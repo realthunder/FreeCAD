@@ -2456,3 +2456,64 @@ handles come back.
 - **Retiring `scanMaterialGroups`.** The split it performs becomes
   unnecessary, but removing it is a separate change with its own import
   regression surface, and it should not ride in with the storage work.
+
+### 10.7 Landed 2026-08-19/20: the storage, the wire and the blobs
+
+Five commits, in the order the implementation notes suggested except that
+the blobs and the serialization swapped: the restore side of the blob
+plumbing has nothing to hook into until the file states the hashes.
+
+| Commit | What |
+|---|---|
+| `37efdecbfc` | `App::SurfaceTexture` on `App::Material` (10.3) |
+| `6333553219` | the palette + index field on `PropertyMaterialList` (10.4) |
+| `e1d5d0873c` | length-prefixed runs, and the texture in the fork's own two encodings (10.5) |
+| `09291e1ceb` | the companion property for the schemas that cannot state one |
+| (this one) | the multi-blob referrer (10.2) |
+
+**Three things the design did not anticipate.**
+
+1. **`slots` is a macro.** Qt defines it as nothing, and this
+   translation unit sees it, so `uint8_t slots = 0;` compiles to
+   `uint8_t = 0;` and the error names `unsigned char`, not the variable.
+   The identifier is `slotCount` throughout for that reason.
+
+2. **9.4.2's "length-prefix each run" had only half landed.** What the
+   finish work shipped was a run head of SHAPE plus entry count, which
+   lets a reader step over a run whose FIELD it does not know but not one
+   whose SHAPE it does not know -- there it stopped reading, losing
+   everything behind it. A palette is a new shape, so the other half had
+   to land with it: the head is now shape, BYTE LENGTH and count. Writing
+   the length means buffering the payload into a scratch stream in the
+   same mode and byte order, as 9.4.2 said it would.
+
+   It also retires the idea of reserving mask bits for payload-free flags.
+   A first attempt did reserve the top nibble and thereby swallowed
+   `FieldTexture` at bit 12 -- the field read back as absent with no error
+   anywhere. With a byte length there is nothing to reserve: **a flag
+   added later writes a run of ZERO bytes**, which every reader steps over
+   exactly as it steps over a field it does not know, so the presence of
+   the bit stays the whole value and the 16 bits stay available to fields.
+
+3. **A `pruneTextureBlobs()` on every `normalize()` is a use-after-free
+   waiting to happen.** A caller must insert content before it can name
+   the hash, so between `insertTextureFile()` and the write that names it
+   there is always a handle no slot points at -- and normalize runs on any
+   read, including one inside that window. The claim is therefore dropped
+   only where the palette has just been stated IN FULL: the whole-list
+   assignments and the restore.
+
+**What 10.2 predicted and the code confirms.** `FileBlobManager` needed no
+change at all. The five things a second blob would touch are the storage,
+the save collection, the naming, the restore queue and the slot identity,
+and only the last is work: `assignRestoredBlob` resolves by
+`blob->hash()`, which makes it idempotent, which is what lets two slots
+over one content both be served and a duplicated queue entry be harmless.
+The collect passes in `App::Document` and `Gui::Document` grew one branch
+each, because they dispatch on property type and an appearance is not a
+`PropertyFileIncluded`.
+
+**Still to do**, and none of it is storage: the importer and exporter onto
+the new field, the UI, and the Python spelling. `Render_BaseColorTexture`
+and its four siblings are still what `ViewProviderGeometryObject` reads, so
+nothing yet writes a texture into an appearance except a script.

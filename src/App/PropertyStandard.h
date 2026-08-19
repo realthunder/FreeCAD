@@ -25,6 +25,7 @@
 #define APP_PROPERTYSTANDARD_H
 
 #include <list>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -34,6 +35,7 @@
 
 #include "Property.h"
 #include "Enumeration.h"
+#include "FileBlobManager.h"
 #include "Material.h"
 
 
@@ -1158,6 +1160,7 @@ private:
  * it.
  */
 class AppExport PropertyMaterialList : public PropertyLists,
+                                       public BlobReferrerProperty,
                                        public AtomicPropertyChangeInterface<PropertyMaterialList>
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
@@ -1401,6 +1404,38 @@ public:
     /// while some entry still resolves to it.
     bool hasTexture() const { ensureNormalized(); return !_texturePalette.empty(); }
 
+    /** @name The texture maps as stored content
+     *
+     * A slot holds a content hash, and App::FileBlobManager owns the bytes.
+     * This is the first property to refer to SEVERAL blobs at once --
+     * PropertyFileIncluded and PropertyPartShape hold a single one each --
+     * and the whole of what that costs is a discipline rather than a
+     * signature: arrival order is NOT queue order, because
+     * addPendingReferrer serves an already-read hash immediately and queues
+     * the rest, so a multi-slot referrer must RESOLVE THE SLOT BY CONTENT
+     * HASH and never by the order the handles come back
+     * (docs/ShapeAppearanceDesign.md 10.2).
+     *
+     * Two slots naming the same content share one blob and both are
+     * assigned, which is correct and makes the assignment idempotent --
+     * which in turn is what lets a duplicated queue entry be harmless.
+     */
+    //@{
+    /// Take a file into the document's store and answer the content hash a
+    /// SurfaceTexture slot holds. Empty if the file cannot be read.
+    std::string insertTextureFile(const char *path, const char *extension = nullptr);
+    /// Where the content behind a hash is on disk, empty if this property
+    /// does not hold it (yet -- a restore serves the handles later)
+    std::string getTextureFile(const std::string &hash) const;
+    /// Tell a save which content this property refers to. One referrer name
+    /// per SLOT, so the files land under readable names rather than under a
+    /// number, and once per DISTINCT hash, because shared content is one
+    /// file with several referrers.
+    void noteTextureBlobs(FileBlobManager &manager, const BlobReferrer &referrer) const;
+    /// Take a restored blob into whichever slots name its hash
+    void assignRestoredBlob(const FileBlobHandle &blob) override;
+    //@}
+
     /** @name PBR mode
      *
      * One bool for the whole list. When set, the same arrays are READ AS
@@ -1549,6 +1584,16 @@ private:
     /// The same for the texture pair, which lands as a palette and an index
     /// rather than as one record per entry
     void applyPendingTexture();
+    /// The document's blob store, or the process-wide one for a property
+    /// with no document -- the same resolution PropertyFileIncluded makes
+    FileBlobManager &blobManager() const;
+    /// Ask the manager for every distinct hash the palette names and does
+    /// not already hold. Called once the palette has landed, from both
+    /// restore paths.
+    void requestTextureBlobs();
+    /// Drop the handles no palette slot names any more, which is what ends
+    /// a blob's life once the last referrer lets go
+    void pruneTextureBlobs();
     /** One material as this list reads it
      *
      * The list holds a single mode for every entry, so a material written
@@ -1671,6 +1716,18 @@ private:
     //@{
     std::vector<SurfaceTexture> _texturePalette;
     std::vector<uint16_t> _textureIndex;
+    /** The content the palette names, held so it stays on disk
+     *
+     * Keyed by content hash, which is the palette's own spelling of a slot
+     * and the only thing a restored handle can be matched on. A blob lives
+     * while some handle to it does, so this map IS this property's claim on
+     * the files.
+     */
+    std::map<std::string, FileBlobHandle> _textureBlobs;
+    /// The manager holding queued requests for this property, so a death
+    /// mid-restore withdraws them rather than leaving it queued for content
+    /// it will never take
+    FileBlobManager *_pendingBlobManager {nullptr};
     //@}
 
     /** Which shape the doc file being read is in

@@ -1898,6 +1898,14 @@ void Document::collectFiles(App::FileBlobManager &manager,
                 manager.noteReferenced(file->getBlob(),
                                        App::FileBlobManager::referrerOf(file, object));
             }
+            else if (auto materials =
+                             Base::freecad_dynamic_cast<App::PropertyMaterialList>(prop)) {
+                // ShapeAppearance lives here, and it refers to as many blobs
+                // as its palette names -- one referrer name per texture slot
+                // (docs/ShapeAppearanceDesign.md 10.2)
+                materials->noteTextureBlobs(manager,
+                                            App::FileBlobManager::referrerOf(prop, object));
+            }
         }
     };
 

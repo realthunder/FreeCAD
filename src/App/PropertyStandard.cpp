@@ -3284,7 +3284,159 @@ void assignPalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &
 
 PropertyMaterialList::PropertyMaterialList() = default;
 
-PropertyMaterialList::~PropertyMaterialList() = default;
+// Releasing the handles is all the content needs -- an undo snapshot or
+// another property may still hold the same blob, and the file goes when the
+// last handle does. What does need saying is a death mid-restore: a property
+// still queued for content it will now never take has to withdraw, or the
+// manager dispatches into a dangling referrer.
+PropertyMaterialList::~PropertyMaterialList()
+{
+    if (_pendingBlobManager) {
+        _pendingBlobManager->removePendingReferrer(this);
+    }
+}
+
+//**************************************************************************
+// The texture maps as stored content
+
+FileBlobManager &PropertyMaterialList::blobManager() const
+{
+    if (auto container = getContainer()) {
+        // A view provider answers with the document of the object it
+        // presents, which is where its appearance belongs
+        if (auto doc = container->getOwnerDocument()) {
+            return doc->getFileBlobManager();
+        }
+    }
+    return FileBlobManager::defaultManager();
+}
+
+std::string PropertyMaterialList::insertTextureFile(const char *path, const char *extension)
+{
+    if (!path || !path[0]) {
+        return {};
+    }
+    FileBlobHandle blob = blobManager().insertFile(path, extension);
+    if (!blob) {
+        return {};
+    }
+    // Held here, keyed by what a slot will name it by. Content already in
+    // the store comes back as the same handle, so importing one image twice
+    // costs one file and one entry.
+    const std::string hash = blob->hash();
+    _textureBlobs[hash] = std::move(blob);
+    return hash;
+}
+
+std::string PropertyMaterialList::getTextureFile(const std::string &hash) const
+{
+    const auto it = _textureBlobs.find(hash);
+    return it == _textureBlobs.end() ? std::string() : it->second->path();
+}
+
+void PropertyMaterialList::noteTextureBlobs(FileBlobManager &manager,
+                                            const BlobReferrer &referrer) const
+{
+    ensureNormalized();
+    for (const auto &value : _texturePalette) {
+        for (uint8_t slot = 0; slot < SurfaceTexture::SlotCount; ++slot) {
+            const auto it = _textureBlobs.find(value.maps[slot]);
+            if (value.maps[slot].empty() || it == _textureBlobs.end()) {
+                continue;
+            }
+            // The referrer NAMES the file, so each slot passes its own --
+            // "Box.ShapeAppearance.normal" rather than a numbered collision.
+            // Noting the same blob again adds to its referrer list, which is
+            // what two slots over one content should do.
+            BlobReferrer named = referrer;
+            if (!named.name.empty()) {
+                named.name += ".";
+                named.name += SurfaceTexture::slotName(slot);
+            }
+            manager.noteReferenced(it->second, named);
+        }
+    }
+}
+
+void PropertyMaterialList::assignRestoredBlob(const FileBlobHandle &blob)
+{
+    // No value change: this completes the restore of a value the document
+    // already had, and touching it here would mark a document modified just
+    // by being opened.
+    //
+    // BY HASH, never by arrival order. addPendingReferrer serves a hash
+    // whose content has already been read IMMEDIATELY and queues the rest,
+    // so a property asking for an unread h1 and then an already-read h2 is
+    // handed h2 first -- invisible with one blob per property, a silent
+    // mis-assignment with five (docs/ShapeAppearanceDesign.md 10.2).
+    if (!blob) {
+        return;
+    }
+    _textureBlobs[blob->hash()] = blob;
+    // Every slot that names content this property now holds: nothing is
+    // still queued, so nothing has to be withdrawn on the way out
+    for (const auto &value : _texturePalette) {
+        for (const auto &hash : value.maps) {
+            if (!hash.empty() && _textureBlobs.find(hash) == _textureBlobs.end()) {
+                return;
+            }
+        }
+    }
+    _pendingBlobManager = nullptr;
+}
+
+void PropertyMaterialList::requestTextureBlobs()
+{
+    if (_texturePalette.empty()) {
+        return;
+    }
+    FileBlobManager *manager = nullptr;
+    for (const auto &value : _texturePalette) {
+        for (const auto &hash : value.maps) {
+            if (hash.empty() || _textureBlobs.find(hash) != _textureBlobs.end()) {
+                continue;
+            }
+            if (!manager) {
+                manager = &blobManager();
+            }
+            // Once per DISTINCT hash: two slots over one content ask once,
+            // and the assignment that answers them is idempotent anyway
+            if (auto blob = manager->find(hash)) {
+                _textureBlobs[hash] = std::move(blob);
+                continue;
+            }
+            _pendingBlobManager = manager;
+            manager->addPendingReferrer(hash, this);
+        }
+    }
+}
+
+/** Drop the handles no palette slot names any more
+ *
+ * Deliberately NOT called from normalize(). A caller has to insert content
+ * before it can name the hash, so between insertTextureFile() and the write
+ * that names it there is always a handle no slot points at -- and normalize
+ * runs on any read, including one inside that window. So this is called
+ * only where the palette has just been stated in full: the whole-list
+ * assignments and the restore.
+ */
+void PropertyMaterialList::pruneTextureBlobs()
+{
+    if (_textureBlobs.empty()) {
+        return;
+    }
+    std::set<std::string> named;
+    for (const auto &value : _texturePalette) {
+        for (const auto &hash : value.maps) {
+            if (!hash.empty()) {
+                named.insert(hash);
+            }
+        }
+    }
+    for (auto it = _textureBlobs.begin(); it != _textureBlobs.end();) {
+        it = named.count(it->first) ? std::next(it) : _textureBlobs.erase(it);
+    }
+}
 
 const Material &PropertyMaterialList::defaultMaterial()
 {
@@ -3753,6 +3905,7 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
         assignPalette(_texturePalette, _textureIndex, textures,
                       defaultMaterial().texture);
         normalize();
+        pruneTextureBlobs();
     }
     else {
         _normalized = true;
@@ -4005,6 +4158,7 @@ void PropertyMaterialList::setTextures(const std::vector<SurfaceTexture> &values
     touchFields();
     palette.swap(_texturePalette);
     index.swap(_textureIndex);
+    pruneTextureBlobs();
     guard.tryInvoke();
 }
 
@@ -4622,18 +4776,23 @@ void PropertyMaterialList::applyPendingTexture()
     std::vector<uint16_t> index;
     palette.swap(_pendingTexturePalette);
     index.swap(_pendingTextureIndex);
-    if (palette.empty() || _count == 0)
-        return;
-    // The check the companion element could not make: it is restored before
-    // the list it belongs to has a length
-    if (!index.empty() && static_cast<int>(index.size()) != _count)
-        throw Base::FileException("texture index length does not match the list");
-    atomic_change guard(*this);
-    touchFields();
-    _texturePalette.swap(palette);
-    _textureIndex.swap(index);
-    normalize();
-    guard.tryInvoke();
+    if (!palette.empty() && _count != 0) {
+        // The check the companion element could not make: it is restored
+        // before the list it belongs to has a length
+        if (!index.empty() && static_cast<int>(index.size()) != _count)
+            throw Base::FileException("texture index length does not match the list");
+        atomic_change guard(*this);
+        touchFields();
+        _texturePalette.swap(palette);
+        _textureIndex.swap(index);
+        normalize();
+        pruneTextureBlobs();
+        guard.tryInvoke();
+    }
+    // Unconditional, because the palette may equally have come from the
+    // field encoding, which lands it long before this runs. Whatever put it
+    // there, this is the point at which every hash in it is known.
+    requestTextureBlobs();
 }
 
 void PropertyMaterialList::SaveDocFile(Base::Writer &writer) const
@@ -5508,6 +5667,9 @@ Property *PropertyMaterialList::Copy() const
     p->_finish = _finish;
     p->_texturePalette = _texturePalette;
     p->_textureIndex = _textureIndex;
+    // Handles, not bytes: a copy refers to the same content, which is the
+    // whole point of a shared store
+    p->_textureBlobs = _textureBlobs;
     return p;
 }
 
@@ -5532,6 +5694,7 @@ void PropertyMaterialList::Paste(const Property &from)
     _finish = other._finish;
     _texturePalette = other._texturePalette;
     _textureIndex = other._textureIndex;
+    _textureBlobs = other._textureBlobs;
     _normalized = true;
     guard.tryInvoke();
 }

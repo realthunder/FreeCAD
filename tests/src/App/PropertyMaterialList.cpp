@@ -20,14 +20,17 @@
 
 #include <gtest/gtest.h>
 
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include <App/FileBlobManager.h>
 #include <App/Material.h>
 #include <App/PropertyStandard.h>
+#include <Base/FileInfo.h>
 #include <Base/Exception.h>
 #include <Base/Reader.h>
 #include <Base/Writer.h>
@@ -1959,6 +1962,127 @@ TEST_F(PropertyMaterialListTest, anArchivedTextureWaitsForItsMaterials)
     EXPECT_EQ(back.getTexture(0), oakTexture());
     EXPECT_FALSE(back.getTexture(1).isSet());
     EXPECT_EQ(back.getImagePath(0), "/tmp/oak.png");
+}
+
+namespace
+{
+
+/// A file in the system temp directory holding exactly \a content
+std::string writeTempFile(const std::string& content)
+{
+    const std::string path = Base::FileInfo::getTempFileName("texture") + ".bin";
+    std::ofstream out(path, std::ios::binary);
+    out << content;
+    out.close();
+    return path;
+}
+
+}  // namespace
+
+TEST_F(PropertyMaterialListTest, textureContentIsHeldByTheHashItIsNamedBy)
+{
+    // No container, so this is the process-wide store rather than a
+    // document's -- the reference counting is the same either way
+    const std::string oakPath = writeTempFile("this is an oak plank");
+    const std::string steelPath = writeTempFile("this is brushed steel");
+
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    const std::string oakHash = prop.insertTextureFile(oakPath.c_str());
+    const std::string steelHash = prop.insertTextureFile(steelPath.c_str());
+    ASSERT_FALSE(oakHash.empty());
+    ASSERT_FALSE(steelHash.empty());
+    EXPECT_NE(oakHash, steelHash);
+
+    // The property holds the content, so the file is on disk and findable
+    // by the hash a slot spells it with
+    EXPECT_FALSE(prop.getTextureFile(oakHash).empty());
+    EXPECT_TRUE(Base::FileInfo(prop.getTextureFile(oakHash)).exists());
+    EXPECT_TRUE(prop.getTextureFile("no such hash").empty());
+
+    // Same content twice is one blob, whatever the file it arrived in
+    const std::string copyPath = writeTempFile("this is an oak plank");
+    EXPECT_EQ(prop.insertTextureFile(copyPath.c_str()), oakHash);
+
+    App::SurfaceTexture texture;
+    texture.maps[App::SurfaceTexture::BaseColor] = oakHash;
+    texture.maps[App::SurfaceTexture::Normal] = steelHash;
+    prop.setTexture(texture);
+    EXPECT_EQ(prop.getTexture(1).maps[App::SurfaceTexture::BaseColor], oakHash);
+
+    Base::FileInfo(oakPath).deleteFile();
+    Base::FileInfo(steelPath).deleteFile();
+    Base::FileInfo(copyPath).deleteFile();
+}
+
+TEST_F(PropertyMaterialListTest, aRestoredBlobFindsItsSlotByHashNotByOrder)
+{
+    // The whole cost of being the first multi-blob referrer
+    // (docs/ShapeAppearanceDesign.md 10.2): addPendingReferrer serves an
+    // already-read hash IMMEDIATELY and queues the rest, so the handles
+    // come back in an order that has nothing to do with the order asked in.
+    const std::string firstPath = writeTempFile("content of the first map");
+    const std::string secondPath = writeTempFile("content of the second map");
+
+    App::PropertyMaterialList source;
+    source.setSize(1);
+    const std::string firstHash = source.insertTextureFile(firstPath.c_str());
+    const std::string secondHash = source.insertTextureFile(secondPath.c_str());
+    ASSERT_FALSE(firstHash.empty());
+    ASSERT_FALSE(secondHash.empty());
+
+    auto& manager = App::FileBlobManager::defaultManager();
+    const App::FileBlobHandle first = manager.find(firstHash);
+    const App::FileBlobHandle second = manager.find(secondHash);
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(second);
+
+    App::SurfaceTexture texture;
+    texture.maps[App::SurfaceTexture::BaseColor] = firstHash;
+    texture.maps[App::SurfaceTexture::Normal] = secondHash;
+    // Both slots over one content, which has to be assigned to both
+    texture.maps[App::SurfaceTexture::Emissive] = firstHash;
+
+    App::PropertyMaterialList restored;
+    restored.setSize(1);
+    restored.setTexture(texture);
+    EXPECT_TRUE(restored.getTextureFile(firstHash).empty());
+
+    // Backwards, which is exactly what the manager may do
+    restored.assignRestoredBlob(second);
+    restored.assignRestoredBlob(first);
+
+    EXPECT_EQ(restored.getTextureFile(firstHash), first->path());
+    EXPECT_EQ(restored.getTextureFile(secondHash), second->path());
+    // Idempotent, which is what lets a duplicated queue entry be harmless
+    restored.assignRestoredBlob(first);
+    EXPECT_EQ(restored.getTextureFile(firstHash), first->path());
+
+    Base::FileInfo(firstPath).deleteFile();
+    Base::FileInfo(secondPath).deleteFile();
+}
+
+TEST_F(PropertyMaterialListTest, aTextureClaimFollowsWhatThePaletteNames)
+{
+    const std::string path = writeTempFile("content nothing will name for long");
+
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    const std::string hash = prop.insertTextureFile(path.c_str());
+    ASSERT_FALSE(hash.empty());
+
+    App::SurfaceTexture texture;
+    texture.maps[App::SurfaceTexture::Occlusion] = hash;
+    prop.setTexture(texture);
+    EXPECT_FALSE(prop.getTextureFile(hash).empty());
+
+    // A whole-list assignment states the palette in full, and the claim
+    // goes with it
+    prop.setTextures({App::SurfaceTexture(), App::SurfaceTexture()});
+    EXPECT_FALSE(prop.hasTexture());
+    EXPECT_TRUE(prop.getTextureFile(hash).empty());
+
+    Base::FileInfo(path).deleteFile();
 }
 
 TEST_F(PropertyMaterialListTest, aTextureSlotFromALaterBuildIsReadAndDropped)
