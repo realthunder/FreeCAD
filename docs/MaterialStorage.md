@@ -1,9 +1,10 @@
 # Material storage -- content-addressed cards in the document
 
-Status: design agreed 2026-08-19 (user), implementation not started. The
-`Materials::PropertyMaterial ShapeMaterial` property on `Part::Feature` is
-built and green, as a faithful port of upstream; everything below replaces how
-that property *stores* its value, not what it means.
+Status: design agreed 2026-08-19 (user). Sec 10 step 1 -- the canonical writer
+and the content hash -- is built, tested and landed; steps 2 onward are not
+started. The `Materials::PropertyMaterial ShapeMaterial` property on
+`Part::Feature` is built and green, as a faithful port of upstream; everything
+below replaces how that property *stores* its value, not what it means.
 
 Related: `docs/FileBlobsManager.md` (the blob store this builds on, and whose
 save-side collect walk sec 8 generalizes), `docs/SharedShapeStorage.md` (the
@@ -159,6 +160,59 @@ library, directory and filename are excluded, and the display name travels on
 the property, matching `FileBlobsManager.md`'s rule that "names live on the
 property, not the blob".
 
+**4.4 Quantities are written in the reader's unit schema.** The third one, and
+the one that survives every precaution above. `MaterialValue::getYAMLString`
+renders a quantity with `Base::Quantity::getUserString()`, which is
+`UnitsApi::schemaTranslate` -- the *user's* unit schema, a preference. The same
+card written by a user working in imperial units is different bytes, and that
+schema's decimal count rounds the value on the way out, so it is not only a
+different hash but a lossy one. `Array2D` and `Array3D` render every cell the
+same way.
+
+The canonical writer renders a quantity as its internal value plus
+`Unit::getString()` -- `"7.9e-06 kg/mm^3"` -- at the shortest precision that
+reads back as the same double. That depends on the value alone.
+
+A plain `Float` property has a smaller version of the same problem from the
+other end: a value read from a card is a `float`, a value set through the API
+may be a `double`, and widening the first gives `0.30000001192092896` where
+the second gives `0.3`. Floats are written at the shortest precision that
+reads back as the same *float*, so both routes to the same number agree.
+
+**4.5 The canonical form, exactly.** It is ordinary `.FCMat` YAML, so
+`MaterialLoader` reads it with no new parser, but nothing outside the card's
+own models and values reaches it:
+
+| Written | Not written |
+| --- | --- |
+| `General: UUID` -- the *nil* uuid, always | the card's uuid, name, author, license |
+| `Description`, `SourceURL`, `ReferenceSource`, `Tags` (sorted) | the `# File created by <version>` header |
+| `Inherits:` keyed by the parent uuid | library, directory, filename |
+| `Models:` / `AppearanceModels:`, keyed and sorted by model uuid | |
+| each model's values, in property-name order | any null value |
+
+Three choices in that table are not obvious.
+
+The nil uuid is there because `MaterialLoader::getMaterialFromYAML` requires a
+`General/UUID` node, so the slot cannot simply be dropped; filling it with the
+nil uuid also reads correctly as "this card's identity is not in this file".
+
+The model blocks are keyed by model *uuid* rather than by the model's name,
+which is what upstream's writer uses. The name is a lookup in the installed
+model library, so it makes the bytes depend on the installation; the loader
+reads the `UUID` inside the block and ignores the key entirely. For the same
+reason the properties written are the ones the card holds, each grouped under
+the model it names (`MaterialProperty::getModelUUID`), rather than the ones
+the installed model *declares* -- a card whose model this installation lacks
+still writes its values out.
+
+`Description`, `SourceURL`, `ReferenceSource` and `Tags` are inside the hash
+even though they are arguably provenance, because unlike name and uuid they
+have nowhere else to travel: the property carries the display name, and
+anything else left out of the bytes is simply lost on the round trip through a
+blob. Two cards that differ only in their description are then different
+content, which is the harmless direction to be wrong in.
+
 **Why this is cleaner than the shape case.** `SharedShapeStorage.md` sec 1.3
 found content hashing only matched sharers whose incidental state agreed --
 each object's placement is baked into the bytes it writes, so four identical
@@ -260,7 +314,9 @@ into the store under its content hash. No new manager API is required.
    enters it (sec 4.3).
 2. Model uuids are sorted before writing. An unsorted write is a silent
    sharing bug, not a cosmetic one (sec 4.2).
-3. `saveInherited` is false for blob serialization, always (sec 4.1).
+3. `saveInherited` is false for blob serialization, always (sec 4.1). In
+   practice the canonical writer never calls it: it writes every value the
+   card holds, and the `Inherits:` block from `_parentUuid` alone.
 4. A parsed card reachable from a property is `const`. Editing allocates.
 5. Restore never silently substitutes Default. Unresolved means a placeholder
    that keeps uuid and name (sec 7).
@@ -269,12 +325,29 @@ into the store under its content hash. No new manager API is required.
 7. Everything `FileBlobsManager.md` sec 10 already requires of blob lifetime
    applies unchanged -- in particular, no handle is destroyed while the
    manager mutex is held.
+8. Nothing installation-dependent enters the bytes: not a unit schema, not a
+   locale, not the writing version, not the installed model or material
+   libraries (sec 4.4, 4.5).
 
 ## 10. Build order
 
-1. **Canonical writer plus hash.** `Material` -> canonical bytes, sorted
-   models, provenance excluded. Test: same card, two processes, one hash;
-   an edited value changes it; a renamed card does not.
+1. **Canonical writer plus hash.** DONE. `Material::saveCanonical` /
+   `getCanonicalForm` / `getContentHash` (SHA-1 hex, the same hash
+   `FileBlobManager` computes for a file of those bytes), exposed to Python as
+   `Material.CanonicalForm` and `Material.ContentHash`. Guarded by
+   `src/Mod/Material/materialtests/TestMaterialCanonical.py`: the hash is the
+   SHA-1 of the form, model uuids come out sorted, a rename or a new author
+   does not move it, an edited value does, and every unit schema in
+   `listSchemas()` gives one hash. The QSet order fix (sec 4.2) also applies
+   to the ordinary library writer, and to the tag list.
+
+   Verified beyond the suite, 2026-08-19: all 215 shipped cards hashed in
+   three separate processes give three identical lists, and 215 distinct
+   hashes -- no collisions. Written to a file and read back through
+   `MaterialLoader`, a card re-canonicalizes to the same hash, so the form is
+   a fixed point and not merely deterministic; `sha1sum` of that file equals
+   `ContentHash`, which is the agreement with `FileBlobManager::hashFile`
+   step 3 rests on.
 2. **Generalize the collect walk** (sec 8) so a non-`PropertyFileIncluded`
    property can own a blob. No behaviour change for existing documents.
 3. **`PropertyMaterial` on blobs**: handle plus `shared_ptr<const Material>`
