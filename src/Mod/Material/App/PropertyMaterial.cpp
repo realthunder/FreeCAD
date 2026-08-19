@@ -21,15 +21,21 @@
  *                                                                         *
  **************************************************************************/
 
+#include <QFile>
 #include <QMetaType>
 #include <QUuid>
 
 
 
 #include <App/Application.h>
+#include <App/Document.h>
+#include <App/DocumentObject.h>
+#include <Base/Console.h>
+#include <Base/FileInfo.h>
 #include <Base/Writer.h>
 #include <Gui/MetaTypes.h>
 
+#include "MaterialCards.h"
 #include "MaterialManager.h"
 #include "MaterialPy.h"
 #include "PropertyMaterial.h"
@@ -42,30 +48,67 @@ TYPESYSTEM_SOURCE(Materials::PropertyMaterial, App::Property)
 
 PropertyMaterial::PropertyMaterial() = default;
 
-PropertyMaterial::~PropertyMaterial() = default;
+PropertyMaterial::~PropertyMaterial()
+{
+    if (_pendingManager) {
+        // Still waiting for content that will now never be delivered: the
+        // manager would otherwise hand it to a property that no longer exists.
+        _pendingManager->removePendingReferrer(this);
+    }
+}
+
+App::FileBlobManager& PropertyMaterial::blobManager() const
+{
+    if (auto container = getContainer()) {
+        if (auto doc = container->getOwnerDocument()) {
+            return doc->getFileBlobManager();
+        }
+    }
+    return App::FileBlobManager::defaultManager();
+}
 
 void PropertyMaterial::setValue(const Material& mat)
 {
     aboutToSetValue();
-    _material = mat;
+    // A copy taken once, here, and shared const from now on: whoever handed us
+    // this card keeps their own, and every referrer of ours shares ours.
+    _card = std::make_shared<const Material>(mat);
+    _uuid = mat.getUUID();
+    _name = mat.getName();
+    _unresolved = false;
+    // Different content, so whatever was stored is no longer what this
+    // property holds. The store keeps the old bytes only while something else
+    // still refers to them.
+    _blob.reset();
+    _hash.clear();
     hasSetValue();
 }
 
 void PropertyMaterial::setValue(const App::Material& mat)
 {
     aboutToSetValue();
-    _material = mat;
+    // Copy on write: the card is shared and const, so setting the appearance
+    // means a new one rather than an edit anyone else can see.
+    auto edited = _card ? std::make_shared<Material>(*_card) : std::make_shared<Material>();
+    *edited = mat;
+    _card = std::move(edited);
+    _blob.reset();
+    _hash.clear();
     hasSetValue();
 }
 
 const Material& PropertyMaterial::getValue() const
 {
-    return _material;
+    // A property that was never assigned anything. Not the default card:
+    // "no material" and "the Default material" are different answers, and
+    // conflating them is how a lost card goes unnoticed.
+    static const Material empty;
+    return _card ? *_card : empty;
 }
 
 PyObject* PropertyMaterial::getPyObject()
 {
-    return new MaterialPy(new Material(_material));
+    return new MaterialPy(new Material(getValue()));
 }
 
 void PropertyMaterial::setPyObject(PyObject* value)
@@ -80,20 +123,253 @@ void PropertyMaterial::setPyObject(PyObject* value)
     }
 }
 
+const std::string& PropertyMaterial::contentHash() const
+{
+    // Cached: a save asks twice per property, and canonicalizing a card to
+    // hash it is not free when a document holds hundreds of them. An
+    // unresolved value keeps the hash the document recorded instead: the
+    // placeholder is not the card, and must not be written as if it were.
+    if (_hash.empty() && _card && !_unresolved) {
+        _hash = _card->getContentHash();
+    }
+    return _hash;
+}
+
+bool PropertyMaterial::storesContent() const
+{
+    // A stock card need not be carried: every installation that has the
+    // library has this exact content, matched by hash rather than by uuid, so
+    // a document using only stock materials costs no extra bytes and a
+    // library edited since does not slip in under the same uuid
+    // (docs/MaterialStorage.md sec 5).
+    // An unresolved value has no content of its own to store: what it holds
+    // is a note of what is missing, and re-saving must leave the document
+    // saying what it said.
+    return _card && !_unresolved && !MaterialCards::preset(contentHash());
+}
+
+const App::FileBlobHandle& PropertyMaterial::ensureBlob() const
+{
+    if (_blob || !_card) {
+        return _blob;
+    }
+
+    const std::string& hash = contentHash();
+    auto& manager = blobManager();
+    if (auto existing = manager.find(hash)) {
+        // This content is already stored -- another object assigned the same
+        // card, or this document was opened from a file holding it. Nothing to
+        // write.
+        _blob = existing;
+        return _blob;
+    }
+
+    const std::string path = manager.uniquePath(hash + ".FCMat");
+    QFile file(QString::fromUtf8(path.c_str()));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        Base::Console().error("PropertyMaterial: cannot write the card to '%s'\n", path.c_str());
+        return _blob;
+    }
+    const QByteArray canonical = _card->getCanonicalForm().toUtf8();
+    const bool written = file.write(canonical) == canonical.size();
+    file.close();
+    if (!written) {
+        Base::Console().error("PropertyMaterial: cannot write the card to '%s'\n", path.c_str());
+        Base::FileInfo(path).deleteFile();
+        return _blob;
+    }
+
+    // adoptFile() hashes the file itself and shares an existing blob when the
+    // content is already stored, so the store stays the authority on identity
+    // and this hash is only a shortcut past the write above.
+    _blob = manager.adoptFile(path.c_str(), ".FCMat");
+    return _blob;
+}
+
+std::string PropertyMaterial::getContentHash() const
+{
+    return contentHash();
+}
+
+App::BlobReferrer PropertyMaterial::referrer(const App::DocumentObject* object) const
+{
+    auto referrer = App::FileBlobManager::referrerOf(this, object);
+    // The extension is the property's to give: nothing about the content says
+    // it is a material card, and a stored card should still open in whatever
+    // handles one.
+    referrer.ext = ".FCMat";
+    return referrer;
+}
+
+void PropertyMaterial::collectBlobs(App::FileBlobManager& manager,
+                                    const App::DocumentObject* object) const
+{
+    if (!storesContent()) {
+        return;
+    }
+    manager.noteReferenced(ensureBlob(), referrer(object));
+}
+
 void PropertyMaterial::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<PropertyMaterial uuid=\""
-                    << _material.getUUID().toStdString() << "\"/>" << std::endl;
+    const std::string uuid = _uuid.toStdString();
+    if (writer.getSchemaVersion() >= 5 && _card) {
+        // The card is identified by its content. The uuid stays alongside as
+        // the relink anchor and as what an upstream reader will find
+        // (docs/MaterialStorage.md sec 6), and the name because it is the
+        // property's, not the content's.
+        //
+        // The content itself is written only when this installation is the
+        // only place it exists. A stock card is left out: the hash still
+        // says exactly which card it was, and every reader that has the
+        // library can produce it.
+        std::string hash = contentHash();
+        if (storesContent()) {
+            const auto& blob = ensureBlob();
+            if (!blob) {
+                // The store would not take it. Fall through to the reference
+                // form rather than writing a hash nothing can resolve.
+                hash.clear();
+            }
+            else {
+                // Noted again here for the same reason PropertyFileIncluded
+                // does: a property written through a path the collect pass
+                // does not walk would otherwise lose its content.
+                blobManager().noteReferenced(blob, referrer(nullptr));
+                hash = blob->hash();
+            }
+        }
+        if (!hash.empty()) {
+            writer.Stream() << writer.ind() << "<PropertyMaterial hash=\""
+                            << encodeAttribute(hash) << "\" uuid=\"" << encodeAttribute(uuid)
+                            << "\" name=\"" << encodeAttribute(_name.toStdString()) << "\"/>"
+                            << std::endl;
+            return;
+        }
+    }
+
+    // Schema 4 and below, and the empty value: upstream's exact form, so a
+    // document written for upstream stays readable there.
+    writer.Stream() << writer.ind() << "<PropertyMaterial uuid=\"" << encodeAttribute(uuid)
+                    << "\"/>" << std::endl;
+}
+
+void PropertyMaterial::assign(const std::shared_ptr<const Material>& card, bool unresolved)
+{
+    // No aboutToSetValue()/hasSetValue(): this completes the restore of a
+    // value the document already had, and touching it here would mark a
+    // document modified just by being opened.
+    _card = card;
+    _hash.clear();
+    _unresolved = unresolved;
+}
+
+void PropertyMaterial::assignUnresolved(const std::string& hash)
+{
+    // Everything the document recorded about the card, and nothing invented:
+    // the assignment stays visible and can relink if the library turns up
+    // later. Reverting to Default here is the failure this design removes.
+    auto placeholder = std::make_shared<Material>();
+    placeholder->setUUID(_uuid);
+    placeholder->setName(_name);
+    assign(std::move(placeholder), true);
+    // Saving this document again writes the same reference back. Opening a
+    // document on the wrong machine must not be what destroys what it says.
+    _hash = hash;
 }
 
 void PropertyMaterial::Restore(Base::XMLReader& reader)
 {
-    // read my Element
     reader.readElement("PropertyMaterial");
-    // get the value of my Attribute
-    auto uuid = reader.getAttribute<const char*>("uuid");
+    _uuid = QString::fromUtf8(reader.getAttribute<const char*>("uuid"));
+    _name = reader.hasAttribute("name") ? QString::fromUtf8(reader.getAttribute<const char*>("name"))
+                                        : QString();
+    _card.reset();
+    _blob.reset();
+    _hash.clear();
+    _unresolved = false;
 
-    setValue(*MaterialManager::getManager().getMaterial(QString::fromLatin1(uuid)));
+    const std::string hash =
+        reader.hasAttribute("hash") ? reader.getAttribute<const char*>("hash") : std::string();
+    if (!hash.empty()) {
+        // Case 1: the card is identified by its content, which is
+        // authoritative -- the library may hold something else under this
+        // uuid by now, and what this document was saved with is what it
+        // opens with.
+        if (auto card = MaterialCards::find(hash, _uuid, _name)) {
+            assign(card, false);
+            return;
+        }
+        // Installed content, which is why the document did not carry it. Also
+        // reached by a document that did carry it: one instance then serves
+        // every open document rather than one per document.
+        if (auto stock = MaterialCards::preset(hash)) {
+            assign(MaterialCards::adopt(hash, _uuid, _name, stock), false);
+            return;
+        }
+        // The manager hands the content over: at once if the entry has been
+        // read already, otherwise once the archive is drained. Until then the
+        // value is the placeholder -- content that never arrives warns and
+        // never calls back, and an empty value would say nothing at all.
+        assignUnresolved(hash);
+        auto& manager = blobManager();
+        _pendingManager = &manager;
+        manager.addPendingReferrer(hash, this);
+        return;
+    }
+
+    if (_uuid.isEmpty()) {
+        return;
+    }
+
+    // Case 2: an upstream document, or one of ours written at schema 4. The
+    // uuid is all there is, so resolve it against the library as upstream
+    // does.
+    try {
+        auto card = MaterialManager::getManager().getMaterial(_uuid);
+        if (card) {
+            if (_name.isEmpty()) {
+                _name = card->getName();
+            }
+            // Through the cache, so several objects referring to one library
+            // card share one instance here too.
+            assign(MaterialCards::adopt(card->getContentHash(), _uuid, _name, card), false);
+            return;
+        }
+    }
+    catch (const Base::Exception&) {
+    }
+
+    // Case 3: nothing resolves.
+    Base::Console().warning("The material '%s' (%s) assigned to %s is not installed, and this "
+                            "document does not carry it.\n",
+                            _name.isEmpty() ? "?" : _name.toUtf8().constData(),
+                            _uuid.toUtf8().constData(),
+                            getFullName().c_str());
+    assignUnresolved({});
+}
+
+void PropertyMaterial::assignRestoredBlob(const App::FileBlobHandle& blob)
+{
+    _pendingManager = nullptr;
+    _blob = blob;
+    if (!blob) {
+        assignUnresolved(_hash);
+        return;
+    }
+
+    auto card = MaterialCards::load(blob->hash(),
+                                    QString::fromUtf8(blob->path().c_str()),
+                                    _uuid,
+                                    _name);
+    if (!card) {
+        Base::Console().error("The material stored for %s cannot be read (%s).\n",
+                              getFullName().c_str(),
+                              blob->hash().c_str());
+        assignUnresolved(blob->hash());
+        return;
+    }
+    assign(card, false);
 }
 
 const char* PropertyMaterial::getEditorName() const
@@ -106,14 +382,30 @@ const char* PropertyMaterial::getEditorName() const
 
 App::Property* PropertyMaterial::Copy() const
 {
+    // A refcount increment, not a card: an undo snapshot of five hundred
+    // objects sharing one material is five hundred pointers.
     PropertyMaterial* p = new PropertyMaterial();
-    p->_material = _material;
+    p->_card = _card;
+    p->_blob = _blob;
+    p->_hash = _hash;
+    p->_uuid = _uuid;
+    p->_name = _name;
+    p->_unresolved = _unresolved;
     return p;
 }
 
 void PropertyMaterial::Paste(const App::Property& from)
 {
+    const auto& other = dynamic_cast<const PropertyMaterial&>(from);
     aboutToSetValue();
-    _material = dynamic_cast<const PropertyMaterial&>(from)._material;
+    _card = other._card;
+    _hash = other._hash;
+    _uuid = other._uuid;
+    _name = other._name;
+    _unresolved = other._unresolved;
+    // Not the blob: the value may be arriving from another document, whose
+    // store this one's handles must not point into. ensureBlob() puts it in
+    // the right store when it is next needed.
+    _blob.reset();
     hasSetValue();
 }
