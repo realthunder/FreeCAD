@@ -1831,7 +1831,7 @@ public:
     ///
     /// Enable physically based shading with image based lighting of
     /// the experimental render engine (render cache mode 3 with a
-    /// selected renderer type). Replaces the default headlight shading
+    /// selected renderer type). Replaces the Classic headlight shading
     /// of lit surfaces with a metallic/roughness material lit by a
     /// built-in studio environment.
     static const bool & getPBR();

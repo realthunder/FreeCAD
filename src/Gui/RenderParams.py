@@ -1037,7 +1037,7 @@ Params = [
     ParamBool('PBR',  False, title='Physically based shading',
         doc="Enable physically based shading with image based lighting of\n"
         "the experimental render engine (render cache mode 3 with a\n"
-        "selected renderer type). Replaces the default headlight shading\n"
+        "selected renderer type). Replaces the Classic headlight shading\n"
         "of lit surfaces with a metallic/roughness material lit by a\n"
         "built-in studio environment."),
     ParamFloat('PBRMetallic',  0.0, title='Metallic',

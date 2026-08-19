@@ -106,17 +106,24 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     // the surface's response to light, so at most one can be on.
     auto modelRow = new QHBoxLayout;
     modelRow->setContentsMargins(0, 0, 0, 0);
-    defaultRadio = new QRadioButton(tr("Default"), this);
-    defaultRadio->setToolTip(tr("The renderer's default headlight shading"));
+    // Named for what it IS, not for its position in the list. "Default"
+    // described only the fact that a view starts in it, which stops being
+    // true the moment that changes and never said anything about the
+    // shading either way.
+    classicRadio = new QRadioButton(tr("Classic"), this);
+    classicRadio->setToolTip(
+        tr("Blinn-Phong headlight shading: the light follows the camera "
+           "and the surface has no environment around it. What a view "
+           "starts in."));
     pbrRadio = new QRadioButton(tr("Realistic"), this);
     pbrRadio->setToolTip(doc(RenderParams::docPBR()));
     matcapRadio = new QRadioButton(tr("Matcap"), this);
     matcapRadio->setToolTip(doc(RenderParams::docMatcap()));
     auto models = new QButtonGroup(this);
-    models->addButton(defaultRadio);
+    models->addButton(classicRadio);
     models->addButton(pbrRadio);
     models->addButton(matcapRadio);
-    modelRow->addWidget(defaultRadio);
+    modelRow->addWidget(classicRadio);
     modelRow->addWidget(pbrRadio);
     modelRow->addWidget(matcapRadio);
     modelRow->addStretch();
@@ -212,7 +219,7 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     hint->setEnabled(false);
     layout->addWidget(hint, 6, 0, 1, 2);
 
-    connect(defaultRadio, &QRadioButton::toggled, this, [this](bool on) {
+    connect(classicRadio, &QRadioButton::toggled, this, [this](bool on) {
         if (on && !loading)
             setModel(false, false);
     });
@@ -345,7 +352,7 @@ void ShadingOptionsWidget::refresh()
     // radio when a document somehow carries both.
     matcapRadio->setChecked(matcap);
     pbrRadio->setChecked(pbr && !matcap);
-    defaultRadio->setChecked(!pbr && !matcap);
+    classicRadio->setChecked(!pbr && !matcap);
     if (auto prop = renderProp<App::PropertyEnumeration>(view, "MatcapPreset"))
         matcapCombo->setCurrentIndex(int(prop->getValue()));
     if (auto prop = renderProp<App::PropertyFloat>(view, "MatcapTint"))
@@ -371,7 +378,7 @@ void ShadingOptionsWidget::refresh()
     shadowCheck->setChecked(renderFlag(view, "Light", false));
     bloomCheck->setChecked(renderFlag(view, "Bloom", false));
 
-    defaultRadio->setEnabled(available);
+    classicRadio->setEnabled(available);
     pbrRadio->setEnabled(available);
     matcapRadio->setEnabled(available);
     matcapLabel->setEnabled(available && matcap);
