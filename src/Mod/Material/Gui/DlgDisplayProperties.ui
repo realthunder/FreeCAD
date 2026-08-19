@@ -427,6 +427,97 @@
           </property>
          </widget>
         </item>
+        <item row="5" column="0">
+         <widget class="QLabel" name="labelFinish">
+          <property name="text">
+           <string>Surface finish</string>
+          </property>
+         </widget>
+        </item>
+        <item row="5" column="1">
+         <widget class="QComboBox" name="comboFinish">
+          <property name="toolTip">
+           <string>The machining the surface was given, shaded as relief.
+Pick a preset, then size it below.</string>
+          </property>
+         </widget>
+        </item>
+        <item row="6" column="0">
+         <widget class="QLabel" name="labelFinishSize">
+          <property name="text">
+           <string>Pitch / depth (mm)</string>
+          </property>
+         </widget>
+        </item>
+        <item row="6" column="1">
+         <layout class="QHBoxLayout" name="layoutFinishSize">
+          <item>
+           <widget class="QDoubleSpinBox" name="spinFinishPitch">
+            <property name="toolTip">
+             <string>Feature spacing in millimetres; 0 = the size this pattern has on a real part</string>
+            </property>
+            <property name="specialValueText">
+             <string>auto pitch</string>
+            </property>
+            <property name="decimals">
+             <number>3</number>
+            </property>
+            <property name="maximum">
+             <double>10000.000000000000000</double>
+            </property>
+            <property name="singleStep">
+             <double>0.050000000000000</double>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="spinFinishDepth">
+            <property name="toolTip">
+             <string>Peak to valley in millimetres; 0 = automatic (a fraction of the pitch)</string>
+            </property>
+            <property name="specialValueText">
+             <string>auto depth</string>
+            </property>
+            <property name="decimals">
+             <number>3</number>
+            </property>
+            <property name="maximum">
+             <double>10000.000000000000000</double>
+            </property>
+            <property name="singleStep">
+             <double>0.010000000000000</double>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item row="7" column="0">
+         <widget class="QLabel" name="labelFinishAngle">
+          <property name="text">
+           <string>Lay angle</string>
+          </property>
+         </widget>
+        </item>
+        <item row="7" column="1">
+         <widget class="QDoubleSpinBox" name="spinFinishAngle">
+          <property name="toolTip">
+           <string>Direction of the pattern's lay; a lay has an axis, not a
+direction, so it wraps at 180 degrees</string>
+          </property>
+          <property name="suffix">
+           <string notr="true"> deg</string>
+          </property>
+          <property name="decimals">
+           <number>1</number>
+          </property>
+          <property name="maximum">
+           <double>180.000000000000000</double>
+          </property>
+          <property name="singleStep">
+           <double>5.000000000000000</double>
+          </property>
+         </widget>
+        </item>
        </layout>
       </item>
       <item row="0" column="0">

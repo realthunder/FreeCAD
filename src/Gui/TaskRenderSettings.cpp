@@ -24,7 +24,6 @@
 
 #ifndef _PreComp_
 # include <QCheckBox>
-# include <QComboBox>
 # include <QDoubleSpinBox>
 # include <QGridLayout>
 # include <QLabel>
@@ -76,7 +75,6 @@ void removeProp(ViewProviderGeometryObject *vp, const char *name)
         vp->removeDynamicProperty(name);
 }
 
-const App::PropertyFloatConstraint::Constraints UnitRange = {0.0, 1.0, 0.05};
 
 } // anonymous namespace
 
@@ -105,47 +103,6 @@ RenderSettingsWidget::RenderSettingsWidget(
         grid->addWidget(spin, row, col, 1, colspan);
         return spin;
     };
-
-    // PBR scalars: only meaningful to the render engine's PBR shading
-    // path, overriding the global/per-view defaults per object.
-    metallicCheck = addOverride(tr("Metallic"));
-    metallicSpin = addSpin(1, 0.0, 1.0, 0.05, 2);
-    ++row;
-    roughnessCheck = addOverride(tr("Roughness"));
-    roughnessSpin = addSpin(1, 0.0, 1.0, 0.05, 2);
-    ++row;
-
-    // Machined surface finish: the pattern the surface was given, which
-    // the render engine shades as relief. Sized in millimetres of the
-    // object's own space, so the values are the ones the drawing would
-    // carry rather than anything display-relative.
-    finishCheck = addOverride(tr("Surface finish"));
-    finishCombo = new QComboBox(this);
-    for (uint8_t p = 1; p < App::SurfaceFinish::PatternCount; ++p)
-        finishCombo->addItem(QString::fromLatin1(
-                    App::SurfaceFinish::patternName(p)));
-    grid->addWidget(finishCombo, row, 1, 1, 2);
-    ++row;
-    grid->addWidget(new QLabel(tr("Pitch / depth (mm)"), this), row, 0);
-    finishPitchSpin = addSpin(1, 0.0, 1.0e4, 0.05);
-    finishPitchSpin->setSpecialValueText(tr("auto pitch"));
-    finishPitchSpin->setToolTip(
-        tr("Feature spacing in millimetres; 0 = the size this pattern "
-           "has on a real part"));
-    finishDepthSpin = addSpin(2, 0.0, 1.0e4, 0.01);
-    finishDepthSpin->setSpecialValueText(tr("auto depth"));
-    finishDepthSpin->setToolTip(
-        tr("Peak to valley in millimetres; 0 = automatic (a fraction "
-           "of the pitch)"));
-    ++row;
-    grid->addWidget(new QLabel(tr("Lay angle"), this), row, 0);
-    finishAngleSpin = addSpin(1, 0.0, 180.0, 5.0, 2);
-    finishAngleSpin->setDecimals(1);
-    finishAngleSpin->setSuffix(QString::fromLatin1(" deg"));
-    finishAngleSpin->setToolTip(
-        tr("Direction of the pattern's lay; a lay has an axis, not a "
-           "direction, so it wraps at 180 degrees"));
-    ++row;
 
     // Water body of the volumetric lighting pass.
     waterCheck = addOverride(tr("Water body"));
@@ -321,10 +278,6 @@ RenderSettingsWidget::RenderSettingsWidget(
         }
     };
     load();
-    enables(metallicCheck, {metallicSpin});
-    enables(roughnessCheck, {roughnessSpin});
-    enables(finishCheck, {finishCombo, finishPitchSpin, finishDepthSpin,
-                          finishAngleSpin});
     enables(waterCheck, {waterDensitySpin});
     enables(glassCheck, {glassIORSpin, glassDensitySpin, glassRoughSpin});
     enables(cloudCheck, {cloudDensitySpin, cloudDetailSpin,
@@ -363,42 +316,6 @@ void RenderSettingsWidget::load()
         return;
     auto vp = vps.front();
 
-    if (auto prop = getProp<App::PropertyFloat>(vp, "Render_Metallic")) {
-        metallicCheck->setChecked(true);
-        metallicSpin->setValue(prop->getValue());
-    }
-    if (auto prop = getProp<App::PropertyFloat>(vp, "Render_Roughness")) {
-        roughnessCheck->setChecked(true);
-        roughnessSpin->setValue(prop->getValue());
-    }
-    // The finish knob is written as an enumeration, but the reader in
-    // the view provider takes a plain string or the raw pattern value
-    // too, so a scripted object shows up in this dialog as well.
-    const char *finishName = nullptr;
-    if (auto prop = getProp<App::PropertyEnumeration>(vp, "Render_Finish")) {
-        if (prop->getEnum().isValid())
-            finishName = prop->getValueAsString();
-    }
-    else if (auto prop = getProp<App::PropertyString>(vp, "Render_Finish")) {
-        finishName = prop->getValue();
-    }
-    else if (auto prop = getProp<App::PropertyInteger>(vp, "Render_Finish")) {
-        finishName = App::SurfaceFinish::patternName(
-                uint8_t(prop->getValue()));
-    }
-    if (finishName && finishName[0]) {
-        int idx = finishCombo->findText(QString::fromLatin1(finishName));
-        if (idx >= 0) {
-            finishCheck->setChecked(true);
-            finishCombo->setCurrentIndex(idx);
-        }
-    }
-    if (auto prop = getProp<App::PropertyFloat>(vp, "Render_FinishPitch"))
-        finishPitchSpin->setValue(prop->getValue());
-    if (auto prop = getProp<App::PropertyFloat>(vp, "Render_FinishDepth"))
-        finishDepthSpin->setValue(prop->getValue());
-    if (auto prop = getProp<App::PropertyFloat>(vp, "Render_FinishAngle"))
-        finishAngleSpin->setValue(prop->getValue());
     if (auto prop = getProp<App::PropertyBool>(vp, "Render_Water")) {
         waterCheck->setChecked(prop->getValue());
         if (auto dens = getProp<App::PropertyFloat>(
@@ -520,70 +437,6 @@ void RenderSettingsWidget::load()
 
 void RenderSettingsWidget::apply(ViewProviderGeometryObject *vp)
 {
-    // Scalar overrides (0..1 constrained like the per-view properties).
-    auto applyScalar = [vp](QCheckBox *check, QDoubleSpinBox *spin,
-                            const char *name, const char *doc) {
-        if (!check->isChecked()) {
-            removeProp(vp, name);
-            return;
-        }
-        auto prop = ensureProp<App::PropertyFloatConstraint>(
-                vp, "App::PropertyFloatConstraint", name, doc);
-        if (prop) {
-            if (prop->getConstraints() != &UnitRange)
-                prop->setConstraints(&UnitRange);
-            prop->setValue(spin->value());
-        }
-    };
-    applyScalar(metallicCheck, metallicSpin, "Render_Metallic",
-                "Per-object PBR metalness of the render engine");
-    applyScalar(roughnessCheck, roughnessSpin, "Render_Roughness",
-                "Per-object PBR roughness of the render engine");
-
-    // Surface finish: the pattern as an enumeration, so the property
-    // editor offers the same list this combo does (a custom enum list
-    // persists with the document), plus the three sizes as optional
-    // floats on the usual "0 = automatic" convention.
-    if (finishCheck->isChecked()) {
-        if (auto prop = ensureProp<App::PropertyEnumeration>(
-                    vp, "App::PropertyEnumeration", "Render_Finish",
-                    "Machined surface finish the render engine shades "
-                    "as relief")) {
-            std::vector<std::string> items;
-            items.reserve(finishCombo->count());
-            for (int i = 0; i < finishCombo->count(); ++i)
-                items.push_back(finishCombo->itemText(i).toStdString());
-            // Enums first: setting them resets the value.
-            prop->setEnums(items);
-            prop->setValue(long(finishCombo->currentIndex()));
-        }
-        auto applyOptional = [vp](double value, const char *name,
-                                  const char *doc) {
-            if (value > 0.0) {
-                if (auto prop = ensureProp<App::PropertyFloat>(
-                            vp, "App::PropertyFloat", name, doc))
-                    prop->setValue(value);
-            }
-            else {
-                removeProp(vp, name);
-            }
-        };
-        applyOptional(finishPitchSpin->value(), "Render_FinishPitch",
-                      "Finish feature spacing in millimetres; "
-                      "0 = the pattern's own size");
-        applyOptional(finishDepthSpin->value(), "Render_FinishDepth",
-                      "Finish peak to valley in millimetres; "
-                      "0 = automatic");
-        applyOptional(finishAngleSpin->value(), "Render_FinishAngle",
-                      "Direction of the finish's lay, in degrees");
-    }
-    else {
-        removeProp(vp, "Render_Finish");
-        removeProp(vp, "Render_FinishPitch");
-        removeProp(vp, "Render_FinishDepth");
-        removeProp(vp, "Render_FinishAngle");
-    }
-
     // Water body flag + optional density.
     if (waterCheck->isChecked()) {
         if (auto prop = ensureProp<App::PropertyBool>(

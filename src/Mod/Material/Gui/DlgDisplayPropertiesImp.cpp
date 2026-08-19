@@ -22,6 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <QPixmap>
 #include <QSignalBlocker>
 #include <algorithm>
 #include <fastsignals/signal.h>
@@ -42,6 +43,7 @@
 #include <Mod/Material/App/ModelUuids.h>
 
 #include "DlgDisplayPropertiesImp.h"
+#include "MaterialIcons.h"
 #include "ui_DlgDisplayProperties.h"
 
 
@@ -179,6 +181,7 @@ DlgDisplayPropertiesImp::DlgDisplayPropertiesImp(QWidget* parent, Qt::WindowFlag
     // Create a filter to only include current format materials
     // that contain the basic render model.
     setupFilters();
+    setupFinishPresets();
 
     {
         QSignalBlocker block(d->ui.widgetMaterial);
@@ -283,6 +286,22 @@ void DlgDisplayPropertiesImp::setupConnections()
             &MaterialTreeWidget::materialSelected,
             this,
             &DlgDisplayPropertiesImp::onMaterialSelected);
+    connect(d->ui.comboFinish,
+            qOverload<int>(&QComboBox::activated),
+            this,
+            &DlgDisplayPropertiesImp::onFinishPresetActivated);
+    connect(d->ui.spinFinishPitch,
+            qOverload<double>(&QDoubleSpinBox::valueChanged),
+            this,
+            &DlgDisplayPropertiesImp::onFinishSizeChanged);
+    connect(d->ui.spinFinishDepth,
+            qOverload<double>(&QDoubleSpinBox::valueChanged),
+            this,
+            &DlgDisplayPropertiesImp::onFinishSizeChanged);
+    connect(d->ui.spinFinishAngle,
+            qOverload<double>(&QDoubleSpinBox::valueChanged),
+            this,
+            &DlgDisplayPropertiesImp::onFinishSizeChanged);
     connect(d->ui.checkBoxMapFaceColor,
             &QCheckBox::toggled,
             this,
@@ -315,6 +334,7 @@ void DlgDisplayPropertiesImp::setPropertiesFromSelection()
     setDisplayModes(views);
     setColorPlot(views);
     setShapeAppearance(views);
+    setShapeFinish(views);
     setShapeColor(views);
     setLineColor(views);
     setPointColor(views);
@@ -692,6 +712,156 @@ void DlgDisplayPropertiesImp::setShapeAppearance(const std::vector<Gui::ViewProv
     d->ui.buttonCustomAppearance->setEnabled(material);
 }
 
+namespace
+{
+
+/// The label a finish pattern wears in the preset list. Not the canonical
+/// name App::SurfaceFinish uses -- that one is an API spelling ("knurl-
+/// straight"), and this one is read by a person.
+QString finishPresetLabel(uint8_t pattern)
+{
+    switch (pattern) {
+        case App::SurfaceFinish::Knurl:
+            return DlgDisplayPropertiesImp::tr("Diamond knurl");
+        case App::SurfaceFinish::KnurlStraight:
+            return DlgDisplayPropertiesImp::tr("Straight knurl");
+        case App::SurfaceFinish::Brushed:
+            return DlgDisplayPropertiesImp::tr("Brushed");
+        case App::SurfaceFinish::Blasted:
+            return DlgDisplayPropertiesImp::tr("Blasted");
+        case App::SurfaceFinish::Turned:
+            return DlgDisplayPropertiesImp::tr("Turned");
+        default:
+            return {};
+    }
+}
+
+}  // namespace
+
+void DlgDisplayPropertiesImp::setupFinishPresets()
+{
+    QSignalBlocker block(d->ui.comboFinish);
+
+    // One size for the row height whatever the icons turn out to be, and
+    // a blank of that size behind "None" so its text lines up with the
+    // patterns' rather than sliding into the icon column.
+    const QSize iconSize(32, 32);
+    d->ui.comboFinish->setIconSize(iconSize);
+    QPixmap blank(iconSize);
+    blank.fill(Qt::transparent);
+
+    d->ui.comboFinish->addItem(QIcon(blank), tr("None"),
+                               uint(App::SurfaceFinish::None));
+    for (uint8_t pattern = 1; pattern < App::SurfaceFinish::PatternCount; ++pattern) {
+        // Each preset is drawn at the size that pattern has on a real
+        // part, which is the one size MaterialIcons ships a rendered
+        // icon for -- so the list paints from the resource rather than
+        // waiting on the render queue.
+        const App::SurfaceFinish preset = MaterialIcons::defaultFinish(pattern);
+        QIcon icon = MaterialIcons::instance().finishIcon(preset);
+        if (icon.isNull()) {
+            icon = QIcon(blank);
+        }
+        d->ui.comboFinish->addItem(icon, finishPresetLabel(pattern), uint(pattern));
+    }
+}
+
+void DlgDisplayPropertiesImp::setShapeFinish(const std::vector<Gui::ViewProvider*>& views)
+{
+    bool hasAppearance = false;
+    App::SurfaceFinish finish;
+    for (auto view : views) {
+        if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(
+                view->getPropertyByName("ShapeAppearance"))) {
+            if (prop->getSize() == 0) {
+                continue;
+            }
+            hasAppearance = true;
+            // Entry 0 is the finish the dialog edits: it writes every
+            // entry alike, and a per-face finish authored from a script
+            // still reads back as its first face rather than as nothing.
+            finish = prop->getFinish(0);
+            break;
+        }
+    }
+
+    QSignalBlocker blockCombo(d->ui.comboFinish);
+    QSignalBlocker blockPitch(d->ui.spinFinishPitch);
+    QSignalBlocker blockDepth(d->ui.spinFinishDepth);
+    QSignalBlocker blockAngle(d->ui.spinFinishAngle);
+
+    // A pattern this build cannot draw -- a document written by a later
+    // one -- has no row here, and reads as unfinished rather than as a
+    // silently wrong preset. The value itself survives untouched so long
+    // as nobody picks a row.
+    int index = d->ui.comboFinish->findData(uint(finish.pattern));
+    d->ui.comboFinish->setCurrentIndex(index >= 0 ? index : 0);
+    // MinPitch is the stored spelling of "unstated": SurfaceFinish::
+    // normalize() clamps a set pattern's pitch up to it, and the view
+    // provider reads anything that low back as "give me this pattern's
+    // own size". Show it as the automatic it is.
+    const bool set = finish.isSet() && index > 0;
+    d->ui.spinFinishPitch->setValue(
+        set && finish.pitch > App::SurfaceFinish::MinPitch ? finish.pitch : 0.0);
+    d->ui.spinFinishDepth->setValue(set ? finish.depth : 0.0);
+    d->ui.spinFinishAngle->setValue(set ? finish.angle : 0.0);
+
+    d->ui.comboFinish->setEnabled(hasAppearance);
+    d->ui.spinFinishPitch->setEnabled(hasAppearance && set);
+    d->ui.spinFinishDepth->setEnabled(hasAppearance && set);
+    d->ui.spinFinishAngle->setEnabled(hasAppearance && set);
+}
+
+void DlgDisplayPropertiesImp::applyFinish()
+{
+    App::SurfaceFinish finish;
+    finish.pattern = uint8_t(d->ui.comboFinish->currentData().toUInt());
+    if (finish.isSet()) {
+        // 0 = automatic in all three, which normalize() stores as the
+        // MinPitch floor for the pitch and as a plain 0 for the rest.
+        finish.pitch = float(d->ui.spinFinishPitch->value());
+        finish.depth = float(d->ui.spinFinishDepth->value());
+        finish.angle = float(d->ui.spinFinishAngle->value());
+    }
+
+    for (auto view : getTargets()) {
+        if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(
+                view->getPropertyByName("ShapeAppearance"))) {
+            // The uniform setter: every entry gets this finish, and an
+            // unset one clears the field entirely rather than storing a
+            // row of zeros -- which is what lets hasFinish() stay false
+            // and the legacy Render_Finish* knobs keep working.
+            prop->setFinish(finish);
+        }
+    }
+}
+
+void DlgDisplayPropertiesImp::onFinishPresetActivated(int index)
+{
+    Q_UNUSED(index)
+    // A preset is a pattern at its own size, so picking one drops any
+    // sizes the previous pattern was given -- they meant nothing to this
+    // one. Customisation is what the three spin boxes are for, after.
+    {
+        QSignalBlocker blockPitch(d->ui.spinFinishPitch);
+        QSignalBlocker blockDepth(d->ui.spinFinishDepth);
+        QSignalBlocker blockAngle(d->ui.spinFinishAngle);
+        d->ui.spinFinishPitch->setValue(0.0);
+        d->ui.spinFinishDepth->setValue(0.0);
+        d->ui.spinFinishAngle->setValue(0.0);
+    }
+    const bool set = d->ui.comboFinish->currentData().toUInt() != App::SurfaceFinish::None;
+    d->ui.spinFinishPitch->setEnabled(set);
+    d->ui.spinFinishDepth->setEnabled(set);
+    d->ui.spinFinishAngle->setEnabled(set);
+    applyFinish();
+}
+
+void DlgDisplayPropertiesImp::onFinishSizeChanged(double)
+{
+    applyFinish();
+}
+
 void DlgDisplayPropertiesImp::setShapeColor(const std::vector<Gui::ViewProvider*>& views)
 {
     Private::setElementColor(views, "ShapeColor", d->ui.buttonColor);
@@ -854,7 +1024,14 @@ void DlgDisplayPropertiesImp::onMaterialSelected(
     for (auto it : Provider) {
         if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(
                 it->getPropertyByName("ShapeAppearance"))) {
-            prop->setValue(material->getMaterialAppearance());
+            // A card states colours and gloss, never a machining, so the
+            // material it builds carries finish None -- and setValue
+            // REPLACES the list, which would take the finish set one row
+            // down with it. Carry it across, for the same reason
+            // applyWholeMaterial does.
+            App::Material appearance = material->getMaterialAppearance();
+            appearance.finish = prop->getFinish(0);
+            prop->setValue(appearance);
         }
     }
 }
