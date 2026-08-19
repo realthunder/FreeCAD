@@ -414,12 +414,17 @@ intact (`testUnresolvedCardSurvivesAResave`).
 
 ## 12. Open questions
 
-- Should an *edited* preset (same uuid, different hash) keep the preset's uuid
-  or mint a new one? Keeping it preserves the relink anchor; minting one makes
-  the two distinguishable without comparing content. Leaning: keep the uuid,
-  and let the hash carry the difference (sec 6's table already assumes this).
+- ~~Should an *edited* preset (same uuid, different hash) keep the preset's
+  uuid or mint a new one?~~ **Settled 2026-08-19 (user): keep the uuid, and
+  let the hash carry the difference.** That is what sec 6's table assumes and
+  what the code already does. The consequence step 5 has to honour: an edited
+  preset stays pointed at the library card it came from, so "update from
+  library" always has an anchor to pull from and "save to library" always has
+  one to write back to -- which is the deliberate sync sec 2 says every other
+  system requires. The two are still told apart by content, never by uuid.
 - Is the placeholder card of sec 7 case 3 a real `Material` with empty models,
-  or a distinct state the UI can render differently? A distinct state is
-  better for the user and more work.
+  or a distinct state the UI can render differently? Built as the first:
+  `PropertyMaterial::isUnresolved()` is the distinct state, and no UI reads it
+  yet. A distinct state is better for the user and more work.
 - Cross-document dedup of material blobs is the same best-effort tier as
   `FileBlobsManager.md` sec 10 describes for files, and is not in scope here.
