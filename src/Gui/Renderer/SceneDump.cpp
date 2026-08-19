@@ -244,7 +244,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     material data where nothing states a metalness (PBRFromSpecular).
 //     A snapshot older than this was written by a build that always
 //     dropped that colour, so it reads as off and renders as it did.
-const uint32_t kVersion = 59;
+const uint32_t kVersion = 60;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -3123,6 +3123,9 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.b(blc.enabled); w.f(blc.threshold); w.f(blc.intensity);
     w.f(blc.radius);
 
+    // v60: the output colour transform.
+    w.i32(snap.outconf.transform);
+
     w.f(snap.autozoomScale);
     w.f(snap.effectResolution);
     w.f(snap.ssaoResolution);
@@ -3556,6 +3559,10 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
         blc.enabled = r.b(); blc.threshold = r.f();
         blc.intensity = r.f(); blc.radius = r.f();
     }
+
+    snap.outconf = OutputConfig();
+    if (version >= 60)
+        snap.outconf.transform = r.i32();
 
     snap.autozoomScale = r.f();
     snap.effectResolution = version >= 9 ? r.f() : 1.0f;

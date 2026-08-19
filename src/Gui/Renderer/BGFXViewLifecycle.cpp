@@ -189,6 +189,7 @@ bool BGFXView::effectAllocated(EffectGroup g) const
     case EffectBloom:      return bgfx::isValid(bloomFbo);
     case EffectSSAO:       return bgfx::isValid(aoPrepassFbo);
     case EffectShadow:     return bgfx::isValid(shadowFbo);
+    case EffectPresent:    return bgfx::isValid(presentFbo);
     default:               return false;
     }
 }
@@ -199,6 +200,22 @@ bool BGFXView::effectAllocated(EffectGroup g) const
 bool BGFXView::allocEffect(EffectGroup g)
 {
     switch (g) {
+    case EffectPresent: {
+        // One full-res 8-bit target: the encoded frame. Point-sampled
+        // and clamped because the blit that reads it is 1:1 -- there is
+        // no filtering to be had and a linear sampler would only invite
+        // a half-texel error.
+        presentTex = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        if (!bgfx::isValid(presentTex))
+            return false;
+        presentFbo = bgfx::createFrameBuffer(1, &presentTex, false);
+        return bgfx::isValid(presentFbo);
+    }
     case EffectVolumetric: {
         if (!m_vol)
             return false;
@@ -536,6 +553,17 @@ void BGFXView::freeEffect(EffectGroup g)
         drop(reflTex);
         drop(reflDepth);
         break;
+    case EffectPresent:
+        drop(presentFbo);
+        drop(presentTex);
+#ifndef FC_RENDERER_STANDALONE
+        // The desktop blit caches a GL framebuffer around whichever
+        // texture it reads; that one is gone, so the cache has to be
+        // rebuilt. (Standalone presents onto the default backbuffer and
+        // has no such cache -- nor this group, which it never allocates.)
+        hasFBO = false;
+#endif
+        break;
     case EffectBloom:
         drop(bloomFbo);
         drop(bloomBlurFbo);
@@ -615,7 +643,7 @@ void BGFXView::updateEffect(EffectGroup g, bool want)
             freeEffect(g);   // drop whatever part of the set did land
             static const char *const kNames[NumEffectGroups] = {
                 "volumetric", "bulb shadow", "reflection", "bloom",
-                "AO prepass", "shadow map"};
+                "AO prepass", "shadow map", "output transform"};
             std::printf("bgfx: no render target handles for the %s "
                         "effect -- it stays off in this view\n",
                         kNames[g]);
@@ -818,12 +846,13 @@ void BGFXView::init(bool keepShared)
     // PBR environment drawn as the visible background.
     ensureProgram(m_progEnvBg, "vs_fc_comp", "fs_fc_env");
 
-#ifdef FC_RENDERER_STANDALONE
-    // The standalone present pass copies the scene color onto the
-    // default backbuffer (no Qt framebuffer to GL-blit into).
-    ensureProgram(m_progPresent, "vs_fc_comp", "fs_fc_copy");
+    // The present pass: the output colour transform, and standalone
+    // also the only thing that puts the frame on the default backbuffer
+    // (no Qt framebuffer to GL-blit into there).
+    ensureProgram(m_progPresent, "vs_fc_comp", "fs_fc_present");
     ensureUniform(s_texScene, "s_texScene", bgfx::UniformType::Sampler);
-#endif
+    ensureUniform(u_outputParams, "u_outputParams",
+                  bgfx::UniformType::Vec4);
 
     ensureProgram(m_progMesh, "vs_fc_mesh", "fs_fc_mesh");
     ensureProgram(m_progFlat, "vs_fc_flat", "fs_fc_flat");
@@ -1318,8 +1347,10 @@ void BGFXView::init(bool keepShared)
         {m_progCap, "fc_cap"},
         {m_progCapClip, "fc_cap_clip"},
 #ifdef FC_RENDERER_STANDALONE
-        // Nothing else copies the scene onto the backbuffer here.
-        {m_progPresent, "fc_copy"},
+        // Nothing else copies the scene onto the backbuffer here. On
+        // the desktop the GL blit does, so a missing present program
+        // there costs the colour transform and nothing else.
+        {m_progPresent, "fc_present"},
 #endif
     };
     for (const auto &c : core) {
@@ -1407,27 +1438,21 @@ void BGFXView::collectMeshes(const std::unordered_map<uint64_t, uint64_t> &kept,
     }
 }
 
-#ifdef FC_RENDERER_STANDALONE
 void BGFXView::present()
 {
-    TransientVertex::init();
-    if (bgfx::getAvailTransientVertexBuffer(3, TransientVertex::ms_layout)
-            < 3)
+    if (!bgfx::isValid(m_progPresent))
         return;
-    bgfx::TransientVertexBuffer tvb;
-    bgfx::allocTransientVertexBuffer(&tvb, 3, TransientVertex::ms_layout);
-    auto *v = reinterpret_cast<TransientVertex *>(tvb.data);
-    v[0] = {-1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
-    v[1] = { 3.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
-    v[2] = {-1.0f,  3.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+    // The transform this frame asked for, as the shader's own selector.
+    // An out-of-range value passes the frame through in the shader, so
+    // a snapshot written by a later build degrades rather than failing.
+    float params[4] = {float(outputTransform), 0.0f, 0.0f, 0.0f};
+    bgfx::setUniform(u_outputParams, params);
     bgfx::setTexture(0, s_texScene, bgfxColor);
-    bgfx::setVertexBuffer(0, &tvb);
-    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-    bgfx::submit(vid(ViewPresent), m_progPresent);
-    ++drawcount;
+    fullscreen(ViewPresent, m_progPresent,
+               BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
 }
 
-#else // !FC_RENDERER_STANDALONE
+#ifndef FC_RENDERER_STANDALONE
 
 bool BGFXView::writeDumpImage(const std::string &path,
                            const unsigned char *color,
@@ -1470,9 +1495,20 @@ void BGFXView::blit(const Render::FrameDumpRequest *dump,
     auto *f = QOpenGLContext::currentContext()->extraFunctions();
     GLint prevFbo;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint *) &prevFbo);
+    // With a colour transform selected, what belongs on screen is the
+    // ENCODED frame the present pass wrote, not the linear scene colour.
+    // Its handle is dropped whenever the group is released, which resets
+    // the cache below (freeEffect), so the cached GL framebuffer can
+    // never outlive the texture it wraps.
+    const bool encoded = outputTransform != Render::OutputConfig::None
+        && bgfx::isValid(presentTex);
+    const bgfx::TextureHandle source = encoded ? presentTex : bgfxColor;
+    if (hasFBO && blitSourceEncoded != encoded)
+        hasFBO = false;
     if (!hasFBO) {
         hasFBO = true;
-        GLuint colorBuffer = bgfx::getInternal(bgfxColor);
+        blitSourceEncoded = encoded;
+        GLuint colorBuffer = bgfx::getInternal(source);
         GLuint depthBuffer = bgfx::getInternal(bgfxDepth);
         blitColorId = colorBuffer;
         std::printf("bgfx: blit cache create msaa %d color %u (isTex %d) "

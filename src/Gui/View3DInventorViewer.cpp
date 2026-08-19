@@ -4398,6 +4398,19 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             RenderParams::docCavityRidge(), RenderParams::getCavityRidge());
     _renderParam<App::PropertyFloat>(view, "CavityRadius",
             RenderParams::docCavityRadius(), RenderParams::getCavityRadius());
+    // The output colour transform. An enumeration, like
+    // Render_AOMethod: materialized by hand so the names are installed
+    // before the value is set.
+    if (!view->getPropertyByName("Render_OutputTransform")) {
+        static const char* _outputTransformEnums[] =
+            {"Off", "sRGB", nullptr};
+        auto prop = static_cast<App::PropertyEnumeration*>(
+                view->addDynamicProperty("App::PropertyEnumeration",
+                                         "Render_OutputTransform", "Render",
+                                         RenderParams::docOutputTransform()));
+        prop->setEnums(_outputTransformEnums);
+        prop->setValue(long(RenderParams::getOutputTransform()));
+    }
     _renderParam<App::PropertyBool>(view, "PBR",
             RenderParams::docPBR(), RenderParams::getPBR());
     static const App::PropertyFloatConstraint::Constraints _unit_cstr(0.0,1.0,0.1);

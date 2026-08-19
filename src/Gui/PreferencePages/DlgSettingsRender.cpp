@@ -72,6 +72,21 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     Type->setEntryName("Type");
     Type->setParamGrpPath("View/Render");
 
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutGeneral->addLayout(layoutRow);
+    labelOutputTransform = new QLabel(this);
+    layoutRow->addWidget(labelOutputTransform);
+    OutputTransform = new Gui::PrefComboBox(this);
+    layoutRow->addWidget(OutputTransform);
+    OutputTransform->setEntryName("OutputTransform");
+    OutputTransform->setParamGrpPath("View/Render");
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1141)
+        OutputTransform->addItem(QString());
+    OutputTransform->setCurrentIndex(Gui::RenderParams::defaultOutputTransform());
+
 
     // Auto generated code (Tools/params_utils.py:448)
     groupScenestreaming = new QGroupBox(this);
@@ -632,6 +647,7 @@ void DlgSettingsRender::saveSettings()
 {
     // Auto generated code (Tools/params_utils.py:497)
     Type->onSave();
+    OutputTransform->onSave();
     CoarseTessellation->onSave();
     LevelTolerance->onSave();
     LevelThreads->onSave();
@@ -676,6 +692,7 @@ void DlgSettingsRender::loadSettings()
 {
     // Auto generated code (Tools/params_utils.py:484)
     Type->onRestore();
+    OutputTransform->onRestore();
     CoarseTessellation->onRestore();
     LevelTolerance->onRestore();
     LevelThreads->onRestore();
@@ -723,6 +740,12 @@ void DlgSettingsRender::retranslateUi()
     Type->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docType()));
     labelType->setText(QObject::tr("Renderer type"));
     labelType->setToolTip(Type->toolTip());
+    OutputTransform->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docOutputTransform()));
+    labelOutputTransform->setText(QObject::tr("Output colour transform"));
+    labelOutputTransform->setToolTip(OutputTransform->toolTip());
+    // Auto generated code (Tools/params_utils.py:1166)
+    OutputTransform->setItemText(0, QObject::tr("Off"));
+    OutputTransform->setItemText(1, QObject::tr("sRGB"));
     groupScenestreaming->setTitle(QObject::tr("Scene streaming"));
     CoarseTessellation->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCoarseTessellation()));
     labelCoarseTessellation->setText(QObject::tr("Coarse tessellation level"));

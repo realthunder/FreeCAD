@@ -1453,6 +1453,40 @@ struct PBRConfig {
     bool operator!=(const PBRConfig &o) const { return !(*this == o); }
 };
 
+/// What the engine does to a finished frame before it is shown.
+///
+/// The shading math here is linear -- `mix()`, the GGX lobe, the IBL
+/// product, `f0 * env` are all plain arithmetic on light, and they are
+/// only correct on linear numbers, which is why material colours are
+/// linear by definition on this side and why the environment photo is
+/// decoded on load. A display is not linear: it reads the byte it is
+/// handed as sRGB. Writing the linear result straight into an 8-bit
+/// target therefore shows it about a gamma too dark through the
+/// midtones.
+///
+/// The transform is applied ONCE, at the last write before the frame
+/// leaves the engine, so every blend, the weighted-blended transparency
+/// composite and every effect pass still run on linear values. It is
+/// deliberately NOT pushed back into the material data: pre-compensating
+/// there would trade a correct metal reflectance table for a wrong one,
+/// and would only reach the objects whose numbers were edited.
+struct OutputConfig {
+    enum Transform {
+        /// Write the linear result unchanged -- what every frame this
+        /// engine has drawn so far did, and what an older scene
+        /// snapshot has to keep being drawn with.
+        None = 0,
+        /// Encode to sRGB at the last write.
+        SRGB = 1,
+    };
+    int transform = None;
+
+    bool operator==(const OutputConfig &o) const {
+        return transform == o.transform;
+    }
+    bool operator!=(const OutputConfig &o) const { return !(*this == o); }
+};
+
 /// How many distinct finishes one draw's palette may hold. The backend
 /// uploads the palette as a uniform array of this size, so it is a shader
 /// contract as much as a storage bound; a face whose finish does not fit
@@ -2225,6 +2259,10 @@ public:
     virtual bool isSceneDirty() const { return true; }
     /// Per-frame physically based shading configuration.
     virtual void setPBRConfig(const PBRConfig &config) { (void)config; }
+
+    /// The output colour transform (OutputConfig): what happens to the
+    /// finished frame before it is shown.
+    virtual void setOutputConfig(const OutputConfig &config) { (void)config; }
     /// Per-frame bump/normal mapping configuration.
     virtual void setBumpConfig(const BumpConfig &config) { (void)config; }
     /// Per-frame scene light (Shadow draw style).

@@ -83,6 +83,34 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter OutputTransform
+    ///
+    /// What the engine does to a finished frame before it is shown.
+    /// 
+    /// The shading math is linear -- mixes, the GGX lobe, the image
+    /// based lighting product are all plain arithmetic on light, and
+    /// they are only correct on linear numbers. A display is not
+    /// linear: it reads the byte it is given as sRGB. Writing a linear
+    /// result straight into an 8-bit target therefore shows it about a
+    /// gamma too dark through the midtones, which is what 'Off' does
+    /// and what every frame this engine has drawn so far has done.
+    /// 
+    /// 'sRGB' encodes the finished frame once, at the last write
+    /// before it is handed to the screen, so blending, the order
+    /// independent transparency composite and every effect pass still
+    /// run on linear values. Material colours are NOT touched: they
+    /// are linear by definition here, and pre-compensating them
+    /// instead would trade a correct metal reflectance table for a
+    /// wrong one.
+    static const long & getOutputTransform();
+    static const long & defaultOutputTransform();
+    static void removeOutputTransform();
+    static void setOutputTransform(const long &v);
+    static const char *docOutputTransform();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter MaxViewIds
     ///
     /// How many backend view ids the render engine may hand out, which

@@ -914,6 +914,16 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->updateEffect(BGFXView::EffectVolumetric,
                        view->m_vol && volconf.enabled);
     view->updateEffect(BGFXView::EffectBloom, bloomconf.enabled);
+    // The output colour transform's target. Standalone presents through
+    // the same pass whatever the transform is (it is what reaches the
+    // backbuffer at all), but it presents onto the DEFAULT backbuffer
+    // and needs no target of its own; only the desktop, whose GL blit
+    // has to be handed something already encoded, does.
+    view->outputTransform = outconf.transform;
+#ifndef FC_RENDERER_STANDALONE
+    view->updateEffect(BGFXView::EffectPresent,
+                       outconf.transform != Render::OutputConfig::None);
+#endif
     // The scene light's shadow maps, ~117MB at ShadowPrecision 1.0:
     // the 2048^2 moments and their depth, the blur ping and the glass
     // tint pair. Wanted whenever a scene light is fed and Render_Shadow
@@ -3283,15 +3293,27 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // Standalone present: the default backbuffer; the
         // fullscreen triangle overwrites every pixel.
         //
-        // On desktop no present is drawn, but the empty view still
-        // targets the default backbuffer ON PURPOSE: bgfx only
-        // resolves an MSAA framebuffer (multisampled renderbuffer
-        // -> resolve texture) when the frame transitions AWAY from
-        // it, and every desktop content view targets bgfxFbo -- so
-        // without this trailing view the resolve texture the
-        // composite blit reads stayed stale under MSAA (an empty
-        // viewport).
-        bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
+        // On desktop the frame leaves through the Qt GL blit instead,
+        // so this view draws only when there is an output colour
+        // transform to apply -- into presentFbo, which is what the
+        // blit then reads.
+        //
+        // Either way the view still targets a framebuffer that is NOT
+        // bgfxFbo, and on desktop it does so even with nothing to draw,
+        // ON PURPOSE: bgfx only resolves an MSAA framebuffer
+        // (multisampled renderbuffer -> resolve texture) when the frame
+        // transitions AWAY from it, and every desktop content view
+        // targets bgfxFbo -- so without this trailing view the resolve
+        // texture the composite blit reads stayed stale under MSAA (an
+        // empty viewport). That is also what orders the resolve BEFORE
+        // the present pass samples the scene colour.
+        bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE;
+#ifndef FC_RENDERER_STANDALONE
+        if (outconf.transform != Render::OutputConfig::None
+                && bgfx::isValid(view->presentFbo))
+            target = view->presentFbo;
+#endif
+        bgfx::setViewFrameBuffer(id, target);
         bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
                            clearColor, 1.0f, 0);
         bgfx::setViewRect(id, 0, 0, width, height);
@@ -5488,6 +5510,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->present();
     frameNum = timedBgfxFrame();
 #else
+    // The output colour transform, when one is selected: encode the
+    // finished frame into presentTex so the blit below transfers the
+    // encoded image rather than the linear one. Submitted here, with
+    // the rest of the frame already queued, because ViewPresent is the
+    // last view id -- the same place the standalone present sits.
+    if (outconf.transform != Render::OutputConfig::None
+            && bgfx::isValid(view->presentFbo))
+        view->present();
     // The finished frame belongs in whatever framebuffer the caller had
     // bound when it asked for it: the widget's own for an on-screen
     // frame, a capture target for a screenshot (renderOffscreen).

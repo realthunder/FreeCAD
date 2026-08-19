@@ -52,6 +52,7 @@ public:
     ParameterGrp::handle handle;
     std::unordered_map<const char *,void(*)(RenderParamsP*),App::CStringHasher,App::CStringHasher> funcs;
     std::string Type;
+    long OutputTransform;
     long MaxViewIds;
     long BackgroundReleaseDelay;
     long CoarseTessellation;
@@ -199,6 +200,8 @@ public:
 
         Type = this->handle->GetASCII("Type", "Default");
         funcs["Type"] = &RenderParamsP::updateType;
+        OutputTransform = this->handle->GetInt("OutputTransform", 0);
+        funcs["OutputTransform"] = &RenderParamsP::updateOutputTransform;
         MaxViewIds = this->handle->GetInt("MaxViewIds", 1024);
         funcs["MaxViewIds"] = &RenderParamsP::updateMaxViewIds;
         BackgroundReleaseDelay = this->handle->GetInt("BackgroundReleaseDelay", 1000);
@@ -500,6 +503,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateType(RenderParamsP *self) {
         self->Type = self->handle->GetASCII("Type", "Default");
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOutputTransform(RenderParamsP *self) {
+        self->OutputTransform = self->handle->GetInt("OutputTransform", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateMaxViewIds(RenderParamsP *self) {
@@ -1099,6 +1106,50 @@ void RenderParams::setType(const std::string &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeType() {
     instance()->handle->RemoveASCII("Type");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOutputTransform() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"What the engine does to a finished frame before it is shown.\n"
+"\n"
+"The shading math is linear -- mixes, the GGX lobe, the image\n"
+"based lighting product are all plain arithmetic on light, and\n"
+"they are only correct on linear numbers. A display is not\n"
+"linear: it reads the byte it is given as sRGB. Writing a linear\n"
+"result straight into an 8-bit target therefore shows it about a\n"
+"gamma too dark through the midtones, which is what 'Off' does\n"
+"and what every frame this engine has drawn so far has done.\n"
+"\n"
+"'sRGB' encodes the finished frame once, at the last write\n"
+"before it is handed to the screen, so blending, the order\n"
+"independent transparency composite and every effect pass still\n"
+"run on linear values. Material colours are NOT touched: they\n"
+"are linear by definition here, and pre-compensating them\n"
+"instead would trade a correct metal reflectance table for a\n"
+"wrong one.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOutputTransform() {
+    return instance()->OutputTransform;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOutputTransform() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOutputTransform(const long &v) {
+    instance()->handle->SetInt("OutputTransform",v);
+    instance()->OutputTransform = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOutputTransform() {
+    instance()->handle->RemoveInt("OutputTransform");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

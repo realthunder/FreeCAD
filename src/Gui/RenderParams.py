@@ -47,6 +47,26 @@ Params = [
     ParamString('Type', 'Default', title='Renderer type',
         doc="Type of the experimental render engine backend. 'Default' keeps\n"
         "the plain GL pipeline. Only effective with render cache mode 3."),
+    ParamInt('OutputTransform',  0, title='Output colour transform',
+        proxy=ParamComboBox(items=['Off', 'sRGB']),
+        doc="What the engine does to a finished frame before it is shown.\n"
+        "\n"
+        "The shading math is linear -- mixes, the GGX lobe, the image\n"
+        "based lighting product are all plain arithmetic on light, and\n"
+        "they are only correct on linear numbers. A display is not\n"
+        "linear: it reads the byte it is given as sRGB. Writing a linear\n"
+        "result straight into an 8-bit target therefore shows it about a\n"
+        "gamma too dark through the midtones, which is what 'Off' does\n"
+        "and what every frame this engine has drawn so far has done.\n"
+        "\n"
+        "'sRGB' encodes the finished frame once, at the last write\n"
+        "before it is handed to the screen, so blending, the order\n"
+        "independent transparency composite and every effect pass still\n"
+        "run on linear values. Material colours are NOT touched: they\n"
+        "are linear by definition here, and pre-compensating them\n"
+        "instead would trade a correct metal reflectance table for a\n"
+        "wrong one.",
+        ),
     ParamInt('MaxViewIds',  1024, title='Backend view id budget',
         doc="How many backend view ids the render engine may hand out, which\n"
         "is what decides how many 3D views can draw on it at once: each\n"

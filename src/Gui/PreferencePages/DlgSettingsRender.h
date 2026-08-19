@@ -72,6 +72,8 @@ private:
     QGroupBox * groupGeneral = nullptr;
     QLabel *labelType = nullptr;
     Gui::PrefLineEdit *Type = nullptr;
+    QLabel *labelOutputTransform = nullptr;
+    Gui::PrefComboBox *OutputTransform = nullptr;
 
     // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupScenestreaming = nullptr;

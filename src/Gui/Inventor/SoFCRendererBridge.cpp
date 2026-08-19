@@ -2469,6 +2469,16 @@ RendererBridge::translateBumpConfig(App::PropertyContainer * view)
     return res;
 }
 
+Render::OutputConfig
+RendererBridge::translateOutputConfig(App::PropertyContainer * view)
+{
+    Render::OutputConfig res;
+    res.transform = int(viewParamOverride<App::PropertyEnumeration>(
+            view, "Render", "OutputTransform",
+            RenderParams::getOutputTransform()));
+    return res;
+}
+
 Render::PBRConfig
 RendererBridge::translatePBRConfig(App::PropertyContainer * view)
 {

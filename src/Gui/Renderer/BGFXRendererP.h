@@ -3853,6 +3853,7 @@ public:
         fn(fireFrontFbo, LifeSized);
         fn(fireBackFbo, LifeSized);
         fn(sceneCopyFbo, LifeSized);
+        fn(presentFbo, LifeSized);
         fn(reflFbo, LifeSized);
         fn(volTex, LifeSized);
         fn(volFrontTex, LifeSized);
@@ -3879,6 +3880,7 @@ public:
         fn(fireFrontDepth, LifeSized);
         fn(fireBackDepth, LifeSized);
         fn(sceneCopyTex, LifeSized);
+        fn(presentTex, LifeSized);
         fn(reflTex, LifeSized);
         fn(reflDepth, LifeSized);
         fn(s_texVol, LifeProgram);
@@ -3995,6 +3997,7 @@ public:
         fn(u_aoKernel, LifeProgram);
         fn(s_texEnv, LifeProgram);
         fn(u_pbrParams, LifeProgram);
+        fn(u_outputParams, LifeProgram);
         fn(u_matcapParams, LifeProgram);
         fn(u_envSH, LifeProgram);
         fn(s_texBump, LifeProgram);
@@ -4061,9 +4064,7 @@ public:
         fn(u_clipParams, LifeProgram);
         fn(u_clipPlanes, LifeProgram);
         fn(u_linePattern, LifeProgram);
-#ifdef FC_RENDERER_STANDALONE
         fn(m_progPresent, LifeProgram);
-#endif
         // Per-view-lifetime resources. The impact map is sized by the
         // map resolution, not by the window; the stateful-particle
         // programs/uniforms are created once per view and kept across
@@ -4126,6 +4127,7 @@ public:
         EffectSSAO,        ///< depth+normal prepass, AO chain, glass interval
         EffectShadow,      ///< the scene light's shadow maps (moments,
                            ///< blur ping, glass tint pair)
+        EffectPresent,     ///< the output colour transform's target
         NumEffectGroups
     };
     /// Does this group's framebuffer set exist right now?
@@ -5342,12 +5344,18 @@ public:
 
     static uint64_t depthFuncState(uint8_t func);
 
-#ifdef FC_RENDERER_STANDALONE
-    /// Standalone present: fullscreen copy of the scene color onto the
-    /// default backbuffer (ViewPresent targets the invalid framebuffer).
-    /// Submitted before bgfx::frame(), replacing the desktop GL blit.
+    /// The present pass: a fullscreen draw of the scene color through
+    /// the output colour transform (fs_fc_present).
+    ///
+    /// Standalone, it is what puts the frame on the default backbuffer
+    /// at all (ViewPresent targets the invalid framebuffer), so it runs
+    /// every frame. On the desktop the Qt GL blit does that instead, so
+    /// this runs only when a transform is selected, drawing into
+    /// presentFbo for the blit to take its source from -- and targeting
+    /// a framebuffer at all still forces the MSAA resolve the empty
+    /// ViewPresent used to force on its own.
     void present();
-#else
+#ifndef FC_RENDERER_STANDALONE
     /// Write \a color (tightly packed RGBA8, glReadPixels bottom-up
     /// rows) to \a path: raw PPM for a .ppm extension, else through
     /// Qt's image writers (PNG etc.).
@@ -5680,6 +5688,7 @@ public:
     bgfx::TextureHandle m_dummyEnvTex = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texEnv = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_pbrParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_outputParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_matcapParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_envSH = BGFX_INVALID_HANDLE;
     float envSH[kEnvSH][4];
@@ -5702,6 +5711,8 @@ public:
     // Read the Phong specular colour as PBR material data where nothing
     // states a metalness (PBRConfig::fromSpecular).
     bool pbrFromSpecular = false;
+    /// Render::OutputConfig::Transform for this frame.
+    int outputTransform = 0;
     float pbrRoughness = 0.0f; // <= 0: derive from the material shininess
     float pbrEnvIntensity = 1.0f;
     bgfx::UniformHandle s_texBump = BGFX_INVALID_HANDLE;
@@ -6010,6 +6021,12 @@ public:
     // Water surface refraction (scene copy) + ground reflection targets.
     bgfx::TextureHandle sceneCopyTex = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle sceneCopyFbo = BGFX_INVALID_HANDLE;
+    /// The output colour transform's destination (EffectPresent): the
+    /// encoded frame, which is what the desktop then blits into the Qt
+    /// framebuffer. Only allocated while a transform is selected -- with
+    /// none, the blit takes the scene colour directly as it always did.
+    bgfx::TextureHandle presentTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle presentFbo = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle reflTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle reflDepth = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle reflFbo = BGFX_INVALID_HANDLE;
@@ -6161,13 +6178,20 @@ public:
     // falls back to plain scaling.
     const float *viewMatrix = nullptr;
     const float *projMatrix = nullptr;
-#ifdef FC_RENDERER_STANDALONE
+    /// The present pass' program (fs_fc_present): the output colour
+    /// transform on every tier, and standalone also the copy that puts
+    /// the frame on the default backbuffer.
     bgfx::ProgramHandle m_progPresent = BGFX_INVALID_HANDLE;
-#else
+#ifndef FC_RENDERER_STANDALONE
     GLuint fbo = 0;
     GLuint fboDepth = 0;
     GLuint blitColorId = 0;
     bool hasFBO = false;
+    /// Which texture the cached blit framebuffer wraps: the encoded
+    /// frame (presentTex) or the linear scene colour. Turning the
+    /// output transform on or off changes it, and the cache has to be
+    /// rebuilt around the new one.
+    bool blitSourceEncoded = false;
 #endif
 };
 
@@ -7791,6 +7815,7 @@ public:
     Render::VolumetricConfig volconf;
     Render::WaterConfig waterconf;
     Render::BloomConfig bloomconf;
+    Render::OutputConfig outconf;
     Render::RenderDebugConfig debugconf;
     /// Backend frame cost accumulated since the last reported line
     /// (docs/FarFieldProxies.md sec 10.1). Per view, because two views

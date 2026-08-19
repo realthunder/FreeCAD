@@ -111,6 +111,9 @@ struct SceneSnapshot {
     VolumetricConfig volconf;
     WaterConfig waterconf;
     BloomConfig bloomconf;      ///< v18; defaulted on older snapshots
+    /// v60; None on older snapshots, which is what makes them keep
+    /// being drawn the way they were written -- unencoded.
+    OutputConfig outconf;
     RenderDebugConfig debugconf; ///< v20; defaulted on older snapshots
     /// User shaders (docs/RenderDebug.md §6; v23; empty on older
     /// snapshots): the scene-level post-stage list. "material"-stage

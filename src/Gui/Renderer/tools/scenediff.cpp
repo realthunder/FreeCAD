@@ -280,6 +280,7 @@ size_t diffFeed(const char *what, const DrawCallList &a,
 #define FC_SCENEDIFF_CONFIGS(X)                                             \
     X(background) X(hlconfig) X(secconf) X(aoconf) X(pbrconf)               \
     X(bumpconf) X(lightconf) X(volconf) X(waterconf) X(bloomconf)           \
+    X(outconf)                                                              \
     X(debugconf) X(usershaderconf) X(preselconf) X(selconf)                 \
     X(effectResolution) X(ssaoResolution) X(hatch)
 

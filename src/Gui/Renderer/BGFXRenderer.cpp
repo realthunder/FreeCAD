@@ -587,6 +587,14 @@ void BGFXRenderer::setBloomConfig(const BloomConfig &config)
     }
 }
 
+void BGFXRenderer::setOutputConfig(const OutputConfig &config)
+{
+    if (pimpl->outconf != config) {
+        pimpl->outconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
 void BGFXRenderer::setRenderDebugConfig(const RenderDebugConfig &config)
 {
     if (pimpl->debugconf != config) {
