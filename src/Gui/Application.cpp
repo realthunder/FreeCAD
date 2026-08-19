@@ -28,6 +28,7 @@
 # include <Inventor/errors/SoError.h>
 # include <QCloseEvent>
 # include <QDir>
+# include <QFile>
 # include <QFileInfo>
 # include <QImageReader>
 # include <QLocale>
@@ -2318,6 +2319,55 @@ void preAppSetup()
     }
     if (qEnvironmentVariableIsEmpty("QSG_RHI_BACKEND")) {
         qputenv("QSG_RHI_BACKEND", "opengl");  // read by QtQuick, scene graph
+    }
+#endif
+
+#if defined(FC_OS_LINUX)
+    // Under WSLg, prefer xcb over Wayland.
+    //
+    // WSLg does not run an ordinary compositor: it runs weston with the rdprail
+    // shell, where every Wayland window becomes its own Windows window streamed
+    // over RDP. A destroyed popup's pixels are left on screen there. Measured
+    // 2026-08-19: picking an entry in any combo box leaves the drop-down list
+    // painted, with the widget reporting hidden, its QWindow reporting hidden,
+    // activePopupWidget() null and nothing holding a grab -- the popup is gone
+    // and only the image remains. Because Qt puts a non-editable combo's popup
+    // over the combo itself, the next click lands on the combo underneath and
+    // opens the list again, so it reads as a drop-down that refuses to close.
+    // A bare Qt dialog with one QComboBox reproduces it, so no application code
+    // is involved; the same build on xcb does not.
+    //
+    // The swap is free: the platform plugin has no bearing on GL here. Measured
+    // on both plugins, a bare launch gets llvmpipe and the d3d12 driver env gets
+    // D3D12, with the adapter decided by MESA_D3D12_DEFAULT_ADAPTER_NAME -- the
+    // same renderer string either way.
+    //
+    // Overridable two ways, so this can be dropped when WSLg fixes it: an
+    // explicit QT_QPA_PLATFORM, or the parameter. NOT by Qt's -platform switch
+    // -- FreeCAD's own option parser rejects it and the process exits before
+    // Qt sees the argument, verified.
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")
+            && !qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY")
+            && !qEnvironmentVariableIsEmpty("DISPLAY")) {
+        bool underWsl = !qEnvironmentVariableIsEmpty("WSL_DISTRO_NAME")
+                     || !qEnvironmentVariableIsEmpty("WSL_INTEROP");
+        if (!underWsl) {
+            // The environment carries WSL_* only for a shell-launched process,
+            // so ask the kernel as well.
+            QFile release(QStringLiteral("/proc/sys/kernel/osrelease"));
+            if (release.open(QFile::ReadOnly | QFile::Text)) {
+                underWsl = QString::fromLatin1(release.readAll())
+                               .contains(QStringLiteral("microsoft"), Qt::CaseInsensitive);
+            }
+        }
+
+        ParameterGrp::handle hGen = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/General");
+        if (underWsl && hGen->GetBool("PreferXcbOnWsl", true)) {
+            qputenv("QT_QPA_PLATFORM", "xcb");
+            Base::Console().Log("Init: WSL detected, using the xcb platform "
+                                "plugin (PreferXcbOnWsl)\n");
+        }
     }
 #endif
 
