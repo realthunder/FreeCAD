@@ -2055,6 +2055,80 @@ mesh-ladder state; until it is, **the composition percentages above
 travel and the absolute ratios do not**. Nothing in this section is
 read across the two.
 
+### 11.1j MEASURED: a draw is NOT free in this regime -- 8487 tiny draws are 21% of the frame
+
+11.1i ended by refusing to inherit 11.1b-prims' dismissal of draw
+count, on the grounds that it was measured at ~1540 primitives per
+draw and the far-field residue is ~12. That refusal is now a
+measurement, and **the dismissal does not transfer.**
+
+`Render_TinyElementCutoff` suppresses every line and point draw at or
+below N primitives, floating sets included -- which no existing gate
+could do, the element contract never gating a floating set by design.
+MiSTer Express, converged, real GPU (RTX 3060) over Xvfb, viewport
+1607x788, `Render_DebugTiming` reading the engine's own frame line.
+Run **A/B/A/B alternating**, not A-then-B: the ladder keeps working
+and a single crossing would credit scene drift to the knob.
+
+| phase | draws | prims | prims/draw | frame ms | submit ms | gpu ms |
+|---|---|---|---|---|---|---|
+| cutoff 0 | 16057 | 2030501 | 126 | 102.94 | 37.26 | 38.09 |
+| cutoff 24 | 7570 | 1979367 | 261 | 84.02 | 27.25 | 27.29 |
+| cutoff 0 | 16057 | 2030501 | 126 | 109.01 | 37.14 | 37.02 |
+| cutoff 24 | 7570 | 1979367 | 261 | 83.33 | 27.09 | 27.13 |
+
+The repeat is the control and it holds: draw and primitive counts are
+identical within each setting, and the two crossings agree.
+
+**Removing 8487 draws -- 2.5% of the primitives -- took 22.3 ms off a
+106 ms frame, 21%.** The draws removed averaged 6.0 primitives each.
+There is no geometry in that saving to speak of; it is draw count.
+
+#### The per-draw cost, and why it should be believed
+
+| axis | delta | per removed draw | independently measured in DrawSubmission.md |
+|---|---|---|---|
+| whole frame | 22.30 ms | **2.63 us** | -- |
+| submit | 10.03 ms | 1.18 us | 0.294 (our C++) + 0.859 (bgfx::frame) = **1.15** |
+| gpu | 10.35 ms | 1.22 us | **1.25**-1.72 us/draw |
+
+The submit and GPU figures were arrived at here by removing draws from
+a real scene, and there by curve-fitting a different model on a
+different camera. They agree to within 3% and 3%. That is the
+strongest reason to trust the headline.
+
+!! The three rows are components measured on overlapping windows, not
+addends -- `submit`, `gpu` and `bgfx::frame` all read close to each
+other on this scene, and `cpu ours` reads 0.00 with `outside`
+absorbing the whole frame in this configuration. **Do not sum them.**
+The frame delta is the number.
+
+#### What this is worth to the far field, and what it is not
+
+!! **The cutoff prices the REGIME, not the fix.** It removes 8487
+draws scene-wide; the far field's own addressable population is the
+5532 sets of 11.1i whose faces a proxy already took and whose entire
+edge set is exempt only because one edge in the shape floats. At the
+measured 2.63 us/draw that is **about 14.5 ms, roughly 14% of the
+frame** -- a linear extrapolation from the marginal cost, and flagged
+as one.
+
+The other half of the residue is not addressable and should not be
+counted: the 6205 draws over 1916 keys that own no faces at all are
+floating by construction, and the contract's ruling on those is not a
+performance trade -- nothing else on screen would show them.
+
+**What this changes in the plan.** 11.1b-prims' judgement that "a cut
+that removes draws without removing primitives buys exactly nothing
+here" is now known to be regime-specific, and the far field lives in
+the other regime. Candidates 2 and 3 of 11.1g -- merge line sets per
+cell, decimate as polylines -- are therefore worth their cost after
+all, and so is the per-edge attached mask of 11.1i, which is the only
+one of the three that removes draws with no change to what is on
+screen. None of them is priced yet; this section says only that the
+axis they act on is real, which is what 11.1i said had to be
+established first.
+
 ### 11.2 What the code already gives us
 
 `simplifyMesh()` is a better starting point than §5.1 claims. It is a
