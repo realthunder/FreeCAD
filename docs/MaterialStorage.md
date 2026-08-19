@@ -455,7 +455,7 @@ uuid, and there are five answers.
 | `Unanchored` | a card with no uuid: it never came from a library | -- | needs a target |
 | `Absent` | the uuid names no installed card | -- | needs a target |
 | `Current` | the library holds exactly this content | nothing to do | nothing to do |
-| `Diverged` | the library holds other content under this uuid | yes | yes |
+| `Diverged` | the library holds other content under this uuid | yes | yes, if writable |
 
 `Diverged` is the second row of sec 6's table -- "someone edited their library"
 -- and the only row where the two identities disagree in a way a user can act
@@ -493,7 +493,14 @@ Where there is no library card to write over -- `Unanchored` or `Absent` -- the
 operation needs a target, which the App layer has no business inventing. It
 fails there, and the GUI falls back to the existing save dialog
 (`MatGui::MaterialSave`), which is already the way a card gets a library, a
-folder and a filename.
+folder and a filename. The dialog may mint a new uuid, so what comes back is
+re-anchored onto the property: otherwise the document would still point at the
+card it came from and the same question would be asked again next time.
+
+The same fallback covers a case the state table does not, because it is not a
+state of the card but of its library: **the stock cards live in `System`, which
+is read only.** An edited preset is `Diverged` and can never be written back in
+place, so in practice this is the common path, not the exception.
 
 Overwriting a library card is the one destructive half of this feature: other
 documents anchored to that uuid will read `Diverged` afterwards. That is

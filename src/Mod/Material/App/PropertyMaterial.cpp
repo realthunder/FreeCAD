@@ -36,6 +36,7 @@
 #include <Gui/MetaTypes.h>
 
 #include "MaterialCards.h"
+#include "MaterialLibrary.h"
 #include "MaterialManager.h"
 #include "MaterialPy.h"
 #include "PropertyMaterial.h"
@@ -370,6 +371,130 @@ void PropertyMaterial::assignRestoredBlob(const App::FileBlobHandle& blob)
         return;
     }
     assign(card, false);
+}
+
+std::shared_ptr<Material> PropertyMaterial::libraryCard() const
+{
+    if (_uuid.isEmpty()) {
+        return {};
+    }
+    try {
+        return MaterialManager::getManager().getMaterial(_uuid);
+    }
+    catch (const Base::Exception&) {
+        return {};
+    }
+}
+
+PropertyMaterial::LibraryStatus PropertyMaterial::libraryStatus() const
+{
+    if (!_card) {
+        return LibraryStatus::NoCard;
+    }
+    if (_uuid.isEmpty()) {
+        return LibraryStatus::Unanchored;
+    }
+    auto card = libraryCard();
+    if (!card) {
+        return LibraryStatus::Absent;
+    }
+    // By content, never by uuid alone: a card someone renamed is the same
+    // card, and a card someone edited is not, whatever its uuid says. For a
+    // value whose content never arrived, the hash the document recorded is
+    // still the honest thing to compare -- what the library holds is not it,
+    // and saying so is what offers the relink.
+    return card->getContentHash() == contentHash() ? LibraryStatus::Current
+                                                   : LibraryStatus::Diverged;
+}
+
+const char* PropertyMaterial::statusName(LibraryStatus status)
+{
+    switch (status) {
+        case LibraryStatus::NoCard:
+            return "NoCard";
+        case LibraryStatus::Unanchored:
+            return "Unanchored";
+        case LibraryStatus::Absent:
+            return "Absent";
+        case LibraryStatus::Current:
+            return "Current";
+        case LibraryStatus::Diverged:
+            return "Diverged";
+    }
+    return "NoCard";
+}
+
+bool PropertyMaterial::updateFromLibrary()
+{
+    if (libraryStatus() != LibraryStatus::Diverged) {
+        return false;
+    }
+    auto card = libraryCard();
+    if (!card) {
+        return false;
+    }
+
+    const std::string hash = card->getContentHash();
+    aboutToSetValue();
+    // The library's card wholesale, name included: the name is the referrer's
+    // to keep only while the two are the same card, and this is the point at
+    // which the referrer says it wants the library's.
+    _uuid = card->getUUID();
+    _name = card->getName();
+    // Through the cache, so a hundred objects updated from one library card
+    // share the instance the library already holds instead of taking a
+    // hundred copies of it.
+    _card = MaterialCards::adopt(hash, _uuid, _name, card);
+    _unresolved = false;
+    _blob.reset();
+    _hash.clear();
+    hasSetValue();
+    return true;
+}
+
+bool PropertyMaterial::saveToLibrary()
+{
+    if (!_card || _unresolved) {
+        // Nothing of our own to write. Storing the placeholder would put a
+        // note about a missing card into the library under the missing card's
+        // uuid, which is worse than refusing.
+        return false;
+    }
+    auto existing = libraryCard();
+    if (!existing) {
+        return false;
+    }
+    auto library = existing->getLibrary();
+    if (!library || library->isReadOnly()) {
+        // Stock cards live in a read only library, so an edited preset has no
+        // place to go in place. The caller has to ask where.
+        return false;
+    }
+    const QString filename = existing->getFilename();
+    if (filename.isEmpty()) {
+        return false;
+    }
+    const QString path = existing->getDirectory() + QStringLiteral("/") + filename;
+
+    // The writer stamps the placement onto the card it is given, and the
+    // shared card must not be reachable from that -- everyone else holding it
+    // is entitled to the card they were handed.
+    auto card = std::make_shared<Material>(*_card);
+    try {
+        MaterialManager::getManager().saveMaterial(library, card, path, true, false, false);
+    }
+    catch (const Base::Exception& error) {
+        Base::Console().error("Cannot save the material '%s' to the library: %s\n",
+                              _name.toUtf8().constData(),
+                              error.what());
+        return false;
+    }
+
+    // The library holds different content now, so what was indexed by content
+    // is stale -- in particular the preset index, which is what decides
+    // whether a document has to carry a card at all.
+    MaterialCards::clearPresets();
+    return true;
 }
 
 const char* PropertyMaterial::getEditorName() const

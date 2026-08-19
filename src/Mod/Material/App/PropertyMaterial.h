@@ -114,6 +114,55 @@ public:
         return _unresolved;
     }
 
+    /** How the stored card compares with the library card it came from.
+     *
+     * The document's copy always wins, so the two are free to disagree
+     * (docs/MaterialStorage.md sec 2). This says whether they do, which is
+     * what the explicit sync of sec 13 acts on. The comparison is by content:
+     * a card renamed, or re-authored, is still Current.
+     */
+    enum class LibraryStatus
+    {
+        /// Nothing is assigned.
+        NoCard,
+        /// A card with no uuid: it never came from a library.
+        Unanchored,
+        /// The uuid names no installed card.
+        Absent,
+        /// The library holds exactly this content.
+        Current,
+        /// The library holds other content under this uuid. Someone edited it.
+        Diverged,
+    };
+
+    LibraryStatus libraryStatus() const;
+    /// The state's name, for Python and for messages.
+    static const char* statusName(LibraryStatus status);
+
+    /** Take the library's current card as the value.
+     *
+     * The deliberate pull of docs/MaterialStorage.md sec 13.2: an ordinary
+     * assignment, so it touches, transacts and undoes like any other. Refuses
+     * unless the library actually holds something else under this uuid --
+     * including the case where this document's card never arrived at all,
+     * where taking the library's is the relink that makes the object whole.
+     *
+     * \return whether the value changed.
+     */
+    bool updateFromLibrary();
+
+    /** Write this card over the library card it came from.
+     *
+     * The push of sec 13.3, in place and keeping the uuid, so it is the
+     * inverse of updateFromLibrary() rather than a way to breed near
+     * duplicates. Refuses when there is no library card to write over or the
+     * library is read only: choosing a new home for a card needs a target
+     * this layer has no business inventing, and the GUI asks for one.
+     *
+     * \return whether the library was written.
+     */
+    bool saveToLibrary();
+
     void Save(Base::Writer& writer) const override;
     void Restore(Base::XMLReader& reader) override;
 
@@ -165,6 +214,8 @@ private:
     const std::string& contentHash() const;
     /// Whether this document has to carry the card, i.e. it is not installed.
     bool storesContent() const;
+    /// The installed card this one's uuid names, or null. Never throws.
+    std::shared_ptr<Material> libraryCard() const;
     /// Take a card as the value, without touching the document. Restore only.
     void assign(const std::shared_ptr<const Material>& card, bool unresolved);
     /** The placeholder of docs/MaterialStorage.md sec 7 case 3.
