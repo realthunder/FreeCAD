@@ -1718,7 +1718,10 @@ geometry the cut still draws exactly, which is the near half of the
 model, and not by what aggregation costs. That is the opposite of the
 worry in 11.4, and it says where the next work is: it is not worth
 tuning the proxies, it is worth asking why 1.8 M primitives at 4 px are
-still exact.
+still exact. 11.1g asked, and the answer is that they are near field --
+and the same instrument found that this table overstates its own
+saving, because it counts edges under a stopped node as covered by a
+proxy that never had them.
 
 !! **Three things this table is not.** The denominator moves between
 rows: a cut that stops higher culls at node granularity, so a coarse
@@ -1730,6 +1733,101 @@ triangles only -- lines and points stay exact by design (11.1c). And
 410 buckets were skipped as single-member, which is the gap of 11.1e at
 scale: those branches never aggregate, so the table understates what a
 complete generation would give.
+
+### 11.1g Measured: the exact mass is near field, and the edges are the ceiling
+
+11.1f ended by saying it was not worth tuning the proxies, it was worth
+asking why 1.8 M primitives at 4 px are still drawn exactly. The
+instrument for that is `ProxyHierarchy::explainExact`: every exact
+instance is a resident of a node the descent went past, so the reason
+belongs to the node -- its error was resolvable, nothing was generated
+for it, or it held too few members to be worth a proxy -- crossed with
+how large the instance itself projects, in multiples of the tolerance.
+`ProxyCut` records which node each exact instance came from, because the
+reason cannot be recovered afterwards without searching the partition
+again.
+
+MiSTer Express, converged, whole-assembly camera, same store as 11.1f
+(1802 nodes, 2259 entries, 410 buckets skipped as single-member).
+
+| tol | exact | resolvable | no proxy | too few members | <= 1x tol | > 16x tol |
+|---|---|---|---|---|---|---|
+| 4px | 2.00 M / 35925 inst | 1.91 M (95%) | 0.09 M (5%) | 0 | 0.04 M | 1.44 M |
+| 16px | 1.87 M / 34909 | 1.79 M (96%) | 0.08 M (4%) | 0 | 0.32 M | 0.66 M |
+| 64px | 1.58 M / 34207 | 1.52 M (96%) | 0.06 M (4%) | 0 | 0.41 M | 0.08 M |
+
+**The answer to 11.1f's question is that the exact mass is near field,
+and it is near field correctly.** 95-96% of it sits under a node whose
+own measured error the camera can resolve, which is the one reason that
+is not a gap. At 4 px, 1.44 M of the 2.00 M is carried by instances
+projecting to more than *sixteen times* the tolerance -- 64 px and up on
+a 1064 px viewport -- and no cut should touch those. The hoped-for
+bug-shaped cause is 4-5% and never larger, so the 410 single-member
+buckets of 11.1e are worth closing for tidiness and not for the frame.
+
+#### KEY: the same instrument found the table above it was overstating
+
+Asked from the other side -- what does a stopped node count as covered
+that no generated proxy draws -- the readout answered 17-27% of the
+covered figure, and **99% of it was edges**. A cut covers everything
+below a node it stops on; generation accepts triangles only (11.1c: a
+decimated edge is not an edge), so an edge under a stopped node was
+being counted as removed while still having to be issued. The saving
+11.1f quoted was gross in a second way nobody had noticed.
+
+`ProxyInstance::mergeable` closes it: set from the same rule
+`ProxyStore::build` applies, read by `selectCut`, which now walks a
+stopped node's subtree and puts what no proxy can stand for into the
+exact list beside the proxy rather than under it. `verifyCut` reads
+"its covering proxy" the same strict way. It costs a subtree walk per
+stopped node -- which phase 4 has to do anyway to issue those draws.
+
+| tol | 11.1f drawn / net | corrected drawn / net | 11.1f draws | corrected draws |
+|---|---|---|---|---|
+| 4px | 1.82 M, **1.80x** | 2.13 M of 3.31 M, **1.56x** | 13300 (497 proxy) | 36574 (649) |
+| 16px | 1.55 M, **2.17x** | 1.93 M of 3.31 M, **1.72x** | 6600 (241) | 35193 (284) |
+| 64px | 1.01 M, **3.34x** | 1.62 M of 3.37 M, **2.08x** | 3444 (177) | 34388 (181) |
+
+The primitive win survives, smaller: 1.56x to 2.08x rather than 1.80x
+to 3.34x. **The draw win does not survive at all.** 11.1f reported
+draws falling from 9581 to 3444 at 64 px; corrected, the same cut
+issues 34388, because 30823 edge draws below stopped nodes were being
+counted as absorbed by proxies that never had them. What is left
+uncovered after the fix is the generation gap proper, and it is 0.2-1.8%
+-- 50 to 73 instances.
+
+#### KEY: what this makes the next question
+
+The far field's ceiling is **un-aggregatable edge geometry**, not proxy
+cost and not the generation gap. It shows up twice in the same table.
+At 64 px, 0.41 M of the 1.58 M still exact is carried by instances
+projecting to *less* than the tolerance -- 30723 of them, almost all
+edges, each too small for a viewer to resolve and none of them
+mergeable. And the draw count, which the cut was built to reduce, is
+now dominated by the same population: 34388 draws of which 181 are
+proxies.
+
+So an aggregating far field has to say something about edges, and there
+are three candidates, in the order they should be tried:
+
+1. **Drop them below a tolerance.** An edge whose whole part projects to
+   under a pixel of error contributes a darkening, not a line. Cheapest
+   to build and the appearance question is the whole of the risk --
+   which makes it a pixel comparison, and 12.21's injected-failure
+   harness is the shape of that test.
+2. **Merge the line sets per (cell, material) the way triangles are
+   merged.** No decimation, just concatenation into one buffer: it
+   removes draws without removing primitives, and 11.1b-prims already
+   established that draws alone are not what costs on this scene -- so
+   this is the option that helps least on the axis that matters.
+3. **Decimate them as polylines**, which is the only one that removes
+   primitives, and the only one that needs a simplifier that does not
+   exist yet.
+
+None of this changes phase 3's remaining work (hysteresis on a retained
+cut, incremental index update, wiring into `SceneLadder.cpp`), and all
+of it is measured against a cut that now reports what it would actually
+issue.
 
 ### 11.2 What the code already gives us
 
