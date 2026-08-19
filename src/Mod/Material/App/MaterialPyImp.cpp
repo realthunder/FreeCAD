@@ -131,6 +131,16 @@ Py::String MaterialPy::getUUID() const
     return {getMaterialPtr()->getUUID().toStdString()};
 }
 
+Py::String MaterialPy::getCanonicalForm() const
+{
+    return {getMaterialPtr()->getCanonicalForm().toStdString()};
+}
+
+Py::String MaterialPy::getContentHash() const
+{
+    return {getMaterialPtr()->getContentHash()};
+}
+
 Py::String MaterialPy::getDescription() const
 {
     return {getMaterialPtr()->getDescription().toStdString()};

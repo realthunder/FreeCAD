@@ -106,7 +106,32 @@ public:
     void setList(const QList<QVariant>& value);
 
     virtual QString getYAMLString() const;
+    /*
+     * The YAML form used for content addressing: identical bytes for identical
+     * content on every installation. See docs/MaterialStorage.md sec 4.
+     */
+    virtual QString getCanonicalYAMLString() const;
     static QString escapeString(const QString& source);
+
+    /*
+     * A quantity as the user's unit schema renders it. This is a display
+     * form: it depends on a preference and on that schema's decimal count.
+     */
+    static QString displayQuantity(const Base::Quantity& quantity);
+    /*
+     * A quantity in internal units, at the shortest precision that reads back
+     * as the same value. Depends on the value alone -- no unit schema, no
+     * locale, no rounding -- which is what content addressing requires.
+     */
+    static QString canonicalQuantity(const Base::Quantity& quantity);
+    static QString canonicalNumber(double value);
+    /*
+     * A Float property, rendered at float precision. A value read from a card
+     * is a float and a value set through the API may be a double, so the
+     * shortest form that reads back as the same float is what makes those two
+     * routes to the same number agree.
+     */
+    static QString canonicalFloat(float value);
     static ValueType mapType(const QString& stringType);
 
     static const Base::QuantityFormat getQuantityFormat();
@@ -125,6 +150,7 @@ protected:
     }
     void setInitialValue(ValueType inherited);
 
+    QString yamlString(bool canonical) const;
     QString getYAMLStringImage() const;
     QString getYAMLStringList() const;
     QString getYAMLStringImageList() const;
@@ -183,8 +209,10 @@ public:
     QVariant getValue(int row, int column) const;
 
     QString getYAMLString() const override;
+    QString getCanonicalYAMLString() const override;
 
 protected:
+    QString yamlString(bool canonical) const;
     void deepCopy(const Array2D& other);
 
     QList<std::shared_ptr<QList<QVariant>>> _rows;
@@ -272,8 +300,10 @@ public:
     void setCurrentDepth(int depth);
 
     QString getYAMLString() const override;
+    QString getCanonicalYAMLString() const override;
 
 protected:
+    QString yamlString(bool canonical) const;
     void deepCopy(const Array3D& other);
 
     QList<std::pair<Base::Quantity, std::shared_ptr<QList<std::shared_ptr<QList<Base::Quantity>>>>>>
