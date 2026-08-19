@@ -74,6 +74,8 @@ typedef boost::iterator_range<const char*> CharRange;
 #include <Base/Rotation.h>
 #include <Base/Stream.h>
 #include <Base/Tools.h>
+#include <Mod/Material/App/MaterialManager.h>
+#include <Mod/Material/App/Materials.h>
 
 #include "PartFeature.h"
 #include "PartFeaturePy.h"
@@ -93,6 +95,9 @@ PROPERTY_SOURCE(Part::Feature, App::GeoFeature)
 Feature::Feature()
 {
     ADD_PROPERTY(Shape, (TopoDS_Shape()));
+    auto mat = Materials::MaterialManager::defaultMaterial();
+    ADD_PROPERTY_TYPE(ShapeMaterial, (*mat), "", App::Prop_None,
+            "The physical material assigned to this shape");
     ADD_PROPERTY_TYPE(ValidateShape, (false), "", App::Prop_None,
             "Validate shape content and warn about invalid shape");
     ADD_PROPERTY_TYPE(InvalidShape, (false), "", App::Prop_Hidden,
@@ -1413,6 +1418,21 @@ const char* Feature::getViewProviderName(void) const {
 const App::PropertyComplexGeoData* Feature::getPropertyOfGeometry() const
 {
     return &Shape;
+}
+
+App::Material Feature::getMaterialAppearance() const
+{
+    return ShapeMaterial.getValue().getMaterialAppearance();
+}
+
+void Feature::setMaterialAppearance(const App::Material& material)
+{
+    try {
+        ShapeMaterial.setValue(material);
+    }
+    catch (const Base::Exception& e) {
+        e.ReportException();
+    }
 }
 
 const std::vector<const char *>& Feature::getElementTypes(bool all) const

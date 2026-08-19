@@ -248,6 +248,9 @@ protected:
     SoShadowStyle    * pcRenderShadowStyle{nullptr};
 
 private:
+    /// Last appearance adopted from the object's material card. Lets us tell
+    /// an appearance the material supplied from one the user set by hand.
+    App::Material materialAppearance;
     SoFCBoundingBox  * pcBoundingBox{nullptr};
     SoSwitch         * pcBoundSwitch{nullptr};
     SoBaseColor      * pcBoundColor{nullptr};

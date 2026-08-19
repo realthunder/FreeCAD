@@ -28,6 +28,7 @@
 
 #include <App/FeaturePython.h>
 #include <App/GeoFeature.h>
+#include <Mod/Material/App/PropertyMaterial.h>
 #include <Mod/Part/PartGlobal.h>
 
 #include <TopoDS_Face.hxx>
@@ -63,6 +64,8 @@ public:
     ~Feature() override;
 
     PropertyPartShape Shape;
+    /// The physical material card assigned to this shape
+    Materials::PropertyMaterial ShapeMaterial;
     App::PropertyLinkSubHidden ColoredElements;
     App::PropertyBool ValidateShape;
     App::PropertyBool InvalidShape;
@@ -76,6 +79,11 @@ public:
     /// returns the type name of the ViewProvider
     const char* getViewProviderName() const override;
     const App::PropertyComplexGeoData* getPropertyOfGeometry() const override;
+
+    /// Appearance taken from the assigned material card
+    App::Material getMaterialAppearance() const override;
+    /// Assign the appearance half of the material card
+    void setMaterialAppearance(const App::Material& material) override;
 
     PyObject* getPyObject() override;
 
