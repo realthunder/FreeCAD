@@ -1,8 +1,9 @@
 # Material storage -- content-addressed cards in the document
 
-Status: design agreed 2026-08-19 (user). Sec 10 steps 1 and 2 -- the canonical
-writer with its content hash, and the generalized collect walk -- are built,
-tested and landed; steps 3 onward are not started. The `Materials::PropertyMaterial ShapeMaterial` property on
+Status: design agreed 2026-08-19 (user). Sec 10 steps 1 to 4 are built, tested
+and landed: the canonical writer with its content hash, the generalized
+collect walk, `PropertyMaterial` on blobs, and the preset index. Step 5, the
+explicit sync commands, is not started. The `Materials::PropertyMaterial ShapeMaterial` property on
 `Part::Feature` is built and green, as a faithful port of upstream; everything
 below replaces how that property *stores* its value, not what it means.
 
@@ -359,21 +360,57 @@ into the store under its content hash. No new manager API is required.
    34, and `-t Document` fails exactly the nine long-standing names.
 3. **`PropertyMaterial` on blobs**: handle plus `shared_ptr<const Material>`
    plus provenance; save/restore across all three restore cases of sec 7.
+   DONE. One correction to sec 7's order: presets are checked *before* the
+   blob is waited for, because a document that used a stock card does not
+   carry it and a pending referrer for content the archive does not hold is
+   never called back. The placeholder is therefore installed up front, so
+   content that never arrives leaves the recorded uuid and name rather than
+   an empty value.
+
+   One case the design did not cover: **an unresolved value must survive a
+   re-save.** The placeholder is a card like any other, so hashing and storing
+   it would replace the document's reference to the real card with a reference
+   to the note about it -- opening a file on the wrong machine would be what
+   destroyed what it said. The property keeps the hash the document recorded
+   and writes that back instead.
 4. **Preset index** by content hash at startup; skip writing preset blobs.
+   DONE, and it turned out to be a prerequisite for step 3 rather than a
+   later optimization: `Part::Feature` assigns the Default card in its
+   constructor, so without the index every Part object in every schema-5
+   document stored a copy of it. The `ShapeStorage` suite caught it -- nine
+   failures over archive entry counts, all of which went away when the index
+   landed. The index is built on first use rather than at startup (47 ms for
+   215 cards in a debug build) and dropped by `MaterialManager::refresh()`.
 5. **Explicit sync commands** ("update from library", "save to library").
 6. Only then: consider whether appearance and texture properties fold onto
    the same mechanism (the general reading of decision 3).
 
 ## 11. How this will be judged
 
+All six now hold, each with a case in
+`src/Mod/Material/materialtests/TestMaterialBlobs.py`:
+
 - A document assigned a custom material, opened on an installation without
   that card, reports the material by name with its physical values intact.
-  This is the acceptance test; today it silently reports Default.
+  This is the acceptance test; before this work it silently reported Default.
+  `testCardOpensWhereItIsNotInstalled`.
 - An upstream-written document with a uuid-only material still opens.
-- A document written at schema 4 still opens in upstream FreeCAD.
+  `testUpstreamUuidOnlyDocumentStillOpens`.
+- A document written at schema 4 still carries upstream's exact form.
+  `testSchemaFourWritesUpstreamsForm` -- that it then opens *in* upstream is
+  not testable here.
 - N objects sharing one material hold one `Material` instance, not N.
+  `testObjectsSharingACardShareOneInstance`, asserted through
+  `Materials.cardCacheSize()`: twenty objects, one card.
 - A document using only stock materials is not measurably larger than today.
+  `testStockCardIsNotCarried`; measured, 200 boxes with the standard steel
+  card give 3 archive entries and 9.5 KB, with no material blob at all.
 - The same document saved twice produces byte-identical blob entries.
+  `testSavingTwiceWritesTheSameBytes`.
+
+And one the list did not have: opening a document whose card cannot be
+resolved, and saving it there, leaves the reference the document recorded
+intact (`testUnresolvedCardSurvivesAResave`).
 
 ## 12. Open questions
 
