@@ -89,11 +89,11 @@ bool BGFXRenderer::render(const QColor &col,
     // Qt and the app -- see docs/DrawSubmission.md phase 0 item 2, where
     // ~44ms of a 54.8ms frame had no instrument on it at all.
     const int64_t renderT0 = bx::getHPCounter();
+    bool ok = pimpl->render(col, viewMatrix, projMatrix);
     if (pimpl->debugconf.frameTiming)
         pimpl->frameStats.renderMs += 1000.0
             * double(bx::getHPCounter() - renderT0)
             / double(bx::getHPFrequency());
-    bool ok = pimpl->render(col, viewMatrix, projMatrix);
     if (savedMode >= 0)
         pimpl->debugconf.viewMode = savedMode;
     return ok;
