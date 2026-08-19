@@ -458,6 +458,43 @@ MaterialLoader::getMaterialFromPath(const std::shared_ptr<MaterialLibraryLocal>&
     return model;
 }
 
+std::shared_ptr<Material> MaterialLoader::getMaterialFromFile(const QString& path)
+{
+    Base::FileInfo info(path.toStdString());
+    Base::ifstream fin(info);
+    if (!fin) {
+        Base::Console().error("Material file open error: '%s'\n", info.filePath().c_str());
+        return {};
+    }
+
+    try {
+        YAML::Node yamlroot = YAML::Load(fin);
+        // A library for the duration of the parse only: addToTree() files its
+        // result under one, and this card has none. Nothing outside this
+        // function ever sees it, and the card holds the only reference.
+        auto library = std::make_shared<MaterialLibraryLocal>(QStringLiteral("Document"),
+                                                              QString(),
+                                                              QString());
+        auto entry = getMaterialFromYAML(library, yamlroot, path);
+        if (!entry) {
+            return {};
+        }
+        auto materials = std::make_shared<std::map<QString, std::shared_ptr<Material>>>();
+        entry->addToTree(materials);
+        auto found = materials->find(entry->getUUID());
+        if (found == materials->end()) {
+            return {};
+        }
+        return found->second;
+    }
+    catch (const YAML::Exception& e) {
+        Base::Console().error("YAML parsing error: '%s'\n", info.filePath().c_str());
+        Base::Console().error("\t'%s'\n", e.what());
+    }
+
+    return {};
+}
+
 void MaterialLoader::showYaml(const YAML::Node& yaml)
 {
     std::stringstream out;

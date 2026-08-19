@@ -94,6 +94,8 @@ SET(Materials_SRCS
     MaterialFilter.h
     MaterialLibrary.cpp
     MaterialLibrary.h
+    MaterialCards.cpp
+    MaterialCards.h
     MaterialLoader.cpp
     MaterialLoader.h
     MaterialManager.cpp

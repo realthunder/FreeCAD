@@ -48,6 +48,7 @@
 #include "MaterialLibraryPy.h"
 #include "MaterialManagerPy.h"
 #include "MaterialPropertyPy.h"
+#include "MaterialCards.h"
 #include "MaterialPy.h"
 
 namespace Materials
@@ -58,12 +59,25 @@ public:
     Module()
         : Py::ExtensionModule<Module>("Materials")
     {
+        add_varargs_method("cardCacheSize",
+                           &Module::cardCacheSize,
+                           "cardCacheSize() -> int\n\n"
+                           "Number of distinct material cards currently held in memory.\n"
+                           "Objects assigned the same card share one, so this counts cards\n"
+                           "rather than assignments.");
         initialize("This module is the Materials module.");  // register with Python
     }
 
     ~Module() override = default;
 
 private:
+    Py::Object cardCacheSize(const Py::Tuple& args)
+    {
+        if (!PyArg_ParseTuple(args.ptr(), "")) {
+            throw Py::Exception();
+        }
+        return Py::Long(static_cast<long>(MaterialCards::size()));
+    }
 };
 
 PyObject* initModule()
