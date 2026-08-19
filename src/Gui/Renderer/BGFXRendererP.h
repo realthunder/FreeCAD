@@ -1160,6 +1160,161 @@ static void reportProxyStore(const Render::ProxyHierarchy &index,
 #endif
 }
 
+/// What the exactly drawn part of a cut *is* (docs/FarFieldProxies.md
+/// section 11.1g).
+///
+/// The priced readout below measured that a proxy costs 4-9% of what it
+/// replaces, and that two thirds of the visible primitives are still
+/// exact at a 4px tolerance. The second number is the ceiling and the
+/// first says tuning proxies cannot move it, so the next question is
+/// what that exact mass is: near field the cut was right to descend
+/// into, or geometry nothing ever offered to aggregate.
+///
+/// Reported beside it, because it is the same question asked from the
+/// other side: what a stopped node covers and no generated proxy
+/// draws. A cut counts every instance below a node it stops on as
+/// covered, but generation works per material bucket and produces
+/// nothing for some -- lines and points by design, a bucket the
+/// decimation refused by accident. Those primitives are neither drawn
+/// exactly nor drawn by a proxy, and a saving that counts them as
+/// removed is counting a hole.
+static void reportProxyExact(const Render::ProxyHierarchy &index,
+                             const Render::ProxyStore &store,
+                             const Render::DrawCallList &draws,
+                             const Render::ProxyCut &cut, const float *V,
+                             const float *P, float viewportHeightPx,
+                             float tolerancePx,
+                             const std::vector<Render::ProxyNodeCost> &costs)
+{
+    Render::ProxyExactBreakdown ex;
+    index.explainExact(cut, V, P, viewportHeightPx, tolerancePx, &costs, ex);
+
+    char buf[512];
+    const double total = double(ex.total.prims);
+    const auto pct = [&](uint64_t v) {
+        return total > 0.0 ? 100.0 * double(v) / total : 0.0;
+    };
+    snprintf(buf, sizeof(buf),
+             "render proxyexact %gpx: %.2fM exact over %u inst = resolvable "
+             "%.2fM (%.0f%%) | no proxy %.2fM (%.0f%%) | too few members "
+             "%.2fM (%.0f%%) | level mean %.1f max %u\n",
+             double(tolerancePx), total / 1e6, ex.total.instances,
+             double(ex.byReason[Render::ProxyExactBreakdown::Resolvable].prims)
+                 / 1e6,
+             pct(ex.byReason[Render::ProxyExactBreakdown::Resolvable].prims),
+             double(ex.byReason[Render::ProxyExactBreakdown::NoProxy].prims)
+                 / 1e6,
+             pct(ex.byReason[Render::ProxyExactBreakdown::NoProxy].prims),
+             double(ex.byReason[Render::ProxyExactBreakdown::TooFewMembers]
+                        .prims) / 1e6,
+             pct(ex.byReason[Render::ProxyExactBreakdown::TooFewMembers].prims),
+             ex.meanLevel, ex.maxLevel);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+
+    // The cross-cut, and the one that says whether any of it is
+    // addressable: an instance projecting to less than the tolerance is
+    // detail nothing merged, one projecting to ten times it is near
+    // field however it got there.
+    std::string sizes;
+    static const char *kBinNames[] = {"<=1x", "<=4x", "<=16x", ">16x"};
+    for (int b = 0; b < Render::ProxyExactBreakdown::SizeBins; ++b) {
+        snprintf(buf, sizeof(buf), " %s:%.2fM/%u(res %.2fM,gap %.2fM)",
+                 kBinNames[b], double(ex.bySize[b].prims) / 1e6,
+                 ex.bySize[b].instances,
+                 double(ex.bins[Render::ProxyExactBreakdown::Resolvable][b]
+                            .prims) / 1e6,
+                 double(ex.bins[Render::ProxyExactBreakdown::NoProxy][b].prims)
+                     / 1e6);
+        sizes += buf;
+    }
+    snprintf(buf, sizeof(buf), "render proxyexact %gpx by own size:%s\n",
+             double(tolerancePx), sizes.c_str());
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+
+    // What the cut counted as covered and nothing draws. Asked per
+    // (node, bucket) against the store, which is the pair generation
+    // keys on, so a bucket with no entry is exactly a bucket no proxy
+    // stands for.
+    uint64_t holePrims = 0;
+    uint32_t holeInstances = 0, holeBuckets = 0, holeNodes = 0;
+    // Split by what the missing bucket draws, because the two halves
+    // want opposite fixes: a line or point bucket has no proxy because
+    // generation refuses one on purpose (a decimated edge is not an
+    // edge), so the accounting is what is wrong -- the cut may not
+    // count it as covered. A triangle bucket with no proxy is the
+    // generation gap of 11.1e, and there the accounting is right and
+    // the generation is what is missing.
+    uint64_t holeTriPrims = 0, holeLinePrims = 0;
+    uint32_t holeTriInstances = 0;
+    std::vector<uint32_t> sub;
+    const auto &insts = index.instances();
+    for (int ni : cut.proxyNodes) {
+        const auto &node = index.nodes()[size_t(ni)];
+        sub.clear();
+        index.subtreeInstances(ni, sub);
+        std::unordered_set<uint64_t> missing;
+        for (uint32_t idx : sub) {
+            const auto &inst = insts[idx];
+            if (store.find(node.id, inst.materialBucket))
+                continue;
+            missing.insert(inst.materialBucket);
+            holeInstances += 1;
+            holePrims += inst.primCount;
+            const bool triangle =
+                inst.drawIndex < draws.size()
+                && draws[inst.drawIndex].material.type
+                    == Render::Material::Triangle
+                && !draws[inst.drawIndex].standIn;
+            if (triangle) {
+                holeTriInstances += 1;
+                holeTriPrims += inst.primCount;
+            }
+            else {
+                holeLinePrims += inst.primCount;
+            }
+        }
+        if (!missing.empty()) {
+            ++holeNodes;
+            holeBuckets += uint32_t(missing.size());
+        }
+    }
+    // And the net figure the priced line should have quoted: what a
+    // cut draws is what it draws exactly, plus its proxies, plus
+    // everything it counted as covered that no proxy stands for --
+    // because that has to be drawn by somebody.
+    const uint64_t honest = cut.exactPrims + cut.proxyPrims + holePrims;
+    const uint64_t visible = cut.exactPrims + cut.coveredPrims;
+    snprintf(buf, sizeof(buf),
+             "render proxyexact %gpx uncovered: %u of %zu stopped nodes leave "
+             "%u buckets with no proxy -- %u inst / %llu prims counted covered "
+             "and drawn by nobody (%.1f%% of %llu covered), of which %llu tri "
+             "over %u inst and %llu line/point | honest net %llu of %llu, "
+             "%.2fx\n",
+             double(tolerancePx), holeNodes, cut.proxyNodes.size(),
+             holeBuckets, holeInstances, (unsigned long long)holePrims,
+             cut.coveredPrims ? 100.0 * double(holePrims)
+                     / double(cut.coveredPrims)
+                 : 0.0,
+             (unsigned long long)cut.coveredPrims,
+             (unsigned long long)holeTriPrims, holeTriInstances,
+             (unsigned long long)holeLinePrims, (unsigned long long)honest,
+             (unsigned long long)visible,
+             honest ? double(visible) / double(honest) : 0.0);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+}
+
 /// What a cut costs once the proxies it stops on are real: the same
 /// frontier chosen by a node's measured error instead of by its extent,
 /// and priced by what the proxies draw rather than only by what they
@@ -1236,6 +1391,10 @@ static void reportProxyCutPriced(const Render::ProxyHierarchy &index,
 #else
         Base::Console().Message("%s", buf);
 #endif
+        // The same cut, asked what it did NOT aggregate -- which is
+        // where the ceiling above is, and what phase 3 has to move.
+        reportProxyExact(index, store, draws, byError, V, P, viewportHeightPx,
+                         tol, costs);
     }
 }
 

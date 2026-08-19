@@ -649,6 +649,7 @@ void ProxyHierarchy::selectCutImpl(const float *view, const float *proj,
 {
     out.proxyNodes.clear();
     out.exact.clear();
+    out.exactNode.clear();
     out.drawCount = 0;
     out.proxyDraws = 0;
     out.coveredInstances = 0;
@@ -719,6 +720,7 @@ void ProxyHierarchy::selectCutImpl(const float *view, const float *proj,
             }
             else {
                 out.exact.push_back(idx);
+                out.exactNode.push_back(ni);
                 out.exactPrims += inst.primCount;
             }
         }
@@ -728,6 +730,74 @@ void ProxyHierarchy::selectCutImpl(const float *view, const float *proj,
         }
     }
     out.drawCount = out.proxyDraws + uint32_t(out.exact.size());
+}
+
+void ProxyHierarchy::explainExact(const ProxyCut &cut, const float *view,
+                                  const float *proj, float viewportHeightPx,
+                                  float tolerancePx,
+                                  const std::vector<ProxyNodeCost> *costs,
+                                  ProxyExactBreakdown &out) const
+{
+    out = ProxyExactBreakdown();
+    if (!view || !proj || viewportHeightPx <= 0.0f)
+        return;
+
+    double levelWeight = 0.0;
+    for (size_t i = 0; i < cut.exact.size(); ++i) {
+        const uint32_t idx = cut.exact[i];
+        if (idx >= instancedata.size())
+            continue;
+        const ProxyInstance &inst = instancedata[idx];
+        const int ni = i < cut.exactNode.size() ? cut.exactNode[i]
+                                                : kNoProxyNode;
+
+        // The node's reason, asked in the same order the descent asks
+        // it: a node without a proxy never reaches the tolerance test,
+        // and one below minMerge never reaches it either.
+        ProxyExactBreakdown::Reason reason = ProxyExactBreakdown::Resolvable;
+        if (ni != kNoProxyNode && size_t(ni) < nodedata.size()) {
+            const ProxyNode &node = nodedata[size_t(ni)];
+            const ProxyNodeCost *cost =
+                costs && size_t(ni) < costs->size() ? &(*costs)[size_t(ni)]
+                                                    : nullptr;
+            // minMerge first, though the descent tests it last: a
+            // node below it has no proxy *because* of it, and reading
+            // that as a generation gap would blame the store for
+            // obeying the partition's own floor.
+            if (node.subtreeCount < parameters.minMerge)
+                reason = ProxyExactBreakdown::TooFewMembers;
+            else if (costs && (!cost || cost->errorRatio < 0.0f))
+                reason = ProxyExactBreakdown::NoProxy;
+            if (node.level > out.maxLevel)
+                out.maxLevel = node.level;
+            levelWeight += double(node.level) * double(inst.primCount);
+        }
+
+        // How large the instance is on its own. Inside the box counts
+        // as maximal rather than as unknown: a camera within an
+        // instance's bounds is the near field by any reading.
+        const BoxSight sight = sightBounds(inst.bboxMin, inst.bboxMax,
+                                           view, proj, viewportHeightPx);
+        const float px = sight.what == BoxSight::Inside
+            ? viewportHeightPx
+            : sight.diagPx;
+        int bin = ProxyExactBreakdown::SizeBins - 1;
+        if (tolerancePx > 0.0f) {
+            const float ratio = px / tolerancePx;
+            bin = ratio <= 1.0f ? 0 : (ratio <= 4.0f ? 1 : (ratio <= 16.0f ? 2 : 3));
+        }
+
+        const auto add = [&](ProxyExactBreakdown::Bin &b) {
+            b.instances += 1;
+            b.prims += inst.primCount;
+        };
+        add(out.bins[reason][bin]);
+        add(out.byReason[reason]);
+        add(out.bySize[bin]);
+        add(out.total);
+    }
+    if (out.total.prims)
+        out.meanLevel = levelWeight / double(out.total.prims);
 }
 
 void ProxyHierarchy::markSubtree(int node, std::vector<uint8_t> &mark,

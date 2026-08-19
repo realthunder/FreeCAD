@@ -351,6 +351,41 @@ struct ProxyNodeCost {
     uint32_t draws = 0;
 };
 
+/// The exactly drawn mass of a cut, split by why it did not aggregate
+/// and by how large it is on screen (section 11.1g).
+struct ProxyExactBreakdown {
+    /// Why the node an exact instance sits in did not stop the cut.
+    enum Reason {
+        /// Its own error projects above the tolerance. The near field,
+        /// and the one answer that is not a gap: descending was right.
+        Resolvable,
+        /// Nothing was generated for it, so the cut could not stop
+        /// there whatever its error would have been.
+        NoProxy,
+        /// Fewer members than minMerge: proxying one object produces a
+        /// decimated object, which the per-object ladder does better.
+        TooFewMembers,
+        ReasonCount
+    };
+    /// How large the instance itself is, in multiples of the tolerance:
+    /// within it, up to 4x, up to 16x, beyond. The first bin is the
+    /// mass a cut could in principle remove and did not.
+    static const int SizeBins = 4;
+    struct Bin {
+        uint32_t instances = 0;
+        uint64_t prims = 0;
+    };
+    Bin bins[ReasonCount][SizeBins];
+    Bin byReason[ReasonCount];
+    Bin bySize[SizeBins];
+    Bin total;
+    /// Deepest node level any exact instance was found at, and the
+    /// primitive-weighted mean level -- a near field sits deep, a
+    /// generation gap can sit anywhere.
+    uint32_t maxLevel = 0;
+    double meanLevel = 0.0;
+};
+
 /// A frontier through the partition, and what it costs.
 ///
 /// Note what a node *above* the frontier still owes: its own residents.
@@ -360,6 +395,12 @@ struct ProxyNodeCost {
 struct ProxyCut {
     std::vector<int> proxyNodes;      ///< nodes drawing proxies
     std::vector<uint32_t> exact;      ///< instance indices drawn exactly
+    /// The node each exact instance was resident in, parallel to
+    /// \ref exact. Which node it was is what says *why* the instance
+    /// draws exactly -- the descent's reason is a property of the node,
+    /// not of the instance -- and it cannot be recovered afterwards
+    /// without searching the partition for the instance again.
+    std::vector<int> exactNode;
     /// Draws the cut issues: the exact ones, plus one per distinct
     /// material bucket of each proxy node (§5.1). **This is the number
     /// phase 1 exists to produce.**
@@ -437,6 +478,38 @@ public:
                    float viewportHeightPx, float tolerancePx,
                    const std::vector<ProxyNodeCost> &costs,
                    ProxyCut &out) const;
+
+    /// Why the exactly drawn part of \a cut is drawn exactly
+    /// (section 11.1g).
+    ///
+    /// The priced cut measured that a proxy costs 4-9% of what it
+    /// replaces, which moves the question: the ceiling is not what
+    /// aggregation costs, it is what never aggregates. At a 4px
+    /// tolerance two thirds of the visible primitives are still exact,
+    /// and "tune the proxies" cannot touch any of it until it is known
+    /// which of three quite different things that mass is.
+    ///
+    /// Every exact instance is a resident of a node the descent went
+    /// past, so the reason is the node's: it had an error the camera
+    /// can resolve (correct -- this is the near field), it had no
+    /// proxy to stop on (a generation gap, and the bug-shaped one), or
+    /// it held too few members to be worth one (the partition's own
+    /// floor).
+    ///
+    /// Crossed with how large the instance itself is on screen, which
+    /// is what says whether the mass is *addressable at all*: an
+    /// instance that projects to less than the tolerance is detail the
+    /// camera cannot resolve and that something ought to have merged,
+    /// while one that projects to ten times it is near field however it
+    /// got there, and no cut should touch it.
+    ///
+    /// \a costs may be null, in which case the descent is the extent
+    /// rule's and no node can be missing a proxy.
+    void explainExact(const ProxyCut &cut, const float *view,
+                      const float *proj, float viewportHeightPx,
+                      float tolerancePx,
+                      const std::vector<ProxyNodeCost> *costs,
+                      ProxyExactBreakdown &out) const;
 
     /// §11.3, the invariant asserted before either ladder is coded:
     ///

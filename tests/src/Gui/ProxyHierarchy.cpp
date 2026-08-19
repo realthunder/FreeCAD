@@ -458,6 +458,136 @@ TEST(ProxyHierarchy, emptyAndUnlocatableInputAreHarmless)
     EXPECT_EQ(h.instances().size(), 1u);
 }
 
+TEST(ProxyCutTest, theExactMassIsAttributedToTheNodesReason)
+{
+    // Section 11.1g. The priced cut said a proxy costs 4-9% of what it
+    // replaces, which means the ceiling is what stays exact -- so the
+    // exact mass has to be readable as something other than one number.
+    // With no costs given there is no such thing as a missing proxy, so
+    // every exact instance is a resident of a node whose extent the
+    // camera resolves, and the totals must still add up to the cut's.
+    auto instances = flatAssembly(10);
+    for (auto &inst : instances)
+        inst.primCount = 100;
+    ProxyHierarchy h;
+    h.build(instances);
+
+    float V[16];
+    float P[16];
+    viewAt(V, 10.0f);
+    perspective(P, 45.0f, 1.6f, 0.1f, 1000.0f);
+    ProxyCut cut;
+    h.selectCut(V, P, 1200.0f, 4.0f, cut);
+    ASSERT_FALSE(cut.exact.empty());
+    EXPECT_EQ(cut.exactNode.size(), cut.exact.size());
+
+    ProxyExactBreakdown ex;
+    h.explainExact(cut, V, P, 1200.0f, 4.0f, nullptr, ex);
+    EXPECT_EQ(ex.total.instances, cut.exact.size());
+    EXPECT_EQ(ex.total.prims, cut.exactPrims);
+    EXPECT_EQ(ex.byReason[ProxyExactBreakdown::NoProxy].prims, 0u)
+        << "a descent that never consulted a store found a missing proxy";
+    EXPECT_EQ(ex.byReason[ProxyExactBreakdown::Resolvable].prims,
+              cut.exactPrims);
+
+    // The two cross-cuts are partitions of the same mass, not two
+    // different measurements of it.
+    uint64_t bySize = 0, byReason = 0;
+    for (int b = 0; b < ProxyExactBreakdown::SizeBins; ++b)
+        bySize += ex.bySize[b].prims;
+    for (int r = 0; r < ProxyExactBreakdown::ReasonCount; ++r)
+        byReason += ex.byReason[r].prims;
+    EXPECT_EQ(bySize, ex.total.prims);
+    EXPECT_EQ(byReason, ex.total.prims);
+}
+
+TEST(ProxyCutTest, aGenerationGapReadsDifferentlyFromNearField)
+{
+    // The distinction the whole readout exists for: geometry drawn
+    // exactly because the camera can resolve it is the near field and
+    // is correct, geometry drawn exactly because nothing was ever
+    // generated above it is a gap. They are indistinguishable in the
+    // exact count and must not be in the breakdown.
+    auto instances = flatAssembly(10);
+    for (auto &inst : instances)
+        inst.primCount = 100;
+    ProxyHierarchy h;
+    h.build(instances);
+
+    float V[16];
+    float P[16];
+    viewAt(V, 400.0f);  // far enough that nothing is resolvable
+    perspective(P, 45.0f, 1.6f, 0.1f, 5000.0f);
+
+    // Every node has a proxy of no error at all: the cut stops at the
+    // root and there is no exact mass to explain.
+    std::vector<ProxyNodeCost> costs(h.nodes().size());
+    for (auto &cost : costs) {
+        cost.errorRatio = 0.0f;
+        cost.prims = 1;
+        cost.draws = 1;
+    }
+    ProxyCut stopped;
+    h.selectCut(V, P, 1200.0f, 4.0f, costs, stopped);
+    ProxyExactBreakdown none;
+    h.explainExact(stopped, V, P, 1200.0f, 4.0f, &costs, none);
+    EXPECT_EQ(none.total.prims, 0u);
+
+    // Nothing generated anywhere: the same camera, the same tolerance,
+    // and now the whole model draws exactly -- as a gap, not as near
+    // field.
+    for (auto &cost : costs)
+        cost.errorRatio = -1.0f;
+    ProxyCut gap;
+    h.selectCut(V, P, 1200.0f, 4.0f, costs, gap);
+    ProxyExactBreakdown ex;
+    h.explainExact(gap, V, P, 1200.0f, 4.0f, &costs, ex);
+    EXPECT_EQ(ex.total.prims, gap.exactPrims);
+    EXPECT_GT(ex.total.prims, 0u);
+    EXPECT_EQ(ex.byReason[ProxyExactBreakdown::NoProxy].prims, ex.total.prims);
+    EXPECT_EQ(ex.byReason[ProxyExactBreakdown::Resolvable].prims, 0u);
+}
+
+TEST(ProxyCutTest, theSizeCrossCutSaysWhetherTheMassIsAddressable)
+{
+    // Reason alone cannot answer the question, because "the node is
+    // resolvable" is true of a node holding one large part and of a
+    // node holding a thousand small ones that happens to sit high in
+    // the tree. What separates them is the instance's own projected
+    // size: below the tolerance it is detail nothing merged, well above
+    // it, it is near field whatever the reason says.
+    auto instances = flatAssembly(10);
+    for (auto &inst : instances)
+        inst.primCount = 10;
+    // One part spanning the whole model, which no cell below the root
+    // can hold and which is therefore a root resident.
+    ProxyInstance big = boxAt(0.0f, 0.0f, 0.0f, 0.9f, 999999);
+    big.primCount = 1000;
+    instances.push_back(big);
+
+    ProxyHierarchy h;
+    h.build(instances);
+    float V[16];
+    float P[16];
+    viewAt(V, 6.0f);
+    perspective(P, 45.0f, 1.6f, 0.1f, 1000.0f);
+    ProxyCut cut;
+    h.selectCut(V, P, 1200.0f, 4.0f, cut);
+
+    ProxyExactBreakdown ex;
+    h.explainExact(cut, V, P, 1200.0f, 4.0f, nullptr, ex);
+    // The big part is drawn exactly and lands in the coarsest bin.
+    EXPECT_GE(ex.bySize[ProxyExactBreakdown::SizeBins - 1].prims, 1000u);
+    // A tolerance the whole model is smaller than puts everything in
+    // the first bin instead, which is what "addressable" would look
+    // like if it were true.
+    ProxyExactBreakdown wide;
+    h.explainExact(cut, V, P, 1200.0f, 100000.0f, nullptr, wide);
+    EXPECT_EQ(wide.bySize[0].prims, wide.total.prims);
+    EXPECT_EQ(wide.total.prims, ex.total.prims)
+        << "the tolerance changed what the same cut is made of";
+}
+
 TEST(ProxyHierarchy, coincidentInstancesDoNotRecurseForever)
 {
     // Ten thousand parts at the same point cannot be separated by any
