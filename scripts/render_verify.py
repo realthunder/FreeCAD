@@ -4,8 +4,8 @@ Runs inside FreeCAD *after* a demo/scene script (pass both to the binary:
 ``FreeCAD scene.py render_verify.py``); scripts/render-verify.sh does the
 launching, isolation and log collection. For every (camera, mode) pair it
 writes ``<scene>--<camera>--mode<N>.png`` plus the reproducibility sidecar
-JSON via ``View3DInventor.saveRenderDump``, with ``RenderDebug_FreezeFrame``
-on so captures are deterministic. ``render_diff.py`` compares two such
+JSON via ``View3DInventor.saveRenderDump``, with the render engine's
+``DebugFreezeFrame`` parameter on so captures are deterministic. ``render_diff.py`` compares two such
 capture directories stage by stage.
 
 Staging comes from one of two sources:
@@ -25,7 +25,8 @@ Environment contract (all optional except RV_OUT):
   RV_RESULT    result log (default RV_OUT/result.txt); ends with DONE/ABORT
   RV_SCENE_NAME  scene id used in filenames (default "scene")
   RV_CAMERAS   comma list of named views (default "iso,front,top")
-  RV_MODES     comma list of RenderDebug_ViewMode ints (default "0,1,2,3,4")
+  RV_MODES     comma list of debug view modes, passed to saveRenderDump
+               (default "0,1,2,3,4"; 0 = the beauty frame)
   RV_GOLDEN    golden capture dir -> restage from its sidecars
   RV_VIEWER    "1" -> also capture the browser leg (source='viewer') per
                mode; waits up to RV_VIEWER_TIMEOUT s (default 120) for a
@@ -233,8 +234,39 @@ def wait_renderer():
     return poll
 
 
+# The determinism switch, and the group it lives in. It was a
+# Render_* view property until the debug and measurement switches were
+# retired to global RenderParams (see the note in
+# View3DInventorViewer::initRenderProperties): a saved copy inside a
+# document shadowed whatever a measurement harness set globally, which
+# is exactly what a harness must not allow. The bridge reads the
+# parameter alone -- there is no per-view override left to set.
+FREEZE_GROUP = "User parameter:BaseApp/Preferences/View/Render"
+FREEZE_PARAM = "DebugFreezeFrame"
+
+
 def freeze():
-    view().RenderDebug_FreezeFrame = True
+    """Freeze every time- and history-dependent render input.
+
+    Without this, temporal accumulation, per-frame sampling jitter and
+    time-driven animation all keep moving, and two runs of one scene
+    produce two different images -- so every golden diff shows noise
+    that is not a regression.
+
+    Read back and assert, rather than setting and hoping: this step
+    silently stopped working once already, when the property it used to
+    set was retired, and unfrozen captures look perfectly normal.
+    """
+    grp = FreeCAD.ParamGet(FREEZE_GROUP)
+    grp.SetBool(FREEZE_PARAM, True)
+    # The engine picks the change up through the parameter observer;
+    # pump once so it is in force before anything is captured.
+    view().redraw()
+    FreeCADGui.updateGui()
+    if not grp.GetBool(FREEZE_PARAM, False):
+        raise RuntimeError(
+            "%s/%s did not take -- captures would be nondeterministic"
+            % (FREEZE_GROUP, FREEZE_PARAM))
     note("freeze on")
 
 
