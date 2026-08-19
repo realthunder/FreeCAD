@@ -376,6 +376,29 @@ TEST(SceneDump, monolithicRoundTrip)
     expectScene(loaded);
 }
 
+/// The output colour transform crosses the wire (v60).
+///
+/// It has to: the desktop, the headless-serve backend and the browser
+/// viewer each finish their own frames, so a transform that stayed on
+/// the machine that chose it would leave the tiers rendering the same
+/// scene in two different colour spaces. A snapshot older than v60 has
+/// no field to read and must come back None -- unencoded is how those
+/// frames were written and how they have to keep being drawn.
+TEST(SceneDump, theOutputTransformCrossesTheWire)
+{
+    Render::SceneSnapshot snap = makeScene();
+    EXPECT_EQ(snap.outconf.transform, Render::OutputConfig::None)
+        << "a snapshot states no transform until one is selected";
+    snap.outconf.transform = Render::OutputConfig::SRGB;
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    EXPECT_EQ(loaded.outconf.transform, Render::OutputConfig::SRGB);
+}
+
 TEST(SceneDump, manifestRoundTrip)
 {
     BlobStore store;
