@@ -1303,6 +1303,203 @@ static void reportProxyExact(const Render::ProxyHierarchy &index,
 #endif
 }
 
+/// Whether the draws a stopped node leaves behind are geometry that
+/// MUST draw, or geometry nobody ever classified.
+///
+/// The two are invisible in the one bit that decides it.
+/// MeshData::attachedOnly is false BY DEFAULT and the gate reads false
+/// as "floating -- never suppress", so a set the producer never judged
+/// is indistinguishable from one it judged and found floating (the
+/// same trap docs/SceneStreaming.md 13b records for the load storm).
+/// At 64px on MiSTer three quarters of what the cut still draws is
+/// this population, so which of the two it is decides whether the
+/// residue is an irreducible floor or a producer that stopped short.
+///
+/// It is answerable without a new bit, because the element contract
+/// keys on the OBJECT and the object's own faces say what its edges
+/// are. A set whose object owns no faces ANYWHERE is floating by
+/// construction -- a sketch, a wire, a datum, and nothing else on
+/// screen would show it. A set whose faces are still drawn exactly is
+/// drawn correctly, because the dependency it waits on is still shown.
+/// Only a set whose own faces a proxy has ALREADY taken, and which the
+/// cut nevertheless draws, is one the contract would have gated had
+/// the producer classified it -- so that population, and only that
+/// one, is the suspect the question is about.
+static void reportProxyFloating(const Render::ProxyHierarchy &index,
+                                const Render::DrawCallList &draws,
+                                const Render::ProxyCut &cut,
+                                float tolerancePx)
+{
+    const auto &insts = index.instances();
+    // Faces ANYWHERE in the model, not merely under a proxy: "this
+    // object has no surface at all" is what makes a line set floating
+    // by construction, and that is a claim about the object rather
+    // than about the cut.
+    std::unordered_set<uint64_t> objectHasFaces, objectAnyDraw;
+    for (const auto &inst : insts) {
+        if (inst.objectKey)
+            objectAnyDraw.insert(inst.objectKey);
+        if (inst.mergeable && inst.objectKey)
+            objectHasFaces.insert(inst.objectKey);
+    }
+    // Whose faces a proxy actually took. Recomputed from the same rule
+    // rather than borrowed from the cut's counters, so a member the
+    // cut silently dropped still appears in the census.
+    std::unordered_set<uint64_t> proxiedObjects;
+    // And WHICH INSTANCES actually sit below one. The cut gates only
+    // inside a stopped subtree, so an object whose faces a proxy took
+    // may still own a set the descent reached by another route --
+    // and reading such a set as "the producer never classified it"
+    // would be reading this census's own approximation back as a
+    // finding.
+    std::unordered_set<uint32_t> underStopped;
+    std::vector<uint32_t> sub;
+    for (int ni : cut.proxyNodes) {
+        sub.clear();
+        index.subtreeInstances(ni, sub);
+        for (uint32_t idx : sub) {
+            const auto &inst = insts[idx];
+            underStopped.insert(idx);
+            if (inst.mergeable && inst.objectKey)
+                proxiedObjects.insert(inst.objectKey);
+        }
+    }
+
+    enum Who {
+        FaceExact,        ///< a triangle draw no proxy stopped over
+        Unkeyed,          ///< no objectKey: the contract cannot key on it
+        NoFacesAtAll,     ///< genuinely floating -- nothing else shows it
+        FacesStillExact,  ///< its dependency is drawn exactly, so it draws
+        WouldGate,        ///< faces already proxied, yet still drawn
+        WhoCount
+    };
+    struct Row {
+        uint32_t inst = 0;
+        uint64_t prims = 0;
+    };
+    Row who[WhoCount];
+    uint32_t kindLine = 0, kindPoint = 0, kindStandIn = 0, kindOther = 0;
+    uint32_t noMesh = 0;
+    // The bit itself, COUNTED rather than inferred. Everything above
+    // deduces "unclassified" from "the cut did not gate it", and that
+    // deduction is sound only for a set the cut could have gated.
+    uint32_t attTrue = 0, attFalse = 0, offStopped = 0;
+    std::unordered_set<uint64_t> suspectObjects, noFaceObjects;
+
+    for (uint32_t idx : cut.exact) {
+        if (idx >= insts.size())
+            continue;
+        const auto &inst = insts[idx];
+        Who w;
+        if (inst.mergeable)
+            w = FaceExact;
+        else if (!inst.objectKey)
+            w = Unkeyed;
+        else if (!objectHasFaces.count(inst.objectKey))
+            w = NoFacesAtAll;
+        else if (!proxiedObjects.count(inst.objectKey))
+            w = FacesStillExact;
+        else
+            w = WouldGate;
+        who[w].inst += 1;
+        who[w].prims += inst.primCount;
+        if (w == NoFacesAtAll)
+            noFaceObjects.insert(inst.objectKey);
+        if (w != WouldGate)
+            continue;
+        suspectObjects.insert(inst.objectKey);
+        (inst.attachedOnly ? attTrue : attFalse) += 1;
+        if (!underStopped.count(idx))
+            ++offStopped;
+        // What the suspect actually is. A stand-in box is not source
+        // geometry and was never the producer's to classify; a draw
+        // with no mesh could not have carried the bit at all. Both are
+        // separated out, or they would be read as producer omissions.
+        if (inst.drawIndex < draws.size()) {
+            const auto &d = draws[inst.drawIndex];
+            if (!d.mesh)
+                ++noMesh;
+            if (d.standIn)
+                ++kindStandIn;
+            else if (d.material.type == Render::Material::Line)
+                ++kindLine;
+            else if (d.material.type == Render::Material::Point)
+                ++kindPoint;
+            else
+                ++kindOther;
+        }
+    }
+
+    char buf[512];
+    const uint64_t unmerged = who[Unkeyed].prims + who[NoFacesAtAll].prims
+        + who[FacesStillExact].prims + who[WouldGate].prims;
+    const uint32_t unmergedInst = who[Unkeyed].inst + who[NoFacesAtAll].inst
+        + who[FacesStillExact].inst + who[WouldGate].inst;
+    const auto pct = [&](uint32_t v) {
+        return unmergedInst ? 100.0 * double(v) / double(unmergedInst) : 0.0;
+    };
+    snprintf(buf, sizeof(buf),
+             "render proxyfloat %gpx: exact %u inst / %llu prims = faces %u / "
+             "%llu + unmergeable %u / %llu | of the unmergeable: unkeyed %u "
+             "(%.0f%%) | no faces at all %u (%.0f%%) | faces still exact %u "
+             "(%.0f%%) | WOULD GATE %u (%.0f%%)\n",
+             double(tolerancePx), unmergedInst + who[FaceExact].inst,
+             (unsigned long long)(unmerged + who[FaceExact].prims),
+             who[FaceExact].inst, (unsigned long long)who[FaceExact].prims,
+             unmergedInst, (unsigned long long)unmerged,
+             who[Unkeyed].inst, pct(who[Unkeyed].inst),
+             who[NoFacesAtAll].inst, pct(who[NoFacesAtAll].inst),
+             who[FacesStillExact].inst, pct(who[FacesStillExact].inst),
+             who[WouldGate].inst, pct(who[WouldGate].inst));
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+
+    snprintf(buf, sizeof(buf),
+             "render proxyfloat %gpx would-gate detail: %u inst / %llu prims "
+             "(%.1f prims/draw) over %zu object(s) -- lines %u, points %u, "
+             "standin %u, other %u, no mesh %u | attached bit: true %u, "
+             "false %u | NOT below a stopped node: %u\n",
+             double(tolerancePx), who[WouldGate].inst,
+             (unsigned long long)who[WouldGate].prims,
+             who[WouldGate].inst
+                 ? double(who[WouldGate].prims) / double(who[WouldGate].inst)
+                 : 0.0,
+             suspectObjects.size(), kindLine, kindPoint, kindStandIn,
+             kindOther, noMesh, attTrue, attFalse, offStopped);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+
+    // The reading above rests entirely on the object key PAIRING a
+    // line draw with its own faces, and there are two ways that could
+    // be false rather than informative: the instanced path builds the
+    // face group and the edge group as separate SoFCSelectionRoots,
+    // and a merged draw-call entry is given a SYNTHETIC key
+    // (0x80000000 | cacheId) that belongs to no object at all. Either
+    // would make "this object owns no faces" mean "the key did not
+    // match", and the whole census would be measuring its own
+    // plumbing. So the model-wide pairing is reported beside it: if
+    // face-less keys are a handful of real wires the two counts stay
+    // far apart, and if the pairing is broken they converge.
+    snprintf(buf, sizeof(buf),
+             "render proxyfloat %gpx pairing: %zu distinct object key(s) in "
+             "the model, %zu own faces, %zu own none -- the cut's 'no faces "
+             "at all' is %u inst over %zu key(s)\n",
+             double(tolerancePx), objectAnyDraw.size(), objectHasFaces.size(),
+             objectAnyDraw.size() - objectHasFaces.size(),
+             who[NoFacesAtAll].inst, noFaceObjects.size());
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+}
+
 /// What a cut costs once the proxies it stops on are real: the same
 /// frontier chosen by a node's measured error instead of by its extent,
 /// and priced by what the proxies draw rather than only by what they
@@ -1384,6 +1581,10 @@ static void reportProxyCutPriced(const Render::ProxyHierarchy &index,
         // where the ceiling above is, and what phase 3 has to move.
         reportProxyExact(index, store, byError, V, P, viewportHeightPx, tol,
                          costs);
+        // And what those exact draws ARE: the residue is three
+        // quarters of the cut's draws at 64px, and it matters whether
+        // it must draw or merely was never judged.
+        reportProxyFloating(index, draws, byError, tol);
     }
 }
 
