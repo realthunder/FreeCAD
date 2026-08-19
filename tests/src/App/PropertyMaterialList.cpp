@@ -20,6 +20,7 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -80,6 +81,20 @@ App::SurfaceFinish brushedFinish()
     finish.depth = 0.002F;
     finish.angle = 30.0F;
     return finish;
+}
+
+/// Content hashes, not paths: the slots name blobs the manager owns
+App::SurfaceTexture oakTexture()
+{
+    App::SurfaceTexture texture;
+    texture.maps[App::SurfaceTexture::BaseColor] = "0123456789abcdef";
+    texture.maps[App::SurfaceTexture::Normal] = "fedcba9876543210";
+    // Short decimals, so they survive the doc file's 6-digit text form
+    texture.scale[0] = 2.0F;
+    texture.scale[1] = 0.5F;
+    texture.offset[0] = 0.25F;
+    texture.rotation = 90.0F;
+    return texture;
 }
 
 App::Material fullyPaintedMaterial()
@@ -1288,6 +1303,105 @@ TEST_F(PropertyMaterialListTest, aFinishRidesAWholeMaterialBothWays)
     App::Material kept = mat;
     kept.setType(App::Material::USER_DEFINED);
     EXPECT_EQ(kept.finish, knurlFinish());
+}
+
+TEST_F(PropertyMaterialListTest, aTextureIsUnsetUntilASlotIsFilled)
+{
+    App::SurfaceTexture texture;
+    EXPECT_FALSE(texture.isSet());
+
+    // A transform with nothing to transform states nothing, so it is not
+    // a set record and normalize takes the numbers back out
+    texture.scale[0] = 4.0F;
+    texture.offset[1] = 0.75F;
+    texture.rotation = 45.0F;
+    EXPECT_FALSE(texture.isSet());
+    texture.normalize();
+    EXPECT_EQ(texture, App::SurfaceTexture());
+
+    // Any one slot is enough, and then the transform means something
+    texture.maps[App::SurfaceTexture::Occlusion] = "abc";
+    texture.rotation = 45.0F;
+    EXPECT_TRUE(texture.isSet());
+    texture.normalize();
+    EXPECT_FLOAT_EQ(texture.rotation, 45.0F);
+}
+
+TEST_F(PropertyMaterialListTest, aTextureTransformIsClampedOnTheWayIn)
+{
+    App::SurfaceTexture texture;
+    texture.maps[App::SurfaceTexture::BaseColor] = "abc";
+    texture.scale[0] = std::numeric_limits<float>::quiet_NaN();
+    texture.scale[1] = std::numeric_limits<float>::infinity();
+    texture.offset[0] = std::numeric_limits<float>::quiet_NaN();
+    texture.rotation = 400.0F;   // a texture rotation is a direction
+    texture.normalize();
+
+    EXPECT_FLOAT_EQ(texture.scale[0], 1.0F);
+    EXPECT_FLOAT_EQ(texture.scale[1], 1.0F);
+    EXPECT_FLOAT_EQ(texture.offset[0], 0.0F);
+    EXPECT_FLOAT_EQ(texture.rotation, 40.0F);
+
+    // ... so the full turn, unlike the finish lay's half
+    texture.rotation = -30.0F;
+    texture.normalize();
+    EXPECT_FLOAT_EQ(texture.rotation, 330.0F);
+}
+
+TEST_F(PropertyMaterialListTest, everyTextureSlotRoundTripsThroughItsName)
+{
+    for (uint8_t slot = 0; slot < App::SurfaceTexture::SlotCount; ++slot) {
+        const char* name = App::SurfaceTexture::slotName(slot);
+        EXPECT_STRNE(name, "") << int(slot);
+        EXPECT_EQ(App::SurfaceTexture::slotFromName(name), slot) << name;
+    }
+    // A slot this build does not know is skipped, not named wrongly
+    EXPECT_STREQ(App::SurfaceTexture::slotName(App::SurfaceTexture::SlotCount), "");
+    EXPECT_EQ(App::SurfaceTexture::slotFromName("clearcoat"),
+              App::SurfaceTexture::SlotCount);
+    EXPECT_EQ(App::SurfaceTexture::slotFromName(""), App::SurfaceTexture::SlotCount);
+    EXPECT_EQ(App::SurfaceTexture::slotFromName(nullptr), App::SurfaceTexture::SlotCount);
+}
+
+TEST_F(PropertyMaterialListTest, aTextureRidesAWholeMaterialBothWays)
+{
+    App::Material mat = redMaterial();
+    mat.texture = oakTexture();
+
+    App::Material plain = redMaterial();
+    EXPECT_NE(mat, plain);   // equality includes the texture
+
+    // Two slots naming the same content are the same statement
+    App::Material same = redMaterial();
+    same.texture = oakTexture();
+    EXPECT_EQ(mat, same);
+
+    // a preset states the whole material, and none of them states a texture
+    App::Material preset = mat;
+    preset.setType(App::Material::STEEL);
+    EXPECT_FALSE(preset.texture.isSet());
+    // ... but USER_DEFINED states nothing, here as for the finish
+    App::Material kept = mat;
+    kept.setType(App::Material::USER_DEFINED);
+    EXPECT_EQ(kept.texture, oakTexture());
+}
+
+TEST_F(PropertyMaterialListTest, aTextureSurvivesTheModeConversions)
+{
+    // Which image is pasted on a surface is not a reading of the shading
+    // slots, so nothing about the mode may touch it
+    App::Material mat = redMaterial();
+    mat.texture = oakTexture();
+
+    EXPECT_EQ(App::Material::phongToPbr(mat).texture, oakTexture());
+    EXPECT_EQ(App::Material::pbrToPhong(App::Material::phongToPbr(mat)).texture,
+              oakTexture());
+
+    App::Material converted = mat;
+    converted.setPBR(true);
+    EXPECT_EQ(converted.texture, oakTexture());
+    converted.setPBR(false);
+    EXPECT_EQ(converted.texture, oakTexture());
 }
 
 TEST_F(PropertyMaterialListTest, aFinishSurvivesTheModeConversions)
