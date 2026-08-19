@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -1384,6 +1385,156 @@ TEST_F(PropertyMaterialListTest, aTextureRidesAWholeMaterialBothWays)
     App::Material kept = mat;
     kept.setType(App::Material::USER_DEFINED);
     EXPECT_EQ(kept.texture, oakTexture());
+}
+
+TEST_F(PropertyMaterialListTest, aTextureFieldCostsNothingUntilSomethingStatesOne)
+{
+    App::PropertyMaterialList prop;
+    prop.setSize(5);
+    EXPECT_FALSE(prop.hasTexture());
+    EXPECT_EQ(prop.getTexturePalette().size(), 0U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+    EXPECT_FALSE(prop.getTexture(3).isSet());
+
+    // Uniform: one record, and still no index
+    prop.setTexture(oakTexture());
+    EXPECT_TRUE(prop.hasTexture());
+    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+    for (int i = 0; i < 5; ++i)
+        EXPECT_EQ(prop.getTexture(i), oakTexture()) << i;
+
+    // Back to the default everywhere, and the storage goes with it
+    prop.setTexture(App::SurfaceTexture());
+    EXPECT_FALSE(prop.hasTexture());
+    EXPECT_EQ(prop.getTexturePalette().size(), 0U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+}
+
+TEST_F(PropertyMaterialListTest, oneOddEntryCostsTwoBytesNotARecordPerEntry)
+{
+    // The whole point of the palette: an odd face among many must not
+    // materialise a record for every other face
+    App::PropertyMaterialList prop;
+    prop.setSize(1000);
+    prop.setTexture(oakTexture());
+
+    App::SurfaceTexture odd;
+    odd.maps[App::SurfaceTexture::Emissive] = "odd-one-out";
+    prop.setTexture(700, odd);
+
+    EXPECT_EQ(prop.getTexturePalette().size(), 2U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 1000U);
+    EXPECT_EQ(prop.getTexture(699), oakTexture());
+    EXPECT_EQ(prop.getTexture(700), odd);
+    EXPECT_EQ(prop.getTexture(701), oakTexture());
+
+    // ... and putting it back collapses the whole thing again
+    prop.setTexture(700, oakTexture());
+    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+    EXPECT_EQ(prop.getTexture(700), oakTexture());
+}
+
+TEST_F(PropertyMaterialListTest, aTexturePaletteHoldsOnlyWhatIsDistinct)
+{
+    App::SurfaceTexture a;
+    a.maps[App::SurfaceTexture::BaseColor] = "aaa";
+    App::SurfaceTexture b;
+    b.maps[App::SurfaceTexture::BaseColor] = "bbb";
+
+    App::PropertyMaterialList prop;
+    // Six entries, three distinct values, one of them the default
+    prop.setTextures({a, b, a, App::SurfaceTexture(), b, a});
+    EXPECT_EQ(prop.getSize(), 6);
+    EXPECT_EQ(prop.getTexturePalette().size(), 3U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 6U);
+    // First-use order, which is what makes the stored form canonical
+    EXPECT_EQ(prop.getTexturePalette()[0], a);
+    EXPECT_EQ(prop.getTexturePalette()[1], b);
+    EXPECT_FALSE(prop.getTexturePalette()[2].isSet());
+    const std::vector<uint16_t> expected {0, 1, 0, 2, 1, 0};
+    EXPECT_EQ(prop.getTextureIndex(), expected);
+
+    // A run that is all one value is the uniform form, index and all
+    prop.setTextures({b, b, b, b, b, b});
+    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+    EXPECT_EQ(prop.getTexture(4), b);
+}
+
+TEST_F(PropertyMaterialListTest, aTextureRidesTheWholeMaterialThroughTheList)
+{
+    App::Material textured = redMaterial();
+    textured.texture = oakTexture();
+
+    App::PropertyMaterialList prop;
+    prop.setValues({textured, redMaterial(), textured});
+    EXPECT_EQ(prop.getTexture(0), oakTexture());
+    EXPECT_FALSE(prop.getTexture(1).isSet());
+    EXPECT_EQ(prop.getMaterial(2).texture, oakTexture());
+    // Two entries share one palette slot; the default is the third
+    EXPECT_EQ(prop.getTexturePalette().size(), 2U);
+
+    // set1Value reads back through the same storage
+    prop.set1Value(1, textured);
+    EXPECT_EQ(prop.getTexture(1), oakTexture());
+    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+}
+
+TEST_F(PropertyMaterialListTest, aTexturePaletteFollowsTheEntryCount)
+{
+    App::SurfaceTexture a;
+    a.maps[App::SurfaceTexture::Normal] = "aaa";
+
+    App::PropertyMaterialList prop;
+    prop.setSize(3);
+    prop.setTexture(1, a);
+    EXPECT_EQ(prop.getTextureIndex().size(), 3U);
+
+    // Growth extends with the filler, and the index grows with it
+    prop.setSize(6);
+    EXPECT_EQ(prop.getTextureIndex().size(), 6U);
+    EXPECT_EQ(prop.getTexture(1), a);
+    EXPECT_FALSE(prop.getTexture(5).isSet());
+
+    // Shrinking past the odd entry leaves nothing varying, so the whole
+    // field collapses away rather than keeping a dead palette slot
+    prop.setSize(1);
+    EXPECT_FALSE(prop.hasTexture());
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+}
+
+TEST_F(PropertyMaterialListTest, aTextureFieldIsPartOfTheListsIdentity)
+{
+    App::SurfaceTexture a;
+    a.maps[App::SurfaceTexture::Occlusion] = "aaa";
+
+    App::PropertyMaterialList one;
+    one.setSize(4);
+    one.setTexture(2, a);
+
+    App::PropertyMaterialList two;
+    two.setSize(4);
+    EXPECT_FALSE(one.isSame(two));
+
+    two.setTexture(2, a);
+    EXPECT_TRUE(one.isSame(two));
+
+    // ... and Copy/Paste carry it
+    std::unique_ptr<App::Property> copy(one.Copy());
+    App::PropertyMaterialList three;
+    three.Paste(*copy);
+    EXPECT_TRUE(three.isSame(one));
+    EXPECT_EQ(three.getTexture(2), a);
+
+    // A field that varies is something a plain colour list cannot say
+    EXPECT_FALSE(one.variesOnlyInDiffuse());
+    App::PropertyMaterialList uniform;
+    uniform.setSize(4);
+    uniform.setTexture(a);
+    EXPECT_TRUE(uniform.variesOnlyInDiffuse());
 }
 
 TEST_F(PropertyMaterialListTest, aTextureSurvivesTheModeConversions)

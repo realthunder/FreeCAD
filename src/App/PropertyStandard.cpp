@@ -2634,6 +2634,16 @@ SurfaceFinish storedFinish(const SurfaceFinish &finish)
     return stored;
 }
 
+/// The texture a whole material stores, clamped for the same reason -- and
+/// so that two records differing only in a transform nobody stated land in
+/// one palette slot rather than two
+SurfaceTexture storedTexture(const SurfaceTexture &texture)
+{
+    SurfaceTexture stored = texture;
+    stored.normalize();
+    return stored;
+}
+
 } // namespace
 
 void PropertyColor::Save (Base::Writer &writer) const
@@ -3034,6 +3044,17 @@ std::size_t stringsMemSize(const std::vector<std::string> &field)
     return size;
 }
 
+/// A palette's own bytes plus the hashes its records hold
+std::size_t texturesMemSize(const std::vector<SurfaceTexture> &palette)
+{
+    std::size_t size = palette.size() * sizeof(SurfaceTexture);
+    for (const auto &texture : palette) {
+        for (const auto &hash : texture.maps)
+            size += hash.size();
+    }
+    return size;
+}
+
 /// Resolve one entry of a field that may be 0, 1 or count long
 template<class T>
 inline const T &fieldAt(const std::vector<T> &values, int idx, const T &def)
@@ -3115,6 +3136,145 @@ bool setFieldAt(std::vector<T> &values, int idx, int count, const T &value, cons
     return true;
 }
 
+//--------------------------------------------------------------------------
+// The palette+index field
+//
+// The same five operations the dense helpers above provide, over a pair of
+// vectors instead of one. The invariant every one of them restores: an
+// empty index means the palette holds 0 or 1 entries, and a non-empty one
+// is exactly count long with every value addressing the palette.
+//--------------------------------------------------------------------------
+
+/// More distinct values than the index can address. Unreachable in
+/// practice -- the point of a palette is that the cardinality is low --
+/// but a silent wrap would hand back the wrong texture forever.
+constexpr std::size_t maxPaletteSize = 0x10000;
+
+/// Resolve one entry of a palette+index field
+const SurfaceTexture &paletteAt(const std::vector<SurfaceTexture> &palette,
+                                const std::vector<uint16_t> &index,
+                                int idx, const SurfaceTexture &def)
+{
+    if (palette.empty())
+        return def;
+    if (index.empty())
+        return palette.front();
+    if (idx < 0 || idx >= static_cast<int>(index.size()))
+        return def;
+    const std::size_t slot = index[idx];
+    return slot < palette.size() ? palette[slot] : def;
+}
+
+/// The slot holding \a value, appending it if the palette does not have it
+uint16_t paletteSlot(std::vector<SurfaceTexture> &palette, const SurfaceTexture &value)
+{
+    for (std::size_t i = 0; i < palette.size(); ++i) {
+        if (palette[i] == value)
+            return static_cast<uint16_t>(i);
+    }
+    if (palette.size() >= maxPaletteSize)
+        throw Base::ValueError("too many distinct textures");
+    palette.push_back(value);
+    return static_cast<uint16_t>(palette.size() - 1);
+}
+
+/// Materialise the index so one entry can differ from the others
+void expandPalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
+                   int count, const SurfaceTexture &def)
+{
+    if (static_cast<int>(index.size()) == count && !palette.empty())
+        return;
+    // by value: the current uniform value can be palette.front(), and the
+    // assign below reallocates the buffer it lives in
+    const SurfaceTexture current = palette.empty() ? def : palette.front();
+    std::vector<SurfaceTexture>(1, current).swap(palette);
+    index.assign(count, 0);
+}
+
+/// Rebuild a palette+index field into the smallest of its three forms
+void collapsePalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
+                     int count, const SurfaceTexture &def)
+{
+    if (palette.empty() || count == 0) {
+        // swap rather than clear: a palette read from a large document
+        // should give the memory back, not merely stop counting it
+        std::vector<SurfaceTexture>().swap(palette);
+        std::vector<uint16_t>().swap(index);
+        return;
+    }
+    if (!index.empty()) {
+        // Renumber into first-use order, which drops both the slots
+        // nothing points at any more and any duplicate a caller wrote
+        std::vector<SurfaceTexture> used;
+        std::vector<uint16_t> renumbered;
+        renumbered.reserve(index.size());
+        for (uint16_t slot : index) {
+            renumbered.push_back(paletteSlot(
+                used, slot < palette.size() ? palette[slot] : def));
+        }
+        used.swap(palette);
+        renumbered.swap(index);
+        if (palette.size() > 1)
+            return;   // genuinely varies: the index earns its two bytes
+        std::vector<uint16_t>().swap(index);
+    }
+    // Uniform, so the index is gone and one record says it all -- unless
+    // that record is the default, which an empty palette already says
+    if (palette.front() == def)
+        std::vector<SurfaceTexture>().swap(palette);
+    else if (palette.size() > 1)
+        std::vector<SurfaceTexture>(1, palette.front()).swap(palette);
+}
+
+/// Follow a change of entry count, without materialising a uniform field
+void resizePalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
+                   int oldCount, int newCount, const SurfaceTexture &fill,
+                   const SurfaceTexture &def)
+{
+    if (newCount < oldCount) {
+        if (newCount == 0) {
+            std::vector<SurfaceTexture>().swap(palette);
+            std::vector<uint16_t>().swap(index);
+        }
+        else if (static_cast<int>(index.size()) > newCount) {
+            index.resize(newCount);   // collapse prunes the palette after
+        }
+        return;
+    }
+    if (newCount == oldCount)
+        return;
+    const SurfaceTexture current = palette.empty() ? def : palette.front();
+    if (index.empty() && current == fill)
+        return;
+    if (index.empty())
+        expandPalette(palette, index, oldCount, def);
+    index.resize(newCount, paletteSlot(palette, fill));
+}
+
+/// Write one entry, materialising the index only if the value is new
+bool setPaletteAt(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
+                  int idx, int count, const SurfaceTexture &value,
+                  const SurfaceTexture &def)
+{
+    if (paletteAt(palette, index, idx, def) == value)
+        return false;
+    expandPalette(palette, index, count, def);
+    index[idx] = paletteSlot(palette, value);
+    return true;
+}
+
+/// Lay a whole run in, building the palette from what is distinct in it
+void assignPalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
+                   const std::vector<SurfaceTexture> &values, const SurfaceTexture &def)
+{
+    std::vector<SurfaceTexture>().swap(palette);
+    std::vector<uint16_t>().swap(index);
+    index.reserve(values.size());
+    for (const auto &value : values)
+        index.push_back(paletteSlot(palette, value));
+    collapsePalette(palette, index, static_cast<int>(values.size()), def);
+}
+
 } // namespace
 
 //**************************************************************************
@@ -3152,6 +3312,8 @@ void PropertyMaterialList::normalize()
         std::vector<std::string>().swap(_uuid);
         std::vector<int8_t>().swap(_type);
         std::vector<SurfaceFinish>().swap(_finish);
+        std::vector<SurfaceTexture>().swap(_texturePalette);
+        std::vector<uint16_t>().swap(_textureIndex);
     }
     else {
         collapseField(_ambient, def.ambientColor);
@@ -3164,6 +3326,7 @@ void PropertyMaterialList::normalize()
         collapseField(_uuid, def.uuid);
         collapseField(_type, static_cast<int8_t>(def.getType()));
         collapseField(_finish, def.finish);
+        collapsePalette(_texturePalette, _textureIndex, _count, def.texture);
     }
     _normalized = true;
 }
@@ -3189,7 +3352,10 @@ bool PropertyMaterialList::variesOnlyInDiffuse() const
     return _ambient.size() <= 1 && _specular.size() <= 1 && _emissive.size() <= 1
         && _shininess.size() <= 1 && _type.size() <= 1
         && _image.size() <= 1 && _imagePath.size() <= 1 && _uuid.size() <= 1
-        && _finish.size() <= 1;
+        && _finish.size() <= 1
+        // Normalised, so an index exists only while the palette genuinely
+        // varies -- the uniform and all-default forms have none
+        && _textureIndex.empty();
 }
 
 //**************************************************************************
@@ -3371,10 +3537,12 @@ void PropertyMaterialList::restoreValues(std::vector<Material> &&values, bool le
     std::vector<std::string>().swap(_imagePath);
     std::vector<std::string>().swap(_uuid);
     std::vector<int8_t>().swap(_type);
-    // No _finish here: none of the encodings that come through this
-    // function can carry one, so every entry reads as unfinished -- which
-    // an empty field already says, at no cost.
+    // No _finish or texture here: none of the encodings that come through
+    // this function can carry either, so every entry reads as unfinished
+    // and untextured -- which the empty fields already say, at no cost.
     std::vector<SurfaceFinish>().swap(_finish);
+    std::vector<SurfaceTexture>().swap(_texturePalette);
+    std::vector<uint16_t>().swap(_textureIndex);
     if (_count) {
         _ambient.reserve(_count);
         _diffuse.reserve(_count);
@@ -3478,6 +3646,8 @@ void PropertyMaterialList::setSize(int newSize, const Material &fill)
     resizeField(_type, _count, newSize, static_cast<int8_t>(def.getType()),
                 static_cast<int8_t>(zero.getType()));
     resizeField(_finish, _count, newSize, storedFinish(def.finish), zero.finish);
+    resizePalette(_texturePalette, _textureIndex, _count, newSize,
+                  storedTexture(def.texture), zero.texture);
     _count = newSize;
     clearTouchList();
     guard.tryInvoke();
@@ -3508,6 +3678,7 @@ Material PropertyMaterialList::getMaterial(int idx) const
     mat.imagePath = fieldAt(_imagePath, idx, def.imagePath);
     mat.uuid = fieldAt(_uuid, idx, def.uuid);
     mat.finish = fieldAt(_finish, idx, def.finish);
+    mat.texture = paletteAt(_texturePalette, _textureIndex, idx, def.texture);
     // Stamp the list's mode on the value, so whoever holds it still knows
     // which reading its slots are in
     mat.pbr = _pbr;
@@ -3546,6 +3717,9 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
     std::vector<std::string>().swap(_uuid);
     std::vector<int8_t>().swap(_type);
     std::vector<SurfaceFinish>().swap(_finish);
+    std::vector<SurfaceTexture> textures;
+    std::vector<SurfaceTexture>().swap(_texturePalette);
+    std::vector<uint16_t>().swap(_textureIndex);
     if (_count) {
         _ambient.reserve(_count);
         _diffuse.reserve(_count);
@@ -3557,6 +3731,7 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
         _uuid.reserve(_count);
         _type.reserve(_count);
         _finish.reserve(_count);
+        textures.reserve(_count);
         for (const auto &value : values) {
             const Material mat = inMode(value);
             _ambient.push_back(mat.ambientColor);
@@ -3569,7 +3744,12 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
             _uuid.push_back(mat.uuid);
             _type.push_back(static_cast<int8_t>(mat.getType()));
             _finish.push_back(storedFinish(mat.finish));
+            textures.push_back(storedTexture(mat.texture));
         }
+        // Dense in, palette out: assignPalette collapses too, so the
+        // normalize() below finds this field already in its normal form
+        assignPalette(_texturePalette, _textureIndex, textures,
+                      defaultMaterial().texture);
         normalize();
     }
     else {
@@ -3609,6 +3789,8 @@ void PropertyMaterialList::set1Value(int idx, const Material &value)
         setFieldAt(_type, idx, _count, static_cast<int8_t>(mat.getType()),
                    static_cast<int8_t>(def.getType()));
         setFieldAt(_finish, idx, _count, storedFinish(mat.finish), def.finish);
+        setPaletteAt(_texturePalette, _textureIndex, idx, _count,
+                     storedTexture(mat.texture), def.texture);
     }
     _touchList.insert(idx);
     guard.tryInvoke();
@@ -3666,6 +3848,11 @@ const std::string &PropertyMaterialList::getUuid(int idx) const
 SurfaceFinish PropertyMaterialList::getFinish(int idx) const
 {
     return fieldAt(_finish, idx, defaultMaterial().finish);
+}
+
+SurfaceTexture PropertyMaterialList::getTexture(int idx) const
+{
+    return paletteAt(_texturePalette, _textureIndex, idx, defaultMaterial().texture);
 }
 
 Material::MaterialType PropertyMaterialList::getType(int idx) const
@@ -3783,6 +3970,42 @@ void PropertyMaterialList::setFinishes(const std::vector<SurfaceFinish> &values)
     setField(_finish, clamped, defaultMaterial().finish);
 }
 
+void PropertyMaterialList::setTextures(const std::vector<SurfaceTexture> &values)
+{
+    const SurfaceTexture &def = defaultMaterial().texture;
+    std::vector<SurfaceTexture> clamped;
+    clamped.reserve(values.size());
+    for (const auto &value : values)
+        clamped.push_back(storedTexture(value));
+
+    std::vector<SurfaceTexture> palette;
+    std::vector<uint16_t> index;
+    assignPalette(palette, index, clamped, def);
+    // assignPalette produces the canonical form -- first-use order, and
+    // the smallest of the three shapes -- so comparing the pair is
+    // comparing what the field means, not how it happens to be stored
+    ensureNormalized();
+    if (static_cast<int>(clamped.size()) == _count
+        && palette == _texturePalette && index == _textureIndex)
+        return;
+
+    atomic_change guard(*this);
+    const int newCount = static_cast<int>(values.size());
+    if (newCount != _count && (newCount > 1 || _count == 0)) {
+        // The same growth rule setField documents: extend the LAST entry's
+        // material, because the caller is stating one field and saying
+        // nothing about the others
+        if (_count)
+            setSize(newCount, getMaterial(_count - 1));
+        else
+            setSize(newCount);
+    }
+    touchFields();
+    palette.swap(_texturePalette);
+    index.swap(_textureIndex);
+    guard.tryInvoke();
+}
+
 /// Write one entry of one field, growing the list if it names a new entry
 template<class T>
 void PropertyMaterialList::setFieldValue(std::vector<T> &field, int idx, const T &value,
@@ -3860,6 +4083,31 @@ void PropertyMaterialList::setUuid(int idx, const std::string &value)
 void PropertyMaterialList::setFinish(int idx, const SurfaceFinish &value)
 {
     setFieldValue(_finish, idx, storedFinish(value), defaultMaterial().finish);
+}
+
+void PropertyMaterialList::setTexture(int idx, const SurfaceTexture &value)
+{
+    // setFieldValue's body, over the pair: the palette is not a field the
+    // template can take a reference to
+    if (idx < 0 || idx > _count)
+        throw Base::RuntimeError("index out of bound");
+    const SurfaceTexture stored = storedTexture(value);
+    const SurfaceTexture &def = defaultMaterial().texture;
+    atomic_change guard(*this, false);
+    if (idx == _count) {
+        guard.aboutToChange();
+        setSize(_count + 1);
+    }
+    else if (paletteAt(_texturePalette, _textureIndex, idx, def) == stored) {
+        return;
+    }
+    else {
+        guard.aboutToChange();
+    }
+    touchFields();
+    setPaletteAt(_texturePalette, _textureIndex, idx, _count, stored, def);
+    _touchList.insert(idx);
+    guard.tryInvoke();
 }
 
 /// Give every entry the same value for one field, and none of it to storage
@@ -4002,6 +4250,29 @@ void PropertyMaterialList::setFinish(const SurfaceFinish &value)
     setUniformField(_finish, storedFinish(value), defaultMaterial().finish);
 }
 
+void PropertyMaterialList::setTexture(const SurfaceTexture &value)
+{
+    // setUniformField's body, over the pair. Uniform is the form with no
+    // index at all, so this drops one wherever it found one.
+    const SurfaceTexture stored = storedTexture(value);
+    const SurfaceTexture &def = defaultMaterial().texture;
+    if (_texturePalette.empty() && stored == def)
+        return;  // already the default everywhere, including on an empty list
+    if (_count && _textureIndex.empty() && _texturePalette.size() == 1
+        && _texturePalette.front() == stored)
+        return;
+    atomic_change guard(*this);
+    touchFields();
+    if (_count == 0)
+        setSize(1);
+    std::vector<uint16_t>().swap(_textureIndex);
+    if (stored == def)
+        std::vector<SurfaceTexture>().swap(_texturePalette);
+    else
+        std::vector<SurfaceTexture>(1, stored).swap(_texturePalette);
+    guard.tryInvoke();
+}
+
 PyObject *PropertyMaterialList::getPyObject()
 {
     Py::Tuple tuple(getSize());
@@ -4064,6 +4335,8 @@ unsigned int PropertyMaterialList::getMemSize() const
             + _shininess.size() * sizeof(float)
             + _type.size() * sizeof(int8_t)
             + _finish.size() * sizeof(SurfaceFinish)
+            + texturesMemSize(_texturePalette)
+            + _textureIndex.size() * sizeof(uint16_t)
             + stringsMemSize(_image) + stringsMemSize(_imagePath)
             + stringsMemSize(_uuid));
 }
@@ -4902,7 +5175,11 @@ bool PropertyMaterialList::isSame(const Property &other) const
         && _imagePath == list->_imagePath
         && _uuid == list->_uuid
         && _type == list->_type
-        && _finish == list->_finish;
+        && _finish == list->_finish
+        // Normalised on both sides, and the normal form is canonical
+        // (first-use order), so the pair compares as the values do
+        && _texturePalette == list->_texturePalette
+        && _textureIndex == list->_textureIndex;
 }
 
 Property *PropertyMaterialList::Copy() const
@@ -4921,6 +5198,8 @@ Property *PropertyMaterialList::Copy() const
     p->_uuid = _uuid;
     p->_type = _type;
     p->_finish = _finish;
+    p->_texturePalette = _texturePalette;
+    p->_textureIndex = _textureIndex;
     return p;
 }
 
@@ -4943,6 +5222,8 @@ void PropertyMaterialList::Paste(const Property &from)
     _uuid = other._uuid;
     _type = other._type;
     _finish = other._finish;
+    _texturePalette = other._texturePalette;
+    _textureIndex = other._textureIndex;
     _normalized = true;
     guard.tryInvoke();
 }

@@ -1241,6 +1241,29 @@ public:
     const std::vector<SurfaceFinish> &getFinishes() const
     { ensureNormalized(); return _finish; }
 
+    /** @name The texture field's storage: distinct values plus an index
+     *
+     * The one field that is NOT a 0/1/count array. A texture record is
+     * large and its cardinality is low -- glTF gives a mesh a handful of
+     * materials, however many faces it has -- so one odd face must not
+     * materialise a record per face. Three forms, and the first two are
+     * the same degenerate cases the dense fields have:
+     *
+     *  - empty palette (and empty index): every entry is unset
+     *  - one palette entry, empty index: uniform
+     *  - N palette entries, index getSize() long: per entry, two bytes each
+     *
+     * Handed out as the pair rather than flattened because that IS what
+     * the render side wants: updateRenderMaterial builds exactly this
+     * palette from the dense finish array on every update.
+     */
+    //@{
+    const std::vector<SurfaceTexture> &getTexturePalette() const
+    { ensureNormalized(); return _texturePalette; }
+    const std::vector<uint16_t> &getTextureIndex() const
+    { ensureNormalized(); return _textureIndex; }
+    //@}
+
     Color getAmbientColor(int idx) const;
     Color getDiffuseColor(int idx) const;
     Color getSpecularColor(int idx) const;
@@ -1251,6 +1274,9 @@ public:
     const std::string &getImagePath(int idx) const;
     const std::string &getUuid(int idx) const;
     SurfaceFinish getFinish(int idx) const;
+    /// By value, because the storage holds distinct records rather than
+    /// one per entry: there is no array element to hand a reference into
+    SurfaceTexture getTexture(int idx) const;
     Material::MaterialType getType(int idx) const;
 
     /** The first entry's field, which is upstream's no-argument spelling
@@ -1281,6 +1307,9 @@ public:
     /// The records clamp on the way in (SurfaceFinish::normalize), so what
     /// is stored is always something a consumer can draw
     void setFinishes(const std::vector<SurfaceFinish> &values);
+    /// One record per entry going in; the palette is built from what is
+    /// distinct among them. Clamps the same way the finishes do.
+    void setTextures(const std::vector<SurfaceTexture> &values);
 
     /// Set one field of one entry, expanding that field alone if it has to
     void setAmbientColor(int idx, const Color &col);
@@ -1293,6 +1322,7 @@ public:
     void setImagePath(int idx, const std::string &value);
     void setUuid(int idx, const std::string &value);
     void setFinish(int idx, const SurfaceFinish &value);
+    void setTexture(int idx, const SurfaceTexture &value);
 
     /// Set one field for every entry, leaving the others alone
     void setAmbientColor(const Color &col);
@@ -1315,6 +1345,7 @@ public:
     void setImagePath(const std::string &value);
     void setUuid(const std::string &value);
     void setFinish(const SurfaceFinish &value);
+    void setTexture(const SurfaceTexture &value);
     //@}
 
     /** Upstream's loose-float and packed-rgba spellings of the four colour
@@ -1365,6 +1396,10 @@ public:
     /// finish written and then cleared answers false rather than "there is
     /// still an array there"
     bool hasFinish() const { ensureNormalized(); return !_finish.empty(); }
+    /// Whether any entry names a texture map. Normalised, so an empty
+    /// palette is the whole answer: a palette entry survives collapse only
+    /// while some entry still resolves to it.
+    bool hasTexture() const { ensureNormalized(); return !_texturePalette.empty(); }
 
     /** @name PBR mode
      *
@@ -1610,6 +1645,25 @@ private:
     std::vector<SurfaceFinish> _finish;
     /// Restored from the companion element, waiting for the materials to land
     std::vector<SurfaceFinish> _pendingFinish;
+
+    /** The texture sets, as distinct records plus one index per entry
+     *
+     * The other storage strategy, for the one field where the 0/1/count
+     * array falls off a cliff: five hashes and five floats per record, and
+     * one odd face among five thousand would materialise five thousand of
+     * them. The palette pays instead for what is DISTINCT, which the
+     * importer already knows is a handful.
+     *
+     * The invariant, held by collapseTexturePalette: an empty index means
+     * the palette is uniform (0 or 1 entries), a non-empty one is exactly
+     * getSize() long and every value in it addresses the palette. So a
+     * reader never has to defend itself, and the two cheap forms cost
+     * exactly what the dense fields' do.
+     */
+    //@{
+    std::vector<SurfaceTexture> _texturePalette;
+    std::vector<uint16_t> _textureIndex;
+    //@}
 
     /** Which shape the doc file being read is in
      *
