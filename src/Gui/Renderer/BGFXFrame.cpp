@@ -914,15 +914,22 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->updateEffect(BGFXView::EffectVolumetric,
                        view->m_vol && volconf.enabled);
     view->updateEffect(BGFXView::EffectBloom, bloomconf.enabled);
-    // The output colour transform's target. Standalone presents through
-    // the same pass whatever the transform is (it is what reaches the
-    // backbuffer at all), but it presents onto the DEFAULT backbuffer
-    // and needs no target of its own; only the desktop, whose GL blit
-    // has to be handed something already encoded, does.
-    view->outputTransform = outconf.transform;
+    // The output colour transform this frame will actually apply --
+    // none of it under a debug view mode, which blits a QUANTITY into
+    // the scene colour (prepass depth, the AO term, a coverage count)
+    // rather than light. Encoding a quantity would change what the
+    // picture means, and these modes are read as measurements.
+    view->outputTransform = debugconf.viewMode == 0
+        ? outconf.transform : int(Render::OutputConfig::None);
+    // Its target. Standalone presents through the same pass whatever
+    // the transform is (that pass is what reaches the backbuffer at
+    // all) but presents onto the DEFAULT backbuffer and needs no target
+    // of its own; only the desktop, whose GL blit has to be handed
+    // something already encoded, does.
 #ifndef FC_RENDERER_STANDALONE
     view->updateEffect(BGFXView::EffectPresent,
-                       outconf.transform != Render::OutputConfig::None);
+                       view->outputTransform
+                           != Render::OutputConfig::None);
 #endif
     // The scene light's shadow maps, ~117MB at ShadowPrecision 1.0:
     // the 2048^2 moments and their depth, the blur ping and the glass
@@ -1089,6 +1096,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->pbrFrame = pbrActive;
     view->pbrMetallic = pbrconf.metallic;
     view->pbrFromSpecular = pbrconf.fromSpecular;
+    view->pbrShininessMapping = pbrconf.shininessMapping;
     view->pbrRoughness = pbrconf.roughness;
     view->pbrEnvIntensity = pbrconf.envIntensity;
     // Matcap replaces the lit shading outright, so it does not care
@@ -3309,7 +3317,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // the present pass samples the scene colour.
         bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE;
 #ifndef FC_RENDERER_STANDALONE
-        if (outconf.transform != Render::OutputConfig::None
+        if (view->outputTransform != Render::OutputConfig::None
                 && bgfx::isValid(view->presentFbo))
             target = view->presentFbo;
 #endif
@@ -5515,7 +5523,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // encoded image rather than the linear one. Submitted here, with
     // the rest of the frame already queued, because ViewPresent is the
     // last view id -- the same place the standalone present sits.
-    if (outconf.transform != Render::OutputConfig::None
+    if (view->outputTransform != Render::OutputConfig::None
             && bgfx::isValid(view->presentFbo))
         view->present();
     // The finished frame belongs in whatever framebuffer the caller had
