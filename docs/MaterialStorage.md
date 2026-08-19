@@ -428,3 +428,98 @@ intact (`testUnresolvedCardSurvivesAResave`).
   yet. A distinct state is better for the user and more work.
 - Cross-document dedup of material blobs is the same best-effort tier as
   `FileBlobsManager.md` sec 10 describes for files, and is not in scope here.
+
+---
+
+## 13. Explicit sync -- the two commands (step 5)
+
+Sec 2's guarantee is that a library edit never reaches an old document. Its
+cost is drift: the library moves on, the document does not, and nothing closes
+the gap. Every system in that table pays the same cost and answers it the same
+way -- a deliberate user action. Inventor has the Style Library Manager;
+Onshape makes you re-apply the material. This is that action, in the two
+directions a user can want it: pull the library's version into the document,
+or push the document's version back to the library.
+
+### 13.1 The five states, and where a command means something
+
+The uuid is what makes this possible at all (sec 6): it says "this came from
+library card X" and survives an edit, because an edited preset keeps the
+preset's uuid and lets the hash carry the difference (sec 12, settled). So
+compare what the property holds against what the library holds under that
+uuid, and there are five answers.
+
+| State | What it means | Update from library | Save to library |
+| --- | --- | --- | --- |
+| `NoCard` | nothing is assigned | -- | -- |
+| `Unanchored` | a card with no uuid: it never came from a library | -- | needs a target |
+| `Absent` | the uuid names no installed card | -- | needs a target |
+| `Current` | the library holds exactly this content | nothing to do | nothing to do |
+| `Diverged` | the library holds other content under this uuid | yes | yes |
+
+`Diverged` is the second row of sec 6's table -- "someone edited their library"
+-- and the only row where the two identities disagree in a way a user can act
+on. The state is computed by content, never by uuid alone: a card the user
+renamed, or one whose author changed, is still `Current`, because none of that
+is in the hash (sec 4).
+
+A card that could not be resolved at all (sec 7 case 3, `isUnresolved()`) is
+not a sixth state. It is orthogonal: the recorded hash is still what the state
+is computed from, so an unresolved card whose uuid the library does have reads
+`Diverged`, and updating it from the library is the relink that makes the
+object whole again. That is the strongest case for the command existing --
+opening a document from someone else, finding a card missing, and having the
+one action that fixes it.
+
+### 13.2 Update from library
+
+Takes the library's current card as the property's value. It is an ordinary
+property assignment: it touches the object, goes through the transaction, and
+undoes. Nothing else is special -- the new content is hashed, stored and shared
+by the same path any assignment takes, and if the library card is a stock one
+the document stops carrying content at all.
+
+It refuses in every state but `Diverged`, and says so rather than silently
+doing nothing.
+
+### 13.3 Save to library
+
+Writes the property's card over the library card of the same uuid, in place, at
+the path that card already occupies. The uuid is kept (`overwrite=true`,
+`saveAsCopy=false`), which is what makes the operation the inverse of 13.2
+rather than a way to litter the library with near-duplicates.
+
+Where there is no library card to write over -- `Unanchored` or `Absent` -- the
+operation needs a target, which the App layer has no business inventing. It
+fails there, and the GUI falls back to the existing save dialog
+(`MatGui::MaterialSave`), which is already the way a card gets a library, a
+folder and a filename.
+
+Overwriting a library card is the one destructive half of this feature: other
+documents anchored to that uuid will read `Diverged` afterwards. That is
+correct -- it is exactly what the library having changed means -- but it is why
+the GUI confirms first, as the save dialog already does for its own overwrite.
+
+### 13.4 What this deliberately does not do
+
+- No automatic sync, at open or at any other time. That is the whole argument
+  of sec 2 and the reason SolidWorks is the outlier.
+- No cross-document sweep. The commands act on a selection, and a document is
+  a selection of its objects.
+- No notification beyond what restore already prints. Deciding whether a
+  divergence deserves a tree decoration is a UI question, and a passive
+  indicator is compatible with all of the above; it is simply not this step.
+
+### 13.5 Where it lives
+
+The primitive is on the property -- `libraryStatus()`, `updateFromLibrary()`,
+`saveToLibrary()` -- because the property is what holds all three of the card,
+the uuid and the hash. It is reachable from Python as module-level
+`Materials.libraryStatus/updateFromLibrary/saveToLibrary(obj, property)`, which
+is what the tests drive; properties have no Python object of their own, so the
+object plus the property name is the address.
+
+The GUI adds two commands next to `Std_SetMaterial`, and the workbench
+manipulator puts them in the Tree and View context menus only when the current
+selection has a material they apply to -- a command that is greyed out nine
+times in ten is clutter in a menu that is already long.
