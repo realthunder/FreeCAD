@@ -469,11 +469,19 @@ static void accumulateFrameStats(FrameStatsAccum &acc, uint16_t sceneWidth,
         const bgfx::ViewStats &v = s->viewStats[i];
         auto &slot = acc.viewMs[resolvePass(v.view)];
         slot.first += double(v.cpuTimeEnd - v.cpuTimeBegin) * toMs;
-        if (s->gpuTimerFreq > 0)
+        if (s->gpuTimerFreq > 0 && v.gpuTimeEnd > v.gpuTimeBegin)
             slot.second += double(v.gpuTimeEnd - v.gpuTimeBegin) * 1000.0
                            / double(s->gpuTimerFreq);
     }
-    if (s->gpuTimerFreq > 0
+    // ! gpuTimerFreq alone is NOT a validity gate: bgfx's GL backend
+    // publishes a fixed 1e9 whether or not the driver ever resolved a
+    // timestamp pair, so a context whose timer queries never come back
+    // reports a *measured zero* rather than "not measured". Requiring
+    // the pair to be ordered is what tells the two apart -- and the
+    // difference decides whether a frame's GPU cost was small or was
+    // never asked. (Mesa d3d12 under WSLg advertises ARB_timer_query
+    // and resolves nothing, which is how this was found.)
+    if (s->gpuTimerFreq > 0 && s->gpuTimeEnd > s->gpuTimeBegin
             && (!acc.gpuFrameValid || s->gpuFrameNum != acc.gpuFrameSeen)) {
         acc.gpuFrameValid = true;
         acc.gpuFrameSeen = s->gpuFrameNum;
