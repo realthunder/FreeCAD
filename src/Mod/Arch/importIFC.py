@@ -266,14 +266,7 @@ def insert(srcfile, docname, skip=[], only=[], root=None, preferences=None):
     #         ctx.Precision = ctx.Precision/100
 
     # Set default ifcopenshell options to work in brep mode
-    settings = geom.settings()
-    settings.set(settings.USE_BREP_DATA, True)
-    settings.set(settings.SEW_SHELLS, True)
-    settings.set(settings.USE_WORLD_COORDS, True)
-    if preferences['SEPARATE_OPENINGS']:
-        settings.set(settings.DISABLE_OPENING_SUBTRACTIONS, True)
-    if preferences['SPLIT_LAYERS'] and hasattr(settings, "APPLY_LAYERSETS"):
-        settings.set(settings.APPLY_LAYERSETS, True)
+    settings = importIFCHelper.getGeomSettings(preferences)
 
     # build all needed tables
     if preferences['DEBUG']:
@@ -460,11 +453,7 @@ def insert(srcfile, docname, skip=[], only=[], root=None, preferences=None):
                             store = originalid  # flag this object to be stored later
 
         # set additional setting for structural entities
-        if hasattr(settings,"INCLUDE_CURVES"):
-            if structobj:
-                settings.set(settings.INCLUDE_CURVES,True)
-            else:
-                settings.set(settings.INCLUDE_CURVES,False)
+        importIFCHelper.setIncludeCurves(settings,structobj)
         try:
             cr = geom.create_shape(settings, product)
             brep = cr.geometry.brep_data

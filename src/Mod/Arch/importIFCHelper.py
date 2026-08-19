@@ -193,6 +193,52 @@ class ProjectImporter:
         return round(math.degrees(math.atan2(y, x)) - 90, 6)
 
 
+def getGeomSettings(preferences):
+    """Return the ifcopenshell geometry settings used to import breps.
+
+    ifcopenshell 0.8 replaced the constant-based settings API with named
+    settings, and did not keep every name: shells are always sewn in
+    serialized output, and curve inclusion moved into "dimensionality"
+    (see setIncludeCurves below). Which API is present depends on the
+    ifcopenshell that is installed, so both are supported here.
+    """
+    import ifcopenshell.geom
+
+    settings = ifcopenshell.geom.settings()
+    if hasattr(settings, "USE_BREP_DATA"):
+        # ifcopenshell 0.7 and earlier
+        settings.set(settings.USE_BREP_DATA, True)
+        settings.set(settings.SEW_SHELLS, True)
+        settings.set(settings.USE_WORLD_COORDS, True)
+        if preferences['SEPARATE_OPENINGS']:
+            settings.set(settings.DISABLE_OPENING_SUBTRACTIONS, True)
+        if preferences['SPLIT_LAYERS'] and hasattr(settings, "APPLY_LAYERSETS"):
+            settings.set(settings.APPLY_LAYERSETS, True)
+    else:
+        from ifcopenshell import ifcopenshell_wrapper
+        settings.set("iterator-output", ifcopenshell_wrapper.SERIALIZED)
+        settings.set("use-world-coords", True)
+        if preferences['SEPARATE_OPENINGS']:
+            settings.set("disable-opening-subtractions", True)
+        if preferences['SPLIT_LAYERS']:
+            settings.set("enable-layerset-slicing", True)
+    return settings
+
+
+def setIncludeCurves(settings, include):
+    """Turn curve output on or off, for structural entities.
+
+    The 0.7 flag was INCLUDE_CURVES; 0.8 folds it into "dimensionality",
+    where curves are a value rather than a switch.
+    """
+    if hasattr(settings, "INCLUDE_CURVES"):
+        settings.set(settings.INCLUDE_CURVES, include)
+    else:
+        from ifcopenshell import ifcopenshell_wrapper as w
+        settings.set("dimensionality",
+                     w.CURVES_SURFACES_AND_SOLIDS if include else w.SURFACES_AND_SOLIDS)
+
+
 def buildRelProductsAnnotations(ifcfile, root_element='IfcProduct'):
     """Build the products and annotations relation table."""
     products = ifcfile.by_type(root_element)
