@@ -2043,6 +2043,12 @@ frame time on this scene HAS NOT BEEN MEASURED here, and the existing
 measurement is the honest next step before anyone spends a session on
 either lever.
 
+**MEASURED in 11.1j: a draw is NOT free here.** Removing 8487 tiny
+draws (2.5% of the primitives) took 21% off the frame, at 2.63 us per
+draw -- and the submit and GPU components land within 3% of
+DrawSubmission.md's independently fitted per-draw costs. The far
+field's own addressable share extrapolates to ~14% of the frame.
+
 #### A caveat on comparing these rows with 11.1h's
 
 This session's converged scene is **2.91M visible primitives** where
