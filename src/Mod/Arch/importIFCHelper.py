@@ -272,7 +272,9 @@ def buildRelProductsAnnotations(ifcfile, root_element='IfcProduct'):
     """Build the products and annotations relation table."""
     products = ifcfile.by_type(root_element)
 
-    annotations = ifcfile.by_type("IfcAnnotation")
+    # ifcopenshell 0.8 returns a tuple from by_type, and both this function
+    # and the importer append to the annotations
+    annotations = list(ifcfile.by_type("IfcAnnotation"))
     tp = []
     for product in products:
         if product.is_a("IfcGrid") and (product not in annotations):
