@@ -1321,6 +1321,23 @@ bool Material::isAppearanceModelComplete(const QString& uuid) const
     return true;
 }
 
+namespace
+{
+
+// Qt seeds QHash differently in every process, so a QSet hands its contents
+// back in a different order on every run. An unsorted write means the same
+// card serializes to different bytes each time it is saved: noise in a
+// library diff, and no content addressing at all (docs/MaterialStorage.md
+// sec 4.2).
+QStringList sortedStrings(const QSet<QString>& uuids)
+{
+    QStringList sorted(uuids.begin(), uuids.end());
+    sorted.sort();
+    return sorted;
+}
+
+}  // namespace
+
 void Material::saveGeneral(QTextStream& stream) const
 {
     stream << "General:\n";
@@ -1343,7 +1360,7 @@ void Material::saveGeneral(QTextStream& stream) const
     }
     if (!_tags.isEmpty()) {
         stream << "  Tags:\n";
-        for (auto tag : _tags) {
+        for (const auto& tag : sortedStrings(_tags)) {
             stream << "    - \"" << tag << "\"\n";
         }
     }
@@ -1427,7 +1444,7 @@ void Material::saveModels(QTextStream& stream, bool saveInherited) const
     }
 
     bool headerPrinted = false;
-    for (auto& itm : _physicalUuids) {
+    for (const auto& itm : sortedStrings(_physicalUuids)) {
         auto model = modelManager.getModel(itm);
         if (!inherited || modelChanged(*parent, *model)) {
             if (!headerPrinted) {
@@ -1481,7 +1498,7 @@ void Material::saveAppearanceModels(QTextStream& stream, bool saveInherited) con
     }
 
     bool headerPrinted = false;
-    for (auto& itm : _appearanceUuids) {
+    for (const auto& itm : sortedStrings(_appearanceUuids)) {
         auto model = modelManager.getModel(itm);
         if (!inherited || modelAppearanceChanged(*parent, *model)) {
             if (!headerPrinted) {
