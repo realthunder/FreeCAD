@@ -22,10 +22,28 @@
  **************************************************************************/
 
 #include "WorkbenchManipulator.h"
+#include <Gui/Application.h>
+#include <Gui/Command.h>
 #include <Gui/MenuManager.h>
 #include <Gui/ToolBarManager.h>
 
 using namespace MatGui;
+
+namespace
+{
+
+/** Whether a command would do something with what is selected right now.
+ *
+ * Asking the command itself keeps one answer in one place: the menu shows an
+ * entry exactly when activating it would have an effect.
+ */
+bool applies(const char* command)
+{
+    auto found = Gui::Application::Instance->commandManager().getCommandByName(command);
+    return found && found->isActive();
+}
+
+}  // namespace
 
 void WorkbenchManipulator::modifyMenuBar([[maybe_unused]] Gui::MenuItem* menuBar)
 {
@@ -40,11 +58,14 @@ void WorkbenchManipulator::modifyContextMenu(const char* recipient, Gui::MenuIte
     // commands. Std_RenderSettings is what followed Std_SetAppearance in both
     // recipients, so going in front of it puts them back where they always were.
     if (strcmp(recipient, "View") == 0 || strcmp(recipient, "Tree") == 0) {
-        addCommands(menuBar, "Std_RenderSettings", true);
+        addCommands(menuBar, "Std_RenderSettings", true, true);
     }
 }
 
-void WorkbenchManipulator::addCommands(Gui::MenuItem* menuBar, const char* reference, bool before)
+void WorkbenchManipulator::addCommands(Gui::MenuItem* menuBar,
+                                      const char* reference,
+                                      bool before,
+                                      bool sync)
 {
     auto par = menuBar->findParentOf(reference);
     if (par) {
@@ -59,6 +80,22 @@ void WorkbenchManipulator::addCommands(Gui::MenuItem* menuBar, const char* refer
         auto cmd2 = new Gui::MenuItem();
         cmd2->setCommand("Std_SetAppearance");
         par->insertItem(item, cmd2);
+
+        if (!sync) {
+            return;
+        }
+        // The two sync commands (docs/MaterialStorage.md sec 13) go next to
+        // the command that assigned the material in the first place, but only
+        // when they have something to act on: a divergence to take, or a card
+        // to write back. An entry greyed out nine times in ten is clutter in a
+        // menu that is long already.
+        for (const char* command : {"Material_UpdateFromLibrary", "Material_SaveToLibrary"}) {
+            if (applies(command)) {
+                auto sync = new Gui::MenuItem();
+                sync->setCommand(command);
+                par->insertItem(item, sync);
+            }
+        }
     }
 }
 

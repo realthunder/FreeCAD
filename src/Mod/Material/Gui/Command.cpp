@@ -23,6 +23,12 @@
 
 #include <QPointer>
 
+#include <map>
+#include <string>
+#include <vector>
+
+#include <App/DocumentObject.h>
+#include <Mod/Material/App/PropertyMaterial.h>
 
 #include <Gui/Command.h>
 #include <Gui/Control.h>
@@ -219,6 +225,150 @@ bool CmdMigrateToExternal::isActive()
 }
 #endif
 
+//===========================================================================
+// Material_UpdateFromLibrary / Material_SaveToLibrary
+//===========================================================================
+
+namespace
+{
+
+/// Every material property on an object. Only Part::Feature has one today.
+std::vector<Materials::PropertyMaterial*> materialProperties(App::DocumentObject* object)
+{
+    std::vector<Materials::PropertyMaterial*> found;
+    std::vector<App::Property*> properties;
+    object->getPropertyList(properties);
+    for (auto property : properties) {
+        if (property->isDerivedFrom<Materials::PropertyMaterial>()) {
+            found.push_back(static_cast<Materials::PropertyMaterial*>(property));
+        }
+    }
+    return found;
+}
+
+std::vector<Materials::PropertyMaterial*> selectedMaterials()
+{
+    std::vector<Materials::PropertyMaterial*> found;
+    for (auto object : Gui::Selection().getObjectsOfType<App::DocumentObject>()) {
+        auto properties = materialProperties(object);
+        found.insert(found.end(), properties.begin(), properties.end());
+    }
+    return found;
+}
+
+}  // namespace
+
+DEF_STD_CMD_A(CmdMaterialUpdateFromLibrary)
+
+CmdMaterialUpdateFromLibrary::CmdMaterialUpdateFromLibrary()
+    : Command("Material_UpdateFromLibrary")
+{
+    sAppModule = "Material";
+    sGroup = QT_TR_NOOP("Material");
+    sMenuText = QT_TR_NOOP("Update Material From Library");
+    sToolTipText =
+        QT_TR_NOOP("Replaces the material stored in the document with the library's current one");
+    sWhatsThis = "Material_UpdateFromLibrary";
+    sStatusTip = sToolTipText;
+}
+
+void CmdMaterialUpdateFromLibrary::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+
+    openCommand(QT_TRANSLATE_NOOP("Command", "Update material from library"));
+    int updated = 0;
+    for (auto property : selectedMaterials()) {
+        if (property->updateFromLibrary()) {
+            ++updated;
+        }
+    }
+    if (updated == 0) {
+        abortCommand();
+        return;
+    }
+    commitCommand();
+    updateActive();
+}
+
+bool CmdMaterialUpdateFromLibrary::isActive()
+{
+    // Offered only where it would do something. A library that has moved on is
+    // the only thing there is to take.
+    for (auto property : selectedMaterials()) {
+        if (property->libraryStatus() == Materials::PropertyMaterial::LibraryStatus::Diverged) {
+            return true;
+        }
+    }
+    return false;
+}
+
+//===========================================================================
+
+DEF_STD_CMD_A(CmdMaterialSaveToLibrary)
+
+CmdMaterialSaveToLibrary::CmdMaterialSaveToLibrary()
+    : Command("Material_SaveToLibrary")
+{
+    sAppModule = "Material";
+    sGroup = QT_TR_NOOP("Material");
+    sMenuText = QT_TR_NOOP("Save Material To Library");
+    sToolTipText = QT_TR_NOOP("Writes the material stored in the document back to the library");
+    sWhatsThis = "Material_SaveToLibrary";
+    sStatusTip = sToolTipText;
+}
+
+void CmdMaterialSaveToLibrary::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+
+    // By content: the same card assigned to twenty objects is one thing to
+    // write, and one question to ask if it needs a home.
+    std::map<std::string, std::vector<Materials::PropertyMaterial*>> byContent;
+    for (auto property : selectedMaterials()) {
+        if (property->libraryStatus() != Materials::PropertyMaterial::LibraryStatus::NoCard
+            && !property->isUnresolved()) {
+            byContent[property->getContentHash()].push_back(property);
+        }
+    }
+
+    for (auto& entry : byContent) {
+        auto& properties = entry.second;
+        if (properties.front()->saveToLibrary()) {
+            // Written in place, over the card it came from. Every property
+            // holding this content now matches the library.
+            continue;
+        }
+
+        // No card to write over, or a read only library. Where it goes is the
+        // user's answer, and this is the dialog that already asks.
+        auto card = std::make_shared<Materials::Material>(properties.front()->getValue());
+        MatGui::MaterialSave dialog(card, Gui::getMainWindow());
+        if (dialog.exec() != QDialog::Accepted) {
+            continue;
+        }
+        // The dialog wrote the card somewhere and may have given it a new
+        // uuid. Re-anchor, or the document would still point at the card it
+        // came from and this would have to be answered again next time.
+        openCommand(QT_TRANSLATE_NOOP("Command", "Save material to library"));
+        for (auto property : properties) {
+            property->setValue(*card);
+        }
+        commitCommand();
+    }
+}
+
+bool CmdMaterialSaveToLibrary::isActive()
+{
+    for (auto property : selectedMaterials()) {
+        if (property->libraryStatus() != Materials::PropertyMaterial::LibraryStatus::NoCard
+            && !property->isUnresolved()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 //---------------------------------------------------------------
 
 void CreateMaterialCommands()
@@ -230,6 +380,8 @@ void CreateMaterialCommands()
     rcCmdMgr.addCommand(new StdCmdSetMaterial());
     rcCmdMgr.addCommand(new CmdInspectAppearance());
     rcCmdMgr.addCommand(new CmdInspectMaterial());
+    rcCmdMgr.addCommand(new CmdMaterialUpdateFromLibrary());
+    rcCmdMgr.addCommand(new CmdMaterialSaveToLibrary());
 #if defined(BUILD_MATERIAL_EXTERNAL)
     rcCmdMgr.addCommand(new CmdMigrateToExternal());
 #endif
