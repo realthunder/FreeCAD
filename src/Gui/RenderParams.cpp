@@ -89,6 +89,7 @@ public:
     bool ShapeVertices;
     bool PressureDropEdges;
     long ElementGateStagger;
+    long TinyElementCutoff;
     bool LoadDropElements;
     double EffectResolution;
     bool Occlusion;
@@ -272,6 +273,8 @@ public:
         funcs["PressureDropEdges"] = &RenderParamsP::updatePressureDropEdges;
         ElementGateStagger = this->handle->GetInt("ElementGateStagger", 15);
         funcs["ElementGateStagger"] = &RenderParamsP::updateElementGateStagger;
+        TinyElementCutoff = this->handle->GetInt("TinyElementCutoff", 0);
+        funcs["TinyElementCutoff"] = &RenderParamsP::updateTinyElementCutoff;
         LoadDropElements = this->handle->GetBool("LoadDropElements", true);
         funcs["LoadDropElements"] = &RenderParamsP::updateLoadDropElements;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
@@ -645,6 +648,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateElementGateStagger(RenderParamsP *self) {
         self->ElementGateStagger = self->handle->GetInt("ElementGateStagger", 15);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateTinyElementCutoff(RenderParamsP *self) {
+        self->TinyElementCutoff = self->handle->GetInt("TinyElementCutoff", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLoadDropElements(RenderParamsP *self) {
@@ -2624,6 +2631,53 @@ void RenderParams::setElementGateStagger(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeElementGateStagger() {
     instance()->handle->RemoveInt("ElementGateStagger");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docTinyElementCutoff() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"MEASUREMENT INSTRUMENT, 0 = off. Suppress every line and\n"
+"point draw issuing this many primitives or fewer, regardless of\n"
+"the element contract -- floating sets included, which is the\n"
+"point: the contract deliberately never gates those, and they\n"
+"are what a far-field cut is left drawing\n"
+"(docs/FarFieldProxies.md 11.1i).\n"
+"\n"
+"It exists to price the DRAW axis, which this engine has only\n"
+"ever measured in the opposite regime. docs/DrawSubmission.md\n"
+"dismissed draw count on a frame averaging ~1540 primitives per\n"
+"draw, where the GPU is geometry-bound and a draw is free; the\n"
+"far-field residue is ~12 primitives per draw, where a draw is\n"
+"nearly all overhead. Setting this to ~24 on MiSTer removes\n"
+"about 2% of the primitives and about 44% of the draws, so any\n"
+"frame-time difference is attributable to draw count and not to\n"
+"geometry.\n"
+"\n"
+"Not a display feature: it makes real edges vanish, and picking,\n"
+"highlighting and on-top draws are exempt so the scene stays\n"
+"usable while it is on.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getTinyElementCutoff() {
+    return instance()->TinyElementCutoff;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultTinyElementCutoff() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setTinyElementCutoff(const long &v) {
+    instance()->handle->SetInt("TinyElementCutoff",v);
+    instance()->TinyElementCutoff = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeTinyElementCutoff() {
+    instance()->handle->RemoveInt("TinyElementCutoff");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

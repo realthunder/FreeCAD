@@ -2780,6 +2780,9 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
             PRIVATE(this)->externalview),
         RendererBridge::translateElementGateStagger(
             PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setTinyElementCutoff(
+        RendererBridge::translateTinyElementCutoff(
+            PRIVATE(this)->externalview));
     PRIVATE(this)->external->setAutoZoomScale(
         RendererBridge::translateAutoZoomScale(state));
   }

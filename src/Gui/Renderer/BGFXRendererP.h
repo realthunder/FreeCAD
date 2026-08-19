@@ -8332,6 +8332,10 @@ public:
     /// to do with memory, and the reason a user sees dots and edges
     /// over half-refined geometry when it is not enforced.
     size_t gatedByCoarse = 0;
+    /// What Render_TinyElementCutoff suppressed this frame, kept apart
+    /// from the contract's own counters so a measurement run cannot be
+    /// read back as the contract having gated more (11.1i).
+    size_t gatedTiny = 0, gatedTinyPrims = 0;
     /// THE AUDIT (see the gate walk): attached point and line draws
     /// this frame actually SUBMITS, and how many of them break the
     /// contract -- drawn with no face set in the scene at all
@@ -8410,6 +8414,10 @@ public:
     int elemPressureStage = 0;
     int elemStageFrames = 0;
     int elemGateStagger = 15;
+    /// Render_TinyElementCutoff: suppress line and point draws at or
+    /// below this many primitives, contract or no contract. A
+    /// MEASUREMENT instrument for the draw axis (11.1i), 0 = off.
+    int tinyElementCutoff = 0;
     // The load gate as of the last frame, so the crossing can be
     // reported. The plan readout below cannot carry it: that prints on
     // a camera settle, and a load can begin and end entirely between

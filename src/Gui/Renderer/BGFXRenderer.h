@@ -130,6 +130,8 @@ public:
     /// desktop guard below: the vertex gate is pure display and is
     /// worth more on a phone than on the desktop, so the standalone
     /// viewer drives it from its URL parameters.
+    void setTinyElementCutoff(int prims) override;
+
     virtual void setElementGates(bool shapeVertices, bool pressureEdges,
                                  bool loadingDrop, int staggerFrames) override;
 

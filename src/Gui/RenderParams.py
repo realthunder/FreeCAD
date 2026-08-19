@@ -618,6 +618,27 @@ Params = [
         "collector's census answer whether the cheaper stage was enough\n"
         "before the next one is spent, and what keeps the release from\n"
         "re-opening into the memory the collector just freed."),
+    ParamInt('TinyElementCutoff',  0, title='Tiny element draw cutoff',
+        doc="MEASUREMENT INSTRUMENT, 0 = off. Suppress every line and\n"
+        "point draw issuing this many primitives or fewer, regardless of\n"
+        "the element contract -- floating sets included, which is the\n"
+        "point: the contract deliberately never gates those, and they\n"
+        "are what a far-field cut is left drawing\n"
+        "(docs/FarFieldProxies.md 11.1i).\n"
+        "\n"
+        "It exists to price the DRAW axis, which this engine has only\n"
+        "ever measured in the opposite regime. docs/DrawSubmission.md\n"
+        "dismissed draw count on a frame averaging ~1540 primitives per\n"
+        "draw, where the GPU is geometry-bound and a draw is free; the\n"
+        "far-field residue is ~12 primitives per draw, where a draw is\n"
+        "nearly all overhead. Setting this to ~24 on MiSTer removes\n"
+        "about 2% of the primitives and about 44% of the draws, so any\n"
+        "frame-time difference is attributable to draw count and not to\n"
+        "geometry.\n"
+        "\n"
+        "Not a display feature: it makes real edges vanish, and picking,\n"
+        "highlighting and on-top draws are exempt so the scene stays\n"
+        "usable while it is on."),
     ParamBool('LoadDropElements',  True, title='Drop elements while loading',
         doc="Stop drawing edges AND vertices for as long as a document is\n"
         "still arriving (docs/SceneStreaming.md #13b), and let the two\n"
