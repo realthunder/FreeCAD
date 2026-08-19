@@ -1436,6 +1436,18 @@ struct PBRConfig {
     /// authored: a material or frame metalness, a PBR-mode appearance or
     /// a metallic-roughness map all stand.
     bool fromSpecular = true;
+    /// How a Phong SHININESS becomes a roughness, where the material
+    /// states none of its own (OutputConfig-style enum, see
+    /// RenderParams::docShininessMapping): 0 reads shininess as the
+    /// fixed-function GL exponent scaled onto 0..128, which is faithful
+    /// but bottoms out at roughness 0.35 -- 128 is the sharpest exponent
+    /// GL could state, so the lower half of the roughness range cannot
+    /// be reached from shininess at all. 1 reads it as the 0..100%
+    /// appearance control the dialog presents and maps it onto the whole
+    /// exponent range, n = 128 * s / (1 - s): matte at zero, a mirror at
+    /// one, and within a few percent of the GL reading over the low
+    /// values real materials use.
+    int shininessMapping = 1;
     /// User environment image replacing the built-in procedural studio
     /// environment; null = procedural. A 2:1 image is read as
     /// equirectangular (lat-long), anything squarer as a GL sphere map
@@ -1448,7 +1460,8 @@ struct PBRConfig {
         return enabled == o.enabled && metallic == o.metallic
             && roughness == o.roughness && envIntensity == o.envIntensity
             && envBackground == o.envBackground && envImage == o.envImage
-            && fromSpecular == o.fromSpecular;
+            && fromSpecular == o.fromSpecular
+            && shininessMapping == o.shininessMapping;
     }
     bool operator!=(const PBRConfig &o) const { return !(*this == o); }
 };

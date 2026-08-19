@@ -1917,6 +1917,42 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ShininessMapping
+    ///
+    /// How a classic Phong appearance's SHININESS becomes a
+    /// roughness, where the material states no roughness of its own.
+    /// 
+    /// Either way the conversion itself is the standard match of the
+    /// GGX lobe width to a Phong exponent n, roughness =
+    /// (2 / (n + 2)) ^ 1/4. What differs is what shininess MEANS.
+    /// 
+    /// 'GL exponent' reads it the way fixed-function GL did, as the
+    /// exponent scaled onto 0..128. That is faithful, but 128 is the
+    /// sharpest exponent GL could state, and it converts to a
+    /// roughness of 0.35 -- so on this reading a fully shiny Phong
+    /// material is satin, and the lower half of the roughness range
+    /// cannot be reached from shininess at all.
+    /// 
+    /// 'Full range' reads shininess as what the Appearance dialog
+    /// presents, a 0 to 100% appearance control, and maps it onto the
+    /// whole exponent range instead: n = 128 * s / (1 - s). Matte at
+    /// zero and a mirror at one, and over the low shininess values
+    /// real materials use it agrees with the GL reading to within a
+    /// few percent (FreeCAD's default 0.2 gives 0.49 rather than
+    /// 0.52, the Gold preset 0.66 rather than 0.67).
+    /// 
+    /// Neither reading touches anything authored: a stated roughness,
+    /// a PBR appearance, a metallic-roughness map and the per-object
+    /// Render_Roughness override all stand.
+    static const long & getShininessMapping();
+    static const long & defaultShininessMapping();
+    static void removeShininessMapping();
+    static void setShininessMapping(const long &v);
+    static const char *docShininessMapping();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter PBREnvIntensity
     ///
     /// Brightness of the image based lighting environment.

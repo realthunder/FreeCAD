@@ -310,6 +310,21 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
 
     // Auto generated code (Tools/params_utils.py:467)
     layoutPhysicallybasedshading->addLayout(layoutRow);
+    labelShininessMapping = new QLabel(this);
+    layoutRow->addWidget(labelShininessMapping);
+    ShininessMapping = new Gui::PrefComboBox(this);
+    layoutRow->addWidget(ShininessMapping);
+    ShininessMapping->setEntryName("ShininessMapping");
+    ShininessMapping->setParamGrpPath("View/Render");
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1141)
+        ShininessMapping->addItem(QString());
+    ShininessMapping->setCurrentIndex(Gui::RenderParams::defaultShininessMapping());
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutPhysicallybasedshading->addLayout(layoutRow);
     labelPBREnvIntensity = new QLabel(this);
     layoutRow->addWidget(labelPBREnvIntensity);
     PBREnvIntensity = new Gui::PrefDoubleSpinBox(this);
@@ -663,6 +678,7 @@ void DlgSettingsRender::saveSettings()
     PBRMetallic->onSave();
     PBRRoughness->onSave();
     PBRFromSpecular->onSave();
+    ShininessMapping->onSave();
     PBREnvIntensity->onSave();
     BumpScale->onSave();
     Parallax->onSave();
@@ -708,6 +724,7 @@ void DlgSettingsRender::loadSettings()
     PBRMetallic->onRestore();
     PBRRoughness->onRestore();
     PBRFromSpecular->onRestore();
+    ShininessMapping->onRestore();
     PBREnvIntensity->onRestore();
     BumpScale->onRestore();
     Parallax->onRestore();
@@ -794,6 +811,12 @@ void DlgSettingsRender::retranslateUi()
     labelPBRRoughness->setToolTip(PBRRoughness->toolTip());
     PBRFromSpecular->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docPBRFromSpecular()));
     PBRFromSpecular->setText(QObject::tr("Specular to metallic"));
+    ShininessMapping->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docShininessMapping()));
+    labelShininessMapping->setText(QObject::tr("Shininess mapping"));
+    labelShininessMapping->setToolTip(ShininessMapping->toolTip());
+    // Auto generated code (Tools/params_utils.py:1166)
+    ShininessMapping->setItemText(0, QObject::tr("GL exponent"));
+    ShininessMapping->setItemText(1, QObject::tr("Full range"));
     PBREnvIntensity->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docPBREnvIntensity()));
     labelPBREnvIntensity->setText(QObject::tr("Environment brightness"));
     labelPBREnvIntensity->setToolTip(PBREnvIntensity->toolTip());

@@ -160,18 +160,41 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
         float rough = mat.roughness >= 0.0f ? mat.roughness
                                             : pbrRoughness;
         if (rough <= 0.0f) {
-            // Derive from the material shininess (Coin's 0..1
-            // convention maps to a GL exponent of s * 128) with
-            // the usual Blinn-Phong-to-GGX conversion. That match
-            // is on the GGX WIDTH -- alpha = sqrt(2 / (n + 2)) --
-            // and the shader squares this value to get the width
-            // back, so the fourth root is what belongs here. The
-            // square root handed the shader an alpha to square a
-            // second time, which is why every Phong appearance
-            // read as a mirror (shininess 0.2, FreeCAD's default,
-            // arrived at alpha 0.073 instead of 0.269).
-            float exponent =
-                std::max(mat.shininess, 0.0f) * 128.0f;
+            // Derive from the material shininess with the usual
+            // Blinn-Phong-to-GGX conversion. That match is on the GGX
+            // WIDTH -- alpha = sqrt(2 / (n + 2)) -- and the shader
+            // squares this value to get the width back, so the fourth
+            // root is what belongs here. The square root handed the
+            // shader an alpha to square a second time, which is why
+            // every Phong appearance read as a mirror (shininess 0.2,
+            // FreeCAD's default, arrived at alpha 0.073 instead of
+            // 0.269).
+            //
+            // What the shininess MEANS is the frame's to say
+            // (PBRConfig::shininessMapping). Coin's 0..1 is the
+            // fixed-function GL exponent scaled onto 0..128, and read
+            // that way it is faithful but cannot express a sharp
+            // surface: 128 is the sharpest exponent GL could state and
+            // converts to roughness 0.35, so the lower half of the
+            // range is unreachable from shininess however hard the
+            // slider is pushed. Read instead as the 0..100% appearance
+            // control the dialog presents, the odds transform
+            // s / (1 - s) spends the same 128 at the HALFWAY point and
+            // runs to infinity at one -- matte at zero, a mirror at
+            // one, and within a few percent of the GL reading over the
+            // low values real materials actually carry.
+            const float shininess =
+                bx::clamp(mat.shininess, 0.0f, 1.0f);
+            float exponent;
+            if (pbrShininessMapping == 1) {
+                // 1 - s underflows to zero at the very top; the clamp
+                // is what makes that a very sharp surface rather than
+                // an infinity, and the shader's own lower clamp
+                // finishes the job.
+                const float denom = std::max(1.0f - shininess, 1.0e-4f);
+                exponent = 128.0f * shininess / denom;
+            } else
+                exponent = shininess * 128.0f;
             rough = std::pow(2.0f / (exponent + 2.0f), 0.25f);
         }
         pbrParams[2] = bx::clamp(rough, 0.02f, 1.0f);

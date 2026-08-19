@@ -244,7 +244,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     material data where nothing states a metalness (PBRFromSpecular).
 //     A snapshot older than this was written by a build that always
 //     dropped that colour, so it reads as off and renders as it did.
-const uint32_t kVersion = 60;
+const uint32_t kVersion = 61;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -3069,6 +3069,8 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.b(snap.pbrconf.envBackground);
     refs.tex(w, snap.pbrconf.envImage);
     w.b(snap.pbrconf.fromSpecular);
+    // v61: how a Phong shininess becomes a roughness.
+    w.i32(snap.pbrconf.shininessMapping);
 
     w.f(snap.bumpconf.scale);
     w.b(snap.bumpconf.parallax);
@@ -3493,6 +3495,10 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     if (version >= 25)
         refs.tex(r, snap.pbrconf.envImage);
     snap.pbrconf.fromSpecular = version >= 59 ? r.b() : false;
+    snap.pbrconf.shininessMapping = version >= 61 ? r.i32() : 0;
+    // (0, not the current default: an older snapshot was written
+    // under the GL-exponent reading and has to keep being drawn
+    // with it.)
 
     snap.bumpconf.scale = r.f();
     snap.bumpconf.parallax = r.b();

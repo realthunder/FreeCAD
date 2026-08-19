@@ -5711,6 +5711,8 @@ public:
     // Read the Phong specular colour as PBR material data where nothing
     // states a metalness (PBRConfig::fromSpecular).
     bool pbrFromSpecular = false;
+    /// Render::PBRConfig::shininessMapping for this frame.
+    int pbrShininessMapping = 0;
     /// Render::OutputConfig::Transform for this frame.
     int outputTransform = 0;
     float pbrRoughness = 0.0f; // <= 0: derive from the material shininess

@@ -133,6 +133,7 @@ public:
     double PBRMetallic;
     double PBRRoughness;
     bool PBRFromSpecular;
+    long ShininessMapping;
     double PBREnvIntensity;
     std::string PBREnvImage;
     bool PBREnvEmbed;
@@ -362,6 +363,8 @@ public:
         funcs["PBRRoughness"] = &RenderParamsP::updatePBRRoughness;
         PBRFromSpecular = this->handle->GetBool("PBRFromSpecular", true);
         funcs["PBRFromSpecular"] = &RenderParamsP::updatePBRFromSpecular;
+        ShininessMapping = this->handle->GetInt("ShininessMapping", 1);
+        funcs["ShininessMapping"] = &RenderParamsP::updateShininessMapping;
         PBREnvIntensity = this->handle->GetFloat("PBREnvIntensity", 1.0);
         funcs["PBREnvIntensity"] = &RenderParamsP::updatePBREnvIntensity;
         PBREnvImage = this->handle->GetASCII("PBREnvImage", "");
@@ -827,6 +830,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBRFromSpecular(RenderParamsP *self) {
         self->PBRFromSpecular = self->handle->GetBool("PBRFromSpecular", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateShininessMapping(RenderParamsP *self) {
+        self->ShininessMapping = self->handle->GetInt("ShininessMapping", 1);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvIntensity(RenderParamsP *self) {
@@ -4236,6 +4243,58 @@ void RenderParams::setPBRFromSpecular(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removePBRFromSpecular() {
     instance()->handle->RemoveBool("PBRFromSpecular");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docShininessMapping() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How a classic Phong appearance's SHININESS becomes a\n"
+"roughness, where the material states no roughness of its own.\n"
+"\n"
+"Either way the conversion itself is the standard match of the\n"
+"GGX lobe width to a Phong exponent n, roughness =\n"
+"(2 / (n + 2)) ^ 1/4. What differs is what shininess MEANS.\n"
+"\n"
+"'GL exponent' reads it the way fixed-function GL did, as the\n"
+"exponent scaled onto 0..128. That is faithful, but 128 is the\n"
+"sharpest exponent GL could state, and it converts to a\n"
+"roughness of 0.35 -- so on this reading a fully shiny Phong\n"
+"material is satin, and the lower half of the roughness range\n"
+"cannot be reached from shininess at all.\n"
+"\n"
+"'Full range' reads shininess as what the Appearance dialog\n"
+"presents, a 0 to 100% appearance control, and maps it onto the\n"
+"whole exponent range instead: n = 128 * s / (1 - s). Matte at\n"
+"zero and a mirror at one, and over the low shininess values\n"
+"real materials use it agrees with the GL reading to within a\n"
+"few percent (FreeCAD's default 0.2 gives 0.49 rather than\n"
+"0.52, the Gold preset 0.66 rather than 0.67).\n"
+"\n"
+"Neither reading touches anything authored: a stated roughness,\n"
+"a PBR appearance, a metallic-roughness map and the per-object\n"
+"Render_Roughness override all stand.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getShininessMapping() {
+    return instance()->ShininessMapping;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultShininessMapping() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setShininessMapping(const long &v) {
+    instance()->handle->SetInt("ShininessMapping",v);
+    instance()->ShininessMapping = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeShininessMapping() {
+    instance()->handle->RemoveInt("ShininessMapping");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

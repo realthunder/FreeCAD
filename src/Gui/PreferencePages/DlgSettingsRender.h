@@ -110,6 +110,8 @@ private:
     QLabel *labelPBRRoughness = nullptr;
     Gui::PrefDoubleSpinBox *PBRRoughness = nullptr;
     Gui::PrefCheckBox *PBRFromSpecular = nullptr;
+    QLabel *labelShininessMapping = nullptr;
+    Gui::PrefComboBox *ShininessMapping = nullptr;
     QLabel *labelPBREnvIntensity = nullptr;
     Gui::PrefDoubleSpinBox *PBREnvIntensity = nullptr;
 

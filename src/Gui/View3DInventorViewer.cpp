@@ -4427,6 +4427,18 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _renderParam<App::PropertyBool>(view, "PBRFromSpecular",
             RenderParams::docPBRFromSpecular(),
             RenderParams::getPBRFromSpecular());
+    // An enumeration, like Render_MatcapPreset above: materialized by
+    // hand so the names are installed before the value is set.
+    if (!view->getPropertyByName("Render_ShininessMapping")) {
+        static const char* _shininessMappingEnums[] =
+            {"GL exponent", "Full range", nullptr};
+        auto prop = static_cast<App::PropertyEnumeration*>(
+                view->addDynamicProperty("App::PropertyEnumeration",
+                                         "Render_ShininessMapping", "Render",
+                                         RenderParams::docShininessMapping()));
+        prop->setEnums(_shininessMappingEnums);
+        prop->setValue(long(RenderParams::getShininessMapping()));
+    }
     _renderParam<App::PropertyFloat>(view, "PBREnvIntensity",
             RenderParams::docPBREnvIntensity(), RenderParams::getPBREnvIntensity());
     // The environment image is a plain path; Render_PBREnvEmbed
