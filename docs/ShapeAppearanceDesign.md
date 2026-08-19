@@ -2469,7 +2469,7 @@ plumbing has nothing to hook into until the file states the hashes.
 | `6333553219` | the palette + index field on `PropertyMaterialList` (10.4) |
 | `e1d5d0873c` | length-prefixed runs, and the texture in the fork's own two encodings (10.5) |
 | `09291e1ceb` | the companion property for the schemas that cannot state one |
-| (this one) | the multi-blob referrer (10.2) |
+| `363f1f7c55` | the multi-blob referrer (10.2) |
 
 **Three things the design did not anticipate.**
 
