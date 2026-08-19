@@ -212,6 +212,24 @@ struct ProxyInstance {
     /// MiSTer, 99% of it edges, which is the difference between a 3.34x
     /// saving and a 2.05x one (11.1g).
     bool mergeable = true;
+    /// The producer's attachment bit (MeshData::attachedOnly): every
+    /// vertex of this point set is an edge endpoint, or every edge of
+    /// this line set bounds a face of the same shape.
+    ///
+    /// Which is the whole of the element contract
+    /// (docs/SceneStreaming.md 13b), and the contract already answers
+    /// what a far field should do with edges. An attached line set
+    /// draws only while its object's faces are shown *and exact* --
+    /// "an edge set describes the shape its faces approximate, so
+    /// drawing it over a rough rung decorates geometry that is not the
+    /// answer yet". A proxy is the coarsest rung there is, so an
+    /// attached set below a stopped node is covered by it; a floating
+    /// one ranks WITH the faces, is never gated, and draws exactly.
+    ///
+    /// The contract's dependency is per object -- an edge waits on
+    /// *its own* faces -- and \ref objectKey is already the id the
+    /// gate keys on, so nothing further is needed to apply it.
+    bool attachedOnly = false;
     /// Primitives this draw issues -- triangles, line segments or
     /// points, whichever the material's topology selects.
     ///
@@ -426,6 +444,14 @@ struct ProxyCut {
     /// hole (11.1g).
     uint32_t unmergeableInstances = 0;
     uint64_t unmergeablePrims = 0;
+    /// Of what a stopped node covers, the attached point and line sets
+    /// the element contract gates behind the proxy that took their
+    /// faces. Counted apart from \ref coveredPrims because a proxy
+    /// does not *contain* them -- it satisfies their dependency, which
+    /// is a different claim and one the drawing side has to honour
+    /// (11.1h).
+    uint32_t gatedInstances = 0;
+    uint64_t gatedPrims = 0;
     /// The same three populations counted in primitives instead of
     /// draws. `coveredPrims` is the geometry a proxy replaces -- the
     /// ceiling on what the cut can save, before the proxy's own
@@ -541,9 +567,14 @@ public:
     ///
     /// "Its covering proxy" is read strictly: an instance no proxy can
     /// stand in for (\ref ProxyInstance::mergeable) is not covered by
-    /// the node above it, so it has to appear in the exact list or be
-    /// culled -- which is exactly what the invariant should have been
-    /// saying all along, and what 11.1g found it was not.
+    /// the node above it, so it has to appear in the exact list, be
+    /// culled, or be gated by the element contract -- which is exactly
+    /// what the invariant should have been saying all along, and what
+    /// 11.1g found it was not.
+    ///
+    /// The gated population is recomputed here from the contract's own
+    /// rule rather than read off the cut's counters, so a member the
+    /// cut silently dropped still reads as a violation.
     bool verifyCut(const ProxyCut &cut, std::string *why = nullptr) const;
 
     /// What phase 1 reports (§11.1): the distributions that pick K and

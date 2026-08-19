@@ -1274,12 +1274,17 @@ static void reportProxyExact(const Render::ProxyHierarchy &index,
     // everything it counted as covered that no proxy stands for --
     // because that has to be drawn by somebody.
     const uint64_t honest = cut.exactPrims + cut.proxyPrims + holePrims;
-    const uint64_t visible = cut.exactPrims + cut.coveredPrims;
+    // The denominator is what the frame would draw with no cut at all,
+    // so the gated edges belong in it: they are geometry the cut
+    // removed, not geometry that was never there.
+    const uint64_t visible =
+        cut.exactPrims + cut.coveredPrims + cut.gatedPrims;
     snprintf(buf, sizeof(buf),
              "render proxyexact %gpx uncovered: %u of %zu stopped nodes leave "
              "%u triangle buckets with no proxy -- %u inst / %llu prims "
-             "(%.1f%% of %llu covered) | below a stopped node and drawn "
-             "exactly: %u inst / %llu prims | net %llu of %llu, %.2fx\n",
+             "(%.1f%% of %llu covered) | below a stopped node: %u inst / "
+             "%llu prims drawn exactly, %u / %llu gated by the element "
+             "contract | net %llu of %llu, %.2fx\n",
              double(tolerancePx), holeNodes, cut.proxyNodes.size(),
              holeBuckets, holeInstances, (unsigned long long)holePrims,
              cut.coveredPrims ? 100.0 * double(holePrims)
@@ -1287,7 +1292,8 @@ static void reportProxyExact(const Render::ProxyHierarchy &index,
                  : 0.0,
              (unsigned long long)cut.coveredPrims,
              cut.unmergeableInstances,
-             (unsigned long long)cut.unmergeablePrims,
+             (unsigned long long)cut.unmergeablePrims, cut.gatedInstances,
+             (unsigned long long)cut.gatedPrims,
              (unsigned long long)honest, (unsigned long long)visible,
              honest ? double(visible) / double(honest) : 0.0);
 #ifdef FC_RENDERER_STANDALONE
@@ -1355,7 +1361,8 @@ static void reportProxyCutPriced(const Render::ProxyHierarchy &index,
         // What the frame draws with no cut at all is everything the cut
         // did not cull, which both cuts agree on -- so it is the
         // denominator both rows are read against.
-        const uint64_t visible = byError.exactPrims + byError.coveredPrims;
+        const uint64_t visible = byError.exactPrims + byError.coveredPrims
+            + byError.gatedPrims;
         const uint64_t drawn = byError.exactPrims + byError.proxyPrims;
         snprintf(buf, sizeof(buf),
                  "render proxypriced %gpx: extent draws %u (%u proxy) covers "

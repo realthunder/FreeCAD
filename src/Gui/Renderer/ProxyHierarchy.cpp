@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <unordered_set>
 
 using namespace Render;
 
@@ -260,6 +261,11 @@ void Render::proxyInstances(const DrawCallList &draws,
         // source geometry in the first place.
         inst.mergeable =
             d.material.type == Material::Triangle && !d.standIn && d.mesh;
+        // False by default means "the producer has not classified
+        // this", and the gate treats an unclassified set as floating --
+        // never suppressed, always drawn. The cut reads it the same
+        // way, or it would delete what nothing else on screen shows.
+        inst.attachedOnly = d.mesh && d.mesh->attachedOnly;
         inst.primCount = drawPrimitives(d);
         inst.meshBytes = Render::meshResidentBytes(d.mesh.get());
         out.push_back(inst);
@@ -661,6 +667,8 @@ void ProxyHierarchy::selectCutImpl(const float *view, const float *proj,
     out.culledInstances = 0;
     out.unmergeableInstances = 0;
     out.unmergeablePrims = 0;
+    out.gatedInstances = 0;
+    out.gatedPrims = 0;
     out.exactPrims = 0;
     out.coveredPrims = 0;
     out.culledPrims = 0;
@@ -669,7 +677,7 @@ void ProxyHierarchy::selectCutImpl(const float *view, const float *proj,
         return;
 
     std::vector<int> stack;
-    std::vector<uint32_t> scratch;
+    std::vector<int> stopped;
     stack.push_back(rootnode);
     while (!stack.empty()) {
         const int ni = stack.back();
@@ -722,31 +730,7 @@ void ProxyHierarchy::selectCutImpl(const float *view, const float *proj,
             // have to do. Phase 4 has to walk it anyway to issue those
             // draws, and a saving that cannot be issued is not a
             // saving.
-            scratch.clear();
-            subtreeInstances(ni, scratch);
-            for (uint32_t idx : scratch) {
-                const ProxyInstance &inst = instancedata[idx];
-                if (inst.mergeable) {
-                    out.coveredInstances += 1;
-                    out.coveredPrims += inst.primCount;
-                    continue;
-                }
-                // Judged like any other exact draw, since that is what
-                // it is: off screen it is culled rather than covered.
-                const BoxSight is = sightBounds(inst.bboxMin, inst.bboxMax,
-                                                view, proj, viewportHeightPx);
-                if (is.what == BoxSight::Offscreen
-                        || is.what == BoxSight::Empty) {
-                    out.culledInstances += 1;
-                    out.culledPrims += inst.primCount;
-                    continue;
-                }
-                out.exact.push_back(idx);
-                out.exactNode.push_back(ni);
-                out.exactPrims += inst.primCount;
-                out.unmergeableInstances += 1;
-                out.unmergeablePrims += inst.primCount;
-            }
+            stopped.push_back(ni);
             continue;
         }
         // Descended past: this node's own residents are covered by no
@@ -769,6 +753,76 @@ void ProxyHierarchy::selectCutImpl(const float *view, const float *proj,
         for (int o = 0; o < 8; ++o) {
             if (node.child[o] != kNoProxyNode)
                 stack.push_back(node.child[o]);
+        }
+    }
+    // What a stopped node leaves behind, in two passes because the
+    // element contract's dependency is per OBJECT and reads across
+    // nodes: an attached edge waits on *its own* faces, and whether
+    // those were taken by a proxy is not answerable while still
+    // descending.
+    //
+    // Pass one: whose faces did a proxy take.
+    std::vector<uint32_t> scratch;
+    std::unordered_set<uint64_t> proxiedObjects;
+    for (int ni : stopped) {
+        scratch.clear();
+        subtreeInstances(ni, scratch);
+        for (uint32_t idx : scratch) {
+            const ProxyInstance &inst = instancedata[idx];
+            if (inst.mergeable && inst.objectKey)
+                proxiedObjects.insert(inst.objectKey);
+        }
+    }
+    // Pass two: everything below a stopped node, judged.
+    //
+    // Lines, points and stand-in boxes are refused by generation on
+    // purpose, so no proxy above one ever draws it, and counting them
+    // as covered was counting a hole -- 17-27% of the covered figure
+    // on MiSTer, 99% of it edges (11.1g). What becomes of them is the
+    // element contract's answer and not a new rule (11.1h): an
+    // ATTACHED set is gated behind the proxy that took its faces,
+    // exactly as it is gated behind a coarse rung today, and a
+    // FLOATING one ranks with the faces and draws exactly.
+    //
+    // This walks each stopped subtree, which a counting-only cut did
+    // not have to do. Phase 4 has to walk it anyway to issue those
+    // draws, and a saving that cannot be issued is not a saving.
+    for (int ni : stopped) {
+        scratch.clear();
+        subtreeInstances(ni, scratch);
+        for (uint32_t idx : scratch) {
+            const ProxyInstance &inst = instancedata[idx];
+            if (inst.mergeable) {
+                out.coveredInstances += 1;
+                out.coveredPrims += inst.primCount;
+                continue;
+            }
+            // Gated only where the dependency is actually satisfied.
+            // An attached edge whose own faces are NOT under a proxy
+            // has nothing standing in for it, and suppressing it would
+            // leave the object showing neither surface nor outline --
+            // so the test is per object, and it errs towards drawing.
+            if (inst.attachedOnly && inst.objectKey
+                    && proxiedObjects.count(inst.objectKey)) {
+                out.gatedInstances += 1;
+                out.gatedPrims += inst.primCount;
+                continue;
+            }
+            // Judged like any other exact draw, since that is what it
+            // is: off screen it is culled rather than covered.
+            const BoxSight is = sightBounds(inst.bboxMin, inst.bboxMax,
+                                            view, proj, viewportHeightPx);
+            if (is.what == BoxSight::Offscreen
+                    || is.what == BoxSight::Empty) {
+                out.culledInstances += 1;
+                out.culledPrims += inst.primCount;
+                continue;
+            }
+            out.exact.push_back(idx);
+            out.exactNode.push_back(ni);
+            out.exactPrims += inst.primCount;
+            out.unmergeableInstances += 1;
+            out.unmergeablePrims += inst.primCount;
         }
     }
     out.drawCount = out.proxyDraws + uint32_t(out.exact.size());
@@ -870,6 +924,45 @@ bool ProxyHierarchy::verifyCut(const ProxyCut &cut, std::string *why) const
     uint32_t clashes = 0;
     for (int ni : cut.proxyNodes)
         markSubtree(ni, mark, 1, clashes);
+    // The third outcome, and it has to be named or the invariant is
+    // being dodged rather than checked: an attached point or line set
+    // whose faces a proxy took is drawn by nobody ON PURPOSE (11.1h).
+    // Recomputed here from the same rule rather than taken from the
+    // cut's counters, so that a member the cut silently dropped still
+    // reads as a violation.
+    std::vector<uint32_t> scratch;
+    std::unordered_set<uint64_t> proxiedObjects;
+    for (int ni : cut.proxyNodes) {
+        scratch.clear();
+        subtreeInstances(ni, scratch);
+        for (uint32_t idx : scratch) {
+            if (instancedata[idx].mergeable && instancedata[idx].objectKey)
+                proxiedObjects.insert(instancedata[idx].objectKey);
+        }
+    }
+    uint32_t gated = 0;
+    for (int ni : cut.proxyNodes) {
+        scratch.clear();
+        subtreeInstances(ni, scratch);
+        for (uint32_t idx : scratch) {
+            const ProxyInstance &inst = instancedata[idx];
+            if (inst.mergeable || !inst.attachedOnly || !inst.objectKey
+                    || !proxiedObjects.count(inst.objectKey))
+                continue;
+            if (mark[idx])
+                ++clashes;
+            mark[idx] = uint8_t(mark[idx] | 4);
+            ++gated;
+        }
+    }
+    if (gated != cut.gatedInstances) {
+        if (why) {
+            *why = "the element contract gates " + std::to_string(gated)
+                + " set(s) below a proxy, and the cut reported "
+                + std::to_string(cut.gatedInstances);
+        }
+        return false;
+    }
     for (uint32_t idx : cut.exact) {
         if (idx >= mark.size()) {
             if (why)

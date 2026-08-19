@@ -1807,8 +1807,12 @@ mergeable. And the draw count, which the cut was built to reduce, is
 now dominated by the same population: 34388 draws of which 181 are
 proxies.
 
-So an aggregating far field has to say something about edges, and there
-are three candidates, in the order they should be tried:
+So an aggregating far field has to say something about edges. Three
+candidates were listed here, in the order they should be tried -- and
+11.1h then found that the first of them is already written as the
+element contract, so it needed no new rule at all. The list is kept
+because the other two remain the answer for a *floating* edge, which
+no contract gates:
 
 1. **Drop them below a tolerance.** An edge whose whole part projects to
    under a pixel of error contributes a darkening, not a line. Cheapest
@@ -1828,6 +1832,99 @@ None of this changes phase 3's remaining work (hysteresis on a retained
 cut, incremental index update, wiring into `SceneLadder.cpp`), and all
 of it is measured against a cut that now reports what it would actually
 issue.
+
+### 11.1h Built: the far field does not need an edge rule, it needs the element contract
+
+11.1g ended with three candidates for the edge ceiling and picked
+"drop them below a tolerance" as the cheapest, which would have meant a
+new knob, a new threshold and a fresh argument about appearance. None
+of that is necessary. **The rule is already written, already shipped
+and already ruled on** (docs/SceneStreaming.md 13b, the element
+contract):
+
+> An attached LINE set draws only while its object's face set is shown
+> and memory allows. An attached POINT set draws only while its object's
+> line set is shown. A FLOATING point or line set ranks WITH THE FACES;
+> it is the object, and it is never gated.
+
+and the half of it that decides this case is the coarseness half, in
+`gatedForMemory`:
+
+> An edge set describes the shape its faces approximate, so drawing it
+> over a rough rung decorates geometry that is not the answer yet.
+
+**A proxy is the coarsest rung there is.** An attached edge below a
+node the cut stopped on is decorating a shape that has been merged into
+a cluster with twenty others; the contract already says that edge does
+not draw. A floating edge -- a sketch, a datum line, a wire, or a set
+the producer has not classified -- ranks with the faces and must still
+be drawn exactly, because nothing else on screen would show it.
+
+So `ProxyInstance` carries the producer's `attachedOnly` bit, and
+`selectCut` applies the contract's own dependency, per object and in
+two passes: whose faces did a proxy take, then, of everything below a
+stopped node, gate the attached sets belonging to those objects and
+draw the rest. `verifyCut` names the third outcome explicitly and
+recomputes it from the rule rather than reading the cut's counters, so
+a member the cut silently dropped still counts as a violation.
+
+MiSTer Express, converged, same store and camera as 11.1f and 11.1g.
+
+| tol | 11.1f: net / draws | 11.1g corrected: net / draws | with the contract: net / draws | gated |
+|---|---|---|---|---|
+| 4px | 1.80x / 13300 | 1.56x / 36574 | **1.83x** / 21814 (526 proxy) | 14519 sets, 251 k prims |
+| 16px | 2.17x / 6600 | 1.72x / 35193 | **2.16x** / 17315 (258) | 17830, 354 k |
+| 64px | 3.34x / 3444 | 2.08x / 34388 | **3.31x** / 14270 (181) | 20333, 601 k |
+
+**The number 11.1f reported comes back, and this time it is real.** It
+was 3.34x at 64 px because the edges quietly disappeared from the
+accounting; it is 3.31x now because they quietly disappear from the
+*frame*, on a rule that predates this workstream and that a user has
+already accepted for memory pressure and for coarse rungs. The
+difference between the two middle columns -- 2.08x and 3.31x -- is
+what the contract is worth here: 601 k primitives at 64 px.
+
+#### !! The wiring this obliges phase 4 to get right
+
+The gate decides "shown" from the draws present in the frame, and a
+proxied object contributes none:
+
+    if (d.material.type == Render::Material::Line) {
+        if (!objectsWithTriangles.count(d.objectKey)) {
+            const bool late = incompleteObjects.count(d.objectKey) != 0;
+            return late;          // not late => NOT gated => it DRAWS
+        }
+        const bool coarse = objectsCoarseFaces.count(d.objectKey) != 0;
+        return dropLines || coarse;
+    }
+
+An object whose faces a proxy took has no face draw in the scene, so it
+takes the first branch, reads as "absent, not late", and hits the
+**display-mode exemption** -- the rule that stops a genuine Wireframe
+or Points object from showing nothing. The edge would then draw, which
+is the exact opposite of what the cut planned, and the frame would look
+like 11.1g while the plan reported 11.1h.
+
+The fix is not a new branch. A stopped node must register every object
+it covers into **both** `objectsWithTriangles` and
+`objectsCoarseFaces`: its faces *are* present and they *are* coarse,
+which is true, and the existing rule then produces the right answer with
+its existing order, its existing stagger and its existing on-top and
+highlight exemptions.
+
+#### What is left of the edge ceiling, and it is a draw-count question
+
+Primitives are no longer where edges hurt: what still draws exactly
+below a stopped node is 34 k primitives at 64 px, against the 601 k the
+contract gates. But those 34 k arrive as **10813 draws of about three
+primitives each**, and they are three quarters of the 14270 draws the
+whole cut issues. They are the sets the contract calls floating -- and
+`attachedOnly` is false *by default*, meaning "the producer has not
+classified this", so an unclassified set and a genuine sketch line are
+indistinguishable in the flag (13b records the same trap for the load
+storm). Whether that population is really floating, or merely
+unclassified, is the next thing worth measuring, and it is a question
+about the producer rather than about the far field.
 
 ### 11.2 What the code already gives us
 

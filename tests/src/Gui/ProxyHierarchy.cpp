@@ -458,6 +458,89 @@ TEST(ProxyHierarchy, emptyAndUnlocatableInputAreHarmless)
     EXPECT_EQ(h.instances().size(), 1u);
 }
 
+TEST(ProxyCutTest, theElementContractDecidesWhatBecomesOfTheEdges)
+{
+    // Section 11.1h. The far field does not need a new rule for edges:
+    // the element contract (docs/SceneStreaming.md 13b) already says an
+    // attached line set draws only while its object's faces are shown
+    // and exact, because "an edge set describes the shape its faces
+    // approximate". A proxy is the coarsest rung there is. A floating
+    // set ranks WITH the faces and is never gated -- it is the object,
+    // and nothing else on screen would show it.
+    std::vector<ProxyInstance> instances;
+    uint64_t key = 1;
+    const int n = 6;
+    const float step = 2.0f / float(n);
+    uint64_t attachedPrims = 0, floatingPrims = 0, facePrims = 0;
+    for (int x = 0; x < n; ++x) {
+        for (int y = 0; y < n; ++y) {
+            for (int z = 0; z < n; ++z) {
+                const float cx = -1.0f + (float(x) + 0.5f) * step;
+                const float cy = -1.0f + (float(y) + 0.5f) * step;
+                const float cz = -1.0f + (float(z) + 0.5f) * step;
+                // One object, three drawables: its faces, the edges
+                // that bound them, and -- on every third -- a sketch or
+                // datum line that bounds nothing.
+                ProxyInstance faces = boxAt(cx, cy, cz, 0.2f * step, key, 0);
+                faces.primCount = 100;
+                facePrims += faces.primCount;
+                instances.push_back(faces);
+
+                ProxyInstance edges = boxAt(cx, cy, cz, 0.2f * step, key, 1);
+                edges.mergeable = false;
+                edges.attachedOnly = true;
+                edges.primCount = 20;
+                attachedPrims += edges.primCount;
+                instances.push_back(edges);
+
+                if (key % 3 == 0) {
+                    ProxyInstance wire =
+                        boxAt(cx, cy, cz, 0.2f * step, key, 2);
+                    wire.mergeable = false;
+                    wire.attachedOnly = false;
+                    wire.primCount = 5;
+                    floatingPrims += wire.primCount;
+                    instances.push_back(wire);
+                }
+                ++key;
+            }
+        }
+    }
+    ProxyHierarchy h;
+    h.build(instances);
+
+    float V[16];
+    float P[16];
+    viewAt(V, 400.0f);  // the whole model under one stopped node
+    perspective(P, 45.0f, 1.6f, 0.1f, 5000.0f);
+    ProxyCut cut;
+    h.selectCut(V, P, 1200.0f, 64.0f, cut);
+    ASSERT_FALSE(cut.proxyNodes.empty());
+
+    EXPECT_EQ(cut.gatedPrims, attachedPrims)
+        << "an attached edge set outlived the proxy that took its faces";
+    EXPECT_EQ(cut.exactPrims, floatingPrims)
+        << "a floating set was suppressed, and nothing else shows it";
+    EXPECT_EQ(cut.coveredPrims, facePrims);
+    std::string why;
+    EXPECT_TRUE(h.verifyCut(cut, &why)) << why;
+
+    // And the dependency is per object, not per node: an attached set
+    // whose own faces no proxy took has nothing standing in for it.
+    auto orphaned = instances;
+    for (auto &inst : orphaned) {
+        if (inst.mergeable && inst.objectKey == 1)
+            inst.primCount = 100, inst.mergeable = false;
+    }
+    ProxyHierarchy ho;
+    ho.build(orphaned);
+    ProxyCut oc;
+    ho.selectCut(V, P, 1200.0f, 64.0f, oc);
+    EXPECT_EQ(oc.gatedPrims, attachedPrims - 20)
+        << "an edge was suppressed although its own faces still draw";
+    EXPECT_TRUE(ho.verifyCut(oc, &why)) << why;
+}
+
 TEST(ProxyCutTest, aStoppedNodeDrawsWhatNoProxyCanStandForItself)
 {
     // Section 11.1g. Generation refuses lines, points and stand-in
