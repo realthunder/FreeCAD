@@ -217,7 +217,7 @@ protected:
 
 
 /// Convenient class for accessing and tracking common parameter settings of PrefWidgets
-class PrefParam: public ParameterGrp::ObserverType {
+class GuiExport PrefParam: public ParameterGrp::ObserverType {
 public:
   PrefParam();
   ~PrefParam();
