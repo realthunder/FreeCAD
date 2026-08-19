@@ -313,11 +313,12 @@ def insert(srcfile, docname, skip=[], only=[], root=None, preferences=None):
     # only import a list of IDs and their children, if defined
     if only:
         ids = []
-        while only:
-            currentid = only.pop()
+        pending = list(only)  # pop() below would otherwise empty the caller's list
+        while pending:
+            currentid = pending.pop()
             ids.append(currentid)
             if currentid in additions:
-                only.extend(additions[currentid])
+                pending.extend(additions[currentid])
         products = [ifcfile[currentid] for currentid in ids]
 
     # start the actual import, set FreeCAD UI
@@ -455,7 +456,7 @@ def insert(srcfile, docname, skip=[], only=[], root=None, preferences=None):
         # set additional setting for structural entities
         importIFCHelper.setIncludeCurves(settings,structobj)
         try:
-            cr = geom.create_shape(settings, product)
+            cr = importIFCHelper.createShape(settings, product, structobj)
             brep = cr.geometry.brep_data
         except Exception:
             pass  # IfcOpenShell will yield an error if a given product has no shape, but we don't care, we're brave enough

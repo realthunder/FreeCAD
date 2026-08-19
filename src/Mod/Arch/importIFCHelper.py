@@ -239,6 +239,35 @@ def setIncludeCurves(settings, include):
                      w.CURVES_SURFACES_AND_SOLIDS if include else w.SURFACES_AND_SOLIDS)
 
 
+def createShape(settings, product, curves=False):
+    """Create the ifcopenshell shape of a product, in brep mode.
+
+    From 0.8 on, create_shape() given a product takes the first
+    representation the product has, which on a Revit export is the 2D
+    "Axis" curve, and then fails with "Failed to process shape" -- the
+    context settings only steer the iterator, not this path. So the body
+    representation is looked up and passed explicitly. Structural
+    entities, which want the curve, keep the plain call.
+    """
+    import ifcopenshell.geom
+
+    if hasattr(settings, "USE_BREP_DATA") or curves:
+        # ifcopenshell 0.7 and earlier, or a product we want the curves of
+        return ifcopenshell.geom.create_shape(settings, product)
+
+    import ifcopenshell.util.representation
+
+    rep = None
+    for target in ("MODEL_VIEW", None):
+        rep = ifcopenshell.util.representation.get_representation(
+            product, "Model", "Body", target)
+        if rep is not None:
+            break
+    if rep is not None:
+        return ifcopenshell.geom.create_shape(settings, product, rep)
+    return ifcopenshell.geom.create_shape(settings, product)
+
+
 def buildRelProductsAnnotations(ifcfile, root_element='IfcProduct'):
     """Build the products and annotations relation table."""
     products = ifcfile.by_type(root_element)
