@@ -29,8 +29,14 @@
 #include <Gui/Language/Translator.h>
 #include <Gui/WidgetFactory.h>
 
+#include <Gui/BitmapFactory.h>
+
+#include <Mod/Material/App/Exceptions.h>
+#include <Mod/Material/App/MaterialManager.h>
+
 #include "DlgSettingsDefaultMaterial.h"
 #include "DlgSettingsMaterial.h"
+#include "MaterialIcons.h"
 #include "Workbench.h"
 #include "WorkbenchManipulator.h"
 #include "MaterialTreeWidget.h"
@@ -49,6 +55,13 @@ void loadMaterialResource()
     Q_INIT_RESOURCE(Material);
     Q_INIT_RESOURCE(Material_translation);
     Gui::Translator::instance()->refresh();
+
+    // The bundled appearance and surface finish icons, LAST on the icon
+    // search path so that everything already on it -- the user's own icon
+    // directory, a custom Bitmaps path, a theme's icon set -- overrides
+    // them, which is what makes a bundled icon a default and not a
+    // fixture. MatGui::MaterialIcons looks them up by name from here.
+    Gui::BitmapFactory().addPath(QStringLiteral(":/icons/materials"));
 }
 
 namespace MatGui
@@ -59,12 +72,69 @@ public:
     Module()
         : Py::ExtensionModule<Module>("MatGui")
     {
+        add_varargs_method("renderMaterialIcon",
+                           &Module::renderMaterialIcon,
+                           "renderMaterialIcon(uuid, path) -> bool\n\n"
+                           "Render the appearance of the material with the given uuid into\n"
+                           "path as a PNG. What generates the bundled preset icons; see\n"
+                           "src/Mod/Material/Gui/Resources/icons/materials/generate.py.\n"
+                           "False where there is nothing to render with.");
+        add_varargs_method("renderFinishIcon",
+                           &Module::renderFinishIcon,
+                           "renderFinishIcon(pattern, path, pitch=0, depth=0) -> bool\n\n"
+                           "Render the named surface finish pattern into path as a PNG, on\n"
+                           "the neutral material. At the pitch and depth the bundled icons\n"
+                           "state unless both are given -- a finish is its scale as much as\n"
+                           "it is its pattern, so stating one is how you choose what the\n"
+                           "icon shows. False where there is nothing to render with.");
         initialize("This module is the MatGui module.");  // register with Python
     }
 
     ~Module() = default;
 
 private:
+    Py::Object renderMaterialIcon(const Py::Tuple& args)
+    {
+        char* uuid {};
+        char* path {};
+        if (!PyArg_ParseTuple(args.ptr(), "ss", &uuid, &path)) {
+            throw Py::Exception();
+        }
+        try {
+            auto material = Materials::MaterialManager::getManager().getMaterial(
+                QString::fromUtf8(uuid));
+            const App::Material appearance = material->getMaterialAppearance();
+            return Py::Boolean(MatGui::MaterialIcons::instance().renderToFile(
+                appearance, appearance.finish, QString::fromUtf8(path)));
+        }
+        catch (const Materials::MaterialNotFound&) {
+            throw Py::KeyError("No material with that uuid");
+        }
+    }
+
+    Py::Object renderFinishIcon(const Py::Tuple& args)
+    {
+        char* pattern {};
+        char* path {};
+        float pitch {};
+        float depth {};
+        if (!PyArg_ParseTuple(args.ptr(), "ss|ff", &pattern, &path, &pitch, &depth)) {
+            throw Py::Exception();
+        }
+        const uint8_t value = App::SurfaceFinish::patternFromName(pattern);
+        if (value == App::SurfaceFinish::None) {
+            throw Py::ValueError("Not a surface finish pattern");
+        }
+        App::SurfaceFinish finish = MatGui::MaterialIcons::defaultFinish(value);
+        if (pitch > 0.0F && depth > 0.0F) {
+            finish.pitch = pitch;
+            finish.depth = depth;
+            finish.normalize();
+        }
+        return Py::Boolean(MatGui::MaterialIcons::instance().renderToFile(
+            MatGui::MaterialIcons::finishMaterial(value), finish,
+            QString::fromUtf8(path), MatGui::IconShape::Cylinder));
+    }
 };
 
 PyObject* initModule()

@@ -10,5 +10,35 @@
         <file>icons/table.svg</file>
         <file>images/default_image.png</file>
         <file>ui/materials-editor.ui</file>
+        <!-- rendered by icons/materials/generate.py -->
+        <file>icons/materials/Appearance_Aluminum.png</file>
+        <file>icons/materials/Appearance_Brass.png</file>
+        <file>icons/materials/Appearance_Bronze.png</file>
+        <file>icons/materials/Appearance_Chrome.png</file>
+        <file>icons/materials/Appearance_Copper.png</file>
+        <file>icons/materials/Appearance_Default.png</file>
+        <file>icons/materials/Appearance_Emerald.png</file>
+        <file>icons/materials/Appearance_Gold.png</file>
+        <file>icons/materials/Appearance_Jade.png</file>
+        <file>icons/materials/Appearance_Metalized.png</file>
+        <file>icons/materials/Appearance_Neon_GNC.png</file>
+        <file>icons/materials/Appearance_Neon_PHC.png</file>
+        <file>icons/materials/Appearance_Obsidian.png</file>
+        <file>icons/materials/Appearance_Pewter.png</file>
+        <file>icons/materials/Appearance_Plaster.png</file>
+        <file>icons/materials/Appearance_Plastic.png</file>
+        <file>icons/materials/Appearance_Ruby.png</file>
+        <file>icons/materials/Appearance_Satin.png</file>
+        <file>icons/materials/Appearance_Shiny_Plastic.png</file>
+        <file>icons/materials/Appearance_Silver.png</file>
+        <file>icons/materials/Appearance_Steel.png</file>
+        <file>icons/materials/Appearance_Stone.png</file>
+        <file>icons/materials/Appearance_Wood.png</file>
+        <file>icons/materials/Finish_blasted.png</file>
+        <file>icons/materials/Finish_brushed.png</file>
+        <file>icons/materials/Finish_knurl-straight.png</file>
+        <file>icons/materials/Finish_knurl.png</file>
+        <file>icons/materials/Finish_turned.png</file>
+        <!-- end rendered icons -->
     </qresource>
 </RCC>

@@ -29,11 +29,13 @@
 
 #include <QHBoxLayout>
 #include <QSpacerItem>
+#include <QStyledItemDelegate>
 #include <QVBoxLayout>
 
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Gui/Command.h>
+#include <Gui/ViewParams.h>
 
 #include <Mod/Material/App/Exceptions.h>
 #include <Mod/Material/App/MaterialFilter.h>
@@ -49,6 +51,77 @@ Q_DECLARE_METATYPE(Materials::MaterialFilterPy*)
 
 using Base::Console;
 using namespace MatGui;
+
+namespace
+{
+/// How much shorter than the style would make it each row of the material
+/// tree is. The tree is a list to pick a name out of, and the taller its
+/// rows the fewer names are in front of the user at the size this widget
+/// is given; the style's own padding is sized for a form, where a row is
+/// something to click into rather than something to read down.
+constexpr int RowTrim = 4;
+
+/** How big a card's icon is drawn, unless the user says otherwise
+ *
+ * The icons are renders of the materials, so this is how much of one
+ * there is to see. Thirty-two is about where a surface finish starts to
+ * read at all -- below it a knurl and a brushed lay both average out to
+ * the same shiny grey cylinder -- and sixty-four is where it reads
+ * without being looked for, which is what a picture chosen over a name
+ * is for. Anyone who wants the list denser than the pictures sets
+ * IconSize back down.
+ */
+constexpr int DefaultIconExtent = 64;
+constexpr int MinIconExtent = 12;
+constexpr int MaxIconExtent = 128;
+
+/// The tree's rows, minus that padding and no shorter than what they have
+/// to show.
+class CompactRows: public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void initStyleOption(QStyleOptionViewItem* option,
+                         const QModelIndex& index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        // Only a card carries a render worth enlarging -- it is the one
+        // thing here that IS a picture. The folders and library headings
+        // above them are stock icons with no sixty-four pixel version to
+        // show, so scaling them up only blurs them, and it makes the
+        // tree's structure shout as loudly as its contents. A card is
+        // the item that names a material.
+        if (!index.data(Qt::UserRole).toString().isEmpty()) {
+            return;
+        }
+        const int small = option->widget
+            ? option->widget->style()->pixelMetric(QStyle::PM_SmallIconSize,
+                                                   option, option->widget)
+            : 16;
+        option->decorationSize = QSize(qMin(option->decorationSize.width(), small),
+                                       qMin(option->decorationSize.height(), small));
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem& option,
+                   const QModelIndex& index) const override
+    {
+        QSize size = QStyledItemDelegate::sizeHint(option, index);
+        // The floor is whatever the row actually carries -- the text, and
+        // the icon where it is the taller of the two -- so trimming can
+        // never crop either of them. Measured off a freshly initialised
+        // option rather than the one passed in, because initStyleOption
+        // is where a folder's decoration was cut back down and this has
+        // to agree with what will actually be painted.
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+        const int content = qMax(opt.fontMetrics.height(),
+                                 opt.decorationSize.height());
+        size.setHeight(qMax(size.height() - RowTrim, content));
+        return size;
+    }
+};
+}  // namespace
 
 /** Constructs a Material tree widget.
  */
@@ -148,6 +221,18 @@ void MaterialTreeWidget::createLayout()
     m_materialTree->setMinimumSize(m_treeSizeHint);
     m_materialTree->setSelectionMode(QAbstractItemView::SingleSelection);
     m_materialTree->setSelectionBehavior(QAbstractItemView::SelectItems);
+    m_materialTree->setItemDelegate(new CompactRows(m_materialTree));
+    // NOT uniform row heights: a card is as tall as its render and a
+    // folder is as tall as a stock icon, so the view has to measure each
+    // one. Taking the first row for all of them would crop every card to
+    // the height of the "Favorites" heading above it.
+
+    auto treeParam = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Material/TreeWidget");
+    const int extent = qBound(MinIconExtent,
+                              int(treeParam->GetInt("IconSize", DefaultIconExtent)),
+                              MaxIconExtent);
+    m_materialTree->setIconSize(QSize(extent, extent));
 
     auto materialLayout = new QHBoxLayout();
     materialLayout->addWidget(m_material);
@@ -179,9 +264,7 @@ void MaterialTreeWidget::createLayout()
     fillFilterCombo();
 
     // Start in the previous expanded state
-    auto param = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Mod/Material/TreeWidget");
-    auto expanded = param->GetBool("WidgetExpanded", false);
+    auto expanded = treeParam->GetBool("WidgetExpanded", false);
     setExpanded(expanded);
 
     connect(m_expand, &QPushButton::clicked, this, &MaterialTreeWidget::expandClicked);
@@ -614,9 +697,10 @@ void MaterialTreeWidget::addRecents(QStandardItem* parent)
         try {
             auto material = getMaterialManager().getMaterial(uuid);
             auto icon = MaterialsEditor::getIcon(material->getLibrary());
-            auto card = new QStandardItem(icon, material->getName());
+            auto card = new QStandardItem(cardIcon(uuid, icon), material->getName());
             card->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
             card->setData(QVariant(uuid), Qt::UserRole);
+            card->setToolTip(cardToolTip(uuid));
 
             addExpanded(parent, card);
         }
@@ -631,9 +715,10 @@ void MaterialTreeWidget::addFavorites(QStandardItem* parent)
         try {
             auto material = getMaterialManager().getMaterial(uuid);
             auto icon = MaterialsEditor::getIcon(material->getLibrary());
-            auto card = new QStandardItem(icon, material->getName());
+            auto card = new QStandardItem(cardIcon(uuid, icon), material->getName());
             card->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
             card->setData(QVariant(uuid), Qt::UserRole);
+            card->setToolTip(cardToolTip(uuid));
 
             addExpanded(parent, card);
         }
@@ -652,7 +737,8 @@ QIcon MaterialTreeWidget::cardIcon(const QString& uuid, const QIcon& fallback)
             return fallback;
         }
         QIcon icon = MaterialIcons::instance().icon(uuid,
-                                                    material->getMaterialAppearance());
+                                                    material->getMaterialAppearance(),
+                                                    material->getName());
         if (!icon.isNull()) {
             return icon;
         }
@@ -664,12 +750,67 @@ QIcon MaterialTreeWidget::cardIcon(const QString& uuid, const QIcon& fallback)
     return fallback;
 }
 
+QString MaterialTreeWidget::cardToolTip(const QString& uuid)
+{
+    // The tree can only afford so many pixels a row, and a material icon
+    // is a picture whose whole job is to be looked at -- so the tooltip
+    // shows the same render again at the size a tooltip can spare, with
+    // what the card says about itself beside it. Same shape as
+    // Gui::Action::createToolTip and the same knob for the size, since
+    // it answers the same question about the same kind of picture.
+    try {
+        auto material = getMaterialManager().getMaterial(uuid);
+        if (!material) {
+            return {};
+        }
+        const QString name = material->getName();
+        const QString description = material->getDescription();
+
+        QString image;
+        const int extent = int(Gui::ViewParams::getToolTipIconSize());
+        if (extent > 0) {
+            // Rich text names a FILE, which is why MaterialIcons keeps
+            // the path it resolved: bundled resource, user override and
+            // rendered cache entry are all somewhere on disk or in the
+            // binary, and all three work here unchanged.
+            const QString path = MaterialIcons::instance().iconPath(uuid);
+            if (!path.isEmpty()) {
+                image = QStringLiteral("<img src='%1' width='%2' height='%2'"
+                                       " style='float:right; margin-left:0.6em;'/>")
+                            .arg(path.toHtmlEscaped())
+                            .arg(extent);
+            }
+        }
+
+        QString tip = image
+            + QStringLiteral("<p style='white-space:pre; margin:0 0 0.4em 0;'><b>%1</b></p>")
+                  .arg(name.toHtmlEscaped());
+        if (!description.isEmpty()
+            && description.compare(name, Qt::CaseInsensitive) != 0) {
+            tip += QStringLiteral("<p style='margin:0;'>%1</p>")
+                       .arg(description.toHtmlEscaped());
+        }
+        return tip;
+    }
+    catch (const Materials::MaterialNotFound&) {
+    }
+    return {};
+}
+
 void MaterialTreeWidget::refreshIcon(const QString& uuid)
 {
     auto* model = static_cast<QStandardItemModel*>(m_materialTree->model());
     if (!model) {
         return;
     }
+    auto restate = [this, &uuid](QStandardItem* item) {
+        auto material = getMaterialManager().getMaterial(uuid);
+        item->setIcon(MaterialIcons::instance().icon(
+            uuid, material->getMaterialAppearance(), material->getName()));
+        // The tooltip names the icon by path, and there was no path
+        // until this render landed.
+        item->setToolTip(cardToolTip(uuid));
+    };
     std::function<void(QStandardItem*)> walk = [&](QStandardItem* item) {
         for (int row = 0; row < item->rowCount(); ++row) {
             QStandardItem* child = item->child(row);
@@ -677,8 +818,7 @@ void MaterialTreeWidget::refreshIcon(const QString& uuid)
                 continue;
             }
             if (child->data(Qt::UserRole).toString() == uuid) {
-                child->setIcon(MaterialIcons::instance().icon(
-                    uuid, getMaterialManager().getMaterial(uuid)->getMaterialAppearance()));
+                restate(child);
             }
             walk(child);
         }
@@ -686,8 +826,7 @@ void MaterialTreeWidget::refreshIcon(const QString& uuid)
     for (int row = 0; row < model->rowCount(); ++row) {
         if (QStandardItem* item = model->item(row)) {
             if (item->data(Qt::UserRole).toString() == uuid) {
-                item->setIcon(MaterialIcons::instance().icon(
-                    uuid, getMaterialManager().getMaterial(uuid)->getMaterialAppearance()));
+                restate(item);
             }
             walk(item);
         }
@@ -711,6 +850,7 @@ void MaterialTreeWidget::addMaterials(
             auto card = new QStandardItem(cardIcon(uuid, icon), mat.first);
             card->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
             card->setData(QVariant(uuid), Qt::UserRole);
+            card->setToolTip(cardToolTip(uuid));
 
             addExpanded(&parent, card);
         }

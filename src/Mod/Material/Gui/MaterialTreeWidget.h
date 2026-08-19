@@ -252,6 +252,9 @@ protected:
     /// The icon a card shows: its own rendered appearance where it has
     /// one and the render has landed, else \a fallback (the library icon).
     QIcon cardIcon(const QString& uuid, const QIcon& fallback);
+    /// The card's name and description, with its rendered icon shown
+    /// larger than a tree row can afford.
+    QString cardToolTip(const QString& uuid);
     /// Restate one card's icon after its render finished.
     void refreshIcon(const QString& uuid);
     void addMaterials(
