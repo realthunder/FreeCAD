@@ -1739,28 +1739,34 @@ TEST_F(PropertyMaterialListTest, aRunFromALaterBuildIsReadAndDropped)
     // by hand, because the claim is about bytes this writer cannot produce.
     std::ostringstream file;
     auto put = [&file](unsigned long value) { file << value << '\n'; };
+    // A run head is its shape, its BYTE LENGTH and its entry count -- the
+    // length being what a reader steps over when it understands neither
+    auto run = [&file, &put](unsigned long type, unsigned long count,
+                             const std::string& payload) {
+        put(type);
+        put(payload.size());
+        put(count);
+        file << payload;
+    };
+    auto num = [](float value) {
+        std::ostringstream s;
+        s << value << '\n';
+        return s.str();
+    };
     put(0xffffffffUL);   // FieldStreamMarker: what follows is per field
     put(2);              // entry count
     // FieldDiffuse | FieldFinish | two fields this build has never heard of
-    put((1U << 1) | (1U << 11) | (1U << 12) | (1U << 14));
-    put(0);              // RunColors
-    put(2);
+    put((1U << 1) | (1U << 11) | (1U << 13) | (1U << 14));
     // A doc file read with no document version behind it reads as legacy, so
     // the alpha byte means TRANSPARENCY here: 0 is opaque
-    put(0xff000000UL);
-    put(0x00ff0000UL);
-    put(4);              // RunFinish
-    put(2);
-    put(App::SurfaceFinish::Brushed);
-    file << 0.05F << '\n' << 0.002F << '\n' << 30.0F << '\n';
-    put(App::SurfaceFinish::Blasted);
-    file << 0.02F << '\n' << 0.004F << '\n' << 0.0F << '\n';
-    put(1);              // the first unknown field, shaped as floats
-    put(2);
-    file << 1.5F << '\n' << 2.5F << '\n';
-    put(3);              // the second, shaped as strings
-    put(1);
-    file << 5 << '\n' << "hello";   // an OutputStream string is a length and its bytes
+    run(0, 2, "4278190080\n16711680\n");   // RunColors
+    run(4, 2, num(App::SurfaceFinish::Brushed) + num(0.05F) + num(0.002F) + num(30.0F)
+                  + num(App::SurfaceFinish::Blasted) + num(0.02F) + num(0.004F)
+                  + num(0.0F));            // RunFinish
+    run(1, 2, num(1.5F) + num(2.5F));      // the first unknown field, as floats
+    // The second, whose payload this build never parses at all: the byte
+    // length is the only thing it needs to get past it
+    run(3, 1, "0:hello\n");
 
     App::PropertyMaterialList prop;
     ASSERT_NO_THROW(restoreDocFile(prop, file.str()));
@@ -1770,6 +1776,148 @@ TEST_F(PropertyMaterialListTest, aRunFromALaterBuildIsReadAndDropped)
     EXPECT_EQ(prop.getFinish(0).pattern, App::SurfaceFinish::Brushed);
     EXPECT_FLOAT_EQ(prop.getFinish(0).angle, 30.0F);
     EXPECT_EQ(prop.getFinish(1).pattern, App::SurfaceFinish::Blasted);
+}
+
+TEST_F(PropertyMaterialListTest, aRunShapeFromALaterBuildIsSteppedOver)
+{
+    // The half a run's shape byte alone cannot buy: a record KIND added
+    // after this build. Only the byte length in the head gets past it --
+    // without one the rest of the stream was consumed as garbage
+    // (docs/ShapeAppearanceDesign.md 9.4.2).
+    std::ostringstream file;
+    auto put = [&file](unsigned long value) { file << value << '\n'; };
+    auto run = [&file, &put](unsigned long type, unsigned long count,
+                             const std::string& payload) {
+        put(type);
+        put(payload.size());
+        put(count);
+        file << payload;
+    };
+    auto num = [](float value) {
+        std::ostringstream s;
+        s << value << '\n';
+        return s.str();
+    };
+    put(0xffffffffUL);
+    put(2);
+    // FieldDiffuse, then FieldType carrying a shape this build has never
+    // heard of, then FieldFinish behind it -- which is the one that used to
+    // be lost along with everything after it
+    put((1U << 1) | (1U << 6) | (1U << 11));
+    run(0, 2, "4278190080\n16711680\n");
+    run(97, 2, "whatever this is\nand however long it runs\n");
+    run(4, 2, num(App::SurfaceFinish::Brushed) + num(0.05F) + num(0.002F) + num(30.0F)
+                  + num(App::SurfaceFinish::Blasted) + num(0.02F) + num(0.004F)
+                  + num(0.0F));
+
+    App::PropertyMaterialList prop;
+    ASSERT_NO_THROW(restoreDocFile(prop, file.str()));
+    ASSERT_EQ(prop.getSize(), 2);
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
+    // The unknown shape was dropped, and the field behind it still landed
+    EXPECT_EQ(prop.getType(0), App::Material::USER_DEFINED);
+    EXPECT_EQ(prop.getFinish(0).pattern, App::SurfaceFinish::Brushed);
+    EXPECT_EQ(prop.getFinish(1).pattern, App::SurfaceFinish::Blasted);
+}
+
+TEST_F(PropertyMaterialListTest, aTextureRoundTripsBothForkEncodings)
+{
+    App::SurfaceTexture other;
+    other.maps[App::SurfaceTexture::Emissive] = "e-hash";
+    other.maps[App::SurfaceTexture::MetallicRoughness] = "mr-hash";
+    other.scale[0] = 0.5F;
+    other.rotation = 270.0F;
+
+    App::PropertyMaterialList prop;
+    prop.setSize(4);
+    prop.setDiffuseColors({packed(0xff0000ff), packed(0x00ff00ff),
+                           packed(0x0000ffff), packed(0xffffffff)});
+    prop.setTextures({oakTexture(), other, oakTexture(), App::SurfaceTexture()});
+    ASSERT_EQ(prop.getTexturePalette().size(), 3U);
+
+    for (bool asXML : {true, false}) {
+        App::PropertyMaterialList back;
+        if (asXML) {
+            restoreFromXML(back, saveToXML(prop, 5));
+        }
+        else {
+            restoreDocFile(back, saveDocFile(prop, 5));
+        }
+        ASSERT_EQ(back.getSize(), 4) << asXML;
+        EXPECT_EQ(back.getTexture(0), oakTexture()) << asXML;
+        EXPECT_EQ(back.getTexture(1), other) << asXML;
+        EXPECT_EQ(back.getTexture(2), oakTexture()) << asXML;
+        EXPECT_FALSE(back.getTexture(3).isSet()) << asXML;
+        // Shared content is one palette slot, coming back as it went out
+        EXPECT_EQ(back.getTexturePalette().size(), 3U) << asXML;
+        EXPECT_EQ(back.getTextureIndex().size(), 4U) << asXML;
+        EXPECT_TRUE(back.isSame(prop)) << asXML;
+    }
+}
+
+TEST_F(PropertyMaterialListTest, aUniformTextureCostsNoIndexOnTheWireEither)
+{
+    App::PropertyMaterialList prop;
+    prop.setSize(500);
+    prop.setTexture(oakTexture());
+
+    for (bool asXML : {true, false}) {
+        App::PropertyMaterialList back;
+        if (asXML) {
+            restoreFromXML(back, saveToXML(prop, 5));
+        }
+        else {
+            // One record and no index, whatever the entry count: the whole
+            // field is well under what 500 two-byte slots would cost
+            EXPECT_LT(saveDocFile(prop, 5).size(), 500U);
+            restoreDocFile(back, saveDocFile(prop, 5));
+        }
+        ASSERT_EQ(back.getSize(), 500) << asXML;
+        EXPECT_EQ(back.getTexturePalette().size(), 1U) << asXML;
+        EXPECT_EQ(back.getTextureIndex().size(), 0U) << asXML;
+        EXPECT_EQ(back.getTexture(499), oakTexture()) << asXML;
+    }
+}
+
+TEST_F(PropertyMaterialListTest, aTextureSlotFromALaterBuildIsReadAndDropped)
+{
+    // A record states how many slots it carries, so a build with one map
+    // more than this one still writes a palette this one can read
+    std::ostringstream file;
+    auto put = [&file](unsigned long value) { file << value << '\n'; };
+    auto run = [&file, &put](unsigned long type, unsigned long count,
+                             const std::string& payload) {
+        put(type);
+        put(payload.size());
+        put(count);
+        file << payload;
+    };
+    // A string over a TEXT-mode stream is its embedded newline count, a
+    // colon, the text, and a closing newline (Base::OutputStream)
+    auto str = [](const std::string& value) { return "0:" + value + "\n"; };
+    std::ostringstream texture;
+    texture << App::SurfaceTexture::SlotCount + 1 << '\n';   // one slot more
+    texture << 1 << '\n';                                    // one palette entry
+    for (unsigned slot = 0; slot < App::SurfaceTexture::SlotCount; ++slot) {
+        texture << str("hash-" + std::to_string(slot));
+    }
+    texture << str("clearcoat");                             // the slot we lack
+    texture << 1.0F << '\n' << 1.0F << '\n' << 0.0F << '\n' << 0.0F << '\n'
+            << 0.0F << '\n';
+    texture << 0 << '\n';                                    // no index: uniform
+
+    put(0xffffffffUL);
+    put(2);
+    put(1U << 12);   // FieldTexture alone
+    run(5, 1, texture.str());
+
+    App::PropertyMaterialList prop;
+    ASSERT_NO_THROW(restoreDocFile(prop, file.str()));
+    ASSERT_EQ(prop.getSize(), 2);
+    ASSERT_EQ(prop.getTexturePalette().size(), 1U);
+    for (unsigned slot = 0; slot < App::SurfaceTexture::SlotCount; ++slot) {
+        EXPECT_EQ(prop.getTexture(0).maps[slot], "hash-" + std::to_string(slot)) << slot;
+    }
 }
 
 TEST_F(PropertyMaterialListTest, aKeyFromALaterBuildIsSteppedOver)

@@ -24,6 +24,8 @@
 #include "PreCompiled.h"
 
 #include <cctype>
+#include <functional>
+#include <sstream>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/math/special_functions/round.hpp>
@@ -4691,17 +4693,44 @@ enum FieldBit {
     /// nothing -- it only tests the bits it knows.
     FieldPBR = 1 << 10,
     FieldFinish = 1 << 11,
+    FieldTexture = 1 << 12,
 };
+
+/** Bits this build knows about
+ *
+ * A bit outside it is a field a later build added: its run is stepped over
+ * by the byte length in its head and the fields around it still land.
+ */
+constexpr uint16_t KnownFields = FieldAmbient | FieldDiffuse | FieldSpecular
+    | FieldEmissive | FieldShininess | FieldTransparency | FieldType
+    | FieldImage | FieldImagePath | FieldUuid | FieldPBR | FieldFinish
+    | FieldTexture;
+
+/** Bits that are flags rather than fields, and so have no run to read
+ *
+ * FieldPBR alone, and it stays a special case rather than becoming a
+ * reserved range: a range would have to be carved out of the same 16 bits
+ * the fields grow into, and the byte length in the run head makes it
+ * unnecessary. A flag added later writes a run of ZERO bytes, which every
+ * reader steps over exactly as it steps over a field it does not know --
+ * so the presence of the bit is still the whole value, and no reader has
+ * to be told in advance which bits carry a payload.
+ */
+constexpr uint16_t FieldFlags = FieldPBR;
 
 /** How a run is built, stated ahead of every run
  *
  * The field bits say WHICH fields a file carries; this says HOW each run
- * is shaped, and it is what lets a reader consume a run whose FIELD it does
- * not know -- read it by its shape, drop the values, carry on with the
- * rest. Without it the encoding is positional and only tolerates unknown
- * fields that happen to sit last, which holds for exactly one round of
- * additions. See docs/ShapeAppearanceDesign.md 9.4.2: this costs one byte
- * per present field and cannot be added once a build is published.
+ * is shaped. It rides in the run head beside the run's BYTE LENGTH, and
+ * between them a reader can get past anything: a field bit it does not
+ * know, and -- because the length needs no understanding of the payload at
+ * all -- a run SHAPE it does not know either. Without them the encoding is
+ * positional and only tolerates unknown fields that happen to sit last,
+ * which holds for exactly one round of additions.
+ *
+ * See docs/ShapeAppearanceDesign.md 9.4.2: this costs 9 bytes per present
+ * field, of which there are under a dozen, and cannot be added once a build
+ * is published.
  */
 enum FieldRunType : uint8_t {
     RunColors = 0,
@@ -4709,6 +4738,7 @@ enum FieldRunType : uint8_t {
     RunInt8 = 2,
     RunStrings = 3,
     RunFinish = 4,
+    RunTexture = 5,
 };
 
 /// The records of one finish run. Shared by the material list's per field
@@ -4736,6 +4766,132 @@ void readFinishRecords(Base::InputStream &str, std::vector<SurfaceFinish> &field
     }
 }
 
+/** One texture run: the palette and the index, each stating its own length
+ *
+ * The slot count leads, so that a build with more slots than this one --
+ * glTF may yet gain a map -- writes a record this one can still read: the
+ * slots it knows land and the rest are dropped, rather than the whole run
+ * going out of step. The same reason the run head states a byte length.
+ */
+void writeTextureRun(Base::OutputStream &str, const std::vector<SurfaceTexture> &palette,
+                     const std::vector<uint16_t> &index)
+{
+    str << static_cast<uint8_t>(SurfaceTexture::SlotCount);
+    str << static_cast<uint32_t>(palette.size());
+    for (const auto &value : palette) {
+        for (const auto &hash : value.maps)
+            str << hash;
+        str << value.scale[0];
+        str << value.scale[1];
+        str << value.offset[0];
+        str << value.offset[1];
+        str << value.rotation;
+    }
+    str << static_cast<uint32_t>(index.size());
+    for (uint16_t slot : index)
+        str << slot;
+}
+
+/// One hex token as its bytes. A lone '-' is the empty string, which no hex
+/// byte can be mistaken for.
+std::string hexToken(const std::string &token)
+{
+    if (token == "-")
+        return {};
+    if (token.size() % 2 != 0)
+        throw Base::FileException("odd-length hex in a material string");
+    std::string value(token.size() / 2, '\0');
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        value[i] = static_cast<char>(std::stoi(token.substr(i * 2, 2), nullptr, 16));
+    }
+    return value;
+}
+
+/// A palette length a file states but the index cannot address. Checked
+/// before the allocation, not after: the number came out of a file.
+void checkPaletteSize(std::size_t size)
+{
+    if (size > maxPaletteSize)
+        throw Base::FileException("texture palette is longer than the index can address");
+}
+
+/// An index is one slot per entry of the list, or absent because the field
+/// is uniform. Nothing else, and checked before the allocation.
+void checkIndexSize(std::size_t size, std::size_t count)
+{
+    if (size != 0 && size != count)
+        throw Base::FileException("texture index length does not match the list");
+}
+
+/// \a count is what the run head said, so the index length can be checked
+/// BEFORE it is allocated: both numbers came out of a file
+void readTextureRun(Base::InputStream &str, std::vector<SurfaceTexture> &palette,
+                    std::vector<uint16_t> &index, uint32_t count)
+{
+    uint8_t slotCount = 0;
+    str >> slotCount;
+    uint32_t size = 0;
+    str >> size;
+    checkPaletteSize(size);
+    palette.resize(size);
+    std::string hash;
+    for (auto &value : palette) {
+        for (uint8_t slot = 0; slot < slotCount; ++slot) {
+            str >> hash;
+            if (slot < SurfaceTexture::SlotCount)
+                value.maps[slot] = hash;
+            // else: a slot this build has no name for, read and dropped
+        }
+        str >> value.scale[0];
+        str >> value.scale[1];
+        str >> value.offset[0];
+        str >> value.offset[1];
+        str >> value.rotation;
+        value.normalize();
+    }
+    uint32_t indexSize = 0;
+    str >> indexSize;
+    checkIndexSize(indexSize, count);
+    index.resize(indexSize);
+    for (auto &slot : index)
+        str >> slot;
+}
+
+/// The same run out of the XML keyed form, whose tokens are text
+void readTextureKey(std::istream &s, std::vector<SurfaceTexture> &palette,
+                    std::vector<uint16_t> &index, unsigned count)
+{
+    unsigned slotCount = 0;
+    unsigned size = 0;
+    if (!(s >> slotCount >> size))
+        return;
+    checkPaletteSize(size);
+    palette.resize(size);
+    std::string token;
+    for (auto &value : palette) {
+        for (unsigned slot = 0; slot < slotCount; ++slot) {
+            if (!(s >> token))
+                return;
+            if (slot < SurfaceTexture::SlotCount)
+                value.maps[slot] = hexToken(token);
+            // else: a slot this build has no name for, read and dropped
+        }
+        s >> value.scale[0] >> value.scale[1]
+          >> value.offset[0] >> value.offset[1] >> value.rotation;
+        value.normalize();
+    }
+    unsigned indexSize = 0;
+    if (!(s >> indexSize))
+        return;
+    checkIndexSize(indexSize, count);
+    index.resize(indexSize);
+    unsigned slot = 0;
+    for (auto &entry : index) {
+        s >> slot;
+        entry = static_cast<uint16_t>(slot);
+    }
+}
+
 } // namespace
 
 void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
@@ -4755,34 +4911,49 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     if (!_imagePath.empty())    mask |= FieldImagePath;
     if (!_uuid.empty())         mask |= FieldUuid;
     if (!_finish.empty())       mask |= FieldFinish;
+    if (!_texturePalette.empty()) mask |= FieldTexture;
     if (_pbr)                   mask |= FieldPBR;
     str << mask;
 
-    // Runs go out in ascending bit order and each states its shape first,
-    // so that a reader meeting a field bit it does not know can still step
-    // over the run (FieldRunType).
-    auto writeRunHead = [&str](uint8_t type, std::size_t size) {
+    // Runs go out in ascending bit order, each behind a head of its shape,
+    // its byte length and its entry count. The length is what a reader that
+    // knows neither the field nor the shape steps over (9.4.2), and writing
+    // it means building the payload first -- into a scratch stream in the
+    // same mode and byte order, so the bytes handed on are exactly the ones
+    // the reader would have seen written directly.
+    auto writeRun = [&str](uint8_t type, std::size_t count,
+                           const std::function<void(Base::OutputStream&)> &payload) {
+        std::ostringstream buf(std::ios::out | std::ios::binary);
+        Base::OutputStream run(buf, str.isBinary());
+        run.setByteOrder(str.byteOrder());
+        payload(run);
+        const std::string bytes = buf.str();
         str << type;
-        str << static_cast<uint32_t>(size);
+        str << static_cast<uint32_t>(bytes.size());
+        str << static_cast<uint32_t>(count);
+        for (char byte : bytes)
+            str << byte;
     };
 
     // The per field encoding is this fork's own, but it is written into the
     // same document as the compatible one and is read back by the same gate,
     // so it stores colours the way that document stores them.
     const bool convert = saveConverts();
-    auto writeColors = [&str, &writeRunHead, convert](const std::vector<Color> &field) {
+    auto writeColors = [&writeRun, convert](const std::vector<Color> &field) {
         if (field.empty())
             return;
-        writeRunHead(RunColors, field.size());
-        for (const auto &col : field)
-            str << packedForSave(col, convert);
+        writeRun(RunColors, field.size(), [&field, convert](Base::OutputStream &run) {
+            for (const auto &col : field)
+                run << packedForSave(col, convert);
+        });
     };
-    auto writeFloats = [&str, &writeRunHead](const std::vector<float> &field) {
+    auto writeFloats = [&writeRun](const std::vector<float> &field) {
         if (field.empty())
             return;
-        writeRunHead(RunFloats, field.size());
-        for (float value : field)
-            str << value;
+        writeRun(RunFloats, field.size(), [&field](Base::OutputStream &run) {
+            for (float value : field)
+                run << value;
+        });
     };
 
     writeColors(_ambient);
@@ -4791,25 +4962,38 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     writeColors(_emissive);
     writeFloats(_shininess);
     if (!_type.empty()) {
-        writeRunHead(RunInt8, _type.size());
-        for (int8_t value : _type)
-            str << value;
+        writeRun(RunInt8, _type.size(), [this](Base::OutputStream &run) {
+            for (int8_t value : _type)
+                run << value;
+        });
     }
     // std::string over this stream is already a length and its bytes, which
     // is the same shape upstream writes its strings in
-    auto writeStrings = [&str, &writeRunHead](const std::vector<std::string> &field) {
+    auto writeStrings = [&writeRun](const std::vector<std::string> &field) {
         if (field.empty())
             return;
-        writeRunHead(RunStrings, field.size());
-        for (const auto &value : field)
-            str << value;
+        writeRun(RunStrings, field.size(), [&field](Base::OutputStream &run) {
+            for (const auto &value : field)
+                run << value;
+        });
     };
     writeStrings(_image);
     writeStrings(_imagePath);
     writeStrings(_uuid);
     if (!_finish.empty()) {
-        writeRunHead(RunFinish, _finish.size());
-        writeFinishRecords(str, _finish);
+        writeRun(RunFinish, _finish.size(), [this](Base::OutputStream &run) {
+            writeFinishRecords(run, _finish);
+        });
+    }
+    if (!_texturePalette.empty()) {
+        // The entry count the head states follows the same rule every other
+        // field's does -- uniform is 1, varying is the whole list -- while
+        // the palette and the index state their own lengths inside, because
+        // neither is the entry count.
+        writeRun(RunTexture, _textureIndex.empty() ? 1 : _textureIndex.size(),
+                 [this](Base::OutputStream &run) {
+                     writeTextureRun(run, _texturePalette, _textureIndex);
+                 });
     }
 }
 
@@ -4840,18 +5024,36 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
     std::vector<std::string>().swap(_uuid);
     std::vector<int8_t>().swap(_type);
     std::vector<SurfaceFinish>().swap(_finish);
+    std::vector<SurfaceTexture>().swap(_texturePalette);
+    std::vector<uint16_t>().swap(_textureIndex);
 
     // Ascending bit order, which is the order they were written in, each run
-    // preceded by its shape. A bit this build does not know is a field added
-    // later: its run is read by that shape and dropped, so the fields around
-    // it still land (docs/ShapeAppearanceDesign.md 9.4.2).
+    // behind a head of its shape, its byte length and its entry count. A bit
+    // this build does not know is a field added later, and a shape it does
+    // not know is a record added later: either way the length says where the
+    // run ends, so the fields around it still land
+    // (docs/ShapeAppearanceDesign.md 9.4.2).
     for (uint32_t bit = 1; bit <= 0x8000U; bit <<= 1) {
-        if ((mask & bit) == 0 || bit == FieldPBR)
-            continue;   // FieldPBR is a flag: it has no run to read
+        if ((mask & bit) == 0 || (bit & FieldFlags) != 0)
+            continue;   // a flag bit carries no run to read
         uint8_t type = 0;
         str >> type;
+        uint32_t bytes = 0;
+        str >> bytes;
         uint32_t count = 0;
         str >> count;
+
+        // Reading a run head is not the same as understanding the run; this
+        // is what gets past the ones that are not understood
+        auto skipRun = [&str, bytes]() {
+            char byte = 0;
+            for (uint32_t i = 0; i < bytes; ++i)
+                str >> byte;
+        };
+        if ((bit & KnownFields) == 0) {
+            skipRun();   // a field added by a later build
+            continue;
+        }
         if (count != 1 && count != uCt)
             throw Base::FileException("material field length does not match the list");
 
@@ -4860,6 +5062,8 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
         std::vector<int8_t> int8s;
         std::vector<std::string> strings;
         std::vector<SurfaceFinish> finishes;
+        std::vector<SurfaceTexture> palette;
+        std::vector<uint16_t> index;
         switch (type) {
         case RunColors: {
             colors.resize(count);
@@ -4888,11 +5092,14 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
         case RunFinish:
             readFinishRecords(str, finishes, count);
             break;
+        case RunTexture:
+            readTextureRun(str, palette, index, count);
+            break;
         default:
-            // An unknown SHAPE cannot be stepped over -- there is no way to
-            // tell where it ends. Stop reading rather than consume the rest
-            // of the stream as garbage; what has landed so far stands.
-            bit = 0x8000U;
+            // A record shape added by a later build. The byte length is
+            // exactly what makes this survivable: the field is dropped and
+            // the ones after it still land.
+            skipRun();
             continue;
         }
 
@@ -4908,7 +5115,11 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
         case FieldImagePath: _imagePath.swap(strings); break;
         case FieldUuid: _uuid.swap(strings); break;
         case FieldFinish: _finish.swap(finishes); break;
-        default: break;   // a field added later: read, and dropped
+        case FieldTexture:
+            _texturePalette.swap(palette);
+            _textureIndex.swap(index);
+            break;
+        default: break;   // unreachable: an unknown bit was skipped above
         }
     }
     if (legacy) {
@@ -4990,6 +5201,44 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
     writeStrings('i', _image);
     writeStrings('p', _imagePath);
     writeStrings('u', _uuid);
+    // Hex again, and for the same reason: a content hash is an opaque
+    // string, not a number this format may reformat
+    auto writeHex = [&writer](const std::string &value) {
+        writer.Stream() << ' ';
+        if (value.empty()) {
+            writer.Stream() << '-';
+            return;
+        }
+        writer.Stream() << std::hex;
+        for (unsigned char byte : value) {
+            writer.Stream() << (byte >> 4) << (byte & 0xf);
+        }
+        writer.Stream() << std::dec;
+    };
+    // Self-describing, unlike every other key: the palette and the index
+    // state their own lengths, because neither of them is the entry count.
+    // The leading number is still the honest token count, which is all a
+    // reader that does not know the key needs to step over it (9.4.2).
+    if (!_texturePalette.empty()) {
+        const auto precision = writer.Stream().precision(9);
+        const unsigned slotCount = SurfaceTexture::SlotCount;
+        writer.Stream() << "x "
+                        << 2 + _texturePalette.size() * (slotCount + 5) + 1
+                               + _textureIndex.size()
+                        << ' ' << slotCount << ' ' << _texturePalette.size();
+        for (const auto &value : _texturePalette) {
+            for (const auto &hash : value.maps)
+                writeHex(hash);
+            writer.Stream() << ' ' << value.scale[0] << ' ' << value.scale[1]
+                            << ' ' << value.offset[0] << ' ' << value.offset[1]
+                            << ' ' << value.rotation;
+        }
+        writer.Stream() << ' ' << _textureIndex.size();
+        for (uint16_t slot : _textureIndex)
+            writer.Stream() << ' ' << slot;
+        writer.Stream() << '\n';
+        writer.Stream().precision(precision);
+    }
     // Four tokens per entry, which is why the number after a key counts
     // TOKENS and not entries: it is the only thing that lets a reader step
     // over a key it does not know (9.4.2). Every other field writes one
@@ -5029,6 +5278,8 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
     std::vector<std::string>().swap(_uuid);
     std::vector<int8_t>().swap(_type);
     std::vector<SurfaceFinish>().swap(_finish);
+    std::vector<SurfaceTexture>().swap(_texturePalette);
+    std::vector<uint16_t>().swap(_textureIndex);
 
     auto &s = reader.beginCharStream();
     std::string key;
@@ -5054,6 +5305,11 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
         case 'f':
             stride = 4;
             break;
+        case 'x':
+            // Self-describing: the count rules below do not apply, and the
+            // stride is only here to say the key IS known
+            stride = 1;
+            break;
         default:
             break;
         }
@@ -5063,6 +5319,12 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
             std::string token;
             for (unsigned i = 0; i < tokens && (s >> token); ++i) {
             }
+            continue;
+        }
+        if (key[0] == 'x') {
+            // The palette states its own length; the index does not get to,
+            // because it is one slot per entry of this list
+            readTextureKey(s, _texturePalette, _textureIndex, uCt);
             continue;
         }
         if (tokens % stride != 0)
@@ -5101,16 +5363,9 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
             field.resize(count);
             std::string token;
             for (auto &value : field) {
-                if (!(s >> token) || token == "-") {
-                    continue;
-                }
-                if (token.size() % 2 != 0)
-                    throw Base::FileException("odd-length hex in a material string");
-                value.resize(token.size() / 2);
-                for (std::size_t i = 0; i < value.size(); ++i) {
-                    value[i] = static_cast<char>(
-                            std::stoi(token.substr(i * 2, 2), nullptr, 16));
-                }
+                if (!(s >> token))
+                    break;
+                value = hexToken(token);
             }
             break;
         }
