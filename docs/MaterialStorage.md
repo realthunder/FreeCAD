@@ -1,9 +1,10 @@
 # Material storage -- content-addressed cards in the document
 
-Status: design agreed 2026-08-19 (user). Sec 10 steps 1 to 4 are built, tested
+Status: design agreed 2026-08-19 (user). Sec 10 steps 1 to 5 are built, tested
 and landed: the canonical writer with its content hash, the generalized
-collect walk, `PropertyMaterial` on blobs, and the preset index. Step 5, the
-explicit sync commands, is not started. The `Materials::PropertyMaterial ShapeMaterial` property on
+collect walk, `PropertyMaterial` on blobs, the preset index, and the explicit
+sync commands. Step 6, folding appearance and texture properties onto the same
+mechanism, is the open one. The `Materials::PropertyMaterial ShapeMaterial` property on
 `Part::Feature` is built and green, as a faithful port of upstream; everything
 below replaces how that property *stores* its value, not what it means.
 
@@ -382,6 +383,24 @@ into the store under its content hash. No new manager API is required.
    landed. The index is built on first use rather than at startup (47 ms for
    215 cards in a debug build) and dropped by `MaterialManager::refresh()`.
 5. **Explicit sync commands** ("update from library", "save to library").
+   DONE, sec 13. `PropertyMaterial::libraryStatus()` with the five states,
+   `updateFromLibrary()`, `saveToLibrary()`, the same three as Python module
+   functions, and `Material_UpdateFromLibrary` / `Material_SaveToLibrary` in
+   the Tree and View context menus. Guarded by
+   `materialtests/TestMaterialSync.py` (17 cases) and smoked under xvfb for
+   the parts a suite cannot reach: command gating, the undo entry, and two
+   objects sharing one card writing the library once.
+
+   One thing the design did not say, found by testing it: **the library writer
+   rounded values away.** It rendered every quantity through
+   `Quantity::getUserString()`, so a card holding 7854.321 kg/m^3 was written
+   as 7854.32 and read back as different content -- "save to library" could
+   never converge, and every document holding that card would report a
+   divergence nobody made. The writer now keeps the schema's unit and asks the
+   parser how much precision reads the value back unchanged. This is sec 4.4's
+   trap again, in the one writer sec 4 did not have to touch, and the reason
+   `testTheLibraryWriterKeepsWhatTheHashMeasures` sits in the canonical
+   suite.
 6. Only then: consider whether appearance and texture properties fold onto
    the same mechanism (the general reading of decision 3).
 
