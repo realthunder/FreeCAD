@@ -1180,7 +1180,6 @@ static void reportProxyStore(const Render::ProxyHierarchy &index,
 /// removed is counting a hole.
 static void reportProxyExact(const Render::ProxyHierarchy &index,
                              const Render::ProxyStore &store,
-                             const Render::DrawCallList &draws,
                              const Render::ProxyCut &cut, const float *V,
                              const float *P, float viewportHeightPx,
                              float tolerancePx,
@@ -1245,15 +1244,6 @@ static void reportProxyExact(const Render::ProxyHierarchy &index,
     // stands for.
     uint64_t holePrims = 0;
     uint32_t holeInstances = 0, holeBuckets = 0, holeNodes = 0;
-    // Split by what the missing bucket draws, because the two halves
-    // want opposite fixes: a line or point bucket has no proxy because
-    // generation refuses one on purpose (a decimated edge is not an
-    // edge), so the accounting is what is wrong -- the cut may not
-    // count it as covered. A triangle bucket with no proxy is the
-    // generation gap of 11.1e, and there the accounting is right and
-    // the generation is what is missing.
-    uint64_t holeTriPrims = 0, holeLinePrims = 0;
-    uint32_t holeTriInstances = 0;
     std::vector<uint32_t> sub;
     const auto &insts = index.instances();
     for (int ni : cut.proxyNodes) {
@@ -1263,23 +1253,16 @@ static void reportProxyExact(const Render::ProxyHierarchy &index,
         std::unordered_set<uint64_t> missing;
         for (uint32_t idx : sub) {
             const auto &inst = insts[idx];
-            if (store.find(node.id, inst.materialBucket))
+            // What the cut already draws itself is not a hole: an edge
+            // below a stopped node is in the exact list by design
+            // (11.1g). What is left is the generation gap proper --
+            // a triangle bucket that should have had a proxy.
+            if (!inst.mergeable
+                    || store.find(node.id, inst.materialBucket))
                 continue;
             missing.insert(inst.materialBucket);
             holeInstances += 1;
             holePrims += inst.primCount;
-            const bool triangle =
-                inst.drawIndex < draws.size()
-                && draws[inst.drawIndex].material.type
-                    == Render::Material::Triangle
-                && !draws[inst.drawIndex].standIn;
-            if (triangle) {
-                holeTriInstances += 1;
-                holeTriPrims += inst.primCount;
-            }
-            else {
-                holeLinePrims += inst.primCount;
-            }
         }
         if (!missing.empty()) {
             ++holeNodes;
@@ -1294,19 +1277,18 @@ static void reportProxyExact(const Render::ProxyHierarchy &index,
     const uint64_t visible = cut.exactPrims + cut.coveredPrims;
     snprintf(buf, sizeof(buf),
              "render proxyexact %gpx uncovered: %u of %zu stopped nodes leave "
-             "%u buckets with no proxy -- %u inst / %llu prims counted covered "
-             "and drawn by nobody (%.1f%% of %llu covered), of which %llu tri "
-             "over %u inst and %llu line/point | honest net %llu of %llu, "
-             "%.2fx\n",
+             "%u triangle buckets with no proxy -- %u inst / %llu prims "
+             "(%.1f%% of %llu covered) | below a stopped node and drawn "
+             "exactly: %u inst / %llu prims | net %llu of %llu, %.2fx\n",
              double(tolerancePx), holeNodes, cut.proxyNodes.size(),
              holeBuckets, holeInstances, (unsigned long long)holePrims,
              cut.coveredPrims ? 100.0 * double(holePrims)
                      / double(cut.coveredPrims)
                  : 0.0,
              (unsigned long long)cut.coveredPrims,
-             (unsigned long long)holeTriPrims, holeTriInstances,
-             (unsigned long long)holeLinePrims, (unsigned long long)honest,
-             (unsigned long long)visible,
+             cut.unmergeableInstances,
+             (unsigned long long)cut.unmergeablePrims,
+             (unsigned long long)honest, (unsigned long long)visible,
              honest ? double(visible) / double(honest) : 0.0);
 #ifdef FC_RENDERER_STANDALONE
     std::printf("%s", buf);
@@ -1393,8 +1375,8 @@ static void reportProxyCutPriced(const Render::ProxyHierarchy &index,
 #endif
         // The same cut, asked what it did NOT aggregate -- which is
         // where the ceiling above is, and what phase 3 has to move.
-        reportProxyExact(index, store, draws, byError, V, P, viewportHeightPx,
-                         tol, costs);
+        reportProxyExact(index, store, byError, V, P, viewportHeightPx, tol,
+                         costs);
     }
 }
 

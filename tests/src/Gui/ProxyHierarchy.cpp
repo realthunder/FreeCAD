@@ -458,6 +458,54 @@ TEST(ProxyHierarchy, emptyAndUnlocatableInputAreHarmless)
     EXPECT_EQ(h.instances().size(), 1u);
 }
 
+TEST(ProxyCutTest, aStoppedNodeDrawsWhatNoProxyCanStandForItself)
+{
+    // Section 11.1g. Generation refuses lines, points and stand-in
+    // boxes on purpose -- a decimated edge is not an edge -- so nothing
+    // above one ever draws it. A cut that counted them as covered was
+    // quoting as removed what would still have to be issued: 17-27% of
+    // the covered figure on MiSTer, 99% of it edges.
+    auto instances = flatAssembly(8);
+    for (auto &inst : instances)
+        inst.primCount = 100;
+    // One in eight is an edge draw, spread through the model rather
+    // than gathered, which is how a document's edges actually sit.
+    uint64_t edges = 0, edgePrims = 0;
+    for (size_t i = 0; i < instances.size(); i += 8) {
+        instances[i].mergeable = false;
+        instances[i].materialBucket = 7;
+        ++edges;
+        edgePrims += instances[i].primCount;
+    }
+    ProxyHierarchy h;
+    h.build(instances);
+
+    float V[16];
+    float P[16];
+    viewAt(V, 400.0f);  // far enough that the cut stops at the root
+    perspective(P, 45.0f, 1.6f, 0.1f, 5000.0f);
+    ProxyCut cut;
+    h.selectCut(V, P, 1200.0f, 64.0f, cut);
+
+    ASSERT_FALSE(cut.proxyNodes.empty());
+    EXPECT_EQ(cut.unmergeableInstances, edges);
+    EXPECT_EQ(cut.unmergeablePrims, edgePrims);
+    EXPECT_EQ(cut.exact.size() + cut.coveredInstances + cut.culledInstances,
+              instances.size())
+        << "an instance was neither drawn nor covered nor culled";
+    EXPECT_EQ(cut.coveredInstances, instances.size() - edges);
+    // And the invariant agrees: an edge below a stopped node is drawn
+    // by the cut, so marking it as covered too would be drawing it
+    // twice.
+    std::string why;
+    EXPECT_TRUE(h.verifyCut(cut, &why)) << why;
+
+    // The saving is what it is, not what ignoring the edges made it
+    // look like.
+    EXPECT_GT(cut.exactPrims, 0u);
+    EXPECT_EQ(cut.exactPrims, edgePrims);
+}
+
 TEST(ProxyCutTest, theExactMassIsAttributedToTheNodesReason)
 {
     // Section 11.1g. The priced cut said a proxy costs 4-9% of what it

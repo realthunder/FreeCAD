@@ -202,6 +202,16 @@ struct ProxyInstance {
     /// one screw expands what instancing shares) and unused by the
     /// partition itself.
     const void *sourceTag = nullptr;
+    /// Whether a proxy can stand in for this at all. False for line and
+    /// point draws and for stand-in boxes: generation refuses those on
+    /// purpose (11.1c -- a decimated edge is not an edge), so no proxy
+    /// above one ever draws it.
+    ///
+    /// The cut has to know, or it counts as removed what nothing draws.
+    /// Measured at 17-27% of what a stopped node claimed to cover on
+    /// MiSTer, 99% of it edges, which is the difference between a 3.34x
+    /// saving and a 2.05x one (11.1g).
+    bool mergeable = true;
     /// Primitives this draw issues -- triangles, line segments or
     /// points, whichever the material's topology selects.
     ///
@@ -408,6 +418,14 @@ struct ProxyCut {
     uint32_t proxyDraws = 0;          ///< the merged part of drawCount
     uint32_t coveredInstances = 0;    ///< instances a proxy stands for
     uint32_t culledInstances = 0;     ///< off screen, drawn by nobody
+    /// Of \ref exact, the part that lies *below* a node the cut
+    /// stopped on: geometry no proxy can stand in for, so the proxy
+    /// draws beside it rather than instead of it. Counted separately
+    /// because it is the one population that grows as the tolerance
+    /// coarsens, and because a cut quoting it as covered is quoting a
+    /// hole (11.1g).
+    uint32_t unmergeableInstances = 0;
+    uint64_t unmergeablePrims = 0;
     /// The same three populations counted in primitives instead of
     /// draws. `coveredPrims` is the geometry a proxy replaces -- the
     /// ceiling on what the cut can save, before the proxy's own
@@ -520,6 +538,12 @@ public:
     /// Over a partition this is a counting argument rather than the
     /// ancestry test the same rule needs over a document tree. O(n) and
     /// debug-only: it allocates a mark per instance.
+    ///
+    /// "Its covering proxy" is read strictly: an instance no proxy can
+    /// stand in for (\ref ProxyInstance::mergeable) is not covered by
+    /// the node above it, so it has to appear in the exact list or be
+    /// culled -- which is exactly what the invariant should have been
+    /// saying all along, and what 11.1g found it was not.
     bool verifyCut(const ProxyCut &cut, std::string *why = nullptr) const;
 
     /// What phase 1 reports (§11.1): the distributions that pick K and

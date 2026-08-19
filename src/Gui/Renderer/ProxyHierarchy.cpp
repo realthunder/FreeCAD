@@ -255,6 +255,11 @@ void Render::proxyInstances(const DrawCallList &draws,
             ? uint64_t(d.materialIndex) : materialIdentity(d.material);
         inst.sourceTag = d.mesh ? static_cast<const void *>(d.mesh.get())
                                 : nullptr;
+        // What generation will and will not accept (ProxyStore::build):
+        // triangles only, and never a stand-in box, which is not
+        // source geometry in the first place.
+        inst.mergeable =
+            d.material.type == Material::Triangle && !d.standIn && d.mesh;
         inst.primCount = drawPrimitives(d);
         inst.meshBytes = Render::meshResidentBytes(d.mesh.get());
         out.push_back(inst);
@@ -654,6 +659,8 @@ void ProxyHierarchy::selectCutImpl(const float *view, const float *proj,
     out.proxyDraws = 0;
     out.coveredInstances = 0;
     out.culledInstances = 0;
+    out.unmergeableInstances = 0;
+    out.unmergeablePrims = 0;
     out.exactPrims = 0;
     out.coveredPrims = 0;
     out.culledPrims = 0;
@@ -662,6 +669,7 @@ void ProxyHierarchy::selectCutImpl(const float *view, const float *proj,
         return;
 
     std::vector<int> stack;
+    std::vector<uint32_t> scratch;
     stack.push_back(rootnode);
     while (!stack.empty()) {
         const int ni = stack.back();
@@ -701,10 +709,44 @@ void ProxyHierarchy::selectCutImpl(const float *view, const float *proj,
             out.proxyNodes.push_back(ni);
             out.proxyDraws +=
                 cost && cost->draws ? cost->draws : node.bucketCount;
-            out.coveredInstances += node.subtreeCount;
-            out.coveredPrims += node.subtreePrims;
             if (cost)
                 out.proxyPrims += cost->prims;
+            // Not everything below a stopped node is a proxy's to
+            // cover. Lines, points and stand-in boxes are refused by
+            // generation on purpose, so nothing above them ever draws
+            // them, and counting them as covered was counting a hole --
+            // 17-27% of the covered figure on MiSTer, 99% of it edges
+            // (11.1g). They draw exactly, beside the proxy.
+            //
+            // This walks the subtree, which a counting-only cut did not
+            // have to do. Phase 4 has to walk it anyway to issue those
+            // draws, and a saving that cannot be issued is not a
+            // saving.
+            scratch.clear();
+            subtreeInstances(ni, scratch);
+            for (uint32_t idx : scratch) {
+                const ProxyInstance &inst = instancedata[idx];
+                if (inst.mergeable) {
+                    out.coveredInstances += 1;
+                    out.coveredPrims += inst.primCount;
+                    continue;
+                }
+                // Judged like any other exact draw, since that is what
+                // it is: off screen it is culled rather than covered.
+                const BoxSight is = sightBounds(inst.bboxMin, inst.bboxMax,
+                                                view, proj, viewportHeightPx);
+                if (is.what == BoxSight::Offscreen
+                        || is.what == BoxSight::Empty) {
+                    out.culledInstances += 1;
+                    out.culledPrims += inst.primCount;
+                    continue;
+                }
+                out.exact.push_back(idx);
+                out.exactNode.push_back(ni);
+                out.exactPrims += inst.primCount;
+                out.unmergeableInstances += 1;
+                out.unmergeablePrims += inst.primCount;
+            }
             continue;
         }
         // Descended past: this node's own residents are covered by no
@@ -805,7 +847,13 @@ void ProxyHierarchy::markSubtree(int node, std::vector<uint8_t> &mark,
 {
     const ProxyNode &n = nodedata[size_t(node)];
     for (uint32_t r = 0; r < n.residentCount; ++r) {
-        uint8_t &m = mark[residentdata[n.residentFirst + r]];
+        const uint32_t idx = residentdata[n.residentFirst + r];
+        // What a proxy covers is what generation would accept from it;
+        // an edge below a stopped node is drawn by the cut itself and
+        // is marked there, not here (11.1g).
+        if (!instancedata[idx].mergeable)
+            continue;
+        uint8_t &m = mark[idx];
         if (m)
             ++clashes;
         m = uint8_t(m | bit);
