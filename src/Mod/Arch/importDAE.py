@@ -19,7 +19,7 @@
 #*                                                                         *
 #***************************************************************************
 
-import FreeCAD, Mesh, ArchCommands, os, numpy, MeshPart, Draft, Part, types
+import FreeCAD, Mesh, ArchCommands, os, numpy, Draft, Part, types
 from collections import defaultdict
 if FreeCAD.GuiUp:
     import FreeCADGui
@@ -99,6 +99,11 @@ if _param.GetBool('ColladaImportInstances', True) != \
 
 def triangulate(shape, dosegment):
     "triangulates the given face"
+
+    # MeshPart is only needed to export, and it is not built unless SMESH is.
+    # Importing it here keeps Arch (and with it the IFC importer) usable in a
+    # build without it, instead of failing at import time.
+    import MeshPart
 
     mesher = _param.GetInt("ColladaMesher",0)
     tessellation = _param.GetFloat("ColladaTessellation",1.0)
