@@ -32,7 +32,9 @@ guard on that: see docs/MaterialStorage.md sec 4.
 """
 
 import hashlib
+import os
 import re
+import shutil
 import unittest
 
 import FreeCAD
@@ -44,9 +46,26 @@ STEEL = "92589471-a6cb-4bbc-b748-d425a17dea7d"
 class MaterialCanonicalTestCases(unittest.TestCase):
     """Canonical serialization and content hashing"""
 
+    LIBRARY_FOLDER = "CanonicalTest"
+    LIBRARY_CARD = LIBRARY_FOLDER + "/Precision.FCMat"
+
     def setUp(self):
         self.MaterialManager = Materials.MaterialManager()
         self.steel = self.MaterialManager.getMaterial(STEEL)
+        self.removeLibraryCard()
+
+    def tearDown(self):
+        self.removeLibraryCard()
+
+    def removeLibraryCard(self):
+        """Leave the user's real library as it was found."""
+        for name, directory, _icon in self.MaterialManager.MaterialLibraries:
+            if name == "User":
+                folder = os.path.join(directory, self.LIBRARY_FOLDER)
+                if os.path.isdir(folder):
+                    shutil.rmtree(folder, ignore_errors=True)
+                    self.MaterialManager.refresh()
+                return
 
     def testHashIsAHash(self):
         """The hash is SHA-1 hex, matching what the blob store computes"""
@@ -141,6 +160,28 @@ class MaterialCanonicalTestCases(unittest.TestCase):
             self.assertEqual(len(forms), 1)
         finally:
             FreeCAD.Units.setSchema(schema)
+
+    def testTheLibraryWriterKeepsWhatTheHashMeasures(self):
+        """
+        A card written to a library and read back has to be the card that was
+        written. The library writer renders values in the user's units, whose
+        decimal count is a display preference: rounding a value away there
+        would make every document holding the card report a divergence nobody
+        made (docs/MaterialStorage.md sec 13.3).
+        """
+        uuids = Materials.UUIDs()
+        material = Materials.Material()
+        material.addPhysicalModel(uuids.Density)
+        # More decimals than any schema chooses to show.
+        material.setPhysicalValue("Density", "7854.321 kg/m^3")
+        self.MaterialManager.save("User", material, self.LIBRARY_CARD, overwrite=True)
+        written = self.MaterialManager.getMaterialByPath(self.LIBRARY_CARD, "User").ContentHash
+
+        # refresh() throws away what is in memory, so what comes back is what
+        # reached the disk.
+        self.MaterialManager.refresh()
+        reread = self.MaterialManager.getMaterialByPath(self.LIBRARY_CARD, "User")
+        self.assertEqual(reread.ContentHash, written)
 
     def testCanonicalFormIsLoadableYaml(self):
         """The canonical form is ordinary .FCMat YAML, not a private format"""

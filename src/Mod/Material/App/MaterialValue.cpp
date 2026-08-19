@@ -314,7 +314,40 @@ QString MaterialValue::getYAMLStringMultiLine() const
 
 QString MaterialValue::displayQuantity(const Base::Quantity& quantity)
 {
-    return QString::fromStdString(quantity.getUserString());
+    // The user's schema picks the unit, and that is what keeps a card
+    // readable. Its decimal count is another matter: getUserString() alone
+    // rounds 7854.321 kg/m^3 to 7854.32, so a card saved to the library and
+    // read back is not the card that was saved, and every document holding it
+    // reports a divergence nobody made (docs/MaterialStorage.md sec 13.3).
+    //
+    // So keep the schema's unit and ask the parser -- not an assumption about
+    // digits -- how much precision it takes to read the value back unchanged.
+    // The answer is usually the number the user typed.
+    double factor {1.0};
+    std::string unitString;
+    const std::string userString = quantity.getUserString(factor, unitString);
+    if (factor == 0.0) {
+        return QString::fromStdString(userString);
+    }
+
+    const QString units = QString::fromStdString(unitString);
+    const double displayed = quantity.getValue() / factor;
+    for (int precision = 6; precision <= 17; precision++) {
+        const QString number = QString::number(displayed, 'g', precision);
+        const QString text =
+            units.isEmpty() ? number : number + QStringLiteral(" ") + units;
+        try {
+            if (Base::Quantity::parse(text.toStdString()).getValue() == quantity.getValue()) {
+                return text;
+            }
+        }
+        catch (const Base::Exception&) {
+            // A unit this parser cannot read back. Nothing here can improve
+            // on what the schema said, so say it.
+            break;
+        }
+    }
+    return QString::fromStdString(userString);
 }
 
 QString MaterialValue::canonicalNumber(double value)
@@ -387,8 +420,10 @@ QString MaterialValue::yamlString(bool canonical) const
         else if (getType() == MaterialValue::Float) {
             auto value = getValue();
             if (!value.isNull()) {
-                yaml += canonical ? canonicalFloat(value.toFloat())
-                                  : QStringLiteral("%1").arg(value.toFloat(), 0, 'g', 6);
+                // Six digits is not enough to read a float back unchanged
+                // either, and for the same reason: what is written has to be
+                // what was stored.
+                yaml += canonicalFloat(value.toFloat());
             }
         }
         else if (getType() == MaterialValue::List) {
