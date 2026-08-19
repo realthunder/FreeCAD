@@ -166,10 +166,22 @@ Python passthrough, so the protocol design questions below are all still open.</
   `execute()` purity contract or audit, no parallel recompute scheduler, no cross-process
   BRep transfer. The one adjacent thing that *did* land is **content addressing in the
   document tier** — `App::PropertyFileIncluded` files are now stored and reference-counted by
-  content hash and written as `blobs/<hash>` archive entries, with save options and a
+  content hash and written as `blobs/` archive entries -- named after the referring
+  property, with a `blobs/Content.xml` index binding name to content, so an unpacked
+  project is diffable -- with save options and a
   restore handover protocol ([FileBlobsManager.md](./FileBlobsManager.md)). That is
   deduplicated file storage, *not* recompute memoization, and it does not advance the
   process split; it does establish the content-addressing habit both tiers want.
+  <span style="color:#1a7f37">**Extended through 2026-08 to the shapes
+  themselves** ([SharedShapeStorage.md](./SharedShapeStorage.md)): a stored
+  `TopoShape` is a content-addressed file like any other, one file per distinct
+  shape, and four preferences cut what those files hold -- pcurve dedup with the
+  planar drop, congruent-instance dedup (one file plus a rigid motion for the
+  same part in twenty places), cross-file geometry tables, and borrowing a
+  sub-shape from another file. On a 17800-object assembly the shape bytes fall
+  from 113.9MB to 71.3MB. The arc closed on a measurement, sec 12.16: the one
+  piece left was worth nothing at assembly scale. Still not recompute
+  memoization, which remains the near-term compute item below.</span>
 
 ### 3. WebAssembly tier (browser / mobile / sandbox)
 - OCCT + Python already run in the browser via WASM (opencascade.js / occt-wasm; OCP.wasm

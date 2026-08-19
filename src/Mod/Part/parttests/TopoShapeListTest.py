@@ -6,6 +6,7 @@
 import FreeCAD as App
 import Part
 import os
+import shutil
 import tempfile
 import unittest
 
@@ -59,4 +60,31 @@ class TopoShapeListTest(unittest.TestCase):
 
         self.assertEqual(len(obj.Shapes), 3, "TopoShapeList has wrong entry count (2): {0}".format(len(obj.Shapes)))
         App.closeDocument(doc.Name)
+
+    def testSaveAsDirectory(self):
+        """A project saved as a directory carries its shapes inside the XML.
+
+        That form was never restored: Restore() asked for the `file` attribute
+        which only the archive form writes, threw, and left the property
+        empty -- so every shape in the list was silently lost.
+        """
+        tmp = tempfile.mkdtemp(prefix="TopoShapeListDir_")
+        try:
+            project = os.path.join(tmp, "project")
+            os.makedirs(project)
+            doc = App.newDocument("TopoShapeListDir")
+            obj = doc.addObject("App::FeaturePython", "TestObject")
+            obj.addProperty("Part::PropertyTopoShapeList", "Shapes")
+            obj.Shapes = [Part.makeBox(1, 1, 1), Part.makeBox(1, 1, 2)]
+            doc.saveAs(project)
+            App.closeDocument(doc.Name)
+
+            doc = App.openDocument(project)
+            shapes = doc.getObject("TestObject").Shapes
+            self.assertEqual(len(shapes), 2, "shapes were lost by the directory round trip")
+            self.assertAlmostEqual(shapes[0].Volume, 1.0, places=7)
+            self.assertAlmostEqual(shapes[1].Volume, 2.0, places=7)
+            App.closeDocument(doc.Name)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 

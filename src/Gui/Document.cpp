@@ -26,6 +26,7 @@
 #ifndef _PreComp_
 # include <mutex>
 # include <QApplication>
+# include <QCheckBox>
 # include <QFileInfo>
 # include <QLabel>
 # include <QMessageBox>
@@ -45,6 +46,7 @@
 #include <App/AutoTransaction.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/DocumentParams.h>
 #include <App/DocumentObjectGroup.h>
 #include <App/FileBlobManager.h>
 #include <App/GeoFeatureGroupExtension.h>
@@ -137,6 +139,13 @@ struct DocumentP
     /// List of all registered views
     std::list<Gui::BaseView*> passiveViews;
     std::map<const App::DocumentObject*,ViewProviderDocumentObject*> _ViewProviderMap;
+    /** Which object each split-XML entry of the save in progress is for.
+     *
+     * The entry used to be read back as `<object name>.Gui.xml`, which makes
+     * the file name an identity -- and a name a file system will take is not
+     * always the name an object has. See App::Document's own map.
+     */
+    std::map<std::string, const App::DocumentObject*> _splitXmlEntries;
     std::map<SoSeparator *,ViewProviderDocumentObject*> _CoinMap;
     std::map<std::string,ViewProvider*> _ViewProviderMapAnnotation;
     std::vector<const App::DocumentObject*> _redoObjects;
@@ -1573,7 +1582,22 @@ namespace {
 class DocumentFormatOption : public QWidget
 {
 public:
-    DocumentFormatOption(bool compact, bool *result)
+    /** What the dialog decides, in one place.
+     *
+     * The format choice belongs to the document and is written to its
+     * SaveSchemaVersion. The two storage choices do not: they are preferences
+     * that apply to every save from here on, shown here because this is where
+     * someone is already thinking about how the file will be written.
+     */
+    struct Choices
+    {
+        bool compact = false;
+        bool dedupPCurves = true;
+        bool dedupCongruent = true;
+        bool dedupGeometry = false;
+    };
+
+    DocumentFormatOption(bool compact, Choices *result)
         : result(result)
     {
         auto layout = new QVBoxLayout(this);
@@ -1603,22 +1627,78 @@ public:
 
         compactBtn->setChecked(compact);
         standard->setChecked(!compact);
+
+        // Separate, and deliberately not under the warning: neither of these
+        // costs compatibility. A file missing a pcurve a plane can rebuild, or
+        // naming one table entry from two records, is ordinary BRep that every
+        // FreeCAD has always read.
+        auto storage = new QLabel(QObject::tr("Shape storage"), this);
+        storage->setStyleSheet(QStringLiteral("font-weight:bold;"));
+        layout->addSpacing(6);
+        layout->addWidget(storage);
+
+        dedupPCurves = new QCheckBox(QObject::tr(
+                    "Store each 2D curve once, and leave out the ones reading "
+                    "the file computes again"), this);
+        dedupPCurves->setToolTip(QObject::tr(
+                    "A curve computed twice used to be written twice, and a "
+                    "curve on a flat face need not be written at all because "
+                    "the kernel projects it back. Neither changes the shape "
+                    "that comes back, and the file still opens anywhere."));
+        dedupCongruent = new QCheckBox(QObject::tr(
+                    "Store one copy of parts that are the same shape in "
+                    "different places"), this);
+        dedupCongruent->setToolTip(QObject::tr(
+                    "Parts repeated at different positions are stored once "
+                    "with the motion between them recorded, which sharing by "
+                    "content alone cannot do when the position is baked into "
+                    "the coordinates. Two parts are only ever merged once the "
+                    "motion has been recovered and checked."));
+        dedupGeometry = new QCheckBox(QObject::tr(
+                    "Share surfaces and curves between the parts that have "
+                    "them in common"), this);
+        dedupGeometry->setToolTip(QObject::tr(
+                    "Every part stores its own table of surfaces and curves, "
+                    "and about half of what those tables hold is written "
+                    "again by some other part. With this on a part names what "
+                    "another one already holds. It is off by default because "
+                    "it makes one part's geometry depend on another part's "
+                    "file being there."));
+        dedupPCurves->setChecked(App::DocumentParams::getDedupShapePCurves());
+        dedupCongruent->setChecked(App::DocumentParams::getDedupCongruentShapes());
+        dedupGeometry->setChecked(App::DocumentParams::getDedupCrossFileGeometry());
+        layout->addWidget(dedupPCurves);
+        layout->addWidget(dedupCongruent);
+        layout->addWidget(dedupGeometry);
+
         apply();
         QObject::connect(compactBtn, &QRadioButton::toggled,
+                         [this](bool) { apply(); });
+        QObject::connect(dedupPCurves, &QCheckBox::toggled,
+                         [this](bool) { apply(); });
+        QObject::connect(dedupCongruent, &QCheckBox::toggled,
+                         [this](bool) { apply(); });
+        QObject::connect(dedupGeometry, &QCheckBox::toggled,
                          [this](bool) { apply(); });
     }
 
 private:
     void apply()
     {
-        *result = compactBtn->isChecked();
+        result->compact = compactBtn->isChecked();
+        result->dedupPCurves = dedupPCurves->isChecked();
+        result->dedupCongruent = dedupCongruent->isChecked();
+        result->dedupGeometry = dedupGeometry->isChecked();
         warning->setVisible(compactBtn->isChecked());
     }
 
-    bool *result;
+    Choices *result;
     QLabel *warning;
     QRadioButton *standard;
     QRadioButton *compactBtn;
+    QCheckBox *dedupPCurves;
+    QCheckBox *dedupCongruent;
+    QCheckBox *dedupGeometry;
 };
 } // anonymous namespace
 
@@ -1635,16 +1715,20 @@ bool Document::saveAs()
             "User parameter:BaseApp/Preferences/Document");
     const char *curFile = getDocument()->FileName.getValue();
     bool compact = (curFile && curFile[0])
-            ? getDocument()->getSaveSchemaVersion() >= 6
+            ? getDocument()->getSaveSchemaVersion() >= 5
             : hGrp->GetBool("PreferCompactFormat", false);
-    bool chosenCompact = compact;
+    DocumentFormatOption::Choices chosen;
+    chosen.compact = compact;
+    chosen.dedupPCurves = App::DocumentParams::getDedupShapePCurves();
+    chosen.dedupCongruent = App::DocumentParams::getDedupCongruentShapes();
+    chosen.dedupGeometry = App::DocumentParams::getDedupCrossFileGeometry();
 
     QString exe = qApp->applicationName();
     QString fn = FileDialog::getSaveFileName(getMainWindow(), QObject::tr("Save %1 Document").arg(exe),
         QString::fromUtf8(getDocument()->FileName.getValue()),
         QStringLiteral("%1 %2 (*.FCStd)").arg(exe).arg(QObject::tr("Document")),
         nullptr, QFileDialog::Options(), QFileDialog::AnyFile,
-        new DocumentFormatOption(compact, &chosenCompact));
+        new DocumentFormatOption(compact, &chosen));
 
     if (!fn.isEmpty()) {
         QFileInfo fi;
@@ -1655,11 +1739,20 @@ bool Document::saveAs()
         // save as new file name
         try {
             Gui::WaitCursor wc;
-            hGrp->SetBool("PreferCompactFormat", chosenCompact);
-            if (chosenCompact != (getDocument()->getSaveSchemaVersion() >= 6))
+            hGrp->SetBool("PreferCompactFormat", chosen.compact);
+            // Preferences, so they are set before the save runs and stay set
+            // for the next one. Written only when changed, to leave the
+            // parameter file alone otherwise.
+            if (chosen.dedupPCurves != App::DocumentParams::getDedupShapePCurves())
+                App::DocumentParams::setDedupShapePCurves(chosen.dedupPCurves);
+            if (chosen.dedupCongruent != App::DocumentParams::getDedupCongruentShapes())
+                App::DocumentParams::setDedupCongruentShapes(chosen.dedupCongruent);
+            if (chosen.dedupGeometry != App::DocumentParams::getDedupCrossFileGeometry())
+                App::DocumentParams::setDedupCrossFileGeometry(chosen.dedupGeometry);
+            if (chosen.compact != (getDocument()->getSaveSchemaVersion() >= 5))
                 Command::doCommand(Command::Doc,
                         "App.getDocument(\"%s\").SaveSchemaVersion = %d", DocName,
-                        chosenCompact ? (int)App::Document::getCurrentSchemaVersion() : 5);
+                        chosen.compact ? (int)App::Document::getCurrentSchemaVersion() : 4);
             std::string literal = Base::Tools::pythonLiteral(fn);
             Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveAs(%s)"
                                            , DocName, literal.c_str());
@@ -1791,7 +1884,10 @@ unsigned int Document::getMemSize () const
 void Document::collectFiles(App::FileBlobManager &manager,
                             const std::vector<App::DocumentObject*> &objs) const
 {
-    auto collect = [&manager](const App::PropertyContainer *container) {
+    // The object is passed alongside: a view provider's properties are named
+    // after, and belong to the generation of, the object it presents.
+    auto collect = [&manager](const App::PropertyContainer *container,
+                              const App::DocumentObject *object) {
         if (!container) {
             return;
         }
@@ -1799,21 +1895,22 @@ void Document::collectFiles(App::FileBlobManager &manager,
         container->getPropertyList(props);
         for (auto prop : props) {
             if (auto file = Base::freecad_dynamic_cast<App::PropertyFileIncluded>(prop)) {
-                manager.noteReferenced(file->getBlob());
+                manager.noteReferenced(file->getBlob(),
+                                       App::FileBlobManager::referrerOf(file, object));
             }
         }
     };
 
     if (objs.empty()) {
         for (const auto &v : d->_ViewProviderMap) {
-            collect(v.second);
+            collect(v.second, v.first);
         }
         // A view's own properties -- the embedded environment image lives
         // here. They are written into a string inside GuiDocument.xml and
         // replayed from memory, so they can never register an archive entry
         // themselves; this is the only place their content is picked up.
         for (auto view : d->baseViews) {
-            collect(view);
+            collect(view, nullptr);
         }
     }
     else {
@@ -1822,7 +1919,7 @@ void Document::collectFiles(App::FileBlobManager &manager,
         for (auto obj : objs) {
             auto it = d->_ViewProviderMap.find(obj);
             if (it != d->_ViewProviderMap.end()) {
-                collect(it->second);
+                collect(it->second, obj);
             }
         }
     }
@@ -1888,7 +1985,7 @@ void Document::readObject(Base::XMLReader &xmlReader) {
     }
 }
 
-// Deliberately still 1, and the defaults block of schema 6 (see
+// Deliberately still 1, and the defaults block of schema 5 (see
 // App::Document::getWritableSchemaVersions) does not move it.
 //
 // RestoreDocFile below gates its whole body on `DocumentSchema == 1`, and so
@@ -1905,6 +2002,16 @@ void Document::readObject(Base::XMLReader &xmlReader) {
 static const int FC_GUI_SCHEMA_VER = 1;
 static const char *FC_XML_GUI_POSTFIX = ".Gui.xml";
 static const char *FC_ATTR_SPLIT_XML = "Split";
+/** Whether this file lists the entry each view provider was written to.
+ *
+ * *** The reader must never re-derive a file name. A name is chosen by the
+ * writer -- it has to be one the file system will take, which the name an
+ * object carries need not be (Base::Tools::portableFileName) -- and a reader
+ * that computes it again only works while both sides compute alike. Change
+ * the rule, or the limit, and every file written before the change stops
+ * loading. So the name is written down, and this says it was.
+ */
+static const char *FC_ATTR_SPLIT_FILES = "SplitFiles";
 static const char *FC_ATTR_TREE_EXPANSION = "HasExpansion";
 
 namespace {
@@ -2095,6 +2202,7 @@ void Document::RestoreDocFile(Base::Reader &reader)
     }
 
     bool split = !!xmlReader.getAttributeAsInteger(FC_ATTR_SPLIT_XML,"0");
+    bool splitFiles = !!xmlReader.getAttributeAsInteger(FC_ATTR_SPLIT_FILES,"0");
 
     d->_hasExpansion = !!xmlReader.getAttributeAsInteger(FC_ATTR_TREE_EXPANSION,"0");
     if(d->_hasExpansion)
@@ -2147,18 +2255,24 @@ void Document::RestoreDocFile(Base::Reader &reader)
                 int guard;
                 xmlReader.readElement("ViewProvider",&guard);
                 if (d->_deferVPs) {
-                    // Park the element, verbatim, for the post-open drain --
-                    // unless it references archive entries. Those are
-                    // consumed by the forward walk, in registration order,
-                    // before any drain runs; such a view provider restores
-                    // now, exactly as the eager path would have. The marker
-                    // is exact for attributes: a quote inside a value is
-                    //  re-escaped by the capture, so a literal ` file="` can
-                    // only be markup.
+                    // Park the element, verbatim, for the post-open drain
+                    // -- unless it references content that only the load
+                    // holds open. An archive entry (` file="`) is consumed by
+                    // the forward walk, in registration order, before any
+                    // drain runs. A blob reference (` hash="`, schema 5) is
+                    // served out of FileBlobManager's restore hold, which is
+                    // dropped as soon as the finish-restore signal returns
+                    // (App::Document::afterRestore). Either way the drain is
+                    // too late and the property would come back empty, so
+                    // such a view provider restores now, exactly as the eager
+                    // path would have. The marker is exact for attributes: a
+                    // quote inside a value is re-escaped by the capture, so a
+                    // literal ` file="` can only be markup.
                     std::string &captured = d->_deferScratch;
                     captured.clear();
                     xmlReader.captureElement(captured);
-                    if (captured.find(" file=\"") != std::string::npos) {
+                    if (captured.find(" file=\"") != std::string::npos
+                            || captured.find(" hash=\"") != std::string::npos) {
                         restoreCapturedViewProvider(captured, xmlReader);
                     } else {
                         d->_deferBuf += captured;
@@ -2184,7 +2298,22 @@ void Document::RestoreDocFile(Base::Reader &reader)
                     << stats.total.count() << "s (value " << stats.value.count()
                     << "s), total " << Base::GetDuration(t).count() << 's');
             xmlReader.readEndElement("ViewProviderData");
+        } else if (splitFiles) {
+            // The entries as the writer recorded them. Read, never re-derived:
+            // the writer is free to change how it makes a name into one the
+            // file system will take, and a file written before it changed has
+            // to go on loading.
+            xmlReader.readElement("ViewProviderFiles");
+            const int count = xmlReader.getAttributeAsInteger("Count");
+            for (int i = 0; i < count; ++i) {
+                xmlReader.readElement("File");
+                xmlReader.addFile(xmlReader.getAttribute("name"),this);
+            }
+            xmlReader.readEndElement("ViewProviderFiles");
         } else {
+            // Written before the entries were recorded, when the name was the
+            // object's name and the postfix -- which is what those files hold,
+            // whatever the writer does now.
             for(const auto &v : d->_ViewProviderMap)
                 xmlReader.addFile(std::string(v.first->getNameInDocument())+FC_XML_GUI_POSTFIX,this);
         }
@@ -2858,7 +2987,7 @@ void Document::buildDefaults(Base::Writer &writer,
     // One gate, the same one the App side answers to: the resolved schema.
     // The user chooses the compact format per document in the save dialog;
     // no preference of this machine outranks what that document promised.
-    if (writer.getSchemaVersion() < 6)
+    if (writer.getSchemaVersion() < 5)
         return;
 
     // A default block is one class's whole property set, so it only pays for
@@ -2933,11 +3062,17 @@ void Document::SaveDocFile (Base::Writer &writer) const
                     << " FreeCAD Document, see http://www.freecad.org for more information...\n"
                     << "-->\n";
 
-    if(boost::ends_with(writer.getCurrentFileName(),FC_XML_GUI_POSTFIX)) {
-        const std::string &name = writer.getCurrentFileName();
+    const std::string &name = writer.getCurrentFileName();
+    auto entry = d->_splitXmlEntries.find(name);
+    if(entry != d->_splitXmlEntries.end()
+            || boost::ends_with(name,FC_XML_GUI_POSTFIX)) {
         static const std::size_t plen = std::strlen(FC_XML_GUI_POSTFIX);
-        std::string objName = name.substr(0,name.size()-plen);
-        auto obj = getDocument()->getObject(objName.c_str());
+        std::string objName = entry != d->_splitXmlEntries.end()
+            ? std::string(entry->second->getNameInDocument())
+            : name.substr(0,name.size()-plen);
+        auto obj = entry != d->_splitXmlEntries.end()
+            ? entry->second
+            : getDocument()->getObject(objName.c_str());
         auto it = d->_ViewProviderMap.find(obj);
         if(it == d->_ViewProviderMap.end())
             FC_ERR("View object not found: " << getDocument()->getName() << '#' << objName);
@@ -2959,13 +3094,35 @@ void Document::SaveDocFile (Base::Writer &writer) const
     writer.Stream() << "<Document SchemaVersion=\"" << FC_GUI_SCHEMA_VER 
         << "\" FileVersion=\"" << writer.getFileVersion() << "\" "
         << FC_ATTR_SPLIT_XML << "=\"" << (writer.isSplitXML()?1:0) << "\"";
+    if (writer.isSplitXML())
+        writer.Stream() << ' ' << FC_ATTR_SPLIT_FILES << "=\"1\"";
 
     if (!TreeWidget::saveDocumentItem(this, writer, FC_ATTR_TREE_EXPANSION))
         writer.Stream() << ">\n";
 
     if(writer.isSplitXML()) {
-        for(const auto &v : d->_ViewProviderMap)
-            writer.addFile(std::string(v.first->getNameInDocument())+FC_XML_GUI_POSTFIX,this);
+        d->_splitXmlEntries.clear();
+        writer.incInd();
+        writer.Stream() << writer.ind() << "<ViewProviderFiles Count=\""
+                        << d->_ViewProviderMap.size() << "\">\n";
+        writer.incInd();
+        for(const auto &v : d->_ViewProviderMap) {
+            // What the writer settled on, which is not always what was asked
+            // for: it makes the name one a file system will take. Written
+            // down, because the reader must take the name from here rather
+            // than work it out again -- and kept, so that SaveDocFile answers
+            // with the object rather than reading its name back out of a file
+            // name.
+            const std::string& entry = writer.addFile(
+                    std::string(v.first->getNameInDocument())+FC_XML_GUI_POSTFIX,this);
+            d->_splitXmlEntries[entry] = v.first;
+            writer.Stream() << writer.ind() << "<File obj=\""
+                            << encodeAttribute(v.first->getNameInDocument())
+                            << "\" name=\"" << encodeAttribute(entry) << "\"/>\n";
+        }
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</ViewProviderFiles>\n";
+        writer.decInd();
     } else {
         writer.incInd(); 
 

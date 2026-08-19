@@ -33,6 +33,7 @@ class BRepBuilderAPI_MakeShape;
 #include "TopoShape.h"
 #include <TopAbs_ShapeEnum.hxx>
 
+#include <App/FileBlobManager.h>
 #include <App/PropertyGeo.h>
 #include <App/DocumentObject.h>
 
@@ -40,11 +41,13 @@ namespace Part
 {
 
 class Feature;
+class ShapeRefSet;
 
 /** The part shape property class.
  * @author Werner Mayer
  */
-class PartExport PropertyPartShape : public App::PropertyComplexGeoData
+class PartExport PropertyPartShape : public App::PropertyComplexGeoData,
+                                     public App::BlobReferrerProperty
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
@@ -91,7 +94,7 @@ public:
     void Save (Base::Writer &writer) const override;
     void Restore(Base::XMLReader &reader) override;
 
-    void beforeSave() const override;
+    void beforeSave(Base::Writer &writer) const override;
 
     void SaveDocFile (Base::Writer &writer) const override;
     void RestoreDocFile(Base::Reader &reader) override;
@@ -120,7 +123,24 @@ public:
     void setRestorePending(bool on) override { _RestorePending = on; }
     //@}
 
+    /** @name Blob storage (docs/SharedShapeStorage.md sec 12.3)
+     *
+     * From schema 5 on the geometry is an ordinary file in the document's
+     * blob store, named `Box.Shape.brp` after this property and shared by
+     * content: two objects whose geometry serializes to the same bytes --
+     * which, with the location canonicalized out, is every pair of equal
+     * parts -- are one file, parsed once.
+     */
+    //@{
+    /// Take the geometry file this restore was handed. Does not parse it.
+    void assignRestoredBlob(const App::FileBlobHandle &blob) override;
+    /// The file holding this property's geometry, or null.
+    const App::FileBlobHandle &getBlob() const { return _blob; }
+    //@}
+
     friend class Feature;
+    /// Stamps _StorePos during the pre-save collect, and serves it on restore.
+    friend class PropertyShapeStore;
 
 protected:
     void validateShape(App::DocumentObject *);
@@ -130,10 +150,55 @@ private:
     TopoDS_Shape loadFromFile(Base::Reader &reader);
     TopoDS_Shape loadFromStream(Base::Reader &reader);
 
+    /** @name Location canonicalization (docs/SharedShapeStorage.md sec 11.4)
+     *
+     * From schema 5 on the geometry is written with its top level location
+     * taken off and the location spelled as a `loc=` attribute instead. Moving
+     * an object then leaves its shape bytes untouched, and two equal parts at
+     * different placements serialize to the same bytes.
+     */
+    //@{
+    /// Whether this writer canonicalizes locations at all.
+    static bool stripsLocation(Base::Writer &writer);
+    /// The geometry as this writer wants it: at the identity, or as it is.
+    TopoDS_Shape shapeForSave(Base::Writer &writer) const;
+    /** Put the `loc=` this restore read back onto arriving geometry.
+     *
+     * *** Must run BEFORE the value is announced. Outside a recompute
+     * Feature::onChanged copies Placement out of the shape's own transform,
+     * so a shape announced at the identity zeroes the placement.
+     */
+    TopoDS_Shape locatedForRestore(const TopoDS_Shape &shape) const;
+    //@}
+
     /// Serve the parked archive entry, if any, before _Shape is used.
     void ensureRestored() const;
     /// Drop the parked entry unserved -- the value got overwritten.
     void cancelRestorePending();
+    /// Take this shape out of the document's store, at _StorePos.
+    void serveFromStore();
+
+    /** @name Blob storage, the parts that are not the public interface */
+    //@{
+    App::FileBlobManager &blobManager() const;
+    /// Whether this writer puts geometry in the blob store.
+    bool usesBlob(Base::Writer &writer) const;
+    /// Serialize the geometry into the store, unless _blob already holds it.
+    void makeBlob(Base::Writer &writer) const;
+    /// Write the geometry to a new file in the store and take it as _blob.
+    void storeBlob(Base::Writer &writer, ShapeRefSet *refs) const;
+    /// Tell the manager this save refers to _blob, and what to name its file.
+    void noteBlob(Base::Writer &writer) const;
+    /// Parse the geometry out of _blob and announce it.
+    void serveFromBlob();
+    /** Drop _blob if it no longer describes the value being set.
+     *
+     * A shape that differs only in where it sits keeps it: the location is
+     * canonicalized out of the file (sec 11.4), so moving an object leaves
+     * the geometry it already serialized valid, and the save writes nothing.
+     */
+    void dropBlob(const TopoDS_Shape &next);
+    //@}
 
 private:
     TopoShape _Shape;
@@ -142,6 +207,56 @@ private:
     mutable int _HasherIndex = 0;
     mutable bool _SaveHasher = false;
     mutable bool _RestorePending = false;
+    /** Byte position of this shape in the document's shared store.
+     *
+     * Two lives, never at once: on save it is what the collect pass stamped
+     * and Save() prints; on restore it is where ensureRestored() will find
+     * the shape. Absent means this property carries its own archive member,
+     * which is every document below schema 5.
+     */
+    mutable uint64_t _StorePos = ~static_cast<uint64_t>(0);
+    /** The location the `loc=` attribute of this restore carried.
+     *
+     * Identity when the document was written without canonicalized locations,
+     * which is every document below schema 5 -- there the geometry still has
+     * its location baked in and nothing has to be put back.
+     */
+    TopLoc_Location _RestoreLoc;
+    /** The file this property's geometry is, or is about to be, stored in.
+     *
+     * Held from the moment the content is known until the value stops
+     * matching it, which is what lets a save write nothing for a shape that
+     * did not change, and what lets two objects with equal geometry share one
+     * file and one parse.
+     */
+    mutable App::FileBlobHandle _blob;
+    /** What _blob's file borrows from other files, as ShapeRefSet::plan().
+     *
+     * A file's bytes are a function of the shape *and* of what the save
+     * decided to borrow (docs/SharedShapeStorage.md sec 12.4), so an unchanged
+     * shape is not on its own a reason to keep the file written for it: an
+     * object that used to borrow from a file which has since gone would
+     * otherwise keep a reference to it. Set both by writing the file and by
+     * parsing it, so a reopened document still knows what its own files say.
+     */
+    mutable std::string _blobPlan;
+    /** The motion from _blob's geometry to this shape's, when the file was
+     * written for another instance of the same part.
+     *
+     * Identity for a file written for this shape, which is the ordinary
+     * case. When it is not identity, this property owns none of the file:
+     * the geometry in it sits where the other instance sits, and this one
+     * is that geometry moved. It is composed into the location written to
+     * the XML, so nothing on the reading side has to know about any of it.
+     */
+    mutable TopLoc_Location _blobMotion;
+    /// The motion a restore has to put back into the geometry, from the
+    /// `motion` attribute. Identity for a file written for this shape.
+    TopLoc_Location _RestoreMotion;
+    /// Content hash a restore read, empty when this shape is not a blob.
+    std::string _RestoreHash;
+    /// Manager the pending referrer was queued with, for withdrawing it.
+    App::FileBlobManager *_PendingManager {nullptr};
 };
 
 struct PartExport ShapeHistory {

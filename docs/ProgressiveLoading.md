@@ -54,7 +54,7 @@ behind the live window.
  1. zip central directory  ──  Base::ZipFileReader: index once, every
     (ArchiveRandomAccess)      entry its own positioned stream
  2. Document.xml           ──  object creation + property data; compact
-    (SaveSchemaVersion 6)      format elides class defaults per class
+    (SaveSchemaVersion 5)      format elides class defaults per class
  3. archive walk           ──  registered entries served in registration
                                order; shape entries PARKED, not read
     (DeferShapeLoad)
@@ -216,7 +216,7 @@ line describes neither.
 | Parameter | Group | Default | Governs |
 |---|---|---|---|
 | `ArchiveRandomAccess` | Document | on | central-directory archive reader (stage 1) |
-| `SaveSchemaVersion` | per document | 6 | compact format with default elision (stage 2) |
+| `SaveSchemaVersion` | per document | 4 | 5 is the fork format: default elision, shared blobs, shape store (stage 2) |
 | `DeferShapeLoad` | Document | **on** | park shape entries, serve on demand (stages 3, 5) |
 | `ProgressiveLoadBudgetMS` | View/Render | slice budget | drain and fill slice length (stages 5–7) |
 | `ProgressDetailLevels` | General | 5 | nesting depth shown in the progress popup |

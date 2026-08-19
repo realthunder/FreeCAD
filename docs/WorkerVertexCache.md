@@ -3,8 +3,38 @@
 Status: shipped 2026-08-14, verify-mode clean (12/12 exact across
 face/edge/point sets on forced descent landings; the one disagreement
 found was a real Coin bug -- empty polylines in
-SoIndexedLineSet::generatePrimitives -- fixed in the fork). Not yet
-measured against the storm gate. Follows the paint-sampler diagnosis: publish
+SoIndexedLineSet::generatePrimitives -- fixed in the fork).
+
+**2026-08-16: emission WIDENED to the inline path.** As shipped, the
+only producer was the pooled fill, which takes landing-pump items alone
+(`inLandingPump()`, at or above `Render_VisualFillMinFaces` = 2000,
+never the load-time drain). Nothing else emitted, so an ordinary load
+registered nothing and every publish reported `0 adopted of N offered,
+N no entry` -- measured 720/720 on a 240-cylinder grid and across 296
+rack publishes at two budgets. `updateVisual`'s epilogue now emits from
+the final node arrays as well, which is where every inline path arrives
+(ordinary rebuild, load drain, coarse rung, stand-in).
+
+**2026-08-16: an appearance change now MOVES the stamp.** With emission
+widened, the grid still reported `240 stale SoBrepFaceSet` -- one per
+object, every one. `applyShapeAppearance` runs a `SoUpdateVBOAction`
+over the face set and `SoBrepFaceSet::doAction` answers it with
+`touch()`, so the node id moved and the entry registered against the
+old id was dropped at pickup. Only the STAMP was stale there: the
+appearance apply writes the material nodes, while the arrays the
+content mirrors are untouched and everything colour-dependent is
+re-derived from the live elements at adoption. `restamp(node)` moves
+the stamp instead of losing the arrays; the rebuild prologue runs the
+same action and is deliberately NOT restamped, because there the
+geometry really is about to be replaced.
+
+Measured on the grid, same scene and same 1ms budget:
+
+    before widening   15 publishes, 677 deferred,   0 adopted of 720
+    after widening     1 publish,   220 deferred, 480 adopted of 720
+    after restamp      1 publish,     0 deferred, 720 adopted of 720
+
+Verify arm on the same scene: **720 verified, 0 mismatches**. Follows the paint-sampler diagnosis: publish
 capture (SoFCRenderCacheManager re-running generatePrimitives over every
 changed shape) is ~50% of storm paints, and the capture budget
 (Render_CaptureBudgetMS) only spreads that cost across frames. This

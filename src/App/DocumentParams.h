@@ -228,6 +228,78 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter DedupShapePCurves
+    ///
+    /// Store each 2D curve of a shape once, and leave out the ones
+    /// reading the file back computes again anyway.
+    /// 
+    /// Two things, because they are the same bargain. A pcurve computed
+    /// twice used to be written twice, which on a real project is the
+    /// largest single duplication inside a shape file; and a pcurve on a
+    /// planar face need not be stored at all, since the kernel projects
+    /// the 3D curve onto the plane when it finds none. Neither changes
+    /// the geometry that comes back: a merged pcurve is the identical
+    /// curve, and a dropped one is checked against the projection that
+    /// will replace it before it is dropped.
+    /// 
+    /// Applies to shapes written as ASCII BRep. Turn off to write what
+    /// the kernel holds, entry for entry.
+    static const bool & getDedupShapePCurves();
+    static const bool & defaultDedupShapePCurves();
+    static void removeDedupShapePCurves();
+    static void setDedupShapePCurves(const bool &v);
+    static const char *docDedupShapePCurves();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DedupCongruentShapes
+    ///
+    /// Store one file for parts that are the same shape in different
+    /// places, and record the motion between them instead of writing the
+    /// geometry again.
+    /// 
+    /// Content addressing already shares parts whose bytes match, which
+    /// an exporter that bakes each placement into the coordinates
+    /// defeats: the same part at twenty positions is twenty distinct
+    /// contents. Two instances are only merged once the rigid motion
+    /// between them has been recovered and checked sub-shape by
+    /// sub-shape, so a mirrored instance or a near-miss is written out
+    /// in full rather than merged.
+    static const bool & getDedupCongruentShapes();
+    static const bool & defaultDedupCongruentShapes();
+    static void removeDedupCongruentShapes();
+    static void setDedupCongruentShapes(const bool &v);
+    static const char *docDedupCongruentShapes();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DedupCrossFileGeometry
+    ///
+    /// Let a shape file name the surfaces and curves another shape file
+    /// already holds instead of writing its own copy of them.
+    /// 
+    /// Each shape file carries its own table of surfaces, 3D curves and
+    /// 2D curves, so a face two parts have in common is written once per
+    /// part. On a real project those tables are most of the bytes and
+    /// about half of what they hold repeats between files. An entry may
+    /// instead name a file and a position in its table, and the reader
+    /// then puts the entry it parsed there into this file.
+    /// 
+    /// Off by default: it makes a shape file depend on another one for
+    /// its geometry, not only for whole sub-shapes, so a file that goes
+    /// missing costs more than it did. Applies to shapes written as
+    /// ASCII BRep inside a document; an exported file names nothing.
+    static const bool & getDedupCrossFileGeometry();
+    static const bool & defaultDedupCrossFileGeometry();
+    static void removeDedupCrossFileGeometry();
+    static void setDedupCrossFileGeometry(const bool &v);
+    static const char *docDedupCrossFileGeometry();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter AutoRemoveFile
     static const bool & getAutoRemoveFile();
     static const bool & defaultAutoRemoveFile();

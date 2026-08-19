@@ -23,11 +23,17 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <charconv>
+# include <memory>
+# include <mutex>
 # include <sstream>
+# include <unordered_map>
 # include <Bnd_Box.hxx>
 # include <BRepBndLib.hxx>
 # include <BRepBuilderAPI_Copy.hxx>
+# include <BRepBuilderAPI_Transform.hxx>
 # include <BRepTools.hxx>
+# include <BRep_Builder.hxx>
 # include <BRepTools_ShapeSet.hxx>
 # include <OSD_OpenFile.hxx>
 # include <TopExp.hxx>
@@ -36,6 +42,7 @@
 # include <gp_GTrsf.hxx>
 # include <gp_Trsf.hxx>
 # include <BRepBuilderAPI_MakeShape.hxx>
+# include <TopLoc_Location.hxx>
 # include <TopTools_ListOfShape.hxx>
 # include <TopTools_IndexedMapOfShape.hxx>
 
@@ -44,6 +51,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/DocumentParams.h>
 #include <App/DocumentObject.h>
 #include <App/ObjectIdentifier.h>
 #include <Base/Console.h>
@@ -60,7 +68,10 @@
 #include "PartFeature.h"
 #include "PartParams.h"
 #include "PartPyCXX.h"
+#include "PropertyShapeStore.h"
 #include "PropertyTopoShape.h"
+#include "ShapeCongruence.h"
+#include "ShapeRefSet.h"
 #include "TopoShapePy.h"
 
 namespace sp = std::placeholders;
@@ -73,24 +84,695 @@ TYPESYSTEM_SOURCE(Part::PropertyPartShape , App::PropertyComplexGeoData)
 
 PropertyPartShape::PropertyPartShape() = default;
 
-PropertyPartShape::~PropertyPartShape() = default;
+PropertyPartShape::~PropertyPartShape()
+{
+    // A referrer queued for content that has not arrived outlives nothing:
+    // the manager would dispatch onto freed memory.
+    if (_PendingManager)
+        _PendingManager->removePendingReferrer(this);
+}
+
+namespace
+{
+
+/** The shortest text that reads back as the very same double.
+ *
+ * Exactness is not decoration here: an inexactly restored location is a
+ * different shape, and the whole point of taking the location out of the
+ * geometry is a file that does not change when nothing did.
+ */
+void writeReal(std::ostream& out, double value)
+{
+    char buf[40];
+    auto res = std::to_chars(buf, buf + sizeof(buf), value);
+    out.write(buf, res.ptr - buf);
+}
+
+/** Whether a location moves anything at all.
+ *
+ * TopLoc_Location::IsIdentity() answers whether there is a datum, not whether
+ * that datum does anything: setting a placement of zero builds a location that
+ * holds an identity transformation, and every Part::Feature whose placement was
+ * ever touched carries one. Comparing exactly is right -- such a location
+ * contributes nothing to the geometry, so dropping it is lossless, and writing
+ * it would be an attribute that says nothing and a file that churns.
+ */
+bool isIdentityLocation(const TopLoc_Location& loc)
+{
+    if (loc.IsIdentity())
+        return true;
+    const gp_Trsf& trsf = loc.Transformation();
+    for (int row = 1; row <= 3; ++row) {
+        for (int col = 1; col <= 4; ++col) {
+            if (trsf.Value(row, col) != (row == col ? 1.0 : 0.0))
+                return false;
+        }
+    }
+    return true;
+}
+
+/// A location as the 3x4 of its transformation, row major -- scale included.
+std::string locationToString(const TopLoc_Location& loc)
+{
+    std::ostringstream str;
+    const gp_Trsf& trsf = loc.Transformation();
+    for (int row = 1; row <= 3; ++row) {
+        for (int col = 1; col <= 4; ++col) {
+            if (row != 1 || col != 1)
+                str << ' ';
+            writeReal(str, trsf.Value(row, col));
+        }
+    }
+    return str.str();
+}
+
+bool locationFromString(const std::string& text, TopLoc_Location& loc)
+{
+    double v[12];
+    std::istringstream str(text);
+    for (double& value : v) {
+        if (!(str >> value)) {
+            FC_ERR("Truncated shape location '" << text << '\'');
+            return false;
+        }
+    }
+    try {
+        gp_Trsf trsf;
+        trsf.SetValues(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11]);
+        loc = TopLoc_Location(trsf);
+    }
+    catch (const Standard_Failure& e) {
+        FC_ERR("Invalid shape location '" << text << "': " << e.GetMessageString());
+        return false;
+    }
+    return true;
+}
+
+/** A shape file as it came out of the parse.
+ *
+ * More than the shape it is: another file may borrow a sub-shape of this one
+ * by index (docs/SharedShapeStorage.md sec 11.6), so the table this file's
+ * numbering addresses has to survive the parse, and the plan says what this
+ * file itself borrowed -- which is what a later save compares against before
+ * it can leave the file alone.
+ */
+struct ParsedShape
+{
+    TopoDS_Shape root;
+    /** The set the file was parsed into, kept whole rather than as a copy of
+     * its shape table.
+     *
+     * Another file addresses this one by position, and with cross-file
+     * geometry on it addresses the surface and curve tables that way too --
+     * so what has to survive the parse is the set, not one map out of it.
+     * Shared rather than owned: what the resolver hands out lives as long as
+     * the cache entry, and the entry lives as long as the file.
+     */
+    std::shared_ptr<ShapeRefSet> tables;
+    std::string plan;
+};
+
+/** One parse per file, however many properties refer to it.
+ *
+ * Blobs are content, so two objects whose geometry serializes to the same
+ * bytes -- with the location canonicalized out, every pair of equal parts --
+ * hold the *same* blob. Parsing it once and handing the same TopoDS_Shape to
+ * both is what restores the TShape sharing the central store used to provide,
+ * and it is why equal-but-unshared duplicates cost one parse and one
+ * tessellation instead of N (docs/SharedShapeStorage.md sec 12.5).
+ *
+ * Keyed on the blob rather than on its hash: a blob belongs to one document,
+ * and sharing a TShape across documents is not this cache's decision to make.
+ * The weak handle is what says an entry has outlived its content.
+ */
+class ShapeParseCache
+{
+public:
+    static ShapeParseCache& instance()
+    {
+        static ShapeParseCache cache;
+        return cache;
+    }
+
+    /** The parse of this file, or null.
+     *
+     * The pointer is into the map's own node, so it survives anything but the
+     * erasure of this entry -- which the sweep only does once the blob has
+     * expired, i.e. once the caller has stopped holding it.
+     */
+    const ParsedShape* get(const App::FileBlobHandle& blob) const
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        auto found = _entries.find(blob.get());
+        if (found == _entries.end() || found->second.blob.expired())
+            return nullptr;
+        return &found->second.parsed;
+    }
+
+    const ParsedShape* put(const App::FileBlobHandle& blob, ParsedShape parsed)
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        // Swept here rather than on every read: an entry costs a handle and a
+        // shape, and the sweep is what keeps a document's whole geometry from
+        // being held alive by files nothing refers to any more.
+        if (_entries.size() >= _sweepAt) {
+            for (auto it = _entries.begin(); it != _entries.end();) {
+                it = it->second.blob.expired() ? _entries.erase(it) : std::next(it);
+            }
+            _sweepAt = std::max<std::size_t>(64, _entries.size() * 2);
+        }
+        Entry& entry = _entries[blob.get()];
+        entry.blob = blob;
+        entry.parsed = std::move(parsed);
+        return &entry.parsed;
+    }
+
+private:
+    struct Entry
+    {
+        std::weak_ptr<App::FileBlob> blob;
+        ParsedShape parsed;
+    };
+    mutable std::mutex _mutex;
+    std::unordered_map<const App::FileBlob*, Entry> _entries;
+    std::size_t _sweepAt {64};
+};
+
+/** Parse a stored geometry file, resolving whatever it borrows.
+ *
+ * A file that names other files pulls them in transitively, each through this
+ * same cache -- so a shape borrowed by twenty objects is parsed once and comes
+ * back as one TShape, which is the sharing the whole design exists for.
+ */
+const ParsedShape* parseBlob(App::FileBlobManager& manager,
+                             const App::FileBlobHandle& blob,
+                             int depth = 0)
+{
+    if (!blob)
+        return nullptr;
+    if (const ParsedShape* cached = ShapeParseCache::instance().get(blob))
+        return cached;
+    if (depth > 1024) {
+        // The writer only ever borrows from files written before this one, so
+        // the graph is a DAG by construction. A file that says otherwise was
+        // not written by this build.
+        // *** Deep, because a chain here is files and not sub-shapes: with
+        // cross-file geometry a file names whichever earlier file first wrote
+        // each entry, and that file may name an earlier one still. The guard
+        // is against a cycle a foreign writer could produce, not against the
+        // depth a real project reaches.
+        FC_ERR("Geometry file " << blob->path() << " is nested past any depth a save writes");
+        return nullptr;
+    }
+
+    ParsedShape parsed;
+    Base::FileInfo file(blob->path());
+    // Held for the length of the read: the tables the resolver hands back live
+    // in the cache, and only a live handle keeps an entry from being swept.
+    std::vector<App::FileBlobHandle> sources;
+    try {
+        Base::ifstream in(file, std::ios::in | std::ios::binary);
+        if (!in) {
+            FC_ERR("Cannot read the geometry in " << blob->path());
+        }
+        else if (file.hasExtension("bin")) {
+            // The binary format has no way to name another file, so nothing
+            // written through it borrows anything.
+            TopoShape shape;
+            shape.importBinary(in);
+            parsed.root = shape.getShape();
+        }
+        else {
+            BRep_Builder builder;
+            auto set = std::make_shared<ShapeRefSet>(builder);
+            set->setResolver([&](const std::string& hash) -> const ShapeRefSet* {
+                App::FileBlobHandle source = manager.find(hash);
+                if (!source) {
+                    return nullptr;
+                }
+                sources.push_back(source);
+                const ParsedShape* borrowed = parseBlob(manager, source, depth + 1);
+                return borrowed ? borrowed->tables.get() : nullptr;
+            });
+            parsed.root = set->read(in);
+            parsed.plan = set->plan();
+            // The resolver closes over this frame, so it does not outlive it.
+            // read() has already dropped what it borrowed from.
+            set->setResolver(nullptr);
+            parsed.tables = std::move(set);
+        }
+    }
+    catch (const Standard_Failure& e) {
+        FC_ERR("Failed to read the geometry in " << blob->path() << ": " << e.GetMessageString());
+        parsed = ParsedShape();
+    }
+    // Cached even when the parse failed: a file that cannot be read does not
+    // get read again once per referrer.
+    return ShapeParseCache::instance().put(blob, std::move(parsed));
+}
+
+/** The owner table for the save in progress.
+ *
+ * One table, not a registry: a save runs on its own -- Base::Writer is not
+ * shared either -- and the generation is what says the last one is over. The
+ * table holds no shape handles (ShapeOwnerTable), so what it leaves behind
+ * between saves costs a pointer per TShape and pins nothing.
+ *
+ * *** Keyed on the generation alone, and it has to be: the generation is
+ * counted across the process (FileBlobManager::saveGeneration), so every save
+ * of every document gets its own number, and the table cannot survive into a
+ * save it was not built for. Keying on the document instead would not do --
+ * a closed document's address is reused by the next one, and the stale table
+ * then answers with TShape addresses that have since been freed and reissued.
+ */
+ShapeOwnerTable* saveOwnerTable(uint64_t generation)
+{
+    static uint64_t built = 0;
+    static ShapeOwnerTable owners;
+    if (built != generation) {
+        built = generation;
+        owners.clear();
+    }
+    return &owners;
+}
+
+}  // namespace
+
+bool PropertyPartShape::stripsLocation(Base::Writer& writer)
+{
+    // Schema 5 and nothing below it, for the same reason the shape store has
+    // that gate: a schema-4 document written by this build must come out
+    // exactly as upstream writes it. It must, here, for a harder reason than
+    // taste -- an older reader ignores the `loc=` attribute, and would then
+    // announce the geometry at the identity and zero every placement.
+    return writer.getSchemaVersion() >= 5;
+}
+
+TopoDS_Shape PropertyPartShape::shapeForSave(Base::Writer& writer) const
+{
+    ensureRestored();
+    const TopoDS_Shape& shape = _Shape.getShape();
+    if (!stripsLocation(writer) || shape.IsNull() || shape.Location().IsIdentity())
+        return shape;
+    // Stripped even when the location does nothing (isIdentityLocation), so
+    // that the geometry of a placed part and of one that was never touched
+    // come out as the same bytes. Shares the TShape -- this is a handle swap,
+    // not a copy of any geometry.
+    return shape.Located(TopLoc_Location());
+}
+
+TopoDS_Shape PropertyPartShape::locatedForRestore(const TopoDS_Shape& shape) const
+{
+    TopoDS_Shape geometry = shape;
+    // *** Baked into the geometry, not carried as a location, and this is
+    // the whole reason the file this came from could be shared at all. A
+    // restored shape's location is the object's Placement -- model data
+    // someone reads. An App::Link that replaces its source's placement with
+    // its own reads exactly that, and would then draw this geometry where
+    // the instance it was borrowed from sits, which is what a first attempt
+    // at this did to 1146 links. So the motion costs a copy of the geometry
+    // and leaves the location meaning what it has always meant.
+    if (!_RestoreMotion.IsIdentity() && !geometry.IsNull()) {
+        BRepBuilderAPI_Transform moved(geometry, _RestoreMotion.Transformation(), Standard_True);
+        if (moved.IsDone())
+            geometry = moved.Shape();
+    }
+    if (_RestoreLoc.IsIdentity() || geometry.IsNull())
+        return geometry;
+    return geometry.Located(_RestoreLoc);
+}
+
+App::FileBlobManager& PropertyPartShape::blobManager() const
+{
+    if (auto container = getContainer()) {
+        if (auto doc = container->getOwnerDocument())
+            return doc->getFileBlobManager();
+    }
+    return App::FileBlobManager::defaultManager();
+}
+
+bool PropertyPartShape::usesBlob(Base::Writer& writer) const
+{
+    // The manager decided this once for the whole save, and the answer has to
+    // be the same one: it is what says whether there will be entries for the
+    // geometry to be in. Above ForceXML level 3 the caller asked for a
+    // document that carries everything inside its XML, and the geometry goes
+    // inline exactly as it always has.
+    (void)writer;
+    return blobManager().blobFormat() == App::FileBlobManager::BlobFormat::Entries;
+}
+
+/// Extension a save under this writer stores the geometry under, no leading dot.
+static const char* blobExtension(Base::Writer& writer)
+{
+    return writer.getMode("BinaryBrep") ? "bin" : "brp";
+}
+
+void PropertyPartShape::makeBlob(Base::Writer& writer) const
+{
+    auto& manager = blobManager();
+    const char* ext = blobExtension(writer);
+    if (_blob) {
+        // Still the right content only if it was written for this document
+        // and in this format. A copied object carries a handle on another
+        // document's file, and PreferBinary can change between saves.
+        if (_blob->owner() != &manager
+                || !Base::FileInfo(_blob->path()).hasExtension(ext)) {
+            _blob.reset();
+            _blobPlan.clear();
+        }
+    }
+
+    if (writer.getMode("BinaryBrep")) {
+        // References are an extension of the ASCII format and of nothing else:
+        // the binary encoding has no way to name another file, so a document
+        // written binary shares nothing between its files.
+        if (!_blob)
+            storeBlob(writer, nullptr);
+        return;
+    }
+
+    auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+    App::Document* doc = owner ? owner->getDocument() : nullptr;
+    // Without a document there is nothing to share with: a property standing
+    // on its own writes plain BRep, as it always did.
+    // Without the owner table nothing is borrowed and nothing is published, so
+    // the switch turns this file back into the whole-shape file sec 12.3 wrote.
+    // It is what an A/B against that format is measured with.
+    ShapeOwnerTable* owners = (doc && PartParams::getShareStoredSubShapes())
+        ? saveOwnerTable(manager.saveGeneration())
+        : nullptr;
+    // Sharing a moved part rides on the same table -- it names the file to
+    // share -- so it is off wherever that is.
+    CongruenceIndex* congruent = (owners && App::DocumentParams::getDedupCongruentShapes())
+        ? CongruenceIndex::forSave(manager.saveGeneration())
+        : nullptr;
+
+    // The analysis runs whatever happens to the file. It is what tells later
+    // objects that this file holds these sub-shapes, and it is cheap next to
+    // serialization -- walking TShapes and mapping pointers
+    // (docs/SharedShapeStorage.md sec 11.7).
+    const TopoDS_Shape root = shapeForSave(writer);
+    ShapeRefSet refs;
+    // Before build(), which is what fills the geometry tables.
+    TopoShape::applyStorageOptions(refs, true);
+    refs.setOwners(owners);
+    // Rides on the same table, and is off wherever that is: a geometry entry
+    // names a file, and the table is what says which files there are.
+    const bool geometry = owners && App::DocumentParams::getDedupCrossFileGeometry();
+    refs.setGeometrySharing(geometry);
+    // Below a face the association *is* the identity of a geometry object, so
+    // this is sound only while that object can be named across files: off
+    // wherever the geometry is not shared, whatever the setting says.
+    refs.setSubFaceBorrowing(geometry ? PartParams::getBorrowBelowFace() : 0);
+    refs.build(root);
+    const std::string plan = refs.plan();
+
+    // *** A shape that is another file's whole root is not borrowed, it is
+    // shared. Writing a reference to it would produce a file holding nothing
+    // but that reference -- and would cost the one thing content addressing
+    // was already getting right, because the two objects had identical bytes
+    // and so were one file. Borrowing pays below a root, where there is real
+    // geometry to leave out; at the root it is pure indirection.
+    if (owners && !root.IsNull() && refs.rootIndex() == 0) {
+        if (const int held = owners->rootOwner(root)) {
+            if (App::FileBlobHandle shared = manager.find(owners->file(held).hash)) {
+                _blob = shared;
+                _blobPlan = owners->file(held).plan;
+                _blobMotion = TopLoc_Location();
+                return;
+            }
+        }
+    }
+
+    // The same part written again somewhere else. Content addressing cannot
+    // see it when the exporter multiplied the placement into the coordinates,
+    // and neither can the table above, which matches on TShape identity. What
+    // is left is to recognize the shape by its geometry and record the motion
+    // -- which needs no format change at all, because the location this
+    // property already writes is where the motion goes
+    // (docs/SharedShapeStorage.md sec 12.12).
+    // Not gated on rootIndex(), unlike the check above: that one asks whether
+    // this file borrowed its root, which is the one case a congruent shape is
+    // never in -- the owner table matches TShapes, and a part written again
+    // elsewhere is a different TShape holding different numbers.
+    if (owners && congruent && !root.IsNull()) {
+        CongruenceIndex::Match match;
+        if (congruent->find(root, match)) {
+            if (App::FileBlobHandle shared = manager.find(owners->file(match.slot).hash)) {
+                _blob = shared;
+                _blobPlan = owners->file(match.slot).plan;
+                _blobMotion = TopLoc_Location(match.motion);
+                return;
+            }
+        }
+    }
+
+    // The shape not having changed is what kept _blob (dropBlob), but a file's
+    // bytes are the shape *and* what the save borrowed. An object that used to
+    // borrow from a file which has since gone still holds a valid shape, and
+    // its old file would still name a file this save does not write.
+    if (!_blob || plan != _blobPlan) {
+        storeBlob(writer, &refs);
+        _blobPlan = plan;
+        _blobMotion = TopLoc_Location();
+    }
+
+    if (_blob && owners) {
+        ShapeOwnerTable::File entry;
+        entry.hash = _blob->hash();
+        entry.plan = plan;
+        entry.root = refs.rootIndex();
+        entry.orientation = root.IsNull() ? 0 : root.Orientation();
+        const int file = owners->addFile(std::move(entry));
+        refs.publish(file, *owners);
+        // Every file written, whatever it borrows: what a later instance
+        // needs is a file that reads back as this shape, and borrowing is
+        // internal to the file.
+        if (congruent)
+            congruent->add(root, file);
+    }
+}
+
+void PropertyPartShape::storeBlob(Base::Writer& writer, ShapeRefSet* refs) const
+{
+    auto& manager = blobManager();
+    const char* ext = blobExtension(writer);
+    const std::string path = manager.uniquePath(std::string("shape.") + ext);
+    try {
+        {
+            Base::ofstream out(Base::FileInfo(path),
+                               std::ios::out | std::ios::binary | std::ios::trunc);
+            if (!out) {
+                FC_ERR("Cannot write the geometry of " << getFullName() << " to " << path);
+                return;
+            }
+            // Even a null shape is written, for the same reason SaveDocFile
+            // writes one: an empty member is an error to whatever reads it.
+            const TopoDS_Shape shape = shapeForSave(writer);
+            if (!refs)
+                TopoShape(shape).exportBinary(out, true);
+            else
+                refs->write(shape, out);
+        }
+        _blob = manager.adoptFile(path.c_str(), ext);
+    }
+    catch (const Base::Exception& e) {
+        FC_ERR("Failed to store the geometry of " << getFullName() << ": " << e.what());
+        Base::FileInfo(path).deleteFile();
+    }
+    catch (const Standard_Failure& e) {
+        FC_ERR("Failed to serialize the geometry of " << getFullName() << ": "
+                                                      << e.GetMessageString());
+        Base::FileInfo(path).deleteFile();
+    }
+}
+
+void PropertyPartShape::noteBlob(Base::Writer& writer) const
+{
+    if (!_blob)
+        return;
+    auto referrer = App::FileBlobManager::referrerOf(this);
+    // The extension is the property's to give: nothing about the content says
+    // whether it was written as ASCII BRep or as binary.
+    referrer.ext = std::string(".") + blobExtension(writer);
+    blobManager().noteReferenced(_blob, referrer);
+}
+
+void PropertyPartShape::dropBlob(const TopoDS_Shape& next)
+{
+    if (!_blob)
+        return;
+    const TopoDS_Shape& current = _Shape.getShape();
+    // The location is canonicalized out of the file, so a shape over the same
+    // TShape serializes to the same bytes wherever it sits. That is what makes
+    // moving an object cost no write: the geometry it already stored is still
+    // exactly what the next save would produce.
+    if (!current.IsNull() && !next.IsNull() && current.IsPartner(next)
+            && current.Orientation() == next.Orientation()) {
+        return;
+    }
+    _blob.reset();
+    _blobPlan.clear();
+    _blobMotion = TopLoc_Location();
+}
+
+void PropertyPartShape::assignRestoredBlob(const App::FileBlobHandle& blob)
+{
+    // No value change and no parse: this hands over the file, and the geometry
+    // inside it is read on first use. That is the deferred read the shape
+    // count makes necessary -- see ensureRestored().
+    _blob = blob;
+    _PendingManager = nullptr;
+}
+
+void PropertyPartShape::serveFromBlob()
+{
+    // Cleared first, for the same reason the pending flag is: anything the
+    // setValue below reaches must find a settled property, not a second serve.
+    _RestoreHash.clear();
+    // Held across the setValue below: the value about to be announced is
+    // exactly this file's content, so the property keeps the file and the
+    // next save has nothing to serialize.
+    const App::FileBlobHandle blob = _blob;
+    if (!blob)
+        return;
+    auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+
+    FC_TRACE(getFullName() << " parsing " << blob->path());
+    const ParsedShape* parsed = parseBlob(blobManager(), blob);
+    const TopoDS_Shape geometry = parsed ? parsed->root : TopoDS_Shape();
+    // What the file says it borrows, taken from the file itself. Without this
+    // a reopened document could not tell whether its own files are still what
+    // the next save would write, and would rewrite all of them.
+    //
+    // *** Kept aside rather than assigned here, because the setValue() below
+    // goes through dropBlob(), which drops everything that describes the file
+    // -- the plan and the motion along with the handle. Only the handle used
+    // to be put back, and a stale empty plan is not a harmless one: it reads
+    // as "this file borrows nothing", so a save that now has nothing to
+    // borrow leaves the file alone with its references still in it.
+    const std::string plan = parsed ? parsed->plan : std::string();
+
+    const bool wasTouched = owner && owner->isTouched();
+    {
+        // Load-time conditions, exactly as serveFromStore() reproduces them:
+        // observers see a restoring object, and an object does not come out
+        // touched by having been served. A property with no owning object --
+        // there is no document to mark modified -- needs neither.
+        std::unique_ptr<Base::ObjectStatusLocker<App::ObjectStatus, App::DocumentObject>> guard;
+        if (owner) {
+            guard = std::make_unique<
+                    Base::ObjectStatusLocker<App::ObjectStatus, App::DocumentObject>>(
+                    App::ObjectStatus::Restore, owner);
+        }
+        auto elementMap = _Shape.resetElementMap();
+        auto hasher = _Shape.Hasher;
+        std::string ver = _Ver;
+
+        TopoShape shape(locatedForRestore(geometry));
+        shape.Hasher = hasher;
+        shape.resetElementMap(elementMap);
+        setValue(shape);
+        _Ver = ver;
+    }
+    _blob = blob;
+    _blobPlan = plan;
+    // The three together are what says the file on disk is this value: the
+    // shape held now is that file's geometry moved by the motion it was
+    // restored with, so that is the motion a save keeping the file must
+    // write again.
+    _blobMotion = _RestoreMotion;
+    if (owner && !wasTouched)
+        owner->purgeTouched();
+}
 
 void PropertyPartShape::ensureRestored() const
 {
     if (!_RestorePending)
         return;
-    // Cleared before serving: whatever runs below reads the property
-    // again, and must find a settled state instead of re-entering.
     auto self = const_cast<PropertyPartShape*>(this);
-    self->_RestorePending = false;
     auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
-    if (!owner || !owner->getDocument())
+    if (!owner || !owner->getDocument()) {
+        self->_RestorePending = false;
         return;
-    owner->getDocument()->restoreDeferredFile(self);
+    }
+    if (!_RestoreHash.empty()) {
+        // The blob arrives with the archive entries, which are drained after
+        // the whole XML pass -- and the XML pass asks for this shape itself,
+        // through the element map version check at the end of Restore(). Stay
+        // pending until the file is here, exactly as the store branch does:
+        // the property then reads as the null shape it is.
+        if (!_blob)
+            return;
+        // Cleared before serving: whatever runs below reads the property
+        // again, and must find a settled state instead of re-entering.
+        self->_RestorePending = false;
+        self->serveFromBlob();
+    }
+    else if (_StorePos != PropertyShapeStore::NoPosition) {
+        // The store arrives with the archive entries, which are drained
+        // after the whole XML pass -- and the XML pass asks for this shape
+        // itself, through the element map version check at the end of
+        // Restore(). Stay pending until the store is here: the property then
+        // reads as the null shape it is, which is exactly what a deferred
+        // archive entry reads as at that moment (its pending flag is not
+        // armed until the same drain).
+        auto store = PropertyShapeStore::find(owner->getDocument());
+        if (!store || !store->hasContent())
+            return;
+        // Cleared before serving: whatever runs below reads the property
+        // again, and must find a settled state instead of re-entering.
+        self->_RestorePending = false;
+        self->serveFromStore();
+    }
+    else {
+        self->_RestorePending = false;
+        owner->getDocument()->restoreDeferredFile(self);
+    }
     // The shape-content expansion Feature::onDocumentRestored() left for
     // the shape's arrival.
     if (auto feat = Base::freecad_dynamic_cast<Feature>(owner))
         feat->restoreShapeContents();
+}
+
+void PropertyPartShape::serveFromStore()
+{
+    const uint64_t pos = _StorePos;
+    // Cleared first, for the same reason the pending flag is: anything the
+    // setValue below reaches must find a settled property, not a second serve.
+    _StorePos = PropertyShapeStore::NoPosition;
+    auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+    if (!owner || !owner->getDocument())
+        return;
+    auto store = PropertyShapeStore::find(owner->getDocument());
+    if (!store) {
+        FC_ERR("No shape store to serve " << getFullName() << " from");
+        return;
+    }
+
+    // Load-time conditions, as the deferred archive serve reproduces them
+    // (Document::restoreDeferredFile): observers see a restoring object, and
+    // an object does not come out touched by having been served.
+    const bool wasTouched = owner->isTouched();
+    {
+        Base::ObjectStatusLocker<App::ObjectStatus, App::DocumentObject> guard(
+                App::ObjectStatus::Restore, owner);
+        // The element map belongs to the property and not to the geometry:
+        // two objects over one shared TShape carry different mapped names, so
+        // it is taken off and put back around the value change.
+        auto elementMap = _Shape.resetElementMap();
+        auto hasher = _Shape.Hasher;
+        std::string ver = _Ver;
+
+        TopoShape shape(locatedForRestore(store->readShape(pos)));
+        shape.Hasher = hasher;
+        shape.resetElementMap(elementMap);
+        setValue(shape);
+        _Ver = ver;
+    }
+    if (!wasTouched)
+        owner->purgeTouched();
 }
 
 void PropertyPartShape::cancelRestorePending()
@@ -98,6 +780,16 @@ void PropertyPartShape::cancelRestorePending()
     if (!_RestorePending)
         return;
     _RestorePending = false;
+    // A store position is dropped the same way an archive entry is: the value
+    // it would have produced has just been overwritten. So is a blob still
+    // waiting to be handed over -- and the manager has to be told, or it
+    // dispatches onto a property that has moved on.
+    _StorePos = PropertyShapeStore::NoPosition;
+    _RestoreHash.clear();
+    if (_PendingManager) {
+        _PendingManager->removePendingReferrer(this);
+        _PendingManager = nullptr;
+    }
     auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
     if (owner && owner->getDocument())
         owner->getDocument()->cancelDeferredFile(this);
@@ -137,6 +829,7 @@ void PropertyPartShape::setValue(const TopoShape& sh)
     // An unserved parked entry is dead: the value it would bring is
     // being overwritten. Never serve it after this.
     cancelRestorePending();
+    dropBlob(sh.getShape());
     aboutToSetValue();
     _Shape = sh;
     _ShapeNoName.setShape(sh.getShape(), true);
@@ -162,6 +855,7 @@ void PropertyPartShape::setValue(const TopoShape& sh)
 void PropertyPartShape::setValue(const TopoDS_Shape& sh, bool resetElementMap)
 {
     cancelRestorePending();
+    dropBlob(sh);
     aboutToSetValue();
     auto obj = dynamic_cast<App::DocumentObject*>(getContainer());
     if(obj)
@@ -245,6 +939,9 @@ Base::Matrix4D PropertyPartShape::getTransform() const
 void PropertyPartShape::transformGeometry(const Base::Matrix4D &rclTrf)
 {
     ensureRestored();
+    // Unlike a placement this rewrites the geometry itself, so whatever was
+    // stored for it no longer describes the value.
+    _blob.reset();
     aboutToSetValue();
     _Shape.transformGeometry(rclTrf);
     hasSetValue();
@@ -330,12 +1027,28 @@ void PropertyPartShape::getPaths(std::vector<App::ObjectIdentifier> &paths) cons
     //                 << App::ObjectIdentifier::Component::SimpleComponent(App::ObjectIdentifier::String("Volume")));
 }
 
-void PropertyPartShape::beforeSave() const
+void PropertyPartShape::beforeSave(Base::Writer &writer) const
 {
     ensureRestored();
+    // Whatever position a previous save left is about to be answered by this
+    // one -- and no save writes a store any more, so the answer is always the
+    // blob below. A stale position would send Save() to a store this file
+    // does not have. The ensureRestored() above is what took the geometry out
+    // of the store this document may have been read from.
+    _StorePos = PropertyShapeStore::NoPosition;
+    auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+
+    // The geometry as a file in the blob store, which is where it goes from
+    // schema 5 on (docs/SharedShapeStorage.md sec 12.3). Done here rather than
+    // in Save() because the entries are planned, named and pruned as a set --
+    // this pass is the last point at which the set can still grow.
+    if (usesBlob(writer)) {
+        makeBlob(writer);
+        noteBlob(writer);
+    }
+
     _HasherIndex = 0;
     _SaveHasher = false;
-    auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
     if(owner && !_Shape.isNull() && _Shape.getElementMapSize()>0) {
         auto ret = owner->getDocument()->addStringHasher(_Shape.Hasher);
         _HasherIndex = ret.second;
@@ -366,19 +1079,48 @@ void PropertyPartShape::Save (Base::Writer &writer) const
         version = _Ver.size()?_Ver:_Shape.getElementMapVersion();
     writer.Stream() << " ElementMap=\"" << version << '"';
 
+    // The top level location, taken off the geometry below and written here
+    // instead (docs/SharedShapeStorage.md sec 11.4). Absent means the geometry
+    // carries its own location, which is what every schema below 5 writes.
+    const TopLoc_Location loc = stripsLocation(writer) ? _Shape.getShape().Location()
+                                                       : TopLoc_Location();
+    if (!isIdentityLocation(loc))
+        writer.Stream() << " loc=\"" << locationToString(loc) << '"';
+    // Present only when this shape borrows the file of another instance of
+    // the same part: the motion from that instance's geometry to this one's,
+    // applied to the geometry on the way in. Absent is the ordinary case and
+    // costs nothing.
+    if (!isIdentityLocation(_blobMotion))
+        writer.Stream() << " motion=\"" << locationToString(_blobMotion) << '"';
+
     bool binary = writer.getMode("BinaryBrep");
     bool toXML = writer.getFileVersion()>1 && writer.isForceXML()>=(binary?3:2);
-    if(!toXML) {
+    if(_blob && usesBlob(writer)) {
+        // The geometry is a file of its own in the blob store, named after
+        // this property and shared by content. Noted again here for the same
+        // reason PropertyFileIncluded does: it costs nothing, and a property
+        // written through a path the pre-save pass does not walk would
+        // otherwise lose its content.
+        noteBlob(writer);
+        writer.Stream() << " hash=\"" << _blob->hash() << "\"/>\n";
+    } else if(_StorePos != PropertyShapeStore::NoPosition) {
+        // The geometry is already in the document's store, written there by
+        // the collect pass with every other shape; all that is left to say is
+        // where. Read for the documents that have one; no save writes one any
+        // more (docs/SharedShapeStorage.md sec 12.3).
+        writer.Stream() << " store=\"" << PropertyShapeStore::propertyName()
+            << "\" pos=\"" << _StorePos << "\"/>\n";
+    } else if(!toXML) {
         writer.Stream() << " file=\""
             << writer.addFile(getFileName(binary?".bin":".brp"), this)
             << "\"/>\n";
     } else if(binary) {
         writer.Stream() << " binary=\"1\">\n";
-        _Shape.exportBinary(writer.beginBase64Stream());
+        TopoShape(shapeForSave(writer)).exportBinary(writer.beginBase64Stream(), true);
         writer.endCharStream() <<  writer.ind() << "</Part>\n";
     } else {
         writer.Stream() << " brep=\"1\">\n";
-        _Shape.exportBrep(writer.beginCharStream()<<'\n');
+        TopoShape(shapeForSave(writer)).exportBrep(writer.beginCharStream()<<'\n', true);
         writer.endCharStream() << '\n' << writer.ind() << "</Part>\n";
     }
 
@@ -417,13 +1159,54 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
     int hasher_idx = reader.getAttributeAsInteger("HasherIndex","-1");
     int save_hasher = reader.getAttributeAsInteger("SaveHasher","");
 
-    TopoShape shape;
+    // The location the geometry was written without. It outlives this call:
+    // the geometry may be a deferred archive member or a position in the
+    // store, and is put back wherever it does arrive.
+    _RestoreLoc = TopLoc_Location();
+    _RestoreMotion = TopLoc_Location();
+    if (reader.hasAttribute("loc"))
+        locationFromString(reader.getAttribute("loc"), _RestoreLoc);
+    if (reader.hasAttribute("motion"))
+        locationFromString(reader.getAttribute("motion"), _RestoreMotion);
 
-    if(reader.hasAttribute("file")) {
+    // Cleared before the branch below chooses: a stale hash would send
+    // ensureRestored() looking for a file this restore never asked for.
+    _RestoreHash.clear();
+
+    TopoShape shape;
+    // Whether this restore parked a value to be served later. Read at the end
+    // instead of _RestorePending, which by then may already have been answered:
+    // the element map check below asks for the shape, and a blob already in the
+    // store is served on the spot.
+    bool parked = false;
+
+    if(reader.hasAttribute("hash")) {
+        // The geometry is a file the manager owns. It hands the file over
+        // once the entries have been drained (assignRestoredBlob), and the
+        // parse waits for the first use -- which is what keeps a document
+        // whose entry count is dominated by shapes cheap to open.
+        _RestoreHash = reader.getAttribute("hash");
+        if (!_RestoreHash.empty()) {
+            FC_TRACE(getFullName() << " restores from blob " << _RestoreHash);
+            _PendingManager = &blobManager();
+            _PendingManager->addPendingReferrer(_RestoreHash, this);
+            _RestorePending = true;
+            parked = true;
+        }
+    } else if(reader.hasAttribute("store")) {
+        // The shape is a position in the document's shared store, and the
+        // store is a file that outlives the restore -- so nothing is read
+        // here. ensureRestored() seeks to it the first time the value is
+        // asked for, which is what keeps a large document's open cheap.
+        _StorePos = reader.getAttributeAsUnsigned("pos");
+        _RestorePending = true;
+        parked = true;
+    } else if(reader.hasAttribute("file")) {
         std::string file = reader.getAttribute("file");
         if (!file.empty()) {
             // initiate a file read
             reader.addFile(file.c_str(),this);
+            parked = true;
         }
     } else if(reader.getAttributeAsInteger("binary","")) {
         shape.importBinary(reader.beginBase64Stream());
@@ -487,8 +1270,13 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
         }
     }
 
-    if (!shape.isNull() || !_Shape.isNull()) {
-        setValue(shape.getShape(), false);
+    // Not when this restore parked something. The local shape is null on every
+    // parking branch, so announcing it would either run cancelRestorePending()
+    // and throw away the blob, store position or archive entry just
+    // registered, or -- when the parked value has already been served above --
+    // wipe the value that was just restored.
+    if (!parked && (!shape.isNull() || !_Shape.isNull())) {
+        setValue(locatedForRestore(shape.getShape()), false);
     }
 }
 
@@ -669,12 +1457,16 @@ void PropertyPartShape::SaveDocFile (Base::Writer &writer) const
     // if (_Shape.getShape().IsNull())
     //     return;
 
+    // Written at the identity from schema 5 on, with the location in the XML
+    // instead: a move then leaves this member byte-identical, which the blob
+    // manager's hash skip turns into no write at all.
+    const TopoShape shape(shapeForSave(writer));
     Base::FileInfo finfo(writer.getCurrentFileName());
     if (finfo.hasExtension("bin")) {
-        _Shape.exportBinary(writer.Stream());
+        shape.exportBinary(writer.Stream(), true);
     }
     else {
-        _Shape.exportBrep(writer.Stream());
+        shape.exportBrep(writer.Stream(), true);
     }
 }
 
@@ -701,6 +1493,11 @@ void PropertyPartShape::RestoreDocFile(Base::Reader &reader)
     else {
         shape.importBrep(reader);
     }
+    // Back on before anything can see the value: outside a recompute
+    // Feature::onChanged reads Placement out of the shape's own transform,
+    // so geometry announced at the identity zeroes the placement.
+    if (!_RestoreLoc.IsIdentity())
+        shape.setShape(locatedForRestore(shape.getShape()), false);
     FC_DURATION_PLUS(dImport, tRestore);
 
     std::string ver = _Ver;

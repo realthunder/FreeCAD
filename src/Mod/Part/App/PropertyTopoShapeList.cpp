@@ -212,15 +212,27 @@ void PropertyTopoShapeList::Restore(Base::XMLReader &reader)
     for (int i = 0; i < count; i++) {
         auto newShape = std::make_shared<TopoShape>();
         reader.readElement("TopoShape");
-        std::string file (reader.getAttribute("file") );
-        if (!file.empty()) {
-            reader.addFile(file.c_str(),this);
+        // Asked for rather than read outright: Save() writes `file=` only when
+        // the shapes go out as archive members, and a project the writer is
+        // carrying inside its XML -- which is every directory project, they
+        // set ForceXML -- has the geometry right here instead. Reading the
+        // attribute unconditionally threw on exactly those, and the property
+        // was then restored empty.
+        if (reader.hasAttribute("file")) {
+            std::string file (reader.getAttribute("file") );
+            if (!file.empty()) {
+                reader.addFile(file.c_str(),this);
+            }
         } else if(reader.getAttributeAsInteger("binary","")) {
             newShape->importBinary(reader.beginBase64Stream());
         } else if(reader.getAttributeAsInteger("brep","")) {
             newShape->importBrep(reader.beginCharStream());
         }
         m_restorePointers.push_back(newShape);
+        // Closes the character stream the two branches above opened, which is
+        // what lets the next element be read at all. Harmless on the `file=`
+        // form, whose element is self-closing.
+        reader.readEndElement("TopoShape");
     }
     reader.readEndElement("ShapeList");
 }

@@ -252,6 +252,39 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ShareStoredSubShapes
+    ///
+    /// Let a stored shape borrow a sub-shape from another object's file instead
+    /// of writing its geometry again (docs/SharedShapeStorage.md sec 12.4).
+    /// Turning this off writes every file whole, which is what the format did
+    /// before external references; the files stay readable either way.
+    static const bool & getShareStoredSubShapes();
+    static const bool & defaultShareStoredSubShapes();
+    static void removeShareStoredSubShapes();
+    static void setShareStoredSubShapes(const bool &v);
+    static const char *docShareStoredSubShapes();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BorrowBelowFace
+    ///
+    /// Which sub-shapes may be borrowed below a shell, as a sum
+    /// (docs/SharedShapeStorage.md sec 12.15): 0 none, which is what ships,
+    /// 1 a face inside a shell, 2 an edge inside a face or a wire, 4 a vertex
+    /// inside an edge. Each of those associations is keyed on the identity of
+    /// a geometry object -- a face's edges hold their 2D curve against the
+    /// surface the face carries -- so this is sound only where the geometry is
+    /// shared too, and it is off wherever DedupCrossFileGeometry is.
+    static const long & getBorrowBelowFace();
+    static const long & defaultBorrowBelowFace();
+    static void removeBorrowBelowFace();
+    static void setBorrowBelowFace(const long &v);
+    static const char *docBorrowBelowFace();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LoftMaxDegree
     static const unsigned long & getLoftMaxDegree();
     static const unsigned long & defaultLoftMaxDegree();

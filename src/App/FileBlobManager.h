@@ -24,8 +24,10 @@
 #define APP_FILEBLOBMANAGER_H
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -38,10 +40,44 @@ namespace App
 {
 
 class Document;
+class DocumentObject;
 class FileBlobManager;
+class Property;
 class PropertyFileIncluded;
 
-/** One content-addressed file living in a document's transient directory.
+/** Who refers to a blob, for the purpose of naming the file it is saved to.
+ *
+ * A blob is content and its identity is its hash, but the file a save
+ * writes it to has a name, and for a project saved as a directory that name
+ * is what version control follows. Deriving it from the referring property --
+ * `Box.Image.png` -- makes an edit a modification of one file rather than the
+ * delete plus add of an opaque hash that content-addressed entry names forced.
+ */
+struct BlobReferrer
+{
+    /** Id of the object the referrer belongs to, 0 when it has none.
+     *
+     * The lowest id present wins the name. The id also travels in the content
+     * index as a generation token, because an object's internal name is
+     * reused after a delete and its id (App::DocumentObject::_Id) never is.
+     */
+    long id {0};
+    /// `Object.Property`, the derived name without its extension. Empty when
+    /// nothing can name the content, which leaves it named by its hash.
+    std::string name;
+    /// Extension the referrer stores its file under, leading dot included, so
+    /// a saved blob still opens in whatever handles that type.
+    std::string ext;
+};
+
+/// One line of the content index: what a file holds and who refers to it.
+struct BlobIndexEntry
+{
+    std::string hash;
+    std::vector<std::string> referrers;
+};
+
+/** One immutable file living in a document's transient directory.
  *
  * A blob is shared by every referrer that holds a handle to it -- properties,
  * undo transaction snapshots, the clipboard -- and is deleted from disk only
@@ -49,10 +85,14 @@ class PropertyFileIncluded;
  * ~PropertyFileIncluded deleted its file unconditionally, so two properties
  * could never name the same file and Copy() had to duplicate the bytes.
  *
- * A blob is pure content: it is identified by, and stored under, the hash of
- * its bytes. Names belong to the referring property, which persists its own
- * file name and original path, so any number of properties can share one blob
- * while each keeps the name the user gave it.
+ * A blob is pure content: it is identified by the hash of its bytes. Names
+ * belong to the referring property, which persists its own file name and
+ * original path, so any number of properties can share one blob while each
+ * keeps the name the user gave it. The file in the transient directory is
+ * named by a uuid rather than by the hash -- at insertFile() time there may
+ * be no referrer at all, and the name there is a cache detail nothing may
+ * depend on; only the extension is kept, so the path handed to a consumer
+ * still says what the content is.
  *
  * Blobs are immutable. Changing a property's file always produces a new blob;
  * the file on disk is kept read-only to enforce that.
@@ -86,6 +126,28 @@ private:
 
 using FileBlobHandle = std::shared_ptr<FileBlob>;
 
+/** A property the manager restores content into.
+ *
+ * The pending queue is keyed on this rather than on `PropertyFileIncluded`
+ * because a shape property is an ordinary referrer too
+ * (`docs/SharedShapeStorage.md` sec 12.3), and the two have nothing else in
+ * common -- one stores a file the user gave it, the other serializes geometry.
+ */
+class AppExport BlobReferrerProperty
+{
+public:
+    virtual ~BlobReferrerProperty() = default;
+
+    /** Take the content the manager restored on this property's behalf.
+     *
+     * Called once the archive entry holding the content has been read, or
+     * straight away when it had been read already. Not a value change: it
+     * completes the restore of a value the document already had, so it must
+     * not touch the document.
+     */
+    virtual void assignRestoredBlob(const FileBlobHandle& blob) = 0;
+};
+
 /** Per-document store of the files referenced by PropertyFileIncluded.
  *
  * Ownership is deliberately per document rather than per application. A
@@ -97,7 +159,9 @@ using FileBlobHandle = std::shared_ptr<FileBlob>;
  * The manager is also the only file-channel consumer at save time. It writes
  * one archive entry per blob and properties serialize just the hash, which
  * sidesteps Base::Writer::addFile renaming colliding names and ZipReader
- * matching entries to consumers sequentially by name.
+ * matching entries to consumers sequentially by name. It therefore owns the
+ * names those entries go under, and an index recording them -- see
+ * indexName() and noteReferenced().
  */
 class AppExport FileBlobManager
 {
@@ -113,14 +177,23 @@ public:
      * Returns a handle to the existing blob when the content is already
      * stored, whatever the referring properties call it, so importing the
      * same image twice costs one file on disk.
+     *
+     * The extension is the one the content should be stored under; null takes
+     * the source file's own, which is right unless the caller is renaming it.
      */
-    FileBlobHandle insertFile(const char* srcPath);
+    FileBlobHandle insertFile(const char* srcPath, const char* extension = nullptr);
 
     /** Adopt a file that is already inside the transient directory, moving it
-     * to its content-addressed location. Used by the restore path, which
-     * streams archive content to a staging path first.
+     * to its place in the store. Used by the restore path, which streams
+     * archive content to a staging path first.
+     *
+     * The extension is the one the content should be stored under. Null takes
+     * the incoming file's own, which is right for a scratch file named after
+     * what it holds and wrong for a staging path called "blob.part" -- so a
+     * caller streaming into one passes what it knows, and an empty string
+     * when it knows nothing.
      */
-    FileBlobHandle adoptFile(const char* path);
+    FileBlobHandle adoptFile(const char* path, const char* extension = nullptr);
 
     /// Existing blob for a content hash, or null. Never creates.
     FileBlobHandle find(const std::string& hash) const;
@@ -149,6 +222,13 @@ public:
      */
     void repath(const FileBlobHandle& blob, const std::string& path);
 
+    /** Where a blob's file is now, after the transient directory has moved.
+     *
+     * The directory is renamed with its contents, so the file keeps the name
+     * it was given -- only the directory leading to it is stale.
+     */
+    std::string relocatedPath(const FileBlobHandle& blob) const;
+
     /** Re-anchor every stored path after the transient directory has moved.
      *
      * The directory is renamed with its contents, so the content is still
@@ -169,12 +249,24 @@ public:
      * in step, so it can only carry content owned by exactly one property in
      * exactly one place; shared content cannot satisfy that ordering and was
      * silently dropped when it tried. The manager writes its own entries
-     * instead, named "blobs/<hash>", directly behind Document.xml, and claims
-     * them again on restore through Base::XMLReader's archive handler.
+     * instead, under "blobs/", directly behind Document.xml, and claims them
+     * again on restore through Base::XMLReader's archive handler.
      */
     //@{
     /// Prefix of the archive entries holding stored content.
     static const char* archivePrefix();
+
+    /** Name of the content index, inside the blob directory.
+     *
+     * The index binds a saved file's name to its content and to the referrers
+     * that justify it. It is not load-bearing for a restore -- identity stays
+     * the hash in Document.xml -- so a file written before it existed, or one
+     * whose index a user deleted, still opens; it costs a one-time rename on
+     * the next save. What the index buys is the *next* save: the name a file
+     * already has, the proof that its content is unchanged, and the list of
+     * names that may be pruned.
+     */
+    static const char* indexName();
 
     /// Where a save puts the content the document refers to.
     enum class BlobFormat
@@ -194,12 +286,50 @@ public:
      * way whatever the answer is, and only this manager has to care.
      */
     void beginSave(Base::Writer& writer);
+    /** Which save this is, counted across the whole process.
+     *
+     * A consumer that has to build something once per save and throw it away
+     * afterwards has no other way to tell one save from the next: there is no
+     * end-of-save signal, and a document can be saved any number of times.
+     * Comparing this against what it built for is what says the answer is
+     * stale (docs/SharedShapeStorage.md sec 12.4).
+     *
+     * *** Counted globally, not per document, and that is load-bearing: a
+     * closed document's address is handed straight back to the next one, so a
+     * per-document count would let a new document's first save be mistaken
+     * for a stale answer built for a dead one.
+     */
+    uint64_t saveGeneration() const;
     /// Format chosen for the save in progress.
     BlobFormat blobFormat() const;
     /// Whether this save writes a `<Blobs>` element, i.e. there is one to read.
     bool hasInlineBlobs() const;
-    /// Record that the document being written refers to this blob.
-    void noteReferenced(const FileBlobHandle& blob);
+    /** Record that the document being written refers to this blob.
+     *
+     * The referrer is what names the file the blob is saved to, so a caller
+     * that knows which property it is walking should say so. Noting the same
+     * blob again with a different referrer adds to the list rather than
+     * replacing it: shared content is one file with several referrers.
+     */
+    void noteReferenced(const FileBlobHandle& blob, const BlobReferrer& referrer = {});
+
+    /** Identify a referrer for naming.
+     *
+     * \a object supplies the id when the property's own container has none --
+     * a view provider's properties are named after, and belong to the
+     * generation of, the object it presents.
+     */
+    static BlobReferrer referrerOf(const Property* prop,
+                                   const DocumentObject* object = nullptr);
+    /** Take back a reference noted for the save in progress.
+     *
+     * The collect pass runs before a single property has been written, so it
+     * has to note every blob it can see. A property that then decides to
+     * write itself out with no content -- the shape store below schema 5
+     * (docs/SharedShapeStorage.md) -- says so here, or the archive carries
+     * content nothing in the file refers to.
+     */
+    void dropReferenced(const FileBlobHandle& blob);
     /** Write one entry per collected blob.
      *
      * Must run while the writer is between entries and before anything
@@ -223,12 +353,18 @@ public:
      *
      * The property is handed its blob as soon as the content is available:
      * immediately when it has already been read (a view property restored
-     * from a replayed string long after the archive was closed), otherwise at
+     * from a replayed string while the archive is still open), otherwise at
      * dispatchPending() once the entries have been drained.
+     *
+     * Arriving after endRestore() is an error, not a wait: nothing dispatches
+     * any more and the property would be left empty in silence. It is logged.
+     * A tier that restores that late has to be restored inside the load --
+     * which is why Gui::Document refuses to park a view provider whose record
+     * names a blob.
      */
-    void addPendingReferrer(const std::string& hash, PropertyFileIncluded* prop);
+    void addPendingReferrer(const std::string& hash, BlobReferrerProperty* prop);
     /// Withdraw a referrer that died before it could be served.
-    void removePendingReferrer(PropertyFileIncluded* prop);
+    void removePendingReferrer(BlobReferrerProperty* prop);
     /// Hand every waiting referrer its blob.
     void dispatchPending();
     /** Drop the manager's own hold on restored content.
@@ -237,25 +373,54 @@ public:
      * point a referrer can appear -- which is after the finish-restore signal,
      * because that is when embedded view documents are replayed. What is still
      * held then is content no property claimed, and it goes.
+     *
+     * This is also the deadline every restoring tier answers to: anything
+     * still to be restored after it cannot be served, so it must not be
+     * deferred past it.
      */
     void endRestore();
     //@}
 
-    /// Directory holding the content-addressed files, created on demand.
+    /// Directory holding the stored files, created on demand.
     std::string blobDir() const;
 
-    /// Where the content with this hash lives: <transient>/blobs/<hash>.
-    std::string blobPath(const std::string& hash) const;
+    /// A free path in the store for content that is about to be stored there.
+    std::string newBlobPath(const char* extension) const;
 
 private:
     friend class FileBlob;
+    /// One file a save is about to write: the name it goes under, the content
+    /// it holds and the referrer tokens that justify the name.
+    struct SaveEntry
+    {
+        std::string name;
+        FileBlobHandle blob;
+        std::vector<std::string> referrers;
+    };
+
     /// The collected save set in hash order, so a document always writes the
     /// same file for the same content.
     std::vector<FileBlobHandle> collected() const;
+    /** Decide what every collected blob is called, in name order.
+     *
+     * \a previous is the index the target directory already holds, which
+     * pins names that are still current -- see the implementation for why a
+     * name has to be pinned rather than simply re-derived.
+     */
+    std::vector<SaveEntry> planSave(const std::map<std::string, BlobIndexEntry>& previous) const;
+    /// Parse a content index, or nothing if it is absent or unreadable.
+    static std::map<std::string, BlobIndexEntry> readIndex(const std::string& path);
+    /// Write the content index as the first entry of the blob directory.
+    static void writeIndex(Base::Writer& writer, const std::vector<SaveEntry>& entries);
+    /// Remove the files the previous index listed and this save did not write.
+    static void prune(const std::string& dir,
+                      const std::map<std::string, BlobIndexEntry>& previous,
+                      const std::set<std::string>& kept);
     /// Called from ~FileBlob: drop the map entry and unlink the file.
     void release(FileBlob* blob);
     /// Stream one archive entry into the store, keyed by what it contains.
-    void readBlobEntry(Base::Reader& entry);
+    /// The entry name is trusted for nothing but the extension.
+    void readBlobEntry(const std::string& name, Base::Reader& entry);
     /// Take copies of the content of an unpacked project's blob directory.
     void restoreFromDirectory(const std::string& dir);
     /// Keep restored content alive until its referrers have been served.
@@ -266,10 +431,17 @@ private:
     mutable std::mutex _mutex;
     /// Format the save in progress writes its content in, see beginSave().
     BlobFormat _format {BlobFormat::None};
+    /// Which save is in progress, see saveGeneration().
+    uint64_t _generation {0};
     /// Blobs this save references, keyed by hash.
     mutable std::unordered_map<std::string, FileBlobHandle> _saveSet;
+    /// Who refers to each of them, which is what names the file it goes to.
+    std::unordered_map<std::string, std::vector<BlobReferrer>> _saveRefs;
     /// Properties waiting for content that is still to be read.
-    std::vector<std::pair<std::string, PropertyFileIncluded*>> _pending;
+    std::vector<std::pair<std::string, BlobReferrerProperty*>> _pending;
+    /// Whether endRestore() has run, i.e. whether a referrer turning up now
+    /// can still be served. See addPendingReferrer().
+    bool _restoreClosed {false};
     /// Keeps restored content alive until every referrer has been served.
     std::unordered_map<std::string, FileBlobHandle> _restoreHold;
     std::unordered_map<std::string, std::weak_ptr<FileBlob>> _blobs;

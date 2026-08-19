@@ -340,8 +340,9 @@ public:
     long getSaveSchemaVersion() const;
     /// Schema version one particular save actually comes out as. The cap
     /// answers "what may this document be?", this answers "what is this
-    /// file?" -- a split save has no block to share and comes out as 5,
-    /// old-readable, whatever the cap says.
+    /// file?" -- kept apart because a save may leave out a half of the
+    /// format it cannot carry (a split save shares no default block)
+    /// without that changing the version the file is written under.
     long resolveSchemaVersion(const Base::Writer &writer) const;
     //@}
 

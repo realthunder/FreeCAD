@@ -362,6 +362,37 @@ struct BaseExport Tools
     getUniqueName(const std::string&, const std::vector<std::string>&, int d = 0);
     static std::string addNumber(const std::string&, unsigned int, int d = 0);
     static std::string getIdentifier(const std::string&);
+
+    /** A file name every platform will take, out of a name someone chose.
+     *
+     * Objects and properties are named by whoever made them, and those names
+     * reach the file system: a project saved as a directory writes one file
+     * per object and one per stored shape, named after them
+     * (docs/SharedShapeStorage.md sec 12.1). getIdentifier() has already made
+     * an object's name a Python identifier, which rules out a separator and a
+     * space -- and leaves everything a file system cares about and Python
+     * does not.
+     *
+     *  - Non-ASCII is kept. It is legal on every platform this runs on, and
+     *    a derived name exists to be read.
+     *  - Past 255 bytes a name stops being a name -- ext4 and APFS refuse it
+     *    and the write simply fails, which is how a long object name lost its
+     *    shape and its XML without anything the user could see. A name over
+     *    \a limit is cut on a character boundary and given a digest of what
+     *    it was, so two long names that agree up to the cut stay two files.
+     *  - Windows reserves CON, PRN, AUX, NUL, COM0-9 and LPT0-9 *including*
+     *    with anything after a dot: `CON.Shape.brp` is the console.
+     *  - Windows drops a trailing dot or space, so a name ending in one is
+     *    not the name it opens.
+     *  - Anything a file system reserves outright, and any byte that is not
+     *    valid UTF-8, becomes an underscore.
+     *
+     * The extension, if the name ends in a short alphanumeric one, is kept
+     * through all of it. Idempotent: a name this already answers with comes
+     * back unchanged, which is what lets it be applied at every layer that
+     * makes a file name without the layers fighting.
+     */
+    static std::string portableFileName(const std::string& name, std::size_t limit = 120);
     static std::wstring widen(const std::string& str);
     static std::string narrow(const std::wstring& str);
     static std::string escapedUnicodeFromUtf8(const char* s);

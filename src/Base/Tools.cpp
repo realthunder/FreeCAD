@@ -23,6 +23,10 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <cctype>
+# include <cstdint>
+# include <cstring>
+# include <iomanip>
 # include <sstream>
 # include <locale>
 # include <iostream>
@@ -157,6 +161,157 @@ std::string Base::Tools::addNumber(const std::string& name, unsigned int num, in
     }
     str << num;
     return str.str();
+}
+
+namespace
+{
+
+/// Length of the UTF-8 sequence starting at \a at, or 0 when what is there is
+/// not the start of a valid one.
+std::size_t utf8SequenceLength(const std::string& text, std::size_t at)
+{
+    const auto byte = static_cast<unsigned char>(text[at]);
+    std::size_t length = 0;
+    if ((byte & 0xE0) == 0xC0) {
+        length = 2;
+    }
+    else if ((byte & 0xF0) == 0xE0) {
+        length = 3;
+    }
+    else if ((byte & 0xF8) == 0xF0) {
+        length = 4;
+    }
+    else {
+        return 0;
+    }
+    if (at + length > text.size()) {
+        return 0;
+    }
+    for (std::size_t i = 1; i < length; ++i) {
+        if ((static_cast<unsigned char>(text[at + i]) & 0xC0) != 0x80) {
+            return 0;
+        }
+    }
+    return length;
+}
+
+/// Whether Windows answers this name with a device rather than a file. What
+/// follows a dot does not save it: `CON.Shape.brp` is the console.
+bool isReservedDeviceName(const std::string& name)
+{
+    std::string head = name.substr(0, name.find('.'));
+    for (char& c : head) {
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    if (head == "CON" || head == "PRN" || head == "AUX" || head == "NUL") {
+        return true;
+    }
+    return head.size() == 4 && (head.compare(0, 3, "COM") == 0 || head.compare(0, 3, "LPT") == 0)
+        && head[3] >= '0' && head[3] <= '9';
+}
+
+/// FNV-1a, spelt out rather than taken from std::hash: this ends up in a file
+/// name someone's version control follows, so it has to be the same number in
+/// every build.
+std::string nameDigest(const std::string& text)
+{
+    std::uint64_t hash = 14695981039346656037ULL;
+    for (char c : text) {
+        hash ^= static_cast<unsigned char>(c);
+        hash *= 1099511628211ULL;
+    }
+    std::ostringstream out;
+    out << std::hex << std::setw(8) << std::setfill('0') << (hash & 0xFFFFFFFFULL);
+    return out.str();
+}
+
+}  // namespace
+
+std::string Base::Tools::portableFileName(const std::string& name, std::size_t limit)
+{
+    std::string clean;
+    clean.reserve(name.size());
+    for (std::size_t i = 0; i < name.size();) {
+        const auto byte = static_cast<unsigned char>(name[i]);
+        if (byte < 0x80) {
+            const bool reserved = byte < 0x20 || byte == 0x7F
+                || std::strchr("<>:\"/\\|?*", static_cast<char>(byte)) != nullptr;
+            clean += reserved ? '_' : static_cast<char>(byte);
+            ++i;
+            continue;
+        }
+        const std::size_t length = utf8SequenceLength(name, i);
+        if (length == 0) {
+            // Not UTF-8, so nothing downstream can be told what it is: Qt,
+            // the zip entry table and the file system would each guess.
+            clean += '_';
+            ++i;
+            continue;
+        }
+        clean.append(name, i, length);
+        i += length;
+    }
+
+    if (clean.empty()) {
+        return "_";
+    }
+    if (clean.front() == '.') {
+        // A leading dot hides the file on every Unix, including from the
+        // person looking for it in a directory project.
+        clean.front() = '_';
+    }
+    for (std::size_t i = clean.size(); i > 0 && (clean[i - 1] == '.' || clean[i - 1] == ' '); --i) {
+        clean[i - 1] = '_';
+    }
+
+    // The extension is kept through everything below, so a shortened name
+    // still opens in whatever handles that type -- and it is taken in up to
+    // two parts, because what says what a file is here is often two: a
+    // `.Gui.xml` entry is dispatched on the whole of it.
+    std::string ext;
+    for (int part = 0; part < 2; ++part) {
+        const std::size_t dot = clean.rfind('.');
+        if (dot == std::string::npos || dot == 0 || clean.size() - dot - 1 > 8
+            || clean.size() - dot < 2) {
+            break;
+        }
+        bool plain = true;
+        for (std::size_t i = dot + 1; plain && i < clean.size(); ++i) {
+            const auto c = static_cast<unsigned char>(clean[i]);
+            plain = c < 0x80 && std::isalnum(c) != 0;
+        }
+        if (!plain || clean.size() - dot + ext.size() > 16) {
+            break;
+        }
+        ext = clean.substr(dot) + ext;
+        clean.resize(dot);
+    }
+
+    if (isReservedDeviceName(clean)) {
+        clean.insert(clean.begin(), '_');
+    }
+
+    if (clean.size() + ext.size() > limit) {
+        const std::string digest = nameDigest(name);
+        std::size_t room = limit > ext.size() + digest.size() + 1
+            ? limit - ext.size() - digest.size() - 1
+            : 1;
+        if (room > clean.size()) {
+            room = clean.size();
+        }
+        // Cut on a character boundary: half a UTF-8 sequence is not a name.
+        while (room > 0 && (static_cast<unsigned char>(clean[room]) & 0xC0) == 0x80) {
+            --room;
+        }
+        clean.resize(room);
+        clean += '-';
+        clean += digest;
+    }
+
+    if (clean.empty()) {
+        clean = "_";
+    }
+    return clean + ext;
 }
 
 std::string Base::Tools::getIdentifier(const std::string& name)

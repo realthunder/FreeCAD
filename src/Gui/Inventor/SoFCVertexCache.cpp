@@ -1090,8 +1090,18 @@ SoFCVertexCache::getProtoNode(const SoNode * node)
 // stale entry for a destroyed node can only collide with a NEW node at
 // the same address, whose node id is necessarily different, so the
 // nodeid check in takePrebuilt drops it.
-static std::unordered_map<const SoNode *,
-    std::shared_ptr<const SoFCVertexCache::PrebuiltContent> > PrebuiltTable;
+// The stamp lives in the ENTRY, not in the content: the content is
+// shared and const (a color variant may hold the same arrays), while
+// the stamp is a property of this node's registration and restamp()
+// moves it.
+namespace {
+struct PrebuiltEntry {
+  SbFCUniqueId stamp = 0;
+  std::shared_ptr<const SoFCVertexCache::PrebuiltContent> content;
+};
+} // anonymous namespace
+
+static std::unordered_map<const SoNode *, PrebuiltEntry> PrebuiltTable;
 
 void
 SoFCVertexCache::setPrebuilt(const SoNode * node,
@@ -1099,25 +1109,62 @@ SoFCVertexCache::setPrebuilt(const SoNode * node,
 {
   if (!content)
     PrebuiltTable.erase(node);
-  else
-    PrebuiltTable[node] = std::move(content);
-}
-
-std::shared_ptr<const SoFCVertexCache::PrebuiltContent>
-SoFCVertexCache::takePrebuilt(const SoNode * node)
-{
-  auto it = PrebuiltTable.find(node);
-  if (it == PrebuiltTable.end())
-    return nullptr;
-  auto content = std::move(it->second);
-  PrebuiltTable.erase(it);
-  if (content->nodeid != node->getNodeId())
-    return nullptr;
-  return content;
+  else {
+    PrebuiltEntry & entry = PrebuiltTable[node];
+    entry.stamp = content->nodeid;
+    entry.content = std::move(content);
+  }
 }
 
 bool
-SoFCVertexCache::prebuiltApplicable() const
+SoFCVertexCache::restamp(const SoNode * node)
+{
+  auto it = PrebuiltTable.find(node);
+  if (it == PrebuiltTable.end())
+    return false;
+  it->second.stamp = node->getNodeId();
+  return true;
+}
+
+static SoFCVertexCache::PrebuiltStats PrebuiltStatsCounters;
+
+void
+SoFCVertexCache::resetPrebuiltStats()
+{
+  PrebuiltStatsCounters = PrebuiltStats();
+}
+
+const SoFCVertexCache::PrebuiltStats &
+SoFCVertexCache::prebuiltStats()
+{
+  return PrebuiltStatsCounters;
+}
+
+std::shared_ptr<const SoFCVertexCache::PrebuiltContent>
+SoFCVertexCache::takePrebuilt(const SoNode * node, bool * stale)
+{
+  if (stale)
+    *stale = false;
+  ++PrebuiltStatsCounters.requested;
+  auto it = PrebuiltTable.find(node);
+  if (it == PrebuiltTable.end()) {
+    ++PrebuiltStatsCounters.missing;
+    return nullptr;
+  }
+  const SbFCUniqueId stamp = it->second.stamp;
+  auto content = std::move(it->second.content);
+  PrebuiltTable.erase(it);
+  if (stamp != node->getNodeId()) {
+    ++PrebuiltStatsCounters.stale;
+    if (stale)
+      *stale = true;
+    return nullptr;
+  }
+  return content;
+}
+
+const char *
+SoFCVertexCache::prebuiltReject() const
 {
   // The prebuilt contract: the worker baked neither colors nor texture
   // coordinates, so any captured state that needs them falls back to
@@ -1125,19 +1172,29 @@ SoFCVertexCache::prebuiltApplicable() const
   // verdict open() reached from the lazy element. Valid only between
   // open() and close() (tmp lives in that window).
   auto self = PRIVATE(this);
-  if (!self->tmp || self->prevattached)
-    return false;
+  if (!self->tmp)
+    return "closed";
+  if (self->prevattached)
+    return "prev attached";
   if (self->colorpervertex != 0)
-    return false;
+    return "color per vertex";
   if (self->lastenabled >= 0)
-    return false;
+    return "texture unit";
   if (self->tmp->numbumpcoords)
-    return false;
+    return "bump coords";
   if (self->markerindices)
-    return false;
-  if (self->glrender || self->flipnormal)
-    return false;
-  return true;
+    return "markers";
+  if (self->glrender)
+    return "glrender";
+  if (self->flipnormal)
+    return "flipped normal";
+  return nullptr;
+}
+
+bool
+SoFCVertexCache::prebuiltApplicable() const
+{
+  return prebuiltReject() == nullptr;
 }
 
 bool

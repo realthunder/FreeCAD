@@ -1673,10 +1673,10 @@ void Feature::expandShapeContents()
         purgeTouched();
 }
 
-void Feature::beforeSave() const
+void Feature::beforeSave(Base::Writer &writer) const
 {
     const_cast<Feature*>(this)->expandShapeContents();
-    inherited::beforeSave();
+    inherited::beforeSave(writer);
 }
 
 void Feature::unsetupObject()

@@ -74,6 +74,19 @@ Params = [
     ParamInt("ParallelRunThreshold", 100),
     ParamBool("AutoValidateShape", False),
     ParamBool("FixShape", False),
+    ParamBool("ShareStoredSubShapes", True,
+        "Let a stored shape borrow a sub-shape from another object's file instead\n"
+        "of writing its geometry again (docs/SharedShapeStorage.md sec 12.4).\n"
+        "Turning this off writes every file whole, which is what the format did\n"
+        "before external references; the files stay readable either way."),
+    ParamInt("BorrowBelowFace", 0,
+        "Which sub-shapes may be borrowed below a shell, as a sum\n"
+        "(docs/SharedShapeStorage.md sec 12.15): 0 none, which is what ships,\n"
+        "1 a face inside a shell, 2 an edge inside a face or a wire, 4 a vertex\n"
+        "inside an edge. Each of those associations is keyed on the identity of\n"
+        "a geometry object -- a face's edges hold their 2D curve against the\n"
+        "surface the face carries -- so this is sound only where the geometry is\n"
+        "shared too, and it is off wherever DedupCrossFileGeometry is."),
     ParamUInt("LoftMaxDegree", 5),
     _MinimumDeviation,
     _MeshDeviation,

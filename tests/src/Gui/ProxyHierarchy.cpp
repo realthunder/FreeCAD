@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <random>
 #include <set>
 #include <string>
@@ -457,6 +458,267 @@ TEST(ProxyHierarchy, emptyAndUnlocatableInputAreHarmless)
     EXPECT_EQ(h.instances().size(), 1u);
 }
 
+TEST(ProxyCutTest, theElementContractDecidesWhatBecomesOfTheEdges)
+{
+    // Section 11.1h. The far field does not need a new rule for edges:
+    // the element contract (docs/SceneStreaming.md 13b) already says an
+    // attached line set draws only while its object's faces are shown
+    // and exact, because "an edge set describes the shape its faces
+    // approximate". A proxy is the coarsest rung there is. A floating
+    // set ranks WITH the faces and is never gated -- it is the object,
+    // and nothing else on screen would show it.
+    std::vector<ProxyInstance> instances;
+    uint64_t key = 1;
+    const int n = 6;
+    const float step = 2.0f / float(n);
+    uint64_t attachedPrims = 0, floatingPrims = 0, facePrims = 0;
+    for (int x = 0; x < n; ++x) {
+        for (int y = 0; y < n; ++y) {
+            for (int z = 0; z < n; ++z) {
+                const float cx = -1.0f + (float(x) + 0.5f) * step;
+                const float cy = -1.0f + (float(y) + 0.5f) * step;
+                const float cz = -1.0f + (float(z) + 0.5f) * step;
+                // One object, three drawables: its faces, the edges
+                // that bound them, and -- on every third -- a sketch or
+                // datum line that bounds nothing.
+                ProxyInstance faces = boxAt(cx, cy, cz, 0.2f * step, key, 0);
+                faces.primCount = 100;
+                facePrims += faces.primCount;
+                instances.push_back(faces);
+
+                ProxyInstance edges = boxAt(cx, cy, cz, 0.2f * step, key, 1);
+                edges.mergeable = false;
+                edges.attachedOnly = true;
+                edges.primCount = 20;
+                attachedPrims += edges.primCount;
+                instances.push_back(edges);
+
+                if (key % 3 == 0) {
+                    ProxyInstance wire =
+                        boxAt(cx, cy, cz, 0.2f * step, key, 2);
+                    wire.mergeable = false;
+                    wire.attachedOnly = false;
+                    wire.primCount = 5;
+                    floatingPrims += wire.primCount;
+                    instances.push_back(wire);
+                }
+                ++key;
+            }
+        }
+    }
+    ProxyHierarchy h;
+    h.build(instances);
+
+    float V[16];
+    float P[16];
+    viewAt(V, 400.0f);  // the whole model under one stopped node
+    perspective(P, 45.0f, 1.6f, 0.1f, 5000.0f);
+    ProxyCut cut;
+    h.selectCut(V, P, 1200.0f, 64.0f, cut);
+    ASSERT_FALSE(cut.proxyNodes.empty());
+
+    EXPECT_EQ(cut.gatedPrims, attachedPrims)
+        << "an attached edge set outlived the proxy that took its faces";
+    EXPECT_EQ(cut.exactPrims, floatingPrims)
+        << "a floating set was suppressed, and nothing else shows it";
+    EXPECT_EQ(cut.coveredPrims, facePrims);
+    std::string why;
+    EXPECT_TRUE(h.verifyCut(cut, &why)) << why;
+
+    // And the dependency is per object, not per node: an attached set
+    // whose own faces no proxy took has nothing standing in for it.
+    auto orphaned = instances;
+    for (auto &inst : orphaned) {
+        if (inst.mergeable && inst.objectKey == 1)
+            inst.primCount = 100, inst.mergeable = false;
+    }
+    ProxyHierarchy ho;
+    ho.build(orphaned);
+    ProxyCut oc;
+    ho.selectCut(V, P, 1200.0f, 64.0f, oc);
+    EXPECT_EQ(oc.gatedPrims, attachedPrims - 20)
+        << "an edge was suppressed although its own faces still draw";
+    EXPECT_TRUE(ho.verifyCut(oc, &why)) << why;
+}
+
+TEST(ProxyCutTest, aStoppedNodeDrawsWhatNoProxyCanStandForItself)
+{
+    // Section 11.1g. Generation refuses lines, points and stand-in
+    // boxes on purpose -- a decimated edge is not an edge -- so nothing
+    // above one ever draws it. A cut that counted them as covered was
+    // quoting as removed what would still have to be issued: 17-27% of
+    // the covered figure on MiSTer, 99% of it edges.
+    auto instances = flatAssembly(8);
+    for (auto &inst : instances)
+        inst.primCount = 100;
+    // One in eight is an edge draw, spread through the model rather
+    // than gathered, which is how a document's edges actually sit.
+    uint64_t edges = 0, edgePrims = 0;
+    for (size_t i = 0; i < instances.size(); i += 8) {
+        instances[i].mergeable = false;
+        instances[i].materialBucket = 7;
+        ++edges;
+        edgePrims += instances[i].primCount;
+    }
+    ProxyHierarchy h;
+    h.build(instances);
+
+    float V[16];
+    float P[16];
+    viewAt(V, 400.0f);  // far enough that the cut stops at the root
+    perspective(P, 45.0f, 1.6f, 0.1f, 5000.0f);
+    ProxyCut cut;
+    h.selectCut(V, P, 1200.0f, 64.0f, cut);
+
+    ASSERT_FALSE(cut.proxyNodes.empty());
+    EXPECT_EQ(cut.unmergeableInstances, edges);
+    EXPECT_EQ(cut.unmergeablePrims, edgePrims);
+    EXPECT_EQ(cut.exact.size() + cut.coveredInstances + cut.culledInstances,
+              instances.size())
+        << "an instance was neither drawn nor covered nor culled";
+    EXPECT_EQ(cut.coveredInstances, instances.size() - edges);
+    // And the invariant agrees: an edge below a stopped node is drawn
+    // by the cut, so marking it as covered too would be drawing it
+    // twice.
+    std::string why;
+    EXPECT_TRUE(h.verifyCut(cut, &why)) << why;
+
+    // The saving is what it is, not what ignoring the edges made it
+    // look like.
+    EXPECT_GT(cut.exactPrims, 0u);
+    EXPECT_EQ(cut.exactPrims, edgePrims);
+}
+
+TEST(ProxyCutTest, theExactMassIsAttributedToTheNodesReason)
+{
+    // Section 11.1g. The priced cut said a proxy costs 4-9% of what it
+    // replaces, which means the ceiling is what stays exact -- so the
+    // exact mass has to be readable as something other than one number.
+    // With no costs given there is no such thing as a missing proxy, so
+    // every exact instance is a resident of a node whose extent the
+    // camera resolves, and the totals must still add up to the cut's.
+    auto instances = flatAssembly(10);
+    for (auto &inst : instances)
+        inst.primCount = 100;
+    ProxyHierarchy h;
+    h.build(instances);
+
+    float V[16];
+    float P[16];
+    viewAt(V, 10.0f);
+    perspective(P, 45.0f, 1.6f, 0.1f, 1000.0f);
+    ProxyCut cut;
+    h.selectCut(V, P, 1200.0f, 4.0f, cut);
+    ASSERT_FALSE(cut.exact.empty());
+    EXPECT_EQ(cut.exactNode.size(), cut.exact.size());
+
+    ProxyExactBreakdown ex;
+    h.explainExact(cut, V, P, 1200.0f, 4.0f, nullptr, ex);
+    EXPECT_EQ(ex.total.instances, cut.exact.size());
+    EXPECT_EQ(ex.total.prims, cut.exactPrims);
+    EXPECT_EQ(ex.byReason[ProxyExactBreakdown::NoProxy].prims, 0u)
+        << "a descent that never consulted a store found a missing proxy";
+    EXPECT_EQ(ex.byReason[ProxyExactBreakdown::Resolvable].prims,
+              cut.exactPrims);
+
+    // The two cross-cuts are partitions of the same mass, not two
+    // different measurements of it.
+    uint64_t bySize = 0, byReason = 0;
+    for (int b = 0; b < ProxyExactBreakdown::SizeBins; ++b)
+        bySize += ex.bySize[b].prims;
+    for (int r = 0; r < ProxyExactBreakdown::ReasonCount; ++r)
+        byReason += ex.byReason[r].prims;
+    EXPECT_EQ(bySize, ex.total.prims);
+    EXPECT_EQ(byReason, ex.total.prims);
+}
+
+TEST(ProxyCutTest, aGenerationGapReadsDifferentlyFromNearField)
+{
+    // The distinction the whole readout exists for: geometry drawn
+    // exactly because the camera can resolve it is the near field and
+    // is correct, geometry drawn exactly because nothing was ever
+    // generated above it is a gap. They are indistinguishable in the
+    // exact count and must not be in the breakdown.
+    auto instances = flatAssembly(10);
+    for (auto &inst : instances)
+        inst.primCount = 100;
+    ProxyHierarchy h;
+    h.build(instances);
+
+    float V[16];
+    float P[16];
+    viewAt(V, 400.0f);  // far enough that nothing is resolvable
+    perspective(P, 45.0f, 1.6f, 0.1f, 5000.0f);
+
+    // Every node has a proxy of no error at all: the cut stops at the
+    // root and there is no exact mass to explain.
+    std::vector<ProxyNodeCost> costs(h.nodes().size());
+    for (auto &cost : costs) {
+        cost.errorRatio = 0.0f;
+        cost.prims = 1;
+        cost.draws = 1;
+    }
+    ProxyCut stopped;
+    h.selectCut(V, P, 1200.0f, 4.0f, costs, stopped);
+    ProxyExactBreakdown none;
+    h.explainExact(stopped, V, P, 1200.0f, 4.0f, &costs, none);
+    EXPECT_EQ(none.total.prims, 0u);
+
+    // Nothing generated anywhere: the same camera, the same tolerance,
+    // and now the whole model draws exactly -- as a gap, not as near
+    // field.
+    for (auto &cost : costs)
+        cost.errorRatio = -1.0f;
+    ProxyCut gap;
+    h.selectCut(V, P, 1200.0f, 4.0f, costs, gap);
+    ProxyExactBreakdown ex;
+    h.explainExact(gap, V, P, 1200.0f, 4.0f, &costs, ex);
+    EXPECT_EQ(ex.total.prims, gap.exactPrims);
+    EXPECT_GT(ex.total.prims, 0u);
+    EXPECT_EQ(ex.byReason[ProxyExactBreakdown::NoProxy].prims, ex.total.prims);
+    EXPECT_EQ(ex.byReason[ProxyExactBreakdown::Resolvable].prims, 0u);
+}
+
+TEST(ProxyCutTest, theSizeCrossCutSaysWhetherTheMassIsAddressable)
+{
+    // Reason alone cannot answer the question, because "the node is
+    // resolvable" is true of a node holding one large part and of a
+    // node holding a thousand small ones that happens to sit high in
+    // the tree. What separates them is the instance's own projected
+    // size: below the tolerance it is detail nothing merged, well above
+    // it, it is near field whatever the reason says.
+    auto instances = flatAssembly(10);
+    for (auto &inst : instances)
+        inst.primCount = 10;
+    // One part spanning the whole model, which no cell below the root
+    // can hold and which is therefore a root resident.
+    ProxyInstance big = boxAt(0.0f, 0.0f, 0.0f, 0.9f, 999999);
+    big.primCount = 1000;
+    instances.push_back(big);
+
+    ProxyHierarchy h;
+    h.build(instances);
+    float V[16];
+    float P[16];
+    viewAt(V, 6.0f);
+    perspective(P, 45.0f, 1.6f, 0.1f, 1000.0f);
+    ProxyCut cut;
+    h.selectCut(V, P, 1200.0f, 4.0f, cut);
+
+    ProxyExactBreakdown ex;
+    h.explainExact(cut, V, P, 1200.0f, 4.0f, nullptr, ex);
+    // The big part is drawn exactly and lands in the coarsest bin.
+    EXPECT_GE(ex.bySize[ProxyExactBreakdown::SizeBins - 1].prims, 1000u);
+    // A tolerance the whole model is smaller than puts everything in
+    // the first bin instead, which is what "addressable" would look
+    // like if it were true.
+    ProxyExactBreakdown wide;
+    h.explainExact(cut, V, P, 1200.0f, 100000.0f, nullptr, wide);
+    EXPECT_EQ(wide.bySize[0].prims, wide.total.prims);
+    EXPECT_EQ(wide.total.prims, ex.total.prims)
+        << "the tolerance changed what the same cut is made of";
+}
+
 TEST(ProxyHierarchy, coincidentInstancesDoNotRecurseForever)
 {
     // Ten thousand parts at the same point cannot be separated by any
@@ -582,4 +844,37 @@ TEST(BoxNearPlane, degenerateInputIsNotAnswerable)
     const float mx[3] = {-1.0f, -1.0f, -1.0f};
     EXPECT_TRUE(boxReachesNearPlane(mn, mx, V, P, true));
     EXPECT_TRUE(boxReachesNearPlane(nullptr, mx, V, P, true));
+}
+
+TEST(ProxyHierarchy, aNodeIdNamesOneNodeAndOnlyOne)
+{
+    // The id is what a generation cache is keyed by (section 7), so two
+    // nodes sharing one is not a cosmetic fault: it serves one node's
+    // proxy for another node's geometry. It happened -- the Morton
+    // spread used the masks of a two-dimensional code, which puts bit i
+    // at bit 2i, so the three interleaved halves overlapped and
+    // (0,0,1) collided with (2,0,0).
+    ProxyHierarchy h;
+    ProxyParams params;
+    params.maxPerCell = 8;
+    h.build(flatAssembly(16), params);
+    ASSERT_GT(h.nodes().size(), 8u);
+
+    std::map<uint64_t, size_t> seen;
+    for (size_t i = 0; i < h.nodes().size(); ++i) {
+        const ProxyNode &node = h.nodes()[i];
+        const auto it = seen.find(node.id);
+        ASSERT_EQ(it, seen.end())
+            << "nodes " << it->second << " and " << i << " share id "
+            << node.id;
+        seen[node.id] = i;
+    }
+
+    // And it is positional: the same id comes back for the same level
+    // and cell, which is what lets the cache outlive the session.
+    ProxyHierarchy again;
+    again.build(flatAssembly(16), params);
+    ASSERT_EQ(again.nodes().size(), h.nodes().size());
+    for (size_t i = 0; i < h.nodes().size(); ++i)
+        EXPECT_EQ(again.nodes()[i].id, h.nodes()[i].id);
 }

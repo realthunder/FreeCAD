@@ -148,7 +148,7 @@ public:
 
     /** Whether a property TYPE name marks a type internal to a container
      *
-     * ⭐ Some property types are not values a user may add: they only work as
+     * * Some property types are not values a user may add: they only work as
      * a member of one particular container, because they hold a reference to
      * a sibling property whose storage they really are (Gui::PropertyShapeColor
      * over the appearance, PartGui::PropertyDiffuseColor over its diffuse
@@ -170,6 +170,18 @@ public:
      * @param python: if true, then return an expression for accessing this property in Python
      */
     virtual std::string getFullName(bool python=false) const;
+
+    /** Return a file name suitable for saving this property
+     *
+     * `Object.Property`, and `Object.ViewObject.Property` for a view
+     * provider's -- the document name is stripped, so the name survives a
+     * save-as, and an object's internal name is immutable, so it does not
+     * churn while the object lives. Public because it is not only the
+     * property that names the property's file: FileBlobManager derives the
+     * name of a shared file from its referrer, and has to spell it the same
+     * way as a property that writes its own.
+     */
+    std::string getFileName(const char *postfix=nullptr, const char *prefix=nullptr) const;
 
     /// Get the class name of the associated property editor item
     virtual const char* getEditorName() const { return ""; }
@@ -357,7 +369,18 @@ public:
      */
     int64_t getID() const {return _id;}
 
-    virtual void beforeSave() const {}
+    /** Last chance to prepare for a save, before anything is written.
+     *
+     * The writer is the one the save is running through, so a property can
+     * see what the document resolved -- the schema above all, which decides
+     * whether a document-wide store is in play at all (docs/SharedShapeStorage.md).
+     * Everything the save will write is still unwritten when this runs, so a
+     * property may still stamp state onto others.
+     */
+    virtual void beforeSave(Base::Writer &writer) const
+    {
+        (void)writer;
+    }
 
     friend class PropertyContainer;
     friend struct PropertyData;
@@ -383,9 +406,6 @@ protected:
 
     /// Verify a path for the current property
     virtual void verifyPath(const App::ObjectIdentifier & p) const;
-
-    /// Return a file name suitable for saving this property
-    std::string getFileName(const char *postfix=0, const char *prefix=0) const;
 
     // forbidden
     Property(const Property&) = delete;

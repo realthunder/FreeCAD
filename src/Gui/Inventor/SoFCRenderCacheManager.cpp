@@ -658,6 +658,45 @@ public:
   // verify arm's compare at postShape (docs/WorkerVertexCache.md).
   std::shared_ptr<const SoFCVertexCache::PrebuiltContent> verifyprebuilt;
   int adoptedcount = 0;
+
+  // Verify arm only (Render_WorkerVertexCache = 2): comparisons that
+  // ran and AGREED. A mismatch shouts on its own; agreement has to be
+  // counted, or "no mismatch" is indistinguishable from "compared
+  // nothing" and the arm passes by being silent.
+  int verifiedcount = 0;
+
+  // Why shapes that DID have worker content still could not adopt it,
+  // keyed on the literal SoFCVertexCache::prebuiltReject() returned --
+  // pointer identity is enough, they all come from one function. The
+  // registry-side half of the same question is counted there
+  // (SoFCVertexCache::prebuiltStats).
+  std::vector<std::pair<const char *, int> > adoptrejects;
+
+  // Which node CLASS was registered and then touched before the publish
+  // could pick it up. Keyed on the interned SoType name, so the same
+  // pointer-identity counting works.
+  std::vector<std::pair<const char *, int> > adoptstale;
+
+  static void count(std::vector<std::pair<const char *, int> > & tally,
+                    const char * key)
+  {
+    if (!key)
+      return;
+    for (auto & entry : tally) {
+      if (entry.first == key) {
+        ++entry.second;
+        return;
+      }
+    }
+    tally.emplace_back(key, 1);
+  }
+
+  void countAdoptReject(const char * why) { count(this->adoptrejects, why); }
+
+  void countAdoptStale(const SoNode * node)
+  {
+    count(this->adoptstale, node->getTypeId().getName().getString());
+  }
 };
 
 std::unordered_map<const SoNode *,
@@ -1558,6 +1597,10 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
     PRIVATE(this)->capturecount = 0;
     PRIVATE(this)->deferredcount = 0;
     PRIVATE(this)->adoptedcount = 0;
+    PRIVATE(this)->adoptrejects.clear();
+    PRIVATE(this)->adoptstale.clear();
+    PRIVATE(this)->verifiedcount = 0;
+    SoFCVertexCache::resetPrebuiltStats();
     {
       CaptureFlagGuard capguard;
       PRIVATE(this)->action->apply(path->getTail());
@@ -1569,14 +1612,42 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
       // each pass captures at least one more shape until none defer.
       PRIVATE(this)->sceneid = 0;
     }
-    if (Gui::RenderParams::getLevelDebug()
-        && (PRIVATE(this)->deferredcount > 0
-            || PRIVATE(this)->adoptedcount > 0))
-      Base::Console().Message(
-          "capture budget: %d captured in %.0fms, %d deferred, "
-          "%d adopted\n",
-          PRIVATE(this)->capturecount, PRIVATE(this)->capturespentms,
-          PRIVATE(this)->deferredcount, PRIVATE(this)->adoptedcount);
+    {
+      // The adoption side of the line reports its own failure: a bare
+      // "0 adopted" cannot distinguish "nothing was ever registered"
+      // from "registered but voided" from "refused by the captured
+      // state", and those have three different fixes. Printed whenever
+      // a shape offered anything, so the count cannot go quiet.
+      const auto & pstats = SoFCVertexCache::prebuiltStats();
+      if (Gui::RenderParams::getLevelDebug()
+          && (PRIVATE(this)->deferredcount > 0
+              || PRIVATE(this)->adoptedcount > 0
+              || pstats.requested > 0)) {
+        std::string why;
+        auto add = [&why](int count, const char * what) {
+          if (!count)
+            return;
+          char buf[128];
+          std::snprintf(buf, sizeof(buf), ", %d %s", count, what);
+          why += buf;
+        };
+        add(pstats.missing, "no entry");
+        add(PRIVATE(this)->verifiedcount, "verified");
+        for (const auto & entry : PRIVATE(this)->adoptstale) {
+          char what[96];
+          std::snprintf(what, sizeof(what), "stale %s", entry.first);
+          add(entry.second, what);
+        }
+        for (const auto & entry : PRIVATE(this)->adoptrejects)
+          add(entry.second, entry.first);
+        Base::Console().Message(
+            "capture budget: %d captured in %.0fms, %d deferred, "
+            "%d adopted of %d offered%s\n",
+            PRIVATE(this)->capturecount, PRIVATE(this)->capturespentms,
+            PRIVATE(this)->deferredcount, PRIVATE(this)->adoptedcount,
+            pstats.requested, why.c_str());
+      }
+    }
     cache->close(state);
 
     {
@@ -2302,8 +2373,12 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
   // registration.
   std::shared_ptr<const SoFCVertexCache::PrebuiltContent> prebuilt;
   const int wvcmode = Gui::RenderParams::getWorkerVertexCache();
-  if (wvcmode > 0)
-    prebuilt = SoFCVertexCache::takePrebuilt(node);
+  if (wvcmode > 0) {
+    bool stale = false;
+    prebuilt = SoFCVertexCache::takePrebuilt(node, &stale);
+    if (stale)
+      self->countAdoptStale(node);
+  }
 
   // The capture budget (Render CaptureBudgetMS). A publish that has
   // already spent its budget capturing changed shapes keeps this shape's
@@ -2382,6 +2457,12 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
       // is not compared.
       if (self->vcache->prebuiltApplicable())
         self->verifyprebuilt = std::move(prebuilt);
+    }
+    else if (const char * why = self->vcache->prebuiltReject()) {
+      // Had content, refused it: name the clause (the fallback below
+      // is the normal path, but a publish that never adopts has to be
+      // able to say whether it was the registry or the state).
+      self->countAdoptReject(why);
     }
     else if (self->vcache->installPrebuilt(*prebuilt)) {
       ++self->adoptedcount;
@@ -2505,13 +2586,19 @@ SoFCRenderCacheManagerP::postShape(void *userdata,
              << " stamped " << self->verifyprebuilt->nodeid
              << "): " << diff);
     }
-    else
+    else {
       // Console directly, not FC_LOG: the verify arm is an opt-in
       // diagnostic and its positive signal must be distinguishable
       // from "never ran" without a log-level hunt.
       Base::Console().Log("worker vertex cache verified on %s (%s)\n",
                           node->getName().getString(),
                           node->getTypeId().getName().getString());
+      // ...and counted for the publish line, because the Log above is
+      // suppressed at default log level: a verify run that compared
+      // NOTHING otherwise reads exactly like one that compared
+      // everything and agreed.
+      ++self->verifiedcount;
+    }
     self->verifyprebuilt.reset();
   }
 

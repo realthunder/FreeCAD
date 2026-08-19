@@ -202,6 +202,34 @@ struct ProxyInstance {
     /// one screw expands what instancing shares) and unused by the
     /// partition itself.
     const void *sourceTag = nullptr;
+    /// Whether a proxy can stand in for this at all. False for line and
+    /// point draws and for stand-in boxes: generation refuses those on
+    /// purpose (11.1c -- a decimated edge is not an edge), so no proxy
+    /// above one ever draws it.
+    ///
+    /// The cut has to know, or it counts as removed what nothing draws.
+    /// Measured at 17-27% of what a stopped node claimed to cover on
+    /// MiSTer, 99% of it edges, which is the difference between a 3.34x
+    /// saving and a 2.05x one (11.1g).
+    bool mergeable = true;
+    /// The producer's attachment bit (MeshData::attachedOnly): every
+    /// vertex of this point set is an edge endpoint, or every edge of
+    /// this line set bounds a face of the same shape.
+    ///
+    /// Which is the whole of the element contract
+    /// (docs/SceneStreaming.md 13b), and the contract already answers
+    /// what a far field should do with edges. An attached line set
+    /// draws only while its object's faces are shown *and exact* --
+    /// "an edge set describes the shape its faces approximate, so
+    /// drawing it over a rough rung decorates geometry that is not the
+    /// answer yet". A proxy is the coarsest rung there is, so an
+    /// attached set below a stopped node is covered by it; a floating
+    /// one ranks WITH the faces, is never gated, and draws exactly.
+    ///
+    /// The contract's dependency is per object -- an edge waits on
+    /// *its own* faces -- and \ref objectKey is already the id the
+    /// gate keys on, so nothing further is needed to apply it.
+    bool attachedOnly = false;
     /// Primitives this draw issues -- triangles, line segments or
     /// points, whichever the material's topology selects.
     ///
@@ -325,6 +353,67 @@ struct ProxyNode {
     }
 };
 
+/// What generation found out about one node, for the cut to read --
+/// indexed by node index, parallel to nodes().
+///
+/// Phase 1 descended by a node's projected *extent* because nothing had
+/// been generated that could have an error, and 11.1c measured what
+/// that stand-in costs: the extent-to-error ratio is a distribution
+/// (0.084 mean against 0.34 worst at cell/8), so a single tolerance
+/// over extents stops far too early on some nodes and far too late on
+/// others. The ratio is a property of geometry and grid rather than of
+/// the camera, so it is measured once at generation and read here.
+struct ProxyNodeCost {
+    /// The node's committed error as a fraction of its extent, so that
+    /// the projected error is this times the projected extent and no
+    /// second projection is needed. Negative means no proxy exists for
+    /// this node, and a cut cannot stop where there is nothing to draw.
+    float errorRatio = -1.0f;
+    /// Primitives the node draws if the cut stops on it: the proxy and
+    /// the boxes standing in for what it deleted (11.1d). What makes
+    /// the saving honest -- phase 1 could only count what a proxy
+    /// replaces, never what it costs.
+    uint32_t prims = 0;
+    /// Draw calls it issues, one per material bucket actually built.
+    /// Zero falls back to the node's bucket count.
+    uint32_t draws = 0;
+};
+
+/// The exactly drawn mass of a cut, split by why it did not aggregate
+/// and by how large it is on screen (section 11.1g).
+struct ProxyExactBreakdown {
+    /// Why the node an exact instance sits in did not stop the cut.
+    enum Reason {
+        /// Its own error projects above the tolerance. The near field,
+        /// and the one answer that is not a gap: descending was right.
+        Resolvable,
+        /// Nothing was generated for it, so the cut could not stop
+        /// there whatever its error would have been.
+        NoProxy,
+        /// Fewer members than minMerge: proxying one object produces a
+        /// decimated object, which the per-object ladder does better.
+        TooFewMembers,
+        ReasonCount
+    };
+    /// How large the instance itself is, in multiples of the tolerance:
+    /// within it, up to 4x, up to 16x, beyond. The first bin is the
+    /// mass a cut could in principle remove and did not.
+    static const int SizeBins = 4;
+    struct Bin {
+        uint32_t instances = 0;
+        uint64_t prims = 0;
+    };
+    Bin bins[ReasonCount][SizeBins];
+    Bin byReason[ReasonCount];
+    Bin bySize[SizeBins];
+    Bin total;
+    /// Deepest node level any exact instance was found at, and the
+    /// primitive-weighted mean level -- a near field sits deep, a
+    /// generation gap can sit anywhere.
+    uint32_t maxLevel = 0;
+    double meanLevel = 0.0;
+};
+
 /// A frontier through the partition, and what it costs.
 ///
 /// Note what a node *above* the frontier still owes: its own residents.
@@ -334,6 +423,12 @@ struct ProxyNode {
 struct ProxyCut {
     std::vector<int> proxyNodes;      ///< nodes drawing proxies
     std::vector<uint32_t> exact;      ///< instance indices drawn exactly
+    /// The node each exact instance was resident in, parallel to
+    /// \ref exact. Which node it was is what says *why* the instance
+    /// draws exactly -- the descent's reason is a property of the node,
+    /// not of the instance -- and it cannot be recovered afterwards
+    /// without searching the partition for the instance again.
+    std::vector<int> exactNode;
     /// Draws the cut issues: the exact ones, plus one per distinct
     /// material bucket of each proxy node (§5.1). **This is the number
     /// phase 1 exists to produce.**
@@ -341,6 +436,22 @@ struct ProxyCut {
     uint32_t proxyDraws = 0;          ///< the merged part of drawCount
     uint32_t coveredInstances = 0;    ///< instances a proxy stands for
     uint32_t culledInstances = 0;     ///< off screen, drawn by nobody
+    /// Of \ref exact, the part that lies *below* a node the cut
+    /// stopped on: geometry no proxy can stand in for, so the proxy
+    /// draws beside it rather than instead of it. Counted separately
+    /// because it is the one population that grows as the tolerance
+    /// coarsens, and because a cut quoting it as covered is quoting a
+    /// hole (11.1g).
+    uint32_t unmergeableInstances = 0;
+    uint64_t unmergeablePrims = 0;
+    /// Of what a stopped node covers, the attached point and line sets
+    /// the element contract gates behind the proxy that took their
+    /// faces. Counted apart from \ref coveredPrims because a proxy
+    /// does not *contain* them -- it satisfies their dependency, which
+    /// is a different claim and one the drawing side has to honour
+    /// (11.1h).
+    uint32_t gatedInstances = 0;
+    uint64_t gatedPrims = 0;
     /// The same three populations counted in primitives instead of
     /// draws. `coveredPrims` is the geometry a proxy replaces -- the
     /// ceiling on what the cut can save, before the proxy's own
@@ -350,6 +461,11 @@ struct ProxyCut {
     uint64_t exactPrims = 0;
     uint64_t coveredPrims = 0;
     uint64_t culledPrims = 0;
+    /// What the proxies themselves draw, when the cut was given
+    /// ProxyNodeCost to read. Zero without it, because an ungenerated
+    /// proxy has no cost to report -- and a saving quoted as
+    /// coveredPrims alone is the gross figure, not the net one.
+    uint64_t proxyPrims = 0;
 };
 
 /// The spatial index of §3.2: a loose octree over world bounds with
@@ -393,6 +509,52 @@ public:
                    float viewportHeightPx, float tolerancePx,
                    ProxyCut &out) const;
 
+    /// The same descent, reading each node's measured error instead of
+    /// standing its extent in for one (section 3.3).
+    ///
+    /// \a costs is indexed by node index and may be shorter than
+    /// nodes(); a node it does not cover, or covers with a negative
+    /// ratio, has no proxy and is descended past. A node stops the
+    /// frontier when `errorRatio * diagPx` is within \a tolerancePx --
+    /// the projected error rather than the projected size, which is
+    /// what 11.1c showed a single extent tolerance cannot stand in for.
+    void selectCut(const float *view, const float *proj,
+                   float viewportHeightPx, float tolerancePx,
+                   const std::vector<ProxyNodeCost> &costs,
+                   ProxyCut &out) const;
+
+    /// Why the exactly drawn part of \a cut is drawn exactly
+    /// (section 11.1g).
+    ///
+    /// The priced cut measured that a proxy costs 4-9% of what it
+    /// replaces, which moves the question: the ceiling is not what
+    /// aggregation costs, it is what never aggregates. At a 4px
+    /// tolerance two thirds of the visible primitives are still exact,
+    /// and "tune the proxies" cannot touch any of it until it is known
+    /// which of three quite different things that mass is.
+    ///
+    /// Every exact instance is a resident of a node the descent went
+    /// past, so the reason is the node's: it had an error the camera
+    /// can resolve (correct -- this is the near field), it had no
+    /// proxy to stop on (a generation gap, and the bug-shaped one), or
+    /// it held too few members to be worth one (the partition's own
+    /// floor).
+    ///
+    /// Crossed with how large the instance itself is on screen, which
+    /// is what says whether the mass is *addressable at all*: an
+    /// instance that projects to less than the tolerance is detail the
+    /// camera cannot resolve and that something ought to have merged,
+    /// while one that projects to ten times it is near field however it
+    /// got there, and no cut should touch it.
+    ///
+    /// \a costs may be null, in which case the descent is the extent
+    /// rule's and no node can be missing a proxy.
+    void explainExact(const ProxyCut &cut, const float *view,
+                      const float *proj, float viewportHeightPx,
+                      float tolerancePx,
+                      const std::vector<ProxyNodeCost> *costs,
+                      ProxyExactBreakdown &out) const;
+
     /// §11.3, the invariant asserted before either ladder is coded:
     ///
     /// > Every instance belongs to exactly one cell per level, and for
@@ -402,6 +564,17 @@ public:
     /// Over a partition this is a counting argument rather than the
     /// ancestry test the same rule needs over a document tree. O(n) and
     /// debug-only: it allocates a mark per instance.
+    ///
+    /// "Its covering proxy" is read strictly: an instance no proxy can
+    /// stand in for (\ref ProxyInstance::mergeable) is not covered by
+    /// the node above it, so it has to appear in the exact list, be
+    /// culled, or be gated by the element contract -- which is exactly
+    /// what the invariant should have been saying all along, and what
+    /// 11.1g found it was not.
+    ///
+    /// The gated population is recomputed here from the contract's own
+    /// rule rather than read off the cut's counters, so a member the
+    /// cut silently dropped still reads as a violation.
     bool verifyCut(const ProxyCut &cut, std::string *why = nullptr) const;
 
     /// What phase 1 reports (§11.1): the distributions that pick K and
@@ -423,6 +596,10 @@ public:
     Stats stats() const;
 
 private:
+    void selectCutImpl(const float *view, const float *proj,
+                       float viewportHeightPx, float tolerancePx,
+                       const std::vector<ProxyNodeCost> *costs,
+                       ProxyCut &out) const;
     int buildNode(uint32_t level, const uint32_t cell[3],
                   std::vector<uint32_t> items);
     void markSubtree(int node, std::vector<uint8_t> &mark,

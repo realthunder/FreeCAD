@@ -1594,7 +1594,7 @@ private:
     /** Material::MaterialType, which operator== compares
      *
      * The compatible encoding has never carried it and still does not, so a
-     * list that goes through a schema 5 document comes back user-defined,
+     * list that goes through a schema 4 document comes back user-defined,
      * as it always has. The per field encoding does carry it.
      */
     std::vector<int8_t> _type;
@@ -1615,7 +1615,7 @@ private:
      *
      * Upstream states it on the element as version="3" and it means the
      * colours are followed by a second pass of strings. Absent, or on a
-     * file this fork wrote at schema 5, there is no second pass.
+     * file this fork wrote at schema 5 or later, there is no second pass.
      */
     int _fileVersion {0};
 

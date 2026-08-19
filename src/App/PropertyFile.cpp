@@ -136,11 +136,16 @@ void PropertyFileIncluded::setValue(const char* sFile, const char* sName)
         // A writable file already sitting in the transient directory is a
         // scratch file handed over by getExchangeTempFile(): claim it instead
         // of copying. Read-only ones belong to another blob and must not move.
+        // The store keeps the extension of the name this property gives the
+        // content, not of the file it happened to arrive in -- a scratch file
+        // from getExchangeTempFile() says nothing about what it holds.
+        const std::string ext = Base::FileInfo(name).extension();
+
         FileBlobHandle blob;
         if (file.dirPath() == pathTrans && file.isWritable())
-            blob = manager.adoptFile(sFile);
+            blob = manager.adoptFile(sFile, ext.c_str());
         else
-            blob = manager.insertFile(sFile);
+            blob = manager.insertFile(sFile, ext.c_str());
 
         aboutToSetValue();
         _blob = std::move(blob);
@@ -304,9 +309,9 @@ void PropertyFileIncluded::Save (Base::Writer &writer) const
     if (_blob && !Base::FileInfo(_blob->path()).exists()) {
         auto &manager = blobManager();
         // Saving under a new name gives the document a new transient
-        // directory, so the stored absolute path is stale. The content, and
-        // therefore its name, is unchanged.
-        Base::FileInfo fi(manager.blobPath(_blob->hash()));
+        // directory, so the stored absolute path is stale. The directory is
+        // renamed with its contents, so the file is still called what it was.
+        Base::FileInfo fi(manager.relocatedPath(_blob));
         if (!fi.exists()) {
             // Content written by an older version sat directly in the
             // transient directory under its file name.
@@ -331,7 +336,7 @@ void PropertyFileIncluded::Save (Base::Writer &writer) const
             // is written through some path the collect pass does not walk
             // from losing its content, since the entries are written after
             // Document.xml.
-            blobManager().noteReferenced(_blob);
+            blobManager().noteReferenced(_blob, FileBlobManager::referrerOf(this));
             writer.Stream() << writer.ind() << "<FileIncluded hash=\""
                             << encodeAttribute(_blob->hash()) << "\" name=\""
                             << encodeAttribute(_BaseFileName) << "\""
@@ -417,8 +422,11 @@ void PropertyFileIncluded::Restore(Base::XMLReader &reader)
 
             aboutToSetValue();
             // adoptFile() de-duplicates: restoring the same content twice
-            // keeps one file and hands back the same blob.
-            _blob = manager.adoptFile(path.c_str());
+            // keeps one file and hands back the same blob. The extension
+            // comes from the stored name rather than from the staging path,
+            // which uniquePath() may have made unique with a uuid.
+            _blob = manager.adoptFile(path.c_str(),
+                                      Base::FileInfo(file).extension().c_str());
             _BaseFileName = file;
             _OriginalName = original;
             hasSetValue();
@@ -460,13 +468,17 @@ void PropertyFileIncluded::RestoreDocFile(Base::Reader &reader)
     // copy plain data
     aboutToSetValue();
 
-    reader >> to.rdbuf();
+    // Written, not extracted: extraction skips leading whitespace, so content
+    // that starts with any came back short. See readBlobEntry() for the same
+    // fix and what content addressing turns that into.
+    to << reader.rdbuf();
     to.close();
 
     // Hand the file to the store. Two objects referencing identical content --
     // copy&paste inside a document, for instance -- collapse onto one blob
     // here, which is what the old read-only sentinel check used to approximate.
-    _blob = blobManager().adoptFile(path.c_str());
+    _blob = blobManager().adoptFile(path.c_str(),
+                                    Base::FileInfo(_BaseFileName).extension().c_str());
     hasSetValue();
 }
 

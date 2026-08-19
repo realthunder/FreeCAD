@@ -28,6 +28,8 @@ grouped by the concern they pin down:
   BlobRefCountCases     lifetime: who keeps a file alive, who deletes it
   BlobPersistenceCases  archive shape and round-trips, including the
                         forward-only-merge ordering regression (docs §4)
+  BlobSaveOptionCases   ForceXML / SplitXML / PreferBinary over both writers
+  BlobNamingCases       stable saved names, the content index, pruning (docs sec 13)
   BlobExportImportCases the export/import path (copyObject, clipboard)
 
 Run headless with:  FreeCADCmd -t FileBlobs
@@ -40,6 +42,7 @@ import shutil
 import tempfile
 import unittest
 import zipfile
+from xml.etree import ElementTree
 
 import FreeCAD
 
@@ -51,6 +54,7 @@ except ImportError:
     HAS_PART = False
 
 BLOB_DIR = "blobs"
+BLOB_INDEX = "Content.xml"
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +80,10 @@ class BlobTestCase(unittest.TestCase):
     def newDocument(self, name="BlobDoc"):
         doc = FreeCAD.newDocument(name)
         self.docs.append(doc.Name)
+        # Shared entries are part of this fork's format, and a new document
+        # defaults to upstream's -- an incompatible file is chosen, never
+        # inherited. The cases that want the default say so themselves.
+        doc.SaveSchemaVersion = 5
         return doc
 
     def openDocument(self, path):
@@ -115,8 +123,11 @@ class BlobTestCase(unittest.TestCase):
             self.assertEqual(handle.read(), expected)
 
     def blobEntries(self, project):
+        """The content entries of an archive -- the index describes them
+        rather than being one of them, so it is not counted here."""
         names = zipfile.ZipFile(project).namelist()
-        return [n for n in names if n.startswith(BLOB_DIR + "/")]
+        index = "%s/%s" % (BLOB_DIR, BLOB_INDEX)
+        return [n for n in names if n.startswith(BLOB_DIR + "/") and n != index]
 
     def storedBlobs(self, doc):
         """Files actually present in the document's blob store."""
@@ -132,7 +143,44 @@ class BlobTestCase(unittest.TestCase):
         blobdir = os.path.join(project, BLOB_DIR)
         if not os.path.isdir(blobdir):
             return []
-        return sorted(os.listdir(blobdir))
+        return sorted(n for n in os.listdir(blobdir) if n != BLOB_INDEX)
+
+    def blobIndex(self, project):
+        """The content index of a saved project: name -> (hash, referrers)."""
+        entry = "%s/%s" % (BLOB_DIR, BLOB_INDEX)
+        if os.path.isdir(project):
+            path = os.path.join(project, BLOB_DIR, BLOB_INDEX)
+            if not os.path.exists(path):
+                return {}
+            with open(path, "rb") as handle:
+                data = handle.read()
+        else:
+            archive = zipfile.ZipFile(project)
+            if entry not in archive.namelist():
+                return {}
+            data = archive.read(entry)
+        root = ElementTree.fromstring(data)
+        return {n.get("n"): (n.get("h"), (n.get("r") or "").split()) for n in root}
+
+    def blobBytes(self, project, name):
+        with open(os.path.join(project, BLOB_DIR, name), "rb") as handle:
+            return handle.read()
+
+    def blobSnapshot(self, project):
+        """The blob directory of an unpacked project with its bytes, index
+        included -- what version control would see of it.
+
+        Document.xml is deliberately left out: every save writes a new
+        LastModifiedDate into it, so it can never be byte-identical and says
+        nothing about whether the blob layer churned."""
+        blobdir = os.path.join(project, BLOB_DIR)
+        snapshot = {}
+        if not os.path.isdir(blobdir):
+            return snapshot
+        for name in os.listdir(blobdir):
+            with open(os.path.join(blobdir, name), "rb") as handle:
+                snapshot[name] = handle.read()
+        return snapshot
 
     def directoryXml(self, project):
         """Every XML file of an unpacked project, joined -- SplitXML decides
@@ -155,13 +203,17 @@ class BlobTestCase(unittest.TestCase):
 
 
 class BlobStorageCases(BlobTestCase):
-    def testStoredByContentHash(self):
-        """The stored file is named by the hash of its bytes, nothing else."""
+    def testStoredInTheBlobDirectory(self):
+        """The transient name is a uuid, not the hash: the store is a cache
+        and nothing outside it may address a file by name. The extension is
+        kept, because the path is handed to whatever consumes the content."""
         doc = self.newDocument()
         content = b"content addressed"
-        obj = self.fileObject(doc, "File1", content)
-        self.assertEqual(os.path.basename(obj.File), self.sha1(content))
+        obj = self.fileObject(doc, "File1", content, saveName="picture.png")
+        name = os.path.basename(obj.File)
         self.assertEqual(os.path.basename(os.path.dirname(obj.File)), BLOB_DIR)
+        self.assertNotEqual(name, self.sha1(content))
+        self.assertTrue(name.endswith(".png"), name)
 
     def testIdenticalContentIsShared(self):
         """Same bytes, different source files and names -> one file on disk."""
@@ -379,13 +431,55 @@ class BlobPersistenceCases(BlobTestCase):
             self.assertContent(reopened.getObject("File%d" % index), b"shared")
         self.assertEqual(len(self.storedBlobs(reopened)), 1)
 
-    def testEntryNamedByHash(self):
+    def testEntryNamedAfterItsReferrer(self):
+        """`Object.Property` plus the extension the property stores it under,
+        which is what a diff of an unpacked project has to be able to follow."""
         doc = self.newDocument()
-        content = b"named by hash"
-        self.fileObject(doc, "File1", content)
+        self.fileObject(doc, "File1", b"named", saveName="picture.png")
         project = self.projectPath()
         doc.saveAs(project)
-        self.assertEqual(self.blobEntries(project), ["%s/%s" % (BLOB_DIR, self.sha1(content))])
+        self.assertEqual(self.blobEntries(project), ["%s/File1.File.png" % BLOB_DIR])
+
+    def testIndexRecordsNameHashAndReferrer(self):
+        doc = self.newDocument()
+        content = b"indexed"
+        obj = self.fileObject(doc, "File1", content, saveName="picture.png")
+        objid = obj.ID
+        project = self.projectPath()
+        doc.saveAs(project)
+        index = self.blobIndex(project)
+        self.assertEqual(list(index), ["File1.File.png"])
+        digest, referrers = index["File1.File.png"]
+        self.assertEqual(digest, self.sha1(content))
+        self.assertEqual(referrers, ["%d:File1.File" % objid])
+
+    def testIndexListsEveryReferrerOfSharedContent(self):
+        """Shared content collapses to one file, so the index carries a list."""
+        doc = self.newDocument()
+        first = self.fileObject(doc, "File1", b"shared", saveName="a.txt")
+        second = self.fileObject(doc, "File2", b"shared", saveName="b.txt")
+        project = self.projectPath()
+        doc.saveAs(project)
+        index = self.blobIndex(project)
+        self.assertEqual(list(index), ["File1.File.txt"])
+        self.assertEqual(
+            index["File1.File.txt"][1],
+            ["%d:File1.File" % first.ID, "%d:File2.File" % second.ID],
+        )
+
+    def testNameFollowsTheLowestReferrer(self):
+        """The name belongs to the naming referrer, not to the referrer set:
+        when that object goes, the name is re-derived from the next one --
+        which is what stops a stale name squatting on a reused one."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"shared", saveName="a.txt")
+        self.fileObject(doc, "File2", b"shared", saveName="b.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.txt"])
+        doc.removeObject("File1")
+        doc.save()
+        self.assertEqual(self.directoryBlobs(project), ["File2.File.txt"])
 
     def testPropertyKeepsItsOwnName(self):
         """Sharing content must not merge the properties' file names."""
@@ -504,7 +598,7 @@ class BlobSaveOptionCases(BlobTestCase):
         self.fileObject(doc, "File1", b"unpacked", saveName="a.txt")
         project = self.directoryPath()
         doc.saveAs(project)
-        self.assertEqual(self.directoryBlobs(project), [self.sha1(b"unpacked")])
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.txt"])
         FreeCAD.closeDocument(doc.Name)
         reopened = self.openDocument(project)
         self.assertContent(reopened.getObject("File1"), b"unpacked")
@@ -523,13 +617,14 @@ class BlobSaveOptionCases(BlobTestCase):
         self.assertEqual(len(self.storedBlobs(reopened)), 1)
 
     def testDirectoryResaveKeepsStoredContent(self):
-        """Content addressing makes an existing file proof of equality, so a
-        re-save skips it -- and must not lose it by skipping."""
+        """The index is what proves an existing file still holds what this
+        blob holds, so a re-save skips it -- and must not lose it by
+        skipping. The name alone proves nothing once names are derived."""
         doc = self.newDocument()
         self.fileObject(doc, "File1", b"unchanged", saveName="a.txt")
         project = self.directoryPath()
         doc.saveAs(project)
-        stored = os.path.join(project, BLOB_DIR, self.sha1(b"unchanged"))
+        stored = os.path.join(project, BLOB_DIR, "File1.File.txt")
         stamp = os.stat(stored).st_mtime_ns
         doc.save()
         self.assertTrue(os.path.exists(stored))
@@ -544,7 +639,7 @@ class BlobSaveOptionCases(BlobTestCase):
         project = self.directoryPath()
         doc.saveAs(project)
         self.assertIn("File1.xml", os.listdir(project))
-        self.assertEqual(self.directoryBlobs(project), [self.sha1(b"split")])
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.txt"])
         FreeCAD.closeDocument(doc.Name)
         reopened = self.openDocument(project)
         self.assertContent(reopened.getObject("File1"), b"split")
@@ -556,7 +651,7 @@ class BlobSaveOptionCases(BlobTestCase):
         project = self.directoryPath()
         doc.saveAs(project)
         self.assertNotIn("File1.xml", os.listdir(project))
-        self.assertEqual(self.directoryBlobs(project), [self.sha1(b"joined")])
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.txt"])
         FreeCAD.closeDocument(doc.Name)
         reopened = self.openDocument(project)
         self.assertContent(reopened.getObject("File1"), b"joined")
@@ -658,7 +753,7 @@ class BlobSaveOptionCases(BlobTestCase):
         doc.ForceXML = 3
         project = self.directoryPath()
         doc.saveAs(project)
-        self.assertEqual(self.directoryBlobs(project), [self.sha1(b"entries")])
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.txt"])
         self.assertIn("<FileIncluded hash=", self.directoryXml(project))
 
     def testForceXmlDoesNotReachTheArchive(self):
@@ -668,7 +763,7 @@ class BlobSaveOptionCases(BlobTestCase):
         doc.ForceXML = 4
         project = self.projectPath()
         doc.saveAs(project)
-        self.assertEqual(self.blobEntries(project), ["%s/%s" % (BLOB_DIR, self.sha1(b"packed"))])
+        self.assertEqual(self.blobEntries(project), ["%s/File1.File.txt" % BLOB_DIR])
         FreeCAD.closeDocument(doc.Name)
         reopened = self.openDocument(project)
         self.assertContent(reopened.getObject("File1"), b"packed")
@@ -682,7 +777,7 @@ class BlobSaveOptionCases(BlobTestCase):
         doc.PreferBinary = True
         project = self.projectPath()
         doc.saveAs(project)
-        self.assertEqual(self.blobEntries(project), ["%s/%s" % (BLOB_DIR, self.sha1(content))])
+        self.assertEqual(self.blobEntries(project), ["%s/File1.File.bin" % BLOB_DIR])
         FreeCAD.closeDocument(doc.Name)
         reopened = self.openDocument(project)
         self.assertContent(reopened.getObject("File1"), content)
@@ -693,10 +788,237 @@ class BlobSaveOptionCases(BlobTestCase):
         doc.PreferBinary = True
         project = self.directoryPath()
         doc.saveAs(project)
-        self.assertEqual(self.directoryBlobs(project), [self.sha1(b"binary mode")])
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.bin"])
         FreeCAD.closeDocument(doc.Name)
         reopened = self.openDocument(project)
         self.assertContent(reopened.getObject("File1"), b"binary mode")
+
+
+# ---------------------------------------------------------------------------
+# stable names, the content index, and pruning
+# ---------------------------------------------------------------------------
+
+
+class BlobNamingCases(BlobTestCase):
+    """A project saved as a directory exists to be friendly to version
+    control, which means its files must keep their names across edits, must
+    actually change when their content does, and must not accumulate orphans.
+    """
+
+    def testNameSurvivesCloseReopenAndEdit(self):
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"first", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.txt"])
+
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.txt"])
+
+        reopened.getObject("File1").File = self.sourceFile("second.txt", b"second")
+        reopened.save()
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.txt"])
+
+    def testChangedContentReachesDisk(self):
+        """The trap the stable name creates: a file existing under the right
+        name no longer proves its content matches, so the skip has to compare
+        against the hash the index recorded, or the old bytes stay."""
+        doc = self.newDocument()
+        obj = self.fileObject(doc, "File1", b"first", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.blobBytes(project, "File1.File.txt"), b"first")
+
+        obj.File = self.sourceFile("second.txt", b"second")
+        doc.save()
+        self.assertEqual(self.blobBytes(project, "File1.File.txt"), b"second")
+        self.assertEqual(self.blobIndex(project)["File1.File.txt"][0], self.sha1(b"second"))
+
+        FreeCAD.closeDocument(doc.Name)
+        self.assertContent(self.openDocument(project).getObject("File1"), b"second")
+
+    def testUnmodifiedResaveDoesNotChangeTheBlobs(self):
+        """Two saves of an unmodified project leave the blob layer identical,
+        index included -- otherwise every save is a commit."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"stable", saveName="a.txt")
+        self.fileObject(doc, "File2", b"other", saveName="b.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        before = self.blobSnapshot(project)
+        doc.save()
+        self.assertEqual(self.blobSnapshot(project), before)
+
+    def testOrphanIsPruned(self):
+        """Nothing pruned before this: a directory project accumulated a file
+        per content it ever held, and `git add -A` committed them all."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"keep", saveName="a.txt")
+        obj = self.fileObject(doc, "File2", b"drop", saveName="b.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.txt", "File2.File.txt"])
+
+        doc.removeObject(obj.Name)
+        doc.save()
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.txt"])
+        self.assertEqual(list(self.blobIndex(project)), ["File1.File.txt"])
+
+    def testReplacedContentLeavesNoOrphan(self):
+        doc = self.newDocument()
+        doc.UndoMode = 0
+        obj = self.fileObject(doc, "File1", b"first", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        obj.File = self.sourceFile("second.txt", b"second")
+        doc.save()
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.txt"])
+
+    def testANameTheFileSystemRefusesIsMadeIntoOneItTakes(self):
+        """The names come from whoever made the object and the property, and
+        an object's name only has to be a Python identifier.
+
+        That admits any length -- and a directory project writes the name as a
+        real file, where ext4 and APFS stop at 255 bytes. A name past that lost
+        the file with nothing but a line in the report view. It admits the
+        Windows device names too: CON.File.txt is the console, not a file.
+        """
+        doc = self.newDocument()
+        self.fileObject(doc, "x" * 250, b"long", saveName="a.txt")
+        self.fileObject(doc, "CON", b"device", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+
+        names = self.directoryBlobs(project)
+        self.assertEqual(len(names), 2, names)
+        for name in names:
+            self.assertLessEqual(len(name.encode("utf-8")), 255, name)
+            self.assertTrue(name.endswith(".txt"), name)
+            self.assertNotIn(
+                name.split(".")[0].upper(), ("CON", "PRN", "AUX", "NUL"), name
+            )
+        # And every one of them is readable again, which is the point.
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("x" * 250), b"long")
+        self.assertContent(reopened.getObject("CON"), b"device")
+
+    def testTwoLongNamesStayTwoFiles(self):
+        """A name is cut to fit, so two names that agree up to the cut would
+        otherwise become one file -- and the second would take the first's
+        content. A digest of the whole name is what keeps them apart."""
+        doc = self.newDocument()
+        self.fileObject(doc, "y" * 240 + "aaa", b"first", saveName="a.txt")
+        self.fileObject(doc, "y" * 240 + "bbb", b"second", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(len(set(self.directoryBlobs(project))), 2)
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("y" * 240 + "aaa"), b"first")
+        self.assertContent(reopened.getObject("y" * 240 + "bbb"), b"second")
+
+    def testANonAsciiNameIsKeptAsItIs(self):
+        """Non-ASCII is legal on every platform this runs on, and a derived
+        name exists to be read -- so it is kept, not transliterated."""
+        # Escaped rather than written out, because the sources here are ASCII.
+        name = "\u30d1\u30fc\u30c4"
+        doc = self.newDocument()
+        self.fileObject(doc, name, b"part", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.directoryBlobs(project), [name + ".File.txt"])
+        FreeCAD.closeDocument(doc.Name)
+        self.assertContent(self.openDocument(project).getObject(name), b"part")
+
+    def testStrayFileIsNotTouched(self):
+        """Only names the previous index listed may be removed, so whatever a
+        user put in the directory stays there."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"keep", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        stray = os.path.join(project, BLOB_DIR, "notes.txt")
+        with open(stray, "wb") as handle:
+            handle.write(b"mine")
+        doc.save()
+        self.assertTrue(os.path.exists(stray))
+
+    def testContentAddressedOrphanIsPruned(self):
+        """The one exception: files a save wrote before the index existed are
+        the SHA-1 of what they hold, they are ours by construction, and
+        nothing else can identify them once the names have moved. Without
+        this an upgraded project keeps every orphan it ever accumulated."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"keep", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        legacy = os.path.join(project, BLOB_DIR, self.sha1(b"an older save"))
+        with open(legacy, "wb") as handle:
+            handle.write(b"an older save")
+        doc.save()
+        self.assertFalse(os.path.exists(legacy))
+
+    def testLegacyDirectoryProjectStillOpens(self):
+        """A project written before the index existed has hash-named files and
+        no index at all. Identity is the hash in Document.xml, so it restores;
+        the names move on the next save, which is the whole cost."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"legacy", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+
+        blobdir = os.path.join(project, BLOB_DIR)
+        os.remove(os.path.join(blobdir, BLOB_INDEX))
+        os.rename(
+            os.path.join(blobdir, "File1.File.txt"),
+            os.path.join(blobdir, self.sha1(b"legacy")),
+        )
+
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File1"), b"legacy")
+        reopened.save()
+        self.assertEqual(self.directoryBlobs(project), ["File1.File.txt"])
+
+    def testArchiveCarriesTheIndex(self):
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"packed", saveName="a.txt")
+        project = self.projectPath()
+        doc.saveAs(project)
+        names = zipfile.ZipFile(project).namelist()
+        self.assertIn("%s/%s" % (BLOB_DIR, BLOB_INDEX), names)
+        self.assertEqual(list(self.blobIndex(project)), ["File1.File.txt"])
+
+    def testDocumentWithoutContentHasNoBlobDirectory(self):
+        doc = self.newDocument()
+        doc.addObject("App::FeaturePython", "Plain")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertFalse(os.path.isdir(os.path.join(project, BLOB_DIR)))
+
+    def testSaveAsToAnotherDirectoryWritesTheContent(self):
+        """The index is read from the directory being written, not remembered
+        from the last one: a save-as goes somewhere whose names mean whatever
+        that directory's own index says they mean."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"moved", saveName="a.txt")
+        first = self.directoryPath("first_dir")
+        doc.saveAs(first)
+
+        # The target already holds a file under the name this save will use,
+        # with content that has nothing to do with it. Remembering the first
+        # directory's index would make that file look like proof of equality.
+        second = self.directoryPath("second_dir")
+        os.makedirs(os.path.join(second, BLOB_DIR))
+        with open(os.path.join(second, BLOB_DIR, "File1.File.txt"), "wb") as handle:
+            handle.write(b"someone else's")
+        doc.saveAs(second)
+        self.assertEqual(self.blobBytes(second, "File1.File.txt"), b"moved")
+        FreeCAD.closeDocument(doc.Name)
+        self.assertContent(self.openDocument(second).getObject("File1"), b"moved")
 
 
 # ---------------------------------------------------------------------------

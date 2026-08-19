@@ -165,6 +165,16 @@ struct DocumentP
      */
     std::shared_ptr<Base::ZipFileReader> archiveReader;
     std::map<std::pair<std::string, std::string>, std::string> deferredFiles;
+    /** Which object each split-XML entry of the save in progress is for.
+     *
+     * The entry used to be found by reading the object's name back out of the
+     * file name, which made the name an identity rather than a name -- and a
+     * name a file system will take is not always the name an object has, so
+     * an object whose name is too long for a file name silently wrote an
+     * empty entry. Written as the Objects section is, read as the entries
+     * are, and stale only between the two.
+     */
+    std::map<std::string, App::DocumentObject*> splitXmlEntries;
     /// The serve phase's progress: alive across serve slices so the
     /// indicator shows shapes-served over the whole backlog, with the
     /// per-shape import indicators nested beneath it.

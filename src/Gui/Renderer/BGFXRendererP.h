@@ -33,6 +33,7 @@
 #include "MeshSource.h"
 #include "SceneLadder.h"
 #include "ProxyHierarchy.h"
+#include "ProxyStore.h"
 #include "CullBenefit.h"
 #include "MaskedOcclusion.h"
 #include "Simd4.h"
@@ -760,6 +761,14 @@ struct ProxyGenTotals {
     /// every occupied cell whether or not a triangle survived on it.
     uint64_t proxyVertices = 0;
     uint64_t collapsedMembers = 0;
+    /// What it costs to carry the deleted members rather than lose
+    /// them, both ways round (11.1c): a box per collapsed member, or a
+    /// box per grid cell holding deleted content. Both are covers of
+    /// the same points, so the triangles are the price and the volume
+    /// is how loosely each one holds them.
+    Render::StandInStats perMember;
+    Render::StandInStats perCell;
+    double standInMs = 0.0;
     double sourceArea = 0.0;
     double proxyArea = 0.0;
     double ratioSum = 0.0;
@@ -767,6 +776,22 @@ struct ProxyGenTotals {
     float ratioMax = 0.0f;
     double ms = 0.0;
 };
+
+/// Sum one proxy's stand-in numbers into the totals for its grid.
+static void accumulate(Render::StandInStats &total,
+                       const Render::StandInStats &one)
+{
+    total.boxes += one.boxes;
+    total.triangles += one.triangles;
+    total.members += one.members;
+    total.named += one.named;
+    total.cells += one.cells;
+    total.sharedCells += one.sharedCells;
+    total.volume += one.volume;
+    total.area += one.area;
+    total.deletedArea += one.deletedArea;
+    total.ms += one.ms;
+}
 
 static void reportProxyGen(const Render::ProxyHierarchy &index,
                            const Render::DrawCallList &draws, const float *V,
@@ -903,6 +928,21 @@ static void reportProxyGen(const Render::ProxyHierarchy &index,
                 t.sourceArea += stats.sourceArea;
                 t.proxyArea += stats.proxyArea;
                 t.ms += stats.simplifyMs;
+                // What would stand in for the members this grid
+                // deleted, measured both ways on the same merge --
+                // which is the only way the two can be compared,
+                // since a different merge deletes a different set.
+                Render::SimplifiedMesh standIn;
+                Render::StandInStats perMember, perCell;
+                Render::buildStandIns(merged, proxy, params,
+                                      Render::StandInMode::PerMember, standIn,
+                                      &perMember);
+                Render::buildStandIns(merged, proxy, params,
+                                      Render::StandInMode::PerCell, standIn,
+                                      &perCell);
+                accumulate(t.perMember, perMember);
+                accumulate(t.perCell, perCell);
+                t.standInMs += perMember.ms + perCell.ms;
                 if (!made) {
                     ++t.refused;
                     continue;
@@ -988,6 +1028,370 @@ static void reportProxyGen(const Render::ProxyHierarchy &index,
 #else
         Base::Console().Message("%s", buf);
 #endif
+        // The deleted mass, carried both ways. Volumes are directly
+        // comparable because both are covers of the same points, so
+        // the looser one is the one committing more space to hold
+        // them; the named counts say what a pick still resolves to.
+        snprintf(buf, sizeof(buf),
+                 "render standin 1/%u cell: per-member %u boxes %u tri "
+                 "vol %.4g area %.4g named %u/%u | per-cell %u boxes %u tri "
+                 "vol %.4g area %.4g named %u/%u over %u cells (%u shared) "
+                 "| deleted area %.4g vs proxy %.4g | %.1fms\n",
+                 kSubdivisions[g], t.perMember.boxes,
+                 t.perMember.triangles, t.perMember.volume,
+                 t.perMember.area, t.perMember.named, t.perMember.members,
+                 t.perCell.boxes, t.perCell.triangles,
+                 t.perCell.volume, t.perCell.area, t.perCell.named,
+                 t.perCell.members, t.perCell.cells, t.perCell.sharedCells,
+                 t.perMember.deletedArea, t.proxyArea, t.standInMs);
+#ifdef FC_RENDERER_STANDALONE
+        std::printf("%s", buf);
+#else
+        Base::Console().Message("%s", buf);
+#endif
+    }
+}
+
+/// What building the proxies bottom-up costs against building each node
+/// from source, measured on the nodes a cut actually stops on
+/// (docs/FarFieldProxies.md section 7.1).
+///
+/// Both passes generate the same set of nodes and differ only in what
+/// each merge is fed, so the difference between them is the geometric
+/// series the bottom-up rule is supposed to buy -- and the error and
+/// area columns say what it costs in fidelity to merge a decimation of
+/// a decimation rather than the geometry itself.
+static void reportProxyStore(const Render::ProxyHierarchy &index,
+                             const Render::DrawCallList &draws, const float *V,
+                             const float *P, float viewportHeightPx)
+{
+    static const float kTolerancePx = 64.0f;
+    // A generation pass over a node is that node's whole subtree, so a
+    // handful of them is a large fraction of the model. Both bounds are
+    // reported: a measurement that silently drops most of its work
+    // reads as coverage it did not have.
+    static const uint32_t kMaxNodes = 4;
+    static const uint64_t kTriangleBudget = 3000000;
+
+    Render::ProxyCut cut;
+    index.selectCut(V, P, viewportHeightPx, kTolerancePx, cut);
+    if (cut.proxyNodes.empty())
+        return;
+
+    Render::ProxyStoreStats up, src;
+    double upperror = 0.0, srcerror = 0.0;
+    double upkept = 0.0, srckept = 0.0;
+    double uparea = 0.0, srcarea = 0.0;
+    uint32_t sampled = 0;
+    const uint32_t stride =
+        std::max<uint32_t>(1, uint32_t(cut.proxyNodes.size()) / kMaxNodes);
+    const auto accumulate = [](Render::ProxyStoreStats &total,
+                               const Render::ProxyStoreStats &one) {
+        total.nodes += one.nodes;
+        total.entries += one.entries;
+        total.refused += one.refused;
+        total.overBudget += one.overBudget;
+        total.mergedTriangles += one.mergedTriangles;
+        total.sourceTriangles += one.sourceTriangles;
+        total.proxyTriangles += one.proxyTriangles;
+        total.standInTriangles += one.standInTriangles;
+        total.maxLevelSpan = std::max(total.maxLevelSpan, one.maxLevelSpan);
+        total.ms += one.ms;
+    };
+    // The top entries of a pass are what the cut would draw at that
+    // node, so they are where the accumulated error and the area still
+    // represented are read.
+    const auto top = [](const Render::ProxyStore &store, double &error,
+                        double &kept, double &area) {
+        uint32_t level = 0xffffffffu;
+        for (const Render::ProxyEntry &entry : store.entries())
+            level = std::min(level, entry.level);
+        for (const Render::ProxyEntry &entry : store.entries()) {
+            if (entry.level != level)
+                continue;
+            error = std::max(error, double(entry.errorRatio));
+            kept += entry.keptArea;
+            area += entry.sourceArea;
+        }
+    };
+
+    for (size_t i = 0;
+         i < cut.proxyNodes.size() && sampled < kMaxNodes; i += stride) {
+        const int node = cut.proxyNodes[i];
+        ++sampled;
+        Render::ProxyStore bottomUp;
+        Render::ProxyGenOptions opts;
+        opts.triangleBudget = kTriangleBudget;
+        if (bottomUp.generate(index, node, draws, opts)) {
+            accumulate(up, bottomUp.stats());
+            top(bottomUp, upperror, upkept, uparea);
+        }
+        Render::ProxyStore fromSource;
+        Render::ProxyGenOptions control = opts;
+        control.fromSource = true;
+        if (fromSource.generate(index, node, draws, control)) {
+            accumulate(src, fromSource.stats());
+            top(fromSource, srcerror, srckept, srcarea);
+        }
+    }
+
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+             "render proxystore: tol %gpx nodes:%u/%u | bottom-up merged "
+             "%.2fMtri over %u nodes / %u entries in %.0fms, depth %u "
+             "| from source %.2fMtri over %u nodes / %u entries in %.0fms "
+             "| skipped budget:%u/%u refused:%u/%u\n",
+             double(kTolerancePx), sampled, unsigned(cut.proxyNodes.size()),
+             double(up.mergedTriangles) / 1e6, up.nodes, up.entries, up.ms,
+             up.maxLevelSpan, double(src.mergedTriangles) / 1e6, src.nodes,
+             src.entries, src.ms, up.overBudget, src.overBudget, up.refused,
+             src.refused);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+    snprintf(buf, sizeof(buf),
+             "render proxystore drawn: bottom-up %llu proxy + %llu standin "
+             "tri, worst err/extent %.4f, area kept %.0f%% | from source "
+             "%llu + %llu tri, worst err/extent %.4f, area kept %.0f%%\n",
+             (unsigned long long)up.proxyTriangles,
+             (unsigned long long)up.standInTriangles, upperror,
+             uparea > 0.0 ? 100.0 * upkept / uparea : 0.0,
+             (unsigned long long)src.proxyTriangles,
+             (unsigned long long)src.standInTriangles, srcerror,
+             srcarea > 0.0 ? 100.0 * srckept / srcarea : 0.0);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+}
+
+/// What the exactly drawn part of a cut *is* (docs/FarFieldProxies.md
+/// section 11.1g).
+///
+/// The priced readout below measured that a proxy costs 4-9% of what it
+/// replaces, and that two thirds of the visible primitives are still
+/// exact at a 4px tolerance. The second number is the ceiling and the
+/// first says tuning proxies cannot move it, so the next question is
+/// what that exact mass is: near field the cut was right to descend
+/// into, or geometry nothing ever offered to aggregate.
+///
+/// Reported beside it, because it is the same question asked from the
+/// other side: what a stopped node covers and no generated proxy
+/// draws. A cut counts every instance below a node it stops on as
+/// covered, but generation works per material bucket and produces
+/// nothing for some -- lines and points by design, a bucket the
+/// decimation refused by accident. Those primitives are neither drawn
+/// exactly nor drawn by a proxy, and a saving that counts them as
+/// removed is counting a hole.
+static void reportProxyExact(const Render::ProxyHierarchy &index,
+                             const Render::ProxyStore &store,
+                             const Render::ProxyCut &cut, const float *V,
+                             const float *P, float viewportHeightPx,
+                             float tolerancePx,
+                             const std::vector<Render::ProxyNodeCost> &costs)
+{
+    Render::ProxyExactBreakdown ex;
+    index.explainExact(cut, V, P, viewportHeightPx, tolerancePx, &costs, ex);
+
+    char buf[512];
+    const double total = double(ex.total.prims);
+    const auto pct = [&](uint64_t v) {
+        return total > 0.0 ? 100.0 * double(v) / total : 0.0;
+    };
+    snprintf(buf, sizeof(buf),
+             "render proxyexact %gpx: %.2fM exact over %u inst = resolvable "
+             "%.2fM (%.0f%%) | no proxy %.2fM (%.0f%%) | too few members "
+             "%.2fM (%.0f%%) | level mean %.1f max %u\n",
+             double(tolerancePx), total / 1e6, ex.total.instances,
+             double(ex.byReason[Render::ProxyExactBreakdown::Resolvable].prims)
+                 / 1e6,
+             pct(ex.byReason[Render::ProxyExactBreakdown::Resolvable].prims),
+             double(ex.byReason[Render::ProxyExactBreakdown::NoProxy].prims)
+                 / 1e6,
+             pct(ex.byReason[Render::ProxyExactBreakdown::NoProxy].prims),
+             double(ex.byReason[Render::ProxyExactBreakdown::TooFewMembers]
+                        .prims) / 1e6,
+             pct(ex.byReason[Render::ProxyExactBreakdown::TooFewMembers].prims),
+             ex.meanLevel, ex.maxLevel);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+
+    // The cross-cut, and the one that says whether any of it is
+    // addressable: an instance projecting to less than the tolerance is
+    // detail nothing merged, one projecting to ten times it is near
+    // field however it got there.
+    std::string sizes;
+    static const char *kBinNames[] = {"<=1x", "<=4x", "<=16x", ">16x"};
+    for (int b = 0; b < Render::ProxyExactBreakdown::SizeBins; ++b) {
+        snprintf(buf, sizeof(buf), " %s:%.2fM/%u(res %.2fM,gap %.2fM)",
+                 kBinNames[b], double(ex.bySize[b].prims) / 1e6,
+                 ex.bySize[b].instances,
+                 double(ex.bins[Render::ProxyExactBreakdown::Resolvable][b]
+                            .prims) / 1e6,
+                 double(ex.bins[Render::ProxyExactBreakdown::NoProxy][b].prims)
+                     / 1e6);
+        sizes += buf;
+    }
+    snprintf(buf, sizeof(buf), "render proxyexact %gpx by own size:%s\n",
+             double(tolerancePx), sizes.c_str());
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+
+    // What the cut counted as covered and nothing draws. Asked per
+    // (node, bucket) against the store, which is the pair generation
+    // keys on, so a bucket with no entry is exactly a bucket no proxy
+    // stands for.
+    uint64_t holePrims = 0;
+    uint32_t holeInstances = 0, holeBuckets = 0, holeNodes = 0;
+    std::vector<uint32_t> sub;
+    const auto &insts = index.instances();
+    for (int ni : cut.proxyNodes) {
+        const auto &node = index.nodes()[size_t(ni)];
+        sub.clear();
+        index.subtreeInstances(ni, sub);
+        std::unordered_set<uint64_t> missing;
+        for (uint32_t idx : sub) {
+            const auto &inst = insts[idx];
+            // What the cut already draws itself is not a hole: an edge
+            // below a stopped node is in the exact list by design
+            // (11.1g). What is left is the generation gap proper --
+            // a triangle bucket that should have had a proxy.
+            if (!inst.mergeable
+                    || store.find(node.id, inst.materialBucket))
+                continue;
+            missing.insert(inst.materialBucket);
+            holeInstances += 1;
+            holePrims += inst.primCount;
+        }
+        if (!missing.empty()) {
+            ++holeNodes;
+            holeBuckets += uint32_t(missing.size());
+        }
+    }
+    // And the net figure the priced line should have quoted: what a
+    // cut draws is what it draws exactly, plus its proxies, plus
+    // everything it counted as covered that no proxy stands for --
+    // because that has to be drawn by somebody.
+    const uint64_t honest = cut.exactPrims + cut.proxyPrims + holePrims;
+    // The denominator is what the frame would draw with no cut at all,
+    // so the gated edges belong in it: they are geometry the cut
+    // removed, not geometry that was never there.
+    const uint64_t visible =
+        cut.exactPrims + cut.coveredPrims + cut.gatedPrims;
+    snprintf(buf, sizeof(buf),
+             "render proxyexact %gpx uncovered: %u of %zu stopped nodes leave "
+             "%u triangle buckets with no proxy -- %u inst / %llu prims "
+             "(%.1f%% of %llu covered) | below a stopped node: %u inst / "
+             "%llu prims drawn exactly, %u / %llu gated by the element "
+             "contract | net %llu of %llu, %.2fx\n",
+             double(tolerancePx), holeNodes, cut.proxyNodes.size(),
+             holeBuckets, holeInstances, (unsigned long long)holePrims,
+             cut.coveredPrims ? 100.0 * double(holePrims)
+                     / double(cut.coveredPrims)
+                 : 0.0,
+             (unsigned long long)cut.coveredPrims,
+             cut.unmergeableInstances,
+             (unsigned long long)cut.unmergeablePrims, cut.gatedInstances,
+             (unsigned long long)cut.gatedPrims,
+             (unsigned long long)honest, (unsigned long long)visible,
+             honest ? double(visible) / double(honest) : 0.0);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+}
+
+/// What a cut costs once the proxies it stops on are real: the same
+/// frontier chosen by a node's measured error instead of by its extent,
+/// and priced by what the proxies draw rather than only by what they
+/// replace (docs/FarFieldProxies.md sections 3.3 and 11.1b).
+///
+/// Phase 1 could report neither. It had no generated proxy to have an
+/// error, so it stood the node's extent in for one, and it had no
+/// proxy to have a triangle count, so its saving was gross rather than
+/// net. Both stand-ins were flagged where they were used; this is the
+/// readout that removes them.
+static void reportProxyCutPriced(const Render::ProxyHierarchy &index,
+                                 const Render::DrawCallList &draws,
+                                 const float *V, const float *P,
+                                 float viewportHeightPx)
+{
+    // Generating the whole model, once, because a cut is a property of
+    // the whole partition and a sampled subtree cannot be swept over
+    // tolerances. Budgeted all the same, and what the budget skipped is
+    // reported: a node without a proxy is descended past, so a run that
+    // quietly ran out would read as a deeper cut rather than as a
+    // missing one.
+    static const uint64_t kTriangleBudget = 24000000;
+    static const float kTolerances[] = {4.0f, 16.0f, 64.0f};
+
+    Render::ProxyStore store;
+    Render::ProxyGenOptions opts;
+    opts.triangleBudget = kTriangleBudget;
+    if (!store.generate(index, index.root(), draws, opts))
+        return;
+    std::vector<Render::ProxyNodeCost> costs;
+    store.costs(index, costs);
+
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+             "render proxypriced: store %u nodes / %u entries, merged "
+             "%.2fMtri in %.0fms (%.0f merge, %.0f decimate, %.0f standin) "
+             "| skipped budget:%u single:%u refused:%u | %llu proxy + %llu "
+             "standin tri held\n",
+             store.stats().nodes, store.stats().entries,
+             double(store.stats().mergedTriangles) / 1e6, store.stats().ms,
+             store.stats().mergeMs, store.stats().simplifyMs,
+             store.stats().standInMs, store.stats().overBudget,
+             store.stats().belowMinMerge, store.stats().refused,
+             (unsigned long long)store.stats().proxyTriangles,
+             (unsigned long long)store.stats().standInTriangles);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+
+    for (float tol : kTolerances) {
+        Render::ProxyCut byExtent, byError;
+        index.selectCut(V, P, viewportHeightPx, tol, byExtent);
+        index.selectCut(V, P, viewportHeightPx, tol, costs, byError);
+        // What the frame draws with no cut at all is everything the cut
+        // did not cull, which both cuts agree on -- so it is the
+        // denominator both rows are read against.
+        const uint64_t visible = byError.exactPrims + byError.coveredPrims
+            + byError.gatedPrims;
+        const uint64_t drawn = byError.exactPrims + byError.proxyPrims;
+        snprintf(buf, sizeof(buf),
+                 "render proxypriced %gpx: extent draws %u (%u proxy) covers "
+                 "%llu prims | error draws %u (%u proxy) covers %llu, proxies "
+                 "cost %llu -> %llu of %llu prims drawn, %.2fx\n",
+                 double(tol), byExtent.drawCount, byExtent.proxyDraws,
+                 (unsigned long long)byExtent.coveredPrims, byError.drawCount,
+                 byError.proxyDraws,
+                 (unsigned long long)byError.coveredPrims,
+                 (unsigned long long)byError.proxyPrims,
+                 (unsigned long long)drawn, (unsigned long long)visible,
+                 drawn ? double(visible) / double(drawn) : 0.0);
+#ifdef FC_RENDERER_STANDALONE
+        std::printf("%s", buf);
+#else
+        Base::Console().Message("%s", buf);
+#endif
+        // The same cut, asked what it did NOT aggregate -- which is
+        // where the ceiling above is, and what phase 3 has to move.
+        reportProxyExact(index, store, byError, V, P, viewportHeightPx, tol,
+                         costs);
     }
 }
 

@@ -50,6 +50,8 @@
 class BRepBuilderAPI_MakeShape;
 class BRepTools_History;
 class BRepTools_ReShape;
+class BRepTools_ShapeSet;
+class BinTools_ShapeSet;
 class ShapeFix_Root;
 class BRepBuilderAPI_Sewing;
 class BRepOffsetAPI_ThruSections;
@@ -266,8 +268,21 @@ public:
     void exportIges(const char *FileName) const;
     void exportStep(const char *FileName) const;
     void exportBrep(const char *FileName) const;
-    void exportBrep(std::ostream&) const;
-    void exportBinary(std::ostream&) const;
+    /** Write ASCII BRep.
+     *
+     * With \a forStorage, the writer is allowed the savings a document save
+     * wants and an export to a file for someone else does not: writing each
+     * 2D curve once, and leaving out the ones the reader recomputes. Both are
+     * gated by DocumentParams, and neither changes the shape that comes back.
+     * The default writes what the kernel holds, entry for entry, so an
+     * explicit exportBrep() is unchanged.
+     */
+    void exportBrep(std::ostream&, bool forStorage = false) const;
+    void exportBinary(std::ostream&, bool forStorage = false) const;
+    /// Configure a shape set for a document save, or leave it as the kernel
+    /// writes by default. See the .cpp for what \a forStorage buys.
+    static void applyStorageOptions(BRepTools_ShapeSet& set, bool forStorage);
+    static void applyStorageOptions(BinTools_ShapeSet& set, bool forStorage);
     void exportStl (const char *FileName, double deflection) const;
     void exportFaceSet(double, double, const std::vector<Base::Color>&, std::ostream&) const;
     void exportLineSet(std::ostream&) const;

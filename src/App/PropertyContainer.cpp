@@ -279,7 +279,7 @@ struct PropertyContainerPGuard
 };
 }
 
-void PropertyContainer::beforeSave() const
+void PropertyContainer::beforeSave(Base::Writer &writer) const
 {
     if (!_pimpl)
         _pimpl.reset(new PropertyContainerP);
@@ -313,7 +313,7 @@ void PropertyContainer::beforeSave() const
             transients.push_back(prop);
             it = Map.erase(it);
         } else {
-            prop->beforeSave();
+            prop->beforeSave(writer);
             ++it;
         }
     }
@@ -322,7 +322,7 @@ void PropertyContainer::beforeSave() const
 void PropertyContainer::Save (Base::Writer &writer) const
 {
     if (!_pimpl || _pimpl->propertyMap.empty())
-        beforeSave();
+        beforeSave(writer);
 
     PropertyContainerPGuard guard(*_pimpl);
 

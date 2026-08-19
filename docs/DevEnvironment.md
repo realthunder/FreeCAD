@@ -95,11 +95,12 @@ ln -sfn share/PySide6/glue glue
 Build dirs / installs are parallel to the system stack and never collide:
 `<repo>/build_conda_debug` → `<repo>/install/conda-debug`.
 
-**OCCT is built from `LinkVibe-801` (OCCT 8.0.1) into `install/conda-debug-801`** —
-that is what FreeCAD links. The 7.7.2 build below (`LinkVibe` → `install/conda-debug`)
-is kept only to compile-check the version-guarded fallback paths; see
-[Building FreeCAD](#building-freecad-conda-stack). Swap branch and `INSTALL_DIR`
-to build either.
+**The debug OCCT install that exists on this box is 7.7.2**, from `LinkVibe` into
+`install/conda-debug`, and it is what the debug FreeCAD links. The recipe below is
+written for the 8.0.1 branch, which is how an `install/conda-debug-801` would be made;
+swap branch and `INSTALL_DIR` for either. Nothing currently needs a debug 801 prefix --
+the 8.0.1 stack in use is the optimized one, `install/conda-relwithdebinfo-801`, which
+is where anything version-guarded is built and measured.
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
@@ -141,8 +142,8 @@ $RUN cmake --build ~/works/sw/pivy/build_conda_debug && $RUN cmake --install ~/w
 
 The user preset `conda-debug-local` (in `CMakeUserPresets.json`, gitignored) inherits
 the repo's `conda-linux-debug` preset and overrides: build dir
-`build/conda-debug-occt801`, `CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` pointing at the
-local `install/conda-debug-801` (OCCT) and `install/conda-debug` (Coin) prefixes,
+`build/conda-debug`, `CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` pointing at the
+local `install/conda-debug` (OCCT, 7.7.2) and `install/conda-debug` (Coin) prefixes,
 `CMAKE_POLICY_VERSION_MINIMUM=3.5` (for bgfx's old cmake_minimum_required
 under cmake 4), `BUILD_BGFX=ON`, and `BUILD_FEM/BUILD_WEB/FREECAD_USE_PCL/`
 `FREECAD_USE_EXTERNAL_SMESH/ENABLE_DEVELOPER_TESTS` OFF (avoids VTK/netgen/WebEngine/
@@ -152,19 +153,22 @@ PCL/smesh packages; enable selectively when needed — conda-forge now has qt6-w
 RUN=~/works/sw/fcad/.conda/run.sh
 cd ~/works/sw/fcad
 $RUN cmake --preset conda-debug-local
-$RUN cmake --build build/conda-debug-occt801   # ninja, add -j N to limit parallelism
+$RUN cmake --build build/conda-debug   # ninja, add -j N to limit parallelism
 ```
+
+*** **There is no debug 8.0.1 stack on this box** (checked 2026-08-18). The
+debug OCCT prefix `occt/install/conda-debug` is **7.7.2**, and 8.0.1 exists
+only as `conda-relwithdebinfo-801` and `conda-tsan-801`. A debugger session
+therefore runs the **7.7.2 side** of everything version-guarded, and a change
+that compiles only against the 8.0.1 fork has to be built in one of those two.
+Earlier revisions of this section described a `build/conda-debug-occt801` and a
+`conda-debug-occt772` preset; neither the directories nor the presets exist any
+more, which follows from 7.7.2 being frozen (`docs/Backport772.md`) and the
+801 stack becoming the only development target.
 
 Sources build against both OCCT versions (`OCC_VERSION_HEX` guards; features that
 need the 8.0.1 fork — parallel healing, streamed STEP transfer — fall back to the
-one-shot path on 7.7.2). The `conda-debug-occt772` preset builds the same tree
-against `install/conda-debug` in `build/conda-debug` to keep that compile-checked;
-run it after touching anything version-guarded:
-
-```sh
-$RUN cmake --preset conda-debug-occt772
-$RUN cmake --build build/conda-debug --target Import ImportGui
-```
+one-shot path on 7.7.2).
 
 ### An optimized stack, for measuring anything
 
@@ -229,9 +233,9 @@ gets detected but its headers are not on the conda sysroot's search path, so the
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
-$RUN ~/works/sw/fcad/build/conda-debug-occt801/bin/FreeCAD     # GUI (WSLg)
-$RUN ~/works/sw/fcad/build/conda-debug-occt801/bin/FreeCADCmd  # headless
-$RUN gdb --args ~/works/sw/fcad/build/conda-debug-occt801/bin/FreeCADCmd script.py
+$RUN ~/works/sw/fcad/build/conda-debug/bin/FreeCAD     # GUI (WSLg)
+$RUN ~/works/sw/fcad/build/conda-debug/bin/FreeCADCmd  # headless
+$RUN gdb --args ~/works/sw/fcad/build/conda-debug/bin/FreeCADCmd script.py
 ```
 
 - All of fcad/OCCT/Coin have full debug info; gdb breakpoints resolve with source lines
@@ -267,7 +271,7 @@ $RUN gdb --args ~/works/sw/fcad/build/conda-debug-occt801/bin/FreeCADCmd script.
 
 ```sh
 # headless kernel sanity (expects volume 500 and "SMOKE OK" pattern)
-$RUN build/conda-debug-occt801/bin/FreeCADCmd /path/to/smoke.py
+$RUN build/conda-debug/bin/FreeCADCmd /path/to/smoke.py
 # GUI + PySide6: launch and confirm no "No module named 'PySide6'" in output,
 # Draft/Arch/Assembly/AddonManager appear in the workbench selector
 ```

@@ -957,18 +957,18 @@ Document::Document(const char* documentName)
             "Prefer binary format when saving object data.\n"
             "This can result in smaller file but bad for version control.");
     PreferBinary.setValue(DocumentParams::getPreferBinary());
-    // ⚠️ 5, not getCurrentSchemaVersion(). Schema 6 is the compact format --
-    // shared default blocks under an <FCDocument> root no other FreeCAD
-    // opens -- and an incompatibility like that is chosen, never inherited
-    // from a constructor. The save dialog is where a user chooses it,
-    // per document, past a warning that stays on screen.
-    ADD_PROPERTY_TYPE(SaveSchemaVersion,(5),"Format",Prop_None,
+    // 4, not getCurrentSchemaVersion(). Schema 5 is this fork's format --
+    // shared blobs and default blocks under an <FCDocument> root no other
+    // FreeCAD opens -- and an incompatibility like that is chosen, never
+    // inherited from a constructor. The save dialog is where a user chooses
+    // it, per document, past a warning that stays on screen.
+    ADD_PROPERTY_TYPE(SaveSchemaVersion,(4),"Format",Prop_None,
             "Document schema version to write.\n"
-            "5 is readable by every FreeCAD version. 6 is the compact\n"
-            "format: smaller and faster to load, but readable only by\n"
-            "builds of this fork that know it -- no other FreeCAD, upstream\n"
-            "included, will open the file. Only versions this build can\n"
-            "still write are accepted.");
+            "4 is upstream's format and is readable by every FreeCAD\n"
+            "version. 5 is the compact format: smaller and faster to load,\n"
+            "but readable only by builds of this fork that know it -- no\n"
+            "other FreeCAD, upstream included, will open the file. Only\n"
+            "versions this build can still write are accepted.");
     {
         const auto &versions = getWritableSchemaVersions();
         static App::PropertyIntegerConstraint::Constraints schemaRange;
@@ -1041,9 +1041,9 @@ std::string Document::getTransientDirectoryName(const std::string& uuid, const s
 
 // Newest schema version this build writes. Every entry of
 // getWritableSchemaVersions() is a shape the writer can still produce.
-#define FC_DOC_SCHEMA_VER 6
+#define FC_DOC_SCHEMA_VER 5
 
-// Root element of a document written at schema 6 or later -- one that may
+// Root element of a document written at schema 5 or later -- one that may
 // share class defaults. The new name is the format's incompatibility made
 // loud: no released reader, this fork's or upstream's, checks a schema
 // number before reading, but every one of them scans for <Document>, reaches
@@ -1068,10 +1068,10 @@ void Document::Save (Base::Writer &writer) const
         writer.setSchemaVersion(resolveSchemaVersion(writer));
 
     // The writer's schema is the resolved outcome (resolveSchemaVersion),
-    // and the root element states it twice: once as the attribute, and at 6
+    // and the root element states it twice: once as the attribute, and at 5
     // or later as its own name.
     writer.Stream() << '<'
-                    << (writer.getSchemaVersion() >= 6 ? FC_ELEM_FCDOCUMENT : "Document")
+                    << (writer.getSchemaVersion() >= 5 ? FC_ELEM_FCDOCUMENT : "Document")
                     << " SchemaVersion=\"" << writer.getSchemaVersion()
                     << "\" ProgramVersion=\""
                     << App::Application::Config()["BuildVersionMajor"] << "."
@@ -1100,10 +1100,15 @@ void Document::Save (Base::Writer &writer) const
     // d->Hasher->setPersistenceFileName("StringHasher.Table");
     d->Hasher->setPersistenceFileName(nullptr);
 
+    // Two passes, and the order between them is load-bearing: every object
+    // settles its own properties first (a shape parked by the deferred
+    // restore is pulled back in here), and only then do the document's own
+    // properties run -- which is where a document-wide store collects what
+    // the objects have just made ready (docs/SharedShapeStorage.md).
     for (auto o : d->objectArray) {
-        o->beforeSave();
+        o->beforeSave(writer);
     }
-    beforeSave();
+    beforeSave(writer);
 
     d->Hasher->Save(writer);
 
@@ -1320,11 +1325,11 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
     }
 
     Base::ZipWriter writer(out);
-    // An exported fragment never shares defaults: it is small, it travels
+    // An exported fragment never shares anything: it is small, it travels
     // (clipboard, merge), and a reader that merges it may be anything. Cap
-    // at 5, which also keeps buildDefaults' schema gate closed and the
+    // at 4, which also keeps buildDefaults' schema gate closed and the
     // <Document> root a fragment has always had.
-    writer.setSchemaVersion(std::min<long>(getSaveSchemaVersion(), 5));
+    writer.setSchemaVersion(std::min<long>(getSaveSchemaVersion(), 4));
     // Only the exported objects' files: a clipboard buffer has no business
     // carrying content belonging to the rest of the document.
     getFileBlobManager().beginSave(writer);
@@ -1492,12 +1497,12 @@ void Document::buildDefaults(Base::Writer &writer,
         const std::vector<App::DocumentObject*>& obj,
         std::map<std::string, SharedDefaults> &defaults) const
 {
-    // One gate, and it is the document's own: the resolved schema. Six is
+    // One gate, and it is the document's own: the resolved schema. Five is
     // the version that introduced the block (getWritableSchemaVersions),
     // the user chooses it per document in the save dialog, and a document
     // that resolved lower has asked to come out in a shape an older FreeCAD
     // reads in full. No preference outranks what a document promised.
-    if (writer.getSchemaVersion() < 6)
+    if (writer.getSchemaVersion() < 5)
         return;
 
     // A default block is one class's whole property set, so it only pays for
@@ -1553,7 +1558,7 @@ void Document::restoreDefaults(Base::XMLReader &reader, int count)
     if (count <= 0)
         return;
 
-    // ⚠️ The stand-in is in no document, and an object's reaction to its own
+    // The stand-in is in no document, and an object's reaction to its own
     // property changing is written for one that is: restoring an App::Link's
     // element list into a document-less stand-in walks straight into
     // LinkBaseExtension::update() dereferencing a null document. Nothing here
@@ -1571,7 +1576,7 @@ void Document::restoreDefaults(Base::XMLReader &reader, int count)
         // difference has to be pasted onto anything, and on the build that
         // wrote the file there is none.
         //
-        // ⚠️ Two stand-ins, not one stand-in and a pile of Property::Copy().
+        // Two stand-ins, not one stand-in and a pile of Property::Copy().
         // A detached copy has no container, so link properties compare by a
         // scope they no longer know and enumerations by a list they no
         // longer have. Two live stand-ins of the same class, both serialized
@@ -1727,6 +1732,8 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
         }
     }
 
+    // Rebuilt by the loop below, and read while this save writes its entries.
+    d->splitXmlEntries.clear();
     std::vector<DocumentObject*>::const_iterator it;
     for (it = obj.begin(); it != obj.end(); ++it) {
         writer.Stream() << writer.ind() << "<Object "
@@ -1754,8 +1761,15 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
             std::string name((*it)->getNameInDocument());
             if(name == "Document" || name == "GuiDocument")
                 name += "-Obj";
-            writer.Stream() << "file=\"" 
-                << writer.addFile(name+".xml",this) << "\" ";
+            // The entry the writer settled on, which is not always the name
+            // asked for: an object is named by whoever made it, and a file
+            // system takes neither any length nor every name. Remembered
+            // here because SaveDocFile is handed a file name and has to
+            // answer with the object it is for -- reading the name back out
+            // of it was what left a long-named object writing nothing.
+            const std::string& entry = writer.addFile(name+".xml",this);
+            d->splitXmlEntries[Base::FileInfo(entry).fileNamePure()] = *it;
+            writer.Stream() << "file=\"" << entry << "\" ";
         }
 
         writer.Stream() << "/>\n";
@@ -1771,8 +1785,15 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
     // Document.xml, and the load has that many fewer properties to restore.
     // The defaults are written out, not implied, so a document opened by a
     // build whose constructors differ still holds what its author saved.
-    // Nothing is shared in the split-XML layout: each object is its own file
-    // there, with no block to point at.
+    //
+    // No block in the split-XML layout, and not for want of a reader: the
+    // block lands in Document.xml, restoreDefaults() holds it until
+    // readFiles() has drained, and readObject() already applies it to an
+    // object arriving from its own file. It is left out because that is the
+    // layout someone picked to keep each object in a file of its own, and a
+    // block would make every one of those files depend on a document-wide
+    // record -- a third object of some class appearing would rewrite the
+    // other two, which is the diff a directory layout exists to not have.
     std::map<std::string, SharedDefaults> defaults;
     if (!writer.isSplitXML())
         buildDefaults(writer, obj, defaults);
@@ -1825,9 +1846,9 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
     }
     writer.Stream() << writer.ind() << "</ObjectData>\n";
     writer.decInd();  // indentation for 'Objects count'
-    // Close whichever root Save() (or exportObjects, always <= 5) opened.
+    // Close whichever root Save() (or exportObjects, always <= 4) opened.
     writer.Stream() << "</"
-                    << (writer.getSchemaVersion() >= 6 ? FC_ELEM_FCDOCUMENT : "Document")
+                    << (writer.getSchemaVersion() >= 5 ? FC_ELEM_FCDOCUMENT : "Document")
                     << ">\n";
 }
 
@@ -1844,8 +1865,16 @@ void Document::writeObject(Base::Writer &writer, DocumentObject *obj) const
 
 void Document::SaveDocFile(Base::Writer &writer) const {
     Base::FileInfo fi(writer.getCurrentFileName());
-    auto obj = getObject(fi.fileNamePure().c_str());
-    if(!obj) 
+    // What the Objects section recorded for this entry, and only then the
+    // name: the entry is a file name, which is a thing the save chose, while
+    // the object's name is a thing the user chose. They agree in the ordinary
+    // case and the lookup below still covers whoever writes an entry without
+    // going through the section above.
+    auto known = d->splitXmlEntries.find(fi.fileNamePure());
+    auto obj = known != d->splitXmlEntries.end()
+        ? known->second
+        : getObject(fi.fileNamePure().c_str());
+    if(!obj)
         FC_ERR("Cannot find object " << fi.fileNamePure());
     else {
         writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
@@ -2786,9 +2815,9 @@ void Document::save(Base::Writer &writer, bool archive) const {
 
     // The property is the cap the user chose; what the writer carries from
     // here on is the outcome this save resolves it to, and every header
-    // below states the outcome. The two must not be conflated: a split save
-    // has no block to share and comes out as 5 -- old-readable -- whatever
-    // the cap says, without touching the cap.
+    // below states the outcome. The two are kept apart because a save may
+    // leave out a half of the format it cannot carry without that changing
+    // the version it is written under, and none of it touches the cap.
     writer.setSchemaVersion(resolveSchemaVersion(writer));
     // Collect before anything is written: the included files go into the
     // archive ahead of the objects and views that refer to them.
@@ -3373,17 +3402,25 @@ const std::vector<long>& Document::getWritableSchemaVersions()
     // Only what the writer can actually produce. Older versions the reader
     // still accepts are deliberately absent: offering to write a shape we
     // cannot build would fail silently at the worst moment.
-    // 4 = one archive entry per PropertyFileIncluded. 5 = one entry per
-    // distinct content, shared by every property referring to it. 6 = a class
-    // may state its defaults once and every container of that class be
-    // written as the difference -- view providers in the view file, objects
-    // in Document.xml -- and the root element becomes <FCDocument>, so that
-    // every reader which cannot put an elided property back refuses the file
-    // outright instead of silently reverting those properties to its own
-    // defaults. One version for both sides: they are the same mechanism,
-    // released together, and a reader that understands one understands the
-    // other.
-    static const std::vector<long> versions {4, 5, FC_DOC_SCHEMA_VER};
+    //
+    // 4 is upstream's format and the only one anything but this fork reads:
+    // one archive entry per PropertyFileIncluded, every container writing its
+    // whole property set, a <Document> root.
+    //
+    // 5 is this fork's format, and it is one version because it is one
+    // decision. An included file becomes one archive entry per distinct
+    // content, shared by every property referring to it; a class may state
+    // its defaults once and every container of that class be written as the
+    // difference -- view providers in the view file, objects in Document.xml;
+    // a document may carry one shared shape store. None of that is readable
+    // anywhere else, so the root element becomes <FCDocument> and every
+    // reader which cannot put the elided halves back refuses the file
+    // outright instead of silently reverting them to its own defaults. The
+    // blob half shipped first under a number of its own, but it was never
+    // any more readable than the rest -- an older reader takes its hash
+    // attributes for nothing and drops the content without a word -- so
+    // there was never a middle version to keep, only one that lied.
+    static const std::vector<long> versions {4, FC_DOC_SCHEMA_VER};
     return versions;
 }
 
@@ -3409,14 +3446,15 @@ long Document::getSaveSchemaVersion() const
 
 long Document::resolveSchemaVersion(const Base::Writer &writer) const
 {
-    const long cap = getSaveSchemaVersion();
-    // Split-XML has nothing to share -- every object is its own file, with
-    // no block to point at -- so a split save is written as 5 and stays
-    // readable by builds that predate the blocks. The cap is untouched: the
-    // same document saved un-split comes out as what it asked for.
-    if (cap >= 6 && writer.isSplitXML())
-        return 5;
-    return cap;
+    (void)writer;
+    // Nothing to resolve away any more. A split save writes what its cap
+    // says: it shares no default block -- every object is its own file, and
+    // a block would tie each of those files to a document-wide record, so
+    // that gaining a third object of some class rewrites every file of that
+    // class, which is exactly what a directory layout exists to avoid -- but
+    // the rest of the format is the format, and skipping one half of it is
+    // no reason to write the file under a version it is not.
+    return getSaveSchemaVersion();
 }
 
 FileBlobManager& Document::getFileBlobManager() const
@@ -3441,7 +3479,9 @@ void Document::collectFileBlobs(const std::vector<App::DocumentObject*>& objs) c
         container->getPropertyList(props);
         for (auto prop : props) {
             if (auto file = Base::freecad_dynamic_cast<PropertyFileIncluded>(prop)) {
-                manager.noteReferenced(file->getBlob());
+                // The referrer is what names the file the content is saved
+                // to, and this pass is where the property is known.
+                manager.noteReferenced(file->getBlob(), FileBlobManager::referrerOf(file));
             }
         }
     };

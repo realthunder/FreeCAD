@@ -232,7 +232,8 @@ TEST_F(RenderCacheMaterial, BridgeMarksPerFaceDraw)
     manager.traverse(root, SbViewportRegion(256, 256));
     SoFCRenderCache* cache = manager.getSceneCache();
     ASSERT_NE(cache, nullptr);
-    auto draws = Gui::RendererBridge::translate(cache->getVertexCaches(true));
+    auto draws = Gui::RendererBridge::translate(cache->getVertexCaches(true),
+                                                Gui::RendererBridge::SectionOnTop {});
     const Render::DrawCall* triangle = nullptr;
     for (const auto& d : draws) {
         if (d.material.type == Render::Material::Triangle) {
@@ -276,7 +277,8 @@ TEST_F(RenderCacheMaterial, SameValuedArraysStayUniform)
 
     SoFCRenderCache* cache = manager.getSceneCache();
     ASSERT_NE(cache, nullptr);
-    auto draws = Gui::RendererBridge::translate(cache->getVertexCaches(true));
+    auto draws = Gui::RendererBridge::translate(cache->getVertexCaches(true),
+                                                Gui::RendererBridge::SectionOnTop {});
     for (const auto& d : draws) {
         if (d.material.type == Render::Material::Triangle) {
             EXPECT_FALSE(d.material.perfacematerial);
@@ -387,7 +389,8 @@ TEST_F(RenderCacheMaterial, BridgeMarksPerFacePbrDraw)
 
     SoFCRenderCache* cache = manager.getSceneCache();
     ASSERT_NE(cache, nullptr);
-    auto draws = Gui::RendererBridge::translate(cache->getVertexCaches(true));
+    auto draws = Gui::RendererBridge::translate(cache->getVertexCaches(true),
+                                                Gui::RendererBridge::SectionOnTop {});
     const Render::DrawCall* triangle = nullptr;
     for (const auto& d : draws) {
         if (d.material.type == Render::Material::Triangle) {

@@ -582,6 +582,14 @@ protected:
     /// (a decimation rung): re-emit the vertex-cache content from the
     /// node arrays as they now stand, into the pending stash.
     void emitVisualVertexCacheFromNodes();
+    /// The same, for the SHARED instanced tessellation, which has no
+    /// view provider to stash on: emits from the given nodes and
+    /// registers immediately, so the caller must have finished writing
+    /// them (docs/WorkerVertexCache.md).
+    static void emitAndRegisterSharedVertexCache(
+            SoCoordinate3 *coords, SoCoordinate3 *pcoords, SoNormal *norm,
+            SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
+            SoBrepPointSet *nodeset);
     /// GUI thread, at the END of a rebuild epilogue (after the
     /// highlight re-apply -- the node ids are stamped here, and any
     /// later touch voids the entry): register the stashed content.

@@ -38,13 +38,17 @@ Three types in `src/App/FileBlobManager.{h,cpp}`:
 
 | Type | Role |
 | --- | --- |
-| `FileBlob` | One immutable, content-addressed file on disk |
+| `FileBlob` | One immutable file on disk, identified by the hash of its bytes |
 | `FileBlobHandle` | `shared_ptr<FileBlob>` — a reference; the count *is* the refcount |
 | `FileBlobManager` | Per-`App::Document` store, owns the mapping hash → blob |
 
 **A blob is pure content.** Its identity is the SHA-1 of its bytes and nothing
-else; it lives at `<transient>/blobs/<sha1>` with no name on disk. Blobs are
-immutable — changing a property's file always produces a *new* blob.
+else; it lives at `<transient>/blobs/<uuid>.<ext>`, under a name nothing outside
+the store may depend on -- the extension is kept only because the path is handed
+to whatever consumes the content, and a file with no extension is a file some
+viewers refuse. Blobs are immutable -- changing a property's file always produces
+a *new* blob. What a blob is called when a document is **saved** is a separate
+question with a separate answer, sec 13.
 
 **Names live on the property**, not the blob: `_BaseFileName` (the name it
 saves under) and `_OriginalName` (where it came from), both persisted. Any
@@ -53,7 +57,7 @@ Two sites used to read a name off the storage path and now ask the property
 instead: `Drawing::FeaturePage` (template-by-name fallback) and
 `Gui::DlgEditFileIncludePropertyExternal` (names the copy handed to an external
 editor). Every other consumer passes the path to a loader that sniffs format
-from content, so a hash-named file is fine.
+from content, so a uuid-named file is fine.
 
 **Ownership is per document, not per application.** A document knows all its own
 referrers, so its counts need no cross-process locking — which matters because
@@ -76,6 +80,20 @@ version is writable only where the writer can still produce that exact shape.
 - **Schema ≥ 5** — the blob form. The manager writes one entry per distinct
   content and the property writes only
   `<FileIncluded hash=".." name=".." original=".."/>`.
+
+WARNING: **Schema 5 is this fork's format, not a compatible middle rung** (settled
+2026-08-16). Nothing but this fork knows the `hash` attribute: upstream's
+`PropertyFileIncluded::Restore` has a `file=` branch and a `data=` branch and
+nothing else, so an unaware reader opens the document, finds neither, and
+leaves every embedded file **empty without a word** -- the `blobs/` entries sit
+unclaimed beside it. That is exactly the silent-misread failure the compact
+format was designed to make impossible, which is why the compact format (built
+as schema 6, and no more released than this was) was folded into 5 rather than
+stacked above it. **4 is upstream's format and the default cap; 5 is this
+fork's**, and a document written at 5 is rooted `<FCDocument>`, so a reader
+that does not know the format refuses it outright instead of half-reading it.
+The blob table is unchanged by the merge -- the gate still reads `>= 5`; it now
+means "the fork format" rather than claiming to mean something weaker.
 
 The gate is `Base::Writer::getSchemaVersion()`, which only the document-level
 save paths set. Anything serializing a property standalone (§9) leaves it unset
@@ -117,8 +135,9 @@ writes them itself, with its own `putNextEntry`, **immediately after
 
 ```
 Document.xml            <- object data; properties carry hashes only
-blobs/<sha1>            <- one entry per distinct content
-blobs/<sha1>            
+blobs/Content.xml       <- the index: name, hash, referrers (sec 13)
+blobs/Box.Image.png     <- one entry per distinct content, named after its referrer
+blobs/Cyl.Image.png
 <object>.Shape.brp      <- the ordinary FileList entries, unchanged
 GuiDocument.xml
 <object>.GuiDocument.xml
@@ -161,21 +180,24 @@ Sequence:
    blobs belonging to unrelated objects.
 3. Stream `Document.xml`. Properties write hash/name/original; they register
    nothing.
-4. `manager.writeBlobs(writer)` — one `putNextEntry("blobs/<hash>")` plus
-   content per collected blob, in hash order so a given document always
-   produces the same archive. It is a no-op below schema 5, where the
-   properties carry self-contained copies of their own and these entries would
-   be weight no reader ever asks for.
+4. `manager.writeBlobs(writer)` -- `blobs/Content.xml`, then one
+   `putNextEntry("blobs/<name>")` plus content per collected blob, in name
+   order so a given document always produces the same archive. The name comes
+   from the referrers collected in step 2; sec 13 is the whole of it. It is a
+   no-op below schema 5, where the properties carry self-contained copies of
+   their own and these entries would be weight no reader ever asks for.
 5. Everything else as before (`signalSaveDocument`, `writeFiles`).
 
 Discovery is by traversal, not by liveness: blobs referenced *only* by an undo
 transaction or the clipboard are live in the manager but not reachable from a
 property, so they are correctly not written.
 
-In directory mode the manager skips a blob whose target file already exists —
-content addressing makes existence proof of equality. That is what makes
-autosave cheap: today every autosave tick rewrites every embedded file, mirroring
-what `RecoveryWriter::shouldWrite` already does for ordinary property files.
+In directory mode the manager skips a blob the previous index recorded under
+the same name with the same hash, the file still being there. That is what
+makes autosave cheap: before any of this, every autosave tick rewrote every
+embedded file, mirroring what `RecoveryWriter::shouldWrite` already does for
+ordinary property files. Existence alone was proof while the name *was* the
+content, and is proof of nothing now (sec 13.5).
 
 ## 6.1 The document's save options
 
@@ -285,6 +307,37 @@ its file deleted: re-saving such a document already drops that object's data.
 creation fails, partial load skips it), so `~PropertyFileIncluded` deregisters
 itself from the pending list.
 
+**The release point is a deadline, and a lazily restoring tier has to answer to
+it** (added 2026-08-17, after this bit data). Nothing dispatches after
+`endRestore()`, so a property that first reads its `hash=` later gets no
+content, writes `hash=""` on the next save, and the content leaves the file for
+good. That is what progressive load did to a view provider: `Gui::Document`
+parks each `<ViewProvider>` element verbatim and drains it in slices *after* the
+open, so a `Render_*` included file on a view provider was lost on every open of
+a schema-5 document.
+
+The guard for it already existed and was one attribute short. Parking is refused
+for a record naming an archive entry (` file="`), because the forward walk
+consumes those during the load; it is now refused for one naming a blob
+(` hash="`) as well, for the same reason at the same boundary -- such a view
+provider is restored inside the load by `restoreCapturedViewProvider()`, exactly
+as the eager path would have. The cost is that a view provider with an embedded
+file does not get parked, which is a rounding error: they are textures and
+environment images, not the thousands of default records parking exists for.
+
+`addPendingReferrer()` now **logs** a referrer arriving after the release point
+instead of queueing it onto a list nobody will read again. The bug above was
+invisible for exactly that reason, and it is what any future instance of this
+shape will run into first.
+
+Audited at the same time, and clear: deferred *archive entries*
+(`Document::serveDeferredFiles`, which outlive the view-provider drain) cannot
+carry a file property at schema 5, because such a property registers no entry;
+the `View3DInventor` string replay (sec 8) runs from `signalFinishRestoreDocument`,
+i.e. inside the hold; and `PropertyShapeStore` is the only subclass, restored
+with the document. The parked view-provider record was the one tier past the
+deadline.
+
 ## 8. The view tier
 
 View-side properties reach the same per-document manager, with two wrinkles:
@@ -356,8 +409,12 @@ restored property compared unequal to itself.
 `src/Mod/Test/FileBlobs.py` (headless, `FreeCADCmd -t FileBlobs`) covers
 storage/dedup, refcount lifetime, undo/redo, persistence round-trips including
 the §4 ordering regression, archive shape, schema-4 fallback, `saveAs`, the
-save options of §6.1 over both writers, and the export/import path via
-`copyObject`. `scripts/file-blob-verify.sh` adds the GUI
+save options of sec 6.1 over both writers, the naming and pruning of sec 13
+(`BlobNamingCases`: a name across close/reopen/edit, changed content actually
+reaching disk, the naming referrer moving when its object goes, orphans pruned
+and strays left alone, an unmodified re-save leaving the blob layer
+byte-identical, and a pre-index directory project still opening), and the
+export/import path via `copyObject`. `scripts/file-blob-verify.sh` adds the GUI
 legs that need a `View3DInventor`: the embedded environment image round-trip and
 the assertion that it saves as a hash rather than base64. See those files for
 the case-by-case matrix.
@@ -394,3 +451,239 @@ rest is staged -- worth doing, not scheduled.
 - **RPC-shaped manager API** (`insert(path|bytes)→key`, `acquire(key)→handle`,
   `open(key)→stream`) for the out-of-process document goal; `getValue()→path`
   stays as the legacy accessor.
+
+## 13. Stable names and the content index
+
+Status: **built** (2026-08-17). This section supersedes the first bullet of
+sec 12 and changes the archive layout of sec 5. It is step 1 of the build order
+in `docs/SharedShapeStorage.md` sec 12, which sequences it against the shape
+work that depends on it. Sec 13.8 records the three places the built form departs
+from the design and why.
+
+### 13.1 What is wrong with content-addressed entry names
+
+Sec 2 makes a blob pure content, stored and written out under the SHA-1 of its
+bytes. For a packed `.FCStd` that is invisible. For a project saved as a
+directory -- which exists to be friendly to version control, and is why
+`PreferBinary` defaults to false -- it is three separate problems:
+
+- Every content edit is a **delete plus add of an opaque hex name**, never a
+  modification, so no tool can follow a file across an edit.
+- **Nothing prunes.** `writeBlobs()` only ever writes, so a project directory
+  accumulates orphaned hex files forever and `git add -A` commits them.
+- The incremental skip is `exists(dir + blob->hash())`, which is sound **only**
+  because the name is the content.
+
+### 13.2 Layout
+
+The same shape in both places, and `blobs/` keeps its name:
+
+```
+<transient>/blobs/Content.xml        <- the index, inside blobs/
+<transient>/blobs/<uuid>.<ext>       <- transient names are uuids
+<project>/blobs/Content.xml
+<project>/blobs/Box.Shape.brp        <- saved names are derived from the referrer
+```
+
+There are no per-property-type subdirectories.
+
+Transient names are uuids because at `insertFile()` time there may be no
+referrer at all -- a blob held only by an undo transaction or the clipboard --
+and because stored files are read-only and held by absolute path, so renaming
+them mid-session is churn for no gain. The extension is kept so a transient
+file can still be opened without guessing. The transient `Content.xml` is a
+diagnostic ledger, not load-bearing.
+
+Saved names are derived, because that is what a human and a diff read, and
+because a directory save already writes `Box.Shape.brp` today
+(`Property::getFileName()` through `writer.addFile`). The two name spaces are
+already decoupled: `writeBlobs()` streams content into an entry, so an entry
+name never had to equal the file name.
+
+### 13.3 The content file
+
+```xml
+<?xml version='1.0' encoding='utf-8'?>
+<FileStore v="1">
+  <F n="Box.Image.png" h="<sha1>" r="4213:Box.Image 4890:Cyl.Image"/>
+  <F n="Cyl.Shape.brp" h="<sha1>" r="4300:Cyl.Shape"/>
+</FileStore>
+```
+
+Three attributes, sorted by name, one element per line, so a content edit is a
+one-line diff and two branches touching different parts merge textually. `n` is
+the name inside `blobs/`, `h` the content hash, `r` the referrers as
+`<objectId>:<Object>.<Property>` tokens -- safe unquoted, since both are
+internal names.
+
+Deliberately absent: the size, which the file itself knows, and the original
+path and base file name, which the **property already persists** in
+`Document.xml`. The index must not duplicate what the document holds; its job
+is the one thing nothing else records, the name-to-content binding and who uses
+it.
+
+XML rather than JSON or a tabular format so that `encodeAttribute` handles
+arbitrary user file names and `Base::XMLReader` parses it with no new
+dependency.
+
+### 13.4 Naming
+
+The derived name is `Property::getFileName()` -- `Object.Property` -- plus the
+extension. An object's internal `Name` is immutable (renaming in the tree
+changes `Label`), so a derived name never churns while the object lives.
+
+**Both halves of that stem are named by a person, so it is made portable before
+it becomes a file** (`Base::Tools::portableFileName`, added 2026-08-18). An
+object's name only has to be a Python identifier, which admits any length and
+every stem Windows still reads as a device; a property's name admits the same.
+A directory project writes the stem as a real file, so a name the file system
+refuses loses the geometry with nothing but a line in the report view -- and
+that is what it did: of three objects named 250 `x`, `CON`, and 90 CJK
+characters, two came back with a null shape and no properties. The transform
+replaces control, reserved and non-ASCII bytes with `_`, prefixes a reserved
+device name, and over a 120-byte budget truncates and appends a digest of the
+original so two long names stay distinct. The extension survives truncation, in
+up to two parts, because what says what a file is here is often two (`.Gui.xml`
+is dispatched on the whole of it). **A name that was already legal is returned
+unchanged**, so no existing project's files move.
+
+**A name belongs to its naming referrer**, defined as the live referrer with
+the lowest object id, not to the referrer set as a whole. If that referrer goes
+away the name is re-derived from the new lowest, which renames the file in the
+same save -- git sees a pure rename, content unchanged.
+
+That rule exists to close a specific hole. Internal names are reused after
+deletion: `App::DocumentObject::_Id` is not (`DocumentP::addObject` only ever
+increases `lastObjectId`, `removeObject` never lowers it, and restore re-mints
+each object at its stored `id=`), but the name is. So a rule that kept a name
+while *any* referrer survived would let a blob shared by `Box` and `Cyl` keep
+the name `Box.Image.png` after `Box` is deleted, and a newly created `Box`
+would then find its rightful name squatted on. With the rule above the two
+generations can never be live in the same save, so the writer can assert name
+uniqueness across the save set rather than resolve a conflict.
+
+Shared content still collapses to **one** file with several referrers, so `r`
+is a list. The generation token in `r` is what keeps the diff honest when a
+path is reused across generations: the line goes from `4213:Box.Image` to
+`4890:Box.Image`.
+
+Residual collisions are rare by construction -- an App property and a
+view-provider property of the same name on the same object need a tier marker
+in the derived name, and referrers with no object fall back to a uuid. What is
+left gets `-1` before the extension, **pinned in the content file**, because
+`Writer::getUniqueFileName()` numbers by scan order and its suffix can
+otherwise migrate between saves.
+
+### 13.5 The skip, and pruning
+
+***The incremental skip must change in the same commit as the naming.*** With
+stable names, a file existing no longer implies its content matches. The skip
+becomes: the previous content file names this file, its recorded hash equals
+the blob's hash, and the file exists. Nothing else is proof.
+
+A directory save reads the **previous** `blobs/Content.xml` before writing, and
+unlinks names that it lists and the new one does not. Nothing outside the
+previous index is ever touched, so a stray file a user put in the tree
+survives.
+
+Note what pruning is and is not for: git compares content, not timestamps, so
+rewriting identical bytes was never visible in `git status`. The skip is a
+save-time I/O win; the diff win comes from the stable names and from removing
+orphans.
+
+### 13.6 What does not change
+
+**Identity stays the hash in `Document.xml`.** The content file is read by the
+same archive handler, ahead of the blob entries, and only re-establishes the
+name table so the *next* save is stable. If it is missing -- an older file, a
+foreign file -- everything still restores and names are assigned fresh on the
+next save, at the cost of a one-time rename.
+
+Having the property reference the name instead, so that a content edit leaves
+`Document.xml` untouched, was considered and deferred: it buys one line of XML
+churn and makes the index load-bearing for restore.
+
+### 13.7 Shape files, and what the index has to carry for them
+
+**Built 2026-08-17** (`docs/SharedShapeStorage.md` sec 12.3). Shape properties
+are referrers like any other, named `Box.Shape.brp`, with the skip and the
+prune applying to them unchanged. The pending queue is keyed on
+`App::BlobReferrerProperty` rather than on `PropertyFileIncluded`, which is all
+the two have in common. Two consequences were predicted; the first did not
+survive contact:
+
+- ~~**Deferred read by name stops being optional.**~~ The premise was that
+  shapes dominate the entry count, so draining them at open would be ruinous.
+  Content addressing removes it: on `MiSTer_imported.FCStd` 17800 shapes became
+  10873 files, and the walk over them is *cheaper* than the old one over 68235
+  registered entries -- the open went from 4.06s to 2.37s. Entries are still
+  drained at open. Making them lazy is an optimization, not a prerequisite.
+- **Blobs reference other blobs.** A shape file that shares geometry with
+  another object writes a reference to that object's *file* rather than a copy
+  of the geometry (`docs/SharedShapeStorage.md` sec 11.5). That is still full
+  referring -- the referrer holds a handle on the whole target blob and names a
+  sub-shape inside it -- so lifetime is ordinary refcounting and none of the
+  rules here change. What the index gains is **blob-to-blob edges**: alongside
+  the property referrers in `r`, a `<F>` records which other files it reads.
+
+  They pay for themselves twice. Pruning becomes correct in the presence of a
+  file that no property names directly but another file needs. And they answer
+  the one question the save cannot answer from memory: which *parked* shapes
+  must be loaded because a file they reference is being rewritten. Everything
+  else about ownership is recomputed from scratch on every save, which is what
+  keeps the scheme free of carried-forward state.
+
+***The bug routing shapes through here uncovered.*** `readBlobEntry()` copied
+an archive entry with `entry >> to.rdbuf()`. That is a *formatted* extraction:
+its sentry skips leading whitespace, so content beginning with any arrived
+short. It had gone unnoticed because no included file the tests carried started
+with whitespace -- and ASCII BRep starts with a newline. Content addressing is
+what made it loud instead of quiet: the stored blob hashed to something other
+than what `Document.xml` referred to, so the referrer was served nothing at all
+rather than handed a corrupted file. `PropertyFileIncluded::RestoreDocFile`
+carried the same line. Both now write the stream (`to << entry.rdbuf()`).
+
+### 13.8 As built: three decisions the design did not settle
+
+**The previous index is read from the target directory, not remembered.**
+`writeBlobs()` reads `blobs/Content.xml` out of the directory it is about to
+write. Remembering the index this document last wrote is unsound across a
+save-as: the skip would then take a file the *other* directory's index vouched
+for as proof about a same-named file here, and quietly keep content belonging to
+whatever was there before. Reading the target also means nothing is carried
+between saves, which is the property sec 11.7 of `docs/SharedShapeStorage.md`
+wants of ownership generally. An archive has no previous state to read and so
+rewrites every entry, which costs nothing it did not cost before.
+
+**A restore does not parse the index.** It is claimed with the content --
+`readBlobEntry()` returns early for it, so no other consumer is offered it --
+and then dropped. Identity is the hash in `Document.xml`, the extension a
+transient file needs comes off the entry name, and the names the next save has
+to know are read from the directory it writes. Parsing it at restore would buy
+one thing only: names known before content is touched, which is what step 3's
+deferred read by name needs. That belongs to step 3. There is also no transient
+`blobs/Content.xml`; the design called it diagnostic and not load-bearing, and
+an unwritten diagnostic is one fewer file every consumer has to skip.
+
+**One thing outside the previous index is pruned: 40-hex names.** Those are
+what a save wrote before this section existed. They are ours by construction --
+`blobs/` is written by nothing else -- and once the names have moved nothing
+else can identify them, so an upgraded project would otherwise keep every
+orphan it ever accumulated and `git add -A` would commit them. A file with any
+other name that no index ever listed is left alone, which is the rule as
+designed.
+
+Two further notes on what the built form does *not* exercise:
+
+- **Collision suffixes are unreachable today.** Two derived names can only
+  collide if two referrers produce the same `Object.Property` -- and property
+  names are unique per container, the two tiers are separated by the
+  `.ViewObject` marker `getFullName()` already spells, and referrers that
+  cannot be named fall back to a 40-hex hash that no derived name can equal.
+  The `-N` numbering and its pinning are built and are what sec 13.4 describes,
+  but the gate cannot reach them from the public API; the case they exist for
+  is the one step 3 and the property tiers after it may reintroduce.
+- **`Property::getFileName()` is now public.** The blob manager derives a
+  referrer's name with it rather than reimplementing the spelling, which is
+  what guarantees step 3's shape files keep the names `PropertyPartShape`
+  already gives them instead of being renamed wholesale on the first save.

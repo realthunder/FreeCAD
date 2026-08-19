@@ -22,8 +22,13 @@
 
 #include "PreCompiled.h"
 
+#include <atomic>
+
 #include <algorithm>
+#include <cctype>
 #include <cstring>
+#include <numeric>
+#include <tuple>
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -33,6 +38,7 @@
 #include <Base/Console.h>
 #include <Base/Reader.h>
 #include <Base/Stream.h>
+#include <Base/Tools.h>
 #include <Base/Writer.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
@@ -40,6 +46,7 @@
 
 #include "FileBlobManager.h"
 #include "Document.h"
+#include "DocumentObject.h"
 #include "PropertyFile.h"
 
 FC_LOG_LEVEL_INIT("App", true, 2, true)
@@ -118,13 +125,25 @@ void FileBlobManager::repath(const FileBlobHandle& blob, const std::string& path
     blob->_path = path;
 }
 
+std::string FileBlobManager::relocatedPath(const FileBlobHandle& blob) const
+{
+    if (!blob) {
+        return {};
+    }
+    // The transient directory is renamed with its contents, so the file is
+    // still called what it was called; only the directory leading to it has
+    // moved. Reading the name back off the stale path is what keeps this
+    // independent of how the store names its files.
+    return blobDir() + "/" + Base::FileInfo(blob->path()).fileName();
+}
+
 void FileBlobManager::relocate()
 {
     for (const auto& blob : blobs()) {
         if (Base::FileInfo(blob->path()).exists()) {
             continue;
         }
-        Base::FileInfo moved(blobPath(blob->hash()));
+        Base::FileInfo moved(relocatedPath(blob));
         if (moved.exists()) {
             repath(blob, moved.filePath());
         }
@@ -136,6 +155,67 @@ namespace
 uint64_t fileSize(const char* path)
 {
     return Base::FileInfo(path).size();
+}
+
+/** Is \a name the name `stem` + `ext` would produce, suffix and all?
+ *
+ * A derived name carries a `-N` before its extension only to break a
+ * collision. Telling a numbered variant of a name from a different name is
+ * what lets the index pin a suffix: the name is still this referrer's, so it
+ * is kept rather than reassigned by scan order.
+ */
+bool sameBaseName(const std::string& name, const std::string& stem, const std::string& ext)
+{
+    if (name.size() < stem.size() + ext.size()) {
+        return false;
+    }
+    if (name.compare(0, stem.size(), stem) != 0) {
+        return false;
+    }
+    if (name.compare(name.size() - ext.size(), ext.size(), ext) != 0) {
+        return false;
+    }
+    const std::string middle = name.substr(stem.size(), name.size() - stem.size() - ext.size());
+    if (middle.empty()) {
+        return true;
+    }
+    if (middle.size() < 2 || middle[0] != '-') {
+        return false;
+    }
+    return std::all_of(middle.begin() + 1, middle.end(), [](unsigned char chr) {
+        return std::isdigit(chr) != 0;
+    });
+}
+
+std::string numberedName(const std::string& stem, const std::string& ext, int number)
+{
+    return stem + "-" + std::to_string(number) + ext;
+}
+
+/** Is this safe to append to a derived name?
+ *
+ * The extension comes from the name a property was given, which comes from
+ * Python and is not a file name the store chose -- so it is taken only when it
+ * cannot turn a name into a path. Nothing is lost by dropping a strange one:
+ * the extension is a courtesy to whatever opens the file, and identity is the
+ * hash either way.
+ */
+bool isPlainExtension(const std::string& ext)
+{
+    return !ext.empty() && ext.size() <= 16
+        && std::all_of(ext.begin(), ext.end(), [](unsigned char chr) {
+               return std::isalnum(chr) != 0 || chr == '_' || chr == '-';
+           });
+}
+
+/// Names a save wrote before the content index existed, which are the SHA-1
+/// of what they hold and so identifiable as nothing else in the directory is.
+bool isContentAddressedName(const std::string& name)
+{
+    return name.size() == 40
+        && std::all_of(name.begin(), name.end(), [](unsigned char chr) {
+               return std::isxdigit(chr) != 0;
+           });
 }
 }  // namespace
 
@@ -158,6 +238,47 @@ const char* FileBlobManager::archivePrefix()
     return "blobs/";
 }
 
+const char* FileBlobManager::indexName()
+{
+    return "Content.xml";
+}
+
+BlobReferrer FileBlobManager::referrerOf(const Property* prop, const DocumentObject* object)
+{
+    BlobReferrer referrer;
+    if (!prop) {
+        return referrer;
+    }
+
+    if (auto file = Base::freecad_dynamic_cast<PropertyFileIncluded>(prop)) {
+        // The name the property stores its file under is the user's; only its
+        // extension is taken, so the derived name says what the file is
+        // without inheriting a name that can change under it.
+        const std::string ext = Base::FileInfo(file->getBaseFileName()).extension();
+        if (isPlainExtension(ext)) {
+            referrer.ext = "." + ext;
+        }
+    }
+
+    if (!object) {
+        object = Base::freecad_dynamic_cast<DocumentObject>(prop->getContainer());
+    }
+    if (!object || !object->isAttachedToDocument()) {
+        // Nothing anchors a name: a document-level property would take the
+        // document's own name, which a save-as changes, and a view's own
+        // properties belong to no object at all. Leaving the name empty
+        // leaves the content named by its hash, which at least does not move.
+        return referrer;
+    }
+
+    referrer.id = object->getID();
+    // getFileName() is Object.Property for an object's property and
+    // Object.ViewObject.Property for a view provider's, so the marker that
+    // keeps the two tiers from colliding on one name comes for free.
+    referrer.name = prop->getFileName();
+    return referrer;
+}
+
 void FileBlobManager::beginSave(Base::Writer& writer)
 {
     // Declared before the lock, so it dies after the lock is released.
@@ -166,8 +287,15 @@ void FileBlobManager::beginSave(Base::Writer& writer)
     // the last reference, to content a property has since replaced. Doing
     // that under the lock deadlocks the thread against itself.
     std::unordered_map<std::string, FileBlobHandle> expiring;
+    // Process-wide, so no two saves anywhere share a number -- see
+    // saveGeneration().
+    static std::atomic<uint64_t> saves {0};
     std::lock_guard<std::mutex> guard(_mutex);
+    _generation = ++saves;
     expiring.swap(_saveSet);
+    // Referrers are recomputed from scratch every save. Nothing is carried
+    // forward, so a deleted object cannot leave a name behind it.
+    _saveRefs.clear();
     // Decided once, before a single referrer has been written. Below schema 5
     // the properties still carry their own copies; above ForceXML level 3 the
     // caller wants a document that carries its content inside the XML, which
@@ -184,6 +312,12 @@ void FileBlobManager::beginSave(Base::Writer& writer)
     }
 }
 
+uint64_t FileBlobManager::saveGeneration() const
+{
+    std::lock_guard<std::mutex> guard(_mutex);
+    return _generation;
+}
+
 FileBlobManager::BlobFormat FileBlobManager::blobFormat() const
 {
     std::lock_guard<std::mutex> guard(_mutex);
@@ -196,7 +330,7 @@ bool FileBlobManager::hasInlineBlobs() const
     return _format == BlobFormat::InlineXml && !_saveSet.empty();
 }
 
-void FileBlobManager::noteReferenced(const FileBlobHandle& blob)
+void FileBlobManager::noteReferenced(const FileBlobHandle& blob, const BlobReferrer& referrer)
 {
     if (!blob) {
         return;
@@ -207,6 +341,42 @@ void FileBlobManager::noteReferenced(const FileBlobHandle& blob)
     auto& slot = _saveSet[blob->hash()];
     expiring = std::move(slot);
     slot = blob;
+
+    if (referrer.name.empty()) {
+        // A caller that cannot say who is referring -- a property writing
+        // itself out through a path the collect pass does not walk -- still
+        // keeps the content in the save set. It just does not get to name it.
+        return;
+    }
+    auto& referrers = _saveRefs[blob->hash()];
+    // Shared content is one file with several referrers, and the same
+    // property can be noted twice: once by the collect pass and once by its
+    // own Save().
+    if (std::none_of(referrers.begin(), referrers.end(), [&referrer](const BlobReferrer& other) {
+            return other.id == referrer.id && other.name == referrer.name;
+        })) {
+        referrers.push_back(referrer);
+    }
+}
+
+void FileBlobManager::dropReferenced(const FileBlobHandle& blob)
+{
+    if (!blob) {
+        return;
+    }
+    // Released after the lock, as in beginSave(): this may hold the last
+    // reference, and ~FileBlob takes the same mutex.
+    FileBlobHandle expiring;
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        auto it = _saveSet.find(blob->hash());
+        if (it == _saveSet.end() || it->second != blob) {
+            return;
+        }
+        expiring = std::move(it->second);
+        _saveSet.erase(it);
+        _saveRefs.erase(blob->hash());
+    }
 }
 
 std::vector<FileBlobHandle> FileBlobManager::collected() const
@@ -227,6 +397,220 @@ std::vector<FileBlobHandle> FileBlobManager::collected() const
     return pending;
 }
 
+std::vector<FileBlobManager::SaveEntry>
+FileBlobManager::planSave(const std::map<std::string, BlobIndexEntry>& previous) const
+{
+    const std::vector<FileBlobHandle> pending = collected();
+
+    std::unordered_map<std::string, std::vector<BlobReferrer>> refs;
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        refs = _saveRefs;
+    }
+
+    std::vector<SaveEntry> entries;
+    std::vector<std::string> stems;
+    std::vector<std::string> exts;
+    entries.reserve(pending.size());
+    stems.reserve(pending.size());
+    exts.reserve(pending.size());
+
+    for (const auto& blob : pending) {
+        std::vector<BlobReferrer> mine;
+        auto found = refs.find(blob->hash());
+        if (found != refs.end()) {
+            mine = found->second;
+        }
+        std::sort(mine.begin(), mine.end(), [](const BlobReferrer& a, const BlobReferrer& b) {
+            return std::tie(a.id, a.name) < std::tie(b.id, b.name);
+        });
+
+        SaveEntry entry;
+        entry.blob = blob;
+        for (const auto& referrer : mine) {
+            entry.referrers.push_back(std::to_string(referrer.id) + ":" + referrer.name);
+        }
+
+        // The name belongs to the *naming referrer* -- the live referrer with
+        // the lowest object id -- and not to the referrer set. A rule that
+        // kept a name while any referrer survived would let a blob shared by
+        // Box and Cyl keep the name Box.Image.png after Box was deleted, and
+        // internal names are reused, so a newly created Box would find its
+        // rightful name squatted on. Re-deriving means the two generations
+        // can never be live in the same save.
+        std::string stem;
+        std::string ext;
+        if (!mine.empty()) {
+            stem = mine.front().name;
+            ext = mine.front().ext;
+        }
+        if (stem.empty()) {
+            // Nothing can name it -- a view's own property, or a caller that
+            // did not say who was referring. Content addressing is then all
+            // there is, and a hash at least does not move while the content
+            // does not.
+            stem = blob->hash();
+            ext.clear();
+        }
+        // *** The stem is Object.Property, and both halves are named by
+        // whoever made them: an object's name only has to be a Python
+        // identifier, which admits any length and every script name Windows
+        // reads as a device, and a property's name admits the same. A
+        // directory project writes this as a real file, so a name the file
+        // system refuses loses the geometry with nothing but a line in the
+        // report view (docs/SharedShapeStorage.md sec 12.1). A name that was
+        // already fine is unchanged, so no existing project's files move.
+        stem = Base::Tools::portableFileName(stem, 120 - ext.size());
+        stems.push_back(std::move(stem));
+        exts.push_back(std::move(ext));
+        entries.push_back(std::move(entry));
+    }
+
+    // Assign in referrer order rather than in the content order collected()
+    // hands back: which name a collision resolves to must not depend on some
+    // other file's bytes having changed.
+    std::vector<std::size_t> order(entries.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+        return std::tie(stems[a], exts[a], entries[a].blob->hash())
+            < std::tie(stems[b], exts[b], entries[b].blob->hash());
+    });
+
+    std::set<std::string> taken;
+    // A name the previous index gave to this exact content is kept as it
+    // stands, suffix included. That is what pins a collision suffix: without
+    // it the numbering follows scan order and can migrate between saves,
+    // which is the one way a stable name still produces a spurious diff.
+    for (std::size_t i : order) {
+        for (const auto& prev : previous) {
+            if (prev.second.hash != entries[i].blob->hash()) {
+                continue;
+            }
+            if (!sameBaseName(prev.first, stems[i], exts[i])) {
+                continue;
+            }
+            if (!taken.insert(prev.first).second) {
+                continue;
+            }
+            entries[i].name = prev.first;
+            break;
+        }
+    }
+    for (std::size_t i : order) {
+        if (!entries[i].name.empty()) {
+            continue;
+        }
+        std::string candidate = stems[i] + exts[i];
+        for (int number = 1; !taken.insert(candidate).second; ++number) {
+            candidate = numberedName(stems[i], exts[i], number);
+        }
+        entries[i].name = std::move(candidate);
+    }
+
+    std::sort(entries.begin(), entries.end(), [](const SaveEntry& a, const SaveEntry& b) {
+        return a.name < b.name;
+    });
+    return entries;
+}
+
+std::map<std::string, BlobIndexEntry> FileBlobManager::readIndex(const std::string& path)
+{
+    std::map<std::string, BlobIndexEntry> index;
+    Base::FileInfo fi(path);
+    if (!fi.exists()) {
+        return index;
+    }
+
+    try {
+        Base::ifstream from(fi, std::ios::in | std::ios::binary);
+        if (!from) {
+            return index;
+        }
+        Base::XMLReader reader(path.c_str(), from);
+        if (!reader.isValid()) {
+            return index;
+        }
+        // No element count: two branches that each add a file must merge
+        // textually, and a count is exactly the line they would both edit.
+        while (reader.readNextElement()) {
+            if (std::strcmp(reader.localName(), "F") != 0) {
+                continue;
+            }
+            if (!reader.hasAttribute("n") || !reader.hasAttribute("h")) {
+                continue;
+            }
+            BlobIndexEntry entry;
+            entry.hash = reader.getAttribute("h");
+            if (reader.hasAttribute("r")) {
+                std::istringstream tokens(reader.getAttribute("r"));
+                std::string token;
+                while (tokens >> token) {
+                    entry.referrers.push_back(token);
+                }
+            }
+            index[reader.getAttribute("n")] = std::move(entry);
+        }
+    }
+    catch (const Base::Exception& e) {
+        // An unreadable index is not an error: it only means this save cannot
+        // keep the names the last one chose, and has to derive them again.
+        FC_WARN("Failed to read " << path << ": " << e.what());
+        index.clear();
+    }
+    return index;
+}
+
+void FileBlobManager::writeIndex(Base::Writer& writer, const std::vector<SaveEntry>& entries)
+{
+    writer.putNextEntry((std::string(archivePrefix()) + indexName()).c_str());
+    std::ostream& str = writer.Stream();
+    str << "<?xml version='1.0' encoding='utf-8'?>\n"
+        << "<FileStore v=\"1\">\n";
+    // One element per line and sorted by name, so a content edit is a one-line
+    // diff and two branches touching different parts of a project merge.
+    for (const auto& entry : entries) {
+        str << "  <F n=\"" << Base::Persistence::encodeAttribute(entry.name) << "\" h=\""
+            << entry.blob->hash() << "\" r=\"";
+        for (std::size_t i = 0; i < entry.referrers.size(); ++i) {
+            str << (i ? " " : "") << entry.referrers[i];
+        }
+        str << "\"/>\n";
+    }
+    str << "</FileStore>\n";
+}
+
+void FileBlobManager::prune(const std::string& dir,
+                            const std::map<std::string, BlobIndexEntry>& previous,
+                            const std::set<std::string>& kept)
+{
+    for (const auto& entry : previous) {
+        if (kept.count(entry.first)) {
+            continue;
+        }
+        Base::FileInfo fi(dir + entry.first);
+        if (fi.exists()) {
+            fi.deleteFile();
+        }
+    }
+
+    // Files a save wrote before the index existed are named by their content
+    // hash. They are ours by construction, and nothing else can identify them
+    // once the names have moved -- so they are the one thing outside the
+    // previous index that is removed. Without this an upgraded project keeps
+    // every orphan it ever accumulated, and `git add -A` commits them all.
+    QDir source(QString::fromUtf8(dir.c_str()));
+    if (!source.exists()) {
+        return;
+    }
+    for (const QFileInfo& info : source.entryInfoList(QDir::Files)) {
+        const std::string name = info.fileName().toUtf8().constData();
+        if (kept.count(name) || !isContentAddressedName(name)) {
+            continue;
+        }
+        Base::FileInfo(dir + name).deleteFile();
+    }
+}
+
 void FileBlobManager::writeBlobs(Base::Writer& writer)
 {
     // Entries are one of the two places the content can go; writeInlineBlobs()
@@ -236,39 +620,70 @@ void FileBlobManager::writeBlobs(Base::Writer& writer)
         return;
     }
 
-    std::vector<FileBlobHandle> pending = collected();
-
     // Saving under a new name gives the document a new transient directory,
     // which leaves every stored path stale. Repaired here rather than in the
     // property, because the properties of the view tier are written after this
     // point and would be repaired too late.
     relocate();
 
-    // A directory writer needs the subdirectory to exist before an entry can
-    // be opened inside it; it also lets an unchanged blob be skipped outright,
-    // since content addressing makes an existing file proof of equality. That
-    // is what keeps repeated autosaves of a document with a large embedded
-    // file cheap.
     auto* fileWriter = dynamic_cast<Base::FileWriter*>(&writer);
     std::string dir;
+    std::map<std::string, BlobIndexEntry> previous;
     if (fileWriter) {
         dir = fileWriter->getDirName() + "/" + archivePrefix();
+        // Read the index out of the directory being written, rather than
+        // remembering the one this document last wrote: a save-as writes
+        // somewhere else, where what is on disk is the only thing that says
+        // what the names there mean. An archive has no previous state to
+        // read, and rewrites every entry.
+        previous = readIndex(dir + indexName());
+    }
+
+    const std::vector<SaveEntry> entries = planSave(previous);
+    if (entries.empty() && previous.empty()) {
+        // Nothing to write and nothing to take back: leave the directory
+        // without a blobs/ in it at all.
+        return;
+    }
+
+    // A directory writer needs the subdirectory to exist before an entry can
+    // be opened inside it.
+    if (fileWriter) {
         Base::FileInfo(dir).createDirectory();
     }
 
-    for (const auto& blob : pending) {
-        if (fileWriter && Base::FileInfo(dir + blob->hash()).exists()) {
-            continue;
+    // The index first, so that what is here can be known without reading the
+    // content -- which is what a deferred read by name will need.
+    writeIndex(writer, entries);
+
+    std::set<std::string> kept;
+    for (const auto& entry : entries) {
+        kept.insert(entry.name);
+        if (fileWriter) {
+            // Names are derived now, so a file existing proves nothing about
+            // what is in it. Only the index does: it recorded what this name
+            // held when it was last written, and equal hashes over an
+            // existing file is the whole proof. That is what keeps repeated
+            // saves of a document with a large embedded file cheap.
+            auto found = previous.find(entry.name);
+            if (found != previous.end() && found->second.hash == entry.blob->hash()
+                && Base::FileInfo(dir + entry.name).exists()) {
+                continue;
+            }
         }
-        Base::ifstream from(Base::FileInfo(blob->path()), std::ios::in | std::ios::binary);
+        Base::ifstream from(Base::FileInfo(entry.blob->path()), std::ios::in | std::ios::binary);
         if (!from) {
             std::stringstream str;
-            str << "FileBlobManager::writeBlobs(): file '" << blob->path()
+            str << "FileBlobManager::writeBlobs(): file '" << entry.blob->path()
                 << "' in transient directory doesn't exist.";
             THROWM(Base::FileSystemError, str.str())
         }
-        writer.putNextEntry((std::string(archivePrefix()) + blob->hash()).c_str());
+        writer.putNextEntry((std::string(archivePrefix()) + entry.name).c_str());
         writer.Stream() << from.rdbuf();
+    }
+
+    if (fileWriter) {
+        prune(dir, previous, kept);
     }
 }
 
@@ -319,7 +734,9 @@ void FileBlobManager::restoreInlineBlobs(Base::XMLReader& reader)
             // Stored under the hash of what actually arrived, not the one the
             // file claims: the properties looking it up were written from the
             // same content, so agreeing with them is what matters.
-            FileBlobHandle blob = adoptFile(staging.c_str());
+            // The inline table carries a hash and a size, and nothing that
+            // says what the content is -- so the store keeps it unnamed.
+            FileBlobHandle blob = adoptFile(staging.c_str(), "");
             if (blob && blob->hash() != hash) {
                 FC_WARN("Included file " << hash << " does not match its content");
             }
@@ -337,6 +754,7 @@ void FileBlobManager::beginRestore(Base::XMLReader& reader)
     {
         std::lock_guard<std::mutex> guard(_mutex);
         _pending.clear();
+        _restoreClosed = false;
     }
 
     // An unpacked project keeps its content as ordinary files, so there are no
@@ -359,7 +777,7 @@ void FileBlobManager::beginRestore(Base::XMLReader& reader)
             return false;
         }
         try {
-            readBlobEntry(entry);
+            readBlobEntry(name, entry);
         }
         catch (const Base::Exception& e) {
             FC_ERR("Failed to read included file " << name << ": " << e.what());
@@ -368,8 +786,16 @@ void FileBlobManager::beginRestore(Base::XMLReader& reader)
     }, wanted);
 }
 
-void FileBlobManager::readBlobEntry(Base::Reader& entry)
+void FileBlobManager::readBlobEntry(const std::string& name, Base::Reader& entry)
 {
+    // The index sits among the content it describes and is claimed with it,
+    // so that no other consumer is offered it. It says nothing a restore
+    // needs -- identity is the hash in Document.xml -- and is read again from
+    // the target directory when the next save needs to know the names there.
+    if (name == std::string(archivePrefix()) + indexName()) {
+        return;
+    }
+
     const std::string staging = uniquePath("blob.part");
     {
         Base::ofstream to(Base::FileInfo(staging), std::ios::out | std::ios::binary | std::ios::trunc);
@@ -378,14 +804,24 @@ void FileBlobManager::readBlobEntry(Base::Reader& entry)
             str << "FileBlobManager: cannot create " << staging;
             THROWM(Base::FileSystemError, str.str())
         }
-        entry >> to.rdbuf();
+        // ***Written, not extracted.*** `entry >> to.rdbuf()` is a formatted
+        // extraction: its sentry skips leading whitespace, so content that
+        // begins with any would arrive one or more bytes short. Content
+        // addressing turns that from a quiet corruption into a blob whose
+        // hash no longer matches the one the document refers to, and the
+        // referrer is served nothing at all -- which is exactly what ASCII
+        // BRep, whose first byte is a newline, hit.
+        to << entry.rdbuf();
     }
 
     // adoptFile() hashes the content and relocates it, so the entry name is
-    // never trusted: what the archive claims and what it holds are checked
-    // against each other by construction. It also drops content that is
-    // already stored, which is what makes reopening a document cheap.
-    hold(adoptFile(staging.c_str()));
+    // never trusted for anything but the extension: what the archive claims
+    // and what it holds are checked against each other by construction. It
+    // also drops content that is already stored, which is what makes
+    // reopening a document cheap.
+    auto blob = adoptFile(staging.c_str(), Base::FileInfo(name).extension().c_str());
+    FC_TRACE("blob entry " << name << " -> " << (blob ? blob->hash() : std::string("(none)")));
+    hold(std::move(blob));
 }
 
 void FileBlobManager::restoreFromDirectory(const std::string& dir)
@@ -395,6 +831,10 @@ void FileBlobManager::restoreFromDirectory(const std::string& dir)
         return;
     }
     for (const QFileInfo& info : source.entryInfoList(QDir::Files)) {
+        if (info.fileName() == QString::fromUtf8(indexName())) {
+            // Describes the content rather than being any; see readBlobEntry().
+            continue;
+        }
         try {
             // insertFile() copies: the files belong to the project directory
             // and must stay in it.
@@ -420,7 +860,7 @@ void FileBlobManager::hold(FileBlobHandle blob)
     slot = std::move(blob);
 }
 
-void FileBlobManager::addPendingReferrer(const std::string& hash, PropertyFileIncluded* prop)
+void FileBlobManager::addPendingReferrer(const std::string& hash, BlobReferrerProperty* prop)
 {
     if (hash.empty() || !prop) {
         return;
@@ -428,14 +868,26 @@ void FileBlobManager::addPendingReferrer(const std::string& hash, PropertyFileIn
     // Content read earlier in this restore, or left over from one before it,
     // can be handed over at once. Everything else waits for the drain.
     if (auto blob = find(hash)) {
+        FC_TRACE("referrer served at once from " << hash);
         prop->assignRestoredBlob(blob);
         return;
     }
+    FC_TRACE("referrer queued for " << hash);
     std::lock_guard<std::mutex> guard(_mutex);
+    if (_restoreClosed) {
+        // Nothing will dispatch this: the hold is gone and dispatchPending()
+        // has already run for the last time. A tier restoring this late has
+        // to be restored inside the load instead -- Gui::Document does that
+        // for a view provider whose record names a blob. Queuing it would
+        // leave the property empty without a word, which is how this went
+        // unnoticed once already.
+        FC_WARN("Included file " << hash << " requested after the restore closed");
+        return;
+    }
     _pending.emplace_back(hash, prop);
 }
 
-void FileBlobManager::removePendingReferrer(PropertyFileIncluded* prop)
+void FileBlobManager::removePendingReferrer(BlobReferrerProperty* prop)
 {
     std::lock_guard<std::mutex> guard(_mutex);
     _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
@@ -445,7 +897,7 @@ void FileBlobManager::removePendingReferrer(PropertyFileIncluded* prop)
 
 void FileBlobManager::dispatchPending()
 {
-    std::vector<std::pair<std::string, PropertyFileIncluded*>> pending;
+    std::vector<std::pair<std::string, BlobReferrerProperty*>> pending;
     {
         std::lock_guard<std::mutex> guard(_mutex);
         pending.swap(_pending);
@@ -467,6 +919,9 @@ void FileBlobManager::endRestore()
         std::lock_guard<std::mutex> guard(_mutex);
         _pending.clear();
         hold.swap(_restoreHold);
+        // From here a referrer arriving is a bug in whatever produced it, not
+        // something to wait for; addPendingReferrer() says so out loud.
+        _restoreClosed = true;
     }
     // Released outside the lock: the last reference to unclaimed content dies
     // here, and ~FileBlob calls back into release().
@@ -479,9 +934,29 @@ std::string FileBlobManager::blobDir() const
     return root;
 }
 
-std::string FileBlobManager::blobPath(const std::string& hash) const
+std::string FileBlobManager::newBlobPath(const char* extension) const
 {
-    return blobDir() + "/" + hash;
+    // A uuid, not the content hash: at insertFile() time there may be no
+    // referrer to name the file after, the store is a cache nothing outside
+    // may address by path, and a stored file is read-only and held by
+    // absolute path -- so renaming one mid-session would be churn for
+    // nothing. The extension is kept because the path is handed to whatever
+    // consumes the content, and a file with no extension is a file some
+    // viewers will not open.
+    const std::string dir = blobDir();
+    // Whatever the caller passed, it becomes part of a path here, and the
+    // callers upstream of this take it from a name that came from Python.
+    std::string ext = extension ? extension : "";
+    if (!ext.empty() && ext[0] == '.') {
+        ext.erase(ext.begin());
+    }
+    ext = isPlainExtension(ext) ? "." + ext : std::string();
+    Base::FileInfo fi;
+    do {
+        Base::Uuid uuid;
+        fi.setFile(dir + "/" + uuid.getValue() + ext);
+    } while (fi.exists());
+    return fi.filePath();
 }
 
 std::string FileBlobManager::uniquePath(const std::string& name) const
@@ -519,7 +994,7 @@ FileBlobHandle FileBlobManager::find(const std::string& hash) const
     return it->second.lock();
 }
 
-FileBlobHandle FileBlobManager::insertFile(const char* srcPath)
+FileBlobHandle FileBlobManager::insertFile(const char* srcPath, const char* extension)
 {
     Base::FileInfo src(srcPath);
     if (!src.exists()) {
@@ -544,7 +1019,14 @@ FileBlobHandle FileBlobManager::insertFile(const char* srcPath)
         }
     }
 
-    const std::string dst = blobPath(hash);
+    // The name the referrer will store this under decides the extension when
+    // there is one: the source is often a scratch file whose name says less
+    // about the content than the name the property gives it.
+    std::string ext = extension ? extension : src.extension();
+    if (!ext.empty() && ext[0] != '.') {
+        ext.insert(ext.begin(), '.');
+    }
+    const std::string dst = newBlobPath(ext.empty() ? nullptr : ext.c_str());
     if (!src.copyTo(dst.c_str())) {
         std::stringstream str;
         str << "FileBlobManager: cannot copy " << srcPath << " to " << dst;
@@ -559,7 +1041,7 @@ FileBlobHandle FileBlobManager::insertFile(const char* srcPath)
     return make(hash, dst, fileSize(dst.c_str()));
 }
 
-FileBlobHandle FileBlobManager::adoptFile(const char* path)
+FileBlobHandle FileBlobManager::adoptFile(const char* path, const char* extension)
 {
     Base::FileInfo fi(path);
     if (!fi.exists()) {
@@ -589,8 +1071,15 @@ FileBlobHandle FileBlobManager::adoptFile(const char* path)
     }
 
     // An adopted file is a scratch file, or freshly restored content sitting
-    // at a staging path. Move it to its content-addressed location.
-    const std::string dst = blobPath(hash);
+    // at a staging path. Move it into the store. A scratch file is named
+    // after what it holds, so its own extension is the right one to keep; a
+    // staging path is not, and its caller passes what it knows instead --
+    // which may be nothing, and an empty extension says exactly that.
+    std::string ext = extension ? extension : fi.extension();
+    if (!ext.empty() && ext[0] != '.') {
+        ext.insert(ext.begin(), '.');
+    }
+    const std::string dst = newBlobPath(ext.empty() ? nullptr : ext.c_str());
     if (fi.filePath() != dst) {
         fi.setPermissions(Base::FileInfo::ReadWrite);
         if (!fi.renameFile(dst.c_str())) {

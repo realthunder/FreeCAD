@@ -1128,7 +1128,7 @@ is worth more and this should wait.
 | phase | new/changed | note |
 |---|---|---|
 | 1 hierarchy | **new** `Gui/Renderer/ProxyHierarchy.{h,cpp}` | plain floats, no bgfx/Coin/OCCT — the discipline `SceneLadder.h` already keeps, so both tiers can share the policy. Input is the instance table of §3.1, projected from `DrawCallList` |
-| 2 generation | `Gui/Renderer/MeshSimplify.*`, refine pool | merge N transformed meshes per (cell, material), then decimate; bottom-up per §7.1 |
+| 2 generation | `Gui/Renderer/MeshSimplify.*`, **new** `Gui/Renderer/ProxyStore.{h,cpp}` | merge N transformed meshes per (cell, material), then decimate; bottom-up per sec 7.1, kept per node id -- built, see 11.1c-e |
 | 3 the cut | `Gui/Renderer/SceneLadder.cpp` | beside `planMeshRefines`, sharing `PlanBoxes` |
 | 4 drawing | `Gui/Inventor/SoFCRendererBridge.cpp`, `BGFXRenderer.cpp` | needs the per-child slices of `IncrementalPublish` phase 4 |
 | 5 picking/highlight | `ProxyHierarchy`, selection path, shaders | in-proxy tint is now a phase-4 requirement, not a phase-5 nicety — see §11.4 |
@@ -1500,6 +1500,431 @@ along with everything it skipped for the triangle budget. Groups with a
 single member are not proxied at all (56 of them here), and lines and
 points are their own material buckets and stay exact (48 here) — a line
 proxy is a separate question this does not touch.
+
+### 11.1d Decided: the deleted mass is carried per cell, not per member
+
+`RenderDebug_ProxyGen` now generates both candidate stand-ins on every
+merge it makes and reports what each cost and what each committed, so
+11.1c's open question is answered by the model rather than by the
+argument. Same machine, same document, same converged whole-assembly
+camera (8479 triangle draws over 8328 distinct meshes, 140-163 nodes on
+the 64px cut), 19 reports aggregated at camera A and 8 at 4x zoom;
+29161 members sampled in the far field.
+
+A stand-in is an axis-aligned box, 12 triangles, appended after the
+decimation -- what `DrawCall::standIn` already draws for geometry that
+has not arrived. The two candidates:
+
+- **per collapsed member**: one box around each member the decimation
+  dropped;
+- **per occupied cell**: one box per cell of the decimation grid that
+  holds dropped content, sized to the content in that cell rather than
+  to the cell.
+
+Both are **conservative covers of the same point set** -- every
+deleted vertex lands inside a box either way -- which is what makes them
+comparable at all: the triangles are the price, and the volume and area
+are how loosely each one holds the same content. Neither can win by
+covering less of the model.
+
+**Far field (camera A, the operating point).**
+
+| grid | members lost | per-member boxes / tri | per-cell boxes / tri | per-cell volume | per-cell area | per-cell names |
+|---|---|---|---|---|---|---|
+| cell/4 | 25106 (86%) | 25106 / 301 k | 5974 / 72 k (0.24x) | 1.61x | 0.76x | 1222 (5%) |
+| cell/8 | 21866 (75%) | 21866 / 262 k | 9220 / 111 k (0.42x) | 0.50x | 0.47x | 2026 (9%) |
+| cell/16 | 16173 (55%) | 16173 / 194 k | 12159 / 146 k (0.75x) | 0.77x | 0.63x | 2447 (15%) |
+
+The volume and area columns are per-cell as a fraction of per-member;
+under 1.0 means the per-cell cover is the tighter of the two.
+
+**The verdict is per cell, and it is not close at the operating grid.**
+At cell/8 it costs 2.4x fewer triangles *and* commits half the volume
+and half the surface area. That is the result 11.1c did not predict: the
+expectation was that per-cell would buy its cheapness by filling the
+gaps between the parts it aggregates, and instead it is tighter on both
+counts, because the loss runs the other way too -- a member whose shape
+is nothing like its bounding box (a long diagonal bracket, a bent clip)
+is over-covered by the one box per-member gives it, and the grid cuts
+that box into pieces that follow the part.
+
+!! The gap-filling does show up, but only at the coarsest grid: at
+cell/4 per-cell commits **1.61x the volume** while still holding less
+surface area. A cell there is a quarter of the node, so a box that
+unions whatever is in one fills real space between real parts. It is an
+argument against standing in at grids coarser than cell/8, not against
+the representation.
+
+**It is close to area-preserving, which is the property that
+matters.** Section 4.1's diagnosis is that a far field stops behaving
+like a surface and starts behaving like a partially opaque cloud, so
+what has to survive is coverage. At cell/8 the decimation deletes
+2.25e4 of surface area and the per-cell boxes put back 1.81e4 of it --
+0.81x, slightly under. Per-member puts back 3.85e4, **1.7x the area it
+is standing in for**: it does not restore the missing coverage, it
+overshoots it, and pays 2.4x more triangles to do so.
+
+**Near field (camera B, 4x zoom).** The ordering reverses on cost and
+holds on tightness: per-cell costs **1.2x to 5.8x more boxes** (its
+count is bounded by the grid, not by the member count, so a cut node
+with few deletions still pays for every cell it spans) while committing
+0.13x-0.46x the volume. This is the regime where per-member is the
+cheaper of the two -- and it is also the regime where deletion barely
+happens: 255 members lost at cell/16 against 16173 in the far field. The
+absolute cost of being wrong here is 18 k triangles against a scene of
+several million.
+
+**What per cell costs, stated plainly: identity.** A box that stands in
+for one member sits in that member's part slot and a pick still names
+the part it hit; a cell holding several members can honestly name none
+of them, and the far field is crowded -- **per-cell names 5-15% of the
+deleted members against per-member's 100%**. Section 6's invariant is
+kept either way (a pick resolves to no object, never to the wrong one),
+but per cell it resolves to nothing far more often. This is the same
+trade the rung ladder already makes and it is judged acceptable at a
+distance where the whole node is 64 px; near the camera, where a user
+picks, the deletion is small and the cut has descended past the node
+anyway.
+
+**The structural argument, which the measurement does not see and
+which points the same way.** Section 7.1 builds a parent's proxy from
+its children's, so whatever carries the deleted mass has to compose the
+same way. Per cell it does: the grids nest, so eight child cells fall in
+one parent cell and their boxes union into one, and the parent's
+stand-in count stays bounded by the parent's own grid. Per member it
+does not: a parent inherits every member deleted anywhere below it, so
+the stand-in table grows with the subtree while the proxy it accompanies
+shrinks -- exactly the wrong shape, and the bottom-up construction would
+have baked it into every level.
+
+! **What neither representation is: cheap.** At cell/8 the per-cell
+stand-ins cost 1.29x the proxy's own triangles, so a node's real cost is
+the proxy plus a bit more than the proxy again. The aggregation still
+wins by a wide margin against the source, but phase 3's cut has to price
+a node at proxy + stand-in, not at proxy, and 11.1c's error term has to
+account for the stand-in as geometry that is present rather than
+missing.
+
+! Two things this does not settle. The boxes are opaque, so the
+"partially opaque cloud" of section 4.1 is approximated by a solid at
+the coverage the boxes happen to have; a normal distribution per cell
+(SGGX, section 4.1) is the next refinement and it is orthogonal to which
+unit the stand-in is keyed on. And a box is not a voxel: this measures
+the cheap end of section 5(2), not Far Voxels itself.
+
+### 11.1e Built: generation bottom-up, and what it costs against from source
+
+`ProxyStore` (`Gui/Renderer/ProxyStore.{h,cpp}`) generates a subtree
+post-order and keeps the result keyed by ProxyNode::id. A node merges
+its own residents together with what its children already built --
+their proxies and the boxes standing in for what those children deleted
+-- and `ProxyGenOptions::fromSource` keeps the old behaviour as a
+control, because "bottom-up is cheaper" is a claim about this
+codebase's numbers rather than a citation. `RenderDebug_ProxyGen`
+reports both over the nodes a cut stops on.
+
+MiSTer Express, converged, camera A, four sampled cut nodes covering
+122 generated nodes over a six-level chain:
+
+| | merged | time | entries | drawn: proxy + stand-in | worst err/extent | area kept |
+|---|---|---|---|---|---|---|
+| bottom-up | 0.05 Mtri | 9 ms | 127 | 6004 + 2436 = 8440 | 0.151 | 59% |
+| from source | 0.11 Mtri | 18 ms | 129 | 6020 + 9060 = 15080 | 0.135 | 70% |
+
+**Generation halves**, which is section 7.1's claim and the shape it
+predicted: each level merges a decimation of the level below, so the
+total is a geometric series rather than the source counted once per
+level. Six levels deep it is 2.2x here rather than an order of
+magnitude, because most of the cost is the leaves either way -- the
+ratio grows with depth, and depth grows with model size.
+
+**It also halves what the node draws, which was not predicted.** The
+proxy triangles are the same to within a rounding (6004 against 6020 --
+the same merge, one level of decimation apart), and the whole
+difference is the stand-ins: **2436 against 9060, 3.7x fewer**. That is
+the nesting of 11.1d paying a second time. Built bottom-up, a child's
+boxes enter the parent's merge as geometry and re-aggregate onto the
+parent's coarser grid; generated from source, every level re-derives
+the same fine boxes from the same deleted members and carries all of
+them. So the representation that made the deleted mass affordable per
+level is also what stops it accumulating between levels.
+
+**What it costs is 12% more error**: 0.151 against 0.135 as a fraction
+of extent, from decimating a decimation. Against halving both the
+generation cost and the drawn triangles that is a good trade, and it
+is bounded by construction rather than by luck -- the stored error is
+the worst input plus this level's displacement, so it is a bound, and
+monotone up the tree (which is what section 8.1 needs for nodes to
+decide independently).
+
+The area kept falls too, 59% against 70%. Part of that is definitional:
+a coarser box holds less surface than the several boxes it replaces,
+which is what aggregation is. Part of it is real, and it is the reason
+the stored error has to be read beside the area rather than alone.
+
+!! **One gap, inherent to the rule.** A material bucket whose members
+are spread one per child never accumulates: each child refuses it as a
+single member, so the parent sees nothing to merge. Measured as 127
+entries against the control's 129. Nothing is lost visually -- those
+instances draw exactly, which is what the cut does with anything it has
+no proxy for -- but the aggregation is not available there. Passing a
+refused bucket's residents up to the parent would close it, and that is
+machinery for phase 3 rather than a defect in what is built.
+
+A related case did have to be fixed: a node whose bucket holds exactly
+one *child proxy* refused under the single-object rule (minMerge),
+which broke the chain wherever a subtree narrowed. Coarsening a lone
+child proxy onto this level's grid is exactly what a level is for, so
+the rule now applies to source members only.
+
+### 11.1f Built and measured: the cut reads the error, and pays for the proxy
+
+Two stand-ins went into phase 1 because nothing had been generated yet,
+and both were flagged where they were used: the descent judged a node by
+its projected *extent* rather than by an error it did not have, and the
+saving was quoted as what a proxy replaces because nobody knew what one
+costs. `ProxyStore` removes both. `ProxyNodeCost` carries the measured
+error ratio and the drawn primitives per node, `selectCut` takes it, and
+`RenderDebug_ProxyGen` generates the whole partition and sweeps
+tolerances over both rules.
+
+MiSTer Express, converged, whole-assembly camera, 1863x1064. The store
+is 1802 nodes and 2259 entries, 1.95 Mtri merged in 292 ms, holding
+151 k proxy and 182 k stand-in triangles.
+
+| tol | extent: draws (proxy) | extent covers | error: draws (proxy) | error covers | proxies cost | drawn | net |
+|---|---|---|---|---|---|---|---|
+| 4px | 36717 (1188) | 31.8 k prims | 13071 (482) | 886 k | 76 k | 1.82 M of 2.63 M | **1.44x** |
+| 16px | 19290 (2914) | 761 k | 6600 (241) | 1.14 M | 49 k | 1.56 M of 2.66 M | **1.70x** |
+| 64px | 9581 (1490) | 983 k | 3444 (177) | 2.03 M | 40 k | 0.80 M of 2.79 M | **3.48x** |
+
+**The measured error is what makes a usable tolerance aggregate at
+all.** At 4 px -- an error a viewer has no way to see -- the extent rule
+aggregates 32 k primitives out of 2.6 M, which is 1.2% of the frame and
+is why 11.1b read as a weak case. The same tolerance read as *error*
+aggregates 886 k, and the frame drops by 1.44x. The rule did not change;
+what changed is that a node is now judged by what it commits rather than
+by how big it is, and 11.1c already showed those differ by a factor of
+five within one camera.
+
+**Draws fall by the same rule, not despite it**: 3444 against 9581 at
+64 px, 13071 against 36717 at 4 px. A frontier that stops higher issues
+fewer of both.
+
+**A proxy is cheap; what stays exact is not.** The proxies the error cut
+stops on cost 40-76 k primitives to stand for 0.9-2.0 M -- 4% at 64 px,
+9% at 4 px. So the ceiling on the win is set almost entirely by the
+geometry the cut still draws exactly, which is the near half of the
+model, and not by what aggregation costs. That is the opposite of the
+worry in 11.4, and it says where the next work is: it is not worth
+tuning the proxies, it is worth asking why 1.8 M primitives at 4 px are
+still exact. 11.1g asked, and the answer is that they are near field --
+and the same instrument found that this table overstates its own
+saving, because it counts edges under a stopped node as covered by a
+proxy that never had them.
+
+!! **Three things this table is not.** The denominator moves between
+rows: a cut that stops higher culls at node granularity, so a coarse
+stop keeps some off-screen members its finer counterpart would have
+dropped, and each row is read against its own visible total rather than
+against a fixed one. The units are mixed: `exactPrims` counts whatever
+a draw issues, so line segments and points are in it, while a proxy is
+triangles only -- lines and points stay exact by design (11.1c). And
+410 buckets were skipped as single-member, which is the gap of 11.1e at
+scale: those branches never aggregate, so the table understates what a
+complete generation would give.
+
+### 11.1g Measured: the exact mass is near field, and the edges are the ceiling
+
+11.1f ended by saying it was not worth tuning the proxies, it was worth
+asking why 1.8 M primitives at 4 px are still drawn exactly. The
+instrument for that is `ProxyHierarchy::explainExact`: every exact
+instance is a resident of a node the descent went past, so the reason
+belongs to the node -- its error was resolvable, nothing was generated
+for it, or it held too few members to be worth a proxy -- crossed with
+how large the instance itself projects, in multiples of the tolerance.
+`ProxyCut` records which node each exact instance came from, because the
+reason cannot be recovered afterwards without searching the partition
+again.
+
+MiSTer Express, converged, whole-assembly camera, same store as 11.1f
+(1802 nodes, 2259 entries, 410 buckets skipped as single-member).
+
+| tol | exact | resolvable | no proxy | too few members | <= 1x tol | > 16x tol |
+|---|---|---|---|---|---|---|
+| 4px | 2.00 M / 35925 inst | 1.91 M (95%) | 0.09 M (5%) | 0 | 0.04 M | 1.44 M |
+| 16px | 1.87 M / 34909 | 1.79 M (96%) | 0.08 M (4%) | 0 | 0.32 M | 0.66 M |
+| 64px | 1.58 M / 34207 | 1.52 M (96%) | 0.06 M (4%) | 0 | 0.41 M | 0.08 M |
+
+**The answer to 11.1f's question is that the exact mass is near field,
+and it is near field correctly.** 95-96% of it sits under a node whose
+own measured error the camera can resolve, which is the one reason that
+is not a gap. At 4 px, 1.44 M of the 2.00 M is carried by instances
+projecting to more than *sixteen times* the tolerance -- 64 px and up on
+a 1064 px viewport -- and no cut should touch those. The hoped-for
+bug-shaped cause is 4-5% and never larger, so the 410 single-member
+buckets of 11.1e are worth closing for tidiness and not for the frame.
+
+#### KEY: the same instrument found the table above it was overstating
+
+Asked from the other side -- what does a stopped node count as covered
+that no generated proxy draws -- the readout answered 17-27% of the
+covered figure, and **99% of it was edges**. A cut covers everything
+below a node it stops on; generation accepts triangles only (11.1c: a
+decimated edge is not an edge), so an edge under a stopped node was
+being counted as removed while still having to be issued. The saving
+11.1f quoted was gross in a second way nobody had noticed.
+
+`ProxyInstance::mergeable` closes it: set from the same rule
+`ProxyStore::build` applies, read by `selectCut`, which now walks a
+stopped node's subtree and puts what no proxy can stand for into the
+exact list beside the proxy rather than under it. `verifyCut` reads
+"its covering proxy" the same strict way. It costs a subtree walk per
+stopped node -- which phase 4 has to do anyway to issue those draws.
+
+| tol | 11.1f drawn / net | corrected drawn / net | 11.1f draws | corrected draws |
+|---|---|---|---|---|
+| 4px | 1.82 M, **1.80x** | 2.13 M of 3.31 M, **1.56x** | 13300 (497 proxy) | 36574 (649) |
+| 16px | 1.55 M, **2.17x** | 1.93 M of 3.31 M, **1.72x** | 6600 (241) | 35193 (284) |
+| 64px | 1.01 M, **3.34x** | 1.62 M of 3.37 M, **2.08x** | 3444 (177) | 34388 (181) |
+
+The primitive win survives, smaller: 1.56x to 2.08x rather than 1.80x
+to 3.34x. **The draw win does not survive at all.** 11.1f reported
+draws falling from 9581 to 3444 at 64 px; corrected, the same cut
+issues 34388, because 30823 edge draws below stopped nodes were being
+counted as absorbed by proxies that never had them. What is left
+uncovered after the fix is the generation gap proper, and it is 0.2-1.8%
+-- 50 to 73 instances.
+
+#### KEY: what this makes the next question
+
+The far field's ceiling is **un-aggregatable edge geometry**, not proxy
+cost and not the generation gap. It shows up twice in the same table.
+At 64 px, 0.41 M of the 1.58 M still exact is carried by instances
+projecting to *less* than the tolerance -- 30723 of them, almost all
+edges, each too small for a viewer to resolve and none of them
+mergeable. And the draw count, which the cut was built to reduce, is
+now dominated by the same population: 34388 draws of which 181 are
+proxies.
+
+So an aggregating far field has to say something about edges. Three
+candidates were listed here, in the order they should be tried -- and
+11.1h then found that the first of them is already written as the
+element contract, so it needed no new rule at all. The list is kept
+because the other two remain the answer for a *floating* edge, which
+no contract gates:
+
+1. **Drop them below a tolerance.** An edge whose whole part projects to
+   under a pixel of error contributes a darkening, not a line. Cheapest
+   to build and the appearance question is the whole of the risk --
+   which makes it a pixel comparison, and 12.21's injected-failure
+   harness is the shape of that test.
+2. **Merge the line sets per (cell, material) the way triangles are
+   merged.** No decimation, just concatenation into one buffer: it
+   removes draws without removing primitives, and 11.1b-prims already
+   established that draws alone are not what costs on this scene -- so
+   this is the option that helps least on the axis that matters.
+3. **Decimate them as polylines**, which is the only one that removes
+   primitives, and the only one that needs a simplifier that does not
+   exist yet.
+
+None of this changes phase 3's remaining work (hysteresis on a retained
+cut, incremental index update, wiring into `SceneLadder.cpp`), and all
+of it is measured against a cut that now reports what it would actually
+issue.
+
+### 11.1h Built: the far field does not need an edge rule, it needs the element contract
+
+11.1g ended with three candidates for the edge ceiling and picked
+"drop them below a tolerance" as the cheapest, which would have meant a
+new knob, a new threshold and a fresh argument about appearance. None
+of that is necessary. **The rule is already written, already shipped
+and already ruled on** (docs/SceneStreaming.md 13b, the element
+contract):
+
+> An attached LINE set draws only while its object's face set is shown
+> and memory allows. An attached POINT set draws only while its object's
+> line set is shown. A FLOATING point or line set ranks WITH THE FACES;
+> it is the object, and it is never gated.
+
+and the half of it that decides this case is the coarseness half, in
+`gatedForMemory`:
+
+> An edge set describes the shape its faces approximate, so drawing it
+> over a rough rung decorates geometry that is not the answer yet.
+
+**A proxy is the coarsest rung there is.** An attached edge below a
+node the cut stopped on is decorating a shape that has been merged into
+a cluster with twenty others; the contract already says that edge does
+not draw. A floating edge -- a sketch, a datum line, a wire, or a set
+the producer has not classified -- ranks with the faces and must still
+be drawn exactly, because nothing else on screen would show it.
+
+So `ProxyInstance` carries the producer's `attachedOnly` bit, and
+`selectCut` applies the contract's own dependency, per object and in
+two passes: whose faces did a proxy take, then, of everything below a
+stopped node, gate the attached sets belonging to those objects and
+draw the rest. `verifyCut` names the third outcome explicitly and
+recomputes it from the rule rather than reading the cut's counters, so
+a member the cut silently dropped still counts as a violation.
+
+MiSTer Express, converged, same store and camera as 11.1f and 11.1g.
+
+| tol | 11.1f: net / draws | 11.1g corrected: net / draws | with the contract: net / draws | gated |
+|---|---|---|---|---|
+| 4px | 1.80x / 13300 | 1.56x / 36574 | **1.83x** / 21814 (526 proxy) | 14519 sets, 251 k prims |
+| 16px | 2.17x / 6600 | 1.72x / 35193 | **2.16x** / 17315 (258) | 17830, 354 k |
+| 64px | 3.34x / 3444 | 2.08x / 34388 | **3.31x** / 14270 (181) | 20333, 601 k |
+
+**The number 11.1f reported comes back, and this time it is real.** It
+was 3.34x at 64 px because the edges quietly disappeared from the
+accounting; it is 3.31x now because they quietly disappear from the
+*frame*, on a rule that predates this workstream and that a user has
+already accepted for memory pressure and for coarse rungs. The
+difference between the two middle columns -- 2.08x and 3.31x -- is
+what the contract is worth here: 601 k primitives at 64 px.
+
+#### !! The wiring this obliges phase 4 to get right
+
+The gate decides "shown" from the draws present in the frame, and a
+proxied object contributes none:
+
+    if (d.material.type == Render::Material::Line) {
+        if (!objectsWithTriangles.count(d.objectKey)) {
+            const bool late = incompleteObjects.count(d.objectKey) != 0;
+            return late;          // not late => NOT gated => it DRAWS
+        }
+        const bool coarse = objectsCoarseFaces.count(d.objectKey) != 0;
+        return dropLines || coarse;
+    }
+
+An object whose faces a proxy took has no face draw in the scene, so it
+takes the first branch, reads as "absent, not late", and hits the
+**display-mode exemption** -- the rule that stops a genuine Wireframe
+or Points object from showing nothing. The edge would then draw, which
+is the exact opposite of what the cut planned, and the frame would look
+like 11.1g while the plan reported 11.1h.
+
+The fix is not a new branch. A stopped node must register every object
+it covers into **both** `objectsWithTriangles` and
+`objectsCoarseFaces`: its faces *are* present and they *are* coarse,
+which is true, and the existing rule then produces the right answer with
+its existing order, its existing stagger and its existing on-top and
+highlight exemptions.
+
+#### What is left of the edge ceiling, and it is a draw-count question
+
+Primitives are no longer where edges hurt: what still draws exactly
+below a stopped node is 34 k primitives at 64 px, against the 601 k the
+contract gates. But those 34 k arrive as **10813 draws of about three
+primitives each**, and they are three quarters of the 14270 draws the
+whole cut issues. They are the sets the contract calls floating -- and
+`attachedOnly` is false *by default*, meaning "the producer has not
+classified this", so an unclassified set and a genuine sketch line are
+indistinguishable in the flag (13b records the same trap for the load
+storm). Whether that population is really floating, or merely
+unclassified, is the next thing worth measuring, and it is a question
+about the producer rather than about the far field.
 
 ### 11.2 What the code already gives us
 
