@@ -3478,10 +3478,12 @@ void Document::collectFileBlobs(const std::vector<App::DocumentObject*>& objs) c
         std::vector<Property*> props;
         container->getPropertyList(props);
         for (auto prop : props) {
-            if (auto file = Base::freecad_dynamic_cast<PropertyFileIncluded>(prop)) {
-                // The referrer is what names the file the content is saved
-                // to, and this pass is where the property is known.
-                manager.noteReferenced(file->getBlob(), FileBlobManager::referrerOf(file));
+            // Any property that stores its value as blob content, not just
+            // the one that did when this pass was written: a cast to a
+            // concrete class is a list of what gets saved, and a property
+            // left off it loses its content silently.
+            if (auto owner = dynamic_cast<BlobReferrerProperty*>(prop)) {
+                owner->collectBlobs(manager, nullptr);
             }
         }
     };

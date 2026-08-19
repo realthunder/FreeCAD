@@ -1894,9 +1894,8 @@ void Document::collectFiles(App::FileBlobManager &manager,
         std::vector<App::Property*> props;
         container->getPropertyList(props);
         for (auto prop : props) {
-            if (auto file = Base::freecad_dynamic_cast<App::PropertyFileIncluded>(prop)) {
-                manager.noteReferenced(file->getBlob(),
-                                       App::FileBlobManager::referrerOf(file, object));
+            if (auto owner = dynamic_cast<App::BlobReferrerProperty*>(prop)) {
+                owner->collectBlobs(manager, object);
             }
         }
     };
