@@ -717,6 +717,42 @@ metallic-roughness map):
   at translation time, because the base colour can arrive per vertex or
   per face; the engine asks for it by passing a negative metalness.
 
+### What the branch costs
+
+Measured 2026-08-19 on an RTX 3070 Ti Laptop (D3D12 via WSLg), one
+1430x725 view, 1018692 covered pixels, every other effect pinned off, by
+`scripts/pbr_cost_probe.py` + `scripts/pbr_cost_report.py`. Per
+full-screen shading pass:
+
+| leg | serialized clock | free-running clock |
+| --- | --- | --- |
+| Phong | 0.057 ms | 0.059 ms |
+| PBR | 0.105 ms | 0.107 ms |
+| PBR, `PBRFromSpecular` off | 0.111 ms | 0.109 ms |
+
+**PBR costs 1.8x Phong per fragment** -- about +0.048 ms on a fully
+covered 1080p frame, +0.09 ms at 1440p. The two clocks are independent
+(one serialized by a readback, one free-running) and agree to 2%.
+
+Two things follow, and the second is the one that decides anything:
+
+- **`fcBaseFromSpecular` is free.** It was expected to be the expensive
+  half, since it runs for every Phong-authored material -- which is
+  nearly all of them -- and it does not show up above noise on either
+  clock. Whether to read a specular colour as material data is a
+  question about how models should LOOK, not about frame cost.
+- **A desktop frame cannot see any of this.** It had to be amplified by
+  ~800x overdraw before the GPU became what the frame waits for. At
+  ordinary coverage the frame is bound by this renderer's own C++ and
+  the Qt/Coin composite, and a 14x sweep of the covered-pixel count
+  moved it by nothing at all. So on the desktop tier the shading model
+  is not what a frame costs.
+
+  It does not follow that the ratio is harmless everywhere. 1.8x is a
+  ratio on fragment work, and the mobile and browser tiers are exactly
+  where fragment work binds. The number to carry to that decision is the
+  ratio, not the milliseconds.
+
 ### Environment (image based lighting)
 
 PBR shading (`Render_PBR`) is lit by a prefiltered environment cubemap
