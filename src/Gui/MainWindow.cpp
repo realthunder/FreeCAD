@@ -654,6 +654,38 @@ static inline void _updateDockWidget(const char *name,
     }
 }
 
+// Reading "Enabled" twice with opposite defaults is how we tell an unset entry
+// apart from one set to false. Only when it is unset -- a fresh profile, or one
+// predating the separate tree/property docks -- do we fall back to the old
+// per-dock visibility flag, which defaults to the split views.
+static bool _treeViewEnabled()
+{
+    ParameterGrp::handle group = App::GetApplication().GetUserParameter().
+            GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("DockWindows")->GetGroup("TreeView");
+    bool enabled = group->GetBool("Enabled", true);
+    if (enabled != group->GetBool("Enabled", false)) {
+        enabled = App::GetApplication().GetUserParameter().GetGroup("BaseApp")
+                        ->GetGroup("MainWindow")->GetGroup("DockWindows")->GetBool("Std_TreeView",true);
+    }
+    return enabled;
+}
+
+bool MainWindow::comboViewShowsModel()
+{
+    if (!_treeViewEnabled())
+        return true;
+    return App::GetApplication().GetUserParameter().GetGroup("BaseApp")
+            ->GetGroup("Preferences")->GetGroup("DockWindows")
+            ->GetGroup("ComboView")->GetBool("Enabled", false);
+}
+
+Qt::DockWidgetArea MainWindow::comboViewDockArea()
+{
+    // With the model in its own dock the combo view is nothing but the task
+    // panel, and that belongs opposite the tree.
+    return comboViewShowsModel() ? Qt::LeftDockWidgetArea : Qt::RightDockWidgetArea;
+}
+
 void MainWindow::initDockWindows(bool show)
 {
     bool treeView = false;
@@ -662,14 +694,10 @@ void MainWindow::initDockWindows(bool show)
         //work through parameter.
         ParameterGrp::handle group = App::GetApplication().GetUserParameter().
                 GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("DockWindows")->GetGroup("TreeView");
-        bool enabled = group->GetBool("Enabled", true);
-        if (enabled != group->GetBool("Enabled", false)) {
-            enabled = App::GetApplication().GetUserParameter().GetGroup("BaseApp")
-                            ->GetGroup("MainWindow")->GetGroup("DockWindows")->GetBool("Std_TreeView",false);
-        }
+        bool enabled = _treeViewEnabled();
         group->SetBool("Enabled", enabled); //ensure entry exists.
         treeView = enabled;
-        _updateDockWidget("Std_TreeView", enabled, show, Qt::RightDockWidgetArea,
+        _updateDockWidget("Std_TreeView", enabled, show, Qt::LeftDockWidgetArea,
             [](QWidget *widget) {
                 if(widget)
                     return widget;
@@ -692,7 +720,7 @@ void MainWindow::initDockWindows(bool show)
                             ->GetGroup("MainWindow")->GetGroup("DockWindows")->GetBool("Std_PropertyView",false);
         }
         group->SetBool("Enabled", enabled); //ensure entry exists.
-        _updateDockWidget("Std_PropertyView", enabled, show, Qt::RightDockWidgetArea,
+        _updateDockWidget("Std_PropertyView", enabled, show, Qt::LeftDockWidgetArea,
             [](QWidget *widget) {
                 if(widget)
                     return widget;
@@ -710,9 +738,10 @@ void MainWindow::initDockWindows(bool show)
         if (!enable) {
             ParameterGrp::handle group = App::GetApplication().GetUserParameter().
                     GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("DockWindows")->GetGroup("ComboView");
-            enable = group->GetBool("Enabled", true);
+            enable = group->GetBool("Enabled", false);
         }
-        _updateDockWidget("Std_ComboView", true, show, Qt::LeftDockWidgetArea,
+        _updateDockWidget("Std_ComboView", true, show,
+                enable ? Qt::LeftDockWidgetArea : Qt::RightDockWidgetArea,
             [enable](QWidget *widget) {
                 auto pcComboView = qobject_cast<ComboView*>(widget);
                 if(widget) {

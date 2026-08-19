@@ -898,8 +898,10 @@ DockWindowItems* StdWorkbench::setupDockWindows() const
     root->addDockWidget("Std_PropertyView", Qt::LeftDockWidgetArea, true, false);
     root->addDockWidget("Std_SelectionView", Qt::LeftDockWidgetArea, false, false);
     root->addDockWidget("Std_TaskWatcher", Qt::LeftDockWidgetArea, false, false);
-    root->addDockWidget("Std_ComboView", Qt::LeftDockWidgetArea, true, true);
-    root->addDockWidget("Std_TaskView", Qt::LeftDockWidgetArea, true, true);
+    // The combo view keeps the left side only while it still carries the model
+    // tree; reduced to the task panel it goes opposite the tree, on the right.
+    root->addDockWidget("Std_ComboView", MainWindow::comboViewDockArea(), true, true);
+    root->addDockWidget("Std_TaskView", Qt::RightDockWidgetArea, true, true);
     root->addDockWidget("Std_ReportView", Qt::BottomDockWidgetArea, true, true);
     root->addDockWidget("Std_PythonView", Qt::BottomDockWidgetArea, true, true);
 
