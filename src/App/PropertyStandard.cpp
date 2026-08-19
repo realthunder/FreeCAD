@@ -4528,6 +4528,15 @@ void PropertyMaterialList::Save(Base::Writer &writer) const
         carrier.setValue(_finish);
         carrier.Save(writer);
     }
+    // The texture goes out the same way and for the same reason: below
+    // schema 5 the material encodings are upstream's, they have nowhere to
+    // put one, and SaveSchemaVersion defaults to 4 -- so without this a
+    // texture would vanish from every ordinary document.
+    if (writer.getSchemaVersion() < 5 && !_texturePalette.empty()) {
+        PropertySurfaceTextureList carrier;
+        carrier.setValue(_texturePalette, _textureIndex);
+        carrier.Save(writer);
+    }
     if (writer.getSchemaVersion() < 5 && hasTextureOrCard() && !writer.isForceXML()
             && canSaveStream(writer)) {
         writer.Stream() << writer.ind() << '<' << xmlName() << " file=\""
@@ -4545,6 +4554,8 @@ void PropertyMaterialList::Save(Base::Writer &writer) const
 void PropertyMaterialList::Restore(Base::XMLReader &reader)
 {
     _pendingFinish.clear();
+    _pendingTexturePalette.clear();
+    _pendingTextureIndex.clear();
     // Scan to the material element exactly as readElement would -- callers do
     // not all arrive positioned on it -- but notice the companion element if
     // it comes past on the way (Save writes it ahead of the material one).
@@ -4564,6 +4575,11 @@ void PropertyMaterialList::Restore(Base::XMLReader &reader)
             PropertySurfaceFinishList carrier;
             carrier.RestoreHere(reader);
             _pendingFinish = carrier.takeValues();
+        }
+        if (strcmp(reader.localName(), "SurfaceTextureList") == 0) {
+            PropertySurfaceTextureList carrier;
+            carrier.RestoreHere(reader);
+            carrier.takeValues(_pendingTexturePalette, _pendingTextureIndex);
         }
     }
     // Remembered for RestoreDocFile, which is called later and separately
@@ -4586,6 +4602,7 @@ void PropertyMaterialList::Restore(Base::XMLReader &reader)
             setSize(0);
     }
     applyPendingFinish();
+    applyPendingTexture();
 }
 
 void PropertyMaterialList::applyPendingFinish()
@@ -4597,6 +4614,26 @@ void PropertyMaterialList::applyPendingFinish()
     std::vector<SurfaceFinish> finish;
     finish.swap(_pendingFinish);
     setFinishes(finish);
+}
+
+void PropertyMaterialList::applyPendingTexture()
+{
+    std::vector<SurfaceTexture> palette;
+    std::vector<uint16_t> index;
+    palette.swap(_pendingTexturePalette);
+    index.swap(_pendingTextureIndex);
+    if (palette.empty() || _count == 0)
+        return;
+    // The check the companion element could not make: it is restored before
+    // the list it belongs to has a length
+    if (!index.empty() && static_cast<int>(index.size()) != _count)
+        throw Base::FileException("texture index length does not match the list");
+    atomic_change guard(*this);
+    touchFields();
+    _texturePalette.swap(palette);
+    _textureIndex.swap(index);
+    normalize();
+    guard.tryInvoke();
 }
 
 void PropertyMaterialList::SaveDocFile(Base::Writer &writer) const
@@ -4643,6 +4680,7 @@ void PropertyMaterialList::RestoreDocFile(Base::Reader &reader)
     // Now that the materials are in: the finish read from the companion
     // element back in Restore, which restoreValues above has just cleared
     applyPendingFinish();
+    applyPendingTexture();
 }
 
 /// Upstream's second pass: image, imagePath and uuid, entry by entry
@@ -4792,6 +4830,59 @@ void writeTextureRun(Base::OutputStream &str, const std::vector<SurfaceTexture> 
         str << slot;
 }
 
+/// One string as a hex token, leading space included. Hex because these are
+/// paths, identifiers and content hashes: a space would end the token and an
+/// angle bracket would end the element. The empty string is a lone '-',
+/// which no hex byte can be mistaken for.
+void writeHexToken(std::ostream &out, const std::string &value)
+{
+    out << ' ';
+    if (value.empty()) {
+        out << '-';
+        return;
+    }
+    out << std::hex;
+    for (unsigned char byte : value) {
+        out << (byte >> 4) << (byte & 0xf);
+    }
+    out << std::dec;
+}
+
+/// How many whitespace tokens writeTextureTokens writes
+std::size_t textureTokenCount(const std::vector<SurfaceTexture> &palette,
+                              const std::vector<uint16_t> &index)
+{
+    // slot count, palette size, the records, index size, the index
+    return 2 + palette.size() * (SurfaceTexture::SlotCount + 5) + 1 + index.size();
+}
+
+/** The palette and the index as text tokens, each half stating its length
+ *
+ * Shared by the XML field form's 'x' key and by PropertySurfaceTextureList,
+ * so the two cannot drift apart -- the same reason writeFinishRecords is
+ * shared. Every token carries its own leading space, so a caller decides
+ * what goes ahead of them.
+ */
+void writeTextureTokens(std::ostream &out, const std::vector<SurfaceTexture> &palette,
+                        const std::vector<uint16_t> &index)
+{
+    // max_digits10, so a value read back is the float that was written
+    const auto precision = out.precision(9);
+    out << ' ' << static_cast<unsigned>(SurfaceTexture::SlotCount)
+        << ' ' << palette.size();
+    for (const auto &value : palette) {
+        for (const auto &hash : value.maps)
+            writeHexToken(out, hash);
+        out << ' ' << value.scale[0] << ' ' << value.scale[1]
+            << ' ' << value.offset[0] << ' ' << value.offset[1]
+            << ' ' << value.rotation;
+    }
+    out << ' ' << index.size();
+    for (uint16_t slot : index)
+        out << ' ' << slot;
+    out.precision(precision);
+}
+
 /// One hex token as its bytes. A lone '-' is the empty string, which no hex
 /// byte can be mistaken for.
 std::string hexToken(const std::string &token)
@@ -4816,17 +4907,20 @@ void checkPaletteSize(std::size_t size)
 }
 
 /// An index is one slot per entry of the list, or absent because the field
-/// is uniform. Nothing else, and checked before the allocation.
-void checkIndexSize(std::size_t size, std::size_t count)
+/// is uniform. Nothing else, and checked before the allocation. A negative
+/// \a expected is a reader that cannot know yet -- the companion element is
+/// restored before the list it belongs to has a length -- and there the
+/// material list checks instead (applyPendingTexture).
+void checkIndexSize(std::size_t size, int expected)
 {
-    if (size != 0 && size != count)
+    if (expected >= 0 && size != 0 && size != static_cast<std::size_t>(expected))
         throw Base::FileException("texture index length does not match the list");
 }
 
 /// \a count is what the run head said, so the index length can be checked
 /// BEFORE it is allocated: both numbers came out of a file
 void readTextureRun(Base::InputStream &str, std::vector<SurfaceTexture> &palette,
-                    std::vector<uint16_t> &index, uint32_t count)
+                    std::vector<uint16_t> &index, int count)
 {
     uint8_t slotCount = 0;
     str >> slotCount;
@@ -4859,7 +4953,7 @@ void readTextureRun(Base::InputStream &str, std::vector<SurfaceTexture> &palette
 
 /// The same run out of the XML keyed form, whose tokens are text
 void readTextureKey(std::istream &s, std::vector<SurfaceTexture> &palette,
-                    std::vector<uint16_t> &index, unsigned count)
+                    std::vector<uint16_t> &index, int count)
 {
     unsigned slotCount = 0;
     unsigned size = 0;
@@ -4884,12 +4978,13 @@ void readTextureKey(std::istream &s, std::vector<SurfaceTexture> &palette,
     if (!(s >> indexSize))
         return;
     checkIndexSize(indexSize, count);
-    index.resize(indexSize);
+    // Grown as the tokens actually arrive rather than resized to what the
+    // file claims: the claim is not evidence, and the companion element has
+    // nothing to check it against
+    index.reserve(std::min<std::size_t>(indexSize, 4096));
     unsigned slot = 0;
-    for (auto &entry : index) {
-        s >> slot;
-        entry = static_cast<uint16_t>(slot);
-    }
+    for (unsigned i = 0; i < indexSize && (s >> slot); ++i)
+        index.push_back(static_cast<uint16_t>(slot));
 }
 
 } // namespace
@@ -5093,7 +5188,7 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
             readFinishRecords(str, finishes, count);
             break;
         case RunTexture:
-            readTextureRun(str, palette, index, count);
+            readTextureRun(str, palette, index, static_cast<int>(count));
             break;
         default:
             // A record shape added by a later build. The byte length is
@@ -5177,67 +5272,25 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
             writer.Stream() << ' ' << static_cast<int>(value);
         writer.Stream() << '\n';
     }
-    // Hex, because these are file paths and identifiers: a space would end
-    // the token and an angle bracket would end the element. An empty string
-    // is a lone '-', which no hex byte can be mistaken for.
     auto writeStrings = [&writer](char key, const std::vector<std::string> &field) {
         if (field.empty())
             return;
         writer.Stream() << key << ' ' << field.size();
-        for (const auto &value : field) {
-            writer.Stream() << ' ';
-            if (value.empty()) {
-                writer.Stream() << '-';
-                continue;
-            }
-            writer.Stream() << std::hex;
-            for (unsigned char byte : value) {
-                writer.Stream() << (byte >> 4) << (byte & 0xf);
-            }
-            writer.Stream() << std::dec;
-        }
+        for (const auto &value : field)
+            writeHexToken(writer.Stream(), value);
         writer.Stream() << '\n';
     };
     writeStrings('i', _image);
     writeStrings('p', _imagePath);
     writeStrings('u', _uuid);
-    // Hex again, and for the same reason: a content hash is an opaque
-    // string, not a number this format may reformat
-    auto writeHex = [&writer](const std::string &value) {
-        writer.Stream() << ' ';
-        if (value.empty()) {
-            writer.Stream() << '-';
-            return;
-        }
-        writer.Stream() << std::hex;
-        for (unsigned char byte : value) {
-            writer.Stream() << (byte >> 4) << (byte & 0xf);
-        }
-        writer.Stream() << std::dec;
-    };
     // Self-describing, unlike every other key: the palette and the index
     // state their own lengths, because neither of them is the entry count.
     // The leading number is still the honest token count, which is all a
     // reader that does not know the key needs to step over it (9.4.2).
     if (!_texturePalette.empty()) {
-        const auto precision = writer.Stream().precision(9);
-        const unsigned slotCount = SurfaceTexture::SlotCount;
-        writer.Stream() << "x "
-                        << 2 + _texturePalette.size() * (slotCount + 5) + 1
-                               + _textureIndex.size()
-                        << ' ' << slotCount << ' ' << _texturePalette.size();
-        for (const auto &value : _texturePalette) {
-            for (const auto &hash : value.maps)
-                writeHex(hash);
-            writer.Stream() << ' ' << value.scale[0] << ' ' << value.scale[1]
-                            << ' ' << value.offset[0] << ' ' << value.offset[1]
-                            << ' ' << value.rotation;
-        }
-        writer.Stream() << ' ' << _textureIndex.size();
-        for (uint16_t slot : _textureIndex)
-            writer.Stream() << ' ' << slot;
+        writer.Stream() << "x " << textureTokenCount(_texturePalette, _textureIndex);
+        writeTextureTokens(writer.Stream(), _texturePalette, _textureIndex);
         writer.Stream() << '\n';
-        writer.Stream().precision(precision);
     }
     // Four tokens per entry, which is why the number after a key counts
     // TOKENS and not entries: it is the only thing that lets a reader step
@@ -5324,7 +5377,7 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
         if (key[0] == 'x') {
             // The palette states its own length; the index does not get to,
             // because it is one slot per entry of this list
-            readTextureKey(s, _texturePalette, _textureIndex, uCt);
+            readTextureKey(s, _texturePalette, _textureIndex, static_cast<int>(uCt));
             continue;
         }
         if (tokens % stride != 0)
@@ -5609,6 +5662,131 @@ void PropertySurfaceFinishList::setPyObject(PyObject *value)
         values.push_back(finish);
     }
     setValue(values);
+}
+
+//**************************************************************************
+// PropertySurfaceTextureList
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+// Registered with a leading underscore for the same reason the finish
+// carrier is: a serialization carrier the material list builds on the
+// stack, not a value a user may add (App::Property::isInternalType).
+TYPESYSTEM_SOURCE_P(App::PropertySurfaceTextureList)
+void App::PropertySurfaceTextureList::init()
+{
+    initSubclass(App::PropertySurfaceTextureList::classTypeId,
+                 "App::_PropertySurfaceTextureList", "App::Property",
+                 &App::PropertySurfaceTextureList::create);
+}
+
+PropertySurfaceTextureList::PropertySurfaceTextureList() = default;
+
+PropertySurfaceTextureList::~PropertySurfaceTextureList() = default;
+
+void PropertySurfaceTextureList::Save(Base::Writer &writer) const
+{
+    // count is the PALETTE length, which is what sizes the read; the index
+    // states its own length among the tokens, as it does under the 'x' key
+    writer.Stream() << writer.ind() << "<SurfaceTextureList count=\""
+                    << _palette.size() << "\">\n";
+    writeTextureTokens(writer.Stream(), _palette, _index);
+    writer.Stream() << '\n' << writer.ind() << "</SurfaceTextureList>\n";
+}
+
+void PropertySurfaceTextureList::Restore(Base::XMLReader &reader)
+{
+    reader.readElement("SurfaceTextureList");
+    RestoreHere(reader);
+}
+
+void PropertySurfaceTextureList::RestoreHere(Base::XMLReader &reader)
+{
+    const unsigned count = reader.getAttributeAsUnsigned("count");
+    std::vector<SurfaceTexture> palette;
+    std::vector<uint16_t> index;
+    if (count) {
+        auto &s = reader.beginCharStream();
+        // The index length is whatever the tokens say here: only the
+        // material list knows how many entries it has, so it is the one
+        // that checks (applyPendingTexture)
+        readTextureKey(s, palette, index, -1);
+        reader.endCharStream();
+    }
+    reader.readEndElement("SurfaceTextureList");
+    _palette.swap(palette);
+    _index.swap(index);
+}
+
+Property *PropertySurfaceTextureList::Copy() const
+{
+    auto *p = new PropertySurfaceTextureList();
+    p->_palette = _palette;
+    p->_index = _index;
+    return p;
+}
+
+void PropertySurfaceTextureList::Paste(const Property &from)
+{
+    const auto &other = dynamic_cast<const PropertySurfaceTextureList&>(from);
+    _palette = other._palette;
+    _index = other._index;
+}
+
+bool PropertySurfaceTextureList::isSame(const Property &other) const
+{
+    if (&other == this)
+        return true;
+    auto list = Base::freecad_dynamic_cast<const PropertySurfaceTextureList>(&other);
+    return list && list->_palette == _palette && list->_index == _index;
+}
+
+unsigned int PropertySurfaceTextureList::getMemSize() const
+{
+    return static_cast<unsigned int>(texturesMemSize(_palette)
+                                     + _index.size() * sizeof(uint16_t));
+}
+
+PyObject *PropertySurfaceTextureList::getPyObject()
+{
+    Py::List palette(static_cast<int>(_palette.size()));
+    int i = 0;
+    for (const auto &value : _palette) {
+        Py::Dict entry;
+        for (uint8_t slot = 0; slot < SurfaceTexture::SlotCount; ++slot) {
+            if (!value.maps[slot].empty()) {
+                entry.setItem(SurfaceTexture::slotName(slot),
+                              Py::String(value.maps[slot]));
+            }
+        }
+        Py::Tuple scale(2);
+        scale.setItem(0, Py::Float(value.scale[0]));
+        scale.setItem(1, Py::Float(value.scale[1]));
+        entry.setItem("Scale", scale);
+        Py::Tuple offset(2);
+        offset.setItem(0, Py::Float(value.offset[0]));
+        offset.setItem(1, Py::Float(value.offset[1]));
+        entry.setItem("Offset", offset);
+        entry.setItem("Rotation", Py::Float(value.rotation));
+        palette[i++] = entry;
+    }
+    Py::List index(static_cast<int>(_index.size()));
+    i = 0;
+    for (uint16_t slot : _index)
+        index[i++] = Py::Long(static_cast<long>(slot));
+    Py::Tuple result(2);
+    result.setItem(0, palette);
+    result.setItem(1, index);
+    return Py::new_reference_to(result);
+}
+
+void PropertySurfaceTextureList::setPyObject(PyObject *value)
+{
+    // A carrier, not a value a script is meant to author: the appearance
+    // property is where a texture is set, and the two halves only mean
+    // anything together
+    (void)value;
+    throw Base::AttributeError("the texture carrier is read only; "
+                               "set ShapeAppearance instead");
 }
 
 //**************************************************************************

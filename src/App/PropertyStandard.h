@@ -1546,6 +1546,9 @@ private:
      * one). So the value waits until the materials are in.
      */
     void applyPendingFinish();
+    /// The same for the texture pair, which lands as a palette and an index
+    /// rather than as one record per entry
+    void applyPendingTexture();
     /** One material as this list reads it
      *
      * The list holds a single mode for every entry, so a material written
@@ -1645,6 +1648,11 @@ private:
     std::vector<SurfaceFinish> _finish;
     /// Restored from the companion element, waiting for the materials to land
     std::vector<SurfaceFinish> _pendingFinish;
+    /// The same, for the texture companion; the pair travels together
+    //@{
+    std::vector<SurfaceTexture> _pendingTexturePalette;
+    std::vector<uint16_t> _pendingTextureIndex;
+    //@}
 
     /** The texture sets, as distinct records plus one index per entry
      *
@@ -1728,6 +1736,59 @@ public:
 
 private:
     std::vector<SurfaceFinish> _values;
+};
+
+/** The texture field beside the appearance, for the schemas that cannot
+ * state one inside it
+ *
+ * The same carrier PropertySurfaceFinishList is, and for the same reason
+ * (docs/ShapeAppearanceDesign.md 9.4.1): below schema 5 the material
+ * encodings are upstream's, they have nowhere to put a texture, and the
+ * default SaveSchemaVersion is 4 -- so without this a texture would vanish
+ * from every ordinary document. Written as an element of its own inside the
+ * appearance property's element, which upstream's reader walks straight
+ * past.
+ *
+ * It carries the palette and the index rather than one record per entry:
+ * that is what the field IS, and flattening it here would give the
+ * compatible schema a bigger file than the fork's own.
+ */
+class AppExport PropertySurfaceTextureList: public Property
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    PropertySurfaceTextureList();
+    ~PropertySurfaceTextureList() override;
+
+    const std::vector<SurfaceTexture> &getPalette() const { return _palette; }
+    const std::vector<uint16_t> &getIndex() const { return _index; }
+    void setValue(const std::vector<SurfaceTexture> &palette,
+                  const std::vector<uint16_t> &index)
+    { _palette = palette; _index = index; }
+    /// Both halves at once, because one without the other says nothing
+    void takeValues(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index)
+    { palette = std::move(_palette); index = std::move(_index); }
+
+    /// Restore from a reader ALREADY positioned on the element, which is how
+    /// the material list reads it: it has to look at the element to know
+    /// whether it is this one at all.
+    void RestoreHere(Base::XMLReader &reader);
+
+    PyObject *getPyObject() override;
+    void setPyObject(PyObject *) override;
+
+    void Save(Base::Writer &writer) const override;
+    void Restore(Base::XMLReader &reader) override;
+
+    Property *Copy() const override;
+    void Paste(const Property &from) override;
+    bool isSame(const Property &other) const override;
+    unsigned int getMemSize() const override;
+
+private:
+    std::vector<SurfaceTexture> _palette;
+    std::vector<uint16_t> _index;
 };
 
 /** Property for dynamic creation of a FreeCAD persistent object

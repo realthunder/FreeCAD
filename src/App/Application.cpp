@@ -2283,6 +2283,7 @@ void Application::initTypes()
     App::PropertyMaterial           ::init();
     App::PropertyMaterialList       ::init();
     App::PropertySurfaceFinishList  ::init();
+    App::PropertySurfaceTextureList ::init();
     App::PropertyPath               ::init();
     App::PropertyFile               ::init();
     App::PropertyFileIncluded       ::init();

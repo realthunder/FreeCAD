@@ -1879,6 +1879,88 @@ TEST_F(PropertyMaterialListTest, aUniformTextureCostsNoIndexOnTheWireEither)
     }
 }
 
+TEST_F(PropertyMaterialListTest, aTextureRidesItsOwnElementBelowSchemaFive)
+{
+    // SaveSchemaVersion defaults to 4, where the material encodings are
+    // upstream's and have nowhere to put a texture. Rather than give up
+    // their compatibility for it, it goes beside them
+    // (docs/ShapeAppearanceDesign.md 9.4.1).
+    App::SurfaceTexture other;
+    other.maps[App::SurfaceTexture::Emissive] = "e-hash";
+
+    App::PropertyMaterialList prop;
+    prop.setSize(3);
+    prop.setDiffuseColors({packed(0xff0000ff), packed(0x00ff00ff), packed(0x0000ffff)});
+    prop.setTextures({oakTexture(), other, oakTexture()});
+
+    const std::string xml = saveToXML(prop, 4);
+    EXPECT_NE(xml.find("<SurfaceTextureList count=\"2\""), std::string::npos) << xml;
+    // Its own element, ahead of the material one and closed before it -- so
+    // a reader that asks for the material element by name walks past it
+    const std::size_t closed = xml.find("</SurfaceTextureList>");
+    ASSERT_NE(closed, std::string::npos) << xml;
+    EXPECT_LT(closed, xml.find("<MaterialList")) << xml;
+
+    App::PropertyMaterialList back;
+    restoreFromXML(back, xml);
+    ASSERT_EQ(back.getSize(), 3);
+    EXPECT_EQ(back.getTexture(0), oakTexture());
+    EXPECT_EQ(back.getTexture(1), other);
+    EXPECT_EQ(back.getTexture(2), oakTexture());
+    EXPECT_EQ(back.getTexturePalette().size(), 2U);
+}
+
+TEST_F(PropertyMaterialListTest, nothingExtraIsWrittenForATextureAtSchemaFive)
+{
+    // At 5 the field form carries it, so no document holds it twice
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    prop.setTexture(oakTexture());
+    EXPECT_EQ(saveToXML(prop, 5).find("SurfaceTextureList"), std::string::npos);
+    // ... and an appearance with no texture writes no companion at either
+    App::PropertyMaterialList plain;
+    plain.setSize(2);
+    EXPECT_EQ(saveToXML(plain, 4).find("SurfaceTextureList"), std::string::npos);
+}
+
+TEST_F(PropertyMaterialListTest, anArchivedTextureWaitsForItsMaterials)
+{
+    // Below schema 5 the values go to an archive entry read long after the
+    // XML pass, and that read clears the texture field -- so the companion
+    // has to wait for it rather than land on the spot
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    prop.setImagePath(0, "/tmp/oak.png");   // what sends it down the file route
+    prop.setTexture(0, oakTexture());
+
+    Base::StringWriter element;
+    element.setSchemaVersion(4);
+    element.setPreferBinary(true);
+    element.setForceXML(0);
+    prop.Save(element);
+    ASSERT_NE(element.getString().find("SurfaceTextureList"), std::string::npos)
+            << element.getString();
+    ASSERT_NE(element.getString().find("file="), std::string::npos)
+            << element.getString();
+
+    Base::StringWriter file;
+    file.setSchemaVersion(4);
+    file.setPreferBinary(true);
+    file.setForceXML(0);
+    prop.SaveDocFile(file);
+
+    App::PropertyMaterialList back;
+    restoreFromXML(back, element.getString());
+    std::istringstream stream(file.getString());
+    Base::Reader reader(stream, "material.bin");
+    back.RestoreDocFile(reader);
+
+    ASSERT_EQ(back.getSize(), 2);
+    EXPECT_EQ(back.getTexture(0), oakTexture());
+    EXPECT_FALSE(back.getTexture(1).isSet());
+    EXPECT_EQ(back.getImagePath(0), "/tmp/oak.png");
+}
+
 TEST_F(PropertyMaterialListTest, aTextureSlotFromALaterBuildIsReadAndDropped)
 {
     // A record states how many slots it carries, so a build with one map
