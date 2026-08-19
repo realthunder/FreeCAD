@@ -171,7 +171,9 @@ wiring, because all three have an archive *and* a document-scoped manager:
 Sequence:
 
 1. `manager.beginSave()` — clear the collected set.
-2. **Collect broadcast.** Walk every reachable `PropertyFileIncluded` and
+2. **Collect broadcast.** Walk every reachable property that owns blob
+   content -- anything implementing `App::BlobReferrerProperty`, which the walk
+   asks via `collectBlobs()` rather than testing for a concrete class -- and
    `noteReferenced()` it: App objects and the document, plus a Gui leg
    (`signalCollectFiles`) covering view providers **and** `MDIView`s, which is
    what puts a view-only blob such as the environment image into the save set.
@@ -424,18 +426,19 @@ the case-by-case matrix.
 The save options are done (§6.1) and so is the browser-tier fetch (below). The
 rest is staged -- worth doing, not scheduled.
 
-- **Any file save through the manager, not just included files.** The store is
-  already type-agnostic (`insertFile(path) → handle`, hash identity, refcounted
-  lifetime); what is still `PropertyFileIncluded`-shaped is the referrer side:
-  `addPendingReferrer` takes that concrete type, and the collect pass filters on
-  it. Generalizing means a small referrer interface -- take the handle, and
-  withdraw on destruction -- which the collect pass and dispatch use instead.
-  Names stay on the consumer, as `_BaseFileName` does today, so one stored file
-  can serve referrers that each call it something different. The thing to settle
-  first is identity for generated content: a shape's bytes are what would be
-  hashed, so the writer's mode becomes part of the address (`BinaryBrep` and
-  ASCII hash differently). §6.1 settles what the existing options mean on this
-  path, which is the groundwork for that.
+- ~~**Any file save through the manager, not just included files.**~~ Done.
+  The store was already type-agnostic (`insertFile(path) -> handle`, hash
+  identity, refcounted lifetime) and the pending queue was already keyed on
+  `App::BlobReferrerProperty`; the collect pass was the last place holding a
+  concrete `PropertyFileIncluded` cast, so it now asks that same interface
+  (`collectBlobs()`) instead. An owner notes its own content, which is what
+  lets it choose the extension and the referrer name -- names stay on the
+  consumer, as `_BaseFileName` does today, so one stored file can serve
+  referrers that each call it something different. `PropertyPartShape`
+  implements it as nothing on purpose: it notes at write time, when the
+  writer's mode (`BinaryBrep` or ASCII, which hash differently) is finally
+  known. The first non-file owner is the material card,
+  `docs/MaterialStorage.md` sec 8.
 - **Cross-document dedup tier.** An application-level, content-addressed,
   append-only cache in its own directory (never inside a document's transient
   dir, which is wiped on close), referenced by copy where linking is

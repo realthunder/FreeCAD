@@ -1,8 +1,8 @@
 # Material storage -- content-addressed cards in the document
 
-Status: design agreed 2026-08-19 (user). Sec 10 step 1 -- the canonical writer
-and the content hash -- is built, tested and landed; steps 2 onward are not
-started. The `Materials::PropertyMaterial ShapeMaterial` property on
+Status: design agreed 2026-08-19 (user). Sec 10 steps 1 and 2 -- the canonical
+writer with its content hash, and the generalized collect walk -- are built,
+tested and landed; steps 3 onward are not started. The `Materials::PropertyMaterial ShapeMaterial` property on
 `Part::Feature` is built and green, as a faithful port of upstream; everything
 below replaces how that property *stores* its value, not what it means.
 
@@ -296,12 +296,16 @@ interface -- `virtual void assignRestoredBlob(const FileBlobHandle&)` -- and
 `PropertyFileIncluded`. A new blob-backed property implements the interface
 and the restore path already works.
 
-**The save leg is not.** `Document::collectFileBlobs` walks properties and
-does `Base::freecad_dynamic_cast<PropertyFileIncluded>(prop)`, so a blob held
-by any other property class is never collected and never written. That single
-cast is the generalization point: it must test for a blob-owning interface
-instead of a concrete class, and `PropertyFileIncluded` and `PropertyMaterial`
-both implement it.
+**The save leg was not, and now is.** `Document::collectFileBlobs` walked
+properties and did `Base::freecad_dynamic_cast<PropertyFileIncluded>(prop)`,
+so a blob held by any other property class was never collected and never
+written -- silently, since nothing complains about content no entry was
+written for. Done: `BlobReferrerProperty` gained
+`collectBlobs(manager, object)`, both walks (App and the Gui view tier) test
+for that interface instead, and an owner notes its own content so it keeps
+control of the extension and the referrer name. `PropertyPartShape`
+implements it as nothing on purpose -- it notes at write time, when the
+writer's ASCII-or-binary choice is known -- and says so at the override.
 
 **Blob creation is path-based**, not bytes-based: `insertFile(srcPath, ext)`,
 `adoptFile(path, ext)`, `newBlobPath(ext)`, `hashFile(path)`. So a material is
@@ -349,7 +353,10 @@ into the store under its content hash. No new manager API is required.
    `ContentHash`, which is the agreement with `FileBlobManager::hashFile`
    step 3 rests on.
 2. **Generalize the collect walk** (sec 8) so a non-`PropertyFileIncluded`
-   property can own a blob. No behaviour change for existing documents.
+   property can own a blob. No behaviour change for existing documents. DONE.
+   Regression evidence: `scripts/file-blob-verify.sh all` passes both legs
+   (the view tier is the second walk), the `ShapeStorage` suite passes 34 of
+   34, and `-t Document` fails exactly the nine long-standing names.
 3. **`PropertyMaterial` on blobs**: handle plus `shared_ptr<const Material>`
    plus provenance; save/restore across all three restore cases of sec 7.
 4. **Preset index** by content hash at startup; skip writing preset blobs.
