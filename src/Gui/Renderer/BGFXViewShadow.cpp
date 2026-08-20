@@ -85,6 +85,13 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     // knurl the ground with whatever the last scene draw stated).
     bgfx::setUniform(u_matcapParams, pbrOff);
     bgfx::setUniform(u_finishParams, pbrOff);
+    // Nor does the ground carry per-face images -- and the palette is a
+    // global uniform too, so leaving it alone would paint the ground
+    // with whatever the last scene draw put on its faces.
+    float faceTexOff[4] = {0.0f, 0.0f, -1.0f, 0.0f};
+    bgfx::setUniform(u_faceTexParams, faceTexOff);
+    if (bgfx::isValid(m_whiteTexArray))
+        bgfx::setTexture(10, s_texFace, m_whiteTexArray);
     bgfx::setTexture(1, s_texEnv, m_dummyEnvTex);
     static const bool dbgvis =
         getenv("FC_BGFX_DEBUG_SHADOW_VIS") != nullptr;

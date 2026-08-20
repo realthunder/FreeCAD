@@ -433,6 +433,12 @@ void BGFXRenderer::Private::buildInstanceGroups()
     struct InstKey {
         uint64_t geomHash, colorHash;
         uint64_t texId, bumpId, emissiveId, occlusionId, mrId;
+        /// The per-face palette rides a uniform and a sampler, so
+        /// instances in one batch must share the whole thing -- the
+        /// images, the tile size and which layer is being read.
+        uint64_t facePalette;
+        float facetexscale;
+        int facetexlayer;
         float texmatrix[16];
         int numVertices, numTri;
         int start, count, part;
@@ -478,6 +484,10 @@ void BGFXRenderer::Private::buildInstanceGroups()
             k.occlusionId = m.occlusionmap->textureId;
         if (m.metallicroughnessmap)
             k.mrId = m.metallicroughnessmap->textureId;
+        k.facePalette =
+            uint64_t(reinterpret_cast<uintptr_t>(m.texturepalette.get()));
+        k.facetexscale = m.facetexscale;
+        k.facetexlayer = m.facetexlayer;
         // The texture matrix feeds any textured route (a bump or
         // material map transforms its texcoords through it too).
         if ((k.texId || k.bumpId || k.emissiveId || k.occlusionId

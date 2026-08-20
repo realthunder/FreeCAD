@@ -69,6 +69,7 @@
 #include "SoFCVertexCache.h"
 #include "SoFCDetail.h"
 #include "SoFCDiffuseElement.h"
+#include "SoFCFaceTextureElement.h"
 #include "SoFCFinishElement.h"
 #include "SoFCPbrElement.h"
 #include "SoFCZoomOffsetElement.h"
@@ -324,6 +325,7 @@ void SoFCRenderCache::initClass()
   SoFCZoomOffsetElement::initClass();
   SoFCPbrElement::initClass();
   SoFCFinishElement::initClass();
+  SoFCFaceTextureElement::initClass();
 }
 
 void SoFCRenderCache::resetNode()
@@ -336,6 +338,7 @@ void SoFCRenderCache::cleanup()
   SoFCDiffuseElement::cleanup();
   SoFCPbrElement::cleanup();
   SoFCFinishElement::cleanup();
+  SoFCFaceTextureElement::cleanup();
 }
 
 static inline std::bitset<32>
@@ -494,6 +497,9 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->emissivemaps.clear();
   this->occlusionmaps.clear();
   this->metallicroughnessmaps.clear();
+  this->facetextures.clear();
+  this->facetextureindices.reset();
+  this->facetexscale = 0.0f;
   this->lights.clear();
   this->partialhighlight = 0;
   this->selectstyle = Material::Full;
@@ -1022,6 +1028,8 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
     res.emissivemaps.clear();
     res.occlusionmaps.clear();
     res.metallicroughnessmaps.clear();
+    res.facetextures.clear();
+    res.facetextureindices.reset();
     res.texturematrices.clear();
   } else {
     res.texturematrices.combine(parent.texturematrices);
@@ -1043,6 +1051,12 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
     res.emissivemaps.add(parent.emissivemaps, false);
     res.occlusionmaps.add(parent.occlusionmaps, false);
     res.metallicroughnessmaps.add(parent.metallicroughnessmaps, false);
+    // The face palette merges like the maps above -- the child's own
+    // layers win -- but the indices that name them do NOT: a layer
+    // index is only meaningful against the palette it was authored
+    // with, so an outer node's index array must never be applied to an
+    // inner node's images.
+    res.facetextures.add(parent.facetextures, false);
   }
 
   res.lights = parent.lights;
@@ -1593,6 +1607,25 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
       }
     }
   }
+  // The per-face texture layers, and how large the images they name are
+  // laid out. The palette itself arrives as sibling SoFCRenderTexture
+  // nodes (addRenderTexture), so what is captured here is only the
+  // index array -- clamped to what the palette cap allows, since a
+  // layer nothing uploaded would sample whatever the array texture
+  // holds there.
+  PRIVATE(this)->material.facetextureindices.reset();
+  PRIVATE(this)->material.facetexscale =
+      material->faceTextureScale.getValue();
+  const int numlayers = material->faceTextureIndices.getNum();
+  if (numlayers > 0) {
+    const int32_t *layers = material->faceTextureIndices.getValues(0);
+    PRIVATE(this)->material.facetextureindices.reserve(numlayers);
+    for (int i = 0; i < numlayers; ++i) {
+      const int32_t idx = layers[i];
+      PRIVATE(this)->material.facetextureindices.append(
+              idx > 0 && idx < Render::MaxFaceTexturePalette ? idx : 0);
+    }
+  }
   PRIVATE(this)->material.water = material->water.getValue();
   PRIVATE(this)->material.waterdensity = material->waterDensity.getValue();
   PRIVATE(this)->material.glass = material->glass.getValue();
@@ -1663,6 +1696,15 @@ SoFCRenderCache::addRenderTexture(SoState * state, const SoNode * node)
   case Gui::SoFCRenderTexture::METALLIC_ROUGHNESS:
     PRIVATE(this)->material.metallicroughnessmaps.set(0, info);
     break;
+  case Gui::SoFCRenderTexture::FACE: {
+    // A palette entry rather than a map: the key is the LAYER it
+    // occupies, and layer 0 is the untextured face -- a node claiming
+    // it (or a layer past the cap) states nothing at all.
+    const int32_t layer = texture->layer.getValue();
+    if (layer > 0 && layer < Render::MaxFaceTexturePalette)
+      PRIVATE(this)->material.facetextures.set(int(layer), info);
+    break;
+  }
   default:
     PRIVATE(this)->material.emissivemaps.set(0, info);
     break;
@@ -3084,6 +3126,8 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
     bboxmaterial.emissivemaps.clear();
     bboxmaterial.occlusionmaps.clear();
     bboxmaterial.metallicroughnessmaps.clear();
+    bboxmaterial.facetextures.clear();
+    bboxmaterial.facetextureindices.reset();
     bboxmaterial.texturematrices.clear();
     bboxmaterial.usershader.reset();
     bboxmaterial.finishpalette.reset();

@@ -444,6 +444,58 @@ TEST(SceneDump, aFloatTexturePayloadKeepsItsFloats)
             << "component " << i;
 }
 
+/// The per-face texture palette crosses the wire (v65).
+///
+/// The images a shape puts on its individual faces are ordinary
+/// textures, but WHICH face wears which is carried by the palette's
+/// order alone -- so a reader that dropped an entry, or took them out
+/// of order, would repaint the wrong faces rather than fail. The layer
+/// a draw with no per-vertex stream reads travels with them, since that
+/// is the only thing such a draw has to go on.
+TEST(SceneDump, thePerFaceTexturePaletteCrossesTheWire)
+{
+    Render::SceneSnapshot snap = makeScene();
+    ASSERT_FALSE(snap.scene.empty());
+    auto palette = std::make_shared<Render::TexturePalette>();
+    for (int i = 0; i < 3; ++i) {
+        auto tex = std::make_shared<Render::TextureImage>();
+        tex->textureId = 9100 + uint64_t(i);
+        tex->width = 1;
+        tex->height = 1;
+        tex->numComponents = 3;
+        tex->pixels = {uint8_t(10 * i), uint8_t(20 * i), uint8_t(30 * i)};
+        palette->entries.push_back(tex);
+    }
+    snap.scene[0].material.texturepalette = palette;
+    snap.scene[0].material.facetexscale = 12.5f;
+    snap.scene[0].material.facetexlayer = 2;
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+
+    ASSERT_FALSE(loaded.scene.empty());
+    const auto &mat = loaded.scene[0].material;
+    ASSERT_TRUE(mat.texturepalette);
+    ASSERT_EQ(mat.texturepalette->entries.size(), 3u);
+    for (int i = 0; i < 3; ++i) {
+        const auto &e = mat.texturepalette->entries[size_t(i)];
+        ASSERT_TRUE(e) << "layer " << i;
+        EXPECT_EQ(e->textureId, 9100u + uint64_t(i)) << "layer " << i;
+        ASSERT_EQ(e->pixels.size(), 3u) << "layer " << i;
+        EXPECT_EQ(e->pixels[1], uint8_t(20 * i)) << "layer " << i;
+    }
+    EXPECT_FLOAT_EQ(mat.facetexscale, 12.5f);
+    EXPECT_EQ(mat.facetexlayer, 2);
+
+    // And a draw with no palette comes back with none, rather than
+    // inheriting the one before it in the table.
+    ASSERT_GT(loaded.scene.size(), 1u);
+    EXPECT_FALSE(loaded.scene[1].material.texturepalette);
+}
+
 TEST(SceneDump, manifestRoundTrip)
 {
     BlobStore store;

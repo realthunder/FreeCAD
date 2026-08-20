@@ -26,6 +26,8 @@
 
 #include "ViewProviderDragger.h"
 #include <Inventor/lists/SoPickedPointList.h>
+#include <cstdint>
+#include <vector>
 
 class SoPickedPointList;
 class SoSwitch;
@@ -230,6 +232,19 @@ protected:
     /// Render_OcclusionMap / Render_MetallicRoughnessMap dynamic
     /// properties.
     void updateRenderTexture();
+    /** Sync the per-face texture palette with the ShapeAppearance
+     *
+     * A face of the appearance may name an image (Material::imagePath,
+     * or Material::image holding the encoded bytes of one), and the
+     * distinct images become a PALETTE of SoFCRenderTexture nodes in
+     * the FACE slot -- layer 1 and up, since layer 0 is the untextured
+     * face. \a indices comes back holding the layer of every face, or
+     * empty when no face names an image.
+     *
+     * Only the render engine draws these: Coin's GL path binds one
+     * texture per draw and has nowhere to put a palette.
+     */
+    void updateFaceTextures(std::vector<int32_t> &indices);
     /// Sync the optional SoShadowStyle node with the Render_CastShadow /
     /// Render_ReceiveShadow dynamic properties.
     void updateRenderShadowStyle();
@@ -245,6 +260,13 @@ protected:
     SoFCRenderTexture * pcRenderEmissiveMap{nullptr};
     SoFCRenderTexture * pcRenderOcclusionMap{nullptr};
     SoFCRenderTexture * pcRenderMetallicRoughnessMap{nullptr};
+    /// The per-face texture palette, one node a layer, in layer order
+    /// (entry 0 is layer 1 -- layer 0 is the untextured face).
+    std::vector<SoFCRenderTexture *> pcFaceTextures;
+    /// What each of those nodes was loaded from (image path, inline
+    /// image data): a palette node is only rewritten when its source
+    /// changed, since every write invalidates the render caches below.
+    std::vector<std::pair<std::string, std::string>> faceTextureSources;
     SoShadowStyle    * pcRenderShadowStyle{nullptr};
 
 private:

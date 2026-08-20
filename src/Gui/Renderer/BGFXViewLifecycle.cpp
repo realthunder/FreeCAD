@@ -984,6 +984,20 @@ void BGFXView::init(bool keepShared)
     // Metallic-roughness map at unit 6; u_pbrParams.x = 2 flags it.
     ensureUniform(s_texMetallicRoughness, "s_texMetallicRoughness",
                   bgfx::UniformType::Sampler);
+    // Per-face texture palette at unit 10: an array texture whose
+    // layers are the images the draw's faces carry. Bound on every mesh
+    // draw, with the 1x1 white array below standing in for the draws
+    // (almost all of them) whose faces carry none.
+    ensureUniform(s_texFace, "s_texFace", bgfx::UniformType::Sampler);
+    ensureUniform(u_faceTexParams, "u_faceTexParams",
+                  bgfx::UniformType::Vec4);
+    if (!bgfx::isValid(m_whiteTexArray)
+            && (bgfx::getCaps()->supported & BGFX_CAPS_TEXTURE_2D_ARRAY)) {
+        static const uint32_t whitelayers[2] = {0xffffffff, 0xffffffff};
+        m_whiteTexArray = bgfx::createTexture2D(
+            1, 1, false, 2, bgfx::TextureFormat::RGBA8, 0,
+            bgfx::copy(whitelayers, sizeof(whitelayers)));
+    }
 
     // Shadows: variance moments rendered from the scene light of the
     // Shadow draw style (unit 3 of the mesh programs; the white
@@ -1451,6 +1465,13 @@ void BGFXView::collectMeshes(const std::unordered_map<uint64_t, uint64_t> &kept,
         if (it->second.lastUsed + 2 < frame) {
             it->second.destroy();
             it = textures.erase(it);
+        } else
+            ++it;
+    }
+    for (auto it = textureArrays.begin(); it != textureArrays.end();) {
+        if (it->second.lastUsed + 2 < frame) {
+            it->second.destroy();
+            it = textureArrays.erase(it);
         } else
             ++it;
     }

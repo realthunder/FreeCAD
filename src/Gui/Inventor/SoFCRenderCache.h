@@ -381,6 +381,22 @@ public:
     TextureMap emissivemaps;
     TextureMap occlusionmaps;
     TextureMap metallicroughnessmaps;
+    /// Per-face texture PALETTE of triangle draws (SoFCRenderTexture
+    /// nodes whose slot is FACE), keyed by the LAYER each one occupies
+    /// rather than by a texture unit: they are not units, they are the
+    /// images one draw puts on its individual faces, and the backend
+    /// uploads them as the layers of a single array texture. Layer 0 is
+    /// the untextured face and never has an entry. Only external
+    /// backends consume these.
+    TextureMap facetextures;
+    /// One layer index per FACE, naming an entry of the map above
+    /// (0 = untextured). Captured from SoFCRenderMaterial like the
+    /// finish indices, and baked into the per-vertex material stream by
+    /// the shape traversal.
+    COWVector<int32_t> facetextureindices;
+    /// Millimetres of object space per tile of those images, or <= 0 to
+    /// lay them out on the mesh's own texture coordinates.
+    float facetexscale;
     NodeInfoArray lights;
     NodeInfoArray clippers;
     NodeInfoArray autozoom;
@@ -484,6 +500,12 @@ public:
         if (framepalette.get() > other.framepalette.get()) return false;
         if (frameindices < other.frameindices) return true;
         if (frameindices > other.frameindices) return false;
+        if (facetextures < other.facetextures) return true;
+        if (facetextures > other.facetextures) return false;
+        if (facetextureindices < other.facetextureindices) return true;
+        if (facetextureindices > other.facetextureindices) return false;
+        if (facetexscale < other.facetexscale) return true;
+        if (facetexscale > other.facetexscale) return false;
         if (water < other.water) return true;
         if (water > other.water) return false;
         if (waterdensity < other.waterdensity) return true;

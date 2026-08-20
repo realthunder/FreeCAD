@@ -134,6 +134,37 @@ public:
      */
     SoMFVec4f framePalette;
     SoMFInt32 frameIndices;
+    /** Per-face texture layer (empty = the faces carry no images)
+     *
+     * A face can be given an image of its own, and a draw binds one
+     * sampler -- so the images become a PALETTE (the SoFCRenderTexture
+     * nodes whose slot is FACE, each holding the layer it occupies) and
+     * what travels per face is one index into it. LAYER 0 IS THE
+     * UNTEXTURED FACE and has no palette entry, so a shape that images
+     * only two of its faces states 0 for all the rest.
+     *
+     * The array travels into SoFCFaceTextureElement on traversal and is
+     * baked into the per-vertex material stream by the render cache; the
+     * images are read off the palette nodes by the cache, since their
+     * consumer is the draw material rather than the shape below.
+     *
+     * Indexed by the FACE (the shape's part index) rather than by the
+     * material index: an image is put on a face, and two faces sharing
+     * one colour may well carry different images.
+     */
+    SoMFInt32 faceTextureIndices;
+    /** How large the per-face images above are laid out, in millimetres
+     * of OBJECT space per tile
+     *
+     * Their coordinates come from the face's own projection frame (the
+     * framePalette above), so an image needs a physical size the way a
+     * printed decal or a machined marking does -- not a fraction of a
+     * bounding box that changes when the part does.
+     *
+     * <= 0 hands the mesh's own texture coordinates to them instead,
+     * which is what a shape that was really UV mapped wants.
+     */
+    SoSFFloat faceTextureScale;
     /// The shapes form a water body: their closed volume becomes a
     /// scattering medium of the render engine's volumetric lighting
     /// pass (tinted by the material diffuse color), instead of an
@@ -252,6 +283,13 @@ public:
         /// glTF metallic-roughness map: g multiplies the roughness
         /// factor, b the metallic factor (PBR shading only)
         METALLIC_ROUGHNESS,
+        /// One entry of the per-face texture PALETTE: the image the
+        /// faces whose SoFCRenderMaterial::faceTextureIndices names
+        /// this node's `layer` are painted with. Several such nodes
+        /// together make the palette, and the backend uploads them as
+        /// the layers of a single array texture -- which is what lets
+        /// one draw put different images on different faces.
+        FACE,
     };
     enum Wrap {
         REPEAT,
@@ -262,6 +300,10 @@ public:
     SoSFImage image;  ///< the map pixels (RGB8/RGBA8, bottom-up)
     SoSFEnum wrapS;
     SoSFEnum wrapT;
+    /// FACE slot only: which layer of the per-face texture palette this
+    /// image occupies. 1 and up -- layer 0 is the untextured face, so a
+    /// node claiming it states nothing and is ignored.
+    SoSFInt32 layer;
 
 protected:
     ~SoFCRenderTexture() override = default;

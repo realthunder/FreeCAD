@@ -97,6 +97,7 @@
 #include "SoFCVBO.h"
 #include "SoFCVertexArrayIndexer.h"
 #include "SoFCShapeInfo.h"
+#include "SoFCFaceTextureElement.h"
 #include "SoFCFinishElement.h"
 #include "SoFCPbrElement.h"
 #include "COWData.h"
@@ -292,6 +293,14 @@ public:
     // in it. Same padding rule.
     const int32_t * frameptr = nullptr;
     int numframe = 0;
+
+    // Per-face TEXTURE layer (SoFCFaceTextureElement), which rides the
+    // third byte of the stream's third slot: which image of the draw's
+    // palette a face is painted with, 0 being the untextured face.
+    // Indexed by the face like the frame beside it -- an image is put on
+    // a face, not on a material. Same padding rule.
+    const int32_t * facetexptr = nullptr;
+    int numfacetex = 0;
 
     const SoMultiTextureCoordinateElement * multielem;
     SoState * state = nullptr;
@@ -573,6 +582,10 @@ public:
   /// ordinary case), and that is exactly when the stream exists for the
   /// frames alone.
   bool matframe = false;
+  /// The third byte of the stream's third slot carries a per-face
+  /// texture palette layer. Independent of the two above: a shape may
+  /// image its faces without finishing any of them.
+  bool matfacetex = false;
   uint32_t firstemissive = 0;
   uint32_t firstspecshine = 0;
   uint32_t firstfinishidx = 0;
@@ -736,6 +749,7 @@ SoFCVertexCache::SoFCVertexCache(SoFCVertexCache & prev)
   PRIVATE(this)->matpbr = PRIVATE(pprev)->matpbr;
   PRIVATE(this)->matfinish = PRIVATE(pprev)->matfinish;
   PRIVATE(this)->matframe = PRIVATE(pprev)->matframe;
+  PRIVATE(this)->matfacetex = PRIVATE(pprev)->matfacetex;
   PRIVATE(this)->firstemissive = PRIVATE(pprev)->firstemissive;
   PRIVATE(this)->firstspecshine = PRIVATE(pprev)->firstspecshine;
   PRIVATE(this)->firstfinishidx = PRIVATE(pprev)->firstfinishidx;
@@ -973,6 +987,7 @@ SoFCVertexCache::open(SoState * state)
   PRIVATE(this)->matpbr = false;
   PRIVATE(this)->matfinish = false;
   PRIVATE(this)->matframe = false;
+  PRIVATE(this)->matfacetex = false;
   {
     auto t = PRIVATE(this)->tmp;
     if (const SoLazyElementEx *ex = SoLazyElementEx::getInstance(state)) {
@@ -1008,9 +1023,19 @@ SoFCVertexCache::open(SoState * state)
       t->numframe = fin.numframeindex;
       PRIVATE(this)->matframe = true;
     }
+    // The per-face texture layer (SoFCFaceTextureElement). One layer for
+    // every face is the draw's own image and needs no stream, exactly as
+    // a single finish does not -- the bridge resolves it into the draw
+    // material instead.
+    const auto & facetex = SoFCFaceTextureElement::get(state);
+    if (facetex.isPerFace() && facetex.numindex > 1) {
+      t->facetexptr = facetex.index;
+      t->numfacetex = facetex.numindex;
+      PRIVATE(this)->matfacetex = true;
+    }
     if (t->numemissive > 1 || t->numspecular > 1 || t->numshininess > 1
         || PRIVATE(this)->matpbr || PRIVATE(this)->matfinish
-        || PRIVATE(this)->matframe) {
+        || PRIVATE(this)->matframe || PRIVATE(this)->matfacetex) {
       if (t->numemissive == 0) {
         const SbColor & e = SoLazyElement::getEmissive(state);
         e.getValue(t->emissivefallback[0], t->emissivefallback[1],
@@ -2012,7 +2037,7 @@ SoFCVertexCache::addTriangle(const SoPrimitiveVertex * v0,
   // whole shape face 0's frame. -1 = no detail, and then the material
   // index is the only answer there is.
   int partidx = -1;
-  if (PRIVATE(this)->matframe) {
+  if (PRIVATE(this)->matframe || PRIVATE(this)->matfacetex) {
     const SoDetail * fdetail = v0->getDetail();
     if (fdetail && fdetail->isOfType(SoFaceDetail::getClassTypeId()))
       partidx = static_cast<const SoFaceDetail *>(fdetail)->getPartIndex();
@@ -2404,6 +2429,12 @@ SoFCVertexCache::hasFinishMaterial(void) const
 {
   return (PRIVATE(this)->matfinish || PRIVATE(this)->matframe)
       && PRIVATE(this)->materialarray;
+}
+
+SbBool
+SoFCVertexCache::hasFaceTexture(void) const
+{
+  return PRIVATE(this)->matfacetex && PRIVATE(this)->materialarray;
 }
 
 int
@@ -2830,13 +2861,13 @@ SoFCVertexCacheP::appendMaterial(uint32_t emissive, uint32_t specshine,
   this->materialarray.append((specshine >> 8) & 0xff);
   this->materialarray.append(specshine & 0xff);
   // The finish palette index, then the projection frame palette index
-  // beside it, then two bytes nothing states yet: the stream is a
-  // vertex attribute, and a backend binds it as one rgba8 whatever this
-  // fills in. Both indices ride the one uint32 packedFinishIndex()
-  // built, low byte first.
+  // beside it, then the per-face texture layer, then one byte nothing
+  // states yet: the stream is a vertex attribute, and a backend binds it
+  // as one rgba8 whatever this fills in. All three indices ride the one
+  // uint32 packedFinishIndex() built, low byte first.
   this->materialarray.append(finishidx & 0xff);
   this->materialarray.append((finishidx >> 8) & 0xff);
-  this->materialarray.append(0);
+  this->materialarray.append((finishidx >> 16) & 0xff);
   this->materialarray.append(0);
 }
 
@@ -2901,6 +2932,12 @@ SoFCVertexCacheP::packedFinishIndex(int midx, int partidx) const
         partidx > 0 && partidx < this->tmp->numframe ? partidx : 0];
     if (idx > 0 && idx < 256)
       packed |= uint32_t(idx) << 8;
+  }
+  if (this->matfacetex) {
+    const int32_t idx = this->tmp->facetexptr[
+        partidx > 0 && partidx < this->tmp->numfacetex ? partidx : 0];
+    if (idx > 0 && idx < 256)
+      packed |= uint32_t(idx) << 16;
   }
   return packed;
 }

@@ -227,6 +227,13 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
     float finishParams[Render::MaxFinishPalette][4] = {};
     uint16_t numFinish = 1;
     const bool finishOn = mat.lighting && pass != PassDepthOnly;
+    // Per-face images: a colour, not a shading trick, so unlike the
+    // finish they are drawn on an unlit draw too -- but not in the
+    // depth-only pass, which writes no colour and must see exactly the
+    // geometry the beauty pass does.
+    const bool faceTexOn = mat.texturepalette
+        && !mat.texturepalette->entries.empty()
+        && pass != PassDepthOnly;
     auto setFinish = [](float (&dst)[4], uint8_t pattern, float pitch,
                         float depth, float angle) {
         if (pattern == 0 || pitch <= 0.0f || depth <= 0.0f)
@@ -278,7 +285,10 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
         dst[0][3] = float(f.kind);
         dst[1][3] = f.radius;
     };
-    if (finishOn) {
+    // The frames serve the per-face images as well: they are what the
+    // images are laid out ON, so a draw that states a tile size needs
+    // them uploaded whether or not anything finished it.
+    if (finishOn || (faceTexOn && mat.facetexscale > 0.0f)) {
         setFrame(frameParams[0], mat.frame);
         if (mat.framepalette && mat.perfacematerial) {
             const auto &entries = mat.framepalette->entries;
@@ -294,6 +304,34 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
                              float(matcapPreset), matcapTint, 0.0f};
     bgfx::setUniform(u_matcapParams, matcapParams);
     bgfx::setTexture(1, s_texEnv, env);
+
+    // The per-face texture palette (unit 10). Bound on every mesh draw,
+    // whether or not this one has a palette: a bgfx uniform holds its
+    // value for the rest of the frame, so a draw that left these alone
+    // would paint itself with the previous draw's images.
+    float faceTexParams[4] = {0.0f, 0.0f, -1.0f, 0.0f};
+    bgfx::TextureHandle faceTex = m_whiteTexArray;
+    if (faceTexOn) {
+        if (GpuTextureArray *arr = getTextureArray(*mat.texturepalette)) {
+            faceTex = arr->handle;
+            faceTexParams[0] = 1.0f;
+            faceTexParams[1] = mat.facetexscale;
+            // Which layer this draw's fragments read: the one the
+            // producer resolved (a uniformly imaged shape, or a
+            // single-face draw), or -1 to read it per vertex out of the
+            // material stream -- which only a draw that consumes the
+            // stream can do.
+            faceTexParams[2] = mat.facetexlayer >= 0
+                ? float(mat.facetexlayer)
+                : (mat.perfacematerial ? -1.0f : 0.0f);
+            faceTexParams[3] =
+                float(std::min(mat.texturepalette->entries.size(),
+                               std::size_t(Render::MaxFaceTexturePalette)));
+        }
+    }
+    bgfx::setUniform(u_faceTexParams, faceTexParams);
+    if (bgfx::isValid(faceTex))
+        bgfx::setTexture(10, s_texFace, faceTex);
 
     // The scene light replaces the headlight for every lit draw of
     // the frame; the VSM lookup runs only on receivers (the white

@@ -96,9 +96,10 @@ struct MeshData {
     /// shininess (0..1) quantized in the last byte, then the surface
     /// finish palette index (Material::finishpalette) in one byte, the
     /// projection frame palette index (Material::framepalette) in the
-    /// next and two reserved after them. Null for uniform objects (then
-    /// the Material scalars apply). Draws consume it only when their
-    /// material sets perfacematerial.
+    /// next, the per-face TEXTURE layer (Material::texturepalette, 0 =
+    /// untextured) in the third and one reserved after it. Null for
+    /// uniform objects (then the Material scalars apply). Draws consume
+    /// it only when their material sets perfacematerial.
     const uint8_t *materials = nullptr;
 
     const int32_t *triangleIndices = nullptr;
@@ -1683,6 +1684,44 @@ struct FramePalette {
     }
 };
 
+/// How many images one draw's per-face texture palette may hold,
+/// LAYER 0 INCLUDED. The backend uploads the palette as one 2D ARRAY
+/// texture of this many layers at most, and layer 0 is not an image at
+/// all: it is the untextured face, which samples opaque white. So a
+/// draw states at most MaxFaceTexturePalette - 1 distinct images, and a
+/// face whose image did not fit falls back to layer 0 -- untextured,
+/// which is what every face looked like before the palette existed.
+static constexpr int MaxFaceTexturePalette = 8;
+
+/// The distinct images of one per-face-textured draw
+///
+/// A texture cannot ride the per-vertex material stream the way a colour
+/// does, and a draw binds ONE sampler -- so the images a shape puts on
+/// its individual faces are collected here, uploaded as the layers of a
+/// single array texture, and what travels per face is the layer index
+/// (MeshData::materials, third slot, third byte).
+///
+/// Entry i is layer i + 1: layer 0 is the untextured face and has no
+/// entry. Immutable once published and shared by pointer, like
+/// FinishPalette -- the backend keys both its batching and its uploaded
+/// array on that pointer.
+struct TexturePalette {
+    /// At most MaxFaceTexturePalette - 1 entries, none of them null.
+    std::vector<std::shared_ptr<const TextureImage>> entries;
+
+    bool operator==(const TexturePalette &o) const {
+        if (entries.size() != o.entries.size())
+            return false;
+        for (std::size_t i = 0; i < entries.size(); ++i) {
+            const uint64_t a = entries[i] ? entries[i]->textureId : 0;
+            const uint64_t b = o.entries[i] ? o.entries[i]->textureId : 0;
+            if (a != b)
+                return false;
+        }
+        return true;
+    }
+};
+
 /// Flattened per-draw render state, translated from the Coin-side material
 /// (SoFCRenderCache::Material). Colors are packed 0xRRGGBBAA.
 struct Material {
@@ -1847,6 +1886,46 @@ struct Material {
     /// so it is published only when a finish is stated somewhere -- a
     /// shape nobody finished must not pay for a stream it cannot use.
     std::shared_ptr<const FramePalette> framepalette;
+
+    /// Per-face texture palette of a triangle draw (null = the draw's
+    /// faces carry no images of their own, and `texture` above is the
+    /// whole texturing story).
+    ///
+    /// One draw binds one sampler, so per-face images cannot be one
+    /// texture each: the palette's entries become the LAYERS of a single
+    /// array texture and the material stream's third slot, third byte,
+    /// names a face's layer -- 0 being the untextured face, entry i
+    /// being layer i + 1 (TexturePalette). Sampled on top of everything
+    /// `texture` does: a face's own image modulates the fragment colour
+    /// after the unit-0 texture has, so a shape can carry both.
+    ///
+    /// Shared and immutable, so pointer identity is a batch key and the
+    /// key the backend caches the uploaded array under.
+    std::shared_ptr<const TexturePalette> texturepalette;
+
+    /// Where the per-face images above are laid out, in millimetres of
+    /// OBJECT space per tile -- the size the image is printed at, which
+    /// is what a physical decal or a machined marking has, rather than
+    /// a fraction of a bounding box that changes when the part does.
+    ///
+    /// The coordinates themselves come from the face's own projection
+    /// frame (`framepalette`, the same frames the finish is laid out
+    /// in): a planar face in the plane's own axes, a turned one
+    /// unwrapped about its axis, and a face with no analytic surface
+    /// triplanarly off the object-space normal.
+    ///
+    /// <= 0 means the mesh's own texture coordinates instead, which is
+    /// what a shape that was really UV mapped wants. A mesh that carries
+    /// none then reads (0, 0) -- the image's corner texel -- exactly as
+    /// the unit-0 texture does in the same situation.
+    float facetexscale = 0.0f;
+
+    /// The layer every fragment of this draw samples, or < 0 to read the
+    /// stream. A single-face draw (a selection or preselection highlight)
+    /// has no material stream to read an index out of, so the producer
+    /// resolves that one face's layer here -- the same way it resolves
+    /// the face's finish and PBR pair into the scalars.
+    int8_t facetexlayer = -1;
 
     /// Water body flag of a triangle draw (SoFCRenderMaterial, typically
     /// fed from a ViewProvider Render_Water property): while the

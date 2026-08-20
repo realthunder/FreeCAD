@@ -429,4 +429,164 @@ TEST_F(RenderCacheMaterial, UniformPbrKeepsThePhongStream)
     }
 }
 
+//////////////////////////////////////////////////////////////////////
+// Per-face TEXTURE: the images a shape puts on its individual faces.
+// A draw binds one sampler, so the images are a palette the draw
+// material carries and what travels per face is one layer index --
+// layer 0 being the untextured face.
+
+namespace {
+
+// A tiny distinguishable image: \a n by \a n RGB, all one colour.
+Gui::SoFCRenderTexture* faceTexture(int layer, unsigned char r,
+                                    unsigned char g, unsigned char b)
+{
+    auto* node = new Gui::SoFCRenderTexture;
+    node->slot = Gui::SoFCRenderTexture::FACE;
+    node->layer = layer;
+    const unsigned char px[3] = {r, g, b};
+    node->image.setValue(SbVec2s(1, 1), 3, px);
+    return node;
+}
+
+}  // namespace
+
+// Two images on three faces: face 0 wears layer 1, face 1 layer 2, and
+// face 2 nothing at all. The palette reaches the draw material, the
+// layers reach the per-vertex stream.
+TEST_F(RenderCacheMaterial, CapturesPerFaceTextureLayers)
+{
+    auto* rm = new Gui::SoFCRenderMaterial;
+    const int32_t layers[3] = {1, 2, 0};
+    rm->faceTextureIndices.setValues(0, 3, layers);
+    rm->faceTextureScale = 12.5F;
+    root->insertChild(rm, 0);
+    root->insertChild(faceTexture(1, 255, 0, 0), 0);
+    root->insertChild(faceTexture(2, 0, 0, 255), 0);
+
+    const auto* m = triangleMaterial();
+    ASSERT_NE(m, nullptr);
+    ASSERT_EQ(m->facetextureindices.getNum(), 3);
+    EXPECT_EQ(m->facetextureindices[0], 1);
+    EXPECT_EQ(m->facetextureindices[1], 2);
+    EXPECT_EQ(m->facetextureindices[2], 0);
+    EXPECT_FLOAT_EQ(m->facetexscale, 12.5F);
+    // the palette itself, keyed by the layer each image occupies
+    EXPECT_EQ(m->facetextures.getNum(), 2);
+    ASSERT_NE(m->facetextures.get(1), nullptr);
+    ASSERT_NE(m->facetextures.get(2), nullptr);
+    EXPECT_EQ(m->facetextures.get(0), nullptr);
+
+    SoFCVertexCache* vcache = triangleVertexCache();
+    ASSERT_NE(vcache, nullptr);
+    EXPECT_TRUE(vcache->hasFaceTexture());
+    const uint8_t* mats = vcache->getMaterialArray();
+    ASSERT_NE(mats, nullptr);
+    const GLint* idx = vcache->getTriangleIndices();
+    for (int tri = 0; tri < 3; ++tri) {
+        for (int c = 0; c < 3; ++c) {
+            const uint8_t* p =
+                mats + size_t(idx[tri * 3 + c]) * SoFCVertexCache::MaterialStride;
+            // third slot: finish, frame, THEN the texture layer
+            EXPECT_EQ(p[8], 0) << "finish of face " << tri;
+            EXPECT_EQ(p[9], 0) << "frame of face " << tri;
+            EXPECT_EQ(p[10], uint8_t(layers[tri]))
+                << "texture layer of face " << tri;
+        }
+    }
+}
+
+// The bridge builds the array-texture palette from those nodes, in
+// layer order, and leaves the draw reading its layer out of the stream.
+TEST_F(RenderCacheMaterial, BridgeBuildsTheTexturePalette)
+{
+    auto* rm = new Gui::SoFCRenderMaterial;
+    const int32_t layers[3] = {1, 2, 0};
+    rm->faceTextureIndices.setValues(0, 3, layers);
+    rm->faceTextureScale = 12.5F;
+    root->insertChild(rm, 0);
+    root->insertChild(faceTexture(1, 255, 0, 0), 0);
+    root->insertChild(faceTexture(2, 0, 0, 255), 0);
+
+    ASSERT_NE(triangleMaterial(), nullptr);
+    SoFCRenderCache* cache = manager.getSceneCache();
+    ASSERT_NE(cache, nullptr);
+    auto draws = Gui::RendererBridge::translate(cache->getVertexCaches(true),
+                                                Gui::RendererBridge::SectionOnTop {});
+    const Render::DrawCall* triangle = nullptr;
+    for (const auto& d : draws) {
+        if (d.material.type == Render::Material::Triangle) {
+            triangle = &d;
+            break;
+        }
+    }
+    ASSERT_NE(triangle, nullptr);
+    const auto& mat = triangle->material;
+    ASSERT_NE(mat.texturepalette, nullptr);
+    ASSERT_EQ(mat.texturepalette->entries.size(), 2U);
+    // entry i is layer i + 1, and the pixels are the ones authored
+    ASSERT_NE(mat.texturepalette->entries[0], nullptr);
+    ASSERT_NE(mat.texturepalette->entries[1], nullptr);
+    ASSERT_EQ(mat.texturepalette->entries[0]->pixels.size(), 3U);
+    EXPECT_EQ(mat.texturepalette->entries[0]->pixels[0], 255);
+    EXPECT_EQ(mat.texturepalette->entries[1]->pixels[2], 255);
+    EXPECT_FLOAT_EQ(mat.facetexscale, 12.5F);
+    // the faces differ, so the layer comes from the stream
+    EXPECT_TRUE(mat.perfacematerial);
+    EXPECT_EQ(mat.facetexlayer, -1);
+}
+
+// Every face wearing the SAME image states no per-vertex layer: the
+// stream collapses, and the draw carries the one layer instead. This is
+// the case that would silently render untextured if the draw material
+// did not answer for it.
+TEST_F(RenderCacheMaterial, UniformFaceTextureRidesTheDrawMaterial)
+{
+    auto* rm = new Gui::SoFCRenderMaterial;
+    const int32_t layers[3] = {1, 1, 1};
+    rm->faceTextureIndices.setValues(0, 3, layers);
+    root->insertChild(rm, 0);
+    root->insertChild(faceTexture(1, 0, 255, 0), 0);
+    // one colour everywhere: nothing else asks for a stream either
+    material->diffuseColor.setValue(kDiffuse[0]);
+    material->ambientColor.setValue(kAmbient[0]);
+    material->emissiveColor.setValue(kEmissive[0]);
+    material->specularColor.setValue(kSpecular[0]);
+    material->shininess.setValue(kShininess[0]);
+
+    ASSERT_NE(triangleMaterial(), nullptr);
+    SoFCRenderCache* cache = manager.getSceneCache();
+    ASSERT_NE(cache, nullptr);
+    auto draws = Gui::RendererBridge::translate(cache->getVertexCaches(true),
+                                                Gui::RendererBridge::SectionOnTop {});
+    const Render::DrawCall* triangle = nullptr;
+    for (const auto& d : draws) {
+        if (d.material.type == Render::Material::Triangle) {
+            triangle = &d;
+            break;
+        }
+    }
+    ASSERT_NE(triangle, nullptr);
+    ASSERT_NE(triangle->material.texturepalette, nullptr);
+    EXPECT_EQ(triangle->material.facetexlayer, 1);
+}
+
+// A face naming a layer the palette cap cannot hold falls back to the
+// untextured layer 0 -- not to some other face's image.
+TEST_F(RenderCacheMaterial, LayerPastTheCapReadsAsUntextured)
+{
+    auto* rm = new Gui::SoFCRenderMaterial;
+    const int32_t layers[3] = {1, Render::MaxFaceTexturePalette, 0};
+    rm->faceTextureIndices.setValues(0, 3, layers);
+    root->insertChild(rm, 0);
+    root->insertChild(faceTexture(1, 255, 0, 0), 0);
+
+    const auto* m = triangleMaterial();
+    ASSERT_NE(m, nullptr);
+    ASSERT_EQ(m->facetextureindices.getNum(), 3);
+    EXPECT_EQ(m->facetextureindices[0], 1);
+    EXPECT_EQ(m->facetextureindices[1], 0);
+    EXPECT_EQ(m->facetextureindices[2], 0);
+}
+
 }  // namespace
