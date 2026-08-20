@@ -25,6 +25,7 @@
 """Document observer to act on documents containing NativeIFC objects"""
 
 import FreeCAD
+from importers import importIFCHelper
 from . import has_ifcopenshell
 
 params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/NativeIFC")
@@ -101,7 +102,7 @@ class ifc_observer:
             schema = doc.Schema
             ifcfile = ifc_tools.get_ifcfile(doc)
             if ifcfile:
-                if schema != ifcfile.wrapped_data.schema_name():
+                if schema != importIFCHelper.getSchema(ifcfile):
                     # TODO display warming
                     ifcfile, migration_table = ifc_tools.migrate_schema(ifcfile, schema)
                     doc.Proxy.ifcfile = ifcfile

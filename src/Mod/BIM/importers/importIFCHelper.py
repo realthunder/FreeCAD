@@ -273,6 +273,31 @@ def createShape(settings, product, curves=False):
     return ifcopenshell.geom.create_shape(settings, product)
 
 
+def getSchema(ifcfile):
+    """Return the schema name of an ifcopenshell file.
+
+    0.9 dropped `wrapped_data`: a file answers `.schema` itself, and an
+    entity instance *is* the wrapped object rather than holding one.
+    """
+    if hasattr(ifcfile, "wrapped_data"):
+        return ifcfile.wrapped_data.schema_name()
+    return ifcfile.schema
+
+
+def getDeclaration(ifcentity):
+    """Return the schema declaration of an entity instance. See getSchema."""
+    if hasattr(ifcentity, "wrapped_data"):
+        return ifcentity.wrapped_data.declaration()
+    return ifcentity.declaration
+
+
+def toString(ifcfile):
+    """Return the STEP text of an ifcopenshell file. See getSchema."""
+    if hasattr(ifcfile, "wrapped_data"):
+        return ifcfile.wrapped_data.to_string()
+    return ifcfile.to_string()
+
+
 def buildRelProductsAnnotations(ifcfile, root_element="IfcProduct"):
     """Build the products and annotations relation table."""
     products = ifcfile.by_type(root_element)

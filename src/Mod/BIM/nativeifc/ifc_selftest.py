@@ -30,6 +30,7 @@ import tempfile
 import unittest
 
 import ifcopenshell
+from importers import importIFCHelper
 from ifcopenshell.util import element
 
 import FreeCAD
@@ -121,7 +122,7 @@ class NativeIFCTest(unittest.TestCase):
 
     def assertClassEnumMatchesFamily(self, obj, root_name):
         ifcfile = ifc_tools.get_ifcfile(obj)
-        schema_name = ifcfile.wrapped_data.schema_name()
+        schema_name = importIFCHelper.getSchema(ifcfile)
         expected = get_schema_descendant_names(schema_name, root_name)
         actual = sorted(obj.getEnumerationsOfProperty("Class"))
         self.assertEqual(actual, expected)

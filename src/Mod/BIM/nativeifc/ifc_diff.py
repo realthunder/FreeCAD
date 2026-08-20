@@ -27,6 +27,7 @@
 import difflib
 
 import ifcopenshell
+from importers import importIFCHelper
 
 import FreeCAD
 import FreeCADGui
@@ -47,13 +48,13 @@ def get_diff(proj):
         # cannot use open() here as it gives different encoding
         # than ifcopenshell and diff does not work
         f = ifcopenshell.open(proj.IfcFilePath)
-        old = f.wrapped_data.to_string().split("\n")
+        old = importIFCHelper.toString(f).split("\n")
     if not old:
         return ""
     ifcfile = ifc_tools.get_ifcfile(proj)
     if not ifcfile:
         return ""
-    new = ifcfile.wrapped_data.to_string().split("\n")
+    new = importIFCHelper.toString(ifcfile).split("\n")
     # diff = difflib.HtmlDiff().make_file(old,new) # UGLY
     res = [l for l in difflib.unified_diff(old, new, lineterm="")]
     res = [l for l in res if l.startswith("+") or l.startswith("-")]

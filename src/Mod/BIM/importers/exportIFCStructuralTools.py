@@ -41,12 +41,13 @@ def setup(ifcfile, ifcbin, scale):
     structural_nodes = {}
     scaling = scale
     import ifcopenshell
+    from importers import importIFCHelper
 
     uid = ifcopenshell.guid.new
     ownerHistory = ifcfile.by_type("IfcOwnerHistory")[0]
     project = ifcfile.by_type("IfcProject")[0]
     structContext = createStructuralContext(ifcfile)
-    if ifcfile.wrapped_data.schema_name() == "IFC2X3":
+    if importIFCHelper.getSchema(ifcfile) == "IFC2X3":
         mod = ifcfile.createIfcStructuralAnalysisModel(
             uid(),
             ownerHistory,
@@ -101,6 +102,7 @@ def createStructuralNode(ifcfile, ifcbin, point):
     """Creates a connection node at the given point"""
 
     import ifcopenshell
+    from importers import importIFCHelper
 
     uid = ifcopenshell.guid.new
     ownerHistory = ifcfile.by_type("IfcOwnerHistory")[0]
@@ -118,7 +120,7 @@ def createStructuralNode(ifcfile, ifcbin, point):
     # for now we don't create any boundary condition
     appliedCondition = None
     localPlacement = ifcbin.createIfcLocalPlacement()
-    if ifcfile.wrapped_data.schema_name() == "IFC2X3":
+    if importIFCHelper.getSchema(ifcfile) == "IFC2X3":
         structPntConn = ifcfile.createIfcStructuralPointConnection(
             uid(),
             ownerHistory,
@@ -148,6 +150,7 @@ def createStructuralCurve(ifcfile, ifcbin, curve):
     """Creates a structural connection for a curve"""
 
     import ifcopenshell
+    from importers import importIFCHelper
 
     uid = ifcopenshell.guid.new
     ownerHistory = ifcfile.by_type("IfcOwnerHistory")[0]
@@ -192,6 +195,7 @@ def createStructuralMember(ifcfile, ifcbin, obj):
     import Draft
     import Part
     import ifcopenshell
+    from importers import importIFCHelper
     import FreeCAD
 
     uid = ifcopenshell.guid.new
@@ -250,7 +254,7 @@ def createStructuralMember(ifcfile, ifcbin, obj):
         localPlacement = ifcbin.createIfcLocalPlacement()
         localZAxis = ifcbin.createIfcDirection((0, 0, 1))
         # create structural member
-        if ifcfile.wrapped_data.schema_name() == "IFC2X3":
+        if importIFCHelper.getSchema(ifcfile) == "IFC2X3":
             structuralMember = ifcfile.createIfcStructuralCurveMember(
                 uid(),
                 ownerHistory,
@@ -413,6 +417,7 @@ def createStructuralGroup(ifcfile):
     """Assigns all structural objects found in the file to the structural model"""
 
     import ifcopenshell
+    from importers import importIFCHelper
 
     uid = ifcopenshell.guid.new
     ownerHistory = ifcfile.by_type("IfcOwnerHistory")[0]
@@ -436,6 +441,7 @@ def associates(ifcfile, aobj, sobj):
     # object with an IfcProduct. Needs to investigate more....
 
     import ifcopenshell
+    from importers import importIFCHelper
 
     uid = ifcopenshell.guid.new
     ownerHistory = ifcfile.by_type("IfcOwnerHistory")[0]
