@@ -320,6 +320,30 @@ public:
 
     void startNotify();
 
+    /** Stamp a value a SEQUENCE SLOT is about to return, so that mutating
+     * it writes back into this container at that index
+     *
+     * __getattro() does this for every PyObjectBase an attribute hands
+     * out, which is what makes `obj.Placement.Base.x = 1` reach the
+     * object. Sequence and mapping slots are installed raw by the binding
+     * generator and go nowhere near it, which is why
+     * `obj.Placement.Base[0] = 1` has always been a silent no-op -- so a
+     * list-like type calls this on the value its sq_item is returning.
+     *
+     * Like the attribute path, a const or not-tracking value is left
+     * alone, and a value previously handed out for the same index is
+     * unstamped first: two live children writing back to one slot is the
+     * bug #0002902 shape.
+     */
+    void trackReturnedItem(PyObject* child, Py_ssize_t index);
+
+    /** Forget which parent this value came out of
+     *
+     * After this it notifies nobody, which is what a value being handed
+     * to a new owner wants -- it is a value from then on, not a view.
+     */
+    void resetAttribute();
+
     void setNotTracking(bool on=true) {
         StatusBits.set(NoTrack, on);
     }
@@ -332,10 +356,13 @@ public:
 
 private:
     void setAttributeOf(const char* attr, PyObject* par);
-    void resetAttribute();
+    void setItemOf(Py_ssize_t index, PyObject* par);
     PyObject* getTrackedAttribute(const char* attr);
     void trackAttribute(const char* attr, PyObject* obj);
     void untrackAttribute(const char* attr);
+    PyObject* getTrackedItem(Py_ssize_t index);
+    void trackItem(Py_ssize_t index, PyObject* obj);
+    void untrackItem(Py_ssize_t index);
     void clearAttributes();
 
 protected:

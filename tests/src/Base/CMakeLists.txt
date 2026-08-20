@@ -37,6 +37,17 @@ target_include_directories(COWData_tests_run PRIVATE
 target_link_libraries(COWData_tests_run gtest_main)
 add_test(NAME COWData_tests_run COMMAND COWData_tests_run)
 
+# The attribute/item tracking that makes obj.Attr.Sub = x write back needs
+# an interpreter and a throwaway Python type, but nothing of App.
+add_executable(PyObjectTracking_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/PyObjectTracking.cpp)
+target_include_directories(PyObjectTracking_tests_run PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/src
+    ${Python3_INCLUDE_DIRS}
+    ${XercesC_INCLUDE_DIRS})
+target_link_libraries(PyObjectTracking_tests_run gtest_main FreeCADBase ${Python3_LIBRARIES})
+add_test(NAME PyObjectTracking_tests_run COMMAND PyObjectTracking_tests_run)
+
 # OutputStream and InputStream are one contract in two halves, and the
 # halves are written far enough apart to have drifted. Header-only over
 # FreeCADBase, so an executable of its own.
