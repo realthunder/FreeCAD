@@ -49,13 +49,14 @@ PyObject*  DocumentPy::addProperty(PyObject *args, PyObject *kwd)
     char *sDoc {nullptr};
     short attr=0;
     std::string sDocStr;
-    PyObject *ro = Py_False, *hd = Py_False;
+    PyObject *ro = Py_False, *hd = Py_False, *lk = Py_False;
     PyObject* enumVals = nullptr;
-    static const std::array<const char *, 9> kwlist{"type", "name", "group", "doc", "attr",
-                                                    "read_only", "hidden", "enum_vals", nullptr};
+    static const std::array<const char *, 10> kwlist{"type", "name", "group", "doc", "attr",
+                                                     "read_only", "hidden", "locked",
+                                                     "enum_vals", nullptr};
     if (!Base::Wrapped_ParseTupleAndKeywords(
-            args, kwd, "ss|sethO!O!O", kwlist, &sType, &sName, &sGroup, "utf-8",
-            &sDoc, &attr, &PyBool_Type, &ro, &PyBool_Type, &hd, &enumVals)) {
+            args, kwd, "ss|sethO!O!O!O", kwlist, &sType, &sName, &sGroup, "utf-8",
+            &sDoc, &attr, &PyBool_Type, &ro, &PyBool_Type, &hd, &PyBool_Type, &lk, &enumVals)) {
         return nullptr;
     }
 
@@ -67,6 +68,10 @@ PyObject*  DocumentPy::addProperty(PyObject *args, PyObject *kwd)
     Property *prop = getDocumentPtr()->
         addDynamicProperty(sType,sName,sGroup,sDocStr.c_str(),attr,
                            Base::asBoolean(ro), Base::asBoolean(hd));
+
+    if (prop) {
+        prop->setStatus(Property::LockDynamic, Base::asBoolean(lk));
+    }
 
     // enum support
     auto* propEnum = dynamic_cast<App::PropertyEnumeration*>(prop);

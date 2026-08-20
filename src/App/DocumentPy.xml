@@ -107,7 +107,10 @@ viewType (String): override the view provider type directly, only effective when
     <Methode Name="addProperty" Keyword="true">
         <Documentation>
             <UserDocu>
-                addProperty(type: string, name: string, group="", doc="", attr=0, read_only=False, hidden=False) -- Add a generic property.
+                addProperty(type: string, name: string, group="", doc="", attr=0, read_only=False,
+                            hidden=False, locked=False, enum_vals=[]) -- Add a generic property.
+
+                    locked: prevent the property from being removed again (Property.LockDynamic).
             </UserDocu>
         </Documentation>
     </Methode>
