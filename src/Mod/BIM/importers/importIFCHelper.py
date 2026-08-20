@@ -78,6 +78,33 @@ def dms2dd(degrees, minutes, seconds, milliseconds=0):
     return dd
 
 
+def getMulticore():
+    """How many threads ifcopenshell may use to build geometry.
+
+    The preference defaults to 0, and the old expression was
+    max(1, <pref>), so out of the box every import generated geometry on
+    ONE thread -- while still going through the multicore importer,
+    since the routing test treats any value as truthy. Measured on the
+    Autodesk 210 King model (13636 products): the main loop spent
+    257.3s waiting for geometry over the first 2000 products alone, 95%
+    of the time, and one bucket of 200 products cost 184s. With seven
+    threads the whole file waited 1.7s in total, because the workers run
+    ahead of the loop that consumes them.
+
+    So 0 is read as "choose one" rather than "use one". Half the logical
+    CPUs is deliberately conservative: these threads are CPU-bound, the
+    machines this runs on commonly report SMT siblings in cpu_count(),
+    and oversubscribing them costs throughput rather than buying it. An
+    explicit preference is always honoured, including a deliberate 1.
+    """
+    import os
+
+    configured = params.get_param_arch("ifcMulticore")
+    if configured:
+        return max(1, configured)
+    return max(1, (os.cpu_count() or 2) // 2)
+
+
 def getPreferences():
     """Retrieve the IFC preferences available in import and export.
 
@@ -105,7 +132,7 @@ def getPreferences():
         "FITVIEW_ONIMPORT": params.get_param_arch("ifcFitViewOnImport"),
         "ALLOW_INVALID": params.get_param_arch("ifcAllowInvalid"),
         "REPLACE_PROJECT": params.get_param_arch("ifcReplaceProject"),
-        "MULTICORE": max(1, params.get_param_arch("ifcMulticore")),
+        "MULTICORE": getMulticore(),
         "IMPORT_LAYER": params.get_param_arch("ifcImportLayer"),
     }
 

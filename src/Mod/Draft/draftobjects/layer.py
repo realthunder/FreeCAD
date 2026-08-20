@@ -112,9 +112,19 @@ class Layer:
         pass
 
     def _get_other_layers(self, obj, child):
+        # InList is exactly the set of objects that link to this child, so
+        # the layers holding it are a filter over a list whose length is
+        # the child's own degree -- typically one or two entries.
+        #
+        # This used to call Document.findObjects(), which walks every
+        # object in the document, once per child added to a layer. That
+        # made the cost of adding grow with the document, and importing
+        # an IFC model is one long sequence of such adds: on a
+        # 13636-product file it was 111s of a 312s import, the single
+        # largest item in the profile.
         other_lyrs = []
-        for find in child.Document.findObjects(Type="App::FeaturePython"):
-            if utils.get_type(find) == "Layer" and find != obj and child in find.Group:
+        for find in child.InList:
+            if find != obj and utils.get_type(find) == "Layer" and child in find.Group:
                 other_lyrs.append(find)
         return other_lyrs
 
@@ -127,8 +137,17 @@ class Layer:
             return
         vobj = getattr(obj, "ViewObject", None)
         old_grp = getattr(self, "oldGroup", [])
+        # Names, not objects: this runs once per add, walks the whole
+        # group, and the membership test used to be `child in old_grp`
+        # -- a linear scan of a list, inside a loop over that same list,
+        # so the cost of one add grew with the SQUARE of the layer's
+        # size. Importing an IFC model is one long run of such adds, and
+        # this single method was 78s of a 264s import, nearly all of it
+        # its own time. A set of names makes each add linear in the
+        # group instead.
+        old_names = {o.Name for o in old_grp}
         for child in obj.Group:
-            if child in old_grp:
+            if child.Name in old_names:
                 continue
             for other_lyr in self._get_other_layers(obj, child):
                 other_grp = other_lyr.Group

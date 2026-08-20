@@ -48,6 +48,11 @@ def uncamel(t):
 IfcTypes = [uncamel(t) for t in ArchIFCSchema.IfcProducts.keys()]
 
 
+# id(schema) -> (schema, canonicalised type names); see
+# getCanonicalisedIfcTypes().
+_canonicalisedIfcTypes = {}
+
+
 class IfcRoot:
     """This class defines the common methods and properties for managing IFC data.
 
@@ -219,9 +224,22 @@ class IfcRoot:
 
         """
         schema = self.getIfcSchema()
-        return [
+        # getIfcSchema() returns a module-level constant, so this list is
+        # the same every time it is built. Rebuilding it per object cost
+        # 16.5s of a 312s IFC import -- 13681 calls, and 32.9 million
+        # invocations of the lambda below.
+        cached = _canonicalisedIfcTypes.get(id(schema))
+        if cached is not None and cached[0] is schema:
+            # A copy, because the caller assigns it to an enumeration
+            # property and must not be able to edit the cache.
+            return list(cached[1])
+        types = [
             "".join(map(lambda x: x if x.islower() else " " + x, t[3:]))[1:] for t in schema.keys()
         ]
+        # The schema is held alongside the result so that a recycled id()
+        # cannot hand back another schema's list.
+        _canonicalisedIfcTypes[id(schema)] = (schema, types)
+        return list(types)
 
     def getIfcAttributeSchema(self, ifcTypeSchema, name):
         """Get the schema of an IFC attribute with the given name.
