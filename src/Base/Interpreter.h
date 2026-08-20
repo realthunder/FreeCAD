@@ -155,6 +155,31 @@ inline Py::Object pyCallWithKeywords(PyObject* callable, PyObject* args, PyObjec
  * was thrown.
  * @author Werner Mayer
  */
+/**
+ * Structured lifecycle metadata for one deprecated Python API.
+ *
+ * deprecatedIn and removedIn must both be non-null and non-empty.
+ */
+struct PythonApiDeprecation
+{
+    const char* deprecatedIn;
+    const char* removedIn;
+    const char* replacement = nullptr;
+    const char* details = nullptr;
+};
+
+/**
+ * Emit a Python DeprecationWarning for one FreeCAD API entry point.
+ *
+ * Returns false if the warning API raised a Python exception instead of
+ * reporting a warning, for example when deprecations are configured as errors.
+ */
+BaseExport bool warnDeprecatedPythonApi(
+    const char* apiKind,
+    const char* qualifiedName,
+    const PythonApiDeprecation& deprecation
+);
+
 class BaseExport SystemExitException: public Exception
 {
 public:

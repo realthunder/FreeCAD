@@ -5,6 +5,11 @@ if(MSVC)
 endif(MSVC)
 
 
+# Same reason as the include path below: OCCT reaches this target through
+# Part's link interface, but the fork points at its own OCCT install with a
+# directory-scoped link_directories(), which does not propagate.
+link_directories(${OCC_LIBRARY_DIR})
+
 set(DraftUtils_LIBS
     Part
     FreeCADApp
@@ -27,6 +32,11 @@ endif(FREECAD_USE_PCH)
 target_include_directories(
     DraftUtils
     PRIVATE
+    # Upstream gets Python's headers through its FreeCADApp target's usage
+    # requirements; here FreeCADApp sets them with a directory-scoped
+    # include_directories(), which does not propagate, so name them as the
+    # other modules do. Without this AppDraftUtils.cpp cannot find Python.h.
+    ${PYTHON_INCLUDE_DIRS}
     ${CMAKE_BINARY_DIR}
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_BINARY_DIR}/src
