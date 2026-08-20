@@ -60,6 +60,14 @@ public:
     QGraphicsObject* toQGraphicsObject(PyObject* pyPtr);
     QGraphicsObject* toQGraphicsObject(const Py::Object& pyObject);
 
+    /*!
+      Return the integer value of a Python enum member. PySide6 enums are not
+      plain ints any more, so a value that PyNumber_Long refuses is read from
+      the member's .value instead. Returns 0 if it is neither.
+     */
+    static qsizetype toEnum(PyObject* pyPtr);
+    static qsizetype toEnum(const Py::Object& pyObject);
+
     Py::Object fromQPrinter(QPrinter*);
     Py::Object fromQObject(QObject*, const char* className=nullptr);
     Py::Object fromQWidget(QWidget*, const char* className=nullptr);

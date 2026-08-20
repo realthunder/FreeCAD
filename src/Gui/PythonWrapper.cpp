@@ -589,6 +589,45 @@ QGraphicsObject* PythonWrapper::toQGraphicsObject(PyObject* pyPtr)
     return nullptr;
 }
 
+namespace
+{
+qsizetype tryEnum(PyObject* pyPtr)
+{
+    if (PyObject* number = PyNumber_Long(pyPtr)) {
+        Py::Long longObj(number, true);
+        return longObj.as_long();
+    }
+
+    // if PyNumber_Long failed then an exception is set
+    PyErr_Clear();
+
+    Py::Object object(pyPtr);
+    if (object.hasAttr(std::string("value"))) {
+        Py::Long longObj(object.getAttr(std::string("value")));
+        return longObj.as_long();
+    }
+
+    return 0;
+}
+}  // namespace
+
+qsizetype PythonWrapper::toEnum(PyObject* pyPtr)
+{
+    try {
+        return tryEnum(pyPtr);
+    }
+    catch (Py::Exception&) {
+        Base::PyException e;
+        e.ReportException();
+        return 0;
+    }
+}
+
+qsizetype PythonWrapper::toEnum(const Py::Object& pyobject)
+{
+    return toEnum(pyobject.ptr());
+}
+
 QGraphicsObject* PythonWrapper::toQGraphicsObject(const Py::Object& pyobject)
 {
     return toQGraphicsObject(pyobject.ptr());
