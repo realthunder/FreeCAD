@@ -3791,9 +3791,11 @@ void PropertyMaterialList::Save(Base::Writer &writer) const
         carrier.Save(writer);
     }
     // The texture goes out the same way and for the same reason: below
-    // schema 5 the material encodings are upstream's, they have nowhere to
-    // put one, and SaveSchemaVersion defaults to 4 -- so without this a
-    // texture would vanish from every ordinary document.
+    // schema 5 the material encodings are upstream's and have nowhere to put
+    // one -- so without this a texture would vanish from every document
+    // written in upstream's format, which is every document that came from
+    // one (Document::Restore keeps a file's own schema) and every one a user
+    // caps at 4 to keep readable.
     if (writer.getSchemaVersion() < 5 && !_list.rd().texturePalette.empty()) {
         PropertySurfaceTextureList carrier;
         carrier.setValue(_list.rd().texturePalette, _list.rd().textureIndex);

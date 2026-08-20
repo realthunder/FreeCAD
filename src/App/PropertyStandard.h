@@ -1717,9 +1717,10 @@ private:
  *
  * The same carrier PropertySurfaceFinishList is, and for the same reason
  * (docs/ShapeAppearanceDesign.md 9.4.1): below schema 5 the material
- * encodings are upstream's, they have nowhere to put a texture, and the
- * default SaveSchemaVersion is 4 -- so without this a texture would vanish
- * from every ordinary document. Written as an element of its own inside the
+ * encodings are upstream's and have nowhere to put a texture -- so without
+ * this a texture would vanish from every document written in upstream's
+ * format, which a document restored from one still is. Written as an
+ * element of its own inside the
  * appearance property's element, which upstream's reader walks straight
  * past.
  *

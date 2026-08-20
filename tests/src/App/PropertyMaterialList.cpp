@@ -1885,10 +1885,9 @@ TEST_F(PropertyMaterialListTest, aUniformTextureCostsNoIndexOnTheWireEither)
 
 TEST_F(PropertyMaterialListTest, aTextureRidesItsOwnElementBelowSchemaFive)
 {
-    // SaveSchemaVersion defaults to 4, where the material encodings are
-    // upstream's and have nowhere to put a texture. Rather than give up
-    // their compatibility for it, it goes beside them
-    // (docs/ShapeAppearanceDesign.md 9.4.1).
+    // At schema 4 the material encodings are upstream's and have nowhere to
+    // put a texture. Rather than give up their compatibility for it, it goes
+    // beside them (docs/ShapeAppearanceDesign.md 9.4.1).
     App::SurfaceTexture other;
     other.maps[App::SurfaceTexture::Emissive] = "e-hash";
 

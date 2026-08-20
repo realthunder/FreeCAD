@@ -1885,17 +1885,20 @@ bool Document::saveAs()
     getMainWindow()->showMessage(QObject::tr("Save document under new filename..."));
 
     // The format is the document's own promise -- SaveSchemaVersion, shown
-    // and changed here and nowhere quieter. Plain Save never touches it. A
-    // document that has never been saved starts from the last choice made
-    // in this dialog -- which defaults to COMPACT, this fork's own format
-    // being what a document written here should be -- and one that has
-    // keeps its own.
+    // and changed here and nowhere quieter. Plain Save never touches it.
+    //
+    // A document that has been saved keeps its own. One that has not starts
+    // COMPACT, this fork's own format being what a document written here
+    // should be: that is the property's default, and the last choice made in
+    // this dialog can hold it back but not push it -- a cap something
+    // already lowered on purpose (a script, or the property editor) is not
+    // for a remembered preference to raise.
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Document");
     const char *curFile = getDocument()->FileName.getValue();
-    bool compact = (curFile && curFile[0])
-            ? getDocument()->getSaveSchemaVersion() >= 5
-            : hGrp->GetBool("PreferCompactFormat", true);
+    bool compact = getDocument()->getSaveSchemaVersion() >= 5;
+    if (!(curFile && curFile[0]))
+        compact = compact && hGrp->GetBool("PreferCompactFormat", true);
     DocumentFormatOption::Choices chosen;
     chosen.compact = compact;
     chosen.dedupPCurves = App::DocumentParams::getDedupShapePCurves();

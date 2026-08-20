@@ -89,8 +89,9 @@ leaves every embedded file **empty without a word** -- the `blobs/` entries sit
 unclaimed beside it. That is exactly the silent-misread failure the compact
 format was designed to make impossible, which is why the compact format (built
 as schema 6, and no more released than this was) was folded into 5 rather than
-stacked above it. **4 is upstream's format and the default cap; 5 is this
-fork's**, and a document written at 5 is rooted `<FCDocument>`, so a reader
+stacked above it. **4 is upstream's format; 5 is this fork's, and the
+default for a document created here (2026-08-20) -- a restored document
+keeps the format its file was written in**, and a document written at 5 is rooted `<FCDocument>`, so a reader
 that does not know the format refuses it outright instead of half-reading it.
 The blob table is unchanged by the merge -- the gate still reads `>= 5`; it now
 means "the fork format" rather than claiming to mean something weaker.
@@ -98,8 +99,11 @@ means "the fork format" rather than claiming to mean something weaker.
 ### 3.1 What the user is asked, and when
 
 The format is chosen in the save dialog (`Gui::Document::saveAs`), and since
-2026-08-20 a **never-saved document opens that dialog on compact**
-(`PreferCompactFormat` defaults to true). Two message boxes state what the
+2026-08-20 a **new document is compact**: `SaveSchemaVersion` defaults to 5 and
+the dialog opens on it (`PreferCompactFormat`, also true by default, can hold a
+new document back to standard but never raises a cap something lowered on
+purpose). A document restored from a file keeps that file's own format, so this
+is about documents created here, not documents opened here. Two message boxes state what the
 choice costs, both raised after the file name is in so that neither is a
 heading nobody reads:
 

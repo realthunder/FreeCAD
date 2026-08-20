@@ -1680,10 +1680,13 @@ Against that, the three encodings:
   short-circuits on `uuid` (7.3).
 
   ⚠️ **And "the default save carries it" was not true as written.**
-  `SaveSchemaVersion` defaults to **4**, deliberately (`Document.cpp`
-  ~960: schema 5 is an incompatibility a user chooses per document, never
-  one inherited from a constructor), so the default save is a compatible
-  encoding and a finish would have vanished from every ordinary document.
+  `SaveSchemaVersion` defaulted to **4** when this was written, and a
+  compatible encoding has nowhere to put a finish, so one would have
+  vanished from every ordinary document. (**Superseded 2026-08-20**: the
+  default is now 5, but the conclusion below stands unchanged --
+  `Document::Restore` keeps a restored file at its own schema, and a user
+  can cap any document at 4, so the compatible encodings still have to
+  carry a finish and a texture.)
 
   An earlier draft answered that by forcing the fork's own encoding
   whenever a list states a finish. That works and is lossless for us, but

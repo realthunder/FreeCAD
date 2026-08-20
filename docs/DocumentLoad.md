@@ -532,20 +532,31 @@ carrying versions, the root name only says "not for readers that
 predate it".
 
 **Schema is an outcome, chosen per document (req 3).** The
-`SaveSchemaVersion` property is the user's cap, **default 4** -- a fresh
-document restored or written by a script is readable everywhere until
-someone decides otherwise, and now that is true rather than nearly
-true: at 4 nothing of this fork's format is written, included files
-included. The one place to decide is the save dialog: a format row
-(standard/compact) preselected from the document's own cap, or, for a
-never-saved document, from the `PreferCompactFormat` parameter holding
-the last choice made there.
+`SaveSchemaVersion` property is the user's cap. At 4 nothing of this
+fork's format is written, included files included, so a document capped
+there is readable everywhere. The one place to decide is the save
+dialog: a format row (standard/compact) preselected from the document's
+own cap, which for a never-saved document the `PreferCompactFormat`
+parameter (the last choice made there) can hold back but not raise.
 
-**A document saved from the GUI for the first time defaults to compact**
-(2026-08-20): `PreferCompactFormat` defaults to *true*, so this fork's
-own format is what this fork writes, and the cost is stated rather than
-implied. The property default stays 4 -- what changes is the dialog's
-opening position, not what a scripted or headless save produces.
+**The default is 5 -- this fork's format (2026-08-20, user ruling).**
+A document created here is written the way this build writes documents,
+and what that costs is *stated* rather than avoided: `Gui::Document`
+warns explicitly, once, with a "do not warn again" checkbox. Two things
+keep that from becoming a silent conversion:
+
+- **A restored document keeps the format its file was written in.**
+  `Document::Restore` sets the cap from the file's own `SchemaVersion`
+  *before* the property block is read, so a file that records
+  `SaveSchemaVersion` still overrides it, and one written before the
+  property existed -- or by upstream FreeCAD -- comes back at 4 instead
+  of inheriting today's default. Opening an old document and pressing
+  Ctrl+S does not change its format.
+- **A save that would drop content asks first.** See
+  `confirmSchemaUpgrade()` below.
+
+`exportObjects` is still capped at 4 whatever the document says: a
+fragment travels.
 
 **Two prompts carry what the format costs**, both in `Gui::Document`,
 both after the file name is in:
