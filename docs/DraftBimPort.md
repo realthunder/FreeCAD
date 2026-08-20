@@ -162,9 +162,7 @@ edges" (longer than 9999.9 mm).
 
 ## Status (2026-08-20)
 
-Stages 0 to 3 are done and committed on `LinkVibe`. Stage 4 is started:
-its blocker is cleared and its gate is measured, but the gate does not
-pass yet.
+All five stages are done and committed on `LinkVibe`.
 
 | stage | commit | gate |
 | --- | --- | --- |
@@ -172,57 +170,99 @@ pass yet.
 | 1 `Gui.UserInput` (shimmed) | `c160feaae7` | upstream Draft modules importing 174/222 -> 220/222 |
 | 2 Draft transplant | `9ea92ae952` | `TestDraft` 82 tests / 5 failing (was 67 / 1), `TestDraftGui` 38 / 1 |
 | 3 Arch -> BIM | `82a8a4478d` | `TestArch` 280 tests / 7 failing; King import 473 objects, 298 solids, 8.7 s against 9.1 s |
-| 4 NativeIFC | `d71c8a9fcd` (partial) | opens in 10 s, but the building structure costs 635 s -- see below |
+| 4 NativeIFC | `d71c8a9fcd`, `a187adbd75`..`09742e3e86` | King opens in 10 s and its building structure costs 18.2 s, against 635 s -- see below |
 
 Supporting commits: `087a4d01a4` (task panel buttons as a PySide6 enum),
 `6df7f94a36` and `d763bd8ee5` (`addProperty` keywords on the view
 provider and the document), `21df0beab6` (`freecad.deprecation`),
 `d5989ce60f` (`create_pip_call`).
 
-### Stage 4 -- NativeIFC, measured but not passing
+### Stage 4 -- NativeIFC
 
 `d71c8a9fcd` cleared the blocker: ifcopenshell 0.9 dropped
 `entity_instance.wrapped_data`, which BIM used at 14 sites, and all of
 them now go through version-tolerant helpers. Both NativeIFC tests pass.
 
-What the King file then measured, with `LoadOrphans` and the other
-optional loads off:
+What the King file measures, with `LoadOrphans` and the other optional
+loads off:
 
 | | NativeIFC | Arch importer |
 | --- | --- | --- |
 | parse 155 MB IFC | 4.7 s | 5 s |
 | open, root object only (`strategy=0`) | 5.3 s | -- |
 | **document usable** | **10 s**, saves to 5.5 KB | **599 s**, saves 171 MB in 138 s |
-| open, building structure (`strategy=1`) | **635 s** for 296 objects | -- |
+| open, building structure (`strategy=1`) | **18.2 s** for 294 objects | -- |
 
-So the promise holds at the root and collapses one level down: getting
-the building structure costs more than importing the whole model the old
-way, for 296 objects.
+That last number was **635 s** when the stage was first measured, which
+was worse than importing the entire model the old way. The whole of the
+gap was one mechanism, and it is worth stating plainly because it is not
+a per-object cost and it is not in the tree-building code at all:
 
-It is not per-object cost. The same call on a 25 MB model (NVW
-DCR-LOD200) takes **1.3 s for 99 objects** -- 13 ms an object against
-King's 2100 ms -- and its profile is flat, two thirds of it
-`ifcopenshell.open`. So the cost is superlinear in file content, and
-only bites at King's scale.
+**NativeIFC was writing to the IFC file while merely reading it, and
+every write invalidates IfcOpenShell's inverse index.**
 
-Narrowed, not proven. `create_child` asking the project for its whole
-`OutListRecursive` per child is quadratic, but with 296 objects it is
-not the cost: hoisting it to a set changed 635 s into 649 s, so that
-change was reverted rather than shipped unmeasured. The remaining
-suspect is `filter_elements` calling
-`ifcopenshell.util.element.get_decomposition` per structural object --
-one such call on King's project alone returns 12638 elements in 1.2 s,
-and 296 of those would be the right order of magnitude. King has only
-55 groups and 1503 grouped objects, so `assign_groups` and its
-document-wide `get_object` scan are not it.
+On a clean file an inverse lookup -- `IsDecomposedBy`,
+`ContainsElements`, `LayerAssignments` -- is free, because IfcOpenShell
+keeps an index. One `attribute.edit_attributes` call on King costs
+1.28 s by itself and drops that index; the next lookups pay ~16 ms each
+rebuilding it, and then it is free again until the next write. Interleave
+N writes with the tree walk and the cost goes superlinear in file size,
+which is exactly the shape that was measured (the same call on the 25 MB
+NVW DCR-LOD200 model was 1.3 s for 99 objects with a flat profile).
 
-Next step: count `get_decomposition` calls during a `strategy=1` convert.
-Use the 25 MB model to iterate -- a King measurement costs 11 minutes.
+Three separate paths were doing the writing:
 
-⚠️ `LoadOrphans` defaults to **True**, and on King that alone exceeds
-400 s. With it off the same open is 10 s. Whatever stage 4 concludes,
-that default is the difference between NativeIFC being the fast path and
-being slower than what it replaces.
+- `create_object()` called `ifc_layers.add_layers()` for every object,
+  ungated, though the bulk `load_layers()` pass it duplicates is gated on
+  `LoadLayers` (default off). `add_to_layer()` then appended the
+  *product* to the layer's `AssignedItems` -- where IFC does not keep
+  layer membership, so the element was never already there and the write
+  always fired, and `populate_layer()` cannot read a product back out of
+  it either. `a187adbd75`.
+- `ifc_export.get_placement()` used `0.001 / calculate_unit_scale()`
+  where `importIFCHelper.getPlacement()` wants millimetres per file
+  unit, `calculate_unit_scale() * 1000` -- the reciprocal, and the same
+  factor the two explicit callers in that file already pass. The two
+  agree for a file in millimetres, which is why it survived. King is in
+  feet, so every object was placed at 1/92903 of where it belongs, the
+  storey `Elevation` expression followed the bad `Placement.Base.z`, and
+  33 storeys were rewritten in the file: `21.0` became
+  `0.00022604211875090419`. `c839d86208`.
+- `set_attribute()`'s `differs()` compared floats exactly, so a length
+  that round-tripped through a millimetre property came back a few ULPs
+  out and was written back. `a9886ce33e`.
+
+Opening King and expanding it one level now performs **zero** API writes.
+
+A fourth fix is independent of all that: `generate_geometry()` built the
+element's decomposition before consulting `ShapeMode`, and discarded it
+when nothing wanted a shape -- 12.2 s of the remaining 43.8 s, and
+quadratic in subtree size besides, since `get_decomposed_elements()`
+dedupes with `if el not in result` over a list. `4a9db86314`.
+
+With `LoadLayers` on, the same expansion is 19.8 s, which before was not
+reachable at all.
+
+`09742e3e86` is a separate repair to `34d09e66cb`. Making `defer()` call
+straight through without an event loop fixed the segfault at exit but
+started running GUI-only work headless: `ifc_import.insert()` defers
+`toggle_lock_off()`, which reaches `FreeCADGui.getMainWindow()`. So a
+headless NativeIFC import raised. `set_menu()`, `set_button()` and
+`on_activate()` now return early without a GUI, which takes
+`nativeifc.ifc_selftest` from 15 errors + 1 failure of 20 to 2 + 2.
+
+Verified unchanged by the whole series: `TestArch` 280 tests / 5 failing,
+the same five as before. The four `ifc_selftest` failures left are
+pre-existing gaps the crash was hiding -- an IFC2X3 file created with no
+unit assignment (08c), object counts (09), a placement move that never
+reaches the property (10), a missing `ExtrusionDepth` (11) -- and are
+identical with and without these commits.
+
+WARNING: `LoadOrphans` defaults to **True**, and on King that alone
+exceeds 400 s. With it off the same open is 10 s. That default is the
+difference between NativeIFC being the fast path and being slower than
+what it replaces, and it is still the largest single thing left to
+decide here.
 
 ### What the remaining test failures want, none of it in ported code
 
