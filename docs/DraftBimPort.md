@@ -169,8 +169,35 @@ All five stages are done and committed on `LinkVibe`.
 | 0 AreaCalculator | `a96bf81a40` | King parametric import, 1300 s cap: `Part.Wire` failures 398 -> 0, total 993 -> 536 |
 | 1 `Gui.UserInput` (shimmed) | `c160feaae7` | upstream Draft modules importing 174/222 -> 220/222 |
 | 2 Draft transplant | `9ea92ae952` | `TestDraft` 82 tests / 5 failing (was 67 / 1), `TestDraftGui` 38 / 1 |
-| 3 Arch -> BIM | `82a8a4478d` | `TestArch` 280 tests / 7 failing; King import 473 objects, 298 solids, 8.7 s against 9.1 s |
+| 3 Arch -> BIM | `82a8a4478d` | `TestArch` 280 tests / 7 failing, now 5; King import 473 objects, 298 solids, 8.7 s against 9.1 s |
 | 4 NativeIFC | `d71c8a9fcd`, `a187adbd75`..`0d52fa4244` | King opens in 5 s and its building structure costs 18.2 s, against 635 s -- see below |
+
+### Test standing, all four suites re-run 2026-08-20
+
+| suite | tests | failing |
+| --- | --- | --- |
+| `TestDraft` | 82 | 5 |
+| `TestDraftGui` | 38 | 1 |
+| `TestArch` | 280 | 5 |
+| `TestArchGui` | 41 | 3 |
+
+`TestArchGui` is a registered suite that the plan above never gated --
+an omission, not a result. Its three:
+
+- `testImportSH3D` -- `No module named 'MeshPart'`. MeshPart is not in
+  this build configuration at all (no mention of it in `build.ninja`,
+  whatever `BUILD_MESH_PART` says in the cache), so this is the build
+  tree rather than the port.
+- `testBuildingPart` -- `RuntimeError: Auto correct group member`. The
+  fork's group auto-correct rejecting how upstream's BuildingPart fills
+  a Group. Same family as the window/host `Hosts` mismatch below: fork
+  core against upstream BIM, and a real one.
+- `test_texture_scenegraph_structure` -- no `FlatRoot` node found. The
+  fork's view provider builds a different scene graph than the test
+  expects.
+
+The last two are genuine fork-versus-upstream friction and are the only
+untriaged items the port leaves behind.
 
 Supporting commits: `087a4d01a4` (task panel buttons as a PySide6 enum),
 `6df7f94a36` and `d763bd8ee5` (`addProperty` keywords on the view
