@@ -3132,22 +3132,63 @@ struct GpuTextureArray
         h = std::min(h, MaxSide);
         const uint64_t flags = BGFX_SAMPLER_MIN_ANISOTROPIC
             | BGFX_SAMPLER_MAG_ANISOTROPIC;
-        handle = bgfx::createTexture2D(uint16_t(w), uint16_t(h), false,
+        // WITH a mip chain, and it is not optional here: a face image
+        // is laid out in millimetres, so a part zoomed to fit shows
+        // several tiles across a few hundred pixels and an unmipped
+        // checker boils into speckle the moment the camera moves.
+        // bgfx has no runtime mip generation, so the levels are built
+        // on the CPU exactly as GpuTexture::upload builds them.
+        handle = bgfx::createTexture2D(uint16_t(w), uint16_t(h), true,
                                        numLayers,
                                        bgfx::TextureFormat::RGBA8, flags);
         if (!bgfx::isValid(handle))
             return;
-        std::vector<uint8_t> layer(size_t(w) * h * 4);
+        std::vector<uint8_t> level;
+        std::vector<uint8_t> next;
         for (uint16_t i = 0; i < numLayers; ++i) {
+            // Back to the full size for every layer: the mip loop below
+            // walks this buffer down to 1x1, and the next layer's
+            // resample writes a whole level into it.
+            level.assign(size_t(w) * h * 4, uint8_t(255));
             const auto &e = palette.entries[i];
             if (e && usable(*e))
-                resample(*e, w, h, layer.data());
-            else
-                std::fill(layer.begin(), layer.end(), uint8_t(255));
+                resample(*e, w, h, level.data());
             bgfx::updateTexture2D(handle, i, 0, 0, 0, uint16_t(w),
                                   uint16_t(h),
-                                  bgfx::copy(layer.data(),
-                                             uint32_t(layer.size())));
+                                  bgfx::copy(level.data(),
+                                             uint32_t(level.size())));
+            int lw = w, lh = h;
+            uint8_t mip = 1;
+            while (lw > 1 || lh > 1) {
+                const int nw = std::max(1, lw >> 1);
+                const int nh = std::max(1, lh >> 1);
+                next.assign(size_t(nw) * nh * 4, 0);
+                for (int y = 0; y < nh; ++y) {
+                    const int y0 = std::min(2 * y, lh - 1);
+                    const int y1 = std::min(2 * y + 1, lh - 1);
+                    for (int x = 0; x < nw; ++x) {
+                        const int x0 = std::min(2 * x, lw - 1);
+                        const int x1 = std::min(2 * x + 1, lw - 1);
+                        for (int c = 0; c < 4; ++c) {
+                            const int s =
+                                level[(size_t(y0) * lw + x0) * 4 + c]
+                                + level[(size_t(y0) * lw + x1) * 4 + c]
+                                + level[(size_t(y1) * lw + x0) * 4 + c]
+                                + level[(size_t(y1) * lw + x1) * 4 + c];
+                            next[(size_t(y) * nw + x) * 4 + c] =
+                                uint8_t((s + 2) / 4);
+                        }
+                    }
+                }
+                bgfx::updateTexture2D(handle, i, mip, 0, 0, uint16_t(nw),
+                                      uint16_t(nh),
+                                      bgfx::copy(next.data(),
+                                                 uint32_t(next.size())));
+                level.swap(next);
+                lw = nw;
+                lh = nh;
+                ++mip;
+            }
         }
     }
 

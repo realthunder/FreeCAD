@@ -314,25 +314,34 @@ void main()
 		// the array's layer i holds palette entry i.
 		float faceLayer = u_faceTexParams.z >= 0.0
 			? u_faceTexParams.z : finishSlot.z;
+		vec2 fuv;
+		if (u_faceTexParams.y > 0.0)
+			fuv = fcFrameTexUV(v_opos, v_onrm, finishSlot.y,
+			                   u_faceTexParams.y);
+		else
+#ifdef TEXTURE
+			fuv = uv;
+#else
+			fuv = vec2(0.0, 0.0);
+#endif
+		float slice = clamp(faceLayer - 1.0, 0.0,
+		                    max(u_faceTexParams.w - 1.0, 0.0));
+		// KEY: the sample is taken HERE, outside the per-face test
+		// below, because WHICH face a fragment belongs to varies
+		// across the quad. A sampler in divergent control flow has
+		// no defined derivatives, so it cannot pick a mip level --
+		// and an unmipped minified checker is the speckle this
+		// costs. The branch above is uniform per draw (a uniform and
+		// the object-space position), so the derivatives here are
+		// the real ones.
+		//
+		// A picture, like the base colour texture: its texels are
+		// display numbers and decode on the way in, its alpha is
+		// coverage and does not.
+		vec4 ftex = fcAuthoredColor4(
+			texture2DArray(s_texFace, vec3(fuv, slice)));
 		if (faceLayer > 0.5)
 		{
-			vec2 fuv;
-			if (u_faceTexParams.y > 0.0)
-				fuv = fcFrameTexUV(v_opos, v_onrm, finishSlot.y,
-				                   u_faceTexParams.y);
-			else
-#ifdef TEXTURE
-				fuv = uv;
-#else
-				fuv = vec2(0.0, 0.0);
-#endif
-			float slice = clamp(faceLayer - 1.0, 0.0,
-			                    max(u_faceTexParams.w - 1.0, 0.0));
-			// A picture, like the base colour texture: its texels
-			// are display numbers and decode on the way in, its
-			// alpha is coverage and does not.
-			vec4 ftex = fcAuthoredColor4(
-				texture2DArray(s_texFace, vec3(fuv, slice)));
 			color *= ftex.rgb;
 			alpha *= ftex.a;
 			if (alpha < 0.004)

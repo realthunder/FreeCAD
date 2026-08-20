@@ -49,6 +49,9 @@ SHOT = os.environ.get("FACETEX_SHOT", "")
 EXIT = os.environ.get("FACETEX_EXIT", "") == "1"
 CHECK = os.environ.get("FACETEX_CHECK", "") == "1"
 SCALE = os.environ.get("FACETEX_SCALE", "")
+# Checker cells per image; 1 = a solid image, which is what tells a
+# sampling artefact (needs high frequency) from a shading one.
+CELLS = int(os.environ.get("FACETEX_CELLS", "4"))
 
 SIZE = 40.0
 BASE = (0.75, 0.75, 0.75)   # the paint under the images
@@ -144,7 +147,7 @@ def build():
         paths = {}
         for where, (light, dark) in IMAGES.items():
             paths[where] = checker(os.path.join(tmp, where + ".png"),
-                                   light, dark)
+                                   light, dark, cells=CELLS)
 
         doc = FreeCAD.newDocument("FaceTextures")
         box = doc.addObject("Part::Box", "Block")
@@ -200,6 +203,7 @@ def check(view, box):
     # The viewer's pixels may be larger than the widget's (HiDPI or a
     # render scale), so map through the ratio rather than assume 1:1.
     ok = True
+    lines = []
     for face in box.Shape.Faces:
         where = face_direction(box, face)
         # A hidden face's centre projects onto whatever is drawn in
@@ -238,11 +242,17 @@ def check(view, box):
             # The bare face: still the uniform paint underneath.
             good = abs(r - g) < 25 and abs(g - b) < 25
         ok = ok and good
-        FreeCAD.Console.PrintMessage(
-            "FACETEX %-6s at %4d,%4d rgb=%3d,%3d,%3d %s\n"
-            % (where, px, py, r, g, b, "PASS" if good else "FAIL"))
+        lines.append("%-6s at %4d,%4d rgb=%3d,%3d,%3d %s"
+                     % (where, px, py, r, g, b,
+                        "PASS" if good else "FAIL"))
+        FreeCAD.Console.PrintMessage("FACETEX %s\n" % lines[-1])
     FreeCAD.Console.PrintMessage(
         "FACETEX result: %s\n" % ("PASS" if ok else "FAIL"))
+    # A GUI run sends console messages to the report view, not to the
+    # terminal, so the verdict goes somewhere a scripted run can read.
+    with open(os.path.join(os.path.dirname(shot), "check.txt"), "w") as fh:
+        fh.write("\n".join(lines) + "\nresult: %s\n"
+                 % ("PASS" if ok else "FAIL"))
 
 
 QTimer.singleShot(600, build)
