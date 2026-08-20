@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2020 Eliud Cabrera Castillo <e.cabrera-castillo@tum.de>           *
 # *                                                                         *
@@ -21,6 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides functions to create orthogonal 2D and 3D Array objects."""
+
 ## @package make_orthoarray
 # \ingroup draftmake
 # \brief Provides functions to create orthogonal 2D and 3D Arrays.
@@ -31,19 +34,21 @@ import FreeCAD as App
 import draftutils.utils as utils
 import draftmake.make_array as make_array
 
-from draftutils.messages import _msg, _wrn, _err
+from draftutils.messages import _wrn, _err
 from draftutils.translate import translate
 
 
-def _make_ortho_array(base_object,
-                      v_x=App.Vector(10, 0, 0),
-                      v_y=App.Vector(0, 10, 0),
-                      v_z=App.Vector(0, 0, 10),
-                      n_x=2,
-                      n_y=2,
-                      n_z=1,
-                      use_link=True,
-                      build_shape=True):
+def _make_ortho_array(
+    base_object,
+    v_x=App.Vector(10, 0, 0),
+    v_y=App.Vector(0, 10, 0),
+    v_z=App.Vector(0, 0, 10),
+    n_x=2,
+    n_y=2,
+    n_z=1,
+    use_link=True,
+    build_shape=True,
+):
     """Create an orthogonal array from the given object.
 
     This is a simple wrapper of the `draftmake.make_array.make_array`
@@ -58,77 +63,73 @@ def _make_ortho_array(base_object,
     This should be handled by the subfunctions that use this one.
     """
     _name = "_make_ortho_array"
-    utils.print_header(_name, translate("draft","Internal orthogonal array"), debug=False)
 
-    new_obj = make_array.make_array(base_object,
-                                    arg1=v_x, arg2=v_y, arg3=v_z,
-                                    arg4=n_x, arg5=n_y, arg6=n_z,
-                                    use_link=use_link,
-                                    build_shape=build_shape)
+    new_obj = make_array.make_array(
+        base_object,
+        arg1=v_x,
+        arg2=v_y,
+        arg3=v_z,
+        arg4=n_x,
+        arg5=n_y,
+        arg6=n_z,
+        use_link=use_link,
+        build_shape=build_shape,
+    )
     return new_obj
 
 
 def _are_vectors(v_x, v_y, v_z=None, name="Unknown"):
     """Check that the vectors are numbers."""
-    _msg("v_x: {}".format(v_x))
-    _msg("v_y: {}".format(v_y))
-    if v_z:
-        _msg("v_z: {}".format(v_z))
-
     try:
         if v_z:
-            utils.type_check([(v_x, (int, float, App.Vector)),
-                              (v_y, (int, float, App.Vector)),
-                              (v_z, (int, float, App.Vector))],
-                             name=name)
+            utils.type_check(
+                [
+                    (v_x, (int, float, App.Vector)),
+                    (v_y, (int, float, App.Vector)),
+                    (v_z, (int, float, App.Vector)),
+                ],
+                name=name,
+            )
         else:
-            utils.type_check([(v_x, (int, float, App.Vector)),
-                              (v_y, (int, float, App.Vector))],
-                             name=name)
+            utils.type_check(
+                [(v_x, (int, float, App.Vector)), (v_y, (int, float, App.Vector))], name=name
+            )
     except TypeError:
-        _err(translate("draft","Wrong input: must be a number or vector."))
+        _err(translate("draft", "Wrong input: must be a number or vector."))
         return False, v_x, v_y, v_z
 
     if not isinstance(v_x, App.Vector):
         v_x = App.Vector(v_x, 0, 0)
-        _wrn(translate("draft","Input: single value expanded to vector."))
+        _wrn(translate("draft", "Input: single value expanded to vector."))
     if not isinstance(v_y, App.Vector):
         v_y = App.Vector(0, v_y, 0)
-        _wrn(translate("draft","Input: single value expanded to vector."))
+        _wrn(translate("draft", "Input: single value expanded to vector."))
     if v_z and not isinstance(v_z, App.Vector):
         v_z = App.Vector(0, 0, v_z)
-        _wrn(translate("draft","Input: single value expanded to vector."))
+        _wrn(translate("draft", "Input: single value expanded to vector."))
 
     return True, v_x, v_y, v_z
 
 
 def _are_integers(n_x, n_y, n_z=None, name="Unknown"):
     """Check that the numbers are integers, with minimum value of 1."""
-    _msg("n_x: {}".format(n_x))
-    _msg("n_y: {}".format(n_y))
-    if n_z:
-        _msg("n_z: {}".format(n_z))
-
     try:
         if n_z:
-            utils.type_check([(n_x, int),
-                              (n_y, int),
-                              (n_z, int)], name=name)
+            utils.type_check([(n_x, int), (n_y, int), (n_z, int)], name=name)
         else:
-            utils.type_check([(n_x, int),
-                              (n_y, int)], name=name)
+            utils.type_check([(n_x, int), (n_y, int)], name=name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be an integer number."))
+        _err(translate("draft", "Wrong input: must be an integer number."))
         return False, n_x, n_y, n_z
 
     if n_x < 1:
-        _wrn(translate("draft","Input: number of elements must be at least 1. It is set to 1."))
+        _wrn(translate("draft", "Input: number of elements must be at least 1. It is set to 1."))
         n_x = 1
     if n_y < 1:
-        _wrn(translate("draft","Input: number of elements must be at least 1. It is set to 1."))
+        _wrn(translate("draft", "Input: number of elements must be at least 1. It is set to 1."))
         n_y = 1
     if n_z and n_z < 1:
-        _wrn(translate("draft","Input: number of elements must be at least 1. It is set to 1."))
+        _wrn(translate("draft", "Input: number of elements must be at least 1. It is set to 1."))
         n_z = 1
 
     return True, n_x, n_y, n_z
@@ -136,21 +137,15 @@ def _are_integers(n_x, n_y, n_z=None, name="Unknown"):
 
 def _are_numbers(d_x, d_y, d_z=None, name="Unknown"):
     """Check that the numbers are numbers."""
-    _msg("d_x: {}".format(d_x))
-    _msg("d_y: {}".format(d_y))
-    if d_z:
-        _msg("d_z: {}".format(d_z))
-
     try:
         if d_z:
-            utils.type_check([(d_x, (int, float)),
-                              (d_y, (int, float)),
-                              (d_z, (int, float))], name=name)
+            utils.type_check(
+                [(d_x, (int, float)), (d_y, (int, float)), (d_z, (int, float))], name=name
+            )
         else:
-            utils.type_check([(d_x, (int, float)),
-                              (d_y, (int, float))], name=name)
+            utils.type_check([(d_x, (int, float)), (d_y, (int, float))], name=name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a number."))
+        _err(translate("draft", "Wrong input: must be a number."))
         return False, d_x, d_y, d_z
 
     return True, d_x, d_y, d_z
@@ -158,31 +153,24 @@ def _are_numbers(d_x, d_y, d_z=None, name="Unknown"):
 
 def _find_object_in_doc(base_object, doc=None):
     """Check that a document is available and the object exists."""
-    FOUND = True
-    if isinstance(base_object, str):
-        base_object_str = base_object
-
-    found, base_object = utils.find_object(base_object,
-                                           doc=doc)
+    found, base_object = utils.find_object(base_object, doc=doc)
     if not found:
-        _msg("base_object: {}".format(base_object_str))
-        _err(translate("draft","Wrong input: object not in document."))
-        return not FOUND, base_object
+        _err(translate("draft", "Wrong input: base_object not in document."))
 
-    _msg("base_object: {}".format(base_object.Label))
-
-    return FOUND, base_object
+    return found, base_object
 
 
-def make_ortho_array(base_object,
-                     v_x=App.Vector(10, 0, 0),
-                     v_y=App.Vector(0, 10, 0),
-                     v_z=App.Vector(0, 0, 10),
-                     n_x=2,
-                     n_y=2,
-                     n_z=1,
-                     use_link=True,
-                     build_shape=True):
+def make_ortho_array(
+    base_object,
+    v_x=App.Vector(10, 0, 0),
+    v_y=App.Vector(0, 10, 0),
+    v_z=App.Vector(0, 0, 10),
+    n_x=2,
+    n_y=2,
+    n_z=1,
+    use_link=True,
+    build_shape=True,
+):
     """Create an orthogonal array from the given object.
 
     Parameters
@@ -251,6 +239,15 @@ def make_ortho_array(base_object,
         The Links repeat the shape of the original `base_object` exactly,
         and therefore the resulting array is more memory efficient.
 
+        Also, when `use_link` is `True`, the `Fuse` property
+        of the resulting array does not work; the array doesn't
+        contain separate shapes, it only has the original shape repeated
+        many times, so there is nothing to fuse together.
+
+        If `use_link` is `False` the original shape is copied many times.
+        In this case the `Fuse` property is able to fuse
+        all copies into a single object, if they touch each other.
+
     build_shape: bool, optional
         It defaults to `True`.
         It is only effective when `use_link` is `True`. If it is `True`, a
@@ -278,10 +275,8 @@ def make_ortho_array(base_object,
     make_circular_array, make_path_array, make_point_array
     """
     _name = "make_ortho_array"
-    utils.print_header(_name, translate("draft","Orthogonal array"))
 
-    found, base_object = _find_object_in_doc(base_object,
-                                             doc=App.activeDocument())
+    found, base_object = _find_object_in_doc(base_object, doc=App.activeDocument())
     if not found:
         return None
 
@@ -294,26 +289,32 @@ def make_ortho_array(base_object,
         return None
 
     use_link = bool(use_link)
-    _msg("use_link: {}".format(use_link))
 
     build_shape = bool(build_shape)
-    _msg("build_shape: {}".format(build_shape))
 
-    new_obj = _make_ortho_array(base_object,
-                                v_x=v_x, v_y=v_y, v_z=v_z,
-                                n_x=n_x, n_y=n_y, n_z=n_z,
-                                use_link=use_link,
-                                build_shape=build_shape)
+    new_obj = _make_ortho_array(
+        base_object,
+        v_x=v_x,
+        v_y=v_y,
+        v_z=v_z,
+        n_x=n_x,
+        n_y=n_y,
+        n_z=n_z,
+        use_link=use_link,
+        build_shape=build_shape,
+    )
     return new_obj
 
 
-def make_ortho_array2d(base_object,
-                       v_x=App.Vector(10, 0, 0),
-                       v_y=App.Vector(0, 10, 0),
-                       n_x=2,
-                       n_y=2,
-                       use_link=True,
-                       build_shape=True):
+def make_ortho_array2d(
+    base_object,
+    v_x=App.Vector(10, 0, 0),
+    v_y=App.Vector(0, 10, 0),
+    n_x=2,
+    n_y=2,
+    use_link=True,
+    build_shape=True,
+):
     """Create a 2D orthogonal array from the given object.
 
     This works the same as `make_ortho_array`.
@@ -362,10 +363,8 @@ def make_ortho_array2d(base_object,
     make_circular_array, make_path_array, make_point_array
     """
     _name = "make_ortho_array2d"
-    utils.print_header(_name, translate("draft","Orthogonal array 2D"))
 
-    found, base_object = _find_object_in_doc(base_object,
-                                             doc=App.activeDocument())
+    found, base_object = _find_object_in_doc(base_object, doc=App.activeDocument())
     if not found:
         return None
 
@@ -378,28 +377,18 @@ def make_ortho_array2d(base_object,
         return None
 
     use_link = bool(use_link)
-    _msg("use_link: {}".format(use_link))
 
     build_shape = bool(build_shape)
-    _msg("build_shape: {}".format(build_shape))
 
-    new_obj = _make_ortho_array(base_object,
-                                v_x=v_x, v_y=v_y,
-                                n_x=n_x, n_y=n_y,
-                                use_link=use_link,
-                                build_shape=build_shape)
+    new_obj = _make_ortho_array(
+        base_object, v_x=v_x, v_y=v_y, n_x=n_x, n_y=n_y, use_link=use_link, build_shape=build_shape
+    )
     return new_obj
 
 
-def make_rect_array(base_object,
-                    d_x=10,
-                    d_y=10,
-                    d_z=10,
-                    n_x=2,
-                    n_y=2,
-                    n_z=1,
-                    use_link=True,
-                    build_shape=True):
+def make_rect_array(
+    base_object, d_x=10, d_y=10, d_z=10, n_x=2, n_y=2, n_z=1, use_link=True, build_shape=True
+):
     """Create a rectangular array from the given object.
 
     This function wraps around `make_ortho_array`
@@ -445,10 +434,8 @@ def make_rect_array(base_object,
     make_circular_array, make_path_array, make_point_array
     """
     _name = "make_rect_array"
-    utils.print_header(_name, translate("draft","Rectangular array"))
 
-    found, base_object = _find_object_in_doc(base_object,
-                                             doc=App.activeDocument())
+    found, base_object = _find_object_in_doc(base_object, doc=App.activeDocument())
     if not found:
         return None
 
@@ -461,30 +448,24 @@ def make_rect_array(base_object,
         return None
 
     use_link = bool(use_link)
-    _msg("use_link: {}".format(use_link))
 
     build_shape = bool(build_shape)
-    _msg("build_shape: {}".format(build_shape))
 
-    new_obj = _make_ortho_array(base_object,
-                                v_x=App.Vector(d_x, 0, 0),
-                                v_y=App.Vector(0, d_y, 0),
-                                v_z=App.Vector(0, 0, d_z),
-                                n_x=n_x,
-                                n_y=n_y,
-                                n_z=n_z,
-                                use_link=use_link,
-                                build_shape=build_shape)
+    new_obj = _make_ortho_array(
+        base_object,
+        v_x=App.Vector(d_x, 0, 0),
+        v_y=App.Vector(0, d_y, 0),
+        v_z=App.Vector(0, 0, d_z),
+        n_x=n_x,
+        n_y=n_y,
+        n_z=n_z,
+        use_link=use_link,
+        build_shape=build_shape,
+    )
     return new_obj
 
 
-def make_rect_array2d(base_object,
-                      d_x=10,
-                      d_y=10,
-                      n_x=2,
-                      n_y=2,
-                      use_link=True,
-                      build_shape=True):
+def make_rect_array2d(base_object, d_x=10, d_y=10, n_x=2, n_y=2, use_link=True, build_shape=True):
     """Create a 2D rectangular array from the given object.
 
     This function wraps around `make_ortho_array`,
@@ -531,10 +512,8 @@ def make_rect_array2d(base_object,
     make_circular_array, make_path_array, make_point_array
     """
     _name = "make_rect_array2d"
-    utils.print_header(_name, translate("draft","Rectangular array 2D"))
 
-    found, base_object = _find_object_in_doc(base_object,
-                                             doc=App.activeDocument())
+    found, base_object = _find_object_in_doc(base_object, doc=App.activeDocument())
     if not found:
         return None
 
@@ -547,18 +526,19 @@ def make_rect_array2d(base_object,
         return None
 
     use_link = bool(use_link)
-    _msg("use_link: {}".format(use_link))
 
     build_shape = bool(build_shape)
-    _msg("build_shape: {}".format(build_shape))
 
-    new_obj = _make_ortho_array(base_object,
-                                v_x=App.Vector(d_x, 0, 0),
-                                v_y=App.Vector(0, d_y, 0),
-                                n_x=n_x,
-                                n_y=n_y,
-                                use_link=use_link,
-                                build_shape=build_shape)
+    new_obj = _make_ortho_array(
+        base_object,
+        v_x=App.Vector(d_x, 0, 0),
+        v_y=App.Vector(0, d_y, 0),
+        n_x=n_x,
+        n_y=n_y,
+        use_link=use_link,
+        build_shape=build_shape,
+    )
     return new_obj
+
 
 ## @}

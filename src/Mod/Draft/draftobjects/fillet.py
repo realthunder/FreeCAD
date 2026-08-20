@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2020 Eliud Cabrera Castillo <e.cabrera-castillo@tum.de> *
 # *                                                                         *
@@ -19,6 +21,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides the object code for the Fillet object."""
+
 ## @package fillet
 # \ingroup draftobjects
 # \brief Provides the object code for the Fillet object.
@@ -28,50 +31,41 @@
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
-import draftobjects.base as base
+from draftobjects.base import DraftObject
+from draftutils import gui_utils
 
-from draftutils.messages import _msg
 
-
-class Fillet(base.DraftObject):
+class Fillet(DraftObject):
     """Proxy class for the Fillet object."""
 
     def __init__(self, obj):
-        super(Fillet, self).__init__(obj, "Fillet")
+        super().__init__(obj, "Fillet")
         self._set_properties(obj)
+
+    def onDocumentRestored(self, obj):
+        super().onDocumentRestored(obj)
+        gui_utils.restore_view_object(obj, vp_module="view_fillet", vp_class="ViewProviderFillet")
 
     def _set_properties(self, obj):
         """Set the properties of objects if they don't exist."""
         if not hasattr(obj, "Start"):
             _tip = QT_TRANSLATE_NOOP("App::Property", "The start point of this line.")
-            obj.addProperty("App::PropertyVectorDistance",
-                            "Start",
-                            "Draft",
-                            _tip)
+            obj.addProperty("App::PropertyVectorDistance", "Start", "Draft", _tip, locked=True)
             obj.Start = App.Vector(0, 0, 0)
 
         if not hasattr(obj, "End"):
             _tip = QT_TRANSLATE_NOOP("App::Property", "The end point of this line.")
-            obj.addProperty("App::PropertyVectorDistance",
-                            "End",
-                            "Draft",
-                            _tip)
+            obj.addProperty("App::PropertyVectorDistance", "End", "Draft", _tip, locked=True)
             obj.End = App.Vector(0, 0, 0)
 
         if not hasattr(obj, "Length"):
             _tip = QT_TRANSLATE_NOOP("App::Property", "The length of this line.")
-            obj.addProperty("App::PropertyLength",
-                            "Length",
-                            "Draft",
-                            _tip)
+            obj.addProperty("App::PropertyLength", "Length", "Draft", _tip, locked=True)
             obj.Length = 0
 
         if not hasattr(obj, "FilletRadius"):
             _tip = QT_TRANSLATE_NOOP("App::Property", "Radius to use to fillet the corner.")
-            obj.addProperty("App::PropertyLength",
-                            "FilletRadius",
-                            "Draft",
-                            _tip)
+            obj.addProperty("App::PropertyLength", "FilletRadius", "Draft", _tip, locked=True)
             obj.FilletRadius = 0
 
         # TODO: these two properties should link two straight lines
@@ -110,11 +104,10 @@ class Fillet(base.DraftObject):
             obj.End = obj.Shape.Vertexes[-1].Point
 
     def _update_radius(self, obj, radius):
-        if (hasattr(obj, "Line1") and hasattr(obj, "Line2")
-                and obj.Line1 and obj.Line2):
-            _msg("Recalculate the radius with objects.")
-
-        _msg("Update radius currently not implemented: r={}".format(radius))
+        # if (hasattr(obj, "Line1") and hasattr(obj, "Line2")
+        #        and obj.Line1 and obj.Line2):
+        # do the unimplemented work
+        pass
 
     def onChanged(self, obj, prop):
         """Change the radius of fillet. NOT IMPLEMENTED.
@@ -124,5 +117,6 @@ class Fillet(base.DraftObject):
         """
         if prop in "FilletRadius":
             self._update_radius(obj, obj.FilletRadius)
+
 
 ## @}

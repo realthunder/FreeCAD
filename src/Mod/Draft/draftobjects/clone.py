@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -21,6 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides the object code for the Clone object."""
+
 ## @package clone
 # \ingroup draftobjects
 # \brief Provides the object code for the Clone object.
@@ -31,36 +34,51 @@ from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
 import DraftVecUtils
-
 from draftobjects.base import DraftObject
+from draftutils import gui_utils
+from draftutils.messages import _log
 
 
 class Clone(DraftObject):
     """The Clone object"""
 
-    def __init__(self,obj):
-        super(Clone, self).__init__(obj, "Clone")
+    def __init__(self, obj):
+        self.set_properties(obj)
+        super().__init__(obj, "Clone")
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "The objects included in this clone")
-        obj.addProperty("App::PropertyLinkListGlobal", "Objects",
-                        "Draft", _tip)
+    def set_properties(self, obj):
+        pl = obj.PropertiesList
+        if not "Objects" in pl:
+            _tip = QT_TRANSLATE_NOOP("App::Property", "The objects included in this clone")
+            obj.addProperty("App::PropertyLinkListGlobal", "Objects", "Draft", _tip, locked=True)
+        if not "Scale" in pl:
+            _tip = QT_TRANSLATE_NOOP("App::Property", "The scale factor of this clone")
+            obj.addProperty("App::PropertyVector", "Scale", "Draft", _tip, locked=True)
+            obj.Scale = App.Vector(1, 1, 1)
+        if not "Fuse" in pl:
+            _tip = QT_TRANSLATE_NOOP(
+                "App::Property",
+                "If Clones includes several objects,\n" "set True for fusion or False for compound",
+            )
+            obj.addProperty("App::PropertyBool", "Fuse", "Draft", _tip, locked=True)
+        if not "ForceCompound" in pl:
+            _tip = QT_TRANSLATE_NOOP("App::Property", "Always create a compound")
+            obj.addProperty("App::PropertyBool", "ForceCompound", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "The scale factor of this clone")
-        obj.addProperty("App::PropertyVector", "Scale",
-                        "Draft", _tip)
+    def onDocumentRestored(self, obj):
+        super().onDocumentRestored(obj)
+        ref = obj.Objects[0] if obj.Objects else None
+        gui_utils.restore_view_object(
+            obj, vp_module="view_clone", vp_class="ViewProviderClone", format_ref=ref
+        )
+        if hasattr(obj, "ForceCompound"):
+            return
+        self.set_properties(obj)
+        _log("v1.1, " + obj.Name + ", added 'ForceCompound' property")
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "If Clones includes several objects,\n"
-                "set True for fusion or False for compound")
-        obj.addProperty("App::PropertyBool", "Fuse",
-                        "Draft", _tip)
-
-        obj.Scale = App.Vector(1,1,1)
-
-    def join(self,obj,shapes):
-        fuse = getattr(obj, 'Fuse', False)
+    def join(self, obj, shapes):
+        fuse = getattr(obj, "Fuse", False)
+        force_compound = getattr(obj, "ForceCompound", False)
         if fuse:
             tmps = []
             for s in shapes:
@@ -72,9 +90,13 @@ class Clone(DraftObject):
                     for s in shapes:
                         tmps += s.Edges
             shapes = tmps
-        if len(shapes) == 1:
-            return shapes[0]
         import Part
+
+        if len(shapes) == 1:
+            if force_compound:
+                return Part.makeCompound([shapes[0]])
+            else:
+                return shapes[0]
         if fuse:
             try:
                 sh = shapes[0].multiFuse(shapes[1:])
@@ -82,24 +104,30 @@ class Clone(DraftObject):
             except Exception:
                 pass
             else:
-                return sh
+                if force_compound:
+                    return Part.makeCompound([sh])
+                else:
+                    return sh
         return Part.makeCompound(shapes)
 
-    def execute(self,obj):
+    def execute(self, obj):
         if self.props_changed_placement_only(obj):
-            if hasattr(obj,"positionBySupport"):
+            if hasattr(obj, "positionBySupport"):
                 obj.positionBySupport()
             self.props_changed_clear()
             return
 
         import Part
+
         pl = obj.Placement
         shapes = []
         if obj.isDerivedFrom("Part::Part2DObject"):
             # if our clone is 2D, make sure all its linked geometry is 2D too
             for o in obj.Objects:
                 if not o.getLinkedObject(True).isDerivedFrom("Part::Part2DObject"):
-                    App.Console.PrintWarning("Warning 2D Clone "+obj.Name+" contains 3D geometry")
+                    App.Console.PrintWarning(
+                        "Warning 2D Clone " + obj.Name + " contains 3D geometry"
+                    )
                     return
         for o in obj.Objects:
             sh = Part.getShape(o)
@@ -108,31 +136,27 @@ class Clone(DraftObject):
         if shapes:
             sh = self.join(obj, shapes)
             m = App.Matrix()
-            if hasattr(obj,"Scale") and not sh.isNull():
-                sx,sy,sz = obj.Scale
-                if not DraftVecUtils.equals(obj.Scale,App.Vector(1, 1, 1)):
+            if hasattr(obj, "Scale") and not sh.isNull():
+                if not DraftVecUtils.equals(obj.Scale, App.Vector(1, 1, 1)):
                     op = sh.Placement
                     sh.Placement = App.Placement()
                     m.scale(obj.Scale)
-                    if sx == sy == sz:
-                        sh.transformShape(m)
-                    else:
-                        sh = sh.transformGeometry(m)
+                    sh.transformShape(m, False, True)
                     sh.Placement = op
             obj.Shape = sh
 
         obj.Placement = pl
-        if hasattr(obj,"positionBySupport"):
+        if hasattr(obj, "positionBySupport"):
             obj.positionBySupport()
         self.props_changed_clear()
 
     def onChanged(self, obj, prop):
         self.props_changed_store(prop)
 
-    def getSubVolume(self,obj,placement=None):
+    def getSubVolume(self, obj, placement=None):
         # this allows clones of arch windows to return a subvolume too
         if obj.Objects:
-            if hasattr(obj.Objects[0],"Proxy"):
+            if hasattr(obj.Objects[0], "Proxy"):
                 if hasattr(obj.Objects[0].Proxy, "getSubVolume"):
                     if not placement:
                         # clones must displace the original subvolume too

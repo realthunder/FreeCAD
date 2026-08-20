@@ -1,15 +1,16 @@
-# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 ## @package importAirfoilDAT
 #  \ingroup DRAFT
 #  \brief Airfoil (.dat) file importer
 #
 # This module provides support for importing airfoil .dat files
-'''@package importAirfoilDAT
-\ingroup DRAFT
-\brief Airfoil (.dat) file importer
+"""@package importAirfoilDAT
+Airfoil (.dat) file importer
 
 This module provides support for importing airfoil .dat files.
-'''
+"""
+
 # Check code with
 # flake8 --ignore=E226,E266,E401,W503
 
@@ -41,24 +42,19 @@ __url__ = "https://www.freecad.org"
 import re
 import os
 import FreeCAD
-import Draft
 import Part
 from FreeCAD import Vector
 from FreeCAD import Console as FCC
-
+from draftmake import make_wire
+from draftutils.utils import pyopen
 
 if FreeCAD.GuiUp:
     from draftutils.translate import translate
 else:
+
     def translate(context, txt):
         return txt
 
-# Save the native open function to avoid a collision with the open()
-# this module defines further down. The guard this replaces tested the
-# Python 2 spelling of open.__module__ and so never ran on Python 3 --
-# see importSVG.py.
-import builtins
-pythonopen = builtins.open
 
 useDraftWire = True
 
@@ -127,18 +123,18 @@ def process(filename):
 
     Returns
     -------
-    Part::Part2DObject or None.
-        The created Draft Wire object or None if the file contains less
+    Part::Feature or None.
+        The created object or None if the file contains fewer
         than 3 points.
     """
     # Regex to identify data rows and throw away unused metadata
-    xval = r'(?P<xval>\-?\s*\d*\.*\d*([Ee]\-?\d+)?)'
-    yval = r'(?P<yval>\-?\s*\d*\.*\d*([Ee]\-?\d+)?)'
-    _regex = r'^\s*' + xval + r'\,?\s*' + yval + r'\s*$'
+    xval = r"(?P<xval>\-?\s*\d*\.*\d*([Ee]\-?\d+)?)"
+    yval = r"(?P<yval>\-?\s*\d*\.*\d*([Ee]\-?\d+)?)"
+    _regex = r"^\s*" + xval + r"\,?\s*" + yval + r"\s*$"
 
     regex = re.compile(_regex)
-    afile = pythonopen(filename, 'r')
-    # read the airfoil name which is always at the first line
+    afile = pyopen(filename, "r")
+    # read the airfoil name which is always in the first line
     airfoilname = afile.readline().strip()
 
     coords = []
@@ -148,9 +144,7 @@ def process(filename):
     # Collect the data
     for lin in afile:
         curdat = regex.match(lin)
-        if (curdat is not None
-                and curdat.group("xval")
-                and curdat.group("yval")):
+        if curdat is not None and curdat.group("xval") and curdat.group("yval"):
             x = float(curdat.group("xval"))
             y = float(curdat.group("yval"))
 
@@ -174,7 +168,7 @@ def process(filename):
     if coords[0:-1].count(coords[0]) > 1:
         flippoint = coords.index(coords[0], 1)
         upper = coords[0:flippoint]
-        lower = coords[flippoint+1:]
+        lower = coords[flippoint + 1 :]
         lower.reverse()
         for i in lower:
             upper.append(i)
@@ -182,7 +176,7 @@ def process(filename):
 
     # do we use the parametric Draft Wire?
     if useDraftWire:
-        obj = Draft.make_wire(coords, True)
+        obj = make_wire.make_wire(coords, True)
         # obj.label = airfoilname
     else:
         # alternate solution, uses common Part Faces
@@ -206,7 +200,7 @@ def process(filename):
 
         wire = Part.Wire(lines)
         face = Part.Face(wire)
-        obj = FreeCAD.ActiveDocument.addObject('Part::Feature', airfoilname)
+        obj = FreeCAD.ActiveDocument.addObject("Part::Feature", airfoilname)
         obj.Shape = face
 
     return obj

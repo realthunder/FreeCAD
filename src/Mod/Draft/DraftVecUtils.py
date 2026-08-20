@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -24,6 +26,7 @@
 Vector math utilities used primarily in the Draft workbench
 but which can also be used in other workbenches and in macros.
 """
+
 ## \defgroup DRAFTVECUTILS DraftVecUtils
 #  \ingroup UTILITIES
 #  \brief Vector math utilities used in Draft workbench
@@ -40,6 +43,8 @@ import FreeCAD
 from FreeCAD import Vector
 from draftutils import params
 from draftutils import messages
+from draftutils.utils import precision as draft_precision
+from freecad.deprecation import deprecated
 
 __title__ = "FreeCAD Draft Workbench - Vector library"
 __author__ = "Yorik van Havre, Werner Mayer, Martin Burbaum, Ken Cline"
@@ -49,16 +54,26 @@ __url__ = "https://www.freecad.org"
 #  @{
 
 
-def precision():
-    """Get the number of decimal numbers used for precision.
+@deprecated(
+    deprecated_in="26.3",
+    removed_in="27.2",
+    replacement="Draft.precision()",
+)
+def precision() -> int:
+    """
+    Get the number of fractional decimal digits as configured
+    in Draft preferences.
+
+    This function is deprecated since it is a doublette of
+    Draft.precision()
 
     Returns
     -------
     int
-        Return the number of decimal places set up in the preferences,
-        or a standard value (6), if the parameter is missing.
+        Return the number of fractional decimal digits as configured
+        in Draft preferences.
     """
-    return params.get_param("precision")
+    return draft_precision()
 
 
 def typecheck(args_and_types, name="?"):
@@ -95,8 +110,7 @@ def typecheck(args_and_types, name="?"):
     """
     for v, t in args_and_types:
         if not isinstance(v, t):
-            _msg = "typecheck[{0}]: {1} is not {2}".format(name, v, t)
-            messages._wrn(_msg)
+            messages._wrn("typecheck[{0}]: {1} is not {2}".format(name, v, t))
             raise TypeError("fcvec." + str(name))
 
 
@@ -178,7 +192,7 @@ def neg(u):
     return Vector(-u.x, -u.y, -u.z)
 
 
-def equals(u, v):
+def equals(u, v, precision=None):
     """Check for equality between two vectors.
 
     Due to rounding errors, two vectors will rarely be `equal`.
@@ -192,10 +206,13 @@ def equals(u, v):
 
     Parameters
     ----------
-    u : Base::Vector3
-        The first vector.
-    v : Base::Vector3
-        The second vector.
+    u         : Base::Vector3
+                The first vector.
+    v         : Base::Vector3
+                The second vector.
+    precision : int | None
+                mathematical precision - if None use configured draft
+                precision
 
     Returns
     -------
@@ -203,7 +220,7 @@ def equals(u, v):
         `True` if the vectors are within the precision, `False` otherwise.
     """
     typecheck([(u, Vector), (v, Vector)], "equals")
-    return isNull(u.sub(v))
+    return isNull(u.sub(v), precision)
 
 
 def scale(u, scalar):
@@ -222,7 +239,7 @@ def scale(u, scalar):
         The new vector with each of its elements multiplied by `scalar`.
     """
     typecheck([(u, Vector), (scalar, (int, int, float))], "scale")
-    return Vector(u.x*scalar, u.y*scalar, u.z*scalar)
+    return Vector(u.x * scalar, u.y * scalar, u.z * scalar)
 
 
 def scaleTo(u, l):
@@ -255,8 +272,8 @@ def scaleTo(u, l):
     if u.Length == 0:
         return Vector(u)
     else:
-        a = l/u.Length
-        return Vector(u.x*a, u.y*a, u.z*a)
+        a = l / u.Length
+        return Vector(u.x * a, u.y * a, u.z * a)
 
 
 def dist(u, v):
@@ -323,7 +340,7 @@ def angle(u, v=Vector(1, 0, 0), normal=Vector(0, 0, 1)):
         return 0
 
     # The dot product indicates the projection of one vector over the other
-    dp = u.dot(v)/ll
+    dp = u.dot(v) / ll
 
     # Due to rounding errors, the dot product could be outside
     # the range [-1, 1], so let's force it to be within this range.
@@ -375,7 +392,7 @@ def project(u, v):
         return Vector(0, 0, 0)  # to avoid division by zero
     # Why specifically this value? This should be an else?
     if dp != 15:
-        return scale(v, u.dot(v)/dp)
+        return scale(v, u.dot(v) / dp)
 
     # Return a null vector if the magnitude squared is 15, why?
     return Vector(0, 0, 0)
@@ -461,9 +478,9 @@ def rotate(u, angle, axis=Vector(0, 0, 1)):
 
     # Unit components, so that x**2 + y**2 + z**2 = 1
     L = axis.Length
-    x = axis.x/L
-    y = axis.y/L
-    z = axis.z/L
+    x = axis.x / L
+    y = axis.y / L
+    z = axis.z / L
 
     c = math.cos(angle)
     s = math.sin(angle)
@@ -477,9 +494,11 @@ def rotate(u, angle, axis=Vector(0, 0, 1)):
     ys = y * s
     zs = z * s
 
+    # fmt: off
     m = FreeCAD.Matrix(c + x*x*t,   xyt - zs,   xzt + ys,   0,
                        xyt + zs,    c + y*y*t,  yzt - xs,   0,
                        xzt - ys,    yzt + xs,   c + z*z*t,  0)
+    # fmt: on
 
     return m.multiply(u)
 
@@ -526,19 +545,22 @@ def getRotation(vector, reference=Vector(1, 0, 0)):
     return (c.x, c.y, c.z, Q)
 
 
-def isNull(vector):
+def isNull(vector, precision=None):
     """Return False if each of the components of the vector is zero.
 
     Due to rounding errors, an element is probably never going to be
     exactly zero. Therefore, it rounds the element by the number
-    of decimals specified in the `precision` parameter
-    in the parameter database, accessed through `FreeCAD.ParamGet()`.
-    It then compares the rounded numbers against zero.
+    of decimals specified in the `precision` parameter - if `precision`
+    is not set or set to None configured Draft precision is used.
+    It then compares the rounded coordinates against zero.
 
     Parameters
     ----------
     vector : Base::Vector3
         The tested vector.
+    precision : int | None
+                mathematical precision - if None use configured draft
+                precision
 
     Returns
     -------
@@ -546,14 +568,15 @@ def isNull(vector):
         `True` if each of the elements is zero within the precision.
         `False` otherwise.
     """
-    p = precision()
-    x = round(vector.x, p)
-    y = round(vector.y, p)
-    z = round(vector.z, p)
-    return (x == 0 and y == 0 and z == 0)
+    if precision is None:
+        precision = params.get_param("precision")
+    x = round(vector.x, precision)
+    y = round(vector.y, precision)
+    z = round(vector.z, precision)
+    return x == 0 and y == 0 and z == 0
 
 
-def find(vector, vlist):
+def find(vector, vlist, precision=None):
     """Find a vector in a list of vectors, and return the index.
 
     Finding a vector tests for `equality` which depends on the `precision`
@@ -565,10 +588,13 @@ def find(vector, vlist):
         The tested vector.
     vlist : list
         A list of Base::Vector3 vectors.
+    precision : int | None
+                mathematical precision - if None use configured draft
+                precision
 
     Returns
     -------
-    int
+    int | None
         The index of the list where the vector is found,
         or `None` if the vector is not found.
 
@@ -578,7 +604,7 @@ def find(vector, vlist):
     """
     typecheck([(vector, Vector), (vlist, list)], "find")
     for i, v in enumerate(vlist):
-        if equals(vector, v):
+        if equals(vector, v, precision):
             return i
     return None
 
@@ -629,7 +655,7 @@ def closest(vector, vlist, return_length=False):
         return index
 
 
-def isColinear(vlist):
+def isColinear(vlist, precision=None):
     """Check if the vectors in the list are colinear.
 
     Colinear vectors are those whose angle between them is zero.
@@ -656,6 +682,9 @@ def isColinear(vlist):
     vlist : list
         List of Base::Vector3 vectors.
         At least three elements must be present.
+    precision : int | None
+                mathematical precision - if None use configured draft
+                precision
 
     Returns
     -------
@@ -677,8 +706,8 @@ def isColinear(vlist):
     # This doesn't test for colinearity between the first two vectors.
     if len(vlist) < 3:
         return True
-
-    p = precision()
+    if precision is None:
+        precision = params.get_param("precision")
 
     # Difference between the second vector and the first one
     first = vlist[1].sub(vlist[0])
@@ -692,12 +721,12 @@ def isColinear(vlist):
         # The angle between the difference and the first difference.
         _angle = angle(diff, first)
 
-        if round(_angle, p) != 0:
+        if round(_angle, precision) != 0:
             return False
     return True
 
 
-def rounded(v,d=None):
+def rounded(v, precision=None):
     """Return a vector rounded to the `precision` in the parameter database
     or to the given decimals value
 
@@ -706,9 +735,12 @@ def rounded(v,d=None):
 
     Parameters
     ----------
-    v : Base::Vector3
-        The input vector.
-    d : (Optional) the number of decimals to round to
+    v         : Base::Vector3
+                The input vector.
+    precision : int | None
+                        mathematical precision - if None use configured draft
+                precision
+
 
     Returns
     -------
@@ -717,13 +749,12 @@ def rounded(v,d=None):
         to the number of decimals specified in the `precision` parameter
         in the parameter database.
     """
-    p = precision()
-    if d:
-        p = d
-    return Vector(round(v.x, p), round(v.y, p), round(v.z, p))
+    if precision is None:
+        precision = params.get_param("precision")
+    return Vector(round(v.x, precision), round(v.y, precision), round(v.z, precision))
 
 
-def getPlaneRotation(u, v, _ = None):
+def getPlaneRotation(u, v, _=None):
     """Return a rotation matrix defining the (u,v,w) coordinate system.
 
     The rotation matrix uses the elements from each vector.
@@ -760,14 +791,16 @@ def getPlaneRotation(u, v, _ = None):
     w.normalize()
     v = w.cross(u)
 
+    # fmt: off
     m = FreeCAD.Matrix(u.x, v.x, w.x, 0,
                        u.y, v.y, w.y, 0,
                        u.z, v.z, w.z, 0,
                        0.0, 0.0, 0.0, 1.0)
+    # fmt: on
     return m
 
 
-def removeDoubles(vlist):
+def removeDoubles(vlist, precision=None):
     """Remove duplicated vectors from a list of vectors.
 
     It removes only the duplicates that are next to each other in the list.
@@ -785,8 +818,11 @@ def removeDoubles(vlist):
 
     Parameters
     ----------
-    vlist : list of Base::Vector3
-        List with vectors.
+    vlist     : list of Base::Vector3
+                List with vectors.
+    precision : int | None
+                mathematical precision - if None use configured draft
+                precision
 
     Returns
     -------
@@ -806,20 +842,24 @@ def removeDoubles(vlist):
     # Iterate until the penultimate element, and test for equality
     # with the element in front
     for i in range(len(vlist) - 1):
-        if not equals(vlist[i], vlist[i+1]):
+        if not equals(vlist[i], vlist[i + 1], precision):
             nlist.append(vlist[i])
     # Add the last element
     nlist.append(vlist[-1])
     return nlist
 
-def get_spherical_coords(x, y, z):
+
+def get_spherical_coords(x, y, z, precision=None):
     """Get the Spherical coordinates of the vector represented
     by Cartesian coordinates (x, y, z).
 
     Parameters
     ----------
-    vector : Base::Vector3
-        The input vector.
+    vector    : Base::Vector3
+                        The input vector.
+    precision : int | None
+                mathematical precision - if None use configured draft
+                precision
 
     Returns
     -------
@@ -837,23 +877,26 @@ def get_spherical_coords(x, y, z):
     (0, 0, z) -> (radius, theta, 0)
     """
 
-    v = Vector(x,y,z)
-    x_axis = Vector(1,0,0)
-    z_axis = Vector(0,0,1)
-    y_axis = Vector(0,1,0)
+    if precision is None:
+        precision = params.get_param("precision")
+
+    v = Vector(x, y, z)
+    x_axis = Vector(1, 0, 0)
+    z_axis = Vector(0, 0, 1)
+    y_axis = Vector(0, 1, 0)
     rad = v.Length
 
-    if not bool(round(rad, precision())):
-        return (0, math.pi/2, 0)
+    if not bool(round(rad, precision)):
+        return (0, math.pi / 2, 0)
 
     theta = v.getAngle(z_axis)
-    v.projectToPlane(Vector(0,0,0), z_axis)
+    v.projectToPlane(Vector(0, 0, 0), z_axis)
     phi = v.getAngle(x_axis)
     if math.isnan(phi):
         return (rad, theta, 0)
     # projected vector is on 3rd or 4th quadrant
     if v.dot(Vector(y_axis)) < 0:
-        phi = -1*phi
+        phi = -1 * phi
 
     return (rad, theta, phi)
 
@@ -877,9 +920,9 @@ def get_cartesian_coords(radius, theta, phi):
         Tuple (x, y, z) with the Cartesian coordinates.
     """
 
-    x = radius*math.sin(theta)*math.cos(phi)
-    y = radius*math.sin(theta)*math.sin(phi)
-    z = radius*math.cos(theta)
+    x = radius * math.sin(theta) * math.cos(phi)
+    y = radius * math.sin(theta) * math.sin(phi)
+    z = radius * math.cos(theta)
 
     return (x, y, z)
 

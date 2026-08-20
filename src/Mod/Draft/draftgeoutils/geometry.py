@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -22,6 +24,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides various functions for general geometrical calculations."""
+
 ## @package geometry
 # \ingroup draftgeoutils
 # \brief Provides various functions for general geometrical calculations.
@@ -111,8 +114,7 @@ def findDistance(point, edge, strict=False):
             if strict:
                 s1 = newpoint.sub(edge[0])
                 s2 = newpoint.sub(edge[1])
-                if (s1.Length <= segment.Length
-                        and s2.Length <= segment.Length):
+                if s1.Length <= segment.Length and s2.Length <= segment.Length:
                     return dist
                 else:
                     return None
@@ -131,14 +133,13 @@ def findDistance(point, edge, strict=False):
 
             newpoint = point.add(dist)
 
-            if (dist.Length == 0):
+            if dist.Length == 0:
                 return None
 
             if strict:
                 s1 = newpoint.sub(edge.Vertexes[0].Point)
                 s2 = newpoint.sub(edge.Vertexes[-1].Point)
-                if (s1.Length <= segment.Length
-                        and s2.Length <= segment.Length):
+                if s1.Length <= segment.Length and s2.Length <= segment.Length:
                     return dist
                 else:
                     return None
@@ -170,7 +171,7 @@ def findDistance(point, edge, strict=False):
                 ang1 = DraftVecUtils.angle(ve1.sub(center))
                 ang2 = DraftVecUtils.angle(ve2.sub(center))
                 angpt = DraftVecUtils.angle(newpoint.sub(center))
-                if ang1 >= ang2: # Arc does not cross the 9 o'clock point.
+                if ang1 >= ang2:  # Arc does not cross the 9 o'clock point.
                     if ang1 >= angpt and angpt >= ang2:
                         return dist
                     else:
@@ -182,15 +183,13 @@ def findDistance(point, edge, strict=False):
             else:
                 return dist
 
-        elif (geomType(edge) == "BSplineCurve"
-              or geomType(edge) == "BezierCurve"):
+        elif geomType(edge) == "BSplineCurve" or geomType(edge) == "BezierCurve":
             try:
                 pr = edge.Curve.parameter(point)
                 np = edge.Curve.value(pr)
                 dist = np.sub(point)
             except Part.OCCError:
-                print("DraftGeomUtils: Unable to get curve parameter "
-                      "for point ", point)
+                print("DraftGeomUtils: Unable to get curve parameter " "for point ", point)
                 return None
             else:
                 return dist
@@ -217,6 +216,69 @@ def get_spline_normal(edge, tol=-1):
         return normal
     else:
         return None
+
+
+def get_shape_normal(shape):
+    """Find the normal of a shape or list of points or colinear edges, if possible."""
+
+    # New function based on get_normal() drafted by @Roy_043
+    # in discussion https://forum.freecad.org/viewtopic.php?p=717862#p717862
+    #
+    # The normal would not be affected  by the 3D view direction and flipped as
+    # get_normal would be. Placement of the Shape is taken into account in this
+    # new function instead :
+    # - Normal of a planar shape is usually bi-directional, this function return
+    #   the one 'in the direction' of the shape's placement 'normal' (z-direction).
+    #   As reference, shape.findPlane() favour positive axes, get_normal()
+    #   favour the 'view direction' (obtained by getViewDirection() ).
+    # - Even when the Shape is an edge or colinear edges, its Placement is taken
+    #   into account, and this function return one 'in the direction' of the
+    #   shape's placement 'normal' (z-direction).
+    #   https://forum.freecad.org/viewtopic.php?p=715850#p715850
+    # The normal direction of a Draft wire (co-planar) or arc used to depends on
+    # the way the shape is constructed i.e. by vertexes in clockwise or
+    # anti-clockwise.  This cryptic behaviour no longer matters.
+
+    if shape.isNull():
+        return None
+
+    # Roy_043's remarks on the behavior of Shape.findPlane():
+    # - https://forum.freecad.org/viewtopic.php?p=713993#p713993
+    # Check if the shape is planar
+    # If True: check if the outer wire is closed:
+    #    if True  :   Return a (plane with) normal based on the direction of the outer wire (CW or CCW).
+    #    if False : ? Return a (plane with) normal that points towards positive global axes with a certain priority
+    #                 (probably? Z, Y and then X).
+    # If False: return None.
+    #
+    # Further remarks :
+    # - Tested Sketch with 2 colinear edges return a Plane with Axis
+    # - Tested Sketch with 1 edge return no Plane with no Axis
+
+    shape_rot = shape.Placement.Rotation
+    plane = shape.findPlane()
+
+    if plane is None:
+        if not is_straight_line(shape):
+            return None
+        start_edge = shape.Edges[0]
+        x_vec = start_edge.tangentAt(
+            start_edge.FirstParameter
+        )  # Return vector is in global coordinate
+        local_x_vec = shape_rot.inverted().multVec(x_vec)  #
+        local_rot = App.Rotation(local_x_vec, App.Vector(0, 1, 0), App.Vector(0, 0, 1), "XZY")
+        # see https://blog.freecad.org/2023/01/16/the-rotation-api-in-freecad/ for App.Rotation(vecx, vecy, vecz, string)
+        # discussion - https://forum.freecad.org/viewtopic.php?p=717738#p717738
+        return shape_rot.multiply(local_rot).multVec(App.Vector(0, 0, 1))
+
+    normal = plane.Axis
+    shape_normal = shape_rot.multVec(App.Vector(0, 0, 1))
+    # Now, check the normal direction of the plane (plane.Axis).
+    # The final deduced normal should be 'in the direction' of the z-direction of the shape's placement,
+    # if plane.Axis is in the 'opposite' direction of the Z direction of the shape's placement, reverse it.
+    if normal.getAngle(shape_normal) > math.pi / 2:
+        normal = normal.negative()
+    return normal
 
 
 def get_normal(shape, tol=-1):
@@ -329,8 +391,10 @@ def is_straight_line(shape, tol=-1):
     if len(shape.Edges) >= 1:
         start_edge = shape.Edges[0]
         dir_start_edge = start_edge.tangentAt(start_edge.FirstParameter)
-        #set tolerance
-        if tol <=0:
+        point_start_edge = start_edge.firstVertex().Point
+
+        # set tolerance
+        if tol <= 0:
             err = shape.globalTolerance(tol)
         else:
             err = tol
@@ -342,8 +406,27 @@ def is_straight_line(shape, tol=-1):
             # check if edge is curve or no parallel to start_edge
             # because sin(x) = x + O(x**3), for small angular deflection it's
             # enough use the cross product of directions (or dot with a normal)
-            if (abs(edge.Length - first_point.distanceToPoint(last_point)) > err
-                or dir_start_edge.cross(dir_edge).Length > err):
+            if (
+                abs(edge.Length - first_point.distanceToPoint(last_point)) > err
+                # https://forum.freecad.org/viewtopic.php?p=726101#p726101
+                # Shape with parallel edges but not colinear used to return True
+                # by this function, below line added fixes this bug.
+                # Further remark on the below fix :
+                # - get_normal() use this function, may had created problems
+                #   previously but not reported; on the other hand, this fix
+                #   seems have no 'regression' created as get_normal use
+                #   plane.Axis (with 3DView check).  See get_shape_normal()
+                #   which take into account shape's placement
+                # - other functions had been using this also : Keep In View to
+                #    see if there is 'regression' :
+                #
+                # $ grep -rni "is_straight" ./
+                # ./draftfunctions/upgrade.py
+                # ./draftgeoutils/geometry.py
+                # ./draftmake/make_wire.py
+                or first_point.distanceToLine(point_start_edge, dir_start_edge) > err  #
+                or dir_start_edge.cross(dir_edge).Length > err
+            ):
                 return False
 
     return True
@@ -364,8 +447,8 @@ def are_coplanar(shape_a, shape_b, tol=-1):
     plane_a = find_plane(shape_a, tol)
     plane_b = find_plane(shape_b, tol)
 
-    #set tolerance
-    if tol <=0:
+    # set tolerance
+    if tol <= 0:
         err = 1e-7
     else:
         err = tol
@@ -374,8 +457,7 @@ def are_coplanar(shape_a, shape_b, tol=-1):
         normal_a = plane_a.Axis
         normal_b = plane_b.Axis
         proj = plane_a.projectPoint(plane_b.Position)
-        if (normal_a.cross(normal_b).Length > err
-            or plane_b.Position.sub(proj).Length > err):
+        if normal_a.cross(normal_b).Length > err or plane_b.Position.sub(proj).Length > err:
             return False
         else:
             return True
@@ -420,8 +502,8 @@ def get_spline_surface_normal(shape, tol=-1):
     if len(shape.Faces) == 0:
         return None
 
-    #set tolerance
-    if tol <=0:
+    # set tolerance
+    if tol <= 0:
         err = shape.globalTolerance(tol)
     else:
         err = tol
@@ -433,8 +515,8 @@ def get_spline_surface_normal(shape, tol=-1):
 
     # find bounds of first_surf
     u0, u1, v0, v1 = first_surf.bounds()
-    u = (u0 + u1)/2
-    v = (v0 + v1)/2
+    u = (u0 + u1) / 2
+    v = (v0 + v1) / 2
     first_normal = first_surf.normal(u, v)
     # check if all faces are planar and parallel
     for face in shape.Faces:
@@ -442,8 +524,8 @@ def get_spline_surface_normal(shape, tol=-1):
         if not surf.isPlanar(tol):
             return None
         u0, u1, v0, v1 = surf.bounds()
-        u = (u0 + u1)/2
-        v = (v0 + v1)/2
+        u = (u0 + u1) / 2
+        v = (v0 + v1) / 2
         surf_normal = surf.normal(u, v)
         if first_normal.cross(surf_normal).Length > err:
             return None
@@ -451,6 +533,7 @@ def get_spline_surface_normal(shape, tol=-1):
     normal = first_normal
 
     return normal
+
 
 def find_plane(shape, tol=-1):
     """Find the plane containing the shape if possible.
@@ -750,13 +833,13 @@ def project_point_on_plane(point, base, normal, direction=None, force_projection
     return point - delta_ax_proj / cos * direction
 
 
-#compatibility layer
+# compatibility layer
 
 getSplineNormal = get_spline_normal
 
 getNormal = get_normal
 
-isPlanar =  is_planar
+isPlanar = is_planar
 
 
 ## @}

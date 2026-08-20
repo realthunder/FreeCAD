@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2020 Eliud Cabrera Castillo <e.cabrera-castillo@tum.de>           *
 # *                                                                         *
@@ -21,6 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides GUI tools to create parametric Array objects. Grouping command."""
+
 ## @package gui_arrays
 # \ingroup draftguitools
 # \brief Provides GUI tools to create parametric Array objects.
@@ -30,7 +33,8 @@
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCADGui as Gui
-import Draft_rc
+from draftutils import gui_utils
+
 import draftguitools.gui_circulararray
 import draftguitools.gui_orthoarray
 import draftguitools.gui_patharray
@@ -39,12 +43,12 @@ import draftguitools.gui_polararray
 import draftguitools.gui_pathtwistedarray
 
 # The module is used to prevent complaints from code checkers (flake8)
-bool(Draft_rc.__name__)
 bool(draftguitools.gui_circulararray.__name__)
 bool(draftguitools.gui_orthoarray.__name__)
 bool(draftguitools.gui_patharray.__name__)
 bool(draftguitools.gui_pointarray.__name__)
 bool(draftguitools.gui_polararray.__name__)
+bool(draftguitools.gui_pathtwistedarray.__name__)
 
 
 class ArrayGroup:
@@ -52,27 +56,35 @@ class ArrayGroup:
 
     def GetCommands(self):
         """Tuple of array commands."""
-        return ("Draft_OrthoArray",
-                "Draft_PolarArray", "Draft_CircularArray",
-                "Draft_PathArray", "Draft_PathLinkArray",
-                "Draft_PointArray", "Draft_PointLinkArray",
-                "Draft_PathTwistedArray", "Draft_PathTwistedLinkArray")
+        return (
+            "Draft_OrthoArray",
+            "Draft_PolarArray",
+            "Draft_CircularArray",
+            "Draft_PathArray",
+            "Draft_PathLinkArray",
+            "Draft_PointArray",
+            "Draft_PointLinkArray",
+            "Draft_PathTwistedArray",
+            "Draft_PathTwistedLinkArray",
+        )
 
     def GetResources(self):
         """Set icon, menu and tooltip."""
 
-        return {'Pixmap': 'Draft_Array',
-                'MenuText': QT_TRANSLATE_NOOP("Draft_ArrayTools", "Array tools"),
-                'ToolTip': QT_TRANSLATE_NOOP("Draft_ArrayTools", "Create various types of arrays, including rectangular, polar, circular, path, and point")}
+        return {
+            "Pixmap": "Draft_Array",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_ArrayTools", "Array Tools"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_ArrayTools",
+                "Tools to create various types of arrays, including rectangular, polar, circular, path, and point arrays",
+            ),
+        }
 
     def IsActive(self):
         """Return True when this command should be available."""
-        if Gui.activeDocument():
-            return True
-        else:
-            return False
+        return bool(gui_utils.get_3d_view())
 
 
-Gui.addCommand('Draft_ArrayTools', ArrayGroup())
+Gui.addCommand("Draft_ArrayTools", ArrayGroup())
 
 ## @}

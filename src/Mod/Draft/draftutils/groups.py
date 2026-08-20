@@ -1,4 +1,5 @@
-# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009, 2010                                                        *
 # *   Yorik van Havre <yorik@uncreated.net>, Ken Cline <cline@frii.com>     *
@@ -28,6 +29,7 @@
 The functions here are also used in the Arch Workbench as some of
 the objects created with this workbench work like groups.
 """
+
 ## @package groups
 # \ingroup draftutils
 # \brief Provides utility functions to do operations with groups.
@@ -38,7 +40,7 @@ import FreeCAD as App
 import draftutils.utils as utils
 
 from draftutils.translate import translate
-from draftutils.messages import _msg, _err
+from draftutils.messages import _err
 
 
 def is_group(obj):
@@ -64,10 +66,14 @@ def is_group(obj):
         Otherwise returns `False`.
     """
     typ = utils.get_type(obj)
-    return ((obj.isDerivedFrom("App::DocumentObjectGroup")
-                and typ != "LayerContainer")
-            or typ in ("Project", "Site", "Building",
-                       "Floor", "BuildingPart", "Space"))
+    return (obj.isDerivedFrom("App::DocumentObjectGroup") and typ != "LayerContainer") or typ in (
+        "Project",
+        "Site",
+        "Building",
+        "Floor",
+        "BuildingPart",
+        "Space",
+    )
 
 
 def get_group_names(doc=None):
@@ -128,8 +134,7 @@ def ungroup(obj):
 
     found, obj = utils.find_object(obj, doc=App.activeDocument())
     if not found:
-        _msg("obj: {}".format(obj_str))
-        _err(translate("draft", "Wrong input: object not in document."))
+        _err(translate("draft", "Wrong input: object {} not in document.").format(obj_str))
         return None
 
     doc = obj.Document
@@ -151,15 +156,14 @@ def get_windows(obj):
     Parameters
     ----------
     obj: App::DocumentObject
-        A scripted object of type `'Wall'` or `'Structure'`
-        (Arch Workbench).
+        A scripted object of type `'Wall'`, `'Roof'`, `'Structure'` or
+        `'CurtainWall'` (BIM Workbench).
         This will be searched for objects of type `'Window'` and `'Rebar'`,
         and clones of them, and the found elements will be added
         to the output list.
 
         The function will search recursively all elements under `obj.OutList`,
-        in case the windows and rebars are nested under other walls
-        and structures.
+        in case the windows and rebars are nested under other hosts.
 
     Returns
     -------
@@ -169,49 +173,29 @@ def get_windows(obj):
         it will return the same `obj` element.
     """
     out = []
-    item = obj
-
-    if isinstance(item, tuple):
-        obj = item[0].getSubObject(item[1], retType=1)
-        if not obj:
-            return out
-
-    # getLinkedObject() will return the obj itself if it is not a link
-    linked = obj.getLinkedObject()
-
-    if utils.get_type(linked) in ("Wall", "Structure"):
-        if obj is not item:
-            for o in obj.OutList:
-                for child, sub in get_windows((o, '')):
-                    out.append(item[0], item[1] + child.Name + '.' + sub)
-        else:
-            for o in obj.OutList:
-                out.extend(get_windows(o))
-
-            for i in obj.InList:
-                ilinked = i.getLinkedObject()
-                if (utils.get_type(ilinked) == "Window"
-                        or utils.is_clone(ilinked, "Window")):
-                    if hasattr(i, "Hosts"):
-                        if obj in i.Hosts:
-                            out.append(i)
-                elif (utils.get_type(ilinked) == "Rebar"
-                    or utils.is_clone(ilinked, "Rebar")):
-                    if hasattr(i, "Host"):
-                        if obj == i.Host:
-                            out.append(i)
-
-    elif (utils.get_type(linked) in ("Window", "Rebar")
-          or utils.is_clone(linked, ["Window", "Rebar"])):
-        out.append(item)
+    if utils.get_type(obj) in ("Wall", "Roof", "Structure", "CurtainWall"):
+        for o in obj.OutList:
+            out.extend(get_windows(o))
+        for i in obj.InList:
+            if utils.get_type(i.getLinkedObject()) == "Window" or utils.is_clone(obj, "Window"):
+                if hasattr(i, "Hosts"):
+                    if obj in i.Hosts:
+                        out.append(i)
+            elif utils.get_type(i) == "Rebar" or utils.is_clone(obj, "Rebar"):
+                if hasattr(i, "Host"):
+                    if obj == i.Host:
+                        out.append(i)
+    elif utils.get_type(obj.getLinkedObject()) in ("Window", "Rebar") or utils.is_clone(
+        obj, ["Window", "Rebar"]
+    ):
+        out.append(obj)
 
     return out
 
 
-def get_group_contents(objectslist,
-                       walls=False, addgroups=False,
-                       spaces=False, noarchchild=False,
-                       nobodyfeature=True):
+def get_group_contents(
+    objectslist, walls=False, addgroups=False, spaces=False, noarchchild=False, exclude_names=None
+):
     """Return a list of objects from expanding the input groups.
 
     The function accepts any type of object, although it is most useful
@@ -229,9 +213,9 @@ def get_group_contents(objectslist,
 
     walls: bool, optional
         It defaults to `False`.
-        If it is `True`, Wall and Structure objects (Arch Workbench)
-        are treated as groups; they are scanned for Window, Door,
-        and Rebar objects, and these are added to the output list.
+        If it is `True`, Wall, Roof, Structure and CurtainWall objects
+        (BIM Workbench) are treated as groups; they are scanned for Window,
+        Door, and Rebar objects, and these are added to the output list.
 
     addgroups: bool, optional
         It defaults to `False`.
@@ -247,11 +231,10 @@ def get_group_contents(objectslist,
         If it is `True`, the objects inside Building and BuildingParts
         (Arch Workbench) aren't added to the output list.
 
-    nobodyfeature: bool, optional
-        It defaults to `True`.
-        If it is `True`, replace any body feature in objectlist with its owner
-        body, because in most cases body feature can't be manipulated like
-        other normal feature.
+    exclude_names: list/tuple/set, optional
+        It defaults to `None`.
+        If an iterable of object names is given, any object whose `Name` is
+        in this iterable will be excluded from the output list.
 
     Returns
     -------
@@ -264,49 +247,23 @@ def get_group_contents(objectslist,
         objectslist = [objectslist]
 
     for obj in objectslist:
-        item = obj
-        if isinstance(item, tuple):
-            obj = item[0].getSubObject(item[1], retType=1)
         if obj:
-            if nobodyfeature and obj.isDerivedFrom('PartDesign::Feature'):
-                if not isinstance(item, tuple):
-                    group = obj.getParentGeoFeatureGroup()
-                    if group:
-                        newlist.append(group)
-                        continue
-                else:
-                    # if we are given a path, traverse the path instead of relying
-                    # on getParentGeoFeatureGroup() so that it works properly with
-                    # Link
-                    objs = item[0].getSubObjectList(item[1])
-                    obj = objs[-1]
-                    if obj.isDerivedFrom('PartDesign::Feature'):
-                        for i,parent in enumerate(reversed(objs[:-1])):
-                            linked = parent.getLinkedObject()
-                            if linked.isDerivedFrom('PartDesign::Body'):
-                                if linked.hasObject(obj):
-                                    sub = '.'.join([o.Name for o in objs[1:-(i+1)]])
-                                    if sub:
-                                        sub += '.'
-                                    newlist.append((item[0], sub))
-                                    continue
-                            break
-
+            if exclude_names and obj.Name in exclude_names:
+                continue
             if is_group(obj):
-                if addgroups or (spaces
-                                 and utils.get_type(obj) == "Space"):
-                    newlist.append(item)
-                if not (noarchchild
-                        and utils.get_type(obj) in ("Building",
-                                                    "BuildingPart")):
-                    newlist.extend(get_group_contents(obj.Group,
-                                                      walls, addgroups,
-                                                      spaces, noarchchild))
+                if addgroups or (spaces and utils.get_type(obj) == "Space"):
+                    newlist.append(obj)
+                if not (noarchchild and utils.get_type(obj) in ("Building", "BuildingPart")):
+                    newlist.extend(
+                        get_group_contents(
+                            obj.Group, walls, addgroups, spaces, noarchchild, exclude_names
+                        )
+                    )
             else:
                 # print("adding ", obj.Name)
-                newlist.append(item)
+                newlist.append(obj)
                 if walls:
-                    newlist.extend(get_windows(item))
+                    newlist.extend(get_windows(obj))
 
     # Clean possible duplicates
     cleanlist = []
@@ -317,17 +274,11 @@ def get_group_contents(objectslist,
     return cleanlist
 
 
-def getGroupContents(objectslist,
-                     walls=False, addgroups=False,
-                     spaces=False, noarchchild=False,
-                     nobodyfeature=True):
+def getGroupContents(objectslist, walls=False, addgroups=False, spaces=False, noarchchild=False):
     """Return a list of objects from groups. DEPRECATED."""
     utils.use_instead("get_group_contents")
 
-    return get_group_contents(objectslist,
-                              walls, addgroups,
-                              spaces, noarchchild,
-                              nobodyfeature)
+    return get_group_contents(objectslist, walls, addgroups, spaces, noarchchild)
 
 
 def get_movable_children(objectslist, recursive=True, _donelist=[]):
@@ -369,19 +320,28 @@ def get_movable_children(objectslist, recursive=True, _donelist=[]):
         _donelist.append(obj.Name)
 
         # Skips some objects that should never move their children
-        if utils.get_type(obj) not in ("App::Part", "PartDesign::Body",
-                                       "Clone", "SectionPlane",
-                                       "Facebinder", "BuildingPart", "App::Link"):
+        if utils.get_type(obj) not in (
+            "App::Part",
+            "PartDesign::Body",
+            "Clone",
+            "SectionPlane",
+            "Facebinder",
+            "BuildingPart",
+            "App::Link",
+        ):
             children = obj.OutList
-            if (hasattr(obj, "Proxy") and obj.Proxy
-                    and hasattr(obj.Proxy, "getSiblings")
-                    and utils.get_type(obj) != "Window"):
+            if (
+                hasattr(obj, "Proxy")
+                and obj.Proxy
+                and hasattr(obj.Proxy, "getSiblings")
+                and utils.get_type(obj) != "Window"
+            ):
                 # children.extend(obj.Proxy.getSiblings(obj))
                 pass
 
             for child in children:
                 if hasattr(child, "MoveWithHost") and child.MoveWithHost:
-                    if hasattr(obj, "CloneOf") and  obj.CloneOf:
+                    if hasattr(obj, "CloneOf") and obj.CloneOf:
                         if obj.CloneOf.Name != child.Name:
                             added.append(child)
                     else:
@@ -397,5 +357,6 @@ def getMovableChildren(objectslist, recursive=True):
     """Return a list of objects with child objects. DEPRECATED."""
     utils.use_instead("get_movable_children")
     return get_movable_children(objectslist, recursive)
+
 
 ## @}

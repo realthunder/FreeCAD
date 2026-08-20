@@ -1,6 +1,9 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2013 Yorik van Havre <yorik@uncreated.net>              *
 # *   Copyright (c) 2019 Eliud Cabrera Castillo <e.cabrera-castillo@tum.de> *
+# *   Copyright (c) 2025 FreeCAD Project Association                        *
 # *                                                                         *
 # *   This file is part of the FreeCAD CAx development system.              *
 # *                                                                         *
@@ -21,43 +24,29 @@
 # *   USA                                                                   *
 # *                                                                         *
 # ***************************************************************************
+
 """Unit tests for the Draft Workbench, object creation tests."""
+
 ## @package test_creation
 # \ingroup drafttests
 # \brief Unit tests for the Draft Workbench, object creation tests.
 
 ## \addtogroup drafttests
 # @{
-import unittest
+
 import math
+import os
+import tempfile
 
 import FreeCAD as App
 import Draft
-import drafttests.auxiliary as aux
-
 from FreeCAD import Vector
+from drafttests import test_base
 from draftutils.messages import _msg
 
 
-class DraftCreation(unittest.TestCase):
+class DraftCreation(test_base.DraftTestCaseDoc):
     """Test Draft creation functions."""
-
-    def setUp(self):
-        """Set up a new document to hold the tests.
-
-        This is executed before every test, so we create a document
-        to hold the objects.
-        """
-        aux.draw_header()
-        doc_name = self.__class__.__name__
-        if App.ActiveDocument:
-            if App.ActiveDocument.Name != doc_name:
-                App.newDocument(doc_name)
-        else:
-            App.newDocument(doc_name)
-        App.setActiveDocument(doc_name)
-        self.doc = App.ActiveDocument
-        _msg("  Temporary document '{}'".format(self.doc.Name))
 
     def test_line(self):
         """Create a line."""
@@ -118,10 +107,8 @@ class DraftCreation(unittest.TestCase):
         start_angle = 0
         end_angle = 90
         _msg("  radius={}".format(radius))
-        _msg("  startangle={0}, endangle={1}".format(start_angle,
-                                                     end_angle))
-        obj = Draft.make_circle(radius,
-                                startangle=start_angle, endangle=end_angle)
+        _msg("  startangle={0}, endangle={1}".format(start_angle, end_angle))
+        obj = Draft.make_circle(radius, startangle=start_angle, endangle=end_angle)
         self.assertTrue(obj, "'{}' failed".format(operation))
 
     def test_arc_3points(self):
@@ -200,9 +187,7 @@ class DraftCreation(unittest.TestCase):
         line = Draft.make_line(a, b)
         self.doc.recompute()
 
-        obj = Draft.make_linear_dimension_obj(line,
-                                              i1=1, i2=2,
-                                              dim_line=Vector(5, 3, 0))
+        obj = Draft.make_linear_dimension_obj(line, i1=1, i2=2, dim_line=Vector(5, 3, 0))
         self.assertTrue(obj, "'{}' failed".format(operation))
 
     def test_dimension_radial_obj(self):
@@ -213,18 +198,16 @@ class DraftCreation(unittest.TestCase):
         start_angle = 0
         end_angle = 90
         _msg("  radius={}".format(radius))
-        _msg("  startangle={0}, endangle={1}".format(start_angle,
-                                                     end_angle))
-        circ = Draft.make_circle(radius,
-                                 startangle=start_angle, endangle=end_angle)
+        _msg("  startangle={0}, endangle={1}".format(start_angle, end_angle))
+        circ = Draft.make_circle(radius, startangle=start_angle, endangle=end_angle)
         self.doc.recompute()
 
-        obj1 = Draft.make_radial_dimension_obj(circ, index=1,
-                                               mode="radius",
-                                               dim_line=Vector(1, 1, 0))
-        obj2 = Draft.make_radial_dimension_obj(circ, index=1,
-                                               mode="diameter",
-                                               dim_line=Vector(3, 1, 0))
+        obj1 = Draft.make_radial_dimension_obj(
+            circ, index=1, mode="radius", dim_line=Vector(1, 1, 0)
+        )
+        obj2 = Draft.make_radial_dimension_obj(
+            circ, index=1, mode="diameter", dim_line=Vector(3, 1, 0)
+        )
         self.assertTrue(obj1 and obj2, "'{}' failed".format(operation))
 
     def test_dimension_angular(self):
@@ -282,7 +265,7 @@ class DraftCreation(unittest.TestCase):
         _msg("  or an App::PropertyLinkSubList")
 
         _msg("  Box")
-        box = App.ActiveDocument.addObject("Part::Box")
+        box = self.doc.addObject("Part::Box")
         self.doc.recompute()
         # The facebinder function accepts a Gui selection set,
         # or a 'PropertyLinkSubList'
@@ -337,14 +320,22 @@ class DraftCreation(unittest.TestCase):
         target_point = Vector(0, 0, 0)
         distance = -25
         placement = App.Placement(Vector(50, 50, 0), App.Rotation())
-        _msg("  target_point={0}, "
-             "distance={1}".format(target_point, distance))
+        _msg("  target_point={0}, " "distance={1}".format(target_point, distance))
         _msg("  placement={}".format(placement))
-        obj = Draft.make_label(target_point=target_point,
-                               distance=distance,
-                               placement=placement)
+        obj = Draft.make_label(target_point=target_point, distance=distance, placement=placement)
         self.doc.recompute()
         self.assertTrue(obj, "'{}' failed".format(operation))
+
+    def test_label_custom_text_updates_text_immediately(self):
+        """Change label custom text without waiting for recompute."""
+        operation = "Draft Label custom text update"
+        _msg("  Test '{}'".format(operation))
+        obj = Draft.make_label(custom_text="Original")
+        self.doc.recompute()
+        self.assertEqual(list(obj.Text), ["Original"], "'{}' setup failed".format(operation))
+
+        obj.CustomText = ["Foo"]
+        self.assertEqual(list(obj.Text), ["Foo"], "'{}' failed".format(operation))
 
     def test_layer(self):
         """Create a layer, and add a rectangle to it."""
@@ -378,27 +369,53 @@ class DraftCreation(unittest.TestCase):
         _msg("  length={0}, width={1}".format(length, width))
         rect = Draft.make_rectangle(length, width)
         rect.MakeFace = True
-        App.ActiveDocument.recompute()
+        self.doc.recompute()
 
         patfile = App.getResourceDir() + "Mod/TechDraw/PAT/FCPAT.pat"
         patname = "Horizontal5"
         _msg("  patfile='{0}'".format(patfile))
         _msg("  patname='{0}'".format(patname))
         obj = Draft.make_hatch(rect, patfile, patname, scale=1, rotation=45)
-        App.ActiveDocument.recompute()
+        self.doc.recompute()
 
         box = obj.Shape.BoundBox
         # A rather high tolerance is required.
-        obj_is_ok = (box.Center.isEqual(Vector(length/2, width/2, 0), 1e-6)
-                      and math.isclose(box.XLength, length, rel_tol=0, abs_tol=1e-6)
-                      and math.isclose(box.YLength, width, rel_tol=0, abs_tol=1e-6))
+        obj_is_ok = (
+            box.Center.isEqual(Vector(length / 2, width / 2, 0), 1e-6)
+            and math.isclose(box.XLength, length, rel_tol=0, abs_tol=1e-6)
+            and math.isclose(box.YLength, width, rel_tol=0, abs_tol=1e-6)
+        )
         self.assertTrue(obj_is_ok, "'{}' failed".format(operation))
 
-    def tearDown(self):
-        """Finish the test.
+    def test_hatch_ignores_trailing_eof_marker(self):
+        """A trailing DOS EOF marker must not change hatch geometry."""
+        operation = "Draft Hatch EOF Marker"
+        _msg("  Test '{}'".format(operation))
+        length = 50
+        width = 30
+        rect = Draft.make_rectangle(length, width)
+        rect.MakeFace = True
+        self.doc.recompute()
 
-        This is executed after each test, so we close the document.
-        """
-        App.closeDocument(self.doc.Name)
+        pattern_name = "TrailingEOF"
+        pattern_body = "*{}, test pattern\r\n0, 0,0, 0,10\r\n".format(pattern_name).encode("ascii")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            clean_pat = os.path.join(temp_dir, "clean.pat")
+            eof_pat = os.path.join(temp_dir, "with_eof_marker.pat")
+            with open(clean_pat, "wb") as pat_file:
+                pat_file.write(pattern_body)
+            with open(eof_pat, "wb") as pat_file:
+                pat_file.write(pattern_body)
+                pat_file.write(b"\x1a\r\n")
+
+            clean_hatch = Draft.make_hatch(rect, clean_pat, pattern_name, scale=1, rotation=0)
+            eof_hatch = Draft.make_hatch(rect, eof_pat, pattern_name, scale=1, rotation=0)
+            self.doc.recompute()
+
+            clean_edges = sorted(round(edge.Length, 6) for edge in clean_hatch.Shape.Edges)
+            eof_edges = sorted(round(edge.Length, 6) for edge in eof_hatch.Shape.Edges)
+
+        self.assertEqual(clean_edges, eof_edges, "'{}' failed".format(operation))
+
 
 ## @}

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -22,6 +24,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides various functions to calculate intersections of shapes."""
+
 ## @package intersections
 # \ingroup draftgeoutils
 # \brief Provides various functions to calculate intersections of shapes.
@@ -41,14 +44,49 @@ Part = lz.LazyLoader("Part", globals(), "Part")
 # @{
 
 
-def findIntersection(edge1, edge2,
-                     infinite1=False, infinite2=False,
-                     ex1=False, ex2=False,
-                     dts=True, findAll=False):
+def findIntersection(
+    edge1, edge2, infinite1=False, infinite2=False, ex1=False, ex2=False, dts=True, findAll=False
+):
     """Return a list containing the intersection points of 2 edges.
 
     You can also feed 4 points instead of `edge1` and `edge2`.
-    If `dts` is used, `Shape.distToShape()` is used, which can be buggy.
+    If `dts` is used, `Shape.section()` is used.
+
+    Parameters
+    ----------
+    edge1
+        Part.Edge, Circle, Line -> the first edge.
+        Base::Vector3 -> the starting point of the first line. In which case
+            `infinite1` must also be a point.
+    edge2
+        Part.Edge, Circle, Line -> the second edge.
+        Base::Vector3 -> the ending point of the second line. In which case
+            `infinite2` must also be a point.
+        the second edge. In case of a point, `infinite2` must also be a point.
+    infinite1
+        bool, optional -> whether `edge1` should be continued to infinity.
+        Default to `False`.
+        Base::Vector3 -> if `edge1` is a point, must also be a point.
+    infinite2
+        bool, optional -> whether `edge2` should be continued to infinity.
+        Default to `False`.
+        Base::Vector3 -> if `edge2` is a point, must also be a point.
+    ex1: bool, optional
+        In case `edge1` is a point, indicate whether the line should be
+        continued to infinity. Default to `False`
+    ex2: bool, optional
+        In case `edge2` is a point, indicate whether the line should be
+        continued to infinity. Default to `False`
+    dts: bool, optional
+        NOT_DOCUMENTED. Default to `True`
+    findAll: bool, optional
+        In case either `edge1` or `edge2` is a circle, indicates whether
+        to find all intersection points. Default to `False`
+
+    Returns
+    -------
+    list
+        A list of intersection points
     """
 
     def getLineIntersections(pt1, pt2, pt3, pt4, infinite1, infinite2):
@@ -56,7 +94,7 @@ def findIntersection(edge1, edge2,
             # first check if we don't already have coincident endpoints
             if pt1 in [pt3, pt4]:
                 return [pt1]
-            elif (pt2 in [pt3, pt4]):
+            elif pt2 in [pt3, pt4]:
                 return [pt2]
         norm1 = pt2.sub(pt1).cross(pt3.sub(pt1))
         norm2 = pt2.sub(pt4).cross(pt3.sub(pt4))
@@ -86,9 +124,11 @@ def findIntersection(edge1, edge2,
             norm3 = vec1.cross(vec2)
             denom = norm3.x + norm3.y + norm3.z
             if not DraftVecUtils.isNull(norm3) and denom != 0:
-                k = ((pt3.z - pt1.z) * (vec2.x - vec2.y)
-                     + (pt3.y - pt1.y) * (vec2.z - vec2.x)
-                     + (pt3.x - pt1.x) * (vec2.y - vec2.z))/denom
+                k = (
+                    (pt3.z - pt1.z) * (vec2.x - vec2.y)
+                    + (pt3.y - pt1.y) * (vec2.z - vec2.x)
+                    + (pt3.x - pt1.x) * (vec2.y - vec2.z)
+                ) / denom
                 vec1.scale(k, k, k)
                 intp = pt1.add(vec1)
 
@@ -104,24 +144,31 @@ def findIntersection(edge1, edge2,
         else:
             return []  # Lines aren't on same plane
 
+    tol = pow(10, -precision())
+
     # First, check bound boxes
-    if (isinstance(edge1, Part.Edge) and isinstance(edge2, Part.Edge)
-            and (not infinite1) and (not infinite2)):
+    if (
+        isinstance(edge1, Part.Edge)
+        and isinstance(edge2, Part.Edge)
+        and (not infinite1)
+        and (not infinite2)
+    ):
         bb1 = edge1.BoundBox
-        bb1.enlarge(pow(10, -precision()))  # enlarge one box to account for rounding errors
+        bb1.enlarge(tol)  # enlarge one box to account for rounding errors
         if not bb1.intersect(edge2.BoundBox):
             return []  # bound boxes don't intersect
 
-    # First, try to use distToShape if possible
-    if (dts and isinstance(edge1, Part.Edge) and isinstance(edge2, Part.Edge)
-            and (not infinite1) and (not infinite2)):
-        dist, pts, geom = edge1.distToShape(edge2)
-        sol = []
-        if round(dist, precision()) == 0:
-            for p in pts:
-                if p[0] not in sol:
-                    sol.append(p[0])
-        return sol
+    # First, try to use Shape.section if possible
+    if (
+        dts
+        and (
+            (isinstance(edge1, Part.Edge) and isinstance(edge2, (Part.Edge, Part.Face)))
+            or (isinstance(edge1, (Part.Edge, Part.Face)) and isinstance(edge2, Part.Edge))
+        )
+        and (not infinite1)
+        and (not infinite2)
+    ):
+        return [v.Point for v in edge1.section((edge2), tol).Vertexes]
 
     pt1 = None
 
@@ -137,14 +184,20 @@ def findIntersection(edge1, edge2,
 
     elif (geomType(edge1) == "Line") and (geomType(edge2) == "Line"):
         # we have 2 straight lines
-        pt1, pt2, pt3, pt4 = [edge1.Vertexes[0].Point,
-                              edge1.Vertexes[1].Point,
-                              edge2.Vertexes[0].Point,
-                              edge2.Vertexes[1].Point]
+        pt1, pt2, pt3, pt4 = [
+            edge1.Vertexes[0].Point,
+            edge1.Vertexes[1].Point,
+            edge2.Vertexes[0].Point,
+            edge2.Vertexes[1].Point,
+        ]
         return getLineIntersections(pt1, pt2, pt3, pt4, infinite1, infinite2)
 
-    elif ((geomType(edge1) == "Circle") and (geomType(edge2) == "Line")
-          or (geomType(edge1) == "Line") and (geomType(edge2) == "Circle")):
+    elif (
+        (geomType(edge1) == "Circle")
+        and (geomType(edge2) == "Line")
+        or (geomType(edge1) == "Line")
+        and (geomType(edge2) == "Circle")
+    ):
 
         # deals with an arc or circle and a line
         edges = [edge1, edge2]
@@ -184,7 +237,7 @@ def findIntersection(edge1, edge2,
             toLine = pt1.sub(center).add(onLine)
 
             if toLine.Length < arc.Curve.Radius:
-                dOnLine = (arc.Curve.Radius**2 - toLine.Length**2)**(0.5)
+                dOnLine = (arc.Curve.Radius**2 - toLine.Length**2) ** (0.5)
                 onLine = App.Vector(dirVec)
                 onLine.scale(dOnLine, dOnLine, dOnLine)
                 int += [center.add(toLine).add(onLine)]
@@ -206,10 +259,9 @@ def findIntersection(edge1, edge2,
                     return []
                 dToPlane = center.sub(pt1).dot(toPlane)
                 toPlane = App.Vector(pt1)
-                toPlane.scale(dToPlane/d, dToPlane/d, dToPlane/d)
+                toPlane.scale(dToPlane / d, dToPlane / d, dToPlane / d)
                 ptOnPlane = toPlane.add(pt1)
-                if round(ptOnPlane.sub(center).Length - arc.Curve.Radius,
-                         precision()) == 0:
+                if round(ptOnPlane.sub(center).Length - arc.Curve.Radius, precision()) == 0:
                     int = [ptOnPlane]
                 else:
                     return []
@@ -243,9 +295,11 @@ def findIntersection(edge1, edge2,
                 dc2c = c2c.Length
                 if not DraftVecUtils.isNull(c2c):
                     c2c.normalize()
-                if (round(rad1 + rad2 - dc2c, precision()) < 0
-                        or round(rad1 - dc2c - rad2, precision()) > 0
-                        or round(rad2 - dc2c - rad1, precision()) > 0):
+                if (
+                    round(rad1 + rad2 - dc2c, precision()) < 0
+                    or round(rad1 - dc2c - rad2, precision()) > 0
+                    or round(rad2 - dc2c - rad1, precision()) > 0
+                ):
                     return []
                 else:
                     norm = c2c.cross(axis1)
@@ -254,8 +308,8 @@ def findIntersection(edge1, edge2,
                     if DraftVecUtils.isNull(norm):
                         x = 0
                     else:
-                        x = (dc2c**2 + rad1**2 - rad2**2) / (2*dc2c)
-                    y = abs(rad1**2 - x**2)**(0.5)
+                        x = (dc2c**2 + rad1**2 - rad2**2) / (2 * dc2c)
+                    y = abs(rad1**2 - x**2) ** (0.5)
                     c2c.scale(x, x, x)
                     if round(y, precision()) != 0:
                         norm.scale(y, y, y)
@@ -273,14 +327,13 @@ def findIntersection(edge1, edge2,
             V = axis1.cross(U)
             dToPlane = c2c.dot(axis2)
             d = V.add(cent1).dot(axis2)
-            V.scale(dToPlane/d, dToPlane/d, dToPlane/d)
+            V.scale(dToPlane / d, dToPlane / d, dToPlane / d)
             PtOn2Planes = V.add(cent1)
             planeIntersectionVector = U.add(PtOn2Planes)
-            intTemp = findIntersection(planeIntersectionVector,
-                                       edge1, True, True)
+            intTemp = findIntersection(planeIntersectionVector, edge1, True, True)
             int = []
             for pt in intTemp:
-                if round(pt.sub(cent2).Length-rad2, precision()) == 0:
+                if round(pt.sub(cent2).Length - rad2, precision()) == 0:
                     int += [pt]
 
         if infinite1 is False:
@@ -294,8 +347,10 @@ def findIntersection(edge1, edge2,
 
         return int
     else:
-        print("DraftGeomUtils: Unsupported curve type: "
-              "(" + str(edge1.Curve) + ", " + str(edge2.Curve) + ")")
+        print(
+            "DraftGeomUtils: Unsupported curve type: "
+            "(" + str(edge1.Curve) + ", " + str(edge2.Curve) + ")"
+        )
         return []
 
 
@@ -311,10 +366,10 @@ def wiresIntersect(wire1, wire2):
     return False
 
 
-def connect(edges, closed=False):
+def connect(edges, closed=False, wireNedge=False):
     """Connect the edges in the given list by their intersections."""
 
-    inters_list = [] # List of intersections (with the previous edge).
+    inters_list = []  # List of intersections (with the previous edge).
     for i, curr in enumerate(edges):
         if i > 0:
             prev = edges[i - 1]
@@ -324,17 +379,20 @@ def connect(edges, closed=False):
             inters_list.append(None)
             continue
 
-        curr_inters_list = (findIntersection(prev, curr, True, True))
+        curr_inters_list = findIntersection(prev, curr, True, True)
         if len(curr_inters_list) == 0:
             inters_list.append(None)
         elif len(curr_inters_list) == 1:
             inters_list.append(curr_inters_list[0])
         else:
-            inters = curr_inters_list[DraftVecUtils.closest(curr.Vertexes[0].Point,
-                                                            curr_inters_list)]
+            inters = curr_inters_list[
+                DraftVecUtils.closest(curr.Vertexes[0].Point, curr_inters_list)
+            ]
             inters_list.append(inters)
 
+    new_edges_full = []
     new_edges = []
+
     for i, curr in enumerate(edges):
         curr_sta = inters_list[i]
         if i < (len(edges) - 1):
@@ -354,25 +412,36 @@ def connect(edges, closed=False):
                 prev = None
             if prev is not None:
                 prev_end = prev.Vertexes[-1].Point
-                new_edges.append(Part.LineSegment(prev_end, curr_sta).toShape())
+                new_edges_full.append(Part.LineSegment(prev_end, curr_sta).toShape())
 
         if curr_end is None:
             curr_end = curr.Vertexes[-1].Point
 
         if curr_sta != curr_end:
             if geomType(curr) == "Line":
-                new_edges.append(Part.LineSegment(curr_sta, curr_end).toShape())
+                n = Part.LineSegment(curr_sta, curr_end).toShape()
+                new_edges.append(n)
+                new_edges_full.append(n)
+
             elif geomType(curr) == "Circle":
-                new_edges.append(Part.Arc(curr_sta, findMidpoint(curr), curr_end).toShape())
+                n = Part.Arc(curr_sta, findMidpoint(curr), curr_end).toShape()
+                new_edges.append(n)
+                new_edges_full.append(n)
 
     try:
-        return Part.Wire(new_edges)
+        wire = Part.Wire(new_edges_full)
+
+        # TODO May phase out wire if bind() can do without it later and do with
+        # only connectEdges so no need bind() to find 'touching edges' there
+        if wireNedge:
+            return (wire, new_edges_full, new_edges)
+        else:
+            return wire
+
     except Part.OCCError:
         print("DraftGeomUtils.connect: unable to connect edges")
         for edge in new_edges:
-            print(edge.Curve, " ",
-                  edge.Vertexes[0].Point, " ",
-                  edge.Vertexes[-1].Point)
+            print(edge.Curve, " ", edge.Vertexes[0].Point, " ", edge.Vertexes[-1].Point)
         return None
 
 
@@ -401,5 +470,6 @@ def angleBisection(edge1, edge2):
         direction.normalize()
 
     return Part.LineSegment(origin, origin.add(direction)).toShape()
+
 
 ## @}

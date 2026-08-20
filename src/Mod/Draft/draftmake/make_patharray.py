@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -30,6 +32,7 @@
 The copies will be placed along a path like a polyline, spline, or bezier
 curve.
 """
+
 ## @package make_patharray
 # \ingroup draftmake
 # \brief Provides functions to create PathArray objects.
@@ -40,26 +43,32 @@ import FreeCAD as App
 import draftutils.utils as utils
 import draftutils.gui_utils as gui_utils
 
-from draftutils.messages import _msg, _err
+from draftutils.messages import _err
 from draftutils.translate import translate
 from draftobjects.patharray import PathArray
 from draftobjects.pathtwistedarray import PathTwistedArray
 
 if App.GuiUp:
-    from draftutils.todo import ToDo
     from draftviewproviders.view_array import ViewProviderDraftArray
     from draftviewproviders.view_draftlink import ViewProviderDraftLink
 
 
-def make_path_array(base_object, path_object, count=4,
-                    extra=App.Vector(0, 0, 0), subelements=None,
-                    align=False, align_mode="Original",
-                    tan_vector=App.Vector(1, 0, 0),
-                    force_vertical=False,
-                    vertical_vector=App.Vector(0, 0, 1),
-                    start_offset=0.0, end_offset=0.0,
-                    use_link=True,
-                    build_shape=True):
+def make_path_array(
+    base_object,
+    path_object,
+    count=4,
+    extra=App.Vector(0, 0, 0),
+    subelements=None,
+    align=False,
+    align_mode="Original",
+    tan_vector=App.Vector(1, 0, 0),
+    force_vertical=False,
+    vertical_vector=App.Vector(0, 0, 1),
+    start_offset=0.0,
+    end_offset=0.0,
+    use_link=True,
+    build_shape=True,
+):
     """Make a Draft PathArray object.
 
     Distribute copies of a `base_object` along `path_object`
@@ -177,63 +186,48 @@ def make_path_array(base_object, path_object, count=4,
         If there is a problem it will return `None`.
     """
     _name = "make_path_array"
-    utils.print_header(_name, "Path array")
 
     found, doc = utils.find_doc(App.activeDocument())
     if not found:
-        _err(translate("draft","No active document. Aborting."))
+        _err(translate("draft", "No active document. Aborting."))
         return None
-
-    if isinstance(base_object, str):
-        base_object_str = base_object
 
     found, base_object = utils.find_object(base_object, doc)
     if not found:
-        _msg("base_object: {}".format(base_object_str))
-        _err(translate("draft","Wrong input: object not in document."))
+        _err(translate("draft", "Wrong input: base_object not in document."))
         return None
-
-    _msg("base_object: {}".format(base_object.Label))
-
-    if isinstance(path_object, str):
-        path_object_str = path_object
 
     found, path_object = utils.find_object(path_object, doc)
     if not found:
-        _msg("path_object: {}".format(path_object_str))
-        _err(translate("draft","Wrong input: object not in document."))
+        _err(translate("draft", "Wrong input: path_object not in document."))
         return None
 
-    _msg("path_object: {}".format(path_object.Label))
-
-    _msg("count: {}".format(count))
     try:
-        utils.type_check([(count, (int, float))],
-                         name=_name)
+        utils.type_check([(count, (int, float))], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a number."))
+        _err(translate("draft", "Wrong input: must be a number."))
         return None
     count = int(count)
 
-    _msg("extra: {}".format(extra))
     try:
-        utils.type_check([(extra, App.Vector)],
-                         name=_name)
+        utils.type_check([(extra, App.Vector)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a vector."))
+        _err(translate("draft", "Wrong input: must be a vector."))
         return None
 
-    _msg("subelements: {}".format(subelements))
     if subelements:
         try:
             # Make a list
             if isinstance(subelements, str):
                 subelements = [subelements]
 
-            utils.type_check([(subelements, (list, tuple, str))],
-                             name=_name)
+            utils.type_check([(subelements, (list, tuple, str))], name=_name)
         except TypeError:
-            _err(translate("draft","Wrong input: must be a list or tuple of strings, or a single string."))
+            _err(
+                translate(
+                    "draft", "Wrong input: must be a list or tuple of strings, or a single string."
+                )
+            )
             return None
 
         # The subelements list is used to build a special list
@@ -256,67 +250,51 @@ def make_path_array(base_object, path_object, count=4,
         sub_list = None
 
     align = bool(align)
-    _msg("align: {}".format(align))
 
-    _msg("align_mode: {}".format(align_mode))
     try:
-        utils.type_check([(align_mode, str)],
-                         name=_name)
+        utils.type_check([(align_mode, str)], name=_name)
 
         if align_mode not in ("Original", "Frenet", "Tangent"):
             raise TypeError
     except TypeError:
-        _err(translate("draft","Wrong input: must be 'Original', 'Frenet', or 'Tangent'."))
+        _err(translate("draft", "Wrong input: must be 'Original', 'Frenet', or 'Tangent'."))
         return None
 
-    _msg("tan_vector: {}".format(tan_vector))
     try:
-        utils.type_check([(tan_vector, App.Vector)],
-                         name=_name)
+        utils.type_check([(tan_vector, App.Vector)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a vector."))
+        _err(translate("draft", "Wrong input: must be a vector."))
         return None
 
     force_vertical = bool(force_vertical)
-    _msg("force_vertical: {}".format(force_vertical))
-
-    _msg("vertical_vector: {}".format(vertical_vector))
     try:
-        utils.type_check([(vertical_vector, App.Vector)],
-                         name=_name)
+        utils.type_check([(vertical_vector, App.Vector)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a vector."))
+        _err(translate("draft", "Wrong input: must be a vector."))
         return None
 
-    _msg("start_offset: {}".format(start_offset))
     try:
-        utils.type_check([(start_offset, (int, float))],
-                         name=_name)
+        utils.type_check([(start_offset, (int, float))], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a number."))
+        _err(translate("draft", "Wrong input: must be a number."))
         return None
     start_offset = float(start_offset)
 
-    _msg("end_offset: {}".format(end_offset))
     try:
-        utils.type_check([(end_offset, (int, float))],
-                         name=_name)
+        utils.type_check([(end_offset, (int, float))], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a number."))
+        _err(translate("draft", "Wrong input: must be a number."))
         return None
     end_offset = float(end_offset)
 
     use_link = bool(use_link)
-    _msg("use_link: {}".format(use_link))
 
     build_shape = bool(build_shape)
-    _msg("build_shape: {}".format(build_shape))
 
     if use_link:
         # The PathArray class must be called in this special way
         # to make it a PathLinkArray
-        new_obj = doc.addObject("Part::FeaturePython", "PathArray",
-                                PathArray(None), None, True)
+        new_obj = doc.addObject("Part::FeaturePython", "PathArray", PathArray(None), None, True)
         new_obj.BuildShape = build_shape
     else:
         new_obj = doc.addObject("Part::FeaturePython", "PathArray")
@@ -342,84 +320,66 @@ def make_path_array(base_object, path_object, count=4,
             ViewProviderDraftArray(new_obj.ViewObject)
             gui_utils.formatObject(new_obj, new_obj.Base)
             new_obj.ViewObject.Proxy.resetColors(new_obj.ViewObject)
-            # Workaround to trigger update of DiffuseColor:
-            ToDo.delay(reapply_diffuse_color, new_obj.ViewObject)
         new_obj.Base.ViewObject.hide()
         gui_utils.select(new_obj)
 
     return new_obj
 
 
-def makePathArray(baseobject, pathobject, count,
-                  xlate=None, align=False,
-                  pathobjsubs=None,
-                  use_link=False,
-                  build_shape=True):
+def makePathArray(
+    baseobject,
+    pathobject,
+    count,
+    xlate=None,
+    align=False,
+    pathobjsubs=[],
+    use_link=False,
+    build_shape=True,
+):
     """Create PathArray. DEPRECATED. Use 'make_path_array'."""
-    utils.use_instead('make_path_array')
+    utils.use_instead("make_path_array")
 
-    return make_path_array(baseobject, pathobject, count,
-                           xlate, pathobjsubs,
-                           align,
-                           use_link,
-                           build_shape)
+    return make_path_array(
+        baseobject, pathobject, count, xlate, pathobjsubs, align, use_link, build_shape
+    )
 
 
-def make_path_twisted_array(base_object, path_object,
-                            count=15, rot_factor=0.25,
-                            use_link=True,
-                            build_shape=True):
+def make_path_twisted_array(
+    base_object, path_object, count=15, rot_factor=0.25, use_link=True, build_shape=True
+):
     """Create a Path twisted array."""
     _name = "make_path_twisted_array"
-    utils.print_header(_name, "Path twisted array")
 
     found, doc = utils.find_doc(App.activeDocument())
     if not found:
-        _err(translate("draft","No active document. Aborting."))
+        _err(translate("draft", "No active document. Aborting."))
         return None
-
-    if isinstance(base_object, str):
-        base_object_str = base_object
 
     found, base_object = utils.find_object(base_object, doc)
     if not found:
-        _msg("base_object: {}".format(base_object_str))
-        _err(translate("draft","Wrong input: object not in document."))
+        _err(translate("draft", "Wrong input: base_object not in document."))
         return None
-
-    _msg("base_object: {}".format(base_object.Label))
-
-    if isinstance(path_object, str):
-        path_object_str = path_object
 
     found, path_object = utils.find_object(path_object, doc)
     if not found:
-        _msg("path_object: {}".format(path_object_str))
-        _err(translate("draft","Wrong input: object not in document."))
+        _err(translate("draft", "Wrong input: path_object not in document."))
         return None
-
-    _msg("path_object: {}".format(path_object.Label))
-
-    _msg("count: {}".format(count))
     try:
-        utils.type_check([(count, (int, float))],
-                         name=_name)
+        utils.type_check([(count, (int, float))], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a number."))
+        _err(translate("draft", "Wrong input: must be a number."))
         return None
     count = int(count)
 
     use_link = bool(use_link)
-    _msg("use_link: {}".format(use_link))
-
     build_shape = bool(build_shape)
-    _msg("build_shape: {}".format(build_shape))
 
     if use_link:
         # The PathTwistedArray class must be called in this special way
         # to make it a PathTwistLinkArray
-        new_obj = doc.addObject("Part::FeaturePython", "PathTwistedArray",
-                                PathTwistedArray(None), None, True)
+        new_obj = doc.addObject(
+            "Part::FeaturePython", "PathTwistedArray", PathTwistedArray(None), None, True
+        )
         new_obj.BuildShape = build_shape
     else:
         new_obj = doc.addObject("Part::FeaturePython", "PathTwistedArray")
@@ -437,18 +397,10 @@ def make_path_twisted_array(base_object, path_object,
             ViewProviderDraftArray(new_obj.ViewObject)
             gui_utils.formatObject(new_obj, new_obj.Base)
             new_obj.ViewObject.Proxy.resetColors(new_obj.ViewObject)
-            # Workaround to trigger update of DiffuseColor:
-            ToDo.delay(reapply_diffuse_color, new_obj.ViewObject)
         new_obj.Base.ViewObject.hide()
         gui_utils.select(new_obj)
 
     return new_obj
 
-
-def reapply_diffuse_color(vobj):
-    try:
-        vobj.DiffuseColor = vobj.DiffuseColor
-    except:
-        pass
 
 ## @}

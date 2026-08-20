@@ -1,10 +1,11 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # -*- coding: utf8 -*-
 ## @package importOCA
 #  \ingroup DRAFT
 #  \brief OCA (Open CAD Format) file importer & exporter
-'''@package importOCA
-\ingroup DRAFT
-\brief OCA (Open CAD Format) file importer & exporter
+"""@package importOCA
+OCA (Open CAD Format) file importer & exporter
 
 This module provides support for importing from and exporting to
 the OCA format or GCAD format from GCAD3D (http://www.gcad3d.org/).
@@ -12,7 +13,8 @@ See: https://groups.google.com/forum/#!forum/open_cad_format
 
 As of 2019 this file format is practically obsolete, and this module is not
 maintained.
-'''
+"""
+
 # Check code with
 # flake8 --ignore=E226,E266,E401,W503
 
@@ -45,19 +47,14 @@ import FreeCAD, os, Part, DraftVecUtils, DraftGeomUtils
 from FreeCAD import Vector
 from FreeCAD import Console as FCC
 from draftutils import params
+from draftutils.utils import pyopen
 
 if FreeCAD.GuiUp:
     from draftutils.translate import translate
 else:
+
     def translate(context, txt):
         return txt
-
-# Save the native open function to avoid a collision with the open()
-# this module defines further down. The guard this replaces tested the
-# Python 2 spelling of open.__module__ and so never ran on Python 3 --
-# see importSVG.py.
-import builtins
-pythonopen = builtins.open
 
 
 def getpoint(data):
@@ -87,8 +84,7 @@ def getpoint(data):
             elif data[1][0] == "C":
                 # Error: DraftGeomUtils.findProjection()
                 # doesn't exist
-                return DraftGeomUtils.findProjection(objects[data[0]],
-                                                     objects[data[1]])
+                return DraftGeomUtils.findProjection(objects[data[0]], objects[data[1]])
     elif data[0][0] == "C":
         if objects[data[0]]:
             p1 = objects[data[0]].Curve.Position
@@ -146,7 +142,7 @@ def getarc(data):
         verts = []
         for p in range(len(pts)):
             if pts[p] == "P":
-                verts.append(getpoint(pts[p:p+3]))
+                verts.append(getpoint(pts[p : p + 3]))
             elif pts[p][0] == "P":
                 verts.append(getpoint([pts[p]]))
         if verts[0] and verts[1] and verts[2]:
@@ -158,11 +154,11 @@ def getarc(data):
         lines = []
         for p in range(len(data)):
             if data[p] == "P":
-                verts.append(getpoint(data[p:p+4]))
+                verts.append(getpoint(data[p : p + 4]))
             elif data[p][0] == "P":
                 verts.append(getpoint([data[p]]))
             elif data[p] == "VAL":
-                rad = float(data[p+1])
+                rad = float(data[p + 1])
             elif data[p][0] == "L":
                 lines.append(objects[data[p]])
         c = Part.Circle()
@@ -179,12 +175,10 @@ def getarc(data):
         rad = None
         for p in range(len(data)):
             if data[p] == "VAL":
-                rad = float(data[p+1])
+                rad = float(data[p + 1])
             elif data[p][0] == "L":
                 lines.append(objects[data[p]])
-        circles = DraftGeomUtils.circleFrom2LinesRadius(lines[0],
-                                                        lines[1],
-                                                        rad)
+        circles = DraftGeomUtils.circleFrom2LinesRadius(lines[0], lines[1], rad)
         if circles:
             c = circles[0]
     if c:
@@ -208,7 +202,7 @@ def getline(data):
     verts = []
     for p in range(len(data)):
         if data[p] == "P":
-            verts.append(getpoint(data[p:p+4]))
+            verts.append(getpoint(data[p : p + 4]))
         elif data[p][0] == "P":
             verts.append(getpoint([data[p]]))
     L = Part.LineSegment(verts[0], verts[1])
@@ -251,7 +245,7 @@ def writepoint(vector):
     str
         A string "P(X Y Z)" with the information from `vector`.
     """
-    return "P("+str(vector.x)+" "+str(vector.y)+" "+str(vector.z)+")"
+    return "P(" + str(vector.x) + " " + str(vector.y) + " " + str(vector.z) + ")"
 
 
 def createobject(oid, doc):
@@ -289,7 +283,7 @@ def parse(filename, doc):
     -------
     None
     """
-    filebuffer = pythonopen(filename)
+    filebuffer = pyopen(filename)
     global objects
     objects = {}
     global color
@@ -308,7 +302,7 @@ def parse(filename, doc):
             if _id[0] == "P":
                 # point
                 objects[_id] = getpoint(data)
-            elif ((_id[0] == "A") and params.get_param("ocaareas")):
+            elif (_id[0] == "A") and params.get_param("ocaareas"):
                 # area
                 objects[_id] = getarea(data)
                 createobject(_id, doc)
@@ -330,9 +324,7 @@ def parse(filename, doc):
         elif readline[0:6] == "DEFCOL":
             # color
             c = readline.split()
-            color = (float(c[1])/255,
-                     float(c[2])/255,
-                     float(c[3])/255)
+            color = (float(c[1]) / 255, float(c[2]) / 255, float(c[3]) / 255)
 
 
 def open(filename):
@@ -413,33 +405,31 @@ def export(exportList, filename):
             for e in ob.Shape.Edges:
                 edges.append(e)
     if not (edges or faces):
-        FCC.PrintMessage(translate("importOCA",
-                                   "OCA: found no data to export")
-                         + "\n")
+        FCC.PrintMessage(translate("importOCA", "OCA: found no data to export") + "\n")
         return
 
     # writing file
-    oca = pythonopen(filename, 'w')
+    oca = pyopen(filename, "w")
     oca.write("#oca file generated from FreeCAD\r\n")
     oca.write("# edges\r\n")
     count = 1
     for e in edges:
         if DraftGeomUtils.geomType(e) == "Line":
-            oca.write("L"+str(count)+"=")
+            oca.write("L" + str(count) + "=")
             oca.write(writepoint(e.Vertexes[0].Point))
             oca.write(" ")
             oca.write(writepoint(e.Vertexes[-1].Point))
             oca.write("\r\n")
         elif DraftGeomUtils.geomType(e) == "Circle":
             if len(e.Vertexes) > 1:
-                oca.write("C"+str(count)+"=ARC ")
+                oca.write("C" + str(count) + "=ARC ")
                 oca.write(writepoint(e.Vertexes[0].Point))
                 oca.write(" ")
                 oca.write(writepoint(DraftGeomUtils.findMidpoint(e)))
                 oca.write(" ")
                 oca.write(writepoint(e.Vertexes[-1].Point))
             else:
-                oca.write("C"+str(count)+"= ")
+                oca.write("C" + str(count) + "= ")
                 oca.write(writepoint(e.Curve.Center))
                 oca.write(" ")
                 oca.write(str(e.Curve.Radius))
@@ -447,7 +437,7 @@ def export(exportList, filename):
         count += 1
     oca.write("# faces\r\n")
     for f in faces:
-        oca.write("A"+str(count)+"=S(POL")
+        oca.write("A" + str(count) + "=S(POL")
         for v in f.Vertexes:
             oca.write(" ")
             oca.write(writepoint(v.Point))
@@ -458,6 +448,4 @@ def export(exportList, filename):
 
     # closing
     oca.close()
-    FCC.PrintMessage(translate("importOCA",
-                               "successfully exported")
-                     + " " + filename + "\n")
+    FCC.PrintMessage(translate("importOCA", "successfully exported") + " " + filename + "\n")

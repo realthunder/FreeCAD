@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -21,6 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides the object code for the Ellipse object."""
+
 ## @package ellipse
 # \ingroup draftobjects
 # \brief Provides the object code for the Ellipse object.
@@ -31,6 +34,7 @@ from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
 from draftobjects.base import DraftObject
+from draftutils import gui_utils
 from draftutils import params
 
 
@@ -38,28 +42,35 @@ class Ellipse(DraftObject):
     """The Circle object"""
 
     def __init__(self, obj):
-        super(Ellipse, self).__init__(obj, "Ellipse")
+        super().__init__(obj, "Ellipse")
 
-        _tip = QT_TRANSLATE_NOOP("App::Property","Start angle of the elliptical arc")
-        obj.addProperty("App::PropertyAngle", "FirstAngle", "Draft", _tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "Start angle of the elliptical arc")
+        obj.addProperty("App::PropertyAngle", "FirstAngle", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property","End angle of the elliptical arc \n\
-                (for a full circle, give it same value as First Angle)")
-        obj.addProperty("App::PropertyAngle", "LastAngle", "Draft", _tip)
+        _tip = QT_TRANSLATE_NOOP(
+            "App::Property",
+            "End angle of the elliptical arc \n\
+                (for a full circle, give it same value as First Angle)",
+        )
+        obj.addProperty("App::PropertyAngle", "LastAngle", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property","Minor radius of the ellipse")
-        obj.addProperty("App::PropertyLength", "MinorRadius", "Draft", _tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "Minor radius of the ellipse")
+        obj.addProperty("App::PropertyLength", "MinorRadius", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property","Major radius of the ellipse")
-        obj.addProperty("App::PropertyLength", "MajorRadius", "Draft", _tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "Major radius of the ellipse")
+        obj.addProperty("App::PropertyLength", "MajorRadius", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property","Create a face")
-        obj.addProperty("App::PropertyBool", "MakeFace", "Draft", _tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "Create a face")
+        obj.addProperty("App::PropertyBool", "MakeFace", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property","Area of this object")
-        obj.addProperty("App::PropertyArea", "Area","Draft", _tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "Area of this object")
+        obj.addProperty("App::PropertyArea", "Area", "Draft", _tip, locked=True)
 
-        obj.MakeFace = params.get_param("fillmode")
+        obj.MakeFace = params.get_param("MakeFaceMode")
+
+    def onDocumentRestored(self, obj):
+        super().onDocumentRestored(obj)
+        gui_utils.restore_view_object(obj, vp_module="view_base", vp_class="ViewProviderDraft")
 
     def execute(self, obj):
         if self.props_changed_placement_only():
@@ -68,24 +79,23 @@ class Ellipse(DraftObject):
             return
 
         import Part
+
         plm = obj.Placement
         if obj.MajorRadius.Value < obj.MinorRadius.Value:
             _err = "Error: Major radius is smaller than the minor radius"
             App.Console.PrintMessage(QT_TRANSLATE_NOOP("Draft", _err))
             return
         if obj.MajorRadius.Value and obj.MinorRadius.Value:
-            ell = Part.Ellipse(App.Vector(0, 0, 0),
-                               obj.MajorRadius.Value,
-                               obj.MinorRadius.Value)
+            ell = Part.Ellipse(App.Vector(0, 0, 0), obj.MajorRadius.Value, obj.MinorRadius.Value)
             shape = ell.toShape()
-            if hasattr(obj,"FirstAngle"):
+            if hasattr(obj, "FirstAngle"):
                 if obj.FirstAngle.Value != obj.LastAngle.Value:
                     a1 = obj.FirstAngle.getValueAs(App.Units.Radian)
                     a2 = obj.LastAngle.getValueAs(App.Units.Radian)
                     shape = Part.ArcOfEllipse(ell, a1, a2).toShape()
             shape = Part.Wire(shape)
             if shape.isClosed():
-                if hasattr(obj,"MakeFace"):
+                if hasattr(obj, "MakeFace"):
                     if obj.MakeFace:
                         shape = Part.Face(shape)
                 else:

@@ -1,4 +1,5 @@
-# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2020 Yorik van Havre <yorik@uncreated.net>              *
 # *                                                                         *
@@ -20,6 +21,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides GUI tools to create and edit annotation styles."""
+
 ## @package gui_annotationstyleeditor
 # \ingroup draftguitools
 # \brief Provides GUI tools to create and edit annotation styles.
@@ -28,6 +30,8 @@
 # @{
 import json
 import PySide.QtGui as QtGui
+import PySide.QtWidgets as QtWidgets
+
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
@@ -62,7 +66,9 @@ class AnnotationStyleEditor(gui_base.GuiCommandSimplest):
     """
 
     def __init__(self):
-        super(AnnotationStyleEditor, self).__init__(name=translate("draft","Annotation style editor"))
+        super(AnnotationStyleEditor, self).__init__(
+            name=translate("draft", "Annotation Style Editor")
+        )
         self.doc = None
         self.styles = {}
         self.renamed = {}
@@ -71,11 +77,14 @@ class AnnotationStyleEditor(gui_base.GuiCommandSimplest):
 
     def GetResources(self):
         """Set icon, menu and tooltip."""
-        return {'Pixmap': ":icons/Draft_Annotation_Style.svg",
-                'MenuText': QT_TRANSLATE_NOOP("Draft_AnnotationStyleEditor",
-                                              "Annotation styles..."),
-                'ToolTip': QT_TRANSLATE_NOOP("Draft_AnnotationStyleEditor",
-                                             "Manage or create annotation styles")}
+        return {
+            "Pixmap": ":icons/Draft_Annotation_Style.svg",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_AnnotationStyleEditor", "Annotation Styles"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_AnnotationStyleEditor",
+                "Opens an editor to manage or create annotation styles",
+            ),
+        }
 
     def Activated(self):
         """Execute when the command is called.
@@ -98,9 +107,9 @@ class AnnotationStyleEditor(gui_base.GuiCommandSimplest):
 
         # center the dialog over FreeCAD window
         mw = Gui.getMainWindow()
-        self.form.move(mw.frameGeometry().topLeft()
-                       + mw.rect().center()
-                       - self.form.rect().center())
+        self.form.move(
+            mw.frameGeometry().topLeft() + mw.rect().center() - self.form.rect().center()
+        )
 
         # set icons
         self.form.setWindowIcon(QtGui.QIcon(":/icons/Draft_Annotation_Style.svg"))
@@ -142,7 +151,7 @@ class AnnotationStyleEditor(gui_base.GuiCommandSimplest):
         meta = self.doc.Meta
         for key, value in meta.items():
             if key.startswith("Draft_Style_"):
-                styles[key[12:]] = self.repair_style(json.loads(value))
+                styles[key[12:]] = utils.repair_annotation_style(json.loads(value))
         return styles
 
     def save_meta(self, styles):
@@ -155,8 +164,7 @@ class AnnotationStyleEditor(gui_base.GuiCommandSimplest):
                 strvalue = json.dumps(value)
             except Exception:
                 print("debug: unable to serialize this:", value)
-            if ("Draft_Style_" + key in meta
-                    and meta["Draft_Style_" + key] != strvalue):
+            if "Draft_Style_" + key in meta and meta["Draft_Style_" + key] != strvalue:
                 changedstyles.append(key)
             meta["Draft_Style_" + key] = strvalue
 
@@ -183,7 +191,10 @@ class AnnotationStyleEditor(gui_base.GuiCommandSimplest):
                 if vobj.AnnotationStyle in self.renamed:
                     # the style has been renamed
                     # temporarily add the new style and switch to it
-                    vobj.AnnotationStyle = [vobj.AnnotationStyle, self.renamed[vobj.AnnotationStyle]]
+                    vobj.AnnotationStyle = [
+                        vobj.AnnotationStyle,
+                        self.renamed[vobj.AnnotationStyle],
+                    ]
                     vobj.AnnotationStyle = self.renamed[vobj.AnnotationStyle]
                 if vobj.AnnotationStyle in styles:
                     if vobj.AnnotationStyle in changedstyles:
@@ -192,9 +203,9 @@ class AnnotationStyleEditor(gui_base.GuiCommandSimplest):
                             if hasattr(vobj, attr):
                                 try:
                                     if vobj.getTypeIdOfProperty(attr) == "App::PropertyColor":
-                                        value = value & 0xFFFFFF00
+                                        value = value | 0x000000FF
                                     setattr(vobj, attr, value)
-                                except:
+                                except TypeError:
                                     pass
                 else:
                     # the style has been removed
@@ -209,21 +220,25 @@ class AnnotationStyleEditor(gui_base.GuiCommandSimplest):
             self.form.pushButtonRename.setEnabled(False)
         elif index == 1:
             # Add new... entry
-            reply = QtGui.QInputDialog.getText(None,
-                                               "Create new style",
-                                               "Style name:")
+            reply = QtWidgets.QInputDialog.getText(
+                None, translate("draft", "New Style"), translate("draft", "Style name")
+            )
             if reply[1]:
                 # OK or Enter pressed
                 name = reply[0].strip()
                 if name == "":
-                    QtGui.QMessageBox.information(None,
-                                                  "Style name required",
-                                                  "No style name specified")
+                    QtWidgets.QMessageBox.information(
+                        None,
+                        translate("draft", "Style name required"),
+                        translate("draft", "No style name specified"),
+                    )
                     self.form.comboBoxStyles.setCurrentIndex(0)
                 elif name in self.styles:
-                    QtGui.QMessageBox.information(None,
-                                                  "Style exists",
-                                                  "This style name already exists")
+                    QtWidgets.QMessageBox.information(
+                        None,
+                        translate("draft", "Style exists"),
+                        translate("draft", "This style name already exists"),
+                    )
                     self.form.comboBoxStyles.setCurrentIndex(0)
                 else:
                     # create new style from current editor values
@@ -250,91 +265,95 @@ class AnnotationStyleEditor(gui_base.GuiCommandSimplest):
         style = self.form.comboBoxStyles.itemText(index)
 
         if self.get_style_users(style):
-            reply = QtGui.QMessageBox.question(None,
-                                               "Style in use",
-                                               "This style is used by some objects in this document. Are you sure?",
-                                               QtGui.QMessageBox.Yes | QtGui.QMessageBox.No,
-                                               QtGui.QMessageBox.No)
-            if reply == QtGui.QMessageBox.No:
+            reply = QtWidgets.QMessageBox.question(
+                None,
+                translate("draft", "Style in use"),
+                translate("draft", "This style is used by some objects in this document. Proceed?"),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if reply == QtWidgets.QMessageBox.No:
                 return
-        self.form.comboBoxStyles.removeItem(index)
+
         del self.styles[style]
+        # We need to reset self.current_style, which is the deleted style,
+        # to stop on_style_changed from adding that style again:
+        self.current_style = None
+
+        self.form.comboBoxStyles.currentIndexChanged.disconnect(self.on_style_changed)
+        self.form.comboBoxStyles.removeItem(index)
+        if not self.styles:
+            self.form.comboBoxStyles.setCurrentIndex(0)
+        # Update the dialog and self.current_style:
+        self.on_style_changed(self.form.comboBoxStyles.currentIndex())
+        self.form.comboBoxStyles.currentIndexChanged.connect(self.on_style_changed)
 
     def on_rename(self):
         """Execute as a callback when the rename button is pressed."""
         index = self.form.comboBoxStyles.currentIndex()
         style = self.form.comboBoxStyles.itemText(index)
 
-        reply = QtGui.QInputDialog.getText(None,
-                                           "Rename style",
-                                           "New name:",
-                                           QtGui.QLineEdit.Normal,
-                                           style)
+        reply = QtWidgets.QInputDialog.getText(
+            None,
+            translate("draft", "Rename Style"),
+            translate("draft", "New name"),
+            QtWidgets.QLineEdit.Normal,
+            style,
+        )
         if reply[1]:
             # OK or Enter pressed
             newname = reply[0]
             if newname in self.styles:
-                reply = QtGui.QMessageBox.information(None,
-                                                      "Style exists",
-                                                      "This style name already exists")
+                reply = QtWidgets.QMessageBox.information(
+                    None,
+                    translate("draft", "Style exists"),
+                    translate("draft", "This style name already exists"),
+                )
             else:
                 self.form.comboBoxStyles.setItemText(index, newname)
                 value = self.styles[style]
                 del self.styles[style]
                 self.styles[newname] = value
                 self.renamed[style] = newname
+                self.current_style = newname
 
     def on_import(self):
         """Import styles from a json file."""
-        filename = QtGui.QFileDialog.getOpenFileName(
-            QtGui.QApplication.activeWindow(),
-            translate("draft","Open styles file"),
+        filename = QtWidgets.QFileDialog.getOpenFileName(
+            QtWidgets.QApplication.activeWindow(),
+            translate("draft", "Open Styles File"),
             None,
-            translate("draft","JSON files (*.json *.JSON)"))
+            translate("draft", "JSON files (*.json *.JSON)"),
+        )
         if filename and filename[0]:
             nstyles = {}
             with open(filename[0]) as f:
                 for key, val in json.load(f).items():
-                    nstyles[key] = self.repair_style(val)
+                    nstyles[key] = utils.repair_annotation_style(val)
             if nstyles:
                 self.styles.update(nstyles)
                 for style in self.styles.keys():
                     if self.form.comboBoxStyles.findText(style) == -1:
                         self.form.comboBoxStyles.addItem(style)
-                self.fill_editor(self.current_style) # The current style may have changed.
+                self.fill_editor(self.current_style)  # The current style may have changed.
                 print("Styles updated from " + filename[0])
 
     def on_export(self):
         """Export styles to a json file."""
-        filename = QtGui.QFileDialog.getSaveFileName(
-            QtGui.QApplication.activeWindow(),
-            translate("draft","Save styles file"),
+        filename = QtWidgets.QFileDialog.getSaveFileName(
+            QtWidgets.QApplication.activeWindow(),
+            translate("draft", "Save Styles File"),
             None,
-            translate("draft","JSON file (*.json)"))
+            translate("draft", "JSON file (*.json)"),
+        )
         if filename and filename[0]:
             self.update_style()
-            with open(filename[0],"w") as f:
-                json.dump(self.styles,f,indent=4)
-            print("Styles saved to " + filename[0])
-
-    def repair_style(self, style):
-        """Repair a V0.19 or V0.20 style.
-
-        Some properties were missing or misspelled.
-        Some float values were wrongly stored as strings.
-        """
-        default = utils.get_default_annotation_style()
-        new = {}
-        for key, val in default.items():
-            if style.get(key) is None:
-                new[key] = val[1]
-            elif type(style[key]) == type(val[1]):
-                new[key] = style[key]
-            elif isinstance(style[key], str):
-                new[key] = float(style[key].replace(",", "."))
-            else:
-                new[key] = val[1]
-        return new
+            filename = filename[0]
+            if not filename.lower().endswith(".json"):
+                filename += ".json"
+            with open(filename, "w") as f:
+                json.dump(self.styles, f, indent=4)
+            print("Styles saved to " + filename)
 
     def fill_editor(self, style=None):
         """Fill the editor fields with the contents of a style."""
@@ -362,8 +381,8 @@ class AnnotationStyleEditor(gui_base.GuiCommandSimplest):
             elif default[key][0] == "int":
                 control.setValue(value)
             elif default[key][0] == "float":
-                if hasattr(control, "setText"):
-                    control.setText(App.Units.Quantity(value, App.Units.Length).UserString)
+                if control.metaObject().indexOfProperty("rawValue") != -1:
+                    control.setProperty("rawValue", value)
                 else:
                     control.setValue(value)
             elif default[key][0] == "bool":
@@ -392,8 +411,8 @@ class AnnotationStyleEditor(gui_base.GuiCommandSimplest):
             elif default[key][0] == "int":
                 values[key] = control.value()
             elif default[key][0] == "float":
-                if hasattr(control, "setText"):
-                    values[key] = App.Units.Quantity(control.text()).Value
+                if control.metaObject().indexOfProperty("rawValue") != -1:
+                    values[key] = control.property("rawValue")
                 else:
                     values[key] = control.value()
             elif default[key][0] == "bool":
@@ -420,6 +439,6 @@ class AnnotationStyleEditor(gui_base.GuiCommandSimplest):
         return users
 
 
-Gui.addCommand('Draft_AnnotationStyleEditor', AnnotationStyleEditor())
+Gui.addCommand("Draft_AnnotationStyleEditor", AnnotationStyleEditor())
 
 ## @}

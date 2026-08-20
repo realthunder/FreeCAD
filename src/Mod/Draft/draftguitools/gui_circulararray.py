@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2019 Eliud Cabrera Castillo <e.cabrera-castillo@tum.de>           *
 # *                                                                         *
@@ -21,6 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides GUI tools to create circular Array objects."""
+
 ## @package gui_circulararray
 # \ingroup draftguitools
 # \brief Provides GUI tools to create circular Array objects.
@@ -32,28 +35,18 @@ from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
 import FreeCADGui as Gui
-import Draft
-import Draft_rc  # include resources, icons, ui files
-import draftutils.todo as todo
-
-from draftutils.messages import _log
-from draftutils.translate import translate
 from draftguitools import gui_base
+from draftutils import gui_utils
 from drafttaskpanels import task_circulararray
-
-# The module is used to prevent complaints from code checkers (flake8)
-bool(Draft_rc.__name__)
 
 
 class CircularArray(gui_base.GuiCommandBase):
     """Gui command for the CircularArray tool."""
 
     def __init__(self):
-        super(CircularArray, self).__init__()
-        self.command_name = "Circular array"
+        super().__init__(name="CircularArray")
         self.location = None
         self.mouse_event = None
-        self.view = None
         self.callback_move = None
         self.callback_click = None
         self.ui = None
@@ -61,9 +54,14 @@ class CircularArray(gui_base.GuiCommandBase):
 
     def GetResources(self):
         """Set icon, menu and tooltip."""
-        return {'Pixmap': 'Draft_CircularArray',
-               'MenuText': QT_TRANSLATE_NOOP("Draft_CircularArray", "Circular array"),
-               'ToolTip': QT_TRANSLATE_NOOP("Draft_CircularArray", "Creates copies of the selected object, and places the copies in a radial pattern\ncreating various circular layers.\n\nThe array can be turned into an orthogonal or a polar array by changing its type.")}
+        return {
+            "Pixmap": "Draft_CircularArray",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_CircularArray", "Circular Array"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_CircularArray",
+                "Creates copies of the selected object in a radial pattern with 1 or more circular layers",
+            ),
+        }
 
     def Activated(self):
         """Execute when the command is called.
@@ -71,22 +69,21 @@ class CircularArray(gui_base.GuiCommandBase):
         We add callbacks that connect the 3D view with
         the widgets of the task panel.
         """
-        _log("GuiCommand: {}".format(self.command_name))
+        super().Activated()
 
         self.location = coin.SoLocation2Event.getClassTypeId()
         self.mouse_event = coin.SoMouseButtonEvent.getClassTypeId()
-        self.view = Draft.get3DView()
-        self.callback_move = \
-            self.view.addEventCallbackPivy(self.location, self.move)
-        self.callback_click = \
-            self.view.addEventCallbackPivy(self.mouse_event, self.click)
+        self.callback_move = self.view.addEventCallbackPivy(self.location, self.move)
+        self.callback_click = self.view.addEventCallbackPivy(self.mouse_event, self.click)
 
         self.ui = task_circulararray.TaskPanelCircularArray()
         # The calling class (this one) is saved in the object
         # of the interface, to be able to call a function from within it.
         self.ui.source_command = self
-        # Gui.Control.showDialog(self.ui)
-        todo.ToDo.delay(Gui.Control.showDialog, self.ui)
+        Gui.Snapper.setPointConstraintProvider(self.ui)
+        task = Gui.Control.showDialog(self.ui)
+        task.setDocumentName(Gui.ActiveDocument.Document.Name)
+        task.setAutoCloseOnDeletedDocument(True)
 
     def move(self, event_cb):
         """Execute as a callback when the pointer moves in the 3D view.
@@ -109,8 +106,10 @@ class CircularArray(gui_base.GuiCommandBase):
         """
         if event_cb:
             event = event_cb.getEvent()
-            if (event.getState() != coin.SoMouseButtonEvent.DOWN
-                    or event.getButton() != coin.SoMouseButtonEvent.BUTTON1):
+            if (
+                event.getState() != coin.SoMouseButtonEvent.DOWN
+                or event.getButton() != coin.SoMouseButtonEvent.BUTTON1
+            ):
                 return
         if self.ui and self.point:
             # The accept function of the interface
@@ -124,15 +123,21 @@ class CircularArray(gui_base.GuiCommandBase):
         We should remove the callbacks that were added to the 3D view
         and then close the task panel.
         """
-        self.view.removeEventCallbackPivy(self.location,
-                                          self.callback_move)
-        self.view.removeEventCallbackPivy(self.mouse_event,
-                                          self.callback_click)
+        try:
+            self.view.removeEventCallbackPivy(self.location, self.callback_move)
+            self.view.removeEventCallbackPivy(self.mouse_event, self.callback_click)
+            gui_utils.end_all_events()
+        except RuntimeError:
+            # the view has been deleted already
+            pass
+        self.callback_move = None
+        self.callback_click = None
+        Gui.Snapper.clearPointConstraintProvider(self.ui)
         if Gui.Control.activeDialog():
             Gui.Control.closeDialog()
-            self.finish()
+        self.finish()
 
 
-Gui.addCommand('Draft_CircularArray', CircularArray())
+Gui.addCommand("Draft_CircularArray", CircularArray())
 
 ## @}

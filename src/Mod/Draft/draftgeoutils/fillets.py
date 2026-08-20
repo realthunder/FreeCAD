@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -22,6 +24,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides various functions to work with fillets."""
+
 ## @package fillets
 # \ingroup draftgeoutils
 # \brief Provides various functions to work with fillets.
@@ -54,14 +57,13 @@ def fillet(lEdges, r, chamfer=False):
         The dictionary contains edges with keys 'Arc' and 'Line'.
         """
         if not existingCurveType:
-            existingCurveType = {'Line': [],
-                                 'Arc': []}
+            existingCurveType = {"Line": [], "Arc": []}
         if issubclass(type(edge.Curve), Part.LineSegment):
-            existingCurveType['Line'] += [edge]
+            existingCurveType["Line"] += [edge]
         elif issubclass(type(edge.Curve), Part.Line):
-            existingCurveType['Line'] += [edge]
+            existingCurveType["Line"] += [edge]
         elif issubclass(type(edge.Curve), Part.Circle):
-            existingCurveType['Arc'] += [edge]
+            existingCurveType["Arc"] += [edge]
         else:
             raise ValueError("Edge's curve must be either Line or Arc")
         return existingCurveType
@@ -79,9 +81,21 @@ def fillet(lEdges, r, chamfer=False):
     curveType = getCurveType(rndEdges[0])
     curveType = getCurveType(rndEdges[1], curveType)
 
-    lVertexes = rndEdges[0].Vertexes + [rndEdges[1].Vertexes[-1]]
+    # Part.__sortEdges__() does not reverse edges. There is no guarantee that
+    # the endpoint of the 1st edge is the corner point.
+    edge1_sta, edge1_end = [rndEdges[0].Vertexes[i].Point for i in [0, -1]]
+    edge2_sta, edge2_end = [rndEdges[1].Vertexes[i].Point for i in [0, -1]]
+    tol = 1e-7
+    if edge1_sta.isEqual(edge2_sta, tol):
+        lVertexes = [rndEdges[0].Vertexes[-1], rndEdges[0].Vertexes[0], rndEdges[1].Vertexes[-1]]
+    elif edge1_sta.isEqual(edge2_end, tol):
+        lVertexes = [rndEdges[0].Vertexes[-1], rndEdges[0].Vertexes[0], rndEdges[1].Vertexes[0]]
+    elif edge1_end.isEqual(edge2_sta, tol):
+        lVertexes = [rndEdges[0].Vertexes[0], rndEdges[0].Vertexes[-1], rndEdges[1].Vertexes[-1]]
+    else:
+        lVertexes = [rndEdges[0].Vertexes[0], rndEdges[0].Vertexes[-1], rndEdges[1].Vertexes[0]]
 
-    if len(curveType['Line']) == 2:
+    if len(curveType["Line"]) == 2:
         # Deals with 2-line-edges lists
         U1 = lVertexes[0].Point.sub(lVertexes[1].Point)
         U1.normalize()
@@ -91,20 +105,13 @@ def fillet(lEdges, r, chamfer=False):
 
         alpha = U1.getAngle(U2)
 
-        if chamfer:
-            # correcting r value so the size of the chamfer = r
-            beta = math.pi - alpha/2
-            r = (r/2)/math.cos(beta)
-
         # Edges have same direction
-        if (round(alpha, precision()) == 0
-                or round(alpha - math.pi, precision()) == 0):
-            print("DraftGeomUtils.fillet: Warning: "
-                  "edges have same direction. Did nothing")
+        if round(alpha, precision()) == 0 or round(alpha - math.pi, precision()) == 0:
+            print("DraftGeomUtils.fillet: Warning: " "edges have same direction. Did nothing")
             return rndEdges
 
-        dToCenter = r / math.sin(alpha/2.0)
-        dToTangent = (dToCenter**2-r**2)**(0.5)
+        dToCenter = r / math.sin(alpha / 2.0)
+        dToTangent = (dToCenter**2 - r**2) ** (0.5)
         dirVect = App.Vector(U1)
         dirVect.scale(dToTangent, dToTangent, dToTangent)
         arcPt1 = lVertexes[1].Point.add(dirVect)
@@ -118,9 +125,8 @@ def fillet(lEdges, r, chamfer=False):
         dirVect.scale(dToTangent, dToTangent, dToTangent)
         arcPt3 = lVertexes[1].Point.add(dirVect)
 
-        if (dToTangent > lEdges[0].Length) or (dToTangent > lEdges[1].Length):
-            print("DraftGeomUtils.fillet: Error: radius value ", r,
-                  " is too high")
+        if (dToTangent > rndEdges[0].Length) or (dToTangent > rndEdges[1].Length):
+            print("DraftGeomUtils.fillet: Error: radius value ", r, " is too high")
             return rndEdges
 
         if chamfer:
@@ -132,19 +138,17 @@ def fillet(lEdges, r, chamfer=False):
             # fillet consumes entire first edge
             rndEdges.pop(0)
         else:
-            rndEdges[0] = Part.Edge(Part.LineSegment(lVertexes[0].Point,
-                                                     arcPt1))
+            rndEdges[0] = Part.Edge(Part.LineSegment(lVertexes[0].Point, arcPt1))
 
         if lVertexes[2].Point != arcPt3:
             # fillet does not consume entire second edge
-            rndEdges += [Part.Edge(Part.LineSegment(arcPt3,
-                                                    lVertexes[2].Point))]
+            rndEdges += [Part.Edge(Part.LineSegment(arcPt3, lVertexes[2].Point))]
 
         return rndEdges
 
-    elif len(curveType['Arc']) == 1:
+    elif len(curveType["Arc"]) == 1:
         # Deals with lists containing an arc and a line
-        if lEdges[0] in curveType['Arc']:
+        if rndEdges[0] in curveType["Arc"]:
             lineEnd = lVertexes[2]
             arcEnd = lVertexes[0]
             arcFirst = True
@@ -152,10 +156,10 @@ def fillet(lEdges, r, chamfer=False):
             lineEnd = lVertexes[0]
             arcEnd = lVertexes[2]
             arcFirst = False
-        arcCenter = curveType['Arc'][0].Curve.Center
-        arcRadius = curveType['Arc'][0].Curve.Radius
-        arcAxis = curveType['Arc'][0].Curve.Axis
-        arcLength = curveType['Arc'][0].Length
+        arcCenter = curveType["Arc"][0].Curve.Center
+        arcRadius = curveType["Arc"][0].Curve.Radius
+        arcAxis = curveType["Arc"][0].Curve.Axis
+        arcLength = curveType["Arc"][0].Length
 
         U1 = lineEnd.Point.sub(lVertexes[1].Point)
         U1.normalize()
@@ -176,20 +180,19 @@ def fillet(lEdges, r, chamfer=False):
 
         if round(projCenter, precision()) > 0:
             newRadius = arcRadius - r
-        elif (round(projCenter, precision()) < 0
-              or (round(projCenter, precision()) == 0 and U1.dot(T) > 0)):
+        elif round(projCenter, precision()) < 0 or (
+            round(projCenter, precision()) == 0 and U1.dot(T) > 0
+        ):
             newRadius = arcRadius + r
         else:
-            print("DraftGeomUtils.fillet: Warning: "
-                  "edges are already tangent. Did nothing")
+            print("DraftGeomUtils.fillet: Warning: " "edges are already tangent. Did nothing")
             return rndEdges
 
         toNewCent = newRadius**2 - dCenterToLine**2
         if toNewCent > 0:
-            toNewCent = abs(abs(projCenter) - toNewCent**(0.5))
+            toNewCent = abs(abs(projCenter) - toNewCent ** (0.5))
         else:
-            print("DraftGeomUtils.fillet: Error: radius value ", r,
-                  " is too high")
+            print("DraftGeomUtils.fillet: Error: radius value ", r, " is too high")
             return rndEdges
 
         U1.scale(toNewCent, toNewCent, toNewCent)
@@ -225,9 +228,8 @@ def fillet(lEdges, r, chamfer=False):
         toCenter.scale(-1, -1, -1)
 
         delLength = arcRadius * V[0].sub(arcCenter).getAngle(toCenter)
-        if delLength > arcLength or toNewCent > curveType['Line'][0].Length:
-            print("DraftGeomUtils.fillet: Error: radius value ", r,
-                  " is too high")
+        if delLength > arcLength or toNewCent > curveType["Line"][0].Length:
+            print("DraftGeomUtils.fillet: Error: radius value ", r, " is too high")
             return rndEdges
 
         arcAsEdge = arcFrom2Pts(V[-arcFirst], V[-myTrick], arcCenter, arcAxis)
@@ -238,26 +240,29 @@ def fillet(lEdges, r, chamfer=False):
         rndEdges[not arcFirst] = arcAsEdge
         rndEdges[arcFirst] = lineAsEdge
         if chamfer:
-            rndEdges[1:1] = [Part.Edge(Part.LineSegment(arcPt[- arcFirst],
-                                                        arcPt[- myTrick]))]
+            rndEdges[1:1] = [Part.Edge(Part.LineSegment(arcPt[-arcFirst], arcPt[-myTrick]))]
         else:
-            rndEdges[1:1] = [Part.Edge(Part.Arc(arcPt[- arcFirst],
-                                                arcPt[1],
-                                                arcPt[- myTrick]))]
+            rndEdges[1:1] = [Part.Edge(Part.Arc(arcPt[-arcFirst], arcPt[1], arcPt[-myTrick]))]
 
         return rndEdges
 
-    elif len(curveType['Arc']) == 2:
+    elif len(curveType["Arc"]) == 2:
         # Deals with lists of 2 arc-edges
-        (arcCenter, arcRadius,
-         arcAxis, arcLength,
-         toCenter, T, newRadius) = [], [], [], [], [], [], []
+        arcCenter, arcRadius, arcAxis, arcLength, toCenter, T, newRadius = (
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+        )
 
         for i in range(2):
-            arcCenter += [curveType['Arc'][i].Curve.Center]
-            arcRadius += [curveType['Arc'][i].Curve.Radius]
-            arcAxis += [curveType['Arc'][i].Curve.Axis]
-            arcLength += [curveType['Arc'][i].Length]
+            arcCenter += [curveType["Arc"][i].Curve.Center]
+            arcRadius += [curveType["Arc"][i].Curve.Radius]
+            arcAxis += [curveType["Arc"][i].Curve.Axis]
+            arcLength += [curveType["Arc"][i].Length]
             toCenter += [arcCenter[i].sub(lVertexes[1].Point)]
 
         T += [arcAxis[0].cross(toCenter[0])]
@@ -265,7 +270,7 @@ def fillet(lEdges, r, chamfer=False):
         CentToCent = toCenter[1].sub(toCenter[0])
         dCentToCent = CentToCent.Length
 
-        sameDirection = (arcAxis[0].dot(arcAxis[1]) > 0)
+        sameDirection = arcAxis[0].dot(arcAxis[1]) > 0
         TcrossT = T[0].cross(T[1])
 
         if sameDirection:
@@ -279,8 +284,7 @@ def fillet(lEdges, r, chamfer=False):
                 newRadius += [arcRadius[0] + r]
                 newRadius += [arcRadius[1] + r]
             else:
-                print("DraftGeomUtils.fillet: Warning: "
-                      "edges are already tangent. Did nothing")
+                print("DraftGeomUtils.fillet: Warning: " "edges are already tangent. Did nothing")
                 return rndEdges
 
         elif not sameDirection:
@@ -298,24 +302,22 @@ def fillet(lEdges, r, chamfer=False):
                     newRadius += [arcRadius[0] + r]
                     newRadius += [arcRadius[1] - r]
                 else:
-                    print("DraftGeomUtils.fillet: Warning: "
-                          "arcs are coincident. Did nothing")
+                    print("DraftGeomUtils.fillet: Warning: " "arcs are coincident. Did nothing")
                     return rndEdges
             else:
-                print("DraftGeomUtils.fillet: Warning: "
-                      "edges are already tangent. Did nothing")
+                print("DraftGeomUtils.fillet: Warning: " "edges are already tangent. Did nothing")
                 return rndEdges
 
-        if (newRadius[0] + newRadius[1] < dCentToCent
-                or newRadius[0] - newRadius[1] > dCentToCent
-                or newRadius[1] - newRadius[0] > dCentToCent):
-            print("DraftGeomUtils.fillet: Error: radius value ", r,
-                  " is too high")
+        if (
+            newRadius[0] + newRadius[1] < dCentToCent
+            or newRadius[0] - newRadius[1] > dCentToCent
+            or newRadius[1] - newRadius[0] > dCentToCent
+        ):
+            print("DraftGeomUtils.fillet: Error: radius value ", r, " is too high")
             return rndEdges
 
-        x = ((dCentToCent**2 + newRadius[0]**2 - newRadius[1]**2)
-             / (2*dCentToCent))
-        y = (newRadius[0]**2 - x**2)**(0.5)
+        x = (dCentToCent**2 + newRadius[0] ** 2 - newRadius[1] ** 2) / (2 * dCentToCent)
+        y = (newRadius[0] ** 2 - x**2) ** (0.5)
 
         CentToCent.normalize()
         toCenter[0].normalize()
@@ -329,8 +331,7 @@ def fillet(lEdges, r, chamfer=False):
         CentToCent.scale(x, x, x)
         normVect.scale(y, y, y)
         newCent = arcCenter[0].add(CentToCent.add(normVect))
-        CentToNewCent = [newCent.sub(arcCenter[0]),
-                         newCent.sub(arcCenter[1])]
+        CentToNewCent = [newCent.sub(arcCenter[0]), newCent.sub(arcCenter[1])]
 
         for i in range(2):
             CentToNewCent[i].normalize()
@@ -350,24 +351,19 @@ def fillet(lEdges, r, chamfer=False):
         arcAsEdge = []
         for i in range(2):
             toCenter[i].scale(-1, -1, -1)
-            delLength = (arcRadius[i]
-                         * arcPt[-i].sub(arcCenter[i]).getAngle(toCenter[i]))
+            delLength = arcRadius[i] * arcPt[-i].sub(arcCenter[i]).getAngle(toCenter[i])
             if delLength > arcLength[i]:
-                print("DraftGeomUtils.fillet: Error: radius value ", r,
-                      " is too high")
+                print("DraftGeomUtils.fillet: Error: radius value ", r, " is too high")
                 return rndEdges
             V = [arcPt[-i], lVertexes[-i].Point]
-            arcAsEdge += [arcFrom2Pts(V[i-1], V[-i],
-                                      arcCenter[i], arcAxis[i])]
+            arcAsEdge += [arcFrom2Pts(V[i - 1], V[-i], arcCenter[i], arcAxis[i])]
 
         rndEdges[0] = arcAsEdge[0]
         rndEdges[1] = arcAsEdge[1]
         if chamfer:
             rndEdges[1:1] = [Part.Edge(Part.LineSegment(arcPt[0], arcPt[2]))]
         else:
-            rndEdges[1:1] = [Part.Edge(Part.Arc(arcPt[0],
-                                                arcPt[1],
-                                                arcPt[2]))]
+            rndEdges[1:1] = [Part.Edge(Part.Arc(arcPt[0], arcPt[1], arcPt[2]))]
 
         return rndEdges
 
@@ -383,7 +379,7 @@ def filletWire(aWire, r, chamfer=False):
     filEdges = [edges[0]]
 
     for i in range(len(edges) - 1):
-        result = fillet([filEdges[-1], edges[i+1]], r, chamfer)
+        result = fillet([filEdges[-1], edges[i + 1]], r, chamfer)
         if len(result) > 2:
             filEdges[-1:] = result[0:3]
         else:
@@ -396,5 +392,6 @@ def filletWire(aWire, r, chamfer=False):
             filEdges[0] = result[2]
 
     return Part.Wire(filEdges)
+
 
 ## @}

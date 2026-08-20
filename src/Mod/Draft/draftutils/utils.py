@@ -1,8 +1,10 @@
-# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
-# *   (c) 2009, 2010                                                        *
-# *   Yorik van Havre <yorik@uncreated.net>, Ken Cline <cline@frii.com>     *
-# *   (c) 2019 Eliud Cabrera Castillo <e.cabrera-castillo@tum.de>           *
+# *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
+# *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
+# *   Copyright (c) 2019 Eliud Cabrera Castillo <e.cabrera-castillo@tum.de> *
+# *   Copyright (c) 2024 The FreeCAD Project Association                    *
 # *                                                                         *
 # *   This file is part of the FreeCAD CAx development system.              *
 # *                                                                         *
@@ -29,6 +31,7 @@ This module contains auxiliary functions which can be used
 in other modules of the workbench, and which don't require
 the graphical user interface (GUI).
 """
+
 ## @package utils
 # \ingroup draftutils
 # \brief Provides general utility functions used throughout the workbench.
@@ -40,8 +43,9 @@ import PySide.QtCore as QtCore
 
 import FreeCAD as App
 from draftutils import params
-from draftutils.messages import _msg, _wrn, _err, _log
+from draftutils.messages import _wrn, _err, _log
 from draftutils.translate import translate
+from builtins import open
 
 # TODO: move the functions that require the graphical interface
 # This module should not import any graphical commands; those should be
@@ -54,33 +58,69 @@ if App.GuiUp:
     True if Draft_rc else False
 
 
-ARROW_TYPES = ["Dot", "Circle", "Arrow", "Tick", "Tick-2"]
+ARROW_TYPES = ["Dot", "Circle", "Arrow", "Tick", "Tick-2", "None"]
 DISPLAY_MODES = ["Flat Lines", "Shaded", "Wireframe", "Points"]
 DRAW_STYLES = ["Solid", "Dashed", "Dotted", "Dashdot"]
 arrowtypes = ARROW_TYPES
 
 
 def get_default_annotation_style():
-    arrow_type_index = params.get_param("dimsymbol")
+    arrow_start_type_index = params.get_param("dimsymbolstart")
+    arrow_end_type_index = params.get_param("dimsymbolend")
     return {
-        "ArrowSize":       ("float", params.get_param("arrowsize")),
-        "ArrowType":       ("index", arrow_type_index, ARROW_TYPES[arrow_type_index]),
-        "Decimals":        ("int",   params.get_param("dimPrecision")),
-        "DimOvershoot":    ("float", params.get_param("dimovershoot")),
-        "ExtLines":        ("float", params.get_param("extlines")),
-        "ExtOvershoot":    ("float", params.get_param("extovershoot")),
-        "FontName":        ("font",  params.get_param("textfont")),
-        "FontSize":        ("float", params.get_param("textheight")),
-        "LineColor":       ("color", params.get_param("DefaultAnnoLineColor")),
-        "LineSpacing":     ("float", params.get_param("LineSpacing")),
-        "LineWidth":       ("int",   params.get_param("DefaultAnnoLineWidth")),
+        "ArrowSizeStart": ("float", params.get_param("arrowsizestart")),
+        "ArrowSizeEnd": ("float", params.get_param("arrowsizeend")),
+        "ArrowTypeStart": ("index", arrow_start_type_index, ARROW_TYPES[arrow_start_type_index]),
+        "ArrowTypeEnd": ("index", arrow_end_type_index, ARROW_TYPES[arrow_end_type_index]),
+        "Decimals": ("int", params.get_param("dimPrecision")),
+        "DimOvershoot": ("float", params.get_param("dimovershoot")),
+        "ExtLines": ("float", params.get_param("extlines")),
+        "ExtOvershoot": ("float", params.get_param("extovershoot")),
+        "FontName": ("font", params.get_param("textfont")),
+        "FontSize": ("float", params.get_param("textheight")),
+        "LineColor": ("color", params.get_param("DefaultAnnoLineColor") | 0x000000FF),
+        "LineSpacing": ("float", params.get_param("LineSpacing")),
+        "LineWidth": ("int", params.get_param("DefaultAnnoLineWidth")),
         "ScaleMultiplier": ("float", params.get_param("DefaultAnnoScaleMultiplier")),
-        "ShowLine":        ("bool",  params.get_param("DimShowLine")),
-        "ShowUnit":        ("bool",  params.get_param("showUnit")),
-        "TextColor":       ("color", params.get_param("DefaultTextColor")),
-        "TextSpacing":     ("float", params.get_param("dimspacing")),
-        "UnitOverride":    ("str",   params.get_param("overrideUnit"))
+        "ShowLine": ("bool", params.get_param("DimShowLine")),
+        "ShowUnit": ("bool", params.get_param("showUnit")),
+        "TextColor": ("color", params.get_param("DefaultTextColor") | 0x000000FF),
+        "TextSpacing": ("float", params.get_param("dimspacing")),
+        "UnitOverride": ("str", params.get_param("overrideUnit")),
     }
+
+
+def repair_annotation_style(style):
+    """Repair a V0.19, V0.20 or < V1.1 style.
+
+    V0.19 and V0.20:
+    Some properties were missing or misspelled.
+    Some float values were wrongly stored as strings.
+
+    V1.0 -> V1.1:
+    ArrowSize has been replaced by ArrowSizeStart and ArrowSizeEnd.
+    ArrowType has been replaced by ArrowTypeStart and ArrowTypeEnd.
+    """
+    for key in ("ArrowSize", "ArrowType"):
+        if (
+            style.get(key) is not None
+            and style.get(key + "Start") is None
+            and style.get(key + "End") is None
+        ):
+            style[key + "Start"] = style[key]
+            style[key + "End"] = style[key]
+    default = get_default_annotation_style()
+    new = {}
+    for key, val in default.items():
+        if style.get(key) is None:
+            new[key] = val[1]
+        elif type(style[key]) == type(val[1]):
+            new[key] = style[key]
+        elif isinstance(style[key], str):
+            new[key] = float(style[key].replace(",", "."))
+        else:
+            new[key] = val[1]
+    return new
 
 
 def get_default_shape_style():
@@ -88,15 +128,26 @@ def get_default_shape_style():
     display_mode_index = params.get_param("DefaultDisplayMode")
     draw_style_index = params.get_param("DefaultDrawStyle")
     return {
-        "DisplayMode":  ("index", display_mode_index, DISPLAY_MODES[display_mode_index]),
-        "DrawStyle":    ("index", draw_style_index, DRAW_STYLES[draw_style_index]),
-        "LineColor":    ("color", params.get_param_view("DefaultShapeLineColor")),
-        "LineWidth":    ("int",   params.get_param_view("DefaultShapeLineWidth")),
-        "PointColor":   ("color", params.get_param_view("DefaultShapeVertexColor")),
-        "PointSize":    ("int",   params.get_param_view("DefaultShapePointSize")),
-        "ShapeColor":   ("color", params.get_param_view("DefaultShapeColor")),
-        "Transparency": ("int",   params.get_param_view("DefaultShapeTransparency"))
+        "DisplayMode": ("index", display_mode_index, DISPLAY_MODES[display_mode_index]),
+        "DrawStyle": ("index", draw_style_index, DRAW_STYLES[draw_style_index]),
+        "LineColor": ("color", params.get_param_view("DefaultShapeLineColor") | 0x000000FF),
+        "LineWidth": ("int", params.get_param_view("DefaultShapeLineWidth")),
+        "PointColor": ("color", params.get_param_view("DefaultShapeVertexColor") | 0x000000FF),
+        "PointSize": ("int", params.get_param_view("DefaultShapePointSize")),
+        "ShapeAppearance": ("material", (get_view_material(),)),
     }
+
+
+def get_view_material():
+    """Return a ShapeAppearance material with properties based on the preferences."""
+    material = App.Material()
+    material.AmbientColor = params.get_param_view("DefaultAmbientColor") | 0x000000FF
+    material.DiffuseColor = params.get_param_view("DefaultShapeColor") | 0x000000FF
+    material.EmissiveColor = params.get_param_view("DefaultEmissiveColor") | 0x000000FF
+    material.Shininess = params.get_param_view("DefaultShapeShininess") / 100
+    material.SpecularColor = params.get_param_view("DefaultSpecularColor") | 0x000000FF
+    material.Transparency = params.get_param_view("DefaultShapeTransparency") / 100
+    return material
 
 
 def string_encode_coin(ustr):
@@ -116,13 +167,14 @@ def string_encode_coin(ustr):
     """
     try:
         from pivy import coin
+
         coin4 = coin.COIN_MAJOR_VERSION >= 4
     except (ImportError, AttributeError):
         coin4 = False
     if coin4:
-        return ustr.encode('utf-8')
+        return ustr.encode("utf-8")
     else:
-        return ustr.encode('latin1')
+        return ustr.encode("latin1")
 
 
 stringencodecoin = string_encode_coin
@@ -163,184 +215,11 @@ def type_check(args_and_types, name="?"):
     for v, t in args_and_types:
         if not isinstance(v, t):
             w = "typecheck[{}]: '{}' is not {}".format(name, v, t)
-            _wrn(w)
+            _err(w)
             raise TypeError("Draft." + str(name))
 
 
 typecheck = type_check
-
-
-def get_param_type(param):
-    """Return the type of the parameter entered.
-
-    Parameters
-    ----------
-    param : str
-        A string that indicates a parameter in the parameter database.
-
-    Returns
-    -------
-    str or None
-        The returned string could be `'int'`, `'string'`, `'float'`,
-        `'bool'`, `'unsigned'`, depending on the parameter.
-        It returns `None` for unhandled situations.
-    """
-    if param in ("dimsymbol", "dimPrecision",
-                 "precision", "defaultWP", "snapRange", "gridEvery",
-                 "linewidth", "modconstrain", "modsnap",
-                 "maxSnapEdges", "modalt", "HatchPatternResolution",
-                 "snapStyle", "DefaultAnnoDisplayMode", "DefaultAnnoLineWidth",
-                 "DefaultDrawStyle", "DefaultDisplayMode",
-                 "gridSize", "gridTransparency"):
-        return "int"
-    elif param in ("constructiongroupname", "textfont",
-                   "patternFile", "snapModes",
-                   "FontFile", "ClonePrefix", "overrideUnit",
-                   "labeltype", "gridSpacing") or "inCommandShortcut" in param:
-        return "string"
-    elif param in ("textheight", "arrowsize", "extlines", "dimspacing",
-                   "dimovershoot", "extovershoot", "HatchPatternSize",
-                   "LineSpacing", "DefaultAnnoScaleMultiplier"):
-        return "float"
-    elif param in ("selectBaseObjects", "alwaysSnap", "grid",
-                   "fillmode", "DimShowLine", 'showtray',
-                   "SvgLinesBlack", "dxfStdSize", "SnapBarShowOnlyDuringCommands",
-                   "alwaysShowGrid", "renderPolylineWidth",
-                   "showPlaneTracker", "UsePartPrimitives",
-                   "DiscretizeEllipses", "showUnit", "coloredGridAxes",
-                   "Draft_array_fuse", "Draft_array_Link",
-                   "Draft_array_build_shape", "gridBorder"):
-        return "bool"
-    elif param in ("color", "constructioncolor", "snapcolor",
-                   "gridColor", "DefaultTextColor", "DefaultAnnoLineColor"):
-        return "unsigned"
-    else:
-        return None
-
-
-getParamType = get_param_type
-
-
-def get_param(param, default=None):
-    """Return a parameter value from the current parameter database.
-
-    The parameter database is located in the tree
-    ::
-        'User parameter:BaseApp/Preferences/Mod/Draft'
-
-    In the case that `param` is `'linewidth'` or `'color'` it will get
-    the values from the View parameters
-    ::
-        'User parameter:BaseApp/Preferences/View/DefaultShapeLineWidth'
-        'User parameter:BaseApp/Preferences/View/DefaultShapeLineColor'
-
-    Parameters
-    ----------
-    param : str
-        A string that indicates a parameter in the parameter database.
-
-    default : optional
-        It indicates the default value of the given parameter.
-        It defaults to `None`, in which case it will use a specific
-        value depending on the type of parameter determined
-        with `get_param_type`.
-
-    Returns
-    -------
-    int, or str, or float, or bool
-        Depending on `param` and its type, by returning `ParameterGrp.GetInt`,
-        `ParameterGrp.GetString`, `ParameterGrp.GetFloat`,
-        `ParameterGrp.GetBool`, or `ParameterGrp.GetUnsinged`.
-    """
-    draft_params = "User parameter:BaseApp/Preferences/Mod/Draft"
-    view_params = "User parameter:BaseApp/Preferences/View"
-
-    p = App.ParamGet(draft_params)
-    v = App.ParamGet(view_params)
-    t = get_param_type(param)
-    # print("getting param ",param, " of type ",t, " default: ",str(default))
-    if t == "int":
-        if default is None:
-            default = 0
-        if param == "linewidth":
-            return v.GetInt("DefaultShapeLineWidth", default)
-        return p.GetInt(param, default)
-    elif t == "string":
-        if default is None:
-            default = ""
-        return p.GetString(param, default)
-    elif t == "float":
-        if default is None:
-            default = 0
-        return p.GetFloat(param, default)
-    elif t == "bool":
-        if default is None:
-            default = False
-        return p.GetBool(param, default)
-    elif t == "unsigned":
-        if default is None:
-            default = 0
-        if param == "color":
-            return v.GetUnsigned("DefaultShapeLineColor", default)
-        return p.GetUnsigned(param, default)
-    else:
-        return default
-
-
-getParam = get_param
-
-
-def set_param(param, value):
-    """Set a Draft parameter with the given value.
-
-    The parameter database is located in the tree
-    ::
-        'User parameter:BaseApp/Preferences/Mod/Draft'
-
-    In the case that `param` is `'linewidth'` or `'color'` it will set
-    the View parameters
-    ::
-        'User parameter:BaseApp/Preferences/View/DefaultShapeLineWidth'
-        'User parameter:BaseApp/Preferences/View/DefaultShapeLineColor'
-
-    Parameters
-    ----------
-    param : str
-        A string that indicates a parameter in the parameter database.
-
-    value : int, or str, or float, or bool
-        The appropriate value of the parameter.
-        Depending on `param` and its type, determined with `get_param_type`,
-        it sets the appropriate value by calling `ParameterGrp.SetInt`,
-        `ParameterGrp.SetString`, `ParameterGrp.SetFloat`,
-        `ParameterGrp.SetBool`, or `ParameterGrp.SetUnsinged`.
-    """
-    draft_params = "User parameter:BaseApp/Preferences/Mod/Draft"
-    view_params = "User parameter:BaseApp/Preferences/View"
-
-    p = App.ParamGet(draft_params)
-    v = App.ParamGet(view_params)
-    t = get_param_type(param)
-
-    if t == "int":
-        if param == "linewidth":
-            v.SetInt("DefaultShapeLineWidth", value)
-        else:
-            p.SetInt(param, value)
-    elif t == "string":
-        p.SetString(param, value)
-    elif t == "float":
-        p.SetFloat(param, value)
-    elif t == "bool":
-        p.SetBool(param, value)
-    elif t == "unsigned":
-        if param == "color":
-            v.SetUnsigned("DefaultShapeLineColor", value)
-        else:
-            p.SetUnsigned(param, value)
-
-
-setParam = set_param
 
 
 def precision():
@@ -366,6 +245,29 @@ def precision():
     return params.get_param("precision")
 
 
+def svg_precision():
+    """Return the precision value for SVG import from the parameter database.
+
+    It is the number of decimal places that a float will have.
+    Example
+    ::
+        precision=5, 0.12345
+        precision=4, 0.1234
+        precision=3, 0.123
+
+    Due to floating point operations there may be rounding errors.
+    Therefore, this precision number is used to round up values
+    so that all operations are consistent.
+    By default the precision is 3 decimal places.
+
+    Returns
+    -------
+    int
+        params.get_param("svgPrecision")
+    """
+    return params.get_param("svgPrecision")
+
+
 def tolerance():
     """Return a tolerance based on the precision() value
 
@@ -375,6 +277,14 @@ def tolerance():
         10 ** -precision()
     """
     return 10 ** -precision()
+
+
+def is_deleted(obj):
+    """Return `True` if obj is deleted."""
+    try:
+        return not obj.isAttachedToDocument()
+    except:
+        return True
 
 
 def get_real_name(name):
@@ -393,8 +303,8 @@ def get_real_name(name):
         at least one letter.
     """
     for i in range(1, len(name) + 1):
-        if name[-i] not in '1234567890':
-            return name[:len(name) - (i - 1)]
+        if name[-i] not in "1234567890":
+            return name[: len(name) - (i - 1)]
     return name
 
 
@@ -423,18 +333,93 @@ def get_type(obj):
         or `None` if `obj` is `None`.
     """
     import Part
+
     if not obj:
         return None
     if isinstance(obj, Part.Shape):
         return "Shape"
-    if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, "Type"):
+    if hasattr(obj, "Class") and "Ifc" in str(obj.Class):
+        return obj.Class
+    if hasattr(obj, "Proxy") and hasattr(obj.Proxy, "Type"):
         return obj.Proxy.Type
-    if hasattr(obj, 'TypeId'):
+    if hasattr(obj, "TypeId"):
         return obj.TypeId
     return "Unknown"
 
 
 getType = get_type
+
+
+def get_trimex_unsupported_reason(obj, subobjects=None):
+    """Return a translated Trimex error message for unsupported objects.
+
+    Parameters
+    ----------
+    obj : App::DocumentObject
+        Object that Trimex should operate on.
+    subobjects : list, optional
+        Selected subobjects associated with `obj`.
+
+    Returns
+    -------
+    str or None
+        `None` if the object is supported by Trimex, otherwise
+        a translated error message explaining why it is rejected.
+    """
+    import Part
+
+    def edge_geom_type(edge):
+        if isinstance(edge.Curve, (Part.LineSegment, Part.Line)):
+            return "Line"
+        if isinstance(edge.Curve, Part.Circle):
+            return "Circle"
+        return "Unknown"
+
+    if not hasattr(obj, "Shape"):
+        return translate("draft", "This object is not supported")
+
+    shape = obj.Shape
+    if shape.Faces:
+        if len(shape.Faces) == 1:
+            return None
+        if (
+            subobjects
+            and len(subobjects) == 1
+            and getattr(subobjects[0], "ShapeType", None) == "Face"
+        ):
+            return None
+        return translate("draft", "Only a single face can be extruded")
+
+    if obj.isDerivedFrom("Sketcher::SketchObject"):
+        return translate("draft", "Trimex does not support this object type")
+
+    if len(shape.Wires) > 1:
+        return translate("draft", "Trimex does not support this object type")
+
+    if shape.Wires:
+        edges = shape.Wires[0].Edges
+    else:
+        if len(shape.Edges) != 1:
+            return translate("draft", "Trimex does not support this object type")
+        edges = shape.Edges
+
+    for edge in edges:
+        if edge_geom_type(edge) not in {"Line", "Circle"}:
+            return translate("draft", "Trimex does not support this object type")
+
+    obj_type = get_type(obj)
+    if obj_type in {"Wire", "Part::Line", "Circle"}:
+        return None
+
+    if obj.TypeId in {"Part::Feature", "Part::Part2DObject"}:
+        return None
+
+    if obj.TypeId in {"Part::FeaturePython", "Part::Part2DObjectPython"}:
+        proxy = getattr(obj, "Proxy", None)
+        if proxy is None or not hasattr(proxy, "execute"):
+            return None
+
+    return translate("draft", "Trimex does not support this object type")
 
 
 def get_objects_of_type(objects, typ):
@@ -584,7 +569,7 @@ def get_clone_base(obj, strict=False, recursive=True):
 getCloneBase = get_clone_base
 
 
-def shapify(obj):
+def shapify(obj, delete=True):
     """Transform a parametric object into a static, non-parametric shape.
 
     Parameters
@@ -595,6 +580,10 @@ def shapify(obj):
         This object will be removed, and a non-parametric object
         with the same topological shape (`Part::TopoShape`)
         will be created.
+
+    delete: bool, optional
+        It defaults to `False`.
+        If it is `True`, the original object is deleted.
 
     Returns
     -------
@@ -625,15 +614,12 @@ def shapify(obj):
     elif len(shape.Wires) == 1:
         name = "Wire"
     elif len(shape.Edges) == 1:
-        import DraftGeomUtils
-        if DraftGeomUtils.geomType(shape.Edges[0]) == "Line":
-            name = "Line"
-        else:
-            name = "Circle"
+        name = "Edge"
     else:
-        name = getRealName(obj.Name)
+        name = get_real_name(obj.Name)
 
-    App.ActiveDocument.removeObject(obj.Name)
+    if delete:
+        App.ActiveDocument.removeObject(obj.Name)
     newobj = App.ActiveDocument.addObject("Part::Feature", name)
     newobj.Shape = shape
 
@@ -691,13 +677,19 @@ def compare_objects(obj1, obj2):
         Any type of scripted object.
     """
     if obj1.TypeId != obj2.TypeId:
-        _msg("'{0}' ({1}), '{2}' ({3}): ".format(obj1.Name, obj1.TypeId,
-                                                 obj2.Name, obj2.TypeId)
-             + translate("draft", "different types") + " (TypeId)")
+        _msg(
+            "'{0}' ({1}), '{2}' ({3}): ".format(obj1.Name, obj1.TypeId, obj2.Name, obj2.TypeId)
+            + translate("draft", "different types")
+            + " (TypeId)"
+        )
     elif getType(obj1) != getType(obj2):
-        _msg("'{0}' ({1}), '{2}' ({3}): ".format(obj1.Name, get_type(obj1),
-                                                 obj2.Name, get_type(obj2))
-             + translate("draft", "different types") + " (Proxy.Type)")
+        _msg(
+            "'{0}' ({1}), '{2}' ({3}): ".format(
+                obj1.Name, get_type(obj1), obj2.Name, get_type(obj2)
+            )
+            + translate("draft", "different types")
+            + " (Proxy.Type)"
+        )
     else:
         for p in obj1.PropertiesList:
             if p in obj2.PropertiesList:
@@ -705,15 +697,17 @@ def compare_objects(obj1, obj2):
                     pass
                 elif p == "Placement":
                     delta = obj1.Placement.Base.sub(obj2.Placement.Base)
-                    text = translate("draft", "Objects have different placements. "
-                                              "Distance between the two base points: ")
-                    _msg(text + str(delta.Length))
+                    text = translate(
+                        "draft",
+                        "Objects have different placements. "
+                        "Distance between the two base points:",
+                    )
+                    _msg(text + " " + str(delta.Length))
                 else:
                     if getattr(obj1, p) != getattr(obj2, p):
                         _msg("'{}' ".format(p) + translate("draft", "has a different value"))
             else:
-                _msg("{} ".format(p)
-                     + translate("draft", "doesn't exist in one of the objects"))
+                _msg("{} ".format(p) + translate("draft", "doesn't exist in one of the objects"))
 
 
 compareObjects = compare_objects
@@ -726,6 +720,7 @@ def load_svg_patterns():
     attribute.
     """
     import importSVG
+
     App.svgpatterns = {}
 
     # Get default patterns in the resource file
@@ -734,7 +729,7 @@ def load_svg_patterns():
         file = ":/patterns/" + str(fn)
         f = QtCore.QFile(file)
         f.open(QtCore.QIODevice.ReadOnly)
-        p = importSVG.getContents(str(f.readAll()), 'pattern', True)
+        p = importSVG.getContents(str(f.readAll()), "pattern", True)
         if p:
             for k in p:
                 p[k] = [p[k], file]
@@ -746,25 +741,25 @@ def load_svg_patterns():
         for f in os.listdir(altpat):
             if f[-4:].upper() == ".SVG":
                 file = os.path.join(altpat, f)
-                p = importSVG.getContents(file, 'pattern')
+                p = importSVG.getContents(file, "pattern")
                 if p:
                     for k in p:
                         p[k] = [p[k], file]
                     App.svgpatterns.update(p)
 
     # Get TechDraw patterns
-    altpat = os.path.join(App.getResourceDir(),"Mod","TechDraw","Patterns")
+    altpat = os.path.join(App.getResourceDir(), "Mod", "TechDraw", "Patterns")
     if os.path.isdir(altpat):
         for f in os.listdir(altpat):
             if f[-4:].upper() == ".SVG":
                 file = os.path.join(altpat, f)
-                p = importSVG.getContents(file, 'pattern')
+                p = importSVG.getContents(file, "pattern")
                 if p:
                     for k in p:
                         p[k] = [p[k], file]
                 else:
                     # some TD pattern files have no <pattern> definition but can still be used by Draft
-                    p = {f[:-4]:["<pattern></pattern>",file]}
+                    p = {f[:-4]: ["<pattern></pattern>", file]}
                     App.svgpatterns.update(p)
 
 
@@ -800,13 +795,13 @@ def get_rgb(color, testbw=True):
     ----------
     color : list or tuple with RGB values
         The values must be in the 0.0-1.0 range.
-    testwb : bool (default = True)
+    testbw : bool (default = True)
         Pure white will be converted into pure black.
     """
-    r = str(hex(int(color[0]*255)))[2:].zfill(2)
-    g = str(hex(int(color[1]*255)))[2:].zfill(2)
-    b = str(hex(int(color[2]*255)))[2:].zfill(2)
-    col = "#"+r+g+b
+    r = str(hex(int(color[0] * 255)))[2:].zfill(2)
+    g = str(hex(int(color[1] * 255)))[2:].zfill(2)
+    b = str(hex(int(color[2] * 255)))[2:].zfill(2)
+    col = "#" + r + g + b
     if testbw:
         if col == "#ffffff":
             # print(params.get_param("SvgLinesBlack"))
@@ -821,8 +816,11 @@ getrgb = get_rgb
 def argb_to_rgba(color):
     """Change byte order of a 4 byte color int from ARGB (Qt) to RGBA (FreeCAD).
 
-    Alpha in both integers is always 255.
-    Alpha in color properties, although ignored, is always zero however.
+    Alpha in both integers should always be 255.
+
+    Alpha in color properties is not used in the 3D view, but is shown in the
+    color swatches in the Property editor. It therefore better to ensure alpha
+    is 255 (version 1.1 dev cycle).
 
     Usage:
 
@@ -833,21 +831,17 @@ def argb_to_rgba(color):
         FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")\
             .SetUnsigned("DefaultShapeColor", fc_int)
 
-        obj.ViewObject.ShapeColor = fc_int & 0xFFFFFF00
+        obj.ViewObject.ShapeColor = fc_int | 0x000000FF
 
     Related:
 
-        getRgbF() returns an RGBA tuple. 4 floats in the range 0.0 - 1.0. Alpha is always 1.
-        Alpha should be set to zero or removed before using the tuple to change a color property:
-
-        obj.ViewObject.ShapeColor = self.form.ShapeColor.property("color").getRgbF()[:3]
+        getRgbF() returns an RGBA tuple. 4 floats in the range 0.0 - 1.0. Alpha is always 1.0.
     """
     return ((color & 0xFFFFFF) << 8) + ((color & 0xFF000000) >> 24)
 
 
 def rgba_to_argb(color):
-    """Change byte order of a 4 byte color int from RGBA (FreeCAD) to ARGB (Qt).
-    """
+    """Change byte order of a 4 byte color int from RGBA (FreeCAD) to ARGB (Qt)."""
     return ((color & 0xFFFFFF00) >> 8) + ((color & 0xFF) << 24)
 
 
@@ -862,46 +856,123 @@ def get_rgba_tuple(color, typ=1.0):
         If float the values in the returned tuple are in the 0.0-1.0 range.
         Else the values are in the 0-255 range.
     """
-    color = ((color >> 24) & 0xFF,
-             (color >> 16) & 0xFF,
-             (color >> 8) & 0xFF,
-             color & 0xFF)
+    color = ((color >> 24) & 0xFF, (color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF)
     if type(typ) == float:
         return tuple([x / 255.0 for x in color])
     else:
         return color
 
 
-def filter_objects_for_modifiers(objects, isCopied=False):
-    filteredObjects = []
-    for obj in objects:
-        if hasattr(obj, "MoveBase") and obj.MoveBase and obj.Base:
+def _modifiers_process_subselection(sels, copy):
+    data_list = []
+    sel_info = []
+    for sel in sels:
+        for sub in sel.SubElementNames if sel.SubElementNames else [""]:
+            if not ("Vertex" in sub or "Edge" in sub):
+                continue
+            if copy and "Vertex" in sub:
+                continue
+            obj = sel.Object.getSubObject(sub, 1)
+            pla = sel.Object.getSubObject(sub, 3)
+            if "Vertex" in sub:
+                vert_idx = int(sub.rpartition("Vertex")[2]) - 1
+                edge_idx = -1
+            else:
+                vert_idx = -1
+                edge_idx = int(sub.rpartition("Edge")[2]) - 1
+            data_list.append((obj, vert_idx, edge_idx, pla))
+            sel_info.append(("", sel.Object.Name, sub))
+    return data_list, sel_info
+
+
+def _modifiers_process_selection(sels, copy, scale=False, add_movable_children=False):
+    # Only when creating ghosts and if copy is False, should add_movable_children be True.
+    objects = []
+    places = []
+    sel_info = []
+    for sel in sels:
+        for sub in sel.SubElementNames if sel.SubElementNames else [""]:
+            obj = sel.Object.getSubObject(sub, 1)
+            # Get the global placement of the parent:
+            if obj == sel.Object:
+                pla = App.Placement()
+            else:
+                pla = sel.Object.getSubObject(sub.rpartition(obj.Name)[0], 3)
+            objs = _modifiers_get_group_contents(obj)
+            if add_movable_children:
+                children = []
+                for obj in objs:
+                    children.extend(_modifiers_get_movable_children(obj))
+                objs.extend(children)
+            objs = _modifiers_filter_objects(objs, copy, scale)
+            objects.extend(objs)
+            places.extend(len(objs) * [pla])
+            if "." in sub:
+                sub = sub.rpartition(".")[0] + "."
+            elif "Face" in sub or "Edge" in sub or "Vertex" in sub:
+                sub = ""
+            sel_info.append(("", sel.Object.Name, sub))
+    return objects, places, sel_info
+
+
+def _modifiers_get_group_contents(obj):
+    from draftutils import groups
+
+    return groups.get_group_contents(obj, addgroups=True, spaces=True, noarchchild=True)
+
+
+def _modifiers_get_movable_children(obj):
+    result = []
+    if hasattr(obj, "Proxy") and hasattr(obj.Proxy, "getMovableChildren"):
+        children = obj.Proxy.getMovableChildren(obj)
+        result.extend(children)
+        for child in children:
+            result.extend(_modifiers_get_movable_children(child))
+    return result
+
+
+def _modifiers_filter_objects(objs, copy, scale=False):
+
+    def is_scalable(obj):
+        if hasattr(obj, "Placement") and hasattr(obj, "Shape"):
+            return True
+        if obj.isDerivedFrom("App::DocumentObjectGroup"):
+            return True
+        if obj.isDerivedFrom("App::Annotation"):
+            return True
+        if obj.isDerivedFrom("Image::ImagePlane"):
+            return True
+        return False
+
+    result = []
+    for obj in objs:
+        if not copy and hasattr(obj, "MoveBase") and obj.MoveBase and obj.Base:
             parents = []
             for parent in obj.Base.InList:
                 if parent.isDerivedFrom("Part::Feature"):
                     parents.append(parent.Name)
             if len(parents) > 1:
-                warningMessage = translate("draft", "%s shares a base with %d other objects. Please check if you want to modify this.") % (obj.Name,len(parents) - 1)
-                App.Console.PrintError(warningMessage)
-                if App.GuiUp:
-                    Gui.getMainWindow().showMessage(warningMessage, 0)
-            filteredObjects.append(obj.Base)
-        elif hasattr(obj,"Placement") and obj.getEditorMode("Placement") == ["ReadOnly"] and not isCopied:
-            App.Console.PrintError(translate("draft", "%s cannot be modified because its placement is readonly.") % obj.Name)
-            continue
-        else:
-            filteredObjects.append(obj)
-    return filteredObjects
-
-
-filterObjectsForModifiers = filter_objects_for_modifiers
+                message = translate(
+                    "draft",
+                    "%s shares a base with %d other objects. Please check if you want to modify this.",
+                ) % (obj.Name, len(parents) - 1)
+                _err(message)
+            if not scale or utils.get_type(obj.Base) == "Wire":
+                result.append(obj.Base)
+        elif (
+            not copy and hasattr(obj, "Placement") and "ReadOnly" in obj.getEditorMode("Placement")
+        ):
+            _err(
+                translate("draft", "%s cannot be modified because its placement is readonly")
+                % obj.Name
+            )
+        elif not scale or is_scalable(obj):
+            result.append(obj)
+    return result
 
 
 def is_closed_edge(edge_index, object):
     return edge_index + 1 >= len(object.Points)
-
-
-isClosedEdge = is_closed_edge
 
 
 def utf8_decode(text):
@@ -1030,8 +1101,7 @@ def find_doc(doc=None):
         try:
             doc = App.getDocument(doc)
         except NameError:
-            _msg("document: {}".format(doc))
-            _err(translate("draft", "Wrong input: unknown document."))
+            _err(translate("draft", "Wrong input: unknown document {}").format(doc))
             return not FOUND, None
 
     return FOUND, doc
@@ -1108,11 +1178,32 @@ def use_instead(function, version=""):
         then we should not give a version.
     """
     if version:
-        _wrn(translate("draft", "This function will be deprecated in ")
-             + "{}. ".format(version)
-             + translate("draft", "Please use ") + "'{}'.".format(function))
+        _wrn(
+            translate("draft", "This function will be deprecated in {}. Please use '{}'.").format(
+                version, function
+            )
+        )
     else:
-        _wrn(translate("draft", "This function will be deprecated. ")
-             + translate("draft", "Please use ") + "'{}'.".format(function))
+        _wrn(
+            translate("draft", "This function will be deprecated. Please use '{}'.").format(
+                function
+            )
+        )
+
+
+def pyopen(
+    file,
+    mode="r",
+    buffering=-1,
+    encoding=None,
+    errors=None,
+    newline=None,
+    closefd=True,
+    opener=None,
+):
+    if encoding is None:
+        encoding = "utf-8"
+    return open(file, mode, buffering, encoding, errors, newline, closefd, opener)
+
 
 ## @}

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -21,6 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides the object code for the Rectangle object."""
+
 ## @package rectangle
 # \ingroup draftobjects
 # \brief Provides the object code for the Rectangle object.
@@ -30,8 +33,9 @@
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
-import DraftGeomUtils
+from draftgeoutils import fillets as geo_fillets
 from draftobjects.base import DraftObject
+from draftutils import gui_utils
 from draftutils import params
 
 
@@ -39,37 +43,43 @@ class Rectangle(DraftObject):
     """The Rectangle object"""
 
     def __init__(self, obj):
-        super(Rectangle, self).__init__(obj, "Rectangle")
+        super().__init__(obj, "Rectangle")
 
         _tip = QT_TRANSLATE_NOOP("App::Property", "Length of the rectangle")
-        obj.addProperty("App::PropertyDistance", "Length", "Draft", _tip)
+        obj.addProperty("App::PropertyDistance", "Length", "Draft", _tip, locked=True)
 
         _tip = QT_TRANSLATE_NOOP("App::Property", "Height of the rectangle")
-        obj.addProperty("App::PropertyDistance", "Height", "Draft", _tip)
+        obj.addProperty("App::PropertyDistance", "Height", "Draft", _tip, locked=True)
 
         _tip = QT_TRANSLATE_NOOP("App::Property", "Radius to use to fillet the corners")
-        obj.addProperty("App::PropertyLength", "FilletRadius", "Draft", _tip)
+        obj.addProperty("App::PropertyLength", "FilletRadius", "Draft", _tip, locked=True)
 
         _tip = QT_TRANSLATE_NOOP("App::Property", "Size of the chamfer to give to the corners")
-        obj.addProperty("App::PropertyLength", "ChamferSize", "Draft", _tip)
+        obj.addProperty("App::PropertyLength", "ChamferSize", "Draft", _tip, locked=True)
 
         _tip = QT_TRANSLATE_NOOP("App::Property", "Create a face")
-        obj.addProperty("App::PropertyBool", "MakeFace", "Draft", _tip)
+        obj.addProperty("App::PropertyBool", "MakeFace", "Draft", _tip, locked=True)
 
         _tip = QT_TRANSLATE_NOOP("App::Property", "Horizontal subdivisions of this rectangle")
-        obj.addProperty("App::PropertyInteger", "Rows", "Draft", _tip)
+        obj.addProperty("App::PropertyInteger", "Rows", "Draft", _tip, locked=True)
 
         _tip = QT_TRANSLATE_NOOP("App::Property", "Vertical subdivisions of this rectangle")
-        obj.addProperty("App::PropertyInteger", "Columns", "Draft", _tip)
+        obj.addProperty("App::PropertyInteger", "Columns", "Draft", _tip, locked=True)
 
         _tip = QT_TRANSLATE_NOOP("App::Property", "The area of this object")
-        obj.addProperty("App::PropertyArea", "Area", "Draft", _tip)
+        obj.addProperty("App::PropertyArea", "Area", "Draft", _tip, locked=True)
 
-        obj.MakeFace = params.get_param("fillmode")
-        obj.Length=1
-        obj.Height=1
-        obj.Rows=1
-        obj.Columns=1
+        obj.MakeFace = params.get_param("MakeFaceMode")
+        obj.Length = 1
+        obj.Height = 1
+        obj.Rows = 1
+        obj.Columns = 1
+
+    def onDocumentRestored(self, obj):
+        super().onDocumentRestored(obj)
+        gui_utils.restore_view_object(
+            obj, vp_module="view_rectangle", vp_class="ViewProviderRectangle"
+        )
 
     def execute(self, obj):
         """This method is run when the object is created or recomputed."""
@@ -88,7 +98,7 @@ class Rectangle(DraftObject):
 
         shape = None
 
-        if hasattr(obj,"Rows") and hasattr(obj,"Columns"):
+        if hasattr(obj, "Rows") and hasattr(obj, "Columns"):
             # TODO: verify if this is needed:
             if obj.Rows > 1:
                 rows = obj.Rows
@@ -102,29 +112,26 @@ class Rectangle(DraftObject):
 
             if (rows > 1) or (columns > 1):
                 shapes = []
-                l = obj.Length.Value/columns
-                h = obj.Height.Value/rows
+                l = obj.Length.Value / columns
+                h = obj.Height.Value / rows
                 for i in range(columns):
                     for j in range(rows):
-                        p1 = App.Vector(i*l,j*h,0)
-                        p2 = App.Vector(p1.x+l,p1.y,p1.z)
-                        p3 = App.Vector(p1.x+l,p1.y+h,p1.z)
-                        p4 = App.Vector(p1.x,p1.y+h,p1.z)
-                        p = Part.makePolygon([p1,p2,p3,p4,p1])
+                        p1 = App.Vector(i * l, j * h, 0)
+                        p2 = App.Vector(p1.x + l, p1.y, p1.z)
+                        p3 = App.Vector(p1.x + l, p1.y + h, p1.z)
+                        p4 = App.Vector(p1.x, p1.y + h, p1.z)
+                        p = Part.makePolygon([p1, p2, p3, p4, p1])
                         if "ChamferSize" in obj.PropertiesList:
                             if obj.ChamferSize.Value != 0:
-                                w = DraftGeomUtils.filletWire(p,
-                                                              obj.ChamferSize.Value,
-                                                              chamfer=True)
+                                w = geo_fillets.filletWire(p, obj.ChamferSize.Value, chamfer=True)
                                 if w:
                                     p = w
                         if "FilletRadius" in obj.PropertiesList:
                             if obj.FilletRadius.Value != 0:
-                                w = DraftGeomUtils.filletWire(p,
-                                                              obj.FilletRadius.Value)
+                                w = geo_fillets.filletWire(p, obj.FilletRadius.Value)
                                 if w:
                                     p = w
-                        if hasattr(obj,"MakeFace"):
+                        if hasattr(obj, "MakeFace"):
                             if obj.MakeFace:
                                 p = Part.Face(p)
                         shapes.append(p)
@@ -132,31 +139,22 @@ class Rectangle(DraftObject):
                     shape = Part.makeCompound(shapes)
 
         if not shape:
-            p1 = App.Vector(0,0,0)
-            p2 = App.Vector(p1.x+obj.Length.Value,
-                            p1.y,
-                            p1.z)
-            p3 = App.Vector(p1.x+obj.Length.Value,
-                            p1.y+obj.Height.Value,
-                            p1.z)
-            p4 = App.Vector(p1.x,
-                            p1.y+obj.Height.Value,
-                            p1.z)
+            p1 = App.Vector(0, 0, 0)
+            p2 = App.Vector(p1.x + obj.Length.Value, p1.y, p1.z)
+            p3 = App.Vector(p1.x + obj.Length.Value, p1.y + obj.Height.Value, p1.z)
+            p4 = App.Vector(p1.x, p1.y + obj.Height.Value, p1.z)
             shape = Part.makePolygon([p1, p2, p3, p4, p1])
             if "ChamferSize" in obj.PropertiesList:
                 if obj.ChamferSize.Value != 0:
-                    w = DraftGeomUtils.filletWire(shape,
-                                                  obj.ChamferSize.Value,
-                                                  chamfer=True)
+                    w = geo_fillets.filletWire(shape, obj.ChamferSize.Value, chamfer=True)
                     if w:
                         shape = w
             if "FilletRadius" in obj.PropertiesList:
                 if obj.FilletRadius.Value != 0:
-                    w = DraftGeomUtils.filletWire(shape,
-                                                  obj.FilletRadius.Value)
+                    w = geo_fillets.filletWire(shape, obj.FilletRadius.Value)
                     if w:
                         shape = w
-            if hasattr(obj,"MakeFace"):
+            if hasattr(obj, "MakeFace"):
                 if obj.MakeFace:
                     shape = Part.Face(shape)
             else:
@@ -164,7 +162,7 @@ class Rectangle(DraftObject):
 
         obj.Shape = shape
 
-        if hasattr(obj,"Area") and hasattr(shape,"Area"):
+        if hasattr(obj, "Area") and hasattr(shape, "Area"):
             obj.Area = shape.Area
 
         obj.Placement = plm

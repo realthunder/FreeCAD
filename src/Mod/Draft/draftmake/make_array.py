@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -24,6 +26,7 @@
 
 This includes orthogonal arrays, polar arrays, and circular arrays.
 """
+
 ## @package make_array
 # \ingroup draftmake
 # \brief Provides functions to create Array objects.
@@ -39,16 +42,13 @@ from draftutils.translate import translate
 from draftobjects.array import Array
 
 if App.GuiUp:
-    from draftutils.todo import ToDo
     from draftviewproviders.view_array import ViewProviderDraftArray
     from draftviewproviders.view_draftlink import ViewProviderDraftLink
 
 
-def make_array(base_object,
-               arg1, arg2, arg3,
-               arg4=None, arg5=None, arg6=None,
-               use_link=True,
-               build_shape=True):
+def make_array(
+    base_object, arg1, arg2, arg3, arg4=None, arg5=None, arg6=None, use_link=True, build_shape=True
+):
     """Create a Draft Array of the given object.
 
     Rectangular array
@@ -84,14 +84,13 @@ def make_array(base_object,
     """
     found, doc = utils.find_doc(App.activeDocument())
     if not found:
-        _err(translate("draft","No active document. Aborting."))
+        _err(translate("draft", "No active document. Aborting."))
         return None
 
     if use_link:
         # The Array class must be called in this special way
         # to make it a LinkArray
-        new_obj = doc.addObject("Part::FeaturePython", "Array",
-                                Array(None), None, True)
+        new_obj = doc.addObject("Part::FeaturePython", "Array", Array(None), None, True)
         new_obj.BuildShape = build_shape
     else:
         new_obj = doc.addObject("Part::FeaturePython", "Array")
@@ -132,36 +131,38 @@ def make_array(base_object,
             ViewProviderDraftLink(new_obj.ViewObject)
         else:
             if new_obj.ArrayType == "circular":
-                new_obj.Proxy.execute(new_obj) # Updates Count which is required for correct DiffuseColor.
+                new_obj.Proxy.execute(
+                    new_obj
+                )  # Updates Count which is required for correct DiffuseColor.
             ViewProviderDraftArray(new_obj.ViewObject)
             gui_utils.format_object(new_obj, new_obj.Base)
             new_obj.ViewObject.Proxy.resetColors(new_obj.ViewObject)
-            # Workaround to trigger update of DiffuseColor:
-            ToDo.delay(reapply_diffuse_color, new_obj.ViewObject)
         new_obj.Base.ViewObject.hide()
         gui_utils.select(new_obj)
 
     return new_obj
 
 
-def makeArray(baseobject,
-              arg1, arg2, arg3,
-              arg4=None, arg5=None, arg6=None,
-              name="Array", use_link=False, build_shape=True):
+def makeArray(
+    baseobject,
+    arg1,
+    arg2,
+    arg3,
+    arg4=None,
+    arg5=None,
+    arg6=None,
+    name="Array",
+    use_link=False,
+    build_shape=True,
+):
     """Create an Array. DEPRECATED. Use 'make_array'."""
-    _wrn("Do not use this function directly; instead, use "
-         "'make_ortho_array', 'make_polar_array', "
-         "or 'make_circular_array'.")
+    _wrn(
+        "Do not use this function directly; instead, use "
+        "'make_ortho_array', 'make_polar_array', "
+        "or 'make_circular_array'."
+    )
 
-    return make_array(baseobject,
-                      arg1, arg2, arg3,
-                      arg4, arg5, arg6, use_link, build_shape)
+    return make_array(baseobject, arg1, arg2, arg3, arg4, arg5, arg6, use_link)
 
-
-def reapply_diffuse_color(vobj):
-    try:
-        vobj.DiffuseColor = vobj.DiffuseColor
-    except:
-        pass
 
 ## @}

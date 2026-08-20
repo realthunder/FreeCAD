@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>                  *
 # *   (c) 2009, 2010 Ken Cline <cline@frii.com>                             *
@@ -23,6 +25,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides GUI tools to enable and disable the working plane grid."""
+
 ## @package gui_grid
 # \ingroup draftguitools
 # \brief Provides GUI tools to enable and disable the working plane grid.
@@ -36,6 +39,7 @@ import FreeCADGui as Gui
 import WorkingPlane
 
 from draftguitools import gui_base
+from draftutils import gui_utils
 from draftutils.translate import translate
 
 
@@ -50,17 +54,23 @@ class ToggleGrid(gui_base.GuiCommandSimplest):
     """
 
     def __init__(self):
-        super().__init__(name=translate("draft", "Toggle grid"))
+        super().__init__(name=translate("draft", "Toggle Grid"))
 
     def GetResources(self):
         """Set icon, menu and tooltip."""
+        return {
+            "Pixmap": "Draft_Grid",
+            "Accel": "G, R",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_ToggleGrid", "Toggle Grid"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_ToggleGrid", "Toggles the visibility of the Draft grid"
+            ),
+            "CmdType": "ForEdit",
+        }
 
-        return {"Pixmap": "Draft_Grid",
-                "Accel": "G, R",
-                "MenuText": QT_TRANSLATE_NOOP("Draft_ToggleGrid", "Toggle grid"),
-                "ToolTip": QT_TRANSLATE_NOOP("Draft_ToggleGrid",
-                                             "Toggles the Draft grid on and off."),
-                "CmdType": "ForEdit"}
+    def IsActive(self):
+        """Return True when this command should be available."""
+        return bool(gui_utils.get_3d_view())
 
     def Activated(self):
         """Execute when the command is called."""
@@ -79,12 +89,13 @@ class ToggleGrid(gui_base.GuiCommandSimplest):
             if cmdactive:
                 grid.show_during_command = False
         elif cmdactive:
-            grid.on()
+            grid.set()  # set() required: the grid must be updated to match the current WP
             grid.show_during_command = True
         else:
-            grid.on()
+            grid.set()
             WorkingPlane.get_working_plane()
             grid.show_always = True
+
 
 Gui.addCommand("Draft_ToggleGrid", ToggleGrid())
 

@@ -1,21 +1,9 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 if(MSVC)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif(MSVC)
 
-
-include_directories(
-    ${CMAKE_BINARY_DIR}
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_BINARY_DIR}/src
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${Boost_INCLUDE_DIRS}
-    ${OCC_INCLUDE_DIR}
-    ${PYTHON_INCLUDE_DIRS}
-    ${XercesC_INCLUDE_DIRS}
-    ${QT_QTCORE_INCLUDE_DIR}
-    ${ZLIB_INCLUDE_DIR}
-)
-link_directories(${OCC_LIBRARY_DIR})
 
 set(DraftUtils_LIBS
     Part
@@ -25,12 +13,34 @@ set(DraftUtils_LIBS
 SET(DraftUtils_SRCS
     AppDraftUtils.cpp
     AppDraftUtilsPy.cpp
-    PreCompiled.cpp
     PreCompiled.h
 )
 
 add_library(DraftUtils SHARED ${DraftUtils_SRCS})
+
+if(FREECAD_USE_PCH)
+    target_precompile_headers(DraftUtils PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:"${CMAKE_CURRENT_LIST_DIR}/PreCompiled.h">
+    )
+endif(FREECAD_USE_PCH)
+
+target_include_directories(
+    DraftUtils
+    PRIVATE
+    ${CMAKE_BINARY_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
 target_link_libraries(DraftUtils ${DraftUtils_LIBS})
+
+if (MSVC)
+    target_compile_options(DraftUtils PRIVATE /wd4275)
+endif()
+
+if (FREECAD_WARN_ERROR)
+    target_compile_warn_error(DraftUtils)
+endif()
 
 
 SET_BIN_DIR(DraftUtils DraftUtils /Mod/Draft)

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>                  *
 # *   (c) 2009, 2010 Ken Cline <cline@frii.com>                             *
@@ -29,6 +31,7 @@ It essentially moves the points that are located within a selection area,
 while keeping other points intact. This means the lines tied by the points
 that were moved are 'stretched'.
 """
+
 ## @package gui_stretch
 # \ingroup draftguitools
 # \brief Provides GUI tools to stretch Draft objects.
@@ -59,23 +62,23 @@ class Stretch(gui_base_original.Modifier):
     def GetResources(self):
         """Set icon, menu and tooltip."""
 
-        return {'Pixmap': 'Draft_Stretch',
-                'Accel': "S, H",
-                'MenuText': QT_TRANSLATE_NOOP("Draft_Stretch", "Stretch"),
-                'ToolTip': QT_TRANSLATE_NOOP("Draft_Stretch", "Stretches the selected objects.\nSelect an object, then draw a rectangle to pick the vertices that will be stretched,\nthen draw a line to specify the distance and direction of stretching.")}
+        return {
+            "Pixmap": "Draft_Stretch",
+            "Accel": "S, H",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_Stretch", "Stretch"),
+            "ToolTip": QT_TRANSLATE_NOOP("Draft_Stretch", "Stretches the selected objects"),
+        }
 
     def Activated(self):
         """Execute when the command is called."""
-        super(Stretch, self).Activated(name="Stretch")
+        super().Activated(name="Stretch")
         self.rectracker = None
         self.nodetracker = None
         if self.ui:
             if not Gui.Selection.getSelection():
                 self.ui.selectUi(on_close_call=self.finish)
                 _msg(translate("draft", "Select an object to stretch"))
-                self.call = \
-                    self.view.addEventCallback("SoEvent",
-                                               gui_tool_utils.selectObject)
+                self.call = self.view.addEventCallback("SoEvent", gui_tool_utils.selectObject)
             else:
                 self.proceed()
 
@@ -104,7 +107,11 @@ class Stretch(gui_base_original.Modifier):
                     elif hasattr(obj.Base, "Base"):
                         if obj.Base.Base:
                             if utils.getType(obj.Base.Base) in supported:
-                                self.sel.append([obj.Base.Base, obj.Placement.multiply(obj.Base.Placement)])
+                                self.sel.append(
+                                    [obj.Base.Base, obj.Placement.multiply(obj.Base.Placement)]
+                                )
+                elif utils.getType(obj) == "Wall" and not obj.Base:  # baseless walls
+                    self.sel.append([obj, App.Placement()])
             elif utils.getType(obj) in ["Offset2D", "Array"]:
                 base = None
                 if hasattr(obj, "Source") and obj.Source:
@@ -119,12 +126,14 @@ class Stretch(gui_base_original.Modifier):
             self.refpoint = None
             self.ui.pointUi(title=translate("draft", self.featureName), icon="Draft_Stretch")
             self.call = self.view.addEventCallback("SoEvent", self.action)
-            self.rectracker = trackers.rectangleTracker(dotted=True,
-                                                        scolor=(0.0, 0.0, 1.0),
-                                                        swidth=2)
+            self.rectracker = trackers.rectangleTracker(
+                dotted=True, scolor=(0.0, 0.0, 1.0), swidth=2
+            )
             self.nodetracker = []
             self.displacement = None
             _toolmsg(translate("draft", "Pick first point of selection rectangle"))
+            self.selection_done = True
+            self.update_hints()
 
     def action(self, arg):
         """Handle the 3D scene events.
@@ -158,14 +167,14 @@ class Stretch(gui_base_original.Modifier):
         """Add point to defined selection rectangle."""
         if self.step == 1:
             # first rctangle point
-            _toolmsg(translate("draft", "Pick opposite point "
-                                    "of selection rectangle"))
+            _toolmsg(translate("draft", "Pick the opposite point " "of the selection rectangle"))
             self.ui.setRelative(-1)
             self.rectracker.setorigin(point)
             self.rectracker.on()
             if self.planetrack:
                 self.planetrack.set(point)
             self.step = 2
+            self.update_hints()
         elif self.step == 2:
             # second rectangle point
             _toolmsg(translate("draft", "Pick start point of displacement"))
@@ -219,6 +228,18 @@ class Stretch(gui_base_original.Modifier):
                             nodes.append(p)
                     if iso:
                         self.ops.append([o, np])
+                elif tp == "Wall":
+                    np = []
+                    iso = False
+                    # For baseless walls, get endpoints from our new API method
+                    for p in o.Proxy.calc_endpoints(o):
+                        isi = self.rectracker.isInside(p)
+                        np.append(isi)
+                        if isi:
+                            iso = True
+                            nodes.append(p)
+                    if iso:
+                        self.ops.append([o, np])
                 else:
                     p = o.Placement.Base
                     p = vispla.multVec(p)
@@ -230,6 +251,7 @@ class Stretch(gui_base_original.Modifier):
                 nt.on()
                 self.nodetracker.append(nt)
             self.step = 3
+            self.update_hints()
         elif self.step == 3:
             # first point of displacement line
             _toolmsg(translate("draft", "Pick end point of displacement"))
@@ -237,6 +259,7 @@ class Stretch(gui_base_original.Modifier):
             # print("first point:", point)
             self.node = [point]
             self.step = 4
+            self.update_hints()
         elif self.step == 4:
             # print("second point:", point)
             self.displacement = point.sub(self.displacement)
@@ -255,12 +278,13 @@ class Stretch(gui_base_original.Modifier):
 
     def finish(self, cont=False):
         """Terminate the operation of the command. and clean up."""
+        self.end_callbacks(self.call)
         if self.rectracker:
             self.rectracker.finalize()
         if self.nodetracker:
             for n in self.nodetracker:
                 n.finalize()
-        super(Stretch, self).finish()
+        super().finish()
 
     def doStretch(self):
         """Do the actual stretching once the points are selected."""
@@ -293,7 +317,9 @@ class Stretch(gui_base_original.Modifier):
                         _cmd = _doc + ops[0].Name + ".Points=" + pts
                         commitops.append(_cmd)
                     elif tp in ["Sketch"]:
-                        baseverts = [ops[0].Shape.Vertexes[i].Point for i in range(len(ops[1])) if ops[1][i]]
+                        baseverts = [
+                            ops[0].Shape.Vertexes[i].Point for i in range(len(ops[1])) if ops[1][i]
+                        ]
                         for i in range(ops[0].GeometryCount):
                             j = 0
                             while True:
@@ -324,9 +350,7 @@ class Stretch(gui_base_original.Modifier):
                     elif tp in ["Rectangle"]:
                         p1 = App.Vector(0, 0, 0)
                         p2 = App.Vector(ops[0].Length.Value, 0, 0)
-                        p3 = App.Vector(ops[0].Length.Value,
-                                        ops[0].Height.Value,
-                                        0)
+                        p3 = App.Vector(ops[0].Length.Value, ops[0].Height.Value, 0)
                         p4 = App.Vector(0, ops[0].Height.Value, 0)
                         if ops[1] == [False, True, True, False]:
                             optype = 1
@@ -336,6 +360,8 @@ class Stretch(gui_base_original.Modifier):
                             optype = 3
                         elif ops[1] == [True, True, False, False]:
                             optype = 4
+                        elif ops[1] == [True, True, True, True]:
+                            optype = 5
                         else:
                             optype = 0
                         # print("length:", ops[0].Length,
@@ -343,7 +369,7 @@ class Stretch(gui_base_original.Modifier):
                         #       " - ", ops[1],
                         #       " - ", self.displacement)
                         done = False
-                        if optype > 0:
+                        if 0 < optype < 5:
                             v1 = ops[0].Placement.multVec(p2).sub(ops[0].Placement.multVec(p1))
                             a1 = round(self.displacement.getAngle(v1), 4)
                             v2 = ops[0].Placement.multVec(p4).sub(ops[0].Placement.multVec(p1))
@@ -442,9 +468,15 @@ class Stretch(gui_base_original.Modifier):
                                     commitops.append(_cmd)
                                     commitops.append(_pl)
                                     done = True
+                        elif optype == 5:
+                            _pl = _doc + ops[0].Name
+                            _pl += ".Placement.Base=FreeCAD."
+                            _pl += str(ops[0].Placement.Base.add(self.displacement))
+                            commitops.append(_pl)
+                            done = True
                         if not done:
                             # otherwise create a wire copy and stretch it instead
-                            _msg(translate("draft", "Turning one Rectangle into a Wire"))
+                            _msg(translate("draft", "Turning a rectangle into a wire"))
                             pts = []
                             vts = ops[0].Shape.Vertexes
                             for i in range(4):
@@ -465,6 +497,28 @@ class Stretch(gui_base_original.Modifier):
                             commitops.append("w = " + _cmd)
                             commitops.append(_format)
                             commitops.append(_hide)
+                    elif tp == "Wall":
+                        npts = []
+                        # Reconstruct the new endpoints after applying displacement
+                        for i, pt in enumerate(ops[0].Proxy.calc_endpoints(ops[0])):
+                            if ops[1][i]:
+                                npts.append(pt.add(self.displacement))
+                            else:
+                                npts.append(pt)
+                        # Construct the points list string
+                        points_str = (
+                            "["
+                            + ", ".join([f"FreeCAD.Vector({p.x}, {p.y}, {p.z})" for p in npts])
+                            + "]"
+                        )
+
+                        commitops.append("import FreeCAD")
+                        commitops.append(
+                            f"wall_obj = FreeCAD.ActiveDocument.getObject('{ops[0].Name}')"
+                        )
+                        commitops.append(
+                            f"wall_obj.Proxy.set_from_endpoints(wall_obj, {points_str})"
+                        )
                     else:
                         _pl = _doc + ops[0].Name
                         _pl += ".Placement.Base=FreeCAD."
@@ -476,7 +530,23 @@ class Stretch(gui_base_original.Modifier):
             self.commit(translate("draft", "Stretch"), commitops)
         self.finish()
 
+    def get_action_hints(self):
+        if self.step == 1:
+            label = translate("draft", "%1 pick first point of selection rectangle")
+        elif self.step == 2:
+            label = translate("draft", "%1 pick opposite point of selection rectangle")
+        elif self.step == 3:
+            label = translate("draft", "%1 pick start point of displacement")
+        else:
+            label = translate("draft", "%1 pick end point of displacement")
+        return (
+            [Gui.InputHint(label, Gui.UserInput.MouseLeft)]
+            + gui_tool_utils._get_hint_xyz_constrain()
+            + gui_tool_utils._get_hint_mod_constrain()
+            + gui_tool_utils._get_hint_mod_snap()
+        )
 
-Gui.addCommand('Draft_Stretch', Stretch())
+
+Gui.addCommand("Draft_Stretch", Stretch())
 
 ## @}

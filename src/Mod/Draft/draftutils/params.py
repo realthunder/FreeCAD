@@ -21,21 +21,26 @@
 # *                                                                         *
 # ***************************************************************************
 
-""" Contains a parameter observer class and parameter related functions."""
+"""Contains a parameter observer class and parameter related functions."""
 
+import os
 import PySide.QtCore as QtCore
 import xml.etree.ElementTree as ET
 
 import FreeCAD as App
 import Draft_rc
-import Arch_rc
 
-from draftutils import init_draft_statusbar
+try:
+    import Arch_rc
+except ModuleNotFoundError:
+    pass
+
 from draftutils.translate import translate
 
 if App.GuiUp:
     import FreeCADGui as Gui
-    from PySide import QtGui
+    from PySide import QtWidgets
+
 
 class ParamObserverDraft:
 
@@ -43,8 +48,16 @@ class ParamObserverDraft:
         if entry == "textheight":
             _param_observer_callback_tray()
             return
-        if entry in ("gridBorder", "gridShowHuman", "coloredGridAxes", "gridEvery",
-                    "gridSpacing", "gridSize", "gridTransparency", "gridColor"):
+        if entry in (
+            "gridBorder",
+            "gridShowHuman",
+            "coloredGridAxes",
+            "gridEvery",
+            "gridSpacing",
+            "gridSize",
+            "gridTransparency",
+            "gridColor",
+        ):
             _param_observer_callback_grid()
             return
         if entry == "DefaultAnnoScaleMultiplier":
@@ -76,6 +89,9 @@ class ParamObserverView:
         if entry in ("DefaultShapeColor", "DefaultShapeLineColor", "DefaultShapeLineWidth"):
             _param_observer_callback_tray()
             return
+        if entry == "MarkerSize":
+            _param_observer_callback_snaptextsize()
+            return
 
 
 def _param_observer_callback_tray():
@@ -88,18 +104,45 @@ def _param_observer_callback_tray():
 
 
 def _param_observer_callback_scalemultiplier(value):
-    value = float(value)  # value is a string
+    # value is a string.
+    # import has to happen here to avoid circular imports
+    from draftutils import init_draft_statusbar
+
+    if not value:
+        return
+    value = float(value)
     if value <= 0:
         return
     mw = Gui.getMainWindow()
     sb = mw.statusBar()
-    scale_widget = sb.findChild(QtGui.QToolBar,"draft_scale_widget")
+    scale_widget = sb.findChild(QtWidgets.QToolBar, "draft_scale_widget")
     if scale_widget is not None:
         scale_label = init_draft_statusbar.scale_to_label(1 / value)
         scale_widget.scaleLabel.setText(scale_label)
 
 
-def _param_observer_callback_grid():
+def _document_name(doc):
+    if doc is None:
+        return None
+    if isinstance(doc, str):
+        return doc
+    return doc.Name
+
+
+def _resolve_document(doc):
+    if doc is None:
+        return App.ActiveDocument
+    if isinstance(doc, str):
+        if doc in App.listDocuments():
+            return App.getDocument(doc)
+        return None
+    return doc
+
+
+def refresh_grid(doc=None):
+    if not App.GuiUp:
+        return
+    document_name = _document_name(doc)
     if hasattr(App, "draft_working_planes") and hasattr(Gui, "Snapper"):
         try:
             trackers = Gui.Snapper.trackers
@@ -108,12 +151,22 @@ def _param_observer_callback_grid():
                 if view in trackers[0]:
                     i = trackers[0].index(view)
                     grid = trackers[1][i]
+                    grid_doc_name = grid.doc_name
+                    if document_name is not None and grid_doc_name not in (
+                        None,
+                        document_name,
+                    ):
+                        continue
                     grid.pts = []
                     grid.reset()
                     grid.displayHumanFigure(wp)
                     grid.setAxesColor(wp)
         except Exception:
             pass
+
+
+def _param_observer_callback_grid():
+    refresh_grid()
 
 
 def _param_observer_callback_snapbar(value):
@@ -126,12 +179,18 @@ def _param_observer_callback_snapbar(value):
 
 
 def _param_observer_callback_snapwidget():
+    # import has to happen here to avoid circular imports
+    from draftutils import init_draft_statusbar
+
     if Gui.activeWorkbench().name() == "DraftWorkbench":
         init_draft_statusbar.hide_draft_statusbar()
         init_draft_statusbar.show_draft_statusbar()
 
 
 def _param_observer_callback_scalewidget():
+    # import has to happen here to avoid circular imports
+    from draftutils import init_draft_statusbar
+
     if Gui.activeWorkbench().name() == "DraftWorkbench":
         init_draft_statusbar.hide_draft_statusbar()
         init_draft_statusbar.show_draft_statusbar()
@@ -144,14 +203,25 @@ def _param_observer_callback_snapstyle():
 
 def _param_observer_callback_snapcolor():
     if hasattr(Gui, "Snapper"):
-        for snap_track in Gui.Snapper.trackers[2]:
-            snap_track.setColor()
+        tracker_list = [2, 5, 6]
+        for each_tracker in tracker_list:
+            for snap_track in Gui.Snapper.trackers[each_tracker]:
+                snap_track.setColor()
+
+
+def _param_observer_callback_snaptextsize():
+    if hasattr(Gui, "Snapper"):
+        tracker_list = [5, 6]
+        for each_tracker in tracker_list:
+            for snap_track in Gui.Snapper.trackers[each_tracker]:
+                snap_track.setSize()
 
 
 def _param_observer_callback_svg_pattern():
     # imports have to happen here to avoid circular imports
     from draftutils import utils
     from draftviewproviders import view_base
+
     utils.load_svg_patterns()
     if App.ActiveDocument is None:
         return
@@ -166,23 +236,31 @@ def _param_observer_callback_svg_pattern():
         for obj in doc.Objects:
             if hasattr(obj, "ViewObject"):
                 vobj = obj.ViewObject
-                if hasattr(vobj, "Pattern") \
-                        and hasattr(vobj, "Proxy") \
-                        and isinstance(vobj.Proxy, view_base.ViewProviderDraft) \
-                        and vobj.getEnumerationsOfProperty("Pattern") != pats:
+                if (
+                    hasattr(vobj, "Pattern")
+                    and hasattr(vobj, "Proxy")
+                    and isinstance(vobj.Proxy, view_base.ViewProviderDraft)
+                    and vobj.getEnumerationsOfProperty("Pattern") != pats
+                ):
                     vobjs.append(vobj)
         if vobjs:
             data.append([doc, vobjs])
     if not data:
         return
 
-    msg = translate("draft",
-"""Do you want to update the SVG pattern options
-of existing objects in all opened documents?""")
-    res = QtGui.QMessageBox.question(None, "Update SVG patterns", msg,
-                                     QtGui.QMessageBox.Yes | QtGui.QMessageBox.No,
-                                     QtGui.QMessageBox.No)
-    if res == QtGui.QMessageBox.No:
+    msg = translate(
+        "draft",
+        """Do you want to update the SVG pattern options
+of existing objects in all opened documents?""",
+    )
+    res = QtWidgets.QMessageBox.question(
+        None,
+        "Update SVG patterns",
+        msg,
+        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+        QtWidgets.QMessageBox.No,
+    )
+    if res == QtWidgets.QMessageBox.No:
         return
 
     for doc, vobjs in data:
@@ -205,11 +283,13 @@ def _param_observer_start():
         _param_observer_start_view()
 
 
-def _param_observer_start_draft(param_grp = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Draft")):
+def _param_observer_start_draft(
+    param_grp=App.ParamGet("User parameter:BaseApp/Preferences/Mod/Draft"),
+):
     param_grp.AttachManager(ParamObserverDraft())
 
 
-def _param_observer_start_view(param_grp = App.ParamGet("User parameter:BaseApp/Preferences/View")):
+def _param_observer_start_view(param_grp=App.ParamGet("User parameter:BaseApp/Preferences/View")):
     param_grp.AttachManager(ParamObserverView())
 
 
@@ -334,7 +414,7 @@ def _param_from_PrefLineEdit(widget):
     for elem in list(widget):
         if "name" in elem.keys():
             att_name = elem.attrib["name"]
-            if att_name == "text":                # Can be missing.
+            if att_name == "text":  # Can be missing.
                 value = elem.find("string").text  # If text is missing value will be None here.
             elif att_name == "prefEntry":
                 entry = _param_get_cstring(elem, att_name)
@@ -346,6 +426,7 @@ def _param_from_PrefLineEdit(widget):
 
 
 def _param_from_PrefFileChooser(widget):
+    # Does not occur in Draft preferences anymore.
     for elem in list(widget):
         if "name" in elem.keys():
             att_name = elem.attrib["name"]
@@ -356,34 +437,101 @@ def _param_from_PrefFileChooser(widget):
     return path, entry, ""
 
 
+def _param_from_PrefFontBox(widget):
+    if App.GuiUp:
+        from PySide import QtGui
+
+        font = QtGui.QFont()
+        font.setStyleHint(QtGui.QFont.StyleHint.SansSerif)
+        value = font.defaultFamily()
+    else:
+        value = ""
+    for elem in list(widget):
+        if "name" in elem.keys():
+            att_name = elem.attrib["name"]
+            if att_name == "prefEntry":
+                entry = elem.find("cstring").text
+            elif att_name == "prefPath":
+                path = elem.find("cstring").text
+    # We must set the parameter if it does not exist, else
+    # the Gui::PrefFontBox will show the wrong value.
+    param_grp = App.ParamGet("User parameter:BaseApp/Preferences/" + path)
+    if entry not in param_grp.GetStrings():
+        param_grp.SetString(entry, value)
+    return path, entry, value
+
+
+def _get_shape_string_font_file():
+    """Try to get the file name of a sans serif font (TTC or TTF) from the OS."""
+    # https://forum.freecad.org/viewtopic.php?t=96770
+    # Windows font: "arial"
+    # Mac fonts: "geneva" and "helvetica"
+    # Linux fonts: "dejavusans" and "freesans"
+    favorite_names = ("arial", "geneva", "helvetica", "dejavusans", "freesans")
+    font_file_sans = None  # Font with name containing "sans". 1st fallback.
+    font_file_alpha = None  # Font with name starting with a letter. 2nd fallback.
+    # Reverse the order of the paths so that user related paths come last:
+    for path in QtCore.QStandardPaths.standardLocations(QtCore.QStandardPaths.FontsLocation)[::-1]:
+        # We don't use os.path.join as dir_path has forward slashes even on Windows.
+        for dir_path, dir_names, file_names in os.walk(path):
+            for file_name in file_names:
+                base_name, ext = [s.lower() for s in os.path.splitext(file_name)]
+                if not ext in (".ttc", ".ttf"):
+                    continue
+                if base_name in favorite_names:
+                    return dir_path + "/" + file_name
+                if font_file_sans is None and "sans" in base_name:
+                    font_file_sans = dir_path + "/" + file_name
+                if font_file_alpha is None and base_name[0].isalpha():
+                    font_file_alpha = dir_path + "/" + file_name
+    if font_file_sans is not None:
+        return font_file_sans
+    if font_file_alpha is not None:
+        return font_file_alpha
+    return ""
+
+
 def _get_param_dictionary():
 
     # print("Creating preferences dictionary...")
 
     param_dict = {}
 
+    hatch_pattern_file = (
+        App.getResourceDir().replace("\\", "/").rstrip("/") + "/Mod/TechDraw/PAT/FCPAT.pat"
+    )
+
     # Draft parameters that are not in the preferences:
+    # fmt: off
     param_dict["Mod/Draft"] = {
         "AnnotationStyleEditorHeight": ("int",       450),
-        "AnnotationStyleEditorWidth":  ("int",       450),
+        "AnnotationStyleEditorWidth":  ("int",       600),
         "CenterPlaneOnView":           ("bool",      False),
-        "ContinueMode":                ("bool",      False),
+        "ChainedMode":                 ("bool",      False),
         "CopyMode":                    ("bool",      False),
         "DefaultAnnoDisplayMode":      ("int",       0),
         "DefaultDisplayMode":          ("int",       0),
         "DefaultDrawStyle":            ("int",       0),
         "DefaultPrintColor":           ("unsigned",  255),
+        "DimAutoFlipText":             ("bool",      True),
         "Draft_array_fuse":            ("bool",      False),
         "Draft_array_Link":            ("bool",      True),
-        "fillmode":                    ("bool",      True),
+        "Draft_array_build_shape":     ("bool",      True),
+        "FilletChamferMode":           ("bool",      False),
+        "FilletDeleteMode":            ("bool",      False),
+        "FilletRadius":                ("float",     100.0),
         "GlobalMode":                  ("bool",      False),
         "GridHideInOtherWorkbenches":  ("bool",      True),
-        "HatchPatternResolution":      ("int",       128),
+        "HatchPatternFile":            ("string",    hatch_pattern_file),
+        "HatchPatternName":            ("string",    "Diamond"),
+        "HatchPatternResolution":      ("int",       128),  # used for SVG patterns
         "HatchPatternRotation":        ("float",     0.0),
         "HatchPatternScale":           ("float",     100.0),
+        "HatchPatternTranslate":       ("bool",      True),
         "labeltype":                   ("string",    "Custom"),
         "LayersManagerHeight":         ("int",       320),
         "LayersManagerWidth":          ("int",       640),
+        "MakeFaceMode":                ("bool",      True),
         "maxSnapEdges":                ("int",       0),
         "OffsetCopyMode":              ("bool",      False),
         "Offset_OCC":                  ("bool",      False),
@@ -392,6 +540,10 @@ def _get_param_dictionary():
         "ScaleCopy":                   ("bool",      False),
         "ScaleRelative":               ("bool",      False),
         "ScaleUniform":                ("bool",      False),
+        "ShapeStringFontFile":         ("string",    _get_shape_string_font_file()),
+        "ShapeStringHeight":           ("float",     10.0),
+        "ShapeStringText":             ("string",    translate("draft", "Default")),
+        "showtray":                    ("bool",      True),
         "snapModes":                   ("string",    "100000000000000"),
         "snapRange":                   ("int",       8),
         "SubelementMode":              ("bool",      False),
@@ -399,27 +551,140 @@ def _get_param_dictionary():
         "useSupport":                  ("bool",      False),
     }
 
-    # Arch parameters that are not in the preferences:
-    param_dict["Mod/Arch"] = {
+    param_dict["Mod/Draft/ContinueMode"] = {
+        # Draft
+        "Arc":                         ("bool",      False),
+        "Arc_3Points":                 ("bool",      False),
+        "BezCurve":                    ("bool",      False),
+        "Bspline":                     ("bool",      False),
+        "Circle":                      ("bool",      False),
+        "CubicBezCurve":               ("bool",      False),
+        "Dimension":                   ("bool",      False),
+        "Ellipse":                     ("bool",      False),
+        "Line":                        ("bool",      False),
+        "Point":                       ("bool",      False),
+        "Polygon":                     ("bool",      False),
+        "Polyline":                    ("bool",      False),
+        "Rectangle":                   ("bool",      False),
+        "Text":                        ("bool",      False),
 
+        # Standard operations (Draft)
+        "Copy":                        ("bool",      False),
+        "Move":                        ("bool",      False),
+        "Rotate":                      ("bool",      False),
 
+        # Arch/BIM
+        "Beam":                        ("bool",      False),
+        "Column":                      ("bool",      False),
+        "Panel":                       ("bool",      False),
+        "Wall":                        ("bool",      False),
     }
 
-    # For the View parameters we do not check the preferences:
-    param_dict["View"] = {
-        "BackgroundColor":             ("unsigned",  336897023),
-        "BackgroundColor2":            ("unsigned",  859006463),
-        "BackgroundColor3":            ("unsigned",  2543299327),
-        "DefaultShapeColor":           ("unsigned",  3435973887),
-        "DefaultShapeLineColor":       ("unsigned",  421075455),
-        "DefaultShapeLineWidth":       ("int",       2),
-        "DefaultShapePointSize":       ("int",       2),
-        "DefaultShapeTransparency":    ("int",       0),
-        "DefaultShapeVertexColor":     ("unsigned",  421075455),
-        "EnableSelection":             ("bool",      True),
-        "Gradient":                    ("bool",      True),
-        "MarkerSize":                  ("int",       9),
-        "NewDocumentCameraScale":      ("float",     100.0),
+    start_val = App.Units.Quantity(100.0, App.Units.Length).Value
+    param_dict["Mod/Draft/OrthoArrayLinearMode"] = {
+        "LinearModeOn":                ("bool",      True),
+        "AxisSelected":                ("string",    "X"),
+        "XInterval":                   ("float",     start_val),
+        "YInterval":                   ("float",     start_val),
+        "ZInterval":                   ("float",     start_val),
+        "XNumOfElements":              ("int",       2),
+        "YNumOfElements":              ("int",       2),
+        "ZNumOfElements":              ("int",       2)
+    }
+
+    # Arch parameters that are not in the preferences:
+    param_dict["Mod/Arch"] = {
+        "applyConstructionStyle":      ("bool",      True),
+        "ClaimHosted":                 ("bool",      True),
+        "CoveringAlignment":           ("string",    "Center"),
+        "CoveringFinishMode":          ("string",    "Parametric Pattern"),
+        "CoveringJoint":               ("float",     5.0),
+        "CoveringLength":              ("float",     300.0),
+        "CoveringThickness":           ("float",     10.0),
+        "CoveringRotation":            ("float",     0.0),
+        "CoveringWidth":               ("float",     300.0),
+        "CustomIfcSchema":             ("string",    ""),     # importIFClegacy.py
+        "createIfcGroups":             ("bool",      False),  # importIFClegacy.py
+        "DoorHeight":                  ("float",     2100.0),
+        "DoorPreset":                  ("int",       5),
+        "DoorSill":                    ("float",     0.0),
+        "DoorWidth":                   ("float",     1000.0),
+        "FreeLinking":                 ("bool",      False),
+        "forceIfcPythonParser":        ("bool",      False),  # importIFClegacy.py
+        "getStandardType":             ("bool",      False),
+        "ifcAggregateWindows":         ("bool",      False),  # importIFClegacy.py
+        "ifcAsMesh":                   ("string",    ""),     # importIFClegacy.py
+        "IfcExportList":               ("bool",      False),  # importIFClegacy.py
+        "ifcImportLayer":              ("bool",      True),
+        "ifcJoinSolids":               ("bool",      False),  # importIFClegacy.py
+        "ifcMergeProfiles":            ("bool",      False),
+        "IfcScalingFactor":            ("float",     1.0),    # importIFClegacy.py
+        "ifcSeparatePlacements":       ("bool",      False),  # importIFClegacy.py
+        "MultiMaterialColumnWidth0":   ("int",       120),
+        "MultiMaterialColumnWidth1":   ("int",       120),
+        "PanelLength":                 ("float",     1000.0),
+        "PanelThickness":              ("float",     10.0),
+        "PanelWidth":                  ("float",     1000.0),
+        "PrecastBase":                 ("float",     0.0),
+        "PrecastChamfer":              ("float",     0.0),
+        "PrecastDentHeight":           ("float",     0.0),
+        "PrecastDentLength":           ("float",     0.0),
+        "PrecastDentWidth":            ("float",     0.0),
+        "PrecastDownLength":           ("float",     0.0),
+        "PrecastGrooveDepth":          ("float",     0.0),
+        "PrecastGrooveHeight":         ("float",     0.0),
+        "PrecastGrooveSpacing":        ("float",     0.0),
+        "PrecastHoleMajor":            ("float",     0.0),
+        "PrecastHoleMinor":            ("float",     0.0),
+        "PrecastHoleSpacing":          ("float",     0.0),
+        "PrecastRiser":                ("float",     0.0),
+        "PrecastTread":                ("float",     0.0),
+        "ProfilePreset":               ("string",    ""),
+        "ScheduleColumnWidth0":        ("int",       100),
+        "ScheduleColumnWidth1":        ("int",       100),
+        "ScheduleColumnWidth2":        ("int",       50),
+        "ScheduleColumnWidth3":        ("int",       100),
+        "ScheduleDialogHeight":        ("int",       200),
+        "ScheduleDialogWidth":         ("int",       300),
+        "BeamHeight":                  ("float",     100.0),
+        "BeamLength":                  ("float",     1000.0),
+        "BeamWidth":                   ("float",     100.0),
+        "ColumnHeight":                ("float",     1000.0),
+        "ColumnLength":                ("float",     100.0),
+        "ColumnWidth":                 ("float",     100.0),
+        "StructureHeight":             ("float",     1000.0),
+        "StructureLength":             ("float",     100.0),
+        "StructurePreset":             ("string",    ""),
+        "StructureWidth":              ("float",     100.0),
+        "swallowAdditions":            ("bool",      True),
+        "swallowSubtractions":         ("bool",      True),
+        "WallAlignment":               ("int",       0),
+        "WallHeight":                  ("float",     3000.0),
+        "WallWidth":                   ("float",     200.0),
+        "WallOffset":                  ("float",     0.0),
+        "WindowH1":                    ("float",     50.0),
+        "WindowH2":                    ("float",     50.0),
+        "WindowH3":                    ("float",     50.0),
+        "WindowHeight":                ("float",     1000.0),
+        "WindowO1":                    ("float",     0.0),
+        "WindowO2":                    ("float",     50.0),
+        "WindowPreset":                ("int",       0),
+        "WindowSill":                  ("float",     0.0),
+        "WindowW1":                    ("float",     100.0),
+        "WindowW2":                    ("float",     50.0),
+        "WindowWidth":                 ("float",     1000.0),
+    }
+
+    # BIM parameters that are not in the preferences:
+    # Note: incomplete!
+    param_dict["Mod/BIM"] = {
+        "BIMSketchPlacementOnly":      ("bool",      False),
+        "WallBaseline":                ("int",       0),
+    }
+
+    # For the Mod/Mesh parameters we do not check the preferences:
+    param_dict["Mod/Mesh"] = {
+        "MaxDeviationExport":          ("float",     0.1),
     }
 
     # For the General parameters we do not check the preferences:
@@ -433,38 +698,58 @@ def _get_param_dictionary():
         "UserSchema":                  ("int",       0),
     }
 
-    # For the Mod/TechDraw/PAT parameters we do not check the preferences:
-    param_dict["Mod/TechDraw/PAT"] = {
-        "FilePattern":                 ("string",    ""),
-        "NamePattern":                 ("string",    "Diamant"),
+    # For the View parameters we do not check the preferences:
+    param_dict["View"] = {
+        "BackgroundColor":             ("unsigned",  336897023),
+        "BackgroundColor2":            ("unsigned",  859006463),
+        "BackgroundColor3":            ("unsigned",  2543299327),
+        "DefaultAmbientColor":         ("unsigned",  1431655935),
+        "DefaultEmissiveColor":        ("unsigned",  255),
+        "DefaultShapeColor":           ("unsigned",  3435980543),
+        "DefaultShapeLineColor":       ("unsigned",  421075455),
+        "DefaultShapeLineWidth":       ("int",       2),
+        "DefaultShapePointSize":       ("int",       2),
+        "DefaultShapeShininess":       ("int",       90),
+        "DefaultShapeTransparency":    ("int",       0),
+        "DefaultShapeVertexColor":     ("unsigned",  421075455),
+        "DefaultSpecularColor":        ("unsigned",  2290649343),
+        "EnableSelection":             ("bool",      True),
+        "Gradient":                    ("bool",      True),
+        "MarkerSize":                  ("int",       9),
+        "NewDocumentCameraScale":      ("float",     100.0),
     }
-
+    # fmt: on
 
     # Preferences ui files are stored in resource files.
     # For the Draft Workbench: /Mod/Draft/Draft_rc.py
     # For the Arch Workbench: /Mod/Arch/Arch_rc.py
-    for fnm in (":/ui/preferences-draft.ui",
-                ":/ui/preferences-draftinterface.ui",
-                ":/ui/preferences-draftsnap.ui",
-                ":/ui/preferences-drafttexts.ui",
-                ":/ui/preferences-draftvisual.ui",
-                ":/ui/preferences-dwg.ui",
-                ":/ui/preferences-dxf.ui",
-                ":/ui/preferences-oca.ui",
-                ":/ui/preferences-svg.ui",
-                ":/ui/preferences-arch.ui",
-                ":/ui/preferences-archdefaults.ui",
-                ":/ui/preferences-dae.ui",
-                ":/ui/preferences-ifc.ui",
-                ":/ui/preferences-ifc-export.ui"):
+    for fnm in (
+        ":/ui/preferences-draft.ui",
+        ":/ui/preferences-draftinterface.ui",
+        ":/ui/preferences-draftsnap.ui",
+        ":/ui/preferences-drafttexts.ui",
+        ":/ui/preferences-draftvisual.ui",
+        ":/ui/preferences-dwg.ui",
+        ":/ui/preferences-dxf.ui",
+        ":/ui/preferences-oca.ui",
+        ":/ui/preferences-svg.ui",
+        ":/ui/preferences-arch.ui",
+        ":/ui/preferences-archdefaults.ui",
+        ":/ui/preferences-dae.ui",
+        ":/ui/preferences-ifc.ui",
+        ":/ui/preferences-ifc-export.ui",
+        ":/ui/preferences-sh3d-import.ui",
+        ":/ui/preferences-webgl.ui",
+    ):
 
         # https://stackoverflow.com/questions/14750997/load-txt-file-from-resources-in-python
         fd = QtCore.QFile(fnm)
         if fd.open(QtCore.QIODevice.ReadOnly | QtCore.QFile.Text):
-            text = QtCore.QTextStream(fd).readAll()
+            # avoid using QTextStream due to bug in PySide6.11
+            # text = QtCore.QTextStream(fd).readAll()
+            text = fd.readAll().data().decode()
             fd.close()
         else:
-            print("Preferences file " + fnm + " not found")
             continue
 
         # https://docs.python.org/3/library/xml.etree.elementtree.html
@@ -509,6 +794,14 @@ def _get_param_dictionary():
                     elif att_class == "Gui::PrefFileChooser":
                         path, entry, value = _param_from_PrefFileChooser(widget)
                         typ = "string"
+                    elif att_class == "Gui::PrefFontBox":
+                        path, entry, value = _param_from_PrefFontBox(widget)
+                        typ = "string"
+                    elif att_class == "Gui::PrefCheckableGroupBox":
+                        # It's a boolean preference, so we can reuse the parsing logic
+                        # from _param_from_PrefCheckBox, which looks for <property name="checked">.
+                        path, entry, value = _param_from_PrefCheckBox(widget)
+                        typ = "bool"
                 except Exception:
                     App.Console.PrintError(f'Failed to get parameter {fnm}\n'
                                            f'{ET.tostring(widget, encoding="unicode")}\n')
@@ -524,8 +817,122 @@ def _get_param_dictionary():
 
 PARAM_DICT = _get_param_dictionary()
 
+_GRID_DOCUMENT_NAMESPACE = "Draft"
+_GRID_DOCUMENT_SETTINGS = {
+    "gridSpacing": "GridSpacing",
+    "gridEvery": "GridMainlines",
+    "gridSize": "GridSize",
+}
 
-def get_param(entry, path="Mod/Draft"):
+
+def _is_valid_grid_spacing(value):
+    try:
+        quantity = App.Units.Quantity(value)
+    except (TypeError, ValueError):
+        return False
+    return quantity.Value > 0
+
+
+def _grid_param_default(entry):
+    value = get_param(entry)
+    if entry == "gridSpacing":
+        if _is_valid_grid_spacing(value):
+            return value
+        default = get_param(entry, ret_default=True)
+        if _is_valid_grid_spacing(default):
+            return default
+        return "1 mm"
+
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        value = 0
+    if value > 1:
+        return value
+
+    try:
+        default = int(get_param(entry, ret_default=True))
+    except (TypeError, ValueError):
+        default = 2
+    return default if default > 1 else 2
+
+
+def _document_settings(doc):
+    """Return the document's Draft settings group, or None if there is none.
+
+    Per-document settings arrived upstream with App::Document.settings();
+    this fork has no such API, so grid parameters fall back to preferences.
+    """
+    getter = getattr(doc, "settings", None)
+    if getter is None:
+        return None
+    return getter(_GRID_DOCUMENT_NAMESPACE)
+
+
+def get_grid_param(entry, doc=None):
+    """Return a grid parameter with document settings overriding preferences."""
+    document_key = _GRID_DOCUMENT_SETTINGS.get(entry)
+    if document_key is None:
+        return get_param(entry)
+
+    default = _grid_param_default(entry)
+    doc = _resolve_document(doc)
+    if doc is None:
+        return default
+
+    settings = _document_settings(doc)
+    if settings is None:
+        return get_param(entry)
+
+    if entry == "gridSpacing":
+        value = settings.getString(document_key, default)
+        return value if _is_valid_grid_spacing(value) else default
+
+    value = settings.getInt(document_key, default)
+    return value if value > 1 else default
+
+
+def set_grid_param(entry, value, doc=None):
+    """Store a grid parameter in document settings, or preferences if no document exists."""
+    document_key = _GRID_DOCUMENT_SETTINGS.get(entry)
+    if document_key is None:
+        return set_param(entry, value)
+
+    if entry == "gridSpacing":
+        try:
+            quantity = App.Units.Quantity(value)
+        except (TypeError, ValueError):
+            return False
+        if quantity.Value <= 0:
+            return False
+        value = quantity.UserString
+    else:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return False
+        if value <= 1:
+            return False
+
+    source_doc = doc
+    doc = _resolve_document(doc)
+    if doc is None:
+        if source_doc is not None:
+            return False
+        return set_param(entry, value)
+
+    settings = _document_settings(doc)
+    if settings is None:
+        return set_param(entry, value)
+
+    if entry == "gridSpacing":
+        settings.setString(document_key, value)
+    else:
+        settings.setInt(document_key, value)
+    return True
+
+
+def get_param(entry, path="Mod/Draft", ret_default=False, silent=False):
     """Return a stored parameter value or its default.
 
     Parameters
@@ -536,16 +943,25 @@ def get_param(entry, path="Mod/Draft"):
         Defaults to "Mod/Draft".
         The path where the parameter can be found.
         This string is appended to "User parameter:BaseApp/Preferences/".
+    ret_default: bool, optional
+        Defaults to `False`.
+        If `True`, always return the default value even if a stored value is available.
+    silent: bool, optional
+        Defaults to `False`.
+        If `True`, do not log anything if entry wasn't found.
 
     Returns
     -------
     bool, float, int or str (if successful) or `None`.
     """
     if path not in PARAM_DICT or entry not in PARAM_DICT[path]:
-        print(f"draftutils.params.get_param: Unable to find '{entry}' in '{path}'")
+        if not silent:
+            print(f"draftutils.params.get_param: Unable to find '{entry}' in '{path}'")
         return None
     param_grp = App.ParamGet("User parameter:BaseApp/Preferences/" + path)
     typ, default = PARAM_DICT[path][entry]
+    if ret_default:
+        return default
     if typ == "bool":
         return param_grp.GetBool(entry, default)
     if typ == "float":
@@ -559,12 +975,12 @@ def get_param(entry, path="Mod/Draft"):
     return None
 
 
-def get_param_arch(entry):
-    return get_param(entry, path="Mod/Arch")
+def get_param_arch(entry, ret_default=False):
+    return get_param(entry, path="Mod/Arch", ret_default=ret_default)
 
 
-def get_param_view(entry):
-    return get_param(entry, path="View")
+def get_param_view(entry, ret_default=False):
+    return get_param(entry, path="View", ret_default=ret_default)
 
 
 def set_param(entry, value, path="Mod/Draft"):

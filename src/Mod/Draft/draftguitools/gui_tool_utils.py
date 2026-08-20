@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009 Yorik van Havre <yorik@uncreated.net>                        *
 # *   (c) 2010 Ken Cline <cline@frii.com>                                   *
@@ -28,12 +30,15 @@ These functions are used by different command classes in the `DraftTools`
 module. We assume that the graphical interface was already loaded
 as they operate on selections and graphical properties.
 """
+
 ## @package gui_tool_utils
 # \ingroup draftguitools
 # \brief Provides utility functions that are used by many Draft Gui Commands.
 
 ## \addtogroup draftguitools
 # @{
+import re
+
 import FreeCAD as App
 import FreeCADGui as Gui
 import WorkingPlane
@@ -41,6 +46,7 @@ from draftutils import gui_utils
 from draftutils import params
 from draftutils import utils
 from draftutils.messages import _wrn
+from draftutils.translate import translate
 
 # Set modifier keys from the parameter database
 MODS = ["shift", "ctrl", "alt"]
@@ -56,6 +62,116 @@ def get_mod_snap_key():
 
 def get_mod_alt_key():
     return MODS[params.get_param("modalt")]
+
+
+_HINT_MOD_KEYS = [Gui.UserInput.KeyShift, Gui.UserInput.KeyControl, Gui.UserInput.KeyAlt]
+
+
+# To allows for easy concatenation the _get_hint_* functions
+# always return a list (with a single item or an empty list).
+
+
+def _get_hint_mod_constrain():
+    key = _HINT_MOD_KEYS[params.get_param("modconstrain")]
+    return [Gui.InputHint(translate("draft", "Hold %1 constrain"), key)]
+
+
+def _get_hint_mod_constrain_dimension_linear():
+    key = _HINT_MOD_KEYS[params.get_param("modconstrain")]
+    return [Gui.InputHint(translate("draft", "Hold %1 horizontal/vertical dimension"), key)]
+
+
+def _get_hint_mod_constrain_dimension_radial():
+    key = _HINT_MOD_KEYS[params.get_param("modconstrain")]
+    return [Gui.InputHint(translate("draft", "Hold %1 radial dimension"), key)]
+
+
+def _get_hint_mod_snap():
+    if params.get_param("alwaysSnap"):
+        return []
+    key = _HINT_MOD_KEYS[params.get_param("modsnap")]
+    return [Gui.InputHint(translate("draft", "Hold %1 snap"), key)]
+
+
+def _get_hint_mod_copy():
+    key = _HINT_MOD_KEYS[params.get_param("modalt")]
+    return [Gui.InputHint(translate("draft", "Hold %1 copy"), key)]
+
+
+def _get_hint_in_cmd_shortcut(shortcut_param):
+    shortcut = params.get_param(shortcut_param)
+    if not shortcut:
+        # Empty string.
+        return ""
+    # In command shortcuts support multiple characters where each individual
+    # character is recognized separately. We only display the 1st character.
+    return shortcut[0].upper()
+
+
+def _get_hint_select_object(multiple=True):
+    if multiple:
+        text = translate("draft", "%1 select objects to modify")
+    else:
+        text = translate("draft", "%1 select object to modify")
+    return [Gui.InputHint(text, Gui.UserInput.MouseLeft)]
+
+
+def _get_hint_xyz_constrain():
+    pattern = re.compile("[A-Z]")
+    shortcut_x = _get_hint_in_cmd_shortcut("inCommandShortcutRestrictX")
+    shortcut_y = _get_hint_in_cmd_shortcut("inCommandShortcutRestrictY")
+    shortcut_z = _get_hint_in_cmd_shortcut("inCommandShortcutRestrictZ")
+    if (
+        pattern.fullmatch(shortcut_x)
+        and pattern.fullmatch(shortcut_y)
+        and pattern.fullmatch(shortcut_z)
+    ):
+        key_x = getattr(Gui.UserInput, "Key" + shortcut_x)
+        key_y = getattr(Gui.UserInput, "Key" + shortcut_y)
+        key_z = getattr(Gui.UserInput, "Key" + shortcut_z)
+        return [
+            Gui.InputHint(translate("draft", "%1 / %2 / %3 switch constraint"), key_x, key_y, key_z)
+        ]
+    return []
+
+
+def _get_hint_relative():
+    pattern = re.compile("[A-Z]")
+    shortcut = _get_hint_in_cmd_shortcut("inCommandShortcutRelative")
+    if pattern.fullmatch(shortcut):
+        key = getattr(Gui.UserInput, "Key" + shortcut)
+        return [Gui.InputHint(translate("draft", "%1 toggle relative"), key)]
+    return []
+
+
+def _get_hint_global():
+    pattern = re.compile("[A-Z]")
+    shortcut = _get_hint_in_cmd_shortcut("inCommandShortcutGlobal")
+    if pattern.fullmatch(shortcut):
+        key = getattr(Gui.UserInput, "Key" + shortcut)
+        return [Gui.InputHint(translate("draft", "%1 toggle global"), key)]
+    return []
+
+
+def _get_hint_continue():
+    pattern = re.compile("[A-Z]")
+    shortcut = _get_hint_in_cmd_shortcut("inCommandShortcutContinue")
+    if pattern.fullmatch(shortcut):
+        key = getattr(Gui.UserInput, "Key" + shortcut)
+        return [Gui.InputHint(translate("draft", "%1 toggle continue"), key)]
+    return []
+
+
+def _get_hint_select_edge():
+    mod_key = _HINT_MOD_KEYS[params.get_param("modalt")]
+    pattern = re.compile("[A-Z]")
+    shortcut = _get_hint_in_cmd_shortcut("inCommandShortcutSelectEdge")
+    if pattern.fullmatch(shortcut):
+        shortcut_key = getattr(Gui.UserInput, "Key" + shortcut)
+        return [
+            Gui.InputHint(translate("draft", "%1 / hold %2 select edge"), shortcut_key, mod_key)
+        ]
+    return [Gui.InputHint(translate("draft", "Hold %1 select edge"), mod_key)]
 
 
 def format_unit(exp, unit="mm"):
@@ -190,6 +306,8 @@ def get_point(target, args, noTracker=False):
         returned by the `Snapper` or by the `ActiveView`.
     """
     ui = Gui.draftToolBar
+    if not ui.mouse:
+        return None, None, None
 
     if target.node:
         last = target.node[-1]
@@ -201,14 +319,12 @@ def get_point(target, args, noTracker=False):
     point = None
 
     if hasattr(Gui, "Snapper"):
-        point = Gui.Snapper.snap(args["Position"],
-                                 lastpoint=last,
-                                 active=smod,
-                                 constrain=cmod,
-                                 noTracker=noTracker)
+        point = Gui.Snapper.snap(
+            args["Position"], lastpoint=last, active=smod, constrain=cmod, noTracker=noTracker
+        )
         info = Gui.Snapper.snapInfo
         mask = Gui.Snapper.affinity
-    if not point:
+    if point is None:
         p = Gui.ActiveDocument.ActiveView.getCursorPos()
         point = Gui.ActiveDocument.ActiveView.getPoint(p)
         info = Gui.ActiveDocument.ActiveView.getObjectInfo(p)
@@ -244,9 +360,9 @@ def set_working_plane_to_object_under_cursor(mouseEvent):
     App::DocumentObject or None
         The parent object the face belongs to, if alignment occurred, or None.
     """
-    objectUnderCursor = gui_utils.get_3d_view().getObjectInfo((
-        mouseEvent["Position"][0],
-        mouseEvent["Position"][1]))
+    objectUnderCursor = gui_utils.get_3d_view().getObjectInfo(
+        (mouseEvent["Position"][0], mouseEvent["Position"][1])
+    )
 
     if not objectUnderCursor:
         return None
@@ -257,6 +373,7 @@ def set_working_plane_to_object_under_cursor(mouseEvent):
         return None
 
     import Part
+
     if "ParentObject" in objectUnderCursor:
         obj = objectUnderCursor["ParentObject"]
         sub = objectUnderCursor["SubName"]
@@ -291,14 +408,16 @@ def set_working_plane_to_selected_object():
 
     sels = Gui.Selection.getSelectionEx("", 0)
 
-    if len(sels) == 1 \
-            and len(sels[0].SubObjects) == 1 \
-            and sels[0].SubObjects[0].ShapeType == "Face":
+    if (
+        len(sels) == 1
+        and len(sels[0].SubObjects) == 1
+        and sels[0].SubObjects[0].ShapeType == "Face"
+    ):
         import Part
-        shape = Part.getShape(sels[0].Object,
-                              sels[0].SubElementNames[0],
-                              needSubElement=True,
-                              retType=0)
+
+        shape = Part.getShape(
+            sels[0].Object, sels[0].SubElementNames[0], needSubElement=True, retType=0
+        )
 
         if wp.align_to_face(shape, _hist_add=False):
             wp.auto = True
@@ -311,7 +430,7 @@ setWorkingPlaneToSelectedObject = set_working_plane_to_selected_object
 
 
 def get_support(mouseEvent=None):
-    """"Align the working plane to a preselected face or the face under the cursor.
+    """ "Align the working plane to a preselected face or the face under the cursor.
 
     The working plane is only aligned if it is `'auto'`.
 

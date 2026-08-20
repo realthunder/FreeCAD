@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>                  *
 # *   (c) 2009, 2010 Ken Cline <cline@frii.com>                             *
@@ -28,6 +30,7 @@ A facebinder is a surface or shell created from the face of a solid object.
 This tool allows extracting such faces to be used for other purposes
 including extruding solids from faces.
 """
+
 ## @package gui_facebinders
 # \ingroup draftguitools
 # \brief Provides GUI tools to create Facebinder objects.
@@ -55,27 +58,31 @@ class Facebinder(gui_base_original.Creator):
     def GetResources(self):
         """Set icon, menu and tooltip."""
 
-        return {"Pixmap": "Draft_Facebinder",
-                "Accel": "F,F",
-                "MenuText": QT_TRANSLATE_NOOP("Draft_Facebinder", "Facebinder"),
-                "ToolTip": QT_TRANSLATE_NOOP("Draft_Facebinder", "Creates a facebinder object from selected faces.")}
+        return {
+            "Pixmap": "Draft_Facebinder",
+            "Accel": "F,F",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_Facebinder", "Facebinder"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_Facebinder", "Creates a facebinder from the selected faces"
+            ),
+        }
 
     def Activated(self):
         """Execute when the command is called."""
         super().Activated(name="Facebinder")
-
+        if not self.ui:
+            return
         if not Gui.Selection.getSelection():
-            if self.ui:
-                self.ui.selectUi(on_close_call=self.finish)
-                _msg(translate("draft", "Select faces from existing objects"))
-                self.call = self.view.addEventCallback(
-                    "SoEvent",
-                    gui_tool_utils.selectObject)
+            self.ui.selectUi(on_close_call=self.finish)
+            _msg(translate("draft", "Select faces from existing objects"))
+            self.call = self.view.addEventCallback("SoEvent", gui_tool_utils.selectObject)
         else:
             self.proceed()
 
     def proceed(self):
         """Proceed when a valid selection has been made."""
+        if self.call is not None:
+            self.end_callbacks(self.call)
         if Gui.Selection.getSelection():
             App.ActiveDocument.openTransaction("Create Facebinder")
             Gui.addModule("Draft")

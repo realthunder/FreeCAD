@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009 Yorik van Havre <yorik@uncreated.net>                        *
 # *   (c) 2019 Eliud Cabrera Castillo <e.cabrera-castillo@tum.de>           *
@@ -26,6 +28,7 @@
 This module contains auxiliary functions to translate strings
 using the QtCore module.
 """
+
 ## @package translate
 # \ingroup draftutils
 # \brief Provides utility functions that wrap around the Qt translate function.
@@ -33,12 +36,12 @@ using the QtCore module.
 ## \addtogroup draftutils
 # @{
 import PySide.QtCore as QtCore
-import PySide.QtGui as QtGui
+import PySide.QtWidgets as QtWidgets
 
 Qtranslate = QtCore.QCoreApplication.translate
 
 try:
-    _encoding = QtGui.QApplication.UnicodeUTF8
+    _encoding = QtWidgets.QApplication.UnicodeUTF8
 except AttributeError:
     _encoding = None
 
@@ -46,7 +49,7 @@ except AttributeError:
 def translate(context, text, comment=None):
     r"""Translate the text using the Qt translate function.
 
-    It wraps around `QtGui.QApplication.translate`,
+    It wraps around `QtWidgets.QApplication.translate`,
     which is the same as `QtCore.QCoreApplication.translate`.
 
     Parameters
@@ -68,7 +71,7 @@ def translate(context, text, comment=None):
     Returns
     -------
     str
-        A unicode string returned by `QtGui.QApplication.translate`.
+        A unicode string returned by `QtWidgets.QApplication.translate`.
 
     Unicode strings
     ---------------
@@ -77,7 +80,7 @@ def translate(context, text, comment=None):
     In Qt5 the strings are always assumed unicode
 
     >>> QtCore.QCoreApplication.translate(context, text, None)
-    >>> QtGui.QApplication.translate(context, text, None)
+    >>> QtWidgets.QApplication.translate(context, text, None)
     """
     return Qtranslate(context, text, comment)
 
@@ -90,7 +93,7 @@ def translate(context, text, comment=None):
 #
 # =============================================================================
 # try:
-#     _encoding = QtGui.QApplication.UnicodeUTF8 if six.PY2 else None
+#     _encoding = QtWidgets.QApplication.UnicodeUTF8 if six.PY2 else None
 #     def translate(context, text, utf8_decode=True):
 #         """convenience function for Qt translator
 #             context: str

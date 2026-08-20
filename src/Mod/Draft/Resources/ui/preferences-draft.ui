@@ -113,7 +113,7 @@ faces are picked during commands.</string>
 plane orientation appears when picking points</string>
         </property>
         <property name="text">
-         <string>Show working plane tracker</string>
+         <string>Show working plane orientation</string>
         </property>
         <property name="prefEntry" stdset="0">
          <cstring>showPlaneTracker</cstring>
@@ -146,16 +146,16 @@ Objects can then automatically be added to groups as well.</string>
    <item>
     <widget class="QGroupBox" name="groupBox_2">
      <property name="title">
-      <string>Command options</string>
+      <string>Command Options</string>
      </property>
      <layout class="QGridLayout" name="gridLayout_2">
       <item row="0" column="0" colspan="3">
        <widget class="Gui::PrefCheckBox" name="checkBox_ToolMessages">
         <property name="toolTip">
-         <string>If checked, instructions are displayed in the Report view when using Draft commands</string>
+         <string>If checked, instructions are displayed in the Report View when using Draft commands</string>
         </property>
         <property name="text">
-         <string>Show prompts in the Report view</string>
+         <string>Show prompts in the Report View</string>
         </property>
         <property name="prefEntry" stdset="0">
          <cstring>ToolMessages</cstring>
@@ -169,7 +169,7 @@ Objects can then automatically be added to groups as well.</string>
        <widget class="Gui::PrefCheckBox" name="checkBox_focusOnLength">
         <property name="toolTip">
          <string>If checked, Length input, instead of the X coordinate, will have the initial focus.
-This allows to indicate a direction and then type a distance.</string>
+This allows indicating a direction and then type a distance.</string>
         </property>
         <property name="text">
          <string>Set focus on Length instead of X coordinate</string>
@@ -251,13 +251,53 @@ Only for the splitFaces and makeShell options.</string>
        </widget>
       </item>
       <item row="6" column="0">
-       <widget class="QLabel" name="label_DraftEditMaxObjects">
+       <widget class="QLabel" name="label_MouseDelay">
         <property name="text">
-         <string>Max. number of editable objects</string>
+         <string>Mouse delay</string>
         </property>
        </widget>
       </item>
       <item row="6" column="1">
+       <widget class="Gui::PrefSpinBox" name="spinBox_MouseDelay">
+        <property name="toolTip">
+         <string>This is a delay during which the mouse is inactive, after entering numbers
+manually in any of the coordinate fields. Setting this to 0 disables the delay.
+If a delay of 1 is set, after entering a numeric value, the mouse will not
+update the field anymore during one second, to avoid moving the mouse
+accidentally and modifying the entered value.</string>
+        </property>
+        <property name="suffix">
+         <string> seconds</string>
+        </property>
+        <property name="maximum">
+         <number>10000</number>
+        </property>
+        <property name="value">
+         <number>1</number>
+        </property>
+        <property name="prefEntry" stdset="0">
+         <cstring>MouseDelay</cstring>
+        </property>
+        <property name="prefPath" stdset="0">
+         <cstring>Mod/Draft</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="2">
+       <spacer name="horizontalSpacer_2">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+       </spacer>
+      </item>
+      <item row="7" column="0">
+       <widget class="QLabel" name="label_DraftEditMaxObjects">
+        <property name="text">
+         <string>Maximum number of editable objects</string>
+        </property>
+       </widget>
+      </item>
+      <item row="7" column="1">
        <widget class="Gui::PrefSpinBox" name="spinBox_DraftEditMaxObjects">
         <property name="toolTip">
          <string>The maximum number of objects Draft Edit is allowed to process at the same time</string>
@@ -282,21 +322,14 @@ Only for the splitFaces and makeShell options.</string>
         </property>
        </widget>
       </item>
-      <item row="6" column="2">
-       <spacer name="horizontalSpacer_2">
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
-       </spacer>
-      </item>
-      <item row="7" column="0">
+      <item row="8" column="0">
        <widget class="QLabel" name="label_DraftEditPickRadius">
         <property name="text">
          <string>Edit node pick radius</string>
         </property>
        </widget>
       </item>
-      <item row="7" column="1">
+      <item row="8" column="1">
        <widget class="Gui::PrefSpinBox" name="spinBox_DraftEditPickRadius">
         <property name="toolTip">
          <string>The pick radius of edit nodes</string>
@@ -318,14 +351,14 @@ Only for the splitFaces and makeShell options.</string>
         </property>
        </widget>
       </item>
-      <item row="8" column="0">
+      <item row="9" column="0">
        <widget class="QLabel" name="label_ClonePrefix">
         <property name="text">
          <string>Label prefix for clones</string>
         </property>
        </widget>
       </item>
-      <item row="8" column="1">
+      <item row="9" column="1">
        <widget class="Gui::PrefLineEdit" name="lineEdit_ClonePrefix">
         <property name="maximumSize">
          <size>
@@ -347,14 +380,14 @@ Only for the splitFaces and makeShell options.</string>
         </property>
        </widget>
       </item>
-      <item row="9" column="0">
+      <item row="10" column="0">
        <widget class="QLabel" name="label_constructiongroupname">
         <property name="text">
          <string>Construction group label</string>
         </property>
        </widget>
       </item>
-      <item row="9" column="1">
+      <item row="10" column="1">
        <widget class="Gui::PrefLineEdit" name="lineEdit_constructiongroupname">
         <property name="maximumSize">
          <size>
@@ -376,14 +409,14 @@ Only for the splitFaces and makeShell options.</string>
         </property>
        </widget>
       </item>
-      <item row="10" column="0">
+      <item row="11" column="0">
        <widget class="QLabel" name="label_constructioncolor">
         <property name="text">
          <string>Construction geometry color</string>
         </property>
        </widget>
       </item>
-      <item row="10" column="1">
+      <item row="11" column="1">
        <widget class="Gui::PrefColorButton" name="colorButton_constructioncolor">
         <property name="toolTip">
          <string>The default color for Draft objects in construction mode</string>
@@ -416,7 +449,6 @@ Only for the splitFaces and makeShell options.</string>
   </layout>
  </widget>
  <layoutdefault spacing="6" margin="11"/>
- <pixmapfunction>qPixmapFromMimeSource</pixmapfunction>
  <customwidgets>
   <customwidget>
    <class>Gui::PrefCheckBox</class>

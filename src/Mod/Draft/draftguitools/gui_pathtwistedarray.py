@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2020 Eliud Cabrera Castillo <e.cabrera-castillo@tum.de> *
 # *                                                                         *
@@ -25,6 +27,7 @@
 The copies will be created along a path, like a polyline, B-spline,
 or Bezier curve.
 """
+
 ## @package gui_pathtwistedarray
 # \ingroup draftguitools
 # \brief Provides GUI tools to create PathTwistedArray objects.
@@ -39,6 +42,7 @@ import draftguitools.gui_base_original as gui_base_original
 
 from draftutils.messages import _err
 from draftutils.translate import translate
+import draftutils.params as params
 import draftutils.utils as utils
 
 # The module is used to prevent complaints from code checkers (flake8)
@@ -63,9 +67,14 @@ class PathTwistedArray(gui_base_original.Modifier):
     def GetResources(self):
         """Set icon, menu and tooltip."""
 
-        return {'Pixmap': 'Draft_PathTwistedArray',
-                'MenuText': QT_TRANSLATE_NOOP("Draft_PathTwistedArray", "Path twisted array"),
-                'ToolTip': QT_TRANSLATE_NOOP("Draft_PathTwistedArray", "Creates copies of the selected object along a selected path, and twists the copies.\nFirst select the object, and then select the path.\nThe path can be a polyline, B-spline, Bezier curve, or even edges from other objects.")}
+        return {
+            "Pixmap": "Draft_PathTwistedArray",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_PathTwistedArray", "Twisted Path Array"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_PathTwistedArray",
+                "Creates twisted copies of the selected object along a selected path",
+            ),
+        }
 
     def Activated(self, name="Path twisted array"):
         """Execute when the command is called."""
@@ -77,7 +86,12 @@ class PathTwistedArray(gui_base_original.Modifier):
         """Proceed with the command if one object was selected."""
         sel = Gui.Selection.getSelectionEx()
         if len(sel) != 2:
-            _err(translate("draft","Please select exactly two objects, the base object and the path object, before calling this command."))
+            _err(
+                translate(
+                    "draft",
+                    "Select exactly 2 objects, the base object and the path object, before calling this command",
+                )
+            )
         else:
             base_object = sel[0].Object
             path_object = sel[1].Object
@@ -86,7 +100,7 @@ class PathTwistedArray(gui_base_original.Modifier):
             rot_factor = 0.25
             use_link = self.use_link
 
-            build_shape = utils.get_param("Draft_array_build_shape", True)
+            build_shape = params.get_param("Draft_array_build_shape")
 
             Gui.addModule("Draft")
             _cmd = "Draft.make_path_twisted_array"
@@ -99,17 +113,19 @@ class PathTwistedArray(gui_base_original.Modifier):
             _cmd += "build_shape=" + str(build_shape)
             _cmd += ")"
 
-            _cmd_list = ["_obj_ = " + _cmd,
-                         "Draft.autogroup(_obj_)",
-                         "App.ActiveDocument.recompute()"]
-            self.commit(translate("draft","Path twisted array"), _cmd_list)
+            _cmd_list = [
+                "_obj_ = " + _cmd,
+                "Draft.autogroup(_obj_)",
+                "App.ActiveDocument.recompute()",
+            ]
+            self.commit(translate("draft", "Create Path Twisted Array"), _cmd_list)
 
         # Commit the transaction and execute the commands
         # through the parent class
         self.finish()
 
 
-Gui.addCommand('Draft_PathTwistedArray', PathTwistedArray())
+Gui.addCommand("Draft_PathTwistedArray", PathTwistedArray())
 
 
 class PathTwistedLinkArray(PathTwistedArray):
@@ -121,16 +137,20 @@ class PathTwistedLinkArray(PathTwistedArray):
     def GetResources(self):
         """Set icon, menu and tooltip."""
 
-        return {'Pixmap': 'Draft_PathTwistedLinkArray',
-                'MenuText': QT_TRANSLATE_NOOP("Draft_PathTwistedLinkArray","Path twisted link array"),
-                'ToolTip': QT_TRANSLATE_NOOP("Draft_PathTwistedLinkArray","Like the PathTwistedArray tool, but creates a 'Link array' instead.\nA 'Link array' is more efficient when handling many copies but the 'Fuse' option cannot be used.")}
+        return {
+            "Pixmap": "Draft_PathTwistedLinkArray",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_PathTwistedLinkArray", "Twisted Path Link Array"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_PathTwistedLinkArray",
+                "Creates twisted linked copies of the selected object along a selected path",
+            ),
+        }
 
     def Activated(self):
         """Execute when the command is called."""
-        super(PathTwistedLinkArray,
-              self).Activated(name="Path twisted link array")
+        super(PathTwistedLinkArray, self).Activated(name="Path twisted link array")
 
 
-Gui.addCommand('Draft_PathTwistedLinkArray', PathTwistedLinkArray())
+Gui.addCommand("Draft_PathTwistedLinkArray", PathTwistedLinkArray())
 
 ## @}

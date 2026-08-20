@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2019 Eliud Cabrera Castillo <e.cabrera-castillo@tum.de>           *
 # *                                                                         *
@@ -21,6 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides functions to create polar Array objects."""
+
 ## @package make_polararray
 # \ingroup draftmake
 # \brief Provides functions to create polar Array objects.
@@ -28,17 +31,23 @@
 ## \addtogroup draftmake
 # @{
 import FreeCAD as App
+import WorkingPlane
 import draftutils.utils as utils
 import draftmake.make_array as make_array
 
-from draftutils.messages import _msg, _err
+from draftutils.messages import _err
 from draftutils.translate import translate
 
 
-def make_polar_array(base_object,
-                     number=5, angle=360, center=App.Vector(0, 0, 0),
-                     use_link=True,
-                     build_shape=True):
+def make_polar_array(
+    base_object,
+    number=5,
+    angle=360,
+    center=App.Vector(0, 0, 0),
+    axis=None,
+    use_link=True,
+    build_shape=True,
+):
     """Create a polar array from the given object.
 
     Parameters
@@ -61,6 +70,11 @@ def make_polar_array(base_object,
     center: Base::Vector3, optional
         It defaults to the origin `App.Vector(0, 0, 0)`.
         The vector indicating the center of rotation of the array.
+
+    axis: Base::Vector3, optional
+        It defaults to the active Draft working plane axis if available,
+        otherwise to `App.Vector(0, 0, 1)` or the `+Z` axis.
+        The unit vector indicating the axis of rotation.
 
     use_link: bool, optional
         It defaults to `True`.
@@ -95,51 +109,49 @@ def make_polar_array(base_object,
     make_ortho_array, make_circular_array, make_path_array, make_point_array
     """
     _name = "make_polar_array"
-    utils.print_header(_name, translate("draft","Polar array"))
 
-    if isinstance(base_object, str):
-        base_object_str = base_object
-
-    found, base_object = utils.find_object(base_object,
-                                           doc=App.activeDocument())
+    found, base_object = utils.find_object(base_object, doc=App.activeDocument())
     if not found:
-        _msg("base_object: {}".format(base_object_str))
-        _err(translate("draft","Wrong input: object not in document."))
+        _err(translate("draft", "Wrong input: base_object not in document."))
         return None
 
-    _msg("base_object: {}".format(base_object.Label))
-
-    _msg("number: {}".format(number))
     try:
         utils.type_check([(number, int)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be an integer number."))
+        _err(translate("draft", "Wrong input: must be an integer number."))
         return None
 
-    _msg("angle: {}".format(angle))
     try:
         utils.type_check([(angle, (int, float))], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a number."))
+        _err(translate("draft", "Wrong input: must be a number."))
         return None
 
-    _msg("center: {}".format(center))
+    if axis is None:
+        if App.GuiUp:
+            axis = WorkingPlane.get_working_plane(update=False).axis
+        else:
+            axis = App.Vector(0, 0, 1)
+
     try:
-        utils.type_check([(center, App.Vector)], name=_name)
+        utils.type_check([(center, App.Vector), (axis, App.Vector)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a vector."))
+        _err(translate("draft", "Wrong input: must be a vector."))
         return None
 
     use_link = bool(use_link)
-    _msg("use_link: {}".format(use_link))
-
     build_shape = bool(build_shape)
-    _msg("build_shape: {}".format(build_shape))
 
-    new_obj = make_array.make_array(base_object,
-                                    arg1=center, arg2=angle, arg3=number,
-                                    use_link=use_link,
-                                    build_shape=build_shape)
+    new_obj = make_array.make_array(
+        base_object,
+        arg1=center,
+        arg2=angle,
+        arg3=number,
+        use_link=use_link,
+        build_shape=build_shape,
+    )
+    new_obj.Axis = axis
     return new_obj
+
 
 ## @}

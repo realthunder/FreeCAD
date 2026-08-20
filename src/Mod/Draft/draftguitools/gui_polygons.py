@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009 Yorik van Havre <yorik@uncreated.net>                        *
 # *   (c) 2010 Ken Cline <cline@frii.com>                                   *
@@ -26,6 +28,7 @@
 
 Minimum number of sides is three (equilateral triangles).
 """
+
 ## @package gui_polygons
 # \ingroup draftguitools
 # \brief Provides GUI tools to create regular Polygon objects.
@@ -37,6 +40,9 @@ from PySide.QtCore import QT_TRANSLATE_NOOP
 import FreeCAD as App
 import FreeCADGui as Gui
 import DraftVecUtils
+from draftgeoutils import circles as geo_circles
+from draftgeoutils import circles as geo_circles_incomplete
+from draftgeoutils import geometry as geo_geometry
 from draftguitools import gui_base_original
 from draftguitools import gui_tool_utils
 from draftguitools import gui_trackers as trackers
@@ -52,12 +58,16 @@ class Polygon(gui_base_original.Creator):
     def GetResources(self):
         """Set icon, menu and tooltip."""
 
-        return {'Pixmap': 'Draft_Polygon',
-                'Accel': "P, G",
-                'MenuText': QT_TRANSLATE_NOOP("Draft_Polygon", "Polygon"),
-                'ToolTip': QT_TRANSLATE_NOOP("Draft_Polygon", "Creates a regular polygon (triangle, square, pentagon, ...), by defining the number of sides and the circumscribed radius.\nCTRL to snap, SHIFT to constrain")}
+        return {
+            "Pixmap": "Draft_Polygon",
+            "Accel": "P, G",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_Polygon", "Polygon"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_Polygon", "Creates a regular polygon (triangle, square, pentagon…)"
+            ),
+        }
 
-    def Activated(self):
+    def Activated(self, numVertices=None):
         """Execute when the command is called."""
         super().Activated(name="Polygon")
         if self.ui:
@@ -72,8 +82,10 @@ class Polygon(gui_base_original.Creator):
             self.ui.numFaces.show()
             self.ui.numFacesLabel.show()
             self.altdown = False
+            self.numVertices = numVertices if numVertices is not None else 3
+            self.ui.numFaces.setValue(self.numVertices)
             self.ui.sourceCmd = self
-            self.arctrack = trackers.arcTracker()
+            self.polygonTrack = trackers.polygonTracker(sides=self.numVertices)
             self.call = self.view.addEventCallback("SoEvent", self.action)
             _toolmsg(translate("draft", "Pick center point"))
 
@@ -86,12 +98,12 @@ class Polygon(gui_base_original.Creator):
             Restart (continue) the command if `True`, or if `None` and
             `ui.continueMode` is `True`.
         """
-        super().finish(self)
+        self.end_callbacks(self.call)
         if self.ui:
-            self.arctrack.finalize()
-            self.doc.recompute()
+            self.polygonTrack.finalize()
+        super().finish()
         if cont or (cont is None and self.ui and self.ui.continueMode):
-            self.Activated()
+            self.Activated(self.numVertices)
 
     def action(self, arg):
         """Handle the 3D scene events.
@@ -104,18 +116,21 @@ class Polygon(gui_base_original.Creator):
             Dictionary with strings that indicates the type of event received
             from the 3D view.
         """
-        import DraftGeomUtils
-
+        if self.ui.numFaces.value() != self.numVertices:
+            self.polygonTrack.setNumVertices(self.ui.numFaces.value())
+            self.numVertices = self.ui.numFaces.value()
         if arg["Type"] == "SoKeyboardEvent":
             if arg["Key"] == "ESCAPE":
                 self.finish()
+        elif not self.ui.mouse:
+            pass
         elif arg["Type"] == "SoLocation2Event":  # mouse movement detection
             self.point, ctrlPoint, info = gui_tool_utils.getPoint(self, arg)
+            self.polygonTrack.update(ctrlPoint)
 
             # this is to make sure radius is what you see on screen
             if self.center and DraftVecUtils.dist(self.point, self.center) > 0:
-                viewdelta = DraftVecUtils.project(self.point.sub(self.center),
-                                                  self.wp.axis)
+                viewdelta = DraftVecUtils.project(self.point.sub(self.center), self.wp.axis)
                 if not DraftVecUtils.isNull(viewdelta):
                     self.point = self.point.add(viewdelta.negative())
             if self.step == 0:  # choose center
@@ -129,68 +144,65 @@ class Polygon(gui_base_original.Creator):
                         self.ui.switchUi(False)
             else:  # choose radius
                 if len(self.tangents) == 2:
-                    cir = DraftGeomUtils.circleFrom2tan1pt(self.tangents[0],
-                                                           self.tangents[1],
-                                                           self.point)
-                    _c = DraftGeomUtils.findClosestCircle(self.point, cir)
+                    cir = geo_circles_incomplete.circleFrom2tan1pt(
+                        self.tangents[0], self.tangents[1], self.point
+                    )
+                    _c = geo_circles.findClosestCircle(self.point, cir)
                     self.center = _c.Center
-                    self.arctrack.setCenter(self.center)
                 elif self.tangents and self.tanpoints:
-                    cir = DraftGeomUtils.circleFrom1tan2pt(self.tangents[0],
-                                                           self.tanpoints[0],
-                                                           self.point)
-                    _c = DraftGeomUtils.findClosestCircle(self.point, cir)
+                    cir = geo_circles_incomplete.circleFrom1tan2pt(
+                        self.tangents[0], self.tanpoints[0], self.point
+                    )
+                    _c = geo_circles.findClosestCircle(self.point, cir)
                     self.center = _c.Center
-                    self.arctrack.setCenter(self.center)
                 if gui_tool_utils.hasMod(arg, gui_tool_utils.get_mod_alt_key()):
                     if not self.altdown:
                         self.altdown = True
-                    snapped = self.view.getObjectInfo((arg["Position"][0],
-                                                       arg["Position"][1]))
+                    snapped = self.view.getObjectInfo((arg["Position"][0], arg["Position"][1]))
                     if snapped:
-                        ob = self.doc.getObject(snapped['Object'])
-                        num = int(snapped['Component'].lstrip('Edge')) - 1
+                        ob = self.doc.getObject(snapped["Object"])
+                        num = int(snapped["Component"].lstrip("Edge")) - 1
                         ed = ob.Shape.Edges[num]
                         if len(self.tangents) == 2:
-                            cir = DraftGeomUtils.circleFrom3tan(self.tangents[0],
-                                                                self.tangents[1],
-                                                                ed)
-                            cl = DraftGeomUtils.findClosestCircle(self.point, cir)
+                            cir = geo_circles_incomplete.circleFrom3tan(
+                                self.tangents[0], self.tangents[1], ed
+                            )
+                            cl = geo_circles.findClosestCircle(self.point, cir)
                             self.center = cl.Center
                             self.rad = cl.Radius
-                            self.arctrack.setCenter(self.center)
                         else:
-                            self.rad = self.center.add(DraftGeomUtils.findDistance(self.center,ed).sub(self.center)).Length
+                            self.rad = self.center.add(
+                                geo_geometry.findDistance(self.center, ed).sub(self.center)
+                            ).Length
                     else:
                         self.rad = DraftVecUtils.dist(self.point, self.center)
                 else:
                     if self.altdown:
                         self.altdown = False
                     self.rad = DraftVecUtils.dist(self.point, self.center)
-                self.ui.setRadiusValue(self.rad, 'Length')
-                self.arctrack.setRadius(self.rad)
+                self.ui.setRadiusValue(self.rad, "Length")
 
             gui_tool_utils.redraw3DView()
 
-        elif (arg["Type"] == "SoMouseButtonEvent"
-              and arg["State"] == "DOWN"
-              and arg["Button"] == "BUTTON1"):  # mouse click
+        elif (
+            arg["Type"] == "SoMouseButtonEvent"
+            and arg["State"] == "DOWN"
+            and arg["Button"] == "BUTTON1"
+        ):  # mouse click
             if self.point:
                 if self.step == 0:  # choose center
                     if (not self.node) and (not self.support):
                         gui_tool_utils.getSupport(arg)
-                        (self.point,
-                         ctrlPoint, info) = gui_tool_utils.getPoint(self, arg)
+                        self.point, ctrlPoint, info = gui_tool_utils.getPoint(self, arg)
                     if gui_tool_utils.hasMod(arg, gui_tool_utils.get_mod_alt_key()):
-                        snapped = self.view.getObjectInfo((arg["Position"][0],
-                                                           arg["Position"][1]))
+                        snapped = self.view.getObjectInfo((arg["Position"][0], arg["Position"][1]))
                         if snapped:
-                            ob = self.doc.getObject(snapped['Object'])
-                            num = int(snapped['Component'].lstrip('Edge')) - 1
+                            ob = self.doc.getObject(snapped["Object"])
+                            num = int(snapped["Component"].lstrip("Edge")) - 1
                             ed = ob.Shape.Edges[num]
                             self.tangents.append(ed)
                             if len(self.tangents) == 2:
-                                self.arctrack.on()
+                                self.polygonTrack.on()
                                 self.ui.radiusUi()
                                 self.step = 1
                                 _toolmsg(translate("draft", "Pick radius"))
@@ -200,13 +212,14 @@ class Polygon(gui_base_original.Creator):
                         else:
                             self.center = self.point
                             self.node = [self.point]
-                            self.arctrack.setCenter(self.center)
-                        self.arctrack.on()
+                            self.polygonTrack.setOrigin(self.center)
+                        self.polygonTrack.on()
                         self.ui.radiusUi()
                         self.step = 1
                         _toolmsg(translate("draft", "Pick radius"))
                         if self.planetrack:
                             self.planetrack.set(self.point)
+                    self.update_hints()
                 elif self.step == 1:  # choose radius
                     self.drawPolygon()
 
@@ -217,38 +230,41 @@ class Polygon(gui_base_original.Creator):
         if params.get_param("UsePartPrimitives"):
             # Insert a Part::Primitive object
             Gui.addModule("Part")
-            _cmd = 'FreeCAD.ActiveDocument.'
+            _cmd = "FreeCAD.ActiveDocument."
             _cmd += 'addObject("Part::RegularPolygon","RegularPolygon")'
-            _cmd_list = ['pl = FreeCAD.Placement()',
-                         'pl.Rotation.Q = ' + rot,
-                         'pl.Base = ' + DraftVecUtils.toString(self.center),
-                         'pol = ' + _cmd,
-                         'pol.Polygon = ' + str(self.ui.numFaces.value()),
-                         'pol.Circumradius = ' + str(self.rad),
-                         'pol.Placement = pl',
-                         'Draft.autogroup(pol)',
-                         'FreeCAD.ActiveDocument.recompute()']
-            self.commit(translate("draft", "Create Polygon (Part)"),
-                        _cmd_list)
+            _cmd_list = [
+                "pl = FreeCAD.Placement()",
+                "pl.Rotation.Q = " + rot,
+                "pl.Base = " + DraftVecUtils.toString(self.center),
+                "pol = " + _cmd,
+                "pol.Polygon = " + str(self.ui.numFaces.value()),
+                "pol.Circumradius = " + str(self.rad),
+                "pol.Placement = pl",
+                "Draft.autogroup(pol)",
+                "Draft.select(pol)",
+                "FreeCAD.ActiveDocument.recompute()",
+            ]
+            self.commit(translate("draft", "Create Polygon (Part)"), _cmd_list)
         else:
             # Insert a Draft polygon
-            _cmd = 'Draft.make_polygon'
-            _cmd += '('
-            _cmd += str(self.ui.numFaces.value()) + ', '
-            _cmd += 'radius=' + str(self.rad) + ', '
-            _cmd += 'inscribed=True, '
-            _cmd += 'placement=pl, '
-            _cmd += 'face=' + fil + ', '
-            _cmd += 'support=' + sup
-            _cmd += ')'
-            _cmd_list = ['pl = FreeCAD.Placement()',
-                         'pl.Rotation.Q = ' + rot,
-                         'pl.Base = ' + DraftVecUtils.toString(self.center),
-                         'pol = ' + _cmd,
-                         'Draft.autogroup(pol)',
-                         'FreeCAD.ActiveDocument.recompute()']
-            self.commit(translate("draft", "Create Polygon"),
-                        _cmd_list)
+            _cmd = "Draft.make_polygon"
+            _cmd += "("
+            _cmd += str(self.ui.numFaces.value()) + ", "
+            _cmd += "radius=" + str(self.rad) + ", "
+            _cmd += "inscribed=True, "
+            _cmd += "placement=pl, "
+            _cmd += "face=" + fil + ", "
+            _cmd += "support=" + sup
+            _cmd += ")"
+            _cmd_list = [
+                "pl = FreeCAD.Placement()",
+                "pl.Rotation.Q = " + rot,
+                "pl.Base = " + DraftVecUtils.toString(self.center),
+                "pol = " + _cmd,
+                "Draft.autogroup(pol)",
+                "FreeCAD.ActiveDocument.recompute()",
+            ]
+            self.commit(translate("draft", "Create Polygon"), _cmd_list)
         self.finish(cont=None)
 
     def numericInput(self, numx, numy, numz):
@@ -259,12 +275,12 @@ class Polygon(gui_base_original.Creator):
         """
         self.center = App.Vector(numx, numy, numz)
         self.node = [self.center]
-        self.arctrack.setCenter(self.center)
-        self.arctrack.on()
+        self.polygonTrack.on()
         self.ui.radiusUi()
         self.step = 1
         self.ui.radiusValue.setFocus()
         _toolmsg(translate("draft", "Pick radius"))
+        self.update_hints()
 
     def numericRadius(self, rad):
         """Validate the entry radius in the user interface.
@@ -272,30 +288,38 @@ class Polygon(gui_base_original.Creator):
         This function is called by the toolbar or taskpanel interface
         when a valid radius has been entered in the input field.
         """
-        import DraftGeomUtils
-
         self.rad = rad
         if len(self.tangents) == 2:
-            cir = DraftGeomUtils.circleFrom2tan1rad(self.tangents[0],
-                                                    self.tangents[1],
-                                                    rad)
+            cir = geo_circles_incomplete.circleFrom2tan1rad(self.tangents[0], self.tangents[1], rad)
             if self.center:
-                _c = DraftGeomUtils.findClosestCircle(self.center, cir)
+                _c = geo_circles.findClosestCircle(self.center, cir)
                 self.center = _c.Center
             else:
                 self.center = cir[-1].Center
         elif self.tangents and self.tanpoints:
-            cir = DraftGeomUtils.circleFrom1tan1pt1rad(self.tangents[0],
-                                                       self.tanpoints[0],
-                                                       rad)
+            cir = geo_circles_incomplete.circleFrom1tan1pt1rad(
+                self.tangents[0], self.tanpoints[0], rad
+            )
             if self.center:
-                _c = DraftGeomUtils.findClosestCircle(self.center, cir)
+                _c = geo_circles.findClosestCircle(self.center, cir)
                 self.center = _c.Center
             else:
                 self.center = cir[-1].Center
         self.drawPolygon()
 
+    def get_hints(self):
+        if self.step == 0:
+            hints = [Gui.InputHint(translate("draft", "%1 pick center"), Gui.UserInput.MouseLeft)]
+        else:
+            hints = [Gui.InputHint(translate("draft", "%1 pick radius"), Gui.UserInput.MouseLeft)]
+        return (
+            hints
+            + gui_tool_utils._get_hint_xyz_constrain()
+            + gui_tool_utils._get_hint_mod_constrain()
+            + gui_tool_utils._get_hint_mod_snap()
+        )
 
-Gui.addCommand('Draft_Polygon', Polygon())
+
+Gui.addCommand("Draft_Polygon", Polygon())
 
 ## @}

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009 Yorik van Havre <yorik@uncreated.net>                        *
 # *   (c) 2010 Ken Cline <cline@frii.com>                                   *
@@ -27,6 +29,7 @@
 The highlighting can be used to manipulate shapes with other tools
 such as Move, Rotate, and Scale.
 """
+
 ## @package gui_subelements
 # \ingroup draftguitools
 # \brief Provides GUI tools to highlight subelements of objects.
@@ -37,10 +40,10 @@ import pivy.coin as coin
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCADGui as Gui
-import draftguitools.gui_base_original as gui_base_original
-import draftguitools.gui_tool_utils as gui_tool_utils
-
-from draftutils.messages import _msg
+from draftguitools import gui_base_original
+from draftguitools import gui_tool_utils
+from draftutils import utils
+from draftutils.messages import _msg, _wrn
 from draftutils.translate import translate
 
 
@@ -56,36 +59,45 @@ class SubelementHighlight(gui_base_original.Modifier):
     def GetResources(self):
         """Set icon, menu and tooltip."""
 
-        return {'Pixmap': 'Draft_SubelementHighlight',
-                'Accel': "H, S",
-                'MenuText': QT_TRANSLATE_NOOP("Draft_SubelementHighlight","Subelement highlight"),
-                'ToolTip': QT_TRANSLATE_NOOP("Draft_SubelementHighlight","Highlight the subelements of the selected objects, so that they can then be edited with the move, rotate, and scale tools.")}
+        return {
+            "Pixmap": "Draft_SubelementHighlight",
+            "Accel": "H, S",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_SubelementHighlight", "Highlight Subelements"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_SubelementHighlight",
+                "Highlights the subelements of the selected objects, to be able to move, rotate, and scale them",
+            ),
+        }
 
     def Activated(self):
         """Execute when the command is called."""
         if self.is_running:
             return self.finish()
         self.is_running = True
-        super(SubelementHighlight, self).Activated(name="Subelement highlight")
+        super().Activated(name="Subelement highlight")
         self.get_selection()
 
     def proceed(self):
         """Continue with the command."""
-        self.remove_view_callback()
+        if self.call:
+            self.view.removeEventCallback("SoEvent", self.call)
         self.get_editable_objects_from_selection()
         if not self.editable_objects:
+            _wrn(translate("draft", "Only Draft lines, wires, and curves can be highlighted"))
             return self.finish()
         self.call = self.view.addEventCallback("SoEvent", self.action)
         self.highlight_editable_objects()
+        self.selection_done = True
+        self.update_hints()
 
     def finish(self):
         """Terminate the operation.
 
         Re-initialize by running __init__ again at the end.
         """
-        super(SubelementHighlight, self).finish()
-        self.remove_view_callback()
+        self.end_callbacks(self.call)
         self.restore_editable_objects_graphics()
+        super().finish()
         self.__init__()
 
     def action(self, event):
@@ -106,41 +118,45 @@ class SubelementHighlight(gui_base_original.Modifier):
         """Get the selection."""
         if not Gui.Selection.getSelection() and self.ui:
             _msg(translate("draft", "Select an object to edit"))
-            self.call = self.view.addEventCallback("SoEvent",
-                                                   gui_tool_utils.selectObject)
+            self.call = self.view.addEventCallback("SoEvent", gui_tool_utils.selectObject)
         else:
             self.proceed()
-
-    def remove_view_callback(self):
-        """Remove the installed callback if it exists."""
-        if self.call:
-            self.view.removeEventCallback("SoEvent", self.call)
 
     def get_editable_objects_from_selection(self):
         """Get editable Draft objects for the selection."""
         for obj in Gui.Selection.getSelection():
-            if obj.isDerivedFrom("Part::Part2DObject"):
+            if obj.isDerivedFrom("Part::Part2DObject") or utils.get_type(obj) in [
+                "BezCurve",
+                "BSpline",
+                "Wire",
+            ]:
                 self.editable_objects.append(obj)
-            elif (hasattr(obj, "Base")
-                  and obj.Base.isDerivedFrom("Part::Part2DObject")):
+            elif getattr(obj, "Base", None) and (
+                obj.Base.isDerivedFrom("Part::Part2DObject")
+                or utils.get_type(obj.Base) in ["BezCurve", "BSpline", "Wire"]
+            ):
                 self.editable_objects.append(obj.Base)
 
     def highlight_editable_objects(self):
         """Highlight editable Draft objects from the selection."""
         for obj in self.editable_objects:
+            vobj = obj.ViewObject
             self.original_view_settings[obj.Name] = {
-                'Visibility': obj.ViewObject.Visibility,
-                'PointSize': obj.ViewObject.PointSize,
-                'PointColor': obj.ViewObject.PointColor,
-                'LineColor': obj.ViewObject.LineColor}
-            obj.ViewObject.Visibility = True
-            obj.ViewObject.PointSize = 10
-            obj.ViewObject.PointColor = (1.0, 0.0, 0.0)
-            obj.ViewObject.LineColor = (1.0, 0.0, 0.0)
-            xray = coin.SoAnnotation()
-            xray.addChild(obj.ViewObject.RootNode.getChild(2).getChild(0))
-            xray.setName("xray")
-            obj.ViewObject.RootNode.addChild(xray)
+                "Visibility": vobj.Visibility,
+                "PointSize": vobj.PointSize,
+                "PointColor": vobj.PointColor,
+                "LineColor": vobj.LineColor,
+            }
+            vobj.Visibility = True
+            vobj.PointSize = 10
+            vobj.PointColor = (1.0, 0.0, 0.0)
+            vobj.LineColor = (1.0, 0.0, 0.0)
+            switch = vobj.SwitchNode
+            if switch is not None:
+                xray = coin.SoAnnotation()
+                xray.addChild(switch.getChild(0))
+                xray.setName("xray")
+                vobj.RootNode.addChild(xray)
 
     def restore_editable_objects_graphics(self):
         """Restore the editable objects' appearance."""
@@ -154,7 +170,16 @@ class SubelementHighlight(gui_base_original.Modifier):
                 # This can occur if objects have had graph changing operations
                 pass
 
+    def get_action_hints(self):
+        return [
+            Gui.InputHint(
+                translate("draft", "%1 run Move, Rotate or Scale on subelements"),
+                Gui.UserInput.MouseLeft,
+            ),
+            Gui.InputHint(translate("draft", "%1 finish"), Gui.UserInput.KeyEscape),
+        ]
 
-Gui.addCommand('Draft_SubelementHighlight', SubelementHighlight())
+
+Gui.addCommand("Draft_SubelementHighlight", SubelementHighlight())
 
 ## @}
