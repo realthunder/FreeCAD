@@ -96,6 +96,23 @@ macro(SetupShibokenAndPyside)
         endif()
     endif()
 
+    # A PySide2 namespace that forwards to PySide6, so that the many
+    # third-party addons written against PySide2 load on a Qt6 build
+    # instead of dying with "No module named 'PySide2'". Generated only
+    # for PySide 6 and newer, so it can never shadow a real PySide2.
+    # Unlike the PySide namespace above it keeps the Qt5 module layout
+    # (QtGui and QtWidgets stay separate) -- see the module docstring.
+    set(FREECAD_PYSIDE2_COMPAT OFF)
+    if(NOT PYSIDE_MAJOR_VERSION LESS 6)
+        set(FREECAD_PYSIDE2_COMPAT ON)
+        file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/Ext/PySide2)
+        configure_file(
+            ${CMAKE_SOURCE_DIR}/src/Ext/PySide2Compat.py
+            ${CMAKE_BINARY_DIR}/Ext/PySide2/__init__.py
+            COPYONLY
+        )
+    endif()
+
     if(APPLE AND NOT BUILD_WITH_CONDA)
         install(
         DIRECTORY
@@ -103,6 +120,14 @@ macro(SetupShibokenAndPyside)
         DESTINATION
             MacOS
         )
+        if(FREECAD_PYSIDE2_COMPAT)
+            install(
+            DIRECTORY
+                ${CMAKE_BINARY_DIR}/Ext/PySide2
+            DESTINATION
+                MacOS
+            )
+        endif()
     else()
         install(
         DIRECTORY
@@ -110,6 +135,14 @@ macro(SetupShibokenAndPyside)
         DESTINATION
             Ext
         )
+        if(FREECAD_PYSIDE2_COMPAT)
+            install(
+            DIRECTORY
+                ${CMAKE_BINARY_DIR}/Ext/PySide2
+            DESTINATION
+                Ext
+            )
+        endif()
     endif()
 
     # If shiboken cannot be found the build option will be set to OFF
