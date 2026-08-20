@@ -63,6 +63,10 @@ class ifc_object:
             self.old_schema = obj.Schema
         elif prop == "Placement":
             self.old_placement = obj.Placement
+        elif prop == "Group":
+            # names, not objects: this outlives the change, and a child
+            # deleted in the meantime would leave a dangling reference here
+            self.old_group = [c.Name for c in obj.Group]
 
     def onChanged(self, obj, prop):
         # link class property to its hidder IfcClass counterpart
@@ -337,6 +341,10 @@ class ifc_object:
             ifcfile = ifc_tools.get_ifcfile(obj)
             if not ifcfile:
                 return
+            # Only the children this change added need assigning. Walking the
+            # whole group on every append is quadratic in the group size, and
+            # each add_to_layer has to interrogate the IFC file.
+            old = set(getattr(self, "old_group", None) or [])
             newlist = []
             for child in obj.Group:
                 if not getattr(child, "StepId", None) or ifc_tools.get_ifcfile(child) != ifcfile:
@@ -349,7 +357,8 @@ class ifc_object:
                 else:
                     # print("DEBUG: adding", child.Label, "to layer", obj.Label)
                     newlist.append(child)
-                    ifc_layers.add_to_layer(child, obj)
+                    if child.Name not in old:
+                        ifc_layers.add_to_layer(child, obj)
             if newlist != obj.Group:
                 obj.Group = newlist
 

@@ -283,7 +283,11 @@ def create_object(ifcentity, document, ifcfile, shapemode=0, objecttype=None):
     FreeCAD.Console.PrintLog(s)
     obj = add_object(document, otype=objecttype)
     add_properties(obj, ifcfile, ifcentity, shapemode=shapemode)
-    ifc_layers.add_layers(obj, ifcentity, ifcfile)
+    if PARAMS.GetBool("LoadLayers", False):
+        # Same gate as the bulk ifc_layers.load_layers() pass in ifc_import.
+        # Ungated, expanding a tree node builds layers nobody asked for, and on
+        # a large file that is the whole cost of the expansion.
+        ifc_layers.add_layers(obj, ifcentity, ifcfile)
     if FreeCAD.GuiUp:
         if (
             ifcentity.is_a("IfcSpace")

@@ -101,6 +101,20 @@ def add_layers(obj, element=None, ifcfile=None, proj=None):
             lay.Proxy.addObject(lay, obj)
 
 
+def is_assigned(element, layer_element, ifcfile):
+    """Returns True if the file already puts this element on this layer.
+
+    IFC keeps layer membership on the representation items, not on the
+    product, so an element loaded from file is never listed in the layer's
+    AssignedItems even though it belongs to it. Writing it there anyway costs
+    an API write per object -- which on a large file marks a freshly opened
+    document as modified, and invalidates IfcOpenShell's inverse index, so
+    every later inverse lookup rescans the file.
+    """
+
+    return layer_element in ifcopenshell.util.element.get_layers(ifcfile, element)
+
+
 def add_to_layer(obj, layer):
     """Adds the given object to the given layer"""
 
@@ -124,7 +138,7 @@ def add_to_layer(obj, layer):
     items = ()
     if layer_element.AssignedItems:
         items = layer_element.AssignedItems
-    if not obj_element in items:
+    if not obj_element in items and not is_assigned(obj_element, layer_element, ifcfile):
         cmd = "attribute.edit_attributes"
         attribs = {"AssignedItems": items + (obj_element,)}
         ifc_tools.api_run(cmd, ifcfile, product=layer_element, attributes=attribs)
