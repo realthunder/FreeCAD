@@ -124,9 +124,16 @@ class IfcRoot:
         if prop == "IfcType":
             self.setupIfcAttributes(obj)
             self.setupIfcComplexAttributes(obj)
-        if prop in obj.PropertiesList:
-            if obj.getGroupOfProperty(prop) == "IFC Attributes":
-                self.setObjIfcAttributeValue(obj, prop, obj.getPropertyByName(prop))
+        # getGroupOfProperty raises for a property the object does not have,
+        # which is the question `prop in obj.PropertiesList` was asking -- but
+        # that rebuilt the entire property list, and this runs on every
+        # property change of every object.
+        try:
+            group = obj.getGroupOfProperty(prop)
+        except AttributeError:
+            return
+        if group == "IFC Attributes":
+            self.setObjIfcAttributeValue(obj, prop, obj.getPropertyByName(prop))
 
     def setupIfcAttributes(self, obj):
         """Set up the IFC attributes in the object's properties.
@@ -294,9 +301,12 @@ class IfcRoot:
             The schema of the IFC type.
         """
 
+        # one property list for the whole schema, kept up to date as
+        # attributes are added, rather than one per attribute
+        properties = set(obj.PropertiesList)
         for attribute in ifcTypeSchema["attributes"]:
             if (
-                attribute["name"] in obj.PropertiesList
+                attribute["name"] in properties
                 or attribute["name"] == "RefLatitude"
                 or attribute["name"] == "RefLongitude"
                 or attribute["name"] == "Name"
@@ -304,6 +314,7 @@ class IfcRoot:
                 continue
             self.addIfcAttribute(obj, attribute)
             self.addIfcAttributeValueExpressions(obj, attribute)
+            properties.add(attribute["name"])
 
     def addIfcAttribute(self, obj, attribute):
         """Add an IFC type's attribute to the object, within its properties.

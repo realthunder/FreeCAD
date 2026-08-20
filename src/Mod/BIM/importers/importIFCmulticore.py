@@ -45,6 +45,8 @@ objects = {}  # ifcid : Arch_Component
 subs = {}  # host_ifcid: [child_ifcid,...]
 adds = {}  # host_ifcid: [child_ifcid,...]
 colors = {}  # objname : (r,g,b)
+settableattributes = {}  # (ifc entity type, ifc type) : [attribute name,...]
+layermembers = {}  # ifcid : [Arch_Component,...] waiting to be put in the layer
 
 
 def open(filename):
@@ -65,11 +67,17 @@ def insert(filename, docname=None, preferences=None):
     global objects
     global adds
     global subs
+    global settableattributes
+    global layermembers
     layers = {}
     materials = {}
     objects = {}
     adds = {}
     subs = {}
+    layermembers = {}
+    # the attribute cache is keyed on entity type, which only means the same
+    # thing within one schema
+    settableattributes = {}
 
     # statistics
     starttime = time.time()  # in seconds
@@ -121,6 +129,7 @@ def insert(filename, docname=None, preferences=None):
             )
 
     # post-processing
+    applyLayers()
     processRelationships()
     storeColorDict()
 
@@ -187,14 +196,32 @@ def setAttributes(obj, ifcproduct):
         obj.Label = ifcproduct.Name
     if ifctype in ArchIFC.IfcTypes:
         obj.IfcType = ifctype
-    for attr in dir(ifcproduct):
-        if attr in obj.PropertiesList:
-            value = getattr(ifcproduct, attr)
-            if value:
-                try:
-                    setattr(obj, attr, value)
-                except Exception:
-                    pass
+    for attr in getSettableAttributes(obj, ifcproduct, ifctype):
+        value = getattr(ifcproduct, attr)
+        if value:
+            try:
+                setattr(obj, attr, value)
+            except Exception:
+                pass
+
+
+def getSettableAttributes(obj, ifcproduct, ifctype):
+    """returns the IFC attribute names this object has a matching property for
+
+    Both halves of that question are settled by the entity type and the IFC
+    type alone, so the answer is memoised: dir() rebuilds the entity's
+    attribute list and PropertiesList rebuilds the object's property list, and
+    asking for the second one inside a loop over the first rebuilt it once per
+    attribute per product.
+    """
+
+    key = (ifcproduct.is_a(), ifctype)
+    attrs = settableattributes.get(key)
+    if attrs is None:
+        properties = set(obj.PropertiesList)
+        attrs = [attr for attr in dir(ifcproduct) if attr in properties]
+        settableattributes[key] = attrs
+    return attrs
 
 
 def setProperties(obj, ifcproduct):
@@ -224,16 +251,41 @@ def setColor(obj, ifcproduct):
 
 
 def createLayer(obj, ifcproduct):
-    """sets the layer of a component"""
+    """queues a component for its layers -- applyLayers() does the assigning"""
 
     global layers
+    global layermembers
 
     if ifcproduct.Representation:
         for rep in ifcproduct.Representation.Representations:
             for layer in rep.LayerAssignments:
                 if not layer.id() in layers:
                     layers[layer.id()] = Draft.make_layer(layer.Name)
-                layers[layer.id()].Proxy.addObject(layers[layer.id()], obj)
+                layermembers.setdefault(layer.id(), []).append(obj)
+
+
+def applyLayers():
+    """puts the queued components in their layers, one assignment per layer
+
+    Adding one child means writing the whole Group property back, and the
+    Layer's own onChanged then walks that group. Doing that per child costs
+    the square of the layer's size, and an IFC model puts thousands of
+    objects in a single layer.
+    """
+
+    global layers
+    global layermembers
+
+    for layerid, members in layermembers.items():
+        layer = layers[layerid]
+        group = layer.Group
+        names = {o.Name for o in group}
+        for member in members:
+            if member.Name not in names:
+                names.add(member.Name)
+                group.append(member)
+        layer.Group = group
+    layermembers = {}
 
 
 def createMaterial(obj, ifcproduct):

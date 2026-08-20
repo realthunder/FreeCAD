@@ -5234,12 +5234,18 @@ std::string Document::getUniqueObjectName(const char *Name) const
             }
         }
 
-        std::vector<std::string> names;
-        names.reserve(d->objectMap.size());
-        for (pos = d->objectMap.begin();pos != d->objectMap.end();++pos) {
-            names.push_back(pos->first);
-        }
-        return Base::Tools::getUniqueName(CleanName, names, 3);
+        // Hand the names over one at a time. Copying them into a vector
+        // first is the whole cost of this call once a document holds
+        // thousands of objects, and every one of those adds pays it: an
+        // import of 13636 IFC products, all of them named 'Component', spent
+        // most of addObject() here.
+        auto it = d->objectMap.begin();
+        auto next = [&]() -> const char * {
+            if (it == d->objectMap.end())
+                return nullptr;
+            return (it++)->first.c_str();
+        };
+        return Base::Tools::getUniqueName(CleanName, next, 3);
     }
 }
 

@@ -360,6 +360,16 @@ struct BaseExport Tools
 {
     static std::string
     getUniqueName(const std::string&, const std::vector<std::string>&, int d = 0);
+    /** getUniqueName over names handed out one at a time
+     *
+     * \a next returns the next name in use, or nullptr once there are none
+     * left. A caller that already holds those names elsewhere -- a document
+     * holds a label per object -- would otherwise have to copy every one of
+     * them into a vector first, and with thousands of them that copy is the
+     * whole cost of the call.
+     */
+    static std::string
+    getUniqueName(const std::string&, const std::function<const char*()>& next, int d = 0);
     static std::string addNumber(const std::string&, unsigned int, int d = 0);
     static std::string getIdentifier(const std::string&);
 
