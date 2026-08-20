@@ -140,6 +140,7 @@ def get_options(strategy=None, shapemode=None, switchwb=None, silent=False):
     types = PARAMS.GetBool("LoadTypes", False)
     materials = PARAMS.GetBool("LoadMaterials", False)
     layers = PARAMS.GetBool("LoadLayers", False)
+    orphans = PARAMS.GetBool("LoadOrphans", True)
     singledoc = PARAMS.GetBool("SingleDoc", False)
     if strategy is None:
         strategy = PARAMS.GetInt("ImportStrategy", 0)
@@ -163,6 +164,7 @@ def get_options(strategy=None, shapemode=None, switchwb=None, silent=False):
         dlg.checkLoadTypes.setChecked(types)
         dlg.checkLoadMaterials.setChecked(materials)
         dlg.checkLoadLayers.setChecked(layers)
+        dlg.checkLoadOrphans.setChecked(orphans)
         dlg.comboSingleDoc.setCurrentIndex(1 - int(singledoc))
 
         from PySide import QtCore, QtGui
@@ -181,6 +183,7 @@ def get_options(strategy=None, shapemode=None, switchwb=None, silent=False):
         types = dlg.checkLoadTypes.isChecked()
         materials = dlg.checkLoadMaterials.isChecked()
         layers = dlg.checkLoadLayers.isChecked()
+        orphans = dlg.checkLoadOrphans.isChecked()
         singledoc = dlg.comboSingleDoc.currentIndex()
         PARAMS.SetInt("ImportStrategy", strategy)
         PARAMS.SetInt("ShapeMode", shapemode)
@@ -190,6 +193,7 @@ def get_options(strategy=None, shapemode=None, switchwb=None, silent=False):
         PARAMS.SetBool("LoadTypes", types)
         PARAMS.SetBool("LoadMaterials", materials)
         PARAMS.SetBool("LoadLayers", layers)
+        PARAMS.SetBool("LoadOrphans", orphans)
         PARAMS.SetBool("SingleDoc", bool(1 - singledoc))
     return strategy, shapemode, switchwb
 

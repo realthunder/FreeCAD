@@ -154,6 +154,19 @@
     </widget>
    </item>
    <item>
+    <widget class="QCheckBox" name="checkLoadOrphans">
+     <property name="toolTip">
+      <string>Load objects that no spatial container refers to. On a file with many such objects this can dominate the import, and they can be loaded later from the project's context menu.</string>
+     </property>
+     <property name="text">
+      <string>Load orphan objects</string>
+     </property>
+     <property name="checked">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QCheckBox" name="checkAskAgain">
      <property name="toolTip">
       <string>If this is unchecked, these settings will be applied automatically next time. This can be changed later under menu Edit -&gt; Preferences -&gt; BIM -&gt; Native IFC</string>
