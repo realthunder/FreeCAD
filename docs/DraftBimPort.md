@@ -191,14 +191,19 @@ attribute names onto the PySide wrapper. A new `add_varargs_method` is
 invisible from Python until its name is in that list --
 `Gui.getMainWindow()` just returns a plain `QMainWindow`.
 
-### Test standing 2026-08-20, after closing caveats 1 and 2
+### Test standing 2026-08-20, all three caveats closed
 
 | suite | tests | failing |
 | --- | --- | --- |
-| `TestDraft` | 82 | 1 |
+| `TestDraft` | 82 | **0** |
 | `TestDraftGui` | 38 | **0** |
-| `TestArch` | 280 | 3 |
+| `TestArch` | 280 | **0** |
 | `TestArchGui` | 41 | **0** |
+
+`TestArch` carries one declared expected failure. `Document` (110/9),
+`TestSpreadsheet` (51/2), `TestPartApp` (75/1) and `TestPartGui` (4/3)
+sit at their pre-existing baselines, each re-checked by reverting and
+rebuilding.
 
 `TestArchGui` was a registered suite the plan never gated, and it is now
 green. Its three failures were a MeshPart silently switched off at
@@ -212,21 +217,62 @@ template trees (`6bd3bfde0c`) took three across all three
 suites; trimming a DOS EOF marker from a `.pat` file took one; and
 stable schema names from `listSchemas()` (`959a47a508`) took one.
 
-Two gaps remain, and both were mis-filed in the earlier list:
+The gaps that remained were all mis-filed, and none of them turned out
+to live in ported code.
 
-- **The Arch Report writes no spreadsheet cells**, which is what both
-  remaining `TestArchReport` failures actually are -- not an MKS unit
-  schema, and not two separate problems. The generated SQL parser does
-  reach the build tree and imports; diagnosis was still open when this
-  was paused.
-- **`test_read_dxf_Issue24314` is not a pending-exception bug.** The
-  import produces the shape but no Layers container: this fork's C++ DXF
-  importer reads a `groupLayers` preference, while the test and upstream
-  use `dxfUseDraftVisGroups` and build the layers through
-  `Draft.make_layer`. That importer is ~4000 lines diverged and wants a
-  transplant. The genuine pending-exception hole upstream also fixes --
-  `Draft.make_text()` and `Draft.make_linear_dimension()` leaving an
-  error set -- is fixed regardless.
+**The Arch Report wrote no spreadsheet cells** -- both remaining
+`TestArchReport` failures, and neither an MKS unit schema nor a BIM bug.
+Two fork gaps in the layers underneath. `Sheet.getUsedRange()` returned
+`('@0', '@0')` for an empty sheet, because `extractRange()` over no cells
+stringifies a default-constructed, invalid `CellAddress`; `execute()`
+tests `if used_range:`, so a truthy tuple sent `'@'` to
+`getColumnWidth()`, raised "Invalid cell specifier" and aborted the
+recompute before writing anything. Upstream returns None, and now so
+does this fork (`110558aa74`). Separately,
+`DocumentObject.isAttachedToDocument()` existed in C++ and was used
+across App but had never been declared in `DocumentObjectPy.xml`, so the
+report's document observer raised an `AttributeError` on every recompute
+(`38703b330a`).
+
+**`testMakeProjectedHorizontalAreaFace`** was still live and the earlier
+list had dropped it. The transplanted `ArchComponent.py` had had
+upstream's `noElementMap=True` arguments stripped, because this fork's
+Part API had no such keyword, so the transient analysis face kept the
+naming of the faces it was built from. `77974e204b` ports the API rather
+than leaving the call site mangled: `TopoShape::dropElementNaming()` --
+map, tag and hasher, upstream's semantics -- and a keyword-only
+`noElementMap` on `copy()`, `fuse()` and `multiFuse()`. The flag is
+pulled out of the keyword dict before the positional parse, so every
+existing call form is untouched.
+
+**`test_read_dxf_Issue24314` wanted the DXF importer transplanted**, and
+measuring first inverted the cost estimate. The ~4000 lines are entirely
+upstream moving ahead: this fork's own footprint in
+`src/Mod/Import/{App,Gui}/dxf` was three OCCT 8.0.1 include lines.
+Everything else it carried there has since been absorbed upstream --
+last session's pending-exception clearing, and the code page fix, whose
+`ResolveEncoding` now clears the Python `LookupError` explicitly and adds
+an `8859_1` mapping this fork lacked. `importDXF.py` was already
+byte-identical to upstream from the Draft port, so the Python side was
+calling for this importer already. All six files came across verbatim
+(`00f4235d1f`); the fork delta is 16 lines of API spelling, since
+`ReportException()` and `Base::Console()` keep their capitals here and
+`Base::Exception`'s constructor is protected, so the throws name
+`Base::RuntimeError`. `e2c1d5f09e` adds upstream's
+`Document::addObject<T>()` so thirteen call sites needed no edit.
+
+DXF coverage is two tests, which is not evidence for a 4000-line swap.
+The check that is: stash the transplant, rebuild `Import.so`, and import
+the same files with the old importer. Geometry came out identical -- 99
+and 85 shapes, 198 and 170 vertexes on every `Drawing/Templates/*.dxf`.
+The only difference is the Layers container and Draft Layer objects the
+new importer builds under `dxfUseDraftVisGroups`, where the old one read
+a `groupLayers` preference and merged shapes into a compound instead.
+
+WARNING: a transplant adds thousands of lines, so the ASCII hook's
+added-lines-only rule does not protect it -- `dxf.cpp` carries three
+comment lines with a multiplication sign. Commit with
+`NO_STRIP_NONASCII=1`, or every future re-sync shows a spurious diff.
 
 Also found and fixed along the way: **DraftUtils.so had not been built
 since the Draft transplant** (`e9afa724c0`). Upstream's CMakeLists
