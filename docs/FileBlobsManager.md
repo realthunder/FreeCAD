@@ -95,6 +95,36 @@ that does not know the format refuses it outright instead of half-reading it.
 The blob table is unchanged by the merge -- the gate still reads `>= 5`; it now
 means "the fork format" rather than claiming to mean something weaker.
 
+### 3.1 What the user is asked, and when
+
+The format is chosen in the save dialog (`Gui::Document::saveAs`), and since
+2026-08-20 a **never-saved document opens that dialog on compact**
+(`PreferCompactFormat` defaults to true). Two message boxes state what the
+choice costs, both raised after the file name is in so that neither is a
+heading nobody reads:
+
+| prompt | fires when | offers |
+|---|---|---|
+| `confirmCompactFormat()` | the save resolves to schema 5 | Save compact / Use standard format / Cancel, plus **Do not warn again** (`WarnCompactFormat`, default true) |
+| `confirmSchemaUpgrade()` | the save resolves to schema 4 **and** the document holds content only the store carries | Use compact format / Save anyway / Cancel, plus do-not-ask-again for that document (session only) |
+
+The second one also runs on the **plain Save** path, which is the case that
+made it necessary: plain Save never touches `SaveSchemaVersion`, so a document
+saved once at 4 and given a texture afterwards would drop the image on every
+save without a word.
+
+What "content only the store carries" means is answered by the property, not
+by the caller: `App::BlobReferrerProperty::blobContentNeedsStore()` is **false
+by default**, because most referrers have a schema 4 spelling that keeps the
+data -- `PropertyFileIncluded` writes its own copy of the file, a shape
+property writes the shape the old way and forfeits sharing rather than
+content. `PropertyMaterialList` overrides it with `hasTexture()`: the maps
+themselves ride a companion element below 5 (`docs/ShapeAppearanceDesign.md`
+10.5), the bytes behind them live in the store and nowhere else. A new
+referrer with the same problem overrides the same hook and both prompts pick
+it up; `Gui::Document`'s scan walks the document, its objects and their view
+providers and asks nothing else.
+
 The gate is `Base::Writer::getSchemaVersion()`, which only the document-level
 save paths set. Anything serializing a property standalone (§9) leaves it unset
 and keeps the self-contained form, which still round-trips.

@@ -533,15 +533,46 @@ predate it".
 
 **Schema is an outcome, chosen per document (req 3).** The
 `SaveSchemaVersion` property is the user's cap, **default 4** -- a fresh
-document is readable everywhere until someone decides otherwise, and
-now that is true rather than nearly true: at 4 nothing of this fork's
-format is written, included files included. The
-one place to decide is the save dialog: a format row (standard/compact)
-preselected from the document's own cap (or, for a never-saved document,
-the `PreferCompactFormat` parameter holding the last choice made there),
-with a red, bold, title-sized warning that stays on screen for as long
-as compact is selected — deselected, never dismissed. Plain Save keeps
-whatever the document decided. Each save then *resolves* the cap:
+document restored or written by a script is readable everywhere until
+someone decides otherwise, and now that is true rather than nearly
+true: at 4 nothing of this fork's format is written, included files
+included. The one place to decide is the save dialog: a format row
+(standard/compact) preselected from the document's own cap, or, for a
+never-saved document, from the `PreferCompactFormat` parameter holding
+the last choice made there.
+
+**A document saved from the GUI for the first time defaults to compact**
+(2026-08-20): `PreferCompactFormat` defaults to *true*, so this fork's
+own format is what this fork writes, and the cost is stated rather than
+implied. The property default stays 4 -- what changes is the dialog's
+opening position, not what a scripted or headless save produces.
+
+**Two prompts carry what the format costs**, both in `Gui::Document`,
+both after the file name is in:
+
+- `confirmCompactFormat()` -- fires when a save resolves to compact and
+  says outright that no other FreeCAD will open the file, with
+  *Save compact* / *Use standard format* / *Cancel* and a
+  **Do not warn again** checkbox (parameter `WarnCompactFormat`,
+  default true). This replaced a red, bold, title-sized label inside the
+  file dialog that appeared and disappeared with the radio button: a
+  heading that flickers is not a warning, and with compact now
+  preselected nobody would ever have toggled it into view.
+- `confirmSchemaUpgrade()` -- fires when a save resolves to **standard**
+  and the document holds content only the store can carry, offering
+  *Use compact format* / *Save anyway* / *Cancel*. It runs on the plain
+  Save path too, which is the case that matters: a document saved once
+  at 4 and given a texture afterwards never opens the dialog again.
+  "Save anyway" is remembered for that document for the session.
+
+The scan behind the second one asks the properties, not the appearance:
+`App::BlobReferrerProperty::blobContentNeedsStore()` is false by default
+-- `PropertyFileIncluded` writes its own copy below 5, a shape property
+writes the shape the old way and forfeits sharing rather than data --
+and `PropertyMaterialList` overrides it with `hasTexture()`, being the
+one referrer whose content has no schema 4 spelling. Plain Save keeps
+whatever the document decided otherwise. Each save then *resolves* the
+cap:
 
 | configuration | outcome |
 |---|---|
