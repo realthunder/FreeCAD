@@ -21,6 +21,8 @@ Env:   AP_DOC    save path (default data/examples/render/appearance-chart.FCStd)
        AP_EXPOSURE  frame exposure (default 1.0; an HDR environment wants
                  well under one)
        AP_ENVINT tune the environment lighting brightness (default 1.0)
+       AP_ENVPRESET  built-in environment: Studio, Gradient, Overcast,
+                 Sunset or Interior (default leaves the preference alone)
        AP_AO     "1" = ambient occlusion on (default follows the preference)
        AP_EXIT   "1" = exit after save/shot (for scripted runs)
 """
@@ -50,6 +52,7 @@ ENV = os.environ.get("AP_ENV", "")
 EXPOSURE = float(os.environ.get("AP_EXPOSURE", "1.0"))
 ENVINT = float(os.environ.get("AP_ENVINT", "1.0"))
 AO = os.environ.get("AP_AO", "")
+ENVPRESET = os.environ.get("AP_ENVPRESET", "")
 EXIT = os.environ.get("AP_EXIT", "") == "1"
 
 COLS = 5
@@ -121,6 +124,10 @@ def build():
             sph.Radius = RADIUS
             sph.Placement.Base = FreeCAD.Vector(x, 0, z)
             vo = sph.ViewObject
+            # Shaded, not Flat Lines: edges and vertices are not the
+            # subject here and their dark outline eats the silhouette
+            # the material is being judged on.
+            vo.DisplayMode = "Shaded"
             # ShapeColor and the appearance's diffuse are the same
             # channel; set the colour first so the material assignment
             # below is what survives.
@@ -150,6 +157,7 @@ def build():
         slab.Placement.Base = FreeCAD.Vector(
             -RADIUS - SLAB_OVERHANG, -2 * RADIUS, -3 * RADIUS)
         svo = slab.ViewObject
+        svo.DisplayMode = "Shaded"
         svo.ShapeColor = (0.35, 0.35, 0.36)
         smat = svo.ShapeAppearance[0]
         smat.DiffuseColor = (0.35, 0.35, 0.36)
@@ -168,6 +176,8 @@ def build():
         if ENV:
             view.addProperty("App::PropertyFile", "Render_PBREnvImage")
             view.Render_PBREnvImage = ENV
+        if ENVPRESET:
+            view.Render_PBREnvPreset = ENVPRESET
         view.addProperty("App::PropertyFloat", "Render_Exposure")
         view.Render_Exposure = EXPOSURE
         view.addProperty("App::PropertyFloat", "Render_PBREnvIntensity")
