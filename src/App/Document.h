@@ -371,6 +371,13 @@ public:
      */
     DocumentObject *addObject(const char* sType, const char* pObjectName=nullptr,
             bool isNew=true, const char *viewType=nullptr, bool isPartial=false);
+    /** Add a feature of the given type, named by the type itself.
+     * Same as the string overload above, but the return is already the
+     * concrete type, so a call site needs no cast.
+     */
+    template<typename T>
+    T *addObject(const char* pObjectName=nullptr,
+            bool isNew=true, const char *viewType=nullptr, bool isPartial=false);
     /** Add an array of features of the given types and names.
      * Unicode names are set through the Label property.
      * @param sType       The type of created object
@@ -891,6 +898,15 @@ inline std::vector<T*> Document::getObjectsOfType() const
     return type;
 }
 
+
+template<typename T>
+T *Document::addObject(const char* pObjectName, bool isNew, const char *viewType, bool isPartial)
+{
+    static_assert(std::is_base_of<DocumentObject, T>::value,
+                  "T must be derived from DocumentObject");
+    return static_cast<T*>(addObject(T::getClassTypeId().getName(), pObjectName, isNew,
+                                     viewType, isPartial));
+}
 
 } //namespace App
 
