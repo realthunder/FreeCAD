@@ -1060,6 +1060,23 @@ struct LightConfig {
     bool sunDisc = false;
     float sunDiscSize = 1.5f;  ///< angular radius in degrees
 
+    /// A fully transparent ground is not an absent one: it carries the
+    /// shadow and nothing else, transparent wherever the scene light
+    /// reaches it. That is Coin's TRANSPARENT_SHADOWED style, which
+    /// RenderShadow_GroundTransparency = 1 selected there too -- and
+    /// what a receiver is usually wanted for, since a solid plane puts
+    /// a horizon in a view of a part.
+    ///
+    /// The quad is the same one either way, depth included, so a
+    /// ground reflection still lands on it: what changes is only that
+    /// the plane itself is not painted.
+    ///
+    /// RenderShadow_ShowGround is what says there is no ground at all.
+    bool groundShadowOnly() const
+    {
+        return groundTransparency >= 1.0f;
+    }
+
     /// The ground quad's four corners in world space, wound as Coin
     /// builds them (-x-y, +x-y, +x+y, -x+y). False when there is no
     /// ground to draw, so a caller can use it as its own gate.
@@ -1082,8 +1099,7 @@ struct LightConfig {
     bool groundQuad(const float *bmin, const float *bmax,
                     float corners[4][3], float *halfOut = nullptr) const
     {
-        if (!valid || !(ground || groundReflection)
-                || groundTransparency >= 1.0f)
+        if (!valid || !(ground || groundReflection))
             return false;
         float hx, hy;
         if (groundAuto) {

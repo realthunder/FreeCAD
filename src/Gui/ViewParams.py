@@ -345,10 +345,19 @@ Params = [
        "Specifies the physcal length of the ground texture image size.\n"
        "Texture mappings beyond this size will be wrapped around",
        title='Ground texture size', proxy=ParamSpinBox(0.0, 1e7, 10.0)),
-    ParamFloat('ShadowGroundTransparency',  0.0,
-       "Specifics the ground transparency. When set to 0, the non-shadowed part\n"
-       "of the ground will be complete transparent, showing only the shadowed part\n"
-       "of the ground with some transparency.",
+    ParamFloat('ShadowGroundTransparency',  1.0,
+       "How much of the shadow receiver plane is drawn beside the shadow\n"
+       "itself.\n"
+       "\n"
+       "1 (the default) is the receiver a view of a part usually wants: the\n"
+       "ground carries the shadow and nothing else, so there is no plane in\n"
+       "the frame and no horizon behind the model -- only the shadow, at a\n"
+       "fixed 0.8 opacity where it is fully dark. Anything below 1 draws a\n"
+       "solid ground of that transparency and shades it, which is what a\n"
+       "presentation image of a whole scene wants.\n"
+       "\n"
+       "A ground reflection needs a surface to blend onto, so it keeps the\n"
+       "solid ground whatever this says.",
        title='Ground transparency', proxy=ParamSpinBox(0.0, 1.0, 0.1)),
     ParamBool('ShadowGroundShading',  True,
         "Render ground with shading. If disabled, the ground and the shadow casted\n"

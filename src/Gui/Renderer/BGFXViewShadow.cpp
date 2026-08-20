@@ -33,6 +33,14 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     float halfExtent[2];
     if (!light.groundQuad(bmin, bmax, corners, halfExtent))
         return;
+    // A fully transparent ground carries the shadow and nothing else
+    // (Coin's TRANSPARENT_SHADOWED). Nothing below changes for it
+    // except which program paints the fragments: same quad, same
+    // depth, same winding -- so a ground reflection still lines up
+    // with it, and the texture rows simply have nothing to modulate.
+    const bool shadowOnly = light.groundShadowOnly();
+    if (shadowOnly && !bgfx::isValid(m_progGroundShadow))
+        return;
     uint32_t colorPacked = light.groundColor;
 
     TransientVertex::init();
@@ -59,7 +67,11 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     // Ground transparency (ShadowGroundTransparency): plain alpha
     // blend over whatever lies behind in the depth order (the
     // background; the quad still writes depth like Coin's ground).
-    color[3] = 1.0f - light.groundTransparency;
+    // A shadow-only ground spends the alpha slot differently: it is
+    // how dark the shadow itself lands, since the lit ground is not
+    // drawn at all. 0.8 is Coin's, whose SoShadowTransparency
+    // defaulted to 0.2 and which FreeCAD never overrode.
+    color[3] = shadowOnly ? 0.8f : 1.0f - light.groundTransparency;
     // Lighting and sidedness are the ground's own properties
     // (ShadowGroundShading, ShadowGroundBackFaceCull), which Coin
     // states as an SoLightModel and an SoShapeHints above the quad
@@ -133,7 +145,10 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     // textured program with the same tiled UVs (white color
     // stand-in when there is no ground texture, the scene's
     // lone-bump-map pattern).
-    bool textured = (light.groundTexture || light.groundBumpMap)
+    // A shadow-only ground has no lit surface to paint, so a ground
+    // texture or bump map has nothing to modulate.
+    bool textured = !shadowOnly
+        && (light.groundTexture || light.groundBumpMap)
         && bgfx::isValid(m_progMeshTex);
     bgfx::TransientVertexBuffer uvb;
     if (textured) {
@@ -217,14 +232,17 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
         state |= BGFX_STATE_BLEND_ALPHA;
     bgfx::setState(state);
     bgfx::submit(vid(ViewOpaque),
-                 textured ? m_progMeshTex : m_progMesh);
+                 shadowOnly ? m_progGroundShadow
+                            : (textured ? m_progMeshTex : m_progMesh));
     ++drawcount;
 
     // The volumetric raymarch ends rays at the prepass depth, so the
     // ground must be a prepass source too or shafts would continue
     // through it (SSAO alone keeps the ground out of the prepass —
-    // it neither receives nor casts AO, preserved behavior).
-    if (prepass && bgfx::isValid(m_progPrepass)) {
+    // it neither receives nor casts AO, preserved behavior). A
+    // shadow-only ground is not a surface: a shaft SHOULD carry on
+    // through where there is nothing to stop it.
+    if (prepass && !shadowOnly && bgfx::isValid(m_progPrepass)) {
         bgfx::setTransform(identity);
         bgfx::setVertexBuffer(0, &tvb);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A

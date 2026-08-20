@@ -441,7 +441,7 @@ public:
         funcs["ShadowGroundTexture"] = &ViewParamsP::updateShadowGroundTexture;
         ShadowGroundTextureSize = this->handle->GetFloat("ShadowGroundTextureSize", 100.0);
         funcs["ShadowGroundTextureSize"] = &ViewParamsP::updateShadowGroundTextureSize;
-        ShadowGroundTransparency = this->handle->GetFloat("ShadowGroundTransparency", 0.0);
+        ShadowGroundTransparency = this->handle->GetFloat("ShadowGroundTransparency", 1.0);
         funcs["ShadowGroundTransparency"] = &ViewParamsP::updateShadowGroundTransparency;
         ShadowGroundShading = this->handle->GetBool("ShadowGroundShading", true);
         funcs["ShadowGroundShading"] = &ViewParamsP::updateShadowGroundShading;
@@ -1031,7 +1031,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateShadowGroundTransparency(ViewParamsP *self) {
-        self->ShadowGroundTransparency = self->handle->GetFloat("ShadowGroundTransparency", 0.0);
+        self->ShadowGroundTransparency = self->handle->GetFloat("ShadowGroundTransparency", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateShadowGroundShading(ViewParamsP *self) {
@@ -4128,9 +4128,18 @@ void ViewParams::removeShadowGroundTextureSize() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docShadowGroundTransparency() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Specifics the ground transparency. When set to 0, the non-shadowed part\n"
-"of the ground will be complete transparent, showing only the shadowed part\n"
-"of the ground with some transparency.");
+"How much of the shadow receiver plane is drawn beside the shadow\n"
+"itself.\n"
+"\n"
+"1 (the default) is the receiver a view of a part usually wants: the\n"
+"ground carries the shadow and nothing else, so there is no plane in\n"
+"the frame and no horizon behind the model -- only the shadow, at a\n"
+"fixed 0.8 opacity where it is fully dark. Anything below 1 draws a\n"
+"solid ground of that transparency and shades it, which is what a\n"
+"presentation image of a whole scene wants.\n"
+"\n"
+"A ground reflection needs a surface to blend onto, so it keeps the\n"
+"solid ground whatever this says.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -4140,7 +4149,7 @@ const double & ViewParams::getShadowGroundTransparency() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const double & ViewParams::defaultShadowGroundTransparency() {
-    const static double def = 0.0;
+    const static double def = 1.0;
     return def;
 }
 
@@ -6420,7 +6429,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:603)
+// Auto generated code (Gui/ViewParams.py:612)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6465,7 +6474,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:611)
+// Auto generated code (Gui/ViewParams.py:620)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6478,7 +6487,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:621)
+// Auto generated code (Gui/ViewParams.py:630)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -6491,13 +6500,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:631)
+// Auto generated code (Gui/ViewParams.py:640)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:638)
+// Auto generated code (Gui/ViewParams.py:647)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -6505,7 +6514,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:647)
+// Auto generated code (Gui/ViewParams.py:656)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6517,7 +6526,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:660)
+// Auto generated code (Gui/ViewParams.py:669)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)

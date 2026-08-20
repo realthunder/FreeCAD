@@ -1332,6 +1332,10 @@ void BGFXView::init(bool keepShared)
     // and uniforms are built here.
     ensureProgram(m_progReflMedia, "vs_fc_comp", "fs_fc_refl_media");
     ensureProgram(m_progGroundRefl, "vs_fc_mesh", "fs_fc_groundrefl");
+    // The shadow-only ground rides the same vertex program as both
+    // of the above, for the same reason: one quad, one depth.
+    ensureProgram(m_progGroundShadow, "vs_fc_mesh",
+                  "fs_fc_groundshadow");
     ensureUniform(u_reflParams, "u_reflParams", bgfx::UniformType::Vec4);
 
     // Stateful particle resources (docs/RenderEngine.md §5.8).

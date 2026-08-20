@@ -4377,6 +4377,7 @@ public:
         fn(m_progWater, LifeProgram);
         fn(m_progGlass, LifeProgram);
         fn(m_progGroundRefl, LifeProgram);
+        fn(m_progGroundShadow, LifeProgram);
         // Shadow resources: the framebuffers before their textures.
         fn(shadowFbo, LifeSized);
         fn(shadowBlurFbo, LifeSized);
@@ -6581,6 +6582,9 @@ public:
     bgfx::ProgramHandle m_progWaterCopy = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progWater = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progGroundRefl = BGFX_INVALID_HANDLE;
+    /// Shadow-only ground (LightConfig::groundShadowOnly): the same
+    /// quad as the solid one, painting the shadow alone.
+    bgfx::ProgramHandle m_progGroundShadow = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texScene = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texRefl = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_waterSurf = BGFX_INVALID_HANDLE;
