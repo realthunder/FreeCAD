@@ -160,6 +160,53 @@ now an `AreaCalculator` class with `Part.OCCError` handling, the
 `MaxComputeAreas` guard and an explicit workaround for TechDraw's "crazy
 edges" (longer than 9999.9 mm).
 
+## Status (2026-08-20)
+
+Stages 0 to 3 are done and committed on `LinkVibe`. Stage 4 has not
+started.
+
+| stage | commit | gate |
+| --- | --- | --- |
+| 0 AreaCalculator | `a96bf81a40` | King parametric import, 1300 s cap: `Part.Wire` failures 398 -> 0, total 993 -> 536 |
+| 1 `Gui.UserInput` (shimmed) | `c160feaae7` | upstream Draft modules importing 174/222 -> 220/222 |
+| 2 Draft transplant | `9ea92ae952` | `TestDraft` 82 tests / 5 failing (was 67 / 1), `TestDraftGui` 38 / 1 |
+| 3 Arch -> BIM | `82a8a4478d` | `TestArch` 280 tests / 7 failing; King import 473 objects, 298 solids, 8.7 s against 9.1 s |
+
+Supporting commits: `087a4d01a4` (task panel buttons as a PySide6 enum),
+`6df7f94a36` and `d763bd8ee5` (`addProperty` keywords on the view
+provider and the document), `21df0beab6` (`freecad.deprecation`),
+`d5989ce60f` (`create_pip_call`).
+
+### What the remaining test failures want, none of it in ported code
+
+- `App::Document.settings()` -- per-document settings, a whole
+  DocumentSettings class. Three Draft grid tests. Grid parameters fall
+  back to preferences meanwhile.
+- TechDraw templates under `Templates/ISO/`, and its pattern parser
+  ignoring a DOS EOF marker. Three tests across both workbenches.
+- The C++ DXF importer's pending-exception fix. One test.
+- An MKS unit schema. Two BIM tests.
+- `noElementMap` on `Part.makeFace`/`copy`/`fuse`, which this fork's
+  Part API has no equivalent of, so a transient analysis face keeps its
+  element map. One test.
+- ifcopenshell 0.9 removed `entity_instance.wrapped_data`, which
+  NativeIFC uses. Two tests, and the first thing stage 4 has to decide:
+  pin 0.8.5 or follow the new API.
+- An Arch Report writing no spreadsheet cells. One test.
+
+### Two things worth knowing before stage 4
+
+**Upstream's BIM always goes multicore.** `MULTICORE` is computed as
+`max(1, ifcMulticore)`, so the preference cannot turn it off, and
+`importIFCmulticore` ignores the `only` argument -- a bounded import of
+a few hundred products silently becomes a full one. Pass
+`preferences["MULTICORE"] = 0` for a bounded run.
+
+**Run the test suites against an empty `FREECAD_USER_HOME`.** A
+SketchArch addon in the user profile calls `FreeCADGui.addCommand` at
+import; in console mode that raises, and it took 110 of `TestArch`'s
+280 tests down before the cause was visible.
+
 ## The plan
 
 Five stages. Each ends in a measurement, and the fork keeps working
