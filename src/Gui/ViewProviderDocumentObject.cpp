@@ -188,7 +188,24 @@ void ViewProviderDocumentObject::getTaskViewContent(std::vector<Gui::TaskView::T
 void ViewProviderDocumentObject::startRestoring()
 {
     _VisibilityRestored = false;
-    hide();
+    {
+        // hide() sets Visibility false, and onChanged() writes that back
+        // to the App object -- which is where finishRestoring() reads the
+        // visibility from when the saved view provider record did not
+        // carry one. Left unguarded, the two steps destroy the value they
+        // are meant to recover: a document written without a
+        // GuiDocument.xml (anything saved by FreeCADCmd) records
+        // Visibility=true per object in Document.xml, and every object
+        // still came back hidden, with the App-side flag reading false
+        // afterwards.
+        //
+        // User1 is the existing "do not propagate to the App object" flag
+        // on this property, and hiding here is a restore mechanic rather
+        // than anyone hiding the object, so nothing should propagate.
+        Base::ObjectStatusLocker<App::Property::Status, App::Property>
+            guard(App::Property::User1, &Visibility);
+        hide();
+    }
     callExtension(&ViewProviderExtension::extensionStartRestoring);
 }
 
