@@ -300,10 +300,12 @@ strategy 1 carries 1393 objects in 73.4 s.
 **The knob is reachable** (`0d52fa4244`). `LoadOrphans` now appears in
 both the import dialog and the preferences page.
 
-WARNING: editing a `.ui` does **not** regenerate `Arch_rc.py` on an
-incremental build -- the resource target depends on `Arch.qrc` alone,
-which the CMakeLists comment documents and works around by touching the
-`.qrc`. A `.ui` edit that seems to have no effect is this, not the edit.
+Editing a `.ui` used not to regenerate `Arch_rc.py` on an incremental
+build -- the resource target depended on `Arch.qrc` alone, which the
+CMakeLists comment documented and worked around by telling you to touch
+the `.qrc`. Fixed in `79df6c69bb`: `PYSIDE_WRAP_RC` now parses the
+`.qrc` and depends on the files it lists, for all six generated
+resources. `Draft_rc.py` turned out to have been silently stale.
 
 ### What the remaining test failures want, none of it in ported code
 
