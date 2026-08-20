@@ -24,6 +24,7 @@
 
 """This is the main NativeIFC module"""
 
+import math
 import os
 
 from PySide import QtCore
@@ -1073,6 +1074,13 @@ def set_attribute(ifcfile, element, attribute, value):
             return False
         if not val1 and not val2:
             return False
+        if isinstance(val1, float) and isinstance(val2, float):
+            # A length read from the file, converted to millimetres and
+            # converted back, lands a few ULPs away from where it started.
+            # Writing that back changes nothing but marks the document
+            # modified, so treat it as equal.
+            if math.isclose(val1, val2, rel_tol=1e-9, abs_tol=1e-12):
+                return False
         if isinstance(val1, (tuple, list)):
             if tuple(val1) == tuple(val2):
                 return False
