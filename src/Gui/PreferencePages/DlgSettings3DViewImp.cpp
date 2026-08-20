@@ -61,12 +61,6 @@ DlgSettings3DViewImp::DlgSettings3DViewImp(QWidget* parent)
     , ui(new Ui_DlgSettings3DView)
 {
     ui->setupUi(this);
-    QString tooltip = tr(ViewParams::docRenderCacheMergeCount());
-    ui->renderCacheMergeCount->setToolTip(tooltip);
-    ui->renderCacheMergeCountLabel->setToolTip(tooltip);
-    tooltip = tr(ViewParams::docRenderCacheMergeCountMax());
-    ui->renderCacheMergeCountMax->setToolTip(tooltip);
-    ui->renderCacheMergeCountMaxLabel->setToolTip(tooltip);
 }
 
 /**
@@ -91,8 +85,6 @@ void DlgSettings3DViewImp::saveSettings()
     ui->radioOrthographic->onSave();
     ui->CheckBox_ApplyToViews->onSave();
     ui->spinPreselectionDelay->onSave();
-    ui->renderCacheMergeCount->onSave();
-    ui->renderCacheMergeCountMax->onSave();
     ui->checkBoxEnhancedPick->onSave();
 }
 
@@ -111,8 +103,6 @@ void DlgSettings3DViewImp::loadSettings()
     ui->radioOrthographic->onRestore();
     ui->CheckBox_ApplyToViews->onRestore();
     ui->spinPreselectionDelay->onRestore();
-    ui->renderCacheMergeCount->onRestore();
-    ui->renderCacheMergeCountMax->onRestore();
     ui->comboAliasing->onRestore();
 
     ui->checkBoxEnhancedPick->onRestore();
