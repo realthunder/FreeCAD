@@ -31,6 +31,7 @@
 #include <App/Material.h>
 #include <App/PropertyStandard.h>
 #include <Base/FileInfo.h>
+#include <Base/Interpreter.h>
 #include <Base/Exception.h>
 #include <Base/Reader.h>
 #include <Base/Writer.h>
@@ -2292,4 +2293,131 @@ TEST_F(PropertyMaterialListTest, contentTheListHoldsTravelsWithACopyOfIt)
     ASSERT_FALSE(second.empty());
     EXPECT_TRUE(copy.isSameData(prop.getList()));
     EXPECT_FALSE(copy.getTextureFile(second).empty());
+}
+
+//--------------------------------------------------------------------------
+// What Python sees (docs/PythonValueBindings.md)
+//
+// The property hands Python a LIVE VIEW of its value rather than a tuple of
+// copies, so vp.ShapeAppearance[0].DiffuseColor = c reaches the object --
+// which it never did before. These run the chain end to end through the
+// interpreter, because every link in it is a Python one: the item stamp on
+// the value a sequence slot returns, the notification on the write, the
+// item assignment it turns into, and the property's own change signalling.
+//--------------------------------------------------------------------------
+
+namespace
+{
+
+/// Run a snippet with \a prop bound to the name "mlist"
+void runOn(App::PropertyMaterialList& prop, const char* code)
+{
+    Base::PyGILStateLocker lock;
+    PyObject* view = prop.getPyObject();
+    ASSERT_NE(view, nullptr);
+    Py::Module main(PyImport_AddModule("__main__"), false);
+    main.setAttr("mlist", Py::Object(view, true));
+    Base::Interpreter().runString(code);
+}
+
+/// The same, with nothing bound: for a snippet that keeps its own reference
+void run(const char* code)
+{
+    Base::PyGILStateLocker lock;
+    Base::Interpreter().runString(code);
+}
+
+}  // namespace
+
+TEST_F(PropertyMaterialListTest, aPythonWriteToOneEntryReachesTheProperty)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+
+    // The whole point: a field written on the entry Python was handed goes
+    // back into the property, at that index and nowhere else
+    runOn(prop, "mlist[2].DiffuseColor = (0.0, 1.0, 0.0, 1.0)");
+    EXPECT_EQ(prop.getDiffuseColor(2).getPackedValue(), 0x00ff00ffU);
+    EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue(), 0xff0000ffU);
+    EXPECT_EQ(prop.getSize(), 4);
+
+    // and so does a whole-entry assignment
+    runOn(prop, "import FreeCAD\n"
+                "mat = FreeCAD.Material()\n"
+                "mat.DiffuseColor = (0.0, 0.0, 1.0, 1.0)\n"
+                "mlist[0] = mat\n");
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0x0000ffffU);
+}
+
+TEST_F(PropertyMaterialListTest, aPythonListReadsWithoutCopyingTheStorage)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(1000, redMaterial()));
+
+    // A view, not a tuple of a thousand materials: reading it neither
+    // copies the storage nor detaches it
+    const App::MaterialList before = prop.getList();
+    runOn(prop,
+          "assert len(mlist) == 1000\n"
+          "assert mlist.Count == 1000\n"
+          "assert mlist.IsAttached\n"
+          "assert len([m for m in mlist]) == 1000\n");
+    EXPECT_TRUE(prop.getList().isSameData(before));
+}
+
+TEST_F(PropertyMaterialListTest, aDetachedListIsAValueAndWritesNowhere)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(2, redMaterial()));
+
+    runOn(prop, "import FreeCAD\n"
+                "copy = mlist.copy()\n"
+                "assert not copy.IsAttached\n"
+                "mat = FreeCAD.Material()\n"
+                "mat.DiffuseColor = (0.0, 1.0, 0.0, 1.0)\n"
+                "copy[0] = mat\n"
+                "assert copy[0].DiffuseColor[1] == 1.0\n");
+    // the property is untouched by anything done to the copy
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
+
+    // and assigning it back is what writes
+    Base::PyGILStateLocker lock;
+    Py::Module main(PyImport_AddModule("__main__"), false);
+    Py::Object copy = main.getAttr("copy");
+    prop.setPyObject(copy.ptr());
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0x00ff00ffU);
+    // the value assigned in is shared, not copied
+    EXPECT_TRUE(prop.getList().isShared());
+}
+
+TEST_F(PropertyMaterialListTest, aViewOfADeadPropertyIsStillReadable)
+{
+    {
+        App::PropertyMaterialList prop;
+        prop.setValues(std::vector<App::Material>(3, redMaterial()));
+        runOn(prop, "kept = mlist");
+    }
+    // The property took its views down with it, each keeping the value it
+    // could still see. Reading one must answer, and writing one must reach
+    // nothing at all rather than a freed property.
+    run("assert kept.Count == 3\n"
+        "assert not kept.IsAttached\n"
+        "assert kept[0].DiffuseColor[0] == 1.0\n"
+        "import FreeCAD\n"
+        "kept[0] = FreeCAD.Material()\n");
+}
+
+TEST_F(PropertyMaterialListTest, aReadOnlyPropertyHandsOutSomethingNothingWritesThrough)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(2, redMaterial()));
+    prop.setStatus(App::Property::ReadOnly, true);
+
+    runOn(prop, "import FreeCAD\n"
+                "try:\n"
+                "    mlist[0] = FreeCAD.Material()\n"
+                "    raise AssertionError('a read-only list took a write')\n"
+                "except ReferenceError:\n"
+                "    pass\n");
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
 }

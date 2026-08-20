@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GenerateModel xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="generateMetaModel_Module.xsd">
+    <PythonExport
+        Father="PyObjectBase"
+        Name="MaterialListPy"
+        PythonName="App.MaterialList"
+        TwinPointer="MaterialList"
+        Twin="MaterialList"
+        Include="App/MaterialList.h"
+        Namespace="App"
+        FatherInclude="Base/PyObjectBase.h"
+        FatherNamespace="Base"
+        Constructor="true"
+        RichCompare="true"
+        Initialization="true"
+        Delete="false">
+        <Documentation>
+            <Author Licence="LGPL" Name="Zheng, Lei" EMail="realthunder.dev@gmail.com" />
+            <UserDocu>A list of materials, which behaves like a list of App.Material.
+
+Read from a view provider it is a LIVE VIEW of that appearance: writing to
+it -- vp.ShapeAppearance[0].DiffuseColor = c, or one of the indexed setters
+below -- changes the object, records an undo step and redraws.
+
+Assigning it anywhere else DETACHES it into a plain value. A detached list
+shares its storage with the one it came from until either side writes, so
+copying one costs nothing and mutating one never surprises the other:
+
+    a = vp.ShapeAppearance      # a live view of the appearance
+    a[0].DiffuseColor = (1.0, 0.0, 0.0, 1.0)    # changes the object
+
+    b = App.MaterialList(vp.ShapeAppearance)    # a value, shares storage
+    b[0] = mat                  # changes b alone
+    vp.ShapeAppearance = b      # and this is what changes the object
+
+Indexing yields a copy of the entry with a link back, so writing a field on
+it writes the whole entry back to that index. The per field setters below
+take Index=-1 to mean every entry.
+            </UserDocu>
+        </Documentation>
+        <Methode Name="append">
+            <Documentation>
+                <UserDocu>append(Material) -> None: add one entry at the end.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="extend">
+            <Documentation>
+                <UserDocu>extend(iterable) -> None: add every material of an iterable.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="insert">
+            <Documentation>
+                <UserDocu>insert(index, Material) -> None: insert one entry before index.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="copy">
+            <Documentation>
+                <UserDocu>copy() -> MaterialList: a detached copy.
+
+It shares this list's storage until one of them is written to, so it costs
+a pointer however long the list is.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="detach">
+            <Documentation>
+                <UserDocu>detach() -> None: stop being a view of the object.
+
+The list keeps the value it has and writing to it stops changing anything
+else. Assigning the list to a property does this too.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setSize">
+            <Documentation>
+                <UserDocu>setSize(count, [Material]) -> None: resize the list.
+
+Entries added take the given material, or -- with none given -- what an
+unset entry of this list reads as.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getMaterial">
+            <Documentation>
+                <UserDocu>getMaterial(index) -> Material: one entry, as a copy.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setMaterial">
+            <Documentation>
+                <UserDocu>setMaterial(index, Material) -> None: write one whole entry.
+
+Index=-1 writes every entry.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Attribute Name="Count" ReadOnly="true">
+            <Documentation>
+                <UserDocu>How many entries the list has; the same as len().</UserDocu>
+            </Documentation>
+            <Parameter Name="Count" Type="Int"/>
+        </Attribute>
+        <Attribute Name="IsAttached" ReadOnly="true">
+            <Documentation>
+                <UserDocu>Whether writing to this list writes to the object it came from.</UserDocu>
+            </Documentation>
+            <Parameter Name="IsAttached" Type="Boolean"/>
+        </Attribute>
+        <Attribute Name="PBR" ReadOnly="false">
+            <Documentation>
+                <UserDocu>Whether the stored values are read as PBR quantities.
+
+One flag for the whole list. Setting it reinterprets the values; it
+converts nothing (App.Material.PBR does convert).</UserDocu>
+            </Documentation>
+            <Parameter Name="PBR" Type="Boolean"/>
+        </Attribute>
+        <Sequence
+            sq_length="true"
+            sq_concat="true"
+            sq_repeat="true"
+            sq_item="true"
+            mp_subscript="true"
+            sq_ass_item="true"
+            mp_ass_subscript="true"
+            sq_contains="true"
+            sq_inplace_concat="true"
+            sq_inplace_repeat="false">
+        </Sequence>
+        <ClassDeclarations>public:
+    /// Become a live view of \a prop, which registers this object with it
+    void attach(PropertyMaterialList *prop);
+    /// Stop being one, keeping the value as it stands (a shared snapshot).
+    /// Called by the property when it dies, and by any assignment that
+    /// hands this list to a new owner.
+    void detachFromOwner();
+    /// The property this is a view of, or null once detached
+    PropertyMaterialList *getOwner() const { return owner; }
+    /// The value, wherever it lives: the owner's while attached, this
+    /// object's own once detached
+    const MaterialList &amp;list() const;
+
+private:
+    /// Run a write, through the owner's change signalling while attached
+    void edit(const std::function&lt;void(MaterialList &amp;)&gt; &amp;op, int touched = -1);
+    /// Whether a write is allowed at all, i.e. the object is alive and not
+    /// const. Raises and answers false when it is not.
+    bool writable();
+
+    PropertyMaterialList *owner = nullptr;
+    MaterialList *ownvalue = nullptr;
+        </ClassDeclarations>
+    </PythonExport>
+</GenerateModel>

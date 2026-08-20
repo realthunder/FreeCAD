@@ -23,6 +23,7 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
 #include <cctype>
 #include <functional>
 #include <sstream>
@@ -45,6 +46,7 @@
 #include "Document.h"
 #include "DocumentObject.h"
 #include "DocumentParams.h"
+#include "MaterialListPy.h"
 #include "MaterialPy.h"
 #include "ObjectIdentifier.h"
 
@@ -3020,6 +3022,15 @@ PropertyMaterialList::~PropertyMaterialList()
     if (_pendingBlobManager) {
         _pendingBlobManager->removePendingReferrer(this);
     }
+    // Every Python view of this property becomes a plain value holding
+    // what it can still see -- a pointer's worth of work each. Moved out
+    // first: detaching unregisters, which is a write to the vector being
+    // walked.
+    const std::vector<MaterialListPy *> views = std::move(_views);
+    _views.clear();
+    for (auto *view : views) {
+        view->detachFromOwner();
+    }
 }
 
 //**************************************************************************
@@ -3508,19 +3519,52 @@ void PropertyMaterialList::requestTextureBlobs()
 
 
 
+void PropertyMaterialList::registerView(MaterialListPy *view)
+{
+    _views.push_back(view);
+}
+
+void PropertyMaterialList::unregisterView(MaterialListPy *view)
+{
+    _views.erase(std::remove(_views.begin(), _views.end(), view), _views.end());
+}
+
+void PropertyMaterialList::editList(const std::function<void(MaterialList &)> &op, int touched)
+{
+    change([&] { op(_list); }, touched);
+}
+
 PyObject *PropertyMaterialList::getPyObject()
 {
-    Py::Tuple tuple(getSize());
-
-    for (int i = 0; i<getSize(); i++) {
-        tuple.setItem(i, Py::asObject(new MaterialPy(new Material(getMaterial(i)))));
+    // A live view, not a copy of the list: it reads this value and writes
+    // through editList(). Fresh each time, because the value it is a view
+    // of is this property's and outlives no wrapper.
+    _list.setBlobManager(&blobManager());
+    auto *view = new MaterialListPy(&_list);
+    view->attach(this);
+    if (testStatus(App::Property::Immutable) || testStatus(App::Property::ReadOnly)) {
+        // A read-only property hands out a value nothing can write through
+        view->setConst();
     }
-
-    return Py::new_reference_to(tuple);
+    return view;
 }
 
 void PropertyMaterialList::setPyObject(PyObject *value)
 {
+    if (PyObject_TypeCheck(value, &(MaterialListPy::Type))) {
+        auto *view = static_cast<MaterialListPy *>(value);
+        if (view->getOwner() == this) {
+            // Its own writes have already landed here; assigning it back
+            // is the round trip, not a change
+            return;
+        }
+        // Whatever it was a view of, it is a value from here on -- and
+        // this property takes a share of that value, which costs a pointer
+        view->detachFromOwner();
+        view->resetAttribute();
+        setList(view->list());
+        return;
+    }
     if (PyObject_TypeCheck(value, &(MaterialPy::Type))) {
         // One material for the whole list, mode and all
         setValue(*static_cast<MaterialPy*>(value)->getMaterialPtr());

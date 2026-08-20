@@ -24,6 +24,7 @@
 #ifndef APP_PROPERTYSTANDARD_H
 #define APP_PROPERTYSTANDARD_H
 
+#include <functional>
 #include <list>
 #include <map>
 #include <memory>
@@ -1160,6 +1161,8 @@ private:
  * Writing is therefore always from the normalised form; reading may assume
  * it.
  */
+class MaterialListPy;
+
 class AppExport PropertyMaterialList : public PropertyLists,
                                        public BlobReferrerProperty,
                                        public AtomicPropertyChangeInterface<PropertyMaterialList>
@@ -1169,6 +1172,9 @@ class AppExport PropertyMaterialList : public PropertyLists,
 public:
     using atomic_change = AtomicPropertyChangeInterface<PropertyMaterialList>::AtomicPropertyChange;
     friend atomic_change;
+    /// Reads the value in place; every write it makes goes through
+    /// editList(), so nothing bypasses the change signalling
+    friend class MaterialListPy;
 
     bool canShareDefault() const override { return true; }
 
@@ -1177,6 +1183,22 @@ public:
 
     /// The material every entry of an empty field reads as
     static const Material &defaultMaterial();
+
+    /** @name The Python view of this property
+     *
+     * getPyObject() hands out a MaterialListPy that is a LIVE VIEW: it
+     * reads this property's value and writes through editList(), so
+     * vp.ShapeAppearance[0].DiffuseColor = c reaches the object. The views
+     * register here so that this property's death turns them into plain
+     * values rather than dangling pointers.
+     */
+    //@{
+    void registerView(MaterialListPy *view);
+    void unregisterView(MaterialListPy *view);
+    /// Run a write against the value, recording and signalling it if it
+    /// changed.  touched is the entry a per entry write names.
+    void editList(const std::function<void(MaterialList &)> &op, int touched = -1);
+    //@}
 
     /** @name The value this property holds
      *
@@ -1605,6 +1627,10 @@ private:
      * the same storage until one of them writes; see App::MaterialList.
      */
     MaterialList _list;
+    /// The Python views handed out and not yet dropped. Raw pointers: a
+    /// view unregisters itself when Python drops it, and this property
+    /// detaches every one of them on the way out.
+    std::vector<MaterialListPy *> _views;
 
     /// Restored from the companion element, waiting for the materials to land
     std::vector<SurfaceFinish> _pendingFinish;
