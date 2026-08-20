@@ -2517,6 +2517,121 @@ bool BGFXRenderer::Private::render(const QColor &col,
         && lightconf.smoothBorder > 0.0f
         && bgfx::isValid(view->shadowBlurFbo);
 
+    // Medium-interval / planar-reflection frame cache: those targets
+    // depend only on the camera, the viewport and the scene draws.
+    // The fire/cloud/water animation lives in the volume raymarch
+    // and the surface shaders, not in the interval depths, and the
+    // mirrored-scene render is static per camera (the water waves
+    // only distort how the surface samples it). Re-render when the
+    // camera or viewport changed or any scene/config change was
+    // applied this frame (dirtyChanged covers every mutation path);
+    // the mirrored scene additionally re-renders whenever the shadow
+    // map did (its shading includes the shadow lookup) and while a
+    // fire burns (the flickering fire effect light shades the
+    // mirrored geometry per frame).
+    static const bool staticNoCache =
+        (getenv("FC_BGFX_NO_STATIC_CACHE") != nullptr);
+    uint64_t camH = 1469598103934665603ULL;
+    hashBytes(camH, reinterpret_cast<const float *>(viewMatrix),
+              sizeof(float) * 16);
+    hashBytes(camH, reinterpret_cast<const float *>(projMatrix),
+              sizeof(float) * 16);
+    hashBytes(camH, &width, sizeof(width));
+    hashBytes(camH, &height, sizeof(height));
+    const bool staticFrame = !dirtyChanged && !hlconfig.show
+        && !staticNoCache && camH == view->camFrameHash;
+    view->camFrameHash = camH;
+    const bool mediumRender = !staticFrame;
+
+    // Idle temporal accumulation (docs/RenderEngine.md sec 3.5).
+    //
+    // Multisampling resolves coverage and nothing else: one shaded
+    // value per triangle per pixel, and every screen-space pass after
+    // the resolve at one sample. So a highlight crawling across a
+    // curved surface, detail below the pixel and the noise left in the
+    // effect passes are all beyond it at any sample count. What is
+    // left is to spend time: over a still camera, offset the projection
+    // by a fraction of a pixel each frame and average the results, and
+    // the whole pipeline converges toward supersampling for free --
+    // "free" because a frame that nobody is interacting with was going
+    // to be idle anyway.
+    //
+    // No reprojection, no history rejection, no motion vectors: this
+    // runs ONLY over frames where nothing moved, and staticFrame above
+    // is that predicate exactly -- it already answers for the camera,
+    // the viewport, every scene and config mutation, and the hover
+    // highlight. Any of them changing zeroes the count below, which
+    // replaces the history outright on the next frame. That is what
+    // keeps thin CAD edges from smearing the way ordinary TAA smears
+    // them, and why this refines a multisampled frame instead of
+    // replacing multisampling with a temporal filter.
+    //
+    // ! camH above hashes the UNJITTERED projection, and the jitter is
+    // applied below it on purpose. Hashing the jittered matrix would
+    // make every accumulation frame read as a camera move -- the one
+    // thing that resets the accumulation -- so it would reset itself
+    // every frame and never converge, at the cost of a full extra
+    // render per frame forever.
+    const int accumSamples =
+        tempconf.enabled && !debugconf.freezeFrame
+                && view->effectAllocated(BGFXView::EffectAccum)
+            ? std::max(2, std::min(256, tempconf.samples))
+            : 0;
+    // A capture that drops the viewport chrome (an image export, as
+    // against a debug capture) renders a DIFFERENT picture from the one
+    // on screen. It must neither be averaged into the history nor be
+    // overwritten by it -- the history has the chrome in it, and
+    // painting that back would put the navigation cube into an exported
+    // image. Stand the accumulation down for that frame alone, without
+    // resetting the count, so the view resumes where it left off.
+    const bool chromelessDump = dumpPending && !pendingDump.overlays;
+    const bool accumActive =
+        accumSamples != 0 && staticFrame && !chromelessDump;
+    if (!accumActive)
+        view->accumFrames = 0;
+    // What this frame is worth in the running mean. The first frame
+    // over a still camera replaces the history outright; the nth
+    // arrives with weight 1/(n+1), which makes the history their mean.
+    // Once the budget is reached the frame contributes nothing and only
+    // the copy back runs, so a redraw the view did not ask for (an
+    // expose, a sibling window) still shows the converged image.
+    const float accumBlend =
+        !accumActive ? 0.0f
+        : view->accumFrames >= accumSamples ? 0.0f
+        : 1.0f / float(view->accumFrames + 1);
+    // Accruing a jittered sample this frame -- as against holding a
+    // converged image, or sample 0, which is the pixel centre and so
+    // is the ordinary frame. Everything that has to move per sample
+    // keys on this one predicate: the camera offset below, and the
+    // AO chain, which would otherwise sit on its cache and hold one
+    // frame's noise through the whole refinement.
+    const bool accumRefining = accumActive && view->accumFrames > 0
+        && view->accumFrames < accumSamples;
+    // Asked for and not engaging: say so once, with the reason. All
+    // three causes look the same on screen -- the picture simply never
+    // refines -- and the third one (something in the feed reporting a
+    // change every frame) is invisible from outside the renderer
+    // entirely. Held for a stretch of frames first, because "not
+    // static" is the ordinary state of a view somebody is using.
+    if (tempconf.enabled && !view->accumReported) {
+        if (accumActive) {
+            view->accumReported = true;   // it works; nothing to say
+        }
+        else if (++view->accumQuietFrames > 240) {
+            view->accumReported = true;
+            const char *why =
+                debugconf.freezeFrame
+                    ? "the freeze-frame determinism switch is on"
+                : !view->effectAllocated(BGFXView::EffectAccum)
+                    ? "its history target could not be allocated"
+                : "something reports a change every frame -- a scene or "
+                  "config feed, or the hover highlight -- so no two "
+                  "frames are ever of the same picture";
+            RENDER_ERR("temporal accumulation is on but never engages: "
+                       << why);
+        }
+    }
+
     // The prepass rasterizes for SSAO and/or the volumetric ray
     // ends; the AO resolve chain itself stays SSAO-gated. The water
     // surface pass also reads its viewZ, to reject refraction
@@ -2593,6 +2708,18 @@ bool BGFXRenderer::Private::render(const QColor &col,
         aoRender = h != view->aoMapHash;
         if (aoRender)
             view->aoMapHash = h;
+        // ... except while the accumulation is refining. The hash
+        // above reads the UNJITTERED camera (it is taken before the
+        // offset is applied, and deliberately so -- see there), so
+        // across a refinement it never changes and the cache would
+        // answer "hit" for every sample. That is the whole reason
+        // AO alone did not converge: the chain was skipped outright
+        // and the view averaged one frame's AO noise with itself N
+        // times. Re-render it per sample instead. This is real work
+        // on a parked view, which is exactly what the feature
+        // spends; an idle view WITHOUT it keeps the cache.
+        if (accumRefining)
+            aoRender = true;
     } else if (prepassActive) {
         view->aoMapHash = 0;
     }
@@ -2782,114 +2909,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
         bx::mtxMul(waterReflShadowMtx, m2, view->shadowMtx);
     }
 
-    // Medium-interval / planar-reflection frame cache: those targets
-    // depend only on the camera, the viewport and the scene draws.
-    // The fire/cloud/water animation lives in the volume raymarch
-    // and the surface shaders, not in the interval depths, and the
-    // mirrored-scene render is static per camera (the water waves
-    // only distort how the surface samples it). Re-render when the
-    // camera or viewport changed or any scene/config change was
-    // applied this frame (dirtyChanged covers every mutation path);
-    // the mirrored scene additionally re-renders whenever the shadow
-    // map did (its shading includes the shadow lookup) and while a
-    // fire burns (the flickering fire effect light shades the
-    // mirrored geometry per frame).
-    static const bool staticNoCache =
-        (getenv("FC_BGFX_NO_STATIC_CACHE") != nullptr);
-    uint64_t camH = 1469598103934665603ULL;
-    hashBytes(camH, reinterpret_cast<const float *>(viewMatrix),
-              sizeof(float) * 16);
-    hashBytes(camH, reinterpret_cast<const float *>(projMatrix),
-              sizeof(float) * 16);
-    hashBytes(camH, &width, sizeof(width));
-    hashBytes(camH, &height, sizeof(height));
-    const bool staticFrame = !dirtyChanged && !hlconfig.show
-        && !staticNoCache && camH == view->camFrameHash;
-    view->camFrameHash = camH;
-    const bool mediumRender = !staticFrame;
-
-    // Idle temporal accumulation (docs/RenderEngine.md sec 3.5).
-    //
-    // Multisampling resolves coverage and nothing else: one shaded
-    // value per triangle per pixel, and every screen-space pass after
-    // the resolve at one sample. So a highlight crawling across a
-    // curved surface, detail below the pixel and the noise left in the
-    // effect passes are all beyond it at any sample count. What is
-    // left is to spend time: over a still camera, offset the projection
-    // by a fraction of a pixel each frame and average the results, and
-    // the whole pipeline converges toward supersampling for free --
-    // "free" because a frame that nobody is interacting with was going
-    // to be idle anyway.
-    //
-    // No reprojection, no history rejection, no motion vectors: this
-    // runs ONLY over frames where nothing moved, and staticFrame above
-    // is that predicate exactly -- it already answers for the camera,
-    // the viewport, every scene and config mutation, and the hover
-    // highlight. Any of them changing zeroes the count below, which
-    // replaces the history outright on the next frame. That is what
-    // keeps thin CAD edges from smearing the way ordinary TAA smears
-    // them, and why this refines a multisampled frame instead of
-    // replacing multisampling with a temporal filter.
-    //
-    // ! camH above hashes the UNJITTERED projection, and the jitter is
-    // applied below it on purpose. Hashing the jittered matrix would
-    // make every accumulation frame read as a camera move -- the one
-    // thing that resets the accumulation -- so it would reset itself
-    // every frame and never converge, at the cost of a full extra
-    // render per frame forever.
-    const int accumSamples =
-        tempconf.enabled && !debugconf.freezeFrame
-                && view->effectAllocated(BGFXView::EffectAccum)
-            ? std::max(2, std::min(256, tempconf.samples))
-            : 0;
-    // A capture that drops the viewport chrome (an image export, as
-    // against a debug capture) renders a DIFFERENT picture from the one
-    // on screen. It must neither be averaged into the history nor be
-    // overwritten by it -- the history has the chrome in it, and
-    // painting that back would put the navigation cube into an exported
-    // image. Stand the accumulation down for that frame alone, without
-    // resetting the count, so the view resumes where it left off.
-    const bool chromelessDump = dumpPending && !pendingDump.overlays;
-    const bool accumActive =
-        accumSamples != 0 && staticFrame && !chromelessDump;
-    if (!accumActive)
-        view->accumFrames = 0;
-    // What this frame is worth in the running mean. The first frame
-    // over a still camera replaces the history outright; the nth
-    // arrives with weight 1/(n+1), which makes the history their mean.
-    // Once the budget is reached the frame contributes nothing and only
-    // the copy back runs, so a redraw the view did not ask for (an
-    // expose, a sibling window) still shows the converged image.
-    const float accumBlend =
-        !accumActive ? 0.0f
-        : view->accumFrames >= accumSamples ? 0.0f
-        : 1.0f / float(view->accumFrames + 1);
-    // Asked for and not engaging: say so once, with the reason. All
-    // three causes look the same on screen -- the picture simply never
-    // refines -- and the third one (something in the feed reporting a
-    // change every frame) is invisible from outside the renderer
-    // entirely. Held for a stretch of frames first, because "not
-    // static" is the ordinary state of a view somebody is using.
-    if (tempconf.enabled && !view->accumReported) {
-        if (accumActive) {
-            view->accumReported = true;   // it works; nothing to say
-        }
-        else if (++view->accumQuietFrames > 240) {
-            view->accumReported = true;
-            const char *why =
-                debugconf.freezeFrame
-                    ? "the freeze-frame determinism switch is on"
-                : !view->effectAllocated(BGFXView::EffectAccum)
-                    ? "its history target could not be allocated"
-                : "something reports a change every frame -- a scene or "
-                  "config feed, or the hover highlight -- so no two "
-                  "frames are ever of the same picture";
-            RENDER_ERR("temporal accumulation is on but never engages: "
-                       << why);
-        }
-    }
-    if (accumActive && view->accumFrames > 0
-            && view->accumFrames < accumSamples) {
+    // The accumulation's camera offset. Its state is decided far
+    // above, next to the AO cache that also reads it; only the
+    // matrix edit belongs here, below everything that must see the
+    // unjittered camera.
+    if (accumRefining) {
         // Sample 0 is the pixel centre -- the ordinary frame -- so
         // settling the camera shows no jump, and the offsets start
         // from sample 1.
@@ -5307,7 +5331,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (view->passLive(V::ViewAOGen))
         view->submitAOResolve(aoRadius, aoconf.intensity,
                               aoconf.method, aoconf.fast,
-                              aoconf.slices, aoconf.steps);
+                              aoconf.slices, aoconf.steps,
+                              accumRefining ? view->accumFrames : 0);
 
     // 1d. Volumetric light shafts: half-res raymarch of the shadow
     // map, bilateral-upsampled and composited onto the opaque scene

@@ -43,7 +43,8 @@ void BGFXView::fullscreen(uint16_t pass, bgfx::ProgramHandle prog,
 }
 
 void BGFXView::submitAOResolve(float radius, float intensity, int method,
-                     bool fast, int slices, int steps)
+                     bool fast, int slices, int steps,
+                     int temporalIndex)
 {
     // Fixed hemisphere kernel (unit radius, z >= 0, clustered near
     // the origin), deterministic across frames like the noise.
@@ -96,9 +97,17 @@ void BGFXView::submitAOResolve(float radius, float intensity, int method,
     // .z: classic pass depth bias; for GTAO two flag bits — bit0 the
     // interaction fast path (fewer slices/steps while the camera
     // moves), bit1 fp16 prepass depth (widens the coplanarity guard
-    // to the fp16 quantization step).
+    // to the fp16 quantization step) -- and above them the idle
+    // accumulation's sample index, which walks GTAO's noise along
+    // the R2 sequence so successive samples decorrelate. Packed
+    // rather than given a uniform of its own: both other vec4s are
+    // full, the field is already a bitfield, and 4*63+3 = 255 is
+    // exact in float. The index stays a SAMPLE number, so the frame
+    // remains reproducible -- the same argument that keeps the
+    // Halton camera jitter deterministic.
     const float paramZ = gtao
         ? (fast ? 1.0f : 0.0f) + (aoNormalZFp16 ? 2.0f : 0.0f)
+            + 4.0f * float(temporalIndex & 63)
         : 0.02f * radius;
     float params[4] = {radius, intensity, paramZ, aoPower};
     bgfx::setUniform(u_aoParams, params);

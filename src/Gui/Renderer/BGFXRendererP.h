@@ -5644,8 +5644,12 @@ public:
     /// composited here: the mesh programs sample it at unit 9 and fold
     /// it into their ambient/headlight/IBL terms only (aoMeshTex), so
     /// direct scene/bulb light is not AO-darkened.
+    /// temporalIndex advances the GTAO noise per idle-accumulation
+    /// sample so its noise averages out instead of being averaged
+    /// with itself; 0 for an ordinary frame.
     void submitAOResolve(float radius, float intensity, int method,
-                         bool fast, int slices, int steps);
+                         bool fast, int slices, int steps,
+                         int temporalIndex);
 
     /// Cavity (curvature) shading: one fullscreen multiply of the
     /// finished opaque scene by a curvature term read from the prepass
