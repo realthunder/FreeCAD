@@ -93,8 +93,15 @@ def generate_geometry(obj, cached=False):
                 return
 
     # generate the shape or coin node
+    wants_shape = obj.ShapeMode == "Shape"
+    wants_coin = bool(obj.ViewObject) and obj.ShapeMode == "Coin"
+    if not (wants_shape or wants_coin):
+        # Nothing below consumes the decomposition, and building it walks the
+        # element's whole subtree in the IFC file -- the dominant cost of a
+        # recompute on a large model when the shape is not wanted at all.
+        return
     elements = get_decomposition(obj)
-    if obj.ShapeMode == "Shape":
+    if wants_shape:
         shape, colors = generate_shape(ifcfile, elements, cached)
         if shape:
             placement = shape.Placement
@@ -103,7 +110,7 @@ def generate_geometry(obj, cached=False):
         else:
             obj.Shape = Part.Shape()
             print_debug(obj)
-    elif obj.ViewObject and obj.ShapeMode == "Coin":
+    elif wants_coin:
         node, placement = generate_coin(ifcfile, elements, cached)
         if node:
             # TODO this still needs to be fixed
