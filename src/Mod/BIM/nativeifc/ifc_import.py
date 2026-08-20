@@ -54,7 +54,7 @@ def open(filename):
     FreeCAD.setActiveDocument(doc.Name)
     insert(filename, doc.Name, singledoc=None)
     del FreeCAD.IsOpeningIFC
-    QtCore.QTimer.singleShot(100, unset_modified)
+    ifc_tools.defer(unset_modified)
     return doc
 
 
@@ -88,10 +88,10 @@ def insert(
         singledoc = PARAMS.GetBool("SingleDoc", True)
     if singledoc:
         prj_obj = ifc_tools.convert_document(document, filename, shapemode, strategy)
-        QtCore.QTimer.singleShot(100, toggle_lock_on)
+        ifc_tools.defer(toggle_lock_on)
     else:
         prj_obj = ifc_tools.create_document_object(document, filename, shapemode, strategy)
-        QtCore.QTimer.singleShot(100, toggle_lock_off)
+        ifc_tools.defer(toggle_lock_off)
     if PARAMS.GetBool("LoadOrphans", True):
         ifc_tools.load_orphans(prj_obj)
     if not silent and PARAMS.GetBool("LoadMaterials", False):

@@ -118,7 +118,7 @@ def generate_geometry(obj, cached=False):
 
     # set shape and diffuse colors
     if colors:
-        QtCore.QTimer.singleShot(0, lambda: ifc_tools.set_colors(obj, colors))  # TODO migrate here?
+        ifc_tools.defer(lambda: ifc_tools.set_colors(obj, colors), 0)  # TODO migrate here?
 
 
 def generate_shape(ifcfile, elements, cached=False):

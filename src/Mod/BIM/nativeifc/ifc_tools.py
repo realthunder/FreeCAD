@@ -352,7 +352,7 @@ def create_children(
         result.extend(create_child(obj, child))
     assign_groups(children)
     # TEST: mark new objects to recompute
-    QtCore.QTimer.singleShot(0, lambda: recompute([get_object(c) for c in children]))
+    defer(lambda: recompute([get_object(c) for c in children]), 0)
     return result
 
 
@@ -1778,7 +1778,7 @@ def load_orphans(obj):
                 project.Proxy.addObject(project, o)
 
     # TEST: Try recomputing
-    QtCore.QTimer.singleShot(0, lambda: recompute(objs))
+    defer(lambda: recompute(objs), 0)
 
 
 def remove_tree(objs):
@@ -1801,6 +1801,21 @@ def remove_tree(objs):
             deletelist.append(obj.Name)
     for n in deletelist:
         doc.removeObject(n)
+
+
+def defer(callback, delay=100):
+    """Run a callback through the event loop, or straight away if there is none.
+
+    NativeIFC defers a lot of work with QTimer.singleShot. Without a GUI
+    nothing ever runs those calls, and they are destroyed after the Python
+    interpreter has been finalized -- which segfaults on exit inside
+    QMetaCallEvent's destructor. Headless callers get the call immediately
+    instead, which is what a script wants anyway.
+    """
+    if FreeCAD.GuiUp:
+        QtCore.QTimer.singleShot(delay, callback)
+    else:
+        callback()
 
 
 def recompute(children):

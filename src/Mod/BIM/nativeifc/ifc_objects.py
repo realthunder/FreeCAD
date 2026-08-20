@@ -123,8 +123,8 @@ class ifc_object:
                         child.touch()
             else:
                 obj.Proxy.cached = True
-                QtCore.QTimer.singleShot(100, obj.touch)
-            QtCore.QTimer.singleShot(100, obj.Document.recompute)
+                ifc_tools.defer(obj.touch)
+            ifc_tools.defer(obj.Document.recompute)
             QtCore.QTimer.singleShot(100, self.fit_all)
 
     def assign_classification(self, obj):
