@@ -106,6 +106,10 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     // the surface's response to light, so at most one can be on.
     auto modelRow = new QHBoxLayout;
     modelRow->setContentsMargins(0, 0, 0, 0);
+    // Three one-word labels read as one run of text at the style default
+    // spacing -- wider than the 12 the checkbox grid below uses, because
+    // those sit in aligned columns and these do not.
+    modelRow->setSpacing(18);
     // Named for what it IS, not for its position in the list. "Default"
     // described only the fact that a view starts in it, which stops being
     // true the moment that changes and never said anything about the
