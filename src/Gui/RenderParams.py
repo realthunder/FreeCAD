@@ -1133,7 +1133,7 @@ Params = [
         ),
     ParamInt('PBREnvPreset',  4, title='Environment',
         proxy=ParamComboBox(items=['Studio', 'Gradient', 'Overcast',
-                                   'Sunset', 'Interior']),
+                                   'Sunset', 'Interior', 'Light tent']),
         doc="Which built-in environment lights the scene, where no\n"
         "environment image is set. They are computed rather than\n"
         "sampled from a file, so they cost no assets and work on every\n"
@@ -1159,7 +1159,11 @@ Params = [
         "back. Overcast = a bright sky weighted to the zenith over dark\n"
         "ground, soft and neutral. Sunset = a low warm sun with a deep\n"
         "sky, the strongest colour separation, and the only one that\n"
-        "tints the whole frame."),
+        "tints the whole frame. Light tent = a box of white panels,\n"
+        "bright BELOW the horizon as well as above it and seamed all\n"
+        "the way round; the one to pick when the SIDES of a subject\n"
+        "matter, since every other environment here puts a floor under\n"
+        "it and a standing wall reflects the floor."),
     ParamFloat('PBREnvIntensity',  1.0, title='Environment brightness',
         doc="Brightness of the image based lighting environment."),
     ParamString('PBREnvImage', '', title='Environment image',

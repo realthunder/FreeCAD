@@ -142,6 +142,7 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     envCombo->addItem(tr("Overcast"));
     envCombo->addItem(tr("Sunset"));
     envCombo->addItem(tr("Interior"));
+    envCombo->addItem(tr("Light tent"));
     envCombo->setToolTip(doc(RenderParams::docPBREnvPreset()));
     envLabel->setToolTip(envCombo->toolTip());
     // The environment lights the scene whether or not it is DRAWN --

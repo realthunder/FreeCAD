@@ -2016,7 +2016,11 @@ public:
     /// back. Overcast = a bright sky weighted to the zenith over dark
     /// ground, soft and neutral. Sunset = a low warm sun with a deep
     /// sky, the strongest colour separation, and the only one that
-    /// tints the whole frame.
+    /// tints the whole frame. Light tent = a box of white panels,
+    /// bright BELOW the horizon as well as above it and seamed all
+    /// the way round; the one to pick when the SIDES of a subject
+    /// matter, since every other environment here puts a floor under
+    /// it and a standing wall reflects the floor.
     static const long & getPBREnvPreset();
     static const long & defaultPBREnvPreset();
     static void removePBREnvPreset();

@@ -1485,7 +1485,8 @@ struct PBRConfig {
     /// dark surround), 1 Gradient (the smooth three-band dome this
     /// engine had before the others), 2 Overcast, 3 Sunset, 4 Interior
     /// (the default -- one window against a dark surround, the crispest
-    /// key of the five).
+    /// key of them), 5 Light tent (bright in BOTH hemispheres with
+    /// panel seams throughout, for a subject whose sides matter).
     ///
     /// The point of the others is that Gradient spans barely one stop
     /// and has no edges anywhere, so a smooth dielectric reflecting it

@@ -766,7 +766,18 @@ the source changes:
   `Studio` (four soft boxes on a dark surround), `Gradient` (the Z-up
   ground/horizon/sky ramp plus three cosine lobes this engine had
   before the others, kept so an older document can have its look
-  back), `Overcast`, `Sunset`.
+  back), `Overcast`, `Sunset`, `Light tent`.
+
+  `Light tent` is the odd one and exists for a specific failure. Every
+  other preset here is a place with a FLOOR, so its lower hemisphere is
+  the darkest part of it -- and a standing cylinder's wall reflects
+  exactly that half, whatever the camera does, because a wall seen from
+  above the equator mirrors below the horizon. The wall of a machined
+  billet therefore goes dead under all of them. This one is bright in
+  both hemispheres and carries panel seams at every elevation, which
+  matters twice over: brightness alone still leaves a vertical groove
+  invisible, since a groove that tilts its normal only in azimuth needs
+  something to swing the reflection ACROSS.
 
   All five are scaled to integrate to the **same mean radiance** over
   the sphere (0.565 in luminance, Gradient's). That is load bearing:

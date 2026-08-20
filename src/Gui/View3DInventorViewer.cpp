@@ -4452,7 +4452,7 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     if (!view->getPropertyByName("Render_PBREnvPreset")) {
         static const char* _pbrEnvPresetEnums[] =
             {"Studio", "Gradient", "Overcast", "Sunset", "Interior",
-             nullptr};
+             "Light tent", nullptr};
         auto prop = static_cast<App::PropertyEnumeration*>(
                 view->addDynamicProperty("App::PropertyEnumeration",
                                          "Render_PBREnvPreset", "Render",

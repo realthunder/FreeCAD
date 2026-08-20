@@ -295,6 +295,52 @@ void BGFXView::envRadianceProcedural(const float d[3], float out[3]) const
             out[i] *= 0.80033f;
         return;
     }
+    case 5: {   // Light tent -- a box of white panels, seams and all.
+        // Bright in BOTH hemispheres, which is the point and what
+        // separates it from every other preset here. A standing
+        // cylinder's wall reflects the half of the sphere BELOW the
+        // horizon, and in a studio or a room that half is floor and
+        // therefore dark, so the wall of a machined billet goes dead
+        // however the rest is lit.
+        if (t >= 0.0f) {
+            out[0] = 0.62f + 0.20f * t;
+            out[1] = 0.63f + 0.20f * t;
+            out[2] = 0.65f + 0.20f * t;
+        }
+        else {
+            float g = -t;
+            out[0] = out[1] = 0.72f - 0.10f * g;
+            out[2] = 0.73f - 0.10f * g;
+        }
+        // Two lit panels and two dark ones, all the way round and at
+        // every elevation. Brightness alone is not enough: a groove
+        // tilts its normal, and a tilt that only swings the reflection
+        // in AZIMUTH shows nothing unless there is something to swing
+        // across. Below the horizon most of all -- that is where a
+        // vertical groove on a vertical wall looks.
+        //
+        // TWO cycles, and a plain cosine rather than a narrow seam,
+        // because of what the surface does to it. These are rough
+        // metals: a roughness of 0.39 integrates a lobe tens of degrees
+        // wide, and that lobe is a low-pass filter on the environment.
+        // Narrow seams six to a turn measured a 1.43x swing in the
+        // environment and 1.01x after the lobe -- gone. Two broad ones
+        // survive at 1.90x, which is the whole difference between a
+        // brushed wall that reads and one that does not.
+        const float panel = 0.5f * (1.0f + std::cos(2.0f * az));
+        for (int i = 0; i < 3; ++i)
+            out[i] *= 1.0f - 0.75f * panel;
+        // The top light, as a smooth power rather than a panel with an
+        // edge: a tent diffuses its source, and nothing in here should
+        // be sharp enough for a polished surface to clip on.
+        const float up = std::max(0.0f, std::sin(el));
+        const float lid = 2.0f * up * up * up;
+        for (int i = 0; i < 3; ++i)
+            out[i] += lid;
+        for (int i = 0; i < 3; ++i)
+            out[i] *= 0.82700f;
+        return;
+    }
     default: {  // 0 Studio -- softboxes on a dark surround.
         if (t >= 0.0f) {
             out[0] = 0.15f + 0.07f * t;

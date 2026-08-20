@@ -4391,7 +4391,11 @@ const char *RenderParams::docPBREnvPreset() {
 "back. Overcast = a bright sky weighted to the zenith over dark\n"
 "ground, soft and neutral. Sunset = a low warm sun with a deep\n"
 "sky, the strongest colour separation, and the only one that\n"
-"tints the whole frame.");
+"tints the whole frame. Light tent = a box of white panels,\n"
+"bright BELOW the horizon as well as above it and seamed all\n"
+"the way round; the one to pick when the SIDES of a subject\n"
+"matter, since every other environment here puts a floor under\n"
+"it and a standing wall reflects the floor.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
