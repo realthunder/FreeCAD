@@ -167,10 +167,29 @@ All five stages are done and committed on `LinkVibe`.
 | stage | commit | gate |
 | --- | --- | --- |
 | 0 AreaCalculator | `a96bf81a40` | King parametric import, 1300 s cap: `Part.Wire` failures 398 -> 0, total 993 -> 536 |
-| 1 `Gui.UserInput` (shimmed) | `c160feaae7` | upstream Draft modules importing 174/222 -> 220/222 |
+| 1 `Gui.UserInput` (ported) | `c160feaae7`, `19bb5c42a8` | upstream Draft modules importing 174/222 -> 220/222; the shim is gone, hints display |
 | 2 Draft transplant | `9ea92ae952` | `TestDraft` 82 tests / 5 failing (was 67 / 1), `TestDraftGui` 38 / 1 |
 | 3 Arch -> BIM | `82a8a4478d` | `TestArch` 280 tests / 7 failing, now 5; King import 473 objects, 298 solids, 8.7 s against 9.1 s |
 | 4 NativeIFC | `d71c8a9fcd`, `a187adbd75`..`0d52fa4244` | King opens in 5 s and its building structure costs 18.2 s, against 635 s -- see below |
+
+### Stage 1 -- the shim is gone
+
+`19bb5c42a8` replaces the 190-line Python shim with upstream's real
+subsystem: `InputHint.h`, `InputHintPy.{h,cpp}` and
+`InputHintWidget.{h,cpp}` verbatim, and upstream's own Python
+`InputHint`/`HintManager`, which call through to the main window rather
+than discarding. Four adaptations, none in the hint code:
+`InputHintWidget` takes `QLabel` rather than `StatusBarLabel` (a class
+that exists to drive a status-bar item registry this fork lacks);
+MainWindow places it with `statusBar()->addWidget()` since
+`addStatusBarItem()` is likewise absent; and `Base::PyRegisterEnum` and
+`BitmapFactoryInst::empty()`/`getMaximumDPR()` came across because this
+fork had neither.
+
+WARNING: `MainWindowPy::createWrapper()` copies a hard-coded list of
+attribute names onto the PySide wrapper. A new `add_varargs_method` is
+invisible from Python until its name is in that list --
+`Gui.getMainWindow()` just returns a plain `QMainWindow`.
 
 ### Test standing, all four suites re-run 2026-08-20
 
