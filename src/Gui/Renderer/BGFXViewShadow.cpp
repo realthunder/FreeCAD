@@ -75,9 +75,12 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     // background; the quad still writes depth like Coin's ground).
     // A shadow-only ground spends the alpha slot differently: it is
     // how dark the shadow itself lands, since the lit ground is not
-    // drawn at all. 0.8 is Coin's, whose SoShadowTransparency
-    // defaulted to 0.2 and which FreeCAD never overrode.
-    color[3] = shadowOnly ? 0.8f : 1.0f - light.groundTransparency;
+    // drawn at all. That is Coin's SoShadowTransparency, and it is what
+    // separates the two shadow-only modes: 0 a solid shadow, anything
+    // above it a translucent one.
+    color[3] = shadowOnly
+        ? std::min(1.0f, std::max(0.0f, 1.0f - light.shadowTransparency))
+        : 1.0f - light.groundTransparency;
     // Lighting and sidedness are the ground's own properties
     // (ShadowGroundShading, ShadowGroundBackFaceCull), which Coin
     // states as an SoLightModel and an SoShapeHints above the quad
@@ -234,8 +237,15 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     // the mat.ccw case of every other cull site here.
     if (light.groundBackFaceCull)
         state |= BGFX_STATE_CULL_CW;
-    if (light.groundTransparency > 0.0f)
+    if (shadowOnly) {
+        // Multiplied, not blended: the shadow attenuates the frame
+        // behind it (fs_fc_groundshadow), which is the only way it is
+        // darker than the background whatever the background is.
+        state |= BGFX_STATE_BLEND_MULTIPLY;
+    }
+    else if (light.groundTransparency > 0.0f) {
         state |= BGFX_STATE_BLEND_ALPHA;
+    }
     bgfx::setState(state);
     bgfx::submit(vid(ViewOpaque),
                  shadowOnly ? m_progGroundShadow

@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:577)
+// Auto generated code (Gui/ViewParams.py:587)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -1193,6 +1193,25 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ShadowTransparency
+    ///
+    /// How transparent the shadow itself is, where the ground carries the
+    /// shadow and nothing else (Ground transparency at 1). 0 paints a solid
+    /// shadow, 1 an invisible one; the unshadowed ground is hidden either
+    /// way. Coin spelled this SoShadowTransparency and defaulted it to the
+    /// same 0.2.
+    /// 
+    /// A drawn ground ignores it -- there the shadow is the ground shaded,
+    /// and how dark it goes is a matter of the light.
+    static const double & getShadowTransparency();
+    static const double & defaultShadowTransparency();
+    static void removeShadowTransparency();
+    static void setShadowTransparency(const double &v);
+    static const char *docShadowTransparency();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter ShadowGroundTransparency
     ///
     /// How much of the shadow receiver plane is drawn beside the shadow
@@ -2206,7 +2225,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:583)
+    // Auto generated code (Gui/ViewParams.py:593)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2237,7 +2256,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:596)
+// Auto generated code (Gui/ViewParams.py:606)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

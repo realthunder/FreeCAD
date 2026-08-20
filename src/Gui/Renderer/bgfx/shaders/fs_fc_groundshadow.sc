@@ -28,13 +28,25 @@ void main()
 {
 	vec3 tint;
 	float dark = 1.0 - fcSceneShadow(v_vpos, gl_FragCoord.xy, tint);
-	// A coloured glass caster tints the shadow it throws, the same
-	// transmittance the lit surfaces multiply their direct term by.
+	// A shadow DARKENS what is behind it, and this draw is submitted
+	// multiplied (BGFX_STATE_BLEND_MULTIPLY) rather than blended over
+	// the frame so that it always does. Blending a mid grey over the
+	// background only darkens a background lighter than the grey; over
+	// a dark one it would paint the shadow BRIGHTER than the scene it
+	// falls on.
 	//
-	// Lit ground comes out at alpha 0 rather than discarded: the quad
-	// then writes the same depth over its whole span that the solid
-	// ground does, which is what a ground reflection depth-tests
-	// EQUAL against -- and there is nothing under a receiver plane for
-	// the depth to hide.
-	gl_FragColor = vec4(u_matColor.rgb * tint, dark * u_matColor.a);
+	// So the fragment is not a colour but a transmittance: how much of
+	// what is behind survives. u_matColor is what survives where the
+	// shadow is fully dark (the ground colour, linear -- the CPU
+	// decoded it), its alpha how far toward that a partly shadowed
+	// fragment goes, and a coloured glass caster's tint rides along as
+	// the transmittance it already is.
+	//
+	// Fully lit ground comes out as white -- a multiply by one, which
+	// changes nothing -- rather than discarded: the quad then writes
+	// the same depth over its whole span that the solid ground does,
+	// which is what a ground reflection depth-tests EQUAL against.
+	float k = clamp(dark * u_matColor.a, 0.0, 1.0);
+	vec3 pass = mix(vec3_splat(1.0), u_matColor.rgb * tint, k);
+	gl_FragColor = vec4(pass, 1.0);
 }

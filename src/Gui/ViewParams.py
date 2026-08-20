@@ -345,6 +345,16 @@ Params = [
        "Specifies the physcal length of the ground texture image size.\n"
        "Texture mappings beyond this size will be wrapped around",
        title='Ground texture size', proxy=ParamSpinBox(0.0, 1e7, 10.0)),
+    ParamFloat('ShadowTransparency',  0.2,
+       "How transparent the shadow itself is, where the ground carries the\n"
+       "shadow and nothing else (Ground transparency at 1). 0 paints a solid\n"
+       "shadow, 1 an invisible one; the unshadowed ground is hidden either\n"
+       "way. Coin spelled this SoShadowTransparency and defaulted it to the\n"
+       "same 0.2.\n"
+       "\n"
+       "A drawn ground ignores it -- there the shadow is the ground shaded,\n"
+       "and how dark it goes is a matter of the light.",
+       title='Shadow transparency', proxy=ParamSpinBox(0.0, 1.0, 0.1)),
     ParamFloat('ShadowGroundTransparency',  1.0,
        "How much of the shadow receiver plane is drawn beside the shadow\n"
        "itself.\n"

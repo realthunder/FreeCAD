@@ -2567,6 +2567,13 @@ Gui::ShadowRenderParams Gui::materializeShadowRenderParams(App::PropertyContaine
                 if(!prop.getConstraints())
                     prop.setConstraints(&_transp_cstr);
             });
+    _shadowRenderParam<App::PropertyFloatConstraint>(view, "Transparency",
+            ViewParams::docShadowTransparency(),
+            ViewParams::getShadowTransparency(),
+            [](App::PropertyFloatConstraint &prop) {
+                if(!prop.getConstraints())
+                    prop.setConstraints(&_transp_cstr);
+            });
     _shadowRenderParam<App::PropertyBool>(view, "GroundBackFaceCull",
             ViewParams::docShadowGroundBackFaceCull(),
             ViewParams::getShadowGroundBackFaceCull());

@@ -1060,6 +1060,15 @@ struct LightConfig {
     bool sunDisc = false;
     float sunDiscSize = 1.5f;  ///< angular radius in degrees
 
+    /// How transparent the shadow ITSELF is on a shadow-only ground
+    /// (RenderShadow_Transparency; Coin's SoShadowTransparency, whose
+    /// 0.2 default this keeps). 0 paints a solid shadow, 1 an invisible
+    /// one -- the two modes the Coin ground had, both of them hiding
+    /// the unshadowed ground entirely. Read only while
+    /// groundShadowOnly(): a drawn ground carries the shadow in its
+    /// shading instead.
+    float shadowTransparency = 0.2f;
+
     /// A fully transparent ground is not an absent one: it carries the
     /// shadow and nothing else, transparent wherever the scene light
     /// reaches it. That is Coin's TRANSPARENT_SHADOWED style, which
@@ -1187,6 +1196,7 @@ struct LightConfig {
             && groundAuto == o.groundAuto
             && groundSizeX == o.groundSizeX && groundSizeY == o.groundSizeY
             && groundAutoPos == o.groundAutoPos
+            && shadowTransparency == o.shadowTransparency
             && std::equal(groundPos, groundPos + 3, o.groundPos)
             && std::equal(groundMatrix, groundMatrix + 16, o.groundMatrix);
     }

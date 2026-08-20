@@ -250,7 +250,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     laid out at and the layer a draw with no per-vertex stream reads.
 //     A snapshot older than this has no palette, and its faces are
 //     textured the one way they always were.
-const uint32_t kVersion = 65;
+// 66: the light says how transparent the SHADOW is on a shadow-only
+//     ground (LightConfig::shadowTransparency). A snapshot older than
+//     this reads the struct default, 0.2 -- the translucent shadow the
+//     mode was first written with, and Coin's own default.
+const uint32_t kVersion = 66;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -1771,6 +1775,7 @@ void writeLight(Writer &w, const LightConfig &l, const RefWriter &refs)
     w.floats(l.groundMatrix, 16);
     w.b(l.groundShading);   // v58
     w.b(l.groundBackFaceCull);
+    w.f(l.shadowTransparency);   // v66
 }
 
 void readLight(Reader &r, LightConfig &l, const RefReader &refs,
@@ -1817,6 +1822,9 @@ void readLight(Reader &r, LightConfig &l, const RefReader &refs,
     if (version >= 58) {
         l.groundShading = r.b();
         l.groundBackFaceCull = r.b();
+    }
+    if (version >= 66) {
+        l.shadowTransparency = r.f();
     }
     // Older streams leave the struct's defaults: auto sizing from the
     // scene bounds, which is what those builds did.

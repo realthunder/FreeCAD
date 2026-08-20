@@ -2420,6 +2420,16 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
                 float(ViewParams::getShadowGroundTransparency());
         res.groundTransparency =
             std::min(1.0f, std::max(0.0f, res.groundTransparency));
+        // The shadow's own transparency, which only a shadow-only
+        // ground reads (Coin's SoShadowTransparency).
+        if (auto prop = viewPropOverride<App::PropertyFloat>(
+                    view, "RenderShadow", "Transparency"))
+            res.shadowTransparency = float(prop->getValue());
+        else
+            res.shadowTransparency =
+                float(ViewParams::getShadowTransparency());
+        res.shadowTransparency =
+            std::min(1.0f, std::max(0.0f, res.shadowTransparency));
         std::string bumppath;
         if (auto prop = viewPropOverride<App::PropertyFileIncluded>(
                     view, "RenderShadow", "GroundBumpMap")) {
