@@ -7,9 +7,9 @@
 
 AreaDxfRead::AreaDxfRead(CArea* area, const char* filepath):CDxfRead(filepath), m_area(area){}
 
-void AreaDxfRead::StartCurveIfNecessary(const double* s)
+void AreaDxfRead::StartCurveIfNecessary(const Base::Vector3d& s)
 {
-	Point ps(s);
+	Point ps(s.x, s.y);
 	if((m_area->m_curves.size() == 0) || (m_area->m_curves.back().m_vertices.size() == 0) || (m_area->m_curves.back().m_vertices.back().m_p != ps))
 	{
 		// start a new curve
@@ -18,14 +18,15 @@ void AreaDxfRead::StartCurveIfNecessary(const double* s)
 	}
 }
 
-void AreaDxfRead::OnReadLine(const double* s, const double* e, bool /*hidden*/)
+void AreaDxfRead::OnReadLine(const Base::Vector3d& s, const Base::Vector3d& e, bool /*hidden*/)
 {
 	StartCurveIfNecessary(s);
-	m_area->m_curves.back().m_vertices.push_back(Point(e));
+	m_area->m_curves.back().m_vertices.push_back(Point(e.x, e.y));
 }
 
-void AreaDxfRead::OnReadArc(const double* s, const double* e, const double* c, bool dir, bool /*hidden*/)
+void AreaDxfRead::OnReadArc(const Base::Vector3d& s, const Base::Vector3d& e, const Base::Vector3d& c,
+                            bool dir, bool /*hidden*/)
 {
 	StartCurveIfNecessary(s);
-	m_area->m_curves.back().m_vertices.emplace_back(dir?1:0, Point(e), Point(c));
+	m_area->m_curves.back().m_vertices.emplace_back(dir?1:0, Point(e.x, e.y), Point(c.x, c.y));
 }

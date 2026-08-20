@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009 Yorik van Havre <yorik@uncreated.net>                        *
 # *   (c) 2010 Ken Cline <cline@frii.com>                                   *
@@ -23,16 +25,21 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides the base classes for newer Draft Gui Commands."""
+
 ## @package gui_base
 # \ingroup draftguitools
 # \brief Provides the base classes for newer Draft Gui Commands.
 
 ## \addtogroup draftguitools
 # @{
+from PySide import QtCore
+
 import FreeCAD as App
 import FreeCADGui as Gui
-import draftutils.todo as todo
-
+from draftguitools import gui_trackers as trackers
+from draftutils import gui_utils
+from draftutils import params
+from draftutils import todo
 from draftutils.messages import _toolmsg, _log
 
 
@@ -60,40 +67,24 @@ class GuiCommandSimplest:
         for example, `'Heal'`, `'Flip dimensions'`,
         `'Line'`, `'Circle'`, etc.
 
-    doc: App::Document, optional
-        It defaults to the value of `App.activeDocument()`.
-        The document object itself, which indicates where the actions
-        of the command will be executed.
-
     Attributes
     ----------
-    command_name: str
+    featureName: str
         This is the command name, which is assigned by `name`.
 
     doc: App::Document
-        This is the document object itself, which is assigned by `doc`.
-
         This attribute should be used by functions to make sure
         that the operations are performed in the correct document
         and not in other documents.
-        To set the active document we can use
-
-        >>> App.setActiveDocument(self.doc.Name)
     """
 
-    def __init__(self, name="None", doc=App.activeDocument()):
-        self.command_name = name
-        self.doc = doc
+    def __init__(self, name="None"):
+        self.doc = None
+        self.featureName = name
 
     def IsActive(self):
-        """Return True when this command should be available.
-
-        It is `True` when there is a document.
-        """
-        if App.activeDocument():
-            return True
-        else:
-            return False
+        """Return True when this command should be available."""
+        return bool(App.activeDocument())
 
     def Activated(self):
         """Execute when the command is called.
@@ -102,10 +93,8 @@ class GuiCommandSimplest:
         Also update the `doc` attribute.
         """
         self.doc = App.activeDocument()
-        _log("Document: {}".format(self.doc.Label))
-        _log("GuiCommand: {}".format(self.command_name))
-        _toolmsg("{}".format(16*"-"))
-        _toolmsg("GuiCommand: {}".format(self.command_name))
+        _toolmsg("{}".format(16 * "-"))
+        _toolmsg("GuiCommand: {}".format(self.featureName))
 
 
 class GuiCommandNeedsSelection(GuiCommandSimplest):
@@ -119,14 +108,8 @@ class GuiCommandNeedsSelection(GuiCommandSimplest):
     """
 
     def IsActive(self):
-        """Return True when this command should be available.
-
-        It is `True` when there is a selection.
-        """
-        if App.activeDocument() and Gui.Selection.getSelection():
-            return True
-        else:
-            return False
+        """Return True when this command should be available."""
+        return bool(Gui.Selection.getSelection())
 
 
 class GuiCommandBase:
@@ -165,20 +148,39 @@ class GuiCommandBase:
             >>> Draft.autogroup(obj)
     """
 
-    def __init__(self):
+    def __init__(self, name="None"):
+        App.activeDraftCommand = None
         self.call = None
         self.commit_list = []
         self.doc = None
-        App.activeDraftCommand = None
-        self.view = None
+        self.featureName = name
         self.planetrack = None
+        self.view = None
 
     def IsActive(self):
         """Return True when this command should be available."""
-        if App.ActiveDocument:
-            return True
-        else:
-            return False
+        return bool(gui_utils.get_3d_view())
+
+    def Activated(self):
+        self.doc = App.ActiveDocument
+        if not self.doc:
+            self.finish()
+            return
+
+        App.activeDraftCommand = self
+        self.view = gui_utils.get_3d_view()
+
+        if params.get_param("showPlaneTracker"):
+            self.planetrack = trackers.PlaneTracker()
+
+        _toolmsg("{}".format(16 * "-"))
+        _toolmsg("GuiCommand: {}".format(self.featureName))
+
+    def update_hints(self):
+        Gui.HintManager.show(*self.get_hints())
+
+    def get_hints(self):
+        return []
 
     def finish(self):
         """Terminate the active command by committing the list of commands.
@@ -189,6 +191,7 @@ class GuiCommandBase:
         App.activeDraftCommand = None
         if self.planetrack:
             self.planetrack.finalize()
+        self.planetrack = None
         if hasattr(Gui, "Snapper"):
             Gui.Snapper.off()
         if self.call:
@@ -197,10 +200,12 @@ class GuiCommandBase:
             except RuntimeError:
                 # the view has been deleted already
                 pass
-            self.call = None
+        self.call = None
         if self.commit_list:
             todo.ToDo.delayCommit(self.commit_list)
         self.commit_list = []
+
+        QtCore.QTimer.singleShot(0, Gui.HintManager.hide)
 
     def commit(self, name, func):
         """Store actions to be committed to the document.
@@ -215,5 +220,6 @@ class GuiCommandBase:
             that will be executed.
         """
         self.commit_list.append((name, func))
+
 
 ## @}

@@ -103,7 +103,12 @@ This applies to CLAUDE.md and the docs too: the existing text stays as it is.
 
 Enforcement is `scripts/strip-nonascii.py`, installed as a `post-commit` hook by
 `scripts/install-hooks.sh` (run it once per clone, and for the sibling coin/occt
-repos). It transliterates the non-ASCII on lines the commit added -- and only where
+repos). The installed hook is `scripts/post-commit-hook.sh`, a wrapper that picks
+an interpreter it has proved runs -- `python3`/`python` on PATH is the Microsoft
+Store stub on Windows, and relying on the script's shebang there meant every
+commit printed "Python was not found" and enforced nothing. Override with
+`STRIP_NONASCII_PYTHON`; if the wrapper finds no Python it says the check was
+**SKIPPED** rather than passing silently. It transliterates the non-ASCII on lines the commit added -- and only where
 that text was not already in the file -- fixes the commit message, and amends
 the commit. The pre-image check matters because "added" is git's answer, not
 yours: flatten a CRLF file with an editor that writes LF, reindent, or move a

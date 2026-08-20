@@ -79,6 +79,8 @@ private Q_SLOTS:
     void onButtonCustomAppearanceClicked();
     void onButtonColorPlotClicked();
     void onMaterialSelected(const std::shared_ptr<Materials::Material>& material);
+    void onFinishPresetActivated(int);
+    void onFinishSizeChanged(double);
     void onMapFaceColorChanged(bool);
     void onMapLineColorChanged(bool);
     void onMapPointColorChanged(bool);
@@ -96,6 +98,12 @@ private:
     void setDisplayModes(const std::vector<Gui::ViewProvider*>&);
     void setColorPlot(const std::vector<Gui::ViewProvider*>&);
     void setShapeAppearance(const std::vector<Gui::ViewProvider*>&);
+    /// Fill the finish combo with one row per pattern, on the icons the
+    /// Material module renders for them
+    void setupFinishPresets();
+    void setShapeFinish(const std::vector<Gui::ViewProvider*>&);
+    /// Write the row's finish onto every entry of each target's appearance
+    void applyFinish();
     void setShapeColor(const std::vector<Gui::ViewProvider*>&);
     void setLineColor(const std::vector<Gui::ViewProvider*>&);
     void setPointColor(const std::vector<Gui::ViewProvider*>&);

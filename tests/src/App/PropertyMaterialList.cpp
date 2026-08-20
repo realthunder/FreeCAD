@@ -20,12 +20,18 @@
 
 #include <gtest/gtest.h>
 
+#include <fstream>
+#include <limits>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include <App/FileBlobManager.h>
 #include <App/Material.h>
 #include <App/PropertyStandard.h>
+#include <Base/FileInfo.h>
+#include <Base/Interpreter.h>
 #include <Base/Exception.h>
 #include <Base/Reader.h>
 #include <Base/Writer.h>
@@ -80,6 +86,20 @@ App::SurfaceFinish brushedFinish()
     finish.depth = 0.002F;
     finish.angle = 30.0F;
     return finish;
+}
+
+/// Content hashes, not paths: the slots name blobs the manager owns
+App::SurfaceTexture oakTexture()
+{
+    App::SurfaceTexture texture;
+    texture.maps[App::SurfaceTexture::BaseColor] = "0123456789abcdef";
+    texture.maps[App::SurfaceTexture::Normal] = "fedcba9876543210";
+    // Short decimals, so they survive the doc file's 6-digit text form
+    texture.scale[0] = 2.0F;
+    texture.scale[1] = 0.5F;
+    texture.offset[0] = 0.25F;
+    texture.rotation = 90.0F;
+    return texture;
 }
 
 App::Material fullyPaintedMaterial()
@@ -1290,6 +1310,255 @@ TEST_F(PropertyMaterialListTest, aFinishRidesAWholeMaterialBothWays)
     EXPECT_EQ(kept.finish, knurlFinish());
 }
 
+TEST_F(PropertyMaterialListTest, aTextureIsUnsetUntilASlotIsFilled)
+{
+    App::SurfaceTexture texture;
+    EXPECT_FALSE(texture.isSet());
+
+    // A transform with nothing to transform states nothing, so it is not
+    // a set record and normalize takes the numbers back out
+    texture.scale[0] = 4.0F;
+    texture.offset[1] = 0.75F;
+    texture.rotation = 45.0F;
+    EXPECT_FALSE(texture.isSet());
+    texture.normalize();
+    EXPECT_EQ(texture, App::SurfaceTexture());
+
+    // Any one slot is enough, and then the transform means something
+    texture.maps[App::SurfaceTexture::Occlusion] = "abc";
+    texture.rotation = 45.0F;
+    EXPECT_TRUE(texture.isSet());
+    texture.normalize();
+    EXPECT_FLOAT_EQ(texture.rotation, 45.0F);
+}
+
+TEST_F(PropertyMaterialListTest, aTextureTransformIsClampedOnTheWayIn)
+{
+    App::SurfaceTexture texture;
+    texture.maps[App::SurfaceTexture::BaseColor] = "abc";
+    texture.scale[0] = std::numeric_limits<float>::quiet_NaN();
+    texture.scale[1] = std::numeric_limits<float>::infinity();
+    texture.offset[0] = std::numeric_limits<float>::quiet_NaN();
+    texture.rotation = 400.0F;   // a texture rotation is a direction
+    texture.normalize();
+
+    EXPECT_FLOAT_EQ(texture.scale[0], 1.0F);
+    EXPECT_FLOAT_EQ(texture.scale[1], 1.0F);
+    EXPECT_FLOAT_EQ(texture.offset[0], 0.0F);
+    EXPECT_FLOAT_EQ(texture.rotation, 40.0F);
+
+    // ... so the full turn, unlike the finish lay's half
+    texture.rotation = -30.0F;
+    texture.normalize();
+    EXPECT_FLOAT_EQ(texture.rotation, 330.0F);
+}
+
+TEST_F(PropertyMaterialListTest, everyTextureSlotRoundTripsThroughItsName)
+{
+    for (uint8_t slot = 0; slot < App::SurfaceTexture::SlotCount; ++slot) {
+        const char* name = App::SurfaceTexture::slotName(slot);
+        EXPECT_STRNE(name, "") << int(slot);
+        EXPECT_EQ(App::SurfaceTexture::slotFromName(name), slot) << name;
+    }
+    // A slot this build does not know is skipped, not named wrongly
+    EXPECT_STREQ(App::SurfaceTexture::slotName(App::SurfaceTexture::SlotCount), "");
+    EXPECT_EQ(App::SurfaceTexture::slotFromName("clearcoat"),
+              App::SurfaceTexture::SlotCount);
+    EXPECT_EQ(App::SurfaceTexture::slotFromName(""), App::SurfaceTexture::SlotCount);
+    EXPECT_EQ(App::SurfaceTexture::slotFromName(nullptr), App::SurfaceTexture::SlotCount);
+}
+
+TEST_F(PropertyMaterialListTest, aTextureRidesAWholeMaterialBothWays)
+{
+    App::Material mat = redMaterial();
+    mat.texture = oakTexture();
+
+    App::Material plain = redMaterial();
+    EXPECT_NE(mat, plain);   // equality includes the texture
+
+    // Two slots naming the same content are the same statement
+    App::Material same = redMaterial();
+    same.texture = oakTexture();
+    EXPECT_EQ(mat, same);
+
+    // a preset states the whole material, and none of them states a texture
+    App::Material preset = mat;
+    preset.setType(App::Material::STEEL);
+    EXPECT_FALSE(preset.texture.isSet());
+    // ... but USER_DEFINED states nothing, here as for the finish
+    App::Material kept = mat;
+    kept.setType(App::Material::USER_DEFINED);
+    EXPECT_EQ(kept.texture, oakTexture());
+}
+
+TEST_F(PropertyMaterialListTest, aTextureFieldCostsNothingUntilSomethingStatesOne)
+{
+    App::PropertyMaterialList prop;
+    prop.setSize(5);
+    EXPECT_FALSE(prop.hasTexture());
+    EXPECT_EQ(prop.getTexturePalette().size(), 0U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+    EXPECT_FALSE(prop.getTexture(3).isSet());
+
+    // Uniform: one record, and still no index
+    prop.setTexture(oakTexture());
+    EXPECT_TRUE(prop.hasTexture());
+    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+    for (int i = 0; i < 5; ++i)
+        EXPECT_EQ(prop.getTexture(i), oakTexture()) << i;
+
+    // Back to the default everywhere, and the storage goes with it
+    prop.setTexture(App::SurfaceTexture());
+    EXPECT_FALSE(prop.hasTexture());
+    EXPECT_EQ(prop.getTexturePalette().size(), 0U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+}
+
+TEST_F(PropertyMaterialListTest, oneOddEntryCostsTwoBytesNotARecordPerEntry)
+{
+    // The whole point of the palette: an odd face among many must not
+    // materialise a record for every other face
+    App::PropertyMaterialList prop;
+    prop.setSize(1000);
+    prop.setTexture(oakTexture());
+
+    App::SurfaceTexture odd;
+    odd.maps[App::SurfaceTexture::Emissive] = "odd-one-out";
+    prop.setTexture(700, odd);
+
+    EXPECT_EQ(prop.getTexturePalette().size(), 2U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 1000U);
+    EXPECT_EQ(prop.getTexture(699), oakTexture());
+    EXPECT_EQ(prop.getTexture(700), odd);
+    EXPECT_EQ(prop.getTexture(701), oakTexture());
+
+    // ... and putting it back collapses the whole thing again
+    prop.setTexture(700, oakTexture());
+    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+    EXPECT_EQ(prop.getTexture(700), oakTexture());
+}
+
+TEST_F(PropertyMaterialListTest, aTexturePaletteHoldsOnlyWhatIsDistinct)
+{
+    App::SurfaceTexture a;
+    a.maps[App::SurfaceTexture::BaseColor] = "aaa";
+    App::SurfaceTexture b;
+    b.maps[App::SurfaceTexture::BaseColor] = "bbb";
+
+    App::PropertyMaterialList prop;
+    // Six entries, three distinct values, one of them the default
+    prop.setTextures({a, b, a, App::SurfaceTexture(), b, a});
+    EXPECT_EQ(prop.getSize(), 6);
+    EXPECT_EQ(prop.getTexturePalette().size(), 3U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 6U);
+    // First-use order, which is what makes the stored form canonical
+    EXPECT_EQ(prop.getTexturePalette()[0], a);
+    EXPECT_EQ(prop.getTexturePalette()[1], b);
+    EXPECT_FALSE(prop.getTexturePalette()[2].isSet());
+    const std::vector<uint16_t> expected {0, 1, 0, 2, 1, 0};
+    EXPECT_EQ(prop.getTextureIndex(), expected);
+
+    // A run that is all one value is the uniform form, index and all
+    prop.setTextures({b, b, b, b, b, b});
+    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+    EXPECT_EQ(prop.getTexture(4), b);
+}
+
+TEST_F(PropertyMaterialListTest, aTextureRidesTheWholeMaterialThroughTheList)
+{
+    App::Material textured = redMaterial();
+    textured.texture = oakTexture();
+
+    App::PropertyMaterialList prop;
+    prop.setValues({textured, redMaterial(), textured});
+    EXPECT_EQ(prop.getTexture(0), oakTexture());
+    EXPECT_FALSE(prop.getTexture(1).isSet());
+    EXPECT_EQ(prop.getMaterial(2).texture, oakTexture());
+    // Two entries share one palette slot; the default is the third
+    EXPECT_EQ(prop.getTexturePalette().size(), 2U);
+
+    // set1Value reads back through the same storage
+    prop.set1Value(1, textured);
+    EXPECT_EQ(prop.getTexture(1), oakTexture());
+    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+}
+
+TEST_F(PropertyMaterialListTest, aTexturePaletteFollowsTheEntryCount)
+{
+    App::SurfaceTexture a;
+    a.maps[App::SurfaceTexture::Normal] = "aaa";
+
+    App::PropertyMaterialList prop;
+    prop.setSize(3);
+    prop.setTexture(1, a);
+    EXPECT_EQ(prop.getTextureIndex().size(), 3U);
+
+    // Growth extends with the filler, and the index grows with it
+    prop.setSize(6);
+    EXPECT_EQ(prop.getTextureIndex().size(), 6U);
+    EXPECT_EQ(prop.getTexture(1), a);
+    EXPECT_FALSE(prop.getTexture(5).isSet());
+
+    // Shrinking past the odd entry leaves nothing varying, so the whole
+    // field collapses away rather than keeping a dead palette slot
+    prop.setSize(1);
+    EXPECT_FALSE(prop.hasTexture());
+    EXPECT_EQ(prop.getTextureIndex().size(), 0U);
+}
+
+TEST_F(PropertyMaterialListTest, aTextureFieldIsPartOfTheListsIdentity)
+{
+    App::SurfaceTexture a;
+    a.maps[App::SurfaceTexture::Occlusion] = "aaa";
+
+    App::PropertyMaterialList one;
+    one.setSize(4);
+    one.setTexture(2, a);
+
+    App::PropertyMaterialList two;
+    two.setSize(4);
+    EXPECT_FALSE(one.isSame(two));
+
+    two.setTexture(2, a);
+    EXPECT_TRUE(one.isSame(two));
+
+    // ... and Copy/Paste carry it
+    std::unique_ptr<App::Property> copy(one.Copy());
+    App::PropertyMaterialList three;
+    three.Paste(*copy);
+    EXPECT_TRUE(three.isSame(one));
+    EXPECT_EQ(three.getTexture(2), a);
+
+    // A field that varies is something a plain colour list cannot say
+    EXPECT_FALSE(one.variesOnlyInDiffuse());
+    App::PropertyMaterialList uniform;
+    uniform.setSize(4);
+    uniform.setTexture(a);
+    EXPECT_TRUE(uniform.variesOnlyInDiffuse());
+}
+
+TEST_F(PropertyMaterialListTest, aTextureSurvivesTheModeConversions)
+{
+    // Which image is pasted on a surface is not a reading of the shading
+    // slots, so nothing about the mode may touch it
+    App::Material mat = redMaterial();
+    mat.texture = oakTexture();
+
+    EXPECT_EQ(App::Material::phongToPbr(mat).texture, oakTexture());
+    EXPECT_EQ(App::Material::pbrToPhong(App::Material::phongToPbr(mat)).texture,
+              oakTexture());
+
+    App::Material converted = mat;
+    converted.setPBR(true);
+    EXPECT_EQ(converted.texture, oakTexture());
+    converted.setPBR(false);
+    EXPECT_EQ(converted.texture, oakTexture());
+}
+
 TEST_F(PropertyMaterialListTest, aFinishSurvivesTheModeConversions)
 {
     // A finish is a statement about the surface, not a reading of the
@@ -1474,28 +1743,34 @@ TEST_F(PropertyMaterialListTest, aRunFromALaterBuildIsReadAndDropped)
     // by hand, because the claim is about bytes this writer cannot produce.
     std::ostringstream file;
     auto put = [&file](unsigned long value) { file << value << '\n'; };
+    // A run head is its shape, its BYTE LENGTH and its entry count -- the
+    // length being what a reader steps over when it understands neither
+    auto run = [&file, &put](unsigned long type, unsigned long count,
+                             const std::string& payload) {
+        put(type);
+        put(payload.size());
+        put(count);
+        file << payload;
+    };
+    auto num = [](float value) {
+        std::ostringstream s;
+        s << value << '\n';
+        return s.str();
+    };
     put(0xffffffffUL);   // FieldStreamMarker: what follows is per field
     put(2);              // entry count
     // FieldDiffuse | FieldFinish | two fields this build has never heard of
-    put((1U << 1) | (1U << 11) | (1U << 12) | (1U << 14));
-    put(0);              // RunColors
-    put(2);
+    put((1U << 1) | (1U << 11) | (1U << 13) | (1U << 14));
     // A doc file read with no document version behind it reads as legacy, so
     // the alpha byte means TRANSPARENCY here: 0 is opaque
-    put(0xff000000UL);
-    put(0x00ff0000UL);
-    put(4);              // RunFinish
-    put(2);
-    put(App::SurfaceFinish::Brushed);
-    file << 0.05F << '\n' << 0.002F << '\n' << 30.0F << '\n';
-    put(App::SurfaceFinish::Blasted);
-    file << 0.02F << '\n' << 0.004F << '\n' << 0.0F << '\n';
-    put(1);              // the first unknown field, shaped as floats
-    put(2);
-    file << 1.5F << '\n' << 2.5F << '\n';
-    put(3);              // the second, shaped as strings
-    put(1);
-    file << 5 << '\n' << "hello";   // an OutputStream string is a length and its bytes
+    run(0, 2, "4278190080\n16711680\n");   // RunColors
+    run(4, 2, num(App::SurfaceFinish::Brushed) + num(0.05F) + num(0.002F) + num(30.0F)
+                  + num(App::SurfaceFinish::Blasted) + num(0.02F) + num(0.004F)
+                  + num(0.0F));            // RunFinish
+    run(1, 2, num(1.5F) + num(2.5F));      // the first unknown field, as floats
+    // The second, whose payload this build never parses at all: the byte
+    // length is the only thing it needs to get past it
+    run(3, 1, "0:hello\n");
 
     App::PropertyMaterialList prop;
     ASSERT_NO_THROW(restoreDocFile(prop, file.str()));
@@ -1505,6 +1780,350 @@ TEST_F(PropertyMaterialListTest, aRunFromALaterBuildIsReadAndDropped)
     EXPECT_EQ(prop.getFinish(0).pattern, App::SurfaceFinish::Brushed);
     EXPECT_FLOAT_EQ(prop.getFinish(0).angle, 30.0F);
     EXPECT_EQ(prop.getFinish(1).pattern, App::SurfaceFinish::Blasted);
+}
+
+TEST_F(PropertyMaterialListTest, aRunShapeFromALaterBuildIsSteppedOver)
+{
+    // The half a run's shape byte alone cannot buy: a record KIND added
+    // after this build. Only the byte length in the head gets past it --
+    // without one the rest of the stream was consumed as garbage
+    // (docs/ShapeAppearanceDesign.md 9.4.2).
+    std::ostringstream file;
+    auto put = [&file](unsigned long value) { file << value << '\n'; };
+    auto run = [&file, &put](unsigned long type, unsigned long count,
+                             const std::string& payload) {
+        put(type);
+        put(payload.size());
+        put(count);
+        file << payload;
+    };
+    auto num = [](float value) {
+        std::ostringstream s;
+        s << value << '\n';
+        return s.str();
+    };
+    put(0xffffffffUL);
+    put(2);
+    // FieldDiffuse, then FieldType carrying a shape this build has never
+    // heard of, then FieldFinish behind it -- which is the one that used to
+    // be lost along with everything after it
+    put((1U << 1) | (1U << 6) | (1U << 11));
+    run(0, 2, "4278190080\n16711680\n");
+    run(97, 2, "whatever this is\nand however long it runs\n");
+    run(4, 2, num(App::SurfaceFinish::Brushed) + num(0.05F) + num(0.002F) + num(30.0F)
+                  + num(App::SurfaceFinish::Blasted) + num(0.02F) + num(0.004F)
+                  + num(0.0F));
+
+    App::PropertyMaterialList prop;
+    ASSERT_NO_THROW(restoreDocFile(prop, file.str()));
+    ASSERT_EQ(prop.getSize(), 2);
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
+    // The unknown shape was dropped, and the field behind it still landed
+    EXPECT_EQ(prop.getType(0), App::Material::USER_DEFINED);
+    EXPECT_EQ(prop.getFinish(0).pattern, App::SurfaceFinish::Brushed);
+    EXPECT_EQ(prop.getFinish(1).pattern, App::SurfaceFinish::Blasted);
+}
+
+TEST_F(PropertyMaterialListTest, aTextureRoundTripsBothForkEncodings)
+{
+    App::SurfaceTexture other;
+    other.maps[App::SurfaceTexture::Emissive] = "e-hash";
+    other.maps[App::SurfaceTexture::MetallicRoughness] = "mr-hash";
+    other.scale[0] = 0.5F;
+    other.rotation = 270.0F;
+
+    App::PropertyMaterialList prop;
+    prop.setSize(4);
+    prop.setDiffuseColors({packed(0xff0000ff), packed(0x00ff00ff),
+                           packed(0x0000ffff), packed(0xffffffff)});
+    prop.setTextures({oakTexture(), other, oakTexture(), App::SurfaceTexture()});
+    ASSERT_EQ(prop.getTexturePalette().size(), 3U);
+
+    for (bool asXML : {true, false}) {
+        App::PropertyMaterialList back;
+        if (asXML) {
+            restoreFromXML(back, saveToXML(prop, 5));
+        }
+        else {
+            restoreDocFile(back, saveDocFile(prop, 5));
+        }
+        ASSERT_EQ(back.getSize(), 4) << asXML;
+        EXPECT_EQ(back.getTexture(0), oakTexture()) << asXML;
+        EXPECT_EQ(back.getTexture(1), other) << asXML;
+        EXPECT_EQ(back.getTexture(2), oakTexture()) << asXML;
+        EXPECT_FALSE(back.getTexture(3).isSet()) << asXML;
+        // Shared content is one palette slot, coming back as it went out
+        EXPECT_EQ(back.getTexturePalette().size(), 3U) << asXML;
+        EXPECT_EQ(back.getTextureIndex().size(), 4U) << asXML;
+        EXPECT_TRUE(back.isSame(prop)) << asXML;
+    }
+}
+
+TEST_F(PropertyMaterialListTest, aUniformTextureCostsNoIndexOnTheWireEither)
+{
+    App::PropertyMaterialList prop;
+    prop.setSize(500);
+    prop.setTexture(oakTexture());
+
+    for (bool asXML : {true, false}) {
+        App::PropertyMaterialList back;
+        if (asXML) {
+            restoreFromXML(back, saveToXML(prop, 5));
+        }
+        else {
+            // One record and no index, whatever the entry count: the whole
+            // field is well under what 500 two-byte slots would cost
+            EXPECT_LT(saveDocFile(prop, 5).size(), 500U);
+            restoreDocFile(back, saveDocFile(prop, 5));
+        }
+        ASSERT_EQ(back.getSize(), 500) << asXML;
+        EXPECT_EQ(back.getTexturePalette().size(), 1U) << asXML;
+        EXPECT_EQ(back.getTextureIndex().size(), 0U) << asXML;
+        EXPECT_EQ(back.getTexture(499), oakTexture()) << asXML;
+    }
+}
+
+TEST_F(PropertyMaterialListTest, aTextureRidesItsOwnElementBelowSchemaFive)
+{
+    // At schema 4 the material encodings are upstream's and have nowhere to
+    // put a texture. Rather than give up their compatibility for it, it goes
+    // beside them (docs/ShapeAppearanceDesign.md 9.4.1).
+    App::SurfaceTexture other;
+    other.maps[App::SurfaceTexture::Emissive] = "e-hash";
+
+    App::PropertyMaterialList prop;
+    prop.setSize(3);
+    prop.setDiffuseColors({packed(0xff0000ff), packed(0x00ff00ff), packed(0x0000ffff)});
+    prop.setTextures({oakTexture(), other, oakTexture()});
+
+    const std::string xml = saveToXML(prop, 4);
+    EXPECT_NE(xml.find("<SurfaceTextureList count=\"2\""), std::string::npos) << xml;
+    // Its own element, ahead of the material one and closed before it -- so
+    // a reader that asks for the material element by name walks past it
+    const std::size_t closed = xml.find("</SurfaceTextureList>");
+    ASSERT_NE(closed, std::string::npos) << xml;
+    EXPECT_LT(closed, xml.find("<MaterialList")) << xml;
+
+    App::PropertyMaterialList back;
+    restoreFromXML(back, xml);
+    ASSERT_EQ(back.getSize(), 3);
+    EXPECT_EQ(back.getTexture(0), oakTexture());
+    EXPECT_EQ(back.getTexture(1), other);
+    EXPECT_EQ(back.getTexture(2), oakTexture());
+    EXPECT_EQ(back.getTexturePalette().size(), 2U);
+}
+
+TEST_F(PropertyMaterialListTest, nothingExtraIsWrittenForATextureAtSchemaFive)
+{
+    // At 5 the field form carries it, so no document holds it twice
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    prop.setTexture(oakTexture());
+    EXPECT_EQ(saveToXML(prop, 5).find("SurfaceTextureList"), std::string::npos);
+    // ... and an appearance with no texture writes no companion at either
+    App::PropertyMaterialList plain;
+    plain.setSize(2);
+    EXPECT_EQ(saveToXML(plain, 4).find("SurfaceTextureList"), std::string::npos);
+}
+
+TEST_F(PropertyMaterialListTest, anArchivedTextureWaitsForItsMaterials)
+{
+    // Below schema 5 the values go to an archive entry read long after the
+    // XML pass, and that read clears the texture field -- so the companion
+    // has to wait for it rather than land on the spot
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    prop.setImagePath(0, "/tmp/oak.png");   // what sends it down the file route
+    prop.setTexture(0, oakTexture());
+
+    Base::StringWriter element;
+    element.setSchemaVersion(4);
+    element.setPreferBinary(true);
+    element.setForceXML(0);
+    prop.Save(element);
+    ASSERT_NE(element.getString().find("SurfaceTextureList"), std::string::npos)
+            << element.getString();
+    ASSERT_NE(element.getString().find("file="), std::string::npos)
+            << element.getString();
+
+    Base::StringWriter file;
+    file.setSchemaVersion(4);
+    file.setPreferBinary(true);
+    file.setForceXML(0);
+    prop.SaveDocFile(file);
+
+    App::PropertyMaterialList back;
+    restoreFromXML(back, element.getString());
+    std::istringstream stream(file.getString());
+    Base::Reader reader(stream, "material.bin");
+    back.RestoreDocFile(reader);
+
+    ASSERT_EQ(back.getSize(), 2);
+    EXPECT_EQ(back.getTexture(0), oakTexture());
+    EXPECT_FALSE(back.getTexture(1).isSet());
+    EXPECT_EQ(back.getImagePath(0), "/tmp/oak.png");
+}
+
+namespace
+{
+
+/// A file in the system temp directory holding exactly \a content
+std::string writeTempFile(const std::string& content)
+{
+    const std::string path = Base::FileInfo::getTempFileName("texture") + ".bin";
+    std::ofstream out(path, std::ios::binary);
+    out << content;
+    out.close();
+    return path;
+}
+
+}  // namespace
+
+TEST_F(PropertyMaterialListTest, textureContentIsHeldByTheHashItIsNamedBy)
+{
+    // No container, so this is the process-wide store rather than a
+    // document's -- the reference counting is the same either way
+    const std::string oakPath = writeTempFile("this is an oak plank");
+    const std::string steelPath = writeTempFile("this is brushed steel");
+
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    const std::string oakHash = prop.insertTextureFile(oakPath.c_str());
+    const std::string steelHash = prop.insertTextureFile(steelPath.c_str());
+    ASSERT_FALSE(oakHash.empty());
+    ASSERT_FALSE(steelHash.empty());
+    EXPECT_NE(oakHash, steelHash);
+
+    // The property holds the content, so the file is on disk and findable
+    // by the hash a slot spells it with
+    EXPECT_FALSE(prop.getTextureFile(oakHash).empty());
+    EXPECT_TRUE(Base::FileInfo(prop.getTextureFile(oakHash)).exists());
+    EXPECT_TRUE(prop.getTextureFile("no such hash").empty());
+
+    // Same content twice is one blob, whatever the file it arrived in
+    const std::string copyPath = writeTempFile("this is an oak plank");
+    EXPECT_EQ(prop.insertTextureFile(copyPath.c_str()), oakHash);
+
+    App::SurfaceTexture texture;
+    texture.maps[App::SurfaceTexture::BaseColor] = oakHash;
+    texture.maps[App::SurfaceTexture::Normal] = steelHash;
+    prop.setTexture(texture);
+    EXPECT_EQ(prop.getTexture(1).maps[App::SurfaceTexture::BaseColor], oakHash);
+
+    Base::FileInfo(oakPath).deleteFile();
+    Base::FileInfo(steelPath).deleteFile();
+    Base::FileInfo(copyPath).deleteFile();
+}
+
+TEST_F(PropertyMaterialListTest, aRestoredBlobFindsItsSlotByHashNotByOrder)
+{
+    // The whole cost of being the first multi-blob referrer
+    // (docs/ShapeAppearanceDesign.md 10.2): addPendingReferrer serves an
+    // already-read hash IMMEDIATELY and queues the rest, so the handles
+    // come back in an order that has nothing to do with the order asked in.
+    const std::string firstPath = writeTempFile("content of the first map");
+    const std::string secondPath = writeTempFile("content of the second map");
+
+    App::PropertyMaterialList source;
+    source.setSize(1);
+    const std::string firstHash = source.insertTextureFile(firstPath.c_str());
+    const std::string secondHash = source.insertTextureFile(secondPath.c_str());
+    ASSERT_FALSE(firstHash.empty());
+    ASSERT_FALSE(secondHash.empty());
+
+    auto& manager = App::FileBlobManager::defaultManager();
+    const App::FileBlobHandle first = manager.find(firstHash);
+    const App::FileBlobHandle second = manager.find(secondHash);
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(second);
+
+    App::SurfaceTexture texture;
+    texture.maps[App::SurfaceTexture::BaseColor] = firstHash;
+    texture.maps[App::SurfaceTexture::Normal] = secondHash;
+    // Both slots over one content, which has to be assigned to both
+    texture.maps[App::SurfaceTexture::Emissive] = firstHash;
+
+    App::PropertyMaterialList restored;
+    restored.setSize(1);
+    restored.setTexture(texture);
+    EXPECT_TRUE(restored.getTextureFile(firstHash).empty());
+
+    // Backwards, which is exactly what the manager may do
+    restored.assignRestoredBlob(second);
+    restored.assignRestoredBlob(first);
+
+    EXPECT_EQ(restored.getTextureFile(firstHash), first->path());
+    EXPECT_EQ(restored.getTextureFile(secondHash), second->path());
+    // Idempotent, which is what lets a duplicated queue entry be harmless
+    restored.assignRestoredBlob(first);
+    EXPECT_EQ(restored.getTextureFile(firstHash), first->path());
+
+    Base::FileInfo(firstPath).deleteFile();
+    Base::FileInfo(secondPath).deleteFile();
+}
+
+TEST_F(PropertyMaterialListTest, aTextureClaimFollowsWhatThePaletteNames)
+{
+    const std::string path = writeTempFile("content nothing will name for long");
+
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    const std::string hash = prop.insertTextureFile(path.c_str());
+    ASSERT_FALSE(hash.empty());
+
+    App::SurfaceTexture texture;
+    texture.maps[App::SurfaceTexture::Occlusion] = hash;
+    prop.setTexture(texture);
+    EXPECT_FALSE(prop.getTextureFile(hash).empty());
+
+    // A whole-list assignment states the palette in full, and the claim
+    // goes with it
+    prop.setTextures({App::SurfaceTexture(), App::SurfaceTexture()});
+    EXPECT_FALSE(prop.hasTexture());
+    EXPECT_TRUE(prop.getTextureFile(hash).empty());
+
+    Base::FileInfo(path).deleteFile();
+}
+
+TEST_F(PropertyMaterialListTest, aTextureSlotFromALaterBuildIsReadAndDropped)
+{
+    // A record states how many slots it carries, so a build with one map
+    // more than this one still writes a palette this one can read
+    std::ostringstream file;
+    auto put = [&file](unsigned long value) { file << value << '\n'; };
+    auto run = [&file, &put](unsigned long type, unsigned long count,
+                             const std::string& payload) {
+        put(type);
+        put(payload.size());
+        put(count);
+        file << payload;
+    };
+    // A string over a TEXT-mode stream is its embedded newline count, a
+    // colon, the text, and a closing newline (Base::OutputStream)
+    auto str = [](const std::string& value) { return "0:" + value + "\n"; };
+    std::ostringstream texture;
+    texture << App::SurfaceTexture::SlotCount + 1 << '\n';   // one slot more
+    texture << 1 << '\n';                                    // one palette entry
+    for (unsigned slot = 0; slot < App::SurfaceTexture::SlotCount; ++slot) {
+        texture << str("hash-" + std::to_string(slot));
+    }
+    texture << str("clearcoat");                             // the slot we lack
+    texture << 1.0F << '\n' << 1.0F << '\n' << 0.0F << '\n' << 0.0F << '\n'
+            << 0.0F << '\n';
+    texture << 0 << '\n';                                    // no index: uniform
+
+    put(0xffffffffUL);
+    put(2);
+    put(1U << 12);   // FieldTexture alone
+    run(5, 1, texture.str());
+
+    App::PropertyMaterialList prop;
+    ASSERT_NO_THROW(restoreDocFile(prop, file.str()));
+    ASSERT_EQ(prop.getSize(), 2);
+    ASSERT_EQ(prop.getTexturePalette().size(), 1U);
+    for (unsigned slot = 0; slot < App::SurfaceTexture::SlotCount; ++slot) {
+        EXPECT_EQ(prop.getTexture(0).maps[slot], "hash-" + std::to_string(slot)) << slot;
+    }
 }
 
 TEST_F(PropertyMaterialListTest, aKeyFromALaterBuildIsSteppedOver)
@@ -1532,4 +2151,339 @@ TEST_F(PropertyMaterialListTest, aKeyFromALaterBuildIsSteppedOver)
     EXPECT_EQ(prop.getFinish(1).pattern, App::SurfaceFinish::None);
     EXPECT_EQ(prop.getFinish(2).pattern, App::SurfaceFinish::Brushed);
     EXPECT_FLOAT_EQ(prop.getFinish(2).angle, 30.0F);
+}
+
+//--------------------------------------------------------------------------
+// The value is shared and copied on write (docs/PythonValueBindings.md)
+//
+// The storage lives in App::MaterialList now, and copying one costs a
+// pointer. What these hold to account is the two halves of that bargain:
+// nobody sees another holder's write, and a write that changes nothing
+// leaves the storage exactly as it found it -- which is how the property
+// decides whether there is a change to record at all.
+//--------------------------------------------------------------------------
+
+TEST_F(PropertyMaterialListTest, aCopyOfTheValueSharesUntilOneOfThemWrites)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(1000, redMaterial()));
+
+    App::MaterialList copy = prop.getList();
+    EXPECT_TRUE(prop.getList().isShared());
+    EXPECT_TRUE(copy.isSameData(prop.getList()));
+    EXPECT_EQ(copy.getSize(), 1000);
+
+    // Reading never detaches, however much of it there is
+    for (int i = 0; i < 1000; ++i) {
+        EXPECT_TRUE(prop.getMaterial(i) == redMaterial()) << "entry " << i;
+    }
+    EXPECT_TRUE(prop.getList().isShared());
+
+    App::Material blue;
+    blue.diffuseColor = packed(0x0000ffff);
+    prop.setDiffuseColor(500, blue.diffuseColor);
+
+    EXPECT_FALSE(prop.getList().isShared());
+    EXPECT_FALSE(copy.isSameData(prop.getList()));
+    // the copy still says what it said
+    EXPECT_EQ(copy.getDiffuseColor(500).getPackedValue(), 0xff0000ffU);
+    EXPECT_EQ(prop.getDiffuseColor(500).getPackedValue(), 0x0000ffffU);
+}
+
+TEST_F(PropertyMaterialListTest, anUndoSnapshotIsAPointerRatherThanTheWholeList)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(1000, redMaterial()));
+    EXPECT_FALSE(prop.getList().isShared());
+
+    // Copy() is what the transaction machinery calls before every change
+    std::unique_ptr<App::Property> snapshot(prop.Copy());
+    EXPECT_TRUE(prop.getList().isShared());
+
+    auto *copied = dynamic_cast<App::PropertyMaterialList *>(snapshot.get());
+    ASSERT_NE(copied, nullptr);
+    EXPECT_TRUE(copied->getList().isSameData(prop.getList()));
+
+    prop.setDiffuseColor(0, packed(0x00ff00ff));
+    EXPECT_FALSE(prop.getList().isShared());
+    EXPECT_EQ(copied->getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
+
+    // and pasting it back is the same pointer trade in reverse
+    prop.Paste(*copied);
+    EXPECT_TRUE(prop.getList().isSameData(copied->getList()));
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
+}
+
+TEST_F(PropertyMaterialListTest, aWriteThatChangesNothingLeavesTheStorageAlone)
+{
+    // The property reads "did anything change" off the storage identity, so
+    // a setter that decides nothing changed must not detach -- otherwise
+    // every no-op write would record an undo step and touch the document.
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+
+    const App::MaterialList before = prop.getList();
+    prop.setDiffuseColor(2, redMaterial().diffuseColor);
+    EXPECT_TRUE(prop.getList().isSameData(before));
+    prop.setDiffuseColor(redMaterial().diffuseColor);
+    EXPECT_TRUE(prop.getList().isSameData(before));
+    prop.setShininess(2, prop.getShininess(2));
+    EXPECT_TRUE(prop.getList().isSameData(before));
+    prop.setFinish(2, prop.getFinish(2));
+    EXPECT_TRUE(prop.getList().isSameData(before));
+    prop.setTexture(2, prop.getTexture(2));
+    EXPECT_TRUE(prop.getList().isSameData(before));
+    prop.setPBR(prop.isPBR());
+    EXPECT_TRUE(prop.getList().isSameData(before));
+    prop.setSize(4);
+    EXPECT_TRUE(prop.getList().isSameData(before));
+
+    // A WHOLE-LIST assignment is the exception, and always was: it rebuilds
+    // every field rather than comparing first, so it records a change even
+    // when the values match. Nothing here changes that -- it is the same
+    // signal the property sent before the value moved out of it.
+    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    EXPECT_FALSE(prop.getList().isSameData(before));
+
+    // and a real entry write detaches too
+    const App::MaterialList reassigned = prop.getList();
+    prop.setDiffuseColor(2, packed(0x00ff00ff));
+    EXPECT_FALSE(prop.getList().isSameData(reassigned));
+}
+
+TEST_F(PropertyMaterialListTest, anIndexedWriteRecordsThatIndexAndAWholeOneClearsThem)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    EXPECT_TRUE(prop.getTouchList().empty());
+
+    prop.setDiffuseColor(2, packed(0x00ff00ff));
+    EXPECT_EQ(prop.getTouchList(), std::set<int>({2}));
+    prop.setShininess(1, 0.5F);
+    EXPECT_EQ(prop.getTouchList(), std::set<int>({1, 2}));
+
+    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    EXPECT_TRUE(prop.getTouchList().empty());
+}
+
+TEST_F(PropertyMaterialListTest, contentTheListHoldsTravelsWithACopyOfIt)
+{
+    const std::string oakPath = writeTempFile("this is an oak plank");
+
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(2, redMaterial()));
+    const std::string hash = prop.insertTextureFile(oakPath.c_str());
+    ASSERT_FALSE(hash.empty());
+
+    App::Material textured = redMaterial();
+    textured.texture.maps[App::SurfaceTexture::BaseColor] = hash;
+    prop.set1Value(1, textured);
+
+    // A copy names the same content, which is the point of a shared store:
+    // the file lives while any handle to it does
+    App::MaterialList copy = prop.getList();
+    EXPECT_FALSE(copy.getTextureFile(hash).empty());
+    EXPECT_EQ(copy.getTexture(1).maps[App::SurfaceTexture::BaseColor], hash);
+
+    // and taking content in is a claim rather than a value change, so it
+    // does not detach the copy or record a change
+    const std::string steelPath = writeTempFile("this is brushed steel");
+    const std::string second = prop.insertTextureFile(steelPath.c_str());
+    ASSERT_FALSE(second.empty());
+    EXPECT_TRUE(copy.isSameData(prop.getList()));
+    EXPECT_FALSE(copy.getTextureFile(second).empty());
+}
+
+//--------------------------------------------------------------------------
+// What Python sees (docs/PythonValueBindings.md)
+//
+// The property hands Python a LIVE VIEW of its value rather than a tuple of
+// copies, so vp.ShapeAppearance[0].DiffuseColor = c reaches the object --
+// which it never did before. These run the chain end to end through the
+// interpreter, because every link in it is a Python one: the item stamp on
+// the value a sequence slot returns, the notification on the write, the
+// item assignment it turns into, and the property's own change signalling.
+//--------------------------------------------------------------------------
+
+namespace
+{
+
+/// Run a snippet with \a prop bound to the name "mlist"
+void runOn(App::PropertyMaterialList& prop, const char* code)
+{
+    Base::PyGILStateLocker lock;
+    PyObject* view = prop.getPyObject();
+    ASSERT_NE(view, nullptr);
+    Py::Module main(PyImport_AddModule("__main__"), false);
+    main.setAttr("mlist", Py::Object(view, true));
+    Base::Interpreter().runString(code);
+}
+
+/// The same, with nothing bound: for a snippet that keeps its own reference
+void run(const char* code)
+{
+    Base::PyGILStateLocker lock;
+    Base::Interpreter().runString(code);
+}
+
+}  // namespace
+
+TEST_F(PropertyMaterialListTest, aPythonWriteToOneEntryReachesTheProperty)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+
+    // The whole point: a field written on the entry Python was handed goes
+    // back into the property, at that index and nowhere else
+    runOn(prop, "mlist[2].DiffuseColor = (0.0, 1.0, 0.0, 1.0)");
+    EXPECT_EQ(prop.getDiffuseColor(2).getPackedValue(), 0x00ff00ffU);
+    EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue(), 0xff0000ffU);
+    EXPECT_EQ(prop.getSize(), 4);
+
+    // and so does a whole-entry assignment
+    runOn(prop, "import FreeCAD\n"
+                "mat = FreeCAD.Material()\n"
+                "mat.DiffuseColor = (0.0, 0.0, 1.0, 1.0)\n"
+                "mlist[0] = mat\n");
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0x0000ffffU);
+}
+
+TEST_F(PropertyMaterialListTest, aPythonListReadsWithoutCopyingTheStorage)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(1000, redMaterial()));
+
+    // A view, not a tuple of a thousand materials: reading it neither
+    // copies the storage nor detaches it
+    const App::MaterialList before = prop.getList();
+    runOn(prop,
+          "assert len(mlist) == 1000\n"
+          "assert mlist.Count == 1000\n"
+          "assert mlist.IsAttached\n"
+          "assert len([m for m in mlist]) == 1000\n");
+    EXPECT_TRUE(prop.getList().isSameData(before));
+}
+
+TEST_F(PropertyMaterialListTest, aDetachedListIsAValueAndWritesNowhere)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(2, redMaterial()));
+
+    runOn(prop, "import FreeCAD\n"
+                "copy = mlist.copy()\n"
+                "assert not copy.IsAttached\n"
+                "mat = FreeCAD.Material()\n"
+                "mat.DiffuseColor = (0.0, 1.0, 0.0, 1.0)\n"
+                "copy[0] = mat\n"
+                "assert copy[0].DiffuseColor[1] == 1.0\n");
+    // the property is untouched by anything done to the copy
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
+
+    // and assigning it back is what writes
+    Base::PyGILStateLocker lock;
+    Py::Module main(PyImport_AddModule("__main__"), false);
+    Py::Object copy = main.getAttr("copy");
+    prop.setPyObject(copy.ptr());
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0x00ff00ffU);
+    // the value assigned in is shared, not copied
+    EXPECT_TRUE(prop.getList().isShared());
+}
+
+TEST_F(PropertyMaterialListTest, aViewOfADeadPropertyIsStillReadable)
+{
+    {
+        App::PropertyMaterialList prop;
+        prop.setValues(std::vector<App::Material>(3, redMaterial()));
+        runOn(prop, "kept = mlist");
+    }
+    // The property took its views down with it, each keeping the value it
+    // could still see. Reading one must answer, and writing one must reach
+    // nothing at all rather than a freed property.
+    run("assert kept.Count == 3\n"
+        "assert not kept.IsAttached\n"
+        "assert kept[0].DiffuseColor[0] == 1.0\n"
+        "import FreeCAD\n"
+        "kept[0] = FreeCAD.Material()\n");
+}
+
+TEST_F(PropertyMaterialListTest, aReadOnlyPropertyHandsOutSomethingNothingWritesThrough)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(2, redMaterial()));
+    prop.setStatus(App::Property::ReadOnly, true);
+
+    runOn(prop, "import FreeCAD\n"
+                "try:\n"
+                "    mlist[0] = FreeCAD.Material()\n"
+                "    raise AssertionError('a read-only list took a write')\n"
+                "except ReferenceError:\n"
+                "    pass\n");
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
+}
+
+TEST_F(PropertyMaterialListTest, aTextureIsStatedFromPythonByFile)
+{
+    const std::string oakPath = writeTempFile("this is an oak plank");
+
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(3, redMaterial()));
+
+    // Two steps or one: content into the store, then a slot naming it --
+    // and setTextureFile() is both, which is what a script wants
+    runOn(prop,
+          ("h = mlist.insertTextureFile(r'" + oakPath + "')\n"
+           "assert len(h) > 8\n"
+           "assert mlist.getTextureFile(h)\n"
+           "mlist.setTexture(0, 'basecolor', h)\n"
+           "assert mlist.getTexture(0)['basecolor'] == h\n"
+           "assert 'basecolor' not in mlist.getTexture(1)\n"
+           "n = mlist.setTextureFile(1, 'normal', r'" + oakPath + "')\n"
+           "assert n == h\n"  // same content, same hash, one file
+           "mlist.setTextureTransform(0, Scale=(2.0, 3.0), Rotation=45.0)\n")
+              .c_str());
+
+    const App::SurfaceTexture first = prop.getTexture(0);
+    EXPECT_FALSE(first.maps[App::SurfaceTexture::BaseColor].empty());
+    EXPECT_FLOAT_EQ(first.scale[1], 3.0F);
+    EXPECT_FLOAT_EQ(first.rotation, 45.0F);
+    EXPECT_EQ(prop.getTexture(1).maps[App::SurfaceTexture::Normal],
+              first.maps[App::SurfaceTexture::BaseColor]);
+    EXPECT_TRUE(prop.getTexture(2).maps[App::SurfaceTexture::BaseColor].empty());
+    // one file for content named twice
+    EXPECT_FALSE(prop.getTextureFile(first.maps[App::SurfaceTexture::BaseColor]).empty());
+
+    runOn(prop, "mlist.clearTexture(0, 'basecolor')\n"
+                "assert 'basecolor' not in mlist.getTexture(0)\n");
+    EXPECT_TRUE(prop.getTexture(0).maps[App::SurfaceTexture::BaseColor].empty());
+}
+
+TEST_F(PropertyMaterialListTest, aPythonFieldWriteNamesOneEntryOrEveryOne)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+
+    // With an index it is one entry; without one it is every entry, which
+    // is why "every entry" is not spelled as an index at all
+    runOn(prop, "mlist.setDiffuseColor(2, (0.0, 1.0, 0.0, 1.0))\n"
+                "mlist.setShininess(0.5)\n");
+    EXPECT_EQ(prop.getDiffuseColor(2).getPackedValue(), 0x00ff00ffU);
+    EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue(), 0xff0000ffU);
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_FLOAT_EQ(prop.getShininess(i), 0.5F) << "entry " << i;
+    }
+
+    runOn(prop, "assert abs(mlist.getDiffuseColor(2)[1] - 1.0) < 1e-6\n"
+                "assert abs(mlist.getShininess(3) - 0.5) < 1e-6\n"
+                "assert abs(mlist.getDiffuseColor(-3)[0] - 1.0) < 1e-6\n");
+
+    // the PBR pair demands the mode, exactly as the C++ setters do
+    runOn(prop, "try:\n"
+                "    mlist.setMetallic(0.5)\n"
+                "    raise AssertionError('a Phong list took a metallic factor')\n"
+                "except Exception:\n"
+                "    pass\n"
+                "mlist.PBR = True\n"
+                "mlist.setMetallic(1, 0.9)\n");
+    EXPECT_TRUE(prop.isPBR());
+    EXPECT_NEAR(prop.getMetallic(1), 0.9F, 0.01F);
 }

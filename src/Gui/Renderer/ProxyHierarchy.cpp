@@ -195,15 +195,7 @@ float Render::depthQuantumPad(const float *bmin, const float *bmax,
 // The instance table
 // ---------------------------------------------------------------------
 
-namespace
-{
-
-/// Primitives one draw issues. `indexCount` is the draw's own range
-/// when set; 0 means the whole buffer, and which buffer is decided by
-/// the material's topology, not by which arrays the mesh happens to
-/// carry -- a mesh usually has both triangles and lines, and charging a
-/// line draw for the triangle array would count most of the scene twice.
-uint32_t drawPrimitives(const DrawCall &d)
+uint32_t Render::drawPrimitives(const DrawCall &d)
 {
     int indices = d.indexCount;
     int perPrim = 3;
@@ -220,8 +212,6 @@ uint32_t drawPrimitives(const DrawCall &d)
     }
     return indices > 0 ? uint32_t(indices / perPrim) : 0u;
 }
-
-}  // anonymous namespace
 
 uint32_t Render::meshResidentBytes(const MeshData *m)
 {

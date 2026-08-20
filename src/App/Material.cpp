@@ -44,6 +44,17 @@ static_assert(sizeof(finishPatternNames) / sizeof(finishPatternNames[0])
                   == SurfaceFinish::PatternCount,
               "every SurfaceFinish::Pattern needs a name");
 
+/// Indexed by SurfaceTexture::Slot. Unlike the finish patterns every slot
+/// has a name: there is no "no slot" value to spell as the empty string,
+/// and these names are also the stored file names.
+const char *textureSlotNames[] = {
+    "basecolor", "metallic-roughness", "normal", "emissive", "occlusion"
+};
+
+static_assert(sizeof(textureSlotNames) / sizeof(textureSlotNames[0])
+                  == SurfaceTexture::SlotCount,
+              "every SurfaceTexture::Slot needs a name");
+
 } // namespace
 
 //===========================================================================
@@ -94,6 +105,71 @@ uint8_t SurfaceFinish::patternFromName(const char *name)
         }
     }
     return None;
+}
+
+//===========================================================================
+// SurfaceTexture
+//===========================================================================
+
+bool SurfaceTexture::isSet() const
+{
+    for (uint8_t i = 0; i < SlotCount; ++i) {
+        if (!maps[i].empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void SurfaceTexture::normalize()
+{
+    if (!isSet()) {
+        // A transform with nothing to transform states nothing, and
+        // zeroing is what lets the record compare equal to the default
+        // and elide
+        *this = SurfaceTexture();
+        return;
+    }
+    for (float& s : scale) {
+        if (!std::isfinite(s)) {   // catches NaN too
+            s = 1.0F;
+        }
+    }
+    for (float& o : offset) {
+        if (!std::isfinite(o)) {
+            o = 0.0F;
+        }
+    }
+    if (!std::isfinite(rotation)) {
+        rotation = 0.0F;
+    }
+    else {
+        // A texture rotation is a direction, not an axis: the full turn,
+        // unlike the finish lay's half
+        rotation = std::fmod(rotation, 360.0F);
+        if (rotation < 0.0F) {
+            rotation += 360.0F;
+        }
+    }
+}
+
+const char *SurfaceTexture::slotName(uint8_t slot)
+{
+    // A slot this build does not know -- a document from a later one --
+    // has no name here; it is skipped rather than named wrongly
+    return slot < SlotCount ? textureSlotNames[slot] : "";
+}
+
+uint8_t SurfaceTexture::slotFromName(const char *name)
+{
+    if (name && name[0]) {
+        for (uint8_t i = 0; i < SlotCount; ++i) {
+            if (std::strcmp(name, textureSlotNames[i]) == 0) {
+                return i;
+            }
+        }
+    }
+    return SlotCount;
 }
 
 //===========================================================================
@@ -217,12 +293,13 @@ void Material::set(const char* MatName)
 void Material::setType(const MaterialType MatType)
 {
     _matType = MatType;
-    // A preset states the whole material and none of them states a finish,
-    // so a previous one must not survive -- the same rule the colours and
-    // both floats below already follow. USER_DEFINED states nothing and
-    // therefore changes nothing, here as in the switch.
+    // A preset states the whole material and none of them states a finish
+    // or a texture, so a previous one must not survive -- the same rule
+    // the colours and both floats below already follow. USER_DEFINED
+    // states nothing and therefore changes nothing, here as in the switch.
     if (MatType != USER_DEFINED) {
         finish = SurfaceFinish();
+        texture = SurfaceTexture();
     }
     switch (MatType)
     {

@@ -34,6 +34,7 @@
 # include <QTextStream>
 # include <QTimer>
 # include <QStatusBar>
+# include <QStringList>
 # include <QVBoxLayout>
 # include <Inventor/actions/SoSearchAction.h>
 # include <Inventor/nodes/SoSeparator.h>
@@ -110,6 +111,10 @@ struct DocumentP
     int        _iDocId;
     bool       _isClosing;
     bool       _isModified;
+    /// Answered "save anyway" to the warning that this save drops content
+    /// only the compact format stores. Asked once per document, not once
+    /// per press of Ctrl+S.
+    bool       _schemaDowngradeAcked = false;
     bool       _isTransacting;
     bool       _hasExpansion;
     bool       _changeViewTouchDocument;
@@ -1483,6 +1488,178 @@ bool Document::askIfSavingFailed(const QString& error)
     return false;
 }
 
+namespace {
+/** Whether anything in the document needs the blob store to keep its content.
+ *
+ * Asks the properties rather than looking for an appearance: what makes a
+ * format choice more than a size trade is a referrer with no schema 4
+ * spelling for its content, and only the property knows that
+ * (App::BlobReferrerProperty::blobContentNeedsStore). View provider
+ * properties are scanned too -- ShapeAppearance, today's only such
+ * referrer, is one of them.
+ */
+bool needsBlobStore(App::Document *doc)
+{
+    auto scan = [](const App::PropertyContainer *container) {
+        std::vector<App::Property*> props;
+        container->getPropertyList(props);
+        for (auto prop : props) {
+            auto referrer = dynamic_cast<const App::BlobReferrerProperty*>(prop);
+            if (referrer && referrer->blobContentNeedsStore())
+                return true;
+        }
+        return false;
+    };
+
+    if (scan(doc))
+        return true;
+    auto gdoc = Application::Instance->getDocument(doc);
+    for (auto obj : doc->getObjects()) {
+        if (scan(obj))
+            return true;
+        if (gdoc) {
+            if (auto vp = gdoc->getViewProvider(obj)) {
+                if (scan(vp))
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
+/// What a format prompt settles: the format to write, or nothing because the
+/// save itself was called off.
+enum class FormatAnswer { Compact, Standard, Cancel };
+
+/** The explicit statement that the compact format is this fork's own.
+ *
+ * Shown when a save resolves to compact, once, with a way to turn it off --
+ * not as a heading inside the file dialog. A warning that appears and
+ * disappears as a radio button is clicked reads as a flicker, and the case
+ * that matters most never toggles anything: a new document is compact
+ * already, so nobody would ever have seen it.
+ */
+FormatAnswer confirmCompactFormat(ParameterGrp::handle hGrp)
+{
+    if (!hGrp->GetBool("WarnCompactFormat", true))
+        return FormatAnswer::Compact;
+
+    QMessageBox box(getMainWindow());
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle(QObject::tr("Incompatible file format"));
+    box.setText(QObject::tr("<b>This file will not open in any other FreeCAD.</b>"));
+    box.setInformativeText(QObject::tr(
+                "The compact format is this FreeCAD's own. No other build reads it "
+                "-- not upstream, not an older release of this fork; they report a "
+                "broken file rather than a format they do not know.\n\n"
+                "The standard format opens everywhere, and is the one to pick for a "
+                "file that has to leave this machine."));
+    auto keep = box.addButton(QObject::tr("Save compact"), QMessageBox::AcceptRole);
+    auto standard = box.addButton(QObject::tr("Use standard format"), QMessageBox::ActionRole);
+    box.addButton(QMessageBox::Cancel);
+    box.setDefaultButton(keep);
+    auto again = new QCheckBox(QObject::tr("Do not warn again"), &box);
+    box.setCheckBox(again);
+    box.exec();
+
+    auto clicked = box.clickedButton();
+    if (clicked != keep && clicked != standard)
+        return FormatAnswer::Cancel;
+    // The suppression is about the warning, not about the format chosen this
+    // time round: someone who never wants to see it again means it whichever
+    // button they leave by.
+    if (again->isChecked())
+        hGrp->SetBool("WarnCompactFormat", false);
+    return clicked == keep ? FormatAnswer::Compact : FormatAnswer::Standard;
+}
+
+/** The other half: content the format about to be written cannot carry.
+ *
+ * Fires only when the scan found something that would actually be dropped,
+ * so it is a decision and not a reminder, and offers the upgrade first
+ * because the alternative loses data. `acked` comes back set when the user
+ * asked not to be told again about this document.
+ */
+FormatAnswer confirmSchemaUpgrade(const QStringList &docs, bool *acked)
+{
+    QMessageBox box(getMainWindow());
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle(QObject::tr("File content will be dropped"));
+    box.setText(QObject::tr("<b>The standard format cannot store the files this "
+                            "document refers to.</b>"));
+    QString detail = QObject::tr(
+                "Stored file content -- today that is the texture images on a shape "
+                "appearance -- lives inside the document in the compact format only. "
+                "Saved as standard, the reference is kept and the image is not: "
+                "reopening the file reports every one of them as missing.\n\n"
+                "The compact format keeps them, and is read by this FreeCAD only.");
+    if (docs.size() > 1)
+        detail += QObject::tr("\n\nAffected documents: %1").arg(docs.join(QStringLiteral(", ")));
+    box.setInformativeText(detail);
+    auto upgrade = box.addButton(QObject::tr("Use compact format"), QMessageBox::AcceptRole);
+    auto anyway = box.addButton(QObject::tr("Save anyway"), QMessageBox::DestructiveRole);
+    box.addButton(QMessageBox::Cancel);
+    box.setDefaultButton(upgrade);
+    auto again = new QCheckBox(QObject::tr("Do not ask again for this document"), &box);
+    box.setCheckBox(again);
+    box.exec();
+
+    auto clicked = box.clickedButton();
+    if (clicked == upgrade)
+        return FormatAnswer::Compact;
+    if (clicked != anyway)
+        return FormatAnswer::Cancel;
+    *acked = again->isChecked();
+    return FormatAnswer::Standard;
+}
+
+} // anonymous namespace
+
+/* Offer the schema their own content needs to every document about to be
+ * written, before the first of them is. A document that has never been saved
+ * is skipped: it is going through the save dialog, which makes the same offer
+ * with the format row in hand.
+ */
+bool Document::offerSchemaUpgrade(const std::vector<App::Document*> &docs)
+{
+    // The Gui documents, not the App ones: an answer of "save it away
+    // anyway" is remembered on the document it was given for.
+    std::vector<Document*> upgrade;
+    QStringList names;
+    for (auto doc : docs) {
+        auto gdoc = Application::Instance->getDocument(doc);
+        if (!gdoc || gdoc->d->_schemaDowngradeAcked
+                || doc->testStatus(App::Document::PartialDoc)
+                || doc->testStatus(App::Document::TempDoc)
+                || !doc->isSaved()
+                || doc->getSaveSchemaVersion() >= 5
+                || !needsBlobStore(doc))
+            continue;
+        upgrade.push_back(gdoc);
+        names << QString::fromUtf8(doc->Label.getValue());
+    }
+    if (upgrade.empty())
+        return true;
+
+    bool acked = false;
+    switch (confirmSchemaUpgrade(names, &acked)) {
+    case FormatAnswer::Compact:
+        for (auto gdoc : upgrade)
+            Command::doCommand(Command::Doc,
+                    "App.getDocument(\"%s\").SaveSchemaVersion = %d",
+                    gdoc->getDocument()->getName(),
+                    (int)App::Document::getCurrentSchemaVersion());
+        break;
+    case FormatAnswer::Standard:
+        for (auto gdoc : upgrade)
+            gdoc->d->_schemaDowngradeAcked = acked;
+        break;
+    case FormatAnswer::Cancel:
+        return false;
+    }
+    return true;
+}
+
 /// Save the document
 bool Document::save()
 {
@@ -1534,6 +1711,14 @@ bool Document::save()
             if (!checkCanonicalPath(dmap))
                 return false;
 
+            // A plain save never opens the format dialog, and never touches
+            // the schema -- so this is where a document that has GROWN
+            // content the standard format cannot carry gets asked about it.
+            // Silent otherwise: the scan only speaks when something would
+            // actually be dropped.
+            if (!offerSchemaUpgrade(docs))
+                return false;
+
             Gui::WaitCursor wc;
             // save all documents
             for (auto doc : docs) {
@@ -1570,14 +1755,16 @@ bool Document::save()
 }
 
 namespace {
-/** The document-format choice a save dialog carries, warning included.
+/** The document-format choice a save dialog carries.
  *
- * The warning is a red heading that stays on screen for as long as the
- * compact choice is selected. A message box someone clicks away once is not
- * a warning about a file that stays incompatible; this one cannot be
- * collapsed or dismissed, only deselected. The result lands in the caller's
- * own bool -- the widget is reparented into the file dialog and dies with
- * it.
+ * The choice is always on screen -- FileDialog gives the widget a full-width
+ * row of its own and there is no toggle to fold it away, so what the save is
+ * about to write can be read off the dialog at any moment. What compact
+ * COSTS is stated by confirmCompactFormat() once the file name is in: a
+ * warning heading that comes and goes with a radio button reads as a
+ * flicker, and a preselected compact never toggles one. The result lands in
+ * the caller's own struct -- the widget is reparented into the file dialog
+ * and dies with it.
  */
 class DocumentFormatOption : public QWidget
 {
@@ -1603,19 +1790,11 @@ public:
         auto layout = new QVBoxLayout(this);
         layout->setContentsMargins(0, 6, 0, 0);
 
-        warning = new QLabel(this);
-        warning->setWordWrap(true);
-        // Red, bold, a size up: a title, not a footnote. A hard colour
-        // rather than a palette role, because it must read as a warning on
-        // any theme.
-        warning->setStyleSheet(QStringLiteral(
-                    "color:#c81414; font-weight:bold; font-size:%1pt;")
-                .arg(font().pointSize() + 1));
-        warning->setText(QObject::tr(
-                    "Incompatible format: this file will NOT open in any other "
-                    "FreeCAD \xe2\x80\x94 not upstream, not an older release of "
-                    "this fork."));
-        layout->addWidget(warning);
+        // Titled like the storage group below it: the format a save is about
+        // to write is always on screen, named, whichever way it is set.
+        auto format = new QLabel(QObject::tr("Document format"), this);
+        format->setStyleSheet(QStringLiteral("font-weight:bold;"));
+        layout->addWidget(format);
 
         standard = new QRadioButton(QObject::tr(
                     "Standard format \xe2\x80\x94 readable by every FreeCAD version"), this);
@@ -1628,8 +1807,8 @@ public:
         compactBtn->setChecked(compact);
         standard->setChecked(!compact);
 
-        // Separate, and deliberately not under the warning: neither of these
-        // costs compatibility. A file missing a pcurve a plane can rebuild, or
+        // Separate, and deliberately apart from the format row: neither of
+        // these costs compatibility. A file missing a pcurve a plane can rebuild, or
         // naming one table entry from two records, is ordinary BRep that every
         // FreeCAD has always read.
         auto storage = new QLabel(QObject::tr("Shape storage"), this);
@@ -1689,11 +1868,9 @@ private:
         result->dedupPCurves = dedupPCurves->isChecked();
         result->dedupCongruent = dedupCongruent->isChecked();
         result->dedupGeometry = dedupGeometry->isChecked();
-        warning->setVisible(compactBtn->isChecked());
     }
 
     Choices *result;
-    QLabel *warning;
     QRadioButton *standard;
     QRadioButton *compactBtn;
     QCheckBox *dedupPCurves;
@@ -1708,15 +1885,20 @@ bool Document::saveAs()
     getMainWindow()->showMessage(QObject::tr("Save document under new filename..."));
 
     // The format is the document's own promise -- SaveSchemaVersion, shown
-    // and changed here and nowhere quieter. Plain Save never touches it. A
-    // document that has never been saved starts from the last choice made
-    // in this dialog; one that has keeps its own.
+    // and changed here and nowhere quieter. Plain Save never touches it.
+    //
+    // A document that has been saved keeps its own. One that has not starts
+    // COMPACT, this fork's own format being what a document written here
+    // should be: that is the property's default, and the last choice made in
+    // this dialog can hold it back but not push it -- a cap something
+    // already lowered on purpose (a script, or the property editor) is not
+    // for a remembered preference to raise.
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Document");
     const char *curFile = getDocument()->FileName.getValue();
-    bool compact = (curFile && curFile[0])
-            ? getDocument()->getSaveSchemaVersion() >= 5
-            : hGrp->GetBool("PreferCompactFormat", false);
+    bool compact = getDocument()->getSaveSchemaVersion() >= 5;
+    if (!(curFile && curFile[0]))
+        compact = compact && hGrp->GetBool("PreferCompactFormat", true);
     DocumentFormatOption::Choices chosen;
     chosen.compact = compact;
     chosen.dedupPCurves = App::DocumentParams::getDedupShapePCurves();
@@ -1735,6 +1917,39 @@ bool Document::saveAs()
         fi.setFile(fn);
 
         const char * DocName = App::GetApplication().getDocumentName(getDocument());
+
+        // The format is settled before a byte is written: what compact costs
+        // said out loud, and -- for a standard save -- the offer of the
+        // schema this document's own content needs. Either prompt can send
+        // the save back the other way, and either can call it off.
+        if (chosen.compact) {
+            switch (confirmCompactFormat(hGrp)) {
+            case FormatAnswer::Compact:
+                break;
+            case FormatAnswer::Standard:
+                chosen.compact = false;
+                break;
+            case FormatAnswer::Cancel:
+                getMainWindow()->showMessage(QObject::tr("Saving aborted"), 2000);
+                return false;
+            }
+        }
+        if (!chosen.compact && !d->_schemaDowngradeAcked && needsBlobStore(getDocument())) {
+            bool acked = false;
+            QStringList names;
+            names << QString::fromUtf8(getDocument()->Label.getValue());
+            switch (confirmSchemaUpgrade(names, &acked)) {
+            case FormatAnswer::Compact:
+                chosen.compact = true;
+                break;
+            case FormatAnswer::Standard:
+                d->_schemaDowngradeAcked = acked;
+                break;
+            case FormatAnswer::Cancel:
+                getMainWindow()->showMessage(QObject::tr("Saving aborted"), 2000);
+                return false;
+            }
+        }
 
         // save as new file name
         try {
@@ -1808,6 +2023,12 @@ void Document::saveAll()
     }
 
     if (!checkCanonicalPath(dmap))
+        return;
+
+    // Save All writes each document at whatever schema it had decided, so it
+    // owes the same offer the plain Save path makes -- once, for all of them,
+    // before the first one is written.
+    if (!offerSchemaUpgrade(docs))
         return;
 
     for(auto doc : docs) {

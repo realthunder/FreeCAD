@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2019 Yorik van Havre <yorik@uncreated.net>              *
 # *   Copyright (c) 2023 FreeCAD Project Association                        *
@@ -20,6 +22,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides GUI tools to set up the working plane and its grid."""
+
 ## @package gui_selectplane
 # \ingroup draftguitools
 # \brief Provides GUI tools to set up the working plane and its grid.
@@ -36,14 +39,15 @@ import WorkingPlane
 
 from FreeCAD import Units
 from drafttaskpanels import task_selectplane
+from draftutils import gui_utils
 from draftutils import params
-from draftutils.messages import _msg
+from draftutils import utils
+from draftutils.messages import _toolmsg
 from draftutils.todo import todo
 from draftutils.translate import translate
 
 __title__ = "FreeCAD Draft Workbench GUI Tools - Working plane-related tools"
-__author__ = ("Yorik van Havre, Werner Mayer, Martin Burbaum, Ken Cline, "
-              "Dmitry Chigrin")
+__author__ = "Yorik van Havre, Werner Mayer, Martin Burbaum, Ken Cline, " "Dmitry Chigrin"
 __url__ = "https://www.freecad.org"
 
 
@@ -52,20 +56,28 @@ class Draft_SelectPlane:
 
     def GetResources(self):
         """Set icon, menu and tooltip."""
-        return {"Pixmap": "Draft_SelectPlane",
-                "Accel": "W, P",
-                "MenuText": QT_TRANSLATE_NOOP("Draft_SelectPlane", "Select plane"),
-                "ToolTip": QT_TRANSLATE_NOOP("Draft_SelectPlane", "Select 3 vertices, one or more shapes or an object to define a working plane.")}
+        return {
+            "Pixmap": "Draft_SelectPlane",
+            "Accel": "W, P",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_SelectPlane", "Working Plane"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_SelectPlane",
+                "Defines the working plane from 3 vertices, 1 or more shapes, or an object",
+            ),
+        }
 
     def IsActive(self):
         """Return True when this command should be available."""
-        if Gui.ActiveDocument:
-            return True
-        else:
-            return False
+        return bool(gui_utils.get_3d_view())
 
     def Activated(self):
         """Execute when the command is called."""
+
+        def _show_dialog():
+            dia = Gui.Control.showDialog(self.taskd)
+            dia.setDocumentName(Gui.ActiveDocument.Document.Name)
+            dia.setAutoCloseOnDeletedDocument(True)
+
         # Finish active Draft command if any
         if App.activeDraftCommand is not None:
             App.activeDraftCommand.finish()
@@ -80,6 +92,7 @@ class Draft_SelectPlane:
         if hasattr(Gui, "Snapper"):
             Gui.Snapper.setTrackers()
             self.grid = Gui.Snapper.grid
+        self.doc_name = App.ActiveDocument.Name if App.ActiveDocument is not None else None
         self.offset = 0
         self.center = params.get_param("CenterPlaneOnView")
 
@@ -92,12 +105,12 @@ class Draft_SelectPlane:
         form.fieldOffset.setText(Units.Quantity(self.offset, Units.Length).UserString)
         form.checkCenter.setChecked(self.center)
         try:
-            q = Units.Quantity(params.get_param("gridSpacing"))
+            q = Units.Quantity(params.get_grid_param("gridSpacing", self.doc_name))
         except ValueError:
             q = Units.Quantity("1 mm")
         form.fieldGridSpacing.setText(q.UserString)
-        form.fieldGridMainLine.setValue(params.get_param("gridEvery"))
-        form.fieldGridExtension.setValue(params.get_param("gridSize"))
+        form.fieldGridMainLine.setValue(params.get_grid_param("gridEvery", self.doc_name))
+        form.fieldGridExtension.setValue(params.get_grid_param("gridSize", self.doc_name))
         form.fieldSnapRadius.setValue(params.get_param("snapRange"))
 
         # Set icons
@@ -112,6 +125,10 @@ class Draft_SelectPlane:
         form.buttonPrevious.setIcon(QtGui.QIcon(":/icons/sel-back.svg"))
         form.buttonNext.setIcon(QtGui.QIcon(":/icons/sel-forward.svg"))
 
+        # Grid color
+        color = params.get_param("gridColor")
+        form.buttonColor.setProperty("color", QtGui.QColor(utils.rgba_to_argb(color)))
+
         # Connect slots
         form.buttonTop.clicked.connect(self.on_click_top)
         form.buttonFront.clicked.connect(self.on_click_front)
@@ -123,11 +140,15 @@ class Draft_SelectPlane:
         form.buttonPrevious.clicked.connect(self.on_click_previous)
         form.buttonNext.clicked.connect(self.on_click_next)
         form.fieldOffset.textEdited.connect(self.on_set_offset)
-        form.checkCenter.stateChanged.connect(self.on_set_center)
+        if hasattr(form.checkCenter, "checkStateChanged"):  # Qt version >= 6.7.0
+            form.checkCenter.checkStateChanged.connect(self.on_set_center)
+        else:  # Qt version < 6.7.0
+            form.checkCenter.stateChanged.connect(self.on_set_center)
         form.fieldGridSpacing.textEdited.connect(self.on_set_grid_size)
         form.fieldGridMainLine.valueChanged.connect(self.on_set_main_line)
         form.fieldGridExtension.valueChanged.connect(self.on_set_extension)
         form.fieldSnapRadius.valueChanged.connect(self.on_set_snap_radius)
+        form.buttonColor.changed.connect(self.on_color_changed)
 
         # Enable/disable buttons.
         form.buttonPrevious.setEnabled(self.wp._has_previous())
@@ -141,11 +162,14 @@ class Draft_SelectPlane:
             return
 
         # Execute the actual task panel delayed to catch possible active Draft command
-        todo.delay(Gui.Control.showDialog, self.taskd)
+        todo.delay(_show_dialog, None)
         todo.delay(form.setFocus, None)
-        _msg(translate(
+        _toolmsg(
+            translate(
                 "draft",
-                "Select 3 vertices, one or more shapes or an object to define a working plane"))
+                "Select 3 vertices, one or more shapes or an object to define a working plane",
+            )
+        )
         self.call = self.view.addEventCallback("SoEvent", self.action)
 
     def finish(self):
@@ -171,9 +195,11 @@ class Draft_SelectPlane:
         """Set the callbacks for the view."""
         if arg["Type"] == "SoKeyboardEvent" and arg["Key"] == "ESCAPE":
             self.reject()
-        if arg["Type"] == "SoMouseButtonEvent" \
-                and (arg["State"] == "DOWN") \
-                and (arg["Button"] == "BUTTON1"):
+        if (
+            arg["Type"] == "SoMouseButtonEvent"
+            and (arg["State"] == "UP")
+            and (arg["Button"] == "BUTTON1")
+        ):
             self.check_selection()
 
     def check_selection(self):
@@ -204,13 +230,14 @@ class Draft_SelectPlane:
 
     def on_click_move(self):
         sels = Gui.Selection.getSelectionEx("", 0)
-        if len(sels) == 1 \
-                and len(sels[0].SubObjects) == 1 \
-                and sels[0].SubObjects[0].ShapeType == "Vertex":
-            vert = Part.getShape(sels[0].Object,
-                                 sels[0].SubElementNames[0],
-                                 needSubElement=True,
-                                 retType=0)
+        if (
+            len(sels) == 1
+            and len(sels[0].SubObjects) == 1
+            and sels[0].SubObjects[0].ShapeType == "Vertex"
+        ):
+            vert = Part.getShape(
+                sels[0].Object, sels[0].SubElementNames[0], needSubElement=True, retType=0
+            )
             self.wp.set_to_position(vert.Point)
             Gui.Selection.clearSelection()
             self.finish()
@@ -240,43 +267,44 @@ class Draft_SelectPlane:
             self.offset = q.Value
 
     def on_set_center(self, val):
-        self.center = bool(val)
+        self.center = bool(getattr(val, "value", val))
         params.set_param("CenterPlaneOnView", self.center)
+
+    def _update_grid(self):
+        params.refresh_grid(self.doc_name)
+        if self.grid is not None:
+            self.grid.show_during_command = True
+            self.grid.on()
 
     def on_set_grid_size(self, text):
         try:
             q = Units.Quantity(text)
-        except Exception:
+        except (TypeError, ValueError):
             pass
         else:
-            params.set_param("gridSpacing", q.UserString)
-            # ParamObserver handles grid changes. See params.py.
-            if self.grid is not None:
-                self.grid.show_during_command = True
-                self.grid.on()
+            if params.set_grid_param("gridSpacing", q.UserString, self.doc_name):
+                self._update_grid()
 
     def on_set_main_line(self, i):
         if i > 1:
-            params.set_param("gridEvery", i)
-            # ParamObserver handles grid changes. See params.py.
-            if self.grid is not None:
-                self.grid.show_during_command = True
-                self.grid.on()
+            if params.set_grid_param("gridEvery", i, self.doc_name):
+                self._update_grid()
 
     def on_set_extension(self, i):
         if i > 1:
-            params.set_param("gridSize", i)
-            # ParamObserver handles grid changes. See params.py.
-            if self.grid is not None:
-                self.grid.show_during_command = True
-                self.grid.on()
+            if params.set_grid_param("gridSize", i, self.doc_name):
+                self._update_grid()
 
     def on_set_snap_radius(self, i):
         params.set_param("snapRange", i)
         if hasattr(Gui, "Snapper"):
             Gui.Snapper.showradius()
 
+    def on_color_changed(self):
+        color = utils.argb_to_rgba(self.taskd.form.buttonColor.property("color").rgba())
+        params.set_param("gridColor", color)
 
-Gui.addCommand('Draft_SelectPlane', Draft_SelectPlane())
+
+Gui.addCommand("Draft_SelectPlane", Draft_SelectPlane())
 
 ## @}

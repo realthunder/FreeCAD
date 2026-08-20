@@ -1142,6 +1142,8 @@ SOURCE_GROUP("View3D\\Inventor" FILES ${Inventor_SRCS})
 # The widget sources
 SET(Widget_CPP_SRCS
     FileDialog.cpp
+    InputHintPy.cpp
+    InputHintWidget.cpp
     MainWindow.cpp
     MainWindowPy.cpp
     NotificationBox.cpp
@@ -1162,6 +1164,9 @@ SET(Widget_CPP_SRCS
 
 SET(Widget_HPP_SRCS
     FileDialog.h
+    InputHint.h
+    InputHintPy.h
+    InputHintWidget.h
     MainWindow.h
     MainWindowPy.h
     NotificationBox.h

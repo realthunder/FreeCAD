@@ -52,20 +52,27 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
     PyObject* finishPitch = nullptr;
     PyObject* finishDepth = nullptr;
     PyObject* finishAngle = nullptr;
+    PyObject* texture = nullptr;
+    PyObject* textureScale = nullptr;
+    PyObject* textureOffset = nullptr;
+    PyObject* textureRotation = nullptr;
     PyObject* image = nullptr;
     PyObject* imagePath = nullptr;
     PyObject* uuid = nullptr;
-    static const std::array<const char *, 17> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
+    static const std::array<const char *, 21> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
                                                           "EmissiveColor", "Shininess", "Transparency",
                                                           "PBR", "Metallic", "Roughness",
                                                           "Finish", "FinishPitch", "FinishDepth",
-                                                          "FinishAngle", "Image", "ImagePath",
+                                                          "FinishAngle", "Texture", "TextureScale",
+                                                          "TextureOffset", "TextureRotation",
+                                                          "Image", "ImagePath",
                                                           "Uuid", nullptr};
 
-    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOOOOOOOOOOOO", kwds_colors,
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOOOOOOOOOOOOOOOO", kwds_colors,
         &diffuse, &ambient, &specular, &emissive, &shininess, &transparency,
         &pbr, &metallic, &roughness,
         &finish, &finishPitch, &finishDepth, &finishAngle,
+        &texture, &textureScale, &textureOffset, &textureRotation,
         &image, &imagePath, &uuid)) {
         return -1;
     }
@@ -130,6 +137,25 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
 
         if (finishAngle) {
             setFinishAngle(Py::Float(finishAngle));
+        }
+
+        // The maps first, whatever the keyword order, for the reason the
+        // pattern goes before its numbers: a transform arriving after them
+        // would be zeroed by the normalize an empty map dict performs.
+        if (texture) {
+            setTexture(Py::Dict(texture));
+        }
+
+        if (textureScale) {
+            setTextureScale(Py::Tuple(textureScale));
+        }
+
+        if (textureOffset) {
+            setTextureOffset(Py::Tuple(textureOffset));
+        }
+
+        if (textureRotation) {
+            setTextureRotation(Py::Float(textureRotation));
         }
 
         // Carried, not used (see the attribute docs): a material that
@@ -357,6 +383,95 @@ Py::Float MaterialPy::getFinishAngle() const
 void MaterialPy::setFinishAngle(Py::Float arg)
 {
     getMaterialPtr()->finish.angle = static_cast<float>(arg);
+}
+
+Py::Dict MaterialPy::getTexture() const
+{
+    // A slot the material does not state is absent rather than empty, so a
+    // caller can test it with `in` and a round trip through this dict says
+    // exactly what the material said
+    Py::Dict dict;
+    const SurfaceTexture &texture = getMaterialPtr()->texture;
+    for (uint8_t slot = 0; slot < SurfaceTexture::SlotCount; ++slot) {
+        if (!texture.maps[slot].empty()) {
+            dict.setItem(SurfaceTexture::slotName(slot), Py::String(texture.maps[slot]));
+        }
+    }
+    return dict;
+}
+
+void MaterialPy::setTexture(Py::Dict arg)
+{
+    // Every slot at once: an absent key clears its slot rather than leaving
+    // whatever was there, so assigning a dict states the whole texture
+    SurfaceTexture texture = getMaterialPtr()->texture;
+    for (auto &hash : texture.maps) {
+        hash.clear();
+    }
+    for (const auto &item : arg) {
+        const std::string name = Py::String(item.first).as_std_string("utf-8");
+        const uint8_t slot = SurfaceTexture::slotFromName(name.c_str());
+        if (slot >= SurfaceTexture::SlotCount) {
+            throw Py::ValueError("'" + name + "' is not a texture slot");
+        }
+        texture.maps[slot] = Py::String(item.second).as_std_string("utf-8");
+    }
+    // Clearing the last slot clears what positioned it, so that "no texture"
+    // is one state rather than a transform with nothing to transform
+    texture.normalize();
+    getMaterialPtr()->texture = texture;
+}
+
+// The transform attributes deliberately do NOT clamp, for the reason the
+// finish size attributes do not: normalize() zeroes everything while no
+// slot is occupied, so clamping here would wipe a scale written before the
+// map it belongs to. The clamp happens where the value is stored.
+Py::Tuple MaterialPy::getTextureScale() const
+{
+    const SurfaceTexture &texture = getMaterialPtr()->texture;
+    Py::Tuple value(2);
+    value.setItem(0, Py::Float(texture.scale[0]));
+    value.setItem(1, Py::Float(texture.scale[1]));
+    return value;
+}
+
+void MaterialPy::setTextureScale(Py::Tuple arg)
+{
+    if (arg.size() != 2) {
+        throw Py::ValueError("a texture scale is (u, v)");
+    }
+    SurfaceTexture &texture = getMaterialPtr()->texture;
+    texture.scale[0] = static_cast<float>(Py::Float(arg[0]));
+    texture.scale[1] = static_cast<float>(Py::Float(arg[1]));
+}
+
+Py::Tuple MaterialPy::getTextureOffset() const
+{
+    const SurfaceTexture &texture = getMaterialPtr()->texture;
+    Py::Tuple value(2);
+    value.setItem(0, Py::Float(texture.offset[0]));
+    value.setItem(1, Py::Float(texture.offset[1]));
+    return value;
+}
+
+void MaterialPy::setTextureOffset(Py::Tuple arg)
+{
+    if (arg.size() != 2) {
+        throw Py::ValueError("a texture offset is (u, v)");
+    }
+    SurfaceTexture &texture = getMaterialPtr()->texture;
+    texture.offset[0] = static_cast<float>(Py::Float(arg[0]));
+    texture.offset[1] = static_cast<float>(Py::Float(arg[1]));
+}
+
+Py::Float MaterialPy::getTextureRotation() const
+{
+    return Py::Float(getMaterialPtr()->texture.rotation);
+}
+
+void MaterialPy::setTextureRotation(Py::Float arg)
+{
+    getMaterialPtr()->texture.rotation = static_cast<float>(arg);
 }
 
 Py::String MaterialPy::getImage() const

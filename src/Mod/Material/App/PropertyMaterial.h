@@ -168,6 +168,16 @@ public:
 
     void collectBlobs(App::FileBlobManager& manager,
                       const App::DocumentObject* object) const override;
+    /** A card only this document holds has no schema 4 spelling.
+     *
+     * The fallback form is the uuid alone, which is lossless for a stock
+     * card -- every installation with the library reproduces it -- and
+     * lossy for any other: the uuid resolves to nothing on the way back
+     * in, and Restore takes the assignUnresolved path, keeping the name
+     * and losing the values. That is exactly what storesContent()
+     * already distinguishes, so it is the answer here too.
+     */
+    bool blobContentNeedsStore() const override { return storesContent(); }
     void assignRestoredBlob(const App::FileBlobHandle& blob) override;
 
     const char* getEditorName() const override;

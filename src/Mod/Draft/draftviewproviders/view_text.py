@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -24,6 +26,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides the viewprovider code for the Text object."""
+
 ## @package view_text
 # \ingroup draftviewproviders
 # \brief Provides the viewprovider code for the Text object.
@@ -35,6 +38,7 @@ from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
 import FreeCADGui as Gui
+from draftutils import gui_utils
 from draftutils import params
 from draftutils.translate import translate
 from draftviewproviders.view_draft_annotation import ViewProviderDraftAnnotation
@@ -48,21 +52,13 @@ class ViewProviderText(ViewProviderDraftAnnotation):
         super().set_text_properties(vobj, properties)
 
         if "Justification" not in properties:
-            _tip = QT_TRANSLATE_NOOP("App::Property",
-                                     "Horizontal alignment")
-            vobj.addProperty("App::PropertyEnumeration",
-                             "Justification",
-                             "Text",
-                             _tip)
+            _tip = QT_TRANSLATE_NOOP("App::Property", "Horizontal alignment")
+            vobj.addProperty("App::PropertyEnumeration", "Justification", "Text", _tip, locked=True)
             vobj.Justification = ["Left", "Center", "Right"]
 
         if "LineSpacing" not in properties:
-            _tip = QT_TRANSLATE_NOOP("App::Property",
-                                     "Line spacing (relative to font size)")
-            vobj.addProperty("App::PropertyFloat",
-                             "LineSpacing",
-                             "Text",
-                             _tip)
+            _tip = QT_TRANSLATE_NOOP("App::Property", "Line spacing (relative to font size)")
+            vobj.addProperty("App::PropertyFloat", "LineSpacing", "Text", _tip, locked=True)
             vobj.LineSpacing = params.get_param("LineSpacing")
 
     def getIcon(self):
@@ -74,11 +70,10 @@ class ViewProviderText(ViewProviderDraftAnnotation):
         self.Object = vobj.Object
 
         # Main attributes of the Coin scenegraph
-        self.trans = coin.SoTransform()
         self.mattext = coin.SoMaterial()
         self.font = coin.SoFont()
-        self.text_wld = coin.SoAsciiText() # World orientation. Can be oriented in 3D space.
-        self.text_scr = coin.SoText2()     # Screen orientation. Always faces the camera.
+        self.text_wld = coin.SoAsciiText()  # World orientation. Can be oriented in 3D space.
+        self.text_scr = coin.SoText2()  # Screen orientation. Always faces the camera.
 
         textdrawstyle = coin.SoDrawStyle()
         textdrawstyle.style = coin.SoDrawStyle.FILLED
@@ -90,14 +85,12 @@ class ViewProviderText(ViewProviderDraftAnnotation):
         self.text_scr.justification = coin.SoText2.LEFT
 
         self.node_wld = coin.SoGroup()
-        self.node_wld.addChild(self.trans)
         self.node_wld.addChild(self.mattext)
         self.node_wld.addChild(textdrawstyle)
         self.node_wld.addChild(self.font)
         self.node_wld.addChild(self.text_wld)
 
         self.node_scr = coin.SoGroup()
-        self.node_scr.addChild(self.trans)
         self.node_scr.addChild(self.mattext)
         self.node_scr.addChild(textdrawstyle)
         self.node_scr.addChild(self.font)
@@ -122,8 +115,10 @@ class ViewProviderText(ViewProviderDraftAnnotation):
             self.text_scr.string.setValues(_list)
 
         elif prop == "Placement":
-            self.trans.translation.setValue(obj.Placement.Base)
-            self.trans.rotation.setValue(obj.Placement.Rotation.Q)
+            transform = gui_utils.find_coin_node(obj.ViewObject.RootNode, coin.SoTransform)
+            if transform:
+                transform.translation.setValue(obj.Placement.Base)
+                transform.rotation.setValue(obj.Placement.Rotation.Q)
 
     def onChanged(self, vobj, prop):
         """Execute when a view property is changed."""
@@ -131,8 +126,7 @@ class ViewProviderText(ViewProviderDraftAnnotation):
 
         properties = vobj.PropertiesList
 
-        if (prop == "ScaleMultiplier" and "ScaleMultiplier" in properties
-                and vobj.ScaleMultiplier):
+        if prop == "ScaleMultiplier" and "ScaleMultiplier" in properties and vobj.ScaleMultiplier:
             if "FontSize" in properties:
                 self.font.size = vobj.FontSize.Value * vobj.ScaleMultiplier
 
@@ -143,8 +137,12 @@ class ViewProviderText(ViewProviderDraftAnnotation):
         elif prop == "FontName" and "FontName" in properties:
             self.font.name = vobj.FontName.encode("utf8")
 
-        elif (prop == "FontSize" and "FontSize" in properties
-              and "ScaleMultiplier" in properties and vobj.ScaleMultiplier):
+        elif (
+            prop == "FontSize"
+            and "FontSize" in properties
+            and "ScaleMultiplier" in properties
+            and vobj.ScaleMultiplier
+        ):
             # In v0.19 this code causes an `AttributeError` exception
             # during loading of the document as `ScaleMultiplier`
             # apparently isn't set immediately when the document loads.
@@ -187,7 +185,7 @@ class ViewProviderText(ViewProviderDraftAnnotation):
         Gui.draftToolBar.textValue.setFocus()
 
     def createObject(self):
-        if hasattr(self,"Object"):
+        if hasattr(self, "Object"):
             txt = self.text
             if not txt:
                 self.finish()
@@ -195,9 +193,7 @@ class ViewProviderText(ViewProviderDraftAnnotation):
             # If the last element is an empty string "" we remove it
             if not txt[-1]:
                 txt.pop()
-            t_list = ['"' + l + '"' for l in txt]
-            list_as_text = ", ".join(t_list)
-            string = '[' + list_as_text + ']'
+            string = "[" + ", ".join(repr(l) for l in txt) + "]"
             Gui.doCommand("FreeCAD.ActiveDocument." + self.Object.Name + ".Text = " + string)
             App.ActiveDocument.recompute()
             self.finish()

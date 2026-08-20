@@ -1926,6 +1926,215 @@ storm). Whether that population is really floating, or merely
 unclassified, is the next thing worth measuring, and it is a question
 about the producer rather than about the far field.
 
+**MEASURED in 11.1i: they are genuinely floating.** The producer
+judged them and found real free edges; omission is four occurrences.
+What fails is not the classifier but its all-or-nothing granularity --
+one free edge exempts a shape's whole edge set, and 71% of the
+face-owning objects on screen are that mixed case.
+
+### 11.1i Answered: the leftover draws are GENUINELY floating, and the assumption that fails is granularity
+
+11.1h ended by asking whether the 10813 tiny draws a stopped node
+leaves behind are really floating or merely unclassified, and said the
+answer decides where the fix lives -- in the producer, or nowhere.
+**They are genuinely floating.** The producer looked, and found real
+free edges. The two roads to `false` by omission are measured, and
+they are empty.
+
+Three probes had to agree, because no one of them can answer it alone.
+
+**1. The producer's own judgement** (`nothingFloats`, Render_LevelDebug,
+counts are the last power-of-two logged so read them as "at least"):
+
+| what the classifier said | times |
+|---|---|
+| EDGE/FACE **a real floating element** | **>= 8192** |
+| EDGE/FACE ancestor map EMPTY -- cannot judge | 4 |
+| VERTEX/EDGE a real floating element | 4 |
+
+**2. What arrived at the bridge**, per node type -- which says whether
+anything reached the renderer that PartGui never classified at all:
+
+| drawable | state | times |
+|---|---|---|
+| SoBrepPointSet | attached | >= 16384 |
+| SoBrepEdgeSet | attached | >= 8192 |
+| SoBrepEdgeSet | **unattached/unjudged** | **>= 8192** |
+| SoBrepPointSet | unattached/unjudged | 4 |
+| IndexedLineSet | NO attachedOnly FIELD | 4 |
+
+**3. The cut's own census** (`reportProxyFloating`), MiSTer Express,
+converged, isometric fit, three runs agreeing to within two instances:
+
+| tol | no faces at all | faces still exact | would gate | of those: bit FALSE | straddle |
+|---|---|---|---|---|---|
+| 4px | 6205 (39%) | 3104 (19%) | 6644 (42%) | 4998 | 3201 |
+| 16px | 6205 (45%) | 1148 (8%) | 6411 (47%) | 5388 | 2041 |
+| 64px | 6205 (50%) | 408 (3%) | **5826 (47%)** | **5532** | 592 |
+
+Read together they close it. The unattached edge sets track the "real
+floating element" count one for one; the unjudgeable empty map fires
+four times, and the only non-PartGui line producer that reached the
+renderer at all -- a plain Coin `IndexedLineSet`, which could never
+have carried the field -- fires four times, so **omission is not a
+measurable population**. Points are
+almost entirely attached, so the residue is an edge story and not a
+point story. And 5532 of the 5826 carry the bit `false` outright
+rather than by inference -- the straddle case, an object with faces
+below a stopped node whose own set the descent reached by another
+route, is 592 and was counted precisely so it could not be mistaken
+for a producer failure.
+
+The census's own validity was checked rather than assumed, because
+every row of it rests on a line draw pairing with its own faces
+through `objectKey`, and two mechanisms could have broken that
+silently -- the instanced path builds the face group and the edge group
+as separate `SoFCSelectionRoot`s, and a merged draw-call entry is given
+a synthetic key. Model-wide: **9563 distinct keys, 7647 own faces,
+1916 own none**, and the 6205 "no faces at all" draws come from
+exactly those 1916 keys. The pairing holds; the face-less objects are
+real.
+
+#### What actually fails is the ALL-OR-NOTHING rule, not the classifier
+
+`nothingFloats` is deliberately per drawable, and says so:
+
+> All or nothing per drawable, deliberately: objects are in practice
+> either all floating or none, so a per-element subset would buy
+> nothing measurable and cost an index permutation -- and the
+> coordinate order is the picking identity.
+
+**On this model that assumption is false.** The would-gate population
+is by construction objects that own faces, and 5532 of them at 64 px
+have an edge set marked floating -- so **5456 of the 7647 face-owning
+objects on screen, 71%, are the mixed case the rule says does not
+happen in practice**. One free edge in a shape exempts that shape's
+entire edge set from the contract, and the far field then has to draw
+all of it exactly.
+
+So the fix 11.1h hoped for -- a producer that stopped short, costing
+nothing to finish -- is not available. The lever that remains is
+per-element granularity, and the producer has already priced it: an
+index permutation, against a coordinate order that IS the picking
+identity (`getCoordinateIndex() - startIndex + 1`). A per-edge attached
+mask with the order left alone is the shape that avoids the
+permutation, and it is a producer-side design question, not a
+far-field one.
+
+#### What it is worth, on the axis this workstream is gated on
+
+!! **2.3% of primitives, 44% of draws.** The would-gate draws are
+68096 primitives at 64 px against 2.91M visible. On the primitive axis
+that 11.1b-prims re-gated everything onto, this is nearly nothing, and
+by that reading 11.1h's residue is the floor and candidates 2 and 3 of
+11.1g (merge line sets per cell, decimate as polylines) are the only
+remaining levers -- which is what 11.1h predicted for this branch.
+
+!! **But the reason draws were dismissed does not transfer to these
+draws, and that should not be quietly inherited.** 11.1b-prims
+dismissed draw count because the rack frame was GPU-bound and the GPU
+was geometry-bound -- measured at roughly 1540 primitives per draw.
+This population is **11.7 primitives per draw**, which is the opposite
+regime: nearly pure per-draw overhead, where `docs/DrawSubmission.md`
+measures 0.294 us/draw of our own C++ plus 0.859 us/draw of
+`bgfx::frame`. Whether removing 5532 such draws is worth measurable
+frame time on this scene HAS NOT BEEN MEASURED here, and the existing
+"draws cost nothing" result is not evidence about it either way. That
+measurement is the honest next step before anyone spends a session on
+either lever.
+
+**MEASURED in 11.1j: a draw is NOT free here.** Removing 8487 tiny
+draws (2.5% of the primitives) took 21% off the frame, at 2.63 us per
+draw -- and the submit and GPU components land within 3% of
+DrawSubmission.md's independently fitted per-draw costs. The far
+field's own addressable share extrapolates to ~14% of the frame.
+
+#### A caveat on comparing these rows with 11.1h's
+
+This session's converged scene is **2.91M visible primitives** where
+11.1h's was 3.3M, and the cut correspondingly reads 5.38x net / 12700
+draws at 64 px against 11.1h's 3.31x / 14270. Same model, same
+viewport, same camera, and the run is deterministic -- 12 consecutive
+report sets byte-identical, and three separate runs agreeing. The
+difference is not explained, and most likely a different converged
+mesh-ladder state; until it is, **the composition percentages above
+travel and the absolute ratios do not**. Nothing in this section is
+read across the two.
+
+### 11.1j MEASURED: a draw is NOT free in this regime -- 8487 tiny draws are 21% of the frame
+
+11.1i ended by refusing to inherit 11.1b-prims' dismissal of draw
+count, on the grounds that it was measured at ~1540 primitives per
+draw and the far-field residue is ~12. That refusal is now a
+measurement, and **the dismissal does not transfer.**
+
+`Render_TinyElementCutoff` suppresses every line and point draw at or
+below N primitives, floating sets included -- which no existing gate
+could do, the element contract never gating a floating set by design.
+MiSTer Express, converged, real GPU (RTX 3060) over Xvfb, viewport
+1607x788, `Render_DebugTiming` reading the engine's own frame line.
+Run **A/B/A/B alternating**, not A-then-B: the ladder keeps working
+and a single crossing would credit scene drift to the knob.
+
+| phase | draws | prims | prims/draw | frame ms | submit ms | gpu ms |
+|---|---|---|---|---|---|---|
+| cutoff 0 | 16057 | 2030501 | 126 | 102.94 | 37.26 | 38.09 |
+| cutoff 24 | 7570 | 1979367 | 261 | 84.02 | 27.25 | 27.29 |
+| cutoff 0 | 16057 | 2030501 | 126 | 109.01 | 37.14 | 37.02 |
+| cutoff 24 | 7570 | 1979367 | 261 | 83.33 | 27.09 | 27.13 |
+
+The repeat is the control and it holds: draw and primitive counts are
+identical within each setting, and the two crossings agree.
+
+**Removing 8487 draws -- 2.5% of the primitives -- took 22.3 ms off a
+106 ms frame, 21%.** The draws removed averaged 6.0 primitives each.
+There is no geometry in that saving to speak of; it is draw count.
+
+#### The per-draw cost, and why it should be believed
+
+| axis | delta | per removed draw | independently measured in DrawSubmission.md |
+|---|---|---|---|
+| whole frame | 22.30 ms | **2.63 us** | -- |
+| submit | 10.03 ms | 1.18 us | 0.294 (our C++) + 0.859 (bgfx::frame) = **1.15** |
+| gpu | 10.35 ms | 1.22 us | **1.25**-1.72 us/draw |
+
+The submit and GPU figures were arrived at here by removing draws from
+a real scene, and there by curve-fitting a different model on a
+different camera. They agree to within 3% and 3%. That is the
+strongest reason to trust the headline.
+
+!! The three rows are components measured on overlapping windows, not
+addends -- `submit`, `gpu` and `bgfx::frame` all read close to each
+other on this scene, and `cpu ours` reads 0.00 with `outside`
+absorbing the whole frame in this configuration. **Do not sum them.**
+The frame delta is the number.
+
+#### What this is worth to the far field, and what it is not
+
+!! **The cutoff prices the REGIME, not the fix.** It removes 8487
+draws scene-wide; the far field's own addressable population is the
+5532 sets of 11.1i whose faces a proxy already took and whose entire
+edge set is exempt only because one edge in the shape floats. At the
+measured 2.63 us/draw that is **about 14.5 ms, roughly 14% of the
+frame** -- a linear extrapolation from the marginal cost, and flagged
+as one.
+
+The other half of the residue is not addressable and should not be
+counted: the 6205 draws over 1916 keys that own no faces at all are
+floating by construction, and the contract's ruling on those is not a
+performance trade -- nothing else on screen would show them.
+
+**What this changes in the plan.** 11.1b-prims' judgement that "a cut
+that removes draws without removing primitives buys exactly nothing
+here" is now known to be regime-specific, and the far field lives in
+the other regime. Candidates 2 and 3 of 11.1g -- merge line sets per
+cell, decimate as polylines -- are therefore worth their cost after
+all, and so is the per-edge attached mask of 11.1i, which is the only
+one of the three that removes draws with no change to what is on
+screen. None of them is priced yet; this section says only that the
+axis they act on is real, which is what 11.1i said had to be
+established first.
+
 ### 11.2 What the code already gives us
 
 `simplifyMesh()` is a better starting point than §5.1 claims. It is a

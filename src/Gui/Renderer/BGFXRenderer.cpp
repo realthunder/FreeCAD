@@ -815,6 +815,11 @@ void BGFXRenderer::setLevelBudgetDeadband(float fraction)
 }
 #endif
 
+void BGFXRenderer::setTinyElementCutoff(int prims)
+{
+    pimpl->tinyElementCutoff = prims > 0 ? prims : 0;
+}
+
 void BGFXRenderer::setElementGates(bool shapeVertices, bool pressureEdges,
                                    bool loadingDrop, int staggerFrames)
 {

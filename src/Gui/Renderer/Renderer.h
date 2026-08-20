@@ -2544,6 +2544,15 @@ public:
     /// \a staggerFrames is the frame wait between pressure stages,
     /// escalating and releasing both. None of these ever touches an
     /// on-top or highlight draw.
+    /// MEASUREMENT ONLY (Render_TinyElementCutoff, 0 = off): suppress
+    /// every line and point draw of this many primitives or fewer,
+    /// floating sets included -- which the element contract never
+    /// gates, and which is exactly the population a far-field cut is
+    /// left drawing (docs/FarFieldProxies.md 11.1i). It exists to
+    /// price the DRAW axis in the ~12-primitives-per-draw regime,
+    /// which this engine has only ever measured at ~1540.
+    virtual void setTinyElementCutoff(int prims) { (void)prims; }
+
     virtual void setElementGates(bool shapeVertices, bool pressureEdges,
                                  bool loadingDrop, int staggerFrames)
     { (void)shapeVertices; (void)pressureEdges; (void)loadingDrop;

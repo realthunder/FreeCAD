@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -24,6 +26,7 @@
 
 Many viewprovider classes may inherit this class in order to have
 the same basic behavior."""
+
 ## @package view_base
 # \ingroup draftviewproviders
 # \brief Provides the viewprovider code for the base Draft object.
@@ -44,6 +47,7 @@ if App.GuiUp:
     from pivy import coin
     import FreeCADGui as Gui
     import Draft_rc
+
     # The module is used to prevent complaints from code checkers (flake8)
     bool(Draft_rc.__name__)
 
@@ -56,7 +60,7 @@ class ViewProviderDraft(object):
     vobj : a base C++ view provider
         The view provider of the scripted object (`obj.ViewObject`),
         which commonly may be of types `PartGui::ViewProvider2DObjectPython`,
-        `PartGui::ViewProviderPython`, or `Gui::ViewProviderPythonFeature`.
+        `PartGui::ViewProviderPython`, or `Gui::ViewProviderFeaturePython`.
 
         A basic view provider is instantiated during the creation
         of the base C++ object, for example,
@@ -102,21 +106,25 @@ class ViewProviderDraft(object):
     def _set_properties(self, vobj):
         """Set the properties of objects if they don't exist."""
         if not hasattr(vobj, "Pattern"):
-            vobj.addProperty("App::PropertyEnumeration",
-                             "Pattern",
-                             "Draft",
-                             QT_TRANSLATE_NOOP("App::Property",
-                                               "Defines an SVG pattern."))
+            vobj.addProperty(
+                "App::PropertyEnumeration",
+                "Pattern",
+                "Draft",
+                QT_TRANSLATE_NOOP("App::Property", "Defines an SVG pattern."),
+                locked=True,
+            )
             patterns = list(utils.svg_patterns())
             patterns.sort()
             vobj.Pattern = ["None"] + patterns
 
         if not hasattr(vobj, "PatternSize"):
-            vobj.addProperty("App::PropertyFloat",
-                             "PatternSize",
-                             "Draft",
-                             QT_TRANSLATE_NOOP("App::Property",
-                                               "Defines the size of the SVG pattern."))
+            vobj.addProperty(
+                "App::PropertyFloat",
+                "PatternSize",
+                "Draft",
+                QT_TRANSLATE_NOOP("App::Property", "Defines the size of the SVG pattern."),
+                locked=True,
+            )
             vobj.PatternSize = params.get_param("HatchPatternSize")
 
     def dumps(self):
@@ -263,7 +271,7 @@ class ViewProviderDraft(object):
         draw style, shape color, transparency, and others.
 
         This method  updates the texture and pattern if
-        the properties `TextureImage`, `Pattern`, `DiffuseColor`,
+        the properties `TextureImage`, `Pattern`, `ShapeAppearance`,
         and `PatternSize` change.
 
         Parameters
@@ -275,52 +283,53 @@ class ViewProviderDraft(object):
             Name of the property that was modified.
         """
         # treatment of patterns and image textures
-        if prop in ("TextureImage", "Pattern", "DiffuseColor"):
-            if hasattr(self.Object, "Shape"):
-                if self.Object.Shape.Faces:
-                    path = None
-                    if hasattr(vobj, "TextureImage"):
-                        if vobj.TextureImage:
-                            path = vobj.TextureImage
-                    if not path:
-                        if hasattr(vobj, "Pattern"):
-                            if str(vobj.Pattern) in utils.svg_patterns():
-                                path = utils.svg_patterns()[vobj.Pattern][1]
-                            else:
-                                path = "None"
-                    if path and vobj.RootNode:
-                        if vobj.RootNode.getChildren().getLength() > 2:
-                            if vobj.RootNode.getChild(2).getChildren().getLength() > 0:
-                                innodes = vobj.RootNode.getChild(2).getChild(0).getChildren().getLength()
-                                if  innodes > 2:
-                                    r = vobj.RootNode.getChild(2).getChild(0).getChild(innodes-1)
-                                    i = QtCore.QFileInfo(path)
-                                    if self.texture:
-                                        r.removeChild(self.texture)
-                                        self.texture = None
-                                    if self.texcoords:
-                                        r.removeChild(self.texcoords)
-                                        self.texcoords = None
-                                    if i.exists():
-                                        size = None
-                                        if ".SVG" in path.upper():
-                                            size = params.get_param("HatchPatternResolution")
-                                            if not size:
-                                                size = 128
-                                        im = gui_utils.load_texture(path, size)
-                                        if im:
-                                            self.texture = coin.SoTexture2()
-                                            self.texture.image = im
-                                            r.insertChild(self.texture, 1)
-                                            if size:
-                                                s = 1
-                                                if hasattr(vobj, "PatternSize"):
-                                                    if vobj.PatternSize:
-                                                        s = vobj.PatternSize
-                                                self.texcoords = coin.SoTextureCoordinatePlane()
-                                                self.texcoords.directionS.setValue(s, 0, 0)
-                                                self.texcoords.directionT.setValue(0, s, 0)
-                                                r.insertChild(self.texcoords, 2)
+        if prop in ("TextureImage", "Pattern", "ShapeAppearance"):
+            if hasattr(self.Object, "Shape") and self.Object.Shape.Faces:
+                path = None
+                if hasattr(vobj, "TextureImage"):
+                    if vobj.TextureImage:
+                        path = vobj.TextureImage
+                if not path:
+                    if hasattr(vobj, "Pattern"):
+                        if str(vobj.Pattern) in utils.svg_patterns():
+                            path = utils.svg_patterns()[vobj.Pattern][1]
+                        else:
+                            path = "None"
+                if path and vobj.RootNode:
+                    switch = vobj.SwitchNode
+                    if switch is not None and switch.getChildren().getLength() > 0:
+                        flat_lines_node = switch.getChild(0)
+                        # Get the Shaded sub-node of the Flat Lines node. The name in
+                        # Std_SceneInspector is "Shaded", but the actual name is "FlatRoot")
+                        shaded_node = gui_utils.find_coin_node_by_name(flat_lines_node, "FlatRoot")
+                        if shaded_node is not None:
+                            i = QtCore.QFileInfo(path)
+                            if self.texture:
+                                shaded_node.removeChild(self.texture)
+                                self.texture = None
+                            if self.texcoords:
+                                shaded_node.removeChild(self.texcoords)
+                                self.texcoords = None
+                            if i.exists():
+                                size = None
+                                if ".SVG" in path.upper():
+                                    size = params.get_param("HatchPatternResolution")
+                                    if not size:
+                                        size = 128
+                                im = gui_utils.load_texture(path, size)
+                                if im:
+                                    self.texture = coin.SoTexture2()
+                                    self.texture.image = im
+                                    shaded_node.insertChild(self.texture, 1)
+                                    if size:
+                                        s = 1
+                                        if hasattr(vobj, "PatternSize"):
+                                            if vobj.PatternSize:
+                                                s = vobj.PatternSize
+                                        self.texcoords = coin.SoTextureCoordinatePlane()
+                                        self.texcoords.directionS.setValue(s, 0, 0)
+                                        self.texcoords.directionT.setValue(0, s, 0)
+                                        shaded_node.insertChild(self.texcoords, 2)
         elif prop == "PatternSize":
             if hasattr(self, "texcoords"):
                 if self.texcoords:
@@ -398,8 +407,15 @@ class ViewProviderDraft(object):
         # Facebinder, ShapeString, PanelSheet and Profile objects have their own
         # setEdit and unsetEdit.
 
-        if utils.get_type(vobj.Object) in ("Wire", "Circle", "Ellipse", "Rectangle", "Polygon",
-                                           "BSpline", "BezCurve"):
+        if utils.get_type(vobj.Object) in (
+            "Wire",
+            "Circle",
+            "Ellipse",
+            "Rectangle",
+            "Polygon",
+            "BSpline",
+            "BezCurve",
+        ):
             if not "Draft_Edit" in Gui.listCommands():
                 self.wb_before_edit = Gui.activeWorkbench()
                 Gui.activateWorkbench("DraftWorkbench")
@@ -416,8 +432,15 @@ class ViewProviderDraft(object):
         if mode == 1 or mode == 2:
             return None
 
-        if utils.get_type(vobj.Object) in ("Wire", "Circle", "Ellipse", "Rectangle", "Polygon",
-                                           "BSpline", "BezCurve"):
+        if utils.get_type(vobj.Object) in (
+            "Wire",
+            "Circle",
+            "Ellipse",
+            "Rectangle",
+            "Polygon",
+            "BSpline",
+            "BezCurve",
+        ):
             if hasattr(App, "activeDraftCommand") and App.activeDraftCommand:
                 App.activeDraftCommand.finish()
             Gui.Control.closeDialog()
@@ -431,46 +454,54 @@ class ViewProviderDraft(object):
     def setupContextMenu(self, vobj, menu):
         tp = utils.get_type(self.Object)
 
-        if tp in ("Wire", "Circle", "Ellipse", "Rectangle", "Polygon",
-                  "BSpline", "BezCurve", "Facebinder", "ShapeString",
-                  "PanelSheet", "Profile"):
-            action_edit = QtGui.QAction(translate("draft", "Edit"),
-                                        menu)
-            QtCore.QObject.connect(action_edit,
-                                   QtCore.SIGNAL("triggered()"),
-                                   self.edit)
+        if tp in (
+            "Wire",
+            "Circle",
+            "Ellipse",
+            "Rectangle",
+            "Polygon",
+            "BSpline",
+            "BezCurve",
+            "Facebinder",
+            "ShapeString",
+            "PanelSheet",
+            "Profile",
+        ):
+            action_edit = QtGui.QAction(translate("draft", "Edit"), menu)
+            QtCore.QObject.connect(action_edit, QtCore.SIGNAL("triggered()"), self.edit)
             menu.addAction(action_edit)
 
         if tp == "Wire":
-            action_flatten = QtGui.QAction(translate("draft", "Flatten"),
-                                           menu)
-            QtCore.QObject.connect(action_flatten,
-                                   QtCore.SIGNAL("triggered()"),
-                                   self.flatten) # The flatten function is defined in view_wire.py.
+            action_flatten = QtGui.QAction(translate("draft", "Flatten"), menu)
+            QtCore.QObject.connect(
+                action_flatten, QtCore.SIGNAL("triggered()"), self.flatten
+            )  # The flatten function is defined in view_wire.py.
             menu.addAction(action_flatten)
 
         # The default Part::FeaturePython context menu contains a `Set colors`
         # option. This option makes no sense for objects without a face or that
-        # can only have a single face. In those cases we override this menu and
-        # have to add our own `Transform` item.
+        # can only have a single face.
         # To override the default menu this function must return `True`.
-        if tp in ("Wire", "Circle", "Ellipse", "Rectangle", "Polygon",
-                  "BSpline","BezCurve", "Fillet", "Point", "Shape2DView",
-                  "PanelCut", "PanelSheet", "Profile"):
-            action_transform = QtGui.QAction(Gui.getIcon("Std_TransformManip.svg"),
-                                             translate("Command", "Transform"), # Context `Command` instead of `draft`.
-                                             menu)
-            QtCore.QObject.connect(action_transform,
-                                   QtCore.SIGNAL("triggered()"),
-                                   self.transform)
-            menu.addAction(action_transform)
+
+        if tp in (
+            "Wire",
+            "Circle",
+            "Ellipse",
+            "Rectangle",
+            "Polygon",
+            "BSpline",
+            "BezCurve",
+            "Fillet",
+            "Point",
+            "Shape2DView",
+            "PanelCut",
+            "PanelSheet",
+            "Profile",
+        ):
             return True
 
     def edit(self):
         Gui.ActiveDocument.setEdit(self.Object, 0)
-
-    def transform(self):
-        Gui.ActiveDocument.setEdit(self.Object, 1)
 
     def getIcon(self):
         """Return the path to the icon used by the view provider.
@@ -498,8 +529,9 @@ class ViewProviderDraft(object):
             return ":/icons/Draft_N-Curve.svg"
         if tp in ("ShapeString"):
             return ":/icons/Draft_ShapeString_tree.svg"
-        if hasattr(self.Object,"AutoUpdate") and not self.Object.AutoUpdate:
+        if hasattr(self.Object, "AutoUpdate") and not self.Object.AutoUpdate:
             import TechDrawGui
+
             return ":/icons/TechDraw_TreePageUnsync.svg"
         return ":/icons/Draft_Draft.svg"
 
@@ -556,6 +588,10 @@ class ViewProviderDraftAlt(ViewProviderDraft):
 
     def claimChildren(self):
         return []
+
+    def updateData(self, obj, prop):
+        if prop == "AutoUpdate":
+            obj.ViewObject.signalChangeIcon()
 
 
 # Alias for compatibility with v0.18 and earlier

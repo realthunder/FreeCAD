@@ -33,6 +33,7 @@
 
 #include <Base/BoundBoxPy.h>
 #include <Base/PyWrapParseTupleAndKeywords.h>
+#include <App/PropertyStandard.h>
 
 #include "ViewProvider.h"
 #include "WidgetFactory.h"
@@ -64,14 +65,19 @@ std::string ViewProviderPy::representation() const
     return "<View provider object>";
 }
 
-PyObject*  ViewProviderPy::addProperty(PyObject *args)
+PyObject*  ViewProviderPy::addProperty(PyObject *args, PyObject *kwd)
 {
     char *sType,*sName=nullptr,*sGroup=nullptr,*sDoc=nullptr;
     short attr=0;
     std::string sDocStr;
-    PyObject *ro = Py_False, *hd = Py_False;
-    if (!PyArg_ParseTuple(args, "s|ssethO!O!", &sType,&sName,&sGroup,"utf-8",&sDoc,&attr,
-        &PyBool_Type, &ro, &PyBool_Type, &hd))
+    PyObject *ro = Py_False, *hd = Py_False, *lk = Py_False;
+    PyObject* enumVals = nullptr;
+    const std::array<const char *, 10> kwlist {"type","name","group","doc","attr","read_only",
+                                               "hidden","locked","enum_vals",nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(
+            args, kwd, "s|ssethO!O!O!O", kwlist, &sType, &sName, &sGroup, "utf-8",
+            &sDoc, &attr, &PyBool_Type, &ro, &PyBool_Type, &hd, &PyBool_Type, &lk,
+            &enumVals))
         return nullptr;
 
     if (sDoc) {
@@ -86,6 +92,21 @@ PyObject*  ViewProviderPy::addProperty(PyObject *args)
     }
     catch (const Base::Exception& e) {
         throw Py::RuntimeError(e.what());
+    }
+
+    if (prop) {
+        prop->setStatus(App::Property::LockDynamic, Base::asBoolean(lk));
+    }
+
+    // enum support
+    if (auto* propEnum = dynamic_cast<App::PropertyEnumeration*>(prop)) {
+        if (enumVals && PySequence_Check(enumVals)) {
+            std::vector<std::string> enumValsAsVector;
+            for (Py_ssize_t i = 0; i < PySequence_Length(enumVals); ++i) {
+                enumValsAsVector.emplace_back(PyUnicode_AsUTF8(PySequence_GetItem(enumVals, i)));
+            }
+            propEnum->setEnums(enumValsAsVector);
+        }
     }
     if (!prop) {
         std::stringstream str;

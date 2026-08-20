@@ -106,6 +106,36 @@ std::string UnitsApi::getDescription(UnitSystem system)
     return QCoreApplication::translate("UnitsApi", description).toStdString();
 }
 
+std::string UnitsApi::getName(UnitSystem system)
+{
+    // Stable identifiers, matching upstream's schema names and order, so a
+    // script can select a schema without depending on a translated string.
+    switch (system) {
+        case UnitSystem::SI1:
+            return "Internal";
+        case UnitSystem::SI2:
+            return "MKS";
+        case UnitSystem::Imperial1:
+            return "Imperial";
+        case UnitSystem::ImperialDecimal:
+            return "ImperialDecimal";
+        case UnitSystem::Centimeters:
+            return "Centimeter";
+        case UnitSystem::ImperialBuilding:
+            return "ImperialBuilding";
+        case UnitSystem::MmMin:
+            return "MmMin";
+        case UnitSystem::ImperialCivil:
+            return "ImperialCivil";
+        case UnitSystem::FemMilliMeterNewton:
+            return "FEM";
+        case UnitSystem::MeterDecimal:
+            return "MeterDecimal";
+        default:
+            return "Unknown";
+    }
+}
+
 UnitsSchemaPtr UnitsApi::createSchema(UnitSystem system)
 {
     switch (system) {

@@ -73,9 +73,9 @@ class ShapeTestCase(unittest.TestCase):
     def newDocument(self, name="ShapeDoc"):
         doc = FreeCAD.newDocument(name)
         self.docs.append(doc.Name)
-        # A new document defaults to upstream's schema, and canonicalized
-        # locations are part of this fork's -- an incompatible file is chosen,
-        # never inherited. The case that wants the default says so itself.
+        # Canonicalized locations are part of this fork's format. Stated
+        # rather than inherited, so these cases do not move when the default
+        # does -- and the case that wants upstream's format says so too.
         doc.SaveSchemaVersion = 5
         return doc
 
@@ -380,7 +380,7 @@ class ShapeLocationCases(ShapeTestCase):
             1e-9,
         )
 
-    def testDefaultSchemaIsUnchanged(self):
+    def testSchemaFourIsUnchanged(self):
         """Schema 4 is upstream's format and stays exactly that: the geometry
         keeps its location, and an older reader that never heard of `loc=`
         reads the document unharmed."""
@@ -389,6 +389,7 @@ class ShapeLocationCases(ShapeTestCase):
         wanted = self.placement(3, 4, 5, angle=20.0)
         self.box(doc, "Moved", wanted)
         doc.recompute()
+        doc.SaveSchemaVersion = 4
         self.assertEqual(doc.SaveSchemaVersion, 4)
         project = self.projectPath("legacy.FCStd")
         doc.saveAs(project)
@@ -397,6 +398,9 @@ class ShapeLocationCases(ShapeTestCase):
 
         reopened = self.openDocument(project)
         self.assertPlacement(reopened.getObject("Moved"), wanted)
+        # And the file's own format comes back with it: a document restored
+        # from upstream's format is not converted by the next save.
+        self.assertEqual(reopened.SaveSchemaVersion, 4)
 
 
 @unittest.skipUnless(HAS_PART, "Part module not available")

@@ -2884,6 +2884,12 @@ RendererBridge::translateElementGateStagger(App::PropertyContainer *)
     return int(RenderParams::getElementGateStagger());
 }
 
+int
+RendererBridge::translateTinyElementCutoff(App::PropertyContainer *)
+{
+    return int(RenderParams::getTinyElementCutoff());
+}
+
 bool
 RendererBridge::translateLoadDropElements(App::PropertyContainer * view)
 {

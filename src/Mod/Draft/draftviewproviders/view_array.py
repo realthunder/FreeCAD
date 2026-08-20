@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2019 Eliud Cabrera Castillo <e.cabrera-castillo@tum.de>           *
 # *                                                                         *
@@ -21,6 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides the viewprovider code for the Array object."""
+
 ## @package view_array
 # \ingroup draftviewproviders
 # \brief Provides the viewprovider code for the Array object.
@@ -38,7 +41,7 @@ from draftutils import gui_utils
 class ViewProviderDraftArray(ViewProviderDraft):
     """a view provider that displays a Array icon instead of a Draft icon"""
 
-    def __init__(self,vobj):
+    def __init__(self, vobj):
         super(ViewProviderDraftArray, self).__init__(vobj)
 
     def setupContextMenu(self,vobj,menu):
@@ -55,11 +58,11 @@ class ViewProviderDraftArray(ViewProviderDraft):
 
     def getIcon(self):
         if hasattr(self.Object, "ArrayType"):
-            if self.Object.ArrayType == 'ortho':
+            if self.Object.ArrayType == "ortho":
                 return ":/icons/Draft_Array.svg"
-            elif self.Object.ArrayType == 'polar':
+            elif self.Object.ArrayType == "polar":
                 return ":/icons/Draft_PolarArray.svg"
-            elif self.Object.ArrayType == 'circular':
+            elif self.Object.ArrayType == "circular":
                 return ":/icons/Draft_CircularArray.svg"
         elif hasattr(self.Object, "PointObject"):
             return ":/icons/Draft_PointArray.svg"
@@ -72,19 +75,21 @@ class ViewProviderDraftArray(ViewProviderDraft):
         obj = vobj.Object
         if obj.Base is not None:
             colors = gui_utils.get_diffuse_color(obj.Base)
-            if colors:
+            if not colors:
+                return
+            if len(colors) > 1:
                 n = 1
                 if hasattr(obj, "ArrayType"):
                     if obj.ArrayType == "ortho":
                         n = obj.NumberX * obj.NumberY * obj.NumberZ
                     elif obj.ArrayType == "polar":
                         n = obj.NumberPolar
-                    else: # "circular"
+                    else:  # "circular"
                         n = obj.Count
                 elif hasattr(obj, "Count"):
                     n = obj.Count
                 colors = colors * n
-                vobj.DiffuseColor = colors
+            vobj.DiffuseColor = colors
 
 
 # Alias for compatibility with v0.18 and earlier

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009 Yorik van Havre <yorik@uncreated.net>                        *
 # *   (c) 2010 Ken Cline <cline@frii.com>                                   *
@@ -27,12 +29,15 @@
 This class is used by Gui Commands to set up some properties
 of the DraftToolBar, the Snapper, and the working plane.
 """
+
 ## @package gui_base_original
 # \ingroup draftguitools
 # \brief Provides the base classes for most old Draft Gui Commands.
 
 ## \addtogroup draftguitools
 # @{
+from PySide import QtCore
+
 import FreeCAD as App
 import FreeCADGui as Gui
 import DraftVecUtils
@@ -43,7 +48,7 @@ from draftutils import gui_utils
 from draftutils import params
 from draftutils import todo
 from draftutils import utils
-from draftutils.messages import _log, _msg, _toolmsg
+from draftutils.messages import _log, _toolmsg
 
 
 class DraftTool:
@@ -70,14 +75,8 @@ class DraftTool:
         self.commitList = []
 
     def IsActive(self):
-        """Return True when this command should be available.
-
-        It is `True` when there is a document.
-        """
-        if Gui.ActiveDocument:
-            return True
-        else:
-            return False
+        """Return True when this command should be available."""
+        return bool(gui_utils.get_3d_view())
 
     def Activated(self, name="None", is_subtool=False):
         """Execute when the command is called.
@@ -109,9 +108,8 @@ class DraftTool:
 
         # The Part module is first initialized when using any Gui Command
         # for the first time.
-        global Part, DraftGeomUtils
+        global Part
         import Part
-        import DraftGeomUtils
 
         self.call = None
         self.commitList = []
@@ -125,6 +123,7 @@ class DraftTool:
         self.pos = []
         self.support = None
         self.ui = Gui.draftToolBar
+        self.ui.mouse = True  # reset mouse movement
         self.ui.sourceCmd = self
         self.view = gui_utils.get_3d_view()
         self.wp = WorkingPlane.get_working_plane()
@@ -135,8 +134,26 @@ class DraftTool:
         if hasattr(Gui, "Snapper"):
             Gui.Snapper.setTrackers()
 
-        _toolmsg("{}".format(16*"-"))
+        _toolmsg("{}".format(16 * "-"))
         _toolmsg("GuiCommand: {}".format(self.featureName))
+
+        # update hints after the tool is fully initialized
+        QtCore.QTimer.singleShot(0, self.update_hints)
+
+    def update_hints(self):
+        Gui.HintManager.show(*self.get_hints())
+
+    def get_hints(self):
+        return []
+
+    def end_callbacks(self, call):
+        try:
+            self.view.removeEventCallback("SoEvent", call)
+            gui_utils.end_all_events()
+        except RuntimeError:
+            # the view has been deleted already
+            pass
+        call = None
 
     def finish(self, cont=False):
         """Finish the current command.
@@ -162,18 +179,11 @@ class DraftTool:
         if self.ui:
             self.ui.offUi()
             self.ui.sourceCmd = None
+        if hasattr(Gui, "Snapper"):
+            Gui.Snapper.off()
         if self.planetrack:
             self.planetrack.finalize()
         self.wp._restore()
-        if hasattr(Gui, "Snapper"):
-            Gui.Snapper.off()
-        if self.call:
-            try:
-                self.view.removeEventCallback("SoEvent", self.call)
-            except RuntimeError:
-                # the view has been deleted already
-                pass
-            self.call = None
         if self.commitList:
             last_cmd = self.commitList[-1][1][-1]
             if last_cmd.find("recompute") >= 0:
@@ -183,6 +193,8 @@ class DraftTool:
             else:
                 todo.ToDo.delayCommit(self.commitList)
         self.commitList = []
+
+        QtCore.QTimer.singleShot(0, Gui.HintManager.hide)
 
     def commit(self, name, func):
         """Store actions in the commit list to be run later.
@@ -212,8 +224,8 @@ class DraftTool:
             * the current working plane rotation quaternion as a string
             * the support object if available as a string
             * the list of nodes inside the `node` attribute as a string
-            * the string `'True'` or `'False'` depending on the fill mode
-              of the current tool
+            * the string `'True'` or `'False'` depending on the make face
+              setting
         """
         # Current plane rotation as a string
         qr = self.wp.get_placement().Rotation.Q
@@ -221,26 +233,26 @@ class DraftTool:
 
         # Support object
         if self.support and params.get_param("useSupport"):
-            sup = 'FreeCAD.ActiveDocument.getObject'
+            sup = "FreeCAD.ActiveDocument.getObject"
             sup += '("{}")'.format(self.support.Name)
         else:
-            sup = 'None'
+            sup = "None"
 
         # Contents of self.node
-        points = '['
+        points = "["
         for n in self.node:
             if len(points) > 1:
-                points += ', '
+                points += ", "
             points += DraftVecUtils.toString(n)
-        points += ']'
+        points += "]"
 
-        # Fill mode
+        # Make face
         if self.ui:
-            fil = str(bool(self.ui.fillmode))
+            make_face = str(self.ui.makeFaceMode)
         else:
-            fil = "True"
+            make_face = "True"
 
-        return qr, sup, points, fil
+        return qr, sup, points, make_face
 
 
 class Creator(DraftTool):
@@ -273,14 +285,39 @@ class Modifier(DraftTool):
 
     It inherits `DraftTool`, which sets up the majority of the behavior
     of this class.
+
+    Modifier tools share a two-phase input flow: first the user picks the
+    object(s) to operate on, then the user supplies one or more reference
+    points (base point, angle, distance, mirror line, etc.). The
+    ``selection_done`` flag distinguishes the two phases so the base class
+    can provide the selection-phase hint by default; subclasses override
+    ``get_action_hints`` to describe their action-phase steps.
+
+    Subclasses that only operate on a single object set
+    ``multi_object_selection`` to ``False`` so the selection hint is phrased
+    in the singular.
     """
+
+    multi_object_selection = True
 
     def __init__(self):
         super().__init__()
         self.copymode = False
+        self.selection_done = False
 
     def Activated(self, name="None", is_subtool=False):
         super().Activated(name, is_subtool)
         # call _save to sync with _restore called in finish method
         self.wp._save()
+        self.selection_done = False
+
+    def get_hints(self):
+        if not self.selection_done:
+            return gui_tool_utils._get_hint_select_object(self.multi_object_selection)
+        return self.get_action_hints()
+
+    def get_action_hints(self):
+        return []
+
+
 ## @}

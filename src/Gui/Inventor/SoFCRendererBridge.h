@@ -216,6 +216,10 @@ GuiExport bool translatePressureDropEdges(App::PropertyContainer * view);
 /// The frame wait between the element contract's pressure stages,
 /// escalating and releasing both (docs/SceneStreaming.md #13b).
 GuiExport int translateElementGateStagger(App::PropertyContainer * view);
+/// MEASUREMENT ONLY: the primitive count at or below which a line or
+/// point draw is suppressed outright, to price the draw axis
+/// (docs/FarFieldProxies.md 11.1i). 0 = off.
+GuiExport int translateTinyElementCutoff(App::PropertyContainer * view);
 /// Whether the element gates should suppress both classes outright
 /// right now: Render_LoadDropElements is on, coarse-first is on, and
 /// some document is still arriving (docs/SceneStreaming.md #13b).

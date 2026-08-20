@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -21,6 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides the object code for the Wire (Polyline) object."""
+
 ## @package wire
 # \ingroup draftobjects
 # \brief Provides the object code for the Wire (Polyline) object.
@@ -31,130 +34,160 @@ import math
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
-import DraftGeomUtils
 import DraftVecUtils
+from draftgeoutils import faces as geo_faces
+from draftgeoutils import fillets as geo_fillets
 from draftobjects.base import DraftObject
+from draftutils import gui_utils
 from draftutils import params
+from draftutils.messages import _log
 
 
 class Wire(DraftObject):
     """The Wire object"""
 
     def __init__(self, obj):
-        super(Wire, self).__init__(obj, "Wire")
+        super().__init__(obj, "Wire")
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "The vertices of the wire")
-        obj.addProperty("App::PropertyVectorList","Points", "Draft",_tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "The vertices of the wire")
+        obj.addProperty("App::PropertyVectorList", "Points", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "If the wire is closed or not")
-        obj.addProperty("App::PropertyBool","Closed", "Draft",_tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "If the wire is closed or not")
+        obj.addProperty("App::PropertyBool", "Closed", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "The base object is the wire, it's formed from 2 objects")
-        obj.addProperty("App::PropertyLink","Base", "Draft",_tip)
+        _tip = QT_TRANSLATE_NOOP(
+            "App::Property", "The base object is the wire, it's formed from 2 objects"
+        )
+        obj.addProperty("App::PropertyLink", "Base", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "The tool object is the wire, it's formed from 2 objects")
-        obj.addProperty("App::PropertyLink","Tool", "Draft",_tip)
+        _tip = QT_TRANSLATE_NOOP(
+            "App::Property", "The tool object is the wire, it's formed from 2 objects"
+        )
+        obj.addProperty("App::PropertyLink", "Tool", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "The start point of this line")
-        obj.addProperty("App::PropertyVectorDistance","Start", "Draft",_tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "The start point of this line")
+        obj.addProperty("App::PropertyVectorDistance", "Start", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "The end point of this line")
-        obj.addProperty("App::PropertyVectorDistance","End", "Draft",_tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "The end point of this line")
+        obj.addProperty("App::PropertyVectorDistance", "End", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "The length of this line")
-        obj.addProperty("App::PropertyLength","Length", "Draft",_tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "The length of this line")
+        obj.addProperty("App::PropertyLength", "Length", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "Radius to use to fillet the corners")
-        obj.addProperty("App::PropertyLength","FilletRadius", "Draft",_tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "Radius to use to fillet the corners")
+        obj.addProperty("App::PropertyLength", "FilletRadius", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "Size of the chamfer to give to the corners")
-        obj.addProperty("App::PropertyLength","ChamferSize", "Draft",_tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "Size of the chamfer to give to the corners")
+        obj.addProperty("App::PropertyLength", "ChamferSize", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "Create a face if this object is closed")
-        obj.addProperty("App::PropertyBool","MakeFace", "Draft",_tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "Create a face if this object is closed")
+        obj.addProperty("App::PropertyBool", "MakeFace", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "The number of subdivisions of each edge")
-        obj.addProperty("App::PropertyInteger","Subdivisions", "Draft",_tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "The number of subdivisions of each edge")
+        obj.addProperty("App::PropertyInteger", "Subdivisions", "Draft", _tip, locked=True)
 
-        _tip = QT_TRANSLATE_NOOP("App::Property",
-                "The area of this object")
-        obj.addProperty("App::PropertyArea","Area", "Draft",_tip)
+        _tip = QT_TRANSLATE_NOOP("App::Property", "The area of this object")
+        obj.addProperty("App::PropertyArea", "Area", "Draft", _tip, locked=True)
 
-        obj.MakeFace = params.get_param("fillmode")
+        obj.MakeFace = params.get_param("MakeFaceMode")
         obj.Closed = False
 
+    def onDocumentRestored(self, obj):
+        super().onDocumentRestored(obj)
+        gui_utils.restore_view_object(obj, vp_module="view_wire", vp_class="ViewProviderWire")
+
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is None:
+            return
+
+        if hasattr(vobj, "ArrowSize") or hasattr(vobj, "ArrowType") or hasattr(vobj, "EndArrow"):
+            self.update_properties_1v1(obj, vobj)
+
+    def update_properties_1v1(self, obj, vobj):
+        """Update view properties."""
+        vobj.Proxy._set_properties(vobj)
+        if getattr(vobj, "EndArrow", False) and hasattr(vobj, "ArrowType"):
+            vobj.ArrowTypeEnd = vobj.ArrowType
+        if hasattr(vobj, "ArrowSize"):
+            vobj.ArrowSizeStart = vobj.ArrowSize
+            vobj.ArrowSizeEnd = vobj.ArrowSize
+            vobj.setPropertyStatus("ArrowSize", "-LockDynamic")
+            vobj.removeProperty("ArrowSize")
+        if hasattr(vobj, "ArrowType"):
+            vobj.setPropertyStatus("ArrowType", "-LockDynamic")
+            vobj.removeProperty("ArrowType")
+        if hasattr(vobj, "EndArrow"):
+            vobj.setPropertyStatus("EndArrow", "-LockDynamic")
+            vobj.removeProperty("EndArrow")
+        _log("v1.1, " + obj.Name + ", migrated view properties")
+
     def execute(self, obj):
-        if self.props_changed_placement_only(obj): # Supplying obj is required because of `Base` and `Tool`.
+        if self.props_changed_placement_only(
+            obj
+        ):  # Supplying obj is required because of `Base` and `Tool`.
             obj.positionBySupport()
             self.update_start_end(obj)
             self.props_changed_clear()
             return
 
         import Part
+
         plm = obj.Placement
         if obj.Base and (not obj.Tool):
             if obj.Base.isDerivedFrom("Sketcher::SketchObject"):
                 shape = obj.Base.Shape.copy()
                 if obj.Base.Shape.isClosed():
-                    if getattr(obj,"MakeFace",True):
+                    if getattr(obj, "MakeFace", True):
                         shape = Part.Face(shape)
                 obj.Shape = shape
         elif obj.Base and obj.Tool:
-            if hasattr(obj.Base,'Shape') and hasattr(obj.Tool,'Shape'):
+            if hasattr(obj.Base, "Shape") and hasattr(obj.Tool, "Shape"):
                 if (not obj.Base.Shape.isNull()) and (not obj.Tool.Shape.isNull()):
                     sh1 = obj.Base.Shape.copy()
                     sh2 = obj.Tool.Shape.copy()
                     shape = sh1.fuse(sh2)
-                    if DraftGeomUtils.isCoplanar(shape.Faces):
-                        shape = DraftGeomUtils.concatenate(shape)
+                    if geo_faces.is_coplanar(shape.Faces):
+                        shape = geo_faces.concatenate(shape)
                         obj.Shape = shape
                         p = []
-                        for v in shape.Vertexes: p.append(v.Point)
-                        if obj.Points != p: obj.Points = p
+                        for v in shape.Vertexes:
+                            p.append(v.Point)
+                        if obj.Points != p:
+                            obj.Points = p
         elif obj.Points:
             if obj.Points[0] == obj.Points[-1]:
-                if not obj.Closed: obj.Closed = True
+                if not obj.Closed:
+                    obj.Closed = True
                 obj.Points.pop()
             if obj.Closed and (len(obj.Points) > 2):
                 pts = obj.Points
-                if getattr(obj,"Subdivisions",0) > 0:
+                if getattr(obj, "Subdivisions", 0) > 0:
                     npts = []
                     for i in range(len(pts)):
                         p1 = pts[i]
                         npts.append(pts[i])
-                        if i == len(pts)-1:
+                        if i == len(pts) - 1:
                             p2 = pts[0]
                         else:
-                            p2 = pts[i+1]
+                            p2 = pts[i + 1]
                         v = p2.sub(p1)
-                        v = DraftVecUtils.scaleTo(v,v.Length/(obj.Subdivisions+1))
+                        v = DraftVecUtils.scaleTo(v, v.Length / (obj.Subdivisions + 1))
                         for j in range(obj.Subdivisions):
-                            npts.append(p1.add(App.Vector(v).multiply(j+1)))
+                            npts.append(p1.add(App.Vector(v).multiply(j + 1)))
                     pts = npts
-                shape = Part.makePolygon(pts+[pts[0]])
+                shape = Part.makePolygon(pts + [pts[0]])
                 if "ChamferSize" in obj.PropertiesList:
                     if obj.ChamferSize.Value != 0:
-                        w = DraftGeomUtils.filletWire(shape,obj.ChamferSize.Value,chamfer=True)
+                        w = geo_fillets.filletWire(shape, obj.ChamferSize.Value, chamfer=True)
                         if w:
                             shape = w
                 if "FilletRadius" in obj.PropertiesList:
                     if obj.FilletRadius.Value != 0:
-                        w = DraftGeomUtils.filletWire(shape,obj.FilletRadius.Value)
+                        w = geo_fillets.filletWire(shape, obj.FilletRadius.Value)
                         if w:
                             shape = w
                 try:
-                    if getattr(obj,"MakeFace",True):
+                    if getattr(obj, "MakeFace", True):
                         shape = Part.Face(shape)
                 except Part.OCCError:
                     pass
@@ -163,18 +196,18 @@ class Wire(DraftObject):
                 pts = obj.Points[1:]
                 lp = obj.Points[0]
                 for p in pts:
-                    if not DraftVecUtils.equals(lp,p):
-                        if getattr(obj,"Subdivisions",0) > 0:
+                    if not DraftVecUtils.equals(lp, p):
+                        if getattr(obj, "Subdivisions", 0) > 0:
                             npts = []
                             v = p.sub(lp)
-                            v = DraftVecUtils.scaleTo(v,v.Length/(obj.Subdivisions+1))
-                            edges.append(Part.LineSegment(lp,lp.add(v)).toShape())
+                            v = DraftVecUtils.scaleTo(v, v.Length / (obj.Subdivisions + 1))
+                            edges.append(Part.LineSegment(lp, lp.add(v)).toShape())
                             lv = lp.add(v)
                             for j in range(obj.Subdivisions):
-                                edges.append(Part.LineSegment(lv,lv.add(v)).toShape())
+                                edges.append(Part.LineSegment(lv, lv.add(v)).toShape())
                                 lv = lv.add(v)
                         else:
-                            edges.append(Part.LineSegment(lp,p).toShape())
+                            edges.append(Part.LineSegment(lp, p).toShape())
                         lp = p
                 try:
                     shape = Part.Wire(edges)
@@ -183,19 +216,19 @@ class Wire(DraftObject):
                     shape = None
                 if "ChamferSize" in obj.PropertiesList:
                     if obj.ChamferSize.Value != 0:
-                        w = DraftGeomUtils.filletWire(shape,obj.ChamferSize.Value,chamfer=True)
+                        w = geo_fillets.filletWire(shape, obj.ChamferSize.Value, chamfer=True)
                         if w:
                             shape = w
                 if "FilletRadius" in obj.PropertiesList:
                     if obj.FilletRadius.Value != 0:
-                        w = DraftGeomUtils.filletWire(shape,obj.FilletRadius.Value)
+                        w = geo_fillets.filletWire(shape, obj.FilletRadius.Value)
                         if w:
                             shape = w
             if shape:
                 obj.Shape = shape
-                if hasattr(obj,"Area") and hasattr(shape,"Area"):
+                if hasattr(obj, "Area") and hasattr(shape, "Area"):
                     obj.Area = shape.Area
-                if hasattr(obj,"Length"):
+                if hasattr(obj, "Length"):
                     obj.Length = shape.Length
 
         obj.Placement = plm
@@ -226,14 +259,11 @@ class Wire(DraftObject):
                     obj.Points = pts
 
         elif prop == "Length":
-            if (len(obj.Points) == 2
-                    and obj.Length.Value > tol
-                    and obj.Shape
-                    and (not obj.Shape.isNull())
-                    and abs(obj.Length.Value - obj.Shape.Length) > tol):
-                v = obj.Points[-1].sub(obj.Points[0])
-                v = DraftVecUtils.scaleTo(v, obj.Length.Value)
-                obj.Points = [obj.Points[0], obj.Points[0].add(v)]
+            if len(obj.Points) == 2 and obj.Length.Value > tol:
+                vec = obj.Points[-1].sub(obj.Points[0])
+                if abs(obj.Length.Value - vec.Length) > tol:
+                    vec = DraftVecUtils.scaleTo(vec, obj.Length.Value)
+                    obj.Points = [obj.Points[0], obj.Points[0].add(vec)]
 
     def update_start_end(self, obj):
         tol = 1e-7

@@ -1,4 +1,5 @@
-# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -24,6 +25,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides the object code for the Label object."""
+
 ## @package label
 # \ingroup draftobjects
 # \brief Provides the object code for the Label object.
@@ -34,11 +36,10 @@ from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
 from FreeCAD import Units as U
-
-from draftutils.messages import _wrn
-from draftutils.translate import translate
-
 from draftobjects.draft_annotation import DraftAnnotation
+from draftutils import gui_utils
+from draftutils.messages import _log
+from draftutils.translate import translate
 
 
 class Label(DraftAnnotation):
@@ -46,8 +47,8 @@ class Label(DraftAnnotation):
 
     def __init__(self, obj):
         obj.Proxy = self
-        self.set_properties(obj)
         self.Type = "Label"
+        self.set_properties(obj)
 
     def set_properties(self, obj):
         """Set properties only if they don't exist."""
@@ -60,29 +61,27 @@ class Label(DraftAnnotation):
         properties = obj.PropertiesList
 
         if "TargetPoint" not in properties:
-            _tip = QT_TRANSLATE_NOOP("App::Property",
-                                     "The position of the tip of the leader "
-                                     "line.\n"
-                                     "This point can be decorated "
-                                     "with an arrow or another symbol.")
-            obj.addProperty("App::PropertyVector",
-                            "TargetPoint",
-                            "Target",
-                            _tip)
+            _tip = QT_TRANSLATE_NOOP(
+                "App::Property",
+                "The position of the tip of the leader "
+                "line.\n"
+                "This point can be decorated "
+                "with an arrow or another symbol.",
+            )
+            obj.addProperty("App::PropertyVector", "TargetPoint", "Target", _tip, locked=True)
             obj.TargetPoint = App.Vector(2, -1, 0)
 
         if "Target" not in properties:
-            _tip = QT_TRANSLATE_NOOP("App::Property",
-                                     "Object, and optionally subelement, "
-                                     "whose properties will be displayed\n"
-                                     "as 'Text', depending on 'Label Type'.\n"
-                                     "\n"
-                                     "'Target' won't be used "
-                                     "if 'Label Type' is set to 'Custom'.")
-            obj.addProperty("App::PropertyLinkSub",
-                            "Target",
-                            "Target",
-                            _tip)
+            _tip = QT_TRANSLATE_NOOP(
+                "App::Property",
+                "Object, and optionally subelement, "
+                "whose properties will be displayed\n"
+                "as 'Text', depending on 'Label Type'.\n"
+                "\n"
+                "'Target' won't be used "
+                "if 'Label Type' is set to 'Custom'.",
+            )
+            obj.addProperty("App::PropertyLinkSub", "Target", "Target", _tip, locked=True)
             obj.Target = None
 
     def set_leader_properties(self, obj):
@@ -90,62 +89,63 @@ class Label(DraftAnnotation):
         properties = obj.PropertiesList
 
         if "Points" not in properties:
-            _tip = QT_TRANSLATE_NOOP("App::Property",
-                                     "The list of points defining the leader "
-                                     "line; normally a list of three points.\n"
-                                     "\n"
-                                     "The first point should be the position "
-                                     "of the text, that is, the 'Placement',\n"
-                                     "and the last point should be "
-                                     "the tip of the line, that is, "
-                                     "the 'Target Point'.\n"
-                                     "The middle point is calculated "
-                                     "automatically depending on the chosen\n"
-                                     "'Straight Direction' "
-                                     "and the 'Straight Distance' value "
-                                     "and sign.\n"
-                                     "\n"
-                                     "If 'Straight Direction' is set to "
-                                     "'Custom', the 'Points' property\n"
-                                     "can be set as a list "
-                                     "of arbitrary points.")
-            obj.addProperty("App::PropertyVectorList",
-                            "Points",
-                            "Leader",
-                            _tip)
+            _tip = QT_TRANSLATE_NOOP(
+                "App::Property",
+                "The list of points defining the leader "
+                "line; normally a list of three points.\n"
+                "\n"
+                "The first point should be the position "
+                "of the text, that is, the 'Placement',\n"
+                "and the last point should be "
+                "the tip of the line, that is, "
+                "the 'Target Point'.\n"
+                "The middle point is calculated "
+                "automatically depending on the chosen\n"
+                "'Straight Direction' "
+                "and the 'Straight Distance' value "
+                "and sign.\n"
+                "\n"
+                "If 'Straight Direction' is set to "
+                "'Custom', the 'Points' property\n"
+                "can be set as a list "
+                "of arbitrary points.",
+            )
+            obj.addProperty("App::PropertyVectorList", "Points", "Leader", _tip, locked=True)
             obj.Points = []
 
         if "StraightDirection" not in properties:
-            _tip = QT_TRANSLATE_NOOP("App::Property",
-                                     "The direction of the straight segment "
-                                     "of the leader line.\n"
-                                     "\n"
-                                     "If 'Custom' is chosen, the points "
-                                     "of the leader can be specified by\n"
-                                     "assigning a custom list "
-                                     "to the 'Points' attribute.")
-            obj.addProperty("App::PropertyEnumeration",
-                            "StraightDirection",
-                            "Leader",
-                            _tip)
+            _tip = QT_TRANSLATE_NOOP(
+                "App::Property",
+                "The direction of the straight segment "
+                "of the leader line.\n"
+                "\n"
+                "If 'Custom' is chosen, the points "
+                "of the leader can be specified by\n"
+                "assigning a custom list "
+                "to the 'Points' attribute.",
+            )
+            obj.addProperty(
+                "App::PropertyEnumeration", "StraightDirection", "Leader", _tip, locked=True
+            )
             obj.StraightDirection = ["Horizontal", "Vertical", "Custom"]
 
         if "StraightDistance" not in properties:
-            _tip = QT_TRANSLATE_NOOP("App::Property",
-                                     "The length of the straight segment "
-                                     "of the leader line.\n"
-                                     "\n"
-                                     "This is an oriented distance; "
-                                     "if it is negative, the line will "
-                                     "be drawn\n"
-                                     "to the left or below the 'Text', "
-                                     "otherwise to the right or above it,\n"
-                                     "depending on the value of "
-                                     "'Straight Direction'.")
-            obj.addProperty("App::PropertyDistance",
-                            "StraightDistance",
-                            "Leader",
-                            _tip)
+            _tip = QT_TRANSLATE_NOOP(
+                "App::Property",
+                "The length of the straight segment "
+                "of the leader line.\n"
+                "\n"
+                "This is an oriented distance; "
+                "if it is negative, the line will "
+                "be drawn\n"
+                "to the left or below the 'Text', "
+                "otherwise to the right or above it,\n"
+                "depending on the value of "
+                "'Straight Direction'.",
+            )
+            obj.addProperty(
+                "App::PropertyDistance", "StraightDistance", "Leader", _tip, locked=True
+            )
             obj.StraightDistance = 1
 
     def set_label_properties(self, obj):
@@ -153,38 +153,31 @@ class Label(DraftAnnotation):
         properties = obj.PropertiesList
 
         if "Placement" not in properties:
-            _tip = QT_TRANSLATE_NOOP("App::Property",
-                                     "The placement of the 'Text' element "
-                                     "in 3D space")
-            obj.addProperty("App::PropertyPlacement",
-                            "Placement",
-                            "Label",
-                            _tip)
+            _tip = QT_TRANSLATE_NOOP(
+                "App::Property", "The placement of the 'Text' element " "in 3D space"
+            )
+            obj.addProperty("App::PropertyPlacement", "Placement", "Label", _tip, locked=True)
             obj.Placement = App.Placement()
 
         if "CustomText" not in properties:
-            _tip = QT_TRANSLATE_NOOP("App::Property",
-                                     "The text to display when 'Label Type' "
-                                     "is set to 'Custom'")
-            obj.addProperty("App::PropertyStringList",
-                            "CustomText",
-                            "Label",
-                            _tip)
+            _tip = QT_TRANSLATE_NOOP(
+                "App::Property", "The text to display when 'Label Type' " "is set to 'Custom'"
+            )
+            obj.addProperty("App::PropertyStringList", "CustomText", "Label", _tip, locked=True)
             obj.CustomText = "Label"
 
         if "Text" not in properties:
-            _tip = QT_TRANSLATE_NOOP("App::Property",
-                                     "The text displayed by this label.\n"
-                                     "\n"
-                                     "This property is read-only, as the "
-                                     "final text depends on 'Label Type',\n"
-                                     "and the object defined in 'Target'.\n"
-                                     "The 'Custom Text' is displayed only "
-                                     "if 'Label Type' is set to 'Custom'.")
-            obj.addProperty("App::PropertyStringList",
-                            "Text",
-                            "Label",
-                            _tip)
+            _tip = QT_TRANSLATE_NOOP(
+                "App::Property",
+                "The text displayed by this label.\n"
+                "\n"
+                "This property is read-only, as the "
+                "final text depends on 'Label Type',\n"
+                "and the object defined in 'Target'.\n"
+                "The 'Custom Text' is displayed only "
+                "if 'Label Type' is set to 'Custom'.",
+            )
+            obj.addProperty("App::PropertyStringList", "Text", "Label", _tip, locked=True)
             obj.setEditorMode("Text", 1)  # Read only
 
         # TODO: maybe here we can define a second and third 'label type'
@@ -197,44 +190,44 @@ class Label(DraftAnnotation):
         # This would also require updating the `return_info` function
         # to handle any combination that we want.
         if "LabelType" not in properties:
-            _tip = QT_TRANSLATE_NOOP("App::Property",
-                                     "The type of information displayed "
-                                     "by this label.\n"
-                                     "\n"
-                                     "If 'Custom' is chosen, the contents of "
-                                     "'Custom Text' will be used.\n"
-                                     "For other types, the string will be "
-                                     "calculated automatically from the "
-                                     "object defined in 'Target'.\n"
-                                     "'Tag' and 'Material' only work "
-                                     "for objects that have these properties, "
-                                     "like Arch objects.\n"
-                                     "\n"
-                                     "For 'Position', 'Length', and 'Area' "
-                                     "these properties will be extracted "
-                                     "from the main object in 'Target',\n"
-                                     "or from the subelement "
-                                     "'VertexN', 'EdgeN', or 'FaceN', "
-                                     "respectively, if it is specified.")
-            obj.addProperty("App::PropertyEnumeration",
-                            "LabelType",
-                            "Label",
-                            _tip)
+            _tip = QT_TRANSLATE_NOOP(
+                "App::Property",
+                "The type of information displayed "
+                "by this label.\n"
+                "\n"
+                "If 'Custom' is chosen, the contents of "
+                "'Custom Text' will be used.\n"
+                "For other types, the string will be "
+                "calculated automatically from the "
+                "object defined in 'Target'.\n"
+                "'Tag' and 'Material' only work "
+                "for objects that have these properties, "
+                "like BIM objects.\n"
+                "\n"
+                "For 'Position', 'Length', and 'Area' "
+                "these properties will be extracted "
+                "from the main object in 'Target',\n"
+                "or from the subelement "
+                "'VertexN', 'EdgeN', or 'FaceN', "
+                "respectively, if it is specified.",
+            )
+            obj.addProperty("App::PropertyEnumeration", "LabelType", "Label", _tip, locked=True)
             obj.LabelType = get_label_types()
 
     def onDocumentRestored(self, obj):
         """Execute code when the document is restored."""
         super().onDocumentRestored(obj)
-        self.Type = "Label"
+        gui_utils.restore_view_object(obj, vp_module="view_label", vp_class="ViewProviderLabel")
 
-        if not hasattr(obj, "ViewObject"):
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is None:
             return
-        vobj = obj.ViewObject
-        if not vobj:
-            return
-        if hasattr(vobj, "FontName") and hasattr(vobj, "FontSize"):
-            return
-        self.update_properties_0v21(obj, vobj)
+
+        if not hasattr(vobj, "FontName") or not hasattr(vobj, "FontSize"):
+            self.update_properties_0v21(obj, vobj)
+
+    def loads(self, state):
+        self.Type = "Label"
 
     def update_properties_0v21(self, obj, vobj):
         """Update view properties."""
@@ -250,16 +243,15 @@ class Label(DraftAnnotation):
         # switched: "2D text" becomes "World" and "3D text" becomes "Screen".
         # It should be the other way around:
         vobj.DisplayMode = "World" if vobj.DisplayMode == "Screen" else "Screen"
-        _wrn("v0.21, " + obj.Label + ", "
-             + translate("draft", "renamed view property 'TextFont' to 'FontName'"))
-        _wrn("v0.21, " + obj.Label + ", "
-             + translate("draft", "renamed view property 'TextSize' to 'FontSize'"))
-        _wrn("v0.21, " + obj.Label + ", "
-             + translate("draft", "renamed 'DisplayMode' options to 'World/Screen'"))
+        _log("v0.21, " + obj.Name + ", renamed view property 'TextFont' to 'FontName'")
+        _log("v0.21, " + obj.Name + ", renamed view property 'TextSize' to 'FontSize'")
+        _log("v0.21, " + obj.Name + ", renamed 'DisplayMode' options to 'World/Screen'")
 
     def onChanged(self, obj, prop):
         """Execute when a property is changed."""
         self.show_and_hide(obj, prop)
+        if prop in ("CustomText", "LabelType", "Target"):
+            self.update_text(obj)
 
     def show_and_hide(self, obj, prop):
         """Show and hide the properties depending on the touched property."""
@@ -300,12 +292,16 @@ class Label(DraftAnnotation):
             # will be overwritten
             pass
 
-        # Reset the text, only change it depending on the options
-        obj.Text = ""
+        self.update_text(obj)
+
+    def update_text(self, obj):
+        """Update the text displayed by this label."""
+        properties = obj.PropertiesList
+        if "Text" not in properties or "LabelType" not in properties:
+            return
 
         if obj.LabelType == "Custom":
-            if obj.CustomText:
-                obj.Text = obj.CustomText
+            obj.Text = obj.CustomText if obj.CustomText else []
 
         elif obj.Target and obj.Target[0]:
             target = obj.Target[0]
@@ -314,9 +310,10 @@ class Label(DraftAnnotation):
 
             # The sublist may be empty so we test it first
             subelement = sub_list[0] if sub_list else None
+            obj.Text = return_info(target, typ, subelement)
 
-            text_list = return_info(target, typ, subelement)
-            obj.Text = text_list
+        else:
+            obj.Text = [translate("draft", "No Target")]
 
 
 # Alias for compatibility with v0.18 and earlier
@@ -324,20 +321,22 @@ DraftLabel = Label
 
 
 def get_label_types():
-    return [QT_TRANSLATE_NOOP("Draft","Custom"),
-            QT_TRANSLATE_NOOP("Draft","Name"),
-            QT_TRANSLATE_NOOP("Draft","Label"),
-            QT_TRANSLATE_NOOP("Draft","Position"),
-            QT_TRANSLATE_NOOP("Draft","Length"),
-            QT_TRANSLATE_NOOP("Draft","Area"),
-            QT_TRANSLATE_NOOP("Draft","Volume"),
-            QT_TRANSLATE_NOOP("Draft","Tag"),
-            QT_TRANSLATE_NOOP("Draft","Material"),
-            QT_TRANSLATE_NOOP("Draft","Label + Position"),
-            QT_TRANSLATE_NOOP("Draft","Label + Length"),
-            QT_TRANSLATE_NOOP("Draft","Label + Area"),
-            QT_TRANSLATE_NOOP("Draft","Label + Volume"),
-            QT_TRANSLATE_NOOP("Draft","Label + Material")]
+    return [
+        QT_TRANSLATE_NOOP("Draft", "Custom"),
+        QT_TRANSLATE_NOOP("Draft", "Name"),
+        QT_TRANSLATE_NOOP("Draft", "Label"),
+        QT_TRANSLATE_NOOP("Draft", "Position"),
+        QT_TRANSLATE_NOOP("Draft", "Length"),
+        QT_TRANSLATE_NOOP("Draft", "Area"),
+        QT_TRANSLATE_NOOP("Draft", "Volume"),
+        QT_TRANSLATE_NOOP("Draft", "Tag"),
+        QT_TRANSLATE_NOOP("Draft", "Material"),
+        QT_TRANSLATE_NOOP("Draft", "Label + Position"),
+        QT_TRANSLATE_NOOP("Draft", "Label + Length"),
+        QT_TRANSLATE_NOOP("Draft", "Label + Area"),
+        QT_TRANSLATE_NOOP("Draft", "Label + Volume"),
+        QT_TRANSLATE_NOOP("Draft", "Label + Material"),
+    ]
 
 
 def return_info(target, typ, subelement=None):
@@ -362,54 +361,43 @@ def return_info(target, typ, subelement=None):
     if typ == "Name":
         return _get_name(target)
 
-    elif typ == "Label":
+    if typ == "Label":
         return _get_label(target)
 
-    elif typ == "Tag" and hasattr(target, "Tag"):
+    if typ == "Tag":
         return _get_tag(target)
 
-    elif (typ == "Material"
-          and hasattr(target, "Material")
-          and hasattr(target.Material, "Label")):
+    if typ == "Material":
         return _get_material(target)
 
-    elif (typ == "Label + Material"
-          and hasattr(target, "Material")
-          and hasattr(target.Material, "Label")):
+    if typ == "Label + Material":
         return _get_label(target) + _get_material(target)
 
-    elif typ == "Position":
+    if typ == "Position":
         return _get_position(target, subelement)
 
-    elif typ == "Label + Position":
+    if typ == "Label + Position":
         return _get_label(target) + _get_position(target, subelement)
 
-    elif typ == "Length" and hasattr(target, 'Shape'):
+    if typ == "Length":
         return _get_length(target, subelement)
 
-    elif typ == "Label + Length" and hasattr(target, 'Shape'):
+    if typ == "Label + Length":
         return _get_label(target) + _get_length(target, subelement)
 
-    elif typ == "Area" and hasattr(target, 'Shape'):
+    if typ == "Area":
         return _get_area(target, subelement)
 
-    elif typ == "Label + Area" and hasattr(target, 'Shape'):
+    if typ == "Label + Area":
         return _get_label(target) + _get_area(target, subelement)
 
-    elif (typ == "Volume"
-          and hasattr(target, 'Shape')
-          and hasattr(target.Shape, "Volume")):
-        return _get_volume(target)
+    if typ == "Volume":
+        return _get_volume(target, subelement)
 
-    elif (typ == "Label + Volume"
-          and hasattr(target, 'Shape')
-          and hasattr(target.Shape, "Volume")):
-        return _get_label(target) + _get_volume(target)
+    if typ == "Label + Volume":
+        return _get_label(target) + _get_volume(target, subelement)
 
-    # If the type is not the correct one, or the subelement doesn't have
-    # the required `Shape` and information underneath, it will return
-    # an empty list
-    return [""]
+    return [translate("draft", "Invalid label type")]
 
 
 def _get_name(target):
@@ -421,54 +409,72 @@ def _get_label(target):
 
 
 def _get_tag(target):
-    return [target.Tag]
+    if hasattr(target, "Tag"):
+        return [target.Tag]
+    else:
+        return [translate("draft", "Tag not available for object")]
 
 
 def _get_material(target):
-    return [target.Material.Label]
+    if hasattr(target, "Material") and hasattr(target.Material, "Label"):
+        return [target.Material.Label]
+    else:
+        return [translate("draft", "Material not available for object")]
 
 
 def _get_position(target, subelement):
-    p = target.Placement.Base
-
-    # Position of the vertex if it is given as subelement
-    if subelement and "Vertex" in subelement:
-        p = target.Shape.Vertexes[int(subelement[6:]) - 1].Point
-
-    text_list = [U.Quantity(x, U.Length).UserString for x in tuple(p)]
-    return text_list
+    point = None
+    if subelement is not None:
+        if "Vertex" in subelement:
+            point = target.Shape.Vertexes[int(subelement[6:]) - 1].Point
+    else:
+        point = target.Placement.Base
+    if point is None:
+        return [translate("draft", "Position not available for (sub)object")]
+    return [U.Quantity(x, U.Length).UserString for x in tuple(point)]
 
 
 def _get_length(target, subelement):
-    text_list = ["No length"]
-    if hasattr(target.Shape, "Length"):
-        text_list = [U.Quantity(target.Shape.Length, U.Length).UserString]
-
-    # Length of the edge if it is given as subelement
-    if subelement and "Edge" in subelement:
-        edge = target.Shape.Edges[int(subelement[4:]) - 1]
-        text_list = [U.Quantity(edge.Length, U.Length).UserString]
-
-    return text_list
+    length = None
+    if subelement is not None:
+        if "Edge" in subelement:
+            length = target.Shape.Edges[int(subelement[4:]) - 1].Length
+        elif "Face" in subelement:
+            length = target.Shape.Faces[int(subelement[4:]) - 1].Length
+    elif hasattr(target, "Length"):
+        length = target.Length
+    elif hasattr(target, "Shape") and hasattr(target.Shape, "Length"):
+        length = target.Shape.Length
+    if length is None:
+        return [translate("draft", "Length not available for (sub)object")]
+    return [U.Quantity(length, U.Length).UserString]
 
 
 def _get_area(target, subelement):
-    text_list = ["No area"]
-    if hasattr(target.Shape, "Area"):
-        area = U.Quantity(target.Shape.Area, U.Area).UserString
-        text_list = [area.replace("^2", "²")]
+    area = None
+    if subelement is not None:
+        if "Face" in subelement:
+            area = target.Shape.Faces[int(subelement[4:]) - 1].Area
+    elif hasattr(target, "Area"):
+        area = target.Area
+    elif hasattr(target, "Shape") and hasattr(target.Shape, "Area"):
+        area = target.Shape.Area
+    if area is None:
+        return [translate("draft", "Area not available for (sub)object")]
+    return [U.Quantity(area, U.Area).UserString.replace("^2", "²")]
 
-    # Area of the face if it is given as subelement
-    if subelement and "Face" in subelement:
-        face = target.Shape.Faces[int(subelement[4:]) - 1]
-        text_list = [U.Quantity(face.Area, U.Area).UserString]
 
-    return text_list
-
-
-def _get_volume(target):
-    volume = U.Quantity(target.Shape.Volume, U.Volume).UserString
-    return [volume.replace("^3", "³")]
+def _get_volume(target, subelement):
+    volume = None
+    if subelement is not None:
+        pass
+    elif hasattr(target, "Volume"):
+        volume = target.Volume
+    elif hasattr(target, "Shape") and hasattr(target.Shape, "Volume"):
+        volume = target.Shape.Volume
+    if volume is None:
+        return [translate("draft", "Volume not available for (sub)object")]
+    return [U.Quantity(volume, U.Volume).UserString.replace("^3", "³")]
 
 
 ## @}

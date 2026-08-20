@@ -483,7 +483,15 @@ void GroupExtension::extensionOnChanged(const Property* p) {
                 //we have already set the obj into the group, so in a case of multiple groups getGroupOfObject
                 //would return anyone of it and hence it is possible that we miss an error. We need a custom check
                 for(auto in : obj->getInList()) {
-                    if(in!=owner && GeoFeatureGroupExtension::isNonGeoGroup(in)) {
+                    // Only a plain App::GroupExtension counts, not one derived from it.
+                    // A scripted container -- ArchBuildingPart and friends carry
+                    // App::GroupExtensionPython -- holds its children as well as whatever
+                    // group they are put in, and rejecting that breaks moving an object
+                    // from such a container into a group. Upstream draws the same line, by
+                    // asking getExtension() for the exact type rather than a derived one.
+                    if(in!=owner && GeoFeatureGroupExtension::isNonGeoGroup(in)
+                            && in->getExtension(GroupExtension::getExtensionClassTypeId(),
+                                                false, true)) {
                         FC_WARN("Remove " << obj->getFullName() <<  " from " 
                                 << owner->getFullName() << " because of multiple owner groups");
                         return true;

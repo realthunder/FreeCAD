@@ -57,6 +57,8 @@ public:
     }
     /// Returns a brief description of a schema
     static std::string getDescription(UnitSystem);
+    /// Stable identifier for a schema, unaffected by translation.
+    static std::string getName(UnitSystem);
 
     static std::string
     schemaTranslate(const Base::Quantity& quant, double& factor, std::string& unitString);

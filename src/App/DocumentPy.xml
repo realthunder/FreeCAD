@@ -13,6 +13,15 @@
       <Author Licence="LGPL" Name="Juergen Riegel" EMail="FreeCAD@juergen-riegel.net" />
       <UserDocu>This is a Document class</UserDocu>
     </Documentation>
+    <Methode Name="settings">
+      <Documentation>
+        <UserDocu>settings(namespace) -> DocumentSettings
+
+Return document-persisted settings for a namespace, backed by this
+document's Meta map. The namespace may contain dot-separated identifier
+segments.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="save">
       <Documentation>
         <UserDocu>Save the document to disk</UserDocu>
@@ -107,7 +116,10 @@ viewType (String): override the view provider type directly, only effective when
     <Methode Name="addProperty" Keyword="true">
         <Documentation>
             <UserDocu>
-                addProperty(type: string, name: string, group="", doc="", attr=0, read_only=False, hidden=False) -- Add a generic property.
+                addProperty(type: string, name: string, group="", doc="", attr=0, read_only=False,
+                            hidden=False, locked=False, enum_vals=[]) -- Add a generic property.
+
+                    locked: prevent the property from being removed again (Property.LockDynamic).
             </UserDocu>
         </Documentation>
     </Methode>

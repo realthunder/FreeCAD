@@ -478,6 +478,17 @@ PyObject *PyObjectBase::_repr()
 
 // Tracking functions
 
+namespace
+{
+/// The key a container tracks one handed-out item under. Not a legal
+/// attribute name, so it cannot collide with the attribute tracking that
+/// shares the dict.
+std::string itemKey(Py_ssize_t index)
+{
+    return "[" + std::to_string(index) + "]";
+}
+}  // namespace
+
 void PyObjectBase::resetAttribute()
 {
     if (attrDict) {
@@ -485,16 +496,22 @@ void PyObjectBase::resetAttribute()
         // which we search for in the dict
         PyObject* key1 = PyBytes_FromString("__attribute_of_parent__");
         PyObject* key2 = PyBytes_FromString("__instance_of_parent__");
+        PyObject* key3 = PyBytes_FromString("__item_of_parent__");
         PyObject* attr = PyDict_GetItem(attrDict, key1);
         PyObject* inst = PyDict_GetItem(attrDict, key2);
+        PyObject* item = PyDict_GetItem(attrDict, key3);
         if (attr) {
             PyDict_DelItem(attrDict, key1);
         }
         if (inst) {
             PyDict_DelItem(attrDict, key2);
         }
+        if (item) {
+            PyDict_DelItem(attrDict, key3);
+        }
         Py_DECREF(key1);
         Py_DECREF(key2);
+        Py_DECREF(key3);
     }
 }
 
@@ -506,12 +523,67 @@ void PyObjectBase::setAttributeOf(const char* attr, PyObject* par)
 
     PyObject* key1 = PyBytes_FromString("__attribute_of_parent__");
     PyObject* key2 = PyBytes_FromString("__instance_of_parent__");
+    PyObject* key3 = PyBytes_FromString("__item_of_parent__");
     PyObject* attro = PyUnicode_FromString(attr);
     PyDict_SetItem(attrDict, key1, attro);
     PyDict_SetItem(attrDict, key2, par);
+    // A value is an attribute of its parent or an item of it, never both.
+    // The two links share __instance_of_parent__, so a stale one left
+    // behind would notify through whichever branch startNotify tries
+    // first.
+    if (PyDict_GetItem(attrDict, key3)) {
+        PyDict_DelItem(attrDict, key3);
+    }
     Py_DECREF(attro);
     Py_DECREF(key1);
     Py_DECREF(key2);
+    Py_DECREF(key3);
+}
+
+void PyObjectBase::setItemOf(Py_ssize_t index, PyObject* par)
+{
+    if (!attrDict) {
+        attrDict = PyDict_New();
+    }
+
+    PyObject* key1 = PyBytes_FromString("__attribute_of_parent__");
+    PyObject* key2 = PyBytes_FromString("__instance_of_parent__");
+    PyObject* key3 = PyBytes_FromString("__item_of_parent__");
+    PyObject* item = PyLong_FromSsize_t(index);
+    PyDict_SetItem(attrDict, key2, par);
+    PyDict_SetItem(attrDict, key3, item);
+    if (PyDict_GetItem(attrDict, key1)) {
+        PyDict_DelItem(attrDict, key1);
+    }
+    Py_DECREF(item);
+    Py_DECREF(key1);
+    Py_DECREF(key2);
+    Py_DECREF(key3);
+}
+
+void PyObjectBase::trackReturnedItem(PyObject* child, Py_ssize_t index)
+{
+    if (!child || !PyObject_TypeCheck(child, &(PyObjectBase::Type))) {
+        return;
+    }
+    auto* base = static_cast<PyObjectBase*>(child);
+    // The two refusals __getattro makes, for the same reasons: a const
+    // value is not a way in, and a value that opted out of tracking meant
+    // it.
+    if (base->isConst() || base->isNotTracking()) {
+        return;
+    }
+    // Whatever was handed out for this index before stops being a way to
+    // write to it, exactly as re-reading an attribute resets the value it
+    // handed out last time (bug #0002902).
+    if (PyObject* cur = getTrackedItem(index)) {
+        if (PyObject_TypeCheck(cur, &(PyObjectBase::Type))) {
+            static_cast<PyObjectBase*>(cur)->resetAttribute();
+        }
+        untrackItem(index);
+    }
+    base->setItemOf(index, this);
+    trackItem(index, child);
 }
 
 void PyObjectBase::startNotify()
@@ -525,8 +597,36 @@ void PyObjectBase::startNotify()
         // which we search for in the dict
         PyObject* key1 = PyBytes_FromString("__attribute_of_parent__");
         PyObject* key2 = PyBytes_FromString("__instance_of_parent__");
+        PyObject* key3 = PyBytes_FromString("__item_of_parent__");
         PyObject* attr = PyDict_GetItem(attrDict, key1);
         PyObject* parent = PyDict_GetItem(attrDict, key2);
+        PyObject* item = PyDict_GetItem(attrDict, key3);
+        if (item && parent) {
+            // Came out of a container's sequence slot rather than an
+            // attribute, so it writes itself back the way it was read:
+            // parent[index] = this. Same reference dance as the attribute
+            // branch -- the assignment can drop the last reference to any
+            // of the three.
+            Py_INCREF(parent);
+            Py_INCREF(item);
+            Py_INCREF(this);
+
+            PyObject_SetItem(parent, item, this);
+
+            Py_DECREF(parent);
+            Py_DECREF(item);
+            Py_DECREF(this);
+
+            if (PyErr_Occurred()) {
+                PyErr_Clear();
+            }
+
+            Py_DECREF(key1);
+            Py_DECREF(key2);
+            Py_DECREF(key3);
+            return;
+        }
+        Py_DECREF(key3);
         if (attr && parent) {
             // Inside __setattr of the parent structure the 'attr'
             // is being removed from the dict and thus its reference
@@ -570,6 +670,10 @@ void PyObjectBase::trackAttribute(const char* attr, PyObject* obj)
     PyObject* obj_ref = createWeakRef(static_cast<PyObjectBase*>(obj));
     if (obj_ref) {
         PyDict_SetItemString(attrDict, attr, obj_ref);
+        // The dict holds its own reference. Without this the weakref
+        // created here leaked, one per attribute READ -- and reading an
+        // attribute in a loop is the normal way to use these objects.
+        Py_DECREF(obj_ref);
     }
 }
 
@@ -577,6 +681,38 @@ void PyObjectBase::untrackAttribute(const char* attr)
 {
     if (attrDict) {
         PyDict_DelItemString(attrDict, attr);
+    }
+}
+
+PyObject* PyObjectBase::getTrackedItem(Py_ssize_t index)
+{
+    PyObject* obj = nullptr;
+    if (attrDict) {
+        obj = PyDict_GetItemString(attrDict, itemKey(index).c_str());
+        obj = getFromWeakRef(obj);
+    }
+    return obj;
+}
+
+void PyObjectBase::trackItem(Py_ssize_t index, PyObject* obj)
+{
+    if (!attrDict) {
+        attrDict = PyDict_New();
+    }
+
+    // Weak, like the attribute side: a container must not keep alive
+    // what it handed out, or reading a list once would pin every entry
+    PyObject* obj_ref = createWeakRef(static_cast<PyObjectBase*>(obj));
+    if (obj_ref) {
+        PyDict_SetItemString(attrDict, itemKey(index).c_str(), obj_ref);
+        Py_DECREF(obj_ref);
+    }
+}
+
+void PyObjectBase::untrackItem(Py_ssize_t index)
+{
+    if (attrDict) {
+        PyDict_DelItemString(attrDict, itemKey(index).c_str());
     }
 }
 

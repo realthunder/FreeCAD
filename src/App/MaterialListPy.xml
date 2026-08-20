@@ -1,0 +1,336 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GenerateModel xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="generateMetaModel_Module.xsd">
+    <PythonExport
+        Father="PyObjectBase"
+        Name="MaterialListPy"
+        PythonName="App.MaterialList"
+        TwinPointer="MaterialList"
+        Twin="MaterialList"
+        Include="App/MaterialList.h"
+        Namespace="App"
+        FatherInclude="Base/PyObjectBase.h"
+        FatherNamespace="Base"
+        Constructor="true"
+        RichCompare="true"
+        Initialization="true"
+        Delete="false">
+        <Documentation>
+            <Author Licence="LGPL" Name="Zheng, Lei" EMail="realthunder.dev@gmail.com" />
+            <UserDocu>A list of materials, which behaves like a list of App.Material.
+
+Read from a view provider it is a LIVE VIEW of that appearance: writing to
+it -- vp.ShapeAppearance[0].DiffuseColor = c, or one of the indexed setters
+below -- changes the object, records an undo step and redraws.
+
+Assigning it anywhere else DETACHES it into a plain value. A detached list
+shares its storage with the one it came from until either side writes, so
+copying one costs nothing and mutating one never surprises the other:
+
+    a = vp.ShapeAppearance      # a live view of the appearance
+    a[0].DiffuseColor = (1.0, 0.0, 0.0, 1.0)    # changes the object
+
+    b = App.MaterialList(vp.ShapeAppearance)    # a value, shares storage
+    b[0] = mat                  # changes b alone
+    vp.ShapeAppearance = b      # and this is what changes the object
+
+Indexing yields a copy of the entry with a link back, so writing a field on
+it writes the whole entry back to that index. The per field setters below
+take Index=-1 to mean every entry.
+            </UserDocu>
+        </Documentation>
+        <Methode Name="append">
+            <Documentation>
+                <UserDocu>append(Material) -> None: add one entry at the end.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="extend">
+            <Documentation>
+                <UserDocu>extend(iterable) -> None: add every material of an iterable.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="insert">
+            <Documentation>
+                <UserDocu>insert(index, Material) -> None: insert one entry before index.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="copy">
+            <Documentation>
+                <UserDocu>copy() -> MaterialList: a detached copy.
+
+It shares this list's storage until one of them is written to, so it costs
+a pointer however long the list is.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="detach">
+            <Documentation>
+                <UserDocu>detach() -> None: stop being a view of the object.
+
+The list keeps the value it has and writing to it stops changing anything
+else. Assigning the list to a property does this too.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setSize">
+            <Documentation>
+                <UserDocu>setSize(count, [Material]) -> None: resize the list.
+
+Entries added take the given material, or -- with none given -- what an
+unset entry of this list reads as.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getMaterial">
+            <Documentation>
+                <UserDocu>getMaterial(index) -> Material: one entry, as a copy.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setMaterial">
+            <Documentation>
+                <UserDocu>setMaterial(index, Material) -> None: write one whole entry.
+
+Index=-1 writes every entry.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getDiffuseColor">
+            <Documentation>
+                <UserDocu>getDiffuseColor(index) -> tuple: one entry's diffuse colour -- in PBR mode the base colour, its alpha the opacity.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setDiffuseColor">
+            <Documentation>
+                <UserDocu>setDiffuseColor([index], colour) -> None: write the diffuse colour -- in PBR mode the base colour, its alpha the opacity.
+
+With an index it writes that entry, without one every entry.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getAmbientColor">
+            <Documentation>
+                <UserDocu>getAmbientColor(index) -> tuple: one entry's ambient colour, which has no PBR meaning.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setAmbientColor">
+            <Documentation>
+                <UserDocu>setAmbientColor([index], colour) -> None: write the ambient colour, which has no PBR meaning.
+
+With an index it writes that entry, without one every entry.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getSpecularColor">
+            <Documentation>
+                <UserDocu>getSpecularColor(index) -> tuple: one entry's specular colour -- in PBR mode the F0 tint, its alpha the metallic factor.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setSpecularColor">
+            <Documentation>
+                <UserDocu>setSpecularColor([index], colour) -> None: write the specular colour -- in PBR mode the F0 tint, its alpha the metallic factor.
+
+With an index it writes that entry, without one every entry.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getEmissiveColor">
+            <Documentation>
+                <UserDocu>getEmissiveColor(index) -> tuple: one entry's emissive colour.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setEmissiveColor">
+            <Documentation>
+                <UserDocu>setEmissiveColor([index], colour) -> None: write the emissive colour.
+
+With an index it writes that entry, without one every entry.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getShininess">
+            <Documentation>
+                <UserDocu>getShininess(index) -> float: one entry's shininess -- in PBR mode the roughness.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setShininess">
+            <Documentation>
+                <UserDocu>setShininess([index], value) -> None: write the shininess -- in PBR mode the roughness.
+
+With an index it writes that entry, without one every entry.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getTransparency">
+            <Documentation>
+                <UserDocu>getTransparency(index) -> float: one entry's transparency, which is the complement of the diffuse alpha.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setTransparency">
+            <Documentation>
+                <UserDocu>setTransparency([index], value) -> None: write the transparency, which is the complement of the diffuse alpha.
+
+With an index it writes that entry, without one every entry.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getMetallic">
+            <Documentation>
+                <UserDocu>getMetallic(index) -> float: one entry's metallic factor (PBR mode only).</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setMetallic">
+            <Documentation>
+                <UserDocu>setMetallic([index], value) -> None: write the metallic factor (PBR mode only).
+
+With an index it writes that entry, without one every entry.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getRoughness">
+            <Documentation>
+                <UserDocu>getRoughness(index) -> float: one entry's roughness (PBR mode only; in Phong mode it is derived).</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setRoughness">
+            <Documentation>
+                <UserDocu>setRoughness([index], value) -> None: write the roughness (PBR mode only; in Phong mode it is derived).
+
+With an index it writes that entry, without one every entry.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="insertTextureFile">
+            <Documentation>
+                <UserDocu>insertTextureFile(path, [extension]) -> str: take a file into the store.
+
+Answers the content hash a texture slot names it by. The store is the
+document's when this list is a view of one of its properties, and the
+process-wide one otherwise; either way the content survives being assigned
+into a document and is written out with it.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getTextureFile">
+            <Documentation>
+                <UserDocu>getTextureFile(hash) -> str: where that content is on disk.
+
+Empty when this list does not hold it -- which a restored document does
+until the archive entry has been read.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getTexture">
+            <Documentation>
+                <UserDocu>getTexture(index) -> dict: one entry's maps, by slot name.
+
+A slot the entry does not state is absent rather than empty, so `in` says
+what the entry says. See TextureSlots for the names.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setTexture">
+            <Documentation>
+                <UserDocu>setTexture([index], slot, hash) -> None: name content in one slot.
+
+With an index it writes that entry, without one every entry. The hash is
+what insertTextureFile() answered; an empty one clears the slot.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setTextureFile">
+            <Documentation>
+                <UserDocu>setTextureFile([index], slot, path) -> str: insert a file and name it.
+
+insertTextureFile() followed by setTexture(), which is what a script
+stating a texture from a file wants. Answers the content hash.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="clearTexture">
+            <Documentation>
+                <UserDocu>clearTexture([index], [slot]) -> None: unname content.
+
+With no slot it clears every slot of the entry, and with no index it does
+that to every entry. Clearing the last slot of an entry clears what
+positioned it, because a transform with no map states nothing.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getTextureTransform">
+            <Documentation>
+                <UserDocu>getTextureTransform(index) -> dict: Scale, Offset and Rotation.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setTextureTransform" Keyword="true">
+            <Documentation>
+                <UserDocu>setTextureTransform([index], Scale=, Offset=, Rotation=) -> None.
+
+Positions the maps of an entry, or of every entry when no index is given.
+Scale and Offset are pairs, Rotation is in degrees. What is not named is
+left as it is.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Attribute Name="Count" ReadOnly="true">
+            <Documentation>
+                <UserDocu>How many entries the list has; the same as len().</UserDocu>
+            </Documentation>
+            <Parameter Name="Count" Type="Int"/>
+        </Attribute>
+        <Attribute Name="IsAttached" ReadOnly="true">
+            <Documentation>
+                <UserDocu>Whether writing to this list writes to the object it came from.</UserDocu>
+            </Documentation>
+            <Parameter Name="IsAttached" Type="Boolean"/>
+        </Attribute>
+        <Attribute Name="TextureSlots" ReadOnly="true">
+            <Documentation>
+                <UserDocu>The texture slot names, which are also what the stored files are named by.</UserDocu>
+            </Documentation>
+            <Parameter Name="TextureSlots" Type="Tuple"/>
+        </Attribute>
+        <Attribute Name="PBR" ReadOnly="false">
+            <Documentation>
+                <UserDocu>Whether the stored values are read as PBR quantities.
+
+One flag for the whole list. Setting it reinterprets the values; it
+converts nothing (App.Material.PBR does convert).</UserDocu>
+            </Documentation>
+            <Parameter Name="PBR" Type="Boolean"/>
+        </Attribute>
+        <Sequence
+            sq_length="true"
+            sq_concat="true"
+            sq_repeat="true"
+            sq_item="true"
+            mp_subscript="true"
+            sq_ass_item="true"
+            mp_ass_subscript="true"
+            sq_contains="true"
+            sq_inplace_concat="true"
+            sq_inplace_repeat="false">
+        </Sequence>
+        <ClassDeclarations>public:
+    /// Become a live view of \a prop, which registers this object with it
+    void attach(PropertyMaterialList *prop);
+    /// Stop being one, keeping the value as it stands (a shared snapshot).
+    /// Called by the property when it dies, and by any assignment that
+    /// hands this list to a new owner.
+    void detachFromOwner();
+    /// The property this is a view of, or null once detached
+    PropertyMaterialList *getOwner() const { return owner; }
+    /// The value, wherever it lives: the owner's while attached, this
+    /// object's own once detached
+    const MaterialList &amp;list() const;
+
+    /// Run a write, through the owner's change signalling while attached
+    void edit(const std::function&lt;void(MaterialList &amp;)&gt; &amp;op, int touched = -1);
+
+private:
+    /// Whether a write is allowed at all, i.e. the object is alive and not
+    /// const. Raises and answers false when it is not.
+    bool writable();
+
+    /** @name The shared bodies of the per field accessors
+     *
+     * The member pointer travels as void * because the binding generator
+     * gives this class no place to name the types, and every caller
+     * casts back the type it passed in.
+     */
+    //@{
+    PyObject *colorGet(PyObject *args, void *getter);
+    PyObject *colorSet(PyObject *args, void *setter, void *allsetter);
+    PyObject *floatGet(PyObject *args, void *getter);
+    PyObject *floatSet(PyObject *args, void *setter, void *allsetter);
+    /// The (index, slot, value) an argument list states; no index answers
+    /// -1, which the texture writers read as "every entry"
+    bool textureArgs(PyObject *args, const char *format, int &amp;idx, uint8_t &amp;slot,
+                     const char *&amp;value);
+    /// Run a write over one entry's texture record, or over every entry's
+    void editTexture(int idx, const std::function&lt;void(SurfaceTexture &amp;)&gt; &amp;op);
+    //@}
+
+    PropertyMaterialList *owner = nullptr;
+    MaterialList *ownvalue = nullptr;
+        </ClassDeclarations>
+    </PythonExport>
+</GenerateModel>

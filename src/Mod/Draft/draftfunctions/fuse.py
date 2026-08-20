@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -21,6 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides functions to create a fusion of two shapes."""
+
 ## @package fuse
 # \ingroup draftfunctions
 # \brief Provides functions to create a fusion of two shapes.
@@ -28,9 +31,9 @@
 ## \addtogroup draftfunctions
 # @{
 import FreeCAD as App
-import draftutils.gui_utils as gui_utils
-
+from draftgeoutils import faces as geo_faces
 from draftmake.make_wire import Wire
+from draftutils import gui_utils
 
 if App.GuiUp:
     from draftviewproviders.view_wire import ViewProviderWire
@@ -48,7 +51,7 @@ def fuse(object1, object2):
         App.Console.PrintError("No active document. Aborting\n")
         return
     import Part
-    import DraftGeomUtils
+
     # testing if we have holes:
     holes = False
     fshape = object1.Shape.fuse(object2.Shape)
@@ -56,8 +59,8 @@ def fuse(object1, object2):
     for f in fshape.Faces:
         if len(f.Wires) > 1:
             holes = True
-    if DraftGeomUtils.isCoplanar(object1.Shape.fuse(object2.Shape).Faces) and not holes:
-        obj = App.ActiveDocument.addObject("Part::Part2DObjectPython","Fusion")
+    if geo_faces.is_coplanar(object1.Shape.fuse(object2.Shape).Faces) and not holes:
+        obj = App.ActiveDocument.addObject("Part::FeaturePython", "Fusion")
         Wire(obj)
         if App.GuiUp:
             ViewProviderWire(obj.ViewObject)
@@ -65,18 +68,19 @@ def fuse(object1, object2):
         obj.Tool = object2
     elif holes:
         # temporary hack, since Part::Fuse objects don't remove splitters
-        obj = App.ActiveDocument.addObject("Part::Feature","Fusion")
+        obj = App.ActiveDocument.addObject("Part::Feature", "Fusion")
         obj.Shape = fshape
     else:
-        obj = App.ActiveDocument.addObject("Part::Fuse","Fusion")
+        obj = App.ActiveDocument.addObject("Part::Fuse", "Fusion")
         obj.Base = object1
         obj.Tool = object2
     if App.GuiUp:
         object1.ViewObject.Visibility = False
         object2.ViewObject.Visibility = False
-        gui_utils.format_object(obj,object1)
+        gui_utils.format_object(obj, object1)
         gui_utils.select(obj)
 
     return obj
+
 
 ## @}

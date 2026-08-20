@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -21,13 +23,15 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides GUI tools to start the edit mode of different objects."""
+
 ## @package gui_edit
 # \ingroup draftguitools
 # \brief Provides GUI tools to start the edit mode of different objects.
 
 __title__ = "FreeCAD Draft Edit Tool"
-__author__ = ("Yorik van Havre, Werner Mayer, Martin Burbaum, Ken Cline, "
-              "Dmitry Chigrin, Carlo Pavan")
+__author__ = (
+    "Yorik van Havre, Werner Mayer, Martin Burbaum, Ken Cline, " "Dmitry Chigrin, Carlo Pavan"
+)
 __url__ = "https://www.freecad.org"
 
 ## \addtogroup draftguitools
@@ -35,7 +39,7 @@ __url__ = "https://www.freecad.org"
 import math
 import pivy.coin as coin
 import PySide.QtCore as QtCore
-import PySide.QtGui as QtGui
+import PySide.QtWidgets as QtWidgets
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -52,18 +56,17 @@ from draftguitools import gui_edit_sketcher_objects as edit_sketcher
 from draftguitools import gui_tool_utils
 from draftguitools import gui_trackers as trackers
 
-
 COLORS = {
-    "default": Gui.draftToolBar.getDefaultColor("snap"),
-    "black":  (0., 0., 0.),
-    "white":  (1., 1., 1.),
-    "grey":   (.5, .5, .5),
-    "red":    (1., 0., 0.),
-    "green":  (0., 1., 0.),
-    "blue":   (0., 0., 1.),
-    "yellow": (1., 1., 0.),
-    "cyan":   (0., 1., 1.),
-    "magenta": (1., 0., 1.)
+    "default": utils.get_rgba_tuple(params.get_param("snapcolor"))[:3],
+    "black": (0.0, 0.0, 0.0),
+    "white": (1.0, 1.0, 1.0),
+    "grey": (0.5, 0.5, 0.5),
+    "red": (1.0, 0.0, 0.0),
+    "green": (0.0, 1.0, 0.0),
+    "blue": (0.0, 0.0, 1.0),
+    "yellow": (1.0, 1.0, 0.0),
+    "cyan": (0.0, 1.0, 1.0),
+    "magenta": (1.0, 0.0, 1.0),
 }
 
 
@@ -198,7 +201,7 @@ class Edit(gui_base_original.Modifier):
         super().__init__()
         """Initialize Draft_Edit Command."""
         self.running = False
-        self.trackers = {'object': []}
+        self.trackers = {"object": []}
         self.overNode = None  # preselected node with mouseover
         self.edited_objects = []
         self.obj = None
@@ -218,7 +221,7 @@ class Edit(gui_base_original.Modifier):
         self.max_objects = 5
         self.pick_radius = 20
 
-        self.alt_edit_mode = 0 # default edit mode for objects
+        self.alt_edit_mode = 0  # default edit mode for objects
 
         # preview
         self.ghost = None
@@ -226,39 +229,43 @@ class Edit(gui_base_original.Modifier):
         # setup gui_tools for every supported object
         self.gui_tools_repository = GuiToolsRepository()
 
-        self.gui_tools_repository.add('Wire', edit_draft.DraftWireGuiTools())
-        self.gui_tools_repository.add('BSpline', edit_draft.DraftBSplineGuiTools())
-        self.gui_tools_repository.add('BezCurve', edit_draft.DraftBezCurveGuiTools())
-        self.gui_tools_repository.add('Circle', edit_draft.DraftCircleGuiTools())
-        self.gui_tools_repository.add('Rectangle', edit_draft.DraftRectangleGuiTools())
-        self.gui_tools_repository.add('Polygon', edit_draft.DraftPolygonGuiTools())
-        self.gui_tools_repository.add('Ellipse', edit_draft.DraftEllipseGuiTools())
-        self.gui_tools_repository.add('Dimension', edit_draft.DraftDimensionGuiTools()) # Backward compatibility
-        self.gui_tools_repository.add('LinearDimension', edit_draft.DraftDimensionGuiTools())
+        self.gui_tools_repository.add("Wire", edit_draft.DraftWireGuiTools())
+        self.gui_tools_repository.add("BSpline", edit_draft.DraftBSplineGuiTools())
+        self.gui_tools_repository.add("BezCurve", edit_draft.DraftBezCurveGuiTools())
+        self.gui_tools_repository.add("Circle", edit_draft.DraftCircleGuiTools())
+        self.gui_tools_repository.add("Rectangle", edit_draft.DraftRectangleGuiTools())
+        self.gui_tools_repository.add("Polygon", edit_draft.DraftPolygonGuiTools())
+        self.gui_tools_repository.add("Ellipse", edit_draft.DraftEllipseGuiTools())
+        self.gui_tools_repository.add(
+            "Dimension", edit_draft.DraftDimensionGuiTools()
+        )  # Backward compatibility
+        self.gui_tools_repository.add("LinearDimension", edit_draft.DraftDimensionGuiTools())
+        self.gui_tools_repository.add("Label", edit_draft.DraftLabelGuiTools())
 
-        self.gui_tools_repository.add('Wall', edit_arch.ArchWallGuiTools())
-        self.gui_tools_repository.add('Window', edit_arch.ArchWindowGuiTools())
-        self.gui_tools_repository.add('Structure', edit_arch.ArchStructureGuiTools())
-        self.gui_tools_repository.add('Space', edit_arch.ArchSpaceGuiTools())
-        self.gui_tools_repository.add('PanelCut', edit_arch.ArchPanelCutGuiTools())
-        self.gui_tools_repository.add('PanelSheet', edit_arch.ArchPanelSheetGuiTools())
+        self.gui_tools_repository.add("Wall", edit_arch.ArchWallGuiTools())
+        self.gui_tools_repository.add("Window", edit_arch.ArchWindowGuiTools())
+        self.gui_tools_repository.add("Structure", edit_arch.ArchStructureGuiTools())
+        self.gui_tools_repository.add("Space", edit_arch.ArchSpaceGuiTools())
+        self.gui_tools_repository.add("PanelCut", edit_arch.ArchPanelCutGuiTools())
+        self.gui_tools_repository.add("PanelSheet", edit_arch.ArchPanelSheetGuiTools())
 
-        self.gui_tools_repository.add('Part::Line', edit_part.PartLineGuiTools())
-        self.gui_tools_repository.add('Part::Box', edit_part.PartBoxGuiTools())
-        self.gui_tools_repository.add('Part::Cylinder', edit_part.PartCylinderGuiTools())
-        self.gui_tools_repository.add('Part::Cone', edit_part.PartConeGuiTools())
-        self.gui_tools_repository.add('Part::Sphere', edit_part.PartSphereGuiTools())
+        self.gui_tools_repository.add("Part::Line", edit_part.PartLineGuiTools())
+        self.gui_tools_repository.add("Part::Box", edit_part.PartBoxGuiTools())
+        self.gui_tools_repository.add("Part::Cylinder", edit_part.PartCylinderGuiTools())
+        self.gui_tools_repository.add("Part::Cone", edit_part.PartConeGuiTools())
+        self.gui_tools_repository.add("Part::Sphere", edit_part.PartSphereGuiTools())
 
-        self.gui_tools_repository.add('Sketcher::SketchObject', edit_sketcher.SketcherSketchObjectGuiTools())
-
+        self.gui_tools_repository.add(
+            "Sketcher::SketchObject", edit_sketcher.SketcherSketchObjectGuiTools()
+        )
 
     def GetResources(self):
-        return {'Pixmap': 'Draft_Edit',
-                'Accel': "D, E",
-                'MenuText': QtCore.QT_TRANSLATE_NOOP("Draft_Edit", "Edit"),
-                'ToolTip': QtCore.QT_TRANSLATE_NOOP("Draft_Edit", "Edits the active object.\nPress E or ALT+LeftClick to display context menu\non supported nodes and on supported objects.")
-                }
-
+        return {
+            "Pixmap": "Draft_Edit",
+            "Accel": "D, E",
+            "MenuText": QtCore.QT_TRANSLATE_NOOP("Draft_Edit", "Edit"),
+            "ToolTip": QtCore.QT_TRANSLATE_NOOP("Draft_Edit", "Edits the active object"),
+        }
 
     # -------------------------------------------------------------------------
     # MAIN FUNCTIONS
@@ -282,14 +289,14 @@ class Edit(gui_base_original.Modifier):
         self.pick_radius = params.get_param("DraftEditPickRadius")
 
         if Gui.Selection.getSelection():
-            self.proceed()
+            # Delay to avoid triggering `display_tracker_menu` with the
+            # "E" key up event after the "D, E" shortcut.
+            # https://github.com/FreeCAD/FreeCAD/issues/27308
+            QtCore.QTimer.singleShot(300, self.proceed)
         else:
             self.ui.selectUi(on_close_call=self.finish)
-            App.Console.PrintMessage(translate("draft",
-                                               "Select a Draft object to edit")
-                                               + "\n")
+            App.Console.PrintMessage(translate("draft", "Select a Draft object to edit") + "\n")
             self.register_selection_callback()
-
 
     def proceed(self):
         """this method set the editTrackers"""
@@ -309,8 +316,9 @@ class Edit(gui_base_original.Modifier):
         for obj in self.edited_objects:
             self.setTrackers(obj, self.getEditPoints(obj))
 
+        App.addDocumentObserver(self)
         self.register_editing_callbacks()
-
+        self.update_hints()
 
     def numericInput(self, numx, numy, numz):
         """Execute callback by the toolbar to activate the update function.
@@ -321,9 +329,15 @@ class Edit(gui_base_original.Modifier):
         self.endEditing(self.obj, self.editing, App.Vector(numx, numy, numz))
         App.ActiveDocument.recompute()
 
+    def slotDeletedObject(self, obj):
+        """Document observer callback: exit edit mode if the edited object is deleted."""
+        if obj in self.edited_objects:
+            App.removeDocumentObserver(self)
+            QtCore.QTimer.singleShot(0, self.finish)
 
     def finish(self, cont=False):
         """Terminate Edit Tool."""
+        App.removeDocumentObserver(self)
         self.unregister_selection_callback()
         self.unregister_editing_callbacks()
         self.editing = None
@@ -340,8 +354,49 @@ class Edit(gui_base_original.Modifier):
         self.running = False
         # delay resetting edit mode otherwise it doesn't happen
         from PySide import QtCore
-        QtCore.QTimer.singleShot(0, Gui.ActiveDocument.resetEdit)
 
+        QtCore.QTimer.singleShot(0, self.reset_edit)
+
+    def reset_edit(self):
+        if Gui.ActiveDocument is not None:
+            Gui.ActiveDocument.resetEdit()
+
+    # -------------------------------------------------------------------------
+    # INPUT HINTS
+    # -------------------------------------------------------------------------
+
+    def get_hints(self):
+        """Return status bar input hints for the current tool state."""
+        if self.selection_callback is not None:
+            # Phase 1: waiting for the user to select an object to edit.
+            return [
+                Gui.InputHint(
+                    translate("draft", "%1 select object to edit"), Gui.UserInput.MouseLeft
+                ),
+            ]
+        if self.editing is None:
+            # Phase 2: trackers are shown, waiting for the user to pick a node.
+            # The context menu (E) acts on whatever is under the cursor, which
+            # can be a node or an edge, so the hint mentions both.
+            return [
+                Gui.InputHint(translate("draft", "%1 pick node to edit"), Gui.UserInput.MouseLeft),
+                Gui.InputHint(
+                    translate("draft", "%1 options for hovered node/edge"),
+                    Gui.UserInput.KeyE,
+                ),
+                Gui.InputHint(translate("draft", "%1 finish"), Gui.UserInput.KeyEscape),
+            ]
+        # Phase 3: a node is being edited, mirror the placement hints used by
+        # creation tools so the modifiers stay consistent across the workbench.
+        hints = [
+            Gui.InputHint(translate("draft", "%1 place node"), Gui.UserInput.MouseLeft),
+        ]
+        return (
+            hints
+            + gui_tool_utils._get_hint_xyz_constrain()
+            + gui_tool_utils._get_hint_mod_constrain()
+            + gui_tool_utils._get_hint_mod_snap()
+        )
 
     # -------------------------------------------------------------------------
     # SCENE EVENTS CALLBACKS
@@ -356,45 +411,59 @@ class Edit(gui_base_original.Modifier):
         """
         remove selection callback if it exists
         """
-        if self.selection_callback:
-            self.view.removeEventCallback("SoEvent", self.selection_callback)
+        try:
+            if self.selection_callback:
+                self.view.removeEventCallback("SoEvent", self.selection_callback)
+        except RuntimeError:
+            # the view has been deleted already
+            pass
         self.selection_callback = None
 
     def register_editing_callbacks(self):
         """
         register editing callbacks (former action function)
         """
-        viewer = Gui.ActiveDocument.ActiveView.getViewer()
-        self.render_manager = viewer.getSoRenderManager()
-        view = Gui.ActiveDocument.ActiveView
+        self.render_manager = self.view.getViewer().getSoRenderManager()
         if self._keyPressedCB is None:
-            self._keyPressedCB = view.addEventCallbackPivy(
-            coin.SoKeyboardEvent.getClassTypeId(), self.keyPressed)
+            self._keyPressedCB = self.view.addEventCallbackPivy(
+                coin.SoKeyboardEvent.getClassTypeId(), self.keyPressed
+            )
         if self._mouseMovedCB is None:
-            self._mouseMovedCB = view.addEventCallbackPivy(
-            coin.SoLocation2Event.getClassTypeId(), self.mouseMoved)
+            self._mouseMovedCB = self.view.addEventCallbackPivy(
+                coin.SoLocation2Event.getClassTypeId(), self.mouseMoved
+            )
         if self._mousePressedCB is None:
-            self._mousePressedCB = view.addEventCallbackPivy(
-            coin.SoMouseButtonEvent.getClassTypeId(), self.mousePressed)
-        #App.Console.PrintMessage("Draft edit callbacks registered \n")
+            self._mousePressedCB = self.view.addEventCallbackPivy(
+                coin.SoMouseButtonEvent.getClassTypeId(), self.mousePressed
+            )
+        # App.Console.PrintMessage("Draft edit callbacks registered \n")
 
     def unregister_editing_callbacks(self):
         """
         remove callbacks used during editing if they exist
         """
-        view = Gui.ActiveDocument.ActiveView
-        if self._keyPressedCB:
-            view.removeEventCallbackSWIG(coin.SoKeyboardEvent.getClassTypeId(), self._keyPressedCB)
-            self._keyPressedCB = None
-            #App.Console.PrintMessage("Draft edit keyboard callback unregistered \n")
-        if self._mouseMovedCB:
-            view.removeEventCallbackSWIG(coin.SoLocation2Event.getClassTypeId(), self._mouseMovedCB)
-            self._mouseMovedCB = None
-            #App.Console.PrintMessage("Draft edit location callback unregistered \n")
-        if self._mousePressedCB:
-            view.removeEventCallbackSWIG(coin.SoMouseButtonEvent.getClassTypeId(), self._mousePressedCB)
-            self._mousePressedCB = None
-            #App.Console.PrintMessage("Draft edit mouse button callback unregistered \n")
+        try:
+            if self._keyPressedCB:
+                self.view.removeEventCallbackSWIG(
+                    coin.SoKeyboardEvent.getClassTypeId(), self._keyPressedCB
+                )
+                # App.Console.PrintMessage("Draft edit keyboard callback unregistered \n")
+            if self._mouseMovedCB:
+                self.view.removeEventCallbackSWIG(
+                    coin.SoLocation2Event.getClassTypeId(), self._mouseMovedCB
+                )
+                # App.Console.PrintMessage("Draft edit location callback unregistered \n")
+            if self._mousePressedCB:
+                self.view.removeEventCallbackSWIG(
+                    coin.SoMouseButtonEvent.getClassTypeId(), self._mousePressedCB
+                )
+                # App.Console.PrintMessage("Draft edit mouse button callback unregistered \n")
+        except RuntimeError:
+            # the view has been deleted already
+            pass
+        self._keyPressedCB = None
+        self._mouseMovedCB = None
+        self._mousePressedCB = None
 
     # -------------------------------------------------------------------------
     # SCENE EVENT HANDLERS
@@ -404,25 +473,23 @@ class Edit(gui_base_original.Modifier):
         """Execute as callback for keyboard event."""
         # TODO: Get the keys from preferences
         event = event_callback.getEvent()
-        if event.getState() == coin.SoKeyboardEvent.DOWN:
+        if event.getState() in (coin.SoKeyboardEvent.DOWN, coin.SoKeyboardEvent.UP):
             key = event.getKey()
-            # App.Console.PrintMessage("pressed key : "+str(key)+"\n")
-            if key == 65307:  # ESC
+            if key == coin.SoKeyboardEvent.ESCAPE:
                 self.finish()
-            if key == 101:  # "e"
+            if key == coin.SoKeyboardEvent.E:
                 self.display_tracker_menu(event)
-            if key == 65535 and Gui.Selection.GetSelection() is None: # BUG: delete key activate Std::Delete command at the same time!
-                print("DELETE PRESSED\n")
-                self.delPoint(event)
+            if key == coin.SoKeyboardEvent.DELETE:  # exit edit mode before Std_Delete fires
+                self.finish()
 
     def mousePressed(self, event_callback):
         """
         mouse button event handler, calls: startEditing, endEditing, addPoint, delPoint
         """
         event = event_callback.getEvent()
-        if (event.getState() == coin.SoMouseButtonEvent.DOWN and
-            event.getButton() == event.BUTTON1
-            ):#left click
+        if (
+            event.getState() == coin.SoMouseButtonEvent.DOWN and event.getButton() == event.BUTTON1
+        ):  # left click
             if not event.wasAltDown():
                 if self.editing is None:
 
@@ -465,16 +532,13 @@ class Edit(gui_base_original.Modifier):
 
     def startEditing(self, obj, node_idx):
         """Start editing selected EditNode."""
-        self.obj = obj # this is still needed to handle preview
+        self.obj = obj  # this is still needed to handle preview
         if obj is None:
             return
 
-        App.Console.PrintMessage(obj.Name
-                                 + ": editing node number "
-                                 + str(node_idx) + "\n")
+        App.Console.PrintMessage(obj.Name + ": editing node number " + str(node_idx) + "\n")
 
-        self.ui.lineUi(title=translate("draft", "Edit node"), icon="Draft_Edit")
-        self.ui.isRelative.hide()
+        self.ui.lineUi(title=translate("draft", "Edit Node"), icon="Draft_Edit")
         self.ui.continueCmd.hide()
         self.editing = node_idx
         self.trackers[obj.Name][node_idx].off()
@@ -485,6 +549,7 @@ class Edit(gui_base_original.Modifier):
         self.node.append(self.trackers[obj.Name][node_idx].get())
         Gui.Snapper.setSelectMode(False)
         self.hideTrackers()
+        self.update_hints()
 
     def updateTrackerAndGhost(self, event):
         """Update tracker position when editing and update ghost."""
@@ -492,7 +557,7 @@ class Edit(gui_base_original.Modifier):
         orthoConstrain = False
         if event.wasShiftDown() == 1:
             orthoConstrain = True
-        snappedPos = Gui.Snapper.snap((pos[0],pos[1]),self.node[-1], constrain=orthoConstrain)
+        snappedPos = Gui.Snapper.snap((pos[0], pos[1]), self.node[-1], constrain=orthoConstrain)
         self.trackers[self.obj.Name][self.editing].set(snappedPos)
         self.ui.displayPoint(snappedPos, self.node[-1], mask=Gui.Snapper.affinity)
         if self.ghost:
@@ -517,7 +582,7 @@ class Edit(gui_base_original.Modifier):
         self.editing = None
         self.showTrackers()
         gui_tool_utils.redraw_3d_view()
-
+        self.update_hints()
 
     # -------------------------------------------------------------------------
     # EDIT TRACKERS functions
@@ -531,14 +596,16 @@ class Edit(gui_base_original.Modifier):
             _wrn = translate("draft", "No edit point found for selected object")
             App.Console.PrintWarning(_wrn + "\n")
             # do not finish if some trackers are still present
-            if self.trackers == {'object': []}:
+            if self.trackers == {"object": []}:
                 self.finish()
             return
         self.trackers[obj.Name] = []
         if obj.Name in self.trackers:
             self.removeTrackers(obj)
         for ep in range(len(points)):
-            self.trackers[obj.Name].append(trackers.editTracker(pos=points[ep], name=obj.Name, idx=ep))
+            self.trackers[obj.Name].append(
+                trackers.editTracker(pos=points[ep], name=obj.Name, idx=ep)
+            )
 
     def resetTrackers(self, obj):
         """Reset Edit Trackers and set them again."""
@@ -549,42 +616,49 @@ class Edit(gui_base_original.Modifier):
         # in future move tracker definition to DraftTrackers
         size = params.get_param_view("MarkerSize")
         knotmarkers = (
-            Gui.getMarkerIndex("DIAMOND_FILLED", size),   # sharp
-            Gui.getMarkerIndex("SQUARE_FILLED", size),    # tangent
-            Gui.getMarkerIndex("HOURGLASS_FILLED", size)  # symmetric
+            Gui.getMarkerIndex("DIAMOND_FILLED", size),  # sharp
+            Gui.getMarkerIndex("SQUARE_FILLED", size),  # tangent
+            Gui.getMarkerIndex("HOURGLASS_FILLED", size),  # symmetric
         )
-        polemarker = Gui.getMarkerIndex("CIRCLE_FILLED",  size)  # pole
+        polemarker = Gui.getMarkerIndex("CIRCLE_FILLED", size)  # pole
         self.trackers[obj.Name] = []
         cont = obj.Continuity
         firstknotcont = cont[-1] if (obj.Closed and cont) else 0
-        pointswithmarkers = [(obj.Shape.Edges[0].Curve.
-                getPole(1),knotmarkers[firstknotcont])]
+        pointswithmarkers = [(obj.Shape.Edges[0].Curve.getPole(1), knotmarkers[firstknotcont])]
         for edgeindex, edge in enumerate(obj.Shape.Edges):
             poles = edge.Curve.getPoles()
-            pointswithmarkers.extend([(point,polemarker) for point in poles[1:-1]])
-            if not obj.Closed or len(obj.Shape.Edges) > edgeindex +1:
+            pointswithmarkers.extend([(point, polemarker) for point in poles[1:-1]])
+            if not obj.Closed or len(obj.Shape.Edges) > edgeindex + 1:
                 knotmarkeri = cont[edgeindex] if len(cont) > edgeindex else 0
-                pointswithmarkers.append((poles[-1],knotmarkers[knotmarkeri]))
+                pointswithmarkers.append((poles[-1], knotmarkers[knotmarkeri]))
         for index, pwm in enumerate(pointswithmarkers):
             p, marker = pwm
             p = obj.Placement.inverse().multVec(p)
             p = obj.getGlobalPlacement().multVec(p)
-            self.trackers[obj.Name].append(trackers.editTracker(p, obj.Name,
-                index, obj.ViewObject.LineColor, marker=marker))
+            self.trackers[obj.Name].append(
+                trackers.editTracker(p, obj.Name, index, obj.ViewObject.LineColor, marker=marker)
+            )
 
     def removeTrackers(self, obj=None):
-        """Remove Edit Trackers."""
-        if obj:
-            if obj.Name in self.trackers:
-                for t in self.trackers[obj.Name]:
-                    t.finalize()
-            self.trackers[obj.Name] = []
-        else:
-            for key in self.trackers.keys():
+        """Remove Edit Trackers.
+
+        Attributes
+        ----------
+        obj: FreeCAD object
+            Removes trackers only for given object,
+            if obj is None, removes all trackers
+        """
+        if obj is None:
+            for key in self.trackers:
                 for t in self.trackers[key]:
                     t.finalize()
-            self.trackers = {'object': []}
-
+            self.trackers = {"object": []}
+        else:
+            key = obj.Name
+            if key in self.trackers:
+                for t in self.trackers[key]:
+                    t.finalize()
+            self.trackers[key] = []
 
     def hideTrackers(self, obj=None):
         """Hide Edit Trackers.
@@ -650,7 +724,7 @@ class Edit(gui_base_original.Modifier):
     # ------------------------------------------------------------------------
 
     def display_tracker_menu(self, event):
-        self.tracker_menu = QtGui.QMenu()
+        self.tracker_menu = QtWidgets.QMenu()
         actions = None
 
         if self.overNode:
@@ -665,7 +739,7 @@ class Edit(gui_base_original.Modifier):
 
         else:
             # try if user is over an edited object
-            pos = event.getPosition()
+            pos = event.getPosition().getValue()
             obj = self.get_selected_obj_at_position(pos)
 
             obj_gui_tools = self.get_obj_gui_tools(obj)
@@ -675,7 +749,8 @@ class Edit(gui_base_original.Modifier):
         if actions is None:
             return
 
-        for (label, callback) in actions:
+        for label, callback in actions:
+
             def wrapper(callback=callback):
                 callback()
                 self.resetTrackers(obj)
@@ -685,15 +760,13 @@ class Edit(gui_base_original.Modifier):
 
         self.tracker_menu.popup(Gui.getMainWindow().cursor().pos())
 
-        QtCore.QObject.connect(self.tracker_menu,
-                               QtCore.SIGNAL("triggered(QAction *)"),
-                               self.evaluate_menu_action)
-
+        QtCore.QObject.connect(
+            self.tracker_menu, QtCore.SIGNAL("triggered(QAction *)"), self.evaluate_menu_action
+        )
 
     def evaluate_menu_action(self, action):
         callback = action.data()
         callback()
-
 
     # -------------------------------------------------------------------------
     # EDIT OBJECT TOOLS
@@ -703,8 +776,7 @@ class Edit(gui_base_original.Modifier):
     # -------------------------------------------------------------------------
 
     def getEditPoints(self, obj):
-        """Return a list of App.Vectors according to the given object edit nodes.
-        """
+        """Return a list of App.Vectors according to the given object edit nodes."""
         eps = None
 
         obj_gui_tools = self.get_obj_gui_tools(obj)
@@ -715,7 +787,6 @@ class Edit(gui_base_original.Modifier):
             return self.globalize_vectors(obj, eps)
         else:
             return None
-
 
     def update(self, obj, nodeIndex, v):
         """Apply the App.Vector to the modified point and update obj."""
@@ -729,35 +800,33 @@ class Edit(gui_base_original.Modifier):
         except AttributeError as err:
             pass
 
-
     def update_object(self, obj, nodeIndex, v):
-        """Update the object according to the given modified editpoint.
-        """
+        """Update the object according to the given modified editpoint."""
         obj_gui_tools = self.get_obj_gui_tools(obj)
         if obj_gui_tools:
-            eps = obj_gui_tools.update_object_from_edit_points(obj, nodeIndex, v, self.alt_edit_mode)
+            eps = obj_gui_tools.update_object_from_edit_points(
+                obj, nodeIndex, v, self.alt_edit_mode
+            )
 
         obj.recompute()
-
 
     # -------------------------------------------------------------------------
     # UTILS
     # -------------------------------------------------------------------------
 
     def has_obj_gui_tools(self, obj):
-        """ Check if the object has the GuiTools to provide information to edit it.
-        """
-        if (hasattr(obj, 'obj_gui_tools') or
-            (hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'obj_gui_tools')) or
-            (utils.get_type(obj) in self.gui_tools_repository.keys()) ):
+        """Check if the object has the GuiTools to provide information to edit it."""
+        if (
+            hasattr(obj, "obj_gui_tools")
+            or (hasattr(obj, "Proxy") and hasattr(obj.Proxy, "obj_gui_tools"))
+            or (utils.get_type(obj) in self.gui_tools_repository.keys())
+        ):
             return True
         else:
             return False
 
-
     def get_obj_gui_tools(self, obj):
-        """ Retrieve the obj_gui_tools to support Draft Edit.
-        """
+        """Retrieve the obj_gui_tools to support Draft Edit."""
         try:
             obj_gui_tools = obj.obj_gui_tools
         except AttributeError:
@@ -770,21 +839,20 @@ class Edit(gui_base_original.Modifier):
                     obj_gui_tools = None
         return obj_gui_tools
 
-
     def getObjsFromSelection(self):
         """Evaluate selection and return a valid object to edit.
 
         #to be used for app link support
 
         for selobj in Gui.Selection.getSelectionEx('', 0):
-    	    for sub in selobj.SubElementNames:
+            for sub in selobj.SubElementNames:
                 obj = selobj.Object
                 obj_matrix = selobj.Object.getSubObject(sub, retType=4)
         """
         selection = Gui.Selection.getSelection()
         self.edited_objects = []
         if len(selection) > self.max_objects:
-            _err = translate("draft", "Too many objects selected, max number set to:")
+            _err = translate("draft", "Too many objects selected, maximum number set to:")
             App.Console.PrintMessage(_err + " " + str(self.max_objects) + "\n")
             return None
 
@@ -796,30 +864,26 @@ class Edit(gui_base_original.Modifier):
                 App.Console.PrintWarning(obj.Name + _wrn + "\n")
         return self.edited_objects
 
-
     def format_objects_for_editing(self, objs):
-        """Change objects style during editing mode.
-        """
+        """Change objects style during editing mode."""
         for obj in objs:
             obj_gui_tools = self.get_obj_gui_tools(obj)
             if obj_gui_tools:
                 self.objs_formats[obj.Name] = obj_gui_tools.get_object_style(obj)
                 obj_gui_tools.set_object_editing_style(obj)
 
-
     def deformat_objects_after_editing(self, objs):
-        """Restore objects style during editing mode.
-        """
+        """Restore objects style during editing mode."""
         for obj in objs:
+            if utils.is_deleted(obj):
+                continue
             obj_gui_tools = self.get_obj_gui_tools(obj)
             if obj_gui_tools:
                 obj_gui_tools.restore_object_style(obj, self.objs_formats[obj.Name])
 
-
     def get_specific_object_info(self, obj, pos):
-        """Return info of a specific object at a given position.
-        """
-        selobjs = Gui.ActiveDocument.ActiveView.getObjectsInfo((pos[0],pos[1]))
+        """Return info of a specific object at a given position."""
+        selobjs = self.view.getObjectsInfo((pos[0], pos[1]))
         if not selobjs:
             return
         for info in selobjs:
@@ -835,7 +899,7 @@ class Edit(gui_base_original.Modifier):
 
         If object is one of the edited objects (self.edited_objects).
         """
-        selobjs = Gui.ActiveDocument.ActiveView.getObjectsInfo((pos[0],pos[1]))
+        selobjs = self.view.getObjectsInfo((pos[0], pos[1]))
         if not selobjs:
             return
         for info in selobjs:
@@ -896,8 +960,10 @@ class Edit(gui_base_original.Modifier):
             path = point.getPath()
             length = path.getLength()
             point = path.getNode(length - 2)
-            #import DraftTrackers
-            if hasattr(point,"subElementName") and 'EditNode' in str(point.subElementName.getValue()):
+            # import DraftTrackers
+            if hasattr(point, "subElementName") and "EditNode" in str(
+                point.subElementName.getValue()
+            ):
                 return point
         return None
 
@@ -911,16 +977,16 @@ class Edit(gui_base_original.Modifier):
             return None
 
 
-
-class GuiToolsRepository():
-    """ This object provide a repository to collect all the specific objects
+class GuiToolsRepository:
+    """This object provide a repository to collect all the specific objects
     editing tools.
     """
+
     def __init__(self):
-         self.obj_gui_tools = {}
+        self.obj_gui_tools = {}
 
     def get(self, obj_type):
-         return self.obj_gui_tools[obj_type]
+        return self.obj_gui_tools[obj_type]
 
     def add(self, type, gui_tools):
         self.obj_gui_tools[type] = gui_tools
@@ -929,7 +995,6 @@ class GuiToolsRepository():
         return self.obj_gui_tools.keys()
 
 
-
-Gui.addCommand('Draft_Edit', Edit())
+Gui.addCommand("Draft_Edit", Edit())
 
 ## @}

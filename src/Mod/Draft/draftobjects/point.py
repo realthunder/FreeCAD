@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -21,6 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides the object code for the Point object."""
+
 ## @package point
 # \ingroup draftobjects
 # \brief Provides the object code for the Point object.
@@ -31,30 +34,34 @@ import math
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
-
 from draftobjects.base import DraftObject
+from draftutils import gui_utils
 
 
 class Point(DraftObject):
     """The Draft Point object."""
 
     def __init__(self, obj, x=0, y=0, z=0):
-        super(Point, self).__init__(obj, "Point")
+        super().__init__(obj, "Point")
 
         _tip = QT_TRANSLATE_NOOP("App::Property", "X Location")
-        obj.addProperty("App::PropertyDistance", "X", "Draft", _tip)
+        obj.addProperty("App::PropertyDistance", "X", "Draft", _tip, locked=True)
 
         _tip = QT_TRANSLATE_NOOP("App::Property", "Y Location")
-        obj.addProperty("App::PropertyDistance", "Y", "Draft", _tip)
+        obj.addProperty("App::PropertyDistance", "Y", "Draft", _tip, locked=True)
 
         _tip = QT_TRANSLATE_NOOP("App::Property", "Z Location")
-        obj.addProperty("App::PropertyDistance", "Z", "Draft", _tip)
+        obj.addProperty("App::PropertyDistance", "Z", "Draft", _tip, locked=True)
 
         obj.X = x
         obj.Y = y
         obj.Z = z
 
-        obj.setPropertyStatus('Placement', 'Hidden')
+        obj.setPropertyStatus("Placement", "Hidden")
+
+    def onDocumentRestored(self, obj):
+        super().onDocumentRestored(obj)
+        gui_utils.restore_view_object(obj, vp_module="view_point", vp_class="ViewProviderPoint")
 
     def execute(self, obj):
         base = obj.Placement.Base
@@ -69,6 +76,7 @@ class Point(DraftObject):
             return
 
         import Part
+
         obj.Shape = Part.Vertex(App.Vector(0, 0, 0))
         if base != xyz_vec:
             obj.Placement.Base = xyz_vec

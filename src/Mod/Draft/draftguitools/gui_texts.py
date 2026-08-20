@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>                  *
 # *   (c) 2009, 2010 Ken Cline <cline@frii.com>                             *
@@ -26,6 +28,7 @@
 
 The textual block can consist of multiple lines.
 """
+
 ## @package gui_texts
 # \ingroup draftguitools
 # \brief Provides GUI tools to create simple Text objects.
@@ -55,16 +58,18 @@ class Text(gui_base_original.Creator):
     def GetResources(self):
         """Set icon, menu and tooltip."""
 
-        return {'Pixmap': 'Draft_Text',
-                'Accel': "T, E",
-                'MenuText': QT_TRANSLATE_NOOP("Draft_Text", "Text"),
-                'ToolTip': QT_TRANSLATE_NOOP("Draft_Text", "Creates a multi-line annotation. CTRL to snap.")}
+        return {
+            "Pixmap": "Draft_Text",
+            "Accel": "T, E",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_Text", "Text"),
+            "ToolTip": QT_TRANSLATE_NOOP("Draft_Text", "Creates a multi-line annotation"),
+        }
 
     def Activated(self):
         """Execute when the command is called."""
-        super(Text, self).Activated(name="Text")
+        super().Activated(name="Text")
         if self.ui:
-            self.text = ''
+            self.text = ""
             self.ui.sourceCmd = self
             self.ui.pointUi(title=translate("draft", self.featureName), icon="Draft_Text")
             self.ui.isRelative.hide()
@@ -84,7 +89,8 @@ class Text(gui_base_original.Creator):
             Restart (continue) the command if `True`, or if `None` and
             `ui.continueMode` is `True`.
         """
-        super(Text, self).finish(self)
+        self.end_callbacks(self.call)
+        super().finish(self)
         if cont or (cont is None and self.ui and self.ui.continueMode):
             self.Activated()
 
@@ -107,23 +113,24 @@ class Text(gui_base_original.Creator):
 
         list_as_text = ", ".join(t_list)
 
-        string = '[' + list_as_text + ']'
+        string = "[" + list_as_text + "]"
 
         Gui.addModule("Draft")
-        _cmd = 'Draft.make_text'
-        _cmd += '('
-        _cmd += string + ', '
-        _cmd += 'placement=pl, '
-        _cmd += 'screen=None, height=None, line_spacing=None'
-        _cmd += ')'
-        _cmd_list = ['pl = FreeCAD.Placement()',
-                     'pl.Rotation.Q = ' + rot,
-                     'pl.Base = ' + base,
-                     '_text_ = ' + _cmd,
-                     'Draft.autogroup(_text_)',
-                     'FreeCAD.ActiveDocument.recompute()']
-        self.commit(translate("draft", "Create Text"),
-                    _cmd_list)
+        _cmd = "Draft.make_text"
+        _cmd += "("
+        _cmd += string + ", "
+        _cmd += "placement=pl, "
+        _cmd += "screen=None, height=None, line_spacing=None"
+        _cmd += ")"
+        _cmd_list = [
+            "pl = FreeCAD.Placement()",
+            "pl.Rotation.Q = " + rot,
+            "pl.Base = " + base,
+            "_text_ = " + _cmd,
+            "Draft.autogroup(_text_)",
+            "FreeCAD.ActiveDocument.recompute()",
+        ]
+        self.commit(translate("draft", "Create Text"), _cmd_list)
         self.finish(cont=None)
 
     def action(self, arg):
@@ -142,8 +149,7 @@ class Text(gui_base_original.Creator):
                 self.finish()
         elif arg["Type"] == "SoLocation2Event":  # mouse movement detection
             if self.active:
-                (self.point,
-                 ctrlPoint, info) = gui_tool_utils.getPoint(self, arg)
+                self.point, ctrlPoint, info = gui_tool_utils.getPoint(self, arg)
             gui_tool_utils.redraw3DView()
         elif arg["Type"] == "SoMouseButtonEvent":
             if arg["State"] == "DOWN" and arg["Button"] == "BUTTON1":
@@ -153,6 +159,7 @@ class Text(gui_base_original.Creator):
                     self.node.append(self.point)
                     self.ui.textUi()
                     self.ui.textValue.setFocus()
+                    self.update_hints()
 
     def numericInput(self, numx, numy, numz):
         """Validate the entry fields in the user interface.
@@ -164,8 +171,16 @@ class Text(gui_base_original.Creator):
         self.node.append(self.point)
         self.ui.textUi()
         self.ui.textValue.setFocus()
+        self.update_hints()
+
+    def get_hints(self):
+        if self.node:
+            return []
+        return [
+            Gui.InputHint(translate("draft", "%1 pick point"), Gui.UserInput.MouseLeft)
+        ] + gui_tool_utils._get_hint_mod_snap()
 
 
-Gui.addCommand('Draft_Text', Text())
+Gui.addCommand("Draft_Text", Text())
 
 ## @}

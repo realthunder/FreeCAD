@@ -54,6 +54,64 @@ class SelectionStyle(IntEnum):
 
 Gui.Selection.SelectionStyle = SelectionStyle
 
+# Gui.InputHint / Gui.HintManager
+#
+# Gui.UserInput itself is registered from C++ by
+# registerUserInputEnumInPython(), see src/Gui/InputHintPy.cpp. These two are
+# Python upstream as well, so they are taken from upstream verbatim.
+
+
+class InputHint:
+    """
+    Represents a single input hint (shortcut suggestion).
+
+    The message is a Qt formatting string with placeholders like %1, %2, ...
+    The placeholders are replaced with input representations - be it keys, mouse buttons etc.
+    Each placeholder corresponds to one input sequence. Sequence can either be:
+     - one input from Gui.UserInput enum
+     - tuple of mentioned enum values representing the input sequence
+
+    >>> InputHint("%1 change mode", Gui.UserInput.KeyM)
+    will result in a hint displaying `[M] change mode`
+
+    >>> InputHint("%1 new line", (Gui.UserInput.KeyControl, Gui.UserInput.KeyEnter))
+    will result in a hint displaying `[ctrl][enter] new line`
+
+    >>> InputHint("%1/%2 increase/decrease ...", Gui.UserInput.KeyU, Gui.UserInput.KeyJ)
+    will result in a hint displaying `[U]/[J] increase / decrease ...`
+    """
+
+    def __init__(self, message, *sequences):
+        self.message = message
+        self.sequences = list(sequences)
+
+
+class HintManager:
+    """
+    A convenience class for managing input hints (shortcut suggestions) displayed to the user.
+    It is here mostly to provide well-defined and easy to reach API from python without developers
+    needing to call low-level functions on the main window directly.
+    """
+
+    def show(self, *hints):
+        """
+        Displays the specified input hints to the user.
+
+        :param hints: List of hints to show.
+        """
+        Gui.getMainWindow().showHint(*hints)
+
+    def hide(self):
+        """
+        Hides all currently displayed input hints.
+        """
+        Gui.getMainWindow().hideHint()
+
+
+Gui.InputHint = InputHint
+Gui.HintManager = HintManager()
+
+
 # Important definitions
 class Workbench:
     """The workbench base class."""

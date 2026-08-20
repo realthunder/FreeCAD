@@ -235,10 +235,37 @@ int TopoShapePy::PyInit(PyObject* args, PyObject *keywds)
     return 0;
 }
 
-PyObject* TopoShapePy::copy(PyObject *args) const
+/** Pull the keyword-only `noElementMap` flag out of a keyword dict.
+ *
+ * The methods that accept it also accept several positional forms, so the flag
+ * is taken out here and the positional parse below is left exactly as it was.
+ * Returns false with a Python error set if the dict holds anything else.
+ */
+static bool getNoElementMap(PyObject *kwds, bool &noElementMap) {
+    if (!kwds)
+        return true;
+    PyObject *value = PyDict_GetItemString(kwds, "noElementMap");
+    if (value) {
+        if (!PyBool_Check(value)) {
+            PyErr_SetString(PyExc_TypeError, "noElementMap must be a boolean");
+            return false;
+        }
+        noElementMap = Base::asBoolean(value);
+    }
+    if (PyDict_Size(kwds) > (value ? 1 : 0)) {
+        PyErr_SetString(PyExc_TypeError, "received an unexpected keyword argument");
+        return false;
+    }
+    return true;
+}
+
+PyObject* TopoShapePy::copy(PyObject *args, PyObject *kwds) const
 {
     PyObject* copyGeom = Py_True;
     PyObject* copyMesh = Py_False;
+    bool noElementMap = false;
+    if (!getNoElementMap(kwds, noElementMap))
+        return nullptr;
 
 #ifndef FC_NO_ELEMENT_MAP
     const char *op = 0;
@@ -254,12 +281,13 @@ PyObject* TopoShapePy::copy(PyObject *args) const
     if(pyHasher)
         hasher = static_cast<App::StringHasherPy*>(pyHasher)->getStringHasherPtr();
     auto &self = *getTopoShapePtr();
-    return Py::new_reference_to(shape2pyshape(
-                TopoShape(self.Tag,hasher).makECopy(
-                    self,op,PyObject_IsTrue(copyGeom),PyObject_IsTrue(copyMesh))));
+    TopoShape res = TopoShape(self.Tag,hasher).makECopy(
+                self,op,PyObject_IsTrue(copyGeom),PyObject_IsTrue(copyMesh));
+    if (noElementMap)
+        res.dropElementNaming();
+    return Py::new_reference_to(shape2pyshape(res));
 #else
-    PyObject* copyGeom = Py_True;
-    PyObject* copyMesh = Py_False;
+    (void)noElementMap;  // nothing to drop without element maps
     if (!PyArg_ParseTuple(args, "|O!O!", &PyBool_Type, &copyGeom, &PyBool_Type, &copyMesh))
         return nullptr;
 
@@ -766,7 +794,12 @@ PyObject*  TopoShapePy::check(PyObject *args) const
     return const_cast<TopoShapePy*>(this)->IncRef();
 }
 
-static PyObject *makeShape(const char *op,const TopoShape &shape, PyObject *args) {
+static PyObject *makeShape(const char *op,const TopoShape &shape, PyObject *args,
+                           PyObject *kwds=nullptr)
+{
+    bool noElementMap = false;
+    if (!getNoElementMap(kwds, noElementMap))
+        return nullptr;
     double tol=0;
     PyObject *pcObj;
     if (!PyArg_ParseTuple(args, "O|d", &pcObj,&tol))
@@ -775,15 +808,24 @@ static PyObject *makeShape(const char *op,const TopoShape &shape, PyObject *args
         std::vector<TopoShape> shapes;
         shapes.push_back(shape);
         getPyShapes(pcObj,shapes);
-        return Py::new_reference_to(shape2pyshape(TopoShape().makEBoolean(op,shapes,0,tol)));
+        TopoShape res = TopoShape().makEBoolean(op,shapes,0,tol);
+        if (noElementMap)
+            res.dropElementNaming();
+        return Py::new_reference_to(shape2pyshape(res));
     } PY_CATCH_OCC
 }
 
-PyObject*  TopoShapePy::fuse(PyObject *args) const
+PyObject*  TopoShapePy::fuse(PyObject *args, PyObject *kwds) const
 {
 #if !defined(FC_NO_ELEMENT_MAP)
-    return makeShape(Part::OpCodes::Fuse,*getTopoShapePtr(),args);
+    return makeShape(Part::OpCodes::Fuse,*getTopoShapePtr(),args,kwds);
 #else
+    // No element maps in this configuration, so noElementMap is a no-op --
+    // still validate it, so a caller passing it does not get silence.
+    bool noElementMap = false;
+    if (!getNoElementMap(kwds, noElementMap))
+        return nullptr;
+    (void)noElementMap;
     PyObject *pcObj;
     if (PyArg_ParseTuple(args, "O!", &(TopoShapePy::Type), &pcObj)) {
         TopoDS_Shape shape = static_cast<TopoShapePy*>(pcObj)->getTopoShapePtr()->getShape();
@@ -831,11 +873,17 @@ PyObject*  TopoShapePy::fuse(PyObject *args) const
 #endif
 }
 
-PyObject*  TopoShapePy::multiFuse(PyObject *args) const
+PyObject*  TopoShapePy::multiFuse(PyObject *args, PyObject *kwds) const
 {
 #if !defined(FC_NO_ELEMENT_MAP) && (OCC_VERSION_HEX>=0x060900)
-    return makeShape(Part::OpCodes::Fuse,*getTopoShapePtr(),args);
+    return makeShape(Part::OpCodes::Fuse,*getTopoShapePtr(),args,kwds);
 #else
+    // No element maps in this configuration, so noElementMap is a no-op --
+    // still validate it, so a caller passing it does not get silence.
+    bool noElementMap = false;
+    if (!getNoElementMap(kwds, noElementMap))
+        return nullptr;
+    (void)noElementMap;
     double tolerance = 0.0;
     PyObject *pcObj;
     if (!PyArg_ParseTuple(args, "O|d", &pcObj, &tolerance))

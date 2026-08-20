@@ -532,16 +532,58 @@ carrying versions, the root name only says "not for readers that
 predate it".
 
 **Schema is an outcome, chosen per document (req 3).** The
-`SaveSchemaVersion` property is the user's cap, **default 4** -- a fresh
-document is readable everywhere until someone decides otherwise, and
-now that is true rather than nearly true: at 4 nothing of this fork's
-format is written, included files included. The
-one place to decide is the save dialog: a format row (standard/compact)
-preselected from the document's own cap (or, for a never-saved document,
-the `PreferCompactFormat` parameter holding the last choice made there),
-with a red, bold, title-sized warning that stays on screen for as long
-as compact is selected — deselected, never dismissed. Plain Save keeps
-whatever the document decided. Each save then *resolves* the cap:
+`SaveSchemaVersion` property is the user's cap. At 4 nothing of this
+fork's format is written, included files included, so a document capped
+there is readable everywhere. The one place to decide is the save
+dialog: a format row (standard/compact) preselected from the document's
+own cap, which for a never-saved document the `PreferCompactFormat`
+parameter (the last choice made there) can hold back but not raise.
+
+**The default is 5 -- this fork's format (2026-08-20, user ruling).**
+A document created here is written the way this build writes documents,
+and what that costs is *stated* rather than avoided: `Gui::Document`
+warns explicitly, once, with a "do not warn again" checkbox. Two things
+keep that from becoming a silent conversion:
+
+- **A restored document keeps the format its file was written in.**
+  `Document::Restore` sets the cap from the file's own `SchemaVersion`
+  *before* the property block is read, so a file that records
+  `SaveSchemaVersion` still overrides it, and one written before the
+  property existed -- or by upstream FreeCAD -- comes back at 4 instead
+  of inheriting today's default. Opening an old document and pressing
+  Ctrl+S does not change its format.
+- **A save that would drop content asks first.** See
+  `confirmSchemaUpgrade()` below.
+
+`exportObjects` is still capped at 4 whatever the document says: a
+fragment travels.
+
+**Two prompts carry what the format costs**, both in `Gui::Document`,
+both after the file name is in:
+
+- `confirmCompactFormat()` -- fires when a save resolves to compact and
+  says outright that no other FreeCAD will open the file, with
+  *Save compact* / *Use standard format* / *Cancel* and a
+  **Do not warn again** checkbox (parameter `WarnCompactFormat`,
+  default true). This replaced a red, bold, title-sized label inside the
+  file dialog that appeared and disappeared with the radio button: a
+  heading that flickers is not a warning, and with compact now
+  preselected nobody would ever have toggled it into view.
+- `confirmSchemaUpgrade()` -- fires when a save resolves to **standard**
+  and the document holds content only the store can carry, offering
+  *Use compact format* / *Save anyway* / *Cancel*. It runs on the plain
+  Save path too, which is the case that matters: a document saved once
+  at 4 and given a texture afterwards never opens the dialog again.
+  "Save anyway" is remembered for that document for the session.
+
+The scan behind the second one asks the properties, not the appearance:
+`App::BlobReferrerProperty::blobContentNeedsStore()` is false by default
+-- `PropertyFileIncluded` writes its own copy below 5, a shape property
+writes the shape the old way and forfeits sharing rather than data --
+and `PropertyMaterialList` overrides it with `hasTexture()`, being the
+one referrer whose content has no schema 4 spelling. Plain Save keeps
+whatever the document decided otherwise. Each save then *resolves* the
+cap:
 
 | configuration | outcome |
 |---|---|

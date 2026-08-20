@@ -727,7 +727,7 @@ public:
 
   typedef SbFCVector<VertexCacheEntry> VertexCacheArray;
 
-#ifdef _FC_RENDER_MEM_TRACE
+#ifdef FC_COW_MEM_TRACE
   typedef boost::container::flat_map<Material,
                                      VertexCacheArray,
                                      std::less<Material>,

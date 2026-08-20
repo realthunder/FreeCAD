@@ -110,7 +110,7 @@ locations = [
         "../Mod/AddonManager/Resources/AddonManager.qrc",
     ],
     ["App", "../App/Resources/translations", "../App/Resources/App.qrc"],
-    ["Arch", "../Mod/Arch/Resources/translations", "../Mod/Arch/Resources/Arch.qrc"],
+    ["Arch", "../Mod/BIM/Resources/translations", "../Mod/BIM/Resources/Arch.qrc"],
     [
         "draft",
         "../Mod/Draft/Resources/translations",

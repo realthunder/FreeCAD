@@ -413,6 +413,15 @@ private:
     /// The drain has emptied: default what was never recorded, then refresh
     void finishDeferredRestore();
 
+    /** Offer every document about to be written the schema its own content
+     * needs, and answer false when the user called the save off.
+     *
+     * Static, because Save All is: the answer belongs to each document
+     * rather than to whoever pressed the button, and a document told to
+     * save its content away anyway remembers that for the session.
+     */
+    static bool offerSchemaUpgrade(const std::vector<App::Document*> &docs);
+
     /// Check other documents for the same transaction ID
     bool checkTransactionID(bool undo, int iSteps);
     /// Ask for user interaction if saving has failed

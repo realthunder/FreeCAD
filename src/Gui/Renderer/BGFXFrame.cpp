@@ -693,7 +693,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
                         "downgrade %zu | cpu ceiling %s | refine tolerance "
                         "%.2fpx%s%s | gates: eligible %zu, suppressed "
                         "%zu point + %zu line draws (%zu by dependency, "
-                        "%zu by coarse faces)%s\n",
+                        "%zu by coarse faces)%s | tiny cutoff %ld: %zu "
+                        "draws / %zu prims\n",
                         budget ? (std::to_string(budget / 1048576)
                                   + "MB").c_str()
                                : "NONE (GL reports no limit; set the "
@@ -711,7 +712,9 @@ bool BGFXRenderer::Private::render(const QColor &col,
                             ? " (RAISED BY PRESSURE)" : "",
                         pressWhy,
                         gateEligible, gatedPoints, gatedLines,
-                        gatedByDependency, gatedByCoarse, gateWhy);
+                        gatedByDependency, gatedByCoarse, gateWhy,
+                        long(tinyElementCutoff),
+                        gatedTiny, gatedTinyPrims);
                     // Who holds the uploaded bytes, by drawable
                     // class, with the share no recent frame drew --
                     // the gap between uploaded and live finally
@@ -4004,6 +4007,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
         objectsWithFloatLines, incompleteObjects, objectsCoarseFaces;
     gatedPoints = gatedLines = gateEligible = gatedByDependency = 0;
     gatedByCoarse = 0;
+    gatedTiny = 0;
+    gatedTinyPrims = 0;
     auditDrawn = auditNoFaces = auditCoarse = 0;
     auditFloating = auditFloatingNoFaces = auditFloatingDrawn = 0;
     for (const auto &d : scene) {
@@ -4139,6 +4144,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // frame. ShapeVertices off keeps attached points dark outright
     // (the pre-contract default); PressureDropEdges off exempts
     // lines from the pressure stages (not from the load).
+    // Measurement only; see the parameter's own documentation.
+    const int tinyCutoff = tinyElementCutoff;
     const bool dropPoints = !shapeVerticesOn || loadDropElements
         || elemPressureStage >= 1;
     const bool dropLines = loadDropElements
@@ -4164,6 +4171,25 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // what never fires.
     auto gatedForMemory = [&](const Render::DrawCall &d,
                               bool *dependency = nullptr) {
+        // The measurement instrument (Render_TinyElementCutoff, 0 =
+        // off), and it sits ABOVE the contract on purpose: the
+        // population it exists to price is the FLOATING sets, which
+        // the contract never gates by design, so a cutoff applied
+        // after the attachment test would suppress nothing that
+        // matters (docs/FarFieldProxies.md 11.1i). Picking, highlight
+        // and on-top draws stay exempt, as they are for every other
+        // gate here.
+        if (tinyCutoff > 0 && d.mesh && !d.material.ontop
+                && !d.material.highlightline
+                && (d.material.type == Render::Material::Line
+                    || d.material.type == Render::Material::Point)) {
+            const uint32_t prims = Render::drawPrimitives(d);
+            // A draw of zero primitives is one whose fill has not run;
+            // it paints nothing and suppressing it would flatter the
+            // measurement with draws that were never costing anything.
+            if (prims > 0 && prims <= uint32_t(tinyCutoff))
+                return true;
+        }
         if (!d.mesh || !d.mesh->attachedOnly || !d.objectKey
                 || d.material.ontop || d.material.highlightline)
             return false;
@@ -4231,6 +4257,22 @@ bool BGFXRenderer::Private::render(const QColor &col,
                        ? gatedPoints : gatedLines);
                 if (byDependency)
                     ++gatedByDependency;
+                // What the measurement cutoff took, kept apart from
+                // what the contract took. Recomputed rather than
+                // reported out of the predicate: it is asked by the id
+                // pass and the submit loop as well, and a counter
+                // inside it counts every draw two and three times over
+                // -- the trap the comment below this block records.
+                // A silent cap reads as "the contract did this", which
+                // is exactly the misattribution the knob is meant to
+                // avoid.
+                if (tinyCutoff > 0) {
+                    const uint32_t prims = Render::drawPrimitives(d);
+                    if (prims > 0 && prims <= uint32_t(tinyCutoff)) {
+                        ++gatedTiny;
+                        gatedTinyPrims += prims;
+                    }
+                }
                 // The coarseness half on its own, because it is the
                 // one a user reads off the screen: these are sets held
                 // back by unfinished geometry, not by memory.

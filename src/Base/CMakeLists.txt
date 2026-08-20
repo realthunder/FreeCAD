@@ -275,6 +275,7 @@ SET(FreeCADBase_CPP_SRCS
     Swap.cpp
     ${SWIG_SRCS}
     TimeInfo.cpp
+    StringUtils.cpp
     Tools.cpp
     Tools2D.cpp
     Tools3D.cpp
@@ -304,6 +305,7 @@ SET(FreeCADBase_HPP_SRCS
     BoundBox.h
     Builder3D.h
     Color.h
+    COWData.h
     Console.h
     ConsoleObserver.h
     Converter.h
@@ -345,6 +347,7 @@ SET(FreeCADBase_HPP_SRCS
     Swap.h
     ${SWIG_HEADERS}
     TimeInfo.h
+    StringUtils.h
     Tools.h
     Tools2D.h
     Tools3D.h

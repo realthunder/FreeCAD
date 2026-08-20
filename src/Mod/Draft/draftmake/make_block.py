@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -21,6 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides functions to create Block objects."""
+
 ## @package make_block
 # \ingroup draftmake
 # \brief Provides functions to create Block objects.
@@ -43,14 +46,15 @@ def make_block(objectslist):
 
     Parameters
     ----------
-    objectlist : list
+    objectslist : list
         Major radius of the ellipse.
 
     """
     if not App.ActiveDocument:
         App.Console.PrintError("No active document. Aborting\n")
         return
-    obj = App.ActiveDocument.addObject("Part::Part2DObjectPython","Block")
+    obj = App.ActiveDocument.addObject("Part::FeaturePython", "Block")
+    obj.addExtension("Part::AttachExtensionPython")
     Block(obj)
     obj.Components = objectslist
     if App.GuiUp:

@@ -23,7 +23,7 @@
    <item>
     <widget class="QGroupBox" name="groupBox">
      <property name="title">
-      <string>DWG conversion</string>
+      <string>DWG Conversion</string>
      </property>
      <layout class="QVBoxLayout" name="verticalLayout">
       <item>
@@ -31,7 +31,7 @@
         <item>
          <widget class="QLabel" name="label_2">
           <property name="text">
-           <string>Conversion method:</string>
+           <string>Conversion method</string>
           </property>
          </widget>
         </item>
@@ -97,7 +97,7 @@
       <item>
        <widget class="QLabel" name="label">
         <property name="text">
-         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=" font-weight:600;"&gt;Note:&lt;/span&gt; DXF options apply to DWG files as well.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+         <string>Note: DXF options apply to DWG files as well.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
@@ -123,7 +123,6 @@
   </layout>
  </widget>
  <layoutdefault spacing="6" margin="11"/>
- <pixmapfunction>qPixmapFromMimeSource</pixmapfunction>
  <customwidgets>
   <customwidget>
    <class>Gui::FileChooser</class>

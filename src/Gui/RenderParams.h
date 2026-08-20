@@ -1087,6 +1087,37 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter TinyElementCutoff
+    ///
+    /// MEASUREMENT INSTRUMENT, 0 = off. Suppress every line and
+    /// point draw issuing this many primitives or fewer, regardless of
+    /// the element contract -- floating sets included, which is the
+    /// point: the contract deliberately never gates those, and they
+    /// are what a far-field cut is left drawing
+    /// (docs/FarFieldProxies.md 11.1i).
+    /// 
+    /// It exists to price the DRAW axis, which this engine has only
+    /// ever measured in the opposite regime. docs/DrawSubmission.md
+    /// dismissed draw count on a frame averaging ~1540 primitives per
+    /// draw, where the GPU is geometry-bound and a draw is free; the
+    /// far-field residue is ~12 primitives per draw, where a draw is
+    /// nearly all overhead. Setting this to ~24 on MiSTer removes
+    /// about 2% of the primitives and about 44% of the draws, so any
+    /// frame-time difference is attributable to draw count and not to
+    /// geometry.
+    /// 
+    /// Not a display feature: it makes real edges vanish, and picking,
+    /// highlighting and on-top draws are exempt so the scene stays
+    /// usable while it is on.
+    static const long & getTinyElementCutoff();
+    static const long & defaultTinyElementCutoff();
+    static void removeTinyElementCutoff();
+    static void setTinyElementCutoff(const long &v);
+    static const char *docTinyElementCutoff();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LoadDropElements
     ///
     /// Stop drawing edges AND vertices for as long as a document is

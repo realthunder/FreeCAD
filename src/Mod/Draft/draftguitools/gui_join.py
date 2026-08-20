@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>                  *
 # *   (c) 2009, 2010 Ken Cline <cline@frii.com>                             *
@@ -23,6 +25,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides GUI tools to join lines and wires."""
+
 ## @package gui_join
 # \ingroup draftguitools
 # \brief Provides GUI tools to join lines and wires.
@@ -33,10 +36,10 @@ from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCADGui as Gui
 import Draft_rc
-import draftguitools.gui_base_original as gui_base_original
-import draftguitools.gui_tool_utils as gui_tool_utils
-
-from draftutils.messages import _msg, _toolmsg
+from draftguitools import gui_base_original
+from draftguitools import gui_tool_utils
+from draftutils import utils
+from draftutils.messages import _msg, _err, _toolmsg
 from draftutils.translate import translate
 
 # The module is used to prevent complaints from code checkers (flake8)
@@ -49,10 +52,15 @@ class Join(gui_base_original.Modifier):
     def GetResources(self):
         """Set icon, menu and tooltip."""
 
-        return {"Pixmap": "Draft_Join",
-                "Accel": "J, O",
-                "MenuText": QT_TRANSLATE_NOOP("Draft_Join", "Join"),
-                "ToolTip": QT_TRANSLATE_NOOP("Draft_Join", "Joins the selected lines or polylines into a single object.\nThe lines must share a common point at the start or at the end for the operation to succeed.")}
+        return {
+            "Pixmap": "Draft_Join",
+            "Accel": "J, O",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_Join", "Join"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_Join",
+                "Joins the selected lines or polylines into a single object.\nThe lines must share a common point at the start or at the end.",
+            ),
+        }
 
     def Activated(self):
         """Execute when the command is called."""
@@ -62,9 +70,7 @@ class Join(gui_base_original.Modifier):
         if not Gui.Selection.getSelection():
             self.ui.selectUi(on_close_call=self.finish)
             _msg(translate("draft", "Select an object to join"))
-            self.call = self.view.addEventCallback(
-                "SoEvent",
-                gui_tool_utils.selectObject)
+            self.call = self.view.addEventCallback("SoEvent", gui_tool_utils.selectObject)
         else:
             self.proceed()
 
@@ -75,17 +81,20 @@ class Join(gui_base_original.Modifier):
         visually share a point. This is due to the underlying `joinWires`
         method not handling the points correctly.
         """
+        if self.call is not None:
+            self.end_callbacks(self.call)
         if Gui.Selection.getSelection():
             self.print_selection()
-            Gui.addModule("Draft")
-            _cmd = "Draft.join_wires"
-            _cmd += "("
-            _cmd += "FreeCADGui.Selection.getSelection()"
-            _cmd += ")"
-            _cmd_list = ['j = ' + _cmd,
-                         'FreeCAD.ActiveDocument.recompute()']
-            self.commit(translate("draft", "Join lines"),
-                        _cmd_list)
+            if all(utils.get_type(o) == "Wire" for o in Gui.Selection.getSelection()):
+                Gui.addModule("Draft")
+                _cmd = "Draft.join_wires"
+                _cmd += "("
+                _cmd += "FreeCADGui.Selection.getSelection()"
+                _cmd += ")"
+                _cmd_list = ["j = " + _cmd, "FreeCAD.ActiveDocument.recompute()"]
+                self.commit(translate("draft", "Join Lines"), _cmd_list)
+            else:
+                _err(translate("draft", "Only Draft lines and wires can be joined"))
         self.finish()
 
     def print_selection(self):
@@ -95,9 +104,9 @@ class Join(gui_base_original.Modifier):
             labels.append(obj.Label)
 
         labels = ", ".join(labels)
-        _toolmsg(translate("draft","Selection:") + " {}".format(labels))
+        _toolmsg(translate("draft", "Selection:") + " {}".format(labels))
 
 
-Gui.addCommand('Draft_Join', Join())
+Gui.addCommand("Draft_Join", Join())
 
 ## @}

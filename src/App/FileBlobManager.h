@@ -165,6 +165,18 @@ public:
      * missing from the archive.
      */
     virtual void collectBlobs(FileBlobManager& manager, const DocumentObject* object) const = 0;
+
+    /** Whether the content this property refers to is LOST when the save
+     * writes no store.
+     *
+     * The store exists at schema 5 and above only, and most referrers have a
+     * schema 4 spelling that keeps the data: PropertyFileIncluded writes its
+     * own copy of the file, a shape property writes the shape the old way and
+     * forfeits sharing rather than content. A referrer with nothing to fall
+     * back on answers true, and the save path offers the schema its content
+     * needs rather than dropping it silently.
+     */
+    virtual bool blobContentNeedsStore() const { return false; }
 };
 
 /** Per-document store of the files referenced by PropertyFileIncluded.

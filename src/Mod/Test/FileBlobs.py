@@ -80,9 +80,9 @@ class BlobTestCase(unittest.TestCase):
     def newDocument(self, name="BlobDoc"):
         doc = FreeCAD.newDocument(name)
         self.docs.append(doc.Name)
-        # Shared entries are part of this fork's format, and a new document
-        # defaults to upstream's -- an incompatible file is chosen, never
-        # inherited. The cases that want the default say so themselves.
+        # Shared entries are part of this fork's format. Stated rather than
+        # inherited, so these cases do not move when the default does -- and
+        # the cases that want upstream's format say so too.
         doc.SaveSchemaVersion = 5
         return doc
 

@@ -1,4 +1,5 @@
-# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -27,6 +28,7 @@
 
 This includes linear dimensions, radial dimensions, and angular dimensions.
 """
+
 ## @package make_dimension
 # \ingroup draftmake
 # \brief Provides functions to create Linear or AngularDimension objects.
@@ -36,19 +38,69 @@ This includes linear dimensions, radial dimensions, and angular dimensions.
 import math
 
 import FreeCAD as App
+import DraftVecUtils
 import WorkingPlane
 
+from draftgeoutils import edges
 from draftutils import gui_utils
+from draftutils import params
 from draftutils import utils
-from draftutils.messages import _msg, _wrn, _err
+from draftutils.messages import _wrn, _err
 from draftutils.translate import translate
 
 from draftobjects.dimension import LinearDimension, AngularDimension
 
 if App.GuiUp:
-    from draftviewproviders.view_dimension \
-        import (ViewProviderLinearDimension,
-                ViewProviderAngularDimension)
+    from draftviewproviders.view_dimension import (
+        ViewProviderLinearDimension,
+        ViewProviderAngularDimension,
+    )
+
+
+def _get_flip_text_lin(p1, p2, wp, normal):
+    # for linear, radial dimensions
+    if not params.get_param("DimAutoFlipText"):
+        return False
+    p1 = wp.project_point(p1)
+    p2 = wp.project_point(p2)
+    ang = DraftVecUtils.angle(wp.u, p2.sub(p1), normal)
+    tol = 1e-4  # high tolerance
+    if math.isclose(ang, 0, abs_tol=tol):
+        return False
+    if math.isclose(abs(ang), math.pi, abs_tol=tol):
+        return True
+    if math.isclose(ang, math.pi / 2, abs_tol=tol):
+        return False
+    if math.isclose(ang, -math.pi / 2, abs_tol=tol):
+        return True
+    # 90-180 (in that quadrant + 1st point closest to the origin):
+    if math.pi / 2 < ang < math.pi:
+        return True
+    # 180-270:
+    if -math.pi < ang < -math.pi / 2:
+        return True
+    # 0-90 and 270-360:
+    return False
+
+
+def _get_flip_text_ang(cen, sta, end, normal):
+    # for angular dimensions
+    if not params.get_param("DimAutoFlipText"):
+        return False
+    import Part
+
+    circle = Part.makeCircle(1, cen, normal, sta, end)
+    mid = edges.findMidpoint(circle)
+    wp = WorkingPlane.get_working_plane(update=False)
+    ang = DraftVecUtils.angle(wp.u, mid.sub(cen), normal)
+    tol = 1e-4  # high tolerance
+    if math.isclose(ang, 0, abs_tol=tol):
+        return True
+    if math.isclose(abs(ang), math.pi, abs_tol=tol):
+        return False
+    if ang > 0:
+        return False
+    return True
 
 
 def make_dimension(p1, p2, p3=None, p4=None):
@@ -77,12 +129,21 @@ def make_dimension(p1, p2, p3=None, p4=None):
         _err("No active document. Aborting")
         return None
 
-    new_obj = App.ActiveDocument.addObject("App::FeaturePython",
-                                           "Dimension")
+    new_obj = App.ActiveDocument.addObject("App::FeaturePython", "Dimension")
     LinearDimension(new_obj)
 
+    wp = WorkingPlane.get_working_plane(update=False)
+    normal = wp.axis
+    flip_text = False
+    override = ""
+
     if App.GuiUp:
-        ViewProviderLinearDimension(new_obj.ViewObject)
+        # invert the normal if we are viewing it from the back
+        vnorm = gui_utils.get3DView().getViewDirection()
+        if vnorm.getAngle(normal) < math.pi / 2:
+            normal = normal.negative()
+
+    new_obj.Normal = normal
 
     if isinstance(p1, App.Vector) and isinstance(p2, App.Vector):
         # Measure a straight distance between p1 and p2
@@ -92,6 +153,9 @@ def make_dimension(p1, p2, p3=None, p4=None):
             p3 = p2.sub(p1)
             p3.multiply(0.5)
             p3 = p1.add(p3)
+
+        if App.GuiUp:
+            flip_text = _get_flip_text_lin(p1, p2, wp, normal)
 
     elif isinstance(p2, int) and isinstance(p3, int):
         # p1 is an object, and measure the distance between vertices p2 and p3
@@ -103,20 +167,17 @@ def make_dimension(p1, p2, p3=None, p4=None):
         new_obj.LinkedGeometry = linked
         new_obj.Support = p1
 
-        # p4, and now p3, is the point through which the dimension line
-        # will go through
+        v1 = p1.Shape.Vertexes[idx[0]].Point
+        v2 = p1.Shape.Vertexes[idx[1]].Point
+        # p4, and now p3, is the point through which the dimension line will pass
         p3 = p4
         if not p3:
-            # When used from the GUI command, this will never run
-            # because p4 will always be assigned to a vector,
-            # so p3 will never be `None`.
-            # Moreover, `new_obj.Base` doesn't exist, and certainly `Shape`
-            # doesn't exist, so if this ever runs it will be an error.
-            v1 = new_obj.Base.Shape.Vertexes[idx[0]].Point
-            v2 = new_obj.Base.Shape.Vertexes[idx[1]].Point
             p3 = v2.sub(v1)
             p3.multiply(0.5)
             p3 = v1.add(p3)
+
+        if App.GuiUp:
+            flip_text = _get_flip_text_lin(v1, v2, wp, normal)
 
     elif isinstance(p3, str):
         # If the original p3 is a string, we are measuring a circular arc
@@ -126,40 +187,33 @@ def make_dimension(p1, p2, p3=None, p4=None):
 
         if p3 == "radius":
             # linked.append((p1, "Center"))
-            if App.GuiUp:
-                new_obj.ViewObject.Override = "R $dim"
+            override = "R $dim"
             new_obj.Diameter = False
         elif p3 == "diameter":
             # linked.append((p1, "Diameter"))
-            if App.GuiUp:
-                new_obj.ViewObject.Override = "Ø $dim"
+            override = "Ø $dim"
             new_obj.Diameter = True
         new_obj.LinkedGeometry = linked
         new_obj.Support = p1
 
-        # p4, and now p3, is the point through which the dimension line
-        # will go through
+        cen = p1.Shape.Edges[p2].Curve.Center
+        # p4, and now p3, is the point through which the dimension line will pass
         p3 = p4
         if not p3:
-            p3 = p1.Shape.Edges[p2].Curve.Center.add(App.Vector(1, 0, 0))
+            p3 = cen.add(App.Vector(1, 0, 0))
+
+        if App.GuiUp:
+            flip_text = _get_flip_text_lin(cen, p3, wp, normal)
 
     # This p3 is the point through which the dimension line will pass,
     # but this may not be the original p3, it could have been p4
     # depending on the first three parameter values
     new_obj.Dimline = p3
 
-    normal = WorkingPlane.get_working_plane(update=False).axis
-
     if App.GuiUp:
-        # invert the normal if we are viewing it from the back
-        vnorm = gui_utils.get3DView().getViewDirection()
-
-        if vnorm.getAngle(normal) < math.pi/2:
-            normal = normal.negative()
-
-    new_obj.Normal = normal
-
-    if App.GuiUp:
+        ViewProviderLinearDimension(new_obj.ViewObject)
+        new_obj.ViewObject.FlipText = flip_text
+        new_obj.ViewObject.Override = override
         gui_utils.format_object(new_obj)
         gui_utils.select(new_obj)
 
@@ -168,8 +222,8 @@ def make_dimension(p1, p2, p3=None, p4=None):
 
 def makeDimension(p1, p2, p3=None, p4=None):
     """Create a dimension. DEPRECATED. Use 'make_dimension'."""
-    _wrn(translate("draft","This function is deprecated. Do not use this function directly."))
-    _wrn(translate("draft","Use one of 'make_linear_dimension', or 'make_linear_dimension_obj'."))
+    _wrn(translate("draft", "This function is deprecated. Do not use this function directly."))
+    _wrn(translate("draft", "Use one of 'make_linear_dimension', or 'make_linear_dimension_obj'."))
 
     return make_dimension(p1, p2, p3, p4)
 
@@ -206,33 +260,29 @@ def make_linear_dimension(p1, p2, dim_line=None):
         If there is a problem it will return `None`.
     """
     _name = "make_linear_dimension"
-    utils.print_header(_name, "Linear dimension")
 
     found, doc = utils.find_doc(App.activeDocument())
     if not found:
-        _err(translate("draft","No active document. Aborting."))
+        _err(translate("draft", "No active document. Aborting."))
         return None
 
-    _msg("p1: {}".format(p1))
     try:
         utils.type_check([(p1, App.Vector)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a vector."))
+        _err(translate("draft", "Wrong input: must be a vector."))
         return None
 
-    _msg("p2: {}".format(p2))
     try:
         utils.type_check([(p2, App.Vector)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a vector."))
+        _err(translate("draft", "Wrong input: must be a vector."))
         return None
 
-    _msg("dim_line: {}".format(dim_line))
     if dim_line:
         try:
             utils.type_check([(dim_line, App.Vector)], name=_name)
         except TypeError:
-            _err(translate("draft","Wrong input: must be a vector."))
+            _err(translate("draft", "Wrong input: must be a vector."))
             return None
     else:
         diff = p2.sub(p1)
@@ -299,74 +349,73 @@ def make_linear_dimension_obj(edge_object, i1=1, i2=2, dim_line=None):
         If there is a problem it will return `None`.
     """
     _name = "make_linear_dimension_obj"
-    utils.print_header(_name, "Linear dimension")
 
     found, doc = utils.find_doc(App.activeDocument())
     if not found:
-        _err(translate("draft","No active document. Aborting."))
+        _err(translate("draft", "No active document. Aborting."))
         return None
 
-    if isinstance(edge_object, str):
-        edge_object_str = edge_object
-
     if isinstance(edge_object, (list, tuple)):
-        _msg("edge_object: {}".format(edge_object))
-        _err(translate("draft","Wrong input: object must not be a list."))
+        _err(translate("draft", "Wrong input: edge_object must not be a list or tuple."))
         return None
 
     found, edge_object = utils.find_object(edge_object, doc)
     if not found:
-        _msg("edge_object: {}".format(edge_object_str))
-        _err(translate("draft","Wrong input: object not in document."))
+        _err(translate("draft", "Wrong input: edge_object not in document."))
         return None
 
-    _msg("edge_object: {}".format(edge_object.Label))
     if not hasattr(edge_object, "Shape"):
-        _err(translate("draft","Wrong input: object doesn't have a 'Shape' to measure."))
+        _err(translate("draft", "Wrong input: object doesn't have a 'Shape' to measure."))
         return None
-    if (not hasattr(edge_object.Shape, "Vertexes")
-            or len(edge_object.Shape.Vertexes) < 1):
-        _err(translate("draft","Wrong input: object doesn't have at least one element in 'Vertexes' to use for measuring."))
+    if not hasattr(edge_object.Shape, "Vertexes") or len(edge_object.Shape.Vertexes) < 1:
+        _err(
+            translate(
+                "draft",
+                "Wrong input: object does not have at least 1 element in 'Vertexes' to use for measuring.",
+            )
+        )
         return None
 
-    _msg("i1: {}".format(i1))
     try:
         utils.type_check([(i1, int)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be an integer."))
+        _err(translate("draft", "Wrong input: must be an integer."))
         return None
 
     if i1 < 1:
         i1 = 1
-        _wrn(translate("draft","i1: values below 1 are not allowed; will be set to 1."))
+        _wrn(translate("draft", "i1: values below 1 are not allowed; will be set to 1."))
 
     vx1 = edge_object.getSubObject("Vertex" + str(i1))
     if not vx1:
-        _err(translate("draft","Wrong input: vertex not in object."))
+        _err(translate("draft", "Wrong input: vertex not in object."))
         return None
 
-    _msg("i2: {}".format(i2))
     try:
         utils.type_check([(i2, int)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a vector."))
+        _err(translate("draft", "Wrong input: must be a vector."))
         return None
 
     if i2 < 1:
         i2 = len(edge_object.Shape.Vertexes)
-        _wrn(translate("draft","i2: values below 1 are not allowed; will be set to the last vertex in the object."))
+        _wrn(
+            translate(
+                "draft",
+                "i2: values below 1 are not allowed; will be set to the last vertex in the object.",
+            )
+        )
 
     vx2 = edge_object.getSubObject("Vertex" + str(i2))
     if not vx2:
-        _err(translate("draft","Wrong input: vertex not in object."))
+        _err(translate("draft", "Wrong input: vertex not in object."))
         return None
 
-    _msg("dim_line: {}".format(dim_line))
     if dim_line:
         try:
             utils.type_check([(dim_line, App.Vector)], name=_name)
         except TypeError:
-            _err(translate("draft","Wrong input: must be a vector."))
+            _err(translate("draft", "Wrong input: must be a vector."))
             return None
     else:
         diff = vx2.Point.sub(vx1.Point)
@@ -384,8 +433,7 @@ def make_linear_dimension_obj(edge_object, i1=1, i2=2, dim_line=None):
     return new_obj
 
 
-def make_radial_dimension_obj(edge_object, index=1, mode="radius",
-                              dim_line=None):
+def make_radial_dimension_obj(edge_object, index=1, mode="radius", dim_line=None):
     """Create a radial or diameter dimension from an arc object.
 
     Parameters
@@ -429,68 +477,63 @@ def make_radial_dimension_obj(edge_object, index=1, mode="radius",
         If there is a problem it will return `None`.
     """
     _name = "make_radial_dimension_obj"
-    utils.print_header(_name, "Radial dimension")
 
     found, doc = utils.find_doc(App.activeDocument())
     if not found:
-        _err(translate("draft","No active document. Aborting."))
+        _err(translate("draft", "No active document. Aborting."))
         return None
-
-    if isinstance(edge_object, str):
-        edge_object_str = edge_object
 
     found, edge_object = utils.find_object(edge_object, doc)
     if not found:
-        _msg("edge_object: {}".format(edge_object_str))
-        _err(translate("draft","Wrong input: object not in document."))
+        _err(translate("draft", "Wrong input: edge_object not in document."))
         return None
 
-    _msg("edge_object: {}".format(edge_object.Label))
     if not hasattr(edge_object, "Shape"):
-        _err(translate("draft","Wrong input: object doesn't have a 'Shape' to measure."))
+        _err(translate("draft", "Wrong input: object doesn't have a 'Shape' to measure."))
         return None
-    if (not hasattr(edge_object.Shape, "Edges")
-            or len(edge_object.Shape.Edges) < 1):
-        _err(translate("draft","Wrong input: object doesn't have at least one element in 'Edges' to use for measuring."))
+    if not hasattr(edge_object.Shape, "Edges") or len(edge_object.Shape.Edges) < 1:
+        _err(
+            translate(
+                "draft",
+                "Wrong input: object doesn't have at least one element in 'Edges' to use for measuring.",
+            )
+        )
         return None
 
-    _msg("index: {}".format(index))
     try:
         utils.type_check([(index, int)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be an integer."))
+        _err(translate("draft", "Wrong input: must be an integer."))
         return None
 
     if index < 1:
         index = 1
-        _wrn(translate("draft","index: values below 1 are not allowed; will be set to 1."))
+        _wrn(translate("draft", "index: values below 1 are not allowed; will be set to 1."))
 
     edge = edge_object.getSubObject("Edge" + str(index))
     if not edge:
-        _err(translate("draft","Wrong input: index doesn't correspond to an edge in the object."))
+        _err(translate("draft", "Wrong input: index doesn't correspond to an edge in the object."))
         return None
 
-    if not hasattr(edge, "Curve") or edge.Curve.TypeId != 'Part::GeomCircle':
-        _err(translate("draft","Wrong input: index doesn't correspond to a circular edge."))
+    if not hasattr(edge, "Curve") or edge.Curve.TypeId != "Part::GeomCircle":
+        _err(translate("draft", "Wrong input: index doesn't correspond to a circular edge."))
         return None
 
-    _msg("mode: {}".format(mode))
     try:
         utils.type_check([(mode, str)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a string, 'radius' or 'diameter'."))
+        _err(translate("draft", "Wrong input: must be a string, 'radius' or 'diameter'."))
         return None
 
     if mode not in ("radius", "diameter"):
-        _err(translate("draft","Wrong input: must be a string, 'radius' or 'diameter'."))
+        _err(translate("draft", "Wrong input: must be a string, 'radius' or 'diameter'."))
         return None
 
-    _msg("dim_line: {}".format(dim_line))
     if dim_line:
         try:
             utils.type_check([(dim_line, App.Vector)], name=_name)
         except TypeError:
-            _err(translate("draft","Wrong input: must be a vector."))
+            _err(translate("draft", "Wrong input: must be a vector."))
             return None
     else:
         center = edge_object.Shape.Edges[index - 1].Curve.Center
@@ -506,9 +549,12 @@ def make_radial_dimension_obj(edge_object, index=1, mode="radius",
     return new_obj
 
 
-def make_angular_dimension(center=App.Vector(0, 0, 0),
-                           angles=None, # If None, set to [0,90]
-                           dim_line=App.Vector(10, 10, 0), normal=None):
+def make_angular_dimension(
+    center=App.Vector(0, 0, 0),
+    angles=None,  # If None, set to [0,90]
+    dim_line=App.Vector(10, 10, 0),
+    normal=None,
+):
     """Create an angular dimension from the given center and angles.
 
     Parameters
@@ -548,7 +594,6 @@ def make_angular_dimension(center=App.Vector(0, 0, 0),
         If there is a problem it will return `None`.
     """
     _name = "make_angular_dimension"
-    utils.print_header(_name, "Angular dimension")
 
     # Prevent later modification of a default parameter by using a placeholder
     if angles is None:
@@ -556,29 +601,26 @@ def make_angular_dimension(center=App.Vector(0, 0, 0),
 
     found, doc = utils.find_doc(App.activeDocument())
     if not found:
-        _err(translate("draft","No active document. Aborting."))
+        _err(translate("draft", "No active document. Aborting."))
         return None
 
-    _msg("center: {}".format(center))
     try:
         utils.type_check([(center, App.Vector)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a vector."))
+        _err(translate("draft", "Wrong input: must be a vector."))
         return None
 
-    _msg("angles: {}".format(angles))
     try:
         utils.type_check([(angles, (tuple, list))], name=_name)
 
         if len(angles) != 2:
-            _err(translate("draft","Wrong input: must be a list with two angles."))
+            _err(translate("draft", "Wrong input: must be a list with two angles."))
             return None
 
         ang1, ang2 = angles
-        utils.type_check([(ang1, (int, float)),
-                          (ang2, (int, float))], name=_name)
+        utils.type_check([(ang1, (int, float)), (ang2, (int, float))], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a list with two angles."))
+        _err(translate("draft", "Wrong input: must be a list with two angles."))
         return None
 
     # If the angle is larger than 360 degrees, make sure
@@ -587,32 +629,24 @@ def make_angular_dimension(center=App.Vector(0, 0, 0),
         if angles[n] > 360:
             angles[n] = angles[n] - 360
 
-    _msg("dim_line: {}".format(dim_line))
     try:
         utils.type_check([(dim_line, App.Vector)], name=_name)
     except TypeError:
-        _err(translate("draft","Wrong input: must be a vector."))
+        _err(translate("draft", "Wrong input: must be a vector."))
         return None
 
-    _msg("normal: {}".format(normal))
     if normal:
         try:
             utils.type_check([(dim_line, App.Vector)], name=_name)
         except TypeError:
-            _err(translate("draft","Wrong input: must be a vector."))
+            _err(translate("draft", "Wrong input: must be a vector."))
             return None
 
     if not normal:
         normal = WorkingPlane.get_working_plane(update=False).axis
 
-    new_obj = App.ActiveDocument.addObject("App::FeaturePython",
-                                           "Dimension")
+    new_obj = App.ActiveDocument.addObject("App::FeaturePython", "Dimension")
     AngularDimension(new_obj)
-
-    new_obj.Center = center
-    new_obj.FirstAngle = angles[0]
-    new_obj.LastAngle = angles[1]
-    new_obj.Dimline = dim_line
 
     if App.GuiUp:
         ViewProviderAngularDimension(new_obj.ViewObject)
@@ -621,12 +655,17 @@ def make_angular_dimension(center=App.Vector(0, 0, 0),
         # This is determined by the angle between the current
         # 3D view and the provided normal being below 90 degrees
         vnorm = gui_utils.get3DView().getViewDirection()
-        if vnorm.getAngle(normal) < math.pi/2:
+        if vnorm.getAngle(normal) < math.pi / 2:
             normal = normal.negative()
 
+    new_obj.Center = center
+    new_obj.FirstAngle = angles[0]
+    new_obj.LastAngle = angles[1]
+    new_obj.Dimline = dim_line
     new_obj.Normal = normal
 
     if App.GuiUp:
+        new_obj.ViewObject.FlipText = _get_flip_text_ang(center, angles[0], angles[1], normal)
         gui_utils.format_object(new_obj)
         gui_utils.select(new_obj)
 
@@ -640,7 +679,7 @@ def makeAngularDimension(center, angles, p3, normal=None):
     ang1, ang2 = angles
     angles = [math.degrees(ang2), math.degrees(ang1)]
 
-    return make_angular_dimension(center=center, angles=angles,
-                                  dim_line=p3, normal=normal)
+    return make_angular_dimension(center=center, angles=angles, dim_line=p3, normal=normal)
+
 
 ## @}

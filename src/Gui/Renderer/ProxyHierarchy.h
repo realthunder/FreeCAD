@@ -257,6 +257,18 @@ struct ProxyInstance {
     uint32_t drawIndex = 0;
 };
 
+/// Primitives one draw issues. `indexCount` is the draw's own range
+/// when set; 0 means the whole buffer, and which buffer is decided by
+/// the material's topology, not by which arrays the mesh happens to
+/// carry -- a mesh usually has both triangles and lines, and charging a
+/// line draw for the triangle array would count most of the scene twice.
+///
+/// Shared with the frame loop rather than duplicated there: a cut that
+/// plans in primitives and a gate that spends them have to be counting
+/// the same thing, or the plan and the measurement describe different
+/// scenes.
+RendererExport uint32_t drawPrimitives(const DrawCall &d);
+
 /// Project a draw list into the instance table (§3.1). Draws without
 /// usable bounds are skipped: the hierarchy cannot place what it cannot
 /// locate, and a draw with no bounds is not judgeable by the cut

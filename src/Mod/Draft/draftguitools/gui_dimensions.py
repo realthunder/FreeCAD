@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>                  *
 # *   (c) 2009, 2010 Ken Cline <cline@frii.com>                             *
@@ -31,6 +33,7 @@ and circular arcs.
 And it can also be an angular dimension measuring the angle between
 two straight lines.
 """
+
 ## @package gui_dimensions
 # \ingroup draftguitools
 # \brief Provides GUI tools to create dimension objects.
@@ -43,15 +46,14 @@ import FreeCAD as App
 import FreeCADGui as Gui
 import Draft_rc
 import DraftVecUtils
-import draftguitools.gui_base_original as gui_base_original
-import draftguitools.gui_tool_utils as gui_tool_utils
-import draftguitools.gui_trackers as trackers
-import draftutils.gui_utils as gui_utils
-
+from draftgeoutils import general as geo_general
+from draftgeoutils import intersections as geo_intersections
+from draftguitools import gui_base_original
+from draftguitools import gui_tool_utils
+from draftguitools import gui_trackers as trackers
+from draftutils import gui_utils
 from draftutils.translate import translate
 from draftutils.messages import _toolmsg, _msg
-
-DraftGeomUtils = lz.LazyLoader("DraftGeomUtils", globals(), "DraftGeomUtils")
 
 # The module is used to prevent complaints from code checkers (flake8)
 True if Draft_rc.__name__ else False
@@ -73,61 +75,60 @@ class Dimension(gui_base_original.Creator):
 
     def __init__(self):
         super().__init__()
-        self.max = 2
-        self.cont = None
+        self.chain = None  # Last chain's leg in ChainMode
         self.dir = None
+        self.featureName = "Dimension"
 
     def GetResources(self):
         """Set icon, menu and tooltip."""
 
-        return {'Pixmap': 'Draft_Dimension',
-                'Accel': "D, I",
-                'MenuText': QT_TRANSLATE_NOOP("Draft_Dimension", "Dimension"),
-                'ToolTip': QT_TRANSLATE_NOOP("Draft_Dimension", "Creates a dimension.\n\n- Pick three points to create a simple linear dimension.\n- Select a straight line to create a linear dimension linked to that line.\n- Select an arc or circle to create a radius or diameter dimension linked to that arc.\n- Select two straight lines to create an angular dimension between them.\nCTRL to snap, SHIFT to constrain, ALT to select an edge or arc.\n\nYou may select a single line or single circular arc before launching this command\nto create the corresponding linked dimension.\nYou may also select an 'App::MeasureDistance' object before launching this command\nto turn it into a 'Draft Dimension' object.")}
+        return {
+            "Pixmap": "Draft_Dimension",
+            "Accel": "D, I",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_Dimension", "Dimension"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_Dimension",
+                "Creates a linear dimension for a straight edge, a circular edge, or 2 picked points, or an angular dimension for 2 straight edges",
+            ),
+        }
 
-    def Activated(self):
+    def Activated(self, dir_vec=None):
         """Execute when the command is called."""
-        if self.cont:
-            self.finish()
-        elif self.selected_app_measure():
-            super().Activated(name="Dimension")
-            self.dimtrack = trackers.dimTracker()
-            self.arctrack = trackers.arcTracker()
-            self.create_with_app_measure()
-            self.finish()
-        else:
-            super().Activated(name="Dimension")
-            if self.ui:
-                self.ui.pointUi(title=translate("draft", "Dimension"), icon="Draft_Dimension")
-                self.ui.continueCmd.show()
-                self.ui.selectButton.show()
-                self.altdown = False
-                self.call = self.view.addEventCallback("SoEvent", self.action)
-                self.dimtrack = trackers.dimTracker()
-                self.arctrack = trackers.arcTracker()
-                self.link = None
-                self.edges = []
-                self.angles = []
-                self.angledata = None
-                self.indices = []
-                self.center = None
-                self.arcmode = False
-                self.point1 = None
-                self.point2 = None
-                self.proj_point1 = None
-                self.proj_point2 = None
-                self.force = None
-                self.info = None
-                self.selectmode = False
-                self.set_selection()
-                _toolmsg(translate("draft", "Pick first point"))
+        super().Activated(name=self.featureName)
+        self.ui.pointUi(title=translate("draft", self.featureName), icon="Draft_Dimension")
+        self.ui.continueCmd.show()
+        self.ui.chainedModeCmd.show()
+        self.ui.selectButton.show()
+        self.altdown = False
+        self.call = self.view.addEventCallback("SoEvent", self.action)
+        self.dimtrack = trackers.dimTracker()
+        self.arctrack = trackers.arcTracker()
+        self.link = []
+        self.dir = dir_vec
+        self.edges = []
+        self.angles = []
+        self.angledata = []
+        self.indices = []
+        self.center = None
+        self.arcmode = ""
+        self.point1 = None
+        self.point2 = None
+        self.proj_point1 = None
+        self.proj_point2 = None
+        self.force = 0
+        self.info = {}
+        self.selectmode = False
+        self.set_selection()
+        _toolmsg(translate("draft", "Pick first point"))
 
     def set_selection(self):
         """Fill the nodes according to the selected geometry."""
         sel = Gui.Selection.getSelectionEx()
-        if (len(sel) == 1
-                and len(sel[0].SubElementNames) == 1
-                and "Edge" in sel[0].SubElementNames[0]):
+        if (
+            len(sel) == 1
+            and len(sel[0].SubElementNames) == 1
+            and "Edge" in sel[0].SubElementNames[0]
+        ):
             # The selection is just a single `Edge`
             sel_object = sel[0]
             edge = sel_object.SubObjects[0]
@@ -138,9 +139,8 @@ class Dimension(gui_base_original.Creator):
             n = int(sel_object.SubElementNames[0].lstrip("Edge")) - 1
             self.indices.append(n)
 
-            if DraftGeomUtils.geomType(edge) == "Line":
-                self.node.extend([edge.Vertexes[0].Point,
-                                  edge.Vertexes[1].Point])
+            if geo_general.geomType(edge) == "Line":
+                self.node.extend([edge.Vertexes[0].Point, edge.Vertexes[1].Point])
 
                 # Iterate over the vertices of the parent `Object`;
                 # when the vertices match those of the selected `edge`
@@ -153,75 +153,35 @@ class Dimension(gui_base_original.Creator):
                     if v.Point == edge.Vertexes[1].Point:
                         v2 = i
 
-                if v1 is not None and v2 is not None: # note that v1 or v2 can be zero
+                if v1 is not None and v2 is not None:  # note that v1 or v2 can be zero
+                    self.edges = [edge]
                     self.link = [sel_object.Object, v1, v2]
-            elif DraftGeomUtils.geomType(edge) == "Circle":
-                self.node.extend([edge.Curve.Center,
-                                  edge.Vertexes[0].Point])
+            elif geo_general.geomType(edge) == "Circle":
+                self.node.extend([edge.Curve.Center, edge.Vertexes[0].Point])
                 self.edges = [edge]
                 self.arcmode = "diameter"
                 self.link = [sel_object.Object, n]
 
-    def selected_app_measure(self):
-        """Check if App::MeasureDistance objects are selected."""
-        sel = Gui.Selection.getSelection()
-        if not sel:
-            return False
-        for o in sel:
-            if not o.isDerivedFrom("App::MeasureDistance"):
-                return False
-        return True
-
     def finish(self, cont=False):
         """Terminate the operation."""
-        self.cont = None
+        if cont is False and self.chain:
+            cont = None
+        self.chain = None
         self.dir = None
+        self.end_callbacks(self.call)
+        self.dimtrack.finalize()
+        self.arctrack.finalize()
         super().finish()
-        if self.ui:
-            self.dimtrack.finalize()
-            self.arctrack.finalize()
+        if cont or (cont is None and self.ui.continueMode):
+            self.Activated()
 
     def angle_dimension_normal(self, edge1, edge2):
-        rot = App.Rotation(DraftGeomUtils.vec(edge1),
-                           DraftGeomUtils.vec(edge2),
-                           self.wp.axis,
-                           "XYZ")
+        rot = App.Rotation(geo_general.vec(edge1), geo_general.vec(edge2), self.wp.axis, "XYZ")
         norm = rot.multVec(App.Vector(0, 0, 1))
         vnorm = gui_utils.get_3d_view().getViewDirection()
         if vnorm.getAngle(norm) < math.pi / 2:
             norm = norm.negative()
         return norm
-
-    def create_with_app_measure(self):
-        """Create on measurement objects.
-
-        This is used when the selection is an `'App::MeasureDistance'`,
-        which is created with the basic tool `Std_MeasureDistance`.
-        This object is removed and in its place a `Draft Dimension`
-        is created.
-        """
-        for o in Gui.Selection.getSelection():
-            p1 = o.P1
-            p2 = o.P2
-            _root = o.ViewObject.RootNode
-            _ch = _root.getChildren()[1].getChildren()[0].getChildren()[0]
-            pt = _ch.getChildren()[3]
-            p3 = App.Vector(pt.point.getValues()[2].getValue())
-
-            Gui.addModule("Draft")
-            _cmd = 'Draft.make_linear_dimension'
-            _cmd += '('
-            _cmd += DraftVecUtils.toString(p1) + ', '
-            _cmd += DraftVecUtils.toString(p2) + ', '
-            _cmd += 'dim_line=' + DraftVecUtils.toString(p3)
-            _cmd += ')'
-            _rem = 'FreeCAD.ActiveDocument.removeObject("' + o.Name + '")'
-            _cmd_list = ['_dim_ = ' + _cmd,
-                         _rem,
-                         'Draft.autogroup(_dim_)',
-                         'FreeCAD.ActiveDocument.recompute()']
-            self.commit(translate("draft", "Create Dimension"),
-                        _cmd_list)
 
     def create_angle_dimension(self):
         """Create an angular dimension from a center and two angles."""
@@ -229,36 +189,38 @@ class Dimension(gui_base_original.Creator):
         ang2 = math.degrees(self.angledata[0])
         norm = self.angle_dimension_normal(self.edges[0], self.edges[1])
 
-        _cmd = 'Draft.make_angular_dimension'
-        _cmd += '('
-        _cmd += 'center=' + DraftVecUtils.toString(self.center) + ', '
-        _cmd += 'angles='
-        _cmd += '['
-        _cmd += str(ang1) + ', '
+        _cmd = "Draft.make_angular_dimension"
+        _cmd += "("
+        _cmd += "center=" + DraftVecUtils.toString(self.center) + ", "
+        _cmd += "angles="
+        _cmd += "["
+        _cmd += str(ang1) + ", "
         _cmd += str(ang2)
-        _cmd += '], '
-        _cmd += 'dim_line=' + DraftVecUtils.toString(self.node[-1]) + ', '
-        _cmd += 'normal=' + DraftVecUtils.toString(norm)
-        _cmd += ')'
-        _cmd_list = ['_dim_ = ' + _cmd,
-                     'Draft.autogroup(_dim_)',
-                     'FreeCAD.ActiveDocument.recompute()']
-        self.commit(translate("draft", "Create Dimension"),
-                    _cmd_list)
+        _cmd += "], "
+        _cmd += "dim_line=" + DraftVecUtils.toString(self.node[-1]) + ", "
+        _cmd += "normal=" + DraftVecUtils.toString(norm)
+        _cmd += ")"
+        _cmd_list = [
+            "_dim_ = " + _cmd,
+            "Draft.autogroup(_dim_)",
+            "FreeCAD.ActiveDocument.recompute()",
+        ]
+        self.commit(translate("draft", "Create Dimension"), _cmd_list)
 
     def create_linear_dimension(self):
         """Create a simple linear dimension, not linked to an edge."""
-        _cmd = 'Draft.make_linear_dimension'
-        _cmd += '('
-        _cmd += DraftVecUtils.toString(self.node[0]) + ', '
-        _cmd += DraftVecUtils.toString(self.node[1]) + ', '
-        _cmd += 'dim_line=' + DraftVecUtils.toString(self.node[2])
-        _cmd += ')'
-        _cmd_list = ['_dim_ = ' + _cmd,
-                     'Draft.autogroup(_dim_)',
-                     'FreeCAD.ActiveDocument.recompute()']
-        self.commit(translate("draft", "Create Dimension"),
-                    _cmd_list)
+        _cmd = "Draft.make_linear_dimension"
+        _cmd += "("
+        _cmd += DraftVecUtils.toString(self.node[0]) + ", "
+        _cmd += DraftVecUtils.toString(self.node[1]) + ", "
+        _cmd += "dim_line=" + DraftVecUtils.toString(self.node[2])
+        _cmd += ")"
+        _cmd_list = [
+            "_dim_ = " + _cmd,
+            "Draft.autogroup(_dim_)",
+            "FreeCAD.ActiveDocument.recompute()",
+        ]
+        self.commit(translate("draft", "Create Dimension"), _cmd_list)
 
     def create_linear_dimension_obj(self, direction=None):
         """Create a linear dimension linked to an edge.
@@ -271,41 +233,40 @@ class Dimension(gui_base_original.Creator):
         with 1, that is, `Vertex1`.
         Therefore the value in `link` has to be incremented by 1.
         """
-        _cmd = 'Draft.make_linear_dimension_obj'
-        _cmd += '('
-        _cmd += 'FreeCAD.ActiveDocument.' + self.link[0].Name + ', '
-        _cmd += 'i1=' + str(self.link[1] + 1) + ', '
-        _cmd += 'i2=' + str(self.link[2] + 1) + ', '
-        _cmd += 'dim_line=' + DraftVecUtils.toString(self.node[2])
-        _cmd += ')'
-        _cmd_list = ['_dim_ = ' + _cmd]
+        _cmd = "Draft.make_linear_dimension_obj"
+        _cmd += "("
+        _cmd += "FreeCAD.ActiveDocument." + self.link[0].Name + ", "
+        _cmd += "i1=" + str(self.link[1] + 1) + ", "
+        _cmd += "i2=" + str(self.link[2] + 1) + ", "
+        _cmd += "dim_line=" + DraftVecUtils.toString(self.node[2])
+        _cmd += ")"
+        _cmd_list = ["_dim_ = " + _cmd]
 
         dir_u = DraftVecUtils.toString(self.wp.u)
         dir_v = DraftVecUtils.toString(self.wp.v)
         if direction == "X":
-            _cmd_list += ['_dim_.Direction = ' + dir_u]
+            _cmd_list += ["_dim_.Direction = " + dir_u]
         elif direction == "Y":
-            _cmd_list += ['_dim_.Direction = ' + dir_v]
+            _cmd_list += ["_dim_.Direction = " + dir_v]
 
-        _cmd_list += ['Draft.autogroup(_dim_)',
-                      'FreeCAD.ActiveDocument.recompute()']
-        self.commit(translate("draft", "Create Dimension"),
-                    _cmd_list)
+        _cmd_list += ["Draft.autogroup(_dim_)", "FreeCAD.ActiveDocument.recompute()"]
+        self.commit(translate("draft", "Create Dimension"), _cmd_list)
 
     def create_radial_dimension_obj(self):
         """Create a radial dimension linked to a circular edge."""
-        _cmd = 'Draft.make_radial_dimension_obj'
-        _cmd += '('
-        _cmd += 'FreeCAD.ActiveDocument.' + self.link[0].Name + ', '
-        _cmd += 'index=' + str(self.link[1] + 1) + ', '
+        _cmd = "Draft.make_radial_dimension_obj"
+        _cmd += "("
+        _cmd += "FreeCAD.ActiveDocument." + self.link[0].Name + ", "
+        _cmd += "index=" + str(self.link[1] + 1) + ", "
         _cmd += 'mode="' + str(self.arcmode) + '", '
-        _cmd += 'dim_line=' + DraftVecUtils.toString(self.node[2])
-        _cmd += ')'
-        _cmd_list = ['_dim_ = ' + _cmd,
-                     'Draft.autogroup(_dim_)',
-                     'FreeCAD.ActiveDocument.recompute()']
-        self.commit(translate("draft", "Create Dimension (radial)"),
-                    _cmd_list)
+        _cmd += "dim_line=" + DraftVecUtils.toString(self.node[2])
+        _cmd += ")"
+        _cmd_list = [
+            "_dim_ = " + _cmd,
+            "Draft.autogroup(_dim_)",
+            "FreeCAD.ActiveDocument.recompute()",
+        ]
+        self.commit(translate("draft", "Create Dimension"), _cmd_list)
 
     def createObject(self):
         """Create the actual object in the current document."""
@@ -314,34 +275,34 @@ class Dimension(gui_base_original.Creator):
         if self.angledata:
             # Angle dimension, with two angles provided
             self.create_angle_dimension()
-        elif self.link and not self.arcmode:
-            # Linear dimension, linked to a straight edge
-            if self.force == 1:
-                self.create_linear_dimension_obj("Y")
-            elif self.force == 2:
-                self.create_linear_dimension_obj("X")
-            else:
-                self.create_linear_dimension_obj()
         elif self.arcmode:
             # Radius or dimeter dimension, linked to a circular edge
             self.create_radial_dimension_obj()
         else:
-            # Linear dimension, not linked to any edge
-            self.create_linear_dimension()
-
-        if self.ui.continueMode:
-            self.cont = self.node[2]
-            if not self.dir:
-                if self.link:
-                    v1 = self.link[0].Shape.Vertexes[self.link[1]].Point
-                    v2 = self.link[0].Shape.Vertexes[self.link[2]].Point
-                    self.dir = v2.sub(v1)
+            # Linear dimension
+            if self.link:
+                # Linked to a straight edge
+                if self.force == 1:
+                    self.create_linear_dimension_obj("Y")
+                elif self.force == 2:
+                    self.create_linear_dimension_obj("X")
                 else:
-                    self.dir = self.node[1].sub(self.node[0])
+                    self.create_linear_dimension_obj()
+            else:
+                # Not linked to any edge
+                self.create_linear_dimension()
 
-            self.node = [self.node[1]]
-
-        self.link = None
+            if self.ui.chainedMode:
+                if not self.dir:
+                    if self.link:
+                        v1 = self.link[0].Shape.Vertexes[self.link[1]].Point
+                        v2 = self.link[0].Shape.Vertexes[self.link[2]].Point
+                        self.dir = v2.sub(v1)
+                    else:
+                        self.dir = self.node[1].sub(self.node[0])
+                self.chain = self.node[2]
+                self.node = [self.node[1]]
+                self.link = None
 
     def selectEdge(self):
         """Toggle the select mode to the opposite state."""
@@ -360,32 +321,33 @@ class Dimension(gui_base_original.Creator):
         """
         if arg["Type"] == "SoKeyboardEvent":
             if arg["Key"] == "ESCAPE":
-                self.finish()
+                self.finish(cont=None)
         elif arg["Type"] == "SoLocation2Event":  # mouse movement detection
             shift = gui_tool_utils.hasMod(arg, gui_tool_utils.get_mod_constrain_key())
             if self.arcmode or self.point2:
                 gui_tool_utils.setMod(arg, gui_tool_utils.get_mod_constrain_key(), False)
-            (self.point,
-             ctrlPoint, self.info) = gui_tool_utils.getPoint(self, arg,
-                                                             noTracker=(len(self.node)>0))
-            if (gui_tool_utils.hasMod(arg, gui_tool_utils.get_mod_alt_key())
-                    or self.selectmode) and (len(self.node) < 3):
+            self.point, ctrlPoint, self.info = gui_tool_utils.getPoint(
+                self, arg, noTracker=(len(self.node) > 0)
+            )
+            if (
+                gui_tool_utils.hasMod(arg, gui_tool_utils.get_mod_alt_key()) or self.selectmode
+            ) and (len(self.node) < 3):
                 self.dimtrack.off()
                 if not self.altdown:
                     self.altdown = True
                     self.ui.switchUi(True)
                     if hasattr(Gui, "Snapper"):
                         Gui.Snapper.setSelectMode(True)
-                snapped = self.view.getObjectInfo((arg["Position"][0],
-                                                   arg["Position"][1]))
+                        self.update_hints()
+                snapped = self.view.getObjectInfo((arg["Position"][0], arg["Position"][1]))
                 if snapped:
-                    ob = self.doc.getObject(snapped['Object'])
-                    if "Edge" in snapped['Component']:
-                        num = int(snapped['Component'].lstrip('Edge')) - 1
+                    ob = self.doc.getObject(snapped["Object"])
+                    if "Edge" in snapped["Component"]:
+                        num = int(snapped["Component"].lstrip("Edge")) - 1
                         ed = ob.Shape.Edges[num]
                         v1 = ed.Vertexes[0].Point
                         v2 = ed.Vertexes[-1].Point
-                        self.dimtrack.update([v1, v2, self.cont])
+                        self.dimtrack.update([v1, v2, self.chain])
             else:
                 if self.node and (len(self.edges) < 2):
                     self.dimtrack.on()
@@ -405,13 +367,11 @@ class Dimension(gui_base_original.Creator):
                     r = self.point.sub(self.center)
                     self.arctrack.setRadius(r.Length)
                     a = self.arctrack.getAngle(self.point)
-                    pair = DraftGeomUtils.getBoundaryAngles(a, self.angles)
+                    pair = geo_general.getBoundaryAngles(a, self.angles)
                     if not (pair[0] < a < pair[1]):
-                        self.angledata = [4 * math.pi - pair[0],
-                                          2 * math.pi - pair[1]]
+                        self.angledata = [4 * math.pi - pair[0], 2 * math.pi - pair[1]]
                     else:
-                        self.angledata = [2 * math.pi - pair[0],
-                                          2 * math.pi - pair[1]]
+                        self.angledata = [2 * math.pi - pair[0], 2 * math.pi - pair[1]]
                     self.arctrack.setStartAngle(self.angledata[0])
                     self.arctrack.setEndAngle(self.angledata[1])
                 if self.altdown:
@@ -419,9 +379,9 @@ class Dimension(gui_base_original.Creator):
                     self.ui.switchUi(False)
                     if hasattr(Gui, "Snapper"):
                         Gui.Snapper.setSelectMode(False)
+                        self.update_hints()
                 if self.node and self.dir and len(self.node) < 2:
-                    _p = DraftVecUtils.project(self.point.sub(self.node[0]),
-                                               self.dir)
+                    _p = DraftVecUtils.project(self.point.sub(self.node[0]), self.dir)
                     self.point = self.node[0].add(_p)
                 if len(self.node) == 2:
                     if self.arcmode and self.edges:
@@ -440,26 +400,27 @@ class Dimension(gui_base_original.Creator):
                 # Draw constraint tracker line.
                 if shift and (not self.arcmode):
                     if len(self.node) == 2:
+                        # Save self.node[0] and self.node[1] so that they can be restored:
                         if not self.point1:
                             self.point1 = self.node[0]
                         if not self.point2:
                             self.point2 = self.node[1]
-                        # else:
-                        #     self.node[1] = self.point2
                         self.set_constraint_node()
                 else:
-                    self.force = None
+                    self.force = 0
                     self.proj_point1 = None
                     self.proj_point2 = None
+                    # Restore self.node[0] and self.node[1]:
                     if self.point1:
                         self.node[0] = self.point1
-                    if self.point2 and (len(self.node) > 1):
-                        self.node[1] = self.point2
-                        # self.point2 = None
+                        self.point1 = None
+                    if self.point2:
+                        if len(self.node) > 1:
+                            self.node[1] = self.point2
+                        self.point2 = None
                 # update the dimline
                 if self.node and not self.arcmode:
-                    self.dimtrack.update(self.node
-                                         + [self.point] + [self.cont])
+                    self.dimtrack.update(self.node + [self.point] + [self.chain])
             gui_tool_utils.redraw3DView()
         elif arg["Type"] == "SoMouseButtonEvent":
             if (arg["State"] == "DOWN") and (arg["Button"] == "BUTTON1"):
@@ -467,13 +428,15 @@ class Dimension(gui_base_original.Creator):
                     self.ui.redraw()
                     if (not self.node) and (not self.support):
                         gui_tool_utils.getSupport(arg)
-                    if (gui_tool_utils.hasMod(arg, gui_tool_utils.get_mod_alt_key())
-                            or self.selectmode) and (len(self.node) < 3):
+                    if (
+                        gui_tool_utils.hasMod(arg, gui_tool_utils.get_mod_alt_key())
+                        or self.selectmode
+                    ) and (len(self.node) < 3):
                         # print("snapped: ",self.info)
                         if self.info:
-                            ob = self.doc.getObject(self.info['Object'])
-                            if 'Edge' in self.info['Component']:
-                                num = int(self.info['Component'].lstrip('Edge')) - 1
+                            ob = self.doc.getObject(self.info["Object"])
+                            if "Edge" in self.info["Component"]:
+                                num = int(self.info["Component"].lstrip("Edge")) - 1
                                 ed = ob.Shape.Edges[num]
                                 v1 = ed.Vertexes[0].Point
                                 v2 = ed.Vertexes[-1].Point
@@ -491,7 +454,7 @@ class Dimension(gui_base_original.Creator):
                                         self.node = [v1, v2]
                                         self.link = [ob, i1, i2]
                                         self.edges.append(ed)
-                                        if DraftGeomUtils.geomType(ed) == "Circle":
+                                        if geo_general.geomType(ed) == "Circle":
                                             # snapped edge is an arc
                                             self.arcmode = "diameter"
                                             self.link = [ob, num]
@@ -501,31 +464,42 @@ class Dimension(gui_base_original.Creator):
                                         self.edges.append(ed)
                                         # self.node now has the 4 endpoints
                                         self.node.extend([v1, v2])
-                                        c = DraftGeomUtils.findIntersection(self.node[0],
-                                                                            self.node[1],
-                                                                            self.node[2],
-                                                                            self.node[3],
-                                                                            True, True)
+                                        c = geo_intersections.findIntersection(
+                                            self.node[0],
+                                            self.node[1],
+                                            self.node[2],
+                                            self.node[3],
+                                            True,
+                                            True,
+                                        )
                                         if c:
                                             # print("centers:",c)
                                             self.center = c[0]
                                             self.arctrack.setCenter(self.center)
-                                            self.arctrack.normal = self.angle_dimension_normal(self.edges[0], self.edges[1])
+                                            self.arctrack.normal = self.angle_dimension_normal(
+                                                self.edges[0], self.edges[1]
+                                            )
                                             self.arctrack.on()
                                             for e in self.edges:
-                                                if e.Length < 0.00003: # Edge must be long enough for the tolerance of 0.00001mm to make sense.
+                                                if (
+                                                    e.Length < 0.00003
+                                                ):  # Edge must be long enough for the tolerance of 0.00001mm to make sense.
                                                     _msg(translate("draft", "Edge too short!"))
-                                                    self.finish()
+                                                    self.finish(cont=None)
                                                     return
                                                 for i in [0, 1]:
                                                     pt = e.Vertexes[i].Point
-                                                    if pt.isEqual(self.center, 0.00001): # A relatively high tolerance is required.
-                                                        pt = e.Vertexes[i - 1].Point     # Use the other point instead.
+                                                    if pt.isEqual(
+                                                        self.center, 0.0001
+                                                    ):  # A relatively high tolerance is required.
+                                                        pt = e.Vertexes[
+                                                            i - 1
+                                                        ].Point  # Use the other point instead.
                                                     self.angles.append(self.arctrack.getAngle(pt))
                                             self.link = [self.link[0], ob]
                                         else:
-                                            _msg(translate("draft", "Edges don't intersect!"))
-                                            self.finish()
+                                            _msg(translate("draft", "Edges do not intersect!"))
+                                            self.finish(cont=None)
                                             return
                                 self.dimtrack.on()
                     else:
@@ -533,17 +507,15 @@ class Dimension(gui_base_original.Creator):
                     self.selectmode = False
                     # print("node", self.node)
                     self.dimtrack.update(self.node)
-                    if len(self.node) == 2:
-                        self.point2 = self.node[1]
                     if len(self.node) == 1:
                         self.dimtrack.on()
                         if self.planetrack:
                             self.planetrack.set(self.node[0])
-                    elif len(self.node) == 2 and self.cont:
-                        self.node.append(self.cont)
-                        self.createObject()
-                        if not self.cont:
-                            self.finish()
+                    elif len(self.node) == 2:
+                        self.point2 = self.node[1]
+                        if self.chain:
+                            self.node.append(self.chain)
+                            self.createObject()
                     elif len(self.node) == 3:
                         # for unlinked arc mode:
                         # if self.arcmode:
@@ -552,12 +524,13 @@ class Dimension(gui_base_original.Creator):
                         #     cen = self.node[0].add(v)
                         #     self.node = [self.node[0], self.node[1], cen]
                         self.createObject()
-                        if not self.cont:
-                            self.finish()
+                        if self.arcmode or not self.chain:
+                            self.finish(cont=None)
                     elif self.angledata:
                         self.node.append(self.point)
                         self.createObject()
-                        self.finish()
+                        self.finish(cont=None)
+                    self.update_hints()
 
     def numericInput(self, numx, numy, numz):
         """Validate the entry fields in the user interface.
@@ -572,8 +545,9 @@ class Dimension(gui_base_original.Creator):
             self.dimtrack.on()
         elif len(self.node) == 3:
             self.createObject()
-            if not self.cont:
-                self.finish()
+            if not self.chain:
+                self.finish(cont=None)
+        self.update_hints()
 
     def set_constraint_node(self):
         """Set constrained nodes for vertical or horizontal dimension
@@ -582,27 +556,80 @@ class Dimension(gui_base_original.Creator):
         if not self.proj_point1 or not self.proj_point2:
             self.proj_point1 = self.wp.project_point(self.node[0])
             self.proj_point2 = self.wp.project_point(self.node[1])
-            proj_u= self.wp.u.dot(self.proj_point2 - self.proj_point1)
-            proj_v= self.wp.v.dot(self.proj_point2 - self.proj_point1)
+            proj_u = self.wp.u.dot(self.proj_point2 - self.proj_point1)
+            proj_v = self.wp.v.dot(self.proj_point2 - self.proj_point1)
             active_view = Gui.ActiveDocument.ActiveView
             cursor = active_view.getCursorPos()
             cursor_point = active_view.getPoint(cursor)
             self.point = self.wp.project_point(cursor_point)
             if not self.force:
-                ref_point = self.point - (self.proj_point2 + self.proj_point1)*1/2
+                ref_point = self.point - (self.proj_point2 + self.proj_point1) * 1 / 2
                 ref_angle = abs(ref_point.getAngle(self.wp.u))
-                if (ref_angle > math.pi/4) and (ref_angle <= 0.75*math.pi):
+                if (ref_angle > math.pi / 4) and (ref_angle <= 0.75 * math.pi):
                     self.force = 2
                 else:
                     self.force = 1
             if self.force == 1:
                 self.node[0] = self.proj_point1
-                self.node[1] = self.proj_point1 + self.wp.v*proj_v
+                self.node[1] = self.proj_point1 + self.wp.v * proj_v
             elif self.force == 2:
                 self.node[0] = self.proj_point1
-                self.node[1] = self.proj_point1 + self.wp.u*proj_u
+                self.node[1] = self.proj_point1 + self.wp.u * proj_u
+
+    def get_hints(self):
+
+        position_txt = translate("draft", "%1 pick dimension position")
+
+        if hasattr(Gui, "Snapper") and Gui.Snapper.selectMode:
+            # Edge selection mode: update hints for clarity.
+            hints = [Gui.InputHint(translate("draft", "%1 select edge"), Gui.UserInput.MouseLeft)]
+        elif self.center is not None:
+            # 2 straight edges that intersect have been selected: angular dimension.
+            hints = [Gui.InputHint(position_txt, Gui.UserInput.MouseLeft)]
+        elif self.arcmode:
+            # 1 circular edge has been selected.
+            hints = [Gui.InputHint(position_txt, Gui.UserInput.MouseLeft)]
+            hints += gui_tool_utils._get_hint_mod_constrain_dimension_radial()
+        elif self.edges:
+            # 1 straight edge has been selected: linear or angular dimension.
+            hints = [Gui.InputHint(position_txt, Gui.UserInput.MouseLeft)]
+            hints += gui_tool_utils._get_hint_mod_constrain_dimension_linear()
+            hints += gui_tool_utils._get_hint_select_edge()
+        elif self.chain is not None:
+            # 1st linear dimension is defined, chain points can be picked.
+            hints = [
+                Gui.InputHint(
+                    translate("draft", "%1 pick next dimension point"), Gui.UserInput.MouseLeft
+                ),
+                Gui.InputHint(translate("draft", "%1 finish"), Gui.UserInput.KeyEscape),
+            ]
+        elif len(self.node) == 0:
+            # 0 points picked.
+            hints = [
+                Gui.InputHint(
+                    translate("draft", "%1 pick first dimension point"), Gui.UserInput.MouseLeft
+                )
+            ]
+            hints += gui_tool_utils._get_hint_mod_snap()
+            hints += gui_tool_utils._get_hint_select_edge()
+        elif len(self.node) == 1:
+            # 1 point picked.
+            hints = [
+                Gui.InputHint(
+                    translate("draft", "%1 pick second dimension point"), Gui.UserInput.MouseLeft
+                )
+            ]
+            hints += gui_tool_utils._get_hint_xyz_constrain()
+            hints += gui_tool_utils._get_hint_mod_constrain()
+            hints += gui_tool_utils._get_hint_mod_snap()
+        else:
+            # 2 points picked.
+            hints = [Gui.InputHint(position_txt, Gui.UserInput.MouseLeft)]
+            hints += gui_tool_utils._get_hint_mod_constrain_dimension_linear()
+
+        return hints
 
 
-Gui.addCommand('Draft_Dimension', Dimension())
+Gui.addCommand("Draft_Dimension", Dimension())
 
 ## @}

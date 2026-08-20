@@ -172,12 +172,14 @@ This is a more detailed check as done in isValid().
 if runBopCheck is True, a BOPCheck analysis is also performed.</UserDocu>
       </Documentation>
     </Methode>
-    <Methode Name="fuse" Const="true">
+    <Methode Name="fuse" Const="true" Keyword="true">
       <Documentation>
         <UserDocu>Union of this and a given (list of) topo shape.
 fuse(tool) -> Shape
   or
 fuse((tool1,tool2,...),[tolerance=0.0]) -> Shape
+  or
+fuse(tool, noElementMap=True) -> Shape
 --
 Union of this and a given list of topo shapes.
 
@@ -189,10 +191,12 @@ Supports (OCCT 6.9.0 and above):
 Beginning from OCCT 6.8.1 a tolerance value can be specified.</UserDocu>
       </Documentation>
     </Methode>
-    <Methode Name="multiFuse" Const="true">
+    <Methode Name="multiFuse" Const="true" Keyword="true">
       <Documentation>
         <UserDocu>Union of this and a given list of topo shapes.
 multiFuse((tool1,tool2,...),[tolerance=0.0]) -> Shape
+  or
+multiFuse((tool1,tool2,...), noElementMap=True) -> Shape
 --
 Supports (OCCT 6.9.0 and above):
 - Fuzzy Boolean operations (global tolerance for a Boolean operation)
@@ -721,10 +725,15 @@ into B-spline curves, and all surfaces supporting its faces are converted
 into B-spline surfaces.</UserDocu>
       </Documentation>
     </Methode>
-    <Methode Name="copy" Const="true">
+    <Methode Name="copy" Const="true" Keyword="true">
       <Documentation>
         <UserDocu>Create a copy of this shape
 copy(copyGeom=True, copyMesh=False) -> Shape
+copy(noElementMap=True) -> Shape
+--
+If noElementMap is True, the copy carries no mapped element names,
+no owning tag and no hasher. Use it for a transient shape whose
+naming must not leak into anything downstream.
 --
 If copyMesh is True, triangulation contained in original shape will be
 copied along with geometry.

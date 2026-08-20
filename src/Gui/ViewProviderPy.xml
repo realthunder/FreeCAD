@@ -13,9 +13,10 @@
             <Author Licence="LGPL" Name="Werner Mayer" EMail="wmayer@users.sourceforge.net" />
             <UserDocu>This is the ViewProvider base class</UserDocu>
         </Documentation>
-        <Methode Name="addProperty">
+        <Methode Name="addProperty" Keyword="true">
             <Documentation>
-                <UserDocu>addProperty(type, name, group, doc, attr=0, ro=False, hd=False) -> ViewProvider
+                <UserDocu>addProperty(type: string, name: string, group="", doc="", attr=0, read_only=False,
+            hidden=False, locked=False, enum_vals=[]) -> ViewProvider
 
 Add a generic property.
 

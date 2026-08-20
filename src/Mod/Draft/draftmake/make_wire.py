@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -20,6 +22,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides functions to create multipoint Wire objects."""
+
 ## @package make_wire
 # \ingroup draftmake
 # \brief Provides functions to create multipoint Wire objects.
@@ -27,11 +30,10 @@
 ## \addtogroup draftmake
 # @{
 import FreeCAD as App
-import DraftGeomUtils
-import draftutils.utils as utils
-import draftutils.gui_utils as gui_utils
-
+from draftgeoutils import geometry as geo_geometry
 from draftobjects.wire import Wire
+from draftutils import utils
+from draftutils import gui_utils
 
 if App.GuiUp:
     from draftviewproviders.view_wire import ViewProviderWire
@@ -72,27 +74,25 @@ def make_wire(pointslist, closed=False, placement=None, face=None, support=None,
 
     import Part
 
-    if isinstance(pointslist, (list,tuple)):
+    if isinstance(pointslist, (list, tuple)):
         for pnt in pointslist:
             if not isinstance(pnt, App.Vector):
                 App.Console.PrintError(
-                    "Items must be Base.Vector objects, not {}\n".format(
-                    type(pnt)))
+                    "Items must be Base.Vector objects, not {}\n".format(type(pnt))
+                )
                 return None
 
     elif isinstance(pointslist, Part.Wire):
         for edge in pointslist.Edges:
-            if not DraftGeomUtils.is_straight_line(edge):
+            if not geo_geometry.is_straight_line(edge):
                 App.Console.PrintError("All edges must be straight lines\n")
                 return None
         closed = pointslist.isClosed()
         pointslist = [v.Point for v in pointslist.OrderedVertexes]
 
     else:
-        App.Console.PrintError("Can't make Draft Wire from {}\n".format(
-            type(pointslist)))
+        App.Console.PrintError("Can't make Draft Wire from {}\n".format(type(pointslist)))
         return None
-
 
     if len(pointslist) == 0:
         App.Console.PrintWarning("Draft Wire created with empty point list\n")
@@ -108,11 +108,12 @@ def make_wire(pointslist, closed=False, placement=None, face=None, support=None,
     else:
         fname = "Wire"
 
-    obj = App.ActiveDocument.addObject("Part::Part2DObjectPython", fname)
+    obj = App.ActiveDocument.addObject("Part::FeaturePython", fname)
+    obj.addExtension("Part::AttachExtensionPython")
     Wire(obj)
     obj.Points = pointslist
     obj.Closed = closed
-    obj.Support = support
+    obj.AttachmentSupport = support
 
     if face is not None:
         obj.MakeFace = face

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2009, 2010 Yorik van Havre <yorik@uncreated.net>        *
 # *   Copyright (c) 2009, 2010 Ken Cline <cline@frii.com>                   *
@@ -22,6 +24,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Provides various functions to work with arcs."""
+
 ## @package arcs
 # \ingroup draftgeoutils
 # \brief Provides various functions to work with arcs.
@@ -43,7 +46,23 @@ Part = lz.LazyLoader("Part", globals(), "Part")
 
 
 def isClockwise(edge, ref=None):
-    """Return True if a circle-based edge has a clockwise direction."""
+    """Return True if a circle-based edge has a clockwise direction.
+
+    Parameters
+    ----------
+    edge :
+        The edge to be analyzed.
+
+    ref : Vector, optional
+        The normal around which the direction of the edge is to be determined.
+        Defaults to the Z normal vector.
+
+    Returns
+    -------
+    bool
+        Returns True if the edge is clockwise oriented around the ref Vector
+        or not.
+    """
     if not geomType(edge) == "Circle":
         return True
 
@@ -58,7 +77,7 @@ def isClockwise(edge, ref=None):
     # if that axis points "the wrong way" from the reference, we invert it
     if not ref:
         ref = App.Vector(0, 0, 1)
-    if n.getAngle(ref) > math.pi/2:
+    if n.getAngle(ref) > math.pi / 2:
         n = n.negative()
 
     if DraftVecUtils.angle(v1, v2, n) < 0:
@@ -76,9 +95,9 @@ def isWideAngle(edge):
         return False
 
     r = edge.Curve.Radius
-    total = 2*r*math.pi
+    total = 2 * r * math.pi
 
-    if edge.Length > total/2:
+    if edge.Length > total / 2:
         return True
 
     return False
@@ -90,7 +109,7 @@ def arcFrom2Pts(firstPt, lastPt, center, axis=None):
     radius2 = lastPt.sub(center).Length
 
     # (PREC = 4 = same as Part Module),  Is it possible?
-    if round(radius1-radius2, 4) != 0:
+    if round(radius1 - radius2, 4) != 0:
         return None
 
     thirdPt = App.Vector(firstPt.sub(center).add(lastPt).sub(center))
@@ -125,7 +144,7 @@ def arcFromSpline(edge):
         # 2-point arc
         p1 = edge.Vertexes[0].Point
         p2 = edge.Vertexes[-1].Point
-        ml = edge.Length/2
+        ml = edge.Length / 2
         p3 = edge.valueAt(ml)
         try:
             return Part.Arc(p1, p3, p2).toShape()
@@ -145,5 +164,6 @@ def arcFromSpline(edge):
         except Part.OCCError:
             print("couldn't make a circle out of this edge")
             return None
+
 
 ## @}

@@ -143,6 +143,10 @@ public:
      * possible for the versions the writer can still produce, which is what
      * getWritableSchemaVersions() lists. Lower it to keep a document readable
      * by an older FreeCAD, at the cost of whatever the newer versions added.
+     *
+     * A new document starts at the current version -- this fork's format.
+     * One restored from a file starts at the version that file was written
+     * in, so opening an older document does not convert it.
      */
     PropertyIntegerConstraint SaveSchemaVersion;
     /// Specify user defined thumbnail
@@ -930,7 +934,6 @@ T* Document::addObject(const char* pObjectName, bool isNew, const char* viewType
     return static_cast<T*>(addObject(T::getClassTypeId().getName(), pObjectName, isNew,
                                      viewType, isPartial));
 }
-
 
 } //namespace App
 

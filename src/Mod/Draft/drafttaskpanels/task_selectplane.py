@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2019 Yorik van Havre <yorik@uncreated.net>              *
 # *                                                                         *
@@ -33,6 +35,7 @@ using the delayed mechanism defined by the `todo.ToDo` class.
 Therefore, at some point this class should be refactored
 to be more similar to OrthoArray and the new tools.
 """
+
 ## @package task_selectplane
 # \ingroup drafttaskpanels
 # \brief Provides the task panel code for the Draft SelectPlane tool.
@@ -40,6 +43,7 @@ to be more similar to OrthoArray and the new tools.
 ## \addtogroup drafttaskpanels
 # @{
 import FreeCADGui as Gui
+from PySide import QtWidgets
 
 
 class SelectPlaneTaskPanel:
@@ -50,6 +54,7 @@ class SelectPlaneTaskPanel:
 
     def getStandardButtons(self):
         """Execute to set the standard buttons."""
-        return 2097152  # int(QtGui.QDialogButtonBox.Close)
+        return QtWidgets.QDialogButtonBox.Close
+
 
 ## @}
