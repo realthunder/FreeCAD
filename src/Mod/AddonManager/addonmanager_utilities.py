@@ -31,7 +31,7 @@ import stat
 import subprocess
 import re
 import ctypes
-from typing import Optional, Any
+from typing import Optional, Any, List
 
 from urllib.parse import urlparse
 
@@ -343,6 +343,21 @@ def is_float(element: Any) -> bool:
         return True
     except ValueError:
         return False
+
+
+def create_pip_call(args) -> List[str]:
+    """Return the command line that runs pip with the given arguments.
+
+    manage_python_dependencies.call_pip() runs pip and hands back its output.
+    Callers that need to run it themselves -- the BIM workbench does, so that
+    it can interrupt the subprocess -- want the argument list instead.
+    """
+    from freecad.utils import get_python_exe
+
+    python_exe = get_python_exe()
+    if not python_exe:
+        raise RuntimeError("Could not locate Python executable on this system")
+    return [python_exe, "-m", "pip", "--disable-pip-version-check"] + list(args)
 
 
 def get_pip_target_directory():
