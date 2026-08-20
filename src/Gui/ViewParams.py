@@ -179,7 +179,7 @@ Params = [
     ParamHex('DefaultLinkColor', 0x66FFFFFF),
     ParamHex('DefaultShapeLineColor', 0x191919FF),
     ParamHex('DefaultShapeVertexColor', 0x191919FF),
-    ParamHex('DefaultShapeColor', 0xCCCCCCFF),
+    ParamHex('DefaultShapeColor', 0xCCCCE6FF),
     ParamInt('DefaultShapeTransparency', 0),
     ParamInt('DefaultShapeLineWidth', 2),
     ParamInt('DefaultShapePointSize', 2),

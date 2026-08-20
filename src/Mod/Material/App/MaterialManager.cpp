@@ -182,7 +182,10 @@ std::shared_ptr<App::Material> MaterialManager::defaultAppearance()
     getColor("DefaultSpecularColor", mat.specularColor);
 
     long initialTransparency = hGrp->GetInt("DefaultShapeTransparency", 0);
-    long initialShininess = hGrp->GetInt("DefaultShapeShininess", 90);
+    // 37, not upstream's 90: the fallback has to be the Default
+    // appearance card's 0.3729, or the card this hands out
+    // disagrees with the appearance every object starts with.
+    long initialShininess = hGrp->GetInt("DefaultShapeShininess", 37);
     mat.shininess = Base::fromPercent(initialShininess);
     mat.transparency = Base::fromPercent(initialTransparency);
 

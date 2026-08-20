@@ -271,7 +271,7 @@ public:
         funcs["DefaultShapeLineColor"] = &ViewParamsP::updateDefaultShapeLineColor;
         DefaultShapeVertexColor = this->handle->GetUnsigned("DefaultShapeVertexColor", 0x191919FF);
         funcs["DefaultShapeVertexColor"] = &ViewParamsP::updateDefaultShapeVertexColor;
-        DefaultShapeColor = this->handle->GetUnsigned("DefaultShapeColor", 0xCCCCCCFF);
+        DefaultShapeColor = this->handle->GetUnsigned("DefaultShapeColor", 0xCCCCE6FF);
         funcs["DefaultShapeColor"] = &ViewParamsP::updateDefaultShapeColor;
         DefaultShapeTransparency = this->handle->GetInt("DefaultShapeTransparency", 0);
         funcs["DefaultShapeTransparency"] = &ViewParamsP::updateDefaultShapeTransparency;
@@ -683,7 +683,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDefaultShapeColor(ViewParamsP *self) {
-        self->DefaultShapeColor = self->handle->GetUnsigned("DefaultShapeColor", 0xCCCCCCFF);
+        self->DefaultShapeColor = self->handle->GetUnsigned("DefaultShapeColor", 0xCCCCE6FF);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDefaultShapeTransparency(ViewParamsP *self) {
@@ -1783,7 +1783,7 @@ const unsigned long & ViewParams::getDefaultShapeColor() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const unsigned long & ViewParams::defaultDefaultShapeColor() {
-    const static unsigned long def = 0xCCCCCCFF;
+    const static unsigned long def = 0xCCCCE6FF;
     return def;
 }
 
