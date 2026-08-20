@@ -35,6 +35,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <atomic>
 #include <memory>
@@ -174,6 +175,35 @@ struct TextureImage {
     /// 1 = luminance, 2 = luminance+alpha, 3 = rgb, 4 = rgba; rows are
     /// tightly packed, bottom-up like GL.
     int numComponents = 0;
+
+    /// What one component of \ref pixels IS.
+    ///
+    /// A photograph is display referred and fits in a byte. A captured
+    /// ENVIRONMENT is not: the sky is thousands of times brighter than
+    /// the wall below it, and that ratio is the whole reason an image
+    /// based light looks like a place rather than like a picture.
+    /// Clamped into a byte there can be no sun, which is why the
+    /// built-in environment is procedural.
+    ///
+    /// F32 keeps the payload in \ref pixels as little-endian floats --
+    /// four bytes a component, same packing, same row order -- so the
+    /// content key, the blob store and every deduplication that hashes
+    /// those bytes go on working untouched. The values are LINEAR
+    /// radiance already and are never decoded.
+    enum Sample : uint8_t { U8, F32 };
+    uint8_t sample = U8;
+    /// Bytes per component of \ref pixels.
+    size_t sampleSize() const { return sample == F32 ? 4u : 1u; }
+    /// Read one component as linear light, whatever it is stored as.
+    float component(size_t index) const {
+        if (sample == F32) {
+            float v = 0.0f;
+            std::memcpy(&v, pixels.data() + index * 4u, 4u);
+            return v;
+        }
+        return pixels[index] / 255.0f;
+    }
+
     std::vector<uint8_t> pixels;
 
     enum Wrap : uint8_t { Repeat, Clamp };

@@ -244,7 +244,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     material data where nothing states a metalness (PBRFromSpecular).
 //     A snapshot older than this was written by a build that always
 //     dropped that colour, so it reads as off and renders as it did.
-const uint32_t kVersion = 62;
+const uint32_t kVersion = 63;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -1123,6 +1123,10 @@ void writeTexture(Writer &w, const TextureImage &t,
     w.u8(t.wrapT);
     w.u8(t.model);
     w.u32(t.blendColor);
+    // v63: what one component of the payload IS. Written after the
+    // payload, so an older reader stops before it and a newer one knows
+    // the bytes it just took were floats.
+    w.u8(t.sample);
 
     if (defer && (!sent || sent->insert(t.contentKey).second))
         blobs(t.contentKey, std::vector<uint8_t>(t.pixels));
@@ -1167,6 +1171,10 @@ std::shared_ptr<TextureImage> readTexture(Reader &r, uint32_t version,
     tex->wrapT = r.u8();
     tex->model = r.u8();
     tex->blendColor = r.u32();
+    // v63; U8 on anything older, which is all those snapshots could
+    // hold.
+    tex->sample = version >= 63 ? r.u8()
+                                : uint8_t(TextureImage::U8);
     return tex;
 }
 

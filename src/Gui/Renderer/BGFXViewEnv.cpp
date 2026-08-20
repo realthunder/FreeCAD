@@ -64,18 +64,22 @@ void BGFXView::sampleEnvImage(const Render::TextureImage &img,
     int x0 = int(std::floor(fx)), y0 = int(std::floor(fy));
     float tx = fx - x0, ty = fy - y0;
     const int nc = img.numComponents;
+    // An HDR picture is already linear radiance, and may be far
+    // brighter than one -- a sun is thousands. It is neither decoded
+    // below nor clamped here; that headroom is the entire reason to
+    // load one.
+    const bool hdr = img.sample == Render::TextureImage::F32;
     auto texel = [&](int x, int y, float c[3]) {
         x = ((x % img.width) + img.width) % img.width;
         y = bx::clamp(y, 0, img.height - 1);
-        const uint8_t *p = img.pixels.data()
-            + (size_t(y) * img.width + x) * nc;
+        const size_t base = (size_t(y) * img.width + x) * nc;
         if (nc >= 3) {
-            c[0] = p[0] / 255.0f;
-            c[1] = p[1] / 255.0f;
-            c[2] = p[2] / 255.0f;
+            c[0] = img.component(base);
+            c[1] = img.component(base + 1);
+            c[2] = img.component(base + 2);
         }
         else {
-            c[0] = c[1] = c[2] = p[0] / 255.0f;
+            c[0] = c[1] = c[2] = img.component(base);
         }
     };
     float c00[3], c10[3], c01[3], c11[3];
@@ -95,7 +99,8 @@ void BGFXView::sampleEnvImage(const Render::TextureImage &img,
         // this always used stays -- it is what those frames were drawn
         // with, and nothing re-encodes them.
         float lin = a + (b - a) * ty;
-        out[i] = managed ? decodeSRGB(lin) : lin * lin;
+        out[i] = hdr ? lin
+                     : (managed ? decodeSRGB(lin) : lin * lin);
     }
 }
 

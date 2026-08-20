@@ -2928,7 +2928,14 @@ struct GpuTexture
         // read every one of them off the end of an empty vector. White
         // is the answer the deferral already promises: a modulating
         // draw renders as if untextured until the payload lands.
-        if (tex.pixels.size() < n * size_t(tex.numComponents)) {
+        // A float image is an ENVIRONMENT, and an environment is
+        // consumed on the CPU (sampleEnvImage builds the prefiltered
+        // cube). Nothing should route one here, and the expansion
+        // below reads one byte a component -- so refuse rather than
+        // walk a float payload as bytes.
+        if (tex.sample == Render::TextureImage::F32
+                || tex.pixels.size()
+                       < n * size_t(tex.numComponents) * tex.sampleSize()) {
             const uint8_t white[4] = {255, 255, 255, 255};
             handle = bgfx::createTexture2D(
                 1, 1, false, 1, bgfx::TextureFormat::RGBA8, 0,

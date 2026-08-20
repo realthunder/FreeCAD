@@ -2008,6 +2008,15 @@ public:
     /// image is read as equirectangular (lat-long), anything squarer
     /// as a sphere map — the same convention as the Texture mapping
     /// dialog's Environment mode, so the same file works in both.
+    /// 
+    /// A Radiance picture (.hdr, .pic) is read as real radiance and
+    /// is the format worth using: a sky is thousands of times
+    /// brighter than the wall beneath it, and an ordinary 8-bit image
+    /// cannot hold that ratio, which is what makes one light a model
+    /// like a picture rather than like a place. An HDR environment
+    /// needs the output colour transform on, since it is the exposure
+    /// that decides how its range lands on the screen.
+    /// 
     /// Empty falls back to that dialog's current image, then to the
     /// procedural environment.
     static const std::string & getPBREnvImage();

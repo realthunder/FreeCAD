@@ -1139,6 +1139,15 @@ Params = [
         "image is read as equirectangular (lat-long), anything squarer\n"
         "as a sphere map — the same convention as the Texture mapping\n"
         "dialog's Environment mode, so the same file works in both.\n"
+        "\n"
+        "A Radiance picture (.hdr, .pic) is read as real radiance and\n"
+        "is the format worth using: a sky is thousands of times\n"
+        "brighter than the wall beneath it, and an ordinary 8-bit image\n"
+        "cannot hold that ratio, which is what makes one light a model\n"
+        "like a picture rather than like a place. An HDR environment\n"
+        "needs the output colour transform on, since it is the exposure\n"
+        "that decides how its range lands on the screen.\n"
+        "\n"
         "Empty falls back to that dialog's current image, then to the\n"
         "procedural environment."),
     ParamBool('PBREnvEmbed', False, title='Embed environment image',
