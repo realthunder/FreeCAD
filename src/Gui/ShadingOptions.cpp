@@ -242,9 +242,14 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     layout->addWidget(cavityRadiusLabel, 6, 0);
     layout->addLayout(radiusRow, 6, 1);
 
-    hint = new QLabel(tr("Needs the render engine: set the render cache "
-                         "to the renderer mode\nand pick a renderer type "
-                         "in the 3D view preferences."), this);
+    // Not "pick a renderer type in the preferences" any more: the
+    // render path stopped being a stored choice in ca372262f1, and
+    // both controls left the preference page with it. What is left
+    // to say is that the engine is not running, which now means this
+    // build has no backend or the one it has could not start --
+    // neither of them something to fix in a dialog.
+    hint = new QLabel(tr("Needs the render engine, which is not "
+                         "running on this view."), this);
     hint->setEnabled(false);
     layout->addWidget(hint, 7, 0, 1, 2);
 
