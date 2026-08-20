@@ -2634,6 +2634,8 @@ RendererBridge::translatePBRConfig(App::PropertyContainer * view)
             view, "Render", "PBRMetallic", RenderParams::getPBRMetallic()));
     res.roughness = float(viewParamOverride<App::PropertyFloatConstraint>(
             view, "Render", "PBRRoughness", RenderParams::getPBRRoughness()));
+    res.envPreset = int(viewParamOverride<App::PropertyEnumeration>(
+            view, "Render", "PBREnvPreset", RenderParams::getPBREnvPreset()));
     res.envIntensity = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "PBREnvIntensity", RenderParams::getPBREnvIntensity()));
     res.envBackground = viewParamOverride<App::PropertyBool>(

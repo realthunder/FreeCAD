@@ -759,9 +759,28 @@ PBR shading (`Render_PBR`) is lit by a prefiltered environment cubemap
 plus its irradiance SH, built once per view on the CPU and rebuilt when
 the source changes:
 
-- Default source is the built-in procedural studio environment (Z-up
-  ground/horizon/sky gradient + three light lobes), fixed so frames stay
-  deterministic.
+- Default source is a built-in **procedural environment**, computed on
+  the CPU and fixed so frames stay deterministic. `Render_PBREnvPreset`
+  picks which one: `Studio` (default -- four soft boxes on a dark
+  surround), `Gradient` (the Z-up ground/horizon/sky ramp plus three
+  cosine lobes this engine had before the others, kept so an older
+  document can have its look back), `Overcast`, `Sunset`, `Interior`.
+
+  All five are scaled to integrate to the **same mean radiance** over
+  the sphere (0.565 in luminance, Gradient's). That is load bearing:
+  choosing a preset changes contrast and structure and NOT how bright
+  the scene comes out, so one exposure suits all of them. The scale
+  constants in `envRadianceProcedural` were measured by integrating
+  each shape over a uniform sphere -- edit a shape and its constant is
+  stale.
+
+  Why more than one: Gradient spans barely one stop peak-to-floor
+  (about 12:1) and has no edges anywhere, so a smooth dielectric
+  reflecting it shows the same flat grey at *every* roughness and
+  nothing in the frame reads as a light source. Studio is about 370:1
+  with rectangular sources, which is what makes a polished surface look
+  polished. Rectangular and not a cosine lobe on purpose -- the edge is
+  the point.
 - `Render_PBREnvImage` replaces it with a user image. A 2:1 image is
   read as equirectangular (lat-long), anything squarer as a GL sphere
   map — the convention Coin's `SoTextureCoordinateEnvironment` uses, so

@@ -1478,6 +1478,18 @@ struct PBRConfig {
     /// one, and within a few percent of the GL reading over the low
     /// values real materials use.
     int shininessMapping = 1;
+    /// Which built-in environment is computed where `envImage` is null.
+    /// They differ in contrast and structure, not in brightness: every
+    /// one integrates to the same mean radiance, so a change of preset
+    /// does not ask for a change of exposure. 0 Studio (softboxes on a
+    /// dark surround), 1 Gradient (the smooth three-band dome this
+    /// engine had before the others), 2 Overcast, 3 Sunset, 4 Interior.
+    ///
+    /// The point of the others is that Gradient spans barely one stop
+    /// and has no edges anywhere, so a smooth dielectric reflecting it
+    /// shows the same grey at every roughness and nothing in the frame
+    /// reads as a light source.
+    int envPreset = 0;
     /// User environment image replacing the built-in procedural studio
     /// environment; null = procedural. A 2:1 image is read as
     /// equirectangular (lat-long), anything squarer as a GL sphere map
@@ -1490,6 +1502,7 @@ struct PBRConfig {
         return enabled == o.enabled && metallic == o.metallic
             && roughness == o.roughness && envIntensity == o.envIntensity
             && envBackground == o.envBackground && envImage == o.envImage
+            && envPreset == o.envPreset
             && fromSpecular == o.fromSpecular
             && shininessMapping == o.shininessMapping;
     }

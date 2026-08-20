@@ -244,7 +244,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     material data where nothing states a metalness (PBRFromSpecular).
 //     A snapshot older than this was written by a build that always
 //     dropped that colour, so it reads as off and renders as it did.
-const uint32_t kVersion = 63;
+const uint32_t kVersion = 64;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -3073,6 +3073,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.b(snap.pbrconf.enabled);
     w.f(snap.pbrconf.metallic);
     w.f(snap.pbrconf.roughness);
+    w.i32(snap.pbrconf.envPreset);
     w.f(snap.pbrconf.envIntensity);
     w.b(snap.pbrconf.envBackground);
     refs.tex(w, snap.pbrconf.envImage);
@@ -3499,6 +3500,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.pbrconf.enabled = r.b();
     snap.pbrconf.metallic = r.f();
     snap.pbrconf.roughness = r.f();
+    snap.pbrconf.envPreset = version >= 64 ? r.i32() : 1;
     snap.pbrconf.envIntensity = r.f();
     snap.pbrconf.envBackground = version >= 25 ? r.b() : false;
     if (version >= 25)

@@ -135,6 +135,7 @@ public:
     double PBRRoughness;
     bool PBRFromSpecular;
     long ShininessMapping;
+    long PBREnvPreset;
     double PBREnvIntensity;
     std::string PBREnvImage;
     bool PBREnvEmbed;
@@ -368,13 +369,15 @@ public:
         funcs["PBRFromSpecular"] = &RenderParamsP::updatePBRFromSpecular;
         ShininessMapping = this->handle->GetInt("ShininessMapping", 1);
         funcs["ShininessMapping"] = &RenderParamsP::updateShininessMapping;
+        PBREnvPreset = this->handle->GetInt("PBREnvPreset", 0);
+        funcs["PBREnvPreset"] = &RenderParamsP::updatePBREnvPreset;
         PBREnvIntensity = this->handle->GetFloat("PBREnvIntensity", 1.0);
         funcs["PBREnvIntensity"] = &RenderParamsP::updatePBREnvIntensity;
         PBREnvImage = this->handle->GetASCII("PBREnvImage", "");
         funcs["PBREnvImage"] = &RenderParamsP::updatePBREnvImage;
         PBREnvEmbed = this->handle->GetBool("PBREnvEmbed", false);
         funcs["PBREnvEmbed"] = &RenderParamsP::updatePBREnvEmbed;
-        PBREnvBackground = this->handle->GetBool("PBREnvBackground", false);
+        PBREnvBackground = this->handle->GetBool("PBREnvBackground", true);
         funcs["PBREnvBackground"] = &RenderParamsP::updatePBREnvBackground;
         BumpScale = this->handle->GetFloat("BumpScale", 1.0);
         funcs["BumpScale"] = &RenderParamsP::updateBumpScale;
@@ -843,6 +846,10 @@ public:
         self->ShininessMapping = self->handle->GetInt("ShininessMapping", 1);
     }
     // Auto generated code (Tools/params_utils.py:310)
+    static void updatePBREnvPreset(RenderParamsP *self) {
+        self->PBREnvPreset = self->handle->GetInt("PBREnvPreset", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvIntensity(RenderParamsP *self) {
         self->PBREnvIntensity = self->handle->GetFloat("PBREnvIntensity", 1.0);
     }
@@ -856,7 +863,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvBackground(RenderParamsP *self) {
-        self->PBREnvBackground = self->handle->GetBool("PBREnvBackground", false);
+        self->PBREnvBackground = self->handle->GetBool("PBREnvBackground", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateBumpScale(RenderParamsP *self) {
@@ -4357,6 +4364,56 @@ void RenderParams::removeShininessMapping() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docPBREnvPreset() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Which built-in environment lights the scene, where no\n"
+"environment image is set. They are computed rather than\n"
+"sampled from a file, so they cost no assets and work on every\n"
+"tier including the browser.\n"
+"\n"
+"What separates them is contrast and structure, not brightness:\n"
+"all five integrate to the same mean radiance, so the exposure\n"
+"that suits one suits the others. That matters because a\n"
+"surround with no bright sources and no edges cannot put a\n"
+"highlight on anything that reads as a light, and a smooth\n"
+"surface reflecting it shows the same flat grey at every\n"
+"roughness -- which is what made physically based shading look\n"
+"like painted plastic.\n"
+"\n"
+"Studio = softboxes on a dark surround, the product-shot rig,\n"
+"and the one to reach for when a surface should read as\n"
+"polished. Gradient = the smooth three-band dome this engine\n"
+"used before the others existed; the flattest and the most\n"
+"even, which makes it the kindest to reading shape in a busy\n"
+"assembly. Overcast = a bright uniform sky over dark ground,\n"
+"soft and neutral. Sunset = a low warm sun with a deep sky, the\n"
+"strongest colour separation. Interior = a room with one window\n"
+"and a ceiling panel, walls close enough to bounce.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getPBREnvPreset() {
+    return instance()->PBREnvPreset;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultPBREnvPreset() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setPBREnvPreset(const long &v) {
+    instance()->handle->SetInt("PBREnvPreset",v);
+    instance()->PBREnvPreset = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removePBREnvPreset() {
+    instance()->handle->RemoveInt("PBREnvPreset");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docPBREnvIntensity() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Brightness of the image based lighting environment.");
@@ -4463,8 +4520,15 @@ void RenderParams::removePBREnvEmbed() {
 const char *RenderParams::docPBREnvBackground() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Show the image based lighting environment itself as the view\n"
-"background while PBR shading is active, so reflective surfaces\n"
-"visibly mirror their surroundings.");
+"background while physically based shading is active, so\n"
+"reflective surfaces visibly mirror their surroundings.\n"
+"\n"
+"On by default, because a reflective object standing in front of\n"
+"a flat gradient reads as fake for a reason that is not the\n"
+"object's fault: the reflection has no visible source, so there\n"
+"is nothing in the frame for the eye to reconcile it against.\n"
+"Affects nothing outside physically based shading -- the\n"
+"Classic and Matcap models keep the background gradient.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -4474,7 +4538,7 @@ const bool & RenderParams::getPBREnvBackground() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const bool & RenderParams::defaultPBREnvBackground() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 

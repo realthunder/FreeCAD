@@ -1131,6 +1131,32 @@ Params = [
         "a PBR appearance, a metallic-roughness map and the per-object\n"
         "Render_Roughness override all stand.",
         ),
+    ParamInt('PBREnvPreset',  0, title='Environment',
+        proxy=ParamComboBox(items=['Studio', 'Gradient', 'Overcast',
+                                   'Sunset', 'Interior']),
+        doc="Which built-in environment lights the scene, where no\n"
+        "environment image is set. They are computed rather than\n"
+        "sampled from a file, so they cost no assets and work on every\n"
+        "tier including the browser.\n"
+        "\n"
+        "What separates them is contrast and structure, not brightness:\n"
+        "all five integrate to the same mean radiance, so the exposure\n"
+        "that suits one suits the others. That matters because a\n"
+        "surround with no bright sources and no edges cannot put a\n"
+        "highlight on anything that reads as a light, and a smooth\n"
+        "surface reflecting it shows the same flat grey at every\n"
+        "roughness -- which is what made physically based shading look\n"
+        "like painted plastic.\n"
+        "\n"
+        "Studio = softboxes on a dark surround, the product-shot rig,\n"
+        "and the one to reach for when a surface should read as\n"
+        "polished. Gradient = the smooth three-band dome this engine\n"
+        "used before the others existed; the flattest and the most\n"
+        "even, which makes it the kindest to reading shape in a busy\n"
+        "assembly. Overcast = a bright uniform sky over dark ground,\n"
+        "soft and neutral. Sunset = a low warm sun with a deep sky, the\n"
+        "strongest colour separation. Interior = a room with one window\n"
+        "and a ceiling panel, walls close enough to bounce."),
     ParamFloat('PBREnvIntensity',  1.0, title='Environment brightness',
         doc="Brightness of the image based lighting environment."),
     ParamString('PBREnvImage', '', title='Environment image',
@@ -1156,10 +1182,17 @@ Params = [
         "original path. The copy lives in the view's\n"
         "Render_PBREnvImageData property and takes precedence over the\n"
         "image path while set."),
-    ParamBool('PBREnvBackground', False, title='Environment background',
+    ParamBool('PBREnvBackground', True, title='Environment background',
         doc="Show the image based lighting environment itself as the view\n"
-        "background while PBR shading is active, so reflective surfaces\n"
-        "visibly mirror their surroundings."),
+        "background while physically based shading is active, so\n"
+        "reflective surfaces visibly mirror their surroundings.\n"
+        "\n"
+        "On by default, because a reflective object standing in front of\n"
+        "a flat gradient reads as fake for a reason that is not the\n"
+        "object's fault: the reflection has no visible source, so there\n"
+        "is nothing in the frame for the eye to reconcile it against.\n"
+        "Affects nothing outside physically based shading -- the\n"
+        "Classic and Matcap models keep the background gradient."),
     ParamFloat('BumpScale',  1.0, title='Bump strength',
         doc="Strength of bump/normal mapped surfaces (SoBumpMap) of the\n"
         "experimental render engine: scales the slope of normal maps and\n"

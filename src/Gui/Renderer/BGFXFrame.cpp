@@ -1084,8 +1084,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (pbrconf.enabled && !hlconfig.show) {
         // A changed environment image invalidates the built cubemap
         // (and its irradiance SH) — rebuild on the next ensure.
-        if (view->m_envImage != pbrconf.envImage) {
+        if (view->m_envImage != pbrconf.envImage
+                || view->m_envPreset != pbrconf.envPreset) {
             view->m_envImage = pbrconf.envImage;
+            view->m_envPreset = pbrconf.envPreset;
             view->m_envBuilt = false;
         }
         view->ensureEnvironment();

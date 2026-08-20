@@ -4441,6 +4441,19 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         prop->setEnums(_shininessMappingEnums);
         prop->setValue(long(RenderParams::getShininessMapping()));
     }
+    // An enumeration, like Render_ShininessMapping above: materialized
+    // by hand so the names are installed before the value is set.
+    if (!view->getPropertyByName("Render_PBREnvPreset")) {
+        static const char* _pbrEnvPresetEnums[] =
+            {"Studio", "Gradient", "Overcast", "Sunset", "Interior",
+             nullptr};
+        auto prop = static_cast<App::PropertyEnumeration*>(
+                view->addDynamicProperty("App::PropertyEnumeration",
+                                         "Render_PBREnvPreset", "Render",
+                                         RenderParams::docPBREnvPreset()));
+        prop->setEnums(_pbrEnvPresetEnums);
+        prop->setValue(long(RenderParams::getPBREnvPreset()));
+    }
     _renderParam<App::PropertyFloat>(view, "PBREnvIntensity",
             RenderParams::docPBREnvIntensity(), RenderParams::getPBREnvIntensity());
     // The environment image is a plain path; Render_PBREnvEmbed

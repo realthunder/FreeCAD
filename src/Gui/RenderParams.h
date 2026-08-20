@@ -1989,6 +1989,40 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter PBREnvPreset
+    ///
+    /// Which built-in environment lights the scene, where no
+    /// environment image is set. They are computed rather than
+    /// sampled from a file, so they cost no assets and work on every
+    /// tier including the browser.
+    /// 
+    /// What separates them is contrast and structure, not brightness:
+    /// all five integrate to the same mean radiance, so the exposure
+    /// that suits one suits the others. That matters because a
+    /// surround with no bright sources and no edges cannot put a
+    /// highlight on anything that reads as a light, and a smooth
+    /// surface reflecting it shows the same flat grey at every
+    /// roughness -- which is what made physically based shading look
+    /// like painted plastic.
+    /// 
+    /// Studio = softboxes on a dark surround, the product-shot rig,
+    /// and the one to reach for when a surface should read as
+    /// polished. Gradient = the smooth three-band dome this engine
+    /// used before the others existed; the flattest and the most
+    /// even, which makes it the kindest to reading shape in a busy
+    /// assembly. Overcast = a bright uniform sky over dark ground,
+    /// soft and neutral. Sunset = a low warm sun with a deep sky, the
+    /// strongest colour separation. Interior = a room with one window
+    /// and a ceiling panel, walls close enough to bounce.
+    static const long & getPBREnvPreset();
+    static const long & defaultPBREnvPreset();
+    static void removePBREnvPreset();
+    static void setPBREnvPreset(const long &v);
+    static const char *docPBREnvPreset();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter PBREnvIntensity
     ///
     /// Brightness of the image based lighting environment.
@@ -2047,8 +2081,15 @@ public:
     /// Accessor for parameter PBREnvBackground
     ///
     /// Show the image based lighting environment itself as the view
-    /// background while PBR shading is active, so reflective surfaces
-    /// visibly mirror their surroundings.
+    /// background while physically based shading is active, so
+    /// reflective surfaces visibly mirror their surroundings.
+    /// 
+    /// On by default, because a reflective object standing in front of
+    /// a flat gradient reads as fake for a reason that is not the
+    /// object's fault: the reflection has no visible source, so there
+    /// is nothing in the frame for the eye to reconcile it against.
+    /// Affects nothing outside physically based shading -- the
+    /// Classic and Matcap models keep the background gradient.
     static const bool & getPBREnvBackground();
     static const bool & defaultPBREnvBackground();
     static void removePBREnvBackground();

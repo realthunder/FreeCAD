@@ -104,42 +104,205 @@ void BGFXView::sampleEnvImage(const Render::TextureImage &img,
     }
 }
 
-void BGFXView::envRadianceProcedural(const float d[3], float out[3])
-{
-    // The ground stays fairly bright: metals reflect the lower
-    // hemisphere over most of a model's side faces, and a dark
-    // floor reads as black plastic in a CAD view.
-    static const float ground[3] = {0.30f, 0.30f, 0.32f};
-    static const float horizon[3] = {0.45f, 0.46f, 0.48f};
-    static const float sky[3] = {0.60f, 0.66f, 0.76f};
-    float z = d[2];
-    float t = std::sqrt(std::fabs(z));
-    for (int i = 0; i < 3; ++i)
-        out[i] = z < 0.0f ? horizon[i] + (ground[i] - horizon[i]) * t
-                          : horizon[i] + (sky[i] - horizon[i]) * t;
+namespace {
 
-    struct Lobe {
-        float dir[3];       // not normalized
-        float power;
-        float intensity;
-        float color[3];
-    };
-    static const Lobe lobes[3] = {
-        {{0.45f, -0.35f, 0.82f}, 40.0f, 3.0f, {1.0f, 0.98f, 0.92f}},
-        {{-0.75f, -0.25f, 0.35f}, 12.0f, 1.0f, {0.75f, 0.8f, 0.9f}},
-        {{0.15f, 0.85f, 0.25f}, 25.0f, 1.5f, {0.9f, 0.93f, 1.0f}},
-    };
-    for (const auto &lobe : lobes) {
-        float len = std::sqrt(lobe.dir[0]*lobe.dir[0]
-                              + lobe.dir[1]*lobe.dir[1]
-                              + lobe.dir[2]*lobe.dir[2]);
-        float dot = (d[0]*lobe.dir[0] + d[1]*lobe.dir[1]
-                     + d[2]*lobe.dir[2]) / len;
-        if (dot <= 0.0f)
+/// A rectangular source in (azimuth, elevation), with a soft edge.
+///
+/// Rectangular and not a cosine lobe on purpose: the lobes this file
+/// used to be built from have no edges anywhere, and an edge is the
+/// whole difference between a reflection that reads as a light and one
+/// that reads as a gradient. `soft` is the fraction of the half-width
+/// spent on the falloff, so the rest is a flat core the way a real
+/// diffuser is.
+float envBox(float az, float el, float azDeg, float elDeg,
+             float halfAzDeg, float halfElDeg, float soft)
+{
+    const float kDeg = 3.14159265358979323846f / 180.0f;
+    float da = az - azDeg * kDeg;
+    while (da > 3.14159265358979323846f) da -= 2.0f * 3.14159265358979323846f;
+    while (da < -3.14159265358979323846f) da += 2.0f * 3.14159265358979323846f;
+    float u = std::fabs(da) / (halfAzDeg * kDeg);
+    float v = std::fabs(el - elDeg * kDeg) / (halfElDeg * kDeg);
+    float m = std::max(u, v);
+    if (m >= 1.0f)
+        return 0.0f;
+    return std::min(1.0f, (1.0f - m) / soft);
+}
+
+struct EnvBox {
+    float az, el, halfAz, halfEl, radiance, soft, color[3];
+};
+
+void envAddBoxes(float az, float el, const EnvBox *boxes, int count,
+                 float out[3])
+{
+    for (int b = 0; b < count; ++b) {
+        const EnvBox &s = boxes[b];
+        float w = envBox(az, el, s.az, s.el, s.halfAz, s.halfEl, s.soft)
+            * s.radiance;
+        if (w <= 0.0f)
             continue;
-        float s = std::pow(dot, lobe.power) * lobe.intensity;
         for (int i = 0; i < 3; ++i)
-            out[i] += lobe.color[i] * s;
+            out[i] += s.color[i] * w;
+    }
+}
+
+/// Darken a thin band at the horizon. A horizon LINE is the cheapest
+/// cue there is that a reflection is of a place rather than of a ramp.
+void envHorizon(float el, float halfDeg, float amount, float out[3])
+{
+    const float kDeg = 3.14159265358979323846f / 180.0f;
+    if (std::fabs(el) >= halfDeg * kDeg)
+        return;
+    for (int i = 0; i < 3; ++i)
+        out[i] *= amount;
+}
+
+} // namespace
+
+void BGFXView::envRadianceProcedural(const float d[3], float out[3]) const
+{
+    // Every preset below is scaled so the sphere integrates to the same
+    // mean radiance as Gradient, 0.565 in luminance. That is deliberate
+    // and load bearing: it means choosing a preset changes contrast and
+    // structure WITHOUT changing how bright the scene comes out, so the
+    // exposure that suited one suits all five. The constants were
+    // measured by integrating each shape over a uniform sphere; edit a
+    // shape and its constant is stale.
+    float z = bx::clamp(d[2], -1.0f, 1.0f);
+    float el = std::asin(z);
+    float az = std::atan2(d[1], d[0]);
+    float t = el / (3.14159265358979323846f * 0.5f);   // -1 nadir .. 1 zenith
+
+    switch (m_envPreset) {
+    case 1: {   // Gradient -- what this engine had before the others.
+        // The ground stays fairly bright: metals reflect the lower
+        // hemisphere over most of a model's side faces, and a dark
+        // floor reads as black plastic in a CAD view.
+        static const float ground[3] = {0.30f, 0.30f, 0.32f};
+        static const float horizon[3] = {0.45f, 0.46f, 0.48f};
+        static const float sky[3] = {0.60f, 0.66f, 0.76f};
+        float g = std::sqrt(std::fabs(z));
+        for (int i = 0; i < 3; ++i)
+            out[i] = z < 0.0f ? horizon[i] + (ground[i] - horizon[i]) * g
+                              : horizon[i] + (sky[i] - horizon[i]) * g;
+
+        struct Lobe {
+            float dir[3];       // not normalized
+            float power;
+            float intensity;
+            float color[3];
+        };
+        static const Lobe lobes[3] = {
+            {{0.45f, -0.35f, 0.82f}, 40.0f, 3.0f, {1.0f, 0.98f, 0.92f}},
+            {{-0.75f, -0.25f, 0.35f}, 12.0f, 1.0f, {0.75f, 0.8f, 0.9f}},
+            {{0.15f, 0.85f, 0.25f}, 25.0f, 1.5f, {0.9f, 0.93f, 1.0f}},
+        };
+        for (const auto &lobe : lobes) {
+            float len = std::sqrt(lobe.dir[0]*lobe.dir[0]
+                                  + lobe.dir[1]*lobe.dir[1]
+                                  + lobe.dir[2]*lobe.dir[2]);
+            float dot = (d[0]*lobe.dir[0] + d[1]*lobe.dir[1]
+                         + d[2]*lobe.dir[2]) / len;
+            if (dot <= 0.0f)
+                continue;
+            float s = std::pow(dot, lobe.power) * lobe.intensity;
+            for (int i = 0; i < 3; ++i)
+                out[i] += lobe.color[i] * s;
+        }
+        return;
+    }
+    case 2: {   // Overcast -- bright even sky over dark ground.
+        if (t >= 0.0f) {
+            out[0] = 0.62f + 0.38f * t;
+            out[1] = 0.65f + 0.38f * t;
+            out[2] = 0.72f + 0.36f * t;
+        }
+        else {
+            float g = -t;
+            out[0] = out[1] = 0.20f - 0.09f * g;
+            out[2] = 0.21f - 0.09f * g;
+        }
+        envHorizon(el, 1.0f, 0.6f, out);
+        for (int i = 0; i < 3; ++i)
+            out[i] *= 1.19158f;
+        return;
+    }
+    case 3: {   // Sunset -- a low warm sun, deep sky, the widest hue span.
+        if (t >= 0.0f) {
+            out[0] = 0.55f * (1.0f - t) + 0.05f * t;
+            out[1] = 0.30f * (1.0f - t) + 0.07f * t;
+            out[2] = 0.18f * (1.0f - t) + 0.20f * t;
+        }
+        else {
+            float g = -t;
+            out[0] = 0.14f - 0.09f * g;
+            out[1] = 0.10f - 0.06f * g;
+            out[2] = 0.09f - 0.05f * g;
+        }
+        static const EnvBox boxes[2] = {
+            // The sun itself: small, hard edged and very bright, which
+            // is what puts a specular on a curved surface.
+            {25.0f, 4.0f, 5.0f, 4.0f, 90.0f, 0.5f, {1.00f, 0.62f, 0.30f}},
+            // Its glow, wide and soft, doing the colour work.
+            {25.0f, 10.0f, 40.0f, 22.0f, 1.2f, 1.0f, {1.00f, 0.55f, 0.28f}},
+        };
+        envAddBoxes(az, el, boxes, 2, out);
+        for (int i = 0; i < 3; ++i)
+            out[i] *= 2.21629f;
+        return;
+    }
+    case 4: {   // Interior -- one window, a ceiling panel, close walls.
+        if (t >= 0.0f) {
+            out[0] = 0.20f + 0.06f * t;
+            out[1] = 0.19f + 0.055f * t;
+            out[2] = 0.175f + 0.05f * t;
+        }
+        else {
+            float g = -t;
+            out[0] = 0.14f - 0.05f * g;
+            out[1] = 0.125f - 0.045f * g;
+            out[2] = 0.105f - 0.04f * g;
+        }
+        envHorizon(el, 1.2f, 0.5f, out);
+        // Piers: something with vertical structure for a mirror to show.
+        float pier = 0.5f + 0.5f * std::cos(4.0f * az);
+        for (int i = 0; i < 3; ++i)
+            out[i] *= 0.78f + 0.22f * pier;
+        static const EnvBox boxes[2] = {
+            {-50.0f, 18.0f, 17.0f, 24.0f, 20.0f, 0.22f, {0.86f, 0.92f, 1.00f}},
+            {120.0f, 62.0f, 22.0f, 8.0f, 6.0f, 0.40f, {1.00f, 0.96f, 0.88f}},
+        };
+        envAddBoxes(az, el, boxes, 2, out);
+        for (int i = 0; i < 3; ++i)
+            out[i] *= 0.80033f;
+        return;
+    }
+    default: {  // 0 Studio -- softboxes on a dark surround.
+        if (t >= 0.0f) {
+            out[0] = 0.15f + 0.07f * t;
+            out[1] = 0.155f + 0.075f * t;
+            out[2] = 0.17f + 0.09f * t;
+        }
+        else {
+            float g = 1.0f + t;
+            out[0] = out[1] = 0.11f + 0.05f * g;
+            out[2] = 0.115f + 0.05f * g;
+        }
+        envHorizon(el, 1.2f, 0.45f, out);
+        static const EnvBox boxes[4] = {
+            // Key, fill, rim, and a wide strip overhead -- the rig a
+            // product photograph is actually lit with.
+            {40.0f, 42.0f, 15.0f, 11.0f, 26.0f, 0.30f, {1.00f, 0.98f, 0.94f}},
+            {-68.0f, 12.0f, 13.0f, 15.0f, 7.0f, 0.30f, {0.80f, 0.86f, 1.00f}},
+            {150.0f, 28.0f, 8.0f, 7.0f, 15.0f, 0.30f, {1.00f, 0.96f, 0.90f}},
+            {0.0f, 78.0f, 30.0f, 9.0f, 5.0f, 0.30f, {0.95f, 0.97f, 1.00f}},
+        };
+        envAddBoxes(az, el, boxes, 4, out);
+        for (int i = 0; i < 3; ++i)
+            out[i] *= 1.06484f;
+        return;
+    }
     }
 }
 
@@ -339,6 +502,12 @@ void BGFXView::submitEnvBackground()
 {
     if (!bgfx::isValid(m_progEnvBg) || !bgfx::isValid(m_envTex))
         return;
+    // A backdrop wants to be soft: a real one is out of focus, and the
+    // blur is also what lets a small bright source bleed into a wide
+    // gentle falloff instead of sitting there as a hard rectangle. LOD
+    // 2 is 32x32 per face on a 128 cube -- the same softness this
+    // always had, at four times the resolution it had it at, which is
+    // what stops it blocking up now the presets have edges in them.
     float params[4] = {0.0f, 2.0f, 0.0f,
                        std::max(pbrEnvIntensity, 0.0f)};
     bgfx::setUniform(u_pbrParams, params);

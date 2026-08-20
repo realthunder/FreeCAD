@@ -4217,7 +4217,8 @@ public:
                                const float d[3], float out[3],
                                bool managed);
 
-    static void envRadianceProcedural(const float d[3], float out[3]);
+    /// Reads m_envPreset, so it is a member and not static any more.
+    void envRadianceProcedural(const float d[3], float out[3]) const;
 
     // World direction of a cube face texel; standard GL/D3D face order
     // and orientation (+x, -x, +y, -y, +z, -z), u/v in [-1, 1].
@@ -5722,7 +5723,12 @@ public:
     // built once on demand — a GGX-prefiltered cubemap mip chain for the
     // specular part and its irradiance SH for the diffuse part.
     static constexpr int kEnvSH = 9;
-    static constexpr uint16_t kEnvSize = 64;
+    // 128 and not 64: the procedural environments have EDGES now
+    // (Render_PBREnvPreset), and 64 could not resolve a softbox
+    // without the reflection breaking into blocks. Costs about a
+    // megabyte of RGBA16F per view and a one-off prefilter, both paid
+    // once when the environment changes rather than per frame.
+    static constexpr uint16_t kEnvSize = 128;
     bgfx::TextureHandle m_envTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_dummyEnvTex = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texEnv = BGFX_INVALID_HANDLE;
@@ -5735,6 +5741,9 @@ public:
     /// User environment image the built cubemap came from (null = the
     /// procedural studio environment); a change invalidates the build.
     std::shared_ptr<const Render::TextureImage> m_envImage;
+    /// Which procedural environment the built cube holds, so a change
+    /// of preset invalidates it the way a change of image does.
+    int m_envPreset = 0;
     bool m_envBuilt = false;   // build attempted (m_envTex may still be
                                // invalid when the caps disallow it)
     bool pbrFrame = false;     // PBR active for the frame being submitted
