@@ -252,6 +252,9 @@ def on_open():
 def on_activate():
     """What happens when activating a document"""
 
+    if not FreeCAD.GuiUp:
+        return
+
     from PySide import QtGui  # lazy import
 
     # always reset the menu to normal first
@@ -278,6 +281,10 @@ def on_new():
 
 def set_menu(locked=False):
     """Sets the File menu items"""
+
+    if not FreeCAD.GuiUp:
+        # reachable headless since deferred work runs straight through there
+        return
 
     from PySide import QtGui  # lazy loading
 
@@ -306,6 +313,9 @@ def set_menu(locked=False):
 
 def set_button(checked=False, setchecked=False):
     """Sets the lock button"""
+
+    if not FreeCAD.GuiUp:
+        return
 
     from PySide import QtGui  # lazy loading
 
