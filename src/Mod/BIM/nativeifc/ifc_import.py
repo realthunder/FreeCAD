@@ -92,7 +92,10 @@ def insert(
     else:
         prj_obj = ifc_tools.create_document_object(document, filename, shapemode, strategy)
         ifc_tools.defer(toggle_lock_off)
-    if PARAMS.GetBool("LoadOrphans", True):
+    if strategy and PARAMS.GetBool("LoadOrphans", True):
+        # Not at strategy 0: "only the root object" has to mean that, and on a
+        # large file this one call dwarfs the open. The project's context menu
+        # loads them on demand instead.
         ifc_tools.load_orphans(prj_obj)
     if not silent and PARAMS.GetBool("LoadMaterials", False):
         ifc_materials.load_materials(prj_obj)

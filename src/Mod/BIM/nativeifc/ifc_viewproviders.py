@@ -436,6 +436,16 @@ class ifc_vp_document(ifc_vp_object):
         action_saveas = QtGui.QAction(icon, translate("BIM", "Save IFC File As…"), menu)
         action_saveas.triggered.connect(self.saveas)
         ifc_menu.addAction(action_saveas)
+        action_orphans = QtGui.QAction(icon, translate("BIM", "Load Orphan Objects"), menu)
+        action_orphans.triggered.connect(self.loadOrphans)
+        ifc_menu.addAction(action_orphans)
+
+    def loadOrphans(self):
+        """Loads the objects that the spatial tree does not reach"""
+
+        from . import ifc_tools  # lazy import
+
+        ifc_tools.load_orphans(self.Object)
 
     def save(self):
         """Saves the associated IFC file"""
