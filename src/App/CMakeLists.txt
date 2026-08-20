@@ -95,6 +95,7 @@ generate_from_xml(GeoFeaturePy)
 generate_from_xml(GeoFeatureGroupExtensionPy)
 # Authored as a .pyi, the way upstream writes bindings now.
 generate_from_py(SuppressibleExtension)
+generate_from_py(DocumentSettings)
 generate_from_xml(MetadataPy)
 generate_from_xml(OriginGroupExtensionPy)
 generate_from_xml(PartPy)
@@ -121,6 +122,7 @@ SET(FreeCADApp_XML_SRCS
     GeoFeaturePy.xml
     GeoFeatureGroupExtensionPy.xml
     SuppressibleExtension.pyi
+    DocumentSettings.pyi
     OriginGroupExtensionPy.xml
     PartPy.xml
     DocumentPy.xml
@@ -170,6 +172,8 @@ SET(Document_CPP_SRCS
     GeoFeatureGroupExtension.cpp
     SuppressibleExtensionPyImp.cpp
     SuppressibleExtension.cpp
+    DocumentSettingsPyImp.cpp
+    DocumentSettings.cpp
     ImagePlane.cpp
     OriginGroupExtensionPyImp.cpp
     OriginGroupExtension.cpp
@@ -226,6 +230,7 @@ SET(Document_HPP_SRCS
     GeoFeature.h
     GeoFeatureGroupExtension.h
     SuppressibleExtension.h
+    DocumentSettings.h
     ImagePlane.h
     OriginGroupExtension.h
     Part.h

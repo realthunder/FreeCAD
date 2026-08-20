@@ -13,6 +13,15 @@
       <Author Licence="LGPL" Name="Juergen Riegel" EMail="FreeCAD@juergen-riegel.net" />
       <UserDocu>This is a Document class</UserDocu>
     </Documentation>
+    <Methode Name="settings">
+      <Documentation>
+        <UserDocu>settings(namespace) -> DocumentSettings
+
+Return document-persisted settings for a namespace, backed by this
+document's Meta map. The namespace may contain dot-separated identifier
+segments.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="save">
       <Documentation>
         <UserDocu>Save the document to disk</UserDocu>

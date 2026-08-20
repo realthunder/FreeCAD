@@ -857,18 +857,6 @@ def _grid_param_default(entry):
     return default if default > 1 else 2
 
 
-def _document_settings(doc):
-    """Return the document's Draft settings group, or None if there is none.
-
-    Per-document settings arrived upstream with App::Document.settings();
-    this fork has no such API, so grid parameters fall back to preferences.
-    """
-    getter = getattr(doc, "settings", None)
-    if getter is None:
-        return None
-    return getter(_GRID_DOCUMENT_NAMESPACE)
-
-
 def get_grid_param(entry, doc=None):
     """Return a grid parameter with document settings overriding preferences."""
     document_key = _GRID_DOCUMENT_SETTINGS.get(entry)
@@ -880,10 +868,7 @@ def get_grid_param(entry, doc=None):
     if doc is None:
         return default
 
-    settings = _document_settings(doc)
-    if settings is None:
-        return get_param(entry)
-
+    settings = doc.settings(_GRID_DOCUMENT_NAMESPACE)
     if entry == "gridSpacing":
         value = settings.getString(document_key, default)
         return value if _is_valid_grid_spacing(value) else default
@@ -921,9 +906,7 @@ def set_grid_param(entry, value, doc=None):
             return False
         return set_param(entry, value)
 
-    settings = _document_settings(doc)
-    if settings is None:
-        return set_param(entry, value)
+    settings = doc.settings(_GRID_DOCUMENT_NAMESPACE)
 
     if entry == "gridSpacing":
         settings.setString(document_key, value)
