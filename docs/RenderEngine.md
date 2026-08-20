@@ -765,6 +765,44 @@ a converged view left and returned to reconverges bit-identically. A
 pre-fix/post-fix `scripts/render-verify.sh` diff is clean over all 15
 stages, which is what says both shaders are an identity at sample 0.
 
+**Cavity shading needed no change of its own.** It is not a stochastic
+estimator -- there is no noise to decorrelate -- but it is a
+screen-space crease detector, a two-tap normal difference over a
+one-texel baseline run once per pixel after the MSAA resolve, so its
+response is a line one or two pixels wide that stairsteps. That is
+what "jagged cavity shading" is, and multisampling cannot touch it at
+any sample count. It converges because the pass re-runs every frame
+and reads the prepass, which the AO cache key above now re-renders per
+sample: `cavityActive` feeds `prepassActive`, so cavity gets a freshly
+jittered prepass even with AO off.
+
+`scripts/cavity_accum_probe.py` measures it with edges off (the Flat
+Lines wireframe draws its own hard lines along exactly these creases
+and would be most of any number), isolating the cavity term by
+rendering the same camera with the pass on and off and dividing in
+linear light -- it is a multiply, so division recovers the multiplier
+map exactly. Over 32 samples: the shaded frame closes 0.402 of its
+distance to a 3x supersampled render with cavity on against 0.272 with
+it off, so 0.130 of the gain is error only this pass contributes; the
+crease lines' own high-frequency energy falls 0.128 -> 0.103 against a
+supersampled floor of 0.083, about 55% of the way.
+
+It does not converge all the way, and the screen-pinned IGN dither at
+the end of `fs_fc_cavity.sc` is **not** why -- that is the one part
+that genuinely cannot average out (it is a function of
+`gl_FragCoord`, which the jitter does not move), but at 3/255 faded by
+the darkening it is 0.0004 rms against a 0.020 gap, 2% of it. The rest
+is simply that 32 subpixel samples do not fully resolve a one-pixel
+crease detector.
+
+Note that the probe's reference deliberately does **not** rescale
+`CavityRadius` for the supersampled render, though the units invite
+it: `saveImage` does not resize the renderer's target (no second view
+init appears in the log), so a radius of 1 already spans one full 1x
+pixel in the 3x image. "Correcting" it to the supersample factor
+thickened the reference's crease lines to twice the coverage and
+scored the accumulation as diverging from a pass it was converging to.
+
 Both settings are **local** (`Prop_NoPersist`, `_localRenderProperties`):
 what they spend is the reader's idle GPU time and, on a laptop, their
 battery, which is a fact about their machine rather than about the model
