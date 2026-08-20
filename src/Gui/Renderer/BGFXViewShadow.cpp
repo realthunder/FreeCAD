@@ -63,7 +63,13 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     }
 
     float color[4], zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    unpackColor(colorPacked, color);
+    // An AUTHORED colour: someone picked the ground's grey, so it is a
+    // display number and decodes on the way in like every other picked
+    // colour. Handed over encoded it arrived as light 1.5x too bright,
+    // which a lit ground half hides and a shadow-only one cannot: the
+    // shadow IS this colour, and 0.49 painted as 0.73 is the
+    // background.
+    unpackAuthoredColor(colorPacked, color, colorManaged());
     // Ground transparency (ShadowGroundTransparency): plain alpha
     // blend over whatever lies behind in the depth order (the
     // background; the quad still writes depth like Coin's ground).
