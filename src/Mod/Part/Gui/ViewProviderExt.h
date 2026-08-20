@@ -326,6 +326,17 @@ public:
 protected:
     bool setEdit(int ModNum) override;
     void unsetEdit(int ModNum) override;
+    /// The projection frames are read off the OCCT surfaces and written
+    /// into the render material by the visual build, so restating them
+    /// means running it again (buildVisualNodes, ~7160).
+    void renderMaterialNeedsGeometry() override {
+        if (isUpdateForced() || Visibility.getValue()) {
+            updateVisual();
+        }
+        else {
+            VisualTouched = true;
+        }
+    }
     //@}
 
     Base::BoundBox3d _getBoundingBox(const char *subname=0,

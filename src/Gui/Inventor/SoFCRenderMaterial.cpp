@@ -129,7 +129,13 @@ void SoFCRenderMaterial::doAction(SoAction *action)
     // traversal only while a finish is stated somewhere: entry 0's
     // pattern (which is also what the Render_Finish knobs resolve into)
     // or a per-face palette.
-    const bool hasfinish = finish.getValue() > 0 || nf > 0;
+    // Per-face images are laid out in those frames too, so they are
+    // the second reason to publish them (faceTextureScale < 0 lays the
+    // images on the mesh's own texture coordinates instead and needs
+    // none, but the scale is the appearance's business and the frames
+    // cost one byte a vertex in a stream this shape already carries).
+    const bool hasfinish = finish.getValue() > 0 || nf > 0
+        || faceTextureIndices.getNum() > 0;
     const int nfr = hasfinish && framePalette.getNum() >= 6
         ? frameIndices.getNum() : 0;
     SoFCFinishElement::set(action->getState(), this,

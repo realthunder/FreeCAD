@@ -1038,10 +1038,22 @@ void ViewProviderGeometryObject::updateRenderMaterial()
         }
         return;
     }
+    const bool freshNode = !pcRenderMaterial;
     if (!pcRenderMaterial) {
         pcRenderMaterial = new SoFCRenderMaterial;
         pcRenderMaterial->ref();
         pcRoot->insertChild(pcRenderMaterial, 0);
+    }
+    // A node that did not exist when the shape was tessellated missed
+    // the projection frames, and a finish or a per-face image laid out
+    // in object space needs them -- otherwise every face is projected
+    // in the first face's frame. Ask the geometry to state them, once.
+    if (freshNode && !renderGeometryAsked
+            && (finish.isSet() || !palette.empty()
+                || !faceTextureIndices.empty())
+            && pcRenderMaterial->framePalette.getNum() == 0) {
+        renderGeometryAsked = true;
+        renderMaterialNeedsGeometry();
     }
     pcRenderMaterial->metallic = metallic;
     pcRenderMaterial->roughness = roughness;

@@ -245,6 +245,22 @@ protected:
      * texture per draw and has nowhere to put a palette.
      */
     void updateFaceTextures(std::vector<int32_t> &indices);
+    /** The render material node needs what only the geometry can state
+     *
+     * The projection frames a finish and the per-face images are laid
+     * out in are written onto SoFCRenderMaterial at TESSELLATION time
+     * (the Part view provider reads them off the OCCT surfaces), and
+     * that node does not exist until something states a render
+     * property. So a shape drawn plain and given an image afterwards
+     * has a node with no frames in it, and every face would be
+     * projected in the first one's.
+     *
+     * This is called once in that situation, and a view provider that
+     * can restate its geometry answers by re-running its visual build.
+     * The default does nothing -- a view provider with no analytic
+     * surfaces has no frames to state.
+     */
+    virtual void renderMaterialNeedsGeometry() {}
     /// Sync the optional SoShadowStyle node with the Render_CastShadow /
     /// Render_ReceiveShadow dynamic properties.
     void updateRenderShadowStyle();
@@ -263,6 +279,10 @@ protected:
     /// The per-face texture palette, one node a layer, in layer order
     /// (entry 0 is layer 1 -- layer 0 is the untextured face).
     std::vector<SoFCRenderTexture *> pcFaceTextures;
+    /// Whether renderMaterialNeedsGeometry() has been asked already, so
+    /// a shape whose geometry states no frames at all is asked once
+    /// rather than on every appearance edit.
+    bool renderGeometryAsked{false};
     /// What each of those nodes was loaded from (image path, inline
     /// image data): a palette node is only rewritten when its source
     /// changed, since every write invalidates the render caches below.

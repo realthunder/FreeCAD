@@ -1203,6 +1203,13 @@ SoFCVertexCache::prebuiltReject() const
     return "prev attached";
   if (self->colorpervertex != 0)
     return "color per vertex";
+  // The worker baked no per-vertex MATERIAL stream either, and the
+  // shape's per-face appearance -- emissive/specular/shininess, the PBR
+  // pair, the finish and frame indices, the texture layer -- lives
+  // nowhere else. Adopting prebuilt content here would drop all of it
+  // silently, which is the one failure mode worse than not sharing.
+  if (self->matpervertex != 0)
+    return "per-face material";
   if (self->lastenabled >= 0)
     return "texture unit";
   if (self->tmp->numbumpcoords)

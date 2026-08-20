@@ -684,6 +684,53 @@ uniform-selected branch that costs nothing on a scene that states none.
   is stated in physical units and not as a normalised amplitude. In the
   Phong path the same quantity travels through the shininess slot.
 
+### Per-face textures (an image on one face)
+
+A texture is otherwise a property of the DRAW: one unit-0 `SoTexture2`
+captured from traversal state, so a shape wears one image over all of it
+or none. A per-face appearance may instead name an image per face
+(`App::Material::imagePath`, or `image` carrying the encoded bytes
+inline), and the engine paints each one on its own face.
+
+- **A palette, because a draw binds one sampler.** The distinct images
+  of an appearance become a `Render::TexturePalette` and what travels
+  per face is one byte of layer index in the material stream's third
+  slot, beside the finish and frame indices (`MeshData::materials`).
+  **Layer 0 is the untextured face** and has no palette entry, so an
+  unbound attribute, an overflowed palette (cap
+  `Render::MaxFaceTexturePalette` = 8, layer 0 included) and a face
+  nobody imaged all read as the pre-feature look.
+- **Uploaded as one 2D array texture** (`GpuTextureArray`), every layer
+  bilinearly resampled onto the largest one and bounded at 1024 a side,
+  keyed by the layer image ids so two appearances naming the same images
+  share the upload. Bound at unit 10 on **every** mesh draw with
+  `u_faceTexParams` -- a bgfx uniform holds its value for the rest of
+  the frame, so a draw that left it alone would wear the previous
+  draw's images.
+- **Laid out in the face's own projection frame**, the same
+  `Render::FramePalette` the machined finish uses: a planar face in the
+  plane's own axes, a turned one unwrapped about its axis (arc length
+  snapped to whole tiles so the atan2 seam does not cut the image), and
+  a face with no analytic surface triplanarly off the object-space
+  normal -- dominant axis outright, since two blended projections read
+  as a ghost of the image over itself. That is what makes this work on
+  CAD geometry, which carries no UVs, and it gives an image a physical
+  size: `Render_FaceTextureScale`, millimetres of object space per tile,
+  25 by default. A NEGATIVE scale hands the images the mesh's own
+  texture coordinates instead, for a shape that really was UV mapped.
+- **Modulate, on top of everything the unit-0 texture did**: a shape may
+  carry both, and the face's own image is the more specific statement.
+- **A draw with no stream still gets its image.** A shape that paints
+  every face alike collapses the per-vertex stream away, and a
+  single-face draw (a selection or preselection highlight) never has
+  one: both carry `Material::facetexlayer` instead, resolved by the
+  bridge the same way it resolves a face's finish into the scalars.
+- **No Coin change.** `SoFCFaceTextureElement` follows `SoFCPbrElement`
+  and `SoFCFinishElement`: the quantity has no Coin material field to
+  ride, and Coin's own GL path binds one texture per draw and has
+  nowhere to put a palette -- so the GL renderer draws none of this,
+  like the rest of the per-face appearance.
+
 ### Reading a Phong appearance as PBR material data
 
 Almost nothing in a FreeCAD document is authored as metallic/roughness.
