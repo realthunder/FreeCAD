@@ -701,12 +701,32 @@ translateRenderTexture(const SoFCRenderCache::TextureInfo & info,
     return res;
 }
 
+// The white 1x1 image a palette layer nobody filled is given.
+//
+// A gap has to be FILLED rather than closed up: the layers are named by
+// index, so dropping one would shift every image after it and repaint
+// the faces that named those. White is the honest filler -- the images
+// modulate, so a face pointing at one renders exactly as it would
+// untextured. The id is one no Coin node can produce, since the backend
+// keys its uploads on it.
+std::shared_ptr<const Render::TextureImage>
+whiteFaceTexture()
+{
+    static const std::shared_ptr<const Render::TextureImage> white = [] {
+        auto tex = std::make_shared<Render::TextureImage>();
+        tex->textureId = ~uint64_t(0);
+        tex->width = 1;
+        tex->height = 1;
+        tex->numComponents = 3;
+        tex->pixels.assign(3, uint8_t(255));
+        return tex;
+    }();
+    return white;
+}
+
 // The per-face texture palette: the images the draw's faces are painted
 // with, as the layers of one array texture. Entry i is layer i + 1 --
-// layer 0 is the untextured face and has no image -- so a gap in the
-// captured layers (nothing claimed layer 2) is filled with the entry
-// before it rather than shifting every image up one, which would repaint
-// the faces that named the layers after the gap.
+// layer 0 is the untextured face and has no image.
 std::shared_ptr<const Render::TexturePalette>
 translateFaceTextures(const SoFCRenderCache::Material & m,
                       TextureImageMap & texmap, TexturePaletteMap & palmap)
@@ -735,16 +755,8 @@ translateFaceTextures(const SoFCRenderCache::Material & m,
         std::shared_ptr<const Render::TextureImage> image;
         if (const auto * info = m.facetextures.get(layer))
             image = translateRenderTexture(*info, texmap);
-        if (!image) {
-            // A layer nobody filled, or one whose node held no pixels:
-            // the array texture has that layer either way, and an image
-            // the palette repeats is cheaper to reason about than a
-            // hole that samples whatever the upload left there.
-            image = palette->entries.empty() ? nullptr
-                                             : palette->entries.back();
-        }
         if (!image)
-            return nullptr;   // nothing usable at all
+            image = whiteFaceTexture();
         palette->entries.push_back(std::move(image));
     }
     res = palette;
