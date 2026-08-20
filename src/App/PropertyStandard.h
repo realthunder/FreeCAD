@@ -34,6 +34,7 @@
 #include <Base/Uuid.h>
 
 #include "Property.h"
+#include "MaterialList.h"
 #include "Enumeration.h"
 #include "FileBlobManager.h"
 #include "Material.h"
@@ -1177,13 +1178,24 @@ public:
     /// The material every entry of an empty field reads as
     static const Material &defaultMaterial();
 
+    /** @name The value this property holds
+     *
+     * Copying it costs a pointer, so handing it to Python, snapshotting it
+     * for undo and assigning one property to another are all O(1); the
+     * first write through any holder pays for the storage.
+     */
+    //@{
+    const MaterialList &getList() const { return _list; }
+    void setList(const MaterialList &list);
+    //@}
+
     /** @name Whole material access
      *
      * The interface a material list has always had. Each of these composes
      * or decomposes materials across the field arrays.
      */
     //@{
-    int getSize() const override { return _count; }
+    int getSize() const override { return _list.getSize(); }
     void setSize(int newSize) override;
     void setSize(int newSize, const Material &def);
 
@@ -1226,23 +1238,22 @@ public:
      * vector handed to setDiffuseColors() collapses to one element.
      */
     //@{
-    const std::vector<Color> &getAmbientColors() const { return _ambient; }
-    const std::vector<Color> &getDiffuseColors() const { return _diffuse; }
-    const std::vector<Color> &getSpecularColors() const { return _specular; }
-    const std::vector<Color> &getEmissiveColors() const { return _emissive; }
-    const std::vector<float> &getShininessValues() const { return _shininess; }
+    const std::vector<Color> &getAmbientColors() const { return _list.getAmbientColors(); }
+    const std::vector<Color> &getDiffuseColors() const { return _list.getDiffuseColors(); }
+    const std::vector<Color> &getSpecularColors() const { return _list.getSpecularColors(); }
+    const std::vector<Color> &getEmissiveColors() const { return _list.getEmissiveColors(); }
+    const std::vector<float> &getShininessValues() const { return _list.getShininessValues(); }
     // There is deliberately no getTransparencies(): a transparency is the
     // complement of the diffuse alpha (see the storage note below), so there
     // is no float array to hand back. Read getTransparency(i), or the diffuse
     // colours.
-    const std::vector<std::string> &getImages() const { return _image; }
-    const std::vector<std::string> &getImagePaths() const { return _imagePath; }
-    const std::vector<std::string> &getUuids() const { return _uuid; }
+    const std::vector<std::string> &getImages() const { return _list.getImages(); }
+    const std::vector<std::string> &getImagePaths() const { return _list.getImagePaths(); }
+    const std::vector<std::string> &getUuids() const { return _list.getUuids(); }
     /// Normalised first, so the "0, 1 or getSize()" rule above holds for a
     /// caller that only ever reads -- normalisation is lazy, and a write
     /// leaves the field denormal until something asks
-    const std::vector<SurfaceFinish> &getFinishes() const
-    { ensureNormalized(); return _finish; }
+    const std::vector<SurfaceFinish> &getFinishes() const { return _list.getFinishes(); }
 
     /** @name The texture field's storage: distinct values plus an index
      *
@@ -1262,9 +1273,9 @@ public:
      */
     //@{
     const std::vector<SurfaceTexture> &getTexturePalette() const
-    { ensureNormalized(); return _texturePalette; }
+    { return _list.getTexturePalette(); }
     const std::vector<uint16_t> &getTextureIndex() const
-    { ensureNormalized(); return _textureIndex; }
+    { return _list.getTextureIndex(); }
     //@}
 
     Color getAmbientColor(int idx) const;
@@ -1393,16 +1404,16 @@ public:
     //@}
 
     /// Whether any entry names a texture or a material card
-    bool hasTextureOrCard() const { return !_image.empty() || !_imagePath.empty() || !_uuid.empty(); }
+    bool hasTextureOrCard() const { return _list.hasTextureOrCard(); }
     /// Whether any entry states a surface finish; the cheap gate for a
     /// consumer that has nothing to do when none does. Normalised, so a
     /// finish written and then cleared answers false rather than "there is
     /// still an array there"
-    bool hasFinish() const { ensureNormalized(); return !_finish.empty(); }
+    bool hasFinish() const { return _list.hasFinish(); }
     /// Whether any entry names a texture map. Normalised, so an empty
     /// palette is the whole answer: a palette entry survives collapse only
     /// while some entry still resolves to it.
-    bool hasTexture() const { ensureNormalized(); return !_texturePalette.empty(); }
+    bool hasTexture() const { return _list.hasTexture(); }
 
     /** @name The texture maps as stored content
      *
@@ -1453,7 +1464,7 @@ public:
      * (getPhongMaterial()) in place of the raw slots.
      */
     //@{
-    bool isPBR() const { return _pbr; }
+    bool isPBR() const { return _list.isPBR(); }
     /// Flip the reading of the stored values; converts nothing
     void setPBR(bool enable);
     /** Flip the mode AND convert the stored values so the look survives
@@ -1552,27 +1563,6 @@ protected:
     void restoreStringStream(Base::InputStream &str, unsigned count);
 
 private:
-    /// Collapse every field to 0, 1 or _count. Idempotent, and lazy.
-    void ensureNormalized() const;
-    void normalize();
-    /// Mark the fields as possibly denormal after a write
-    void touchFields();
-
-    /** What an empty _specular / _shininess field reads as, per mode
-     *
-     * The Phong defaults are the default material's -- a near-white
-     * specular whose alpha is 1, which in PBR mode would read back as a
-     * fully metallic surface. So PBR mode reads an unset specular as a
-     * white F0 tint with metallic 0, and an unset shininess slot as a mid
-     * roughness. These are also the collapse baselines, so which values a
-     * field can elide follows the mode -- deterministically, because the
-     * mode itself is part of the serialized identity (the mask bit / the
-     * element attribute).
-     */
-    const Color &specularDefault() const;
-    float shininessDefault() const;
-    /// Throw unless the list is in PBR mode
-    void requirePBR() const;
     /** Land a finish restored from the element beside this property's
      *
      * Held rather than applied on the spot because the two encodings land at
@@ -1591,106 +1581,31 @@ private:
     /// not already hold. Called once the palette has landed, from both
     /// restore paths.
     void requestTextureBlobs();
-    /// Drop the handles no palette slot names any more, which is what ends
-    /// a blob's life once the last referrer lets go
-    void pruneTextureBlobs();
-    /** One material as this list reads it
-     *
-     * The list holds a single mode for every entry, so a material written
-     * into it under the other reading is converted rather than stored raw
-     * -- its slots would mean something else here. A whole-list
-     * assignment states the mode first (from its first entry), so this
-     * converts only what disagrees with it.
-     */
-    Material inMode(const Material &mat) const;
 
-    /** Land restored values, converting and merging what the file's era means
+    /** Run a write against the value and signal it only if it changed
      *
-     * \a values carry both slots exactly as the file states them. The stored
-     * diffuse alpha becomes the complement of the entry's transparency, whose
-     * truth depends on the era:
+     * Every mutator goes through this. It works because the value is
+     * copy-on-write: taking a snapshot costs a pointer, so the write can
+     * simply be made and the result compared by STORAGE IDENTITY -- if the
+     * value is unchanged, MaterialList's own setters return without
+     * detaching and the pointer is still the one the snapshot holds.
      *
-     *  - \a legacy (before upstream 1.1, which is also every file this fork
-     *    writes): BOTH slots meant transparency. The released files split by
-     *    property -- a link override list's truth is the field, an old
-     *    DiffuseColor's the alpha -- and where both are set they were kept in
-     *    sync, so the merged truth is max(alpha, field): whichever of the two
-     *    transparencies was actually written survives, and an unset slot (0)
-     *    never wins over a set one.
-     *  - 1.1 or later: the field is the truth and the alpha is vestigial
-     *    (their own migration writes 1.0 into it), so the field alone is
-     *    taken and max() would be wrong -- an opacity cannot be compared
-     *    with a transparency.
-     *
-     * The other three colours convert by inversion in the legacy case, as
-     * upstream's convertAlphaInMaterial does.
+     * The old value then goes back for exactly as long as it takes to open
+     * the atomic change, because aboutToSetValue() is what snapshots the
+     * property for undo and it has to see the value the change is FROM.
+     * Three pointer assignments, and no per-field "would this change
+     * anything" predicate to keep in step with the setter beside it.
      */
-    void restoreValues(std::vector<Material> &&values, bool legacy);
+    template<class Op>
+    void change(Op &&op, int touched = -1);
 
-    /** The same merge for the per field encoding's separate transparency run
+    /** The value, which several holders may share
      *
-     * Runs after the colour fields are in place (and, in the legacy case,
-     * already inverted). Empty \a transparency means the file carried none:
-     * nothing to merge, the alphas stand.
+     * A Python variable, an undo snapshot and this property can all name
+     * the same storage until one of them writes; see App::MaterialList.
      */
-    void applyRestoredTransparency(const std::vector<float> &transparency, bool legacy);
+    MaterialList _list;
 
-    template<class T> void setField(std::vector<T> &field, const std::vector<T> &values,
-                                    const T &def);
-    template<class T> void setFieldValue(std::vector<T> &field, int idx, const T &value,
-                                         const T &def);
-    template<class T> void setUniformField(std::vector<T> &field, const T &value, const T &def);
-    /// The rgb-only write behind setDiffuseRGB / setSpecularRGB
-    void setFieldRGB(std::vector<Color> &field, const Color &col, const Color &def);
-
-    int _count {0};
-    /// The PBR reading of the fields; see the PBR mode block above
-    bool _pbr {false};
-    std::vector<Color> _ambient;
-    /** Diffuse colour AND transparency: the alpha is the entry's opacity
-     *
-     * There is no transparency array. A face's transparency and its diffuse
-     * alpha are one quantity twice, and while both were stored the two could
-     * be written independently and disagree -- and did, with a container
-     * detach hack and a per-path choice of which store to render from. So
-     * the property enforces the invariant instead of syncing it:
-     * getTransparency(i) IS 1 - _diffuse[i].a.
-     *
-     * A whole App::Material still carries both slots, so composition has to
-     * pick one: THE TRANSPARENCY FIELD WINS, and the diffuse alpha stored is
-     * its complement. Upstream data forces that choice -- their renderer
-     * reads only the field and their migration writes 1.0 into every diffuse
-     * alpha, so an upstream material's alpha is vestigial and its field is
-     * the truth. A caller composing a Material by hand must set
-     * .transparency, not .diffuseColor.a.
-     *
-     * On restore the same one-of-two choice is made per file era; see
-     * restoreValues.
-     */
-    std::vector<Color> _diffuse;
-    std::vector<Color> _specular;
-    std::vector<Color> _emissive;
-    std::vector<float> _shininess;
-    std::vector<std::string> _image;
-    std::vector<std::string> _imagePath;
-    std::vector<std::string> _uuid;
-    /** Material::MaterialType, which operator== compares
-     *
-     * The compatible encoding has never carried it and still does not, so a
-     * list that goes through a schema 4 document comes back user-defined,
-     * as it always has. The per field encoding does carry it.
-     */
-    std::vector<int8_t> _type;
-    /** The surface finish, one record per entry rather than four arrays
-     *
-     * The four numbers co-vary -- a face has one finish specification --
-     * so splitting them would quadruple the accessors, the field mask bits
-     * and the serialized keys to buy an elision case that does not occur,
-     * and would have to re-state by hand the "all four or none" pairing a
-     * record gets for free. Not written by the compatible encodings, which
-     * have nowhere to put it.
-     */
-    std::vector<SurfaceFinish> _finish;
     /// Restored from the companion element, waiting for the materials to land
     std::vector<SurfaceFinish> _pendingFinish;
     /// The same, for the texture companion; the pair travels together
@@ -1698,37 +1613,10 @@ private:
     std::vector<SurfaceTexture> _pendingTexturePalette;
     std::vector<uint16_t> _pendingTextureIndex;
     //@}
-
-    /** The texture sets, as distinct records plus one index per entry
-     *
-     * The other storage strategy, for the one field where the 0/1/count
-     * array falls off a cliff: five hashes and five floats per record, and
-     * one odd face among five thousand would materialise five thousand of
-     * them. The palette pays instead for what is DISTINCT, which the
-     * importer already knows is a handful.
-     *
-     * The invariant, held by collapseTexturePalette: an empty index means
-     * the palette is uniform (0 or 1 entries), a non-empty one is exactly
-     * getSize() long and every value in it addresses the palette. So a
-     * reader never has to defend itself, and the two cheap forms cost
-     * exactly what the dense fields' do.
-     */
-    //@{
-    std::vector<SurfaceTexture> _texturePalette;
-    std::vector<uint16_t> _textureIndex;
-    /** The content the palette names, held so it stays on disk
-     *
-     * Keyed by content hash, which is the palette's own spelling of a slot
-     * and the only thing a restored handle can be matched on. A blob lives
-     * while some handle to it does, so this map IS this property's claim on
-     * the files.
-     */
-    std::map<std::string, FileBlobHandle> _textureBlobs;
     /// The manager holding queued requests for this property, so a death
     /// mid-restore withdraws them rather than leaving it queued for content
     /// it will never take
     FileBlobManager *_pendingBlobManager {nullptr};
-    //@}
 
     /** Which shape the doc file being read is in
      *
@@ -1737,8 +1625,6 @@ private:
      * file this fork wrote at schema 5 or later, there is no second pass.
      */
     int _fileVersion {0};
-
-    mutable bool _normalized {true};
 };
 
 

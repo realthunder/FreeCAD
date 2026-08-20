@@ -2591,6 +2591,16 @@ unsigned long convertPackedAlpha(unsigned long rgba)
     return (rgba & ~alphaMax) | (alphaMax - (rgba & alphaMax));
 }
 
+/** Where a count would be, in the per field doc file encoding
+ *
+ * The count PropertyLists::SaveDocFile writes ahead of the values is an
+ * entry count, and no list has 2^32-1 entries, so the impossible value says
+ * "what follows is per field" to a reader that knows the encoding and
+ * cannot be mistaken for a list by one that does not. It is only ever
+ * written at schema 5 or later, which no reader unaware of it opens anyway.
+ */
+constexpr uint32_t FieldStreamMarker = 0xffffffff;
+
 /// Whether colours read through this reader are in the other convention
 bool restoreConverts(const Base::XMLReader &reader)
 {
@@ -2614,36 +2624,6 @@ uint32_t packedForSave(const Color &color, bool convert)
 {
     unsigned long packed = color.getPackedValue();
     return static_cast<uint32_t>(convert ? convertPackedAlpha(packed) : packed);
-}
-
-/// The diffuse colour a whole material stores: its transparency field is the
-/// truth and the alpha holds its complement (see the storage note in the
-/// header).
-Color storedDiffuse(const Material &mat)
-{
-    Color color = mat.diffuseColor;
-    color.setTransparency(mat.transparency);
-    return color;
-}
-
-/// The finish a whole material stores: clamped, so that everything reading
-/// this property back gets a record it can actually draw, whatever a caller
-/// assembled by hand or a file happened to state
-SurfaceFinish storedFinish(const SurfaceFinish &finish)
-{
-    SurfaceFinish stored = finish;
-    stored.normalize();
-    return stored;
-}
-
-/// The texture a whole material stores, clamped for the same reason -- and
-/// so that two records differing only in a transform nobody stated land in
-/// one palette slot rather than two
-SurfaceTexture storedTexture(const SurfaceTexture &texture)
-{
-    SurfaceTexture stored = texture;
-    stored.normalize();
-    return stored;
 }
 
 } // namespace
@@ -3024,260 +3004,6 @@ bool PropertyMaterial::isSame(const Property &other) const
 
 TYPESYSTEM_SOURCE(App::PropertyMaterialList, App::PropertyLists)
 
-namespace {
-
-/** Where a count would be, in the per field doc file encoding
- *
- * The count PropertyLists::SaveDocFile writes ahead of the values is an
- * entry count, and no list has 2^32-1 entries, so the impossible value says
- * "what follows is per field" to a reader that knows the encoding and
- * cannot be mistaken for a list by one that does not. It is only ever
- * written at schema 5 or later, which no reader unaware of it opens anyway.
- */
-constexpr uint32_t FieldStreamMarker = 0xffffffff;
-
-/// What a string field costs, its contents included
-std::size_t stringsMemSize(const std::vector<std::string> &field)
-{
-    std::size_t size = field.size() * sizeof(std::string);
-    for (const auto &value : field) {
-        size += value.size();
-    }
-    return size;
-}
-
-/// A palette's own bytes plus the hashes its records hold
-std::size_t texturesMemSize(const std::vector<SurfaceTexture> &palette)
-{
-    std::size_t size = palette.size() * sizeof(SurfaceTexture);
-    for (const auto &texture : palette) {
-        for (const auto &hash : texture.maps)
-            size += hash.size();
-    }
-    return size;
-}
-
-/// Resolve one entry of a field that may be 0, 1 or count long
-template<class T>
-inline const T &fieldAt(const std::vector<T> &values, int idx, const T &def)
-{
-    if (values.empty())
-        return def;
-    return values.size() == 1 ? values.front() : values[idx];
-}
-
-/// Collapse a field to the smallest of 0, 1 and its current length
-template<class T>
-void collapseField(std::vector<T> &values, const T &def)
-{
-    if (values.empty())
-        return;
-    const T &first = values.front();
-    for (std::size_t i = 1; i < values.size(); ++i) {
-        if (!(values[i] == first))
-            return;
-    }
-    // swap rather than resize: a field that has just been read from a
-    // 10,000 entry document should give the memory back, not merely stop
-    // counting it
-    if (first == def) {
-        std::vector<T>().swap(values);
-    }
-    else if (values.size() > 1) {
-        std::vector<T>(1, first).swap(values);
-    }
-}
-
-/// Grow a field so that one entry can differ from the others
-template<class T>
-void expandField(std::vector<T> &values, int count, const T &def)
-{
-    if (static_cast<int>(values.size()) == count)
-        return;
-    // by value: assign() frees the old buffer before it copies, so handing
-    // it a reference into that buffer is a use after free
-    const T current = values.empty() ? def : values.front();
-    values.assign(count, current);
-}
-
-/** Follow a change of entry count, without materialising a uniform field
- *
- * A field only has to be written out entry by entry when the value arriving
- * disagrees with the one already there -- which is what keeps a growing
- * import of identically coloured faces linear.
- */
-template<class T>
-void resizeField(std::vector<T> &values, int oldCount, int newCount,
-                 const T &fill, const T &def)
-{
-    if (newCount < oldCount) {
-        if (newCount == 0)
-            std::vector<T>().swap(values);
-        else if (static_cast<int>(values.size()) > newCount && values.size() > 1)
-            values.resize(newCount);
-        return;
-    }
-    if (newCount == oldCount)
-        return;
-    const T current = values.empty() ? def : values.front();
-    if (values.size() <= 1 && current == fill)
-        return;
-    if (values.size() <= 1)
-        values.assign(oldCount, current);
-    values.resize(newCount, fill);
-}
-
-/// Write one entry of a field, expanding it only if the value is new
-template<class T>
-bool setFieldAt(std::vector<T> &values, int idx, int count, const T &value, const T &def)
-{
-    if (fieldAt(values, idx, def) == value)
-        return false;
-    expandField(values, count, def);
-    values[idx] = value;
-    return true;
-}
-
-//--------------------------------------------------------------------------
-// The palette+index field
-//
-// The same five operations the dense helpers above provide, over a pair of
-// vectors instead of one. The invariant every one of them restores: an
-// empty index means the palette holds 0 or 1 entries, and a non-empty one
-// is exactly count long with every value addressing the palette.
-//--------------------------------------------------------------------------
-
-/// More distinct values than the index can address. Unreachable in
-/// practice -- the point of a palette is that the cardinality is low --
-/// but a silent wrap would hand back the wrong texture forever.
-constexpr std::size_t maxPaletteSize = 0x10000;
-
-/// Resolve one entry of a palette+index field
-const SurfaceTexture &paletteAt(const std::vector<SurfaceTexture> &palette,
-                                const std::vector<uint16_t> &index,
-                                int idx, const SurfaceTexture &def)
-{
-    if (palette.empty())
-        return def;
-    if (index.empty())
-        return palette.front();
-    if (idx < 0 || idx >= static_cast<int>(index.size()))
-        return def;
-    const std::size_t slot = index[idx];
-    return slot < palette.size() ? palette[slot] : def;
-}
-
-/// The slot holding \a value, appending it if the palette does not have it
-uint16_t paletteSlot(std::vector<SurfaceTexture> &palette, const SurfaceTexture &value)
-{
-    for (std::size_t i = 0; i < palette.size(); ++i) {
-        if (palette[i] == value)
-            return static_cast<uint16_t>(i);
-    }
-    if (palette.size() >= maxPaletteSize)
-        throw Base::ValueError("too many distinct textures");
-    palette.push_back(value);
-    return static_cast<uint16_t>(palette.size() - 1);
-}
-
-/// Materialise the index so one entry can differ from the others
-void expandPalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
-                   int count, const SurfaceTexture &def)
-{
-    if (static_cast<int>(index.size()) == count && !palette.empty())
-        return;
-    // by value: the current uniform value can be palette.front(), and the
-    // assign below reallocates the buffer it lives in
-    const SurfaceTexture current = palette.empty() ? def : palette.front();
-    std::vector<SurfaceTexture>(1, current).swap(palette);
-    index.assign(count, 0);
-}
-
-/// Rebuild a palette+index field into the smallest of its three forms
-void collapsePalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
-                     int count, const SurfaceTexture &def)
-{
-    if (palette.empty() || count == 0) {
-        // swap rather than clear: a palette read from a large document
-        // should give the memory back, not merely stop counting it
-        std::vector<SurfaceTexture>().swap(palette);
-        std::vector<uint16_t>().swap(index);
-        return;
-    }
-    if (!index.empty()) {
-        // Renumber into first-use order, which drops both the slots
-        // nothing points at any more and any duplicate a caller wrote
-        std::vector<SurfaceTexture> used;
-        std::vector<uint16_t> renumbered;
-        renumbered.reserve(index.size());
-        for (uint16_t slot : index) {
-            renumbered.push_back(paletteSlot(
-                used, slot < palette.size() ? palette[slot] : def));
-        }
-        used.swap(palette);
-        renumbered.swap(index);
-        if (palette.size() > 1)
-            return;   // genuinely varies: the index earns its two bytes
-        std::vector<uint16_t>().swap(index);
-    }
-    // Uniform, so the index is gone and one record says it all -- unless
-    // that record is the default, which an empty palette already says
-    if (palette.front() == def)
-        std::vector<SurfaceTexture>().swap(palette);
-    else if (palette.size() > 1)
-        std::vector<SurfaceTexture>(1, palette.front()).swap(palette);
-}
-
-/// Follow a change of entry count, without materialising a uniform field
-void resizePalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
-                   int oldCount, int newCount, const SurfaceTexture &fill,
-                   const SurfaceTexture &def)
-{
-    if (newCount < oldCount) {
-        if (newCount == 0) {
-            std::vector<SurfaceTexture>().swap(palette);
-            std::vector<uint16_t>().swap(index);
-        }
-        else if (static_cast<int>(index.size()) > newCount) {
-            index.resize(newCount);   // collapse prunes the palette after
-        }
-        return;
-    }
-    if (newCount == oldCount)
-        return;
-    const SurfaceTexture current = palette.empty() ? def : palette.front();
-    if (index.empty() && current == fill)
-        return;
-    if (index.empty())
-        expandPalette(palette, index, oldCount, def);
-    index.resize(newCount, paletteSlot(palette, fill));
-}
-
-/// Write one entry, materialising the index only if the value is new
-bool setPaletteAt(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
-                  int idx, int count, const SurfaceTexture &value,
-                  const SurfaceTexture &def)
-{
-    if (paletteAt(palette, index, idx, def) == value)
-        return false;
-    expandPalette(palette, index, count, def);
-    index[idx] = paletteSlot(palette, value);
-    return true;
-}
-
-/// Lay a whole run in, building the palette from what is distinct in it
-void assignPalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
-                   const std::vector<SurfaceTexture> &values, const SurfaceTexture &def)
-{
-    std::vector<SurfaceTexture>().swap(palette);
-    std::vector<uint16_t>().swap(index);
-    index.reserve(values.size());
-    for (const auto &value : values)
-        index.push_back(paletteSlot(palette, value));
-    collapsePalette(palette, index, static_cast<int>(values.size()), def);
-}
-
-} // namespace
 
 //**************************************************************************
 // Construction/Destruction
@@ -3297,7 +3023,443 @@ PropertyMaterialList::~PropertyMaterialList()
 }
 
 //**************************************************************************
+// The value, and the change signalling around it
+//
+// Everything below is one line of delegation plus the signalling the value
+// itself knows nothing about. App::MaterialList holds the storage and every
+// field rule; this class holds the undo record, the touch list and the
+// document notification.
+
+const Material &PropertyMaterialList::defaultMaterial()
+{
+    return MaterialList::defaultMaterial();
+}
+
+/** Run a write against the value and signal it only if it changed
+ *
+ * The value is copy-on-write, which is what makes this possible: the
+ * snapshot costs a pointer, so the write can simply be MADE and the outcome
+ * read off the storage identity -- a setter that decides nothing changed
+ * returns without detaching, and the pointer is still the snapshot's.
+ *
+ * The old value then goes back for exactly as long as it takes to open the
+ * atomic change, because aboutToSetValue() is what records the property for
+ * undo and it has to see the value the change is FROM. Three pointer
+ * assignments, and no per-field "would this change anything" predicate to
+ * keep in step with the setter beside it.
+ */
+template<class Op>
+void PropertyMaterialList::change(Op &&op, int touched)
+{
+    const MaterialList before = _list;
+    op();
+    if (_list.isSameData(before)) {
+        return;
+    }
+    const MaterialList after = _list;
+    _list = before;
+    atomic_change guard(*this);
+    _list = after;
+    if (touched >= 0) {
+        _touchList.insert(touched);
+    }
+    else {
+        _touchList.clear();
+    }
+    guard.tryInvoke();
+}
+
+void PropertyMaterialList::setList(const MaterialList &list)
+{
+    change([&] {
+        _list = list;
+        _list.setBlobManager(&blobManager());
+    });
+}
+
+
+void PropertyMaterialList::setSize(int newSize)
+{
+    change([&] { _list.setSize(newSize); });
+}
+
+void PropertyMaterialList::setSize(int newSize, const Material &def)
+{
+    change([&] { _list.setSize(newSize, def); });
+}
+
+void PropertyMaterialList::setValue(const Material &mat)
+{
+    change([&] { _list.setValue(mat); });
+}
+
+void PropertyMaterialList::setValues(const std::vector<Material> &values)
+{
+    change([&] { _list.setValues(values); });
+}
+
+void PropertyMaterialList::setAmbientColors(const std::vector<Color> &colors)
+{
+    change([&] { _list.setAmbientColors(colors); });
+}
+
+void PropertyMaterialList::setDiffuseColors(const std::vector<Color> &colors)
+{
+    change([&] { _list.setDiffuseColors(colors); });
+}
+
+void PropertyMaterialList::setSpecularColors(const std::vector<Color> &colors)
+{
+    change([&] { _list.setSpecularColors(colors); });
+}
+
+void PropertyMaterialList::setEmissiveColors(const std::vector<Color> &colors)
+{
+    change([&] { _list.setEmissiveColors(colors); });
+}
+
+void PropertyMaterialList::setShininessValues(const std::vector<float> &values)
+{
+    change([&] { _list.setShininessValues(values); });
+}
+
+void PropertyMaterialList::setTransparencies(const std::vector<float> &values)
+{
+    change([&] { _list.setTransparencies(values); });
+}
+
+void PropertyMaterialList::setImages(const std::vector<std::string> &values)
+{
+    change([&] { _list.setImages(values); });
+}
+
+void PropertyMaterialList::setImagePaths(const std::vector<std::string> &values)
+{
+    change([&] { _list.setImagePaths(values); });
+}
+
+void PropertyMaterialList::setUuids(const std::vector<std::string> &values)
+{
+    change([&] { _list.setUuids(values); });
+}
+
+void PropertyMaterialList::setFinishes(const std::vector<SurfaceFinish> &values)
+{
+    change([&] { _list.setFinishes(values); });
+}
+
+void PropertyMaterialList::setTextures(const std::vector<SurfaceTexture> &values)
+{
+    change([&] { _list.setTextures(values); });
+}
+
+void PropertyMaterialList::setAmbientColor(const Color &col)
+{
+    change([&] { _list.setAmbientColor(col); });
+}
+
+void PropertyMaterialList::setDiffuseColor(const Color &col)
+{
+    change([&] { _list.setDiffuseColor(col); });
+}
+
+void PropertyMaterialList::setSpecularColor(const Color &col)
+{
+    change([&] { _list.setSpecularColor(col); });
+}
+
+void PropertyMaterialList::setEmissiveColor(const Color &col)
+{
+    change([&] { _list.setEmissiveColor(col); });
+}
+
+void PropertyMaterialList::setDiffuseRGB(const Color &col)
+{
+    change([&] { _list.setDiffuseRGB(col); });
+}
+
+void PropertyMaterialList::setSpecularRGB(const Color &col)
+{
+    change([&] { _list.setSpecularRGB(col); });
+}
+
+void PropertyMaterialList::setShininess(float value)
+{
+    change([&] { _list.setShininess(value); });
+}
+
+void PropertyMaterialList::setTransparency(float value)
+{
+    change([&] { _list.setTransparency(value); });
+}
+
+void PropertyMaterialList::setImage(const std::string &value)
+{
+    change([&] { _list.setImage(value); });
+}
+
+void PropertyMaterialList::setImagePath(const std::string &value)
+{
+    change([&] { _list.setImagePath(value); });
+}
+
+void PropertyMaterialList::setUuid(const std::string &value)
+{
+    change([&] { _list.setUuid(value); });
+}
+
+void PropertyMaterialList::setFinish(const SurfaceFinish &value)
+{
+    change([&] { _list.setFinish(value); });
+}
+
+void PropertyMaterialList::setTexture(const SurfaceTexture &value)
+{
+    change([&] { _list.setTexture(value); });
+}
+
+void PropertyMaterialList::setPBR(bool enable)
+{
+    change([&] { _list.setPBR(enable); });
+}
+
+void PropertyMaterialList::convertPBR(bool enable)
+{
+    change([&] { _list.convertPBR(enable); });
+}
+
+void PropertyMaterialList::setMetallicValues(const std::vector<float> &values)
+{
+    change([&] { _list.setMetallicValues(values); });
+}
+
+void PropertyMaterialList::setRoughnessValues(const std::vector<float> &values)
+{
+    change([&] { _list.setRoughnessValues(values); });
+}
+
+void PropertyMaterialList::setMetallic(float value)
+{
+    change([&] { _list.setMetallic(value); });
+}
+
+void PropertyMaterialList::setRoughness(float value)
+{
+    change([&] { _list.setRoughness(value); });
+}
+
+void PropertyMaterialList::set1Value(int idx, const Material &mat)
+{
+    change([&] { _list.set1Value(idx, mat); }, idx);
+}
+
+void PropertyMaterialList::setAmbientColor(int idx, const Color &col)
+{
+    change([&] { _list.setAmbientColor(idx, col); }, idx);
+}
+
+void PropertyMaterialList::setDiffuseColor(int idx, const Color &col)
+{
+    change([&] { _list.setDiffuseColor(idx, col); }, idx);
+}
+
+void PropertyMaterialList::setSpecularColor(int idx, const Color &col)
+{
+    change([&] { _list.setSpecularColor(idx, col); }, idx);
+}
+
+void PropertyMaterialList::setEmissiveColor(int idx, const Color &col)
+{
+    change([&] { _list.setEmissiveColor(idx, col); }, idx);
+}
+
+void PropertyMaterialList::setShininess(int idx, float value)
+{
+    change([&] { _list.setShininess(idx, value); }, idx);
+}
+
+void PropertyMaterialList::setTransparency(int idx, float value)
+{
+    change([&] { _list.setTransparency(idx, value); }, idx);
+}
+
+void PropertyMaterialList::setImage(int idx, const std::string &value)
+{
+    change([&] { _list.setImage(idx, value); }, idx);
+}
+
+void PropertyMaterialList::setImagePath(int idx, const std::string &value)
+{
+    change([&] { _list.setImagePath(idx, value); }, idx);
+}
+
+void PropertyMaterialList::setUuid(int idx, const std::string &value)
+{
+    change([&] { _list.setUuid(idx, value); }, idx);
+}
+
+void PropertyMaterialList::setFinish(int idx, const SurfaceFinish &value)
+{
+    change([&] { _list.setFinish(idx, value); }, idx);
+}
+
+void PropertyMaterialList::setTexture(int idx, const SurfaceTexture &value)
+{
+    change([&] { _list.setTexture(idx, value); }, idx);
+}
+
+void PropertyMaterialList::setMetallic(int idx, float value)
+{
+    change([&] { _list.setMetallic(idx, value); }, idx);
+}
+
+void PropertyMaterialList::setRoughness(int idx, float value)
+{
+    change([&] { _list.setRoughness(idx, value); }, idx);
+}
+
+Material PropertyMaterialList::getMaterial(int idx) const
+{
+    return _list.getMaterial(idx);
+}
+
+Color PropertyMaterialList::getAmbientColor(int idx) const
+{
+    return _list.getAmbientColor(idx);
+}
+
+Color PropertyMaterialList::getDiffuseColor(int idx) const
+{
+    return _list.getDiffuseColor(idx);
+}
+
+Color PropertyMaterialList::getSpecularColor(int idx) const
+{
+    return _list.getSpecularColor(idx);
+}
+
+Color PropertyMaterialList::getEmissiveColor(int idx) const
+{
+    return _list.getEmissiveColor(idx);
+}
+
+float PropertyMaterialList::getShininess(int idx) const
+{
+    return _list.getShininess(idx);
+}
+
+float PropertyMaterialList::getTransparency(int idx) const
+{
+    return _list.getTransparency(idx);
+}
+
+const std::string &PropertyMaterialList::getImage(int idx) const
+{
+    return _list.getImage(idx);
+}
+
+const std::string &PropertyMaterialList::getImagePath(int idx) const
+{
+    return _list.getImagePath(idx);
+}
+
+const std::string &PropertyMaterialList::getUuid(int idx) const
+{
+    return _list.getUuid(idx);
+}
+
+SurfaceFinish PropertyMaterialList::getFinish(int idx) const
+{
+    return _list.getFinish(idx);
+}
+
+SurfaceTexture PropertyMaterialList::getTexture(int idx) const
+{
+    return _list.getTexture(idx);
+}
+
+Material::MaterialType PropertyMaterialList::getType(int idx) const
+{
+    return _list.getType(idx);
+}
+
+float PropertyMaterialList::getMetallic(int idx) const
+{
+    return _list.getMetallic(idx);
+}
+
+float PropertyMaterialList::getRoughness(int idx) const
+{
+    return _list.getRoughness(idx);
+}
+
+Material PropertyMaterialList::getPhongMaterial(int idx) const
+{
+    return _list.getPhongMaterial(idx);
+}
+
+bool PropertyMaterialList::variesOnlyInDiffuse() const
+{
+    return _list.variesOnlyInDiffuse();
+}
+
+
+void PropertyMaterialList::setValues(std::vector<Material> &&values)
+{
+    setValues(static_cast<const std::vector<Material> &>(values));
+}
+
+unsigned int PropertyMaterialList::getMemSize() const
+{
+    return _list.getMemSize();
+}
+
+bool PropertyMaterialList::isSame(const Property &other) const
+{
+    if (&other == this) {
+        return true;
+    }
+    auto list = Base::freecad_dynamic_cast<const PropertyMaterialList>(&other);
+    return list && _list.isSame(list->_list);
+}
+
+//**************************************************************************
 // The texture maps as stored content
+//
+// The value holds the content and resolves the slots; what belongs here is
+// the document the content goes into and the restore queue, neither of
+// which a value can know about.
+
+std::string PropertyMaterialList::insertTextureFile(const char *path, const char *extension)
+{
+    _list.setBlobManager(&blobManager());
+    return _list.insertTextureFile(path, extension);
+}
+
+std::string PropertyMaterialList::getTextureFile(const std::string &hash) const
+{
+    return _list.getTextureFile(hash);
+}
+
+void PropertyMaterialList::noteTextureBlobs(FileBlobManager &manager,
+                                            const BlobReferrer &referrer) const
+{
+    _list.noteTextureBlobs(manager, referrer);
+}
+
+void PropertyMaterialList::assignRestoredBlob(const FileBlobHandle &blob)
+{
+    // No value change: this completes the restore of a value the document
+    // already had, and touching it here would mark a document modified just
+    // by being opened. So it goes straight to the value rather than through
+    // change().
+    _list.assignRestoredBlob(blob);
+    if (_list.holdsEveryNamedBlob()) {
+        // Nothing is still queued, so nothing has to be withdrawn on the
+        // way out
+        _pendingBlobManager = nullptr;
+    }
+}
 
 FileBlobManager &PropertyMaterialList::blobManager() const
 {
@@ -3311,89 +3473,16 @@ FileBlobManager &PropertyMaterialList::blobManager() const
     return FileBlobManager::defaultManager();
 }
 
-std::string PropertyMaterialList::insertTextureFile(const char *path, const char *extension)
-{
-    if (!path || !path[0]) {
-        return {};
-    }
-    FileBlobHandle blob = blobManager().insertFile(path, extension);
-    if (!blob) {
-        return {};
-    }
-    // Held here, keyed by what a slot will name it by. Content already in
-    // the store comes back as the same handle, so importing one image twice
-    // costs one file and one entry.
-    const std::string hash = blob->hash();
-    _textureBlobs[hash] = std::move(blob);
-    return hash;
-}
-
-std::string PropertyMaterialList::getTextureFile(const std::string &hash) const
-{
-    const auto it = _textureBlobs.find(hash);
-    return it == _textureBlobs.end() ? std::string() : it->second->path();
-}
-
-void PropertyMaterialList::noteTextureBlobs(FileBlobManager &manager,
-                                            const BlobReferrer &referrer) const
-{
-    ensureNormalized();
-    for (const auto &value : _texturePalette) {
-        for (uint8_t slot = 0; slot < SurfaceTexture::SlotCount; ++slot) {
-            const auto it = _textureBlobs.find(value.maps[slot]);
-            if (value.maps[slot].empty() || it == _textureBlobs.end()) {
-                continue;
-            }
-            // The referrer NAMES the file, so each slot passes its own --
-            // "Box.ShapeAppearance.normal" rather than a numbered collision.
-            // Noting the same blob again adds to its referrer list, which is
-            // what two slots over one content should do.
-            BlobReferrer named = referrer;
-            if (!named.name.empty()) {
-                named.name += ".";
-                named.name += SurfaceTexture::slotName(slot);
-            }
-            manager.noteReferenced(it->second, named);
-        }
-    }
-}
-
-void PropertyMaterialList::assignRestoredBlob(const FileBlobHandle &blob)
-{
-    // No value change: this completes the restore of a value the document
-    // already had, and touching it here would mark a document modified just
-    // by being opened.
-    //
-    // BY HASH, never by arrival order. addPendingReferrer serves a hash
-    // whose content has already been read IMMEDIATELY and queues the rest,
-    // so a property asking for an unread h1 and then an already-read h2 is
-    // handed h2 first -- invisible with one blob per property, a silent
-    // mis-assignment with five (docs/ShapeAppearanceDesign.md 10.2).
-    if (!blob) {
-        return;
-    }
-    _textureBlobs[blob->hash()] = blob;
-    // Every slot that names content this property now holds: nothing is
-    // still queued, so nothing has to be withdrawn on the way out
-    for (const auto &value : _texturePalette) {
-        for (const auto &hash : value.maps) {
-            if (!hash.empty() && _textureBlobs.find(hash) == _textureBlobs.end()) {
-                return;
-            }
-        }
-    }
-    _pendingBlobManager = nullptr;
-}
 
 void PropertyMaterialList::requestTextureBlobs()
 {
-    if (_texturePalette.empty()) {
+    if (_list.wd().texturePalette.empty()) {
         return;
     }
     FileBlobManager *manager = nullptr;
-    for (const auto &value : _texturePalette) {
+    for (const auto &value : _list.wd().texturePalette) {
         for (const auto &hash : value.maps) {
-            if (hash.empty() || _textureBlobs.find(hash) != _textureBlobs.end()) {
+            if (hash.empty() || _list.wd().textureBlobs.find(hash) != _list.wd().textureBlobs.end()) {
                 continue;
             }
             if (!manager) {
@@ -3402,7 +3491,7 @@ void PropertyMaterialList::requestTextureBlobs()
             // Once per DISTINCT hash: two slots over one content ask once,
             // and the assignment that answers them is idempotent anyway
             if (auto blob = manager->find(hash)) {
-                _textureBlobs[hash] = std::move(blob);
+                _list.wd().textureBlobs[hash] = std::move(blob);
                 continue;
             }
             _pendingBlobManager = manager;
@@ -3411,1023 +3500,13 @@ void PropertyMaterialList::requestTextureBlobs()
     }
 }
 
-/** Drop the handles no palette slot names any more
- *
- * Deliberately NOT called from normalize(). A caller has to insert content
- * before it can name the hash, so between insertTextureFile() and the write
- * that names it there is always a handle no slot points at -- and normalize
- * runs on any read, including one inside that window. So this is called
- * only where the palette has just been stated in full: the whole-list
- * assignments and the restore.
- */
-void PropertyMaterialList::pruneTextureBlobs()
-{
-    if (_textureBlobs.empty()) {
-        return;
-    }
-    std::set<std::string> named;
-    for (const auto &value : _texturePalette) {
-        for (const auto &hash : value.maps) {
-            if (!hash.empty()) {
-                named.insert(hash);
-            }
-        }
-    }
-    for (auto it = _textureBlobs.begin(); it != _textureBlobs.end();) {
-        it = named.count(it->first) ? std::next(it) : _textureBlobs.erase(it);
-    }
-}
 
-const Material &PropertyMaterialList::defaultMaterial()
-{
-    static const Material def;
-    return def;
-}
 
 //**************************************************************************
 // Storage
 
-void PropertyMaterialList::touchFields()
-{
-    _normalized = false;
-}
 
-void PropertyMaterialList::normalize()
-{
-    const Material &def = defaultMaterial();
-    if (_count == 0) {
-        std::vector<Color>().swap(_ambient);
-        std::vector<Color>().swap(_diffuse);
-        std::vector<Color>().swap(_specular);
-        std::vector<Color>().swap(_emissive);
-        std::vector<float>().swap(_shininess);
-        std::vector<std::string>().swap(_image);
-        std::vector<std::string>().swap(_imagePath);
-        std::vector<std::string>().swap(_uuid);
-        std::vector<int8_t>().swap(_type);
-        std::vector<SurfaceFinish>().swap(_finish);
-        std::vector<SurfaceTexture>().swap(_texturePalette);
-        std::vector<uint16_t>().swap(_textureIndex);
-    }
-    else {
-        collapseField(_ambient, def.ambientColor);
-        collapseField(_diffuse, storedDiffuse(def));
-        collapseField(_specular, specularDefault());
-        collapseField(_emissive, def.emissiveColor);
-        collapseField(_shininess, shininessDefault());
-        collapseField(_image, def.image);
-        collapseField(_imagePath, def.imagePath);
-        collapseField(_uuid, def.uuid);
-        collapseField(_type, static_cast<int8_t>(def.getType()));
-        collapseField(_finish, def.finish);
-        collapsePalette(_texturePalette, _textureIndex, _count, def.texture);
-    }
-    _normalized = true;
-}
 
-void PropertyMaterialList::ensureNormalized() const
-{
-    // Normalising is deferred so that a loop setting one entry at a time
-    // does not rescan the whole list on every step. It changes what is
-    // stored but not what the property means, which is why it may happen
-    // under a const call -- everything that compares or writes this property
-    // asks for the normal form first.
-    if (!_normalized)
-        const_cast<PropertyMaterialList*>(this)->normalize();
-}
-
-bool PropertyMaterialList::variesOnlyInDiffuse() const
-{
-    ensureNormalized();
-    // Normalised, so a field is 0, 1 or _count: anything above one is a field
-    // that genuinely differs from entry to entry. Per-entry transparency is
-    // the diffuse alpha, so it is variance a colour list CAN express and is
-    // deliberately not tested here.
-    return _ambient.size() <= 1 && _specular.size() <= 1 && _emissive.size() <= 1
-        && _shininess.size() <= 1 && _type.size() <= 1
-        && _image.size() <= 1 && _imagePath.size() <= 1 && _uuid.size() <= 1
-        && _finish.size() <= 1
-        // Normalised, so an index exists only while the palette genuinely
-        // varies -- the uniform and all-default forms have none
-        && _textureIndex.empty();
-}
-
-//**************************************************************************
-// PBR mode
-
-const Color &PropertyMaterialList::specularDefault() const
-{
-    // White F0 tint, metallic 0 in the alpha: the natural unset PBR
-    // surface. The Phong default's alpha of one would read as full metal.
-    static const Color pbrDef(1.0f, 1.0f, 1.0f, 0.0f);
-    return _pbr ? pbrDef : defaultMaterial().specularColor;
-}
-
-float PropertyMaterialList::shininessDefault() const
-{
-    return _pbr ? 0.5f : defaultMaterial().shininess;
-}
-
-void PropertyMaterialList::requirePBR() const
-{
-    if (!_pbr)
-        throw Base::RuntimeError("material list is not in PBR mode");
-}
-
-Material PropertyMaterialList::inMode(const Material &mat) const
-{
-    if (mat.pbr == _pbr)
-        return mat;
-    Material converted = mat;
-    converted.setPBR(_pbr);
-    return converted;
-}
-
-void PropertyMaterialList::setPBR(bool enable)
-{
-    if (_pbr == enable)
-        return;
-    atomic_change guard(*this);
-    // The collapse baselines follow the mode
-    touchFields();
-    _pbr = enable;
-    guard.tryInvoke();
-}
-
-void PropertyMaterialList::convertPBR(bool enable)
-{
-    if (_pbr == enable)
-        return;
-    atomic_change guard(*this);
-    // Convert while the old mode still governs the readings, then flip.
-    // Per entry, so per-face variation converts entry by entry; normalize
-    // collapses whatever stays uniform afterwards.
-    std::vector<Material> values;
-    values.reserve(_count);
-    for (int i = 0; i < _count; ++i) {
-        // Tagged with the mode they are in, so the conversion is the
-        // value's own; setValues below then reads the new mode off them
-        Material mat = getMaterial(i);
-        mat.setPBR(enable);
-        values.push_back(mat);
-    }
-    setPBR(enable);
-    setValues(std::move(values));
-    guard.tryInvoke();
-}
-
-float PropertyMaterialList::getMetallic(int idx) const
-{
-    if (!_pbr)
-        return 0.0f;  // the Phong model has no metals
-    return fieldAt(_specular, idx, specularDefault()).a;
-}
-
-float PropertyMaterialList::getRoughness(int idx) const
-{
-    const float value = fieldAt(_shininess, idx, shininessDefault());
-    return _pbr ? value : Material::shininessToRoughness(value);
-}
-
-void PropertyMaterialList::setMetallicValues(const std::vector<float> &values)
-{
-    // The alphas of the specular field, exactly as setTransparencies works
-    // the diffuse alphas: empty is back-to-default, 1 uniform, N per entry,
-    // and every entry's tint rgb stays what it was.
-    requirePBR();
-    const Color def = specularDefault();
-    const int newCount = static_cast<int>(values.size());
-    std::vector<Color> colors = _specular;
-    if (newCount == 0 || newCount == 1) {
-        const float alpha = newCount ? values[0] : def.a;
-        if (colors.empty())
-            colors.push_back(def);
-        for (auto &color : colors)
-            color.a = alpha;
-    }
-    else {
-        colors.resize(newCount, fieldAt(_specular, 0, def));
-        for (int i = 0; i < newCount; ++i)
-            colors[i].a = values[i];
-    }
-    setField(_specular, colors, def);
-}
-
-void PropertyMaterialList::setRoughnessValues(const std::vector<float> &values)
-{
-    requirePBR();
-    setField(_shininess, values, shininessDefault());
-}
-
-void PropertyMaterialList::setMetallic(int idx, float value)
-{
-    requirePBR();
-    Color color = getSpecularColor(idx < 0 || idx >= _count ? 0 : idx);
-    color.a = value;
-    setFieldValue(_specular, idx, color, specularDefault());
-}
-
-void PropertyMaterialList::setRoughness(int idx, float value)
-{
-    requirePBR();
-    setFieldValue(_shininess, idx, value, shininessDefault());
-}
-
-void PropertyMaterialList::setMetallic(float value)
-{
-    requirePBR();
-    if (_specular.size() <= 1) {
-        Color color = fieldAt(_specular, 0, specularDefault());
-        color.a = value;
-        setUniformField(_specular, color, specularDefault());
-        return;
-    }
-    // Per-entry tints: only the alphas move
-    bool changed = false;
-    for (const auto &color : _specular) {
-        if (color.a != value) {
-            changed = true;
-            break;
-        }
-    }
-    if (!changed)
-        return;
-    atomic_change guard(*this);
-    touchFields();
-    for (auto &color : _specular)
-        color.a = value;
-    normalize();
-    guard.tryInvoke();
-}
-
-void PropertyMaterialList::setRoughness(float value)
-{
-    requirePBR();
-    setUniformField(_shininess, value, shininessDefault());
-}
-
-Material PropertyMaterialList::getPhongMaterial(int idx) const
-{
-    Material mat = getMaterial(idx);
-    if (!_pbr)
-        return mat;
-    // Why the diffuse stays the base colour: see Material::pbrToPhong
-    return Material::pbrToPhong(mat);
-}
-
-void PropertyMaterialList::restoreValues(std::vector<Material> &&values, bool legacy)
-{
-    atomic_change guard(*this);
-    touchFields();
-    _touchList.clear();
-    _count = static_cast<int>(values.size());
-    std::vector<float> transparency;
-    std::vector<Color>().swap(_ambient);
-    std::vector<Color>().swap(_diffuse);
-    std::vector<Color>().swap(_specular);
-    std::vector<Color>().swap(_emissive);
-    std::vector<float>().swap(_shininess);
-    std::vector<std::string>().swap(_image);
-    std::vector<std::string>().swap(_imagePath);
-    std::vector<std::string>().swap(_uuid);
-    std::vector<int8_t>().swap(_type);
-    // No _finish or texture here: none of the encodings that come through
-    // this function can carry either, so every entry reads as unfinished
-    // and untextured -- which the empty fields already say, at no cost.
-    std::vector<SurfaceFinish>().swap(_finish);
-    std::vector<SurfaceTexture>().swap(_texturePalette);
-    std::vector<uint16_t>().swap(_textureIndex);
-    if (_count) {
-        _ambient.reserve(_count);
-        _diffuse.reserve(_count);
-        _specular.reserve(_count);
-        _emissive.reserve(_count);
-        _shininess.reserve(_count);
-        transparency.reserve(_count);
-        _image.reserve(_count);
-        _imagePath.reserve(_count);
-        _uuid.reserve(_count);
-        _type.reserve(_count);
-        for (auto &mat : values) {
-            // The diffuse alpha exactly as the file states it; which of the
-            // two slots is the entry's transparency is decided below, once
-            // the legacy conversion has made them comparable.
-            _ambient.push_back(mat.ambientColor);
-            _diffuse.push_back(mat.diffuseColor);
-            _specular.push_back(mat.specularColor);
-            _emissive.push_back(mat.emissiveColor);
-            _shininess.push_back(mat.shininess);
-            transparency.push_back(mat.transparency);
-            _image.push_back(std::move(mat.image));
-            _imagePath.push_back(std::move(mat.imagePath));
-            _uuid.push_back(std::move(mat.uuid));
-            _type.push_back(static_cast<int8_t>(mat.getType()));
-        }
-        if (legacy) {
-            // Every colour's alpha meant transparency: invert, as upstream's
-            // convertAlphaInMaterial does. For the diffuse this makes the
-            // alpha an opacity, so that the merge below can compare it with
-            // the field.
-            for (auto *field : {&_ambient, &_diffuse, &_specular, &_emissive}) {
-                for (auto &color : *field)
-                    convertAlpha(color);
-            }
-        }
-        applyRestoredTransparency(transparency, legacy);
-        normalize();
-    }
-    else {
-        _normalized = true;
-    }
-    guard.tryInvoke();
-}
-
-void PropertyMaterialList::applyRestoredTransparency(const std::vector<float> &transparency,
-                                                     bool legacy)
-{
-    if (transparency.empty() || _count == 0)
-        return;
-    // Sizes are 1 or _count, validated by every reader that fills the vector.
-    const std::size_t n = transparency.size();
-    expandField(_diffuse, _count, storedDiffuse(defaultMaterial()));
-    for (int i = 0; i < _count; ++i) {
-        const float field = transparency[n == 1 ? 0 : i];
-        float &alpha = _diffuse[i].a;
-        // See restoreValues: for a legacy file both slots were transparency
-        // and the larger of the two is the one that was actually written (the
-        // alpha arrives here already inverted, so it is min() of opacities);
-        // for a 1.1 file the field alone is the truth.
-        if (legacy)
-            alpha = std::min(alpha, 1.0F - field);
-        else
-            alpha = 1.0F - field;
-    }
-}
-
-void PropertyMaterialList::setSize(int newSize)
-{
-    // Grow with what an unset entry reads as, which follows the mode --
-    // and say so, because these slots are already in this list's reading:
-    // converting them again would state the mode's own default twice over
-    Material def = defaultMaterial();
-    def.specularColor = specularDefault();
-    def.shininess = shininessDefault();
-    def.pbr = _pbr;
-    setSize(newSize, def);
-}
-
-void PropertyMaterialList::setSize(int newSize, const Material &fill)
-{
-    if (newSize == _count)
-        return;
-    if (newSize < 0)
-        throw Base::ValueError("negative list size");
-
-    // Growth fills entries of this list, so the filler reads as this list
-    // does; only a whole-list assignment restates the mode
-    const Material def = inMode(fill);
-    atomic_change guard(*this);
-    touchFields();
-    const Material &zero = defaultMaterial();
-    resizeField(_ambient, _count, newSize, def.ambientColor, zero.ambientColor);
-    resizeField(_diffuse, _count, newSize, storedDiffuse(def), storedDiffuse(zero));
-    resizeField(_specular, _count, newSize, def.specularColor, specularDefault());
-    resizeField(_emissive, _count, newSize, def.emissiveColor, zero.emissiveColor);
-    resizeField(_shininess, _count, newSize, def.shininess, shininessDefault());
-    resizeField(_image, _count, newSize, def.image, zero.image);
-    resizeField(_imagePath, _count, newSize, def.imagePath, zero.imagePath);
-    resizeField(_uuid, _count, newSize, def.uuid, zero.uuid);
-    resizeField(_type, _count, newSize, static_cast<int8_t>(def.getType()),
-                static_cast<int8_t>(zero.getType()));
-    resizeField(_finish, _count, newSize, storedFinish(def.finish), zero.finish);
-    resizePalette(_texturePalette, _textureIndex, _count, newSize,
-                  storedTexture(def.texture), zero.texture);
-    _count = newSize;
-    clearTouchList();
-    guard.tryInvoke();
-}
-
-Material PropertyMaterialList::getMaterial(int idx) const
-{
-    Material mat;
-    if (idx < 0 || idx >= _count)
-        return mat;
-    // The type goes on FIRST. Material::setType() rewrites every colour and
-    // both floats with that type's preset, so a setType() after the fields
-    // are laid in throws all of them away and the list hands back the
-    // preset instead of what it stores -- silently, because the per field
-    // getters below are unaffected and keep telling the truth.
-    const Material &def = defaultMaterial();
-    mat.setType(static_cast<Material::MaterialType>(
-                fieldAt(_type, idx, static_cast<int8_t>(def.getType()))));
-    mat.ambientColor = fieldAt(_ambient, idx, def.ambientColor);
-    mat.diffuseColor = fieldAt(_diffuse, idx, storedDiffuse(def));
-    mat.specularColor = fieldAt(_specular, idx, specularDefault());
-    mat.emissiveColor = fieldAt(_emissive, idx, def.emissiveColor);
-    mat.shininess = fieldAt(_shininess, idx, shininessDefault());
-    // One quantity, two slots: the material handed out is always consistent,
-    // whatever inconsistent pair was once handed in.
-    mat.transparency = mat.diffuseColor.transparency();
-    mat.image = fieldAt(_image, idx, def.image);
-    mat.imagePath = fieldAt(_imagePath, idx, def.imagePath);
-    mat.uuid = fieldAt(_uuid, idx, def.uuid);
-    mat.finish = fieldAt(_finish, idx, def.finish);
-    mat.texture = paletteAt(_texturePalette, _textureIndex, idx, def.texture);
-    // Stamp the list's mode on the value, so whoever holds it still knows
-    // which reading its slots are in
-    mat.pbr = _pbr;
-    return mat;
-}
-
-void PropertyMaterialList::setValue(const Material &mat)
-{
-    setValues(std::vector<Material>(1, mat));
-}
-
-void PropertyMaterialList::setValues(std::vector<Material> &&values)
-{
-    setValues(static_cast<const std::vector<Material>&>(values));
-}
-
-void PropertyMaterialList::setValues(const std::vector<Material> &values)
-{
-    atomic_change guard(*this);
-    // The list holds ONE mode, and an assignment states it through the
-    // material it starts with; the rest are converted to that reading
-    // rather than landing their slots under the wrong one. An empty
-    // assignment states nothing, so the mode it finds stands.
-    if (!values.empty())
-        setPBR(values.front().pbr);
-    touchFields();
-    _touchList.clear();
-    _count = static_cast<int>(values.size());
-    std::vector<Color>().swap(_ambient);
-    std::vector<Color>().swap(_diffuse);
-    std::vector<Color>().swap(_specular);
-    std::vector<Color>().swap(_emissive);
-    std::vector<float>().swap(_shininess);
-    std::vector<std::string>().swap(_image);
-    std::vector<std::string>().swap(_imagePath);
-    std::vector<std::string>().swap(_uuid);
-    std::vector<int8_t>().swap(_type);
-    std::vector<SurfaceFinish>().swap(_finish);
-    std::vector<SurfaceTexture> textures;
-    std::vector<SurfaceTexture>().swap(_texturePalette);
-    std::vector<uint16_t>().swap(_textureIndex);
-    if (_count) {
-        _ambient.reserve(_count);
-        _diffuse.reserve(_count);
-        _specular.reserve(_count);
-        _emissive.reserve(_count);
-        _shininess.reserve(_count);
-        _image.reserve(_count);
-        _imagePath.reserve(_count);
-        _uuid.reserve(_count);
-        _type.reserve(_count);
-        _finish.reserve(_count);
-        textures.reserve(_count);
-        for (const auto &value : values) {
-            const Material mat = inMode(value);
-            _ambient.push_back(mat.ambientColor);
-            _diffuse.push_back(storedDiffuse(mat));
-            _specular.push_back(mat.specularColor);
-            _emissive.push_back(mat.emissiveColor);
-            _shininess.push_back(mat.shininess);
-            _image.push_back(mat.image);
-            _imagePath.push_back(mat.imagePath);
-            _uuid.push_back(mat.uuid);
-            _type.push_back(static_cast<int8_t>(mat.getType()));
-            _finish.push_back(storedFinish(mat.finish));
-            textures.push_back(storedTexture(mat.texture));
-        }
-        // Dense in, palette out: assignPalette collapses too, so the
-        // normalize() below finds this field already in its normal form
-        assignPalette(_texturePalette, _textureIndex, textures,
-                      defaultMaterial().texture);
-        normalize();
-        pruneTextureBlobs();
-    }
-    else {
-        _normalized = true;
-    }
-    guard.tryInvoke();
-}
-
-void PropertyMaterialList::set1Value(int idx, const Material &value)
-{
-    if (idx < -1 || idx > _count)
-        throw Base::RuntimeError("index out of bound");
-
-    // One entry cannot restate the whole list's mode, so it is converted
-    // to it instead
-    const Material mat = inMode(value);
-    atomic_change guard(*this, false);
-    if (idx == -1 || idx == _count) {
-        guard.aboutToChange();
-        idx = _count;
-        setSize(_count + 1, mat);
-    }
-    else {
-        if (getMaterial(idx) == mat)
-            return;
-        guard.aboutToChange();
-        touchFields();
-        const Material &def = defaultMaterial();
-        setFieldAt(_ambient, idx, _count, mat.ambientColor, def.ambientColor);
-        setFieldAt(_diffuse, idx, _count, storedDiffuse(mat), storedDiffuse(def));
-        setFieldAt(_specular, idx, _count, mat.specularColor, specularDefault());
-        setFieldAt(_emissive, idx, _count, mat.emissiveColor, def.emissiveColor);
-        setFieldAt(_shininess, idx, _count, mat.shininess, shininessDefault());
-        setFieldAt(_image, idx, _count, mat.image, def.image);
-        setFieldAt(_imagePath, idx, _count, mat.imagePath, def.imagePath);
-        setFieldAt(_uuid, idx, _count, mat.uuid, def.uuid);
-        setFieldAt(_type, idx, _count, static_cast<int8_t>(mat.getType()),
-                   static_cast<int8_t>(def.getType()));
-        setFieldAt(_finish, idx, _count, storedFinish(mat.finish), def.finish);
-        setPaletteAt(_texturePalette, _textureIndex, idx, _count,
-                     storedTexture(mat.texture), def.texture);
-    }
-    _touchList.insert(idx);
-    guard.tryInvoke();
-}
-
-//**************************************************************************
-// Per field access
-
-Color PropertyMaterialList::getAmbientColor(int idx) const
-{
-    return fieldAt(_ambient, idx, defaultMaterial().ambientColor);
-}
-
-Color PropertyMaterialList::getDiffuseColor(int idx) const
-{
-    return fieldAt(_diffuse, idx, storedDiffuse(defaultMaterial()));
-}
-
-Color PropertyMaterialList::getSpecularColor(int idx) const
-{
-    return fieldAt(_specular, idx, specularDefault());
-}
-
-Color PropertyMaterialList::getEmissiveColor(int idx) const
-{
-    return fieldAt(_emissive, idx, defaultMaterial().emissiveColor);
-}
-
-float PropertyMaterialList::getShininess(int idx) const
-{
-    return fieldAt(_shininess, idx, shininessDefault());
-}
-
-float PropertyMaterialList::getTransparency(int idx) const
-{
-    // The complement of the diffuse alpha; there is no second store.
-    return getDiffuseColor(idx).transparency();
-}
-
-const std::string &PropertyMaterialList::getImage(int idx) const
-{
-    return fieldAt(_image, idx, defaultMaterial().image);
-}
-
-const std::string &PropertyMaterialList::getImagePath(int idx) const
-{
-    return fieldAt(_imagePath, idx, defaultMaterial().imagePath);
-}
-
-const std::string &PropertyMaterialList::getUuid(int idx) const
-{
-    return fieldAt(_uuid, idx, defaultMaterial().uuid);
-}
-
-SurfaceFinish PropertyMaterialList::getFinish(int idx) const
-{
-    return fieldAt(_finish, idx, defaultMaterial().finish);
-}
-
-SurfaceTexture PropertyMaterialList::getTexture(int idx) const
-{
-    return paletteAt(_texturePalette, _textureIndex, idx, defaultMaterial().texture);
-}
-
-Material::MaterialType PropertyMaterialList::getType(int idx) const
-{
-    return static_cast<Material::MaterialType>(
-            fieldAt(_type, idx, static_cast<int8_t>(defaultMaterial().getType())));
-}
-
-/** Take a whole field
- *
- * A field of one is uniform and a field as long as the list is per entry.
- * A vector that is neither is a statement about how long the list should
- * be, the way assigning a colour list of a different length is; an empty
- * one returns the field to its default without disturbing the count. The
- * values normalise on the way in.
- */
-template<class T>
-void PropertyMaterialList::setField(std::vector<T> &field, const std::vector<T> &values,
-                                    const T &def)
-{
-    if (field == values)
-        return;
-    atomic_change guard(*this);
-    const int newCount = static_cast<int>(values.size());
-    if (newCount != _count && (newCount > 1 || _count == 0)) {
-        // Growth extends the LAST entry's material, not the default: the
-        // caller is stating one field for N entries and saying nothing about
-        // the others, so the others must not change meaning -- and for a
-        // uniform field, extending its own value keeps it stored as one
-        // element where a default fill would materialise N of them and make
-        // the appearance "vary" in fields nobody set. An empty list grows
-        // with what its entries read as, which follows the mode.
-        if (_count)
-            setSize(newCount, getMaterial(_count - 1));
-        else
-            setSize(newCount);
-    }
-    touchFields();
-    field = values;
-    collapseField(field, def);
-    guard.tryInvoke();
-}
-
-void PropertyMaterialList::setAmbientColors(const std::vector<Color> &colors)
-{
-    setField(_ambient, colors, defaultMaterial().ambientColor);
-}
-
-void PropertyMaterialList::setDiffuseColors(const std::vector<Color> &colors)
-{
-    setField(_diffuse, colors, storedDiffuse(defaultMaterial()));
-}
-
-void PropertyMaterialList::setSpecularColors(const std::vector<Color> &colors)
-{
-    setField(_specular, colors, specularDefault());
-}
-
-void PropertyMaterialList::setEmissiveColors(const std::vector<Color> &colors)
-{
-    setField(_emissive, colors, defaultMaterial().emissiveColor);
-}
-
-void PropertyMaterialList::setShininessValues(const std::vector<float> &values)
-{
-    setField(_shininess, values, shininessDefault());
-}
-
-void PropertyMaterialList::setTransparencies(const std::vector<float> &values)
-{
-    // The alphas of the diffuse field, at the sizes the old float field
-    // accepted: empty is back-to-default, 1 is uniform, N per entry -- and a
-    // different N resizes the list, as assigning any field does. The rgb of
-    // every entry stays what it was; only the alphas move.
-    const Color def = storedDiffuse(defaultMaterial());
-    const int newCount = static_cast<int>(values.size());
-    std::vector<Color> colors = _diffuse;
-    if (newCount == 0 || newCount == 1) {
-        const float alpha = newCount ? 1.0F - values[0] : def.a;
-        if (colors.empty())
-            colors.push_back(def);
-        for (auto &color : colors)
-            color.a = alpha;
-    }
-    else {
-        // Per entry: the rgb comes along, from wherever the field has it.
-        colors.resize(newCount, fieldAt(_diffuse, 0, def));
-        for (int i = 0; i < newCount; ++i)
-            colors[i].setTransparency(values[i]);
-    }
-    setField(_diffuse, colors, def);
-}
-
-void PropertyMaterialList::setImages(const std::vector<std::string> &values)
-{
-    setField(_image, values, defaultMaterial().image);
-}
-
-void PropertyMaterialList::setImagePaths(const std::vector<std::string> &values)
-{
-    setField(_imagePath, values, defaultMaterial().imagePath);
-}
-
-void PropertyMaterialList::setUuids(const std::vector<std::string> &values)
-{
-    setField(_uuid, values, defaultMaterial().uuid);
-}
-
-void PropertyMaterialList::setFinishes(const std::vector<SurfaceFinish> &values)
-{
-    std::vector<SurfaceFinish> clamped;
-    clamped.reserve(values.size());
-    for (const auto &value : values)
-        clamped.push_back(storedFinish(value));
-    setField(_finish, clamped, defaultMaterial().finish);
-}
-
-void PropertyMaterialList::setTextures(const std::vector<SurfaceTexture> &values)
-{
-    const SurfaceTexture &def = defaultMaterial().texture;
-    std::vector<SurfaceTexture> clamped;
-    clamped.reserve(values.size());
-    for (const auto &value : values)
-        clamped.push_back(storedTexture(value));
-
-    std::vector<SurfaceTexture> palette;
-    std::vector<uint16_t> index;
-    assignPalette(palette, index, clamped, def);
-    // assignPalette produces the canonical form -- first-use order, and
-    // the smallest of the three shapes -- so comparing the pair is
-    // comparing what the field means, not how it happens to be stored
-    ensureNormalized();
-    if (static_cast<int>(clamped.size()) == _count
-        && palette == _texturePalette && index == _textureIndex)
-        return;
-
-    atomic_change guard(*this);
-    const int newCount = static_cast<int>(values.size());
-    if (newCount != _count && (newCount > 1 || _count == 0)) {
-        // The same growth rule setField documents: extend the LAST entry's
-        // material, because the caller is stating one field and saying
-        // nothing about the others
-        if (_count)
-            setSize(newCount, getMaterial(_count - 1));
-        else
-            setSize(newCount);
-    }
-    touchFields();
-    palette.swap(_texturePalette);
-    index.swap(_textureIndex);
-    pruneTextureBlobs();
-    guard.tryInvoke();
-}
-
-/// Write one entry of one field, growing the list if it names a new entry
-template<class T>
-void PropertyMaterialList::setFieldValue(std::vector<T> &field, int idx, const T &value,
-                                         const T &def)
-{
-    if (idx < 0 || idx > _count)
-        throw Base::RuntimeError("index out of bound");
-    atomic_change guard(*this, false);
-    if (idx == _count) {
-        guard.aboutToChange();
-        setSize(_count + 1);
-    }
-    else if (fieldAt(field, idx, def) == value) {
-        return;
-    }
-    else {
-        guard.aboutToChange();
-    }
-    touchFields();
-    setFieldAt(field, idx, _count, value, def);
-    _touchList.insert(idx);
-    guard.tryInvoke();
-}
-
-void PropertyMaterialList::setAmbientColor(int idx, const Color &col)
-{
-    setFieldValue(_ambient, idx, col, defaultMaterial().ambientColor);
-}
-
-void PropertyMaterialList::setDiffuseColor(int idx, const Color &col)
-{
-    setFieldValue(_diffuse, idx, col, storedDiffuse(defaultMaterial()));
-}
-
-void PropertyMaterialList::setSpecularColor(int idx, const Color &col)
-{
-    setFieldValue(_specular, idx, col, specularDefault());
-}
-
-void PropertyMaterialList::setEmissiveColor(int idx, const Color &col)
-{
-    setFieldValue(_emissive, idx, col, defaultMaterial().emissiveColor);
-}
-
-void PropertyMaterialList::setShininess(int idx, float value)
-{
-    setFieldValue(_shininess, idx, value, shininessDefault());
-}
-
-void PropertyMaterialList::setTransparency(int idx, float value)
-{
-    // One entry's alpha: the same write as setDiffuseColor of that entry
-    // with only the alpha changed, and it shares that setter's growth and
-    // early-out behaviour.
-    Color color = getDiffuseColor(idx < 0 || idx >= _count ? 0 : idx);
-    color.setTransparency(value);
-    setFieldValue(_diffuse, idx, color, storedDiffuse(defaultMaterial()));
-}
-
-void PropertyMaterialList::setImage(int idx, const std::string &value)
-{
-    setFieldValue(_image, idx, value, defaultMaterial().image);
-}
-
-void PropertyMaterialList::setImagePath(int idx, const std::string &value)
-{
-    setFieldValue(_imagePath, idx, value, defaultMaterial().imagePath);
-}
-
-void PropertyMaterialList::setUuid(int idx, const std::string &value)
-{
-    setFieldValue(_uuid, idx, value, defaultMaterial().uuid);
-}
-
-void PropertyMaterialList::setFinish(int idx, const SurfaceFinish &value)
-{
-    setFieldValue(_finish, idx, storedFinish(value), defaultMaterial().finish);
-}
-
-void PropertyMaterialList::setTexture(int idx, const SurfaceTexture &value)
-{
-    // setFieldValue's body, over the pair: the palette is not a field the
-    // template can take a reference to
-    if (idx < 0 || idx > _count)
-        throw Base::RuntimeError("index out of bound");
-    const SurfaceTexture stored = storedTexture(value);
-    const SurfaceTexture &def = defaultMaterial().texture;
-    atomic_change guard(*this, false);
-    if (idx == _count) {
-        guard.aboutToChange();
-        setSize(_count + 1);
-    }
-    else if (paletteAt(_texturePalette, _textureIndex, idx, def) == stored) {
-        return;
-    }
-    else {
-        guard.aboutToChange();
-    }
-    touchFields();
-    setPaletteAt(_texturePalette, _textureIndex, idx, _count, stored, def);
-    _touchList.insert(idx);
-    guard.tryInvoke();
-}
-
-/// Give every entry the same value for one field, and none of it to storage
-template<class T>
-void PropertyMaterialList::setUniformField(std::vector<T> &field, const T &value, const T &def)
-{
-    if (field.empty() && value == def)
-        return;  // already the default everywhere, including on an empty list
-    if (_count && field.size() <= 1 && fieldAt(field, 0, def) == value)
-        return;
-    atomic_change guard(*this);
-    touchFields();
-    if (_count == 0)
-        setSize(1);
-    if (value == def)
-        std::vector<T>().swap(field);
-    else
-        std::vector<T>(1, value).swap(field);
-    guard.tryInvoke();
-}
-
-void PropertyMaterialList::setAmbientColor(const Color &col)
-{
-    setUniformField(_ambient, col, defaultMaterial().ambientColor);
-}
-
-void PropertyMaterialList::setDiffuseColor(const Color &col)
-{
-    setUniformField(_diffuse, col, storedDiffuse(defaultMaterial()));
-}
-
-void PropertyMaterialList::setSpecularColor(const Color &col)
-{
-    setUniformField(_specular, col, specularDefault());
-}
-
-void PropertyMaterialList::setEmissiveColor(const Color &col)
-{
-    setUniformField(_emissive, col, defaultMaterial().emissiveColor);
-}
-
-void PropertyMaterialList::setShininess(float value)
-{
-    setUniformField(_shininess, value, shininessDefault());
-}
-
-void PropertyMaterialList::setTransparency(float value)
-{
-    // Every entry's alpha, leaving every entry's rgb alone -- which on a per
-    // face field is NOT a uniform write of one colour.
-    if (_diffuse.size() <= 1) {
-        Color color = fieldAt(_diffuse, 0, storedDiffuse(defaultMaterial()));
-        color.setTransparency(value);
-        setUniformField(_diffuse, color, storedDiffuse(defaultMaterial()));
-        return;
-    }
-    const float alpha = 1.0F - value;
-    bool changed = false;
-    for (const auto &color : _diffuse) {
-        if (color.a != alpha) {
-            changed = true;
-            break;
-        }
-    }
-    if (!changed)
-        return;
-    atomic_change guard(*this);
-    touchFields();
-    for (auto &color : _diffuse)
-        color.a = alpha;
-    normalize();
-    guard.tryInvoke();
-}
-
-void PropertyMaterialList::setDiffuseRGB(const Color &col)
-{
-    setFieldRGB(_diffuse, col, storedDiffuse(defaultMaterial()));
-}
-
-void PropertyMaterialList::setSpecularRGB(const Color &col)
-{
-    setFieldRGB(_specular, col, specularDefault());
-}
-
-void PropertyMaterialList::setFieldRGB(std::vector<Color> &field, const Color &col,
-                                       const Color &def)
-{
-    // setTransparency's mirror image: every entry's rgb, leaving every
-    // entry's alpha alone -- the diffuse alpha is the opacity and the PBR
-    // specular alpha is the metallic, so on a per entry field this is NOT
-    // a uniform write of one colour.
-    if (field.size() <= 1) {
-        Color color = fieldAt(field, 0, def);
-        color.r = col.r;
-        color.g = col.g;
-        color.b = col.b;
-        setUniformField(field, color, def);
-        return;
-    }
-    bool changed = false;
-    for (const auto &color : field) {
-        if (color.r != col.r || color.g != col.g || color.b != col.b) {
-            changed = true;
-            break;
-        }
-    }
-    if (!changed)
-        return;
-    atomic_change guard(*this);
-    touchFields();
-    for (auto &color : field) {
-        color.r = col.r;
-        color.g = col.g;
-        color.b = col.b;
-    }
-    normalize();
-    guard.tryInvoke();
-}
-
-//**************************************************************************
-// Base class implementer
-
-void PropertyMaterialList::setImage(const std::string &value)
-{
-    setUniformField(_image, value, defaultMaterial().image);
-}
-
-void PropertyMaterialList::setImagePath(const std::string &value)
-{
-    setUniformField(_imagePath, value, defaultMaterial().imagePath);
-}
-
-void PropertyMaterialList::setUuid(const std::string &value)
-{
-    setUniformField(_uuid, value, defaultMaterial().uuid);
-}
-
-void PropertyMaterialList::setFinish(const SurfaceFinish &value)
-{
-    setUniformField(_finish, storedFinish(value), defaultMaterial().finish);
-}
-
-void PropertyMaterialList::setTexture(const SurfaceTexture &value)
-{
-    // setUniformField's body, over the pair. Uniform is the form with no
-    // index at all, so this drops one wherever it found one.
-    const SurfaceTexture stored = storedTexture(value);
-    const SurfaceTexture &def = defaultMaterial().texture;
-    if (_texturePalette.empty() && stored == def)
-        return;  // already the default everywhere, including on an empty list
-    if (_count && _textureIndex.empty() && _texturePalette.size() == 1
-        && _texturePalette.front() == stored)
-        return;
-    atomic_change guard(*this);
-    touchFields();
-    if (_count == 0)
-        setSize(1);
-    std::vector<uint16_t>().swap(_textureIndex);
-    if (stored == def)
-        std::vector<SurfaceTexture>().swap(_texturePalette);
-    else
-        std::vector<SurfaceTexture>(1, stored).swap(_texturePalette);
-    guard.tryInvoke();
-}
 
 PyObject *PropertyMaterialList::getPyObject()
 {
@@ -4482,21 +3561,6 @@ void PropertyMaterialList::setPyValues(const std::vector<PyObject*> &vals,
     guard.tryInvoke();
 }
 
-unsigned int PropertyMaterialList::getMemSize() const
-{
-    ensureNormalized();
-    return static_cast<unsigned int>(
-            (_ambient.size() + _diffuse.size() + _specular.size() + _emissive.size())
-                * sizeof(Color)
-            + _shininess.size() * sizeof(float)
-            + _type.size() * sizeof(int8_t)
-            + _finish.size() * sizeof(SurfaceFinish)
-            + texturesMemSize(_texturePalette)
-            + _textureIndex.size() * sizeof(uint16_t)
-            + stringsMemSize(_image) + stringsMemSize(_imagePath)
-            + stringsMemSize(_uuid));
-}
-
 unsigned int PropertyMaterialList::getSaveSize(Base::Writer &writer) const
 {
     if (writer.getSchemaVersion() >= 5)
@@ -4505,7 +3569,7 @@ unsigned int PropertyMaterialList::getSaveSize(Base::Writer &writer) const
     // little of it the storage holds, so a uniform list of ten thousand
     // faces is four bytes in memory and a quarter of a megabyte on the way
     // out. Weighed as the former it would land inline in Document.xml.
-    return static_cast<unsigned int>(_count) * (4 * sizeof(uint32_t) + 2 * sizeof(float));
+    return static_cast<unsigned int>(_list.rd().count) * (4 * sizeof(uint32_t) + 2 * sizeof(float));
 }
 
 //**************************************************************************
@@ -4517,7 +3581,7 @@ unsigned int PropertyMaterialList::getSaveSize(Base::Writer &writer) const
 
 bool PropertyMaterialList::saveXML(Base::Writer &writer) const
 {
-    ensureNormalized();
+    _list.ensureNormalized();
     // The per field form also when a string has to survive: the inline form
     // is fork-only at every schema -- upstream's reader looks for a file
     // attribute and ignores a count -- so there is nothing to lose by using
@@ -4533,10 +3597,10 @@ bool PropertyMaterialList::saveXML(Base::Writer &writer) const
 
     const bool convert = saveConverts();
     writer.Stream() << ">\n" << std::hex;
-    if (_pbr) {
+    if (_list.rd().pbr) {
         // This encoding cannot state the mode, so it states the Phong
         // derivation instead -- the same look an old build should show
-        for (int i = 0; i < _count; ++i) {
+        for (int i = 0; i < _list.rd().count; ++i) {
             const Material mat = getPhongMaterial(i);
             writer.Stream() << packedForSave(mat.ambientColor, convert)
                             << ' ' << packedForSave(mat.diffuseColor, convert)
@@ -4549,7 +3613,7 @@ bool PropertyMaterialList::saveXML(Base::Writer &writer) const
         writer.Stream() << std::dec;
         return false;
     }
-    for (int i = 0; i < _count; ++i) {
+    for (int i = 0; i < _list.rd().count; ++i) {
         writer.Stream() << packedForSave(getAmbientColor(i), convert)
                         << ' ' << packedForSave(getDiffuseColor(i), convert)
                         << ' ' << packedForSave(getSpecularColor(i), convert)
@@ -4568,7 +3632,7 @@ void PropertyMaterialList::restoreXML(Base::XMLReader &reader)
     const bool convert = restoreConverts(reader);
     // Absent everywhere but a field-encoded PBR list, so this also resets
     // the mode when an old-era element is restored over a PBR property
-    _pbr = reader.getAttributeAsInteger("pbr", "0") != 0;
+    _list.wd().pbr = reader.getAttributeAsInteger("pbr", "0") != 0;
     if (reader.hasAttribute("fields")) {
         restoreFieldXML(reader, uCt);
         return;
@@ -4586,17 +3650,17 @@ void PropertyMaterialList::restoreXML(Base::XMLReader &reader)
     }
     s >> std::dec;
     reader.endCharStream();
-    restoreValues(std::move(values), convert);
+    _list.restoreValues(std::move(values), convert);
 }
 
 void PropertyMaterialList::saveStream(Base::OutputStream &str) const
 {
-    ensureNormalized();
+    _list.ensureNormalized();
     const bool convert = saveConverts();
-    if (_pbr) {
+    if (_list.rd().pbr) {
         // As in saveXML's compatible branch: the Phong derivation, since
         // the mode itself cannot travel here
-        for (int i = 0; i < _count; ++i) {
+        for (int i = 0; i < _list.rd().count; ++i) {
             const Material mat = getPhongMaterial(i);
             str << packedForSave(mat.ambientColor, convert);
             str << packedForSave(mat.diffuseColor, convert);
@@ -4607,7 +3671,7 @@ void PropertyMaterialList::saveStream(Base::OutputStream &str) const
         }
         return;
     }
-    for (int i = 0; i < _count; ++i) {
+    for (int i = 0; i < _list.rd().count; ++i) {
         str << packedForSave(getAmbientColor(i), convert);
         str << packedForSave(getDiffuseColor(i), convert);
         str << packedForSave(getSpecularColor(i), convert);
@@ -4651,8 +3715,8 @@ void PropertyMaterialList::restoreStream(Base::InputStream &str, unsigned uCt)
     // The generic hook, which no caller with a document reaches (this class
     // overrides RestoreDocFile); a bare stream states no version, and no
     // conversion is the reading that leaves its bytes meaning what they say.
-    _pbr = false;
-    restoreValues(parseMaterialStream(str, uCt), false);
+    _list.wd().pbr = false;
+    _list.restoreValues(parseMaterialStream(str, uCt), false);
 }
 
 /** The element, and whether it promises a second pass
@@ -4666,7 +3730,7 @@ void PropertyMaterialList::restoreStream(Base::InputStream &str, unsigned uCt)
  */
 void PropertyMaterialList::Save(Base::Writer &writer) const
 {
-    ensureNormalized();
+    _list.ensureNormalized();
     // ⭐ The finish goes out ahead of the material element, as an element of
     // its own inside this property's -- as though an older format had kept it
     // in a property beside the appearance and this one had merged it in.
@@ -4677,18 +3741,18 @@ void PropertyMaterialList::Save(Base::Writer &writer) const
     // the same file is theirs to open and ours to open back with nothing
     // lost. At schema 5 and above the per field encoding carries the finish
     // itself and nothing extra is written at all.
-    if (writer.getSchemaVersion() < 5 && !_finish.empty()) {
+    if (writer.getSchemaVersion() < 5 && !_list.rd().finish.empty()) {
         PropertySurfaceFinishList carrier;
-        carrier.setValue(_finish);
+        carrier.setValue(_list.rd().finish);
         carrier.Save(writer);
     }
     // The texture goes out the same way and for the same reason: below
     // schema 5 the material encodings are upstream's, they have nowhere to
     // put one, and SaveSchemaVersion defaults to 4 -- so without this a
     // texture would vanish from every ordinary document.
-    if (writer.getSchemaVersion() < 5 && !_texturePalette.empty()) {
+    if (writer.getSchemaVersion() < 5 && !_list.rd().texturePalette.empty()) {
         PropertySurfaceTextureList carrier;
-        carrier.setValue(_texturePalette, _textureIndex);
+        carrier.setValue(_list.rd().texturePalette, _list.rd().textureIndex);
         carrier.Save(writer);
     }
     if (writer.getSchemaVersion() < 5 && hasTextureOrCard() && !writer.isForceXML()
@@ -4751,7 +3815,7 @@ void PropertyMaterialList::Restore(Base::XMLReader &reader)
         restoreXML(reader);
     }
     else {
-        _pbr = false;
+        _list.wd().pbr = false;
         if (getSize())
             setSize(0);
     }
@@ -4761,7 +3825,7 @@ void PropertyMaterialList::Restore(Base::XMLReader &reader)
 
 void PropertyMaterialList::applyPendingFinish()
 {
-    if (_pendingFinish.empty() || _count == 0) {
+    if (_pendingFinish.empty() || _list.wd().count == 0) {
         _pendingFinish.clear();
         return;
     }
@@ -4776,17 +3840,17 @@ void PropertyMaterialList::applyPendingTexture()
     std::vector<uint16_t> index;
     palette.swap(_pendingTexturePalette);
     index.swap(_pendingTextureIndex);
-    if (!palette.empty() && _count != 0) {
+    if (!palette.empty() && _list.wd().count != 0) {
         // The check the companion element could not make: it is restored
         // before the list it belongs to has a length
-        if (!index.empty() && static_cast<int>(index.size()) != _count)
+        if (!index.empty() && static_cast<int>(index.size()) != _list.wd().count)
             throw Base::FileException("texture index length does not match the list");
         atomic_change guard(*this);
-        touchFields();
-        _texturePalette.swap(palette);
-        _textureIndex.swap(index);
-        normalize();
-        pruneTextureBlobs();
+        _list.touchFields();
+        _list.wd().texturePalette.swap(palette);
+        _list.wd().textureIndex.swap(index);
+        _list.normalize();
+        _list.pruneTextureBlobs();
         guard.tryInvoke();
     }
     // Unconditional, because the palette may equally have come from the
@@ -4799,17 +3863,17 @@ void PropertyMaterialList::SaveDocFile(Base::Writer &writer) const
 {
     if (writer.getSchemaVersion() < 5) {
         Base::OutputStream str(writer.Stream(), writer.isPreferBinary());
-        str << static_cast<uint32_t>(_count);
+        str << static_cast<uint32_t>(_list.rd().count);
         saveStream(str);
         if (hasTextureOrCard()) {
             saveStringStream(str);
         }
         return;
     }
-    ensureNormalized();
+    _list.ensureNormalized();
     Base::OutputStream str(writer.Stream(), writer.isPreferBinary());
     str << FieldStreamMarker;
-    str << static_cast<uint32_t>(_count);
+    str << static_cast<uint32_t>(_list.rd().count);
     saveFieldStream(str);
 }
 
@@ -4827,8 +3891,8 @@ void PropertyMaterialList::RestoreDocFile(Base::Reader &reader)
     }
     else {
         // The compatible stream cannot state a mode: its values are Phong
-        _pbr = false;
-        restoreValues(parseMaterialStream(str, uCt), legacy);
+        _list.wd().pbr = false;
+        _list.restoreValues(parseMaterialStream(str, uCt), legacy);
         // Version 3 is the colours we have always read, followed by three
         // strings per entry. Written by upstream, and by this fork when it
         // has any to write.
@@ -4845,7 +3909,7 @@ void PropertyMaterialList::RestoreDocFile(Base::Reader &reader)
 /// Upstream's second pass: image, imagePath and uuid, entry by entry
 void PropertyMaterialList::saveStringStream(Base::OutputStream &str) const
 {
-    for (int i = 0; i < _count; ++i) {
+    for (int i = 0; i < _list.rd().count; ++i) {
         str << getImage(i);
         str << getImagePath(i);
         str << getUuid(i);
@@ -4855,7 +3919,7 @@ void PropertyMaterialList::saveStringStream(Base::OutputStream &str) const
 void PropertyMaterialList::restoreStringStream(Base::InputStream &str, unsigned uCt)
 {
     atomic_change guard(*this);
-    touchFields();
+    _list.touchFields();
     std::vector<std::string> image(uCt);
     std::vector<std::string> imagePath(uCt);
     std::vector<std::string> uuid(uCt);
@@ -4864,10 +3928,10 @@ void PropertyMaterialList::restoreStringStream(Base::InputStream &str, unsigned 
         str >> imagePath[i];
         str >> uuid[i];
     }
-    _image.swap(image);
-    _imagePath.swap(imagePath);
-    _uuid.swap(uuid);
-    normalize();
+    _list.wd().image.swap(image);
+    _list.wd().imagePath.swap(imagePath);
+    _list.wd().uuid.swap(uuid);
+    _list.normalize();
     guard.tryInvoke();
 }
 
@@ -5061,7 +4125,7 @@ std::string hexToken(const std::string &token)
 /// before the allocation, not after: the number came out of a file.
 void checkPaletteSize(std::size_t size)
 {
-    if (size > maxPaletteSize)
+    if (size > MaterialList::MaxPaletteSize)
         throw Base::FileException("texture palette is longer than the index can address");
 }
 
@@ -5155,18 +4219,18 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     // understood on the way in, for the files written while it was a field
     // of its own.
     uint16_t mask = 0;
-    if (!_ambient.empty())      mask |= FieldAmbient;
-    if (!_diffuse.empty())      mask |= FieldDiffuse;
-    if (!_specular.empty())     mask |= FieldSpecular;
-    if (!_emissive.empty())     mask |= FieldEmissive;
-    if (!_shininess.empty())    mask |= FieldShininess;
-    if (!_type.empty())         mask |= FieldType;
-    if (!_image.empty())        mask |= FieldImage;
-    if (!_imagePath.empty())    mask |= FieldImagePath;
-    if (!_uuid.empty())         mask |= FieldUuid;
-    if (!_finish.empty())       mask |= FieldFinish;
-    if (!_texturePalette.empty()) mask |= FieldTexture;
-    if (_pbr)                   mask |= FieldPBR;
+    if (!_list.rd().ambient.empty())      mask |= FieldAmbient;
+    if (!_list.rd().diffuse.empty())      mask |= FieldDiffuse;
+    if (!_list.rd().specular.empty())     mask |= FieldSpecular;
+    if (!_list.rd().emissive.empty())     mask |= FieldEmissive;
+    if (!_list.rd().shininess.empty())    mask |= FieldShininess;
+    if (!_list.rd().type.empty())         mask |= FieldType;
+    if (!_list.rd().image.empty())        mask |= FieldImage;
+    if (!_list.rd().imagePath.empty())    mask |= FieldImagePath;
+    if (!_list.rd().uuid.empty())         mask |= FieldUuid;
+    if (!_list.rd().finish.empty())       mask |= FieldFinish;
+    if (!_list.rd().texturePalette.empty()) mask |= FieldTexture;
+    if (_list.rd().pbr)                   mask |= FieldPBR;
     str << mask;
 
     // Runs go out in ascending bit order, each behind a head of its shape,
@@ -5210,14 +4274,14 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
         });
     };
 
-    writeColors(_ambient);
-    writeColors(_diffuse);
-    writeColors(_specular);
-    writeColors(_emissive);
-    writeFloats(_shininess);
-    if (!_type.empty()) {
-        writeRun(RunInt8, _type.size(), [this](Base::OutputStream &run) {
-            for (int8_t value : _type)
+    writeColors(_list.rd().ambient);
+    writeColors(_list.rd().diffuse);
+    writeColors(_list.rd().specular);
+    writeColors(_list.rd().emissive);
+    writeFloats(_list.rd().shininess);
+    if (!_list.rd().type.empty()) {
+        writeRun(RunInt8, _list.rd().type.size(), [this](Base::OutputStream &run) {
+            for (int8_t value : _list.rd().type)
                 run << value;
         });
     }
@@ -5231,22 +4295,22 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
                 run << value;
         });
     };
-    writeStrings(_image);
-    writeStrings(_imagePath);
-    writeStrings(_uuid);
-    if (!_finish.empty()) {
-        writeRun(RunFinish, _finish.size(), [this](Base::OutputStream &run) {
-            writeFinishRecords(run, _finish);
+    writeStrings(_list.rd().image);
+    writeStrings(_list.rd().imagePath);
+    writeStrings(_list.rd().uuid);
+    if (!_list.rd().finish.empty()) {
+        writeRun(RunFinish, _list.rd().finish.size(), [this](Base::OutputStream &run) {
+            writeFinishRecords(run, _list.rd().finish);
         });
     }
-    if (!_texturePalette.empty()) {
+    if (!_list.rd().texturePalette.empty()) {
         // The entry count the head states follows the same rule every other
         // field's does -- uniform is 1, varying is the whole list -- while
         // the palette and the index state their own lengths inside, because
         // neither is the entry count.
-        writeRun(RunTexture, _textureIndex.empty() ? 1 : _textureIndex.size(),
+        writeRun(RunTexture, _list.rd().textureIndex.empty() ? 1 : _list.rd().textureIndex.size(),
                  [this](Base::OutputStream &run) {
-                     writeTextureRun(run, _texturePalette, _textureIndex);
+                     writeTextureRun(run, _list.rd().texturePalette, _list.rd().textureIndex);
                  });
     }
 }
@@ -5254,9 +4318,9 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
 void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned uCt, bool legacy)
 {
     atomic_change guard(*this);
-    touchFields();
+    _list.touchFields();
     _touchList.clear();
-    _count = static_cast<int>(uCt);
+    _list.wd().count = static_cast<int>(uCt);
     // A run this fork stopped writing but read back from the files written
     // while the quantity was a field of its own; merged into the diffuse
     // alphas below.
@@ -5265,21 +4329,21 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
     uint16_t mask = 0;
     str >> mask;
     // Before the fields land: the mode decides what an absent field reads
-    // as when normalize() runs below
-    _pbr = (mask & FieldPBR) != 0;
+    // as when _list.normalize() runs below
+    _list.wd().pbr = (mask & FieldPBR) != 0;
 
-    std::vector<Color>().swap(_ambient);
-    std::vector<Color>().swap(_diffuse);
-    std::vector<Color>().swap(_specular);
-    std::vector<Color>().swap(_emissive);
-    std::vector<float>().swap(_shininess);
-    std::vector<std::string>().swap(_image);
-    std::vector<std::string>().swap(_imagePath);
-    std::vector<std::string>().swap(_uuid);
-    std::vector<int8_t>().swap(_type);
-    std::vector<SurfaceFinish>().swap(_finish);
-    std::vector<SurfaceTexture>().swap(_texturePalette);
-    std::vector<uint16_t>().swap(_textureIndex);
+    std::vector<Color>().swap(_list.wd().ambient);
+    std::vector<Color>().swap(_list.wd().diffuse);
+    std::vector<Color>().swap(_list.wd().specular);
+    std::vector<Color>().swap(_list.wd().emissive);
+    std::vector<float>().swap(_list.wd().shininess);
+    std::vector<std::string>().swap(_list.wd().image);
+    std::vector<std::string>().swap(_list.wd().imagePath);
+    std::vector<std::string>().swap(_list.wd().uuid);
+    std::vector<int8_t>().swap(_list.wd().type);
+    std::vector<SurfaceFinish>().swap(_list.wd().finish);
+    std::vector<SurfaceTexture>().swap(_list.wd().texturePalette);
+    std::vector<uint16_t>().swap(_list.wd().textureIndex);
 
     // Ascending bit order, which is the order they were written in, each run
     // behind a head of its shape, its byte length and its entry count. A bit
@@ -5358,33 +4422,33 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
         }
 
         switch (bit) {
-        case FieldAmbient: _ambient.swap(colors); break;
-        case FieldDiffuse: _diffuse.swap(colors); break;
-        case FieldSpecular: _specular.swap(colors); break;
-        case FieldEmissive: _emissive.swap(colors); break;
-        case FieldShininess: _shininess.swap(floats); break;
+        case FieldAmbient: _list.wd().ambient.swap(colors); break;
+        case FieldDiffuse: _list.wd().diffuse.swap(colors); break;
+        case FieldSpecular: _list.wd().specular.swap(colors); break;
+        case FieldEmissive: _list.wd().emissive.swap(colors); break;
+        case FieldShininess: _list.wd().shininess.swap(floats); break;
         case FieldTransparency: transparency.swap(floats); break;
-        case FieldType: _type.swap(int8s); break;
-        case FieldImage: _image.swap(strings); break;
-        case FieldImagePath: _imagePath.swap(strings); break;
-        case FieldUuid: _uuid.swap(strings); break;
-        case FieldFinish: _finish.swap(finishes); break;
+        case FieldType: _list.wd().type.swap(int8s); break;
+        case FieldImage: _list.wd().image.swap(strings); break;
+        case FieldImagePath: _list.wd().imagePath.swap(strings); break;
+        case FieldUuid: _list.wd().uuid.swap(strings); break;
+        case FieldFinish: _list.wd().finish.swap(finishes); break;
         case FieldTexture:
-            _texturePalette.swap(palette);
-            _textureIndex.swap(index);
+            _list.wd().texturePalette.swap(palette);
+            _list.wd().textureIndex.swap(index);
             break;
         default: break;   // unreachable: an unknown bit was skipped above
         }
     }
     if (legacy) {
-        for (auto *field : {&_ambient, &_diffuse, &_specular, &_emissive}) {
+        for (auto *field : {&_list.wd().ambient, &_list.wd().diffuse, &_list.wd().specular, &_list.wd().emissive}) {
             for (auto &color : *field)
                 convertAlpha(color);
         }
     }
-    applyRestoredTransparency(transparency, legacy);
-    touchFields();
-    normalize();
+    _list.applyRestoredTransparency(transparency, legacy);
+    _list.touchFields();
+    _list.normalize();
     guard.tryInvoke();
 }
 
@@ -5393,7 +4457,7 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
     // The mode is an attribute, not a key line in the char stream: an old
     // fork build ignores an attribute it does not query but throws on an
     // unknown field key
-    if (_pbr)
+    if (_list.rd().pbr)
         writer.Stream() << " pbr=\"1\"";
     writer.Stream() << " fields=\"1\">\n";
 
@@ -5420,14 +4484,14 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
         writer.Stream().precision(precision);
     };
 
-    writeColors('a', _ambient);
-    writeColors('d', _diffuse);
-    writeColors('s', _specular);
-    writeColors('e', _emissive);
-    writeFloats('h', _shininess);
-    if (!_type.empty()) {
-        writer.Stream() << "y " << _type.size();
-        for (int8_t value : _type)
+    writeColors('a', _list.rd().ambient);
+    writeColors('d', _list.rd().diffuse);
+    writeColors('s', _list.rd().specular);
+    writeColors('e', _list.rd().emissive);
+    writeFloats('h', _list.rd().shininess);
+    if (!_list.rd().type.empty()) {
+        writer.Stream() << "y " << _list.rd().type.size();
+        for (int8_t value : _list.rd().type)
             writer.Stream() << ' ' << static_cast<int>(value);
         writer.Stream() << '\n';
     }
@@ -5439,16 +4503,16 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
             writeHexToken(writer.Stream(), value);
         writer.Stream() << '\n';
     };
-    writeStrings('i', _image);
-    writeStrings('p', _imagePath);
-    writeStrings('u', _uuid);
+    writeStrings('i', _list.rd().image);
+    writeStrings('p', _list.rd().imagePath);
+    writeStrings('u', _list.rd().uuid);
     // Self-describing, unlike every other key: the palette and the index
     // state their own lengths, because neither of them is the entry count.
     // The leading number is still the honest token count, which is all a
     // reader that does not know the key needs to step over it (9.4.2).
-    if (!_texturePalette.empty()) {
-        writer.Stream() << "x " << textureTokenCount(_texturePalette, _textureIndex);
-        writeTextureTokens(writer.Stream(), _texturePalette, _textureIndex);
+    if (!_list.rd().texturePalette.empty()) {
+        writer.Stream() << "x " << textureTokenCount(_list.rd().texturePalette, _list.rd().textureIndex);
+        writeTextureTokens(writer.Stream(), _list.rd().texturePalette, _list.rd().textureIndex);
         writer.Stream() << '\n';
     }
     // Four tokens per entry, which is why the number after a key counts
@@ -5456,10 +4520,10 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
     // over a key it does not know (9.4.2). Every other field writes one
     // token per entry, so for them the two counts are the same number and
     // nothing about their lines changed.
-    if (!_finish.empty()) {
+    if (!_list.rd().finish.empty()) {
         const auto precision = writer.Stream().precision(9);
-        writer.Stream() << "f " << _finish.size() * 4;
-        for (const auto &value : _finish) {
+        writer.Stream() << "f " << _list.rd().finish.size() * 4;
+        for (const auto &value : _list.rd().finish) {
             writer.Stream() << ' ' << static_cast<unsigned>(value.pattern)
                             << ' ' << value.pitch
                             << ' ' << value.depth
@@ -5475,23 +4539,23 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
 {
     const bool legacy = restoreConverts(reader);
     atomic_change guard(*this);
-    touchFields();
+    _list.touchFields();
     _touchList.clear();
-    _count = static_cast<int>(uCt);
+    _list.wd().count = static_cast<int>(uCt);
     // As in restoreFieldStream: read but no longer written.
     std::vector<float> transparency;
-    std::vector<Color>().swap(_ambient);
-    std::vector<Color>().swap(_diffuse);
-    std::vector<Color>().swap(_specular);
-    std::vector<Color>().swap(_emissive);
-    std::vector<float>().swap(_shininess);
-    std::vector<std::string>().swap(_image);
-    std::vector<std::string>().swap(_imagePath);
-    std::vector<std::string>().swap(_uuid);
-    std::vector<int8_t>().swap(_type);
-    std::vector<SurfaceFinish>().swap(_finish);
-    std::vector<SurfaceTexture>().swap(_texturePalette);
-    std::vector<uint16_t>().swap(_textureIndex);
+    std::vector<Color>().swap(_list.wd().ambient);
+    std::vector<Color>().swap(_list.wd().diffuse);
+    std::vector<Color>().swap(_list.wd().specular);
+    std::vector<Color>().swap(_list.wd().emissive);
+    std::vector<float>().swap(_list.wd().shininess);
+    std::vector<std::string>().swap(_list.wd().image);
+    std::vector<std::string>().swap(_list.wd().imagePath);
+    std::vector<std::string>().swap(_list.wd().uuid);
+    std::vector<int8_t>().swap(_list.wd().type);
+    std::vector<SurfaceFinish>().swap(_list.wd().finish);
+    std::vector<SurfaceTexture>().swap(_list.wd().texturePalette);
+    std::vector<uint16_t>().swap(_list.wd().textureIndex);
 
     auto &s = reader.beginCharStream();
     std::string key;
@@ -5536,7 +4600,7 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
         if (key[0] == 'x') {
             // The palette states its own length; the index does not get to,
             // because it is one slot per entry of this list
-            readTextureKey(s, _texturePalette, _textureIndex, static_cast<int>(uCt));
+            readTextureKey(s, _list.wd().texturePalette, _list.wd().textureIndex, static_cast<int>(uCt));
             continue;
         }
         if (tokens % stride != 0)
@@ -5562,16 +4626,16 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
         };
 
         switch (key[0]) {
-        case 'a': readColors(_ambient); break;
-        case 'd': readColors(_diffuse); break;
-        case 's': readColors(_specular); break;
-        case 'e': readColors(_emissive); break;
-        case 'h': readFloats(_shininess); break;
+        case 'a': readColors(_list.wd().ambient); break;
+        case 'd': readColors(_list.wd().diffuse); break;
+        case 's': readColors(_list.wd().specular); break;
+        case 'e': readColors(_list.wd().emissive); break;
+        case 'h': readFloats(_list.wd().shininess); break;
         case 't': readFloats(transparency); break;
         case 'i':
         case 'p':
         case 'u': {
-            auto &field = key[0] == 'i' ? _image : (key[0] == 'p' ? _imagePath : _uuid);
+            auto &field = key[0] == 'i' ? _list.wd().image : (key[0] == 'p' ? _list.wd().imagePath : _list.wd().uuid);
             field.resize(count);
             std::string token;
             for (auto &value : field) {
@@ -5582,18 +4646,18 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
             break;
         }
         case 'y': {
-            _type.resize(count);
+            _list.wd().type.resize(count);
             int value = 0;
-            for (auto &entry : _type) {
+            for (auto &entry : _list.wd().type) {
                 s >> value;
                 entry = static_cast<int8_t>(value);
             }
             break;
         }
         case 'f': {
-            _finish.resize(count);
+            _list.wd().finish.resize(count);
             unsigned pattern = 0;
-            for (auto &entry : _finish) {
+            for (auto &entry : _list.wd().finish) {
                 s >> pattern >> entry.pitch >> entry.depth >> entry.angle;
                 entry.pattern = static_cast<uint8_t>(pattern);
                 entry.normalize();
@@ -5606,14 +4670,14 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
     }
     reader.endCharStream();
     if (legacy) {
-        for (auto *field : {&_ambient, &_diffuse, &_specular, &_emissive}) {
+        for (auto *field : {&_list.wd().ambient, &_list.wd().diffuse, &_list.wd().specular, &_list.wd().emissive}) {
             for (auto &color : *field)
                 convertAlpha(color);
         }
     }
-    applyRestoredTransparency(transparency, legacy);
-    touchFields();
-    normalize();
+    _list.applyRestoredTransparency(transparency, legacy);
+    _list.touchFields();
+    _list.normalize();
     guard.tryInvoke();
 }
 
@@ -5624,79 +4688,21 @@ const char* PropertyMaterialList::getEditorName() const
     return "Gui::PropertyEditor::PropertyMaterialListItem";
 }
 
-bool PropertyMaterialList::isSame(const Property &other) const
-{
-    if (&other == this)
-        return true;
-    auto list = Base::freecad_dynamic_cast<const PropertyMaterialList>(&other);
-    if (!list || list->_count != _count || list->_pbr != _pbr)
-        return false;
-    ensureNormalized();
-    list->ensureNormalized();
-    return _ambient == list->_ambient
-        && _diffuse == list->_diffuse
-        && _specular == list->_specular
-        && _emissive == list->_emissive
-        && _shininess == list->_shininess
-        && _image == list->_image
-        && _imagePath == list->_imagePath
-        && _uuid == list->_uuid
-        && _type == list->_type
-        && _finish == list->_finish
-        // Normalised on both sides, and the normal form is canonical
-        // (first-use order), so the pair compares as the values do
-        && _texturePalette == list->_texturePalette
-        && _textureIndex == list->_textureIndex;
-}
 
 Property *PropertyMaterialList::Copy() const
 {
-    ensureNormalized();
-    PropertyMaterialList *p = new PropertyMaterialList();
-    p->_count = _count;
-    p->_pbr = _pbr;
-    p->_ambient = _ambient;
-    p->_diffuse = _diffuse;
-    p->_specular = _specular;
-    p->_emissive = _emissive;
-    p->_shininess = _shininess;
-    p->_image = _image;
-    p->_imagePath = _imagePath;
-    p->_uuid = _uuid;
-    p->_type = _type;
-    p->_finish = _finish;
-    p->_texturePalette = _texturePalette;
-    p->_textureIndex = _textureIndex;
-    // Handles, not bytes: a copy refers to the same content, which is the
-    // whole point of a shared store
-    p->_textureBlobs = _textureBlobs;
+    // A pointer, not fourteen vectors. The copy shares this property's
+    // storage until either of them writes, which is what makes an undo
+    // snapshot of a ten thousand face appearance free.
+    auto *p = new PropertyMaterialList();
+    p->_list = _list;
     return p;
 }
 
 void PropertyMaterialList::Paste(const Property &from)
 {
-    const auto &other = dynamic_cast<const PropertyMaterialList&>(from);
-    other.ensureNormalized();
-    atomic_change guard(*this);
-    touchFields();
-    _touchList.clear();
-    _count = other._count;
-    _pbr = other._pbr;
-    _ambient = other._ambient;
-    _diffuse = other._diffuse;
-    _specular = other._specular;
-    _emissive = other._emissive;
-    _shininess = other._shininess;
-    _image = other._image;
-    _imagePath = other._imagePath;
-    _uuid = other._uuid;
-    _type = other._type;
-    _finish = other._finish;
-    _texturePalette = other._texturePalette;
-    _textureIndex = other._textureIndex;
-    _textureBlobs = other._textureBlobs;
-    _normalized = true;
-    guard.tryInvoke();
+    const auto &other = dynamic_cast<const PropertyMaterialList &>(from);
+    change([&] { _list = other._list; });
 }
 
 //**************************************************************************

@@ -306,6 +306,7 @@ SET(FreeCADApp_CPP_SRCS
     MappedElement.cpp
     MappedName.cpp
     Material.cpp
+    MaterialList.cpp
     MaterialPyImp.cpp
     Metadata.cpp
     MetadataPyImp.cpp
@@ -331,6 +332,7 @@ SET(FreeCADApp_HPP_SRCS
     IndexedName.h
     MappedName.h
     Material.h
+    MaterialList.h
     Metadata.h
     ElementNamingUtils.h
     StringHasher.h

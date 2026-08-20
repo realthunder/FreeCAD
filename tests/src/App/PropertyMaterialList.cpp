@@ -2152,3 +2152,144 @@ TEST_F(PropertyMaterialListTest, aKeyFromALaterBuildIsSteppedOver)
     EXPECT_EQ(prop.getFinish(2).pattern, App::SurfaceFinish::Brushed);
     EXPECT_FLOAT_EQ(prop.getFinish(2).angle, 30.0F);
 }
+
+//--------------------------------------------------------------------------
+// The value is shared and copied on write (docs/PythonValueBindings.md)
+//
+// The storage lives in App::MaterialList now, and copying one costs a
+// pointer. What these hold to account is the two halves of that bargain:
+// nobody sees another holder's write, and a write that changes nothing
+// leaves the storage exactly as it found it -- which is how the property
+// decides whether there is a change to record at all.
+//--------------------------------------------------------------------------
+
+TEST_F(PropertyMaterialListTest, aCopyOfTheValueSharesUntilOneOfThemWrites)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(1000, redMaterial()));
+
+    App::MaterialList copy = prop.getList();
+    EXPECT_TRUE(prop.getList().isShared());
+    EXPECT_TRUE(copy.isSameData(prop.getList()));
+    EXPECT_EQ(copy.getSize(), 1000);
+
+    // Reading never detaches, however much of it there is
+    for (int i = 0; i < 1000; ++i) {
+        EXPECT_TRUE(prop.getMaterial(i) == redMaterial()) << "entry " << i;
+    }
+    EXPECT_TRUE(prop.getList().isShared());
+
+    App::Material blue;
+    blue.diffuseColor = packed(0x0000ffff);
+    prop.setDiffuseColor(500, blue.diffuseColor);
+
+    EXPECT_FALSE(prop.getList().isShared());
+    EXPECT_FALSE(copy.isSameData(prop.getList()));
+    // the copy still says what it said
+    EXPECT_EQ(copy.getDiffuseColor(500).getPackedValue(), 0xff0000ffU);
+    EXPECT_EQ(prop.getDiffuseColor(500).getPackedValue(), 0x0000ffffU);
+}
+
+TEST_F(PropertyMaterialListTest, anUndoSnapshotIsAPointerRatherThanTheWholeList)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(1000, redMaterial()));
+    EXPECT_FALSE(prop.getList().isShared());
+
+    // Copy() is what the transaction machinery calls before every change
+    std::unique_ptr<App::Property> snapshot(prop.Copy());
+    EXPECT_TRUE(prop.getList().isShared());
+
+    auto *copied = dynamic_cast<App::PropertyMaterialList *>(snapshot.get());
+    ASSERT_NE(copied, nullptr);
+    EXPECT_TRUE(copied->getList().isSameData(prop.getList()));
+
+    prop.setDiffuseColor(0, packed(0x00ff00ff));
+    EXPECT_FALSE(prop.getList().isShared());
+    EXPECT_EQ(copied->getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
+
+    // and pasting it back is the same pointer trade in reverse
+    prop.Paste(*copied);
+    EXPECT_TRUE(prop.getList().isSameData(copied->getList()));
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
+}
+
+TEST_F(PropertyMaterialListTest, aWriteThatChangesNothingLeavesTheStorageAlone)
+{
+    // The property reads "did anything change" off the storage identity, so
+    // a setter that decides nothing changed must not detach -- otherwise
+    // every no-op write would record an undo step and touch the document.
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+
+    const App::MaterialList before = prop.getList();
+    prop.setDiffuseColor(2, redMaterial().diffuseColor);
+    EXPECT_TRUE(prop.getList().isSameData(before));
+    prop.setDiffuseColor(redMaterial().diffuseColor);
+    EXPECT_TRUE(prop.getList().isSameData(before));
+    prop.setShininess(2, prop.getShininess(2));
+    EXPECT_TRUE(prop.getList().isSameData(before));
+    prop.setFinish(2, prop.getFinish(2));
+    EXPECT_TRUE(prop.getList().isSameData(before));
+    prop.setTexture(2, prop.getTexture(2));
+    EXPECT_TRUE(prop.getList().isSameData(before));
+    prop.setPBR(prop.isPBR());
+    EXPECT_TRUE(prop.getList().isSameData(before));
+    prop.setSize(4);
+    EXPECT_TRUE(prop.getList().isSameData(before));
+
+    // A WHOLE-LIST assignment is the exception, and always was: it rebuilds
+    // every field rather than comparing first, so it records a change even
+    // when the values match. Nothing here changes that -- it is the same
+    // signal the property sent before the value moved out of it.
+    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    EXPECT_FALSE(prop.getList().isSameData(before));
+
+    // and a real entry write detaches too
+    const App::MaterialList reassigned = prop.getList();
+    prop.setDiffuseColor(2, packed(0x00ff00ff));
+    EXPECT_FALSE(prop.getList().isSameData(reassigned));
+}
+
+TEST_F(PropertyMaterialListTest, anIndexedWriteRecordsThatIndexAndAWholeOneClearsThem)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    EXPECT_TRUE(prop.getTouchList().empty());
+
+    prop.setDiffuseColor(2, packed(0x00ff00ff));
+    EXPECT_EQ(prop.getTouchList(), std::set<int>({2}));
+    prop.setShininess(1, 0.5F);
+    EXPECT_EQ(prop.getTouchList(), std::set<int>({1, 2}));
+
+    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    EXPECT_TRUE(prop.getTouchList().empty());
+}
+
+TEST_F(PropertyMaterialListTest, contentTheListHoldsTravelsWithACopyOfIt)
+{
+    const std::string oakPath = writeTempFile("this is an oak plank");
+
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(2, redMaterial()));
+    const std::string hash = prop.insertTextureFile(oakPath.c_str());
+    ASSERT_FALSE(hash.empty());
+
+    App::Material textured = redMaterial();
+    textured.texture.maps[App::SurfaceTexture::BaseColor] = hash;
+    prop.set1Value(1, textured);
+
+    // A copy names the same content, which is the point of a shared store:
+    // the file lives while any handle to it does
+    App::MaterialList copy = prop.getList();
+    EXPECT_FALSE(copy.getTextureFile(hash).empty());
+    EXPECT_EQ(copy.getTexture(1).maps[App::SurfaceTexture::BaseColor], hash);
+
+    // and taking content in is a claim rather than a value change, so it
+    // does not detach the copy or record a change
+    const std::string steelPath = writeTempFile("this is brushed steel");
+    const std::string second = prop.insertTextureFile(steelPath.c_str());
+    ASSERT_FALSE(second.empty());
+    EXPECT_TRUE(copy.isSameData(prop.getList()));
+    EXPECT_FALSE(copy.getTextureFile(second).empty());
+}
