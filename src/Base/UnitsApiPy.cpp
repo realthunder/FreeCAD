@@ -54,7 +54,7 @@ PyMethodDef UnitsApi::Methods[] = {
     {"listSchemas",
      UnitsApi::sListSchemas,
      METH_VARARGS,
-     "listSchemas() -> a tuple of schemas\n\n"
+     "listSchemas() -> a tuple of schema names\n\n"
      "listSchemas(int) -> description of the given schema\n\n"},
     {"getSchema",
      UnitsApi::sGetSchema,
@@ -115,9 +115,11 @@ PyObject* UnitsApi::sListSchemas(PyObject* /*self*/, PyObject* args)
         int num = static_cast<int>(UnitSystem::NumUnitSystemTypes);
         Py::Tuple tuple(num);
         for (int i = 0; i < num; i++) {
-            const auto description {
-                UnitsApi::getDescription(static_cast<UnitSystem>(i)).toStdString()};
-            tuple.setItem(i, Py::String(description.c_str()));
+            // Names, not descriptions: a caller selecting a schema by string
+            // must not depend on the user's language. listSchemas(int) still
+            // answers with the description, as upstream does.
+            const auto name {UnitsApi::getName(static_cast<UnitSystem>(i))};
+            tuple.setItem(i, Py::String(name.c_str()));
         }
 
         return Py::new_reference_to(tuple);
