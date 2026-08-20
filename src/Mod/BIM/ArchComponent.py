@@ -74,9 +74,9 @@ def _make_projected_horizontal_area_face(projected_faces):
     if not projected_faces:
         return None
 
-    fused_face = projected_faces[0].copy()
+    fused_face = projected_faces[0].copy(noElementMap=True)
     for face in projected_faces[1:]:
-        fused_face = fused_face.fuse(face)
+        fused_face = fused_face.fuse(face, noElementMap=True)
     return fused_face.removeSplitter()
 
 

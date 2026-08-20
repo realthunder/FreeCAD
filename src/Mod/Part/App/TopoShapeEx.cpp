@@ -633,6 +633,14 @@ Data::ElementMapPtr TopoShape::resetElementMap(Data::ElementMapPtr elementMap)
     return Data::ComplexGeoData::resetElementMap(elementMap);
 }
 
+void TopoShape::dropElementNaming()
+{
+    resetElementMap();
+    Tag = 0;
+    Hasher = nullptr;
+    initCache(1);
+}
+
 void TopoShape::flushElementMap() const
 {
     INIT_SHAPE_CACHE();

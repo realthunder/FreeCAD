@@ -2447,6 +2447,9 @@ public:
     unsigned long getElementMapReserve() const override;
     bool hasPendingElementMap() const;
 
+    /// Forget all element naming: the map, the owning tag and the hasher.
+    void dropElementNaming();
+
     std::vector<Data::IndexedName> getHigherElements(const char *element,
                                                      bool silent=false) const override;
 
