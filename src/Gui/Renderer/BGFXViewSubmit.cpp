@@ -22,6 +22,17 @@
 
 #include "BGFXRendererP.h"
 
+namespace {
+/// Does this draw's per-face palette want the mesh's own texture
+/// coordinates? A tile size <= 0 says so (Material::facetexscale), and
+/// only the shader's TEXTURE variant carries v_texcoord0 to answer it.
+bool faceTexOnMeshUV(const Render::Material &mat)
+{
+    return mat.texturepalette && !mat.texturepalette->entries.empty()
+        && mat.facetexscale <= 0.0f;
+}
+} // namespace
+
 void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,
                       bool mapped)
 {
@@ -434,8 +445,9 @@ bool BGFXView::submitInstanced(const Render::DrawCall &draw, const float *data,
     bool mapped = (mat.emissivemap || mat.occlusionmap
                    || mat.metallicroughnessmap)
         && draw.mesh->texCoords;
+    bool faceuv = faceTexOnMeshUV(mat) && draw.mesh->texCoords;
     bool textured = (mat.texture && draw.mesh->texCoords)
-        || bumped || mapped;
+        || bumped || mapped || faceuv;
     if (textured) {
         mesh->geom->ensureTexCoord(*draw.mesh);
         textured = bgfx::isValid(mesh->geom->texcoord);
@@ -686,9 +698,19 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
         && (mat.emissivemap || mat.occlusionmap
             || mat.metallicroughnessmap)
         && draw.mesh->texCoords && pass != PassDepthOnly;
+    // Per-face images laid out on the mesh's OWN texture coordinates
+    // (a negative tile size -- what a shape that really was UV mapped
+    // states, and what the glTF reader writes): that fallback lives
+    // inside the shader's TEXTURE variant, so the draw needs the
+    // textured programs and the texcoord stream even when nothing else
+    // about it is textured. The white unit-0 stand-in a lone bump map
+    // already uses modulates by nothing.
+    bool faceuv = mat.type == Render::Material::Triangle
+        && pass != PassDepthOnly && faceTexOnMeshUV(mat)
+        && draw.mesh->texCoords;
     bool textured = (mat.type == Render::Material::Triangle
         && mat.texture && draw.mesh->texCoords
-        && pass != PassDepthOnly) || bumped || mapped;
+        && pass != PassDepthOnly) || bumped || mapped || faceuv;
     if (textured) {
         mesh->geom->ensureTexCoord(*draw.mesh);
         textured = bgfx::isValid(mesh->geom->texcoord);
