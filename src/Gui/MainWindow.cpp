@@ -90,6 +90,7 @@
 #include <customtitlebarkit/MenuIntegration.h>
 
 #include "MainWindow.h"
+#include "InputHintWidget.h"
 #include "Action.h"
 #include "Assistant.h"
 #include "BitmapFactory.h"
@@ -286,6 +287,7 @@ struct MainWindowP
 {
     DimensionWidget* sizeLabel;
     QLabel* actionLabel;
+    InputHintWidget* hintLabel;
     QTimer* actionTimer;
     QTimer* statusTimer;
     QTimer* activityTimer;
@@ -541,7 +543,15 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
 
     d->sizeLabel = new DimensionWidget(statusBar());
 
+    d->hintLabel = new InputHintWidget(statusBar());
+    d->hintLabel->setObjectName(QStringLiteral("SB_HintLabel"));
+    d->hintLabel->setWindowTitle(tr("Input hints"));
+    // Hints must keep their full sizeHint and never be clipped. Upstream gets
+    // that from addStatusBarItem(), which this fork has no equivalent of.
+    d->hintLabel->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
+
     statusBar()->addWidget(d->actionLabel, 1);
+    statusBar()->addWidget(d->hintLabel, 0);
     QProgressBar* progressBar = Gui::SequencerBar::instance()->getProgressBar(statusBar());
     progressBar->setWindowTitle(tr("Progress bar"));
     progressBar->setObjectName(QStringLiteral("SB_ProgressBar"));
@@ -3193,6 +3203,16 @@ void MainWindow::showMessage(const QString& message, int timeout) {
         d->actionTimer->start(timeout);
     }else
         d->actionTimer->stop();
+}
+
+void MainWindow::showHints(const std::list<InputHint>& hints)
+{
+    d->hintLabel->showHints(hints);
+}
+
+void MainWindow::hideHints()
+{
+    d->hintLabel->clearHints();
 }
 
 void MainWindow::showStatus(int type, const QString& message)

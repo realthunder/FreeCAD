@@ -45,6 +45,9 @@
 #include <string>
 #include <Inventor/fields/SoSFImage.h>
 
+#include <QGuiApplication>
+#include <QScreen>
+
 #include <Base/Console.h>
 #include <Base/ConsoleObserver.h>
 #include "Tree.h"
@@ -746,6 +749,28 @@ QPixmap BitmapFactoryInst::merge(const QPixmap& p1, const QPixmap& p2, Position 
     pt.end();
 
     return p;
+}
+
+qreal BitmapFactoryInst::getMaximumDPR()
+{
+    qreal dpr = 1.0F;
+
+    for (QScreen* screen : QGuiApplication::screens()) {
+        dpr = std::max(screen->devicePixelRatio(), dpr);
+    }
+
+    return dpr;
+}
+
+QPixmap BitmapFactoryInst::empty(QSize size) const
+{
+    qreal dpr = getMaximumDPR();
+
+    QPixmap res(size * dpr);
+    res.fill(Qt::transparent);
+    res.setDevicePixelRatio(dpr);
+
+    return res;
 }
 
 QPixmap BitmapFactoryInst::disabled(const QPixmap& p) const

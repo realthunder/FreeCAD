@@ -100,6 +100,7 @@
 #include "GuiApplication.h"
 #include "GuiInitScript.h"
 #include "LinkViewPy.h"
+#include "InputHintPy.h"
 #include "MainWindow.h"
 #include "Macro.h"
 #include "PreferencePackManager.h"
@@ -560,6 +561,8 @@ Application::Application(bool GUIenabled)
         Py::Module(module).setAttr(std::string("Control"),
             Py::Object(Gui::TaskView::ControlPy::getInstance(), true));
         Gui::TaskView::TaskDialogPy::init_type();
+
+        registerUserInputEnumInPython(module);
 
         CommandActionPy::init_type();
         Base::Interpreter().addType(CommandActionPy::type_object(),

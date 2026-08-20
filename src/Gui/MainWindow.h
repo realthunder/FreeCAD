@@ -24,8 +24,12 @@
 #ifndef GUI_MAINWINDOW_H
 #define GUI_MAINWINDOW_H
 
+#include <list>
+
 #include <QEvent>
 #include <QMdiArea>
+
+#include "InputHint.h"
 
 #include <customtitlebarkit/CustomTitleBarWindow.h>
 
@@ -255,6 +259,9 @@ public:
 
     enum StatusType {None, Err, Wrn, Pane, Msg, Log, Tmp, Critical};
     void showStatus(int type, const QString & message);
+
+    void showHints(const std::list<InputHint>& hints = {});
+    void hideHints();
 
     void initDockWindows(bool show);
 

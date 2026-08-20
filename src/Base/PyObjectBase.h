@@ -555,6 +555,36 @@ inline void PyTypeCheck(PyObject** ptr, int (*method)(PyObject*), const char* ms
 }
 
 
+/**
+ * Registers a C++ enum as a Python IntEnum in the given module.
+ * Taken from upstream; needed by Gui's UserInput enum.
+ */
+template <typename T>
+void PyRegisterEnum(PyObject* module, const char* name, const std::map<const char*, T>& entries)
+{
+    PyObject* pyEnumModule = PyImport_ImportModule("enum");
+    if (!pyEnumModule) {
+        return;
+    }
+
+    PyObject* pyConstantsDict = PyDict_New();
+
+    // Populate dictionary
+    for (const auto& [key, value] : entries) {
+        PyDict_SetItemString(pyConstantsDict, key, PyLong_FromLong(static_cast<int>(value)));
+    }
+
+    PyObject* pyEnumClass = PyObject_CallMethod(pyEnumModule, "IntEnum", "sO", name, pyConstantsDict);
+
+    Py_CLEAR(pyConstantsDict);
+    Py_CLEAR(pyEnumModule);
+
+    if (pyEnumClass && PyModule_AddObject(module, name, pyEnumClass) < 0) {
+        Py_CLEAR(pyEnumClass);
+    }
+}
+
+
 } // namespace Base
 
 // NOLINTEND(cppcoreguidelines-macro-usage)

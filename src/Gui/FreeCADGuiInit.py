@@ -54,206 +54,31 @@ class SelectionStyle(IntEnum):
 
 Gui.Selection.SelectionStyle = SelectionStyle
 
-# Gui.UserInput / Gui.InputHint / Gui.HintManager
+# Gui.InputHint / Gui.HintManager
 #
-# Upstream FreeCAD registers the UserInput enum from C++ (src/Gui/InputHint.h)
-# and shows the hints in a status bar widget. This fork does not carry that
-# subsystem, so the names it publishes are provided here in Python and the
-# hints are simply not displayed. Workbenches -- Draft above all -- only need
-# the enum members to exist and to compare equal to the matching Qt keys.
-#
-# The values must match with that of the C++ enum class InputHint::UserInput.
-
-def _build_user_input():
-    from PySide.QtCore import Qt
-
-    def _int(value):
-        # PySide6 hands out enum members, and the flag types among them do not
-        # survive a plain int(): take .value when there is one.
-        return int(getattr(value, "value", value))
-
-    def _key(name):
-        value = getattr(Qt, "Key_" + name, None)
-        if value is None:
-            value = getattr(Qt.Key, "Key_" + name)
-        return _int(value)
-
-    keypad = getattr(Qt, "KeypadModifier", None)
-    if keypad is None:
-        keypad = Qt.KeyboardModifier.KeypadModifier
-    _keypad = _int(keypad)
-
-    return IntEnum("UserInput", [
-        ("ModifierShift", _key("Shift")),
-        ("ModifierCtrl", _key("Control")),
-        ("ModifierAlt", _key("Alt")),
-        ("ModifierMeta", _key("Meta")),
-        ("KeySpace", _key("Space")),
-        ("KeyExclam", _key("Exclam")),
-        ("KeyQuoteDbl", _key("QuoteDbl")),
-        ("KeyNumberSign", _key("NumberSign")),
-        ("KeyDollar", _key("Dollar")),
-        ("KeyPercent", _key("Percent")),
-        ("KeyAmpersand", _key("Ampersand")),
-        ("KeyApostrophe", _key("Apostrophe")),
-        ("KeyParenLeft", _key("ParenLeft")),
-        ("KeyParenRight", _key("ParenRight")),
-        ("KeyAsterisk", _key("Asterisk")),
-        ("KeyPlus", _key("Plus")),
-        ("KeyComma", _key("Comma")),
-        ("KeyMinus", _key("Minus")),
-        ("KeyPeriod", _key("Period")),
-        ("KeySlash", _key("Slash")),
-        ("Key0", _key("0")),
-        ("Key1", _key("1")),
-        ("Key2", _key("2")),
-        ("Key3", _key("3")),
-        ("Key4", _key("4")),
-        ("Key5", _key("5")),
-        ("Key6", _key("6")),
-        ("Key7", _key("7")),
-        ("Key8", _key("8")),
-        ("Key9", _key("9")),
-        ("KeyColon", _key("Colon")),
-        ("KeySemicolon", _key("Semicolon")),
-        ("KeyLess", _key("Less")),
-        ("KeyEqual", _key("Equal")),
-        ("KeyGreater", _key("Greater")),
-        ("KeyQuestion", _key("Question")),
-        ("KeyAt", _key("At")),
-        ("KeyA", _key("A")),
-        ("KeyB", _key("B")),
-        ("KeyC", _key("C")),
-        ("KeyD", _key("D")),
-        ("KeyE", _key("E")),
-        ("KeyF", _key("F")),
-        ("KeyG", _key("G")),
-        ("KeyH", _key("H")),
-        ("KeyI", _key("I")),
-        ("KeyJ", _key("J")),
-        ("KeyK", _key("K")),
-        ("KeyL", _key("L")),
-        ("KeyM", _key("M")),
-        ("KeyN", _key("N")),
-        ("KeyO", _key("O")),
-        ("KeyP", _key("P")),
-        ("KeyQ", _key("Q")),
-        ("KeyR", _key("R")),
-        ("KeyS", _key("S")),
-        ("KeyT", _key("T")),
-        ("KeyU", _key("U")),
-        ("KeyV", _key("V")),
-        ("KeyW", _key("W")),
-        ("KeyX", _key("X")),
-        ("KeyY", _key("Y")),
-        ("KeyZ", _key("Z")),
-        ("KeyBracketLeft", _key("BracketLeft")),
-        ("KeyBackslash", _key("Backslash")),
-        ("KeyBracketRight", _key("BracketRight")),
-        ("KeyAsciiCircum", _key("AsciiCircum")),
-        ("KeyUnderscore", _key("Underscore")),
-        ("KeyQuoteLeft", _key("QuoteLeft")),
-        ("KeyBraceLeft", _key("BraceLeft")),
-        ("KeyBar", _key("Bar")),
-        ("KeyBraceRight", _key("BraceRight")),
-        ("KeyAsciiTilde", _key("AsciiTilde")),
-        ("KeyEscape", _key("Escape")),
-        ("KeyTab", _key("Tab")),
-        ("KeyBacktab", _key("Backtab")),
-        ("KeyBackspace", _key("Backspace")),
-        ("KeyReturn", _key("Return")),
-        ("KeyEnter", _key("Enter")),
-        ("KeyInsert", _key("Insert")),
-        ("KeyDelete", _key("Delete")),
-        ("KeyPause", _key("Pause")),
-        ("KeyPrintScr", _key("Print")),
-        ("KeySysReq", _key("SysReq")),
-        ("KeyClear", _key("Clear")),
-        ("KeyHome", _key("Home")),
-        ("KeyEnd", _key("End")),
-        ("KeyLeft", _key("Left")),
-        ("KeyUp", _key("Up")),
-        ("KeyRight", _key("Right")),
-        ("KeyDown", _key("Down")),
-        ("KeyPageUp", _key("PageUp")),
-        ("KeyPageDown", _key("PageDown")),
-        ("KeyShift", _key("Shift")),
-        ("KeyControl", _key("Control")),
-        ("KeyMeta", _key("Meta")),
-        ("KeyAlt", _key("Alt")),
-        ("KeyCapsLock", _key("CapsLock")),
-        ("KeyNumLock", _key("NumLock")),
-        ("KeyScrollLock", _key("ScrollLock")),
-        ("KeyF1", _key("F1")),
-        ("KeyF2", _key("F2")),
-        ("KeyF3", _key("F3")),
-        ("KeyF4", _key("F4")),
-        ("KeyF5", _key("F5")),
-        ("KeyF6", _key("F6")),
-        ("KeyF7", _key("F7")),
-        ("KeyF8", _key("F8")),
-        ("KeyF9", _key("F9")),
-        ("KeyF10", _key("F10")),
-        ("KeyF11", _key("F11")),
-        ("KeyF12", _key("F12")),
-        ("KeyF13", _key("F13")),
-        ("KeyF14", _key("F14")),
-        ("KeyF15", _key("F15")),
-        ("KeyF16", _key("F16")),
-        ("KeyF17", _key("F17")),
-        ("KeyF18", _key("F18")),
-        ("KeyF19", _key("F19")),
-        ("KeyF20", _key("F20")),
-        ("KeyF21", _key("F21")),
-        ("KeyF22", _key("F22")),
-        ("KeyF23", _key("F23")),
-        ("KeyF24", _key("F24")),
-        ("KeyF25", _key("F25")),
-        ("KeyF26", _key("F26")),
-        ("KeyF27", _key("F27")),
-        ("KeyF28", _key("F28")),
-        ("KeyF29", _key("F29")),
-        ("KeyF30", _key("F30")),
-        ("KeyF31", _key("F31")),
-        ("KeyF32", _key("F32")),
-        ("KeyF33", _key("F33")),
-        ("KeyF34", _key("F34")),
-        ("KeyF35", _key("F35")),
-        ("KeyNum0", _key("0") | _keypad),
-        ("KeyNum1", _key("1") | _keypad),
-        ("KeyNum2", _key("2") | _keypad),
-        ("KeyNum3", _key("3") | _keypad),
-        ("KeyNum4", _key("4") | _keypad),
-        ("KeyNum5", _key("5") | _keypad),
-        ("KeyNum6", _key("6") | _keypad),
-        ("KeyNum7", _key("7") | _keypad),
-        ("KeyNum8", _key("8") | _keypad),
-        ("KeyNum9", _key("9") | _keypad),
-        ("MouseMove", 1 << 16),
-        ("MouseLeft", 2 << 16),
-        ("MouseRight", 3 << 16),
-        ("MouseMiddle", 4 << 16),
-        ("MouseScroll", 5 << 16),
-        ("MouseScrollUp", 6 << 16),
-        ("MouseScrollDown", 7 << 16),
-        ("Mouse", 8 << 16),
-        ("MouseMoveLeft", 9 << 16),
-        ("MouseMoveMiddle", 10 << 16),
-        ("MouseMoveRight", 11 << 16),
-        ("MouseDoubleLeft", 12 << 16),
-    ])
-
-
-UserInput = _build_user_input()
-Gui.UserInput = UserInput
+# Gui.UserInput itself is registered from C++ by
+# registerUserInputEnumInPython(), see src/Gui/InputHintPy.cpp. These two are
+# Python upstream as well, so they are taken from upstream verbatim.
 
 
 class InputHint:
-    """One input hint: a message plus the input sequences it refers to.
+    """
+    Represents a single input hint (shortcut suggestion).
 
-    The message is a Qt format string with %1, %2, ... placeholders, one per
-    sequence. A sequence is either a single Gui.UserInput member or a tuple of
-    them. Kept API-compatible with upstream; this fork never displays them.
+    The message is a Qt formatting string with placeholders like %1, %2, ...
+    The placeholders are replaced with input representations - be it keys, mouse buttons etc.
+    Each placeholder corresponds to one input sequence. Sequence can either be:
+     - one input from Gui.UserInput enum
+     - tuple of mentioned enum values representing the input sequence
+
+    >>> InputHint("%1 change mode", Gui.UserInput.KeyM)
+    will result in a hint displaying `[M] change mode`
+
+    >>> InputHint("%1 new line", (Gui.UserInput.KeyControl, Gui.UserInput.KeyEnter))
+    will result in a hint displaying `[ctrl][enter] new line`
+
+    >>> InputHint("%1/%2 increase/decrease ...", Gui.UserInput.KeyU, Gui.UserInput.KeyJ)
+    will result in a hint displaying `[U]/[J] increase / decrease ...`
     """
 
     def __init__(self, message, *sequences):
@@ -262,13 +87,25 @@ class InputHint:
 
 
 class HintManager:
-    """Stand-in for upstream's hint manager. Accepts hints and drops them."""
+    """
+    A convenience class for managing input hints (shortcut suggestions) displayed to the user.
+    It is here mostly to provide well-defined and easy to reach API from python without developers
+    needing to call low-level functions on the main window directly.
+    """
 
     def show(self, *hints):
-        pass
+        """
+        Displays the specified input hints to the user.
+
+        :param hints: List of hints to show.
+        """
+        Gui.getMainWindow().showHint(*hints)
 
     def hide(self):
-        pass
+        """
+        Hides all currently displayed input hints.
+        """
+        Gui.getMainWindow().hideHint()
 
 
 Gui.InputHint = InputHint
