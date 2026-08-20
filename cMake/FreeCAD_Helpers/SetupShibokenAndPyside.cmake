@@ -232,6 +232,28 @@ MACRO(PYSIDE_WRAP_UI outfiles)
   ENDFOREACH(it)
 ENDMACRO (PYSIDE_WRAP_UI)
 
+# Returns, in ${result}, the files a .qrc lists, as absolute paths.
+# rcc embeds their *contents*, so the generated module is stale whenever one of
+# them changes -- not only when the .qrc itself does. Only paths that exist at
+# configure time are returned: a .qrc may name a file another target generates,
+# and depending on one of those would break the build rather than order it.
+FUNCTION(FC_QRC_LISTED_FILES qrc result)
+  GET_FILENAME_COMPONENT(qrcdir "${qrc}" DIRECTORY)
+  SET(listed)
+  FILE(STRINGS "${qrc}" lines REGEX "<file[^>]*>")
+  FOREACH(line ${lines})
+    STRING(REGEX REPLACE "^.*<file[^>]*>(.*)</file>.*$" "\\1" entry "${line}")
+    STRING(STRIP "${entry}" entry)
+    IF(NOT IS_ABSOLUTE "${entry}")
+      SET(entry "${qrcdir}/${entry}")
+    ENDIF()
+    IF(EXISTS "${entry}")
+      LIST(APPEND listed "${entry}")
+    ENDIF()
+  ENDFOREACH()
+  SET(${result} ${listed} PARENT_SCOPE)
+ENDFUNCTION(FC_QRC_LISTED_FILES)
+
 MACRO(PYSIDE_WRAP_RC outfiles)
   if (NOT PYSIDE_RCC_EXECUTABLE)
     message(FATAL_ERROR "Qt rcc is required for generating ${ARGN}")
@@ -240,6 +262,10 @@ MACRO(PYSIDE_WRAP_RC outfiles)
     GET_FILENAME_COMPONENT(outfile ${it} NAME_WE)
     GET_FILENAME_COMPONENT(infile ${it} ABSOLUTE)
     SET(outfile "${CMAKE_CURRENT_BINARY_DIR}/${outfile}_rc.py")
+    FC_QRC_LISTED_FILES("${infile}" RCDEPS)
+    # The dependency list is built at configure time, so adding or removing a
+    # <file> entry has to re-run cmake for the new list to take effect.
+    SET_PROPERTY(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${infile}")
     #ADD_CUSTOM_TARGET(${it} ALL
     #  DEPENDS ${outfile}
     #)
@@ -247,6 +273,7 @@ MACRO(PYSIDE_WRAP_RC outfiles)
         ADD_CUSTOM_COMMAND(OUTPUT ${outfile}
           COMMAND ${PYSIDE_RCC_EXECUTABLE} ${RCCOPTIONS} ${infile} -o ${outfile}
           MAIN_DEPENDENCY ${infile}
+          DEPENDS ${RCDEPS}
         )
     else()
         # Especially on Open Build Service we don't want changing date like
@@ -256,6 +283,7 @@ MACRO(PYSIDE_WRAP_RC outfiles)
           COMMAND "${PYSIDE_RCC_EXECUTABLE}" ${RCCOPTIONS} "${infile}" ${PY_ATTRIBUTE} -o "${outfile}"
           COMMAND sed "/^# /d" "${outfile}" >"${outfile}.tmp" && mv "${outfile}.tmp" "${outfile}"
           MAIN_DEPENDENCY "${infile}"
+          DEPENDS ${RCDEPS}
         )
     endif()
     list(APPEND ${outfiles} ${outfile})

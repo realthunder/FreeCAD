@@ -5,10 +5,10 @@ find_package(PythonInterp REQUIRED)
 # Define the source files and resources of the BIM workbench
 # ==============================================================================
 
-# If we are building the GUI mode, we need to process the Qt resource file
-# Note that if any of the files listed in the .qrc file changes, the
-# resource file will NOT be regenerated automatically. To work around this,
-# use `touch` on the .qrc file to force regeneration.
+# If we are building the GUI mode, we need to process the Qt resource file.
+# PYSIDE_WRAP_RC makes the generated module depend on the files the .qrc lists,
+# so editing one of them -- a .ui, an icon -- regenerates it. Adding or removing
+# a <file> entry re-runs cmake, since that list is built at configure time.
 IF (BUILD_GUI)
     PYSIDE_WRAP_RC(Arch_QRC_SRCS Resources/Arch.qrc)
     # the copy into the build tree is what the workbench imports
