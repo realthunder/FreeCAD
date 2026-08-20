@@ -170,7 +170,7 @@ All five stages are done and committed on `LinkVibe`.
 | 1 `Gui.UserInput` (shimmed) | `c160feaae7` | upstream Draft modules importing 174/222 -> 220/222 |
 | 2 Draft transplant | `9ea92ae952` | `TestDraft` 82 tests / 5 failing (was 67 / 1), `TestDraftGui` 38 / 1 |
 | 3 Arch -> BIM | `82a8a4478d` | `TestArch` 280 tests / 7 failing; King import 473 objects, 298 solids, 8.7 s against 9.1 s |
-| 4 NativeIFC | `d71c8a9fcd`, `a187adbd75`..`09742e3e86` | King opens in 10 s and its building structure costs 18.2 s, against 635 s -- see below |
+| 4 NativeIFC | `d71c8a9fcd`, `a187adbd75`..`0d52fa4244` | King opens in 5 s and its building structure costs 18.2 s, against 635 s -- see below |
 
 Supporting commits: `087a4d01a4` (task panel buttons as a PySide6 enum),
 `6df7f94a36` and `d763bd8ee5` (`addProperty` keywords on the view
@@ -258,11 +258,52 @@ unit assignment (08c), object counts (09), a placement move that never
 reaches the property (10), a missing `ExtrusionDepth` (11) -- and are
 identical with and without these commits.
 
-WARNING: `LoadOrphans` defaults to **True**, and on King that alone
-exceeds 400 s. With it off the same open is 10 s. That default is the
-difference between NativeIFC being the fast path and being slower than
-what it replaces, and it is still the largest single thing left to
-decide here.
+### `LoadOrphans`, which was the largest thing left
+
+`load_orphans()` creates a FreeCAD object for every `IfcProduct` the
+spatial tree does not reach, so that a file's contents are not silently
+dropped. It ran after every import regardless of strategy, and defaulted
+to on with no control anywhere -- not in `dialogImport.ui`, which
+already carries checkboxes for its four siblings, and not in
+`preferencesNativeIFC.ui`, which exposes sixteen other entries.
+
+Re-measured after the fixes above, so this is volume and not the write
+pathology -- it performs zero API writes:
+
+| King, `insert(strategy=0)` | before | after |
+| --- | --- | --- |
+| `LoadOrphans` off | 5.2 s, 2 objects | 5.0 s, 2 objects |
+| `LoadOrphans` on (the default) | **735.9 s, 10925 objects** | **5.0 s, 2 objects** |
+
+Three things were wrong, and all three are now fixed.
+
+**A port is not an orphan** (`e407f8611d`). `get_orphan_elements()` tests
+`Decomposes`, `ContainedInStructure` and `VoidsElements`. IFC parents a
+port elsewhere: IFC2X3 puts it on the port as `ContainedIn`, an
+`IfcRelConnectsPortToElement`; IFC4 nests it. Neither was checked, so
+**9824 of King's 10879 orphans were `IfcDistributionPort`s, every one
+with a non-empty `ContainedIn`** -- and only 1055 of the 10879 had a
+`Representation` at all, so most were connection nodes that can never
+draw anything. Excluding `ContainedIn`/`Nests` takes King to **1055
+orphans, all of which have a representation**. `get_children()` now
+follows the same two relations from the other end, through `HasPorts`
+and `IsNestedBy` and outside the `only_structure` branch, so what stops
+being an orphan becomes reachable under its element instead of
+vanishing.
+
+**A root-only open must stay root-only** (`d71cf30009`). `load_orphans()`
+is skipped at strategy 0, and the project's IFC context menu gains "Load
+Orphan Objects" beside the other on-demand loaders, so nothing becomes
+unreachable. Strategies 1 and 2 are unchanged; with the port fix in,
+strategy 1 carries 1393 objects in 73.4 s.
+
+**The knob is reachable** (`0d52fa4244`). `LoadOrphans` now appears in
+both the import dialog and the preferences page.
+
+WARNING: editing a `.ui` does **not** regenerate `Arch_rc.py` on an
+incremental build -- the resource target depends on `Arch.qrc` alone,
+which the CMakeLists comment documents and works around by touching the
+`.qrc`. A `.ui` edit that seems to have no effect is this, not the edit.
 
 ### What the remaining test failures want, none of it in ported code
 
