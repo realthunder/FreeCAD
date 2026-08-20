@@ -497,6 +497,15 @@ PyObject*  DocumentObjectPy::isValid(PyObject *args)
     }
 }
 
+PyObject*  DocumentObjectPy::isAttachedToDocument(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+
+    bool ok = getDocumentObjectPtr()->isAttachedToDocument();
+    return Py_BuildValue("O", (ok ? Py_True : Py_False));
+}
+
 PyObject*  DocumentObjectPy::getStatusString(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ""))

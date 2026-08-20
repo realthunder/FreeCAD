@@ -107,6 +107,11 @@ If the object is valid but touched then &apos;Touched&apos; will be returned,
                 <UserDocu>Returns True if the object is valid, False otherwise</UserDocu>
             </Documentation>
         </Methode>
+        <Methode Name="isAttachedToDocument" const="True">
+            <Documentation>
+                <UserDocu>Returns True if the object is part of a document, False otherwise</UserDocu>
+            </Documentation>
+        </Methode>
         <Methode Name="getSubObject" Keyword="true">
             <Documentation>
                 <UserDocu>
