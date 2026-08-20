@@ -29,6 +29,8 @@
 #include <utility>
 #include <vector>
 
+#include <FCGlobal.h>
+
 namespace App {
 class Property;
 class PropertyMaterial;
@@ -51,7 +53,7 @@ class Ui_DlgMaterialProperties;
  * on. On a material list the shading model can be toggled between Phong
  * and PBR, converting the stored values so the look survives the switch.
  */
-class DlgMaterialPropertiesImp : public QDialog
+class GuiExport DlgMaterialPropertiesImp : public QDialog
 {
     Q_OBJECT
 

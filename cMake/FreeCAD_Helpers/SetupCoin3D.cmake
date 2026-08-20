@@ -19,8 +19,11 @@ macro(SetupCoin3D)
             # target. Handing that name straight to the linker only works
             # where the prefix is already on its search path; resolve the
             # real file so a private install prefix links too.
+            # Coin_LIBRARY_RELEASE first: on Windows the file carries the
+            # soversion postfix (CoinRT4.lib), so COIN_NAME alone finds
+            # nothing there. It is the plain name everywhere else.
             find_library(COIN3D_LIBRARIES
-                         NAMES ${COIN_NAME} Coin
+                         NAMES ${Coin_LIBRARY_RELEASE} ${COIN_NAME} Coin
                          HINTS ${Coin_LIB_DIR}
                          NO_DEFAULT_PATH)
             if (NOT COIN3D_LIBRARIES)
