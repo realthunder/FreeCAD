@@ -1449,7 +1449,8 @@ void BGFXView::present()
     // The transform this frame asked for, as the shader's own selector.
     // An out-of-range value passes the frame through in the shader, so
     // a snapshot written by a later build degrades rather than failing.
-    float params[4] = {float(outputTransform), 0.0f, 0.0f, 0.0f};
+    float params[4] = {float(outputTransform),
+                       std::max(outputExposure, 0.0f), 0.0f, 0.0f};
     bgfx::setUniform(u_outputParams, params);
     bgfx::setTexture(0, s_texScene, bgfxColor);
     fullscreen(ViewPresent, m_progPresent,

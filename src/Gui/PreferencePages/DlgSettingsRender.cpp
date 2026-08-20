@@ -87,6 +87,19 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
         OutputTransform->addItem(QString());
     OutputTransform->setCurrentIndex(Gui::RenderParams::defaultOutputTransform());
 
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutGeneral->addLayout(layoutRow);
+    labelExposure = new QLabel(this);
+    layoutRow->addWidget(labelExposure);
+    Exposure = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(Exposure);
+    Exposure->setValue(Gui::RenderParams::defaultExposure());
+    Exposure->setEntryName("Exposure");
+    Exposure->setParamGrpPath("View/Render");
+
 
     // Auto generated code (Tools/params_utils.py:448)
     groupScenestreaming = new QGroupBox(this);
@@ -663,6 +676,7 @@ void DlgSettingsRender::saveSettings()
     // Auto generated code (Tools/params_utils.py:497)
     Type->onSave();
     OutputTransform->onSave();
+    Exposure->onSave();
     CoarseTessellation->onSave();
     LevelTolerance->onSave();
     LevelThreads->onSave();
@@ -709,6 +723,7 @@ void DlgSettingsRender::loadSettings()
     // Auto generated code (Tools/params_utils.py:484)
     Type->onRestore();
     OutputTransform->onRestore();
+    Exposure->onRestore();
     CoarseTessellation->onRestore();
     LevelTolerance->onRestore();
     LevelThreads->onRestore();
@@ -763,6 +778,9 @@ void DlgSettingsRender::retranslateUi()
     // Auto generated code (Tools/params_utils.py:1166)
     OutputTransform->setItemText(0, QObject::tr("Off"));
     OutputTransform->setItemText(1, QObject::tr("sRGB"));
+    Exposure->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docExposure()));
+    labelExposure->setText(QObject::tr("Exposure"));
+    labelExposure->setToolTip(Exposure->toolTip());
     groupScenestreaming->setTitle(QObject::tr("Scene streaming"));
     CoarseTessellation->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCoarseTessellation()));
     labelCoarseTessellation->setText(QObject::tr("Coarse tessellation level"));

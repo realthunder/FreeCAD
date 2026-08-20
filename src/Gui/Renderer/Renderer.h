@@ -1499,9 +1499,19 @@ struct OutputConfig {
         SRGB = 1,
     };
     int transform = SRGB;
+    /// A plain multiplier on the linear image before it is encoded.
+    /// One leaves the frame alone, bit for bit.
+    ///
+    /// A colour managed scene is lit in real reflectances -- a mid grey
+    /// reflects about 18 per cent, not the 45 per cent its number reads
+    /// as -- so a scene whose lights were set before that was true is
+    /// lit two to three times too dimly. This answers that without
+    /// touching a light. Ignored while transform is None: there the
+    /// engine is not working in light at all.
+    float exposure = 1.0f;
 
     bool operator==(const OutputConfig &o) const {
-        return transform == o.transform;
+        return transform == o.transform && exposure == o.exposure;
     }
     bool operator!=(const OutputConfig &o) const { return !(*this == o); }
 };

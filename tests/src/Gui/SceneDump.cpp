@@ -393,12 +393,17 @@ TEST(SceneDump, theOutputTransformCrossesTheWire)
     for (int transform : {int(Render::OutputConfig::None),
                           int(Render::OutputConfig::SRGB)}) {
         snap.outconf.transform = transform;
+        // The exposure travels with it (v62) -- a viewer developing the
+        // frame a stop darker than the machine that published it is the
+        // same divergence as the transform itself.
+        snap.outconf.exposure = transform ? 2.5f : 1.0f;
         std::vector<uint8_t> payload;
         ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
         Render::SceneSnapshot loaded;
         ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(),
                                               payload.size(), loaded));
         EXPECT_EQ(loaded.outconf.transform, transform);
+        EXPECT_FLOAT_EQ(loaded.outconf.exposure, snap.outconf.exposure);
     }
 }
 

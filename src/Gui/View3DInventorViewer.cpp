@@ -4411,6 +4411,8 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         prop->setEnums(_outputTransformEnums);
         prop->setValue(long(RenderParams::getOutputTransform()));
     }
+    _renderParam<App::PropertyFloat>(view, "Exposure",
+            RenderParams::docExposure(), RenderParams::getExposure());
     _renderParam<App::PropertyBool>(view, "PBR",
             RenderParams::docPBR(), RenderParams::getPBR());
     static const App::PropertyFloatConstraint::Constraints _unit_cstr(0.0,1.0,0.1);

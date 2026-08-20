@@ -74,6 +74,8 @@ private:
     Gui::PrefLineEdit *Type = nullptr;
     QLabel *labelOutputTransform = nullptr;
     Gui::PrefComboBox *OutputTransform = nullptr;
+    QLabel *labelExposure = nullptr;
+    Gui::PrefDoubleSpinBox *Exposure = nullptr;
 
     // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupScenestreaming = nullptr;

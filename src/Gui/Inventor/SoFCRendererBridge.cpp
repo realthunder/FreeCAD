@@ -2476,6 +2476,8 @@ RendererBridge::translateOutputConfig(App::PropertyContainer * view)
     res.transform = int(viewParamOverride<App::PropertyEnumeration>(
             view, "Render", "OutputTransform",
             RenderParams::getOutputTransform()));
+    res.exposure = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "Exposure", RenderParams::getExposure()));
     return res;
 }
 

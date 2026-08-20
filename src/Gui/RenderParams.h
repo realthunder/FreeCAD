@@ -116,6 +116,37 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter Exposure
+    ///
+    /// How much light the frame is developed with, as a plain
+    /// multiplier on the linear image before it is encoded for the
+    /// screen. One leaves it alone.
+    /// 
+    /// It exists because a colour managed scene is lit in real
+    /// reflectances, and a mid grey reflects about 18 per cent of what
+    /// falls on it rather than the 45 per cent its number reads as. A
+    /// scene whose lights were set before that was true is lit about
+    /// two to three times too dimly, and this is the control that
+    /// answers it without touching a single light.
+    /// 
+    /// Raising it does not clip. Anything the multiplier pushes past
+    /// the top of the range rolls off smoothly instead, and the roll
+    /// off is exactly nothing below the knee -- so at an exposure of
+    /// one the frame is bit for bit what it would have been without
+    /// this stage at all.
+    /// 
+    /// Only meaningful while the output colour transform is on: with
+    /// it off the engine is not working in light, and a multiplier
+    /// there would scale display numbers rather than exposure.
+    static const double & getExposure();
+    static const double & defaultExposure();
+    static void removeExposure();
+    static void setExposure(const double &v);
+    static const char *docExposure();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter MaxViewIds
     ///
     /// How many backend view ids the render engine may hand out, which

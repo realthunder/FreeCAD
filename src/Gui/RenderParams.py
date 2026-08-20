@@ -72,6 +72,28 @@ Params = [
         "a gamma too dark. Documents written before this existed are\n"
         "drawn that way, which is how they were authored.",
         ),
+    ParamFloat('Exposure',  1.0, title='Exposure',
+        doc="How much light the frame is developed with, as a plain\n"
+        "multiplier on the linear image before it is encoded for the\n"
+        "screen. One leaves it alone.\n"
+        "\n"
+        "It exists because a colour managed scene is lit in real\n"
+        "reflectances, and a mid grey reflects about 18 per cent of what\n"
+        "falls on it rather than the 45 per cent its number reads as. A\n"
+        "scene whose lights were set before that was true is lit about\n"
+        "two to three times too dimly, and this is the control that\n"
+        "answers it without touching a single light.\n"
+        "\n"
+        "Raising it does not clip. Anything the multiplier pushes past\n"
+        "the top of the range rolls off smoothly instead, and the roll\n"
+        "off is exactly nothing below the knee -- so at an exposure of\n"
+        "one the frame is bit for bit what it would have been without\n"
+        "this stage at all.\n"
+        "\n"
+        "Only meaningful while the output colour transform is on: with\n"
+        "it off the engine is not working in light, and a multiplier\n"
+        "there would scale display numbers rather than exposure.",
+        ),
     ParamInt('MaxViewIds',  1024, title='Backend view id budget',
         doc="How many backend view ids the render engine may hand out, which\n"
         "is what decides how many 3D views can draw on it at once: each\n"

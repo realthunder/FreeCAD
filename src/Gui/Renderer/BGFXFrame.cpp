@@ -931,6 +931,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // picture means, and these modes are read as measurements.
     view->outputTransform = debugconf.viewMode == 0
         ? outconf.transform : int(Render::OutputConfig::None);
+    view->outputExposure = outconf.exposure;
     // Its target. Standalone presents through the same pass whatever
     // the transform is (that pass is what reaches the backbuffer at
     // all) but presents onto the DEFAULT backbuffer and needs no target

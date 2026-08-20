@@ -5748,6 +5748,8 @@ public:
     int pbrShininessMapping = 0;
     /// Render::OutputConfig::Transform for this frame.
     int outputTransform = 0;
+    /// Render::OutputConfig::exposure for this frame.
+    float outputExposure = 1.0f;
     /// Is this frame's pipeline colour managed -- authored colours
     /// decoded on the way in, the finished frame encoded on the way
     /// out? One question, so every unpack site asks it the same way.
