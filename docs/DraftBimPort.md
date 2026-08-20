@@ -191,44 +191,48 @@ attribute names onto the PySide wrapper. A new `add_varargs_method` is
 invisible from Python until its name is in that list --
 `Gui.getMainWindow()` just returns a plain `QMainWindow`.
 
-### Test standing, all four suites re-run 2026-08-20
+### Test standing 2026-08-20, after closing caveats 1 and 2
 
 | suite | tests | failing |
 | --- | --- | --- |
-| `TestDraft` | 82 | 5 |
-| `TestDraftGui` | 38 | 1 |
-| `TestArch` | 280 | 5 |
+| `TestDraft` | 82 | 1 |
+| `TestDraftGui` | 38 | **0** |
+| `TestArch` | 280 | 3 |
 | `TestArchGui` | 41 | **0** |
 
-`TestArchGui` was a registered suite the plan never gated -- an
-omission, not a result. It had three failures when first run, and all
-three are now fixed, none of them in ported code:
+`TestArchGui` was a registered suite the plan never gated, and it is now
+green. Its three failures were a MeshPart silently switched off at
+configure time (`6499242e16`), a single-group rule that counted scripted
+containers (`c086cc5a03`), and five missing `setName()` calls on Part's
+display-mode roots (`013035bd9f`) -- none of it in ported code.
 
-- `testImportSH3D` wanted MeshPart, which was not in the build at all.
-  `BUILD_MESH_PART` defaults ON, but CheckInterModuleDependencies
-  required `BUILD_SMESH`, which no user can set -- only `BUILD_FEM`
-  turns it on -- so every build without FEM silently lost MeshPart, and
-  with it FlatMesh and OpenSCAD. Upstream does not list `BUILD_SMESH`
-  there; it enables SMESH whenever MeshPart is on, which here would pull
-  in VTK for a mesher BIM does not use. Instead `Mesher.cpp`'s
-  `createFrom(SMESH_Mesh*)`, the one definition left outside the
-  `HAVE_SMESH` guards, is now guarded, so the module builds either way.
-  `3bd39c9ba7`.
-- `testBuildingPart` hit the fork's "Auto correct group member" error.
-  `GroupExtension`'s single-group rule asked `isNonGeoGroup()`, which
-  matches derived extensions, so `App::GroupExtensionPython` counted --
-  and ArchBuildingPart carries it. Upstream asks for the exact
-  extension. `c086cc5a03`. A plain
-  `App::DocumentObjectGroup` still triggers the rule, a scripted
-  container no longer does.
-- `test_texture_scenegraph_structure` looked up a Coin node called
-  "FlatRoot". Upstream's ViewProviderPartExt names its four
-  display-mode roots and the face draw style; the fork named only the
-  wireframe node. The nodes were there, unnamed.
+What closed since, against the core gaps below: `App::Document.settings()`
+(`ece2e9a8c6`) took two Draft grid tests; upstream's ISO and ASME
+template trees (`6bd3bfde0c`) took three across all three
+suites; trimming a DOS EOF marker from a `.pat` file took one; and
+stable schema names from `listSchemas()` (`959a47a508`) took one.
 
-Both core changes were checked by reverting the file and re-running:
-`Document` stays at 110 tests / 9 failing and `TestPartApp` /
-`TestPartGui` at 75 / 1 and 4 / 3, the same failures by name.
+Two gaps remain, and both were mis-filed in the earlier list:
+
+- **The Arch Report writes no spreadsheet cells**, which is what both
+  remaining `TestArchReport` failures actually are -- not an MKS unit
+  schema, and not two separate problems. The generated SQL parser does
+  reach the build tree and imports; diagnosis was still open when this
+  was paused.
+- **`test_read_dxf_Issue24314` is not a pending-exception bug.** The
+  import produces the shape but no Layers container: this fork's C++ DXF
+  importer reads a `groupLayers` preference, while the test and upstream
+  use `dxfUseDraftVisGroups` and build the layers through
+  `Draft.make_layer`. That importer is ~4000 lines diverged and wants a
+  transplant. The genuine pending-exception hole upstream also fixes --
+  `Draft.make_text()` and `Draft.make_linear_dimension()` leaving an
+  error set -- is fixed regardless.
+
+Also found and fixed along the way: **DraftUtils.so had not been built
+since the Draft transplant** (`e9afa724c0`). Upstream's CMakeLists
+relies on target usage requirements this fork does not have, so it found
+neither Python.h nor the OCCT libraries, and every build stopped earlier
+without saying so.
 
 Supporting commits: `087a4d01a4` (task panel buttons as a PySide6 enum),
 `6df7f94a36` and `d763bd8ee5` (`addProperty` keywords on the view
