@@ -11,13 +11,14 @@ class CArea;
 class CCurve;
 
 class AreaDxfRead : public CDxfRead{
-	void StartCurveIfNecessary(const double* s);
+	void StartCurveIfNecessary(const Base::Vector3d& s);
 
 public:
 	CArea* m_area;
 	AreaDxfRead(CArea* area, const char* filepath);
 
 	// AreaDxfRead's virtual functions
-	void OnReadLine(const double* s, const double* e, bool /*hidden*/) override;
-	void OnReadArc(const double* s, const double* e, const double* c, bool dir, bool /*hidden*/) override;
+	void OnReadLine(const Base::Vector3d& s, const Base::Vector3d& e, bool /*hidden*/) override;
+	void OnReadArc(const Base::Vector3d& s, const Base::Vector3d& e, const Base::Vector3d& c,
+	               bool dir, bool /*hidden*/) override;
 };
