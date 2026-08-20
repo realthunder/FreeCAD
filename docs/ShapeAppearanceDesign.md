@@ -2517,3 +2517,94 @@ each, because they dispatch on property type and an appearance is not a
 the new field, the UI, and the Python spelling. `Render_BaseColorTexture`
 and its four siblings are still what `ViewProviderGeometryObject` reads, so
 nothing yet writes a texture into an appearance except a script.
+
+## 11. The appearance as a Python value
+
+Landed 2026-08-20, in five commits. The storage work of section 10 left the
+Python spelling as the last thing owed, and doing it properly turned out to
+be a change to what a property hands Python at all -- so the pattern is
+written up separately in `docs/PythonValueBindings.md` and this section
+records what it means for the appearance.
+
+### 11.1 What changed
+
+`vp.ShapeAppearance` was a `Py::Tuple` of N freshly copied `MaterialPy`
+objects (4.1 recorded that as "same observable behaviour, same cost"). It
+is now one `App.MaterialList`:
+
+| | before | after |
+|---|---|---|
+| reading it | N `Material` copies + N wrappers | a pointer |
+| `[0].DiffuseColor = c` | silently did nothing | paints the face, records undo |
+| `[0] = mat` | silently did nothing | paints the face |
+| assigning it to another property | copied every field array | a pointer |
+| an undo snapshot | deep copy of fourteen vectors | a pointer |
+
+The value moved out of the property into `App::MaterialList`, a copy-on-write
+value over `Base::COWValue`. `PropertyMaterialList` keeps the serialization,
+the blob restore queue, the touch list and the change signalling, and
+delegates the rest. Nothing about the storage layout or the encodings
+changed: the 76 storage tests pass unmodified, byte-identical serialization
+included.
+
+### 11.2 The three states a script can be in
+
+```python
+a = vp.ShapeAppearance      # a LIVE VIEW: writing to it paints the object
+b = a.copy()                # a VALUE sharing a's storage: writing paints nothing
+vp.ShapeAppearance = b      # takes a share of b -- and b stays a value
+```
+
+Assigning a list into any property detaches it, which is what stops a view
+from quietly becoming a view of two things. A view whose property dies --
+document closed, object deleted -- keeps what it last saw and writes
+nowhere; the property detaches every view it handed out on the way out.
+
+### 11.3 The texture spelling
+
+A slot holds the content hash of a file the blob store owns, so stating a
+texture from Python is content in, then a slot naming it:
+
+```python
+h = a.insertTextureFile('/path/oak.png')     # -> the content hash
+a.setTexture(0, 'basecolor', h)
+n = a.setTextureFile(0, 'normal', '/path/n.png')   # both at once
+a.setTextureTransform(0, Scale=(2, 2), Rotation=45)
+a.getTexture(0)                              # {'basecolor': h, 'normal': n}
+a.clearTexture(0)                            # every slot of that entry
+```
+
+The slot names are `TextureSlots`, and they are the same strings
+`MaterialPy.Texture` uses and the saved files are named by. Every setter
+takes the entry index or leaves it out, and leaving it out means EVERY
+entry -- not the -1 an index would be mistaken for, since the getters count
+negatives from the end the way Python does.
+
+The per field accessors alongside them are the same eight fields the C++ API
+has (the four colours, shininess, transparency, and the PBR pair, which
+demands the mode).
+
+The store the content goes into is the document's when the list is a view of
+one of its properties, and the process-wide one otherwise. 10.2 asked
+whether a blob minted by one manager can be saved by another: it can --
+`noteReferenced()` keys the save set by hash and writes the bytes from
+wherever the handle points -- so a list built in Python and assigned into a
+document carries its content in with it, and no re-homing is needed.
+
+WORTH KNOWING: content is archived at SCHEMA 5 and above. Schema 4 is
+upstream's format, where the blob store does not exist, and a document saved
+there keeps the hashes and drops the files -- a legitimate state the
+property already handles (a hash with no content answers an empty path and
+logs one warning per missing file on restore). A script that wants a texture
+to survive a round trip sets `doc.SaveSchemaVersion = 5`. Mapping the base
+colour slot onto upstream's `imagePath` for the schema 4 save, as 10.3
+proposes, is still owed.
+
+### 11.4 What this stage deliberately excludes
+
+- **The renderer.** `ViewProviderGeometryObject` still reads
+  `Render_BaseColorTexture` and its four siblings; nothing yet draws a
+  texture that lives in an appearance. That is the next stage, and this one
+  exists to make it verifiable -- a per-face texture can now be authored
+  from a script.
+- **The importer and the UI**, unchanged from 10.7's list.
