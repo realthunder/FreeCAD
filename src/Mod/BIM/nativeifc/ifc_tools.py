@@ -410,6 +410,13 @@ def get_children(
             children.extend([rel.RelatedOpeningElement])
         for rel in getattr(ifcentity, "HasFillings", []):
             children.extend([rel.RelatedBuildingElement])
+        # ports and nested parts, the counterpart of the ContainedIn/Nests
+        # exclusion in get_orphan_elements(): IFC2X3 hangs ports off the
+        # element with HasPorts, IFC4 nests them
+        for rel in getattr(ifcentity, "IsNestedBy", []):
+            children.extend(rel.RelatedObjects)
+        for rel in getattr(ifcentity, "HasPorts", []):
+            children.append(rel.RelatingPort)
     result = filter_elements(children, ifcfile, expand=expand, spaces=True, assemblies=assemblies)
     if ifctype:
         result = [r for r in result if r.is_a(ifctype)]
@@ -1721,6 +1728,13 @@ def get_orphan_elements(ifcfile):
     products = [p for p in products if not p.Decomposes]
     products = [p for p in products if not getattr(p, "ContainedInStructure", [])]
     products = [p for p in products if not hasattr(p, "VoidsElements") or not p.VoidsElements]
+    # A port belongs to the element it serves rather than to the spatial tree,
+    # and so does anything nested. Neither is an orphan: get_children() reaches
+    # both through HasPorts/IsNestedBy. Without this, an MEP file drowns the
+    # document in ports -- 9824 of the King file's 10879 "orphans" were ports,
+    # every one of them with a ContainedIn.
+    products = [p for p in products if not getattr(p, "ContainedIn", None)]
+    products = [p for p in products if not getattr(p, "Nests", None)]
     # add control elements
     proj = ifcfile.by_type("IfcProject")[0]
     for rel in getattr(proj, "Declares", []):
