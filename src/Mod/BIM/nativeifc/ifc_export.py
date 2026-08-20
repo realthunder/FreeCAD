@@ -398,7 +398,12 @@ def get_placement(ifcelement, ifcfile=None, scale=None):
     if not scale:
         if not ifcfile:
             ifcfile = ifcelement.file
-        scale = 0.001 / ifcopenshell.util.unit.calculate_unit_scale(ifcfile)
+        # scaling is millimetres per file unit -- the same factor the explicit
+        # callers below pass. The reciprocal happens to be right for a file
+        # already in millimetres, which is why this went unnoticed: on a file
+        # in feet it placed every object at 1/92903 of its elevation, and the
+        # storey Elevation expression then wrote that back into the file.
+        scale = ifcopenshell.util.unit.calculate_unit_scale(ifcfile) * 1000
     return importIFCHelper.getPlacement(ifcelement, scaling=scale)
 
 
