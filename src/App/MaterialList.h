@@ -35,6 +35,12 @@
 namespace App
 {
 
+/// The property this list can be a live view of. MaterialListPy.xml injects
+/// declarations naming it into the generated binding header, which includes
+/// this one and nothing else that would declare it -- a friend declaration
+/// inside MaterialList is not enough to name the type at namespace scope.
+class PropertyMaterialList;
+
 /// A texture palette's own bytes plus the hashes its records hold. Shared
 /// with PropertySurfaceTextureList, which stores the same pair.
 AppExport std::size_t texturesMemSize(const std::vector<SurfaceTexture> &palette);
