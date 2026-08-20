@@ -291,6 +291,10 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
         // A PBR-mode appearance rides the render material node (its
         // metallic/roughness), so it has to follow appearance changes too
         updateRenderMaterial();
+        // ... and the per-face images it may now carry decide whether
+        // the unit-0 stand-in that makes texture coordinates exist is
+        // needed at all.
+        updateRenderTexture();
         Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &BoundingBox) {
@@ -548,6 +552,18 @@ void applyFinishDefaults(App::SurfaceFinish &finish)
 
 } // anonymous namespace
 
+float ViewProviderGeometryObject::faceTextureScale() const
+{
+    auto prop = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            getPropertyByName("Render_FaceTextureScale"));
+    const float scale = prop ? float(prop->getValue()) : -1.0f;
+    if (scale == 0.0f)
+        return -1.0f;    // an explicit zero reads as "the mesh's UVs"
+    if (scale < 0.0f)
+        return 25.0f;    // unset: a hand-sized marking
+    return scale;
+}
+
 void ViewProviderGeometryObject::updateRenderTexture()
 {
     auto fileProp = [this](const char *name) -> const char * {
@@ -566,9 +582,20 @@ void ViewProviderGeometryObject::updateRenderTexture()
     // stand-in still goes in: an enabled texture unit is what makes the
     // shapes generate texture coordinates (both in Coin GL and in the
     // render cache capture).
+    //
+    // A per-face image laid out on the mesh's OWN coordinates needs the
+    // stand-in for exactly the same reason: without an enabled unit the
+    // shapes generate no coordinates, the vertex cache captures none,
+    // and every fragment reads the image's corner texel. The frame
+    // projection does not -- it makes its own coordinates out of the
+    // object-space position.
+    const bool faceImages = !ShapeAppearance.getImages().empty()
+        || !ShapeAppearance.getImagePaths().empty();
+    const bool faceImagesOnMeshUV = faceImages && faceTextureScale() <= 0.0f;
     bool wantTexture = (color && color[0]) || (bump && bump[0])
         || (emissive && emissive[0]) || (occlusion && occlusion[0])
-        || (metallicroughness && metallicroughness[0]);
+        || (metallicroughness && metallicroughness[0])
+        || faceImagesOnMeshUV;
     if (!wantTexture) {
         if (pcRenderTexture) {
             int idx = pcRoot->findChild(pcRenderTexture);
@@ -932,11 +959,7 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     // coordinates instead, for a shape that really was UV mapped;
     // unset (the ordinary case, and a CAD shape carries no UVs) takes
     // the default below.
-    float faceTexScale = floatProp("Render_FaceTextureScale");
-    if (faceTexScale == 0.0f)
-        faceTexScale = -1.0f;    // an explicit zero reads as "the UVs"
-    else if (faceTexScale < 0.0f)
-        faceTexScale = 25.0f;    // unset: a hand-sized marking
+    const float faceTexScale = faceTextureScale();
 
     // Render_Water turns the object's closed shape into a water body of
     // the render engine's volumetric lighting pass (tinted by the shape
@@ -1143,7 +1166,14 @@ void ViewProviderGeometryObject::updateRenderMaterial()
 
 void ViewProviderGeometryObject::updateRenderProperty(const char *name)
 {
-    if (strcmp(name, "Render_BaseColorTexture") == 0
+    if (strcmp(name, "Render_FaceTextureScale") == 0) {
+        // Both: the scale is a field of the material node, and it is
+        // also what decides whether the per-face images want the mesh's
+        // own coordinates -- which only exist while a unit is enabled.
+        updateRenderTexture();
+        updateRenderMaterial();
+    }
+    else if (strcmp(name, "Render_BaseColorTexture") == 0
             || strcmp(name, "Render_NormalMap") == 0
             || strcmp(name, "Render_EmissiveMap") == 0
             || strcmp(name, "Render_OcclusionMap") == 0

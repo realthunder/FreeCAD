@@ -245,6 +245,16 @@ protected:
      * texture per draw and has nowhere to put a palette.
      */
     void updateFaceTextures(std::vector<int32_t> &indices);
+    /** Millimetres of object space per tile of a per-face image
+     *
+     * Render_FaceTextureScale, resolved: an explicit zero asks for the
+     * mesh's OWN texture coordinates and comes back negative, an unset
+     * property takes the hand-sized default, and a positive value is
+     * itself. Both the material node and the texture nodes key on it --
+     * the mesh-UV reading needs a texture unit enabled before the
+     * shapes will generate any coordinates at all.
+     */
+    float faceTextureScale() const;
     /** The render material node needs what only the geometry can state
      *
      * The projection frames a finish and the per-face images are laid
