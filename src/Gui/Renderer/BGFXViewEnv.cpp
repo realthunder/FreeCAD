@@ -212,20 +212,37 @@ void BGFXView::envRadianceProcedural(const float d[3], float out[3]) const
         }
         return;
     }
-    case 2: {   // Overcast -- bright even sky over dark ground.
+    case 2: {   // Overcast -- a bright dome, weighted to the zenith.
         if (t >= 0.0f) {
-            out[0] = 0.62f + 0.38f * t;
-            out[1] = 0.65f + 0.38f * t;
-            out[2] = 0.72f + 0.36f * t;
+            // The sky is concentrated ABOVE rather than spread evenly,
+            // and the reason is where the camera looks. Every preset
+            // here carries the same mean radiance, so an even sky has
+            // to be bright everywhere to reach it -- including the band
+            // just over the horizon, which is exactly what fills the
+            // frame behind a model. Plaster and the other near-white
+            // appearances then have nothing to stand out against.
+            //
+            // CIE's standard overcast distribution puts the zenith at
+            // three times the horizon; this goes further (about eight),
+            // which is a stylised sky but a usable backdrop: the same
+            // light arrives, from higher up.
+            float k = 0.12f + 0.88f * std::pow(std::sin(el), 1.5f);
+            // Enough cloud to break the field up. A flat backdrop reads
+            // as a missing background, not as weather.
+            k *= 1.0f + 0.10f * std::sin(3.0f * az + 2.0f * el)
+                              * std::cos(2.0f * az);
+            out[0] = 1.00f * k;
+            out[1] = 1.03f * k;
+            out[2] = 1.10f * k;
         }
         else {
             float g = -t;
-            out[0] = out[1] = 0.20f - 0.09f * g;
-            out[2] = 0.21f - 0.09f * g;
+            out[0] = out[1] = 0.11f - 0.05f * g;
+            out[2] = 0.1122f - 0.05f * g;
         }
-        envHorizon(el, 1.0f, 0.6f, out);
+        envHorizon(el, 1.0f, 0.55f, out);
         for (int i = 0; i < 3; ++i)
-            out[i] *= 1.19158f;
+            out[i] *= 1.96290f;
         return;
     }
     case 3: {   // Sunset -- a low warm sun, deep sky, the widest hue span.

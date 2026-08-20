@@ -761,10 +761,12 @@ the source changes:
 
 - Default source is a built-in **procedural environment**, computed on
   the CPU and fixed so frames stay deterministic. `Render_PBREnvPreset`
-  picks which one: `Studio` (default -- four soft boxes on a dark
-  surround), `Gradient` (the Z-up ground/horizon/sky ramp plus three
-  cosine lobes this engine had before the others, kept so an older
-  document can have its look back), `Overcast`, `Sunset`, `Interior`.
+  picks which one: `Interior` (**default** -- one window and a ceiling
+  panel against a dark surround, the crispest key of the five),
+  `Studio` (four soft boxes on a dark surround), `Gradient` (the Z-up
+  ground/horizon/sky ramp plus three cosine lobes this engine had
+  before the others, kept so an older document can have its look
+  back), `Overcast`, `Sunset`.
 
   All five are scaled to integrate to the **same mean radiance** over
   the sphere (0.565 in luminance, Gradient's). That is load bearing:
@@ -781,6 +783,16 @@ the source changes:
   with rectangular sources, which is what makes a polished surface look
   polished. Rectangular and not a cosine lobe on purpose -- the edge is
   the point.
+
+  `Overcast` weights its sky to the **zenith**, about 8:1 over the
+  horizon where CIE's standard overcast distribution says 3:1. Same
+  mean radiance as the rest, so the same light arrives -- it just
+  arrives from higher up, which is what keeps the band immediately
+  above the horizon dark enough to be a backdrop. An evenly bright
+  dome cannot: forced to the common mean it is bright everywhere,
+  including the part of it that fills the frame behind the model, and
+  a near-white appearance like Plaster then has nothing to stand
+  against.
 - `Render_PBREnvImage` replaces it with a user image. A 2:1 image is
   read as equirectangular (lat-long), anything squarer as a GL sphere
   map — the convention Coin's `SoTextureCoordinateEnvironment` uses, so

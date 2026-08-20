@@ -1481,15 +1481,17 @@ struct PBRConfig {
     /// Which built-in environment is computed where `envImage` is null.
     /// They differ in contrast and structure, not in brightness: every
     /// one integrates to the same mean radiance, so a change of preset
-    /// does not ask for a change of exposure. 0 Studio (softboxes on a
+    /// does not ask for a change of exposure. 0 Studio (soft boxes on a
     /// dark surround), 1 Gradient (the smooth three-band dome this
-    /// engine had before the others), 2 Overcast, 3 Sunset, 4 Interior.
+    /// engine had before the others), 2 Overcast, 3 Sunset, 4 Interior
+    /// (the default -- one window against a dark surround, the crispest
+    /// key of the five).
     ///
     /// The point of the others is that Gradient spans barely one stop
     /// and has no edges anywhere, so a smooth dielectric reflecting it
     /// shows the same grey at every roughness and nothing in the frame
     /// reads as a light source.
-    int envPreset = 0;
+    int envPreset = 4;
     /// User environment image replacing the built-in procedural studio
     /// environment; null = procedural. A 2:1 image is read as
     /// equirectangular (lat-long), anything squarer as a GL sphere map

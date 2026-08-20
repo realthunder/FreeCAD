@@ -369,7 +369,7 @@ public:
         funcs["PBRFromSpecular"] = &RenderParamsP::updatePBRFromSpecular;
         ShininessMapping = this->handle->GetInt("ShininessMapping", 1);
         funcs["ShininessMapping"] = &RenderParamsP::updateShininessMapping;
-        PBREnvPreset = this->handle->GetInt("PBREnvPreset", 0);
+        PBREnvPreset = this->handle->GetInt("PBREnvPreset", 4);
         funcs["PBREnvPreset"] = &RenderParamsP::updatePBREnvPreset;
         PBREnvIntensity = this->handle->GetFloat("PBREnvIntensity", 1.0);
         funcs["PBREnvIntensity"] = &RenderParamsP::updatePBREnvIntensity;
@@ -847,7 +847,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvPreset(RenderParamsP *self) {
-        self->PBREnvPreset = self->handle->GetInt("PBREnvPreset", 0);
+        self->PBREnvPreset = self->handle->GetInt("PBREnvPreset", 4);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvIntensity(RenderParamsP *self) {
@@ -4380,15 +4380,18 @@ const char *RenderParams::docPBREnvPreset() {
 "roughness -- which is what made physically based shading look\n"
 "like painted plastic.\n"
 "\n"
-"Studio = softboxes on a dark surround, the product-shot rig,\n"
-"and the one to reach for when a surface should read as\n"
-"polished. Gradient = the smooth three-band dome this engine\n"
+"Interior (the default) = a room with one window and a ceiling\n"
+"panel, walls close enough to bounce. One hard key against a\n"
+"dark surround, which is what gives the crispest highlight and\n"
+"the strongest read of form. Studio = four soft boxes on a dark\n"
+"surround, the product-shot rig, gentler and more even than\n"
+"Interior. Gradient = the smooth three-band dome this engine\n"
 "used before the others existed; the flattest and the most\n"
-"even, which makes it the kindest to reading shape in a busy\n"
-"assembly. Overcast = a bright uniform sky over dark ground,\n"
-"soft and neutral. Sunset = a low warm sun with a deep sky, the\n"
-"strongest colour separation. Interior = a room with one window\n"
-"and a ceiling panel, walls close enough to bounce.");
+"even, and the one to pick to have an older document's look\n"
+"back. Overcast = a bright sky weighted to the zenith over dark\n"
+"ground, soft and neutral. Sunset = a low warm sun with a deep\n"
+"sky, the strongest colour separation, and the only one that\n"
+"tints the whole frame.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -4398,7 +4401,7 @@ const long & RenderParams::getPBREnvPreset() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const long & RenderParams::defaultPBREnvPreset() {
-    const static long def = 0;
+    const static long def = 4;
     return def;
 }
 

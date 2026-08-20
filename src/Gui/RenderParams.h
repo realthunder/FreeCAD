@@ -2005,15 +2005,18 @@ public:
     /// roughness -- which is what made physically based shading look
     /// like painted plastic.
     /// 
-    /// Studio = softboxes on a dark surround, the product-shot rig,
-    /// and the one to reach for when a surface should read as
-    /// polished. Gradient = the smooth three-band dome this engine
+    /// Interior (the default) = a room with one window and a ceiling
+    /// panel, walls close enough to bounce. One hard key against a
+    /// dark surround, which is what gives the crispest highlight and
+    /// the strongest read of form. Studio = four soft boxes on a dark
+    /// surround, the product-shot rig, gentler and more even than
+    /// Interior. Gradient = the smooth three-band dome this engine
     /// used before the others existed; the flattest and the most
-    /// even, which makes it the kindest to reading shape in a busy
-    /// assembly. Overcast = a bright uniform sky over dark ground,
-    /// soft and neutral. Sunset = a low warm sun with a deep sky, the
-    /// strongest colour separation. Interior = a room with one window
-    /// and a ceiling panel, walls close enough to bounce.
+    /// even, and the one to pick to have an older document's look
+    /// back. Overcast = a bright sky weighted to the zenith over dark
+    /// ground, soft and neutral. Sunset = a low warm sun with a deep
+    /// sky, the strongest colour separation, and the only one that
+    /// tints the whole frame.
     static const long & getPBREnvPreset();
     static const long & defaultPBREnvPreset();
     static void removePBREnvPreset();
