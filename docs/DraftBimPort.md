@@ -162,8 +162,9 @@ edges" (longer than 9999.9 mm).
 
 ## Status (2026-08-20)
 
-Stages 0 to 3 are done and committed on `LinkVibe`. Stage 4 has not
-started.
+Stages 0 to 3 are done and committed on `LinkVibe`. Stage 4 is started:
+its blocker is cleared and its gate is measured, but the gate does not
+pass yet.
 
 | stage | commit | gate |
 | --- | --- | --- |
@@ -171,11 +172,57 @@ started.
 | 1 `Gui.UserInput` (shimmed) | `c160feaae7` | upstream Draft modules importing 174/222 -> 220/222 |
 | 2 Draft transplant | `9ea92ae952` | `TestDraft` 82 tests / 5 failing (was 67 / 1), `TestDraftGui` 38 / 1 |
 | 3 Arch -> BIM | `82a8a4478d` | `TestArch` 280 tests / 7 failing; King import 473 objects, 298 solids, 8.7 s against 9.1 s |
+| 4 NativeIFC | `d71c8a9fcd` (partial) | opens in 10 s, but the building structure costs 635 s -- see below |
 
 Supporting commits: `087a4d01a4` (task panel buttons as a PySide6 enum),
 `6df7f94a36` and `d763bd8ee5` (`addProperty` keywords on the view
 provider and the document), `21df0beab6` (`freecad.deprecation`),
 `d5989ce60f` (`create_pip_call`).
+
+### Stage 4 -- NativeIFC, measured but not passing
+
+`d71c8a9fcd` cleared the blocker: ifcopenshell 0.9 dropped
+`entity_instance.wrapped_data`, which BIM used at 14 sites, and all of
+them now go through version-tolerant helpers. Both NativeIFC tests pass.
+
+What the King file then measured, with `LoadOrphans` and the other
+optional loads off:
+
+| | NativeIFC | Arch importer |
+| --- | --- | --- |
+| parse 155 MB IFC | 4.7 s | 5 s |
+| open, root object only (`strategy=0`) | 5.3 s | -- |
+| **document usable** | **10 s**, saves to 5.5 KB | **599 s**, saves 171 MB in 138 s |
+| open, building structure (`strategy=1`) | **635 s** for 296 objects | -- |
+
+So the promise holds at the root and collapses one level down: getting
+the building structure costs more than importing the whole model the old
+way, for 296 objects.
+
+It is not per-object cost. The same call on a 25 MB model (NVW
+DCR-LOD200) takes **1.3 s for 99 objects** -- 13 ms an object against
+King's 2100 ms -- and its profile is flat, two thirds of it
+`ifcopenshell.open`. So the cost is superlinear in file content, and
+only bites at King's scale.
+
+Narrowed, not proven. `create_child` asking the project for its whole
+`OutListRecursive` per child is quadratic, but with 296 objects it is
+not the cost: hoisting it to a set changed 635 s into 649 s, so that
+change was reverted rather than shipped unmeasured. The remaining
+suspect is `filter_elements` calling
+`ifcopenshell.util.element.get_decomposition` per structural object --
+one such call on King's project alone returns 12638 elements in 1.2 s,
+and 296 of those would be the right order of magnitude. King has only
+55 groups and 1503 grouped objects, so `assign_groups` and its
+document-wide `get_object` scan are not it.
+
+Next step: count `get_decomposition` calls during a `strategy=1` convert.
+Use the 25 MB model to iterate -- a King measurement costs 11 minutes.
+
+⚠️ `LoadOrphans` defaults to **True**, and on King that alone exceeds
+400 s. With it off the same open is 10 s. Whatever stage 4 concludes,
+that default is the difference between NativeIFC being the fast path and
+being slower than what it replaces.
 
 ### What the remaining test failures want, none of it in ported code
 
@@ -189,9 +236,6 @@ provider and the document), `21df0beab6` (`freecad.deprecation`),
 - `noElementMap` on `Part.makeFace`/`copy`/`fuse`, which this fork's
   Part API has no equivalent of, so a transient analysis face keeps its
   element map. One test.
-- ifcopenshell 0.9 removed `entity_instance.wrapped_data`, which
-  NativeIFC uses. Two tests, and the first thing stage 4 has to decide:
-  pin 0.8.5 or follow the new API.
 - An Arch Report writing no spreadsheet cells. One test.
 
 ### Two things worth knowing before stage 4
