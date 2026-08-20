@@ -129,6 +129,21 @@ void BGFXView::submitAOResolve(float radius, float intensity, int method,
             bgfx::setTexture(uint8_t(2 + m), s_texAOMip[m],
                              depthMips ? aoMipTex[m] : aoNormalZ);
     }
+    else {
+        // The classic pass carries the accumulation sample index in a
+        // vec4 of its own rather than packing it the way GTAO does:
+        // GTAO's .z is a bitfield with room above it, while every lane
+        // of u_aoParams means a real value here (radius, intensity,
+        // depth bias, power). u_aoParams2 has no other use in this
+        // pass, so its meaning is per-program -- as u_aoParams itself
+        // already is between this pass and fs_fc_gtao_depths.
+        //
+        // Unmasked, unlike GTAO's index: the 64-entry wrap there is
+        // XeGTAO's own, a property of the sequence it steps through,
+        // and nothing in the golden-ratio rotation below wants it.
+        float params2[4] = {float(temporalIndex), 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_aoParams2, params2);
+    }
     if (!gtao)
         bgfx::setUniform(u_aoKernel, kernel, kAOSamples);
     bgfx::setTexture(0, s_texNormalZ, aoNormalZ);

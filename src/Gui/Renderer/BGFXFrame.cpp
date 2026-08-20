@@ -2607,6 +2607,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // frame's noise through the whole refinement.
     const bool accumRefining = accumActive && view->accumFrames > 0
         && view->accumFrames < accumSamples;
+    // Which sample the stochastic effect passes should draw their noise
+    // from. Zero on an ordinary frame, which is what makes those passes
+    // bit-identical to before the accumulation existed.
+    const int aoTemporalIndex = accumRefining ? view->accumFrames : 0;
     // Asked for and not engaging: say so once, with the reason. All
     // three causes look the same on screen -- the picture simply never
     // refines -- and the third one (something in the feed reporting a
@@ -2648,15 +2652,17 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // AO/prepass cache (same pattern as the shadow-map hash above):
     // the depth/normal prepass and the whole AO resolve chain
     // (pyramid, gen, denoise) depend only on the camera, the
-    // viewport, the AO parameters and the prepass draw set — never
-    // on time. When none of those changed, skip them all and keep
-    // last frame's targets: animated effects (water waves, fire)
-    // re-render every frame but read the cached prepass/AO, so a
-    // static camera pays only the cheap AO apply multiply. The
-    // interaction fast path needs no special casing — aoconf.fast
-    // flips the hash (and the camera moves anyway), and the first
-    // idle frame recomputes at full quality and re-primes the
-    // cache.
+    // viewport, the AO parameters, the prepass draw set and the
+    // accumulation sample index -- never on time. (The index is not
+    // time: it is which sample of a refinement this is, and it is 0
+    // on every frame that is not one.) When none of those changed,
+    // skip them all and keep last frame's targets: animated effects
+    // (water waves, fire) re-render every frame but read the cached
+    // prepass/AO, so a static camera pays only the cheap AO apply
+    // multiply. The interaction fast path needs no special casing --
+    // aoconf.fast flips the hash (and the camera moves anyway), and
+    // the first idle frame recomputes at full quality and re-primes
+    // the cache.
     static const bool aoNoCache =
         (getenv("FC_BGFX_NO_AO_CACHE") != nullptr);
     bool aoRender = prepassActive;
@@ -2676,6 +2682,25 @@ bool BGFXRenderer::Private::render(const QColor &col,
         hashBytes(h, &aoconf.fast, sizeof(aoconf.fast));
         hashBytes(h, &aoconf.slices, sizeof(aoconf.slices));
         hashBytes(h, &aoconf.steps, sizeof(aoconf.steps));
+        // The idle accumulation's sample index (docs/RenderEngine.md
+        // sec 3.5). Both AO passes are stochastic, and both draw their
+        // noise from screen position, so a refinement that reuses this
+        // map averages one noise field with itself -- which is why AO
+        // was the one part of the frame the accumulation could not
+        // converge. Hashing the index is what re-renders the chain per
+        // sample, and it is the honest way to say it: the map really
+        // does depend on the index, so the key that decides whether it
+        // is still valid has to contain it.
+        //
+        // Hashing beats forcing the render from outside, which is what
+        // this first did, because it also answers the way BACK. When a
+        // refinement ends the index returns to 0 while the camera has
+        // not moved, so a hash without it says "hit" and the view keeps
+        // the LAST SAMPLE's noise -- turning the feature off would
+        // leave a frame that is not the frame it had before turning it
+        // on. With the index in the key that transition re-renders,
+        // and off is once again exactly off.
+        hashBytes(h, &aoTemporalIndex, sizeof(aoTemporalIndex));
         const bool consumers[4] = {ssaoActive, volActive,
                                    waterSurfReject, glassReject};
         hashBytes(h, consumers, sizeof(consumers));
@@ -2708,18 +2733,6 @@ bool BGFXRenderer::Private::render(const QColor &col,
         aoRender = h != view->aoMapHash;
         if (aoRender)
             view->aoMapHash = h;
-        // ... except while the accumulation is refining. The hash
-        // above reads the UNJITTERED camera (it is taken before the
-        // offset is applied, and deliberately so -- see there), so
-        // across a refinement it never changes and the cache would
-        // answer "hit" for every sample. That is the whole reason
-        // AO alone did not converge: the chain was skipped outright
-        // and the view averaged one frame's AO noise with itself N
-        // times. Re-render it per sample instead. This is real work
-        // on a parked view, which is exactly what the feature
-        // spends; an idle view WITHOUT it keeps the cache.
-        if (accumRefining)
-            aoRender = true;
     } else if (prepassActive) {
         view->aoMapHash = 0;
     }
@@ -5332,7 +5345,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         view->submitAOResolve(aoRadius, aoconf.intensity,
                               aoconf.method, aoconf.fast,
                               aoconf.slices, aoconf.steps,
-                              accumRefining ? view->accumFrames : 0);
+                              aoTemporalIndex);
 
     // 1d. Volumetric light shafts: half-res raymarch of the shadow
     // map, bilateral-upsampled and composited onto the opaque scene

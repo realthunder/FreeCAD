@@ -702,50 +702,68 @@ factor is 8-bit (bgfx packs it into an RGBA), which is why the sample
 count is capped at 256: below `1/255` the factor rounds to zero and a
 further frame would contribute nothing.
 
-**GTAO converges with the rest of the frame**, and getting it to took
-two changes rather than one. GTAO is a stochastic estimator -- a few
-horizon slices per pixel along directions drawn from a low-discrepancy
-sequence -- so averaging frames is exactly how its noise is supposed to
-disappear. Neither half works alone:
+**The AO passes converge with the rest of the frame**, and getting
+them to took two changes rather than one. Both are stochastic
+estimators -- GTAO marches horizon slices along directions from a
+low-discrepancy sequence, the classic pass rotates a fixed hemisphere
+kernel by a tiled noise texture -- so averaging frames is exactly how
+their noise is supposed to disappear. Neither half works alone:
 
-- The AO chain is cached against the camera (see `aoMapHash`), and that
-  hash is taken from the unjittered projection, above the jitter for the
-  reason in step 1. Across a refinement it therefore never changes, so
-  every sample scored a cache hit and the chain was skipped outright:
-  the accumulation averaged one buffer with itself N times. `aoRender`
-  is now forced while `accumRefining`, which is real work on a parked
-  view and exactly what the feature spends. An idle view **without** the
-  feature keeps the cache untouched.
-- The noise pattern is pinned to screen position, and `fs_fc_gtao.sc`
-  fixed XeGTAO's temporal index at 0. Re-rendering alone would have laid
-  down the identical pattern each sample. The index now comes from the
-  accumulation's sample number, packed above the flag bits of
-  `u_aoParams.z` (both other AO vec4s are full, the field is already a
-  bitfield, and `4*63+3 = 255` is exact in float), and offsets the R2
-  sequence the way XeGTAO's own `SpatioTemporalNoise` does. Determinism
-  survives because it is a **sample** number, not a frame counter --
-  the same argument that makes the Halton jitter golden-safe.
+- The AO chain is cached (see `aoMapHash`), and that key is taken from
+  the unjittered projection, above the jitter for the reason in step 1.
+  Across a refinement it therefore never changed, so every sample
+  scored a cache hit and the chain was skipped outright: the
+  accumulation averaged one AO buffer with itself N times. The
+  **sample index is now part of the key**, which is the honest
+  statement of the dependency -- the map really does depend on which
+  sample it is. Forcing the render from outside would have covered the
+  way in but not the way back: when a refinement ends the index returns
+  to 0 while the camera has not moved, and a key without it answers
+  "hit", so the view would keep the last sample's noise and turning the
+  feature off would not restore the frame it had before turning it on.
+- The noise pattern is pinned to screen position in both passes, so
+  re-rendering alone would lay down the identical pattern each sample.
+  Both now advance with the index. `fs_fc_gtao.sc` offsets XeGTAO's R2
+  sequence exactly as its own `SpatioTemporalNoise` does, taking the
+  index from above the flag bits of `u_aoParams.z` (both other AO vec4s
+  are full, the field is already a bitfield, `4*63+3 = 255` is exact in
+  float). `fs_fc_ssao.sc` rotates the kernel's azimuth by a
+  golden-ratio step and advances the radius jitter by an R2 step --
+  both, because they decorrelate different things, and the radial
+  banding the radius jitter exists to break would otherwise survive
+  every sample intact. It takes the index in `u_aoParams2.x`, its own
+  lane rather than a pack, since every lane of `u_aoParams` means a
+  real value in that pass.
 
-`scripts/gtao_accum_probe.py` measures it, on a drilled plate rather
-than the sibling probe's Siemens star, which has no concave occlusion
-anywhere and so states AO off. Its discriminating measurement is the AO
-buffer alone (render debug view mode 3): on the pre-fix engine the
-accumulated AO term is *bit-identical* to the single-sample one, by
-construction. Measured over 32 samples on llvmpipe, at GTAO's default
-9 slices / 6 steps and full AO resolution:
+Determinism survives in both because the index is a **sample** number,
+not a frame counter -- the same argument that makes the Halton jitter
+golden-safe. Index 0 is an exact identity: the classic pass branches
+around the arithmetic entirely rather than falling through it, because
+one texel of its noise carries `.z = 1.0`, for which `fract(1.0 + 0.0)`
+is `0.0`, and the identity would have failed on one pixel in sixteen.
+
+`scripts/gtao_accum_probe.py` measures both passes, on a drilled plate
+rather than the sibling probe's Siemens star, which has no concave
+occlusion anywhere and so states AO off. Its discriminating measurement
+is the AO buffer alone (render debug view mode 3): on the pre-fix
+engine the accumulated AO term is *bit-identical* to the
+single-sample one, by construction. Over 32 samples on llvmpipe, at
+default quality and full AO resolution:
 
 | | single sample | 32 accumulated |
 |---|---|---|
-| AO term, distance from a 3x supersampled render | 5.900 | **3.907** |
-| high-frequency energy over the geometry | 8.677 | **5.866** |
-| shaded frame, distance from the same reference | 4.108 | **3.026** |
+| GTAO term, distance from a 3x supersampled render | 2.882 | **2.429** |
+| classic SSAO term, same | 2.873 | **2.444** |
+| high-frequency energy over the geometry (GTAO) | 8.677 | **5.866** |
+| shaded frame, distance from the same reference | 4.096 | **3.022** |
 
-and the AO term moves 3.518 rms from where it started, against 0 pre-fix.
-The same run checks the other side of the gate: with the feature off, an
-idle view's AO term is bit-identical 40 frames apart, so the cache is
-untouched for everybody not refining. A pre-fix/post-fix
-`scripts/render-verify.sh` diff is clean over all 15 stages, which is
-what says the shader packing is an identity at sample 0.
+and the AO term moves 3.518 (GTAO) / 3.506 (classic) rms from where it
+started, against 0 pre-fix. The same run checks the other side of the
+gate: with the feature off, an idle view's AO term is bit-identical 40
+frames apart, so the cache is untouched for everybody not refining, and
+a converged view left and returned to reconverges bit-identically. A
+pre-fix/post-fix `scripts/render-verify.sh` diff is clean over all 15
+stages, which is what says both shaders are an identity at sample 0.
 
 Both settings are **local** (`Prop_NoPersist`, `_localRenderProperties`):
 what they spend is the reader's idle GPU time and, on a laptop, their
