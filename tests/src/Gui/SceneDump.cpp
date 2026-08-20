@@ -387,16 +387,19 @@ TEST(SceneDump, monolithicRoundTrip)
 TEST(SceneDump, theOutputTransformCrossesTheWire)
 {
     Render::SceneSnapshot snap = makeScene();
-    EXPECT_EQ(snap.outconf.transform, Render::OutputConfig::None)
-        << "a snapshot states no transform until one is selected";
-    snap.outconf.transform = Render::OutputConfig::SRGB;
-
-    std::vector<uint8_t> payload;
-    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
-    Render::SceneSnapshot loaded;
-    ASSERT_TRUE(
-        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
-    EXPECT_EQ(loaded.outconf.transform, Render::OutputConfig::SRGB);
+    // Both values, because the DEFAULT is not the thing under test --
+    // it has already changed once, and a test that pinned it would fail
+    // for that rather than for anything about the wire.
+    for (int transform : {int(Render::OutputConfig::None),
+                          int(Render::OutputConfig::SRGB)}) {
+        snap.outconf.transform = transform;
+        std::vector<uint8_t> payload;
+        ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+        Render::SceneSnapshot loaded;
+        ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(),
+                                              payload.size(), loaded));
+        EXPECT_EQ(loaded.outconf.transform, transform);
+    }
 }
 
 TEST(SceneDump, manifestRoundTrip)

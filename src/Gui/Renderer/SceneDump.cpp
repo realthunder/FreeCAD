@@ -3567,8 +3567,11 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     }
 
     snap.outconf = OutputConfig();
-    if (version >= 60)
-        snap.outconf.transform = r.i32();
+    // Explicitly, not by leaving the struct default: that default is
+    // now SRGB, and a snapshot written before v60 was NOT colour
+    // managed -- it has to keep being drawn the way it was written.
+    snap.outconf.transform = version >= 60
+        ? r.i32() : int(OutputConfig::None);
 
     snap.autozoomScale = r.f();
     snap.effectResolution = version >= 9 ? r.f() : 1.0f;

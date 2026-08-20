@@ -201,7 +201,7 @@ public:
 
         Type = this->handle->GetASCII("Type", "Default");
         funcs["Type"] = &RenderParamsP::updateType;
-        OutputTransform = this->handle->GetInt("OutputTransform", 0);
+        OutputTransform = this->handle->GetInt("OutputTransform", 1);
         funcs["OutputTransform"] = &RenderParamsP::updateOutputTransform;
         MaxViewIds = this->handle->GetInt("MaxViewIds", 1024);
         funcs["MaxViewIds"] = &RenderParamsP::updateMaxViewIds;
@@ -509,7 +509,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOutputTransform(RenderParamsP *self) {
-        self->OutputTransform = self->handle->GetInt("OutputTransform", 0);
+        self->OutputTransform = self->handle->GetInt("OutputTransform", 1);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateMaxViewIds(RenderParamsP *self) {
@@ -1118,23 +1118,28 @@ void RenderParams::removeType() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docOutputTransform() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"What the engine does to a finished frame before it is shown.\n"
+"Whether the engine is colour managed.\n"
 "\n"
-"The shading math is linear -- mixes, the GGX lobe, the image\n"
-"based lighting product are all plain arithmetic on light, and\n"
-"they are only correct on linear numbers. A display is not\n"
-"linear: it reads the byte it is given as sRGB. Writing a linear\n"
-"result straight into an 8-bit target therefore shows it about a\n"
-"gamma too dark through the midtones, which is what 'Off' does\n"
-"and what every frame this engine has drawn so far has done.\n"
+"The shading is linear -- mixes, the GGX lobe, the image based\n"
+"lighting product are all arithmetic on light, and they are only\n"
+"correct on linear numbers. A colour someone picked is not: it\n"
+"is a display number, which makes it sRGB encoded. And a display\n"
+"reads the byte it is handed as sRGB too.\n"
 "\n"
-"'sRGB' encodes the finished frame once, at the last write\n"
-"before it is handed to the screen, so blending, the order\n"
-"independent transparency composite and every effect pass still\n"
-"run on linear values. Material colours are NOT touched: they\n"
-"are linear by definition here, and pre-compensating them\n"
-"instead would trade a correct metal reflectance table for a\n"
-"wrong one.");
+"'sRGB' honours both ends. Authored colours -- materials, the\n"
+"lights, the background, the base colour and emissive textures --\n"
+"are decoded to linear as they enter, and the finished frame is\n"
+"encoded once at the last write before it is shown. An UNSHADED\n"
+"authored colour therefore survives the round trip exactly, and\n"
+"so does a fully lit surface; what changes is the shading in\n"
+"between, which is the part that was wrong.\n"
+"\n"
+"'Off' is the older pipeline, which did neither: it fed display\n"
+"numbers to the linear shading and wrote the linear result out\n"
+"raw. The two errors partly cancel -- a fully lit surface comes\n"
+"out right -- but everything in falloff and shadow renders about\n"
+"a gamma too dark. Documents written before this existed are\n"
+"drawn that way, which is how they were authored.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -1144,7 +1149,7 @@ const long & RenderParams::getOutputTransform() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const long & RenderParams::defaultOutputTransform() {
-    const static long def = 0;
+    const static long def = 1;
     return def;
 }
 

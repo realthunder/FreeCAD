@@ -1485,14 +1485,20 @@ struct PBRConfig {
 /// and would only reach the objects whose numbers were edited.
 struct OutputConfig {
     enum Transform {
-        /// Write the linear result unchanged -- what every frame this
-        /// engine has drawn so far did, and what an older scene
+        /// Neither end: feed display numbers to the linear shading and
+        /// write the linear result out raw. The two errors partly
+        /// cancel -- a fully lit surface comes out right -- but the
+        /// falloff renders about a gamma too dark. What every frame
+        /// before this existed was drawn with, and what an older scene
         /// snapshot has to keep being drawn with.
         None = 0,
-        /// Encode to sRGB at the last write.
+        /// Colour managed: authored colours decoded to linear on the
+        /// way in (unpackAuthoredColor, and fc_color.sh for the streams
+        /// and pictures C++ cannot reach), the finished frame encoded
+        /// once on the way out.
         SRGB = 1,
     };
-    int transform = None;
+    int transform = SRGB;
 
     bool operator==(const OutputConfig &o) const {
         return transform == o.transform;

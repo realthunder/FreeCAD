@@ -85,23 +85,28 @@ public:
     //@{
     /// Accessor for parameter OutputTransform
     ///
-    /// What the engine does to a finished frame before it is shown.
+    /// Whether the engine is colour managed.
     /// 
-    /// The shading math is linear -- mixes, the GGX lobe, the image
-    /// based lighting product are all plain arithmetic on light, and
-    /// they are only correct on linear numbers. A display is not
-    /// linear: it reads the byte it is given as sRGB. Writing a linear
-    /// result straight into an 8-bit target therefore shows it about a
-    /// gamma too dark through the midtones, which is what 'Off' does
-    /// and what every frame this engine has drawn so far has done.
+    /// The shading is linear -- mixes, the GGX lobe, the image based
+    /// lighting product are all arithmetic on light, and they are only
+    /// correct on linear numbers. A colour someone picked is not: it
+    /// is a display number, which makes it sRGB encoded. And a display
+    /// reads the byte it is handed as sRGB too.
     /// 
-    /// 'sRGB' encodes the finished frame once, at the last write
-    /// before it is handed to the screen, so blending, the order
-    /// independent transparency composite and every effect pass still
-    /// run on linear values. Material colours are NOT touched: they
-    /// are linear by definition here, and pre-compensating them
-    /// instead would trade a correct metal reflectance table for a
-    /// wrong one.
+    /// 'sRGB' honours both ends. Authored colours -- materials, the
+    /// lights, the background, the base colour and emissive textures --
+    /// are decoded to linear as they enter, and the finished frame is
+    /// encoded once at the last write before it is shown. An UNSHADED
+    /// authored colour therefore survives the round trip exactly, and
+    /// so does a fully lit surface; what changes is the shading in
+    /// between, which is the part that was wrong.
+    /// 
+    /// 'Off' is the older pipeline, which did neither: it fed display
+    /// numbers to the linear shading and wrote the linear result out
+    /// raw. The two errors partly cancel -- a fully lit surface comes
+    /// out right -- but everything in falloff and shadow renders about
+    /// a gamma too dark. Documents written before this existed are
+    /// drawn that way, which is how they were authored.
     static const long & getOutputTransform();
     static const long & defaultOutputTransform();
     static void removeOutputTransform();
