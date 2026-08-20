@@ -802,7 +802,12 @@ the source changes:
   procedural environment.
 - `Render_PBREnvBackground` draws the environment itself as the view
   background instead of the gradient quad, so reflective surfaces
-  visibly mirror their surroundings. The background pass keeps the scene
+  visibly mirror their surroundings. **On by default.** It gates the
+  background pass ALONE -- the environment lights the scene either way
+  -- so turning it off is how to have image based lighting over the
+  ordinary background colour or gradient, which is a common enough
+  thing to want that the Shading popup carries it as a checkbox beside
+  the preset. The background pass keeps the scene
   matrices for it (`fs_fc_env` reconstructs per-pixel world directions
   from `u_proj`/`u_invView`); orthographic cameras get a fixed 45°
   virtual field of view since they have no per-pixel ray fan.

@@ -144,8 +144,19 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     envCombo->addItem(tr("Interior"));
     envCombo->setToolTip(doc(RenderParams::docPBREnvPreset()));
     envLabel->setToolTip(envCombo->toolTip());
+    // The environment lights the scene whether or not it is DRAWN --
+    // the flag gates the background pass alone. So this is the switch
+    // for "light it like a studio, keep my background", which is a
+    // thing people want often enough that it should not be four clicks
+    // into the preferences.
+    envBgCheck = new QCheckBox(tr("as background"), this);
+    envBgCheck->setToolTip(doc(RenderParams::docPBREnvBackground()));
+    auto envRow = new QHBoxLayout;
+    envRow->setContentsMargins(0, 0, 0, 0);
+    envRow->addWidget(envCombo, 1);
+    envRow->addWidget(envBgCheck);
     layout->addWidget(envLabel, 2, 0);
-    layout->addWidget(envCombo, 2, 1);
+    layout->addLayout(envRow, 2, 1);
 
     matcapLabel = new QLabel(tr("Matcap:"), this);
     matcapCombo = new QComboBox(this);
@@ -247,6 +258,9 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     connect(matcapRadio, &QRadioButton::toggled, this, [this](bool on) {
         if (on && !loading)
             setModel(false, true);
+    });
+    connect(envBgCheck, &QCheckBox::toggled, this, [this](bool on) {
+        setFlag("PBREnvBackground", on);
     });
     connect(envCombo, qOverload<int>(&QComboBox::currentIndexChanged),
             this, [this](int index) {
@@ -351,6 +365,7 @@ void ShadingOptionsWidget::setModel(bool pbr, bool matcap)
         prop->setValue(matcap);
     envLabel->setEnabled(pbr);
     envCombo->setEnabled(pbr);
+    envBgCheck->setEnabled(pbr);
     matcapLabel->setEnabled(matcap);
     matcapCombo->setEnabled(matcap);
     updateMatcapTintEnabled();
@@ -382,6 +397,11 @@ void ShadingOptionsWidget::refresh()
     classicRadio->setChecked(!pbr && !matcap);
     if (auto prop = renderProp<App::PropertyEnumeration>(view, "PBREnvPreset"))
         envCombo->setCurrentIndex(int(prop->getValue()));
+    // The fallback is the parameter and not a literal false: this one
+    // defaults ON, so a hardcoded false would draw the box unchecked
+    // while the renderer went on drawing the environment.
+    envBgCheck->setChecked(renderFlag(view, "PBREnvBackground",
+                                      RenderParams::getPBREnvBackground()));
     if (auto prop = renderProp<App::PropertyEnumeration>(view, "MatcapPreset"))
         matcapCombo->setCurrentIndex(int(prop->getValue()));
     if (auto prop = renderProp<App::PropertyFloat>(view, "MatcapTint"))
@@ -412,6 +432,7 @@ void ShadingOptionsWidget::refresh()
     matcapRadio->setEnabled(available);
     envLabel->setEnabled(available && pbr && !matcap);
     envCombo->setEnabled(available && pbr && !matcap);
+    envBgCheck->setEnabled(available && pbr && !matcap);
     matcapLabel->setEnabled(available && matcap);
     matcapCombo->setEnabled(available && matcap);
     updateMatcapTintEnabled();
