@@ -25,7 +25,12 @@ macro(CheckInterModuleDependencies)
     REQUIRES_MODS(BUILD_IMPORT             BUILD_PART)
     REQUIRES_MODS(BUILD_INSPECTION         BUILD_MESH BUILD_POINTS BUILD_PART)
     REQUIRES_MODS(BUILD_JTREADER           BUILD_MESH)
-    REQUIRES_MODS(BUILD_MESH_PART          BUILD_PART BUILD_MESH BUILD_SMESH)
+    # Not BUILD_SMESH: MeshPart's only use of it, Mesher.cpp/.h, is behind
+    # HAVE_SMESH, and BUILD_SMESH is not an option a user can set -- it is
+    # turned on by BUILD_FEM alone. Requiring it here silently disabled
+    # MeshPart on every build without FEM, and with it OpenSCAD, FlatMesh and
+    # BIM's SH3D importer.
+    REQUIRES_MODS(BUILD_MESH_PART          BUILD_PART BUILD_MESH)
     REQUIRES_MODS(BUILD_FLAT_MESH          BUILD_MESH_PART)
     REQUIRES_MODS(BUILD_OPENSCAD           BUILD_MESH_PART BUILD_DRAFT)
     REQUIRES_MODS(BUILD_PART_DESIGN        BUILD_SKETCHER)

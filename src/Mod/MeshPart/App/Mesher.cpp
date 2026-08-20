@@ -534,6 +534,11 @@ Mesh::MeshObject* Mesher::createMesh() const
 #endif  // HAVE_SMESH
 }
 
+// SMESH is optional for this module -- everything above already selects a
+// non-SMESH path when it is absent -- but this definition was left outside
+// the guards, so MeshPart could not compile without it. That is why
+// BUILD_MESH_PART used to require BUILD_SMESH, which no user can set.
+#ifdef HAVE_SMESH
 Mesh::MeshObject* Mesher::createFrom(SMESH_Mesh* mesh) const
 {
     // build up the mesh structure
@@ -686,3 +691,4 @@ Mesh::MeshObject* Mesher::createFrom(SMESH_Mesh* mesh) const
     meshdata->swap(kernel);
     return meshdata;
 }
+#endif  // HAVE_SMESH
