@@ -179,25 +179,37 @@ All five stages are done and committed on `LinkVibe`.
 | `TestDraft` | 82 | 5 |
 | `TestDraftGui` | 38 | 1 |
 | `TestArch` | 280 | 5 |
-| `TestArchGui` | 41 | 3 |
+| `TestArchGui` | 41 | **0** |
 
-`TestArchGui` is a registered suite that the plan above never gated --
-an omission, not a result. Its three:
+`TestArchGui` was a registered suite the plan never gated -- an
+omission, not a result. It had three failures when first run, and all
+three are now fixed, none of them in ported code:
 
-- `testImportSH3D` -- `No module named 'MeshPart'`. MeshPart is not in
-  this build configuration at all (no mention of it in `build.ninja`,
-  whatever `BUILD_MESH_PART` says in the cache), so this is the build
-  tree rather than the port.
-- `testBuildingPart` -- `RuntimeError: Auto correct group member`. The
-  fork's group auto-correct rejecting how upstream's BuildingPart fills
-  a Group. Same family as the window/host `Hosts` mismatch below: fork
-  core against upstream BIM, and a real one.
-- `test_texture_scenegraph_structure` -- no `FlatRoot` node found. The
-  fork's view provider builds a different scene graph than the test
-  expects.
+- `testImportSH3D` wanted MeshPart, which was not in the build at all.
+  `BUILD_MESH_PART` defaults ON, but CheckInterModuleDependencies
+  required `BUILD_SMESH`, which no user can set -- only `BUILD_FEM`
+  turns it on -- so every build without FEM silently lost MeshPart, and
+  with it FlatMesh and OpenSCAD. Upstream does not list `BUILD_SMESH`
+  there; it enables SMESH whenever MeshPart is on, which here would pull
+  in VTK for a mesher BIM does not use. Instead `Mesher.cpp`'s
+  `createFrom(SMESH_Mesh*)`, the one definition left outside the
+  `HAVE_SMESH` guards, is now guarded, so the module builds either way.
+  `3bd39c9ba7`.
+- `testBuildingPart` hit the fork's "Auto correct group member" error.
+  `GroupExtension`'s single-group rule asked `isNonGeoGroup()`, which
+  matches derived extensions, so `App::GroupExtensionPython` counted --
+  and ArchBuildingPart carries it. Upstream asks for the exact
+  extension. `c086cc5a03`. A plain
+  `App::DocumentObjectGroup` still triggers the rule, a scripted
+  container no longer does.
+- `test_texture_scenegraph_structure` looked up a Coin node called
+  "FlatRoot". Upstream's ViewProviderPartExt names its four
+  display-mode roots and the face draw style; the fork named only the
+  wireframe node. The nodes were there, unnamed.
 
-The last two are genuine fork-versus-upstream friction and are the only
-untriaged items the port leaves behind.
+Both core changes were checked by reverting the file and re-running:
+`Document` stays at 110 tests / 9 failing and `TestPartApp` /
+`TestPartGui` at 75 / 1 and 4 / 3, the same failures by name.
 
 Supporting commits: `087a4d01a4` (task panel buttons as a PySide6 enum),
 `6df7f94a36` and `d763bd8ee5` (`addProperty` keywords on the view
