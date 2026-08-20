@@ -1467,6 +1467,11 @@ public:
     void noteTextureBlobs(FileBlobManager &manager, const BlobReferrer &referrer) const;
     /// Take a restored blob into whichever slots name its hash
     void assignRestoredBlob(const FileBlobHandle &blob) override;
+    /// The texture content has no schema 4 spelling: the maps themselves ride
+    /// a companion element, the bytes behind them live in the store and
+    /// nowhere else. A save with no store keeps the hashes and drops the
+    /// files, which is what makes this the one referrer answering true.
+    bool blobContentNeedsStore() const override { return hasTexture(); }
     //@}
 
     /** @name PBR mode
