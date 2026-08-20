@@ -2036,15 +2036,17 @@ public:
     /// roughness -- which is what made physically based shading look
     /// like painted plastic.
     /// 
-    /// Interior (the default) = a room with one window and a ceiling
+    /// Interior = a room with one window and a ceiling
     /// panel, walls close enough to bounce. One hard key against a
     /// dark surround, which is what gives the crispest highlight and
     /// the strongest read of form. Studio = four soft boxes on a dark
     /// surround, the product-shot rig, gentler and more even than
-    /// Interior. Gradient = the smooth three-band dome this engine
-    /// used before the others existed; the flattest and the most
-    /// even, and the one to pick to have an older document's look
-    /// back. Overcast = a bright sky weighted to the zenith over dark
+    /// Interior. Gradient (the default) = the smooth three-band dome
+    /// this engine used before the others existed; the flattest and
+    /// the most even, which is why it is where a view starts -- it
+    /// stays out of the way of the model being worked on, and it is
+    /// the one to pick to have an older document's look back.
+    /// Overcast = a bright sky weighted to the zenith over dark
     /// ground, soft and neutral. Sunset = a low warm sun with a deep
     /// sky, the strongest colour separation, and the only one that
     /// tints the whole frame. Light tent = a box of white panels,
