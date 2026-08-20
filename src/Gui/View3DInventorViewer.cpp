@@ -3533,8 +3533,14 @@ void View3DInventorViewer::clearGraphicsItems()
 
 int View3DInventorViewer::getNumSamples()
 {
+    // 4x by default. The backend resolves its own offscreen target, so
+    // the cost is a wider render target and not a cloned GL context,
+    // and edge-dominated CAD geometry is the content multisampling
+    // helps most -- an unantialiased silhouette is the first thing that
+    // reads as "not a real render".
     long samples = App::GetApplication().GetParameterGroupByPath
-        ("User parameter:BaseApp/Preferences/View")->GetInt("AntiAliasing", 0);
+        ("User parameter:BaseApp/Preferences/View")
+        ->GetInt("AntiAliasing", View3DInventorViewer::MSAA4x);
 
     // NOLINTBEGIN
     switch (samples) {
