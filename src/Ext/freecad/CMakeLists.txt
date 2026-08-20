@@ -28,6 +28,7 @@ configure_file(__init__.py.template ${NAMESPACE_INIT})
 configure_file(project_utility.py ${NAMESPACE_DIR}/project_utility.py)
 configure_file(UiTools.py ${NAMESPACE_DIR}/UiTools.py)
 configure_file(utils.py ${NAMESPACE_DIR}/utils.py)
+configure_file(deprecation.py ${NAMESPACE_DIR}/deprecation.py)
 
 # MCP debug console (pure-Python; requires the 'mcp' package at runtime)
 configure_file(mcp_console/__init__.py ${NAMESPACE_DIR}/mcp_console/__init__.py COPYONLY)
@@ -46,6 +47,7 @@ endif()
 INSTALL(
     FILES
         ${NAMESPACE_INIT}
+        deprecation.py
         project_utility.py
         UiTools.py
         utils.py
