@@ -120,6 +120,8 @@ void BGFXView::destroyTargets()
     // handles, so the size it was built at is gone with it.
     shadowSize = 0;
     aoMapHash = 0;
+    reflSampleIndex = -1;
+    mediumSampleIndex = -1;
     camFrameHash = 0;
     for (int t = 0; t < kBulbShadowTiles; ++t) {
         bulbShadowValid[t] = false;
@@ -571,6 +573,7 @@ void BGFXView::freeEffect(EffectGroup g)
         break;
     case EffectReflection:
         drop(reflFbo);
+        reflSampleIndex = -1;
         drop(reflTex);
         drop(reflDepth);
         break;

@@ -2541,7 +2541,6 @@ bool BGFXRenderer::Private::render(const QColor &col,
     const bool staticFrame = !dirtyChanged && !hlconfig.show
         && !staticNoCache && camH == view->camFrameHash;
     view->camFrameHash = camH;
-    const bool mediumRender = !staticFrame;
 
     // Idle temporal accumulation (docs/RenderEngine.md sec 3.5).
     //
@@ -2607,10 +2606,32 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // frame's noise through the whole refinement.
     const bool accumRefining = accumActive && view->accumFrames > 0
         && view->accumFrames < accumSamples;
-    // Which sample the stochastic effect passes should draw their noise
-    // from. Zero on an ordinary frame, which is what makes those passes
-    // bit-identical to before the accumulation existed.
-    const int aoTemporalIndex = accumRefining ? view->accumFrames : 0;
+    // Which sample of a refinement this frame is. Zero on an ordinary
+    // frame, which is what keeps every consumer below bit-identical to
+    // before the accumulation existed.
+    //
+    // Three targets key on it, and all for one reason: they are cached
+    // against a camera the jitter deliberately does not appear in, so
+    // across a refinement their keys never change and they hand back a
+    // result rendered at the UNJITTERED camera while everything
+    // sampling them moves underneath. The AO chain is one (see the
+    // hash below); the mirrored scene and the media interval depths are
+    // the other two, and those are cached on staticFrame -- which is
+    // the very predicate that says an accumulation MAY run, so during a
+    // refinement it is guaranteed to answer "reuse".
+    //
+    // Comparing a STORED index rather than ORing in "is refining"
+    // answers the way back as well: when a refinement ends the index
+    // returns to 0 with the camera unmoved, and a bare OR would leave
+    // each target holding the last sample's jittered result.
+    const int accumSampleIndex = accumRefining ? view->accumFrames : 0;
+    // The media interval depths (water/glass/cloud/fire): screen-space
+    // depth spans of the medium bodies, so they follow the camera and
+    // have to be redrawn per sample like everything else it decides.
+    const bool mediumRender = !staticFrame
+        || view->mediumSampleIndex != accumSampleIndex;
+    if (mediumRender)
+        view->mediumSampleIndex = accumSampleIndex;
     // Asked for and not engaging: say so once, with the reason. All
     // three causes look the same on screen -- the picture simply never
     // refines -- and the third one (something in the feed reporting a
@@ -2700,7 +2721,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // leave a frame that is not the frame it had before turning it
         // on. With the index in the key that transition re-renders,
         // and off is once again exactly off.
-        hashBytes(h, &aoTemporalIndex, sizeof(aoTemporalIndex));
+        hashBytes(h, &accumSampleIndex, sizeof(accumSampleIndex));
         const bool consumers[4] = {ssaoActive, volActive,
                                    waterSurfReject, glassReject};
         hashBytes(h, consumers, sizeof(consumers));
@@ -3757,7 +3778,18 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // reflecting everything except the jet standing in it. Same
     // escape hatch the analytic media already take.
     reflRender = !staticFrame || shadowRender || fireActive
-        || cloudActive || view->particlesLive;
+        || cloudActive || view->particlesLive
+        // Per accumulation sample, for the reason at accumSampleIndex.
+        // This is the costliest of the three and the one worth the
+        // most: the mirror is a second full render of the scene, and it
+        // also covers the most pixels. Measured on a ground-reflection
+        // scene where it touched 63% of the frame, leaving it frozen
+        // did not merely fail to refine it -- it held the WHOLE frame
+        // back, closing 0.067 of the distance to a supersampled render
+        // against 0.295 with the reflection switched off.
+        || view->reflSampleIndex != accumSampleIndex;
+    if (reflRender)
+        view->reflSampleIndex = accumSampleIndex;
 
     // Configure the ids the pass map handed out, through the same
     // table that declared them. A pass the frame did not claim has
@@ -5345,7 +5377,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         view->submitAOResolve(aoRadius, aoconf.intensity,
                               aoconf.method, aoconf.fast,
                               aoconf.slices, aoconf.steps,
-                              aoTemporalIndex);
+                              accumSampleIndex);
 
     // 1d. Volumetric light shafts: half-res raymarch of the shadow
     // map, bilateral-upsampled and composited onto the opaque scene

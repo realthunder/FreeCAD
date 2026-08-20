@@ -803,6 +803,52 @@ pixel in the 3x image. "Correcting" it to the supersample factor
 thickened the reference's crease lines to twice the coverage and
 scored the accumulation as diverging from a pass it was converging to.
 
+**The cache audit.** `staticFrame` does double duty: it is the
+predicate that says an accumulation MAY run, and it is the key several
+targets are cached on. During a refinement those two want opposite
+answers, so every target keyed that way is guaranteed to hand back a
+result rendered at the unjittered camera. Each screen-space pass was
+checked against that:
+
+| pass | verdict |
+|---|---|
+| GTAO / classic SSAO | **defect** -- chain skipped every sample; fixed by the sample index in `aoMapHash` |
+| planar reflection (`reflRender`) | **defect** -- mirror frozen; fixed by `reflSampleIndex` |
+| media intervals (`mediumRender`) | same defect by construction; fixed by `mediumSampleIndex`, **not measured** (see below) |
+| cavity | no defect -- re-runs every frame, and `cavityActive` feeds `prepassActive` so its input is redrawn per sample |
+| volumetric shafts | no defect -- own history with a per-frame golden-ratio march phase, so it decorrelates and converges by itself |
+| shadow map | no defect -- keyed on the LIGHT matrices and the casters, and a subpixel camera jitter does not move either |
+
+The reflection was the costly one. `scripts/refl_accum_probe.py`
+isolates what the pass contributes (render with it on and off,
+difference in linear light) on a scene where the mirror touches 63% of
+the frame. Frozen, the contribution's high-frequency energy fell to
+0.886 of the single frame's -- and that is only the resampling blur,
+since a frozen target's *sampling* still jitters. Re-rendered per
+sample it falls to 0.780, against a floor of 0.645 in the reference,
+and the contribution moves 0.0077 rms from the single frame against
+0.0051 frozen.
+
+Two things that measurement cannot say, and does not:
+
+- The frame-level "distance to a supersampled render" is **not** ground
+  truth for this pass. The reflection target is sized from the view
+  (`effW`/`effH`), and `saveImage` does not resize the view, so a 3x
+  capture still contains a 1x mirror that the downsample merely
+  smooths. Converging the real mirror moves the frame *away* from that
+  reference. The probe reports the number and gates on the
+  contribution instead.
+- The media intervals are fixed by the same key on the same reasoning,
+  but the probe scene has no water, glass, cloud or fire in it, so that
+  half is **reasoned, not measured**.
+
+One note for anyone extending this: the volumetric march phase is
+`frame % 4096`, a frame counter rather than a sample number, so the
+shafts are reproducible only under the freeze-frame switch (which
+zeroes the phase). That predates the accumulation and is deliberate;
+the three targets above deliberately use the sample number instead, so
+they stay golden-safe without it.
+
 Both settings are **local** (`Prop_NoPersist`, `_localRenderProperties`):
 what they spend is the reader's idle GPU time and, on a laptop, their
 battery, which is a fact about their machine rather than about the model

@@ -6446,6 +6446,11 @@ public:
     // AO/prepass cache key: camera + viewport + AO params + prepass draw
     // set (see the aoRender hash in render()); 0 = never cached.
     uint64_t aoMapHash = 0;
+    /// Which idle-accumulation sample the mirrored-scene and media
+    /// interval targets were last rendered at. -1 so the first frame
+    /// of a view cannot match and both are drawn.
+    int reflSampleIndex = -1;
+    int mediumSampleIndex = -1;
     // The GPU downgrade sweep's unlanded orders (SceneLadder.h): what
     // keeps a plan that samples the apply transient from re-correcting
     // off it. Per view, like the meters it reconciles.
