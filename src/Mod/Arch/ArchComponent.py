@@ -31,10 +31,14 @@ __title__  = "FreeCAD Arch Component"
 __author__ = "Yorik van Havre"
 __url__    = "https://www.freecad.org"
 
+import math
+
 import FreeCAD
 import ArchCommands
 import ArchIFC
 import Draft
+
+from draftutils import params
 if FreeCAD.GuiUp:
     import FreeCADGui
     from PySide import QtGui,QtCore
@@ -54,6 +58,18 @@ else:
 #
 #  This module provides the base Arch component class, that
 #  is shared by all of the Arch BIM objects
+
+def _make_projected_horizontal_area_face(projected_faces):
+    """Build one transient XY face from projected coplanar analysis faces."""
+
+    if not projected_faces:
+        return None
+
+    fused_face = projected_faces[0].copy()
+    for face in projected_faces[1:]:
+        fused_face = fused_face.fuse(face)
+    return fused_face.removeSplitter()
+
 
 def addToComponent(compobject,addobject,mod=None):
     """Add an object to a component's properties.
@@ -961,21 +977,13 @@ class Component(ArchIFC.IfcProduct):
     def computeAreas(self,obj):
         """Compute the area properties of the object's shape.
 
-        Compute the vertical area, horizontal area, and perimeter length of
-        the object's shape.
+        This function calculates and assigns the following properties to the object:
+        - **VerticalArea**: The total area of all vertical faces of the object.
+        - **HorizontalArea**: The area of the object's projection onto the XY plane.
+        - **PerimeterLength**: The perimeter of the horizontal area.
 
-        The vertical area is the surface area of the faces perpendicular to the
-        ground.
-
-        The horizontal area is the area of the shape, when projected onto a
-        hyperplane across the XY axes, IE: the area when viewed from a bird's
-        eye view.
-
-        The perimeter length is the length of the outside edges of this bird's
-        eye view.
-
-        Assign these values to the object's "VerticalArea", "HorizontalArea",
-        and "PerimeterLength" properties.
+        The function uses the `AreaCalculator` helper class to perform these
+        calculations. Refer to that class for more details.
 
         Parameters
         ----------
@@ -983,72 +991,7 @@ class Component(ArchIFC.IfcProduct):
             The component object.
         """
 
-
-        if (not obj.Shape) or obj.Shape.isNull() or (not obj.Shape.isValid()) or (not obj.Shape.Faces):
-            obj.VerticalArea = 0
-            obj.HorizontalArea = 0
-            obj.PerimeterLength = 0
-            return
-
-        import Part
-        import TechDraw
-        fmax = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Arch").GetInt("MaxComputeAreas",20)
-        if len(obj.Shape.Faces) > fmax:
-            obj.VerticalArea = 0
-            obj.HorizontalArea = 0
-            obj.PerimeterLength = 0
-            return
-
-        a = 0
-        fset = []
-        for i,f in enumerate(obj.Shape.Faces):
-            try:
-                ang = f.normalAt(0,0).getAngle(FreeCAD.Vector(0,0,1))
-            except Part.OCCError:
-                print("Debug: Error computing areas for ",obj.Label,": normalAt() Face ",i)
-                obj.VerticalArea = 0
-                obj.HorizontalArea = 0
-                obj.PerimeterLength = 0
-                return
-            else:
-                if (ang > 1.57) and (ang < 1.571):
-                    a += f.Area
-                if ang < 1.5707:
-                    fset.append(f)
-
-        if a and hasattr(obj,"VerticalArea"):
-            if obj.VerticalArea.Value != a:
-                obj.VerticalArea = a
-        if fset and hasattr(obj,"HorizontalArea"):
-            pset = []
-            for f in fset:
-                if f.normalAt(0,0).getAngle(FreeCAD.Vector(0,0,1)) < 0.00001:
-                    # already horizontal
-                    pset.append(f)
-                else:
-                    try:
-                        pf = Part.Face(Part.Wire(TechDraw.project(f,FreeCAD.Vector(0,0,1))[0].Edges))
-                    except Part.OCCError:
-                        # error in computing the areas. Better set them to zero than show a wrong value
-                        if obj.HorizontalArea.Value != 0:
-                            print("Debug: Error computing areas for ",obj.Label,": unable to project face: ",str([v.Point for v in f.Vertexes])," (face normal:",f.normalAt(0,0),")")
-                            obj.HorizontalArea = 0
-                        if hasattr(obj,"PerimeterLength"):
-                            if obj.PerimeterLength.Value != 0:
-                                obj.PerimeterLength = 0
-                    else:
-                        pset.append(pf)
-
-            if pset:
-                self.flatarea = pset.pop()
-                for f in pset:
-                    self.flatarea = self.flatarea.fuse(f)
-                self.flatarea = self.flatarea.removeSplitter()
-                if obj.HorizontalArea.Value != self.flatarea.Area:
-                    obj.HorizontalArea = self.flatarea.Area
-                if hasattr(obj,"PerimeterLength") and (len(self.flatarea.Faces) == 1):
-                    if obj.PerimeterLength.Value != self.flatarea.Faces[0].OuterWire.Length:
-                        obj.PerimeterLength = self.flatarea.Faces[0].OuterWire.Length
+        AreaCalculator(obj).compute()
 
     def isStandardCase(self,obj):
         """Determine if the component is a standard case of its IFC type.
@@ -1146,6 +1089,257 @@ class Component(ArchIFC.IfcProduct):
                     if obj in link.Hosts:
                         hosts.append(link)
         return hosts
+
+
+class AreaCalculator:
+    """Helper class to compute vertical area, horizontal area, and perimeter length.
+
+    This class encapsulates the logic for calculating the following properties:
+    - **VerticalArea**: The total area of all vertical faces of the object. See the
+      `isFaceVertical` method for the criteria used to determine vertical faces.
+    - **HorizontalArea**: The area of the object's projection onto the XY plane.
+    - **PerimeterLength**: The perimeter of the horizontal area.
+
+    The class provides methods to validate the object's shape, identify vertical and
+    horizontal faces, and compute the required properties.
+
+    Backported from upstream's BIM workbench. Upstream passes noElementMap=True to
+    Part.makeFace, Shape.copy and Shape.fuse; this fork's Part API has no such
+    parameter, so those calls are made without it.
+    """
+
+    def __init__(self, obj):
+        self.obj = obj
+
+    def isShapeInvalid(self):
+        """Check if the object's shape is invalid."""
+        return (
+            not self.obj.Shape
+            or self.obj.Shape.isNull()
+            or not self.obj.Shape.isValid()
+            or not self.obj.Shape.Faces
+        )
+
+    def tooManyFaces(self):
+        """Check if the object's shape has too many faces to process."""
+        return len(self.obj.Shape.Faces) > params.get_param_arch("MaxComputeAreas")
+
+    def resetAreas(self):
+        """Reset the area properties of the object to zero. Generally called when
+        there is an error.
+        """
+        for prop in ["VerticalArea", "HorizontalArea", "PerimeterLength"]:
+            setattr(self.obj, prop, 0)
+
+    def isFaceVertical(self, face, face_index=None):
+        """Determine if a face is vertical.
+
+        A face is considered vertical if:
+        - Its normal vector forms an angle close to 90 degrees with the Z-axis.
+        - The projected face has an area of zero.
+
+        Parameters
+        ----------
+        face: Part.Face
+            The face object to be checked.
+        face_index: str, optional
+            The face's 1-based index identifier, used for debugging error messages.
+            Defaults to None.
+
+        Notes
+        -----
+        The check whether the projected face has an area of zero means that roof-like
+        (sloped) and domed faces alike will not be counted as vertical faces.
+        Vertically-extruded curved edges (for instance from a slab) will be classified
+        as vertical and be counted.
+        """
+
+        import Part
+        import DraftGeomUtils
+        import TechDraw
+
+        face_name = " Face" + str(face_index) if face_index is not None else ""
+
+        if face.Surface.TypeId == "Part::GeomCylinder":
+            angle = face.Surface.Axis.getAngle(FreeCAD.Vector(0, 0, 1))
+            return self.isZeroAngle(angle)
+        elif face.Surface.TypeId == "Part::GeomSurfaceOfExtrusion":
+            angle = face.Surface.Direction.getAngle(FreeCAD.Vector(0, 0, 1))
+            return self.isZeroAngle(angle)
+        elif face.Surface.TypeId == "Part::GeomPlane":
+            projectedArea = 0  # dummy value, isRightAngle check is sufficient here
+        elif face.findPlane() is not None:
+            projectedArea = 0  # dummy value, idem
+        else:
+            try:
+                edges = TechDraw.project(face, FreeCAD.Vector(0, 0, 1))[0].Edges
+                wires = DraftGeomUtils.findWires(edges)
+                if len(wires) == 1 and not wires[0].isClosed():
+                    projectedArea = 0
+                else:
+                    projectedArea = Part.Face(wires).Area
+            except Part.OCCError:
+                FreeCAD.Console.PrintWarning(
+                    translate("Arch", "Could not project face%s from %s")
+                    % (face_name, self.obj.Label) + "\n"
+                )
+                return False
+
+        try:
+            angle = face.normalAt(0, 0).getAngle(FreeCAD.Vector(0, 0, 1))
+            return self.isRightAngle(angle) and projectedArea < 0.0001
+        except Part.OCCError:
+            FreeCAD.Console.PrintWarning(
+                translate("Arch",
+                          "Could not determine if face%s from %s is vertical: "
+                          "normalAt() failed")
+                % (face_name, self.obj.Label) + "\n"
+            )
+            return False
+
+    def isRightAngle(self, angle):
+        """Check if the angle is close to 90 degrees."""
+        return math.isclose(angle, math.pi / 2, abs_tol=0.0005)
+
+    def isZeroAngle(self, angle):
+        """Check if the angle is close to 0 or 180 degrees."""
+        if math.isclose(angle, 0, abs_tol=0.0005):
+            return True
+        return math.isclose(angle, math.pi, abs_tol=0.0005)
+
+    def compute(self):
+        """Compute the vertical area, horizontal area, and perimeter length.
+
+        This method performs the following steps:
+        1. Identifies the object's vertical and horizontal faces.
+        2. Computes the total vertical area by adding areas of all vertical faces.
+        3. Projects horizontal faces onto the XY plane and computes their total
+           horizontal area.
+        4. Computes the perimeter length of the horizontal area.
+
+        The computed values are assigned to the object's properties:
+        - VerticalArea
+        - HorizontalArea
+        - PerimeterLength
+        """
+
+        if self.isShapeInvalid() or self.tooManyFaces():
+            self.resetAreas()
+            return
+
+        verticalArea = 0
+        horizontalAreaFaces = []
+
+        # Compute vertical area and collect faces to be projected for the
+        # horizontal area
+        for i, face in enumerate(self.obj.Shape.Faces, start=1):
+            if self.isFaceVertical(face, face_index=i):
+                verticalArea += face.Area
+            else:
+                horizontalAreaFaces.append(face)
+
+        # Update vertical area
+        if hasattr(self.obj, "VerticalArea") and self.obj.VerticalArea.Value != verticalArea:
+            self.obj.VerticalArea = verticalArea
+
+        # Compute horizontal area and perimeter length
+        if horizontalAreaFaces and hasattr(self.obj, "HorizontalArea"):
+            self._computeHorizontalAreaAndPerimeter(horizontalAreaFaces)
+
+    def _computeHorizontalAreaAndPerimeter(self, horizontalAreaFaces):
+        """Compute the horizontal area and perimeter length.
+
+        Projects the given faces onto the XY plane, combines the projected
+        areas into one transient union shape, and calculates:
+        - the total horizontal area
+        - the perimeter length of the combined horizontal outline
+
+        Parameters
+        ----------
+        horizontalAreaFaces: list of Part.Face
+            The faces to process.
+        """
+
+        import Part
+        import TechDraw
+        import DraftGeomUtils
+
+        # In TechDraw edges longer than 9999.9 (ca. 10m) are considered 'crazy'.
+        # See also Draft/draftobjects/hatch.py.
+        param_grp = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/TechDraw/debug")
+        if "allowCrazyEdge" not in param_grp.GetBools():
+            old_allow_crazy_edge = None
+        else:
+            old_allow_crazy_edge = param_grp.GetBool("allowCrazyEdge")
+        param_grp.SetBool("allowCrazyEdge", True)
+
+        direction = FreeCAD.Vector(0, 0, 1)
+        projectedFaces = []
+        for face in horizontalAreaFaces:
+            try:
+                if face.findPlane() is None:
+                    if len(face.Wires) > 1:
+                        # Non-planar faces with holes are not handled properly
+                        FreeCAD.Console.PrintWarning(
+                            translate("Arch",
+                                      "Error computing areas for %s: unable to project "
+                                      "non-planar faces with holes. Area values will be "
+                                      "reset to 0.") % self.obj.Label + "\n"
+                        )
+                        self.resetAreas()
+                        self._restoreCrazyEdge(param_grp, old_allow_crazy_edge)
+                        return
+                    wire = TechDraw.findShapeOutline(face, 1, direction)
+                    projectedFace = Part.makeFace([wire], "Part::FaceMakerSimple")
+                else:
+                    edges = TechDraw.project(face, direction)[0].Edges
+                    wires = DraftGeomUtils.findWires(edges)
+                    # Using "Part::FaceMakerCheese" as the face can have holes
+                    projectedFace = Part.makeFace(wires, "Part::FaceMakerCheese")
+                projectedFaces.append(projectedFace)
+            except Part.OCCError:
+                FreeCAD.Console.PrintWarning(
+                    translate("Arch",
+                              "Error computing areas for %s: unable to project or make "
+                              "face with normal %s. Area values will be reset to 0.")
+                    % (self.obj.Label, str(face.normalAt(0, 0))) + "\n"
+                )
+                self.resetAreas()
+                self._restoreCrazyEdge(param_grp, old_allow_crazy_edge)
+                return
+
+        self._restoreCrazyEdge(param_grp, old_allow_crazy_edge)
+
+        fusedFace = None
+        if projectedFaces:
+            try:
+                fusedFace = _make_projected_horizontal_area_face(projectedFaces)
+            except Part.OCCError:
+                FreeCAD.Console.PrintWarning(
+                    translate("Arch",
+                              "Error computing areas for %s: unable to combine projected "
+                              "horizontal faces. Area values will be reset to 0.")
+                    % self.obj.Label + "\n"
+                )
+                self.resetAreas()
+                return
+
+        if fusedFace:
+            if self.obj.HorizontalArea.Value != fusedFace.Area:
+                self.obj.HorizontalArea = fusedFace.Area
+
+            if hasattr(self.obj, "PerimeterLength") and len(fusedFace.Faces) == 1:
+                perimeterLength = fusedFace.Faces[0].OuterWire.Length
+                if self.obj.PerimeterLength.Value != perimeterLength:
+                    self.obj.PerimeterLength = perimeterLength
+
+    def _restoreCrazyEdge(self, param_grp, old_allow_crazy_edge):
+        """Put TechDraw's allowCrazyEdge debug parameter back as it was."""
+
+        if old_allow_crazy_edge is None:
+            param_grp.RemBool("allowCrazyEdge")
+        else:
+            param_grp.SetBool("allowCrazyEdge", old_allow_crazy_edge)
 
 
 class ViewProviderComponent:
