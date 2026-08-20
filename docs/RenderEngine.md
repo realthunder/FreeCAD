@@ -620,6 +620,100 @@ transition moves RSS by 0.3MB, because the driver allocates outside the
 process's accounting -- the GPU is the wrong place to ask this
 question).
 
+### 3.5 Idle temporal accumulation
+
+`Render_TemporalAccum` (off by default). While the camera, the scene and
+the hover highlight all hold still, each further frame offsets the
+projection by a fraction of a pixel and averages into a history target,
+so the frame converges toward what supersampling it would have given.
+`Render_TemporalAccumSamples` (default 32) is how many samples it
+converges over before the view goes quiet.
+
+**Why it exists next to MSAA rather than instead of it.** Multisampling
+resolves *coverage*: N samples of the triangle, one shaded value. So it
+antialiases the silhouette -- which is most of a CAD frame -- and cannot
+touch anything else at any sample count:
+
+- shading aliasing (a tight highlight crawling across a curved surface,
+  detail below the pixel) -- all N samples inside one triangle share the
+  one shaded value, so MSAA averages N copies of the same wrong answer;
+- every screen-space pass computed after the resolve -- GTAO, outlines,
+  section caps, bloom, the volumetric apply -- which run at one sample
+  per pixel, and below that under `Render_EffectResolution`;
+- the residual noise of the stochastic passes, which is undersampling,
+  not aliasing.
+
+Accumulation is the other half: it amortizes samples over *time*, so N
+frames approximate N-times supersampling of the whole pipeline, at a
+constant per-frame cost instead of MSAA's cost in bandwidth and resolve.
+
+**Why it does not ghost.** It is not TAA in the usual sense and it is
+deliberately not the primary antialiasing (section 7 rules that out --
+edge-dominated content is what ordinary TAA smears worst). There is no
+reprojection, no motion vector and no history rejection heuristic,
+because the accumulation only ever runs over frames where **nothing
+moved**. `staticFrame` in `BGFXFrame.cpp` is that predicate and it
+already existed for the volumetric accumulation: it answers for the
+camera, the viewport, every scene and config mutation (`dirtyChanged`)
+and the hover highlight. Any of them zeroes `BGFXView::accumFrames`,
+which replaces the history outright on the next frame. Interaction
+therefore costs nothing, returns to the ordinary multisampled frame
+immediately, and no thin edge can trail.
+
+**How a frame runs it.**
+
+1. `camFrameHash` is taken from the **unjittered** projection. Hashing
+   the jittered one would make every accumulation frame read as a camera
+   move -- the one thing that resets the accumulation -- so it would
+   reset every frame, converge never, and pay a full extra render for
+   it. The jitter is applied strictly below that hash, and below the
+   level plan and the scene publish, which must not move with it.
+2. The offset is Halton (2,3) indexed by sample number, in
+   `[-0.5, 0.5]` pixels, written straight into the projection's shear
+   terms (`P[8]`/`P[9]` scaled by `P[11]` for either handedness, or the
+   translation row `P[12]`/`P[13]` for an orthographic camera, which has
+   `w = 1`). Sample 0 is the pixel centre, so settling the camera shows
+   no jump. Being indexed is what keeps frame N of an accumulation
+   reproducible, which the render-verify goldens depend on.
+3. `ViewAccum` blends the finished frame into `accumTex` with factor
+   `k = 1/(n+1)` -- the volumetric accumulation's constant-factor idiom
+   at full resolution, so the history is the running mean -- and
+   `ViewAccumApply` copies it back over the scene colour, leaving the
+   blit, the output transform and the standalone present unchanged.
+4. `animatedFrame` is raised while `n < samples`, which is what asks the
+   viewer for the next sample; nothing else would, since by construction
+   the scene has not changed. At the budget it stops and the view goes
+   quiet holding the converged image.
+
+**Placement.** The two passes sit after the overlays, so everything
+ahead of them converges: an overlay drawn from its own camera is
+bit-identical frame to frame and averages to itself exactly, while the
+in-scene overlays (editing graph, dimensions) move with the jitter and
+converge like the scene. An overlay that really does change per frame --
+the FPS counter -- feeds through `setOverlay`, which marks the scene
+dirty and so resets the accumulation rather than smearing it.
+
+**Two costs worth knowing.** The history is RGBA16F whatever the scene
+target is: at sample 32 a frame arrives with weight 1/33, and an 8-bit
+history rounds every difference below four codes back to what it already
+held -- the average would stop moving after a handful of samples, which
+looks exactly like the feature working and then giving up. And the blend
+factor is 8-bit (bgfx packs it into an RGBA), which is why the sample
+count is capped at 256: below `1/255` the factor rounds to zero and a
+further frame would contribute nothing.
+
+The AO map is not re-rendered while accumulating -- its cache key is the
+unjittered camera, so it holds its result and the geometry moves under
+it by less than a pixel. That leaves GTAO's own noise uncleared by this;
+converging it means advancing the shader's temporal index per sample
+(`fs_fc_gtao.sc` pins it at 0 for determinism) and re-rendering the
+chain, which is a separate change.
+
+Both settings are **local** (`Prop_NoPersist`, `_localRenderProperties`):
+what they spend is the reader's idle GPU time and, on a laptop, their
+battery, which is a fact about their machine rather than about the model
+somebody authored.
+
 ## 4. Draw model
 
 - `Render::DrawCall` = mesh reference (+ index sub-range), model

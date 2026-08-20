@@ -4119,13 +4119,30 @@ public:
         ViewOverlay8,       // headroom: the overlay ids (foreground, axis,
                             // graphics-items, fps, navi-cube, navi-buttons,
                             // editing, dimensions) can all be active at once
+        ViewAccum,          // idle temporal accumulation: the finished
+                            // frame -- scene, effects and overlays alike
+                            // -- averaged into the history target under
+                            // a constant-factor blend. Last of the
+                            // drawing passes on purpose: everything
+                            // ahead of it renders under the jittered
+                            // projection, so everything ahead of it is
+                            // what converges, and an overlay drawn from
+                            // its own unjittered camera is bit-identical
+                            // frame to frame and averages to itself
+        ViewAccumApply,     // the accumulated history copied back over
+                            // the scene color, so the blit and the
+                            // present path downstream see the converged
+                            // image without knowing this ran
         ViewPresent,        // standalone build only: fullscreen copy of
                             // the scene color onto the default backbuffer
                             // (the desktop build GL-blits into the Qt
                             // framebuffer instead)
         NUM_VIEWS
     };
-    enum { NumOverlayViews = ViewPresent - ViewOverlay0 };
+    // ! Counted to the first pass AFTER the overlay block, not to
+    // ViewPresent: anything inserted between the two has to leave this
+    // reading 9, or the overlay loop claims ids that belong to it.
+    enum { NumOverlayViews = ViewAccum - ViewOverlay0 };
 
     /// One stateful emitter's particle state (docs/RenderEngine.md
     /// §5.8): two RGBA32F attachment pairs that ping-pong once per
@@ -4291,6 +4308,7 @@ public:
         fn(fireBackFbo, LifeSized);
         fn(sceneCopyFbo, LifeSized);
         fn(presentFbo, LifeSized);
+        fn(accumFbo, LifeSized);
         fn(reflFbo, LifeSized);
         fn(volTex, LifeSized);
         fn(volFrontTex, LifeSized);
@@ -4318,6 +4336,7 @@ public:
         fn(fireBackDepth, LifeSized);
         fn(sceneCopyTex, LifeSized);
         fn(presentTex, LifeSized);
+        fn(accumTex, LifeSized);
         fn(reflTex, LifeSized);
         fn(reflDepth, LifeSized);
         fn(s_texVol, LifeProgram);
@@ -4569,6 +4588,7 @@ public:
         EffectShadow,      ///< the scene light's shadow maps (moments,
                            ///< blur ping, glass tint pair)
         EffectPresent,     ///< the output colour transform's target
+        EffectAccum,       ///< the idle temporal accumulation history
         NumEffectGroups
     };
     /// Does this group's framebuffer set exist right now?
@@ -5665,6 +5685,10 @@ public:
     /// view sits after the volumetric composite; the framebuffer switch
     /// also resolves a multisampled scene attachment).
     void submitWaterCopy();
+    /// Average the finished frame into the accumulation history under
+    /// \a blend (1 replaces it outright, 0 leaves it alone -- converged),
+    /// then copy the history back over the scene colour.
+    void submitTemporalAccum(float blend);
 
     /// User "post" stage (docs/RenderDebug.md §6): resolve the composited
     /// scene color into the water-refraction copy target (safe to share —
@@ -6575,6 +6599,33 @@ public:
     /// none, the blit takes the scene colour directly as it always did.
     bgfx::TextureHandle presentTex = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle presentFbo = BGFX_INVALID_HANDLE;
+    /// Idle temporal accumulation (EffectAccum): the running average of
+    /// the jittered frames, kept while the camera and the scene hold
+    /// still and copied back over the scene colour every frame.
+    ///
+    /// Floating point whatever the scene target is. This is where the
+    /// convergence actually lives, and eight bits cannot hold it: at
+    /// sample 32 a frame arrives with weight 1/33, so an 8-bit history
+    /// rounds every difference below four codes straight back to what it
+    /// already held and the average stops moving after a handful of
+    /// samples -- which looks exactly like the feature working and then
+    /// giving up.
+    bgfx::TextureHandle accumTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle accumFbo = BGFX_INVALID_HANDLE;
+    /// Consecutive frames the accumulation was asked for and did not
+    /// engage, and whether that has been reported. "On, and nothing
+    /// happens" has several causes that all look identical on screen.
+    int accumQuietFrames = 0;
+    bool accumReported = false;
+    /// Jittered samples already averaged into accumTex. 0 = the history
+    /// holds nothing this camera may keep, so the next frame replaces it
+    /// outright (blend factor 1) and draws unjittered.
+    int accumFrames = 0;
+    /// The jittered projection of the frame being drawn. A member and
+    /// not a local of render(): the view keeps the pointer it is handed
+    /// (BGFXView::projMatrix) for the rest of the frame, and a stack
+    /// copy would leave it dangling.
+    float accumProj[16] = {};
     bgfx::TextureHandle reflTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle reflDepth = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle reflFbo = BGFX_INVALID_HANDLE;
@@ -8366,6 +8417,7 @@ public:
     Render::VolumetricConfig volconf;
     Render::WaterConfig waterconf;
     Render::BloomConfig bloomconf;
+    Render::TemporalConfig tempconf;
     Render::OutputConfig outconf;
     Render::RenderDebugConfig debugconf;
     /// Backend frame cost accumulated since the last reported line

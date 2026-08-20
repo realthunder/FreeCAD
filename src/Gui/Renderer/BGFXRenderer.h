@@ -98,6 +98,7 @@ public:
     virtual void setVolumetricConfig(const VolumetricConfig &config) override;
     virtual void setWaterConfig(const WaterConfig &config) override;
     virtual void setBloomConfig(const BloomConfig &config) override;
+    virtual void setTemporalConfig(const TemporalConfig &config) override;
     virtual void setRenderDebugConfig(const RenderDebugConfig &config) override;
     virtual void setOcclusionCullConfig(
             const OcclusionCullConfig &config) override;

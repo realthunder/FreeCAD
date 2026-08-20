@@ -359,6 +359,38 @@ void BGFXView::submitWaterCopy()
                BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
 }
 
+void BGFXView::submitTemporalAccum(float blend)
+{
+    if (!bgfx::isValid(m_progWaterCopy) || !bgfx::isValid(accumFbo))
+        return;
+    // hist = cur * k + hist * (1 - k), the volumetric accumulation's
+    // idiom at full resolution: a plain copy of the scene colour under
+    // a constant-factor blend. k comes from the count of frames already
+    // averaged, so the history is their running mean.
+    //
+    // The factor is 8-bit, which is why the sample count is capped
+    // where it is: below 1/255 the factor rounds to zero and a further
+    // frame would contribute nothing at all.
+    if (blend > 0.0f) {
+        uint32_t k8 = uint32_t(
+            bx::clamp(blend, 0.0f, 1.0f) * 255.0f + 0.5f);
+        uint32_t kRgba = (k8 << 24) | (k8 << 16) | (k8 << 8) | k8;
+        bgfx::setTexture(0, s_texScene, bgfxColor);
+        fullscreen(ViewAccum, m_progWaterCopy,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                   | BGFX_STATE_BLEND_FUNC(
+                       BGFX_STATE_BLEND_FACTOR,
+                       BGFX_STATE_BLEND_INV_FACTOR),
+                   kRgba);
+    }
+    // Back over the scene colour, so everything downstream -- the
+    // desktop blit, the output transform, the standalone present --
+    // reads the converged image without knowing this pass exists.
+    bgfx::setTexture(0, s_texScene, accumTex);
+    fullscreen(ViewAccumApply, m_progWaterCopy,
+               BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+}
+
 void BGFXView::submitUserPost(const Render::UserShader &shader,
                     bgfx::ProgramHandle prog)
 {

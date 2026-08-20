@@ -1188,6 +1188,72 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter TemporalAccum
+    ///
+    /// Keep refining the image while the camera holds still.
+    /// 
+    /// Multisampling antialiases the geometry it rasterizes and nothing
+    /// else: every sample inside one triangle is shaded once, so a
+    /// specular highlight crawling across a curved surface, a normal or
+    /// texture detail below the pixel, and every screen-space pass
+    /// computed after the resolve -- ambient occlusion, outlines,
+    /// section caps, the light shafts -- are left exactly as aliased or
+    /// as noisy as they were drawn. More coverage samples cannot help
+    /// any of them.
+    /// 
+    /// This spends time instead. Once the camera stops, each further
+    /// frame offsets the projection by a fraction of a pixel and
+    /// averages into what is already on screen, so the whole pipeline
+    /// converges toward what supersampling it would have given -- and
+    /// it costs nothing at all while anything is moving.
+    /// 
+    /// There is no reprojection and no history rejection, because
+    /// nothing moved: the accumulation is thrown away outright on any
+    /// camera, scene or highlight change, so a drag or an orbit returns
+    /// to the ordinary multisampled frame immediately with no ghosting,
+    /// smearing or trailing on thin edges. It is a refinement on top of
+    /// multisampling, not a replacement for it -- leave the antialiasing
+    /// preference where it is.
+    /// 
+    /// The cost is idle GPU time: a parked view keeps drawing until it
+    /// has converged (TemporalAccumSamples), then stops and asks for
+    /// nothing more. On a laptop or a tablet that is battery, which is
+    /// why this is off by default and why it does not travel in a saved
+    /// document.
+    static const bool & getTemporalAccum();
+    static const bool & defaultTemporalAccum();
+    static void removeTemporalAccum();
+    static void setTemporalAccum(const bool &v);
+    static const char *docTemporalAccum();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TemporalAccumSamples
+    ///
+    /// How many jittered samples the idle accumulation converges over
+    /// before the view goes quiet (2-256, TemporalAccum only).
+    /// 
+    /// The sequence is a Halton (2,3) pair over the pixel, so it fills
+    /// the pixel evenly at every count rather than clumping, and it is
+    /// indexed by sample number -- frame N of an accumulation is the
+    /// same frame N every time, which is what keeps a rendered
+    /// comparison reproducible.
+    /// 
+    /// Most of the visible gain arrives in the first handful of
+    /// samples, since the error of an average falls with the square
+    /// root of the count: 32 halves the residual noise of 8, and 128
+    /// halves it again for four times the work. Raise it for a still
+    /// worth waiting on, lower it to reach the quiet state sooner.
+    static const long & getTemporalAccumSamples();
+    static const long & defaultTemporalAccumSamples();
+    static void removeTemporalAccumSamples();
+    static void setTemporalAccumSamples(const long &v);
+    static const char *docTemporalAccumSamples();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter Occlusion
     ///
     /// Skip drawing what the depth buffer proves could not have

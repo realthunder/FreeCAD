@@ -1077,6 +1077,7 @@ PyObject* View3DInventorPy::getRenderStats(PyObject *args)
                      Py::Long(long(stats.gpuMemoryUsed)));
         dict.setItem("gpuMemoryMax",
                      Py::Long(long(stats.gpuMemoryMax)));
+        dict.setItem("temporalSamples", Py::Long(stats.temporalSamples));
         return Py::new_reference_to(dict);
     } PY_CATCH
 }

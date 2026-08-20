@@ -190,6 +190,7 @@ bool BGFXView::effectAllocated(EffectGroup g) const
     case EffectSSAO:       return bgfx::isValid(aoPrepassFbo);
     case EffectShadow:     return bgfx::isValid(shadowFbo);
     case EffectPresent:    return bgfx::isValid(presentFbo);
+    case EffectAccum:      return bgfx::isValid(accumFbo);
     default:               return false;
     }
 }
@@ -215,6 +216,26 @@ bool BGFXView::allocEffect(EffectGroup g)
             return false;
         presentFbo = bgfx::createFrameBuffer(1, &presentTex, false);
         return bgfx::isValid(presentFbo);
+    }
+    case EffectAccum: {
+        // One full-res float target: the running average. Point-sampled
+        // and clamped like the present target -- the blend that writes
+        // it and the copy that reads it are both 1:1.
+        //
+        // Float even when the scene target is 8-bit: see accumTex for
+        // why an 8-bit history stops converging after a few samples.
+        accumTex = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::RGBA16F,
+            BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        if (!bgfx::isValid(accumTex))
+            return false;
+        accumFbo = bgfx::createFrameBuffer(1, &accumTex, false);
+        // Nothing in a fresh target is worth averaging into.
+        accumFrames = 0;
+        return bgfx::isValid(accumFbo);
     }
     case EffectVolumetric: {
         if (!m_vol)
@@ -564,6 +585,13 @@ void BGFXView::freeEffect(EffectGroup g)
         hasFBO = false;
 #endif
         break;
+    case EffectAccum:
+        drop(accumFbo);
+        drop(accumTex);
+        // The history is the target; without it there is nothing
+        // accumulated, whatever the counter last said.
+        accumFrames = 0;
+        break;
     case EffectBloom:
         drop(bloomFbo);
         drop(bloomBlurFbo);
@@ -643,7 +671,8 @@ void BGFXView::updateEffect(EffectGroup g, bool want)
             freeEffect(g);   // drop whatever part of the set did land
             static const char *const kNames[NumEffectGroups] = {
                 "volumetric", "bulb shadow", "reflection", "bloom",
-                "AO prepass", "shadow map", "output transform"};
+                "AO prepass", "shadow map", "output transform",
+                "temporal accumulation"};
             std::printf("bgfx: no render target handles for the %s "
                         "effect -- it stays off in this view\n",
                         kNames[g]);
@@ -1646,6 +1675,7 @@ void BGFXView::blit(const Render::FrameDumpRequest *dump,
         if (stats) {
             stats->width = width;
             stats->height = height;
+            stats->temporalSamples = accumFrames;
             stats->geometryPixels = n;
             stats->avgColor[0] = n ? float(r) / float(n) : -1.0f;
             stats->avgColor[1] = n ? float(g) / float(n) : -1.0f;

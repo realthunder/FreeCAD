@@ -2676,6 +2676,19 @@ RendererBridge::translateBloomConfig(App::PropertyContainer * view)
     return res;
 }
 
+Render::TemporalConfig
+RendererBridge::translateTemporalConfig(App::PropertyContainer * view)
+{
+    Render::TemporalConfig res;
+    res.enabled = viewParamOverride<App::PropertyBool>(
+            view, "Render", "TemporalAccum",
+            RenderParams::getTemporalAccum());
+    res.samples = int(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "TemporalAccumSamples",
+            RenderParams::getTemporalAccumSamples()));
+    return res;
+}
+
 // The per-draw face-outline width formula (see the selection block above)
 // with a nominal 1px base line width: the viewer applies it to the hovered /
 // selected face, which carries no explicit outline width.

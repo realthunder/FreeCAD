@@ -47,6 +47,11 @@ ParamGroup = (
         'Exposure',
     )]),
 
+    ('Idle refinement', [_RenderParams[name] for name in (
+        'TemporalAccum',
+        'TemporalAccumSamples',
+    )]),
+
     ('Scene streaming', [_RenderParams[name] for name in (
         'CoarseTessellation',
         'LevelTolerance',
