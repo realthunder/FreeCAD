@@ -2421,3 +2421,70 @@ TEST_F(PropertyMaterialListTest, aReadOnlyPropertyHandsOutSomethingNothingWrites
                 "    pass\n");
     EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
 }
+
+TEST_F(PropertyMaterialListTest, aTextureIsStatedFromPythonByFile)
+{
+    const std::string oakPath = writeTempFile("this is an oak plank");
+
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(3, redMaterial()));
+
+    // Two steps or one: content into the store, then a slot naming it --
+    // and setTextureFile() is both, which is what a script wants
+    runOn(prop,
+          ("h = mlist.insertTextureFile(r'" + oakPath + "')\n"
+           "assert len(h) > 8\n"
+           "assert mlist.getTextureFile(h)\n"
+           "mlist.setTexture(0, 'basecolor', h)\n"
+           "assert mlist.getTexture(0)['basecolor'] == h\n"
+           "assert 'basecolor' not in mlist.getTexture(1)\n"
+           "n = mlist.setTextureFile(1, 'normal', r'" + oakPath + "')\n"
+           "assert n == h\n"  // same content, same hash, one file
+           "mlist.setTextureTransform(0, Scale=(2.0, 3.0), Rotation=45.0)\n")
+              .c_str());
+
+    const App::SurfaceTexture first = prop.getTexture(0);
+    EXPECT_FALSE(first.maps[App::SurfaceTexture::BaseColor].empty());
+    EXPECT_FLOAT_EQ(first.scale[1], 3.0F);
+    EXPECT_FLOAT_EQ(first.rotation, 45.0F);
+    EXPECT_EQ(prop.getTexture(1).maps[App::SurfaceTexture::Normal],
+              first.maps[App::SurfaceTexture::BaseColor]);
+    EXPECT_TRUE(prop.getTexture(2).maps[App::SurfaceTexture::BaseColor].empty());
+    // one file for content named twice
+    EXPECT_FALSE(prop.getTextureFile(first.maps[App::SurfaceTexture::BaseColor]).empty());
+
+    runOn(prop, "mlist.clearTexture(0, 'basecolor')\n"
+                "assert 'basecolor' not in mlist.getTexture(0)\n");
+    EXPECT_TRUE(prop.getTexture(0).maps[App::SurfaceTexture::BaseColor].empty());
+}
+
+TEST_F(PropertyMaterialListTest, aPythonFieldWriteNamesOneEntryOrEveryOne)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+
+    // With an index it is one entry; without one it is every entry, which
+    // is why "every entry" is not spelled as an index at all
+    runOn(prop, "mlist.setDiffuseColor(2, (0.0, 1.0, 0.0, 1.0))\n"
+                "mlist.setShininess(0.5)\n");
+    EXPECT_EQ(prop.getDiffuseColor(2).getPackedValue(), 0x00ff00ffU);
+    EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue(), 0xff0000ffU);
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_FLOAT_EQ(prop.getShininess(i), 0.5F) << "entry " << i;
+    }
+
+    runOn(prop, "assert abs(mlist.getDiffuseColor(2)[1] - 1.0) < 1e-6\n"
+                "assert abs(mlist.getShininess(3) - 0.5) < 1e-6\n"
+                "assert abs(mlist.getDiffuseColor(-3)[0] - 1.0) < 1e-6\n");
+
+    // the PBR pair demands the mode, exactly as the C++ setters do
+    runOn(prop, "try:\n"
+                "    mlist.setMetallic(0.5)\n"
+                "    raise AssertionError('a Phong list took a metallic factor')\n"
+                "except Exception:\n"
+                "    pass\n"
+                "mlist.PBR = True\n"
+                "mlist.setMetallic(1, 0.9)\n");
+    EXPECT_TRUE(prop.isPBR());
+    EXPECT_NEAR(prop.getMetallic(1), 0.9F, 0.01F);
+}

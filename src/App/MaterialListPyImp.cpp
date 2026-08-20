@@ -22,6 +22,7 @@
 
 #include "PreCompiled.h"
 
+#include <array>
 #include <sstream>
 
 #include <Base/Interpreter.h>
@@ -408,6 +409,614 @@ PyObject *MaterialListPy::setMaterial(PyObject *args)
         Py_Return;
     }
     PY_CATCH
+}
+
+
+// ---------------------------------------------------------------------
+// Per field access
+//
+// Every setter takes the entry index or leaves it out, and leaving it out
+// means EVERY entry -- rather than the -1 an index could be mistaken for.
+// The getters index the way Python does, negatives from the end.
+
+namespace
+{
+
+using ColorGetter = Color (MaterialList::*)(int) const;
+using ColorSetter = void (MaterialList::*)(int, const Color &);
+using ColorAllSetter = void (MaterialList::*)(const Color &);
+using FloatGetter = float (MaterialList::*)(int) const;
+using FloatSetter = void (MaterialList::*)(int, float);
+using FloatAllSetter = void (MaterialList::*)(float);
+
+/// A colour out of a Python 3- or 4-tuple, or a packed integer
+bool colorOf(PyObject *value, Color &color)
+{
+    if (PyLong_Check(value)) {
+        color.setPackedValue(static_cast<uint32_t>(PyLong_AsUnsignedLong(value)));
+        return !PyErr_Occurred();
+    }
+    Py::Object obj(value);
+    if (obj.isSequence()) {
+        Py::Sequence seq(obj);
+        if (seq.size() == 3 || seq.size() == 4) {
+            color.r = static_cast<float>(Py::Float(seq[0]));
+            color.g = static_cast<float>(Py::Float(seq[1]));
+            color.b = static_cast<float>(Py::Float(seq[2]));
+            color.a = seq.size() == 4 ? static_cast<float>(Py::Float(seq[3])) : 1.0F;
+            return true;
+        }
+    }
+    PyErr_SetString(PyExc_TypeError, "expected a colour: (r, g, b[, a]) or a packed integer");
+    return false;
+}
+
+Py::Tuple colorTuple(const Color &color)
+{
+    Py::Tuple tuple(4);
+    tuple.setItem(0, Py::Float(color.r));
+    tuple.setItem(1, Py::Float(color.g));
+    tuple.setItem(2, Py::Float(color.b));
+    tuple.setItem(3, Py::Float(color.a));
+    return tuple;
+}
+
+/// The slot a name means, or SlotCount with a ValueError set
+uint8_t slotOf(const char *name)
+{
+    const uint8_t slot = SurfaceTexture::slotFromName(name);
+    if (slot >= SurfaceTexture::SlotCount) {
+        std::string known;
+        for (uint8_t i = 0; i < SurfaceTexture::SlotCount; ++i) {
+            known += i ? ", " : "";
+            known += SurfaceTexture::slotName(i);
+        }
+        PyErr_Format(PyExc_ValueError, "no texture slot called '%s'; there is %s",
+                     name, known.c_str());
+    }
+    return slot;
+}
+
+}  // namespace
+
+PyObject *MaterialListPy::colorGet(PyObject *args, void *getter)
+{
+    Py_ssize_t where = 0;
+    if (!PyArg_ParseTuple(args, "n", &where)) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        int idx = 0;
+        if (!indexOf(where, list().getSize(), idx)) {
+            return nullptr;
+        }
+        auto get = reinterpret_cast<ColorGetter &>(getter);
+        return Py::new_reference_to(colorTuple((list().*get)(idx)));
+    }
+    PY_CATCH
+}
+
+PyObject *MaterialListPy::colorSet(PyObject *args, void *setter, void *allsetter)
+{
+    Py_ssize_t where = 0;
+    PyObject *value = nullptr;
+    Color color;
+    auto one = reinterpret_cast<ColorSetter &>(setter);
+    auto all = reinterpret_cast<ColorAllSetter &>(allsetter);
+    if (PyArg_ParseTuple(args, "nO", &where, &value)) {
+        if (!colorOf(value, color) || !writable()) {
+            return nullptr;
+        }
+        PY_TRY
+        {
+            int idx = 0;
+            if (!indexOf(where, list().getSize(), idx, true)) {
+                return nullptr;
+            }
+            edit([&](MaterialList &values) { (values.*one)(idx, color); }, idx);
+            Py_Return;
+        }
+        PY_CATCH
+    }
+    PyErr_Clear();
+    if (!PyArg_ParseTuple(args, "O", &value)) {
+        return nullptr;
+    }
+    if (!colorOf(value, color) || !writable()) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        edit([&](MaterialList &values) { (values.*all)(color); });
+        Py_Return;
+    }
+    PY_CATCH
+}
+
+PyObject *MaterialListPy::floatGet(PyObject *args, void *getter)
+{
+    Py_ssize_t where = 0;
+    if (!PyArg_ParseTuple(args, "n", &where)) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        int idx = 0;
+        if (!indexOf(where, list().getSize(), idx)) {
+            return nullptr;
+        }
+        auto get = reinterpret_cast<FloatGetter &>(getter);
+        return Py::new_reference_to(Py::Float((list().*get)(idx)));
+    }
+    PY_CATCH
+}
+
+PyObject *MaterialListPy::floatSet(PyObject *args, void *setter, void *allsetter)
+{
+    Py_ssize_t where = 0;
+    double value = 0.0;
+    auto one = reinterpret_cast<FloatSetter &>(setter);
+    auto all = reinterpret_cast<FloatAllSetter &>(allsetter);
+    if (PyArg_ParseTuple(args, "nd", &where, &value)) {
+        if (!writable()) {
+            return nullptr;
+        }
+        PY_TRY
+        {
+            int idx = 0;
+            if (!indexOf(where, list().getSize(), idx, true)) {
+                return nullptr;
+            }
+            edit([&](MaterialList &values) { (values.*one)(idx, static_cast<float>(value)); },
+                 idx);
+            Py_Return;
+        }
+        PY_CATCH
+    }
+    PyErr_Clear();
+    if (!PyArg_ParseTuple(args, "d", &value)) {
+        return nullptr;
+    }
+    if (!writable()) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        edit([&](MaterialList &values) { (values.*all)(static_cast<float>(value)); });
+        Py_Return;
+    }
+    PY_CATCH
+}
+
+PyObject *MaterialListPy::getDiffuseColor(PyObject *args)
+{
+    ColorGetter get = &MaterialList::getDiffuseColor;
+    return colorGet(args, reinterpret_cast<void *&>(get));
+}
+
+PyObject *MaterialListPy::setDiffuseColor(PyObject *args)
+{
+    ColorSetter one = static_cast<ColorSetter>(&MaterialList::setDiffuseColor);
+    ColorAllSetter all = static_cast<ColorAllSetter>(&MaterialList::setDiffuseColor);
+    return colorSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+}
+
+PyObject *MaterialListPy::getAmbientColor(PyObject *args)
+{
+    ColorGetter get = &MaterialList::getAmbientColor;
+    return colorGet(args, reinterpret_cast<void *&>(get));
+}
+
+PyObject *MaterialListPy::setAmbientColor(PyObject *args)
+{
+    ColorSetter one = static_cast<ColorSetter>(&MaterialList::setAmbientColor);
+    ColorAllSetter all = static_cast<ColorAllSetter>(&MaterialList::setAmbientColor);
+    return colorSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+}
+
+PyObject *MaterialListPy::getSpecularColor(PyObject *args)
+{
+    ColorGetter get = &MaterialList::getSpecularColor;
+    return colorGet(args, reinterpret_cast<void *&>(get));
+}
+
+PyObject *MaterialListPy::setSpecularColor(PyObject *args)
+{
+    ColorSetter one = static_cast<ColorSetter>(&MaterialList::setSpecularColor);
+    ColorAllSetter all = static_cast<ColorAllSetter>(&MaterialList::setSpecularColor);
+    return colorSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+}
+
+PyObject *MaterialListPy::getEmissiveColor(PyObject *args)
+{
+    ColorGetter get = &MaterialList::getEmissiveColor;
+    return colorGet(args, reinterpret_cast<void *&>(get));
+}
+
+PyObject *MaterialListPy::setEmissiveColor(PyObject *args)
+{
+    ColorSetter one = static_cast<ColorSetter>(&MaterialList::setEmissiveColor);
+    ColorAllSetter all = static_cast<ColorAllSetter>(&MaterialList::setEmissiveColor);
+    return colorSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+}
+
+PyObject *MaterialListPy::getShininess(PyObject *args)
+{
+    FloatGetter get = &MaterialList::getShininess;
+    return floatGet(args, reinterpret_cast<void *&>(get));
+}
+
+PyObject *MaterialListPy::setShininess(PyObject *args)
+{
+    FloatSetter one = static_cast<FloatSetter>(&MaterialList::setShininess);
+    FloatAllSetter all = static_cast<FloatAllSetter>(&MaterialList::setShininess);
+    return floatSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+}
+
+PyObject *MaterialListPy::getTransparency(PyObject *args)
+{
+    FloatGetter get = &MaterialList::getTransparency;
+    return floatGet(args, reinterpret_cast<void *&>(get));
+}
+
+PyObject *MaterialListPy::setTransparency(PyObject *args)
+{
+    FloatSetter one = static_cast<FloatSetter>(&MaterialList::setTransparency);
+    FloatAllSetter all = static_cast<FloatAllSetter>(&MaterialList::setTransparency);
+    return floatSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+}
+
+PyObject *MaterialListPy::getMetallic(PyObject *args)
+{
+    FloatGetter get = &MaterialList::getMetallic;
+    return floatGet(args, reinterpret_cast<void *&>(get));
+}
+
+PyObject *MaterialListPy::setMetallic(PyObject *args)
+{
+    FloatSetter one = static_cast<FloatSetter>(&MaterialList::setMetallic);
+    FloatAllSetter all = static_cast<FloatAllSetter>(&MaterialList::setMetallic);
+    return floatSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+}
+
+PyObject *MaterialListPy::getRoughness(PyObject *args)
+{
+    FloatGetter get = &MaterialList::getRoughness;
+    return floatGet(args, reinterpret_cast<void *&>(get));
+}
+
+PyObject *MaterialListPy::setRoughness(PyObject *args)
+{
+    FloatSetter one = static_cast<FloatSetter>(&MaterialList::setRoughness);
+    FloatAllSetter all = static_cast<FloatAllSetter>(&MaterialList::setRoughness);
+    return floatSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+}
+
+// ---------------------------------------------------------------------
+// Textures
+//
+// A slot holds the CONTENT HASH of a file the store owns, so stating a
+// texture is two steps: content in, then a slot naming it. setTextureFile()
+// is both at once, which is what a script wants.
+
+PyObject *MaterialListPy::insertTextureFile(PyObject *args)
+{
+    const char *path = nullptr;
+    const char *extension = nullptr;
+    if (!PyArg_ParseTuple(args, "s|s", &path, &extension)) {
+        return nullptr;
+    }
+    if (!writable()) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        // Not a value change: the content is a claim on a file, and the
+        // slot that names it is what changes the appearance
+        std::string hash;
+        if (getOwner()) {
+            hash = getOwner()->insertTextureFile(path, extension);
+        }
+        else {
+            hash = getMaterialListPtr()->insertTextureFile(path, extension);
+        }
+        if (hash.empty()) {
+            PyErr_Format(PyExc_IOError, "cannot read '%s'", path);
+            return nullptr;
+        }
+        return Py::new_reference_to(Py::String(hash));
+    }
+    PY_CATCH
+}
+
+PyObject *MaterialListPy::getTextureFile(PyObject *args)
+{
+    const char *hash = nullptr;
+    if (!PyArg_ParseTuple(args, "s", &hash)) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        return Py::new_reference_to(Py::String(list().getTextureFile(hash)));
+    }
+    PY_CATCH
+}
+
+PyObject *MaterialListPy::getTexture(PyObject *args)
+{
+    Py_ssize_t where = 0;
+    if (!PyArg_ParseTuple(args, "n", &where)) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        int idx = 0;
+        if (!indexOf(where, list().getSize(), idx)) {
+            return nullptr;
+        }
+        const SurfaceTexture texture = list().getTexture(idx);
+        Py::Dict maps;
+        for (uint8_t slot = 0; slot < SurfaceTexture::SlotCount; ++slot) {
+            if (!texture.maps[slot].empty()) {
+                maps.setItem(SurfaceTexture::slotName(slot), Py::String(texture.maps[slot]));
+            }
+        }
+        return Py::new_reference_to(maps);
+    }
+    PY_CATCH
+}
+
+/// The (index, slot) an argument list states, with no index meaning every
+/// entry -- which is answered as -1 here, because there is no entry to name
+bool MaterialListPy::textureArgs(PyObject *args, const char *format, int &idx, uint8_t &slot,
+                                 const char *&value)
+{
+    Py_ssize_t where = 0;
+    const char *name = nullptr;
+    std::string withIndex = std::string("n") + format;
+    if (PyArg_ParseTuple(args, withIndex.c_str(), &where, &name, &value)) {
+        if (!indexOf(where, list().getSize(), idx)) {
+            return false;
+        }
+    }
+    else {
+        PyErr_Clear();
+        if (!PyArg_ParseTuple(args, format, &name, &value)) {
+            return false;
+        }
+        idx = -1;
+    }
+    slot = slotOf(name);
+    return slot < SurfaceTexture::SlotCount;
+}
+
+/// Run \a op over one entry's texture record, or over every entry's
+void MaterialListPy::editTexture(int idx, const std::function<void(SurfaceTexture &)> &op)
+{
+    edit(
+        [&](MaterialList &values) {
+            if (idx >= 0) {
+                SurfaceTexture texture = values.getTexture(idx);
+                op(texture);
+                values.setTexture(idx, texture);
+                return;
+            }
+            const int count = values.getSize();
+            if (count == 0) {
+                // Nothing to state it on yet, and a uniform write on an
+                // empty list is what setTexture() itself does: one entry
+                SurfaceTexture texture;
+                op(texture);
+                values.setTexture(texture);
+                return;
+            }
+            for (int i = 0; i < count; ++i) {
+                SurfaceTexture texture = values.getTexture(i);
+                op(texture);
+                values.setTexture(i, texture);
+            }
+        },
+        idx);
+}
+
+PyObject *MaterialListPy::setTexture(PyObject *args)
+{
+    int idx = -1;
+    uint8_t slot = 0;
+    const char *hash = nullptr;
+    if (!textureArgs(args, "ss", idx, slot, hash) || !writable()) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        const std::string named = hash;
+        editTexture(idx, [&](SurfaceTexture &texture) { texture.maps[slot] = named; });
+        Py_Return;
+    }
+    PY_CATCH
+}
+
+PyObject *MaterialListPy::setTextureFile(PyObject *args)
+{
+    int idx = -1;
+    uint8_t slot = 0;
+    const char *path = nullptr;
+    if (!textureArgs(args, "ss", idx, slot, path) || !writable()) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        std::string hash;
+        if (getOwner()) {
+            hash = getOwner()->insertTextureFile(path);
+        }
+        else {
+            hash = getMaterialListPtr()->insertTextureFile(path);
+        }
+        if (hash.empty()) {
+            PyErr_Format(PyExc_IOError, "cannot read '%s'", path);
+            return nullptr;
+        }
+        editTexture(idx, [&](SurfaceTexture &texture) { texture.maps[slot] = hash; });
+        return Py::new_reference_to(Py::String(hash));
+    }
+    PY_CATCH
+}
+
+PyObject *MaterialListPy::clearTexture(PyObject *args)
+{
+    // (), (index), (slot) or (index, slot) -- the two one-argument forms
+    // tell themselves apart by type
+    Py_ssize_t where = 0;
+    const char *name = nullptr;
+    int idx = -1;
+    if (PyArg_ParseTuple(args, "|ns", &where, &name)) {
+        if (PyTuple_Size(args) > 0 && !indexOf(where, list().getSize(), idx)) {
+            return nullptr;
+        }
+    }
+    else {
+        PyErr_Clear();
+        if (!PyArg_ParseTuple(args, "s", &name)) {
+            return nullptr;
+        }
+    }
+    if (!writable()) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        uint8_t slot = SurfaceTexture::SlotCount;
+        if (name) {
+            slot = slotOf(name);
+            if (slot >= SurfaceTexture::SlotCount) {
+                return nullptr;
+            }
+        }
+        editTexture(idx, [&](SurfaceTexture &texture) {
+            if (slot < SurfaceTexture::SlotCount) {
+                texture.maps[slot].clear();
+            }
+            else {
+                for (auto &map : texture.maps) {
+                    map.clear();
+                }
+            }
+        });
+        Py_Return;
+    }
+    PY_CATCH
+}
+
+PyObject *MaterialListPy::getTextureTransform(PyObject *args)
+{
+    Py_ssize_t where = 0;
+    if (!PyArg_ParseTuple(args, "n", &where)) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        int idx = 0;
+        if (!indexOf(where, list().getSize(), idx)) {
+            return nullptr;
+        }
+        const SurfaceTexture texture = list().getTexture(idx);
+        Py::Tuple scale(2);
+        scale.setItem(0, Py::Float(texture.scale[0]));
+        scale.setItem(1, Py::Float(texture.scale[1]));
+        Py::Tuple offset(2);
+        offset.setItem(0, Py::Float(texture.offset[0]));
+        offset.setItem(1, Py::Float(texture.offset[1]));
+        Py::Dict transform;
+        transform.setItem("Scale", scale);
+        transform.setItem("Offset", offset);
+        transform.setItem("Rotation", Py::Float(texture.rotation));
+        return Py::new_reference_to(transform);
+    }
+    PY_CATCH
+}
+
+PyObject *MaterialListPy::setTextureTransform(PyObject *args, PyObject *kwds)
+{
+    static const std::array<const char *, 5> kwlist {"Index", "Scale", "Offset", "Rotation",
+                                                     nullptr};
+    PyObject *index = nullptr;
+    PyObject *scale = nullptr;
+    PyObject *offset = nullptr;
+    PyObject *rotation = nullptr;
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|OOOO",
+                                     const_cast<char **>(kwlist.data()),
+                                     &index, &scale, &offset, &rotation)) {
+        return nullptr;
+    }
+    if (!writable()) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        int idx = -1;
+        if (index && index != Py_None) {
+            if (!PyIndex_Check(index)) {
+                PyErr_SetString(PyExc_TypeError, "Index must be an integer");
+                return nullptr;
+            }
+            if (!indexOf(PyNumber_AsSsize_t(index, PyExc_IndexError), list().getSize(), idx)) {
+                return nullptr;
+            }
+        }
+        float pair[2] = {0.0F, 0.0F};
+        auto readPair = [&](PyObject *value) {
+            Py::Sequence seq(value);
+            if (seq.size() != 2) {
+                throw Py::ValueError("expected a pair");
+            }
+            pair[0] = static_cast<float>(Py::Float(seq[0]));
+            pair[1] = static_cast<float>(Py::Float(seq[1]));
+        };
+        float scaleValue[2] = {1.0F, 1.0F};
+        float offsetValue[2] = {0.0F, 0.0F};
+        float rotationValue = 0.0F;
+        if (scale) {
+            readPair(scale);
+            scaleValue[0] = pair[0];
+            scaleValue[1] = pair[1];
+        }
+        if (offset) {
+            readPair(offset);
+            offsetValue[0] = pair[0];
+            offsetValue[1] = pair[1];
+        }
+        if (rotation) {
+            rotationValue = static_cast<float>(Py::Float(Py::Object(rotation)));
+        }
+        editTexture(idx, [&](SurfaceTexture &texture) {
+            if (scale) {
+                texture.scale[0] = scaleValue[0];
+                texture.scale[1] = scaleValue[1];
+            }
+            if (offset) {
+                texture.offset[0] = offsetValue[0];
+                texture.offset[1] = offsetValue[1];
+            }
+            if (rotation) {
+                texture.rotation = rotationValue;
+            }
+        });
+        Py_Return;
+    }
+    PY_CATCH
+}
+
+Py::Tuple MaterialListPy::getTextureSlots() const
+{
+    // "slots" is a Qt macro that expands to nothing, and the error it
+    // makes here names the '.' rather than the identifier
+    Py::Tuple names(static_cast<int>(SurfaceTexture::SlotCount));
+    for (uint8_t slot = 0; slot < SurfaceTexture::SlotCount; ++slot) {
+        names.setItem(slot, Py::String(SurfaceTexture::slotName(slot)));
+    }
+    return names;
 }
 
 // ---------------------------------------------------------------------
