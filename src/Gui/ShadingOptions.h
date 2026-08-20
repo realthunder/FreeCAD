@@ -90,6 +90,9 @@ private:
     QRadioButton *classicRadio;
     QRadioButton *pbrRadio;
     QRadioButton *matcapRadio;
+    QLabel *envLabel;
+    QComboBox *envCombo;
+    QCheckBox *envBgCheck;
     QLabel *matcapLabel;
     QComboBox *matcapCombo;
     QLabel *matcapTintLabel;

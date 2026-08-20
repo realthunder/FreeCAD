@@ -88,6 +88,7 @@ public:
     std::shared_ptr<MaterialValue> getMaterialValue() const;
     QString getString() const;
     QString getYAMLString() const;
+    QString getCanonicalYAMLString() const;
     QString getDictionaryString() const;  // Non-localized string
     bool getBoolean() const
     {
@@ -424,6 +425,22 @@ public:
     void save(QTextStream& stream, bool overwrite, bool saveAsCopy, bool saveInherited);
 
     /*
+     * Write the card in its canonical form: the exact bytes that are hashed
+     * and stored as a document blob (docs/MaterialStorage.md sec 4). It is
+     * ordinary .FCMat YAML, readable by MaterialLoader, but nothing outside
+     * the card's own models and values reaches it -- no provenance, no
+     * library lookup, no preference -- so identical content gives identical
+     * bytes on every installation.
+     */
+    void saveCanonical(QTextStream& stream) const;
+    QString getCanonicalForm() const;
+    /*
+     * SHA-1 of the canonical form, hex, matching what App::FileBlobManager
+     * computes for a file holding those bytes.
+     */
+    std::string getContentHash() const;
+
+    /*
      * Assignment operator
      */
     Material& operator=(const Material& other);
@@ -462,6 +479,12 @@ protected:
     void saveInherits(QTextStream& stream) const;
     void saveModels(QTextStream& stream, bool saveInherited) const;
     void saveAppearanceModels(QTextStream& stream, bool saveInherited) const;
+    void saveCanonicalGeneral(QTextStream& stream) const;
+    void saveCanonicalInherits(QTextStream& stream) const;
+    void saveCanonicalModels(QTextStream& stream,
+                             const QSet<QString>& modelUuids,
+                             const std::map<QString, std::shared_ptr<MaterialProperty>>& properties,
+                             const QString& header) const;
 
 private:
     std::shared_ptr<MaterialLibrary> _library;

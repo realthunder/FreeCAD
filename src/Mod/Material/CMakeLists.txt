@@ -322,6 +322,9 @@ set(MaterialTest_Files
     materialtests/TestMaterialCreation.py
     materialtests/TestMaterialDocument.py
     materialtests/TestMaterialFilter.py
+    materialtests/TestMaterialCanonical.py
+    materialtests/TestMaterialBlobs.py
+    materialtests/TestMaterialSync.py
 )
 
 ADD_CUSTOM_TARGET(MaterialTest ALL

@@ -32,3 +32,6 @@ from materialtests.TestModels import ModelTestCases
 from materialtests.TestMaterials import MaterialTestCases
 from materialtests.TestMaterialCreation import MaterialCreationTestCases
 from materialtests.TestMaterialFilter import MaterialFilterTestCases
+from materialtests.TestMaterialCanonical import MaterialCanonicalTestCases
+from materialtests.TestMaterialBlobs import MaterialBlobTestCases
+from materialtests.TestMaterialSync import MaterialSyncTestCases

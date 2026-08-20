@@ -12,6 +12,6 @@ AppearanceModels:
     AmbientColor: "(0.0215, 0.1745, 0.0215, 1.0)"
     DiffuseColor: "(0.0757, 0.6142, 0.0757, 1.0)"
     EmissiveColor: "(0.0000, 0.0000, 0.0000, 1.0)"
-    Shininess: "0.6000"
-    SpecularColor: "(0.0501, 0.0501, 0.0501, 1.0)"
+    Shininess: "0.9936"
+    SpecularColor: "(0.2209, 0.2209, 0.2209, 1.0)"
     Transparency: "0.0"

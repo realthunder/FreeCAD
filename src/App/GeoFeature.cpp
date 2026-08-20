@@ -300,3 +300,13 @@ GeoFeature::getHigherElements(const char *element, bool silent) const
         return {};
     return prop->getComplexData()->getHigherElements(element, silent);
 }
+
+App::Material GeoFeature::getMaterialAppearance() const
+{
+    return App::Material(App::Material::DEFAULT);
+}
+
+void GeoFeature::setMaterialAppearance(const App::Material& material)
+{
+    (void)material;
+}

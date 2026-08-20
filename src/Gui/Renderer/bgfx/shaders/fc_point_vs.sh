@@ -14,6 +14,8 @@
  *                  see fc_line_vs.sh)
  */
 
+#include "fc_color.sh"
+
 uniform vec4 u_params;
 
 void main()
@@ -38,7 +40,7 @@ void main()
 		clipP.xy += offset * (2.0 / res) * clipP.w;
 		clipP.z += u_params.z * clipP.w;
 		gl_Position = clipP;
-		v_color0 = i_data1;
+		v_color0 = fcAuthoredColor4(i_data1);
 #ifdef CLIP_PLANES
 		v_wpos = mul(u_model[0], vec4(i_data0.xyz, 1.0)).xyz;
 #endif

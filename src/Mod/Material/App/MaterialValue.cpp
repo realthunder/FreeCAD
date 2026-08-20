@@ -312,7 +312,92 @@ QString MaterialValue::getYAMLStringMultiLine() const
     return yaml;
 }
 
+QString MaterialValue::displayQuantity(const Base::Quantity& quantity)
+{
+    // The user's schema picks the unit, and that is what keeps a card
+    // readable. Its decimal count is another matter: getUserString() alone
+    // rounds 7854.321 kg/m^3 to 7854.32, so a card saved to the library and
+    // read back is not the card that was saved, and every document holding it
+    // reports a divergence nobody made (docs/MaterialStorage.md sec 13.3).
+    //
+    // So keep the schema's unit and ask the parser -- not an assumption about
+    // digits -- how much precision it takes to read the value back unchanged.
+    // The answer is usually the number the user typed.
+    double factor {1.0};
+    std::string unitString;
+    const std::string userString = quantity.getUserString(factor, unitString);
+    if (factor == 0.0) {
+        return QString::fromStdString(userString);
+    }
+
+    const QString units = QString::fromStdString(unitString);
+    const double displayed = quantity.getValue() / factor;
+    for (int precision = 6; precision <= 17; precision++) {
+        const QString number = QString::number(displayed, 'g', precision);
+        const QString text =
+            units.isEmpty() ? number : number + QStringLiteral(" ") + units;
+        try {
+            if (Base::Quantity::parse(text.toStdString()).getValue() == quantity.getValue()) {
+                return text;
+            }
+        }
+        catch (const Base::Exception&) {
+            // A unit this parser cannot read back. Nothing here can improve
+            // on what the schema said, so say it.
+            break;
+        }
+    }
+    return QString::fromStdString(userString);
+}
+
+QString MaterialValue::canonicalNumber(double value)
+{
+    // The shortest form that reads back as the same double, so the text is a
+    // function of the value alone. QString::number is locale independent.
+    for (int precision = 15; precision < 17; precision++) {
+        QString text = QString::number(value, 'g', precision);
+        if (text.toDouble() == value) {
+            return text;
+        }
+    }
+    return QString::number(value, 'g', 17);
+}
+
+QString MaterialValue::canonicalFloat(float value)
+{
+    for (int precision = 6; precision < 9; precision++) {
+        QString text = QString::number(double(value), 'g', precision);
+        if (text.toFloat() == value) {
+            return text;
+        }
+    }
+    return QString::number(double(value), 'g', 9);
+}
+
+QString MaterialValue::canonicalQuantity(const Base::Quantity& quantity)
+{
+    // Internal units, never the user's schema: getUserString() would write
+    // the same card differently for a user working in imperial units, and
+    // would round the value to that schema's decimal count as well.
+    QString number = canonicalNumber(quantity.getValue());
+    QString units = QString::fromStdString(quantity.getUnit().getString());
+    if (units.isEmpty()) {
+        return number;
+    }
+    return number + QStringLiteral(" ") + units;
+}
+
 QString MaterialValue::getYAMLString() const
+{
+    return yamlString(false);
+}
+
+QString MaterialValue::getCanonicalYAMLString() const
+{
+    return yamlString(true);
+}
+
+QString MaterialValue::yamlString(bool canonical) const
 {
     QString yaml;
     if (!isNull()) {
@@ -330,12 +415,15 @@ QString MaterialValue::getYAMLString() const
         }
         if (getType() == MaterialValue::Quantity) {
             auto quantity = getValue().value<Base::Quantity>();
-            yaml += QString::fromStdString(quantity.getUserString());
+            yaml += canonical ? canonicalQuantity(quantity) : displayQuantity(quantity);
         }
         else if (getType() == MaterialValue::Float) {
             auto value = getValue();
             if (!value.isNull()) {
-                yaml += QStringLiteral("%1").arg(value.toFloat(), 0, 'g', 6);
+                // Six digits is not enough to read a float back unchanged
+                // either, and for the same reason: what is written has to be
+                // what was stored.
+                yaml += canonicalFloat(value.toFloat());
             }
         }
         else if (getType() == MaterialValue::List) {
@@ -550,6 +638,16 @@ void Array2D::dump() const
 
 QString Array2D::getYAMLString() const
 {
+    return yamlString(false);
+}
+
+QString Array2D::getCanonicalYAMLString() const
+{
+    return yamlString(true);
+}
+
+QString Array2D::yamlString(bool canonical) const
+{
     if (isNull()) {
         return QString();
     }
@@ -582,7 +680,7 @@ QString Array2D::getYAMLString() const
             }
             yaml += QStringLiteral("\"");
             auto quantity = column.value<Base::Quantity>();
-            yaml += QString::fromStdString(quantity.getUserString());
+            yaml += canonical ? canonicalQuantity(quantity) : displayQuantity(quantity);
             yaml += QStringLiteral("\"");
         }
 
@@ -957,6 +1055,16 @@ void Array3D::setCurrentDepth(int depth)
 
 QString Array3D::getYAMLString() const
 {
+    return yamlString(false);
+}
+
+QString Array3D::getCanonicalYAMLString() const
+{
+    return yamlString(true);
+}
+
+QString Array3D::yamlString(bool canonical) const
+{
     if (isNull()) {
         return QString();
     }
@@ -974,7 +1082,8 @@ QString Array3D::getYAMLString() const
         }
 
         yaml += QStringLiteral("\"");
-        auto value = QString::fromStdString(getDepthValue(depth).getUserString());
+        auto depthValue = getDepthValue(depth);
+        auto value = canonical ? canonicalQuantity(depthValue) : displayQuantity(depthValue);
         yaml += value;
         yaml += QStringLiteral("\": [");
 
@@ -1003,8 +1112,7 @@ QString Array3D::getYAMLString() const
                     first = false;
                 }
                 yaml += QStringLiteral("\"");
-                // Base::Quantity quantity = column.value<Base::Quantity>();
-                yaml += QString::fromStdString(column.getUserString());
+                yaml += canonical ? canonicalQuantity(column) : displayQuantity(column);
                 yaml += QStringLiteral("\"");
             }
 

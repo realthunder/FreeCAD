@@ -3452,10 +3452,10 @@ std::string PropertyMaterialList::getTextureFile(const std::string &hash) const
     return _list.getTextureFile(hash);
 }
 
-void PropertyMaterialList::noteTextureBlobs(FileBlobManager &manager,
-                                            const BlobReferrer &referrer) const
+void PropertyMaterialList::collectBlobs(FileBlobManager &manager,
+                                        const DocumentObject *object) const
 {
-    _list.noteTextureBlobs(manager, referrer);
+    _list.noteTextureBlobs(manager, FileBlobManager::referrerOf(this, object));
 }
 
 void PropertyMaterialList::assignRestoredBlob(const FileBlobHandle &blob)

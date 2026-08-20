@@ -118,7 +118,7 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
     // Unlit and untextured for the same reason.
     if (mat.drawstyleoverride) {
         float fill[4];
-        unpackColor(bgFillColor, fill);
+        unpackAuthoredColor(bgFillColor, fill, colorManaged());
         fill[3] = 1.0f;
         float fillParams[4] = {0.0f, 0.0f, 1.0f, polygonOffsetBias(mat)};
         bgfx::setUniform(u_matColor, fill);

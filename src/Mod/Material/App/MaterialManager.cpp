@@ -34,6 +34,7 @@
 #include "Exceptions.h"
 #include "MaterialConfigLoader.h"
 #include "MaterialLoader.h"
+#include "MaterialCards.h"
 #include "MaterialManager.h"
 #if defined(BUILD_MATERIAL_EXTERNAL)
 #include "MaterialManagerExternal.h"
@@ -130,6 +131,8 @@ void MaterialManager::cleanup()
 void MaterialManager::refresh()
 {
     _localManager->refresh();
+    // The content index is over the cards that were installed a moment ago.
+    MaterialCards::clearPresets();
 }
 
 //=====

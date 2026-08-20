@@ -21,6 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QMetaType>
 #include <QUuid>
@@ -141,6 +142,11 @@ QString MaterialProperty::getString() const
 QString MaterialProperty::getYAMLString() const
 {
     return _valuePtr->getYAMLString();
+}
+
+QString MaterialProperty::getCanonicalYAMLString() const
+{
+    return _valuePtr->getCanonicalYAMLString();
 }
 
 Base::Color MaterialProperty::getColor() const
@@ -1321,6 +1327,23 @@ bool Material::isAppearanceModelComplete(const QString& uuid) const
     return true;
 }
 
+namespace
+{
+
+// Qt seeds QHash differently in every process, so a QSet hands its contents
+// back in a different order on every run. An unsorted write means the same
+// card serializes to different bytes each time it is saved: noise in a
+// library diff, and no content addressing at all (docs/MaterialStorage.md
+// sec 4.2).
+QStringList sortedStrings(const QSet<QString>& uuids)
+{
+    QStringList sorted(uuids.begin(), uuids.end());
+    sorted.sort();
+    return sorted;
+}
+
+}  // namespace
+
 void Material::saveGeneral(QTextStream& stream) const
 {
     stream << "General:\n";
@@ -1343,7 +1366,7 @@ void Material::saveGeneral(QTextStream& stream) const
     }
     if (!_tags.isEmpty()) {
         stream << "  Tags:\n";
-        for (auto tag : _tags) {
+        for (const auto& tag : sortedStrings(_tags)) {
             stream << "    - \"" << tag << "\"\n";
         }
     }
@@ -1427,7 +1450,7 @@ void Material::saveModels(QTextStream& stream, bool saveInherited) const
     }
 
     bool headerPrinted = false;
-    for (auto& itm : _physicalUuids) {
+    for (const auto& itm : sortedStrings(_physicalUuids)) {
         auto model = modelManager.getModel(itm);
         if (!inherited || modelChanged(*parent, *model)) {
             if (!headerPrinted) {
@@ -1481,7 +1504,7 @@ void Material::saveAppearanceModels(QTextStream& stream, bool saveInherited) con
     }
 
     bool headerPrinted = false;
-    for (auto& itm : _appearanceUuids) {
+    for (const auto& itm : sortedStrings(_appearanceUuids)) {
         auto model = modelManager.getModel(itm);
         if (!inherited || modelAppearanceChanged(*parent, *model)) {
             if (!headerPrinted) {
@@ -1581,6 +1604,127 @@ void Material::save(QTextStream& stream, bool overwrite, bool saveAsCopy, bool s
     saveAppearanceModels(stream, saveInherited);
 
     setOldFormat(false);
+}
+
+// The uuid the canonical form carries in place of the card's own. Identity is
+// provenance and travels on the property, not in the hashed bytes, but the
+// loader requires a General/UUID entry -- so the slot is filled with the nil
+// uuid, which also reads as "this card's identity is not in this file".
+static const char* canonicalUuid = "00000000-0000-0000-0000-000000000000";
+
+void Material::saveCanonicalGeneral(QTextStream& stream) const
+{
+    // Name, uuid, author, license, library, directory and filename are
+    // deliberately absent: the same card obtained from two libraries, or
+    // renamed, is the same content (docs/MaterialStorage.md sec 4.3). What
+    // remains is description text that has nowhere else to travel, so leaving
+    // it out would lose it on the round trip through a blob.
+    stream << "General:\n";
+    stream << "  UUID: \"" << QString::fromLatin1(canonicalUuid) << "\"\n";
+    if (!_description.isEmpty()) {
+        stream << "  Description: \"" << MaterialValue::escapeString(_description) << "\"\n";
+    }
+    if (!_url.isEmpty()) {
+        stream << "  SourceURL: \"" << MaterialValue::escapeString(_url) << "\"\n";
+    }
+    if (!_reference.isEmpty()) {
+        stream << "  ReferenceSource: \"" << MaterialValue::escapeString(_reference) << "\"\n";
+    }
+    if (!_tags.isEmpty()) {
+        stream << "  Tags:\n";
+        for (const auto& tag : sortedStrings(_tags)) {
+            stream << "    - \"" << MaterialValue::escapeString(tag) << "\"\n";
+        }
+    }
+}
+
+void Material::saveCanonicalInherits(QTextStream& stream) const
+{
+    if (_parentUuid.isEmpty()) {
+        return;
+    }
+
+    // saveInherits() writes the parent's name, which means asking the manager
+    // for a card this installation may not have: absent, the whole block is
+    // dropped and the bytes differ. The loader reads only the UUID and
+    // ignores this key, so the uuid stands in for the name here.
+    stream << "Inherits:\n";
+    stream << "  " << _parentUuid << ":\n";
+    stream << "    UUID: \"" << _parentUuid << "\"\n";
+}
+
+void Material::saveCanonicalModels(
+    QTextStream& stream,
+    const QSet<QString>& modelUuids,
+    const std::map<QString, std::shared_ptr<MaterialProperty>>& properties,
+    const QString& header) const
+{
+    // Grouped by the model each property names rather than by asking the
+    // model library what a model contains: a card whose model this
+    // installation lacks still writes its values, and the bytes do not move
+    // when the shipped models do. A model with no values still gets a block,
+    // so an empty model survives the round trip.
+    std::map<QString, std::vector<std::shared_ptr<MaterialProperty>>> byModel;
+    for (const auto& uuid : sortedStrings(modelUuids)) {
+        byModel[uuid];
+    }
+    for (const auto& it : properties) {
+        auto property = it.second;
+        if (!property || property->isNull()) {
+            continue;
+        }
+        auto modelUuid = property->getModelUUID();
+        if (modelUuid.isEmpty()) {
+            Base::Console().log("Material::saveCanonicalModels property '%s' names no model. "
+                                "Not written\n",
+                                it.first.toStdString().c_str());
+            continue;
+        }
+        byModel[modelUuid].push_back(property);
+    }
+
+    if (byModel.empty()) {
+        return;
+    }
+
+    stream << header << ":\n";
+    for (const auto& it : byModel) {
+        // The key is the model uuid, not its name: the name is a library
+        // lookup, and the loader reads the UUID below and ignores the key.
+        stream << "  " << it.first << ":\n";
+        stream << "    UUID: \"" << it.first << "\"\n";
+        for (const auto& property : it.second) {
+            stream << "    " << MaterialValue::escapeString(property->getName()) << ":"
+                   << property->getCanonicalYAMLString() << "\n";
+        }
+    }
+}
+
+void Material::saveCanonical(QTextStream& stream) const
+{
+    // No "created by" header line: it carries the writing version, which is
+    // exactly the kind of thing that must not change the hash.
+    stream << "---\n";
+    saveCanonicalGeneral(stream);
+    saveCanonicalInherits(stream);
+    saveCanonicalModels(stream, _physicalUuids, _physical, QStringLiteral("Models"));
+    saveCanonicalModels(stream, _appearanceUuids, _appearance, QStringLiteral("AppearanceModels"));
+}
+
+QString Material::getCanonicalForm() const
+{
+    QString form;
+    QTextStream stream(&form);
+    saveCanonical(stream);
+    stream.flush();
+    return form;
+}
+
+std::string Material::getContentHash() const
+{
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    hash.addData(getCanonicalForm().toUtf8());
+    return hash.result().toHex().constData();
 }
 
 Material& Material::operator=(const Material& other)

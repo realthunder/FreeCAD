@@ -2728,6 +2728,8 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
     PRIVATE(this)->external->setUserShaderConfig(PRIVATE(this)->mergedshaders);
     PRIVATE(this)->external->setPBRConfig(
         RendererBridge::translatePBRConfig(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setOutputConfig(
+        RendererBridge::translateOutputConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setBumpConfig(
         RendererBridge::translateBumpConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setLightConfig(

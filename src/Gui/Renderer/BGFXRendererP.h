@@ -2928,7 +2928,14 @@ struct GpuTexture
         // read every one of them off the end of an empty vector. White
         // is the answer the deferral already promises: a modulating
         // draw renders as if untextured until the payload lands.
-        if (tex.pixels.size() < n * size_t(tex.numComponents)) {
+        // A float image is an ENVIRONMENT, and an environment is
+        // consumed on the CPU (sampleEnvImage builds the prefiltered
+        // cube). Nothing should route one here, and the expansion
+        // below reads one byte a component -- so refuse rather than
+        // walk a float payload as bytes.
+        if (tex.sample == Render::TextureImage::F32
+                || tex.pixels.size()
+                       < n * size_t(tex.numComponents) * tex.sampleSize()) {
             const uint8_t white[4] = {255, 255, 255, 255};
             handle = bgfx::createTexture2D(
                 1, 1, false, 1, bgfx::TextureFormat::RGBA8, 0,
@@ -3233,6 +3240,30 @@ inline void unpackColor(uint32_t rgba, float *out)
     out[1] = ((rgba >> 16) & 0xff) / 255.0f;
     out[2] = ((rgba >> 8) & 0xff) / 255.0f;
     out[3] = (rgba & 0xff) / 255.0f;
+}
+
+/// sRGB -> linear (IEC 61966-2-1); the inverse of what fs_fc_present
+/// writes, and the C++ twin of the shaders' fcDecodeSRGB.
+inline float decodeSRGB(float c)
+{
+    return c <= 0.04045f ? c / 12.92f
+                         : std::pow((c + 0.055f) / 1.055f, 2.4f);
+}
+
+/// An AUTHORED colour -- one a person picked, which makes it a display
+/// number and so sRGB-encoded. Decoded to linear when the pipeline is
+/// colour managed, because everything downstream of here is arithmetic
+/// on light (Render::OutputConfig; fc_color.sh does the same for the
+/// 8-bit vertex streams this cannot reach).
+///
+/// ! Alpha is left alone: it is coverage, never light.
+inline void unpackAuthoredColor(uint32_t rgba, float *out, bool managed)
+{
+    unpackColor(rgba, out);
+    if (!managed)
+        return;
+    for (int i = 0; i < 3; ++i)
+        out[i] = decodeSRGB(out[i]);
 }
 
 // FNV-1a accumulation for the shadow-map caster-set hash.
@@ -3853,6 +3884,7 @@ public:
         fn(fireFrontFbo, LifeSized);
         fn(fireBackFbo, LifeSized);
         fn(sceneCopyFbo, LifeSized);
+        fn(presentFbo, LifeSized);
         fn(reflFbo, LifeSized);
         fn(volTex, LifeSized);
         fn(volFrontTex, LifeSized);
@@ -3879,6 +3911,7 @@ public:
         fn(fireFrontDepth, LifeSized);
         fn(fireBackDepth, LifeSized);
         fn(sceneCopyTex, LifeSized);
+        fn(presentTex, LifeSized);
         fn(reflTex, LifeSized);
         fn(reflDepth, LifeSized);
         fn(s_texVol, LifeProgram);
@@ -3995,6 +4028,8 @@ public:
         fn(u_aoKernel, LifeProgram);
         fn(s_texEnv, LifeProgram);
         fn(u_pbrParams, LifeProgram);
+        fn(u_outputParams, LifeProgram);
+        fn(u_colorSpace, LifeProgram);
         fn(u_matcapParams, LifeProgram);
         fn(u_envSH, LifeProgram);
         fn(s_texBump, LifeProgram);
@@ -4061,9 +4096,7 @@ public:
         fn(u_clipParams, LifeProgram);
         fn(u_clipPlanes, LifeProgram);
         fn(u_linePattern, LifeProgram);
-#ifdef FC_RENDERER_STANDALONE
         fn(m_progPresent, LifeProgram);
-#endif
         // Per-view-lifetime resources. The impact map is sized by the
         // map resolution, not by the window; the stateful-particle
         // programs/uniforms are created once per view and kept across
@@ -4126,6 +4159,7 @@ public:
         EffectSSAO,        ///< depth+normal prepass, AO chain, glass interval
         EffectShadow,      ///< the scene light's shadow maps (moments,
                            ///< blur ping, glass tint pair)
+        EffectPresent,     ///< the output colour transform's target
         NumEffectGroups
     };
     /// Does this group's framebuffer set exist right now?
@@ -4176,10 +4210,15 @@ public:
     /// disc of a sphere/light-probe image, so a roughly square image is
     /// read that way; a 2:1 image is the usual lat-long panorama. The
     /// image is Y-up in world terms: Z is up in FreeCAD.
+    /// \a managed selects the photo's decode: the exact inverse of
+    /// the output encode when the pipeline is colour managed, and
+    /// otherwise the squaring these frames were always drawn with.
     static void sampleEnvImage(const Render::TextureImage &img,
-                               const float d[3], float out[3]);
+                               const float d[3], float out[3],
+                               bool managed);
 
-    static void envRadianceProcedural(const float d[3], float out[3]);
+    /// Reads m_envPreset, so it is a member and not static any more.
+    void envRadianceProcedural(const float d[3], float out[3]) const;
 
     // World direction of a cube face texel; standard GL/D3D face order
     // and orientation (+x, -x, +y, -y, +z, -z), u/v in [-1, 1].
@@ -4652,6 +4691,9 @@ public:
     /// which is the material's own ambient colour times the
     /// traversal's global ambient. Falls back to the legacy flat floor
     /// when the feed carries no Coin lighting.
+    /// Tell the vertex stages whether the authored colour streams
+    /// they carry need decoding (fc_color.sh).
+    void setColorSpaceUniform();
     void setAmbientUniform(const Render::Material &mat);
 
     /// Appearance/placement of one stencil outline.
@@ -5342,12 +5384,18 @@ public:
 
     static uint64_t depthFuncState(uint8_t func);
 
-#ifdef FC_RENDERER_STANDALONE
-    /// Standalone present: fullscreen copy of the scene color onto the
-    /// default backbuffer (ViewPresent targets the invalid framebuffer).
-    /// Submitted before bgfx::frame(), replacing the desktop GL blit.
+    /// The present pass: a fullscreen draw of the scene color through
+    /// the output colour transform (fs_fc_present).
+    ///
+    /// Standalone, it is what puts the frame on the default backbuffer
+    /// at all (ViewPresent targets the invalid framebuffer), so it runs
+    /// every frame. On the desktop the Qt GL blit does that instead, so
+    /// this runs only when a transform is selected, drawing into
+    /// presentFbo for the blit to take its source from -- and targeting
+    /// a framebuffer at all still forces the MSAA resolve the empty
+    /// ViewPresent used to force on its own.
     void present();
-#else
+#ifndef FC_RENDERER_STANDALONE
     /// Write \a color (tightly packed RGBA8, glReadPixels bottom-up
     /// rows) to \a path: raw PPM for a .ppm extension, else through
     /// Qt's image writers (PNG etc.).
@@ -5675,17 +5723,27 @@ public:
     // built once on demand — a GGX-prefiltered cubemap mip chain for the
     // specular part and its irradiance SH for the diffuse part.
     static constexpr int kEnvSH = 9;
-    static constexpr uint16_t kEnvSize = 64;
+    // 128 and not 64: the procedural environments have EDGES now
+    // (Render_PBREnvPreset), and 64 could not resolve a softbox
+    // without the reflection breaking into blocks. Costs about a
+    // megabyte of RGBA16F per view and a one-off prefilter, both paid
+    // once when the environment changes rather than per frame.
+    static constexpr uint16_t kEnvSize = 128;
     bgfx::TextureHandle m_envTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_dummyEnvTex = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texEnv = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_pbrParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_outputParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_colorSpace = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_matcapParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_envSH = BGFX_INVALID_HANDLE;
     float envSH[kEnvSH][4];
     /// User environment image the built cubemap came from (null = the
     /// procedural studio environment); a change invalidates the build.
     std::shared_ptr<const Render::TextureImage> m_envImage;
+    /// Which procedural environment the built cube holds, so a change
+    /// of preset invalidates it the way a change of image does.
+    int m_envPreset = 0;
     bool m_envBuilt = false;   // build attempted (m_envTex may still be
                                // invalid when the caps disallow it)
     bool pbrFrame = false;     // PBR active for the frame being submitted
@@ -5702,6 +5760,53 @@ public:
     // Read the Phong specular colour as PBR material data where nothing
     // states a metalness (PBRConfig::fromSpecular).
     bool pbrFromSpecular = false;
+    /// Render::PBRConfig::shininessMapping for this frame.
+    int pbrShininessMapping = 0;
+    /// Render::OutputConfig::Transform for this frame.
+    int outputTransform = 0;
+    /// Render::OutputConfig::exposure for this frame.
+    float outputExposure = 1.0f;
+
+    /// What the sized targets were BUILT with: a floating point scene
+    /// colour, or the 8-bit one.
+    bool hdrScene = false;
+    /// What the frame would like them built with -- set before init(),
+    /// the way shadowSizeWanted is. Read through hdrSceneWanted(),
+    /// never directly: this is the wish, that is the answer.
+    bool hdrWanted = false;
+
+    /// Should the scene colour be floating point?
+    ///
+    /// Only while colour managed, and only where the device can render
+    /// to it. Two things want it and neither is optional once the
+    /// pipeline works in light: an 8-bit target holds LINEAR light,
+    /// which spends most of its codes on highlights nobody can
+    /// distinguish and bands the darks, and it clips at one, which
+    /// throws away exactly the headroom the exposure stage exists to
+    /// bring back.
+    ///
+    /// ! Also false once the present target has failed to allocate. A
+    /// floating point scene colour is only ever seen through that
+    /// target's encode -- the desktop blit reads it -- so without one
+    /// the frame would go to the screen as raw linear half-floats. This
+    /// makes the next init() fall back rather than needing a failure
+    /// path of its own.
+    bool hdrSceneWanted() const {
+        if (!hdrWanted || effectFailed[EffectPresent])
+            return false;
+        const uint16_t need = BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER
+            | (msaaSamples > 1 ? BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER_MSAA
+                               : 0);
+        const uint16_t got =
+            bgfx::getCaps()->formats[bgfx::TextureFormat::RGBA16F];
+        return (got & need) == need;
+    }
+    /// Is this frame's pipeline colour managed -- authored colours
+    /// decoded on the way in, the finished frame encoded on the way
+    /// out? One question, so every unpack site asks it the same way.
+    bool colorManaged() const {
+        return outputTransform != Render::OutputConfig::None;
+    }
     float pbrRoughness = 0.0f; // <= 0: derive from the material shininess
     float pbrEnvIntensity = 1.0f;
     bgfx::UniformHandle s_texBump = BGFX_INVALID_HANDLE;
@@ -6010,6 +6115,12 @@ public:
     // Water surface refraction (scene copy) + ground reflection targets.
     bgfx::TextureHandle sceneCopyTex = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle sceneCopyFbo = BGFX_INVALID_HANDLE;
+    /// The output colour transform's destination (EffectPresent): the
+    /// encoded frame, which is what the desktop then blits into the Qt
+    /// framebuffer. Only allocated while a transform is selected -- with
+    /// none, the blit takes the scene colour directly as it always did.
+    bgfx::TextureHandle presentTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle presentFbo = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle reflTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle reflDepth = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle reflFbo = BGFX_INVALID_HANDLE;
@@ -6161,13 +6272,20 @@ public:
     // falls back to plain scaling.
     const float *viewMatrix = nullptr;
     const float *projMatrix = nullptr;
-#ifdef FC_RENDERER_STANDALONE
+    /// The present pass' program (fs_fc_present): the output colour
+    /// transform on every tier, and standalone also the copy that puts
+    /// the frame on the default backbuffer.
     bgfx::ProgramHandle m_progPresent = BGFX_INVALID_HANDLE;
-#else
+#ifndef FC_RENDERER_STANDALONE
     GLuint fbo = 0;
     GLuint fboDepth = 0;
     GLuint blitColorId = 0;
     bool hasFBO = false;
+    /// Which texture the cached blit framebuffer wraps: the encoded
+    /// frame (presentTex) or the linear scene colour. Turning the
+    /// output transform on or off changes it, and the cache has to be
+    /// rebuilt around the new one.
+    bool blitSourceEncoded = false;
 #endif
 };
 
@@ -7791,6 +7909,7 @@ public:
     Render::VolumetricConfig volconf;
     Render::WaterConfig waterconf;
     Render::BloomConfig bloomconf;
+    Render::OutputConfig outconf;
     Render::RenderDebugConfig debugconf;
     /// Backend frame cost accumulated since the last reported line
     /// (docs/FarFieldProxies.md sec 10.1). Per view, because two views

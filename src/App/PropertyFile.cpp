@@ -163,6 +163,15 @@ void PropertyFileIncluded::setValue(const char* sFile, const char* sName)
     }
 }
 
+void PropertyFileIncluded::collectBlobs(FileBlobManager& manager,
+                                       const DocumentObject* object) const
+{
+    // The referrer is what names the file the content is saved to, and this
+    // pass is where the property is known. Null blobs are ignored by the
+    // manager, so a property holding nothing costs a call and no more.
+    manager.noteReferenced(_blob, FileBlobManager::referrerOf(this, object));
+}
+
 void PropertyFileIncluded::assignRestoredBlob(const FileBlobHandle& blob)
 {
     // No aboutToSetValue()/hasSetValue(): this completes a restore rather than

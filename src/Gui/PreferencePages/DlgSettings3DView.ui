@@ -254,6 +254,9 @@ geometry shape, and may cause some initial lag due to bufferring.</string>
         </item>
         <item row="4" column="1" colspan="2">
          <widget class="Gui::PrefComboBox" name="comboAliasing">
+          <property name="currentIndex">
+           <number>3</number>
+          </property>
           <property name="minimumSize">
            <size>
             <width>120</width>

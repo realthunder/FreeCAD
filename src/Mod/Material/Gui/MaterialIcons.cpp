@@ -35,6 +35,7 @@
 
 #include <Inventor/nodes/SoComplexity.h>
 #include <Inventor/nodes/SoCylinder.h>
+#include <Inventor/nodes/SoTransform.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
@@ -121,7 +122,15 @@ constexpr float CylinderFrame = 2.15F;
 /// The gloss of a finish icon before its own relief roughens it: a
 /// polished metal, smoother than anything Phong data can express, since
 /// a rough surface blurs away the very detail the icon exists to show.
-constexpr float BaseRoughness = 0.22F;
+///
+/// Not as polished as it was, though. At 0.22 the billet mirrored the
+/// environment nearly perfectly, so whatever it happened to point at
+/// arrived undimmed: under a single hard key a tenth of the icon
+/// clipped to flat white, and the pattern in the clipped part stopped
+/// existing, which is the opposite of what the picture is for. A
+/// reflection has to be able to land on a bright source and still have
+/// somewhere above it to go.
+constexpr float BaseRoughness = 0.32F;
 }  // namespace
 
 /** The scene the icons are rendered from
@@ -231,14 +240,24 @@ public:
     {
         _shapes->whichChild = shape == Shape::Sphere ? 0 : 1;
         setAnimationEnabled(false);
+        lighting(shape);
         if (shape == Shape::Sphere) {
             setViewDirection(SbVec3f(0, 1, -0.35F));
         }
         else {
-            // Down onto the rim at about 35 degrees: enough of the top
-            // face to read a turned lay as circles rather than as an
-            // ellipse's worth of them, and enough wall left for a knurl.
-            setViewDirection(SbVec3f(0, -0.57F, -0.82F));
+            // Down onto the rim at about 35 degrees above the billet's
+            // equator: enough of the top face to read a turned lay as
+            // circles rather than as an ellipse's worth of them, and
+            // enough wall left for a knurl. Stated about Z, because the
+            // billet stands about Z (see buildCylinder).
+            //
+            // aim() and not setViewDirection(), which derives the up
+            // vector from the direction alone: the rotation it picks is
+            // the shortest one from -Z, and for a direction tilted this
+            // far down that lands the camera's up pointing BELOW the
+            // horizon. The billet came out upside down, top face at the
+            // bottom of the frame.
+            aim(SbVec3f(0, -0.819F, -0.574F), SbVec3f(0, 0, 1));
         }
         viewAll();
         frame(shape == Shape::Sphere ? SphereFrame : CylinderFrame);
@@ -311,6 +330,63 @@ public:
     }
 
 private:
+    /// Point the camera along \a dir with \a up as the world up, which
+    /// is the part setViewDirection() leaves to chance.
+    void aim(const SbVec3f& dir, const SbVec3f& up)
+    {
+        SoCamera* camera = getSoRenderManager()->getCamera();
+        if (!camera) {
+            return;
+        }
+        // A camera looks down its own -Z with +Y up, so its basis in
+        // world terms is (right, up, backwards) and the rotation that
+        // carries it there has those three as its rows.
+        SbVec3f back = -dir;
+        back.normalize();
+        SbVec3f right = up.cross(back);
+        if (right.length() < 1.0e-6F) {
+            right = SbVec3f(1, 0, 0);
+        }
+        right.normalize();
+        const SbVec3f above = back.cross(right);
+        SbMatrix basis;
+        basis.makeIdentity();
+        for (int i = 0; i < 3; ++i) {
+            basis[0][i] = right[i];
+            basis[1][i] = above[i];
+            basis[2][i] = back[i];
+        }
+        camera->orientation.setValue(SbRotation(basis));
+    }
+
+    /// The rig, which is not the same question for the two shapes.
+    ///
+    /// A SPHERE presents every normal at once, so it always turns one
+    /// of them toward whatever the brightest thing in the environment
+    /// is: a single hard key is ideal, and gives the crisp highlight
+    /// that is most of how a metal reads apart from a dielectric at 32
+    /// pixels. Interior, and no exposure correction.
+    ///
+    /// A BILLET has two faces and they sample the environment in two
+    /// places, so one hard key lights one of them and misses the other.
+    /// Measured under Interior: the wall came out twice the top face
+    /// and 16 per cent of the blasted icon was clipped to white, which
+    /// is the sphere's virtue turned into the billet's problem. Studio
+    /// spreads the same total radiance over four sources including one
+    /// overhead, so both faces have something to return, and the
+    /// exposure buys back the headroom a mirror-bright metal needs when
+    /// it does find a source.
+    void lighting(Shape shape)
+    {
+        const bool sphere = shape == Shape::Sphere;
+        if (_envPreset) {
+            _envPreset->setValue(long(sphere ? 4 : 5));
+        }
+        if (_exposure) {
+            _exposure->setValue(sphere ? 1.0 : 0.80);
+        }
+    }
+
     /// State outright how much the camera takes in, overriding whatever
     /// viewAll() decided. Only meaningful for the orthographic camera
     /// the icons use, where that is one field.
@@ -352,6 +428,22 @@ private:
     SoNode* buildCylinder()
     {
         auto* root = new SoSeparator;
+        // STAND IT UP. SoCylinder turns about Y and the environment is
+        // Z-up, so without this the billet lies on its side in the only
+        // frame that matters for image based lighting: the top face's
+        // normal comes out HORIZONTAL, and the reflection of a camera
+        // looking 55 degrees down off a horizontal face goes 55 degrees
+        // DOWN -- into the ground. Measured, the two faces were exactly
+        // inverted: the wall reflected the sky and clipped, the top face
+        // reflected the floor and went dead, which is both of the things
+        // that looked wrong about these icons.
+        //
+        // The finish frames below stay as they are, stated about Y. They
+        // are read in object space (v_opos is a_position), which this
+        // transform is above.
+        auto* upright = new SoTransform;
+        upright->rotation.setValue(SbVec3f(1, 0, 0), float(M_PI) * 0.5F);
+        root->addChild(upright);
         auto* wall = new SoCylinder;
         wall->radius = CylinderRadius;
         wall->height = CylinderHeight;
@@ -372,19 +464,30 @@ private:
         // The top face's frame origin is the CENTRE of that face, which
         // is what a turned lay draws its circles about.
         //
-        // Its X runs at 45 degrees for a reason worth keeping. A machined
-        // face has no canonical X -- it is whatever direction the tool
-        // swept -- but the camera looks down the Y-Z plane and the light
-        // follows the camera, so a one-directional lay laid along Z tilts
-        // every normal in X alone, square to the only light there is, and
-        // shades as though the face were plain. Brushed and the straight
-        // knurl both vanished from the top face; the two-directional
-        // patterns beside them did not. Laid oblique, all four show.
-        constexpr float Diagonal = 0.70710678F;
+        // Its X runs OBLIQUE, and at 22.5 degrees rather than 45.
+        //
+        // A machined face has no canonical X -- it is whatever direction
+        // the tool swept -- but the lighting cares. Tilting a normal
+        // sideways to the view only swings the reflection in azimuth,
+        // and an environment graded in elevation does not change along
+        // that swing, so a lay square to the view shades as though the
+        // face were plain. That is why the angle is oblique at all:
+        // laid along an axis, brushed and the straight knurl vanished
+        // from the top face.
+        //
+        // 45 degrees fixed those two and broke the DIAMOND knurl, which
+        // is the one pattern that is not one train but two, crossing at
+        // a right angle. Laid over by 45 its trains land at 0 and 90 --
+        // both of the bad angles at once -- and the top face came out
+        // as one set of stripes with its other set invisible. 22.5 is
+        // oblique for a single train AND for a crossed pair, which no
+        // multiple of 45 can be.
+        constexpr float LayX = 0.92387953F;   // cos 22.5
+        constexpr float LayZ = 0.38268343F;   // sin 22.5
         setFrame(branch(root, top),
                  SbVec3f(0, CylinderHeight * 0.5F, 0), FramePlanar,
                  SbVec3f(0, 1, 0), 0.0F,
-                 SbVec3f(Diagonal, 0, Diagonal));
+                 SbVec3f(LayX, 0, LayZ));
         return root;
     }
 
@@ -422,9 +525,35 @@ private:
         set("Render_PBREnvBackground", false);
         set("Render_Matcap", false);
         set("Render_AO", false);
+
+        // Which environment and how much of it, stated here rather
+        // than inherited. These pictures ship, so they have to be
+        // reproducible on a machine whose preference says something
+        // else -- and the preference is exactly the kind of thing a
+        // user changes. The VALUES are per shape and set in setShape():
+        // a sphere and a flat-topped billet do not want the same rig.
+        _envPreset = static_cast<App::PropertyEnumeration*>(
+            _settings.addDynamicProperty("App::PropertyEnumeration",
+                                         "Render_PBREnvPreset", "Render",
+                                         nullptr, App::Prop_NoPersist));
+        // Must match View3DInventorViewer's list entry for entry: this
+        // is a second copy of the same enumeration, and setValue() on an
+        // index past its end does nothing at all -- silently, which is
+        // how the billet went on being lit by Interior through four
+        // rounds of tuning an environment it was never using.
+        static const char* kPresets[] =
+            {"Studio", "Gradient", "Overcast", "Sunset", "Interior",
+             "Light tent", nullptr};
+        _envPreset->setEnums(kPresets);
+        _exposure = static_cast<App::PropertyFloat*>(
+            _settings.addDynamicProperty("App::PropertyFloat",
+                                         "Render_Exposure", "Render",
+                                         nullptr, App::Prop_NoPersist));
     }
 
     App::PropertyContainer _settings;
+    App::PropertyEnumeration* _envPreset {nullptr};
+    App::PropertyFloat* _exposure {nullptr};
     /// Every appearance node in the scene: one for the sphere, one per
     /// face of the cylinder. They differ only in the frame they state.
     std::vector<Gui::SoFCRenderMaterial*> _render;
@@ -646,9 +775,14 @@ App::SurfaceFinish MaterialIcons::defaultFinish(uint8_t pattern)
     switch (pattern) {
         case App::SurfaceFinish::Knurl:
             // A diamond has to be big enough to read AS a diamond, so
-            // this is the coarsest of the lot.
-            finish.pitch = 0.650F;
-            finish.depth = 0.160F;
+            // this is still the coarsest of the lot -- but its period
+            // along the arc is the pitch times root two, so it draws
+            // half again as big as the number suggests, and at 0.65 it
+            // put barely three diamonds across the visible wall, which
+            // reads as a pattern of the billet rather than of the
+            // surface.
+            finish.pitch = 0.450F;
+            finish.depth = 0.115F;
             break;
         case App::SurfaceFinish::KnurlStraight:
             finish.pitch = 0.450F;

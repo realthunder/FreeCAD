@@ -43,6 +43,8 @@ _RenderParams = { param.name : param for param in RenderParams.Params }
 ParamGroup = (
     ('General', [_RenderParams[name] for name in (
         'Type',
+        'OutputTransform',
+        'Exposure',
     )]),
 
     ('Scene streaming', [_RenderParams[name] for name in (
@@ -67,6 +69,7 @@ ParamGroup = (
         'PBRMetallic',
         'PBRRoughness',
         'PBRFromSpecular',
+        'ShininessMapping',
         'PBREnvIntensity',
     )]),
 

@@ -9,9 +9,9 @@ General:
 AppearanceModels:
   BasicRendering:
     UUID: 'f006c7e4-35b7-43d5-bbf9-c5d572309e6e'
-    AmbientColor: "(0.0797, 0.0789, 0.0775, 1.0)"
-    DiffuseColor: "(0.1993, 0.1973, 0.1938, 1.0)"
+    AmbientColor: "(0.3127, 0.3112, 0.3085, 1.0)"
+    DiffuseColor: "(0.4837, 0.4815, 0.4775, 1.0)"
     EmissiveColor: "(0.0000, 0.0000, 0.0000, 1.0)"
     Shininess: "0.3000"
-    SpecularColor: "(0.7970, 0.7890, 0.7750, 1.0)"
+    SpecularColor: "(0.9048, 0.9008, 0.8937, 1.0)"
     Transparency: "0.0"

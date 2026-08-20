@@ -1463,8 +1463,9 @@ public:
     /// Tell a save which content this property refers to. One referrer name
     /// per SLOT, so the files land under readable names rather than under a
     /// number, and once per DISTINCT hash, because shared content is one
-    /// file with several referrers.
-    void noteTextureBlobs(FileBlobManager &manager, const BlobReferrer &referrer) const;
+    /// file with several referrers -- which is why the appearance names its
+    /// own referrers here instead of handing the collect pass one handle.
+    void collectBlobs(FileBlobManager &manager, const DocumentObject *object) const override;
     /// Take a restored blob into whichever slots name its hash
     void assignRestoredBlob(const FileBlobHandle &blob) override;
     /// The texture content has no schema 4 spelling: the maps themselves ride

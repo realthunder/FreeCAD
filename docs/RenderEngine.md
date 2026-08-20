@@ -759,9 +759,51 @@ PBR shading (`Render_PBR`) is lit by a prefiltered environment cubemap
 plus its irradiance SH, built once per view on the CPU and rebuilt when
 the source changes:
 
-- Default source is the built-in procedural studio environment (Z-up
-  ground/horizon/sky gradient + three light lobes), fixed so frames stay
-  deterministic.
+- Default source is a built-in **procedural environment**, computed on
+  the CPU and fixed so frames stay deterministic. `Render_PBREnvPreset`
+  picks which one: `Interior` (**default** -- one window and a ceiling
+  panel against a dark surround, the crispest key of the five),
+  `Studio` (four soft boxes on a dark surround), `Gradient` (the Z-up
+  ground/horizon/sky ramp plus three cosine lobes this engine had
+  before the others, kept so an older document can have its look
+  back), `Overcast`, `Sunset`, `Light tent`.
+
+  `Light tent` is the odd one and exists for a specific failure. Every
+  other preset here is a place with a FLOOR, so its lower hemisphere is
+  the darkest part of it -- and a standing cylinder's wall reflects
+  exactly that half, whatever the camera does, because a wall seen from
+  above the equator mirrors below the horizon. The wall of a machined
+  billet therefore goes dead under all of them. This one is bright in
+  both hemispheres and carries panel seams at every elevation, which
+  matters twice over: brightness alone still leaves a vertical groove
+  invisible, since a groove that tilts its normal only in azimuth needs
+  something to swing the reflection ACROSS.
+
+  All five are scaled to integrate to the **same mean radiance** over
+  the sphere (0.565 in luminance, Gradient's). That is load bearing:
+  choosing a preset changes contrast and structure and NOT how bright
+  the scene comes out, so one exposure suits all of them. The scale
+  constants in `envRadianceProcedural` were measured by integrating
+  each shape over a uniform sphere -- edit a shape and its constant is
+  stale.
+
+  Why more than one: Gradient spans barely one stop peak-to-floor
+  (about 12:1) and has no edges anywhere, so a smooth dielectric
+  reflecting it shows the same flat grey at *every* roughness and
+  nothing in the frame reads as a light source. Studio is about 370:1
+  with rectangular sources, which is what makes a polished surface look
+  polished. Rectangular and not a cosine lobe on purpose -- the edge is
+  the point.
+
+  `Overcast` weights its sky to the **zenith**, about 8:1 over the
+  horizon where CIE's standard overcast distribution says 3:1. Same
+  mean radiance as the rest, so the same light arrives -- it just
+  arrives from higher up, which is what keeps the band immediately
+  above the horizon dark enough to be a backdrop. An evenly bright
+  dome cannot: forced to the common mean it is bright everywhere,
+  including the part of it that fills the frame behind the model, and
+  a near-white appearance like Plaster then has nothing to stand
+  against.
 - `Render_PBREnvImage` replaces it with a user image. A 2:1 image is
   read as equirectangular (lat-long), anything squarer as a GL sphere
   map — the convention Coin's `SoTextureCoordinateEnvironment` uses, so
@@ -771,7 +813,12 @@ the source changes:
   procedural environment.
 - `Render_PBREnvBackground` draws the environment itself as the view
   background instead of the gradient quad, so reflective surfaces
-  visibly mirror their surroundings. The background pass keeps the scene
+  visibly mirror their surroundings. **On by default.** It gates the
+  background pass ALONE -- the environment lights the scene either way
+  -- so turning it off is how to have image based lighting over the
+  ordinary background colour or gradient, which is a common enough
+  thing to want that the Shading popup carries it as a checkbox beside
+  the preset. The background pass keeps the scene
   matrices for it (`fs_fc_env` reconstructs per-pixel world directions
   from `u_proj`/`u_invView`); orthographic cameras get a fixed 45°
   virtual field of view since they have no per-pixel ray fan.

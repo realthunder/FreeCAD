@@ -17,7 +17,7 @@
 #                    sidecars instead of the named-view manifest, then
 #                    diff <dir> against the new captures when done
 #   --cams a,b,c     named views (default iso,front,top; see render_verify.py)
-#   --modes 0,1,..   RenderDebug_ViewMode list (default 0,1,2,3,4)
+#   --modes 0,1,..   debug view mode list (default 0,1,2,3,4; 0 = beauty)
 #   --gpu            real-GPU leg: WSLg wayland + Mesa d3d12 (OPENS A WINDOW
 #                    ON THE DESKTOP; default is headless xvfb = llvmpipe,
 #                    which verifies logic but not device-GPU precision)

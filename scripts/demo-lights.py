@@ -1,7 +1,7 @@
 """Simple demo scene for the bgfx render-cache backend: two colored point
 lights (Render_Light bulbs, one warm / one cool) casting shadows
 (Render_LightShadow) from a pillar and a cross-beam onto a matte floor.
-The directional scene light is dimmed (SUN env, default 0.15) so the two
+The directional scene light is dimmed (SUN env, default 0.35) so the two
 bulb shadows dominate. Run it via scripts/renderer-desktop.sh or
 scripts/renderer-serve.sh.
 
@@ -44,7 +44,7 @@ try:
     # View/Shadow* keys beside it are still the shadow map's and the
     # ground's.
     FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render") \
-        .SetFloat("LightIntensity", float(os.environ.get("SUN", "0.15")))
+        .SetFloat("LightIntensity", float(os.environ.get("SUN", "0.35")))
     # The floor slab is the scene's ground; the draw style's auto ground
     # plane would only blow up the view-fit bounds.
     view.SetBool("ShadowShowGround", False)
@@ -124,12 +124,20 @@ try:
     svo.addProperty("App::PropertyFloat", "Render_Metallic").Render_Metallic = 0.9
     svo.addProperty("App::PropertyFloat", "Render_Roughness").Render_Roughness = 0.3
 
+    # The intensities were raised when the engine became colour managed
+    # (Render OutputTransform). They had been set against albedos that
+    # read about two and a half times too reflective -- a mid grey
+    # reflects 18 per cent of what falls on it, not the 45 per cent its
+    # number looks like -- so the same lamps that used to blow their
+    # pools out to flat white suddenly lit almost nothing. Nothing about
+    # the lamps changed; the floor stopped pretending to be nearly
+    # white, and the numbers here caught up with it.
     def make_light(obj, color):
         lvo = obj.ViewObject
         lvo.ShapeColor = color   # emitter body color = light color
         lvo.addProperty("App::PropertyBool", "Render_Light").Render_Light = True
         lvo.addProperty("App::PropertyFloat", "Render_LightIntensity").Render_LightIntensity = \
-            float(os.environ.get("BULB_INTENSITY", "1.2"))
+            float(os.environ.get("BULB_INTENSITY", "2.5"))
         lvo.addProperty("App::PropertyFloat", "Render_LightRange").Render_LightRange = \
             float(os.environ.get("BULB_RANGE", "0"))
         lvo.addProperty("App::PropertyBool", "Render_LightShadow").Render_LightShadow = (
@@ -175,7 +183,7 @@ try:
         try:
             v = FreeCADGui.activeDocument().activeView()
             v.RenderShadow_SmoothBorder = int(os.environ.get("SHADOWSMOOTH", "40"))
-            v.Render_LightIntensity = float(os.environ.get("SUN", "0.15"))
+            v.Render_LightIntensity = float(os.environ.get("SUN", "0.35"))
             if "VOLDENSITY" in os.environ:
                 v.Render_VolumetricDensity = float(os.environ["VOLDENSITY"])
             FreeCADGui.SendMsgToActiveView("ViewFit")

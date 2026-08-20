@@ -127,6 +127,17 @@ public:
                         YAML::Node& yamlroot,
                         const QString& path);
 
+    /** Parse one .FCMat file into a card belonging to no library.
+     *
+     * Every other route into the loader files what it reads under a library,
+     * because that is where cards come from. A card stored in a document does
+     * not: it is content, and its library, directory, filename, name and uuid
+     * are provenance that lives on the property referring to it
+     * (docs/MaterialStorage.md sec 4.3). Returns null if the file cannot be
+     * read or parsed; the caller decides what an unreadable card means.
+     */
+    static std::shared_ptr<Material> getMaterialFromFile(const QString& path);
+
 private:
     MaterialLoader();
 

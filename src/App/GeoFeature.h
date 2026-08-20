@@ -27,6 +27,7 @@
 #include <memory>
 #include "DocumentObject.h"
 #include "MappedElement.h"
+#include "Material.h"
 #include "PropertyGeo.h"
 #include "ComplexGeoData.h"
 
@@ -186,6 +187,17 @@ public:
 
     /// Return the higher level element names of the given element
     virtual std::vector<Data::IndexedName> getHigherElements(const char *name, bool silent=false) const;
+
+    /** @brief Appearance of the feature's material, as an App::Material
+     *
+     * The material itself lives in the Materials module, which the Gui module
+     * cannot reach directly. These two virtuals are the bridge: a feature that
+     * carries a material card reports its appearance here, and the view
+     * provider reads it from the App side without linking Materials.
+     */
+    virtual App::Material getMaterialAppearance() const;
+    /// Set the feature's material appearance from an App::Material
+    virtual void setMaterialAppearance(const App::Material& material);
 
 protected:
     void onChanged(const Property* prop) override;
