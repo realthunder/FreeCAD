@@ -3114,6 +3114,17 @@ struct GpuTextureArray
                               std::size_t(Render::MaxFaceTexturePalette)));
         if (!numLayers)
             return;
+        // bgfx makes a plain 2D texture out of a one-layer request --
+        // `1 < numLayers` is what picks GL_TEXTURE_2D_ARRAY -- and the
+        // mesh shader samples this as an array (SAMPLER2DARRAY
+        // s_texFace). So a palette holding a SINGLE image used to bind
+        // a non-array texture to an array sampler and draw nothing at
+        // all: every one-image case, which is most of them (a marking
+        // on one face, and every glTF whose mesh names one base colour
+        // image). Pad to two slices, exactly as the white stand-in
+        // above already does; the pad is white, and no face names it
+        // because u_faceTexParams.w still states the real count.
+        const uint16_t numSlices = std::max<uint16_t>(numLayers, 2);
         // The array's own size: the largest layer, bounded. A palette
         // whose images have not all arrived still gets its array now --
         // the ones that have are drawn, and `placeholder` brings the
@@ -3139,20 +3150,21 @@ struct GpuTextureArray
         // bgfx has no runtime mip generation, so the levels are built
         // on the CPU exactly as GpuTexture::upload builds them.
         handle = bgfx::createTexture2D(uint16_t(w), uint16_t(h), true,
-                                       numLayers,
+                                       numSlices,
                                        bgfx::TextureFormat::RGBA8, flags);
         if (!bgfx::isValid(handle))
             return;
         std::vector<uint8_t> level;
         std::vector<uint8_t> next;
-        for (uint16_t i = 0; i < numLayers; ++i) {
+        for (uint16_t i = 0; i < numSlices; ++i) {
             // Back to the full size for every layer: the mip loop below
             // walks this buffer down to 1x1, and the next layer's
-            // resample writes a whole level into it.
+            // resample writes a whole level into it. A padding slice
+            // keeps the white it is filled with.
             level.assign(size_t(w) * h * 4, uint8_t(255));
-            const auto &e = palette.entries[i];
-            if (e && usable(*e))
-                resample(*e, w, h, level.data());
+            const auto *e = i < numLayers ? &palette.entries[i] : nullptr;
+            if (e && *e && usable(**e))
+                resample(**e, w, h, level.data());
             bgfx::updateTexture2D(handle, i, 0, 0, 0, uint16_t(w),
                                   uint16_t(h),
                                   bgfx::copy(level.data(),
