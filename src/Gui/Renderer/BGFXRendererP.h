@@ -5750,6 +5750,41 @@ public:
     int outputTransform = 0;
     /// Render::OutputConfig::exposure for this frame.
     float outputExposure = 1.0f;
+
+    /// What the sized targets were BUILT with: a floating point scene
+    /// colour, or the 8-bit one.
+    bool hdrScene = false;
+    /// What the frame would like them built with -- set before init(),
+    /// the way shadowSizeWanted is. Read through hdrSceneWanted(),
+    /// never directly: this is the wish, that is the answer.
+    bool hdrWanted = false;
+
+    /// Should the scene colour be floating point?
+    ///
+    /// Only while colour managed, and only where the device can render
+    /// to it. Two things want it and neither is optional once the
+    /// pipeline works in light: an 8-bit target holds LINEAR light,
+    /// which spends most of its codes on highlights nobody can
+    /// distinguish and bands the darks, and it clips at one, which
+    /// throws away exactly the headroom the exposure stage exists to
+    /// bring back.
+    ///
+    /// ! Also false once the present target has failed to allocate. A
+    /// floating point scene colour is only ever seen through that
+    /// target's encode -- the desktop blit reads it -- so without one
+    /// the frame would go to the screen as raw linear half-floats. This
+    /// makes the next init() fall back rather than needing a failure
+    /// path of its own.
+    bool hdrSceneWanted() const {
+        if (!hdrWanted || effectFailed[EffectPresent])
+            return false;
+        const uint16_t need = BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER
+            | (msaaSamples > 1 ? BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER_MSAA
+                               : 0);
+        const uint16_t got =
+            bgfx::getCaps()->formats[bgfx::TextureFormat::RGBA16F];
+        return (got & need) == need;
+    }
     /// Is this frame's pipeline colour managed -- authored colours
     /// decoded on the way in, the finished frame encoded on the way
     /// out? One question, so every unpack site asks it the same way.

@@ -159,11 +159,16 @@ bool BGFXRenderer::Private::render(const QColor &col,
     const bool progChanged =
         _BGFXLib.standaloneSamples != view->msaaSamples
         || _BGFXLib.shaderGeneration != view->shaderGen;
+    // What the scene colour's format follows. Off the frame's config
+    // rather than view->outputTransform, which a debug view mode zeroes
+    // -- looking at the depth buffer must not reallocate the targets.
+    view->hdrWanted = outconf.transform != Render::OutputConfig::None;
     if (progChanged
             || _BGFXLib.standaloneWidth != view->width
             || _BGFXLib.standaloneHeight != view->height
             || _BGFXLib.effectResolution != view->effectScale
             || _BGFXLib.ssaoResolution != view->ssaoScale
+            || view->hdrScene != view->hdrSceneWanted()
             || warmupReinit) {
         if (_BGFXLib.standaloneWidth != view->width
                 || _BGFXLib.standaloneHeight != view->height)
@@ -192,12 +197,16 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // view->targetsFailed says the last attempt found the handle pool
     // full, and a bailed frame never reaches bgfx::frame(), which is
     // the only place bgfx reclaims what the attempt destroyed.
+    // As above: the scene colour's format is part of what the sized
+    // targets ARE, so changing it is a rebuild like a resize.
+    view->hdrWanted = outconf.transform != Render::OutputConfig::None;
     if (progChanged
             || _BGFXLib.viewWidth(widget) != int(view->width)
             || _BGFXLib.viewHeight(widget) != int(view->height)
             || (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
             || _BGFXLib.effectResolution != view->effectScale
-            || _BGFXLib.ssaoResolution != view->ssaoScale)
+            || _BGFXLib.ssaoResolution != view->ssaoScale
+            || view->hdrScene != view->hdrSceneWanted())
         view->init(!progChanged);
 
     if (!bgfx::isValid(view->bgfxFbo))

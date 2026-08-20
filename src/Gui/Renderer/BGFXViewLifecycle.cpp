@@ -767,7 +767,18 @@ void BGFXView::init(bool keepShared)
 
     // The scene color stays sampleable for the water surface
     // refraction copy (and future screen-space effects).
-    bgfxColor = createTexture(bgfx::TextureFormat::RGBA8, flags, true);
+    //
+    // Floating point while colour managed: what this target holds is
+    // then LINEAR light, and eight bits of linear light spend most of
+    // their codes on highlights the eye cannot separate while banding
+    // the darks it can. It also clips at one, which would throw away
+    // exactly the headroom the exposure stage exists to recover. The
+    // answer is resolved once, here, so every consumer sees one format
+    // for the life of these targets.
+    hdrScene = hdrSceneWanted();
+    const bgfx::TextureFormat::Enum sceneFormat = hdrScene
+        ? bgfx::TextureFormat::RGBA16F : bgfx::TextureFormat::RGBA8;
+    bgfxColor = createTexture(sceneFormat, flags, true);
     //GL_DEPTH24_STENCIL8
     // NOTE: the MSAA levels are an enum in the RT flag nibble, not
     // orthogonal bits — masking BGFX_TEXTURE_RT out of them would
@@ -1269,8 +1280,11 @@ void BGFXView::init(bool keepShared)
     // Water surface refraction: the scene color copies into a
     // linearly-sampled texture the surface shader offsets into.
     // Independent of the volumetric resource sets.
+    // Matched to the scene colour it copies -- an 8-bit copy of a
+    // floating point scene would clip the refraction back down.
     sceneCopyTex = bgfx::createTexture2D(width, height, false, 1,
-        bgfx::TextureFormat::RGBA8,
+        hdrScene ? bgfx::TextureFormat::RGBA16F
+                 : bgfx::TextureFormat::RGBA8,
         BGFX_TEXTURE_RT
         | BGFX_SAMPLER_MIP_POINT
         | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
