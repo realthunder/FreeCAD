@@ -41,7 +41,27 @@
 #include "DrawUtil.h"
 
 
+#include <cctype>
+
 using namespace TechDraw;
+
+namespace
+{
+// A .pat file may end with a DOS EOF marker (0x1a), and its lines with CR.
+// Neither is part of the data, so strip trailing whitespace and control
+// characters before a line is inspected. Taken from upstream.
+void trimPatternLineEnd(std::string& line)
+{
+    while (!line.empty()) {
+        unsigned char ch = static_cast<unsigned char>(line.back());
+        if (std::isspace(ch) || std::iscntrl(ch)) {
+            line.pop_back();
+            continue;
+        }
+        break;
+    }
+}
+}  // namespace
 
 double LineSet::getMinX()
 {
@@ -329,6 +349,7 @@ bool  PATLineSpec::findPatternStart(std::ifstream& inFile, std::string& parmName
     while (inFile.good() ){
          std::string line;
          std::getline(inFile, line);
+         trimPatternLineEnd(line);
          std::string nameTag = line.substr(0, 1);
          std::string patternName;
          std::size_t commaPos;
@@ -359,6 +380,7 @@ std::vector<std::string> PATLineSpec::loadPatternDef(std::ifstream& inFile)
     while ( inFile.good() ){
         std::string line;
         std::getline(inFile, line);
+        trimPatternLineEnd(line);
         std::string nameTag = line.substr(0, 1);
         if ((nameTag == ";")  ||
              (nameTag == " ") ||

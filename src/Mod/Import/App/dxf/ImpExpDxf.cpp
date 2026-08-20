@@ -347,6 +347,13 @@ void ImpExpDxfRead::OnReadText(const double* point,
                     ApplyGuiStyles(
                         static_cast<App::FeaturePython*>(builtText->getDocumentObjectPtr()));
                 }
+                else if (PyErr_Occurred()) {
+                    // Draft.make_text() raised. Report and clear it: a pending
+                    // exception left set here surfaces later, in whatever
+                    // unrelated code next checks, and takes that entity with it.
+                    PyErr_Print();
+                    PyErr_Clear();
+                }
             }
             // We own all the return values so we must release them.
             Py_DECREF(placement);
@@ -427,6 +434,11 @@ void ImpExpDxfRead::OnReadDimension(const double* s,
                                     lineLocation));
             if (builtDim != nullptr) {
                 ApplyGuiStyles(static_cast<App::FeaturePython*>(builtDim->getDocumentObjectPtr()));
+            }
+            else if (PyErr_Occurred()) {
+                // As above: clear it rather than let it surface elsewhere.
+                PyErr_Print();
+                PyErr_Clear();
             }
         }
         // We own all the return values so we must release them.
