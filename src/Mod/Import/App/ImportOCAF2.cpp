@@ -65,6 +65,7 @@
 #include <App/Link.h>
 #include <App/Part.h>
 #include <Base/Console.h>
+#include <Base/Base64.h>
 #include <Base/FileInfo.h>
 #include <Base/Parameter.h>
 #include <Mod/Part/App/FeatureCompound.h>
@@ -276,6 +277,10 @@ struct ImportOCAF2::ColorInfo {
     /// faceMaterials carry raw PBR slots (every contributing material had
     /// the PBR definition) -- the appearance they land in goes PBR mode
     bool pbrMaterials = false;
+    /// at least one face material carries an image of its own, so the
+    /// appearance -- not a whole-object texture property -- is where
+    /// this shape's base colour images live
+    bool faceImages = false;
     App::Color faceColor;
     App::Color edgeColor;
     bool hasFaceColor = false;
@@ -341,6 +346,35 @@ bool ImportOCAF2::getRenderMaterial(TDF_Label label, RenderMaterial& mat)
     }
     return extractRenderMaterial(visMat, mat);
 }
+
+namespace {
+/// A glTF texture's own encoded bytes, base64 -- what a per-face
+/// material carries an image AS (App::Material::image).
+///
+/// The whole-object texture properties are PropertyFileIncluded and can
+/// name the temp file the reader extracts, because the property copies
+/// it into the document. A per-face image has no such property behind
+/// it: App::Material::imagePath is persisted verbatim, so a temp file
+/// would be gone by the time the document is reopened. The bytes travel
+/// instead, once per face that wears them.
+std::string encodeTexture(const Handle(Image_Texture)& tex)
+{
+    if (tex.IsNull()) {
+        return {};
+    }
+    std::ostringstream str(std::ios::out | std::ios::binary);
+    // The file name is the message text OCCT names on failure; nothing
+    // is written to disk on this overload.
+    if (!tex->WriteImage(str, "gltf_face_image")) {
+        return {};
+    }
+    const std::string raw = str.str();
+    if (raw.empty()) {
+        return {};
+    }
+    return Base::base64_encode(raw.data(), raw.size());
+}
+} // namespace
 
 bool ImportOCAF2::extractRenderMaterial(const Handle(XCAFDoc_VisMaterial)& visMat,
                                         RenderMaterial& mat)
@@ -538,7 +572,12 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
         }
     }
 
-    auto convert = [allPbr](const Handle(XCAFDoc_VisMaterial)& visMat) -> App::Material {
+    // The base colour images, keyed by the texture the reader shares
+    // per glTF image: several materials may name the same one, and the
+    // encoding is a copy of the whole file.
+    std::map<const Image_Texture*, std::string> encoded;
+    auto convert = [&](const Handle(XCAFDoc_VisMaterial)& visMat,
+                       bool withImage) -> App::Material {
         if (allPbr) {
             // The raw factors: metallic into the specular alpha under a
             // white tint, roughness into the shininess slot -- exact, no
@@ -563,6 +602,18 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
                 : visMat->ConvertToCommonMaterial();
             if (common.IsDefined) {
                 mat.emissiveColor = Tools::convertColor(Quantity_ColorRGBA(common.EmissiveColor));
+            }
+            // The face's own picture. Only when the faces really do
+            // carry materials one by one: a single whole-object
+            // material states its texture through the Render_* file
+            // properties, and stating it twice would modulate twice.
+            if (withImage && !pbr.BaseColorTexture.IsNull()) {
+                const Image_Texture* key = pbr.BaseColorTexture.get();
+                auto it = encoded.find(key);
+                if (it == encoded.end()) {
+                    it = encoded.emplace(key, encodeTexture(pbr.BaseColorTexture)).first;
+                }
+                mat.image = it->second;
             }
             return mat;
         }
@@ -601,13 +652,13 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
         for (const auto& v : faceMatList) {
             auto it = converted.find(v.second.get());
             if (it == converted.end()) {
-                it = converted.emplace(v.second.get(), convert(v.second)).first;
+                it = converted.emplace(v.second.get(), convert(v.second, true)).first;
             }
             mats[v.first] = it->second;
         }
     }
     else {
-        App::Material mat = convert(wholeMat);
+        App::Material mat = convert(wholeMat, false);
         // A Phong whole-object material matters only for its emissive --
         // see the gate below. A PBR one always matters: its metallic and
         // roughness are authored factors the renderer shades natively.
@@ -639,6 +690,9 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
         }
     }
     colors.pbrMaterials = allPbr;
+    colors.faceImages =
+        std::any_of(mats.begin(), mats.end(),
+                    [](const App::Material& m) { return !m.image.empty(); });
 
     // Diffuse and transparency ride the resolved face colours (the reader
     // mirrors each material's base colour into the colour labels, and a
@@ -654,14 +708,16 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
 }
 
 // glTF meshes may carry a distinct visualization material per face
-// (each glTF primitive imports as one face). A single object holds a
-// single Render_* material set, so when the face sub shape labels
-// resolve to more than one render-relevant material - or to one that
-// does not cover every face - the shape splits into one feature per
-// material group under the same group container an assembly uses
-// (links to the label then reference the container). Color-only
-// faces form their own group and keep the per-face color path; a
-// single material covering the whole shape keeps the plain
+// (each glTF primitive imports as one face). Most of such a material
+// the faces of one object can now each say for themselves - colour,
+// metallic, roughness, and since the per-face texture palette the base
+// colour image too - but the remaining maps (normal, emissive,
+// occlusion, metallic-roughness) are still one per draw and live in
+// the object's Render_* properties. So when the face sub shape labels
+// resolve to more than one of THOSE - or to one that does not cover
+// every face - the shape splits into one feature per group under the
+// same group container an assembly uses (links to the label then
+// reference the container). Everything else keeps the plain
 // one-feature import below.
 struct ImportOCAF2::MaterialGroups
 {
@@ -684,21 +740,27 @@ void ImportOCAF2::scanMaterialGroups(TDF_Label label,
         std::vector<int> faceGroup(numFaces, 0);
         std::vector<RenderMaterial> &groupMats = groups.mats;
         std::vector<std::string> &groupNames = groups.names;
-        // Group by material content EXCLUDING the base color: materials
-        // that only differ in color merge into one group (the per-face
-        // color path keeps the distinction), so a multi-color mesh with
-        // uniform factors does not split. Texture identity is the
-        // Image_Texture handle - the reader shares one per glTF texture.
-        using MatKey = std::tuple<float, float, const void*, const void*,
-                                  const void*, const void*, const void*>;
+        // Group by what a face CANNOT say for itself, which is the
+        // whole reason a shape ever splits: the maps that are one per
+        // draw. Everything else a glTF material carries is expressible
+        // face by face and merges into one group --
+        //
+        //   base colour        -> the face colours (always was)
+        //   metallic/roughness -> the appearance's per-face PBR slots
+        //   base colour image  -> the appearance's per-face image
+        //
+        // so a mesh whose primitives differ only in those keeps one
+        // feature. Texture identity is the Image_Texture handle - the
+        // reader shares one per glTF image.
+        using MatKey = std::tuple<const void*, const void*, const void*,
+                                  const void*>;
         auto matKey = [](const XCAFDoc_VisMaterialPBR& pbr) -> MatKey {
-            return std::make_tuple(pbr.Metallic, pbr.Roughness,
-                                   (const void*)pbr.BaseColorTexture.get(),
-                                   (const void*)pbr.MetallicRoughnessTexture.get(),
+            return std::make_tuple((const void*)pbr.MetallicRoughnessTexture.get(),
                                    (const void*)pbr.NormalTexture.get(),
                                    (const void*)pbr.EmissiveTexture.get(),
                                    (const void*)pbr.OcclusionTexture.get());
         };
+        const MatKey noMaps {nullptr, nullptr, nullptr, nullptr};
         std::map<MatKey, int> matGroups;
         bool grouped = false;
         for (int i = 1; i <= seq.Length(); ++i) {
@@ -715,8 +777,14 @@ void ImportOCAF2::scanMaterialGroups(TDF_Label label,
             if (visMat.IsNull() || !visMat->HasPbrMaterial()) {
                 continue;
             }
+            const MatKey key = matKey(visMat->PbrMaterial());
+            if (key == noMaps) {
+                // Nothing here needs a draw of its own: the face keeps
+                // group 0 and says all of it itself.
+                continue;
+            }
             int group = 0;
-            auto it = matGroups.find(matKey(visMat->PbrMaterial()));
+            auto it = matGroups.find(key);
             if (it != matGroups.end()) {
                 group = it->second;
             }
@@ -730,7 +798,7 @@ void ImportOCAF2::scanMaterialGroups(TDF_Label label,
                             ? std::string()
                             : visMat->RawName()->ToCString());
                 }
-                matGroups.emplace(matKey(visMat->PbrMaterial()), group);
+                matGroups.emplace(key, group);
             }
             if (!group) {
                 continue;

@@ -26,7 +26,10 @@
 #include "PreCompiled.h"
 
 #include "ImportOCAFGui.h"
+#include <algorithm>
+
 #include <App/PropertyFile.h>
+#include <App/PropertyStandard.h>
 #include <Gui/Application.h>
 #include <Gui/ViewProviderGeometryObject.h>
 #include <Gui/ViewProviderLink.h>
@@ -81,6 +84,27 @@ void ImportOCAFGui::applyFaceMaterials(Part::Feature* part,
     }
     else {
         vp->ShapeAppearance.setValues(mats);
+    }
+
+    // Per-face images arrive UV mapped -- a glTF mesh carries its own
+    // texture coordinates and the reader keeps them. The render engine
+    // lays a face image out in millimetres of object space by default
+    // (a printed decal, on CAD geometry that has no UVs), so say so:
+    // Render_FaceTextureScale zero means the mesh's own coordinates.
+    if (std::any_of(mats.begin(), mats.end(), [](const App::Material& m) {
+            return !m.image.empty() || !m.imagePath.empty();
+        })) {
+        auto prop = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            vp->getPropertyByName("Render_FaceTextureScale"));
+        if (!prop) {
+            prop = static_cast<App::PropertyFloat*>(vp->addDynamicProperty(
+                "App::PropertyFloat", "Render_FaceTextureScale", "Render",
+                "Size of one tile of a per-face image, in millimetres of "
+                "object space; 0 = the mesh's own texture coordinates"));
+        }
+        if (prop) {
+            prop->setValue(0.0);
+        }
     }
 }
 
@@ -175,8 +199,13 @@ void ImportOCAFGui::applyRenderMaterial(Part::Feature* part,
         }
         prop->setValue(path.c_str());
     };
-    setFile("Render_BaseColorTexture", mat.baseColorTexture,
-            "Base color texture image of the object");
+    // The base colour image, unless the faces carry their own: those
+    // are the more specific statement and the object-wide one would
+    // modulate on top of them.
+    if (vp->ShapeAppearance.getImages().empty()) {
+        setFile("Render_BaseColorTexture", mat.baseColorTexture,
+                "Base color texture image of the object");
+    }
     setFile("Render_NormalMap", mat.normalMapTexture,
             "Tangent space normal map (or grayscale height map) of the object");
     setFile("Render_EmissiveMap", mat.emissiveTexture,
