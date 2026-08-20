@@ -212,9 +212,19 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // writes its material alpha over it, the background keeps the
     // alpha it was given. On screen the value is moot (the widget
     // composites opaque; the plain GL path clears alpha 0 there).
-    uint32_t clearColor = (uint32_t(col.red()) << 24)
-        | (uint32_t(col.green()) << 16)
-        | (uint32_t(col.blue()) << 8)
+    // A flat background is a hardware CLEAR, not a draw, so nothing
+    // downstream would decode it -- and the present pass encodes it
+    // like everything else. Decode it here so the colour a person
+    // picked is the colour that comes out.
+    auto clearChannel = [&](int v) {
+        float c = float(v) / 255.0f;
+        if (view->colorManaged())
+            c = decodeSRGB(c);
+        return uint32_t(bx::clamp(c * 255.0f + 0.5f, 0.0f, 255.0f));
+    };
+    uint32_t clearColor = (clearChannel(col.red()) << 24)
+        | (clearChannel(col.green()) << 16)
+        | (clearChannel(col.blue()) << 8)
         | uint32_t(col.alpha());
     if (getenv("FC_BGFX_DEBUG_CLEAR"))
         clearColor = 0xff0000ff;
@@ -1159,7 +1169,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
         float ll = std::sqrt(lv[0]*lv[0] + lv[1]*lv[1] + lv[2]*lv[2]);
         for (int j = 0; j < 3; ++j)
             view->lightDirView[j] = ll > 0.0f ? lv[j] / ll : lv[j];
-        unpackColor(light.color, view->lightColorI);
+        unpackAuthoredColor(light.color, view->lightColorI,
+                            view->colorManaged());
         for (int j = 0; j < 3; ++j)
             view->lightColorI[j] *= light.intensity;
         // Spot light: position in camera view space, cone cutoff
@@ -1230,7 +1241,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     unit(view->viewLightView[n]);
                 view->viewLightView[n][3] =
                     l.spot ? 3.0f : (l.positional ? 2.0f : 1.0f);
-                unpackColor(l.color, view->viewLightColorI[n]);
+                unpackAuthoredColor(l.color, view->viewLightColorI[n],
+                                    view->colorManaged());
                 for (int j = 0; j < 3; ++j) {
                     view->viewLightColorI[n][j] *= l.intensity;
                     view->viewLightAtt[n][j] = l.attenuation[j];
@@ -1601,7 +1613,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
             dens = 3.0f / diag;
         }
         float color[4];
-        unpackColor(mat.diffuse, color);
+        unpackAuthoredColor(mat.diffuse, color, view->colorManaged());
         float sigmaS = 0.35f * dens;
         for (int j = 0; j < 3; ++j)
             waterSigma[slot][j] = sigmaS + dens * (1.0f - color[j]);
@@ -2208,7 +2220,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     + cy * vm[4 + j] + cz * vm[8 + j] + vm[12 + j];
             view->localLightView[li][3] = 1.0f / (range * range);
             float color[4];
-            unpackColor(mat.diffuse, color);
+            unpackAuthoredColor(mat.diffuse, color, view->colorManaged());
             for (int j = 0; j < 3; ++j)
                 view->localLightColorI[li][j] = color[j] * intensity;
             view->localLightColorI[li][3] = 0.0f;
@@ -3547,6 +3559,13 @@ bool BGFXRenderer::Private::render(const QColor &col,
 
     ++view->frame;
     view->drawcount = 0;
+    // The submission phase starts here. A bgfx uniform holds its
+    // value for the rest of the frame once set, so setting the
+    // colour space ONCE, ahead of every submit, is what covers the
+    // draws that never pass through submit() -- the background
+    // quad, the overlays, the section caps. The hot paths set it
+    // again per draw rather than depend on that reasoning.
+    view->setColorSpaceUniform();
     view->bufferDeniedSubmits = view->bufferDeniedMeshes = 0;
     view->autozoomScale = autozoomScale;
     if (pbrActive && pbrconf.envBackground)

@@ -853,6 +853,10 @@ void BGFXView::init(bool keepShared)
     ensureUniform(s_texScene, "s_texScene", bgfx::UniformType::Sampler);
     ensureUniform(u_outputParams, "u_outputParams",
                   bgfx::UniformType::Vec4);
+    // The other half of the same setting: the vertex stages decode
+    // the authored 8-bit colour streams through it (fc_color.sh).
+    ensureUniform(u_colorSpace, "u_colorSpace",
+                  bgfx::UniformType::Vec4);
 
     ensureProgram(m_progMesh, "vs_fc_mesh", "fs_fc_mesh");
     ensureProgram(m_progFlat, "vs_fc_flat", "fs_fc_flat");

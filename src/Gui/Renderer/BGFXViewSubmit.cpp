@@ -40,7 +40,7 @@ void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,
         texParams[1] = mat.texture->numComponents == 2
                 || mat.texture->numComponents == 4
             ? 1.0f : 0.0f;
-        unpackColor(mat.texture->blendColor, blend);
+        unpackAuthoredColor(mat.texture->blendColor, blend, colorManaged());
     }
     if (mapped && mat.emissivemap)
         texParams[2] = 1.0f;
@@ -97,6 +97,21 @@ void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,
                  : m_whiteTex);
 }
 
+void BGFXView::setColorSpaceUniform()
+{
+    // What the VERTEX stages need to know: whether the 8-bit colour
+    // streams they carry are authored (sRGB) or already linear.
+    //
+    // ! Called EXACTLY ONCE per frame, at the head of the view's
+    // submission phase. A bgfx uniform holds its value for every
+    // later draw in the frame, and setting one twice for the same
+    // draw call is an assert, not a redundancy -- which is what a
+    // second belt-and-braces call from the draw paths tripped.
+    const float cs[4] = {colorManaged() ? 1.0f : 0.0f,
+                         0.0f, 0.0f, 0.0f};
+    bgfx::setUniform(u_colorSpace, cs);
+}
+
 void BGFXView::setAmbientUniform(const Render::Material &mat)
 {
     // GL's ambient term is the material's ambient colour times
@@ -108,8 +123,8 @@ void BGFXView::setAmbientUniform(const Render::Material &mat)
     float amb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     if (viewAmbientFed) {
         float m[4], g[4];
-        unpackColor(mat.ambient, m);
-        unpackColor(viewAmbient, g);
+        unpackAuthoredColor(mat.ambient, m, colorManaged());
+        unpackAuthoredColor(viewAmbient, g, colorManaged());
         for (int i = 0; i < 3; ++i)
             amb[i] = m[i] * g[i];
         amb[3] = 1.0f;
@@ -125,7 +140,7 @@ void BGFXView::setAmbientUniform(const Render::Material &mat)
     // metallic/roughness has no meaningful ambient slot to read anyway.
     float envAmb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     if (viewAmbientFed) {
-        unpackColor(viewAmbient, envAmb);
+        unpackAuthoredColor(viewAmbient, envAmb, colorManaged());
         envAmb[3] = 1.0f;
     }
     bgfx::setUniform(u_envAmbient, envAmb);
@@ -408,9 +423,9 @@ bool BGFXView::submitInstanced(const Render::DrawCall &draw, const float *data,
     std::memcpy(idb.data, data, size_t(count) * InstanceStride);
 
     float color[4], emissive[4], specular[4], params[4];
-    unpackColor(mat.diffuse, color);
-    unpackColor(mat.emissive, emissive);
-    unpackColor(mat.specular, specular);
+    unpackAuthoredColor(mat.diffuse, color, colorManaged());
+    unpackAuthoredColor(mat.emissive, emissive, colorManaged());
+    unpackAuthoredColor(mat.specular, specular, colorManaged());
     specular[3] = mat.shininess;
     // Never per-face material here: those draws are excluded from
     // instancing, and the flag must not leak from a previous draw.
@@ -817,9 +832,9 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     }
 
     float color[4], emissive[4], specular[4], params[4];
-    unpackColor(mat.diffuse, color);
-    unpackColor(mat.emissive, emissive);
-    unpackColor(mat.specular, specular);
+    unpackAuthoredColor(mat.diffuse, color, colorManaged());
+    unpackAuthoredColor(mat.emissive, emissive, colorManaged());
+    unpackAuthoredColor(mat.specular, specular, colorManaged());
     specular[3] = mat.shininess;
     // u_matEmissive.w: per-face material flag — the fragment stage
     // shades emissive/specular/shininess from the v_color1/v_color2

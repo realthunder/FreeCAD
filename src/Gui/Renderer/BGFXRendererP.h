@@ -3235,6 +3235,30 @@ inline void unpackColor(uint32_t rgba, float *out)
     out[3] = (rgba & 0xff) / 255.0f;
 }
 
+/// sRGB -> linear (IEC 61966-2-1); the inverse of what fs_fc_present
+/// writes, and the C++ twin of the shaders' fcDecodeSRGB.
+inline float decodeSRGB(float c)
+{
+    return c <= 0.04045f ? c / 12.92f
+                         : std::pow((c + 0.055f) / 1.055f, 2.4f);
+}
+
+/// An AUTHORED colour -- one a person picked, which makes it a display
+/// number and so sRGB-encoded. Decoded to linear when the pipeline is
+/// colour managed, because everything downstream of here is arithmetic
+/// on light (Render::OutputConfig; fc_color.sh does the same for the
+/// 8-bit vertex streams this cannot reach).
+///
+/// ! Alpha is left alone: it is coverage, never light.
+inline void unpackAuthoredColor(uint32_t rgba, float *out, bool managed)
+{
+    unpackColor(rgba, out);
+    if (!managed)
+        return;
+    for (int i = 0; i < 3; ++i)
+        out[i] = decodeSRGB(out[i]);
+}
+
 // FNV-1a accumulation for the shadow-map caster-set hash.
 inline void hashBytes(uint64_t &h, const void *data, size_t len)
 {
@@ -3998,6 +4022,7 @@ public:
         fn(s_texEnv, LifeProgram);
         fn(u_pbrParams, LifeProgram);
         fn(u_outputParams, LifeProgram);
+        fn(u_colorSpace, LifeProgram);
         fn(u_matcapParams, LifeProgram);
         fn(u_envSH, LifeProgram);
         fn(s_texBump, LifeProgram);
@@ -4178,8 +4203,12 @@ public:
     /// disc of a sphere/light-probe image, so a roughly square image is
     /// read that way; a 2:1 image is the usual lat-long panorama. The
     /// image is Y-up in world terms: Z is up in FreeCAD.
+    /// \a managed selects the photo's decode: the exact inverse of
+    /// the output encode when the pipeline is colour managed, and
+    /// otherwise the squaring these frames were always drawn with.
     static void sampleEnvImage(const Render::TextureImage &img,
-                               const float d[3], float out[3]);
+                               const float d[3], float out[3],
+                               bool managed);
 
     static void envRadianceProcedural(const float d[3], float out[3]);
 
@@ -4654,6 +4683,9 @@ public:
     /// which is the material's own ambient colour times the
     /// traversal's global ambient. Falls back to the legacy flat floor
     /// when the feed carries no Coin lighting.
+    /// Tell the vertex stages whether the authored colour streams
+    /// they carry need decoding (fc_color.sh).
+    void setColorSpaceUniform();
     void setAmbientUniform(const Render::Material &mat);
 
     /// Appearance/placement of one stencil outline.
@@ -5689,6 +5721,7 @@ public:
     bgfx::UniformHandle s_texEnv = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_pbrParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_outputParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_colorSpace = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_matcapParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_envSH = BGFX_INVALID_HANDLE;
     float envSH[kEnvSH][4];
@@ -5715,6 +5748,12 @@ public:
     int pbrShininessMapping = 0;
     /// Render::OutputConfig::Transform for this frame.
     int outputTransform = 0;
+    /// Is this frame's pipeline colour managed -- authored colours
+    /// decoded on the way in, the finished frame encoded on the way
+    /// out? One question, so every unpack site asks it the same way.
+    bool colorManaged() const {
+        return outputTransform != Render::OutputConfig::None;
+    }
     float pbrRoughness = 0.0f; // <= 0: derive from the material shininess
     float pbrEnvIntensity = 1.0f;
     bgfx::UniformHandle s_texBump = BGFX_INVALID_HANDLE;

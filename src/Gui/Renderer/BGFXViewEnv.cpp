@@ -26,14 +26,15 @@ void BGFXView::envRadiance(const float d[3], float out[3]) const
 {
     if (m_envImage && m_envImage->width > 0 && m_envImage->height > 0
             && m_envImage->numComponents > 0) {
-        sampleEnvImage(*m_envImage, d, out);
+        sampleEnvImage(*m_envImage, d, out, colorManaged());
         return;
     }
     envRadianceProcedural(d, out);
 }
 
 void BGFXView::sampleEnvImage(const Render::TextureImage &img,
-                           const float d[3], float out[3])
+                           const float d[3], float out[3],
+                           bool managed)
 {
     float u, v;
     if (img.width >= img.height * 3 / 2) {
@@ -85,10 +86,16 @@ void BGFXView::sampleEnvImage(const Render::TextureImage &img,
     for (int i = 0; i < 3; ++i) {
         float a = c00[i] + (c10[i] - c00[i]) * tx;
         float b = c01[i] + (c11[i] - c01[i]) * tx;
-        // sRGB-ish decode: the shading math is linear, and an 8-bit
-        // photo is gamma encoded.
+        // The shading math is linear and an 8-bit photo is gamma
+        // encoded, so the photo is decoded here either way. WHICH
+        // decode follows the pipeline: a colour-managed frame owes the
+        // exact inverse of what it encodes on the way out, so that an
+        // environment drawn as the visible background comes back out of
+        // the round trip as the photo it was. Unmanaged, the squaring
+        // this always used stays -- it is what those frames were drawn
+        // with, and nothing re-encodes them.
         float lin = a + (b - a) * ty;
-        out[i] = lin * lin;
+        out[i] = managed ? decodeSRGB(lin) : lin * lin;
     }
 }
 
