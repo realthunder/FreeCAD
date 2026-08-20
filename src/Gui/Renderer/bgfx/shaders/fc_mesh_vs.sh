@@ -100,7 +100,10 @@ void main()
 		u_instParams.x > 0.5 ? a_color0 : i_data4);
 	v_color1 = fcAuthoredColor4(a_color1);
 	v_color2 = fcAuthoredColor4(a_color2);
-	v_findex = a_color3.xyz;
+	// The palette indices ride a NORMALIZED byte attribute (see
+	// MatVertex): scale back to the index itself. Rounded, so a
+	// byte that came back as n/255 lands exactly on n.
+	v_findex = floor(a_color3.xyz * 255.0 + 0.5);
 	v_vpos = mul(u_view, wpos).xyz;
 	gl_Position.z += (u_params.w + fcPolygonOffsetSlope(v_vpos, v_normal))
 		* gl_Position.w;
@@ -124,7 +127,10 @@ void main()
 	// normalized bytes (the attribute is unnormalized) - the same
 	// u_matEmissive.w gate decides whether the fragment stage reads
 	// them.
-	v_findex = a_color3.xyz;
+	// The palette indices ride a NORMALIZED byte attribute (see
+	// MatVertex): scale back to the index itself. Rounded, so a
+	// byte that came back as n/255 lands exactly on n.
+	v_findex = floor(a_color3.xyz * 255.0 + 0.5);
 #ifdef TEXTURE
 	// GL texture matrix on (s, t, 0, 1); the per-fragment projective
 	// divide collapses to a per-vertex one (exact for affine matrices).

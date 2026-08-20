@@ -2079,8 +2079,17 @@ struct ColorVertex
 // bake (MeshData::materials) as three rgba8 attributes — Color1 the
 // emissive, Color2 the specular with quantized shininess in alpha, and
 // Color3 the surface finish palette index (Material::finishpalette) in
-// its first byte, UNNORMALIZED so the shader reads the index itself
-// rather than a fraction of 255.
+// Color3 the per-face palette indices (finish, projection frame, texture
+// layer) one per byte.
+//
+// All three are NORMALIZED, including the index byte, and the vertex
+// shader scales that one back up. Not a style choice: bgfx binds an
+// unnormalized integer attribute with glVertexAttribIPointer on
+// GLES3/WebGL2 (renderer_gl.cpp, `!isFloat(type) && !normalized`),
+// which WebGL2 then refuses against the shader's `vec4 a_color3` --
+// "vertex shader input type does not match the type of the bound
+// vertex attribute", and EVERY draw carrying the stream is dropped.
+// Desktop GL takes the other branch, so it never showed there.
 // Bound only for meshes that carry the stream; every other mesh-program
 // draw leaves the attributes unbound, which bgfx resolves to the GL
 // default attribute — finite values the shader multiplies out, since
@@ -2100,7 +2109,7 @@ struct MatVertex
             .begin()
             .add(bgfx::Attrib::Color1, 4, bgfx::AttribType::Uint8, true)
             .add(bgfx::Attrib::Color2, 4, bgfx::AttribType::Uint8, true)
-            .add(bgfx::Attrib::Color3, 4, bgfx::AttribType::Uint8, false)
+            .add(bgfx::Attrib::Color3, 4, bgfx::AttribType::Uint8, true)
             .end();
     };
 
