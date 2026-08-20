@@ -28,6 +28,15 @@ target_sources(
 
 setup_qt_test(InventorBuilder)
 
+# The copy-on-write containers are a header over the standard library
+# alone, so they test without linking anything of FreeCAD's.
+add_executable(COWData_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/COWData.cpp)
+target_include_directories(COWData_tests_run PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/src)
+target_link_libraries(COWData_tests_run gtest_main)
+add_test(NAME COWData_tests_run COMMAND COWData_tests_run)
+
 # OutputStream and InputStream are one contract in two halves, and the
 # halves are written far enough apart to have drifted. Header-only over
 # FreeCADBase, so an executable of its own.

@@ -88,16 +88,6 @@ typedef SoFCRenderCache::Material Material;
 typedef SoFCRenderCache::VertexCacheEntry VertexCacheEntry;
 typedef SoFCRenderCache::VertexCacheArray VertexCacheArray;
 
-#ifdef _FC_RENDER_MEM_TRACE
-SbFCMemUnitStats *SbFCMemUnitStats::get()
-{
-  static SbFCMemUnitStats *inst;
-  if (!inst)
-    inst = new SbFCMemUnitStats;
-  return inst;
-}
-#endif
-
 typedef SoFCRenderCache::CacheEntry CacheEntry;
 
 static FC_COIN_THREAD_LOCAL std::vector<std::unique_ptr<SoFCRenderCache::VertexCacheMap> > VertexCacheMaps;

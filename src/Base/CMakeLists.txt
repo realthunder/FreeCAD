@@ -304,6 +304,7 @@ SET(FreeCADBase_HPP_SRCS
     BoundBox.h
     Builder3D.h
     Color.h
+    COWData.h
     Console.h
     ConsoleObserver.h
     Converter.h
