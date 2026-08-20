@@ -878,8 +878,8 @@ Document::Document(const char* documentName)
     int num = static_cast<int>(Base::UnitSystem::NumUnitSystemTypes);
     std::vector<std::string> enumValsAsVector;
     for (int i = 0; i < num; i++) {
-        QString item = Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i));
-        enumValsAsVector.emplace_back(item.toStdString());
+        enumValsAsVector.emplace_back(
+            Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i)));
     }
     UnitSystem.setEnums(enumValsAsVector);
     // Get the preferences/General unit system as the default for a new document
@@ -957,18 +957,20 @@ Document::Document(const char* documentName)
             "Prefer binary format when saving object data.\n"
             "This can result in smaller file but bad for version control.");
     PreferBinary.setValue(DocumentParams::getPreferBinary());
-    // 4, not getCurrentSchemaVersion(). Schema 5 is this fork's format --
-    // shared blobs and default blocks under an <FCDocument> root no other
-    // FreeCAD opens -- and an incompatibility like that is chosen, never
-    // inherited from a constructor. The save dialog is where a user chooses
-    // it, per document, past a warning that stays on screen.
-    ADD_PROPERTY_TYPE(SaveSchemaVersion,(4),"Format",Prop_None,
+    // getCurrentSchemaVersion(), i.e. 5: a document created here is this
+    // fork's own format (user ruling 2026-08-20). What that costs is stated
+    // rather than inherited -- Gui::Document warns explicitly, once, before
+    // the first compact save of a file, and the choice is per document from
+    // then on. A document RESTORED from a file keeps the format that file
+    // was written in instead of this default; see Restore().
+    ADD_PROPERTY_TYPE(SaveSchemaVersion,(getCurrentSchemaVersion()),"Format",Prop_None,
             "Document schema version to write.\n"
-            "4 is upstream's format and is readable by every FreeCAD\n"
-            "version. 5 is the compact format: smaller and faster to load,\n"
-            "but readable only by builds of this fork that know it -- no\n"
-            "other FreeCAD, upstream included, will open the file. Only\n"
-            "versions this build can still write are accepted.");
+            "5 is this fork's compact format and the default for a new\n"
+            "document: smaller and faster to load, but readable only by\n"
+            "builds of this fork that know it -- no other FreeCAD, upstream\n"
+            "included, will open the file. Lower it to 4, upstream's format,\n"
+            "to keep the document readable everywhere. Only versions this\n"
+            "build can still write are accepted.");
     {
         const auto &versions = getWritableSchemaVersions();
         static App::PropertyIntegerConstraint::Constraints schemaRange;
@@ -1184,6 +1186,20 @@ void Document::Restore(Base::XMLReader &reader)
     // that is kept in Application.
     std::string FilePath = FileName.getValue();
     std::string DocLabel = Label.getValue();
+
+    // The format this file already is, as this document's cap -- set BEFORE
+    // its own properties are read, so a file that states SaveSchemaVersion
+    // still overrides it with what it states. A file written before the
+    // property existed, or by an upstream FreeCAD, would otherwise inherit
+    // the class default (5) and be converted to a format nothing else opens
+    // by the next plain Save. Restoring is not the place to make that
+    // choice: the document keeps the format it arrived in, and changing it
+    // stays something a user does.
+    if (scheme > 0) {
+        const auto &writable = getWritableSchemaVersions();
+        SaveSchemaVersion.setValue(std::min<long>(std::max<long>(scheme,
+                        writable.front()), writable.back()));
+    }
 
     // read the Document Properties, when reading in Uid the transient directory gets renamed automatically
     PropertyContainer::Restore(reader);
@@ -3478,10 +3494,12 @@ void Document::collectFileBlobs(const std::vector<App::DocumentObject*>& objs) c
         std::vector<Property*> props;
         container->getPropertyList(props);
         for (auto prop : props) {
-            if (auto file = Base::freecad_dynamic_cast<PropertyFileIncluded>(prop)) {
-                // The referrer is what names the file the content is saved
-                // to, and this pass is where the property is known.
-                manager.noteReferenced(file->getBlob(), FileBlobManager::referrerOf(file));
+            // Any property that stores its value as blob content, not just
+            // the one that did when this pass was written: a cast to a
+            // concrete class is a list of what gets saved, and a property
+            // left off it loses its content silently.
+            if (auto owner = dynamic_cast<BlobReferrerProperty*>(prop)) {
+                owner->collectBlobs(manager, nullptr);
             }
         }
     };

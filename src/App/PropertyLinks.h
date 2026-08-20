@@ -24,7 +24,7 @@
 #ifndef APP_PROPERTYLINKS_H
 #define APP_PROPERTYLINKS_H
 
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 #include <boost/ptr_container/ptr_vector.hpp>
 
 #include <cinttypes>
@@ -583,7 +583,7 @@ public:
 
     void setSilentRestore(bool enable);
 
-    boost::signals2::signal<void(const std::string &, const std::string &)> signalUpdateElementReference;
+    fastsignals::signal<void(const std::string &, const std::string &)> signalUpdateElementReference;
 
 protected:
     void hasSetValue() override;

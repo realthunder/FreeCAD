@@ -24,7 +24,7 @@
 #ifndef PARTGUI_ViewProviderSubShapeBinder_H
 #define PARTGUI_ViewProviderSubShapeBinder_H
 
-#include <boost/signals2.hpp>
+#include <fastsignals/signal.h>
 #include <Gui/ViewProviderPythonFeature.h>
 #include <Mod/Part/Gui/ViewProvider.h>
 
@@ -71,7 +71,7 @@ private:
         QPixmap pixmap;
     };
     mutable std::map<QByteArray, IconInfo> iconMap;
-    std::vector<boost::signals2::scoped_connection> iconChangeConns;
+    std::vector<fastsignals::scoped_connection> iconChangeConns;
     int _dropID = 0;
 };
 

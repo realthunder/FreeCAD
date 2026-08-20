@@ -265,6 +265,15 @@ public:
 
     void initDockWindows(bool show);
 
+    /** Whether the combo view dock carries the model tree.
+     *
+     * False once the tree and property views have docks of their own, which
+     * leaves the combo view holding nothing but the task panel.
+     */
+    static bool comboViewShowsModel();
+    /// The side the combo view dock is parked on by default.
+    static Qt::DockWidgetArea comboViewDockArea();
+
     bool isRestoringWindowState() const;
 
 public Q_SLOTS:

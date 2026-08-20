@@ -438,7 +438,7 @@ App::Color ViewProviderViewPart::prefSectionColor()
 App::Color ViewProviderViewPart::prefHighlightColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("HighlightColor", 0x00000000));
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("HighlightColor", 0x000000FF));
     return fcColor;
 }
 

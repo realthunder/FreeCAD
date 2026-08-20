@@ -231,5 +231,5 @@ PROPERTY_SOURCE_TEMPLATE(Gui::ViewProviderPartPython, Gui::ViewProviderPart)
 /// @endcond
 
 // explicit template instantiation
-template class GuiExport ViewProviderPythonFeatureT<ViewProviderPart>;
+template class GuiExport ViewProviderFeaturePythonT<ViewProviderPart>;
 }

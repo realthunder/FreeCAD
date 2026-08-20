@@ -27,7 +27,7 @@
 #include <string>
 #include <App/ObjectIdentifier.h>
 #include <QPalette>
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 
 
 namespace App {
@@ -79,9 +79,9 @@ protected:
 protected:
     void expressionChange(const App::ObjectIdentifier& id);
     void objectDeleted(const App::DocumentObject&);
-    boost::signals2::scoped_connection expressionchanged;
-    boost::signals2::scoped_connection objectdeleted;
-    boost::signals2::scoped_connection docClosed;
+    fastsignals::scoped_connection expressionchanged;
+    fastsignals::scoped_connection objectdeleted;
+    fastsignals::scoped_connection docClosed;
 
 protected:
     ExpressionLabel* iconLabel{nullptr};

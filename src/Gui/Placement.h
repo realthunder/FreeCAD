@@ -142,7 +142,7 @@ Q_SIGNALS:
     void placementChanged(const QVariant &, bool, bool);
 
 private:
-    using Connection = boost::signals2::connection;
+    using Connection = fastsignals::connection;
     Ui_Placement* ui;
     QSignalMapper* signalMapper;
     Connection connectAct;

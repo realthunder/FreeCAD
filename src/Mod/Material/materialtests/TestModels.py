@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 #**************************************************************************
 #   Copyright (c) 2023 David Carter <dcarter@davidcarter.ca>              *
 #                                                                         *
@@ -20,34 +22,54 @@
 #   USA                                                                   *
 #**************************************************************************
 
-# import FreeCAD
-from os import walk
+"""
+Test module for FreeCAD material models
+"""
+
 import unittest
 import FreeCAD
-import Material
+import Materials
 
 parseQuantity = FreeCAD.Units.parseQuantity
-# import locale
-# locale.setpreferredencoding("UTF8")
 
 class ModelTestCases(unittest.TestCase):
+    """
+    Test class for FreeCAD material models
+    """
     def setUp(self):
-        self.ModelManager = Material.ModelManager()
-        self.uuids = Material.UUIDs()
+        """ Setup function to initialize test data """
+        self.ModelManager = Materials.ModelManager()
+        self.uuids = Materials.UUIDs()
 
     def testModelManager(self):
+        """ Ensure we can access ModelManager member functions """
         self.assertIn("ModelLibraries", dir(self.ModelManager))
         self.assertIn("Models", dir(self.ModelManager))
 
     def testUUIDs(self):
+        """ Verify the common UUIDs are defined and correct """
         self.assertTrue(self.uuids.Father, "9cdda8b6-b606-4778-8f13-3934d8668e67")
         self.assertTrue(self.uuids.MaterialStandard, "1e2c0088-904a-4537-925f-64064c07d700")
 
+        self.assertTrue(self.uuids.ArrudaBoyce, "e10d00de-c7de-4e59-bcdd-058c2ea19ec6")
         self.assertTrue(self.uuids.Density, "454661e5-265b-4320-8e6f-fcf6223ac3af")
+        self.assertTrue(self.uuids.Hardness, "3d1a6141-d032-4d82-8bb5-a8f339fff8ad")
         self.assertTrue(self.uuids.IsotropicLinearElastic, "f6f9e48c-b116-4e82-ad7f-3659a9219c50")
         self.assertTrue(self.uuids.LinearElastic,"7b561d1d-fb9b-44f6-9da9-56a4f74d7536")
+        self.assertTrue(self.uuids.MooneyRivlin, "beeed169-7770-4da0-ab67-c9172cf7d23d")
+        self.assertTrue(self.uuids.NeoHooke, "569ebc58-ef29-434a-83be-555a0980d505")
+        self.assertTrue(self.uuids.OgdenN1, "a2634a2c-412f-468d-9bec-74ae5d87a9c0")
+        self.assertTrue(self.uuids.OgdenN2, "233540bb-7b13-4f49-ac12-126a5c82cedf")
+        self.assertTrue(self.uuids.OgdenN3, "a917d6b8-209f-429e-9972-fe4bbb97af3f")
         self.assertTrue(self.uuids.OgdenYld2004p18, "3ef9e427-cc25-43f7-817f-79ff0d49625f")
         self.assertTrue(self.uuids.OrthotropicLinearElastic, "b19ccc6b-a431-418e-91c2-0ac8c649d146")
+        self.assertTrue(self.uuids.PolynomialN1, "285a6042-0f0c-4a36-a898-4afadd6408ce")
+        self.assertTrue(self.uuids.PolynomialN2, "4c2fb7b2-5121-4d6f-be0d-8c5970c9e682")
+        self.assertTrue(self.uuids.PolynomialN3, "e83ada22-947e-4beb-91e7-482a16f5ba77")
+        self.assertTrue(self.uuids.ReducedPolynomialN1, "f8052a3c-db17-42ea-b2be-13aa5ef30730")
+        self.assertTrue(self.uuids.ReducedPolynomialN2, "c52b5021-4bb8-441c-80d4-855fce9de15e")
+        self.assertTrue(self.uuids.ReducedPolynomialN3, "fa4e58b4-74c7-4292-8e79-7d5fd232fb55")
+        self.assertTrue(self.uuids.Yeoh, "cd13c492-21a9-4578-8191-deec003e4c01")
 
         self.assertTrue(self.uuids.Fluid, "1ae66d8c-1ba1-4211-ad12-b9917573b202")
 
@@ -85,6 +107,7 @@ class ModelTestCases(unittest.TestCase):
         self.assertTrue(self.uuids.TestModel, "34d0583d-f999-49ba-99e6-aa40bd5c3a6b")
 
     def testModelLoad(self):
+        """ Test that the Density model has been loaded correctly """
         density = self.ModelManager.getModel(self.uuids.Density)
         self.assertIsNotNone(density)
         self.assertEqual(density.Name, "Density")
@@ -97,3 +120,220 @@ class ModelTestCases(unittest.TestCase):
         self.assertIn("URL", dir(prop))
         self.assertIn("Units", dir(prop))
         self.assertEqual(prop.Name, "Density")
+
+    def testTestModelCompleteness(self):
+        """ Test that the Test model has been loaded correctly """
+        model = self.ModelManager.getModel(self.uuids.TestModel)
+        self.assertIsNotNone(model)
+        self.assertEqual(model.Name, "Test Model")
+        self.assertEqual(model.UUID, "34d0583d-f999-49ba-99e6-aa40bd5c3a6b")
+        self.assertIn("TestString", model.Properties)
+        self.assertEqual(len(model.Properties), 17)
+        prop = model.Properties["TestString"]
+        self.assertIn("Description", dir(prop))
+        self.assertIn("Name", dir(prop))
+        self.assertIn("Type", dir(prop))
+        self.assertIn("URL", dir(prop))
+        self.assertIn("Units", dir(prop))
+        self.assertEqual(prop.Name, "TestString")
+        self.assertEqual(prop.Type, "String")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "A String")
+        prop = model.Properties["TestURL"]
+        self.assertEqual(prop.Name, "TestURL")
+        self.assertEqual(prop.Type, "URL")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "A URL")
+        prop = model.Properties["TestList"]
+        self.assertEqual(prop.Name, "TestList")
+        self.assertEqual(prop.Type, "List")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "A List")
+        prop = model.Properties["TestFileList"]
+        self.assertEqual(prop.Name, "TestFileList")
+        self.assertEqual(prop.Type, "FileList")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "A List of file paths")
+        prop = model.Properties["TestImageList"]
+        self.assertEqual(prop.Name, "TestImageList")
+        self.assertEqual(prop.Type, "ImageList")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "A List of embedded images")
+        prop = model.Properties["TestInteger"]
+        self.assertEqual(prop.Name, "TestInteger")
+        self.assertEqual(prop.Type, "Integer")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "A Integer")
+        prop = model.Properties["TestFloat"]
+        self.assertEqual(prop.Name, "TestFloat")
+        self.assertEqual(prop.Type, "Float")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "A Float")
+        prop = model.Properties["TestBoolean"]
+        self.assertEqual(prop.Name, "TestBoolean")
+        self.assertEqual(prop.Type, "Boolean")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "A Boolean")
+        prop = model.Properties["TestColor"]
+        self.assertEqual(prop.Name, "TestColor")
+        self.assertEqual(prop.Type, "Color")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "A Color")
+        prop = model.Properties["TestFile"]
+        self.assertEqual(prop.Name, "TestFile")
+        self.assertEqual(prop.Type, "File")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "A File")
+        prop = model.Properties["TestSVG"]
+        self.assertEqual(prop.Name, "TestSVG")
+        self.assertEqual(prop.Type, "SVG")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "An SVG")
+        prop = model.Properties["TestImage"]
+        self.assertEqual(prop.Name, "TestImage")
+        self.assertEqual(prop.Type, "Image")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "An Image")
+        prop = model.Properties["TestQuantity"]
+        self.assertEqual(prop.Name, "TestQuantity")
+        self.assertEqual(prop.Type, "Quantity")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "kg/m^3")
+        self.assertEqual(prop.Description, "A Quantity")
+        prop = model.Properties["TestMultiLineString"]
+        self.assertEqual(prop.Name, "TestMultiLineString")
+        self.assertEqual(prop.Type, "MultiLineString")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "A string that spans multiple lines")
+
+        prop = model.Properties["TestArray2D"]
+        self.assertEqual(prop.Name, "TestArray2D")
+        self.assertEqual(prop.Type, "2DArray")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "2 Dimensional array showing density with temperature\n")
+        self.assertEqual(len(prop.Columns), 2)
+        col = prop.Columns[0]
+        self.assertIn("Description", dir(col))
+        self.assertIn("Name", dir(col))
+        self.assertIn("Type", dir(col))
+        self.assertIn("URL", dir(col))
+        self.assertIn("Units", dir(col))
+        self.assertEqual(col.Name, "Temperature")
+        self.assertEqual(col.Type, "Quantity")
+        self.assertEqual(col.URL, "")
+        self.assertEqual(col.Units, "C")
+        self.assertEqual(col.Description, "Temperature")
+        col = prop.Columns[1]
+        self.assertEqual(col.Name, "Density")
+        self.assertEqual(col.Type, "Quantity")
+        self.assertEqual(col.URL, "https://en.wikipedia.org/wiki/Density")
+        self.assertEqual(col.Units, "kg/m^3")
+        self.assertEqual(col.Description, "Density in [FreeCAD Density unit]")
+
+        prop = model.Properties["TestArray2D3Column"]
+        self.assertEqual(prop.Name, "TestArray2D3Column")
+        self.assertEqual(prop.Type, "2DArray")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "2 Dimensional array showing density and initial yield stress with temperature\n")
+        self.assertEqual(len(prop.Columns), 3)
+        col = prop.Columns[0]
+        self.assertEqual(col.Name, "Temperature")
+        self.assertEqual(col.Type, "Quantity")
+        self.assertEqual(col.URL, "")
+        self.assertEqual(col.Units, "C")
+        self.assertEqual(col.Description, "Temperature")
+        col = prop.Columns[1]
+        self.assertEqual(col.Name, "Density")
+        self.assertEqual(col.Type, "Quantity")
+        self.assertEqual(col.URL, "https://en.wikipedia.org/wiki/Density")
+        self.assertEqual(col.Units, "kg/m^3")
+        self.assertEqual(col.Description, "Density in [FreeCAD Density unit]")
+        col = prop.Columns[2]
+        self.assertEqual(col.Name, "InitialYieldStress")
+        self.assertEqual(col.Type, "Quantity")
+        self.assertEqual(col.URL, "")
+        self.assertEqual(col.Units, "kPa")
+        self.assertEqual(col.Description, "Saturation stress for Voce isotropic hardening [FreeCAD Pressure unit]\n")
+
+        prop = model.Properties["TestArray3D"]
+        self.assertEqual(prop.Name, "TestArray3D")
+        self.assertEqual(prop.Type, "3DArray")
+        self.assertEqual(prop.URL, "")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "3 Dimensional array showing stress and strain as a function of temperature\n")
+        self.assertEqual(len(prop.Columns), 3)
+        col = prop.Columns[0]
+        self.assertEqual(col.Name, "Temperature")
+        self.assertEqual(col.Type, "Quantity")
+        self.assertEqual(col.URL, "")
+        self.assertEqual(col.Units, "C")
+        self.assertEqual(col.Description, "Temperature")
+        col = prop.Columns[1]
+        self.assertEqual(col.Name, "Stress")
+        self.assertEqual(col.Type, "Quantity")
+        self.assertEqual(col.URL, "")
+        self.assertEqual(col.Units, "MPa")
+        self.assertEqual(col.Description, "Stress")
+        col = prop.Columns[2]
+        self.assertEqual(col.Name, "Strain")
+        self.assertEqual(col.Type, "Quantity")
+        self.assertEqual(col.URL, "")
+        self.assertEqual(col.Units, "MPa")
+        self.assertEqual(col.Description, "Strain")
+
+    def testModelInheritance(self):
+        """ Test that the inherited models have been loaded correctly """
+        model = self.ModelManager.getModel(self.uuids.LinearElastic)
+        self.assertIsNotNone(model)
+        self.assertEqual(model.Name, "Linear Elastic")
+        self.assertEqual(model.UUID, "7b561d1d-fb9b-44f6-9da9-56a4f74d7536")
+        self.assertIn("Density", model.Properties)
+        prop = model.Properties["Density"]
+        self.assertEqual(prop.Name, "Density")
+        self.assertEqual(prop.Type, "Quantity")
+        self.assertEqual(prop.URL, "https://en.wikipedia.org/wiki/Density")
+        self.assertEqual(prop.Units, "kg/m^3")
+        self.assertEqual(prop.Description, "Density in [FreeCAD Density unit]")
+        prop = model.Properties["BulkModulus"]
+        self.assertEqual(prop.Name, "BulkModulus")
+        self.assertEqual(prop.DisplayName, "Bulk Modulus")
+        self.assertEqual(prop.Type, "Quantity")
+        self.assertEqual(prop.URL, "https://en.wikipedia.org/wiki/Bulk_modulus")
+        self.assertEqual(prop.Units, "kPa")
+        self.assertEqual(prop.Description, "Bulk modulus in [FreeCAD Pressure unit]")
+        prop = model.Properties["PoissonRatio"]
+        self.assertEqual(prop.Name, "PoissonRatio")
+        self.assertEqual(prop.DisplayName, "Poisson Ratio")
+        self.assertEqual(prop.Type, "Float")
+        self.assertEqual(prop.URL, "https://en.wikipedia.org/wiki/Poisson%27s_ratio")
+        self.assertEqual(prop.Units, "")
+        self.assertEqual(prop.Description, "Poisson's ratio [unitless]")
+        prop = model.Properties["ShearModulus"]
+        self.assertEqual(prop.Name, "ShearModulus")
+        self.assertEqual(prop.DisplayName, "Shear Modulus")
+        self.assertEqual(prop.Type, "Quantity")
+        self.assertEqual(prop.URL, "https://en.wikipedia.org/wiki/Shear_modulus")
+        self.assertEqual(prop.Units, "kPa")
+        self.assertEqual(prop.Description, "Shear modulus in [FreeCAD Pressure unit]")
+        prop = model.Properties["YoungsModulus"]
+        self.assertEqual(prop.Name, "YoungsModulus")
+        self.assertEqual(prop.DisplayName, "Young's Modulus")
+        self.assertEqual(prop.Type, "Quantity")
+        self.assertEqual(prop.URL, "https://en.wikipedia.org/wiki/Young%27s_modulus")
+        self.assertEqual(prop.Units, "kPa")
+        self.assertEqual(prop.Description, "Young's modulus (or E-Module) in [FreeCAD Pressure unit]")

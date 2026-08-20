@@ -1169,7 +1169,8 @@ WorkbenchTabWidget::WorkbenchTabWidget(WorkbenchGroup* wb, QWidget* parent)
                         || boost::equals(Name, "WorkbenchTabIconSize"))
                     timer.start(100);
             }
-        });
+        },
+        fastsignals::advanced_tag {});
 
     timer.setSingleShot(true);
     connect(&timer, &QTimer::timeout, [this]() {

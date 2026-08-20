@@ -23,7 +23,7 @@
 #ifndef GUI_TASKVIEW_TaskWrapParameters_H
 #define GUI_TASKVIEW_TaskWrapParameters_H
 
-#include <boost/signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include <Gui/TaskView/TaskView.h>
 #include <Gui/TaskView/TaskDialog.h>
@@ -53,7 +53,7 @@ protected:
 private:
     QWidget* proxy;
     Ui_TaskWrapParameters* ui;
-    boost::signals2::scoped_connection connRecompute;
+    fastsignals::scoped_connection connRecompute;
     bool busy = false;
 };
 

@@ -81,7 +81,7 @@
 
 // Boost
 #include <boost_graph_adjacency_list.hpp>
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/bind/bind.hpp>
 #include <boost/core/ignore_unused.hpp>

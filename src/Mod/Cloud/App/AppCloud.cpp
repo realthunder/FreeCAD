@@ -1439,7 +1439,7 @@ bool Cloud::Module::cloudRestore(const char* BucketName)
         doc = GetApplication().newDocument();
     // clean up if the document is not empty
     // !TODO: mind exceptions while restoring!
-    boost::signals2::scoped_connection conn =
+    fastsignals::scoped_connection conn =
         doc->signalLinkXsetValue.connect(std::bind(&Cloud::Module::LinkXSetValue, this, sp::_1));
 
     doc->clearUndos();

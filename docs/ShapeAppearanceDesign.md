@@ -1680,10 +1680,13 @@ Against that, the three encodings:
   short-circuits on `uuid` (7.3).
 
   ⚠️ **And "the default save carries it" was not true as written.**
-  `SaveSchemaVersion` defaults to **4**, deliberately (`Document.cpp`
-  ~960: schema 5 is an incompatibility a user chooses per document, never
-  one inherited from a constructor), so the default save is a compatible
-  encoding and a finish would have vanished from every ordinary document.
+  `SaveSchemaVersion` defaulted to **4** when this was written, and a
+  compatible encoding has nowhere to put a finish, so one would have
+  vanished from every ordinary document. (**Superseded 2026-08-20**: the
+  default is now 5, but the conclusion below stands unchanged --
+  `Document::Restore` keeps a restored file at its own schema, and a user
+  can cap any document at 4, so the compatible encodings still have to
+  carry a finish and a texture.)
 
   An earlier draft answered that by forcing the fork's own encoding
   whenever a list states a finish. That works and is lossless for us, but
@@ -2230,3 +2233,381 @@ Two things the pair of pictures settles:
   `mix(0.04, base, metallic)` F0 the PBR branch computes. Set only one
   of the two and the other model is being shown whatever the default
   happened to be.
+
+## 10. Textures: the last fold into the appearance
+
+Stage 9 moved the surface finish onto `App::Material`. This stage moves what
+is left that belongs there: the texture maps, which today are `Render_*`
+dynamic properties on the view provider. It also settles the two questions
+that fold raises -- whether one property may hold several stored files, and
+whether the list field should stay dense.
+
+### 10.1 The test for eligibility, and what it selects
+
+**The test, stated by the user 2026-08-19: does some file format carry this
+per face?** Not "would per-face be imaginable" -- everything is imaginable --
+but whether an interchange format the importer already reads states it per
+material. A setting no format varies per face has nothing to round trip and
+stays a view property, whatever the renderer could do with it.
+
+Eligible, and therefore to be folded:
+
+| Property | Where the format states it |
+|---|---|
+| `Render_BaseColorTexture` | glTF `pbrMetallicRoughness.baseColorTexture`; OCCT `XCAFDoc_VisMaterialPBR::BaseColorTexture` |
+| `Render_MetallicRoughnessMap` | glTF `metallicRoughnessTexture`; OCCT `MetallicRoughnessTexture` |
+| `Render_NormalMap` | glTF `normalTexture`; OCCT `NormalTexture` |
+| `Render_EmissiveMap` | glTF `emissiveTexture`; OCCT `EmissiveTexture` |
+| `Render_OcclusionMap` | glTF `occlusionTexture`; OCCT `OcclusionTexture` |
+| `Render_TextureScale` / `Offset` / `Rotation` | glTF `KHR_texture_transform`, per texture reference inside the material |
+
+**The proof is not the specification, it is what this codebase already pays.**
+`ImportOCAF2::scanMaterialGroups` keys material groups on exactly these five
+texture handles plus the metallic and roughness factors, and when they differ
+across the faces of one shape it SPLITS the shape into one `Part::Feature`
+per group under a container. That splitting exists for no other reason than
+that the format is per primitive and the property is per object. Folding
+these retires it: the faces stay one solid and the appearance carries what
+made them differ. Nothing else in the tree is distorted by the gap this way,
+which is why nothing else is on the list.
+
+Not eligible, and staying on the view provider:
+
+- `Render_Water`, `Render_Glass`, `Render_Cloud`, `Render_Fire`,
+  `Render_Fountain` and their density/detail/speed/IOR knobs. These turn a
+  CLOSED SHAPE into a volumetric medium; three of them do not render the body
+  geometry at all. A volume has no faces to attach to, and no format states a
+  per-face medium.
+- `Render_Light` and its intensity/range/shadow flags. glTF puts lights on a
+  NODE (`KHR_lights_punctual`), never on a material. Per-face emission is
+  already `App::Material::emissiveColor`.
+- `Render_CastShadow` / `Render_ReceiveShadow`. These map onto Coin's
+  `SoShadowStyle`, a traversal-state node. No interchange format carries a
+  per-material shadow flag.
+
+Already folded: the PBR pair (8.1) and the finish (9). Note also that
+`Render_Texture` is not a property -- it is the `strncmp` prefix in
+`ViewProviderGeometryObject::updateRenderProperty` that catches the three
+transform names -- and that everything on `View3DInventorViewer`
+(`Render_AO*`, `Render_Occlusion*`, `Render_Level*`, `Render_PBR*`,
+`Render_Matcap*`) is a per-VIEW parameter in a different namespace, never a
+candidate.
+
+### 10.2 The blob store already carries several files per property
+
+A texture is a file, and files live in `App::FileBlobManager`. The fold needs
+one property to hold five of them per entry, which no property does today:
+both existing referrers, `PropertyFileIncluded` and `PropertyPartShape`, hold
+a single `_blob`. The question is whether that is a limit or just a fact.
+
+It is just a fact. Four of the five things a second blob would touch already
+work:
+
+1. **Storage and lifetime.** A blob is content addressed and handed out as a
+   `shared_ptr`; nothing binds one to a single property. Sharing was the
+   explicit point of the design -- before it, `~PropertyFileIncluded` deleted
+   its file unconditionally and `Copy()` had to duplicate the bytes.
+2. **Save collection.** `noteReferenced(blob, referrer)` is called once per
+   blob and its referrer list is additive: "shared content is one file with
+   several referrers".
+3. **Naming.** `BlobReferrer::name` is supplied by the caller, and `planSave`
+   de-collides with a numbering pinned by the previous index so it cannot
+   migrate between saves. A caller with five slots passes five names
+   (`Box.ShapeAppearance.normal`) and gets five readable files; it does not
+   have to accept `Box.ShapeAppearance1.png`.
+4. **The restore queue.** `_pending` is a `vector<pair<hash, prop*>>`, not a
+   map keyed by property, so N entries for one property already fit, and
+   `removePendingReferrer(prop)` withdraws all of them -- which is the
+   correct behaviour for a dying multi-slot property.
+
+**The fifth is the whole of the work, and it is a discipline rather than a
+signature.** `BlobReferrerProperty::assignRestoredBlob(handle)` carries no
+slot identity, and arrival order is NOT queue order: `addPendingReferrer`
+serves a hash IMMEDIATELY when the content has already been read and queues
+it otherwise, so a property asking for an unread h1 and then an already-read
+h2 is handed h2 first. With one blob per property that reordering is
+invisible. With five it is a silent mis-assignment -- the normal map arriving
+in the occlusion slot.
+
+The fix is not to add a cookie to the virtual. The property already knows
+which hash belongs to which slot, because it deserialized them, and
+`FileBlob::hash()` is public: **a multi-slot referrer resolves the slot by
+content hash, never by arrival order.** Two slots holding the same content
+share one hash and one blob, and both are assigned -- which is correct, and
+makes the assignment idempotent, which is what lets a duplicated `_pending`
+entry be harmless. `FileBlobManager` needs no change at all.
+
+### 10.3 The record on `App::Material`
+
+Follow the `SurfaceFinish` precedent (9.2) rather than adding eight loose
+fields: one struct, because the members co-vary -- a texture set is one
+statement about a surface -- and because the field mask bits, the accessors
+and the serialized keys otherwise multiply to buy elision cases that do not
+occur.
+
+```cpp
+struct AppExport SurfaceTexture
+{
+    enum Slot : uint8_t {
+        BaseColor = 0, MetallicRoughness, Normal, Emissive, Occlusion,
+        SlotCount
+    };
+    /// Content hash of the blob in each slot; empty = no map there.
+    std::string maps[SlotCount];
+    float scale[2] {1.0F, 1.0F};
+    float offset[2] {0.0F, 0.0F};
+    float rotation {0.0F};   /**< degrees */
+
+    bool isSet() const;      /**< any slot occupied */
+    void normalize();        /**< an unset record states nothing else */
+};
+```
+
+The slots hold a CONTENT HASH, not a path: the property is the blob referrer
+and the manager owns the bytes, exactly as `PropertyPartShape` does. The
+default is all-empty, which is what lets the field elide out of both the
+storage and the document the way the finish does.
+
+**Reconciling upstream's fields.** `App::Material` already has `image`,
+`imagePath` and `uuid`, and their comment says they exist for the day "a
+reader does produce them -- glTF carries both a texture and a material
+identity". They are upstream's, and `TextureRendering.yml` defines them as
+`TextureImage` = "Embedded texture image" and `TexturePath` = "Path to file
+... only used if Texture Image is unpopulated". So they model exactly one
+texture, embedded or referenced. They stay as they are, and the base colour
+slot maps onto them for the upstream-readable save: writing `imagePath` on
+the way out and reading it into `BaseColor` on the way in. The other four
+slots have nowhere to go in that encoding and are dropped by it, which is
+what 9.4 item 2 permits.
+
+### 10.4 The list field, and why it goes sparse
+
+TODAY a `PropertyMaterialList` field is a `std::vector<T>` normalised to one
+of exactly three lengths -- 0, 1 or `_count` -- and read through
+`fieldAt(values, idx, def)`: empty is "every entry is the default", one is
+"uniform", anything else is dense per entry. `collapseField` restores that
+form after every edit.
+
+**That is already sparse in the two cheap cases and falls off a cliff between
+them.** All-default costs nothing and all-same costs one record, but the
+moment ONE entry differs the field materialises `_count` of them. For a
+colour that is right -- a per-face colour list is genuinely dense, it is the
+common CAD case, and an index would be the size of the value it replaces. For
+a texture set it is ruinous: one odd face in five thousand materialises five
+thousand records of five strings each.
+
+And the distribution is known, not guessed. glTF gives a mesh a HANDFUL of
+materials; `scanMaterialGroups` already discovers exactly that grouping, and
+today spends the discovery on splitting the shape. Low cardinality over many
+faces is the case to store well.
+
+So: **palette plus index, for the heavy fields only.**
+
+```cpp
+std::vector<SurfaceTexture> _texturePalette;  // distinct values
+std::vector<uint16_t>       _textureIndex;    // one per entry
+```
+
+with the degenerate forms preserved so nothing regresses: an empty palette is
+all-default, and a palette of one with an empty index is uniform. Only a
+genuinely varying field pays for the index, and it pays two bytes rather than
+a whole record.
+
+This is not a new idea in the tree, it is the RENDER side's model moved down
+to storage. `updateRenderMaterial` already builds a palette of distinct
+finishes plus a per-face index for `SoFCFinishElement`, and rebuilds it from
+the dense array on every update. A palette in storage is what that consumer
+wanted in the first place.
+
+Which fields change, and which do not:
+
+- **Textures: palette + index.** Large values, low cardinality, and the
+  importer already computes the grouping.
+- **Colours, shininess, transparency, type: unchanged.** An index is the size
+  of the value; per-face variation is the norm, not the exception.
+- **Finish: leave dense for now, revisit.** 16 bytes a record is well short
+  of the cliff, but it is the one other field whose consumer wants a palette.
+  Migrating it is a pure optimisation and can follow once the texture palette
+  has proved the encoding.
+
+### 10.5 Serialization
+
+The fork's binary field stream (schema >= 5) gains one field: a palette
+count, the palette records, then the index run. 9.4 already lists
+length-prefixed runs in that stream as a change that must land before
+publication so later fields stay additive -- a palette field is precisely
+that shape, so this stage should carry it rather than bolt a second
+convention alongside.
+
+The XML keyed form needs the same, under the unknown-key skip that 9.4 also
+requires. The upstream-compatible encoding carries the base colour slot in
+`imagePath` and nothing else, as 10.3 says.
+
+Blobs are already handled: the property notes each distinct palette hash with
+`noteReferenced` at save (one referrer name per slot, 10.2 item 3), and calls
+`addPendingReferrer` per distinct hash on restore, resolving by hash when the
+handles come back.
+
+### 10.6 What this stage deliberately excludes
+
+- **Per-face texture COORDINATES.** The maps are per face; the UVs are not,
+  and the mesh stream is where those belong. Out of scope.
+- **Migrating existing documents.** Per 9.4 item 3 we owe our own older
+  builds nothing. The reader in `ViewProviderGeometryObject` keeps the
+  `Render_*` texture path for scripted objects, as it now does for the PBR
+  pair and the finish; nothing rewrites a document that has them.
+- **Retiring `scanMaterialGroups`.** The split it performs becomes
+  unnecessary, but removing it is a separate change with its own import
+  regression surface, and it should not ride in with the storage work.
+
+### 10.7 Landed 2026-08-19/20: the storage, the wire and the blobs
+
+Five commits, in the order the implementation notes suggested except that
+the blobs and the serialization swapped: the restore side of the blob
+plumbing has nothing to hook into until the file states the hashes.
+
+| Commit | What |
+|---|---|
+| `37efdecbfc` | `App::SurfaceTexture` on `App::Material` (10.3) |
+| `6333553219` | the palette + index field on `PropertyMaterialList` (10.4) |
+| `e1d5d0873c` | length-prefixed runs, and the texture in the fork's own two encodings (10.5) |
+| `09291e1ceb` | the companion property for the schemas that cannot state one |
+| `363f1f7c55` | the multi-blob referrer (10.2) |
+
+**Three things the design did not anticipate.**
+
+1. **`slots` is a macro.** Qt defines it as nothing, and this
+   translation unit sees it, so `uint8_t slots = 0;` compiles to
+   `uint8_t = 0;` and the error names `unsigned char`, not the variable.
+   The identifier is `slotCount` throughout for that reason.
+
+2. **9.4.2's "length-prefix each run" had only half landed.** What the
+   finish work shipped was a run head of SHAPE plus entry count, which
+   lets a reader step over a run whose FIELD it does not know but not one
+   whose SHAPE it does not know -- there it stopped reading, losing
+   everything behind it. A palette is a new shape, so the other half had
+   to land with it: the head is now shape, BYTE LENGTH and count. Writing
+   the length means buffering the payload into a scratch stream in the
+   same mode and byte order, as 9.4.2 said it would.
+
+   It also retires the idea of reserving mask bits for payload-free flags.
+   A first attempt did reserve the top nibble and thereby swallowed
+   `FieldTexture` at bit 12 -- the field read back as absent with no error
+   anywhere. With a byte length there is nothing to reserve: **a flag
+   added later writes a run of ZERO bytes**, which every reader steps over
+   exactly as it steps over a field it does not know, so the presence of
+   the bit stays the whole value and the 16 bits stay available to fields.
+
+3. **A `pruneTextureBlobs()` on every `normalize()` is a use-after-free
+   waiting to happen.** A caller must insert content before it can name
+   the hash, so between `insertTextureFile()` and the write that names it
+   there is always a handle no slot points at -- and normalize runs on any
+   read, including one inside that window. The claim is therefore dropped
+   only where the palette has just been stated IN FULL: the whole-list
+   assignments and the restore.
+
+**What 10.2 predicted and the code confirms.** `FileBlobManager` needed no
+change at all. The five things a second blob would touch are the storage,
+the save collection, the naming, the restore queue and the slot identity,
+and only the last is work: `assignRestoredBlob` resolves by
+`blob->hash()`, which makes it idempotent, which is what lets two slots
+over one content both be served and a duplicated queue entry be harmless.
+The collect passes in `App::Document` and `Gui::Document` grew one branch
+each, because they dispatch on property type and an appearance is not a
+`PropertyFileIncluded`.
+
+**Still to do**, and none of it is storage: the importer and exporter onto
+the new field, the UI, and the Python spelling. `Render_BaseColorTexture`
+and its four siblings are still what `ViewProviderGeometryObject` reads, so
+nothing yet writes a texture into an appearance except a script.
+
+## 11. The appearance as a Python value
+
+Landed 2026-08-20, in five commits. The storage work of section 10 left the
+Python spelling as the last thing owed, and doing it properly turned out to
+be a change to what a property hands Python at all -- so the pattern is
+written up separately in `docs/PythonValueBindings.md` and this section
+records what it means for the appearance.
+
+### 11.1 What changed
+
+`vp.ShapeAppearance` was a `Py::Tuple` of N freshly copied `MaterialPy`
+objects (4.1 recorded that as "same observable behaviour, same cost"). It
+is now one `App.MaterialList`:
+
+| | before | after |
+|---|---|---|
+| reading it | N `Material` copies + N wrappers | a pointer |
+| `[0].DiffuseColor = c` | silently did nothing | paints the face, records undo |
+| `[0] = mat` | silently did nothing | paints the face |
+| assigning it to another property | copied every field array | a pointer |
+| an undo snapshot | deep copy of fourteen vectors | a pointer |
+
+The value moved out of the property into `App::MaterialList`, a copy-on-write
+value over `Base::COWValue`. `PropertyMaterialList` keeps the serialization,
+the blob restore queue, the touch list and the change signalling, and
+delegates the rest. Nothing about the storage layout or the encodings
+changed: the 76 storage tests pass unmodified, byte-identical serialization
+included.
+
+### 11.2 The three states a script can be in
+
+```python
+a = vp.ShapeAppearance      # a LIVE VIEW: writing to it paints the object
+b = a.copy()                # a VALUE sharing a's storage: writing paints nothing
+vp.ShapeAppearance = b      # takes a share of b -- and b stays a value
+```
+
+Assigning a list into any property detaches it, which is what stops a view
+from quietly becoming a view of two things. A view whose property dies --
+document closed, object deleted -- keeps what it last saw and writes
+nowhere; the property detaches every view it handed out on the way out.
+
+### 11.3 The texture spelling
+
+A slot holds the content hash of a file the blob store owns, so stating a
+texture from Python is content in, then a slot naming it:
+
+```python
+h = a.insertTextureFile('/path/oak.png')     # -> the content hash
+a.setTexture(0, 'basecolor', h)
+n = a.setTextureFile(0, 'normal', '/path/n.png')   # both at once
+a.setTextureTransform(0, Scale=(2, 2), Rotation=45)
+a.getTexture(0)                              # {'basecolor': h, 'normal': n}
+a.clearTexture(0)                            # every slot of that entry
+```
+
+The slot names are `TextureSlots`, and they are the same strings
+`MaterialPy.Texture` uses and the saved files are named by. Every setter
+takes the entry index or leaves it out, and leaving it out means EVERY
+entry -- not the -1 an index would be mistaken for, since the getters count
+negatives from the end the way Python does.
+
+The per field accessors alongside them are the same eight fields the C++ API
+has (the four colours, shininess, transparency, and the PBR pair, which
+demands the mode).
+
+The store the content goes into is the document's when the list is a view of
+one of its properties, and the process-wide one otherwise. 10.2 asked
+whether a blob minted by one manager can be saved by another: it can --
+`noteReferenced()` keys the save set by hash and writes the bytes from
+wherever the handle points -- so a list built in Python and assigned into a
+document carries its content in with it, and no re-homing is needed.
+
+WORTH KNOWING: content is archived at SCHEMA 5 and above. Schema 4 is
+upstream's format, where the blob store does not exist, and a document saved
+there keeps the hashes and drops the files -- a legitimate state the
+property already handles (a hash with no content answers an empty path and
+logs one warning per missing file on restore). A script that wants a texture
+to survive a round trip sets `doc.SaveSchemaVersion = 5`. Mapping the base
+colour slot onto upstream's `imagePath` for the schema 4 save, as 10.3
+proposes, is still owed.
+
+### 11.4 What this stage deliberately excludes
+
+- **The renderer.** `ViewProviderGeometryObject` still reads
+  `Render_BaseColorTexture` and its four siblings; nothing yet draws a
+  texture that lives in an appearance. That is the next stage, and this one
+  exists to make it verifiable -- a per-face texture can now be authored
+  from a script.
+- **The importer and the UI**, unchanged from 10.7's list.

@@ -216,7 +216,10 @@ void EditDatumDialog::accepted()
                                           "setDatum(%i,App.Units.Quantity('%f %s'))",
                                           ConstrNbr,
                                           newDatum,
-                                          Base::Tools::escapeEncodeString(newQuant.getUnit().getString()).toUtf8().constData());
+                                          Base::Tools::escapeEncodeString(
+                                              QString::fromStdString(newQuant.getUnit().getString()))
+                                              .toUtf8()
+                                              .constData());
                 }
             }
 

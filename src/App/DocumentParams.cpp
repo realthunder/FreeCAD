@@ -42,7 +42,7 @@ public:
     ParameterGrp::handle handle;
     std::unordered_map<const char *,void(*)(DocumentParamsP*),App::CStringHasher,App::CStringHasher> funcs;
     // Auto generated code (Tools/params_utils.py:227)
-    boost::signals2::signal<void (const char*)> signalParamChanged;
+    fastsignals::signal<void (const char*)> signalParamChanged;
     void signalAll()
     {
         signalParamChanged("prefAuthor");
@@ -418,7 +418,7 @@ ParameterGrp::handle DocumentParams::getHandle() {
 }
 
 // Auto generated code (Tools/params_utils.py:353)
-boost::signals2::signal<void (const char*)> &
+fastsignals::signal<void (const char*)> &
 DocumentParams::signalParamChanged() {
     return instance()->signalParamChanged;
 }

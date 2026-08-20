@@ -20,48 +20,23 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef GUI_SELECTIONFILTERPY_H
-#define GUI_SELECTIONFILTERPY_H
 
-#include <CXX/Extensions.hxx>
+#ifndef GUI_SELECTIONFILTERPY_FORWARD_H
+#define GUI_SELECTIONFILTERPY_FORWARD_H
 
-#include "SelectionFilter.h"
-
-
-namespace Gui {
-/**
- * Python binding for SelectionFilter class.
- * \code
- * filter=Gui.Selection.Filter("SELECT Part::Feature SUBELEMENT Edge")
- * Gui.Selection.addSelectionGate(filter)
- * \endcode
- * @see SelectionFilter
- * @author Werner Mayer
+/** These headers live in Gui/Selection/ now, where upstream keeps them
+ *
+ * Upstream moved the selection sources into their own directory
+ * (docs/UpstreamCoreSync.md section 3, step 2b). This header holds the call
+ * sites that still say the old path; new and ported code includes
+ * <Gui/Selection/SelectionFilterPy.h> directly, and this file is only ever removed
+ * from, never added to.
+ *
+ * WARNING: the guard below is deliberately NOT the moved header's own guard.
+ * Reusing it would define it before the include and the real contents would
+ * be skipped entirely.
  */
-class SelectionFilterPy : public Py::PythonClass<SelectionFilterPy>
-{
-public:
-    SelectionFilter filter;
 
-public:
-    static void init_type();    // announce properties and methods
-    static SelectionFilterPy* cast(PyObject* py) {
-        using SelectionFilterClass = Py::PythonClassObject<SelectionFilterPy>;
-        return SelectionFilterClass(py).getCxxObject();
-    }
+#include <Gui/Selection/SelectionFilterPy.h>
 
-    SelectionFilterPy(Py::PythonClassInstance* self, Py::Tuple& args, Py::Dict& kdws);
-
-    ~SelectionFilterPy() override;
-
-    Py::Object repr() override;
-    Py::Object match();
-    Py::Object result();
-    Py::Object test(const Py::Tuple&);
-    Py::Object setFilter(const Py::Tuple&);
-    Py::Object getFilter();
-};
-
-} // namespace Gui
-
-#endif // GUI_SELECTIONFILTERPY_H
+#endif  // GUI_SELECTIONFILTERPY_FORWARD_H

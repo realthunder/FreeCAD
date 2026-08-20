@@ -72,16 +72,16 @@ ObjectMetaFeed::ObjectMetaFeed()
 
     // Connected for the life of the process; the feed is a singleton and
     // outlives every renderer it serves.
-    static boost::signals2::scoped_connection relabel =
+    static fastsignals::scoped_connection relabel =
         App::GetApplication().signalRelabelObject.connect(changed);
-    static boost::signals2::scoped_connection created =
+    static fastsignals::scoped_connection created =
         App::GetApplication().signalNewObject.connect(changed);
-    static boost::signals2::scoped_connection deleted =
+    static fastsignals::scoped_connection deleted =
         App::GetApplication().signalDeletedObject.connect(removed);
     // A closing document takes an unbounded number of objects with it,
     // and its own signal arrives whether or not each one was announced.
     // Replaying that is exactly the case a full table is cheaper than.
-    static boost::signals2::scoped_connection closed =
+    static fastsignals::scoped_connection closed =
         App::GetApplication().signalDeleteDocument.connect([this](const App::Document&) {
             dropHistory();
         });

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,8 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
-#ifndef MATGUI_IMAGEEDIT_H
-#define MATGUI_IMAGEEDIT_H
+#pragma once
 
 #include <memory>
 
@@ -34,6 +35,8 @@
 #include <QStandardItem>
 #include <QStandardItemModel>
 #include <QVariant>
+
+#include <Gui/FileDialog.h>
 
 #include <Mod/Material/App/Model.h>
 
@@ -53,12 +56,16 @@ public:
     ~ImageLabel() = default;
 
     void setPixmap(const QPixmap& pixmap);
+    void setSVG(const QString& svg);
+    void renderSVG();
 
 protected:
     void resizeEvent(QResizeEvent* event);
+    void paintEvent(QPaintEvent* event);
 
 private:
     QPixmap _pixmap;
+    QString _svg;
 };
 
 class ImageEdit: public QDialog
@@ -71,10 +78,11 @@ public:
               QWidget* parent = nullptr);
     ~ImageEdit() override = default;
 
-    void onFileSelect(bool checked);
-
     void accept() override;
     void reject() override;
+
+private Q_SLOTS:
+    void onFileSelect(bool checked);
 
 private:
     std::unique_ptr<Ui_ImageEdit> ui;
@@ -82,10 +90,16 @@ private:
     std::shared_ptr<Materials::MaterialProperty> _property;
 
     QPixmap _pixmap;
+    QString _svg;
 
     void showPixmap();
+    void showSVG();
+
+    /// This fork's FileDialog takes Qt's classic ";;"-separated filter
+    /// string, not upstream's structured FilterList.
+    QString selectFile(const QString& filter);
+    void onFileSelectImage();
+    void onFileSelectSVG();
 };
 
 }  // namespace MatGui
-
-#endif  // MATGUI_IMAGEEDIT_H

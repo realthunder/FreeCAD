@@ -263,7 +263,7 @@ void SoRotationDragger::drag()
 
     QString message = QStringLiteral("%1 %2").arg(
         QObject::tr("Rotation:"),
-        quantity.getUserString()
+        QString::fromStdString(quantity.getUserString())
     );
     getMainWindow()->showMessage(message, 3000);
 }

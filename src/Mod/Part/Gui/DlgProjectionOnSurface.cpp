@@ -637,9 +637,9 @@ void PartGui::DlgProjectionOnSurface::show_projected_shapes(const std::vector<SS
   PartGui::ViewProviderPartExt* vp = dynamic_cast<PartGui::ViewProviderPartExt*>(Gui::Application::Instance->getViewProvider(m_projectionObject));
   if (vp)
   {
-    vp->LineColor.setValue(0x8ae23400);
-    vp->ShapeColor.setValue(0x8ae23400);
-    vp->PointColor.setValue(0x8ae23400);
+    vp->LineColor.setValue(0x8ae234ff);
+    vp->ShapeColor.setValue(0x8ae234ff);
+    vp->PointColor.setValue(0x8ae234ff);
   }
 }
 

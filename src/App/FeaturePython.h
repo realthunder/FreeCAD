@@ -222,7 +222,7 @@ public:
     /// returns the type name of the ViewProvider
     const char* getViewProviderName() const override {
         return FeatureT::getViewProviderName();
-        //return "Gui::ViewProviderPythonFeature";
+        //return "Gui::ViewProviderFeaturePython";
     }
 
     App::DocumentObject *getSubObject(const char *subname, PyObject **pyObj,

@@ -715,8 +715,25 @@ private:
             }
             return {};
         };
-        mat.metallic = getFloat("Render_Metallic");
-        mat.roughness = getFloat("Render_Roughness");
+        // The appearance is where the importer and the appearance dialogs
+        // put the PBR factors. Entry 0 -- the whole-object reading, and the
+        // first face's for a per-face appearance, since one glTF material
+        // per object is all this carries.
+        if (auto* appearance = Base::freecad_dynamic_cast<App::PropertyMaterialList>(
+                vp->getPropertyByName("ShapeAppearance"))) {
+            if (appearance->isPBR() && appearance->getSize() > 0) {
+                mat.metallic = appearance->getMetallic(0);
+                mat.roughness = appearance->getRoughness(0);
+            }
+        }
+        // The Render_* knobs stay readable for an object a script set them
+        // on; nothing the user does through the dialogs writes them.
+        if (mat.metallic < 0.0) {
+            mat.metallic = getFloat("Render_Metallic");
+        }
+        if (mat.roughness < 0.0) {
+            mat.roughness = getFloat("Render_Roughness");
+        }
         mat.baseColorTexture = getFile("Render_BaseColorTexture");
         mat.normalMapTexture = getFile("Render_NormalMap");
         mat.emissiveTexture = getFile("Render_EmissiveMap");

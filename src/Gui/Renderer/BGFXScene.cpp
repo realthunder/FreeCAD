@@ -53,6 +53,7 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
     snap.volconf = volconf;
     snap.waterconf = waterconf;
     snap.bloomconf = bloomconf;
+    snap.outconf = outconf;
     snap.debugconf = debugconf;
     snap.usershaderconf = usershaderconf;
 #ifndef FC_RENDERER_STANDALONE

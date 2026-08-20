@@ -475,7 +475,7 @@ void QGTracker::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
 
 QColor QGTracker::getTrackerColor()
 {
-    App::Color trackColor = App::Color((uint32_t) Preferences::getPreferenceGroup("Tracker")->GetUnsigned("TrackerColor", 0xFF000000));
+    App::Color trackColor = App::Color((uint32_t) Preferences::getPreferenceGroup("Tracker")->GetUnsigned("TrackerColor", 0xFF0000FF));
     return PreferencesGui::getAccessibleQColor(trackColor.asValue<QColor>());
 }
 

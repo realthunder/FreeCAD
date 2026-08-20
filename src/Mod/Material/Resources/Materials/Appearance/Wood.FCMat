@@ -1,0 +1,16 @@
+---
+General:
+  UUID: "1850ac4a-0df2-43cd-9934-e59e95b9526f"
+  Author: "Jonas Bähr"
+  License: "CC-BY-3.0"
+  Name: "Wood"
+  Description: "Defines generic Wood appearance properties"
+AppearanceModels:
+  BasicRendering:
+    UUID: 'f006c7e4-35b7-43d5-bbf9-c5d572309e6e'
+    AmbientColor: "(0.1550, 0.1100, 0.0650, 1.0)"
+    DiffuseColor: "(0.6200, 0.4400, 0.2600, 1.0)"
+    EmissiveColor: "(0.0000, 0.0000, 0.0000, 1.0)"
+    Shininess: "0.1343"
+    SpecularColor: "(0.2209, 0.2209, 0.2209, 1.0)"
+    Transparency: "0.0"

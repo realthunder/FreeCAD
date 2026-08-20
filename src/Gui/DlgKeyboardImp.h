@@ -24,7 +24,7 @@
 #ifndef GUI_DIALOG_DLGKEYBOARD_IMP_H
 #define GUI_DIALOG_DLGKEYBOARD_IMP_H
 
-#include <boost/signals2/connection.hpp>
+#include <fastsignals/signal.h>
 #include <memory>
 #include <QPointer>
 #include <QAction>
@@ -74,7 +74,7 @@ public:
      * @return Return a boost signal connection for monitoring command changes.
      * Most disconnect the signal before widgets gets destroyed.
      */
-    static boost::signals2::connection
+    static fastsignals::connection
         initCommandWidgets(QTreeWidget *commandTreeWidget,
                            QTreeWidgetItem *separatorItem,
                            QComboBox *comboGroups,
@@ -93,7 +93,7 @@ protected:
                                      QComboBox *combo,
                                      QTreeWidget *treeWidget,
                                      QTreeWidgetItem *separatorItem);
-    static boost::signals2::connection initCommandList(QTreeWidget *, QTreeWidgetItem *, QComboBox *combo);
+    static fastsignals::connection initCommandList(QTreeWidget *, QTreeWidgetItem *, QComboBox *combo);
     static void initPriorityList(QTreeWidget *, QAbstractButton *buttonUp, QAbstractButton *buttonDown);
     static void populateCommandGroups(QComboBox *);
     static void populateCommandList(QTreeWidget *, QTreeWidgetItem *, QComboBox *);
@@ -125,7 +125,7 @@ private:
     std::unique_ptr<Ui_DlgCustomKeyboard> ui;
     std::unique_ptr<Gui::PrefWidgetStates> widgetStates;
     bool firstShow;
-    boost::signals2::scoped_connection conn;
+    fastsignals::scoped_connection conn;
 };
 
 } // namespace Dialog

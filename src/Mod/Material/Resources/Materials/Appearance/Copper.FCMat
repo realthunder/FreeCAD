@@ -3,15 +3,15 @@
 General:
   UUID: "524cad9b-b841-4037-9851-badeca7dcee2"
   Author: "David Carter"
-  License: "GPL-2.0-or-later"
+  License: "CC-BY-4.0"
   Name: "Copper"
   Description: "Defines the Copper appearance properties"
 AppearanceModels:
   BasicRendering:
     UUID: 'f006c7e4-35b7-43d5-bbf9-c5d572309e6e'
-    AmbientColor: "(0.3300, 0.2600, 0.2300, 1.0)"
-    DiffuseColor: "(0.5000, 0.1100, 0.0000, 1.0)"
+    AmbientColor: "(0.3415, 0.2802, 0.2572, 1.0)"
+    DiffuseColor: "(0.5258, 0.4360, 0.4023, 1.0)"
     EmissiveColor: "(0.0000, 0.0000, 0.0000, 1.0)"
-    Shininess: "0.9300"
-    SpecularColor: "(0.9500, 0.7300, 0.0000, 1.0)"
+    Shininess: "0.8500"
+    SpecularColor: "(0.9800, 0.8198, 0.7599, 1.0)"
     Transparency: "0.0"

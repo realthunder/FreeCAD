@@ -22,6 +22,9 @@
 
 #include "PreCompiled.h"
 
+#include <fstream>
+#include <cstdio>
+#include <cmath>
 #include <algorithm>
 #include <cstring>
 #include <map>
@@ -1872,6 +1875,138 @@ RendererBridge::translateShaderProgram(const SoNode * node,
 /// stable textureId. keepGray preserves grayscale images as one
 /// component: a bump map's component count is what tells a height field
 /// (1/2) from a tangent-space normal map (3/4).
+
+/// Read a Radiance picture (.hdr / .pic, the RGBE format) into a float
+/// TextureImage; null if the file is not one or is malformed.
+///
+/// This exists because an environment is the one image in a CAD scene
+/// that genuinely needs more than a byte a channel: the sky is
+/// thousands of times brighter than the wall under it, and clamping
+/// that ratio into 0..1 is what makes an 8-bit panorama light a model
+/// like a picture instead of like a place.
+///
+/// RGBE stores three mantissas and one SHARED exponent, so a pixel is
+/// four bytes and decodes to `mantissa / 256 * 2^(e - 128)`. A zero
+/// exponent is the format's exact zero, not 2^-128.
+static std::shared_ptr<Render::TextureImage>
+loadRadianceImage(const std::string &path)
+{
+    std::ifstream in(path, std::ios::binary);
+    if (!in)
+        return nullptr;
+
+    std::string line;
+    if (!std::getline(in, line)
+            || line.compare(0, 2, "#?") != 0)
+        return nullptr;   // not a Radiance picture
+
+    // Header lines until a blank one; only the format matters to us.
+    bool rgbe = false;
+    while (std::getline(in, line)) {
+        if (line.empty() || line == "\r")
+            break;
+        if (line.find("FORMAT=") != std::string::npos)
+            rgbe = line.find("32-bit_rle_rgbe") != std::string::npos;
+    }
+    if (!rgbe)
+        return nullptr;   // XYZE and friends are not worth guessing at
+
+    // Resolution line. Only the standard orientation is accepted: a
+    // rotated or flipped panorama would need the same care in the
+    // sampler, and no tool writes one.
+    int height = 0, width = 0;
+    if (!std::getline(in, line)
+            || std::sscanf(line.c_str(), "-Y %d +X %d", &height, &width) != 2
+            || width <= 0 || height <= 0
+            || width > (1 << 16) || height > (1 << 16))
+        return nullptr;
+
+    const size_t n = size_t(width) * size_t(height);
+    std::vector<uint8_t> rgbeRows(n * 4);
+
+    auto readFlat = [&](uint8_t *dst, int count) {
+        return bool(in.read(reinterpret_cast<char *>(dst), count * 4));
+    };
+
+    for (int y = 0; y < height; ++y) {
+        uint8_t *row = rgbeRows.data() + size_t(y) * width * 4;
+        uint8_t head[4];
+        if (!in.read(reinterpret_cast<char *>(head), 4))
+            return nullptr;
+        const bool adaptive = head[0] == 2 && head[1] == 2
+            && ((int(head[2]) << 8) | head[3]) == width && width >= 8
+            && width < 32768;
+        if (!adaptive) {
+            // Flat scanline: the four bytes just read are its first
+            // pixel, the rest follow.
+            std::memcpy(row, head, 4);
+            if (width > 1 && !readFlat(row + 4, width - 1))
+                return nullptr;
+            continue;
+        }
+        // Adaptive RLE: each of the four components is run-length
+        // encoded across the whole scanline, one component at a time.
+        for (int c = 0; c < 4; ++c) {
+            int x = 0;
+            while (x < width) {
+                int code = in.get();
+                if (code == EOF)
+                    return nullptr;
+                if (code > 128) {
+                    const int run = code - 128;
+                    const int value = in.get();
+                    if (value == EOF || x + run > width)
+                        return nullptr;
+                    for (int i = 0; i < run; ++i, ++x)
+                        row[x * 4 + c] = uint8_t(value);
+                } else {
+                    const int run = code ? code : 1;
+                    if (x + run > width)
+                        return nullptr;
+                    for (int i = 0; i < run; ++i, ++x) {
+                        const int value = in.get();
+                        if (value == EOF)
+                            return nullptr;
+                        row[x * 4 + c] = uint8_t(value);
+                    }
+                }
+            }
+        }
+    }
+
+    auto tex = std::make_shared<Render::TextureImage>();
+    static uint64_t nextHdrId = 0;
+    tex->textureId = (uint64_t(1) << 62) | ++nextHdrId;
+    tex->width = width;
+    tex->height = height;
+    tex->numComponents = 3;
+    tex->sample = Render::TextureImage::F32;
+    tex->wrapS = Render::TextureImage::Repeat;
+    tex->wrapT = Render::TextureImage::Clamp;
+    tex->pixels.resize(n * 3 * sizeof(float));
+
+    auto *out = reinterpret_cast<float *>(tex->pixels.data());
+    for (int y = 0; y < height; ++y) {
+        // Radiance rows run top-down; TextureImage rows are bottom-up
+        // like GL.
+        const uint8_t *src = rgbeRows.data() + size_t(y) * width * 4;
+        float *dst = out + size_t(height - 1 - y) * width * 3;
+        for (int x = 0; x < width; ++x) {
+            const uint8_t *p = src + x * 4;
+            if (p[3] == 0) {
+                dst[0] = dst[1] = dst[2] = 0.0f;   // the format's exact zero
+            } else {
+                const float f = std::ldexp(1.0f, int(p[3]) - (128 + 8));
+                dst[0] = float(p[0]) * f;
+                dst[1] = float(p[1]) * f;
+                dst[2] = float(p[2]) * f;
+            }
+            dst += 3;
+        }
+    }
+    return tex;
+}
+
 static std::shared_ptr<const Render::TextureImage>
 loadParamImage(const std::string &path, bool keepGray)
 {
@@ -1883,8 +2018,16 @@ loadParamImage(const std::string &path, bool keepGray)
     auto it = cache.find(key);
     if (it == cache.end()) {
         std::shared_ptr<Render::TextureImage> tex;
+        // A Radiance picture carries real radiance and Qt cannot read
+        // one; everything else goes through Qt as before.
+        QString qpath = QString::fromUtf8(path.c_str());
+        if (qpath.endsWith(QLatin1String(".hdr"), Qt::CaseInsensitive)
+                || qpath.endsWith(QLatin1String(".pic"), Qt::CaseInsensitive))
+            tex = loadRadianceImage(path);
         QImage img;
-        if (img.load(QString::fromUtf8(path.c_str()))) {
+        if (tex) {
+            // already loaded
+        } else if (img.load(qpath)) {
             bool alpha = img.hasAlphaChannel();
             bool gray = keepGray && !alpha && img.isGrayscale();
             img = img.convertToFormat(
@@ -2469,6 +2612,18 @@ RendererBridge::translateBumpConfig(App::PropertyContainer * view)
     return res;
 }
 
+Render::OutputConfig
+RendererBridge::translateOutputConfig(App::PropertyContainer * view)
+{
+    Render::OutputConfig res;
+    res.transform = int(viewParamOverride<App::PropertyEnumeration>(
+            view, "Render", "OutputTransform",
+            RenderParams::getOutputTransform()));
+    res.exposure = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "Exposure", RenderParams::getExposure()));
+    return res;
+}
+
 Render::PBRConfig
 RendererBridge::translatePBRConfig(App::PropertyContainer * view)
 {
@@ -2479,11 +2634,19 @@ RendererBridge::translatePBRConfig(App::PropertyContainer * view)
             view, "Render", "PBRMetallic", RenderParams::getPBRMetallic()));
     res.roughness = float(viewParamOverride<App::PropertyFloatConstraint>(
             view, "Render", "PBRRoughness", RenderParams::getPBRRoughness()));
+    res.envPreset = int(viewParamOverride<App::PropertyEnumeration>(
+            view, "Render", "PBREnvPreset", RenderParams::getPBREnvPreset()));
     res.envIntensity = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "PBREnvIntensity", RenderParams::getPBREnvIntensity()));
     res.envBackground = viewParamOverride<App::PropertyBool>(
             view, "Render", "PBREnvBackground",
             RenderParams::getPBREnvBackground());
+    res.fromSpecular = viewParamOverride<App::PropertyBool>(
+            view, "Render", "PBRFromSpecular",
+            RenderParams::getPBRFromSpecular());
+    res.shininessMapping = int(viewParamOverride<App::PropertyEnumeration>(
+            view, "Render", "ShininessMapping",
+            RenderParams::getShininessMapping()));
     // User environment image. With no explicit path, fall back to the
     // image the Texture mapping dialog (Std_TextureMapping) holds — its
     // Environment mode sphere-maps that same file over the scene

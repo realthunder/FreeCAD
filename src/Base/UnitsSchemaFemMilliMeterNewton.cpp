@@ -27,7 +27,7 @@
 #include <unistd.h>
 #endif
 
-#include <QString>
+#include <string>
 
 #include "UnitsSchemaFemMilliMeterNewton.h"
 
@@ -35,19 +35,19 @@
 using namespace Base;
 
 
-QString UnitsSchemaFemMilliMeterNewton::schemaTranslate(const Quantity& quant,
+std::string UnitsSchemaFemMilliMeterNewton::schemaTranslate(const Quantity& quant,
                                                         double& factor,
-                                                        QString& unitString)
+                                                        std::string& unitString)
 {
     Unit unit = quant.getUnit();
     if (unit == Unit::Length) {
         // all length units in millimeters
-        unitString = QStringLiteral("mm");
+        unitString = "mm";
         factor = 1.0;
     }
     else if (unit == Unit::Mass) {
         // all mass units in t
-        unitString = QString::fromUtf8("t");
+        unitString = "t";
         factor = 1e3;
     }
     else {

@@ -334,8 +334,7 @@ std::string BomObject::getBomPropertyValue(App::DocumentObject* obj, const std::
         return propStr->getValue();
     }
     if (auto propQuantity = freecad_cast<App::PropertyQuantity*>(prop)) {
-        // getUserString() still returns a QString here; upstream returns std::string.
-        return propQuantity->getQuantityValue().getUserString().toStdString();
+        return propQuantity->getQuantityValue().getUserString();
     }
     if (auto propEnum = freecad_cast<App::PropertyEnumeration*>(prop)) {
         return propEnum->getValueAsString();

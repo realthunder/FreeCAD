@@ -27,7 +27,6 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <QString>
 #include <FCGlobal.h>
 
 namespace Base
@@ -74,7 +73,7 @@ public:
     Unit();
     Unit(const Unit&) = default;
     Unit(Unit&&) = default;
-    explicit Unit(const QString& expr);
+    explicit Unit(const std::string& expr);
     /// Destruction
     ~Unit() = default;
 
@@ -101,15 +100,13 @@ public:
     }
     bool isEmpty() const;
 
-    QString getString() const;
-
-    std::string getStdString() const;
+    std::string getString() const;
 
     /// get the type as an string such as "Area", "Length" or "Pressure".
     const char *getType() const;
 
     /// get the type as an string such as "Area", "Length" or "Pressure".
-    QString getTypeString() const;
+    std::string getTypeString() const;
 
     std::size_t hash() const;
 

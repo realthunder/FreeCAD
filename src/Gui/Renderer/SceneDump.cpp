@@ -240,7 +240,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     draws the lit two-sided quad it always did; a snapshot older
 //     than this reads as both knobs on, which is what the properties
 //     it was written from defaulted to.
-const uint32_t kVersion = 58;
+// 59: PBRConfig says whether a Phong specular colour is read as PBR
+//     material data where nothing states a metalness (PBRFromSpecular).
+//     A snapshot older than this was written by a build that always
+//     dropped that colour, so it reads as off and renders as it did.
+const uint32_t kVersion = 64;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -1119,6 +1123,10 @@ void writeTexture(Writer &w, const TextureImage &t,
     w.u8(t.wrapT);
     w.u8(t.model);
     w.u32(t.blendColor);
+    // v63: what one component of the payload IS. Written after the
+    // payload, so an older reader stops before it and a newer one knows
+    // the bytes it just took were floats.
+    w.u8(t.sample);
 
     if (defer && (!sent || sent->insert(t.contentKey).second))
         blobs(t.contentKey, std::vector<uint8_t>(t.pixels));
@@ -1163,6 +1171,10 @@ std::shared_ptr<TextureImage> readTexture(Reader &r, uint32_t version,
     tex->wrapT = r.u8();
     tex->model = r.u8();
     tex->blendColor = r.u32();
+    // v63; U8 on anything older, which is all those snapshots could
+    // hold.
+    tex->sample = version >= 63 ? r.u8()
+                                : uint8_t(TextureImage::U8);
     return tex;
 }
 
@@ -3061,9 +3073,13 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.b(snap.pbrconf.enabled);
     w.f(snap.pbrconf.metallic);
     w.f(snap.pbrconf.roughness);
+    w.i32(snap.pbrconf.envPreset);
     w.f(snap.pbrconf.envIntensity);
     w.b(snap.pbrconf.envBackground);
     refs.tex(w, snap.pbrconf.envImage);
+    w.b(snap.pbrconf.fromSpecular);
+    // v61: how a Phong shininess becomes a roughness.
+    w.i32(snap.pbrconf.shininessMapping);
 
     w.f(snap.bumpconf.scale);
     w.b(snap.bumpconf.parallax);
@@ -3117,6 +3133,10 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     const BloomConfig &blc = snap.bloomconf;
     w.b(blc.enabled); w.f(blc.threshold); w.f(blc.intensity);
     w.f(blc.radius);
+
+    // v60: the output colour transform. v62 adds its exposure.
+    w.i32(snap.outconf.transform);
+    w.f(snap.outconf.exposure);
 
     w.f(snap.autozoomScale);
     w.f(snap.effectResolution);
@@ -3480,10 +3500,16 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.pbrconf.enabled = r.b();
     snap.pbrconf.metallic = r.f();
     snap.pbrconf.roughness = r.f();
+    snap.pbrconf.envPreset = version >= 64 ? r.i32() : 1;
     snap.pbrconf.envIntensity = r.f();
     snap.pbrconf.envBackground = version >= 25 ? r.b() : false;
     if (version >= 25)
         refs.tex(r, snap.pbrconf.envImage);
+    snap.pbrconf.fromSpecular = version >= 59 ? r.b() : false;
+    snap.pbrconf.shininessMapping = version >= 61 ? r.i32() : 0;
+    // (0, not the current default: an older snapshot was written
+    // under the GL-exponent reading and has to keep being drawn
+    // with it.)
 
     snap.bumpconf.scale = r.f();
     snap.bumpconf.parallax = r.b();
@@ -3550,6 +3576,14 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
         blc.enabled = r.b(); blc.threshold = r.f();
         blc.intensity = r.f(); blc.radius = r.f();
     }
+
+    snap.outconf = OutputConfig();
+    // Explicitly, not by leaving the struct default: that default is
+    // now SRGB, and a snapshot written before v60 was NOT colour
+    // managed -- it has to keep being drawn the way it was written.
+    snap.outconf.transform = version >= 60
+        ? r.i32() : int(OutputConfig::None);
+    snap.outconf.exposure = version >= 62 ? r.f() : 1.0f;
 
     snap.autozoomScale = r.f();
     snap.effectResolution = version >= 9 ? r.f() : 1.0f;

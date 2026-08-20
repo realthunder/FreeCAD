@@ -642,6 +642,12 @@ void PropertyLink::setValue(App::DocumentObject * lValue)
                 "Cannot link to  external object " << lValue->getFullName()
                 << " in " << getFullName());
 
+    // the refusal PropertyXLink::setValue has always made, which the rest of
+    // the link properties were missing; Restore() nullifies a stored self
+    // link before it gets here, so an old document still loads
+    if(lValue && lValue == parent)
+        THROWM(Base::ValueError, "self linking")
+
     aboutToSetValue();
 #ifndef USE_OLD_DAG
     // maintain the back link in the DocumentObject class if it is from a document object
@@ -935,6 +941,8 @@ void PropertyLinkList::setValues(std::vector<DocumentObject*> &&lValue) {
             FC_THROWM(Base::ValueError,
                     "Cannot link to  external object " << obj->getFullName()
                     << " in " << getFullName());
+        if(obj == parent)
+            FC_THROWM(Base::ValueError, "self linking in " << getFullName());
     }
     // Filling a group (or any other link list) appends one object at a time,
     // which arrives here as a new list holding the old one as its prefix. Both
@@ -1081,7 +1089,13 @@ void PropertyLinkList::Restore(Base::XMLReader &reader)
         DocumentObject* father = static_cast<DocumentObject*>(getContainer());
         App::Document* document = father->getDocument();
         DocumentObject* child = document ? document->getObject(name.c_str()) : nullptr;
-        if (child)
+        if (child == father) {
+            // a stored self reference predates the check in setValues() below;
+            // drop it rather than fail the load, as PropertyLink::Restore does
+            if (reader.isVerbose())
+                FC_WARN("Object " << name << " links to itself, dropping it");
+        }
+        else if (child)
             values.push_back(child);
         else if (reader.isVerbose())
             FC_WARN("Lost link to " << (document?document->getName():"") << " " << name
@@ -3217,7 +3231,7 @@ class App::DocInfo :
     public std::enable_shared_from_this<App::DocInfo>
 {
 public:
-    using Connection = boost::signals2::scoped_connection;
+    using Connection = fastsignals::scoped_connection;
     Connection connFinishRestoreDocument;
     Connection connPendingReloadDocument;
     Connection connDeleteDocument;

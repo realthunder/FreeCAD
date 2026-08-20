@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,8 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
-#ifndef MATGUI_ARRAYMODEL_H
-#define MATGUI_ARRAYMODEL_H
+#pragma once
 
 #include <memory>
 
@@ -48,7 +49,7 @@ class Array2DModel: public AbstractArrayModel
 {
 public:
     explicit Array2DModel(const std::shared_ptr<Materials::MaterialProperty>& property = nullptr,
-                          const std::shared_ptr<Materials::Material2DArray>& value = nullptr,
+                          const std::shared_ptr<Materials::Array2D>& value = nullptr,
                           QObject* parent = nullptr);
     ~Array2DModel() override = default;
 
@@ -71,7 +72,7 @@ public:
 
 private:
     std::shared_ptr<Materials::MaterialProperty> _property;
-    std::shared_ptr<Materials::Material2DArray> _value;
+    std::shared_ptr<Materials::Array2D> _value;
 };
 
 class Array3DDepthModel: public AbstractArrayModel
@@ -79,7 +80,7 @@ class Array3DDepthModel: public AbstractArrayModel
 public:
     explicit Array3DDepthModel(
         const std::shared_ptr<Materials::MaterialProperty>& property = nullptr,
-        const std::shared_ptr<Materials::Material3DArray>& value = nullptr,
+        const std::shared_ptr<Materials::Array3D>& value = nullptr,
         QObject* parent = nullptr);
     ~Array3DDepthModel() override = default;
 
@@ -106,14 +107,14 @@ public:
 
 private:
     std::shared_ptr<Materials::MaterialProperty> _property;
-    std::shared_ptr<Materials::Material3DArray> _value;
+    std::shared_ptr<Materials::Array3D> _value;
 };
 
 class Array3DModel: public AbstractArrayModel
 {
 public:
     explicit Array3DModel(const std::shared_ptr<Materials::MaterialProperty>& property = nullptr,
-                          const std::shared_ptr<Materials::Material3DArray>& value = nullptr,
+                          const std::shared_ptr<Materials::Array3D>& value = nullptr,
                           QObject* parent = nullptr);
     ~Array3DModel() override = default;
 
@@ -138,9 +139,7 @@ public:
 
 private:
     std::shared_ptr<Materials::MaterialProperty> _property;
-    std::shared_ptr<Materials::Material3DArray> _value;
+    std::shared_ptr<Materials::Array3D> _value;
 };
 
 }  // namespace MatGui
-
-#endif  // MATGUI_ARRAYMODEL_H

@@ -12,6 +12,8 @@
  * revealage product (blend ZERO, INV_SRC_COLOR).
  */
 
+#include "fc_color.sh"
+
 #include "fc_mesh_lighting.sh"
 #include "fc_finish.sh"
 
@@ -204,9 +206,8 @@ void main()
 			// give it the shininess the roughness means (the
 			// Blinn-Phong-to-GGX fit, inverted -- what the
 			// stored material's Phong derivation would hold).
-			float r = max(v_color2.a, 0.02);
-			matSpec.w = clamp((2.0 / (r * r) - 2.0) / 128.0,
-			                  0.0, 1.0);
+			matSpec.w = fcShininessFromRough(
+				max(v_color2.a, 0.02));
 		}
 	}
 #ifdef TEXTURE
@@ -235,14 +236,12 @@ void main()
 		// back the same way, so a finish coarsens a Phong highlight
 		// exactly as it coarsens a PBR one.
 		bool phong = u_pbrParams.x < 0.5;
-		float frough = phong
-			? sqrt(2.0 / (max(matSpec.w, 0.0) * 128.0 + 2.0))
-			: rough;
+		float frough = phong ? fcRoughFromShininess(matSpec.w)
+		                     : rough;
 		fcApplyFinish(v_opos, v_onrm, v_vpos, finishParams,
 		              finishSlot.y, n, frough);
 		if (phong)
-			matSpec.w = clamp((2.0 / (frough * frough) - 2.0)
-			                      / 128.0, 0.0, 1.0);
+			matSpec.w = fcShininessFromRough(frough);
 		else
 			rough = frough;
 	}
@@ -256,7 +255,12 @@ void main()
 	// GL fixed-function texture environment, applied to the lit color
 	// like GL textures the rasterized fragment (uv carries the
 	// parallax offset when active).
-	vec4 texel = texture2D(s_texColor, uv);
+	// A base-colour texture is a PICTURE: its texels are display
+	// numbers exactly like a picked colour, so they decode on the way
+	// in too. Its alpha is coverage and is left alone. The data maps
+	// -- bump, metallic-roughness, occlusion -- are NOT pictures and
+	// are never decoded; their channels are quantities.
+	vec4 texel = fcAuthoredColor4(texture2D(s_texColor, uv));
 	float texmodel = u_texParams.x;
 	if (texmodel < 0.5) {        // modulate
 		color *= texel.rgb;
@@ -282,7 +286,7 @@ void main()
 	// Emissive map: added after the texture environment so the base
 	// color texture does not modulate the glow (glTF semantics).
 	if (u_texParams.z > 0.5)
-		color += texture2D(s_texEmissive, uv).rgb;
+		color += fcAuthoredColor(texture2D(s_texEmissive, uv).rgb);
 #endif
 
 #ifdef OIT

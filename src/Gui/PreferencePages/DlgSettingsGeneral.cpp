@@ -89,7 +89,7 @@ DlgSettingsGeneral::DlgSettingsGeneral( QWidget* parent )
 
     int num = static_cast<int>(Base::UnitSystem::NumUnitSystemTypes);
     for (int i = 0; i < num; i++) {
-        QString item = Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i));
+        QString item = QString::fromStdString(Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i)));
         ui->comboBox_UnitSystem->addItem(item, i);
     }
 
@@ -148,9 +148,9 @@ static void saveTreeMode(int value)
         break;
     }
 
-    if(propertyView != hGrp->GetGroup("PropertyView")->GetBool("Enabled",false)
-            || treeView != hGrp->GetGroup("TreeView")->GetBool("Enabled",false)
-            || comboView != hGrp->GetGroup("ComboView")->GetBool("Enabled",true))
+    if(propertyView != hGrp->GetGroup("PropertyView")->GetBool("Enabled",true)
+            || treeView != hGrp->GetGroup("TreeView")->GetBool("Enabled",true)
+            || comboView != hGrp->GetGroup("ComboView")->GetBool("Enabled",false))
     {
         hGrp->GetGroup("ComboView")->SetBool("Enabled",comboView);
         hGrp->GetGroup("TreeView")->SetBool("Enabled",treeView);
@@ -305,9 +305,9 @@ void DlgSettingsGeneral::loadSettings()
     ui->treeMode->addItem(tr("Both"));
 
     hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/DockWindows");
-    bool propertyView = hGrp->GetGroup("PropertyView")->GetBool("Enabled",false);
-    bool treeView = hGrp->GetGroup("TreeView")->GetBool("Enabled",false);
-    bool comboView = hGrp->GetGroup("ComboView")->GetBool("Enabled",true);
+    bool propertyView = hGrp->GetGroup("PropertyView")->GetBool("Enabled",true);
+    bool treeView = hGrp->GetGroup("TreeView")->GetBool("Enabled",true);
+    bool comboView = hGrp->GetGroup("ComboView")->GetBool("Enabled",false);
     index = 0;
     if(propertyView || treeView) {
         index = comboView?2:1;

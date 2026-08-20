@@ -27,12 +27,66 @@
 #ifdef __GNUC__
 # include <cstdint>
 #endif
+#include <cmath>
 #include <string>
 
 #include <FCGlobal.h>
 
 namespace Base
 {
+
+/** Adapter over a foreign colour type, e.g. QColor
+ *
+ * Lets code convert to and from a colour class Base cannot name -- Base
+ * carries no Qt -- by going through the accessors every such class has.
+ */
+template<class color_type>
+struct color_traits
+{
+    color_traits() = default;
+    explicit color_traits(const color_type& ct)
+        : ct(ct)
+    {}
+    float redF() const
+    {
+        return static_cast<float>(ct.redF());
+    }
+    float greenF() const
+    {
+        return static_cast<float>(ct.greenF());
+    }
+    float blueF() const
+    {
+        return static_cast<float>(ct.blueF());
+    }
+    float alphaF() const
+    {
+        return static_cast<float>(ct.alphaF());
+    }
+    int red() const
+    {
+        return ct.red();
+    }
+    int green() const
+    {
+        return ct.green();
+    }
+    int blue() const
+    {
+        return ct.blue();
+    }
+    int alpha() const
+    {
+        return ct.alpha();
+    }
+    static color_type makeColor(int red, int green, int blue, int alpha = 255)
+    {
+        return color_type {red, green, blue, alpha};
+    }
+
+private:
+    color_type ct;
+};
 
 /** Color class
  *
@@ -139,6 +193,18 @@ public:
      */
     uint32_t getPackedValue() const;
     /**
+     * Returns color as a 32 bit packed unsigned int in the form 0xRRGGBB00.
+     * The alpha channel is not represented at all, so this is lossy for any
+     * colour that is not opaque; use getPackedValue() to keep it.
+     */
+    uint32_t getPackedRGB() const;
+    /**
+     * Sets color as a 32 bit packed unsigned int in the form 0xRRGGBB00.
+     * The argument carries no alpha, and this resets it to fully opaque
+     * rather than preserving the previous value.
+     */
+    void setPackedRGB(uint32_t);
+    /**
      * Returns color as a 32 bit packed unsigned int in the form 0xAARRGGBB.
      */
     uint32_t getPackedARGB() const;
@@ -171,7 +237,8 @@ public:
      */
     template <typename T>
     void setValue(const T& q) {
-        set(q.redF(),q.greenF(),q.blueF());
+        color_traits<T> ct {q};
+        set(ct.redF(), ct.greenF(), ct.blueF(), ct.alphaF());
     }
     /**
      * returns a template type e.g. Qt color equivalent to FC color
@@ -179,7 +246,10 @@ public:
      */
     template <typename T>
     inline T asValue() const {
-        return(T(int(r*255.0f),int(g*255.0f),int(b*255.0f)));
+        return color_traits<T>::makeColor(int(std::lround(r * 255.0F)),
+                                         int(std::lround(g * 255.0F)),
+                                         int(std::lround(b * 255.0F)),
+                                         int(std::lround(a * 255.0F)));
     }
     /**
      * returns color as hex color "#RRGGBB"
@@ -195,6 +265,91 @@ public:
 
     /// color values, public accessible. \a a is an opacity: 1 is opaque.
     float r,g,b,a;
+};
+
+/// Specialization for Color itself, so generic code can adapt it like any other
+template<>
+struct color_traits<Base::Color>
+{
+    using color_type = Base::Color;
+    color_traits() = default;
+    explicit color_traits(const color_type& ct)
+        : ct(ct)
+    {}
+    float redF() const
+    {
+        return ct.r;
+    }
+    float greenF() const
+    {
+        return ct.g;
+    }
+    float blueF() const
+    {
+        return ct.b;
+    }
+    float alphaF() const
+    {
+        return ct.a;
+    }
+    void setRedF(float red)
+    {
+        ct.r = red;
+    }
+    void setGreenF(float green)
+    {
+        ct.g = green;
+    }
+    void setBlueF(float blue)
+    {
+        ct.b = blue;
+    }
+    void setAlphaF(float alpha)
+    {
+        ct.a = alpha;
+    }
+    int red() const
+    {
+        return int(std::lround(ct.r * 255.0F));
+    }
+    int green() const
+    {
+        return int(std::lround(ct.g * 255.0F));
+    }
+    int blue() const
+    {
+        return int(std::lround(ct.b * 255.0F));
+    }
+    int alpha() const
+    {
+        return int(std::lround(ct.a * 255.0F));
+    }
+    void setRed(int red)
+    {
+        ct.r = static_cast<float>(red) / 255.0F;
+    }
+    void setGreen(int green)
+    {
+        ct.g = static_cast<float>(green) / 255.0F;
+    }
+    void setBlue(int blue)
+    {
+        ct.b = static_cast<float>(blue) / 255.0F;
+    }
+    void setAlpha(int alpha)
+    {
+        ct.a = static_cast<float>(alpha) / 255.0F;
+    }
+    static color_type makeColor(int red, int green, int blue, int alpha = 255)
+    {
+        return color_type {static_cast<float>(red) / 255.0F,
+                           static_cast<float>(green) / 255.0F,
+                           static_cast<float>(blue) / 255.0F,
+                           static_cast<float>(alpha) / 255.0F};
+    }
+
+private:
+    color_type ct;
 };
 
 } //namespace Base

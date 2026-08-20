@@ -83,6 +83,70 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter OutputTransform
+    ///
+    /// Whether the engine is colour managed.
+    /// 
+    /// The shading is linear -- mixes, the GGX lobe, the image based
+    /// lighting product are all arithmetic on light, and they are only
+    /// correct on linear numbers. A colour someone picked is not: it
+    /// is a display number, which makes it sRGB encoded. And a display
+    /// reads the byte it is handed as sRGB too.
+    /// 
+    /// 'sRGB' honours both ends. Authored colours -- materials, the
+    /// lights, the background, the base colour and emissive textures --
+    /// are decoded to linear as they enter, and the finished frame is
+    /// encoded once at the last write before it is shown. An UNSHADED
+    /// authored colour therefore survives the round trip exactly, and
+    /// so does a fully lit surface; what changes is the shading in
+    /// between, which is the part that was wrong.
+    /// 
+    /// 'Off' is the older pipeline, which did neither: it fed display
+    /// numbers to the linear shading and wrote the linear result out
+    /// raw. The two errors partly cancel -- a fully lit surface comes
+    /// out right -- but everything in falloff and shadow renders about
+    /// a gamma too dark. Documents written before this existed are
+    /// drawn that way, which is how they were authored.
+    static const long & getOutputTransform();
+    static const long & defaultOutputTransform();
+    static void removeOutputTransform();
+    static void setOutputTransform(const long &v);
+    static const char *docOutputTransform();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Exposure
+    ///
+    /// How much light the frame is developed with, as a plain
+    /// multiplier on the linear image before it is encoded for the
+    /// screen. One leaves it alone.
+    /// 
+    /// It exists because a colour managed scene is lit in real
+    /// reflectances, and a mid grey reflects about 18 per cent of what
+    /// falls on it rather than the 45 per cent its number reads as. A
+    /// scene whose lights were set before that was true is lit about
+    /// two to three times too dimly, and this is the control that
+    /// answers it without touching a single light.
+    /// 
+    /// Raising it does not clip. Anything the multiplier pushes past
+    /// the top of the range rolls off smoothly instead, and the roll
+    /// off is exactly nothing below the knee -- so at an exposure of
+    /// one the frame is bit for bit what it would have been without
+    /// this stage at all.
+    /// 
+    /// Only meaningful while the output colour transform is on: with
+    /// it off the engine is not working in light, and a multiplier
+    /// there would scale display numbers rather than exposure.
+    static const double & getExposure();
+    static const double & defaultExposure();
+    static void removeExposure();
+    static void setExposure(const double &v);
+    static const char *docExposure();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter MaxViewIds
     ///
     /// How many backend view ids the render engine may hand out, which
@@ -1862,7 +1926,7 @@ public:
     ///
     /// Enable physically based shading with image based lighting of
     /// the experimental render engine (render cache mode 3 with a
-    /// selected renderer type). Replaces the default headlight shading
+    /// selected renderer type). Replaces the Classic headlight shading
     /// of lit surfaces with a metallic/roughness material lit by a
     /// built-in studio environment.
     static const bool & getPBR();
@@ -1899,6 +1963,104 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter PBRFromSpecular
+    ///
+    /// Read an ordinary Phong appearance's specular COLOUR as
+    /// physically based material data, where nothing states a
+    /// metalness of its own. The metallic/roughness model has no
+    /// specular slot -- its reflectance follows from the base colour
+    /// and the metalness -- so a classic Gold, whose gold-ness lives
+    /// entirely in that colour, otherwise shades as yellow-brown
+    /// plastic, and the presets built from a black diffuse and a
+    /// bright specular (Steel, Satin, Metalized) shade as nearly
+    /// black. Anything authored stands: a stated metalness, a PBR
+    /// appearance, a metallic-roughness map.
+    static const bool & getPBRFromSpecular();
+    static const bool & defaultPBRFromSpecular();
+    static void removePBRFromSpecular();
+    static void setPBRFromSpecular(const bool &v);
+    static const char *docPBRFromSpecular();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShininessMapping
+    ///
+    /// How a classic Phong appearance's SHININESS becomes a
+    /// roughness, where the material states no roughness of its own.
+    /// 
+    /// Either way the conversion itself is the standard match of the
+    /// GGX lobe width to a Phong exponent n, roughness =
+    /// (2 / (n + 2)) ^ 1/4. What differs is what shininess MEANS.
+    /// 
+    /// 'GL exponent' reads it the way fixed-function GL did, as the
+    /// exponent scaled onto 0..128. That is faithful, but 128 is the
+    /// sharpest exponent GL could state, and it converts to a
+    /// roughness of 0.35 -- so on this reading a fully shiny Phong
+    /// material is satin, and the lower half of the roughness range
+    /// cannot be reached from shininess at all.
+    /// 
+    /// 'Full range' reads shininess as what the Appearance dialog
+    /// presents, a 0 to 100% appearance control, and maps it onto the
+    /// whole exponent range instead: n = 128 * s / (1 - s). Matte at
+    /// zero and a mirror at one, and over the low shininess values
+    /// real materials use it agrees with the GL reading to within a
+    /// few percent (FreeCAD's default 0.2 gives 0.49 rather than
+    /// 0.52, the Gold preset 0.66 rather than 0.67).
+    /// 
+    /// Neither reading touches anything authored: a stated roughness,
+    /// a PBR appearance, a metallic-roughness map and the per-object
+    /// Render_Roughness override all stand.
+    static const long & getShininessMapping();
+    static const long & defaultShininessMapping();
+    static void removeShininessMapping();
+    static void setShininessMapping(const long &v);
+    static const char *docShininessMapping();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PBREnvPreset
+    ///
+    /// Which built-in environment lights the scene, where no
+    /// environment image is set. They are computed rather than
+    /// sampled from a file, so they cost no assets and work on every
+    /// tier including the browser.
+    /// 
+    /// What separates them is contrast and structure, not brightness:
+    /// all five integrate to the same mean radiance, so the exposure
+    /// that suits one suits the others. That matters because a
+    /// surround with no bright sources and no edges cannot put a
+    /// highlight on anything that reads as a light, and a smooth
+    /// surface reflecting it shows the same flat grey at every
+    /// roughness -- which is what made physically based shading look
+    /// like painted plastic.
+    /// 
+    /// Interior (the default) = a room with one window and a ceiling
+    /// panel, walls close enough to bounce. One hard key against a
+    /// dark surround, which is what gives the crispest highlight and
+    /// the strongest read of form. Studio = four soft boxes on a dark
+    /// surround, the product-shot rig, gentler and more even than
+    /// Interior. Gradient = the smooth three-band dome this engine
+    /// used before the others existed; the flattest and the most
+    /// even, and the one to pick to have an older document's look
+    /// back. Overcast = a bright sky weighted to the zenith over dark
+    /// ground, soft and neutral. Sunset = a low warm sun with a deep
+    /// sky, the strongest colour separation, and the only one that
+    /// tints the whole frame. Light tent = a box of white panels,
+    /// bright BELOW the horizon as well as above it and seamed all
+    /// the way round; the one to pick when the SIDES of a subject
+    /// matter, since every other environment here puts a floor under
+    /// it and a standing wall reflects the floor.
+    static const long & getPBREnvPreset();
+    static const long & defaultPBREnvPreset();
+    static void removePBREnvPreset();
+    static void setPBREnvPreset(const long &v);
+    static const char *docPBREnvPreset();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter PBREnvIntensity
     ///
     /// Brightness of the image based lighting environment.
@@ -1918,6 +2080,15 @@ public:
     /// image is read as equirectangular (lat-long), anything squarer
     /// as a sphere map — the same convention as the Texture mapping
     /// dialog's Environment mode, so the same file works in both.
+    /// 
+    /// A Radiance picture (.hdr, .pic) is read as real radiance and
+    /// is the format worth using: a sky is thousands of times
+    /// brighter than the wall beneath it, and an ordinary 8-bit image
+    /// cannot hold that ratio, which is what makes one light a model
+    /// like a picture rather than like a place. An HDR environment
+    /// needs the output colour transform on, since it is the exposure
+    /// that decides how its range lands on the screen.
+    /// 
     /// Empty falls back to that dialog's current image, then to the
     /// procedural environment.
     static const std::string & getPBREnvImage();
@@ -1948,8 +2119,15 @@ public:
     /// Accessor for parameter PBREnvBackground
     ///
     /// Show the image based lighting environment itself as the view
-    /// background while PBR shading is active, so reflective surfaces
-    /// visibly mirror their surroundings.
+    /// background while physically based shading is active, so
+    /// reflective surfaces visibly mirror their surroundings.
+    /// 
+    /// On by default, because a reflective object standing in front of
+    /// a flat gradient reads as fake for a reason that is not the
+    /// object's fault: the reflection has no visible source, so there
+    /// is nothing in the frame for the eye to reconcile it against.
+    /// Affects nothing outside physically based shading -- the
+    /// Classic and Matcap models keep the background gradient.
     static const bool & getPBREnvBackground();
     static const bool & defaultPBREnvBackground();
     static void removePBREnvBackground();
@@ -2823,6 +3001,15 @@ public:
     /// made at runtime (console, script) works exactly as before, for
     /// as long as that session lasts.
     static void selectRenderPath();
+    /** The backend type to use, without stating it as a preference
+     *
+     * What selectRenderPath() would settle on: the engine's own backend
+     * where this build registered one, whatever else registered if not,
+     * and "Default" -- meaning plain GL -- where nothing did. Separate
+     * from getType() because a caller may need the engine for a reason
+     * of its own without touching what the user chose for their views.
+     */
+    static std::string preferredType();
 
 /*[[[cog
 RenderParams.declare_end()

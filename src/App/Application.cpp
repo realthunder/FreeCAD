@@ -56,6 +56,7 @@
 #include <QStandardPaths>
 #include <LibraryVersions.h>
 
+#include <App/MaterialListPy.h>
 #include <App/MaterialPy.h>
 #include <App/MetadataPy.h>
 // FreeCAD Base header
@@ -320,6 +321,7 @@ void Application::setupPythonTypes()
     Base::Interpreter().addType(&Base::PrecisionPy       ::Type,pBaseModule,"Precision");
 
     Base::Interpreter().addType(&App::MaterialPy::Type, pAppModule, "Material");
+    Base::Interpreter().addType(&App::MaterialListPy::Type, pAppModule, "MaterialList");
     Base::Interpreter().addType(&App::MetadataPy::Type, pAppModule, "Metadata");
 
     Base::Interpreter().addType(&App::StringHasherPy::Type, pAppModule, "StringHasher");
@@ -676,8 +678,8 @@ struct DocTiming {
 class DocOpenGuard {
 public:
     bool &flag;
-    boost::signals2::signal<void ()> &signal;
-    DocOpenGuard(bool &f, boost::signals2::signal<void ()> &s)
+    fastsignals::signal<void ()> &signal;
+    DocOpenGuard(bool &f, fastsignals::signal<void ()> &s)
         :flag(f),signal(s)
     {
         flag = true;
@@ -2283,6 +2285,7 @@ void Application::initTypes()
     App::PropertyMaterial           ::init();
     App::PropertyMaterialList       ::init();
     App::PropertySurfaceFinishList  ::init();
+    App::PropertySurfaceTextureList ::init();
     App::PropertyPath               ::init();
     App::PropertyFile               ::init();
     App::PropertyFileIncluded       ::init();

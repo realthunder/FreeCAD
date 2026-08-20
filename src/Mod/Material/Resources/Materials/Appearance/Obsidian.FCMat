@@ -3,7 +3,7 @@
 General:
   UUID: "a004c270-7d2c-4898-bec6-b1120edacea9"
   Author: "David Carter"
-  License: "GPL-2.0-or-later"
+  License: "CC-BY-4.0"
   Name: "Obsidian"
   Description: "Defines the Obsidian appearance properties"
 AppearanceModels:
@@ -12,6 +12,6 @@ AppearanceModels:
     AmbientColor: "(0.0538, 0.0500, 0.0662, 1.0)"
     DiffuseColor: "(0.1828, 0.1700, 0.2253, 1.0)"
     EmissiveColor: "(0.0000, 0.0000, 0.0000, 1.0)"
-    Shininess: "0.3000"
-    SpecularColor: "(0.3327, 0.3286, 0.3464, 1.0)"
+    Shininess: "0.9936"
+    SpecularColor: "(0.2209, 0.2209, 0.2209, 1.0)"
     Transparency: "0.0"

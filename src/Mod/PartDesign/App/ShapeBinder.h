@@ -72,7 +72,7 @@ private:
     void slotChangedObject(const App::DocumentObject& Obj, const App::Property& Prop);
     void onSettingDocument() override;
 
-    using Connection = boost::signals2::connection;
+    using Connection = fastsignals::connection;
     Connection connectDocumentChangedObject;
 };
 

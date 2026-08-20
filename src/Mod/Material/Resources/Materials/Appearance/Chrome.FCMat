@@ -3,15 +3,15 @@
 General:
   UUID: "a9544b88-dde7-4d05-9bdb-c008a4e88dc1"
   Author: "David Carter"
-  License: "GPL-2.0-or-later"
+  License: "CC-BY-4.0"
   Name: "Chrome"
   Description: "Defines the Chrome appearance properties"
 AppearanceModels:
   BasicRendering:
     UUID: 'f006c7e4-35b7-43d5-bbf9-c5d572309e6e'
-    AmbientColor: "(0.3500, 0.3500, 0.3500, 1.0)"
-    DiffuseColor: "(0.9176, 0.9176, 0.9176, 1.0)"
+    AmbientColor: "(0.2601, 0.2615, 0.2610, 1.0)"
+    DiffuseColor: "(0.4065, 0.4086, 0.4079, 1.0)"
     EmissiveColor: "(0.0000, 0.0000, 0.0000, 1.0)"
-    Shininess: "0.1000"
-    SpecularColor: "(0.9746, 0.9746, 0.9746, 1.0)"
+    Shininess: "1.0000"
+    SpecularColor: "(0.7674, 0.7711, 0.7699, 1.0)"
     Transparency: "0.0"

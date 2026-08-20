@@ -27,7 +27,7 @@
 #define GUI_DIALOG_PROPERTYPAGE_H
 
 #include <memory>
-#include <boost/signals2.hpp>
+#include <fastsignals/signal.h>
 #include <QTimer>
 #include <QWidget>
 #include <FCGlobal.h>

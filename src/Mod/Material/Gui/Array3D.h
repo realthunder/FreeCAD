@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,8 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
-#ifndef MATGUI_ARRAY3D_H
-#define MATGUI_ARRAY3D_H
+#pragma once
 
 #include <QAction>
 #include <QDialog>
@@ -67,7 +68,7 @@ private:
     std::unique_ptr<Ui_Array3D> ui;
     std::shared_ptr<Materials::Material> _material;
     std::shared_ptr<Materials::MaterialProperty> _property;
-    std::shared_ptr<Materials::Material3DArray> _value;
+    std::shared_ptr<Materials::Array3D> _value;
 
     QAction _deleteDepthAction;
     QAction _delete2DAction;
@@ -84,5 +85,3 @@ private:
 };
 
 }  // namespace MatGui
-
-#endif  // MATGUI_ARRAY3D_H

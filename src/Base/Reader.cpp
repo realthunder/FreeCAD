@@ -27,6 +27,7 @@
 #include <map>
 #include <memory>
 #include <sstream>
+#include <string_view>
 #include <unordered_set>
 #include <xercesc/sax2/XMLReaderFactory.hpp>
 #endif
@@ -201,6 +202,77 @@ const char* Base::XMLReader::getAttribute (const char* AttrName, const char *def
         _FC_READER_THROW(Base::XMLAttributeError, "XML Attribute: '" << AttrName << "' not found");
     }
 }
+
+namespace
+{
+template<typename T>
+T readerCast(const char* value)
+{
+    if constexpr (std::is_same_v<T, const char*>) {
+        return value;
+    }
+    if constexpr (std::is_same_v<T, long>) {
+        return std::stol(value);
+    }
+    if constexpr (std::is_same_v<T, int>) {
+        return std::stoi(value);
+    }
+    if constexpr (std::is_same_v<T, unsigned long>) {
+        return std::stoul(value, nullptr);
+    }
+    if constexpr (std::is_same_v<T, double>) {
+        return std::stod(value, nullptr);
+    }
+    if constexpr (std::is_same_v<T, bool>) {
+        // ! Upstream reads this as (value != "0") alone, which makes the
+        // string "false" true. That is safe for them only because nothing
+        // spelling a bool that way goes through here -- PropertyBool writes
+        // "true"/"false" and restores it by comparing the string itself.
+        // Our Writer spells them the same way, so the two words are honoured
+        // here as well: upstream's "1"/"0" attributes read identically, and
+        // a fork caller who points this at a Bool attribute gets the answer
+        // the file actually holds.
+        std::string_view raw(value);
+        return raw != "0" && raw != "false";
+    }
+}
+}  // namespace
+
+template<typename T>
+    requires Base::XMLReader::instantiated<T>
+T Base::XMLReader::getAttribute(const char* AttrName, T defaultValue) const
+{
+    const std::string *value = findAttribute(AttrName);
+    if (!value)
+        return defaultValue;
+    return readerCast<T>(value->c_str());
+}
+
+template<typename T>
+    requires Base::XMLReader::instantiated<T>
+T Base::XMLReader::getAttribute(const char* AttrName) const
+{
+    const std::string *value = findAttribute(AttrName);
+    if (!value) {
+        // wrong name, use hasAttribute if not sure!
+        _FC_READER_THROW(Base::XMLAttributeError, "XML Attribute: '" << AttrName << "' not found");
+    }
+    return readerCast<T>(value->c_str());
+}
+
+// Explicit template instantiation
+#define FC_READER_INSTANTIATE(_T) \
+    template BaseExport _T Base::XMLReader::getAttribute<_T>(const char*, _T) const; \
+    template BaseExport _T Base::XMLReader::getAttribute<_T>(const char*) const;
+
+FC_READER_INSTANTIATE(bool)
+FC_READER_INSTANTIATE(const char*)
+FC_READER_INSTANTIATE(double)
+FC_READER_INSTANTIATE(int)
+FC_READER_INSTANTIATE(long)
+FC_READER_INSTANTIATE(unsigned long)
+
+#undef FC_READER_INSTANTIATE
 
 bool Base::XMLReader::hasAttribute(const char* AttrName) const
 {

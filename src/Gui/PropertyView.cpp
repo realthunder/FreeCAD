@@ -88,7 +88,8 @@ PropertyView::PropertyView(QWidget *parent)
                 paramChanged = true;
                 timer->start(ViewParams::getPropertyViewTimer());
             }
-        });
+        },
+        fastsignals::advanced_tag {});
 
     auto pLayout = new QGridLayout( this );
     pLayout->setSpacing(0);

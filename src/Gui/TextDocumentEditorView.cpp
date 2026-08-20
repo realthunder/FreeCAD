@@ -277,7 +277,7 @@ bool TextDocumentEditorView::canClose()
 
 void TextDocumentEditorView::saveToObject()
 {
-    boost::signals2::shared_connection_block textBlock {textConnection};
+    fastsignals::shared_connection_block textBlock {textConnection};
     textDocument->Text.setValue(
             getEditor()->document()->toPlainText().toUtf8());
     textDocument->purgeTouched();

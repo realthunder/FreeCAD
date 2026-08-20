@@ -332,7 +332,7 @@ bool QGITile::getAltWeld()
 //TODO: this is Pen, not Brush. sb Brush to colour background
 QColor QGITile::getTileColor() const
 {
-    App::Color fcColor = App::Color((uint32_t) Preferences::getPreferenceGroup("Colors")->GetUnsigned("TileColor", 0x00000000));
+    App::Color fcColor = App::Color((uint32_t) Preferences::getPreferenceGroup("Colors")->GetUnsigned("TileColor", 0x000000FF));
     return PreferencesGui::getAccessibleQColor( fcColor.asValue<QColor>());
 }
 

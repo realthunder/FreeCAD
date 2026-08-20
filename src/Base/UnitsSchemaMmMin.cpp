@@ -26,7 +26,7 @@
 #include <unistd.h>
 #endif
 
-#include <QString>
+#include <string>
 
 #include "UnitsSchemaMmMin.h"
 
@@ -34,12 +34,12 @@
 using namespace Base;
 
 
-QString
-UnitsSchemaMmMin::schemaTranslate(const Quantity& quant, double& factor, QString& unitString)
+std::string
+UnitsSchemaMmMin::schemaTranslate(const Quantity& quant, double& factor, std::string& unitString)
 {
     Unit unit = quant.getUnit();
     if (unit == Unit::Length) {
-        unitString = QStringLiteral("mm");
+        unitString = "mm";
         factor = 1.0;
     }
     else if (unit == Unit::Angle) {
@@ -47,7 +47,7 @@ UnitsSchemaMmMin::schemaTranslate(const Quantity& quant, double& factor, QString
         factor = 1.0;
     }
     else if (unit == Unit::Velocity) {
-        unitString = QStringLiteral("mm/min");
+        unitString = "mm/min";
         factor = 1. / 60.;
     }
     else {

@@ -160,7 +160,7 @@ QVariant FilletRadiusModel::data(const QModelIndex& index, int role) const
     QVariant value = QStandardItemModel::data(index, role);
     if (role == Qt::DisplayRole && index.column() >= 1) {
         Base::Quantity q = value.value<Base::Quantity>();
-        QString str = q.getUserString();
+        QString str = QString::fromStdString(q.getUserString());
         return str;
     }
     return value;
@@ -211,7 +211,7 @@ namespace PartGui {
         std::vector<int> edge_ids;
         TopTools_IndexedMapOfShape all_edges;
         TopTools_IndexedMapOfShape all_faces;
-        using Connection = boost::signals2::connection;
+        using Connection = fastsignals::connection;
         Connection connectApplicationDeletedObject;
         Connection connectApplicationDeletedDocument;
 

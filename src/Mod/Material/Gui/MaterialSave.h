@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,8 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
-#ifndef MATGUI_MATERIALSAVE_H
-#define MATGUI_MATERIALSAVE_H
+#pragma once
 
 #include <memory>
 
@@ -34,6 +35,8 @@
 
 namespace MatGui
 {
+
+class MaterialLibrary;
 
 class Ui_MaterialSave;
 
@@ -76,7 +79,6 @@ public:
 
 private:
     std::unique_ptr<Ui_MaterialSave> ui;
-    Materials::MaterialManager _manager;
     std::shared_ptr<Materials::Material> _material;
     bool _saveInherited;
     QString _selectedPath;
@@ -101,5 +103,3 @@ private:
 };
 
 }  // namespace MatGui
-
-#endif  // MATGUI_MATERIALSAVE_H

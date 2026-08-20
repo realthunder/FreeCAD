@@ -376,6 +376,74 @@ TEST(SceneDump, monolithicRoundTrip)
     expectScene(loaded);
 }
 
+/// The output colour transform crosses the wire (v60).
+///
+/// It has to: the desktop, the headless-serve backend and the browser
+/// viewer each finish their own frames, so a transform that stayed on
+/// the machine that chose it would leave the tiers rendering the same
+/// scene in two different colour spaces. A snapshot older than v60 has
+/// no field to read and must come back None -- unencoded is how those
+/// frames were written and how they have to keep being drawn.
+TEST(SceneDump, theOutputTransformCrossesTheWire)
+{
+    Render::SceneSnapshot snap = makeScene();
+    // Both values, because the DEFAULT is not the thing under test --
+    // it has already changed once, and a test that pinned it would fail
+    // for that rather than for anything about the wire.
+    for (int transform : {int(Render::OutputConfig::None),
+                          int(Render::OutputConfig::SRGB)}) {
+        snap.outconf.transform = transform;
+        // The exposure travels with it (v62) -- a viewer developing the
+        // frame a stop darker than the machine that published it is the
+        // same divergence as the transform itself.
+        snap.outconf.exposure = transform ? 2.5f : 1.0f;
+        std::vector<uint8_t> payload;
+        ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+        Render::SceneSnapshot loaded;
+        ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(),
+                                              payload.size(), loaded));
+        EXPECT_EQ(loaded.outconf.transform, transform);
+        EXPECT_FLOAT_EQ(loaded.outconf.exposure, snap.outconf.exposure);
+    }
+}
+
+/// A float texture payload crosses the wire as floats (v63).
+///
+/// This is what an HDR environment is: the sky is thousands of times
+/// brighter than the wall under it, and that ratio is the whole reason
+/// an image based light reads as a place. A reader that took the bytes
+/// for a byte-per-component image would not merely dim it -- it would
+/// read four texels' worth of mantissa as four pixels.
+TEST(SceneDump, aFloatTexturePayloadKeepsItsFloats)
+{
+    Render::SceneSnapshot snap = makeScene();
+    auto tex = std::make_shared<Render::TextureImage>();
+    tex->textureId = 4242;
+    tex->width = 2;
+    tex->height = 1;
+    tex->numComponents = 3;
+    tex->sample = Render::TextureImage::F32;
+    // A dim texel and one far beyond anything a byte could hold.
+    const float radiance[6] = {0.25f, 0.25f, 0.25f, 800.0f, 800.0f, 800.0f};
+    tex->pixels.resize(sizeof(radiance));
+    std::memcpy(tex->pixels.data(), radiance, sizeof(radiance));
+    snap.hatch = tex;
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+
+    ASSERT_TRUE(loaded.hatch);
+    EXPECT_EQ(loaded.hatch->sample, Render::TextureImage::F32);
+    EXPECT_EQ(loaded.hatch->sampleSize(), 4u);
+    ASSERT_EQ(loaded.hatch->pixels.size(), sizeof(radiance));
+    for (size_t i = 0; i < 6; ++i)
+        EXPECT_FLOAT_EQ(loaded.hatch->component(i), radiance[i])
+            << "component " << i;
+}
+
 TEST(SceneDump, manifestRoundTrip)
 {
     BlobStore store;

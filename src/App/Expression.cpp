@@ -1836,7 +1836,7 @@ void UnitExpression::_toString(std::ostream &ss, bool,int) const
     if(unitStr)
         ss << unitStr;
     else
-        ss << quantity.getUnit().getStdString();
+        ss << quantity.getUnit().getString();
 }
 
 /**

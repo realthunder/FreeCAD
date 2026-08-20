@@ -158,7 +158,7 @@ public:
                 case Sketcher::Diameter:
                 case Sketcher::Angle:
                     name = QStringLiteral("%1 (%2)").arg(
-                        name, constraint->getPresentationValue().getUserString());
+                        name, QString::fromStdString(constraint->getPresentationValue().getUserString()));
                     break;
                 case Sketcher::SnellsLaw: {
                     double v = constraint->getPresentationValue().getValue();
@@ -983,7 +983,8 @@ TaskSketcherConstraints::TaskSketcherConstraints(ViewProviderSketch* sketchView)
     //NOLINTBEGIN
     Gui::Application* app = Gui::Application::Instance;
     changedSketchView = app->signalChangedObject.connect(
-        std::bind(&TaskSketcherConstraints::onChangedSketchView, this, sp::_1, sp::_2));
+        std::bind(&TaskSketcherConstraints::onChangedSketchView, this, sp::_1, sp::_2),
+        fastsignals::advanced_tag {});
     //NOLINTEND
 
     slotConstraintsChanged();// Populate constraints list

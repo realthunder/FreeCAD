@@ -36,7 +36,7 @@
 #include <QStringList>
 #include <QTimer>
 
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 
 class QLineEdit;
 class QWidgetAction;
@@ -309,7 +309,7 @@ protected Q_SLOTS:
 
 private:
     WorkbenchGroup* group;
-    boost::signals2::scoped_connection connParam;
+    fastsignals::advanced_scoped_connection connParam;
     QTimer timer;
     QTimer timerCurrentChange;
     bool moved {false};

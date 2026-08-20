@@ -1,4 +1,6 @@
 ---
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *                                                                         *
 # *   Copyright (c) 2023 David Carter <dcarter@davidcarter.ca>              *
@@ -28,17 +30,20 @@ Model:
   Description: "default electromagnetic model"
   DOI: ""
   RelativePermittivity:
+    DisplayName: "Relative Permittivity"
     Type: 'Float'
     Units: ''
     URL: 'https://en.wikipedia.org/wiki/Relative_permittivity'
     Description: "The ratio to the permittivity of the vacuum"
   ElectricalConductivity:
+    DisplayName: "Electrical Conductivity"
     Type: 'Quantity'
     Units: 'S/m'
     URL: 'https://en.wikipedia.org/wiki/Electrical_resistivity_and_conductivity'
     Description: >
       The electrical conductivity in [FreeCAD ElectricalConductivity unit]
   RelativePermeability:
+    DisplayName: "Relative Permeability"
     Type: 'Float'
     Units: ''
     URL: 'https://en.wikipedia.org/wiki/Permeability_(electromagnetism)'

@@ -20,6 +20,7 @@ link_directories(${OCC_LIBRARY_DIR})
 set(Part_LIBS
     ${OCC_LIBRARIES}
     ${OCC_DEBUG_LIBRARIES}
+    Materials
     FreeCADApp
 )
 

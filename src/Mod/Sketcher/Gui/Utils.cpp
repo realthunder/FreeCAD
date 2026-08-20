@@ -716,7 +716,7 @@ std::string SketcherGui::lengthToDisplayFormat(double value, int digits)
     Base::Quantity asQuantity;
     asQuantity.setValue(value);
     asQuantity.setUnit(Base::Unit::Length);
-    QString qUserString = asQuantity.getUserString();
+    QString qUserString = QString::fromStdString(asQuantity.getUserString());
     if (Base::UnitsApi::isMultiUnitLength() || (!hideUnits() && useSystemDecimals())) {
         // just return the user string
         return Base::Tools::toStdString(qUserString);
@@ -724,9 +724,10 @@ std::string SketcherGui::lengthToDisplayFormat(double value, int digits)
 
     // find the unit of measure
     double factor = 1.0;
-    QString qUnitString;
-    QString qtranslate = Base::UnitsApi::schemaTranslate(asQuantity, factor, qUnitString);
-    QString unitPart = QStringLiteral(" ") + qUnitString;
+    std::string unitString;
+    // called for the unit string it writes back; the translated value is not used here
+    Base::UnitsApi::schemaTranslate(asQuantity, factor, unitString);
+    QString unitPart = QStringLiteral(" ") + QString::fromStdString(unitString);
 
     // get the numeric part of the user string
     QRegularExpression rxNoUnits(
@@ -777,7 +778,7 @@ std::string SketcherGui::angleToDisplayFormat(double value, int digits)
     Base::Quantity asQuantity;
     asQuantity.setValue(value);
     asQuantity.setUnit(Base::Unit::Angle);
-    QString qUserString = asQuantity.getUserString();
+    QString qUserString = QString::fromStdString(asQuantity.getUserString());
     if (Base::UnitsApi::isMultiUnitAngle()) {
         // just return the user string
         // Coin SbString doesn't handle utf8 well, so we convert to ascii

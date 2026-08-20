@@ -102,7 +102,10 @@ App::DocumentObjectExecReturn *DrawParametricTemplate::execute()
         Base::Interpreter().runFile(temp.c_str(), true);
     }
     catch(const Base::Exception& e) {
-        PyErr_SetString(PyExc_ImportError, e.what());
+        // a template script that failed to run is a failed recompute, not a
+        // success; reporting it through a Python error left that error set for
+        // an unrelated later call to trip over, and told the document nothing
+        return new App::DocumentObjectExecReturn(e.what());
     }
     return App::DocumentObject::StdReturn;
 }

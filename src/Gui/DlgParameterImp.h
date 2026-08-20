@@ -26,7 +26,7 @@
 
 #include <set>
 #include <unordered_map>
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include <Base/Parameter.h>
 
@@ -150,7 +150,7 @@ protected:
 
     struct MonitorInfo {
         ParameterGrp::handle handle;
-        boost::signals2::scoped_connection conn;
+        fastsignals::scoped_connection conn;
         std::unordered_map<ParameterGrp*, std::set<ParamKey>> changes;
     };
     std::map<ParameterManager*, MonitorInfo> monitors;

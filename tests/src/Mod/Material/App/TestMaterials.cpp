@@ -215,10 +215,9 @@ TEST_F(TestMaterial, TestAddAppearanceModel)
     EXPECT_EQ(models->size(), 0);
 }
 
-QString parseQuantity(const char *string)
+std::string parseQuantity(const char *string)
 {
-    QString value = QString::fromStdString(string);
-    return Base::Quantity::parse(value).getUserString();
+    return Base::Quantity::parse(string).getUserString();
 }
 
 TEST_F(TestMaterial, TestCalculiXSteel)

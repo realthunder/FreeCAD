@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,15 +21,11 @@
  *                                                                         *
  **************************************************************************/
 
-#include "PreCompiled.h"
-#ifndef _PreComp_
-#include <QRegularExpression>
-#endif
-
 #include <QMetaType>
+#include <QRegularExpression>
+
 
 #include <App/Application.h>
-#include <Base/QtTools.h>
 #include <Base/Quantity.h>
 #include <Gui/MetaTypes.h>
 
@@ -40,6 +38,25 @@ using namespace Materials;
 /* TRANSLATOR Material::MaterialValue */
 
 TYPESYSTEM_SOURCE(Materials::MaterialValue, Base::BaseClass)
+
+QMap<QString, MaterialValue::ValueType> MaterialValue::_typeMap {
+    {QStringLiteral("String"), String},
+    {QStringLiteral("Boolean"), Boolean},
+    {QStringLiteral("Integer"), Integer},
+    {QStringLiteral("Float"), Float},
+    {QStringLiteral("Quantity"), Quantity},
+    {QStringLiteral("Distribution"), Distribution},
+    {QStringLiteral("List"), List},
+    {QStringLiteral("2DArray"), Array2D},
+    {QStringLiteral("3DArray"), Array3D},
+    {QStringLiteral("Color"), Color},
+    {QStringLiteral("Image"), Image},
+    {QStringLiteral("File"), File},
+    {QStringLiteral("URL"), URL},
+    {QStringLiteral("MultiLineString"), MultiLineString},
+    {QStringLiteral("FileList"), FileList},
+    {QStringLiteral("ImageList"), ImageList},
+    {QStringLiteral("SVG"), SVG}};
 
 MaterialValue::MaterialValue()
     : _valueType(None)
@@ -85,18 +102,62 @@ bool MaterialValue::operator==(const MaterialValue& other) const
     return (_valueType == other._valueType) && (_value == other._value);
 }
 
+void MaterialValue::validate(const MaterialValue& other) const
+{
+    if (_valueType != other._valueType) {
+        throw InvalidProperty("Material property value types don't match");
+    }
+    if (_valueType == Quantity) {
+        auto q1 = _value.value<Base::Quantity>();
+        auto q2 = other._value.value<Base::Quantity>();
+        if (q1.isValid()) {
+            if (!q2.isValid()) {
+                throw InvalidProperty("Invalid remote Material property quantity value");
+            }
+            if (q1.getUserString() != q2.getUserString()) {
+                // Direct comparisons of the quantities may have precision issues
+                // throw InvalidProperty("Material property quantity values don't match");
+            }
+        }
+        else {
+            if (q2.isValid()) {
+                throw InvalidProperty("Remote Material property quantity should not have a value");
+            }
+        }
+    }
+    else if (_valueType == Array2D) {
+        auto a1 = static_cast<const Materials::Array2D*>(this);
+        auto a2 = static_cast<const Materials::Array2D*>(&other);
+        a1->validate(*a2);
+    }
+    else if (_valueType == Array3D) {
+        auto a1 = static_cast<const Materials::Array3D*>(this);
+        auto a2 = static_cast<const Materials::Array3D*>(&other);
+        a1->validate(*a2);
+    }
+    else if (!(_value.isNull() && other._value.isNull()) && (_value != other._value)) {
+        throw InvalidProperty("Material property values don't match");
+    }
+}
+
 QString MaterialValue::escapeString(const QString& source)
 {
     QString res = source;
-    res.replace(QString::fromStdString("\\"), QString::fromStdString("\\\\"));
-    res.replace(QString::fromStdString("\""), QString::fromStdString("\\\""));
+    res.replace(QStringLiteral("\\"), QStringLiteral("\\\\"));
+    res.replace(QStringLiteral("\""), QStringLiteral("\\\""));
     return res;
+}
+
+MaterialValue::ValueType MaterialValue::mapType(const QString& stringType)
+{
+    // If not found, return None
+    return _typeMap.value(stringType, None);
 }
 
 void MaterialValue::setInitialValue(ValueType inherited)
 {
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    if (_valueType == String || _valueType == MultiLineString) {
+    if (_valueType == String || _valueType == MultiLineString || _valueType == SVG) {
         _value = QVariant(static_cast<QVariant::Type>(QMetaType::QString));
     }
     else if (_valueType == Boolean) {
@@ -121,7 +182,7 @@ void MaterialValue::setInitialValue(ValueType inherited)
         _value = QVariant(static_cast<QVariant::Type>(QMetaType::QString));
     }
 #else
-    if (_valueType == String || _valueType == MultiLineString) {
+    if (_valueType == String || _valueType == MultiLineString || _valueType == SVG) {
         _value = QVariant(QMetaType(QMetaType::QString));
     }
     else if (_valueType == Boolean) {
@@ -183,6 +244,11 @@ void MaterialValue::setList(const QList<QVariant>& value)
 
 bool MaterialValue::isNull() const
 {
+    return isEmpty();
+}
+
+bool MaterialValue::isEmpty() const
+{
     if (_value.isNull()) {
         return true;
     }
@@ -201,10 +267,10 @@ bool MaterialValue::isNull() const
 QString MaterialValue::getYAMLStringImage() const
 {
     QString yaml;
-    yaml = QString::fromStdString(" |-2");
+    yaml = QStringLiteral(" |-2");
     QString base64 = getValue().toString();
     while (!base64.isEmpty()) {
-        yaml += QString::fromStdString("\n      ") + base64.left(74);
+        yaml += QStringLiteral("\n      ") + base64.left(74);
         base64.remove(0, 74);
     }
     return yaml;
@@ -214,8 +280,8 @@ QString MaterialValue::getYAMLStringList() const
 {
     QString yaml;
     for (auto& it : getList()) {
-        yaml += QString::fromStdString("\n      - \"") + escapeString(it.toString())
-            + QString::fromStdString("\"");
+        yaml += QStringLiteral("\n      - \"") + escapeString(it.toString())
+            + QStringLiteral("\"");
     }
     return yaml;
 }
@@ -224,10 +290,10 @@ QString MaterialValue::getYAMLStringImageList() const
 {
     QString yaml;
     for (auto& it : getList()) {
-        yaml += QString::fromStdString("\n      - |-2");
+        yaml += QStringLiteral("\n      - |-2");
         QString base64 = it.toString();
         while (!base64.isEmpty()) {
-            yaml += QString::fromStdString("\n        ") + base64.left(72);
+            yaml += QStringLiteral("\n        ") + base64.left(72);
             base64.remove(0, 72);
         }
     }
@@ -237,16 +303,101 @@ QString MaterialValue::getYAMLStringImageList() const
 QString MaterialValue::getYAMLStringMultiLine() const
 {
     QString yaml;
-    yaml = QString::fromStdString(" >2");
+    yaml = QStringLiteral(" |2");
     auto list =
         getValue().toString().split(QRegularExpression(QStringLiteral("[\r\n]")), Qt::SkipEmptyParts);
     for (auto& it : list) {
-        yaml += QString::fromStdString("\n      ") + it;
+        yaml += QStringLiteral("\n      ") + it;
     }
     return yaml;
 }
 
+QString MaterialValue::displayQuantity(const Base::Quantity& quantity)
+{
+    // The user's schema picks the unit, and that is what keeps a card
+    // readable. Its decimal count is another matter: getUserString() alone
+    // rounds 7854.321 kg/m^3 to 7854.32, so a card saved to the library and
+    // read back is not the card that was saved, and every document holding it
+    // reports a divergence nobody made (docs/MaterialStorage.md sec 13.3).
+    //
+    // So keep the schema's unit and ask the parser -- not an assumption about
+    // digits -- how much precision it takes to read the value back unchanged.
+    // The answer is usually the number the user typed.
+    double factor {1.0};
+    std::string unitString;
+    const std::string userString = quantity.getUserString(factor, unitString);
+    if (factor == 0.0) {
+        return QString::fromStdString(userString);
+    }
+
+    const QString units = QString::fromStdString(unitString);
+    const double displayed = quantity.getValue() / factor;
+    for (int precision = 6; precision <= 17; precision++) {
+        const QString number = QString::number(displayed, 'g', precision);
+        const QString text =
+            units.isEmpty() ? number : number + QStringLiteral(" ") + units;
+        try {
+            if (Base::Quantity::parse(text.toStdString()).getValue() == quantity.getValue()) {
+                return text;
+            }
+        }
+        catch (const Base::Exception&) {
+            // A unit this parser cannot read back. Nothing here can improve
+            // on what the schema said, so say it.
+            break;
+        }
+    }
+    return QString::fromStdString(userString);
+}
+
+QString MaterialValue::canonicalNumber(double value)
+{
+    // The shortest form that reads back as the same double, so the text is a
+    // function of the value alone. QString::number is locale independent.
+    for (int precision = 15; precision < 17; precision++) {
+        QString text = QString::number(value, 'g', precision);
+        if (text.toDouble() == value) {
+            return text;
+        }
+    }
+    return QString::number(value, 'g', 17);
+}
+
+QString MaterialValue::canonicalFloat(float value)
+{
+    for (int precision = 6; precision < 9; precision++) {
+        QString text = QString::number(double(value), 'g', precision);
+        if (text.toFloat() == value) {
+            return text;
+        }
+    }
+    return QString::number(double(value), 'g', 9);
+}
+
+QString MaterialValue::canonicalQuantity(const Base::Quantity& quantity)
+{
+    // Internal units, never the user's schema: getUserString() would write
+    // the same card differently for a user working in imperial units, and
+    // would round the value to that schema's decimal count as well.
+    QString number = canonicalNumber(quantity.getValue());
+    QString units = QString::fromStdString(quantity.getUnit().getString());
+    if (units.isEmpty()) {
+        return number;
+    }
+    return number + QStringLiteral(" ") + units;
+}
+
 QString MaterialValue::getYAMLString() const
+{
+    return yamlString(false);
+}
+
+QString MaterialValue::getCanonicalYAMLString() const
+{
+    return yamlString(true);
+}
+
+QString MaterialValue::yamlString(bool canonical) const
 {
     QString yaml;
     if (!isNull()) {
@@ -259,28 +410,21 @@ QString MaterialValue::getYAMLString() const
         if (getType() == MaterialValue::ImageList) {
             return getYAMLStringImageList();
         }
-        if (getType() == MaterialValue::MultiLineString) {
+        if (getType() == MaterialValue::MultiLineString || getType() == MaterialValue::SVG) {
             return getYAMLStringMultiLine();
         }
         if (getType() == MaterialValue::Quantity) {
             auto quantity = getValue().value<Base::Quantity>();
-            yaml += quantity.getUserString();
+            yaml += canonical ? canonicalQuantity(quantity) : displayQuantity(quantity);
         }
         else if (getType() == MaterialValue::Float) {
             auto value = getValue();
             if (!value.isNull()) {
-                yaml += QStringLiteral("%1").arg(value.toFloat(), 0, 'g', 6);
+                // Six digits is not enough to read a float back unchanged
+                // either, and for the same reason: what is written has to be
+                // what was stored.
+                yaml += canonicalFloat(value.toFloat());
             }
-        }
-        else if (getType() == MaterialValue::MultiLineString) {
-            yaml = QStringLiteral(">2");
-            auto list =
-                getValue().toString().split(QRegularExpression(QStringLiteral("[\r\n]")),
-                                            Qt::SkipEmptyParts);
-            for (auto& it : list) {
-                yaml += QStringLiteral("\n      ") + it;
-            }
-            return yaml;
         }
         else if (getType() == MaterialValue::List) {
             for (auto& it : getList()) {
@@ -293,30 +437,35 @@ QString MaterialValue::getYAMLString() const
             yaml += getValue().toString();
         }
     }
-    yaml = QStringLiteral("\"") + escapeString(yaml) + QStringLiteral("\"");
+    yaml = QStringLiteral(" \"") + escapeString(yaml) + QStringLiteral("\"");
     return yaml;
+}
+
+const Base::QuantityFormat MaterialValue::getQuantityFormat()
+{
+    return Base::QuantityFormat(Base::QuantityFormat::NumberFormat::Default, PRECISION);
 }
 
 //===
 
-TYPESYSTEM_SOURCE(Materials::Material2DArray, Materials::MaterialValue)
+TYPESYSTEM_SOURCE(Materials::Array2D, Materials::MaterialValue)
 
-Material2DArray::Material2DArray()
-    : MaterialValue(Array2D, Array2D)
+Array2D::Array2D()
+    : MaterialValue(MaterialValue::Array2D, MaterialValue::Array2D)
     , _columns(0)
 {
     // Initialize separatelt to prevent recursion
     // setType(Array2D);
 }
 
-Material2DArray::Material2DArray(const Material2DArray& other)
+Array2D::Array2D(const Array2D& other)
     : MaterialValue(other)
     , _columns(other._columns)
 {
     deepCopy(other);
 }
 
-Material2DArray& Material2DArray::operator=(const Material2DArray& other)
+Array2D& Array2D::operator=(const Array2D& other)
 {
     if (this == &other) {
         return *this;
@@ -330,7 +479,7 @@ Material2DArray& Material2DArray::operator=(const Material2DArray& other)
     return *this;
 }
 
-void Material2DArray::deepCopy(const Material2DArray& other)
+void Array2D::deepCopy(const Array2D& other)
 {
     // Deep copy
     for (auto& row : other._rows) {
@@ -343,26 +492,55 @@ void Material2DArray::deepCopy(const Material2DArray& other)
     }
 }
 
-bool Material2DArray::isNull() const
+bool Array2D::isNull() const
+{
+    return isEmpty();
+}
+
+bool Array2D::isEmpty() const
 {
     return rows() <= 0;
 }
 
-void Material2DArray::validateRow(int row) const
+void Array2D::validateRow(int row) const
 {
     if (row < 0 || row >= rows()) {
         throw InvalidIndex();
     }
 }
 
-void Material2DArray::validateColumn(int column) const
+void Array2D::validateColumn(int column) const
 {
     if (column < 0 || column >= columns()) {
         throw InvalidIndex();
     }
 }
 
-std::shared_ptr<QList<QVariant>> Material2DArray::getRow(int row) const
+void Array2D::validate(const Array2D& other) const
+{
+    if (rows() != other.rows()) {
+        Base::Console().log("Local row count %d, remote %d\n", rows(), other.rows());
+        throw InvalidProperty("Material property value row counts don't match");
+    }
+    if (columns() != other.columns()) {
+        Base::Console().log("Local column count %d, remote %d\n", columns(), other.columns());
+        throw InvalidProperty("Material property value column counts don't match");
+    }
+    try {
+        for (int i = 0; i < rows(); i++) {
+            for (int j = 0; j < columns(); j++) {
+                if (getValue(i, j) != other.getValue(i, j)) {
+                    throw InvalidProperty("Material property values don't match");
+                }
+            }
+        }
+    }
+    catch (const InvalidIndex&) {
+        throw InvalidProperty("Material property value invalid array index");
+    }
+}
+
+std::shared_ptr<QList<QVariant>> Array2D::getRow(int row) const
 {
     validateRow(row);
 
@@ -374,7 +552,7 @@ std::shared_ptr<QList<QVariant>> Material2DArray::getRow(int row) const
     }
 }
 
-std::shared_ptr<QList<QVariant>> Material2DArray::getRow(int row)
+std::shared_ptr<QList<QVariant>> Array2D::getRow(int row)
 {
     validateRow(row);
 
@@ -386,17 +564,17 @@ std::shared_ptr<QList<QVariant>> Material2DArray::getRow(int row)
     }
 }
 
-void Material2DArray::addRow(const std::shared_ptr<QList<QVariant>>& row)
+void Array2D::addRow(const std::shared_ptr<QList<QVariant>>& row)
 {
     _rows.push_back(row);
 }
 
-void Material2DArray::insertRow(int index, const std::shared_ptr<QList<QVariant>>& row)
+void Array2D::insertRow(int index, const std::shared_ptr<QList<QVariant>>& row)
 {
     _rows.insert(_rows.begin() + index, row);
 }
 
-void Material2DArray::deleteRow(int row)
+void Array2D::deleteRow(int row)
 {
     if (row >= static_cast<int>(_rows.size()) || row < 0) {
         throw InvalidIndex();
@@ -404,7 +582,18 @@ void Material2DArray::deleteRow(int row)
     _rows.erase(_rows.begin() + row);
 }
 
-void Material2DArray::setValue(int row, int column, const QVariant& value)
+void Array2D::setRows(int rowCount)
+{
+    while (rows() < rowCount) {
+        auto row = std::make_shared<QList<QVariant>>();
+        for (int i = 0; i < columns(); i++) {
+            row->append(QVariant());
+        }
+        addRow(row);
+    }
+}
+
+void Array2D::setValue(int row, int column, const QVariant& value)
 {
     validateRow(row);
     validateColumn(column);
@@ -418,7 +607,7 @@ void Material2DArray::setValue(int row, int column, const QVariant& value)
     }
 }
 
-QVariant Material2DArray::getValue(int row, int column) const
+QVariant Array2D::getValue(int row, int column) const
 {
     validateColumn(column);
 
@@ -431,23 +620,33 @@ QVariant Material2DArray::getValue(int row, int column) const
     }
 }
 
-void Material2DArray::dumpRow(const std::shared_ptr<QList<QVariant>>& row)
+void Array2D::dumpRow(const std::shared_ptr<QList<QVariant>>& row)
 {
-    Base::Console().Log("row: ");
+    Base::Console().log("row: ");
     for (auto& column : *row) {
-        Base::Console().Log("'%s' ", column.toString().toStdString().c_str());
+        Base::Console().log("'%s' ", column.toString().toStdString().c_str());
     }
-    Base::Console().Log("\n");
+    Base::Console().log("\n");
 }
 
-void Material2DArray::dump() const
+void Array2D::dump() const
 {
     for (auto& row : _rows) {
         dumpRow(row);
     }
 }
 
-QString Material2DArray::getYAMLString() const
+QString Array2D::getYAMLString() const
+{
+    return yamlString(false);
+}
+
+QString Array2D::getCanonicalYAMLString() const
+{
+    return yamlString(true);
+}
+
+QString Array2D::yamlString(bool canonical) const
 {
     if (isNull()) {
         return QString();
@@ -458,45 +657,45 @@ QString Material2DArray::getYAMLString() const
     pad.fill(QChar::fromLatin1(' '), 9);
 
     // Save the array contents
-    QString yaml = QString::fromStdString("\n      - [");
+    QString yaml = QStringLiteral("\n      - [");
     bool firstRow = true;
     for (auto& row : _rows) {
         if (!firstRow) {
             // Each row is on its own line, padded for correct indentation
-            yaml += QString::fromStdString(",\n") + pad;
+            yaml += QStringLiteral(",\n") + pad;
         }
         else {
             firstRow = false;
         }
-        yaml += QString::fromStdString("[");
+        yaml += QStringLiteral("[");
 
         bool first = true;
         for (auto& column : *row) {
             if (!first) {
                 // TODO: Fix for arrays with too many columns to fit on a single line
-                yaml += QString::fromStdString(", ");
+                yaml += QStringLiteral(", ");
             }
             else {
                 first = false;
             }
-            yaml += QString::fromStdString("\"");
+            yaml += QStringLiteral("\"");
             auto quantity = column.value<Base::Quantity>();
-            yaml += quantity.getUserString();
-            yaml += QString::fromStdString("\"");
+            yaml += canonical ? canonicalQuantity(quantity) : displayQuantity(quantity);
+            yaml += QStringLiteral("\"");
         }
 
-        yaml += QString::fromStdString("]");
+        yaml += QStringLiteral("]");
     }
-    yaml += QString::fromStdString("]");
+    yaml += QStringLiteral("]");
     return yaml;
 }
 
 //===
 
-TYPESYSTEM_SOURCE(Materials::Material3DArray, Materials::MaterialValue)
+TYPESYSTEM_SOURCE(Materials::Array3D, Materials::MaterialValue)
 
-Material3DArray::Material3DArray()
-    : MaterialValue(Array3D, Array3D)
+Array3D::Array3D()
+    : MaterialValue(MaterialValue::Array3D, MaterialValue::Array3D)
     , _currentDepth(0)
     , _columns(0)
 {
@@ -504,26 +703,71 @@ Material3DArray::Material3DArray()
     // setType(Array3D);
 }
 
-bool Material3DArray::isNull() const
+Array3D::Array3D(const Array3D& other)
+    : MaterialValue(other)
+    , _currentDepth(other._currentDepth)
+    , _columns(other._columns)
+{
+    deepCopy(other);
+}
+
+Array3D& Array3D::operator=(const Array3D& other)
+{
+    if (this == &other) {
+        return *this;
+    }
+
+    MaterialValue::operator=(other);
+    _columns = other._columns;
+    _currentDepth = other._currentDepth;
+
+    deepCopy(other);
+
+    return *this;
+}
+
+void Array3D::deepCopy(const Array3D& other)
+{
+    // Deep copy
+    _rowMap.clear();
+    for (auto& depthTable : other._rowMap) {
+        auto depth = addDepth(depthTable.first);
+        auto rows = depthTable.second;
+        for (auto row : *rows) {
+            auto newRow = std::make_shared<QList<Base::Quantity>>();
+            for (auto column : *row) {
+                newRow->append(column);
+            }
+            addRow(depth, newRow);
+        }
+    }
+}
+
+bool Array3D::isNull() const
+{
+    return isEmpty();
+}
+
+bool Array3D::isEmpty() const
 {
     return depth() <= 0;
 }
 
-void Material3DArray::validateDepth(int level) const
+void Array3D::validateDepth(int level) const
 {
     if (level < 0 || level >= depth()) {
         throw InvalidIndex();
     }
 }
 
-void Material3DArray::validateColumn(int column) const
+void Array3D::validateColumn(int column) const
 {
     if (column < 0 || column >= columns()) {
         throw InvalidIndex();
     }
 }
 
-void Material3DArray::validateRow(int level, int row) const
+void Array3D::validateRow(int level, int row) const
 {
     validateDepth(level);
 
@@ -532,8 +776,18 @@ void Material3DArray::validateRow(int level, int row) const
     }
 }
 
+void Array3D::validate(const Array3D& other) const
+{
+    if (depth() != other.depth()) {
+        throw InvalidProperty("Material property value row counts don't match");
+    }
+    if (columns() != other.columns()) {
+        throw InvalidProperty("Material property value column counts don't match");
+    }
+}
+
 const std::shared_ptr<QList<std::shared_ptr<QList<Base::Quantity>>>>&
-Material3DArray::getTable(const Base::Quantity& depth) const
+Array3D::getTable(const Base::Quantity& depth) const
 {
     for (auto& it : _rowMap) {
         if (std::get<0>(it) == depth) {
@@ -545,7 +799,7 @@ Material3DArray::getTable(const Base::Quantity& depth) const
 }
 
 const std::shared_ptr<QList<std::shared_ptr<QList<Base::Quantity>>>>&
-Material3DArray::getTable(int depthIndex) const
+Array3D::getTable(int depthIndex) const
 {
     try {
         return std::get<1>(_rowMap.at(depthIndex));
@@ -555,7 +809,7 @@ Material3DArray::getTable(int depthIndex) const
     }
 }
 
-std::shared_ptr<QList<Base::Quantity>> Material3DArray::getRow(int depth, int row) const
+std::shared_ptr<QList<Base::Quantity>> Array3D::getRow(int depth, int row) const
 {
     validateRow(depth, row);
 
@@ -567,13 +821,13 @@ std::shared_ptr<QList<Base::Quantity>> Material3DArray::getRow(int depth, int ro
     }
 }
 
-std::shared_ptr<QList<Base::Quantity>> Material3DArray::getRow(int row) const
+std::shared_ptr<QList<Base::Quantity>> Array3D::getRow(int row) const
 {
     // Check if we can convert otherwise throw error
     return getRow(_currentDepth, row);
 }
 
-std::shared_ptr<QList<Base::Quantity>> Material3DArray::getRow(int depth, int row)
+std::shared_ptr<QList<Base::Quantity>> Array3D::getRow(int depth, int row)
 {
     validateRow(depth, row);
 
@@ -585,12 +839,12 @@ std::shared_ptr<QList<Base::Quantity>> Material3DArray::getRow(int depth, int ro
     }
 }
 
-std::shared_ptr<QList<Base::Quantity>> Material3DArray::getRow(int row)
+std::shared_ptr<QList<Base::Quantity>> Array3D::getRow(int row)
 {
     return getRow(_currentDepth, row);
 }
 
-void Material3DArray::addRow(int depth, const std::shared_ptr<QList<Base::Quantity>>& row)
+void Array3D::addRow(int depth, const std::shared_ptr<QList<Base::Quantity>>& row)
 {
     try {
         getTable(depth)->push_back(row);
@@ -600,12 +854,12 @@ void Material3DArray::addRow(int depth, const std::shared_ptr<QList<Base::Quanti
     }
 }
 
-void Material3DArray::addRow(const std::shared_ptr<QList<Base::Quantity>>& row)
+void Array3D::addRow(const std::shared_ptr<QList<Base::Quantity>>& row)
 {
     addRow(_currentDepth, row);
 }
 
-int Material3DArray::addDepth(int depth, const Base::Quantity& value)
+int Array3D::addDepth(int depth, const Base::Quantity& value)
 {
     if (depth == this->depth()) {
         // Append to the end
@@ -621,7 +875,7 @@ int Material3DArray::addDepth(int depth, const Base::Quantity& value)
     return depth;
 }
 
-int Material3DArray::addDepth(const Base::Quantity& value)
+int Array3D::addDepth(const Base::Quantity& value)
 {
     auto rowVector = std::make_shared<QList<std::shared_ptr<QList<Base::Quantity>>>>();
     auto entry = std::make_pair(value, rowVector);
@@ -630,13 +884,22 @@ int Material3DArray::addDepth(const Base::Quantity& value)
     return depth() - 1;
 }
 
-void Material3DArray::deleteDepth(int depth)
+void Array3D::deleteDepth(int depth)
 {
     deleteRows(depth);  // This may throw an InvalidIndex
     _rowMap.erase(_rowMap.begin() + depth);
 }
 
-void Material3DArray::insertRow(int depth,
+void Array3D::setDepth(int depthCount)
+{
+    Base::Quantity dummy;
+    dummy.setInvalid();
+    while (depth() < depthCount) {
+        addDepth(dummy);
+    }
+}
+
+void Array3D::insertRow(int depth,
                                 int row,
                                 const std::shared_ptr<QList<Base::Quantity>>& rowData)
 {
@@ -649,12 +912,12 @@ void Material3DArray::insertRow(int depth,
     }
 }
 
-void Material3DArray::insertRow(int row, const std::shared_ptr<QList<Base::Quantity>>& rowData)
+void Array3D::insertRow(int row, const std::shared_ptr<QList<Base::Quantity>>& rowData)
 {
     insertRow(_currentDepth, row, rowData);
 }
 
-void Material3DArray::deleteRow(int depth, int row)
+void Array3D::deleteRow(int depth, int row)
 {
     auto table = getTable(depth);
     if (row >= static_cast<int>(table->size()) || row < 0) {
@@ -663,23 +926,23 @@ void Material3DArray::deleteRow(int depth, int row)
     table->erase(table->begin() + row);
 }
 
-void Material3DArray::deleteRow(int row)
+void Array3D::deleteRow(int row)
 {
     deleteRow(_currentDepth, row);
 }
 
-void Material3DArray::deleteRows(int depth)
+void Array3D::deleteRows(int depth)
 {
     auto table = getTable(depth);
     table->clear();
 }
 
-void Material3DArray::deleteRows()
+void Array3D::deleteRows()
 {
     deleteRows(_currentDepth);
 }
 
-int Material3DArray::rows(int depth) const
+int Array3D::rows(int depth) const
 {
     if (depth < 0 || (depth == 0 && this->depth() == 0)) {
         return 0;
@@ -689,7 +952,21 @@ int Material3DArray::rows(int depth) const
     return getTable(depth)->size();
 }
 
-void Material3DArray::setValue(int depth, int row, int column, const Base::Quantity& value)
+void Array3D::setRows(int depth, int rowCount)
+{
+    Base::Quantity dummy;
+    dummy.setInvalid();
+
+    while (rows(depth) < rowCount) {
+        auto row = std::make_shared<QList<Base::Quantity>>();
+        for (int i = 0; i < columns(); i++) {
+            row->append(dummy);
+        }
+        addRow(depth, row);
+    }
+}
+
+void Array3D::setValue(int depth, int row, int column, const Base::Quantity& value)
 {
     validateRow(depth, row);
     validateColumn(column);
@@ -703,12 +980,12 @@ void Material3DArray::setValue(int depth, int row, int column, const Base::Quant
     }
 }
 
-void Material3DArray::setValue(int row, int column, const Base::Quantity& value)
+void Array3D::setValue(int row, int column, const Base::Quantity& value)
 {
     setValue(_currentDepth, row, column, value);
 }
 
-void Material3DArray::setDepthValue(int depth, const Base::Quantity& value)
+void Array3D::setDepthValue(int depth, const Base::Quantity& value)
 {
     try {
         auto oldRows = getTable(depth);
@@ -719,13 +996,13 @@ void Material3DArray::setDepthValue(int depth, const Base::Quantity& value)
     }
 }
 
-void Material3DArray::setDepthValue(const Base::Quantity& value)
+void Array3D::setDepthValue(const Base::Quantity& value)
 {
     setDepthValue(_currentDepth, value);
 }
 
 
-Base::Quantity Material3DArray::getValue(int depth, int row, int column) const
+Base::Quantity Array3D::getValue(int depth, int row, int column) const
 {
     // getRow validates depth and row. Do that first
     auto val = getRow(depth, row);
@@ -739,12 +1016,12 @@ Base::Quantity Material3DArray::getValue(int depth, int row, int column) const
     }
 }
 
-Base::Quantity Material3DArray::getValue(int row, int column) const
+Base::Quantity Array3D::getValue(int row, int column) const
 {
     return getValue(_currentDepth, row, column);
 }
 
-Base::Quantity Material3DArray::getDepthValue(int depth) const
+Base::Quantity Array3D::getDepthValue(int depth) const
 {
     validateDepth(depth);
 
@@ -756,12 +1033,12 @@ Base::Quantity Material3DArray::getDepthValue(int depth) const
     }
 }
 
-int Material3DArray::currentDepth() const
+int Array3D::currentDepth() const
 {
     return _currentDepth;
 }
 
-void Material3DArray::setCurrentDepth(int depth)
+void Array3D::setCurrentDepth(int depth)
 {
     validateDepth(depth);
 
@@ -776,7 +1053,17 @@ void Material3DArray::setCurrentDepth(int depth)
     }
 }
 
-QString Material3DArray::getYAMLString() const
+QString Array3D::getYAMLString() const
+{
+    return yamlString(false);
+}
+
+QString Array3D::getCanonicalYAMLString() const
+{
+    return yamlString(true);
+}
+
+QString Array3D::yamlString(bool canonical) const
 {
     if (isNull()) {
         return QString();
@@ -787,17 +1074,18 @@ QString Material3DArray::getYAMLString() const
     pad.fill(QChar::fromLatin1(' '), 9);
 
     // Save the array contents
-    QString yaml = QString::fromStdString("\n      - [");
+    QString yaml = QStringLiteral("\n      - [");
     for (int depth = 0; depth < this->depth(); depth++) {
         if (depth > 0) {
             // Each row is on its own line, padded for correct indentation
-            yaml += QString::fromStdString(",\n") + pad;
+            yaml += QStringLiteral(",\n") + pad;
         }
 
-        yaml += QString::fromStdString("\"");
-        auto value = getDepthValue(depth).getUserString();
+        yaml += QStringLiteral("\"");
+        auto depthValue = getDepthValue(depth);
+        auto value = canonical ? canonicalQuantity(depthValue) : displayQuantity(depthValue);
         yaml += value;
-        yaml += QString::fromStdString("\": [");
+        yaml += QStringLiteral("\": [");
 
         QString pad2;
         pad2.fill(QChar::fromLatin1(' '), 14 + value.length());
@@ -807,32 +1095,31 @@ QString Material3DArray::getYAMLString() const
         for (auto& row : *rows) {
             if (!firstRow) {
                 // Each row is on its own line, padded for correct indentation
-                yaml += QString::fromStdString(",\n") + pad2;
+                yaml += QStringLiteral(",\n") + pad2;
             }
             else {
                 firstRow = false;
             }
-            yaml += QString::fromStdString("[");
+            yaml += QStringLiteral("[");
 
             bool first = true;
             for (auto& column : *row) {
                 if (!first) {
                     // TODO: Fix for arrays with too many columns to fit on a single line
-                    yaml += QString::fromStdString(", ");
+                    yaml += QStringLiteral(", ");
                 }
                 else {
                     first = false;
                 }
-                yaml += QString::fromStdString("\"");
-                // Base::Quantity quantity = column.value<Base::Quantity>();
-                yaml += column.getUserString();
-                yaml += QString::fromStdString("\"");
+                yaml += QStringLiteral("\"");
+                yaml += canonical ? canonicalQuantity(column) : displayQuantity(column);
+                yaml += QStringLiteral("\"");
             }
 
-            yaml += QString::fromStdString("]");
+            yaml += QStringLiteral("]");
         }
-        yaml += QString::fromStdString("]");
+        yaml += QStringLiteral("]");
     }
-    yaml += QString::fromStdString("]");
+    yaml += QStringLiteral("]");
     return yaml;
 }

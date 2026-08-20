@@ -3,7 +3,7 @@
 General:
   UUID: "953261a0-cc48-41f8-a3f9-7b20ae3f9b56"
   Author: "David Carter"
-  License: "GPL-2.0-or-later"
+  License: "CC-BY-4.0"
   Name: "Ruby"
   Description: "Defines the Ruby appearance properties"
 AppearanceModels:
@@ -12,6 +12,6 @@ AppearanceModels:
     AmbientColor: "(0.1745, 0.0118, 0.0118, 1.0)"
     DiffuseColor: "(0.6142, 0.0414, 0.0414, 1.0)"
     EmissiveColor: "(0.0000, 0.0000, 0.0000, 1.0)"
-    Shininess: "0.6000"
-    SpecularColor: "(0.7278, 0.6279, 0.6279, 1.0)"
+    Shininess: "0.9936"
+    SpecularColor: "(0.2209, 0.2209, 0.2209, 1.0)"
     Transparency: "0.0"

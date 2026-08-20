@@ -26,7 +26,7 @@
 
 #include <Base/Bitmask.h>
 #include <Base/BaseClass.h>
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 #include <memory>
 #include <set>
 #include <FCGlobal.h>
@@ -574,7 +574,7 @@ protected:
 
 private:
     App::Document* _document;
-    using Connection = boost::signals2::connection;
+    using Connection = fastsignals::connection;
     Connection connectApplicationCreatedDocument;
     Connection connectApplicationDeletedDocument;
     Connection connectApplicationActivateDocument;

@@ -30,7 +30,7 @@ DocumentParams.declare()
 
 // Auto generated code (Tools/params_utils.py:82)
 #include <Base/Parameter.h>
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 
 // Auto generated code (Tools/params_utils.py:90)
 namespace App {
@@ -68,7 +68,7 @@ class AppExport DocumentParams {
 public:
     static ParameterGrp::handle getHandle();
 
-    static boost::signals2::signal<void (const char*)> &signalParamChanged();
+    static fastsignals::signal<void (const char*)> &signalParamChanged();
     static void signalAll();
 
     // Auto generated code (Tools/params_utils.py:139)

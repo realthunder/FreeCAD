@@ -23,7 +23,7 @@
 #ifndef PARTDESIGN_AuxGroup_H
 #define PARTDESIGN_AuxGroup_H
 
-#include <boost/signals2.hpp>
+#include <fastsignals/signal.h>
 #include <App/DocumentObject.h>
 #include <App/PropertyLinks.h>
 #include <Mod/PartDesign/PartDesignGlobal.h>
@@ -71,7 +71,7 @@ protected:
     void attachBody();
 
 private:
-    boost::signals2::scoped_connection connBody;
+    fastsignals::scoped_connection connBody;
     mutable GroupType groupType = UnknownGroup;
 };
 

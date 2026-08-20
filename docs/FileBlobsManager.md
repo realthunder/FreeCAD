@@ -89,11 +89,45 @@ leaves every embedded file **empty without a word** -- the `blobs/` entries sit
 unclaimed beside it. That is exactly the silent-misread failure the compact
 format was designed to make impossible, which is why the compact format (built
 as schema 6, and no more released than this was) was folded into 5 rather than
-stacked above it. **4 is upstream's format and the default cap; 5 is this
-fork's**, and a document written at 5 is rooted `<FCDocument>`, so a reader
+stacked above it. **4 is upstream's format; 5 is this fork's, and the
+default for a document created here (2026-08-20) -- a restored document
+keeps the format its file was written in**, and a document written at 5 is rooted `<FCDocument>`, so a reader
 that does not know the format refuses it outright instead of half-reading it.
 The blob table is unchanged by the merge -- the gate still reads `>= 5`; it now
 means "the fork format" rather than claiming to mean something weaker.
+
+### 3.1 What the user is asked, and when
+
+The format is chosen in the save dialog (`Gui::Document::saveAs`), and since
+2026-08-20 a **new document is compact**: `SaveSchemaVersion` defaults to 5 and
+the dialog opens on it (`PreferCompactFormat`, also true by default, can hold a
+new document back to standard but never raises a cap something lowered on
+purpose). A document restored from a file keeps that file's own format, so this
+is about documents created here, not documents opened here. Two message boxes state what the
+choice costs, both raised after the file name is in so that neither is a
+heading nobody reads:
+
+| prompt | fires when | offers |
+|---|---|---|
+| `confirmCompactFormat()` | the save resolves to schema 5 | Save compact / Use standard format / Cancel, plus **Do not warn again** (`WarnCompactFormat`, default true) |
+| `confirmSchemaUpgrade()` | the save resolves to schema 4 **and** the document holds content only the store carries | Use compact format / Save anyway / Cancel, plus do-not-ask-again for that document (session only) |
+
+The second one also runs on the **plain Save** path, which is the case that
+made it necessary: plain Save never touches `SaveSchemaVersion`, so a document
+saved once at 4 and given a texture afterwards would drop the image on every
+save without a word.
+
+What "content only the store carries" means is answered by the property, not
+by the caller: `App::BlobReferrerProperty::blobContentNeedsStore()` is **false
+by default**, because most referrers have a schema 4 spelling that keeps the
+data -- `PropertyFileIncluded` writes its own copy of the file, a shape
+property writes the shape the old way and forfeits sharing rather than
+content. `PropertyMaterialList` overrides it with `hasTexture()`: the maps
+themselves ride a companion element below 5 (`docs/ShapeAppearanceDesign.md`
+10.5), the bytes behind them live in the store and nowhere else. A new
+referrer with the same problem overrides the same hook and both prompts pick
+it up; `Gui::Document`'s scan walks the document, its objects and their view
+providers and asks nothing else.
 
 The gate is `Base::Writer::getSchemaVersion()`, which only the document-level
 save paths set. Anything serializing a property standalone (§9) leaves it unset
@@ -171,7 +205,9 @@ wiring, because all three have an archive *and* a document-scoped manager:
 Sequence:
 
 1. `manager.beginSave()` — clear the collected set.
-2. **Collect broadcast.** Walk every reachable `PropertyFileIncluded` and
+2. **Collect broadcast.** Walk every reachable property that owns blob
+   content -- anything implementing `App::BlobReferrerProperty`, which the walk
+   asks via `collectBlobs()` rather than testing for a concrete class -- and
    `noteReferenced()` it: App objects and the document, plus a Gui leg
    (`signalCollectFiles`) covering view providers **and** `MDIView`s, which is
    what puts a view-only blob such as the environment image into the save set.
@@ -424,18 +460,19 @@ the case-by-case matrix.
 The save options are done (§6.1) and so is the browser-tier fetch (below). The
 rest is staged -- worth doing, not scheduled.
 
-- **Any file save through the manager, not just included files.** The store is
-  already type-agnostic (`insertFile(path) → handle`, hash identity, refcounted
-  lifetime); what is still `PropertyFileIncluded`-shaped is the referrer side:
-  `addPendingReferrer` takes that concrete type, and the collect pass filters on
-  it. Generalizing means a small referrer interface -- take the handle, and
-  withdraw on destruction -- which the collect pass and dispatch use instead.
-  Names stay on the consumer, as `_BaseFileName` does today, so one stored file
-  can serve referrers that each call it something different. The thing to settle
-  first is identity for generated content: a shape's bytes are what would be
-  hashed, so the writer's mode becomes part of the address (`BinaryBrep` and
-  ASCII hash differently). §6.1 settles what the existing options mean on this
-  path, which is the groundwork for that.
+- ~~**Any file save through the manager, not just included files.**~~ Done.
+  The store was already type-agnostic (`insertFile(path) -> handle`, hash
+  identity, refcounted lifetime) and the pending queue was already keyed on
+  `App::BlobReferrerProperty`; the collect pass was the last place holding a
+  concrete `PropertyFileIncluded` cast, so it now asks that same interface
+  (`collectBlobs()`) instead. An owner notes its own content, which is what
+  lets it choose the extension and the referrer name -- names stay on the
+  consumer, as `_BaseFileName` does today, so one stored file can serve
+  referrers that each call it something different. `PropertyPartShape`
+  implements it as nothing on purpose: it notes at write time, when the
+  writer's mode (`BinaryBrep` or ASCII, which hash differently) is finally
+  known. The first non-file owner is the material card,
+  `docs/MaterialStorage.md` sec 8.
 - **Cross-document dedup tier.** An application-level, content-addressed,
   append-only cache in its own directory (never inside a document's transient
   dir, which is wiped on close), referenced by copy where linking is

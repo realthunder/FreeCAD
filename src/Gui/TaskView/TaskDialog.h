@@ -58,6 +58,10 @@ public:
     ~TaskDialog() override;
 
     void addTaskBox(QWidget*);
+    /// As above, but with an icon on the box header. Upstream spells the
+    /// icon-less form as a default argument; keeping a separate overload
+    /// leaves every existing call site here binding to the same function.
+    void addTaskBox(const QPixmap& icon, QWidget*);
 
     void setButtonPosition(ButtonPosition p)
     { pos = p; }

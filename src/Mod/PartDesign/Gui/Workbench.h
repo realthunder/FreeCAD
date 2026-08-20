@@ -76,10 +76,10 @@ private:
    void _switchToDocument(const App::Document* doc);
 
 private:
-   boost::signals2::connection activeDoc;
-   boost::signals2::connection createDoc;
-   boost::signals2::connection finishDoc;
-   boost::signals2::connection deleteDoc;
+   fastsignals::connection activeDoc;
+   fastsignals::connection createDoc;
+   fastsignals::connection finishDoc;
+   fastsignals::connection deleteDoc;
 };
 
 } // namespace PartDesignGui

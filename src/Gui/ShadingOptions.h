@@ -45,7 +45,7 @@ class View3DInventorViewer;
  *
  * The draw styles above it are an exclusive list -- one override mode on
  * the viewer -- which is the wrong shape for these: only the shading
- * model (default / physically based / matcap) is a choice, while cavity,
+ * model (classic / physically based / matcap) is a choice, while cavity,
  * occlusion, shadows and bloom compose freely with it and with each
  * other. So they live here instead, as a popover beside the list, the
  * split Blender's viewport shading and SolidWorks' display style +
@@ -87,9 +87,12 @@ private:
     void setShadow(bool on);
 
 private:
-    QRadioButton *defaultRadio;
+    QRadioButton *classicRadio;
     QRadioButton *pbrRadio;
     QRadioButton *matcapRadio;
+    QLabel *envLabel;
+    QComboBox *envCombo;
+    QCheckBox *envBgCheck;
     QLabel *matcapLabel;
     QComboBox *matcapCombo;
     QLabel *matcapTintLabel;

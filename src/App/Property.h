@@ -32,7 +32,10 @@
 #else
 #   include "stx/any.hpp"
 #endif
-#include <boost/signals2.hpp>
+// The signals library (src/3rdParty/FastSignals). Included here rather than
+// per site because this is where every DocumentObject-side file picks it up,
+// which is what upstream's core headers do too.
+#include <fastsignals/signal.h>
 #include <bitset>
 #include <string>
 #include <FCGlobal.h>
@@ -424,7 +427,7 @@ private:
     int64_t _id;
 
 public:
-    boost::signals2::signal<void (const App::Property&)> signalChanged;
+    fastsignals::signal<void (const App::Property&)> signalChanged;
 };
 
 

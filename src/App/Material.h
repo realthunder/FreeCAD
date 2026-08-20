@@ -102,6 +102,81 @@ struct AppExport SurfaceFinish
     bool operator!=(const SurfaceFinish& f) const { return !operator==(f); }
 };
 
+/** The texture maps a surface is shaded with
+ *
+ * The five maps glTF states per material -- base colour, metallic
+ * roughness, normal, emissive and occlusion -- plus the one transform
+ * that format applies to all of their coordinates. Like the finish above
+ * it rides a material, so a per-face appearance carries a per-face
+ * texture set with no property and no restore path of its own, and it is
+ * carried through every Phong/PBR conversion untouched: which image is
+ * pasted on a surface is not a reading of the shading slots.
+ *
+ * A slot holds the CONTENT HASH of a blob, not a path: the property that
+ * stores this is the blob referrer and App::FileBlobManager owns the
+ * bytes, exactly as PropertyPartShape does. Two slots naming the same
+ * hash share one blob, which is why assigning a restored handle by hash
+ * is idempotent.
+ *
+ * The default is all slots empty, which is what lets an unset texture
+ * elide out of both the storage and the document.
+ */
+struct AppExport SurfaceTexture
+{
+    /** Which map a slot holds
+     *
+     * The order is glTF's, and it is part of the serialized form: a slot
+     * is written by index, so values may be appended but never
+     * renumbered.
+     */
+    enum Slot : uint8_t {
+        BaseColor = 0,
+        MetallicRoughness,
+        Normal,
+        Emissive,
+        Occlusion,
+        SlotCount
+    };
+
+    /// Content hash of the blob in each slot; empty = no map there
+    std::string maps[SlotCount];
+    float scale[2] {1.0F, 1.0F};   /**< coordinate scale, glTF KHR_texture_transform */
+    float offset[2] {0.0F, 0.0F};  /**< coordinate offset */
+    float rotation {0.0F};         /**< coordinate rotation, degrees */
+
+    /// Whether any slot is occupied. A transform with no map states
+    /// nothing, so it does not count.
+    bool isSet() const;
+
+    /** Clamp into the range every consumer may assume
+     *
+     * An unset record states nothing else, so it elides; a set one has a
+     * finite transform with the rotation wrapped into [0, 360) -- a
+     * texture rotation is a direction, unlike a finish lay, which is only
+     * an axis.
+     */
+    void normalize();
+
+    /// The slot name the Python API, the serialized keys and the stored
+    /// file names use; and its inverse, which answers SlotCount for an
+    /// unknown name.
+    static const char *slotName(uint8_t slot);
+    static uint8_t slotFromName(const char *name);
+
+    bool operator==(const SurfaceTexture& t) const
+    {
+        for (uint8_t i = 0; i < SlotCount; ++i) {
+            if (maps[i] != t.maps[i]) {
+                return false;
+            }
+        }
+        return scale[0] == t.scale[0] && scale[1] == t.scale[1]
+            && offset[0] == t.offset[0] && offset[1] == t.offset[1]
+            && rotation == t.rotation;
+    }
+    bool operator!=(const SurfaceTexture& t) const { return !operator==(t); }
+};
+
 /** Material class
  */
 class AppExport Material
@@ -189,11 +264,12 @@ public:
 
     /** @name Phong and PBR readings of the shininess slot
      *
-     * The Blinn-Phong-to-GGX fit the bgfx backend has always used for
-     * materials that state no roughness, and its inverse. Coin's 0..1
-     * shininess maps to a GL exponent of s * 128, so the inverse saturates:
-     * a roughness below ~0.124 needs an exponent above 128 and converts to
-     * a shininess of 1.
+     * The Blinn-Phong-to-GGX fit the bgfx backend uses for materials that
+     * state no roughness, and its inverse. Coin's 0..1 shininess maps to a
+     * GL exponent of s * 128 and the match is alpha = sqrt(2 / (n + 2)) on
+     * the GGX width, which a roughness squares -- so this is the fourth
+     * root of that ratio. The inverse saturates: a roughness below ~0.352
+     * needs an exponent above 128 and converts to a shininess of 1.
      */
     //@{
     static float shininessToRoughness(float shininess);
@@ -269,6 +345,14 @@ public:
      * in the appearance property that stores it.
      */
     SurfaceFinish finish;
+    /** What is pasted on the surface
+     *
+     * Orthogonal to the shading model in the same way the finish is, and
+     * carried through the conversions for the same reason. Empty on every
+     * material until something states one, which is why it costs nothing
+     * in the appearance property that stores it.
+     */
+    SurfaceTexture texture;
     /** @name Texture and material-card identity, upstream's fields
      *
      * Nothing in this fork writes them yet. They are here so that a
@@ -307,6 +391,7 @@ public:
             transparency==m.transparency && ambientColor==m.ambientColor &&
             diffuseColor==m.diffuseColor && specularColor==m.specularColor &&
             emissiveColor==m.emissiveColor && finish==m.finish &&
+            texture==m.texture &&
             image==m.image && imagePath==m.imagePath;
     }
     bool operator!=(const Material& m) const

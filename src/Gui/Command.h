@@ -29,7 +29,7 @@
 #include <string>
 #include <functional>
 #include <vector>
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include <Base/Type.h>
 #include <Gui/Application.h>
@@ -787,7 +787,10 @@ protected:
     //// set the parameters on action creation
     void onActionInit() const;
 
-    boost::signals2::connection connPyCmdInitialized;
+    // Bookkeeping for a one-shot connection that onActionInit() const drops
+    // after the first call. Boost.Signals2 allowed that through a const
+    // disconnect(); FastSignals is honest that disconnecting mutates.
+    mutable fastsignals::connection connPyCmdInitialized;
 };
 
 /** The Python group command class
@@ -835,7 +838,10 @@ protected:
     /// the command object resources
     PyObject * _pcPyResource;
 
-    boost::signals2::connection connPyCmdInitialized;
+    // Bookkeeping for a one-shot connection that onActionInit() const drops
+    // after the first call. Boost.Signals2 allowed that through a const
+    // disconnect(); FastSignals is honest that disconnecting mutates.
+    mutable fastsignals::connection connPyCmdInitialized;
 };
 
 
@@ -969,7 +975,7 @@ public:
     int getRevision() const { return _revision; }
 
     /// Signal on any addition or removal of command
-    boost::signals2::signal<void ()> signalChanged;
+    fastsignals::signal<void ()> signalChanged;
 
     typedef std::function<bool (const char *, int)> CallbackFunction;
 
@@ -992,7 +998,7 @@ public:
     bool onInvokeCommand(const char *cmd, int) const;
 
     /// Signal to Python command on first workbench activation
-    boost::signals2::signal<void ()> signalPyCmdInitialized;
+    fastsignals::signal<void ()> signalPyCmdInitialized;
 
     /** 
      * Returns a pointer to a conflicting command, or nullptr if there is no conflict.

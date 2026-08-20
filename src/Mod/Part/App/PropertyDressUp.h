@@ -79,8 +79,8 @@ public:
 protected:
     std::map<std::string, Segments> segmentsMap;
     std::map<std::string, std::string> referenceUpdates;
-    boost::signals2::scoped_connection connUpdateReference;
-    boost::signals2::scoped_connection connChanged;
+    fastsignals::scoped_connection connUpdateReference;
+    fastsignals::scoped_connection connChanged;
 };
 
 
@@ -131,8 +131,8 @@ public:
 protected:
     std::map<std::string, ChamferInfo> chamferEdgeMap;
     std::map<std::string, std::string> referenceUpdates;
-    boost::signals2::scoped_connection connUpdateReference;
-    boost::signals2::scoped_connection connChanged;
+    fastsignals::scoped_connection connUpdateReference;
+    fastsignals::scoped_connection connChanged;
 };
 
 }

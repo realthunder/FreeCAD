@@ -2883,7 +2883,7 @@ private:
         PyObject *pyKey = nullptr;
         PyObject *pyEnable = Py_True;
         if (!PyArg_ParseTuple(args.ptr(), "|OO", &pyKey, &pyEnable))
-            return Py::Object();
+            throw Py::Exception();
 
         if (initOCCTExtension() < 0)
             throw Py::NotImplementedError("Not implemented");

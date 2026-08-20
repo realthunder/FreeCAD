@@ -35,6 +35,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <atomic>
 #include <memory>
@@ -174,6 +175,35 @@ struct TextureImage {
     /// 1 = luminance, 2 = luminance+alpha, 3 = rgb, 4 = rgba; rows are
     /// tightly packed, bottom-up like GL.
     int numComponents = 0;
+
+    /// What one component of \ref pixels IS.
+    ///
+    /// A photograph is display referred and fits in a byte. A captured
+    /// ENVIRONMENT is not: the sky is thousands of times brighter than
+    /// the wall below it, and that ratio is the whole reason an image
+    /// based light looks like a place rather than like a picture.
+    /// Clamped into a byte there can be no sun, which is why the
+    /// built-in environment is procedural.
+    ///
+    /// F32 keeps the payload in \ref pixels as little-endian floats --
+    /// four bytes a component, same packing, same row order -- so the
+    /// content key, the blob store and every deduplication that hashes
+    /// those bytes go on working untouched. The values are LINEAR
+    /// radiance already and are never decoded.
+    enum Sample : uint8_t { U8, F32 };
+    uint8_t sample = U8;
+    /// Bytes per component of \ref pixels.
+    size_t sampleSize() const { return sample == F32 ? 4u : 1u; }
+    /// Read one component as linear light, whatever it is stored as.
+    float component(size_t index) const {
+        if (sample == F32) {
+            float v = 0.0f;
+            std::memcpy(&v, pixels.data() + index * 4u, 4u);
+            return v;
+        }
+        return pixels[index] / 255.0f;
+    }
+
     std::vector<uint8_t> pixels;
 
     enum Wrap : uint8_t { Repeat, Clamp };
@@ -1424,6 +1454,45 @@ struct PBRConfig {
     /// Draw the environment itself as the visible background (replaces
     /// the background gradient while PBR is active).
     bool envBackground = false;
+    /// Read an ordinary Phong appearance's SPECULAR COLOUR as material
+    /// data where nothing states a metalness. The metallic/roughness
+    /// BRDF has no specular slot -- its reflectance is f0, built from the
+    /// base colour and the metalness -- so a Phong gold, whose gold-ness
+    /// lives entirely in that colour, otherwise shades as yellow-brown
+    /// plastic, and the several presets with a BLACK diffuse and a bright
+    /// specular (Steel, Satin, Metalized ...) shade as nearly black. On,
+    /// the shader solves the pair back into a base colour and a metalness
+    /// (Khronos' spec-gloss conversion). Never applied over anything
+    /// authored: a material or frame metalness, a PBR-mode appearance or
+    /// a metallic-roughness map all stand.
+    bool fromSpecular = true;
+    /// How a Phong SHININESS becomes a roughness, where the material
+    /// states none of its own (OutputConfig-style enum, see
+    /// RenderParams::docShininessMapping): 0 reads shininess as the
+    /// fixed-function GL exponent scaled onto 0..128, which is faithful
+    /// but bottoms out at roughness 0.35 -- 128 is the sharpest exponent
+    /// GL could state, so the lower half of the roughness range cannot
+    /// be reached from shininess at all. 1 reads it as the 0..100%
+    /// appearance control the dialog presents and maps it onto the whole
+    /// exponent range, n = 128 * s / (1 - s): matte at zero, a mirror at
+    /// one, and within a few percent of the GL reading over the low
+    /// values real materials use.
+    int shininessMapping = 1;
+    /// Which built-in environment is computed where `envImage` is null.
+    /// They differ in contrast and structure, not in brightness: every
+    /// one integrates to the same mean radiance, so a change of preset
+    /// does not ask for a change of exposure. 0 Studio (soft boxes on a
+    /// dark surround), 1 Gradient (the smooth three-band dome this
+    /// engine had before the others), 2 Overcast, 3 Sunset, 4 Interior
+    /// (the default -- one window against a dark surround, the crispest
+    /// key of them), 5 Light tent (bright in BOTH hemispheres with
+    /// panel seams throughout, for a subject whose sides matter).
+    ///
+    /// The point of the others is that Gradient spans barely one stop
+    /// and has no edges anywhere, so a smooth dielectric reflecting it
+    /// shows the same grey at every roughness and nothing in the frame
+    /// reads as a light source.
+    int envPreset = 4;
     /// User environment image replacing the built-in procedural studio
     /// environment; null = procedural. A 2:1 image is read as
     /// equirectangular (lat-long), anything squarer as a GL sphere map
@@ -1435,9 +1504,62 @@ struct PBRConfig {
     bool operator==(const PBRConfig &o) const {
         return enabled == o.enabled && metallic == o.metallic
             && roughness == o.roughness && envIntensity == o.envIntensity
-            && envBackground == o.envBackground && envImage == o.envImage;
+            && envBackground == o.envBackground && envImage == o.envImage
+            && envPreset == o.envPreset
+            && fromSpecular == o.fromSpecular
+            && shininessMapping == o.shininessMapping;
     }
     bool operator!=(const PBRConfig &o) const { return !(*this == o); }
+};
+
+/// What the engine does to a finished frame before it is shown.
+///
+/// The shading math here is linear -- `mix()`, the GGX lobe, the IBL
+/// product, `f0 * env` are all plain arithmetic on light, and they are
+/// only correct on linear numbers, which is why material colours are
+/// linear by definition on this side and why the environment photo is
+/// decoded on load. A display is not linear: it reads the byte it is
+/// handed as sRGB. Writing the linear result straight into an 8-bit
+/// target therefore shows it about a gamma too dark through the
+/// midtones.
+///
+/// The transform is applied ONCE, at the last write before the frame
+/// leaves the engine, so every blend, the weighted-blended transparency
+/// composite and every effect pass still run on linear values. It is
+/// deliberately NOT pushed back into the material data: pre-compensating
+/// there would trade a correct metal reflectance table for a wrong one,
+/// and would only reach the objects whose numbers were edited.
+struct OutputConfig {
+    enum Transform {
+        /// Neither end: feed display numbers to the linear shading and
+        /// write the linear result out raw. The two errors partly
+        /// cancel -- a fully lit surface comes out right -- but the
+        /// falloff renders about a gamma too dark. What every frame
+        /// before this existed was drawn with, and what an older scene
+        /// snapshot has to keep being drawn with.
+        None = 0,
+        /// Colour managed: authored colours decoded to linear on the
+        /// way in (unpackAuthoredColor, and fc_color.sh for the streams
+        /// and pictures C++ cannot reach), the finished frame encoded
+        /// once on the way out.
+        SRGB = 1,
+    };
+    int transform = SRGB;
+    /// A plain multiplier on the linear image before it is encoded.
+    /// One leaves the frame alone, bit for bit.
+    ///
+    /// A colour managed scene is lit in real reflectances -- a mid grey
+    /// reflects about 18 per cent, not the 45 per cent its number reads
+    /// as -- so a scene whose lights were set before that was true is
+    /// lit two to three times too dimly. This answers that without
+    /// touching a light. Ignored while transform is None: there the
+    /// engine is not working in light at all.
+    float exposure = 1.0f;
+
+    bool operator==(const OutputConfig &o) const {
+        return transform == o.transform && exposure == o.exposure;
+    }
+    bool operator!=(const OutputConfig &o) const { return !(*this == o); }
 };
 
 /// How many distinct finishes one draw's palette may hold. The backend
@@ -2212,6 +2334,10 @@ public:
     virtual bool isSceneDirty() const { return true; }
     /// Per-frame physically based shading configuration.
     virtual void setPBRConfig(const PBRConfig &config) { (void)config; }
+
+    /// The output colour transform (OutputConfig): what happens to the
+    /// finished frame before it is shown.
+    virtual void setOutputConfig(const OutputConfig &config) { (void)config; }
     /// Per-frame bump/normal mapping configuration.
     virtual void setBumpConfig(const BumpConfig &config) { (void)config; }
     /// Per-frame scene light (Shadow draw style).

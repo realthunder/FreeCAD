@@ -217,7 +217,7 @@ void GeneralSettingsWidget::retranslateUi()
     auto userSchema = hGrpUnits->GetInt("UserSchema", 0);
     int num = static_cast<int>(Base::UnitSystem::NumUnitSystemTypes);
     for (int i = 0; i < num; i++) {
-        QString item = Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i));
+        QString item = QString::fromStdString(Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i)));
         _unitSystemComboBox->addItem(item, i);
     }
     _unitSystemComboBox->setCurrentIndex(userSchema);

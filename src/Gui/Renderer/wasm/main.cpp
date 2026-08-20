@@ -3007,6 +3007,7 @@ static void applySnapshot(bool fit)
     s_renderer->setVolumetricConfig(s_snap.volconf);
     s_renderer->setWaterConfig(s_snap.waterconf);
     s_renderer->setBloomConfig(s_snap.bloomconf);
+    s_renderer->setOutputConfig(s_snap.outconf);
     s_renderer->setRenderDebugConfig(s_snap.debugconf);
     // User shaders (docs/RenderDebug.md §6.3): the post-stage list;
     // material-stage programs ride the scene draw materials. Programs

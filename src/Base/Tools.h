@@ -33,7 +33,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 #include <QString>
 
 #include "Exception.h"
@@ -307,10 +307,18 @@ private:
 
 // ----------------------------------------------------------------------------
 
+/** Blocks a connection for as long as it is alive
+ *
+ * The connection has to have been made with fastsignals::advanced_tag: a
+ * blockable slot is wrapped in a check at connect time, so unlike
+ * Boost.Signals2 the ability to block is a property of the connection and
+ * cannot be added afterwards. Base::AdvancedConnection is the type that
+ * carries it.
+ */
 class ConnectionBlocker
 {
-    using Connection = boost::signals2::connection;
-    using ConnectionBlock = boost::signals2::shared_connection_block;
+    using Connection = fastsignals::advanced_connection;
+    using ConnectionBlock = fastsignals::shared_connection_block;
     ConnectionBlock blocker;
 
 public:

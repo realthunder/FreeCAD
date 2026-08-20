@@ -136,6 +136,9 @@ public:
      */
     void assignRestoredBlob(const FileBlobHandle &blob) override;
 
+    /// Note this property's file for the save in progress, named after it.
+    void collectBlobs(FileBlobManager &manager, const DocumentObject *object) const override;
+
     void setFilter(std::string filter);
     std::string getFilter() const;
 

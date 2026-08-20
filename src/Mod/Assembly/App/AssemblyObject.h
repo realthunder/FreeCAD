@@ -24,7 +24,7 @@
 
 #pragma once
 
-#include <boost/signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include <Mod/Assembly/AssemblyGlobal.h>
 
@@ -253,7 +253,7 @@ public:
     {
         return lastMalformedJoints;
     }
-    boost::signals2::signal<void()> signalSolverUpdate;
+    fastsignals::signal<void()> signalSolverUpdate;
 
 private:
     std::shared_ptr<MbD::ASMTAssembly> mbdAssembly;

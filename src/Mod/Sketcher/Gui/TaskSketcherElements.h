@@ -26,7 +26,7 @@
 
 #include <Gui/TaskView/TaskView.h>
 #include <Gui/Selection.h>
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 #include <QTreeWidget>
 #include <QIcon>
 
@@ -96,7 +96,7 @@ protected:
     void changeEvent(QEvent *e) override;
     void leaveEvent ( QEvent * event ) override;
     ViewProviderSketch *sketchView;
-    using Connection = boost::signals2::connection;
+    using Connection = fastsignals::connection;
     Connection connectionElementsChanged;
 
 private:

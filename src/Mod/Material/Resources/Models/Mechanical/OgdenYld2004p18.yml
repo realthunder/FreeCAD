@@ -1,4 +1,6 @@
 ---
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *                                                                         *
 # *   Copyright (c) 2023 David Carter <dcarter@davidcarter.ca>              *
@@ -30,33 +32,39 @@ Model:
     strain relationship is linear
   DOI: "10.1016/j.ijplas.2004.06.004"
   OgdenModuli:
+    DisplayName: "Ogden Moduli"
     Type: 'List'
     Units: 'kPa'
     URL: 'https://en.wikipedia.org/wiki/Ogden_hyperelastic_model'
     Description: "Elastic moduli μ for Ogden [FreeCAD Pressure unit]"
   OgdenExponent:
+    DisplayName: "Ogden Exponent"
     Type: 'Integer'
     Units: ''
     URL: 'https://en.wikipedia.org/wiki/Ogden_hyperelastic_model'
     Description: "Exponent ɑ for Ogden [unitless]"
   InitialYieldStress:
+    DisplayName: "Initial Yield Stress"
     Type: 'Quantity'
     Units: 'kPa'
     URL: ''
     Description: >
       Saturation stress for Voce isotropic hardening [FreeCAD Pressure unit]
   VoceSaturationStress:
+    DisplayName: "Voce Saturation Stress"
     Type: 'Quantity'
     Units: 'kPa'
     URL: ''
     Description: >
       Saturation stress for Voce isotropic hardening [FreeCAD Pressure unit]
   VoceStrainScale:
+    DisplayName: "Voce Strain Scale"
     Type: 'Float'
     Units: ''
     URL: ''
     Description: "Strain scale in Voce isotropic hardening [unitless]"
   Yld2004p18Coefficients:
+    DisplayName: "Yld2004p18 Coefficients"
     Type: 'List'
     Units: ''
     URL: ''

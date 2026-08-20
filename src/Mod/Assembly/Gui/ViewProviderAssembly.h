@@ -25,9 +25,7 @@
 
 #include <QCoreApplication>
 #include <QMetaObject>
-// Upstream uses the vendored FastSignals library, which this fork does not carry;
-// boost::signals2 is what it uses for the same purpose and has the same interface.
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include <Mod/Assembly/AssemblyGlobal.h>
 
@@ -251,7 +249,7 @@ public:
     SoFieldSensor* translationSensor = nullptr;
     SoFieldSensor* rotationSensor = nullptr;
 
-    boost::signals2::signal<
+    fastsignals::signal<
         void(const QString& state, const QString& msg, const QString& url, const QString& linkText)>
         signalSetUp;
 
@@ -299,9 +297,9 @@ private:
     TaskAssemblyMessages* taskSolver {nullptr};
 
     QMetaObject::Connection workbenchConnection;
-    boost::signals2::connection connectActivatedVP;
-    boost::signals2::connection connectSolverUpdate;
-    boost::signals2::scoped_connection m_preTransactionConn;
+    fastsignals::connection connectActivatedVP;
+    fastsignals::connection connectSolverUpdate;
+    fastsignals::scoped_connection m_preTransactionConn;
 };
 
 }  // namespace AssemblyGui

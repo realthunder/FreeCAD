@@ -72,6 +72,10 @@ private:
     QGroupBox * groupGeneral = nullptr;
     QLabel *labelType = nullptr;
     Gui::PrefLineEdit *Type = nullptr;
+    QLabel *labelOutputTransform = nullptr;
+    Gui::PrefComboBox *OutputTransform = nullptr;
+    QLabel *labelExposure = nullptr;
+    Gui::PrefDoubleSpinBox *Exposure = nullptr;
 
     // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupScenestreaming = nullptr;
@@ -107,6 +111,9 @@ private:
     Gui::PrefDoubleSpinBox *PBRMetallic = nullptr;
     QLabel *labelPBRRoughness = nullptr;
     Gui::PrefDoubleSpinBox *PBRRoughness = nullptr;
+    Gui::PrefCheckBox *PBRFromSpecular = nullptr;
+    QLabel *labelShininessMapping = nullptr;
+    Gui::PrefComboBox *ShininessMapping = nullptr;
     QLabel *labelPBREnvIntensity = nullptr;
     Gui::PrefDoubleSpinBox *PBREnvIntensity = nullptr;
 

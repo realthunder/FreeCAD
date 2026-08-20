@@ -44,6 +44,17 @@ static_assert(sizeof(finishPatternNames) / sizeof(finishPatternNames[0])
                   == SurfaceFinish::PatternCount,
               "every SurfaceFinish::Pattern needs a name");
 
+/// Indexed by SurfaceTexture::Slot. Unlike the finish patterns every slot
+/// has a name: there is no "no slot" value to spell as the empty string,
+/// and these names are also the stored file names.
+const char *textureSlotNames[] = {
+    "basecolor", "metallic-roughness", "normal", "emissive", "occlusion"
+};
+
+static_assert(sizeof(textureSlotNames) / sizeof(textureSlotNames[0])
+                  == SurfaceTexture::SlotCount,
+              "every SurfaceTexture::Slot needs a name");
+
 } // namespace
 
 //===========================================================================
@@ -94,6 +105,71 @@ uint8_t SurfaceFinish::patternFromName(const char *name)
         }
     }
     return None;
+}
+
+//===========================================================================
+// SurfaceTexture
+//===========================================================================
+
+bool SurfaceTexture::isSet() const
+{
+    for (uint8_t i = 0; i < SlotCount; ++i) {
+        if (!maps[i].empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void SurfaceTexture::normalize()
+{
+    if (!isSet()) {
+        // A transform with nothing to transform states nothing, and
+        // zeroing is what lets the record compare equal to the default
+        // and elide
+        *this = SurfaceTexture();
+        return;
+    }
+    for (float& s : scale) {
+        if (!std::isfinite(s)) {   // catches NaN too
+            s = 1.0F;
+        }
+    }
+    for (float& o : offset) {
+        if (!std::isfinite(o)) {
+            o = 0.0F;
+        }
+    }
+    if (!std::isfinite(rotation)) {
+        rotation = 0.0F;
+    }
+    else {
+        // A texture rotation is a direction, not an axis: the full turn,
+        // unlike the finish lay's half
+        rotation = std::fmod(rotation, 360.0F);
+        if (rotation < 0.0F) {
+            rotation += 360.0F;
+        }
+    }
+}
+
+const char *SurfaceTexture::slotName(uint8_t slot)
+{
+    // A slot this build does not know -- a document from a later one --
+    // has no name here; it is skipped rather than named wrongly
+    return slot < SlotCount ? textureSlotNames[slot] : "";
+}
+
+uint8_t SurfaceTexture::slotFromName(const char *name)
+{
+    if (name && name[0]) {
+        for (uint8_t i = 0; i < SlotCount; ++i) {
+            if (std::strcmp(name, textureSlotNames[i]) == 0) {
+                return i;
+            }
+        }
+    }
+    return SlotCount;
 }
 
 //===========================================================================
@@ -217,107 +293,108 @@ void Material::set(const char* MatName)
 void Material::setType(const MaterialType MatType)
 {
     _matType = MatType;
-    // A preset states the whole material and none of them states a finish,
-    // so a previous one must not survive -- the same rule the colours and
-    // both floats below already follow. USER_DEFINED states nothing and
-    // therefore changes nothing, here as in the switch.
+    // A preset states the whole material and none of them states a finish
+    // or a texture, so a previous one must not survive -- the same rule
+    // the colours and both floats below already follow. USER_DEFINED
+    // states nothing and therefore changes nothing, here as in the switch.
     if (MatType != USER_DEFINED) {
         finish = SurfaceFinish();
+        texture = SurfaceTexture();
     }
     switch (MatType)
     {
     case BRASS:
-        ambientColor .set(0.3294f,0.2235f,0.0275f);
-        diffuseColor .set(0.7804f,0.5686f,0.1137f);
-        specularColor.set(0.9922f,0.9412f,0.8078f);
+        ambientColor .set(0.0910f,0.0778f,0.0423f);
+        diffuseColor .set(0.2275f,0.1945f,0.1057f);
+        specularColor.set(0.9100f,0.7780f,0.4230f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.2179f;
+        shininess    = 0.7500f;
         transparency = 0.0000f;
         break;
     case BRONZE:
-        ambientColor .set(0.2125f,0.1275f,0.0540f);
-        diffuseColor .set(0.7140f,0.4284f,0.1814f);
-        specularColor.set(0.3935f,0.2719f,0.1667f);
+        ambientColor .set(0.0910f,0.0700f,0.0450f);
+        diffuseColor .set(0.2275f,0.1750f,0.1125f);
+        specularColor.set(0.9100f,0.7000f,0.4500f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.2000f;
+        shininess    = 0.4500f;
         transparency = 0.0000f;
         break;
     case COPPER:
-        ambientColor .set(0.3300f,0.2600f,0.2300f);
-        diffuseColor .set(0.5000f,0.1100f,0.0000f);
-        specularColor.set(0.9500f,0.7300f,0.0000f);
+        ambientColor .set(0.0955f,0.0638f,0.0538f);
+        diffuseColor .set(0.2387f,0.1595f,0.1345f);
+        specularColor.set(0.9550f,0.6380f,0.5380f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.9300f;
+        shininess    = 0.8500f;
         transparency = 0.0000f;
         break;
     case GOLD:
-        ambientColor .set(0.3000f,0.2306f,0.0953f);
-        diffuseColor .set(0.4000f,0.2760f,0.0000f);
-        specularColor.set(0.9000f,0.8820f,0.7020f);
+        ambientColor .set(0.1000f,0.0766f,0.0336f);
+        diffuseColor .set(0.2500f,0.1915f,0.0840f);
+        specularColor.set(1.0000f,0.7660f,0.3360f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.0625f;
+        shininess    = 0.9000f;
         transparency = 0.0000f;
         break;
     case PEWTER:
-        ambientColor .set(0.1059f,0.0588f,0.1137f);
-        diffuseColor .set(0.4275f,0.4706f,0.5412f);
-        specularColor.set(0.3333f,0.3333f,0.5216f);
+        ambientColor .set(0.0797f,0.0789f,0.0775f);
+        diffuseColor .set(0.1993f,0.1973f,0.1938f);
+        specularColor.set(0.7970f,0.7890f,0.7750f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.0769f;
+        shininess    = 0.3000f;
         transparency = 0.0000f;
         break;
     case PLASTER:
-        ambientColor .set(0.0500f,0.0500f,0.0500f);
-        diffuseColor .set(0.1167f,0.1167f,0.1167f);
-        specularColor.set(0.0305f,0.0305f,0.0305f);
+        ambientColor .set(0.2000f,0.2000f,0.2000f);
+        diffuseColor .set(0.8000f,0.8000f,0.8000f);
+        specularColor.set(0.0400f,0.0400f,0.0400f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 0.0078f;
         transparency = 0.0000f;
         break;
     case PLASTIC:
-        ambientColor .set(0.1000f,0.1000f,0.1000f);
-        diffuseColor .set(0.0000f,0.0000f,0.0000f);
-        specularColor.set(0.0600f,0.0600f,0.0600f);
+        ambientColor .set(0.1375f,0.1375f,0.1375f);
+        diffuseColor .set(0.5500f,0.5500f,0.5500f);
+        specularColor.set(0.0500f,0.0500f,0.0500f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 0.0078f;
         transparency = 0.0000f;
         break;
     case SILVER:
-        ambientColor .set(0.1922f,0.1922f,0.1922f);
-        diffuseColor .set(0.5075f,0.5075f,0.5075f);
-        specularColor.set(0.5083f,0.5083f,0.5083f);
+        ambientColor .set(0.0972f,0.0960f,0.0915f);
+        diffuseColor .set(0.2430f,0.2400f,0.2288f);
+        specularColor.set(0.9720f,0.9600f,0.9150f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.2000f;
+        shininess    = 0.9500f;
         transparency = 0.0000f;
         break;
     case STEEL:
-        ambientColor .set(0.0020f,0.0020f,0.0020f);
-        diffuseColor .set(0.0000f,0.0000f,0.0000f);
-        specularColor.set(0.9800f,0.9800f,0.9800f);
+        ambientColor .set(0.0562f,0.0565f,0.0578f);
+        diffuseColor .set(0.1405f,0.1412f,0.1445f);
+        specularColor.set(0.5620f,0.5650f,0.5780f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.0600f;
+        shininess    = 0.6000f;
         transparency = 0.0000f;
         break;
     case STONE:
         ambientColor .set(0.1900f,0.1520f,0.1178f);
         diffuseColor .set(0.7500f,0.6000f,0.4650f);
-        specularColor.set(0.0784f,0.0800f,0.0480f);
+        specularColor.set(0.0400f,0.0400f,0.0400f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 0.1700f;
         transparency = 0.0000f;
         break;
     case SHINY_PLASTIC:
-        ambientColor .set(0.0880f,0.0880f,0.0880f);
-        diffuseColor .set(0.0000f,0.0000f,0.0000f);
-        specularColor.set(1.0000f,1.0000f,1.0000f);
+        ambientColor .set(0.1375f,0.1375f,0.1375f);
+        diffuseColor .set(0.5500f,0.5500f,0.5500f);
+        specularColor.set(0.0500f,0.0500f,0.0500f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 1.0000f;
         transparency = 0.0000f;
         break;
     case SATIN:
-        ambientColor .set(0.0660f,0.0660f,0.0660f);
-        diffuseColor .set(0.0000f,0.0000f,0.0000f);
-        specularColor.set(0.4400f,0.4400f,0.4400f);
+        ambientColor .set(0.1375f,0.1375f,0.1375f);
+        diffuseColor .set(0.5500f,0.5500f,0.5500f);
+        specularColor.set(0.0500f,0.0500f,0.0500f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 0.0938f;
         transparency = 0.0000f;
@@ -339,27 +416,27 @@ void Material::setType(const MaterialType MatType)
         transparency = 0.0000f;
         break;
     case CHROME:
-        ambientColor .set(0.3500f,0.3500f,0.3500f);
-        diffuseColor .set(0.9176f,0.9176f,0.9176f);
-        specularColor.set(0.9746f,0.9746f,0.9746f);
+        ambientColor .set(0.0550f,0.0556f,0.0554f);
+        diffuseColor .set(0.1375f,0.1390f,0.1385f);
+        specularColor.set(0.5500f,0.5560f,0.5540f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.1000f;
+        shininess    = 1.0000f;
         transparency = 0.0000f;
         break;
     case ALUMINIUM:
-        ambientColor .set(0.3000f,0.3000f,0.3000f);
-        diffuseColor .set(0.3000f,0.3000f,0.3000f);
-        specularColor.set(0.7000f,0.7000f,0.8000f);
+        ambientColor .set(0.0913f,0.0922f,0.0924f);
+        diffuseColor .set(0.2283f,0.2305f,0.2310f);
+        specularColor.set(0.9130f,0.9220f,0.9240f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.0900f;
+        shininess    = 0.5500f;
         transparency = 0.0000f;
         break;
     case OBSIDIAN:
         ambientColor .set(0.0538f,0.0500f,0.0662f);
         diffuseColor .set(0.1828f,0.1700f,0.2253f);
-        specularColor.set(0.3327f,0.3286f,0.3464f);
+        specularColor.set(0.0400f,0.0400f,0.0400f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.3000f;
+        shininess    = 0.8000f;
         transparency = 0.0000f;
         break;
     case NEON_PHC:
@@ -373,15 +450,15 @@ void Material::setType(const MaterialType MatType)
     case JADE:
         ambientColor .set(0.1350f,0.2225f,0.1575f);
         diffuseColor .set(0.5400f,0.8900f,0.6300f);
-        specularColor.set(0.3162f,0.3162f,0.3162f);
+        specularColor.set(0.0616f,0.0616f,0.0616f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.1000f;
+        shininess    = 0.6000f;
         transparency = 0.0000f;
         break;
     case RUBY:
         ambientColor .set(0.1745f,0.0118f,0.0118f);
         diffuseColor .set(0.6142f,0.0414f,0.0414f);
-        specularColor.set(0.7278f,0.6279f,0.6267f);
+        specularColor.set(0.0766f,0.0766f,0.0766f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 0.6000f;
         transparency = 0.0000f;
@@ -389,7 +466,7 @@ void Material::setType(const MaterialType MatType)
     case EMERALD:
         ambientColor .set(0.0215f,0.1745f,0.0215f);
         diffuseColor .set(0.0757f,0.6142f,0.0757f);
-        specularColor.set(0.6330f,0.7278f,0.6330f);
+        specularColor.set(0.0501f,0.0501f,0.0501f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 0.6000f;
         transparency = 0.0000f;
@@ -409,14 +486,23 @@ void Material::setType(const MaterialType MatType)
 
 float Material::shininessToRoughness(float shininess)
 {
+    // The classical Blinn-Phong to microfacet match is on the GGX/Beckmann
+    // WIDTH: alpha = sqrt(2 / (n + 2)) for a Phong exponent n. Roughness is
+    // the square root of that width -- every consumer squares it to get
+    // alpha back (the shader's `a = rough * rough`, which is the glTF
+    // convention) -- so the fit has to be taken to the fourth root, not the
+    // second. Handing the alpha itself over as a roughness squared it a
+    // second time and made every ordinary Phong appearance shade as a
+    // mirror: FreeCAD's default shininess 0.2 arrived at alpha 0.073 where
+    // the match says 0.269.
     const float exponent = std::max(shininess, 0.0f) * 128.0f;
-    return std::min(std::sqrt(2.0f / (exponent + 2.0f)), 1.0f);
+    return std::min(std::pow(2.0f / (exponent + 2.0f), 0.25f), 1.0f);
 }
 
 float Material::roughnessToShininess(float roughness)
 {
-    const float squared = std::max(roughness * roughness, 1e-6f);
-    const float exponent = 2.0f / squared - 2.0f;
+    const float alpha = std::max(roughness * roughness, 1e-3f);
+    const float exponent = 2.0f / (alpha * alpha) - 2.0f;
     return std::clamp(exponent / 128.0f, 0.0f, 1.0f);
 }
 

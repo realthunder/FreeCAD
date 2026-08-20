@@ -1914,7 +1914,10 @@ QString EditModeConstraintCoinManager::getPresentationString(const Constraint* c
     nameStr = QString::fromStdString(constraint->Name);
 
     // Get the current value string including units
-    valueStr = constraint->getPresentationValue().getUserString(factor, unitStr);
+    std::string unitStrStd;
+    valueStr = QString::fromStdString(
+        constraint->getPresentationValue().getUserString(factor, unitStrStd));
+    unitStr = QString::fromStdString(unitStrStd);
 
     // Hide units if user has requested it, is being displayed in the base
     // units, and the schema being used has a clear base unit in the first

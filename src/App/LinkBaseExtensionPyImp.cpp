@@ -43,7 +43,8 @@ std::string LinkBaseExtensionPy::representation() const
 using PropTmpMap = std::map<std::string, std::pair<int,Property*> >;
 using PropMap = std::map<std::string, Property*>;
 
-static bool getProperty(PropTmpMap &props, const LinkBaseExtension::PropInfoMap &infoMap,
+static bool getProperty(const LinkBaseExtension *ext, PropTmpMap &props,
+        const LinkBaseExtension::PropInfoMap &infoMap,
         const PropMap &propMap, PyObject *key, PyObject *value)
 {
     std::ostringstream str;
@@ -86,9 +87,49 @@ static bool getProperty(PropTmpMap &props, const LinkBaseExtension::PropInfoMap 
                 << ") to be derived from '" << info.type.getName()
                 << "', instead of '" << prop->getTypeId().getName() << "'";
             PyErr_SetString(PyExc_TypeError, str.str().c_str());
+            return false;
+        }
+        // everything else the extension refuses for this slot, asked before
+        // any of the configuration is applied
+        try {
+            ext->checkProperty(info.index, prop);
+        } catch (Base::Exception &e) {
+            e.setPyException();
+            return false;
         }
     }
     props[keyStr] = std::make_pair(info.index,prop);
+    return true;
+}
+
+/// Reject a property asked to serve two slots at once
+static bool checkDuplicates(LinkBaseExtension *ext, const PropTmpMap &props)
+{
+    // check the configuration this call would leave behind rather than the
+    // call itself, so that moving a property from one slot to another, or
+    // clearing a slot to free its property, is still allowed
+    const auto &infos = LinkBaseExtension::getPropertyInfo();
+    std::vector<Property*> result(infos.size(), nullptr);
+    for(std::size_t i=0; i<infos.size(); ++i)
+        result[i] = ext->getProperty((int)i);
+    for(const auto &v : props)
+        result[v.second.first] = v.second.second;
+
+    auto container = ext->getExtendedContainer();
+    std::map<Property*, std::size_t> seen;
+    for(std::size_t i=0; i<result.size(); ++i) {
+        if(!result[i])
+            continue;
+        auto res = seen.emplace(result[i], i);
+        if(!res.second) {
+            const char *name = container?container->getPropertyName(result[i]):nullptr;
+            std::ostringstream str;
+            str << "property '" << (name?name:"?") << "' cannot serve both '"
+                << infos[res.first->second].name << "' and '" << infos[i].name << "'";
+            PyErr_SetString(PyExc_ValueError, str.str().c_str());
+            return false;
+        }
+    }
     return true;
 }
 
@@ -104,7 +145,7 @@ PyObject* LinkBaseExtensionPy::configLinkProperty(PyObject *args, PyObject *keyw
     if(args && PyTuple_Check(args)) {
         for(Py_ssize_t pos=0;pos<PyTuple_GET_SIZE(args);++pos) {
             auto key = PyTuple_GET_ITEM(args,pos);
-            if(!getProperty(props,info,propMap,key,key))
+            if(!getProperty(ext,props,info,propMap,key,key))
                 return nullptr;
         }
     }
@@ -112,10 +153,12 @@ PyObject* LinkBaseExtensionPy::configLinkProperty(PyObject *args, PyObject *keyw
         PyObject *key, *value;
         Py_ssize_t pos = 0;
         while (PyDict_Next(keywds, &pos, &key, &value)) {
-            if(!getProperty(props,info,propMap,key,value))
+            if(!getProperty(ext,props,info,propMap,key,value))
                 return nullptr;
         }
     }
+    if(!checkDuplicates(ext,props))
+        return nullptr;
     for(auto &v : props)
         ext->setProperty(v.second.first,v.second.second);
     Py_Return;

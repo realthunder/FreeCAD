@@ -106,22 +106,58 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     // the surface's response to light, so at most one can be on.
     auto modelRow = new QHBoxLayout;
     modelRow->setContentsMargins(0, 0, 0, 0);
-    defaultRadio = new QRadioButton(tr("Default"), this);
-    defaultRadio->setToolTip(tr("The renderer's default headlight shading"));
+    // Named for what it IS, not for its position in the list. "Default"
+    // described only the fact that a view starts in it, which stops being
+    // true the moment that changes and never said anything about the
+    // shading either way.
+    classicRadio = new QRadioButton(tr("Classic"), this);
+    classicRadio->setToolTip(
+        tr("Blinn-Phong headlight shading: the light follows the camera "
+           "and the surface has no environment around it. What a view "
+           "starts in."));
     pbrRadio = new QRadioButton(tr("Realistic"), this);
     pbrRadio->setToolTip(doc(RenderParams::docPBR()));
     matcapRadio = new QRadioButton(tr("Matcap"), this);
     matcapRadio->setToolTip(doc(RenderParams::docMatcap()));
     auto models = new QButtonGroup(this);
-    models->addButton(defaultRadio);
+    models->addButton(classicRadio);
     models->addButton(pbrRadio);
     models->addButton(matcapRadio);
-    modelRow->addWidget(defaultRadio);
+    modelRow->addWidget(classicRadio);
     modelRow->addWidget(pbrRadio);
     modelRow->addWidget(matcapRadio);
     modelRow->addStretch();
     layout->addWidget(new QLabel(tr("Model:"), this), 1, 0);
     layout->addLayout(modelRow, 1, 1);
+
+    // Realistic's one real choice, and the reason the mode is worth
+    // switching to: what the scene is standing in. It sits under the
+    // radio rather than in the preferences for the same reason the
+    // matcap preset does -- it is the knob you reach for immediately
+    // after choosing the model, with the 3D view in sight.
+    envLabel = new QLabel(tr("Environment:"), this);
+    envCombo = new QComboBox(this);
+    envCombo->addItem(tr("Studio"));
+    envCombo->addItem(tr("Gradient"));
+    envCombo->addItem(tr("Overcast"));
+    envCombo->addItem(tr("Sunset"));
+    envCombo->addItem(tr("Interior"));
+    envCombo->addItem(tr("Light tent"));
+    envCombo->setToolTip(doc(RenderParams::docPBREnvPreset()));
+    envLabel->setToolTip(envCombo->toolTip());
+    // The environment lights the scene whether or not it is DRAWN --
+    // the flag gates the background pass alone. So this is the switch
+    // for "light it like a studio, keep my background", which is a
+    // thing people want often enough that it should not be four clicks
+    // into the preferences.
+    envBgCheck = new QCheckBox(tr("as background"), this);
+    envBgCheck->setToolTip(doc(RenderParams::docPBREnvBackground()));
+    auto envRow = new QHBoxLayout;
+    envRow->setContentsMargins(0, 0, 0, 0);
+    envRow->addWidget(envCombo, 1);
+    envRow->addWidget(envBgCheck);
+    layout->addWidget(envLabel, 2, 0);
+    layout->addLayout(envRow, 2, 1);
 
     matcapLabel = new QLabel(tr("Matcap:"), this);
     matcapCombo = new QComboBox(this);
@@ -130,8 +166,8 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     matcapCombo->addItem(tr("Metal"));
     matcapCombo->addItem(tr("Pearl"));
     matcapCombo->setToolTip(doc(RenderParams::docMatcapPreset()));
-    layout->addWidget(matcapLabel, 2, 0);
-    layout->addWidget(matcapCombo, 2, 1);
+    layout->addWidget(matcapLabel, 3, 0);
+    layout->addWidget(matcapCombo, 3, 1);
 
     // Matcap's other number, and the one that surprises people: at zero
     // the whole scene shades as a single material, so an assembly's
@@ -152,8 +188,8 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     tintRow->setContentsMargins(0, 0, 0, 0);
     tintRow->addWidget(matcapTintSlider, 1);
     tintRow->addWidget(matcapTintValue);
-    layout->addWidget(matcapTintLabel, 3, 0);
-    layout->addLayout(tintRow, 3, 1);
+    layout->addWidget(matcapTintLabel, 4, 0);
+    layout->addLayout(tintRow, 4, 1);
 
     // The modifiers: each composes with any shading model and with the
     // others, which is exactly why they are checkboxes and not entries in
@@ -180,7 +216,7 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     flags->addWidget(aoCheck, 0, 1);
     flags->addWidget(shadowCheck, 1, 0);
     flags->addWidget(bloomCheck, 1, 1);
-    layout->addLayout(flags, 4, 0, 1, 2);
+    layout->addLayout(flags, 5, 0, 1, 2);
 
     // Cavity is the one modifier here whose usefulness depends on a
     // number rather than on being on: the radius decides which features
@@ -203,16 +239,16 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     radiusRow->setContentsMargins(0, 0, 0, 0);
     radiusRow->addWidget(cavityRadiusSlider, 1);
     radiusRow->addWidget(cavityRadiusValue);
-    layout->addWidget(cavityRadiusLabel, 5, 0);
-    layout->addLayout(radiusRow, 5, 1);
+    layout->addWidget(cavityRadiusLabel, 6, 0);
+    layout->addLayout(radiusRow, 6, 1);
 
     hint = new QLabel(tr("Needs the render engine: set the render cache "
                          "to the renderer mode\nand pick a renderer type "
                          "in the 3D view preferences."), this);
     hint->setEnabled(false);
-    layout->addWidget(hint, 6, 0, 1, 2);
+    layout->addWidget(hint, 7, 0, 1, 2);
 
-    connect(defaultRadio, &QRadioButton::toggled, this, [this](bool on) {
+    connect(classicRadio, &QRadioButton::toggled, this, [this](bool on) {
         if (on && !loading)
             setModel(false, false);
     });
@@ -223,6 +259,17 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     connect(matcapRadio, &QRadioButton::toggled, this, [this](bool on) {
         if (on && !loading)
             setModel(false, true);
+    });
+    connect(envBgCheck, &QCheckBox::toggled, this, [this](bool on) {
+        setFlag("PBREnvBackground", on);
+    });
+    connect(envCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [this](int index) {
+        if (loading)
+            return;
+        if (auto prop = renderProp<App::PropertyEnumeration>(activeView(),
+                                                            "PBREnvPreset"))
+            prop->setValue(long(index));
     });
     connect(matcapCombo, qOverload<int>(&QComboBox::currentIndexChanged),
             this, [this](int index) {
@@ -317,6 +364,9 @@ void ShadingOptionsWidget::setModel(bool pbr, bool matcap)
         prop->setValue(pbr);
     if (auto prop = renderProp<App::PropertyBool>(view, "Matcap"))
         prop->setValue(matcap);
+    envLabel->setEnabled(pbr);
+    envCombo->setEnabled(pbr);
+    envBgCheck->setEnabled(pbr);
     matcapLabel->setEnabled(matcap);
     matcapCombo->setEnabled(matcap);
     updateMatcapTintEnabled();
@@ -345,7 +395,14 @@ void ShadingOptionsWidget::refresh()
     // radio when a document somehow carries both.
     matcapRadio->setChecked(matcap);
     pbrRadio->setChecked(pbr && !matcap);
-    defaultRadio->setChecked(!pbr && !matcap);
+    classicRadio->setChecked(!pbr && !matcap);
+    if (auto prop = renderProp<App::PropertyEnumeration>(view, "PBREnvPreset"))
+        envCombo->setCurrentIndex(int(prop->getValue()));
+    // The fallback is the parameter and not a literal false: this one
+    // defaults ON, so a hardcoded false would draw the box unchecked
+    // while the renderer went on drawing the environment.
+    envBgCheck->setChecked(renderFlag(view, "PBREnvBackground",
+                                      RenderParams::getPBREnvBackground()));
     if (auto prop = renderProp<App::PropertyEnumeration>(view, "MatcapPreset"))
         matcapCombo->setCurrentIndex(int(prop->getValue()));
     if (auto prop = renderProp<App::PropertyFloat>(view, "MatcapTint"))
@@ -371,9 +428,12 @@ void ShadingOptionsWidget::refresh()
     shadowCheck->setChecked(renderFlag(view, "Light", false));
     bloomCheck->setChecked(renderFlag(view, "Bloom", false));
 
-    defaultRadio->setEnabled(available);
+    classicRadio->setEnabled(available);
     pbrRadio->setEnabled(available);
     matcapRadio->setEnabled(available);
+    envLabel->setEnabled(available && pbr && !matcap);
+    envCombo->setEnabled(available && pbr && !matcap);
+    envBgCheck->setEnabled(available && pbr && !matcap);
     matcapLabel->setEnabled(available && matcap);
     matcapCombo->setEnabled(available && matcap);
     updateMatcapTintEnabled();

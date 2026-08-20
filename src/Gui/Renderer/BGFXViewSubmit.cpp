@@ -40,7 +40,7 @@ void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,
         texParams[1] = mat.texture->numComponents == 2
                 || mat.texture->numComponents == 4
             ? 1.0f : 0.0f;
-        unpackColor(mat.texture->blendColor, blend);
+        unpackAuthoredColor(mat.texture->blendColor, blend, colorManaged());
     }
     if (mapped && mat.emissivemap)
         texParams[2] = 1.0f;
@@ -97,6 +97,21 @@ void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,
                  : m_whiteTex);
 }
 
+void BGFXView::setColorSpaceUniform()
+{
+    // What the VERTEX stages need to know: whether the 8-bit colour
+    // streams they carry are authored (sRGB) or already linear.
+    //
+    // ! Called EXACTLY ONCE per frame, at the head of the view's
+    // submission phase. A bgfx uniform holds its value for every
+    // later draw in the frame, and setting one twice for the same
+    // draw call is an assert, not a redundancy -- which is what a
+    // second belt-and-braces call from the draw paths tripped.
+    const float cs[4] = {colorManaged() ? 1.0f : 0.0f,
+                         0.0f, 0.0f, 0.0f};
+    bgfx::setUniform(u_colorSpace, cs);
+}
+
 void BGFXView::setAmbientUniform(const Render::Material &mat)
 {
     // GL's ambient term is the material's ambient colour times
@@ -108,8 +123,8 @@ void BGFXView::setAmbientUniform(const Render::Material &mat)
     float amb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     if (viewAmbientFed) {
         float m[4], g[4];
-        unpackColor(mat.ambient, m);
-        unpackColor(viewAmbient, g);
+        unpackAuthoredColor(mat.ambient, m, colorManaged());
+        unpackAuthoredColor(viewAmbient, g, colorManaged());
         for (int i = 0; i < 3; ++i)
             amb[i] = m[i] * g[i];
         amb[3] = 1.0f;
@@ -125,7 +140,7 @@ void BGFXView::setAmbientUniform(const Render::Material &mat)
     // metallic/roughness has no meaningful ambient slot to read anyway.
     float envAmb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     if (viewAmbientFed) {
-        unpackColor(viewAmbient, envAmb);
+        unpackAuthoredColor(viewAmbient, envAmb, colorManaged());
         envAmb[3] = 1.0f;
     }
     bgfx::setUniform(u_envAmbient, envAmb);
@@ -147,15 +162,55 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
         float metal = mat.metallic >= 0.0f ? mat.metallic
                                            : pbrMetallic;
         pbrParams[1] = bx::clamp(metal, 0.0f, 1.0f);
+        // Nothing states a metalness -- not the material, not the frame,
+        // and no metallic-roughness map states one per texel either. Ask
+        // the shader to read the Phong specular colour as material data
+        // instead of dropping it (fcBaseFromSpecular); a NEGATIVE
+        // metalness is that request, and it is the only way the question
+        // can be asked per fragment, which is what a per-vertex or
+        // per-face colour needs.
+        if (pbrFromSpecular && mat.metallic < 0.0f && pbrMetallic <= 0.0f
+                && pbrParams[0] < 1.5f)
+            pbrParams[1] = -1.0f;
         float rough = mat.roughness >= 0.0f ? mat.roughness
                                             : pbrRoughness;
         if (rough <= 0.0f) {
-            // Derive from the material shininess (Coin's 0..1
-            // convention maps to a GL exponent of s * 128) with
-            // the usual Blinn-Phong-to-GGX conversion.
-            float exponent =
-                std::max(mat.shininess, 0.0f) * 128.0f;
-            rough = std::sqrt(2.0f / (exponent + 2.0f));
+            // Derive from the material shininess with the usual
+            // Blinn-Phong-to-GGX conversion. That match is on the GGX
+            // WIDTH -- alpha = sqrt(2 / (n + 2)) -- and the shader
+            // squares this value to get the width back, so the fourth
+            // root is what belongs here. The square root handed the
+            // shader an alpha to square a second time, which is why
+            // every Phong appearance read as a mirror (shininess 0.2,
+            // FreeCAD's default, arrived at alpha 0.073 instead of
+            // 0.269).
+            //
+            // What the shininess MEANS is the frame's to say
+            // (PBRConfig::shininessMapping). Coin's 0..1 is the
+            // fixed-function GL exponent scaled onto 0..128, and read
+            // that way it is faithful but cannot express a sharp
+            // surface: 128 is the sharpest exponent GL could state and
+            // converts to roughness 0.35, so the lower half of the
+            // range is unreachable from shininess however hard the
+            // slider is pushed. Read instead as the 0..100% appearance
+            // control the dialog presents, the odds transform
+            // s / (1 - s) spends the same 128 at the HALFWAY point and
+            // runs to infinity at one -- matte at zero, a mirror at
+            // one, and within a few percent of the GL reading over the
+            // low values real materials actually carry.
+            const float shininess =
+                bx::clamp(mat.shininess, 0.0f, 1.0f);
+            float exponent;
+            if (pbrShininessMapping == 1) {
+                // 1 - s underflows to zero at the very top; the clamp
+                // is what makes that a very sharp surface rather than
+                // an infinity, and the shader's own lower clamp
+                // finishes the job.
+                const float denom = std::max(1.0f - shininess, 1.0e-4f);
+                exponent = 128.0f * shininess / denom;
+            } else
+                exponent = shininess * 128.0f;
+            rough = std::pow(2.0f / (exponent + 2.0f), 0.25f);
         }
         pbrParams[2] = bx::clamp(rough, 0.02f, 1.0f);
         pbrParams[3] = std::max(pbrEnvIntensity, 0.0f);
@@ -368,9 +423,9 @@ bool BGFXView::submitInstanced(const Render::DrawCall &draw, const float *data,
     std::memcpy(idb.data, data, size_t(count) * InstanceStride);
 
     float color[4], emissive[4], specular[4], params[4];
-    unpackColor(mat.diffuse, color);
-    unpackColor(mat.emissive, emissive);
-    unpackColor(mat.specular, specular);
+    unpackAuthoredColor(mat.diffuse, color, colorManaged());
+    unpackAuthoredColor(mat.emissive, emissive, colorManaged());
+    unpackAuthoredColor(mat.specular, specular, colorManaged());
     specular[3] = mat.shininess;
     // Never per-face material here: those draws are excluded from
     // instancing, and the flag must not leak from a previous draw.
@@ -777,9 +832,9 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     }
 
     float color[4], emissive[4], specular[4], params[4];
-    unpackColor(mat.diffuse, color);
-    unpackColor(mat.emissive, emissive);
-    unpackColor(mat.specular, specular);
+    unpackAuthoredColor(mat.diffuse, color, colorManaged());
+    unpackAuthoredColor(mat.emissive, emissive, colorManaged());
+    unpackAuthoredColor(mat.specular, specular, colorManaged());
     specular[3] = mat.shininess;
     // u_matEmissive.w: per-face material flag — the fragment stage
     // shades emissive/specular/shininess from the v_color1/v_color2

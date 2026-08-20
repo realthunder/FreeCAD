@@ -244,6 +244,28 @@ $RUN gdb --args ~/works/sw/fcad/build/conda-debug/bin/FreeCADCmd script.py
 - WSLg prints `MESA: error: ZINK: failed to choose pdev` at GUI start — harmless
   fallback noise.
 - pivy is importable by the env python directly: `python -c "from pivy import coin"`.
+- **Combo box popups leave a stale image under WSLg Wayland.** Pick an entry and the
+  drop-down list stays painted on screen; because Qt positions a non-editable combo's
+  popup over the combo itself, the next click lands on the combo underneath and reopens
+  it, so the list looks like it refuses to dismiss. It only clears when something else
+  repaints that region. The popup is genuinely gone -- the widget reports hidden, its
+  QWindow reports hidden, `activePopupWidget()` is null and nothing holds a grab -- so
+  no application code is involved. A 40-line PySide6 dialog with one QComboBox
+  reproduces it, and the same build on `QT_QPA_PLATFORM=xcb` does not, which puts it in
+  the Qt Wayland plugin or WSLg's weston. Run the GUI with `QT_QPA_PLATFORM=xcb` to
+  avoid it; hardware GL is unaffected (both plugins report `D3D12 (AMD Radeon(TM)
+  Graphics)`). Measured against WSLg 1.0.73.2, Qt 6.10.1. `scripts/combo_popup_watch.py`
+  is the instrument -- it separates a widget's own visibility from its platform
+  window's, which is what tells a live popup from a leftover image.
+  **FreeCAD now does this for you**: `preAppSetup()` puts `QT_QPA_PLATFORM=xcb`
+  when it detects WSL and `QT_QPA_PLATFORM` is unset. Override with an explicit
+  `QT_QPA_PLATFORM=wayland`, or `BaseApp/Preferences/General/PreferXcbOnWsl=false`
+  -- so it can be dropped when WSLg fixes the underlying bug. Note Qt's
+  `-platform` switch is NOT a way out: FreeCAD's own option parser rejects it and
+  the process exits before Qt sees it. The platform plugin has no bearing on GL:
+  measured on both plugins, a bare launch gets llvmpipe and the d3d12 driver env
+  gets D3D12, with `MESA_D3D12_DEFAULT_ADAPTER_NAME` deciding the adapter
+  (unset picks the AMD iGPU; `=NVIDIA` picks the RTX 3070 Ti).
 
 ### Quick verification after rebuilds
 

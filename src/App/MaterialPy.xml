@@ -134,6 +134,54 @@ has an axis rather than a direction, so the value wraps into [0, 180).
             </Documentation>
             <Parameter Name="FinishAngle" Type="Float"/>
         </Attribute>
+        <Attribute Name="Texture" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+The texture maps as a dict of slot name to content hash. The slots are
+"basecolor", "metallic-roughness", "normal", "emissive" and "occlusion",
+and a slot the material does not state is absent rather than empty;
+assigning a dict replaces every slot, so an absent key clears one.
+
+A dict rather than the five scalar attributes the finish uses: the slots
+are five of one thing, where a finish is four different ones.
+
+The values are CONTENT HASHES, not paths. The bytes live in the
+document's file store, which is what lets two slots -- or two objects --
+name one image and cost one file; a slot names content the store already
+holds.
+
+Which image is pasted on a surface is not a reading of the shading slots,
+so a texture survives every conversion between Phong and PBR, as a finish
+does. Position it with TextureScale, TextureOffset and TextureRotation.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="Texture" Type="Dict"/>
+        </Attribute>
+        <Attribute Name="TextureScale" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+Texture coordinate scale, as (u, v). glTF states this per material, in
+KHR_texture_transform, and it applies to every map at once.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="TextureScale" Type="Tuple"/>
+        </Attribute>
+        <Attribute Name="TextureOffset" ReadOnly="false">
+            <Documentation>
+                <UserDocu>Texture coordinate offset, as (u, v).</UserDocu>
+            </Documentation>
+            <Parameter Name="TextureOffset" Type="Tuple"/>
+        </Attribute>
+        <Attribute Name="TextureRotation" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+Texture coordinate rotation in degrees. A texture rotation is a
+direction rather than an axis, so the value wraps into [0, 360) -- unlike
+FinishAngle, which wraps into half of that.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="TextureRotation" Type="Float"/>
+        </Attribute>
         <Attribute Name="Image" ReadOnly="false">
             <Documentation>
                 <UserDocu>

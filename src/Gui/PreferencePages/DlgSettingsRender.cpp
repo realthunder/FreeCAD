@@ -72,6 +72,34 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     Type->setEntryName("Type");
     Type->setParamGrpPath("View/Render");
 
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutGeneral->addLayout(layoutRow);
+    labelOutputTransform = new QLabel(this);
+    layoutRow->addWidget(labelOutputTransform);
+    OutputTransform = new Gui::PrefComboBox(this);
+    layoutRow->addWidget(OutputTransform);
+    OutputTransform->setEntryName("OutputTransform");
+    OutputTransform->setParamGrpPath("View/Render");
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1141)
+        OutputTransform->addItem(QString());
+    OutputTransform->setCurrentIndex(Gui::RenderParams::defaultOutputTransform());
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutGeneral->addLayout(layoutRow);
+    labelExposure = new QLabel(this);
+    layoutRow->addWidget(labelExposure);
+    Exposure = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(Exposure);
+    Exposure->setValue(Gui::RenderParams::defaultExposure());
+    Exposure->setEntryName("Exposure");
+    Exposure->setParamGrpPath("View/Render");
+
 
     // Auto generated code (Tools/params_utils.py:448)
     groupScenestreaming = new QGroupBox(this);
@@ -177,7 +205,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(AOMethod);
     AOMethod->setEntryName("AOMethod");
     AOMethod->setParamGrpPath("View/Render");
-    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1127)
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1141)
         AOMethod->addItem(QString());
     AOMethod->setCurrentIndex(Gui::RenderParams::defaultAOMethod());
 
@@ -278,6 +306,32 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     PBRRoughness->setValue(Gui::RenderParams::defaultPBRRoughness());
     PBRRoughness->setEntryName("PBRRoughness");
     PBRRoughness->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutPhysicallybasedshading->addLayout(layoutRow);
+    PBRFromSpecular = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(PBRFromSpecular);
+    PBRFromSpecular->setChecked(Gui::RenderParams::defaultPBRFromSpecular());
+    PBRFromSpecular->setEntryName("PBRFromSpecular");
+    PBRFromSpecular->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutPhysicallybasedshading->addLayout(layoutRow);
+    labelShininessMapping = new QLabel(this);
+    layoutRow->addWidget(labelShininessMapping);
+    ShininessMapping = new Gui::PrefComboBox(this);
+    layoutRow->addWidget(ShininessMapping);
+    ShininessMapping->setEntryName("ShininessMapping");
+    ShininessMapping->setParamGrpPath("View/Render");
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1141)
+        ShininessMapping->addItem(QString());
+    ShininessMapping->setCurrentIndex(Gui::RenderParams::defaultShininessMapping());
 
     // Auto generated code (Tools/params_utils.py:461)
     layoutRow = new QHBoxLayout();
@@ -621,6 +675,8 @@ void DlgSettingsRender::saveSettings()
 {
     // Auto generated code (Tools/params_utils.py:497)
     Type->onSave();
+    OutputTransform->onSave();
+    Exposure->onSave();
     CoarseTessellation->onSave();
     LevelTolerance->onSave();
     LevelThreads->onSave();
@@ -635,6 +691,8 @@ void DlgSettingsRender::saveSettings()
     PBR->onSave();
     PBRMetallic->onSave();
     PBRRoughness->onSave();
+    PBRFromSpecular->onSave();
+    ShininessMapping->onSave();
     PBREnvIntensity->onSave();
     BumpScale->onSave();
     Parallax->onSave();
@@ -664,6 +722,8 @@ void DlgSettingsRender::loadSettings()
 {
     // Auto generated code (Tools/params_utils.py:484)
     Type->onRestore();
+    OutputTransform->onRestore();
+    Exposure->onRestore();
     CoarseTessellation->onRestore();
     LevelTolerance->onRestore();
     LevelThreads->onRestore();
@@ -678,6 +738,8 @@ void DlgSettingsRender::loadSettings()
     PBR->onRestore();
     PBRMetallic->onRestore();
     PBRRoughness->onRestore();
+    PBRFromSpecular->onRestore();
+    ShininessMapping->onRestore();
     PBREnvIntensity->onRestore();
     BumpScale->onRestore();
     Parallax->onRestore();
@@ -710,6 +772,15 @@ void DlgSettingsRender::retranslateUi()
     Type->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docType()));
     labelType->setText(QObject::tr("Renderer type"));
     labelType->setToolTip(Type->toolTip());
+    OutputTransform->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docOutputTransform()));
+    labelOutputTransform->setText(QObject::tr("Output colour transform"));
+    labelOutputTransform->setToolTip(OutputTransform->toolTip());
+    // Auto generated code (Tools/params_utils.py:1166)
+    OutputTransform->setItemText(0, QObject::tr("Off"));
+    OutputTransform->setItemText(1, QObject::tr("sRGB"));
+    Exposure->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docExposure()));
+    labelExposure->setText(QObject::tr("Exposure"));
+    labelExposure->setToolTip(Exposure->toolTip());
     groupScenestreaming->setTitle(QObject::tr("Scene streaming"));
     CoarseTessellation->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCoarseTessellation()));
     labelCoarseTessellation->setText(QObject::tr("Coarse tessellation level"));
@@ -732,7 +803,7 @@ void DlgSettingsRender::retranslateUi()
     AOMethod->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAOMethod()));
     labelAOMethod->setText(QObject::tr("AO method"));
     labelAOMethod->setToolTip(AOMethod->toolTip());
-    // Auto generated code (Tools/params_utils.py:1152)
+    // Auto generated code (Tools/params_utils.py:1166)
     AOMethod->setItemText(0, QObject::tr("SSAO (hemisphere)"));
     AOMethod->setItemText(1, QObject::tr("GTAO (horizon)"));
     AOSlices->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAOSlices()));
@@ -756,6 +827,14 @@ void DlgSettingsRender::retranslateUi()
     PBRRoughness->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docPBRRoughness()));
     labelPBRRoughness->setText(QObject::tr("Roughness"));
     labelPBRRoughness->setToolTip(PBRRoughness->toolTip());
+    PBRFromSpecular->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docPBRFromSpecular()));
+    PBRFromSpecular->setText(QObject::tr("Specular to metallic"));
+    ShininessMapping->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docShininessMapping()));
+    labelShininessMapping->setText(QObject::tr("Shininess mapping"));
+    labelShininessMapping->setToolTip(ShininessMapping->toolTip());
+    // Auto generated code (Tools/params_utils.py:1166)
+    ShininessMapping->setItemText(0, QObject::tr("GL exponent"));
+    ShininessMapping->setItemText(1, QObject::tr("Full range"));
     PBREnvIntensity->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docPBREnvIntensity()));
     labelPBREnvIntensity->setText(QObject::tr("Environment brightness"));
     labelPBREnvIntensity->setToolTip(PBREnvIntensity->toolTip());

@@ -3,15 +3,15 @@
 General:
   UUID: "4b849c55-6b3a-4f75-a055-40c0d0324596"
   Author: "David Carter"
-  License: "GPL-2.0-or-later"
+  License: "CC-BY-4.0"
   Name: "Steel"
   Description: "Defines the Steel appearance properties"
 AppearanceModels:
   BasicRendering:
     UUID: 'f006c7e4-35b7-43d5-bbf9-c5d572309e6e'
-    AmbientColor: "(0.0020, 0.0020, 0.0020, 1.0)"
-    DiffuseColor: "(0.0000, 0.0000, 0.0000, 1.0)"
+    AmbientColor: "(0.2629, 0.2636, 0.2667, 1.0)"
+    DiffuseColor: "(0.4107, 0.4117, 0.4162, 1.0)"
     EmissiveColor: "(0.0000, 0.0000, 0.0000, 1.0)"
-    Shininess: "0.0600"
-    SpecularColor: "(0.9800, 0.9800, 0.9800, 1.0)"
+    Shininess: "0.6000"
+    SpecularColor: "(0.7748, 0.7766, 0.7846, 1.0)"
     Transparency: "0.0"

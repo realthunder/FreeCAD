@@ -180,10 +180,84 @@ Property *LinkBaseExtension::getProperty(const char *name) {
     return getProperty(it->second.index);
 }
 
-void LinkBaseExtension::setProperty(int idx, Property *prop) {
+namespace {
+
+// The two enumeration slots are read by index by the link logic, so the states
+// are part of what the slot means, not a decoration of whatever property
+// happens to fill it.
+const char *linkModeEnums[] = {"None","Auto Delete","Auto Link","Auto Unlink",nullptr};
+const char *linkCopyOnChangeEnums[] = {"Disabled","Enabled","Owned","Tracking",nullptr};
+
+const char **expectedEnums(int idx) {
+    switch(idx) {
+    case LinkBaseExtension::PropLinkMode:
+        return linkModeEnums;
+    case LinkBaseExtension::PropLinkCopyOnChange:
+        return linkCopyOnChangeEnums;
+    default:
+        return nullptr;
+    }
+}
+
+} // anonymous namespace
+
+void LinkBaseExtension::checkProperty(int idx, const Property *prop) const {
     const auto &infos = getPropertyInfo();
     if(idx<0 || idx>=(int)infos.size())
         LINK_THROW(Base::RuntimeError,"App::LinkBaseExtension: property index out of range");
+
+    if(!prop)
+        return;
+
+    if(!prop->isDerivedFrom(infos[idx].type)) {
+        std::ostringstream str;
+        str << "App::LinkBaseExtension: expected property type '" <<
+            infos[idx].type.getName() << "', instead of '" <<
+            prop->getTypeId().getName() << "'";
+        LINK_THROW(Base::TypeError,str.str().c_str());
+    }
+
+    // the extension's own bookkeeping is not a slot filler; handing it out
+    // would let the link overwrite the state it uses to track itself
+    if(prop == &_ChildCache || prop == &_LinkVersion || prop == &_LinkOwner) {
+        std::ostringstream str;
+        str << "App::LinkBaseExtension: '" << infos[idx].name
+            << "' cannot be configured to the extension's own internal property";
+        LINK_THROW(Base::ValueError,str.str().c_str());
+    }
+
+    if(const char **enums = expectedEnums(idx)) {
+        // an empty enumeration is what setProperty() fills in below; anything
+        // else has to already say what this slot needs it to say
+        auto propEnum = static_cast<const PropertyEnumeration*>(prop);
+        if(propEnum->hasEnums()) {
+            const auto current = propEnum->getEnumVector();
+            std::size_t count = 0;
+            bool same = true;
+            for(; enums[count]; ++count) {
+                if(count >= current.size() || current[count] != enums[count]) {
+                    same = false;
+                    break;
+                }
+            }
+            if(same && current.size() != count)
+                same = false;
+            if(!same) {
+                std::ostringstream str;
+                str << "App::LinkBaseExtension: '" << infos[idx].name
+                    << "' expects an enumeration of";
+                for(std::size_t i=0; enums[i]; ++i)
+                    str << (i?", '":" '") << enums[i] << "'";
+                LINK_THROW(Base::ValueError,str.str().c_str());
+            }
+        }
+    }
+}
+
+void LinkBaseExtension::setProperty(int idx, Property *prop) {
+    // reject before touching anything, so that a rejected property leaves
+    // whatever was configured for this slot alone
+    checkProperty(idx, prop);
 
     if(props[idx]) {
         props[idx]->setStatus(Property::LockDynamic,false);
@@ -191,13 +265,6 @@ void LinkBaseExtension::setProperty(int idx, Property *prop) {
     }
     if(!prop)
         return;
-    if(!prop->isDerivedFrom(infos[idx].type)) {
-        std::ostringstream str;
-        str << "App::LinkBaseExtension: expected property type '" <<
-            infos[idx].type.getName() << "', instead of '" <<
-            prop->getClassTypeId().getName() << "'";
-        LINK_THROW(Base::TypeError,str.str().c_str());
-    }
 
     props[idx] = prop;
     props[idx]->setStatus(Property::LockDynamic,true);
@@ -207,18 +274,13 @@ void LinkBaseExtension::setProperty(int idx, Property *prop) {
         if (!GetApplication().isRestoring() && LinkParams::getHideScaleVector())
             prop->setStatus(Property::Hidden, true);
         break;
-    case PropLinkMode: {
-        static const char *linkModeEnums[] = {"None","Auto Delete","Auto Link","Auto Unlink",nullptr};
-        auto propLinkMode = static_cast<PropertyEnumeration*>(prop);
-        if(!propLinkMode->hasEnums())
-            propLinkMode->setEnums(linkModeEnums);
-        break;
-    }
+    case PropLinkMode:
     case PropLinkCopyOnChange: {
-        static const char *enums[] = {"Disabled","Enabled","Owned","Tracking",nullptr};
+        // checkProperty() has already accepted any enumeration that is here
+        // with states of its own, so this only fills in an empty one
         auto propEnum = static_cast<PropertyEnumeration*>(prop);
         if(!propEnum->hasEnums())
-            propEnum->setEnums(enums);
+            propEnum->setEnums(expectedEnums(idx));
         break;
     }
     case PropLinkCopyOnChangeSource:
@@ -273,7 +335,7 @@ void LinkBaseExtension::setProperty(int idx, Property *prop) {
             propName = extensionGetPropertyName(prop);
         if(!Property::isValidName(propName))
             propName = "?";
-        FC_TRACE("set property " << infos[idx].name << ": " << propName);
+        FC_TRACE("set property " << getPropertyInfo()[idx].name << ": " << propName);
     }
 }
 
@@ -704,7 +766,7 @@ void LinkBaseExtension::setupCopyOnChange(DocumentObject *parent, bool checkSour
 }
 
 bool LinkBaseExtension::setupCopyOnChange(DocumentObject *parent, DocumentObject *linked,
-        std::vector<boost::signals2::scoped_connection> *copyOnChangeConns, bool checkExisting)
+        std::vector<fastsignals::scoped_connection> *copyOnChangeConns, bool checkExisting)
 {
     if(!parent || !linked)
         return false;

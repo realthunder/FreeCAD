@@ -76,7 +76,7 @@ std::string DimensionFormatter::formatValue(const qreal value,
         asQuantity.setUnit(Base::Unit::Length);
     }
 
-    QString qUserString = asQuantity.getUserString();  // this handles mm to inch/km/parsec etc
+    QString qUserString = QString::fromStdString(asQuantity.getUserString());  // this handles mm to inch/km/parsec etc
                                                        // and decimal positions but won't give more than
                                                        // Global_Decimals precision
 
@@ -129,7 +129,7 @@ std::string DimensionFormatter::formatValue(const qreal value,
             userVal = asQuantity.getValue();
             qBasicUnit = QString::fromUtf8("°");
         } else {
-            double convertValue = Base::Quantity::parse(QStringLiteral("1") + qBasicUnit).getValue();
+            double convertValue = Base::Quantity::parse((QStringLiteral("1") + qBasicUnit).toStdString()).getValue();
             userVal = asQuantity.getValue() / convertValue;
         }
 

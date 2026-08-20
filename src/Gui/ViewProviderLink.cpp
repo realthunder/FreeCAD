@@ -59,6 +59,7 @@
 #include <App/GeoFeatureGroupExtension.h>
 #include <Base/BoundBoxPy.h>
 #include <Base/Console.h>
+#include <Base/Interpreter.h>
 #include <Base/MatrixPy.h>
 #include <Base/PlacementPy.h>
 #include <Base/Reader.h>
@@ -138,7 +139,7 @@ class Gui::LinkInfo {
 public:
     std::atomic<int> ref;
 
-    using Connection = boost::signals2::scoped_connection;
+    using Connection = fastsignals::scoped_connection;
     Connection connChangeIcon;
 
     ViewProviderDocumentObject *pcLinked;
@@ -3183,7 +3184,12 @@ bool ViewProviderLink::initDraggingPlacement(int mode) {
                     if(!PyArg_ParseTuple(ret.ptr(),"O!O!O!",&Base::MatrixPy::Type, &pymat,
                                 &Base::PlacementPy::Type, &pypla,
                                 &Base::BoundBoxPy::Type, &pybbox)) {
-                        FC_ERR("initDraggingPlacement() expects return of type tuple(matrix,placement,boundbox)");
+                        // the error is handled here, so take it off the
+                        // interpreter instead of leaving it for an unrelated
+                        // later call to trip over
+                        Base::PyException e;
+                        FC_ERR("initDraggingPlacement() expects return of type "
+                               "tuple(matrix,placement,boundbox): " << e.what());
                         return false;
                     }
                     if (!dragCtx)
@@ -4370,5 +4376,5 @@ bool ViewProviderLink::iconMouseEvent(QMouseEvent *ev, const QByteArray &tag)
 
 namespace Gui {
 PROPERTY_SOURCE_TEMPLATE(Gui::ViewProviderLinkPython, Gui::ViewProviderLink)
-template class GuiExport ViewProviderPythonFeatureT<ViewProviderLink>;
+template class GuiExport ViewProviderFeaturePythonT<ViewProviderLink>;
 }

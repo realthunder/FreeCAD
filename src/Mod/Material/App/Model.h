@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,12 +21,10 @@
  *                                                                         *
  **************************************************************************/
 
-#ifndef MATERIAL_MODEL_H
-#define MATERIAL_MODEL_H
+#pragma once
 
 #include <memory>
 
-#include <QDir>
 #include <QString>
 #include <QStringList>
 
@@ -56,6 +56,7 @@ class MaterialsExport ModelProperty: public Base::BaseClass
 public:
     ModelProperty();
     ModelProperty(const QString& name,
+                  const QString& header,
                   const QString& type,
                   const QString& units,
                   const QString& url,
@@ -67,6 +68,7 @@ public:
     {
         return _name;
     }
+    const QString getDisplayName() const;
     const QString getPropertyType() const
     {
         return _propertyType;
@@ -95,6 +97,10 @@ public:
     void setName(const QString& name)
     {
         _name = name;
+    }
+    void setDisplayName(const QString& header)
+    {
+        _displayName = header;
     }
     virtual void setPropertyType(const QString& type)
     {
@@ -137,8 +143,11 @@ public:
         return !operator==(other);
     }
 
+    void validate(const ModelProperty& other) const;
+
 private:
     QString _name;
+    QString _displayName;
     QString _propertyType;
     QString _units;
     QString _url;
@@ -173,12 +182,12 @@ public:
     {
         return _library;
     }
-    const QString getBase() const
+    QString getBase() const
     {
-        return (_type == ModelType_Physical) ? QString::fromStdString("Model")
-                                             : QString::fromStdString("AppearanceModel");
+        return (_type == ModelType_Physical) ? QStringLiteral("Model")
+                                             : QStringLiteral("AppearanceModel");
     }
-    const QString getName() const
+    QString getName() const
     {
         return _name;
     }
@@ -186,31 +195,22 @@ public:
     {
         return _type;
     }
-    const QString getDirectory() const
-    {
-        return _directory;
-    }
-    const QString getDirectoryPath() const
-    {
-        return QDir(_directory).absolutePath();
-    }
-    // const QString getRelativePath() const
-    // {
-    //     return QDir(_directory).relativeFilePath(QDir(_directory).absolutePath());
-    // }
-    const QString getUUID() const
+    QString getDirectory() const;
+    QString getFilename() const;
+    QString getFilePath() const;
+    QString getUUID() const
     {
         return _uuid;
     }
-    const QString getDescription() const
+    QString getDescription() const
     {
         return _description;
     }
-    const QString getURL() const
+    QString getURL() const
     {
         return _url;
     }
-    const QString getDOI() const
+    QString getDOI() const
     {
         return _doi;
     }
@@ -227,10 +227,8 @@ public:
     {
         _name = name;
     }
-    void setDirectory(const QString& directory)
-    {
-        _directory = directory;
-    }
+    void setDirectory(const QString& directory);
+    void setFilename(const QString& filename);
     void setUUID(const QString& uuid)
     {
         _uuid = uuid;
@@ -303,11 +301,14 @@ public:
         return _properties.cend();
     }
 
+    void validate(Model& other) const;
+
 private:
     std::shared_ptr<ModelLibrary> _library;
     ModelType _type;
     QString _name;
     QString _directory;
+    QString _filename;
     QString _uuid;
     QString _description;
     QString _url;
@@ -319,5 +320,3 @@ private:
 typedef FolderTreeNode<Model> ModelTreeNode;
 
 }  // namespace Materials
-
-#endif  // MATERIAL_MODEL_H

@@ -136,32 +136,34 @@ void ImportOCAFGui::applyElementColors(App::DocumentObject* obj,
 void ImportOCAFGui::applyRenderMaterial(Part::Feature* part,
                                         const Import::RenderMaterial& mat)
 {
-    // Mirror the imported PBR material into the view provider's Render_*
-    // dynamic properties (see ViewProviderGeometryObject, which builds the
-    // render engine scene graph nodes from them). The base color factor is
-    // already applied through the color labels.
+    // The texture slots become Render_* dynamic properties (see
+    // ViewProviderGeometryObject, which builds the render engine scene
+    // graph nodes from them); the metalness and roughness factors are
+    // material data and land on the appearance instead. The base color
+    // factor is already applied through the color labels.
     auto vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(
         Gui::Application::Instance->getViewProvider(part));
     if (!vp || !mat.valid) {
         return;
     }
 
-    auto setFloat = [vp](const char* name, double value, const char* doc) {
-        if (value < 0.0) {
-            return;
+    // applyFaceMaterials has normally put the exact per-face factors on
+    // the appearance already, and a whole-object value must not flatten
+    // them -- so this is the fallback for a shape whose faces did NOT all
+    // resolve to a PBR material, where the appearance is still Phong and
+    // these two are the only PBR data the file gave us.
+    if (!vp->ShapeAppearance.isPBR() && (mat.metallic >= 0.0 || mat.roughness >= 0.0)) {
+        // convertPBR rather than setPBR: it carries the Phong reading's
+        // look across the mode change instead of re-reading the same
+        // slots as PBR values, which would restate colour as metalness.
+        vp->ShapeAppearance.convertPBR(true);
+        if (mat.metallic >= 0.0) {
+            vp->ShapeAppearance.setMetallic(float(mat.metallic));
         }
-        auto prop = Base::freecad_dynamic_cast<App::PropertyFloat>(
-            vp->getPropertyByName(name));
-        if (!prop) {
-            prop = static_cast<App::PropertyFloat*>(vp->addDynamicProperty(
-                "App::PropertyFloatConstraint", name, "Render", doc));
+        if (mat.roughness >= 0.0) {
+            vp->ShapeAppearance.setRoughness(float(mat.roughness));
         }
-        prop->setValue(value);
-    };
-    setFloat("Render_Metallic", mat.metallic,
-             "Metalness of the render engine PBR shading, 0 to 1");
-    setFloat("Render_Roughness", mat.roughness,
-             "Roughness of the render engine PBR shading, 0 to 1");
+    }
 
     auto setFile = [vp](const char* name, const std::string& path, const char* doc) {
         if (path.empty()) {

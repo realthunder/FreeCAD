@@ -1,100 +1,107 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 if(MSVC)
     add_definitions(-DFCAppMaterial -DHAVE_ACOSH -DHAVE_ASINH -DHAVE_ATANH)
 else(MSVC)
     add_definitions(-DHAVE_LIMITS_H -DHAVE_CONFIG_H)
 endif(MSVC)
 
-# Only tell yaml-cpp's headers it is a static build when it actually is. conda
-# ships a shared yaml-cpp, where the define suppresses the dllimport attributes
-# its API needs.
-if(NOT TARGET yaml-cpp::yaml-cpp)
-    add_definitions(-DYAML_CPP_STATIC_DEFINE)
-else()
-    get_target_property(_yaml_cpp_type yaml-cpp::yaml-cpp TYPE)
-    if(_yaml_cpp_type STREQUAL "STATIC_LIBRARY")
-        add_definitions(-DYAML_CPP_STATIC_DEFINE)
-    endif()
-    unset(_yaml_cpp_type)
-endif()
+add_definitions(-DYAML_CPP_STATIC_DEFINE)
 
-include_directories(
-    ${CMAKE_BINARY_DIR}
-    ${CMAKE_BINARY_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${Boost_INCLUDE_DIRS}
-    ${PYTHON_INCLUDE_DIRS}
-    ${XercesC_INCLUDE_DIRS}
-    ${ZLIB_INCLUDE_DIR}
-    ${YAML_CPP_INCLUDE_DIR}
-)
-link_directories(${YAML_CPP_LIBRARY_DIR})
+if(BUILD_MATERIAL_EXTERNAL)
+    add_definitions(-DBUILD_MATERIAL_EXTERNAL)
+endif(BUILD_MATERIAL_EXTERNAL)
 
-set(Material_LIBS
-    ${Boost_LIBRARIES}
+set(Materials_LIBS
     FreeCADApp
 )
 
-include_directories(
-    ${QtConcurrent_INCLUDE_DIRS}
-)
-list(APPEND Material_LIBS
+list(APPEND Materials_LIBS
     ${QtConcurrent_LIBRARIES}
 )
-# Prefer the imported target: YAML_CPP_LIBRARIES is the bare string "yaml-cpp",
-# and YAML_CPP_LIBRARY_DIR is not set by yaml-cpp's own config, so the
-# link_directories() above is a no-op and the bare name has no search path.
-# Linux gets away with it because conda's compiler wrapper adds -L$PREFIX/lib;
-# on Windows the link fails with LNK1104 "cannot open file yaml-cpp.lib".
-if(TARGET yaml-cpp::yaml-cpp)
-    list(APPEND Material_LIBS yaml-cpp::yaml-cpp)
+
+if(yaml-cpp_VERSION VERSION_LESS 0.8.0)
+    list(APPEND Materials_LIBS
+        ${YAML_CPP_LIBRARIES}
+    )
 else()
-    list(APPEND Material_LIBS ${YAML_CPP_LIBRARIES})
+    list(APPEND Materials_LIBS
+        yaml-cpp::yaml-cpp
+    )
 endif()
 
-generate_from_xml(Array2DPy)
-generate_from_xml(Array3DPy)
-generate_from_xml(MaterialManagerPy)
-generate_from_xml(MaterialPy)
-generate_from_xml(ModelManagerPy)
-generate_from_xml(ModelPropertyPy)
-generate_from_xml(ModelPy)
-generate_from_xml(UUIDsPy)
+generate_from_py(Array2D)
+generate_from_py(Array3D)
+generate_from_py(MaterialFilter)
+generate_from_py(MaterialFilterOptions)
+generate_from_py(MaterialLibrary)
+generate_from_py(MaterialManager)
+generate_from_py(Material)
+generate_from_py(ModelManager)
+generate_from_py(ModelProperty)
+generate_from_py(MaterialProperty)
+generate_from_py(Model)
+generate_from_py(UUIDs)
+
+SET(MaterialsAPI_Files
+    MaterialAPI/__init__.py
+    MaterialAPI/MaterialManagerExternal.py
+)
+
+SET(MaterialsAPI_Files
+    MaterialAPI/__init__.py
+    MaterialAPI/MaterialManagerExternal.py
+)
 
 SET(Python_SRCS
-    Exceptions.h
-    Array2DPy.xml
-    Array2DPyImpl.cpp
-    Array3DPy.xml
-    Array3DPyImpl.cpp
-    MaterialManagerPy.xml
-    MaterialManagerPyImpl.cpp
-    MaterialPy.xml
-    MaterialPyImpl.cpp
-    ModelManagerPy.xml
-    ModelManagerPyImpl.cpp
-    ModelPropertyPy.xml
-    ModelPropertyPyImpl.cpp
-    ModelPy.xml
-    ModelPyImpl.cpp
-    UUIDsPy.xml
-    UUIDsPyImpl.cpp
+    Exceptions.cpp
+    Array2D.pyi
+    Array2DPyImp.cpp
+    Array3D.pyi
+    Array3DPyImp.cpp
+    MaterialFilterOptions.pyi
+    MaterialFilterOptionsPyImp.cpp
+    MaterialFilter.pyi
+    MaterialFilterPyImp.cpp
+    MaterialLibrary.pyi
+    MaterialLibraryPyImp.cpp
+    MaterialManager.pyi
+    MaterialManagerPyImp.cpp
+    MaterialProperty.pyi
+    MaterialPropertyPyImp.cpp
+    Material.pyi
+    MaterialPyImp.cpp
+    ModelManager.pyi
+    ModelManagerPyImp.cpp
+    ModelProperty.pyi
+    ModelPropertyPyImp.cpp
+    Model.pyi
+    ModelPyImp.cpp
+    UUIDs.pyi
+    UUIDsPyImp.cpp
 )
 SOURCE_GROUP("Python" FILES ${Python_SRCS})
 
-SET(Material_SRCS
+SET(Materials_SRCS
     ${Python_SRCS}
     AppMaterial.cpp
     FolderTree.h
+    Library.cpp
+    Library.h
     MaterialConfigLoader.cpp
     MaterialConfigLoader.h
+    MaterialFilter.cpp
+    MaterialFilter.h
     MaterialLibrary.cpp
     MaterialLibrary.h
+    MaterialCards.cpp
+    MaterialCards.h
     MaterialLoader.cpp
     MaterialLoader.h
     MaterialManager.cpp
     MaterialManager.h
+    MaterialManagerLocal.cpp
+    MaterialManagerLocal.h
     Materials.cpp
     Materials.h
     MaterialValue.cpp
@@ -107,23 +114,86 @@ SET(Material_SRCS
     ModelLoader.h
     ModelManager.cpp
     ModelManager.h
+    ModelManagerLocal.cpp
+    ModelManagerLocal.h
     ModelUuids.cpp
     ModelUuids.h
-    PreCompiled.cpp
     PreCompiled.h
+    PropertyMaterial.cpp
+    PropertyMaterial.h
+    PyVariants.cpp
+    PyVariants.h
     trim.h
 )
 
+if(BUILD_MATERIAL_EXTERNAL)
+    list(APPEND Materials_SRCS
+        ExternalManager.cpp
+        ExternalManager.h
+        MaterialManagerExternal.cpp
+        MaterialManagerExternal.h
+        ModelManagerExternal.cpp
+        ModelManagerExternal.h
+    )
+endif(BUILD_MATERIAL_EXTERNAL)
+
+add_library(Materials SHARED ${Materials_SRCS})
+
 if(FREECAD_USE_PCH)
-    add_definitions(-D_PreComp_)
-    GET_MSVC_PRECOMPILED_SOURCE("PreCompiled.cpp" PCH_SRCS ${Material_SRCS})
-    ADD_MSVC_PRECOMPILED_HEADER(Material PreCompiled.h PreCompiled.cpp PCH_SRCS)
+    target_precompile_headers(Materials PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:"${CMAKE_CURRENT_LIST_DIR}/PreCompiled.h">
+    )
 endif(FREECAD_USE_PCH)
 
-add_library(Material SHARED ${Material_SRCS})
-target_link_libraries(Material ${Material_LIBS})
+target_include_directories(
+    Materials
+    PRIVATE
+    # This fork does not propagate the Python include dirs through the core
+    # targets the way upstream's build does, so the generated *PyImp.cpp
+    # translation units cannot find Python.h without naming them here.
+    ${PYTHON_INCLUDE_DIRS}
+    ${CMAKE_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
-SET_BIN_DIR(Material Material /Mod/Material)
-SET_PYTHON_PREFIX_SUFFIX(Material)
+target_include_directories(
+    Materials
+    SYSTEM
+    PUBLIC
+    ${YAML_CPP_INCLUDE_DIR}
+    ${QtConcurrent_INCLUDE_DIRS}
+)
 
-INSTALL(TARGETS Material DESTINATION ${CMAKE_INSTALL_LIBDIR})
+if(BUILD_MATERIAL_EXTERNAL)
+    target_include_directories(Materials PUBLIC ${CMAKE_SOURCE_DIR}/src/3rdParty/lru-cache/include)
+endif(BUILD_MATERIAL_EXTERNAL)
+
+target_link_directories(Materials PUBLIC ${YAML_CPP_LIBRARY_DIR})
+target_link_libraries(Materials ${Materials_LIBS})
+
+if (MSVC)
+    target_compile_options(Materials PRIVATE /wd4251 /wd4273)
+endif()
+
+if(FREECAD_WARN_ERROR)
+    target_compile_warn_error(Materials)
+endif()
+
+SET_BIN_DIR(Materials Materials /Mod/Material)
+SET_PYTHON_PREFIX_SUFFIX(Materials)
+
+INSTALL(TARGETS Materials DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+ADD_CUSTOM_TARGET(MaterialsAPILib ALL
+    SOURCES ${MaterialsAPI_Files} ${Material_QRC_SRCS}
+)
+
+fc_target_copy_resource(MaterialsAPILib
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_BINARY_DIR}/Mod/Material
+    ${MaterialsAPI_Files})
+
+INSTALL(FILES ${MaterialsAPI_Files} DESTINATION Mod/Material/MaterialAPI)

@@ -406,7 +406,7 @@ protected:
     CoinPtr<SoMatrixTransform> pcMatrixTransform;
     ViewProviderDocumentObject *childVp;
     LinkInfoPtr childVpLink;
-    boost::signals2::scoped_connection connNewElement;
+    fastsignals::scoped_connection connNewElement;
     mutable qint64 overlayCacheKey;
 };
 

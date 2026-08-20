@@ -62,7 +62,7 @@ QVariant PropertyConstraintListItem::toString(const QVariant& prop) const
             out << "...";
             break;
         }
-        out << it->getUserString();
+        out << QString::fromStdString(it->getUserString());
     }
     out << "]";
     return QVariant(str);

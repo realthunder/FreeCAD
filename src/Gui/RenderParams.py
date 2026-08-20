@@ -47,6 +47,53 @@ Params = [
     ParamString('Type', 'Default', title='Renderer type',
         doc="Type of the experimental render engine backend. 'Default' keeps\n"
         "the plain GL pipeline. Only effective with render cache mode 3."),
+    ParamInt('OutputTransform',  1, title='Output colour transform',
+        proxy=ParamComboBox(items=['Off', 'sRGB']),
+        doc="Whether the engine is colour managed.\n"
+        "\n"
+        "The shading is linear -- mixes, the GGX lobe, the image based\n"
+        "lighting product are all arithmetic on light, and they are only\n"
+        "correct on linear numbers. A colour someone picked is not: it\n"
+        "is a display number, which makes it sRGB encoded. And a display\n"
+        "reads the byte it is handed as sRGB too.\n"
+        "\n"
+        "'sRGB' honours both ends. Authored colours -- materials, the\n"
+        "lights, the background, the base colour and emissive textures --\n"
+        "are decoded to linear as they enter, and the finished frame is\n"
+        "encoded once at the last write before it is shown. An UNSHADED\n"
+        "authored colour therefore survives the round trip exactly, and\n"
+        "so does a fully lit surface; what changes is the shading in\n"
+        "between, which is the part that was wrong.\n"
+        "\n"
+        "'Off' is the older pipeline, which did neither: it fed display\n"
+        "numbers to the linear shading and wrote the linear result out\n"
+        "raw. The two errors partly cancel -- a fully lit surface comes\n"
+        "out right -- but everything in falloff and shadow renders about\n"
+        "a gamma too dark. Documents written before this existed are\n"
+        "drawn that way, which is how they were authored.",
+        ),
+    ParamFloat('Exposure',  1.0, title='Exposure',
+        doc="How much light the frame is developed with, as a plain\n"
+        "multiplier on the linear image before it is encoded for the\n"
+        "screen. One leaves it alone.\n"
+        "\n"
+        "It exists because a colour managed scene is lit in real\n"
+        "reflectances, and a mid grey reflects about 18 per cent of what\n"
+        "falls on it rather than the 45 per cent its number reads as. A\n"
+        "scene whose lights were set before that was true is lit about\n"
+        "two to three times too dimly, and this is the control that\n"
+        "answers it without touching a single light.\n"
+        "\n"
+        "Raising it does not clip. Anything the multiplier pushes past\n"
+        "the top of the range rolls off smoothly instead, and the roll\n"
+        "off is exactly nothing below the knee -- so at an exposure of\n"
+        "one the frame is bit for bit what it would have been without\n"
+        "this stage at all.\n"
+        "\n"
+        "Only meaningful while the output colour transform is on: with\n"
+        "it off the engine is not working in light, and a multiplier\n"
+        "there would scale display numbers rather than exposure.",
+        ),
     ParamInt('MaxViewIds',  1024, title='Backend view id budget',
         doc="How many backend view ids the render engine may hand out, which\n"
         "is what decides how many 3D views can draw on it at once: each\n"
@@ -1058,7 +1105,7 @@ Params = [
     ParamBool('PBR',  False, title='Physically based shading',
         doc="Enable physically based shading with image based lighting of\n"
         "the experimental render engine (render cache mode 3 with a\n"
-        "selected renderer type). Replaces the default headlight shading\n"
+        "selected renderer type). Replaces the Classic headlight shading\n"
         "of lit surfaces with a metallic/roughness material lit by a\n"
         "built-in studio environment."),
     ParamFloat('PBRMetallic',  0.0, title='Metallic',
@@ -1066,6 +1113,78 @@ Params = [
     ParamFloat('PBRRoughness',  0.0, title='Roughness',
         doc="Roughness of physically based shaded surfaces, 0 to 1.\n"
         "Zero means automatic (derived from each material's shininess)."),
+    ParamBool('PBRFromSpecular',  True, title='Specular to metallic',
+        doc="Read an ordinary Phong appearance's specular COLOUR as\n"
+        "physically based material data, where nothing states a\n"
+        "metalness of its own. The metallic/roughness model has no\n"
+        "specular slot -- its reflectance follows from the base colour\n"
+        "and the metalness -- so a classic Gold, whose gold-ness lives\n"
+        "entirely in that colour, otherwise shades as yellow-brown\n"
+        "plastic, and the presets built from a black diffuse and a\n"
+        "bright specular (Steel, Satin, Metalized) shade as nearly\n"
+        "black. Anything authored stands: a stated metalness, a PBR\n"
+        "appearance, a metallic-roughness map."),
+    ParamInt('ShininessMapping',  1, title='Shininess mapping',
+        proxy=ParamComboBox(items=['GL exponent', 'Full range']),
+        doc="How a classic Phong appearance's SHININESS becomes a\n"
+        "roughness, where the material states no roughness of its own.\n"
+        "\n"
+        "Either way the conversion itself is the standard match of the\n"
+        "GGX lobe width to a Phong exponent n, roughness =\n"
+        "(2 / (n + 2)) ^ 1/4. What differs is what shininess MEANS.\n"
+        "\n"
+        "'GL exponent' reads it the way fixed-function GL did, as the\n"
+        "exponent scaled onto 0..128. That is faithful, but 128 is the\n"
+        "sharpest exponent GL could state, and it converts to a\n"
+        "roughness of 0.35 -- so on this reading a fully shiny Phong\n"
+        "material is satin, and the lower half of the roughness range\n"
+        "cannot be reached from shininess at all.\n"
+        "\n"
+        "'Full range' reads shininess as what the Appearance dialog\n"
+        "presents, a 0 to 100% appearance control, and maps it onto the\n"
+        "whole exponent range instead: n = 128 * s / (1 - s). Matte at\n"
+        "zero and a mirror at one, and over the low shininess values\n"
+        "real materials use it agrees with the GL reading to within a\n"
+        "few percent (FreeCAD's default 0.2 gives 0.49 rather than\n"
+        "0.52, the Gold preset 0.66 rather than 0.67).\n"
+        "\n"
+        "Neither reading touches anything authored: a stated roughness,\n"
+        "a PBR appearance, a metallic-roughness map and the per-object\n"
+        "Render_Roughness override all stand.",
+        ),
+    ParamInt('PBREnvPreset',  4, title='Environment',
+        proxy=ParamComboBox(items=['Studio', 'Gradient', 'Overcast',
+                                   'Sunset', 'Interior', 'Light tent']),
+        doc="Which built-in environment lights the scene, where no\n"
+        "environment image is set. They are computed rather than\n"
+        "sampled from a file, so they cost no assets and work on every\n"
+        "tier including the browser.\n"
+        "\n"
+        "What separates them is contrast and structure, not brightness:\n"
+        "all five integrate to the same mean radiance, so the exposure\n"
+        "that suits one suits the others. That matters because a\n"
+        "surround with no bright sources and no edges cannot put a\n"
+        "highlight on anything that reads as a light, and a smooth\n"
+        "surface reflecting it shows the same flat grey at every\n"
+        "roughness -- which is what made physically based shading look\n"
+        "like painted plastic.\n"
+        "\n"
+        "Interior (the default) = a room with one window and a ceiling\n"
+        "panel, walls close enough to bounce. One hard key against a\n"
+        "dark surround, which is what gives the crispest highlight and\n"
+        "the strongest read of form. Studio = four soft boxes on a dark\n"
+        "surround, the product-shot rig, gentler and more even than\n"
+        "Interior. Gradient = the smooth three-band dome this engine\n"
+        "used before the others existed; the flattest and the most\n"
+        "even, and the one to pick to have an older document's look\n"
+        "back. Overcast = a bright sky weighted to the zenith over dark\n"
+        "ground, soft and neutral. Sunset = a low warm sun with a deep\n"
+        "sky, the strongest colour separation, and the only one that\n"
+        "tints the whole frame. Light tent = a box of white panels,\n"
+        "bright BELOW the horizon as well as above it and seamed all\n"
+        "the way round; the one to pick when the SIDES of a subject\n"
+        "matter, since every other environment here puts a floor under\n"
+        "it and a standing wall reflects the floor."),
     ParamFloat('PBREnvIntensity',  1.0, title='Environment brightness',
         doc="Brightness of the image based lighting environment."),
     ParamString('PBREnvImage', '', title='Environment image',
@@ -1074,6 +1193,15 @@ Params = [
         "image is read as equirectangular (lat-long), anything squarer\n"
         "as a sphere map — the same convention as the Texture mapping\n"
         "dialog's Environment mode, so the same file works in both.\n"
+        "\n"
+        "A Radiance picture (.hdr, .pic) is read as real radiance and\n"
+        "is the format worth using: a sky is thousands of times\n"
+        "brighter than the wall beneath it, and an ordinary 8-bit image\n"
+        "cannot hold that ratio, which is what makes one light a model\n"
+        "like a picture rather than like a place. An HDR environment\n"
+        "needs the output colour transform on, since it is the exposure\n"
+        "that decides how its range lands on the screen.\n"
+        "\n"
         "Empty falls back to that dialog's current image, then to the\n"
         "procedural environment."),
     ParamBool('PBREnvEmbed', False, title='Embed environment image',
@@ -1082,10 +1210,17 @@ Params = [
         "original path. The copy lives in the view's\n"
         "Render_PBREnvImageData property and takes precedence over the\n"
         "image path while set."),
-    ParamBool('PBREnvBackground', False, title='Environment background',
+    ParamBool('PBREnvBackground', True, title='Environment background',
         doc="Show the image based lighting environment itself as the view\n"
-        "background while PBR shading is active, so reflective surfaces\n"
-        "visibly mirror their surroundings."),
+        "background while physically based shading is active, so\n"
+        "reflective surfaces visibly mirror their surroundings.\n"
+        "\n"
+        "On by default, because a reflective object standing in front of\n"
+        "a flat gradient reads as fake for a reason that is not the\n"
+        "object's fault: the reflection has no visible source, so there\n"
+        "is nothing in the frame for the eye to reconcile it against.\n"
+        "Affects nothing outside physically based shading -- the\n"
+        "Classic and Matcap models keep the background gradient."),
     ParamFloat('BumpScale',  1.0, title='Bump strength',
         doc="Strength of bump/normal mapped surfaces (SoBumpMap) of the\n"
         "experimental render engine: scales the slope of normal maps and\n"

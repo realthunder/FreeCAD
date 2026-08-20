@@ -684,15 +684,126 @@ uniform-selected branch that costs nothing on a scene that states none.
   is stated in physical units and not as a normalised amplitude. In the
   Phong path the same quantity travels through the shininess slot.
 
+### Reading a Phong appearance as PBR material data
+
+Almost nothing in a FreeCAD document is authored as metallic/roughness.
+What the branch is handed is an ordinary Blinn-Phong appearance -- a
+diffuse colour, a specular colour and a shininess -- and how those three
+are read decides what every existing model looks like under Realistic
+shading. Two readings, both per draw, neither touching anything that was
+authored (a stated metalness or roughness, a PBR-mode appearance, a
+metallic-roughness map):
+
+- **Shininess to roughness** is the classical microfacet match on the
+  GGX *width*, `alpha = sqrt(2 / (n + 2))` for a Phong exponent
+  `n = shininess * 128`. Roughness is the square root of the width
+  because the BRDF squares it back (`a = rough * rough`, the glTF
+  convention), so the conversion is the FOURTH root of that ratio --
+  `fcRoughFromShininess`, with `fcShininessFromRough` as its inverse and
+  `App::Material::shininessToRoughness` as the C++ copy. Handing the
+  alpha over directly instead squares it twice and shades every ordinary
+  surface as a mirror.
+- **Specular colour to base colour and metalness** (`Render_PBRFromSpecular`,
+  on by default) recovers what the branch has no slot for. Its
+  reflectance is `f0`, built from the base colour and the metalness, so
+  the specular colour is otherwise dropped -- and a classic Gold, whose
+  gold-ness lives entirely in that colour, shades as yellow-brown
+  plastic, while the presets built from a BLACK diffuse over a bright
+  specular (Steel, Satin, Metalized, Shiny plastic) shade as black
+  spheres. `fcBaseFromSpecular` is Khronos' specular-glossiness to
+  metallic-roughness solve: the metalness for which the dielectric f0 of
+  0.04 and some base colour reproduce the diffuse/specular pair, then the
+  base colour recombined from both readings. It runs in the SHADER, not
+  at translation time, because the base colour can arrive per vertex or
+  per face; the engine asks for it by passing a negative metalness.
+
+### What the branch costs
+
+Measured 2026-08-19 on an RTX 3070 Ti Laptop (D3D12 via WSLg), one
+1430x725 view, 1018692 covered pixels, every other effect pinned off, by
+`scripts/pbr_cost_probe.py` + `scripts/pbr_cost_report.py`. Per
+full-screen shading pass:
+
+| leg | serialized clock | free-running clock |
+| --- | --- | --- |
+| Phong | 0.057 ms | 0.059 ms |
+| PBR | 0.105 ms | 0.107 ms |
+| PBR, `PBRFromSpecular` off | 0.111 ms | 0.109 ms |
+
+**PBR costs 1.8x Phong per fragment** -- about +0.048 ms on a fully
+covered 1080p frame, +0.09 ms at 1440p. The two clocks are independent
+(one serialized by a readback, one free-running) and agree to 2%.
+
+Two things follow, and the second is the one that decides anything:
+
+- **`fcBaseFromSpecular` is free.** It was expected to be the expensive
+  half, since it runs for every Phong-authored material -- which is
+  nearly all of them -- and it does not show up above noise on either
+  clock. Whether to read a specular colour as material data is a
+  question about how models should LOOK, not about frame cost.
+- **A desktop frame cannot see any of this.** It had to be amplified by
+  ~800x overdraw before the GPU became what the frame waits for. At
+  ordinary coverage the frame is bound by this renderer's own C++ and
+  the Qt/Coin composite, and a 14x sweep of the covered-pixel count
+  moved it by nothing at all. So on the desktop tier the shading model
+  is not what a frame costs.
+
+  It does not follow that the ratio is harmless everywhere. 1.8x is a
+  ratio on fragment work, and the mobile and browser tiers are exactly
+  where fragment work binds. The number to carry to that decision is the
+  ratio, not the milliseconds.
+
 ### Environment (image based lighting)
 
 PBR shading (`Render_PBR`) is lit by a prefiltered environment cubemap
 plus its irradiance SH, built once per view on the CPU and rebuilt when
 the source changes:
 
-- Default source is the built-in procedural studio environment (Z-up
-  ground/horizon/sky gradient + three light lobes), fixed so frames stay
-  deterministic.
+- Default source is a built-in **procedural environment**, computed on
+  the CPU and fixed so frames stay deterministic. `Render_PBREnvPreset`
+  picks which one: `Interior` (**default** -- one window and a ceiling
+  panel against a dark surround, the crispest key of the five),
+  `Studio` (four soft boxes on a dark surround), `Gradient` (the Z-up
+  ground/horizon/sky ramp plus three cosine lobes this engine had
+  before the others, kept so an older document can have its look
+  back), `Overcast`, `Sunset`, `Light tent`.
+
+  `Light tent` is the odd one and exists for a specific failure. Every
+  other preset here is a place with a FLOOR, so its lower hemisphere is
+  the darkest part of it -- and a standing cylinder's wall reflects
+  exactly that half, whatever the camera does, because a wall seen from
+  above the equator mirrors below the horizon. The wall of a machined
+  billet therefore goes dead under all of them. This one is bright in
+  both hemispheres and carries panel seams at every elevation, which
+  matters twice over: brightness alone still leaves a vertical groove
+  invisible, since a groove that tilts its normal only in azimuth needs
+  something to swing the reflection ACROSS.
+
+  All five are scaled to integrate to the **same mean radiance** over
+  the sphere (0.565 in luminance, Gradient's). That is load bearing:
+  choosing a preset changes contrast and structure and NOT how bright
+  the scene comes out, so one exposure suits all of them. The scale
+  constants in `envRadianceProcedural` were measured by integrating
+  each shape over a uniform sphere -- edit a shape and its constant is
+  stale.
+
+  Why more than one: Gradient spans barely one stop peak-to-floor
+  (about 12:1) and has no edges anywhere, so a smooth dielectric
+  reflecting it shows the same flat grey at *every* roughness and
+  nothing in the frame reads as a light source. Studio is about 370:1
+  with rectangular sources, which is what makes a polished surface look
+  polished. Rectangular and not a cosine lobe on purpose -- the edge is
+  the point.
+
+  `Overcast` weights its sky to the **zenith**, about 8:1 over the
+  horizon where CIE's standard overcast distribution says 3:1. Same
+  mean radiance as the rest, so the same light arrives -- it just
+  arrives from higher up, which is what keeps the band immediately
+  above the horizon dark enough to be a backdrop. An evenly bright
+  dome cannot: forced to the common mean it is bright everywhere,
+  including the part of it that fills the frame behind the model, and
+  a near-white appearance like Plaster then has nothing to stand
+  against.
 - `Render_PBREnvImage` replaces it with a user image. A 2:1 image is
   read as equirectangular (lat-long), anything squarer as a GL sphere
   map — the convention Coin's `SoTextureCoordinateEnvironment` uses, so
@@ -702,7 +813,12 @@ the source changes:
   procedural environment.
 - `Render_PBREnvBackground` draws the environment itself as the view
   background instead of the gradient quad, so reflective surfaces
-  visibly mirror their surroundings. The background pass keeps the scene
+  visibly mirror their surroundings. **On by default.** It gates the
+  background pass ALONE -- the environment lights the scene either way
+  -- so turning it off is how to have image based lighting over the
+  ordinary background colour or gradient, which is a common enough
+  thing to want that the Shading popup carries it as a checkbox beside
+  the preset. The background pass keeps the scene
   matrices for it (`fs_fc_env` reconstructs per-pixel world directions
   from `u_proj`/`u_invView`); orthographic cameras get a fixed 45°
   virtual field of view since they have no per-pixel ray fan.

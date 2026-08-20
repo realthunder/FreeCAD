@@ -134,6 +134,16 @@ public:
     //@{
     /// Take the geometry file this restore was handed. Does not parse it.
     void assignRestoredBlob(const App::FileBlobHandle &blob) override;
+    /** Nothing: the geometry is noted at write time, by noteBlob().
+     *
+     * Not an oversight. The extension the file is stored under says whether
+     * the geometry was written as ASCII or binary BRep, which is the
+     * writer's choice and is not known during the collect pass; and a shape
+     * that changed since the last save drops its blob when it is written,
+     * which would leave a collect-time note pointing at content the file no
+     * longer refers to.
+     */
+    void collectBlobs(App::FileBlobManager &, const App::DocumentObject *) const override {}
     /// The file holding this property's geometry, or null.
     const App::FileBlobHandle &getBlob() const { return _blob; }
     //@}
@@ -417,7 +427,7 @@ private:
 
 private:
     std::unordered_map<std::string, TopoShape> cache;
-    boost::signals2::scoped_connection connChanged;
+    fastsignals::scoped_connection connChanged;
 };
 
 } //namespace Part

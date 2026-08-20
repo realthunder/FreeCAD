@@ -31,6 +31,8 @@
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
 
+#include <fmt/format.h>
+
 #include "Quantity.h"
 #include "Exception.h"
 #include "UnitsApi.h"
@@ -83,10 +85,10 @@ Quantity::Quantity(double value, const Unit& unit)
     , myUnit {unit}
 {}
 
-Quantity::Quantity(double value, const QString& unit)
+Quantity::Quantity(double value, const std::string& unit)
     : myValue {0.0}
 {
-    if (unit.isEmpty()) {
+    if (unit.empty()) {
         this->myValue = value;
         this->myUnit = Unit();
         return;
@@ -251,24 +253,25 @@ Quantity Quantity::operator-() const
     return Quantity(-(this->myValue), this->myUnit);
 }
 
-QString Quantity::getUserString(double& factor, QString& unitString) const
+std::string Quantity::getUserString(double& factor, std::string& unitString) const
 {
     return Base::UnitsApi::schemaTranslate(*this, factor, unitString);
 }
 
-QString Quantity::getUserString(UnitsSchema* schema, double& factor, QString& unitString) const
+std::string
+Quantity::getUserString(UnitsSchema* schema, double& factor, std::string& unitString) const
 {
     return schema->schemaTranslate(*this, factor, unitString);
 }
 
-QString Quantity::getSafeUserString() const
+std::string Quantity::getSafeUserString() const
 {
     auto retString = getUserString();
-    if (Q_LIKELY(this->myValue != 0)) {
+    if (this->myValue != 0) {
         auto feedbackQty = parse(retString);
         auto feedbackVal = feedbackQty.getValue();
         if (feedbackVal == 0) {
-            retString = QStringLiteral("%1 %2").arg(this->myValue).arg(this->getUnit().getString());
+            retString = fmt::format("{} {}", this->myValue, this->getUnit().getString());
         }
     }
     return retString;
@@ -333,6 +336,8 @@ const Quantity Quantity::Minute(60.0, Unit(0, 0, 1));
 const Quantity Quantity::Hour(3600.0, Unit(0, 0, 1));
 
 const Quantity Quantity::Ampere(1.0, Unit(0, 0, 0, 1));
+const Quantity Quantity::NanoAmpere(1.0e-9, Unit(0, 0, 0, 1));
+const Quantity Quantity::MicroAmpere(1.0e-6, Unit(0, 0, 0, 1));
 const Quantity Quantity::MilliAmpere(0.001, Unit(0, 0, 0, 1));
 const Quantity Quantity::KiloAmpere(1000.0, Unit(0, 0, 0, 1));
 const Quantity Quantity::MegaAmpere(1.0e6, Unit(0, 0, 0, 1));
@@ -341,6 +346,8 @@ const Quantity Quantity::Kelvin(1.0, Unit(0, 0, 0, 0, 1));
 const Quantity Quantity::MilliKelvin(0.001, Unit(0, 0, 0, 0, 1));
 const Quantity Quantity::MicroKelvin(0.000001, Unit(0, 0, 0, 0, 1));
 
+const Quantity Quantity::NanoMole(1.0e-9, Unit(0, 0, 0, 0, 0, 1));
+const Quantity Quantity::MicroMole(1.0e-6, Unit(0, 0, 0, 0, 0, 1));
 const Quantity Quantity::MilliMole(0.001, Unit(0, 0, 0, 0, 0, 1));
 const Quantity Quantity::Mole(1.0, Unit(0, 0, 0, 0, 0, 1));
 
@@ -396,6 +403,8 @@ const Quantity Quantity::KSI(6894.744825494, Unit(-1, 1, -2));   // 1000 x pound
 const Quantity Quantity::MPSI(6894744.825494, Unit(-1, 1, -2));  // 1000 ksi
 
 const Quantity Quantity::Watt(1e+6, Unit(2, 1, -3));  // Watt (kg*m^2/s^3)
+const Quantity Quantity::NanoWatt(1e-3, Unit(2, 1, -3));   // internal power unit is 1e+6 = 1 W
+const Quantity Quantity::MicroWatt(1.0, Unit(2, 1, -3));
 const Quantity Quantity::MilliWatt(1e+3, Unit(2, 1, -3));
 const Quantity Quantity::KiloWatt(1e+9, Unit(2, 1, -3));
 const Quantity Quantity::VoltAmpere(1e+6, Unit(2, 1, -3));  // VoltAmpere (kg*m^2/s^3)
@@ -417,6 +426,7 @@ const Quantity Quantity::MegaOhm(1e+12, Unit(2, 1, -3, -2));
 const Quantity Quantity::Coulomb(1.0, Unit(0, 0, 1, 1));  // Coulomb (A*s)
 
 const Quantity Quantity::Tesla(1.0, Unit(0, 1, -2, -1));   // Tesla (kg/s^2/A)
+const Quantity Quantity::MilliTesla(1e-3, Unit(0, 1, -2, -1));
 const Quantity Quantity::Gauss(1e-4, Unit(0, 1, -2, -1));  // 1 G = 1e-4 T
 
 const Quantity Quantity::Weber(1e6, Unit(2, 1, -2, -1));  // Weber (kg*m^2/s^2/A)
@@ -553,9 +563,9 @@ int QuantityLexer();
 #pragma GCC diagnostic pop
 #endif
 
-Quantity Quantity::parse(const QString& string)
+Quantity Quantity::parse(const std::string& string)
 {
-    return parse(string.toUtf8().constData());
+    return parse(string.c_str());
 }
 
 Quantity Quantity::parse(const char *string)
@@ -616,6 +626,9 @@ const std::vector<UnitInfo> &Quantity::unitInfo() {
         {"h", 0, "Hour", Quantity::Hour, "Hour"},
 
         {"A", 0, "Ampere", Quantity::Ampere, "Ampere (internal standard electric current)"},
+        {"nA", 0, "NanoAmpere", Quantity::NanoAmpere, "Nano Ampere"},
+        {"uA", 0, "MicroAmpere", Quantity::MicroAmpere, "Micro Ampere"},
+        {"\xC2\xB5" "A", "uA", "MicroAmpere", Quantity::MicroAmpere, "Micro Ampere"},
         {"mA", 0, "MilliAmpere", Quantity::MilliAmpere, "Milli Ampere"},
         {"kA", 0, "KiloAmpere", Quantity::KiloAmpere, "Kilo Ampere"},
         {"MA", 0, "MegaAmpere", Quantity::MegaAmpere, "Mega Ampere"},
@@ -625,6 +638,9 @@ const std::vector<UnitInfo> &Quantity::unitInfo() {
         {"uK", 0, "MicroKelvin", Quantity::MicroKelvin, "Micro Kelvin"},
         {"\xC2\xB5K", "uK", "MicroKelvin", Quantity::MicroKelvin, "Micro Kelvin"},
 
+        {"nmol", 0, "NanoMole", Quantity::NanoMole, "Nano Mole"},
+        {"umol", 0, "MicroMole", Quantity::MicroMole, "Micro Mole"},
+        {"\xC2\xB5mol", "umol", "MicroMole", Quantity::MicroMole, "Micro Mole"},
         {"mmol", 0, "MilliMole", Quantity::MilliMole, "Milli Mole"},
         {"mol", 0, "Mole", Quantity::Mole, "Mole (internal standard amount of substance)"},
 
@@ -680,6 +696,9 @@ const std::vector<UnitInfo> &Quantity::unitInfo() {
         {"Mpsi", 0, "MPSI", Quantity::MPSI, "1000 ksi"},
 
         {"W", 0, "Watt", Quantity::Watt, "Watt"},
+        {"nW", 0, "NanoWatt", Quantity::NanoWatt, "Nano Watt"},
+        {"uW", 0, "MicroWatt", Quantity::MicroWatt, "Micro Watt"},
+        {"\xC2\xB5W", "uW", "MicroWatt", Quantity::MicroWatt, "Micro Watt"},
         {"mW", 0, "MilliWatt", Quantity::MilliWatt, "Milli Watt"},
         {"kW", 0, "KiloWatt", Quantity::KiloWatt, "Kilo Watt"},
         {"VA", 0, "VoltAmpere", Quantity::VoltAmpere, "VoltAmpere"},
@@ -702,6 +721,7 @@ const std::vector<UnitInfo> &Quantity::unitInfo() {
         {"C", 0, "Coulomb", Quantity::Coulomb, "Coulomb (A*s)"},
 
         {"T", 0, "Tesla", Quantity::Tesla, "Tesla (kg/s^2/A)"},
+        {"mT", 0, "MilliTesla", Quantity::MilliTesla, "Milli Tesla"},
         {"G", 0, "Gauss", Quantity::Gauss, "Gauss (1 G = 1e-4 T)"},
 
         {"Wb", 0, "Weber", Quantity::Weber, "Weber"},

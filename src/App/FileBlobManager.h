@@ -126,12 +126,14 @@ private:
 
 using FileBlobHandle = std::shared_ptr<FileBlob>;
 
-/** A property the manager restores content into.
+/** A property that stores its value as blob content.
  *
- * The pending queue is keyed on this rather than on `PropertyFileIncluded`
- * because a shape property is an ordinary referrer too
- * (`docs/SharedShapeStorage.md` sec 12.3), and the two have nothing else in
- * common -- one stores a file the user gave it, the other serializes geometry.
+ * Both directions of that are here, and both are keyed on this interface
+ * rather than on `PropertyFileIncluded` because a shape property is an
+ * ordinary referrer too (`docs/SharedShapeStorage.md` sec 12.3), a material
+ * card is another (`docs/MaterialStorage.md` sec 8), and they have nothing
+ * else in common -- one stores a file the user gave it, the next serializes
+ * geometry, the third a material.
  */
 class AppExport BlobReferrerProperty
 {
@@ -146,6 +148,35 @@ public:
      * not touch the document.
      */
     virtual void assignRestoredBlob(const FileBlobHandle& blob) = 0;
+
+    /** Note the blobs this property holds, for the save in progress.
+     *
+     * The collect pass runs before any property is written, and content it
+     * does not see gets no archive entry, so this is where a property says
+     * what it holds. It is also where the naming is decided: an owner that
+     * wants a particular extension or referrer passes it to
+     * FileBlobManager::noteReferenced itself rather than returning a handle.
+     *
+     * \a object supplies the id for a property whose own container has none,
+     * i.e. a view provider's.
+     *
+     * Implement it as nothing only if the property notes its own content at
+     * write time instead, and say so there -- silence here is content
+     * missing from the archive.
+     */
+    virtual void collectBlobs(FileBlobManager& manager, const DocumentObject* object) const = 0;
+
+    /** Whether the content this property refers to is LOST when the save
+     * writes no store.
+     *
+     * The store exists at schema 5 and above only, and most referrers have a
+     * schema 4 spelling that keeps the data: PropertyFileIncluded writes its
+     * own copy of the file, a shape property writes the shape the old way and
+     * forfeits sharing rather than content. A referrer with nothing to fall
+     * back on answers true, and the save path offers the schema its content
+     * needs rather than dropping it silently.
+     */
+    virtual bool blobContentNeedsStore() const { return false; }
 };
 
 /** Per-document store of the files referenced by PropertyFileIncluded.

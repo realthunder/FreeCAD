@@ -24,7 +24,7 @@
 #ifndef GUI_TOOLBARMANAGER_H
 #define GUI_TOOLBARMANAGER_H
 
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 #include <string>
 #include <QStringList>
 #include <QPointer>
@@ -257,7 +257,7 @@ private:
     ParameterGrp::handle hMenuBarLeft;
     ParameterGrp::handle hMenuBarRight;
     ParameterGrp::handle hGeneral;
-    boost::signals2::scoped_connection connParam;
+    fastsignals::advanced_scoped_connection connParam;
     bool restored = false;
     bool migrating = false;
     bool adding = false;

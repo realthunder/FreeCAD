@@ -159,11 +159,16 @@ bool BGFXRenderer::Private::render(const QColor &col,
     const bool progChanged =
         _BGFXLib.standaloneSamples != view->msaaSamples
         || _BGFXLib.shaderGeneration != view->shaderGen;
+    // What the scene colour's format follows. Off the frame's config
+    // rather than view->outputTransform, which a debug view mode zeroes
+    // -- looking at the depth buffer must not reallocate the targets.
+    view->hdrWanted = outconf.transform != Render::OutputConfig::None;
     if (progChanged
             || _BGFXLib.standaloneWidth != view->width
             || _BGFXLib.standaloneHeight != view->height
             || _BGFXLib.effectResolution != view->effectScale
             || _BGFXLib.ssaoResolution != view->ssaoScale
+            || view->hdrScene != view->hdrSceneWanted()
             || warmupReinit) {
         if (_BGFXLib.standaloneWidth != view->width
                 || _BGFXLib.standaloneHeight != view->height)
@@ -192,12 +197,16 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // view->targetsFailed says the last attempt found the handle pool
     // full, and a bailed frame never reaches bgfx::frame(), which is
     // the only place bgfx reclaims what the attempt destroyed.
+    // As above: the scene colour's format is part of what the sized
+    // targets ARE, so changing it is a rebuild like a resize.
+    view->hdrWanted = outconf.transform != Render::OutputConfig::None;
     if (progChanged
             || _BGFXLib.viewWidth(widget) != int(view->width)
             || _BGFXLib.viewHeight(widget) != int(view->height)
             || (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
             || _BGFXLib.effectResolution != view->effectScale
-            || _BGFXLib.ssaoResolution != view->ssaoScale)
+            || _BGFXLib.ssaoResolution != view->ssaoScale
+            || view->hdrScene != view->hdrSceneWanted())
         view->init(!progChanged);
 
     if (!bgfx::isValid(view->bgfxFbo))
@@ -212,9 +221,19 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // writes its material alpha over it, the background keeps the
     // alpha it was given. On screen the value is moot (the widget
     // composites opaque; the plain GL path clears alpha 0 there).
-    uint32_t clearColor = (uint32_t(col.red()) << 24)
-        | (uint32_t(col.green()) << 16)
-        | (uint32_t(col.blue()) << 8)
+    // A flat background is a hardware CLEAR, not a draw, so nothing
+    // downstream would decode it -- and the present pass encodes it
+    // like everything else. Decode it here so the colour a person
+    // picked is the colour that comes out.
+    auto clearChannel = [&](int v) {
+        float c = float(v) / 255.0f;
+        if (view->colorManaged())
+            c = decodeSRGB(c);
+        return uint32_t(bx::clamp(c * 255.0f + 0.5f, 0.0f, 255.0f));
+    };
+    uint32_t clearColor = (clearChannel(col.red()) << 24)
+        | (clearChannel(col.green()) << 16)
+        | (clearChannel(col.blue()) << 8)
         | uint32_t(col.alpha());
     if (getenv("FC_BGFX_DEBUG_CLEAR"))
         clearColor = 0xff0000ff;
@@ -917,6 +936,24 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->updateEffect(BGFXView::EffectVolumetric,
                        view->m_vol && volconf.enabled);
     view->updateEffect(BGFXView::EffectBloom, bloomconf.enabled);
+    // The output colour transform this frame will actually apply --
+    // none of it under a debug view mode, which blits a QUANTITY into
+    // the scene colour (prepass depth, the AO term, a coverage count)
+    // rather than light. Encoding a quantity would change what the
+    // picture means, and these modes are read as measurements.
+    view->outputTransform = debugconf.viewMode == 0
+        ? outconf.transform : int(Render::OutputConfig::None);
+    view->outputExposure = outconf.exposure;
+    // Its target. Standalone presents through the same pass whatever
+    // the transform is (that pass is what reaches the backbuffer at
+    // all) but presents onto the DEFAULT backbuffer and needs no target
+    // of its own; only the desktop, whose GL blit has to be handed
+    // something already encoded, does.
+#ifndef FC_RENDERER_STANDALONE
+    view->updateEffect(BGFXView::EffectPresent,
+                       view->outputTransform
+                           != Render::OutputConfig::None);
+#endif
     // The scene light's shadow maps, ~117MB at ShadowPrecision 1.0:
     // the 2048^2 moments and their depth, the blur ping and the glass
     // tint pair. Wanted whenever a scene light is fed and Render_Shadow
@@ -1050,8 +1087,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (pbrconf.enabled && !hlconfig.show) {
         // A changed environment image invalidates the built cubemap
         // (and its irradiance SH) — rebuild on the next ensure.
-        if (view->m_envImage != pbrconf.envImage) {
+        if (view->m_envImage != pbrconf.envImage
+                || view->m_envPreset != pbrconf.envPreset) {
             view->m_envImage = pbrconf.envImage;
+            view->m_envPreset = pbrconf.envPreset;
             view->m_envBuilt = false;
         }
         view->ensureEnvironment();
@@ -1081,6 +1120,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     }
     view->pbrFrame = pbrActive;
     view->pbrMetallic = pbrconf.metallic;
+    view->pbrFromSpecular = pbrconf.fromSpecular;
+    view->pbrShininessMapping = pbrconf.shininessMapping;
     view->pbrRoughness = pbrconf.roughness;
     view->pbrEnvIntensity = pbrconf.envIntensity;
     // Matcap replaces the lit shading outright, so it does not care
@@ -1143,7 +1184,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
         float ll = std::sqrt(lv[0]*lv[0] + lv[1]*lv[1] + lv[2]*lv[2]);
         for (int j = 0; j < 3; ++j)
             view->lightDirView[j] = ll > 0.0f ? lv[j] / ll : lv[j];
-        unpackColor(light.color, view->lightColorI);
+        unpackAuthoredColor(light.color, view->lightColorI,
+                            view->colorManaged());
         for (int j = 0; j < 3; ++j)
             view->lightColorI[j] *= light.intensity;
         // Spot light: position in camera view space, cone cutoff
@@ -1214,7 +1256,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     unit(view->viewLightView[n]);
                 view->viewLightView[n][3] =
                     l.spot ? 3.0f : (l.positional ? 2.0f : 1.0f);
-                unpackColor(l.color, view->viewLightColorI[n]);
+                unpackAuthoredColor(l.color, view->viewLightColorI[n],
+                                    view->colorManaged());
                 for (int j = 0; j < 3; ++j) {
                     view->viewLightColorI[n][j] *= l.intensity;
                     view->viewLightAtt[n][j] = l.attenuation[j];
@@ -1585,7 +1628,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
             dens = 3.0f / diag;
         }
         float color[4];
-        unpackColor(mat.diffuse, color);
+        unpackAuthoredColor(mat.diffuse, color, view->colorManaged());
         float sigmaS = 0.35f * dens;
         for (int j = 0; j < 3; ++j)
             waterSigma[slot][j] = sigmaS + dens * (1.0f - color[j]);
@@ -2192,7 +2235,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     + cy * vm[4 + j] + cz * vm[8 + j] + vm[12 + j];
             view->localLightView[li][3] = 1.0f / (range * range);
             float color[4];
-            unpackColor(mat.diffuse, color);
+            unpackAuthoredColor(mat.diffuse, color, view->colorManaged());
             for (int j = 0; j < 3; ++j)
                 view->localLightColorI[li][j] = color[j] * intensity;
             view->localLightColorI[li][3] = 0.0f;
@@ -3285,15 +3328,27 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // Standalone present: the default backbuffer; the
         // fullscreen triangle overwrites every pixel.
         //
-        // On desktop no present is drawn, but the empty view still
-        // targets the default backbuffer ON PURPOSE: bgfx only
-        // resolves an MSAA framebuffer (multisampled renderbuffer
-        // -> resolve texture) when the frame transitions AWAY from
-        // it, and every desktop content view targets bgfxFbo -- so
-        // without this trailing view the resolve texture the
-        // composite blit reads stayed stale under MSAA (an empty
-        // viewport).
-        bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
+        // On desktop the frame leaves through the Qt GL blit instead,
+        // so this view draws only when there is an output colour
+        // transform to apply -- into presentFbo, which is what the
+        // blit then reads.
+        //
+        // Either way the view still targets a framebuffer that is NOT
+        // bgfxFbo, and on desktop it does so even with nothing to draw,
+        // ON PURPOSE: bgfx only resolves an MSAA framebuffer
+        // (multisampled renderbuffer -> resolve texture) when the frame
+        // transitions AWAY from it, and every desktop content view
+        // targets bgfxFbo -- so without this trailing view the resolve
+        // texture the composite blit reads stayed stale under MSAA (an
+        // empty viewport). That is also what orders the resolve BEFORE
+        // the present pass samples the scene colour.
+        bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE;
+#ifndef FC_RENDERER_STANDALONE
+        if (view->outputTransform != Render::OutputConfig::None
+                && bgfx::isValid(view->presentFbo))
+            target = view->presentFbo;
+#endif
+        bgfx::setViewFrameBuffer(id, target);
         bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
                            clearColor, 1.0f, 0);
         bgfx::setViewRect(id, 0, 0, width, height);
@@ -3519,6 +3574,13 @@ bool BGFXRenderer::Private::render(const QColor &col,
 
     ++view->frame;
     view->drawcount = 0;
+    // The submission phase starts here. A bgfx uniform holds its
+    // value for the rest of the frame once set, so setting the
+    // colour space ONCE, ahead of every submit, is what covers the
+    // draws that never pass through submit() -- the background
+    // quad, the overlays, the section caps. The hot paths set it
+    // again per draw rather than depend on that reasoning.
+    view->setColorSpaceUniform();
     view->bufferDeniedSubmits = view->bufferDeniedMeshes = 0;
     view->autozoomScale = autozoomScale;
     if (pbrActive && pbrconf.envBackground)
@@ -5529,6 +5591,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->present();
     frameNum = timedBgfxFrame();
 #else
+    // The output colour transform, when one is selected: encode the
+    // finished frame into presentTex so the blit below transfers the
+    // encoded image rather than the linear one. Submitted here, with
+    // the rest of the frame already queued, because ViewPresent is the
+    // last view id -- the same place the standalone present sits.
+    if (view->outputTransform != Render::OutputConfig::None
+            && bgfx::isValid(view->presentFbo))
+        view->present();
     // The finished frame belongs in whatever framebuffer the caller had
     // bound when it asked for it: the widget's own for an on-screen
     // frame, a capture target for a screenshot (renderOffscreen).

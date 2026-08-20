@@ -179,6 +179,72 @@ bool fcViewLight(int i, vec3 vpos, out vec3 l, out vec3 lcol)
 	return true;
 }
 
+/* Blinn-Phong exponent <-> GGX roughness, the one fit the whole engine
+ * uses (App::Material::shininessToRoughness holds the C++ copy, and
+ * BGFXView::setTriangleFrameState derives a draw's roughness with it).
+ *
+ * Coin states shininess in 0..1 and GL's exponent is n = s * 128. The
+ * classical microfacet match is on the GGX WIDTH, alpha = sqrt(2/(n+2));
+ * roughness is the square root of the width, because every consumer
+ * squares it back (`a = rough * rough` below). Hence the fourth root
+ * one way and the fourth power the other.
+ */
+float fcRoughFromShininess(float shininess)
+{
+	return pow(2.0 / (max(shininess, 0.0) * 128.0 + 2.0), 0.25);
+}
+
+float fcShininessFromRough(float rough)
+{
+	float a = max(rough * rough, 1.0e-3);
+	return clamp((2.0 / (a * a) - 2.0) / 128.0, 0.0, 1.0);
+}
+
+/* A Blinn-Phong specular COLOUR read as metallic/roughness material data.
+ *
+ * That branch has no specular slot: its reflectance is f0, which it
+ * builds from the base colour and the metalness alone. A Phong
+ * appearance states its reflectance directly instead -- a gold's
+ * gold-ness lives entirely in its specular colour, and several of the
+ * stock presets (Steel, Satin, Metalized, Shiny plastic) carry a BLACK
+ * diffuse with a bright specular, which read as base colour alone shade
+ * nearly black.
+ *
+ * This is Khronos' specular-glossiness to metallic-roughness conversion,
+ * written when KHR_materials_pbrSpecularGlossiness was deprecated: solve
+ * the metalness for which the dielectric f0 of 0.04 and a base colour
+ * reproduce the diffuse/specular pair, then recombine the base colour
+ * from both readings, trusting the specular one as the surface turns
+ * metallic. Only asked where NOTHING states a metalness -- the engine
+ * signals that by passing a negative one.
+ */
+float fcPerceivedBrightness(vec3 c)
+{
+	return sqrt(dot(c * c, vec3(0.299, 0.587, 0.114)));
+}
+
+vec3 fcBaseFromSpecular(vec3 diffuse, vec3 spec, out float metal)
+{
+	float dielectric = 0.04;
+	float oneMinusSS = 1.0 - max(max(spec.r, spec.g), spec.b);
+	float ds = fcPerceivedBrightness(diffuse);
+	float ss = fcPerceivedBrightness(spec);
+	// Quadratic in the metalness, from f0 = mix(0.04, base, metal) with
+	// the base solved out of the diffuse.
+	float b = ds * oneMinusSS / (1.0 - dielectric) + ss - 2.0 * dielectric;
+	float c = dielectric - ss;
+	float disc = max(b * b - 4.0 * dielectric * c, 0.0);
+	metal = ss < dielectric
+		? 0.0
+		: clamp((-b + sqrt(disc)) / (2.0 * dielectric), 0.0, 1.0);
+	vec3 fromDiffuse = diffuse * (oneMinusSS / (1.0 - dielectric)
+		/ max(1.0 - metal, 1.0e-4));
+	vec3 fromSpec = (spec - vec3_splat(dielectric) * (1.0 - metal))
+		/ max(metal, 1.0e-4);
+	return clamp(mix(fromDiffuse, fromSpec, metal * metal),
+	             vec3_splat(0.0), vec3_splat(1.0));
+}
+
 /* One light's contribution to the metallic/roughness branch: GGX with
  * Karis' fast Smith-joint visibility and Schlick Fresnel. `l` points
  * from the surface toward the light, view space; the view vector is
@@ -416,8 +482,18 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			if (u_params.z > 0.5 && n.z < 0.0)
 				n = -n;
 			float ndv = max(n.z, 1.0e-4);
-			vec3 f0 = mix(vec3_splat(0.04), base.rgb, metal);
-			vec3 kd = base.rgb * (1.0 - metal);
+			// A negative metalness asks for the Phong specular
+			// colour to be read as material data -- nothing
+			// authored one, so the appearance's own reflectance
+			// is the best statement of the surface there is.
+			vec3 pbrBase = base.rgb;
+			float pbrMetal = metal;
+			if (metal < 0.0)
+				pbrBase = fcBaseFromSpecular(base.rgb,
+				                             matSpec.rgb,
+				                             pbrMetal);
+			vec3 f0 = mix(vec3_splat(0.04), pbrBase, pbrMetal);
+			vec3 kd = pbrBase * (1.0 - pbrMetal);
 			float a = rough * rough;
 
 			// The ordinary lights always contribute, and

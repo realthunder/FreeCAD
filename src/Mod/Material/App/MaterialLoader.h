@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,12 +21,10 @@
  *                                                                         *
  **************************************************************************/
 
-#ifndef MATERIAL_MATERIALLOADER_H
-#define MATERIAL_MATERIALLOADER_H
+#pragma once
 
 #include <memory>
 
-#include <QDir>
 #include <QString>
 #include <yaml-cpp/yaml.h>
 
@@ -33,12 +33,14 @@
 
 namespace Materials
 {
+class MaterialLibrary;
+class MaterialLibraryLocal;
 
 class MaterialEntry
 {
 public:
     MaterialEntry() = default;
-    MaterialEntry(const std::shared_ptr<MaterialLibrary>& library,
+    MaterialEntry(const std::shared_ptr<MaterialLibraryLocal>& library,
                   const QString& modelName,
                   const QString& dir,
                   const QString& modelUuid);
@@ -47,7 +49,7 @@ public:
     virtual void
     addToTree(std::shared_ptr<std::map<QString, std::shared_ptr<Material>>> materialMap) = 0;
 
-    std::shared_ptr<MaterialLibrary> getLibrary() const
+    std::shared_ptr<MaterialLibraryLocal> getLibrary() const
     {
         return _library;
     }
@@ -65,7 +67,7 @@ public:
     }
 
 protected:
-    std::shared_ptr<MaterialLibrary> _library;
+    std::shared_ptr<MaterialLibraryLocal> _library;
     QString _name;
     QString _directory;
     QString _uuid;
@@ -74,7 +76,7 @@ protected:
 class MaterialYamlEntry: public MaterialEntry
 {
 public:
-    MaterialYamlEntry(const std::shared_ptr<MaterialLibrary>& library,
+    MaterialYamlEntry(const std::shared_ptr<MaterialLibraryLocal>& library,
                       const QString& modelName,
                       const QString& dir,
                       const QString& modelUuid,
@@ -101,8 +103,8 @@ private:
     static std::shared_ptr<QList<QVariant>> readList(const YAML::Node& node,
                                                      bool isImageList = false);
     static std::shared_ptr<QList<QVariant>> readImageList(const YAML::Node& node);
-    static std::shared_ptr<Material2DArray> read2DArray(const YAML::Node& node, int columns);
-    static std::shared_ptr<Material3DArray> read3DArray(const YAML::Node& node, int columns);
+    static std::shared_ptr<Array2D> read2DArray(const YAML::Node& node, int columns);
+    static std::shared_ptr<Array3D> read3DArray(const YAML::Node& node, int columns);
 
     YAML::Node _model;
 };
@@ -114,16 +116,27 @@ public:
                    const std::shared_ptr<std::list<std::shared_ptr<MaterialLibrary>>>& libraryList);
     ~MaterialLoader() = default;
 
-    std::shared_ptr<std::list<std::shared_ptr<MaterialLibrary>>> getMaterialLibraries();
-    static std::shared_ptr<std::list<QString>> getMaterialFolders(const MaterialLibrary& library);
+    static std::shared_ptr<std::list<QString>>
+    getMaterialFolders(const MaterialLibraryLocal& library);
     static void showYaml(const YAML::Node& yaml);
     static void
     dereference(const std::shared_ptr<std::map<QString, std::shared_ptr<Material>>>& materialMap,
                 const std::shared_ptr<Material>& material);
     static std::shared_ptr<MaterialEntry>
-    getMaterialFromYAML(const std::shared_ptr<MaterialLibrary>& library,
+    getMaterialFromYAML(const std::shared_ptr<MaterialLibraryLocal>& library,
                         YAML::Node& yamlroot,
                         const QString& path);
+
+    /** Parse one .FCMat file into a card belonging to no library.
+     *
+     * Every other route into the loader files what it reads under a library,
+     * because that is where cards come from. A card stored in a document does
+     * not: it is content, and its library, directory, filename, name and uuid
+     * are provenance that lives on the property referring to it
+     * (docs/MaterialStorage.md sec 4.3). Returns null if the file cannot be
+     * read or parsed; the caller decides what an unreadable card means.
+     */
+    static std::shared_ptr<Material> getMaterialFromFile(const QString& path);
 
 private:
     MaterialLoader();
@@ -131,10 +144,11 @@ private:
     void addToTree(std::shared_ptr<MaterialEntry> model);
     void dereference(const std::shared_ptr<Material>& material);
     std::shared_ptr<MaterialEntry>
-    getMaterialFromPath(const std::shared_ptr<MaterialLibrary>& library, const QString& path) const;
-    void addLibrary(const std::shared_ptr<MaterialLibrary>& model);
-    void loadLibrary(const std::shared_ptr<MaterialLibrary>& library);
-    void loadLibraries();
+    getMaterialFromPath(const std::shared_ptr<MaterialLibraryLocal>& library, const QString& path) const;
+    void addLibrary(const std::shared_ptr<MaterialLibraryLocal>& model);
+    void loadLibrary(const std::shared_ptr<MaterialLibraryLocal>& library);
+    void loadLibraries(
+        const std::shared_ptr<std::list<std::shared_ptr<MaterialLibrary>>>& libraryList);
 
     static std::unique_ptr<std::map<QString, std::shared_ptr<MaterialEntry>>> _materialEntryMap;
     std::shared_ptr<std::map<QString, std::shared_ptr<Material>>> _materialMap;
@@ -142,5 +156,3 @@ private:
 };
 
 }  // namespace Materials
-
-#endif  // MATERIAL_MATERIALLOADER_H

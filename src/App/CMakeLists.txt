@@ -106,6 +106,7 @@ generate_from_xml(StringIDPy)
 generate_from_xml(ComplexGeoDataPy)
 generate_from_xml(PropertyContainerPy)
 generate_from_xml(MaterialPy)
+generate_from_xml(MaterialListPy)
 
 generate_embed_from_py(FreeCADInit InitScript.h)
 generate_embed_from_py(FreeCADTest TestScript.h)
@@ -129,6 +130,7 @@ SET(FreeCADApp_XML_SRCS
     PropertyContainerPy.xml
     ComplexGeoDataPy.xml
     MaterialPy.xml
+    MaterialListPy.xml
     ExpressionPy.xml
     StringHasherPy.xml
     StringIDPy.xml
@@ -243,6 +245,7 @@ SET(Document_HPP_SRCS
     OriginFeature.h
     Range.h
     Transactions.h
+    TransactionDefs.h
     TransactionalObject.h
     VRMLObject.h
     MaterialObject.h
@@ -299,6 +302,7 @@ SET(FreeCADApp_CPP_SRCS
     ApplicationPy.cpp
     AutoTransaction.cpp
     Branding.cpp
+    CleanupProcess.cpp
     ColorModel.cpp
     MappedElement.cpp
     ComplexGeoData.cpp
@@ -309,7 +313,9 @@ SET(FreeCADApp_CPP_SRCS
     MappedElement.cpp
     MappedName.cpp
     Material.cpp
+    MaterialList.cpp
     MaterialPyImp.cpp
+    MaterialListPyImp.cpp
     Metadata.cpp
     MetadataPyImp.cpp
     ElementNamingUtils.cpp
@@ -324,6 +330,7 @@ SET(FreeCADApp_HPP_SRCS
     Application.h
     AutoTransaction.h
     Branding.h
+    CleanupProcess.h
     Color.h
     ColorModel.h
     MappedElement.h
@@ -333,6 +340,7 @@ SET(FreeCADApp_HPP_SRCS
     IndexedName.h
     MappedName.h
     Material.h
+    MaterialList.h
     Metadata.h
     ElementNamingUtils.h
     StringHasher.h

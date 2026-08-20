@@ -65,6 +65,14 @@ void TaskDialog::addTaskBox(QWidget* widget)
     Content.push_back(taskbox);
 }
 
+void TaskDialog::addTaskBox(const QPixmap& icon, QWidget* widget)
+{
+    Gui::TaskView::TaskBox* taskbox = new Gui::TaskView::TaskBox(
+        icon, widget->windowTitle(), true, nullptr);
+    taskbox->groupLayout()->addWidget(widget);
+    Content.push_back(taskbox);
+}
+
 const std::vector<QWidget*> &TaskDialog::getDialogContent() const
 {
     return Content;

@@ -58,8 +58,11 @@ int StringHasherPy::PyInit(PyObject* args, PyObject* kwds)
 PyObject* StringHasherPy::isSame(PyObject *args) const
 {
     PyObject *other;
-    if (!PyArg_ParseTuple(args, "O!", &StringHasherPy::Type, &other)){     // convert args: Python->C 
-        return Py::new_reference_to(Py::False());
+    if (!PyArg_ParseTuple(args, "O!", &StringHasherPy::Type, &other)) {
+        // The failed parse has set a TypeError. Returning a value with the
+        // error indicator still set breaks CPython's calling protocol, and
+        // the interpreter reports it as a SystemError somewhere else.
+        return nullptr;
     }
     auto otherHasher = static_cast<StringHasherPy*>(other)->getStringHasherPtr();
     return Py::new_reference_to(Py::Boolean(getStringHasherPtr() == otherHasher));

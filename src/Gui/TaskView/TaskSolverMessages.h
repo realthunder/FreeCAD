@@ -23,13 +23,12 @@
 
 #pragma once
 
-// Upstream uses the vendored FastSignals library, which this fork does not carry.
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include <Gui/TaskView/TaskView.h>
 
 class Ui_TaskSolverMessages;
-using Connection = boost::signals2::connection;
+using Connection = fastsignals::connection;
 
 namespace App
 {

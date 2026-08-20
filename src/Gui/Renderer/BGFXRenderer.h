@@ -91,6 +91,7 @@ public:
     virtual bool isSceneAnimated() const override;
     virtual bool isSceneDirty() const override;
     virtual void setPBRConfig(const PBRConfig &config) override;
+    virtual void setOutputConfig(const OutputConfig &config) override;
     virtual void setBumpConfig(const BumpConfig &config) override;
     virtual void setLightConfig(const LightConfig &config) override;
     virtual void setViewLightConfig(const ViewLightConfig &config) override;

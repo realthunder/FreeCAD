@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,12 +21,9 @@
  *                                                                         *
  **************************************************************************/
 
-#include "PreCompiled.h"
-#ifndef _PreComp_
-#include <QMessageBox>
-#endif
-
 #include <QMenu>
+#include <QMessageBox>
+
 
 #include <Gui/MainWindow.h>
 
@@ -58,19 +57,21 @@ ListEdit::ListEdit(const QString& propertyName,
         _property = material->getAppearanceProperty(propertyName);
     }
     else {
-        Base::Console().Log("Property '%s' not found\n", propertyName.toStdString().c_str());
+        Base::Console().log("Property '%s' not found\n", propertyName.toStdString().c_str());
         _property = nullptr;
     }
     if (_property) {
         _value = _property->getList();
     }
     else {
-        Base::Console().Log("No value loaded\n");
+        Base::Console().log("No value loaded\n");
     }
 
     setupListView();
     setDelegates(ui->listView);
 
+    ui->buttonDeleteRow->setVisible(false);
+    // connect(ui->buttonDeleteRow, &QPushButton::clicked, this, &ListEdit::onDelete);
     connect(ui->standardButtons, &QDialogButtonBox::accepted, this, &ListEdit::accept);
     connect(ui->standardButtons, &QDialogButtonBox::rejected, this, &ListEdit::reject);
 
@@ -110,6 +111,7 @@ void ListEdit::onDataChanged(const QModelIndex& topLeft,
     Q_UNUSED(roles)
 
     _material->setEditStateAlter();
+    update();
 }
 
 bool ListEdit::newRow(const QModelIndex& index)
@@ -139,7 +141,7 @@ int ListEdit::confirmDelete()
     box.setIcon(QMessageBox::Question);
     box.setWindowTitle(QObject::tr("Confirm Delete"));
 
-    QString prompt = QObject::tr("Are you sure you want to delete the row?");
+    QString prompt = QObject::tr("Delete the row?");
     box.setText(prompt);
 
     box.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
@@ -179,18 +181,9 @@ void ListEdit::reject()
 
 void ListEdit::onSelectionChanged(const QItemSelection& selected, const QItemSelection& deselected)
 {
-    Q_UNUSED(selected)
     Q_UNUSED(deselected)
 
-    // auto indexList = selected.indexes();
-    // if (indexList.size() > 0) {
-    //     auto index = indexList[0];
-    //     auto listModel = dynamic_cast<const ListModel*>(index.model());
-    //     if (listModel->newRow(index)) {
-    //         Base::Console().Log("*** New Row ***\n");
-    //         const_cast<ListModel*>(listModel)->insertRows(index.row(), 1);
-    //     }
-    // }
+    ui->buttonDeleteRow->setEnabled(!selected.isEmpty());
 }
 
 #include "moc_ListEdit.cpp"

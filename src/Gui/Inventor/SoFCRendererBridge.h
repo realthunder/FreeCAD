@@ -150,6 +150,7 @@ GuiExport Render::WaterConfig translateWaterConfig(App::PropertyContainer * view
 /// Resolve the bloom (glow) settings (Render_Bloom* view properties,
 /// RenderParams fallback) into the backend-neutral per-frame config.
 GuiExport Render::BloomConfig translateBloomConfig(App::PropertyContainer * view);
+GuiExport Render::OutputConfig translateOutputConfig(App::PropertyContainer * view);
 
 /// Resolve the preselection highlight styling (HighlightColor,
 /// ShowPreSelectedFaceOutline, NoPreSelFaceHighlightWithOutline, outline

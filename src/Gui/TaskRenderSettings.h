@@ -29,7 +29,6 @@
 #include "TaskView/TaskView.h"
 
 class QCheckBox;
-class QComboBox;
 class QDoubleSpinBox;
 class QLineEdit;
 
@@ -38,10 +37,12 @@ namespace Gui {
 class ViewProviderGeometryObject;
 
 /// Editor of the per-object render engine settings: creates, updates
-/// or removes the optional Render_* dynamic properties (PBR
-/// metallic/roughness, water body, base color / normal map textures
-/// with their transform, shadow casting flags) on the selected
-/// geometry view providers — the friendly front end to what the
+/// or removes the optional Render_* dynamic properties (water body,
+/// base color / normal map textures with their transform, shadow
+/// casting flags) on the selected geometry view providers. The material
+/// data the renderer also reads -- the PBR pair and the surface finish
+/// -- belongs to the appearance and is edited from the Set Appearance
+/// dialog instead — the friendly front end to what the
 /// property editor's add-property dialog can do by hand.
 class RenderSettingsWidget : public QWidget
 {
@@ -61,15 +62,6 @@ private:
 private:
     std::vector<ViewProviderGeometryObject*> vps;
 
-    QCheckBox *metallicCheck = nullptr;
-    QDoubleSpinBox *metallicSpin = nullptr;
-    QCheckBox *roughnessCheck = nullptr;
-    QDoubleSpinBox *roughnessSpin = nullptr;
-    QCheckBox *finishCheck = nullptr;
-    QComboBox *finishCombo = nullptr;
-    QDoubleSpinBox *finishPitchSpin = nullptr;
-    QDoubleSpinBox *finishDepthSpin = nullptr;
-    QDoubleSpinBox *finishAngleSpin = nullptr;
     QCheckBox *waterCheck = nullptr;
     QDoubleSpinBox *waterDensitySpin = nullptr;
     QCheckBox *glassCheck = nullptr;

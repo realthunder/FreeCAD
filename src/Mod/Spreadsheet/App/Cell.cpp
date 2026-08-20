@@ -1508,7 +1508,7 @@ bool Cell::setEditData(const QVariant &d) {
         auto parent = Base::freecad_dynamic_cast<App::DocumentObject>(owner->getContainer());
         std::ostringstream ss;
         ss << std::setprecision(std::numeric_limits<double>::digits10 + 1)
-           << q.getValue() << " " << q.getUnit().getStdString();
+           << q.getValue() << " " << q.getUnit().getString();
         auto res = Expression::parse(parent,ss.str());
         auto expr = SimpleStatement::cast<App::ListExpression>(expression.get());
         if(!expr) {
@@ -1888,7 +1888,7 @@ QVariant Cell::getDisplayData(bool silent) const {
                 return number + Base::Tools::fromStdString(" " + displayUnit.stringRep);
             }
         }
-        QString str = q.getUserString();
+        QString str = QString::fromStdString(q.getUserString());
         if (qAbs(q.getValue()) >= 1000.0)
             str.remove(QLocale().groupSeparator());
         return str;

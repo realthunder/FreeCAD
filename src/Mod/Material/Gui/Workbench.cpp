@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -20,7 +22,6 @@
  **************************************************************************/
 
 
-#include "PreCompiled.h"
 
 #include <Gui/MenuManager.h>
 #include <Gui/ToolBarManager.h>
@@ -47,10 +48,10 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     Gui::MenuItem* root = StdWorkbench::setupMenuBar();
     Gui::MenuItem* item = root->findItem("&Windows");
 
-    Gui::MenuItem* part = new Gui::MenuItem;
-    root->insertItem(item, part);
-    part->setCommand("&Materials");
-    *part << "Materials_Edit";
+    Gui::MenuItem* material = new Gui::MenuItem;
+    root->insertItem(item, material);
+    material->setCommand("&Material");
+    *material << "Material_Edit";
 
     return root;
 }
@@ -59,9 +60,9 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
 {
     Gui::ToolBarItem* root = StdWorkbench::setupToolBars();
 
-    Gui::ToolBarItem* solids = new Gui::ToolBarItem(root);
-    solids->setCommand("Materials");
-    *solids << "Materials_Edit";
+    Gui::ToolBarItem* material = new Gui::ToolBarItem(root);
+    material->setCommand("Material");
+    *material << "Material_Edit";
 
     return root;
 }

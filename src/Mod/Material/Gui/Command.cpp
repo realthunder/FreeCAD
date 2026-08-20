@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,17 +21,28 @@
  *                                                                         *
  **************************************************************************/
 
-#include "PreCompiled.h"
-#ifndef _PreComp_
 #include <QPointer>
-#endif
+
+#include <map>
+#include <string>
+#include <vector>
+
+#include <App/DocumentObject.h>
+#include <Mod/Material/App/PropertyMaterial.h>
 
 #include <Gui/Command.h>
+#include <Gui/Control.h>
 #include <Gui/MainWindow.h>
+#include <Gui/Selection/Selection.h>
 
+#include "DlgDisplayPropertiesImp.h"
+#include "DlgInspectAppearance.h"
+#include "DlgInspectMaterial.h"
+#include "DlgMaterialImp.h"
 #include "MaterialSave.h"
 #include "MaterialsEditor.h"
 #include "ModelSelect.h"
+#include "TaskMigrateExternal.h"
 
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -37,25 +50,23 @@
 //===========================================================================
 // Material_Edit
 //===========================================================================
-DEF_STD_CMD_A(CmdMaterialsEdit)
+DEF_STD_CMD_A(CmdMaterialEdit)
 
-CmdMaterialsEdit::CmdMaterialsEdit()
-    : Command("Materials_Edit")
+CmdMaterialEdit::CmdMaterialEdit()
+    : Command("Material_Edit")
 {
     sAppModule = "Material";
     sGroup = QT_TR_NOOP("Material");
-    sMenuText = QT_TR_NOOP("Edit...");
-    sToolTipText = QT_TR_NOOP("Edit material properties");
-    sWhatsThis = "Materials_Edit";
+    sMenuText = QT_TR_NOOP("Edit");
+    sToolTipText = QT_TR_NOOP("Edits material properties");
+    sWhatsThis = "Material_Edit";
     sStatusTip = sToolTipText;
-    sPixmap = "Materials_Edit";
+    sPixmap = "Material_Edit";
 }
 
-void CmdMaterialsEdit::activated(int iMsg)
+void CmdMaterialEdit::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    Base::Console().Log("Materials_Edit\n");
 
     static QPointer<QDialog> dlg = nullptr;
     if (!dlg) {
@@ -65,10 +76,297 @@ void CmdMaterialsEdit::activated(int iMsg)
     dlg->show();
 }
 
-bool CmdMaterialsEdit::isActive()
+bool CmdMaterialEdit::isActive()
 {
     // return (hasActiveDocument() && !Gui::Control().activeDialog());
     return true;
+}
+
+//===========================================================================
+// Std_SetAppearance
+//===========================================================================
+DEF_STD_CMD_A(StdCmdSetAppearance)
+
+StdCmdSetAppearance::StdCmdSetAppearance()
+    : Command("Std_SetAppearance")
+{
+    sGroup = "Standard-View";
+    sMenuText = QT_TR_NOOP("&Appearance");
+    sToolTipText = QT_TR_NOOP("Sets the display properties of the selected object");
+    sWhatsThis = "Std_SetAppearance";
+    sStatusTip = QT_TR_NOOP("Sets the display properties of the selected object");
+    sPixmap = "Std_SetAppearance";
+    sAccel = "Ctrl+D";
+    eType = Alter3DView;
+}
+
+void StdCmdSetAppearance::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    Gui::Control().showDialog(new MatGui::TaskDisplayProperties());
+}
+
+bool StdCmdSetAppearance::isActive()
+{
+    return (Gui::Control().activeDialog() == nullptr) && (Gui::Selection().size() != 0);
+}
+
+//===========================================================================
+// Std_SetMaterial
+//===========================================================================
+DEF_STD_CMD_A(StdCmdSetMaterial)
+
+StdCmdSetMaterial::StdCmdSetMaterial()
+    : Command("Std_SetMaterial")
+{
+    sGroup = "Standard-View";
+    sMenuText = QT_TR_NOOP("&Material");
+    sToolTipText = QT_TR_NOOP("Sets the material of the selected object");
+    sWhatsThis = "Std_SetMaterial";
+    sStatusTip = QT_TR_NOOP("Sets the material of the selected object");
+    sPixmap = "Material_Edit";
+    // sAccel        = "Ctrl+D";
+    // eType = Alter3DView;
+}
+
+void StdCmdSetMaterial::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    Gui::Control().showDialog(new MatGui::TaskMaterial());
+}
+
+bool StdCmdSetMaterial::isActive()
+{
+    return (Gui::Control().activeDialog() == nullptr) && (Gui::Selection().size() != 0);
+}
+
+//===========================================================================
+// Materials_InspectAppearance
+//===========================================================================
+DEF_STD_CMD_A(CmdInspectAppearance)
+
+CmdInspectAppearance::CmdInspectAppearance()
+    : Command("Materials_InspectAppearance")
+{
+    sGroup = "Standard-View";
+    sMenuText = QT_TR_NOOP("Inspect Appearance");
+    sToolTipText = QT_TR_NOOP("Inspects the appearance properties of the selected object");
+    sWhatsThis = "Materials_InspectAppearance";
+    sStatusTip = QT_TR_NOOP("Inspect the appearance properties of the selected object");
+    // sPixmap = "Material_Edit";
+}
+
+void CmdInspectAppearance::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    Gui::Control().showDialog(new MatGui::TaskInspectAppearance());
+}
+
+bool CmdInspectAppearance::isActive()
+{
+    return (Gui::Control().activeDialog() == nullptr);
+}
+
+//===========================================================================
+// Materials_InspectMaterial
+//===========================================================================
+DEF_STD_CMD_A(CmdInspectMaterial)
+
+CmdInspectMaterial::CmdInspectMaterial()
+    : Command("Materials_InspectMaterial")
+{
+    sGroup = "Standard-View";
+    sMenuText = QT_TR_NOOP("Inspect Material");
+    sToolTipText = QT_TR_NOOP("Inspects the material properties of the selected object");
+    sWhatsThis = "Materials_InspectMaterial";
+    sStatusTip = QT_TR_NOOP("Inspect the material properties of the selected object");
+    // sPixmap = "Material_Edit";
+}
+
+void CmdInspectMaterial::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    Gui::Control().showDialog(new MatGui::TaskInspectMaterial());
+}
+
+bool CmdInspectMaterial::isActive()
+{
+    return (Gui::Control().activeDialog() == nullptr);
+}
+
+//===========================================================================
+// Materials_MigrateToDatabase
+//===========================================================================
+
+#if defined(BUILD_MATERIAL_EXTERNAL)
+DEF_STD_CMD_A(CmdMigrateToExternal)
+
+CmdMigrateToExternal::CmdMigrateToExternal()
+    : Command("Materials_MigrateToExternal")
+{
+    sGroup = "Standard-View";
+    sMenuText = QT_TR_NOOP("Migrate");
+    sToolTipText = QT_TR_NOOP("Migrates the materials to the external materials manager");
+    sWhatsThis = "Materials_MigrateToDatabase";
+    sStatusTip = QT_TR_NOOP("Migrate existing materials to the external materials manager");
+    // sPixmap = "Materials_Edit";
+}
+
+void CmdMigrateToExternal::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    MatGui::TaskMigrateExternal* dlg = new MatGui::TaskMigrateExternal();
+    Gui::Control().showDialog(dlg);
+}
+
+bool CmdMigrateToExternal::isActive()
+{
+    return true;
+}
+#endif
+
+//===========================================================================
+// Material_UpdateFromLibrary / Material_SaveToLibrary
+//===========================================================================
+
+namespace
+{
+
+/// Every material property on an object. Only Part::Feature has one today.
+std::vector<Materials::PropertyMaterial*> materialProperties(App::DocumentObject* object)
+{
+    std::vector<Materials::PropertyMaterial*> found;
+    std::vector<App::Property*> properties;
+    object->getPropertyList(properties);
+    for (auto property : properties) {
+        if (property->isDerivedFrom<Materials::PropertyMaterial>()) {
+            found.push_back(static_cast<Materials::PropertyMaterial*>(property));
+        }
+    }
+    return found;
+}
+
+std::vector<Materials::PropertyMaterial*> selectedMaterials()
+{
+    std::vector<Materials::PropertyMaterial*> found;
+    for (auto object : Gui::Selection().getObjectsOfType<App::DocumentObject>()) {
+        auto properties = materialProperties(object);
+        found.insert(found.end(), properties.begin(), properties.end());
+    }
+    return found;
+}
+
+}  // namespace
+
+DEF_STD_CMD_A(CmdMaterialUpdateFromLibrary)
+
+CmdMaterialUpdateFromLibrary::CmdMaterialUpdateFromLibrary()
+    : Command("Material_UpdateFromLibrary")
+{
+    sAppModule = "Material";
+    sGroup = QT_TR_NOOP("Material");
+    sMenuText = QT_TR_NOOP("Update Material From Library");
+    sToolTipText =
+        QT_TR_NOOP("Replaces the material stored in the document with the library's current one");
+    sWhatsThis = "Material_UpdateFromLibrary";
+    sStatusTip = sToolTipText;
+}
+
+void CmdMaterialUpdateFromLibrary::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+
+    openCommand(QT_TRANSLATE_NOOP("Command", "Update material from library"));
+    int updated = 0;
+    for (auto property : selectedMaterials()) {
+        if (property->updateFromLibrary()) {
+            ++updated;
+        }
+    }
+    if (updated == 0) {
+        abortCommand();
+        return;
+    }
+    commitCommand();
+    updateActive();
+}
+
+bool CmdMaterialUpdateFromLibrary::isActive()
+{
+    // Offered only where it would do something. A library that has moved on is
+    // the only thing there is to take.
+    for (auto property : selectedMaterials()) {
+        if (property->libraryStatus() == Materials::PropertyMaterial::LibraryStatus::Diverged) {
+            return true;
+        }
+    }
+    return false;
+}
+
+//===========================================================================
+
+DEF_STD_CMD_A(CmdMaterialSaveToLibrary)
+
+CmdMaterialSaveToLibrary::CmdMaterialSaveToLibrary()
+    : Command("Material_SaveToLibrary")
+{
+    sAppModule = "Material";
+    sGroup = QT_TR_NOOP("Material");
+    sMenuText = QT_TR_NOOP("Save Material To Library");
+    sToolTipText = QT_TR_NOOP("Writes the material stored in the document back to the library");
+    sWhatsThis = "Material_SaveToLibrary";
+    sStatusTip = sToolTipText;
+}
+
+void CmdMaterialSaveToLibrary::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+
+    // By content: the same card assigned to twenty objects is one thing to
+    // write, and one question to ask if it needs a home.
+    std::map<std::string, std::vector<Materials::PropertyMaterial*>> byContent;
+    for (auto property : selectedMaterials()) {
+        if (property->libraryStatus() != Materials::PropertyMaterial::LibraryStatus::NoCard
+            && !property->isUnresolved()) {
+            byContent[property->getContentHash()].push_back(property);
+        }
+    }
+
+    for (auto& entry : byContent) {
+        auto& properties = entry.second;
+        if (properties.front()->saveToLibrary()) {
+            // Written in place, over the card it came from. Every property
+            // holding this content now matches the library.
+            continue;
+        }
+
+        // No card to write over, or a read only library. Where it goes is the
+        // user's answer, and this is the dialog that already asks.
+        auto card = std::make_shared<Materials::Material>(properties.front()->getValue());
+        MatGui::MaterialSave dialog(card, Gui::getMainWindow());
+        if (dialog.exec() != QDialog::Accepted) {
+            continue;
+        }
+        // The dialog wrote the card somewhere and may have given it a new
+        // uuid. Re-anchor, or the document would still point at the card it
+        // came from and this would have to be answered again next time.
+        openCommand(QT_TRANSLATE_NOOP("Command", "Save material to library"));
+        for (auto property : properties) {
+            property->setValue(*card);
+        }
+        commitCommand();
+    }
+}
+
+bool CmdMaterialSaveToLibrary::isActive()
+{
+    for (auto property : selectedMaterials()) {
+        if (property->libraryStatus() != Materials::PropertyMaterial::LibraryStatus::NoCard
+            && !property->isUnresolved()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 //---------------------------------------------------------------
@@ -77,5 +375,14 @@ void CreateMaterialCommands()
 {
     Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
 
-    rcCmdMgr.addCommand(new CmdMaterialsEdit());
+    rcCmdMgr.addCommand(new CmdMaterialEdit());
+    rcCmdMgr.addCommand(new StdCmdSetAppearance());
+    rcCmdMgr.addCommand(new StdCmdSetMaterial());
+    rcCmdMgr.addCommand(new CmdInspectAppearance());
+    rcCmdMgr.addCommand(new CmdInspectMaterial());
+    rcCmdMgr.addCommand(new CmdMaterialUpdateFromLibrary());
+    rcCmdMgr.addCommand(new CmdMaterialSaveToLibrary());
+#if defined(BUILD_MATERIAL_EXTERNAL)
+    rcCmdMgr.addCommand(new CmdMigrateToExternal());
+#endif
 }

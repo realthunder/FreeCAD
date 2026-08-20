@@ -128,7 +128,8 @@ private:
 
     bool m_scaleEdited;
 
-    boost::signals2::scoped_connection conn;
+    // Blocked by Base::ConnectionBlocker, so it is connected blockable.
+    fastsignals::advanced_scoped_connection conn;
 };
 
 class TaskDlgSectionView : public Gui::TaskView::TaskDialog

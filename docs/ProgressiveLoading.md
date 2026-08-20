@@ -216,7 +216,7 @@ line describes neither.
 | Parameter | Group | Default | Governs |
 |---|---|---|---|
 | `ArchiveRandomAccess` | Document | on | central-directory archive reader (stage 1) |
-| `SaveSchemaVersion` | per document | 4 | 5 is the fork format: default elision, shared blobs, shape store (stage 2) |
+| `SaveSchemaVersion` | per document | 5 (a restored document: its file's own) | 5 is the fork format: default elision, shared blobs, shape store (stage 2); 4 is upstream's |
 | `DeferShapeLoad` | Document | **on** | park shape entries, serve on demand (stages 3, 5) |
 | `ProgressiveLoadBudgetMS` | View/Render | slice budget | drain and fill slice length (stages 5–7) |
 | `ProgressDetailLevels` | General | 5 | nesting depth shown in the progress popup |

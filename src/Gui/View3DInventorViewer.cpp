@@ -487,7 +487,21 @@ static ValueT _hiddenLineParam(View3DInventor *view, const char *_name, const ch
 struct View3DInventorViewer::Private
 {
     View3DInventor                    *view;
+    /// Where the Render_* settings are read from, when that is not the
+    /// MDI view above. A viewer with no View3DInventor -- a material
+    /// preview, an icon renderer -- otherwise falls through to the
+    /// global RenderParams preferences, so it cannot be given a shading
+    /// model of its own; see setRenderSettings().
+    App::PropertyContainer            *rendersettings = nullptr;
     View3DInventorViewer              *owner;
+
+    /// The container the Render_* settings live on: the override when one
+    /// was given, else the MDI view. Null for a bare viewer that was given
+    /// neither, which reads the global preferences instead.
+    App::PropertyContainer *renderSettings() const {
+        return rendersettings ? rendersettings
+                              : static_cast<App::PropertyContainer *>(view);
+    }
 
     bool                              animating = false;
 
@@ -3519,8 +3533,14 @@ void View3DInventorViewer::clearGraphicsItems()
 
 int View3DInventorViewer::getNumSamples()
 {
+    // 4x by default. The backend resolves its own offscreen target, so
+    // the cost is a wider render target and not a cloned GL context,
+    // and edge-dominated CAD geometry is the content multisampling
+    // helps most -- an unantialiased silhouette is the first thing that
+    // reads as "not a real render".
     long samples = App::GetApplication().GetParameterGroupByPath
-        ("User parameter:BaseApp/Preferences/View")->GetInt("AntiAliasing", 0);
+        ("User parameter:BaseApp/Preferences/View")
+        ->GetInt("AntiAliasing", View3DInventorViewer::MSAA4x);
 
     // NOLINTBEGIN
     switch (samples) {
@@ -4056,6 +4076,11 @@ bool View3DInventorViewer::applyRendererAntiAliasing()
     return true;
 }
 
+void View3DInventorViewer::setRenderSettings(App::PropertyContainer *container)
+{
+    _pimpl->rendersettings = container;
+}
+
 void View3DInventorViewer::setRendererType(const std::string &type)
 {
     // An empty or 'Default' type selects the plain GL pipeline. A failed
@@ -4083,8 +4108,9 @@ void View3DInventorViewer::setRendererType(const std::string &type)
         _pimpl->renderer = RendererFactory::create(
                 type, qobject_cast<QOpenGLWidget*>(getGLWidget()));
         if (_pimpl->renderer && selectionRoot) {
-            selectionRoot->setExternalRenderer(_pimpl->renderer.get(), _pimpl->view);
-            Gui::initRenderProperties(_pimpl->view);
+            App::PropertyContainer *settings = _pimpl->renderSettings();
+            selectionRoot->setExternalRenderer(_pimpl->renderer.get(), settings);
+            Gui::initRenderProperties(settings);
             // Seed the renderer-layer knobs it cannot read itself
             // before the backend can start serving (RenderParams
             // changes re-push through onRenderParamChanged).
@@ -4378,6 +4404,21 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             RenderParams::docCavityRidge(), RenderParams::getCavityRidge());
     _renderParam<App::PropertyFloat>(view, "CavityRadius",
             RenderParams::docCavityRadius(), RenderParams::getCavityRadius());
+    // The output colour transform. An enumeration, like
+    // Render_AOMethod: materialized by hand so the names are installed
+    // before the value is set.
+    if (!view->getPropertyByName("Render_OutputTransform")) {
+        static const char* _outputTransformEnums[] =
+            {"Off", "sRGB", nullptr};
+        auto prop = static_cast<App::PropertyEnumeration*>(
+                view->addDynamicProperty("App::PropertyEnumeration",
+                                         "Render_OutputTransform", "Render",
+                                         RenderParams::docOutputTransform()));
+        prop->setEnums(_outputTransformEnums);
+        prop->setValue(long(RenderParams::getOutputTransform()));
+    }
+    _renderParam<App::PropertyFloat>(view, "Exposure",
+            RenderParams::docExposure(), RenderParams::getExposure());
     _renderParam<App::PropertyBool>(view, "PBR",
             RenderParams::docPBR(), RenderParams::getPBR());
     static const App::PropertyFloatConstraint::Constraints _unit_cstr(0.0,1.0,0.1);
@@ -4391,6 +4432,34 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _renderParam<App::PropertyFloatConstraint>(view, "PBRRoughness",
             RenderParams::docPBRRoughness(), RenderParams::getPBRRoughness(),
             applyUnitConstraint);
+    _renderParam<App::PropertyBool>(view, "PBRFromSpecular",
+            RenderParams::docPBRFromSpecular(),
+            RenderParams::getPBRFromSpecular());
+    // An enumeration, like Render_MatcapPreset above: materialized by
+    // hand so the names are installed before the value is set.
+    if (!view->getPropertyByName("Render_ShininessMapping")) {
+        static const char* _shininessMappingEnums[] =
+            {"GL exponent", "Full range", nullptr};
+        auto prop = static_cast<App::PropertyEnumeration*>(
+                view->addDynamicProperty("App::PropertyEnumeration",
+                                         "Render_ShininessMapping", "Render",
+                                         RenderParams::docShininessMapping()));
+        prop->setEnums(_shininessMappingEnums);
+        prop->setValue(long(RenderParams::getShininessMapping()));
+    }
+    // An enumeration, like Render_ShininessMapping above: materialized
+    // by hand so the names are installed before the value is set.
+    if (!view->getPropertyByName("Render_PBREnvPreset")) {
+        static const char* _pbrEnvPresetEnums[] =
+            {"Studio", "Gradient", "Overcast", "Sunset", "Interior",
+             "Light tent", nullptr};
+        auto prop = static_cast<App::PropertyEnumeration*>(
+                view->addDynamicProperty("App::PropertyEnumeration",
+                                         "Render_PBREnvPreset", "Render",
+                                         RenderParams::docPBREnvPreset()));
+        prop->setEnums(_pbrEnvPresetEnums);
+        prop->setValue(long(RenderParams::getPBREnvPreset()));
+    }
     _renderParam<App::PropertyFloat>(view, "PBREnvIntensity",
             RenderParams::docPBREnvIntensity(), RenderParams::getPBREnvIntensity());
     // The environment image is a plain path; Render_PBREnvEmbed
@@ -5605,8 +5674,8 @@ void View3DInventorViewer::printDimension() const
         Base::Quantity qHeight(Base::Quantity::MilliMetre);
         qWidth.setValue(fWidth);
         qHeight.setValue(fHeight);
-        QString wStr = Base::UnitsApi::schemaTranslate(qWidth);
-        QString hStr = Base::UnitsApi::schemaTranslate(qHeight);
+        QString wStr = QString::fromStdString(Base::UnitsApi::schemaTranslate(qWidth));
+        QString hStr = QString::fromStdString(Base::UnitsApi::schemaTranslate(qHeight));
 
         // Create final string and update window
         dim = QStringLiteral("%1 x %2").arg(wStr, hStr);

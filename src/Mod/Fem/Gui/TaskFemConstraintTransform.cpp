@@ -537,15 +537,15 @@ else:\n\
 
 std::string TaskFemConstraintTransform::get_X_rot() const
 {
-    return ui->sp_X->value().getSafeUserString().toStdString();
+    return ui->sp_X->value().getSafeUserString();
 }
 std::string TaskFemConstraintTransform::get_Y_rot() const
 {
-    return ui->sp_Y->value().getSafeUserString().toStdString();
+    return ui->sp_Y->value().getSafeUserString();
 }
 std::string TaskFemConstraintTransform::get_Z_rot() const
 {
-    return ui->sp_Z->value().getSafeUserString().toStdString();
+    return ui->sp_Z->value().getSafeUserString();
 }
 
 std::string TaskFemConstraintTransform::get_transform_type() const

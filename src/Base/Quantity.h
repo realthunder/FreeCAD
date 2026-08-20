@@ -25,7 +25,7 @@
 #define BASE_Quantity_H
 
 #include "Unit.h"
-#include <QString>
+#include <string>
 
 // NOLINTBEGIN
 #ifndef DOUBLE_MAX
@@ -132,7 +132,7 @@ public:
     Quantity(const Quantity&) = default;
     Quantity(Quantity&&) = default;
     explicit Quantity(double value, const Unit& unit = Unit());
-    explicit Quantity(double value, const QString& unit);
+    explicit Quantity(double value, const std::string& unit);
     /// Destruction
     ~Quantity() = default;
 
@@ -169,17 +169,17 @@ public:
         myFormat = fmt;
     }
     /// transfer to user preferred unit/potence
-    QString getUserString(double& factor, QString& unitString) const;
-    QString getUserString() const
+    std::string getUserString(double& factor, std::string& unitString) const;
+    std::string getUserString() const
     {  // to satisfy GCC
         double dummy1 {};
-        QString dummy2 {};
+        std::string dummy2 {};
         return getUserString(dummy1, dummy2);
     }
-    QString getUserString(UnitsSchema* schema, double& factor, QString& unitString) const;
-    QString getSafeUserString() const;
+    std::string getUserString(UnitsSchema* schema, double& factor, std::string& unitString) const;
+    std::string getSafeUserString() const;
 
-    static Quantity parse(const QString& string);
+    static Quantity parse(const std::string& string);
     static Quantity parse(const char *string);
 
     static const std::vector<UnitInfo> &unitInfo();
@@ -255,6 +255,8 @@ public:
     static const Quantity Hour;
 
     static const Quantity Ampere;
+    static const Quantity NanoAmpere;
+    static const Quantity MicroAmpere;
     static const Quantity MilliAmpere;
     static const Quantity KiloAmpere;
     static const Quantity MegaAmpere;
@@ -263,6 +265,8 @@ public:
     static const Quantity MilliKelvin;
     static const Quantity MicroKelvin;
 
+    static const Quantity NanoMole;
+    static const Quantity MicroMole;
     static const Quantity MilliMole;
     static const Quantity Mole;
 
@@ -312,6 +316,8 @@ public:
     static const Quantity MPSI;
 
     static const Quantity Watt;
+    static const Quantity NanoWatt;
+    static const Quantity MicroWatt;
     static const Quantity MilliWatt;
     static const Quantity KiloWatt;
     static const Quantity VoltAmpere;
@@ -333,6 +339,7 @@ public:
     static const Quantity Coulomb;
 
     static const Quantity Tesla;
+    static const Quantity MilliTesla;
     static const Quantity Gauss;
 
     static const Quantity Weber;

@@ -1,4 +1,6 @@
 ---
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *                                                                         *
 # *   Copyright (c) 2023 David Carter <dcarter@davidcarter.ca>              *
@@ -28,11 +30,13 @@ Model:
   Description: "default cost model"
   DOI: ""
   ProductURL:
+    DisplayName: "Product URL"
     Type: 'URL'
     Units: ''
     URL: 'https://de.wikipedia.org/wiki/Hyperlink'
     Description: "Product URL, recommended are wikipedia links"
   SpecificPrice:
+    DisplayName: "Specific Price"
     Type: 'Float'
     Units: ''
     URL: ''

@@ -1110,6 +1110,23 @@ void ViewProviderGeometryObject::updateData(const App::Property* prop)
 {
     if(prop->isDerivedFrom(App::PropertyComplexGeoData::getClassTypeId()))
         updateBoundingBox();
+    else if (strcmp(prop->getName(), "ShapeMaterial") == 0) {
+        // The object carries a material card. Take its appearance, but only
+        // while the appearance is still the one the material gave us (or the
+        // untouched default) -- an appearance the user chose outranks it.
+        // A per-face appearance (size != 1) is never overwritten.
+        if (auto geometry = dynamic_cast<App::GeoFeature*>(getObject())) {
+            App::Material defaultMaterial;
+            App::Material material = geometry->getMaterialAppearance();
+            if (ShapeAppearance.getSize() == 1
+                    && (ShapeAppearance[0] == defaultMaterial
+                        || ShapeAppearance[0] == materialAppearance)
+                    && material != defaultMaterial) {
+                ShapeAppearance.setValue(material);
+                materialAppearance = material;
+            }
+        }
+    }
 
     ViewProviderDragger::updateData(prop);
 }

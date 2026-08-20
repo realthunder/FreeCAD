@@ -127,7 +127,7 @@ protected:
 
 private:
 
-    using Connection = boost::signals2::scoped_connection;
+    using Connection = fastsignals::scoped_connection;
     Connection connectPropChanged;
 
     std::unique_ptr<Observer> observer;

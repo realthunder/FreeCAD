@@ -62,9 +62,9 @@ private:
     void rangeUpdated(const App::Range &range);
     QColor getForeground(const Spreadsheet::Cell *cell, int number = 0) const;
 
-    boost::signals2::scoped_connection cellUpdatedConnection;
-    boost::signals2::scoped_connection rangeUpdatedConnection;
-    boost::signals2::scoped_connection tableRefreshConnection;
+    fastsignals::scoped_connection cellUpdatedConnection;
+    fastsignals::scoped_connection rangeUpdatedConnection;
+    fastsignals::scoped_connection tableRefreshConnection;
     Spreadsheet::Sheet * sheet;
     QColor aliasFgColor;
     QColor aliasBgColor;

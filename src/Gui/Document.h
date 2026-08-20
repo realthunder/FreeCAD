@@ -27,7 +27,7 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 #include <QString>
 
 #include <App/Document.h>
@@ -106,51 +106,51 @@ public:
     /** @name Signals of the document */
     //@{
     /// signal on new Object
-    mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&)> signalNewObject;
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&)> signalNewObject;
     /// signal on deleted Object
-    mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&)> signalDeletedObject;
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&)> signalDeletedObject;
     /** signal on changed Object, the 2nd argument is the changed property
         of the referenced document object, not of the view provider */
-    mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&,
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&,
                                           const App::Property&)>                   signalChangedObject;
     /// signal on renamed Object
-    mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&)> signalRelabelObject;
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&)> signalRelabelObject;
     /// signal on activated Object
-    mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&)> signalActivatedObject;
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&)> signalActivatedObject;
     /// signal on entering in edit mode
     /// signal on activated object in the tree (bold item)
-    mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject*, const char*)>
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject*, const char*)>
         signalActivatedViewProvider;
-    mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&)> signalInEdit;
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&)> signalInEdit;
     /// signal on leaving edit mode
-    mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&)> signalResetEdit;
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&)> signalResetEdit;
     /// signal on changed Object, the 2nd argument is the highlight mode to use
-    mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&,
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&,
                                           const Gui::TreeItemMode&,
                                           App::DocumentObject *parent,
                                           const char *subname)> signalExpandObject;
     /// signal on changed ShowInTree property in view provider
-    mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&)> signalShowItem;
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&)> signalShowItem;
     /// signal on scrolling to an object
-    mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&)> signalScrollToObject;
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&)> signalScrollToObject;
     /// signal on undo Document
-    mutable boost::signals2::signal<void (const Gui::Document& doc)> signalUndoDocument;
+    mutable fastsignals::signal<void (const Gui::Document& doc)> signalUndoDocument;
     /// signal on redo Document
-    mutable boost::signals2::signal<void (const Gui::Document& doc)> signalRedoDocument;
+    mutable fastsignals::signal<void (const Gui::Document& doc)> signalRedoDocument;
     /// signal on deleting Document
-    mutable boost::signals2::signal<void (const Gui::Document& doc)> signalDeleteDocument;
+    mutable fastsignals::signal<void (const Gui::Document& doc)> signalDeleteDocument;
     /// signal on change of document's modified status
-    mutable boost::signals2::signal<void (const Gui::Document& doc)> signalChangedModified;
+    mutable fastsignals::signal<void (const Gui::Document& doc)> signalChangedModified;
     /// signal on attaching new view
-    mutable boost::signals2::signal<void (const BaseView &, bool passive)> signalAttachView;
+    mutable fastsignals::signal<void (const BaseView &, bool passive)> signalAttachView;
     /// signal on detaching view
-    mutable boost::signals2::signal<void (const BaseView &, bool passive)> signalDetachView;
+    mutable fastsignals::signal<void (const BaseView &, bool passive)> signalDetachView;
     /// signal on changed view property
-    mutable boost::signals2::signal<void (const Gui::BaseView &, const App::Property &)> signalChangedView;
+    mutable fastsignals::signal<void (const Gui::BaseView &, const App::Property &)> signalChangedView;
     /// signal on changes in show on top objects
-    mutable boost::signals2::signal<void (int, const App::SubObjectT &)> signalOnTopObject;
+    mutable fastsignals::signal<void (int, const App::SubObjectT &)> signalOnTopObject;
     /// signal on changes in accumulated editing transformation
-    mutable boost::signals2::signal<void (const Gui::Document &)> signalEditingTransformChanged;
+    mutable fastsignals::signal<void (const Gui::Document &)> signalEditingTransformChanged;
     //@}
 
     /** @name I/O of the document */
@@ -412,6 +412,15 @@ private:
     void runDeferredServeSlice();
     /// The drain has emptied: default what was never recorded, then refresh
     void finishDeferredRestore();
+
+    /** Offer every document about to be written the schema its own content
+     * needs, and answer false when the user called the save off.
+     *
+     * Static, because Save All is: the answer belongs to each document
+     * rather than to whoever pressed the button, and a document told to
+     * save its content away anyway remembers that for the session.
+     */
+    static bool offerSchemaUpgrade(const std::vector<App::Document*> &docs);
 
     /// Check other documents for the same transaction ID
     bool checkTransactionID(bool undo, int iSteps);
