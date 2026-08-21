@@ -253,6 +253,25 @@ PyObject*  GroupExtensionPy::getObject(PyObject *args)
     }
 }
 
+PyObject*  GroupExtensionPy::getObjectsOfType(PyObject *args)
+{
+    char* pcName;
+    if (!PyArg_ParseTuple(args, "s", &pcName))
+        return nullptr;
+
+    Base::Type type = Base::Type::fromName(pcName);
+    if (type.isBad()) {
+        PyErr_Format(PyExc_TypeError, "Unknown type '%s'", pcName);
+        return nullptr;
+    }
+
+    Py::List result;
+    for (auto obj : getGroupExtensionPtr()->getObjectsOfType(type))
+        result.append(Py::asObject(obj->getPyObject()));
+
+    return Py::new_reference_to(result);
+}
+
 PyObject*  GroupExtensionPy::hasObject(PyObject *args)
 {
     PyObject *object;

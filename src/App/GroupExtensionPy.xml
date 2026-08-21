@@ -53,6 +53,14 @@
         <UserDocu>Return the object with the given name</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="getObjectsOfType">
+      <Documentation>
+        <UserDocu>getObjectsOfType(type) -> list
+
+Return the child objects of the given type. The type is given by name,
+for instance "Part::Feature". Objects of a derived type are included.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="hasObject">
         <Documentation>
             <UserDocu>hasObject(obj, recursive=false)
