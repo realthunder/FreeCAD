@@ -891,6 +891,34 @@ above (both fixed), and the volumetric shafts' history reset -- which
 is the one *correct* use of it as a "something changed, drop the
 history" predicate rather than as a cache key.
 
+**A second sweep, asking a different question.** The audit above asks
+which caches the *jitter* invalidates. The broader question is whether
+each cache's key covers every input its content depends on at all -- a
+missing input is stale in ordinary use, not only under a refinement.
+The frame keeps five caches, and all five hold:
+
+- `shadowMapHash` -- light view and projection matrices, `smoothBorder`,
+  and a detailed caster set (mesh cache id, model matrix when not
+  identity, index sub-range, clip planes, the autozoom scale for
+  autozoom casters, and a glass caster's diffuse colour, since that
+  feeds the tint map beside the moments). A shadow map *resolution*
+  change is not in the key and does not need to be: both paths that
+  resize it destroy the textures and reset the hash to 0.
+- The separable shadow blur is gated on `shadowRender`, not run
+  unconditionally -- which matters more than it looks. Blurring is
+  destructive and in-place, so a blur that ran every frame over a
+  *cached* map would compound, and a parked view's shadows would creep
+  softer the longer nobody touched it. The shadow tint blur takes the
+  same gate.
+- `bulbShadowHash[]`, `aoMapHash`, and the two sample indices are
+  covered in the table above.
+- `camFrameHash` -- the view and projection matrices plus the viewport,
+  and it is taken from the **unjittered** projection, before the
+  accumulation offset is applied further down. It has to be: hashing
+  the jittered matrix would make every sample of a refinement look like
+  a camera move, `staticFrame` would go false, and the accumulation
+  could never engage at all.
+
 One note for anyone extending this: the volumetric march phase is
 `frame % 4096`, a frame counter rather than a sample number, so the
 shafts are reproducible only under the freeze-frame switch (which
