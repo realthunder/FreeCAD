@@ -29,6 +29,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
 
+#include <cstddef>
 #include <vector>
 #include <list>
 #include <math.h>
@@ -94,11 +95,14 @@ class CCurve
 	// a closed curve, please make sure you add an end point, the same as the start point
 
 protected:
-	// A vector, not a list: CheckForArc walks the candidate run from end to
-	// end several times for every point added to it, and it needs the middle
-	// element, which a list can only reach by walking to it.
-	void AddArcOrLines(bool check_for_arc, std::list<CVertex> &new_vertices, std::vector<const CVertex*>& might_be_an_arc, CArc &arc, bool &arc_found, bool &arc_added);
-	static bool CheckForArc(const CVertex& prev_vt, std::vector<const CVertex*>& might_be_an_arc, CArc &arc);
+	// A vector, not a list: a candidate run is asked about at several lengths
+	// and out of order, and CheckForArc needs the middle element of whatever
+	// length it is given, which a list can only reach by walking to it.
+	static void AddArc(std::list<CVertex> &new_vertices, const CArc &arc, bool &arc_added);
+	static void FlushRun(std::list<CVertex> &new_vertices, std::vector<const CVertex*>& run, const CArc &arc, bool &arc_found, bool &arc_added);
+	static void FitArcRun(std::list<CVertex> &new_vertices, std::vector<const CVertex*>& run, CArc &arc, bool &arc_found, bool &arc_added);
+	static std::size_t LongestArcPrefix(const CVertex& prev_vt, const std::vector<const CVertex*>& run, std::size_t first, CArc &arc);
+	static bool CheckForArc(const CVertex& prev_vt, const std::vector<const CVertex*>& run, std::size_t first, std::size_t last, CArc &arc);
 
 public:
 	std::list<CVertex> m_vertices;

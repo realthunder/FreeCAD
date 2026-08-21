@@ -60,39 +60,37 @@ void CCurve::append(const CVertex& vertex)
 	m_vertices.push_back(vertex);
 }
 
-bool CCurve::CheckForArc(const CVertex& prev_vt, std::vector<const CVertex*>& might_be_an_arc, CArc &arc_returned)
+bool CCurve::CheckForArc(const CVertex& prev_vt, const std::vector<const CVertex*>& run, std::size_t first, std::size_t last, CArc &arc_returned)
 {
-	// this examines the vertices in might_be_an_arc
+	// this examines the vertices in run[first, last), which follow prev_vt
 	// if they do fit an arc, set arc to be the arc that they fit and return true
 	// returns true, if arc added
 	//
-	// FitArcs calls this again for every point it adds to the run, and the run
-	// is as long as the number of chords a curve was walked into, so what this
-	// does per call is what decides whether fitting a circle back out of a
-	// clipping result costs milliseconds or hundreds of them. The checks below
-	// are the same ones in the same combination as before, but each vertex is
-	// visited once instead of four times: the run was walked once to find its
-	// middle, once per test, and each interior point was handed to LineIsOn
-	// twice, as the end of one segment and the start of the next.
-	if(might_be_an_arc.size() < 2)
+	// FitArcs asks about several lengths of the same run, so the length to
+	// test is a parameter rather than the run being a vector of its own: a
+	// probe then copies nothing and allocates nothing. Each vertex is visited
+	// once per probe -- the run used to be walked once to find its middle,
+	// once per test, and each interior point was handed to LineIsOn twice, as
+	// the end of one segment and the start of the next.
+	if(last - first < 2)
 	    return false;
 
 	// find middle point
-	const std::size_t num = might_be_an_arc.size();
-	const CVertex* mid_vt = might_be_an_arc[(num-1)/2];
+	const std::size_t num = last - first;
+	const CVertex* mid_vt = run[first + (num-1)/2];
 
 	// create a circle to test
 	Point p0(prev_vt.m_p);
 	Point p1(mid_vt->m_p);
-	Point p2(might_be_an_arc.back()->m_p);
+	Point p2(run[last-1]->m_p);
 	Circle c(p0, p1, p2);
 
 	CArc arc;
 	arc.m_c = c.m_c;
 	arc.m_s = prev_vt.m_p;
-	arc.m_e = might_be_an_arc.back()->m_p;
-	arc.SetDirWithPoint(might_be_an_arc.front()->m_p);
-	arc.m_user_data = might_be_an_arc.back()->m_user_data;
+	arc.m_e = run[last-1]->m_p;
+	arc.SetDirWithPoint(run[first]->m_p);
+	arc.m_user_data = run[last-1]->m_user_data;
 
 	double angs = atan2(arc.m_s.y - arc.m_c.y, arc.m_s.x - arc.m_c.x);
 	double ange = atan2(arc.m_e.y - arc.m_c.y, arc.m_e.x - arc.m_c.x);
@@ -126,9 +124,9 @@ bool CCurve::CheckForArc(const CVertex& prev_vt, std::vector<const CVertex*>& mi
 	    return false;
 
 	const Point* current_p = &prev_vt.m_p;
-	for(std::vector<const CVertex*>::iterator It = might_be_an_arc.begin(); It != might_be_an_arc.end(); It++)
+	for(std::size_t i = first; i < last; i++)
 	{
-		const CVertex* vt = *It;
+		const CVertex* vt = run[i];
 
 		// what LineIsOn(current, vt) checks, without asking again about
 		// current, which the previous turn of this loop already accepted
@@ -162,47 +160,150 @@ bool CCurve::CheckForArc(const CVertex& prev_vt, std::vector<const CVertex*>& mi
 	return true;
 }
 
-void CCurve::AddArcOrLines(bool check_for_arc, std::list<CVertex> &new_vertices, std::vector<const CVertex*>& might_be_an_arc, CArc &arc, bool &arc_found, bool &arc_added)
+std::size_t CCurve::LongestArcPrefix(const CVertex& prev_vt, const std::vector<const CVertex*>& run, std::size_t first, CArc &arc_returned)
 {
-	if(check_for_arc && CheckForArc(new_vertices.back(), might_be_an_arc, arc))
-	{
-		arc_found = true;
-	}
-	else
-	{
-		if(arc_found)
-		{
-			if(arc.AlmostALine())
-			{
-				new_vertices.emplace_back(arc.m_e, arc.m_user_data);
-			}
-			else
-			{
-				new_vertices.emplace_back(arc.m_dir ? 1:-1, arc.m_e, arc.m_c, arc.m_user_data);
-			}
+	// How many vertices from run[first] onwards make an arc: the longest
+	// count CheckForArc accepts, or 0 if it will not accept even two of them.
+	//
+	// FitArcs used to grow the candidate by one vertex and ask CheckForArc
+	// again for each, stopping at the first refusal. That is quadratic in the
+	// length of the run, and the run is as long as the number of chords a
+	// curve was walked into, so a circle fitted at a fine accuracy cost
+	// hundreds of milliseconds. This gallops instead -- 2, 4, 8, ... until a
+	// length is refused -- and then bisects the gap, which is O(n log n).
+	//
+	// That is a deliberate change of meaning as well as of speed, because
+	// CheckForArc refits the circle from (prev, middle, last) every time it is
+	// asked, so its answers are not guaranteed to be monotone in the length,
+	// and the first refusal need not be the only one. What the result still
+	// satisfies is the part that matters: both ends of the bisection are
+	// answers CheckForArc actually gave, so the count returned is one it
+	// accepts, and -- unless the whole run was accepted -- one vertex more is
+	// one it refuses. Every arc emitted is therefore an arc the same test
+	// accepts, ending where the same test says an arc has to end. It need not
+	// be the earliest such place.
+	const std::size_t n = run.size();
+	if(n - first < 2)
+	    return 0;
 
-			arc_added = true;
-			arc_found = false;
-			const CVertex* back_vt = might_be_an_arc.back();
-			might_be_an_arc.clear();
-			if(check_for_arc)might_be_an_arc.push_back(back_vt);
+	CArc arc;
+	if(!CheckForArc(prev_vt, run, first, first + 2, arc))
+	    return 0;
+	arc_returned = arc;
+	if(n - first == 2)
+	    return 2;
+
+	std::size_t good = 2;                       // accepted
+	std::size_t bad = 0;                        // refused, 0 until one is
+	for(std::size_t probe = 4; ; probe *= 2)
+	{
+		const std::size_t count = (probe < n - first) ? probe : (n - first);
+		if(CheckForArc(prev_vt, run, first, first + count, arc))
+		{
+			arc_returned = arc;
+			good = count;
+			if(count == n - first)
+			    return good;                    // the whole run is one arc
 		}
 		else
 		{
-			const CVertex* back_vt = might_be_an_arc.back();
-			if(check_for_arc)might_be_an_arc.pop_back();
-			for(std::vector<const CVertex*>::iterator It = might_be_an_arc.begin(); It != might_be_an_arc.end(); It++)
-			{
-				const CVertex* v = *It;
-				if(It != might_be_an_arc.begin() || (new_vertices.size() == 0) || (new_vertices.back().m_p != v->m_p))
-				{
-					new_vertices.push_back(*v);
-				}
-			}
-			might_be_an_arc.clear();
-			if(check_for_arc)might_be_an_arc.push_back(back_vt);
+			bad = count;
+			break;
 		}
 	}
+
+	while(bad - good > 1)
+	{
+		const std::size_t mid = good + (bad - good) / 2;
+		if(CheckForArc(prev_vt, run, first, first + mid, arc))
+		{
+			arc_returned = arc;
+			good = mid;
+		}
+		else
+		{
+			bad = mid;
+		}
+	}
+
+	return good;
+}
+
+void CCurve::AddArc(std::list<CVertex> &new_vertices, const CArc &arc, bool &arc_added)
+{
+	if(arc.AlmostALine())
+	{
+		new_vertices.emplace_back(arc.m_e, arc.m_user_data);
+	}
+	else
+	{
+		new_vertices.emplace_back(arc.m_dir ? 1:-1, arc.m_e, arc.m_c, arc.m_user_data);
+	}
+
+	arc_added = true;
+}
+
+void CCurve::FlushRun(std::list<CVertex> &new_vertices, std::vector<const CVertex*>& run, const CArc &arc, bool &arc_found, bool &arc_added)
+{
+	// what is left of a run once no more vertices can join it: either the arc
+	// it was found to make, or its vertices as they stand
+	if(arc_found)
+	{
+		AddArc(new_vertices, arc, arc_added);
+		arc_found = false;
+	}
+	else
+	{
+		for(std::vector<const CVertex*>::iterator It = run.begin(); It != run.end(); It++)
+		{
+			const CVertex* v = *It;
+			if(It != run.begin() || (new_vertices.size() == 0) || (new_vertices.back().m_p != v->m_p))
+			{
+				new_vertices.push_back(*v);
+			}
+		}
+	}
+	run.clear();
+}
+
+void CCurve::FitArcRun(std::list<CVertex> &new_vertices, std::vector<const CVertex*>& run, CArc &arc, bool &arc_found, bool &arc_added)
+{
+	// Cut one run of straight vertices into arcs, greedily and left to right,
+	// each arc starting where the last one ended. The final piece is left in
+	// run rather than emitted, because whether it can still grow depends on
+	// what follows the run -- FlushRun settles it.
+	std::size_t first = 0;
+	arc_found = false;
+	while(run.size() - first > 1)
+	{
+		CArc a;
+		const std::size_t count = LongestArcPrefix(new_vertices.back(), run, first, a);
+		if(count == 0)
+		{
+			// no arc begins here, so this vertex stays a line and the next
+			// one is where the following piece begins
+			const CVertex* v = run[first];
+			if((new_vertices.size() == 0) || (new_vertices.back().m_p != v->m_p))
+			{
+				new_vertices.push_back(*v);
+			}
+			first++;
+			continue;
+		}
+
+		if(first + count == run.size())
+		{
+			// it reaches the end of the run, so it is the piece to leave open
+			arc = a;
+			arc_found = true;
+			break;
+		}
+
+		AddArc(new_vertices, a, arc_added);
+		first += count;
+	}
+
+	run.erase(run.begin(), run.begin() + first);
 }
 
 void CCurve::FitArcs(bool retry)
@@ -213,29 +314,31 @@ void CCurve::FitArcs(bool retry)
 	CArc arc;
 	bool arc_found = false;
 	bool arc_added = false;
-	int i = 0;
-	for(std::list<CVertex>::iterator It = m_vertices.begin(); It != m_vertices.end(); It++, i++)
+	std::list<CVertex>::iterator It = m_vertices.begin();
+	if(It != m_vertices.end())
 	{
-		CVertex& vt = *It;
-		if(vt.m_type || i == 0)
+		// the first vertex is where the curve starts, whatever its type
+		new_vertices.push_back(*It);
+		It++;
+	}
+	while(It != m_vertices.end())
+	{
+		if(It->m_type)
 		{
-			if (i != 0)
-			{
-				AddArcOrLines(false, new_vertices, might_be_an_arc, arc, arc_found, arc_added);
-			}
-			new_vertices.push_back(vt);
+			FlushRun(new_vertices, might_be_an_arc, arc, arc_found, arc_added);
+			new_vertices.push_back(*It);
+			It++;
 		}
 		else
 		{
-			might_be_an_arc.push_back(&vt);
-
-			if(might_be_an_arc.size() == 1)
+			// a whole run of straight vertices, collected before any of it is
+			// fitted: the fit wants to ask about lengths out of order
+			while(It != m_vertices.end() && It->m_type == 0)
 			{
+				might_be_an_arc.push_back(&(*It));
+				It++;
 			}
-			else
-			{
-				AddArcOrLines(true, new_vertices, might_be_an_arc, arc, arc_found, arc_added);
-			}
+			FitArcRun(new_vertices, might_be_an_arc, arc, arc_found, arc_added);
 		}
 	}
 
@@ -258,7 +361,7 @@ void CCurve::FitArcs(bool retry)
                 auto itEnd = m_vertices.end();
                 --itEnd;
                 --itEnd;
-                if(CheckForArc(*itEnd,tmp,tmpArc)) {
+                if(CheckForArc(*itEnd,tmp,0,tmp.size(),tmpArc)) {
                     if(arc_found) {
                         // this means the last edge has already been fitted with
                         // some arc, so we move the first edge to the end
@@ -277,7 +380,7 @@ void CCurve::FitArcs(bool retry)
                 }
             }
         }
-        AddArcOrLines(false, new_vertices, might_be_an_arc, arc, arc_found, arc_added);
+        FlushRun(new_vertices, might_be_an_arc, arc, arc_found, arc_added);
     }
 
 	if(arc_added)
