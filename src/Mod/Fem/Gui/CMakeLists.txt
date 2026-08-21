@@ -408,9 +408,14 @@ target_include_directories(
     PUBLIC
     ${SMESH_INCLUDE_DIR}
     ${VTK_INCLUDE_DIRS}
+    ${Boost_INCLUDE_DIRS}
+    ${COIN3D_INCLUDE_DIRS}
+    ${OCC_INCLUDE_DIR}
+    ${PYTHON_INCLUDE_DIRS}
+    ${ZLIB_INCLUDE_DIR}
 )
 
-target_link_directories(FemGui PUBLIC ${SMESH_LIB_PATH})
+target_link_directories(FemGui PUBLIC ${SMESH_LIB_PATH} ${OCC_LIBRARY_DIR})
 target_link_libraries(FemGui ${FemGui_LIBS} ${VTK_LIBRARIES})
 
 if (MSVC)

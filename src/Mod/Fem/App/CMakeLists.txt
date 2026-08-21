@@ -225,9 +225,13 @@ target_include_directories(
     ${SMESH_INCLUDE_DIR}
     ${NETGEN_INCLUDE_DIRS}
     ${VTK_INCLUDE_DIRS}
+    ${Boost_INCLUDE_DIRS}
+    ${OCC_INCLUDE_DIR}
+    ${PYTHON_INCLUDE_DIRS}
+    ${ZLIB_INCLUDE_DIR}
 )
 
-target_link_directories(Fem PUBLIC ${SMESH_LIB_PATH})
+target_link_directories(Fem PUBLIC ${SMESH_LIB_PATH} ${OCC_LIBRARY_DIR})
 target_link_libraries(Fem ${Fem_LIBS} ${VTK_LIBRARIES})
 
 if (MSVC)
