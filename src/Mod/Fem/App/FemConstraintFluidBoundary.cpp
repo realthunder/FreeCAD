@@ -152,7 +152,8 @@ void ConstraintFluidBoundary::onChanged(const App::Property* prop)
     else if (prop == &Reversed) {
         // if the direction is invalid try to compute it again
         if (naturalDirectionVector.Length() < Precision::Confusion()) {
-            naturalDirectionVector = getDirection(Direction);
+            naturalDirectionVector =
+                Direction.getValue() ? getDirection(Direction) : NormalDirection.getValue();
         }
         if (naturalDirectionVector.Length() >= Precision::Confusion()) {
             if (Reversed.getValue() && (DirectionVector.getValue() == naturalDirectionVector)) {
