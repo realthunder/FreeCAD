@@ -62,27 +62,32 @@ void main()
 		discard;
 	float t = -(dot(u_groundPlane.xyz, org) + u_groundPlane.w) / denom;
 	// Behind the eye. Only a perspective ray can be: an orthographic
-	// one starts on the near plane and the frustum test below is what
-	// bounds it.
+	// one starts on the near plane, and a hit in front of that is
+	// depth-clamped below like any other.
 	if (persp && t <= 0.0)
 		discard;
 	vec3 vpos = org + t * dir;
 
-	// The frustum decides the rest, exactly as it would for a
-	// rasterized quad: outside it there is nothing to draw, and the
-	// depth this fragment claims has to be the plane's own.
+	// The frustum does NOT decide the rest. The receiver is
+	// infinite, so the camera's depth bracket is none of its
+	// business: during an orthographic spin the bracket transiently
+	// hugs the model alone (NavigationStyle::reorientCamera writes
+	// near/far, and this pass consumes the camera before Coin's
+	// auto-clip corrects them), and a discard here cut the shadow
+	// along the far plane on isolated frames. Clamp instead. Past
+	// the far plane the fragment claims a depth just inside it, so
+	// real geometry -- all of it nearer than far -- still occludes
+	// the shadow while the cleared background does not; nearer than
+	// near it claims the near plane itself, where anything that
+	// could have occluded it was clipped anyway.
 	vec4 clip = mul(u_proj, vec4(vpos, 1.0));
 	if (clip.w <= 0.0)
 		discard;
 	float ndcz = clip.z / clip.w;
 #if BGFX_SHADER_LANGUAGE_GLSL
-	if (ndcz < -1.0 || ndcz > 1.0)
-		discard;
-	gl_FragDepth = ndcz * 0.5 + 0.5;
+	gl_FragDepth = clamp(ndcz * 0.5 + 0.5, 0.0, 0.99999);
 #else
-	if (ndcz < 0.0 || ndcz > 1.0)
-		discard;
-	gl_FragDepth = ndcz;
+	gl_FragDepth = clamp(ndcz, 0.0, 0.99999);
 #endif // BGFX_SHADER_LANGUAGE_GLSL
 
 	// From here this is fs_fc_groundshadow verbatim, and deliberately
