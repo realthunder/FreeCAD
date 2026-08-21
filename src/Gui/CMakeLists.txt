@@ -62,6 +62,7 @@ if(MSVC)
     set(FreeCADGui_LIBS
          FreeCADApp
          customtitlebarkit
+         fmt::fmt
          ${COIN3D_LIBRARIES}
          ${OPENGL_gl_LIBRARY}
     )
@@ -76,6 +77,7 @@ else(MSVC)
     set(FreeCADGui_LIBS
         FreeCADApp
         customtitlebarkit
+        fmt::fmt
         ${COIN3D_LIBRARIES}
         ${Boost_LIBRARIES}
         ${OPENGL_gl_LIBRARY}
@@ -94,6 +96,17 @@ include_directories(
     ${QtUiTools_INCLUDE_DIRS}
     ${QtXml_INCLUDE_DIRS}
 )
+
+# StyleParameters' YAML theme files (upstream links these in Gui too)
+if(yaml-cpp_VERSION VERSION_LESS 0.8.0)
+    list(APPEND FreeCADGui_LIBS
+        ${YAML_CPP_LIBRARIES}
+    )
+else()
+    list(APPEND FreeCADGui_LIBS
+        yaml-cpp::yaml-cpp
+    )
+endif()
 list(APPEND FreeCADGui_LIBS
     ${QtCore_LIBRARIES}
     ${QtWidgets_LIBRARIES}
@@ -416,6 +429,17 @@ SET(Command_SRCS
     CommandActionPy.h
 )
 SOURCE_GROUP("Command" FILES ${Command_SRCS})
+
+# The style parameter evaluator (upstream's theme parameter model)
+SET(StyleParameters_SRCS
+    StyleParameters/ParameterManager.cpp
+    StyleParameters/ParameterManager.h
+    StyleParameters/Parser.cpp
+    StyleParameters/Parser.h
+    StyleParameters/Value.cpp
+    StyleParameters/Value.h
+)
+SOURCE_GROUP("StyleParameters" FILES ${StyleParameters_SRCS})
 
 # The dialog sources
 SET(Dialog_CPP_SRCS
@@ -1329,6 +1353,7 @@ SET(FreeCADGui_CPP_SRCS
     Control.cpp
     SpaceballEvent.cpp
     PreferencePackManager.cpp
+    FreeCADStyle.cpp
     ThemeManager.cpp
     Thumbnail.cpp
     Utilities.cpp
@@ -1369,6 +1394,7 @@ SET(FreeCADGui_SRCS
     Control.h
     SpaceballEvent.h
     PreferencePackManager.h
+    FreeCADStyle.h
     ThemeManager.h
     Thumbnail.h
     Tools.h
@@ -1390,6 +1416,7 @@ SET(FreeCADGui_SRCS
     ${Gui_QRC_SRCS}
     ${Gui_UIC_HDRS}
     ${Command_SRCS}
+    ${StyleParameters_SRCS}
     ${Dialog_SRCS}
     ${Dialog_Customize_SRCS}
     ${Dialog_Settings_SRCS}
