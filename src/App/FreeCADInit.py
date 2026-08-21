@@ -776,6 +776,16 @@ class Scheme(IntEnum):
     MmMin = 6
     ImperialCivil = 7
     FemMilliMeterNewton = 8
+    MeterDecimal = 9
+
+    # Upstream's names for the very same schemas -- same values, so these are
+    # aliases, and code written against either spelling resolves. Upstream FEM's
+    # Elmer writer asks for Scheme.Internal, Scheme.MKS and Scheme.FEM.
+    Internal = 0
+    MKS = 1
+    Imperial = 2
+    Centimeter = 4
+    FEM = 8
 
 App.Units.Scheme = Scheme
 
