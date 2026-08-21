@@ -31,6 +31,7 @@ from os.path import join
 from os import remove
 
 import FreeCAD
+import FreeCADGui
 
 from femtest.app import support_utils as testtools
 from femtest.app.support_utils import fcc_print
@@ -97,6 +98,10 @@ class TestObjectOpen(unittest.TestCase):
         self.document.saveAs(file_path)
         FreeCAD.closeDocument(self.document.Name)
         self.document = FreeCAD.open(file_path)
+        # This fork loads progressively: the view providers of a document just
+        # opened are parked and built a slice at a time, so asking for one
+        # before the load has drained answers None. Build them all now.
+        FreeCADGui.getDocument(self.document.Name).flushLoad()
 
         # FeaturePythons view provider
         self.compare_feature_pythons_class_gui(self.document)
@@ -116,6 +121,8 @@ class TestObjectOpen(unittest.TestCase):
         fcc_print("load old document objects")
         FreeCAD.closeDocument(self.document.Name)  # close the empty document from setUp first
         self.document = FreeCAD.open(join(self.test_file_dir, "all_objects_de9b3fb438.FCStd"))
+        # see the comment in test_femobjects_open_head
+        FreeCADGui.getDocument(self.document.Name).flushLoad()
 
         # FeaturePythons view provider
         self.compare_feature_pythons_class_gui(self.document)
