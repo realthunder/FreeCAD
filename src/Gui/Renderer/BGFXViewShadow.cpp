@@ -381,12 +381,21 @@ bool BGFXView::submitShadowGroundPlane(const float bmin[3],
     const float planeW = -(nv[0] * pv[0] + nv[1] * pv[1] + nv[2] * pv[2]);
 
     // A one-sided ground shuts out a camera underneath it. On a plane
-    // that is a whole-pass decision rather than a per-fragment one:
-    // every ray from an eye below it hits the back face, so the cull
-    // that the quad spends a raster state on is settled here. The mode
-    // is still HANDLED -- returning false would draw the quad this
-    // path exists to avoid.
-    if (light.groundBackFaceCull && planeW <= 0.0f)
+    // that is a whole-pass decision rather than a per-fragment one,
+    // and which side the camera sees depends on the projection. Every
+    // perspective ray fans out from the eye, so the eye's side of the
+    // plane (planeW) decides. Orthographic rays all run along the view
+    // axis and the eye's own place on that axis is arbitrary -- the
+    // navigation code moves it freely, and an eye slid past the plane
+    // while the view still looks down on it made the shadow vanish on
+    // a boundary unrelated to the horizon -- so the plane's facing
+    // (its view-space normal against the view direction) decides, the
+    // same answer raster winding gives the quad path. The mode is
+    // still HANDLED -- returning false would draw the quad this path
+    // exists to avoid.
+    const bool persp = projMatrix && projMatrix[11] != 0.0f;
+    const bool backFacing = persp ? planeW <= 0.0f : nv[2] <= 0.0f;
+    if (light.groundBackFaceCull && backFacing)
         return true;
 
     static const bool dbgvis =
