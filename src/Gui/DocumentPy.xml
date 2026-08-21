@@ -95,6 +95,17 @@ modName : str
 Update the view representations of all objects.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="flushLoad">
+      <Documentation>
+        <UserDocu>flushLoad() -> None
+
+Finish building whatever view providers this document's load left parked.
+
+Opening a document builds its view providers progressively, a slice at a time
+between returns to the event loop, so right after FreeCAD.open() a script can
+find ViewObject still None. Call this to have them all, at once, now.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getObject">
       <Documentation>
         <UserDocu>getObject(objName) -> object or None
