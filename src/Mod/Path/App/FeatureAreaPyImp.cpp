@@ -29,7 +29,7 @@
 #include "FeatureAreaPy.h"
 #include "FeatureAreaPy.cpp"
 
-#include "AreaPy.h"
+#include <Mod/Area/App/AreaPy.h>
 
 
 using namespace Path;
@@ -46,7 +46,7 @@ PyObject* FeatureAreaPy::getArea(PyObject *args)
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
 
-    return new AreaPy(new Area(getFeatureAreaPtr()->getArea()));
+    return new AreaLib::AreaPy(new Area(getFeatureAreaPtr()->getArea()));
 }
 
 PyObject* FeatureAreaPy::setParams(PyObject *args, PyObject *keywds)

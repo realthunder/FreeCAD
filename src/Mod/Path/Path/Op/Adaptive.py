@@ -29,7 +29,7 @@ import FreeCAD
 import time
 import json
 import math
-import area
+import libarea as area
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
 if FreeCAD.GuiUp:

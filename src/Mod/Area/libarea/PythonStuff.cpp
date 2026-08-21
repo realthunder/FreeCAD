@@ -373,7 +373,7 @@ bp::list AdaptiveExecute(AdaptivePath::Adaptive2d& ada,const boost::python::list
   }
 
 
-BOOST_PYTHON_MODULE(area) {
+BOOST_PYTHON_MODULE(libarea) {
 	bp::class_<Point>("Point")
         .def(bp::init<double, double>())
         .def(bp::init<Point>())

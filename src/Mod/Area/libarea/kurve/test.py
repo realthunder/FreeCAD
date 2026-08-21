@@ -1,4 +1,4 @@
-import area
+import libarea as area
 
 p = area.Point(0, 0)
 

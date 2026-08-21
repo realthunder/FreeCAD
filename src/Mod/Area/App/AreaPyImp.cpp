@@ -188,7 +188,7 @@ static const PyMethodDef areaOverrides[] = {
 
 struct AreaPyModifier {
     AreaPyModifier() {
-        for(auto &method : Path::AreaPy::Methods) {
+        for(auto &method : AreaLib::AreaPy::Methods) {
             if(!method.ml_name) continue;
             for(auto &entry : areaOverrides) {
                 if(std::strcmp(method.ml_name,entry.ml_name)==0) {
@@ -207,7 +207,7 @@ struct AreaPyModifier {
 
 static AreaPyModifier mod;
 
-using namespace Path;
+using namespace AreaLib;
 
 // returns a string which represents the object e.g. when printed in python
 std::string AreaPy::representation() const

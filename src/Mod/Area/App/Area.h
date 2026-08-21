@@ -29,30 +29,31 @@
 #include <vector>
 
 #include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
+#include <gp_Pnt.hxx>
 
-#include <Mod/Path/PathGlobal.h>
+#include <Mod/Area/AreaGlobal.h>
 #include <Mod/Part/App/PartPyCXX.h>
 #include <Mod/Part/App/TopoShape.h>
 
 #include "AreaParams.h"
-#include "Path.h"
 
 
 class CArea;
 class CCurve;
 class Bnd_Box;
 
-namespace Path
+namespace AreaLib
 {
 
 /** Store libarea algorithm configuration */
-struct PathExport CAreaParams {
+struct AreaLibExport CAreaParams {
     PARAM_DECLARE(PARAM_FNAME, AREA_PARAMS_CAREA)
     CAreaParams();
 };
 
 /** Store all Area configurations */
-struct PathExport AreaParams: CAreaParams {
+struct AreaLibExport AreaParams: CAreaParams {
 
     PARAM_DECLARE(PARAM_FNAME, AREA_PARAMS_AREA)
 
@@ -72,7 +73,7 @@ struct PathExport AreaParams: CAreaParams {
     AreaParams();
 };
 
-struct PathExport AreaStaticParams: AreaParams {
+struct AreaLibExport AreaStaticParams: AreaParams {
     AreaStaticParams();
 };
 
@@ -81,7 +82,7 @@ struct PathExport AreaStaticParams: AreaParams {
  * It is kind of troublesome with the fact that libarea uses static variables to
  * config its algorithm. CAreaConfig makes it easy to safely customize libarea.
  */
-struct PathExport CAreaConfig {
+struct AreaLibExport CAreaConfig {
 
     /** For saving current libarea settings */
     PARAM_DECLARE(PARAM_FNAME, AREA_PARAMS_CAREA)
@@ -101,7 +102,7 @@ struct PathExport CAreaConfig {
 
 
 /** Base class for FreeCAD wrapping of libarea */
-class PathExport Area: public Base::BaseClass {
+class AreaLibExport Area: public Base::BaseClass {
 
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
@@ -360,19 +361,6 @@ public:
         bool has_start = false, gp_Pnt* pstart = nullptr, gp_Pnt* pend = nullptr, double* stepdown_hint = nullptr,
         short* arc_plane = nullptr, PARAM_ARGS_DEF(PARAM_FARG, AREA_PARAMS_SORT));
 
-    /** Convert a list of wires to gcode
-     *
-     * \arg \c path: output toolpath
-     * \arg \c shapes: input list of shapes
-     * \arg \c pstart: output start point,
-     * \arg \c pend: optional output containing the ending point of the returned
-     *
-     * See #AREA_PARAMS_PATH for other arguments
-     */
-    static void toPath(Toolpath& path, const std::list<TopoDS_Shape>& shapes,
-        const gp_Pnt* pstart = nullptr, gp_Pnt* pend = nullptr,
-        PARAM_ARGS_DEF(PARAM_FARG, AREA_PARAMS_PATH));
-
     static int project(TopoDS_Shape& out, const TopoDS_Shape& in,
         const AreaParams* params = nullptr,
         const TopoDS_Shape* work_plane = nullptr);
@@ -390,6 +378,24 @@ public:
     static void showShape(const TopoDS_Shape& shape, const char* name, const char* fmt = nullptr, ...);
 };
 
+/** Discretize an edge into points, to the given deflection.
+ *
+ * Shared with the CAM toolpath emitter, which walks wires the same way.
+ */
+AreaLibExport std::vector<gp_Pnt> discretize(const TopoDS_Edge& edge, double deflection);
+
+} //namespace AreaLibLib
+
+namespace Path
+{
+// The area engine used to live in this namespace, and the CAM module, its GUI
+// and a good deal of Python still spell it Path::Area. The engine moved out so
+// that BIM could use it without depending on CAM; the names stay put.
+using Area = ::AreaLib::Area;
+using AreaParams = ::AreaLib::AreaParams;
+using CAreaParams = ::AreaLib::CAreaParams;
+using AreaStaticParams = ::AreaLib::AreaStaticParams;
+using CAreaConfig = ::AreaLib::CAreaConfig;
 } //namespace Path
 
 #endif //PATH_AREA_H

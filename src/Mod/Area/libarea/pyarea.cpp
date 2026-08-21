@@ -400,7 +400,7 @@ void init_pyarea(py::module &m){
 		.def_readwrite("opType", &Adaptive2d::opType);
 }
 
-PYBIND11_MODULE(area, m){
+PYBIND11_MODULE(libarea, m){
     m.doc()= "not yet";
     init_pyarea(m);
 };

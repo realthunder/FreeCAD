@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "AreaToolpath.h"
 #ifndef _PreComp_
 # include <BRep_Tool.hxx>
 # include <BRepAdaptor_Curve.hxx>
@@ -51,7 +53,7 @@
 #include <Mod/Part/App/PartPyCXX.h>
 #include "CommandPy.h"
 
-#include "Area.h"
+#include <Mod/Area/App/Area.h>
 #include "PathPy.h"
 #include "FeaturePath.h"
 
@@ -340,7 +342,7 @@ namespace PathApp {
           try {
               gp_Pnt pend;
               std::unique_ptr<Path::Toolpath> path(new Path::Toolpath);
-              Path::Area::toPath(*path,shapes,start?&pstart:nullptr, &pend,
+              Path::areaToPath(*path,shapes,start?&pstart:nullptr, &pend,
                       PARAM_PY_FIELDS(PARAM_FARG,AREA_PARAMS_PATH));
               if (!Base::asBoolean(return_end))
                   return Py::asObject(new Path::PathPy(path.release()));

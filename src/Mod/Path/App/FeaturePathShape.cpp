@@ -22,6 +22,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "AreaToolpath.h"
 #ifndef _PreComp_
 # include <Standard_Version.hxx>
 # include <TopoDS_Shape.hxx>
@@ -69,7 +71,7 @@ App::DocumentObjectExecReturn *FeatureShape::execute()
         shapes.push_back(shape);
     }
 
-    Area::toPath(path,shapes,UseStartPoint.getValue()?&pstart:nullptr,nullptr,PARAM_PROP_ARGS(AREA_PARAMS_PATH));
+    areaToPath(path,shapes,UseStartPoint.getValue()?&pstart:nullptr,nullptr,PARAM_PROP_ARGS(AREA_PARAMS_PATH));
 
     Path.setValue(path);
     return App::DocumentObject::StdReturn;

@@ -12,7 +12,16 @@ using namespace ClipperLib;
 bool CArea::HolesLinked(){ return false; }
 
 //static const double PI = 3.1415926535897932;
-double CArea::m_clipper_scale = 10000.0;
+// Clipper works on integers, and this is what a model unit is multiplied by
+// before being truncated to one. At the old 10000 the lattice was 1e-4 of a
+// model unit, which is coarser than the 1e-5 precision an IFC file states for
+// itself -- two points an IFC model says are distinct could land on the same
+// lattice point. 1e7 leaves two orders of margin under that, and matches what
+// FreeCAD's own Area has always passed in (see AREA_PARAMS_CAREA's
+// clipper_scale), so driving libarea directly now behaves like driving it
+// through Area. Coordinates stay far inside Clipper's hiRange of 4.6e18: a
+// kilometre expressed in millimetres is 1e13 here.
+double CArea::m_clipper_scale = 1e7;
 
 class DoubleAreaPoint
 {
