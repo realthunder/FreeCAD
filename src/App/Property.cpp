@@ -297,16 +297,37 @@ void Property::setReadOnly(bool readOnly)
     this->setStatus(App::Property::ReadOnly, readOnly);
 }
 
+void Property::checkInputViolation()
+{
+    if (!testStatus(Input) || !DocumentObject::isExecuting())
+        return;
+    // Latch before throwing: AtomicPropertyChange's destructor swallows
+    // exceptions, so the throw alone would be lost for list-type properties.
+    DocumentObject::reportInputViolation(this);
+    FC_THROWM(Base::RuntimeError, "Input property " << getFullName()
+            << " changed during recompute. An input property must not be written by "
+               "execute(); see docs/InputProperties.md");
+}
+
 void Property::hasSetValue()
 {
+    // Whether the value is known to have actually changed. Only a proven change
+    // is an Input violation -- a touch that leaves the value alone does not
+    // break the claim that execute() will not change it.
+    bool changed = false;
     if (father && _old) {
         if(isSame(*_old)) {
             FC_TRACE("no change of " << getFullName());
             return;
         }
         _old.reset();
+        changed = true;
     }
+    // Touch before reporting, so the normal bookkeeping stays intact even
+    // though the write is about to be rejected.
     touch();
+    if (changed)
+        checkInputViolation();
 }
 
 void Property::aboutToSetValue()
@@ -314,7 +335,12 @@ void Property::aboutToSetValue()
     PropertyCleaner guard(this);
     if (father) {
         if (auto doc = father->getOwnerDocument()) {
-            if(!_old && DocumentParams::getOptimizeRecompute()
+            // An input property snapshots regardless of the recompute
+            // optimization preference whenever an execute() is running: the
+            // snapshot is what lets hasSetValue() tell a real change from a
+            // no-op write, and enforcement must not depend on a preference.
+            if(!_old && (DocumentParams::getOptimizeRecompute()
+                            || (testStatus(Input) && DocumentObject::isExecuting()))
                      && !doc->testStatus(Document::Restoring)
                      && !doc->isPerformingTransaction())
             {

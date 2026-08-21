@@ -4395,6 +4395,18 @@ int Document::_recomputeFeature(DocumentObject* Feat)
             } else {
                 Feat->_enforceRecompute = false;
                 returnCode = Feat->recompute();
+                // An input property changed inside execute(). Property::hasSetValue()
+                // threw, but AtomicPropertyChange's destructor swallows exceptions,
+                // so the latch is what makes this reliably fatal.
+                // See docs/InputProperties.md section 6.
+                auto violation = DocumentObject::takeInputViolation();
+                if (!violation.empty()) {
+                    std::string msg = "Input property " + violation
+                        + " changed during recompute";
+                    FC_ERR(msg << " in " << Feat->getFullName());
+                    d->addRecomputeLog(msg, Feat);
+                    return 1;
+                }
             }
 
             if(returnCode == DocumentObject::StdReturn)

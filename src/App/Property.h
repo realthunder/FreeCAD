@@ -90,6 +90,10 @@ public:
         Busy = 15, // internal use to avoid recursive signaling
         CopyOnChange = 16, // for Link to copy the linked object on change of the property with this flag
         UserEdit = 17, // cause property editor to create button for user defined editing
+        Input = 18, // an independent parameter: the owning object's execute()
+                    // never writes it. Enforced during recompute, so consumers
+                    // may read it without an ordering dependency.
+                    // See docs/InputProperties.md.
 
         // The following bits are corresponding to PropertyType set when the
         // property added. These types are meant to be static, and cannot be
@@ -419,6 +423,15 @@ protected:
 private:
     // Sync status with Property_Type
     void syncType(unsigned type);
+
+    /** Enforce the Input status: throw if this write happened inside execute()
+     *
+     * Only called once the value is known to have actually changed. Latches the
+     * violation on the owning object first, because the throw may be swallowed
+     * by AtomicPropertyChange's destructor.
+     * See docs/InputProperties.md section 6.
+     */
+    void checkInputViolation();
 
 private:
     PropertyContainer *father{nullptr};

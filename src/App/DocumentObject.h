@@ -710,6 +710,50 @@ public:
     /// Return a revision number that will change if the object changes.
     virtual int getRevision() const { return _revision; }
 
+    /** @name Input (independent) properties
+     *
+     * An input property is one the owning object's execute() never writes. It
+     * is a parameter, set by the user or by script, and consumers may read it
+     * without being ordered after this object. See docs/InputProperties.md.
+     */
+    //@{
+    /// Whether the given property is marked as an input property.
+    bool isInputProperty(const Property *prop) const;
+    /// Whether the named property exists and is marked as an input property.
+    bool isInputProperty(const std::string &propName) const;
+
+    /** True while any object is inside DocumentObject::recompute()
+     *
+     * That is, inside some execute(). This is the window in which an input
+     * property must not change value; Property::hasSetValue() consults it to
+     * enforce the claim. Deliberately not "this object is recomputing": a
+     * write from another object's execute() breaks the same guarantee.
+     */
+    static bool isExecuting();
+
+    /** Record that an input property was written during an execute()
+     *
+     * Called by Property::hasSetValue() before it throws. The latch is needed
+     * because AtomicPropertyChange's destructor must swallow exceptions, which
+     * would otherwise downgrade the throw to a console message for every
+     * list-type property. Document::_recomputeFeature() reads the latch after
+     * recompute() returns and turns it into a hard recompute error.
+     *
+     * The latch is per-thread rather than per-object: only one object is inside
+     * execute() at a time on a thread, and the latch lives only from the write
+     * until the enclosing _recomputeFeature() drains it, so it needs no storage
+     * on DocumentObject (which would change the layout of every feature class).
+     */
+    static void reportInputViolation(const Property *prop);
+
+    /** Take and clear the pending input-property violation
+     *
+     * Returns the full name of the offending property, or an empty string.
+     * Called by Document::_recomputeFeature() right after recompute() returns.
+     */
+    static std::string takeInputViolation();
+    //@}
+
 protected:
     /** Called when trying to skip recomputing this object
      * @return Return false to force recompute
