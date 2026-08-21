@@ -51,11 +51,6 @@ void ViewProviderFemPostBranchFilter::setupTaskDialog(TaskDlgPost* dlg)
     FemGui::ViewProviderFemPostObject::setupTaskDialog(dlg);
 }
 
-bool ViewProviderFemPostBranchFilter::acceptReorderingObjects() const
-{
-    return true;
-}
-
 bool ViewProviderFemPostBranchFilter::canDragObjectToTarget(
     App::DocumentObject*,
     App::DocumentObject* target

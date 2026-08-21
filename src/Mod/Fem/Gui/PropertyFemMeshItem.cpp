@@ -133,15 +133,13 @@ void PropertyFemMeshItem::setValue(const QVariant& value)
     Q_UNUSED(value);
 }
 
-QWidget* PropertyFemMeshItem::createEditor(
-    QWidget* parent,
-    const std::function<void()>& method,
-    FrameOption frameOption
-) const
+QWidget* PropertyFemMeshItem::createEditor(QWidget* parent,
+                                           const QObject* receiver,
+                                           const char* method) const
 {
     Q_UNUSED(parent);
+    Q_UNUSED(receiver);
     Q_UNUSED(method);
-    Q_UNUSED(frameOption);
     return nullptr;
 }
 

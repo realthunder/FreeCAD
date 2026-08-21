@@ -57,7 +57,6 @@ protected:
     virtual void setupTaskDialog(TaskDlgPost* dlg) override;
 
     // change default group drag/drop behaviour slightly
-    bool acceptReorderingObjects() const override;
     bool canDragObjectToTarget(App::DocumentObject* obj, App::DocumentObject* target) const override;
 
     // override, to not show/hide children as the parent is shown/hidden like normal groups

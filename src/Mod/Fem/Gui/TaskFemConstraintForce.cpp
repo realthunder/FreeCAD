@@ -30,7 +30,7 @@
 
 
 #include <App/DocumentObject.h>
-#include <App/Datums.h>
+#include <App/OriginFeature.h>
 #include <Gui/Command.h>
 #include <Gui/Selection/SelectionObject.h>
 #include <Gui/ViewProvider.h>
@@ -275,7 +275,7 @@ std::pair<App::DocumentObject*, std::string> TaskFemConstraintForce::getDirectio
 
     // Line or Plane
     const auto selObj = selectionElement.getObject();
-    if (selObj->isDerivedFrom<App::DatumElement>() || selObj->isDerivedFrom<Part::Datum>()) {
+    if (selObj->isDerivedFrom<App::OriginFeature>() || selObj->isDerivedFrom<Part::Datum>()) {
         link = std::make_pair(selObj, std::string());
     }
     // Sub-element of Part object

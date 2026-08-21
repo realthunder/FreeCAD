@@ -99,6 +99,11 @@ public:
 
     void compute();
 
+    bool isSame(const Data::ComplexGeoData&) const override
+    {
+        return false;
+    }
+
     // from base class
     unsigned int getMemSize() const override;
     void Save(Base::Writer& /*writer*/) const override;
@@ -112,7 +117,7 @@ public:
      *  List of different subelement types
      *  it is NOT a list of the subelements itself
      */
-    std::vector<const char*> getElementTypes() const override;
+    const std::vector<const char*>& getElementTypes() const override;
     unsigned long countSubElements(const char* Type) const override;
     /// get the subelement by type and number
     Data::Segment* getSubElement(const char* Type, unsigned long) const override;

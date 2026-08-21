@@ -57,7 +57,7 @@
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
 #include <App/FeaturePythonPyImp.h>
-#include <App/Datums.h>
+#include <App/OriginFeature.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/DatumFeature.h>
 #include <Mod/Part/App/Tools.h>
@@ -530,7 +530,7 @@ const Base::Vector3d Constraint::getDirection(const App::PropertyLinkSub& direct
         return Base::Vector3d(0, 0, 0);
     }
     Base::Rotation rot = obj->globalPlacement().getRotation();
-    if (obj->isDerivedFrom<App::DatumElement>() || obj->isDerivedFrom<Part::Datum>()) {
+    if (obj->isDerivedFrom<App::OriginFeature>() || obj->isDerivedFrom<Part::Datum>()) {
         return rot.multVec(Base::Vector3d(0, 0, 1));
     }
 

@@ -82,6 +82,11 @@ public:
 private:
     static void scaleDataObject(vtkDataObject*, double s);
 
+    bool isSame(const App::Property&) const override
+    {
+        return false;
+    }
+
 protected:
     void createDataObjectByExternalType(vtkSmartPointer<vtkDataObject> ex);
     vtkSmartPointer<vtkDataObject> m_dataObject;

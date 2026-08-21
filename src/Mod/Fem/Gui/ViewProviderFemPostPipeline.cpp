@@ -239,11 +239,6 @@ void ViewProviderFemPostPipeline::setupTaskDialog(TaskDlgPost* dlg)
 }
 
 
-bool ViewProviderFemPostPipeline::acceptReorderingObjects() const
-{
-    return true;
-}
-
 bool ViewProviderFemPostPipeline::canDragObjectToTarget(
     App::DocumentObject*,
     App::DocumentObject* target
