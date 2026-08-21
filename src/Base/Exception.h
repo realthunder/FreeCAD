@@ -205,6 +205,12 @@ public:
 
     /// Reports exception. It includes a mechanism to only report an exception once.
     virtual void ReportException() const;
+    /// Upstream's spelling of ReportException(). Not virtual on purpose: it
+    /// forwards, so an override of ReportException() still wins.
+    void reportException() const
+    {
+        ReportException();
+    }
 
     inline void setMessage(const char* sMessage);
     inline void setMessage(const std::string& sMessage);
