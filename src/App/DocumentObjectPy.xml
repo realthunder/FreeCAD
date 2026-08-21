@@ -301,6 +301,21 @@ found, 0 if invisible, or else 1
                           GeoFeature group as with getParentGeoFeatureGroup().</UserDocu>
             </Documentation>
         </Methode>
+        <Methode Name="getPropertyReferrers" Const="true">
+            <Documentation>
+                <UserDocu>
+getPropertyReferrers(name) -- the expression bindings that read a property
+
+Returns a list of (object, property name) pairs, one per binding in this
+document that references the named property of this object. The property name
+is empty for a binding whose target could not be resolved.
+
+This is the question the property editor asks before clearing the Input status
+of a property: see docs/InputProperties.md section 7. It is answered by a scan,
+so it is valid whatever the current status is.
+                </UserDocu>
+            </Documentation>
+        </Methode>
         <Methode Name="getPathsByOutList">
             <Documentation>
                 <UserDocu>Get all paths from this object to another object following the OutList.</UserDocu>

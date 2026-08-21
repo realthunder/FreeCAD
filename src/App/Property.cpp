@@ -402,7 +402,11 @@ void Property::setStatusValue(unsigned long status) {
     _StatusBits = StatusBits(status);
 
     if(father) {
-        static unsigned long _signalMask = (1<<ReadOnly) | (1<<Hidden);
+        // Input is in here for two reasons: the property editor marks an
+        // input property, and -- the part that is not cosmetic -- the
+        // ordering edges of everything that reads it depend on the bit.
+        // See docs/InputProperties.md section 7.
+        static unsigned long _signalMask = (1<<ReadOnly) | (1<<Hidden) | (1<<Input);
         if((status & _signalMask) != (oldStatus & _signalMask))
             father->onPropertyStatusChanged(*this,oldStatus);
     }

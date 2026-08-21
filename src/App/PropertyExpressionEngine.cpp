@@ -134,9 +134,14 @@ Property *PropertyExpressionEngine::Copy() const
 
 void PropertyExpressionEngine::hasSetValue()
 {
+    refreshDependencies();
+    PropertyExpressionContainer::hasSetValue();
+}
+
+void PropertyExpressionEngine::refreshDependencies()
+{
     App::DocumentObject *owner = dynamic_cast<App::DocumentObject*>(getContainer());
     if(!owner || !owner->isAttachedToDocument() || owner->isRestoring() || testFlag(LinkDetached)) {
-        PropertyExpressionContainer::hasSetValue();
         return;
     }
 
@@ -253,8 +258,6 @@ void PropertyExpressionEngine::hasSetValue()
             }
         }
     }
-
-    PropertyExpressionContainer::hasSetValue();
 }
 
 void PropertyExpressionEngine::updateHiddenReference(const std::string &key) {

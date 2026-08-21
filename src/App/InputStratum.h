@@ -116,6 +116,31 @@ public:
      */
     std::vector<PropRef> referrersOf(DocumentObject* obj, const std::string& propName) const;
 
+    /** The bindings in \a obj's own document that read \a propName on it.
+     *
+     * The standalone counterpart of referrersOf(): it scans the document
+     * rather than reading a propagation record, so it can answer for a
+     * property whose Input status is about to change -- which is what the
+     * property editor warning of section 7 needs, and what refreshReferrers()
+     * walks. Hidden references are included: a hiddenref() has no ordering
+     * edge to lose, but it still counts for the closure rule of section 4.
+     *
+     * Same document only, because that is the only place an ordering edge
+     * depends on the status at all -- see section 8.
+     */
+    static std::vector<PropRef> findReferrers(DocumentObject* obj, const std::string& propName);
+
+    /** Rebuild the dependencies of everything that reads \a propName on \a obj.
+     *
+     * The dependency set of a binding depends on the Input status of the
+     * properties it reads, and that status can change after the binding was
+     * set: marking a property input should drop the ordering edges its readers
+     * carry, and clearing it should put them back. Nothing recomputes those
+     * edges on its own, so section 7 has this called from
+     * DocumentObject::onPropertyStatusChanged().
+     */
+    static void refreshReferrers(DocumentObject* obj, const std::string& propName);
+
     /** Would binding \a expr to \a path close a cycle inside the stratum, or
      * break the closure rule of section 4?
      *

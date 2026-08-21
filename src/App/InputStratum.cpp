@@ -470,6 +470,50 @@ std::vector<InputStratum::PropRef> InputStratum::referrersOf(DocumentObject* obj
     return res;
 }
 
+std::vector<InputStratum::PropRef> InputStratum::findReferrers(DocumentObject* obj,
+                                                               const std::string& propName)
+{
+    std::vector<PropRef> res;
+    if (!obj || propName.empty() || !obj->getDocument()) {
+        return res;
+    }
+
+    // Same document only. A cross document reference keeps its ordinary edge
+    // whatever the status says -- section 8 -- so nothing over there can go
+    // stale when the status changes.
+    const PropRef target(obj, propName);
+    for (auto reader : obj->getDocument()->getObjects()) {
+        if (!reader || !reader->isAttachedToDocument()
+            || reader->ExpressionEngine.numExpressions() == 0) {
+            continue;
+        }
+        for (const auto& v : reader->ExpressionEngine.getExpressions()) {
+            if (!v.second) {
+                continue;
+            }
+            std::map<PropRef, bool> refs;
+            collectPropRefs(v.second, refs);
+            if (refs.find(target) != refs.end()) {
+                res.emplace_back(reader, propNameOf(v.first.getProperty()));
+            }
+        }
+    }
+    return res;
+}
+
+void InputStratum::refreshReferrers(DocumentObject* obj, const std::string& propName)
+{
+    std::set<DocumentObject*> readers;
+    for (const auto& ref : findReferrers(obj, propName)) {
+        readers.insert(ref.first);
+    }
+    for (auto reader : readers) {
+        // Recomputing the dependency set is all this needs; the values have
+        // not moved, so nothing is touched and no recompute is provoked.
+        reader->ExpressionEngine.refreshDependencies();
+    }
+}
+
 std::string InputStratum::checkBinding(DocumentObject* owner,
                                        const ObjectIdentifier& path,
                                        const Expression* expr)

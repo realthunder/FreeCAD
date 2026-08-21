@@ -48,6 +48,7 @@
 #include "DocumentObjectGroup.h"
 #include "GeoFeature.h"
 #include "GeoFeatureGroupExtension.h"
+#include "InputStratum.h"
 #include "Link.h"
 #include "ObjectIdentifier.h"
 #include "PropertyExpressionEngine.h"
@@ -1794,8 +1795,17 @@ bool DocumentObject::redirectSubName(std::ostringstream &, DocumentObject *, Doc
 }
 
 void DocumentObject::onPropertyStatusChanged(const Property &prop, unsigned long oldStatus) {
-    (void)oldStatus;
-    if(!Document::isAnyRestoring() && isAttachedToDocument() && getDocument())
+    if(!Document::isAnyRestoring() && isAttachedToDocument() && getDocument()) {
+        static const unsigned long inputBit = 1UL << Property::Input;
+        bool wasInput = (oldStatus & inputBit) != 0;
+        if(wasInput != prop.testStatus(Property::Input) && prop.getName()) {
+            // Marking a property input drops the ordering edge its readers
+            // carry, and clearing it puts the edge back. Neither happens on
+            // its own: the dependencies were computed when each binding was
+            // set. See docs/InputProperties.md section 7.
+            InputStratum::refreshReferrers(this, prop.getName());
+        }
         getDocument()->signalChangePropertyEditor(*getDocument(),prop);
+    }
 }
 

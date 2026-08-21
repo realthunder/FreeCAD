@@ -213,6 +213,20 @@ public:
                             const char *subname=nullptr,
                             bool all=false) const override;
 
+    /** Recompute the dependency set of every binding held here.
+     *
+     * What a binding depends on is not decided by the expression alone:
+     * a reference to a property marked Property::Input carries no ordering
+     * edge, so flipping that status makes the dependencies computed when
+     * the binding was set stale. Called from
+     * InputStratum::refreshReferrers() for exactly those engines. See
+     * docs/InputProperties.md section 7.
+     *
+     * This is the dependency half of hasSetValue() with none of the
+     * change notification: no value moved, so nothing is touched.
+     */
+    void refreshDependencies();
+
     /* Python interface */
     PyObject *getPyObject() override;
     void setPyObject(PyObject *) override;

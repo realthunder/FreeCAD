@@ -1,6 +1,6 @@
 # Input Properties -- Independent Parameters and the Input Recompute Stratum
 
-Status: design. Phases 0, 1 and 2 implemented; phase 3 pending.
+Status: implemented. Phases 0 through 3 are in the tree.
 
 This document defines `Property::Input`, a property status meaning "this property is
 never written by the owning object's `execute()`". It is the foundation for reading a
@@ -106,9 +106,19 @@ input value could change during the object phase and the stratification would no
 
 `dbind()` is excluded from the closure entirely; see section 9.
 
-The closure is checked when an expression is set on an input property, and when a
-property is marked input. It is *not* re-checked when a referenced property loses its
-input status, because that status is a runtime bit any script may clear; see section 7.
+The closure is checked when an expression is set on an input property:
+`PropertyExpressionEngine::validateExpression()` calls `InputStratum::checkBinding()` and
+the binding is rejected.
+
+It is *not* checked at the moment a property is marked input, nor re-checked when a
+referenced property loses its input status. Both are runtime status bits any script may
+flip, and neither flip is a good place to fail: the first would have to reject a status
+change on the strength of an expression the user is midway through arranging, and the
+second would have to reject it on the strength of someone else's. Instead the stratum
+build reports a broken closure as a warning naming both properties, on every recompute,
+for as long as it stands. The value is then still settled -- just without the ordering
+guarantee that makes it sound -- which is why the report is loud and repeated rather than
+one-shot.
 
 ## 5. The input stratum
 
@@ -216,8 +226,33 @@ Policy:
 
 This is safe because the recompute-time enforcement of section 6 is the real backstop.
 Misuse surfaces as a loud error at the next recompute, not as a quietly wrong model.
-Answering "does this property have referrers?" for the warning costs nothing extra: it is
-the same propagation record that step 4 of section 5 maintains.
+
+Answering "does this property have referrers?" is `InputStratum::findReferrers()`, exposed
+to Python as `DocumentObject.getPropertyReferrers()`. It scans the document's expression
+bindings rather than reading the propagation record of step 4 of section 5, because the
+question has to be answerable *before* the status changes -- and the record only covers
+references whose edge the current status has already dropped. Hidden references are
+included: a `hiddenref()` has no ordering edge to lose, but it still counts for the closure
+rule of section 4.
+
+A status change also rebuilds what the referring bindings depend on. This is not cosmetic
+and it is not optional: what a binding depends on is decided by the `Input` status of the
+properties it reads, and that was resolved once, when the expression was bound. Marking a
+property input has to drop the ordering edges its readers already carry, and clearing it
+has to put them back, or the natural order of work -- bind to a parameter, then declare it
+one -- would leave the cycle in place. `Property::setStatusValue()` therefore signals on
+the `Input` bit as it does on `ReadOnly` and `Hidden`, and
+`DocumentObject::onPropertyStatusChanged()` calls `InputStratum::refreshReferrers()`, which
+re-runs `PropertyExpressionEngine::refreshDependencies()` on each referring engine. That is
+the dependency half of `hasSetValue()` and none of the change notification: no value moved,
+so nothing is touched and no recompute is provoked.
+
+Only same-document referrers are walked. A cross-document reference keeps its ordinary edge
+whatever the status says -- section 8 -- so there is nothing over there to rebuild.
+
+The property editor marks an input property in bold and names the status in its tooltip,
+and offers `Input` in the status checkbox list of the context menu alongside `ReadOnly`,
+`Hidden` and the rest.
 
 ## 8. Propagation and staleness
 
@@ -331,15 +366,10 @@ upstream's signatures so their tests port with minimal edits.
 - **Phase 2 -- the stratum.** The input sub-DAG, the closure check, the in-stratum cycle
   check, the new recompute phase, the propagation record, and dropping the ordering edge
   for in-stratum references. Same-document only.
-- **Phase 3 -- surface.** Property editor indication and the status-change warning.
-  `InputStratum::referrersOf()` already answers the question the warning asks.
-
-One thing phase 2 does not do: changing a property's `Input` status does not rebuild the
-dependencies of the expressions that reference it. Marking a property input only relieves
-the cycle for bindings written afterwards, and clearing it leaves the missing edge missing
-until the referring binding is set again. The direction that matters is safe -- section 6
-enforcement still fires -- and the natural order of work is to mark the parameter and then
-bind to it, so this is left for phase 3 to fix with the propagation record in hand.
+- **Phase 3 -- surface.** Property editor indication, the status-change warning, the
+  referrer query behind it (`InputStratum::findReferrers()`, and
+  `DocumentObject.getPropertyReferrers()` for scripts), and the dependency rebuild a status
+  change now performs. Section 7 is the specification.
 
 ## 14. Relation to upstream FEP-0010 phase 1
 
