@@ -814,10 +814,14 @@ checked against that:
 |---|---|
 | GTAO / classic SSAO | **defect** -- chain skipped every sample; fixed by the sample index in `aoMapHash` |
 | planar reflection (`reflRender`) | **defect** -- mirror frozen; fixed by `reflSampleIndex` |
-| media intervals (`mediumRender`) | same defect by construction; fixed by `mediumSampleIndex`, **not measured** (see below) |
+| media intervals (`mediumRender`) | **defect** -- interval frozen; fixed by `mediumSampleIndex`, measured on glass (see below) |
 | cavity | no defect -- re-runs every frame, and `cavityActive` feeds `prepassActive` so its input is redrawn per sample |
 | volumetric shafts | no defect -- own history with a per-frame golden-ratio march phase, so it decorrelates and converges by itself |
 | shadow map | no defect -- keyed on the LIGHT matrices and the casters, and a subpixel camera jitter does not move either |
+| bulb shadow tiles (`bulbShadowHash`) | no defect -- the hash is caster set + light position + range + cube face, with no camera term, and the tile content is light-space. The camera-view-space-to-tile matrix `bulbShadowMtx` is rebuilt every frame from the current camera, so the jitter reaches the *sampling* while the cached content stays put, which is the correct split |
+| `ViewReflMedia` | not an independent cache -- gated on `reflRender`, so the mirror's fix covers it |
+| water planar reflection | not a separate route -- `waterReflActive` and `groundReflActive` share one `reflRender` gate and one `reflFbo`, differing only in which mirror matrix `configRefl` binds |
+| scene copy (`ViewWaterCopy`) / user-post copy | no defect -- neither is cached at all; both re-copy the live scene colour every frame they run |
 
 The reflection was the costly one. `scripts/refl_accum_probe.py`
 isolates what the pass contributes (render with it on and off,
@@ -839,8 +843,53 @@ Two things that measurement cannot say, and does not:
   reference. The probe reports the number and gates on the
   contribution instead.
 - The media intervals are fixed by the same key on the same reasoning,
-  but the probe scene has no water, glass, cloud or fire in it, so that
-  half is **reasoned, not measured**.
+  and that half is now measured too -- separately, because the
+  reflection probe's scene has no medium in it. See below.
+
+**The media half**, measured by `scripts/media_accum_probe.py` on a
+glass scene, since none of the other probe scenes carries a medium.
+What the interval feeds is worth stating, because it is why a frozen
+one shows: the front/back pair gives `thick`, and `thick` drives both
+the lateral refraction displacement and the per-channel Beer-Lambert
+absorption in `fs_fc_glass.sc`. So freezing it pins a stale thickness
+at every pixel, and it hurts exactly where thickness jumps -- body
+silhouettes, the walls of a through-hole, and the step where two glass
+bodies overlap. The scene is built to be full of all three, and the
+pass covers 22.18% of the frame.
+
+Against a build with the fix backed out to `mediumRender =
+!staticFrame`:
+
+| | frozen | per sample |
+|---|---|---|
+| contribution hf, accumulated/single | 0.862 | **0.807** |
+| accumulated frame, glass on | 2.0335 | **1.9450** |
+| gain over the same scene with glass off | +0.0115 | **+0.1000** |
+| contribution moved from the single frame | 0.01638 | 0.01986 |
+
+That pair yields two internal controls for free, and both hold: the
+glass-*off* leg is identical between the two builds to every digit
+(2.0001 single, 1.6312 accumulated), and so is the glass-on *single*
+frame (2.4139). The fix is an exact identity both where no medium
+exists and at sample 0 -- which is what keeps it golden-safe.
+
+Unlike the reflection, here the frame-level number *is* a fair
+discriminator, and by a wide margin: the interval targets are full
+view resolution rather than reduced, and the contribution is dominated
+by the refracted scene, which resamples honestly. Frozen, the glass
+leg gains only 0.0115 more from the accumulation than the same scene
+with glass switched off; re-rendered per sample it gains 0.1000, nine
+times as much. The probe gates on that first and on the hf ratio
+second. It deliberately does **not** gate on the reflection probe's
+third check (`td_a < 0.95 * td_s`): measured here that check passes in
+the broken build too, and a check that cannot fail on the defect it is
+meant to catch is worth reporting but not gating on.
+
+With that, every use of `staticFrame` in the renderer is accounted
+for: its definition, the accumulation gate itself, the two cache keys
+above (both fixed), and the volumetric shafts' history reset -- which
+is the one *correct* use of it as a "something changed, drop the
+history" predicate rather than as a cache key.
 
 One note for anyone extending this: the volumetric march phase is
 `frame % 4096`, a frame counter rather than a sample number, so the
