@@ -1046,6 +1046,45 @@ The lesson for the next module port: **compiling is about half of it.** Budget
 for running the module's own test suite, and expect the failures there to be
 about fork optimisations, not about API names.
 
+### 5.6 The units schemas become data (done 2026-08-21)
+
+Eight hand-written schema classes here, one class driven by a specification
+table upstream. Ported wholesale: `UnitsConvData.h`, `UnitsSchemasSpecs.h`,
+`UnitsSchemasData.h`, `UnitsSchemas.cpp/.h` and the `UnitsSchema` engine, and
+sixteen files deleted. Net about 975 lines gone.
+
+What made it safe to take: upstream's table covers **every one** of the 42 unit
+types this fork's schemas special-cased, and adds nine more -- and the rules
+themselves are a faithful transcription, checked row by row on Internal's
+length ladder. The schema numbering is identical, so the `UserSchema`
+preference and `Units.setSchema(int)` keep meaning what they meant.
+
+Kept on purpose: the `UnitSystem` enum, the whole `UnitsApi` public surface
+(none of its 47 calling files changed), and `UnitsApi::getDescription`'s own
+strings, which is why `Base/Translation.h` did not have to come too -- the
+schema data's descriptions are left untranslated and unused.
+
+ICU arrives with upstream's number formatting. It is free here in the sense
+that matters: Qt already links it on both build stacks and pulls it into the
+conda-forge package, so nothing new loads at run time. It is not free for a
+future WASM tier, where `Base` would need ICU built for emscripten -- worth
+knowing before that work starts.
+
+* **A new unit is now one table row**, which is the point. The three
+electromagnetic units added the same day had no display rule under the old
+schemas and fell through to the composed SI string; upstream's table already
+had them.
+
+**Verify a change like this by measurement.** 10,260 renderings -- 57 unit
+types x 10 schemas x 18 magnitudes -- dumped before and after and diffed.
+1,199 differed and every one was accounted for: 462 a unit now scaled that was
+not before, 439 the factor's last bits (upstream computes it from constants;
+the string is identical), 182 upstream dropping the space before a degree or
+inch mark, 116 number text -- of which 98 follow from psi being corrected from
+6.894744825494 to the true 6.894757293168361, 2 are ICU rounding a tie to even
+where Qt rounded away from zero, and the rest are the DMS and feet-inches
+special functions. Nothing lost, one long-standing numeric error fixed.
+
 ## 6. What this buys beyond FEM
 
 Stages 1-3 are worth doing even if the FEM port never happens. Every one of
