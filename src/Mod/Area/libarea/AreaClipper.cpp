@@ -390,7 +390,17 @@ static void SetFromResult( CArea& area, TPolyPolygon& pp, bool reverse=true, boo
     }
 }
 
-void CArea::Subtract(const CArea& a2)
+void CurveToClipperPath(const CCurve& curve, ClipperLib::Path& path, bool reverse)
+{
+	MakePoly(curve, path, reverse);
+}
+
+void CurveFromClipperPath(CCurve& curve, ClipperLib::Path& path, bool reverse, bool is_closed)
+{
+	SetFromResult(curve, path, reverse, is_closed);
+}
+
+void CArea::Subtract(const CArea& a2, PolyFillType subject_fill, PolyFillType clip_fill)
 {
 	Clipper c;
     c.StrictlySimple(CArea::m_clipper_simple);
@@ -400,7 +410,7 @@ void CArea::Subtract(const CArea& a2)
 	c.AddPaths(pp1, ptSubject, true);
 	c.AddPaths(pp2, ptClip, true);
 	TPolyPolygon solution;
-	c.Execute(ctDifference, solution);
+	c.Execute(ctDifference, solution, subject_fill, clip_fill);
 	SetFromResult(*this, solution);
 }
 
@@ -418,7 +428,7 @@ void CArea::Intersect(const CArea& a2)
 	SetFromResult(*this, solution);
 }
 
-void CArea::Union(const CArea& a2)
+void CArea::Union(const CArea& a2, PolyFillType subject_fill, PolyFillType clip_fill)
 {
 	Clipper c;
     c.StrictlySimple(CArea::m_clipper_simple);
@@ -428,7 +438,7 @@ void CArea::Union(const CArea& a2)
 	c.AddPaths(pp1, ptSubject, true);
 	c.AddPaths(pp2, ptClip, true);
 	TPolyPolygon solution;
-	c.Execute(ctUnion, solution);
+	c.Execute(ctUnion, solution, subject_fill, clip_fill);
 	SetFromResult(*this, solution);
 }
 

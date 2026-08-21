@@ -60,9 +60,20 @@ public:
 
 	void append(const CCurve& curve);
 	void move(CCurve&& curve);
-	void Subtract(const CArea& a2);
+	// The fill rule decides what "inside" means before the operation runs.
+	// Even-odd, the default, reads it off nesting alone, which is why a curve
+	// added the wrong way round does not matter -- but a single contour that
+	// crosses itself then has the overlap cancel, and a boundary that touches
+	// itself is a shape a CAD kernel does hand over. Non-zero counts winding
+	// instead, so it keeps that overlap, at the price of every contour having
+	// to be wound to say which side is solid.
+	void Subtract(const CArea& a2,
+	              ClipperLib::PolyFillType subject_fill = ClipperLib::pftEvenOdd,
+	              ClipperLib::PolyFillType clip_fill = ClipperLib::pftEvenOdd);
 	void Intersect(const CArea& a2);
-	void Union(const CArea& a2);
+	void Union(const CArea& a2,
+	           ClipperLib::PolyFillType subject_fill = ClipperLib::pftEvenOdd,
+	           ClipperLib::PolyFillType clip_fill = ClipperLib::pftEvenOdd);
 	static CArea UniteCurves(std::list<CCurve> &curves);
 	void Xor(const CArea& a2);
 	void Offset(double inwards_value);
@@ -119,6 +130,15 @@ enum eOverlapType
 	eSiblings,
 	eCrossing,
 };
+
+// Walking a curve onto the integer lattice, and recognising the arcs again in
+// what comes back, are the two halves of what libarea adds to Clipper. They
+// are exposed because the operations above hand back a flat list of contours,
+// which does not say which of them lies inside which: a caller that needs the
+// nesting can run Clipper itself for a PolyTree, which carries it, and still
+// have arcs survive the crossing.
+void CurveToClipperPath(const CCurve& curve, ClipperLib::Path& path, bool reverse = true);
+void CurveFromClipperPath(CCurve& curve, ClipperLib::Path& path, bool reverse = true, bool is_closed = true);
 
 eOverlapType GetOverlapType(const CCurve& c1, const CCurve& c2);
 eOverlapType GetOverlapType(const CArea& a1, const CArea& a2);
