@@ -241,6 +241,16 @@ public:
         set(ct.redF(), ct.greenF(), ct.blueF(), ct.alphaF());
     }
     /**
+     * creates FC Color from template type, e.g. Qt QColor
+     * (upstream's factory twin of setValue; StyleParameters uses it)
+     */
+    template <typename T>
+    static Color fromValue(const T& q) {
+        Color c;
+        c.setValue(q);
+        return c;
+    }
+    /**
      * returns a template type e.g. Qt color equivalent to FC color
      *
      */
