@@ -433,13 +433,13 @@ Point CCurve::NearestPoint(const CCurve& c, double *d)const
 	return best_point;
 }
 
-void CCurve::GetBox(CBox2D &box)
+void CCurve::GetBox(CBox2D &box)const
 {
 	Point prev_p = Point(0, 0);
 	bool prev_p_valid = false;
-	for(std::list<CVertex>::iterator It = m_vertices.begin(); It != m_vertices.end(); It++)
+	for(std::list<CVertex>::const_iterator It = m_vertices.begin(); It != m_vertices.end(); It++)
 	{
-		CVertex& vertex = *It;
+		const CVertex& vertex = *It;
 		if(prev_p_valid)
 		{
 			Span(prev_p, vertex).GetBox(box);

@@ -106,7 +106,7 @@ public:
 	Point NearestPoint(const Point& p)const;
 	Point NearestPoint(const CCurve& p, double *d = NULL)const;
 	Point NearestPoint(const Span& p, double *d = NULL)const;
-	void GetBox(CBox2D &box);
+	void GetBox(CBox2D &box)const;
 	void Reverse();
 	double GetArea()const;
 	bool IsClockwise()const{return GetArea()>0;}

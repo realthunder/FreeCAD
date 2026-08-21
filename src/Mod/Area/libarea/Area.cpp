@@ -148,11 +148,11 @@ void CArea::ChangeStartToNearest(const Point *point, double min_dist)
 }
 
 
-void CArea::GetBox(CBox2D &box)
+void CArea::GetBox(CBox2D &box)const
 {
-	for(std::list<CCurve>::iterator It = m_curves.begin(); It != m_curves.end(); It++)
+	for(std::list<CCurve>::const_iterator It = m_curves.begin(); It != m_curves.end(); It++)
 	{
-		CCurve& curve = *It;
+		const CCurve& curve = *It;
 		curve.GetBox(box);
 	}
 }
@@ -685,6 +685,16 @@ double CArea::GetArea(bool always_add)const
 
 eOverlapType GetOverlapType(const CCurve& c1, const CCurve& c2)
 {
+	// Deciding this the general way costs up to three clipping operations,
+	// and the caller that matters -- CAreaOrderer, which rebuilds nesting --
+	// asks it of every pair of curves it holds. Two curves whose bounding
+	// boxes are apart are siblings and nothing else, and that is the answer
+	// for almost every pair in an area with many separate holes.
+	CBox2D b1, b2;
+	c1.GetBox(b1);
+	c2.GetBox(b2);
+	if(!b1.Overlaps(b2, Point::tolerance))return eSiblings;
+
 	CArea a1;
 	a1.m_curves.push_back(c1);
 	CArea a2;

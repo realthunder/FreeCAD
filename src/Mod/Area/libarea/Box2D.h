@@ -82,6 +82,18 @@ public:
 			}
 		}
 	}
+	// Conservative: true whenever the two boxes might touch, so a caller may
+	// use it to skip work but never to conclude anything. An invalid box has
+	// had nothing put in it, and cannot be said to be away from anything.
+	bool Overlaps(const CBox2D& b, double tolerance = 0.0) const {
+		if(!m_valid || !b.m_valid)return true;
+		if(m_maxxy.x + tolerance < b.m_minxy.x)return false;
+		if(b.m_maxxy.x + tolerance < m_minxy.x)return false;
+		if(m_maxxy.y + tolerance < b.m_minxy.y)return false;
+		if(b.m_maxxy.y + tolerance < m_minxy.y)return false;
+		return true;
+	}
+
 	Point Centre() const {return (m_minxy + m_maxxy) * 0.5;}
 	double Width() const {if(m_valid)return m_maxxy.x - m_minxy.x; else return 0.0;}
 	double Height() const {if(m_valid)return m_maxxy.y - m_minxy.y; else return 0.0;}
