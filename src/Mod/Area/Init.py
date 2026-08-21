@@ -23,5 +23,7 @@
 # *                                                                         *
 # ***************************************************************************
 
-# The 2D area engine (libarea/Clipper). No workbench, no GUI -- it is a library
-# other modules import, which is the whole point of it not living inside Path.
+# FreeCAD's side of the 2D area engine: the Part-shape wrapper around the
+# libarea package, plus libarea's own Python module. No workbench, no GUI --
+# it is a library other modules import, which is the whole point of it not
+# living inside Path.

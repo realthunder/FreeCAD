@@ -4,10 +4,10 @@
 
 #include "PythonStuff.h"
 
-#include "Area.h"
-#include "Point.h"
+#include <libarea/Area.h>
+#include <libarea/Point.h>
 #include "AreaDxf.h"
-#include "kurve/geometry.h"
+#include <libarea/kurve/geometry.h>
 #include "Adaptive.hpp"
 
 #if defined (_POSIX_C_SOURCE)
@@ -42,7 +42,7 @@
 #include <boost/python/call.hpp>
 
 
-#include "clipper.hpp"
+#include <libarea/clipper.hpp>
 using namespace ClipperLib;
 
 

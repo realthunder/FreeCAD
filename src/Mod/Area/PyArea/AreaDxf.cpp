@@ -3,7 +3,7 @@
 // This program is released under the BSD license. See the file COPYING for details.
 
 #include "AreaDxf.h"
-#include "Area.h"
+#include <libarea/Area.h>
 
 AreaDxfRead::AreaDxfRead(CArea* area, const char* filepath):CDxfRead(filepath), m_area(area){}
 

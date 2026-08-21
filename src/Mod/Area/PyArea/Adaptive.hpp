@@ -20,7 +20,7 @@
 *                                                                         *
 ***************************************************************************/
 
-#include "clipper.hpp"
+#include <libarea/clipper.hpp>
 #include <vector>
 #include <list>
 #include <time.h>

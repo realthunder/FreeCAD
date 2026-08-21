@@ -7,10 +7,10 @@
     #define strdup _strdup
 #endif
 
-#include "Area.h"
-#include "Point.h"
+#include <libarea/Area.h>
+#include <libarea/Point.h>
 #include "AreaDxf.h"
-#include "kurve/geometry.h"
+#include <libarea/kurve/geometry.h>
 #include "Adaptive.hpp"
 
 #include <pybind11/pybind11.h>

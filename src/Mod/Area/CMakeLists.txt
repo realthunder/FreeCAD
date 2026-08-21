@@ -1,5 +1,10 @@
+# libarea used to be vendored here and built as part of this module. It is its
+# own repository and its own package now, so that IfcOpenShell and FreeCAD link
+# one library rather than each carrying a fork of it.
+find_package(libarea CONFIG REQUIRED)
+
 add_subdirectory(App)
-add_subdirectory(libarea)
+add_subdirectory(PyArea)
 
 set(Area_Scripts
     Init.py

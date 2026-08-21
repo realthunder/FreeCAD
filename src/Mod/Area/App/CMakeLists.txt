@@ -21,7 +21,7 @@ link_directories(${OCC_LIBRARY_DIR})
 
 set(Area_LIBS
     Part
-    area-native
+    libarea::area
     FreeCADApp
 )
 
