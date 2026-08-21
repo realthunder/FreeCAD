@@ -261,7 +261,7 @@ std::string Quantity::getUserString(double& factor, std::string& unitString) con
 std::string
 Quantity::getUserString(UnitsSchema* schema, double& factor, std::string& unitString) const
 {
-    return schema->schemaTranslate(*this, factor, unitString);
+    return schema->translate(*this, factor, unitString);
 }
 
 std::string Quantity::getSafeUserString() const

@@ -24,13 +24,16 @@
 #ifndef BASE_UNITSSCHEMA_H
 #define BASE_UNITSSCHEMA_H
 
+#include <memory>
 #include <string>
 
-#include <Base/Quantity.h>
+#include <FCGlobal.h>
 
+#include "UnitsSchemasSpecs.h"
 
 namespace Base
 {
+class Quantity;
 
 /** Units systems */
 enum class UnitSystem
@@ -48,58 +51,38 @@ enum class UnitSystem
     MeterDecimal = 9,        /** Lengths in metres always */
     NumUnitSystemTypes       // must be the last item!
 };
-
-
-/** The UnitSchema class
- * The subclasses of this class define the stuff for a
- * certain units schema.
+/** One schema, built from its specification.
+ *
+ * Every schema is the same class now; what makes one differ from another is
+ * the data it is constructed from -- see UnitsSchemasData.h. The hand-written
+ * subclass per schema this fork used to carry is gone.
  */
-class UnitsSchema
+class BaseExport UnitsSchema
 {
 public:
-    UnitsSchema() = default;
-    UnitsSchema(const UnitsSchema&) = default;
-    UnitsSchema(UnitsSchema&&) = default;
-    UnitsSchema& operator=(const UnitsSchema&) = default;
-    UnitsSchema& operator=(UnitsSchema&&) = default;
-    virtual ~UnitsSchema() = default;
-    /** Gets called if this schema gets activated.
-     * Here it's theoretically possible that you can change the static factors
-     * for certain units (e.g. mi = 1,8km instead of mi=1.6km).
-     */
-    virtual void setSchemaUnits()
-    {}
-    /// If you use setSchemaUnits() you also have to impment this method to undo your changes!
-    virtual void resetSchemaUnits()
-    {}
+    explicit UnitsSchema(UnitsSchemaSpec spec);
+    UnitsSchema() = delete;
 
-    /// This method translates the quantity in a string as the user may expect it.
-    virtual std::string
-    schemaTranslate(const Base::Quantity& quant, double& factor, std::string& unitString) = 0;
+    [[nodiscard]] bool isMultiUnitLength() const;
+    [[nodiscard]] bool isMultiUnitAngle() const;
+    [[nodiscard]] std::string getBasicLengthUnit() const;
+    [[nodiscard]] std::string getName() const;
+    [[nodiscard]] std::string getDescription() const;
+    [[nodiscard]] int getNum() const;
 
-    std::string
-    toLocale(const Base::Quantity& quant, double factor, const std::string& unitString) const;
+    std::string translate(const Quantity& quant) const;
+    std::string translate(const Quantity& quant, double& factor, std::string& unitString) const;
 
-    // return true if this schema uses multiple units for length (ex. Ft/In)
-    virtual bool isMultiUnitLength() const
-    {
-        return false;
-    }
+private:
+    [[nodiscard]] static std::string toLocale(
+        const Quantity& quant,
+        double factor,
+        const std::string& unitString
+    );
 
-    // return true if this schema uses multiple units for angles (ex. DMS)
-    virtual bool isMultiUnitAngle() const
-    {
-        return false;
-    }
-
-    // return the basic length unit for this schema
-    virtual std::string getBasicLengthUnit() const
-    {
-        return {"mm"};
-    }
-
-    const std::string& getAngleUnit() const;
+    UnitsSchemaSpec spec;
 };
+
 
 
 }  // namespace Base

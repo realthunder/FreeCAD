@@ -76,6 +76,16 @@ struct BaseExport QuantityFormat
         defaultDenominator = denom;
     }
 
+    inline int getPrecision() const
+    {
+        return precision;
+    }
+
+    inline void setPrecision(int prec)
+    {
+        precision = prec;
+    }
+
     inline int getDenominator() const
     {
         return denominator;

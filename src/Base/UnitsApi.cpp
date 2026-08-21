@@ -33,13 +33,8 @@
 #include "Exception.h"
 
 #include "UnitsApi.h"
-#include "UnitsSchemaCentimeters.h"
-#include "UnitsSchemaInternal.h"
-#include "UnitsSchemaImperial1.h"
-#include "UnitsSchemaMKS.h"
-#include "UnitsSchemaMmMin.h"
-#include "UnitsSchemaFemMilliMeterNewton.h"
-#include "UnitsSchemaMeterDecimal.h"
+#include "UnitsSchemas.h"
+#include "UnitsSchemasData.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -58,7 +53,17 @@ using namespace Base;
 
 // === static attributes  ================================================
 
-UnitsSchemaPtr UnitsApi::UserPrefSystem(new UnitsSchemaInternal());
+namespace
+{
+/// Every schema this build knows, read from the specification data.
+Base::UnitsSchemas& schemas()
+{
+    static Base::UnitsSchemas theSchemas {Base::UnitsSchemasData::unitSchemasDataPack};
+    return theSchemas;
+}
+}  // namespace
+
+UnitsSchemaPtr UnitsApi::UserPrefSystem = UnitsApi::createSchema(UnitSystem::SI1);
 UnitSystem UnitsApi::currentSystem = UnitSystem::SI1;
 
 int UnitsApi::UserPrefDecimals = 2;
@@ -138,51 +143,32 @@ std::string UnitsApi::getName(UnitSystem system)
 
 UnitsSchemaPtr UnitsApi::createSchema(UnitSystem system)
 {
-    switch (system) {
-        case UnitSystem::SI1:
-            return std::make_unique<UnitsSchemaInternal>();
-        case UnitSystem::SI2:
-            return std::make_unique<UnitsSchemaMKS>();
-        case UnitSystem::Imperial1:
-            return std::make_unique<UnitsSchemaImperial1>();
-        case UnitSystem::ImperialDecimal:
-            return std::make_unique<UnitsSchemaImperialDecimal>();
-        case UnitSystem::Centimeters:
-            return std::make_unique<UnitsSchemaCentimeters>();
-        case UnitSystem::ImperialBuilding:
-            return std::make_unique<UnitsSchemaImperialBuilding>();
-        case UnitSystem::MmMin:
-            return std::make_unique<UnitsSchemaMmMin>();
-        case UnitSystem::ImperialCivil:
-            return std::make_unique<UnitsSchemaImperialCivil>();
-        case UnitSystem::FemMilliMeterNewton:
-            return std::make_unique<UnitsSchemaFemMilliMeterNewton>();
-        case UnitSystem::MeterDecimal:
-            return std::make_unique<UnitsSchemaMeterDecimal>();
-        default:
-            break;
+    // The schemas are numbered by this enum, and each specification carries the
+    // same number, so the enum selects one without a table of its own.
+    const auto num = static_cast<std::size_t>(system);
+    if (num >= static_cast<std::size_t>(UnitSystem::NumUnitSystemTypes)) {
+        return nullptr;
     }
 
-    return nullptr;
+    try {
+        return std::make_unique<UnitsSchema>(schemas().spec(num));
+    }
+    catch (const Base::Exception&) {
+        // no specification carries this number
+        return nullptr;
+    }
 }
 
 void UnitsApi::setSchema(UnitSystem system)
 {
-    if (UserPrefSystem) {
-        UserPrefSystem->resetSchemaUnits();  // for schemas changed the Quantity constants
-    }
-
     UserPrefSystem = createSchema(system);
     currentSystem = system;
 
     // for wrong value fall back to standard schema
     if (!UserPrefSystem) {
-        UserPrefSystem = std::make_unique<UnitsSchemaInternal>();
+        UserPrefSystem = createSchema(UnitSystem::SI1);
         currentSystem = UnitSystem::SI1;
     }
-
-    UserPrefSystem->setSchemaUnits();  // if necessary a unit schema can change the constants in
-                                       // Quantity (e.g. mi=1.8km rather then 1.6km).
 }
 
 std::string UnitsApi::toString(const Base::Quantity& quantity, const QuantityFormat& format)
@@ -227,7 +213,7 @@ std::string UnitsApi::getBasicLengthUnit()
 std::string
 UnitsApi::schemaTranslate(const Base::Quantity& quant, double& factor, std::string& unitString)
 {
-    return UserPrefSystem->schemaTranslate(quant, factor, unitString);
+    return UserPrefSystem->translate(quant, factor, unitString);
 }
 
 double UnitsApi::toDouble(PyObject* args, const Base::Unit& u)
