@@ -34,6 +34,7 @@
 #include <Base/Writer.h>
 #include <CXX/Objects.hxx>
 
+#include "InputStratum.h"
 #include "PropertyExpressionEngine.h"
 #include "PropertyUnits.h"
 #include "ExpressionParser.h"
@@ -141,31 +142,61 @@ void PropertyExpressionEngine::hasSetValue()
 
     std::map<App::DocumentObject*,bool> deps;
     std::vector<std::string> labels;
+    // Same-document objects every one of whose referenced properties is an
+    // input property. Nothing here writes those during a recompute, so the
+    // ordering edge is spurious and is dropped -- that is what lets a child
+    // read its container's parameters. See docs/InputProperties.md section 5.
+    std::map<App::DocumentObject*,bool> inputOnly;
     unregisterElementReference();
     UpdateElementReferenceExpressionVisitor<PropertyExpressionEngine> v(*this);
     for(auto &e : expressions) {
         auto expr = e.second.expression;
         if(expr) {
-            expr->getDepObjects(deps,&labels);
+            std::map<InputStratum::PropRef,bool> refs;
+            InputStratum::collectDeps(expr.get(), deps, &labels, &refs);
+            for(auto &r : refs) {
+                // A hidden reference is already edge free; it neither makes an
+                // object input-only nor stops it from being so.
+                if(r.second)
+                    continue;
+                bool isInput = InputStratum::isInputRef(owner, r.first);
+                auto res = inputOnly.insert(std::make_pair(r.first.first, isInput));
+                if(!isInput)
+                    res.first->second = false;
+            }
             if(!restoring)
                 expr->visit(v);
         }
     }
     registerLabelReferences(std::move(labels));
 
+    // check if there is any hidden references. Asked before the input-only
+    // deps are folded in below, because those must not gain the eager
+    // signal-driven rebinding a hiddenref() gets -- an input property is
+    // settled by the stratum, in order, and nothing else may move it.
+    bool hasHidden = false;
+    for(auto &v : deps) {
+        if(v.second) {
+            hasHidden = true;
+            break;
+        }
+    }
+
+    // The hidden flag is what updateDeps() reads to decide against a back
+    // link, which is exactly what an input-only dependency wants.
+    for(auto &dep : deps) {
+        if(dep.second)
+            continue;
+        auto it = inputOnly.find(dep.first);
+        if(it != inputOnly.end() && it->second)
+            dep.second = true;
+    }
+
     updateDeps(std::move(deps));
 
     if(pimpl) {
         pimpl->conns.clear();
         pimpl->propMap.clear();
-    }
-    // check if there is any hidden references
-    bool hasHidden = false;
-    for(auto &v : _Deps) {
-        if(v.second) {
-            hasHidden = true;
-            break;
-        }
     }
     if(hasHidden) {
         if(!pimpl) {
@@ -621,6 +652,12 @@ void PropertyExpressionEngine::buildGraph(const ExpressionMap & exprs,
             auto prop = expr.first.getProperty();
             if(!prop)
                 THROWM(Base::RuntimeError, "Path does not resolve to a property.")
+            // The input stratum settles input bindings before the object phase
+            // begins, and the whole point is that nothing may move them again
+            // while it runs. Restore is the exception: it happens before any
+            // recompute, so there is no stratum pass to defer to.
+            if(prop->testStatus(App::Property::Input) && option!=ExecuteOnRestore)
+                continue;
             bool is_output = prop->testStatus(App::Property::Output)||(prop->getType()&App::Prop_Output);
             if((is_output && option==ExecuteNonOutput) || (!is_output && option==ExecuteOutput))
                 continue;
@@ -741,48 +778,80 @@ DocumentObjectExecReturn *App::PropertyExpressionEngine::execute(ExecuteOption o
 #endif
 
     /* Evaluate the expressions, and update properties */
-    for (;it != evaluationOrder.end();++it) {
+    for (;it != evaluationOrder.end();++it)
+        evaluateBinding(*it, expressions[*it].expression, touched);
 
-        // Get property to update
-        Property * prop = it->getProperty();
-
-        if (!prop)
-            THROWM(Base::RuntimeError, "Path does not resolve to a property.")
-
-        DocumentObject* parent = freecad_dynamic_cast<DocumentObject>(prop->getContainer());
-
-        /* Make sure property belongs to the same container as this PropertyExpressionEngine */
-        if (parent != docObj)
-            THROWM(Base::RuntimeError, "Invalid property owner.")
-
-        /* Set value of property */
-        App::any value;
-        try {
-            // Evaluate expression
-            std::shared_ptr<App::Expression> expression = expressions[*it].expression;
-            if (expression) {
-                value = expression->getValueAsAny(Expression::OptionCallFrame);
-                prop->setPathValue(*it, value);
-                if(touched && !*touched)
-                    *touched = prop->isTouched();
-            }
-        }catch(Base::Exception &e) {
-            std::ostringstream ss;
-            ss << e.what() << "\nin binding '" << it->toString() << "'";
-            e.setMessage(ss.str());
-            throw;
-        }catch(std::bad_cast &e) {
-            std::ostringstream ss;
-            ss << "Invalid type '" << value.type().name() << "'";
-            ss << "\nin binding '" << it->toString() << "'";
-            THROWM(Base::TypeError, ss.str().c_str())
-        }catch(std::exception &e) {
-            std::ostringstream ss;
-            ss << e.what() << "\nin binding '" << it->toString() << "'";
-            THROWM(Base::RuntimeError, ss.str().c_str())
-        }
-    }
     return DocumentObject::StdReturn;
+}
+
+DocumentObjectExecReturn *App::PropertyExpressionEngine::executeBinding(
+        const ObjectIdentifier &path, bool *touched)
+{
+    if (running)
+        return DocumentObject::StdReturn;
+
+    auto it = expressions.find(path);
+    if (it == expressions.end() || !it->second.expression)
+        return DocumentObject::StdReturn;
+
+    class resetter {
+    public:
+        explicit resetter(bool & b) : _b(b) { _b = true; }
+        ~resetter() { _b = false; }
+
+    private:
+        bool & _b;
+    };
+
+    resetter r(running);
+    evaluateBinding(path, it->second.expression, touched);
+    return DocumentObject::StdReturn;
+}
+
+void PropertyExpressionEngine::evaluateBinding(const ObjectIdentifier &path,
+                                               const std::shared_ptr<Expression> &expression,
+                                               bool *touched)
+{
+    DocumentObject * docObj = freecad_dynamic_cast<DocumentObject>(getContainer());
+
+    // Get property to update
+    Property * prop = path.getProperty();
+
+    if (!prop)
+        THROWM(Base::RuntimeError, "Path does not resolve to a property.")
+
+    DocumentObject* parent = freecad_dynamic_cast<DocumentObject>(prop->getContainer());
+
+    /* Make sure property belongs to the same container as this PropertyExpressionEngine */
+    if (parent != docObj)
+        THROWM(Base::RuntimeError, "Invalid property owner.")
+
+    if (!expression)
+        return;
+
+    /* Set value of property */
+    App::any value;
+    try {
+        // Evaluate expression
+        value = expression->getValueAsAny(Expression::OptionCallFrame);
+        prop->setPathValue(path, value);
+        if(touched && !*touched)
+            *touched = prop->isTouched();
+    }catch(Base::Exception &e) {
+        std::ostringstream ss;
+        ss << e.what() << "\nin binding '" << path.toString() << "'";
+        e.setMessage(ss.str());
+        throw;
+    }catch(std::bad_cast &e) {
+        std::ostringstream ss;
+        ss << "Invalid type '" << value.type().name() << "'";
+        ss << "\nin binding '" << path.toString() << "'";
+        THROWM(Base::TypeError, ss.str().c_str())
+    }catch(std::exception &e) {
+        std::ostringstream ss;
+        ss << e.what() << "\nin binding '" << path.toString() << "'";
+        THROWM(Base::RuntimeError, ss.str().c_str())
+    }
 }
 
 /**
@@ -848,14 +917,44 @@ std::string PropertyExpressionEngine::validateExpression(const ObjectIdentifier 
     DocumentObject * pathDocObj = usePath.getDocumentObject();
     assert(pathDocObj);
 
+    // The closure rule and the cycle check inside the input stratum. Both must
+    // run before the object level check below: a reference this one accepts is
+    // a reference whose ordering edge is about to disappear, and the inList
+    // walk cannot see what is no longer there.
+    error = InputStratum::checkBinding(pathDocObj, usePath, expr.get());
+    if (!error.empty())
+        return error;
+
     auto inList = pathDocObj->getInListEx(true);
+    std::map<InputStratum::PropRef, bool> refs;
+    bool refsCollected = false;
     for(auto &v : expr->getDepObjects()) {
         auto docObj = v.first;
-        if(!v.second && inList.count(docObj)) {
-            std::stringstream ss;
-            ss << "cyclic reference to " << docObj->getFullName();
-            return ss.str();
+        if(v.second || !inList.count(docObj))
+            continue;
+        // An input-only reference creates no back link, so it cannot close the
+        // loop the inList reports. Rejecting it here is what used to make a
+        // container's parameter unreadable from its own children. Resolving
+        // the identifiers costs the GIL, so it waits until there is something
+        // to reject.
+        if(!refsCollected) {
+            InputStratum::collectPropRefs(expr.get(), refs);
+            refsCollected = true;
         }
+        bool edgeFree = true;
+        for(auto &r : refs) {
+            if(r.first.first != docObj || r.second)
+                continue;
+            if(!InputStratum::isInputRef(pathDocObj, r.first)) {
+                edgeFree = false;
+                break;
+            }
+        }
+        if(edgeFree)
+            continue;
+        std::stringstream ss;
+        ss << "cyclic reference to " << docObj->getFullName();
+        return ss.str();
     }
 
     // Check for internal document object dependencies

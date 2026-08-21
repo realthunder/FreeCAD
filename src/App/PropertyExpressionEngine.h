@@ -146,8 +146,22 @@ public:
     /** Evaluate the expressions
      *
      * @param option: execution option, see ExecuteOption.
+     *
+     * Bindings whose target property is marked Property::Input are skipped by
+     * every option except ExecuteAll and ExecuteOnRestore: the input stratum
+     * owns those, and it has already settled them before the object phase
+     * starts. See docs/InputProperties.md section 5.
      */
     DocumentObjectExecReturn * execute(ExecuteOption option=ExecuteAll, bool *touched=nullptr);
+
+    /** Evaluate one registered binding.
+     *
+     * The input stratum drives its nodes one at a time, in a document wide
+     * order this engine has no way to know, so it needs a way in below
+     * execute(). Does nothing if \a path carries no binding.
+     */
+    DocumentObjectExecReturn * executeBinding(const App::ObjectIdentifier &path,
+                                              bool *touched=nullptr);
 
     void getPathsToDocumentObject(DocumentObject*, std::vector<App::ObjectIdentifier> & paths) const;
 
@@ -217,6 +231,10 @@ private:
     using ExpressionMap = std::map<const App::ObjectIdentifier, ExpressionInfo>;
     #endif
     std::vector<App::ObjectIdentifier> computeEvaluationOrder(ExecuteOption option);
+
+    void evaluateBinding(const App::ObjectIdentifier &path,
+                         const std::shared_ptr<App::Expression> &expression,
+                         bool *touched);
 
     void buildGraphStructures(const App::ObjectIdentifier &path,
                               const std::shared_ptr<Expression> expression, boost::unordered_map<App::ObjectIdentifier, int> &nodes,

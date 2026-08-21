@@ -1,6 +1,6 @@
 # Input Properties -- Independent Parameters and the Input Recompute Stratum
 
-Status: design. Phase 0 and 1 implemented; phase 2 pending.
+Status: design. Phases 0, 1 and 2 implemented; phase 3 pending.
 
 This document defines `Property::Input`, a property status meaning "this property is
 never written by the owning object's `execute()`". It is the foundation for reading a
@@ -138,6 +138,17 @@ recompute.
 
 Evaluation is restricted to the dirty subset. A large parameter set does not cost a full
 re-evaluation on every recompute.
+
+As implemented, the phase lives in `App::InputStratum` (`src/App/InputStratum.{h,cpp}`)
+and is driven from `Document::recompute()`. Both structures are built fresh on every
+recompute rather than maintained incrementally: the build costs one map-emptiness test
+per object and touches nothing else unless the object carries expressions, which is
+cheap next to `getDependencyList()` and leaves nothing to invalidate. Only evaluation,
+which runs the expression interpreter, is restricted to the dirty subset. A node is
+dirty when its owner is up for recompute, when its own target property carries a pending
+change, or when any input property it reads does -- the middle case being what makes a
+restore re-settle the stratum, since before this phase existed those bindings ran from
+`_recomputeFeature()` on every pass over the object.
 
 ### 5.1 Cycle detection inside the stratum
 
@@ -321,6 +332,14 @@ upstream's signatures so their tests port with minimal edits.
   check, the new recompute phase, the propagation record, and dropping the ordering edge
   for in-stratum references. Same-document only.
 - **Phase 3 -- surface.** Property editor indication and the status-change warning.
+  `InputStratum::referrersOf()` already answers the question the warning asks.
+
+One thing phase 2 does not do: changing a property's `Input` status does not rebuild the
+dependencies of the expressions that reference it. Marking a property input only relieves
+the cycle for bindings written afterwards, and clearing it leaves the missing edge missing
+until the referring binding is set again. The direction that matters is safe -- section 6
+enforcement still fires -- and the natural order of work is to mark the parameter and then
+bind to it, so this is left for phase 3 to fix with the propagation record in hand.
 
 ## 14. Relation to upstream FEP-0010 phase 1
 

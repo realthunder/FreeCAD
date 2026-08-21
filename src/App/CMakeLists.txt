@@ -172,6 +172,7 @@ SET(Document_CPP_SRCS
     GeoFeature.cpp
     GeoFeatureGroupExtensionPyImp.cpp
     GeoFeatureGroupExtension.cpp
+    InputStratum.cpp
     SuppressibleExtensionPyImp.cpp
     SuppressibleExtension.cpp
     DocumentSettingsPyImp.cpp
@@ -231,6 +232,7 @@ SET(Document_HPP_SRCS
     FeatureTest.h
     GeoFeature.h
     GeoFeatureGroupExtension.h
+    InputStratum.h
     SuppressibleExtension.h
     DocumentSettings.h
     ImagePlane.h

@@ -145,3 +145,134 @@ class InputPropertyCases(unittest.TestCase):
         self.assertIn("Input", restored.getPropertyStatus("Length"))
         self.assertNotIn("Input", restored.getPropertyStatus("Plain"))
         self.assertIn("ReadOnly", restored.getPropertyStatus("Plain"))
+
+
+class InputStratumCases(unittest.TestCase):
+    """Phase 2: the input recompute stratum.
+
+    An input property needs no ordering edge back from its readers, so a
+    container's own children can read its parameters. Section 5 of
+    docs/InputProperties.md is the specification.
+    """
+
+    def setUp(self):
+        self.Doc = FreeCAD.newDocument("InputStratumTest")
+
+    def tearDown(self):
+        FreeCAD.closeDocument("InputStratumTest")
+
+    def makeParam(self, name, value=10, markInput=True):
+        obj = self.Doc.addObject("App::FeaturePython", name)
+        obj.addProperty("App::PropertyFloat", "Length", "Params")
+        obj.Length = value
+        if markInput:
+            obj.setPropertyStatus("Length", ["Input"])
+        return obj
+
+    def makeContainer(self, name, child, value=10, markInput=True):
+        """An object that links its child, so a binding back is a cycle."""
+        cont = self.makeParam(name, value, markInput)
+        cont.addProperty("App::PropertyLink", "Child", "Params")
+        cont.Child = child
+        return cont
+
+    def bindError(self, obj, prop, expr):
+        try:
+            obj.setExpression(prop, expr)
+        except Exception as exc:
+            # The message is what the test asserts on, so hand it back whole.
+            return str(exc)
+        return ""
+
+    def testContainerParameterIsReadableFromItsChild(self):
+        # The motivating case. Cont links Child, so Child must recompute first;
+        # Child reading Cont.Length would close the loop if Length were not an
+        # input property.
+        child = self.makeParam("Child", 1, markInput=False)
+        cont = self.makeContainer("Cont", child, 7)
+
+        self.assertEqual(self.bindError(child, "Length", "Cont.Length"), "")
+        self.Doc.recompute()
+        self.assertAlmostEqual(child.Length, 7)
+
+        # ...and the edge really is gone, which is the point.
+        self.assertNotIn(child, cont.InList)
+
+    def testNonInputContainerParameterStillCycles(self):
+        child = self.makeParam("Child", 1, markInput=False)
+        cont = self.makeContainer("Cont", child, 7, markInput=False)
+
+        error = self.bindError(child, "Length", "Cont.Length")
+        self.assertIn("cyclic", error)
+
+    def testParameterChangePropagatesToTheChild(self):
+        child = self.makeParam("Child", 1, markInput=False)
+        cont = self.makeContainer("Cont", child, 7)
+        child.setExpression("Length", "Cont.Length")
+        self.Doc.recompute()
+        self.assertAlmostEqual(child.Length, 7)
+
+        # Nothing links Cont to Child any more, so this only arrives if the
+        # stratum pushed Child into the object phase.
+        cont.Length = 21
+        self.Doc.recompute()
+        self.assertAlmostEqual(child.Length, 21)
+
+    def testInputChainSettlesInOneRecompute(self):
+        # A.Length -> B.Length -> C.Length, the first two input, the last not.
+        # The stratum orders the input pair; the object phase sees B settled.
+        a = self.makeParam("A", 2)
+        b = self.makeParam("B", 0)
+        c = self.makeParam("C", 0, markInput=False)
+        b.setExpression("Length", "A.Length * 2")
+        c.setExpression("Length", "B.Length + 1")
+        self.Doc.recompute()
+        self.assertAlmostEqual(b.Length, 4)
+        self.assertAlmostEqual(c.Length, 5)
+
+        a.Length = 5
+        self.Doc.recompute()
+        self.assertAlmostEqual(b.Length, 10)
+        self.assertAlmostEqual(c.Length, 11)
+
+    def testClosureRuleRejectsAComputedSource(self):
+        # Section 4: an input property may only read input properties, or its
+        # value could move during the object phase.
+        a = self.makeParam("A", 2, markInput=False)
+        b = self.makeParam("B", 0)
+        error = self.bindError(b, "Length", "A.Length")
+        self.assertIn("only reference input properties", error)
+
+    def testCycleInsideTheStratumIsRejected(self):
+        # The object level check cannot see these references, because removing
+        # their edges is the whole point. Section 5.1.
+        a = self.makeParam("A", 2)
+        b = self.makeParam("B", 3)
+        self.assertEqual(self.bindError(b, "Length", "A.Length"), "")
+        error = self.bindError(a, "Length", "B.Length")
+        self.assertIn("cyclic", error)
+
+    def testSelfReferenceIsRejected(self):
+        a = self.makeParam("A", 2)
+        error = self.bindError(a, "Length", "A.Length + 1")
+        self.assertIn("cyclic", error)
+
+    def testBindingSurvivesSaveAndRestore(self):
+        child = self.makeParam("Child", 1, markInput=False)
+        cont = self.makeContainer("Cont", child, 7)
+        child.setExpression("Length", "Cont.Length")
+        self.Doc.recompute()
+
+        tempFile = FreeCAD.getTempPath() + "InputStratumTest.FCStd"
+        self.Doc.saveAs(tempFile)
+        FreeCAD.closeDocument("InputStratumTest")
+        self.Doc = FreeCAD.openDocument(tempFile)
+
+        cont = self.Doc.getObject("Cont")
+        child = self.Doc.getObject("Child")
+        self.assertAlmostEqual(child.Length, 7)
+        self.assertNotIn(child, cont.InList)
+
+        cont.Length = 30
+        self.Doc.recompute()
+        self.assertAlmostEqual(child.Length, 30)
