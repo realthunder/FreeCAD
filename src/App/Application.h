@@ -404,6 +404,14 @@ public:
     //@{
     /// Register an export filetype and a module name
     void addExportType(const char* Type, const char* ModuleName);
+    /** Register a filetype for export from a description and a list of extensions.
+     * Upstream's spelling; the description is translated in the "FileFormat"
+     * context, the extensions are appended as a "(*.ext *.ext)" pattern and the
+     * result handed to addExportType above.
+     */
+    void addTranslatableExportType(const std::string& description,
+                                   const std::vector<std::string>& extensions,
+                                   const std::string& moduleName);
     /// Change the module name of a registered filetype
     void changeExportModule(const char* Type, const char* OldModuleName, const char* NewModuleName);
     /// Return a list of modules that support the given filetype.
@@ -560,6 +568,7 @@ private:
     static PyObject* sChangeImportModule(PyObject *self, PyObject *args);
     static PyObject* sGetImportType     (PyObject *self, PyObject *args);
     static PyObject* sAddExportType     (PyObject *self, PyObject *args);
+    static PyObject* sAddTranslatableExportType(PyObject *self, PyObject *args);
     static PyObject* sChangeExportModule(PyObject *self, PyObject *args);
     static PyObject* sGetExportType     (PyObject *self, PyObject *args);
     static PyObject* sGetResourcePath   (PyObject *self, PyObject *args);

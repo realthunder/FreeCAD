@@ -69,6 +69,8 @@ PyMethodDef Application::Methods[] = {
      "Get the name of the module that can import the filetype"},
     {"addExportType",  (PyCFunction) Application::sAddExportType, METH_VARARGS,
      "Register filetype for export"},
+    {"addTranslatableExportType",  (PyCFunction) Application::sAddTranslatableExportType, METH_VARARGS,
+     "Register filetype for export from a description and a list of extensions"},
     {"changeExportModule",  (PyCFunction) Application::sChangeExportModule, METH_VARARGS,
      "Change the export module name of a registered filetype"},
     {"getExportType",  (PyCFunction) Application::sGetExportType, METH_VARARGS,
@@ -578,6 +580,38 @@ PyObject* Application::sAddExportType(PyObject * /*self*/, PyObject *args)
         GetApplication().addExportType(psKey,psMod);
         Py_Return;
     } PY_CATCH
+}
+
+PyObject* Application::sAddTranslatableExportType(PyObject * /*self*/, PyObject *args)
+{
+    char *description {};
+    PyObject *pyExtensions {};
+    char *moduleName {};
+    if (!PyArg_ParseTuple(args, "sOs", &description, &pyExtensions, &moduleName))
+        return nullptr;
+
+    if (!PyList_Check(pyExtensions)) {
+        PyErr_SetString(PyExc_TypeError, "Expected a list of strings as second argument");
+        return nullptr;
+    }
+
+    std::vector<std::string> extensions;
+    Py_ssize_t count = PyList_Size(pyExtensions);
+    for (Py_ssize_t i = 0; i < count; ++i) {
+        PyObject *item = PyList_GetItem(pyExtensions, i);
+        const char *value = PyUnicode_Check(item) ? PyUnicode_AsUTF8(item) : nullptr;
+        if (!value) {
+            PyErr_SetString(PyExc_TypeError, "Extensions list elements must be strings");
+            return nullptr;
+        }
+        extensions.emplace_back(value);
+    }
+
+    PY_TRY {
+        GetApplication().addTranslatableExportType(description, extensions, moduleName);
+    } PY_CATCH;
+
+    Py_Return;
 }
 
 PyObject* Application::sChangeExportModule(PyObject * /*self*/, PyObject *args)

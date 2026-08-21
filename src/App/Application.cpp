@@ -50,6 +50,7 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QProcessEnvironment>
@@ -1617,6 +1618,29 @@ void Application::addExportType(const char* Type, const char* ModuleName)
     else {
         _mExportTypes.push_back(item);
     }
+}
+
+void Application::addTranslatableExportType(const std::string& description,
+                                            const std::vector<std::string>& extensions,
+                                            const std::string& moduleName)
+{
+    if (extensions.empty()) {
+        throw Base::ValueError("addTranslatableExportType: no extension given");
+    }
+
+    std::string filter =
+        QCoreApplication::translate("FileFormat", description.c_str()).toStdString();
+    filter += " (";
+    for (std::size_t i = 0; i < extensions.size(); ++i) {
+        if (i) {
+            filter += ' ';
+        }
+        filter += "*.";
+        filter += extensions[i];
+    }
+    filter += ')';
+
+    addExportType(filter.c_str(), moduleName.c_str());
 }
 
 void Application::changeExportModule(const char* Type, const char* OldModuleName, const char* NewModuleName)

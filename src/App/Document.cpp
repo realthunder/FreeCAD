@@ -570,6 +570,15 @@ bool Document::hasPendingTransaction() const
         return false;
 }
 
+int Document::getBookedTransactionID() const
+{
+    if (d->activeUndoTransaction)
+        return d->activeUndoTransaction->getID();
+    int tid = 0;
+    GetApplication().getActiveTransaction(&tid);
+    return tid;
+}
+
 int Document::getTransactionID(bool undo, unsigned pos) const {
     if(undo) {
         if(d->activeUndoTransaction) {
