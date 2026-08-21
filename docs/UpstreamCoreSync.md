@@ -995,6 +995,57 @@ So the ordering implied by the measurements is the reverse of the one in
 in by FEM, it is a prerequisite of *this* feature. Decide the feature
 first; the module port follows from it or is not needed.
 
+### 5.5 The divergences that compile and then fail at runtime (found 2026-08-21)
+
+Stages 1-4 are about what compiles. The FEM port cleared the compiler and
+then found a second class of divergence: code that builds cleanly here and
+does the wrong thing at run time, because a fork optimisation changed a
+semantic upstream's code relies on. All four below were found by running
+upstream's own FEM test suites (90 App tests, 3 GUI tests) -- none of them
+would have been caught by reading the sources.
+
+**A no-op property write does not notify.** `Property::hasSetValue` compares
+against the pre-change snapshot and, if the value is unchanged, returns
+before `touch()` -- so no `onEarlyChange`, no `onChanged`, no
+`signalChanged`. It is on by default (DocumentParams OptimizeRecompute).
+Upstream always notifies. Any ported code that initialises state from its
+own `onChanged` will silently skip that work whenever the value written
+happens to equal what is already there -- and since defaults are the values
+most likely to be written, the failure hides until someone uses the one face
+whose normal is (0,0,1). Symptom in FEM: a reversed force constraint that
+did not reverse. The fix belongs in the ported code: derive the state
+directly rather than waiting to be told.
+
+**A property write in a constructor closes the property table.** The write
+reaches `findProperty`/`getPropertyList`, which calls `PropertyData::merge`,
+and after that merge `PropertyData::addProperty` refuses to add a new static
+property. So every `ADD_PROPERTY` must come before the first write to any
+property. Upstream has no such rule and writes wherever it reads well.
+Symptom: `Cannot add static property 'X'` -- and only in a debug build. A
+release build takes the `!parentMerged` early-out, skips the registration,
+and the property simply does not exist. Scan a ported module for it: look
+inside each constructor for a `setValue`-style call followed by any
+`ADD_PROPERTY`. Note that `setEnums`, `setConstraints` and `setScope` do not
+notify and so do not merge.
+
+**A document's view providers are not there when open() returns.** This fork
+loads progressively: `Gui::Document` parks the view providers and a drain
+builds them a slice at a time between returns to the event loop. Upstream
+builds them during the load. A script that opens a document and reads
+`obj.ViewObject` gets `None` here, and one `updateGui()` only runs one slice,
+so the number of turns needed scales with the document. `Gui.Document`
+has `flushLoad()` for this, and `getObject()` flushes on its own.
+
+**Base.PropertyError did not exist.** Upstream raises it for a missing
+property and its `onDocumentRestored` migrations catch it by name; the
+`except` clause itself then raised `AttributeError` mid-restore and cost the
+object its view provider. Now defined, deriving from `AttributeError` on
+both sides so old catches still work.
+
+The lesson for the next module port: **compiling is about half of it.** Budget
+for running the module's own test suite, and expect the failures there to be
+about fork optimisations, not about API names.
+
 ## 6. What this buys beyond FEM
 
 Stages 1-3 are worth doing even if the FEM port never happens. Every one of
