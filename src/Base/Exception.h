@@ -677,6 +677,23 @@ public:
 };
 
 /**
+ * The PropertyError is what asking a container for a property it does not have
+ * raises. It derives from AttributeError, in C++ and in python alike, so code
+ * that catches the attribute error keeps catching this too.
+ */
+class BaseExport PropertyError: public AttributeError
+{
+public:
+    explicit PropertyError(const std::string& message = "Property error");
+    PropertyError(const PropertyError&) = default;
+    PropertyError(PropertyError&&) = default;
+    ~PropertyError() noexcept override = default;
+    PropertyError& operator=(const PropertyError&) = default;
+    PropertyError& operator=(PropertyError&&) = default;
+    PyObject* getPyExceptionType() const override;
+};
+
+/**
  * The RuntimeError can be used to indicate an unknown exception at runtime.
  * @author Werner Mayer
  */

@@ -31,6 +31,7 @@
 #include "Property.h"
 #include "PropertyUnits.h"
 #include "DocumentObject.h"
+#include <Base/PyObjectBase.h>
 #include <Base/PyWrapParseTupleAndKeywords.h>
 
 #include <boost/iostreams/device/array.hpp>
@@ -72,7 +73,9 @@ PyObject*  PropertyContainerPy::getPropertyByName(PyObject *args)
             return Py::new_reference_to(res);
         }
     }
-    PyErr_Format(PyExc_AttributeError, "Property container has no property '%s'", pstr);
+    PyErr_Format(Base::PyExc_FC_PropertyError ? Base::PyExc_FC_PropertyError : PyExc_AttributeError,
+                 "Property container has no property '%s'",
+                 pstr);
     return nullptr;
 }
 
@@ -86,7 +89,9 @@ PyObject*  PropertyContainerPy::touchProperty(PyObject *args)
         prop->touch();
         Py_Return;
     }
-    PyErr_Format(PyExc_AttributeError, "Property container has no property '%s'", pstr);
+    PyErr_Format(Base::PyExc_FC_PropertyError ? Base::PyExc_FC_PropertyError : PyExc_AttributeError,
+                 "Property container has no property '%s'",
+                 pstr);
     return nullptr;
 }
 
@@ -106,7 +111,9 @@ PyObject*  PropertyContainerPy::getPropertyTouchList(PyObject *args)
         return Py::new_reference_to(ret);
     }
     else if (!prop) {
-        PyErr_Format(PyExc_AttributeError, "Property container has no property '%s'", pstr);
+        PyErr_Format(Base::PyExc_FC_PropertyError ? Base::PyExc_FC_PropertyError : PyExc_AttributeError,
+                 "Property container has no property '%s'",
+                 pstr);
         return nullptr;
     }
     else {
@@ -124,7 +131,9 @@ PyObject*  PropertyContainerPy::getTypeOfProperty(PyObject *args)
 
     Property* prop =  getPropertyContainerPtr()->getPropertyByName(pstr);
     if (!prop) {
-        PyErr_Format(PyExc_AttributeError, "Property container has no property '%s'", pstr);
+        PyErr_Format(Base::PyExc_FC_PropertyError ? Base::PyExc_FC_PropertyError : PyExc_AttributeError,
+                 "Property container has no property '%s'",
+                 pstr);
         return nullptr;
     }
 
@@ -153,7 +162,9 @@ PyObject*  PropertyContainerPy::getTypeIdOfProperty(PyObject *args)
 
     Property* prop =  getPropertyContainerPtr()->getPropertyByName(pstr);
     if (!prop) {
-        PyErr_Format(PyExc_AttributeError, "Property container has no property '%s'", pstr);
+        PyErr_Format(Base::PyExc_FC_PropertyError ? Base::PyExc_FC_PropertyError : PyExc_AttributeError,
+                 "Property container has no property '%s'",
+                 pstr);
         return nullptr;
     }
 
@@ -399,7 +410,9 @@ PyObject*  PropertyContainerPy::getGroupOfProperty(PyObject *args)
 
     Property* prop = getPropertyContainerPtr()->getPropertyByName(pstr);
     if (!prop) {
-        PyErr_Format(PyExc_AttributeError, "Property container has no property '%s'", pstr);
+        PyErr_Format(Base::PyExc_FC_PropertyError ? Base::PyExc_FC_PropertyError : PyExc_AttributeError,
+                 "Property container has no property '%s'",
+                 pstr);
         return nullptr;
     }
 
@@ -438,7 +451,9 @@ PyObject*  PropertyContainerPy::getDocumentationOfProperty(PyObject *args)
 
     Property* prop = getPropertyContainerPtr()->getPropertyByName(pstr);
     if (!prop) {
-        PyErr_Format(PyExc_AttributeError, "Property container has no property '%s'", pstr);
+        PyErr_Format(Base::PyExc_FC_PropertyError ? Base::PyExc_FC_PropertyError : PyExc_AttributeError,
+                 "Property container has no property '%s'",
+                 pstr);
         return nullptr;
     }
 
@@ -476,7 +491,9 @@ PyObject*  PropertyContainerPy::getEnumerationsOfProperty(PyObject *args)
 
     Property* prop = getPropertyContainerPtr()->getPropertyByName(pstr);
     if (!prop) {
-        PyErr_Format(PyExc_AttributeError, "Property container has no property '%s'", pstr);
+        PyErr_Format(Base::PyExc_FC_PropertyError ? Base::PyExc_FC_PropertyError : PyExc_AttributeError,
+                 "Property container has no property '%s'",
+                 pstr);
         return nullptr;
     }
 

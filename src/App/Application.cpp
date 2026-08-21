@@ -427,6 +427,12 @@ void Application::setupPythonException(PyObject* module)
     Base::PyExc_FC_CADKernelError = PyErr_NewException("Base.CADKernelError", Base::PyExc_FC_GeneralError, nullptr);
     Py_INCREF(Base::PyExc_FC_CADKernelError);
     PyModule_AddObject(module, "CADKernelError", Base::PyExc_FC_CADKernelError);
+
+    // Deriving from AttributeError, not from the general error, so that everything
+    // already catching the attribute error keeps working unchanged.
+    Base::PyExc_FC_PropertyError = PyErr_NewException("Base.PropertyError", PyExc_AttributeError, nullptr);
+    Py_INCREF(Base::PyExc_FC_PropertyError);
+    PyModule_AddObject(module, "PropertyError", Base::PyExc_FC_PropertyError);
 }
 
 //**************************************************************************
