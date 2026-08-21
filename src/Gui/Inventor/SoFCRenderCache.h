@@ -367,6 +367,15 @@ public:
     bool twoside;
     bool outline;
     bool resetclip;
+    /// Captured from Gui::SoSkipBoundingGroup: the draws made under one
+    /// are a navigation gizmo (the axis cross, the rotation-centre
+    /// sphere), not scene geometry, and Coin leaves them out of the
+    /// scene bounding box whenever the caller asks for exclusion
+    /// (SoSkipBoundingBoxElement, View3DInventorViewer::getSceneBoundBox).
+    /// The flag carries that statement to the external backends, whose
+    /// scene bounds are a min/max over the published draws and have no
+    /// traversal left to read the group in.
+    bool skipbounds;
 
     TextureMatrixMap texturematrices;
     TextureMap textures;
@@ -432,6 +441,10 @@ public:
       if (depthwrite > other.depthwrite) return false;
       if (selectstyle < other.selectstyle) return true;
       if (selectstyle > other.selectstyle) return false;
+      // Compared out here, not in the Triangle branch: a gizmo is as
+      // often lines (the axis cross) as it is faces.
+      if (skipbounds < other.skipbounds) return true;
+      if (skipbounds > other.skipbounds) return false;
       if (this->type == Triangle) {
         if (shapetype < other.shapetype) return true;
         if (shapetype > other.shapetype) return false;
@@ -917,6 +930,11 @@ public:
 
   void increaseRenderingOrder(SoState *state, int priority=0);
   void decreaseRenderingOrder(SoState *state, int priority=0);
+
+  /// Mark (or unmark) everything cached from here on as excluded from
+  /// the scene bounding box -- Material::skipbounds. The manager owns
+  /// the nesting count; this is the plain set the flag needs.
+  void setSkipBounds(SoState *state, SbBool skip);
 
   const char * getRenderStatistics() const;
 

@@ -254,7 +254,14 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     ground (LightConfig::shadowTransparency). A snapshot older than
 //     this reads the struct default, 0.2 -- the translucent shadow the
 //     mode was first written with, and Coin's own default.
-const uint32_t kVersion = 66;
+// 67: a draw says whether it is out of the SCENE's bounds
+//     (DrawCall::skipbounds) -- a navigation gizmo captured under a
+//     Gui::SoSkipBoundingGroup, which is what Coin drops from the
+//     scene bounding box. A snapshot older than this has no flag and
+//     every draw counts, which is what those builds measured: the
+//     rotation-centre sphere then drags the shadow ground and the
+//     auto near/far around with the spin.
+const uint32_t kVersion = 67;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -282,8 +289,11 @@ const uint32_t kVersion = 66;
 /// 11: a material chunk carries drawstyleoverride, which tells the
 ///     Tessellation display mode from a plain wireframe node. A cached
 ///     chunk from an older build would answer "the mode" forever and
-///     keep filling the wireframe.)
-const uint32_t kChunkVersion = 11;
+///     keep filling the wireframe.
+/// 12: a group chunk's draws carry skipbounds (v67). The bytes moved,
+///     so an older cached chunk would be MISREAD from that flag on --
+///     the bump retires it.)
+const uint32_t kChunkVersion = 12;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -1866,6 +1876,8 @@ void writeDraw(Writer &w, const DrawCall &d, const DrawRefWriter &refs)
     w.i32(d.indexCount);
     w.floats(d.bboxMin, 3);
     w.floats(d.bboxMax, 3);
+    // v67
+    w.b(d.skipbounds);
 }
 
 typedef std::vector<Material> MaterialTable;
@@ -1893,6 +1905,8 @@ void readDraw(Reader &r, DrawCall &d, const DrawRefReader &refs,
     d.indexCount = r.i32();
     r.floats(d.bboxMin, 3);
     r.floats(d.bboxMax, 3);
+    if (version >= 67)
+        d.skipbounds = r.b();
 }
 
 void writeDrawList(Writer &w, const DrawCallList &draws,

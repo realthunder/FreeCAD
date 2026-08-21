@@ -2152,6 +2152,16 @@ struct DrawCall {
     int indexCount = 0;
     float bboxMin[3] = {0.0f, 0.0f, 0.0f};  ///< world space bounds,
     float bboxMax[3] = {0.0f, 0.0f, 0.0f};  ///< empty if min > max
+    /// This draw does not define the SCENE's bounds: it is a navigation
+    /// gizmo (the axis cross, the rotation-centre sphere), captured
+    /// under a Gui::SoSkipBoundingGroup, which is what Coin leaves out
+    /// of the scene bounding box. Its own bounds above stay valid --
+    /// culling and clipping still need them; what reads this is the
+    /// min/max over the published draws that sizes the shadow ground
+    /// and drives the camera's auto near/far. The rotation-centre
+    /// sphere moves with the spin, so a scene bound that counted it
+    /// would move the ground and the clip planes while the view turns.
+    bool skipbounds = false;
     /// This draw is a coarse stand-in for geometry that has not arrived:
     /// a unit box scaled onto the bounds above, the bottom rung of the
     /// fidelity ladder (docs/SceneStreaming.md §6). It occupies space —

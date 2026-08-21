@@ -412,6 +412,7 @@ void
 SoFCRenderCache::_Material::init(SoState * state)
 {
   this->resetclip = false;
+  this->skipbounds = false;
   this->depthtest = true;
   this->depthclamp = false;
   this->depthfunc = SoDepthBuffer::LEQUAL;
@@ -834,6 +835,13 @@ SoFCRenderCache::decreaseRenderingOrder(SoState *state, int priority)
     --PRIVATE(this)->material.annotation;
 }
 
+void
+SoFCRenderCache::setSkipBounds(SoState *state, SbBool skip)
+{
+  PRIVATE(this)->checkState(state);
+  PRIVATE(this)->material.skipbounds = skip ? true : false;
+}
+
 SoFCRenderCache::Material
 SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
                                 bool &identity,
@@ -856,6 +864,10 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
     res.selectstyle = parent.selectstyle;
 
   res.outline |= parent.outline;
+
+  // Inherited downwards like the outline flag: everything under a
+  // SoSkipBoundingGroup is out of the scene bounds, however deep.
+  res.skipbounds |= parent.skipbounds;
 
   auto mergeNodeInfo = [&](SoFCRenderCache::NodeInfoArray &thisarray,
                            const SoFCRenderCache::NodeInfoArray &other)

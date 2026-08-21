@@ -1481,6 +1481,10 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                             sizeof(draw.model));
             }
 
+            // A gizmo captured under a SoSkipBoundingGroup keeps its own
+            // bounds and stays out of the scene's (Material::skipbounds).
+            draw.skipbounds = material.skipbounds;
+
             // Measured once per entry per publish: the draw-entry build
             // above asked the same question of the same entry.
             const SbBox3f & bbox = ventry.getBoundingBox();
