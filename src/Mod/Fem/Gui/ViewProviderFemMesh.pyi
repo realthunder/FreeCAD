@@ -6,13 +6,13 @@ from typing import Any, Final
 
 from Base.Metadata import export
 
-from Gui.ViewProviderGeometryObject import ViewProviderGeometryObject
+from Gui.ViewProviderDocumentObject import ViewProviderDocumentObject
 
 @export(
     Include="Mod/Fem/Gui/ViewProviderFemMesh.h",
     Namespace="FemGui",
 )
-class ViewProviderFemMesh(ViewProviderGeometryObject):
+class ViewProviderFemMesh(ViewProviderDocumentObject):
     """
     ViewProviderFemMesh class
 

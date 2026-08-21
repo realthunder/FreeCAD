@@ -137,8 +137,7 @@ bool ViewProviderFemAnalysis::doubleClicked()
     // necessary for the workflow with new files to add a solver as next object
     std::vector<App::DocumentObject*> selVector {};
     selVector.push_back(this->getObject());
-    auto* docName = this->getObject()->getDocument()->getName();
-    Gui::Selection().setSelection(docName, selVector);
+    Gui::Selection().setSelection(selVector);
     return true;
 }
 

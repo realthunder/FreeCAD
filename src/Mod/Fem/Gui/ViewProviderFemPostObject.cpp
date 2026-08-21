@@ -56,7 +56,6 @@
 #include <Gui/Selection/Selection.h>
 #include <Gui/Selection/SelectionObject.h>
 #include <Gui/SoFCColorBar.h>
-#include <Gui/SoFCColorBarNotifier.h>
 #include <Gui/TaskView/TaskDialog.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
@@ -238,7 +237,6 @@ ViewProviderFemPostObject::ViewProviderFemPostObject()
     m_colorRoot->addChild(m_colorStyle);
     m_colorBar = new Gui::SoFCColorBar;
     m_colorBar->Attach(this);
-    Gui::SoFCColorBarNotifier::instance().attach(m_colorBar);
     m_colorBar->ref();
 
     // create the vtk algorithms we use for visualisation
@@ -303,7 +301,6 @@ ViewProviderFemPostObject::~ViewProviderFemPostObject()
 
 void ViewProviderFemPostObject::deleteColorBar()
 {
-    Gui::SoFCColorBarNotifier::instance().detach(m_colorBar);
     m_colorBar->Detach(this);
     m_colorBar->unref();
 }

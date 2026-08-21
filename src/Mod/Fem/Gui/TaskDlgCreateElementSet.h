@@ -64,8 +64,10 @@ public:
     /// is called by the framework if the user press the help button
     void helpRequested() override;
 
-    void activate() override;
-    void deactivate() override;
+    // Upstream's TaskDialog calls these; this fork's has no such hooks, so
+    // they override nothing here.
+    void activate();
+    void deactivate();
 
     /// returns for Close and Help button
     QDialogButtonBox::StandardButtons getStandardButtons() const override

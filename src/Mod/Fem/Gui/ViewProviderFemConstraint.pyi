@@ -6,13 +6,13 @@ from typing import Any, Final
 
 from Base.Metadata import export
 
-from Gui.ViewProviderGeometryObject import ViewProviderGeometryObject
+from Gui.ViewProviderDocumentObject import ViewProviderDocumentObject
 
 @export(
     Include="Mod/Fem/Gui/ViewProviderFemConstraint.h",
     Namespace="FemGui",
 )
-class ViewProviderFemConstraint(ViewProviderGeometryObject):
+class ViewProviderFemConstraint(ViewProviderDocumentObject):
     """
     This is the ViewProviderFemConstraint class
 
