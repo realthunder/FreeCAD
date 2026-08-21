@@ -28,7 +28,6 @@
 #include <Inventor/SbBox2s.h>
 #include <Inventor/SbPlane.h>
 #include <Inventor/SbRotation.h>
-#include <Inventor/SbSphere.h>
 #include <Inventor/SbTime.h>
 #include <Inventor/SbVec2f.h>
 #include <Inventor/SbVec2s.h>
@@ -156,7 +155,6 @@ public:
     void setCameraOrientation(const SbRotation& rot, const SbVec3f *center=nullptr);
     void lookAtPoint(const SbVec3f&);
     void translateCamera(const SbVec3f& translation);
-    void findBoundingSphere();
     void reorientCamera(SoCamera* camera, const SbRotation& rotation);
     void reorientCamera(SoCamera* camera, const SbRotation& rotation, const SbVec3f& rotationCenter);
 
@@ -290,7 +288,6 @@ private:
     SbBool resetcursorpos;
     bool menuActive;
 
-    SbSphere boundingSphere;
 };
 
 /** Sub-classes of this class appear in the preference dialog where users can

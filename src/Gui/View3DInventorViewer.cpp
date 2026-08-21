@@ -2259,7 +2259,6 @@ void View3DInventorViewer::setEditingViewProvider(Gui::ViewProvider* vp, int Mod
 {
     this->editViewProvider = vp;
     this->editViewProvider->setEditViewer(this, ModNum);
-    this->navigation->findBoundingSphere();
     addEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,this->editViewProvider);
 }
 
@@ -3053,8 +3052,6 @@ void View3DInventorViewer::setSceneGraph(SoNode* root)
     _pimpl->addRendererBoundsNode();
 
     syncLightRotation();
-
-    navigation->findBoundingSphere();
 }
 
 void View3DInventorViewer::savePicture(int width, int height, int sample, const QColor& bg, QImage& img) const
