@@ -1,7 +1,37 @@
 # Theme Porting — the fork's stylesheets vs upstream's parameter model
 
-Status: assessment. **Nothing has been ported.** Measurements below are from
-`upstream/main` at `63382d52a6` (2026-08-04) against `LinkVibe`.
+Status: **Phases 1 and 2 are ported** (2026-08-22, from `upstream/main` at
+`da8155a5b1`). The evaluator (`Base/ServiceProvider`, `Gui/StyleParameters/`),
+`FreeCADStyle` with the `QtStyle` key, `FreeCAD.qss` + `defaults.qss`, the two
+theme parameter files (installed as `parameters/Light.yaml` / `Dark.yaml` --
+this fork's theme names have no `FreeCAD ` prefix), the `images_classic` icon
+set, and the Light/Dark preference packs now selecting the parameterized sheet.
+Decisions taken during the port:
+
+- The legacy per-theme sheets stay installed and keep working: the old
+  substitution pass runs first, then everything left goes through
+  `ParameterManager::replacePlaceholders()`. A token neither pass knows is
+  substituted empty with a console warning naming it (visual QA of both new
+  themes and a reverted legacy Light ran warning-free).
+- Upstream's `Themes/UserTokens` fallback source is not inherited (sec 8).
+- Upstream registers its own reload handlers; here the existing delayed
+  handlers in `DlgSettingsTheme::attachObserver` reapply the sheet, and
+  `setStyleSheet()` re-derives the theme parameter file on every apply.
+- `Application::setStyle("System")` restores the platform style captured at
+  startup; upstream leaves the previous theme's style in place. The seven
+  legacy packs explicitly set `QtStyle: System` so switching away from a
+  parameterized theme returns to the platform style.
+- The fork-only selectors and the still-relevant sheet commits are appended
+  to `FreeCAD.qss` under a "Fork additions" banner, parameterized (two new
+  per-theme parameters: `MdiBackgroundImage`, `FrameLineColor`). Not replayed:
+  the hover-shade split, tool button strip/arrow sizes and group box margin
+  tweaks -- upstream's redesign has its own model for those; revisit only if
+  QA shows a regression.
+- **Not ported:** `DlgThemeEditor` (Phase 3), and the six extra sheets remain
+  legacy `.qss` rather than parameter sets.
+
+The assessment below is kept as written (measurements from `63382d52a6`,
+2026-08-04).
 
 The fork and upstream FreeCAD now theme the GUI in two incompatible ways. This
 document records what each does, what the difference costs to close, and in what
