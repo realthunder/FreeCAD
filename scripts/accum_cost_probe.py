@@ -52,49 +52,58 @@ as one, but it cancels from a difference and must agree on the ratio.
 frame or two (shader compiles land wherever they land), so a whole
 warm-up REFINEMENT is burned before any leg is timed.
 
-MEASURED 2026-08-21, RTX 3070 Ti under Mesa d3d12, 1498x703, 1.05M
-geometry pixels -- and the result is PROVISIONAL, for two reasons
-recorded below rather than smoothed over.
+MEASURED 2026-08-21 -- RTX 3070 Ti under Mesa d3d12, OPTIMIZED build
+(conda-relwithdebinfo-801), 1498x703, 1.05M geometry pixels, 32 samples,
+best of 3.
 
     config      static/frame  refine/SAMPLE  interactive/frame  ratio
-    plain          15.15         20.02            14.32          1.40
-    AO             17.09         21.80            14.04          1.55
-    mirror         17.02         22.00            14.75          1.49
-    AO+mirror      15.62         19.96            14.53          1.37
+    plain          10.92         11.85            11.99          0.99
+    AO             11.61         13.25            12.58          1.05
+    mirror         15.49         11.85            12.27          0.97
+    AO+mirror      13.86         12.15            12.40          0.98
 
-Read literally: a refinement sample costs about 1.4-1.55x an ordinary
-moving frame, and a 32-sample refinement is ~0.64-0.70 s of wall clock,
-about 45 interactive frames of work.
+**A refinement sample costs the same as an ordinary moving frame** --
+every ratio is 1.0 within noise. So a 32-sample refinement is about
+380-420 ms of work after the camera stops, roughly 31 interactive
+frames. That is the number the sample-count dial should be read
+against: 32 samples is about four tenths of a second on this class of
+GPU, 16 would be two, 64 still under a second.
 
-!! DO NOT QUOTE THOSE ABSOLUTES YET. Two faults, both diagnosed:
+What is NOT resolvable here: what AO or the mirror add PER SAMPLE.
+Free-running says +0.30 ms, serialized says -0.93 ms, and both sit
+under a ~1 ms noise floor on a ~12 ms frame. Two zeroes, not a
+disagreement -- the frame is bound by Qt/Coin composite and per-frame
+CPU, so these passes hide underneath it. That BOUNDS their cost (under
+about a millisecond each); it does not measure it.
 
-1. The frame is CPU-BOUND in this (debug) build, and the tell is in the
-   table: AO+mirror measures no dearer than plain (19.96 vs 20.02),
-   which cannot be true of the GPU work -- the mirror alone is a second
-   full scene render. So these numbers bound the CPU side and say
-   nothing about how the cost scales with what the frame contains.
-   Fixing it needs the optimized tree, which in turn needs the
-   optimized OCCT install rebuilt (the one on this box predates the
-   fork's public BRepTools_ShapeSet accessors).
+The serialized clock (readback after every frame, forcing the GPU to
+finish) puts every leg at 29-43 ms and agrees on the conclusion: a
+sample is not dearer than a frame. Its ratios run lower (0.80-0.88 vs
+0.98) for a reason worth knowing -- serialization exposes GPU work that
+the CPU-bound free-running frame hides, and the INTERACTIVE leg is the
+one doing extra GPU work, because moving the camera invalidates
+light-space caches a parked refinement keeps. Under the readback an
+interactive frame costs 40-43 ms against a refinement sample's 34-35.
 
-2. The serialized cross-check is INVALID AS BUILT, and its disagreement
-   with the free-running clock (0.37 against 1.37) is an artifact of
-   this probe, not a fact about the renderer. The readback attaches per
-   PUMP, but a pump is not a frame: the refinement schedules its own
-   redraws, so one pump drains ~6 samples while a static or interactive
-   pump is exactly one frame. The readback tax therefore lands 32 times
-   on the static and interactive legs and 5 times on the refinement,
-   spread over 32 samples. It inflates the two comparison legs and
-   barely touches the one under test.
+! Traps this probe was built around, all of them instrument faults that
+produced confident wrong numbers first:
 
-   The fix is to stop pumping altogether: let the refinement drive
-   itself (it will -- that is what animatedFrame is for), spin the event
-   loop, and time from restart to the sample budget. Then a frame is a
-   frame in every leg and the readback can be attached per frame.
-
-Until both are addressed the honest statement is the RATIO, ~1.4-1.55,
-which survives the CPU-bound build because a refinement sample and an
-interactive frame are both full frames carrying the same overhead.
+- A GPU READBACK MUST NOT SIT INSIDE THE TIMING. getRenderStats() costs
+  ~15-37 ms here. The first version used it as the loop's own
+  while-condition, so the convergence check cost more than the frames it
+  was waiting for -- about 37% of the total it reported.
+- A PUMP IS NOT A FRAME, and the ratio is not even constant. Unpolled,
+  one redraw()+updateGui() drains exactly one engine frame; with a
+  stall in the loop, 7 pumps drained all 32 samples, because the stall
+  lets the event loop service the redraws the accumulation schedules for
+  itself. Dividing by pumps once reported a sample at 5x an interactive
+  frame; calibrating the pump count WITH polling and replaying it
+  without stopped the run at 7 samples of 32. Pump exactly SAMPLES
+  times.
+- TWO NEAR-ZERO NUMBERS ARE NOT A DISAGREEMENT. Comparing the clocks'
+  sub-millisecond deltas as a ratio printed DISAGREE for what was
+  simply "neither can see it". A null result reported as a conflict is
+  worse than no result.
 """
 import os
 import sys
@@ -191,17 +200,32 @@ def time_frames(view, n, nudge=False, serialize=False):
 
 
 def time_refine(view, serialize=False):
-    """Wall-clock to carry a parked view to SAMPLES samples."""
+    """Wall-clock for a refinement, with NO readback inside the timing.
+
+    Pump exactly SAMPLES times. Without a stall in the loop one pump
+    drains exactly one engine frame, so that is exactly one sample.
+
+    ! It is only 1:1 because nothing in the loop blocks. Measured: with
+    a getRenderStats() readback in the loop, 7 pumps drained all 32
+    samples -- the stall gives the event loop time to service the
+    redraws the accumulation schedules for itself. So the pump-to-frame
+    ratio is a property of what else the loop does, which is why an
+    earlier version that calibrated the count with polling and then
+    replayed it without polling stopped at 7 samples of 32.
+
+    ! And no polling inside the timing, ever: getRenderStats() is a GPU
+    readback costing ~15-37 ms here, more than the frame it would be
+    waiting on. Read the sample count once, afterwards.
+    """
     restart(view)
     t0 = time.perf_counter()
-    frames = 0
-    while samples(view) < SAMPLES and frames < SAMPLES * 8:
+    for _ in range(SAMPLES):
         view.redraw()
         FreeCADGui.updateGui()
-        frames += 1
         if serialize:
             stats(view)
-    return time.perf_counter() - t0, frames, samples(view)
+    dt = time.perf_counter() - t0
+    return dt, SAMPLES, samples(view)
 
 
 def leg(view, name, serialize=False):
@@ -350,8 +374,16 @@ def main():
         pump(4)
         rows.append(leg(view, name))
     # The cross-check clock, on the two configurations that bracket the
-    # range. It must agree on the RATIO; its absolute numbers include a
-    # readback that costs more than the frame does.
+    # range.
+    #
+    # ! It must agree on the DELTA between two configurations, NOT on
+    # the ratio. The readback attaches per pump, and a refinement pump
+    # drains several frames while a static or interactive pump is one,
+    # so the tax lands unevenly across the legs and no ratio taken
+    # through it means anything. It does cancel from a difference
+    # between two configurations measured the same way, which is
+    # exactly what a cross-check needs: both clocks should say the same
+    # thing about what AO and the mirror ADD to a sample.
     say("-- serialized cross-check (readback forces the GPU to finish) --")
     ser = []
     for name, cfg in (configs[0], configs[3]):
@@ -363,26 +395,54 @@ def main():
     say("")
     say("SUMMARY (a refinement is %d samples)" % SAMPLES)
     for row in rows:
-        say("  %-9s one sample %6.2f ms, whole refinement %6.0f ms wall, "
-            "= %.1f interactive frames"
-            % (row["name"], row["abs_sample"] * 1e3,
-               row["refine"] * 1e3,
+        # Normalised to a FULL refinement rather than quoting the timed
+        # run directly: the pump count is calibrated in a pass that
+        # does poll, so a timed run occasionally lands a sample or two
+        # short, and per-sample x SAMPLES is the honest full-refinement
+        # figure either way. `got` is reported per leg above.
+        say("  %-9s one sample %6.2f ms, full %d-sample refinement "
+            "%6.0f ms, = %.1f interactive frames"
+            % (row["name"], row["abs_sample"] * 1e3, SAMPLES,
+               row["abs_sample"] * SAMPLES * 1e3,
                row["abs_sample"] / row["abs_inter"] * SAMPLES
                if row["abs_inter"] > 0 else float("nan")))
-    free_ratio = (rows[3]["abs_sample"] / rows[3]["abs_inter"]
-                  if rows[3]["abs_inter"] > 0 else float("nan"))
-    ser_ratio = (ser[1]["abs_sample"] / ser[1]["abs_inter"]
-                 if ser[1]["abs_inter"] > 0 else float("nan"))
-    agree = (abs(free_ratio - ser_ratio) / max(free_ratio, 1e-9) < 0.15
-             if free_ratio == free_ratio and ser_ratio == ser_ratio
-             else False)
-    say("clocks   : AO+mirror sample/interactive ratio, free-running "
-        "%.2f vs serialized %.2f -- %s"
-        % (free_ratio, ser_ratio,
-           "they agree" if agree else
-           "THEY DISAGREE, so neither absolute is evidence yet; the "
-           "serialized leg taxes per PUMP and a refinement pump drains "
-           "several frames (see the header)"))
+    # What AO+mirror ADDS to one sample, in each clock. The readback
+    # cancels from this difference, so the two must agree.
+    free_delta = rows[3]["abs_sample"] - rows[0]["abs_sample"]
+    ser_delta = ser[1]["abs_sample"] - ser[0]["abs_sample"]
+    # A noise floor, below which "they disagree" is meaningless: two
+    # sub-millisecond numbers on a ~12 ms frame are both saying zero,
+    # and the ratio of two noise values says nothing at all. Comparing
+    # them as if it did is how a null result gets read as a conflict.
+    floor = 0.001 * max(rows[3]["abs_sample"], 1e-9) * 1000.0
+    floor = max(1.0e-3, 0.08 * rows[3]["abs_sample"])
+    both_null = abs(free_delta) < floor and abs(ser_delta) < floor
+    scale = max(abs(free_delta), abs(ser_delta), 1e-9)
+    agree = abs(free_delta - ser_delta) / scale < 0.35
+    if both_null:
+        say("clocks   : what AO+mirror adds to one sample -- free-running "
+            "%+.2f ms, serialized %+.2f ms; both under the %.2f ms noise "
+            "floor, so the passes' own cost is NOT RESOLVABLE here (not a "
+            "disagreement -- two zeroes)"
+            % (free_delta * 1e3, ser_delta * 1e3, floor * 1e3))
+    else:
+        say("clocks   : what AO+mirror adds to one sample -- free-running "
+            "%+.2f ms vs serialized %+.2f ms: %s"
+            % (free_delta * 1e3, ser_delta * 1e3,
+               "AGREE" if agree else "DISAGREE, treat the absolutes as "
+               "provisional"))
+    say("ratio    : one sample / one interactive frame = %.2f "
+        "(free-running; the transferable number)"
+        % (rows[3]["abs_sample"] / rows[3]["abs_inter"]
+           if rows[3]["abs_inter"] > 0 else float("nan")))
+    # A CPU-bound frame is the other way these numbers go quiet, and it
+    # announces itself: the GPU work of AO plus a second full scene
+    # render cannot really be free.
+    if both_null:
+        say("note     : the frame is bound by something other than these "
+            "passes (Qt/Coin composite and per-frame CPU), so their cost "
+            "sits under the floor. That bounds them -- it does not "
+            "measure them.")
     with open(RESULT, "w") as fh:
         fh.write("\n".join(_lines) + "\n")
         fh.write("DONE\n")

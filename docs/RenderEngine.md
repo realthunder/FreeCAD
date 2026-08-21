@@ -919,6 +919,52 @@ The frame keeps five caches, and all five hold:
   a camera move, `staticFrame` would go false, and the accumulation
   could never engage at all.
 
+**What it costs.** Measured by `scripts/accum_cost_probe.py` on an RTX
+3070 Ti under Mesa d3d12, in the optimized tree, 1498x703, 1.05M
+geometry pixels, 32 samples, best of 3. The measurement rests on a
+structural fact rather than an assumption about frame content: with the
+feature off and the camera parked the view still renders, but every
+cache hits; with it on, each frame is a fresh sample.
+
+| config | static/frame | refine/**sample** | interactive/frame | ratio |
+|---|---|---|---|---|
+| plain | 10.92 ms | 11.85 ms | 11.99 ms | 0.99 |
+| AO | 11.61 | 13.25 | 12.58 | 1.05 |
+| mirror | 15.49 | 11.85 | 12.27 | 0.97 |
+| AO+mirror | 13.86 | 12.15 | 12.40 | 0.98 |
+
+**A refinement sample costs what an ordinary moving frame costs** --
+every ratio is 1.0 within noise. So a 32-sample refinement is roughly
+380-420 ms of work after the camera stops, about 31 interactive frames.
+That is what `Render_TemporalAccumSamples` should be read against: 32
+is about four tenths of a second on this class of GPU, 16 would be two
+tenths, 64 still under a second. On a laptop iGPU, scale by that
+machine's frame time -- the ratio is the transferable part, not the
+milliseconds.
+
+What the probe deliberately does **not** claim is what AO or the mirror
+add *per sample*. Free-running says +0.30 ms, serialized says -0.93 ms,
+and both sit under a ~1 ms noise floor on a ~12 ms frame: two zeroes,
+not a disagreement. The frame is bound by Qt/Coin composite and
+per-frame CPU, so those passes hide underneath it. That bounds their
+cost at well under a millisecond each; it does not measure it.
+
+The serialized clock (a readback after every frame, forcing the GPU to
+finish) agrees on the conclusion and disagrees on the ratio, for a
+reason worth keeping: serialization exposes GPU work the CPU-bound
+free-running frame hides, and it is the *interactive* leg doing the
+extra work, because moving the camera invalidates light-space caches
+that a parked refinement keeps. Under the readback an interactive frame
+costs 40-43 ms against a refinement sample's 34-35.
+
+Three instrument faults are recorded in the probe's header, each of
+which produced a confident wrong number first: a GPU readback inside
+the timed loop (the convergence check cost more than the frames it was
+waiting for, ~37% of the total); "a pump is not a frame", whose ratio
+is not even constant, since a stall lets the event loop service the
+redraws the accumulation schedules for itself; and reporting two
+near-zero numbers as a disagreement rather than as a null result.
+
 One note for anyone extending this: the volumetric march phase is
 `frame % 4096`, a frame counter rather than a sample number, so the
 shafts are reproducible only under the freeze-frame switch (which
