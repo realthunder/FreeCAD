@@ -85,6 +85,29 @@ def load(path):
     return np.asarray(Image.open(path).convert("RGB")).astype(np.float64)
 
 
+def stabilise(view):
+    """Wait until the captured frame stops changing SIZE.
+
+    ! The window is still laying itself out for a while after the first
+    document opens, and every number below differences two captures, so
+    a size that moves midway invalidates the lot.  Measured on the
+    desktop (real-GPU) window it went 703 rows then 677 a few frames
+    later, which aborted this probe on a shape mismatch rather than on
+    anything about the renderer.  Under xvfb it is rarer but not
+    absent.  Wait for two consecutive captures to agree.
+    """
+    last = None
+    for i in range(40):
+        settle(4)
+        shape = load(grab(view, "size-probe")).shape
+        if shape == last:
+            say("size     : frame stable at %dx%d after %d checks"
+                % (shape[1], shape[0], i + 1))
+            return shape
+        last = shape
+    raise RuntimeError("frame size never settled (last %s)" % (last,))
+
+
 def rms(a, b):
     return float(np.sqrt(np.mean((a - b) ** 2)))
 
@@ -296,6 +319,7 @@ def main():
     view.viewAxonometric()
     view.fitAll()
     settle()
+    stabilise(view)
     cam = view.getCameraNode()
     _cam["pos"] = tuple(cam.position.getValue().getValue())
     _cam["focal"] = cam.focalDistance.getValue()
