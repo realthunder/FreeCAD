@@ -23,8 +23,7 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef FEM_CONSTRAINTDISPLACEMENT_H
-#define FEM_CONSTRAINTDISPLACEMENT_H
+#pragma once
 
 #include "FemConstraint.h"
 
@@ -40,9 +39,8 @@ public:
     /// Constructor
     ConstraintDisplacement();
 
-    // Read-only (calculated values). These trigger changes in the ViewProvider
-    App::PropertyVectorList Points;
-    App::PropertyVectorList Normals;
+    App::PropertyBool EnableAmplitude;
+    App::PropertyStringList AmplitudeValues;
 
     // Displacement parameters
     App::PropertyDistance xDisplacement;
@@ -57,15 +55,9 @@ public:
     App::PropertyBool xFree;
     App::PropertyBool yFree;
     App::PropertyBool zFree;
-    App::PropertyBool xFix;
-    App::PropertyBool yFix;
-    App::PropertyBool zFix;
     App::PropertyBool rotxFree;
     App::PropertyBool rotyFree;
     App::PropertyBool rotzFree;
-    App::PropertyBool rotxFix;
-    App::PropertyBool rotyFix;
-    App::PropertyBool rotzFix;
     App::PropertyBool hasXFormula;
     App::PropertyBool hasYFormula;
     App::PropertyBool hasZFormula;
@@ -78,13 +70,12 @@ public:
     const char* getViewProviderName() const override;
 
 protected:
-    void handleChangedPropertyType(Base::XMLReader& reader,
-                                   const char* TypeName,
-                                   App::Property* prop) override;
+    void handleChangedPropertyType(
+        Base::XMLReader& reader,
+        const char* TypeName,
+        App::Property* prop
+    ) override;
     void onChanged(const App::Property* prop) override;
 };
 
 }  // namespace Fem
-
-
-#endif  // FEM_CONSTRAINTDISPLACEMENT_H

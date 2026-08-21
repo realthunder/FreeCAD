@@ -17,7 +17,7 @@
 
 
 ** Edge elements
-*Element, TYPE=B32, ELSET=Eedges
+*Element, TYPE=B32R, ELSET=Eedges
 1, 1, 7, 3
 2, 3, 8, 4
 3, 4, 9, 5
@@ -41,9 +41,12 @@ Eedges
 
 ***********************************************************
 ** constraints fixed node sets
-** ConstraintFixed
-*NSET,NSET=ConstraintFixed
+** Fixed
+*NSET,NSET=Fixed
 1,
+
+** Physical constants for SI(mm) unit system with Kelvins
+*PHYSICAL CONSTANTS, ABSOLUTE ZERO=0, STEFAN BOLTZMANN=5.670374419e-11
 
 ***********************************************************
 ** Materials
@@ -53,60 +56,62 @@ Eedges
 *MATERIAL, NAME=MechanicalMaterial
 *ELASTIC
 210000,0.3
+*EXPANSION, ZERO=0
+0
 
 ***********************************************************
 ** Sections
 *BEAM SECTION, ELSET=M0B0RstdD0, MATERIAL=MechanicalMaterial, SECTION=RECT
 400,1250
--0, 1, 0
+0, 1, -0
 
 ***********************************************************
 ** At least one step is needed to run an CalculiX analysis of FreeCAD
-*STEP
+*STEP, INC=2000
 *STATIC
 
 
 ***********************************************************
 ** Fixed Constraints
-** ConstraintFixed
+** Fixed
 *BOUNDARY
-ConstraintFixed,1
-ConstraintFixed,2
-ConstraintFixed,3
-ConstraintFixed,4
-ConstraintFixed,5
-ConstraintFixed,6
+Fixed,1
+Fixed,2
+Fixed,3
+Fixed,4
+Fixed,5
+Fixed,6
 
 
 ***********************************************************
 ** constraints force node loads
+** Force
 *CLOAD
-** ConstraintForce
 ** node load on shape: CantileverLine:Vertex2
-2,3,-9000000.0
+2,3,-9000000
 
 
 
 ***********************************************************
 ** Outputs --> frd file
-*NODE FILE, OUTPUT=2d
+*NODE FILE, OUTPUT=3d
 U
 *EL FILE
 S, E
 ** outputs --> dat file
 ** reaction forces for Constraint fixed
-*NODE PRINT, NSET=ConstraintFixed, TOTALS=ONLY
+*NODE PRINT, NSET=Fixed, TOTALS=ONLY
 RF
 
-
+*OUTPUT, FREQUENCY=1
 ***********************************************************
-*END STEP 
+*END STEP
 
 ***********************************************************
 ** CalculiX Input file
 **   written by    --> FreeCAD 0.21.0
 **   written on    --> Tue Mar 28 03:48:55 2023
-**   file name     --> 
+**   file name     --> ccx_cantilever_beam_rect.FCStd
 **   analysis name --> Analysis
 **
 **

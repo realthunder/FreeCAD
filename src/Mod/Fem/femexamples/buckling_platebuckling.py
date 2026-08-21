@@ -29,6 +29,7 @@ import ObjectsFem
 from . import manager
 from .manager import get_meshname
 from .manager import init_doc
+from .meshes import generate_mesh
 
 
 def get_information():
@@ -37,14 +38,16 @@ def get_information():
         "meshtype": "face",
         "meshelement": "Tria6",
         "constraints": ["displacement", "force"],
-        "solvers": ["calculix", "ccxtools"],
+        "solvers": ["ccxtools"],
         "material": "solid",
-        "equations": ["buckling"]
+        "equations": ["buckling"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.buckling_platebuckling import setup
@@ -55,6 +58,7 @@ See forum topic post:
 https://forum.freecad.org/viewtopic.php?f=18&t=20217&start=110#p509935
 
 """
+    )
 
 
 def setup(doc=None, solvertype="ccxtools"):
@@ -80,21 +84,19 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis = ObjectsFem.makeAnalysis(doc, "Analysis")
 
     # solver
-    if solvertype == "calculix":
-        solver_obj = ObjectsFem.makeSolverCalculix(doc, "SolverCalculiX")
-    elif solvertype == "ccxtools":
-        solver_obj = ObjectsFem.makeSolverCalculixCcxTools(doc, "CalculiXccxTools")
-        solver_obj.WorkingDir = u""
+    if solvertype == "ccxtools":
+        solver_obj = ObjectsFem.makeSolverCalculiXCcxTools(doc, "CalculiXCcxTools")
+        solver_obj.WorkingDir = ""
     else:
         FreeCAD.Console.PrintWarning(
             "Unknown or unsupported solver type: {}. "
             "No solver object was created.\n".format(solvertype)
         )
-    if solvertype == "calculix" or solvertype == "ccxtools":
+    if solvertype == "ccxtools":
         solver_obj.SplitInputWriter = False
         solver_obj.AnalysisType = "buckling"
         solver_obj.BucklingFactors = 10
-        solver_obj.GeometricalNonlinearity = "linear"
+        solver_obj.GeometricalNonlinearity = False
         solver_obj.ThermoMechSteadyState = False
         solver_obj.MatrixSolverType = "default"
         solver_obj.IterationsControlParameterTimeUse = False
@@ -102,7 +104,7 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis.addObject(solver_obj)
 
     # shell thickness
-    thickness_obj = ObjectsFem.makeElementGeometry2D(doc, 50, 'Thickness')
+    thickness_obj = ObjectsFem.makeElementGeometry2D(doc, 50, "Thickness")
     analysis.addObject(thickness_obj)
 
     # material
@@ -115,31 +117,31 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis.addObject(material_obj)
 
     # constraints displacement
-    con_disp_x = ObjectsFem.makeConstraintDisplacement(doc, "ConstraintDisplacement_X")
+    con_disp_x = ObjectsFem.makeConstraintDisplacement(doc, "Displacement_X")
     con_disp_x.References = [(geom_obj, "Edge1")]
-    con_disp_x.xFix = True
+    con_disp_x.xDisplacement = 0
     con_disp_x.xFree = False
     analysis.addObject(con_disp_x)
 
-    con_disp_y = ObjectsFem.makeConstraintDisplacement(doc, "ConstraintDisplacement_Y")
+    con_disp_y = ObjectsFem.makeConstraintDisplacement(doc, "Displacement_Y")
     con_disp_y.References = [(geom_obj, "Vertex1")]
-    con_disp_y.yFix = True
+    con_disp_y.yDisplacement = 0
     con_disp_y.yFree = False
     analysis.addObject(con_disp_y)
 
-    con_disp_z = ObjectsFem.makeConstraintDisplacement(doc, "ConstraintDisplacement_Z")
+    con_disp_z = ObjectsFem.makeConstraintDisplacement(doc, "Displacement_Z")
     con_disp_z.References = [
         (geom_obj, "Edge1"),
         (geom_obj, "Edge2"),
         (geom_obj, "Edge3"),
         (geom_obj, "Edge4"),
     ]
-    con_disp_z.zFix = True
+    con_disp_z.zDisplacement = 0
     con_disp_z.zFree = False
     analysis.addObject(con_disp_z)
 
     # constraint force
-    con_force = ObjectsFem.makeConstraintForce(doc, "ConstraintForce")
+    con_force = ObjectsFem.makeConstraintForce(doc, "Force")
     con_force.References = [(geom_obj, "Edge3")]
     con_force.Force = "17162160 N"
     con_force.Reversed = True
@@ -148,16 +150,11 @@ def setup(doc=None, solvertype="ccxtools"):
 
     # mesh
     from .meshes.mesh_buckling_plate_tria6 import create_nodes, create_elements
-    fem_mesh = Fem.FemMesh()
-    control = create_nodes(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating nodes.\n")
-    control = create_elements(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating elements.\n")
+
+    fem_mesh = generate_mesh.mesh_from_existing(create_nodes, create_elements)
     femmesh_obj = analysis.addObject(ObjectsFem.makeMeshGmsh(doc, get_meshname()))[0]
     femmesh_obj.FemMesh = fem_mesh
-    femmesh_obj.Part = geom_obj
+    femmesh_obj.Shape = geom_obj
     femmesh_obj.SecondOrderLinear = False
     femmesh_obj.CharacteristicLengthMax = "300.0 mm"
     femmesh_obj.ElementDimension = "2D"

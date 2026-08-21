@@ -20,13 +20,14 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef FEMGUI_PROPERTY_FEMMESH_ITEM_H
-#define FEMGUI_PROPERTY_FEMMESH_ITEM_H
+#pragma once
 
 #include <Gui/propertyeditor/PropertyItem.h>
 
 namespace FemGui
 {
+
+using FrameOption = Gui::PropertyEditor::FrameOption;
 
 /**
  * Display data of an FEM mesh.
@@ -44,8 +45,11 @@ class PropertyFemMeshItem: public Gui::PropertyEditor::PropertyItem
     Q_PROPERTY(int Groups READ countGroups CONSTANT)
     PROPERTYITEM_HEADER
 
-    QWidget*
-    createEditor(QWidget* parent, const QObject* receiver, const char* method) const override;
+    QWidget* createEditor(
+        QWidget* parent,
+        const std::function<void()>& method,
+        FrameOption frameOption
+    ) const override;
     void setEditorData(QWidget* editor, const QVariant& data) const override;
     QVariant editorData(QWidget* editor) const override;
 
@@ -77,6 +81,3 @@ private:
 };
 
 }  // namespace FemGui
-
-
-#endif  // FEMGUI_PROPERTY_FEMMESH_ITEM_H

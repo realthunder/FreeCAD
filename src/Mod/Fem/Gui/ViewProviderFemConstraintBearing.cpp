@@ -21,16 +21,14 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
-#ifndef _PreComp_
 #include <Inventor/SbRotation.h>
 #include <Inventor/SbVec3f.h>
 #include <Inventor/nodes/SoSeparator.h>
-#include <QMessageBox>
-#endif
+
 
 #include "Gui/Control.h"
+#include "FemGuiTools.h"
 #include "TaskFemConstraintBearing.h"
 #include "ViewProviderFemConstraintBearing.h"
 #include <Base/Console.h>
@@ -51,61 +49,26 @@ ViewProviderFemConstraintBearing::~ViewProviderFemConstraintBearing() = default;
 
 bool ViewProviderFemConstraintBearing::setEdit(int ModNum)
 {
-
     if (ModNum == ViewProvider::Default) {
-        // When double-clicking on the item for this constraint the
-        // object unsets and sets its edit mode without closing
-        // the task panel
-        Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
-        TaskDlgFemConstraintBearing* constrDlg = qobject_cast<TaskDlgFemConstraintBearing*>(dlg);
-        if (constrDlg && constrDlg->getConstraintView() != this) {
-            constrDlg = nullptr;  // another constraint left open its task panel
-        }
-        if (dlg && !constrDlg) {
-            // This case will occur in the ShaftWizard application
-            checkForWizard();
-            if (!wizardWidget || !wizardSubLayout) {
-                // No shaft wizard is running
-                if (!dlg->tryClose()) {
-                    return false;
-                }
-            }
-            else if (constraintDialog) {
-                // Another FemConstraint* dialog is already open inside the Shaft Wizard
-                // Ignore the request to open another dialog
-                return false;
-            }
-            else {
-                constraintDialog = new TaskFemConstraintBearing(this);
-                return true;
-            }
-        }
-
+        Gui::Control().closeDialog();
         // clear the selection (convenience)
         Gui::Selection().clearSelection();
-
-        // start the edit dialog
-        if (constrDlg) {
-            Gui::Control().showDialog(constrDlg);
-        }
-        else {
-            Gui::Control().showDialog(new TaskDlgFemConstraintBearing(this));
-        }
+        Gui::Control().showDialog(new TaskDlgFemConstraintBearing(this));
 
         return true;
     }
     else {
-        return ViewProviderDocumentObject::setEdit(ModNum);  // clazy:exclude=skipped-base-method
+        return ViewProviderFemConstraint::setEdit(ModNum);
     }
 }
 
 void ViewProviderFemConstraintBearing::updateData(const App::Property* prop)
 {
     // Gets called whenever a property of the attached object changes
-    Fem::ConstraintBearing* pcConstraint = static_cast<Fem::ConstraintBearing*>(this->getObject());
+    Fem::ConstraintBearing* pcConstraint = this->getObject<Fem::ConstraintBearing>();
 
     if (prop == &pcConstraint->References) {
-        Base::Console().Error("\n");  // enable a breakpoint here
+        Base::Console().error("\n");  // enable a breakpoint here
     }
 
     if (prop == &pcConstraint->BasePoint) {
@@ -122,9 +85,10 @@ void ViewProviderFemConstraintBearing::updateData(const App::Property* prop)
         SbVec3f dir(normal.x, normal.y, normal.z);
         SbRotation rot(SbVec3f(0, -1, 0), dir);
 
-        createPlacement(pShapeSep, b, rot);
+        GuiTools::createPlacement(pShapeSep, b, rot);
         pShapeSep->addChild(
-            createFixed(radius / 2, radius / 2 * 1.5, pcConstraint->AxialFree.getValue()));
+            GuiTools::createFixed(radius / 2, radius / 2 * 1.5, pcConstraint->AxialFree.getValue())
+        );
     }
     else if (prop == &pcConstraint->AxialFree) {
         if (pShapeSep->getNumChildren() > 0) {
@@ -138,9 +102,15 @@ void ViewProviderFemConstraintBearing::updateData(const App::Property* prop)
             SbVec3f dir(normal.x, normal.y, normal.z);
             SbRotation rot(SbVec3f(0, -1, 0), dir);
 
-            updatePlacement(pShapeSep, 0, b, rot);
+            GuiTools::updatePlacement(pShapeSep, 0, b, rot);
             const SoSeparator* sep = static_cast<SoSeparator*>(pShapeSep->getChild(2));
-            updateFixed(sep, 0, radius / 2, radius / 2 * 1.5, pcConstraint->AxialFree.getValue());
+            GuiTools::updateFixed(
+                sep,
+                0,
+                radius / 2,
+                radius / 2 * 1.5,
+                pcConstraint->AxialFree.getValue()
+            );
         }
     }
 

@@ -21,16 +21,14 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
+#include <limits>
 
-#ifndef _PreComp_
 #include <QMessageBox>
 #include <TopoDS.hxx>
-#endif
 
 #include <App/Document.h>
 #include <Gui/Command.h>
-#include <Gui/Selection.h>
+#include <Gui/Selection/Selection.h>
 #include <Gui/ViewProvider.h>
 #include <Mod/Fem/App/FemConstraintGear.h>
 #include <Mod/Fem/App/FemTools.h>
@@ -45,26 +43,32 @@ using namespace Gui;
 
 /* TRANSLATOR FemGui::TaskFemConstraintGear */
 
-TaskFemConstraintGear::TaskFemConstraintGear(ViewProviderFemConstraint* ConstraintView,
-                                             QWidget* parent,
-                                             const char* pixmapname)
+TaskFemConstraintGear::TaskFemConstraintGear(
+    ViewProviderFemConstraint* ConstraintView,
+    QWidget* parent,
+    const char* pixmapname
+)
     : TaskFemConstraintBearing(ConstraintView, parent, pixmapname)
 {
-    connect(ui->spinDiameter,
-            qOverload<double>(&QDoubleSpinBox::valueChanged),
-            this,
-            &TaskFemConstraintGear::onDiameterChanged);
-    connect(ui->spinForce,
-            qOverload<double>(&QDoubleSpinBox::valueChanged),
-            this,
-            &TaskFemConstraintGear::onForceChanged);
-    connect(ui->spinForceAngle,
-            qOverload<double>(&QDoubleSpinBox::valueChanged),
-            this,
-            &TaskFemConstraintGear::onForceAngleChanged);
-    connect(ui->buttonDirection, &QPushButton::pressed, this, [=] {
-        onButtonDirection(true);
-    });
+    connect(
+        ui->spinDiameter,
+        qOverload<double>(&QDoubleSpinBox::valueChanged),
+        this,
+        &TaskFemConstraintGear::onDiameterChanged
+    );
+    connect(
+        ui->spinForce,
+        qOverload<double>(&QDoubleSpinBox::valueChanged),
+        this,
+        &TaskFemConstraintGear::onForceChanged
+    );
+    connect(
+        ui->spinForceAngle,
+        qOverload<double>(&QDoubleSpinBox::valueChanged),
+        this,
+        &TaskFemConstraintGear::onForceAngleChanged
+    );
+    connect(ui->buttonDirection, &QPushButton::pressed, this, [this] { onButtonDirection(true); });
     connect(ui->checkReversed, &QCheckBox::toggled, this, &TaskFemConstraintGear::onCheckReversed);
 
     // Temporarily prevent unnecessary feature recomputes
@@ -74,8 +78,7 @@ TaskFemConstraintGear::TaskFemConstraintGear(ViewProviderFemConstraint* Constrai
     ui->checkReversed->blockSignals(true);
 
     // Get the feature data
-    Fem::ConstraintGear* pcConstraint =
-        static_cast<Fem::ConstraintGear*>(ConstraintView->getObject());
+    Fem::ConstraintGear* pcConstraint = ConstraintView->getObject<Fem::ConstraintGear>();
     double dia = pcConstraint->Diameter.getValue();
     double force = pcConstraint->Force.getValue();
     double angle = pcConstraint->ForceAngle.getValue();
@@ -88,10 +91,10 @@ TaskFemConstraintGear::TaskFemConstraintGear(ViewProviderFemConstraint* Constrai
 
     // Fill data into dialog elements
     ui->spinDiameter->setMinimum(0);
-    ui->spinDiameter->setMaximum(FLOAT_MAX);
+    ui->spinDiameter->setMaximum(std::numeric_limits<float>::max());
     ui->spinDiameter->setValue(dia);
     ui->spinForce->setMinimum(0);
-    ui->spinForce->setMaximum(FLOAT_MAX);
+    ui->spinForce->setMaximum(std::numeric_limits<float>::max());
     ui->spinForce->setValue(force);
     ui->spinForceAngle->setMinimum(-360);
     ui->spinForceAngle->setMaximum(360);
@@ -137,34 +140,40 @@ void TaskFemConstraintGear::onSelectionChanged(const Gui::SelectionChanges& msg)
         }
 
         std::vector<std::string> references(1, subName);
-        Fem::ConstraintGear* pcConstraint =
-            static_cast<Fem::ConstraintGear*>(ConstraintView->getObject());
-        App::DocumentObject* obj =
-            ConstraintView->getObject()->getDocument()->getObject(msg.pObjectName);
+        Fem::ConstraintGear* pcConstraint = ConstraintView->getObject<Fem::ConstraintGear>();
+        App::DocumentObject* obj = ConstraintView->getObject()->getDocument()->getObject(
+            msg.pObjectName
+        );
         Part::Feature* feat = static_cast<Part::Feature*>(obj);
         TopoDS_Shape ref = feat->Shape.getShape().getSubShape(subName.c_str());
 
         if (selectionMode == seldir) {
             if (subName.substr(0, 4) == "Face") {
                 if (!Fem::Tools::isPlanar(TopoDS::Face(ref))) {
-                    QMessageBox::warning(this,
-                                         tr("Selection error"),
-                                         tr("Only planar faces can be picked"));
+                    QMessageBox::warning(
+                        this,
+                        tr("Selection Error"),
+                        tr("Only planar faces can be picked")
+                    );
                     return;
                 }
             }
             else if (subName.substr(0, 4) == "Edge") {
                 if (!Fem::Tools::isLinear(TopoDS::Edge(ref))) {
-                    QMessageBox::warning(this,
-                                         tr("Selection error"),
-                                         tr("Only linear edges can be picked"));
+                    QMessageBox::warning(
+                        this,
+                        tr("Selection Error"),
+                        tr("Only linear edges can be picked")
+                    );
                     return;
                 }
             }
             else {
-                QMessageBox::warning(this,
-                                     tr("Selection error"),
-                                     tr("Only faces and edges can be picked"));
+                QMessageBox::warning(
+                    this,
+                    tr("Selection Error"),
+                    tr("Only faces and edges can be picked")
+                );
                 return;
             }
             pcConstraint->Direction.setValue(obj, references);
@@ -180,22 +189,19 @@ void TaskFemConstraintGear::onSelectionChanged(const Gui::SelectionChanges& msg)
 
 void TaskFemConstraintGear::onDiameterChanged(double l)
 {
-    Fem::ConstraintGear* pcConstraint =
-        static_cast<Fem::ConstraintGear*>(ConstraintView->getObject());
+    Fem::ConstraintGear* pcConstraint = ConstraintView->getObject<Fem::ConstraintGear>();
     pcConstraint->Diameter.setValue(l);
 }
 
 void TaskFemConstraintGear::onForceChanged(double f)
 {
-    Fem::ConstraintGear* pcConstraint =
-        static_cast<Fem::ConstraintGear*>(ConstraintView->getObject());
+    Fem::ConstraintGear* pcConstraint = ConstraintView->getObject<Fem::ConstraintGear>();
     pcConstraint->Force.setValue(f);
 }
 
 void TaskFemConstraintGear::onForceAngleChanged(double a)
 {
-    Fem::ConstraintGear* pcConstraint =
-        static_cast<Fem::ConstraintGear*>(ConstraintView->getObject());
+    Fem::ConstraintGear* pcConstraint = ConstraintView->getObject<Fem::ConstraintGear>();
     pcConstraint->ForceAngle.setValue(a);
 }
 
@@ -213,8 +219,7 @@ void TaskFemConstraintGear::onButtonDirection(const bool pressed)
 
 void TaskFemConstraintGear::onCheckReversed(const bool pressed)
 {
-    Fem::ConstraintGear* pcConstraint =
-        static_cast<Fem::ConstraintGear*>(ConstraintView->getObject());
+    Fem::ConstraintGear* pcConstraint = ConstraintView->getObject<Fem::ConstraintGear>();
     pcConstraint->Reversed.setValue(pressed);
 }
 
@@ -295,8 +300,7 @@ TaskDlgFemConstraintGear::TaskDlgFemConstraintGear(ViewProviderFemConstraintGear
 bool TaskDlgFemConstraintGear::accept()
 {
     std::string name = ConstraintView->getObject()->getNameInDocument();
-    const TaskFemConstraintGear* parameterGear =
-        static_cast<const TaskFemConstraintGear*>(parameter);
+    const TaskFemConstraintGear* parameterGear = static_cast<const TaskFemConstraintGear*>(parameter);
 
     try {
         // Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "FEM force constraint changed"));
@@ -304,39 +308,51 @@ bool TaskDlgFemConstraintGear::accept()
         std::string dirobj = parameterGear->getDirectionObject().data();
 
         if (!dirname.empty()) {
-            QString buf = QString::fromUtf8("(App.ActiveDocument.%1,[\"%2\"])");
+            QString buf = QStringLiteral("(App.ActiveDocument.%1,[\"%2\"])");
             buf = buf.arg(QString::fromStdString(dirname));
             buf = buf.arg(QString::fromStdString(dirobj));
-            Gui::Command::doCommand(Gui::Command::Doc,
-                                    "App.ActiveDocument.%s.Direction = %s",
-                                    name.c_str(),
-                                    buf.toStdString().c_str());
+            Gui::Command::doCommand(
+                Gui::Command::Doc,
+                "App.ActiveDocument.%s.Direction = %s",
+                name.c_str(),
+                buf.toStdString().c_str()
+            );
         }
         else {
-            Gui::Command::doCommand(Gui::Command::Doc,
-                                    "App.ActiveDocument.%s.Direction = None",
-                                    name.c_str());
+            Gui::Command::doCommand(
+                Gui::Command::Doc,
+                "App.ActiveDocument.%s.Direction = None",
+                name.c_str()
+            );
         }
 
-        Gui::Command::doCommand(Gui::Command::Doc,
-                                "App.ActiveDocument.%s.Reversed = %s",
-                                name.c_str(),
-                                parameterGear->getReverse() ? "True" : "False");
-        Gui::Command::doCommand(Gui::Command::Doc,
-                                "App.ActiveDocument.%s.Diameter = %f",
-                                name.c_str(),
-                                parameterGear->getDiameter());
-        Gui::Command::doCommand(Gui::Command::Doc,
-                                "App.ActiveDocument.%s.Force = %f",
-                                name.c_str(),
-                                parameterGear->getForce());
-        Gui::Command::doCommand(Gui::Command::Doc,
-                                "App.ActiveDocument.%s.ForceAngle = %f",
-                                name.c_str(),
-                                parameterGear->getForceAngle());
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.ActiveDocument.%s.Reversed = %s",
+            name.c_str(),
+            parameterGear->getReverse() ? "True" : "False"
+        );
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.ActiveDocument.%s.Diameter = %f",
+            name.c_str(),
+            parameterGear->getDiameter()
+        );
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.ActiveDocument.%s.Force = %f",
+            name.c_str(),
+            parameterGear->getForce()
+        );
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.ActiveDocument.%s.ForceAngle = %f",
+            name.c_str(),
+            parameterGear->getForceAngle()
+        );
     }
     catch (const Base::Exception& e) {
-        QMessageBox::warning(parameter, tr("Input error"), QString::fromUtf8(e.what()));
+        QMessageBox::warning(parameter, tr("Input Error"), QString::fromLatin1(e.what()));
         return false;
     }
 

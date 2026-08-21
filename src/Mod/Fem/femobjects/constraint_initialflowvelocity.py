@@ -38,81 +38,75 @@ class ConstraintInitialFlowVelocity(base_fempythonobject.BaseFemPythonObject):
     Type = "Fem::ConstraintInitialFlowVelocity"
 
     def __init__(self, obj):
-        super(ConstraintInitialFlowVelocity, self).__init__(obj)
+        super().__init__(obj)
         obj.addProperty(
-            "App::PropertyVelocity",
-            "VelocityX",
-            "Parameter",
-            "Velocity in x-direction"
+            "App::PropertyVelocity", "VelocityX", "Parameter", "Velocity in X-direction"
         )
+        obj.setPropertyStatus("VelocityX", "LockDynamic")
         obj.addProperty(
             "App::PropertyString",
             "VelocityXFormula",
             "Parameter",
-            "Velocity formula in x-direction"
+            "Velocity formula in X-direction",
         )
+        obj.setPropertyStatus("VelocityXFormula", "LockDynamic")
         obj.addProperty(
-            "App::PropertyBool",
-            "VelocityXUnspecified",
-            "Parameter",
-            "Use velocity in x-direction"
+            "App::PropertyBool", "VelocityXUnspecified", "Parameter", "Use velocity in X-direction"
         )
+        obj.setPropertyStatus("VelocityXUnspecified", "LockDynamic")
         obj.VelocityXUnspecified = True
         obj.addProperty(
             "App::PropertyBool",
             "VelocityXHasFormula",
             "Parameter",
-            "Use formula for velocity in x-direction"
+            "Use formula for velocity in X-direction",
         )
+        obj.setPropertyStatus("VelocityXHasFormula", "LockDynamic")
 
         obj.addProperty(
-            "App::PropertyVelocity",
-            "VelocityY",
-            "Parameter",
-            "Velocity in y-direction"
+            "App::PropertyVelocity", "VelocityY", "Parameter", "Velocity in Y-direction"
         )
+        obj.setPropertyStatus("VelocityY", "LockDynamic")
         obj.addProperty(
             "App::PropertyString",
             "VelocityYFormula",
             "Parameter",
-            "Velocity formula in y-direction"
+            "Velocity formula in Y-direction",
         )
+        obj.setPropertyStatus("VelocityYFormula", "LockDynamic")
         obj.addProperty(
-            "App::PropertyBool",
-            "VelocityYUnspecified",
-            "Parameter",
-            "Use velocity in y-direction"
+            "App::PropertyBool", "VelocityYUnspecified", "Parameter", "Use velocity in Y-direction"
         )
+        obj.setPropertyStatus("VelocityYUnspecified", "LockDynamic")
         obj.VelocityYUnspecified = True
         obj.addProperty(
             "App::PropertyBool",
             "VelocityYHasFormula",
             "Parameter",
-            "Use formula for velocity in y-direction"
+            "Use formula for velocity in Y-direction",
         )
+        obj.setPropertyStatus("VelocityYHasFormula", "LockDynamic")
 
         obj.addProperty(
-            "App::PropertyVelocity",
-            "VelocityZ",
-            "Parameter",
-            "Velocity in z-direction"
+            "App::PropertyVelocity", "VelocityZ", "Parameter", "Velocity in Z-direction"
         )
+        obj.setPropertyStatus("VelocityZ", "LockDynamic")
         obj.addProperty(
             "App::PropertyString",
             "VelocityZFormula",
             "Parameter",
-            "Velocity formula in z-direction"
+            "Velocity formula in Z-direction",
         )
+        obj.setPropertyStatus("VelocityZFormula", "LockDynamic")
         obj.addProperty(
-            "App::PropertyBool",
-            "VelocityZUnspecified",
-            "Parameter",
-            "Use velocity in z-direction"
+            "App::PropertyBool", "VelocityZUnspecified", "Parameter", "Use velocity in Z-direction"
         )
+        obj.setPropertyStatus("VelocityZUnspecified", "LockDynamic")
         obj.VelocityZUnspecified = True
         obj.addProperty(
             "App::PropertyBool",
             "VelocityZHasFormula",
             "Parameter",
-            "Use formula for velocity in z-direction"
+            "Use formula for velocity in Z-direction",
         )
+        obj.setPropertyStatus("VelocityZHasFormula", "LockDynamic")

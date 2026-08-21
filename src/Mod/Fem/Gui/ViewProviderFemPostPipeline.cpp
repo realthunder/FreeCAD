@@ -20,16 +20,14 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
-#ifndef _PreComp_
 #include <vtkPointData.h>
-#endif
+
 
 #include <App/FeaturePythonPyImp.h>
 #include <App/GroupExtension.h>
 #include <Gui/Application.h>
-#include <Gui/Selection.h>
+#include <Gui/Selection/Selection.h>
 #include <Mod/Fem/App/FemAnalysis.h>
 #include <Mod/Fem/App/FemPostPipeline.h>
 
@@ -37,6 +35,7 @@
 #include "ViewProviderFemPostFunction.h"
 #include "ViewProviderFemPostPipeline.h"
 #include "ViewProviderFemPostPipelinePy.h"
+#include "TaskPostBoxes.h"
 
 
 using namespace FemGui;
@@ -45,58 +44,41 @@ PROPERTY_SOURCE(FemGui::ViewProviderFemPostPipeline, FemGui::ViewProviderFemPost
 
 ViewProviderFemPostPipeline::ViewProviderFemPostPipeline()
 {
+    ViewProviderGroupExtension::initExtension(this);
     sPixmap = "FEM_PostPipelineFromResult";
 }
 
 ViewProviderFemPostPipeline::~ViewProviderFemPostPipeline() = default;
 
-std::vector<App::DocumentObject*> ViewProviderFemPostPipeline::claimChildren() const
-{
-
-    Fem::FemPostPipeline* pipeline = static_cast<Fem::FemPostPipeline*>(getObject());
-    std::vector<App::DocumentObject*> children;
-
-    if (pipeline->Functions.getValue()) {
-        children.push_back(pipeline->Functions.getValue());
-    }
-
-    children.insert(children.end(),
-                    pipeline->Filter.getValues().begin(),
-                    pipeline->Filter.getValues().end());
-    return children;
-}
-
-std::vector<App::DocumentObject*> ViewProviderFemPostPipeline::claimChildren3D() const
-{
-
-    return claimChildren();
-}
 
 void ViewProviderFemPostPipeline::updateData(const App::Property* prop)
 {
     FemGui::ViewProviderFemPostObject::updateData(prop);
-    Fem::FemPostPipeline* pipeline = static_cast<Fem::FemPostPipeline*>(getObject());
-    if (prop == &pipeline->Functions) {
+
+    Fem::FemPostPipeline* pipeline = getObject<Fem::FemPostPipeline>();
+    if ((prop == &pipeline->Data) || (prop == &pipeline->Group) || (prop == &pipeline->Frame)) {
+
         updateFunctionSize();
+        updateColorBars();
+    }
+    else if (prop == &pipeline->MergeDuplicate) {
+        updateVtk();
     }
 }
 
 void ViewProviderFemPostPipeline::updateFunctionSize()
 {
-
     // we need to get the bounding box and set the function provider size
-    Fem::FemPostPipeline* obj = static_cast<Fem::FemPostPipeline*>(getObject());
-
-    if (!obj->Functions.getValue()
-        || !obj->Functions.getValue()->isDerivedFrom(
-            Fem::FemPostFunctionProvider::getClassTypeId())) {
+    Fem::FemPostPipeline* obj = getObject<Fem::FemPostPipeline>();
+    Fem::FemPostFunctionProvider* fp = obj->getFunctionProvider();
+    if (!fp) {
         return;
     }
 
-    // get the function provider
-    FemGui::ViewProviderFemPostFunctionProvider* vp =
-        static_cast<FemGui::ViewProviderFemPostFunctionProvider*>(
-            Gui::Application::Instance->getViewProvider(obj->Functions.getValue()));
+    FemGui::ViewProviderFemPostFunctionProvider* vp
+        = static_cast<FemGui::ViewProviderFemPostFunctionProvider*>(
+            Gui::Application::Instance->getViewProvider(fp)
+        );
 
     if (obj->Data.getValue() && obj->Data.getValue()->IsA("vtkDataSet")) {
         vtkBoundingBox box = obj->getBoundingBox();
@@ -107,18 +89,46 @@ void ViewProviderFemPostPipeline::updateFunctionSize()
     }
 }
 
+namespace
+{
+// Function to get the analysis container related to the object
+ViewProviderFemAnalysis* getAnalyzeView(App::DocumentObject* obj)
+{
+    ViewProviderFemAnalysis* analyzeView = nullptr;
+    App::DocumentObject* grp = App::GroupExtension::getGroupOfObject(obj);
+
+    if (Fem::FemAnalysis* analyze = freecad_cast<Fem::FemAnalysis*>(grp)) {
+        analyzeView = freecad_cast<ViewProviderFemAnalysis*>(
+            Gui::Application::Instance->getViewProvider(analyze)
+        );
+    }
+
+    return analyzeView;
+};
+}  // namespace
+
+bool ViewProviderFemPostPipeline::onDelete(const std::vector<std::string>& objs)
+{
+    ViewProviderFemAnalysis* analyzeView = getAnalyzeView(this->getObject());
+    if (analyzeView) {
+        analyzeView->removeView(this);
+    }
+
+    return ViewProviderFemPostObject::onDelete(objs);
+}
+
+void ViewProviderFemPostPipeline::beforeDelete()
+{
+    ViewProviderFemAnalysis* analyzeView = getAnalyzeView(this->getObject());
+    if (analyzeView) {
+        analyzeView->removeView(this);
+    }
+
+    ViewProviderFemPostObject::beforeDelete();
+}
+
 void ViewProviderFemPostPipeline::onSelectionChanged(const Gui::SelectionChanges& sel)
 {
-    auto getAnalyzeView = [](App::DocumentObject* obj) {
-        ViewProviderFemAnalysis* analyzeView = nullptr;
-        App::DocumentObject* grp = App::GroupExtension::getGroupOfObject(obj);
-        if (Fem::FemAnalysis* analyze = Base::freecad_dynamic_cast<Fem::FemAnalysis>(grp)) {
-            analyzeView = Base::freecad_dynamic_cast<ViewProviderFemAnalysis>(
-                Gui::Application::Instance->getViewProvider(analyze));
-        }
-        return analyzeView;
-    };
-
     // If a FemPostObject is selected in the document tree we must refresh its
     // color bar.
     // But don't do this if the object is invisible because other objects with a
@@ -146,7 +156,8 @@ void ViewProviderFemPostPipeline::updateColorBars()
     for (auto& child : children) {
         if (child->Visibility.getValue()) {
             auto vpObject = dynamic_cast<FemGui::ViewProviderFemPostObject*>(
-                Gui::Application::Instance->getViewProvider(child));
+                Gui::Application::Instance->getViewProvider(child)
+            );
             if (vpObject) {
                 vpObject->updateMaterial();
             }
@@ -154,17 +165,16 @@ void ViewProviderFemPostPipeline::updateColorBars()
     }
 
     // if pipeline is visible, update it
-    if (this->isVisible()) {
+    if (this->Visibility.getValue()) {
         updateMaterial();
     }
 }
 
 void ViewProviderFemPostPipeline::transformField(char* FieldName, double FieldFactor)
 {
-    Fem::FemPostPipeline* obj = static_cast<Fem::FemPostPipeline*>(getObject());
+    Fem::FemPostPipeline* obj = getObject<Fem::FemPostPipeline>();
 
-    vtkSmartPointer<vtkDataObject> data = obj->Data.getValue();
-    vtkDataSet* dset = vtkDataSet::SafeDownCast(data);
+    vtkDataSet* dset = obj->getDataSet();
     if (!dset) {
         return;
     }
@@ -195,9 +205,7 @@ void ViewProviderFemPostPipeline::transformField(char* FieldName, double FieldFa
     }
 }
 
-void ViewProviderFemPostPipeline::scaleField(vtkDataSet* dset,
-                                             vtkDataArray* pdata,
-                                             double FieldFactor)
+void ViewProviderFemPostPipeline::scaleField(vtkDataSet* dset, vtkDataArray* pdata, double FieldFactor)
 {
     // safe guard
     if (!dset || !pdata) {
@@ -221,11 +229,42 @@ void ViewProviderFemPostPipeline::scaleField(vtkDataSet* dset,
     }
 }
 
+void ViewProviderFemPostPipeline::setupTaskDialog(TaskDlgPost* dlg)
+{
+    // add the function box
+    assert(dlg->getView() == this);
+    ViewProviderFemPostObject::setupTaskDialog(dlg);
+    auto panel = new TaskPostFrames(this);
+    dlg->addTaskBox(panel->windowIcon().pixmap(32), panel);
+}
+
+
+bool ViewProviderFemPostPipeline::acceptReorderingObjects() const
+{
+    return true;
+}
+
+bool ViewProviderFemPostPipeline::canDragObjectToTarget(
+    App::DocumentObject*,
+    App::DocumentObject* target
+) const
+{
+
+    // allow drag only to other post groups
+    if (target) {
+        return target->hasExtension(Fem::FemPostGroupExtension::getExtensionClassTypeId());
+    }
+    else {
+        return false;
+    }
+}
+
+
 PyObject* ViewProviderFemPostPipeline::getPyObject()
 {
-    if (PythonObject.is(Py::_None())) {
-        // ref counter is set to 1
-        PythonObject = Py::Object(new ViewProviderFemPostPipelinePy(this), true);
+    if (!pyViewObject) {
+        pyViewObject = new ViewProviderFemPostPipelinePy(this);
     }
-    return Py::new_reference_to(PythonObject);
+    pyViewObject->IncRef();
+    return pyViewObject;
 }

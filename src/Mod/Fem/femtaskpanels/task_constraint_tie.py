@@ -36,53 +36,72 @@ import FreeCAD
 import FreeCADGui
 
 from femguiutils import selection_widgets
+from . import base_femtaskpanel
 
 
-class _TaskPanel:
+class _TaskPanel(base_femtaskpanel._BaseTaskPanel):
     """
     The TaskPanel for editing References property of FemConstraintTie objects
     """
 
     def __init__(self, obj):
-
-        self.obj = obj
+        super().__init__(obj)
 
         # parameter widget
-        self.parameterWidget = FreeCADGui.PySideUic.loadUi(
+        self.parameter_widget = FreeCADGui.PySideUic.loadUi(
             FreeCAD.getHomePath() + "Mod/Fem/Resources/ui/ConstraintTie.ui"
         )
         QtCore.QObject.connect(
-            self.parameterWidget.if_tolerance,
+            self.parameter_widget.spb_tolerance,
             QtCore.SIGNAL("valueChanged(Base::Quantity)"),
-            self.tolerance_changed
+            self.tolerance_changed,
+        )
+        QtCore.QObject.connect(
+            self.parameter_widget.ckb_adjust, QtCore.SIGNAL("toggled(bool)"), self.adjust_changed
+        )
+        QtCore.QObject.connect(
+            self.parameter_widget.ckb_rev_master,
+            QtCore.SIGNAL("toggled(bool)"),
+            self.reversed_master_changed,
+        )
+        QtCore.QObject.connect(
+            self.parameter_widget.ckb_rev_slave,
+            QtCore.SIGNAL("toggled(bool)"),
+            self.reversed_slave_changed,
         )
         self.init_parameter_widget()
-
+        # split references, last is master
+        references = [(feat, (sub,)) for feat, sub_list in obj.References for sub in sub_list]
         # geometry selection widget
-        self.selectionWidget = selection_widgets.GeometryElementsSelection(
-            obj.References,
-            ["Face"],
-            False,
-            False
+        self.sel_master = selection_widgets.GeometryElementsSelection(
+            references[-1:], ["Edge", "Face"], False, False
         )
+        self.sel_master.setWindowTitle(self.sel_master.tr("Master Geometry Reference Selector"))
+        self.sel_master.setMaximumHeight(200)
+        self.sel_slave = selection_widgets.GeometryElementsSelection(
+            references[:-1], ["Edge", "Face"], False, False
+        )
+        self.sel_slave.setWindowTitle(self.sel_slave.tr("Slave Geometry Reference Selector"))
+        self.sel_slave.setMaximumHeight(200)
 
         # form made from param and selection widget
-        self.form = [self.parameterWidget, self.selectionWidget]
+        self.form = [self.sel_master, self.sel_slave, self.parameter_widget]
 
     def accept(self):
         # check values
-        items = len(self.selectionWidget.references)
+        items = len(self.sel_master.references) + len(self.sel_slave.references)
         FreeCAD.Console.PrintMessage(
-            "Task panel: found references: {}\n{}\n"
-            .format(items, self.selectionWidget.references)
+            f"Task panel: found master references: {items}\n{self.sel_master.references}\n"
+        )
+        FreeCAD.Console.PrintMessage(
+            f"Task panel: found slave references: {items}\n{self.sel_slave.references}\n"
         )
 
         if items != 2:
             msgBox = QtGui.QMessageBox()
             msgBox.setIcon(QtGui.QMessageBox.Question)
             msgBox.setText(
-                "Constraint Tie requires exactly two faces\n\nfound references: {}"
-                .format(items)
+                f"Constraint Tie requires exactly one master and one slave references\n\nfound references: {items}"
             )
             msgBox.setWindowTitle("FreeCAD FEM Constraint Tie")
             retryButton = msgBox.addButton(QtGui.QMessageBox.Retry)
@@ -94,25 +113,44 @@ class _TaskPanel:
             elif msgBox.clickedButton() == ignoreButton:
                 pass
         self.obj.Tolerance = self.tolerance
-        self.obj.References = self.selectionWidget.references
-        self.recompute_and_set_back_all()
-        return True
+        self.obj.Adjust = self.adjust
+        self.obj.References = self.sel_slave.references + self.sel_master.references
+        self.obj.ReversedMaster = self.reversed_master
+        self.obj.ReversedSlave = self.reversed_slave
+        self.sel_master.finish_selection()
+        self.sel_slave.finish_selection()
+        return super().accept()
 
     def reject(self):
-        self.recompute_and_set_back_all()
-        return True
-
-    def recompute_and_set_back_all(self):
-        doc = FreeCADGui.getDocument(self.obj.Document)
-        doc.Document.recompute()
-        self.selectionWidget.setback_listobj_visibility()
-        if self.selectionWidget.sel_server:
-            FreeCADGui.Selection.removeObserver(self.selectionWidget.sel_server)
-        doc.resetEdit()
+        self.sel_master.finish_selection()
+        self.sel_slave.finish_selection()
+        return super().reject()
 
     def init_parameter_widget(self):
         self.tolerance = self.obj.Tolerance
-        self.parameterWidget.if_tolerance.setText(self.tolerance.UserString)
+        self.adjust = self.obj.Adjust
+        self.reversed_master = self.obj.ReversedMaster
+        self.reversed_slave = self.obj.ReversedSlave
+        FreeCADGui.ExpressionBinding(self.parameter_widget.spb_tolerance).bind(
+            self.obj, "Tolerance"
+        )
+        self.parameter_widget.spb_tolerance.setProperty("value", self.tolerance)
+        self.parameter_widget.ckb_adjust.setChecked(self.adjust)
+        self.parameter_widget.ckb_rev_master.setChecked(
+            False if not self.reversed_master else self.reversed_master[0]
+        )
+        self.parameter_widget.ckb_rev_slave.setChecked(
+            False if not self.reversed_slave else self.reversed_slave[0]
+        )
 
     def tolerance_changed(self, base_quantity_value):
         self.tolerance = base_quantity_value
+
+    def adjust_changed(self, bool_value):
+        self.adjust = bool_value
+
+    def reversed_master_changed(self, bool_value):
+        self.reversed_master = [bool_value]
+
+    def reversed_slave_changed(self, bool_value):
+        self.reversed_slave = [bool_value]

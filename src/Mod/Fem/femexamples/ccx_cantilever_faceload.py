@@ -35,14 +35,16 @@ def get_information():
         "meshtype": "solid",
         "meshelement": "Tet10",
         "constraints": ["fixed", "force"],
-        "solvers": ["calculix", "ccxtools", "elmer", "mystran", "z88"],
+        "solvers": ["ccxtools", "elmer", "mystran", "z88"],
         "material": "solid",
-        "equations": ["mechanical"]
+        "equations": ["mechanical"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.ccx_cantilever_faceload import setup
@@ -53,9 +55,10 @@ See forum topic post:
 ...
 
 """
+    )
 
 
-def setup(doc=None, solvertype="ccxtools"):
+def setup(doc=None, solvertype="ccxtools", test_mode=False):
 
     # init FreeCAD document
     if doc is None:
@@ -66,12 +69,12 @@ def setup(doc=None, solvertype="ccxtools"):
     manager.add_explanation_obj(doc, get_explanation(manager.get_header(get_information())))
 
     # setup CalculiX cantilever
-    doc = setup_cantilever_base_solid(doc, solvertype)
+    doc = setup_cantilever_base_solid(doc, solvertype, test_mode)
     analysis = doc.Analysis
     geom_obj = doc.Box
 
     # constraint force
-    con_force = ObjectsFem.makeConstraintForce(doc, "ConstraintForce")
+    con_force = ObjectsFem.makeConstraintForce(doc, "Force")
     con_force.References = [(geom_obj, "Face2")]
     con_force.Force = "9000000.0 N"
     con_force.Direction = (geom_obj, ["Edge5"])

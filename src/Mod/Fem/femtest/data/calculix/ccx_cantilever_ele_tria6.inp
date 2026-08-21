@@ -268,13 +268,16 @@ Efaces
 
 ***********************************************************
 ** constraints fixed node sets
-** ConstraintFixed
-*NSET,NSET=ConstraintFixed
+** Fixed
+*NSET,NSET=Fixed
 1,
 2,
 5,
 6,
 7,
+
+** Physical constants for SI(mm) unit system with Kelvins
+*PHYSICAL CONSTANTS, ABSOLUTE ZERO=0, STEFAN BOLTZMANN=5.670374419e-11
 
 ***********************************************************
 ** Materials
@@ -284,57 +287,59 @@ Efaces
 *MATERIAL, NAME=MechanicalMaterial
 *ELASTIC
 210000,0.3
+*EXPANSION, ZERO=0
+0
 
 ***********************************************************
 ** Sections
-*SHELL SECTION, ELSET=MechanicalMaterialThickness, MATERIAL=MechanicalMaterial
+*SHELL SECTION, ELSET=MechanicalMaterialThickness, MATERIAL=MechanicalMaterial, OFFSET=0
 1000
 
 ***********************************************************
 ** At least one step is needed to run an CalculiX analysis of FreeCAD
-*STEP
+*STEP, INC=2000
 *STATIC
 
 
 ***********************************************************
 ** Fixed Constraints
-** ConstraintFixed
+** Fixed
 *BOUNDARY
-ConstraintFixed,1
-ConstraintFixed,2
-ConstraintFixed,3
-ConstraintFixed,4
-ConstraintFixed,5
-ConstraintFixed,6
+Fixed,1
+Fixed,2
+Fixed,3
+Fixed,4
+Fixed,5
+Fixed,6
 
 
 ***********************************************************
 ** constraints force node loads
+** Force
 *CLOAD
-** ConstraintForce
 ** node loads on shape: CanileverPlate:Edge3
-3,3,-750000.0
-4,3,-750000.0
-39,3,-1500000.0
-40,3,-3000000.0
-41,3,-3000000.0
+3,3,-750000
+4,3,-750000
+39,3,-1500000
+40,3,-3000000
+41,3,-3000000
 
 
 
 ***********************************************************
 ** Outputs --> frd file
-*NODE FILE, OUTPUT=2d
+*NODE FILE, OUTPUT=3d
 U
 *EL FILE
 S, E
 ** outputs --> dat file
 ** reaction forces for Constraint fixed
-*NODE PRINT, NSET=ConstraintFixed, TOTALS=ONLY
+*NODE PRINT, NSET=Fixed, TOTALS=ONLY
 RF
 
-
+*OUTPUT, FREQUENCY=1
 ***********************************************************
-*END STEP 
+*END STEP
 
 ***********************************************************
 ** CalculiX Input file

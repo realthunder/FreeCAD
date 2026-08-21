@@ -20,8 +20,7 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef Fem_FemMeshShapeNetgenObject_H
-#define Fem_FemMeshShapeNetgenObject_H
+#pragma once
 
 #include "FemMeshShapeObject.h"
 #include <App/PropertyStandard.h>
@@ -29,7 +28,7 @@
 namespace Fem
 {
 
-class FemExport FemMeshShapeNetgenObject: public FemMeshShapeObject
+class FemExport FemMeshShapeNetgenObject: public FemMeshShapeBaseObject
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Fem::FemMeshShapeNetgenObject);
 
@@ -39,6 +38,7 @@ public:
     ~FemMeshShapeNetgenObject() override;
 
     App::PropertyFloat MaxSize;
+    App::PropertyFloat MinSize;
     App::PropertyBool SecondOrder;
     App::PropertyEnumeration Fineness;
     App::PropertyFloat GrowthRate;
@@ -64,6 +64,3 @@ protected:
 };
 
 }  // namespace Fem
-
-
-#endif  // Fem_FemMeshShapeNetgenObject_H

@@ -1,13 +1,12 @@
 
-#include "PreCompiled.h"
 
-#ifndef _PreComp_
 #include <SMESHDS_Mesh.hxx>
 #include <SMESH_Mesh.hxx>
-#endif
+
 
 #include <Base/GeometryPyCXX.h>
 #include <Base/VectorPy.h>
+#include <App/MaterialPy.h>
 #include <Mod/Fem/App/FemMeshObject.h>
 
 #include "ViewProviderFemMesh.h"
@@ -39,8 +38,10 @@ PyObject* ViewProviderFemMeshPy::applyDisplacement(PyObject* args)
     Py_Return;
 }
 
+namespace
+{
 
-App::Color calcColor(double value, double min, double max)
+Base::Color calcColor(double value, double min, double max)
 {
     if (max < 0) {
         max = 0;
@@ -50,29 +51,85 @@ App::Color calcColor(double value, double min, double max)
     }
 
     if (value < min) {
-        return App::Color(0.0, 0.0, 1.0);
+        return Base::Color(0.0, 0.0, 1.0);
     }
     if (value > max) {
-        return App::Color(1.0, 0.0, 0.0);
+        return Base::Color(1.0, 0.0, 0.0);
     }
     if (value == 0.0) {
-        return App::Color(0.0, 1.0, 0.0);
+        return Base::Color(0.0, 1.0, 0.0);
     }
     if (value > max / 2.0) {
-        return App::Color(1.0, 1 - ((value - (max / 2.0)) / (max / 2.0)), 0.0);
+        return Base::Color(1.0, 1 - ((value - (max / 2.0)) / (max / 2.0)), 0.0);
     }
     if (value > 0.0) {
-        return App::Color(value / (max / 2.0), 1.0, 0.0);
+        return Base::Color(value / (max / 2.0), 1.0, 0.0);
     }
     if (value < min / 2.0) {
-        return App::Color(0.0, 1 - ((value - (min / 2.0)) / (min / 2.0)), 1.0);
+        return Base::Color(0.0, 1 - ((value - (min / 2.0)) / (min / 2.0)), 1.0);
     }
     if (value < 0.0) {
-        return App::Color(0.0, 1.0, value / (min / 2.0));
+        return Base::Color(0.0, 1.0, value / (min / 2.0));
     }
-    return App::Color(0, 0, 0);
+    return Base::Color(0, 0, 0);
 }
 
+std::map<std::vector<long>, Base::Color> colorMapFromDict(Py::Dict& arg)
+{
+    std::map<std::vector<long>, Base::Color> colorMap;
+    for (Py::Dict::iterator it = arg.begin(); it != arg.end(); ++it) {
+        std::vector<long> vecId;
+        const Py::Object& id = (*it).first;
+        if (id.isTuple()) {
+            Py::Tuple idSeq(id);
+            for (const auto& i: idSeq) {
+                vecId.emplace_back(static_cast<long>(Py::Long(i)));
+            }
+        }
+        else {
+            vecId.emplace_back(static_cast<long>(Py::Long(id)));
+        }
+        const Py::Object& value = (*it).second;
+        Py::Tuple color(value);
+        colorMap[vecId] = Base::Color(static_cast<float>(Py::Float(color[0])),
+                                      static_cast<float>(Py::Float(color[1])),
+                                      static_cast<float>(Py::Float(color[2])));
+    }
+
+    return colorMap;
+}
+
+Py::Dict colorListToDict(const std::vector<unsigned long>& elements,
+                         const std::vector<Base::Color>& colors)
+{
+    Py::Dict dict;
+    if (colors.size() == elements.size()) {
+        std::size_t num = elements.size();
+        for (std::size_t index = 0; index < num; index++) {
+            unsigned long item = elements[index];
+            Base::Color col = colors[index];
+            dict.setItem(Py::Long(item), Py::TupleN{Py::Float(col.r),
+                                                    Py::Float(col.g),
+                                                    Py::Float(col.b)});
+        }
+    }
+    else if (colors.size() == 1) {
+        int index = 0;
+        Py::Tuple tuple(Py_SAFE_DOWNCAST(elements.size(), std::size_t, Py_ssize_t));
+        for (auto item : elements) {
+            tuple.setItem(index++, Py::Long(item));
+        }
+
+        auto col = colors.front();
+        dict.setItem(tuple, Py::TupleN{Py::Float(col.r),
+                                       Py::Float(col.g),
+                                       Py::Float(col.b)});
+    }
+
+    return dict;
+}
+
+} // namespace
 
 PyObject* ViewProviderFemMeshPy::setNodeColorByScalars(PyObject* args)
 {
@@ -87,9 +144,9 @@ PyObject* ViewProviderFemMeshPy::setNodeColorByScalars(PyObject* args)
         int num_items = PyList_Size(node_ids_py);
         if (num_items < 0) {
             PyErr_SetString(PyExc_ValueError, "PyList_Size < 0. That is not a valid list!");
-            return nullptr;
+            Py_Return;
         }
-        std::vector<App::Color> node_colors(num_items);
+        std::vector<Base::Color> node_colors(num_items);
         for (int i = 0; i < num_items; i++) {
             PyObject* id_py = PyList_GetItem(node_ids_py, i);
             long id = PyLong_AsLong(id_py);
@@ -140,7 +197,7 @@ PyObject* ViewProviderFemMeshPy::setNodeDisplacementByVectors(PyObject* args)
         int num_items = PyList_Size(node_ids_py);
         if (num_items < 0) {
             PyErr_SetString(PyExc_ValueError, "PyList_Size < 0. That is not a valid list!");
-            return nullptr;
+            Py_Return;
         }
         for (int i = 0; i < num_items; i++) {
             PyObject* id_py = PyList_GetItem(node_ids_py, i);
@@ -174,73 +231,42 @@ PyObject* ViewProviderFemMeshPy::resetNodeDisplacement(PyObject* args)
 
 Py::Dict ViewProviderFemMeshPy::getNodeColor() const
 {
-    // return Py::List();
-    throw Py::AttributeError("Not yet implemented");
+    const auto& elm = getViewProviderFemMeshPtr()->getVisibleNodes();
+    const auto& col = getViewProviderFemMeshPtr()->NodeColorArray.getValues();
+    return colorListToDict(elm, col);
 }
-
 
 void ViewProviderFemMeshPy::setNodeColor(Py::Dict arg)
 {
     long size = arg.size();
     if (size == 0) {
-        this->getViewProviderFemMeshPtr()->resetColorByNodeId();
+        getViewProviderFemMeshPtr()->resetColorByNodeId();
     }
     else {
-        Base::TimeInfo Start;
-        Base::Console().Log(
-            "Start: ViewProviderFemMeshPy::setNodeColor() =================================\n");
-        // std::map<long,App::Color> NodeColorMap;
-
-        // for( Py::Dict::iterator it = arg.begin(); it!= arg.end();++it){
-        //     Py::Long id((*it).first);
-        //     Py::Tuple color((*it).second);
-        //     NodeColorMap[id] =
-        //     App::Color(Py::Float(color[0]),Py::Float(color[1]),Py::Float(color[2]),0);
-        // }
-        std::vector<long> NodeIds(size);
-        std::vector<App::Color> NodeColors(size);
-
-        long i = 0;
-        for (Py::Dict::iterator it = arg.begin(); it != arg.end(); ++it, i++) {
-            Py::Long id((*it).first);
-            Py::Tuple color((*it).second);
-            NodeIds[i] = id;
-            NodeColors[i] =
-                App::Color(Py::Float(color[0]), Py::Float(color[1]), Py::Float(color[2]), 0);
-        }
-        Base::Console().Log("    %f: Start ViewProviderFemMeshPy::setNodeColor() call \n",
-                            Base::TimeInfo::diffTimeF(Start, Base::TimeInfo()));
-
-        // this->getViewProviderFemMeshPtr()->setColorByNodeId(NodeColorMap);
-        this->getViewProviderFemMeshPtr()->setColorByNodeId(NodeIds, NodeColors);
-        Base::Console().Log("    %f: Finish ViewProviderFemMeshPy::setNodeColor() call \n",
-                            Base::TimeInfo::diffTimeF(Start, Base::TimeInfo()));
+        getViewProviderFemMeshPtr()->setColorByNodeId(colorMapFromDict(arg));
     }
 }
 
 
 Py::Dict ViewProviderFemMeshPy::getElementColor() const
 {
-    // return Py::List();
-    throw Py::AttributeError("Not yet implemented");
+    // For the shift value see setColorByElementId
+    auto elm = getViewProviderFemMeshPtr()->getVisibleElementFaces();
+    for (auto& item : elm) {
+        item = item >> 3;
+    }
+    const auto& col = getViewProviderFemMeshPtr()->ElementColorArray.getValues();
+    return colorListToDict(elm, col);
 }
 
 
 void ViewProviderFemMeshPy::setElementColor(Py::Dict arg)
 {
     if (arg.size() == 0) {
-        this->getViewProviderFemMeshPtr()->resetColorByNodeId();
+        getViewProviderFemMeshPtr()->resetColorByElementId();
     }
     else {
-        std::map<long, App::Color> NodeColorMap;
-
-        for (Py::Dict::iterator it = arg.begin(); it != arg.end(); ++it) {
-            Py::Long id((*it).first);
-            Py::Tuple color((*it).second);
-            NodeColorMap[id] =
-                App::Color(Py::Float(color[0]), Py::Float(color[1]), Py::Float(color[2]), 0);
-        }
-        this->getViewProviderFemMeshPtr()->setColorByElementId(NodeColorMap);
+        getViewProviderFemMeshPtr()->setColorByElementId(colorMapFromDict(arg));
     }
 }
 
@@ -288,7 +314,7 @@ Py::List ViewProviderFemMeshPy::getHighlightedNodes() const
 void ViewProviderFemMeshPy::setHighlightedNodes(Py::List arg)
 {
     ViewProviderFemMesh* vp = this->getViewProviderFemMeshPtr();
-    const SMESHDS_Mesh* data = static_cast<Fem::FemMeshObject*>(vp->getObject())
+    const SMESHDS_Mesh* data = vp->getObject<Fem::FemMeshObject>()
                                    ->FemMesh.getValue()
                                    .getSMesh()
                                    ->GetMeshDS();

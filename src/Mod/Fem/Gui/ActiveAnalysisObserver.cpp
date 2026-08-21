@@ -20,7 +20,6 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
 #include <Gui/Application.h>
 #include <Gui/Document.h>
@@ -53,7 +52,8 @@ void ActiveAnalysisObserver::setActiveObject(Fem::FemAnalysis* fem)
         App::Document* doc = fem->getDocument();
         activeDocument = Gui::Application::Instance->getDocument(doc);
         activeView = static_cast<Gui::ViewProviderDocumentObject*>(
-            activeDocument->getViewProvider(activeObject));
+            activeDocument->getViewProvider(activeObject)
+        );
         attachDocument(doc);
     }
     else {
@@ -74,8 +74,8 @@ bool ActiveAnalysisObserver::hasActiveObject() const
 
 void ActiveAnalysisObserver::highlightActiveObject(const Gui::HighlightMode& mode, bool on)
 {
-    if (activeView) {
-        Gui::Application::Instance->signalHighlightObject(*activeView, mode, on, 0, 0);
+    if (activeDocument && activeView) {
+        activeDocument->signalHighlightObject(*activeView, mode, on, 0, 0);
     }
 }
 

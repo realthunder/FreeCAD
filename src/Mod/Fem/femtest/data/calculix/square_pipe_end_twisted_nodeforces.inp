@@ -2493,8 +2493,8 @@ Efaces
 
 ***********************************************************
 ** constraints fixed node sets
-** ConstraintFixed
-*NSET,NSET=ConstraintFixed
+** Fixed
+*NSET,NSET=Fixed
 3,
 4,
 29,
@@ -2544,6 +2544,9 @@ Efaces
 1402,
 1407,
 
+** Physical constants for SI(mm) unit system with Kelvins
+*PHYSICAL CONSTANTS, ABSOLUTE ZERO=0, STEFAN BOLTZMANN=5.670374419e-11
+
 ***********************************************************
 ** Materials
 ** see information about units at file end
@@ -2552,34 +2555,36 @@ Efaces
 *MATERIAL, NAME=FemMaterial
 *ELASTIC
 200000,0.3
+*EXPANSION, ZERO=0
+0
 
 ***********************************************************
 ** Sections
-*SHELL SECTION, ELSET=FemMaterialShellThickness, MATERIAL=FemMaterial
+*SHELL SECTION, ELSET=FemMaterialShellThickness, MATERIAL=FemMaterial, OFFSET=0
 15
 
 ***********************************************************
 ** At least one step is needed to run an CalculiX analysis of FreeCAD
-*STEP
+*STEP, INC=2000
 *STATIC
 
 
 ***********************************************************
 ** Fixed Constraints
-** ConstraintFixed
+** Fixed
 *BOUNDARY
-ConstraintFixed,1
-ConstraintFixed,2
-ConstraintFixed,3
-ConstraintFixed,4
-ConstraintFixed,5
-ConstraintFixed,6
+Fixed,1
+Fixed,2
+Fixed,3
+Fixed,4
+Fixed,5
+Fixed,6
 
 
 ***********************************************************
 ** constraints force node loads
+** Force1
 *CLOAD
-** ConstraintForce1
 ** node load on shape: Forces:Vertex1
 1,1,-2777.78
 
@@ -2587,7 +2592,8 @@ ConstraintFixed,6
 236,1,-2777.78
 
 
-** ConstraintForce2
+** Force2
+*CLOAD
 ** node load on shape: Forces:Vertex2
 2,1,2777.78
 
@@ -2595,7 +2601,8 @@ ConstraintFixed,6
 129,1,2777.78
 
 
-** ConstraintForce3
+** Force3
+*CLOAD
 ** node load on shape: Forces:Vertex20
 343,1,-5555.556
 
@@ -2612,7 +2619,8 @@ ConstraintFixed,6
 347,1,-5555.556
 
 
-** ConstraintForce4
+** Force4
+*CLOAD
 ** node load on shape: Forces:Vertex9
 131,1,5555.556
 
@@ -2629,47 +2637,50 @@ ConstraintFixed,6
 135,1,5555.556
 
 
-** ConstraintForce5
+** Force5
+*CLOAD
 ** node load on shape: Forces:Vertex43
-1376,1,-11111.111666666666
+1376,1,-11111.11166667
 
 ** node load on shape: Forces:Vertex44
-1378,1,-11111.111666666666
+1378,1,-11111.11166667
 
 ** node load on shape: Forces:Vertex45
-1380,1,-11111.111666666666
+1380,1,-11111.11166667
 
 ** node load on shape: Forces:Vertex46
-1383,1,-11111.111666666666
+1383,1,-11111.11166667
 
 ** node load on shape: Forces:Vertex47
-1386,1,-11111.111666666666
+1386,1,-11111.11166667
 
 ** node load on shape: Forces:Vertex48
-1390,1,-11111.111666666666
+1390,1,-11111.11166667
 
 
-** ConstraintForce6
+** Force6
+*CLOAD
 ** node load on shape: Forces:Vertex31
-758,1,11111.111666666666
+758,1,11111.11166667
 
 ** node load on shape: Forces:Vertex32
-762,1,11111.111666666666
+762,1,11111.11166667
 
 ** node load on shape: Forces:Vertex33
-764,1,11111.111666666666
+764,1,11111.11166667
 
 ** node load on shape: Forces:Vertex34
-766,1,11111.111666666666
+766,1,11111.11166667
 
 ** node load on shape: Forces:Vertex35
-769,1,11111.111666666666
+769,1,11111.11166667
 
 ** node load on shape: Forces:Vertex36
-772,1,11111.111666666666
+772,1,11111.11166667
 
 
-** ConstraintForce7
+** Force7
+*CLOAD
 ** node load on shape: Forces:Vertex1
 1,2,-2777.78
 
@@ -2677,7 +2688,8 @@ ConstraintFixed,6
 2,2,-2777.78
 
 
-** ConstraintForce8
+** Force8
+*CLOAD
 ** node load on shape: Forces:Vertex8
 129,2,2777.78
 
@@ -2685,7 +2697,8 @@ ConstraintFixed,6
 236,2,2777.78
 
 
-** ConstraintForce9
+** Force9
+*CLOAD
 ** node load on shape: Forces:Vertex3
 5,2,-5555.556
 
@@ -2702,7 +2715,8 @@ ConstraintFixed,6
 9,2,-5555.556
 
 
-** ConstraintForce10
+** Force10
+*CLOAD
 ** node load on shape: Forces:Vertex15
 238,2,5555.556
 
@@ -2719,67 +2733,69 @@ ConstraintFixed,6
 242,2,5555.556
 
 
-** ConstraintForce11
+** Force11
+*CLOAD
 ** node load on shape: Forces:Vertex25
-429,2,-11111.111666666666
+429,2,-11111.11166667
 
 ** node load on shape: Forces:Vertex26
-431,2,-11111.111666666666
+431,2,-11111.11166667
 
 ** node load on shape: Forces:Vertex27
-437,2,-11111.111666666666
+437,2,-11111.11166667
 
 ** node load on shape: Forces:Vertex28
-440,2,-11111.111666666666
+440,2,-11111.11166667
 
 ** node load on shape: Forces:Vertex29
-443,2,-11111.111666666666
+443,2,-11111.11166667
 
 ** node load on shape: Forces:Vertex30
-446,2,-11111.111666666666
+446,2,-11111.11166667
 
 
-** ConstraintForce12
+** Force12
+*CLOAD
 ** node load on shape: Forces:Vertex37
-1067,2,11111.111666666666
+1067,2,11111.11166667
 
 ** node load on shape: Forces:Vertex38
-1071,2,11111.111666666666
+1071,2,11111.11166667
 
 ** node load on shape: Forces:Vertex39
-1073,2,11111.111666666666
+1073,2,11111.11166667
 
 ** node load on shape: Forces:Vertex40
-1075,2,11111.111666666666
+1075,2,11111.11166667
 
 ** node load on shape: Forces:Vertex41
-1078,2,11111.111666666666
+1078,2,11111.11166667
 
 ** node load on shape: Forces:Vertex42
-1081,2,11111.111666666666
+1081,2,11111.11166667
 
 
 
 ***********************************************************
 ** Outputs --> frd file
-*NODE FILE, OUTPUT=2d
+*NODE FILE, OUTPUT=3d
 U
 *EL FILE
 S, E
 ** outputs --> dat file
 ** reaction forces for Constraint fixed
-*NODE PRINT, NSET=ConstraintFixed, TOTALS=ONLY
+*NODE PRINT, NSET=Fixed, TOTALS=ONLY
 RF
 
-
+*OUTPUT, FREQUENCY=1
 ***********************************************************
-*END STEP 
+*END STEP
 
 ***********************************************************
 ** CalculiX Input file
 **   written by    --> FreeCAD 0.21.0
 **   written on    --> Tue Mar 28 05:36:19 2023
-**   file name     --> 
+**   file name     --> square_pipe_end_twisted_nodeforces.FCStd
 **   analysis name --> Analysis
 **
 **

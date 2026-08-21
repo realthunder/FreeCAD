@@ -33,6 +33,7 @@ import ObjectsFem
 from . import manager
 from .manager import get_meshname
 from .manager import init_doc
+from .meshes import generate_mesh
 
 
 def get_information():
@@ -40,15 +41,17 @@ def get_information():
         "name": "Constraint Contact Shell Shell",
         "meshtype": "face",
         "meshelement": "Tria3",
-        "constraints": ["fixed", "force", "contact"],
-        "solvers": ["calculix", "ccxtools"],
+        "constraints": ["displacement", "force", "contact"],
+        "solvers": ["ccxtools"],
         "material": "solid",
-        "equations": ["mechanical"]
+        "equations": ["mechanical"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.constraint_contact_shell_shell import setup
@@ -62,6 +65,7 @@ based on https://forum.freecad.org/viewtopic.php?f=18&t=42228#p359488
 contact example shell to shell elements
 
 """
+    )
 
 
 def setup(doc=None, solvertype="ccxtools"):
@@ -109,7 +113,7 @@ def setup(doc=None, solvertype="ccxtools"):
         force_point.ViewObject.PointColor = (1.0, 0.0, 0.0)
 
     # boolean fragment of upper tubo and force point
-    boolfrag = SplitFeatures.makeBooleanFragments(name='BooleanFragments')
+    boolfrag = SplitFeatures.makeBooleanFragments(name="BooleanFragments")
     boolfrag.Objects = [upper_tube, force_point]
     if FreeCAD.GuiUp:
         upper_tube.ViewObject.hide()
@@ -136,20 +140,18 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis = ObjectsFem.makeAnalysis(doc, "Analysis")
 
     # solver
-    if solvertype == "calculix":
-        solver_obj = ObjectsFem.makeSolverCalculix(doc, "SolverCalculiX")
-    elif solvertype == "ccxtools":
-        solver_obj = ObjectsFem.makeSolverCalculixCcxTools(doc, "CalculiXccxTools")
-        solver_obj.WorkingDir = u""
+    if solvertype == "ccxtools":
+        solver_obj = ObjectsFem.makeSolverCalculiXCcxTools(doc, "CalculiXCcxTools")
+        solver_obj.WorkingDir = ""
     else:
         FreeCAD.Console.PrintWarning(
             "Unknown or unsupported solver type: {}. "
             "No solver object was created.\n".format(solvertype)
         )
-    if solvertype == "calculix" or solvertype == "ccxtools":
+    if solvertype == "ccxtools":
         solver_obj.AnalysisType = "static"
-        solver_obj.BeamShellResultOutput3D = True
-        solver_obj.GeometricalNonlinearity = "linear"  # really?
+        solver_obj.Output3d = True
+        solver_obj.GeometricalNonlinearity = False  # really?
         # TODO iterations parameter !!!
         solver_obj.ThermoMechSteadyState = False
         solver_obj.MatrixSolverType = "default"
@@ -158,7 +160,7 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis.addObject(solver_obj)
 
     # shell thickness
-    shell_thick = ObjectsFem.makeElementGeometry2D(doc, 0.5, 'ShellThickness')
+    shell_thick = ObjectsFem.makeElementGeometry2D(doc, 0.5, "ShellThickness")
     analysis.addObject(shell_thick)
 
     # material
@@ -170,16 +172,19 @@ def setup(doc=None, solvertype="ccxtools"):
     material_obj.Material = mat
     analysis.addObject(material_obj)
 
-    # constraint fixed
-    con_fixed = ObjectsFem.makeConstraintFixed(doc, "ConstraintFixed")
-    con_fixed.References = [
+    # constraint displacement
+    con_displacement = ObjectsFem.makeConstraintDisplacement(doc, "Displacement")
+    con_displacement.References = [
         (lower_tube, "Edge2"),
         (upper_tube, "Edge3"),
     ]
-    analysis.addObject(con_fixed)
+    con_displacement.xFree = False
+    con_displacement.yFree = False
+    con_displacement.zFree = False
+    analysis.addObject(con_displacement)
 
     # constraint force
-    con_force = ObjectsFem.makeConstraintForce(doc, "ConstraintForce")
+    con_force = ObjectsFem.makeConstraintForce(doc, "Force")
     # TODO use point of tube boolean fragment
     con_force.References = [(force_point, "Vertex1")]
     con_force.Force = "5000.0 N"
@@ -188,28 +193,22 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis.addObject(con_force)
 
     # constraint contact
-    con_contact = ObjectsFem.makeConstraintContact(doc, "ConstraintContact")
+    con_contact = ObjectsFem.makeConstraintContact(doc, "Contact")
     con_contact.References = [
         (lower_tube, "Face1"),
         (upper_tube, "Face1"),
     ]
-    con_contact.Friction = 0.0
-    # con_contact.Slope = "1000000.0 kg/(mm*s^2)"  # contact stiffness
-    con_contact.Slope = 1000000.0  # should be 1000000.0 kg/(mm*s^2)
+    con_contact.Friction = False
+    con_contact.Slope = "1000000.0 GPa/m"
     analysis.addObject(con_contact)
 
     # mesh
     from .meshes.mesh_contact_tube_tube_tria3 import create_nodes, create_elements
-    fem_mesh = Fem.FemMesh()
-    control = create_nodes(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating nodes.\n")
-    control = create_elements(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating elements.\n")
+
+    fem_mesh = generate_mesh.mesh_from_existing(create_nodes, create_elements)
     femmesh_obj = analysis.addObject(ObjectsFem.makeMeshGmsh(doc, get_meshname()))[0]
     femmesh_obj.FemMesh = fem_mesh
-    femmesh_obj.Part = geom_obj
+    femmesh_obj.Shape = geom_obj
     femmesh_obj.SecondOrderLinear = False
 
     doc.recompute()

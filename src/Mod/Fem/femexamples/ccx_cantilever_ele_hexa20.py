@@ -30,6 +30,7 @@ from . import manager
 from .ccx_cantilever_faceload import setup as setup_with_faceload
 from .manager import get_meshname
 from .manager import init_doc
+from .meshes import generate_mesh
 
 
 def get_information():
@@ -38,14 +39,16 @@ def get_information():
         "meshtype": "solid",
         "meshelement": "Hexa20",
         "constraints": ["fixed", "force"],
-        "solvers": ["calculix", "ccxtools", "elmer", "z88"],
+        "solvers": ["ccxtools", "z88"], # elmer disabled until mesh has groups
         "material": "solid",
-        "equations": ["mechanical"]
+        "equations": ["mechanical"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.ccx_cantilever_ele_hexa20 import setup
@@ -57,9 +60,10 @@ hexa20 elements and face load
 ...
 
 """
+    )
 
 
-def setup(doc=None, solvertype="ccxtools"):
+def setup(doc=None, solvertype="ccxtools", test_mode=False):
 
     # init FreeCAD document
     if doc is None:
@@ -70,7 +74,7 @@ def setup(doc=None, solvertype="ccxtools"):
     manager.add_explanation_obj(doc, get_explanation(manager.get_header(get_information())))
 
     # setup cantilever faceload
-    doc = setup_with_faceload(doc, solvertype)
+    doc = setup_with_faceload(doc, solvertype, test_mode)
     femmesh_obj = doc.getObject(get_meshname())
 
     # delete explanation object wrongly added with setup faceload
@@ -80,16 +84,9 @@ def setup(doc=None, solvertype="ccxtools"):
 
     # load the hexa20 mesh
     from .meshes.mesh_canticcx_hexa20 import create_nodes, create_elements
-    new_fem_mesh = Fem.FemMesh()
-    control = create_nodes(new_fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating nodes.\n")
-    control = create_elements(new_fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating elements.\n")
 
-    # overwrite mesh with the hexa20 mesh
-    femmesh_obj.FemMesh = new_fem_mesh
+    fem_mesh = generate_mesh.mesh_from_existing(create_nodes, create_elements)
+    femmesh_obj.FemMesh = fem_mesh
 
     doc.recompute()
     return doc

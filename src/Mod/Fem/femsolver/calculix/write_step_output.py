@@ -35,10 +35,10 @@ def write_step_output(f, ccxwriter):
         or ccxwriter.member.geos_shellthickness
         or ccxwriter.member.geos_fluidsection
     ):
-        if ccxwriter.solver_obj.BeamShellResultOutput3D is False:
-            f.write("*NODE FILE, OUTPUT=2d\n")
-        else:
+        if ccxwriter.solver_obj.Output3d:
             f.write("*NODE FILE, OUTPUT=3d\n")
+        else:
+            f.write("*NODE FILE, OUTPUT=2d\n")
     else:
         f.write("*NODE FILE\n")
     # MPH write out nodal temperatures if thermomechanical
@@ -47,19 +47,30 @@ def write_step_output(f, ccxwriter):
             f.write("U, NT\n")
         else:
             f.write("MF, PS\n")
+    elif ccxwriter.analysis_type == "electromagnetic":
+        f.write("NT\n")
     else:
         f.write("U\n")
     if not ccxwriter.member.geos_fluidsection:
         f.write("*EL FILE\n")
-        if ccxwriter.solver_obj.MaterialNonlinearity == "nonlinear":
-            f.write("S, E, PEEQ\n")
-        else:
-            f.write("S, E\n")
+        variables = "S, E"
+        if ccxwriter.analysis_type == "thermomech":
+            variables += ", HFL"
+
+        # plastic strain only if some material has nonlinear properties
+        if ccxwriter.solver_obj.MaterialNonlinearity:
+            for mat in ccxwriter.member.mats_linear:
+                mat_nonlin = mat["Object"].Nonlinear
+                if mat_nonlin and not mat_nonlin.Suppressed:
+                    variables += ", PEEQ"
+                    break
+
+        if ccxwriter.analysis_type == "electromagnetic":
+            variables = "HFL"
+
+        f.write(variables + "\n")
 
         # dat file
-        # reaction forces: freecad.org/tracker/view.php?id=2934
-        # some hint can be found in this topic:
-        # https://forum.freecad.org/viewtopic.php?f=18&t=20664&start=10#p520642
         if ccxwriter.member.cons_fixed or ccxwriter.member.cons_displacement:
             f.write("** outputs --> dat file\n")
         if ccxwriter.member.cons_fixed:
@@ -81,8 +92,50 @@ def write_step_output(f, ccxwriter):
                 ):
                     f.write("*NODE PRINT, NSET={}, TOTALS=ONLY\n".format(femobj["Object"].Name))
                     f.write("RF\n")
-        if ccxwriter.member.cons_fixed or ccxwriter.member.cons_displacement:
+        if ccxwriter.member.cons_rigidbody:
+            # displacements and reaction forces/moments for Constraint rigid body
+            f.write("** displacements and reaction forces/moments for Constraint rigid body\n")
+            for femobj in ccxwriter.member.cons_rigidbody:
+                # femobj --> dict, FreeCAD document object is femobj["Object"]
+                f.write("*NODE PRINT, NSET={}_RefNode\n".format(femobj["Object"].Name))
+                f.write("U\n")
+                f.write("*NODE PRINT, NSET={}_RotNode\n".format(femobj["Object"].Name))
+                f.write("U\n")
+                if (
+                    femobj["Object"].TranslationalModeX != "Free"
+                    or femobj["Object"].TranslationalModeY != "Free"
+                    or femobj["Object"].TranslationalModeZ != "Free"
+                ):
+                    f.write(
+                        "*NODE PRINT, NSET={}_RefNode, TOTALS=ONLY\n".format(femobj["Object"].Name)
+                    )
+                    f.write("RF\n")
+                if (
+                    femobj["Object"].RotationalModeX != "Free"
+                    or femobj["Object"].RotationalModeY != "Free"
+                    or femobj["Object"].RotationalModeZ != "Free"
+                ):
+                    f.write(
+                        "*NODE PRINT, NSET={}_RotNode, TOTALS=ONLY\n".format(femobj["Object"].Name)
+                    )
+                    f.write("RF\n")
+        if ccxwriter.member.cons_contact:
+            # contact forces for all Constraint contact (only available for face-to-face penalty contact)
+            f.write("** contact forces for Constraint contact\n")
+            for femobj in ccxwriter.member.cons_contact:
+                # femobj --> dict, FreeCAD document object is femobj["Object"]
+                f.write(
+                    "*CONTACT PRINT, MASTER={}, SLAVE={}\n".format(
+                        "IND" + femobj["Object"].Name, "DEP" + femobj["Object"].Name
+                    )
+                )
+                f.write("CF, CFN, CFS\n")
+        if any(
+            vars(ccxwriter.member).get(f"cons_{key}")
+            for key in ["fixed", "displacement", "rigidbody", "contact"]
+        ):
             f.write("\n")
+        f.write(f"*OUTPUT, FREQUENCY={ccxwriter.solver_obj.OutputFrequency}")
 
         # there is no need to write all integration point results
         # as long as there is no reader for them

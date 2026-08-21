@@ -20,13 +20,11 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
-#ifndef _PreComp_
 #include <QApplication>
 #include <QMessageBox>
 #include <QTextStream>
-#endif
+
 
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
@@ -41,6 +39,7 @@ PROPERTY_SOURCE(FemGui::ViewProviderSolver, Gui::ViewProviderDocumentObject)
 
 ViewProviderSolver::ViewProviderSolver()
 {
+    setToggleVisibility(ToggleVisibilityMode::NoToggleVisibility);
     sPixmap = "FEM_SolverStandard";
 }
 

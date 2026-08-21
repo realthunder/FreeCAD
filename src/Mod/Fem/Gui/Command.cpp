@@ -1,4 +1,5 @@
 /***************************************************************************
+ *   Copyright (c) 2022 Peter McB                                          *
  *   Copyright (c) 2008 Jürgen Riegel <juergen.riegel@web.de>              *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
@@ -20,8 +21,6 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
-#ifndef _PreComp_
 #include <Inventor/events/SoMouseButtonEvent.h>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoEventCallback.h>
@@ -30,7 +29,7 @@
 #include <QMessageBox>
 #include <SMESHDS_Mesh.hxx>
 #include <SMESH_Mesh.hxx>
-#endif
+
 
 #include <App/Document.h>
 #include <App/DocumentObserver.h>
@@ -41,8 +40,8 @@
 #include <Gui/Document.h>
 #include <Gui/FileDialog.h>
 #include <Gui/MainWindow.h>
-#include <Gui/SelectionFilter.h>
-#include <Gui/SelectionObject.h>
+#include <Gui/Selection/SelectionFilter.h>
+#include <Gui/Selection/SelectionObject.h>
 #include <Gui/Utilities.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
@@ -51,13 +50,16 @@
 #include <Mod/Fem/App/FemAnalysis.h>
 #include <Mod/Fem/App/FemConstraint.h>
 #include <Mod/Fem/App/FemMeshObject.h>
+#include <Mod/Fem/App/FemSetElementNodesObject.h>
 #include <Mod/Fem/App/FemSetNodesObject.h>
 
 #include "ActiveAnalysisObserver.h"
 #include "FemSettings.h"
 
 #ifdef FC_USE_VTK
-#include <Mod/Fem/App/FemPostPipeline.h>
+# include <Mod/Fem/App/FemPostFilter.h>
+# include <Mod/Fem/App/FemPostPipeline.h>
+# include <Mod/Fem/Gui/ViewProviderFemPostObject.h>
 #endif
 
 
@@ -66,12 +68,14 @@ using namespace std;
 //================================================================================================
 //================================================================================================
 // helpers
-bool getConstraintPrerequisits(Fem::FemAnalysis** Analysis)
+static bool getConstraintPrerequisits(Fem::FemAnalysis** Analysis)
 {
     if (!FemGui::ActiveAnalysisObserver::instance()->hasActiveObject()) {
-        QMessageBox::warning(Gui::getMainWindow(),
-                             QObject::tr("No active Analysis"),
-                             QObject::tr("You need to create or activate a Analysis"));
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("No active Analysis"),
+            QObject::tr("You need to create or activate a Analysis")
+        );
         return true;
     }
 
@@ -82,7 +86,7 @@ bool getConstraintPrerequisits(Fem::FemAnalysis** Analysis)
 }
 
 // OvG: Visibility automation show parts and hide meshes on activation of a constraint
-std::string gethideMeshShowPartStr(std::string showConstr = "")
+static std::string gethideMeshShowPartStr(std::string showConstr = "")
 {
     return "for amesh in App.activeDocument().Objects:\n\
     if \""
@@ -94,6 +98,64 @@ std::string gethideMeshShowPartStr(std::string showConstr = "")
             if aparttoshow == apart.Name:\n\
                 apart.ViewObject.Visibility = True\n\
         amesh.ViewObject.Visibility = False\n";
+}
+
+static std::string getSelectedNodes(Gui::View3DInventorViewer* view)
+{
+    Gui::SelectionRole role;
+    std::vector<SbVec2f> clPoly = view->getGLPolygon(&role);
+    if (clPoly.size() < 3) {
+        return {};
+    }
+    if (clPoly.front() != clPoly.back()) {
+        clPoly.push_back(clPoly.front());
+    }
+
+    SoCamera* cam = view->getSoRenderManager()->getCamera();
+    SbViewVolume vv = cam->getViewVolume();
+    Gui::ViewVolumeProjection proj(vv);
+    Base::Polygon2d polygon;
+    for (auto it : clPoly) {
+        polygon.Add(Base::Vector2d(it[0], it[1]));
+    }
+
+    std::vector<App::DocumentObject*> docObj = Gui::Selection().getObjectsOfType(
+        Fem::FemMeshObject::getClassTypeId()
+    );
+    if (docObj.size() != 1) {
+        return {};
+    }
+
+    const SMESHDS_Mesh* data
+        = static_cast<Fem::FemMeshObject*>(docObj[0])->FemMesh.getValue().getSMesh()->GetMeshDS();
+
+    SMDS_NodeIteratorPtr aNodeIter = data->nodesIterator();
+    Base::Vector3f pt2d;
+    std::set<int> IntSet;
+
+    while (aNodeIter->more()) {
+        const SMDS_MeshNode* aNode = aNodeIter->next();
+        Base::Vector3f vec(aNode->X(), aNode->Y(), aNode->Z());
+        pt2d = proj(vec);
+        if (polygon.Contains(Base::Vector2d(pt2d.x, pt2d.y))) {
+            IntSet.insert(aNode->GetID());
+        }
+    }
+
+    std::stringstream set;
+
+    set << "[";
+    for (auto it = IntSet.cbegin(); it != IntSet.cend(); ++it) {
+        if (it == IntSet.begin()) {
+            set << *it;
+        }
+        else {
+            set << "," << *it;
+        }
+    }
+    set << "]";
+
+    return set.str();
 }
 
 
@@ -110,8 +172,8 @@ CmdFemAddPart::CmdFemAddPart()
 {
     sAppModule      = "Fem";
     sGroup          = QT_TR_NOOP("Fem");
-    sMenuText       = QT_TR_NOOP("Add a part to the analysis");
-    sToolTipText    = QT_TR_NOOP("Add a part to the Analysis");
+    sMenuText       = QT_TR_NOOP("Add Part to Analysis");
+    sToolTipText    = QT_TR_NOOP("Adds a part to the analysis");
     sWhatsThis      = "FEM_FemAddPart";
     sStatusTip      = sToolTipText;
     sPixmap         = "fem-add-fem-mesh";
@@ -121,7 +183,7 @@ void CmdFemAddPart::activated(int)
 {
 #ifndef FCWithNetgen
     QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Wrong selection"),
-            QObject::tr("Your FreeCAD is built without NETGEN support. Meshing will not work...."));
+            QObject::tr("Your FreeCAD is built without NETGEN support. Meshing will not work…"));
     return;
 #endif
 
@@ -162,8 +224,7 @@ bool CmdFemAddPart::isActive(void)
 {
     if (Gui::Control().activeDialog())
         return false;
-    Base::Type type = Base::Type::fromName("Part::Feature");
-    return Gui::Selection().countObjectsOfType(type) > 0;
+    return Gui::Selection().countObjectsOfType<Part::Feature>(type) > 0;
 }
 */
 
@@ -180,7 +241,7 @@ CmdFemConstraintBearing::CmdFemConstraintBearing()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Bearing constraint");
+    sMenuText = QT_TR_NOOP("Bearing Constraint");
     sToolTipText = QT_TR_NOOP("Creates a bearing constraint");
     sWhatsThis = "FEM_ConstraintBearing";
     sStatusTip = sToolTipText;
@@ -198,13 +259,13 @@ void CmdFemConstraintBearing::activated(int)
     std::string FeatName = getUniqueObjectName("ConstraintBearing");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make bearing constraint"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintBearing\",\"%s\")",
-              FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(Doc, "App.activeDocument().addObject(\"Fem::ConstraintBearing\",\"%s\")", FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr(FeatName).c_str());
@@ -228,7 +289,7 @@ CmdFemConstraintContact::CmdFemConstraintContact()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Contact constraint");
+    sMenuText = QT_TR_NOOP("Contact Constraint");
     sToolTipText = QT_TR_NOOP("Creates a contact constraint between faces");
     sWhatsThis = "FEM_ConstraintContact";
     sStatusTip = sToolTipText;
@@ -243,25 +304,46 @@ void CmdFemConstraintContact::activated(int)
         return;
     }
 
-    std::string FeatName = getUniqueObjectName("ConstraintContact");
+    std::string FeatName = getUniqueObjectName("Contact");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make contact constraint on a face"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintContact\",\"%s\")",
-              FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.Slope = 1000000.00",
-              FeatName.c_str());  // OvG: set default not equal to 0
-    doCommand(Doc,
-              "App.activeDocument().%s.Friction = 0.0",
-              FeatName.c_str());  // OvG: set default not equal to 0
-    doCommand(Doc,
-              "App.activeDocument().%s.Scale = 1",
-              FeatName.c_str());  // OvG: set initial scale to 1
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(Doc, "App.activeDocument().addObject(\"Fem::ConstraintContact\",\"%s\")", FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Slope = \"1e6 GPa/m\"",
+        FeatName.c_str()
+    );  // OvG: set default not equal to 0
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Adjust = 0.0",
+        FeatName.c_str()
+    );  // OvG: set default equal to 0
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Friction = False",
+        FeatName.c_str()
+    );  // OvG: set default equal to 0
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.FrictionCoefficient = 0.0",
+        FeatName.c_str()
+    );  // OvG: set default equal to 0
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.StickSlope = \"1e4 GPa/m\"",
+        FeatName.c_str()
+    );  // OvG: set default not equal to 0
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Scale = 1",
+        FeatName.c_str()
+    );  // OvG: set initial scale to 1
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr(FeatName).c_str());
@@ -285,7 +367,7 @@ CmdFemConstraintDisplacement::CmdFemConstraintDisplacement()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Displacement boundary condition");
+    sMenuText = QT_TR_NOOP("Displacement Boundary Condition");
     sToolTipText = QT_TR_NOOP("Creates a displacement boundary condition for a geometric entity");
     sWhatsThis = "FEM_ConstraintDisplacement";
     sStatusTip = sToolTipText;
@@ -300,18 +382,22 @@ void CmdFemConstraintDisplacement::activated(int)
         return;
     }
 
-    std::string FeatName = getUniqueObjectName("ConstraintDisplacement");
+    std::string FeatName = getUniqueObjectName("Displacement");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make displacement boundary condition on face"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintDisplacement\",\"%s\")",
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().addObject(\"Fem::ConstraintDisplacement\",\"%s\")",
+        FeatName.c_str()
+    );
     // OvG: set initial scale to 1
     doCommand(Doc, "App.activeDocument().%s.Scale = 1", FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr(FeatName).c_str());
@@ -335,7 +421,7 @@ CmdFemConstraintFixed::CmdFemConstraintFixed()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Fixed boundary condition");
+    sMenuText = QT_TR_NOOP("Fixed Boundary Condition");
     sToolTipText = QT_TR_NOOP("Creates a fixed boundary condition for a geometric entity");
     sWhatsThis = "FEM_ConstraintFixed";
     sStatusTip = sToolTipText;
@@ -350,18 +436,18 @@ void CmdFemConstraintFixed::activated(int)
         return;
     }
 
-    std::string FeatName = getUniqueObjectName("ConstraintFixed");
+    std::string FeatName = getUniqueObjectName("Fixed");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make fixed boundary condition for geometry"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintFixed\",\"%s\")",
-              FeatName.c_str());
+    doCommand(Doc, "App.activeDocument().addObject(\"Fem::ConstraintFixed\",\"%s\")", FeatName.c_str());
     // OvG: set initial scale to 1
     doCommand(Doc, "App.activeDocument().%s.Scale = 1", FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr(FeatName).c_str());
@@ -378,6 +464,66 @@ bool CmdFemConstraintFixed::isActive()
 
 
 //================================================================================================
+DEF_STD_CMD_A(CmdFemConstraintRigidBody)
+
+CmdFemConstraintRigidBody::CmdFemConstraintRigidBody()
+    : Command("FEM_ConstraintRigidBody")
+{
+    sAppModule = "Fem";
+    sGroup = QT_TR_NOOP("Fem");
+    sMenuText = QT_TR_NOOP("Rigid Body Constraint");
+    sToolTipText = QT_TR_NOOP("Creates a rigid body constraint for a geometric entity");
+    sWhatsThis = "FEM_ConstraintRigidBody";
+    sStatusTip = sToolTipText;
+    sPixmap = "FEM_ConstraintRigidBody";
+}
+
+void CmdFemConstraintRigidBody::activated(int)
+{
+    Fem::FemAnalysis* Analysis;
+
+    if (getConstraintPrerequisits(&Analysis)) {
+        return;
+    }
+
+    std::string FeatName = getUniqueObjectName("RigidBody");
+
+    openCommand(QT_TRANSLATE_NOOP("Command", "Make rigid body constraint"));
+    doCommand(
+        Doc,
+        "App.activeDocument().addObject(\"Fem::ConstraintRigidBody\",\"%s\")",
+        FeatName.c_str()
+    );
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Scale = 1",
+        FeatName.c_str()
+    );  // OvG: set initial scale to 1
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
+
+    doCommand(
+        Doc,
+        "%s",
+        gethideMeshShowPartStr(FeatName).c_str()
+    );  // OvG: Hide meshes and show parts
+
+    updateActive();
+
+    doCommand(Gui, "Gui.activeDocument().setEdit('%s')", FeatName.c_str());
+}
+
+bool CmdFemConstraintRigidBody::isActive()
+{
+    return FemGui::ActiveAnalysisObserver::instance()->hasActiveObject();
+}
+
+
+//================================================================================================
 DEF_STD_CMD_A(CmdFemConstraintFluidBoundary)
 
 CmdFemConstraintFluidBoundary::CmdFemConstraintFluidBoundary()
@@ -385,9 +531,10 @@ CmdFemConstraintFluidBoundary::CmdFemConstraintFluidBoundary()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Fluid boundary condition");
-    sToolTipText =
-        QT_TR_NOOP("Create fluid boundary condition on face entity for Computional Fluid Dynamics");
+    sMenuText = QT_TR_NOOP("Fluid Boundary Condition");
+    sToolTipText = QT_TR_NOOP(
+        "Create fluid boundary condition on face entity for Computional Fluid Dynamics"
+    );
     sWhatsThis = "FEM_ConstraintFluidBoundary";
     sStatusTip = sToolTipText;
     sPixmap = "FEM_ConstraintFluidBoundary";
@@ -404,17 +551,23 @@ void CmdFemConstraintFluidBoundary::activated(int)
     std::string FeatName = getUniqueObjectName("ConstraintFluidBoundary");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Create fluid boundary condition"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintFluidBoundary\",\"%s\")",
-              FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.Scale = 1",
-              FeatName.c_str());  // OvG: set initial scale to 1
+    doCommand(
+        Doc,
+        "App.activeDocument().addObject(\"Fem::ConstraintFluidBoundary\",\"%s\")",
+        FeatName.c_str()
+    );
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Scale = 1",
+        FeatName.c_str()
+    );  // OvG: set initial scale to 1
     // BoundaryValue is already the default value, zero is acceptable
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr(FeatName).c_str());
@@ -437,7 +590,7 @@ CmdFemConstraintForce::CmdFemConstraintForce()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Force load");
+    sMenuText = QT_TR_NOOP("Force Load");
     sToolTipText = QT_TR_NOOP("Creates a force load applied to a geometric entity");
     sWhatsThis = "FEM_ConstraintForce";
     sStatusTip = sToolTipText;
@@ -452,25 +605,31 @@ void CmdFemConstraintForce::activated(int)
         return;
     }
 
-    std::string FeatName = getUniqueObjectName("ConstraintForce");
+    std::string FeatName = getUniqueObjectName("Force");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make force load on geometry"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintForce\",\"%s\")",
-              FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.Force = \"1 N\"",
-              FeatName.c_str());  // OvG: set default to 1 N
-    doCommand(Doc,
-              "App.activeDocument().%s.Reversed = False",
-              FeatName.c_str());  // OvG: set default to False
-    doCommand(Doc,
-              "App.activeDocument().%s.Scale = 1",
-              FeatName.c_str());  // OvG: set initial scale to 1
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(Doc, "App.activeDocument().addObject(\"Fem::ConstraintForce\",\"%s\")", FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Force = \"1 N\"",
+        FeatName.c_str()
+    );  // OvG: set default to 1 N
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Reversed = False",
+        FeatName.c_str()
+    );  // OvG: set default to False
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Scale = 1",
+        FeatName.c_str()
+    );  // OvG: set initial scale to 1
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr(FeatName).c_str());
@@ -494,7 +653,7 @@ CmdFemConstraintGear::CmdFemConstraintGear()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Gear constraint");
+    sMenuText = QT_TR_NOOP("Gear Constraint");
     sToolTipText = QT_TR_NOOP("Creates a gear constraint");
     sWhatsThis = "FEM_ConstraintGear";
     sStatusTip = sToolTipText;
@@ -511,14 +670,14 @@ void CmdFemConstraintGear::activated(int)
     std::string FeatName = getUniqueObjectName("ConstraintGear");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make gear constraint"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintGear\",\"%s\")",
-              FeatName.c_str());
+    doCommand(Doc, "App.activeDocument().addObject(\"Fem::ConstraintGear\",\"%s\")", FeatName.c_str());
     doCommand(Doc, "App.activeDocument().%s.Diameter = 100.0", FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr(FeatName).c_str());
@@ -542,7 +701,7 @@ CmdFemConstraintHeatflux::CmdFemConstraintHeatflux()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Heat flux load");
+    sMenuText = QT_TR_NOOP("Heat Flux Load");
     sToolTipText = QT_TR_NOOP("Creates a heat flux load acting on a face");
     sWhatsThis = "FEM_ConstraintHeatflux";
     sStatusTip = sToolTipText;
@@ -557,25 +716,41 @@ void CmdFemConstraintHeatflux::activated(int)
         return;
     }
 
-    std::string FeatName = getUniqueObjectName("ConstraintHeatflux");
+    std::string FeatName = getUniqueObjectName("HeatFlux");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make heat flux load on face"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintHeatflux\",\"%s\")",
-              FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.AmbientTemp = 300.0",
-              FeatName.c_str());  // OvG: set default not equal to 0
-    doCommand(Doc,
-              "App.activeDocument().%s.FilmCoef = 10.0",
-              FeatName.c_str());  // OvG: set default not equal to 0
-    doCommand(Doc,
-              "App.activeDocument().%s.Scale = 1",
-              FeatName.c_str());  // OvG: set initial scale to 1
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().addObject(\"Fem::ConstraintHeatflux\",\"%s\")",
+        FeatName.c_str()
+    );
+    doCommand(Doc, "App.activeDocument().%s.ConstraintType = \"Flux\"", FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.AmbientTemp = 300.0",
+        FeatName.c_str()
+    );  // OvG: set default not equal to 0
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.FilmCoef = 10.0",
+        FeatName.c_str()
+    );  // OvG: set default not equal to 0
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Emissivity = 1.0",
+        FeatName.c_str()
+    );  // OvG: set default not equal to 0
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Scale = 1",
+        FeatName.c_str()
+    );  // OvG: set initial scale to 1
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr().c_str());
@@ -599,7 +774,7 @@ CmdFemConstraintInitialTemperature::CmdFemConstraintInitialTemperature()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Initial temperature");
+    sMenuText = QT_TR_NOOP("Initial Temperature");
     sToolTipText = QT_TR_NOOP("Creates an initial temperature acting on a body");
     sWhatsThis = "FEM_ConstraintInitialTemperature";
     sStatusTip = sToolTipText;
@@ -614,19 +789,25 @@ void CmdFemConstraintInitialTemperature::activated(int)
         return;
     }
 
-    std::string FeatName = getUniqueObjectName("ConstraintInitialTemperature");
+    std::string FeatName = getUniqueObjectName("InitialTemperature");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make initial temperature condition on body"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintInitialTemperature\",\"%s\")",
-              FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.Scale = 1",
-              FeatName.c_str());  // OvG: set initial scale to 1
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().addObject(\"Fem::ConstraintInitialTemperature\",\"%s\")",
+        FeatName.c_str()
+    );
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Scale = 1",
+        FeatName.c_str()
+    );  // OvG: set initial scale to 1
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr().c_str());
@@ -650,7 +831,7 @@ CmdFemConstraintPlaneRotation::CmdFemConstraintPlaneRotation()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Plane multi-point constraint");
+    sMenuText = QT_TR_NOOP("Plane Multi-Point Constraint");
     sToolTipText = QT_TR_NOOP("Creates a plane multi-point constraint for a face");
     sWhatsThis = "FEM_ConstraintPlaneRotation";
     sStatusTip = sToolTipText;
@@ -665,19 +846,25 @@ void CmdFemConstraintPlaneRotation::activated(int)
         return;
     }
 
-    std::string FeatName = getUniqueObjectName("ConstraintPlaneRotation");
+    std::string FeatName = getUniqueObjectName("PlaneRotation");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make plane multi-point constraint on face"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintPlaneRotation\",\"%s\")",
-              FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.Scale = 1",
-              FeatName.c_str());  // OvG: set initial scale to 1
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().addObject(\"Fem::ConstraintPlaneRotation\",\"%s\")",
+        FeatName.c_str()
+    );
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Scale = 1",
+        FeatName.c_str()
+    );  // OvG: set initial scale to 1
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr(FeatName).c_str());
@@ -701,7 +888,7 @@ CmdFemConstraintPressure::CmdFemConstraintPressure()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Pressure load");
+    sMenuText = QT_TR_NOOP("Pressure Load");
     sToolTipText = QT_TR_NOOP("Creates a pressure load acting on a face");
     sWhatsThis = "FEM_ConstraintPressure";
     sStatusTip = sToolTipText;
@@ -716,24 +903,32 @@ void CmdFemConstraintPressure::activated(int)
         return;
     }
 
-    std::string FeatName = getUniqueObjectName("ConstraintPressure");
+    std::string FeatName = getUniqueObjectName("Pressure");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make pressure load on face"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintPressure\",\"%s\")",
-              FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.Pressure = 0.1",
-              FeatName.c_str());  // OvG: set default not equal to 0
-    doCommand(Doc,
-              "App.activeDocument().%s.Reversed = False",
-              FeatName.c_str());  // OvG: set default to False
+    doCommand(
+        Doc,
+        "App.activeDocument().addObject(\"Fem::ConstraintPressure\",\"%s\")",
+        FeatName.c_str()
+    );
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Pressure = \"1 MPa\"",
+        FeatName.c_str()
+    );  // OvG: set default not equal to 0
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Reversed = False",
+        FeatName.c_str()
+    );  // OvG: set default to False
     // OvG: set initial scale to 1
     doCommand(Doc, "App.activeDocument().%s.Scale = 1", FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr(FeatName).c_str());
@@ -757,8 +952,8 @@ CmdFemConstraintSpring::CmdFemConstraintSpring()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Spring");
-    sToolTipText = QT_TR_NOOP("Creates a spring acting on a face");
+    sMenuText = QT_TR_NOOP("Spring Boundary Condition");
+    sToolTipText = QT_TR_NOOP("Creates a spring boundary condition on a face");
     sWhatsThis = "FEM_ConstraintSpring";
     sStatusTip = sToolTipText;
     sPixmap = "FEM_ConstraintSpring";
@@ -772,24 +967,28 @@ void CmdFemConstraintSpring::activated(int)
         return;
     }
 
-    std::string FeatName = getUniqueObjectName("ConstraintSpring");
+    std::string FeatName = getUniqueObjectName("Spring");
 
-    openCommand(QT_TRANSLATE_NOOP("Command", "Make spring on face"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintSpring\",\"%s\")",
-              FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.NormalStiffness = 1.0",
-              FeatName.c_str());  // OvG: set default not equal to 0
-    doCommand(Doc,
-              "App.activeDocument().%s.TangentialStiffness = 0.0",
-              FeatName.c_str());  // OvG: set default to False
+    openCommand(QT_TRANSLATE_NOOP("Command", "Make Spring Constraint"));
+    doCommand(Doc, "App.activeDocument().addObject(\"Fem::ConstraintSpring\",\"%s\")", FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.NormalStiffness = 1.0",
+        FeatName.c_str()
+    );  // OvG: set default not equal to 0
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.TangentialStiffness = 0.0",
+        FeatName.c_str()
+    );  // OvG: set default to False
     // OvG: set initial scale to 1
     doCommand(Doc, "App.activeDocument().%s.Scale = 1", FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr(FeatName).c_str());
 
@@ -812,7 +1011,7 @@ CmdFemConstraintPulley::CmdFemConstraintPulley()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Pulley constraint");
+    sMenuText = QT_TR_NOOP("Pulley Constraint");
     sToolTipText = QT_TR_NOOP("Creates a pulley constraint");
     sWhatsThis = "FEM_ConstraintPulley";
     sStatusTip = sToolTipText;
@@ -830,18 +1029,18 @@ void CmdFemConstraintPulley::activated(int)
     std::string FeatName = getUniqueObjectName("ConstraintPulley");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make pulley constraint"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintPulley\",\"%s\")",
-              FeatName.c_str());
+    doCommand(Doc, "App.activeDocument().addObject(\"Fem::ConstraintPulley\",\"%s\")", FeatName.c_str());
     doCommand(Doc, "App.activeDocument().%s.Diameter = 300.0", FeatName.c_str());
     doCommand(Doc, "App.activeDocument().%s.OtherDiameter = 100.0", FeatName.c_str());
     doCommand(Doc, "App.activeDocument().%s.CenterDistance = 500.0", FeatName.c_str());
     doCommand(Doc, "App.activeDocument().%s.Force = 100.0", FeatName.c_str());
     doCommand(Doc, "App.activeDocument().%s.TensionForce = 100.0", FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr(FeatName).c_str());
@@ -865,7 +1064,7 @@ CmdFemConstraintTemperature::CmdFemConstraintTemperature()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Temperature boundary condition");
+    sMenuText = QT_TR_NOOP("Temperature Boundary Condition");
     sToolTipText = QT_TR_NOOP("Creates a temperature/concentrated heat flux load acting on a face");
     sWhatsThis = "FEM_ConstraintTemperature";
     sStatusTip = sToolTipText;
@@ -880,19 +1079,25 @@ void CmdFemConstraintTemperature::activated(int)
         return;
     }
 
-    std::string FeatName = getUniqueObjectName("ConstraintTemperature");
+    std::string FeatName = getUniqueObjectName("Temperature");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make temperature boundary condition on face"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintTemperature\",\"%s\")",
-              FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.Scale = 1",
-              FeatName.c_str());  // OvG: set initial scale to 1
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().addObject(\"Fem::ConstraintTemperature\",\"%s\")",
+        FeatName.c_str()
+    );
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.Scale = 1",
+        FeatName.c_str()
+    );  // OvG: set initial scale to 1
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr().c_str());
@@ -916,8 +1121,8 @@ CmdFemConstraintTransform::CmdFemConstraintTransform()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Local coordinate system");
-    sToolTipText = QT_TR_NOOP("Create a local coordinate system on a face");
+    sMenuText = QT_TR_NOOP("Local Coordinate System");
+    sToolTipText = QT_TR_NOOP("Creates a local coordinate system on a face");
     sWhatsThis = "FEM_ConstraintTransform";
     sStatusTip = sToolTipText;
     sPixmap = "FEM_ConstraintTransform";
@@ -931,20 +1136,21 @@ void CmdFemConstraintTransform::activated(int)
         return;
     }
 
-    std::string FeatName = getUniqueObjectName("ConstraintTransform");
+    std::string FeatName = getUniqueObjectName("Transform");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make local coordinate system on face"));
-    doCommand(Doc,
-              "App.activeDocument().addObject(\"Fem::ConstraintTransform\",\"%s\")",
-              FeatName.c_str());
-    doCommand(Doc, "App.activeDocument().%s.X_rot = 0.0", FeatName.c_str());
-    doCommand(Doc, "App.activeDocument().%s.Y_rot = 0.0", FeatName.c_str());
-    doCommand(Doc, "App.activeDocument().%s.Z_rot = 0.0", FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().addObject(\"Fem::ConstraintTransform\",\"%s\")",
+        FeatName.c_str()
+    );
     doCommand(Doc, "App.activeDocument().%s.Scale = 1", FeatName.c_str());
-    doCommand(Doc,
-              "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-              Analysis->getNameInDocument(),
-              FeatName.c_str());
+    doCommand(
+        Doc,
+        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        Analysis->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // OvG: Hide meshes and show parts
     doCommand(Doc, "%s", gethideMeshShowPartStr(FeatName).c_str());
@@ -967,7 +1173,7 @@ bool CmdFemConstraintTransform::isActive()
 //================================================================================================
 DEF_STD_CMD_A(CmdFemDefineNodesSet)
 
-void DefineNodesCallback(void* ud, SoEventCallback* n)
+static void DefineNodesCallback(void* ud, SoEventCallback* n)
 {
     Fem::FemAnalysis* Analysis;
 
@@ -984,88 +1190,26 @@ void DefineNodesCallback(void* ud, SoEventCallback* n)
     view->removeEventCallback(SoMouseButtonEvent::getClassTypeId(), DefineNodesCallback, ud);
     n->setHandled();
 
-    Gui::SelectionRole role;
-    std::vector<SbVec2f> clPoly = view->getGLPolygon(&role);
-    if (clPoly.size() < 3) {
-        return;
+    std::string str = getSelectedNodes(view);
+    if (!str.empty()) {
+        int tid = Gui::Command::openActiveDocumentCommand(QT_TRANSLATE_NOOP("Command", "Place robot"));
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.ActiveDocument.addObject('Fem::FemSetNodesObject','NodeSet')"
+        );
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.ActiveDocument.ActiveObject.Nodes = %s",
+            str.c_str()
+        );
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.activeDocument().%s.addObject(App.activeDocument().NodeSet)",
+            Analysis->getNameInDocument()
+        );
+
+        Gui::Command::commitCommand(tid);
     }
-    if (clPoly.front() != clPoly.back()) {
-        clPoly.push_back(clPoly.front());
-    }
-
-    SoCamera* cam = view->getSoRenderManager()->getCamera();
-    SbViewVolume vv = cam->getViewVolume();
-    Gui::ViewVolumeProjection proj(vv);
-    Base::Polygon2d polygon;
-    for (auto it : clPoly) {
-        polygon.Add(Base::Vector2d(it[0], it[1]));
-    }
-
-
-    std::vector<App::DocumentObject*> docObj =
-        Gui::Selection().getObjectsOfType(Fem::FemMeshObject::getClassTypeId());
-    if (docObj.size() != 1) {
-        return;
-    }
-
-    const SMESHDS_Mesh* data =
-        static_cast<Fem::FemMeshObject*>(docObj[0])->FemMesh.getValue().getSMesh()->GetMeshDS();
-
-    SMDS_NodeIteratorPtr aNodeIter = data->nodesIterator();
-    Base::Vector3f pt2d;
-    std::set<int> IntSet;
-
-    while (aNodeIter->more()) {
-        const SMDS_MeshNode* aNode = aNodeIter->next();
-        Base::Vector3f vec(aNode->X(), aNode->Y(), aNode->Z());
-        pt2d = proj(vec);
-        if (polygon.Contains(Base::Vector2d(pt2d.x, pt2d.y))) {
-            IntSet.insert(aNode->GetID());
-        }
-    }
-
-    std::stringstream set;
-
-    set << "[";
-    for (std::set<int>::const_iterator it = IntSet.begin(); it != IntSet.end(); ++it) {
-        if (it == IntSet.begin()) {
-            set << *it;
-        }
-        else {
-            set << "," << *it;
-        }
-    }
-    set << "]";
-
-
-    Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Place robot"));
-    Gui::Command::doCommand(Gui::Command::Doc,
-                            "App.ActiveDocument.addObject('Fem::FemSetNodesObject','NodeSet')");
-    Gui::Command::doCommand(Gui::Command::Doc,
-                            "App.ActiveDocument.ActiveObject.Nodes = %s",
-                            set.str().c_str());
-    Gui::Command::doCommand(Gui::Command::Doc,
-                            "App.activeDocument().%s.addObject(App.activeDocument().NodeSet)",
-                            Analysis->getNameInDocument());
-    // Gui::Command::updateActive();
-    Gui::Command::commitCommand();
-
-    // std::vector<Gui::ViewProvider*> views =
-    // view->getViewProvidersOfType(ViewProviderMesh::getClassTypeId()); if (!views.empty()) {
-    //     Gui::Application::Instance->activeDocument()->openCommand(QT_TRANSLATE_NOOP("Command",
-    //     "Cut")); for (std::vector<Gui::ViewProvider*>::iterator it = views.begin(); it !=
-    //     views.end(); ++it) {
-    //         ViewProviderMesh* that = static_cast<ViewProviderMesh*>(*it);
-    //         if (that->getEditingMode() > -1) {
-    //             that->finishEditing();
-    //             that->cutMesh(clPoly, *view, clip_inner);
-    //         }
-    //     }
-
-    //    Gui::Application::Instance->activeDocument()->commitCommand();
-
-    //    view->render();
-    //}
 }
 
 
@@ -1074,20 +1218,20 @@ CmdFemDefineNodesSet::CmdFemDefineNodesSet()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Node set by poly");
-    sToolTipText = QT_TR_NOOP("Create node set by Poly");
+    sMenuText = QT_TR_NOOP("Node Set by Polygon");
+    sToolTipText = QT_TR_NOOP("Creates a node set by polygon selection");
     sWhatsThis = "FEM_DefineNodesSet";
-    sStatusTip = QT_TR_NOOP("Create node set by Poly");
+    sStatusTip = sToolTipText;
     sPixmap = "FEM_CreateNodesSet";
 }
 
 void CmdFemDefineNodesSet::activated(int)
 {
-    std::vector<App::DocumentObject*> docObj =
-        Gui::Selection().getObjectsOfType(Fem::FemMeshObject::getClassTypeId());
+    std::vector<App::DocumentObject*> docObj = Gui::Selection().getObjectsOfType(
+        Fem::FemMeshObject::getClassTypeId()
+    );
 
-    for (std::vector<App::DocumentObject*>::iterator it = docObj.begin(); it != docObj.end();
-         ++it) {
+    for (std::vector<App::DocumentObject*>::iterator it = docObj.begin(); it != docObj.end(); ++it) {
         if (it == docObj.begin()) {
             Gui::Document* doc = getActiveGuiDocument();
             Gui::MDIView* view = doc->getActiveView();
@@ -1111,12 +1255,12 @@ void CmdFemDefineNodesSet::activated(int)
 bool CmdFemDefineNodesSet::isActive()
 {
     // Check for the selected mesh feature (all Mesh types)
-    if (getSelection().countObjectsOfType(Fem::FemMeshObject::getClassTypeId()) != 1) {
+    if (getSelection().countObjectsOfType<Fem::FemMeshObject>() != 1) {
         return false;
     }
 
     Gui::MDIView* view = Gui::getMainWindow()->activeWindow();
-    if (view && view->isDerivedFrom(Gui::View3DInventor::getClassTypeId())) {
+    if (view && view->isDerivedFrom<Gui::View3DInventor>()) {
         Gui::View3DInventorViewer* viewer = static_cast<Gui::View3DInventor*>(view)->getViewer();
         return !viewer->isEditing();
     }
@@ -1133,7 +1277,7 @@ CmdFemCreateNodesSet::CmdFemCreateNodesSet()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Nodes set");
+    sMenuText = QT_TR_NOOP("Nodes Set");
     sToolTipText = QT_TR_NOOP("Creates a FEM mesh nodes set");
     sWhatsThis = "FEM_CreateNodesSet";
     sStatusTip = sToolTipText;
@@ -1146,32 +1290,35 @@ void CmdFemCreateNodesSet::activated(int)
     Gui::SelectionFilter FemMeshFilter("SELECT Fem::FemMeshObject COUNT 1");
 
     if (ObjectFilter.match()) {
-        Fem::FemSetNodesObject* NodesObj =
-            static_cast<Fem::FemSetNodesObject*>(ObjectFilter.Result[0][0].getObject());
+        Fem::FemSetNodesObject* NodesObj = static_cast<Fem::FemSetNodesObject*>(
+            ObjectFilter.Result[0][0].getObject()
+        );
         openCommand(QT_TRANSLATE_NOOP("Command", "Edit nodes set"));
         doCommand(Gui, "Gui.activeDocument().setEdit('%s')", NodesObj->getNameInDocument());
     }
     else if (FemMeshFilter.match()) {
-        Fem::FemMeshObject* MeshObj =
-            static_cast<Fem::FemMeshObject*>(FemMeshFilter.Result[0][0].getObject());
+        Fem::FemMeshObject* MeshObj = static_cast<Fem::FemMeshObject*>(
+            FemMeshFilter.Result[0][0].getObject()
+        );
 
         std::string FeatName = getUniqueObjectName("NodesSet");
 
         openCommand(QT_TRANSLATE_NOOP("Command", "Create nodes set"));
-        doCommand(Doc,
-                  "App.activeDocument().addObject('Fem::FemSetNodesObject','%s')",
-                  FeatName.c_str());
-        doCommand(Gui,
-                  "App.activeDocument().%s.FemMesh = App.activeDocument().%s",
-                  FeatName.c_str(),
-                  MeshObj->getNameInDocument());
+        doCommand(Doc, "App.activeDocument().addObject('Fem::FemSetNodesObject','%s')", FeatName.c_str());
+        doCommand(
+            Gui,
+            "App.activeDocument().%s.FemMesh = App.activeDocument().%s",
+            FeatName.c_str(),
+            MeshObj->getNameInDocument()
+        );
         doCommand(Gui, "Gui.activeDocument().setEdit('%s')", FeatName.c_str());
     }
     else {
-        QMessageBox::warning(Gui::getMainWindow(),
-                             qApp->translate("CmdFemCreateNodesSet", "Wrong selection"),
-                             qApp->translate("CmdFemCreateNodesSet",
-                                             "Select a single FEM mesh or nodes set, please."));
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            qApp->translate("CmdFemCreateNodesSet", "Wrong selection"),
+            qApp->translate("CmdFemCreateNodesSet", "Select a single FEM mesh or nodes set.")
+        );
     }
 }
 
@@ -1180,6 +1327,168 @@ bool CmdFemCreateNodesSet::isActive()
     return hasActiveDocument();
 }
 
+//===========================================================================
+// start of Erase Elements code
+//===========================================================================
+
+DEF_STD_CMD_A(CmdFemDefineElementsSet);
+
+static void DefineElementsCallback(void* ud, SoEventCallback* n)
+{
+    Fem::FemAnalysis* Analysis;
+
+    if (getConstraintPrerequisits(&Analysis)) {
+        return;
+    }
+
+    // show the wait cursor because this could take quite some time
+    Gui::WaitCursor wc;
+
+    // When this callback function is invoked we must in either case leave the edit mode
+    Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    view->setEditing(false);
+    view->removeEventCallback(SoMouseButtonEvent::getClassTypeId(), DefineElementsCallback, ud);
+    n->setHandled();
+
+    std::string str = getSelectedNodes(view);
+    if (!str.empty()) {
+        int tid = Gui::Command::openActiveDocumentCommand(QT_TRANSLATE_NOOP("Command", "Place robot"));
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.ActiveDocument.addObject('Fem::FemSetElementNodesObject','ElementSet')"
+        );
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.ActiveDocument.ActiveObject.Nodes = %s",
+            str.c_str()
+        );
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.activeDocument().%s.addObject(App.activeDocument().ElementSet)",
+            Analysis->getNameInDocument()
+        );
+
+        Gui::Command::commitCommand(tid);
+    }
+}
+
+CmdFemDefineElementsSet::CmdFemDefineElementsSet()
+    : Command("FEM_DefineElementsSet")
+{
+    sAppModule = "Fem";
+    sGroup = QT_TR_NOOP("Fem");
+    sMenuText = QT_TR_NOOP("Element Set From Polygon");
+    sToolTipText = QT_TR_NOOP("Creates a collection of elements selected by a polygon");
+    sWhatsThis = "FEM_DefineElementsSet";
+    sStatusTip = sToolTipText;
+    sPixmap = "FEM_CreateElementsSet";
+}
+
+void CmdFemDefineElementsSet::activated(int)
+{
+    std::vector<App::DocumentObject*> docObj = Gui::Selection().getObjectsOfType(
+        Fem::FemMeshObject::getClassTypeId()
+    );
+
+    for (std::vector<App::DocumentObject*>::iterator it = docObj.begin(); it != docObj.end(); ++it) {
+        if (it == docObj.begin()) {
+            Gui::Document* doc = getActiveGuiDocument();
+            Gui::MDIView* view = doc->getActiveView();
+            if (view->isDerivedFrom<Gui::View3DInventor>()) {
+                Gui::View3DInventorViewer* viewer = ((Gui::View3DInventor*)view)->getViewer();
+                viewer->setEditing(true);
+                viewer->startSelection(Gui::View3DInventorViewer::Clip);
+                viewer->addEventCallback(SoMouseButtonEvent::getClassTypeId(), DefineElementsCallback);
+            }
+            else {
+                return;
+            }
+        }
+    }
+}
+
+bool CmdFemDefineElementsSet::isActive()
+{
+    // Check for the selected mesh feature (all Mesh types)
+    if (getSelection().countObjectsOfType<Fem::FemMeshObject>() != 1) {
+        return false;
+    }
+
+    Gui::MDIView* view = Gui::getMainWindow()->activeWindow();
+    if (view && view->isDerivedFrom<Gui::View3DInventor>()) {
+        Gui::View3DInventorViewer* viewer = static_cast<Gui::View3DInventor*>(view)->getViewer();
+        return !viewer->isEditing();
+    }
+
+    return false;
+}
+
+//================================================================================================
+DEF_STD_CMD_A(CmdFemCreateElementsSet);
+
+CmdFemCreateElementsSet::CmdFemCreateElementsSet()
+    : Command("FEM_CreateElementsSet")
+{
+    sAppModule = "Fem";
+    sGroup = QT_TR_NOOP("Fem");
+    sMenuText = QT_TR_NOOP("Erase Elements");
+    sToolTipText = QT_TR_NOOP("Creates a FEM mesh elements set");
+    sWhatsThis = "FEM_CreateElementsSet";
+    sStatusTip = sToolTipText;
+    sPixmap = "FEM_CreateElementsSet";
+}
+
+void CmdFemCreateElementsSet::activated(int)
+{
+    Gui::SelectionFilter ObjectFilter("SELECT Fem::FemSetElementNodesObject COUNT 1");
+    Gui::SelectionFilter FemMeshFilter("SELECT Fem::FemMeshObject COUNT 1");
+
+    if (ObjectFilter.match()) {
+        Fem::FemSetElementNodesObject* NodesObj = static_cast<Fem::FemSetElementNodesObject*>(
+            ObjectFilter.Result[0][0].getObject()
+        );
+        openCommand(QT_TRANSLATE_NOOP("Command", "Edit Elements set"));
+        doCommand(Gui, "Gui.activeDocument().setEdit('%s')", NodesObj->getNameInDocument());
+    }
+    // start
+    else if (FemMeshFilter.match()) {
+        Fem::FemMeshObject* MeshObj = static_cast<Fem::FemMeshObject*>(
+            FemMeshFilter.Result[0][0].getObject()
+        );
+
+        std::string elementsName = Fem::FemSetElementNodesObject::getElementName();
+        std::string uniqueElementsName = Command::getUniqueObjectName(elementsName.c_str());
+
+        openCommand(QT_TRANSLATE_NOOP("Command", "Create Elements set"));
+        doCommand(
+            Doc,
+            "App.activeDocument().addObject('Fem::FemSetElementNodesObject','%s')",
+            uniqueElementsName.c_str()
+        );
+        doCommand(
+            Gui,
+            "App.activeDocument().%s.FemMesh = App.activeDocument().%s",
+            uniqueElementsName.c_str(),
+            MeshObj->getNameInDocument()
+        );
+        doCommand(Gui, "Gui.activeDocument().setEdit('%s')", uniqueElementsName.c_str());
+    }
+    else {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            qApp->translate("CmdFemCreateElementsSet", "Wrong selection"),
+            qApp->translate("CmdFemCreateNodesSet", "Select a single FEM Mesh.")
+        );
+    }
+}
+
+bool CmdFemCreateElementsSet::isActive()
+{
+    return hasActiveDocument();
+}
+//===========================================================================
+// end of Erase Elements code
+//===========================================================================
 
 //===========================================================================
 // FEM_CompEmConstraints (dropdown toolbar button for electromagnetic constraints)
@@ -1192,7 +1501,7 @@ CmdFemCompEmConstraints::CmdFemCompEmConstraints()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Electromagnetic boundary conditions");
+    sMenuText = QT_TR_NOOP("Electromagnetic Boundary Conditions");
     sToolTipText = QT_TR_NOOP("Electromagnetic boundary conditions");
     sWhatsThis = "FEM_CompEmConstraints";
     sStatusTip = sToolTipText;
@@ -1202,13 +1511,16 @@ void CmdFemCompEmConstraints::activated(int iMsg)
 {
     Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
     if (iMsg == 0) {
-        rcCmdMgr.runCommandByName("FEM_ConstraintElectrostaticPotential");
+        rcCmdMgr.runCommandByName("FEM_ConstraintElectromagnetic");
     }
     else if (iMsg == 1) {
         rcCmdMgr.runCommandByName("FEM_ConstraintCurrentDensity");
     }
     else if (iMsg == 2) {
         rcCmdMgr.runCommandByName("FEM_ConstraintMagnetization");
+    }
+    else if (iMsg == 3) {
+        rcCmdMgr.runCommandByName("FEM_ConstraintElectricChargeDensity");
     }
     else {
         return;
@@ -1230,11 +1542,13 @@ Gui::Action* CmdFemCompEmConstraints::createAction()
     applyCommandData(this->className(), pcAction);
 
     QAction* cmd0 = pcAction->addAction(QString());
-    cmd0->setIcon(Gui::BitmapFactory().iconFromTheme("FEM_ConstraintElectrostaticPotential"));
+    cmd0->setIcon(Gui::BitmapFactory().iconFromTheme("FEM_ConstraintElectromagnetic"));
     QAction* cmd1 = pcAction->addAction(QString());
     cmd1->setIcon(Gui::BitmapFactory().iconFromTheme("FEM_ConstraintCurrentDensity"));
     QAction* cmd2 = pcAction->addAction(QString());
     cmd2->setIcon(Gui::BitmapFactory().iconFromTheme("FEM_ConstraintMagnetization"));
+    QAction* cmd3 = pcAction->addAction(QString());
+    cmd3->setIcon(Gui::BitmapFactory().iconFromTheme("FEM_ConstraintElectricChargeDensity"));
 
     _pcAction = pcAction;
     languageChange();
@@ -1259,42 +1573,97 @@ void CmdFemCompEmConstraints::languageChange()
     Gui::ActionGroup* pcAction = qobject_cast<Gui::ActionGroup*>(_pcAction);
     QList<QAction*> a = pcAction->actions();
 
-    Gui::Command* ConstraintElectrostaticPotential =
-        rcCmdMgr.getCommandByName("FEM_ConstraintElectrostaticPotential");
-    if (ConstraintElectrostaticPotential) {
+    Gui::Command* ConstraintElectromagnetic = rcCmdMgr.getCommandByName(
+        "FEM_ConstraintElectromagnetic"
+    );
+    if (ConstraintElectromagnetic) {
         QAction* cmd0 = a[0];
-        cmd0->setText(QApplication::translate("FEM_ConstraintElectrostaticPotential",
-                                              ConstraintElectrostaticPotential->getMenuText()));
+        cmd0->setText(
+            QApplication::translate(
+                "FEM_ConstraintElectromagnetic",
+                ConstraintElectromagnetic->getMenuText()
+            )
+        );
         cmd0->setToolTip(
-            QApplication::translate("FEM_ConstraintElectrostaticPotential",
-                                    ConstraintElectrostaticPotential->getToolTipText()));
+            QApplication::translate(
+                "FEM_ConstraintElectromagnetic",
+                ConstraintElectromagnetic->getToolTipText()
+            )
+        );
         cmd0->setStatusTip(
-            QApplication::translate("FEM_ConstraintElectrostaticPotential",
-                                    ConstraintElectrostaticPotential->getStatusTip()));
+            QApplication::translate(
+                "FEM_ConstraintElectromagnetic",
+                ConstraintElectromagnetic->getStatusTip()
+            )
+        );
     }
 
-    Gui::Command* ConstraintCurrentDensity =
-        rcCmdMgr.getCommandByName("FEM_ConstraintCurrentDensity");
+    Gui::Command* ConstraintCurrentDensity = rcCmdMgr.getCommandByName("FEM_ConstraintCurrentDensity");
     if (ConstraintCurrentDensity) {
         QAction* cmd1 = a[1];
-        cmd1->setText(QApplication::translate("FEM_ConstraintCurrentDensity",
-                                              ConstraintCurrentDensity->getMenuText()));
-        cmd1->setToolTip(QApplication::translate("FEM_ConstraintCurrentDensity",
-                                                 ConstraintCurrentDensity->getToolTipText()));
-        cmd1->setStatusTip(QApplication::translate("FEM_ConstraintCurrentDensity",
-                                                   ConstraintCurrentDensity->getStatusTip()));
+        cmd1->setText(
+            QApplication::translate(
+                "FEM_ConstraintCurrentDensity",
+                ConstraintCurrentDensity->getMenuText()
+            )
+        );
+        cmd1->setToolTip(
+            QApplication::translate(
+                "FEM_ConstraintCurrentDensity",
+                ConstraintCurrentDensity->getToolTipText()
+            )
+        );
+        cmd1->setStatusTip(
+            QApplication::translate(
+                "FEM_ConstraintCurrentDensity",
+                ConstraintCurrentDensity->getStatusTip()
+            )
+        );
     }
 
-    Gui::Command* ConstraintMagnetization =
-        rcCmdMgr.getCommandByName("FEM_ConstraintMagnetization");
+    Gui::Command* ConstraintMagnetization = rcCmdMgr.getCommandByName("FEM_ConstraintMagnetization");
     if (ConstraintMagnetization) {
         QAction* cmd2 = a[2];
-        cmd2->setText(QApplication::translate("FEM_ConstraintMagnetization",
-                                              ConstraintMagnetization->getMenuText()));
-        cmd2->setToolTip(QApplication::translate("FEM_ConstraintMagnetization",
-                                                 ConstraintMagnetization->getToolTipText()));
-        cmd2->setStatusTip(QApplication::translate("FEM_ConstraintMagnetization",
-                                                   ConstraintMagnetization->getStatusTip()));
+        cmd2->setText(
+            QApplication::translate("FEM_ConstraintMagnetization", ConstraintMagnetization->getMenuText())
+        );
+        cmd2->setToolTip(
+            QApplication::translate(
+                "FEM_ConstraintMagnetization",
+                ConstraintMagnetization->getToolTipText()
+            )
+        );
+        cmd2->setStatusTip(
+            QApplication::translate(
+                "FEM_ConstraintMagnetization",
+                ConstraintMagnetization->getStatusTip()
+            )
+        );
+    }
+
+    Gui::Command* ConstraintElectricChargeDensity = rcCmdMgr.getCommandByName(
+        "FEM_ConstraintElectricChargeDensity"
+    );
+    if (ConstraintElectricChargeDensity) {
+        QAction* cmd3 = a[3];
+        cmd3->setText(
+            QApplication::translate(
+                "FEM_ConstraintElectricChargeDensity",
+                ConstraintElectricChargeDensity->getMenuText()
+            )
+        );
+        cmd3->setToolTip(
+            QApplication::translate(
+                "FEM_ConstraintElectricChargeDensity",
+                ConstraintElectricChargeDensity->getToolTipText()
+            )
+        );
+        cmd3->setStatusTip(
+            QApplication::translate(
+                "FEM_ConstraintElectricChargeDensity",
+                ConstraintElectricChargeDensity->getStatusTip()
+            )
+        );
     }
 }
 
@@ -1316,7 +1685,7 @@ CmdFemCompEmEquations::CmdFemCompEmEquations()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Electromagnetic equations");
+    sMenuText = QT_TR_NOOP("Electromagnetic Equations");
     sToolTipText = QT_TR_NOOP("Electromagnetic equations for the Elmer solver");
     sWhatsThis = "FEM_CompEmEquations";
     sStatusTip = sToolTipText;
@@ -1336,6 +1705,9 @@ void CmdFemCompEmEquations::activated(int iMsg)
     }
     else if (iMsg == 3) {
         rcCmdMgr.runCommandByName("FEM_EquationMagnetodynamic2D");
+    }
+    else if (iMsg == 4) {
+        rcCmdMgr.runCommandByName("FEM_EquationStaticCurrent");
     }
     else {
         return;
@@ -1364,6 +1736,8 @@ Gui::Action* CmdFemCompEmEquations::createAction()
     cmd2->setIcon(Gui::BitmapFactory().iconFromTheme("FEM_EquationMagnetodynamic"));
     QAction* cmd3 = pcAction->addAction(QString());
     cmd3->setIcon(Gui::BitmapFactory().iconFromTheme("FEM_EquationMagnetodynamic2D"));
+    QAction* cmd4 = pcAction->addAction(QString());
+    cmd4->setIcon(Gui::BitmapFactory().iconFromTheme("FEM_EquationStaticCurrent"));
 
     _pcAction = pcAction;
     languageChange();
@@ -1391,46 +1765,83 @@ void CmdFemCompEmEquations::languageChange()
     Gui::Command* EquationElectrostatic = rcCmdMgr.getCommandByName("FEM_EquationElectrostatic");
     if (EquationElectrostatic) {
         QAction* cmd0 = a[0];
-        cmd0->setText(QApplication::translate("FEM_EquationElectrostatic",
-                                              EquationElectrostatic->getMenuText()));
-        cmd0->setToolTip(QApplication::translate("FEM_EquationElectrostatic",
-                                                 EquationElectrostatic->getToolTipText()));
-        cmd0->setStatusTip(QApplication::translate("FEM_EquationElectrostatic",
-                                                   EquationElectrostatic->getStatusTip()));
+        cmd0->setText(
+            QApplication::translate("FEM_EquationElectrostatic", EquationElectrostatic->getMenuText())
+        );
+        cmd0->setToolTip(
+            QApplication::translate("FEM_EquationElectrostatic", EquationElectrostatic->getToolTipText())
+        );
+        cmd0->setStatusTip(
+            QApplication::translate("FEM_EquationElectrostatic", EquationElectrostatic->getStatusTip())
+        );
     }
 
     Gui::Command* EquationElectricforce = rcCmdMgr.getCommandByName("FEM_EquationElectricforce");
     if (EquationElectricforce) {
         QAction* cmd1 = a[1];
-        cmd1->setText(QApplication::translate("FEM_EquationElectricforce",
-                                              EquationElectricforce->getMenuText()));
-        cmd1->setToolTip(QApplication::translate("FEM_EquationElectricforce",
-                                                 EquationElectricforce->getToolTipText()));
-        cmd1->setStatusTip(QApplication::translate("FEM_EquationElectricforce",
-                                                   EquationElectricforce->getStatusTip()));
+        cmd1->setText(
+            QApplication::translate("FEM_EquationElectricforce", EquationElectricforce->getMenuText())
+        );
+        cmd1->setToolTip(
+            QApplication::translate("FEM_EquationElectricforce", EquationElectricforce->getToolTipText())
+        );
+        cmd1->setStatusTip(
+            QApplication::translate("FEM_EquationElectricforce", EquationElectricforce->getStatusTip())
+        );
     }
 
     Gui::Command* EquationMagnetodynamic = rcCmdMgr.getCommandByName("FEM_EquationMagnetodynamic");
     if (EquationMagnetodynamic) {
         QAction* cmd2 = a[2];
-        cmd2->setText(QApplication::translate("FEM_EquationMagnetodynamic",
-                                              EquationMagnetodynamic->getMenuText()));
-        cmd2->setToolTip(QApplication::translate("FEM_EquationMagnetodynamic",
-                                                 EquationMagnetodynamic->getToolTipText()));
-        cmd2->setStatusTip(QApplication::translate("FEM_EquationMagnetodynamic",
-                                                   EquationMagnetodynamic->getStatusTip()));
+        cmd2->setText(
+            QApplication::translate("FEM_EquationMagnetodynamic", EquationMagnetodynamic->getMenuText())
+        );
+        cmd2->setToolTip(
+            QApplication::translate(
+                "FEM_EquationMagnetodynamic",
+                EquationMagnetodynamic->getToolTipText()
+            )
+        );
+        cmd2->setStatusTip(
+            QApplication::translate("FEM_EquationMagnetodynamic", EquationMagnetodynamic->getStatusTip())
+        );
     }
 
-    Gui::Command* EquationMagnetodynamic2D =
-        rcCmdMgr.getCommandByName("FEM_EquationMagnetodynamic2D");
+    Gui::Command* EquationMagnetodynamic2D = rcCmdMgr.getCommandByName("FEM_EquationMagnetodynamic2D");
     if (EquationMagnetodynamic2D) {
         QAction* cmd3 = a[3];
-        cmd3->setText(QApplication::translate("FEM_EquationMagnetodynamic2D",
-                                              EquationMagnetodynamic2D->getMenuText()));
-        cmd3->setToolTip(QApplication::translate("FEM_EquationMagnetodynamic2D",
-                                                 EquationMagnetodynamic2D->getToolTipText()));
-        cmd3->setStatusTip(QApplication::translate("FEM_EquationMagnetodynamic2D",
-                                                   EquationMagnetodynamic2D->getStatusTip()));
+        cmd3->setText(
+            QApplication::translate(
+                "FEM_EquationMagnetodynamic2D",
+                EquationMagnetodynamic2D->getMenuText()
+            )
+        );
+        cmd3->setToolTip(
+            QApplication::translate(
+                "FEM_EquationMagnetodynamic2D",
+                EquationMagnetodynamic2D->getToolTipText()
+            )
+        );
+        cmd3->setStatusTip(
+            QApplication::translate(
+                "FEM_EquationMagnetodynamic2D",
+                EquationMagnetodynamic2D->getStatusTip()
+            )
+        );
+    }
+
+    Gui::Command* EquationStaticCurrent = rcCmdMgr.getCommandByName("FEM_EquationStaticCurrent");
+    if (EquationStaticCurrent) {
+        QAction* cmd4 = a[4];
+        cmd4->setText(
+            QApplication::translate("FEM_EquationStaticCurrent", EquationStaticCurrent->getMenuText())
+        );
+        cmd4->setToolTip(
+            QApplication::translate("FEM_EquationStaticCurrent", EquationStaticCurrent->getToolTipText())
+        );
+        cmd4->setStatusTip(
+            QApplication::translate("FEM_EquationStaticCurrent", EquationStaticCurrent->getStatusTip())
+        );
     }
 }
 
@@ -1442,9 +1853,11 @@ bool CmdFemCompEmEquations::isActive()
     }
 
     // only activate if a single Elmer object is selected
-    auto results = getSelection().getSelectionEx(nullptr,
-                                                 App::DocumentObject::getClassTypeId(),
-                                                 Gui::ResolveMode::FollowLink);
+    auto results = getSelection().getSelectionEx(
+        nullptr,
+        App::DocumentObject::getClassTypeId(),
+        Gui::ResolveMode::FollowLink
+    );
     if (results.size() == 1) {
         auto object = results.begin()->getObject();
         // FIXME: this is not unique since the Ccx solver object has the same type
@@ -1468,7 +1881,7 @@ CmdFemCompMechEquations::CmdFemCompMechEquations()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Mechanical equations");
+    sMenuText = QT_TR_NOOP("Mechanical Equations");
     sToolTipText = QT_TR_NOOP("Mechanical equations for the Elmer solver");
     sWhatsThis = "FEM_CompMechEquations";
     sStatusTip = sToolTipText;
@@ -1534,22 +1947,28 @@ void CmdFemCompMechEquations::languageChange()
     if (EquationElasticity) {
         QAction* cmd1 = a[0];
         cmd1->setText(
-            QApplication::translate("FEM_EquationElasticity", EquationElasticity->getMenuText()));
-        cmd1->setToolTip(QApplication::translate("FEM_EquationElasticity",
-                                                 EquationElasticity->getToolTipText()));
+            QApplication::translate("FEM_EquationElasticity", EquationElasticity->getMenuText())
+        );
+        cmd1->setToolTip(
+            QApplication::translate("FEM_EquationElasticity", EquationElasticity->getToolTipText())
+        );
         cmd1->setStatusTip(
-            QApplication::translate("FEM_EquationElasticity", EquationElasticity->getStatusTip()));
+            QApplication::translate("FEM_EquationElasticity", EquationElasticity->getStatusTip())
+        );
     }
 
     Gui::Command* EquationDeformation = rcCmdMgr.getCommandByName("FEM_EquationDeformation");
     if (EquationDeformation) {
         QAction* cmd0 = a[1];
         cmd0->setText(
-            QApplication::translate("FEM_EquationDeformation", EquationDeformation->getMenuText()));
-        cmd0->setToolTip(QApplication::translate("FEM_EquationDeformation",
-                                                 EquationDeformation->getToolTipText()));
-        cmd0->setStatusTip(QApplication::translate("FEM_EquationDeformation",
-                                                   EquationDeformation->getStatusTip()));
+            QApplication::translate("FEM_EquationDeformation", EquationDeformation->getMenuText())
+        );
+        cmd0->setToolTip(
+            QApplication::translate("FEM_EquationDeformation", EquationDeformation->getToolTipText())
+        );
+        cmd0->setStatusTip(
+            QApplication::translate("FEM_EquationDeformation", EquationDeformation->getStatusTip())
+        );
     }
 }
 
@@ -1561,9 +1980,11 @@ bool CmdFemCompMechEquations::isActive()
     }
 
     // only activate if a single Elmer object is selected
-    auto results = getSelection().getSelectionEx(nullptr,
-                                                 App::DocumentObject::getClassTypeId(),
-                                                 Gui::ResolveMode::FollowLink);
+    auto results = getSelection().getSelectionEx(
+        nullptr,
+        App::DocumentObject::getClassTypeId(),
+        Gui::ResolveMode::FollowLink
+    );
     if (results.size() == 1) {
         auto object = results.begin()->getObject();
         // FIXME: this is not unique since the Ccx solver object has the same type
@@ -1595,26 +2016,21 @@ void setupFilter(Gui::Command* cmd, std::string Name)
     if (Gui::Selection().getSelection().size() > 1) {
         QMessageBox::warning(
             Gui::getMainWindow(),
-            qApp->translate("setupFilter",
-                            "Error: A filter can only be applied to a single object."),
-            qApp->translate("setupFilter", "The filter could not be set up."));
+            qApp->translate("setupFilter", "Error: A filter can only be applied to a single object."),
+            qApp->translate("setupFilter", "The filter could not be set up.")
+        );
         return;
     }
 
     auto selObject = Gui::Selection().getSelection()[0].pObject;
 
-    // issue error if no post object
-    if (!((selObject->getTypeId() == Base::Type::fromName("Fem::FemPostPipeline"))
-          || (selObject->getTypeId() == Base::Type::fromName("Fem::FemPostClipFilter"))
-          || (selObject->getTypeId() == Base::Type::fromName("Fem::FemPostContoursFilter"))
-          || (selObject->getTypeId() == Base::Type::fromName("Fem::FemPostCutFilter"))
-          || (selObject->getTypeId() == Base::Type::fromName("Fem::FemPostDataAlongLineFilter"))
-          || (selObject->getTypeId() == Base::Type::fromName("Fem::FemPostScalarClipFilter"))
-          || (selObject->getTypeId() == Base::Type::fromName("Fem::FemPostWarpVectorFilter")))) {
+    // issue error if no filter object
+    if (!(selObject->isDerivedFrom<Fem::FemPostObject>())) {
         QMessageBox::warning(
             Gui::getMainWindow(),
             qApp->translate("setupFilter", "Error: no post processing object selected."),
-            qApp->translate("setupFilter", "The filter could not be set up."));
+            qApp->translate("setupFilter", "The filter could not be set up.")
+        );
         return;
     }
 
@@ -1622,62 +2038,93 @@ void setupFilter(Gui::Command* cmd, std::string Name)
 
     // at first we must determine the pipeline of the selection object
     // (which can be a pipeline itself)
-    bool selectionIsPipeline = false;
-    Fem::FemPostPipeline* pipeline = nullptr;
-    if (selObject->getTypeId() == Base::Type::fromName("Fem::FemPostPipeline")) {
-        pipeline = static_cast<Fem::FemPostPipeline*>(selObject);
-        selectionIsPipeline = true;
+    App::DocumentObject* pipeline = nullptr;
+    if (selObject->hasExtension(Fem::FemPostGroupExtension::getExtensionClassTypeId())) {
+        pipeline = selObject;
     }
     else {
-        auto parents = selObject->getInList();
-        if (!parents.empty()) {
-            for (auto parentObject : parents) {
-                if (parentObject->getTypeId() == Base::Type::fromName("Fem::FemPostPipeline")) {
-                    pipeline = static_cast<Fem::FemPostPipeline*>(parentObject);
-                }
-            }
+        pipeline = Fem::FemPostGroupExtension::getGroupOfObject(selObject);
+        if (!pipeline || !pipeline->isDerivedFrom<Fem::FemPostObject>()) {
+            QMessageBox::warning(
+                Gui::getMainWindow(),
+                qApp->translate("setupFilter", "Error: Object not in a post processing group"),
+                qApp->translate(
+                    "setupFilter",
+                    "The filter could not be set up: Object not in a post processing group."
+                )
+            );
+            return;
         }
-    }
-
-    if (!pipeline) {
-        QMessageBox::warning(
-            Gui::getMainWindow(),
-            qApp->translate("setupFilter", "Error: no post processing object selected."),
-            qApp->translate("setupFilter", "The filter could not be set up."));
-        return;
     }
 
     // create the object and add it to the pipeline
     cmd->openCommand(QT_TRANSLATE_NOOP("Command", "Create filter"));
-    cmd->doCommand(Gui::Command::Doc,
-                   "App.activeDocument().addObject('Fem::FemPost%sFilter','%s')",
-                   Name.c_str(),
-                   FeatName.c_str());
+    cmd->doCommand(
+        Gui::Command::Doc,
+        "App.activeDocument().addObject('Fem::FemPost%sFilter','%s')",
+        Name.c_str(),
+        FeatName.c_str()
+    );
     // add it as subobject to the pipeline
-    cmd->doCommand(Gui::Command::Doc,
-                   "__list__ = App.ActiveDocument.%s.Filter",
-                   pipeline->getNameInDocument());
-    cmd->doCommand(Gui::Command::Doc, "__list__.append(App.ActiveDocument.%s)", FeatName.c_str());
-    cmd->doCommand(Gui::Command::Doc,
-                   "App.ActiveDocument.%s.Filter = __list__",
-                   pipeline->getNameInDocument());
-    cmd->doCommand(Gui::Command::Doc, "del __list__");
+    cmd->doCommand(
+        Gui::Command::Doc,
+        "App.ActiveDocument.%s.addObject(App.ActiveDocument.%s)",
+        pipeline->getNameInDocument(),
+        FeatName.c_str()
+    );
 
     // set display to assure the user sees the new object
-    cmd->doCommand(Gui::Command::Doc,
-                   "App.activeDocument().ActiveObject.ViewObject.DisplayMode = \"Surface\"");
+    cmd->doCommand(
+        Gui::Command::Doc,
+        "App.activeDocument().ActiveObject.ViewObject.DisplayMode = \"Surface\""
+    );
     // Set SelectionStyle to BoundBox because the idea is that the user gets the useful result
     // from the colors. The default would be to highlight the shape but then the colors are changed
     // by every highlighting leading to confusions for the user.
-    cmd->doCommand(Gui::Command::Doc,
-                   "App.activeDocument().ActiveObject.ViewObject.SelectionStyle = \"BoundBox\"");
+    cmd->doCommand(
+        Gui::Command::Doc,
+        "App.activeDocument().ActiveObject.ViewObject.SelectionStyle = \"BoundBox\""
+    );
 
-    // in case selObject is no pipeline we must set it as input object
     auto objFilter = App::GetApplication().getActiveDocument()->getActiveObject();
     auto femFilter = static_cast<Fem::FemPostFilter*>(objFilter);
-    if (!selectionIsPipeline) {
-        femFilter->Input.setValue(selObject);
+
+    auto selObjectView = static_cast<FemGui::ViewProviderFemPostObject*>(
+        Gui::Application::Instance->getViewProvider(selObject)
+    );
+    // use none field color from base filter
+    Base::color_traits<Base::Color> ct {selObjectView->NoneFieldColor.getValue()};
+    cmd->doCommand(
+        Gui::Command::Doc,
+        "App.activeDocument().ActiveObject.ViewObject.NoneFieldColor = (%d, %d, %d)",
+        ct.red(),
+        ct.green(),
+        ct.blue()
+    );
+    // TODO: FIX
+    /*
+    auto selObjectView = static_cast<FemGui::ViewProviderFemPostObject*>(
+        Gui::Application::Instance->getViewProvider(selObject));
+    cmd->doCommand(Gui::Command::Doc,
+                   "App.activeDocument().ActiveObject.ViewObject.Field = \"%s\"",
+                   selObjectView->Field.getValueAsString());
+    cmd->doCommand(Gui::Command::Doc,
+                   "App.activeDocument().ActiveObject.ViewObject.VectorMode = \"%s\"",
+                   selObjectView->VectorMode.getValueAsString());
+    */
+
+    // hide selected filter
+    if (!femFilter->isDerivedFrom<Fem::FemPostDataAlongLineFilter>()
+        && !femFilter->isDerivedFrom<Fem::FemPostDataAtPointFilter>()) {
+        cmd->doCommand(
+            Gui::Command::Doc,
+            "App.activeDocument().%s.ViewObject.Visibility = False",
+            selObject->getNameInDocument()
+        );
     }
+
+    // show active filter
+    cmd->doCommand(Gui::Command::Doc, "App.activeDocument().ActiveObject.ViewObject.Visibility = True");
 
     cmd->updateActive();
     // open the dialog to edit the filter
@@ -1687,29 +2134,41 @@ void setupFilter(Gui::Command* cmd, std::string Name)
 
 std::string Plot()
 {
-    auto xAxisLabel = QCoreApplication::translate("CmdFemPostLinearizedStressesFilter",
-                                                  "Thickness [mm]",
-                                                  "Plot X-Axis Label")
+    auto xAxisLabel = QCoreApplication::translate(
+                          "CmdFemPostLinearizedStressesFilter",
+                          "Thickness [mm]",
+                          "Plot X-Axis Label"
+    )
                           .toStdString();
-    auto yAxisLabel = QCoreApplication::translate("CmdFemPostLinearizedStressesFilter",
-                                                  "Stress [MPa]",
-                                                  "Plot Y-Axis Label")
+    auto yAxisLabel = QCoreApplication::translate(
+                          "CmdFemPostLinearizedStressesFilter",
+                          "Stress [MPa]",
+                          "Plot Y-Axis Label"
+    )
                           .toStdString();
-    auto titleLabel = QCoreApplication::translate("CmdFemPostLinearizedStressesFilter",
-                                                  "Linearized Stresses",
-                                                  "Plot title")
+    auto titleLabel = QCoreApplication::translate(
+                          "CmdFemPostLinearizedStressesFilter",
+                          "Linearized Stresses",
+                          "Plot title"
+    )
                           .toStdString();
-    auto legendEntryA = QCoreApplication::translate("CmdFemPostLinearizedStressesFilter",
-                                                    "Membrane",
-                                                    "Plot legend item label")
+    auto legendEntryA = QCoreApplication::translate(
+                            "CmdFemPostLinearizedStressesFilter",
+                            "Membrane",
+                            "Plot legend item label"
+    )
                             .toStdString();
-    auto legendEntryB = QCoreApplication::translate("CmdFemPostLinearizedStressesFilter",
-                                                    "Membrane and Bending",
-                                                    "Plot legend item label")
+    auto legendEntryB = QCoreApplication::translate(
+                            "CmdFemPostLinearizedStressesFilter",
+                            "Membrane and Bending",
+                            "Plot legend item label"
+    )
                             .toStdString();
-    auto legendEntryC = QCoreApplication::translate("CmdFemPostLinearizedStressesFilter",
-                                                    "Total",
-                                                    "Plot legend item label")
+    auto legendEntryC = QCoreApplication::translate(
+                            "CmdFemPostLinearizedStressesFilter",
+                            "Total",
+                            "Plot legend item label"
+    )
                             .toStdString();
 
     std::ostringstream oss;
@@ -1789,9 +2248,10 @@ CmdFemPostClipFilter::CmdFemPostClipFilter()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Region clip filter");
-    sToolTipText =
-        QT_TR_NOOP("Define/create a clip filter which uses functions to define the clipped region");
+    sMenuText = QT_TR_NOOP("Region Clip Filter");
+    sToolTipText = QT_TR_NOOP(
+        "Defines a clip filter which uses functions to define the clipped region"
+    );
     sWhatsThis = "FEM_PostFilterClipRegion";
     sStatusTip = sToolTipText;
     sPixmap = "FEM_PostFilterClipRegion";
@@ -1805,30 +2265,15 @@ void CmdFemPostClipFilter::activated(int)
 bool CmdFemPostClipFilter::isActive()
 {
     // only allow one object
-    if (getSelection().getSelection().size() > 1) {
+    auto selection = getSelection().getSelection();
+    if (selection.size() > 1) {
         return false;
     }
-    // only activate if a result is either a post pipeline or a possible filter
-    if (getSelection().getObjectsOfType<Fem::FemPostPipeline>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostClipFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostDataAlongLineFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostScalarClipFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostContoursFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostCutFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostWarpVectorFilter>().size() == 1) {
-        return true;
+    // only activate if a post object is selected
+    for (auto obj : selection) {
+        if (obj.pObject->isDerivedFrom<Fem::FemPostObject>()) {
+            return true;
+        }
     }
     return false;
 }
@@ -1842,8 +2287,8 @@ CmdFemPostCutFilter::CmdFemPostCutFilter()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Function cut filter");
-    sToolTipText = QT_TR_NOOP("Cut the data along an implicit function");
+    sMenuText = QT_TR_NOOP("Function Cut Filter");
+    sToolTipText = QT_TR_NOOP("Cuts the data along an implicit function");
     sWhatsThis = "FEM_PostFilterCutFunction";
     sStatusTip = sToolTipText;
     sPixmap = "FEM_PostFilterCutFunction";
@@ -1857,30 +2302,15 @@ void CmdFemPostCutFilter::activated(int)
 bool CmdFemPostCutFilter::isActive()
 {
     // only allow one object
-    if (getSelection().getSelection().size() > 1) {
+    auto selection = getSelection().getSelection();
+    if (selection.size() > 1) {
         return false;
     }
-    // only activate if a result is either a post pipeline or a possible filter
-    if (getSelection().getObjectsOfType<Fem::FemPostPipeline>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostClipFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostContoursFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostCutFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostScalarClipFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostDataAlongLineFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostWarpVectorFilter>().size() == 1) {
-        return true;
+    // only activate if a post object is selected
+    for (auto obj : selection) {
+        if (obj.pObject->isDerivedFrom<Fem::FemPostObject>()) {
+            return true;
+        }
     }
     return false;
 }
@@ -1894,8 +2324,8 @@ CmdFemPostDataAlongLineFilter::CmdFemPostDataAlongLineFilter()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Line clip filter");
-    sToolTipText = QT_TR_NOOP("Define/create a clip filter which clips a field along a line");
+    sMenuText = QT_TR_NOOP("Line Clip Filter");
+    sToolTipText = QT_TR_NOOP("Defines a clip filter which clips a field along a line");
     sWhatsThis = "FEM_PostFilterDataAlongLine";
     sStatusTip = sToolTipText;
     sPixmap = "FEM_PostFilterDataAlongLine";
@@ -1909,27 +2339,15 @@ void CmdFemPostDataAlongLineFilter::activated(int)
 bool CmdFemPostDataAlongLineFilter::isActive()
 {
     // only allow one object
-    if (getSelection().getSelection().size() > 1) {
+    auto selection = getSelection().getSelection();
+    if (selection.size() > 1) {
         return false;
     }
-    // only activate if a result is either a post pipeline or a possible filter
-    if (getSelection().getObjectsOfType<Fem::FemPostPipeline>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostClipFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostContoursFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostCutFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostScalarClipFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostWarpVectorFilter>().size() == 1) {
-        return true;
+    // only activate if a post object is selected
+    for (auto obj : selection) {
+        if (obj.pObject->isDerivedFrom<Fem::FemPostObject>()) {
+            return true;
+        }
     }
     return false;
 }
@@ -1943,8 +2361,8 @@ CmdFemPostDataAtPointFilter::CmdFemPostDataAtPointFilter()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Data at point clip filter");
-    sToolTipText = QT_TR_NOOP("Define/create a clip filter which clips a field data at point");
+    sMenuText = QT_TR_NOOP("Data at Point Clip Filter");
+    sToolTipText = QT_TR_NOOP("Defines a clip filter which clips a field data at point");
     sWhatsThis = "FEM_PostFilterDataAtPoint";
     sStatusTip = sToolTipText;
     sPixmap = "FEM_PostFilterDataAtPoint";
@@ -1959,27 +2377,15 @@ void CmdFemPostDataAtPointFilter::activated(int)
 bool CmdFemPostDataAtPointFilter::isActive()
 {
     // only allow one object
-    if (getSelection().getSelection().size() > 1) {
+    auto selection = getSelection().getSelection();
+    if (selection.size() > 1) {
         return false;
     }
-    // only activate if a result is either a post pipeline or a possible filter
-    if (getSelection().getObjectsOfType<Fem::FemPostPipeline>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostClipFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostCutFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostDataAlongLineFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostScalarClipFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostWarpVectorFilter>().size() == 1) {
-        return true;
+    // only activate if a post object is selected
+    for (auto obj : selection) {
+        if (obj.pObject->isDerivedFrom<Fem::FemPostObject>()) {
+            return true;
+        }
     }
     return false;
 }
@@ -1993,8 +2399,8 @@ CmdFemPostLinearizedStressesFilter::CmdFemPostLinearizedStressesFilter()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Stress linearization plot");
-    sToolTipText = QT_TR_NOOP("Define/create stress linearization plots");
+    sMenuText = QT_TR_NOOP("Stress Linearization Plot");
+    sToolTipText = QT_TR_NOOP("Defines a stress linearization plot");
     sWhatsThis = "FEM_PostFilterLinearizedStresses";
     sStatusTip = sToolTipText;
     sPixmap = "FEM_PostFilterLinearizedStresses";
@@ -2006,11 +2412,12 @@ void CmdFemPostLinearizedStressesFilter::activated(int)
     Gui::SelectionFilter DataAlongLineFilter("SELECT Fem::FemPostDataAlongLineFilter COUNT 1");
 
     if (DataAlongLineFilter.match()) {
-        Fem::FemPostDataAlongLineFilter* DataAlongLine =
-            static_cast<Fem::FemPostDataAlongLineFilter*>(
-                DataAlongLineFilter.Result[0][0].getObject());
+        Fem::FemPostDataAlongLineFilter* DataAlongLine = static_cast<Fem::FemPostDataAlongLineFilter*>(
+            DataAlongLineFilter.Result[0][0].getObject()
+        );
         std::string FieldName = DataAlongLine->PlotData.getValue();
-        if ((FieldName == "Tresca Stress") || (FieldName == "von Mises Stress")
+        if (
+            (FieldName == "Tresca Stress") || (FieldName == "von Mises Stress")
             || (FieldName == "Major Principal Stress")
             || (FieldName == "Intermediate Principal Stress")
             || (FieldName == "Minor Principal Stress") || (FieldName == "Stress xx component")
@@ -2034,7 +2441,9 @@ void CmdFemPostLinearizedStressesFilter::activated(int)
                 qApp->translate("CmdFemPostLinearizedStressesFilter", "Wrong selection"),
                 qApp->translate(
                     "CmdFemPostLinearizedStressesFilter",
-                    "Select a Clip filter which clips a STRESS field along a line, please."));
+                    "Select a clip filter which clips a stress field along a line"
+                )
+            );
         }
     }
     else {
@@ -2043,7 +2452,9 @@ void CmdFemPostLinearizedStressesFilter::activated(int)
             qApp->translate("CmdFemPostLinearizedStressesFilter", "Wrong selection"),
             qApp->translate(
                 "CmdFemPostLinearizedStressesFilter",
-                "Select a Clip filter which clips a STRESS field along a line, please."));
+                "Select a clip filter which clips a stress field along a line"
+            )
+        );
     }
 }
 
@@ -2068,9 +2479,8 @@ CmdFemPostScalarClipFilter::CmdFemPostScalarClipFilter()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Scalar clip filter");
-    sToolTipText =
-        QT_TR_NOOP("Define/create a clip filter which clips a field with a scalar value");
+    sMenuText = QT_TR_NOOP("Scalar Clip Filter");
+    sToolTipText = QT_TR_NOOP("Defines a clip filter which clips a field with a scalar value");
     sWhatsThis = "FEM_PostFilterClipScalar";
     sStatusTip = sToolTipText;
     sPixmap = "FEM_PostFilterClipScalar";
@@ -2084,27 +2494,15 @@ void CmdFemPostScalarClipFilter::activated(int)
 bool CmdFemPostScalarClipFilter::isActive()
 {
     // only allow one object
-    if (getSelection().getSelection().size() > 1) {
+    auto selection = getSelection().getSelection();
+    if (selection.size() > 1) {
         return false;
     }
-    // only activate if a result is either a post pipeline or a possible other filter
-    if (getSelection().getObjectsOfType<Fem::FemPostPipeline>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostClipFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostContoursFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostCutFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostDataAlongLineFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostWarpVectorFilter>().size() == 1) {
-        return true;
+    // only activate if a post object is selected
+    for (auto obj : selection) {
+        if (obj.pObject->isDerivedFrom<Fem::FemPostObject>()) {
+            return true;
+        }
     }
     return false;
 }
@@ -2118,8 +2516,8 @@ CmdFemPostWarpVectorFilter::CmdFemPostWarpVectorFilter()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Warp filter");
-    sToolTipText = QT_TR_NOOP("Warp the geometry along a vector field by a certain factor");
+    sMenuText = QT_TR_NOOP("Warp Filter");
+    sToolTipText = QT_TR_NOOP("Warps the geometry along a vector field by a certain factor");
     sWhatsThis = "FEM_PostFilterWarp";
     sStatusTip = sToolTipText;
     sPixmap = "FEM_PostFilterWarp";
@@ -2133,27 +2531,15 @@ void CmdFemPostWarpVectorFilter::activated(int)
 bool CmdFemPostWarpVectorFilter::isActive()
 {
     // only allow one object
-    if (getSelection().getSelection().size() > 1) {
+    auto selection = getSelection().getSelection();
+    if (selection.size() > 1) {
         return false;
     }
-    // only activate if a result is either a post pipeline or a possible other filter
-    if (getSelection().getObjectsOfType<Fem::FemPostPipeline>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostClipFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostCutFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostContoursFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostDataAlongLineFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostScalarClipFilter>().size() == 1) {
-        return true;
+    // only activate if a post object is selected
+    for (auto obj : selection) {
+        if (obj.pObject->isDerivedFrom<Fem::FemPostObject>()) {
+            return true;
+        }
     }
     return false;
 }
@@ -2167,8 +2553,8 @@ CmdFemPostContoursFilter::CmdFemPostContoursFilter()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Contours filter");
-    sToolTipText = QT_TR_NOOP("Define/create a contours filter which displays iso contours");
+    sMenuText = QT_TR_NOOP("Contours Filter");
+    sToolTipText = QT_TR_NOOP("Defines a contours filter that displays iso contours");
     sWhatsThis = "FEM_PostFilterContours";
     sStatusTip = sToolTipText;
     sPixmap = "FEM_PostFilterContours";
@@ -2182,27 +2568,51 @@ void CmdFemPostContoursFilter::activated(int)
 bool CmdFemPostContoursFilter::isActive()
 {
     // only allow one object
-    if (getSelection().getSelection().size() > 1) {
+    auto selection = getSelection().getSelection();
+    if (selection.size() > 1) {
         return false;
     }
-    // only activate if a result is either a post pipeline or a possible other filter
-    if (getSelection().getObjectsOfType<Fem::FemPostPipeline>().size() == 1) {
-        return true;
+    // only activate if a post object is selected
+    for (auto obj : selection) {
+        if (obj.pObject->isDerivedFrom<Fem::FemPostObject>()) {
+            return true;
+        }
     }
-    else if (getSelection().getObjectsOfType<Fem::FemPostClipFilter>().size() == 1) {
-        return true;
+    return false;
+}
+
+
+//================================================================================================
+DEF_STD_CMD_A(CmdFemPostCalculatorFilter)
+
+CmdFemPostCalculatorFilter::CmdFemPostCalculatorFilter()
+    : Command("FEM_PostFilterCalculator")
+{
+    sAppModule = "Fem";
+    sGroup = QT_TR_NOOP("Fem");
+    sMenuText = QT_TR_NOOP("Calculator Filter");
+    sToolTipText = QT_TR_NOOP("Creates a new field from current data");
+    sWhatsThis = "FEM_PostFilterCalculator";
+    sStatusTip = sToolTipText;
+    sPixmap = "FEM_PostFilterCalculator";
+}
+
+void CmdFemPostCalculatorFilter::activated(int)
+{
+    setupFilter(this, "Calculator");
+}
+
+bool CmdFemPostCalculatorFilter::isActive()
+{
+    // only allow one object
+    auto selection = getSelection().getSelection();
+    if (selection.size() > 1) {
+        return false;
     }
-    else if (getSelection().getObjectsOfType<Fem::FemPostCutFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostDataAlongLineFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostScalarClipFilter>().size() == 1) {
-        return true;
-    }
-    else if (getSelection().getObjectsOfType<Fem::FemPostWarpVectorFilter>().size() == 1) {
-        return true;
+    for (auto obj : selection) {
+        if (obj.pObject->isDerivedFrom<Fem::FemPostObject>()) {
+            return true;
+        }
     }
     return false;
 }
@@ -2216,8 +2626,8 @@ CmdFemPostFunctions::CmdFemPostFunctions()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Filter functions");
-    sToolTipText = QT_TR_NOOP("Functions for use in postprocessing filter...");
+    sMenuText = QT_TR_NOOP("Filter Functions");
+    sToolTipText = QT_TR_NOOP("Functions for use in postprocessing filter");
     sWhatsThis = "FEM_PostCreateFunctions";
     sStatusTip = sToolTipText;
     eType = eType | ForEdit;
@@ -2244,43 +2654,45 @@ void CmdFemPostFunctions::activated(int iMsg)
     }
 
     // create the object
-    std::vector<Fem::FemPostPipeline*> pipelines =
-        App::GetApplication().getActiveDocument()->getObjectsOfType<Fem::FemPostPipeline>();
+    std::vector<Fem::FemPostPipeline*> pipelines
+        = App::GetApplication().getActiveDocument()->getObjectsOfType<Fem::FemPostPipeline>();
     if (!pipelines.empty()) {
         Fem::FemPostPipeline* pipeline = pipelines.front();
 
         openCommand(QT_TRANSLATE_NOOP("Command", "Create function"));
 
         // check if the pipeline has a filter provider and add one if needed
-        Fem::FemPostFunctionProvider* provider;
-        if (!pipeline->Functions.getValue()
-            || pipeline->Functions.getValue()->getTypeId()
-                != Fem::FemPostFunctionProvider::getClassTypeId()) {
+        Fem::FemPostFunctionProvider* provider = pipeline->getFunctionProvider();
+        if (!provider) {
             std::string FuncName = getUniqueObjectName("Functions");
-            doCommand(Doc,
-                      "App.ActiveDocument.addObject('Fem::FemPostFunctionProvider','%s')",
-                      FuncName.c_str());
-            doCommand(Doc,
-                      "App.ActiveDocument.%s.Functions = App.ActiveDocument.%s",
-                      pipeline->getNameInDocument(),
-                      FuncName.c_str());
-            provider = static_cast<Fem::FemPostFunctionProvider*>(
-                getDocument()->getObject(FuncName.c_str()));
-        }
-        else {
-            provider = static_cast<Fem::FemPostFunctionProvider*>(pipeline->Functions.getValue());
+            doCommand(
+                Doc,
+                "App.ActiveDocument.addObject('Fem::FemPostFunctionProvider','%s')",
+                FuncName.c_str()
+            );
+            doCommand(
+                Doc,
+                "App.ActiveDocument.%s.addObject(App.ActiveDocument.%s)",
+                pipeline->getNameInDocument(),
+                FuncName.c_str()
+            );
+            provider = pipeline->getFunctionProvider();
         }
 
         // build the object
         std::string FeatName = getUniqueObjectName(name.c_str());
-        doCommand(Doc,
-                  "App.activeDocument().addObject('Fem::FemPost%sFunction','%s')",
-                  name.c_str(),
-                  FeatName.c_str());
-        doCommand(Doc, "__list__ = App.ActiveDocument.%s.Functions", provider->getNameInDocument());
-        doCommand(Doc, "__list__.append(App.ActiveDocument.%s)", FeatName.c_str());
-        doCommand(Doc, "App.ActiveDocument.%s.Functions = __list__", provider->getNameInDocument());
-        doCommand(Doc, "del __list__");
+        doCommand(
+            Doc,
+            "App.activeDocument().addObject('Fem::FemPost%sFunction','%s')",
+            name.c_str(),
+            FeatName.c_str()
+        );
+        doCommand(
+            Doc,
+            "App.ActiveDocument.%s.addObject(App.ActiveDocument.%s)",
+            provider->getNameInDocument(),
+            FeatName.c_str()
+        );
 
         // set the default values, for this get the bounding box
         vtkBoundingBox box = pipeline->getBoundingBox();
@@ -2289,51 +2701,66 @@ void CmdFemPostFunctions::activated(int iMsg)
         box.GetCenter(center);
 
         if (iMsg == 0) {  // Plane
-            doCommand(Doc,
-                      "App.ActiveDocument.%s.Origin = App.Vector(%f, %f, %f)",
-                      FeatName.c_str(),
-                      center[0],
-                      center[1],
-                      center[2]);
+            doCommand(
+                Doc,
+                "App.ActiveDocument.%s.PlaneOrigin = App.Vector(%f, %f, %f)",
+                FeatName.c_str(),
+                center[0],
+                center[1],
+                center[2]
+            );
+            doCommand(Doc, "Gui.ActiveDocument.%s.Scale = %f", FeatName.c_str(), box.GetDiagonalLength());
         }
         else if (iMsg == 1) {  // Sphere
-            doCommand(Doc,
-                      "App.ActiveDocument.%s.Center = App.Vector(%f, %f, %f)",
-                      FeatName.c_str(),
-                      center[0],
-                      center[1] + box.GetLength(1) / 2,
-                      center[2] + box.GetLength(2) / 2);
-            doCommand(Doc,
-                      "App.ActiveDocument.%s.Radius = %f",
-                      FeatName.c_str(),
-                      box.GetDiagonalLength() / 2);
+            doCommand(
+                Doc,
+                "App.ActiveDocument.%s.SphereCenter = App.Vector(%f, %f, %f)",
+                FeatName.c_str(),
+                center[0],
+                center[1] + box.GetLength(1) / 2,
+                center[2] + box.GetLength(2) / 2
+            );
+            doCommand(
+                Doc,
+                "App.ActiveDocument.%s.SphereRadius = %f",
+                FeatName.c_str(),
+                box.GetDiagonalLength() / 2
+            );
         }
         else if (iMsg == 2) {  // Cylinder
-            doCommand(Doc,
-                      "App.ActiveDocument.%s.Center = App.Vector(%f, %f, %f)",
-                      FeatName.c_str(),
-                      center[0],
-                      center[1] + box.GetLength(1) / 2,
-                      center[2]);
-            doCommand(Doc,
-                      "App.ActiveDocument.%s.Radius = %f",
-                      FeatName.c_str(),
-                      box.GetDiagonalLength() / 3.6);  // make cylinder a bit higher than the box
+            doCommand(
+                Doc,
+                "App.ActiveDocument.%s.CylinderCenter = App.Vector(%f, %f, %f)",
+                FeatName.c_str(),
+                center[0],
+                center[1] + box.GetLength(1) / 2,
+                center[2]
+            );
+            doCommand(
+                Doc,
+                "App.ActiveDocument.%s.CylinderRadius = %f",
+                FeatName.c_str(),
+                box.GetDiagonalLength() / 3.6
+            );  // make cylinder a bit higher than the box
         }
         else if (iMsg == 3) {  // Box
-            doCommand(Doc,
-                      "App.ActiveDocument.%s.Center = App.Vector(%f, %f, %f)",
-                      FeatName.c_str(),
-                      center[0] + box.GetLength(0) / 2,
-                      center[1] + box.GetLength(1) / 2,
-                      center[2]);
-            doCommand(Doc, "App.ActiveDocument.%s.Length = %f", FeatName.c_str(), box.GetLength(0));
-            doCommand(Doc, "App.ActiveDocument.%s.Width = %f", FeatName.c_str(), box.GetLength(1));
-            doCommand(Doc,
-                      "App.ActiveDocument.%s.Height = %f",
-                      FeatName.c_str(),
-                      // purposely a bit higher to avoid rendering artifacts at the box border
-                      1.1 * box.GetLength(2));
+            doCommand(
+                Doc,
+                "App.ActiveDocument.%s.BoxCenter = App.Vector(%f, %f, %f)",
+                FeatName.c_str(),
+                center[0] + box.GetLength(0) / 2,
+                center[1] + box.GetLength(1) / 2,
+                center[2]
+            );
+            doCommand(Doc, "App.ActiveDocument.%s.BoxLength = %f", FeatName.c_str(), box.GetLength(0));
+            doCommand(Doc, "App.ActiveDocument.%s.BoxWidth = %f", FeatName.c_str(), box.GetLength(1));
+            doCommand(
+                Doc,
+                "App.ActiveDocument.%s.BoxHeight = %f",
+                FeatName.c_str(),
+                // purposely a bit higher to avoid rendering artifacts at the box border
+                1.1 * box.GetLength(2)
+            );
         }
 
         this->updateActive();
@@ -2343,9 +2770,11 @@ void CmdFemPostFunctions::activated(int iMsg)
         }
     }
     else {
-        QMessageBox::warning(Gui::getMainWindow(),
-                             qApp->translate("CmdFemPostClipFilter", "Wrong selection"),
-                             qApp->translate("CmdFemPostClipFilter", "Select a pipeline, please."));
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            qApp->translate("CmdFemPostClipFilter", "Wrong selection"),
+            qApp->translate("CmdFemPostClipFilter", "Select a pipeline.")
+        );
     }
 
     // Since the default icon is reset when enabling/disabling the command we have
@@ -2398,29 +2827,41 @@ void CmdFemPostFunctions::languageChange()
     QAction* cmd = a[0];
     cmd->setText(QApplication::translate("CmdFemPostFunctions", "Plane"));
     cmd->setToolTip(
-        QApplication::translate("FEM_PostCreateFunctions",
-                                "Create a plane function, defined by its origin and normal"));
+        QApplication::translate(
+            "FEM_PostCreateFunctions",
+            "Create a plane function, defined by its origin and normal"
+        )
+    );
     cmd->setStatusTip(cmd->toolTip());
 
     cmd = a[1];
     cmd->setText(QApplication::translate("CmdFemPostFunctions", "Sphere"));
     cmd->setToolTip(
-        QApplication::translate("FEM_PostCreateFunctions",
-                                "Create a sphere function, defined by its center and radius"));
+        QApplication::translate(
+            "FEM_PostCreateFunctions",
+            "Create a sphere function, defined by its center and radius"
+        )
+    );
     cmd->setStatusTip(cmd->toolTip());
 
     cmd = a[2];
     cmd->setText(QApplication::translate("CmdFemPostFunctions", "Cylinder"));
-    cmd->setToolTip(QApplication::translate(
-        "FEM_PostCreateFunctions",
-        "Create a cylinder function, defined by its center, axis and radius"));
+    cmd->setToolTip(
+        QApplication::translate(
+            "FEM_PostCreateFunctions",
+            "Create a cylinder function, defined by its center, axis and radius"
+        )
+    );
     cmd->setStatusTip(cmd->toolTip());
 
     cmd = a[3];
     cmd->setText(QApplication::translate("CmdFemPostFunctions", "Box"));
-    cmd->setToolTip(QApplication::translate(
-        "FEM_PostCreateFunctions",
-        "Create a box function, defined by its center, length, width and height"));
+    cmd->setToolTip(
+        QApplication::translate(
+            "FEM_PostCreateFunctions",
+            "Create a box function, defined by its center, length, width and height"
+        )
+    );
     cmd->setStatusTip(cmd->toolTip());
 }
 
@@ -2443,8 +2884,8 @@ CmdFemPostApllyChanges::CmdFemPostApllyChanges()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Apply changes to pipeline");
-    sToolTipText = QT_TR_NOOP("Apply changes to parameters directly and not on recompute only...");
+    sMenuText = QT_TR_NOOP("Apply Changes to Pipeline");
+    sToolTipText = QT_TR_NOOP("Applies changes to parameters directly and not on recompute only");
     sWhatsThis = "FEM_PostApplyChanges";
     sStatusTip = sToolTipText;
     sPixmap = "view-refresh";
@@ -2484,7 +2925,7 @@ CmdFemPostPipelineFromResult::CmdFemPostPipelineFromResult()
 {
     sAppModule = "Fem";
     sGroup = QT_TR_NOOP("Fem");
-    sMenuText = QT_TR_NOOP("Post pipeline from result");
+    sMenuText = QT_TR_NOOP("Post Pipeline From Result");
     sToolTipText = QT_TR_NOOP("Creates a post processing pipeline from a result object");
     sWhatsThis = "FEM_PostPipelineFromResult";
     sStatusTip = sToolTipText;
@@ -2496,30 +2937,33 @@ void CmdFemPostPipelineFromResult::activated(int)
     /*
     Gui::SelectionFilter ResultFilter("SELECT Fem::FemResultObject COUNT 1");
     if (ResultFilter.match()) {
-        Base::Console().Message("Debug: `SELECT Fem::FemResultObject COUNT 1` has matched obj");
+        Base::Console().message("Debug: `SELECT Fem::FemResultObject COUNT 1` has matched obj");
         Fem::FemResultObject* result =
          static_cast<Fem::FemResultObject*>(ResultFilter.Result[0][0].getObject());
         //static_cast failed here
-        Base::Console().Message("Debug: FemResultObject pointer = %p", result );
+        Base::Console().message("Debug: FemResultObject pointer = %p", result );
 
     */
 
     // go through active document change some Visibility
     Gui::Document* doc = Gui::Application::Instance->activeDocument();
     App::Document* app = doc->getDocument();
-    const std::vector<App::DocumentObject*> obj =
-        app->getObjectsOfType(App::DocumentObject::getClassTypeId());
+    const std::vector<App::DocumentObject*> obj = app->getObjectsOfType(
+        App::DocumentObject::getClassTypeId()
+    );
 
     for (auto it : obj) {
-        doCommand(Gui,
-                  "Gui.getDocument(\"%s\").getObject(\"%s\").Visibility=False",
-                  app->getName(),
-                  it->getNameInDocument());
+        doCommand(
+            Gui,
+            "Gui.getDocument(\"%s\").getObject(\"%s\").Visibility=False",
+            app->getName(),
+            it->getNameInDocument()
+        );
     }
 
     // we need single result object to attach the pipeline to
-    std::vector<Fem::FemResultObject*> results =
-        getSelection().getObjectsOfType<Fem::FemResultObject>();
+    std::vector<Fem::FemResultObject*> results
+        = getSelection().getObjectsOfType<Fem::FemResultObject>();
     if (results.size() == 1) {
         // the pipeline should be inside the analysis container if possible
         bool foundAnalysis = false;
@@ -2537,25 +2981,28 @@ void CmdFemPostPipelineFromResult::activated(int)
         // create the pipeline object
         openCommand(QT_TRANSLATE_NOOP("Command", "Create pipeline from result"));
         if (foundAnalysis) {
-            pcAnalysis->addObject("Fem::FemPostPipeline", FeatName.c_str());
+            pcAnalysis->addObject<Fem::FemPostPipeline>(FeatName.c_str());
         }
         else {
-            doCommand(Doc,
-                      "App.activeDocument().addObject('Fem::FemPostPipeline','%s')",
-                      FeatName.c_str());
+            doCommand(
+                Doc,
+                "App.activeDocument().addObject('Fem::FemPostPipeline','%s')",
+                FeatName.c_str()
+            );
         }
         // load the contents of the result object to the pipeline
-        doCommand(Doc,
-                  "App.activeDocument().ActiveObject.load("
-                  "App.activeDocument().getObject(\"%s\"))",
-                  results[0]->getNameInDocument());
+        doCommand(
+            Doc,
+            "App.activeDocument().ActiveObject.load("
+            "App.activeDocument().getObject(\"%s\"))",
+            results[0]->getNameInDocument()
+        );
         // set display to assure the user sees the new object
         doCommand(Doc, "App.activeDocument().ActiveObject.ViewObject.DisplayMode = \"Surface\"");
         // Set SelectionStyle to BoundBox because the idea is that the user gets the useful result
         // from the colors. The default would be to highlight the shape but then the colors are
         // changed by every highlighting leading to confusions for the user.
-        doCommand(Doc,
-                  "App.activeDocument().ActiveObject.ViewObject.SelectionStyle = \"BoundBox\"");
+        doCommand(Doc, "App.activeDocument().ActiveObject.ViewObject.SelectionStyle = \"BoundBox\"");
         commitCommand();
 
         this->updateActive();
@@ -2564,16 +3011,53 @@ void CmdFemPostPipelineFromResult::activated(int)
         QMessageBox::warning(
             Gui::getMainWindow(),
             qApp->translate("CmdFemPostPipelineFromResult", "Wrong selection type"),
-            qApp->translate("CmdFemPostPipelineFromResult", "Select a result object, please."));
+            qApp->translate("CmdFemPostPipelineFromResult", "Select a result object.")
+        );
     }
 }
 
 bool CmdFemPostPipelineFromResult::isActive()
 {
     // only activate if a result object is selected from which the pipeline can be loaded
-    std::vector<Fem::FemResultObject*> results =
-        getSelection().getObjectsOfType<Fem::FemResultObject>();
+    std::vector<Fem::FemResultObject*> results
+        = getSelection().getObjectsOfType<Fem::FemResultObject>();
     return (results.size() == 1) ? true : false;
+}
+
+//================================================================================================
+DEF_STD_CMD_A(CmdFemPostBranchFilter)
+
+CmdFemPostBranchFilter::CmdFemPostBranchFilter()
+    : Command("FEM_PostBranchFilter")
+{
+    sAppModule = "Fem";
+    sGroup = QT_TR_NOOP("Fem");
+    sMenuText = QT_TR_NOOP("Pipeline Branch");
+    sToolTipText = QT_TR_NOOP("Branches the pipeline into a new path");
+    sWhatsThis = "FEM_PostBranchFilter";
+    sStatusTip = sToolTipText;
+    sPixmap = "FEM_PostBranchFilter";
+}
+
+void CmdFemPostBranchFilter::activated(int)
+{
+    setupFilter(this, "Branch");
+}
+
+bool CmdFemPostBranchFilter::isActive()
+{
+    // only allow one object
+    auto selection = getSelection().getSelection();
+    if (selection.size() > 1) {
+        return false;
+    }
+    // only activate if a post object is selected
+    for (auto obj : selection) {
+        if (obj.pObject->isDerivedFrom<Fem::FemPostObject>()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 #endif
@@ -2596,6 +3080,7 @@ void CreateFemCommands()
     rcCmdMgr.addCommand(new CmdFemConstraintContact());
     rcCmdMgr.addCommand(new CmdFemConstraintDisplacement());
     rcCmdMgr.addCommand(new CmdFemConstraintFixed());
+    rcCmdMgr.addCommand(new CmdFemConstraintRigidBody());
     rcCmdMgr.addCommand(new CmdFemConstraintFluidBoundary());
     rcCmdMgr.addCommand(new CmdFemConstraintForce());
     rcCmdMgr.addCommand(new CmdFemConstraintGear());
@@ -2613,6 +3098,8 @@ void CreateFemCommands()
     // mesh
     rcCmdMgr.addCommand(new CmdFemCreateNodesSet());
     rcCmdMgr.addCommand(new CmdFemDefineNodesSet());
+    rcCmdMgr.addCommand(new CmdFemCreateElementsSet());
+    rcCmdMgr.addCommand(new CmdFemDefineElementsSet());
 
     // equations
     rcCmdMgr.addCommand(new CmdFemCompEmEquations());
@@ -2620,6 +3107,7 @@ void CreateFemCommands()
     // vtk post processing
 #ifdef FC_USE_VTK
     rcCmdMgr.addCommand(new CmdFemPostApllyChanges);
+    rcCmdMgr.addCommand(new CmdFemPostCalculatorFilter);
     rcCmdMgr.addCommand(new CmdFemPostClipFilter);
     rcCmdMgr.addCommand(new CmdFemPostContoursFilter);
     rcCmdMgr.addCommand(new CmdFemPostCutFilter);
@@ -2628,6 +3116,7 @@ void CreateFemCommands()
     rcCmdMgr.addCommand(new CmdFemPostLinearizedStressesFilter);
     rcCmdMgr.addCommand(new CmdFemPostFunctions);
     rcCmdMgr.addCommand(new CmdFemPostPipelineFromResult);
+    rcCmdMgr.addCommand(new CmdFemPostBranchFilter);
     rcCmdMgr.addCommand(new CmdFemPostScalarClipFilter);
     rcCmdMgr.addCommand(new CmdFemPostWarpVectorFilter);
 #endif

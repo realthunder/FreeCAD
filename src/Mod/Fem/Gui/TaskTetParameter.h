@@ -21,8 +21,7 @@
  ***************************************************************************/
 
 
-#ifndef FEMGUI_TaskTetParameter_H
-#define FEMGUI_TaskTetParameter_H
+#pragma once
 
 #include <Gui/TaskView/TaskView.h>
 
@@ -69,6 +68,7 @@ public:
 private Q_SLOTS:
     void SwitchMethod(int Value);
     void maxSizeValueChanged(double Value);
+    void minSizeValueChanged(double Value);
     void setQuadric(int s);
     void setGrowthRate(double v);
     void setSegsPerEdge(int v);
@@ -84,5 +84,3 @@ private:
 };
 
 }  // namespace FemGui
-
-#endif  // FEMGUI_TaskTetParameter_H

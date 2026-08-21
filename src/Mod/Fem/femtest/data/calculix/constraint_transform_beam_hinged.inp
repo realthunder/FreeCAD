@@ -3257,8 +3257,8 @@ Evolumes
 
 ***********************************************************
 ** constraints displacement node sets
-** FemConstraintDisplacment
-*NSET,NSET=FemConstraintDisplacment
+** Displacement
+*NSET,NSET=Displacement
 4,
 5,
 7,
@@ -3436,8 +3436,8 @@ Evolumes
 
 ***********************************************************
 ** constraints transform node sets
-** FemConstraintTransform1
-*NSET,NSET=CylinFemConstraintTransform1
+** Transform1
+*NSET,NSET=CylinTransform1
 5,
 8,
 82,
@@ -3525,8 +3525,8 @@ Evolumes
 295,
 296,
 2089,
-** FemConstraintTransform2
-*NSET,NSET=CylinFemConstraintTransform2
+** Transform2
+*NSET,NSET=CylinTransform2
 4,
 7,
 69,
@@ -3615,6 +3615,9 @@ Evolumes
 241,
 2088,
 
+** Physical constants for SI(mm) unit system with Kelvins
+*PHYSICAL CONSTANTS, ABSOLUTE ZERO=0, STEFAN BOLTZMANN=5.670374419e-11
+
 ***********************************************************
 ** Materials
 ** see information about units at file end
@@ -3623,6 +3626,8 @@ Evolumes
 *MATERIAL, NAME=FemMaterial
 *ELASTIC
 210000,0.3
+*EXPANSION, ZERO=0
+0
 
 ***********************************************************
 ** Sections
@@ -3630,31 +3635,31 @@ Evolumes
 
 ***********************************************************
 ** Transform Constraints
-** FemConstraintTransform1
-*TRANSFORM, NSET=CylinFemConstraintTransform1, TYPE=C
-10,27,10,10,7,10
-** FemConstraintTransform2
-*TRANSFORM, NSET=CylinFemConstraintTransform2, TYPE=C
-190,27,10,190,7,10
+** Transform1
+*TRANSFORM, NSET=CylinTransform1, TYPE=C
+10,5,10,10,6,10
+** Transform2
+*TRANSFORM, NSET=CylinTransform2, TYPE=C
+190,5,10,190,6,10
 
 ***********************************************************
 ** At least one step is needed to run an CalculiX analysis of FreeCAD
-*STEP
+*STEP, INC=2000
 *STATIC
 
 
 ***********************************************************
 ** Displacement constraint applied
-** FemConstraintDisplacment
+** Displacement
 *BOUNDARY
-FemConstraintDisplacment,1
+Displacement,1,1,0
 
 
 ***********************************************************
 ** constraints pressure element face loads
-** FemConstraintPressure
+** Pressure
 *DLOAD
-** FemConstraintPressure: face load
+** CompoundFilter.Face8
 1384,P3,10.0
 1394,P2,10.0
 1397,P2,10.0
@@ -3782,12 +3787,12 @@ U
 S, E
 ** outputs --> dat file
 ** reaction forces for Constraint displacement constraining translation
-*NODE PRINT, NSET=FemConstraintDisplacment, TOTALS=ONLY
+*NODE PRINT, NSET=Displacement, TOTALS=ONLY
 RF
 
-
+*OUTPUT, FREQUENCY=1
 ***********************************************************
-*END STEP 
+*END STEP
 
 ***********************************************************
 ** CalculiX Input file

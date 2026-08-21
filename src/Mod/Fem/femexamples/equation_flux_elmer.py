@@ -30,6 +30,7 @@ import ObjectsFem
 from . import manager
 from .manager import get_meshname
 from .manager import init_doc
+from .meshes import generate_mesh
 
 
 def get_information():
@@ -37,15 +38,17 @@ def get_information():
         "name": "Flux - Elmer",
         "meshtype": "solid",
         "meshelement": "Tet10",
-        "constraints": ["electrostatic potential", "temperature"],
+        "constraints": ["electromagnetic", "temperature"],
         "solvers": ["elmer"],
         "material": "solid",
-        "equations": ["electrostatic", "flux", "heat"]
+        "equations": ["electrostatic", "flux", "heat"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.equation_flux_elmer import setup
@@ -54,6 +57,7 @@ setup()
 Potential flux and heat flux - Elmer solver
 
 """
+    )
 
 
 def setup(doc=None, solvertype="elmer"):
@@ -80,6 +84,7 @@ def setup(doc=None, solvertype="elmer"):
     analysis = ObjectsFem.makeAnalysis(doc, "Analysis")
     if FreeCAD.GuiUp:
         import FemGui
+
         FemGui.setActiveAnalysis(analysis)
 
     # solver
@@ -120,14 +125,14 @@ def setup(doc=None, solvertype="elmer"):
     analysis.addObject(material_obj)
 
     # constraint potential 1V
-    Potential_1V = ObjectsFem.makeConstraintElectrostaticPotential(doc, "Potential_1V")
+    Potential_1V = ObjectsFem.makeConstraintElectromagnetic(doc, "Potential_1V")
     Potential_1V.Potential = "1 V"
     Potential_1V.NormalDirection = Vector(0, -1, 0)
     Potential_1V.References = [(cube, "Face3")]
     analysis.addObject(Potential_1V)
 
     # constraint potential 0V
-    Potential_0V = ObjectsFem.makeConstraintElectrostaticPotential(doc, "Potential_0V")
+    Potential_0V = ObjectsFem.makeConstraintElectromagnetic(doc, "Potential_0V")
     Potential_0V.Potential = "0 V"
     Potential_0V.NormalDirection = Vector(0, 0, 0)
     Potential_0V.References = [(cube, "Face4")]
@@ -149,21 +154,12 @@ def setup(doc=None, solvertype="elmer"):
 
     # mesh
     femmesh_obj = analysis.addObject(ObjectsFem.makeMeshGmsh(doc, get_meshname()))[0]
-    femmesh_obj.Part = cube
+    femmesh_obj.Shape = cube
     femmesh_obj.CharacteristicLengthMax = "1 mm"
     femmesh_obj.ViewObject.Visibility = False
 
     # generate the mesh
-    from femmesh import gmshtools
-    gmsh_mesh = gmshtools.GmshTools(femmesh_obj, analysis)
-    try:
-        error = gmsh_mesh.create_mesh()
-    except Exception:
-        error = sys.exc_info()[1]
-        FreeCAD.Console.PrintError(
-            "Unexpected error when creating mesh: {}\n"
-            .format(error)
-        )
+    generate_mesh.mesh_from_mesher(femmesh_obj, "gmsh")
 
     doc.recompute()
     return doc

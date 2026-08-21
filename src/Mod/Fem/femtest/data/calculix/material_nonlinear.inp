@@ -19779,8 +19779,8 @@ Evolumes
 
 ***********************************************************
 ** constraints fixed node sets
-** ConstraintFixed
-*NSET,NSET=ConstraintFixed
+** Fixed
+*NSET,NSET=Fixed
 1,
 2,
 7,
@@ -19985,6 +19985,9 @@ Evolumes
 1328,
 1329,
 
+** Physical constants for SI(mm) unit system with Kelvins
+*PHYSICAL CONSTANTS, ABSOLUTE ZERO=0, STEFAN BOLTZMANN=5.670374419e-11
+
 ***********************************************************
 ** Materials
 ** see information about units at file end
@@ -19993,6 +19996,8 @@ Evolumes
 *MATERIAL, NAME=Material_lin
 *ELASTIC
 210000,0.3
+*EXPANSION, ZERO=0
+0
 *PLASTIC
 240.0, 0.0
 270.0, 0.025
@@ -20004,24 +20009,24 @@ Evolumes
 
 ***********************************************************
 ** At least one step is needed to run an CalculiX analysis of FreeCAD
-*STEP, NLGEOM
+*STEP, NLGEOM, INC=2000
 *STATIC
 
 
 ***********************************************************
 ** Fixed Constraints
-** ConstraintFixed
+** Fixed
 *BOUNDARY
-ConstraintFixed,1
-ConstraintFixed,2
-ConstraintFixed,3
+Fixed,1
+Fixed,2
+Fixed,3
 
 
 ***********************************************************
 ** constraints pressure element face loads
-** ConstraintPressure
+** Pressure
 *DLOAD
-** ConstraintPressure: face load
+** Hole_Plate.Face2
 4796,P3,-130.0
 4799,P4,-130.0
 4872,P4,-130.0
@@ -20111,18 +20116,18 @@ U
 S, E, PEEQ
 ** outputs --> dat file
 ** reaction forces for Constraint fixed
-*NODE PRINT, NSET=ConstraintFixed, TOTALS=ONLY
+*NODE PRINT, NSET=Fixed, TOTALS=ONLY
 RF
 
-
+*OUTPUT, FREQUENCY=1
 ***********************************************************
-*END STEP 
+*END STEP
 
 ***********************************************************
 ** CalculiX Input file
 **   written by    --> FreeCAD 0.21.0
 **   written on    --> Tue Mar 28 07:12:17 2023
-**   file name     --> 
+**   file name     --> material_nonlinear.FCStd
 **   analysis name --> Analysis
 **
 **

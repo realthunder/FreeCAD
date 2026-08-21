@@ -1,4 +1,5 @@
 /***************************************************************************
+ *   Copyright (c) 2023 Peter McB                                          *
  *   Copyright (c) 2008 Jürgen Riegel <juergen.riegel@web.de>              *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
@@ -20,7 +21,6 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
 #include <Base/Console.h>
 #include <Base/PyObjectBase.h>
@@ -42,6 +42,7 @@
 #include "ViewProviderFemMeshShape.h"
 #include "ViewProviderFemMeshShapeNetgen.h"
 #include "ViewProviderSetElements.h"
+#include "ViewProviderSetElementNodes.h"
 #include "ViewProviderSetFaces.h"
 #include "ViewProviderSetGeometry.h"
 #include "ViewProviderSetNodes.h"
@@ -51,6 +52,7 @@
 #include "ViewProviderFemConstraintContact.h"
 #include "ViewProviderFemConstraintDisplacement.h"
 #include "ViewProviderFemConstraintFixed.h"
+#include "ViewProviderFemConstraintRigidBody.h"
 #include "ViewProviderFemConstraintForce.h"
 #include "ViewProviderFemConstraintFluidBoundary.h"
 #include "ViewProviderFemConstraintGear.h"
@@ -67,10 +69,12 @@
 #include "Workbench.h"
 
 #ifdef FC_USE_VTK
-#include "ViewProviderFemPostFilter.h"
-#include "ViewProviderFemPostFunction.h"
-#include "ViewProviderFemPostObject.h"
-#include "ViewProviderFemPostPipeline.h"
+# include "ViewProviderFemPostFilter.h"
+# include "ViewProviderFemPostFunction.h"
+# include "ViewProviderFemPostObject.h"
+# include "ViewProviderFemPostPipeline.h"
+# include "ViewProviderFemPostBranchFilter.h"
+# include "ViewProviderShapeExtension.h"
 #endif
 
 
@@ -100,7 +104,7 @@ PyMOD_INIT_FUNC(FemGui)
     }
 
     PyObject* mod = FemGui::initModule();
-    Base::Console().Log("Loading GUI of Fem module... done\n");
+    Base::Console().log("Loading GUI of FEM module… done\n");
 
     // instantiating the commands
     CreateFemCommands();
@@ -120,6 +124,7 @@ PyMOD_INIT_FUNC(FemGui)
     FemGui::ViewProviderFemConstraintContact                    ::init();
     FemGui::ViewProviderFemConstraintDisplacement               ::init();
     FemGui::ViewProviderFemConstraintFixed                      ::init();
+    FemGui::ViewProviderFemConstraintRigidBody                  ::init();
     FemGui::ViewProviderFemConstraintFluidBoundary              ::init();
     FemGui::ViewProviderFemConstraintForce                      ::init();
     FemGui::ViewProviderFemConstraintGear                       ::init();
@@ -134,11 +139,14 @@ PyMOD_INIT_FUNC(FemGui)
 
     FemGui::ViewProviderFemMesh                                 ::init();
     FemGui::ViewProviderFemMeshPython                           ::init();
+    FemGui::ViewProviderFemMeshShapeBase                        ::init();
+    FemGui::ViewProviderFemMeshShapeBasePython                  ::init();
     FemGui::ViewProviderFemMeshShape                            ::init();
     FemGui::ViewProviderFemMeshShapeNetgen                      ::init();
     FemGui::PropertyFemMeshItem                                 ::init();
 
     FemGui::ViewProviderSetElements                             ::init();
+    FemGui::ViewProviderSetElementNodes                         ::init();
     FemGui::ViewProviderSetFaces                                ::init();
     FemGui::ViewProviderSetGeometry                             ::init();
     FemGui::ViewProviderSetNodes                                ::init();
@@ -149,10 +157,23 @@ PyMOD_INIT_FUNC(FemGui)
     FemGui::ViewProviderResult                                  ::init();
     FemGui::ViewProviderResultPython                            ::init();
 
+    FemGui::ViewProviderShapeExtension                          ::init();
+    FemGui::ViewProviderBoxExtension                            ::init();
+    FemGui::ViewProviderBoxExtensionPython                      ::init();
+    FemGui::ViewProviderCylinderExtension                       ::init();
+    FemGui::ViewProviderCylinderExtensionPython                 ::init();
+    FemGui::ViewProviderSphereExtension                         ::init();
+    FemGui::ViewProviderSphereExtensionPython                   ::init();
+    FemGui::ViewProviderPlaneExtension                          ::init();
+    FemGui::ViewProviderPlaneExtensionPython                    ::init();
 
 #ifdef FC_USE_VTK
     FemGui::ViewProviderFemPostObject                           ::init();
     FemGui::ViewProviderFemPostPipeline                         ::init();
+    FemGui::ViewProviderFemPostFilterPythonBase                 ::init();
+    FemGui::ViewProviderPostFilterPython                        ::init();
+    FemGui::ViewProviderFemPostBranchFilter                     ::init();
+    FemGui::ViewProviderFemPostCalculator                       ::init();
     FemGui::ViewProviderFemPostClip                             ::init();
     FemGui::ViewProviderFemPostContours                         ::init();
     FemGui::ViewProviderFemPostCut                              ::init();

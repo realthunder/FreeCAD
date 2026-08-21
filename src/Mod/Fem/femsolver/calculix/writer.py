@@ -36,6 +36,7 @@ import FreeCAD
 from FreeCAD import Units
 
 from . import write_constraint_centrif as con_centrif
+from . import write_constraint_bodyheatsource as con_bodyheatsource
 from . import write_constraint_contact as con_contact
 from . import write_constraint_displacement as con_displacement
 from . import write_constraint_fixed as con_fixed
@@ -43,23 +44,28 @@ from . import write_constraint_fluidsection as con_fluidsection
 from . import write_constraint_force as con_force
 from . import write_constraint_heatflux as con_heatflux
 from . import write_constraint_initialtemperature as con_itemp
+from . import write_constraint_finaltemperature as con_ftemp
 from . import write_constraint_planerotation as con_planerotation
 from . import write_constraint_pressure as con_pressure
+from . import write_constraint_rigidbody as con_rigidbody
+from . import write_constraint_rigidbody_step as con_rigidbody_step
 from . import write_constraint_sectionprint as con_sectionprint
 from . import write_constraint_selfweight as con_selfweight
 from . import write_constraint_temperature as con_temperature
 from . import write_constraint_tie as con_tie
 from . import write_constraint_transform as con_transform
+from . import write_constraint_electricchargedensity as con_electricchargedensity
+from . import write_constraint_electrostatic as con_electrostatic
 from . import write_femelement_geometry
 from . import write_femelement_material
 from . import write_femelement_matgeosets
 from . import write_footer
 from . import write_mesh
+from . import write_amplitude
 from . import write_step_equation
 from . import write_step_output
 from .. import writerbase
 from femtools import constants
-
 
 # Interesting forum topic: https://forum.freecad.org/viewtopic.php?&t=48451
 # TODO somehow set units at beginning and every time a value is retrieved use this identifier
@@ -105,22 +111,10 @@ units_information = """*********************************************************
 
 class FemInputWriterCcx(writerbase.FemInputWriter):
     def __init__(
-        self,
-        analysis_obj,
-        solver_obj,
-        mesh_obj,
-        member,
-        dir_name=None,
-        mat_geo_sets=None
+        self, analysis_obj, solver_obj, mesh_obj, member, dir_name=None, mat_geo_sets=None
     ):
         writerbase.FemInputWriter.__init__(
-            self,
-            analysis_obj,
-            solver_obj,
-            mesh_obj,
-            member,
-            dir_name,
-            mat_geo_sets
+            self, analysis_obj, solver_obj, mesh_obj, member, dir_name, mat_geo_sets
         )
         self.mesh_name = self.mesh_object.Name
         self.file_name = join(self.dir_name, self.mesh_name + ".inp")
@@ -135,10 +129,7 @@ class FemInputWriterCcx(writerbase.FemInputWriter):
         time_start = time.process_time()
         FreeCAD.Console.PrintMessage("\n")  # because of time print in separate line
         FreeCAD.Console.PrintMessage("CalculiX solver input writing...\n")
-        FreeCAD.Console.PrintMessage(
-            "Input file:{}\n"
-            .format(self.file_name)
-        )
+        FreeCAD.Console.PrintMessage(f"Input file:{self.file_name}\n")
 
         if self.solver_obj.SplitInputWriter is True:
             FreeCAD.Console.PrintMessage("Split input file.\n")
@@ -158,13 +149,22 @@ class FemInputWriterCcx(writerbase.FemInputWriter):
 
         # element sets constraints
         self.write_constraints_meshsets(inpfile, self.member.cons_centrif, con_centrif)
+        self.write_constraints_meshsets(
+            inpfile, self.member.cons_bodyheatsource, con_bodyheatsource
+        )
 
         # node sets
         self.write_constraints_meshsets(inpfile, self.member.cons_fixed, con_fixed)
+        self.write_constraints_meshsets(inpfile, self.member.cons_rigidbody, con_rigidbody)
         self.write_constraints_meshsets(inpfile, self.member.cons_displacement, con_displacement)
         self.write_constraints_meshsets(inpfile, self.member.cons_planerotation, con_planerotation)
         self.write_constraints_meshsets(inpfile, self.member.cons_transform, con_transform)
         self.write_constraints_meshsets(inpfile, self.member.cons_temperature, con_temperature)
+        self.write_constraints_meshsets(inpfile, self.member.cons_initialtemperature, con_itemp)
+        self.write_constraints_meshsets(
+            inpfile, self.member.cons_electricchargedensity, con_electricchargedensity
+        )
+        self.write_constraints_meshsets(inpfile, self.member.cons_electrostatic, con_electrostatic)
 
         # surface sets
         self.write_constraints_meshsets(inpfile, self.member.cons_contact, con_contact)
@@ -181,20 +181,35 @@ class FemInputWriterCcx(writerbase.FemInputWriter):
         self.write_constraints_propdata(inpfile, self.member.cons_contact, con_contact)
         self.write_constraints_propdata(inpfile, self.member.cons_tie, con_tie)
         self.write_constraints_propdata(inpfile, self.member.cons_transform, con_transform)
+        self.write_constraints_propdata(inpfile, self.member.cons_rigidbody, con_rigidbody)
+
+        # amplitudes
+        write_amplitude.write_amplitude(inpfile, self)
 
         # step equation
         write_step_equation.write_step_equation(inpfile, self)
 
         # constraints dependent from steps
         self.write_constraints_propdata(inpfile, self.member.cons_fixed, con_fixed)
+        self.write_constraints_propdata(
+            inpfile, self.member.cons_rigidbody_step, con_rigidbody_step
+        )
         self.write_constraints_propdata(inpfile, self.member.cons_displacement, con_displacement)
         self.write_constraints_propdata(inpfile, self.member.cons_sectionprint, con_sectionprint)
         self.write_constraints_propdata(inpfile, self.member.cons_selfweight, con_selfweight)
         self.write_constraints_propdata(inpfile, self.member.cons_centrif, con_centrif)
+        self.write_constraints_propdata(
+            inpfile, self.member.cons_bodyheatsource, con_bodyheatsource
+        )
         self.write_constraints_meshsets(inpfile, self.member.cons_force, con_force)
         self.write_constraints_meshsets(inpfile, self.member.cons_pressure, con_pressure)
         self.write_constraints_propdata(inpfile, self.member.cons_temperature, con_temperature)
+        self.write_constraints_propdata(inpfile, self.member.cons_finaltemperature, con_ftemp)
         self.write_constraints_meshsets(inpfile, self.member.cons_heatflux, con_heatflux)
+        self.write_constraints_propdata(
+            inpfile, self.member.cons_electricchargedensity, con_electricchargedensity
+        )
+        self.write_constraints_propdata(inpfile, self.member.cons_electrostatic, con_electrostatic)
         con_fluidsection.write_constraints_fluidsection(inpfile, self)
 
         # output and step end
@@ -208,17 +223,14 @@ class FemInputWriterCcx(writerbase.FemInputWriter):
         inpfile.close()
 
         writetime = round((time.process_time() - time_start), 3)
-        FreeCAD.Console.PrintMessage(
-            "Writing time CalculiX input file: {} seconds.\n".format(writetime)
-        )
+        FreeCAD.Console.PrintMessage(f"Writing time CalculiX input file: {writetime} seconds.\n")
 
         # return
         if self.femelement_count_test is True:
             return self.file_name
         else:
-            FreeCAD.Console.PrintError(
-                "Problems on writing input file, check report prints.\n\n"
-            )
+            FreeCAD.Console.PrintError("Problems on writing input file, check report prints.\n\n")
             return ""
+
 
 ##  @}
