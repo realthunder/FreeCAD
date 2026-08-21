@@ -261,7 +261,12 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     every draw counts, which is what those builds measured: the
 //     rotation-centre sphere then drags the shadow ground and the
 //     auto near/far around with the spin.
-const uint32_t kVersion = 67;
+// 68: the light says whether the shadow ground sizes itself to the
+//     CAMERA rather than to the scene bounds
+//     (LightConfig::groundFollowCamera). A snapshot older than this
+//     was written by a build that only had the scene-bounds sizing, so
+//     it reads as off and lays its ground out the way it was measured.
+const uint32_t kVersion = 68;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -1786,6 +1791,7 @@ void writeLight(Writer &w, const LightConfig &l, const RefWriter &refs)
     w.b(l.groundShading);   // v58
     w.b(l.groundBackFaceCull);
     w.f(l.shadowTransparency);   // v66
+    w.b(l.groundFollowCamera);   // v68
 }
 
 void readLight(Reader &r, LightConfig &l, const RefReader &refs,
@@ -1836,6 +1842,10 @@ void readLight(Reader &r, LightConfig &l, const RefReader &refs,
     if (version >= 66) {
         l.shadowTransparency = r.f();
     }
+    // The struct defaults this ON, which is right for a live config and
+    // wrong for a snapshot: a writer older than v68 sized the ground
+    // from the scene bounds, so that is what its stream means.
+    l.groundFollowCamera = version >= 68 ? r.b() : false;
     // Older streams leave the struct's defaults: auto sizing from the
     // scene bounds, which is what those builds did.
 }

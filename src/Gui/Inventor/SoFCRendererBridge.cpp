@@ -2344,6 +2344,8 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         // has no render properties at all carries none of these.
         res.groundAuto = viewParamOverride<App::PropertyBool>(
                 view, "RenderShadow", "GroundSizeAuto", true);
+        res.groundFollowCamera = viewParamOverride<App::PropertyBool>(
+                view, "RenderShadow", "GroundSizeFollowCamera", true);
         res.groundSizeX = float(viewParamOverride<App::PropertyLength>(
                 view, "RenderShadow", "GroundSizeX", 100.0));
         res.groundSizeY = float(viewParamOverride<App::PropertyLength>(

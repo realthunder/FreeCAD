@@ -63,6 +63,34 @@ bool BGFXRenderer::Private::render(const QColor &col,
     sceneDirty = false;
     renderOk = false;
 
+    // The camera the shadow ground sizes itself to
+    // (LightConfig::groundFollowCamera). Taken here, at the top, for
+    // two reasons: the ground is laid out well before the frame stores
+    // its matrices for the draw path, and boundBox() -- asked outside
+    // any frame -- has to build the same quad this frame does.
+    if (viewMatrix && projMatrix) {
+        const float *V = reinterpret_cast<const float *>(viewMatrix);
+        const float *P = reinterpret_cast<const float *>(projMatrix);
+        // The eye in world space: the view matrix is rigid, so its
+        // inverse translation is -R^T t.
+        for (int c = 0; c < 3; ++c) {
+            groundCam.pos[c] = -(V[4 * c] * V[12]
+                               + V[4 * c + 1] * V[13]
+                               + V[4 * c + 2] * V[14]);
+        }
+        // The view's -Z in world space: the rotation is orthonormal, so
+        // its transpose maps the view axis back out.
+        groundCam.dir[0] = -V[2];
+        groundCam.dir[1] = -V[6];
+        groundCam.dir[2] = -V[10];
+        // proj[1][1] and the perspective test, in the fed matrices'
+        // column-major layout (the same test fc_prepass_read.sh makes
+        // in the shaders).
+        groundCam.projY = P[5];
+        groundCam.perspective = P[11] != 0.0f;
+        groundCam.valid = true;
+    }
+
     if (_deinit)
         return false;
 
@@ -2653,7 +2681,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // coupling this had until now.
     float groundCorners[4][3];
     const bool groundQuadOk = bboxValid
-        && lightconf.groundQuad(bboxMin, bboxMax, groundCorners);
+        && lightconf.groundQuad(bboxMin, bboxMax, groundCam, groundCorners);
     bool groundReflActive = groundQuadOk && lightconf.groundReflection
         && !hlconfig.show
         && bgfx::isValid(view->m_progGroundRefl)
@@ -4976,7 +5004,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // shadow map exists. groundQuad() decides whether there is a quad at
     // all (either switch, and not fully transparent).
     if ((shadowActive || lightconf.groundReflection) && groundQuadOk) {
-        view->submitShadowGround(bboxMin, bboxMax, lightconf,
+        view->submitShadowGround(bboxMin, bboxMax, lightconf, groundCam,
                                  volActive && aoRender);
     }
     // Ground reflection: the opaque scene triangles re-submit into
@@ -5082,7 +5110,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // every frame; the water surface pass samples reflTex itself
     // (s_texRefl) below.
     if (view->passLive(V::ViewGroundReflApply))
-        view->submitGroundReflOverlay(bboxMin, bboxMax, lightconf);
+        view->submitGroundReflOverlay(bboxMin, bboxMax, lightconf,
+                                      groundCam);
     for (const auto &draw : scene) {
         if (draw.material.ontop && isTriangle(draw) && !isTransp(draw)
                 && !isHidden(draw) && !hideFill(draw)) {

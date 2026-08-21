@@ -741,14 +741,15 @@ void BGFXView::submitReflMedia(const float cloudParams[][4],
 }
 
 void BGFXView::submitGroundReflOverlay(const float bmin[3], const float bmax[3],
-                             const Render::LightConfig &light)
+                             const Render::LightConfig &light,
+                             const Render::GroundCamera &cam)
 {
     // The same quad as submitShadowGround, and it has to be exactly the
     // same: this overlay depth-tests EQUAL against it, so a corner that
     // disagreed by a float would drop the reflection. Hence one shared
     // generator rather than a repeated formula.
     float corners[4][3];
-    if (!light.groundQuad(bmin, bmax, corners))
+    if (!light.groundQuad(bmin, bmax, cam, corners))
         return;
     TransientVertex::init();
     if (bgfx::getAvailTransientVertexBuffer(6, TransientVertex::ms_layout)

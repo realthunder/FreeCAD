@@ -34,6 +34,7 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -944,6 +945,35 @@ struct BumpConfig {
     bool operator!=(const BumpConfig &o) const { return !(*this == o); }
 };
 
+/// What the shadow ground needs to know about the camera to size
+/// itself to the view instead of to the scene
+/// (LightConfig::groundFollowCamera).
+///
+/// Not part of LightConfig: the light is the scene's, published when
+/// the scene changes, while this is the eye's and changes on every
+/// navigation frame. Mixing them would mark the scene dirty for a
+/// mouse move.
+struct GroundCamera {
+    /// False leaves the ground on its scene-bounds sizing. That is the
+    /// honest answer before the first frame, and it is what a caller
+    /// with no camera to hand must say -- never a guess, because the
+    /// quad, the reflection overlay that depth-tests EQUAL against it
+    /// and the scene bounds all have to build the SAME quad.
+    bool valid = false;
+    float pos[3] = {0.0f, 0.0f, 0.0f};  ///< world-space eye position
+    /// World-space view direction (the view's -Z). The eye position
+    /// alone is not enough: looking straight down at a plane and
+    /// looking along it need very different amounts of ground, and the
+    /// difference is entirely in this vector.
+    float dir[3] = {0.0f, 0.0f, -1.0f};
+    /// The projection's y scale, proj[1][1]: 1/tan(fovy/2) under a
+    /// perspective camera, 2/height under an orthographic one. Both
+    /// answer "how much world does the viewport span", which is the
+    /// only question the sizing asks.
+    float projY = 1.0f;
+    bool perspective = true;
+};
+
 /// Per-frame scene light, resolved from the traversal state's light
 /// element. Only the Shadow draw style places a shadow light into the
 /// scene graph (the viewer headlight is filtered out); while valid,
@@ -1016,6 +1046,21 @@ struct LightConfig {
     ///   the matrix is identity. Column-major, as the rest of the
     ///   renderer's matrices.
     bool groundAuto = true;
+    /// Auto sizing measured from the CAMERA rather than from the scene
+    /// bounding box (RenderShadow_GroundSizeFollowCamera; no Coin
+    /// counterpart). The quad centres under the eye and reaches
+    /// `groundScale` times what the viewport spans where it meets the
+    /// plane, so it reads as an infinite ground: no plate edge beside
+    /// the model, and -- the reason it exists -- nothing about the
+    /// scene's extent reaches the ground at all. A bounding box that
+    /// twitches (a level-of-detail swap, an object appearing) then
+    /// cannot move the receiver, and neither can anything that grows
+    /// the box without being part of the model.
+    ///
+    /// Only the EXTENT and the centre come from the camera. The plane's
+    /// height is still the scene's (`groundAutoPos`): a ground that
+    /// rose and fell with the eye would not be a ground.
+    bool groundFollowCamera = true;
     float groundSizeX = 100.0f;  ///< half extent when !groundAuto
     float groundSizeY = 100.0f;
     bool groundAutoPos = true;
@@ -1106,29 +1151,70 @@ struct LightConfig {
     /// asked for here rather than at each consumer so the scene bounds
     /// (camera auto-clipping) grow to cover the quad too.
     bool groundQuad(const float *bmin, const float *bmax,
+                    const GroundCamera &cam,
                     float corners[4][3], float *halfOut = nullptr) const
     {
-        if (!valid || !(ground || groundReflection))
-            return false;
-        float hx, hy;
-        if (groundAuto) {
-            const float scale = groundScale > 0.0f ? groundScale : 1.0f;
-            hx = hy = scale * std::max(bmax[0] - bmin[0],
-                                       std::max(bmax[1] - bmin[1],
-                                                bmax[2] - bmin[2]));
-        }
-        else {
-            hx = groundSizeX;
-            hy = groundSizeY;
-        }
-        if (hx <= 0.0f || hy <= 0.0f)
+        float cx, cy, z, hx, hy;
+        if (!groundExtent(bmin, bmax, cam, cx, cy, z, hx, hy))
             return false;
         if (halfOut) {
             halfOut[0] = hx;
             halfOut[1] = hy;
         }
+        static const float xs[4] = {-1.0f, 1.0f, 1.0f, -1.0f};
+        static const float ys[4] = {-1.0f, -1.0f, 1.0f, 1.0f};
+        for (int i = 0; i < 4; ++i) {
+            const float p[3] = {cx + xs[i] * hx, cy + ys[i] * hy, z};
+            groundToWorld(p, corners[i]);
+        }
+        return true;
+    }
 
-        float cx, cy, z;
+    /// The infinite plane the quad above lies in: a point on it and its
+    /// unit normal, both in world space. Same gate, same placement --
+    /// what it drops is the extent, which is exactly what a receiver
+    /// computed per pixel does not have and does not want.
+    bool groundPlane(const float *bmin, const float *bmax,
+                     const GroundCamera &cam,
+                     float point[3], float normal[3]) const
+    {
+        float cx, cy, z, hx, hy;
+        if (!groundExtent(bmin, bmax, cam, cx, cy, z, hx, hy))
+            return false;
+        const float p[3] = {cx, cy, z};
+        groundToWorld(p, point);
+        // The plane's normal is the placement's local +Z as a
+        // DIRECTION: no translation, and no inverse-transpose either --
+        // groundMatrix is a Base::Placement, so its 3x3 is orthonormal
+        // and is its own normal matrix.
+        normal[0] = groundMatrix[8];
+        normal[1] = groundMatrix[9];
+        normal[2] = groundMatrix[10];
+        const float len = std::sqrt(normal[0] * normal[0]
+                                  + normal[1] * normal[1]
+                                  + normal[2] * normal[2]);
+        if (len <= 1.0e-12f)
+            return false;
+        for (int i = 0; i < 3; ++i)
+            normal[i] /= len;
+        return true;
+    }
+
+    /// Where the ground sits and how far it reaches, in the ground's
+    /// own frame (before groundMatrix). The one place that answers it:
+    /// the quad, the plane and the scene bounds must agree to the bit,
+    /// because the ground reflection depth-tests EQUAL against the quad
+    /// and a corner that disagreed by a float would drop it.
+    bool groundExtent(const float *bmin, const float *bmax,
+                      const GroundCamera &cam,
+                      float &cx, float &cy, float &z,
+                      float &hx, float &hy) const
+    {
+        if (!valid || !(ground || groundReflection))
+            return false;
+
+        // Placement first: a camera-fitted extent is measured from the
+        // plane, so the plane's height has to exist before it.
         if (groundAutoPos) {
             cx = (bmin[0] + bmax[0]) * 0.5f;
             cy = (bmin[1] + bmax[1]) * 0.5f;
@@ -1144,18 +1230,106 @@ struct LightConfig {
             z = groundPos[2];
         }
 
-        static const float xs[4] = {-1.0f, 1.0f, 1.0f, -1.0f};
-        static const float ys[4] = {-1.0f, -1.0f, 1.0f, 1.0f};
-        for (int i = 0; i < 4; ++i) {
-            const float p[3] = {cx + xs[i] * hx, cy + ys[i] * hy, z};
-            for (int r = 0; r < 3; ++r) {
-                corners[i][r] = groundMatrix[r] * p[0]
-                              + groundMatrix[4 + r] * p[1]
-                              + groundMatrix[8 + r] * p[2]
-                              + groundMatrix[12 + r];
-            }
+        const float scale = groundScale > 0.0f ? groundScale : 1.0f;
+        if (!groundAuto) {
+            hx = groundSizeX;
+            hy = groundSizeY;
         }
-        return true;
+        else if (groundFollowCamera && cam.valid) {
+            float eye[3], dir[3];
+            groundToLocal(cam.pos, eye);
+            groundDirToLocal(cam.dir, dir);
+            const float py = cam.projY > 1.0e-6f ? cam.projY : 1.0f;
+            const float above = std::fabs(eye[2] - z);
+            // What the viewport spans in world units where it meets the
+            // plane. A perspective camera's span grows with its
+            // distance from the plane; an orthographic camera's is its
+            // height, wherever it stands.
+            const float span = cam.perspective ? 2.0f * above / py
+                                               : 2.0f / py;
+            // Centred on what the camera is LOOKING at, not on what it
+            // stands over. Looking down, the two are the same point;
+            // looking along the plane they are far apart, and centring
+            // under the eye then puts the whole visible ground outside
+            // the quad -- the ground of a grazing view is in front of
+            // the camera, not under it.
+            //
+            // How far in front is the ray's own answer, so the quad
+            // grows exactly as the view flattens. Its reach is capped
+            // because that answer runs to infinity at the horizon, and
+            // an infinite quad is neither drawable nor wanted: the
+            // fade takes over there, which is what a receding plane
+            // should do anyway.
+            const float toward = eye[2] >= z ? -dir[2] : dir[2];
+            float reach = 0.0f;
+            cx = eye[0];
+            cy = eye[1];
+            if (toward > 1.0e-3f && above > 0.0f) {
+                const float t = above / toward;
+                const float dx = t * dir[0];
+                const float dy = t * dir[1];
+                const float len = std::sqrt(dx * dx + dy * dy);
+                reach = std::min(len, kGroundMaxReach * above);
+                if (len > 1.0e-6f) {
+                    cx += dx * (reach / len);
+                    cy += dy * (reach / len);
+                }
+            }
+            // else: looking along the plane, or away from it. There is
+            // no point on it to centre on, so stay under the eye and
+            // let the fade end the ground.
+            // An eye ON the plane sees it edge on and spans nothing.
+            // The floor is not a size, it is what keeps the ground from
+            // blinking out of existence (and taking the reflection with
+            // it) as the camera crosses.
+            hx = hy = std::max(scale * (span + reach), 1.0e-4f);
+        }
+        else {
+            hx = hy = scale * std::max(bmax[0] - bmin[0],
+                                       std::max(bmax[1] - bmin[1],
+                                                bmax[2] - bmin[2]));
+        }
+        return hx > 0.0f && hy > 0.0f;
+    }
+
+    /// The ground's own frame -> world. Column-major, like the rest of
+    /// the renderer's matrices.
+    void groundToWorld(const float *p, float *out) const
+    {
+        for (int r = 0; r < 3; ++r) {
+            out[r] = groundMatrix[r] * p[0]
+                   + groundMatrix[4 + r] * p[1]
+                   + groundMatrix[8 + r] * p[2]
+                   + groundMatrix[12 + r];
+        }
+    }
+
+    /// How far in front of the eye a camera-fitted ground may reach,
+    /// as a multiple of the eye's height above the plane. The ray's own
+    /// answer runs to infinity as the view flattens toward the horizon,
+    /// and past a point the quad is all fade band and no ground.
+    static constexpr float kGroundMaxReach = 24.0f;
+
+    /// World -> the ground's own frame. groundMatrix is a
+    /// Base::Placement (ShadowGroundPlacement), so its 3x3 is
+    /// orthonormal and the inverse rotation is the transpose; nothing
+    /// in this fork feeds a scaled or sheared one.
+    void groundToLocal(const float *w, float *out) const
+    {
+        const float d[3] = {w[0] - groundMatrix[12],
+                            w[1] - groundMatrix[13],
+                            w[2] - groundMatrix[14]};
+        groundDirToLocal(d, out);
+    }
+
+    /// The same, for a DIRECTION: rotation only, no translation.
+    void groundDirToLocal(const float *w, float *out) const
+    {
+        for (int r = 0; r < 3; ++r) {
+            out[r] = groundMatrix[4 * r] * w[0]
+                   + groundMatrix[4 * r + 1] * w[1]
+                   + groundMatrix[4 * r + 2] * w[2];
+        }
     }
 
     /// ! A new field of this struct belongs in THREE places, and each
@@ -1194,6 +1368,7 @@ struct LightConfig {
             && groundReflectionIntensity == o.groundReflectionIntensity
             && sunDisc == o.sunDisc && sunDiscSize == o.sunDiscSize
             && groundAuto == o.groundAuto
+            && groundFollowCamera == o.groundFollowCamera
             && groundSizeX == o.groundSizeX && groundSizeY == o.groundSizeY
             && groundAutoPos == o.groundAutoPos
             && shadowTransparency == o.shadowTransparency

@@ -2596,6 +2596,11 @@ Gui::ShadowRenderParams Gui::materializeShadowRenderParams(App::PropertyContaine
             });
     _shadowRenderParam<App::PropertyBool>(view, "GroundSizeAuto",
             "Auto adjust ground size based on the scene bounding box", true);
+    _shadowRenderParam<App::PropertyBool>(view, "GroundSizeFollowCamera",
+            "Auto size the ground from the camera instead of the scene bounding box. "
+            "The ground centres under the eye and reaches past the view, so it reads "
+            "as endless and nothing about the model's extent can move it.",
+            true);
     _shadowRenderParam<App::PropertyFloat>(view, "GroundSizeScale",
             ViewParams::docShadowGroundScale(),
             ViewParams::getShadowGroundScale());
@@ -4680,6 +4685,7 @@ const char * const *Gui::shadowRenderPropertyNames()
         "RenderShadow_GroundBumpMap",
         "RenderShadow_GroundTextureSize",
         "RenderShadow_GroundSizeAuto",
+        "RenderShadow_GroundSizeFollowCamera",
         "RenderShadow_GroundSizeScale",
         "RenderShadow_GroundSizeX",
         "RenderShadow_GroundSizeY",
