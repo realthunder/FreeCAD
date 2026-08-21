@@ -146,6 +146,12 @@ endfunction(fc_record_generated_binding)
 #
 # Only files carrying the generator's own banner are removed, so nothing
 # hand-written, and nothing produced by another tool, can be caught by it.
+#
+# Note this is "not produced by THIS configuration", which is broader than
+# "the source moved": switching BUILD_FEM off, say, orphans the FEM bindings
+# too, and they are swept. That is intentional -- they are artifacts of a
+# different configuration -- and costs only their regeneration if the module
+# is switched back on.
 function(fc_sweep_orphan_bindings)
     get_property(_expected GLOBAL PROPERTY FC_GENERATED_BINDINGS)
     file(GLOB_RECURSE _found
