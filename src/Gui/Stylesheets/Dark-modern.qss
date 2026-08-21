@@ -1151,7 +1151,10 @@ QPushButton {
   background-color: #696969;
   color: White;
   border-radius: 2px;
-  padding: 2px;
+  /* room around the label, or a plain button collapses to its text
+     (QDialogButtonBox min-width below does not reach hand-built
+     layouts such as the view turntable's Play/Close) */
+  padding: 3px 14px;
   outline: none;
   border: none;
 }
