@@ -2381,43 +2381,36 @@ unsigned int FemMesh::getMemSize() const
 
 void FemMesh::Save(Base::Writer& writer) const
 {
-    if (!writer.isForceXML()) {
+    writer.Stream() << writer.ind() << "<FemMesh ";
+    writer.Stream() << " a11=\"" << _Mtrx[0][0] << "\" a12=\"" << _Mtrx[0][1] << "\" a13=\""
+                    << _Mtrx[0][2] << "\" a14=\"" << _Mtrx[0][3] << "\"";
+    writer.Stream() << " a21=\"" << _Mtrx[1][0] << "\" a22=\"" << _Mtrx[1][1] << "\" a23=\""
+                    << _Mtrx[1][2] << "\" a24=\"" << _Mtrx[1][3] << "\"";
+    writer.Stream() << " a31=\"" << _Mtrx[2][0] << "\" a32=\"" << _Mtrx[2][1] << "\" a33=\""
+                    << _Mtrx[2][2] << "\" a34=\"" << _Mtrx[2][3] << "\"";
+    writer.Stream() << " a41=\"" << _Mtrx[3][0] << "\" a42=\"" << _Mtrx[3][1] << "\" a43=\""
+                    << _Mtrx[3][2] << "\" a44=\"" << _Mtrx[3][3] << "\"";
+
+    if (writer.isForceXML() < 2) {
         // See SaveDocFile(), RestoreDocFile()
-        writer.Stream() << writer.ind() << "<FemMesh file=\"";
-        writer.Stream() << writer.addFile("FemMesh.unv", this) << "\"";
-        writer.Stream() << " a11=\"" << _Mtrx[0][0] << "\" a12=\"" << _Mtrx[0][1] << "\" a13=\""
-                        << _Mtrx[0][2] << "\" a14=\"" << _Mtrx[0][3] << "\"";
-        writer.Stream() << " a21=\"" << _Mtrx[1][0] << "\" a22=\"" << _Mtrx[1][1] << "\" a23=\""
-                        << _Mtrx[1][2] << "\" a24=\"" << _Mtrx[1][3] << "\"";
-        writer.Stream() << " a31=\"" << _Mtrx[2][0] << "\" a32=\"" << _Mtrx[2][1] << "\" a33=\""
-                        << _Mtrx[2][2] << "\" a34=\"" << _Mtrx[2][3] << "\"";
-        writer.Stream() << " a41=\"" << _Mtrx[3][0] << "\" a42=\"" << _Mtrx[3][1] << "\" a43=\""
-                        << _Mtrx[3][2] << "\" a44=\"" << _Mtrx[3][3] << "\"";
-        writer.Stream() << "/>" << std::endl;
+        std::string filename = _persistenceName;
+        if (filename.empty()) {
+            filename = "FemMesh";
+        }
+        filename += ".unv";
+        writer.Stream() << writer.ind() << " file=\"" << writer.addFile(filename, this)
+                        << "\"/>\n";
+        return;
     }
-    else {
-        writer.Stream() << writer.ind() << "<FemMesh file=\"\"";
-        writer.Stream() << " a11=\"" << _Mtrx[0][0] << "\" a12=\"" << _Mtrx[0][1] << "\" a13=\""
-                        << _Mtrx[0][2] << "\" a14=\"" << _Mtrx[0][3] << "\"";
-        writer.Stream() << " a21=\"" << _Mtrx[1][0] << "\" a22=\"" << _Mtrx[1][1] << "\" a23=\""
-                        << _Mtrx[1][2] << "\" a24=\"" << _Mtrx[1][3] << "\"";
-        writer.Stream() << " a31=\"" << _Mtrx[2][0] << "\" a32=\"" << _Mtrx[2][1] << "\" a33=\""
-                        << _Mtrx[2][2] << "\" a34=\"" << _Mtrx[2][3] << "\"";
-        writer.Stream() << " a41=\"" << _Mtrx[3][0] << "\" a42=\"" << _Mtrx[3][1] << "\" a43=\""
-                        << _Mtrx[3][2] << "\" a44=\"" << _Mtrx[3][3] << "\"";
-        writer.Stream() << "/>" << std::endl;
-    }
+
+    writer.Stream() << " unv=\"1\">\n";
+    save(writer.beginCharStream() << '\n');
+    writer.endCharStream() << '\n' << writer.ind() << "</FemMesh>\n";
 }
 
 void FemMesh::Restore(Base::XMLReader& reader)
 {
     reader.readElement("FemMesh");
-    std::string file(reader.getAttribute<const char*>("file"));
-
-    if (!file.empty()) {
-        // initiate a file read
-        reader.addFile(file.c_str(), this);
-    }
     if (reader.hasAttribute("a11")) {
         _Mtrx[0][0] = reader.getAttribute<double>("a11");
         _Mtrx[0][1] = reader.getAttribute<double>("a12");
@@ -2439,43 +2432,61 @@ void FemMesh::Restore(Base::XMLReader& reader)
         _Mtrx[3][2] = reader.getAttribute<double>("a43");
         _Mtrx[3][3] = reader.getAttribute<double>("a44");
     }
+
+    if (reader.hasAttribute("file")) {
+        std::string file(reader.getAttribute<const char*>("file"));
+
+        if (!file.empty()) {
+            // initiate a file read
+            reader.addFile(file.c_str(), this);
+        }
+    }
+    else if (reader.getAttributeAsInteger("unv", "")) {
+        restore(reader.beginCharStream());
+        reader.endCharStream();
+    }
 }
 
 void FemMesh::SaveDocFile(Base::Writer& writer) const
 {
-    // create a temporary file and copy the content to the zip stream
-    Base::FileInfo fi(App::Application::getTempFileName().c_str());
+    save(writer.Stream());
+}
+
+void FemMesh::save(std::ostream& s) const
+{
+    // create a temporary file and copy the content to the stream
+    Base::FileInfo fi(App::Application::getTempFileName(), true);
 
     myMesh->ExportUNV(fi.filePath().c_str());
 
     Base::ifstream file(fi, std::ios::in | std::ios::binary);
     if (file) {
         std::streambuf* buf = file.rdbuf();
-        writer.Stream() << buf;
+        s << buf;
     }
 
     file.close();
-    // remove temp file
-    fi.deleteFile();
 }
 
 void FemMesh::RestoreDocFile(Base::Reader& reader)
 {
-    // create a temporary file and copy the content from the zip stream
-    Base::FileInfo fi(App::Application::getTempFileName().c_str());
+    restore(reader);
+}
+
+void FemMesh::restore(std::istream& s)
+{
+    // create a temporary file and copy the content from the stream
+    Base::FileInfo fi(App::Application::getTempFileName(), true);
 
     // read in the ASCII file and write back to the file stream
     Base::ofstream file(fi, std::ios::out | std::ios::binary);
-    if (reader) {
-        reader >> file.rdbuf();
+    if (s) {
+        s >> file.rdbuf();
     }
     file.close();
 
     // read the shape from the temp file
     myMesh->UNVToMesh(fi.filePath().c_str());
-
-    // delete the temp file
-    fi.deleteFile();
 }
 
 void FemMesh::transformGeometry(const Base::Matrix4D& rclTrf)

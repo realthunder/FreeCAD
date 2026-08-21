@@ -88,6 +88,9 @@ private:
     }
 
 protected:
+    void save(std::ostream& s, Base::Writer& writer) const;
+    void restore(std::istream& s, const std::string& extension);
+
     void createDataObjectByExternalType(vtkSmartPointer<vtkDataObject> ex);
     vtkSmartPointer<vtkDataObject> m_dataObject;
 };

@@ -118,14 +118,14 @@ void PropertyFemMesh::setPyObject(PyObject* value)
 App::Property* PropertyFemMesh::Copy() const
 {
     PropertyFemMesh* prop = new PropertyFemMesh();
-    prop->_FemMesh = this->_FemMesh;
+    *prop->_FemMesh = *this->_FemMesh;
     return prop;
 }
 
 void PropertyFemMesh::Paste(const App::Property& from)
 {
     aboutToSetValue();
-    _FemMesh = dynamic_cast<const PropertyFemMesh&>(from)._FemMesh;
+    *_FemMesh = *dynamic_cast<const PropertyFemMesh&>(from)._FemMesh;
     hasSetValue();
 }
 
@@ -136,6 +136,7 @@ unsigned int PropertyFemMesh::getMemSize() const
 
 void PropertyFemMesh::Save(Base::Writer& writer) const
 {
+    _FemMesh->setPersistenceFileName(getFileName().c_str());
     _FemMesh->Save(writer);
 }
 
