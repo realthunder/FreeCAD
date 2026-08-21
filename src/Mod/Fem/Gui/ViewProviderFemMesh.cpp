@@ -188,6 +188,11 @@ App::PropertyFloatConstraint::Constraints ViewProviderFemMesh::floatRange = {1.0
 
 const char* ViewProviderFemMesh::colorModeEnum[] = {"Overall", "ByElement", "ByNode", nullptr};
 
+namespace
+{
+const Base::Color defaultMeshColor {1.0f, 0.7f, 0.0f};
+}
+
 ViewProviderFemMesh::ViewProviderFemMesh()
 {
     sPixmap = "fem-femmesh-from-shape";
@@ -198,8 +203,6 @@ ViewProviderFemMesh::ViewProviderFemMesh()
     ADD_PROPERTY(LineWidth, (1.0f));
     LineWidth.setConstraints(&floatRange);
 
-    ShapeAppearance.setDiffuseColor(Base::Color(1.0f, 0.7f, 0.0f));
-    Transparency.setValue(0);
     ADD_PROPERTY(BackfaceCulling, (true));
     ADD_PROPERTY(ShowInner, (false));
     ADD_PROPERTY(MaxFacesShowInner, (50000));
@@ -214,11 +217,17 @@ ViewProviderFemMesh::ViewProviderFemMesh()
     );
     ADD_PROPERTY_TYPE(
         ElementColorArray,
-        (ShapeAppearance.getDiffuseColor()),
+        (defaultMeshColor),
         "Object Style",
         App::Prop_Hidden,
         "Node diffuse color array"
     );
+
+    // Writing a property has to wait until every ADD_PROPERTY above has run: the
+    // write reaches the class property table, which merges it with the parent's,
+    // and after that merge a new static property can no longer be added.
+    ShapeAppearance.setDiffuseColor(defaultMeshColor);
+    Transparency.setValue(0);
 
     suppressibleExt.initExtension(this);
 
