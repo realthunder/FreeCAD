@@ -965,6 +965,38 @@ is not even constant, since a stall lets the event loop service the
 redraws the accumulation schedules for itself; and reporting two
 near-zero numbers as a disagreement rather than as a null result.
 
+**The browser tier.** The viewer compiles the same `BGFXFrame.cpp`, so
+the accumulation was always *in* the wasm build -- but until 2026-08-21
+nothing could reach it, for two independent reasons. `setTemporalConfig`
+is called only from `SoFCRenderer.cpp` through the Coin bridge, which is
+desktop-only, so `TemporalConfig::enabled` kept its `false` default; and
+even set, the viewer's idle skip consulted `isSceneDirty()` and
+`isSceneAnimated()`, and `sceneAnimated` covers only the time-animated
+media (fire, cloud, water, caustics). The accumulation's own
+ask-for-another-frame signal is `animatedFrame`, surfaced as
+`animating()`, which only the desktop viewer read -- so a refinement
+would have stalled after its first sample.
+
+Both are fixed. The viewer takes `?accum=<N>` (bare `?accum` = 32,
+`?accum=0` = off), and its idle skip now also holds off while
+`animating()` is true, which goes false by itself at the sample budget
+so a converged view still goes quiet.
+
+The setting is **viewer-local and deliberately not carried in the scene
+snapshot**, unlike every other config the viewer applies. What it spends
+is the reader's GPU and, on a phone, their battery -- a fact about their
+machine rather than about the model somebody authored. That is the same
+reason both desktop properties are `Prop_NoPersist`; letting it travel
+would hand the producer a claim on the viewer's power budget.
+
+Measured in Chrome on real WebGL2 (`ANGLE ... D3D12 (AMD Radeon)`,
+zero GL errors) against the same scene with `?accum=0`: edge
+high-frequency energy falls **0.08300 -> 0.07143** (ratio 0.861) over
+the 5.1% of the frame that carries edges. Note the AO convergence
+shaders reached this tier for the first time in the same rebuild -- the
+essl pack is compiled from source at build time, so a shader fix does
+not exist in the browser until the viewer is rebuilt.
+
 One note for anyone extending this: the volumetric march phase is
 `frame % 4096`, a frame counter rather than a sample number, so the
 shafts are reproducible only under the freeze-frame switch (which
