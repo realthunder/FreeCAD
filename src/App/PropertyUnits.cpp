@@ -611,6 +611,39 @@ PropertyMagnetization::PropertyMagnetization()
 }
 
 //**************************************************************************
+// PropertyElectromagneticPotential
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+TYPESYSTEM_SOURCE(App::PropertyElectromagneticPotential, App::PropertyQuantity)
+
+PropertyElectromagneticPotential::PropertyElectromagneticPotential()
+{
+    setUnit(Base::Unit::ElectromagneticPotential);
+}
+
+//**************************************************************************
+// PropertySurfaceChargeDensity
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+TYPESYSTEM_SOURCE(App::PropertySurfaceChargeDensity, App::PropertyQuantity)
+
+PropertySurfaceChargeDensity::PropertySurfaceChargeDensity()
+{
+    setUnit(Base::Unit::SurfaceChargeDensity);
+}
+
+//**************************************************************************
+// PropertyVolumeChargeDensity
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+TYPESYSTEM_SOURCE(App::PropertyVolumeChargeDensity, App::PropertyQuantity)
+
+PropertyVolumeChargeDensity::PropertyVolumeChargeDensity()
+{
+    setUnit(Base::Unit::VolumeChargeDensity);
+}
+
+//**************************************************************************
 // PropertyMass
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 

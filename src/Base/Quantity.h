@@ -343,6 +343,10 @@ public:
     static const Quantity Gauss;
 
     static const Quantity Weber;
+    static const Quantity WeberPerMeter;
+
+    static const Quantity CoulombPerSquareMeter;
+    static const Quantity CoulombPerCubicMeter;
 
     // static const Quantity Oersted;
 

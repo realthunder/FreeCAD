@@ -2348,6 +2348,9 @@ void Application::initTypes()
     App::PropertyMagneticFlux               ::init();
     App::PropertyMagneticFluxDensity        ::init();
     App::PropertyMagnetization              ::init();
+    App::PropertyElectromagneticPotential   ::init();
+    App::PropertySurfaceChargeDensity       ::init();
+    App::PropertyVolumeChargeDensity        ::init();
     App::PropertyMass                       ::init();
     App::PropertyMoment                     ::init();
     App::PropertyPressure                   ::init();

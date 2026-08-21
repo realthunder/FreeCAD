@@ -43,6 +43,7 @@ TEST(Unit, TestTypeString)
     EXPECT_EQ(toString(Base::Unit::ElectricCharge), "ElectricCharge");
     EXPECT_EQ(toString(Base::Unit::ElectricCurrent), "ElectricCurrent");
     EXPECT_EQ(toString(Base::Unit::ElectricPotential), "ElectricPotential");
+    EXPECT_EQ(toString(Base::Unit::ElectromagneticPotential), "ElectromagneticPotential");
     EXPECT_EQ(toString(Base::Unit::Frequency), "Frequency");
     EXPECT_EQ(toString(Base::Unit::Force), "Force");
     EXPECT_EQ(toString(Base::Unit::HeatFlux), "HeatFlux");
@@ -65,6 +66,7 @@ TEST(Unit, TestTypeString)
     EXPECT_EQ(toString(Base::Unit::SpecificHeat), "SpecificHeat");
     EXPECT_EQ(toString(Base::Unit::Stiffness), "Stiffness");
     EXPECT_EQ(toString(Base::Unit::Stress), "Pressure");  // same as Pressure
+    EXPECT_EQ(toString(Base::Unit::SurfaceChargeDensity), "SurfaceChargeDensity");
     EXPECT_EQ(toString(Base::Unit::Temperature), "Temperature");
     EXPECT_EQ(toString(Base::Unit::ThermalConductivity), "ThermalConductivity");
     EXPECT_EQ(toString(Base::Unit::ThermalExpansionCoefficient), "ThermalExpansionCoefficient");
@@ -74,6 +76,7 @@ TEST(Unit, TestTypeString)
     EXPECT_EQ(toString(Base::Unit::VacuumPermittivity), "VacuumPermittivity");
     EXPECT_EQ(toString(Base::Unit::Velocity), "Velocity");
     EXPECT_EQ(toString(Base::Unit::Volume), "Volume");
+    EXPECT_EQ(toString(Base::Unit::VolumeChargeDensity), "VolumeChargeDensity");
     EXPECT_EQ(toString(Base::Unit::VolumeFlowRate), "VolumeFlowRate");
     EXPECT_EQ(toString(Base::Unit::VolumetricThermalExpansionCoefficient),
               "ThermalExpansionCoefficient");

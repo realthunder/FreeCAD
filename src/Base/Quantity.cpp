@@ -430,6 +430,11 @@ const Quantity Quantity::MilliTesla(1e-3, Unit(0, 1, -2, -1));
 const Quantity Quantity::Gauss(1e-4, Unit(0, 1, -2, -1));  // 1 G = 1e-4 T
 
 const Quantity Quantity::Weber(1e6, Unit(2, 1, -2, -1));  // Weber (kg*m^2/s^2/A)
+// magnetic vector potential, what FEM's electromagnetic constraints are given in
+const Quantity Quantity::WeberPerMeter(1e3, Unit(1, 1, -2, -1));  // Wb/m (kg*m/s^2/A)
+
+const Quantity Quantity::CoulombPerSquareMeter(1e-6, Unit(-2, 0, 1, 1));  // C/m^2 (A*s/m^2)
+const Quantity Quantity::CoulombPerCubicMeter(1e-9, Unit(-3, 0, 1, 1));   // C/m^3 (A*s/m^3)
 
 // disable Oersted because people need to input e.g. a field strength of
 // 1 ampere per meter -> 1 A/m and not get the recalculation to Oersted
@@ -725,6 +730,12 @@ const std::vector<UnitInfo> &Quantity::unitInfo() {
         {"G", 0, "Gauss", Quantity::Gauss, "Gauss (1 G = 1e-4 T)"},
 
         {"Wb", 0, "Weber", Quantity::Weber, "Weber"},
+        {"Wb/m", 0, "WeberPerMeter", Quantity::WeberPerMeter, "Weber per meter"},
+
+        {"C/m^2", 0, "CoulombPerSquareMeter", Quantity::CoulombPerSquareMeter,
+         "Coulomb per square meter"},
+        {"C/m^3", 0, "CoulombPerCubicMeter", Quantity::CoulombPerCubicMeter,
+         "Coulomb per cubic meter"},
 
         // {"Oe", 0, "Oersted", Quantity::Oersted, "Oersted (A/m)"},
 
