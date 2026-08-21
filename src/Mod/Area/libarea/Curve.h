@@ -94,8 +94,11 @@ class CCurve
 	// a closed curve, please make sure you add an end point, the same as the start point
 
 protected:
-	void AddArcOrLines(bool check_for_arc, std::list<CVertex> &new_vertices, std::list<const CVertex*>& might_be_an_arc, CArc &arc, bool &arc_found, bool &arc_added);
-	static bool CheckForArc(const CVertex& prev_vt, std::list<const CVertex*>& might_be_an_arc, CArc &arc);
+	// A vector, not a list: CheckForArc walks the candidate run from end to
+	// end several times for every point added to it, and it needs the middle
+	// element, which a list can only reach by walking to it.
+	void AddArcOrLines(bool check_for_arc, std::list<CVertex> &new_vertices, std::vector<const CVertex*>& might_be_an_arc, CArc &arc, bool &arc_found, bool &arc_added);
+	static bool CheckForArc(const CVertex& prev_vt, std::vector<const CVertex*>& might_be_an_arc, CArc &arc);
 
 public:
 	std::list<CVertex> m_vertices;

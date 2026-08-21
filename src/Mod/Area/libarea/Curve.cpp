@@ -60,51 +60,32 @@ void CCurve::append(const CVertex& vertex)
 	m_vertices.push_back(vertex);
 }
 
-bool CCurve::CheckForArc(const CVertex& prev_vt, std::list<const CVertex*>& might_be_an_arc, CArc &arc_returned)
+bool CCurve::CheckForArc(const CVertex& prev_vt, std::vector<const CVertex*>& might_be_an_arc, CArc &arc_returned)
 {
 	// this examines the vertices in might_be_an_arc
 	// if they do fit an arc, set arc to be the arc that they fit and return true
 	// returns true, if arc added
+	//
+	// FitArcs calls this again for every point it adds to the run, and the run
+	// is as long as the number of chords a curve was walked into, so what this
+	// does per call is what decides whether fitting a circle back out of a
+	// clipping result costs milliseconds or hundreds of them. The checks below
+	// are the same ones in the same combination as before, but each vertex is
+	// visited once instead of four times: the run was walked once to find its
+	// middle, once per test, and each interior point was handed to LineIsOn
+	// twice, as the end of one segment and the start of the next.
 	if(might_be_an_arc.size() < 2)
 	    return false;
 
 	// find middle point
-	std::size_t num = might_be_an_arc.size();
-	std::size_t i = 0;
-	const CVertex* mid_vt = NULL;
-	std::size_t mid_i = (num-1)/2;
-	for(std::list<const CVertex*>::iterator It = might_be_an_arc.begin(); It != might_be_an_arc.end(); It++, i++)
-	{
-		if(i == mid_i)
-		{
-			mid_vt = *It;
-			break;
-		}
-	}
-
-	if (mid_vt == NULL)
-		return false;
+	const std::size_t num = might_be_an_arc.size();
+	const CVertex* mid_vt = might_be_an_arc[(num-1)/2];
 
 	// create a circle to test
 	Point p0(prev_vt.m_p);
 	Point p1(mid_vt->m_p);
 	Point p2(might_be_an_arc.back()->m_p);
 	Circle c(p0, p1, p2);
-
-	const CVertex* current_vt = &prev_vt;
-    // It seems that ClipperLib's offset ArcTolerance (same as m_accuracy here)
-    // is not exactly what's documented at https://goo.gl/4odfQh. Test shows the
-    // maximum arc distance deviate at about 2.2*ArcTolerance units. The maximum
-    // deviance seems to always occur at the end of arc.
-	double accuracy = CArea::m_accuracy * 2.3 / CArea::m_units;
-	for(std::list<const CVertex*>::iterator It = might_be_an_arc.begin(); It != might_be_an_arc.end(); It++)
-	{
-		const CVertex* vt = *It;
-
-		if(!c.LineIsOn(current_vt->m_p, vt->m_p, accuracy))
-			return false;
-		current_vt = vt;
-	}
 
 	CArc arc;
 	arc.m_c = c.m_c;
@@ -126,12 +107,38 @@ bool CCurve::CheckForArc(const CVertex& prev_vt, std::list<const CVertex*>& migh
 		if(angs < ange)angs += 6.2831853071795864;
 	}
 
+	// Before the per-vertex work rather than after it. This is what rejects a
+	// run that has grown past half a circle, it costs nothing, and it does not
+	// depend on anything the loop below establishes.
 	if(arc.IncludedAngle() >= 3.15) // We don't want full arcs, so limit to about 180 degrees
 	    return false;
 
-	for(std::list<const CVertex*>::iterator It = might_be_an_arc.begin(); It != might_be_an_arc.end(); It++)
+    // It seems that ClipperLib's offset ArcTolerance (same as m_accuracy here)
+    // is not exactly what's documented at https://goo.gl/4odfQh. Test shows the
+    // maximum arc distance deviate at about 2.2*ArcTolerance units. The maximum
+    // deviance seems to always occur at the end of arc.
+	double accuracy = CArea::m_accuracy * 2.3 / CArea::m_units;
+
+	// The first vertex of the run is the only one that is the start of a
+	// segment without having been the end of one, so it is the only one
+	// tested here rather than in the loop.
+	if(!c.PointIsOn(prev_vt.m_p, accuracy))
+	    return false;
+
+	const Point* current_p = &prev_vt.m_p;
+	for(std::vector<const CVertex*>::iterator It = might_be_an_arc.begin(); It != might_be_an_arc.end(); It++)
 	{
 		const CVertex* vt = *It;
+
+		// what LineIsOn(current, vt) checks, without asking again about
+		// current, which the previous turn of this loop already accepted
+		if(!c.PointIsOn(vt->m_p, accuracy))
+			return false;
+		if(!c.PointIsOn(Point((*current_p + vt->m_p)/2), accuracy))
+			return false;
+
+		// and the vertex has to lie within the arc's own sweep, not merely on
+		// its circle
 		double angp = atan2(vt->m_p.y - arc.m_c.y, vt->m_p.x - arc.m_c.x);
 		if(arc.m_dir)
 		{
@@ -147,13 +154,15 @@ bool CCurve::CheckForArc(const CVertex& prev_vt, std::list<const CVertex*>& migh
 			if(angp > angs)
 			    return false;
 		}
+
+		current_p = &vt->m_p;
 	}
 
 	arc_returned = arc;
 	return true;
 }
 
-void CCurve::AddArcOrLines(bool check_for_arc, std::list<CVertex> &new_vertices, std::list<const CVertex*>& might_be_an_arc, CArc &arc, bool &arc_found, bool &arc_added)
+void CCurve::AddArcOrLines(bool check_for_arc, std::list<CVertex> &new_vertices, std::vector<const CVertex*>& might_be_an_arc, CArc &arc, bool &arc_found, bool &arc_added)
 {
 	if(check_for_arc && CheckForArc(new_vertices.back(), might_be_an_arc, arc))
 	{
@@ -182,7 +191,7 @@ void CCurve::AddArcOrLines(bool check_for_arc, std::list<CVertex> &new_vertices,
 		{
 			const CVertex* back_vt = might_be_an_arc.back();
 			if(check_for_arc)might_be_an_arc.pop_back();
-			for(std::list<const CVertex*>::iterator It = might_be_an_arc.begin(); It != might_be_an_arc.end(); It++)
+			for(std::vector<const CVertex*>::iterator It = might_be_an_arc.begin(); It != might_be_an_arc.end(); It++)
 			{
 				const CVertex* v = *It;
 				if(It != might_be_an_arc.begin() || (new_vertices.size() == 0) || (new_vertices.back().m_p != v->m_p))
@@ -200,7 +209,7 @@ void CCurve::FitArcs(bool retry)
 {
 	std::list<CVertex> new_vertices;
 
-	std::list<const CVertex*> might_be_an_arc;
+	std::vector<const CVertex*> might_be_an_arc;
 	CArc arc;
 	bool arc_found = false;
 	bool arc_added = false;
@@ -237,7 +246,7 @@ void CCurve::FitArcs(bool retry)
            m_vertices.begin()->m_type==0 && 
            IsClosed()) 
         {
-	        std::list<const CVertex*> tmp;
+	        std::vector<const CVertex*> tmp;
             auto it = m_vertices.begin();
             tmp.push_back(&(*it++));
 
