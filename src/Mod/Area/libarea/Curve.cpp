@@ -108,8 +108,21 @@ bool CCurve::CheckForArc(const CVertex& prev_vt, const std::vector<const CVertex
 	// Before the per-vertex work rather than after it. This is what rejects a
 	// run that has grown past half a circle, it costs nothing, and it does not
 	// depend on anything the loop below establishes.
-	if(arc.IncludedAngle() >= 3.15) // We don't want full arcs, so limit to about 180 degrees
+	// CArc::IncludedAngle is fabs(ange - angs) after the very normalisation
+	// just done above, down to the two atan2 calls, so it is spelled out here
+	// rather than made again.
+	const double included = fabs(ange - angs);
+	if(included >= 3.15) // We don't want full arcs, so limit to about 180 degrees
 	    return false;
+
+	// Whether a vertex lies within the sweep is two cross-product signs when
+	// the sweep is at most half a turn, and needs the angle only in the sliver
+	// between half a turn and the 3.15 radians just rejected.
+	const bool by_sign = included <= 3.14159265358979324;
+	const double sx = arc.m_s.x - arc.m_c.x;
+	const double sy = arc.m_s.y - arc.m_c.y;
+	const double ex = arc.m_e.x - arc.m_c.x;
+	const double ey = arc.m_e.y - arc.m_c.y;
 
     // It seems that ClipperLib's offset ArcTolerance (same as m_accuracy here)
     // is not exactly what's documented at https://goo.gl/4odfQh. Test shows the
@@ -137,20 +150,40 @@ bool CCurve::CheckForArc(const CVertex& prev_vt, const std::vector<const CVertex
 
 		// and the vertex has to lie within the arc's own sweep, not merely on
 		// its circle
-		double angp = atan2(vt->m_p.y - arc.m_c.y, vt->m_p.x - arc.m_c.x);
-		if(arc.m_dir)
+		const double px = vt->m_p.x - arc.m_c.x;
+		const double py = vt->m_p.y - arc.m_c.y;
+		if(by_sign)
 		{
-			// make sure angp > angs
-			if(angp < angs)angp += 6.2831853071795864;
-			if(angp > ange)
-			    return false;
+			const double from_s = sx*py - sy*px;
+			const double to_e = px*ey - py*ex;
+			if(arc.m_dir)
+			{
+				if(from_s < 0.0 || to_e < 0.0)
+				    return false;
+			}
+			else
+			{
+				if(from_s > 0.0 || to_e > 0.0)
+				    return false;
+			}
 		}
 		else
 		{
-			// make sure angp > ange
-			if(angp < ange)angp += 6.2831853071795864;
-			if(angp > angs)
-			    return false;
+			double angp = atan2(py, px);
+			if(arc.m_dir)
+			{
+				// make sure angp > angs
+				if(angp < angs)angp += 6.2831853071795864;
+				if(angp > ange)
+				    return false;
+			}
+			else
+			{
+				// make sure angp > ange
+				if(angp < ange)angp += 6.2831853071795864;
+				if(angp > angs)
+				    return false;
+			}
 		}
 
 		current_p = &vt->m_p;
