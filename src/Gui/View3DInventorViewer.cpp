@@ -4388,6 +4388,15 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _localRenderParam<App::PropertyFloat>(view, "EffectResolution",
             RenderParams::docEffectResolution(),
             RenderParams::getEffectResolution());
+    // Local, like the other cost dials: what it spends is the reader's
+    // idle GPU time (and on a laptop, their battery), which is a fact
+    // about their machine and not about the model somebody authored.
+    _localRenderParam<App::PropertyBool>(view, "TemporalAccum",
+            RenderParams::docTemporalAccum(),
+            RenderParams::getTemporalAccum());
+    _localRenderParam<App::PropertyInteger>(view, "TemporalAccumSamples",
+            RenderParams::docTemporalAccumSamples(),
+            RenderParams::getTemporalAccumSamples());
     _localRenderParam<App::PropertyInteger>(view, "CoarseTessellation",
             RenderParams::docCoarseTessellation(),
             RenderParams::getCoarseTessellation());
@@ -4987,6 +4996,8 @@ static const char *_localRenderProperties[] = {
     "Render_CoarseTessellation",
     "Render_EffectResolution",
     "Render_LevelTolerance",
+    "Render_TemporalAccum",
+    "Render_TemporalAccumSamples",
     nullptr
 };
 

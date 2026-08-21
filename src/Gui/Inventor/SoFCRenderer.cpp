@@ -2743,6 +2743,8 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
         RendererBridge::translateWaterConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setBloomConfig(
         RendererBridge::translateBloomConfig(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setTemporalConfig(
+        RendererBridge::translateTemporalConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setPreselConfig(
         RendererBridge::translatePreselConfig());
     PRIVATE(this)->external->setSelConfig(

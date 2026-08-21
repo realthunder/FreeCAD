@@ -16,8 +16,10 @@ $input v_texcoord0
  * the classic pass needs its contrast power-curve for).
  *
  * u_aoParams : x = world/view-space effect radius, y = intensity,
- *              z = unused (classic-SSAO depth bias), w = final value
- *              power (XeGTAO FinalValuePower; sharpens the visibility)
+ *              z = packed: bits 0-1 flags, bits 2+ the idle
+ *              accumulation sample index (see below), w = final
+ *              value power (XeGTAO FinalValuePower; sharpens the
+ *              visibility)
  *
  * Outputs ambient visibility (1 = open) into the R8 AO target; shares
  * the 4x4 box blur and multiply-apply with the classic pass.
@@ -107,10 +109,10 @@ void main()
 	// and falsely darken flat surfaces.
 	float minS = 1.3 / radiusPx;
 
-	// Per-pixel spatial noise (deterministic across frames): XeGTAO's
-	// reference noise — a 64x64 Hilbert-curve index through the R2
-	// low-discrepancy sequence. Blue-noise-like and DIRECTIONLESS: the
-	// 4x4 tiled texture banded into rings near silhouettes, and IGN's
+	// Per-pixel spatial noise: XeGTAO's reference noise -- a 64x64
+	// Hilbert-curve index through the R2 low-discrepancy sequence.
+	// Blue-noise-like and DIRECTIONLESS: the 4x4 tiled texture
+	// banded into rings near silhouettes, and IGN's
 	// iso-values form coherent diagonal lines that printed through as
 	// diagonal stripes on faces whose horizon is sensitive to the step
 	// jitter.
@@ -134,8 +136,17 @@ void main()
 			hy = tmp;
 		}
 	}
-	// R2 sequence over the Hilbert index (XeGTAO_SpatioTemporalNoise
-	// at temporal index 0 — frames must stay deterministic here).
+	// R2 sequence over the Hilbert index -- XeGTAO_SpatioTemporalNoise,
+	// with its temporal index taken from the high bits of
+	// u_aoParams.z (see the pack in submitAOResolve). It is the idle
+	// accumulation's SAMPLE number, not a frame counter: an ordinary
+	// frame passes 0 and renders exactly as before, and a refinement
+	// walks each pixel along the sequence so its samples carry
+	// different noise and average out. Pinning it at 0 was what left
+	// AO as the one part of the frame the accumulation could not
+	// converge -- it averaged one pattern with itself. Determinism
+	// survives because a sample number is reproducible.
+	hindex += 288u * uint(u_aoParams.z * 0.25);
 	vec2 hnoise = fract(0.5 + float(hindex)
 	        * vec2(0.75487766624669276005, 0.5698402909980532659114));
 	float noiseSlice = hnoise.x;
@@ -146,13 +157,15 @@ void main()
 	// refined once idle; a uniform, not a target change, so no re-init
 	// stall). Bit1: the prepass depth is fp16 (no float32 render target
 	// on this GPU) — widen the coplanarity guard to its quantization
-	// step.
+	// step. Above them, in units of 4, the accumulation sample index
+	// the noise above reads -- so every flag test here has to mask
+	// itself off rather than compare against the whole field.
 	float pz = u_aoParams.z;
 	bool fast = mod(pz, 2.0) >= 1.0;
 	// Relative depth-quantization step: fp32 depth is effectively exact
 	// (guard only against true coincidence); fp16 has a ~10-bit
 	// mantissa, deltas below ~2e-3 * viewZ are rounding garbage.
-	float depthEps = pz >= 2.0 ? 2.0e-3 : 1.0e-5;
+	float depthEps = mod(pz, 4.0) >= 2.0 ? 2.0e-3 : 1.0e-5;
 	int slices = fast ? 2 : int(u_aoParams2.x);
 	int steps = fast ? 3 : int(u_aoParams2.y);
 

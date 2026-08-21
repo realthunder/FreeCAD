@@ -2236,7 +2236,14 @@ static void mainLoop()
     if (s_dirtyFrames > 0) {
         --s_dirtyFrames;
     } else if (s_renderer && !s_renderer->isSceneDirty()
-               && !s_renderer->isSceneAnimated()) {
+               && !s_renderer->isSceneAnimated()
+               // A refinement in flight asks for the next sample through
+               // animating(); sceneAnimated covers only the time-animated
+               // media (fire/cloud/water/caustics) and would hold the very
+               // frames the accumulation is waiting for. It goes false by
+               // itself at the sample budget, so this does not keep a
+               // converged view awake.
+               && !s_renderer->animating()) {
         updateHud(true);
         s_lastFrameNow = 0.0;   // keep the idle gap out of the fps EMA
         return;
@@ -2944,6 +2951,15 @@ static bool s_shapeVertices = false;
 /// viewer's, so a scene from a build older than v42 -- which says
 /// nothing about cavity at all -- gets the same look as a current one.
 static bool s_cavity = true;
+// ?accum=<N> -- idle temporal refinement (docs/RenderEngine.md sec 3.5),
+// 0 = off, which is the default here for the same reason it is on the
+// desktop: what it spends is the READER's GPU and, on a phone, their
+// battery. That makes it a fact about this machine rather than about the
+// model somebody authored, so it is deliberately NOT taken from the
+// scene snapshot -- the producer does not get to spend the viewer's
+// power. Same rule the desktop follows by keeping both properties local
+// (Prop_NoPersist).
+static int s_accumSamples = 0;
 
 /// ?leveldebug -- narrate the level plan and the element gates, which is
 /// the desktop's FC_LEVEL_DEBUG / Render_LevelDebug by another door
@@ -2995,6 +3011,13 @@ static void applySnapshot(bool fit)
     Render::CavityConfig cavity = s_snap.cavityconf;
     cavity.enabled = s_cavity;
     s_renderer->setCavityConfig(cavity);
+    // Idle refinement: viewer-local, so unlike every other config here
+    // it does not come from s_snap.
+    Render::TemporalConfig temporal;
+    temporal.enabled = s_accumSamples > 0;
+    if (s_accumSamples > 0)
+        temporal.samples = s_accumSamples;
+    s_renderer->setTemporalConfig(temporal);
     s_renderer->setMatcapConfig(s_snap.matcapconf);
     s_renderer->setPBRConfig(s_snap.pbrconf);
     s_renderer->setBumpConfig(s_snap.bumpconf);
@@ -6777,6 +6800,46 @@ int main()
         std::free(camParam);
     }
 
+    // Both of these are consumed INSIDE applySnapshot, so like ?cam=
+    // above they have to be parsed before the bundled snapshot applies
+    // below -- a bundled scene applies exactly once, so a value read
+    // afterwards would never reach the frame at all.
+    // ?cavity=<0|1> -- see s_cavity. On unless asked otherwise, so the
+    // parameter exists to turn the pass OFF (and to A/B what it is
+    // standing in for when the contract withholds the edges).
+    {
+        const int on = EM_ASM_INT({
+            const v = new URLSearchParams(window.location.search)
+                .get('cavity');
+            return v === null ? -1 : ((v === '0' || v === 'false') ? 0 : 1);
+        });
+        if (on >= 0) {
+            s_cavity = on != 0;
+            std::printf("fcviewer: cavity %s\n", s_cavity ? "ON" : "off");
+        }
+    }
+    // ?accum=<N> -- idle temporal refinement over N jittered samples
+    // (bare ?accum means the desktop default of 32, ?accum=0 turns it
+    // off). Off unless asked for: see s_accumSamples.
+    {
+        const int n = EM_ASM_INT({
+            const p = new URLSearchParams(window.location.search);
+            if (!p.has('accum')) return -1;
+            const v = p.get('accum');
+            if (v === null || v === '') return 32;
+            const n = parseInt(v, 10);
+            return isNaN(n) ? 32 : n;
+        });
+        if (n >= 0) {
+            s_accumSamples = n;
+            if (s_accumSamples > 0)
+                std::printf("fcviewer: idle refinement ON, %d samples\n",
+                            s_accumSamples);
+            else
+                std::printf("fcviewer: idle refinement off\n");
+        }
+    }
+
     const bool bundledScene = Render::loadSceneSnapshot("/scene.fcsd", s_snap);
     if (bundledScene) {
         std::printf("fcviewer: snapshot loaded, %zu draws\n",
@@ -6850,20 +6913,6 @@ int main()
         }) != 0) {
         s_levelDebug = true;
         std::printf("fcviewer: level debug ON\n");
-    }
-    // ?cavity=<0|1> -- see s_cavity. On unless asked otherwise, so the
-    // parameter exists to turn the pass OFF (and to A/B what it is
-    // standing in for when the contract withholds the edges).
-    {
-        const int on = EM_ASM_INT({
-            const v = new URLSearchParams(window.location.search)
-                .get('cavity');
-            return v === null ? -1 : ((v === '0' || v === 'false') ? 0 : 1);
-        });
-        if (on >= 0) {
-            s_cavity = on != 0;
-            std::printf("fcviewer: cavity %s\n", s_cavity ? "ON" : "off");
-        }
     }
     // ?membudget=<MB> — pin the resident geometry budget (§6 phase 4b),
     // which otherwise fits itself to the device. A real budget is larger

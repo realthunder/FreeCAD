@@ -925,6 +925,12 @@ struct RenderStats {
     long long renderTargetMemory = -1;
     long long gpuMemoryUsed = -1;
     long long gpuMemoryMax = -1;
+    /// Jittered samples averaged into the idle temporal accumulation as
+    /// of this frame (0 = not accumulating, -1 = the backend has no such
+    /// stage). The one number that separates "converged" from "never
+    /// engaged" -- both of which look like an image that is not
+    /// changing.
+    int temporalSamples = -1;
     bool valid = false;
 };
 
@@ -1640,6 +1646,31 @@ struct BloomConfig {
             && intensity == o.intensity && radius == o.radius;
     }
     bool operator!=(const BloomConfig &o) const { return !(*this == o); }
+};
+
+/// Idle temporal accumulation (docs/RenderEngine.md sec 3.5). While the
+/// camera, the scene and the highlight all hold still, each further frame
+/// offsets the projection by a fraction of a pixel and averages into a
+/// history target, so the whole pipeline -- geometry edges, the shading
+/// itself, and every screen-space pass computed after the multisample
+/// resolve -- converges toward what supersampling it would have given.
+///
+/// Deliberately NOT temporal antialiasing in the usual sense: nothing is
+/// reprojected and no history is rejected, because the accumulation only
+/// ever runs over frames where nothing moved. Any camera, scene or
+/// highlight change replaces the history outright, so interaction costs
+/// nothing and no thin edge can ghost or trail. It refines a multisampled
+/// frame; it does not replace multisampling.
+struct TemporalConfig {
+    bool enabled = false;
+    /// Jittered samples to converge over, after which the view stops
+    /// asking for frames and holds the converged image (clamped 2..256).
+    int samples = 32;
+
+    bool operator==(const TemporalConfig &o) const {
+        return enabled == o.enabled && samples == o.samples;
+    }
+    bool operator!=(const TemporalConfig &o) const { return !(*this == o); }
 };
 
 /// Per-frame physically based shading configuration (like AOConfig there
@@ -2646,6 +2677,11 @@ public:
     { (void)config; }
     /// Per-frame bloom (glow) configuration.
     virtual void setBloomConfig(const BloomConfig &config)
+    { (void)config; }
+    /// Idle temporal accumulation configuration. A backend that does not
+    /// implement this simply keeps drawing single-sample frames, which is
+    /// also what an unfed config asks for.
+    virtual void setTemporalConfig(const TemporalConfig &config)
     { (void)config; }
     /// Preselection (hover) highlight styling from ViewParams; carried in
     /// the snapshot for the standalone/WASM viewer's local hover highlight.
