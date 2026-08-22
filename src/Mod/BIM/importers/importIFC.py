@@ -1099,6 +1099,7 @@ def _insert(srcfile, docname, skip=[], only=[], root=None, preferences=None):
         # product instead, on a budget of its own.
         _pump_live_import()
 
+    importIFCHelper.reportFileDefects()
     progressbar.stop()
     doc.recompute()
 

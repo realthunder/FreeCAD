@@ -33,6 +33,21 @@ import ArchIFC
 from draftutils import params
 from draftutils.messages import _msg, _wrn
 
+
+# Defects the file repeats, counted rather than warned about one by one.
+# reportFileDefects() states the totals when the import is over.
+_styleless_items = 0
+
+
+def reportFileDefects():
+    """Report once what the file got wrong, and reset for the next import."""
+
+    global _styleless_items
+    if _styleless_items > 1:
+        _wrn("%d IfcStyledItem entries in this file carry no style at all"
+             % _styleless_items)
+    _styleless_items = 0
+
 if FreeCAD.GuiUp:
     import FreeCADGui as Gui
 
@@ -643,8 +658,15 @@ def getColorFromStyledItem(styled_item):
     # print(styled_item.Styles)
     if len(styled_item.Styles) == 0:
         # IN IFC2x3, only one element in `Styles` should be available.
-        _wrn("No 'Style' in 'IfcStyleItem', do nothing.")
-        # ca 100x in 210_King_Merged.ifc
+        # A defect in the file, and one it repeats: 3884 times in the King
+        # model. Warn once and count the rest -- the same sentence 3884
+        # times says no more than a count does, and it says it into the
+        # report view, one dispatch at a time, while the import is running.
+        global _styleless_items
+        _styleless_items += 1
+        if _styleless_items == 1:
+            _wrn("No 'Style' in 'IfcStyleItem', do nothing."
+                 " Further occurrences are counted, not repeated.")
         # Empty styles, #4952778=IfcStyledItem(#4952779,(),$)
         # this is an error in the IFC file in my opinion
     else:

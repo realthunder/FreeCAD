@@ -182,6 +182,7 @@ def _insert(filename, docname=None, preferences=None):
     storeColorDict()
 
     # finished
+    importIFCHelper.reportFileDefects()
     progressbar.stop()
     FreeCAD.ActiveDocument.recompute()
     endtime = round(time.time() - starttime, 1)
