@@ -3332,6 +3332,29 @@ bool Application::systemPrefersDarkScheme()
 #endif
 }
 
+bool Application::isDarkTheme()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    // The scheme in effect: the theme's own pin, or the desktop's answer
+    // when the theme follows it. Never unset here -- unlike
+    // systemPrefersDarkScheme(), the pin is exactly what is being asked.
+    if (qGuiApp) {
+        return qGuiApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    }
+#endif
+    // No scheme API (or no GUI yet): fall back to the filename sniff this
+    // helper exists to replace.
+    const std::string sheet = App::GetApplication()
+                                  .GetParameterGroupByPath(
+                                      "User parameter:BaseApp/Preferences/MainWindow")
+                                  ->GetASCII("StyleSheet");
+    std::string lower = sheet;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return std::tolower(c);
+    });
+    return lower.find("dark") != std::string::npos;
+}
+
 void Application::resolveAutoTheme()
 {
     // Pinning the palette emits colorSchemeChanged, and reading the desktop

@@ -38,6 +38,7 @@
 #include <Base/Tools.h>
 
 #include "DlgExpressionInput.h"
+#include "Application.h"
 #include "ui_DlgExpressionInput.h"
 
 #include "ExprParams.h"
@@ -708,10 +709,11 @@ void DlgExpressionInput::setupColors()
                 "User parameter:BaseApp/Preferences/MainWindow");
 
     //Unless something very wrong happens, empty style name means no style sheet
-    //And having dark in the name means dark style (this *needs* to be improved in the future)
     QString styleName = QString::fromUtf8(hGrp->GetASCII("StyleSheet").c_str());
     bool hasStyleSheet = !styleName.isEmpty();
-    bool isDarkStyle = hasStyleSheet && styleName.indexOf(QStringLiteral("dark"), 0, Qt::CaseInsensitive) >= 0;
+    // The color scheme in effect, not the filename: the parameterized
+    // FreeCAD.qss serves both light and dark themes under one name.
+    bool isDarkStyle = hasStyleSheet && Application::isDarkTheme();
 
     hGrp = App::GetApplication().GetParameterGroupByPath(
            "User parameter:BaseApp/Preferences/OutputWindow");

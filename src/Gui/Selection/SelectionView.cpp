@@ -574,13 +574,16 @@ void setupMenuStyle(QWidget *menu)
     static QString _Stylesheet;
     QString name = QString::fromUtf8(hGrp->GetASCII("MenuStyleSheet").c_str());
     if(name.isEmpty()) {
-        QString mainstyle = QString::fromUtf8(hGrp->GetASCII("StyleSheet").c_str());
-        if(mainstyle.indexOf(QStringLiteral("dark"),0,Qt::CaseInsensitive)>=0)
-            name = QStringLiteral("qssm:Dark.qss");
-        else if(mainstyle.indexOf(QStringLiteral("light"),0,Qt::CaseInsensitive)>=0)
-            name = QStringLiteral("qssm:Light.qss");
-        else
+        // Follow the color scheme in effect rather than the stylesheet
+        // filename: the parameterized FreeCAD.qss serves both schemes
+        // under one name. A session with no stylesheet at all keeps the
+        // platform-styled default menus.
+        if(hGrp->GetASCII("StyleSheet").empty())
             name = QStringLiteral("qssm:Default.qss");
+        else if(Application::isDarkTheme())
+            name = QStringLiteral("qssm:Dark.qss");
+        else
+            name = QStringLiteral("qssm:Light.qss");
     } else if (!QFile::exists(name))
         name = QStringLiteral("qssm:%1").arg(name);
     if(_Name != name) {

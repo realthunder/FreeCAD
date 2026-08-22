@@ -291,6 +291,12 @@ public:
     static void resolveAutoTheme();
     /// Whether the platform reports a dark system color scheme.
     static bool systemPrefersDarkScheme();
+    /// Whether the appearance in effect is dark: the color scheme the
+    /// active theme pinned, or the desktop's when nothing is pinned.
+    /// The one answer for code that used to sniff "dark" out of the
+    /// stylesheet filename, which the parameterized FreeCAD.qss never
+    /// carries.
+    static bool isDarkTheme();
     /** Make widgets resolve against the current application palette again.
      *
      * Needed after a theme change: Qt restores a widget to the palette it held
