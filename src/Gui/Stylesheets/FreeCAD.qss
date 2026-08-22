@@ -2762,6 +2762,13 @@ QMenuBar[foldable="true"] {
 WindowDecorationButton {
   background: transparent;
   border: none;
+  /* Pinned, because the QPushButton rule above is written for dialog buttons:
+     its side padding -- and in some sheets a min-width in the tens of pixels
+     -- turns a caption button holding one 16px glyph into a slab over 100px
+     wide. 46px is the width the platform gives its own caption buttons. */
+  min-width: 46px;
+  max-width: 46px;
+  padding: 0px;
 }
 
 WindowDecorationButton:hover {
