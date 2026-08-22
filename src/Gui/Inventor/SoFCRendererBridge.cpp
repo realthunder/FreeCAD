@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <cmath>
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <map>
 #include <set>
@@ -2128,50 +2129,109 @@ loadRadianceImage(const std::string &path)
 }
 
 static std::shared_ptr<const Render::TextureImage>
+decodeParamImage(const std::string &path, bool keepGray)
+{
+    std::shared_ptr<Render::TextureImage> tex;
+    // A Radiance picture carries real radiance and Qt cannot read
+    // one; everything else goes through Qt as before.
+    QString qpath = QString::fromUtf8(path.c_str());
+    if (qpath.endsWith(QLatin1String(".hdr"), Qt::CaseInsensitive)
+            || qpath.endsWith(QLatin1String(".pic"), Qt::CaseInsensitive))
+        tex = loadRadianceImage(path);
+    QImage img;
+    if (tex) {
+        // already loaded
+    } else if (img.load(qpath)) {
+        bool alpha = img.hasAlphaChannel();
+        bool gray = keepGray && !alpha && img.isGrayscale();
+        img = img.convertToFormat(
+            gray ? QImage::Format_Grayscale8
+                 : alpha ? QImage::Format_RGBA8888
+                         : QImage::Format_RGB888);
+        // Render::TextureImage rows are bottom-up like GL.
+        img = img.mirrored(false, true);
+        tex = std::make_shared<Render::TextureImage>();
+        // Outside the Coin node-id space the scene textures key on.
+        static uint64_t nextId = 0;
+        tex->textureId = 0x8000000000000000ULL + ++nextId;
+        tex->width = img.width();
+        tex->height = img.height();
+        tex->numComponents = gray ? 1 : alpha ? 4 : 3;
+        int rowLen = img.width() * tex->numComponents;
+        tex->pixels.resize(size_t(rowLen) * img.height());
+        for (int y = 0; y < img.height(); ++y)
+            std::memcpy(tex->pixels.data() + size_t(y) * rowLen,
+                        img.constScanLine(y), rowLen);
+    }
+    return tex;
+}
+
+static std::shared_ptr<const Render::TextureImage>
 loadParamImage(const std::string &path, bool keepGray)
 {
     if (path.empty())
         return nullptr;
-    static std::map<std::pair<std::string, bool>,
-                    std::shared_ptr<const Render::TextureImage>> cache;
+
+    /*! A decoded image, and what the file it came from looked like when
+     * it was decoded.
+     *
+     * The stamp is why this is not a plain path -> image map. Keyed by
+     * path alone the cache never let anything go: an environment map or
+     * a ground texture edited in another program went on showing the
+     * copy decoded the first time that session, and a path that did not
+     * exist yet was remembered as "no image" for good -- both of which
+     * read as the file having failed to load. Modification time is only
+     * good to the second, hence the size beside it; a rewrite inside one
+     * second that lands on the same byte count is the one edit this
+     * still cannot see.
+     */
+    struct Entry {
+        std::shared_ptr<const Render::TextureImage> image;
+        int64_t mtime = -1;
+        uint64_t size = 0;
+        std::chrono::steady_clock::time_point checked {};
+    };
+    static std::map<std::pair<std::string, bool>, Entry> cache;
+
+    // Every frame comes through here, three times over -- environment,
+    // ground texture, bump map -- and the render thread has no business
+    // stat-ing a file that may be on a network share at frame rate.
+    // Once a second is as often as it could tell anything anyway: that
+    // is the resolution of the timestamp being compared.
+    constexpr auto recheck = std::chrono::seconds(1);
+
+    auto stampOf = [](const std::string &p) {
+        Base::FileInfo fi(p);
+        if (!fi.exists())
+            return std::make_pair(int64_t(-1), uint64_t(0));
+        return std::make_pair(fi.lastModified().getSeconds(), fi.size());
+    };
+
+    const auto now = std::chrono::steady_clock::now();
     auto key = std::make_pair(path, keepGray);
     auto it = cache.find(key);
-    if (it == cache.end()) {
-        std::shared_ptr<Render::TextureImage> tex;
-        // A Radiance picture carries real radiance and Qt cannot read
-        // one; everything else goes through Qt as before.
-        QString qpath = QString::fromUtf8(path.c_str());
-        if (qpath.endsWith(QLatin1String(".hdr"), Qt::CaseInsensitive)
-                || qpath.endsWith(QLatin1String(".pic"), Qt::CaseInsensitive))
-            tex = loadRadianceImage(path);
-        QImage img;
-        if (tex) {
-            // already loaded
-        } else if (img.load(qpath)) {
-            bool alpha = img.hasAlphaChannel();
-            bool gray = keepGray && !alpha && img.isGrayscale();
-            img = img.convertToFormat(
-                gray ? QImage::Format_Grayscale8
-                     : alpha ? QImage::Format_RGBA8888
-                             : QImage::Format_RGB888);
-            // Render::TextureImage rows are bottom-up like GL.
-            img = img.mirrored(false, true);
-            tex = std::make_shared<Render::TextureImage>();
-            // Outside the Coin node-id space the scene textures key on.
-            static uint64_t nextId = 0;
-            tex->textureId = 0x8000000000000000ULL + ++nextId;
-            tex->width = img.width();
-            tex->height = img.height();
-            tex->numComponents = gray ? 1 : alpha ? 4 : 3;
-            int rowLen = img.width() * tex->numComponents;
-            tex->pixels.resize(size_t(rowLen) * img.height());
-            for (int y = 0; y < img.height(); ++y)
-                std::memcpy(tex->pixels.data() + size_t(y) * rowLen,
-                            img.constScanLine(y), rowLen);
-        }
-        it = cache.emplace(key, std::move(tex)).first;
+    if (it != cache.end()) {
+        if (now - it->second.checked < recheck)
+            return it->second.image;
+        it->second.checked = now;
+        if (stampOf(path) == std::make_pair(it->second.mtime,
+                                            it->second.size))
+            return it->second.image;
     }
-    return it->second;
+
+    Entry entry;
+    entry.checked = now;
+    // Stamped before the read, not after: a file still being written
+    // when it is decoded then differs from what was recorded, and the
+    // next check picks the finished version up rather than trusting a
+    // half-written one for the rest of the session.
+    const auto [mtime, size] = stampOf(path);
+    entry.mtime = mtime;
+    entry.size = size;
+    entry.image = decodeParamImage(path, keepGray);
+    auto &slot = cache[key];
+    slot = std::move(entry);
+    return slot.image;
 }
 
 Render::LightConfig
