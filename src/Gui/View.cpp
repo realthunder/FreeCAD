@@ -45,6 +45,12 @@ BaseView::BaseView( Gui::Document* pcDocument)
     if (pcDocument){
         pcDocument->attachView(this);
         bIsPassive = false;
+        // Unlike _id, this one is the document's and is written into its
+        // file, so the view answers to it again in the next session. A view
+        // restored from a file takes the name the file gives it back
+        // (Gui::Document::slotFinishRestoreDocument); this is the name a
+        // view created any other way gets.
+        _name = pcDocument->uniqueViewName(this);
     }
     else{
         Application::Instance->attachView(this);

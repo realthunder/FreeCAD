@@ -273,3 +273,8 @@ Py::Int MDIViewPy::getID() const
 {
     return Py::Int(getMDIViewPtr()->getID());
 }
+
+Py::String MDIViewPy::getName() const
+{
+    return Py::String(getMDIViewPtr()->getPersistentName());
+}

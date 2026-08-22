@@ -136,6 +136,8 @@ struct DocumentP
 
     std::vector<CameraInfo>     _savedViews;
     std::map<int, std::string>  _view3DContents;
+    /// The name each of them was saved under, see Gui::BaseView.
+    std::map<int, std::string>  _view3DNames;
 
     Application*    _pcAppWnd;
     // the doc/Document
@@ -2566,9 +2568,14 @@ void Document::RestoreDocFile(Base::Reader &reader)
         }
 
         d->_view3DContents.clear();
+        d->_view3DNames.clear();
         for (int i=0; i<view3dCount; ++i) {
             xmlReader.readElement("View3D");
             int id = xmlReader.getAttributeAsInteger("id");
+            // Read before the characters are drained, and absent from files
+            // written before views had a name -- those views keep the one
+            // they were handed when they were created.
+            d->_view3DNames[id] = xmlReader.getAttribute("name", "");
             d->_view3DContents[id] = xmlReader.readCharacters();
         }
     }
@@ -2701,6 +2708,30 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
                         onTopObjs[id].emplace_back(std::move(name), std::move(subname));
                 }
             }
+        }
+
+        // Names first, before anything is restored into a view. A view
+        // created for this load was handed an auto name out of the same
+        // "View<n>" pool, so a name coming back from the file can be held
+        // by the wrong view; it is taken from whoever has it, and every
+        // view left nameless is given a free one at the end.
+        size_t named = 0;
+        for (auto v : views) {
+            if (named == d->_savedViews.size())
+                break;
+            auto &info = d->_savedViews[named++];
+            auto it = d->_view3DNames.find(info.id);
+            if (it == d->_view3DNames.end() || it->second.empty())
+                continue;
+            for (auto other : getViews()) {
+                if (other != v && other->getPersistentName() == it->second)
+                    other->setPersistentName(std::string());
+            }
+            v->setPersistentName(it->second);
+        }
+        for (auto v : getViews()) {
+            if (v->getPersistentName().empty())
+                v->setPersistentName(uniqueViewName(v));
         }
 
         std::map<int,View3DInventor*> viewMap;
@@ -3468,7 +3499,11 @@ void Document::SaveDocFile (Base::Writer &writer) const
     stringWriter.setForceXML(4);
     stringWriter.setSchemaVersion(writer.getSchemaVersion());
     for (auto view : view3Ds) {
-        writer.Stream() << writer.ind() << "<View3D id=\"" << view->getID() << "\">";
+        // The name is the view's identity across the save; the id only
+        // correlates this file's own <Camera>/<View3D> entries, and comes
+        // from a counter the next session starts over.
+        writer.Stream() << writer.ind() << "<View3D id=\"" << view->getID()
+            << "\" name=\"" << encodeAttribute(view->getPersistentName()) << "\">";
         stringWriter.clear();
         view->Save(stringWriter);
         writer.beginCharStream() << '\n' << stringWriter.getString();
@@ -3974,6 +4009,27 @@ BaseView *Document::getViewByID(int id) const
             return view;
     }
     return nullptr;
+}
+
+std::string Document::uniqueViewName(const Gui::BaseView *except) const
+{
+    std::set<std::string> taken;
+    for (auto view : d->baseViews) {
+        if (view != except) {
+            taken.insert(view->getPersistentName());
+        }
+    }
+    for (auto view : d->passiveViews) {
+        if (view != except) {
+            taken.insert(view->getPersistentName());
+        }
+    }
+    for (int n = 1;; ++n) {
+        std::string name = "View" + std::to_string(n);
+        if (taken.find(name) == taken.end()) {
+            return name;
+        }
+    }
 }
 
 std::list<MDIView*> Document::getMDIViewsOfType(const Base::Type& typeId) const

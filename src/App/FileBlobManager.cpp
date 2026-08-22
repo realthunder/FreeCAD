@@ -264,10 +264,24 @@ BlobReferrer FileBlobManager::referrerOf(const Property* prop, const DocumentObj
         object = Base::freecad_dynamic_cast<DocumentObject>(prop->getContainer());
     }
     if (!object || !object->isAttachedToDocument()) {
-        // Nothing anchors a name: a document-level property would take the
-        // document's own name, which a save-as changes, and a view's own
-        // properties belong to no object at all. Leaving the name empty
-        // leaves the content named by its hash, which at least does not move.
+        // No object anchors a name -- a document-level property, or a view's
+        // own property. Both still have one: the property names itself, and
+        // getPersistentName() is what the container is called in its own
+        // document across a save and a reload. That is not getFullName():
+        // a view's carries an id from a process-wide counter, and the same
+        // document saved id 5 in one session and 4 in the next, so a name
+        // built from it would move the file on every save. A view's
+        // persistent name is stored in the document and given back to it,
+        // so View1.Render_PBREnvImageData stays that view's file however
+        // many views the document has.
+        if (prop->hasName()) {
+            const std::string container =
+                prop->getContainer() ? prop->getContainer()->getPersistentName()
+                                     : std::string();
+            referrer.name = container.empty()
+                ? prop->getName()
+                : container + "." + prop->getName();
+        }
         return referrer;
     }
 
@@ -434,8 +448,13 @@ FileBlobManager::planSave(const std::map<std::string, BlobIndexEntry>& previous)
         if (found != refs.end()) {
             mine = found->second;
         }
+        // An object behind the referrer wins the name: an unanchored one
+        // carries id 0 and would otherwise sort first and take the name of
+        // content it merely shares -- Box.Shape is the better name for a
+        // shape a view property happens to hold a copy of.
         std::sort(mine.begin(), mine.end(), [](const BlobReferrer& a, const BlobReferrer& b) {
-            return std::tie(a.id, a.name) < std::tie(b.id, b.name);
+            return std::make_tuple(a.id == 0, a.id, a.name)
+                 < std::make_tuple(b.id == 0, b.id, b.name);
         });
 
         SaveEntry entry;

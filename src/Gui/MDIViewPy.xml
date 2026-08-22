@@ -106,6 +106,20 @@ Returns the active object for the given type
         </Documentation>
         <Parameter Name="ID" Type="Int"/>
     </Attribute>
+    <Attribute Name="Name" ReadOnly="true">
+        <Documentation>
+            <UserDocu>The name of this view within its document, "View1",
+"View2", ... Unique in the document, saved with it and given back to the
+same view when it is reopened -- unlike ID, which is a counter that starts
+over with each session. Gui.getDocument(name).getView(name) looks a view up
+by it, and it is what names the included files a view's own properties own.
+
+Read-only, like an object's Name: it is an identity, not a label, and the
+files named after it would move if it changed. The name a view shows is its
+window title -- setName()/getName().</UserDocu>
+        </Documentation>
+        <Parameter Name="Name" Type="String"/>
+    </Attribute>
     <CustomAttributes />
   </PythonExport>
 </GenerateModel>
