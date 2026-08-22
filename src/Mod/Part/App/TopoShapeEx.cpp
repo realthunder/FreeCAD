@@ -1465,7 +1465,7 @@ TopoShape TopoShape::getSubTopoShape(const char *Type, bool silent) const {
     auto res = shapeTypeAndIndex(mapped.index);
     if(res.second<=0) {
         if(!silent)
-            FC_THROWM(Base::CADKernelError,"Invalid shape name " << (Type?Type:""));
+            FC_THROWM(Base::ValueError,"Invalid shape name " << (Type?Type:""));
         return TopoShape();
     }
     return getSubTopoShape(res.first,res.second,silent);
