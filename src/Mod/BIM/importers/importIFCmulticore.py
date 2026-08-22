@@ -122,26 +122,52 @@ def _insert(filename, docname=None, preferences=None):
     iterator = ifcopenshell.geom.iterator(settings, ifcfile, cores)
     iterator.initialize()
     count = 0
+    aborted = False
 
-    # This loop keeps pumping events (progressbar.next below), so there is
-    # something to deliver input with; hand the 3D view back to the user for
-    # the duration. Released by insert()'s finally, on every path.
-    from importers.importIFC import _set_live_import
-    _set_live_import(FreeCAD.ActiveDocument, True)
+    # The 3D view is the user's for the duration: the loop below offers the
+    # event loop a turn per product, so there is something to deliver input
+    # with. Released by insert()'s finally, on every path.
+    from importers.importIFC import _set_live_import, _pump_live_import
+    doc = FreeCAD.ActiveDocument
+    docname = doc.Name
+    _set_live_import(doc, True)
 
     # process objects
-    for item in iterator:
-        brep = item.geometry.brep_data
-        # 0.8 tells the two apart: guid is the IfcGloballyUniqueId string,
-        # id is the STEP entity id that by_id wants
-        ifcproduct = ifcfile.by_id(item.id if hasattr(item,"id") else item.guid)
-        obj = createProduct(ifcproduct,brep)
-        progressbar.next(True)
-        writeProgress(count, productscount, starttime)
-        count += 1
+    try:
+        for item in iterator:
+            if docname not in FreeCAD.listDocuments():
+                # A live view is one the user can act on, so the document can
+                # go away under the loop -- and every product from here on
+                # would be built into whatever document is active next.
+                raise RuntimeError("the document being imported into was closed")
+            brep = item.geometry.brep_data
+            # 0.8 tells the two apart: guid is the IfcGloballyUniqueId string,
+            # id is the STEP entity id that by_id wants
+            ifcproduct = ifcfile.by_id(item.id if hasattr(item,"id") else item.guid)
+            obj = createProduct(ifcproduct,brep)
+            progressbar.next(True)
+            # next() only pumps on its own 200ms bar-update throttle, which is
+            # a slideshow to someone orbiting the model; this offers a turn per
+            # product and is throttled on its own, shorter, budget.
+            _pump_live_import()
+            writeProgress(count, productscount, starttime)
+            count += 1
+    except FreeCAD.Base.FreeCADAbort:
+        # Escape. Stop making products, but still finish the file: the layers,
+        # relationships and colours all belong to products that were made, and
+        # a half-related model is worse than a smaller one. The caller's
+        # transaction still commits, so one undo takes the import back.
+        aborted = True
+        FreeCAD.Console.PrintWarning(
+            "IFC import aborted after "
+            + str(count)
+            + " of "
+            + str(productscount)
+            + " products\n"
+        )
 
     # process 2D annotations
-    annotations = ifcfile.by_type("IfcAnnotation")
+    annotations = [] if aborted else ifcfile.by_type("IfcAnnotation")
     if annotations:
         print("Processing", str(len(annotations)), "annotations...")
         ifcscale = importIFCHelper.getScaling(ifcfile)

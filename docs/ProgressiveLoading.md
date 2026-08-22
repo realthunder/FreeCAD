@@ -151,6 +151,35 @@ a single OCCT boolean. Slicing the loop would not fix that either; only
 moving the geometry off the thread would
 ([ComputeBoundaries.md](ComputeBoundaries.md)).
 
+That sampling interval is worth owning explicitly. Left to itself the
+loop only reaches the event loop through `Base.ProgressIndicator.next()`,
+which pumps on the bar's own 200 ms *update* throttle -- a repaint
+cadence, chosen for what a bar redraw costs, standing in for an input
+cadence. Measured on a 144-product IFC file in the GUI, that is nine
+turns of the event loop in 2.55 s: about three and a half a second to
+someone orbiting the model. `Gui.pumpLiveImport()` offers a turn per
+item instead, throttled on `ViewParams::LiveImportPumpInterval`
+(50 ms), and the same import gives 40 turns in 2.70 s -- 4.4x the
+interaction for 6% of the wall clock. Pumping at every item (interval 0)
+reaches 124 turns but costs 25%, which is what the default is chosen
+against. The pump is a no-op unless `setLiveImport()` is in effect: an
+import that did not ask for a live view never has events run behind its
+back.
+
+Two things follow from a loop the user can reach. The document can be
+closed under it, so each item checks that the document it started in is
+still open rather than building the rest of the file into whatever is
+active next. And Escape now means something the importer can act on:
+`Base.ProgressIndicator.next()` raises `Base.FreeCADAbort` rather than a
+bare `RuntimeError`, which is the difference between "the user pressed
+Escape" and "this step failed", and which the interpreter already turns
+back into a `Base::AbortException` that `Command::invoke()` swallows
+without an error dialog. The IFC importer catches it, stops making
+products, and still applies the layers, relationships and colours that
+belong to the products it did make -- a smaller model rather than an
+unrelated one, inside the caller's transaction, so one undo takes the
+whole import back.
+
 ## 4. The remote viewer
 
 The browser/mobile viewer receives the scene as a content-addressed

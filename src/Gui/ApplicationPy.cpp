@@ -24,6 +24,7 @@
 
 #ifndef _PreComp_
 # include <QApplication>
+# include <QElapsedTimer>
 # include <QDir>
 # include <QPrinter>
 # include <QFileInfo>
@@ -69,6 +70,7 @@
 #include "SoFCDB.h"
 #include "SplitView3DInventor.h"
 #include "View3DInventor.h"
+#include "ViewParams.h"
 #include "ViewProvider.h"
 #include "LiveViewInteraction.h"
 #include "WaitCursor.h"
@@ -192,6 +194,19 @@ PyMethodDef Application::Methods[] = {
    "Only meaningful for a loop that keeps pumping events -- one that\n"
    "holds the thread outright has nothing to deliver the input with.\n"
    "Always disable it again from a finally block."},
+  {"pumpLiveImport",          (PyCFunction) Application::sPumpLiveImport, METH_VARARGS,
+   "pumpLiveImport(force=False) -> bool\n"
+   "\n"
+   "Give the event loop a turn in the middle of a live import.\n"
+   "\n"
+   "A synchronous import holds the main thread, so a live view only sees\n"
+   "input and paints where the import offers the loop a slice. Call this\n"
+   "as often as the loop can afford to: it does nothing unless\n"
+   "setLiveImport() is in effect, and it holds itself to one turn every\n"
+   "LiveImportPumpInterval milliseconds, so an offer that comes too soon\n"
+   "costs a clock read. Pass force=True to pump regardless.\n"
+   "\n"
+   "Returns True when it did pump."},
   {"serveDocument",           (PyCFunction) Application::sServeDocument, METH_VARARGS,
    "serveDocument(doc, port=0) -> bool\n"
    "\n"
@@ -942,6 +957,9 @@ namespace {
 // them on -- they are RAII objects standing in for a scope Python cannot hold.
 std::unique_ptr<Gui::LiveViewInteraction> liveImportNavigable;
 std::unique_ptr<Gui::WaitCursorRestorer> liveImportCursor;
+// When the loop was last given a turn. Invalid until an import turns the
+// live view on, which is also the only state in which anything pumps.
+QElapsedTimer liveImportPumpClock;
 }  // namespace
 
 PyObject* Application::sSetLiveImport(PyObject * /*self*/, PyObject *args)
@@ -972,6 +990,7 @@ PyObject* Application::sSetLiveImport(PyObject * /*self*/, PyObject *args)
         if (!liveImportNavigable) {
             liveImportCursor = std::make_unique<Gui::WaitCursorRestorer>();
             liveImportNavigable = std::make_unique<Gui::LiveViewInteraction>();
+            liveImportPumpClock.start();
         }
         appDoc->setStatus(App::Document::LiveImport, true);
     }
@@ -982,6 +1001,36 @@ PyObject* Application::sSetLiveImport(PyObject * /*self*/, PyObject *args)
     }
 
     Py_Return;
+}
+
+PyObject* Application::sPumpLiveImport(PyObject * /*self*/, PyObject *args)
+{
+    PyObject *pyForce = Py_False;
+    if (!PyArg_ParseTuple(args, "|O!", &PyBool_Type, &pyForce))
+        return nullptr;
+
+    // Nothing live means nobody is watching this thread, and an import that
+    // did not ask for a live view must not start running events behind its
+    // caller's back -- an unasked-for processEvents() is how re-entrancy gets
+    // into code that was written to be synchronous.
+    if (!liveImportNavigable)
+        return Py::new_reference_to(Py::Boolean(false));
+
+    const long interval = ViewParams::getLiveImportPumpInterval();
+    if (!Base::asBoolean(pyForce) && interval > 0 && liveImportPumpClock.isValid()
+            && liveImportPumpClock.elapsed() < interval) {
+        // Too soon. The throttle lives here rather than in the caller so that
+        // every importer answers to one knob, and so that a loop can offer a
+        // turn per item without knowing what an item costs.
+        return Py::new_reference_to(Py::Boolean(false));
+    }
+
+    liveImportPumpClock.restart();
+    // Everything, user input included: the point of the exercise is the mouse
+    // reaching the 3D view. What that costs in frames is bounded by the view's
+    // own redraw budget, not here.
+    qApp->processEvents();
+    return Py::new_reference_to(Py::Boolean(true));
 }
 
 PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)
