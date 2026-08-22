@@ -139,7 +139,60 @@ def open(filename, skip=[], only=[], root=None):
     return doc
 
 
+_live_import_doc = None
+
+
+def _set_live_import(doc, enable):
+    """Keep the 3D view usable while a long import fills the document.
+
+    Enabled, the wait cursor is lifted and both input filters make an
+    exception for mouse input aimed at a 3D view, so the model can be orbited
+    as it grows. Keys stay blocked, so Escape still cancels, and every
+    document-mutating command is refused while the document carries the
+    LiveImport status -- the view is live, the document is not editable.
+
+    Disabling takes no argument on purpose: whatever was enabled is what gets
+    turned off, so the caller's finally block cannot leave the flag behind on
+    a document it no longer has.
+    """
+    global _live_import_doc
+    if not FreeCAD.GuiUp:
+        return
+    # Imported here rather than relying on the module-level name: that one is
+    # only bound if the GUI was up when this module was first imported, and a
+    # NameError raised from the caller's finally would bury the real error.
+    import FreeCADGui
+    if not hasattr(FreeCADGui, "setLiveImport"):
+        return
+    if enable:
+        if doc is not None and _live_import_doc is None:
+            FreeCADGui.setLiveImport(doc, True)
+            _live_import_doc = doc
+    elif _live_import_doc is not None:
+        try:
+            FreeCADGui.setLiveImport(_live_import_doc, False)
+        except Exception:
+            # A document closed under us is not a reason to fail the import
+            # that was already ending.
+            pass
+        _live_import_doc = None
+
+
 def insert(srcfile, docname, skip=[], only=[], root=None, preferences=None):
+    """Import the contents of an IFC file in the current active document.
+
+    A wrapper around the import proper, so that the live-view state is given
+    back on every path out of it -- including the ones that raise. Leaving it
+    set would leave the whole GUI refusing to edit anything.
+    """
+    try:
+        return _insert(srcfile, docname, skip=skip, only=only, root=root,
+                       preferences=preferences)
+    finally:
+        _set_live_import(None, False)
+
+
+def _insert(srcfile, docname, skip=[], only=[], root=None, preferences=None):
     """Import the contents of an IFC file in the current active document.
 
     TODO: change the default argument to `None`, instead of `[]`.
@@ -299,6 +352,10 @@ def insert(srcfile, docname, skip=[], only=[], root=None, preferences=None):
 
     progressbar = Base.ProgressIndicator()
     progressbar.start("Importing IFC objects...", len(products))
+    # This loop keeps pumping events (progressbar.next below), so there is
+    # something to deliver input with; hand the 3D view back to the user for
+    # the duration. Released by insert()'s finally, on every path.
+    _set_live_import(doc, True)
     if preferences["DEBUG"]:
         _msg("Parsing {} BIM objects...".format(len(products)))
 

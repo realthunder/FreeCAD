@@ -70,6 +70,7 @@
 #include "SplitView3DInventor.h"
 #include "View3DInventor.h"
 #include "ViewProvider.h"
+#include "LiveViewInteraction.h"
 #include "WaitCursor.h"
 #include "WidgetFactory.h"
 #include "Workbench.h"
@@ -176,6 +177,21 @@ PyMethodDef Application::Methods[] = {
    "updateGui() -> None\n"
    "\n"
    "Update the main window and all its windows."},
+  {"setLiveImport",           (PyCFunction) Application::sSetLiveImport, METH_VARARGS,
+   "setLiveImport(doc, enable=True) -> None\n"
+   "\n"
+   "Let a long import keep the 3D view in the user's hands.\n"
+   "\n"
+   "While enabled, the wait cursor is lifted and both input filters make\n"
+   "an exception for mouse input aimed at a 3D view, so orbit/pan/zoom\n"
+   "keep working as the model grows. The exception is narrow on purpose:\n"
+   "keys stay blocked, so Escape still cancels, context menus stay shut,\n"
+   "and every document-mutating command is refused while the document\n"
+   "carries the LiveImport status.\n"
+   "\n"
+   "Only meaningful for a loop that keeps pumping events -- one that\n"
+   "holds the thread outright has nothing to deliver the input with.\n"
+   "Always disable it again from a finally block."},
   {"serveDocument",           (PyCFunction) Application::sServeDocument, METH_VARARGS,
    "serveDocument(doc, port=0) -> bool\n"
    "\n"
@@ -919,6 +935,53 @@ PyObject* Application::sGetMainWindow(PyObject * /*self*/, PyObject *args)
     catch (const Py::Exception&) {
         return nullptr;
     }
+}
+
+namespace {
+// One import at a time, and the pieces have to outlive the call that turned
+// them on -- they are RAII objects standing in for a scope Python cannot hold.
+std::unique_ptr<Gui::LiveViewInteraction> liveImportNavigable;
+std::unique_ptr<Gui::WaitCursorRestorer> liveImportCursor;
+}  // namespace
+
+PyObject* Application::sSetLiveImport(PyObject * /*self*/, PyObject *args)
+{
+    PyObject *pyDoc = nullptr;
+    PyObject *pyEnable = Py_True;
+    if (!PyArg_ParseTuple(args, "O|O!", &pyDoc, &PyBool_Type, &pyEnable))
+        return nullptr;
+
+    App::Document *appDoc = nullptr;
+    if (PyObject_TypeCheck(pyDoc, &App::DocumentPy::Type))
+        appDoc = static_cast<App::DocumentPy*>(pyDoc)->getDocumentPtr();
+    else {
+        PyErr_SetString(PyExc_TypeError, "expected a document");
+        return nullptr;
+    }
+    if (!appDoc) {
+        // Called from a finally block, where the document may already be gone.
+        // Give the guards back anyway; there is no status left to clear.
+        liveImportNavigable.reset();
+        liveImportCursor.reset();
+        Py_Return;
+    }
+
+    if (Base::asBoolean(pyEnable)) {
+        // Turning it on twice would leave the first pair of guards behind and
+        // the status set by a caller that no longer owns it.
+        if (!liveImportNavigable) {
+            liveImportCursor = std::make_unique<Gui::WaitCursorRestorer>();
+            liveImportNavigable = std::make_unique<Gui::LiveViewInteraction>();
+        }
+        appDoc->setStatus(App::Document::LiveImport, true);
+    }
+    else {
+        liveImportNavigable.reset();
+        liveImportCursor.reset();
+        appDoc->setStatus(App::Document::LiveImport, false);
+    }
+
+    Py_Return;
 }
 
 PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)

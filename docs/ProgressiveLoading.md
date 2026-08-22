@@ -130,6 +130,27 @@ instancing/mesh-reuse registries it leans on are
 instancing architecture underneath is
 [TShapeRenderCache.md](TShapeRenderCache.md).
 
+The two halves of that are separable, and the IFC import takes only the
+second. Its product loop is not sliced -- it holds the thread and pumps
+events from inside `Base.ProgressIndicator.next()` -- but a loop that
+pumps has input to deliver, and the only reason it was unusable is that
+the indicator swallowed it. `Gui.setLiveImport(doc, True)` hands the
+view back for the duration: `Gui::LiveViewInteraction` makes both input
+filters except mouse events aimed at a 3D view, `WaitCursorRestorer`
+lifts the cursor, and `App::Document::LiveImport` makes
+`Gui::Command::invoke()` refuse every `AlterDoc` command with "The
+document is busy importing, please wait...". Live view, inert document.
+The exception stays narrow on purpose: keys are still blocked so Escape
+cancels, and context menus stay shut so a right-drag orbits rather than
+offering commands.
+
+It is worth being clear about what that does *not* buy. Interaction is
+sampled at the loop's pumping interval, so a single slow product blocks
+for as long as its geometry takes -- one King wall was once 157 s inside
+a single OCCT boolean. Slicing the loop would not fix that either; only
+moving the geometry off the thread would
+([ComputeBoundaries.md](ComputeBoundaries.md)).
+
 ## 4. The remote viewer
 
 The browser/mobile viewer receives the scene as a content-addressed
