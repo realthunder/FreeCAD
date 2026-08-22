@@ -34,6 +34,7 @@ import ObjectsFem
 from . import manager
 from .manager import get_meshname
 from .manager import init_doc
+from .meshes import generate_mesh
 
 
 def get_information():
@@ -42,14 +43,16 @@ def get_information():
         "meshtype": "solid",
         "meshelement": "Tet10",
         "constraints": ["pressure", "displacement", "transform"],
-        "solvers": ["calculix", "ccxtools"],
+        "solvers": ["ccxtools"],
         "material": "solid",
-        "equations": ["mechanical"]
+        "equations": ["mechanical"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.constraint_transform_beam_hinged import setup
@@ -62,6 +65,7 @@ https://forum.freecad.org/viewtopic.php?f=18&t=20238#p157643
 Constraint transform on a beam
 
 """
+    )
 
 
 def setup(doc=None, solvertype="ccxtools"):
@@ -83,7 +87,9 @@ def setup(doc=None, solvertype="ccxtools"):
     cylinder.Height = "20 mm"
     cylinder.Radius = "6 mm"
     cylinder.Placement = FreeCAD.Placement(
-        Vector(10, 12, 10), Rotation(0, 0, 90), Vector(0, 0, 0),
+        Vector(10, 12, 10),
+        Rotation(0, 0, 90),
+        Vector(0, 0, 0),
     )
     cut = doc.addObject("Part::Cut", "Cut")
     cut.Base = cube
@@ -102,9 +108,9 @@ def setup(doc=None, solvertype="ccxtools"):
     fusion.Refine = True
 
     # compound filter
-    geom_obj = CompoundFilter.makeCompoundFilter(name='CompoundFilter')
+    geom_obj = CompoundFilter.makeCompoundFilter(name="CompoundFilter")
     geom_obj.Base = fusion
-    geom_obj.FilterType = 'window-volume'
+    geom_obj.FilterType = "window-volume"
     doc.recompute()
 
     if FreeCAD.GuiUp:
@@ -116,20 +122,18 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis = ObjectsFem.makeAnalysis(doc, "Analysis")
 
     # solver
-    if solvertype == "calculix":
-        solver_obj = ObjectsFem.makeSolverCalculix(doc, "SolverCalculiX")
-    elif solvertype == "ccxtools":
-        solver_obj = ObjectsFem.makeSolverCalculixCcxTools(doc, "CalculiXccxTools")
-        solver_obj.WorkingDir = u""
+    if solvertype == "ccxtools":
+        solver_obj = ObjectsFem.makeSolverCalculiXCcxTools(doc, "CalculiXCcxTools")
+        solver_obj.WorkingDir = ""
     else:
         FreeCAD.Console.PrintWarning(
             "Unknown or unsupported solver type: {}. "
             "No solver object was created.\n".format(solvertype)
         )
-    if solvertype == "calculix" or solvertype == "ccxtools":
+    if solvertype == "ccxtools":
         solver_obj.SplitInputWriter = False
         solver_obj.AnalysisType = "static"
-        solver_obj.GeometricalNonlinearity = "linear"
+        solver_obj.GeometricalNonlinearity = False
         solver_obj.ThermoMechSteadyState = False
         solver_obj.MatrixSolverType = "default"
         solver_obj.IterationsControlParameterTimeUse = False
@@ -145,50 +149,39 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis.addObject(material_obj)
 
     # constraint pressure
-    con_pressure = ObjectsFem.makeConstraintPressure(doc, name="FemConstraintPressure")
+    con_pressure = ObjectsFem.makeConstraintPressure(doc, name="Pressure")
     con_pressure.References = [(geom_obj, "Face8")]
     con_pressure.Pressure = "10.0 MPa"
     con_pressure.Reversed = False
     analysis.addObject(con_pressure)
 
     # constraint displacement
-    con_disp = ObjectsFem.makeConstraintDisplacement(doc, name="FemConstraintDisplacment")
+    con_disp = ObjectsFem.makeConstraintDisplacement(doc, name="Displacement")
     con_disp.References = [(geom_obj, "Face4"), (geom_obj, "Face5")]
     con_disp.xFree = False
-    con_disp.xFix = True
+    con_disp.xDisplacement = 0.0
     analysis.addObject(con_disp)
 
     # constraints transform
-    con_transform1 = ObjectsFem.makeConstraintTransform(doc, name="FemConstraintTransform1")
+    con_transform1 = ObjectsFem.makeConstraintTransform(doc, name="Transform1")
     con_transform1.References = [(geom_obj, "Face4")]
     con_transform1.TransformType = "Cylindrical"
-    con_transform1.X_rot = 0.0
-    con_transform1.Y_rot = 0.0
-    con_transform1.Z_rot = 0.0
     analysis.addObject(con_transform1)
 
-    con_transform2 = ObjectsFem.makeConstraintTransform(doc, name="FemConstraintTransform2")
+    con_transform2 = ObjectsFem.makeConstraintTransform(doc, name="Transform2")
     con_transform2.References = [(geom_obj, "Face5")]
     con_transform2.TransformType = "Cylindrical"
-    con_transform2.X_rot = 0.0
-    con_transform2.Y_rot = 0.0
-    con_transform2.Z_rot = 0.0
     analysis.addObject(con_transform2)
 
     # mesh
     from .meshes.mesh_transform_beam_hinged_tetra10 import create_nodes, create_elements
-    fem_mesh = Fem.FemMesh()
-    control = create_nodes(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating nodes.\n")
-    control = create_elements(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating elements.\n")
+
+    fem_mesh = generate_mesh.mesh_from_existing(create_nodes, create_elements)
     femmesh_obj = analysis.addObject(ObjectsFem.makeMeshGmsh(doc, get_meshname()))[0]
     femmesh_obj.FemMesh = fem_mesh
-    femmesh_obj.Part = geom_obj
+    femmesh_obj.Shape = geom_obj
     femmesh_obj.SecondOrderLinear = False
-    femmesh_obj.CharacteristicLengthMax = '7 mm'
+    femmesh_obj.CharacteristicLengthMax = "7 mm"
 
     doc.recompute()
     return doc

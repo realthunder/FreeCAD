@@ -80,6 +80,15 @@ private:
     /// Grey the tint row unless the matcap model is on and available.
     void updateMatcapTintEnabled();
     void setFlag(const char *name, bool value);
+    /// Ask for an environment image and hand it to Render_PBREnvImage.
+    /// Cancelling leaves the preset that is in effect selected.
+    void chooseEnvImage();
+    /// Drop both the path and any embedded copy, so a preset chosen in
+    /// the same combo is what actually lights the scene.
+    void clearEnvImage();
+    /// The environment image in effect on the active view: the embedded
+    /// copy's original name, else the path. Empty when there is none.
+    QString envImageName() const;
     /// Enter or leave the Shadow draw style, carrying the current style
     /// in and handing it back on the way out. The draw style is what puts
     /// a scene light in the graph at all, so it -- not Render_Shadow
@@ -93,6 +102,9 @@ private:
     QLabel *envLabel;
     QComboBox *envCombo;
     QCheckBox *envBgCheck;
+    /// Index of the combo's trailing "Image..." entry -- the presets are
+    /// the enumeration's own values and sit at 0..n-1 before it.
+    int envImageIndex = -1;
     QLabel *matcapLabel;
     QComboBox *matcapCombo;
     QLabel *matcapTintLabel;

@@ -53,12 +53,11 @@ class _Analysis(CommandManager):
     "The FEM_Analysis command definition"
 
     def __init__(self):
-        super(_Analysis, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_Analysis", "Analysis container")
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_Analysis", "New Analysis")
         self.accel = "S, A"
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_Analysis",
-            "Creates an analysis container with default solver"
+            "FEM_Analysis", "Creates an analysis container with default solver"
         )
         self.is_active = "with_document"
 
@@ -69,20 +68,28 @@ class _Analysis(CommandManager):
         FreeCADGui.doCommand("ObjectsFem.makeAnalysis(FreeCAD.ActiveDocument, 'Analysis')")
         FreeCADGui.doCommand("FemGui.setActiveAnalysis(FreeCAD.ActiveDocument.ActiveObject)")
         FreeCAD.ActiveDocument.commitTransaction()
-        if get_default_solver() != "None":
+        def_solver = get_default_solver()
+        if def_solver:
             FreeCAD.ActiveDocument.openTransaction("Create default solver")
+            cmd = ""
+            match def_solver:
+                case "CalculiX":
+                    cmd = "FEM_SolverCalculiX"
+                case "Elmer":
+                    cmd = "FEM_SolverElmer"
+                case "Mystran":
+                    cmd = "FEM_SolverMystran"
+                case "Z88":
+                    cmd = "FEM_SolverZ88"
+
+            if cmd:
+                FreeCADGui.doCommand(f'FreeCADGui.runCommand("{cmd}")')
+
             FreeCADGui.doCommand(
-                "ObjectsFem.makeSolver{}(FreeCAD.ActiveDocument)"
-                .format(get_default_solver())
-            )
-            FreeCADGui.doCommand(
-                "FemGui.getActiveAnalysis().addObject(FreeCAD.ActiveDocument.ActiveObject)"
+                "FreeCADGui.ActiveDocument.toggleTreeItem(FemGui.getActiveAnalysis(), 2)"
             )
             FreeCAD.ActiveDocument.commitTransaction()
-            self.do_activated = "add_obj_on_gui_expand_noset_edit"
-            # Fixme: expand analysis object in tree view to make added solver visible
-            # expandParentObject() does not work because the Analysis is not yet a tree
-            # in the tree view
+
         FreeCAD.ActiveDocument.recompute()
 
 
@@ -90,16 +97,17 @@ class _ClippingPlaneAdd(CommandManager):
     "The FEM_ClippingPlaneAdd command definition"
 
     def __init__(self):
-        super(_ClippingPlaneAdd, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ClippingPlaneAdd",
-            "Clipping plane on face"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_ClippingPlaneAdd", "Clipping Plane on Face")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ClippingPlaneAdd",
-            "Add a clipping plane on a selected face"
+            "FEM_ClippingPlaneAdd", "Adds a clipping plane on a selected face"
         )
         self.is_active = "with_document"
+
+    def GetResources(self):
+        resources = super().GetResources()
+        resources["CmdType"] = "ForEdit | Alter3DView"
+        return resources
 
     def Activated(self):
         from pivy import coin
@@ -109,13 +117,15 @@ class _ClippingPlaneAdd(CommandManager):
         overallboundbox = getBoundBoxOfAllDocumentShapes(FreeCAD.ActiveDocument)
         # print(overallboundbox)
         if overallboundbox:
-            min_bb_length = (min(set([
-                overallboundbox.XLength,
-                overallboundbox.YLength,
-                overallboundbox.ZLength
-            ])))
+            min_bb_length = min(
+                {
+                    overallboundbox.XLength,
+                    overallboundbox.YLength,
+                    overallboundbox.ZLength,
+                }
+            )
         else:
-            min_bb_length = 10.        # default
+            min_bb_length = 10.0  # default
 
         dbox = min_bb_length * 0.2
 
@@ -130,11 +140,12 @@ class _ClippingPlaneAdd(CommandManager):
 
         coin_normal_vector = coin.SbVec3f(-f_normal.x, -f_normal.y, -f_normal.z)
         coin_bound_box = coin.SbBox3f(
-            f_CoM.x - dbox, f_CoM.y - dbox,
+            f_CoM.x - dbox,
+            f_CoM.y - dbox,
             f_CoM.z - dbox * 0.15,
             f_CoM.x + dbox,
             f_CoM.y + dbox,
-            f_CoM.z + dbox * 0.15
+            f_CoM.z + dbox * 0.15,
         )
         clip_plane = coin.SoClipPlaneManip()
         clip_plane.setValue(coin_bound_box, coin_normal_vector, 1)
@@ -145,16 +156,19 @@ class _ClippingPlaneRemoveAll(CommandManager):
     "The FEM_ClippingPlaneRemoveAll command definition"
 
     def __init__(self):
-        super(_ClippingPlaneRemoveAll, self).__init__()
+        super().__init__()
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ClippingPlaneRemoveAll",
-            "Remove all clipping planes"
+            "FEM_ClippingPlaneRemoveAll", "Remove All Clipping Planes"
         )
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ClippingPlaneRemoveAll",
-            "Removes all clipping planes"
+            "FEM_ClippingPlaneRemoveAll", "Removes all clipping planes"
         )
         self.is_active = "with_document"
+
+    def GetResources(self):
+        resources = super().GetResources()
+        resources["CmdType"] = "ForEdit | Alter3DView"
+        return resources
 
     def Activated(self):
         line1 = "for node in list(sg.getChildren()):\n"
@@ -170,15 +184,14 @@ class _ConstantVacuumPermittivity(CommandManager):
     "The FEM_ConstantVacuumPermittivity command definition"
 
     def __init__(self):
-        super(_ConstantVacuumPermittivity, self).__init__()
+        super().__init__()
         self.pixmap = "fem-solver-analysis-thermomechanical.svg"
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstantVacuumPermittivity",
-            "Constant vacuum permittivity"
+            "FEM_ConstantVacuumPermittivity", "Constant Vacuum Permittivity"
         )
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
             "FEM_ConstantVacuumPermittivity",
-            "Creates a FEM constant vacuum permittivity to overwrite standard value"
+            "Creates a constant vacuum permittivity to overwrite standard value",
         )
         self.is_active = "with_document"
         self.is_active = "with_analysis"
@@ -189,15 +202,11 @@ class _ConstraintBodyHeatSource(CommandManager):
     "The FEM_ConstraintBodyHeatSource command definition"
 
     def __init__(self):
-        super(_ConstraintBodyHeatSource, self).__init__()
+        super().__init__()
         self.pixmap = "FEM_ConstraintBodyHeatSource"
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintBodyHeatSource",
-            "Body heat source"
-        )
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_ConstraintBodyHeatSource", "Body Heat Source")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintBodyHeatSource",
-            "Creates a body heat source"
+            "FEM_ConstraintBodyHeatSource", "Creates a body heat source"
         )
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
@@ -207,15 +216,9 @@ class _ConstraintCentrif(CommandManager):
     "The FEM_ConstraintCentrif command definition"
 
     def __init__(self):
-        super(_ConstraintCentrif, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintCentrif",
-            "Centrifugal load"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintCentrif",
-            "Creates a centrifugal load"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_ConstraintCentrif", "Centrifugal Load")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_ConstraintCentrif", "Creates a centrifugal load")
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
 
@@ -224,32 +227,47 @@ class _ConstraintCurrentDensity(CommandManager):
     "The FEM_ConstraintCurrentDensity command definition"
 
     def __init__(self):
-        super(_ConstraintCurrentDensity, self).__init__()
+        super().__init__()
         self.pixmap = "FEM_ConstraintCurrentDensity"
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintCurrentDensity",
-            "Current density boundary condition"
+            "FEM_ConstraintCurrentDensity", "Current Density Boundary Condition"
         )
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
             "FEM_ConstraintCurrentDensity",
-            "Creates a current density boundary condition"
+            "Creates a current density boundary condition",
         )
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
 
 
-class _ConstraintElectrostaticPotential(CommandManager):
-    "The FEM_ConstraintElectrostaticPotential command definition"
+class _ConstraintElectricChargeDensity(CommandManager):
+    "The FEM_ConstraintElectricChargeDensity command definition"
 
     def __init__(self):
-        super(_ConstraintElectrostaticPotential, self).__init__()
+        super().__init__()
+        self.pixmap = "FEM_ConstraintElectricChargeDensity"
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintElectrostaticPotential",
-            "Electrostatic potential boundary condition"
+            "FEM_ConstraintElectricChargeDensity", "Electric Charge Density"
         )
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintElectrostaticPotential",
-            "Creates an electrostatic potential boundary condition"
+            "FEM_ConstraintElectricChargeDensity", "Creates an electric charge density"
+        )
+        self.is_active = "with_analysis"
+        self.do_activated = "add_obj_on_gui_set_edit"
+
+
+class _ConstraintElectromagnetic(CommandManager):
+    "The FEM_ConstraintElectromagnetic command definition"
+
+    def __init__(self):
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP(
+            "FEM_ConstraintElectromagnetic",
+            "Electromagnetic Boundary Condition",
+        )
+        self.tooltip = Qt.QT_TRANSLATE_NOOP(
+            "FEM_ConstraintElectromagnetic",
+            "Creates an electromagnetic boundary condition",
         )
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
@@ -259,14 +277,12 @@ class _ConstraintFlowVelocity(CommandManager):
     "The FEM_ConstraintFlowVelocity command definition"
 
     def __init__(self):
-        super(_ConstraintFlowVelocity, self).__init__()
+        super().__init__()
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintFlowVelocity",
-            "Flow velocity boundary condition"
+            "FEM_ConstraintFlowVelocity", "Flow Velocity Boundary Condition"
         )
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintFlowVelocity",
-            "Creates a flow velocity boundary condition"
+            "FEM_ConstraintFlowVelocity", "Creates a flow velocity boundary condition"
         )
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
@@ -276,14 +292,13 @@ class _ConstraintInitialFlowVelocity(CommandManager):
     "The FEM_ConstraintInitialFlowVelocity command definition"
 
     def __init__(self):
-        super(_ConstraintInitialFlowVelocity, self).__init__()
+        super().__init__()
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintInitialFlowVelocity",
-            "Initial flow velocity condition"
+            "FEM_ConstraintInitialFlowVelocity", "Initial Flow Velocity Condition"
         )
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
             "FEM_ConstraintInitialFlowVelocity",
-            "Creates initial flow velocity condition"
+            "Creates an initial flow velocity condition",
         )
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
@@ -293,14 +308,12 @@ class _ConstraintInitialPressure(CommandManager):
     "The FEM_ConstraintInitialPressure command definition"
 
     def __init__(self):
-        super(_ConstraintInitialPressure, self).__init__()
+        super().__init__()
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintInitialPressure",
-            "Initial pressure condition"
+            "FEM_ConstraintInitialPressure", "Initial Pressure Condition"
         )
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintInitialPressure",
-            "Creates an initial pressure condition"
+            "FEM_ConstraintInitialPressure", "Creates an initial pressure condition"
         )
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
@@ -310,14 +323,12 @@ class _ConstraintMagnetization(CommandManager):
     "The FEM_ConstraintMagnetization command definition"
 
     def __init__(self):
-        super(_ConstraintMagnetization, self).__init__()
+        super().__init__()
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintMagnetization",
-            "Magnetization boundary condition"
+            "FEM_ConstraintMagnetization", "Magnetization Boundary Condition"
         )
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintMagnetization",
-            "Creates a magnetization boundary condition"
+            "FEM_ConstraintMagnetization", "Creates a magnetization boundary condition"
         )
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
@@ -327,14 +338,10 @@ class _ConstraintSectionPrint(CommandManager):
     "The FEM_ConstraintSectionPrint command definition"
 
     def __init__(self):
-        super(_ConstraintSectionPrint, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintSectionPrint",
-            "Section print feature"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_ConstraintSectionPrint", "Section Print Feature")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintSectionPrint",
-            "Creates a section print feature"
+            "FEM_ConstraintSectionPrint", "Creates a section print feature"
         )
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
@@ -344,15 +351,9 @@ class _ConstraintSelfWeight(CommandManager):
     "The FEM_ConstraintSelfWeight command definition"
 
     def __init__(self):
-        super(_ConstraintSelfWeight, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintSelfWeight",
-            "Gravity load"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintSelfWeight",
-            "Creates a gravity load"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_ConstraintSelfWeight", "Gravity Load")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_ConstraintSelfWeight", "Creates a gravity load")
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_noset_edit"
 
@@ -361,15 +362,9 @@ class _ConstraintTie(CommandManager):
     "The FEM_ConstraintTie command definition"
 
     def __init__(self):
-        super(_ConstraintTie, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintTie",
-            "Tie constraint"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ConstraintTie",
-            "Creates a tie constraint"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_ConstraintTie", "Tie Constraint")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_ConstraintTie", "Creates a tie constraint")
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
 
@@ -378,14 +373,10 @@ class _ElementFluid1D(CommandManager):
     "The FEM_ElementFluid1D command definition"
 
     def __init__(self):
-        super(_ElementFluid1D, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ElementFluid1D",
-            "Fluid section for 1D flow"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_ElementFluid1D", "Fluid Section for 1D Flow")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ElementFluid1D",
-            "Creates a FEM fluid section for 1D flow"
+            "FEM_ElementFluid1D", "Creates a fluid section for 1D flow"
         )
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
@@ -395,15 +386,9 @@ class _ElementGeometry1D(CommandManager):
     "The Fem_ElementGeometry1D command definition"
 
     def __init__(self):
-        super(_ElementGeometry1D, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ElementGeometry1D",
-            "Beam cross section"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ElementGeometry1D",
-            "Creates a FEM beam cross section"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_ElementGeometry1D", "Beam Cross Section")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_ElementGeometry1D", "Creates a beam cross section")
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
 
@@ -412,14 +397,10 @@ class _ElementGeometry2D(CommandManager):
     "The FEM_ElementGeometry2D command definition"
 
     def __init__(self):
-        super(_ElementGeometry2D, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ElementGeometry2D",
-            "Shell plate thickness"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_ElementGeometry2D", "Shell Plate Thickness")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ElementGeometry2D",
-            "Creates a FEM shell plate thickness"
+            "FEM_ElementGeometry2D", "Creates a shell plate thickness"
         )
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
@@ -429,15 +410,9 @@ class _ElementRotation1D(CommandManager):
     "The Fem_ElementRotation1D command definition"
 
     def __init__(self):
-        super(_ElementRotation1D, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ElementRotation1D",
-            "Beam rotation"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ElementRotation1D",
-            "Creates a FEM beam rotation"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_ElementRotation1D", "Beam Rotation")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_ElementRotation1D", "Creates a beam rotation")
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_noset_edit"
 
@@ -446,14 +421,11 @@ class _EquationDeformation(CommandManager):
     "The FEM_EquationDeformation command definition"
 
     def __init__(self):
-        super(_EquationDeformation, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationDeformation",
-            "Deformation equation"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_EquationDeformation", "Deformation Equation")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
             "FEM_EquationDeformation",
-            "Creates a FEM equation for\n deformation (nonlinear elasticity)"
+            "Creates an equation for deformation (nonlinear elasticity)",
         )
         self.is_active = "with_solver_elmer"
         self.do_activated = "add_obj_on_gui_selobj_expand_noset_edit"
@@ -463,14 +435,10 @@ class _EquationElasticity(CommandManager):
     "The FEM_EquationElasticity command definition"
 
     def __init__(self):
-        super(_EquationElasticity, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationElasticity",
-            "Elasticity equation"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_EquationElasticity", "Elasticity Equation")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationElasticity",
-            "Creates a FEM equation for\n elasticity (stress)"
+            "FEM_EquationElasticity", "Creates an equation for elasticity (stress)"
         )
         self.is_active = "with_solver_elmer"
         self.do_activated = "add_obj_on_gui_selobj_expand_noset_edit"
@@ -480,14 +448,10 @@ class _EquationElectricforce(CommandManager):
     "The FEM_EquationElectricforce command definition"
 
     def __init__(self):
-        super(_EquationElectricforce, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationElectricforce",
-            "Electricforce equation"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_EquationElectricforce", "Electricforce Equation")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationElectricforce",
-            "Creates a FEM equation for electric forces"
+            "FEM_EquationElectricforce", "Creates an equation for electric forces"
         )
         self.is_active = "with_solver_elmer"
         self.do_activated = "add_obj_on_gui_selobj_expand_noset_edit"
@@ -497,14 +461,10 @@ class _EquationElectrostatic(CommandManager):
     "The FEM_EquationElectrostatic command definition"
 
     def __init__(self):
-        super(_EquationElectrostatic, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationElectrostatic",
-            "Electrostatic equation"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_EquationElectrostatic", "Electrostatic Equation")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationElectrostatic",
-            "Creates a FEM equation for electrostatic"
+            "FEM_EquationElectrostatic", "Creates an equation for electrostatic"
         )
         self.is_active = "with_solver_elmer"
         self.do_activated = "add_obj_on_gui_selobj_expand_noset_edit"
@@ -514,15 +474,9 @@ class _EquationFlow(CommandManager):
     "The FEM_EquationFlow command definition"
 
     def __init__(self):
-        super(_EquationFlow, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationFlow",
-            "Flow equation"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationFlow",
-            "Creates a FEM equation for flow"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_EquationFlow", "Flow Equation")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_EquationFlow", "Creates an equation for flow")
         self.is_active = "with_solver_elmer"
         self.do_activated = "add_obj_on_gui_selobj_expand_noset_edit"
 
@@ -531,15 +485,9 @@ class _EquationFlux(CommandManager):
     "The FEM_EquationFlux command definition"
 
     def __init__(self):
-        super(_EquationFlux, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationFlux",
-            "Flux equation"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationFlux",
-            "Creates a FEM equation for flux"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_EquationFlux", "Flux Equation")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_EquationFlux", "Creates an equation for flux")
         self.is_active = "with_solver_elmer"
         self.do_activated = "add_obj_on_gui_selobj_expand_noset_edit"
 
@@ -548,15 +496,9 @@ class _EquationHeat(CommandManager):
     "The FEM_EquationHeat command definition"
 
     def __init__(self):
-        super(_EquationHeat, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationHeat",
-            "Heat equation"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationHeat",
-            "Creates a FEM equation for heat"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_EquationHeat", "Heat Equation")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_EquationHeat", "Creates an equation for heat")
         self.is_active = "with_solver_elmer"
         self.do_activated = "add_obj_on_gui_selobj_expand_noset_edit"
 
@@ -565,14 +507,13 @@ class _EquationMagnetodynamic(CommandManager):
     "The FEM_EquationMagnetodynamic command definition"
 
     def __init__(self):
-        super(_EquationMagnetodynamic, self).__init__()
+        super().__init__()
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationMagnetodynamic",
-            "Magnetodynamic equation"
+            "FEM_EquationMagnetodynamic", "Magnetodynamic Equation"
         )
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
             "FEM_EquationMagnetodynamic",
-            "Creates a FEM equation for\n magnetodynamic forces"
+            "Creates an equation for magnetodynamic forces",
         )
         self.is_active = "with_solver_elmer"
         self.do_activated = "add_obj_on_gui_selobj_expand_noset_edit"
@@ -582,14 +523,26 @@ class _EquationMagnetodynamic2D(CommandManager):
     "The FEM_EquationMagnetodynamic2D command definition"
 
     def __init__(self):
-        super(_EquationMagnetodynamic2D, self).__init__()
+        super().__init__()
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_EquationMagnetodynamic2D",
-            "Magnetodynamic2D equation"
+            "FEM_EquationMagnetodynamic2D", "Magnetodynamic 2D Equation"
         )
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
             "FEM_EquationMagnetodynamic2D",
-            "Creates a FEM equation for\n 2D magnetodynamic forces"
+            "Creates an equation for 2D magnetodynamic forces",
+        )
+        self.is_active = "with_solver_elmer"
+        self.do_activated = "add_obj_on_gui_selobj_expand_noset_edit"
+
+
+class _EquationStaticCurrent(CommandManager):
+    "The FEM_EquationStaticCurrent command definition"
+
+    def __init__(self):
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_EquationStaticCurrent", "Static Current Equation")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP(
+            "FEM_EquationStaticCurrent", "Creates an equation for static current"
         )
         self.is_active = "with_solver_elmer"
         self.do_activated = "add_obj_on_gui_selobj_expand_noset_edit"
@@ -599,16 +552,10 @@ class _Examples(CommandManager):
     "The FEM_Examples command definition"
 
     def __init__(self):
-        super(_Examples, self).__init__()
+        super().__init__()
         self.pixmap = "FemWorkbench"
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_Examples",
-            "Open FEM examples"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_Examples",
-            "Opens the FEM examples"
-        )
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_Examples", "FEM Examples")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_Examples", "Opens the FEM examples")
         self.is_active = "always"
 
     def Activated(self):
@@ -620,15 +567,11 @@ class _MaterialEditor(CommandManager):
     "The FEM_MaterialEditor command definition"
 
     def __init__(self):
-        super(_MaterialEditor, self).__init__()
+        super().__init__()
         self.pixmap = "Arch_Material_Group"
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MaterialEditor",
-            "Material editor"
-        )
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MaterialEditor", "Material Editor")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MaterialEditor",
-            "Opens the FreeCAD material editor"
+            "FEM_MaterialEditor", "Opens the FreeCAD material editor"
         )
         self.is_active = "always"
 
@@ -641,15 +584,9 @@ class _MaterialFluid(CommandManager):
     "The FEM_MaterialFluid command definition"
 
     def __init__(self):
-        super(_MaterialFluid, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MaterialFluid",
-            "Material for fluid"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MaterialFluid",
-            "Creates a FEM material for fluid"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MaterialFluid", "Fluid Material")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_MaterialFluid", "Creates a fluid material")
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
 
@@ -658,68 +595,28 @@ class _MaterialMechanicalNonlinear(CommandManager):
     "The FEM_MaterialMechanicalNonlinear command definition"
 
     def __init__(self):
-        super(_MaterialMechanicalNonlinear, self).__init__()
+        super().__init__()
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MaterialMechanicalNonlinear",
-            "Nonlinear mechanical material"
+            "FEM_MaterialMechanicalNonlinear", "Non-Linear Mechanical Material"
         )
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MaterialMechanicalNonlinear",
-            "Creates a nonlinear mechanical material"
+            "FEM_MaterialMechanicalNonlinear", "Add non-linear mechanical properties to material"
         )
-        self.is_active = "with_material_solid"
+
+    def IsActive(self):
+        return self.material_solid_selected() and (self.selobj.Nonlinear is None)
 
     def Activated(self):
-        # test if there is a nonlinear material which has the selected material as base material
-        for o in self.selobj.Document.Objects:
-            if (
-                is_of_type(o, "Fem::MaterialMechanicalNonlinear")
-                and o.LinearBaseMaterial == self.selobj
-            ):
-                FreeCAD.Console.PrintError(
-                    "Nonlinear material {} is based on the selected material {}. "
-                    "Only one nonlinear object allowed for each material.\n"
-                    .format(o.Name, self.selobj.Name)
-                )
-                return
-
         # add a nonlinear material
-        string_lin_mat_obj = "FreeCAD.ActiveDocument.getObject('" + self.selobj.Name + "')"
-        command_to_run = (
-            "FemGui.getActiveAnalysis().addObject(ObjectsFem."
-            "makeMaterialMechanicalNonlinear(FreeCAD.ActiveDocument, {}))"
-            .format(string_lin_mat_obj)
-        )
         FreeCAD.ActiveDocument.openTransaction("Create FemMaterialMechanicalNonlinear")
         FreeCADGui.addModule("ObjectsFem")
+        lin_mat_obj = f"FreeCAD.ActiveDocument.getObject('{self.selobj.Name}')"
+        command_to_run = (
+            f"ObjectsFem.makeMaterialMechanicalNonlinear(FreeCAD.ActiveDocument, {lin_mat_obj})"
+        )
         FreeCADGui.doCommand(command_to_run)
-        # set some property of the solver to nonlinear
-        # (only if one solver is available and if this solver is a CalculiX solver):
-        # nonlinear material
-        # nonlinear geometry --> it is triggered anyway
-        # https://forum.freecad.org/viewtopic.php?f=18&t=23101&p=180489#p180489
-        solver_object = None
-        for m in self.active_analysis.Group:
-            if m.isDerivedFrom("Fem::FemSolverObjectPython"):
-                if not solver_object:
-                    solver_object = m
-                else:
-                    # we do not change attributes if we have more than one solver
-                    # since we do not know which one to take
-                    solver_object = None
-                    break
-        # set solver attribute for nonlinearity for ccxtools
-        # CalculiX solver or new frame work CalculiX solver
-        if solver_object and (
-            is_of_type(solver_object, "Fem::SolverCcxTools")
-            or is_of_type(solver_object, "Fem::SolverCalculix")
-        ):
-            FreeCAD.Console.PrintMessage(
-                "Set MaterialNonlinearity and GeometricalNonlinearity to nonlinear for {}\n"
-                .format(solver_object.Label)
-            )
-            solver_object.MaterialNonlinearity = "nonlinear"
-            solver_object.GeometricalNonlinearity = "nonlinear"
+
+        expandParentObject()
         FreeCAD.ActiveDocument.commitTransaction()
         FreeCADGui.Selection.clearSelection()
         FreeCAD.ActiveDocument.recompute()
@@ -729,14 +626,13 @@ class _MaterialReinforced(CommandManager):
     "The FEM_MaterialReinforced command definition"
 
     def __init__(self):
-        super(_MaterialReinforced, self).__init__()
+        super().__init__()
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MaterialReinforced",
-            "Reinforced material (concrete)"
+            "FEM_MaterialReinforced", "Reinforced Material (Concrete)"
         )
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
             "FEM_MaterialReinforced",
-            "Creates a material for reinforced matrix material such as concrete"
+            "Creates a material for reinforced matrix material such as concrete",
         )
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
@@ -746,16 +642,10 @@ class _MaterialSolid(CommandManager):
     "The FEM_MaterialSolid command definition"
 
     def __init__(self):
-        super(_MaterialSolid, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MaterialSolid",
-            "Material for solid"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MaterialSolid", "Solid Material")
         self.accel = "M, S"
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MaterialSolid",
-            "Creates a FEM material for solid"
-        )
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_MaterialSolid", "Creates a solid material")
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_set_edit"
 
@@ -764,14 +654,10 @@ class _FEMMesh2Mesh(CommandManager):
     "The FEM_FEMMesh2Mesh command definition"
 
     def __init__(self):
-        super(_FEMMesh2Mesh, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_FEMMesh2Mesh",
-            "FEM mesh to mesh"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_FEMMesh2Mesh", "FEM Mesh to Mesh")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_FEMMesh2Mesh",
-            "Converts the surface of a FEM mesh to a mesh"
+            "FEM_FEMMesh2Mesh", "Converts the surface of a FEM mesh to a mesh"
         )
         self.is_active = "with_femmesh_andor_res"
 
@@ -781,8 +667,7 @@ class _FEMMesh2Mesh(CommandManager):
             FreeCADGui.addModule("femmesh.femmesh2mesh")
             FreeCADGui.doCommand(
                 "out_mesh = femmesh.femmesh2mesh.femmesh_2_mesh("
-                "FreeCAD.ActiveDocument.{}.FemMesh)"
-                .format(self.selobj.Name)
+                "FreeCAD.ActiveDocument.{}.FemMesh)".format(self.selobj.Name)
             )
             FreeCADGui.addModule("Mesh")
             FreeCADGui.doCommand("Mesh.show(Mesh.Mesh(out_mesh))")
@@ -795,14 +680,13 @@ class _FEMMesh2Mesh(CommandManager):
             FreeCADGui.addModule("femmesh.femmesh2mesh")
             FreeCADGui.doCommand(
                 "out_mesh = femmesh.femmesh2mesh.femmesh_2_mesh("
-                "FreeCAD.ActiveDocument.{}.FemMesh, FreeCAD.ActiveDocument.{})"
-                .format(femmesh.Name, res.Name)
+                "FreeCAD.ActiveDocument.{}.FemMesh, FreeCAD.ActiveDocument.{})".format(
+                    femmesh.Name, res.Name
+                )
             )
             FreeCADGui.addModule("Mesh")
             FreeCADGui.doCommand("Mesh.show(Mesh.Mesh(out_mesh))")
-            FreeCADGui.doCommand(
-                "FreeCAD.ActiveDocument." + femmesh.Name + ".ViewObject.hide()"
-            )
+            FreeCADGui.doCommand("FreeCAD.ActiveDocument." + femmesh.Name + ".ViewObject.hide()")
         FreeCAD.ActiveDocument.commitTransaction()
         FreeCADGui.Selection.clearSelection()
         FreeCAD.ActiveDocument.recompute()
@@ -812,14 +696,11 @@ class _MeshBoundaryLayer(CommandManager):
     "The FEM_MeshBoundaryLayer command definition"
 
     def __init__(self):
-        super(_MeshBoundaryLayer, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MeshBoundaryLayer",
-            "FEM mesh boundary layer"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MeshBoundaryLayer", "2D Boundary Layer")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
             "FEM_MeshBoundaryLayer",
-            "Creates a FEM mesh boundary layer"
+            "Adds a structured layer of mesh elements on 2D model boundaries",
         )
         self.is_active = "with_gmsh_femmesh"
         self.do_activated = "add_obj_on_gui_selobj_set_edit"
@@ -829,15 +710,9 @@ class _MeshClear(CommandManager):
     "The FEM_MeshClear command definition"
 
     def __init__(self):
-        super(_MeshClear, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MeshClear",
-            "Clear FEM mesh"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MeshClear",
-            "Clears the Mesh of a FEM mesh object"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MeshClear", "Clear FEM Mesh")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_MeshClear", "Clears the mesh of a FEM mesh object")
         self.is_active = "with_femmesh"
 
     def Activated(self):
@@ -851,19 +726,36 @@ class _MeshClear(CommandManager):
         FreeCAD.ActiveDocument.recompute()
 
 
+class _MeshClearGroups(CommandManager):
+    "The FEM_MeshClearGroups command definition"
+
+    def __init__(self):
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MeshClearGroups", "Clear Mesh Groups")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_MeshClearGroups", "Remove groups from FEM mesh")
+        self.is_active = "with_femmesh"
+
+    def Activated(self):
+        FreeCAD.ActiveDocument.openTransaction("ClearGroups FEM mesh")
+        FreeCADGui.addModule("Fem")
+        grps = "FreeCAD.ActiveDocument." + self.selobj.Name + ".FemMesh.Groups"
+        remove_func = "FreeCAD.ActiveDocument." + self.selobj.Name + ".FemMesh.removeGroup"
+        FreeCADGui.doCommand(f"tuple(map({remove_func}, {grps}))")
+        FreeCAD.Console.PrintMessage(
+            f"Groups cleared: Now {self.selobj.Name} has {self.selobj.FemMesh.GroupCount} groups\n"
+        )
+        FreeCAD.ActiveDocument.commitTransaction()
+        FreeCADGui.Selection.clearSelection()
+        FreeCAD.ActiveDocument.recompute()
+
+
 class _MeshDisplayInfo(CommandManager):
     "The FEM_MeshDisplayInfo command definition"
 
     def __init__(self):
-        super(_MeshDisplayInfo, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MeshDisplayInfo",
-            "Display FEM mesh info"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MeshDisplayInfo",
-            "Displays FEM mesh information"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MeshDisplayInfo", "Display Mesh Info")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_MeshDisplayInfo", "Displays FEM mesh information")
         self.is_active = "with_femmesh"
 
     def Activated(self):
@@ -885,14 +777,10 @@ class _MeshGmshFromShape(CommandManager):
     "The FEM_MeshGmshFromShape command definition"
 
     def __init__(self):
-        super(_MeshGmshFromShape, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MeshGmshFromShape",
-            "FEM mesh from shape by Gmsh"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MeshGmshFromShape", "Mesh From Shape by Gmsh")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MeshGmshFromShape",
-            "Creates a FEM mesh from a shape by Gmsh mesher"
+            "FEM_MeshGmshFromShape", "Creates a FEM mesh from a shape by Gmsh mesher"
         )
         self.is_active = "with_part_feature"
 
@@ -908,12 +796,22 @@ class _MeshGmshFromShape(CommandManager):
             "ObjectsFem.makeMeshGmsh(FreeCAD.ActiveDocument, '" + mesh_obj_name + "')"
         )
         FreeCADGui.doCommand(
-            "FreeCAD.ActiveDocument.ActiveObject.Part = FreeCAD.ActiveDocument.{}"
-            .format(self.selobj.Name)
+            "FreeCAD.ActiveDocument.ActiveObject.Shape = FreeCAD.ActiveDocument.{}".format(
+                self.selobj.Name
+            )
         )
+        FreeCADGui.doCommand("FreeCAD.ActiveDocument.ActiveObject.ElementOrder = '2nd'")
+        # SecondOrderLinear gives much better meshes in the regard of
+        # nonpositive jacobians but on curved faces the constraint nodes
+        # will no longer found thus standard will be False
+        # https://forum.freecad.org/viewtopic.php?t=41738
+        # https://forum.freecad.org/viewtopic.php?f=18&t=45260&start=20#p389494
+        FreeCADGui.doCommand("FreeCAD.ActiveDocument.ActiveObject.SecondOrderLinear = False")
+
         # Gmsh mesh object could be added without an active analysis
         # but if there is an active analysis move it in there
         import FemGui
+
         if FemGui.getActiveAnalysis():
             FreeCADGui.addModule("FemGui")
             FreeCADGui.doCommand(
@@ -922,24 +820,16 @@ class _MeshGmshFromShape(CommandManager):
         FreeCADGui.doCommand(
             "FreeCADGui.ActiveDocument.setEdit(FreeCAD.ActiveDocument.ActiveObject.Name)"
         )
-        FreeCAD.ActiveDocument.commitTransaction()
         FreeCADGui.Selection.clearSelection()
-        FreeCAD.ActiveDocument.recompute()
 
 
 class _MeshGroup(CommandManager):
     "The FEM_MeshGroup command definition"
 
     def __init__(self):
-        super(_MeshGroup, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MeshGroup",
-            "FEM mesh group"
-        )
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MeshGroup",
-            "Creates a FEM mesh group"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MeshGroup", "Mesh Group")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_MeshGroup", "Creates a mesh group")
         self.is_active = "with_gmsh_femmesh"
         self.do_activated = "add_obj_on_gui_selobj_set_edit"
 
@@ -948,35 +838,44 @@ class _MeshNetgenFromShape(CommandManager):
     "The FEM_MeshNetgenFromShape command definition"
 
     def __init__(self):
-        super(_MeshNetgenFromShape, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MeshNetgenFromShape",
-            "FEM mesh from shape by Netgen"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MeshNetgenFromShape", "Mesh From Shape by Netgen")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
             "FEM_MeshNetgenFromShape",
-            "Creates a FEM mesh from a solid or face shape by Netgen internal mesher"
+            "Creates a FEM mesh from a solid or face shape by Netgen internal mesher",
         )
         self.is_active = "with_part_feature"
 
     def Activated(self):
         # a mesh could be made with and without an analysis,
         # we're going to check not for an analysis in command manager module
+        netgen_prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Fem/Netgen")
         FreeCAD.ActiveDocument.openTransaction("Create FEM mesh Netgen")
         mesh_obj_name = "FEMMeshNetgen"
         # if requested by some people add Preference for this
         # mesh_obj_name = sel[0].Name + "_Mesh"
         FreeCADGui.addModule("ObjectsFem")
+        if netgen_prefs.GetBool("UseLegacyNetgen", 1):
+            FreeCADGui.doCommand(
+                "ObjectsFem.makeMeshNetgenLegacy(FreeCAD.ActiveDocument, '" + mesh_obj_name + "')"
+            )
+        else:
+            FreeCADGui.doCommand(
+                "ObjectsFem.makeMeshNetgen(FreeCAD.ActiveDocument, '" + mesh_obj_name + "')"
+            )
+            FreeCADGui.doCommand("FreeCAD.ActiveDocument.ActiveObject.EndStep = 'OptimizeVolume'")
+
         FreeCADGui.doCommand(
-            "ObjectsFem.makeMeshNetgen(FreeCAD.ActiveDocument, '" + mesh_obj_name + "')"
+            "FreeCAD.ActiveDocument.ActiveObject.Shape = FreeCAD.ActiveDocument.{}".format(
+                self.selobj.Name
+            )
         )
-        FreeCADGui.doCommand(
-            "FreeCAD.ActiveDocument.ActiveObject.Shape = FreeCAD.ActiveDocument.{}"
-            .format(self.selobj.Name)
-        )
+        FreeCADGui.doCommand("FreeCAD.ActiveDocument.ActiveObject.Fineness = 'Moderate'")
+
         # Netgen mesh object could be added without an active analysis
         # but if there is an active analysis move it in there
         import FemGui
+
         if FemGui.getActiveAnalysis():
             FreeCADGui.addModule("FemGui")
             FreeCADGui.doCommand(
@@ -985,7 +884,6 @@ class _MeshNetgenFromShape(CommandManager):
         FreeCADGui.doCommand(
             "FreeCADGui.ActiveDocument.setEdit(FreeCAD.ActiveDocument.ActiveObject.Name)"
         )
-        FreeCAD.ActiveDocument.commitTransaction()
         FreeCADGui.Selection.clearSelection()
         # a recompute immediately starts meshing when task panel is opened, this is not intended
 
@@ -994,32 +892,158 @@ class _MeshRegion(CommandManager):
     "The FEM_MeshRefinement command definition"
 
     def __init__(self):
-        super(_MeshRegion, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MeshRegion",
-            "FEM mesh refinement"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MeshRegion", "Mesh Refinement")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_MeshRegion", "Creates a FEM mesh refinement")
+        self.is_active = "with_femmesh"
+        self.do_activated = "add_obj_on_gui_selobj_set_edit"
+
+
+class _MeshDistance(CommandManager):
+    "The FEM_MeshRefinement command definition"
+
+    def __init__(self):
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MeshDistance", "Distance-Based Refinement")
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_MeshRegion",
-            "Creates a FEM mesh refinement"
+            "FEM_MeshDistance", "Sets mesh size based on the distance to vertices, edges, and faces"
         )
         self.is_active = "with_gmsh_femmesh"
         self.do_activated = "add_obj_on_gui_selobj_set_edit"
+
+
+class _MeshManipulate(CommandManager):
+    "The FEM_MeshManipulate command definition"
+
+    def __init__(self):
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MeshManipulate", "Manipulate Refinement")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP(
+            "FEM_MeshManipulate", "Allows to manipulate the output of a refinement in various ways"
+        )
+        self.is_active = "with_gmsh_femmesh"
+        self.do_activated = "add_obj_on_gui_selobj_set_edit"
+
+
+class _MeshAdvanced(CommandManager):
+    "The FEM_MeshAdvanced command definition"
+
+    def __init__(self):
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MeshAdvanced", "Advanced Refinement Types")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP(
+            "FEM_MeshAdvanced", "Allows to define the mesh size by various advanced means"
+        )
+        self.is_active = "with_gmsh_femmesh"
+        self.do_activated = "add_obj_on_gui_selobj_set_edit"
+
+
+class _MeshShape(CommandManager):
+    "The FEM_MeshRefinement command definition"
+
+    def __init__(self):
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_MeshShape", "Shape-Based Refinement")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP(
+            "FEM_MeshSphere",
+            "Sets mesh size within and outside of a geometric shape (box, sphere, cylinder)",
+        )
+        self.is_active = "with_gmsh_femmesh"
+        self.do_activated = "add_obj_on_gui_selobj_set_edit"
+
+
+class _MeshTransfiniteCurve(CommandManager):
+    "The FEM_MeshTransfiniteCurve command definition"
+
+    def __init__(self):
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP(
+            "FEM_MeshTransfiniteCurve", "Structured Transfinite Curve"
+        )
+        self.tooltip = Qt.QT_TRANSLATE_NOOP(
+            "FEM_MeshTransfiniteCurve",
+            "Creates a fixed number of nodes on an edge with a structured algorithm",
+        )
+        self.is_active = "with_gmsh_femmesh"
+        self.do_activated = "add_obj_on_gui_selobj_set_edit"
+
+
+class _MeshTransfiniteSurface(CommandManager):
+    "The FEM_MeshTransfiniteSurface command definition"
+
+    def __init__(self):
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP(
+            "FEM_MeshTransfiniteSurface", "Structured Transfinite Surface"
+        )
+        self.tooltip = Qt.QT_TRANSLATE_NOOP(
+            "FEM_MeshTransfiniteSurface", "Creates a structured mesh on a face"
+        )
+        self.is_active = "with_gmsh_femmesh"
+        self.do_activated = "add_obj_on_gui_selobj_set_edit"
+
+
+class _MeshTransfiniteVolume(CommandManager):
+    "The FEM_MeshTransfiniteVolume command definition"
+
+    def __init__(self):
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP(
+            "FEM_MeshTransfiniteVolume", "Structured Transfinite Volume"
+        )
+        self.tooltip = Qt.QT_TRANSLATE_NOOP(
+            "FEM_MeshTransfiniteVolume",
+            "Creates a structured mesh in a 4- or 5-sided volume bounded by transfinite surfaces",
+        )
+        self.is_active = "with_gmsh_femmesh"
+        self.do_activated = "add_obj_on_gui_selobj_set_edit"
+
+
+class _GMSHRefine:
+    # Group command for all gmsh special refinements
+
+    def GetCommands(self):
+        return [
+            "FEM_MeshDistance",
+            "FEM_MeshBoundaryLayer",
+            "FEM_MeshShape",
+            "FEM_MeshManipulate",
+            "FEM_MeshAdvanced",
+            "FEM_MeshTransfiniteCurve",
+            "FEM_MeshTransfiniteSurface",
+            "FEM_MeshTransfiniteVolume",
+        ]
+
+    def GetDefaultCommand(self):
+        return 0
+
+    def GetResources(self):
+        return {
+            "MenuText": "GMSH Refinements",
+            "ToolTip": "Mesh refinements for the GMSH mesh generation",
+        }
+
+    def IsActive(self):
+        if not FreeCADGui.ActiveDocument:
+            return False
+
+        sel = FreeCADGui.Selection.getSelection()
+        if len(sel) == 1 and sel[0].isDerivedFrom("Fem::FemMeshObject"):
+            # must be GMSH mesh
+            return is_of_type(sel[0], "Fem::FemMeshGmsh")
+
+        return False
 
 
 class _ResultShow(CommandManager):
     "The FEM_ResultShow command definition"
 
     def __init__(self):
-        super(_ResultShow, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ResultShow",
-            "Show result"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_ResultShow", "Show Result")
         self.accel = "R, S"
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ResultShow",
-            "Shows and visualizes selected result data"
+            "FEM_ResultShow", "Shows and visualizes the selected result data"
         )
         self.is_active = "with_selresult"
 
@@ -1031,99 +1055,169 @@ class _ResultsPurge(CommandManager):
     "The FEM_ResultsPurge command definition"
 
     def __init__(self):
-        super(_ResultsPurge, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ResultsPurge",
-            "Purge results"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_ResultsPurge", "Purge Results")
         self.accel = "R, P"
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_ResultsPurge",
-            "Purges all results from active analysis"
-        )
-        self.is_active = "with_results"
-
-    def Activated(self):
-        import femresult.resulttools as resulttools
-        resulttools.purge_results(self.active_analysis)
-
-
-class _SolverCxxtools(CommandManager):
-    "The FEM_SolverCalculix ccx tools command definition"
-
-    def __init__(self):
-        super(_SolverCxxtools, self).__init__()
-        self.pixmap = "FEM_SolverStandard"
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_SolverCalculixCxxtools",
-            "Solver CalculiX Standard"
-        )
-        self.accel = "S, X"
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_SolverCalculixCxxtools",
-            "Creates a standard FEM solver CalculiX with ccx tools"
+            "FEM_ResultsPurge", "Purges all results from the active analysis"
         )
         self.is_active = "with_analysis"
 
     def Activated(self):
-        has_nonlinear_material_obj = False
-        for m in self.active_analysis.Group:
-            if is_of_type(m, "Fem::MaterialMechanicalNonlinear"):
-                has_nonlinear_material_obj = True
-        FreeCAD.ActiveDocument.openTransaction("Create SolverCalculix")
+        import femresult.resulttools as resulttools
+
+        FreeCAD.ActiveDocument.openTransaction("Purge FEM results")
+        resulttools.purge_results(self.active_analysis)
+        FreeCAD.ActiveDocument.commitTransaction()
+
+
+class _SolverCalculixContextManager:
+
+    def __init__(self, make_name, cli_obj_ref_name):
+        self.make_name = make_name
+        self.cli_name = cli_obj_ref_name
+
+    def __enter__(self):
+        ccx_prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Fem/Ccx")
+        FreeCAD.ActiveDocument.openTransaction("Create SolverCalculiX")
         FreeCADGui.addModule("ObjectsFem")
         FreeCADGui.addModule("FemGui")
-        if has_nonlinear_material_obj:
-            FreeCADGui.doCommand(
-                "solver = ObjectsFem.makeSolverCalculixCcxTools(FreeCAD.ActiveDocument)"
+        FreeCADGui.doCommand(
+            f"{self.cli_name} = ObjectsFem.{self.make_name}(FreeCAD.ActiveDocument)"
+        )
+        FreeCADGui.doCommand(
+            "{}.AnalysisType = {}".format(self.cli_name, ccx_prefs.GetInt("AnalysisType", 0))
+        )
+        FreeCADGui.doCommand(
+            "{}.EigenmodesCount = {}".format(self.cli_name, ccx_prefs.GetInt("EigenmodesCount", 10))
+        )
+        FreeCADGui.doCommand(
+            "{}.EigenmodeLowLimit = {}".format(
+                self.cli_name, ccx_prefs.GetFloat("EigenmodeLowLimit", 0.0)
             )
-            FreeCADGui.doCommand("solver.GeometricalNonlinearity = 'nonlinear'")
-            FreeCADGui.doCommand("solver.MaterialNonlinearity = 'nonlinear'")
-            FreeCADGui.doCommand("FemGui.getActiveAnalysis().addObject(solver)")
-        else:
-            FreeCADGui.doCommand(
-                "FemGui.getActiveAnalysis().addObject(ObjectsFem."
-                "makeSolverCalculixCcxTools(FreeCAD.ActiveDocument))"
+        )
+        FreeCADGui.doCommand(
+            "{}.EigenmodeHighLimit = {}".format(
+                self.cli_name, ccx_prefs.GetFloat("EigenmodeHighLimit", 1000000.0)
             )
+        )
+        FreeCADGui.doCommand(
+            "{}.IncrementsMaximum = {}".format(
+                self.cli_name, ccx_prefs.GetInt("StepMaxIncrements", 2000)
+            )
+        )
+        FreeCADGui.doCommand(
+            "{}.TimeInitialIncrement = {}".format(
+                self.cli_name, ccx_prefs.GetFloat("TimeInitialIncrement", 1.0)
+            )
+        )
+        FreeCADGui.doCommand(
+            "{}.TimePeriod = {}".format(self.cli_name, ccx_prefs.GetFloat("TimePeriod", 1.0))
+        )
+        FreeCADGui.doCommand(
+            "{}.TimeMinimumIncrement = {}".format(
+                self.cli_name, ccx_prefs.GetFloat("TimeMinimumIncrement", 0.00001)
+            )
+        )
+        FreeCADGui.doCommand(
+            "{}.TimeMaximumIncrement = {}".format(
+                self.cli_name, ccx_prefs.GetFloat("TimeMaximumIncrement", 1.0)
+            )
+        )
+        FreeCADGui.doCommand(
+            "{}.ThermoMechSteadyState = {}".format(
+                self.cli_name, ccx_prefs.GetBool("StaticAnalysis", True)
+            )
+        )
+        FreeCADGui.doCommand(
+            "{}.IterationsControlParameterTimeUse = {}".format(
+                self.cli_name, ccx_prefs.GetBool("UseNonCcxIterationParam", False)
+            )
+        )
+        FreeCADGui.doCommand(
+            "{}.SplitInputWriter = {}".format(
+                self.cli_name, ccx_prefs.GetBool("SplitInputWriter", False)
+            )
+        )
+        FreeCADGui.doCommand(
+            "{}.MatrixSolverType = {}".format(self.cli_name, ccx_prefs.GetInt("Solver", 0))
+        )
+        FreeCADGui.doCommand(
+            "{}.Output3d = {}".format(self.cli_name, ccx_prefs.GetBool("BeamShellOutput", True))
+        )
+        FreeCADGui.doCommand(
+            "{}.GeometricalNonlinearity = {}".format(
+                self.cli_name,
+                ccx_prefs.GetBool("NonlinearGeometry", False),
+            )
+        )
+
+        return self
+
+    def __exit__(self, exc_type, exc_value, trace):
+        FreeCADGui.doCommand(f"FemGui.getActiveAnalysis().addObject({self.cli_name})")
         FreeCAD.ActiveDocument.commitTransaction()
         # expand analysis object in tree view
         expandParentObject()
         FreeCAD.ActiveDocument.recompute()
 
 
-class _SolverCalculix(CommandManager):
-    "The FEM_SolverCalculix command definition"
+class _SolverCcxTools(CommandManager):
+    "The FEM_SolverCalculix ccx tools command definition"
 
     def __init__(self):
-        super(_SolverCalculix, self).__init__()
+        super().__init__()
         self.pixmap = "FEM_SolverStandard"
         self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_SolverCalculiX",
-            "Solver CalculiX (new framework)"
+            "FEM_SolverCalculiXCcxTools", "Solver CalculiX Standard"
         )
+        self.accel = "S, X"
+        self.tooltip = Qt.QT_TRANSLATE_NOOP(
+            "FEM_SolverCalculiXCcxTools",
+            "Creates a standard FEM solver CalculiX with ccx tools",
+        )
+        self.is_active = "with_analysis"
+
+    def Activated(self):
+        with _SolverCalculixContextManager("makeSolverCalculiXCcxTools", "solver") as cm:
+            FreeCADGui.doCommand(f"{cm.cli_name}.MaterialNonlinearity = True")
+
+
+class _SolverCalculiX(CommandManager):
+    "The FEM_SolverCalculiX command definition"
+
+    def __init__(self):
+        super().__init__()
+        self.pixmap = "FEM_SolverStandard"
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_SolverCalculiX", "Solver CalculiX")
         self.accel = "S, C"
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
             "FEM_SolverCalculiX",
-            "Creates a FEM solver CalculiX new framework (less result error handling)"
+            "Creates a FEM solver CalculiX",
         )
         self.is_active = "with_analysis"
-        self.is_active = "with_analysis"
-        self.do_activated = "add_obj_on_gui_expand_noset_edit"
+
+    def Activated(self):
+        ccx_prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Fem/Ccx")
+        if ccx_prefs.GetBool("ResultAsPipeline", True):
+            make_solver = "makeSolverCalculiX"
+        else:
+            make_solver = "makeSolverCalculiXCcxTools"
+
+        with _SolverCalculixContextManager(make_solver, "solver") as cm:
+            FreeCADGui.doCommand(f"{cm.cli_name}.MaterialNonlinearity = True")
 
 
 class _SolverControl(CommandManager):
     "The FEM_SolverControl command definition"
 
     def __init__(self):
-        super(_SolverControl, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP(
-            "FEM_SolverControl",
-            "Solver job control"
-        )
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_SolverControl", "Solver Job Control")
         self.accel = "S, T"
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
             "FEM_SolverControl",
-            "Changes solver attributes and runs the calculations for the selected solver"
+            "Changes solver attributes and runs the calculations for the selected solver",
         )
         self.is_active = "with_solver"
 
@@ -1135,22 +1229,45 @@ class _SolverElmer(CommandManager):
     "The FEM_SolverElmer command definition"
 
     def __init__(self):
-        super(_SolverElmer, self).__init__()
+        super().__init__()
         self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_SolverElmer", "Solver Elmer")
         self.accel = "S, E"
-        self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_SolverElmer",
-            "Creates a FEM solver Elmer"
-        )
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_SolverElmer", "Creates a FEM solver Elmer")
         self.is_active = "with_analysis"
-        self.do_activated = "add_obj_on_gui_expand_noset_edit"
+
+    def Activated(self):
+        FreeCAD.ActiveDocument.openTransaction(f"Create Fem SolverElmer")
+        FreeCADGui.addModule("ObjectsFem")
+        FreeCADGui.addModule("FemGui")
+        # expand parent obj in tree view if selected
+        expandParentObject()
+        # add the object
+        FreeCADGui.doCommand("ObjectsFem.makeSolverElmer(FreeCAD.ActiveDocument)")
+        # select only added object
+        FreeCADGui.doCommand(
+            "FemGui.getActiveAnalysis().addObject(FreeCAD.ActiveDocument.ActiveObject)"
+        )
+        elmer_prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Fem/Elmer")
+        bin_out = elmer_prefs.GetBool("BinaryOutput", False)
+        save_id = elmer_prefs.GetBool("SaveGeometryIndex", False)
+        FreeCADGui.doCommand(
+            "FreeCAD.ActiveDocument.ActiveObject.BinaryOutput = {}".format(bin_out)
+        )
+        FreeCADGui.doCommand(
+            "FreeCAD.ActiveDocument.ActiveObject.SaveGeometryIndex = {}".format(save_id)
+        )
+
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.doCommand(
+            "FreeCADGui.Selection.addSelection(FreeCAD.ActiveDocument.ActiveObject)"
+        )
 
 
 class _SolverMystran(CommandManager):
     "The FEM_SolverMystran command definition"
 
     def __init__(self):
-        super(_SolverMystran, self).__init__()
+        super().__init__()
         self.pixmap = "FEM_SolverMystran"
         self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_SolverMystran", "Solver Mystran")
         self.accel = "S, M"
@@ -1163,17 +1280,18 @@ class _SolverRun(CommandManager):
     "The FEM_SolverRun command definition"
 
     def __init__(self):
-        super(_SolverRun, self).__init__()
-        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_SolverRun", "Run solver calculations")
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_SolverRun", "Run Solver")
         self.accel = "S, R"
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
-            "FEM_SolverRun",
-            "Runs the calculations for the selected solver"
+            "FEM_SolverRun", "Runs the calculations for the selected solver"
         )
         self.is_active = "with_solver"
+        self.tool = None
 
     def Activated(self):
         from femsolver.run import run_fem_solver
+
         run_fem_solver(self.selobj)
         FreeCADGui.Selection.clearSelection()
         FreeCAD.ActiveDocument.recompute()
@@ -1183,216 +1301,155 @@ class _SolverZ88(CommandManager):
     "The FEM_SolverZ88 command definition"
 
     def __init__(self):
-        super(_SolverZ88, self).__init__()
+        super().__init__()
         self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_SolverZ88", "Solver Z88")
         self.accel = "S, Z"
         self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_SolverZ88", "Creates a FEM solver Z88")
         self.is_active = "with_analysis"
         self.do_activated = "add_obj_on_gui_expand_noset_edit"
 
+    def Activated(self):
+        FreeCAD.ActiveDocument.openTransaction(f"Create Fem SolverZ88")
+        FreeCADGui.addModule("ObjectsFem")
+        FreeCADGui.addModule("FemGui")
+        # expand parent obj in tree view if selected
+        expandParentObject()
+        # add the object
+        FreeCADGui.doCommand("ObjectsFem.makeSolverZ88(FreeCAD.ActiveDocument)")
+        # select only added object
+        FreeCADGui.doCommand(
+            "FemGui.getActiveAnalysis().addObject(FreeCAD.ActiveDocument.ActiveObject)"
+        )
+        z88_prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Fem/Z88")
+        solver_type = z88_prefs.GetString("Solver", "sorcg")
+        maxgs = z88_prefs.GetInt("MaxGS", 100000000)
+        maxkoi = z88_prefs.GetInt("MaxKOI", 2800000)
+
+        FreeCADGui.doCommand(f"FreeCAD.ActiveDocument.ActiveObject.SolverType = '{solver_type}'")
+        FreeCADGui.doCommand(f"FreeCAD.ActiveDocument.ActiveObject.MatrixMaximum = {maxgs}")
+        FreeCADGui.doCommand(f"FreeCAD.ActiveDocument.ActiveObject.VectorMaximum = {maxkoi}")
+
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.doCommand(
+            "FreeCADGui.Selection.addSelection(FreeCAD.ActiveDocument.ActiveObject)"
+        )
+
+
+class _PostFilterGlyph(CommandManager):
+    "The FEM_PostFilterGlyph command definition"
+
+    def __init__(self):
+        super().__init__()
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_PostFilterGlyph", "Glyph Filter")
+        self.accel = "F, G"
+        self.tooltip = Qt.QT_TRANSLATE_NOOP(
+            "FEM_PostFilterGlyph",
+            "Adds a post-processing filter that adds glyphs to the mesh vertices for vertex data visualization",
+        )
+        self.is_active = "with_vtk_selresult"
+        self.do_activated = "add_filter_set_edit"
+
+
+class _CompSolvers(CommandManager):
+    def __init__(self):
+        super().__init__()
+        self.pixmap = ""
+        self.menutext = Qt.QT_TRANSLATE_NOOP("FEM_CompSolvers", "Solvers")
+        self.tooltip = Qt.QT_TRANSLATE_NOOP("FEM_CompSolvers", "Creates a FEM solver")
+        self.is_active = "with_analysis"
+        self.commands = [
+            "FEM_SolverCalculiX",
+            "FEM_SolverElmer",
+            "FEM_SolverMystran",
+            "FEM_SolverZ88",
+        ]
+
+    def Activated(self, i):
+        FreeCADGui.runCommand(self.commands[i])
+
+    def GetCommands(self):
+        return self.commands
+
+    def GetDefaultCommand(self):
+        gen_prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Fem/General")
+        # DefaultSolver == 0 is "None"
+        index = gen_prefs.GetInt("DefaultSolver", 0)
+        return (index - 1) if index > 0 else 0
+
 
 # the string in add command will be the page name on FreeCAD wiki
-FreeCADGui.addCommand(
-    "FEM_Analysis",
-    _Analysis()
-)
-FreeCADGui.addCommand(
-    "FEM_ClippingPlaneAdd",
-    _ClippingPlaneAdd()
-)
-FreeCADGui.addCommand(
-    "FEM_ClippingPlaneRemoveAll",
-    _ClippingPlaneRemoveAll()
-)
-FreeCADGui.addCommand(
-    "FEM_ConstantVacuumPermittivity",
-    _ConstantVacuumPermittivity()
-)
-FreeCADGui.addCommand(
-    "FEM_ConstraintBodyHeatSource",
-    _ConstraintBodyHeatSource()
-)
-FreeCADGui.addCommand(
-    "FEM_ConstraintCentrif",
-    _ConstraintCentrif()
-)
-FreeCADGui.addCommand(
-    "FEM_ConstraintCurrentDensity",
-    _ConstraintCurrentDensity()
-)
-FreeCADGui.addCommand(
-    "FEM_ConstraintElectrostaticPotential",
-    _ConstraintElectrostaticPotential()
-)
-FreeCADGui.addCommand(
-    "FEM_ConstraintFlowVelocity",
-    _ConstraintFlowVelocity()
-)
-FreeCADGui.addCommand(
-    "FEM_ConstraintInitialFlowVelocity",
-    _ConstraintInitialFlowVelocity()
-)
-FreeCADGui.addCommand(
-    "FEM_ConstraintInitialPressure",
-    _ConstraintInitialPressure()
-)
-FreeCADGui.addCommand(
-    "FEM_ConstraintMagnetization",
-    _ConstraintMagnetization()
-)
-FreeCADGui.addCommand(
-    "FEM_ConstraintSectionPrint",
-    _ConstraintSectionPrint()
-)
-FreeCADGui.addCommand(
-    "FEM_ConstraintSelfWeight",
-    _ConstraintSelfWeight()
-)
-FreeCADGui.addCommand(
-    "FEM_ConstraintTie",
-    _ConstraintTie()
-)
-FreeCADGui.addCommand(
-    "FEM_ElementFluid1D",
-    _ElementFluid1D()
-)
-FreeCADGui.addCommand(
-    "FEM_ElementGeometry1D",
-    _ElementGeometry1D()
-)
-FreeCADGui.addCommand(
-    "FEM_ElementGeometry2D",
-    _ElementGeometry2D()
-)
-FreeCADGui.addCommand(
-    "FEM_ElementRotation1D",
-    _ElementRotation1D()
-)
-FreeCADGui.addCommand(
-    "FEM_EquationDeformation",
-    _EquationDeformation()
-)
-FreeCADGui.addCommand(
-    "FEM_EquationElasticity",
-    _EquationElasticity()
-)
-FreeCADGui.addCommand(
-    "FEM_EquationElectricforce",
-    _EquationElectricforce()
-)
-FreeCADGui.addCommand(
-    "FEM_EquationElectrostatic",
-    _EquationElectrostatic()
-)
-FreeCADGui.addCommand(
-    "FEM_EquationFlow",
-    _EquationFlow()
-)
-FreeCADGui.addCommand(
-    "FEM_EquationFlux",
-    _EquationFlux()
-)
-FreeCADGui.addCommand(
-    "FEM_EquationHeat",
-    _EquationHeat()
-)
-FreeCADGui.addCommand(
-    "FEM_EquationMagnetodynamic",
-    _EquationMagnetodynamic()
-)
-FreeCADGui.addCommand(
-    "FEM_EquationMagnetodynamic2D",
-    _EquationMagnetodynamic2D()
-)
-FreeCADGui.addCommand(
-    "FEM_Examples",
-    _Examples()
-)
-FreeCADGui.addCommand(
-    "FEM_MaterialEditor",
-    _MaterialEditor()
-)
-FreeCADGui.addCommand(
-    "FEM_MaterialFluid",
-    _MaterialFluid()
-)
-FreeCADGui.addCommand(
-    "FEM_MaterialMechanicalNonlinear",
-    _MaterialMechanicalNonlinear()
-)
-FreeCADGui.addCommand(
-    "FEM_MaterialReinforced",
-    _MaterialReinforced()
-)
-FreeCADGui.addCommand(
-    "FEM_MaterialSolid",
-    _MaterialSolid()
-)
-FreeCADGui.addCommand(
-    "FEM_FEMMesh2Mesh",
-    _FEMMesh2Mesh()
-)
-FreeCADGui.addCommand(
-    "FEM_MeshBoundaryLayer",
-    _MeshBoundaryLayer()
-)
-FreeCADGui.addCommand(
-    "FEM_MeshClear",
-    _MeshClear()
-)
-FreeCADGui.addCommand(
-    "FEM_MeshDisplayInfo",
-    _MeshDisplayInfo()
-)
-FreeCADGui.addCommand(
-    "FEM_MeshGmshFromShape",
-    _MeshGmshFromShape()
-)
-FreeCADGui.addCommand(
-    "FEM_MeshGroup",
-    _MeshGroup()
-)
-FreeCADGui.addCommand(
-    "FEM_MeshNetgenFromShape",
-    _MeshNetgenFromShape()
-)
-FreeCADGui.addCommand(
-    "FEM_MeshRegion",
-    _MeshRegion()
-)
-FreeCADGui.addCommand(
-    "FEM_ResultShow",
-    _ResultShow()
-)
-FreeCADGui.addCommand(
-    "FEM_ResultsPurge",
-    _ResultsPurge()
-)
-FreeCADGui.addCommand(
-    "FEM_SolverCalculixCxxtools",
-    _SolverCxxtools()
-)
-FreeCADGui.addCommand(
-    "FEM_SolverCalculiX",
-    _SolverCalculix()
-)
-FreeCADGui.addCommand(
-    "FEM_SolverControl",
-    _SolverControl()
-)
-FreeCADGui.addCommand(
-    "FEM_SolverElmer",
-    _SolverElmer()
-)
-FreeCADGui.addCommand(
-    "FEM_SolverMystran",
-    _SolverMystran()
-)
-FreeCADGui.addCommand(
-    "FEM_SolverRun",
-    _SolverRun()
-)
-FreeCADGui.addCommand(
-    "FEM_SolverZ88",
-    _SolverZ88()
-)
+FreeCADGui.addCommand("FEM_Analysis", _Analysis())
+FreeCADGui.addCommand("FEM_ClippingPlaneAdd", _ClippingPlaneAdd())
+FreeCADGui.addCommand("FEM_ClippingPlaneRemoveAll", _ClippingPlaneRemoveAll())
+FreeCADGui.addCommand("FEM_ConstantVacuumPermittivity", _ConstantVacuumPermittivity())
+FreeCADGui.addCommand("FEM_ConstraintBodyHeatSource", _ConstraintBodyHeatSource())
+FreeCADGui.addCommand("FEM_ConstraintCentrif", _ConstraintCentrif())
+FreeCADGui.addCommand("FEM_ConstraintCurrentDensity", _ConstraintCurrentDensity())
+FreeCADGui.addCommand("FEM_ConstraintElectricChargeDensity", _ConstraintElectricChargeDensity())
+FreeCADGui.addCommand("FEM_ConstraintElectromagnetic", _ConstraintElectromagnetic())
+FreeCADGui.addCommand("FEM_ConstraintFlowVelocity", _ConstraintFlowVelocity())
+FreeCADGui.addCommand("FEM_ConstraintInitialFlowVelocity", _ConstraintInitialFlowVelocity())
+FreeCADGui.addCommand("FEM_ConstraintInitialPressure", _ConstraintInitialPressure())
+FreeCADGui.addCommand("FEM_ConstraintMagnetization", _ConstraintMagnetization())
+FreeCADGui.addCommand("FEM_ConstraintSectionPrint", _ConstraintSectionPrint())
+FreeCADGui.addCommand("FEM_ConstraintSelfWeight", _ConstraintSelfWeight())
+FreeCADGui.addCommand("FEM_ConstraintTie", _ConstraintTie())
+FreeCADGui.addCommand("FEM_ElementFluid1D", _ElementFluid1D())
+FreeCADGui.addCommand("FEM_ElementGeometry1D", _ElementGeometry1D())
+FreeCADGui.addCommand("FEM_ElementGeometry2D", _ElementGeometry2D())
+FreeCADGui.addCommand("FEM_ElementRotation1D", _ElementRotation1D())
+FreeCADGui.addCommand("FEM_EquationDeformation", _EquationDeformation())
+FreeCADGui.addCommand("FEM_EquationElasticity", _EquationElasticity())
+FreeCADGui.addCommand("FEM_EquationElectricforce", _EquationElectricforce())
+FreeCADGui.addCommand("FEM_EquationElectrostatic", _EquationElectrostatic())
+FreeCADGui.addCommand("FEM_EquationFlow", _EquationFlow())
+FreeCADGui.addCommand("FEM_EquationFlux", _EquationFlux())
+FreeCADGui.addCommand("FEM_EquationHeat", _EquationHeat())
+FreeCADGui.addCommand("FEM_EquationMagnetodynamic", _EquationMagnetodynamic())
+FreeCADGui.addCommand("FEM_EquationMagnetodynamic2D", _EquationMagnetodynamic2D())
+FreeCADGui.addCommand("FEM_EquationStaticCurrent", _EquationStaticCurrent())
+FreeCADGui.addCommand("FEM_Examples", _Examples())
+FreeCADGui.addCommand("FEM_MaterialEditor", _MaterialEditor())
+FreeCADGui.addCommand("FEM_MaterialFluid", _MaterialFluid())
+FreeCADGui.addCommand("FEM_MaterialMechanicalNonlinear", _MaterialMechanicalNonlinear())
+FreeCADGui.addCommand("FEM_MaterialReinforced", _MaterialReinforced())
+FreeCADGui.addCommand("FEM_MaterialSolid", _MaterialSolid())
+FreeCADGui.addCommand("FEM_FEMMesh2Mesh", _FEMMesh2Mesh())
+FreeCADGui.addCommand("FEM_MeshBoundaryLayer", _MeshBoundaryLayer())
+FreeCADGui.addCommand("FEM_MeshClear", _MeshClear())
+FreeCADGui.addCommand("FEM_MeshClearGroups", _MeshClearGroups())
+FreeCADGui.addCommand("FEM_MeshDisplayInfo", _MeshDisplayInfo())
+FreeCADGui.addCommand("FEM_MeshGmshFromShape", _MeshGmshFromShape())
+FreeCADGui.addCommand("FEM_MeshGroup", _MeshGroup())
+FreeCADGui.addCommand("FEM_MeshNetgenFromShape", _MeshNetgenFromShape())
+FreeCADGui.addCommand("FEM_MeshRegion", _MeshRegion())
+FreeCADGui.addCommand("FEM_MeshDistance", _MeshDistance())
+FreeCADGui.addCommand("FEM_MeshManipulate", _MeshManipulate())
+FreeCADGui.addCommand("FEM_MeshAdvanced", _MeshAdvanced())
+FreeCADGui.addCommand("FEM_MeshShape", _MeshShape())
+FreeCADGui.addCommand("FEM_MeshTransfiniteCurve", _MeshTransfiniteCurve())
+FreeCADGui.addCommand("FEM_MeshTransfiniteSurface", _MeshTransfiniteSurface())
+FreeCADGui.addCommand("FEM_MeshTransfiniteVolume", _MeshTransfiniteVolume())
+FreeCADGui.addCommand("FEM_MeshGMSHRefinement", _GMSHRefine())
+FreeCADGui.addCommand("FEM_ResultShow", _ResultShow())
+FreeCADGui.addCommand("FEM_ResultsPurge", _ResultsPurge())
+FreeCADGui.addCommand("FEM_SolverCalculiXCcxTools", _SolverCcxTools())
+FreeCADGui.addCommand("FEM_SolverCalculiX", _SolverCalculiX())
+FreeCADGui.addCommand("FEM_SolverControl", _SolverControl())
+FreeCADGui.addCommand("FEM_SolverElmer", _SolverElmer())
+FreeCADGui.addCommand("FEM_SolverMystran", _SolverMystran())
+FreeCADGui.addCommand("FEM_SolverRun", _SolverRun())
+FreeCADGui.addCommand("FEM_SolverZ88", _SolverZ88())
+FreeCADGui.addCommand("FEM_CompSolvers", _CompSolvers())
+
+if "BUILD_FEM_VTK_PYTHON" in FreeCAD.__cmake__:
+    FreeCADGui.addCommand("FEM_PostFilterGlyph", _PostFilterGlyph())
+
+    # setup all visualization commands (register by importing)
+    import femobjects.post_lineplot
+    import femobjects.post_histogram
+    import femobjects.post_table
+
+    from femguiutils import post_visualization
+
+    post_visualization.setup_commands("FEM_PostVisualization")

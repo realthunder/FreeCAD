@@ -465,6 +465,16 @@ struct BaseExport Tools
     static std::string quoted(const std::string&);
 
     /**
+     * @brief isNullOrEmpty
+     * @param str A C string, possibly null.
+     * @return true if \a str is null or has no characters.
+     */
+    static constexpr bool isNullOrEmpty(const char* str)
+    {
+        return !str || str[0] == '\0';
+    }
+
+    /**
      * @brief joinList
      * Join the vector of strings \a vec using the separator \a sep
      * @param vec

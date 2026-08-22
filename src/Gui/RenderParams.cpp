@@ -94,6 +94,8 @@ public:
     long TinyElementCutoff;
     bool LoadDropElements;
     double EffectResolution;
+    bool TemporalAccum;
+    long TemporalAccumSamples;
     bool Occlusion;
     long OcclusionVisibleTtl;
     long OcclusionBudget;
@@ -288,6 +290,10 @@ public:
         funcs["LoadDropElements"] = &RenderParamsP::updateLoadDropElements;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
         funcs["EffectResolution"] = &RenderParamsP::updateEffectResolution;
+        TemporalAccum = this->handle->GetBool("TemporalAccum", false);
+        funcs["TemporalAccum"] = &RenderParamsP::updateTemporalAccum;
+        TemporalAccumSamples = this->handle->GetInt("TemporalAccumSamples", 32);
+        funcs["TemporalAccumSamples"] = &RenderParamsP::updateTemporalAccumSamples;
         Occlusion = this->handle->GetBool("Occlusion", false);
         funcs["Occlusion"] = &RenderParamsP::updateOcclusion;
         OcclusionVisibleTtl = this->handle->GetInt("OcclusionVisibleTtl", 6);
@@ -372,7 +378,7 @@ public:
         funcs["PBRFromSpecular"] = &RenderParamsP::updatePBRFromSpecular;
         ShininessMapping = this->handle->GetInt("ShininessMapping", 1);
         funcs["ShininessMapping"] = &RenderParamsP::updateShininessMapping;
-        PBREnvPreset = this->handle->GetInt("PBREnvPreset", 4);
+        PBREnvPreset = this->handle->GetInt("PBREnvPreset", 1);
         funcs["PBREnvPreset"] = &RenderParamsP::updatePBREnvPreset;
         PBREnvIntensity = this->handle->GetFloat("PBREnvIntensity", 1.0);
         funcs["PBREnvIntensity"] = &RenderParamsP::updatePBREnvIntensity;
@@ -685,6 +691,14 @@ public:
         self->EffectResolution = self->handle->GetFloat("EffectResolution", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
+    static void updateTemporalAccum(RenderParamsP *self) {
+        self->TemporalAccum = self->handle->GetBool("TemporalAccum", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateTemporalAccumSamples(RenderParamsP *self) {
+        self->TemporalAccumSamples = self->handle->GetInt("TemporalAccumSamples", 32);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusion(RenderParamsP *self) {
         self->Occlusion = self->handle->GetBool("Occlusion", false);
     }
@@ -854,7 +868,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvPreset(RenderParamsP *self) {
-        self->PBREnvPreset = self->handle->GetInt("PBREnvPreset", 4);
+        self->PBREnvPreset = self->handle->GetInt("PBREnvPreset", 1);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvIntensity(RenderParamsP *self) {
@@ -2914,6 +2928,104 @@ void RenderParams::removeEffectResolution() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docTemporalAccum() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Keep refining the image while the camera holds still.\n"
+"\n"
+"Multisampling antialiases the geometry it rasterizes and nothing\n"
+"else: every sample inside one triangle is shaded once, so a\n"
+"specular highlight crawling across a curved surface, a normal or\n"
+"texture detail below the pixel, and every screen-space pass\n"
+"computed after the resolve -- ambient occlusion, outlines,\n"
+"section caps, the light shafts -- are left exactly as aliased or\n"
+"as noisy as they were drawn. More coverage samples cannot help\n"
+"any of them.\n"
+"\n"
+"This spends time instead. Once the camera stops, each further\n"
+"frame offsets the projection by a fraction of a pixel and\n"
+"averages into what is already on screen, so the whole pipeline\n"
+"converges toward what supersampling it would have given -- and\n"
+"it costs nothing at all while anything is moving.\n"
+"\n"
+"There is no reprojection and no history rejection, because\n"
+"nothing moved: the accumulation is thrown away outright on any\n"
+"camera, scene or highlight change, so a drag or an orbit returns\n"
+"to the ordinary multisampled frame immediately with no ghosting,\n"
+"smearing or trailing on thin edges. It is a refinement on top of\n"
+"multisampling, not a replacement for it -- leave the antialiasing\n"
+"preference where it is.\n"
+"\n"
+"The cost is idle GPU time: a parked view keeps drawing until it\n"
+"has converged (TemporalAccumSamples), then stops and asks for\n"
+"nothing more. On a laptop or a tablet that is battery, which is\n"
+"why this is off by default and why it does not travel in a saved\n"
+"document.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getTemporalAccum() {
+    return instance()->TemporalAccum;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultTemporalAccum() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setTemporalAccum(const bool &v) {
+    instance()->handle->SetBool("TemporalAccum",v);
+    instance()->TemporalAccum = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeTemporalAccum() {
+    instance()->handle->RemoveBool("TemporalAccum");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docTemporalAccumSamples() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many jittered samples the idle accumulation converges over\n"
+"before the view goes quiet (2-256, TemporalAccum only).\n"
+"\n"
+"The sequence is a Halton (2,3) pair over the pixel, so it fills\n"
+"the pixel evenly at every count rather than clumping, and it is\n"
+"indexed by sample number -- frame N of an accumulation is the\n"
+"same frame N every time, which is what keeps a rendered\n"
+"comparison reproducible.\n"
+"\n"
+"Most of the visible gain arrives in the first handful of\n"
+"samples, since the error of an average falls with the square\n"
+"root of the count: 32 halves the residual noise of 8, and 128\n"
+"halves it again for four times the work. Raise it for a still\n"
+"worth waiting on, lower it to reach the quiet state sooner.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getTemporalAccumSamples() {
+    return instance()->TemporalAccumSamples;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultTemporalAccumSamples() {
+    const static long def = 32;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setTemporalAccumSamples(const long &v) {
+    instance()->handle->SetInt("TemporalAccumSamples",v);
+    instance()->TemporalAccumSamples = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeTemporalAccumSamples() {
+    instance()->handle->RemoveInt("TemporalAccumSamples");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docOcclusion() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Skip drawing what the depth buffer proves could not have\n"
@@ -4434,15 +4546,17 @@ const char *RenderParams::docPBREnvPreset() {
 "roughness -- which is what made physically based shading look\n"
 "like painted plastic.\n"
 "\n"
-"Interior (the default) = a room with one window and a ceiling\n"
+"Interior = a room with one window and a ceiling\n"
 "panel, walls close enough to bounce. One hard key against a\n"
 "dark surround, which is what gives the crispest highlight and\n"
 "the strongest read of form. Studio = four soft boxes on a dark\n"
 "surround, the product-shot rig, gentler and more even than\n"
-"Interior. Gradient = the smooth three-band dome this engine\n"
-"used before the others existed; the flattest and the most\n"
-"even, and the one to pick to have an older document's look\n"
-"back. Overcast = a bright sky weighted to the zenith over dark\n"
+"Interior. Gradient (the default) = the smooth three-band dome\n"
+"this engine used before the others existed; the flattest and\n"
+"the most even, which is why it is where a view starts -- it\n"
+"stays out of the way of the model being worked on, and it is\n"
+"the one to pick to have an older document's look back.\n"
+"Overcast = a bright sky weighted to the zenith over dark\n"
 "ground, soft and neutral. Sunset = a low warm sun with a deep\n"
 "sky, the strongest colour separation, and the only one that\n"
 "tints the whole frame. Light tent = a box of white panels,\n"
@@ -4459,7 +4573,7 @@ const long & RenderParams::getPBREnvPreset() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const long & RenderParams::defaultPBREnvPreset() {
-    const static long def = 4;
+    const static long def = 1;
     return def;
 }
 

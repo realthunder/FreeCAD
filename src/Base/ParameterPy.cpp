@@ -323,7 +323,10 @@ Py::Object ParameterGrpPy::getGroup(const Py::Tuple& args)
 
         throw Py::RuntimeError("GetGroup failed");
     }
-    _PY_CATCH(return Py::None())
+    catch (const Base::Exception& e) {
+        e.setPyException();
+        throw Py::Exception();
+    }
 }
 
 Py::Object ParameterGrpPy::getManager(const Py::Tuple& args)

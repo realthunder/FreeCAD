@@ -60,6 +60,9 @@ if(NOT FREECAD_LIBPACK_USE OR FREECAD_LIBPACK_CHECKFILE_CLBUNDLER)
     SetupPybind11()
     SetupXercesC()
     find_package(ZLIB REQUIRED)
+    # The unit schemas format numbers through ICU. Qt already links it on every
+    # platform this builds on, so this costs no new library at run time.
+    find_package(ICU REQUIRED COMPONENTS uc i18n)
     find_package(PyCXX REQUIRED)
     SetupOpenCasCade()
     if(BUILD_GUI)
@@ -102,6 +105,12 @@ SetGlobalCompilerAndLinkerSettings()
 
 add_subdirectory(src)
 add_subdirectory(data)
+
+# After every subdirectory has declared what it generates: drop generated
+# binding files this configuration no longer produces. A build directory
+# outlives the source layout, and a leftover on the include path shadows the
+# real header (see fc_sweep_orphan_bindings in cMake/FreeCadMacros.cmake).
+fc_sweep_orphan_bindings()
 
 BuildAndInstallDesignerPlugin()
 

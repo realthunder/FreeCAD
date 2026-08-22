@@ -622,7 +622,7 @@ Data::ElementMapPtr TopoShape::resetElementMap(Data::ElementMapPtr elementMap)
     if (_Cache && elementMap != this->elementMap(false)) {
         for (auto &info : _Cache->infos)
             info.clear();
-    } else
+    } else if (elementMap)
         INIT_SHAPE_CACHE();
     if (elementMap) {
         _Cache->cachedElementMap = elementMap;
@@ -699,13 +699,21 @@ bool TopoShape::hasPendingElementMap() const
 void TopoShape::operator = (const TopoShape& sh)
 {
     if (this != &sh) {
-        this->setShape(sh._Shape, true);
+        // Take the source's state as it stands, and touch nothing else. Every
+        // member below is overwritten, so there is nothing here to invalidate:
+        // going through setShape()/resetElementMap() only built a cache for the
+        // shape being replaced and another for the new one, and then dropped
+        // both on the next line. A cache is an array of 90 OCCT maps, so that
+        // was the bulk of the cost of copying a shape -- and worse for a mapped
+        // shape, where resetElementMap() would clear the infos of the very
+        // cache being adopted, throwing away the source's own sub shapes.
+        this->_Shape._Shape = sh._Shape.getShape();
         this->Tag = sh.Tag;
         this->Hasher = sh.Hasher;
         this->_Cache = sh._Cache;
         this->_ParentCache = sh._ParentCache;
         this->_SubLocation = sh._SubLocation;
-        resetElementMap(sh.elementMap(false));
+        Data::ComplexGeoData::resetElementMap(sh.elementMap(false));
     }
 }
 
@@ -1457,7 +1465,7 @@ TopoShape TopoShape::getSubTopoShape(const char *Type, bool silent) const {
     auto res = shapeTypeAndIndex(mapped.index);
     if(res.second<=0) {
         if(!silent)
-            FC_THROWM(Base::CADKernelError,"Invalid shape name " << (Type?Type:""));
+            FC_THROWM(Base::ValueError,"Invalid shape name " << (Type?Type:""));
         return TopoShape();
     }
     return getSubTopoShape(res.first,res.second,silent);

@@ -20,11 +20,11 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef Fem_FemMeshObject_H
-#define Fem_FemMeshObject_H
+#pragma once
 
 #include <App/FeaturePython.h>
 #include <App/GeoFeature.h>
+#include <App/SuppressibleExtension.h>
 
 #include "FemMesh.h"
 #include "FemMeshProperty.h"
@@ -63,12 +63,12 @@ public:
 protected:
     /// get called by the container when a property has changed
     void onChanged(const App::Property* prop) override;
+
+private:
+    App::SuppressibleExtension suppressibleExt;
 };
 
 using FemMeshObjectPython = App::FeaturePythonT<FemMeshObject>;
 
 
 }  // namespace Fem
-
-
-#endif  // Fem_FemMeshObject_H

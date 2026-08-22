@@ -20,10 +20,9 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef FEM_ViewProviderSolver_H
-#define FEM_ViewProviderSolver_H
+#pragma once
 
-#include <Gui/ViewProviderPythonFeature.h>
+#include <Gui/ViewProviderFeaturePython.h>
 #include <Mod/Fem/FemGlobal.h>
 
 
@@ -61,9 +60,6 @@ public:
     bool canDelete(App::DocumentObject* obj) const override;
 };
 
-using ViewProviderSolverPython = Gui::ViewProviderPythonFeatureT<ViewProviderSolver>;
+using ViewProviderSolverPython = Gui::ViewProviderFeaturePythonT<ViewProviderSolver>;
 
 }  // namespace FemGui
-
-
-#endif  // FEM_ViewProviderSolver_H

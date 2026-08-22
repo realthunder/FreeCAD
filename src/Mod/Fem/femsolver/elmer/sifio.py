@@ -29,6 +29,7 @@ __url__ = "https://www.freecad.org"
 #  @{
 
 import collections
+from FreeCAD import Units
 
 SIMULATION = "Simulation"
 CONSTANTS = "Constants"
@@ -78,10 +79,10 @@ _TYPE_STRING = "String"
 _TYPE_FILE = "File"
 _TYPE_VARIABLE = "Variable"
 
-WARN = "\"Warn\""
-IGNORE = "\"Ignore\""
-ABORT = "\"Abort\""
-SILENT = "\"Silent\""
+WARN = '"Warn"'
+IGNORE = '"Ignore"'
+ABORT = '"Abort"'
+SILENT = '"Silent"'
 
 
 def createSection(name):
@@ -104,7 +105,7 @@ def isValid(section):
     return section.name in _VALID_SECTIONS
 
 
-class Builder(object):
+class Builder:
 
     _ACTIVE_SOLVERS = "Active Solvers"
 
@@ -191,7 +192,7 @@ class Builder(object):
         return iter(allSections)
 
 
-class Sif(object):
+class Sif:
 
     _CHECK_KEYWORDS = "Check Keywords"
     _HEADER = "Header"
@@ -238,7 +239,7 @@ class Sif(object):
         stream.write('"%s"' % value)
 
 
-class Section(object):
+class Section:
 
     def __init__(self, name):
         self.name = name
@@ -274,7 +275,7 @@ class FileAttr(str):
     pass
 
 
-class _Writer(object):
+class _Writer:
 
     def __init__(self, idManager, sections, stream):
         self._idMgr = idManager
@@ -282,11 +283,13 @@ class _Writer(object):
         self._stream = stream
 
     def write(self):
-        sortedSections = sorted(
-            self._sections, key=lambda s: s.priority, reverse=True)
+        firstSection, *sortedSections = sorted(
+            self._sections, key=lambda s: s.priority, reverse=True
+        )
+        self._writeSection(firstSection)
         for s in sortedSections:
-            self._writeSection(s)
             self._stream.write(_NEWLINE)
+            self._writeSection(s)
 
     def _writeSection(self, s):
         self._writeSectionHeader(s)
@@ -296,8 +299,8 @@ class _Writer(object):
 
     def _writeSectionHeader(self, s):
         self._stream.write(s.name)
-        self._stream.write(_WHITESPACE)
         if isNumbered(s):
+            self._stream.write(_WHITESPACE)
             self._stream.write(str(self._idMgr.getId(s)))
 
     def _writeSectionFooter(self, s):
@@ -332,10 +335,7 @@ class _Writer(object):
         return next(it)
 
     def _isCollection(self, data):
-        return (
-            not isinstance(data, str)
-            and isinstance(data, collections.abc.Iterable)
-        )
+        return not isinstance(data, str) and isinstance(data, collections.abc.Iterable)
 
     def _checkScalar(self, dataType):
         if issubclass(dataType, int):
@@ -359,7 +359,7 @@ class _Writer(object):
         self._stream.write(_WHITESPACE)
         # check if we have a variable string
         if attrType is _TYPE_STRING:
-            if data.startswith('Variable'):
+            if data.startswith("Variable"):
                 attrType = _TYPE_VARIABLE
         if attrType is not _TYPE_VARIABLE:
             self._stream.write(attrType)
@@ -367,7 +367,7 @@ class _Writer(object):
         output = self._preprocess(data, type(data))
         # in case of a variable the output must be without the quatoation marks
         if attrType is _TYPE_VARIABLE:
-            output = output.lstrip('\"')
+            output = output.lstrip('"')
             # we cannot use rstrip because there are two subsequent " at the end
             output = output[:-1]
         self._stream.write(output)
@@ -382,7 +382,7 @@ class _Writer(object):
         self._stream.write(_WHITESPACE)
         # check if we have a variable string
         if attrType is _TYPE_STRING:
-            if data.startswith('Variable'):
+            if data.startswith("Variable"):
                 attrType = _TYPE_VARIABLE
         if attrType is not _TYPE_VARIABLE:
             self._stream.write(attrType)
@@ -391,7 +391,7 @@ class _Writer(object):
             output = self._preprocess(val, type(val))
             # in case of a variable the output must be without the quatoation marks
             if attrType is _TYPE_VARIABLE:
-                output = output.lstrip('\"')
+                output = output.lstrip('"')
                 # we cannot use rstrip because there are two subsequent " at the end
                 output = output[:-1]
             self._stream.write(output)
@@ -411,22 +411,28 @@ class _Writer(object):
     def _getSifDataType(self, dataType):
         if issubclass(dataType, Section):
             return _TYPE_INTEGER
-        if issubclass(dataType, bool):
+        elif issubclass(dataType, bool):
             return _TYPE_LOGICAL
-        if issubclass(dataType, int):
+        elif issubclass(dataType, int):
             return _TYPE_INTEGER
-        if issubclass(dataType, float):
+        elif issubclass(dataType, float):
             return _TYPE_REAL
-        if issubclass(dataType, str):
+        elif issubclass(dataType, str):
             return _TYPE_STRING
-        raise ValueError("Unsupported data type: %s" % dataType)
+        elif issubclass(dataType, Units.Quantity):
+            return _TYPE_REAL
+        else:
+            raise ValueError("Unsupported data type: %s" % dataType)
 
     def _preprocess(self, data, dataType):
         if issubclass(dataType, Section):
             return str(self._idMgr.getId(data))
-        if issubclass(dataType, str):
+        elif issubclass(dataType, str):
             return '"%s"' % data
-        return str(data)
+        elif issubclass(dataType, Units.Quantity):
+            return f"{data.Value:.13g}"
+        else:
+            return str(data)
 
     def _getAttrTypeScalar(self, data):
         return self._getSifDataType(type(data))
@@ -442,7 +448,7 @@ class _Writer(object):
         return self._getSifDataType(dataType)
 
 
-class _IdManager(object):
+class _IdManager:
 
     def __init__(self, firstId=1):
         self._pool = dict()
@@ -459,5 +465,6 @@ class _IdManager(object):
         if section not in self._ids:
             self.setId(section)
         return self._ids[section]
+
 
 ##  @}

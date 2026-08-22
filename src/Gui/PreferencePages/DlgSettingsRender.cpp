@@ -102,6 +102,39 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
 
 
     // Auto generated code (Tools/params_utils.py:448)
+    groupIdlerefinement = new QGroupBox(this);
+    layout->addWidget(groupIdlerefinement);
+    auto layoutHorizIdlerefinement = new QHBoxLayout(groupIdlerefinement);
+    auto layoutIdlerefinement = new QVBoxLayout();
+    layoutHorizIdlerefinement->addLayout(layoutIdlerefinement);
+    layoutHorizIdlerefinement->addStretch();
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutIdlerefinement->addLayout(layoutRow);
+    TemporalAccum = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(TemporalAccum);
+    TemporalAccum->setChecked(Gui::RenderParams::defaultTemporalAccum());
+    TemporalAccum->setEntryName("TemporalAccum");
+    TemporalAccum->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutIdlerefinement->addLayout(layoutRow);
+    labelTemporalAccumSamples = new QLabel(this);
+    layoutRow->addWidget(labelTemporalAccumSamples);
+    TemporalAccumSamples = new Gui::PrefSpinBox(this);
+    layoutRow->addWidget(TemporalAccumSamples);
+    TemporalAccumSamples->setValue(Gui::RenderParams::defaultTemporalAccumSamples());
+    TemporalAccumSamples->setEntryName("TemporalAccumSamples");
+    TemporalAccumSamples->setParamGrpPath("View/Render");
+
+
+    // Auto generated code (Tools/params_utils.py:448)
     groupScenestreaming = new QGroupBox(this);
     layout->addWidget(groupScenestreaming);
     auto layoutHorizScenestreaming = new QHBoxLayout(groupScenestreaming);
@@ -677,6 +710,8 @@ void DlgSettingsRender::saveSettings()
     Type->onSave();
     OutputTransform->onSave();
     Exposure->onSave();
+    TemporalAccum->onSave();
+    TemporalAccumSamples->onSave();
     CoarseTessellation->onSave();
     LevelTolerance->onSave();
     LevelThreads->onSave();
@@ -724,6 +759,8 @@ void DlgSettingsRender::loadSettings()
     Type->onRestore();
     OutputTransform->onRestore();
     Exposure->onRestore();
+    TemporalAccum->onRestore();
+    TemporalAccumSamples->onRestore();
     CoarseTessellation->onRestore();
     LevelTolerance->onRestore();
     LevelThreads->onRestore();
@@ -781,6 +818,12 @@ void DlgSettingsRender::retranslateUi()
     Exposure->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docExposure()));
     labelExposure->setText(QObject::tr("Exposure"));
     labelExposure->setToolTip(Exposure->toolTip());
+    groupIdlerefinement->setTitle(QObject::tr("Idle refinement"));
+    TemporalAccum->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docTemporalAccum()));
+    TemporalAccum->setText(QObject::tr("Idle temporal accumulation"));
+    TemporalAccumSamples->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docTemporalAccumSamples()));
+    labelTemporalAccumSamples->setText(QObject::tr("Idle accumulation samples"));
+    labelTemporalAccumSamples->setToolTip(TemporalAccumSamples->toolTip());
     groupScenestreaming->setTitle(QObject::tr("Scene streaming"));
     CoarseTessellation->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCoarseTessellation()));
     labelCoarseTessellation->setText(QObject::tr("Coarse tessellation level"));

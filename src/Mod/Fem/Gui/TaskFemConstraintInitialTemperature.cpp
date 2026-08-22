@@ -23,12 +23,10 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
-#ifndef _PreComp_
 #include <QMessageBox>
 #include <sstream>
-#endif
+
 
 #include <Gui/Command.h>
 #include <Mod/Fem/App/FemConstraintInitialTemperature.h>
@@ -44,7 +42,8 @@ using namespace Gui;
 
 TaskFemConstraintInitialTemperature::TaskFemConstraintInitialTemperature(
     ViewProviderFemConstraintInitialTemperature* ConstraintView,
-    QWidget* parent)
+    QWidget* parent
+)
     : TaskFemConstraint(ConstraintView, parent, "FEM_ConstraintInitialTemperature")
     , ui(new Ui_TaskFemConstraintInitialTemperature)
 {
@@ -55,15 +54,15 @@ TaskFemConstraintInitialTemperature::TaskFemConstraintInitialTemperature(
     this->groupLayout()->addWidget(proxy);
 
     // Get the feature data
-    Fem::ConstraintInitialTemperature* pcConstraint =
-        static_cast<Fem::ConstraintInitialTemperature*>(ConstraintView->getObject());
+    Fem::ConstraintInitialTemperature* pcConstraint
+        = ConstraintView->getObject<Fem::ConstraintInitialTemperature>();
     std::vector<App::DocumentObject*> Objects = pcConstraint->References.getValues();
     std::vector<std::string> SubElements = pcConstraint->References.getSubValues();
 
     // Fill data into dialog elements
-    ui->if_temperature->setValue(pcConstraint->initialTemperature.getQuantityValue());
+    ui->if_temperature->setValue(pcConstraint->InitialTemperature.getQuantityValue());
 
-    ui->if_temperature->bind(pcConstraint->initialTemperature);
+    ui->if_temperature->bind(pcConstraint->InitialTemperature);
 }
 
 TaskFemConstraintInitialTemperature::~TaskFemConstraintInitialTemperature() = default;
@@ -82,7 +81,8 @@ void TaskFemConstraintInitialTemperature::changeEvent(QEvent*)
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 TaskDlgFemConstraintInitialTemperature::TaskDlgFemConstraintInitialTemperature(
-    ViewProviderFemConstraintInitialTemperature* ConstraintView)
+    ViewProviderFemConstraintInitialTemperature* ConstraintView
+)
 {
     this->ConstraintView = ConstraintView;
     assert(ConstraintView);
@@ -92,65 +92,35 @@ TaskDlgFemConstraintInitialTemperature::TaskDlgFemConstraintInitialTemperature(
 }
 
 //==== calls from the TaskView ===============================================================
-void TaskDlgFemConstraintInitialTemperature::open()
-{
-    // a transaction is already open at creation time of the panel
-    if (!Gui::Command::hasPendingCommand()) {
-        QString msg = QObject::tr("Constraint initial temperature");
-        Gui::Command::openCommand((const char*)msg.toUtf8());
-        ConstraintView->setVisible(true);
-        Gui::Command::doCommand(
-            Gui::Command::Doc,
-            ViewProviderFemConstraint::gethideMeshShowPartStr(
-                (static_cast<Fem::Constraint*>(ConstraintView->getObject()))->getNameInDocument())
-                .c_str());  // OvG: Hide meshes and show parts
-    }
-}
 
 bool TaskDlgFemConstraintInitialTemperature::accept()
 {
     std::string name = ConstraintView->getObject()->getNameInDocument();
-    const TaskFemConstraintInitialTemperature* parameterTemperature =
-        static_cast<const TaskFemConstraintInitialTemperature*>(parameter);
+    const TaskFemConstraintInitialTemperature* parameterTemperature
+        = static_cast<const TaskFemConstraintInitialTemperature*>(parameter);
 
     try {
-        Gui::Command::doCommand(Gui::Command::Doc,
-                                "App.ActiveDocument.%s.initialTemperature = \"%s\"",
-                                name.c_str(),
-                                parameterTemperature->get_temperature().c_str());
-
-        std::string scale = parameterTemperature->getScale();  // OvG: determine modified scale
-        Gui::Command::doCommand(Gui::Command::Doc,
-                                "App.ActiveDocument.%s.Scale = %s",
-                                name.c_str(),
-                                scale.c_str());  // OvG: implement modified scale
-    }
-    catch (const Base::Exception& e) {
-        QMessageBox::warning(parameter, tr("Input error"), QString::fromUtf8(e.what()));
-        return false;
-    }
-
-    try {
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.ActiveDocument.%s.InitialTemperature = \"%s\"",
+            name.c_str(),
+            parameterTemperature->get_temperature().c_str()
+        );
         Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
         if (!ConstraintView->getObject()->isValid()) {
-            THROWM(Base::RuntimeError, ConstraintView->getObject()->getStatusString())
+            throw Base::RuntimeError(ConstraintView->getObject()->getStatusString());
         }
+
+        ConstraintView->getDocument()->commitCommand();  // Opened in
+                                                         // ViewProviderDocumentObject::startDefaultEditMode()
         Gui::Command::doCommand(Gui::Command::Gui, "Gui.activeDocument().resetEdit()");
-        Gui::Command::commitCommand();
     }
     catch (const Base::Exception& e) {
-        QMessageBox::warning(parameter, tr("Input error"), QString::fromUtf8(e.what()));
+        ConstraintView->getDocument()->abortCommand();  // Opened in
+                                                        // ViewProviderDocumentObject::startDefaultEditMode()
+        QMessageBox::warning(parameter, tr("Input Error"), QString::fromLatin1(e.what()));
         return false;
     }
-
-    return true;
-}
-
-bool TaskDlgFemConstraintInitialTemperature::reject()
-{
-    Gui::Command::abortCommand();
-    Gui::Command::doCommand(Gui::Command::Gui, "Gui.activeDocument().resetEdit()");
-    Gui::Command::updateActive();
 
     return true;
 }

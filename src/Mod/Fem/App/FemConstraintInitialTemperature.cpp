@@ -23,7 +23,6 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
 #include "FemConstraintInitialTemperature.h"
 
@@ -34,23 +33,23 @@ PROPERTY_SOURCE(Fem::ConstraintInitialTemperature, Fem::Constraint)
 
 ConstraintInitialTemperature::ConstraintInitialTemperature()
 {
-    ADD_PROPERTY(initialTemperature, (300.0));
-
-    ADD_PROPERTY_TYPE(Points,
-                      (Base::Vector3d()),
-                      "ConstraintInitialTemperature",
-                      App::PropertyType(App::Prop_ReadOnly | App::Prop_Output),
-                      "Points where symbols are drawn");
-    ADD_PROPERTY_TYPE(Normals,
-                      (Base::Vector3d()),
-                      "ConstraintInitialTemperature",
-                      App::PropertyType(App::Prop_ReadOnly | App::Prop_Output),
-                      "Normals where symbols are drawn");
-    Points.setValues(std::vector<Base::Vector3d>());
-    Normals.setValues(std::vector<Base::Vector3d>());
-
-    References.setStatus(App::Property::ReadOnly, true);
-    References.setStatus(App::Property::Hidden, true);
+    ADD_PROPERTY(InitialTemperature, (300.0));
+    ADD_PROPERTY(EnableFinalTemperature, (false));
+    ADD_PROPERTY(FinalTemperature, (300.0));
+    ADD_PROPERTY_TYPE(
+        EnableAmplitude,
+        (false),
+        "",
+        (App::PropertyType)(App::Prop_None),
+        "Amplitude of the final temperature field"
+    );
+    ADD_PROPERTY_TYPE(
+        AmplitudeValues,
+        (std::vector<std::string> {"0, 0", "1, 1"}),
+        "",
+        (App::PropertyType)(App::Prop_None),
+        "Amplitude values"
+    );
 }
 
 App::DocumentObjectExecReturn* ConstraintInitialTemperature::execute()
@@ -63,34 +62,25 @@ const char* ConstraintInitialTemperature::getViewProviderName() const
     return "FemGui::ViewProviderFemConstraintInitialTemperature";
 }
 
-void ConstraintInitialTemperature::handleChangedPropertyType(Base::XMLReader& reader,
-                                                             const char* TypeName,
-                                                             App::Property* prop)
+void ConstraintInitialTemperature::handleChangedPropertyName(
+    Base::XMLReader& reader,
+    const char* typeName,
+    const char* propName
+)
 {
-    // property initialTemperature had App::PropertyFloat, was changed to App::PropertyTemperature
-    if (prop == &initialTemperature && strcmp(TypeName, "App::PropertyFloat") == 0) {
-        App::PropertyFloat initialTemperatureProperty;
-        // restore the PropertyFloat to be able to set its value
-        initialTemperatureProperty.Restore(reader);
-        initialTemperature.setValue(initialTemperatureProperty.getValue());
+    if (strcmp(propName, "initialTemperature") == 0
+        && (strcmp(typeName, "App::PropertyTemperature") == 0
+            || strcmp(typeName, "App::PropertyFloat") == 0)) {
+        App::PropertyTemperature initialTemp;
+        initialTemp.Restore(reader);
+        InitialTemperature.setValue(initialTemp.getValue());
+    }
+    else {
+        Constraint::handleChangedPropertyName(reader, typeName, propName);
     }
 }
 
 void ConstraintInitialTemperature::onChanged(const App::Property* prop)
 {
-    // Note: If we call this at the end, then the arrows are not oriented correctly initially
-    // because the NormalDirection has not been calculated yet
     Constraint::onChanged(prop);
-
-    if (prop == &References) {
-        std::vector<Base::Vector3d> points;
-        std::vector<Base::Vector3d> normals;
-        int scale = 1;  // OvG: Enforce use of scale
-        if (getPoints(points, normals, &scale)) {
-            Points.setValues(points);
-            Normals.setValues(normals);
-            Scale.setValue(scale);  // OvG: Scale
-            Points.touch();         // This triggers ViewProvider::updateData()
-        }
-    }
 }

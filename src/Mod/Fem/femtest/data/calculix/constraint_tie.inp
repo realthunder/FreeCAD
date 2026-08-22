@@ -18535,16 +18535,16 @@ Evolumes
 
 ***********************************************************
 ** constraints fixed node sets
-** ConstraintFixed
-*NSET,NSET=ConstraintFixed
+** Fixed
+*NSET,NSET=Fixed
 3,
 9,
 461,
 
 ***********************************************************
 ** constraints tie surface sets
-** ConstraintTie
-*SURFACE, NAME=TIE_DEPConstraintTie
+** Tie
+*SURFACE, NAME=TIE_DEPTie
 4834,S1
 4835,S1
 4890,S1
@@ -18567,7 +18567,7 @@ Evolumes
 9637,S1
 9877,S1
 10493,S2
-*SURFACE, NAME=TIE_INDConstraintTie
+*SURFACE, NAME=TIE_INDTie
 4687,S4
 5445,S3
 5759,S4
@@ -18591,6 +18591,9 @@ Evolumes
 9684,S1
 10647,S2
 
+** Physical constants for SI(mm) unit system with Kelvins
+*PHYSICAL CONSTANTS, ABSOLUTE ZERO=0, STEFAN BOLTZMANN=5.670374419e-11
+
 ***********************************************************
 ** Materials
 ** see information about units at file end
@@ -18599,6 +18602,8 @@ Evolumes
 *MATERIAL, NAME=MechanicalMaterial
 *ELASTIC
 210000,0.3
+*EXPANSION, ZERO=0
+0
 
 ***********************************************************
 ** Sections
@@ -18606,33 +18611,33 @@ Evolumes
 
 ***********************************************************
 ** Tie Constraints
-** ConstraintTie
-*TIE, POSITION TOLERANCE=25, ADJUST=NO, NAME=TIEConstraintTie
-TIE_DEPConstraintTie,TIE_INDConstraintTie
+** Tie
+*TIE, POSITION TOLERANCE=25, ADJUST=NO, NAME=TIETie
+TIE_DEPTie, TIE_INDTie
 
 ***********************************************************
 ** At least one step is needed to run an CalculiX analysis of FreeCAD
-*STEP
+*STEP, INC=2000
 *STATIC
 
 
 ***********************************************************
 ** Fixed Constraints
-** ConstraintFixed
+** Fixed
 *BOUNDARY
-ConstraintFixed,1
-ConstraintFixed,2
-ConstraintFixed,3
+Fixed,1
+Fixed,2
+Fixed,3
 
 
 ***********************************************************
 ** constraints force node loads
+** Force
 *CLOAD
-** ConstraintForce
 ** node loads on shape: BooleanFragments:Edge2
-2,2,1666.6666666666667
-8,2,1666.6666666666667
-385,2,6666.666666666667
+2,2,1666.666666667
+8,2,1666.666666667
+385,2,6666.666666667
 
 
 
@@ -18644,18 +18649,18 @@ U
 S, E
 ** outputs --> dat file
 ** reaction forces for Constraint fixed
-*NODE PRINT, NSET=ConstraintFixed, TOTALS=ONLY
+*NODE PRINT, NSET=Fixed, TOTALS=ONLY
 RF
 
-
+*OUTPUT, FREQUENCY=1
 ***********************************************************
-*END STEP 
+*END STEP
 
 ***********************************************************
 ** CalculiX Input file
 **   written by    --> FreeCAD 0.21.0
 **   written on    --> Tue Mar 28 04:35:16 2023
-**   file name     --> 
+**   file name     --> constraint_tie.FCStd
 **   analysis name --> Analysis
 **
 **

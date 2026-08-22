@@ -433,6 +433,12 @@ void BGFXRenderer::Private::buildInstanceGroups()
     struct InstKey {
         uint64_t geomHash, colorHash;
         uint64_t texId, bumpId, emissiveId, occlusionId, mrId;
+        /// The per-face palette rides a uniform and a sampler, so
+        /// instances in one batch must share the whole thing -- the
+        /// images, the tile size and which layer is being read.
+        uint64_t facePalette;
+        float facetexscale;
+        int facetexlayer;
         float texmatrix[16];
         int numVertices, numTri;
         int start, count, part;
@@ -478,6 +484,10 @@ void BGFXRenderer::Private::buildInstanceGroups()
             k.occlusionId = m.occlusionmap->textureId;
         if (m.metallicroughnessmap)
             k.mrId = m.metallicroughnessmap->textureId;
+        k.facePalette =
+            uint64_t(reinterpret_cast<uintptr_t>(m.texturepalette.get()));
+        k.facetexscale = m.facetexscale;
+        k.facetexlayer = m.facetexlayer;
         // The texture matrix feeds any textured route (a bump or
         // material map transforms its texcoords through it too).
         if ((k.texId || k.bumpId || k.emissiveId || k.occlusionId
@@ -560,6 +570,12 @@ void BGFXRenderer::Private::updateBBox()
     static const bool dbg = getenv("FC_BGFX_DEBUG_BBOX") != nullptr;
     bboxValid = false;
     for (const auto &draw : scene) {
+        // A navigation gizmo is not the scene (DrawCall::skipbounds):
+        // the rotation-centre sphere sits wherever the spin is centred
+        // and moves with it, and counting it would drag the shadow
+        // ground and the auto near/far along with the mouse.
+        if (draw.skipbounds)
+            continue;
         if (draw.bboxMin[0] > draw.bboxMax[0])
             continue;
         if (!bboxValid) {

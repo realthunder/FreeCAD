@@ -205,6 +205,18 @@ PyObject* DocumentPy::update(PyObject *args)
     PY_CATCH;
 }
 
+PyObject* DocumentPy::flushLoad(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+
+    PY_TRY {
+        getDocumentPtr()->flushDeferredRestore();
+        Py_Return;
+    }
+    PY_CATCH;
+}
+
 PyObject* DocumentPy::getObject(PyObject *args)
 {
     char *sName;
@@ -212,6 +224,9 @@ PyObject* DocumentPy::getObject(PyObject *args)
         return nullptr;
 
     PY_TRY {
+        // Asking for one by name means needing it now, so anything this
+        // document's load parked is built first.
+        getDocumentPtr()->flushDeferredRestore();
         ViewProvider *pcView = getDocumentPtr()->getViewProviderByName(sName);
         if (pcView)
             return pcView->getPyObject();

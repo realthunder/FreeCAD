@@ -94,6 +94,7 @@ DlgUnitsCalculator::DlgUnitsCalculator( QWidget* parent, Qt::WindowFlags fl )
           << Base::Unit::ElectricCharge
           << Base::Unit::ElectricCurrent
           << Base::Unit::ElectricPotential
+          << Base::Unit::ElectromagneticPotential
           << Base::Unit::Force
           << Base::Unit::Frequency
           << Base::Unit::HeatFlux
@@ -113,6 +114,7 @@ DlgUnitsCalculator::DlgUnitsCalculator( QWidget* parent, Qt::WindowFlags fl )
           << Base::Unit::SpecificEnergy
           << Base::Unit::SpecificHeat
           << Base::Unit::Stiffness
+          << Base::Unit::SurfaceChargeDensity
           << Base::Unit::Temperature
           << Base::Unit::ThermalConductivity
           << Base::Unit::ThermalExpansionCoefficient
@@ -121,6 +123,7 @@ DlgUnitsCalculator::DlgUnitsCalculator( QWidget* parent, Qt::WindowFlags fl )
           << Base::Unit::VacuumPermittivity
           << Base::Unit::Velocity
           << Base::Unit::Volume
+          << Base::Unit::VolumeChargeDensity
           << Base::Unit::VolumeFlowRate
           << Base::Unit::VolumetricThermalExpansionCoefficient
           << Base::Unit::Work;

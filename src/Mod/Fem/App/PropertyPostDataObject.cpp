@@ -20,9 +20,7 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
-#ifndef _PreComp_
 #include <Python.h>
 #include <vtkCompositeDataSet.h>
 #include <vtkMultiBlockDataSet.h>
@@ -32,12 +30,23 @@
 #include <vtkStructuredGrid.h>
 #include <vtkUniformGrid.h>
 #include <vtkUnstructuredGrid.h>
+#include <vtkTable.h>
+#include <vtkXMLTableWriter.h>
 #include <vtkXMLDataSetWriter.h>
+#include <vtkXMLMultiBlockDataWriter.h>
+#include <vtkXMLTableReader.h>
+#include <vtkXMLMultiBlockDataReader.h>
 #include <vtkXMLImageDataReader.h>
 #include <vtkXMLPolyDataReader.h>
 #include <vtkXMLRectilinearGridReader.h>
 #include <vtkXMLStructuredGridReader.h>
 #include <vtkXMLUnstructuredGridReader.h>
+
+
+#ifdef FC_USE_VTK_PYTHON
+# include <vtkPythonUtil.h>
+#else
+# include <Base/PyObjectBase.h>
 #endif
 
 #include <App/Application.h>
@@ -48,6 +57,13 @@
 #include <Base/Stream.h>
 #include <Base/Writer.h>
 #include <CXX/Objects.hxx>
+
+
+#ifdef _MSC_VER
+# include <zipios++/zipios-config.h>
+#endif
+#include <zipios++/zipoutputstream.h>
+#include <zipios++/zipinputstream.h>
 
 #include "PropertyPostDataObject.h"
 
@@ -153,12 +169,39 @@ int PropertyPostDataObject::getDataType()
 
 PyObject* PropertyPostDataObject::getPyObject()
 {
-    // TODO: fetch the vtk python object from the data set and return it
-    return Py::new_reference_to(Py::None());
+#ifdef FC_USE_VTK_PYTHON
+    // create a copy first
+    auto copy = static_cast<PropertyPostDataObject*>(Copy());
+
+    // get the data python wrapper
+    PyObject* py_dataset = vtkPythonUtil::GetObjectFromPointer(copy->getValue());
+    auto result = Py::new_reference_to(py_dataset);
+    delete copy;
+
+    return result;
+#else
+    PyErr_SetString(PyExc_NotImplementedError, "VTK python wrapper not available");
+    Py_Return;
+#endif
 }
 
-void PropertyPostDataObject::setPyObject(PyObject* /*value*/)
-{}
+void PropertyPostDataObject::setPyObject([[maybe_unused]] PyObject* value)
+{
+#ifdef FC_USE_VTK_PYTHON
+    vtkObjectBase* obj = vtkPythonUtil::GetPointerFromObject(value, "vtkDataObject");
+    if (!obj) {
+        throw Base::TypeError("Can only set vtkDataObject");
+    }
+    auto dobj = static_cast<vtkDataObject*>(obj);
+    createDataObjectByExternalType(dobj);
+
+    aboutToSetValue();
+    m_dataObject->DeepCopy(dobj);
+    hasSetValue();
+#else
+    throw Base::NotImplementedError();
+#endif
+}
 
 App::Property* PropertyPostDataObject::Copy() const
 {
@@ -201,8 +244,11 @@ void PropertyPostDataObject::createDataObjectByExternalType(vtkSmartPointer<vtkD
         case VTK_MULTIPIECE_DATA_SET:
             m_dataObject = vtkSmartPointer<vtkMultiPieceDataSet>::New();
             break;
-        default:
+        case VTK_TABLE:
+            m_dataObject = vtkSmartPointer<vtkTable>::New();
             break;
+        default:
+            throw Base::TypeError("Unsupported VTK data type");
     };
 }
 
@@ -247,14 +293,15 @@ void PropertyPostDataObject::getPaths(std::vector<App::ObjectIdentifier>& /*path
 void PropertyPostDataObject::Save(Base::Writer& writer) const
 {
     std::string extension;
-    if(!m_dataObject) {
+    if (!m_dataObject) {
         writer.Stream() << writer.ind() << "<Data/>\n";
         return;
     }
 
     bool forceXML = writer.isForceXML() > 1;
-    if(!forceXML)
+    if (!forceXML) {
         extension = ".";
+    }
 
     switch (m_dataObject->GetDataObjectType()) {
 
@@ -271,31 +318,26 @@ void PropertyPostDataObject::Save(Base::Writer& writer) const
             extension += "vtu";
             break;
         case VTK_UNIFORM_GRID:
-            extension += "vti"; // image data
+            extension += "vti";  // image data
             break;
-            // TODO:multi-datasets use multiple files, this needs to be implemented specially
-            //         case VTK_COMPOSITE_DATA_SET:
-            //             prop->m_dataObject = vtkCompositeDataSet::New();
-            //             break;
-            //         case VTK_MULTIBLOCK_DATA_SET:
-            //             prop->m_dataObject = vtkMultiBlockDataSet::New();
-            //             break;
-            //         case VTK_MULTIPIECE_DATA_SET:
-            //             prop->m_dataObject = vtkMultiPieceDataSet::New();
-            //             break;
+        case VTK_MULTIBLOCK_DATA_SET:
+            extension += "zip";
+            break;
+        case VTK_TABLE:
+            extension += "vtt";
+            break;
         default:
             break;
     };
 
-    if(forceXML) {
-        writer.Stream() << writer.ind() << "<Data cdata=\""
-            << extension << "\"/>\n";
+    if (forceXML) {
+        writer.Stream() << writer.ind() << "<Data cdata=\"" << extension << "\"/>\n";
         save(writer.beginCharStream() << '\n', writer);
         writer.endCharStream() << '\n' << writer.ind() << "</Data>\n";
-    } else {
+    }
+    else {
         writer.Stream() << writer.ind() << "<Data file=\""
-                        << writer.addFile(getFileName(extension.c_str()), this)
-                        << "\"/>\n";
+                        << writer.addFile(getFileName(extension.c_str()), this) << "\"/>\n";
     }
 }
 
@@ -303,28 +345,46 @@ void PropertyPostDataObject::Restore(Base::XMLReader& reader)
 {
     reader.readElement("Data");
 
-    std::string ext = reader.getAttribute("cdata","");
-    if(ext.size()) {
-        restore(reader.beginCharStream(),ext);
+    std::string ext = reader.getAttribute("cdata", "");
+    if (!ext.empty()) {
+        restore(reader.beginCharStream(), ext);
         return;
-    } else if(!reader.hasAttribute("file")) {
+    }
+    if (!reader.hasAttribute("file")) {
         return;
     }
 
-    std::string file(reader.getAttribute("file"));
-
+    std::string file(reader.getAttribute<const char*>("file"));
     if (!file.empty()) {
         // initiate a file read
         reader.addFile(file.c_str(), this);
     }
 }
 
-void PropertyPostDataObject::SaveDocFile(Base::Writer& writer) const
+void add_to_zip(Base::FileInfo path, int zip_path_idx, zipios::ZipOutputStream& ZipWriter)
 {
-    save(writer.Stream(),writer);
+
+    if (path.isDir()) {
+        for (auto file : path.getDirectoryContent()) {
+            add_to_zip(file, zip_path_idx, ZipWriter);
+        }
+    }
+    else {
+        ZipWriter.putNextEntry(path.filePath().substr(zip_path_idx));
+        Base::ifstream file(path, std::ios::in | std::ios::binary);
+        if (file) {
+            std::streambuf* buf = file.rdbuf();
+            ZipWriter << buf;
+        }
+    }
 }
 
-void PropertyPostDataObject::save(std::ostream &s, Base::Writer &writer) const
+void PropertyPostDataObject::SaveDocFile(Base::Writer& writer) const
+{
+    save(writer.Stream(), writer);
+}
+
+void PropertyPostDataObject::save(std::ostream& s, Base::Writer& writer) const
 {
     // If the shape is empty we simply store nothing. The file size will be 0 which
     // can be checked when reading in the data.
@@ -332,24 +392,48 @@ void PropertyPostDataObject::save(std::ostream &s, Base::Writer &writer) const
         return;
     }
 
-    Base::FileInfo fi(App::Application::getTempFileName(), true);
+    // create a temporary file and copy the content to the zip stream
+    // once the tmp. filename is known use always the same because otherwise
+    // we may run into some problems on the Linux platform
+    static Base::FileInfo fi = Base::FileInfo(App::Application::getTempFileName());
 
-    vtkSmartPointer<vtkXMLDataSetWriter> xmlWriter = vtkSmartPointer<vtkXMLDataSetWriter>::New();
-    xmlWriter->SetInputDataObject(m_dataObject);
-    xmlWriter->SetFileName(fi.filePath().c_str());
-    if(writer.isPreferBinary())
-        xmlWriter->SetDataModeToBinary();
-    else
-        xmlWriter->SetDataModeToAscii();
+    Base::FileInfo datafolder;
+    vtkSmartPointer<vtkXMLWriter> xmlWriter;
+    if (m_dataObject->IsA("vtkMultiBlockDataSet")) {
 
-#ifdef VTK_CELL_ARRAY_V2
-    // Looks like an invalid data object that causes a crash with vtk9
-    vtkUnstructuredGrid* dataGrid = vtkUnstructuredGrid::SafeDownCast(m_dataObject);
-    if (dataGrid && (dataGrid->GetPiece() < 0 || dataGrid->GetNumberOfPoints() <= 0)) {
-        std::cerr << "PropertyPostDataObject::SaveDocFile: ignore empty vtkUnstructuredGrid\n";
-        return;
+        // create a tmp directory to write in
+        datafolder = Base::FileInfo(App::Application::getTempPath() + "vtk_datadir");
+        datafolder.createDirectories();
+        auto datafile = Base::FileInfo(datafolder.filePath() + "/datafile.vtm");
+
+        // create the data: vtm file and subfolder with the subsequent data files
+        xmlWriter = vtkSmartPointer<vtkXMLMultiBlockDataWriter>::New();
+        xmlWriter->SetInputDataObject(m_dataObject);
+        xmlWriter->SetFileName(datafile.filePath().c_str());
     }
-#endif
+    else if (m_dataObject->IsA("vtkTable")) {
+        xmlWriter = vtkSmartPointer<vtkXMLTableWriter>::New();
+        xmlWriter->SetInputDataObject(m_dataObject);
+        xmlWriter->SetFileName(fi.filePath().c_str());
+    }
+    else {
+        xmlWriter = vtkSmartPointer<vtkXMLDataSetWriter>::New();
+        xmlWriter->SetInputDataObject(m_dataObject);
+        xmlWriter->SetFileName(fi.filePath().c_str());
+
+        // Looks like an invalid data object that causes a crash with vtk9
+        vtkUnstructuredGrid* dataGrid = vtkUnstructuredGrid::SafeDownCast(m_dataObject);
+        if (dataGrid && (dataGrid->GetPiece() < 0 || dataGrid->GetNumberOfPoints() <= 0)) {
+            std::cerr << "PropertyPostDataObject::SaveDocFile: ignore empty vtkUnstructuredGrid\n";
+            return;
+        }
+    }
+    if (writer.isPreferBinary()) {
+        xmlWriter->SetDataModeToBinary();
+    }
+    else {
+        xmlWriter->SetDataModeToAscii();
+    }
 
     if (xmlWriter->Write() != 1) {
         // Note: Do NOT throw an exception here because if the tmp. file could
@@ -357,40 +441,54 @@ void PropertyPostDataObject::save(std::ostream &s, Base::Writer &writer) const
         // We only print an error message but continue writing the next files to the
         // stream...
         App::PropertyContainer* father = this->getContainer();
-        if (father && father->isDerivedFrom(App::DocumentObject::getClassTypeId())) {
+        if (father && father->isDerivedFrom<App::DocumentObject>()) {
             App::DocumentObject* obj = static_cast<App::DocumentObject*>(father);
-            Base::Console().Error("Dataset of '%s' cannot be written to vtk file '%s'\n",
-                                  obj->Label.getValue(),
-                                  fi.filePath().c_str());
+            Base::Console().error(
+                "Dataset of '%s' cannot be written to vtk file '%s'\n",
+                obj->Label.getValue(),
+                fi.filePath().c_str()
+            );
         }
         else {
-            Base::Console().Error("Cannot save vtk file '%s'\n", fi.filePath().c_str());
+            Base::Console().error("Cannot save vtk file '%s'\n", fi.filePath().c_str());
         }
 
         std::stringstream ss;
         ss << "Cannot save vtk file '" << fi.filePath() << "'";
         writer.addError(ss.str());
     }
+    else if (m_dataObject->IsA("vtkMultiBlockDataSet")) {
+        // ZIP file we store all data in
+        zipios::ZipOutputStream ZipWriter(fi.filePath());
+        ZipWriter.putNextEntry("dummy");  // need to add a dummy first, as the read stream preloads
+                                          // the first entry, and we cannot get the file name...
+        add_to_zip(datafolder, datafolder.filePath().length(), ZipWriter);
+        ZipWriter.close();
+        datafolder.deleteDirectoryRecursive();
+    }
 
     Base::ifstream file(fi, std::ios::in | std::ios::binary);
-    if (file){
+    if (file) {
         std::streambuf* buf = file.rdbuf();
         s << buf;
     }
 
     file.close();
+    // remove temp file
+    fi.deleteFile();
 }
 
 void PropertyPostDataObject::RestoreDocFile(Base::Reader& reader)
 {
     Base::FileInfo xml(reader.getFileName());
-    restore(reader,xml.extension());
+    restore(reader, xml.extension());
 }
 
-void PropertyPostDataObject::restore(std::istream &reader, const std::string &extension) {
-
+void PropertyPostDataObject::restore(std::istream& reader, const std::string& extension)
+{
     // create a temporary file and copy the content from the zip stream
     Base::FileInfo fi(App::Application::getTempFileName());
+    Base::FileInfo fo;
 
     // read in the ASCII file and write back to the file stream
     Base::ofstream file(fi, std::ios::out | std::ios::binary);
@@ -407,7 +505,7 @@ void PropertyPostDataObject::restore(std::istream &reader, const std::string &ex
     if (ulSize > 0) {
         // TODO: read in of composite data structures need to be coded,
         // including replace of "GetOutputAsDataSet()"
-        vtkSmartPointer<vtkXMLReader> xmlReader;
+        vtkSmartPointer<vtkXMLReader> xmlReader = nullptr;
         if (extension == "vtp") {
             xmlReader = vtkSmartPointer<vtkXMLPolyDataReader>::New();
         }
@@ -423,35 +521,94 @@ void PropertyPostDataObject::restore(std::istream &reader, const std::string &ex
         else if (extension == "vti") {
             xmlReader = vtkSmartPointer<vtkXMLImageDataReader>::New();
         }
+        else if (extension == "vtt") {
+            xmlReader = vtkSmartPointer<vtkXMLTableReader>::New();
+        }
+        else if (extension == "zip") {
 
-        xmlReader->SetFileName(fi.filePath().c_str());
-        xmlReader->Update();
+            // first unzip the file into a datafolder
+            zipios::ZipInputStream ZipReader(fi.filePath());
+            fo = Base::FileInfo(App::Application::getTempPath() + "vtk_extract_datadir");
+            fo.createDirectories();
 
-        if (!xmlReader->GetOutputAsDataSet()) {
-            // Note: Do NOT throw an exception here because if the tmp. created file could
-            // not be read it's NOT an indication for an invalid input stream 'reader'.
-            // We only print an error message but continue reading the next files from the
-            // stream...
-            App::PropertyContainer* father = this->getContainer();
-            if (father && father->isDerivedFrom(App::DocumentObject::getClassTypeId())) {
-                App::DocumentObject* obj = static_cast<App::DocumentObject*>(father);
-                Base::Console().Error("Dataset file '%s' with data of '%s' seems to be empty\n",
-                                      fi.filePath().c_str(),
-                                      obj->Label.getValue());
+            try {
+                zipios::ConstEntryPointer entry = ZipReader.getNextEntry();
+                while (entry->isValid()) {
+                    Base::FileInfo entry_path(fo.filePath() + entry->getName());
+                    if (entry->isDirectory()) {
+                        // seems not to be called
+                        entry_path.createDirectories();
+                    }
+                    else {
+                        auto entry_dir = Base::FileInfo(entry_path.dirPath());
+                        if (!entry_dir.exists()) {
+                            entry_dir.createDirectories();
+                        }
+
+                        Base::ofstream file(entry_path, std::ios::out | std::ios::binary);
+                        std::streambuf* buf = file.rdbuf();
+                        ZipReader >> buf;
+                        file.flush();
+                        file.close();
+                    }
+                    entry = ZipReader.getNextEntry();
+                }
+            }
+            catch (const std::exception&) {
+                // there is no further entry
+            }
+
+            // create the reader, and change the file for it to read. Also delete zip file, not
+            // needed anymore
+            fi.deleteFile();
+            fi = Base::FileInfo(fo.filePath() + "/datafile.vtm");
+            xmlReader = vtkSmartPointer<vtkXMLMultiBlockDataReader>::New();
+        }
+
+        if (xmlReader) {
+            xmlReader->SetFileName(fi.filePath().c_str());
+            xmlReader->Update();
+
+            if (!xmlReader->GetOutputDataObject(0)) {
+                // Note: Do NOT throw an exception here because if the tmp. created file could
+                // not be read it's NOT an indication for an invalid input stream 'reader'.
+                // We only print an error message but continue reading the next files from the
+                // stream...
+                App::PropertyContainer* father = this->getContainer();
+                if (father && father->isDerivedFrom<App::DocumentObject>()) {
+                    App::DocumentObject* obj = static_cast<App::DocumentObject*>(father);
+                    Base::Console().error(
+                        "Dataset file '%s' with data of '%s' seems to be empty\n",
+                        fi.filePath().c_str(),
+                        obj->Label.getValue()
+                    );
+                }
+                else {
+                    Base::Console().warning(
+                        "Loaded Dataset file '%s' seems to be empty\n",
+                        fi.filePath().c_str()
+                    );
+                }
             }
             else {
-                Base::Console().Warning("Loaded Dataset file '%s' seems to be empty\n",
-                                        fi.filePath().c_str());
+                aboutToSetValue();
+                createDataObjectByExternalType(xmlReader->GetOutputDataObject(0));
+                m_dataObject->DeepCopy(xmlReader->GetOutputDataObject(0));
+                hasSetValue();
             }
         }
         else {
-            aboutToSetValue();
-            createDataObjectByExternalType(xmlReader->GetOutputAsDataSet());
-            m_dataObject->DeepCopy(xmlReader->GetOutputAsDataSet());
-            hasSetValue();
+            Base::Console().error(
+                "Dataset file '%s' is of unsupported type: %s. Data not loaded.\n",
+                fi.filePath().c_str(),
+                extension
+            );
         }
     }
 
     // delete the temp file
     fi.deleteFile();
+    if (extension == "zip") {
+        fo.deleteDirectoryRecursive();
+    }
 }

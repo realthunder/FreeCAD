@@ -577,6 +577,15 @@ typedef std::unordered_map<const SoNode *,
                            std::shared_ptr<const Render::TextureImage>>
     TextureImageMap;
 
+// Shares one TexturePalette among all materials built from the same set
+// of face-texture nodes within a translate() call. Pointer identity is
+// what the backend batches on and what it caches the uploaded array
+// texture under, so two draws off one appearance must come out holding
+// the same palette, not two equal ones.
+typedef std::map<std::vector<const SoNode *>,
+                 std::shared_ptr<const Render::TexturePalette>>
+    TexturePaletteMap;
+
 std::shared_ptr<const Render::TextureImage>
 translateTexture(const SoFCRenderCache::TextureInfo & info,
                  TextureImageMap & texmap)
@@ -692,6 +701,68 @@ translateRenderTexture(const SoFCRenderCache::TextureInfo & info,
     return res;
 }
 
+// The white 1x1 image a palette layer nobody filled is given.
+//
+// A gap has to be FILLED rather than closed up: the layers are named by
+// index, so dropping one would shift every image after it and repaint
+// the faces that named those. White is the honest filler -- the images
+// modulate, so a face pointing at one renders exactly as it would
+// untextured. The id is one no Coin node can produce, since the backend
+// keys its uploads on it.
+std::shared_ptr<const Render::TextureImage>
+whiteFaceTexture()
+{
+    static const std::shared_ptr<const Render::TextureImage> white = [] {
+        auto tex = std::make_shared<Render::TextureImage>();
+        tex->textureId = ~uint64_t(0);
+        tex->width = 1;
+        tex->height = 1;
+        tex->numComponents = 3;
+        tex->pixels.assign(3, uint8_t(255));
+        return tex;
+    }();
+    return white;
+}
+
+// The per-face texture palette: the images the draw's faces are painted
+// with, as the layers of one array texture. Entry i is layer i + 1 --
+// layer 0 is the untextured face and has no image.
+std::shared_ptr<const Render::TexturePalette>
+translateFaceTextures(const SoFCRenderCache::Material & m,
+                      TextureImageMap & texmap, TexturePaletteMap & palmap)
+{
+    if (!m.facetextures.getNum())
+        return nullptr;
+
+    int maxlayer = 0;
+    for (const auto & v : m.facetextures.getData())
+        maxlayer = std::max(maxlayer, v.first);
+    if (maxlayer <= 0)
+        return nullptr;
+
+    std::vector<const SoNode *> key(std::size_t(maxlayer), nullptr);
+    for (const auto & v : m.facetextures.getData()) {
+        if (v.first > 0 && v.first <= maxlayer)
+            key[std::size_t(v.first - 1)] = v.second.texture.get();
+    }
+    auto & res = palmap[key];
+    if (res)
+        return res;
+
+    auto palette = std::make_shared<Render::TexturePalette>();
+    palette->entries.reserve(std::size_t(maxlayer));
+    for (int layer = 1; layer <= maxlayer; ++layer) {
+        std::shared_ptr<const Render::TextureImage> image;
+        if (const auto * info = m.facetextures.get(layer))
+            image = translateRenderTexture(*info, texmap);
+        if (!image)
+            image = whiteFaceTexture();
+        palette->entries.push_back(std::move(image));
+    }
+    res = palette;
+    return res;
+}
+
 // Whether a line/point material of this feed renders with GL's
 // RenderPassHighlight (selection thickening). Mirrors the bucket routing
 // in SoFCRendererP::updateSelection: partial-element selections and full
@@ -721,7 +792,7 @@ useHighlightPass(const CoinMaterial & m, int selId, bool highlight)
 
 Render::Material
 translateMaterial(const CoinMaterial & m, int selId, bool highlight,
-                  TextureImageMap & texmap,
+                  TextureImageMap & texmap, TexturePaletteMap & palmap,
                   const RendererBridge::SectionOnTop & sectionOnTop)
 {
     Render::Material res;
@@ -953,6 +1024,25 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         res.framepalette = m.framepalette;
         if (m.framepalette && !m.framepalette->entries.empty())
             res.frame = m.framepalette->entries.front();
+        // The per-face texture palette, on the same terms: it rides
+        // along and the per-draw pass below decides how a draw reads it
+        // -- out of the material stream, or as the one layer a draw
+        // with no stream (or a single-face draw) resolves to.
+        if (!m.facetextureindices.getNum())
+            res.texturepalette.reset();
+        else {
+            res.texturepalette = translateFaceTextures(m, texmap, palmap);
+            if (res.texturepalette) {
+                res.facetexscale = m.facetexscale;
+                // The draw's own layer: face 0's, which is every face's
+                // whenever the layers do not vary. A draw whose mesh
+                // really carries the per-face bake overrides this with
+                // -1 below and reads the stream instead.
+                const int32_t layer = m.facetextureindices[0];
+                res.facetexlayer = layer > 0 && layer < 128
+                    ? int8_t(layer) : 0;
+            }
+        }
         res.water = m.water;
         res.waterdensity = m.waterdensity;
         res.glass = m.glass;
@@ -1098,6 +1188,7 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
     std::unordered_map<SoFCVertexCache *,
                        std::shared_ptr<CacheMeshData>> meshes;
     TextureImageMap textures;
+    TexturePaletteMap facepalettes;
 
     for (const auto & v : vcachemap) {
         const CoinMaterial & material = v.first;
@@ -1107,7 +1198,8 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             continue;
 
         Render::Material rmat =
-            translateMaterial(material, selId, highlight, textures, sectionOnTop);
+            translateMaterial(material, selId, highlight, textures,
+                              facepalettes, sectionOnTop);
 
         for (const VertexCacheEntry & ventry : v.second) {
             if (!ventry.cache)
@@ -1297,7 +1389,11 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                     // these a UNIFORM appearance can state: a knurled
                     // shaft has one material and still needs its
                     // per-face frame index read.
-                    || material.frameindices.getNum();
+                    || material.frameindices.getNum()
+                    // And the face texture layers, which a uniform
+                    // appearance can state for the same reason: one
+                    // colour over a part, one face of it imaged.
+                    || material.facetextureindices.getNum();
                 if (ventry.partidx < 0) {
                     draw.material.perfacematerial =
                         hasarrays && mesh->materials != nullptr;
@@ -1307,6 +1403,15 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                     draw.material.perfacepbr =
                         draw.material.perfacematerial
                         && ventry.cache->hasPbrMaterial();
+                    // Whether the layers really got baked is the bake's
+                    // answer too: a shape that paints every face with
+                    // the same image collapses the stream away, and
+                    // then the draw's own layer -- resolved above --
+                    // is what every fragment reads.
+                    if (draw.material.texturepalette
+                            && draw.material.perfacematerial
+                            && ventry.cache->hasFaceTexture())
+                        draw.material.facetexlayer = -1;
                 } else if (hasarrays) {
                     // A single-face draw carries no stream, so its
                     // face's values resolve into the scalars. The
@@ -1355,6 +1460,17 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                             draw.material.frame = entries[std::size_t(idx)];
                     }
                     draw.material.framepalette.reset();
+                    // The face's own image, resolved like its finish.
+                    // The palette STAYS: one layer is still a layer of
+                    // the array texture, and the draw names it here
+                    // rather than reading a stream it does not have.
+                    const int nft = material.facetextureindices.getNum();
+                    if (nft && draw.material.texturepalette) {
+                        const int32_t layer =
+                            material.facetextureindices[p < nft ? p : 0];
+                        draw.material.facetexlayer =
+                            layer > 0 && layer < 128 ? int8_t(layer) : 0;
+                    }
                 }
             }
             draw.identity = ventry.identity;
@@ -1364,6 +1480,10 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                 std::memcpy(draw.model, ventry.matrix.getValue(),
                             sizeof(draw.model));
             }
+
+            // A gizmo captured under a SoSkipBoundingGroup keeps its own
+            // bounds and stays out of the scene's (Material::skipbounds).
+            draw.skipbounds = material.skipbounds;
 
             // Measured once per entry per publish: the draw-entry build
             // above asked the same question of the same entry.
@@ -2224,6 +2344,8 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         // has no render properties at all carries none of these.
         res.groundAuto = viewParamOverride<App::PropertyBool>(
                 view, "RenderShadow", "GroundSizeAuto", true);
+        res.groundFollowCamera = viewParamOverride<App::PropertyBool>(
+                view, "RenderShadow", "GroundSizeFollowCamera", true);
         res.groundSizeX = float(viewParamOverride<App::PropertyLength>(
                 view, "RenderShadow", "GroundSizeX", 100.0));
         res.groundSizeY = float(viewParamOverride<App::PropertyLength>(
@@ -2304,6 +2426,16 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
                 float(ViewParams::getShadowGroundTransparency());
         res.groundTransparency =
             std::min(1.0f, std::max(0.0f, res.groundTransparency));
+        // The shadow's own transparency, which only a shadow-only
+        // ground reads (Coin's SoShadowTransparency).
+        if (auto prop = viewPropOverride<App::PropertyFloat>(
+                    view, "RenderShadow", "Transparency"))
+            res.shadowTransparency = float(prop->getValue());
+        else
+            res.shadowTransparency =
+                float(ViewParams::getShadowTransparency());
+        res.shadowTransparency =
+            std::min(1.0f, std::max(0.0f, res.shadowTransparency));
         std::string bumppath;
         if (auto prop = viewPropOverride<App::PropertyFileIncluded>(
                     view, "RenderShadow", "GroundBumpMap")) {
@@ -2557,6 +2689,19 @@ RendererBridge::translateBloomConfig(App::PropertyContainer * view)
     res.radius = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "BloomRadius",
             RenderParams::getBloomRadius()));
+    return res;
+}
+
+Render::TemporalConfig
+RendererBridge::translateTemporalConfig(App::PropertyContainer * view)
+{
+    Render::TemporalConfig res;
+    res.enabled = viewParamOverride<App::PropertyBool>(
+            view, "Render", "TemporalAccum",
+            RenderParams::getTemporalAccum());
+    res.samples = int(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "TemporalAccumSamples",
+            RenderParams::getTemporalAccumSamples()));
     return res;
 }
 

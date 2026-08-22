@@ -2120,8 +2120,8 @@ Evolumes
 
 ***********************************************************
 ** constraints fixed node sets
-** ConstraintFixed
-*NSET,NSET=ConstraintFixed
+** Fixed
+*NSET,NSET=Fixed
 1,
 2,
 3,
@@ -2136,6 +2136,9 @@ Evolumes
 12,
 13,
 
+** Physical constants for SI(mm) unit system with Kelvins
+*PHYSICAL CONSTANTS, ABSOLUTE ZERO=0, STEFAN BOLTZMANN=5.670374419e-11
+
 ***********************************************************
 ** Materials
 ** see information about units at file end
@@ -2146,6 +2149,8 @@ Evolumes
 210000,0.3
 *DENSITY
 7.9E-09
+*EXPANSION, ZERO=0
+0
 
 ***********************************************************
 ** Sections
@@ -2153,24 +2158,24 @@ Evolumes
 
 ***********************************************************
 ** At least one step is needed to run an CalculiX analysis of FreeCAD
-*STEP
+*STEP, INC=2000
 *STATIC
 
 
 ***********************************************************
 ** Fixed Constraints
-** ConstraintFixed
+** Fixed
 *BOUNDARY
-ConstraintFixed,1
-ConstraintFixed,2
-ConstraintFixed,3
+Fixed,1
+Fixed,2
+Fixed,3
 
 
 ***********************************************************
 ** Self weight Constraint
-** ConstraintSelfWeight
+** Gravity
 *DLOAD
-Eall,GRAV,9806,0,0,-1
+Eall,GRAV,9806.65,0,0,-1
 
 
 ***********************************************************
@@ -2181,18 +2186,18 @@ U
 S, E
 ** outputs --> dat file
 ** reaction forces for Constraint fixed
-*NODE PRINT, NSET=ConstraintFixed, TOTALS=ONLY
+*NODE PRINT, NSET=Fixed, TOTALS=ONLY
 RF
 
-
+*OUTPUT, FREQUENCY=1
 ***********************************************************
-*END STEP 
+*END STEP
 
 ***********************************************************
 ** CalculiX Input file
 **   written by    --> FreeCAD 0.19.21963 +19 (Git)
 **   written on    --> Tue Jul 14 12:48:52 2020
-**   file name     --> 
+**   file name     --> constraint_selfweight_cantilever.FCStd
 **   analysis name --> Analysis
 **
 **

@@ -20,10 +20,8 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
-#ifndef _PreComp_
 #include <QString>
-#endif
+
 
 #include <Gui/BitmapFactory.h>
 #include <Mod/Fem/App/FemMesh.h>
@@ -49,6 +47,7 @@ TaskTetParameter::TaskTetParameter(Fem::FemMeshShapeNetgenObject* pcObject, QWid
     this->groupLayout()->addWidget(proxy);
 
     ui->doubleSpinBox_MaxSize->setValue(pcObject->MaxSize.getValue());
+    ui->doubleSpinBox_MinSize->setValue(pcObject->MinSize.getValue());
     ui->comboBox_Fineness->setCurrentIndex(pcObject->Fineness.getValue());
     ui->checkBox_SecondOrder->setChecked(pcObject->SecondOrder.getValue());
     ui->doubleSpinBox_GrowthRate->setValue(pcObject->GrowthRate.getValue());
@@ -56,35 +55,67 @@ TaskTetParameter::TaskTetParameter(Fem::FemMeshShapeNetgenObject* pcObject, QWid
     ui->spinBox_SegsPerRadius->setValue(pcObject->NbSegsPerRadius.getValue());
     ui->checkBox_Optimize->setChecked(pcObject->Optimize.getValue());
 
-    QObject::connect(ui->doubleSpinBox_MaxSize,
-                     qOverload<double>(&QDoubleSpinBox::valueChanged),
-                     this,
-                     &TaskTetParameter::maxSizeValueChanged);
-    QObject::connect(ui->comboBox_Fineness,
-                     qOverload<int>(&QComboBox::activated),
-                     this,
-                     &TaskTetParameter::SwitchMethod);
-    QObject::connect(ui->checkBox_SecondOrder,
-                     &QCheckBox::stateChanged,
-                     this,
-                     &TaskTetParameter::setQuadric);
-    QObject::connect(ui->doubleSpinBox_GrowthRate,
-                     qOverload<double>(&QDoubleSpinBox::valueChanged),
-                     this,
-                     &TaskTetParameter::setGrowthRate);
-    QObject::connect(ui->spinBox_SegsPerEdge,
-                     qOverload<int>(&QSpinBox::valueChanged),
-                     this,
-                     &TaskTetParameter::setSegsPerEdge);
-    QObject::connect(ui->spinBox_SegsPerRadius,
-                     qOverload<int>(&QSpinBox::valueChanged),
-                     this,
-                     &TaskTetParameter::setSegsPerRadius);
-    QObject::connect(ui->checkBox_Optimize,
-                     &QCheckBox::stateChanged,
-                     this,
-                     &TaskTetParameter::setOptimize);
-
+    QObject::connect(
+        ui->doubleSpinBox_MaxSize,
+        qOverload<double>(&QDoubleSpinBox::valueChanged),
+        this,
+        &TaskTetParameter::maxSizeValueChanged
+    );
+    QObject::connect(
+        ui->doubleSpinBox_MinSize,
+        qOverload<double>(&QDoubleSpinBox::valueChanged),
+        this,
+        &TaskTetParameter::minSizeValueChanged
+    );
+    QObject::connect(
+        ui->comboBox_Fineness,
+        qOverload<int>(&QComboBox::activated),
+        this,
+        &TaskTetParameter::SwitchMethod
+    );
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    QObject::connect(
+        ui->checkBox_SecondOrder,
+        &QCheckBox::checkStateChanged,
+        this,
+        &TaskTetParameter::setQuadric
+    );
+#else
+    QObject::connect(
+        ui->checkBox_SecondOrder,
+        &QCheckBox::stateChanged,
+        this,
+        &TaskTetParameter::setQuadric
+    );
+#endif
+    QObject::connect(
+        ui->doubleSpinBox_GrowthRate,
+        qOverload<double>(&QDoubleSpinBox::valueChanged),
+        this,
+        &TaskTetParameter::setGrowthRate
+    );
+    QObject::connect(
+        ui->spinBox_SegsPerEdge,
+        qOverload<int>(&QSpinBox::valueChanged),
+        this,
+        &TaskTetParameter::setSegsPerEdge
+    );
+    QObject::connect(
+        ui->spinBox_SegsPerRadius,
+        qOverload<int>(&QSpinBox::valueChanged),
+        this,
+        &TaskTetParameter::setSegsPerRadius
+    );
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    QObject::connect(
+        ui->checkBox_Optimize,
+        &QCheckBox::checkStateChanged,
+        this,
+        &TaskTetParameter::setOptimize
+    );
+#else
+    QObject::connect(ui->checkBox_Optimize, &QCheckBox::stateChanged, this, &TaskTetParameter::setOptimize);
+#endif
     if (pcObject->FemMesh.getValue().getInfo().numNode == 0) {
         touched = true;
     }
@@ -117,6 +148,12 @@ void TaskTetParameter::SwitchMethod(int Value)
 void TaskTetParameter::maxSizeValueChanged(double Value)
 {
     pcObject->MaxSize.setValue(Value);
+    touched = true;
+}
+
+void TaskTetParameter::minSizeValueChanged(double Value)
+{
+    pcObject->MinSize.setValue(Value);
     touched = true;
 }
 

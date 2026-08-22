@@ -417,4 +417,62 @@ void fcApplyFinish(vec3 opos, vec3 onrm, vec3 vpos, vec4 params,
 	fcFinishPerturb(g, opos, vpos, dox, doy, n);
 }
 
+/// Texture coordinates for laying an IMAGE on a face, in the same
+/// projection frames the finish above is laid out in.
+///
+/// A per-face image has no parametrization of its own -- a CAD face
+/// carries no UVs -- so it is projected exactly the way the finish is:
+/// in the plane's own axes for a planar face, unwrapped about the axis
+/// for a turned one, and triplanarly off the object-space normal for a
+/// face whose surface could not be classified. \a mmPerTile is the size
+/// the image is printed at, in the millimetres of object space
+/// everything here is measured in.
+///
+/// Unlike the finish this returns coordinates rather than a gradient:
+/// the sampler does the filtering, and an image has no analytic slope
+/// to hand to a surface gradient.
+vec2 fcFrameTexUV(vec3 opos, vec3 onrm, float frameIndex, float mmPerTile)
+{
+	float inv = 1.0 / max(mmPerTile, 1.0e-6);
+	int fi = int(clamp(frameIndex, 0.0, float(FC_FRAME_PALETTE - 1))) * 3;
+	vec4 f0 = u_frameParams[fi];
+	if (f0.w > 0.5)
+	{
+		vec4 f1 = u_frameParams[fi + 1];
+		vec4 f2 = u_frameParams[fi + 2];
+		vec3 origin = f0.xyz;
+		vec3 axis = normalize(f1.xyz);
+		vec3 xdir = normalize(f2.xyz - axis * dot(axis, f2.xyz));
+		vec3 ydir = cross(axis, xdir);
+		vec3 d = opos - origin;
+		if (f0.w < FC_FRAME_RADIAL - 0.5)
+			return vec2(dot(d, xdir), dot(d, ydir)) * inv;
+
+		// Radial: arc length about the axis and distance along it, so
+		// an image wraps a turned face the way a printed label does.
+		// The arc is snapped to a whole number of tiles round the
+		// reference radius for the same reason the pattern is: the
+		// atan2 seam would otherwise cut the image mid-tile.
+		float z = dot(d, axis);
+		vec3 rvec = d - z * axis;
+		float r = length(rvec);
+		float theta = atan2(dot(rvec, ydir), dot(rvec, xdir));
+		float rref = f1.w > 1.0e-6 ? f1.w : max(r, 1.0e-6);
+		float tiles = max(1.0, floor(FC_FINISH_TWOPI * rref * inv
+		                             + 0.5));
+		return vec2(theta * tiles / FC_FINISH_TWOPI, z * inv);
+	}
+
+	// Triplanar: the same normal-weighted blend the finish falls back
+	// to, but a coordinate cannot be blended -- two projections
+	// averaged read as a ghost of the image over itself -- so the
+	// dominant axis wins outright.
+	vec3 w = abs(normalize(onrm));
+	if (w.x >= w.y && w.x >= w.z)
+		return opos.yz * inv;
+	if (w.y >= w.z)
+		return opos.zx * inv;
+	return opos.xy * inv;
+}
+
 #endif // FC_FINISH_SH

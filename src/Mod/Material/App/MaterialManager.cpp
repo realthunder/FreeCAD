@@ -147,9 +147,15 @@ std::shared_ptr<App::Material> MaterialManager::defaultAppearance()
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
 
     auto getColor = [hGrp](const char* parameter, Base::Color& color) {
-        uint32_t packed = color.getPackedRGB();
+        // RGBA, because that is how every writer of these parameters
+        // packs them -- ViewParams' DefaultShapeColor, Draft's copy of
+        // the same defaults, and the colour buttons in the preferences
+        // all store getPackedValue(). Read as RGB the alpha byte became
+        // the blue one: a stored 0xCCCCCCFF, the grey people actually
+        // set, arrived here as (0.8, 0.8, 1.0).
+        uint32_t packed = color.getPackedValue();
         packed = hGrp->GetUnsigned(parameter, packed);
-        color.setPackedRGB(packed);
+        color.setPackedValue(packed);
         color.a = 1.0;  // The default color sets fully transparent, not opaque
     };
     auto intRandom = [](int min, int max) -> int {
@@ -176,7 +182,10 @@ std::shared_ptr<App::Material> MaterialManager::defaultAppearance()
     getColor("DefaultSpecularColor", mat.specularColor);
 
     long initialTransparency = hGrp->GetInt("DefaultShapeTransparency", 0);
-    long initialShininess = hGrp->GetInt("DefaultShapeShininess", 90);
+    // 37, not upstream's 90: the fallback has to be the Default
+    // appearance card's 0.3729, or the card this hands out
+    // disagrees with the appearance every object starts with.
+    long initialShininess = hGrp->GetInt("DefaultShapeShininess", 37);
     mat.shininess = Base::fromPercent(initialShininess);
     mat.transparency = Base::fromPercent(initialTransparency);
 

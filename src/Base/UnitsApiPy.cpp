@@ -185,7 +185,7 @@ PyObject* UnitsApi::sSchemaTranslate(PyObject* /*self*/, PyObject* args)
 
     double factor {};
     std::string uus;
-    std::string uss = schema->schemaTranslate(quant, factor, uus);
+    std::string uss = schema->translate(quant, factor, uus);
 
     Py::Tuple res(3);
     res[0] = Py::String(uss, "utf-8");

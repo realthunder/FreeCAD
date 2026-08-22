@@ -241,12 +241,14 @@ public:
    * quantized into the last byte -- or, when hasPbrMaterial(), the PBR
    * factor pair in those two alpha slots instead -- and then the
    * surface finish palette index in one byte, the projection frame
-   * palette index in the next and two reserved after them
+   * palette index in the next, the per-face TEXTURE layer in the third
+   * (hasFaceTexture()) and one reserved after it
    * (hasFinishMaterial()). Present only when the coin fork's
    * extended lazy element carried per-face material arrays whose
    * resolved values actually diverge (SoLazyElementEx), or a per-face
    * PBR appearance carried factors (SoFCPbrElement), or a per-face
-   * finish or projection frame carried indices (SoFCFinishElement);
+   * finish or projection frame carried indices (SoFCFinishElement), or
+   * the faces carried images of their own (SoFCFaceTextureElement);
    * null for every uniform-material cache. Only triangle vertices carry values --
    * vertices referenced by lines/points alone hold zeros, and
    * line/point draws never shade with these fields.
@@ -279,6 +281,18 @@ public:
    * whether the palettes are worth uploading.
    */
   SbBool hasFinishMaterial(void) const;
+
+  /** Whether that stream's third slot carries per-face texture layers
+   *
+   * The third byte, beside the two palette indices above: which image of
+   * the draw's per-face texture palette a face is painted with, 0 being
+   * the untextured face (SoFCFaceTextureElement). False means every
+   * vertex reads 0, which is also what an unbound attribute gives -- so
+   * a consumer needs this to tell "no face states an image" from "every
+   * face states the same one", which is a layer the draw material
+   * carries instead.
+   */
+  SbBool hasFaceTexture(void) const;
 
   void setFaceColors(const SbFCVector<std::pair<int, uint32_t> > &colors = {});
 

@@ -21,23 +21,21 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
-#ifndef _PreComp_
 #include <QAction>
 #include <QKeyEvent>
 #include <QListWidget>
 #include <QMessageBox>
-#include <boost/lexical_cast.hpp>  // OvG conversion between string and int etc.
 #include <sstream>
-#endif
+
 
 #include <App/Document.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
-#include <Gui/Selection.h>
+#include <Gui/Selection/Selection.h>
+#include <Gui/Tools.h>
 #include <Gui/ViewProvider.h>
 #include <Mod/Fem/App/FemConstraint.h>
 
@@ -50,57 +48,40 @@ using namespace Gui;
 
 /* TRANSLATOR FemGui::TaskFemConstraint */
 
-TaskFemConstraint::TaskFemConstraint(ViewProviderFemConstraint* ConstraintView,
-                                     QWidget* parent,
-                                     const char* pixmapname)
-    : TaskBox(Gui::BitmapFactory().pixmap(pixmapname),
-              tr("Analysis feature parameters"),
-              true,
-              parent)
+TaskFemConstraint::TaskFemConstraint(
+    ViewProviderFemConstraint* ConstraintView,
+    QWidget* parent,
+    const char* pixmapname
+)
+    : TaskBox(Gui::BitmapFactory().pixmap(pixmapname), tr("Analysis Feature Properties"), true, parent)
     , proxy(nullptr)
+    , actionList(nullptr)
+    , clearListAction(nullptr)
     , deleteAction(nullptr)
     , ConstraintView(ConstraintView)
-    , buttonBox(nullptr)
-    , okButton(nullptr)
-    , cancelButton(nullptr)
+    , selectionMode(selref)
+{}
+
+bool TaskFemConstraint::event(QEvent* event)
 {
-    selectionMode = selref;
-
-    // Setup the dialog inside the Shaft Wizard dialog
-    if ((ConstraintView->wizardWidget) && (ConstraintView->wizardSubLayout)) {
-        // Hide the shaft wizard table widget to make more space
-        ConstraintView->wizardSubLayout->itemAt(0)->widget()->hide();
-        QGridLayout* buttons = ConstraintView->wizardSubLayout->findChild<QGridLayout*>();
-        for (int b = 0; b < buttons->count(); b++) {
-            buttons->itemAt(b)->widget()->hide();
+    if (event && event->type() == QEvent::ShortcutOverride) {
+        auto ke = static_cast<QKeyEvent*>(event);  // NOLINT
+        if (deleteAction) {
+            if (ke->matches(QKeySequence::Delete) || ke->matches(QKeySequence::Backspace)) {
+                ke->accept();
+            }
         }
-
-        // Show this dialog for the FEM constraint
-        ConstraintView->wizardWidget->addWidget(this);
-
-        // Add buttons to finish editing the constraint without closing the shaft wizard dialog
-        okButton = new QPushButton(QObject::tr("Ok"));
-        cancelButton = new QPushButton(QObject::tr("Cancel"));
-        buttonBox = new QDialogButtonBox();
-        buttonBox->addButton(okButton, QDialogButtonBox::AcceptRole);
-        buttonBox->addButton(cancelButton, QDialogButtonBox::RejectRole);
-        QObject::connect(okButton, &QPushButton::clicked, this, &TaskFemConstraint::onButtonWizOk);
-        QObject::connect(cancelButton,
-                         &QPushButton::clicked,
-                         this,
-                         &TaskFemConstraint::onButtonWizCancel);
-        ConstraintView->wizardWidget->addWidget(buttonBox);
     }
+    return TaskBox::event(event);
 }
 
 void TaskFemConstraint::keyPressEvent(QKeyEvent* ke)
 {
-    if ((ConstraintView->wizardWidget) && (ConstraintView->wizardSubLayout)) {
-        // Prevent <Enter> from closing this dialog AND the shaft wizard dialog
-        // TODO: This should trigger an update in the shaft wizard but its difficult to access a
-        // python dialog from here...
-        if (ke->key() == Qt::Key_Return) {
-            return;
+    // if we have a Del key, trigger the deleteAction
+    if (ke->matches(QKeySequence::Delete) || ke->matches(QKeySequence::Backspace)) {
+        if (deleteAction && deleteAction->isEnabled()) {
+            ke->accept();
+            deleteAction->trigger();
         }
     }
 
@@ -120,13 +101,11 @@ const std::string TaskFemConstraint::getReferences(const std::vector<std::string
     return result;
 }
 
-const std::string
-TaskFemConstraint::getScale() const  // OvG: Return pre-calculated scale for constraint display
+const std::string TaskFemConstraint::getScale() const
 {
-    std::string result;
-    Fem::Constraint* pcConstraint = static_cast<Fem::Constraint*>(ConstraintView->getObject());
-    result = boost::lexical_cast<std::string>(pcConstraint->Scale.getValue());
-    return result;
+    Fem::Constraint* pcConstraint = ConstraintView->getObject<Fem::Constraint>();
+
+    return std::to_string(pcConstraint->Scale.getValue());
 }
 
 void TaskFemConstraint::setSelection(QListWidgetItem* item)
@@ -150,9 +129,15 @@ void TaskFemConstraint::setSelection(QListWidgetItem* item)
     Gui::Selection().addSelection(docName.c_str(), objName.c_str(), ItemName.c_str(), 0, 0, 0);
 }
 
+void TaskFemConstraint::onReferenceClearList()
+{
+    QSignalBlocker block(actionList);
+    actionList->clear();
+}
+
 void TaskFemConstraint::onReferenceDeleted(const int row)
 {
-    Fem::Constraint* pcConstraint = static_cast<Fem::Constraint*>(ConstraintView->getObject());
+    Fem::Constraint* pcConstraint = ConstraintView->getObject<Fem::Constraint>();
     std::vector<App::DocumentObject*> Objects = pcConstraint->References.getValues();
     std::vector<std::string> SubElements = pcConstraint->References.getSubValues();
 
@@ -172,47 +157,33 @@ void TaskFemConstraint::onButtonReference(const bool pressed)
     Gui::Selection().clearSelection();
 }
 
-void TaskFemConstraint::onButtonWizOk()
-{
-    // Remove dialog elements
-    buttonBox->removeButton(okButton);
-    delete okButton;
-    buttonBox->removeButton(cancelButton);
-    delete cancelButton;
-    ConstraintView->wizardWidget->removeWidget(buttonBox);
-    delete buttonBox;
-    ConstraintView->wizardWidget->removeWidget(this);
-
-    // Show the wizard shaft dialog again
-    ConstraintView->wizardSubLayout->itemAt(0)->widget()->show();
-    QGridLayout* buttons = ConstraintView->wizardSubLayout->findChild<QGridLayout*>();
-    for (int b = 0; b < buttons->count(); b++) {
-        buttons->itemAt(b)->widget()->show();
-    }
-
-    Gui::Application::Instance->activeDocument()
-        ->resetEdit();  // Reaches ViewProviderFemConstraint::unsetEdit() eventually
-}
-
-void TaskFemConstraint::onButtonWizCancel()
-{
-    Fem::Constraint* pcConstraint = static_cast<Fem::Constraint*>(ConstraintView->getObject());
-    if (pcConstraint) {
-        pcConstraint->getDocument()->removeObject(pcConstraint->getNameInDocument());
-    }
-    onButtonWizOk();
-}
-
-const QString TaskFemConstraint::makeRefText(const std::string& objName,
-                                             const std::string& subName) const
+const QString TaskFemConstraint::makeRefText(const std::string& objName, const std::string& subName) const
 {
     return QString::fromUtf8((objName + ":" + subName).c_str());
 }
 
-const QString TaskFemConstraint::makeRefText(const App::DocumentObject* obj,
-                                             const std::string& subName) const
+const QString TaskFemConstraint::makeRefText(
+    const App::DocumentObject* obj,
+    const std::string& subName
+) const
 {
     return QString::fromUtf8((std::string(obj->getNameInDocument()) + ":" + subName).c_str());
+}
+
+void TaskFemConstraint::createActions(QListWidget* parentList)
+{
+    actionList = parentList;
+    createDeleteAction(parentList);
+    createClearListAction(parentList);
+}
+
+void TaskFemConstraint::createClearListAction(QListWidget* parentList)
+{
+    clearListAction = new QAction(tr("Clear list"), this);
+    connect(clearListAction, &QAction::triggered, this, &TaskFemConstraint::onReferenceClearList);
+
+    parentList->addAction(clearListAction);
+    parentList->setContextMenuPolicy(Qt::ActionsContextMenu);
 }
 
 void TaskFemConstraint::createDeleteAction(QListWidget* parentList)
@@ -220,39 +191,13 @@ void TaskFemConstraint::createDeleteAction(QListWidget* parentList)
     // creates a context menu, a shortcut for it and connects it to a slot function
 
     deleteAction = new QAction(tr("Delete"), this);
-    deleteAction->setShortcut(QKeySequence::Delete);
-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
+    deleteAction->setShortcut(Gui::QtTools::deleteKeySequence());
+
     // display shortcut behind the context menu entry
     deleteAction->setShortcutVisibleInContextMenu(true);
-#endif
+
     parentList->addAction(deleteAction);
     parentList->setContextMenuPolicy(Qt::ActionsContextMenu);
-}
-
-bool TaskFemConstraint::KeyEvent(QEvent* e)
-{
-    // in case another instance takes key events, accept the overridden key even
-    if (e && e->type() == QEvent::ShortcutOverride) {
-        QKeyEvent* kevent = static_cast<QKeyEvent*>(e);
-        if (kevent->modifiers() == Qt::NoModifier) {
-            if (deleteAction && kevent->key() == Qt::Key_Delete) {
-                kevent->accept();
-                return true;
-            }
-        }
-    }
-    // if we have a Del key, trigger the deleteAction
-    else if (e && e->type() == QEvent::KeyPress) {
-        QKeyEvent* kevent = static_cast<QKeyEvent*>(e);
-        if (kevent->key() == Qt::Key_Delete) {
-            if (deleteAction && deleteAction->isEnabled()) {
-                deleteAction->trigger();
-            }
-            return true;
-        }
-    }
-
-    return TaskFemConstraint::event(e);
 }
 
 //**************************************************************************
@@ -264,12 +209,11 @@ bool TaskFemConstraint::KeyEvent(QEvent* e)
 
 void TaskDlgFemConstraint::open()
 {
-    ConstraintView->setVisible(true);
-    Gui::Command::runCommand(
-        Gui::Command::Doc,
-        ViewProviderFemConstraint::gethideMeshShowPartStr(
-            (static_cast<Fem::Constraint*>(ConstraintView->getObject()))->getNameInDocument())
-            .c_str());  // OvG: Hide meshes and show parts
+    if (!ConstraintView->getDocument()->hasPendingCommand()) {
+        const auto typeName = ConstraintView->getObject()->getTypeId().getName();
+        ConstraintView->getDocument()->openCommand(std::string {typeName}.c_str());
+        ConstraintView->setVisible(true);
+    }
 }
 
 bool TaskDlgFemConstraint::accept()
@@ -280,27 +224,39 @@ bool TaskDlgFemConstraint::accept()
         std::string refs = parameter->getReferences();
 
         if (!refs.empty()) {
-            Gui::Command::doCommand(Gui::Command::Doc,
-                                    "App.ActiveDocument.%s.References = [%s]",
-                                    name.c_str(),
-                                    refs.c_str());
+            Gui::Command::doCommand(
+                Gui::Command::Doc,
+                "App.ActiveDocument.%s.References = [%s]",
+                name.c_str(),
+                refs.c_str()
+            );
         }
         else {
-            QMessageBox::warning(parameter,
-                                 tr("Input error"),
-                                 tr("You must specify at least one reference"));
+            QMessageBox::warning(
+                parameter,
+                tr("Input Error"),
+                tr("You must specify at least one reference")
+            );
             return false;
         }
 
+        std::string scale = parameter->getScale();
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.ActiveDocument.%s.Scale = %s",
+            name.c_str(),
+            scale.c_str()
+        );
         Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
         if (!ConstraintView->getObject()->isValid()) {
-            THROWM(Base::RuntimeError, ConstraintView->getObject()->getStatusString())
+            throw Base::RuntimeError(ConstraintView->getObject()->getStatusString());
         }
         Gui::Command::doCommand(Gui::Command::Gui, "Gui.activeDocument().resetEdit()");
-        Gui::Command::commitCommand();
+        ConstraintView->getDocument()->commitCommand();
     }
     catch (const Base::Exception& e) {
-        QMessageBox::warning(parameter, tr("Input error"), QString::fromUtf8(e.what()));
+        ConstraintView->getDocument()->abortCommand();
+        QMessageBox::warning(parameter, tr("Input Error"), QString::fromLatin1(e.what()));
         return false;
     }
 
@@ -310,11 +266,11 @@ bool TaskDlgFemConstraint::accept()
 bool TaskDlgFemConstraint::reject()
 {
     // roll back the changes
-    Gui::Command::abortCommand();
+    ConstraintView->getDocument()->abortCommand();
     Gui::Command::doCommand(Gui::Command::Gui, "Gui.activeDocument().resetEdit()");
+    Gui::Command::updateActive();
 
     return true;
 }
-
 
 #include "moc_TaskFemConstraint.cpp"

@@ -31,6 +31,7 @@ import ObjectsFem
 from . import manager
 from .manager import get_meshname
 from .manager import init_doc
+from .meshes import generate_mesh
 
 
 def get_information():
@@ -39,14 +40,16 @@ def get_information():
         "meshtype": "face",
         "meshelement": "Quad4",
         "constraints": ["fixed", "force"],
-        "solvers": ["calculix", "ccxtools", "elmer", "mystran"],
+        "solvers": ["ccxtools", "mystran"], # elmer disabled until mesh has groups
         "material": "solid",
-        "equations": ["mechanical"]
+        "equations": ["mechanical"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.buckling_platebuckling import setup
@@ -64,6 +67,7 @@ one each mesh node on one edge 100 N tension force
 Does not work on Z88 because Z88 does not support quad4 elements
 
 """
+    )
 
 
 def setup(doc=None, solvertype="ccxtools"):
@@ -95,7 +99,7 @@ def setup(doc=None, solvertype="ccxtools"):
     doc.recompute()
 
     # all geom boolean fragment
-    geom_obj = SplitFeatures.makeBooleanFragments(name='ThePointPlate')
+    geom_obj = SplitFeatures.makeBooleanFragments(name="ThePointPlate")
     geom_obj.Objects = [plate, force_pt1, force_pt2, force_pt3, force_pt4]
     doc.recompute()
     if FreeCAD.GuiUp:
@@ -115,11 +119,9 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis = ObjectsFem.makeAnalysis(doc, "Analysis")
 
     # solver
-    if solvertype == "calculix":
-        solver_obj = ObjectsFem.makeSolverCalculix(doc, "SolverCalculiX")
-    elif solvertype == "ccxtools":
-        solver_obj = ObjectsFem.makeSolverCalculixCcxTools(doc, "CalculiXccxTools")
-        solver_obj.WorkingDir = u""
+    if solvertype == "ccxtools":
+        solver_obj = ObjectsFem.makeSolverCalculiXCcxTools(doc, "CalculiXCcxTools")
+        solver_obj.WorkingDir = ""
     elif solvertype == "elmer":
         solver_obj = ObjectsFem.makeSolverElmer(doc, "SolverElmer")
         ObjectsFem.makeEquationElasticity(doc, solver_obj)
@@ -133,17 +135,17 @@ def setup(doc=None, solvertype="ccxtools"):
             "No solver object was created.\n".format(solvertype)
         )
 
-    if solvertype == "calculix" or solvertype == "ccxtools":
+    if solvertype == "ccxtools":
         solver_obj.SplitInputWriter = False
         solver_obj.AnalysisType = "static"
-        solver_obj.GeometricalNonlinearity = "linear"
+        solver_obj.GeometricalNonlinearity = False
         solver_obj.ThermoMechSteadyState = False
         solver_obj.MatrixSolverType = "default"
         solver_obj.IterationsControlParameterTimeUse = False
     analysis.addObject(solver_obj)
 
     # shell thickness
-    thickness_obj = ObjectsFem.makeElementGeometry2D(doc, 0.3, 'Thickness')
+    thickness_obj = ObjectsFem.makeElementGeometry2D(doc, 0.3, "Thickness")
     analysis.addObject(thickness_obj)
 
     # material
@@ -156,12 +158,12 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis.addObject(material_obj)
 
     # constraint fixed
-    con_fixed = ObjectsFem.makeConstraintFixed(doc, "ConstraintFixed")
+    con_fixed = ObjectsFem.makeConstraintFixed(doc, "Fixed")
     con_fixed.References = [(geom_obj, "Edge1")]
     analysis.addObject(con_fixed)
 
     # constraint force
-    con_force = ObjectsFem.makeConstraintForce(doc, "ConstraintForce")
+    con_force = ObjectsFem.makeConstraintForce(doc, "Force")
     con_force.References = [
         (geom_obj, "Vertex7"),
         (geom_obj, "Vertex1"),
@@ -177,16 +179,11 @@ def setup(doc=None, solvertype="ccxtools"):
 
     # mesh
     from .meshes.mesh_plate_mystran_quad4 import create_nodes, create_elements
-    fem_mesh = Fem.FemMesh()
-    control = create_nodes(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating nodes.\n")
-    control = create_elements(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating elements.\n")
+
+    fem_mesh = generate_mesh.mesh_from_existing(create_nodes, create_elements)
     femmesh_obj = analysis.addObject(ObjectsFem.makeMeshGmsh(doc, get_meshname()))[0]
     femmesh_obj.FemMesh = fem_mesh
-    femmesh_obj.Part = geom_obj
+    femmesh_obj.Shape = geom_obj
     femmesh_obj.SecondOrderLinear = False
     femmesh_obj.CharacteristicLengthMax = "1.0 mm"
     femmesh_obj.ElementDimension = "2D"

@@ -59,8 +59,10 @@ endif(MSVC)
 
 include_directories(
     ${QtCore_INCLUDE_DIRS}
+    ${ICU_INCLUDE_DIRS}
 )
 list(APPEND FreeCADBase_LIBS ${QtCore_LIBRARIES})
+list(APPEND FreeCADBase_LIBS ${ICU_LIBRARIES})
 
 list(APPEND FreeCADBase_LIBS fmt::fmt)
 
@@ -191,21 +193,12 @@ SET(FreeCADBase_UNITAPI_SRCS
     UnitsApiPy.cpp
     UnitsApi.h
     UnitsSchema.h
+    UnitsSchemas.h
+    UnitsSchemasData.h
+    UnitsSchemasSpecs.h
+    UnitsConvData.h
     UnitsSchema.cpp
-    UnitsSchemaInternal.h
-    UnitsSchemaInternal.cpp
-    UnitsSchemaMKS.h
-    UnitsSchemaMKS.cpp
-    UnitsSchemaImperial1.h
-    UnitsSchemaImperial1.cpp
-    UnitsSchemaCentimeters.h
-    UnitsSchemaCentimeters.cpp
-    UnitsSchemaMmMin.h
-    UnitsSchemaMmMin.cpp
-    UnitsSchemaFemMilliMeterNewton.h
-    UnitsSchemaFemMilliMeterNewton.cpp
-    UnitsSchemaMeterDecimal.h
-    UnitsSchemaMeterDecimal.cpp
+    UnitsSchemas.cpp
     Quantity.h
     Quantity.cpp
     QuantityPyImp.cpp

@@ -26,21 +26,25 @@
 # include <QButtonGroup>
 # include <QCheckBox>
 # include <QComboBox>
+# include <QFileInfo>
 # include <QGridLayout>
 # include <QHBoxLayout>
 # include <QLabel>
 # include <QMenu>
+# include <QPointer>
 # include <QRadioButton>
 # include <QSlider>
 # include <QWidgetAction>
 #endif
 
 #include <App/PropertyContainer.h>
+#include <App/PropertyFile.h>
 #include <App/PropertyStandard.h>
 #include <Base/Tools.h>
 
 #include "ShadingOptions.h"
 #include "Application.h"
+#include "FileDialog.h"
 #include "RenderParams.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -106,6 +110,10 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     // the surface's response to light, so at most one can be on.
     auto modelRow = new QHBoxLayout;
     modelRow->setContentsMargins(0, 0, 0, 0);
+    // Three one-word labels read as one run of text at the style default
+    // spacing -- wider than the 12 the checkbox grid below uses, because
+    // those sit in aligned columns and these do not.
+    modelRow->setSpacing(18);
     // Named for what it IS, not for its position in the list. "Default"
     // described only the fact that a view starts in it, which stops being
     // true the moment that changes and never said anything about the
@@ -143,6 +151,15 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     envCombo->addItem(tr("Sunset"));
     envCombo->addItem(tr("Interior"));
     envCombo->addItem(tr("Light tent"));
+    // An image is the same choice as a preset rather than a modifier of
+    // one: the renderer takes one INSTEAD of the other
+    // (SoFCRendererBridge::translatePBR resolves the image first and
+    // only falls back to the preset). So it is the last entry of this
+    // combo -- a separate browse button beside it would be a control
+    // that silently disables the one next to it.
+    envCombo->insertSeparator(envCombo->count());
+    envImageIndex = envCombo->count();
+    envCombo->addItem(tr("Image..."));
     envCombo->setToolTip(doc(RenderParams::docPBREnvPreset()));
     envLabel->setToolTip(envCombo->toolTip());
     // The environment lights the scene whether or not it is DRAWN --
@@ -242,9 +259,14 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     layout->addWidget(cavityRadiusLabel, 6, 0);
     layout->addLayout(radiusRow, 6, 1);
 
-    hint = new QLabel(tr("Needs the render engine: set the render cache "
-                         "to the renderer mode\nand pick a renderer type "
-                         "in the 3D view preferences."), this);
+    // Not "pick a renderer type in the preferences" any more: the
+    // render path stopped being a stored choice in ca372262f1, and
+    // both controls left the preference page with it. What is left
+    // to say is that the engine is not running, which now means this
+    // build has no backend or the one it has could not start --
+    // neither of them something to fix in a dialog.
+    hint = new QLabel(tr("Needs the render engine, which is not "
+                         "running on this view."), this);
     hint->setEnabled(false);
     layout->addWidget(hint, 7, 0, 1, 2);
 
@@ -267,6 +289,14 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
             this, [this](int index) {
         if (loading)
             return;
+        if (index == envImageIndex) {
+            chooseEnvImage();
+            return;
+        }
+        // Leaving the image behind is part of picking a preset: an image
+        // still set would go on winning, and the combo would read as a
+        // control that does nothing.
+        clearEnvImage();
         if (auto prop = renderProp<App::PropertyEnumeration>(activeView(),
                                                             "PBREnvPreset"))
             prop->setValue(long(index));
@@ -380,6 +410,80 @@ void ShadingOptionsWidget::setFlag(const char *name, bool value)
         prop->setValue(value);
 }
 
+QString ShadingOptionsWidget::envImageName() const
+{
+    auto view = activeView();
+    // The embedded copy wins in the bridge, so it wins here: it is what
+    // the scene is standing in. A restored document holds the copy but
+    // not the path it came from -- the source name is runtime state --
+    // which is why the copy is asked first rather than second.
+    if (auto prop = renderProp<App::PropertyFileIncluded>(view,
+                                                          "PBREnvImageData")) {
+        if (!prop->isEmpty()) {
+            QString name = QString::fromUtf8(
+                    prop->getOriginalFileName().c_str());
+            if (name.isEmpty())
+                name = QString::fromUtf8(prop->getValue());
+            return name;
+        }
+    }
+    if (auto prop = renderProp<App::PropertyFile>(view, "PBREnvImage")) {
+        if (const char *path = prop->getValue())
+            return QString::fromUtf8(path);
+    }
+    return QString();
+}
+
+void ShadingOptionsWidget::chooseEnvImage()
+{
+    auto view = activeView();
+    auto prop = renderProp<App::PropertyFile>(view, "PBREnvImage");
+    if (!prop) {
+        refresh();
+        return;
+    }
+    // The menu holds a popup grab, and a file dialog raised under one
+    // closes it on the first click anyway. Dropping it here makes the
+    // sequence the same every time instead of style dependent.
+    if (auto menu = qobject_cast<QMenu*>(parentWidget()))
+        menu->close();
+    // The menu owns this widget, so it outlives the dialog -- but only
+    // as long as the toolbar does not rebuild the menu underneath it,
+    // which is exactly the kind of thing a modal loop lets happen.
+    QPointer<ShadingOptionsWidget> self(this);
+    QString path = FileDialog::getOpenFileName(
+            this, tr("Environment image"),
+            QString::fromUtf8(prop->getValue()),
+            tr("Environment images (*.hdr *.pic *.png *.jpg *.jpeg *.bmp "
+               "*.tif *.tiff);;All files (*)"));
+    if (!self)
+        return;
+    // Cancelled: the combo has already moved onto the image entry, and
+    // refresh puts it back on the preset that is still lighting the
+    // scene.
+    if (!path.isEmpty())
+        prop->setValue(path.toUtf8().constData());
+    refresh();
+}
+
+void ShadingOptionsWidget::clearEnvImage()
+{
+    auto view = activeView();
+    if (auto prop = renderProp<App::PropertyFile>(view, "PBREnvImage")) {
+        if (prop->getValue() && prop->getValue()[0])
+            prop->setValue("");
+    }
+    // The path change drops the embedded copy through
+    // View3DInventorViewer::syncEnvImageEmbed -- except on a restored
+    // document, whose path is already empty while the copy still lights
+    // the scene, so the copy is cleared here rather than assumed gone.
+    if (auto prop = renderProp<App::PropertyFileIncluded>(view,
+                                                          "PBREnvImageData")) {
+        if (!prop->isEmpty())
+            prop->setValue("");
+    }
+}
+
 void ShadingOptionsWidget::refresh()
 {
     auto view = activeView();
@@ -396,7 +500,22 @@ void ShadingOptionsWidget::refresh()
     matcapRadio->setChecked(matcap);
     pbrRadio->setChecked(pbr && !matcap);
     classicRadio->setChecked(!pbr && !matcap);
-    if (auto prop = renderProp<App::PropertyEnumeration>(view, "PBREnvPreset"))
+    // An image set on the view is what the scene is standing in, so the
+    // combo names it; the entry carries the file name rather than the
+    // bare "Image..." prompt, which is the only place the choice is
+    // visible without opening the property editor.
+    QString envImage = envImageName();
+    if (envImageIndex >= 0) {
+        envCombo->setItemText(envImageIndex, envImage.isEmpty()
+                ? tr("Image...")
+                : QFileInfo(envImage).fileName());
+        envCombo->setItemData(envImageIndex, envImage.isEmpty()
+                ? QVariant() : QVariant(envImage), Qt::ToolTipRole);
+    }
+    if (!envImage.isEmpty() && envImageIndex >= 0)
+        envCombo->setCurrentIndex(envImageIndex);
+    else if (auto prop = renderProp<App::PropertyEnumeration>(view,
+                                                              "PBREnvPreset"))
         envCombo->setCurrentIndex(int(prop->getValue()));
     // The fallback is the parameter and not a literal false: this one
     // defaults ON, so a hardcoded false would draw the box unchecked

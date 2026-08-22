@@ -1008,9 +1008,10 @@ elementary shapes, Face, Edge, Vertex.
     <Methode Name="getChildShapes" Const="true">
       <Documentation>
           <UserDocu>
-getChildShapes(shapetype, avoidtype='') -> list(Shape)
+getChildShapes(shapetype, avoidtype='') -> ShapeList
 
-Return a list of child sub-shapes of given type.
+Return the child sub-shapes of given type, as the same lazy list
+Shape.Faces and its siblings answer with.
 
 shapetype: the type of requesting sub shapes
 avoidtype: optional shape type to skip when exploring
@@ -1049,57 +1050,58 @@ avoidtype: optional shape type to skip when exploring
     </Attribute>
     <Attribute Name="Faces" ReadOnly="true">
       <Documentation>
-        <UserDocu>List of faces in this shape.</UserDocu>
+        <UserDocu>The faces of this shape, as a Part.ShapeList: a lazy list that
+builds a face only when one is asked for.</UserDocu>
       </Documentation>
-      <Parameter Name="Faces" Type="List"/>
+      <Parameter Name="Faces" Type="Object"/>
     </Attribute>
     <Attribute Name="Vertexes" ReadOnly="true">
       <Documentation>
-        <UserDocu>List of vertexes in this shape.</UserDocu>
+        <UserDocu>The vertexes of this shape, as a lazy Part.ShapeList.</UserDocu>
       </Documentation>
-      <Parameter Name="Vertexes" Type="List"/>
+      <Parameter Name="Vertexes" Type="Object"/>
     </Attribute>
       <Attribute Name="Shells" ReadOnly="true">
           <Documentation>
-              <UserDocu>List of subsequent shapes in this shape.</UserDocu>
+              <UserDocu>The shells of this shape, as a lazy Part.ShapeList.</UserDocu>
           </Documentation>
-          <Parameter Name="Shells" Type="List"/>
+          <Parameter Name="Shells" Type="Object"/>
       </Attribute>
       <Attribute Name="Solids" ReadOnly="true">
           <Documentation>
-              <UserDocu>List of subsequent shapes in this shape.</UserDocu>
+              <UserDocu>The solids of this shape, as a lazy Part.ShapeList.</UserDocu>
           </Documentation>
-          <Parameter Name="Solids" Type="List"/>
+          <Parameter Name="Solids" Type="Object"/>
       </Attribute>
       <Attribute Name="CompSolids" ReadOnly="true">
       <Documentation>
-          <UserDocu>List of subsequent shapes in this shape.</UserDocu>
+          <UserDocu>The compsolids of this shape, as a lazy Part.ShapeList.</UserDocu>
       </Documentation>
-      <Parameter Name="CompSolids" Type="List"/>
+      <Parameter Name="CompSolids" Type="Object"/>
     </Attribute>
     <Attribute Name="Edges" ReadOnly="true">
       <Documentation>
-       <UserDocu>List of Edges in this shape.</UserDocu>
+       <UserDocu>The edges of this shape, as a lazy Part.ShapeList.</UserDocu>
       </Documentation>
-      <Parameter Name="Edges" Type="List"/>
+      <Parameter Name="Edges" Type="Object"/>
    </Attribute>
     <Attribute Name="Wires" ReadOnly="true">
       <Documentation>
-        <UserDocu>List of wires in this shape.</UserDocu>
+        <UserDocu>The wires of this shape, as a lazy Part.ShapeList.</UserDocu>
       </Documentation>
-      <Parameter Name="Wires" Type="List"/>
+      <Parameter Name="Wires" Type="Object"/>
     </Attribute>
     <Attribute Name="Compounds" ReadOnly="true">
       <Documentation>
-        <UserDocu>List of compounds in this shape.</UserDocu>
+        <UserDocu>The compounds of this shape, as a lazy Part.ShapeList.</UserDocu>
       </Documentation>
-      <Parameter Name="Compounds" Type="List"/>
+      <Parameter Name="Compounds" Type="Object"/>
     </Attribute>
     <Attribute Name="SubShapes" ReadOnly="true">
       <Documentation>
-        <UserDocu>List of sub-shapes in this shape.</UserDocu>
+        <UserDocu>The direct sub-shapes of this shape, as a lazy Part.ShapeList.</UserDocu>
       </Documentation>
-      <Parameter Name="SubShapes" Type="List"/>
+      <Parameter Name="SubShapes" Type="Object"/>
     </Attribute>
     <Attribute Name="Length" ReadOnly="true">
       <Documentation>

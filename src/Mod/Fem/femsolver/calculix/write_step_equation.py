@@ -36,8 +36,8 @@ def write_step_equation(f, ccxwriter):
 
     # build STEP line
     step = "*STEP"
-    if ccxwriter.solver_obj.GeometricalNonlinearity == "nonlinear":
-        if ccxwriter.analysis_type == "static" or ccxwriter.analysis_type == "thermomech":
+    if ccxwriter.solver_obj.GeometricalNonlinearity:
+        if ccxwriter.analysis_type in ["static", "thermomech"]:
             # https://www.comsol.com/blogs/what-is-geometric-nonlinearity
             step += ", NLGEOM"
         elif ccxwriter.analysis_type == "frequency":
@@ -45,16 +45,11 @@ def write_step_equation(f, ccxwriter):
                 "Analysis type frequency and geometrical nonlinear "
                 "analysis are not allowed together, linear is used instead!\n"
             )
-    if ccxwriter.solver_obj.IterationsThermoMechMaximum:
-        if ccxwriter.analysis_type == "thermomech":
-            step += ", INC={}".format(ccxwriter.solver_obj.IterationsThermoMechMaximum)
-        elif (
-            ccxwriter.analysis_type == "static"
-            or ccxwriter.analysis_type == "frequency"
-            or ccxwriter.analysis_type == "buckling"
-        ):
-            # parameter is for thermomechanical analysis only, see ccx manual *STEP
-            pass
+
+    if ccxwriter.solver_obj.IncrementsMaximum:
+        if ccxwriter.analysis_type in ["static", "thermomech", "electromagnetic"]:
+            step += f", INC={ccxwriter.solver_obj.IncrementsMaximum}"
+
     # write STEP line
     f.write(step + "\n")
 
@@ -64,84 +59,82 @@ def write_step_equation(f, ccxwriter):
         f.write("*CONTROLS, PARAMETERS=TIME INCREMENTATION\n")
         f.write(ccxwriter.solver_obj.IterationsControlParameterIter + "\n")
         f.write(ccxwriter.solver_obj.IterationsControlParameterCutb + "\n")
+        f.write("*CONTROLS, PARAMETERS=FIELD\n")
+        f.write(ccxwriter.solver_obj.IterationsControlParameterField + "\n")
 
     # ANALYSIS type line
     # analysis line --> analysis type
+    analysis_type = ""
     if ccxwriter.analysis_type == "static":
         analysis_type = "*STATIC"
     elif ccxwriter.analysis_type == "frequency":
         analysis_type = "*FREQUENCY"
     elif ccxwriter.analysis_type == "thermomech":
-        analysis_type = "*COUPLED TEMPERATURE-DISPLACEMENT"
+        if ccxwriter.solver_obj.ThermoMechType == "coupled":
+            analysis_type = "*COUPLED TEMPERATURE-DISPLACEMENT"
+        elif ccxwriter.solver_obj.ThermoMechType == "uncoupled":
+            analysis_type = "*UNCOUPLED TEMPERATURE-DISPLACEMENT"
+        elif ccxwriter.solver_obj.ThermoMechType == "pure heat transfer":
+            analysis_type = "*HEAT TRANSFER"
+        if ccxwriter.solver_obj.ThermoMechSteadyState:
+            analysis_type += ", STEADY STATE"
     elif ccxwriter.analysis_type == "check":
         analysis_type = "*NO ANALYSIS"
     elif ccxwriter.analysis_type == "buckling":
         analysis_type = "*BUCKLE"
+    elif ccxwriter.analysis_type == "electromagnetic":
+        if ccxwriter.solver_obj.ElectromagneticMode == "electrostatic":
+            analysis_type = "*HEAT TRANSFER, STEADY STATE"
+
     # analysis line --> solver type
     # https://forum.freecad.org/viewtopic.php?f=18&t=43178
     if ccxwriter.solver_obj.MatrixSolverType == "default":
         pass
+    elif ccxwriter.solver_obj.MatrixSolverType == "pastix":
+        analysis_type += ", SOLVER=PASTIX"
+    elif ccxwriter.solver_obj.MatrixSolverType == "pardiso":
+        analysis_type += ", SOLVER=PARDISO"
     elif ccxwriter.solver_obj.MatrixSolverType == "spooles":
         analysis_type += ", SOLVER=SPOOLES"
     elif ccxwriter.solver_obj.MatrixSolverType == "iterativescaling":
         analysis_type += ", SOLVER=ITERATIVE SCALING"
     elif ccxwriter.solver_obj.MatrixSolverType == "iterativecholesky":
         analysis_type += ", SOLVER=ITERATIVE CHOLESKY"
-    # analysis line --> user defined incrementations --> parameter DIRECT
-    # --> completely switch off ccx automatic incrementation
-    if ccxwriter.solver_obj.IterationsUserDefinedIncrementations:
-        if ccxwriter.analysis_type == "static":
+
+    # analysis line --> automatic incrementation --> parameter DIRECT
+    # completely switch off ccx automatic incrementation
+    if not ccxwriter.solver_obj.AutomaticIncrementation:
+        if ccxwriter.analysis_type in ["static", "thermomech", "electromagnetic"]:
             analysis_type += ", DIRECT"
-        elif ccxwriter.analysis_type == "thermomech":
-            analysis_type += ", DIRECT"
-        elif ccxwriter.analysis_type == "frequency":
-            FreeCAD.Console.PrintMessage(
-                "Analysis type frequency and IterationsUserDefinedIncrementations "
-                "are not allowed together, it is ignored\n"
-            )
-    # analysis line --> steadystate --> thermomech only
-    if ccxwriter.solver_obj.ThermoMechSteadyState:
-        # bernd: I do not know if STEADY STATE is allowed with DIRECT
-        # but since time steps are 1.0 it makes no sense IMHO
-        if ccxwriter.analysis_type == "thermomech":
-            analysis_type += ", STEADY STATE"
-            # Set time to 1 and ignore user inputs for steady state
-            ccxwriter.solver_obj.TimeInitialStep = 1.0
-            ccxwriter.solver_obj.TimeEnd = 1.0
-        elif (
-            ccxwriter.analysis_type == "static"
-            or ccxwriter.analysis_type == "frequency"
-            or ccxwriter.analysis_type == "buckling"
-        ):
-            pass  # not supported for static and frequency!
 
     # ANALYSIS parameter line
     analysis_parameter = ""
-    if ccxwriter.analysis_type == "static" or ccxwriter.analysis_type == "check":
-        if ccxwriter.solver_obj.IterationsUserDefinedIncrementations is True \
-                or ccxwriter.solver_obj.IterationsUserDefinedTimeStepLength is True:
-            analysis_parameter = "{},{}".format(
-                ccxwriter.solver_obj.TimeInitialStep,
-                ccxwriter.solver_obj.TimeEnd
-            )
+    if ccxwriter.analysis_type in ["static", "thermomech", "electromagnetic"]:
+        analysis_parameter = "{},{},{},{}".format(
+            ccxwriter.solver_obj.TimeInitialIncrement.getValueAs("s").Value,
+            ccxwriter.solver_obj.TimePeriod.getValueAs("s").Value,
+            ccxwriter.solver_obj.TimeMinimumIncrement.getValueAs("s").Value,
+            ccxwriter.solver_obj.TimeMaximumIncrement.getValueAs("s").Value,
+        )
     elif ccxwriter.analysis_type == "frequency":
-        if ccxwriter.solver_obj.EigenmodeLowLimit == 0.0 \
-                and ccxwriter.solver_obj.EigenmodeHighLimit == 0.0:
-            analysis_parameter = "{}\n".format(ccxwriter.solver_obj.EigenmodesCount)
+        if (
+            ccxwriter.solver_obj.EigenmodeLowLimit == 0.0
+            and ccxwriter.solver_obj.EigenmodeHighLimit == 0.0
+        ):
+            analysis_parameter = f"{ccxwriter.solver_obj.EigenmodesCount}\n"
         else:
             analysis_parameter = "{},{},{}\n".format(
                 ccxwriter.solver_obj.EigenmodesCount,
-                ccxwriter.solver_obj.EigenmodeLowLimit,
-                ccxwriter.solver_obj.EigenmodeHighLimit
+                ccxwriter.solver_obj.EigenmodeLowLimit.getValueAs("Hz").Value,
+                ccxwriter.solver_obj.EigenmodeHighLimit.getValueAs("Hz").Value,
             )
-    elif ccxwriter.analysis_type == "thermomech":
-        # OvG: 1.0 increment, total time 1 for steady state will cut back automatically
-        analysis_parameter = "{},{}".format(
-            ccxwriter.solver_obj.TimeInitialStep,
-            ccxwriter.solver_obj.TimeEnd
-        )
     elif ccxwriter.analysis_type == "buckling":
-        analysis_parameter = "{}\n".format(ccxwriter.solver_obj.BucklingFactors)
+        analysis_parameter = "{},{}".format(
+            ccxwriter.solver_obj.BucklingFactors,
+            ccxwriter.solver_obj.BucklingAccuracy,
+        )
+    elif ccxwriter.analysis_type == "check":
+        analysis_parameter = ""
 
     # write analysis type line, analysis parameter line
     f.write(analysis_type + "\n")
@@ -150,4 +143,4 @@ def write_step_equation(f, ccxwriter):
 
 def write_step_end(f, ccxwriter):
     f.write("\n{}\n".format(59 * "*"))
-    f.write("*END STEP \n")
+    f.write("*END STEP\n")

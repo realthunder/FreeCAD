@@ -20,22 +20,27 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef Fem_FemPostFilter_H
-#define Fem_FemPostFilter_H
+#pragma once
 
+#include <vtkArrayCalculator.h>
 #include <vtkContourFilter.h>
+#include <vtkSmoothPolyDataFilter.h>
 #include <vtkCutter.h>
 #include <vtkExtractGeometry.h>
 #include <vtkExtractVectorComponents.h>
 #include <vtkLineSource.h>
 #include <vtkPointSource.h>
 #include <vtkProbeFilter.h>
+#include <vtkAppendArcLength.h>
 #include <vtkSmartPointer.h>
 #include <vtkTableBasedClipDataSet.h>
 #include <vtkVectorNorm.h>
 #include <vtkWarpVector.h>
+#include <vtkImplicitFunction.h>
 
 #include <App/PropertyUnits.h>
+#include <App/DocumentObjectExtension.h>
+#include <App/FeaturePython.h>
 
 #include "FemPostObject.h"
 
@@ -43,38 +48,98 @@
 namespace Fem
 {
 
+enum class TransformLocation : size_t
+{
+    input,
+    output
+};
+
+class FemPostFilterPy;
+
 class FemExport FemPostFilter: public Fem::FemPostObject
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Fem::FemPostFilter);
+
+protected:
+    bool dataIsAvailable();
+    vtkSmartPointer<vtkDataSet> getInputData();
+    std::vector<std::string> getInputVectorFields();
+    std::vector<std::string> getInputScalarFields();
+
+    // pipeline handling for derived filter
+    struct FilterPipeline
+    {
+        vtkSmartPointer<vtkAlgorithm> source, target;
+        std::vector<vtkSmartPointer<vtkAlgorithm>> algorithmStorage;
+    };
+
+    // pipeline handling
+    void addFilterPipeline(const FilterPipeline& p, std::string name);
+    FilterPipeline& getFilterPipeline(std::string name);
+    void setActiveFilterPipeline(std::string name);
+
+    // Transformation handling
+    void setTransformLocation(TransformLocation loc);
+
+    friend class FemPostFilterPy;
 
 public:
     /// Constructor
     FemPostFilter();
     ~FemPostFilter() override;
 
-    App::PropertyLink Input;
+    App::PropertyFloat Frame;
 
+    void onChanged(const App::Property* prop) override;
     App::DocumentObjectExecReturn* execute() override;
 
-protected:
-    vtkDataObject* getInputData();
+    vtkSmartPointer<vtkAlgorithm> getFilterInput();
+    vtkSmartPointer<vtkAlgorithm> getFilterOutput();
 
-    // pipeline handling for derived filter
-    struct FilterPipeline
-    {
-        vtkSmartPointer<vtkAlgorithm> source, target;
-        vtkSmartPointer<vtkProbeFilter> filterSource, filterTarget;
-        std::vector<vtkSmartPointer<vtkAlgorithm>> algorithmStorage;
-    };
-
-    void addFilterPipeline(const FilterPipeline& p, std::string name);
-    void setActiveFilterPipeline(std::string name);
-    FilterPipeline& getFilterPipeline(std::string name);
+    PyObject* getPyObject() override;
 
 private:
     // handling of multiple pipelines which can be the filter
     std::map<std::string, FilterPipeline> m_pipelines;
     std::string m_activePipeline;
+    bool m_use_transform = false;
+    bool m_running_setup = false;
+    TransformLocation m_transform_location = TransformLocation::output;
+
+    void pipelineChanged();  // inform parents that the pipeline changed
+};
+
+using PostFilterPython = App::FeaturePythonT<FemPostFilter>;
+
+class FemExport FemPostSmoothFilterExtension: public App::DocumentObjectExtension
+{
+    EXTENSION_PROPERTY_HEADER_WITH_OVERRIDE(Fem::FemPostSmoothFilterExtension);
+
+public:
+    FemPostSmoothFilterExtension();
+    ~FemPostSmoothFilterExtension() override = default;
+
+    App::PropertyBool BoundarySmoothing;
+    App::PropertyAngle EdgeAngle;
+    App::PropertyBool EdgeSmoothing;
+    App::PropertyBool EnableSmoothing;
+    App::PropertyAngle FeatureAngle;
+    App::PropertyIntegerConstraint Iterations;
+    App::PropertyFloatConstraint RelaxationFactor;
+
+    vtkSmartPointer<vtkSmoothPolyDataFilter> getFilter() const
+    {
+        return m_smooth;
+    }
+
+protected:
+    void extensionOnChanged(const App::Property* prop) override;
+
+private:
+    vtkSmartPointer<vtkSmoothPolyDataFilter> m_smooth;
+    static const App::PropertyQuantityConstraint::Constraints angleRange;
+    static const App::PropertyIntegerConstraint::Constraints iterationRange;
+    static const App::PropertyFloatConstraint::Constraints relaxationRange;
 };
 
 // ***************************************************************************
@@ -111,12 +176,15 @@ public:
 protected:
     App::DocumentObjectExecReturn* execute() override;
     void onChanged(const App::Property* prop) override;
-    void handleChangedPropertyType(Base::XMLReader& reader,
-                                   const char* TypeName,
-                                   App::Property* prop) override;
+    void handleChangedPropertyType(
+        Base::XMLReader& reader,
+        const char* TypeName,
+        App::Property* prop
+    ) override;
 
 private:
     vtkSmartPointer<vtkLineSource> m_line;
+    vtkSmartPointer<vtkAppendArcLength> m_arclength;
     vtkSmartPointer<vtkProbeFilter> m_probe;
 };
 
@@ -182,6 +250,7 @@ protected:
 private:
     vtkSmartPointer<vtkTableBasedClipDataSet> m_clipper;
     vtkSmartPointer<vtkExtractGeometry> m_extractor;
+    vtkSmartPointer<vtkImplicitFunction> m_defaultFunction;
 };
 
 
@@ -210,11 +279,14 @@ public:
 protected:
     App::DocumentObjectExecReturn* execute() override;
     void onChanged(const App::Property* prop) override;
+
     void recalculateContours(double min, double max);
     void refreshFields();
     void refreshVectors();
     bool m_blockPropertyChanges = false;
+
     std::string contourFieldName;
+    FemPostSmoothFilterExtension smoothExtension;
 
 private:
     vtkSmartPointer<vtkContourFilter> m_contours;
@@ -251,6 +323,7 @@ protected:
 
 private:
     vtkSmartPointer<vtkCutter> m_cutter;
+    vtkSmartPointer<vtkImplicitFunction> m_defaultFunction;
 };
 
 
@@ -316,7 +389,39 @@ private:
     App::Enumeration m_vectorFields;
 };
 
+// ***************************************************************************
+// calculator filter
+class FemExport FemPostCalculatorFilter: public FemPostFilter
+{
+
+    PROPERTY_HEADER_WITH_OVERRIDE(Fem::FemPostCalculatorFilter);
+
+public:
+    FemPostCalculatorFilter();
+    ~FemPostCalculatorFilter() override;
+
+    App::PropertyString FieldName;
+    App::PropertyString Function;
+    App::PropertyFloat ReplacementValue;
+    App::PropertyBool ReplaceInvalid;
+
+    const char* getViewProviderName() const override
+    {
+        return "FemGui::ViewProviderFemPostCalculator";
+    }
+    short int mustExecute() const override;
+
+    const std::vector<std::string> getScalarVariables();
+    const std::vector<std::string> getVectorVariables();
+
+protected:
+    App::DocumentObjectExecReturn* execute() override;
+    void onChanged(const App::Property* prop) override;
+
+    void updateAvailableFields();
+
+private:
+    vtkSmartPointer<vtkArrayCalculator> m_calculator;
+};
+
 }  // namespace Fem
-
-
-#endif  // Fem_FemPostFilter_H

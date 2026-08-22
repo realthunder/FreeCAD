@@ -20,34 +20,42 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef Fem_FemPostPipeline_H
-#define Fem_FemPostPipeline_H
+#pragma once
+
+#include "Base/Unit.h"
+#include "FemPostGroupExtension.h"
 
 #include "FemPostFilter.h"
 #include "FemPostFunction.h"
 #include "FemPostObject.h"
 #include "FemResultObject.h"
+#include "VTKExtensions/vtkFemFrameSourceAlgorithm.h"
 
+#if VTK_VERSION_NUMBER < VTK_VERSION_CHECK(9, 2, 20230125)
+# include "VTKExtensions/vtkCleanUnstructuredGrid.h"
+#else
+# include <vtkCleanUnstructuredGrid.h>
+#endif
 #include <vtkSmartPointer.h>
 
 
 namespace Fem
 {
 
-class FemExport FemPostPipeline: public Fem::FemPostFilter
+class FemExport FemPostPipeline: public Fem::FemPostObject, public Fem::FemPostGroupExtension
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(Fem::FemPostPipeline);
+    PROPERTY_HEADER_WITH_EXTENSIONS(Fem::FemPostPipeline);
 
 public:
     /// Constructor
     FemPostPipeline();
-    ~FemPostPipeline() override;
 
-    App::PropertyLinkList Filter;
-    App::PropertyLink Functions;
-    App::PropertyEnumeration Mode;
+    App::PropertyEnumeration Frame;
+    App::PropertyBool MergeDuplicate;
 
-    short mustExecute() const override;
+    virtual vtkDataSet* getDataSet() override;
+    Fem::FemPostFunctionProvider* getFunctionProvider();
+
     App::DocumentObjectExecReturn* execute() override;
     PyObject* getPyObject() override;
 
@@ -56,37 +64,82 @@ public:
         return "FemGui::ViewProviderFemPostPipeline";
     }
 
-    // load data from files
+    // load data from files (single or as multiframe)
     static bool canRead(Base::FileInfo file);
     void read(Base::FileInfo file);
+    void read(
+        std::vector<Base::FileInfo>& files,
+        std::vector<double>& values,
+        Base::Unit unit,
+        std::string& frame_type
+    );
     void scale(double s);
+    void renameArrays(const std::map<std::string, std::string>& names);
+    void addArrayFromFunction(const std::map<std::string, std::string>& functions);
 
     // load from results
     void load(FemResultObject* res);
+    void load(
+        std::vector<FemResultObject*>& res,
+        std::vector<double>& values,
+        Base::Unit unit,
+        std::string& frame_type
+    );
 
-    // Pipeline handling
-    void recomputeChildren();
-    FemPostObject* getLastPostObject();
-    bool holdsPostObject(FemPostObject* obj);
+    // Group pipeline handling
+    void filterChanged(FemPostFilter* filter) override;
+    void filterPipelineChanged(FemPostFilter* filter) override;
+
+    // frame handling
+    bool hasFrames();
+    std::string getFrameType();
+    Base::Unit getFrameUnit();
+    void setTimeInfo(const std::string& frameType, const Base::Unit& unit);
+    unsigned int getFrameNumber();
+    std::vector<double> getFrameValues();
+
+    // output algorithm handling
+    vtkSmartPointer<vtkAlgorithm> getOutputAlgorithm()
+    {
+        return m_source_algorithm;
+    }
 
 protected:
     void onChanged(const App::Property* prop) override;
+    bool allowObject(App::DocumentObject* obj) override;
+
+    // update documents
+    void handleChangedPropertyName(
+        Base::XMLReader& reader,
+        const char* TypeName,
+        const char* PropName
+    ) override;
+    void onDocumentRestored() override;
 
 private:
-    static const char* ModeEnums[];
+    App::Enumeration m_frameEnum;
+
+    vtkSmartPointer<vtkFemFrameSourceAlgorithm> m_source_algorithm;
+    vtkSmartPointer<vtkCleanUnstructuredGrid> m_clean_filter;
+
+    bool m_block_property = false;
+    bool m_data_updated = false;
+    void updateData();
+    void updateFrameValues();
+
 
     template<class TReader>
-    void readXMLFile(std::string file)
+    vtkSmartPointer<vtkDataObject> readXMLFile(std::string file)
     {
 
         vtkSmartPointer<TReader> reader = vtkSmartPointer<TReader>::New();
         reader->SetFileName(file.c_str());
         reader->Update();
-        Data.setValue(reader->GetOutput());
+        return reader->GetOutput();
     }
+    vtkSmartPointer<vtkDataObject> dataObjectFromFile(const Base::FileInfo& File);
+    // read .pvd file into multiblock dataset
+    vtkSmartPointer<vtkDataObject> readPVD(const Base::FileInfo& file);
 };
 
 }  // namespace Fem
-
-
-#endif  // Fem_FemPostPipeline_H

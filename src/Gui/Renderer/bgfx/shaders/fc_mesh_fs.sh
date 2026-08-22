@@ -17,6 +17,23 @@
 #include "fc_mesh_lighting.sh"
 #include "fc_finish.sh"
 
+// Per-face texture palette (unit 10): the images the draw's faces are
+// painted with, as the layers of one array texture, since a draw binds
+// one sampler. Outside the TEXTURE variants deliberately -- the
+// coordinates come from the face's own projection frame, so a shape
+// with no texture coordinates at all can still be imaged face by face.
+//
+// x = on, y = millimetres of object space per tile (<= 0 = use the
+// mesh's own texture coordinates, which only the TEXTURE variants
+// have), z = the one layer every fragment reads (< 0 = read the
+// per-face stream), w = how many layers the array holds.
+SAMPLER2DARRAY(s_texFace, 10);
+uniform vec4 u_faceTexParams;
+
+#ifdef GROUND_FADE
+#include "fc_ground_fade.sh"
+#endif
+
 #ifdef TEXTURE
 SAMPLER2D(s_texColor, 0);
 // x = texture environment (0 modulate, 1 decal, 2 blend, 3 replace),
@@ -226,7 +243,7 @@ void main()
 	// entry 0 (the draw's own finish) for a draw that does not consume
 	// the stream -- the same u_matEmissive.w gate the material fields
 	// above use, so an unbound attribute is never read.
-	vec2 finishSlot = v_findex * perFace;
+	vec3 finishSlot = v_findex * perFace;
 	vec4 finishParams = fcFinishEntry(finishSlot.x);
 	if (finishParams.x > 0.5)
 	{
@@ -287,6 +304,64 @@ void main()
 	// color texture does not modulate the glow (glTF semantics).
 	if (u_texParams.z > 0.5)
 		color += fcAuthoredColor(texture2D(s_texEmissive, uv).rgb);
+#endif
+
+	// The face's own image, on top of whatever the unit-0 texture did:
+	// a shape may carry both, and the face image is the more specific
+	// statement. Modulate, like the default texture environment -- a
+	// marking on a red part comes out red-tinted, which is what the
+	// same image applied through the ordinary texture path does.
+	if (u_faceTexParams.x > 0.5)
+	{
+		// The draw's own layer, or this face's out of the stream.
+		// Layer numbering starts at 1: 0 is the untextured face, and
+		// the array's layer i holds palette entry i.
+		float faceLayer = u_faceTexParams.z >= 0.0
+			? u_faceTexParams.z : finishSlot.z;
+		vec2 fuv;
+		if (u_faceTexParams.y > 0.0)
+			fuv = fcFrameTexUV(v_opos, v_onrm, finishSlot.y,
+			                   u_faceTexParams.y);
+		else
+#ifdef TEXTURE
+			fuv = uv;
+#else
+			fuv = vec2(0.0, 0.0);
+#endif
+		float slice = clamp(faceLayer - 1.0, 0.0,
+		                    max(u_faceTexParams.w - 1.0, 0.0));
+		// KEY: the sample is taken HERE, outside the per-face test
+		// below, because WHICH face a fragment belongs to varies
+		// across the quad. A sampler in divergent control flow has
+		// no defined derivatives, so it cannot pick a mip level --
+		// and an unmipped minified checker is the speckle this
+		// costs. The branch above is uniform per draw (a uniform and
+		// the object-space position), so the derivatives here are
+		// the real ones.
+		//
+		// A picture, like the base colour texture: its texels are
+		// display numbers and decode on the way in, its alpha is
+		// coverage and does not.
+		vec4 ftex = fcAuthoredColor4(
+			texture2DArray(s_texFace, vec3(fuv, slice)));
+		if (faceLayer > 0.5)
+		{
+			color *= ftex.rgb;
+			alpha *= ftex.a;
+			if (alpha < 0.004)
+				discard;
+		}
+	}
+
+#ifdef GROUND_FADE
+	// The ground's rim, dissolved (fc_ground_fade.sh).
+	alpha *= fcGroundFade(v_vpos);
+	// Discarded rather than left to blend at zero: the quad writes
+	// depth, and an invisible ground that still occludes what is behind
+	// it is a worse artifact than the edge this fade removes. Early-Z
+	// is what it costs, which for one quad is nothing.
+	if (alpha < 0.004)
+		discard;
 #endif
 
 #ifdef OIT

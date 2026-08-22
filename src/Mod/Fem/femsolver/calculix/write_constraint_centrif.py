@@ -60,12 +60,16 @@ def get_after_write_constraint():
 
 
 def write_meshdata_constraint(f, femobj, centrif_obj, ccxwriter):
-    f.write("*ELSET,ELSET={}\n".format(centrif_obj.Name))
-    if isinstance(femobj["FEMElements"], str):
-        f.write("{}\n".format(femobj["FEMElements"]))
-    else:
-        for e in femobj["FEMElements"]:
-            f.write("{},\n".format(e))
+
+    f.write(f"*ELSET,ELSET={centrif_obj.Name}\n")
+    for refs, elem, is_sub_el in femobj["CentrifElements"]:
+        if not is_sub_el:
+            for e in elem:
+                f.write(f"{e},\n")
+
+    # use all elements if there are no references
+    if not femobj["CentrifElements"]:
+        f.write(f"{ccxwriter.ccx_eall}\n")
 
 
 def write_constraint(f, femobj, centrif_obj, ccxwriter):
@@ -85,22 +89,21 @@ def write_constraint(f, femobj, centrif_obj, ccxwriter):
     else:  # no line found, set default
         # TODO: No test at all in the writer
         # they should all be before in prechecks
-        location = FreeCAD.Vector(0., 0., 0.)
-        direction = FreeCAD.Vector(0., 0., 1.)
+        location = FreeCAD.Vector(0.0, 0.0, 0.0)
+        direction = FreeCAD.Vector(0.0, 0.0, 1.0)
 
     # write to file
     f.write("*DLOAD\n")
     f.write(
-        "{},CENTRIF,{:.13G},{:.13G},{:.13G},{:.13G},{:.13G},{:.13G},{:.13G}\n"
-        .format(
+        "{},CENTRIF,{:.13G},{:.13G},{:.13G},{:.13G},{:.13G},{:.13G},{:.13G}\n".format(
             centrif_obj.Name,
-            (2. * math.pi * float(centrif_obj.RotationFrequency.getValueAs("1/s"))) ** 2,
+            (2.0 * math.pi * float(centrif_obj.RotationFrequency.getValueAs("1/s"))) ** 2,
             location.x,
             location.y,
             location.z,
             direction.x,
             direction.y,
-            direction.z
+            direction.z,
         )
     )
     f.write("\n")

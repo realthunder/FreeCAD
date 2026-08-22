@@ -186,10 +186,14 @@ FinishAngle, which wraps into half of that.
             <Documentation>
                 <UserDocu>
 The embedded texture image of the material, as the string upstream
-FreeCAD stores it in. Nothing in this fork writes one; it is here so a
-material that arrived carrying one survives a round trip through Python
-rather than being silently dropped by anything that restates the
-material -- the property editor's appearance row among them.
+FreeCAD stores it in (the encoded bytes of an image file, base64 in
+every material card that has ever held one).
+
+The render engine PAINTS it: a per-face appearance whose entries name
+different images puts each one on its own face, laid out in that face's
+projection frame at ViewObject.Render_FaceTextureScale millimetres per
+tile. Coin's own GL path draws none of it -- it binds one texture per
+draw and has nowhere to put a palette.
                 </UserDocu>
             </Documentation>
             <Parameter Name="Image" Type="String"/>
@@ -197,8 +201,8 @@ material -- the property editor's appearance row among them.
         <Attribute Name="ImagePath" ReadOnly="false">
             <Documentation>
                 <UserDocu>
-The path of the material's texture image. Carried, not used, exactly
-like Image.
+The path of the material's texture image, read and painted exactly like
+Image -- which wins if both are set.
                 </UserDocu>
             </Documentation>
             <Parameter Name="ImagePath" Type="String"/>

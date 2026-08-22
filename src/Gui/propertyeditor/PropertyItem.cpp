@@ -712,15 +712,24 @@ QVariant PropertyItem::data(int column, int role) const
 
     // property name
     if (column == 0) {
-        if (linked) {
-            if (role == Qt::ForegroundRole)
-                return QVariant::fromValue(QColor(0x20,0xaa,0x20));
-            if (role == Qt::FontRole) {
-                QFont font;
-                font.setItalic(true);
-                return font;
-            }
+        // An input property is a declared parameter: nothing recomputes it, and
+        // other objects may read it without an ordering dependency. That is a
+        // promise the object makes, so show it. See docs/InputProperties.md.
+        const bool isInput = propertyItems.size() == 1
+            && propertyItems.front()->testStatus(App::Property::Input);
+
+        if (role == Qt::FontRole) {
+            // Both axes are set here rather than in two branches, so an item
+            // that is linked and input keeps both marks.
+            if (!linked && !isInput)
+                return {};
+            QFont font;
+            font.setItalic(linked);
+            font.setBold(isInput);
+            return font;
         }
+        if (linked && role == Qt::ForegroundRole)
+            return QVariant::fromValue(QColor(0x20,0xaa,0x20));
 
         if (role == Qt::BackgroundRole || role == Qt::ForegroundRole) {
             if(PropertyView::showAll()
@@ -752,6 +761,10 @@ QVariant PropertyItem::data(int column, int role) const
             }
             else
                 type += QStringLiteral("\nName: %1").arg(objectName());
+
+            if (propertyItems[0]->testStatus(App::Property::Input)) {
+                type += QStringLiteral("\nStatus: Input (never written by a recompute)");
+            }
 
             QString doc = QApplication::translate("App::Property", propertyItems[0]->getDocumentation());
             if (linked && propertyItems[0]->getContainer()

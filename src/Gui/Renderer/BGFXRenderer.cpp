@@ -158,8 +158,15 @@ bool BGFXRenderer::requestFrameDump(const FrameDumpRequest &req)
 #else
     pimpl->pendingDump = req;
     pimpl->dumpPending = true;
-    // The capture needs a real frame — defeat the idle skip.
-    pimpl->sceneDirty = true;
+    // The capture needs a real frame, and needsRedraw() below reports
+    // the pending dump for exactly that reason.
+    //
+    // ! It must NOT say the scene changed to get one. That claim is
+    // read by everything asking "is this the same picture as last
+    // frame" -- the idle temporal accumulation above all, which would
+    // reset on the very frame being captured, so every capture of a
+    // converged view returned the unconverged image and no instrument
+    // could see the feature working at all.
     return true;
 #endif
 }
@@ -272,7 +279,12 @@ bool BGFXRenderer::boundBox(float &xmin, float &ymin, float &zmin,
     const float bmin[3] = {xmin, ymin, zmin};
     const float bmax[3] = {xmax, ymax, zmax};
     float corners[4][3];
-    if (light.groundQuad(bmin, bmax, corners)) {
+    // The camera of the last frame, which is the one that laid this
+    // quad out. It cannot feed back: a camera-fitted ground is sized
+    // from the eye's DISTANCE to the plane and its field of view,
+    // neither of which the near/far planes computed from these bounds
+    // can move.
+    if (light.groundQuad(bmin, bmax, pimpl->groundCam, corners)) {
         // Whatever the quad actually is -- explicitly sized, moved or
         // tilted -- rather than a second copy of the auto formula, which
         // would under-report the moment either differed.
@@ -587,6 +599,17 @@ void BGFXRenderer::setBloomConfig(const BloomConfig &config)
     }
 }
 
+void BGFXRenderer::setTemporalConfig(const TemporalConfig &config)
+{
+    if (pimpl->tempconf != config) {
+        pimpl->tempconf = config;
+        // Marking the scene dirty is what discards the accumulation:
+        // a frame that changes how the refinement works must not be
+        // averaged into the refinement it replaces.
+        pimpl->sceneDirty = true;
+    }
+}
+
 void BGFXRenderer::setOutputConfig(const OutputConfig &config)
 {
     if (pimpl->outconf != config) {
@@ -700,7 +723,11 @@ void BGFXRenderer::setHatchImage(const void *data, int nc,
 
 bool BGFXRenderer::needsRedraw() const
 {
-    return pimpl->sceneDirty;
+    // A pending capture needs a frame as much as a changed scene does,
+    // and says so in its own right rather than by pretending the scene
+    // moved. Self-clearing: the flag is dropped once the frame that
+    // served it has been read back.
+    return pimpl->sceneDirty || pimpl->dumpPending;
 }
 
 bool BGFXRenderer::canSkipInternal() const

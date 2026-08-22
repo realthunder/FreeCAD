@@ -218,6 +218,61 @@ $RUN cmake -B build/conda-relwithdebinfo-801 \
 from stock Coin's soname because the fork's ABI diverges; FreeCAD refuses to
 start on a fork ABI mismatch, see `coin_fork_abi()` in the coin repo.)
 
+**The optimized stack goes stale silently, and it fails one layer at a time.**
+The debug stack is rebuilt daily, so it stays honest; the optimized one is only
+touched when somebody measures something, which can be weeks apart. In between,
+the fork moves and its two dependency *installs* do not. Nothing warns you --
+the tree simply fails to compile, and the error names a FreeCAD source file even
+though the fault is in a dependency install, which reads like a source bug and
+is not one.
+
+Budget for the whole chain rather than the first error: each fix uncovers the
+next one, because the build cannot reach the later failure until the earlier
+file compiles. All three of these were hit in sequence on 2026-08-21, and all
+three dated to the same early-August measurement:
+
+| symptom | actually wrong |
+|---|---|
+| `src/Base/BaseClass.h: error: expected constructor, destructor, or type conversion before '(' token` on `requires(...)`, plus `warning: identifier 'requires' is a keyword in C++20` | the build dir is configured for C++17 |
+| `src/Mod/Part/App/ShapeRefSet.cpp: error: 'const class BRepTools_ShapeSet' has no member named 'Curves2d'` (`declared private here`) | stale OCCT install -- the fork makes those accessors public |
+| `src/Gui/Application.cpp: fatal error: Inventor/CoinFork.h: No such file or directory` | stale Coin install -- `CoinFork.h` is a fork addition |
+
+**A cached CMake variable survives `cmake --preset`.** The first one above is not
+fixed by reconfiguring: `BUILD_ENABLE_CXX_STD` is a cache entry, so a plain
+re-run of the preset keeps whatever it already had (the debug tree had `C++20`,
+the optimized tree still `C++17`). Pass it explicitly, and confirm in the
+generated ninja file rather than in the cache:
+
+```sh
+$RUN cmake -S . -B build/conda-relwithdebinfo-801 -DBUILD_ENABLE_CXX_STD=C++20
+grep -m1 -oE '\-std=gnu\+\+[0-9]+' build/conda-relwithdebinfo-801/build.ninja   # want gnu++20
+```
+
+**Changing the standard forces a FULL rebuild, never a targeted one.** C++17 and
+C++20 objects are not ABI-compatible here, so building only the few libraries a
+probe needs links new code against stale siblings -- the failure mode is heap
+corruption at runtime, not a link error.
+
+Cheapest staleness check before starting, since the installs carry no version
+marker -- compare each install against the date of its repo's HEAD. Read the
+newest file *inside* the prefix, never the prefix itself: `cmake --install`
+overwrites files in place, which adds no directory entry, so the prefix keeps
+the mtime of the day it was first created and a current install reports as
+weeks old. (Checked 2026-08-21 on the Windows prefixes, which both dated
+themselves to Aug 6 while holding files from Aug 15 and Aug 19.)
+
+```sh
+newest() { find "$1" -type f -exec stat -c '%y %n' {} + | sort -r | head -1; }
+newest ~/works/sw/occt/install/conda-relwithdebinfo-801
+newest ~/works/sw/coin/install/conda-relwithdebinfo
+git -C ~/works/sw/occt log -1 --format=%cd; git -C ~/works/sw/coin log -1 --format=%cd
+```
+
+An install whose newest file predates its repo's last commit is suspect. Refresh
+in dependency order -- OCCT, then Coin, then FreeCAD -- each with its own
+`--target install`; ccache keeps the FreeCAD objects already compiled before the
+failure, so resuming after each fix is much cheaper than the first build was.
+
 **Verify before trusting a number**, every time — this is the check that catches the two
 traps above:
 

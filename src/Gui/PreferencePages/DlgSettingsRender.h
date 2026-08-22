@@ -78,6 +78,12 @@ private:
     Gui::PrefDoubleSpinBox *Exposure = nullptr;
 
     // Auto generated code (Tools/params_utils.py:426)
+    QGroupBox * groupIdlerefinement = nullptr;
+    Gui::PrefCheckBox *TemporalAccum = nullptr;
+    QLabel *labelTemporalAccumSamples = nullptr;
+    Gui::PrefSpinBox *TemporalAccumSamples = nullptr;
+
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupScenestreaming = nullptr;
     QLabel *labelCoarseTessellation = nullptr;
     Gui::PrefSpinBox *CoarseTessellation = nullptr;

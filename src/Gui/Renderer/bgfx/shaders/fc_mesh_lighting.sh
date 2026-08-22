@@ -328,48 +328,25 @@ float fc_shadowTap(vec2 uv, float z)
 	return fc_vsmVisibility(texture2D(s_texShadow, uv).xy, z);
 }
 
-/* The full stock shading of one fragment: base color in, lit color +
- * alpha out (emissive included; the texture environment and OIT
- * weighting stay with the caller).
+/* The scene light's shadow factor at one fragment: 1 fully lit, 0
+ * fully shadowed, a spot light's cone falloff folded in -- the one
+ * number every scene-light term is attenuated by. \a tint comes back
+ * as the per-channel transmittance of a glass caster over the
+ * fragment.
  *
- *   base  : base color and alpha (the stock draw's is
- *           mix(u_matColor, v_color0, u_params.x))
- *   n     : shading normal, normalized, view space (bump-perturbed by
- *           the stock caller)
- *   geoN  : geometric surface normal before any perturbation, oriented
- *           toward the viewer for two-sided draws — self-occludes the
- *           unshadowed effect lights
- *   vpos  : view-space position (v_vpos)
- *   fragCoord : gl_FragCoord.xy, passed in because shaderc's spirv
- *           path resolves gl_FragCoord only inside main()
- *   occ   : material occlusion-map factor of the ambient/IBL terms
- *           (1.0 without one)
- *   metal, rough : PBR factors, the metallic-roughness map already
- *           folded in by the caller (pass u_pbrParams.y / .z without
- *           one)
- *   matEmissive, matSpec : the draw's emissive rgb and specular
- *           rgb + shininess-in-w. The stock caller resolves them from
- *           the scalars or the per-face stream (u_matEmissive.w); the
- *           trailing overload below fills in the scalars for callers
- *           written before the stream existed (user shaders).
+ * Its own function because the shadow-only ground
+ * (fs_fc_groundshadow) paints exactly this and nothing else. A second
+ * copy of the tap and its spread kernel is how the volumetric pass
+ * came to hard-code a bias the mesh read from a tunable.
  */
-vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
-                     vec2 fragCoord, float occ, float metal, float rough,
-                     vec3 matEmissive, vec4 matSpec)
+float fcSceneShadow(vec3 vpos, vec2 fragCoord, out vec3 tint)
 {
-	vec3 color = base.rgb;
-
-	// Screen-space AO factor of the ambient-like terms below (the
-	// white stand-in reads 1 when inapplicable).
-	float ao = texture2D(s_texAOScreen,
-	                     fragCoord * u_viewTexel.xy).x;
-
 	// Variance shadow map factor of the scene light (Chebyshev upper
 	// bound with light-bleed reduction); fragments outside the map stay
 	// lit. Only attenuates the direct light term below. The tint map
 	// adds the per-channel glass-caster transmittance.
 	float shadow = 1.0;
-	vec3 shadowTint = vec3_splat(1.0);
+	tint = vec3_splat(1.0);
 	if (u_shadowParams.x > 0.5)
 	{
 		vec4 sp = mul(u_shadowMatrix, vec4(vpos, 1.0));
@@ -378,7 +355,7 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 		if (sp.x > 0.0 && sp.x < 1.0 && sp.y > 0.0 && sp.y < 1.0
 		    && sp.z > 0.0 && sp.z < 1.0)
 		{
-			shadowTint = texture2D(s_texShadowTint, sp.xy).rgb;
+			tint = texture2D(s_texShadowTint, sp.xy).rgb;
 			if (u_evsm.w > 0.5 && u_evsm.z > 0.0)
 			{
 				// Coin's N-tap spread kernel (ShadowSpreadSize
@@ -442,18 +419,66 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 		}
 	}
 
-	// Scene light vector at this fragment: constant for a directional
-	// light, position-dependent for a spot light, whose cone falloff
-	// folds into the shadow factor (both only feed the scene-light
-	// branches below).
-	vec3 sceneL = u_lightDir.xyz;
+	// A spot light's cone falloff folds into the factor: it darkens
+	// exactly what the map darkens, and every caller wants the two
+	// together.
 	if (u_lightPos.w > -0.5)
 	{
-		sceneL = normalize(vpos - u_lightPos.xyz);
+		vec3 sceneL = normalize(vpos - u_lightPos.xyz);
 		float cd = dot(sceneL, u_lightDir.xyz);
 		shadow *= cd > u_lightPos.w
 			? pow(max(cd, 1.0e-4), u_lightColor.w) : 0.0;
 	}
+	return shadow;
+}
+
+/* The full stock shading of one fragment: base color in, lit color +
+ * alpha out (emissive included; the texture environment and OIT
+ * weighting stay with the caller).
+ *
+ *   base  : base color and alpha (the stock draw's is
+ *           mix(u_matColor, v_color0, u_params.x))
+ *   n     : shading normal, normalized, view space (bump-perturbed by
+ *           the stock caller)
+ *   geoN  : geometric surface normal before any perturbation, oriented
+ *           toward the viewer for two-sided draws — self-occludes the
+ *           unshadowed effect lights
+ *   vpos  : view-space position (v_vpos)
+ *   fragCoord : gl_FragCoord.xy, passed in because shaderc's spirv
+ *           path resolves gl_FragCoord only inside main()
+ *   occ   : material occlusion-map factor of the ambient/IBL terms
+ *           (1.0 without one)
+ *   metal, rough : PBR factors, the metallic-roughness map already
+ *           folded in by the caller (pass u_pbrParams.y / .z without
+ *           one)
+ *   matEmissive, matSpec : the draw's emissive rgb and specular
+ *           rgb + shininess-in-w. The stock caller resolves them from
+ *           the scalars or the per-face stream (u_matEmissive.w); the
+ *           trailing overload below fills in the scalars for callers
+ *           written before the stream existed (user shaders).
+ */
+vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
+                     vec2 fragCoord, float occ, float metal, float rough,
+                     vec3 matEmissive, vec4 matSpec)
+{
+	vec3 color = base.rgb;
+
+	// Screen-space AO factor of the ambient-like terms below (the
+	// white stand-in reads 1 when inapplicable).
+	float ao = texture2D(s_texAOScreen,
+	                     fragCoord * u_viewTexel.xy).x;
+
+	// The scene light's shadow factor, and the transmittance of any
+	// glass caster standing in it.
+	vec3 shadowTint;
+	float shadow = fcSceneShadow(vpos, fragCoord, shadowTint);
+
+	// Scene light vector at this fragment: constant for a directional
+	// light, position-dependent for a spot light -- whose cone falloff
+	// the factor above already carries.
+	vec3 sceneL = u_lightDir.xyz;
+	if (u_lightPos.w > -0.5)
+		sceneL = normalize(vpos - u_lightPos.xyz);
 
 	if (u_params.y > 0.5)
 	{

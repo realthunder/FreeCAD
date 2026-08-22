@@ -36,6 +36,7 @@
 #include "NaviCube.h"
 #include "NavigationStyle.h"
 #include "RenderParams.h"
+#include "ViewParams.h"
 #include "SoFCSelectionAction.h"
 #include "View3DSettings.h"
 #include "View3DInventorViewer.h"
@@ -295,10 +296,19 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
     }
     else if (strcmp(Reason,"RenderCache") == 0) {
         if (!ignoreRenderCache) {
-            int mode = rGrp.GetInt("RenderCache", 0);
-            // The experimental renderer backend is only used in render cache
-            // mode 3; any other mode keeps the plain GL pipeline. Changes of
-            // the renderer type itself are applied by
+            // Through ViewParams rather than the raw key: the default
+            // is 3 there and every other reader goes through it, so a
+            // literal default here is a second answer to the same
+            // question -- and it was 0, which is not what a
+            // configuration without the key means. A profile that never
+            // wrote the key (the usual one, since
+            // RenderParams::selectRenderPath() only writes when the
+            // value is not already 3) then had the engine warmed up at
+            // startup and every 3D view told to use nothing.
+            int mode = int(ViewParams::getRenderCache());
+            // The renderer backend is only used in render cache mode 3;
+            // any other mode keeps the plain GL pipeline. Changes of the
+            // renderer type itself are applied by
             // RenderParams::onRenderParamChanged.
             std::string type = mode == 3 ?
                 RenderParams::getType() : std::string();

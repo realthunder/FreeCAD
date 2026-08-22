@@ -532,6 +532,45 @@ public:
     ~PropertyMagnetization() override = default;
 };
 
+/** ElectromagneticPotential property
+ * This is a property for representing electromagnetic potentials. It is
+ * basically a float property. On the Gui it has a quantity like Wb/m.
+ */
+class AppExport PropertyElectromagneticPotential: public PropertyQuantity
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    PropertyElectromagneticPotential();
+    ~PropertyElectromagneticPotential() override = default;
+};
+
+/** SurfaceChargeDensity property
+ * This is a property for representing surface charge densities. It is
+ * basically a float property. On the Gui it has a quantity like C/m^2.
+ */
+class AppExport PropertySurfaceChargeDensity: public PropertyQuantity
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    PropertySurfaceChargeDensity();
+    ~PropertySurfaceChargeDensity() override = default;
+};
+
+/** VolumeChargeDensity property
+ * This is a property for representing volume charge densities. It is
+ * basically a float property. On the Gui it has a quantity like C/m^3.
+ */
+class AppExport PropertyVolumeChargeDensity: public PropertyQuantity
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    PropertyVolumeChargeDensity();
+    ~PropertyVolumeChargeDensity() override = default;
+};
+
 /** Mass property
  * This is a property for representing mass. It is basically a float
  * property. On the Gui it has a quantity like kg.

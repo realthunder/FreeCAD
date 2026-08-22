@@ -20,14 +20,13 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
 // HypothesisPy.h must be included as first file to avoid compiler warning,
 // see: https://forum.freecad.org/viewtopic.php?p=633192#p633192
 #include "HypothesisPy.h"
 
-#ifndef _PreComp_
 #include <SMESH_Version.h>  // needed for SMESH_VERSION_MAJOR
+
 #include <StdMeshers_Arithmetic1D.hxx>
 #include <StdMeshers_AutomaticLength.hxx>
 #include <StdMeshers_CompositeSegment_1D.hxx>
@@ -36,7 +35,9 @@
 #include <StdMeshers_LayerDistribution.hxx>
 #include <StdMeshers_LengthFromEdges.hxx>
 #include <StdMeshers_LocalLength.hxx>
-#include <StdMeshers_MEFISTO_2D.hxx>
+#if SMESH_VERSION_MAJOR <= 9 && SMESH_VERSION_MINOR < 10
+# include <StdMeshers_MEFISTO_2D.hxx>
+#endif
 #include <StdMeshers_MaxElementArea.hxx>
 #include <StdMeshers_MaxElementVolume.hxx>
 #include <StdMeshers_MaxLength.hxx>
@@ -60,10 +61,6 @@
 #include <StdMeshers_StartEndLength.hxx>
 #include <StdMeshers_UseExisting_1D2D.hxx>
 #include <sstream>
-#if SMESH_VERSION_MAJOR < 7
-#include <StdMeshers_TrianglePreference.hxx>
-#endif
-#endif
 
 #include <Base/Interpreter.h>
 #include <Mod/Part/App/TopoShapePy.h>
@@ -90,38 +87,58 @@ void SMESH_HypothesisPy<T>::init_type(PyObject* module)
     SMESH_HypothesisPy<T>::behaviors().supportSetattr();
     SMESH_HypothesisPy<T>::behaviors().set_tp_new(PyMake);
 
-    SMESH_HypothesisPy::add_varargs_method("setLibName",
-                                           &SMESH_HypothesisPy<T>::setLibName,
-                                           "setLibName(String)");
-    SMESH_HypothesisPy::add_varargs_method("getLibName",
-                                           &SMESH_HypothesisPy<T>::getLibName,
-                                           "String getLibName()");
+    SMESH_HypothesisPy::add_varargs_method(
+        "setLibName",
+        &SMESH_HypothesisPy<T>::setLibName,
+        "setLibName(String)"
+    );
+    SMESH_HypothesisPy::add_varargs_method(
+        "getLibName",
+        &SMESH_HypothesisPy<T>::getLibName,
+        "String getLibName()"
+    );
 #if SMESH_VERSION_MAJOR < 7
-    SMESH_HypothesisPy::add_varargs_method("setParameters",
-                                           &SMESH_HypothesisPy<T>::setParameters,
-                                           "setParameters(String)");
-    SMESH_HypothesisPy::add_varargs_method("getParameters",
-                                           &SMESH_HypothesisPy<T>::getParameters,
-                                           "String getParameters()");
-    SMESH_HypothesisPy::add_varargs_method("setLastParameters",
-                                           &SMESH_HypothesisPy<T>::setLastParameters,
-                                           "setLastParameters(String)");
-    SMESH_HypothesisPy::add_varargs_method("getLastParameters",
-                                           &SMESH_HypothesisPy<T>::getLastParameters,
-                                           "String getLastParameters()");
-    SMESH_HypothesisPy::add_varargs_method("clearParameters",
-                                           &SMESH_HypothesisPy<T>::clearParameters,
-                                           "clearParameters()");
+    SMESH_HypothesisPy::add_varargs_method(
+        "setParameters",
+        &SMESH_HypothesisPy<T>::setParameters,
+        "setParameters(String)"
+    );
+    SMESH_HypothesisPy::add_varargs_method(
+        "getParameters",
+        &SMESH_HypothesisPy<T>::getParameters,
+        "String getParameters()"
+    );
+    SMESH_HypothesisPy::add_varargs_method(
+        "setLastParameters",
+        &SMESH_HypothesisPy<T>::setLastParameters,
+        "setLastParameters(String)"
+    );
+    SMESH_HypothesisPy::add_varargs_method(
+        "getLastParameters",
+        &SMESH_HypothesisPy<T>::getLastParameters,
+        "String getLastParameters()"
+    );
+    SMESH_HypothesisPy::add_varargs_method(
+        "clearParameters",
+        &SMESH_HypothesisPy<T>::clearParameters,
+        "clearParameters()"
+    );
 #endif
-    SMESH_HypothesisPy::add_varargs_method("isAuxiliary",
-                                           &SMESH_HypothesisPy<T>::isAuxiliary,
-                                           "Bool isAuxiliary()");
-    SMESH_HypothesisPy::add_varargs_method("setParametersByMesh",
-                                           &SMESH_HypothesisPy<T>::setParametersByMesh,
-                                           "setParametersByMesh(Mesh,Shape)");
-    Base::Interpreter().addType(SMESH_HypothesisPy<T>::behaviors().type_object(),
-                                module,
-                                SMESH_HypothesisPy<T>::behaviors().getName());
+    SMESH_HypothesisPy::add_varargs_method(
+        "isAuxiliary",
+        &SMESH_HypothesisPy<T>::isAuxiliary,
+        "Bool isAuxiliary()"
+    );
+    SMESH_HypothesisPy::add_varargs_method(
+        "setParametersByMesh",
+        &SMESH_HypothesisPy<T>::setParametersByMesh,
+        "setParametersByMesh(Mesh,Shape)"
+    );
+    Base::Interpreter().addType(
+        SMESH_HypothesisPy<T>::behaviors().type_object(),
+        module,
+        SMESH_HypothesisPy<T>::behaviors().getName()
+    );
 }
 
 template<class T>
@@ -167,65 +184,18 @@ Py::Object SMESH_HypothesisPy<T>::getLibName(const Py::Tuple& args)
 }
 
 
-#if SMESH_VERSION_MAJOR < 7  // -----------------------------------------------
-template<class T>
-Py::Object SMESH_HypothesisPy<T>::setParameters(const Py::Tuple& args)
-{
-    std::string paramName = static_cast<std::string>(Py::String(args[0]));
-    hypothesis<SMESH_Hypothesis>()->SetParameters(paramName.c_str());
-    return Py::None();
-}
-
-template<class T>
-Py::Object SMESH_HypothesisPy<T>::getParameters(const Py::Tuple& args)
-{
-    if (!PyArg_ParseTuple(args.ptr(), "")) {
-        throw Py::Exception();
-    }
-    return Py::String(hypothesis<SMESH_Hypothesis>()->GetParameters());
-}
-
-template<class T>
-Py::Object SMESH_HypothesisPy<T>::setLastParameters(const Py::Tuple& args)
-{
-    if (!PyArg_ParseTuple(args.ptr(), "")) {
-        throw Py::Exception();
-    }
-    std::string paramName = static_cast<std::string>(Py::String(args[0]));
-    hypothesis<SMESH_Hypothesis>()->SetLastParameters(paramName.c_str());
-    return Py::None();
-}
-
-template<class T>
-Py::Object SMESH_HypothesisPy<T>::getLastParameters(const Py::Tuple& args)
-{
-    if (!PyArg_ParseTuple(args.ptr(), "")) {
-        throw Py::Exception();
-    }
-    return Py::String(hypothesis<SMESH_Hypothesis>()->GetLastParameters());
-}
-
-template<class T>
-Py::Object SMESH_HypothesisPy<T>::clearParameters(const Py::Tuple& args)
-{
-    if (!PyArg_ParseTuple(args.ptr(), "")) {
-        throw Py::Exception();
-    }
-    hypothesis<SMESH_Hypothesis>()->ClearParameters();
-    return Py::None();
-}
-#endif  // --------------------------------------------------------------------
-
 template<class T>
 Py::Object SMESH_HypothesisPy<T>::setParametersByMesh(const Py::Tuple& args)
 {
     PyObject *mesh, *shape;
-    if (!PyArg_ParseTuple(args.ptr(),
-                          "O!O!",
-                          &(Fem::FemMeshPy::Type),
-                          &mesh,
-                          &(Part::TopoShapePy::Type),
-                          &shape)) {
+    if (!PyArg_ParseTuple(
+            args.ptr(),
+            "O!O!",
+            &(Fem::FemMeshPy::Type),
+            &mesh,
+            &(Part::TopoShapePy::Type),
+            &shape
+        )) {
         throw Py::Exception();
     }
     Fem::FemMesh* m = static_cast<Fem::FemMeshPy*>(mesh)->getFemMeshPtr();
@@ -243,8 +213,7 @@ Py::Object SMESH_HypothesisPy<T>::isAuxiliary(const Py::Tuple& args)
 }
 
 template<class T>
-PyObject*
-SMESH_HypothesisPy<T>::PyMake(struct _typeobject* /*type*/, PyObject* args, PyObject* /*kwds*/)
+PyObject* SMESH_HypothesisPy<T>::PyMake(struct _typeobject* /*type*/, PyObject* args, PyObject* /*kwds*/)
 {
     int hypId;
     PyObject* obj;
@@ -285,8 +254,10 @@ StdMeshers_Arithmetic1DPy::~StdMeshers_Arithmetic1DPy() = default;
 
 Py::Object StdMeshers_Arithmetic1DPy::setLength(const Py::Tuple& args)
 {
-    hypothesis<StdMeshers_Arithmetic1D>()->SetLength((double)Py::Float(args[0]),
-                                                     (bool)Py::Boolean(args[1]));
+    hypothesis<StdMeshers_Arithmetic1D>()->SetLength(
+        (double)Py::Float(args[0]),
+        (bool)Py::Boolean(args[1])
+    );
     return Py::None();
 }
 
@@ -317,9 +288,7 @@ StdMeshers_AutomaticLengthPy::StdMeshers_AutomaticLengthPy(int /*hypId*/, SMESH_
     : SMESH_HypothesisPyBase(0)
 {}
 #else
-StdMeshers_AutomaticLengthPy::StdMeshers_AutomaticLengthPy(int /*hypId*/,
-                                                           int /*studyId*/,
-                                                           SMESH_Gen* /*gen*/)
+StdMeshers_AutomaticLengthPy::StdMeshers_AutomaticLengthPy(int /*hypId*/, int /*studyId*/, SMESH_Gen* /*gen*/)
     : SMESH_HypothesisPyBase(nullptr)
 {}
 #endif
@@ -388,9 +357,7 @@ StdMeshers_NotConformAllowedPy::StdMeshers_NotConformAllowedPy(int hypId, SMESH_
     : SMESH_HypothesisPyBase(new StdMeshers_NotConformAllowed(hypId, gen))
 {}
 #else
-StdMeshers_NotConformAllowedPy::StdMeshers_NotConformAllowedPy(int hypId,
-                                                               int studyId,
-                                                               SMESH_Gen* gen)
+StdMeshers_NotConformAllowedPy::StdMeshers_NotConformAllowedPy(int hypId, int studyId, SMESH_Gen* gen)
     : SMESH_HypothesisPyBase(new StdMeshers_NotConformAllowed(hypId, studyId, gen))
 {}
 #endif
@@ -406,21 +373,31 @@ void StdMeshers_MaxLengthPy::init_type(PyObject* module)
 
     add_varargs_method("setLength", &StdMeshers_MaxLengthPy::setLength, "setLength()");
     add_varargs_method("getLength", &StdMeshers_MaxLengthPy::getLength, "getLength()");
-    add_varargs_method("havePreestimatedLength",
-                       &StdMeshers_MaxLengthPy::havePreestimatedLength,
-                       "havePreestimatedLength()");
-    add_varargs_method("getPreestimatedLength",
-                       &StdMeshers_MaxLengthPy::getPreestimatedLength,
-                       "getPreestimatedLength()");
-    add_varargs_method("setPreestimatedLength",
-                       &StdMeshers_MaxLengthPy::setPreestimatedLength,
-                       "setPreestimatedLength()");
-    add_varargs_method("setUsePreestimatedLength",
-                       &StdMeshers_MaxLengthPy::setUsePreestimatedLength,
-                       "setUsePreestimatedLength()");
-    add_varargs_method("getUsePreestimatedLength",
-                       &StdMeshers_MaxLengthPy::getUsePreestimatedLength,
-                       "getUsePreestimatedLength()");
+    add_varargs_method(
+        "havePreestimatedLength",
+        &StdMeshers_MaxLengthPy::havePreestimatedLength,
+        "havePreestimatedLength()"
+    );
+    add_varargs_method(
+        "getPreestimatedLength",
+        &StdMeshers_MaxLengthPy::getPreestimatedLength,
+        "getPreestimatedLength()"
+    );
+    add_varargs_method(
+        "setPreestimatedLength",
+        &StdMeshers_MaxLengthPy::setPreestimatedLength,
+        "setPreestimatedLength()"
+    );
+    add_varargs_method(
+        "setUsePreestimatedLength",
+        &StdMeshers_MaxLengthPy::setUsePreestimatedLength,
+        "setUsePreestimatedLength()"
+    );
+    add_varargs_method(
+        "getUsePreestimatedLength",
+        &StdMeshers_MaxLengthPy::getUsePreestimatedLength,
+        "getUsePreestimatedLength()"
+    );
     SMESH_HypothesisPyBase::init_type(module);
 }
 
@@ -592,9 +569,7 @@ StdMeshers_QuadranglePreferencePy::StdMeshers_QuadranglePreferencePy(int hypId, 
     : SMESH_HypothesisPyBase(new StdMeshers_QuadranglePreference(hypId, gen))
 {}
 #else
-StdMeshers_QuadranglePreferencePy::StdMeshers_QuadranglePreferencePy(int hypId,
-                                                                     int studyId,
-                                                                     SMESH_Gen* gen)
+StdMeshers_QuadranglePreferencePy::StdMeshers_QuadranglePreferencePy(int hypId, int studyId, SMESH_Gen* gen)
     : SMESH_HypothesisPyBase(new StdMeshers_QuadranglePreference(hypId, studyId, gen))
 {}
 #endif
@@ -699,9 +674,7 @@ StdMeshers_CompositeSegment_1DPy::StdMeshers_CompositeSegment_1DPy(int hypId, SM
     : SMESH_HypothesisPyBase(new StdMeshers_CompositeSegment_1D(hypId, gen))
 {}
 #else
-StdMeshers_CompositeSegment_1DPy::StdMeshers_CompositeSegment_1DPy(int hypId,
-                                                                   int studyId,
-                                                                   SMESH_Gen* gen)
+StdMeshers_CompositeSegment_1DPy::StdMeshers_CompositeSegment_1DPy(int hypId, int studyId, SMESH_Gen* gen)
     : SMESH_HypothesisPyBase(new StdMeshers_CompositeSegment_1D(hypId, studyId, gen))
 {}
 #endif
@@ -715,9 +688,7 @@ void StdMeshers_Deflection1DPy::init_type(PyObject* module)
     behaviors().name("StdMeshers_Deflection1D");
     behaviors().doc("StdMeshers_Deflection1D");
 
-    add_varargs_method("setDeflection",
-                       &StdMeshers_Deflection1DPy::setDeflection,
-                       "setDeflection()");
+    add_varargs_method("setDeflection", &StdMeshers_Deflection1DPy::setDeflection, "setDeflection()");
     SMESH_HypothesisPyBase::init_type(module);
 }
 
@@ -761,24 +732,6 @@ StdMeshers_Hexa_3DPy::StdMeshers_Hexa_3DPy(int hypId, int studyId, SMESH_Gen* ge
 
 StdMeshers_Hexa_3DPy::~StdMeshers_Hexa_3DPy() = default;
 
-// ---------------------------------------------------------------------------
-
-#if SMESH_VERSION_MAJOR < 7  // -----------------------------------------------
-void StdMeshers_TrianglePreferencePy::init_type(PyObject* module)
-{
-    behaviors().name("StdMeshers_TrianglePreference");
-    behaviors().doc("StdMeshers_TrianglePreference");
-    SMESH_HypothesisPyBase::init_type(module);
-}
-
-StdMeshers_TrianglePreferencePy::StdMeshers_TrianglePreferencePy(int hypId,
-                                                                 int studyId,
-                                                                 SMESH_Gen* gen)
-    : SMESH_HypothesisPyBase(new StdMeshers_TrianglePreference(hypId, studyId, gen))
-{}
-
-StdMeshers_TrianglePreferencePy::~StdMeshers_TrianglePreferencePy() = default;
-#endif  // --------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 
@@ -805,15 +758,16 @@ StdMeshers_StartEndLengthPy::~StdMeshers_StartEndLengthPy() = default;
 
 Py::Object StdMeshers_StartEndLengthPy::setLength(const Py::Tuple& args)
 {
-    hypothesis<StdMeshers_StartEndLength>()->SetLength((double)Py::Float(args[0]),
-                                                       (bool)Py::Boolean(args[1]));
+    hypothesis<StdMeshers_StartEndLength>()->SetLength(
+        (double)Py::Float(args[0]),
+        (bool)Py::Boolean(args[1])
+    );
     return Py::None();
 }
 
 Py::Object StdMeshers_StartEndLengthPy::getLength(const Py::Tuple& args)
 {
-    return Py::Float(
-        hypothesis<StdMeshers_StartEndLength>()->GetLength((bool)Py::Boolean(args[0])));
+    return Py::Float(hypothesis<StdMeshers_StartEndLength>()->GetLength((bool)Py::Boolean(args[0])));
 }
 
 // ---------------------------------------------------------------------------
@@ -822,24 +776,21 @@ void StdMeshers_SegmentLengthAroundVertexPy::init_type(PyObject* module)
 {
     behaviors().name("StdMeshers_SegmentLengthAroundVertex");
     behaviors().doc("StdMeshers_SegmentLengthAroundVertex");
-    add_varargs_method("setLength",
-                       &StdMeshers_SegmentLengthAroundVertexPy::setLength,
-                       "setLength()");
-    add_varargs_method("getLength",
-                       &StdMeshers_SegmentLengthAroundVertexPy::getLength,
-                       "getLength()");
+    add_varargs_method("setLength", &StdMeshers_SegmentLengthAroundVertexPy::setLength, "setLength()");
+    add_varargs_method("getLength", &StdMeshers_SegmentLengthAroundVertexPy::getLength, "getLength()");
     SMESH_HypothesisPyBase::init_type(module);
 }
 
 #if SMESH_VERSION_MAJOR >= 9
-StdMeshers_SegmentLengthAroundVertexPy::StdMeshers_SegmentLengthAroundVertexPy(int hypId,
-                                                                               SMESH_Gen* gen)
+StdMeshers_SegmentLengthAroundVertexPy::StdMeshers_SegmentLengthAroundVertexPy(int hypId, SMESH_Gen* gen)
     : SMESH_HypothesisPyBase(new StdMeshers_SegmentLengthAroundVertex(hypId, gen))
 {}
 #else
-StdMeshers_SegmentLengthAroundVertexPy::StdMeshers_SegmentLengthAroundVertexPy(int hypId,
-                                                                               int studyId,
-                                                                               SMESH_Gen* gen)
+StdMeshers_SegmentLengthAroundVertexPy::StdMeshers_SegmentLengthAroundVertexPy(
+    int hypId,
+    int studyId,
+    SMESH_Gen* gen
+)
     : SMESH_HypothesisPyBase(new StdMeshers_SegmentLengthAroundVertex(hypId, studyId, gen))
 {}
 #endif
@@ -874,9 +825,11 @@ StdMeshers_SegmentAroundVertex_0DPy::StdMeshers_SegmentAroundVertex_0DPy(int hyp
     : SMESH_HypothesisPyBase(new StdMeshers_SegmentAroundVertex_0D(hypId, gen))
 {}
 #else
-StdMeshers_SegmentAroundVertex_0DPy::StdMeshers_SegmentAroundVertex_0DPy(int hypId,
-                                                                         int studyId,
-                                                                         SMESH_Gen* gen)
+StdMeshers_SegmentAroundVertex_0DPy::StdMeshers_SegmentAroundVertex_0DPy(
+    int hypId,
+    int studyId,
+    SMESH_Gen* gen
+)
     : SMESH_HypothesisPyBase(new StdMeshers_SegmentAroundVertex_0D(hypId, studyId, gen))
 {}
 #endif
@@ -939,9 +892,7 @@ StdMeshers_ProjectionSource3DPy::StdMeshers_ProjectionSource3DPy(int hypId, SMES
     : SMESH_HypothesisPyBase(new StdMeshers_ProjectionSource3D(hypId, gen))
 {}
 #else
-StdMeshers_ProjectionSource3DPy::StdMeshers_ProjectionSource3DPy(int hypId,
-                                                                 int studyId,
-                                                                 SMESH_Gen* gen)
+StdMeshers_ProjectionSource3DPy::StdMeshers_ProjectionSource3DPy(int hypId, int studyId, SMESH_Gen* gen)
     : SMESH_HypothesisPyBase(new StdMeshers_ProjectionSource3D(hypId, studyId, gen))
 {}
 #endif
@@ -962,9 +913,7 @@ StdMeshers_ProjectionSource2DPy::StdMeshers_ProjectionSource2DPy(int hypId, SMES
     : SMESH_HypothesisPyBase(new StdMeshers_ProjectionSource2D(hypId, gen))
 {}
 #else
-StdMeshers_ProjectionSource2DPy::StdMeshers_ProjectionSource2DPy(int hypId,
-                                                                 int studyId,
-                                                                 SMESH_Gen* gen)
+StdMeshers_ProjectionSource2DPy::StdMeshers_ProjectionSource2DPy(int hypId, int studyId, SMESH_Gen* gen)
     : SMESH_HypothesisPyBase(new StdMeshers_ProjectionSource2D(hypId, studyId, gen))
 {}
 #endif
@@ -985,9 +934,7 @@ StdMeshers_ProjectionSource1DPy::StdMeshers_ProjectionSource1DPy(int hypId, SMES
     : SMESH_HypothesisPyBase(new StdMeshers_ProjectionSource1D(hypId, gen))
 {}
 #else
-StdMeshers_ProjectionSource1DPy::StdMeshers_ProjectionSource1DPy(int hypId,
-                                                                 int studyId,
-                                                                 SMESH_Gen* gen)
+StdMeshers_ProjectionSource1DPy::StdMeshers_ProjectionSource1DPy(int hypId, int studyId, SMESH_Gen* gen)
     : SMESH_HypothesisPyBase(new StdMeshers_ProjectionSource1D(hypId, studyId, gen))
 {}
 #endif
@@ -1084,12 +1031,16 @@ void StdMeshers_NumberOfSegmentsPy::init_type(PyObject* module)
 {
     behaviors().name("StdMeshers_NumberOfSegments");
     behaviors().doc("StdMeshers_NumberOfSegments");
-    add_varargs_method("setNumberOfSegments",
-                       &StdMeshers_NumberOfSegmentsPy::setNumSegm,
-                       "setNumberOfSegments()");
-    add_varargs_method("getNumberOfSegments",
-                       &StdMeshers_NumberOfSegmentsPy::getNumSegm,
-                       "getNumberOfSegments()");
+    add_varargs_method(
+        "setNumberOfSegments",
+        &StdMeshers_NumberOfSegmentsPy::setNumSegm,
+        "setNumberOfSegments()"
+    );
+    add_varargs_method(
+        "getNumberOfSegments",
+        &StdMeshers_NumberOfSegmentsPy::getNumSegm,
+        "getNumberOfSegments()"
+    );
     SMESH_HypothesisPyBase::init_type(module);
 }
 
@@ -1125,12 +1076,16 @@ void StdMeshers_NumberOfLayersPy::init_type(PyObject* module)
 {
     behaviors().name("StdMeshers_NumberOfLayers");
     behaviors().doc("StdMeshers_NumberOfLayers");
-    add_varargs_method("setNumberOfLayers",
-                       &StdMeshers_NumberOfLayersPy::setNumLayers,
-                       "setNumberOfLayers()");
-    add_varargs_method("getNumberOfLayers",
-                       &StdMeshers_NumberOfLayersPy::getNumLayers,
-                       "getNumberOfLayers()");
+    add_varargs_method(
+        "setNumberOfLayers",
+        &StdMeshers_NumberOfLayersPy::setNumLayers,
+        "setNumberOfLayers()"
+    );
+    add_varargs_method(
+        "getNumberOfLayers",
+        &StdMeshers_NumberOfLayersPy::getNumLayers,
+        "getNumberOfLayers()"
+    );
     SMESH_HypothesisPyBase::init_type(module);
 }
 
@@ -1161,7 +1116,7 @@ Py::Object StdMeshers_NumberOfLayersPy::getNumLayers(const Py::Tuple& args)
 }
 
 // ---------------------------------------------------------------------------
-
+#if SMESH_VERSION_MAJOR <= 9 && SMESH_VERSION_MINOR < 10
 void StdMeshers_MEFISTO_2DPy::init_type(PyObject* module)
 {
     behaviors().name("StdMeshers_MEFISTO_2D");
@@ -1169,17 +1124,17 @@ void StdMeshers_MEFISTO_2DPy::init_type(PyObject* module)
     SMESH_HypothesisPyBase::init_type(module);
 }
 
-#if SMESH_VERSION_MAJOR >= 9
+# if SMESH_VERSION_MAJOR >= 9
 StdMeshers_MEFISTO_2DPy::StdMeshers_MEFISTO_2DPy(int hypId, SMESH_Gen* gen)
     : SMESH_HypothesisPyBase(new StdMeshers_MEFISTO_2D(hypId, gen))
 {}
-#else
+# else
 StdMeshers_MEFISTO_2DPy::StdMeshers_MEFISTO_2DPy(int hypId, int studyId, SMESH_Gen* gen)
     : SMESH_HypothesisPyBase(new StdMeshers_MEFISTO_2D(hypId, studyId, gen))
 {}
-#endif
-
+# endif
 StdMeshers_MEFISTO_2DPy::~StdMeshers_MEFISTO_2DPy() = default;
+#endif
 
 // ---------------------------------------------------------------------------
 
@@ -1187,12 +1142,8 @@ void StdMeshers_MaxElementVolumePy::init_type(PyObject* module)
 {
     behaviors().name("StdMeshers_MaxElementVolume");
     behaviors().doc("StdMeshers_MaxElementVolume");
-    add_varargs_method("setMaxVolume",
-                       &StdMeshers_MaxElementVolumePy::setMaxVolume,
-                       "setMaxVolume()");
-    add_varargs_method("getMaxVolume",
-                       &StdMeshers_MaxElementVolumePy::getMaxVolume,
-                       "getMaxVolume()");
+    add_varargs_method("setMaxVolume", &StdMeshers_MaxElementVolumePy::setMaxVolume, "setMaxVolume()");
+    add_varargs_method("getMaxVolume", &StdMeshers_MaxElementVolumePy::getMaxVolume, "getMaxVolume()");
     SMESH_HypothesisPyBase::init_type(module);
 }
 
@@ -1265,12 +1216,16 @@ void StdMeshers_LayerDistributionPy::init_type(PyObject* module)
 {
     behaviors().name("StdMeshers_LayerDistribution");
     behaviors().doc("StdMeshers_LayerDistribution");
-    add_varargs_method("setLayerDistribution",
-                       &StdMeshers_LayerDistributionPy::setLayerDistribution,
-                       "setLayerDistribution()");
-    add_varargs_method("getLayerDistribution",
-                       &StdMeshers_LayerDistributionPy::getLayerDistribution,
-                       "getLayerDistribution()");
+    add_varargs_method(
+        "setLayerDistribution",
+        &StdMeshers_LayerDistributionPy::setLayerDistribution,
+        "setLayerDistribution()"
+    );
+    add_varargs_method(
+        "getLayerDistribution",
+        &StdMeshers_LayerDistributionPy::getLayerDistribution,
+        "getLayerDistribution()"
+    );
     SMESH_HypothesisPyBase::init_type(module);
 }
 
@@ -1279,9 +1234,7 @@ StdMeshers_LayerDistributionPy::StdMeshers_LayerDistributionPy(int hypId, SMESH_
     : SMESH_HypothesisPyBase(new StdMeshers_LayerDistribution(hypId, gen))
 {}
 #else
-StdMeshers_LayerDistributionPy::StdMeshers_LayerDistributionPy(int hypId,
-                                                               int studyId,
-                                                               SMESH_Gen* gen)
+StdMeshers_LayerDistributionPy::StdMeshers_LayerDistributionPy(int hypId, int studyId, SMESH_Gen* gen)
     : SMESH_HypothesisPyBase(new StdMeshers_LayerDistribution(hypId, studyId, gen))
 {}
 #endif
@@ -1301,6 +1254,5 @@ Py::Object StdMeshers_LayerDistributionPy::getLayerDistribution(const Py::Tuple&
     if (!PyArg_ParseTuple(args.ptr(), "")) {
         throw Py::Exception();
     }
-    // return hypothesis<StdMeshers_LayerDistribution>()->GetLayerDistribution();
     return Py::None();
 }

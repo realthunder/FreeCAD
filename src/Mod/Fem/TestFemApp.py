@@ -35,9 +35,10 @@ from femtest.app.test_mesh import TestMeshEleTetra10 as FemTest08
 from femtest.app.test_mesh import TestMeshGroups as FemTest09
 from femtest.app.test_result import TestResult as FemTest10
 from femtest.app.test_ccxtools import TestCcxTools as FemTest11
-from femtest.app.test_solver_calculix import TestSolverCalculix as FemTest12
 from femtest.app.test_solver_elmer import TestSolverElmer as FemTest13
 from femtest.app.test_solver_z88 import TestSolverZ88 as FemTest14
+from femtest.app.test_gmsh import TestGMSHTransfinite as FemTest15
+from femtest.app.test_gmsh import TestGMSHRefinements as FemTest16
 
 # dummy usage to get flake8 and lgtm quiet
 False if FemTest01.__name__ else True
@@ -51,6 +52,7 @@ False if FemTest08.__name__ else True
 False if FemTest09.__name__ else True
 False if FemTest10.__name__ else True
 False if FemTest11.__name__ else True
-False if FemTest12.__name__ else True
 False if FemTest13.__name__ else True
 False if FemTest14.__name__ else True
+False if FemTest15.__name__ else True
+False if FemTest16.__name__ else True

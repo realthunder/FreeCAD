@@ -1,6 +1,8 @@
 # ***************************************************************************
 # *   Copyright (c) 2015 Qingfeng Xia <qingfeng.xia()eng.ox.ac.uk>          *
 # *   Copyright (c) 2016 Bernd Hahnebach <bernd@bimstatik.org>              *
+# *   Copyright (c) 2024 PMcB                                               *
+# *   Copyright (c) 2025 PMcB                                               *
 # *                                                                         *
 # *   This file is part of the FreeCAD CAx development system.              *
 # *                                                                         *
@@ -43,18 +45,20 @@ class VPResultMechanical(view_base_femconstraint.VPBaseFemConstraint):
     """
 
     def setEdit(self, vobj, mode=0):
-        view_base_femconstraint.VPBaseFemConstraint.setEdit(
+        # is mesh visible
+        self.visibility = self.Object.Mesh.ViewObject.Visibility
+        return view_base_femconstraint.VPBaseFemConstraint.setEdit(
             self,
             vobj,
             mode,
             task_result_mechanical._TaskPanel,
         )
 
-    # overwrite unsetEdit, hide result mesh object on task panel exit
     def unsetEdit(self, vobj, mode=0):
         FreeCADGui.Control.closeDialog()
-        # hide the mesh after result viewing is finished, but do not reset the coloring
-        self.Object.Mesh.ViewObject.hide()
+        # hide the mesh if it was not visible
+        if not self.visibility:
+            self.Object.Mesh.ViewObject.hide()
         return True
 
     def claimChildren(self):
@@ -78,10 +82,26 @@ class VPResultMechanical(view_base_femconstraint.VPBaseFemConstraint):
                 "Object dependencies",
                 bodyMessage,
                 QtGui.QMessageBox.Yes | QtGui.QMessageBox.No,
-                QtGui.QMessageBox.No
+                QtGui.QMessageBox.No,
             )
             if reply == QtGui.QMessageBox.Yes:
                 return True
             else:
                 return False
         return True
+
+    def onChanged(self, vp, prop):
+        if prop != "Visibility":
+            return
+
+        for child in self.claimChildren():
+            try:
+                if child is None:
+                    continue
+                childViewObject = getattr(child, "ViewObject", None)
+                if childViewObject is None:
+                    continue
+
+                child.ViewObject.Visibility = self.Object.ViewObject.Visibility
+            except Exception:
+                pass

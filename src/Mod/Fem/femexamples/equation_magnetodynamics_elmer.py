@@ -32,22 +32,25 @@ from BasicShapes import Shapes
 from . import manager
 from .manager import get_meshname
 from .manager import init_doc
+from .meshes import generate_mesh
 
 
 def get_information():
     return {
         "name": "Magnetic Field Around Wire",
         "meshtype": "solid",
-        "meshelement": "Tet10",
-        "constraints": ["electrostatic potential", "magnetization"],
+        "meshelement": "Tet4",
+        "constraints": ["electromagnetic", "magnetization"],
         "solvers": ["elmer"],
         "material": "solid",
-        "equations": ["electromagnetic"]
+        "equations": ["electromagnetic"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.equation_magnetodynamics_elmer import setup
@@ -56,6 +59,7 @@ setup()
 Magnetodynamic equation - Elmer solver
 
 """
+    )
 
 
 def setup(doc=None, solvertype="elmer"):
@@ -99,13 +103,14 @@ def setup(doc=None, solvertype="elmer"):
     analysis = ObjectsFem.makeAnalysis(doc, "Analysis")
     if FreeCAD.GuiUp:
         import FemGui
+
         FemGui.setActiveAnalysis(analysis)
 
     # solver
     if solvertype == "elmer":
         solver_obj = ObjectsFem.makeSolverElmer(doc, "SolverElmer")
         eq_electrostatic = ObjectsFem.makeEquationMagnetodynamic(doc, solver_obj)
-        eq_electrostatic.AngularFrequency = "100 kHz"
+        eq_electrostatic.Frequency = "100 kHz"
         eq_electrostatic.BiCGstablDegree = 4
         eq_electrostatic.IsHarmonic = True
         eq_electrostatic.LinearIterativeMethod = "BiCGStabl"
@@ -153,36 +158,35 @@ def setup(doc=None, solvertype="elmer"):
     analysis.addObject(material_obj)
 
     # axial field around the wire
-    AxialField = ObjectsFem.makeConstraintElectrostaticPotential(doc, "AxialField")
+    AxialField = ObjectsFem.makeConstraintElectromagnetic(doc, "AxialField")
     AxialField.References = [
         (BooleanFragments, "Face4"),
         (BooleanFragments, "Face5"),
-        (BooleanFragments, "Face6")]
+        (BooleanFragments, "Face6"),
+    ]
     AxialField.PotentialEnabled = False
-    AxialField.AV_im_1_Disabled = False
-    AxialField.AV_im_2_Disabled = False
-    AxialField.AV_re_1_Disabled = False
-    AxialField.AV_re_2_Disabled = False
+    AxialField.EnableAV_1 = True
+    AxialField.EnableAV_2 = True
     analysis.addObject(AxialField)
 
     # voltage on one end
-    Voltage = ObjectsFem.makeConstraintElectrostaticPotential(doc, "Voltage")
+    Voltage = ObjectsFem.makeConstraintElectromagnetic(doc, "Voltage")
     Voltage.References = [(BooleanFragments, "Face3")]
-    Voltage.Potential = "10.000 mV"
-    Voltage.AV_im_1_Disabled = False
-    Voltage.AV_im_2_Disabled = False
-    Voltage.AV_re_1_Disabled = False
-    Voltage.AV_re_2_Disabled = False
+    Voltage.AV_re = "10.000 mV"
+    Voltage.AV_im = "0 V"
+    Voltage.EnableAV = True
+    Voltage.EnableAV_1 = True
+    Voltage.EnableAV_2 = True
     analysis.addObject(Voltage)
 
     # ground on other end
-    Ground = ObjectsFem.makeConstraintElectrostaticPotential(doc, "Ground")
+    Ground = ObjectsFem.makeConstraintElectromagnetic(doc, "Ground")
     Ground.References = [(BooleanFragments, "Face2")]
-    Ground.Potential = "0 V"
-    Ground.AV_im_1_Disabled = False
-    Ground.AV_im_2_Disabled = False
-    Ground.AV_re_1_Disabled = False
-    Ground.AV_re_2_Disabled = False
+    Ground.AV_re = "0 V"
+    Ground.AV_im = "0 V"
+    Ground.EnableAV = True
+    Ground.EnableAV_1 = True
+    Ground.EnableAV_2 = True
     analysis.addObject(Ground)
 
     # magnetization
@@ -191,12 +195,12 @@ def setup(doc=None, solvertype="elmer"):
     Magnetization.Magnetization_re_1 = "7500.000 A/m"
     Magnetization.Magnetization_re_2 = "7500.000 A/m"
     Magnetization.Magnetization_re_3 = "7500.000 A/m"
-    Magnetization.Magnetization_re_2_Disabled = False
+    Magnetization.EnableMagnetization_2 = True
     analysis.addObject(Magnetization)
 
     # mesh
     femmesh_obj = analysis.addObject(ObjectsFem.makeMeshGmsh(doc, get_meshname()))[0]
-    femmesh_obj.Part = BooleanFragments
+    femmesh_obj.Shape = BooleanFragments
     femmesh_obj.ElementOrder = "1st"
     femmesh_obj.CharacteristicLengthMax = "0.5 mm"
     femmesh_obj.ViewObject.Visibility = False
@@ -208,27 +212,7 @@ def setup(doc=None, solvertype="elmer"):
     mesh_region.ViewObject.Visibility = False
 
     # generate the mesh
-    from femmesh import gmshtools
-    gmsh_mesh = gmshtools.GmshTools(femmesh_obj, analysis)
-    try:
-        error = gmsh_mesh.create_mesh()
-    except Exception:
-        error = sys.exc_info()[1]
-        FreeCAD.Console.PrintError(
-            "Unexpected error when creating mesh: {}\n"
-            .format(error)
-        )
-    if error:
-        # try to create from existing rough mesh
-        from .meshes.mesh_capacitance_two_balls_tetra10 import create_nodes, create_elements
-        fem_mesh = Fem.FemMesh()
-        control = create_nodes(fem_mesh)
-        if not control:
-            FreeCAD.Console.PrintError("Error on creating nodes.\n")
-        control = create_elements(fem_mesh)
-        if not control:
-            FreeCAD.Console.PrintError("Error on creating elements.\n")
-        femmesh_obj.FemMesh = fem_mesh
+    generate_mesh.mesh_from_mesher(femmesh_obj, "gmsh")
 
     doc.recompute()
     return doc

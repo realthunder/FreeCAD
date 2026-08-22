@@ -30,6 +30,7 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <type_traits>
 #include <deque>
 #include <fastsignals/signal.h>
 
@@ -494,6 +495,14 @@ public:
     unsigned int countObjectsOfType(const Base::Type& typeId=App::DocumentObject::getClassTypeId(),
                                     const char* pDocName=nullptr,
                                     ResolveMode resolve = ResolveMode::OldStyleElement) const;
+
+    /**
+     * Convenience form of the above naming the type as a template parameter.
+     * The typename T must be based on App::DocumentObject.
+     */
+    template<typename T>
+    inline unsigned int countObjectsOfType(const char* pDocName = nullptr,
+                                           ResolveMode resolve = ResolveMode::OldStyleElement) const;
 
     /**
      * Does basically the same as the method above unless that it accepts a string literal as first argument.
@@ -1003,6 +1012,15 @@ public:
     SelectionContext(const App::SubObjectT &sobj = App::SubObjectT());
     ~SelectionContext();
 };
+
+template<typename T>
+inline unsigned int SelectionSingleton::countObjectsOfType(const char* pDocName,
+                                                           ResolveMode resolve) const
+{
+    static_assert(std::is_base_of<App::DocumentObject, T>::value,
+                  "Template parameter T must be derived from App::DocumentObject");
+    return this->countObjectsOfType(T::getClassTypeId(), pDocName, resolve);
+}
 
 } //namespace Gui
 

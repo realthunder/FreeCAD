@@ -359,6 +359,74 @@ volumetric jitter, user shaders via `u_fcTime`) reads one shared
 animation clock. `RenderDebug_FreezeFrame` pins it to 0 and suppresses
 self-scheduled redraws; two frozen frames are byte-identical.
 
+### The shadow ground, in two forms
+
+The scene light's receiver (`RenderShadow_*`) is drawn by the backend,
+not fed to it -- the Coin-era ground lived outside the captured scene
+graph. It is not, and never was, a mesh object: `submitShadowGround`
+allocates a **six-vertex transient buffer** per frame over the four
+corners `LightConfig::groundQuad` computes. The triangles cost nothing;
+what costs is the fill, and what used to hurt is that the quad had to
+be **sized**, which is what tied the ground to the scene's bounding box.
+
+So there are two forms of it, and the mode picks:
+
+- **Shadow-only** (`groundShadowOnly()`, i.e. `GroundTransparency` 1 --
+  Coin's TRANSPARENT_SHADOWED) draws no surface at all, so it needs no
+  quad: `submitShadowGroundPlane` runs a **fullscreen pass**
+  (`fs_fc_groundshadow_plane`) that intersects the ground plane per
+  pixel, samples the shadow map there and multiplies the frame down by
+  it. The receiver is infinite -- no plate edge, no sizing, and nothing
+  about the scene's extent reaches it. It writes `gl_FragDepth` so
+  geometry in front still occludes the shadow, and writes no depth
+  **buffer**: a shadow is not a surface, and the volumetric raymarch is
+  meant to carry on through it. A one-sided ground (`GroundBackFaceCull`)
+  culls per *pass* here rather than per fragment -- every ray from an eye
+  below a plane hits its back face.
+- **A drawn ground** -- textured, bump-mapped, reflective, occluding --
+  keeps the quad, because three things need its depth: it occludes, it
+  is a prepass source so volumetric shafts end on it, and the ground
+  reflection overlay depth-tests **EQUAL** against its interpolated
+  corners. That last one is why `groundQuad` is one function and not
+  three formulas: a corner that disagreed by a float would drop the
+  reflection. It is also why the shadow-only path stands down whenever
+  `groundReflection` is on.
+
+The drawn ground's **rim dissolves** (`fc_ground_fade.sh`): an endless
+ground may not END anywhere the eye can see, and a finite quad would
+otherwise draw a hard line across the view. The coordinate is
+normalized against the quad's own axes, so the band is 0 at the centre
+and 1 at the rim whatever the size, orientation or aspect, and nothing
+about it moves as the camera does. It rides three **ground-only program
+variants** -- `fs_fc_mesh_ground`, `fs_fc_mesh_ground_tex` and
+`fs_fc_prepass_ground` -- rather than a flag on the scene's own mesh
+program, because a fade uniform there would be one more global that
+every scene draw has to clear (the trap `submitShadowGround` already
+spends a dozen lines avoiding). The prepass variant **discards** the
+rim instead of fading it: what is not drawn must not stop a volumetric
+shaft either. Only an auto-sized, camera-fitted ground fades -- an
+explicit extent is a plate somebody asked for, edge included.
+
+Auto **sizing** measures the camera, not the scene
+(`groundFollowCamera`, `RenderShadow_GroundSizeFollowCamera`, default
+on): the quad centres on **what the camera is looking at** -- where its
+centre ray meets the plane -- and reaches `groundScale` times the sum of
+what the viewport spans there and how far in front of the eye that is.
+Looking down, those two points coincide and the quad is the view's own
+footprint; looking along the plane they are far apart, and centring
+under the eye would put the whole visible ground outside the quad. The
+reach is capped at `kGroundMaxReach` times the eye's height, because
+the ray's answer runs to infinity at the horizon -- past that the fade
+below takes over, which is what a receding plane should do anyway. It
+reads as endless and -- the reason it exists -- cannot be moved by a
+bounding box that twitches. Only the extent and the centre come from the camera; the
+plane's **height** is still the scene's, one unit under its floor.
+There is no feedback loop with the viewer's auto near/far, which unions
+the quad into `BGFXRenderer::boundBox`: the fit reads the eye's distance
+to the plane and its field of view, neither of which a near/far plane
+can move. `GroundSizeFollowCamera` off restores the Coin sizing,
+`groundScale` times the largest scene dimension.
+
 ### 3.1 The view-id budget
 
 bgfx addresses views by id out of a fixed table, and submitting an id
@@ -620,6 +688,395 @@ transition moves RSS by 0.3MB, because the driver allocates outside the
 process's accounting -- the GPU is the wrong place to ask this
 question).
 
+### 3.5 Idle temporal accumulation
+
+`Render_TemporalAccum` (off by default). While the camera, the scene and
+the hover highlight all hold still, each further frame offsets the
+projection by a fraction of a pixel and averages into a history target,
+so the frame converges toward what supersampling it would have given.
+`Render_TemporalAccumSamples` (default 32) is how many samples it
+converges over before the view goes quiet.
+
+**Why it exists next to MSAA rather than instead of it.** Multisampling
+resolves *coverage*: N samples of the triangle, one shaded value. So it
+antialiases the silhouette -- which is most of a CAD frame -- and cannot
+touch anything else at any sample count:
+
+- shading aliasing (a tight highlight crawling across a curved surface,
+  detail below the pixel) -- all N samples inside one triangle share the
+  one shaded value, so MSAA averages N copies of the same wrong answer;
+- every screen-space pass computed after the resolve -- GTAO, outlines,
+  section caps, bloom, the volumetric apply -- which run at one sample
+  per pixel, and below that under `Render_EffectResolution`;
+- the residual noise of the stochastic passes, which is undersampling,
+  not aliasing.
+
+Accumulation is the other half: it amortizes samples over *time*, so N
+frames approximate N-times supersampling of the whole pipeline, at a
+constant per-frame cost instead of MSAA's cost in bandwidth and resolve.
+
+**Why it does not ghost.** It is not TAA in the usual sense and it is
+deliberately not the primary antialiasing (section 7 rules that out --
+edge-dominated content is what ordinary TAA smears worst). There is no
+reprojection, no motion vector and no history rejection heuristic,
+because the accumulation only ever runs over frames where **nothing
+moved**. `staticFrame` in `BGFXFrame.cpp` is that predicate and it
+already existed for the volumetric accumulation: it answers for the
+camera, the viewport, every scene and config mutation (`dirtyChanged`)
+and the hover highlight. Any of them zeroes `BGFXView::accumFrames`,
+which replaces the history outright on the next frame. Interaction
+therefore costs nothing, returns to the ordinary multisampled frame
+immediately, and no thin edge can trail.
+
+**How a frame runs it.**
+
+1. `camFrameHash` is taken from the **unjittered** projection. Hashing
+   the jittered one would make every accumulation frame read as a camera
+   move -- the one thing that resets the accumulation -- so it would
+   reset every frame, converge never, and pay a full extra render for
+   it. The jitter is applied strictly below that hash, and below the
+   level plan and the scene publish, which must not move with it.
+2. The offset is Halton (2,3) indexed by sample number, in
+   `[-0.5, 0.5]` pixels, written straight into the projection's shear
+   terms (`P[8]`/`P[9]` scaled by `P[11]` for either handedness, or the
+   translation row `P[12]`/`P[13]` for an orthographic camera, which has
+   `w = 1`). Sample 0 is the pixel centre, so settling the camera shows
+   no jump. Being indexed is what keeps frame N of an accumulation
+   reproducible, which the render-verify goldens depend on.
+3. `ViewAccum` blends the finished frame into `accumTex` with factor
+   `k = 1/(n+1)` -- the volumetric accumulation's constant-factor idiom
+   at full resolution, so the history is the running mean -- and
+   `ViewAccumApply` copies it back over the scene colour, leaving the
+   blit, the output transform and the standalone present unchanged.
+4. `animatedFrame` is raised while `n < samples`, which is what asks the
+   viewer for the next sample; nothing else would, since by construction
+   the scene has not changed. At the budget it stops and the view goes
+   quiet holding the converged image.
+
+**Placement.** The two passes sit after the overlays, so everything
+ahead of them converges: an overlay drawn from its own camera is
+bit-identical frame to frame and averages to itself exactly, while the
+in-scene overlays (editing graph, dimensions) move with the jitter and
+converge like the scene. An overlay that really does change per frame --
+the FPS counter -- feeds through `setOverlay`, which marks the scene
+dirty and so resets the accumulation rather than smearing it.
+
+**Two costs worth knowing.** The history is RGBA16F whatever the scene
+target is: at sample 32 a frame arrives with weight 1/33, and an 8-bit
+history rounds every difference below four codes back to what it already
+held -- the average would stop moving after a handful of samples, which
+looks exactly like the feature working and then giving up. And the blend
+factor is 8-bit (bgfx packs it into an RGBA), which is why the sample
+count is capped at 256: below `1/255` the factor rounds to zero and a
+further frame would contribute nothing.
+
+**The AO passes converge with the rest of the frame**, and getting
+them to took two changes rather than one. Both are stochastic
+estimators -- GTAO marches horizon slices along directions from a
+low-discrepancy sequence, the classic pass rotates a fixed hemisphere
+kernel by a tiled noise texture -- so averaging frames is exactly how
+their noise is supposed to disappear. Neither half works alone:
+
+- The AO chain is cached (see `aoMapHash`), and that key is taken from
+  the unjittered projection, above the jitter for the reason in step 1.
+  Across a refinement it therefore never changed, so every sample
+  scored a cache hit and the chain was skipped outright: the
+  accumulation averaged one AO buffer with itself N times. The
+  **sample index is now part of the key**, which is the honest
+  statement of the dependency -- the map really does depend on which
+  sample it is. Forcing the render from outside would have covered the
+  way in but not the way back: when a refinement ends the index returns
+  to 0 while the camera has not moved, and a key without it answers
+  "hit", so the view would keep the last sample's noise and turning the
+  feature off would not restore the frame it had before turning it on.
+- The noise pattern is pinned to screen position in both passes, so
+  re-rendering alone would lay down the identical pattern each sample.
+  Both now advance with the index. `fs_fc_gtao.sc` offsets XeGTAO's R2
+  sequence exactly as its own `SpatioTemporalNoise` does, taking the
+  index from above the flag bits of `u_aoParams.z` (both other AO vec4s
+  are full, the field is already a bitfield, `4*63+3 = 255` is exact in
+  float). `fs_fc_ssao.sc` rotates the kernel's azimuth by a
+  golden-ratio step and advances the radius jitter by an R2 step --
+  both, because they decorrelate different things, and the radial
+  banding the radius jitter exists to break would otherwise survive
+  every sample intact. It takes the index in `u_aoParams2.x`, its own
+  lane rather than a pack, since every lane of `u_aoParams` means a
+  real value in that pass.
+
+Determinism survives in both because the index is a **sample** number,
+not a frame counter -- the same argument that makes the Halton jitter
+golden-safe. Index 0 is an exact identity: the classic pass branches
+around the arithmetic entirely rather than falling through it, because
+one texel of its noise carries `.z = 1.0`, for which `fract(1.0 + 0.0)`
+is `0.0`, and the identity would have failed on one pixel in sixteen.
+
+`scripts/gtao_accum_probe.py` measures both passes, on a drilled plate
+rather than the sibling probe's Siemens star, which has no concave
+occlusion anywhere and so states AO off. Its discriminating measurement
+is the AO buffer alone (render debug view mode 3): on the pre-fix
+engine the accumulated AO term is *bit-identical* to the
+single-sample one, by construction. Over 32 samples on llvmpipe, at
+default quality and full AO resolution:
+
+| | single sample | 32 accumulated |
+|---|---|---|
+| GTAO term, distance from a 3x supersampled render | 2.882 | **2.429** |
+| classic SSAO term, same | 2.873 | **2.444** |
+| high-frequency energy over the geometry (GTAO) | 8.677 | **5.866** |
+| shaded frame, distance from the same reference | 4.096 | **3.022** |
+
+and the AO term moves 3.518 (GTAO) / 3.506 (classic) rms from where it
+started, against 0 pre-fix. The same run checks the other side of the
+gate: with the feature off, an idle view's AO term is bit-identical 40
+frames apart, so the cache is untouched for everybody not refining, and
+a converged view left and returned to reconverges bit-identically. A
+pre-fix/post-fix `scripts/render-verify.sh` diff is clean over all 15
+stages, which is what says both shaders are an identity at sample 0.
+
+**Cavity shading needed no change of its own.** It is not a stochastic
+estimator -- there is no noise to decorrelate -- but it is a
+screen-space crease detector, a two-tap normal difference over a
+one-texel baseline run once per pixel after the MSAA resolve, so its
+response is a line one or two pixels wide that stairsteps. That is
+what "jagged cavity shading" is, and multisampling cannot touch it at
+any sample count. It converges because the pass re-runs every frame
+and reads the prepass, which the AO cache key above now re-renders per
+sample: `cavityActive` feeds `prepassActive`, so cavity gets a freshly
+jittered prepass even with AO off.
+
+`scripts/cavity_accum_probe.py` measures it with edges off (the Flat
+Lines wireframe draws its own hard lines along exactly these creases
+and would be most of any number), isolating the cavity term by
+rendering the same camera with the pass on and off and dividing in
+linear light -- it is a multiply, so division recovers the multiplier
+map exactly. Over 32 samples: the shaded frame closes 0.402 of its
+distance to a 3x supersampled render with cavity on against 0.272 with
+it off, so 0.130 of the gain is error only this pass contributes; the
+crease lines' own high-frequency energy falls 0.128 -> 0.103 against a
+supersampled floor of 0.083, about 55% of the way.
+
+It does not converge all the way, and the screen-pinned IGN dither at
+the end of `fs_fc_cavity.sc` is **not** why -- that is the one part
+that genuinely cannot average out (it is a function of
+`gl_FragCoord`, which the jitter does not move), but at 3/255 faded by
+the darkening it is 0.0004 rms against a 0.020 gap, 2% of it. The rest
+is simply that 32 subpixel samples do not fully resolve a one-pixel
+crease detector.
+
+Note that the probe's reference deliberately does **not** rescale
+`CavityRadius` for the supersampled render, though the units invite
+it: `saveImage` does not resize the renderer's target (no second view
+init appears in the log), so a radius of 1 already spans one full 1x
+pixel in the 3x image. "Correcting" it to the supersample factor
+thickened the reference's crease lines to twice the coverage and
+scored the accumulation as diverging from a pass it was converging to.
+
+**The cache audit.** `staticFrame` does double duty: it is the
+predicate that says an accumulation MAY run, and it is the key several
+targets are cached on. During a refinement those two want opposite
+answers, so every target keyed that way is guaranteed to hand back a
+result rendered at the unjittered camera. Each screen-space pass was
+checked against that:
+
+| pass | verdict |
+|---|---|
+| GTAO / classic SSAO | **defect** -- chain skipped every sample; fixed by the sample index in `aoMapHash` |
+| planar reflection (`reflRender`) | **defect** -- mirror frozen; fixed by `reflSampleIndex` |
+| media intervals (`mediumRender`) | **defect** -- interval frozen; fixed by `mediumSampleIndex`, measured on glass (see below) |
+| cavity | no defect -- re-runs every frame, and `cavityActive` feeds `prepassActive` so its input is redrawn per sample |
+| volumetric shafts | no defect -- own history with a per-frame golden-ratio march phase, so it decorrelates and converges by itself |
+| shadow map | no defect -- keyed on the LIGHT matrices and the casters, and a subpixel camera jitter does not move either |
+| bulb shadow tiles (`bulbShadowHash`) | no defect -- the hash is caster set + light position + range + cube face, with no camera term, and the tile content is light-space. The camera-view-space-to-tile matrix `bulbShadowMtx` is rebuilt every frame from the current camera, so the jitter reaches the *sampling* while the cached content stays put, which is the correct split |
+| `ViewReflMedia` | not an independent cache -- gated on `reflRender`, so the mirror's fix covers it |
+| water planar reflection | not a separate route -- `waterReflActive` and `groundReflActive` share one `reflRender` gate and one `reflFbo`, differing only in which mirror matrix `configRefl` binds |
+| scene copy (`ViewWaterCopy`) / user-post copy | no defect -- neither is cached at all; both re-copy the live scene colour every frame they run |
+
+The reflection was the costly one. `scripts/refl_accum_probe.py`
+isolates what the pass contributes (render with it on and off,
+difference in linear light) on a scene where the mirror touches 63% of
+the frame. Frozen, the contribution's high-frequency energy fell to
+0.886 of the single frame's -- and that is only the resampling blur,
+since a frozen target's *sampling* still jitters. Re-rendered per
+sample it falls to 0.780, against a floor of 0.645 in the reference,
+and the contribution moves 0.0077 rms from the single frame against
+0.0051 frozen.
+
+Two things that measurement cannot say, and does not:
+
+- The frame-level "distance to a supersampled render" is **not** ground
+  truth for this pass. The reflection target is sized from the view
+  (`effW`/`effH`), and `saveImage` does not resize the view, so a 3x
+  capture still contains a 1x mirror that the downsample merely
+  smooths. Converging the real mirror moves the frame *away* from that
+  reference. The probe reports the number and gates on the
+  contribution instead.
+- The media intervals are fixed by the same key on the same reasoning,
+  and that half is now measured too -- separately, because the
+  reflection probe's scene has no medium in it. See below.
+
+**The media half**, measured by `scripts/media_accum_probe.py` on a
+glass scene, since none of the other probe scenes carries a medium.
+What the interval feeds is worth stating, because it is why a frozen
+one shows: the front/back pair gives `thick`, and `thick` drives both
+the lateral refraction displacement and the per-channel Beer-Lambert
+absorption in `fs_fc_glass.sc`. So freezing it pins a stale thickness
+at every pixel, and it hurts exactly where thickness jumps -- body
+silhouettes, the walls of a through-hole, and the step where two glass
+bodies overlap. The scene is built to be full of all three, and the
+pass covers 22.18% of the frame.
+
+Against a build with the fix backed out to `mediumRender =
+!staticFrame`:
+
+| | frozen | per sample |
+|---|---|---|
+| contribution hf, accumulated/single | 0.862 | **0.807** |
+| accumulated frame, glass on | 2.0335 | **1.9450** |
+| gain over the same scene with glass off | +0.0115 | **+0.1000** |
+| contribution moved from the single frame | 0.01638 | 0.01986 |
+
+That pair yields two internal controls for free, and both hold: the
+glass-*off* leg is identical between the two builds to every digit
+(2.0001 single, 1.6312 accumulated), and so is the glass-on *single*
+frame (2.4139). The fix is an exact identity both where no medium
+exists and at sample 0 -- which is what keeps it golden-safe.
+
+Unlike the reflection, here the frame-level number *is* a fair
+discriminator, and by a wide margin: the interval targets are full
+view resolution rather than reduced, and the contribution is dominated
+by the refracted scene, which resamples honestly. Frozen, the glass
+leg gains only 0.0115 more from the accumulation than the same scene
+with glass switched off; re-rendered per sample it gains 0.1000, nine
+times as much. The probe gates on that first and on the hf ratio
+second. It deliberately does **not** gate on the reflection probe's
+third check (`td_a < 0.95 * td_s`): measured here that check passes in
+the broken build too, and a check that cannot fail on the defect it is
+meant to catch is worth reporting but not gating on.
+
+With that, every use of `staticFrame` in the renderer is accounted
+for: its definition, the accumulation gate itself, the two cache keys
+above (both fixed), and the volumetric shafts' history reset -- which
+is the one *correct* use of it as a "something changed, drop the
+history" predicate rather than as a cache key.
+
+**A second sweep, asking a different question.** The audit above asks
+which caches the *jitter* invalidates. The broader question is whether
+each cache's key covers every input its content depends on at all -- a
+missing input is stale in ordinary use, not only under a refinement.
+The frame keeps five caches, and all five hold:
+
+- `shadowMapHash` -- light view and projection matrices, `smoothBorder`,
+  and a detailed caster set (mesh cache id, model matrix when not
+  identity, index sub-range, clip planes, the autozoom scale for
+  autozoom casters, and a glass caster's diffuse colour, since that
+  feeds the tint map beside the moments). A shadow map *resolution*
+  change is not in the key and does not need to be: both paths that
+  resize it destroy the textures and reset the hash to 0.
+- The separable shadow blur is gated on `shadowRender`, not run
+  unconditionally -- which matters more than it looks. Blurring is
+  destructive and in-place, so a blur that ran every frame over a
+  *cached* map would compound, and a parked view's shadows would creep
+  softer the longer nobody touched it. The shadow tint blur takes the
+  same gate.
+- `bulbShadowHash[]`, `aoMapHash`, and the two sample indices are
+  covered in the table above.
+- `camFrameHash` -- the view and projection matrices plus the viewport,
+  and it is taken from the **unjittered** projection, before the
+  accumulation offset is applied further down. It has to be: hashing
+  the jittered matrix would make every sample of a refinement look like
+  a camera move, `staticFrame` would go false, and the accumulation
+  could never engage at all.
+
+**What it costs.** Measured by `scripts/accum_cost_probe.py` on an RTX
+3070 Ti under Mesa d3d12, in the optimized tree, 1498x703, 1.05M
+geometry pixels, 32 samples, best of 3. The measurement rests on a
+structural fact rather than an assumption about frame content: with the
+feature off and the camera parked the view still renders, but every
+cache hits; with it on, each frame is a fresh sample.
+
+| config | static/frame | refine/**sample** | interactive/frame | ratio |
+|---|---|---|---|---|
+| plain | 10.92 ms | 11.85 ms | 11.99 ms | 0.99 |
+| AO | 11.61 | 13.25 | 12.58 | 1.05 |
+| mirror | 15.49 | 11.85 | 12.27 | 0.97 |
+| AO+mirror | 13.86 | 12.15 | 12.40 | 0.98 |
+
+**A refinement sample costs what an ordinary moving frame costs** --
+every ratio is 1.0 within noise. So a 32-sample refinement is roughly
+380-420 ms of work after the camera stops, about 31 interactive frames.
+That is what `Render_TemporalAccumSamples` should be read against: 32
+is about four tenths of a second on this class of GPU, 16 would be two
+tenths, 64 still under a second. On a laptop iGPU, scale by that
+machine's frame time -- the ratio is the transferable part, not the
+milliseconds.
+
+What the probe deliberately does **not** claim is what AO or the mirror
+add *per sample*. Free-running says +0.30 ms, serialized says -0.93 ms,
+and both sit under a ~1 ms noise floor on a ~12 ms frame: two zeroes,
+not a disagreement. The frame is bound by Qt/Coin composite and
+per-frame CPU, so those passes hide underneath it. That bounds their
+cost at well under a millisecond each; it does not measure it.
+
+The serialized clock (a readback after every frame, forcing the GPU to
+finish) agrees on the conclusion and disagrees on the ratio, for a
+reason worth keeping: serialization exposes GPU work the CPU-bound
+free-running frame hides, and it is the *interactive* leg doing the
+extra work, because moving the camera invalidates light-space caches
+that a parked refinement keeps. Under the readback an interactive frame
+costs 40-43 ms against a refinement sample's 34-35.
+
+Three instrument faults are recorded in the probe's header, each of
+which produced a confident wrong number first: a GPU readback inside
+the timed loop (the convergence check cost more than the frames it was
+waiting for, ~37% of the total); "a pump is not a frame", whose ratio
+is not even constant, since a stall lets the event loop service the
+redraws the accumulation schedules for itself; and reporting two
+near-zero numbers as a disagreement rather than as a null result.
+
+**The browser tier.** The viewer compiles the same `BGFXFrame.cpp`, so
+the accumulation was always *in* the wasm build -- but until 2026-08-21
+nothing could reach it, for two independent reasons. `setTemporalConfig`
+is called only from `SoFCRenderer.cpp` through the Coin bridge, which is
+desktop-only, so `TemporalConfig::enabled` kept its `false` default; and
+even set, the viewer's idle skip consulted `isSceneDirty()` and
+`isSceneAnimated()`, and `sceneAnimated` covers only the time-animated
+media (fire, cloud, water, caustics). The accumulation's own
+ask-for-another-frame signal is `animatedFrame`, surfaced as
+`animating()`, which only the desktop viewer read -- so a refinement
+would have stalled after its first sample.
+
+Both are fixed. The viewer takes `?accum=<N>` (bare `?accum` = 32,
+`?accum=0` = off), and its idle skip now also holds off while
+`animating()` is true, which goes false by itself at the sample budget
+so a converged view still goes quiet.
+
+The setting is **viewer-local and deliberately not carried in the scene
+snapshot**, unlike every other config the viewer applies. What it spends
+is the reader's GPU and, on a phone, their battery -- a fact about their
+machine rather than about the model somebody authored. That is the same
+reason both desktop properties are `Prop_NoPersist`; letting it travel
+would hand the producer a claim on the viewer's power budget.
+
+Measured in Chrome on real WebGL2 (`ANGLE ... D3D12 (AMD Radeon)`,
+zero GL errors) against the same scene with `?accum=0`: edge
+high-frequency energy falls **0.08300 -> 0.07143** (ratio 0.861) over
+the 5.1% of the frame that carries edges. Note the AO convergence
+shaders reached this tier for the first time in the same rebuild -- the
+essl pack is compiled from source at build time, so a shader fix does
+not exist in the browser until the viewer is rebuilt.
+
+One note for anyone extending this: the volumetric march phase is
+`frame % 4096`, a frame counter rather than a sample number, so the
+shafts are reproducible only under the freeze-frame switch (which
+zeroes the phase). That predates the accumulation and is deliberate;
+the three targets above deliberately use the sample number instead, so
+they stay golden-safe without it.
+
+Both settings are **local** (`Prop_NoPersist`, `_localRenderProperties`):
+what they spend is the reader's idle GPU time and, on a laptop, their
+battery, which is a fact about their machine rather than about the model
+somebody authored.
+
 ## 4. Draw model
 
 - `Render::DrawCall` = mesh reference (+ index sub-range), model
@@ -683,6 +1140,53 @@ uniform-selected branch that costs nothing on a scene that states none.
   direction-less sheen rather than as geometry. This is why the finish
   is stated in physical units and not as a normalised amplitude. In the
   Phong path the same quantity travels through the shininess slot.
+
+### Per-face textures (an image on one face)
+
+A texture is otherwise a property of the DRAW: one unit-0 `SoTexture2`
+captured from traversal state, so a shape wears one image over all of it
+or none. A per-face appearance may instead name an image per face
+(`App::Material::imagePath`, or `image` carrying the encoded bytes
+inline), and the engine paints each one on its own face.
+
+- **A palette, because a draw binds one sampler.** The distinct images
+  of an appearance become a `Render::TexturePalette` and what travels
+  per face is one byte of layer index in the material stream's third
+  slot, beside the finish and frame indices (`MeshData::materials`).
+  **Layer 0 is the untextured face** and has no palette entry, so an
+  unbound attribute, an overflowed palette (cap
+  `Render::MaxFaceTexturePalette` = 8, layer 0 included) and a face
+  nobody imaged all read as the pre-feature look.
+- **Uploaded as one 2D array texture** (`GpuTextureArray`), every layer
+  bilinearly resampled onto the largest one and bounded at 1024 a side,
+  keyed by the layer image ids so two appearances naming the same images
+  share the upload. Bound at unit 10 on **every** mesh draw with
+  `u_faceTexParams` -- a bgfx uniform holds its value for the rest of
+  the frame, so a draw that left it alone would wear the previous
+  draw's images.
+- **Laid out in the face's own projection frame**, the same
+  `Render::FramePalette` the machined finish uses: a planar face in the
+  plane's own axes, a turned one unwrapped about its axis (arc length
+  snapped to whole tiles so the atan2 seam does not cut the image), and
+  a face with no analytic surface triplanarly off the object-space
+  normal -- dominant axis outright, since two blended projections read
+  as a ghost of the image over itself. That is what makes this work on
+  CAD geometry, which carries no UVs, and it gives an image a physical
+  size: `Render_FaceTextureScale`, millimetres of object space per tile,
+  25 by default. A NEGATIVE scale hands the images the mesh's own
+  texture coordinates instead, for a shape that really was UV mapped.
+- **Modulate, on top of everything the unit-0 texture did**: a shape may
+  carry both, and the face's own image is the more specific statement.
+- **A draw with no stream still gets its image.** A shape that paints
+  every face alike collapses the per-vertex stream away, and a
+  single-face draw (a selection or preselection highlight) never has
+  one: both carry `Material::facetexlayer` instead, resolved by the
+  bridge the same way it resolves a face's finish into the scalars.
+- **No Coin change.** `SoFCFaceTextureElement` follows `SoFCPbrElement`
+  and `SoFCFinishElement`: the quantity has no Coin material field to
+  ride, and Coin's own GL path binds one texture per draw and has
+  nowhere to put a palette -- so the GL renderer draws none of this,
+  like the rest of the per-face appearance.
 
 ### Reading a Phong appearance as PBR material data
 

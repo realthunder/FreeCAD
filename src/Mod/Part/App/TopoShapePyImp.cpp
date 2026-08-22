@@ -87,12 +87,14 @@
 #include <App/StringHasherPy.h>
 #include <App/ExpressionParser.h>
 
+#include "ShapeList.h"
 #include "TopoShape.h"
 #include "TopoShapeOpCode.h"
 
 #include <Mod/Part/App/TopoShapePy.h>
 #include <Mod/Part/App/TopoShapePy.cpp>
 
+#include <Mod/Part/App/ShapeListPy.h>
 #include <Mod/Part/App/GeometryPy.h>
 #include <Mod/Part/App/PlanePy.h>
 #include <Mod/Part/App/TopoShapeCompoundPy.h>
@@ -2929,18 +2931,14 @@ void TopoShapePy::setOrientation(Py::String arg)
     getTopoShapePtr()->setShape(sh);
 }
 
-static Py::List getElements(const TopoShape &sh,
-                            TopAbs_ShapeEnum type,
-                            TopAbs_ShapeEnum avoid = TopAbs_SHAPE)
+// A view of the sub shapes, not a python object per element: the list
+// materialises an element when one is asked for, so len() and a single
+// index cost one cache lookup rather than the whole list. See ShapeList.
+static Py::Object getElements(const TopoShape &sh,
+                              TopAbs_ShapeEnum type,
+                              TopAbs_ShapeEnum avoid = TopAbs_SHAPE)
 {
-    Py::List ret;
-    for(auto &shape : sh.getSubTopoShapes(type, avoid)) {
-        auto pyobj = shape2pyshape(shape);
-        auto pyshape = static_cast<Base::PyObjectBase*>(pyobj.ptr());
-        pyshape->setNotTracking();
-        ret.append(pyobj);
-    }
-    return ret;
+    return Py::asObject(new ShapeListPy(new ShapeList(sh, type, avoid)));
 }
 
 PyObject *TopoShapePy::getChildShapes(PyObject *args) const
@@ -2958,47 +2956,47 @@ PyObject *TopoShapePy::getChildShapes(PyObject *args) const
     }PY_CATCH_OCC;
 }
 
-Py::List TopoShapePy::getSubShapes() const
+Py::Object TopoShapePy::getSubShapes() const
 {
     return getElements(*getTopoShapePtr(),TopAbs_SHAPE);
 }
 
-Py::List TopoShapePy::getFaces() const
+Py::Object TopoShapePy::getFaces() const
 {
     return getElements(*getTopoShapePtr(),TopAbs_FACE);
 }
 
-Py::List TopoShapePy::getVertexes() const
+Py::Object TopoShapePy::getVertexes() const
 {
     return getElements(*getTopoShapePtr(),TopAbs_VERTEX);
 }
 
-Py::List TopoShapePy::getShells() const
+Py::Object TopoShapePy::getShells() const
 {
     return getElements(*getTopoShapePtr(),TopAbs_SHELL);
 }
 
-Py::List TopoShapePy::getSolids() const
+Py::Object TopoShapePy::getSolids() const
 {
     return getElements(*getTopoShapePtr(),TopAbs_SOLID);
 }
 
-Py::List TopoShapePy::getCompSolids() const
+Py::Object TopoShapePy::getCompSolids() const
 {
     return getElements(*getTopoShapePtr(),TopAbs_COMPSOLID);
 }
 
-Py::List TopoShapePy::getEdges() const
+Py::Object TopoShapePy::getEdges() const
 {
     return getElements(*getTopoShapePtr(),TopAbs_EDGE);
 }
 
-Py::List TopoShapePy::getWires() const
+Py::Object TopoShapePy::getWires() const
 {
     return getElements(*getTopoShapePtr(),TopAbs_WIRE);
 }
 
-Py::List TopoShapePy::getCompounds() const
+Py::Object TopoShapePy::getCompounds() const
 {
     return getElements(*getTopoShapePtr(),TopAbs_COMPOUND);
 }

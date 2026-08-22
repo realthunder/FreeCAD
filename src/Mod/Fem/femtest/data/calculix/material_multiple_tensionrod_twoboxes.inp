@@ -1166,8 +1166,8 @@ Evolumes
 
 ***********************************************************
 ** constraints fixed node sets
-** ConstraintFixed
-*NSET,NSET=ConstraintFixed
+** Fixed
+*NSET,NSET=Fixed
 9,
 10,
 11,
@@ -1210,6 +1210,9 @@ Evolumes
 296,
 297,
 
+** Physical constants for SI(mm) unit system with Kelvins
+*PHYSICAL CONSTANTS, ABSOLUTE ZERO=0, STEFAN BOLTZMANN=5.670374419e-11
+
 ***********************************************************
 ** Materials
 ** see information about units at file end
@@ -1218,11 +1221,15 @@ Evolumes
 *MATERIAL, NAME=MechanicalMaterialLow
 *ELASTIC
 70000,0.35
+*EXPANSION, ZERO=0
+0
 ** FreeCAD material name: Steel-Generic
 ** MechanicalMaterialUpp
 *MATERIAL, NAME=MechanicalMaterialUpp
 *ELASTIC
 200000,0.3
+*EXPANSION, ZERO=0
+0
 
 ***********************************************************
 ** Sections
@@ -1231,24 +1238,24 @@ Evolumes
 
 ***********************************************************
 ** At least one step is needed to run an CalculiX analysis of FreeCAD
-*STEP
+*STEP, INC=2000
 *STATIC
 
 
 ***********************************************************
 ** Fixed Constraints
-** ConstraintFixed
+** Fixed
 *BOUNDARY
-ConstraintFixed,1
-ConstraintFixed,2
-ConstraintFixed,3
+Fixed,1
+Fixed,2
+Fixed,3
 
 
 ***********************************************************
 ** constraints pressure element face loads
-** ConstraintPressure
+** Pressure
 *DLOAD
-** ConstraintPressure: face load
+** MultiMatCompSolid.Face11
 61,P3,1000.0
 74,P3,1000.0
 75,P3,1000.0
@@ -1274,18 +1281,18 @@ U
 S, E
 ** outputs --> dat file
 ** reaction forces for Constraint fixed
-*NODE PRINT, NSET=ConstraintFixed, TOTALS=ONLY
+*NODE PRINT, NSET=Fixed, TOTALS=ONLY
 RF
 
-
+*OUTPUT, FREQUENCY=1
 ***********************************************************
-*END STEP 
+*END STEP
 
 ***********************************************************
 ** CalculiX Input file
 **   written by    --> FreeCAD 0.21.0
 **   written on    --> Tue Mar 28 06:48:16 2023
-**   file name     --> 
+**   file name     --> material_multiple_tensionrod_twoboxes.FCStd
 **   analysis name --> Analysis
 **
 **

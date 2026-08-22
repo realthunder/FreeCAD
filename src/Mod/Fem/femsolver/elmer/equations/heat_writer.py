@@ -30,6 +30,9 @@ __url__ = "https://www.freecad.org"
 ## \addtogroup FEM
 #  @{
 
+import itertools
+import FreeCAD
+
 from .. import sifio
 from .. import writer as general_writer
 from femtools import membertools
@@ -60,7 +63,7 @@ class Heatwriter:
     def handleHeatConstants(self):
         self.write.constant(
             "Stefan Boltzmann",
-            self.write.convert(self.write.constsdef["StefanBoltzmann"], "M/(O^4*T^3)")
+            self.write.convert(self.write.constsdef["StefanBoltzmann"], "M/(O^4*T^3)"),
         )
 
     def handleHeatEquation(self, bodies, equation):
@@ -77,7 +80,8 @@ class Heatwriter:
                 "App::PropertyEnumeration",
                 "Convection",
                 "Equation",
-                "Type of convection to be used"
+                "Type of convection to be used",
+                locked=True,
             )
             equation.Convection = heat.CONVECTION_TYPE
             equation.Convection = "None"
@@ -86,7 +90,8 @@ class Heatwriter:
                 "App::PropertyEnumeration",
                 "PhaseChangeModel",
                 "Equation",
-                "Model for phase change"
+                "Model for phase change",
+                locked=True,
             )
             equation.PhaseChangeModel = heat.PHASE_CHANGE_MODEL
             equation.PhaseChangeModel = "None"
@@ -96,12 +101,10 @@ class Heatwriter:
         for obj in self.write.getMember("Fem::ConstraintTemperature"):
             i = i + 1
             femobjects = membertools.get_several_member(
-                self.write.analysis,
-                "Fem::ConstraintTemperature"
+                self.write.analysis, "Fem::ConstraintTemperature"
             )
             femobjects[i]["Nodes"] = meshtools.get_femnodes_by_femobj_with_references(
-                self.write.getSingleMember("Fem::FemMeshObject").FemMesh,
-                femobjects[i]
+                self.write.getSingleMember("Fem::FemMeshObject").FemMesh, femobjects[i]
             )
             NumberOfNodes = len(femobjects[i]["Nodes"])
             if obj.References:
@@ -109,8 +112,8 @@ class Heatwriter:
                     if obj.ConstraintType == "Temperature":
                         temperature = float(obj.Temperature.getValueAs("K"))
                         self.write.boundary(name, "Temperature", temperature)
-                    elif obj.ConstraintType == "CFlux":
-                        flux = float(obj.CFlux.getValueAs("W"))
+                    elif obj.ConstraintType == "Flux":
+                        flux = float(obj.ConcentratedHeatFlux.getValueAs("W"))
                         # CFLUX is the flux per mesh node
                         flux = flux / NumberOfNodes
                         self.write.boundary(name, "Temperature Load", flux)
@@ -119,26 +122,67 @@ class Heatwriter:
             if obj.References:
                 for name in obj.References[0][1]:
                     if obj.ConstraintType == "Convection":
-                        film = self.write.getFromUi(obj.FilmCoef, "W/(m^2*K)", "M/(T^3*O)")
-                        temp = self.write.getFromUi(obj.AmbientTemp, "K", "O")
+                        film = obj.FilmCoef.getValueAs("W/(m^2*K)").Value
+                        temp = obj.AmbientTemp.getValueAs("K").Value
                         self.write.boundary(name, "Heat Transfer Coefficient", film)
                         self.write.boundary(name, "External Temperature", temp)
-                    elif obj.ConstraintType == "DFlux":
-                        flux = self.write.getFromUi(obj.DFlux, "W/m^2", "M*T^-3")
+                    elif obj.ConstraintType == "Flux":
+                        flux = obj.DistributedHeatFlux.getValueAs("W/m^2").Value
                         self.write.boundary(name, "Heat Flux BC", True)
                         self.write.boundary(name, "Heat Flux", flux)
+                    elif obj.ConstraintType == "Radiation":
+                        temp = obj.AmbientTemp.getValueAs("K").Value
+                        self.write.boundary(name, "Emissivity", obj.Emissivity)
+                        if obj.CavityRadiation:
+                            self.write.boundary(name, "Radiation", "Diffuse Gray")
+                            if obj.ClosedCavity:
+                                self.write.boundary(name, "Radiation Boundary Open", False)
+                            else:
+                                self.write.boundary(name, "Radiation Boundary Open", True)
+                                self.write.boundary(name, "External Temperature", temp)
+                        else:
+                            self.write.boundary(name, "Radiation", "Idealized")
+                            self.write.boundary(name, "External Temperature", temp)
                 self.write.handled(obj)
 
     def handleHeatInitial(self, bodies):
         tempObj = self.write.getSingleMember("Fem::ConstraintInitialTemperature")
         if tempObj is not None:
-            refTemp = float(tempObj.initialTemperature.getValueAs("K"))
+            refTemp = float(tempObj.InitialTemperature.getValueAs("K"))
             for name in bodies:
                 self.write.initial(name, "Temperature", refTemp)
             self.write.handled(tempObj)
 
     def _outputHeatBodyForce(self, obj, name):
-        heatSource = self.write.getFromUi(obj.HeatSource, "W/kg", "L^2*T^-3")
+        if obj.Mode == "Dissipation Rate":
+            heatSource = obj.DissipationRate.getValueAs("W/kg").Value
+
+        elif obj.Mode == "Total Power":
+            ref = obj.References[0]
+            ref_feat = ref[0]
+            ref_sub_obj = ref[1][0]
+            density = None
+            for mat in self.write.getMember("App::MaterialObject"):
+                mat_ref = [
+                    *itertools.chain(*[itertools.product([i[0]], i[1]) for i in mat.References])
+                ]
+                if (ref_feat, ref_sub_obj) in mat_ref:
+                    density = FreeCAD.Units.Quantity(mat.Material["Density"])
+                    break
+
+            if not density:
+                # search material without references
+                for mat in self.write.getMember("App::MaterialObject"):
+                    if not mat.References:
+                        density = FreeCAD.Units.Quantity(mat.Material["Density"])
+                        break
+            volume = ref_feat.getSubObject(ref_sub_obj).Volume
+            heatSource = (
+                (obj.TotalPower / (density * FreeCAD.Units.Quantity(volume, "mm^3")))
+                .getValueAs("W/kg")
+                .Value
+            )
+
         if heatSource == 0.0:
             # a zero heat would break Elmer (division by zero)
             raise general_writer.WriteError("The body heat source must not be zero!")
@@ -167,37 +211,35 @@ class Heatwriter:
     def handleHeatMaterial(self, bodies):
         tempObj = self.write.getSingleMember("Fem::ConstraintInitialTemperature")
         if tempObj is not None:
-            refTemp = float(tempObj.initialTemperature.getValueAs("K"))
+            refTemp = float(tempObj.InitialTemperature.getValueAs("K"))
             for name in bodies:
                 self.write.material(name, "Reference Temperature", refTemp)
         for obj in self.write.getMember("App::MaterialObject"):
             m = obj.Material
-            refs = (
-                obj.References[0][1]
-                if obj.References
-                else self.write.getAllBodies())
+            refs = obj.References[0][1] if obj.References else self.write.getAllBodies()
             for name in (n for n in refs if n in bodies):
                 if "Density" not in m:
                     raise general_writer.WriteError(
                         "Used material does not specify the necessary 'Density'."
                     )
                 self.write.material(name, "Name", m["Name"])
-                self.write.material(
-                    name, "Density",
-                    self.write.getDensity(m))
+                self.write.material(name, "Density", self.write.getDensity(m))
                 if "ThermalConductivity" not in m:
                     raise general_writer.WriteError(
                         "Used material does not specify the necessary 'Thermal Conductivity'."
                     )
                 self.write.material(
-                    name, "Heat Conductivity",
-                    self.write.convert(m["ThermalConductivity"], "M*L/(T^3*O)"))
+                    name,
+                    "Heat Conductivity",
+                    self.write.convert(m["ThermalConductivity"], "M*L/(T^3*O)"),
+                )
                 if "SpecificHeat" not in m:
                     raise general_writer.WriteError(
                         "Used material does not specify the necessary 'Specific Heat'."
                     )
                 self.write.material(
-                    name, "Heat Capacity",
-                    self.write.convert(m["SpecificHeat"], "L^2/(T^2*O)"))
+                    name, "Heat Capacity", self.write.convert(m["SpecificHeat"], "L^2/(T^2*O)")
+                )
+
 
 ##  @}

@@ -30,7 +30,7 @@
 namespace Part
 {
 
-class Compound : public Part::Feature
+class PartExport Compound : public Part::Feature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Compound);
 
@@ -54,7 +54,7 @@ public:
 };
 
 /// Same as Part::Compound, except it marks the Shape as transient, and rebuild it during restore
-class Compound2 : public Compound {
+class PartExport Compound2 : public Compound {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Compound2);
 public:
     Compound2();

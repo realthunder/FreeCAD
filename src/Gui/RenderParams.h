@@ -1188,6 +1188,72 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter TemporalAccum
+    ///
+    /// Keep refining the image while the camera holds still.
+    /// 
+    /// Multisampling antialiases the geometry it rasterizes and nothing
+    /// else: every sample inside one triangle is shaded once, so a
+    /// specular highlight crawling across a curved surface, a normal or
+    /// texture detail below the pixel, and every screen-space pass
+    /// computed after the resolve -- ambient occlusion, outlines,
+    /// section caps, the light shafts -- are left exactly as aliased or
+    /// as noisy as they were drawn. More coverage samples cannot help
+    /// any of them.
+    /// 
+    /// This spends time instead. Once the camera stops, each further
+    /// frame offsets the projection by a fraction of a pixel and
+    /// averages into what is already on screen, so the whole pipeline
+    /// converges toward what supersampling it would have given -- and
+    /// it costs nothing at all while anything is moving.
+    /// 
+    /// There is no reprojection and no history rejection, because
+    /// nothing moved: the accumulation is thrown away outright on any
+    /// camera, scene or highlight change, so a drag or an orbit returns
+    /// to the ordinary multisampled frame immediately with no ghosting,
+    /// smearing or trailing on thin edges. It is a refinement on top of
+    /// multisampling, not a replacement for it -- leave the antialiasing
+    /// preference where it is.
+    /// 
+    /// The cost is idle GPU time: a parked view keeps drawing until it
+    /// has converged (TemporalAccumSamples), then stops and asks for
+    /// nothing more. On a laptop or a tablet that is battery, which is
+    /// why this is off by default and why it does not travel in a saved
+    /// document.
+    static const bool & getTemporalAccum();
+    static const bool & defaultTemporalAccum();
+    static void removeTemporalAccum();
+    static void setTemporalAccum(const bool &v);
+    static const char *docTemporalAccum();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TemporalAccumSamples
+    ///
+    /// How many jittered samples the idle accumulation converges over
+    /// before the view goes quiet (2-256, TemporalAccum only).
+    /// 
+    /// The sequence is a Halton (2,3) pair over the pixel, so it fills
+    /// the pixel evenly at every count rather than clumping, and it is
+    /// indexed by sample number -- frame N of an accumulation is the
+    /// same frame N every time, which is what keeps a rendered
+    /// comparison reproducible.
+    /// 
+    /// Most of the visible gain arrives in the first handful of
+    /// samples, since the error of an average falls with the square
+    /// root of the count: 32 halves the residual noise of 8, and 128
+    /// halves it again for four times the work. Raise it for a still
+    /// worth waiting on, lower it to reach the quiet state sooner.
+    static const long & getTemporalAccumSamples();
+    static const long & defaultTemporalAccumSamples();
+    static void removeTemporalAccumSamples();
+    static void setTemporalAccumSamples(const long &v);
+    static const char *docTemporalAccumSamples();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter Occlusion
     ///
     /// Skip drawing what the depth buffer proves could not have
@@ -2036,15 +2102,17 @@ public:
     /// roughness -- which is what made physically based shading look
     /// like painted plastic.
     /// 
-    /// Interior (the default) = a room with one window and a ceiling
+    /// Interior = a room with one window and a ceiling
     /// panel, walls close enough to bounce. One hard key against a
     /// dark surround, which is what gives the crispest highlight and
     /// the strongest read of form. Studio = four soft boxes on a dark
     /// surround, the product-shot rig, gentler and more even than
-    /// Interior. Gradient = the smooth three-band dome this engine
-    /// used before the others existed; the flattest and the most
-    /// even, and the one to pick to have an older document's look
-    /// back. Overcast = a bright sky weighted to the zenith over dark
+    /// Interior. Gradient (the default) = the smooth three-band dome
+    /// this engine used before the others existed; the flattest and
+    /// the most even, which is why it is where a view starts -- it
+    /// stays out of the way of the model being worked on, and it is
+    /// the one to pick to have an older document's look back.
+    /// Overcast = a bright sky weighted to the zenith over dark
     /// ground, soft and neutral. Sunset = a low warm sun with a deep
     /// sky, the strongest colour separation, and the only one that
     /// tints the whole frame. Light tent = a box of white panels,

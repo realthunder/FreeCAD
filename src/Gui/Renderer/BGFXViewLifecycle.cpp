@@ -120,6 +120,8 @@ void BGFXView::destroyTargets()
     // handles, so the size it was built at is gone with it.
     shadowSize = 0;
     aoMapHash = 0;
+    reflSampleIndex = -1;
+    mediumSampleIndex = -1;
     camFrameHash = 0;
     for (int t = 0; t < kBulbShadowTiles; ++t) {
         bulbShadowValid[t] = false;
@@ -190,6 +192,7 @@ bool BGFXView::effectAllocated(EffectGroup g) const
     case EffectSSAO:       return bgfx::isValid(aoPrepassFbo);
     case EffectShadow:     return bgfx::isValid(shadowFbo);
     case EffectPresent:    return bgfx::isValid(presentFbo);
+    case EffectAccum:      return bgfx::isValid(accumFbo);
     default:               return false;
     }
 }
@@ -215,6 +218,26 @@ bool BGFXView::allocEffect(EffectGroup g)
             return false;
         presentFbo = bgfx::createFrameBuffer(1, &presentTex, false);
         return bgfx::isValid(presentFbo);
+    }
+    case EffectAccum: {
+        // One full-res float target: the running average. Point-sampled
+        // and clamped like the present target -- the blend that writes
+        // it and the copy that reads it are both 1:1.
+        //
+        // Float even when the scene target is 8-bit: see accumTex for
+        // why an 8-bit history stops converging after a few samples.
+        accumTex = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::RGBA16F,
+            BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        if (!bgfx::isValid(accumTex))
+            return false;
+        accumFbo = bgfx::createFrameBuffer(1, &accumTex, false);
+        // Nothing in a fresh target is worth averaging into.
+        accumFrames = 0;
+        return bgfx::isValid(accumFbo);
     }
     case EffectVolumetric: {
         if (!m_vol)
@@ -550,6 +573,7 @@ void BGFXView::freeEffect(EffectGroup g)
         break;
     case EffectReflection:
         drop(reflFbo);
+        reflSampleIndex = -1;
         drop(reflTex);
         drop(reflDepth);
         break;
@@ -563,6 +587,13 @@ void BGFXView::freeEffect(EffectGroup g)
         // has no such cache -- nor this group, which it never allocates.)
         hasFBO = false;
 #endif
+        break;
+    case EffectAccum:
+        drop(accumFbo);
+        drop(accumTex);
+        // The history is the target; without it there is nothing
+        // accumulated, whatever the counter last said.
+        accumFrames = 0;
         break;
     case EffectBloom:
         drop(bloomFbo);
@@ -643,7 +674,8 @@ void BGFXView::updateEffect(EffectGroup g, bool want)
             freeEffect(g);   // drop whatever part of the set did land
             static const char *const kNames[NumEffectGroups] = {
                 "volumetric", "bulb shadow", "reflection", "bloom",
-                "AO prepass", "shadow map", "output transform"};
+                "AO prepass", "shadow map", "output transform",
+                "temporal accumulation"};
             std::printf("bgfx: no render target handles for the %s "
                         "effect -- it stays off in this view\n",
                         kNames[g]);
@@ -984,6 +1016,20 @@ void BGFXView::init(bool keepShared)
     // Metallic-roughness map at unit 6; u_pbrParams.x = 2 flags it.
     ensureUniform(s_texMetallicRoughness, "s_texMetallicRoughness",
                   bgfx::UniformType::Sampler);
+    // Per-face texture palette at unit 10: an array texture whose
+    // layers are the images the draw's faces carry. Bound on every mesh
+    // draw, with the 1x1 white array below standing in for the draws
+    // (almost all of them) whose faces carry none.
+    ensureUniform(s_texFace, "s_texFace", bgfx::UniformType::Sampler);
+    ensureUniform(u_faceTexParams, "u_faceTexParams",
+                  bgfx::UniformType::Vec4);
+    if (!bgfx::isValid(m_whiteTexArray)
+            && (bgfx::getCaps()->supported & BGFX_CAPS_TEXTURE_2D_ARRAY)) {
+        static const uint32_t whitelayers[2] = {0xffffffff, 0xffffffff};
+        m_whiteTexArray = bgfx::createTexture2D(
+            1, 1, false, 2, bgfx::TextureFormat::RGBA8, 0,
+            bgfx::copy(whitelayers, sizeof(whitelayers)));
+    }
 
     // Shadows: variance moments rendered from the scene light of the
     // Shadow draw style (unit 3 of the mesh programs; the white
@@ -1318,6 +1364,23 @@ void BGFXView::init(bool keepShared)
     // and uniforms are built here.
     ensureProgram(m_progReflMedia, "vs_fc_comp", "fs_fc_refl_media");
     ensureProgram(m_progGroundRefl, "vs_fc_mesh", "fs_fc_groundrefl");
+    // The shadow-only ground rides the same vertex program as both
+    // of the above, for the same reason: one quad, one depth.
+    ensureProgram(m_progGroundShadow, "vs_fc_mesh",
+                  "fs_fc_groundshadow");
+    // ... and the quad-less form of it, which needs the screen triangle
+    // instead and the plane it is to find as a uniform.
+    ensureProgram(m_progGroundShadowPlane, "vs_fc_comp",
+                  "fs_fc_groundshadow_plane");
+    ensureUniform(u_groundPlane, "u_groundPlane", bgfx::UniformType::Vec4);
+    // The drawn ground's own mesh variants, which fade their rim out.
+    ensureProgram(m_progGroundFade, "vs_fc_mesh", "fs_fc_mesh_ground");
+    ensureProgram(m_progGroundFadeTex, "vs_fc_mesh_tex",
+                  "fs_fc_mesh_ground_tex");
+    ensureProgram(m_progGroundFadePrepass, "vs_fc_prepass",
+                  "fs_fc_prepass_ground");
+    ensureUniform(u_groundFadeU, "u_groundFadeU", bgfx::UniformType::Vec4);
+    ensureUniform(u_groundFadeV, "u_groundFadeV", bgfx::UniformType::Vec4);
     ensureUniform(u_reflParams, "u_reflParams", bgfx::UniformType::Vec4);
 
     // Stateful particle resources (docs/RenderEngine.md §5.8).
@@ -1451,6 +1514,13 @@ void BGFXView::collectMeshes(const std::unordered_map<uint64_t, uint64_t> &kept,
         if (it->second.lastUsed + 2 < frame) {
             it->second.destroy();
             it = textures.erase(it);
+        } else
+            ++it;
+    }
+    for (auto it = textureArrays.begin(); it != textureArrays.end();) {
+        if (it->second.lastUsed + 2 < frame) {
+            it->second.destroy();
+            it = textureArrays.erase(it);
         } else
             ++it;
     }
@@ -1625,6 +1695,7 @@ void BGFXView::blit(const Render::FrameDumpRequest *dump,
         if (stats) {
             stats->width = width;
             stats->height = height;
+            stats->temporalSamples = accumFrames;
             stats->geometryPixels = n;
             stats->avgColor[0] = n ? float(r) / float(n) : -1.0f;
             stats->avgColor[1] = n ? float(g) / float(n) : -1.0f;

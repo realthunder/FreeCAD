@@ -2,7 +2,7 @@
 #include <Base/Exception.h>
 #include <Base/Quantity.h>
 #include <Base/UnitsApi.h>
-#include <Base/UnitsSchemaImperial1.h>
+#include <Base/UnitsSchema.h>
 #include <QLocale>
 #include <boost/core/ignore_unused.hpp>
 
@@ -194,7 +194,7 @@ TEST_F(Quantity, TestSchemeImperialTwo)
     double factor {};
     std::string unitString;
     auto scheme = Base::UnitsApi::createSchema(Base::UnitSystem::ImperialDecimal);
-    std::string result = scheme->schemaTranslate(quantity, factor, unitString);
+    std::string result = scheme->translate(quantity, factor, unitString);
     EXPECT_EQ(result, "0.04 in");
 }
 
@@ -209,7 +209,7 @@ TEST_F(Quantity, TestSchemeImperialOne)
     double factor {};
     std::string unitString;
     auto scheme = Base::UnitsApi::createSchema(Base::UnitSystem::ImperialDecimal);
-    std::string result = scheme->schemaTranslate(quantity, factor, unitString);
+    std::string result = scheme->translate(quantity, factor, unitString);
 
     EXPECT_EQ(result, "0.0 in");
 }

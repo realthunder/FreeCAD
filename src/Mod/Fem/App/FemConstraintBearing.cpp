@@ -21,18 +21,16 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
-#ifndef _PreComp_
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <TopoDS.hxx>
-#endif
+
 
 #include <Mod/Part/App/PartFeature.h>
 
 #include "FemConstraintBearing.h"
-
+#include "FemTools.h"
 
 using namespace Fem;
 
@@ -40,25 +38,31 @@ PROPERTY_SOURCE(Fem::ConstraintBearing, Fem::Constraint)
 
 ConstraintBearing::ConstraintBearing()
 {
-    ADD_PROPERTY_TYPE(Location,
-                      (nullptr),
-                      "ConstraintBearing",
-                      (App::PropertyType)(App::Prop_None),
-                      "Element giving axial location of constraint");
+    ADD_PROPERTY_TYPE(
+        Location,
+        (nullptr),
+        "ConstraintBearing",
+        (App::PropertyType)(App::Prop_None),
+        "Element giving axial location of constraint"
+    );
     ADD_PROPERTY(Dist, (0.0));
     ADD_PROPERTY(AxialFree, (0));
     ADD_PROPERTY(Radius, (0.0));
     ADD_PROPERTY(Height, (0.0));
-    ADD_PROPERTY_TYPE(BasePoint,
-                      (Base::Vector3d(0, 0, 0)),
-                      "ConstraintBearing",
-                      App::PropertyType(App::Prop_ReadOnly | App::Prop_Output),
-                      "Base point of cylindrical bearing seat");
-    ADD_PROPERTY_TYPE(Axis,
-                      (Base::Vector3d(0, 1, 0)),
-                      "ConstraintBearing",
-                      App::PropertyType(App::Prop_ReadOnly | App::Prop_Output),
-                      "Axis of bearing seat");
+    ADD_PROPERTY_TYPE(
+        BasePoint,
+        (Base::Vector3d(0, 0, 0)),
+        "ConstraintBearing",
+        App::PropertyType(App::Prop_ReadOnly | App::Prop_Output),
+        "Base point of cylindrical bearing seat"
+    );
+    ADD_PROPERTY_TYPE(
+        Axis,
+        (Base::Vector3d(0, 1, 0)),
+        "ConstraintBearing",
+        App::PropertyType(App::Prop_ReadOnly | App::Prop_Output),
+        "Axis of bearing seat"
+    );
 }
 
 App::DocumentObjectExecReturn* ConstraintBearing::execute()
@@ -74,9 +78,17 @@ void ConstraintBearing::onChanged(const App::Property* prop)
 
     if (prop == &References) {
         // Find data of cylinder
+        std::vector<App::DocumentObject*> ref = References.getValues();
+        std::vector<std::string> subRef = References.getSubValues();
+        if (ref.empty()) {
+            return;
+        }
+
+        Part::Feature* feat = static_cast<Part::Feature*>(ref.front());
+        TopoDS_Shape sh = Tools::getFeatureSubShape(feat, subRef.front().c_str(), true);
         double radius, height;
         Base::Vector3d base, axis;
-        if (!getCylinder(radius, height, base, axis)) {
+        if (sh.IsNull() || !Tools::getCylinderParams(sh, base, axis, height, radius)) {
             return;
         }
         Radius.setValue(radius);
@@ -113,12 +125,19 @@ void ConstraintBearing::onChanged(const App::Property* prop)
             }
         }
 
-        double radius, height;
-        Base::Vector3d base, axis;
-        if (!getCylinder(radius, height, base, axis)) {
+        std::vector<App::DocumentObject*> ref = References.getValues();
+        std::vector<std::string> subRef = References.getSubValues();
+        if (ref.empty()) {
             return;
         }
-        base = getBasePoint(base + axis * height / 2, axis, Location, Dist.getValue());
+
+        feat = static_cast<Part::Feature*>(ref.front());
+        sh = Tools::getFeatureSubShape(feat, subRef.front().c_str(), true);
+        double radius, height;
+        Base::Vector3d base, axis;
+        if (!Tools::getCylinderParams(sh, base, axis, height, radius)) {
+            return;
+        }
         BasePoint.setValue(base);
         BasePoint.touch();
     }

@@ -20,8 +20,7 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef FEM_PROPERTYPOSTDATASET_H
-#define FEM_PROPERTYPOSTDATASET_H
+#pragma once
 
 #include <vtkDataObject.h>
 #include <vtkSmartPointer.h>
@@ -83,17 +82,17 @@ public:
 private:
     static void scaleDataObject(vtkDataObject*, double s);
 
-    virtual bool isSame(const App::Property &) const {return false;}
+    bool isSame(const App::Property&) const override
+    {
+        return false;
+    }
 
 protected:
-    void save(std::ostream &s, Base::Writer &writer) const;
-    void restore(std::istream &s, const std::string &ext);
+    void save(std::ostream& s, Base::Writer& writer) const;
+    void restore(std::istream& s, const std::string& extension);
 
     void createDataObjectByExternalType(vtkSmartPointer<vtkDataObject> ex);
     vtkSmartPointer<vtkDataObject> m_dataObject;
 };
 
 }  // namespace Fem
-
-
-#endif  // FEM_PROPERTYPOSTDATASET_H

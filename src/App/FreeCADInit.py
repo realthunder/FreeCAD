@@ -317,8 +317,11 @@ def InitApplications():
             freecad.__path__ = pkgutil.extend_path(freecad.__path__, 'freecad')
         except ImportError as inst:
             Err('While initializing ' + Dir + ' the error "' + str(inst) + '" occurred\n')
-        InitNamespacePackages()
+        # Search paths first: a namespace package that imports an extension module
+        # at module scope needs the library search paths already registered. See the
+        # matching order at startup below.
         setupSearchPaths(NewPaths)
+        InitNamespacePackages()
         return True
 
     # Keep the entry point alive past the "del(InitApplications)" below: the addon
@@ -328,12 +331,18 @@ def InitApplications():
     for Dir in ModDict.values():
         InitApplication(Dir, PathExtension)
 
-    InitNamespacePackages()
-
     Log("Using "+ModDir+" as module path!\n")
     # In certain cases the PathExtension list can contain invalid strings. We concatenate them to a single string
     # but check that the output is a valid string
+    #
+    # This must precede InitNamespacePackages(): since Python 3.8 a Windows extension
+    # module resolves its dependency DLLs through os.add_dll_directory(), which is what
+    # setupSearchPaths() registers, and not through PATH. A freecad.* namespace package
+    # that imports an extension module at module scope -- freecad.fc_cadquery imports
+    # Part -- would otherwise fail with "DLL load failed while importing Part".
     setupSearchPaths(PathExtension)
+
+    InitNamespacePackages()
     path = os.environ["PATH"].split(os.pathsep)
     Log("System path after init:\n")
     for i in path:
@@ -776,6 +785,16 @@ class Scheme(IntEnum):
     MmMin = 6
     ImperialCivil = 7
     FemMilliMeterNewton = 8
+    MeterDecimal = 9
+
+    # Upstream's names for the very same schemas -- same values, so these are
+    # aliases, and code written against either spelling resolves. Upstream FEM's
+    # Elmer writer asks for Scheme.Internal, Scheme.MKS and Scheme.FEM.
+    Internal = 0
+    MKS = 1
+    Imperial = 2
+    Centimeter = 4
+    FEM = 8
 
 App.Units.Scheme = Scheme
 

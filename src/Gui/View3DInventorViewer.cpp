@@ -2259,7 +2259,6 @@ void View3DInventorViewer::setEditingViewProvider(Gui::ViewProvider* vp, int Mod
 {
     this->editViewProvider = vp;
     this->editViewProvider->setEditViewer(this, ModNum);
-    this->navigation->findBoundingSphere();
     addEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,this->editViewProvider);
 }
 
@@ -2567,6 +2566,13 @@ Gui::ShadowRenderParams Gui::materializeShadowRenderParams(App::PropertyContaine
                 if(!prop.getConstraints())
                     prop.setConstraints(&_transp_cstr);
             });
+    _shadowRenderParam<App::PropertyFloatConstraint>(view, "Transparency",
+            ViewParams::docShadowTransparency(),
+            ViewParams::getShadowTransparency(),
+            [](App::PropertyFloatConstraint &prop) {
+                if(!prop.getConstraints())
+                    prop.setConstraints(&_transp_cstr);
+            });
     _shadowRenderParam<App::PropertyBool>(view, "GroundBackFaceCull",
             ViewParams::docShadowGroundBackFaceCull(),
             ViewParams::getShadowGroundBackFaceCull());
@@ -2589,6 +2595,11 @@ Gui::ShadowRenderParams Gui::materializeShadowRenderParams(App::PropertyContaine
             });
     _shadowRenderParam<App::PropertyBool>(view, "GroundSizeAuto",
             "Auto adjust ground size based on the scene bounding box", true);
+    _shadowRenderParam<App::PropertyBool>(view, "GroundSizeFollowCamera",
+            "Auto size the ground from the camera instead of the scene bounding box. "
+            "The ground centres under the eye and reaches past the view, so it reads "
+            "as endless and nothing about the model's extent can move it.",
+            true);
     _shadowRenderParam<App::PropertyFloat>(view, "GroundSizeScale",
             ViewParams::docShadowGroundScale(),
             ViewParams::getShadowGroundScale());
@@ -3041,8 +3052,6 @@ void View3DInventorViewer::setSceneGraph(SoNode* root)
     _pimpl->addRendererBoundsNode();
 
     syncLightRotation();
-
-    navigation->findBoundingSphere();
 }
 
 void View3DInventorViewer::savePicture(int width, int height, int sample, const QColor& bg, QImage& img) const
@@ -4376,6 +4385,15 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _localRenderParam<App::PropertyFloat>(view, "EffectResolution",
             RenderParams::docEffectResolution(),
             RenderParams::getEffectResolution());
+    // Local, like the other cost dials: what it spends is the reader's
+    // idle GPU time (and on a laptop, their battery), which is a fact
+    // about their machine and not about the model somebody authored.
+    _localRenderParam<App::PropertyBool>(view, "TemporalAccum",
+            RenderParams::docTemporalAccum(),
+            RenderParams::getTemporalAccum());
+    _localRenderParam<App::PropertyInteger>(view, "TemporalAccumSamples",
+            RenderParams::docTemporalAccumSamples(),
+            RenderParams::getTemporalAccumSamples());
     _localRenderParam<App::PropertyInteger>(view, "CoarseTessellation",
             RenderParams::docCoarseTessellation(),
             RenderParams::getCoarseTessellation());
@@ -4673,6 +4691,7 @@ const char * const *Gui::shadowRenderPropertyNames()
         "RenderShadow_GroundBumpMap",
         "RenderShadow_GroundTextureSize",
         "RenderShadow_GroundSizeAuto",
+        "RenderShadow_GroundSizeFollowCamera",
         "RenderShadow_GroundSizeScale",
         "RenderShadow_GroundSizeX",
         "RenderShadow_GroundSizeY",
@@ -4974,6 +4993,8 @@ static const char *_localRenderProperties[] = {
     "Render_CoarseTessellation",
     "Render_EffectResolution",
     "Render_LevelTolerance",
+    "Render_TemporalAccum",
+    "Render_TemporalAccumSamples",
     nullptr
 };
 

@@ -505,6 +505,7 @@ const std::vector<std::pair<Unit, const char *> > &Unit::unitTypes() {
         {Unit::ElectricalResistance, "ElectricalResistance"},
         {Unit::ElectricCharge, "ElectricCharge"},
         {Unit::ElectricPotential, "ElectricPotential"},
+        {Unit::ElectromagneticPotential, "ElectromagneticPotential"},
         {Unit::Force, "Force"},
         {Unit::Frequency, "Frequency"},
         {Unit::HeatFlux, "HeatFlux"},
@@ -525,6 +526,7 @@ const std::vector<std::pair<Unit, const char *> > &Unit::unitTypes() {
         {Unit::Stiffness, "Stiffness"},
         {Unit::StiffnessDensity, "StiffnessDensity"},
         {Unit::Stress, "Stress"},
+        {Unit::SurfaceChargeDensity, "SurfaceChargeDensity"},
         {Unit::ThermalConductivity, "ThermalConductivity"},
         {Unit::ThermalExpansionCoefficient, "ThermalExpansionCoefficient"},
         {Unit::ThermalTransferCoefficient, "ThermalTransferCoefficient"},
@@ -532,6 +534,7 @@ const std::vector<std::pair<Unit, const char *> > &Unit::unitTypes() {
         {Unit::VacuumPermittivity, "VacuumPermittivity"},
         {Unit::Velocity, "Velocity"},
         {Unit::Volume, "Volume"},
+        {Unit::VolumeChargeDensity, "VolumeChargeDensity"},
         {Unit::VolumeFlowRate, "VolumeFlowRate"},
         {Unit::VolumetricThermalExpansionCoefficient, "VolumetricThermalExpansionCoefficient"},
         {Unit::Work, "Work"},
@@ -580,6 +583,8 @@ const Unit Unit::ElectricalInductance       (2, 1, -2, -2);
 const Unit Unit::ElectricalResistance       (2, 1, -3, -2);
 const Unit Unit::ElectricCharge             (0, 0, 1, 1);
 const Unit Unit::ElectricPotential          (2, 1, -3, -1);
+// Wb/m -- the magnetic vector potential, distinct from MagneticFlux (2,1,-2,-1)
+const Unit Unit::ElectromagneticPotential   (1, 1, -2, -1);
 const Unit Unit::Force                      (1, 1, -2);
 // Moment shares Work's signature, so the two are the same unit and
 // getType() answers "Work" for both -- as it does upstream, where
@@ -604,6 +609,7 @@ const Unit Unit::SpecificHeat               (2, 0, -2, 0, -1);
 const Unit Unit::Stiffness                  (0, 1, -2);
 const Unit Unit::StiffnessDensity           (-2,1,-2);
 const Unit Unit::Stress                     (-1,1,-2);
+const Unit Unit::SurfaceChargeDensity       (-2, 0, 1, 1);
 const Unit Unit::ThermalConductivity        (1, 1, -3, 0, -1);
 const Unit Unit::ThermalExpansionCoefficient(0, 0, 0, 0, -1);
 const Unit Unit::ThermalTransferCoefficient (0, 1, -3, 0, -1);
@@ -611,6 +617,7 @@ const Unit Unit::UltimateTensileStrength    (-1,1,-2);
 const Unit Unit::VacuumPermittivity         (-3, -1, 4,  2);
 const Unit Unit::Velocity                   (1, 0, -1);
 const Unit Unit::Volume                     (3);
+const Unit Unit::VolumeChargeDensity        (-3, 0, 1, 1);
 const Unit Unit::VolumeFlowRate             (3, 0, -1);
 const Unit Unit::VolumetricThermalExpansionCoefficient(0, 0, 0, 0, -1);
 const Unit Unit::Work                       (2, 1, -2);

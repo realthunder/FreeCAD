@@ -43,7 +43,8 @@ void BGFXView::fullscreen(uint16_t pass, bgfx::ProgramHandle prog,
 }
 
 void BGFXView::submitAOResolve(float radius, float intensity, int method,
-                     bool fast, int slices, int steps)
+                     bool fast, int slices, int steps,
+                     int temporalIndex)
 {
     // Fixed hemisphere kernel (unit radius, z >= 0, clustered near
     // the origin), deterministic across frames like the noise.
@@ -96,9 +97,17 @@ void BGFXView::submitAOResolve(float radius, float intensity, int method,
     // .z: classic pass depth bias; for GTAO two flag bits — bit0 the
     // interaction fast path (fewer slices/steps while the camera
     // moves), bit1 fp16 prepass depth (widens the coplanarity guard
-    // to the fp16 quantization step).
+    // to the fp16 quantization step) -- and above them the idle
+    // accumulation's sample index, which walks GTAO's noise along
+    // the R2 sequence so successive samples decorrelate. Packed
+    // rather than given a uniform of its own: both other vec4s are
+    // full, the field is already a bitfield, and 4*63+3 = 255 is
+    // exact in float. The index stays a SAMPLE number, so the frame
+    // remains reproducible -- the same argument that keeps the
+    // Halton camera jitter deterministic.
     const float paramZ = gtao
         ? (fast ? 1.0f : 0.0f) + (aoNormalZFp16 ? 2.0f : 0.0f)
+            + 4.0f * float(temporalIndex & 63)
         : 0.02f * radius;
     float params[4] = {radius, intensity, paramZ, aoPower};
     bgfx::setUniform(u_aoParams, params);
@@ -119,6 +128,21 @@ void BGFXView::submitAOResolve(float radius, float intensity, int method,
         for (int m = 0; m < kAOMipLevels; ++m)
             bgfx::setTexture(uint8_t(2 + m), s_texAOMip[m],
                              depthMips ? aoMipTex[m] : aoNormalZ);
+    }
+    else {
+        // The classic pass carries the accumulation sample index in a
+        // vec4 of its own rather than packing it the way GTAO does:
+        // GTAO's .z is a bitfield with room above it, while every lane
+        // of u_aoParams means a real value here (radius, intensity,
+        // depth bias, power). u_aoParams2 has no other use in this
+        // pass, so its meaning is per-program -- as u_aoParams itself
+        // already is between this pass and fs_fc_gtao_depths.
+        //
+        // Unmasked, unlike GTAO's index: the 64-entry wrap there is
+        // XeGTAO's own, a property of the sequence it steps through,
+        // and nothing in the golden-ratio rotation below wants it.
+        float params2[4] = {float(temporalIndex), 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_aoParams2, params2);
     }
     if (!gtao)
         bgfx::setUniform(u_aoKernel, kernel, kAOSamples);
@@ -356,6 +380,38 @@ void BGFXView::submitWaterCopy()
 {
     bgfx::setTexture(0, s_texScene, bgfxColor);
     fullscreen(ViewWaterCopy, m_progWaterCopy,
+               BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+}
+
+void BGFXView::submitTemporalAccum(float blend)
+{
+    if (!bgfx::isValid(m_progWaterCopy) || !bgfx::isValid(accumFbo))
+        return;
+    // hist = cur * k + hist * (1 - k), the volumetric accumulation's
+    // idiom at full resolution: a plain copy of the scene colour under
+    // a constant-factor blend. k comes from the count of frames already
+    // averaged, so the history is their running mean.
+    //
+    // The factor is 8-bit, which is why the sample count is capped
+    // where it is: below 1/255 the factor rounds to zero and a further
+    // frame would contribute nothing at all.
+    if (blend > 0.0f) {
+        uint32_t k8 = uint32_t(
+            bx::clamp(blend, 0.0f, 1.0f) * 255.0f + 0.5f);
+        uint32_t kRgba = (k8 << 24) | (k8 << 16) | (k8 << 8) | k8;
+        bgfx::setTexture(0, s_texScene, bgfxColor);
+        fullscreen(ViewAccum, m_progWaterCopy,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                   | BGFX_STATE_BLEND_FUNC(
+                       BGFX_STATE_BLEND_FACTOR,
+                       BGFX_STATE_BLEND_INV_FACTOR),
+                   kRgba);
+    }
+    // Back over the scene colour, so everything downstream -- the
+    // desktop blit, the output transform, the standalone present --
+    // reads the converged image without knowing this pass exists.
+    bgfx::setTexture(0, s_texScene, accumTex);
+    fullscreen(ViewAccumApply, m_progWaterCopy,
                BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
 }
 
@@ -741,14 +797,15 @@ void BGFXView::submitReflMedia(const float cloudParams[][4],
 }
 
 void BGFXView::submitGroundReflOverlay(const float bmin[3], const float bmax[3],
-                             const Render::LightConfig &light)
+                             const Render::LightConfig &light,
+                             const Render::GroundCamera &cam)
 {
     // The same quad as submitShadowGround, and it has to be exactly the
     // same: this overlay depth-tests EQUAL against it, so a corner that
     // disagreed by a float would drop the reflection. Hence one shared
     // generator rather than a repeated formula.
     float corners[4][3];
-    if (!light.groundQuad(bmin, bmax, corners))
+    if (!light.groundQuad(bmin, bmax, cam, corners))
         return;
     TransientVertex::init();
     if (bgfx::getAvailTransientVertexBuffer(6, TransientVertex::ms_layout)

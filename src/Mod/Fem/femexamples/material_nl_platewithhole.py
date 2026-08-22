@@ -41,6 +41,7 @@ import ObjectsFem
 from . import manager
 from .manager import get_meshname
 from .manager import init_doc
+from .meshes import generate_mesh
 
 
 def get_information():
@@ -49,14 +50,16 @@ def get_information():
         "meshtype": "solid",
         "meshelement": "Tet10",
         "constraints": ["fixed", "force"],
-        "solvers": ["calculix", "ccxtools"],
+        "solvers": ["ccxtools"],
         "material": "nonlinear",
-        "equations": ["mechanical"]
+        "equations": ["mechanical"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.material_nl_platewithhole import setup
@@ -80,6 +83,7 @@ TODO nonlinear material: give more information, use values from harry
 TODO compare results with example from HarryvL
 
 """
+    )
 
 
 def setup(doc=None, solvertype="ccxtools"):
@@ -116,25 +120,22 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis = ObjectsFem.makeAnalysis(doc, "Analysis")
 
     # solver
-    if solvertype == "calculix":
-        solver_obj = ObjectsFem.makeSolverCalculix(doc, "SolverCalculiX")
-    elif solvertype == "ccxtools":
-        solver_obj = ObjectsFem.makeSolverCalculixCcxTools(doc, "CalculiXccxTools")
-        solver_obj.WorkingDir = u""
+    if solvertype == "ccxtools":
+        solver_obj = ObjectsFem.makeSolverCalculiXCcxTools(doc, "CalculiXCcxTools")
+        solver_obj.WorkingDir = ""
     else:
         FreeCAD.Console.PrintWarning(
             "Unknown or unsupported solver type: {}. "
             "No solver object was created.\n".format(solvertype)
         )
-    if solvertype == "calculix" or solvertype == "ccxtools":
+    if solvertype == "ccxtools":
         solver_obj.SplitInputWriter = False
         solver_obj.AnalysisType = "static"
-        solver_obj.GeometricalNonlinearity = "linear"
         solver_obj.ThermoMechSteadyState = False
         solver_obj.MatrixSolverType = "default"
         solver_obj.IterationsControlParameterTimeUse = False
-        solver_obj.GeometricalNonlinearity = 'nonlinear'
-        solver_obj.MaterialNonlinearity = 'nonlinear'
+        solver_obj.GeometricalNonlinearity = True
+        solver_obj.MaterialNonlinearity = True
     analysis.addObject(solver_obj)
 
     # linear material
@@ -149,17 +150,16 @@ def setup(doc=None, solvertype="ccxtools"):
     # nonlinear material
     name_nlm = "Material_nonlin"
     nonlinear_mat = ObjectsFem.makeMaterialMechanicalNonlinear(doc, material_obj, name_nlm)
-    nonlinear_mat.YieldPoints = ['240.0, 0.0', '270.0, 0.025']
-    analysis.addObject(nonlinear_mat)
+    nonlinear_mat.YieldPoints = ["240.0, 0.0", "270.0, 0.025"]
     # check solver attributes, Nonlinearity needs to be set to nonlinear
 
     # constraint fixed
-    con_fixed = ObjectsFem.makeConstraintFixed(doc, "ConstraintFixed")
+    con_fixed = ObjectsFem.makeConstraintFixed(doc, "Fixed")
     con_fixed.References = [(geom_obj, "Face4")]
     analysis.addObject(con_fixed)
 
     # pressure constraint
-    con_pressure = ObjectsFem.makeConstraintPressure(doc, "ConstraintPressure")
+    con_pressure = ObjectsFem.makeConstraintPressure(doc, "Pressure")
     con_pressure.References = [(geom_obj, "Face2")]
     con_pressure.Pressure = "130.0 MPa"
     con_pressure.Reversed = True
@@ -167,16 +167,11 @@ def setup(doc=None, solvertype="ccxtools"):
 
     # mesh
     from .meshes.mesh_platewithhole_tetra10 import create_nodes, create_elements
-    fem_mesh = Fem.FemMesh()
-    control = create_nodes(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating nodes.\n")
-    control = create_elements(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating elements.\n")
+
+    fem_mesh = generate_mesh.mesh_from_existing(create_nodes, create_elements)
     femmesh_obj = analysis.addObject(ObjectsFem.makeMeshGmsh(doc, get_meshname()))[0]
     femmesh_obj.FemMesh = fem_mesh
-    femmesh_obj.Part = geom_obj
+    femmesh_obj.Shape = geom_obj
     femmesh_obj.SecondOrderLinear = False
 
     doc.recompute()

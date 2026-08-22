@@ -2280,8 +2280,17 @@ struct ColorVertex
 // bake (MeshData::materials) as three rgba8 attributes — Color1 the
 // emissive, Color2 the specular with quantized shininess in alpha, and
 // Color3 the surface finish palette index (Material::finishpalette) in
-// its first byte, UNNORMALIZED so the shader reads the index itself
-// rather than a fraction of 255.
+// Color3 the per-face palette indices (finish, projection frame, texture
+// layer) one per byte.
+//
+// All three are NORMALIZED, including the index byte, and the vertex
+// shader scales that one back up. Not a style choice: bgfx binds an
+// unnormalized integer attribute with glVertexAttribIPointer on
+// GLES3/WebGL2 (renderer_gl.cpp, `!isFloat(type) && !normalized`),
+// which WebGL2 then refuses against the shader's `vec4 a_color3` --
+// "vertex shader input type does not match the type of the bound
+// vertex attribute", and EVERY draw carrying the stream is dropped.
+// Desktop GL takes the other branch, so it never showed there.
 // Bound only for meshes that carry the stream; every other mesh-program
 // draw leaves the attributes unbound, which bgfx resolves to the GL
 // default attribute — finite values the shader multiplies out, since
@@ -2301,7 +2310,7 @@ struct MatVertex
             .begin()
             .add(bgfx::Attrib::Color1, 4, bgfx::AttribType::Uint8, true)
             .add(bgfx::Attrib::Color2, 4, bgfx::AttribType::Uint8, true)
-            .add(bgfx::Attrib::Color3, 4, bgfx::AttribType::Uint8, false)
+            .add(bgfx::Attrib::Color3, 4, bgfx::AttribType::Uint8, true)
             .end();
     };
 
@@ -3223,6 +3232,202 @@ struct GpuTexture
     }
 };
 
+// GPU array texture of one Render::TexturePalette: the images a draw
+// puts on its individual faces, as the layers of a single texture, so
+// that one draw with one sampler can paint its faces differently.
+//
+// The layers of an array texture are all one size, and the palette's
+// images are not -- so every layer is resampled onto the largest of
+// them (bounded, since a palette of eight 4k images would be 512 MB).
+// Keyed by the content of the palette, like GpuTexture: the same images
+// in the same order always name the same array.
+struct GpuTextureArray
+{
+    bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
+    uint64_t lastUsed = 0;
+    /// Some layer's pixels had not arrived, so the array stands in for
+    /// a palette that is still assembling and must be rebuilt when it
+    /// has (GpuTexture::placeholder, one per array).
+    bool placeholder = false;
+
+    /// Longest side any layer is resampled to. A per-face image is a
+    /// marking on one face of one part, not an environment.
+    static constexpr int MaxSide = 1024;
+
+    void destroy()
+    {
+        if (bgfx::isValid(handle)) {
+            bgfx::destroy(handle);
+            handle = BGFX_INVALID_HANDLE;
+        }
+    }
+
+    /// Expand one image to RGBA8 at (w, h), bilinearly resampled -- the
+    /// component expansion is GpuTexture::upload's (1/2 components are
+    /// luminance(+alpha)), and the rows stay in the GL bottom-up order
+    /// they arrive in.
+    static void resample(const Render::TextureImage &tex, int w, int h,
+                         uint8_t *dst)
+    {
+        const int nc = tex.numComponents;
+        const uint8_t *src = tex.pixels.data();
+        auto texel = [&](int x, int y, uint8_t *out) {
+            const uint8_t *p = src + (size_t(y) * tex.width + x) * nc;
+            switch (nc) {
+            case 1: out[0] = out[1] = out[2] = p[0]; out[3] = 255; break;
+            case 2: out[0] = out[1] = out[2] = p[0]; out[3] = p[1]; break;
+            case 3: out[0] = p[0]; out[1] = p[1]; out[2] = p[2];
+                    out[3] = 255; break;
+            default: out[0] = p[0]; out[1] = p[1]; out[2] = p[2];
+                     out[3] = p[3]; break;
+            }
+        };
+        for (int y = 0; y < h; ++y) {
+            // Pixel centres, so a layer already at the target size
+            // resamples to itself exactly rather than to a half-texel
+            // shifted copy of itself.
+            const float sy = (float(y) + 0.5f) * float(tex.height)
+                / float(h) - 0.5f;
+            const int y0 = std::max(0, std::min(tex.height - 1,
+                                                int(std::floor(sy))));
+            const int y1 = std::max(0, std::min(tex.height - 1, y0 + 1));
+            const float fy = std::max(0.0f, sy - float(y0));
+            for (int x = 0; x < w; ++x) {
+                const float sx = (float(x) + 0.5f) * float(tex.width)
+                    / float(w) - 0.5f;
+                const int x0 = std::max(0, std::min(tex.width - 1,
+                                                    int(std::floor(sx))));
+                const int x1 = std::max(0, std::min(tex.width - 1, x0 + 1));
+                const float fx = std::max(0.0f, sx - float(x0));
+                uint8_t p00[4], p10[4], p01[4], p11[4];
+                texel(x0, y0, p00);
+                texel(x1, y0, p10);
+                texel(x0, y1, p01);
+                texel(x1, y1, p11);
+                uint8_t *out = dst + (size_t(y) * w + x) * 4;
+                for (int c = 0; c < 4; ++c) {
+                    const float top = float(p00[c])
+                        + (float(p10[c]) - float(p00[c])) * fx;
+                    const float bot = float(p01[c])
+                        + (float(p11[c]) - float(p01[c])) * fx;
+                    out[c] = uint8_t(top + (bot - top) * fy + 0.5f);
+                }
+            }
+        }
+    }
+
+    void upload(const Render::TexturePalette &palette)
+    {
+        placeholder = false;
+        const uint16_t numLayers =
+            uint16_t(std::min(palette.entries.size(),
+                              std::size_t(Render::MaxFaceTexturePalette)));
+        if (!numLayers)
+            return;
+        // bgfx makes a plain 2D texture out of a one-layer request --
+        // `1 < numLayers` is what picks GL_TEXTURE_2D_ARRAY -- and the
+        // mesh shader samples this as an array (SAMPLER2DARRAY
+        // s_texFace). So a palette holding a SINGLE image used to bind
+        // a non-array texture to an array sampler and draw nothing at
+        // all: every one-image case, which is most of them (a marking
+        // on one face, and every glTF whose mesh names one base colour
+        // image). Pad to two slices, exactly as the white stand-in
+        // above already does; the pad is white, and no face names it
+        // because u_faceTexParams.w still states the real count.
+        const uint16_t numSlices = std::max<uint16_t>(numLayers, 2);
+        // The array's own size: the largest layer, bounded. A palette
+        // whose images have not all arrived still gets its array now --
+        // the ones that have are drawn, and `placeholder` brings the
+        // rest in when they land.
+        int w = 1, h = 1;
+        for (uint16_t i = 0; i < numLayers; ++i) {
+            const auto &e = palette.entries[i];
+            if (!e || !usable(*e)) {
+                placeholder = true;
+                continue;
+            }
+            w = std::max(w, int(e->width));
+            h = std::max(h, int(e->height));
+        }
+        w = std::min(w, MaxSide);
+        h = std::min(h, MaxSide);
+        const uint64_t flags = BGFX_SAMPLER_MIN_ANISOTROPIC
+            | BGFX_SAMPLER_MAG_ANISOTROPIC;
+        // WITH a mip chain, and it is not optional here: a face image
+        // is laid out in millimetres, so a part zoomed to fit shows
+        // several tiles across a few hundred pixels and an unmipped
+        // checker boils into speckle the moment the camera moves.
+        // bgfx has no runtime mip generation, so the levels are built
+        // on the CPU exactly as GpuTexture::upload builds them.
+        handle = bgfx::createTexture2D(uint16_t(w), uint16_t(h), true,
+                                       numSlices,
+                                       bgfx::TextureFormat::RGBA8, flags);
+        if (!bgfx::isValid(handle))
+            return;
+        std::vector<uint8_t> level;
+        std::vector<uint8_t> next;
+        for (uint16_t i = 0; i < numSlices; ++i) {
+            // Back to the full size for every layer: the mip loop below
+            // walks this buffer down to 1x1, and the next layer's
+            // resample writes a whole level into it. A padding slice
+            // keeps the white it is filled with.
+            level.assign(size_t(w) * h * 4, uint8_t(255));
+            const auto *e = i < numLayers ? &palette.entries[i] : nullptr;
+            if (e && *e && usable(**e))
+                resample(**e, w, h, level.data());
+            bgfx::updateTexture2D(handle, i, 0, 0, 0, uint16_t(w),
+                                  uint16_t(h),
+                                  bgfx::copy(level.data(),
+                                             uint32_t(level.size())));
+            int lw = w, lh = h;
+            uint8_t mip = 1;
+            while (lw > 1 || lh > 1) {
+                const int nw = std::max(1, lw >> 1);
+                const int nh = std::max(1, lh >> 1);
+                next.assign(size_t(nw) * nh * 4, 0);
+                for (int y = 0; y < nh; ++y) {
+                    const int y0 = std::min(2 * y, lh - 1);
+                    const int y1 = std::min(2 * y + 1, lh - 1);
+                    for (int x = 0; x < nw; ++x) {
+                        const int x0 = std::min(2 * x, lw - 1);
+                        const int x1 = std::min(2 * x + 1, lw - 1);
+                        for (int c = 0; c < 4; ++c) {
+                            const int s =
+                                level[(size_t(y0) * lw + x0) * 4 + c]
+                                + level[(size_t(y0) * lw + x1) * 4 + c]
+                                + level[(size_t(y1) * lw + x0) * 4 + c]
+                                + level[(size_t(y1) * lw + x1) * 4 + c];
+                            next[(size_t(y) * nw + x) * 4 + c] =
+                                uint8_t((s + 2) / 4);
+                        }
+                    }
+                }
+                bgfx::updateTexture2D(handle, i, mip, 0, 0, uint16_t(nw),
+                                      uint16_t(nh),
+                                      bgfx::copy(next.data(),
+                                                 uint32_t(next.size())));
+                level.swap(next);
+                lw = nw;
+                lh = nh;
+                ++mip;
+            }
+        }
+    }
+
+    /// Whether an image can be walked as bytes at all: a streamed one
+    /// arrives as its header first and its pixels later, and a float
+    /// image is an environment nothing should have routed here
+    /// (GpuTexture::upload refuses both the same way).
+    static bool usable(const Render::TextureImage &tex)
+    {
+        return tex.sample != Render::TextureImage::F32
+            && tex.width > 0 && tex.height > 0
+            && tex.numComponents > 0
+            && tex.pixels.size() >= size_t(tex.width) * tex.height
+                   * size_t(tex.numComponents) * tex.sampleSize();
+    }
+};
+
 // Set the effective model transform of a draw. Plain draws use
 // DrawCall::model as-is; autozoom draws replay the material's autozoom
 // chain per frame like the GL renderer's setupMatrix: accumulate each
@@ -3914,13 +4119,30 @@ public:
         ViewOverlay8,       // headroom: the overlay ids (foreground, axis,
                             // graphics-items, fps, navi-cube, navi-buttons,
                             // editing, dimensions) can all be active at once
+        ViewAccum,          // idle temporal accumulation: the finished
+                            // frame -- scene, effects and overlays alike
+                            // -- averaged into the history target under
+                            // a constant-factor blend. Last of the
+                            // drawing passes on purpose: everything
+                            // ahead of it renders under the jittered
+                            // projection, so everything ahead of it is
+                            // what converges, and an overlay drawn from
+                            // its own unjittered camera is bit-identical
+                            // frame to frame and averages to itself
+        ViewAccumApply,     // the accumulated history copied back over
+                            // the scene color, so the blit and the
+                            // present path downstream see the converged
+                            // image without knowing this ran
         ViewPresent,        // standalone build only: fullscreen copy of
                             // the scene color onto the default backbuffer
                             // (the desktop build GL-blits into the Qt
                             // framebuffer instead)
         NUM_VIEWS
     };
-    enum { NumOverlayViews = ViewPresent - ViewOverlay0 };
+    // ! Counted to the first pass AFTER the overlay block, not to
+    // ViewPresent: anything inserted between the two has to leave this
+    // reading 9, or the overlay loop claims ids that belong to it.
+    enum { NumOverlayViews = ViewAccum - ViewOverlay0 };
 
     /// One stateful emitter's particle state (docs/RenderEngine.md
     /// §5.8): two RGBA32F attachment pairs that ping-pong once per
@@ -4086,6 +4308,7 @@ public:
         fn(fireBackFbo, LifeSized);
         fn(sceneCopyFbo, LifeSized);
         fn(presentFbo, LifeSized);
+        fn(accumFbo, LifeSized);
         fn(reflFbo, LifeSized);
         fn(volTex, LifeSized);
         fn(volFrontTex, LifeSized);
@@ -4113,6 +4336,7 @@ public:
         fn(fireBackDepth, LifeSized);
         fn(sceneCopyTex, LifeSized);
         fn(presentTex, LifeSized);
+        fn(accumTex, LifeSized);
         fn(reflTex, LifeSized);
         fn(reflDepth, LifeSized);
         fn(s_texVol, LifeProgram);
@@ -4130,6 +4354,9 @@ public:
         fn(u_waterAbsorb, LifeProgram);
         fn(u_waterRipple, LifeProgram);
         fn(u_reflParams, LifeProgram);
+        fn(u_groundPlane, LifeProgram);
+        fn(u_groundFadeU, LifeProgram);
+        fn(u_groundFadeV, LifeProgram);
         fn(s_texGlassFront, LifeProgram);
         fn(s_texGlassBack, LifeProgram);
         fn(u_glassParams, LifeProgram);
@@ -4172,6 +4399,11 @@ public:
         fn(m_progWater, LifeProgram);
         fn(m_progGlass, LifeProgram);
         fn(m_progGroundRefl, LifeProgram);
+        fn(m_progGroundShadow, LifeProgram);
+        fn(m_progGroundShadowPlane, LifeProgram);
+        fn(m_progGroundFade, LifeProgram);
+        fn(m_progGroundFadeTex, LifeProgram);
+        fn(m_progGroundFadePrepass, LifeProgram);
         // Shadow resources: the framebuffers before their textures.
         fn(shadowFbo, LifeSized);
         fn(shadowBlurFbo, LifeSized);
@@ -4240,6 +4472,8 @@ public:
         fn(s_texEmissive, LifeProgram);
         fn(s_texOcclusion, LifeProgram);
         fn(s_texMetallicRoughness, LifeProgram);
+        fn(s_texFace, LifeProgram);
+        fn(u_faceTexParams, LifeProgram);
         // The OIT framebuffer references bgfxDepth (owned by bgfxFbo),
         // so it goes first; the sink framebuffer owns its attachments
         // (sinkColor/sinkDepth are invalidated by the sweep caller).
@@ -4282,6 +4516,7 @@ public:
         fn(s_texHatch, LifeProgram);
         fn(m_whiteTex, LifeProgram);
         fn(m_blackTex, LifeProgram);
+        fn(m_whiteTexArray, LifeProgram);
         fn(m_hatchTex, LifeProgram);
         fn(s_texAccum, LifeProgram);
         fn(s_texReveal, LifeProgram);
@@ -4361,6 +4596,7 @@ public:
         EffectShadow,      ///< the scene light's shadow maps (moments,
                            ///< blur ping, glass tint pair)
         EffectPresent,     ///< the output colour transform's target
+        EffectAccum,       ///< the idle temporal accumulation history
         NumEffectGroups
     };
     /// Does this group's framebuffer set exist right now?
@@ -4526,6 +4762,34 @@ public:
     /// programs whose vertex stage reads a_color0 (mesh/flat families);
     /// depth-only programs bind gpu->geom->vbh alone.
     void setMeshVertexBuffers(GpuMesh *gpu, const Render::MeshData &mesh);
+
+    /// The array texture of a per-face palette, uploaded on demand.
+    /// Null when this backend cannot do array textures at all, which
+    /// leaves the draw untextured per face rather than mis-sampled.
+    GpuTextureArray *getTextureArray(const Render::TexturePalette &palette)
+    {
+        if (palette.entries.empty()
+                || !(bgfx::getCaps()->supported
+                     & BGFX_CAPS_TEXTURE_2D_ARRAY))
+            return nullptr;
+        // Content key: the ids of the layers in order. Two draws off one
+        // appearance share the palette pointer, but two appearances
+        // naming the same images should still share the upload.
+        uint64_t key = 1469598103934665603ull;
+        for (const auto &e : palette.entries) {
+            const uint64_t id = e ? e->textureId : 0;
+            key = (key ^ id) * 1099511628211ull;
+        }
+        GpuTextureArray &tex = textureArrays[key];
+        tex.lastUsed = frame;
+        // A placeholder is re-examined every frame: the pixels it
+        // stands in for are in flight and will arrive under these ids.
+        if (tex.placeholder)
+            tex.destroy();
+        if (!bgfx::isValid(tex.handle))
+            tex.upload(palette);
+        return bgfx::isValid(tex.handle) ? &tex : nullptr;
+    }
 
     GpuTexture *getTexture(const Render::TextureImage &data)
     {
@@ -5047,7 +5311,23 @@ public:
     // any receiver, classic shading regardless of the PBR mode.
     void submitShadowGround(const float bmin[3], const float bmax[3],
                             const Render::LightConfig &light,
+                            const Render::GroundCamera &cam,
                             bool prepass = false);
+
+    /// The shadow-only ground WITHOUT a quad: a fullscreen pass that
+    /// intersects the ground plane per pixel, samples the shadow map
+    /// there and multiplies the frame down by it.
+    ///
+    /// The mode wants an infinite receiver and nothing else -- no
+    /// surface, no texture, no depth of its own -- which is exactly
+    /// what a quad is bad at: it needs sizing, it ends somewhere, and
+    /// the sizing is what tied the ground to the scene bounds. Every
+    /// reason to rasterize one is switched off here, so this path
+    /// drops it. Returns false when it cannot run (no program), so the
+    /// caller can fall back to the quad.
+    bool submitShadowGroundPlane(const float bmin[3], const float bmax[3],
+                                 const Render::LightConfig &light,
+                                 const Render::GroundCamera &cam);
 
     // Rasterize a shadow casting triangle draw into the variance shadow
     // map under the light camera (the ViewShadow transform). Both faces
@@ -5388,8 +5668,12 @@ public:
     /// composited here: the mesh programs sample it at unit 9 and fold
     /// it into their ambient/headlight/IBL terms only (aoMeshTex), so
     /// direct scene/bulb light is not AO-darkened.
+    /// temporalIndex advances the GTAO noise per idle-accumulation
+    /// sample so its noise averages out instead of being averaged
+    /// with itself; 0 for an ordinary frame.
     void submitAOResolve(float radius, float intensity, int method,
-                         bool fast, int slices, int steps);
+                         bool fast, int slices, int steps,
+                         int temporalIndex);
 
     /// Cavity (curvature) shading: one fullscreen multiply of the
     /// finished opaque scene by a curvature term read from the prepass
@@ -5429,6 +5713,10 @@ public:
     /// view sits after the volumetric composite; the framebuffer switch
     /// also resolves a multisampled scene attachment).
     void submitWaterCopy();
+    /// Average the finished frame into the accumulation history under
+    /// \a blend (1 replaces it outright, 0 leaves it alone -- converged),
+    /// then copy the history back over the scene colour.
+    void submitTemporalAccum(float blend);
 
     /// User "post" stage (docs/RenderDebug.md §6): resolve the composited
     /// scene color into the water-refraction copy target (safe to share —
@@ -5487,7 +5775,8 @@ public:
     /// visible; the reflection texture's alpha (0 = nothing mirrored)
     /// scales the blend with the intensity.
     void submitGroundReflOverlay(const float bmin[3], const float bmax[3],
-                                 const Render::LightConfig &light);
+                                 const Render::LightConfig &light,
+                                 const Render::GroundCamera &cam);
 
     // Submission passes mirroring SoFCRenderer's delayed render loop.
     enum SubmitPass {
@@ -5855,6 +6144,12 @@ public:
     bgfx::UniformHandle s_texHatch = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_whiteTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_blackTex = BGFX_INVALID_HANDLE;
+    /// 1x1 white two-layer ARRAY stand-in: what the per-face texture
+    /// sampler is bound to when a draw has no palette. A sampler2DArray
+    /// cannot stand in with the plain white texture above -- the two are
+    /// different sampler types, and a mismatched bind is undefined
+    /// rather than merely white.
+    bgfx::TextureHandle m_whiteTexArray = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_hatchTex = BGFX_INVALID_HANDLE;
     uint64_t m_hatchVersion = 0;   // Private's hatch pixel generation
     static constexpr int kAOSamples = 16;
@@ -6034,6 +6329,17 @@ public:
     bgfx::UniformHandle s_texEmissive = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texOcclusion = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texMetallicRoughness = BGFX_INVALID_HANDLE;
+    /// Per-face texture palette of the mesh programs (unit 10): one
+    /// ARRAY texture whose layers are the images the draw's faces are
+    /// painted with. u_faceTexParams says whether and how it is read --
+    /// x = on, y = millimetres of object space per tile (<= 0 = the
+    /// mesh's own texture coordinates), z = the one layer the draw uses
+    /// (< 0 = read the per-vertex stream), w = how many layers there
+    /// are. Bound (with x = 0 and a 1x1 stand-in) on every mesh draw:
+    /// a bgfx uniform holds its value for the rest of the frame, so a
+    /// draw that left these alone would inherit the last one's palette.
+    bgfx::UniformHandle s_texFace = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_faceTexParams = BGFX_INVALID_HANDLE;
     float bumpScale = 1.0f;    // bump/normal map strength (BumpConfig)
     bool bumpParallax = true;  // parallax-occlusion map height maps
     // Variance shadow map of the Shadow draw style's scene light.
@@ -6165,6 +6471,11 @@ public:
     // AO/prepass cache key: camera + viewport + AO params + prepass draw
     // set (see the aoRender hash in render()); 0 = never cached.
     uint64_t aoMapHash = 0;
+    /// Which idle-accumulation sample the mirrored-scene and media
+    /// interval targets were last rendered at. -1 so the first frame
+    /// of a view cannot match and both are drawn.
+    int reflSampleIndex = -1;
+    int mediumSampleIndex = -1;
     // The GPU downgrade sweep's unlanded orders (SceneLadder.h): what
     // keeps a plan that samples the apply transient from re-correcting
     // off it. Per view, like the meters it reconciles.
@@ -6322,12 +6633,61 @@ public:
     /// none, the blit takes the scene colour directly as it always did.
     bgfx::TextureHandle presentTex = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle presentFbo = BGFX_INVALID_HANDLE;
+    /// Idle temporal accumulation (EffectAccum): the running average of
+    /// the jittered frames, kept while the camera and the scene hold
+    /// still and copied back over the scene colour every frame.
+    ///
+    /// Floating point whatever the scene target is. This is where the
+    /// convergence actually lives, and eight bits cannot hold it: at
+    /// sample 32 a frame arrives with weight 1/33, so an 8-bit history
+    /// rounds every difference below four codes straight back to what it
+    /// already held and the average stops moving after a handful of
+    /// samples -- which looks exactly like the feature working and then
+    /// giving up.
+    bgfx::TextureHandle accumTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle accumFbo = BGFX_INVALID_HANDLE;
+    /// Consecutive frames the accumulation was asked for and did not
+    /// engage, and whether that has been reported. "On, and nothing
+    /// happens" has several causes that all look identical on screen.
+    int accumQuietFrames = 0;
+    bool accumReported = false;
+    /// Jittered samples already averaged into accumTex. 0 = the history
+    /// holds nothing this camera may keep, so the next frame replaces it
+    /// outright (blend factor 1) and draws unjittered.
+    int accumFrames = 0;
+    /// The jittered projection of the frame being drawn. A member and
+    /// not a local of render(): the view keeps the pointer it is handed
+    /// (BGFXView::projMatrix) for the rest of the frame, and a stack
+    /// copy would leave it dangling.
+    float accumProj[16] = {};
     bgfx::TextureHandle reflTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle reflDepth = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle reflFbo = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progWaterCopy = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progWater = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progGroundRefl = BGFX_INVALID_HANDLE;
+    /// Shadow-only ground (LightConfig::groundShadowOnly): the same
+    /// quad as the solid one, painting the shadow alone.
+    bgfx::ProgramHandle m_progGroundShadow = BGFX_INVALID_HANDLE;
+    /// The same thing without the quad -- a fullscreen pass that finds
+    /// the ground plane per pixel (submitShadowGroundPlane).
+    bgfx::ProgramHandle m_progGroundShadowPlane = BGFX_INVALID_HANDLE;
+    /// The DRAWN ground, in the mesh program's ground variants: the
+    /// same shading with the rim faded out (GROUND_FADE). Variants
+    /// rather than a flag on the scene's own mesh program, so the fade
+    /// uniforms cannot leak into a scene draw.
+    bgfx::ProgramHandle m_progGroundFade = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progGroundFadeTex = BGFX_INVALID_HANDLE;
+    /// ... and in the prepass, where the rim is discarded rather than
+    /// faded: what is not drawn must not stop a volumetric shaft
+    /// either.
+    bgfx::ProgramHandle m_progGroundFadePrepass = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_groundFadeU = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_groundFadeV = BGFX_INVALID_HANDLE;
+    /// The ground plane in VIEW space for that pass: xyz the unit
+    /// normal, w the offset, so a point is on it where
+    /// dot(xyz, p) + w == 0.
+    bgfx::UniformHandle u_groundPlane = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texScene = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texRefl = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_waterSurf = BGFX_INVALID_HANDLE;
@@ -6414,6 +6774,9 @@ public:
     bgfx::VertexBufferHandle whiteColorVb = BGFX_INVALID_HANDLE;
     int whiteColorCount = 0;
     std::unordered_map<uint64_t, GpuTexture> textures;
+    /// Per-face texture palettes as array textures, keyed by the
+    /// palette's content (the layer image ids in order).
+    std::unordered_map<uint64_t, GpuTextureArray> textureArrays;
     uint64_t frame = 0;
     int drawcount = 0;
     /// Geometry the handle pool refused this frame (tryUploadGeometry):
@@ -8110,6 +8473,7 @@ public:
     Render::VolumetricConfig volconf;
     Render::WaterConfig waterconf;
     Render::BloomConfig bloomconf;
+    Render::TemporalConfig tempconf;
     Render::OutputConfig outconf;
     Render::RenderDebugConfig debugconf;
     /// Backend frame cost accumulated since the last reported line
@@ -8423,6 +8787,15 @@ public:
     // viewer keeps redrawing while set so the animation advances.
     bool animatedFrame = false;
     float bboxMin[3], bboxMax[3];
+    /// The camera the last frame drew with, kept for the shadow
+    /// ground's camera-fitted sizing (LightConfig::groundFollowCamera).
+    ///
+    /// Kept rather than passed because boundBox() -- the scene bounds
+    /// the viewer's auto near/far reads -- is asked OUTSIDE a frame,
+    /// and it has to build the same quad the frame did. Invalid until
+    /// the first frame, which leaves the ground on its scene-bounds
+    /// sizing exactly once.
+    Render::GroundCamera groundCam;
     /// The element gates (docs/SceneStreaming.md #13b), pushed in from
     /// the host -- the Gui bridge on the desktop, the URL parameters in
     /// the standalone viewer. Defaults are the pre-feature behaviour:

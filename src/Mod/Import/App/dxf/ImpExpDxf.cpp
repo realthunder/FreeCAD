@@ -68,6 +68,8 @@
 #include <gp_Vec.hxx>
 
 #include <fstream>
+#include <numbers>
+
 #include <App/Annotation.h>
 #include <App/Application.h>
 #include <App/Document.h>

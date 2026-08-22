@@ -21,12 +21,15 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef GUI_VIEWPROVIDERFEMCONSTRAINTONBOUNDARY_H
-#define GUI_VIEWPROVIDERFEMCONSTRAINTONBOUNDARY_H
-
-#include <Mod/Part/App/PartFeature.h>
+#pragma once
 
 #include "ViewProviderFemConstraint.h"
+
+
+namespace Part
+{
+class Feature;
+}
 
 namespace FemGui
 {
@@ -42,11 +45,9 @@ public:
     void highlightReferences(const bool on) override;
 
 private:
-    std::map<Part::Feature*, std::vector<App::Color>> originalPointColors;
-    std::map<Part::Feature*, std::vector<App::Color>> originalLineColors;
-    std::map<Part::Feature*, std::vector<App::Color>> originalFaceColors;
+    std::map<Part::Feature*, std::vector<Base::Color>> originalPointColors;
+    std::map<Part::Feature*, std::vector<Base::Color>> originalLineColors;
+    std::map<Part::Feature*, std::vector<Base::Color>> originalFaceColors;
 };
 
 }  // namespace FemGui
-
-#endif  // GUI_VIEWPROVIDERFEMCONSTRAINTONBOUNDARY_H

@@ -25,6 +25,7 @@
 #include <Inventor/actions/SoCallbackAction.h>
 
 #include "SoFCRenderMaterial.h"
+#include "SoFCFaceTextureElement.h"
 #include "SoFCFinishElement.h"
 #include "SoFCPbrElement.h"
 
@@ -70,6 +71,13 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     framePalette.setDefault(TRUE);
     frameIndices.setNum(0);
     frameIndices.setDefault(TRUE);
+    // And likewise: no face carries an image of its own until something
+    // states one, and a scale of 0 hands the mesh's own texture
+    // coordinates to the images that do.
+    SO_NODE_ADD_FIELD(faceTextureIndices, (0));
+    SO_NODE_ADD_FIELD(faceTextureScale, (0.0f));
+    faceTextureIndices.setNum(0);
+    faceTextureIndices.setDefault(TRUE);
     SO_NODE_ADD_FIELD(water, (false));
     SO_NODE_ADD_FIELD(waterDensity, (0.0f));
     SO_NODE_ADD_FIELD(glass, (false));
@@ -121,12 +129,26 @@ void SoFCRenderMaterial::doAction(SoAction *action)
     // traversal only while a finish is stated somewhere: entry 0's
     // pattern (which is also what the Render_Finish knobs resolve into)
     // or a per-face palette.
-    const bool hasfinish = finish.getValue() > 0 || nf > 0;
+    // Per-face images are laid out in those frames too, so they are
+    // the second reason to publish them (faceTextureScale < 0 lays the
+    // images on the mesh's own texture coordinates instead and needs
+    // none, but the scale is the appearance's business and the frames
+    // cost one byte a vertex in a stream this shape already carries).
+    const bool hasfinish = finish.getValue() > 0 || nf > 0
+        || faceTextureIndices.getNum() > 0;
     const int nfr = hasfinish && framePalette.getNum() >= 6
         ? frameIndices.getNum() : 0;
     SoFCFinishElement::set(action->getState(), this,
                            nf ? finishIndices.getValues(0) : nullptr, nf,
                            nfr ? frameIndices.getValues(0) : nullptr, nfr);
+    // The per-face texture layers, on the same terms: the palette itself
+    // is a set of sibling nodes the cache reads, and only the index
+    // array has to reach the shapes below.
+    const int nt = faceTextureIndices.getNum();
+    SoFCFaceTextureElement::set(action->getState(), this,
+                                nt ? faceTextureIndices.getValues(0)
+                                   : nullptr,
+                                nt);
 }
 
 SO_NODE_SOURCE(SoFCRenderTexture)
@@ -143,10 +165,12 @@ SoFCRenderTexture::SoFCRenderTexture()
     SO_NODE_ADD_FIELD(image, (SbVec2s(0, 0), 0, nullptr));
     SO_NODE_ADD_FIELD(wrapS, (REPEAT));
     SO_NODE_ADD_FIELD(wrapT, (REPEAT));
+    SO_NODE_ADD_FIELD(layer, (0));
 
     SO_NODE_DEFINE_ENUM_VALUE(Slot, EMISSIVE);
     SO_NODE_DEFINE_ENUM_VALUE(Slot, OCCLUSION);
     SO_NODE_DEFINE_ENUM_VALUE(Slot, METALLIC_ROUGHNESS);
+    SO_NODE_DEFINE_ENUM_VALUE(Slot, FACE);
     SO_NODE_SET_SF_ENUM_TYPE(slot, Slot);
 
     SO_NODE_DEFINE_ENUM_VALUE(Wrap, REPEAT);

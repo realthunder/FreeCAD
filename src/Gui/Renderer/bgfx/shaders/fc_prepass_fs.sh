@@ -7,6 +7,10 @@
  * fs_fc_prepass.sc and fs_fc_prepass_clip.sc (CLIP_PLANES defined).
  */
 
+#ifdef GROUND_FADE
+#include "fc_ground_fade.sh"
+#endif
+
 vec2 octEncode(vec3 n)
 {
 	n /= abs(n.x) + abs(n.y) + abs(n.z);
@@ -23,6 +27,13 @@ void main()
 {
 #ifdef CLIP_PLANES
 	clipDiscard(v_wpos);
+#endif
+#ifdef GROUND_FADE
+	// The ground's faded rim is not there, so it does not occupy space
+	// either: the volumetric raymarch ends its rays on this depth, and
+	// a shaft must carry on through a ground it cannot see.
+	if (fcGroundFade(v_vpos) < 0.004)
+		discard;
 #endif
 	// Face the normal toward the viewer like the two-sided lighting
 	// most CAD materials use; AO wants the geometric front either way.

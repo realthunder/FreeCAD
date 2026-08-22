@@ -390,10 +390,10 @@ void ParameterGrp::revert(Base::Reference<ParameterGrp> Grp)
 
 Base::Reference<ParameterGrp> ParameterGrp::GetGroup(const char* Name)
 {
-    Base::Reference<ParameterGrp> hGrp = this;
     if (!Name)
-        return hGrp;
+        throw Base::ValueError("Empty group name");
 
+    Base::Reference<ParameterGrp> hGrp = this;
     std::vector<std::string> tokens;
     boost::split(tokens, Name, boost::is_any_of("/"));
     for (auto &token : tokens) {
@@ -408,6 +408,11 @@ Base::Reference<ParameterGrp> ParameterGrp::GetGroup(const char* Name)
             hGrp->_cName = Name;
             break;
         }
+    }
+    if (hGrp == this) {
+        // the name held no group at all -- empty, or nothing but separators.
+        // Handing back the group we started from makes that read as success.
+        throw Base::ValueError("Empty group name");
     }
     return hGrp;
 }

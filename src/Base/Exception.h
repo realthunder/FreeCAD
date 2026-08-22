@@ -205,6 +205,12 @@ public:
 
     /// Reports exception. It includes a mechanism to only report an exception once.
     virtual void ReportException() const;
+    /// Upstream's spelling of ReportException(). Not virtual on purpose: it
+    /// forwards, so an override of ReportException() still wins.
+    void reportException() const
+    {
+        ReportException();
+    }
 
     inline void setMessage(const char* sMessage);
     inline void setMessage(const std::string& sMessage);
@@ -667,6 +673,23 @@ public:
     ~AttributeError() noexcept override = default;
     AttributeError& operator=(const AttributeError&) = default;
     AttributeError& operator=(AttributeError&&) = default;
+    PyObject* getPyExceptionType() const override;
+};
+
+/**
+ * The PropertyError is what asking a container for a property it does not have
+ * raises. It derives from AttributeError, in C++ and in python alike, so code
+ * that catches the attribute error keeps catching this too.
+ */
+class BaseExport PropertyError: public AttributeError
+{
+public:
+    explicit PropertyError(const std::string& message = "Property error");
+    PropertyError(const PropertyError&) = default;
+    PropertyError(PropertyError&&) = default;
+    ~PropertyError() noexcept override = default;
+    PropertyError& operator=(const PropertyError&) = default;
+    PropertyError& operator=(PropertyError&&) = default;
     PyObject* getPyExceptionType() const override;
 };
 

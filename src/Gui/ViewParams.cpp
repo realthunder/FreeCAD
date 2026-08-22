@@ -157,6 +157,7 @@ public:
     std::string ShadowGroundBumpMap;
     std::string ShadowGroundTexture;
     double ShadowGroundTextureSize;
+    double ShadowTransparency;
     double ShadowGroundTransparency;
     bool ShadowGroundShading;
     bool ShadowExtraRedraw;
@@ -272,7 +273,7 @@ public:
         funcs["DefaultShapeLineColor"] = &ViewParamsP::updateDefaultShapeLineColor;
         DefaultShapeVertexColor = this->handle->GetUnsigned("DefaultShapeVertexColor", 0x191919FF);
         funcs["DefaultShapeVertexColor"] = &ViewParamsP::updateDefaultShapeVertexColor;
-        DefaultShapeColor = this->handle->GetUnsigned("DefaultShapeColor", 0xCCCCCCFF);
+        DefaultShapeColor = this->handle->GetUnsigned("DefaultShapeColor", 0xCCCCE6FF);
         funcs["DefaultShapeColor"] = &ViewParamsP::updateDefaultShapeColor;
         DefaultShapeTransparency = this->handle->GetInt("DefaultShapeTransparency", 0);
         funcs["DefaultShapeTransparency"] = &ViewParamsP::updateDefaultShapeTransparency;
@@ -442,7 +443,9 @@ public:
         funcs["ShadowGroundTexture"] = &ViewParamsP::updateShadowGroundTexture;
         ShadowGroundTextureSize = this->handle->GetFloat("ShadowGroundTextureSize", 100.0);
         funcs["ShadowGroundTextureSize"] = &ViewParamsP::updateShadowGroundTextureSize;
-        ShadowGroundTransparency = this->handle->GetFloat("ShadowGroundTransparency", 0.0);
+        ShadowTransparency = this->handle->GetFloat("ShadowTransparency", 0.2);
+        funcs["ShadowTransparency"] = &ViewParamsP::updateShadowTransparency;
+        ShadowGroundTransparency = this->handle->GetFloat("ShadowGroundTransparency", 1.0);
         funcs["ShadowGroundTransparency"] = &ViewParamsP::updateShadowGroundTransparency;
         ShadowGroundShading = this->handle->GetBool("ShadowGroundShading", true);
         funcs["ShadowGroundShading"] = &ViewParamsP::updateShadowGroundShading;
@@ -686,7 +689,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDefaultShapeColor(ViewParamsP *self) {
-        self->DefaultShapeColor = self->handle->GetUnsigned("DefaultShapeColor", 0xCCCCCCFF);
+        self->DefaultShapeColor = self->handle->GetUnsigned("DefaultShapeColor", 0xCCCCE6FF);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDefaultShapeTransparency(ViewParamsP *self) {
@@ -1033,8 +1036,12 @@ public:
         self->ShadowGroundTextureSize = self->handle->GetFloat("ShadowGroundTextureSize", 100.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
+    static void updateShadowTransparency(ViewParamsP *self) {
+        self->ShadowTransparency = self->handle->GetFloat("ShadowTransparency", 0.2);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
     static void updateShadowGroundTransparency(ViewParamsP *self) {
-        self->ShadowGroundTransparency = self->handle->GetFloat("ShadowGroundTransparency", 0.0);
+        self->ShadowGroundTransparency = self->handle->GetFloat("ShadowGroundTransparency", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateShadowGroundShading(ViewParamsP *self) {
@@ -1790,7 +1797,7 @@ const unsigned long & ViewParams::getDefaultShapeColor() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const unsigned long & ViewParams::defaultDefaultShapeColor() {
-    const static unsigned long def = 0xCCCCCCFF;
+    const static unsigned long def = 0xCCCCE6FF;
     return def;
 }
 
@@ -4133,11 +4140,55 @@ void ViewParams::removeShadowGroundTextureSize() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docShadowTransparency() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"How transparent the shadow itself is, where the ground carries the\n"
+"shadow and nothing else (Ground transparency at 1). 0 paints a solid\n"
+"shadow, 1 an invisible one; the unshadowed ground is hidden either\n"
+"way. Coin spelled this SoShadowTransparency and defaulted it to the\n"
+"same 0.2.\n"
+"\n"
+"A drawn ground ignores it -- there the shadow is the ground shaded,\n"
+"and how dark it goes is a matter of the light.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & ViewParams::getShadowTransparency() {
+    return instance()->ShadowTransparency;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & ViewParams::defaultShadowTransparency() {
+    const static double def = 0.2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setShadowTransparency(const double &v) {
+    instance()->handle->SetFloat("ShadowTransparency",v);
+    instance()->ShadowTransparency = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeShadowTransparency() {
+    instance()->handle->RemoveFloat("ShadowTransparency");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docShadowGroundTransparency() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Specifics the ground transparency. When set to 0, the non-shadowed part\n"
-"of the ground will be complete transparent, showing only the shadowed part\n"
-"of the ground with some transparency.");
+"How much of the shadow receiver plane is drawn beside the shadow\n"
+"itself.\n"
+"\n"
+"1 (the default) is the receiver a view of a part usually wants: the\n"
+"ground carries the shadow and nothing else, so there is no plane in\n"
+"the frame and no horizon behind the model -- only the shadow, at a\n"
+"fixed 0.8 opacity where it is fully dark. Anything below 1 draws a\n"
+"solid ground of that transparency and shades it, which is what a\n"
+"presentation image of a whole scene wants.\n"
+"\n"
+"A ground reflection needs a surface to blend onto, so it keeps the\n"
+"solid ground whatever this says.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -4147,7 +4198,7 @@ const double & ViewParams::getShadowGroundTransparency() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const double & ViewParams::defaultShadowGroundTransparency() {
-    const static double def = 0.0;
+    const static double def = 1.0;
     return def;
 }
 
@@ -6463,7 +6514,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:613)
+// Auto generated code (Gui/ViewParams.py:632)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6508,7 +6559,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:621)
+// Auto generated code (Gui/ViewParams.py:640)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6521,7 +6572,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:631)
+// Auto generated code (Gui/ViewParams.py:650)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -6534,13 +6585,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:641)
+// Auto generated code (Gui/ViewParams.py:660)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:648)
+// Auto generated code (Gui/ViewParams.py:667)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -6548,7 +6599,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:657)
+// Auto generated code (Gui/ViewParams.py:676)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6560,7 +6611,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:670)
+// Auto generated code (Gui/ViewParams.py:689)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)

@@ -355,12 +355,16 @@ public:
     SurfaceTexture texture;
     /** @name Texture and material-card identity, upstream's fields
      *
-     * Nothing in this fork writes them yet. They are here so that a
-     * document written by upstream survives a round trip through it, and so
-     * that the day a reader does produce them -- glTF carries both a
-     * texture and a material identity -- there is somewhere to put them.
-     * Empty on every object until then, which is why the appearance
-     * property stores them as fields that cost nothing at size zero.
+     * image holds the encoded bytes of an image file and imagePath names
+     * one; the render engine paints either onto the faces the appearance
+     * carries them on (ViewProviderGeometryObject::updateFaceTextures --
+     * a per-face appearance can put a different image on every face).
+     * uuid is carried, not used: it is here so that a document written
+     * by upstream survives a round trip, and so that the day a reader
+     * produces one there is somewhere to put it. All three are empty on
+     * every object until something states them, which is why the
+     * appearance property stores them as fields that cost nothing at
+     * size zero.
      */
     //@{
     std::string image;

@@ -30,7 +30,6 @@ __url__ = "https://www.freecad.org"
 
 import FreeCAD as App
 
-
 INFO = 10
 WARNING = 20
 ERROR = 30
@@ -46,10 +45,10 @@ def display(report, title=None, text=None):
 def displayGui(report, title=None, text=None):
     import FreeCADGui as Gui
     from . import reportdialog
+
     if not report.isEmpty():
         mw = Gui.getMainWindow()
-        dialog = reportdialog.ReportDialog(
-            report, title, text, mw)
+        dialog = reportdialog.ReportDialog(report, title, text, mw)
         dialog.exec_()
 
 
@@ -62,7 +61,7 @@ def displayLog(report):
         App.Console.PrintError("%s\n" % e)
 
 
-class Report(object):
+class Report:
 
     def __init__(self):
         self.infos = []
@@ -94,5 +93,6 @@ class Report(object):
 
     def error(self, msg):
         self.errors.append(msg)
+
 
 ##  @}

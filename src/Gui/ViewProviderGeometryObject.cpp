@@ -152,6 +152,8 @@ ViewProviderGeometryObject::~ViewProviderGeometryObject()
         pcRenderOcclusionMap->unref();
     if (pcRenderMetallicRoughnessMap)
         pcRenderMetallicRoughnessMap->unref();
+    for (auto *node : pcFaceTextures)
+        node->unref();
     if (pcRenderShadowStyle)
         pcRenderShadowStyle->unref();
     if(pcBoundingBox)
@@ -289,6 +291,10 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
         // A PBR-mode appearance rides the render material node (its
         // metallic/roughness), so it has to follow appearance changes too
         updateRenderMaterial();
+        // ... and the per-face images it may now carry decide whether
+        // the unit-0 stand-in that makes texture coordinates exist is
+        // needed at all.
+        updateRenderTexture();
         Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &BoundingBox) {
@@ -470,6 +476,37 @@ bool loadTextureImage(const char *path, SoSFImage &field,
     return true;
 }
 
+// Load an image a material card carried as CONTENT rather than as a
+// path (App::Material::image, upstream's "TextureImage"): the encoded
+// bytes of an image file, base64 in every card that has ever held one.
+// Falls back to reading it as raw file bytes, so a card written with
+// the payload unencoded still draws.
+bool loadTextureImageData(const std::string &data, SoSFImage &field)
+{
+    if (data.empty())
+        return false;
+    QByteArray raw = QByteArray::fromBase64(
+            QByteArray::fromRawData(data.c_str(), int(data.size())));
+    QImage img;
+    if (!img.loadFromData(raw)
+            && !img.loadFromData(QByteArray::fromRawData(
+                       data.c_str(), int(data.size()))))
+        return false;
+    const bool alpha = img.hasAlphaChannel();
+    img = img.convertToFormat(alpha ? QImage::Format_RGBA8888
+                                    : QImage::Format_RGB888);
+    img = img.mirrored(false, true);   // Coin images are bottom-up
+    const int nc = alpha ? 4 : 3;
+    const int rowLen = img.width() * nc;
+    std::vector<unsigned char> packed(size_t(rowLen) * img.height());
+    for (int y = 0; y < img.height(); ++y)
+        memcpy(packed.data() + size_t(y) * rowLen, img.constScanLine(y),
+               rowLen);
+    field.setValue(SbVec2s(short(img.width()), short(img.height())), nc,
+                   packed.data());
+    return true;
+}
+
 // Fill in what a stated finish leaves unsaid: a pattern authored with no
 // pitch (or with the placeholder minimum App::SurfaceFinish::normalize()
 // floors an unstated one to) gets the size that pattern has on a real
@@ -515,6 +552,18 @@ void applyFinishDefaults(App::SurfaceFinish &finish)
 
 } // anonymous namespace
 
+float ViewProviderGeometryObject::faceTextureScale() const
+{
+    auto prop = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            getPropertyByName("Render_FaceTextureScale"));
+    const float scale = prop ? float(prop->getValue()) : -1.0f;
+    if (scale == 0.0f)
+        return -1.0f;    // an explicit zero reads as "the mesh's UVs"
+    if (scale < 0.0f)
+        return 25.0f;    // unset: a hand-sized marking
+    return scale;
+}
+
 void ViewProviderGeometryObject::updateRenderTexture()
 {
     auto fileProp = [this](const char *name) -> const char * {
@@ -533,9 +582,20 @@ void ViewProviderGeometryObject::updateRenderTexture()
     // stand-in still goes in: an enabled texture unit is what makes the
     // shapes generate texture coordinates (both in Coin GL and in the
     // render cache capture).
+    //
+    // A per-face image laid out on the mesh's OWN coordinates needs the
+    // stand-in for exactly the same reason: without an enabled unit the
+    // shapes generate no coordinates, the vertex cache captures none,
+    // and every fragment reads the image's corner texel. The frame
+    // projection does not -- it makes its own coordinates out of the
+    // object-space position.
+    const bool faceImages = !ShapeAppearance.getImages().empty()
+        || !ShapeAppearance.getImagePaths().empty();
+    const bool faceImagesOnMeshUV = faceImages && faceTextureScale() <= 0.0f;
     bool wantTexture = (color && color[0]) || (bump && bump[0])
         || (emissive && emissive[0]) || (occlusion && occlusion[0])
-        || (metallicroughness && metallicroughness[0]);
+        || (metallicroughness && metallicroughness[0])
+        || faceImagesOnMeshUV;
     if (!wantTexture) {
         if (pcRenderTexture) {
             int idx = pcRoot->findChild(pcRenderTexture);
@@ -657,6 +717,89 @@ void ViewProviderGeometryObject::updateRenderTexture()
     syncRenderTexture(metallicroughness,
                       SoFCRenderTexture::METALLIC_ROUGHNESS,
                       pcRenderMetallicRoughnessMap);
+}
+
+void ViewProviderGeometryObject::updateFaceTextures(
+        std::vector<int32_t> &indices)
+{
+    indices.clear();
+
+    // What each face names: its own image path, or the encoded image
+    // the appearance carries inline. Faces naming the same one share a
+    // palette layer, so a part with two markings costs two layers
+    // however many faces wear them.
+    const std::vector<std::string> &paths = ShapeAppearance.getImagePaths();
+    const std::vector<std::string> &images = ShapeAppearance.getImages();
+    const int count = ShapeAppearance.getSize();
+    std::vector<std::pair<std::string, std::string>> palette;  // path, data
+    bool any = false;
+    if (count > 0 && (!paths.empty() || !images.empty())) {
+        indices.assign(std::size_t(count), 0);
+        for (int i = 0; i < count; ++i) {
+            const std::string &path = ShapeAppearance.getImagePath(i);
+            const std::string &data = ShapeAppearance.getImage(i);
+            if (path.empty() && data.empty())
+                continue;
+            int layer = 0;
+            for (std::size_t k = 0; k < palette.size() && !layer; ++k) {
+                if (palette[k].first == path && palette[k].second == data)
+                    layer = int(k) + 1;
+            }
+            if (!layer) {
+                // Past the cap a face keeps layer 0 -- untextured --
+                // rather than wearing some other face's marking.
+                if (palette.size() + 1
+                        >= std::size_t(Render::MaxFaceTexturePalette))
+                    continue;
+                palette.emplace_back(path, data);
+                layer = int(palette.size());
+            }
+            indices[std::size_t(i)] = layer;
+            any = true;
+        }
+    }
+    if (!any) {
+        indices.clear();
+        palette.clear();
+    }
+
+    // One node a layer under the view provider root. Rebuilt only when
+    // the palette really changed: every write notifies, and a
+    // notification off one of these invalidates the render caches below.
+    while (pcFaceTextures.size() > palette.size()) {
+        SoFCRenderTexture *node = pcFaceTextures.back();
+        pcFaceTextures.pop_back();
+        int idx = pcRoot->findChild(node);
+        if (idx >= 0)
+            pcRoot->removeChild(idx);
+        node->unref();
+    }
+    for (std::size_t i = 0; i < palette.size(); ++i) {
+        const bool fresh = i >= pcFaceTextures.size();
+        if (fresh) {
+            auto *node = new SoFCRenderTexture;
+            node->ref();
+            node->slot = SoFCRenderTexture::FACE;
+            node->layer = int(i) + 1;
+            pcRoot->insertChild(node, 0);
+            pcFaceTextures.push_back(node);
+        }
+        SoFCRenderTexture *node = pcFaceTextures[i];
+        if (!fresh && node->layer.getValue() == int(i) + 1
+                && faceTextureSources[i] == palette[i])
+            continue;
+        if (node->layer.getValue() != int(i) + 1)
+            node->layer = int(i) + 1;
+        if (!loadTextureImage(palette[i].first.c_str(), node->image)
+                && !loadTextureImageData(palette[i].second, node->image)) {
+            // Neither the path nor the payload gave an image: a 1x1
+            // white layer, so the faces naming it draw as they would
+            // untextured instead of sampling whatever was there before.
+            static const unsigned char white[3] = {255, 255, 255};
+            node->image.setValue(SbVec2s(1, 1), 3, white);
+        }
+    }
+    faceTextureSources = std::move(palette);
 }
 
 void ViewProviderGeometryObject::updateRenderMaterial()
@@ -806,6 +949,18 @@ void ViewProviderGeometryObject::updateRenderMaterial()
         finishIndices.clear();
     }
 
+    // The images the appearance puts on individual faces, as a palette
+    // of texture nodes plus one layer index per face.
+    std::vector<int32_t> faceTextureIndices;
+    updateFaceTextures(faceTextureIndices);
+    // Where those images are laid out: millimetres of object space per
+    // tile, the physical size a printed decal or a machined marking
+    // has. A NEGATIVE value hands them the mesh's own texture
+    // coordinates instead, for a shape that really was UV mapped;
+    // unset (the ordinary case, and a CAD shape carries no UVs) takes
+    // the default below.
+    const float faceTexScale = faceTextureScale();
+
     // Render_Water turns the object's closed shape into a water body of
     // the render engine's volumetric lighting pass (tinted by the shape
     // color); Render_WaterDensity <= 0 = automatic.
@@ -895,7 +1050,7 @@ void ViewProviderGeometryObject::updateRenderMaterial()
         && lightShadowExtProp->getValue();
 
     if (!pbr && metallic < 0.0f && roughness < 0.0f && !finish.isSet()
-            && palette.empty()
+            && palette.empty() && faceTextureIndices.empty()
             && !water && !glass && !cloud && !fire && !fountain && !light) {
         if (pcRenderMaterial) {
             int idx = pcRoot->findChild(pcRenderMaterial);
@@ -906,10 +1061,22 @@ void ViewProviderGeometryObject::updateRenderMaterial()
         }
         return;
     }
+    const bool freshNode = !pcRenderMaterial;
     if (!pcRenderMaterial) {
         pcRenderMaterial = new SoFCRenderMaterial;
         pcRenderMaterial->ref();
         pcRoot->insertChild(pcRenderMaterial, 0);
+    }
+    // A node that did not exist when the shape was tessellated missed
+    // the projection frames, and a finish or a per-face image laid out
+    // in object space needs them -- otherwise every face is projected
+    // in the first face's frame. Ask the geometry to state them, once.
+    if (freshNode && !renderGeometryAsked
+            && (finish.isSet() || !palette.empty()
+                || !faceTextureIndices.empty())
+            && pcRenderMaterial->framePalette.getNum() == 0) {
+        renderGeometryAsked = true;
+        renderMaterialNeedsGeometry();
     }
     pcRenderMaterial->metallic = metallic;
     pcRenderMaterial->roughness = roughness;
@@ -959,6 +1126,9 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     };
     syncPalette(pcRenderMaterial->finishPalette, palette);
     syncIndices(pcRenderMaterial->finishIndices, finishIndices);
+    syncIndices(pcRenderMaterial->faceTextureIndices, faceTextureIndices);
+    if (pcRenderMaterial->faceTextureScale.getValue() != faceTexScale)
+        pcRenderMaterial->faceTextureScale = faceTexScale;
     pcRenderMaterial->water = water;
     pcRenderMaterial->waterDensity = waterDensity < 0.0f ? 0.0f
                                                          : waterDensity;
@@ -996,7 +1166,14 @@ void ViewProviderGeometryObject::updateRenderMaterial()
 
 void ViewProviderGeometryObject::updateRenderProperty(const char *name)
 {
-    if (strcmp(name, "Render_BaseColorTexture") == 0
+    if (strcmp(name, "Render_FaceTextureScale") == 0) {
+        // Both: the scale is a field of the material node, and it is
+        // also what decides whether the per-face images want the mesh's
+        // own coordinates -- which only exist while a unit is enabled.
+        updateRenderTexture();
+        updateRenderMaterial();
+    }
+    else if (strcmp(name, "Render_BaseColorTexture") == 0
             || strcmp(name, "Render_NormalMap") == 0
             || strcmp(name, "Render_EmissiveMap") == 0
             || strcmp(name, "Render_OcclusionMap") == 0

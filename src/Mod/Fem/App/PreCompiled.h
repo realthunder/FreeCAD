@@ -20,18 +20,9 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef FEM_PRECOMPILED_H
-#define FEM_PRECOMPILED_H
+#pragma once
 
 #include <FCConfig.h>
-#include <limits>
-
-#ifdef _MSC_VER
-#pragma warning(disable : 4290)
-#pragma warning(disable : 4275)
-#endif
-
-#ifdef _PreComp_
 
 // standard
 #include <algorithm>
@@ -55,13 +46,13 @@
 
 #include <Python.h>
 #include <QFileInfo>
+#include <QStandardPaths>
 
 // Salomesh
 #include <SMDSAbs_ElementType.hxx>
 #include <SMDS_MeshElement.hxx>
 #include <SMDS_MeshGroup.hxx>
 #include <SMDS_MeshNode.hxx>
-#include <SMDS_PolyhedralVolumeOfNodes.hxx>
 #include <SMESHDS_Group.hxx>
 #include <SMESHDS_GroupBase.hxx>
 #include <SMESHDS_Mesh.hxx>
@@ -79,7 +70,9 @@
 #include <StdMeshers_LayerDistribution.hxx>
 #include <StdMeshers_LengthFromEdges.hxx>
 #include <StdMeshers_LocalLength.hxx>
-#include <StdMeshers_MEFISTO_2D.hxx>
+#if SMESH_VERSION_MAJOR <= 9 && SMESH_VERSION_MINOR < 10
+# include <StdMeshers_MEFISTO_2D.hxx>
+#endif
 #include <StdMeshers_MaxElementArea.hxx>
 #include <StdMeshers_MaxElementVolume.hxx>
 #include <StdMeshers_MaxLength.hxx>
@@ -101,18 +94,18 @@
 #include <StdMeshers_SegmentAroundVertex_0D.hxx>
 #include <StdMeshers_SegmentLengthAroundVertex.hxx>
 #include <StdMeshers_StartEndLength.hxx>
-#if SMESH_VERSION_MAJOR < 7
-#include <StdMeshers_TrianglePreference.hxx>
-#endif
 #include <StdMeshers_UseExisting_1D2D.hxx>
 
 // Opencascade
+#include <Standard_Version.hxx>
+
 #include <Adaptor3d_IsoCurve.hxx>
+#include <BRepAdaptor_CompCurve.hxx>
 #include <BRepAdaptor_Curve.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #if OCC_VERSION_HEX < 0x070600
-#include <BRepAdaptor_HSurface.hxx>
+# include <BRepAdaptor_HSurface.hxx>
 #endif
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepBndLib.hxx>
@@ -126,6 +119,7 @@
 #include <GCPnts_AbscissaPoint.hxx>
 #include <GProp_GProps.hxx>
 #include <GeomAPI_IntCS.hxx>
+#include <GeomAPI_ProjectPointOnCurve.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Geom_BSplineSurface.hxx>
@@ -135,8 +129,8 @@
 #include <Geom_Plane.hxx>
 #include <Precision.hxx>
 #include <ShapeAnalysis_ShapeTolerance.hxx>
+#include <ShapeAnalysis_Surface.hxx>
 #include <Standard_Real.hxx>
-#include <Standard_Version.hxx>
 #include <TColgp_Array2OfPnt.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
@@ -151,22 +145,33 @@
 #include <gp_Vec.hxx>
 
 // VTK
+#include <vtkVersionMacros.h>
+#include <vtkAlgorithmOutput.h>
 #include <vtkAppendFilter.h>
+#include <vtkArrayCalculator.h>
 #include <vtkCellArray.h>
+#if VTK_VERSION_NUMBER >= VTK_VERSION_CHECK(9, 2, 20230125)
+# include <vtkCleanUnstructuredGrid.h>
+#endif
 #include <vtkCompositeDataSet.h>
 #include <vtkDataArray.h>
 #include <vtkDataSetReader.h>
 #include <vtkDataSetWriter.h>
 #include <vtkDoubleArray.h>
+#include <vtkFloatArray.h>
 #include <vtkHexahedron.h>
 #include <vtkIdList.h>
 #include <vtkImageData.h>
+#include <vtkInformation.h>
+#include <vtkInformationVector.h>
+#include <vtkLine.h>
 #include <vtkMultiBlockDataSet.h>
 #include <vtkMultiPieceDataSet.h>
 #include <vtkPointData.h>
 #include <vtkPolyData.h>
 #include <vtkPyramid.h>
 #include <vtkQuad.h>
+#include <vtkQuadraticEdge.h>
 #include <vtkQuadraticHexahedron.h>
 #include <vtkQuadraticPyramid.h>
 #include <vtkQuadraticQuad.h>
@@ -174,27 +179,32 @@
 #include <vtkQuadraticTriangle.h>
 #include <vtkQuadraticWedge.h>
 #include <vtkRectilinearGrid.h>
+#include <vtkStreamingDemandDrivenPipeline.h>
+#include <vtkStringArray.h>
 #include <vtkStructuredGrid.h>
+#include <vtkTable.h>
 #include <vtkTetra.h>
+#include <vtkTransform.h>
 #include <vtkTriangle.h>
 #include <vtkUniformGrid.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkWedge.h>
 #include <vtkXMLDataSetWriter.h>
 #include <vtkXMLImageDataReader.h>
+#include <vtkXMLMultiBlockDataReader.h>
+#include <vtkXMLMultiBlockDataWriter.h>
 #include <vtkXMLPUnstructuredGridReader.h>
 #include <vtkXMLPolyDataReader.h>
 #include <vtkXMLRectilinearGridReader.h>
 #include <vtkXMLStructuredGridReader.h>
+#include <vtkXMLTableReader.h>
+#include <vtkXMLTableWriter.h>
 #include <vtkXMLUnstructuredGridReader.h>
 #include <vtkXMLUnstructuredGridWriter.h>
 
 // Netgen
 #ifdef FCWithNetgen
-#include <NETGENPlugin_Hypothesis.hxx>
-#include <NETGENPlugin_Mesher.hxx>
-#include <NETGENPlugin_SimpleHypothesis_3D.hxx>
-#endif
-
-#endif  // _PreComp_
+# include <NETGENPlugin_Hypothesis.hxx>
+# include <NETGENPlugin_Mesher.hxx>
+# include <NETGENPlugin_SimpleHypothesis_3D.hxx>
 #endif

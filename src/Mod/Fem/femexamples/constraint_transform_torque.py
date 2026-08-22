@@ -42,6 +42,7 @@ from Part import makeLine
 from . import manager
 from .manager import get_meshname
 from .manager import init_doc
+from .meshes import generate_mesh
 
 
 def get_information():
@@ -50,14 +51,16 @@ def get_information():
         "meshtype": "solid",
         "meshelement": "Tet10",
         "constraints": ["fixed", "force", "transform"],
-        "solvers": ["calculix", "ccxtools"],
+        "solvers": ["ccxtools"],
         "material": "solid",
-        "equations": ["mechanical"]
+        "equations": ["mechanical"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.constraint_transform_torque import setup
@@ -72,6 +75,7 @@ https://forum.freecad.org/viewtopic.php?t=18970
 constraint transform with a constraint force
 
 """
+    )
 
 
 def setup(doc=None, solvertype="ccxtools"):
@@ -113,19 +117,17 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis = ObjectsFem.makeAnalysis(doc, "Analysis")
 
     # solver
-    if solvertype == "calculix":
-        solver_obj = ObjectsFem.makeSolverCalculix(doc, "SolverCalculiX")
-    elif solvertype == "ccxtools":
-        solver_obj = ObjectsFem.makeSolverCalculixCcxTools(doc, "CalculiXccxTools")
-        solver_obj.WorkingDir = u""
+    if solvertype == "ccxtools":
+        solver_obj = ObjectsFem.makeSolverCalculiXCcxTools(doc, "CalculiXCcxTools")
+        solver_obj.WorkingDir = ""
     else:
         FreeCAD.Console.PrintWarning(
             "Unknown or unsupported solver type: {}. "
             "No solver object was created.\n".format(solvertype)
         )
-    if solvertype == "calculix" or solvertype == "ccxtools":
+    if solvertype == "ccxtools":
         solver_obj.AnalysisType = "static"
-        solver_obj.GeometricalNonlinearity = "linear"
+        solver_obj.GeometricalNonlinearity = False
         solver_obj.ThermoMechSteadyState = False
         solver_obj.MatrixSolverType = "default"
         solver_obj.IterationsControlParameterTimeUse = False
@@ -142,12 +144,12 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis.addObject(material_obj)
 
     # constraint fixed
-    con_fixed = ObjectsFem.makeConstraintFixed(doc, "ConstraintFixed")
+    con_fixed = ObjectsFem.makeConstraintFixed(doc, "Fixed")
     con_fixed.References = [(geom_obj, "Face3")]
     analysis.addObject(con_fixed)
 
     # constraint force
-    con_force = ObjectsFem.makeConstraintForce(doc, "ConstraintForce")
+    con_force = ObjectsFem.makeConstraintForce(doc, "Force")
     con_force.References = [(geom_obj, "Face1")]
     con_force.Force = "2500.0 N"  # 2.5 kN
     con_force.Direction = (load_line, ["Edge1"])
@@ -155,26 +157,18 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis.addObject(con_force)
 
     # constraint transform
-    con_transform = ObjectsFem.makeConstraintTransform(doc, name="ConstraintTransform")
+    con_transform = ObjectsFem.makeConstraintTransform(doc, name="Transform")
     con_transform.References = [(geom_obj, "Face1")]
     con_transform.TransformType = "Cylindrical"
-    con_transform.X_rot = 0.0
-    con_transform.Y_rot = 0.0
-    con_transform.Z_rot = 0.0
     analysis.addObject(con_transform)
 
     # mesh
     from .meshes.mesh_transform_torque_tetra10 import create_nodes, create_elements
-    fem_mesh = Fem.FemMesh()
-    control = create_nodes(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating nodes.\n")
-    control = create_elements(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating elements.\n")
+
+    fem_mesh = generate_mesh.mesh_from_existing(create_nodes, create_elements)
     femmesh_obj = analysis.addObject(ObjectsFem.makeMeshGmsh(doc, get_meshname()))[0]
     femmesh_obj.FemMesh = fem_mesh
-    femmesh_obj.Part = geom_obj
+    femmesh_obj.Shape = geom_obj
     femmesh_obj.SecondOrderLinear = False
 
     doc.recompute()
