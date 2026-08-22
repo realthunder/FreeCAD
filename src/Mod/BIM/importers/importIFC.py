@@ -178,6 +178,23 @@ def _set_live_import(doc, enable):
         _live_import_doc = None
 
 
+def _pump_live_import():
+    """Hand the event loop a turn, so a live view gets input and paints.
+
+    A synchronous import holds the main thread: the view only sees the mouse
+    where the import offers the loop a slice. This is a no-op unless a live
+    import is on, and the Gui holds it to one turn every
+    LiveImportPumpInterval milliseconds, so a loop can offer a turn per item
+    without knowing what an item costs. Returns whether it pumped.
+    """
+    if _live_import_doc is None:
+        return False
+    import FreeCADGui
+    if not hasattr(FreeCADGui, "pumpLiveImport"):
+        return False
+    return FreeCADGui.pumpLiveImport()
+
+
 def insert(srcfile, docname, skip=[], only=[], root=None, preferences=None):
     """Import the contents of an IFC file in the current active document.
 
@@ -1072,11 +1089,15 @@ def _insert(srcfile, docname, skip=[], only=[], root=None, preferences=None):
 
         try:
             progressbar.next(True)
-        except RuntimeError:
+        except FreeCAD.Base.FreeCADAbort:
             print("Aborted.")
             progressbar.stop()
             doc.recompute()
             return
+        # next() pumps only on the bar's own 200ms update throttle, which is a
+        # slideshow to someone orbiting the model; offer the loop a turn per
+        # product instead, on a budget of its own.
+        _pump_live_import()
 
     progressbar.stop()
     doc.recompute()

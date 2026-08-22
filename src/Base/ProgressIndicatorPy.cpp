@@ -24,6 +24,7 @@
 #include "PreCompiled.h"
 
 #include "ProgressIndicatorPy.h"
+#include "PyObjectBase.h"
 
 
 using namespace Base;
@@ -99,7 +100,14 @@ Py::Object ProgressIndicatorPy::next(const Py::Tuple& args)
         }
         catch (const Base::AbortException&) {
             _seq.reset();
-            throw Py::RuntimeError("abort progress indicator");
+            // The dedicated type, not a plain RuntimeError: a caller has to be
+            // able to tell "the user pressed Escape" from "this step failed",
+            // and only the first one is a reason to stop quietly. Raised as
+            // Base.FreeCADAbort, it comes back out of the interpreter as a
+            // C++ Base::AbortException, which Command::invoke() already
+            // swallows without an error dialog.
+            PyErr_SetString(Base::PyExc_FC_FreeCADAbort, "abort progress indicator");
+            throw Py::Exception();
         }
     }
     return Py::None();
