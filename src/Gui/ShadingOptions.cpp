@@ -145,12 +145,45 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     // after choosing the model, with the 3D view in sight.
     envLabel = new QLabel(tr("Environment:"), this);
     envCombo = new QComboBox(this);
-    envCombo->addItem(tr("Studio"));
-    envCombo->addItem(tr("Gradient"));
-    envCombo->addItem(tr("Overcast"));
-    envCombo->addItem(tr("Sunset"));
-    envCombo->addItem(tr("Interior"));
-    envCombo->addItem(tr("Light tent"));
+    // The character of each one goes on the entry rather than into the
+    // combo's own tooltip: which preset is the choice actually being
+    // made here, and the names are the one thing that cannot say how
+    // they differ. All six carry the same mean radiance, so none of
+    // this is about brightness -- it is about where the light comes
+    // from and whether anything in it has an edge.
+    auto addEnvPreset = [this](const QString &name, const QString &tip) {
+        envCombo->addItem(name);
+        envCombo->setItemData(envCombo->count() - 1, tip, Qt::ToolTipRole);
+    };
+    addEnvPreset(tr("Studio"),
+                 tr("Four soft boxes on a dark surround. The widest contrast "
+                    "of the six,\nwith rectangular sources a polished surface "
+                    "can reflect as sources --\nwhich is what makes it look "
+                    "polished."));
+    addEnvPreset(tr("Gradient"),
+                 tr("Ground, horizon and sky in one smooth ramp, with no edge "
+                    "anywhere\nand barely one stop from top to bottom. Nothing "
+                    "in it reads as a\nlight, so every roughness reflects the "
+                    "same flat grey. The oldest of\nthe six, kept so an older "
+                    "document can have its look back."));
+    addEnvPreset(tr("Overcast"),
+                 tr("A bright dome weighted to the zenith, so the light "
+                    "arrives from above\nand the band behind the model stays "
+                    "dark enough for a near-white part\nto stand against it."));
+    addEnvPreset(tr("Sunset"),
+                 tr("A low warm sun over a deep sky: the widest span of hue "
+                    "here, warm\ndown one side of a part and cool down the "
+                    "other."));
+    addEnvPreset(tr("Interior"),
+                 tr("One window and a ceiling panel in a room with close "
+                    "walls. The\ncrispest key of the six, and where a view "
+                    "starts."));
+    addEnvPreset(tr("Light tent"),
+                 tr("A box of white panels, bright below as well as above. "
+                    "The only one\nthat lights the wall of a standing "
+                    "cylinder -- that wall reflects the\nhalf of the sphere "
+                    "under the horizon, which is floor, and dark, in\nevery "
+                    "other preset."));
     // An image is the same choice as a preset rather than a modifier of
     // one: the renderer takes one INSTEAD of the other
     // (SoFCRendererBridge::translatePBR resolves the image first and
@@ -160,7 +193,9 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     envCombo->insertSeparator(envCombo->count());
     envImageIndex = envCombo->count();
     envCombo->addItem(tr("Image..."));
-    envCombo->setToolTip(doc(RenderParams::docPBREnvPreset()));
+    envCombo->setToolTip(
+        tr("What the scene stands in: the surroundings that light it, and "
+           "that\nits reflections show. A preset, or an image of your own."));
     envLabel->setToolTip(envCombo->toolTip());
     // What a usable environment image has to be -- the format, the
     // proportions, the size -- said on the entry that opens the file
