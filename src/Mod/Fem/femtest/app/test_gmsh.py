@@ -26,6 +26,7 @@ __url__ = "https://www.freecad.org"
 import unittest
 import importlib
 import shutil
+from itertools import product
 from os.path import join
 
 import FreeCAD
@@ -136,12 +137,37 @@ class TestGMSHBase(unittest.TestCase):
             f"Generated mesh does not have the same Node count as the golden sample: {name}",
         )
 
-        # compare node locations!
+        # compare node locations! gmsh guarantees the node positions this comparison is for,
+        # but not the order it hands them out in, and that order has changed between gmsh
+        # versions. So match each generated node to a distinct sample node by position
+        # rather than trusting the two meshes to number their nodes the same way.
+        tol = 1e-3
+
+        def cell(node):
+            return (round(node.x / tol), round(node.y / tol), round(node.z / tol))
+
+        unmatched = {}
+        for idx in range(1, sample.NodeCount + 1):
+            unmatched.setdefault(cell(sample.Nodes[idx]), []).append(idx)
+
         for idx in range(1, mesh.NodeCount + 1):
-            self.assertTrue(
-                mesh.Nodes[idx].isEqual(sample.Nodes[idx], 1e-3),
+            node = mesh.Nodes[idx]
+            base = cell(node)
+            found = None
+            for offset in product((-1, 0, 1), repeat=3):
+                key = (base[0] + offset[0], base[1] + offset[1], base[2] + offset[2])
+                for candidate in unmatched.get(key, []):
+                    if node.isEqual(sample.Nodes[candidate], tol):
+                        found = (key, candidate)
+                        break
+                if found is not None:
+                    break
+
+            self.assertIsNotNone(
+                found,
                 f"Generated mesh does not have the same Node locations as golden sample: {name}",
             )
+            unmatched[found[0]].remove(found[1])
 
         self.assertEqual(
             mesh.EdgeCount,
