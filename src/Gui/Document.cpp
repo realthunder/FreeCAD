@@ -28,6 +28,7 @@
 # include <QApplication>
 # include <QCheckBox>
 # include <QFileInfo>
+# include <QHBoxLayout>
 # include <QLabel>
 # include <QMessageBox>
 # include <QRadioButton>
@@ -1790,19 +1791,25 @@ public:
         auto layout = new QVBoxLayout(this);
         layout->setContentsMargins(0, 6, 0, 0);
 
-        // Titled like the storage group below it: the format a save is about
-        // to write is always on screen, named, whichever way it is set.
-        auto format = new QLabel(QObject::tr("Document format"), this);
+        // Two rows, each one line: what the save writes, then how shapes are
+        // stored in it. The labels are short enough to sit beside their
+        // controls; what each one costs is one hover away, in the tooltip.
+        auto formatRow = new QHBoxLayout;
+        auto format = new QLabel(QObject::tr("Document format:"), this);
         format->setStyleSheet(QStringLiteral("font-weight:bold;"));
-        layout->addWidget(format);
+        formatRow->addWidget(format);
 
-        standard = new QRadioButton(QObject::tr(
-                    "Standard format \xe2\x80\x94 readable by every FreeCAD version"), this);
-        compactBtn = new QRadioButton(QObject::tr(
-                    "Compact format \xe2\x80\x94 smaller and faster to load; "
-                    "this FreeCAD only"), this);
-        layout->addWidget(standard);
-        layout->addWidget(compactBtn);
+        standard = new QRadioButton(QObject::tr("Standard"), this);
+        standard->setToolTip(QObject::tr(
+                    "The format every FreeCAD version can open."));
+        compactBtn = new QRadioButton(QObject::tr("Compact"), this);
+        compactBtn->setToolTip(QObject::tr(
+                    "Smaller files that load faster, readable by this "
+                    "FreeCAD only."));
+        formatRow->addWidget(standard);
+        formatRow->addWidget(compactBtn);
+        formatRow->addStretch();
+        layout->addLayout(formatRow);
 
         compactBtn->setChecked(compact);
         standard->setChecked(!compact);
@@ -1811,44 +1818,36 @@ public:
         // these costs compatibility. A file missing a pcurve a plane can rebuild, or
         // naming one table entry from two records, is ordinary BRep that every
         // FreeCAD has always read.
-        auto storage = new QLabel(QObject::tr("Shape storage"), this);
+        auto storageRow = new QHBoxLayout;
+        auto storage = new QLabel(QObject::tr("Shape storage:"), this);
         storage->setStyleSheet(QStringLiteral("font-weight:bold;"));
-        layout->addSpacing(6);
-        layout->addWidget(storage);
+        storageRow->addWidget(storage);
 
-        dedupPCurves = new QCheckBox(QObject::tr(
-                    "Store each 2D curve once, and leave out the ones reading "
-                    "the file computes again"), this);
+        dedupPCurves = new QCheckBox(QObject::tr("2D curves"), this);
         dedupPCurves->setToolTip(QObject::tr(
-                    "A curve computed twice used to be written twice, and a "
-                    "curve on a flat face need not be written at all because "
-                    "the kernel projects it back. Neither changes the shape "
-                    "that comes back, and the file still opens anywhere."));
-        dedupCongruent = new QCheckBox(QObject::tr(
-                    "Store one copy of parts that are the same shape in "
-                    "different places"), this);
+                    "Store each 2D curve once, and leave out the ones loading "
+                    "computes again. Same shape, and the file still opens "
+                    "anywhere."));
+        dedupCongruent = new QCheckBox(QObject::tr("Repeated parts"), this);
         dedupCongruent->setToolTip(QObject::tr(
-                    "Parts repeated at different positions are stored once "
-                    "with the motion between them recorded, which sharing by "
-                    "content alone cannot do when the position is baked into "
-                    "the coordinates. Two parts are only ever merged once the "
-                    "motion has been recovered and checked."));
-        dedupGeometry = new QCheckBox(QObject::tr(
-                    "Share surfaces and curves between the parts that have "
-                    "them in common"), this);
+                    "Store one copy of parts that are the same shape in "
+                    "different places, with the motion between them recorded. "
+                    "Merged only once that motion has been checked."));
+        dedupGeometry = new QCheckBox(QObject::tr("Shared geometry"), this);
         dedupGeometry->setToolTip(QObject::tr(
-                    "Every part stores its own table of surfaces and curves, "
-                    "and about half of what those tables hold is written "
-                    "again by some other part. With this on a part names what "
-                    "another one already holds. It is off by default because "
-                    "it makes one part's geometry depend on another part's "
+                    "Let a part name surfaces and curves another part already "
+                    "stores, saving about half of those tables. Off by "
+                    "default: it makes one part depend on the other part's "
                     "file being there."));
         dedupPCurves->setChecked(App::DocumentParams::getDedupShapePCurves());
         dedupCongruent->setChecked(App::DocumentParams::getDedupCongruentShapes());
         dedupGeometry->setChecked(App::DocumentParams::getDedupCrossFileGeometry());
-        layout->addWidget(dedupPCurves);
-        layout->addWidget(dedupCongruent);
-        layout->addWidget(dedupGeometry);
+        storageRow->addWidget(dedupPCurves);
+        storageRow->addWidget(dedupCongruent);
+        storageRow->addWidget(dedupGeometry);
+        storageRow->addStretch();
+        layout->addSpacing(2);
+        layout->addLayout(storageRow);
 
         apply();
         QObject::connect(compactBtn, &QRadioButton::toggled,
