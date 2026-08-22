@@ -45,6 +45,7 @@
 #include <App/Application.h>
 #include <App/AutoTransaction.h>
 #include <App/Document.h>
+#include <App/InputStratum.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include "Action.h"
@@ -697,11 +698,53 @@ enum MenuAction {
     MA_NoRecompute,
     MA_ReadOnly,
     MA_Hidden,
+    MA_Input,
     MA_Touched,
     MA_EvalOnRestore,
     MA_CopyOnChange,
     MA_MaterialEdit,
 };
+
+namespace {
+
+// Section 7 of docs/InputProperties.md: clearing the Input status retroactively
+// invalidates the closure of every binding that reads the property, so the
+// editor asks first. Script and C++ callers are trusted and do it silently --
+// the recompute-time enforcement is the real backstop either way.
+bool confirmClearInput(QWidget *parent, const std::set<App::DocumentObjectT> &props)
+{
+    QStringList referrers;
+    for(const auto &propT : props) {
+        auto prop = propT.getProperty();
+        if(!prop || !prop->testStatus(App::Property::Input) || !prop->getName())
+            continue;
+        auto obj = Base::freecad_dynamic_cast<App::DocumentObject>(prop->getContainer());
+        if(!obj)
+            continue;
+        for(const auto &ref : App::InputStratum::findReferrers(obj, prop->getName())) {
+            referrers.append(QStringLiteral("%1.%2").arg(
+                        QString::fromUtf8(ref.first->getFullName().c_str()),
+                        QString::fromUtf8(ref.second.c_str())));
+        }
+    }
+    if(referrers.isEmpty())
+        return true;
+
+    referrers.removeDuplicates();
+    return QMessageBox::warning(parent,
+            PropertyEditor::tr("Clear input status"),
+            PropertyEditor::tr(
+                "These expressions read this property as an input parameter:\n\n%1\n\n"
+                "They read it without an ordering dependency, which is only sound while"
+                " the status holds. Clearing it restores the ordinary dependency, which"
+                " may reintroduce a cycle, and any expression bound to an input property"
+                " that reads this one loses its closure.\n\nClear it anyway?")
+                .arg(referrers.join(QStringLiteral("\n"))),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No) == QMessageBox::Yes;
+}
+
+}  // namespace
 
 void PropertyEditor::contextMenuEvent(QContextMenuEvent *ev) {
     QMenu menu;
@@ -850,6 +893,7 @@ void PropertyEditor::contextMenuEvent(QContextMenuEvent *ev) {
         setupAction("NoRecompute", MA_NoRecompute, App::Property::NoRecompute, App::PropertyType::Prop_NoRecompute);
         setupAction("ReadOnly", MA_ReadOnly, App::Property::ReadOnly, App::PropertyType::Prop_ReadOnly);
         setupAction("Transient", MA_Transient, App::Property::Transient, App::PropertyType::Prop_Transient);
+        setupAction("Input", MA_Input, App::Property::Input, App::PropertyType::Prop_None);
         setupAction("Touched", MA_Touched, App::Property::Touched, App::PropertyType::Prop_None);
         setupAction("EvalOnRestore", MA_EvalOnRestore, App::Property::EvalOnRestore, App::PropertyType::Prop_None);
         setupAction("CopyOnChange", MA_CopyOnChange, App::Property::CopyOnChange, App::PropertyType::Prop_None);
@@ -962,6 +1006,16 @@ void PropertyEditor::contextMenuEvent(QContextMenuEvent *ev) {
         ACTION_CHECK(EvalOnRestore);
         ACTION_CHECK(CopyOnChange);
         ACTION_CHECK(MaterialEdit);
+        case MA_Input: {
+            const bool on = action->isChecked();
+            if(!on && !confirmClearInput(this, props))
+                break;
+            for(auto &propT : props) {
+                if (auto prop = propT.getProperty())
+                    prop->setStatus(App::Property::Input, on);
+            }
+            break;
+        }
         case MA_Touched:
             for(auto &propT : props) {
                 if (auto prop = propT.getProperty()) {

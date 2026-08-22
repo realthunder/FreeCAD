@@ -1198,7 +1198,7 @@ Params = [
         "a PBR appearance, a metallic-roughness map and the per-object\n"
         "Render_Roughness override all stand.",
         ),
-    ParamInt('PBREnvPreset',  4, title='Environment',
+    ParamInt('PBREnvPreset',  1, title='Environment',
         proxy=ParamComboBox(items=['Studio', 'Gradient', 'Overcast',
                                    'Sunset', 'Interior', 'Light tent']),
         doc="Which built-in environment lights the scene, where no\n"
@@ -1215,15 +1215,17 @@ Params = [
         "roughness -- which is what made physically based shading look\n"
         "like painted plastic.\n"
         "\n"
-        "Interior (the default) = a room with one window and a ceiling\n"
+        "Interior = a room with one window and a ceiling\n"
         "panel, walls close enough to bounce. One hard key against a\n"
         "dark surround, which is what gives the crispest highlight and\n"
         "the strongest read of form. Studio = four soft boxes on a dark\n"
         "surround, the product-shot rig, gentler and more even than\n"
-        "Interior. Gradient = the smooth three-band dome this engine\n"
-        "used before the others existed; the flattest and the most\n"
-        "even, and the one to pick to have an older document's look\n"
-        "back. Overcast = a bright sky weighted to the zenith over dark\n"
+        "Interior. Gradient (the default) = the smooth three-band dome\n"
+        "this engine used before the others existed; the flattest and\n"
+        "the most even, which is why it is where a view starts -- it\n"
+        "stays out of the way of the model being worked on, and it is\n"
+        "the one to pick to have an older document's look back.\n"
+        "Overcast = a bright sky weighted to the zenith over dark\n"
         "ground, soft and neutral. Sunset = a low warm sun with a deep\n"
         "sky, the strongest colour separation, and the only one that\n"
         "tints the whole frame. Light tent = a box of white panels,\n"

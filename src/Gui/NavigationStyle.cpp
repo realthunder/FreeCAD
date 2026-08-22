@@ -515,24 +515,6 @@ void NavigationStyle::viewAll()
     }
 }
 
-void NavigationStyle::findBoundingSphere() {
-    // Find a bounding sphere for the scene
-    SbBox3f box;
-    viewer->getSceneBoundBox(box);
-    if (box.isEmpty()) {
-        // The scene is empty — which is what a viewer is built with, before
-        // any document. SbSphere's default constructor leaves itself
-        // uninitialized, and circumscribe() refuses an empty box (warning
-        // about it in a debug Coin, and computing a NaN centre from the
-        // inverted empty bounds in a release one), so state what an empty
-        // scene means rather than leave reorientCamera() reading whatever
-        // was on the stack.
-        boundingSphere.setValue(SbVec3f(0, 0, 0), 0);
-        return;
-    }
-    boundingSphere.circumscribe(box);
-}
-
 /** Rotate the camera by the given amount, then reposition it so we're still pointing at the same
  * focal point
  */
@@ -564,24 +546,17 @@ void NavigationStyle::reorientCamera(SoCamera* camera, const SbRotation& rotatio
     // Reposition camera so the rotation center stays in the same place
     camera->position = rotationCenter + newRotationCenterDistance;
 
-    // Fix issue with near clipping in orthogonal view
-     if (camera->getTypeId().isDerivedFrom(SoOrthographicCamera::getClassTypeId())) {
-
-         // The center of the bounding sphere in camera coordinate system
-         SbVec3f center;
-         camera->orientation.getValue().inverse().multVec(boundingSphere.getCenter() - camera->position.getValue(), center);
-
-         SbVec3f dir;
-         camera->orientation.getValue().multVec(SbVec3f(0, 0, -1), dir);
-
-         // Reposition the camera but keep the focal point the same
-         // nearDistance is 0 and farDistance is the diameter of the bounding sphere
-         float repositionDistance = -center.getValue()[2] - boundingSphere.getRadius();
-         camera->position = camera->position.getValue() + repositionDistance * dir;
-         camera->nearDistance = 0;
-         camera->farDistance = 2 * boundingSphere.getRadius();
-         camera->focalDistance = camera->focalDistance.getValue() - repositionDistance;
-     }
+    // No orthographic near/far fixup here. Upstream (e327a3fd40) slid the
+    // eye to the scene sphere's near tangent and wrote near = 0,
+    // far = 2 * radius on every rotation step. In this fork Coin's
+    // auto-clipping recomputes both planes synchronously from the full
+    // graph -- external renderer bounds included -- before each Coin pass,
+    // so the written values only ever reached what reads the camera BEFORE
+    // that correction: the render backend consumed a far plane bracketing
+    // the Coin scene alone and clipped its shadow ground on orthographic
+    // spins, and the per-step eye slide perturbed everything keyed on the
+    // eye position (ground extent, hence scene bounds and the auto planes)
+    // in orthographic views only.
 }
 
 void NavigationStyle::panCamera(SoCamera * cam, float aspectratio, const SbPlane & panplane,
@@ -799,7 +774,6 @@ void NavigationStyle::doZoom(SoCamera* camera, float logfactor, const SbVec2f& p
         // Rotation mode is WindowCenter
         if (!rotationCenterMode) {
             viewer->changeRotationCenterPosition(getFocalPoint());
-            findBoundingSphere();
         }
     }
 }
@@ -1402,7 +1376,6 @@ void NavigationStyle::setViewingMode(const ViewerMode newmode)
         // first starting a drag operation.
         animator->stop();
         viewer->showRotationCenter(true);
-        findBoundingSphere();
         this->spinprojector->project(this->lastmouseposition);
         this->interactiveCountInc();
         this->clearLog();

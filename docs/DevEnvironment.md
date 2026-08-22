@@ -254,17 +254,24 @@ probe needs links new code against stale siblings -- the failure mode is heap
 corruption at runtime, not a link error.
 
 Cheapest staleness check before starting, since the installs carry no version
-marker -- compare each install against the date of its repo's HEAD:
+marker -- compare each install against the date of its repo's HEAD. Read the
+newest file *inside* the prefix, never the prefix itself: `cmake --install`
+overwrites files in place, which adds no directory entry, so the prefix keeps
+the mtime of the day it was first created and a current install reports as
+weeks old. (Checked 2026-08-21 on the Windows prefixes, which both dated
+themselves to Aug 6 while holding files from Aug 15 and Aug 19.)
 
 ```sh
-ls -lad ~/works/sw/occt/install/conda-relwithdebinfo-801 ~/works/sw/coin/install/conda-relwithdebinfo
+newest() { find "$1" -type f -exec stat -c '%y %n' {} + | sort -r | head -1; }
+newest ~/works/sw/occt/install/conda-relwithdebinfo-801
+newest ~/works/sw/coin/install/conda-relwithdebinfo
 git -C ~/works/sw/occt log -1 --format=%cd; git -C ~/works/sw/coin log -1 --format=%cd
 ```
 
-An install older than its repo's last commit is suspect. Refresh in dependency
-order -- OCCT, then Coin, then FreeCAD -- each with its own `--target install`;
-ccache keeps the FreeCAD objects already compiled before the failure, so
-resuming after each fix is much cheaper than the first build was.
+An install whose newest file predates its repo's last commit is suspect. Refresh
+in dependency order -- OCCT, then Coin, then FreeCAD -- each with its own
+`--target install`; ccache keeps the FreeCAD objects already compiled before the
+failure, so resuming after each fix is much cheaper than the first build was.
 
 **Verify before trusting a number**, every time — this is the check that catches the two
 traps above:

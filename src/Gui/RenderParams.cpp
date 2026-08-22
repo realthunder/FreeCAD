@@ -378,7 +378,7 @@ public:
         funcs["PBRFromSpecular"] = &RenderParamsP::updatePBRFromSpecular;
         ShininessMapping = this->handle->GetInt("ShininessMapping", 1);
         funcs["ShininessMapping"] = &RenderParamsP::updateShininessMapping;
-        PBREnvPreset = this->handle->GetInt("PBREnvPreset", 4);
+        PBREnvPreset = this->handle->GetInt("PBREnvPreset", 1);
         funcs["PBREnvPreset"] = &RenderParamsP::updatePBREnvPreset;
         PBREnvIntensity = this->handle->GetFloat("PBREnvIntensity", 1.0);
         funcs["PBREnvIntensity"] = &RenderParamsP::updatePBREnvIntensity;
@@ -868,7 +868,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvPreset(RenderParamsP *self) {
-        self->PBREnvPreset = self->handle->GetInt("PBREnvPreset", 4);
+        self->PBREnvPreset = self->handle->GetInt("PBREnvPreset", 1);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvIntensity(RenderParamsP *self) {
@@ -4546,15 +4546,17 @@ const char *RenderParams::docPBREnvPreset() {
 "roughness -- which is what made physically based shading look\n"
 "like painted plastic.\n"
 "\n"
-"Interior (the default) = a room with one window and a ceiling\n"
+"Interior = a room with one window and a ceiling\n"
 "panel, walls close enough to bounce. One hard key against a\n"
 "dark surround, which is what gives the crispest highlight and\n"
 "the strongest read of form. Studio = four soft boxes on a dark\n"
 "surround, the product-shot rig, gentler and more even than\n"
-"Interior. Gradient = the smooth three-band dome this engine\n"
-"used before the others existed; the flattest and the most\n"
-"even, and the one to pick to have an older document's look\n"
-"back. Overcast = a bright sky weighted to the zenith over dark\n"
+"Interior. Gradient (the default) = the smooth three-band dome\n"
+"this engine used before the others existed; the flattest and\n"
+"the most even, which is why it is where a view starts -- it\n"
+"stays out of the way of the model being worked on, and it is\n"
+"the one to pick to have an older document's look back.\n"
+"Overcast = a bright sky weighted to the zenith over dark\n"
 "ground, soft and neutral. Sunset = a low warm sun with a deep\n"
 "sky, the strongest colour separation, and the only one that\n"
 "tints the whole frame. Light tent = a box of white panels,\n"
@@ -4571,7 +4573,7 @@ const long & RenderParams::getPBREnvPreset() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const long & RenderParams::defaultPBREnvPreset() {
-    const static long def = 4;
+    const static long def = 1;
     return def;
 }
 

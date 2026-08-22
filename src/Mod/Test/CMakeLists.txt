@@ -5,6 +5,7 @@ SET(Test_SRCS
     BaseTests.py
     Document.py
     FileBlobs.py
+    InputProperty.py
     ShapeStorage.py
     Metadata.py
     StringHasher.py

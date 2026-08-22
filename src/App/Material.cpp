@@ -474,11 +474,21 @@ void Material::setType(const MaterialType MatType)
     case USER_DEFINED:
         break;
     default:
-        ambientColor .set(0.2000f,0.2000f,0.2000f);
-        diffuseColor .set(0.8000f,0.8000f,0.8000f);
-        specularColor.set(0.0000f,0.0000f,0.0000f);
+        // The Default appearance card, to the number
+        // (Mod/Material/Resources/Materials/Appearance/Default.FCMat).
+        // A shape carries that card and this preset both, and they used
+        // to disagree: assigning a fresh object the very material it
+        // already claimed changed how it looked. The card is the one
+        // authored for this engine -- 0.2209 is a dielectric's F0 of
+        // 0.04 in the encoded form every colour is stored in, and
+        // 0.3729 is roughness 0.40 through the shininess mapping -- so
+        // it is the one the other two follow (View/DefaultShapeColor
+        // and View/DefaultShapeShininess are the others).
+        ambientColor .set(0.3333f,0.3333f,0.3333f);
+        diffuseColor .set(0.8000f,0.8000f,0.9000f);
+        specularColor.set(0.2209f,0.2209f,0.2209f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.2000f;
+        shininess    = 0.3729f;
         transparency = 0.0000f;
         break;
     }

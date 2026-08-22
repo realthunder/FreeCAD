@@ -570,6 +570,12 @@ void BGFXRenderer::Private::updateBBox()
     static const bool dbg = getenv("FC_BGFX_DEBUG_BBOX") != nullptr;
     bboxValid = false;
     for (const auto &draw : scene) {
+        // A navigation gizmo is not the scene (DrawCall::skipbounds):
+        // the rotation-centre sphere sits wherever the spin is centred
+        // and moves with it, and counting it would drag the shadow
+        // ground and the auto near/far along with the mouse.
+        if (draw.skipbounds)
+            continue;
         if (draw.bboxMin[0] > draw.bboxMax[0])
             continue;
         if (!bboxValid) {

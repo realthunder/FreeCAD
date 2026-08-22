@@ -48,6 +48,7 @@
 #include "DocumentObjectGroup.h"
 #include "GeoFeature.h"
 #include "GeoFeatureGroupExtension.h"
+#include "InputStratum.h"
 #include "Link.h"
 #include "ObjectIdentifier.h"
 #include "PropertyExpressionEngine.h"
@@ -165,6 +166,54 @@ void DocumentObject::printInvalidLinks() const
     }
 }
 
+// Depth of nested DocumentObject::recompute() calls on this thread. Non-zero
+// means some object is inside execute(), which is exactly the window in which
+// an input property must not change. Kept separate from ObjectStatus::Recompute
+// because that bit answers "is *this* object recomputing", and a write from a
+// different object's execute() breaks the same guarantee.
+// See docs/InputProperties.md section 6.
+static thread_local int _executeDepth;
+// Full name of an input property written during an execute(), pending pickup by
+// Document::_recomputeFeature(). First writer wins, so the innermost recompute
+// that drains it reports the error; the property name identifies the real
+// offender either way.
+static thread_local std::string _inputViolation;
+
+namespace {
+struct ExecuteDepthLocker {
+    ExecuteDepthLocker() { ++_executeDepth; }
+    ~ExecuteDepthLocker() { --_executeDepth; }
+};
+}
+
+bool DocumentObject::isExecuting()
+{
+    return _executeDepth != 0;
+}
+
+void DocumentObject::reportInputViolation(const Property *prop)
+{
+    if (prop && _inputViolation.empty())
+        _inputViolation = prop->getFullName();
+}
+
+std::string DocumentObject::takeInputViolation()
+{
+    std::string res;
+    res.swap(_inputViolation);
+    return res;
+}
+
+bool DocumentObject::isInputProperty(const Property *prop) const
+{
+    return prop && prop->testStatus(Property::Input);
+}
+
+bool DocumentObject::isInputProperty(const std::string &propName) const
+{
+    return isInputProperty(getPropertyByName(propName.c_str()));
+}
+
 App::DocumentObjectExecReturn *DocumentObject::recompute()
 {
     //check if the links are valid before making the recompute
@@ -174,6 +223,7 @@ App::DocumentObjectExecReturn *DocumentObject::recompute()
 
     // set/unset the execution bit
     Base::ObjectStatusLocker<ObjectStatus, DocumentObject> exe(App::Recompute, this);
+    ExecuteDepthLocker depth;
 
     // mark the object to recompute its extensions
     this->setStatus(App::RecomputeExtension, true);
@@ -1745,8 +1795,17 @@ bool DocumentObject::redirectSubName(std::ostringstream &, DocumentObject *, Doc
 }
 
 void DocumentObject::onPropertyStatusChanged(const Property &prop, unsigned long oldStatus) {
-    (void)oldStatus;
-    if(!Document::isAnyRestoring() && isAttachedToDocument() && getDocument())
+    if(!Document::isAnyRestoring() && isAttachedToDocument() && getDocument()) {
+        static const unsigned long inputBit = 1UL << Property::Input;
+        bool wasInput = (oldStatus & inputBit) != 0;
+        if(wasInput != prop.testStatus(Property::Input) && prop.getName()) {
+            // Marking a property input drops the ordering edge its readers
+            // carry, and clearing it puts the edge back. Neither happens on
+            // its own: the dependencies were computed when each binding was
+            // set. See docs/InputProperties.md section 7.
+            InputStratum::refreshReferrers(this, prop.getName());
+        }
         getDocument()->signalChangePropertyEditor(*getDocument(),prop);
+    }
 }
 

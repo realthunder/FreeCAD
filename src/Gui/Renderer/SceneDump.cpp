@@ -250,7 +250,23 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     laid out at and the layer a draw with no per-vertex stream reads.
 //     A snapshot older than this has no palette, and its faces are
 //     textured the one way they always were.
-const uint32_t kVersion = 65;
+// 66: the light says how transparent the SHADOW is on a shadow-only
+//     ground (LightConfig::shadowTransparency). A snapshot older than
+//     this reads the struct default, 0.2 -- the translucent shadow the
+//     mode was first written with, and Coin's own default.
+// 67: a draw says whether it is out of the SCENE's bounds
+//     (DrawCall::skipbounds) -- a navigation gizmo captured under a
+//     Gui::SoSkipBoundingGroup, which is what Coin drops from the
+//     scene bounding box. A snapshot older than this has no flag and
+//     every draw counts, which is what those builds measured: the
+//     rotation-centre sphere then drags the shadow ground and the
+//     auto near/far around with the spin.
+// 68: the light says whether the shadow ground sizes itself to the
+//     CAMERA rather than to the scene bounds
+//     (LightConfig::groundFollowCamera). A snapshot older than this
+//     was written by a build that only had the scene-bounds sizing, so
+//     it reads as off and lays its ground out the way it was measured.
+const uint32_t kVersion = 68;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -278,8 +294,11 @@ const uint32_t kVersion = 65;
 /// 11: a material chunk carries drawstyleoverride, which tells the
 ///     Tessellation display mode from a plain wireframe node. A cached
 ///     chunk from an older build would answer "the mode" forever and
-///     keep filling the wireframe.)
-const uint32_t kChunkVersion = 11;
+///     keep filling the wireframe.
+/// 12: a group chunk's draws carry skipbounds (v67). The bytes moved,
+///     so an older cached chunk would be MISREAD from that flag on --
+///     the bump retires it.)
+const uint32_t kChunkVersion = 12;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -1771,6 +1790,8 @@ void writeLight(Writer &w, const LightConfig &l, const RefWriter &refs)
     w.floats(l.groundMatrix, 16);
     w.b(l.groundShading);   // v58
     w.b(l.groundBackFaceCull);
+    w.f(l.shadowTransparency);   // v66
+    w.b(l.groundFollowCamera);   // v68
 }
 
 void readLight(Reader &r, LightConfig &l, const RefReader &refs,
@@ -1818,6 +1839,13 @@ void readLight(Reader &r, LightConfig &l, const RefReader &refs,
         l.groundShading = r.b();
         l.groundBackFaceCull = r.b();
     }
+    if (version >= 66) {
+        l.shadowTransparency = r.f();
+    }
+    // The struct defaults this ON, which is right for a live config and
+    // wrong for a snapshot: a writer older than v68 sized the ground
+    // from the scene bounds, so that is what its stream means.
+    l.groundFollowCamera = version >= 68 ? r.b() : false;
     // Older streams leave the struct's defaults: auto sizing from the
     // scene bounds, which is what those builds did.
 }
@@ -1858,6 +1886,8 @@ void writeDraw(Writer &w, const DrawCall &d, const DrawRefWriter &refs)
     w.i32(d.indexCount);
     w.floats(d.bboxMin, 3);
     w.floats(d.bboxMax, 3);
+    // v67
+    w.b(d.skipbounds);
 }
 
 typedef std::vector<Material> MaterialTable;
@@ -1885,6 +1915,8 @@ void readDraw(Reader &r, DrawCall &d, const DrawRefReader &refs,
     d.indexCount = r.i32();
     r.floats(d.bboxMin, 3);
     r.floats(d.bboxMax, 3);
+    if (version >= 67)
+        d.skipbounds = r.b();
 }
 
 void writeDrawList(Writer &w, const DrawCallList &draws,

@@ -88,6 +88,7 @@
 #include <chrono>
 #include "../RenderTiming.h"
 #include "../InventorBase.h"
+#include "../SoFCBoundingBox.h"
 #include "../SoFCUnifiedSelection.h"
 #include "../SoFCSelectionAction.h"
 #include "../SoFCSelection.h"
@@ -413,6 +414,8 @@ public:
   static SoCallbackAction::Response postAnnotation(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response prePathAnnotation(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postPathAnnotation(void *, SoCallbackAction *action, const SoNode * node);
+  static SoCallbackAction::Response preSkipBounds(void *, SoCallbackAction *action, const SoNode * node);
+  static SoCallbackAction::Response postSkipBounds(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response preShape(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response preImage(SoFCRenderCacheManagerP *self, SoCallbackAction *action, const SoImage * node);
   static SoCallbackAction::Response postShape(void *, SoCallbackAction *action, const SoNode * node);
@@ -641,6 +644,10 @@ public:
   int traversedepth;
   SoFCRenderer *renderer;
   int annotation;
+  /// Nesting depth of Gui::SoSkipBoundingGroup in the traversal. The
+  /// group can nest (a gizmo built out of gizmos), so the flag is
+  /// cleared by the outermost close, not by the first one.
+  int skipbounds;
 
   // The capture budget of one publish (Render CaptureBudgetMS): how much
   // time this rebuild's shape captures have spent, how many shapes were
@@ -738,6 +745,7 @@ SoFCRenderCacheManagerP::SoFCRenderCacheManagerP()
   this->selid = 0;
   this->sceneid = 0;
   this->annotation = 0;
+  this->skipbounds = 0;
   this->action = nullptr;
   this->shapetypeid = 0;
 
@@ -823,6 +831,8 @@ void SoFCRenderCacheManagerP::initAction()
   this->action->addPostCallback(SoAnnotation::getClassTypeId(), &postAnnotation, this);
   this->action->addPreCallback(SoFCPathAnnotation::getClassTypeId(), &prePathAnnotation, this);
   this->action->addPostCallback(SoFCPathAnnotation::getClassTypeId(), &postPathAnnotation, this);
+  this->action->addPreCallback(SoSkipBoundingGroup::getClassTypeId(), &preSkipBounds, this);
+  this->action->addPostCallback(SoSkipBoundingGroup::getClassTypeId(), &postSkipBounds, this);
   this->action->addPreCallback(SoShape::getClassTypeId(), &preShape, this);
   this->action->addPostCallback(SoShape::getClassTypeId(), &postShape, this);
   this->action->addPostCallback(SoTexture::getClassTypeId(), &postTexture, this);
@@ -2031,6 +2041,42 @@ SoFCRenderCacheManagerP::postAnnotation(void *userdata,
   (void)node;
   if (self->annotation && --self->annotation == 0)
     self->stack.back()->decreaseRenderingOrder(action->getState());
+  return SoCallbackAction::CONTINUE;
+}
+
+// A Gui::SoSkipBoundingGroup says its subtree is not scene geometry:
+// Coin drops it from the scene bounding box whenever the requester asks
+// for exclusion (SoSkipBoundingBoxElement). That is a traversal-time
+// statement, and the render cache is what the external backends see
+// instead of the traversal -- so record it on the material, the way the
+// annotation depth is recorded, and let the backends' bounds honour it.
+SoCallbackAction::Response
+SoFCRenderCacheManagerP::preSkipBounds(void *userdata,
+                                       SoCallbackAction *action,
+                                       const SoNode * node)
+{
+  SoFCRenderCacheManagerP *self = reinterpret_cast<SoFCRenderCacheManagerP*>(userdata);
+  if (self->stack.empty())
+      return SoCallbackAction::CONTINUE;
+
+  (void)node;
+  if (++self->skipbounds == 1)
+    self->stack.back()->setSkipBounds(action->getState(), TRUE);
+  return SoCallbackAction::CONTINUE;
+}
+
+SoCallbackAction::Response
+SoFCRenderCacheManagerP::postSkipBounds(void *userdata,
+                                        SoCallbackAction *action,
+                                        const SoNode * node)
+{
+  SoFCRenderCacheManagerP *self = reinterpret_cast<SoFCRenderCacheManagerP*>(userdata);
+  if (self->stack.empty())
+      return SoCallbackAction::CONTINUE;
+
+  (void)node;
+  if (self->skipbounds && --self->skipbounds == 0)
+    self->stack.back()->setSkipBounds(action->getState(), FALSE);
   return SoCallbackAction::CONTINUE;
 }
 

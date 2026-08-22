@@ -279,7 +279,12 @@ bool BGFXRenderer::boundBox(float &xmin, float &ymin, float &zmin,
     const float bmin[3] = {xmin, ymin, zmin};
     const float bmax[3] = {xmax, ymax, zmax};
     float corners[4][3];
-    if (light.groundQuad(bmin, bmax, corners)) {
+    // The camera of the last frame, which is the one that laid this
+    // quad out. It cannot feed back: a camera-fitted ground is sized
+    // from the eye's DISTANCE to the plane and its field of view,
+    // neither of which the near/far planes computed from these bounds
+    // can move.
+    if (light.groundQuad(bmin, bmax, pimpl->groundCam, corners)) {
         // Whatever the quad actually is -- explicitly sized, moved or
         // tilted -- rather than a second copy of the auto formula, which
         // would under-report the moment either differed.

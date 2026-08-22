@@ -1481,6 +1481,10 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                             sizeof(draw.model));
             }
 
+            // A gizmo captured under a SoSkipBoundingGroup keeps its own
+            // bounds and stays out of the scene's (Material::skipbounds).
+            draw.skipbounds = material.skipbounds;
+
             // Measured once per entry per publish: the draw-entry build
             // above asked the same question of the same entry.
             const SbBox3f & bbox = ventry.getBoundingBox();
@@ -2340,6 +2344,8 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         // has no render properties at all carries none of these.
         res.groundAuto = viewParamOverride<App::PropertyBool>(
                 view, "RenderShadow", "GroundSizeAuto", true);
+        res.groundFollowCamera = viewParamOverride<App::PropertyBool>(
+                view, "RenderShadow", "GroundSizeFollowCamera", true);
         res.groundSizeX = float(viewParamOverride<App::PropertyLength>(
                 view, "RenderShadow", "GroundSizeX", 100.0));
         res.groundSizeY = float(viewParamOverride<App::PropertyLength>(
@@ -2420,6 +2426,16 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
                 float(ViewParams::getShadowGroundTransparency());
         res.groundTransparency =
             std::min(1.0f, std::max(0.0f, res.groundTransparency));
+        // The shadow's own transparency, which only a shadow-only
+        // ground reads (Coin's SoShadowTransparency).
+        if (auto prop = viewPropOverride<App::PropertyFloat>(
+                    view, "RenderShadow", "Transparency"))
+            res.shadowTransparency = float(prop->getValue());
+        else
+            res.shadowTransparency =
+                float(ViewParams::getShadowTransparency());
+        res.shadowTransparency =
+            std::min(1.0f, std::max(0.0f, res.shadowTransparency));
         std::string bumppath;
         if (auto prop = viewPropOverride<App::PropertyFileIncluded>(
                     view, "RenderShadow", "GroundBumpMap")) {

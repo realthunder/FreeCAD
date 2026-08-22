@@ -1364,6 +1364,23 @@ void BGFXView::init(bool keepShared)
     // and uniforms are built here.
     ensureProgram(m_progReflMedia, "vs_fc_comp", "fs_fc_refl_media");
     ensureProgram(m_progGroundRefl, "vs_fc_mesh", "fs_fc_groundrefl");
+    // The shadow-only ground rides the same vertex program as both
+    // of the above, for the same reason: one quad, one depth.
+    ensureProgram(m_progGroundShadow, "vs_fc_mesh",
+                  "fs_fc_groundshadow");
+    // ... and the quad-less form of it, which needs the screen triangle
+    // instead and the plane it is to find as a uniform.
+    ensureProgram(m_progGroundShadowPlane, "vs_fc_comp",
+                  "fs_fc_groundshadow_plane");
+    ensureUniform(u_groundPlane, "u_groundPlane", bgfx::UniformType::Vec4);
+    // The drawn ground's own mesh variants, which fade their rim out.
+    ensureProgram(m_progGroundFade, "vs_fc_mesh", "fs_fc_mesh_ground");
+    ensureProgram(m_progGroundFadeTex, "vs_fc_mesh_tex",
+                  "fs_fc_mesh_ground_tex");
+    ensureProgram(m_progGroundFadePrepass, "vs_fc_prepass",
+                  "fs_fc_prepass_ground");
+    ensureUniform(u_groundFadeU, "u_groundFadeU", bgfx::UniformType::Vec4);
+    ensureUniform(u_groundFadeV, "u_groundFadeV", bgfx::UniformType::Vec4);
     ensureUniform(u_reflParams, "u_reflParams", bgfx::UniformType::Vec4);
 
     // Stateful particle resources (docs/RenderEngine.md §5.8).

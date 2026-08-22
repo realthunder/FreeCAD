@@ -24,16 +24,49 @@
 
 void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
                         const Render::LightConfig &light,
+                        const Render::GroundCamera &cam,
                         bool prepass)
 {
+    // A shadow-only ground needs no quad at all -- unless something
+    // else needs the quad's depth. A ground reflection does: it
+    // depth-tests EQUAL against it, so the surface has to be there to
+    // test against even when nothing paints it.
+    if (light.groundShadowOnly() && !light.groundReflection
+            && submitShadowGroundPlane(bmin, bmax, light, cam))
+        return;
+
     // Sizing, placement and the fully-transparent case (Coin then
     // switches to a shadow-only ground rendering, not ported) all live
     // in LightConfig::groundQuad, which is what the Coin quad does.
     float corners[4][3];
     float halfExtent[2];
-    if (!light.groundQuad(bmin, bmax, corners, halfExtent))
+    if (!light.groundQuad(bmin, bmax, cam, corners, halfExtent))
+        return;
+    // A fully transparent ground carries the shadow and nothing else
+    // (Coin's TRANSPARENT_SHADOWED). Nothing below changes for it
+    // except which program paints the fragments: same quad, same
+    // depth, same winding -- so a ground reflection still lines up
+    // with it, and the texture rows simply have nothing to modulate.
+    const bool shadowOnly = light.groundShadowOnly();
+    if (shadowOnly && !bgfx::isValid(m_progGroundShadow))
         return;
     uint32_t colorPacked = light.groundColor;
+
+    // A camera-fitted ground reads as endless only if it does not END
+    // anywhere the eye can see, so its rim fades out -- which takes the
+    // mesh program's ground variants. Sized by hand, it does not: an
+    // explicit extent is a plate somebody asked for, edge included.
+    // Decided here because the texture branch below asks which program
+    // is going to paint the quad.
+    const bool wantFade = !shadowOnly && light.groundAuto
+        && light.groundFollowCamera && cam.valid && viewMatrix
+        && bgfx::isValid(u_groundFadeU) && bgfx::isValid(u_groundFadeV);
+    const bgfx::ProgramHandle progPlain =
+        wantFade && bgfx::isValid(m_progGroundFade) ? m_progGroundFade
+                                                    : m_progMesh;
+    const bgfx::ProgramHandle progTex =
+        wantFade && bgfx::isValid(m_progGroundFadeTex)
+            ? m_progGroundFadeTex : m_progMeshTex;
 
     TransientVertex::init();
     if (bgfx::getAvailTransientVertexBuffer(6, TransientVertex::ms_layout)
@@ -55,11 +88,24 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     }
 
     float color[4], zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    unpackColor(colorPacked, color);
+    // An AUTHORED colour: someone picked the ground's grey, so it is a
+    // display number and decodes on the way in like every other picked
+    // colour. Handed over encoded it arrived as light 1.5x too bright,
+    // which a lit ground half hides and a shadow-only one cannot: the
+    // shadow IS this colour, and 0.49 painted as 0.73 is the
+    // background.
+    unpackAuthoredColor(colorPacked, color, colorManaged());
     // Ground transparency (ShadowGroundTransparency): plain alpha
     // blend over whatever lies behind in the depth order (the
     // background; the quad still writes depth like Coin's ground).
-    color[3] = 1.0f - light.groundTransparency;
+    // A shadow-only ground spends the alpha slot differently: it is
+    // how dark the shadow itself lands, since the lit ground is not
+    // drawn at all. That is Coin's SoShadowTransparency, and it is what
+    // separates the two shadow-only modes: 0 a solid shadow, anything
+    // above it a translucent one.
+    color[3] = shadowOnly
+        ? std::min(1.0f, std::max(0.0f, 1.0f - light.shadowTransparency))
+        : 1.0f - light.groundTransparency;
     // Lighting and sidedness are the ground's own properties
     // (ShadowGroundShading, ShadowGroundBackFaceCull), which Coin
     // states as an SoLightModel and an SoShapeHints above the quad
@@ -133,8 +179,11 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     // textured program with the same tiled UVs (white color
     // stand-in when there is no ground texture, the scene's
     // lone-bump-map pattern).
-    bool textured = (light.groundTexture || light.groundBumpMap)
-        && bgfx::isValid(m_progMeshTex);
+    // A shadow-only ground has no lit surface to paint, so a ground
+    // texture or bump map has nothing to modulate.
+    bool textured = !shadowOnly
+        && (light.groundTexture || light.groundBumpMap)
+        && bgfx::isValid(progTex);
     bgfx::TransientVertexBuffer uvb;
     if (textured) {
         TexCoordVertex::init();
@@ -200,6 +249,52 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
         bgfx::setTexture(5, s_texOcclusion, m_whiteTex);
     }
 
+    // The rim fade, in the quad's OWN axes -- read back off the corners
+    // rather than recomputed from the extent, so the fade cannot land
+    // anywhere but on the quad that was actually built:
+    //
+    //   corners[1] - corners[0] = 2 hx U     (the quad's u axis)
+    //   corners[3] - corners[0] = 2 hy V
+    //   centre                  = (corners[0] + corners[2]) / 2
+    //
+    // The uniform carries U/hx with the centre folded into w, so a
+    // fragment's coordinate is dot(xyz, pos) + w: +-1 at the rim. In
+    // VIEW space, because that is the position every ground program
+    // already has -- the mesh variants for their lighting, the prepass
+    // for its depth. A rotation does not change a vector's length, so
+    // the axes stay normalized across it.
+    const bgfx::ProgramHandle prog = shadowOnly
+        ? m_progGroundShadow : (textured ? progTex : progPlain);
+    const bool faded = wantFade
+        && (prog.idx == m_progGroundFade.idx
+            || prog.idx == m_progGroundFadeTex.idx);
+    if (faded) {
+        const float *V = viewMatrix;
+        float centre[3], axU[3], axV[3];
+        const float invU = 0.5f / (halfExtent[0] * halfExtent[0]);
+        const float invV = 0.5f / (halfExtent[1] * halfExtent[1]);
+        for (int i = 0; i < 3; ++i) {
+            centre[i] = 0.5f * (corners[0][i] + corners[2][i]);
+            axU[i] = (corners[1][i] - corners[0][i]) * invU;
+            axV[i] = (corners[3][i] - corners[0][i]) * invV;
+        }
+        float cv[3], uview[3], vview[3];
+        for (int r = 0; r < 3; ++r) {
+            cv[r] = V[r] * centre[0] + V[4 + r] * centre[1]
+                  + V[8 + r] * centre[2] + V[12 + r];
+            uview[r] = V[r] * axU[0] + V[4 + r] * axU[1]
+                     + V[8 + r] * axU[2];
+            vview[r] = V[r] * axV[0] + V[4 + r] * axV[1]
+                     + V[8 + r] * axV[2];
+        }
+        const float fadeU[4] = {uview[0], uview[1], uview[2],
+            -(uview[0] * cv[0] + uview[1] * cv[1] + uview[2] * cv[2])};
+        const float fadeV[4] = {vview[0], vview[1], vview[2],
+            -(vview[0] * cv[0] + vview[1] * cv[1] + vview[2] * cv[2])};
+        bgfx::setUniform(u_groundFadeU, fadeU);
+        bgfx::setUniform(u_groundFadeV, fadeV);
+    }
+
     float identity[16];
     bx::mtxIdentity(identity);
     bgfx::setTransform(identity);
@@ -213,18 +308,36 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     // the mat.ccw case of every other cull site here.
     if (light.groundBackFaceCull)
         state |= BGFX_STATE_CULL_CW;
-    if (light.groundTransparency > 0.0f)
+    if (shadowOnly) {
+        // Multiplied, not blended: the shadow attenuates the frame
+        // behind it (fs_fc_groundshadow), which is the only way it is
+        // darker than the background whatever the background is.
+        state |= BGFX_STATE_BLEND_MULTIPLY;
+    }
+    else if (light.groundTransparency > 0.0f || faded) {
+        // Faded grounds blend whatever their transparency says: the rim
+        // is an alpha ramp, and an opaque ground would draw it as a
+        // hard edge one shade lighter.
         state |= BGFX_STATE_BLEND_ALPHA;
+    }
     bgfx::setState(state);
-    bgfx::submit(vid(ViewOpaque),
-                 textured ? m_progMeshTex : m_progMesh);
+    bgfx::submit(vid(ViewOpaque), prog);
     ++drawcount;
 
     // The volumetric raymarch ends rays at the prepass depth, so the
     // ground must be a prepass source too or shafts would continue
     // through it (SSAO alone keeps the ground out of the prepass —
-    // it neither receives nor casts AO, preserved behavior).
-    if (prepass && bgfx::isValid(m_progPrepass)) {
+    // it neither receives nor casts AO, preserved behavior). A
+    // shadow-only ground is not a surface: a shaft SHOULD carry on
+    // through where there is nothing to stop it.
+    // A faded rim is not there, so it must not occupy space here
+    // either: the raymarch ends its rays on this depth, and a shaft
+    // has to carry on through a ground nobody can see. Same fade
+    // uniforms, already set above.
+    const bgfx::ProgramHandle prepassProg =
+        faded && bgfx::isValid(m_progGroundFadePrepass)
+            ? m_progGroundFadePrepass : m_progPrepass;
+    if (prepass && !shadowOnly && bgfx::isValid(prepassProg)) {
         bgfx::setTransform(identity);
         bgfx::setVertexBuffer(0, &tvb);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
@@ -232,9 +345,105 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
                        | BGFX_STATE_DEPTH_TEST_LESS
                        | (light.groundBackFaceCull ? BGFX_STATE_CULL_CW
                                                    : 0));
-        bgfx::submit(vid(ViewAOPrepass), m_progPrepass);
+        bgfx::submit(vid(ViewAOPrepass), prepassProg);
         ++drawcount;
     }
+}
+
+bool BGFXView::submitShadowGroundPlane(const float bmin[3],
+                        const float bmax[3],
+                        const Render::LightConfig &light,
+                        const Render::GroundCamera &cam)
+{
+    if (!bgfx::isValid(m_progGroundShadowPlane)
+            || !bgfx::isValid(u_groundPlane) || !viewMatrix)
+        return false;
+    // Same placement as the quad, minus the extent -- an infinite
+    // receiver has none, and not having one is what this path is for.
+    float point[3], normal[3];
+    if (!light.groundPlane(bmin, bmax, cam, point, normal))
+        return false;
+
+    // The plane in VIEW space, which is where the shader works and
+    // where fcSceneShadow wants its position. The view matrix is
+    // rigid, so the normal transforms as a direction with the same
+    // 3x3 -- no inverse transpose.
+    const float *V = viewMatrix;
+    float pv[3], nv[3];
+    for (int r = 0; r < 3; ++r) {
+        pv[r] = V[r] * point[0] + V[4 + r] * point[1]
+              + V[8 + r] * point[2] + V[12 + r];
+        nv[r] = V[r] * normal[0] + V[4 + r] * normal[1]
+              + V[8 + r] * normal[2];
+    }
+    // dot(n, p) + w == 0 on the plane, so w is the eye's own signed
+    // distance from it negated: the eye is the view-space origin.
+    const float planeW = -(nv[0] * pv[0] + nv[1] * pv[1] + nv[2] * pv[2]);
+
+    // A one-sided ground shuts out a camera underneath it. On a plane
+    // that is a whole-pass decision rather than a per-fragment one,
+    // and which side the camera sees depends on the projection. Every
+    // perspective ray fans out from the eye, so the eye's side of the
+    // plane (planeW) decides. Orthographic rays all run along the view
+    // axis and the eye's own place on that axis is arbitrary -- the
+    // navigation code moves it freely, and an eye slid past the plane
+    // while the view still looks down on it made the shadow vanish on
+    // a boundary unrelated to the horizon -- so the plane's facing
+    // (its view-space normal against the view direction) decides, the
+    // same answer raster winding gives the quad path. The mode is
+    // still HANDLED -- returning false would draw the quad this path
+    // exists to avoid.
+    const bool persp = projMatrix && projMatrix[11] != 0.0f;
+    const bool backFacing = persp ? planeW <= 0.0f : nv[2] <= 0.0f;
+    if (light.groundBackFaceCull && backFacing)
+        return true;
+
+    static const bool dbgvis =
+        getenv("FC_BGFX_DEBUG_SHADOW_VIS") != nullptr;
+    const bool shadowed = shadowFrame && bgfx::isValid(shadowTex);
+    // No shadow map, no shadow: the quad would still be submitted for
+    // its depth, and this has none to leave behind.
+    if (!shadowed && !dbgvis)
+        return true;
+
+    float color[4];
+    unpackAuthoredColor(light.groundColor, color, colorManaged());
+    // The shadow-only ground spends the alpha slot on how dark the
+    // shadow itself lands (Coin's SoShadowTransparency), since there
+    // is no lit ground to make transparent.
+    color[3] = std::min(1.0f, std::max(0.0f,
+                1.0f - light.shadowTransparency));
+    float plane[4] = {nv[0], nv[1], nv[2], planeW};
+    float shadowParams[4] = {shadowed ? 1.0f : 0.0f, shadowEpsilon,
+                             0.003f, dbgvis ? 1.0f : 0.0f};
+    float evsm[4] = {shadowWarpFrame, shadowThreshold,
+                     shadowSpreadUv, shadowSpreadMode};
+    float lightDir[4] = {lightDirView[0], lightDirView[1],
+                         lightDirView[2], 1.0f};
+    bgfx::setUniform(u_groundPlane, plane);
+    bgfx::setUniform(u_matColor, color);
+    bgfx::setUniform(u_shadowParams, shadowParams);
+    bgfx::setUniform(u_evsm, evsm);
+    bgfx::setUniform(u_lightDir, lightDir);
+    bgfx::setUniform(u_lightPos, lightPosView);
+    bgfx::setUniform(u_lightColor, lightColorI);
+    bgfx::setUniform(u_shadowMatrix, shadowMtx);
+    bgfx::setTexture(3, s_texShadow, shadowed ? shadowTex : m_whiteTex);
+    if (bgfx::isValid(s_texShadowTint))
+        bgfx::setTexture(7, s_texShadowTint,
+                         bgfx::isValid(shadowTintTex) ? shadowTintTex
+                                                      : m_whiteTex);
+    // Multiplied like the quad -- a shadow darkens what is behind it
+    // whatever that is. Depth is TESTED (the shader states the plane's
+    // own, so geometry in front of it occludes the shadow) and not
+    // WRITTEN: a shadow is not a surface, and the volumetric raymarch
+    // ends its rays on the prepass depth, which this is right to stay
+    // out of.
+    fullscreen(ViewOpaque, m_progGroundShadowPlane,
+               BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+               | BGFX_STATE_DEPTH_TEST_LESS
+               | BGFX_STATE_BLEND_MULTIPLY);
+    return true;
 }
 
 void BGFXView::submitShadowCaster(const Render::DrawCall &draw)

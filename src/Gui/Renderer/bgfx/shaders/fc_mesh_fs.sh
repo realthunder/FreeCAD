@@ -30,6 +30,10 @@
 SAMPLER2DARRAY(s_texFace, 10);
 uniform vec4 u_faceTexParams;
 
+#ifdef GROUND_FADE
+#include "fc_ground_fade.sh"
+#endif
+
 #ifdef TEXTURE
 SAMPLER2D(s_texColor, 0);
 // x = texture environment (0 modulate, 1 decal, 2 blend, 3 replace),
@@ -348,6 +352,17 @@ void main()
 				discard;
 		}
 	}
+
+#ifdef GROUND_FADE
+	// The ground's rim, dissolved (fc_ground_fade.sh).
+	alpha *= fcGroundFade(v_vpos);
+	// Discarded rather than left to blend at zero: the quad writes
+	// depth, and an invisible ground that still occludes what is behind
+	// it is a worse artifact than the edge this fade removes. Early-Z
+	// is what it costs, which for one quad is nothing.
+	if (alpha < 0.004)
+		discard;
+#endif
 
 #ifdef OIT
 	// Depth weight, McGuire's eq. (10): near fragments dominate. The

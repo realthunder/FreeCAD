@@ -4354,6 +4354,9 @@ public:
         fn(u_waterAbsorb, LifeProgram);
         fn(u_waterRipple, LifeProgram);
         fn(u_reflParams, LifeProgram);
+        fn(u_groundPlane, LifeProgram);
+        fn(u_groundFadeU, LifeProgram);
+        fn(u_groundFadeV, LifeProgram);
         fn(s_texGlassFront, LifeProgram);
         fn(s_texGlassBack, LifeProgram);
         fn(u_glassParams, LifeProgram);
@@ -4396,6 +4399,11 @@ public:
         fn(m_progWater, LifeProgram);
         fn(m_progGlass, LifeProgram);
         fn(m_progGroundRefl, LifeProgram);
+        fn(m_progGroundShadow, LifeProgram);
+        fn(m_progGroundShadowPlane, LifeProgram);
+        fn(m_progGroundFade, LifeProgram);
+        fn(m_progGroundFadeTex, LifeProgram);
+        fn(m_progGroundFadePrepass, LifeProgram);
         // Shadow resources: the framebuffers before their textures.
         fn(shadowFbo, LifeSized);
         fn(shadowBlurFbo, LifeSized);
@@ -5303,7 +5311,23 @@ public:
     // any receiver, classic shading regardless of the PBR mode.
     void submitShadowGround(const float bmin[3], const float bmax[3],
                             const Render::LightConfig &light,
+                            const Render::GroundCamera &cam,
                             bool prepass = false);
+
+    /// The shadow-only ground WITHOUT a quad: a fullscreen pass that
+    /// intersects the ground plane per pixel, samples the shadow map
+    /// there and multiplies the frame down by it.
+    ///
+    /// The mode wants an infinite receiver and nothing else -- no
+    /// surface, no texture, no depth of its own -- which is exactly
+    /// what a quad is bad at: it needs sizing, it ends somewhere, and
+    /// the sizing is what tied the ground to the scene bounds. Every
+    /// reason to rasterize one is switched off here, so this path
+    /// drops it. Returns false when it cannot run (no program), so the
+    /// caller can fall back to the quad.
+    bool submitShadowGroundPlane(const float bmin[3], const float bmax[3],
+                                 const Render::LightConfig &light,
+                                 const Render::GroundCamera &cam);
 
     // Rasterize a shadow casting triangle draw into the variance shadow
     // map under the light camera (the ViewShadow transform). Both faces
@@ -5751,7 +5775,8 @@ public:
     /// visible; the reflection texture's alpha (0 = nothing mirrored)
     /// scales the blend with the intensity.
     void submitGroundReflOverlay(const float bmin[3], const float bmax[3],
-                                 const Render::LightConfig &light);
+                                 const Render::LightConfig &light,
+                                 const Render::GroundCamera &cam);
 
     // Submission passes mirroring SoFCRenderer's delayed render loop.
     enum SubmitPass {
@@ -6641,6 +6666,28 @@ public:
     bgfx::ProgramHandle m_progWaterCopy = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progWater = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progGroundRefl = BGFX_INVALID_HANDLE;
+    /// Shadow-only ground (LightConfig::groundShadowOnly): the same
+    /// quad as the solid one, painting the shadow alone.
+    bgfx::ProgramHandle m_progGroundShadow = BGFX_INVALID_HANDLE;
+    /// The same thing without the quad -- a fullscreen pass that finds
+    /// the ground plane per pixel (submitShadowGroundPlane).
+    bgfx::ProgramHandle m_progGroundShadowPlane = BGFX_INVALID_HANDLE;
+    /// The DRAWN ground, in the mesh program's ground variants: the
+    /// same shading with the rim faded out (GROUND_FADE). Variants
+    /// rather than a flag on the scene's own mesh program, so the fade
+    /// uniforms cannot leak into a scene draw.
+    bgfx::ProgramHandle m_progGroundFade = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progGroundFadeTex = BGFX_INVALID_HANDLE;
+    /// ... and in the prepass, where the rim is discarded rather than
+    /// faded: what is not drawn must not stop a volumetric shaft
+    /// either.
+    bgfx::ProgramHandle m_progGroundFadePrepass = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_groundFadeU = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_groundFadeV = BGFX_INVALID_HANDLE;
+    /// The ground plane in VIEW space for that pass: xyz the unit
+    /// normal, w the offset, so a point is on it where
+    /// dot(xyz, p) + w == 0.
+    bgfx::UniformHandle u_groundPlane = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texScene = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texRefl = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_waterSurf = BGFX_INVALID_HANDLE;
@@ -8740,6 +8787,15 @@ public:
     // viewer keeps redrawing while set so the animation advances.
     bool animatedFrame = false;
     float bboxMin[3], bboxMax[3];
+    /// The camera the last frame drew with, kept for the shadow
+    /// ground's camera-fitted sizing (LightConfig::groundFollowCamera).
+    ///
+    /// Kept rather than passed because boundBox() -- the scene bounds
+    /// the viewer's auto near/far reads -- is asked OUTSIDE a frame,
+    /// and it has to build the same quad the frame did. Invalid until
+    /// the first frame, which leaves the ground on its scene-bounds
+    /// sizing exactly once.
+    Render::GroundCamera groundCam;
     /// The element gates (docs/SceneStreaming.md #13b), pushed in from
     /// the host -- the Gui bridge on the desktop, the URL parameters in
     /// the standalone viewer. Defaults are the pre-feature behaviour:

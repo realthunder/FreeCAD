@@ -359,6 +359,74 @@ volumetric jitter, user shaders via `u_fcTime`) reads one shared
 animation clock. `RenderDebug_FreezeFrame` pins it to 0 and suppresses
 self-scheduled redraws; two frozen frames are byte-identical.
 
+### The shadow ground, in two forms
+
+The scene light's receiver (`RenderShadow_*`) is drawn by the backend,
+not fed to it -- the Coin-era ground lived outside the captured scene
+graph. It is not, and never was, a mesh object: `submitShadowGround`
+allocates a **six-vertex transient buffer** per frame over the four
+corners `LightConfig::groundQuad` computes. The triangles cost nothing;
+what costs is the fill, and what used to hurt is that the quad had to
+be **sized**, which is what tied the ground to the scene's bounding box.
+
+So there are two forms of it, and the mode picks:
+
+- **Shadow-only** (`groundShadowOnly()`, i.e. `GroundTransparency` 1 --
+  Coin's TRANSPARENT_SHADOWED) draws no surface at all, so it needs no
+  quad: `submitShadowGroundPlane` runs a **fullscreen pass**
+  (`fs_fc_groundshadow_plane`) that intersects the ground plane per
+  pixel, samples the shadow map there and multiplies the frame down by
+  it. The receiver is infinite -- no plate edge, no sizing, and nothing
+  about the scene's extent reaches it. It writes `gl_FragDepth` so
+  geometry in front still occludes the shadow, and writes no depth
+  **buffer**: a shadow is not a surface, and the volumetric raymarch is
+  meant to carry on through it. A one-sided ground (`GroundBackFaceCull`)
+  culls per *pass* here rather than per fragment -- every ray from an eye
+  below a plane hits its back face.
+- **A drawn ground** -- textured, bump-mapped, reflective, occluding --
+  keeps the quad, because three things need its depth: it occludes, it
+  is a prepass source so volumetric shafts end on it, and the ground
+  reflection overlay depth-tests **EQUAL** against its interpolated
+  corners. That last one is why `groundQuad` is one function and not
+  three formulas: a corner that disagreed by a float would drop the
+  reflection. It is also why the shadow-only path stands down whenever
+  `groundReflection` is on.
+
+The drawn ground's **rim dissolves** (`fc_ground_fade.sh`): an endless
+ground may not END anywhere the eye can see, and a finite quad would
+otherwise draw a hard line across the view. The coordinate is
+normalized against the quad's own axes, so the band is 0 at the centre
+and 1 at the rim whatever the size, orientation or aspect, and nothing
+about it moves as the camera does. It rides three **ground-only program
+variants** -- `fs_fc_mesh_ground`, `fs_fc_mesh_ground_tex` and
+`fs_fc_prepass_ground` -- rather than a flag on the scene's own mesh
+program, because a fade uniform there would be one more global that
+every scene draw has to clear (the trap `submitShadowGround` already
+spends a dozen lines avoiding). The prepass variant **discards** the
+rim instead of fading it: what is not drawn must not stop a volumetric
+shaft either. Only an auto-sized, camera-fitted ground fades -- an
+explicit extent is a plate somebody asked for, edge included.
+
+Auto **sizing** measures the camera, not the scene
+(`groundFollowCamera`, `RenderShadow_GroundSizeFollowCamera`, default
+on): the quad centres on **what the camera is looking at** -- where its
+centre ray meets the plane -- and reaches `groundScale` times the sum of
+what the viewport spans there and how far in front of the eye that is.
+Looking down, those two points coincide and the quad is the view's own
+footprint; looking along the plane they are far apart, and centring
+under the eye would put the whole visible ground outside the quad. The
+reach is capped at `kGroundMaxReach` times the eye's height, because
+the ray's answer runs to infinity at the horizon -- past that the fade
+below takes over, which is what a receding plane should do anyway. It
+reads as endless and -- the reason it exists -- cannot be moved by a
+bounding box that twitches. Only the extent and the centre come from the camera; the
+plane's **height** is still the scene's, one unit under its floor.
+There is no feedback loop with the viewer's auto near/far, which unions
+the quad into `BGFXRenderer::boundBox`: the fit reads the eye's distance
+to the plane and its field of view, neither of which a near/far plane
+can move. `GroundSizeFollowCamera` off restores the Coin sizing,
+`groundScale` times the largest scene dimension.
+
 ### 3.1 The view-id budget
 
 bgfx addresses views by id out of a fixed table, and submitting an id

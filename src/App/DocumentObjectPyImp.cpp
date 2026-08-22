@@ -35,6 +35,7 @@
 #include "GeoFeature.h"
 #include "GeoFeatureGroupExtension.h"
 #include "GroupExtension.h"
+#include "InputStratum.h"
 
 
 // inclusion of the generated files (generated out of DocumentObjectPy.xml)
@@ -909,6 +910,33 @@ Py::Boolean DocumentObjectPy::getMustExecute() const
 {
     try {
         return {getDocumentObjectPtr()->mustExecute() ? true : false};
+    }
+    catch (const Base::Exception& e) {
+        throw Py::RuntimeError(e.what());
+    }
+}
+
+PyObject*  DocumentObjectPy::getPropertyReferrers(PyObject *args) const
+{
+    char *name;
+    if (!PyArg_ParseTuple(args, "s", &name))
+        return nullptr;
+
+    auto obj = getDocumentObjectPtr();
+    if (!obj->getPropertyByName(name)) {
+        PyErr_Format(PyExc_AttributeError, "Object has no property '%s'", name);
+        return nullptr;
+    }
+
+    try {
+        Py::List list;
+        for (const auto &ref : InputStratum::findReferrers(obj, name)) {
+            Py::Tuple pair(2);
+            pair.setItem(0, Py::asObject(ref.first->getPyObject()));
+            pair.setItem(1, Py::String(ref.second));
+            list.append(pair);
+        }
+        return Py::new_reference_to(list);
     }
     catch (const Base::Exception& e) {
         throw Py::RuntimeError(e.what());

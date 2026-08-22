@@ -179,7 +179,7 @@ Params = [
     ParamHex('DefaultLinkColor', 0x66FFFFFF),
     ParamHex('DefaultShapeLineColor', 0x191919FF),
     ParamHex('DefaultShapeVertexColor', 0x191919FF),
-    ParamHex('DefaultShapeColor', 0xCCCCCCFF),
+    ParamHex('DefaultShapeColor', 0xCCCCE6FF),
     ParamInt('DefaultShapeTransparency', 0),
     ParamInt('DefaultShapeLineWidth', 2),
     ParamInt('DefaultShapePointSize', 2),
@@ -345,10 +345,29 @@ Params = [
        "Specifies the physcal length of the ground texture image size.\n"
        "Texture mappings beyond this size will be wrapped around",
        title='Ground texture size', proxy=ParamSpinBox(0.0, 1e7, 10.0)),
-    ParamFloat('ShadowGroundTransparency',  0.0,
-       "Specifics the ground transparency. When set to 0, the non-shadowed part\n"
-       "of the ground will be complete transparent, showing only the shadowed part\n"
-       "of the ground with some transparency.",
+    ParamFloat('ShadowTransparency',  0.2,
+       "How transparent the shadow itself is, where the ground carries the\n"
+       "shadow and nothing else (Ground transparency at 1). 0 paints a solid\n"
+       "shadow, 1 an invisible one; the unshadowed ground is hidden either\n"
+       "way. Coin spelled this SoShadowTransparency and defaulted it to the\n"
+       "same 0.2.\n"
+       "\n"
+       "A drawn ground ignores it -- there the shadow is the ground shaded,\n"
+       "and how dark it goes is a matter of the light.",
+       title='Shadow transparency', proxy=ParamSpinBox(0.0, 1.0, 0.1)),
+    ParamFloat('ShadowGroundTransparency',  1.0,
+       "How much of the shadow receiver plane is drawn beside the shadow\n"
+       "itself.\n"
+       "\n"
+       "1 (the default) is the receiver a view of a part usually wants: the\n"
+       "ground carries the shadow and nothing else, so there is no plane in\n"
+       "the frame and no horizon behind the model -- only the shadow, at a\n"
+       "fixed 0.8 opacity where it is fully dark. Anything below 1 draws a\n"
+       "solid ground of that transparency and shades it, which is what a\n"
+       "presentation image of a whole scene wants.\n"
+       "\n"
+       "A ground reflection needs a surface to blend onto, so it keeps the\n"
+       "solid ground whatever this says.",
        title='Ground transparency', proxy=ParamSpinBox(0.0, 1.0, 0.1)),
     ParamBool('ShadowGroundShading',  True,
         "Render ground with shading. If disabled, the ground and the shadow casted\n"

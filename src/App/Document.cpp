@@ -109,6 +109,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include "DocumentParams.h"
 #include "ExpressionParser.h"
 #include "GeoFeature.h"
+#include "InputStratum.h"
 #include "License.h"
 #include "Link.h"
 #include "MergeDocuments.h"
@@ -4025,6 +4026,36 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
     Base::ObjectStatusLocker<Document::Status, Document> exe(Document::Recomputing, this);
     signalBeforeRecompute(*this);
 
+    // The input recompute stratum. Every parameter settles here, in its own
+    // topological order, before a single execute() runs -- see
+    // docs/InputProperties.md section 5. It has to precede getDependencyList()
+    // below: the touches it raises are what put an object into the work list,
+    // and a pure parameter edit would otherwise sort to an empty one.
+    std::vector<DocumentObject*> inputReferrers;
+    {
+        InputStratum stratum(this);
+        std::string error;
+        DocumentObject *culprit = nullptr;
+        if (!stratum.build(error, &culprit)
+                || !stratum.evaluate(force || testStatus(Document::Restoring),
+                                     inputReferrers, error, &culprit))
+        {
+            FC_ERR("Input stratum: " << error);
+            if (culprit)
+                d->addRecomputeLog(error, culprit);
+            if (hasError)
+                *hasError = true;
+        }
+    }
+    for (auto obj : inputReferrers) {
+        // The same marking the object phase uses for an inList object, and
+        // deliberately not enforceRecompute(): the binding is re-evaluated
+        // either way, and only a value that really moved goes any further.
+        obj->StatusBits.set(ObjectStatus::Enforce);
+        obj->StatusBits.set(ObjectStatus::Touch);
+        signalTouchedObject(*obj);
+    }
+
 #if 0
     //////////////////////////////////////////////////////////////////////////
     // FIXME Comment by Realthunder:
@@ -4044,7 +4075,17 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
     }
     std::reverse(topoSortedObjects.begin(),topoSortedObjects.end());
 #else
-    auto topoSortedObjects = getDependencyList(objs.empty()?d->objectArray:objs,DepSort|options);
+    // A referrer the stratum just touched has to be in the sorted list, or the
+    // parameter change it is waiting on lands nowhere. Only a partial
+    // recompute can miss it; the full list already holds everything.
+    std::vector<DocumentObject*> partialObjs;
+    if (!objs.empty() && !inputReferrers.empty()) {
+        partialObjs = objs;
+        partialObjs.insert(partialObjs.end(), inputReferrers.begin(), inputReferrers.end());
+    }
+    const auto &sortInput = !partialObjs.empty() ? partialObjs
+                                                 : (objs.empty() ? d->objectArray : objs);
+    auto topoSortedObjects = getDependencyList(sortInput,DepSort|options);
 #endif
     for(auto obj : topoSortedObjects)
         obj->setStatus(ObjectStatus::PendingRecompute,true);
@@ -4404,6 +4445,18 @@ int Document::_recomputeFeature(DocumentObject* Feat)
             } else {
                 Feat->_enforceRecompute = false;
                 returnCode = Feat->recompute();
+                // An input property changed inside execute(). Property::hasSetValue()
+                // threw, but AtomicPropertyChange's destructor swallows exceptions,
+                // so the latch is what makes this reliably fatal.
+                // See docs/InputProperties.md section 6.
+                auto violation = DocumentObject::takeInputViolation();
+                if (!violation.empty()) {
+                    std::string msg = "Input property " + violation
+                        + " changed during recompute";
+                    FC_ERR(msg << " in " << Feat->getFullName());
+                    d->addRecomputeLog(msg, Feat);
+                    return 1;
+                }
             }
 
             if(returnCode == DocumentObject::StdReturn)
