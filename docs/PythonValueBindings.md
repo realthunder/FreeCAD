@@ -3,8 +3,9 @@
 How a FreeCAD property gives Python something that is cheap to read, safe to
 hold, and able to write back -- and what the binding generator does not do
 for you. Written from the `App::MaterialList` work (2026-08-20), which is
-the first type in the tree built this way; `Shape.Faces` is the next one it
-is meant for.
+the first type in the tree built this way. Section 5 is the second,
+`Shape.Faces` (2026-08-22), and what the measurement there changed about
+the plan.
 
 ## 1. The problem, in the shape it keeps taking
 
@@ -172,22 +173,84 @@ which is exactly the existing `Placement` semantics, stale-clobber included.
 - **`slots` is a Qt macro** that expands to nothing, and the error it makes
   names the `.` after your variable rather than the variable.
 
-## 5. Applying this to the shape lists
+## 5. The shape lists, as built (2026-08-22)
 
-`Shape.Faces` is the same problem one layer up, and the pieces map over:
+`Shape.Faces` and its eight siblings now answer with a `Part.ShapeList`
+(`src/Mod/Part/App/ShapeList.h`, bound by `ShapeListPy.xml`), and
+`getChildShapes()` with the same. A list is a **view**: it holds the parent
+shape by value, the element type and the type to avoid, and asks the
+parent's cache for an element only when one is wanted. The first write
+materialises every element into storage of its own, shared copy-on-write
+(`Base::COWValue<std::vector<TopoShape>>`) with any copy of the list.
 
-- `TopoShape::Cache::Info` already holds the `std::vector<TopoShape>` a
-  `Faces` list would be a view of, and `TopoShape` itself is already
-  `shared_ptr`-shared, so the value class exists.
-- A `TopoShapeListPy` with `sq_length` / `sq_item` would turn N allocations
-  per attribute read into O(1) plus one per index actually touched.
-- Sub-shape wrappers are `setNotTracking()` today
-  (`TopoShapePyImp.cpp:2892`), which is the existing decision that they are
-  snapshots. `trackReturnedItem` respects that flag, so the item link is
-  opt-in per type rather than something the list forces.
-- `PropertyTopoShapeList::getPyObject()` (`PropertyTopoShapeList.cpp:117`)
-  is a second consumer with the same shape.
+### 5.1 Measure first -- the win was not where the design said
 
-The one thing to decide per type is whether an item should be a live view or
-a copy with a link. For materials it had to be a copy; for a face, where the
-storage really does hold a `TopoShape`, a view is possible.
+The plan above framed this as "N allocations per attribute read". A
+measurement on the optimized tree (RelWithDebInfo, OCCT 8.0.1) said
+otherwise: `Shape.Faces` cost **7.2 us per element**, flat, and a `perf`
+profile put 72% of that in `TopoShape::Cache`'s constructor and destructor
+-- an array of 90 OCCT maps -- with the Python objects nowhere near the
+top. A gdb breakpoint count made it exact: **4800 cache constructions per
+`s.Faces` on a 600 face shape, eight per face.**
+
+They came from `TopoShape::operator=`, which opened with
+`setShape(sh._Shape, true)`. That built one cache for the shape being
+replaced and a second for the new one -- and then the next line overwrote
+`_Cache` with the source's anyway. For a shape with an element map it was
+worse: the trailing `resetElementMap()` saw the map "change" from null and
+cleared the infos of the very cache it had just adopted, throwing away the
+source's own sub shapes. The fix is that an assignment now takes the
+source's state verbatim and touches nothing else.
+
+**So there were two independent wins, and they are separable:**
+
+| on a 6000 face compound | before | after | |
+|---|---|---|---|
+| `s.Face1` -- one element, no list involved | 7.22 us | 0.46 us | the copy fix alone, 16x |
+| `list(s.Faces)` -- every element | 46.2 ms | 1.97 ms | the copy fix alone, 23x |
+| `len(s.Faces)` | 45.8 ms | 0.83 us | the lazy list |
+| `s.Faces[0]` | 45.9 ms | 1.55 us | the lazy list |
+
+The lesson is the one the plan's own note asked for and nearly missed:
+**frame the win off a profile, not off the shape of the previous fix.**
+Had the list gone in alone, every element would still have cost 7.2 us and
+the iteration case -- which is most real code -- would not have moved.
+
+### 5.2 What the list has to be, to replace a list
+
+Read-only compatibility was the whole risk, and two things carry it:
+
+- **Slices answer with a plain `list`.** That is what slicing a list gives,
+  and what every caller that slices one goes on to do with it.
+- **`nb_add` is implemented, not just `sq_concat`.** Python asks both
+  operands' `nb_add` before it falls back to the left one's `sq_concat`,
+  and `list` has no `nb_add`; without it `[edge] + shape.Edges` raises
+  TypeError. That expression is in Draft and BIM today
+  (`draftgeoutils/faces.py:148`, `BasicShapes/ShapeContent.py:87`), and a
+  chain like `a.Edges + [e] + b.Edges` reaches it on the second `+`.
+  Declaring `NumberProtocol` means defining all nineteen handlers; the
+  sixteen that mean nothing for a list return `NotImplemented`, which is
+  what python turns into the TypeError a wrong operand deserves.
+- **The mutators materialise.** `list.pop()` on `shape.Vertexes` is in the
+  tree (`PartDesign/Scripts/Gear.py:195`), so `append`, `extend`, `insert`,
+  `pop`, `remove`, `reverse`, `sort`, `clear`, `l[i] = s` and `del l[i]`
+  all work -- each turning the view into a value first. `sort` hands its
+  arguments to `list.sort` rather than reimplementing `key=`/`reverse=`.
+
+The one break that cannot be papered over is `isinstance(x, list)`, which
+is now False. Nothing in `src/` does that to a shape list, and no C++ site
+uses `PyList_Check` on one (`Mod/Part` has none at all; the 31 in the tree
+are all other types), but a third-party macro could.
+
+### 5.3 What did NOT transfer from the material list
+
+- **No change signalling, no owner, no item write-back.** These lists are
+  read-only views of a shape, not of a property, so `aboutToSetValue`, the
+  storage-identity trick and `trackReturnedItem` have nothing to do here.
+  The `rd()`/`wd()`/`nd()` accessor discipline likewise has no reader.
+- **The parent is held by value**, which is what makes a view a snapshot:
+  reassigning the shape the list came from does not reach the list. It is
+  free because a `TopoShape` copy is a few `shared_ptr`s -- once the
+  assignment above stopped building caches.
+- **`PropertyTopoShapeList::getPyObject()`** is still the old shape of the
+  problem and is untouched.
