@@ -50,6 +50,7 @@
 #include <Base/Tools.h>
 #include <Base/Reader.h>
 
+#include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObserver.h>
 #include <App/DocumentObject.h>
@@ -2465,8 +2466,31 @@ void TreeWidget::keyPressEvent(QKeyEvent *event)
     QTreeWidget::keyPressEvent(event);
 }
 
+namespace {
+// The tree is one of the few places that changes a document without going
+// through a Command, so Command::invoke()'s LiveImport gate does not cover
+// it: a drop reparents, and a double click can open an editor. Both are
+// reachable now that a live import leaves the mouse working, and both would
+// interleave with the import's own create operations.
+bool refuseWhileImporting()
+{
+    for (auto doc : App::GetApplication().getDocuments()) {
+        if (doc->testStatus(App::Document::LiveImport)) {
+            if (auto mw = getMainWindow()) {
+                mw->showMessage(
+                    QObject::tr("The document is busy importing, please wait..."), 3000);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+}  // namespace
+
 void TreeWidget::mouseDoubleClickEvent (QMouseEvent * event)
 {
+    if (refuseWhileImporting())
+        return;
     QTreeWidgetItem* item = itemAt(event->pos());
     if (item && !onDoubleClickItem(item))
         QTreeWidget::mouseDoubleClickEvent(event);
@@ -3329,6 +3353,9 @@ static bool canDragFromParents(DocumentObjectItem *parentItem,
 void TreeWidget::dropEvent(QDropEvent *event)
 {
     ToolTip::hideText();
+
+    if (refuseWhileImporting())
+        return;
 
     bool replace = true;
     int reorder = 0;
