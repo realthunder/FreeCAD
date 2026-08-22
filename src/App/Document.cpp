@@ -559,7 +559,8 @@ void Document::_abortTransaction()
         mUndoMap.erase(d->activeUndoTransaction->getID());
         delete d->activeUndoTransaction;
         d->activeUndoTransaction = nullptr;
-        signalAbortTransaction(*this);
+        // signalAbortTransaction is emitted by the caller, once the enclosing
+        // TransactionGuard has flushed the property changes this rollback deferred
     }
 }
 
