@@ -1078,10 +1078,17 @@ Base::BoundBox3d TopoShape::getBoundBox() const
 {
     Base::BoundBox3d box;
     try {
-        // If the shape is empty an exception may be thrown
         Bnd_Box bounds;
         BRepBndLib::Add(_Shape, bounds);
         bounds.SetGap(0.0);
+        if (bounds.IsVoid()) {
+            // A shape with nothing in it has no bounding box, and saying so
+            // is not a failure -- Get() would throw, and that throw used to
+            // be caught and logged as an error. An Arch import does it about
+            // 1570 times over, once per object carrying an expression on
+            // Shape.BoundBox that does not have its shape yet.
+            return box;
+        }
         Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
         bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
 
