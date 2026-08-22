@@ -54,7 +54,11 @@ SketcherUnderConstrainedColor: "#ffffff"
 StylesheetIconsColor: "white"
 TabbarBackgroundColor: "@PrimaryColorDarken5"
 InActiveTabBackgroundColor: "@PrimaryColorDarken2"
-ActiveTabBackgroundColor: "@3DViewBackgroundRefColor"
+# Not @3DViewBackgroundRefColor: the 3D view color is the user's, not the
+# theme's, so a dark viewport painted the selected tab dark in a light theme
+# (and the reverse). It never blended anyway once the view is a gradient --
+# BackgroundColor is the top of it, the tab sits at the bottom.
+ActiveTabBackgroundColor: "@PrimaryColorLighten3"
 TextDisabledColor: "darken(@TextForegroundColor,120)"
 TextEditFieldBackgroundColor: "@PrimaryColor"
 TextForegroundColor: "#ffffff"
