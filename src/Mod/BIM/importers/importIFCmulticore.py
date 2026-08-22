@@ -56,6 +56,22 @@ def open(filename):
 
 
 def insert(filename, docname=None, preferences=None):
+    """imports the contents of an IFC file in the given document
+
+    A wrapper around the import proper, so the live-view state is given back
+    on every path out of it, including the ones that raise. This is the
+    importer a plain file import actually reaches: importIFC.insert() routes
+    here whenever MULTICORE is set, and getMulticore() never returns 0.
+    """
+    from importers.importIFC import _set_live_import
+
+    try:
+        return _insert(filename, docname, preferences)
+    finally:
+        _set_live_import(None, False)
+
+
+def _insert(filename, docname=None, preferences=None):
     """imports the contents of an IFC file in the given document"""
 
     import ifcopenshell
@@ -106,6 +122,12 @@ def insert(filename, docname=None, preferences=None):
     iterator = ifcopenshell.geom.iterator(settings, ifcfile, cores)
     iterator.initialize()
     count = 0
+
+    # This loop keeps pumping events (progressbar.next below), so there is
+    # something to deliver input with; hand the 3D view back to the user for
+    # the duration. Released by insert()'s finally, on every path.
+    from importers.importIFC import _set_live_import
+    _set_live_import(FreeCAD.ActiveDocument, True)
 
     # process objects
     for item in iterator:
