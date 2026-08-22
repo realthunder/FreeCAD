@@ -1873,7 +1873,7 @@ public:
         setObjectName(QStringLiteral("titleBarLogo"));
         setFlat(true);
         setCursor(Qt::PointingHandCursor);
-        setFixedSize(3 * margin + logoSize + barsWidth, 35);
+        pinSize();
 
         // Long enough that crossing the button on the way somewhere else does
         // not open anything, short enough to feel like the button reacting.
@@ -1948,7 +1948,28 @@ protected:
         update();
     }
 
+    void changeEvent(QEvent *e) override
+    {
+        QPushButton::changeEvent(e);
+        if (e->type() == QEvent::StyleChange) {
+            // Every sheet here gives QPushButton a min-width, for the sake of
+            // dialog buttons, and applying one has QStyleSheetStyle write that
+            // over the size this button fixed for itself in the constructor.
+            // 80px where 50 was asked for: the logo and the bars end up adrift
+            // at one end of a button twice the width of what it draws. The
+            // size is asked for again here, after the sheet has had its say.
+            pinSize();
+        }
+    }
+
 private:
+    /// The room the logo and the three bars beside it need, and no more. See
+    /// changeEvent() for why this is not only set once.
+    void pinSize()
+    {
+        setFixedSize(3 * margin + logoSize + barsWidth, 35);  // NOLINT(*-magic-numbers)
+    }
+
     /*! How long the menu this button opens on hover ignores a click on the
      * button, in milliseconds. 0 in the parameter turns the guard off.
      *
