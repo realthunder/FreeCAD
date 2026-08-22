@@ -2297,8 +2297,20 @@ TopoDS_Shape Area::toShape(const CCurve& _c, const gp_Trsf* trsf, int reorient) 
             continue;
         }
         gp_Pnt pnext(v.m_p.x, v.m_p.y, 0);
-        if (pnext.SquareDistance(pt) <= Precision::SquareConfusion())
+        if (pnext.SquareDistance(pt) <= Precision::SquareConfusion()) {
+            // An arc that ends where it began is the whole circle, which is
+            // what libarea says when FitCircles has put one back together. A
+            // line that ends where it began is nothing.
+            if (!v.m_type)
+                continue;
+            gp_Pnt center(v.m_c.x, v.m_c.y, 0);
+            double r = center.Distance(pt);
+            if (r <= Precision::Confusion())
+                continue;
+            gp_Ax2 axis(center, gp_Dir(0, 0, v.m_type));
+            hEdges->Append(BRepBuilderAPI_MakeEdge(gp_Circ(axis, r)).Edge());
             continue;
+        }
         if (v.m_type == 0) {
             auto edge = BRepBuilderAPI_MakeEdge(pt, pnext).Edge();
             hEdges->Append(edge);

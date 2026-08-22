@@ -75,7 +75,13 @@
     AREA_PARAMS_CLIPPER_FILL
 
 #define AREA_PARAMS_FIT_ARCS \
-    ((bool,fit_arcs,FitArcs,true,"Enable arc fitting"))
+    ((bool,fit_arcs,FitArcs,true,"Enable arc fitting"))\
+    ((bool,fit_circles,FitCircles,false,\
+        "Join arcs that lie on one circle back into a single arc. Arc fitting\n"\
+        "never says more than half a turn at once, so a circle comes back as\n"\
+        "two arcs and an arc of more than 180 degrees comes back as two as\n"\
+        "well. With this on, a closed curve that is nothing but one circle\n"\
+        "becomes a single circular edge."))
 
 /** libarea algorithm option parameters */
 #define AREA_PARAMS_CAREA \
