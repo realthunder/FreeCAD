@@ -2131,13 +2131,18 @@ loadRadianceImage(const std::string &path)
 static std::shared_ptr<const Render::TextureImage>
 decodeParamImage(const std::string &path, bool keepGray)
 {
-    std::shared_ptr<Render::TextureImage> tex;
     // A Radiance picture carries real radiance and Qt cannot read
-    // one; everything else goes through Qt as before.
+    // one; everything else goes through Qt as before. Which of the two
+    // a file is, is decided by what is IN it and not by what it is
+    // called: an environment image embedded in a document is stored
+    // under the hash of its content and comes back with no extension at
+    // all, and a name test then handed a perfectly good .hdr to Qt,
+    // which reads nothing -- so a document reopened with its own
+    // environment in it came back unlit. loadRadianceImage() reads the
+    // signature line and gives up on anything that is not Radiance, so
+    // asking it first costs one open of the file.
+    std::shared_ptr<Render::TextureImage> tex = loadRadianceImage(path);
     QString qpath = QString::fromUtf8(path.c_str());
-    if (qpath.endsWith(QLatin1String(".hdr"), Qt::CaseInsensitive)
-            || qpath.endsWith(QLatin1String(".pic"), Qt::CaseInsensitive))
-        tex = loadRadianceImage(path);
     QImage img;
     if (tex) {
         // already loaded
