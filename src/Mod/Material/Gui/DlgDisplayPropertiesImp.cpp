@@ -22,8 +22,13 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <QAbstractItemView>
+#include <QCompleter>
+#include <QEvent>
+#include <QLineEdit>
 #include <QPixmap>
 #include <QSignalBlocker>
+#include <QStandardItemModel>
 #include <algorithm>
 #include <fastsignals/signal.h>
 
@@ -60,6 +65,15 @@ class DlgDisplayPropertiesImp::Private
 
 public:
     Ui::DlgDisplayProperties ui;
+    /// The finish presets, and the completer that offers them on the
+    /// finish line edit. One row per pattern: the label to type, the
+    /// rendered icon to recognise it by, and the pattern id under
+    /// Qt::UserRole.
+    QStandardItemModel* finishModel = nullptr;
+    QCompleter* finishCompleter = nullptr;
+    /// What the box held before the last keystroke, which is how a
+    /// deletion is told from an insertion -- see inlineCompleteFinish().
+    QString finishTyped;
     DlgDisplayPropertiesImp_Connection connectChangedObject;
     DlgDisplayPropertiesImp_Connection connectDeletedObject;
     DlgDisplayPropertiesImp_Connection connectDeleteDocument;
@@ -286,10 +300,23 @@ void DlgDisplayPropertiesImp::setupConnections()
             &MaterialTreeWidget::materialSelected,
             this,
             &DlgDisplayPropertiesImp::onMaterialSelected);
-    connect(d->ui.comboFinish,
-            qOverload<int>(&QComboBox::activated),
-            this,
-            &DlgDisplayPropertiesImp::onFinishPresetActivated);
+    // The other way into the same slot -- a name typed and committed --
+    // is wired here; the completer does not exist yet at this point and
+    // connects itself in setupFinishPresets(). editingFinished also
+    // catches the clear button, which empties the box: that is None.
+    connect(d->ui.editFinish, &QLineEdit::editingFinished, this, [this]() {
+        onFinishPresetActivated(d->ui.editFinish->text());
+    });
+    // Growing text gets the rest of the name written for it; shrinking
+    // text does not, or Backspace would be undone as fast as it is
+    // pressed.
+    connect(d->ui.editFinish, &QLineEdit::textEdited, this, [this](const QString& text) {
+        const bool grew = text.length() > d->finishTyped.length();
+        d->finishTyped = text;
+        if (grew) {
+            inlineCompleteFinish(text);
+        }
+    });
     connect(d->ui.spinFinishPitch,
             qOverload<double>(&QDoubleSpinBox::valueChanged),
             this,
@@ -736,34 +763,109 @@ QString finishPresetLabel(uint8_t pattern)
     }
 }
 
+/// The pattern a label names, or None for anything this build does not
+/// offer -- including the empty box, which is how None is written.
+uint8_t finishPatternFromLabel(const QString& label)
+{
+    const QString wanted = label.trimmed();
+    if (wanted.isEmpty()) {
+        return App::SurfaceFinish::None;
+    }
+    for (uint8_t pattern = 1; pattern < App::SurfaceFinish::PatternCount; ++pattern) {
+        if (finishPresetLabel(pattern).compare(wanted, Qt::CaseInsensitive) == 0) {
+            return pattern;
+        }
+    }
+    return App::SurfaceFinish::None;
+}
+
 }  // namespace
 
 void DlgDisplayPropertiesImp::setupFinishPresets()
 {
-    QSignalBlocker block(d->ui.comboFinish);
-
-    // One size for the row height whatever the icons turn out to be, and
-    // a blank of that size behind "None" so its text lines up with the
-    // patterns' rather than sliding into the icon column.
-    const QSize iconSize(32, 32);
-    d->ui.comboFinish->setIconSize(iconSize);
-    QPixmap blank(iconSize);
+    // A line edit with the presets behind it rather than a combo box:
+    // the list is short but the names are not guessable from an icon,
+    // and typing three letters beats opening a drop-down and reading
+    // six rows. The icons stay -- they are what the patterns are
+    // recognised by -- at the size the material selection above uses,
+    // so the two lists in this dialog look like one dialog.
+    const int extent = MaterialTreeWidget::iconExtent();
+    QPixmap blank(extent, extent);
     blank.fill(Qt::transparent);
 
-    d->ui.comboFinish->addItem(QIcon(blank), tr("None"),
-                               uint(App::SurfaceFinish::None));
+    d->finishModel = new QStandardItemModel(this);
+    auto addRow = [this, &blank](const QIcon& icon, const QString& label, uint8_t pattern) {
+        auto row = new QStandardItem(icon.isNull() ? QIcon(blank) : icon, label);
+        row->setData(uint(pattern), Qt::UserRole);
+        d->finishModel->appendRow(row);
+    };
+    // The blank behind "None" is the same size as a pattern's icon, so
+    // its label lines up with theirs instead of sliding into the icon
+    // column.
+    addRow(QIcon(blank), tr("None"), App::SurfaceFinish::None);
     for (uint8_t pattern = 1; pattern < App::SurfaceFinish::PatternCount; ++pattern) {
         // Each preset is drawn at the size that pattern has on a real
         // part, which is the one size MaterialIcons ships a rendered
         // icon for -- so the list paints from the resource rather than
         // waiting on the render queue.
         const App::SurfaceFinish preset = MaterialIcons::defaultFinish(pattern);
-        QIcon icon = MaterialIcons::instance().finishIcon(preset);
-        if (icon.isNull()) {
-            icon = QIcon(blank);
-        }
-        d->ui.comboFinish->addItem(icon, finishPresetLabel(pattern), uint(pattern));
+        addRow(MaterialIcons::instance().finishIcon(preset),
+               finishPresetLabel(pattern), pattern);
     }
+
+    d->finishCompleter = new QCompleter(d->finishModel, this);
+    d->finishCompleter->setCaseSensitivity(Qt::CaseInsensitive);
+    // Contains, not starts-with: "knurl" is the word that tells the two
+    // knurls apart, and it is not at the front of either label.
+    d->finishCompleter->setFilterMode(Qt::MatchContains);
+    d->finishCompleter->setCompletionMode(QCompleter::PopupCompletion);
+    d->ui.editFinish->setCompleter(d->finishCompleter);
+    d->finishCompleter->popup()->setIconSize(QSize(extent, extent));
+    // Connected here rather than in setupConnections(), which runs
+    // before this and would be handed a null completer.
+    connect(d->finishCompleter,
+            qOverload<const QString&>(&QCompleter::activated),
+            this,
+            &DlgDisplayPropertiesImp::onFinishPresetActivated);
+
+    // Clicking the box offers the whole list, the way a combo box would.
+    // Without this the control is a text field that happens to complete,
+    // and a preset nobody can name is a preset nobody finds.
+    d->ui.editFinish->installEventFilter(this);
+}
+
+void DlgDisplayPropertiesImp::inlineCompleteFinish(const QString& typed)
+{
+    if (typed.isEmpty()) {
+        return;
+    }
+    d->finishCompleter->setCompletionPrefix(typed);
+    const QString match = d->finishCompleter->currentCompletion();
+    // Only when the match CONTINUES what was typed. The completer also
+    // matches in the middle of a name -- "knurl" finds both knurls --
+    // and there is no way to write the rest of a word in front of the
+    // cursor.
+    if (match.isEmpty() || !match.startsWith(typed, Qt::CaseInsensitive)) {
+        return;
+    }
+    QSignalBlocker block(d->ui.editFinish);
+    d->ui.editFinish->setText(match);
+    // The part nobody typed stays selected, so the next keystroke
+    // replaces it and the one after Enter accepts it.
+    d->ui.editFinish->setSelection(int(typed.length()),
+                                   int(match.length() - typed.length()));
+}
+
+bool DlgDisplayPropertiesImp::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == d->ui.editFinish && d->finishCompleter
+        && (event->type() == QEvent::MouseButtonPress
+            || event->type() == QEvent::FocusIn)) {
+        // An empty prefix matches every row, so this is "show the list".
+        d->finishCompleter->setCompletionPrefix(QString());
+        d->finishCompleter->complete();
+    }
+    return QDialog::eventFilter(watched, event);
 }
 
 void DlgDisplayPropertiesImp::setShapeFinish(const std::vector<Gui::ViewProvider*>& views)
@@ -785,28 +887,28 @@ void DlgDisplayPropertiesImp::setShapeFinish(const std::vector<Gui::ViewProvider
         }
     }
 
-    QSignalBlocker blockCombo(d->ui.comboFinish);
+    QSignalBlocker blockFinish(d->ui.editFinish);
     QSignalBlocker blockPitch(d->ui.spinFinishPitch);
     QSignalBlocker blockDepth(d->ui.spinFinishDepth);
     QSignalBlocker blockAngle(d->ui.spinFinishAngle);
 
     // A pattern this build cannot draw -- a document written by a later
-    // one -- has no row here, and reads as unfinished rather than as a
+    // one -- has no label here, and reads as unfinished rather than as a
     // silently wrong preset. The value itself survives untouched so long
-    // as nobody picks a row.
-    int index = d->ui.comboFinish->findData(uint(finish.pattern));
-    d->ui.comboFinish->setCurrentIndex(index >= 0 ? index : 0);
+    // as nobody picks one.
+    const QString label = finishPresetLabel(finish.pattern);
+    d->ui.editFinish->setText(label);
     // MinPitch is the stored spelling of "unstated": SurfaceFinish::
     // normalize() clamps a set pattern's pitch up to it, and the view
     // provider reads anything that low back as "give me this pattern's
     // own size". Show it as the automatic it is.
-    const bool set = finish.isSet() && index > 0;
+    const bool set = finish.isSet() && !label.isEmpty();
     d->ui.spinFinishPitch->setValue(
         set && finish.pitch > App::SurfaceFinish::MinPitch ? finish.pitch : 0.0);
     d->ui.spinFinishDepth->setValue(set ? finish.depth : 0.0);
     d->ui.spinFinishAngle->setValue(set ? finish.angle : 0.0);
 
-    d->ui.comboFinish->setEnabled(hasAppearance);
+    d->ui.editFinish->setEnabled(hasAppearance);
     d->ui.spinFinishPitch->setEnabled(hasAppearance && set);
     d->ui.spinFinishDepth->setEnabled(hasAppearance && set);
     d->ui.spinFinishAngle->setEnabled(hasAppearance && set);
@@ -815,7 +917,7 @@ void DlgDisplayPropertiesImp::setShapeFinish(const std::vector<Gui::ViewProvider
 void DlgDisplayPropertiesImp::applyFinish()
 {
     App::SurfaceFinish finish;
-    finish.pattern = uint8_t(d->ui.comboFinish->currentData().toUInt());
+    finish.pattern = finishPatternFromLabel(d->ui.editFinish->text());
     if (finish.isSet()) {
         // 0 = automatic in all three, which normalize() stores as the
         // MinPitch floor for the pitch and as a plain 0 for the rest.
@@ -836,13 +938,30 @@ void DlgDisplayPropertiesImp::applyFinish()
     }
 }
 
-void DlgDisplayPropertiesImp::onFinishPresetActivated(int index)
+void DlgDisplayPropertiesImp::onFinishPresetActivated(const QString& label)
 {
-    Q_UNUSED(index)
-    // A preset is a pattern at its own size, so picking one drops any
-    // sizes the previous pattern was given -- they meant nothing to this
-    // one. Customisation is what the three spin boxes are for, after.
+    // Typed rather than chosen, and not a preset: put back what the
+    // objects actually carry instead of silently reading it as None.
+    // The empty box IS None, so it is left alone.
+    const uint8_t pattern = finishPatternFromLabel(label);
+    if (pattern == App::SurfaceFinish::None && !label.trimmed().isEmpty()) {
+        setShapeFinish(getTargets());
+        return;
+    }
+    // Write the label back rather than trusting what is in the box: the
+    // completer sets the text on activation too, and which of the two
+    // runs first is connection order -- not something to leave applyFinish
+    // depending on.
     {
+        QSignalBlocker block(d->ui.editFinish);
+        d->ui.editFinish->setText(finishPresetLabel(pattern));
+        d->finishTyped = d->ui.editFinish->text();
+    }
+    {
+        // A preset is a pattern at its own size, so picking one drops
+        // any sizes the previous pattern was given -- they meant nothing
+        // to this one. Customisation is what the three spin boxes are
+        // for, after.
         QSignalBlocker blockPitch(d->ui.spinFinishPitch);
         QSignalBlocker blockDepth(d->ui.spinFinishDepth);
         QSignalBlocker blockAngle(d->ui.spinFinishAngle);
@@ -850,7 +969,7 @@ void DlgDisplayPropertiesImp::onFinishPresetActivated(int index)
         d->ui.spinFinishDepth->setValue(0.0);
         d->ui.spinFinishAngle->setValue(0.0);
     }
-    const bool set = d->ui.comboFinish->currentData().toUInt() != App::SurfaceFinish::None;
+    const bool set = pattern != App::SurfaceFinish::None;
     d->ui.spinFinishPitch->setEnabled(set);
     d->ui.spinFinishDepth->setEnabled(set);
     d->ui.spinFinishAngle->setEnabled(set);

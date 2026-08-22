@@ -65,6 +65,12 @@ public:
                   Gui::SelectionSingleton::MessageType Reason) override;
     void showDefaultButtons(bool);
     void reject() override;
+    /// Offer the whole preset list when the finish box is clicked into,
+    /// which is what a combo box did for free.
+    bool eventFilter(QObject* watched, QEvent* event) override;
+    /// Write the rest of the matching preset name after what was typed,
+    /// selected, so it is accepted by Enter and replaced by typing on.
+    void inlineCompleteFinish(const QString& typed);
 
 private Q_SLOTS:
     void onChangeModeActivated(const QString&);
@@ -79,7 +85,7 @@ private Q_SLOTS:
     void onButtonCustomAppearanceClicked();
     void onButtonColorPlotClicked();
     void onMaterialSelected(const std::shared_ptr<Materials::Material>& material);
-    void onFinishPresetActivated(int);
+    void onFinishPresetActivated(const QString&);
     void onFinishSizeChanged(double);
     void onMapFaceColorChanged(bool);
     void onMapLineColorChanged(bool);
