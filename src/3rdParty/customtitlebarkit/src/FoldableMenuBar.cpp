@@ -4,6 +4,7 @@
 #include "customtitlebarkit/FoldableMenuBar.h"
 
 #include <QActionEvent>
+#include <QElapsedTimer>
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QMenuBar>
@@ -30,6 +31,18 @@ struct FoldableMenuBar::Impl {
     /// for. See hasKeyboard().
     bool keyboardEntry = false;
     int revealWidth = 0;
+    /// Since the bar last unfolded, see FoldableMenuBar::setClickGuard().
+    /// Invalid whenever the guard does not apply: while folded, and after an
+    /// unfold the brand widget was clicked for.
+    QElapsedTimer sinceUnfold;
+    int clickGuard = 1000;
+
+    /// Whether the bar came open too recently for a click on the brand to
+    /// have been aimed at a bar that was already open.
+    bool inClickGuard() const {
+        return expanded && clickGuard > 0 && sinceUnfold.isValid()
+            && sinceUnfold.elapsed() < clickGuard;
+    }
 
     void updateClip() {
         if (!menuBar) return;
@@ -322,6 +335,16 @@ FoldableMenuBar::~FoldableMenuBar()
         delete d->menuContainer;
 }
 
+void FoldableMenuBar::setClickGuard(int ms)
+{
+    d->clickGuard = ms;
+}
+
+int FoldableMenuBar::clickGuard() const
+{
+    return d->clickGuard;
+}
+
 int FoldableMenuBar::revealWidth() const
 {
     return d->revealWidth;
@@ -473,6 +496,16 @@ void FoldableMenuBar::setExpanded(bool expanded)
     if (d->expanded == expanded) return;
     d->expanded = expanded;
 
+    // The guard runs from the unfold itself, whatever caused it: the pointer
+    // resting on the brand, a mnemonic, the menu-bar command. See
+    // setClickGuard().
+    if (expanded) {
+        d->sinceUnfold.restart();
+    }
+    else {
+        d->sinceUnfold.invalidate();
+    }
+
     if (d->foldable) {
         if (d->animation->state() == QAbstractAnimation::Running)
             d->animation->stop();
@@ -562,7 +595,20 @@ bool FoldableMenuBar::eventFilter(QObject *obj, QEvent *event)
             && d->brandWidget->rect().contains(mouseEvent->position().toPoint())
             && d->foldable) {
             d->collapseTimer->stop();
+            if (d->inClickGuard()) {
+                // Swallowed rather than acted on, see setClickGuard(): the bar
+                // opened under the pointer a moment ago, so this is the click
+                // that was already on its way to a folded button.
+                mouseEvent->accept();
+                return true;
+            }
+            const bool wasFolded = !d->expanded;
             setExpanded(!d->expanded);
+            if (wasFolded) {
+                // Opened by this very click, so the next one is a change of
+                // mind and has to be allowed to fold it again.
+                d->sinceUnfold.invalidate();
+            }
             mouseEvent->accept();
             return true;
         }

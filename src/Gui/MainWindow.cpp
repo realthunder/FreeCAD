@@ -1885,6 +1885,10 @@ public:
             }
             if (auto *bar = qobject_cast<FoldableMenuBar *>(parentWidget())) {
                 if (!bar->isExpanded()) {
+                    // Set here rather than where the bar is installed: the bar
+                    // does not exist yet when this button is built, and the
+                    // parameter can be changed while the program runs.
+                    bar->setClickGuard(clickGuardInterval());
                     bar->setExpanded(true);
                 }
             }
@@ -1945,6 +1949,20 @@ protected:
     }
 
 private:
+    /*! How long the menu this button opens on hover ignores a click on the
+     * button, in milliseconds. 0 in the parameter turns the guard off.
+     *
+     * The pointer coming to rest here is enough to open the menu, and the
+     * click that often follows out of habit would land on a button that now
+     * shuts the menu it was aimed at opening.
+     */
+    static int clickGuardInterval()
+    {
+        auto hGrp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/MainWindow");
+        return static_cast<int>(hGrp->GetInt("TitleBarMenuClickGuard", 1000));  // NOLINT
+    }
+
     static constexpr int logoSize = 24;
     static constexpr int barsWidth = 11;
     static constexpr int margin = 5;
