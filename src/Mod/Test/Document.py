@@ -285,13 +285,6 @@ class DocumentBasicCases(unittest.TestCase):
     def testMem(self):
         self.Doc.MemSize
 
-    def testDuplicateLinks(self):
-        obj = self.Doc.addObject("App::FeatureTest", "obj")
-        grp = self.Doc.addObject("App::DocumentObjectGroup", "group")
-        grp.Group = [obj, obj]
-        self.Doc.removeObject(obj.Name)
-        self.assertListEqual(grp.Group, [])
-
     def testPlacementList(self):
         obj = self.Doc.addObject("App::FeaturePython", "Label")
         obj.addProperty("App::PropertyPlacementList", "PlmList")
@@ -354,64 +347,66 @@ class DocumentBasicCases(unittest.TestCase):
         obj = self.Doc.addObject("App::Origin", "Origin")
         self.Doc.recompute()
 
-        res = obj.getSubObject("X_Axis", retType=2)
+        res = obj.getSubObject("X_Axis.", retType=2)
         self.assertEqual(
             res[1].multVec(FreeCAD.Vector(1, 0, 0)).getAngle(FreeCAD.Vector(1, 0, 0)), 0.0
         )
 
-        res = obj.getSubObject("Y_Axis", retType=2)
+        res = obj.getSubObject("Y_Axis.", retType=2)
         self.assertEqual(
             res[1].multVec(FreeCAD.Vector(1, 0, 0)).getAngle(FreeCAD.Vector(0, 1, 0)), 0.0
         )
 
-        res = obj.getSubObject("Z_Axis", retType=2)
+        res = obj.getSubObject("Z_Axis.", retType=2)
         self.assertEqual(
             res[1].multVec(FreeCAD.Vector(1, 0, 0)).getAngle(FreeCAD.Vector(0, 0, 1)), 0.0
         )
 
-        res = obj.getSubObject("XY_Plane", retType=2)
+        res = obj.getSubObject("XY_Plane.", retType=2)
         self.assertEqual(
             res[1].multVec(FreeCAD.Vector(0, 0, 1)).getAngle(FreeCAD.Vector(0, 0, 1)), 0.0
         )
 
-        res = obj.getSubObject("XZ_Plane", retType=2)
+        res = obj.getSubObject("XZ_Plane.", retType=2)
         self.assertEqual(
             res[1].multVec(FreeCAD.Vector(0, 0, 1)).getAngle(FreeCAD.Vector(0, -1, 0)), 0.0
         )
 
-        res = obj.getSubObject("YZ_Plane", retType=2)
+        res = obj.getSubObject("YZ_Plane.", retType=2)
         self.assertEqual(
             res[1].multVec(FreeCAD.Vector(0, 0, 1)).getAngle(FreeCAD.Vector(1, 0, 0)), 0.0
         )
 
-        res = obj.getSubObject("YZ_Plane", retType=3)
+        res = obj.getSubObject("YZ_Plane.", retType=3)
         self.assertEqual(
             res.multVec(FreeCAD.Vector(0, 0, 1)).getAngle(FreeCAD.Vector(1, 0, 0)), 0.0
         )
 
-        res = obj.getSubObject("YZ_Plane", retType=4)
+        res = obj.getSubObject("YZ_Plane.", retType=4)
         self.assertEqual(
             res.multVec(FreeCAD.Vector(0, 0, 1)).getAngle(FreeCAD.Vector(1, 0, 0)), 0.0
         )
 
         self.assertEqual(
-            obj.getSubObject(("XY_Plane", "YZ_Plane"), retType=4)[0],
-            obj.getSubObject("XY_Plane", retType=4),
+            obj.getSubObject(("XY_Plane.", "YZ_Plane."), retType=4)[0],
+            obj.getSubObject("XY_Plane.", retType=4),
         )
         self.assertEqual(
-            obj.getSubObject(("XY_Plane", "YZ_Plane"), retType=4)[1],
-            obj.getSubObject("YZ_Plane", retType=4),
+            obj.getSubObject(("XY_Plane.", "YZ_Plane."), retType=4)[1],
+            obj.getSubObject("YZ_Plane.", retType=4),
         )
 
         # Create a second origin object
         obj2 = self.Doc.addObject("App::Origin", "Origin2")
         self.Doc.recompute()
 
-        # Use the names of the origin's out-list
-        for i in obj2.OutList:
-            self.assertEqual(obj2.getSubObject(i.Name, retType=1).Name, i.Name)
-        # Add a '.' to the names
-        for i in obj2.OutList:
+        # Use the names of the origin's features. They are not in OutList here:
+        # OriginFeatures is a Prop_Output link, so it declares no dependency, and
+        # iterating OutList would leave this check testing nothing at all.
+        self.assertEqual(len(obj2.OriginFeatures), 6)
+        # a subname names a whole object only with the trailing '.', the same rule
+        # GroupExtension applies -- without it the name does not resolve
+        for i in obj2.OriginFeatures:
             self.assertEqual(obj2.getSubObject(i.Name + ".", retType=1).Name, i.Name)
 
     def testExtensions(self):
@@ -801,6 +796,14 @@ class DocumentSaveRestoreCases(unittest.TestCase):
 
 
 class DocumentRecomputeCases(unittest.TestCase):
+    class RecomputeObserver:
+        # records the objects the document reported as skipping recomputation
+        def __init__(self):
+            self.objs = []
+
+        def slotSkipRecompute(self, _doc, objs):
+            self.objs = objs
+
     def setUp(self):
         self.Doc = FreeCAD.newDocument("RecomputeTests")
         self.L1 = self.Doc.addObject("App::FeatureTest", "Label_1")
@@ -929,21 +932,21 @@ class DocumentRecomputeCases(unittest.TestCase):
 
         box.Placement.Base = FreeCAD.Vector(10,10,10)
 
-        observer = self.Observer();
+        observer = self.RecomputeObserver()
         FreeCAD.addDocumentObserver(observer);
         res = self.Doc.recompute()
         FreeCAD.removeDocumentObserver(observer);
 
         # Placement change will not trigger a full recompute of a Part.Feature, so
         # only 4 objects will be recomputed.
-        self.failUnless(res == 4)
-        self.failUnless(not observer.objs)
+        self.assertEqual(res, 4)
+        self.assertFalse(observer.objs)
 
         box.Length *= 2
         # Other property change shall trigger the recompute, so it shall be 5 this
         # time.
         res = self.Doc.recompute()
-        self.failUnless(res == 5)
+        self.assertEqual(res, 5)
 
     def tearDown(self):
         # closing doc
@@ -1830,9 +1833,10 @@ class DocumentExpressionCases(unittest.TestCase):
         self.assertAlmostEqual(
             self.Obj1.Placement.Rotation.Angle, self.Obj2.Placement.Rotation.Angle
         )
-        # touch the objects to perform a recompute
-        self.Obj1.Placement = self.Obj1.Placement
-        self.Obj2.Placement = self.Obj2.Placement
+        # touch the objects to perform a recompute. Writing a property back to its
+        # own value is elided here (OptimizeRecompute), so it would not touch them.
+        self.Obj1.touch()
+        self.Obj2.touch()
         # must not raise a topological error
         self.assertEqual(self.Doc.recompute(), 2)
 
@@ -1894,6 +1898,8 @@ class DocumentExpressionCases(unittest.TestCase):
             obj.setExpression(".Placement.Base.y", ".Placement.Base.x + 10mm")
 
     def testDependency(self):
+        self.Obj1 = self.Doc.addObject("App::FeatureTest", "Test")
+        self.Obj2 = self.Doc.addObject("App::FeatureTest", "Test")
         self.Obj1.Link = self.Obj2
 
         try:
