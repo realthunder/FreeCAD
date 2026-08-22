@@ -24,12 +24,9 @@
 
 #ifndef _PreComp_
 #include <QEvent>
-#include <QWidget>
-#include <QWindow>
 #endif
 
 #include "LiveViewInteraction.h"
-#include "View3DInventor.h"
 
 using namespace Gui;
 
@@ -40,26 +37,6 @@ namespace
 // that read it are the ones Qt runs while dispatching, and the guard is
 // scoped around GUI-thread work.
 int liveInteractionDepth {0};
-
-// Walk the widget chain the way the filters' own isModalDialog() helpers
-// do, since an event can arrive addressed to a QWindow rather than to the
-// QWidget that owns it.
-bool targetsView3D(QObject* target)
-{
-    auto* widget = qobject_cast<QWidget*>(target);
-    if (!widget) {
-        if (auto* window = qobject_cast<QWindow*>(target)) {
-            widget = QWidget::find(window->winId());
-        }
-    }
-    while (widget) {
-        if (qobject_cast<View3DInventor*>(widget)) {
-            return true;
-        }
-        widget = widget->parentWidget();
-    }
-    return false;
-}
 }  // namespace
 
 LiveViewInteraction::LiveViewInteraction()
@@ -77,28 +54,29 @@ bool LiveViewInteraction::active()
     return liveInteractionDepth > 0;
 }
 
-bool LiveViewInteraction::passes(QObject* target, QEvent* event)
+bool LiveViewInteraction::passes(QObject* /*target*/, QEvent* event)
 {
     if (!active() || !event) {
         return false;
     }
 
     switch (event->type()) {
-        // navigation input: everything the two filters would otherwise
-        // swallow on the way to a 3D view. QEvent::Wheel is absent because
-        // neither filter blocks it (zoom has always worked mid-operation),
-        // and ContextMenu is absent on purpose — see the header.
+        // Pointer input: everything the two filters would otherwise swallow.
+        // ContextMenu is absent on purpose, and so is every key event -- see
+        // the header. The target is deliberately not consulted: a filter
+        // installed on the application sees each of these once addressed to
+        // the QWidgetWindow, before Qt has decided which widget receives it,
+        // and eating that one means the widget never sees the event at all.
         case QEvent::MouseButtonPress:
         case QEvent::MouseButtonRelease:
         case QEvent::MouseButtonDblClick:
         case QEvent::MouseMove:
+        case QEvent::Wheel:
         case QEvent::NativeGesture:
         case QEvent::Enter:
         case QEvent::Leave:
-            break;
+            return true;
         default:
             return false;
     }
-
-    return targetsView3D(target);
 }
