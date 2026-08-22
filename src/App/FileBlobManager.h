@@ -468,6 +468,12 @@ private:
     mutable std::unordered_map<std::string, FileBlobHandle> _saveSet;
     /// Who refers to each of them, which is what names the file it goes to.
     std::unordered_map<std::string, std::vector<BlobReferrer>> _saveRefs;
+    /// What each of them is, for the ones nothing gets to name: the
+    /// extension of the first referrer that offered one. A file named by
+    /// its hash still has to say what it holds -- a stored environment
+    /// image that came back as a nameless blob was read by whoever
+    /// looked at its extension as not being a Radiance picture.
+    std::unordered_map<std::string, std::string> _saveExts;
     /// Properties waiting for content that is still to be read.
     std::vector<std::pair<std::string, BlobReferrerProperty*>> _pending;
     /// Whether endRestore() has run, i.e. whether a referrer turning up now
