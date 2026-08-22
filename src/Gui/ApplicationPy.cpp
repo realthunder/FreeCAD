@@ -207,6 +207,14 @@ PyMethodDef Application::Methods[] = {
    "costs a clock read. Pass force=True to pump regardless.\n"
    "\n"
    "Returns True when it did pump."},
+  {"isLiveImport",            (PyCFunction) Application::sIsLiveImport, METH_VARARGS,
+   "isLiveImport() -> bool\n"
+   "\n"
+   "Whether a live import is filling a document right now.\n"
+   "\n"
+   "For code that is worth skipping while one runs. Selecting each\n"
+   "created object, for one, costs a selection round trip and a tree\n"
+   "expand and scroll that nobody can act on until the import ends."},
   {"serveDocument",           (PyCFunction) Application::sServeDocument, METH_VARARGS,
    "serveDocument(doc, port=0) -> bool\n"
    "\n"
@@ -1031,6 +1039,14 @@ PyObject* Application::sPumpLiveImport(PyObject * /*self*/, PyObject *args)
     // own redraw budget, not here.
     qApp->processEvents();
     return Py::new_reference_to(Py::Boolean(true));
+}
+
+PyObject* Application::sIsLiveImport(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+
+    return Py::new_reference_to(Py::Boolean(liveImportNavigable != nullptr));
 }
 
 PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)

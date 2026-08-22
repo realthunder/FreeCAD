@@ -423,6 +423,7 @@ public:
     static PyObject* sServeDocument            (PyObject *self,PyObject *args);
     static PyObject* sSetLiveImport            (PyObject *self,PyObject *args);
     static PyObject* sPumpLiveImport           (PyObject *self,PyObject *args);
+    static PyObject* sIsLiveImport             (PyObject *self,PyObject *args);
     static PyObject* sServeClients             (PyObject *self,PyObject *args);
     static PyObject* sServeSetClientMode       (PyObject *self,PyObject *args);
     static PyObject* sServeKickClient          (PyObject *self,PyObject *args);
