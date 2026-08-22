@@ -492,6 +492,12 @@ void SequencerLauncher::setNoException(bool enable)
     bNoException = enable;
 }
 
+void SequencerLauncher::setStandalone(bool enable)
+{
+    QMutexLocker locker(&SequencerP::mutex);
+    bStandalone = enable;
+}
+
 // ---------------------------------------------------------
 
 size_t SequencerManager::activeCount()
@@ -511,6 +517,7 @@ SequencerManager::Snapshot SequencerManager::snapshot(size_t maxLevels)
     // by its nested sequences.
     struct ThreadEntry {
         QThread* thread;
+        bool standalone;
         std::vector<Info> infos;
     };
     std::vector<ThreadEntry> threads;
@@ -522,12 +529,20 @@ SequencerManager::Snapshot SequencerManager::snapshot(size_t maxLevels)
         info.total = launcher->nTotalSteps.load(std::memory_order_relaxed);
         if (info.total == 0 && info.progress == 0)
             continue; // registered but not started: invisible, doesn't consume a level
-        auto it = std::find_if(threads.begin(), threads.end(),
-            [launcher](const ThreadEntry& entry) {
-                return entry.thread == launcher->ownerThread;
-            });
+        // Registration order is nesting order per thread -- except for a
+        // sequence that says it is a job of its own, which gets its own
+        // bucket rather than being read as a child of whatever sliced
+        // sequence happened to still be alive beside it.
+        const bool blocking = !launcher->bKeepInteractive;
+        auto it = threads.end();
+        if (!launcher->bStandalone) {
+            it = std::find_if(threads.begin(), threads.end(),
+                [launcher](const ThreadEntry& entry) {
+                    return entry.thread == launcher->ownerThread && !entry.standalone;
+                });
+        }
         if (it == threads.end()) {
-            threads.push_back({launcher->ownerThread, {}});
+            threads.push_back({launcher->ownerThread, launcher->bStandalone, {}});
             it = threads.end() - 1;
         }
         if (it->infos.size() >= maxLevels)
@@ -535,15 +550,28 @@ SequencerManager::Snapshot SequencerManager::snapshot(size_t maxLevels)
         info.depth = it->infos.size();
         info.text = launcher->strText;
         info.mainThread = (launcher->ownerThread == SequencerP::_thread);
+        info.blocking = blocking;
         it->infos.push_back(std::move(info));
     }
+
+    // What the user is waiting on is whatever holds the thread. When anything
+    // blocking is running, the background sequences beside it stay visible in
+    // the detail popup but do not dilute the number on the bar.
+    const bool anyBlocking = std::any_of(threads.begin(), threads.end(),
+        [](const ThreadEntry& entry) {
+            return !entry.infos.empty() && entry.infos.front().blocking;
+        });
 
     for (auto& entry : threads) {
         const Info& root = entry.infos.front();
         ++snap.roots;
-        if (root.total > 0) {
+        const bool counts = root.blocking || !anyBlocking;
+        if (counts && root.total > 0) {
             snap.total += root.total;
             snap.progress += std::min(root.progress, root.total);
+        }
+        if (counts && root.mainThread && snap.lead == static_cast<size_t>(-1)) {
+            snap.lead = snap.sequences.size();
         }
         for (auto& info : entry.infos)
             snap.sequences.push_back(std::move(info));

@@ -47,6 +47,7 @@ namespace Base
 {
 
 class Persistence;
+class SequencerLauncher;
 
 
 /** The Writer class
@@ -108,6 +109,39 @@ public:
     }
     /// process the requested file storing
     virtual void writeFiles() = 0;
+
+    /** Report the file loop's progress through a launcher the caller owns.
+     *
+     * Writing the requested files is where a save of a large document spends
+     * its time -- one entry per parked shape, and the BRep behind it -- so it
+     * is the loop a progress indicator has to see. The launcher is not made
+     * here because only the TOP launcher reports at all: one started under a
+     * live blocking one is a silent no-op, so the save owns a single launcher
+     * spanning its phases and lends it to the writer for this one.
+     *
+     * Pass nullptr, the default, and the loop runs unreported as before.
+     */
+    void setProgress(SequencerLauncher* seq)
+    {
+        progressSeq = seq;
+    }
+
+    /** Where the launcher stands, as the base of a phase about to start.
+     *
+     * A save is a sequence of phases -- the objects, the blob entries, the
+     * requested files -- and none of them knows its own size until the one
+     * before it has run. Each takes the base once and restates the total from
+     * it, so the bar never goes backwards and each phase owns its own stretch.
+     * Zero when nobody is watching.
+     */
+    std::size_t progressBase() const;
+
+    /** Tick one item of a phase of `count` items that began at `base`.
+     *
+     * The total is restated on every step rather than fixed up front: a file
+     * list grows while it is walked, an entry being written may add another.
+     */
+    void stepProgress(std::size_t base, std::size_t count);
 
     /** Whether this writer can carry a document-wide store.
      *
@@ -225,6 +259,9 @@ protected:
 
     int fileVersion {1};
     // NOLINTEND
+
+    /// Borrowed from the save that owns it; null when nobody is watching.
+    SequencerLauncher* progressSeq {nullptr};
 
 public:
     Writer(const Writer&) = delete;

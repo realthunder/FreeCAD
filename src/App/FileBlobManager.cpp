@@ -656,8 +656,14 @@ void FileBlobManager::writeBlobs(Base::Writer& writer)
     // content -- which is what a deferred read by name will need.
     writeIndex(writer, entries);
 
+    // The entries are where a save of a large document spends its bytes -- a
+    // building's worth of shapes is thousands of them -- so this is a phase
+    // the progress indicator has to see. Ticked before the skip below, so a
+    // save that rewrites nothing still walks the bar to the end.
+    const std::size_t progressBase = writer.progressBase();
     std::set<std::string> kept;
     for (const auto& entry : entries) {
+        writer.stepProgress(progressBase, entries.size());
         kept.insert(entry.name);
         if (fileWriter) {
             // Names are derived now, so a file existing proves nothing about

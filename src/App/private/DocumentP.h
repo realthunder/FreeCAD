@@ -179,6 +179,10 @@ struct DocumentP
     /// indicator shows shapes-served over the whole backlog, with the
     /// per-shape import indicators nested beneath it.
     std::unique_ptr<Base::SequencerLauncher> deferServeSeq;
+    /// The save's progress, owned by Document::save() for the length of one
+    /// save and borrowed by the loops it spans. Null outside a save -- an
+    /// export writes objects through the same function and reports nothing.
+    Base::SequencerLauncher* saveSeq {nullptr};
     /// Serve-time attribution for the slice log: entry opening vs the
     /// consumer's RestoreDocFile, against the slice wall clock.
     std::chrono::duration<double> deferOpenTime {0};

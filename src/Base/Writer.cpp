@@ -36,6 +36,7 @@
 #include "FileInfo.h"
 #include "Persistence.h"
 #include "ProgramVersion.h"
+#include "Sequencer.h"
 #include "Stream.h"
 #include "Tools.h"
 
@@ -404,6 +405,20 @@ ZipWriter::ZipWriter(std::ostream& os)
     ZipStream.setf(ios::fixed, ios::floatfield);
 }
 
+std::size_t Writer::progressBase() const
+{
+    return progressSeq ? progressSeq->progress() : 0;
+}
+
+void Writer::stepProgress(std::size_t base, std::size_t count)
+{
+    if (!progressSeq) {
+        return;
+    }
+    progressSeq->setTotalSteps(base + count);
+    progressSeq->next();
+}
+
 void ZipWriter::putNextEntry(const char *file, const char *obj) {
     Writer::putNextEntry(file,obj);
 
@@ -415,7 +430,9 @@ void ZipWriter::writeFiles()
     // use a while loop because it is possible that while
     // processing the files new ones can be added
     size_t index = 0;
+    const size_t base = progressBase();
     while (index < FileList.size()) {
+        stepProgress(base, FileList.size());
         FileEntry entry = FileList[index];
         putNextEntry(entry.FileName.c_str());
         indent = 0;
@@ -480,8 +497,10 @@ void FileWriter::writeFiles()
     // use a while loop because it is possible that while
     // processing the files new ones can be added
     size_t index = 0;
+    const size_t base = progressBase();
     this->FileStream.close();
     while (index < FileList.size()) {
+        stepProgress(base, FileList.size());
         FileEntry entry = FileList[index];
 
         if (shouldWrite(entry.FileName, entry.Object)) {

@@ -433,6 +433,19 @@ public:
         return bBlocking;
     }
     void setNoException(bool enable);
+    /** Report this sequence as a job of its own, never nested under whatever
+     * happened to be running when it started.
+     *
+     * Nesting is inferred from registration order, which is right for a
+     * sequence started inside another one's call stack and wrong for one that
+     * merely overlaps a sliced sequence: a `KeepInteractive` launcher lives
+     * across returns to the event loop, so a document save starting while a
+     * progressive fill still drains was bucketed as the fill's child and
+     * vanished from the consolidated bar -- the status text read
+     * `Saving document...` over the fill's numbers, and a 30 second save
+     * advertised three and a half minutes remaining.
+     */
+    void setStandalone(bool enable = true);
     bool start(size_t steps=0, const char *pszTxt=nullptr);
     bool stop();
 private:
@@ -444,6 +457,7 @@ private:
     bool bBlocking {false};
     bool bKeepInteractive {false};
     bool bNoException {false};
+    bool bStandalone {false};
     QThread *ownerThread {nullptr};
 
     SequencerLauncher(const SequencerLauncher&) = delete;
@@ -481,16 +495,29 @@ public:
         size_t total = 0;       /**< 0 = unknown (busy indicator) */
         size_t depth = 0;       /**< nesting level within its thread; 0 = root */
         bool mainThread = false;
+        /** this sequence owns its thread until it ends (not KeepInteractive) */
+        bool blocking = false;
     };
     struct Snapshot
     {
         /** grouped per thread: each root (depth 0) directly followed by its
          * nested sequences in nesting order */
         std::vector<Info> sequences;
-        size_t progress = 0; /**< consolidated over roots: sum of min(progress, total) */
-        size_t total = 0;    /**< consolidated over roots; 0 = indeterminate */
+        /** Consolidated over the roots that matter: sum of min(progress, total).
+         *
+         * When any root is blocking, only the blocking roots are counted. A
+         * blocking sequence is what holds the thread the user is waiting on,
+         * and a background sliced sequence running beside it must not be what
+         * the bar reports: a save whose numbers came from a still-draining
+         * progressive fill advertised three and a half minutes for thirty
+         * seconds of work.
+         */
+        size_t progress = 0;
+        size_t total = 0;    /**< consolidated the same way; 0 = indeterminate */
         /** number of root (depth 0) sequences, i.e. parallel sequences */
         size_t roots = 0;
+        /** index into `sequences` of the root the bar should name, npos if none */
+        size_t lead = static_cast<size_t>(-1);
     };
 
     /** Lock-free count of live launchers (cheap "is anything running?"). */
