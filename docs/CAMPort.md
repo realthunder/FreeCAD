@@ -287,8 +287,8 @@ It needs installing, plus a `freecad-rt-feedstock` change for releases.
 
 ## Ledger
 
-**Phase 3 is done.** Phases 1 and 2 have not started; phase 1 is the
-next piece of work.
+**Phases 3 and 1 are done.** Phase 2 has not started, and is now the next
+piece of work -- the residual test failures below point straight at it.
 
 | date | phase | repo | commit | what |
 |---|---|---|---|---|
@@ -302,6 +302,13 @@ next piece of work.
 | 2026-08-23 | 3 | fcad | `15074c1fed` | say what Simplify and CleanDistance now do |
 | 2026-08-23 | 3 | libarea-feedstock | `658974d` | libarea 0.2.0 |
 | 2026-08-23 | 3 | fcad | `e5c59ec710` | profile test was pinning Clipper1's rounding |
+| 2026-08-23 | 1 | fcad | `d4d6c2f4bb` | take upstream's CAM wholesale, at 11bee82d6c |
+| 2026-08-23 | 1 | fcad | `14ed3e19a3` | wire the module into this fork's build |
+| 2026-08-23 | 1 | fcad | `c202b3a337` | adapt the ported tree to this fork's core |
+| 2026-08-23 | 1 | fcad | `712e7f7f0d` | restore this fork's own CAM work on it |
+| 2026-08-23 | 1 | fcad | `9ddfcd71e8` | expose ParameterGrp::RenameGrp to Python |
+| 2026-08-23 | 1 | fcad | `5b308e9506` | let Python call libarea Subtract and Union |
+| 2026-08-23 | 1 | fcad | `121b01661f` | run the ported tree against this fork's runtime |
 
 ### What was verified
 
@@ -320,6 +327,57 @@ next piece of work.
   and unrelated -- 38 are `NameError: pythonopen` in the post-processor
   scripts, 2 are `TestPathOpUtil` hitting a null shape out of
   `makEWires`. Both sets fail identically without this work.
+
+### What phase 1 turned out to need
+
+Beyond the recipe: the module is `src/Mod/CAM` now, so `BUILD_PATH` became
+`BUILD_CAM` everywhere; CAM's `tsp_solver` forced `FREECAD_USE_PYBIND11` on,
+which in turn switched `Mod/Area/PyArea` from its boost-python wrapper to
+`pyarea.cpp` and exposed that `Subtract` and `Union` were uncallable from
+Python there; `PathSimulator/AppGL` went behind `BUILD_CAM_SIMULATOR_GL`
+(off), which it needed anyway since it wants a `Gui/MDIViewWithCamera.h` this
+fork does not have; and three upstream-only core APIs had to be met --
+`ParameterGrp.RenameGroup` (bound, the C++ was already here),
+`Base::TimeTracker` (one debug line, dropped) and
+`FreeCAD.ApplicationDirectories` (versioned config directories, which this
+fork does not have, so the two callers fall back to the single user
+directory).
+
+`getClearedArea` moved to the CAM side as `Path::clearedAreaFromPath`, the
+same call `Area::toPath` had already made: upstream made it a static on
+`Area` taking a `Toolpath*`, and the area engine here deliberately knows
+nothing about toolpaths. `Mod/Area` gained no new public API for it.
+
+### Where phase 1 stands
+
+`TestCAMApp`: **1343 tests, 17 failures, 9 errors, 44 skipped, 5 expected
+failures**, all 26 in two groups, neither of them loose ends of the port:
+
+1. **Adaptive clearing (15).** Upstream's `Adaptive2d.Execute` takes a fourth
+   `clearedArea` argument for rest machining; this fork's `Adaptive.cpp` is
+   the older three-argument one, which is the piece this plan already parked
+   ("migrating adaptive clearing is its own piece of work"). Five error out
+   on the signature, ten fail on the path it consequently does not produce.
+2. **Geometry off by one lattice step (11).** `TestPathProfile` test01 wants
+   `X23.54` and gets `X23.55`, the pocket tests get zero loops where they
+   want one, and `TestSlicer` gets 3 Z depths where it wants 4. The area
+   parameters are not the cause -- accuracy and clipper scale have the same
+   defaults on both sides. This is upstream's op code running against an
+   `Area.cpp` that has not had upstream's +1,422/-726 applied to it yet,
+   slicer fixes included. That is exactly phase 2.
+
+Neither group blocks the module: it builds, imports, and 1317 of its tests
+pass.
+
+Two things worth knowing about running the suite:
+
+- Redirecting its stdout to a file makes it die partway with `OSError: [Errno
+  9] Bad file descriptor` -- a Sanity postprocessor test closes the
+  descriptor unittest is writing to. Give it a tty (`script -qec ...
+  /dev/null`) and the whole suite runs.
+- A stale `Mod/Path` directory left in a build tree from before the rename
+  shadows the new `Mod/CAM/Path` package, and the module then fails to import
+  with a misleading `No module named 'Path.Tool.assets'`. Delete it.
 
 ### Still open
 
