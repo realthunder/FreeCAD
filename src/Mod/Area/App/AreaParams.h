@@ -121,16 +121,16 @@
 	((double,max_offset,PocketMaxOffset,0.0,"Maximum offset for pocketing",App::PropertyDistance))\
 	((double,stepover,PocketStepover,0.0,\
         "Cutter diameter to step over on each pass. If =0, use ToolRadius.",App::PropertyLength))\
-	((double,last_stepover,PocketLastStepover,0.0,\
-        "Cutter diameter to step over for the last loop when using offset pocket.\n"\
-        "If =0, use 0.5*ToolRadius.", App::PropertyLength))\
 	((bool,from_center,FromCenter,false,"Start pocketing from center"))\
 	((double,angle,Angle,45,"Pattern angle in degree",App::PropertyAngle))\
 	((double,angle_shift,AngleShift,0.0,"Pattern angle shift for each section", App::PropertyAngle))\
 	((double,shift,Shift,0.0,"Pattern shift distance for each section.\n"\
         "The pocket pattern will be shifted in orthogonal direction by this amount for each section.\n"\
         "This gives a 3D pattern mainly for 3D printing. The shift only applies to 'Offset', 'Grid'\n"\
-        "and 'Triangle'", App::PropertyDistance))
+        "and 'Triangle'", App::PropertyDistance))\
+	((bool,force_max_stepover,ForceMaxStepover,false,\
+        "Force the maximum stepover even where it leaves material behind. Without this,\n"\
+        "a large stepover (over 50%) may be reduced to keep the passes overlapping."))
 
 #define AREA_PARAMS_POCKET_CONF \
     ((bool,thicken,Thicken,false,"Thicken the resulting wires with ToolRadius"))
@@ -148,10 +148,7 @@
         "Offset value, positive for expansion, negative for shrinking",App::PropertyDistance))\
     ((long,extra_pass,ExtraPass,0,"Number of extra offset pass to generate."))\
     ((double,stepover,Stepover,0.0,\
-        "Cutter diameter to step over on each pass. If =0, use Offset",App::PropertyLength))\
-	((double,last_stepover,LastStepover,0.0,\
-        "Cutter diameter to step over for the last loop when shrinking with ExtraPass<0, i.e. for\n"\
-        "offset pocketing. If =0, use 0.5*Offset.", App::PropertyLength))
+        "Cutter diameter to step over on each pass. If =0, use Offset",App::PropertyLength))
 
 #define AREA_PARAMS_SECTION_EXTRA \
     ((enum,mode,SectionMode,2,"Section offset coordinate mode.\n"\

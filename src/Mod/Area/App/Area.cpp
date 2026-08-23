@@ -27,6 +27,7 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <optional>
 # include <cfloat>
 # include <boost_geometry.hpp>
 # include <boost/range/adaptor/indexed.hpp>
@@ -2027,6 +2028,48 @@ TopoDS_Shape Area::makeOffset(int index, PARAM_ARGS(PARAM_FARG, AREA_PARAMS_OFFS
     return TopoDS_Shape();
 }
 
+std::shared_ptr<CArea> Area::performSingleOffset(double offset)
+{
+    PARAM_ENUM_CONVERT(AREA_MY, PARAM_FNAME, PARAM_ENUM_EXCEPT, AREA_PARAMS_OFFSET_CONF);
+#ifdef AREA_OFFSET_ALGO
+    PARAM_ENUM_CONVERT(AREA_MY, PARAM_FNAME, PARAM_ENUM_EXCEPT, AREA_PARAMS_CLIPPER_FILL);
+#endif
+
+    auto area = make_shared<CArea>();
+    CArea areaOpen;
+
+#ifdef AREA_OFFSET_ALGO
+    switch (myParams.Algo) {
+    case Area::Algolibarea:
+        // Separate the closed and open curves for libarea
+        for (const CCurve& c : myArea->m_curves) {
+            if (c.IsClosed())
+                area->append(c);
+            else
+                areaOpen.append(c);
+        }
+        // libarea somehow fails offset without Reorder, but ClipperOffset
+        // works okay. Don't know why
+        area->Reorder();
+        area->Offset(-offset);
+        if (areaOpen.m_curves.size()) {
+            areaOpen.Thicken(offset);
+            area->Clip(Clipper2Lib::ClipType::Union, areaOpen, SubjectFill, ClipFill);
+        }
+        break;
+    case Area::AlgoClipperOffset:
+#endif
+        *area = *myArea;
+        area->OffsetWithClipper(offset, JoinType, EndType,
+            myParams.MiterLimit, myParams.RoundPrecision);
+#ifdef AREA_OFFSET_ALGO
+        break;
+    }
+#endif
+
+    return area;
+}
+
 void Area::makeOffset(list<shared_ptr<CArea> >& areas,
     PARAM_ARGS(PARAM_FARG, AREA_PARAMS_OFFSET), bool from_center)
 {
@@ -2051,78 +2094,96 @@ void Area::makeOffset(list<shared_ptr<CArea> >& areas,
     }
 
     PARAM_ENUM_CONVERT(AREA_MY, PARAM_FNAME, PARAM_ENUM_EXCEPT, AREA_PARAMS_OFFSET_CONF);
-#ifdef AREA_OFFSET_ALGO
-    PARAM_ENUM_CONVERT(AREA_MY, PARAM_FNAME, PARAM_ENUM_EXCEPT, AREA_PARAMS_CLIPPER_FILL);
-#endif
 
-    if (offset < 0) {
-        stepover = -fabs(stepover);
-        if (count < 0) {
-            if (!last_stepover)
-                last_stepover = offset * 0.5;
-            else
-                last_stepover = -fabs(last_stepover);
-        }
-        else
-            last_stepover = 0;
-    }
+    // A stepover wider than the tool leaves uncut material between passes
+    // wherever the shape narrows or turns. Detect that by walking the previous
+    // pass back out by the tool radius and seeing whether the current pass
+    // covers it; where it does not, bisect for the widest stepover that does.
+    std::optional<CArea> previous_area_offset;
+    const double tool_radius = myParams.ToolRadius;
+    const bool check_gaps = !myParams.ForceMaxStepover && fabs(stepover) > tool_radius;
+    const double gap_tolerance = myParams.Accuracy;
+    const double sign_stepover = (stepover > 0) ? 1.0 : -1.0;
+
+    auto reachOf = [&](const CArea& a) {
+        CArea reach(a);
+        reach.OffsetWithClipper(sign_stepover * tool_radius, JoinType, EndType,
+            myParams.MiterLimit, myParams.RoundPrecision);
+        return reach;
+    };
+    auto leavesGap = [&](const CArea& a) {
+        CArea back(a);
+        back.OffsetWithClipper(-sign_stepover * tool_radius, JoinType, EndType,
+            myParams.MiterLimit, myParams.RoundPrecision);
+        CArea gap(*previous_area_offset);
+        gap.Subtract(back);
+        return !gap.m_curves.empty();
+    };
+
     for (int i = 0; count < 0 || i < count; ++i, offset += stepover) {
-        if (from_center)
-            areas.push_front(make_shared<CArea>());
-        else
-            areas.push_back(make_shared<CArea>());
-        CArea& area = from_center ? (*areas.front()) : (*areas.back());
-        CArea areaOpen;
-#ifdef AREA_OFFSET_ALGO
-        if (myParams.Algo == Area::Algolibarea) {
-            for (const CCurve& c : myArea->m_curves) {
-                if (c.IsClosed())
-                    area.append(c);
-                else
-                    areaOpen.append(c);
-            }
-        }
-        else
-#endif
-            area = *myArea;
+        const double prevOffset = offset - stepover;
+        auto area = performSingleOffset(offset);
 
-#ifdef AREA_OFFSET_ALGO
-        switch (myParams.Algo) {
-        case Area::Algolibarea:
-            // libarea somehow fails offset without Reorder, but ClipperOffset
-            // works okay. Don't know why
-            area.Reorder();
-            area.Offset(-offset);
-            if (areaOpen.m_curves.size()) {
-                areaOpen.Thicken(offset);
-                area.Clip(Clipper2Lib::ClipType::Union, areaOpen, SubjectFill, ClipFill);
+        if (previous_area_offset && check_gaps) {
+            if (leavesGap(*area)) {
+                // Anything within a tool radius of the last pass cannot leave a
+                // gap, so the answer lies between there and the full stepover.
+                double offset_min = prevOffset + sign_stepover * tool_radius;
+                double offset_max = offset;
+
+                while (fabs(offset_max - offset_min) > gap_tolerance) {
+                    const double offset_mid = (offset_min + offset_max) / 2.0;
+                    if (leavesGap(*performSingleOffset(offset_mid)))
+                        offset_max = offset_mid;
+                    else
+                        offset_min = offset_mid;
+                }
+
+                // Leave a little extra room so the passes still meet once the
+                // offset vanishes: our arcs are discretized.
+                offset = offset_min - sign_stepover * myParams.Accuracy;
+                area = performSingleOffset(offset);
             }
-            break;
-        case Area::AlgoClipperOffset:
-#endif
-            area.OffsetWithClipper(offset, JoinType, EndType,
-                myParams.MiterLimit, myParams.RoundPrecision);
-#ifdef AREA_OFFSET_ALGO
-            break;
+
+            previous_area_offset = reachOf(*area);
+            if (previous_area_offset->m_curves.empty()) {
+                // This is the last pass. Bisect again for the smallest offset
+                // that still finishes, and split the difference, so the final
+                // pass is not crowded up against the one before it.
+                double offset_min = prevOffset;
+                double offset_max = offset;
+
+                while (fabs(offset_max - offset_min) > gap_tolerance) {
+                    const double offset_mid = (offset_min + offset_max) / 2.0;
+                    if (performSingleOffset(offset_mid + sign_stepover * tool_radius)
+                            ->m_curves.empty())
+                        offset_max = offset_mid;
+                    else
+                        offset_min = offset_mid;
+                }
+
+                offset = (offset + offset_max) / 2;
+                area = performSingleOffset(offset);
+                previous_area_offset->m_curves.clear();
+            }
         }
-#endif
+        else if (check_gaps) {
+            previous_area_offset = reachOf(*area);
+        }
+
         if (count > 1)
             FC_TIME_LOG(t1, "makeOffset " << i << '/' << count);
-        if (area.m_curves.empty()) {
-            if (from_center)
-                areas.pop_front();
-            else
-                areas.pop_back();
-            if (areas.empty())
-                break;
-            if (last_stepover && last_stepover > stepover) {
-                offset -= stepover;
-                stepover = last_stepover;
-                --i;
-                continue;
-            }
-            return;
-        }
+
+        if (area->m_curves.empty())
+            break;
+
+        if (from_center)
+            areas.push_front(area);
+        else
+            areas.push_back(area);
+
+        if (previous_area_offset && previous_area_offset->m_curves.empty())
+            break;
     }
     FC_TIME_LOG(t, "makeOffset count: " << count);
 }
@@ -2185,7 +2246,6 @@ TopoDS_Shape Area::makePocket(int index, PARAM_ARGS(PARAM_FARG, AREA_PARAMS_POCK
         Offset = -tool_radius - extra_offset - shift;
         ExtraPass = -1;
         Stepover = -stepover;
-        LastStepover = -last_stepover;
         // make offset and make sure the loop is CW (i.e. inner wires)
         return makeOffset(index, PARAM_FIELDS(PARAM_FNAME, AREA_PARAMS_OFFSET), -1, from_center);
     }case Area::PocketModeZigZagOffset:
