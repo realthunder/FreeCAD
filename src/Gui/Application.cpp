@@ -2083,6 +2083,11 @@ void Application::refreshLiveLoad(const App::Document* starting)
     }
 }
 
+bool Application::isLiveLoad(const App::Document* doc) const
+{
+    return doc && liveLoad().claimed.count(doc->getName()) != 0;
+}
+
 void Application::setBuildingVisuals(bool building)
 {
     s_buildingVisuals = building;

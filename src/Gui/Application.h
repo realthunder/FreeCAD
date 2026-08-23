@@ -274,6 +274,16 @@ public:
      * at that one call site the status bits do not yet say what is true.
      */
     void refreshLiveLoad(const App::Document* starting = nullptr);
+
+    /** Whether \a doc is mid-LOAD rather than mid-import.
+     *
+     * Both set App::Document::LiveImport, and everything that refuses to
+     * touch the document reads that one bit -- but a user told "busy
+     * importing" while opening a file is being told something that is not
+     * true. Answers off the set refreshLiveLoad() claimed, so an import's
+     * own documents answer false.
+     */
+    bool isLiveLoad(const App::Document* doc) const;
     //@}
 
     void checkForDeprecatedSettings();

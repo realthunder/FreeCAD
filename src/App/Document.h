@@ -477,6 +477,50 @@ public:
      * writing on a render is found by opening a file rather than by
      * attaching a debugger.
      */
+    /** Let a command run, and stop it only if it really changes something.
+     *
+     * A command declares what it intends to alter in eType, and refusing
+     * every command that declares AlterDoc was the first way this document
+     * was protected during a live load or import. It is not a good test:
+     * eType defaults to AlterDoc, so the great majority of commands claim to
+     * alter the document whether or not they touch it, and 138 of them
+     * overwrite it with a bare ForEdit and escape the gate entirely. The
+     * declaration is simply not evidence, in either direction.
+     *
+     * So the question is asked where the answer is certain -- at the write.
+     * While this guard is alive, any attempt to touch an object, change a
+     * property of one, or add or remove an object of a document that is
+     * still loading throws, saying why. A command that only looks runs
+     * exactly as it always did, and needs no declaration to be trusted.
+     *
+     * What this cannot cover, and what a caller must still refuse by name:
+     * an operation that mutates in bulk and would be left half-done by a
+     * throw (undo and redo), and one that damages the document without
+     * changing an object at all (revert, recompute, quit, saving a document
+     * whose objects are still arriving).
+     */
+    class AppExport UserEditGuard {
+    public:
+        UserEditGuard();
+        ~UserEditGuard();
+        UserEditGuard(const UserEditGuard &) = delete;
+        UserEditGuard &operator=(const UserEditGuard &) = delete;
+    private:
+        bool toggled;
+    };
+
+    /// Whether a user command is running inside a UserEditGuard.
+    static bool isUserEditing();
+
+    /** Throw if a user command is changing a document that is still filling.
+     *
+     * Called from the write paths. \a prop is null when the caller touched
+     * the object rather than one of its properties, and \a obj may be null
+     * for a change that is about the document itself.
+     */
+    static void checkUserEdit(const Document *doc, const DocumentObject *obj,
+                              const Property *prop);
+
     class AppExport RestoreDrainGuard {
     public:
         explicit RestoreDrainGuard(Document *doc);
