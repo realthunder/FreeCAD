@@ -908,12 +908,29 @@ void FileBlobManager::dispatchPending()
         std::lock_guard<std::mutex> guard(_mutex);
         pending.swap(_pending);
     }
+    // One absent blob is one defect in the document however many properties
+    // name it, so it is counted rather than warned about per referrer. A
+    // stock material card is the case that matters: it is deliberately not
+    // written (docs/MaterialStorage.md sec 5), so if the installed library
+    // can no longer produce its content every object sharing it lands here
+    // at once -- 13642 of them in one IFC building, which is 13642 Console
+    // dispatches into the report view saying the same sentence.
+    std::map<std::string, std::size_t> missing;
     for (const auto& entry : pending) {
         if (auto blob = find(entry.first)) {
             entry.second->assignRestoredBlob(blob);
         }
         else {
+            ++missing[entry.first];
+        }
+    }
+    for (const auto& entry : missing) {
+        if (entry.second == 1) {
             FC_WARN("Included file " << entry.first << " is missing from the document");
+        }
+        else {
+            FC_WARN("Included file " << entry.first << " is missing from the document, named by "
+                                     << entry.second << " properties");
         }
     }
 }

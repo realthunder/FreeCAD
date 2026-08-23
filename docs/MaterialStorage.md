@@ -230,13 +230,30 @@ cache.
 
 On restore, a document blob whose hash matches a preset resolves to the
 preset's existing instance: no parse, no second copy in memory, and sharing
-re-established across every open document. On save, a blob whose hash is a
-known preset need not be written at all, so a document using only stock
-materials costs about zero extra bytes -- the common case pays nothing.
+re-established across every open document.
 
-This is the piece that makes "always embed" affordable. Embedding is then only
-paid for by documents that actually carry a custom or edited card, which is
-exactly where it is needed.
+**Revised 2026-08-23: the save half of this is off by default.** A preset's
+content was originally left out on save, on the reasoning that any
+installation holding the library can produce it again. That is true only
+while the library does not move, and it moved: `7f5a3b7d49` retuned the
+default appearance, which changed the Default card's content and so its
+hash. Every document written before it names a hash no installed card
+answers to -- and because `Restore()` treats the hash as authoritative and
+reaches the uuid branch only when the hash attribute is *absent*, the miss
+loses the material outright instead of degrading to the uuid that is
+sitting unchanged in the same element. One IFC building lost the material
+on 13642 objects that way.
+
+A shipped library is not a fixed point, so a document may not be built on
+the assumption that it is. `DocumentParams::SaveMaterialCards`, default
+**true**, writes every card including the stock ones; set it false for the
+old behaviour. What makes this affordable is the per-document dedup, not
+the omission: identical cards are stored once, so a model whose objects all
+share one card carries that card once whatever the object count.
+
+Embedding beyond that one copy is still only paid for by documents that
+actually carry a custom or edited card, which is exactly where it is
+needed.
 
 ## 6. What uuid is for once it stops being the key
 

@@ -30,6 +30,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/DocumentParams.h>
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Base/Writer.h>
@@ -138,15 +139,24 @@ const std::string& PropertyMaterial::contentHash() const
 
 bool PropertyMaterial::storesContent() const
 {
-    // A stock card need not be carried: every installation that has the
-    // library has this exact content, matched by hash rather than by uuid, so
-    // a document using only stock materials costs no extra bytes and a
-    // library edited since does not slip in under the same uuid
-    // (docs/MaterialStorage.md sec 5).
     // An unresolved value has no content of its own to store: what it holds
     // is a note of what is missing, and re-saving must leave the document
     // saying what it said.
-    return _card && !_unresolved && !MaterialCards::preset(contentHash());
+    if (!_card || _unresolved) {
+        return false;
+    }
+    // A stock card can be left out -- the hash says which card it was, and an
+    // installation holding the same library produces the content again
+    // (docs/MaterialStorage.md sec 5). That reasoning holds only while the
+    // library does not move, and it moved: retuning the default appearance
+    // changed the Default card, so documents written before it name a hash no
+    // installed card answers to and lose the material outright, since a hash
+    // miss does not fall back to the uuid. Carrying it is the default now that
+    // the content is stored once per document however many objects share it.
+    if (App::DocumentParams::getSaveMaterialCards()) {
+        return true;
+    }
+    return !MaterialCards::preset(contentHash());
 }
 
 const App::FileBlobHandle& PropertyMaterial::ensureBlob() const

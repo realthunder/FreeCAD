@@ -228,6 +228,36 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter SaveMaterialCards
+    ///
+    /// Write every material card into the document, including the
+    /// stock ones.
+    /// 
+    /// A stock card used to be left out: the hash says which card it
+    /// was, and any installation holding the same library can produce
+    /// the content again. That holds only while the library does not
+    /// move. It moved -- retuning the default appearance changed the
+    /// Default card, and every document written before it then named a
+    /// hash no installed card answers to, losing the material outright
+    /// rather than degrading to the uuid. A shipped library is not a
+    /// fixed point, so a document cannot be built on the assumption
+    /// that it is.
+    /// 
+    /// Carrying the content costs almost nothing now that identical
+    /// cards are stored once per document: a model whose objects all
+    /// share one card writes that card once, whatever the object
+    /// count. Turn off to write only the hash of a stock card, which
+    /// is smaller by that one card and readable only by an
+    /// installation whose library still matches.
+    static const bool & getSaveMaterialCards();
+    static const bool & defaultSaveMaterialCards();
+    static void removeSaveMaterialCards();
+    static void setSaveMaterialCards(const bool &v);
+    static const char *docSaveMaterialCards();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter DedupShapePCurves
     ///
     /// Store each 2D curve of a shape once, and leave out the ones
