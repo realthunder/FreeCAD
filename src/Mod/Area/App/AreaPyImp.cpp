@@ -287,15 +287,15 @@ PyObject* AreaPy::add(PyObject *args, PyObject *keywds)
                 PyObject_TypeCheck(pcObj, &(PyTuple_Type))) {
             Py::Sequence shapeSeq(pcObj);
             for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-                PyObject* item = (*it).ptr();
-                if(!PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
+                Py::Object item(*it);
+                if(!PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
                     PyErr_SetString(PyExc_TypeError, "non-shape object in sequence");
                     return nullptr;
                 }
             }
             for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it){
-                PyObject* item = (*it).ptr();
-                getAreaPtr()->add(GET_TOPOSHAPE(item),
+                Py::Object item(*it);
+                getAreaPtr()->add(GET_TOPOSHAPE(item.ptr()),
                         PARAM_PY_FIELDS(PARAM_FARG,AREA_PARAMS_OPCODE));
             }
             Py_INCREF(this);
@@ -379,12 +379,12 @@ PyObject* AreaPy::makeSections(PyObject *args, PyObject *keywds)
                 Py::Sequence shapeSeq(heights);
                 h.reserve(shapeSeq.size());
                 for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-                    PyObject* item = (*it).ptr();
-                    if(!PyObject_TypeCheck(item, &(PyFloat_Type))) {
+                    Py::Object item(*it);
+                    if(!PyObject_TypeCheck(item.ptr(), &(PyFloat_Type))) {
                         PyErr_SetString(PyExc_TypeError, "heights must only contain float type");
                         return nullptr;
                     }
-                    h.push_back(PyFloat_AsDouble(item));
+                    h.push_back(PyFloat_AsDouble(item.ptr()));
                 }
             }else{
                 PyErr_SetString(PyExc_TypeError, "heights must be of type float or list/tuple of float");
@@ -427,12 +427,12 @@ PyObject* AreaPy::getRestArea(PyObject *args)
             Py::Sequence clearedAreasSeq(pyClearedAreas);
             clearedAreas.reserve(clearedAreasSeq.size());
             for (Py::Sequence::iterator it = clearedAreasSeq.begin(); it != clearedAreasSeq.end(); ++it) {
-                PyObject *item = (*it).ptr();
-                if (!PyObject_TypeCheck(item, &(AreaPy::Type))) {
+                Py::Object item(*it);
+                if (!PyObject_TypeCheck(item.ptr(), &(AreaPy::Type))) {
                     PyErr_SetString(PyExc_TypeError, "cleared areas must only contain AreaPy type");
                     return nullptr;
                 }
-                clearedAreas.push_back(std::make_shared<Area>(*static_cast<AreaPy*>(item)->getAreaPtr(), true));
+                clearedAreas.push_back(std::make_shared<Area>(*static_cast<AreaPy*>(item.ptr())->getAreaPtr(), true));
             }
         } else {
             PyErr_SetString(PyExc_TypeError, "clearedAreas must be of type list of AreaPy");

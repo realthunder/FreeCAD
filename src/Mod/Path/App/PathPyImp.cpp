@@ -62,7 +62,8 @@ int PathPy::PyInit(PyObject* args, PyObject* /*kwd*/)
             Py::List list(pcObj);
             for (Py::List::iterator it = list.begin(); it != list.end(); ++it) {
                 if (PyObject_TypeCheck((*it).ptr(), &(Path::CommandPy::Type))) {
-                    Path::Command &cmd = *static_cast<Path::CommandPy*>((*it).ptr())->getCommandPtr();
+                    Py::Object pyItem(*it);
+                    Path::Command &cmd = *static_cast<Path::CommandPy*>(pyItem.ptr())->getCommandPtr();
                     getToolpathPtr()->addCommand(cmd);
                 } else {
                     PyErr_SetString(PyExc_TypeError, "The list must contain only Path Commands");
@@ -157,7 +158,8 @@ PyObject* PathPy::addCommands(PyObject * args)
         Py::List list(o);
         for (Py::List::iterator it = list.begin(); it != list.end(); ++it) {
             if (PyObject_TypeCheck((*it).ptr(), &(Path::CommandPy::Type))) {
-                Path::Command &cmd = *static_cast<Path::CommandPy*>((*it).ptr())->getCommandPtr();
+                Py::Object pyItem(*it);
+                Path::Command &cmd = *static_cast<Path::CommandPy*>(pyItem.ptr())->getCommandPtr();
                 getToolpathPtr()->addCommand(cmd);
             }
         }

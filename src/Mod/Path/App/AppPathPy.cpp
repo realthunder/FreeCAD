@@ -324,12 +324,12 @@ namespace PathApp {
           {
               Py::Sequence shapeSeq(pShapes);
               for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-                  PyObject* item = (*it).ptr();
-                  if(!PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
+                  Py::Object item(*it);
+                  if(!PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
                       PyErr_SetString(PyExc_TypeError, "non-shape object in sequence");
                       throw Py::Exception();
                   }
-                  shapes.push_back(static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape());
+                  shapes.push_back(static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr()->getShape());
               }
           }
 
@@ -379,12 +379,12 @@ namespace PathApp {
                   PyObject_TypeCheck(pShapes, &(PyTuple_Type))) {
               Py::Sequence shapeSeq(pShapes);
               for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-                  PyObject* item = (*it).ptr();
-                  if(!PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
+                  Py::Object item(*it);
+                  if(!PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
                       PyErr_SetString(PyExc_TypeError, "non-shape object in sequence");
                       throw Py::Exception();
                   }
-                  shapes.push_back(static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape());
+                  shapes.push_back(static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr()->getShape());
               }
           }
 

@@ -157,7 +157,8 @@ PartExport void getPyShapes(PyObject *obj, std::vector<TopoShape> &shapes, std::
         Py::Sequence list(obj);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
             if (objs && PyObject_TypeCheck((*it).ptr(), &App::DocumentObjectPy::Type)) {
-                App::DocumentObject *docObj = static_cast<App::DocumentObjectPy*>((*it).ptr())->getDocumentObjectPtr();
+                Py::Object pyItem(*it);
+                App::DocumentObject *docObj = static_cast<App::DocumentObjectPy*>(pyItem.ptr())->getDocumentObjectPtr();
                 objs->emplace_back(docObj);
                 shapes.push_back(Part::Feature::getTopoShape(docObj));
                 continue;
@@ -965,10 +966,9 @@ private:
 
         Py::Sequence list(object);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            Py::Object itemRef(*it);
-            PyObject* item = itemRef.ptr();
-            if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
-                App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
+            Py::Object item(*it);
+            if (PyObject_TypeCheck(item.ptr(), &(App::DocumentObjectPy::Type))) {
+                App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item.ptr())->getDocumentObjectPtr();
                 if (obj->isDerivedFrom<Part::Feature>()) {
                     Part::Feature* part = static_cast<Part::Feature*>(obj);
                     const TopoDS_Shape& shape = part->Shape.getValue();
@@ -1175,10 +1175,9 @@ private:
                 if (PySequence_Check(pcPyShapeOrList)){
                     Py::Sequence list(pcPyShapeOrList);
                     for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-                        Py::Object itemRef(*it);
-                        PyObject* item = itemRef.ptr();
-                        if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
-                            const TopoDS_Shape& sh = static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape();
+                        Py::Object item(*it);
+                        if (PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
+                            const TopoDS_Shape& sh = static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr()->getShape();
                             fm->addShape(sh);
                         } else {
                             throw Py::TypeError("Object is not a shape.");
@@ -2468,10 +2467,9 @@ private:
         Py::Sequence list(obj);
         std::vector<TopoDS_Edge> edges;
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            Py::Object itemRef(*it);
-            PyObject* item = itemRef.ptr();
-            if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
-                const TopoDS_Shape& sh = static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape();
+            Py::Object item(*it);
+            if (PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
+                const TopoDS_Shape& sh = static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr()->getShape();
                 if (sh.ShapeType() == TopAbs_EDGE)
                     edges.push_back(TopoDS::Edge(sh));
                 else {
@@ -2479,7 +2477,7 @@ private:
                 }
             }
             else {
-                throw Py::TypeError("item is not a shape");
+                throw Py::TypeError("item.ptr() is not a shape");
             }
         }
 

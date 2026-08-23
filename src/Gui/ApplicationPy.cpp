@@ -829,10 +829,9 @@ PyObject* Application::sExport(PyObject * /*self*/, PyObject *args)
         App::Document* doc = nullptr;
         Py::Sequence list(object);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            Py::Object itemRef(*it);
-            PyObject* item = itemRef.ptr();
-            if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
-                App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
+            Py::Object item(*it);
+            if (PyObject_TypeCheck(item.ptr(), &(App::DocumentObjectPy::Type))) {
+                App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item.ptr())->getDocumentObjectPtr();
                 doc = obj->getDocument();
                 break;
             }
@@ -855,10 +854,9 @@ PyObject* Application::sExport(PyObject * /*self*/, PyObject *args)
             sep->ref();
 
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-                Py::Object itemRef(*it);
-                PyObject* item = itemRef.ptr();
-                if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
-                    App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
+                Py::Object item(*it);
+                if (PyObject_TypeCheck(item.ptr(), &(App::DocumentObjectPy::Type))) {
+                    App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item.ptr())->getDocumentObjectPtr();
 
                     Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(obj);
                     if (vp) {

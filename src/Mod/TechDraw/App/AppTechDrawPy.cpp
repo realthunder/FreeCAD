@@ -242,7 +242,8 @@ private:
             Py::Sequence list(pcObj);
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                 if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapeEdgePy::Type))) {
-                    const TopoDS_Shape& shape = static_cast<TopoShapePy*>((*it).ptr())->
+                    Py::Object pyItem(*it);
+                    const TopoDS_Shape& shape = static_cast<TopoShapePy*>(pyItem.ptr())->
                         getTopoShapePtr()->getShape();
                     const TopoDS_Edge edge = TopoDS::Edge(shape);
                     edgeList.push_back(edge);
@@ -304,7 +305,8 @@ private:
             Py::Sequence list(pcObj);
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                 if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapeEdgePy::Type))) {
-                    const TopoDS_Shape& shape = static_cast<TopoShapePy*>((*it).ptr())->
+                    Py::Object pyItem(*it);
+                    const TopoDS_Shape& shape = static_cast<TopoShapePy*>(pyItem.ptr())->
                         getTopoShapePtr()->getShape();
                     const TopoDS_Edge edge = TopoDS::Edge(shape);
                     edgeList.push_back(edge);

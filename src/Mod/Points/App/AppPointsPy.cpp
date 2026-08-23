@@ -331,11 +331,10 @@ private:
         Py::Sequence list(object);
         Base::Type pointsId = Base::Type::fromName("Points::Feature");
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            Py::Object itemRef(*it);
-            PyObject* item = itemRef.ptr();
-            if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
+            Py::Object item(*it);
+            if (PyObject_TypeCheck(item.ptr(), &(App::DocumentObjectPy::Type))) {
                 App::DocumentObject* obj =
-                    static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
+                    static_cast<App::DocumentObjectPy*>(item.ptr())->getDocumentObjectPtr();
                 if (obj->getTypeId().isDerivedFrom(pointsId)) {
                     // get relative placement
                     Points::Feature* fea = static_cast<Points::Feature*>(obj);

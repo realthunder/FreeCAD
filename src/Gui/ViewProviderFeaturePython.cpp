@@ -263,10 +263,9 @@ bool ViewProviderFeaturePythonImp::claimChildren(std::vector<App::DocumentObject
     try {
         Py::Sequence list(Base::pyCall(py_claimChildren.ptr()));
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            Py::Object itemRef(*it);
-            PyObject* item = itemRef.ptr();
-            if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
-                App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
+            Py::Object item(*it);
+            if (PyObject_TypeCheck(item.ptr(), &(App::DocumentObjectPy::Type))) {
+                App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item.ptr())->getDocumentObjectPtr();
                 children.push_back(obj);
             }
         }

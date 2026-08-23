@@ -64,10 +64,9 @@ static bool getOptions(PyObject *tuple, ViewProviderSavedView::CaptureOptions &o
             }
             Py::Sequence seq(args);
             for (auto it = seq.begin(); it != seq.end(); ++it) {
-                Py::Object itemRef(*it);
-                PyObject* item = itemRef.ptr();
-                if (PyUnicode_Check(item)) {
-                    opts.push_back(PyUnicode_AsUTF8(item));
+                Py::Object item(*it);
+                if (PyUnicode_Check(item.ptr())) {
+                    opts.push_back(PyUnicode_AsUTF8(item.ptr()));
                 }else{
                     PyErr_SetString(PyExc_TypeError, "non-string object in sequence");
                     return false;

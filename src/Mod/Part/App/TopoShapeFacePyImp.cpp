@@ -233,9 +233,9 @@ int TopoShapeFacePy::PyInit(PyObject* args, PyObject* /*kwd*/)
             if (bound) {
                 Py::List list(bound);
                 for (Py::List::iterator it = list.begin(); it != list.end(); ++it) {
-                    PyObject* item = (*it).ptr();
-                    if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
-                        shapes.push_back(*static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr());
+                    Py::Object item(*it);
+                    if (PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
+                        shapes.push_back(*static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr());
                         const TopoDS_Shape& sh = shapes.back().getShape();
                         if (sh.ShapeType() == TopAbs_WIRE)
                             mkFace.Add(TopoDS::Wire(sh));
@@ -245,7 +245,7 @@ int TopoShapeFacePy::PyInit(PyObject* args, PyObject* /*kwd*/)
                         }
                     }
                     else {
-                        PyErr_SetString(PyExc_TypeError, "item is not a shape");
+                        PyErr_SetString(PyExc_TypeError, "item.ptr() is not a shape");
                         return -1;
                     }
                 }
@@ -263,9 +263,9 @@ int TopoShapeFacePy::PyInit(PyObject* args, PyObject* /*kwd*/)
             std::vector<TopoShape> wires;
             Py::List list(bound);
             for (Py::List::iterator it = list.begin(); it != list.end(); ++it) {
-                PyObject* item = (*it).ptr();
-                if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
-                    wires.push_back(*static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr());
+                Py::Object item(*it);
+                if (PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
+                    wires.push_back(*static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr());
                     const TopoDS_Shape& sh = wires.back().getShape();
                     if (sh.ShapeType() != TopAbs_WIRE)
                         throw Standard_Failure("shape is not a wire");
@@ -321,10 +321,9 @@ int TopoShapeFacePy::PyInit(PyObject* args, PyObject* /*kwd*/)
             if (PySequence_Check(pcPyShapeOrList)){
                 Py::Sequence list(pcPyShapeOrList);
                 for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-                    Py::Object itemRef(*it);
-                    PyObject* item = itemRef.ptr();
-                    if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
-                        auto& sh = *static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr();
+                    Py::Object item(*it);
+                    if (PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
+                        auto& sh = *static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr();
                         fm->addTopoShape(sh);
                     } else {
                         PyErr_SetString(PyExc_TypeError, "Object is not a shape.");
@@ -758,9 +757,9 @@ PyObject* TopoShapeFacePy::cutHoles(PyObject *args)
             std::vector<TopoShape> wires;
             Py::List list(holes);
             for (Py::List::iterator it = list.begin(); it != list.end(); ++it) {
-                PyObject* item = (*it).ptr();
-                if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
-                    const TopoShape& sh = *static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr();
+                Py::Object item(*it);
+                if (PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
+                    const TopoShape& sh = *static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr();
                     if (sh.shapeType() == TopAbs_WIRE)
                         wires.push_back(sh);
                     else
