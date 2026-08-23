@@ -64,6 +64,12 @@ class CAMAssetMigrator:
         self.pref_group_path = "User parameter:BaseApp/Preferences/Mod/CAM/Migration"
 
     def check_migration_needed(self):
+        # Everything below moves assets between per-version config directories.
+        # This fork has no such directories -- FreeCAD.ApplicationDirectories
+        # does not exist here -- so there is nothing to migrate between.
+        if getattr(FreeCAD, "ApplicationDirectories", None) is None:
+            Path.Log.debug("No versioned config directories, skipping asset migration")
+            return
         self.check_asset_location()
         self.check_tool_library_workdir()
 

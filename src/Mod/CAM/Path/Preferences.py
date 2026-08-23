@@ -137,6 +137,19 @@ def getDefaultAssetPath() -> Path:
     return asset_path
 
 
+def _mostRecentConfigFromBase(base: str) -> str:
+    """Resolve a base path to the newest versioned config directory under it.
+
+    FreeCAD.ApplicationDirectories, which keeps one config directory per
+    application version, does not exist in this fork -- there is a single
+    unversioned user directory, so the base path is already the current one.
+    """
+    appdirs = getattr(FreeCAD, "ApplicationDirectories", None)
+    if appdirs is None:
+        return base
+    return appdirs.mostRecentConfigFromBase(base)
+
+
 def getAssetPath() -> pathlib.Path:
     pref = tool_preferences()
 
@@ -144,7 +157,7 @@ def getAssetPath() -> pathlib.Path:
     cam_assets_path = pref.GetString(ToolPath, "")
     if cam_assets_path:
         # Use mostRecentConfigFromBase to get the most recent versioned path
-        most_recent_path = FreeCAD.ApplicationDirectories.mostRecentConfigFromBase(cam_assets_path)
+        most_recent_path = _mostRecentConfigFromBase(cam_assets_path)
         return pathlib.Path(most_recent_path)
 
     # Migration: Check for legacy DefaultFilePath and use it for CamAssets
@@ -155,15 +168,13 @@ def getAssetPath() -> pathlib.Path:
             # Migrate: Set the legacy path as the new CamAssets path
             setAssetPath(legacy_path_obj)
             # Return the most recent version of the legacy path
-            most_recent_legacy = FreeCAD.ApplicationDirectories.mostRecentConfigFromBase(
-                str(legacy_path_obj)
-            )
+            most_recent_legacy = _mostRecentConfigFromBase(str(legacy_path_obj))
             return pathlib.Path(most_recent_legacy)
 
     # Fallback to default if no legacy path found
     default = getDefaultAssetPath()
     # Return the most recent version of the default path
-    most_recent_default = FreeCAD.ApplicationDirectories.mostRecentConfigFromBase(str(default))
+    most_recent_default = _mostRecentConfigFromBase(str(default))
     return pathlib.Path(most_recent_default)
 
 

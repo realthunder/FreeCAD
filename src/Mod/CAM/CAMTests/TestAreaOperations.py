@@ -9,7 +9,7 @@ C++-only methods (Xor, Clip, OffsetWithClipper) are not tested here.
 """
 
 import unittest
-import area
+import libarea as area
 import math
 
 

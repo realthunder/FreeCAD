@@ -28,7 +28,7 @@ import Part
 import Path.Op.Adaptive as PathAdaptive
 import Path.Main.Job as PathJob
 from CAMTests.PathTestUtils import PathTestBase
-import area
+import libarea as area
 import math
 import time
 
