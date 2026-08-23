@@ -330,13 +330,30 @@ void init_pyarea(py::module &m){
         .def("MaxY", &CBox2D::MaxY)
     ;
 
+    // Clipper2's fill rule. Subtract and Union take one per operand in this
+    // fork -- upstream dropped the arguments and hard-coded EvenOdd -- so the
+    // type has to be visible for their defaults to be expressible, and for a
+    // caller that wants NonZero to be able to say so.
+    py::enum_<Clipper2Lib::FillRule>(m, "FillRule")
+        .value("EvenOdd", Clipper2Lib::FillRule::EvenOdd)
+        .value("NonZero", Clipper2Lib::FillRule::NonZero)
+        .value("Positive", Clipper2Lib::FillRule::Positive)
+        .value("Negative", Clipper2Lib::FillRule::Negative)
+    ;
+
     py::class_<CArea>(m, "Area") 
         .def(py::init<>())
         .def("getCurves", &getCurves)
         .def("append",&CArea::append)
-        .def("Subtract",&CArea::Subtract)
+        .def("Subtract",&CArea::Subtract,
+             py::arg("a2"),
+             py::arg("subject_fill") = Clipper2Lib::FillRule::EvenOdd,
+             py::arg("clip_fill") = Clipper2Lib::FillRule::EvenOdd)
         .def("Intersect",&CArea::Intersect)
-        .def("Union",&CArea::Union)
+        .def("Union",&CArea::Union,
+             py::arg("a2"),
+             py::arg("subject_fill") = Clipper2Lib::FillRule::EvenOdd,
+             py::arg("clip_fill") = Clipper2Lib::FillRule::EvenOdd)
         .def("Offset",&CArea::Offset)
         .def("FitArcs",&CArea::FitArcs)
         .def("text", &print_area)
