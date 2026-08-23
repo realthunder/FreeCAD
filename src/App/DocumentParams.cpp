@@ -58,6 +58,7 @@ public:
         signalParamChanged("InlineListSize");
         signalParamChanged("ArchiveRandomAccess");
         signalParamChanged("DeferShapeLoad");
+        signalParamChanged("SaveMaterialCards");
         signalParamChanged("DedupShapePCurves");
         signalParamChanged("DedupCongruentShapes");
         signalParamChanged("DedupCrossFileGeometry");
@@ -102,6 +103,7 @@ public:
     long InlineListSize;
     bool ArchiveRandomAccess;
     bool DeferShapeLoad;
+    bool SaveMaterialCards;
     bool DedupShapePCurves;
     bool DedupCongruentShapes;
     bool DedupCrossFileGeometry;
@@ -162,6 +164,8 @@ public:
         funcs["ArchiveRandomAccess"] = &DocumentParamsP::updateArchiveRandomAccess;
         DeferShapeLoad = this->handle->GetBool("DeferShapeLoad", true);
         funcs["DeferShapeLoad"] = &DocumentParamsP::updateDeferShapeLoad;
+        SaveMaterialCards = this->handle->GetBool("SaveMaterialCards", true);
+        funcs["SaveMaterialCards"] = &DocumentParamsP::updateSaveMaterialCards;
         DedupShapePCurves = this->handle->GetBool("DedupShapePCurves", true);
         funcs["DedupShapePCurves"] = &DocumentParamsP::updateDedupShapePCurves;
         DedupCongruentShapes = this->handle->GetBool("DedupCongruentShapes", true);
@@ -289,6 +293,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDeferShapeLoad(DocumentParamsP *self) {
         self->DeferShapeLoad = self->handle->GetBool("DeferShapeLoad", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateSaveMaterialCards(DocumentParamsP *self) {
+        self->SaveMaterialCards = self->handle->GetBool("SaveMaterialCards", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDedupShapePCurves(DocumentParamsP *self) {
@@ -799,6 +807,52 @@ void DocumentParams::setDeferShapeLoad(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void DocumentParams::removeDeferShapeLoad() {
     instance()->handle->RemoveBool("DeferShapeLoad");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docSaveMaterialCards() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Write every material card into the document, including the\n"
+"stock ones.\n"
+"\n"
+"A stock card used to be left out: the hash says which card it\n"
+"was, and any installation holding the same library can produce\n"
+"the content again. That holds only while the library does not\n"
+"move. It moved -- retuning the default appearance changed the\n"
+"Default card, and every document written before it then named a\n"
+"hash no installed card answers to, losing the material outright\n"
+"rather than degrading to the uuid. A shipped library is not a\n"
+"fixed point, so a document cannot be built on the assumption\n"
+"that it is.\n"
+"\n"
+"Carrying the content costs almost nothing now that identical\n"
+"cards are stored once per document: a model whose objects all\n"
+"share one card writes that card once, whatever the object\n"
+"count. Turn off to write only the hash of a stock card, which\n"
+"is smaller by that one card and readable only by an\n"
+"installation whose library still matches.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & DocumentParams::getSaveMaterialCards() {
+    return instance()->SaveMaterialCards;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & DocumentParams::defaultSaveMaterialCards() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setSaveMaterialCards(const bool &v) {
+    instance()->handle->SetBool("SaveMaterialCards",v);
+    instance()->SaveMaterialCards = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeSaveMaterialCards() {
+    instance()->handle->RemoveBool("SaveMaterialCards");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
