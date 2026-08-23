@@ -180,6 +180,22 @@ public:
     bool blobContentNeedsStore() const override { return storesContent(); }
     void assignRestoredBlob(const App::FileBlobHandle& blob) override;
 
+    /** Stand in for content the document turned out not to carry.
+     *
+     * A stock card is written by hash alone when the installation is expected
+     * to hold it (docs/MaterialStorage.md sec 5), so a library that has moved
+     * since -- a retuned preset, a different FreeCAD -- leaves the hash naming
+     * nothing. The uuid beside it still names the card the assignment came
+     * from, which is what upstream resolves by and what this property resolves
+     * by when a document carries no hash at all, so it is no new trust to
+     * resolve by it here.
+     *
+     * The value stays unresolved: the stand-in is what the material looks
+     * like, not what the document says it is, so saving writes the original
+     * hash back and "save to library" still refuses it.
+     */
+    bool blobUnavailable() override;
+
     const char* getEditorName() const override;
 
     Property* Copy() const override;

@@ -103,6 +103,7 @@
 #include "GuiInitScript.h"
 #include "LinkViewPy.h"
 #include "InputHintPy.h"
+#include "LiveViewInteraction.h"
 #include "MainWindow.h"
 #include "Macro.h"
 #include "PreferencePackManager.h"
@@ -2059,9 +2060,115 @@ bool Application::isClosing()
 // build with no such workbench loaded -- nothing is deferring anything.
 static bool s_buildingVisuals = false;
 
+namespace
+{
+/// What a progressive LOAD holds while it runs, the counterpart of what
+/// Gui.setLiveImport() gives a progressive IMPORT.
+struct LiveLoad
+{
+    /// Alive while any document is loading; this is what the progress
+    /// bar's and the wait cursor's filters consult before swallowing
+    /// pointer input.
+    std::unique_ptr<LiveViewInteraction> navigable;
+    /// The documents this turned App::Document::LiveImport on for, so the
+    /// bit is cleared on exactly the ones that were claimed -- a document
+    /// that had it set by an actual import must keep it.
+    std::set<std::string> claimed;
+};
+
+LiveLoad& liveLoad()
+{
+    static LiveLoad live;
+    return live;
+}
+}  // namespace
+
+void Application::refreshLiveLoad(const App::Document* starting)
+{
+    auto& live = liveLoad();
+
+    // Recomputed from the live state every time rather than counted up and
+    // down, so any call repairs a claim that a failed or abandoned load left
+    // behind. A stuck claim is not cosmetic: it refuses every AlterDoc
+    // command for the rest of the session.
+    std::set<std::string> loading;
+    if (starting) {
+        // Its Restoring bit is not set yet -- the signal that brings us here
+        // is emitted one line before it -- so this is the only evidence that
+        // a load is beginning, and the blocking open that claims the input
+        // filter is about to start.
+        loading.insert(starting->getName());
+    }
+    for (auto doc : App::GetApplication().getDocuments()) {
+        if (doc->testStatus(App::Document::Restoring)) {
+            loading.insert(doc->getName());
+            continue;
+        }
+        // The deferred view-provider drain is still the load: its slices run
+        // with the Restoring bit clear between them.
+        auto guiDoc = getDocument(doc);
+        if (guiDoc && guiDoc->isRestoringViewProviders()) {
+            loading.insert(doc->getName());
+        }
+    }
+    if (s_buildingVisuals) {
+        // The visual drain is the last phase of a load and the only one in
+        // which geometry reaches the view, but it is published as one flag
+        // for all documents rather than per document. So while it runs, the
+        // honest answer is that the documents which were loading still are --
+        // minus any that has been closed since.
+        for (const auto& name : live.claimed) {
+            if (App::GetApplication().getDocument(name.c_str())) {
+                loading.insert(name);
+            }
+        }
+    }
+
+    for (const auto& name : live.claimed) {
+        if (loading.count(name)) {
+            continue;
+        }
+        if (auto doc = App::GetApplication().getDocument(name.c_str())) {
+            doc->setStatus(App::Document::LiveImport, false);
+        }
+    }
+    for (auto it = loading.begin(); it != loading.end();) {
+        if (live.claimed.count(*it)) {
+            ++it;
+            continue;
+        }
+        auto doc = App::GetApplication().getDocument(it->c_str());
+        if (!doc || doc->testStatus(App::Document::LiveImport)) {
+            // Already live for a reason of its own -- an import writing into
+            // the document this load is reading. Not ours to set, so not ours
+            // to clear when the load ends.
+            it = loading.erase(it);
+            continue;
+        }
+        doc->setStatus(App::Document::LiveImport, true);
+        ++it;
+    }
+    live.claimed = std::move(loading);
+
+    if (live.claimed.empty()) {
+        live.navigable.reset();
+    }
+    else if (!live.navigable) {
+        live.navigable = std::make_unique<LiveViewInteraction>();
+    }
+}
+
+bool Application::isLiveLoad(const App::Document* doc) const
+{
+    return doc && liveLoad().claimed.count(doc->getName()) != 0;
+}
+
 void Application::setBuildingVisuals(bool building)
 {
     s_buildingVisuals = building;
+    // The drain emptying is the end of the load, and the only notice of it
+    // this side gets.
+    refreshLiveLoad();
 }
 
 bool Application::isBuildingVisuals() const

@@ -2476,10 +2476,24 @@ bool refuseWhileImporting()
 {
     for (auto doc : App::GetApplication().getDocuments()) {
         if (doc->testStatus(App::Document::LiveImport)) {
+            const bool loading = Application::Instance->isLiveLoad(doc);
             if (auto mw = getMainWindow()) {
                 mw->showMessage(
-                    QObject::tr("The document is busy importing, please wait..."), 3000);
+                    loading
+                        ? QObject::tr("The document is still loading, please wait...")
+                        : QObject::tr("The document is busy importing, please wait..."),
+                    3000);
             }
+            // As in Command::invoke(): a drop or an edit that silently does
+            // nothing is indistinguishable from a broken tree, so the reason
+            // goes somewhere it can still be read once the hint has gone.
+            Base::Console().warning(
+                loading
+                    ? "That was not done: the document '%s' is still loading, and it cannot be"
+                      " edited until that finishes.\n"
+                    : "That was not done: the document '%s' is still being imported into, and it"
+                      " cannot be edited until that finishes.\n",
+                doc->getName());
             return true;
         }
     }

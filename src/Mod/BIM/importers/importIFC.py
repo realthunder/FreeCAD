@@ -1492,9 +1492,15 @@ def _insert(srcfile, docname, skip=[], only=[], root=None, preferences=None):
         lay = Draft.make_layer(layer_name)
         # ShapeColor and LineColor are not set, thus some some default values are used
         # do not override the imported ShapeColor and LineColor with default layer values
-        if FreeCAD.GuiUp:
-            lay.ViewObject.OverrideLineColorChildren = False
-            lay.ViewObject.OverrideShapeColorChildren = False
+        # OverrideShapeColorChildren was renamed OverrideShapeAppearanceChildren
+        # upstream, and Layer's own migration removes the old name -- so setting
+        # it by name alone stopped disabling anything, and raised besides.
+        if FreeCAD.GuiUp and lay.ViewObject is not None:
+            for _prop in ("OverrideLineColorChildren",
+                          "OverrideShapeColorChildren",
+                          "OverrideShapeAppearanceChildren"):
+                if hasattr(lay.ViewObject, _prop):
+                    setattr(lay.ViewObject, _prop, False)
         lay_grp = []
         for lobj_id in layer_objects:
             if lobj_id in objects:

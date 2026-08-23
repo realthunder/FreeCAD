@@ -360,6 +360,37 @@ void PropertyMaterial::Restore(Base::XMLReader& reader)
     assignUnresolved({});
 }
 
+bool PropertyMaterial::blobUnavailable()
+{
+    _pendingManager = nullptr;
+    if (_uuid.isEmpty()) {
+        return false;
+    }
+    // What the document said, kept across the assignment below: the stand-in
+    // must not become what this property claims to be.
+    const std::string recorded = _hash;
+    try {
+        auto card = MaterialManager::getManager().getMaterial(_uuid);
+        if (!card) {
+            return false;
+        }
+        if (_name.isEmpty()) {
+            _name = card->getName();
+        }
+        // Unresolved, deliberately. The card is the library's answer to this
+        // uuid, which is the right thing to look at and the wrong thing to
+        // claim: contentHash() keeps answering with the recorded hash, so a
+        // re-save writes the reference the file carried rather than replacing
+        // it with whatever this installation happens to hold.
+        assign(MaterialCards::adopt(card->getContentHash(), _uuid, _name, card), true);
+        _hash = recorded;
+        return true;
+    }
+    catch (const Base::Exception&) {
+    }
+    return false;
+}
+
 void PropertyMaterial::assignRestoredBlob(const App::FileBlobHandle& blob)
 {
     _pendingManager = nullptr;

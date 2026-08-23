@@ -77,6 +77,11 @@ deferred shapes in §14. The net effect on MiSTer: open window
 32.7s → **~2.0–2.3s**, converged frame 0 px against the eager load,
 peak RSS no higher and ~1.1GB lower during the window.
 
+What keeps the GUI usable across all of those slices is sec 15 of the
+same document: the pointer stays live for a load as it already did for
+an import, and a command is judged by what it actually changes rather
+than by the edit mask it declares.
+
 Two ordering rules in this pipeline were bought with real debugging
 time and must survive refactors:
 

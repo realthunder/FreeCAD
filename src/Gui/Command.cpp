@@ -483,18 +483,61 @@ void Command::invoke(int i, TriggerSource trigger)
     // them, which deleted an object mid-import while the gate asked only
     // about AlterDoc.
     {
-        constexpr int intentBits = AlterDoc | Alter3DView | AlterSelection | ForEdit;
-        const int intent = eType & intentBits;
-        const bool looksOnly =
-            intent != 0 && (intent & ~(Alter3DView | AlterSelection)) == 0;
-        if (!looksOnly) {
-            auto doc = App::GetApplication().getActiveDocument();
-            if (doc && doc->testStatus(App::Document::LiveImport)) {
+        // Only the operations a write-time guard cannot cover are refused by
+        // name. Everything else runs, and App::Document::UserEditGuard stops
+        // it at the first change it makes to a document that is still
+        // filling -- which is the only test that is actually evidence, since
+        // eType defaults to AlterDoc whether or not a command touches
+        // anything, and 138 commands set a bare ForEdit and escape it.
+        //
+        //  - undo and redo replay a transaction in bulk: a throw partway
+        //    leaves the document half reverted and the stack inconsistent,
+        //    so trapping them is worse than refusing them;
+        //  - the rest damage the document without changing an object at all,
+        //    so no write-time guard would ever see them.
+        //
+        // Saving is deliberately absent: Gui::Document::Save() flushes the
+        // deferred restore first, so it is already safe once the objects are
+        // in -- and while they are not, the Restoring test below catches it.
+        static const std::set<std::string> refusedWhileFilling = {
+            "Std_Undo", "Std_Redo",
+            "Std_Refresh", "Std_Revert", "Std_Quit",
+            "Std_MergeProjects", "Std_Import", "Std_ProjectUtil",
+        };
+        const std::string name = sName ? sName : "";
+        auto doc = App::GetApplication().getActiveDocument();
+        const bool filling = doc && doc->testStatus(App::Document::LiveImport);
+        const bool partial = doc && doc->testStatus(App::Document::Restoring);
+        if (filling
+            && (refusedWhileFilling.count(name)
+                // A document whose objects are still arriving cannot be
+                // written out: the flush that makes a save safe deliberately
+                // does nothing while the restore itself is running.
+                || (partial && name.compare(0, 8, "Std_Save") == 0))) {
+                // Say so where it can be read afterwards, not only in a
+                // status bar line that is gone in three seconds. A command
+                // that does nothing and explains nothing reads as a bug in
+                // the button -- and the whole point of the live view is that
+                // the user is in here clicking while it runs.
+                const bool loading = Application::Instance->isLiveLoad(doc);
                 getMainWindow()->showMessage(
-                    QObject::tr("The document is busy importing, please wait..."), 3000);
-                return;
-            }
+                    loading
+                        ? QObject::tr("The document is still loading, please wait...")
+                        : QObject::tr("The document is busy importing, please wait..."),
+                    3000);
+                Base::Console().warning(
+                    loading
+                        ? "%s was not run: the document '%s' is still loading, and it cannot be"
+                          " edited until that finishes. Looking, selecting and moving the camera"
+                          " keep working.\n"
+                        : "%s was not run: the document '%s' is still being imported into, and it"
+                          " cannot be edited until that finishes. Looking, selecting and moving"
+                          " the camera keep working.\n",
+                sName ? sName : "The command", doc->getName());
+            return;
         }
+        // Anything else is allowed to run. If it changes this document, the
+        // guard below throws and _invoke() reports it.
     }
 
     _invoke(i, bCanLog && !_busy);
@@ -517,6 +560,17 @@ void Command::_invoke(int id, bool disablelog)
             }
         }
         App::AutoTransaction committer(transactionName, /*tmpName*/true, recordViewObject);
+
+        // What the command may not do is change a document that is still
+        // filling itself in, and this says so at the moment it tries -- see
+        // App::Document::UserEditGuard.
+        //
+        // Declared AFTER the committer on purpose, so it is destroyed BEFORE
+        // it: a guard still standing while the transaction unwinds would
+        // refuse the rollback's own removeObject, and a throw during stack
+        // unwinding terminates the process. The rollback is undoing an edit,
+        // not making one.
+        App::Document::UserEditGuard liveEditGuard;
 
         // set the application module type for the macro
         getGuiApplication()->macroManager()->setModule(sAppModule);

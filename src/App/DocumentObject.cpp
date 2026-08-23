@@ -276,6 +276,10 @@ bool DocumentObject::recomputeFeature(bool recursive)
  */
 void DocumentObject::touch(bool noRecompute)
 {
+    // A user command may look at a document that is still filling, but not
+    // change one (Document::UserEditGuard). Asked here rather than of the
+    // command's declared eType, which is not evidence.
+    Document::checkUserEdit(_pDoc, this, nullptr);
     // Replayed view work must not leave the document needing a recompute --
     // see Document::RestoreDrainGuard, which is also where this is reported.
     if (_pDoc && _pDoc->testStatus(Document::RestoreDrain)) {
@@ -981,6 +985,11 @@ void DocumentObject::onChanged(const Property* prop)
 
     if (prop == &Label && _pDoc && oldLabel != Label.getStrValue())
         _pDoc->signalRelabelObject(*this);
+
+    // Asked of every property, not only the ones that go on to touch the
+    // object: Prop_Output covers Shape as well as Visibility, so the test
+    // below is not the question "is this a change to the document".
+    Document::checkUserEdit(getDocument(), this, prop);
 
     // set object touched if it is an input property
     if (!testStatus(ObjectStatus::NoTouch)

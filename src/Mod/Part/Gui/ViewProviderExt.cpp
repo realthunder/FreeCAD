@@ -27,6 +27,8 @@
 #endif
 
 #ifndef _PreComp_
+# include <typeinfo>
+
 # include <Bnd_Box.hxx>
 # include <BRep_Tool.hxx>
 # include <BRepBndLib.hxx>
@@ -4757,6 +4759,9 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
     if (coarseLvl < 0) {
         return false;
     }
+    // Kept outside the try so the failure below can report the extents
+    // that produced it -- the exception itself carries no message.
+    double dx = 0.0, dy = 0.0, dz = 0.0;
     try {
         Bnd_Box bounds;
         BRepBndLib::Add(cShape, bounds);
@@ -4766,18 +4771,27 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
         }
         Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
         bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
-        double dx = xMax - xMin, dy = yMax - yMin, dz = zMax - zMin;
+        dx = xMax - xMin;
+        dy = yMax - yMin;
+        dz = zMax - zMin;
         double diag = std::sqrt(dx * dx + dy * dy + dz * dz);
         if (!(diag > 0)) {
             return false;
         }
         double deflection = meshLevelDeflection(diag, unsigned(coarseLvl));
         double angDefl = meshLevelAngle(unsigned(coarseLvl));
+        // A flat shape gives the box a zero side, and the builder wants a
+        // side STRICTLY greater than the tolerance -- clamping AT
+        // Precision::Confusion() is the one value it refuses, so every
+        // exactly-flat object (64 of them in one IFC building) lost its
+        // stand-in here. Twice the tolerance is the nearest thickness it
+        // accepts.
+        const double minSide = 2.0 * Precision::Confusion();
         TopoDS_Shape standIn =
             BRepPrimAPI_MakeBox(gp_Pnt(xMin, yMin, zMin),
-                                std::max(dx, double(Precision::Confusion())),
-                                std::max(dy, double(Precision::Confusion())),
-                                std::max(dz, double(Precision::Confusion())))
+                                std::max(dx, minSide),
+                                std::max(dy, minSide),
+                                std::max(dz, minSide))
                 .Shape();
         int nt = 0, nn = 0, np = 0, nno = 0, nf = 0, ne = 0, nl = 0;
         buildVisualNodes(standIn, deflection, angDefl, false,
@@ -4813,8 +4827,16 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
                                 "standin");
     }
     catch (const Standard_Failure &e) {
+        // GetMessageString() is empty on the path that actually fails here,
+        // so the exception type and the extents that produced it are the
+        // whole diagnosis -- without them this class is unreadable in a log.
+        // typeid rather than DynamicType(): OCCT 8.0 stopped deriving
+        // Standard_Failure from Standard_Transient, so only one of the two
+        // compiles against both kernels this tree builds on.
         FC_ERR("Failed to build the stand-in for the shape of "
-               << pcObject->getFullName() << ": " << e.GetMessageString());
+               << pcObject->getFullName() << ": " << typeid(e).name()
+               << " '" << e.GetMessageString() << "' for extents "
+               << dx << " x " << dy << " x " << dz);
         return false;
     }
     return true;

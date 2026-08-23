@@ -28,6 +28,7 @@
 #include <cctype>
 #include <cstring>
 #include <numeric>
+#include <sstream>
 #include <tuple>
 
 #include <QCryptographicHash>
@@ -951,23 +952,37 @@ void FileBlobManager::dispatchPending()
     // can no longer produce its content every object sharing it lands here
     // at once -- 13642 of them in one IFC building, which is 13642 Console
     // dispatches into the report view saying the same sentence.
-    std::map<std::string, std::size_t> missing;
+    // The archive is drained, so a blob still not found is not late, it is
+    // absent -- which is what blobUnavailable() tells the property, and its
+    // chance to stand in for the content rather than lose the value.
+    std::map<std::string, std::pair<std::size_t, std::size_t>> missing;
     for (const auto& entry : pending) {
         if (auto blob = find(entry.first)) {
             entry.second->assignRestoredBlob(blob);
         }
         else {
-            ++missing[entry.first];
+            auto& counts = missing[entry.first];
+            ++counts.first;
+            if (entry.second->blobUnavailable()) {
+                ++counts.second;
+            }
         }
     }
     for (const auto& entry : missing) {
-        if (entry.second == 1) {
-            FC_WARN("Included file " << entry.first << " is missing from the document");
+        const auto total = entry.second.first;
+        const auto stood_in = entry.second.second;
+        std::ostringstream str;
+        str << "Included file " << entry.first << " is missing from the document";
+        if (total > 1) {
+            str << ", named by " << total << " properties";
         }
-        else {
-            FC_WARN("Included file " << entry.first << " is missing from the document, named by "
-                                     << entry.second << " properties");
+        if (stood_in == total) {
+            str << (total > 1 ? "; all of them stood in for it" : "; it was stood in for");
         }
+        else if (stood_in) {
+            str << "; " << stood_in << " of them stood in for it";
+        }
+        FC_WARN(str.str());
     }
 }
 
