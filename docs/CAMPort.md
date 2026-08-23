@@ -287,7 +287,8 @@ It needs installing, plus a `freecad-rt-feedstock` change for releases.
 
 ## Ledger
 
-**Phase 3 is done.** Phases 1 and 2 have not started.
+**Phase 3 is done.** Phases 1 and 2 have not started; phase 1 is the
+next piece of work.
 
 | date | phase | repo | commit | what |
 |---|---|---|---|---|
@@ -322,8 +323,9 @@ It needs installing, plus a `freecad-rt-feedstock` change for releases.
 
 ### Still open
 
-- The libarea tag `v0.2.0` has to be created and pushed before the
-  feedstock builds. Nothing here has been pushed.
+- libarea and its feedstock are **pushed** (2026-08-23), including the
+  annotated tag `v0.2.0` the recipe builds from. fcad and IfcOpenShell
+  are committed but **not** pushed.
 - `Simplify` is now inert (Clipper2 has no StrictlySimple). It is kept
   and says so; removing it is a separate decision about document
   compatibility.
