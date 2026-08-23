@@ -323,9 +323,26 @@ next piece of work.
 
 ### Still open
 
-- libarea and its feedstock are **pushed** (2026-08-23), including the
-  annotated tag `v0.2.0` the recipe builds from. fcad and IfcOpenShell
-  are committed but **not** pushed.
+- Pushed (2026-08-23): **libarea** (with the annotated tag `v0.2.0` the
+  recipe builds from), **libarea-feedstock**, and **IfcOpenShell**. Only
+  **fcad** is still committed-but-unpushed.
+- The dev environment was migrated with it: IfcOpenShell was rebuilt and
+  reinstalled into the conda prefix so it links `libarea.so.1`, and
+  `libarea.so.0` was then removed. Leaving both sonames in place is the
+  two-Clippers-in-one-process hazard the library split exists to prevent
+  -- `CArea`'s tolerances are static mutable state both consumers write.
+- **`boolean_subtraction_2d_using_area` has not been shown to run.** The
+  symbol contract is proven exact (the kernel's undefined
+  `CurveTo/FromClipperPath` carry `Clipper2Lib::Point<long>` and
+  `libarea.so.1` defines those), the kernel loads, and a synthetic wall
+  with an opening builds geometry -- but nothing confirmed that branch
+  was taken rather than the 3D kernel fallback. Closing it needs a real
+  IFC model with openings (none on this box) or a direct link-test
+  against the kernel.
+- `ifcopenshell-feedstock` still builds the **upstream 0.8.0 tarball**,
+  not the fork branch, and names no `libarea` dependency -- so the fork's
+  2D area path is in no released package. Rewiring it (source -> the
+  `LinkVibe` branch, add `libarea >=0.2.0`) is a separate job.
 - `Simplify` is now inert (Clipper2 has no StrictlySimple). It is kept
   and says so; removing it is a separate decision about document
   compatibility.
@@ -336,4 +353,7 @@ next piece of work.
 
 ### Next
 
-Phase 1: port CAM. Nothing in it now depends on a Clipper decision.
+**Phase 1: port CAM** (user, 2026-08-23: start it next session). Nothing
+in it depends on a Clipper decision any more. The recipe is in the Phase 1
+section above; the FEM port (`f3bb79474b` and the eight commits after it)
+is the worked example, and `TestCAMApp` is the green gate.
