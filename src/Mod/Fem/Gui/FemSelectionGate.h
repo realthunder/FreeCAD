@@ -20,10 +20,9 @@
  ******************************************************************************/
 
 
-#ifndef GUI_FemSelectionGate_H
-#define GUI_FemSelectionGate_H
+#pragma once
 
-#include <Gui/SelectionFilter.h>
+#include <Gui/Selection/SelectionFilter.h>
 
 namespace FemGui
 {
@@ -51,5 +50,3 @@ public:
 };
 
 }  // namespace FemGui
-
-#endif  // GUI_FemSelectionGate_H

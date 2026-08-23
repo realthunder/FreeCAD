@@ -298,7 +298,8 @@ PyObject* TopoShapeWirePy::makePipeShell(PyObject *args) const
             Py::Sequence list(obj);
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                 if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapePy::Type))) {
-                    const TopoDS_Shape& shape = static_cast<TopoShapePy*>((*it).ptr())->getTopoShapePtr()->getShape();
+                    Py::Object pyItem(*it);
+                    const TopoDS_Shape& shape = static_cast<TopoShapePy*>(pyItem.ptr())->getTopoShapePtr()->getShape();
                     sections.Append(shape);
                 }
             }

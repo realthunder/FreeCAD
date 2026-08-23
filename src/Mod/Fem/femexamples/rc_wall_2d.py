@@ -34,6 +34,7 @@ import ObjectsFem
 from . import manager
 from .manager import get_meshname
 from .manager import init_doc
+from .meshes import generate_mesh
 
 
 def get_information():
@@ -42,14 +43,16 @@ def get_information():
         "meshtype": "face",
         "meshelement": "Tria6",
         "constraints": ["fixed", "force", "displacement"],
-        "solvers": ["calculix", "ccxtools"],
+        "solvers": ["ccxtools"],
         "material": "reinforced",
-        "equations": ["mechanical"]
+        "equations": ["mechanical"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.rc_wall_2d import setup
@@ -62,6 +65,7 @@ https://forum.freecad.org/viewtopic.php?f=18&t=33106&start=80#p296469
 example from Harry's epic topic: Concrete branch ready for testing
 
 """
+    )
 
 
 def setup(doc=None, solvertype="ccxtools"):
@@ -102,20 +106,18 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis = ObjectsFem.makeAnalysis(doc, "Analysis")
 
     # solver
-    if solvertype == "calculix":
-        solver_obj = ObjectsFem.makeSolverCalculix(doc, "SolverCalculiX")
-    elif solvertype == "ccxtools":
-        solver_obj = ObjectsFem.makeSolverCalculixCcxTools(doc, "CalculiXccxTools")
-        solver_obj.WorkingDir = u""
+    if solvertype == "ccxtools":
+        solver_obj = ObjectsFem.makeSolverCalculiXCcxTools(doc, "CalculiXCcxTools")
+        solver_obj.WorkingDir = ""
     else:
         FreeCAD.Console.PrintWarning(
             "Unknown or unsupported solver type: {}. "
             "No solver object was created.\n".format(solvertype)
         )
-    if solvertype == "calculix" or solvertype == "ccxtools":
+    if solvertype == "ccxtools":
         solver_obj.SplitInputWriter = False
         solver_obj.AnalysisType = "static"
-        solver_obj.GeometricalNonlinearity = "linear"
+        solver_obj.GeometricalNonlinearity = False
         solver_obj.ThermoMechSteadyState = False
         solver_obj.MatrixSolverType = "default"
         solver_obj.IterationsControlParameterTimeUse = False
@@ -127,7 +129,7 @@ def setup(doc=None, solvertype="ccxtools"):
 
     # material
     matrixprop = {}
-    matrixprop["Name"] = "Concrete-EN-C35/45"
+    matrixprop["Name"] = "Concrete-EN-C35_45"
     matrixprop["YoungsModulus"] = "32000 MPa"
     matrixprop["PoissonRatio"] = "0.17"
     matrixprop["CompressiveStrength"] = "15.75 MPa"
@@ -144,12 +146,12 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis.addObject(material_reinforced)
 
     # constraint fixed
-    con_fixed = ObjectsFem.makeConstraintFixed(doc, "ConstraintFixed")
+    con_fixed = ObjectsFem.makeConstraintFixed(doc, "Fixed")
     con_fixed.References = [(geom_obj, "Edge1"), (geom_obj, "Edge5")]
     analysis.addObject(con_fixed)
 
     # constraint force
-    con_force = ObjectsFem.makeConstraintForce(doc, "ConstraintForce")
+    con_force = ObjectsFem.makeConstraintForce(doc, "Force")
     con_force.References = [(geom_obj, "Edge7")]
     con_force.Force = "1000000.0 N"
     con_force.Direction = (geom_obj, ["Edge8"])
@@ -157,24 +159,19 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis.addObject(con_force)
 
     # constraint displacement
-    con_disp = ObjectsFem.makeConstraintDisplacement(doc, "ConstraintDisplacmentPrescribed")
+    con_disp = ObjectsFem.makeConstraintDisplacement(doc, "Displacement")
     con_disp.References = [(geom_obj, "Face1")]
     con_disp.zFree = False
-    con_disp.zFix = True
+    con_disp.zDisplacement = 0
     analysis.addObject(con_disp)
 
     # mesh
     from .meshes.mesh_rc_wall_2d_tria6 import create_nodes, create_elements
-    fem_mesh = Fem.FemMesh()
-    control = create_nodes(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating nodes.\n")
-    control = create_elements(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating elements.\n")
+
+    fem_mesh = generate_mesh.mesh_from_existing(create_nodes, create_elements)
     femmesh_obj = analysis.addObject(ObjectsFem.makeMeshGmsh(doc, get_meshname()))[0]
     femmesh_obj.FemMesh = fem_mesh
-    femmesh_obj.Part = geom_obj
+    femmesh_obj.Shape = geom_obj
     femmesh_obj.SecondOrderLinear = False
 
     doc.recompute()

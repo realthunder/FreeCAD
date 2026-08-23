@@ -28,14 +28,17 @@ __url__ = "https://www.freecad.org"
 ## \addtogroup FEM
 #  @{
 
+import math
+
+from FreeCAD import Base
+
 from femtools import femutils
 from . import nonlinear
 from ... import equationbase
 
 
 def create(doc, name="Magnetodynamic2D"):
-    return femutils.createObject(
-        doc, name, Proxy, ViewProxy)
+    return femutils.createObject(doc, name, Proxy, ViewProxy)
 
 
 class Proxy(nonlinear.Proxy, equationbase.Magnetodynamic2DProxy):
@@ -43,84 +46,60 @@ class Proxy(nonlinear.Proxy, equationbase.Magnetodynamic2DProxy):
     Type = "Fem::EquationElmerMagnetodynamic2D"
 
     def __init__(self, obj):
-        super(Proxy, self).__init__(obj)
+        super().__init__(obj)
 
         obj.addProperty(
             "App::PropertyBool",
             "IsHarmonic",
             "Magnetodynamic2D",
-            "If the magnetic source is harmonically driven"
+            "If the magnetic source is harmonically driven",
+            locked=True,
         )
         obj.addProperty(
             "App::PropertyFrequency",
-            "AngularFrequency",
+            "Frequency",
             "Magnetodynamic2D",
-            "Frequency of the driving current"
+            "Frequency of the driving current",
+            locked=True,
         )
         obj.IsHarmonic = False
-        obj.AngularFrequency = 0
+        obj.Frequency = 0
         obj.Priority = 10
 
         # the post processor options
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateCurrentDensity",
-            "Magnetodynamic2D",
-            ""
+            "App::PropertyBool", "CalculateCurrentDensity", "Magnetodynamic2D", "", locked=True
         )
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateElectricField",
-            "Magnetodynamic2D",
-            ""
+            "App::PropertyBool", "CalculateElectricField", "Magnetodynamic2D", "", locked=True
         )
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateElementalFields",
-            "Magnetodynamic2D",
-            ""
+            "App::PropertyBool", "CalculateElementalFields", "Magnetodynamic2D", "", locked=True
         )
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateHarmonicLoss",
-            "Magnetodynamic2D",
-            ""
+            "App::PropertyBool", "CalculateHarmonicLoss", "Magnetodynamic2D", "", locked=True
         )
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateJouleHeating",
-            "Magnetodynamic2D",
-            ""
+            "App::PropertyBool", "CalculateJouleHeating", "Magnetodynamic2D", "", locked=True
         )
         obj.addProperty(
             "App::PropertyBool",
             "CalculateMagneticFieldStrength",
             "Magnetodynamic2D",
-            ""
+            "",
+            locked=True,
         )
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateMaxwellStress",
-            "Magnetodynamic2D",
-            ""
+            "App::PropertyBool", "CalculateMaxwellStress", "Magnetodynamic2D", "", locked=True
         )
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateNodalFields",
-            "Magnetodynamic2D",
-            ""
+            "App::PropertyBool", "CalculateNodalFields", "Magnetodynamic2D", "", locked=True
         )
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateNodalForces",
-            "Magnetodynamic2D",
-            ""
+            "App::PropertyBool", "CalculateNodalForces", "Magnetodynamic2D", "", locked=True
         )
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateNodalHeating",
-            "Magnetodynamic2D",
-            ""
+            "App::PropertyBool", "CalculateNodalHeating", "Magnetodynamic2D", "", locked=True
         )
         obj.CalculateCurrentDensity = False
         obj.CalculateElectricField = False
@@ -135,8 +114,21 @@ class Proxy(nonlinear.Proxy, equationbase.Magnetodynamic2DProxy):
         obj.CalculateNodalForces = False
         obj.CalculateNodalHeating = False
 
+    def onDocumentRestored(self, obj):
+        try:
+            # change AngularFrequency to Frequency
+            freq = obj.getPropertyByName("AngularFrequency")
+            obj.setPropertyStatus("AngularFrequency", "-LockDynamic")
+            obj.renameProperty("AngularFrequency", "Frequency")
+            obj.setPropertyStatus("Frequency", "LockDynamic")
+            obj.Frequency = freq / (2 * math.pi)
+        except Base.PropertyError:
+            # do nothing
+            pass
+
 
 class ViewProxy(nonlinear.ViewProxy, equationbase.Magnetodynamic2DViewProxy):
     pass
+
 
 ##  @}

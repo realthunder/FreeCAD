@@ -20,11 +20,10 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef FEM_ViewProviderAnalysis_H
-#define FEM_ViewProviderAnalysis_H
+#pragma once
 
 #include <Gui/ViewProviderDocumentObjectGroup.h>
-#include <Gui/ViewProviderPythonFeature.h>
+#include <Gui/ViewProviderFeaturePython.h>
 #include <Mod/Fem/FemGlobal.h>
 #include <QCoreApplication>
 
@@ -41,6 +40,7 @@ public:
 
     void attach(ViewProviderFemAnalysis*);
     void highlightView(Gui::ViewProviderDocumentObject*);
+    void removeView(Gui::ViewProviderDocumentObject*);
 
 private:
     SoSeparator* annotate;
@@ -49,7 +49,7 @@ private:
 class FemGuiExport ViewProviderFemAnalysis: public Gui::ViewProviderDocumentObjectGroup
 {
     Q_DECLARE_TR_FUNCTIONS(FemGui::ViewProviderFemAnalysis)
-    PROPERTY_HEADER_WITH_OVERRIDE(FemGui::ViewProviderAnalysis);
+    PROPERTY_HEADER_WITH_OVERRIDE(FemGui::ViewProviderFemAnalysis);
 
 public:
     /// constructor
@@ -66,9 +66,11 @@ public:
     /// handling when object is deleted
     bool onDelete(const std::vector<std::string>&) override;
     /// warning on deletion when there are children
-    static bool checkSelectedChildren(const std::vector<App::DocumentObject*> objs,
-                                      Gui::Document* docGui,
-                                      std::string objectName);
+    static bool checkSelectedChildren(
+        const std::vector<App::DocumentObject*> objs,
+        Gui::Document* docGui,
+        std::string objectName
+    );
     /// asks the view provider if the given object can be deleted
     bool canDelete(App::DocumentObject* obj) const override;
 
@@ -87,6 +89,8 @@ public:
     void show() override;
 
     void highlightView(Gui::ViewProviderDocumentObject*);
+
+    void removeView(Gui::ViewProviderDocumentObject*);
 
     /** @name Drag and drop */
     //@{
@@ -112,9 +116,6 @@ private:
     ViewProviderFemHighlighter extension;
 };
 
-using ViewProviderFemAnalysisPython = Gui::ViewProviderPythonFeatureT<ViewProviderFemAnalysis>;
+using ViewProviderFemAnalysisPython = Gui::ViewProviderFeaturePythonT<ViewProviderFemAnalysis>;
 
 }  // namespace FemGui
-
-
-#endif  // FEM_ViewProviderAnalysis_H

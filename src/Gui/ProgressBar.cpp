@@ -741,13 +741,12 @@ void ProgressBar::aggregatePoll()
 
     // Keep the status message in sync: worker-thread setText() doesn't push
     // while poll-driven, so mirror the leading root sequence's text here.
-    const auto* lead = &snap.sequences.front();
-    for (const auto& info : snap.sequences) {
-        if (info.depth == 0 && info.mainThread) {
-            lead = &info;
-            break;
-        }
-    }
+    // The snapshot names its own lead: the root whose numbers the bar is
+    // showing. Picking one here again would let the text describe one sequence
+    // while the bar counted another.
+    const auto* lead = snap.lead < snap.sequences.size()
+        ? &snap.sequences[snap.lead]
+        : &snap.sequences.front();
     QString text = QString::fromUtf8(lead->text.c_str());
     if (snap.roots > 1)
         text += tr(" (+%1 more)").arg(snap.roots - 1);

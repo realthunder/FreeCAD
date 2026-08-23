@@ -2135,6 +2135,126 @@ screen. None of them is priced yet; this section says only that the
 axis they act on is real, which is what 11.1i said had to be
 established first.
 
+### 11.1k MEASURED on an IFC building: the cut pays 4x better, and the tiny-draw residue is a MiSTer artefact
+
+Every far-field number above was measured on MiSTer Express, and
+MiSTer is a mechanical STEP assembly -- twelve byte-identical cuts,
+no depth complexity, nothing that moves independently. Section 11.1i's
+"irreducible floor" of tiny floating draws, and 11.1j's tiny-draw
+regime, were both fitted on that one model. This section is the first
+reading on an architectural one: `king.FCStd`, the Autodesk Research
+210 King Street IFC, 12298 objects / 11951 `Part::Feature` leaves,
+imported per docs and opened converged at 3.70M primitives.
+
+Same rig, same day, same binary (`d4d55614f3`), real GPU (RTX 3060)
+over Xvfb, 1920x1200, camera A = isometric + ViewFit.
+
+#### The re-baseline first, because 127 commits landed in between
+
+MiSTer's own figures moved, so the old 1.83x / 2.16x / 3.31x is not a
+valid comparand and is superseded here.
+
+| tolerance | MiSTer priced | MiSTer exact-net | King priced | King exact-net |
+|---|---|---|---|---|
+| 4px | 1.60x | 1.58x | **2.33x** | 2.23x |
+| 16px | 2.44x | 2.34x | **10.01x** | 9.17x |
+| 64px | 6.20x | 5.14x | **24.22x** | 23.48x |
+
+Both converged, and convergence is the plateau rather than the settle
+loop's own verdict: MiSTer held 2944297 prims for 13 consecutive
+reports, King held 3700452 for the whole of pass A -- all 585 priced
+lines carry the same total.
+
+!! The three tolerances are printed on a round robin, one per report
+cycle. Taking `tail -1` of each pattern therefore mixes cycles, and on
+a scene still climbing it mixes *scenes*: pass B's last 4px line reads
+a 1.86M scene while its last 64px line reads 3.39M. Filter on the
+converged total (`of 3700452`), do not trust position in the file.
+Camera B, zoomed 4x, reached its plateau only at 64px inside its 120s:
+**10.42x**, on 3394233 prims. The rest of pass B is not quotable.
+
+#### Why the architectural model is so much better behaved
+
+The cut is not merely bigger here; the thing 11.1g and 11.1i named as
+the ceiling has almost nothing to stand on. At 64px:
+
+| what the residue is made of | MiSTer | King |
+|---|---|---|
+| draws surviving the cut (error) | 12700 of 13924 | **1874 of 16215** |
+| exact prims below a stopped node | 11545 inst / 61263 prims | **5 inst / 33 prims** |
+| would-gate sets | 5824 inst, 11.1 prims/draw | 705 inst, **42.3 prims/draw** |
+| of those, `attachedOnly` false (unclassified) | 5530 of 5824 | **3 of 705** |
+| keys owning no faces at all | 1916 of 9563 | **1 of 8122** |
+
+Three separate things are true at once, and they compound:
+
+1. **The producer classifies almost everything.** MiSTer leaves 5530
+   of 5824 gateable sets with `attachedOnly` false -- unclassified,
+   which the contract must treat as floating and draw. King leaves 3.
+   11.1i established that MiSTer's are *genuinely* floating; what this
+   shows is that being genuinely floating is a property of that model,
+   not of the mechanism.
+2. **Almost nothing owns no faces.** 1916 of MiSTer's 9563 keys own no
+   faces at all and are floating by construction -- 20% of the model
+   the cut can never touch. King has one such key in 8122.
+3. **The leftover draws are not tiny.** 42.3 prims/draw against 11.1.
+   11.1j priced the tiny-draw regime at 2.63 us/draw and warned that
+   the figure was regime-specific; King is not in that regime, so the
+   draw-count levers 11.1j revived (merge line sets per cell, decimate
+   as polylines, the per-edge attached mask) are worth much less here
+   than they are on MiSTer -- while the cut itself is worth four times
+   as much.
+
+The partition costs the same either way: King builds 35849 instances
+into 2673 nodes at depth 10 in 33.3ms, MiSTer 42893 into 2728 at depth
+12 in 36.3ms. The 28ms rebuild of 11.1's plan item 2 is unchanged by
+the model class.
+
+#### What this changes in the plan
+
+The far field was always justified on models nobody had measured. It
+now has one, and the justification is stronger than the mechanical
+case ever made it: at a 64px tolerance the cut draws 152776 primitives
+where the exact scene draws 3700452, in 1874 draws instead of 16215.
+Nothing in phases 1-3 needs redesigning for this model class -- the
+ordering of the remaining work (hysteresis, incremental index,
+SceneLadder wiring, and the phase-4 gate that must register a stopped
+node's objects as coarse-faces-PRESENT) stands unchanged.
+
+!! **What this section does NOT establish.** It is one camera on one
+building, generated but not drawn: these are the cut's own accounting
+of primitives and draws, not a frame-time measurement, and 11.1j is
+the standing warning about converting one into the other. Hysteresis
+and occlusion remain untested -- they were untestable on MiSTer for
+lack of depth complexity, and this run did not move the camera.
+
+#### The trap that cost four runs before any of this could be measured
+
+The first King run reported nothing at all, and the log looked exactly
+like a run with the debug switches off. Two independent causes, and
+both are now handled by the probe rather than by remembering:
+
+- **A document saved by FreeCADCmd has no `GuiDocument.xml`**, so every
+  object restores hidden. King came up with 292 visible objects -- all
+  of them containers, which draw no geometry of their own -- and the
+  renderer reported `draws 20 prims 49` against a flat grey frame.
+  Every proxy report early-returns silently on an empty partition
+  (`if (!stats.instances) return;`), so nine minutes of run produced a
+  log with no proxy lines and no explanation.
+- **View providers are built by a post-open drain** (docs/DocumentLoad.md
+  sec 13), so a census taken when `openDocument()` returns finds
+  `o.ViewObject` None for every object and a show-all is a silent
+  no-op. On King the drain finished at **t+20.6s**. A three-object
+  document saved the same way gets its view providers immediately, so
+  a small repro reproduces only the first half of this.
+
+`proxygen_probe.py` now reads the switches back and says so, waits for
+the drain, emits `visible objects: N of M`, and takes `FC_SHOW_ALL=1`
+(which must show containers too -- an Arch `BuildingPart` gates its
+children). Its timings are knobs (`FC_SETTLE_ROUNDS`, `FC_SETTLE_STEP`,
+`FC_PASS_A`, `FC_PASS_B`) defaulting to the MiSTer values, so every
+figure already on record still reproduces.
+
 ### 11.2 What the code already gives us
 
 `simplifyMesh()` is a better starting point than §5.1 claims. It is a

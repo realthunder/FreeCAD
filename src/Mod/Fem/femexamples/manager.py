@@ -86,7 +86,10 @@ def run_all():
     run_example("rc_wall_2d", run_solver=True)
     run_example("square_pipe_end_twisted_edgeforces", run_solver=True)
     run_example("square_pipe_end_twisted_nodeforces", run_solver=True)
-    run_example("thermomech_bimetall", run_solver=True)
+    run_example("thermomech_bimetal", run_solver=True)
+    run_example("gmsh_transfinite_manual", run_solver=True)
+    run_example("gmsh_transfinite_automation", run_solver=True)
+    run_example("gmsh_adaptive", run_solver=True)
 
 
 def setup_all():
@@ -124,20 +127,78 @@ def setup_all():
     run_example("rc_wall_2d")
     run_example("square_pipe_end_twisted_edgeforces")
     run_example("square_pipe_end_twisted_nodeforces")
-    run_example("thermomech_bimetall")
+    run_example("thermomech_bimetal")
+    run_example("gmsh_transfinite_manual")
+    run_example("gmsh_transfinite_automation")
+    run_example("gmsh_adaptive")
 
 
-def run_analysis(doc, base_name, filepath="", run_solver=False):
+def run_mesh_generation(doc, analysis=None):
+
+    # find all mesh generation objects
+    from femtools.femutils import is_derived_from
+
+    objects = doc.Objects
+    if analysis:
+        objects = analysis.Group
+
+    gmsh_generators = []
+    netgen_generators = []
+    for m in objects:
+        if is_derived_from(m, "Fem::FemMeshGmsh"):
+            gmsh_generators.append(m)
+        elif is_derived_from(m, "Fem::FemMeshNetgen"):
+            netgen_generators.append(m)
+
+    if not gmsh_generators and not netgen_generators:
+        # no meshes to generate
+        return
+
+    # run generations
+    from femmesh import gmshtools, netgentools
+
+    for gmsh in gmsh_generators:
+
+        if gmsh.FemMesh.NodeCount > 0:
+            # only mesh unmehsed generators
+            continue
+
+        tool = gmshtools.GmshTools(gmsh)
+        tool.create_mesh()
+
+        # make geometry invisible, and mesh visible, like in the other examples
+        if FreeCAD.GuiUp:
+            gmsh.ViewObject.Visibility=True
+            gmsh.Shape.ViewObject.Visibility=False
+
+    for netgen in netgen_generators:
+        if netgen.FemMesh.NodeCount > 0:
+            # only mesh unmehsed generators
+            continue
+
+        tool = netgentools.NetgenTools(netgen)
+        tool.compute()
+
+
+def run_analysis(doc, base_name, analysis=None, filepath="", run_solver=False,  blocking=True):
 
     from os.path import join, exists
     from os import makedirs
     from tempfile import gettempdir as gettmp
 
+    # computable?
+    if not analysis and not hasattr(doc, "Analysis"):
+        return
+
+    # get the default analysis if not specified otherwise
+    if not analysis:
+        analysis = doc.Analysis
+
     # recompute
     doc.recompute()
 
-    # print(doc.Objects)
-    # print([obj.Name for obj in doc.Objects])
+    # check if we need to generate the mesh
+    run_mesh_generation(doc, analysis=analysis)
 
     # filepath
     if filepath == "":
@@ -148,49 +209,73 @@ def run_analysis(doc, base_name, filepath="", run_solver=False):
     # find the first solver
     # thus ATM only one solver per analysis is supported
     from femtools.femutils import is_derived_from
-    for m in doc.Analysis.Group:
+
+    solver = None
+    for m in analysis.Group:
         if is_derived_from(m, "Fem::FemSolverObjectPython"):
             solver = m
             break
 
+    if not solver:
+        return
+
     # a file name is needed for the besides dir to work
     save_fc_file = join(filepath, (base_name + ".FCStd"))
-    FreeCAD.Console.PrintMessage(
-        "Save FreeCAD file for {} analysis to {}\n.".format(base_name, save_fc_file)
-    )
+    FreeCAD.Console.PrintMessage(f"Save FreeCAD file for {base_name} analysis to {save_fc_file}\n.")
     doc.saveAs(save_fc_file)
 
     # get analysis workig dir
     from femtools.femutils import get_beside_dir
+
     working_dir = get_beside_dir(solver)
 
     # run analysis
     from femsolver.run import run_fem_solver
+
     if run_solver is True:
-        run_fem_solver(solver, working_dir)
+        run_fem_solver(solver, working_dir, blocking=blocking)
 
     # save doc once again with results
     doc.save()
 
 
-def run_example(example, solver=None, base_name=None, run_solver=False):
+def run_example(example, solver=None, base_name=None, run_solver=False, blocking=True, doc=None):
 
     from importlib import import_module
+
     module = import_module("femexamples." + example)
     if not hasattr(module, "setup"):
-        FreeCAD.Console.PrintError("Setup method not found in {}\n".format(example))
+        FreeCAD.Console.PrintError(f"Setup method not found in {example}\n")
         return None
 
     if solver is None:
-        doc = getattr(module, "setup")()
+        doc = getattr(module, "setup")(doc=doc)
     else:
-        doc = getattr(module, "setup")(solvertype=solver)
+        doc = getattr(module, "setup")(doc=doc, solvertype=solver)
 
     if base_name is None:
         base_name = example
         if solver is not None:
             base_name += "_" + solver
-    run_analysis(doc, base_name, run_solver=run_solver)
+
+    # As of now, we support:
+    # 1. Multiple analysis objects, each having a mesh and solver object
+    # 2. Or multiple mesh objects outside of analysis
+
+    # find all analysis
+    analysis = []
+    for obj in doc.Objects:
+        if obj.isDerivedFrom('Fem::FemAnalysis'):
+            analysis.append(obj)
+
+    if not analysis:
+        # run all mesh generators in the document!
+        run_mesh_generation(doc)
+    else:
+        # run each analysis
+        for ana in analysis:
+            run_analysis(doc, base_name, analysis=ana, run_solver=run_solver, blocking=blocking)
+
     doc.recompute()
 
     return doc
@@ -201,6 +286,9 @@ def run_example(example, solver=None, base_name=None, run_solver=False):
 def init_doc(doc=None):
     if doc is None:
         doc = FreeCAD.newDocument()
+        # set license
+        doc.License = "Creative Commons Attribution 4.0"
+        doc.LicenseURL = "https://creativecommons.org/licenses/by/4.0/"
     return doc
 
 
@@ -212,7 +300,9 @@ def get_meshname():
 def get_header(information):
     return """{name}
 
-{information}""".format(name=information["name"], information=print_info_dict(information))
+{information}""".format(
+        name=information["name"], information=print_info_dict(information)
+    )
 
 
 def print_info_dict(information):
@@ -221,11 +311,11 @@ def print_info_dict(information):
         value_text = ""
         if isinstance(v, list):
             for j in v:
-                value_text += "{}, ".format(j)
+                value_text += f"{j}, "
             value_text = value_text.rstrip(", ")
         else:
             value_text = v
-        the_text += "{} --> {}\n".format(k, value_text)
+        the_text += f"{k} --> {value_text}\n"
     # print(the_text)
     return the_text
 

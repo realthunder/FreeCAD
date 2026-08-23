@@ -35,14 +35,16 @@ def get_information():
         "meshtype": "solid",
         "meshelement": "Tet10",
         "constraints": [],
-        "solvers": ["calculix", "ccxtools"],
+        "solvers": ["ccxtools"],
         "material": "solid",
-        "equations": ["frequency"]
+        "equations": ["frequency"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.boxanalysis_frequency import setup
@@ -53,9 +55,10 @@ See forum topic post:
 ...
 
 """
+    )
 
 
-def setup(doc=None, solvertype="ccxtools"):
+def setup(doc=None, solvertype="ccxtools", test_mode=False):
 
     # init FreeCAD document
     if doc is None:
@@ -66,18 +69,15 @@ def setup(doc=None, solvertype="ccxtools"):
     manager.add_explanation_obj(doc, get_explanation(manager.get_header(get_information())))
 
     # setup box frequency, change solver attributes
-    doc = setup_boxanalysisbase(doc, solvertype)
+    doc = setup_boxanalysisbase(doc, solvertype, test_mode)
     analysis = doc.Analysis
 
     # solver
-    if solvertype == "calculix":
-        solver_obj = ObjectsFem.makeSolverCalculix(doc, "SolverCalculiX")
-    elif solvertype == "ccxtools":
-        solver_obj = ObjectsFem.makeSolverCalculixCcxTools(doc, "CalculiXccxTools")
-        solver_obj.WorkingDir = u""
-    if solvertype == "calculix" or solvertype == "ccxtools":
+    if solvertype == "ccxtools":
+        solver_obj = ObjectsFem.makeSolverCalculiXCcxTools(doc, "CalculiXCcxTools")
+        solver_obj.WorkingDir = ""
         solver_obj.AnalysisType = "frequency"
-        solver_obj.GeometricalNonlinearity = "linear"
+        solver_obj.GeometricalNonlinearity = False
         solver_obj.ThermoMechSteadyState = False
         solver_obj.MatrixSolverType = "default"
         solver_obj.IterationsControlParameterTimeUse = False

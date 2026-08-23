@@ -20,16 +20,14 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
-#ifndef _PreComp_
 #include <Inventor/nodes/SoSeparator.h>
 #include <QAction>
 #include <QApplication>
 #include <QMenu>
 #include <QMessageBox>
 #include <QTextStream>
-#endif
+
 
 #include <App/Document.h>
 #include <App/MaterialObject.h>
@@ -39,8 +37,8 @@
 #include <Gui/Control.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
-#include <Gui/Selection.h>
-#include <Gui/SelectionObject.h>
+#include <Gui/Selection/Selection.h>
+#include <Gui/Selection/SelectionObject.h>
 #include <Gui/Workbench.h>
 #include <Gui/WorkbenchManager.h>
 #include <Mod/Fem/App/FemAnalysis.h>
@@ -50,7 +48,7 @@
 #include <Mod/Fem/App/FemSetObject.h>
 #include <Mod/Fem/App/FemSolverObject.h>
 #ifdef FC_USE_VTK
-#include <Mod/Fem/App/FemPostObject.h>
+# include <Mod/Fem/App/FemPostObject.h>
 #endif
 
 #include "TaskDlgAnalysis.h"
@@ -85,6 +83,13 @@ void ViewProviderFemHighlighter::highlightView(Gui::ViewProviderDocumentObject* 
     }
 }
 
+void ViewProviderFemHighlighter::removeView(Gui::ViewProviderDocumentObject* view)
+{
+    if (view) {
+        annotate->removeChild(view->getRoot());
+    }
+}
+
 // ----------------------------------------------------------------------------
 
 /* TRANSLATOR FemGui::ViewProviderFemAnalysis */
@@ -103,11 +108,6 @@ void ViewProviderFemAnalysis::attach(App::DocumentObject* obj)
 {
     Gui::ViewProviderDocumentObjectGroup::attach(obj);
     extension.attach(this);
-    // activate analysis if currently active workbench is FEM
-    auto* workbench = Gui::WorkbenchManager::instance()->active();
-    if (workbench->name() == "FemWorkbench") {
-        doubleClicked();
-    }
 }
 
 void ViewProviderFemAnalysis::highlightView(Gui::ViewProviderDocumentObject* view)
@@ -115,13 +115,20 @@ void ViewProviderFemAnalysis::highlightView(Gui::ViewProviderDocumentObject* vie
     extension.highlightView(view);
 }
 
+void ViewProviderFemAnalysis::removeView(Gui::ViewProviderDocumentObject* view)
+{
+    extension.removeView(view);
+}
+
 bool ViewProviderFemAnalysis::doubleClicked()
 {
     Gui::Command::assureWorkbench("FemWorkbench");
     Gui::Command::addModule(Gui::Command::Gui, "FemGui");
-    Gui::Command::doCommand(Gui::Command::Gui,
-                            "FemGui.setActiveAnalysis(App.activeDocument().%s)",
-                            this->getObject()->getNameInDocument());
+    Gui::Command::doCommand(
+        Gui::Command::Gui,
+        "FemGui.setActiveAnalysis(App.activeDocument().%s)",
+        this->getObject()->getNameInDocument()
+    );
     // After activation of the analysis the allowed FEM toolbar buttons should become active.
     // To achieve this we must clear the object selection to trigger the selection observer.
     Gui::Command::doCommand(Gui::Command::Gui, "Gui.Selection.clearSelection()");
@@ -157,10 +164,8 @@ void ViewProviderFemAnalysis::show()
 void ViewProviderFemAnalysis::setupContextMenu(QMenu* menu, QObject*, const char*)
 {
     Gui::ActionFunction* func = new Gui::ActionFunction(menu);
-    QAction* act = menu->addAction(tr("Activate analysis"));
-    func->trigger(act, [this]() {
-        this->doubleClicked();
-    });
+    QAction* act = menu->addAction(tr("Activate Analysis"));
+    func->trigger(act, [this]() { this->doubleClicked(); });
 }
 
 bool ViewProviderFemAnalysis::setEdit(int ModNum)
@@ -191,7 +196,7 @@ bool ViewProviderFemAnalysis::setEdit(int ModNum)
         //            Gui::Control().showDialog(padDlg);
         //        else
 
-        // Fem::FemAnalysis* pcAna = static_cast<Fem::FemAnalysis*>(this->getObject());
+        // Fem::FemAnalysis* pcAna = this->getObject<Fem::FemAnalysis>();
         // Gui::Control().showDialog(new TaskDlgAnalysis(pcAna));
         // return true;
         return false;
@@ -222,38 +227,25 @@ bool ViewProviderFemAnalysis::canDragObject(App::DocumentObject* obj) const
     if (!obj) {
         return false;
     }
-    if (obj->isDerivedFrom<Fem::FemMeshObject>()) {
+
+    // clang-format off: keep line breaks for readability
+    if (obj->isDerivedFrom<Fem::FemMeshObject>()
+        || obj->isDerivedFrom<Fem::FemSolverObject>()
+        || obj->isDerivedFrom<Fem::FemResultObject>()
+        || obj->isDerivedFrom<Fem::Constraint>()
+        || obj->isDerivedFrom<Fem::FemSetObject>()
+        || obj->isDerivedFrom(Base::Type::fromName("Fem::FeaturePython"))
+        || obj->isDerivedFrom<App::MaterialObject>()
+        || obj->isDerivedFrom<App::TextDocument>()) {
         return true;
     }
-    else if (obj->isDerivedFrom<Fem::FemSolverObject>()) {
-        return true;
-    }
-    else if (obj->isDerivedFrom<Fem::FemResultObject>()) {
-        return true;
-    }
-    else if (obj->isDerivedFrom<Fem::Constraint>()) {
-        return true;
-    }
-    else if (obj->isDerivedFrom<Fem::FemSetObject>()) {
-        return true;
-    }
-    else if (obj->getTypeId().isDerivedFrom(Base::Type::fromName("Fem::FeaturePython"))) {
-        return true;
-    }
-    else if (obj->isDerivedFrom<App::MaterialObject>()) {
-        return true;
-    }
-    else if (obj->isDerivedFrom<App::TextDocument>()) {
-        return true;
-    }
+    // clang-format on
 #ifdef FC_USE_VTK
     else if (obj->isDerivedFrom<Fem::FemPostObject>()) {
         return true;
     }
 #endif
-    else {
-        return false;
-    }
+    return false;
 }
 
 void ViewProviderFemAnalysis::dragObject(App::DocumentObject* obj)
@@ -283,9 +275,11 @@ bool ViewProviderFemAnalysis::onDelete(const std::vector<std::string>&)
     return checkSelectedChildren(objs, this->getDocument(), "analysis");
 }
 
-bool ViewProviderFemAnalysis::checkSelectedChildren(const std::vector<App::DocumentObject*> objs,
-                                                    Gui::Document* docGui,
-                                                    std::string objectName)
+bool ViewProviderFemAnalysis::checkSelectedChildren(
+    const std::vector<App::DocumentObject*> objs,
+    Gui::Document* docGui,
+    std::string objectName
+)
 {
     // warn the user if the object has unselected children
     if (!objs.empty()) {
@@ -295,8 +289,7 @@ bool ViewProviderFemAnalysis::checkSelectedChildren(const std::vector<App::Docum
         for (auto child : objs) {
             found = false;
             for (Gui::SelectionObject selection : selectionList) {
-                if (std::string(child->getNameInDocument())
-                    == std::string(selection.getFeatName())) {
+                if (std::string(child->getNameInDocument()) == std::string(selection.getFeatName())) {
                     found = true;
                     break;
                 }
@@ -312,23 +305,26 @@ bool ViewProviderFemAnalysis::checkSelectedChildren(const std::vector<App::Docum
         // generate dialog
         QString bodyMessage;
         QTextStream bodyMessageStream(&bodyMessage);
-        bodyMessageStream << qApp->translate("Std_Delete",
-                                             ("The " + objectName
-                                              + " is not empty, therefore the\nfollowing "
-                                                "referencing objects might be lost:")
-                                                 .c_str());
+        bodyMessageStream << qApp->translate(
+            "Std_Delete",
+            ("The " + objectName
+             + " is not empty, therefore the\nfollowing "
+               "referencing objects might be lost:")
+                .c_str()
+        );
         bodyMessageStream << '\n';
         for (auto ObjIterator : objs) {
             bodyMessageStream << '\n' << QString::fromUtf8(ObjIterator->Label.getValue());
         }
         bodyMessageStream << "\n\n" << QObject::tr("Are you sure you want to continue?");
         // show and evaluate the dialog
-        int DialogResult =
-            QMessageBox::warning(Gui::getMainWindow(),
-                                 qApp->translate("Std_Delete", "Object dependencies"),
-                                 bodyMessage,
-                                 QMessageBox::Yes,
-                                 QMessageBox::No);
+        int DialogResult = QMessageBox::warning(
+            Gui::getMainWindow(),
+            qApp->translate("Std_Delete", "Object dependencies"),
+            bodyMessage,
+            QMessageBox::Yes,
+            QMessageBox::No
+        );
         if (DialogResult == QMessageBox::Yes) {
             return true;
         }

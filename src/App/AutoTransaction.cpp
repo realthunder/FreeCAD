@@ -170,7 +170,21 @@ const char *Application::getActiveTransaction(int *id) const {
 }
 
 void Application::closeActiveTransaction(bool abort, int id) {
-    if (abort && id) {
+    auto stillOpen = [this](int tid) {
+        for (auto &v : DocMap) {
+            if (v.second->hasPendingTransaction() && v.second->getTransactionID(true) == tid)
+                return true;
+        }
+        return false;
+    };
+
+    if (abort && id && !stillOpen(id)) {
+        // An explicit id may name a transaction that has already been closed --
+        // cancelling a transformation task does exactly that, and undoing it is how
+        // the object gets back to where it started. Only a closed one may take this
+        // path: undo() commits a still open transaction before undoing it, so it
+        // would announce itself as a commit and come to rest on the redo stack
+        // rather than being discarded, which is not what aborting means.
         TransactionSignaller signaller(abort,false);
         TransactionGuard guard(TransactionGuard::Abort);
         for(auto &v : DocMap) {
@@ -200,12 +214,23 @@ void Application::closeActiveTransaction(bool abort, int id) {
 
     TransactionSignaller signaller(abort,false);
     if (abort) {
-        TransactionGuard guard(TransactionGuard::Abort);
-        for(auto &v : DocMap) {
-            if(v.second->getTransactionID(true) != id)
-                continue;
-            v.second->_abortTransaction();
+        std::vector<Document*> aborted;
+        {
+            TransactionGuard guard(TransactionGuard::Abort);
+            for(auto &v : DocMap) {
+                if(v.second->getTransactionID(true) != id)
+                    continue;
+                bool wasOpen = v.second->hasPendingTransaction();
+                v.second->_abortTransaction();
+                if(wasOpen && !v.second->hasPendingTransaction())
+                    aborted.push_back(v.second);
+            }
         }
+        // The guard flushes the property changes the rollback deferred as it
+        // unwinds. Announcing the abort before that would hand an observer the
+        // leftovers of a transaction it has already been told is gone.
+        for(auto doc : aborted)
+            doc->signalAbortTransaction(*doc);
     } else {
         for(auto &v : DocMap) {
             if(v.second->getTransactionID(true) != id)

@@ -70,6 +70,10 @@ if(BUILD_PART_DESIGN)
   add_subdirectory(PartDesign)
 endif(BUILD_PART_DESIGN)
 
+if(BUILD_AREA)
+    add_subdirectory(Area)
+endif(BUILD_AREA)
+
 if(BUILD_PATH)
     add_subdirectory(Path)
 endif(BUILD_PATH)

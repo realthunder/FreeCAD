@@ -22,8 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef FEMGUI_DLGSETTINGSFEMINOUTVTKIMP_H
-#define FEMGUI_DLGSETTINGSFEMINOUTVTKIMP_H
+#pragma once
 
 #include <memory>
 
@@ -48,9 +47,8 @@ protected:
     void changeEvent(QEvent* e) override;
 
 private:
+    void populateExportLevel() const;
     std::unique_ptr<Ui_DlgSettingsFemInOutVtk> ui;
 };
 
 }  // namespace FemGui
-
-#endif  // FEMGUI_DLGSETTINGSFEMINOUTVTKIMP_H

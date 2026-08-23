@@ -22,8 +22,7 @@
  ***************************************************************************/
 
 
-#ifndef FEM_CONSTRAINTPSPRING_H
-#define FEM_CONSTRAINTPSPRING_H
+#pragma once
 
 #include "FemConstraint.h"
 
@@ -40,8 +39,6 @@ public:
     App::PropertyStiffness NormalStiffness;
     App::PropertyStiffness TangentialStiffness;
     App::PropertyEnumeration ElmerStiffness;
-    App::PropertyVectorList Points;
-    App::PropertyVectorList Normals;
 
     /// recalculate the object
     App::DocumentObjectExecReturn* execute() override;
@@ -54,5 +51,3 @@ protected:
 };
 
 }  // namespace Fem
-
-#endif  // FEM_CONSTRAINTPSPRING_H

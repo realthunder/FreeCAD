@@ -50,6 +50,7 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QProcessEnvironment>
@@ -426,6 +427,12 @@ void Application::setupPythonException(PyObject* module)
     Base::PyExc_FC_CADKernelError = PyErr_NewException("Base.CADKernelError", Base::PyExc_FC_GeneralError, nullptr);
     Py_INCREF(Base::PyExc_FC_CADKernelError);
     PyModule_AddObject(module, "CADKernelError", Base::PyExc_FC_CADKernelError);
+
+    // Deriving from AttributeError, not from the general error, so that everything
+    // already catching the attribute error keeps working unchanged.
+    Base::PyExc_FC_PropertyError = PyErr_NewException("Base.PropertyError", PyExc_AttributeError, nullptr);
+    Py_INCREF(Base::PyExc_FC_PropertyError);
+    PyModule_AddObject(module, "PropertyError", Base::PyExc_FC_PropertyError);
 }
 
 //**************************************************************************
@@ -1619,6 +1626,29 @@ void Application::addExportType(const char* Type, const char* ModuleName)
     }
 }
 
+void Application::addTranslatableExportType(const std::string& description,
+                                            const std::vector<std::string>& extensions,
+                                            const std::string& moduleName)
+{
+    if (extensions.empty()) {
+        throw Base::ValueError("addTranslatableExportType: no extension given");
+    }
+
+    std::string filter =
+        QCoreApplication::translate("FileFormat", description.c_str()).toStdString();
+    filter += " (";
+    for (std::size_t i = 0; i < extensions.size(); ++i) {
+        if (i) {
+            filter += ' ';
+        }
+        filter += "*.";
+        filter += extensions[i];
+    }
+    filter += ')';
+
+    addExportType(filter.c_str(), moduleName.c_str());
+}
+
 void Application::changeExportModule(const char* Type, const char* OldModuleName, const char* NewModuleName)
 {
     for (auto& it : _mExportTypes) {
@@ -2324,6 +2354,9 @@ void Application::initTypes()
     App::PropertyMagneticFlux               ::init();
     App::PropertyMagneticFluxDensity        ::init();
     App::PropertyMagnetization              ::init();
+    App::PropertyElectromagneticPotential   ::init();
+    App::PropertySurfaceChargeDensity       ::init();
+    App::PropertyVolumeChargeDensity        ::init();
     App::PropertyMass                       ::init();
     App::PropertyMoment                     ::init();
     App::PropertyPressure                   ::init();

@@ -21,8 +21,7 @@
  ***************************************************************************/
 
 
-#ifndef FEM_ViewProviderSetFaces_H
-#define FEM_ViewProviderSetFaces_H
+#pragma once
 
 #include <Gui/ViewProviderGeometryObject.h>
 
@@ -31,7 +30,7 @@ namespace FemGui
 
 class ViewProviderSetFaces: public Gui::ViewProviderGeometryObject
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(RobotGui::ViewProviderSetFaces);
+    PROPERTY_HEADER_WITH_OVERRIDE(FemGui::ViewProviderSetFaces);
 
 public:
     bool doubleClicked() override;
@@ -42,6 +41,3 @@ protected:
 };
 
 }  // namespace FemGui
-
-
-#endif  // FEM_ViewProviderSetFaces_H

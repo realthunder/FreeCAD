@@ -509,7 +509,52 @@ PyObject *MaterialPy::getCustomAttributes(const char* /*attr*/) const
     return nullptr;
 }
 
-int MaterialPy::setCustomAttributes(const char* /*attr*/, PyObject* /*obj*/)
+int MaterialPy::setCustomAttributes(const char* attr, PyObject* obj)
 {
-    return 0;
+    // A colour written as one packed RGBA integer.
+    //
+    // App::PropertyColor has always accepted that spelling
+    // (PropertyColor::setPyObject), and code assigns colours that way:
+    // Draft's layer view provider does
+    //
+    //     material.DiffuseColor = params.get_param_view("DefaultShapeColor") | 0x000000FF
+    //
+    // The generated setters here declare Py::Tuple, so an integer never
+    // reaches them -- PyCXX fails building the tuple first, with
+    // "Error creating object of type N2Py7SeqBaseINS_6ObjectEEE from
+    // 3435973887", which names neither the attribute nor the real
+    // problem. That one line took a whole IFC import down, since
+    // creating a layer creates its view provider.
+    //
+    // _setattr consults this hook before the generated setters, so
+    // accepting the integer here leaves the tuple path exactly as it
+    // was: anything that is not an int returns 0 and falls through.
+    if (!PyLong_Check(obj)) {
+        return 0;
+    }
+
+    Color* target = nullptr;
+    Material* material = getMaterialPtr();
+    if (strcmp(attr, "DiffuseColor") == 0) {
+        target = &material->diffuseColor;
+    }
+    else if (strcmp(attr, "AmbientColor") == 0) {
+        target = &material->ambientColor;
+    }
+    else if (strcmp(attr, "SpecularColor") == 0) {
+        target = &material->specularColor;
+    }
+    else if (strcmp(attr, "EmissiveColor") == 0) {
+        target = &material->emissiveColor;
+    }
+    if (!target) {
+        return 0;
+    }
+
+    unsigned long packed = PyLong_AsUnsignedLong(obj);
+    if (PyErr_Occurred()) {
+        return -1;
+    }
+    target->setPackedValue(static_cast<uint32_t>(packed));
+    return 1;
 }

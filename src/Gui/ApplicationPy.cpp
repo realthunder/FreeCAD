@@ -24,6 +24,7 @@
 
 #ifndef _PreComp_
 # include <QApplication>
+# include <QElapsedTimer>
 # include <QDir>
 # include <QPrinter>
 # include <QFileInfo>
@@ -69,7 +70,9 @@
 #include "SoFCDB.h"
 #include "SplitView3DInventor.h"
 #include "View3DInventor.h"
+#include "ViewParams.h"
 #include "ViewProvider.h"
+#include "LiveViewInteraction.h"
 #include "WaitCursor.h"
 #include "WidgetFactory.h"
 #include "Workbench.h"
@@ -176,6 +179,42 @@ PyMethodDef Application::Methods[] = {
    "updateGui() -> None\n"
    "\n"
    "Update the main window and all its windows."},
+  {"setLiveImport",           (PyCFunction) Application::sSetLiveImport, METH_VARARGS,
+   "setLiveImport(doc, enable=True) -> None\n"
+   "\n"
+   "Let a long import keep the 3D view in the user's hands.\n"
+   "\n"
+   "While enabled, the wait cursor is lifted and both input filters make\n"
+   "an exception for mouse input aimed at a 3D view, so orbit/pan/zoom\n"
+   "keep working as the model grows. The exception is narrow on purpose:\n"
+   "keys stay blocked, so Escape still cancels, context menus stay shut,\n"
+   "and every document-mutating command is refused while the document\n"
+   "carries the LiveImport status.\n"
+   "\n"
+   "Only meaningful for a loop that keeps pumping events -- one that\n"
+   "holds the thread outright has nothing to deliver the input with.\n"
+   "Always disable it again from a finally block."},
+  {"pumpLiveImport",          (PyCFunction) Application::sPumpLiveImport, METH_VARARGS,
+   "pumpLiveImport(force=False) -> bool\n"
+   "\n"
+   "Give the event loop a turn in the middle of a live import.\n"
+   "\n"
+   "A synchronous import holds the main thread, so a live view only sees\n"
+   "input and paints where the import offers the loop a slice. Call this\n"
+   "as often as the loop can afford to: it does nothing unless\n"
+   "setLiveImport() is in effect, and it holds itself to one turn every\n"
+   "LiveImportPumpInterval milliseconds, so an offer that comes too soon\n"
+   "costs a clock read. Pass force=True to pump regardless.\n"
+   "\n"
+   "Returns True when it did pump."},
+  {"isLiveImport",            (PyCFunction) Application::sIsLiveImport, METH_VARARGS,
+   "isLiveImport() -> bool\n"
+   "\n"
+   "Whether a live import is filling a document right now.\n"
+   "\n"
+   "For code that is worth skipping while one runs. Selecting each\n"
+   "created object, for one, costs a selection round trip and a tree\n"
+   "expand and scroll that nobody can act on until the import ends."},
   {"serveDocument",           (PyCFunction) Application::sServeDocument, METH_VARARGS,
    "serveDocument(doc, port=0) -> bool\n"
    "\n"
@@ -790,9 +829,9 @@ PyObject* Application::sExport(PyObject * /*self*/, PyObject *args)
         App::Document* doc = nullptr;
         Py::Sequence list(object);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* item = (*it).ptr();
-            if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
-                App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
+            Py::Object item(*it);
+            if (PyObject_TypeCheck(item.ptr(), &(App::DocumentObjectPy::Type))) {
+                App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item.ptr())->getDocumentObjectPtr();
                 doc = obj->getDocument();
                 break;
             }
@@ -815,9 +854,9 @@ PyObject* Application::sExport(PyObject * /*self*/, PyObject *args)
             sep->ref();
 
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-                PyObject* item = (*it).ptr();
-                if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
-                    App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
+                Py::Object item(*it);
+                if (PyObject_TypeCheck(item.ptr(), &(App::DocumentObjectPy::Type))) {
+                    App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item.ptr())->getDocumentObjectPtr();
 
                     Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(obj);
                     if (vp) {
@@ -919,6 +958,95 @@ PyObject* Application::sGetMainWindow(PyObject * /*self*/, PyObject *args)
     catch (const Py::Exception&) {
         return nullptr;
     }
+}
+
+namespace {
+// One import at a time, and the pieces have to outlive the call that turned
+// them on -- they are RAII objects standing in for a scope Python cannot hold.
+std::unique_ptr<Gui::LiveViewInteraction> liveImportNavigable;
+std::unique_ptr<Gui::WaitCursorRestorer> liveImportCursor;
+// When the loop was last given a turn. Invalid until an import turns the
+// live view on, which is also the only state in which anything pumps.
+QElapsedTimer liveImportPumpClock;
+}  // namespace
+
+PyObject* Application::sSetLiveImport(PyObject * /*self*/, PyObject *args)
+{
+    PyObject *pyDoc = nullptr;
+    PyObject *pyEnable = Py_True;
+    if (!PyArg_ParseTuple(args, "O|O!", &pyDoc, &PyBool_Type, &pyEnable))
+        return nullptr;
+
+    App::Document *appDoc = nullptr;
+    if (PyObject_TypeCheck(pyDoc, &App::DocumentPy::Type))
+        appDoc = static_cast<App::DocumentPy*>(pyDoc)->getDocumentPtr();
+    else {
+        PyErr_SetString(PyExc_TypeError, "expected a document");
+        return nullptr;
+    }
+    if (!appDoc) {
+        // Called from a finally block, where the document may already be gone.
+        // Give the guards back anyway; there is no status left to clear.
+        liveImportNavigable.reset();
+        liveImportCursor.reset();
+        Py_Return;
+    }
+
+    if (Base::asBoolean(pyEnable)) {
+        // Turning it on twice would leave the first pair of guards behind and
+        // the status set by a caller that no longer owns it.
+        if (!liveImportNavigable) {
+            liveImportCursor = std::make_unique<Gui::WaitCursorRestorer>();
+            liveImportNavigable = std::make_unique<Gui::LiveViewInteraction>();
+            liveImportPumpClock.start();
+        }
+        appDoc->setStatus(App::Document::LiveImport, true);
+    }
+    else {
+        liveImportNavigable.reset();
+        liveImportCursor.reset();
+        appDoc->setStatus(App::Document::LiveImport, false);
+    }
+
+    Py_Return;
+}
+
+PyObject* Application::sPumpLiveImport(PyObject * /*self*/, PyObject *args)
+{
+    PyObject *pyForce = Py_False;
+    if (!PyArg_ParseTuple(args, "|O!", &PyBool_Type, &pyForce))
+        return nullptr;
+
+    // Nothing live means nobody is watching this thread, and an import that
+    // did not ask for a live view must not start running events behind its
+    // caller's back -- an unasked-for processEvents() is how re-entrancy gets
+    // into code that was written to be synchronous.
+    if (!liveImportNavigable)
+        return Py::new_reference_to(Py::Boolean(false));
+
+    const long interval = ViewParams::getLiveImportPumpInterval();
+    if (!Base::asBoolean(pyForce) && interval > 0 && liveImportPumpClock.isValid()
+            && liveImportPumpClock.elapsed() < interval) {
+        // Too soon. The throttle lives here rather than in the caller so that
+        // every importer answers to one knob, and so that a loop can offer a
+        // turn per item without knowing what an item costs.
+        return Py::new_reference_to(Py::Boolean(false));
+    }
+
+    liveImportPumpClock.restart();
+    // Everything, user input included: the point of the exercise is the mouse
+    // reaching the 3D view. What that costs in frames is bounded by the view's
+    // own redraw budget, not here.
+    qApp->processEvents();
+    return Py::new_reference_to(Py::Boolean(true));
+}
+
+PyObject* Application::sIsLiveImport(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+
+    return Py::new_reference_to(Py::Boolean(liveImportNavigable != nullptr));
 }
 
 PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)

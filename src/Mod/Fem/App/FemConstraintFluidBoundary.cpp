@@ -21,11 +21,9 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
-#ifndef _PreComp_
 #include <Precision.hxx>
-#endif
+
 
 #include <Base/Console.h>
 
@@ -96,17 +94,9 @@ ConstraintFluidBoundary::ConstraintFluidBoundary()
                       "Heat flux value for thermal boundary condition");
     ADD_PROPERTY_TYPE(HTCoeffValue,(0.0),"HeatTransfer",(App::PropertyType)(App::Prop_None),
                       "Heat transfer coefficient for convective boundary condition");
-    /// geometry rendering related properties
-    ADD_PROPERTY_TYPE(Points,(Base::Vector3d()),"FluidBoundary",App::PropertyType(App::Prop_ReadOnly|App::Prop_Output),
-                      "Points where arrows are drawn");
-    Points.setValues(std::vector<Base::Vector3d>());
     ADD_PROPERTY_TYPE(DirectionVector,(Base::Vector3d(0,0,1)),"FluidBoundary",App::PropertyType(App::Prop_ReadOnly|App::Prop_Output),
                       "Direction of arrows");
     naturalDirectionVector = Base::Vector3d(0,0,0); // by default use the null vector to indicate an invalid value
-    // property from: FemConstraintFixed object
-    ADD_PROPERTY_TYPE(Normals,(Base::Vector3d()),"FluidBoundary",App::PropertyType(App::Prop_ReadOnly|App::Prop_Output),
-                      "Normals where symbols are drawn");
-    Normals.setValues(std::vector<Base::Vector3d>());
     // clang-format on
 }
 
@@ -139,26 +129,13 @@ void ConstraintFluidBoundary::onChanged(const App::Property* prop)
             Subtype.setEnums(OutletSubtypes);
         }
         else {
-            Base::Console().Message(boundaryType.c_str());
-            Base::Console().Message(" Error: this boundaryType is not defined\n");
+            Base::Console().message(boundaryType.c_str());
+            Base::Console().message(" Error: this boundaryType is not defined\n");
         }
 
         // must set a default (0 or 1) as freestream has only 2 subtypes
         Subtype.setValue(1);
         // need to trigger ViewProvider::updateData() for redraw in 3D view after this method
-    }
-
-    // naturalDirectionVector is a private member of this class
-    if (prop == &References) {
-        std::vector<Base::Vector3d> points;
-        std::vector<Base::Vector3d> normals;
-        int scale = 1;  // OvG: Enforce use of scale
-        if (getPoints(points, normals, &scale)) {
-            Points.setValues(points);
-            Normals.setValues(normals);
-            Scale.setValue(scale);  // OvG: Scale
-            Points.touch();         // This triggers ViewProvider::updateData()
-        }
     }
     else if (prop == &Direction) {
         Base::Vector3d direction = getDirection(Direction);
@@ -175,14 +152,14 @@ void ConstraintFluidBoundary::onChanged(const App::Property* prop)
     else if (prop == &Reversed) {
         // if the direction is invalid try to compute it again
         if (naturalDirectionVector.Length() < Precision::Confusion()) {
-            naturalDirectionVector = getDirection(Direction);
+            naturalDirectionVector =
+                Direction.getValue() ? getDirection(Direction) : NormalDirection.getValue();
         }
         if (naturalDirectionVector.Length() >= Precision::Confusion()) {
             if (Reversed.getValue() && (DirectionVector.getValue() == naturalDirectionVector)) {
                 DirectionVector.setValue(-naturalDirectionVector);
             }
-            else if (!Reversed.getValue()
-                     && (DirectionVector.getValue() != naturalDirectionVector)) {
+            else if (!Reversed.getValue() && (DirectionVector.getValue() != naturalDirectionVector)) {
                 DirectionVector.setValue(naturalDirectionVector);
             }
         }

@@ -29,7 +29,7 @@ import FreeCAD
 
 
 def get_analysis_types():
-    return "all"    # write for all analysis types
+    return "all"  # write for all analysis types
 
 
 def get_sets_name():
@@ -57,63 +57,42 @@ def get_after_write_constraint():
 
 
 def write_meshdata_constraint(f, femobj, disp_obj, ccxwriter):
-    f.write("*NSET,NSET={}\n".format(disp_obj.Name))
+    f.write(f"*NSET,NSET={disp_obj.Name}\n")
     for n in femobj["Nodes"]:
-        f.write("{},\n".format(n))
+        f.write(f"{n},\n")
 
 
 def write_constraint(f, femobj, disp_obj, ccxwriter):
 
     # floats read from ccx should use {:.13G}, see comment in writer module
 
-    f.write("*BOUNDARY\n")
-    if disp_obj.xFix:
-        f.write("{},1\n".format(disp_obj.Name))
-    elif not disp_obj.xFree:
+    if disp_obj.EnableAmplitude:
+        f.write(f"*BOUNDARY, AMPLITUDE={disp_obj.Name}\n")
+    else:
+        f.write("*BOUNDARY\n")
+    if not disp_obj.xFree:
         f.write(
-            "{},1,1,{}\n".format(
-                disp_obj.Name, FreeCAD.Units.Quantity(disp_obj.xDisplacement.getValueAs("mm"))
-            )
+            "{},1,1,{:.13G}\n".format(disp_obj.Name, disp_obj.xDisplacement.getValueAs("mm").Value)
         )
-    if disp_obj.yFix:
-        f.write("{},2\n".format(disp_obj.Name))
-    elif not disp_obj.yFree:
+    if not disp_obj.yFree:
         f.write(
-            "{},2,2,{}\n".format(
-                disp_obj.Name, FreeCAD.Units.Quantity(disp_obj.yDisplacement.getValueAs("mm"))
-            )
+            "{},2,2,{:.13G}\n".format(disp_obj.Name, disp_obj.yDisplacement.getValueAs("mm").Value)
         )
-    if disp_obj.zFix:
-        f.write("{},3\n".format(disp_obj.Name))
-    elif not disp_obj.zFree:
+    if not disp_obj.zFree:
         f.write(
-            "{},3,3,{}\n".format(
-                disp_obj.Name, FreeCAD.Units.Quantity(disp_obj.zDisplacement.getValueAs("mm"))
-            )
+            "{},3,3,{:.13G}\n".format(disp_obj.Name, disp_obj.zDisplacement.getValueAs("mm").Value)
         )
 
     if ccxwriter.member.geos_beamsection or ccxwriter.member.geos_shellthickness:
-        if disp_obj.rotxFix:
-            f.write("{},4\n".format(disp_obj.Name))
-        elif not disp_obj.rotxFree:
+        if not disp_obj.rotxFree:
             f.write(
-                "{},4,4,{}\n".format(
-                    disp_obj.Name, FreeCAD.Units.Quantity(disp_obj.xRotation.getValueAs("deg"))
-                )
+                "{},4,4,{:.13G}\n".format(disp_obj.Name, disp_obj.xRotation.getValueAs("rad").Value)
             )
-        if disp_obj.rotyFix:
-            f.write("{},5\n".format(disp_obj.Name))
-        elif not disp_obj.rotyFree:
+        if not disp_obj.rotyFree:
             f.write(
-                "{},5,5,{}\n".format(
-                    disp_obj.Name, FreeCAD.Units.Quantity(disp_obj.yRotation.getValueAs("deg"))
-                )
+                "{},5,5,{:.13G}\n".format(disp_obj.Name, disp_obj.yRotation.getValueAs("rad").Value)
             )
-        if disp_obj.rotzFix:
-            f.write("{},6\n".format(disp_obj.Name))
-        elif not disp_obj.rotzFree:
+        if not disp_obj.rotzFree:
             f.write(
-                "{},6,6,{}\n".format(
-                    disp_obj.Name, FreeCAD.Units.Quantity(disp_obj.zRotation.getValueAs("deg"))
-                )
+                "{},6,6,{:.13G}\n".format(disp_obj.Name, disp_obj.zRotation.getValueAs("rad").Value)
             )

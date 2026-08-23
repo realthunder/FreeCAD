@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "AreaToolpath.h"
 #ifndef _PreComp_
 # include <BRep_Tool.hxx>
 # include <BRepAdaptor_Curve.hxx>
@@ -51,7 +53,7 @@
 #include <Mod/Part/App/PartPyCXX.h>
 #include "CommandPy.h"
 
-#include "Area.h"
+#include <Mod/Area/App/Area.h>
 #include "PathPy.h"
 #include "FeaturePath.h"
 
@@ -322,12 +324,12 @@ namespace PathApp {
           {
               Py::Sequence shapeSeq(pShapes);
               for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-                  PyObject* item = (*it).ptr();
-                  if(!PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
+                  Py::Object item(*it);
+                  if(!PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
                       PyErr_SetString(PyExc_TypeError, "non-shape object in sequence");
                       throw Py::Exception();
                   }
-                  shapes.push_back(static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape());
+                  shapes.push_back(static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr()->getShape());
               }
           }
 
@@ -340,7 +342,7 @@ namespace PathApp {
           try {
               gp_Pnt pend;
               std::unique_ptr<Path::Toolpath> path(new Path::Toolpath);
-              Path::Area::toPath(*path,shapes,start?&pstart:nullptr, &pend,
+              Path::areaToPath(*path,shapes,start?&pstart:nullptr, &pend,
                       PARAM_PY_FIELDS(PARAM_FARG,AREA_PARAMS_PATH));
               if (!Base::asBoolean(return_end))
                   return Py::asObject(new Path::PathPy(path.release()));
@@ -377,12 +379,12 @@ namespace PathApp {
                   PyObject_TypeCheck(pShapes, &(PyTuple_Type))) {
               Py::Sequence shapeSeq(pShapes);
               for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-                  PyObject* item = (*it).ptr();
-                  if(!PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
+                  Py::Object item(*it);
+                  if(!PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
                       PyErr_SetString(PyExc_TypeError, "non-shape object in sequence");
                       throw Py::Exception();
                   }
-                  shapes.push_back(static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape());
+                  shapes.push_back(static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr()->getShape());
               }
           }
 

@@ -325,12 +325,22 @@ void PropertyExpressionEngine::Save(Base::Writer &writer) const
 {
     writer.Stream() << writer.ind() << "<ExpressionEngine count=\"";
 
-    if(expressions.empty()) {
+    // An entry whose expression was removed is skipped by both writers below, so it
+    // must not be counted here either: Restore sizes its vector from this number and
+    // then reads exactly that many entries, running off the end of a shorter list and
+    // failing the whole document with a parse error.
+    std::size_t count = 0;
+    for (const auto &entry : expressions) {
+        if (entry.second.expression)
+            ++count;
+    }
+
+    if(!count) {
         writer.Stream() << "0\"></ExpressionEngine>\n";
         return;
     }
 
-    writer.Stream() << expressions.size();
+    writer.Stream() << count;
 
     if(writer.getFileVersion()>1) 
         writer.Stream() << "\" cdata=\"1";

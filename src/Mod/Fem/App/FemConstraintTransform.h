@@ -21,8 +21,7 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef FEM_CONSTRAINTTransform_H
-#define FEM_CONSTRAINTTransform_H
+#pragma once
 
 #include "FemConstraint.h"
 
@@ -40,16 +39,11 @@ public:
     // Read-only (calculated values). These trigger changes in the ViewProvider
     App::PropertyLinkSubList RefDispl;
     App::PropertyLinkList NameDispl;
-    App::PropertyVectorList Points;
-    App::PropertyVectorList Normals;
     App::PropertyVector BasePoint;
     App::PropertyVector Axis;
-    App::PropertyAngle X_rot;
-    App::PropertyAngle Y_rot;
-    App::PropertyAngle Z_rot;
+
+    App::PropertyRotation Rotation;
     App::PropertyEnumeration TransformType;
-    // etc
-    /* */
 
     /// recalculate the object
     App::DocumentObjectExecReturn* execute() override;
@@ -58,13 +52,12 @@ public:
     const char* getViewProviderName() const override;
 
 protected:
-    void handleChangedPropertyType(Base::XMLReader& reader,
-                                   const char* TypeName,
-                                   App::Property* prop) override;
+    void handleChangedPropertyName(
+        Base::XMLReader& reader,
+        const char* typeName,
+        const char* propName
+    ) override;
     void onChanged(const App::Property* prop) override;
 };
 
 }  // namespace Fem
-
-
-#endif  // FEM_CONSTRAINTTransform_H

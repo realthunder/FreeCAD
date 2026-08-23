@@ -20,10 +20,8 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
-#ifndef _PreComp_
 #include <QTextCharFormat>
-#endif
+
 
 #include "AbaqusHighlighter.h"
 
@@ -134,7 +132,7 @@ void AbaqusHighlighter::highlightBlock(const QString& text)
             }
         }
         // Comment lines
-        else if (text.mid(i, 2) == QStringLiteral("**")) {
+        else if (text.mid(i, 2) == QLatin1String("**")) {
             QTextCharFormat commentFormat;
             commentFormat.setForeground(commentColor);
             commentFormat.setFontItalic(true);

@@ -24,7 +24,10 @@
 #include "PreCompiled.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cstring>
+#include <limits>
 #include <functional>
 #include <sstream>
 
@@ -38,6 +41,7 @@
 #include <Base/Reader.h>
 #include <Base/Writer.h>
 #include <Base/Quantity.h>
+#include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Base/Stream.h>
 #include <Base/Tools.h>
 
@@ -746,6 +750,25 @@ void PropertyIntegerConstraint::setPyObject(PyObject *value)
         _lValue = temp;
         hasSetValue();
     }
+    else if (PyDict_Check(value)) {
+        // Upstream spells the constrained form as a dict, with everything but
+        // the value optional. Translate it into the 4-tuple below, so the
+        // clamping and the constraint bookkeeping stay one code path.
+        long values[4] = {0,
+                          std::numeric_limits<int>::lowest(),
+                          std::numeric_limits<int>::max(),
+                          1};
+        Py::Tuple dummy;
+        static const std::array<const char*, 5> kw = {"value", "min", "max", "step", nullptr};
+        if (!Base::Wrapped_ParseTupleAndKeywords(dummy.ptr(), value, "l|lll", kw,
+                                                 &values[0], &values[1], &values[2], &values[3]))
+            throw Py::Exception();
+
+        Py::Tuple tuple(4);
+        for (int i=0; i<4; i++)
+            tuple.setItem(i, Py::Long(values[i]));
+        setPyObject(tuple.ptr());
+    }
     else if (PyTuple_Check(value) && PyTuple_Size(value) == 4) {
         long values[4];
         for (int i=0; i<4; i++) {
@@ -774,7 +797,7 @@ void PropertyIntegerConstraint::setPyObject(PyObject *value)
         hasSetValue();
     }
     else {
-        std::string error = std::string("type must be int, not ");
+        std::string error = std::string("type must be int, dict or tuple, not ");
         error += value->ob_type->tp_name;
         THROWM(Base::TypeError, error)
     }
@@ -1257,6 +1280,24 @@ void PropertyFloatConstraint::setPyObject(PyObject *value)
         _dValue = temp;
         hasSetValue();
     }
+    else if (PyDict_Check(value)) {
+        // See PropertyIntegerConstraint::setPyObject -- same dict form, same
+        // reason for translating it into the tuple this class already takes.
+        double values[4] = {0.0,
+                            std::numeric_limits<double>::lowest(),
+                            std::numeric_limits<double>::max(),
+                            1.0};
+        Py::Tuple dummy;
+        static const std::array<const char*, 5> kw = {"value", "min", "max", "step", nullptr};
+        if (!Base::Wrapped_ParseTupleAndKeywords(dummy.ptr(), value, "d|ddd", kw,
+                                                 &values[0], &values[1], &values[2], &values[3]))
+            throw Py::Exception();
+
+        Py::Tuple tuple(4);
+        for (int i=0; i<4; i++)
+            tuple.setItem(i, Py::Float(values[i]));
+        setPyObject(tuple.ptr());
+    }
     else if (PyTuple_Check(value) && PyTuple_Size(value) == 4) {
         double values[4];
         for (int i=0; i<4; i++) {
@@ -1292,7 +1333,7 @@ void PropertyFloatConstraint::setPyObject(PyObject *value)
         hasSetValue();
     }
     else {
-        std::string error = std::string("type must be float, not ");
+        std::string error = std::string("type must be float, dict or tuple, not ");
         error += value->ob_type->tp_name;
         THROWM(Base::TypeError, error)
     }
@@ -1589,17 +1630,19 @@ void PropertyString::setValue(const char* newLabel)
 
         App::Document* doc = obj->getDocument();
         if(doc && !DocumentParams::getDuplicateLabels() && !obj->allowDuplicateLabel()) {
-            std::vector<std::string> objectLabels;
-            std::vector<App::DocumentObject*>::const_iterator it;
-            std::vector<App::DocumentObject*> objs = doc->getObjects();
+            // Only a label that is already taken needs any work here, and
+            // answering that compares in place: collecting every label into a
+            // vector first costs a string copy per object in the document,
+            // paid on every label anyone sets. An import that names 13636
+            // objects spent seconds of its time on those copies.
+            const std::vector<App::DocumentObject*> &objs = doc->getObjects();
             bool match = false;
-            for (it = objs.begin();it != objs.end();++it) {
-                if (*it == obj)
-                    continue; // don't compare object with itself
-                std::string objLabel = (*it)->Label.getValue();
-                if (!match && objLabel == newLabel)
+            for (auto it : objs) {
+                if (it != obj  // don't compare object with itself
+                        && strcmp(it->Label.getValue(), newLabel) == 0) {
                     match = true;
-                objectLabels.push_back(objLabel);
+                    break;
+                }
             }
 
             // make sure that there is a name conflict otherwise we don't have to do anything
@@ -1630,15 +1673,33 @@ void PropertyString::setValue(const char* newLabel)
                         if(*c<48 || *c>57)
                             break;
                     }
-                    if(*c == 0 && std::find(objectLabels.begin(), objectLabels.end(),
-                                            obj->getNameInDocument())==objectLabels.end())
+                    if(*c == 0)
                     {
-                        label = obj->getNameInDocument();
-                        changed = true;
+                        bool nameTaken = false;
+                        for (auto it : objs) {
+                            if (it != obj && strcmp(it->Label.getValue(), objName) == 0) {
+                                nameTaken = true;
+                                break;
+                            }
+                        }
+                        if (!nameTaken) {
+                            label = obj->getNameInDocument();
+                            changed = true;
+                        }
                     }
                 }
-                if(!changed)
-                    label = Base::Tools::getUniqueName(label, objectLabels, 3);
+                if(!changed) {
+                    auto it = objs.begin();
+                    auto next = [&]() -> const char * {
+                        for (; it != objs.end(); ) {
+                            auto o = *it++;
+                            if (o != obj)
+                                return o->Label.getValue();
+                        }
+                        return nullptr;
+                    };
+                    label = Base::Tools::getUniqueName(label, next, 3);
+                }
             }
         }
 

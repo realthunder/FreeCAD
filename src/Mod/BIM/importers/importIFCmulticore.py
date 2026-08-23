@@ -45,6 +45,8 @@ objects = {}  # ifcid : Arch_Component
 subs = {}  # host_ifcid: [child_ifcid,...]
 adds = {}  # host_ifcid: [child_ifcid,...]
 colors = {}  # objname : (r,g,b)
+settableattributes = {}  # (ifc entity type, ifc type) : [attribute name,...]
+layermembers = {}  # ifcid : [Arch_Component,...] waiting to be put in the layer
 
 
 def open(filename):
@@ -54,6 +56,22 @@ def open(filename):
 
 
 def insert(filename, docname=None, preferences=None):
+    """imports the contents of an IFC file in the given document
+
+    A wrapper around the import proper, so the live-view state is given back
+    on every path out of it, including the ones that raise. This is the
+    importer a plain file import actually reaches: importIFC.insert() routes
+    here whenever MULTICORE is set, and getMulticore() never returns 0.
+    """
+    from importers.importIFC import _set_live_import
+
+    try:
+        return _insert(filename, docname, preferences)
+    finally:
+        _set_live_import(None, False)
+
+
+def _insert(filename, docname=None, preferences=None):
     """imports the contents of an IFC file in the given document"""
 
     import ifcopenshell
@@ -65,11 +83,17 @@ def insert(filename, docname=None, preferences=None):
     global objects
     global adds
     global subs
+    global settableattributes
+    global layermembers
     layers = {}
     materials = {}
     objects = {}
     adds = {}
     subs = {}
+    layermembers = {}
+    # the attribute cache is keyed on entity type, which only means the same
+    # thing within one schema
+    settableattributes = {}
 
     # statistics
     starttime = time.time()  # in seconds
@@ -98,20 +122,52 @@ def insert(filename, docname=None, preferences=None):
     iterator = ifcopenshell.geom.iterator(settings, ifcfile, cores)
     iterator.initialize()
     count = 0
+    aborted = False
+
+    # The 3D view is the user's for the duration: the loop below offers the
+    # event loop a turn per product, so there is something to deliver input
+    # with. Released by insert()'s finally, on every path.
+    from importers.importIFC import _set_live_import, _pump_live_import
+    doc = FreeCAD.ActiveDocument
+    docname = doc.Name
+    _set_live_import(doc, True)
 
     # process objects
-    for item in iterator:
-        brep = item.geometry.brep_data
-        # 0.8 tells the two apart: guid is the IfcGloballyUniqueId string,
-        # id is the STEP entity id that by_id wants
-        ifcproduct = ifcfile.by_id(item.id if hasattr(item,"id") else item.guid)
-        obj = createProduct(ifcproduct,brep)
-        progressbar.next(True)
-        writeProgress(count, productscount, starttime)
-        count += 1
+    try:
+        for item in iterator:
+            if docname not in FreeCAD.listDocuments():
+                # A live view is one the user can act on, so the document can
+                # go away under the loop -- and every product from here on
+                # would be built into whatever document is active next.
+                raise RuntimeError("the document being imported into was closed")
+            brep = item.geometry.brep_data
+            # 0.8 tells the two apart: guid is the IfcGloballyUniqueId string,
+            # id is the STEP entity id that by_id wants
+            ifcproduct = ifcfile.by_id(item.id if hasattr(item,"id") else item.guid)
+            obj = createProduct(ifcproduct,brep)
+            progressbar.next(True)
+            # next() only pumps on its own 200ms bar-update throttle, which is
+            # a slideshow to someone orbiting the model; this offers a turn per
+            # product and is throttled on its own, shorter, budget.
+            _pump_live_import()
+            writeProgress(count, productscount, starttime)
+            count += 1
+    except FreeCAD.Base.FreeCADAbort:
+        # Escape. Stop making products, but still finish the file: the layers,
+        # relationships and colours all belong to products that were made, and
+        # a half-related model is worse than a smaller one. The caller's
+        # transaction still commits, so one undo takes the import back.
+        aborted = True
+        FreeCAD.Console.PrintWarning(
+            "IFC import aborted after "
+            + str(count)
+            + " of "
+            + str(productscount)
+            + " products\n"
+        )
 
     # process 2D annotations
-    annotations = ifcfile.by_type("IfcAnnotation")
+    annotations = [] if aborted else ifcfile.by_type("IfcAnnotation")
     if annotations:
         print("Processing", str(len(annotations)), "annotations...")
         ifcscale = importIFCHelper.getScaling(ifcfile)
@@ -121,10 +177,12 @@ def insert(filename, docname=None, preferences=None):
             )
 
     # post-processing
+    applyLayers()
     processRelationships()
     storeColorDict()
 
     # finished
+    importIFCHelper.reportFileDefects()
     progressbar.stop()
     FreeCAD.ActiveDocument.recompute()
     endtime = round(time.time() - starttime, 1)
@@ -187,14 +245,32 @@ def setAttributes(obj, ifcproduct):
         obj.Label = ifcproduct.Name
     if ifctype in ArchIFC.IfcTypes:
         obj.IfcType = ifctype
-    for attr in dir(ifcproduct):
-        if attr in obj.PropertiesList:
-            value = getattr(ifcproduct, attr)
-            if value:
-                try:
-                    setattr(obj, attr, value)
-                except Exception:
-                    pass
+    for attr in getSettableAttributes(obj, ifcproduct, ifctype):
+        value = getattr(ifcproduct, attr)
+        if value:
+            try:
+                setattr(obj, attr, value)
+            except Exception:
+                pass
+
+
+def getSettableAttributes(obj, ifcproduct, ifctype):
+    """returns the IFC attribute names this object has a matching property for
+
+    Both halves of that question are settled by the entity type and the IFC
+    type alone, so the answer is memoised: dir() rebuilds the entity's
+    attribute list and PropertiesList rebuilds the object's property list, and
+    asking for the second one inside a loop over the first rebuilt it once per
+    attribute per product.
+    """
+
+    key = (ifcproduct.is_a(), ifctype)
+    attrs = settableattributes.get(key)
+    if attrs is None:
+        properties = set(obj.PropertiesList)
+        attrs = [attr for attr in dir(ifcproduct) if attr in properties]
+        settableattributes[key] = attrs
+    return attrs
 
 
 def setProperties(obj, ifcproduct):
@@ -224,16 +300,41 @@ def setColor(obj, ifcproduct):
 
 
 def createLayer(obj, ifcproduct):
-    """sets the layer of a component"""
+    """queues a component for its layers -- applyLayers() does the assigning"""
 
     global layers
+    global layermembers
 
     if ifcproduct.Representation:
         for rep in ifcproduct.Representation.Representations:
             for layer in rep.LayerAssignments:
                 if not layer.id() in layers:
                     layers[layer.id()] = Draft.make_layer(layer.Name)
-                layers[layer.id()].Proxy.addObject(layers[layer.id()], obj)
+                layermembers.setdefault(layer.id(), []).append(obj)
+
+
+def applyLayers():
+    """puts the queued components in their layers, one assignment per layer
+
+    Adding one child means writing the whole Group property back, and the
+    Layer's own onChanged then walks that group. Doing that per child costs
+    the square of the layer's size, and an IFC model puts thousands of
+    objects in a single layer.
+    """
+
+    global layers
+    global layermembers
+
+    for layerid, members in layermembers.items():
+        layer = layers[layerid]
+        group = layer.Group
+        names = {o.Name for o in group}
+        for member in members:
+            if member.Name not in names:
+                names.add(member.Name)
+                group.append(member)
+        layer.Group = group
+    layermembers = {}
 
 
 def createMaterial(obj, ifcproduct):

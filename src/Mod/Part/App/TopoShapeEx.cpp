@@ -89,6 +89,7 @@
 # include <GCE2d_MakeSegment.hxx>
 # include <GCPnts_AbscissaPoint.hxx>
 # include <GCPnts_UniformAbscissa.hxx>
+# include <GeomAdaptor_Curve.hxx>
 # include <Geom2d_Line.hxx>
 # include <Geom2d_TrimmedCurve.hxx>
 # include <GeomLProp_SLProps.hxx>
@@ -622,7 +623,7 @@ Data::ElementMapPtr TopoShape::resetElementMap(Data::ElementMapPtr elementMap)
     if (_Cache && elementMap != this->elementMap(false)) {
         for (auto &info : _Cache->infos)
             info.clear();
-    } else
+    } else if (elementMap)
         INIT_SHAPE_CACHE();
     if (elementMap) {
         _Cache->cachedElementMap = elementMap;
@@ -699,13 +700,21 @@ bool TopoShape::hasPendingElementMap() const
 void TopoShape::operator = (const TopoShape& sh)
 {
     if (this != &sh) {
-        this->setShape(sh._Shape, true);
+        // Take the source's state as it stands, and touch nothing else. Every
+        // member below is overwritten, so there is nothing here to invalidate:
+        // going through setShape()/resetElementMap() only built a cache for the
+        // shape being replaced and another for the new one, and then dropped
+        // both on the next line. A cache is an array of 90 OCCT maps, so that
+        // was the bulk of the cost of copying a shape -- and worse for a mapped
+        // shape, where resetElementMap() would clear the infos of the very
+        // cache being adopted, throwing away the source's own sub shapes.
+        this->_Shape._Shape = sh._Shape.getShape();
         this->Tag = sh.Tag;
         this->Hasher = sh.Hasher;
         this->_Cache = sh._Cache;
         this->_ParentCache = sh._ParentCache;
         this->_SubLocation = sh._SubLocation;
-        resetElementMap(sh.elementMap(false));
+        Data::ComplexGeoData::resetElementMap(sh.elementMap(false));
     }
 }
 
@@ -1457,7 +1466,7 @@ TopoShape TopoShape::getSubTopoShape(const char *Type, bool silent) const {
     auto res = shapeTypeAndIndex(mapped.index);
     if(res.second<=0) {
         if(!silent)
-            FC_THROWM(Base::CADKernelError,"Invalid shape name " << (Type?Type:""));
+            FC_THROWM(Base::ValueError,"Invalid shape name " << (Type?Type:""));
         return TopoShape();
     }
     return getSubTopoShape(res.first,res.second,silent);
@@ -3045,16 +3054,15 @@ struct EdgePoints {
     }
 };
 
-std::deque<TopoShape>
-TopoShape::sortEdges(std::list<TopoShape>& edges, bool keepOrder, double tol)
+// One connected run, taken out of an edge_points list that the caller built.
+// Both entry points below drive this; keeping the list across runs is the whole
+// point, because building it walks every edge and asks OCCT for two vertices.
+static std::deque<TopoShape>
+extractRun(std::list<TopoShape>& edges,
+           std::list<EdgePoints>& edge_points,
+           bool keepOrder,
+           double tol3d)
 {
-    if (tol<Precision::Confusion()) tol = Precision::Confusion();
-    double tol3d = tol * tol;
-
-    std::list<EdgePoints>  edge_points;
-    for (auto it = edges.begin(); it != edges.end(); ++it)
-        edge_points.emplace_back(it, tol3d);
-
     std::deque<TopoShape> sorted;
     if (edge_points.empty())
         return sorted;
@@ -3065,10 +3073,13 @@ TopoShape::sortEdges(std::list<TopoShape>& edges, bool keepOrder, double tol)
 
     sorted.push_back(edge_points.front().edge);
     edges.erase(edge_points.front().it);
-    if (edge_points.front().closed)
-        return sorted;
-
+    // Take it out of the list before answering. The old code returned here
+    // without doing so, which was invisible while the list was rebuilt for
+    // every run and is an endless loop once it is not.
+    const bool closed = edge_points.front().closed;
     edge_points.erase(edge_points.begin());
+    if (closed)
+        return sorted;
 
     auto reverseEdge = [](const TopoShape &edge) {
         Standard_Real first, last;
@@ -3157,6 +3168,105 @@ TopoShape::sortEdges(std::list<TopoShape>& edges, bool keepOrder, double tol)
     return sorted;
 }
 
+// Build the point list the runs are taken from. tol3d is a SQUARED distance.
+static std::list<EdgePoints>
+makeEdgePoints(std::list<TopoShape>& edges, double tol3d)
+{
+    std::list<EdgePoints> edge_points;
+    for (auto it = edges.begin(); it != edges.end(); ++it)
+        edge_points.emplace_back(it, tol3d);
+    return edge_points;
+}
+
+std::deque<TopoShape>
+TopoShape::sortEdges(std::list<TopoShape>& edges, bool keepOrder, double tol)
+{
+    if (tol<Precision::Confusion()) tol = Precision::Confusion();
+    double tol3d = tol * tol;
+    auto edge_points = makeEdgePoints(edges, tol3d);
+    return extractRun(edges, edge_points, keepOrder, tol3d);
+}
+
+std::vector<std::deque<TopoShape>>
+TopoShape::sortEdgesAll(std::list<TopoShape>& edges, bool keepOrder, double tol)
+{
+    if (tol<Precision::Confusion()) tol = Precision::Confusion();
+    double tol3d = tol * tol;
+
+    // Built once and drained, rather than rebuilt for every run. Calling
+    // sortEdges() in a loop instead costs one pass over the remaining edges
+    // per run, which on input that is mostly short runs is the whole cost:
+    // 200 two-edge runs took 88ms that way and 1.2ms this way.
+    auto edge_points = makeEdgePoints(edges, tol3d);
+
+    std::vector<std::deque<TopoShape>> runs;
+    while (!edge_points.empty()) {
+        auto run = extractRun(edges, edge_points, keepOrder, tol3d);
+        if (run.empty())
+            break;
+        runs.push_back(std::move(run));
+    }
+    return runs;
+}
+
+// Assemble one wire per sorted run. MakeWire may still refuse an edge the
+// sorting joined -- the caller's tolerance can span a gap wider than the
+// vertex tolerances MakeWire connects by -- and ignoring the refusal would
+// silently drop the edge from the result, so start a new wire there instead.
+static std::vector<TopoShape>
+wiresFromSortedRuns(std::list<TopoShape> &edge_list,
+                    bool keepOrder,
+                    double tol,
+                    const char *op,
+                    bool fixWires,
+                    Part::TopoShapeMap *output)
+{
+    std::vector<TopoShape> wires;
+    for (const auto &run : TopoShape::sortEdgesAll(edge_list, keepOrder, tol)) {
+        // An edge shorter than tol never joins a run -- its ends coincide, so
+        // the sorting calls it closed and gives it a run of its own. The wire
+        // fixing used to delete such edges (they are why makEWires() fixes at
+        // all, see issue 595), so do not keep them as degenerate wires here.
+        if (fixWires && run.size() == 1) {
+            Standard_Real first, last;
+            auto curve = BRep_Tool::Curve(TopoDS::Edge(run.front().getShape()), first, last);
+            double len = 0.0;
+            if (!curve.IsNull()) {
+                GeomAdaptor_Curve adaptor(curve, first, last);
+                len = GCPnts_AbscissaPoint::Length(adaptor, Precision::Confusion());
+            }
+            if (len <= tol)
+                continue;
+        }
+        auto it = run.begin();
+        while (it != run.end()) {
+            BRepBuilderAPI_MakeWire mkWire;
+            std::vector<TopoShape> edges;
+            // A refused Add also marks the whole builder not-done, after which
+            // Wire() throws, so keep a copy of the last good wire instead.
+            TopoDS_Wire wire;
+            for (; it != run.end(); ++it) {
+                mkWire.Add(TopoDS::Edge(it->getShape()));
+                if (!edges.empty() && mkWire.Error() == BRepBuilderAPI_DisconnectedWire)
+                    break;
+                edges.push_back(*it);
+                // MakeWire will replace vertex of connected edge, which
+                // effectively creat a new edge. So we need to update the shape
+                // in order to preserve element mapping.
+                edges.back().setShape(mkWire.Edge(), false);
+                if (output)
+                    (*output)[edges.back()] = *it;
+                wire = mkWire.Wire();
+            }
+            wires.push_back(wire);
+            wires.back().mapSubElement(edges, op);
+            if (fixWires)
+                wires.back().fix();
+        }
+    }
+    return wires;
+}
+
 TopoShape &TopoShape::makEOrderedWires(const std::vector<TopoShape> &shapes,
                                        const char *op,
                                        double tol,
@@ -3165,30 +3275,14 @@ TopoShape &TopoShape::makEOrderedWires(const std::vector<TopoShape> &shapes,
     if(!op) op = Part::OpCodes::Wire;
     if(tol<Precision::Confusion()) tol = Precision::Confusion();
 
-    std::vector<TopoShape> wires;
     std::list<TopoShape> edge_list;
 
     auto shape = TopoShape().makECompound(shapes, "", false);
     for(auto &e : shape.getSubTopoShapes(TopAbs_EDGE))
         edge_list.push_back(e);
 
-    while(edge_list.size()) {
-        BRepBuilderAPI_MakeWire mkWire;
-        std::vector<TopoShape> edges;
-        for (auto &edge : sortEdges(edge_list, true, tol)) {
-            edges.push_back(edge);
-            mkWire.Add(TopoDS::Edge(edge.getShape()));
-            // MakeWire will replace vertex of connected edge, which
-            // effectively creat a new edge. So we need to update the shape
-            // in order to preserve element mapping.
-            edges.back().setShape(mkWire.Edge(), false);
-            if (output)
-                (*output)[edges.back()] = edge;
-        }
-        wires.push_back(mkWire.Wire());
-        wires.back().mapSubElement(edges,op);
-    }
-    return makECompound(wires,0,false);
+    return makECompound(wiresFromSortedRuns(edge_list, true, tol, op, false, output),
+                        0, false);
 }
 
 TopoShape &TopoShape::makEWires(const std::vector<TopoShape> &shapes,
@@ -3226,7 +3320,6 @@ TopoShape &TopoShape::makEWires(const std::vector<TopoShape> &shapes,
         return makECompound(wires,"",false);
     }
 
-    std::vector<TopoShape> wires;
     std::list<TopoShape> edge_list;
 
     for (const auto &shape : shapes) {
@@ -3238,52 +3331,12 @@ TopoShape &TopoShape::makEWires(const std::vector<TopoShape> &shapes,
     if (edge_list.empty())
         HANDLE_NULL_SHAPE;
 
-    std::vector<TopoShape> edges;
-    edges.reserve(edge_list.size());
-    wires.reserve(edge_list.size());
-
-    // sort them together to wires
-    while (edge_list.size() > 0) {
-        BRepBuilderAPI_MakeWire mkWire;
-        // add and erase first edge
-        edges.clear();
-        edges.push_back(edge_list.front());
-        mkWire.Add(TopoDS::Edge(edges.back().getShape()));
-        edges.back().setShape(mkWire.Edge(),false);
-        if (output)
-            (*output)[edges.back()] = edge_list.front();
-        edge_list.pop_front();
-
-        TopoDS_Wire new_wire = mkWire.Wire(); // current new wire
-
-        // try to connect each edge to the wire, the wire is complete if no more edges are connectible
-        bool found = false;
-        do {
-            found = false;
-            for (auto it=edge_list.begin();it!=edge_list.end();++it) {
-                mkWire.Add(TopoDS::Edge(it->getShape()));
-                if (mkWire.Error() != BRepBuilderAPI_DisconnectedWire) {
-                    // edge added ==> remove it from list
-                    found = true;
-                    edges.push_back(*it);
-                    // MakeWire will replace vertex of connected edge, which
-                    // effectively creat a new edge. So we need to update the
-                    // shape in order to preserve element mapping.
-                    edges.back().setShape(mkWire.Edge(),false);
-                    if (output)
-                        (*output)[edges.back()] = *it;
-                    edge_list.erase(it);
-                    new_wire = mkWire.Wire();
-                    break;
-                }
-            }
-        } while (found);
-
-        wires.emplace_back(new_wire);
-        wires.back().mapSubElement(edges, op);
-        wires.back().fix();
-    }
-    return makECompound(wires,0,false);
+    // Sort the edges into runs first, one pass over them, instead of growing
+    // each wire by re-offering every remaining edge to MakeWire after every
+    // accepted one. That rescan was quadratic twice over -- in the number of
+    // wires and in the length of each -- and it never honoured tol at all.
+    return makECompound(wiresFromSortedRuns(edge_list, false, tol, op, true, output),
+                        0, false);
 }
 
 TopoShape &TopoShape::makEFace(const TopoShape &shape,

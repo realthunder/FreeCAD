@@ -13,38 +13,38 @@ if(BUILD_FEM_NETGEN)
     add_definitions(-DFCWithNetgen)
 endif(BUILD_FEM_NETGEN)
 
-include_directories(
-    ${CMAKE_BINARY_DIR}
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${Boost_INCLUDE_DIRS}
-    ${COIN3D_INCLUDE_DIRS}
-    ${ZLIB_INCLUDE_DIR}
-    ${OCC_INCLUDE_DIR}
-    ${PYTHON_INCLUDE_DIRS}
-    ${SMESH_INCLUDE_DIR}
-    ${VTK_INCLUDE_DIRS}
-)
-
-link_directories(${OCC_LIBRARY_DIR})
-link_directories(${SMESH_LIB_PATH})
-
 set(FemGui_LIBS
     Fem
     FreeCADGui
     PartGui
 )
 
-generate_from_xml(ViewProviderFemMeshPy)
-generate_from_xml(ViewProviderFemPostPipelinePy)
+generate_from_py(ViewProviderFemConstraint)
+generate_from_py(ViewProviderFemMesh)
+generate_from_py(ViewProviderFemPostPipeline)
+generate_from_py(ViewProviderFemPostFilter)
+generate_from_py(ViewProviderShapeExtension)
 
 SET(Python_SRCS
-    ViewProviderFemMeshPy.xml
+    ViewProviderFemConstraint.pyi
+    ViewProviderFemConstraintPyImp.cpp
+    ViewProviderFemMesh.pyi
     ViewProviderFemMeshPyImp.cpp
-    ViewProviderFemPostPipelinePy.xml
-    ViewProviderFemPostPipelinePyImp.cpp
+    ViewProviderShapeExtension.pyi
+    ViewProviderShapeExtensionPyImp.cpp
 )
+if(BUILD_FEM_VTK)
+    set(Python_SRCS
+        ${Python_SRCS}
+        ViewProviderFemPostPipeline.pyi
+        ViewProviderFemPostPipelinePyImp.cpp
+        ViewProviderFemPostFilter.pyi
+        ViewProviderFemPostFilterPyImp.cpp
+    )
+endif(BUILD_FEM_VTK)
+
 SOURCE_GROUP("Python" FILES ${Python_SRCS})
+
 
 set(FemGui_UIC_SRCS
     DlgSettingsFemCcx.ui
@@ -55,11 +55,13 @@ set(FemGui_UIC_SRCS
     DlgSettingsFemInOutVtk.ui
     DlgSettingsFemMystran.ui
     DlgSettingsFemZ88.ui
+    TaskCreateElementSet.ui
     TaskCreateNodeSet.ui
     TaskObjectName.ui
     TaskFemConstraint.ui
     TaskFemConstraintBearing.ui
     TaskFemConstraintFixed.ui
+    TaskFemConstraintRigidBody.ui
     TaskFemConstraintForce.ui
     TaskFemConstraintFluidBoundary.ui
     TaskFemConstraintPressure.ui
@@ -83,6 +85,7 @@ if(BUILD_FEM_VTK)
         CylinderWidget.ui
         PlaneWidget.ui
         SphereWidget.ui
+        TaskPostCalculator.ui
         TaskPostClip.ui
         TaskPostContours.ui
         TaskPostCut.ui
@@ -91,6 +94,8 @@ if(BUILD_FEM_VTK)
         TaskPostDisplay.ui
         TaskPostScalarClip.ui
         TaskPostWarpVector.ui
+        TaskPostFrames.ui
+        TaskPostBranch.ui
     )
 endif(BUILD_FEM_VTK)
 
@@ -131,6 +136,9 @@ SET(FemGui_DLG_SRCS
     TaskFemConstraintFixed.ui
     TaskFemConstraintFixed.cpp
     TaskFemConstraintFixed.h
+    TaskFemConstraintRigidBody.ui
+    TaskFemConstraintRigidBody.cpp
+    TaskFemConstraintRigidBody.h
     TaskFemConstraintForce.ui
     TaskFemConstraintForce.cpp
     TaskFemConstraintForce.h
@@ -175,7 +183,11 @@ set(Fem_TR_QRC ${CMAKE_CURRENT_BINARY_DIR}/Resources/Fem_translation.qrc)
 qt_find_and_add_translation(QM_SRCS "Resources/translations/*_*.ts"
     ${CMAKE_CURRENT_BINARY_DIR}/Resources/translations)
 qt_create_resource_file(${Fem_TR_QRC} ${QM_SRCS})
-qt_add_resources(FemResource_SRCS Resources/Fem.qrc ${Fem_TR_QRC})
+qt_add_resources(FemResource_SRCS
+    Resources/Fem.qrc
+    ${Fem_TR_QRC}
+    OPTIONS ${FREECAD_RCC_OPTIONS}
+)
 SOURCE_GROUP("Resources" FILES ${FemResource_SRCS})
 
 SET(FemGui_SRCS_ViewProvider
@@ -191,6 +203,8 @@ SET(FemGui_SRCS_ViewProvider
     ViewProviderSolver.h
     ViewProviderSetNodes.cpp
     ViewProviderSetNodes.h
+    ViewProviderSetElementNodes.cpp
+    ViewProviderSetElementNodes.h
     ViewProviderSetElements.cpp
     ViewProviderSetElements.h
     ViewProviderSetFaces.cpp
@@ -207,6 +221,8 @@ SET(FemGui_SRCS_ViewProvider
     ViewProviderFemConstraintBearing.h
     ViewProviderFemConstraintFixed.cpp
     ViewProviderFemConstraintFixed.h
+    ViewProviderFemConstraintRigidBody.cpp
+    ViewProviderFemConstraintRigidBody.h
     ViewProviderFemConstraintForce.cpp
     ViewProviderFemConstraintForce.h
     ViewProviderFemConstraintFluidBoundary.cpp
@@ -235,6 +251,8 @@ SET(FemGui_SRCS_ViewProvider
     ViewProviderFemConstraintTransform.h
     ViewProviderResult.cpp
     ViewProviderResult.h
+    ViewProviderShapeExtension.h
+    ViewProviderShapeExtension.cpp
 )
 SOURCE_GROUP("ViewProvider" FILES ${FemGui_SRCS_ViewProvider})
 
@@ -242,6 +260,9 @@ SET(FemGui_SRCS_TaskBoxes
     TaskObjectName.ui
     TaskObjectName.cpp
     TaskObjectName.h
+    TaskCreateElementSet.ui
+    TaskCreateElementSet.cpp
+    TaskCreateElementSet.h
     TaskCreateNodeSet.ui
     TaskCreateNodeSet.cpp
     TaskCreateNodeSet.h
@@ -265,6 +286,9 @@ if(BUILD_FEM_VTK)
         SphereWidget.ui
         TaskPostBoxes.h
         TaskPostBoxes.cpp
+        TaskPostExtraction.h
+        TaskPostExtraction.cpp
+        TaskPostCalculator.ui
         TaskPostClip.ui
         TaskPostContours.ui
         TaskPostCut.ui
@@ -279,6 +303,8 @@ endif(BUILD_FEM_VTK)
 SOURCE_GROUP("Task_Boxes" FILES ${FemGui_SRCS_TaskBoxes})
 
 SET(FemGui_SRCS_TaskDlg
+    TaskDlgCreateElementSet.h
+    TaskDlgCreateElementSet.cpp
     TaskDlgCreateNodeSet.h
     TaskDlgCreateNodeSet.cpp
     TaskDlgMeshShapeNetgen.h
@@ -296,10 +322,11 @@ SET(FemGui_SRCS_Module
     ActiveAnalysisObserver.cpp
     ActiveAnalysisObserver.h
     Command.cpp
+    FemGuiTools.cpp
+    FemGuiTools.h
     FemSettings.cpp
     FemSettings.h
     Resources/Fem.qrc
-    PreCompiled.cpp
     PreCompiled.h
     PropertyFemMeshItem.cpp
     PropertyFemMeshItem.h
@@ -308,12 +335,15 @@ SET(FemGui_SRCS_Module
 )
 SOURCE_GROUP("Module" FILES ${FemGui_SRCS_Module})
 
+
 if(BUILD_FEM_VTK)
     SET(FemGui_SRCS_Post
         ViewProviderFemPostObject.h
         ViewProviderFemPostObject.cpp
         ViewProviderFemPostPipeline.h
         ViewProviderFemPostPipeline.cpp
+        ViewProviderFemPostBranchFilter.h
+        ViewProviderFemPostBranchFilter.cpp
         ViewProviderFemPostFunction.h
         ViewProviderFemPostFunction.cpp
         ViewProviderFemPostFilter.h
@@ -333,22 +363,74 @@ SET(FemGui_SRCS
     ${FemGui_SRCS_Post}
 )
 
-if(FREECAD_USE_PCH)
-    add_definitions(-D_PreComp_)
-    GET_MSVC_PRECOMPILED_SOURCE("PreCompiled.cpp" PCH_SRCS ${FemGui_SRCS})
-    ADD_MSVC_PRECOMPILED_HEADER(FemGui PreCompiled.h PreCompiled.cpp PCH_SRCS)
-endif(FREECAD_USE_PCH)
-
 SET(FemGuiIcon_SVG
     Resources/icons/FemWorkbench.svg
 )
 
-add_library(FemGui SHARED ${FemGui_SRCS} ${FemGuiIcon_SVG})
+SET(FemGuiSymbol_IV
+    Resources/symbols/ConstraintContact.iv
+    Resources/symbols/ConstraintDisplacement.iv
+    Resources/symbols/ConstraintElectricChargeDensity.iv
+    Resources/symbols/ConstraintElectromagnetic.iv
+    Resources/symbols/ConstraintCurrentDensity.iv
+    Resources/symbols/ConstraintFixed.iv
+    Resources/symbols/ConstraintForce.iv
+    Resources/symbols/ConstraintHeatFlux.iv
+    Resources/symbols/ConstraintPlaneRotation.iv
+    Resources/symbols/ConstraintPressure.iv
+    Resources/symbols/ConstraintRigidBody.iv
+    Resources/symbols/ConstraintSectionPrint.iv
+    Resources/symbols/ConstraintSpring.iv
+    Resources/symbols/ConstraintTemperature.iv
+    Resources/symbols/ConstraintTransform.iv
+    Resources/symbols/ConstraintTie.iv
+)
+
+add_library(FemGui SHARED ${FemGui_SRCS} ${FemGuiIcon_SVG} ${FemGuiSymbol_IV})
+
+if(FREECAD_USE_PCH)
+    target_precompile_headers(FemGui PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:"${CMAKE_CURRENT_LIST_DIR}/PreCompiled.h">
+    )
+endif(FREECAD_USE_PCH)
+
+target_include_directories(
+    FemGui
+    PRIVATE
+    ${CMAKE_BINARY_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+target_include_directories(
+    FemGui
+    SYSTEM
+    PUBLIC
+    ${SMESH_INCLUDE_DIR}
+    ${VTK_INCLUDE_DIRS}
+    ${Boost_INCLUDE_DIRS}
+    ${COIN3D_INCLUDE_DIRS}
+    ${OCC_INCLUDE_DIR}
+    ${PYTHON_INCLUDE_DIRS}
+    ${ZLIB_INCLUDE_DIR}
+)
+
+target_link_directories(FemGui PUBLIC ${SMESH_LIB_PATH} ${OCC_LIBRARY_DIR})
 target_link_libraries(FemGui ${FemGui_LIBS} ${VTK_LIBRARIES})
 
+if (MSVC)
+    target_compile_definitions(FemGui PRIVATE WIN32_LEAN_AND_MEAN)
+endif()
+
+if (FREECAD_WARN_ERROR)
+    target_compile_warn_error(FemGui)
+endif()
+
 fc_copy_sources(FemGui "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Mod/Fem" ${FemGuiIcon_SVG})
+fc_copy_sources(FemGui "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Mod/Fem" ${FemGuiSymbol_IV})
 
 INSTALL(FILES ${FemGuiIcon_SVG} DESTINATION "${CMAKE_INSTALL_DATADIR}/Mod/Fem/Resources/icons")
+INSTALL(FILES ${FemGuiSymbol_IV} DESTINATION "${CMAKE_INSTALL_DATADIR}/Mod/Fem/Resources/symbols")
 
 # Python modules ui files, they are copied as they are, thus the need not to be added to Fem.qrc
 # see https://forum.freecad.org/viewtopic.php?f=10&t=25833
@@ -358,7 +440,9 @@ SET(FemGuiPythonUI_SRCS
     Resources/ui/ConstraintTie.ui
     Resources/ui/ConstraintSectionPrint.ui
     Resources/ui/CurrentDensity.ui
-    Resources/ui/ElectrostaticPotential.ui
+    Resources/ui/DlgSettingsNetgen.ui
+    Resources/ui/ElectricChargeDensity.ui
+    Resources/ui/Electromagnetic.ui
     Resources/ui/ElementFluid1D.ui
     Resources/ui/ElementGeometry1D.ui
     Resources/ui/ElementGeometry2D.ui
@@ -373,10 +457,34 @@ SET(FemGuiPythonUI_SRCS
     Resources/ui/MeshGmsh.ui
     Resources/ui/MeshGroup.ui
     Resources/ui/MeshGroupXDMFExport.ui
+    Resources/ui/MeshNetgen.ui
     Resources/ui/MeshRegion.ui
+    Resources/ui/MeshPreview.ui
+    Resources/ui/MeshPreviewSettings.ui
+    Resources/ui/MeshDistance.ui
+    Resources/ui/MeshManipulate.ui
+    Resources/ui/MeshAdvanced.ui
+    Resources/ui/MeshShape.ui
+    Resources/ui/MeshTransfiniteVolume.ui
+    Resources/ui/MeshTransfiniteSurface.ui
+    Resources/ui/MeshTransfiniteCurve.ui
     Resources/ui/ResultHints.ui
     Resources/ui/ResultShow.ui
-    Resources/ui/SolverCalculix.ui
+    Resources/ui/SolverCalculiX.ui
+    Resources/ui/SolverCcxTools.ui
+    Resources/ui/SolverElmer.ui
+    Resources/ui/SolverZ88.ui
+    Resources/ui/TaskPostGlyph.ui
+    Resources/ui/TaskPostExtraction.ui
+    Resources/ui/TaskPostHistogram.ui
+    Resources/ui/TaskPostLineplot.ui
+    Resources/ui/PostHistogramFieldViewEdit.ui
+    Resources/ui/PostHistogramFieldAppEdit.ui
+    Resources/ui/PostHistogramIndexAppEdit.ui
+    Resources/ui/PostLineplotFieldViewEdit.ui
+    Resources/ui/PostLineplotFieldAppEdit.ui
+    Resources/ui/PostLineplotIndexAppEdit.ui
+    Resources/ui/PostTableFieldViewEdit.ui
 )
 
 ADD_CUSTOM_TARGET(FemPythonUi ALL

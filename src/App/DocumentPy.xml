@@ -87,6 +87,14 @@ the same internal ID and will be undo/redo together.
           </UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="getBookedTransactionID">
+      <Documentation>
+        <UserDocu>getBookedTransactionID() -> int
+
+Return the ID of the transaction this document takes part in, or zero if
+there is none open.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="abortTransaction">
       <Documentation>
         <UserDocu>Abort an Undo/Redo transaction (rollback)</UserDocu>

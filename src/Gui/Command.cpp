@@ -469,15 +469,31 @@ void Command::invoke(int i, TriggerSource trigger)
     Base::Console().Log("CmdG: %s\n",sName);
 #endif
 
-    // A progressive import is still filling the active document; a
-    // document-mutating command interleaved with the pending create ops
-    // would corrupt the import, so gate those until it finishes.
-    if (eType & AlterDoc) {
-        auto doc = App::GetApplication().getActiveDocument();
-        if (doc && doc->testStatus(App::Document::LiveImport)) {
-            getMainWindow()->showMessage(
-                QObject::tr("The document is busy importing, please wait..."), 3000);
-            return;
+    // A progressive import is still filling the active document, and a
+    // command that touches it, interleaved with the pending create ops,
+    // would corrupt the import. What may run while one is in flight is a
+    // command that only *looks*: Alter3DView and AlterSelection say so, and
+    // the transaction/history/action bits are modifiers that say nothing
+    // either way.
+    //
+    // The test is "provably harmless" rather than "declares AlterDoc",
+    // because declaring no document change is not the same as changing no
+    // document. eType defaults to AlterDoc|Alter3DView|AlterSelection, but
+    // 138 commands overwrite it with a bare ForEdit -- Std_Delete among
+    // them, which deleted an object mid-import while the gate asked only
+    // about AlterDoc.
+    {
+        constexpr int intentBits = AlterDoc | Alter3DView | AlterSelection | ForEdit;
+        const int intent = eType & intentBits;
+        const bool looksOnly =
+            intent != 0 && (intent & ~(Alter3DView | AlterSelection)) == 0;
+        if (!looksOnly) {
+            auto doc = App::GetApplication().getActiveDocument();
+            if (doc && doc->testStatus(App::Document::LiveImport)) {
+                getMainWindow()->showMessage(
+                    QObject::tr("The document is busy importing, please wait..."), 3000);
+                return;
+            }
         }
     }
 

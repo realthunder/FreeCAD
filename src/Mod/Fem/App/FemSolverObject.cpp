@@ -21,7 +21,6 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
 #include <App/DocumentObjectPy.h>
 #include <App/FeaturePythonPyImp.h>
@@ -35,7 +34,18 @@ using namespace App;
 PROPERTY_SOURCE(Fem::FemSolverObject, App::DocumentObject)
 
 
-FemSolverObject::FemSolverObject() = default;
+FemSolverObject::FemSolverObject()
+{
+    ADD_PROPERTY_TYPE(
+        Results,
+        (nullptr),
+        "Base",
+        App::PropertyType(App::Prop_ReadOnly | App::Prop_Output),
+        "Solver results list"
+    );
+
+    worker.initExtension(this);
+}
 
 FemSolverObject::~FemSolverObject() = default;
 

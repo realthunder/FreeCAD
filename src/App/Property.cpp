@@ -464,6 +464,10 @@ bool Property::isSameContent(const Property &other) const {
 void PropertyListsBase::_setPyObject(PyObject *value) {
     std::vector<int> indices;
     std::vector<PyObject *> vals;
+    // A sequence may build its items on demand and keep none of its
+    // own, so vals would be a list of freed objects by the time
+    // setPyValues reads it. Hold them until it has.
+    std::vector<Py::Object> held;
     Py::Object pySeq;
 
     if (PyDict_Check(value)) {
@@ -503,8 +507,11 @@ void PropertyListsBase::_setPyObject(PyObject *value) {
         if(!pySeq.isNone()) {
             Py::Sequence seq(pySeq);
             vals.reserve(seq.size());
-            for(auto it=seq.begin();it!=seq.end();++it)
-                vals.push_back((*it).ptr());
+            held.reserve(held.size() + seq.size());
+            for(auto it=seq.begin();it!=seq.end();++it) {
+                held.push_back(*it);
+                vals.push_back(held.back().ptr());
+            }
         }
     }
     setPyValues(vals,indices);

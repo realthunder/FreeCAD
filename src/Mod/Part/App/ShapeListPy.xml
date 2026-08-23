@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GenerateModel xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="generateMetaModel_Module.xsd">
+    <PythonExport
+        Father="PyObjectBase"
+        Name="ShapeListPy"
+        PythonName="Part.ShapeList"
+        TwinPointer="ShapeList"
+        Twin="ShapeList"
+        Include="Mod/Part/App/ShapeList.h"
+        Namespace="Part"
+        FatherInclude="Base/PyObjectBase.h"
+        FatherNamespace="Base"
+        Constructor="true"
+        RichCompare="true"
+        NumberProtocol="true"
+        Delete="true">
+        <Documentation>
+            <Author Licence="LGPL" Name="Zheng, Lei" EMail="realthunder.dev@gmail.com" />
+            <UserDocu>A list of sub elements of a shape, which behaves like a list of Part.Shape.
+
+What Shape.Faces and its siblings answer with. It is a VIEW of the shape it
+came from: it materialises an element only when one is asked for, so its
+length and any single element of it cost one cache lookup rather than a
+shape object per element:
+
+    len(shape.Faces)        # does not build a single face
+    shape.Faces[0]          # builds one face
+    for f in shape.Faces:   # builds them as the loop reaches them
+
+The elements are the ones the shape had when the list was asked for; a
+later change to that shape does not reach back into the list.
+
+Everything a read-only list does, this does: indexing, slicing (which
+answers with a plain list), iteration, len(), "in", "+" with any sequence,
+"*", ==, index() and count(). Writing to it -- append(), sort(), pop() and
+the rest -- makes it a value of its own first, copying every element out of
+the shape; that list shares its storage with any copy of itself until one
+of them is written to.
+            </UserDocu>
+        </Documentation>
+        <Methode Name="copy">
+            <Documentation>
+                <UserDocu>copy() -> ShapeList: a copy of this list.
+
+It shares this list's storage until one of them is written to, so it costs
+a pointer however long the list is.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="index">
+            <Documentation>
+                <UserDocu>index(Shape) -> int: the position of a shape in this list.
+
+Raises ValueError when the shape is not in it. A view answers from the
+shape's own cache rather than by walking the list.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="count">
+            <Documentation>
+                <UserDocu>count(Shape) -> int: how many entries are that shape.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="append">
+            <Documentation>
+                <UserDocu>append(Shape) -> None: add one shape at the end.
+
+Makes the list a value of its own first.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="extend">
+            <Documentation>
+                <UserDocu>extend(iterable) -> None: add every shape of an iterable.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="insert">
+            <Documentation>
+                <UserDocu>insert(index, Shape) -> None: insert one shape before index.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="pop">
+            <Documentation>
+                <UserDocu>pop([index]) -> Shape: remove and return one entry, the last by default.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="remove">
+            <Documentation>
+                <UserDocu>remove(Shape) -> None: remove the first entry that is that shape.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="reverse">
+            <Documentation>
+                <UserDocu>reverse() -> None: reverse the list in place.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="sort" Keyword="true">
+            <Documentation>
+                <UserDocu>sort(key=None, reverse=False) -> None: sort the list in place.
+
+Takes what list.sort() takes and means the same by it.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="clear">
+            <Documentation>
+                <UserDocu>clear() -> None: drop every entry.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Attribute Name="Count" ReadOnly="true">
+            <Documentation>
+                <UserDocu>How many elements the list has. Same as len().</UserDocu>
+            </Documentation>
+            <Parameter Name="Count" Type="Int"/>
+        </Attribute>
+        <Attribute Name="ElementType" ReadOnly="true">
+            <Documentation>
+                <UserDocu>The shape type of the elements, e.g. 'Face'. 'Shape' for a list of
+mixed sub shapes.</UserDocu>
+            </Documentation>
+            <Parameter Name="ElementType" Type="String"/>
+        </Attribute>
+        <Attribute Name="IsView" ReadOnly="true">
+            <Documentation>
+                <UserDocu>Whether the list is still a view of the shape it came from, i.e.
+whether nothing has been written to it.</UserDocu>
+            </Documentation>
+            <Parameter Name="IsView" Type="Boolean"/>
+        </Attribute>
+        <Attribute Name="Shape" ReadOnly="true">
+            <Documentation>
+                <UserDocu>The shape a view came from, or None once the list is a value of
+its own.</UserDocu>
+            </Documentation>
+            <Parameter Name="Shape" Type="Object"/>
+        </Attribute>
+        <Sequence
+            sq_length="true"
+            sq_concat="true"
+            sq_repeat="true"
+            sq_item="true"
+            mp_subscript="true"
+            sq_ass_item="true"
+            mp_ass_subscript="true"
+            sq_contains="true"
+            sq_inplace_concat="true"
+            sq_inplace_repeat="false">
+        </Sequence>
+        <ClassDeclarations>public:
+    /// The value this object holds
+    const ShapeList &amp;list() const { return *getShapeListPtr(); }
+    ShapeList &amp;list() { return *getShapeListPtr(); }
+        </ClassDeclarations>
+    </PythonExport>
+</GenerateModel>

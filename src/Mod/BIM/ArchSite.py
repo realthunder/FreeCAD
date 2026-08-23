@@ -529,6 +529,14 @@ class _Site(ArchIFC.IfcProduct):
         The object to turn into a site.
     """
 
+    # How long to keep waiting for a view provider that is built by the
+    # post-open drain rather than during restore, and how often to look.
+    # The drain took 20.6s on a 12298-object model, so the budget is
+    # generous; the grace is separate and short, see _restoreViewObject.
+    _VIEWOBJECT_WAIT_SECONDS = 300.0
+    _VIEWOBJECT_PROXY_GRACE_SECONDS = 5.0
+    _VIEWOBJECT_POLL_MS = 100
+
     def __init__(self, obj):
         obj.Proxy = self
         self.Type = "Site"
@@ -801,48 +809,135 @@ class _Site(ArchIFC.IfcProduct):
         self.setProperties(obj)
 
         # 2. Trigger the restoration sequence for the associated view provider.
-        # This block only runs in GUI mode.
-        if FreeCAD.GuiUp and hasattr(obj, "ViewObject"):
-            # Manually ensure the view provider's properties are up-to-date.
-            #
-            # When loading a document, FreeCAD's C++ document loading mechanism restores Python
-            # proxy objects by allocating an empty instance and then calling its `loads()` method.
-            # The `__init__()` constructor is intentionally bypassed in this restoration path.
-            #
-            # As a result, any setup logic in the view provider's `__init__` (like the call to
-            # `self.setProperties()`) is never executed during a file load.
-            #
-            # The solution is to call `setProperties()` again here to ensure the view object is
-            # correctly initialized, especially for backward compatibility when a newer version of
-            # FreeCAD adds new properties.
-            try:
-                proxy = getattr(obj.ViewObject, "Proxy", None)
-                if proxy is not None and hasattr(proxy, "setProperties"):
-                    proxy.setProperties(obj.ViewObject)
-            except Exception as e:
-                # Do not break document restore if view-side initialization fails.
-                FreeCAD.Console.PrintError(f"ArchSite: proxy.setProperties failed: {e}\n")
+        # This block only runs in GUI mode, and only once the view provider
+        # actually exists -- see _restoreViewObject.
+        if FreeCAD.GuiUp:
+            self._restoreViewObject(obj)
 
-            # The Site's view provider has property constraints defined (e.g., min/max values for
-            # dates). This requires a special handling sequence during document restoration due to
-            # the way FreeCAD's GUI and data layers interact.
-            #
-            # 1. Constraints are not saved in the .FCStd file, so they must be programmatically
-            #    reapplied every time a document is loaded.
-            # 2. The Property Editor GUI builds its widgets (like spin boxes) as soon as it is
-            #    notified that a property has been added. If constraints are applied in the same
-            #    function call, a race condition occurs: the GUI may build its widget *before* the
-            #    constraints are set, resulting in an unconstrained input field.
-            #
-            # To solve this, we defer the constraint restoration. We use QTimer.singleShot(0, ...)
-            # to push the `restoreConstraints` call to the end of the Qt event queue. This
-            # guarantees that the Property Editor has fully processed the property-add signals in
-            # one event loop cycle *before* we apply the constraints in a subsequent cycle.
-            from PySide import QtCore
+    def _restoreViewObject(self, obj, deadline=None):
+        """Run the view-provider side of the restore, once there is one.
 
-            QtCore.QTimer.singleShot(
-                0, lambda: obj.ViewObject.Proxy.restoreConstraints(obj.ViewObject)
+        The caller's hook cannot assume `obj.ViewObject` is already
+        attached. This build creates view providers in a sliced drain
+        *after* the document open returns (docs/DocumentLoad.md sec 13),
+        so during restore `obj.ViewObject` is None and stays None for as
+        long as the drain takes -- 20.6s on a 12298-object IFC model.
+
+        Both steps below used to be written as though it were there, and
+        both failed in their own way: `getattr(None, "Proxy", None)`
+        returns None, so setProperties was silently skipped, while
+        `obj.ViewObject.Proxy.restoreConstraints(...)` raised
+        `AttributeError: 'NoneType' object has no attribute 'Proxy'` on
+        every Site in the document.
+
+        So wait for it rather than assume it. The wait is bounded: a
+        document whose view provider never arrives (nothing in the GUI
+        ever claimed the object) must not leave a timer cycling forever.
+        """
+        import time
+
+        from PySide import QtCore
+
+        if not FreeCAD.GuiUp:
+            return
+
+        try:
+            vobj = getattr(obj, "ViewObject", None)
+        except ReferenceError:
+            # The document was closed, or the object deleted, while we
+            # were waiting for its view provider.
+            return
+
+        proxy = getattr(vobj, "Proxy", None) if vobj is not None else None
+        if proxy is None:
+            # Two different waits, because they end differently.
+            #
+            # No ViewObject yet means the drain has not reached this
+            # object, which on a large document is tens of seconds away.
+            #
+            # A ViewObject with no Proxy is a much shorter story: the
+            # drain sets the proxy while replaying the saved
+            # <ViewProvider> record, right after creating the provider.
+            # If no record exists -- a document written by FreeCADCmd
+            # has no GuiDocument.xml at all, so every provider comes up
+            # as the plain default for its type -- then no proxy is ever
+            # coming, and there is nothing here to restore. Waiting the
+            # full budget for that would poll for five minutes per Site
+            # on every such file.
+            budget = (
+                self._VIEWOBJECT_WAIT_SECONDS
+                if vobj is None
+                else self._VIEWOBJECT_PROXY_GRACE_SECONDS
             )
+            now = time.monotonic()
+            if deadline is None or (vobj is not None and deadline > now + budget):
+                # First look, or the wait just changed character from
+                # "no provider" to "provider without a proxy".
+                deadline = now + budget
+            elif now >= deadline:
+                FreeCAD.Console.PrintLog(
+                    "ArchSite: %s after %gs, skipping the view-side restore\n"
+                    % (
+                        "no view provider" if vobj is None else "view provider has no proxy",
+                        budget,
+                    )
+                )
+                return
+            QtCore.QTimer.singleShot(
+                self._VIEWOBJECT_POLL_MS, lambda: self._restoreViewObject(obj, deadline)
+            )
+            return
+
+        # Manually ensure the view provider's properties are up-to-date.
+        #
+        # When loading a document, FreeCAD's C++ document loading mechanism restores Python
+        # proxy objects by allocating an empty instance and then calling its `loads()` method.
+        # The `__init__()` constructor is intentionally bypassed in this restoration path.
+        #
+        # As a result, any setup logic in the view provider's `__init__` (like the call to
+        # `self.setProperties()`) is never executed during a file load.
+        #
+        # The solution is to call `setProperties()` again here to ensure the view object is
+        # correctly initialized, especially for backward compatibility when a newer version of
+        # FreeCAD adds new properties.
+        try:
+            if hasattr(proxy, "setProperties"):
+                proxy.setProperties(vobj)
+        except Exception as e:
+            # Do not break document restore if view-side initialization fails.
+            FreeCAD.Console.PrintError(f"ArchSite: proxy.setProperties failed: {e}\n")
+
+        # The Site's view provider has property constraints defined (e.g., min/max values for
+        # dates). This requires a special handling sequence during document restoration due to
+        # the way FreeCAD's GUI and data layers interact.
+        #
+        # 1. Constraints are not saved in the .FCStd file, so they must be programmatically
+        #    reapplied every time a document is loaded.
+        # 2. The Property Editor GUI builds its widgets (like spin boxes) as soon as it is
+        #    notified that a property has been added. If constraints are applied in the same
+        #    function call, a race condition occurs: the GUI may build its widget *before* the
+        #    constraints are set, resulting in an unconstrained input field.
+        #
+        # To solve this, we defer the constraint restoration. We use QTimer.singleShot(0, ...)
+        # to push the `restoreConstraints` call to the end of the Qt event queue. This
+        # guarantees that the Property Editor has fully processed the property-add signals in
+        # one event loop cycle *before* we apply the constraints in a subsequent cycle.
+        QtCore.QTimer.singleShot(0, lambda: self._applyViewConstraints(vobj))
+
+    def _applyViewConstraints(self, vobj):
+        """Apply the view provider's property constraints, defensively.
+
+        One event cycle passed since the caller looked, and a document
+        can be closed inside one.
+        """
+        try:
+            proxy = getattr(vobj, "Proxy", None)
+            if proxy is not None and hasattr(proxy, "restoreConstraints"):
+                proxy.restoreConstraints(vobj)
+        except ReferenceError:
+            pass
+        except Exception as e:
+            FreeCAD.Console.PrintError(f"ArchSite: restoreConstraints failed: {e}\n")
 
     def execute(self, obj):
         """Method run when the object is recomputed.

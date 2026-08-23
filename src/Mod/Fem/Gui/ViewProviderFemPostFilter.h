@@ -20,14 +20,38 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef FEM_VIEWPROVIDERFEMPOSTFILTER_H
-#define FEM_VIEWPROVIDERFEMPOSTFILTER_H
+#pragma once
 
+#include <Gui/ViewProviderFeaturePython.h>
 #include "ViewProviderFemPostObject.h"
-
 
 namespace FemGui
 {
+
+// ***************************************************************************
+// Special classes to enable python filter view providers
+// ***************************************************************************
+
+// Special class for the python view providers, which need some special behaviour
+class FemGuiExport ViewProviderFemPostFilterPythonBase: public ViewProviderFemPostObject
+{
+    PROPERTY_HEADER_WITH_OVERRIDE(FemGui::ViewProviderFemPostFilterPythonBase);
+
+public:
+    /// constructor.
+    ViewProviderFemPostFilterPythonBase();
+    ~ViewProviderFemPostFilterPythonBase() override;
+
+    // we do not use default display modes but let the python implementation choose
+    // Python view provider needs to return a sublist of PostObject supporter DisplayModes
+    std::vector<std::string> getDisplayModes() const override;
+};
+
+
+// Viewprovider for the python filters
+using ViewProviderPostFilterPython
+    = Gui::ViewProviderFeaturePythonT<ViewProviderFemPostFilterPythonBase>;
+
 
 // ***************************************************************************
 // in the following, the different filters sorted alphabetically
@@ -154,7 +178,22 @@ protected:
     void setupTaskDialog(TaskDlgPost* dlg) override;
 };
 
+
+// ***************************************************************************
+// calculator filter
+class FemGuiExport ViewProviderFemPostCalculator: public ViewProviderFemPostObject
+{
+    PROPERTY_HEADER_WITH_OVERRIDE(FemGui::ViewProviderFemPostCalculator);
+
+public:
+    /// constructor.
+    ViewProviderFemPostCalculator();
+    ~ViewProviderFemPostCalculator() override;
+
+    void updateData(const App::Property* prop) override;
+
+protected:
+    void setupTaskDialog(TaskDlgPost* dlg) override;
+};
+
 }  // namespace FemGui
-
-
-#endif  // FEM_VIEWPROVIDERFEMPOSTFILTER_H

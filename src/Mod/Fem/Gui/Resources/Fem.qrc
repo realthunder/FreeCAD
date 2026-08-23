@@ -15,7 +15,8 @@
         <file>icons/FEM_ConstraintContact.svg</file>
         <file>icons/FEM_ConstraintCurrentDensity.svg</file>
         <file>icons/FEM_ConstraintDisplacement.svg</file>
-        <file>icons/FEM_ConstraintElectrostaticPotential.svg</file>
+        <file>icons/FEM_ConstraintElectricChargeDensity.svg</file>
+        <file>icons/FEM_ConstraintElectromagnetic.svg</file>
         <file>icons/FEM_ConstraintFixed.svg</file>
         <file>icons/FEM_ConstraintFlowVelocity.svg</file>
         <file>icons/FEM_ConstraintFluidBoundary.svg</file>
@@ -29,6 +30,7 @@
         <file>icons/FEM_ConstraintPlaneRotation.svg</file>
         <file>icons/FEM_ConstraintPressure.svg</file>
         <file>icons/FEM_ConstraintPulley.svg</file>
+        <file>icons/FEM_ConstraintRigidBody.svg</file>
         <file>icons/FEM_ConstraintSectionPrint.svg</file>
         <file>icons/FEM_ConstraintSelfWeight.svg</file>
         <file>icons/FEM_ConstraintSpring.svg</file>
@@ -50,17 +52,30 @@
         <file>icons/FEM_EquationHeat.svg</file>
         <file>icons/FEM_EquationMagnetodynamic.svg</file>
         <file>icons/FEM_EquationMagnetodynamic2D.svg</file>
+        <file>icons/FEM_EquationStaticCurrent.svg</file>
 
         <!-- gui command icons: meshes -->
+        <file>icons/FEM_CreateElementsSet.svg</file>
         <file>icons/FEM_CreateNodesSet.svg</file>
         <file>icons/FEM_FEMMesh2Mesh.svg</file>
         <file>icons/FEM_MeshBoundaryLayer.svg</file>
         <file>icons/FEM_MeshClear.svg</file>
+        <file>icons/FEM_MeshClearGroups.svg</file>
         <file>icons/FEM_MeshDisplayInfo.svg</file>
         <file>icons/FEM_MeshGmshFromShape.svg</file>
         <file>icons/FEM_MeshGroup.svg</file>
         <file>icons/FEM_MeshNetgenFromShape.svg</file>
         <file>icons/FEM_MeshRegion.svg</file>
+        <file>icons/FEM_MeshDistance.svg</file>
+        <file>icons/FEM_MeshManipulate.svg</file>
+        <file>icons/FEM_MeshAdvanced.svg</file>
+        <file>icons/FEM_MeshShape.svg</file>
+        <file>icons/FEM_MeshSphere.svg</file>
+        <file>icons/FEM_MeshBox.svg</file>
+        <file>icons/FEM_MeshCylinder.svg</file>
+        <file>icons/FEM_MeshTransfiniteCurve.svg</file>
+        <file>icons/FEM_MeshTransfiniteSurface.svg</file>
+        <file>icons/FEM_MeshTransfiniteVolume.svg</file>
 
         <!-- gui command icons: materials -->
         <file>icons/FEM_MaterialFluid.svg</file>
@@ -69,6 +84,7 @@
         <file>icons/FEM_MaterialSolid.svg</file>
 
         <!-- gui command icons: post processing -->
+        <file>icons/FEM_PostFilterCalculator.svg</file>
         <file>icons/FEM_PostFilterClipRegion.svg</file>
         <file>icons/FEM_PostFilterClipScalar.svg</file>
         <file>icons/FEM_PostFilterContours.svg</file>
@@ -77,7 +93,15 @@
         <file>icons/FEM_PostFilterDataAtPoint.svg</file>
         <file>icons/FEM_PostFilterLinearizedStresses.svg</file>
         <file>icons/FEM_PostFilterWarp.svg</file>
+        <file>icons/FEM_PostFilterGlyph.svg</file>
+        <file>icons/FEM_PostFrames.svg</file>
+        <file>icons/FEM_PostBranchFilter.svg</file>
         <file>icons/FEM_PostPipelineFromResult.svg</file>
+        <file>icons/FEM_PostLineplot.svg</file>
+        <file>icons/FEM_PostHistogram.svg</file>
+        <file>icons/FEM_PostSpreadsheet.svg</file>
+        <file>icons/FEM_PostField.svg</file>
+        <file>icons/FEM_PostIndex.svg</file>
         <file>icons/FEM_ResultShow.svg</file>
         <file>icons/FEM_ResultsPurge.svg</file>
 
@@ -121,7 +145,9 @@
         <file>ui/ConstraintSectionPrint.ui</file>
         <file>ui/ConstraintTie.ui</file>
         <file>ui/CurrentDensity.ui</file>
-        <file>ui/ElectrostaticPotential.ui</file>
+        <file>ui/DlgSettingsNetgen.ui</file>
+        <file>ui/ElectricChargeDensity.ui</file>
+        <file>ui/Electromagnetic.ui</file>
         <file>ui/ElementFluid1D.ui</file>
         <file>ui/ElementGeometry1D.ui</file>
         <file>ui/ElementGeometry2D.ui</file>
@@ -137,8 +163,24 @@
         <file>ui/MeshGroup.ui</file>
         <file>ui/MeshGroupXDMFExport.ui</file>
         <file>ui/MeshRegion.ui</file>
+        <file>ui/MeshDistance.ui</file>
         <file>ui/ResultHints.ui</file>
         <file>ui/ResultShow.ui</file>
-        <file>ui/SolverCalculix.ui</file>
+        <file>ui/SolverCalculiX.ui</file>
+        <file>ui/SolverCcxTools.ui</file>
+        <file>ui/SolverElmer.ui</file>
+        <file>ui/SolverZ88.ui</file>
+        <file>ui/TaskPostGlyph.ui</file>
+
+        <!-- images -->
+        <file>images/FEM_MeshDistanceThresholdDark.svg</file>
+        <file>images/FEM_MeshDistanceThresholdLight.svg</file>
+        <file>images/FEM_MeshTransfiniteVolumeLight.svg</file>
+        <file>images/FEM_MeshTransfiniteVolumeDark.svg</file>
+        <file>images/FEM_MeshTransfiniteSurfaceLight.svg</file>
+        <file>images/FEM_MeshTransfiniteSurfaceDark.svg</file>
+        <file>images/FEM_MeshTransfiniteCurveLight.svg</file>
+        <file>images/FEM_MeshTransfiniteCurveDark.svg</file>
+
     </qresource>
 </RCC>

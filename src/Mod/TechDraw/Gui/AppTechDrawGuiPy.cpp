@@ -129,9 +129,9 @@ private:
         TechDraw::DrawPage* page = nullptr;
         Py::Sequence list(object);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* item = (*it).ptr();
-            if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
-                App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
+            Py::Object item(*it);
+            if (PyObject_TypeCheck(item.ptr(), &(App::DocumentObjectPy::Type))) {
+                App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item.ptr())->getDocumentObjectPtr();
                 if (obj->isDerivedFrom<TechDraw::DrawPage>()) {
                     page = static_cast<TechDraw::DrawPage*>(obj);
                     Gui::Document* activeGui = Gui::Application::Instance->getDocument(page->getDocument());

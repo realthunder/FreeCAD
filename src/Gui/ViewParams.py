@@ -546,6 +546,16 @@ Params = [
         "never shorter than LiveImportRedrawInterval nor longer than ten\n"
         "times it, and mouse input renders immediately regardless. Set zero\n"
         "to budget nothing and use the plain interval."),
+    ParamInt('LiveImportPumpInterval',  50,
+        "Minimum interval in milliseconds between two turns of the event\n"
+        "loop while a live import fills the document. The import holds the\n"
+        "main thread, so the view only sees input and paints where the\n"
+        "import hands the loop a slice, and on its own the progress bar\n"
+        "does that on a 200 ms update throttle -- a slideshow to someone\n"
+        "orbiting the model. Offering the loop a turn costs nothing when\n"
+        "nothing is queued, and what a frame costs is bounded by\n"
+        "LiveImportRedrawBudget rather than by how often a turn is\n"
+        "offered. Set zero to pump at every offer."),
     # The experimental render engine parameters (former Renderer* keys)
     # live in RenderParams.py (Preferences/View/Render); see
     # RenderParams::migrate() for the key migration.

@@ -1078,10 +1078,17 @@ Base::BoundBox3d TopoShape::getBoundBox() const
 {
     Base::BoundBox3d box;
     try {
-        // If the shape is empty an exception may be thrown
         Bnd_Box bounds;
         BRepBndLib::Add(_Shape, bounds);
         bounds.SetGap(0.0);
+        if (bounds.IsVoid()) {
+            // A shape with nothing in it has no bounding box, and saying so
+            // is not a failure -- Get() would throw, and that throw used to
+            // be caught and logged as an error. An Arch import does it about
+            // 1570 times over, once per object carrying an expression on
+            // Shape.BoundBox that does not have its shape yet.
+            return box;
+        }
         Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
         bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
 
@@ -2890,6 +2897,13 @@ bool TopoShape::fix()
     ShapeFix_Shape fix(copy._Shape);
     fix.Perform();
 
+    // The fix changed nothing, so there is nothing to redo on the original
+    // and no element names to remap; the only question left is whether the
+    // shape was valid to begin with. makEWires() fix()es every wire it
+    // builds, which makes this the hot case.
+    if (fix.Shape().IsSame(copy.getShape()))
+        return BRepCheck_Analyzer(copy.getShape()).IsValid();
+
     BRepCheck_Analyzer aChecker(fix.Shape());
     if (!aChecker.IsValid())
         return false;
@@ -2971,6 +2985,12 @@ bool TopoShape::fix(double precision, double mintol, double maxtol)
     ShapeFix_Shape fix(copy._Shape);
     if (!doFix(fix, copy, copiedShape))
         return false;
+    // The dry run on the copy changed nothing, so redoing it on the original
+    // would only set the identical shape back and remap identical element
+    // names. makEWires() fix()es every wire it builds, which makes the
+    // nothing-to-fix case the hot one.
+    if (copiedShape.IsSame(copy.getShape()))
+        return true;
     ShapeFix_Shape fixThis(_Shape);
     TopoDS_Shape fixedShape;
     if (doFix(fixThis, *this, fixedShape))

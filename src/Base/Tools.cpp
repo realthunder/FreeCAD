@@ -82,12 +82,46 @@ struct string_comp
 class unique_name
 {
 public:
-    unique_name(std::string name, const std::vector<std::string>& names, int padding)
+    unique_name(std::string name, int padding)
         : base_name {std::move(name)}
         , padding {padding}
     {
         removeDigitsFromEnd();
-        findHighestSuffix(names);
+    }
+
+    unique_name(std::string name, const std::vector<std::string>& names, int padding)
+        : unique_name(std::move(name), padding)
+    {
+        for (const auto& used : names) {
+            consider(used.c_str());
+        }
+    }
+
+    /// Take one name that is already in use into account
+    void consider(const char* name)
+    {
+        // same prefix?
+        if (std::strncmp(name, base_name.c_str(), base_name.size()) != 0) {
+            return;
+        }
+        const char* suffix = name + base_name.size();
+        if (*suffix == '\0') {
+            return;
+        }
+        std::size_t length = 0;
+        for (const char* c = suffix; *c != '\0'; ++c, ++length) {
+            if (*c < '0' || *c > '9') {
+                return;
+            }
+        }
+        // string_comp's order, spelled out on the characters themselves: a
+        // longer run of digits is the larger number, and equal lengths compare
+        // as text. Names are considered one per object in the document, so
+        // this is worth not building a std::string for.
+        if (num_suffix.size() < length
+            || (num_suffix.size() == length && num_suffix.compare(suffix) < 0)) {
+            num_suffix = suffix;
+        }
     }
 
     std::string get() const
@@ -102,21 +136,6 @@ private:
         if (pos != std::string::npos && (pos + 1) < base_name.size()) {
             num_suffix = base_name.substr(pos + 1);
             base_name.erase(pos + 1);
-        }
-    }
-
-    void findHighestSuffix(const std::vector<std::string>& names)
-    {
-        for (const auto& name : names) {
-            if (name.substr(0, base_name.length()) == base_name) {  // same prefix
-                std::string suffix(name.substr(base_name.length()));
-                if (!suffix.empty()) {
-                    std::string::size_type pos = suffix.find_first_not_of("0123456789");
-                    if (pos == std::string::npos) {
-                        num_suffix = std::max<std::string>(num_suffix, suffix, Base::string_comp());
-                    }
-                }
-            }
         }
     }
 
@@ -148,6 +167,23 @@ Base::Tools::getUniqueName(const std::string& name, const std::vector<std::strin
     }
 
     Base::unique_name unique(name, names, pad);
+    return unique.get();
+}
+
+std::string
+Base::Tools::getUniqueName(const std::string& name,
+                           const std::function<const char*()>& next,
+                           int pad)
+{
+    Base::unique_name unique(name, pad);
+    bool any = false;
+    while (const char* used = next()) {
+        any = true;
+        unique.consider(used);
+    }
+    if (!any) {
+        return name;
+    }
     return unique.get();
 }
 

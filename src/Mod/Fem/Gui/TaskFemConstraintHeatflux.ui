@@ -11,13 +11,13 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Task Fem Heat flux Load</string>
+   <string>Task Heat Flux Load</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_2">
    <item>
     <widget class="QLabel" name="lbl_references">
      <property name="text">
-      <string>Select multiple face(s), click Add or Remove:</string>
+    <string>Select  geometry of type: Edge, Face</string>
      </property>
     </widget>
    </item>
@@ -63,18 +63,18 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
-      <widget class="QRadioButton" name="rb_convection">
-       <property name="text">
-        <string>Surface Convection</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QRadioButton" name="rb_dflux">
-       <property name="text">
-        <string>Surface heat flux</string>
-       </property>
-      </widget>
+      <layout class="QFormLayout" name="formLayout_2">
+       <item row="0" column="0">
+        <widget class="QLabel" name="lbl_constr_type">
+         <property name="text">
+          <string>Constraint type</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="1">
+        <widget class="QComboBox" name="cb_constr_type"/>
+       </item>
+      </layout>
      </item>
     </layout>
    </item>
@@ -83,83 +83,155 @@
      <property name="currentIndex">
       <number>1</number>
      </property>
-     <widget class="QWidget" name="page">
-      <layout class="QVBoxLayout" name="verticalLayout_4">
-       <item>
-        <layout class="QVBoxLayout" name="verticalLayout">
-         <item>
-          <layout class="QHBoxLayout" name="layoutFilmCoef">
-           <item>
-            <widget class="QLabel" name="lbl_filmcoef">
-             <property name="text">
-              <string>Film coefficient</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="Gui::InputField" name="if_filmcoef">
-             <property name="text">
-              <string>1 W/m^2/K</string>
-             </property>
-             <property name="unit" stdset="0">
-              <string notr="true">W/m^2/K</string>
-             </property>
-             <property name="quantity" stdset="0">
-              <double>1.000000000000000</double>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-         <item>
-          <layout class="QHBoxLayout" name="layoutAmbientTemp">
-           <item>
-            <widget class="QLabel" name="lbl_ambienttemp">
-             <property name="text">
-              <string>Ambient Temperature</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="Gui::InputField" name="if_ambienttemp">
-             <property name="text">
-              <string>300 K</string>
-             </property>
-             <property name="unit" stdset="0">
-              <string notr="true">K</string>
-             </property>
-             <property name="quantity" stdset="0">
-              <double>300.000000000000000</double>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-        </layout>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="page_2">
+     <widget class="QWidget" name="page_0">
       <layout class="QVBoxLayout" name="verticalLayout_3">
+       <property name="margin">
+        <number>0</number>
+       </property>
        <item>
-        <layout class="QHBoxLayout" name="horizontalLayout_2">
-         <item>
-          <widget class="QLabel" name="label">
+        <layout class="QFormLayout" name="formLayout_3">
+         <item row="0" column="0">
+          <widget class="QLabel" name="lbl_heat_flux">
            <property name="text">
             <string>Surface heat flux</string>
            </property>
           </widget>
          </item>
-         <item>
-          <widget class="Gui::InputField" name="if_heatflux">
-           <property name="text">
-            <string>1 W/m^2</string>
+         <item row="0" column="1">
+          <widget class="Gui::QuantitySpinBox" name="qsb_heat_flux">
+           <property name="unit" stdset="0">
+            <string notr="true">W/m^2</string>
            </property>
+           <property name="alignment">
+            <set>Qt::AlignLeft|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+           <property name="singleStep">
+            <double>1.000000000000000</double>
+           </property>
+           <property name="value" stdset="0">
+            <double>0.000000000000000</double>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+     <property name="currentIndex">
+      <number>1</number>
+     </property>
+     <widget class="QWidget" name="page_1">
+      <layout class="QVBoxLayout" name="verticalLayout_4">
+       <property name="margin">
+        <number>0</number>
+       </property>
+       <item>
+        <layout class="QFormLayout" name="formLayout_4">
+         <item row="0" column="0">
+          <widget class="QLabel" name="lbl_filmcoef">
+           <property name="text">
+            <string>Film coefficient</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="Gui::QuantitySpinBox" name="qsb_film_coef">
            <property name="unit" stdset="0">
             <string notr="true">W/m^2/K</string>
            </property>
-           <property name="quantity" stdset="0">
+           <property name="alignment">
+            <set>Qt::AlignLeft|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+           <property name="singleStep">
             <double>1.000000000000000</double>
+           </property>
+           <property name="value" stdset="0">
+            <double>0.000000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="lbl_ambienttemp_conv">
+           <property name="text">
+            <string>Ambient temperature</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="Gui::QuantitySpinBox" name="qsb_ambienttemp_conv">
+           <property name="unit" stdset="0">
+            <string notr="true">K</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignLeft|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+           <property name="singleStep">
+            <double>1.000000000000000</double>
+           </property>
+           <property name="value" stdset="0">
+            <double>300.0000000000000</double>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+     <property name="currentIndex">
+      <number>2</number>
+     </property>
+     <widget class="QWidget" name="page_2">
+      <layout class="QVBoxLayout" name="verticalLayout_5">
+       <property name="margin">
+        <number>0</number>
+       </property>
+       <item>
+        <layout class="QFormLayout" name="formLayout_5">
+         <item row="0" column="0">
+          <widget class="QLabel" name="lbl_emissivity">
+           <property name="text">
+            <string>Emissivity</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="Gui::DoubleSpinBox" name="dsb_emissivity">
+           <property name="minimumSize">
+            <size>
+             <width>100</width>
+            </size>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignLeft|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+           <property name="singleStep">
+            <double>0.100000000000000</double>
+           </property>
+           <property name="value" stdset="0">
+            <double>1.000000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="lbl_ambienttemp_rad">
+           <property name="text">
+            <string>Ambient temperature</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="Gui::QuantitySpinBox" name="qsb_ambienttemp_rad">
+           <property name="unit" stdset="0">
+            <string notr="true">K</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignLeft|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+           <property name="singleStep">
+            <double>1.000000000000000</double>
+           </property>
+           <property name="value" stdset="0">
+            <double>300.0000000000000</double>
            </property>
           </widget>
          </item>
@@ -173,9 +245,14 @@
  </widget>
  <customwidgets>
   <customwidget>
-   <class>Gui::InputField</class>
-   <extends>QLineEdit</extends>
-   <header>Gui/InputField.h</header>
+   <class>Gui::QuantitySpinBox</class>
+   <extends>QWidget</extends>
+   <header>Gui/QuantitySpinBox.h</header>
+  </customwidget>
+  <customwidget>
+   <class>Gui::DoubleSpinBox</class>
+   <extends>QWidget</extends>
+   <header>Gui/SpinBox.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

@@ -25,7 +25,6 @@ import FreeCAD
 from FreeCAD import Vector as vec
 
 from BasicShapes import Shapes
-from Draft import clone
 from Part import makeLine
 
 import Fem
@@ -34,6 +33,7 @@ import ObjectsFem
 from . import manager
 from .manager import get_meshname
 from .manager import init_doc
+from .meshes import generate_mesh
 
 
 def get_information():
@@ -42,14 +42,16 @@ def get_information():
         "meshtype": "solid",
         "meshelement": "Tet10",
         "constraints": ["centrif", "fixed"],
-        "solvers": ["calculix", "ccxtools"],
+        "solvers": ["ccxtools"],
         "material": "multimaterial",
-        "equations": ["mechanical"]
+        "equations": ["mechanical"],
     }
 
 
 def get_explanation(header=""):
-    return header + """
+    return (
+        header
+        + """
 
 To run the example from Python console use:
 from femexamples.constraint_centrif import setup
@@ -62,6 +64,7 @@ https://forum.freecad.org/viewtopic.php?f=18&t=57770
 constraint centrif, concerning CENTRIF label from ccx's *DLOAD card
 
 """
+    )
 
 
 def setup(doc=None, solvertype="ccxtools"):
@@ -89,6 +92,7 @@ def setup(doc=None, solvertype="ccxtools"):
 
     fusion = doc.addObject("Part::MultiFuse", "Fusion")
     fusion.Shapes = [stiffener, circumference]
+    fusion.Refine = True
     doc.recompute()
 
     centerhole = doc.addObject("Part::Cylinder", "CenterHole")
@@ -99,11 +103,13 @@ def setup(doc=None, solvertype="ccxtools"):
     ring_bottom = doc.addObject("Part::Cut", "RingBottom")
     ring_bottom.Base = fusion
     ring_bottom.Tool = centerhole
+    ring_bottom.Refine = True
     doc.recompute()
 
     # standard ring
-    ring_top = clone(ring_bottom, delta=vec(0, 0, 20))
-    ring_top.Label = "RingTop"
+    ring_top = doc.addObject("Part::Mirroring", "RingTop")
+    ring_top.Source = ring_bottom
+    ring_top.Base.z = 15
 
     # compound of both rings
     geom_obj = doc.addObject("Part::Compound", "TheRingOfFire")
@@ -127,19 +133,17 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis = ObjectsFem.makeAnalysis(doc, "Analysis")
 
     # solver
-    if solvertype == "calculix":
-        solver_obj = ObjectsFem.makeSolverCalculix(doc, "SolverCalculiX")
-    elif solvertype == "ccxtools":
-        solver_obj = ObjectsFem.makeSolverCalculixCcxTools(doc, "CalculiXccxTools")
-        solver_obj.WorkingDir = u""
+    if solvertype == "ccxtools":
+        solver_obj = ObjectsFem.makeSolverCalculiXCcxTools(doc, "CalculiXCcxTools")
+        solver_obj.WorkingDir = ""
     else:
         FreeCAD.Console.PrintWarning(
             "Unknown or unsupported solver type: {}. "
             "No solver object was created.\n".format(solvertype)
         )
-    if solvertype == "calculix" or solvertype == "ccxtools":
+    if solvertype == "ccxtools":
         solver_obj.AnalysisType = "static"
-        solver_obj.GeometricalNonlinearity = "linear"
+        solver_obj.GeometricalNonlinearity = False
         solver_obj.ThermoMechSteadyState = False
         solver_obj.MatrixSolverType = "default"
         solver_obj.IterationsControlParameterTimeUse = False
@@ -168,28 +172,23 @@ def setup(doc=None, solvertype="ccxtools"):
     analysis.addObject(material_obj_std)
 
     # constraint fixed
-    con_fixed = ObjectsFem.makeConstraintFixed(doc, "ConstraintFixed")
-    con_fixed.References = [(geom_obj, ("Face4", "Face12"))]
+    con_fixed = ObjectsFem.makeConstraintFixed(doc, "Fixed")
+    con_fixed.References = [(geom_obj, ("Face6", "Face14"))]
     analysis.addObject(con_fixed)
 
     # constraint centrif
-    con_centrif = ObjectsFem.makeConstraintCentrif(doc, "ConstraintCentrif")
+    con_centrif = ObjectsFem.makeConstraintCentrif(doc, "CentrifugalForce")
     con_centrif.RotationFrequency = "100 Hz"
     con_centrif.RotationAxis = [(axis_line, "Edge1")]
     analysis.addObject(con_centrif)
 
     # mesh
     from .meshes.mesh_constraint_centrif_tetra10 import create_nodes, create_elements
-    fem_mesh = Fem.FemMesh()
-    control = create_nodes(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating nodes.\n")
-    control = create_elements(fem_mesh)
-    if not control:
-        FreeCAD.Console.PrintError("Error on creating elements.\n")
+
+    fem_mesh = generate_mesh.mesh_from_existing(create_nodes, create_elements)
     femmesh_obj = analysis.addObject(ObjectsFem.makeMeshGmsh(doc, get_meshname()))[0]
     femmesh_obj.FemMesh = fem_mesh
-    femmesh_obj.Part = geom_obj
+    femmesh_obj.Shape = geom_obj
     femmesh_obj.SecondOrderLinear = False
     femmesh_obj.CharacteristicLengthMax = "5.0 mm"
 

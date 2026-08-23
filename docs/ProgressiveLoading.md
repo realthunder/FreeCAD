@@ -130,6 +130,56 @@ instancing/mesh-reuse registries it leans on are
 instancing architecture underneath is
 [TShapeRenderCache.md](TShapeRenderCache.md).
 
+The two halves of that are separable, and the IFC import takes only the
+second. Its product loop is not sliced -- it holds the thread and pumps
+events from inside `Base.ProgressIndicator.next()` -- but a loop that
+pumps has input to deliver, and the only reason it was unusable is that
+the indicator swallowed it. `Gui.setLiveImport(doc, True)` hands the
+view back for the duration: `Gui::LiveViewInteraction` makes both input
+filters except mouse events aimed at a 3D view, `WaitCursorRestorer`
+lifts the cursor, and `App::Document::LiveImport` makes
+`Gui::Command::invoke()` refuse every `AlterDoc` command with "The
+document is busy importing, please wait...". Live view, inert document.
+The exception stays narrow on purpose: keys are still blocked so Escape
+cancels, and context menus stay shut so a right-drag orbits rather than
+offering commands.
+
+It is worth being clear about what that does *not* buy. Interaction is
+sampled at the loop's pumping interval, so a single slow product blocks
+for as long as its geometry takes -- one King wall was once 157 s inside
+a single OCCT boolean. Slicing the loop would not fix that either; only
+moving the geometry off the thread would
+([ComputeBoundaries.md](ComputeBoundaries.md)).
+
+That sampling interval is worth owning explicitly. Left to itself the
+loop only reaches the event loop through `Base.ProgressIndicator.next()`,
+which pumps on the bar's own 200 ms *update* throttle -- a repaint
+cadence, chosen for what a bar redraw costs, standing in for an input
+cadence. Measured on a 144-product IFC file in the GUI, that is nine
+turns of the event loop in 2.55 s: about three and a half a second to
+someone orbiting the model. `Gui.pumpLiveImport()` offers a turn per
+item instead, throttled on `ViewParams::LiveImportPumpInterval`
+(50 ms), and the same import gives 40 turns in 2.70 s -- 4.4x the
+interaction for 6% of the wall clock. Pumping at every item (interval 0)
+reaches 124 turns but costs 25%, which is what the default is chosen
+against. The pump is a no-op unless `setLiveImport()` is in effect: an
+import that did not ask for a live view never has events run behind its
+back.
+
+Two things follow from a loop the user can reach. The document can be
+closed under it, so each item checks that the document it started in is
+still open rather than building the rest of the file into whatever is
+active next. And Escape now means something the importer can act on:
+`Base.ProgressIndicator.next()` raises `Base.FreeCADAbort` rather than a
+bare `RuntimeError`, which is the difference between "the user pressed
+Escape" and "this step failed", and which the interpreter already turns
+back into a `Base::AbortException` that `Command::invoke()` swallows
+without an error dialog. The IFC importer catches it, stops making
+products, and still applies the layers, relationships and colours that
+belong to the products it did make -- a smaller model rather than an
+unrelated one, inside the caller's transaction, so one undo takes the
+whole import back.
+
 ## 4. The remote viewer
 
 The browser/mobile viewer receives the scene as a content-addressed
@@ -171,6 +221,26 @@ The pieces, all in `Base/Sequencer.{h,cpp}` and
   feed the consolidated total, so nesting can never inflate progress;
   parallel roots sum. Consolidation work happens in the reader, at
   snapshot time — workers never pay for it.
+
+  Two later rules decide *which* root the bar shows, and both were
+  bought by a save that reported the wrong sequence entirely. Nesting is
+  inferred from registration order, which is right for a sequence
+  started inside another's call stack and wrong for one that merely
+  *overlaps* a sliced sequence -- a `KeepInteractive` launcher lives
+  across returns to the event loop, so a save starting while the
+  progressive fill still drained was bucketed as the fill's child and
+  vanished from the bar. A sequence that is a job of its own says so
+  (`SequencerLauncher::setStandalone()`) and gets its own bucket; the
+  rule stays narrow deliberately, because a per-item indicator really is
+  nested inside the drain slice that created it, and must keep being
+  drawn that way. Then **when anything blocking is running, only
+  blocking roots are counted**: what the user waits on is whatever holds
+  the thread, and the background sequences beside it stay visible in the
+  detail popup without diluting the number. The snapshot names its own
+  `lead` so the status text cannot describe one sequence while the bar
+  counts another -- which is exactly what the save did, reading
+  `Saving document...` over the fill's numbers, advertising three and a
+  half minutes remaining for thirty seconds of work.
 - **The status bar polls.** A 200ms timer drives the bar's range and
   value from the consolidated snapshot; push-path writes are
   suppressed while it runs. Hovering the bar opens a live popup: one
@@ -200,6 +270,53 @@ The pieces, all in `Base/Sequencer.{h,cpp}` and
   from the launcher's *owner* thread rather than from whoever promoted
   it, or a worker's sequence promoted by the main thread would claim
   the main thread's input.
+
+The **save** reports through the same layer, and had to be taught to:
+a 13758-object building took over 200 seconds to write with the GUI
+thread held and the status bar empty, and the compression is only some
+15 of those seconds -- the rest is serialising the objects and writing
+their shapes. `App::Document::saveToFile()` owns **one** launcher for
+the whole save and lends it to the writer (`Base::Writer::setProgress()`)
+for the phases the writer owns. One launcher, because reporting has two
+different notions of "the current sequence" and a save straddled them:
+the *top* launcher drives the status text and the remaining-time
+estimate, while the consolidated bar sums the *roots* -- the outermost
+launcher per thread. A save of a freshly opened document begins by
+flushing the parked shapes, which on MiSTer is 17058 entries and some 25
+of a 30 second save, and the drain's own sequence was still the root
+across all of it. So the text read `Saving document...` while the
+numbers and the estimate were the drain's, and a 30 second save
+advertised three and a half minutes remaining. The flush is now inside
+the save's sequence, and `flushDeferredFiles()` retires whatever drain
+sequence a slice left running -- it is about to take that backlog away
+anyway.
+
+Its phases each restate the total as they learn their own size: the
+flush and the five passes over the objects are known when the save
+starts, the blob entries when the table has been planned, and the file
+loop reads its own list, which is not built until the objects are
+written and which grows while it is walked. Measured on MiSTer: 17058
+flushed + 5 x 18142 object steps + 5204 blob entries = 112972, over a
+29 s save that splits as
+
+    collect 0.17s   beforeSave 23.06s   hasher ~0   document props ~0
+    writeObjects 0.39s (deps 0.035 / headers 0.020 / data 0.32)
+    blobs 2.72s   files 0.0s
+
+Where a save's time goes is not where anyone would look for it, and
+finding out took four measured attempts. The file loop -- the obvious
+place to put a save indicator -- writes **zero** entries on this
+document; every shape goes through the blob table. `writeObjects()`, the
+next obvious candidate and the one that actually emits the XML, is
+**0.4 seconds**. Nearly the whole save is the `beforeSave()` pass in
+`Document::Save()`, where each object settles what it is about to write
+and a document-wide store collects it: 23 of 29 seconds, 79% of the
+save, in a loop that reported nothing. Guessing which phase to
+instrument produced a bar that was still for two thirds of every save;
+only splitting the wall clock across the phases found it.
+
+This launcher stays `BlockInput` on purpose -- unlike the drain, a save
+really does own the document until it ends.
 
 Two reporting facts that cost gate iterations, recorded so they are
 not rediscovered: in OCCT ≥ 7.5 an indicator's text is the *scope

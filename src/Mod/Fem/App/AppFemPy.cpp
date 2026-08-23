@@ -20,11 +20,9 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
-#ifndef _PreComp_
 #include <cstdlib>
 #include <memory>
-#endif
+
 
 #include <App/Application.h>
 #include <App/Document.h>
@@ -38,8 +36,14 @@
 #include "FemMeshObject.h"
 #include "FemMeshPy.h"
 #ifdef FC_USE_VTK
-#include "FemPostPipeline.h"
-#include "FemVTKTools.h"
+# include "FemPostPipeline.h"
+# include "FemVTKTools.h"
+# include <LibraryVersions.h>
+# include <vtkVersionMacros.h>
+#endif
+
+#ifdef FC_USE_VTK_PYTHON
+# include <vtkPythonUtil.h>
 #endif
 
 
@@ -51,34 +55,67 @@ public:
     Module()
         : Py::ExtensionModule<Module>("Fem")
     {
-        add_varargs_method("open",
-                           &Module::open,
-                           "open(string) -- Create a new document and a Mesh::Import feature to "
-                           "load the file into the document.");
-        add_varargs_method("insert",
-                           &Module::insert,
-                           "insert(string|mesh,[string]) -- Load or insert a mesh into the given "
-                           "or active document.");
-        add_varargs_method("export",
-                           &Module::exporter,
-                           "export(list,string) -- Export a list of objects into a single file.");
-        add_varargs_method("read",
-                           &Module::read,
-                           "Read a mesh from a file and returns a Mesh object.");
+        add_varargs_method(
+            "open",
+            &Module::open,
+            "open(string) -- Create a new document and a Mesh::Import feature to "
+            "load the file into the document."
+        );
+        add_varargs_method(
+            "insert",
+            &Module::insert,
+            "insert(string|mesh,[string]) -- Load or insert a mesh into the given "
+            "or active document."
+        );
+        add_varargs_method(
+            "export",
+            &Module::exporter,
+            "export(list,string) -- Export a list of objects into a single file."
+        );
+        add_varargs_method("read", &Module::read, "Read a mesh from a file and returns a Mesh object.");
 #ifdef FC_USE_VTK
-        add_varargs_method("readResult",
-                           &Module::readResult,
-                           "Read a CFD or Mechanical result (auto detect) from a file (file format "
-                           "detected from file suffix)");
-        add_varargs_method("writeResult",
-                           &Module::writeResult,
-                           "write a CFD or FEM result (auto detect) to a file (file format "
-                           "detected from file suffix)");
+        add_varargs_method("frdToVTK", &Module::frdToVTK, "Convert a .frd result file to VTK file");
+        add_varargs_method(
+            "readResult",
+            &Module::readResult,
+            "Read a CFD or Mechanical result (auto detect) from a file (file format "
+            "detected from file suffix)"
+        );
+        add_varargs_method(
+            "writeResult",
+            &Module::writeResult,
+            "write a CFD or FEM result (auto detect) to a file (file format "
+            "detected from file suffix)"
+        );
+        add_varargs_method(
+            "getVtkVersion",
+            &Module::getVtkVersion,
+            "Returns the VTK version FreeCAD is linked against"
+        );
+        add_varargs_method(
+            "getVtkVersionNumber",
+            &Module::getVtkVersionNumber,
+            "Returns the VTK version FreeCAD is linked against as a number"
+        );
+        add_varargs_method(
+            "vtkVersionCheck",
+            &Module::vtkVersionCheck,
+            "Returns VTK version number from `major`, `minor` and `build` values"
+        );
+# ifdef FC_USE_VTK_PYTHON
+        add_varargs_method(
+            "isVtkCompatible",
+            &Module::isVtkCompatible,
+            "Checks if the passed vtkObject is compatible with the c++ VTK version FreeCAD uses"
+        );
+# endif
 #endif
-        add_varargs_method("show",
-                           &Module::show,
-                           "show(shape,[string]) -- Add the mesh to the active document or create "
-                           "one if no document exists.");
+        add_varargs_method(
+            "show",
+            &Module::show,
+            "show(shape,[string]) -- Add the mesh to the active document or create "
+            "one if no document exists."
+        );
         initialize("This module is the Fem module.");  // register with Python
     }
 
@@ -123,8 +160,7 @@ private:
         Base::FileInfo file(EncodedName.c_str());
         // create new document and add Import feature
         App::Document* pcDoc = App::GetApplication().newDocument();
-        FemMeshObject* pcFeature = static_cast<FemMeshObject*>(
-            pcDoc->addObject("Fem::FemMeshObject", file.fileNamePure().c_str()));
+        FemMeshObject* pcFeature = pcDoc->addObject<FemMeshObject>(file.fileNamePure().c_str());
         pcFeature->Label.setValue(file.fileNamePure().c_str());
         pcFeature->FemMesh.setValuePtr(mesh.release());
         pcFeature->purgeTouched();
@@ -160,8 +196,7 @@ private:
             std::unique_ptr<FemMesh> mesh(new FemMesh);
             mesh->read(EncodedName.c_str());
 
-            FemMeshObject* pcFeature = static_cast<FemMeshObject*>(
-                pcDoc->addObject("Fem::FemMeshObject", file.fileNamePure().c_str()));
+            FemMeshObject* pcFeature = pcDoc->addObject<FemMeshObject>(file.fileNamePure().c_str());
             pcFeature->Label.setValue(file.fileNamePure().c_str());
             pcFeature->FemMesh.setValuePtr(mesh.release());
             pcFeature->purgeTouched();
@@ -170,8 +205,7 @@ private:
 #ifdef FC_USE_VTK
             if (FemPostPipeline::canRead(file)) {
 
-                FemPostPipeline* pcFeature = static_cast<FemPostPipeline*>(
-                    pcDoc->addObject("Fem::FemPostPipeline", file.fileNamePure().c_str()));
+                auto* pcFeature = pcDoc->addObject<FemPostPipeline>(file.fileNamePure().c_str());
 
                 pcFeature->Label.setValue(file.fileNamePure().c_str());
                 pcFeature->read(file);
@@ -196,18 +230,38 @@ private:
             throw Py::Exception();
         }
 
-        std::string EncodedName = std::string(Name);
+        Base::FileInfo file(Name);
         PyMem_Free(Name);
 
+        ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Mod/Fem"
+        );
+
         Py::Sequence list(object);
-        Base::Type meshId = Base::Type::fromName("Fem::FemMeshObject");
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* item = (*it).ptr();
-            if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
-                App::DocumentObject* obj =
-                    static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
-                if (obj->getTypeId().isDerivedFrom(meshId)) {
-                    static_cast<FemMeshObject*>(obj)->FemMesh.getValue().write(EncodedName.c_str());
+            Py::Object item(*it);
+            if (PyObject_TypeCheck(item.ptr(), &(App::DocumentObjectPy::Type))) {
+                App::DocumentObject* obj
+                    = static_cast<App::DocumentObjectPy*>(item.ptr())->getDocumentObjectPtr();
+                if (obj->isDerivedFrom<Fem::FemMeshObject>()) {
+                    auto femMesh = static_cast<FemMeshObject*>(obj)->FemMesh.getValue();
+                    if (file.hasExtension({"vtk", "vtu"})) {
+                        // get VTK prefs
+                        ParameterGrp::handle g = hGrp->GetGroup("InOutVtk");
+                        std::string level = g->GetASCII("MeshExportLevel", "Highest");
+                        femMesh.writeVTK(file.filePath().c_str(), level == "Highest" ? true : false);
+                    }
+                    else if (file.hasExtension("inp")) {
+                        // get Abaqus inp prefs
+                        ParameterGrp::handle g = hGrp->GetGroup("Abaqus");
+                        int elemParam = g->GetInt("AbaqusElementChoice", 2);
+                        bool groupParam = g->GetBool("AbaqusWriteGroups", true);
+                        // write ABAQUS Output
+                        femMesh.writeABAQUS(file.filePath(), elemParam, groupParam);
+                    }
+                    else {
+                        femMesh.write(file.filePath().c_str());
+                    }
                     return Py::None();
                 }
             }
@@ -231,6 +285,21 @@ private:
     }
 
 #ifdef FC_USE_VTK
+    Py::Object frdToVTK(const Py::Tuple& args)
+    {
+        char* filename = nullptr;
+        PyObject* binary = Py_True;
+        if (!PyArg_ParseTuple(args.ptr(), "et|O!", "utf-8", &filename, &PyBool_Type, &binary)) {
+            throw Py::Exception();
+        }
+        std::string encodedName = std::string(filename);
+        PyMem_Free(filename);
+
+        FemVTKTools::frdToVTK(encodedName.c_str(), Base::asBoolean(binary));
+
+        return Py::None();
+    }
+
     Py::Object readResult(const Py::Tuple& args)
     {
         char* fileName = nullptr;
@@ -261,12 +330,9 @@ private:
         char* fileName = nullptr;
         PyObject* pcObj = nullptr;
 
-        if (!PyArg_ParseTuple(args.ptr(),
-                              "et|O!",
-                              "utf-8",
-                              &fileName,
-                              &(App::DocumentObjectPy::Type),
-                              &pcObj)) {
+        if (
+            !PyArg_ParseTuple(args.ptr(), "et|O!", "utf-8", &fileName, &(App::DocumentObjectPy::Type), &pcObj)
+        ) {
             throw Py::Exception();
         }
         std::string EncodedName = std::string(fileName);
@@ -274,8 +340,8 @@ private:
 
         if (pcObj) {
             if (PyObject_TypeCheck(pcObj, &(App::DocumentObjectPy::Type))) {
-                App::DocumentObject* obj =
-                    static_cast<App::DocumentObjectPy*>(pcObj)->getDocumentObjectPtr();
+                App::DocumentObject* obj
+                    = static_cast<App::DocumentObjectPy*>(pcObj)->getDocumentObjectPtr();
                 FemVTKTools::writeResult(EncodedName.c_str(), obj);
             }
         }
@@ -285,6 +351,55 @@ private:
 
         return Py::None();
     }
+
+    Py::Object getVtkVersion(const Py::Tuple& args)
+    {
+        if (!PyArg_ParseTuple(args.ptr(), "")) {
+            throw Py::Exception();
+        }
+
+        return Py::String(fcVtkVersion);
+    }
+
+    Py::Object getVtkVersionNumber(const Py::Tuple& args)
+    {
+        if (!PyArg_ParseTuple(args.ptr(), "")) {
+            throw Py::Exception();
+        }
+
+        return Py::Long(VTK_VERSION_NUMBER);
+    }
+
+    Py::Object vtkVersionCheck(const Py::Tuple& args)
+    {
+        int major;
+        int minor;
+        int build = 0;
+        if (!PyArg_ParseTuple(args.ptr(), "ii|i", &major, &minor, &build)) {
+            throw Py::Exception();
+        }
+
+        return Py::Long(VTK_VERSION_CHECK(major, minor, build));
+    }
+
+# ifdef FC_USE_VTK_PYTHON
+    Py::Object isVtkCompatible(const Py::Tuple& args)
+    {
+        PyObject* pcObj = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O", &pcObj)) {
+            throw Py::Exception();
+        }
+
+        // if none is returned the VTK object was created by another VTK library, and the
+        // python api used to create it cannot be used with FreeCAD
+        vtkObjectBase* obj = vtkPythonUtil::GetPointerFromObject(pcObj, "vtkObject");
+        if (!obj) {
+            PyErr_Clear();
+            return Py::False();
+        }
+        return Py::True();
+    }
+# endif
 #endif
 
     Py::Object show(const Py::Tuple& args)
@@ -301,8 +416,7 @@ private:
         }
 
         FemMeshPy* pShape = static_cast<FemMeshPy*>(pcObj);
-        Fem::FemMeshObject* pcFeature =
-            static_cast<Fem::FemMeshObject*>(pcDoc->addObject("Fem::FemMeshObject", name));
+        Fem::FemMeshObject* pcFeature = pcDoc->addObject<Fem::FemMeshObject>(name);
         // copy the data
         pcFeature->FemMesh.setValue(*(pShape->getFemMeshPtr()));
         pcDoc->recompute();

@@ -22,11 +22,13 @@
  ***************************************************************************/
 
 
-#ifndef Fem_FemSolverObject_H
-#define Fem_FemSolverObject_H
+#pragma once
 
 #include <App/FeaturePython.h>
+#include <App/PropertyFile.h>
 #include <Mod/Fem/FemGlobal.h>
+
+#include "WorkerExtension.h"
 
 namespace Fem
 {
@@ -40,6 +42,7 @@ public:
     FemSolverObject();
     ~FemSolverObject() override;
 
+    App::PropertyLinkList Results;
     // Attributes are implemented in the FemSolverObjectPython
 
     /// returns the type name of the ViewProvider
@@ -53,11 +56,11 @@ public:
     }
     short mustExecute() const override;
     PyObject* getPyObject() override;
+
+private:
+    WorkerExtension worker;
 };
 
 using FemSolverObjectPython = App::FeaturePythonT<FemSolverObject>;
 
 }  // namespace Fem
-
-
-#endif  // Fem_FemSolverObject_H

@@ -732,6 +732,14 @@ def select(objs=None, gui=App.GuiUp):
         when the interface is not available.
     """
     if gui:
+        # A live import creates objects in bulk, and every make* helper that
+        # ends by selecting its result then costs a selection round trip, the
+        # 3D view's highlight, and a tree sync that expands the item's whole
+        # ancestry and scrolls to it -- thousands of times over, for a
+        # selection nobody can act on until the import ends. The document
+        # says it is busy; take it at its word.
+        if getattr(Gui, "isLiveImport", None) and Gui.isLiveImport():
+            return
         Gui.Selection.clearSelection()
         if objs is not None:
             if not isinstance(objs, list):

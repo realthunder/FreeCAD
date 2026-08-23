@@ -23,8 +23,7 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef GUI_TASKVIEW_TaskFemConstraintHeatflux_H
-#define GUI_TASKVIEW_TaskFemConstraintHeatflux_H
+#pragma once
 
 #include <QObject>
 #include <memory>
@@ -42,13 +41,17 @@ class TaskFemConstraintHeatflux: public TaskFemConstraintOnBoundary
     Q_OBJECT
 
 public:
-    explicit TaskFemConstraintHeatflux(ViewProviderFemConstraintHeatflux* ConstraintView,
-                                       QWidget* parent = nullptr);
+    explicit TaskFemConstraintHeatflux(
+        ViewProviderFemConstraintHeatflux* ConstraintView,
+        QWidget* parent = nullptr
+    );
     ~TaskFemConstraintHeatflux() override;
-    double getAmbientTemp() const;
+    std::string getAmbientTemp() const;
     /*double getFaceTemp(void) const;*/
-    double getFilmCoef() const;
-    std::string get_constraint_type() const;
+    std::string getFilmCoef() const;
+    std::string getDFlux() const;
+    double getEmissivity() const;
+    std::string getConstraintType() const;
     const std::string getReferences() const override;
 
 private Q_SLOTS:
@@ -56,14 +59,16 @@ private Q_SLOTS:
     void onAmbientTempChanged(double val);
     /*void onFaceTempChanged(double val);*/
     void onFilmCoefChanged(double val);
+    void onEmissivityChanged(double val);
     void onHeatFluxChanged(double val);
+    void onConstrTypeChanged(int val);
     void Conv();
+    void Rad();
     void Flux();
     void addToSelection() override;
     void removeFromSelection() override;
 
 protected:
-    bool event(QEvent* e) override;
     void changeEvent(QEvent* e) override;
     void clearButtons(const SelectionChangeModes notThis) override;
 
@@ -78,11 +83,7 @@ class TaskDlgFemConstraintHeatflux: public TaskDlgFemConstraint
 
 public:
     explicit TaskDlgFemConstraintHeatflux(ViewProviderFemConstraintHeatflux* ConstraintView);
-    void open() override;
     bool accept() override;
-    bool reject() override;
 };
 
 }  // namespace FemGui
-
-#endif  // GUI_TASKVIEW_TaskFemConstraintHeatflux_H

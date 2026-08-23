@@ -19,14 +19,13 @@ link_directories(${OCC_LIBRARY_DIR})
 set(Path_LIBS
 #   Robot
     Part
-    area-native
+    Area
     FreeCADApp
 )
 
 generate_from_xml(CommandPy)
 generate_from_xml(PathPy)
 generate_from_xml(FeaturePathCompoundPy)
-generate_from_xml(AreaPy)
 generate_from_xml(FeatureAreaPy)
 generate_from_xml(VoronoiPy)
 generate_from_xml(VoronoiCellPy)
@@ -40,8 +39,6 @@ SET(Python_SRCS
     PathPyImp.cpp
     FeaturePathCompoundPy.xml
     FeaturePathCompoundPyImp.cpp
-    AreaPy.xml
-    AreaPyImp.cpp
     FeatureAreaPy.xml
     FeatureAreaPyImp.cpp
     VoronoiPy.xml
@@ -74,10 +71,8 @@ SET(Path_SRCS
     FeaturePathCompound.h
     FeaturePathShape.cpp
     FeaturePathShape.h
-    Area.cpp
-    Area.h
-    AreaParams.h
-    ParamsHelper.h
+    AreaToolpath.cpp
+    AreaToolpath.h
     FeatureArea.cpp
     FeatureArea.h
     PathSegmentWalker.h

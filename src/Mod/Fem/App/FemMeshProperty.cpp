@@ -20,11 +20,9 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
-#ifndef _PreComp_
 #include <sstream>
-#endif
+
 
 #include <Base/PlacementPy.h>
 #include <Base/Reader.h>
@@ -113,13 +111,13 @@ void PropertyFemMesh::setPyObject(PyObject* value)
     else {
         std::string error = std::string("type must be 'FemMesh', not ");
         error += value->ob_type->tp_name;
-        THROWM(Base::TypeError, error)
+        throw Base::TypeError(error);
     }
 }
 
 App::Property* PropertyFemMesh::Copy() const
 {
-    PropertyFemMesh *prop = new PropertyFemMesh();
+    PropertyFemMesh* prop = new PropertyFemMesh();
     *prop->_FemMesh = *this->_FemMesh;
     return prop;
 }

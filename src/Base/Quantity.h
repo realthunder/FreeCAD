@@ -76,6 +76,16 @@ struct BaseExport QuantityFormat
         defaultDenominator = denom;
     }
 
+    inline int getPrecision() const
+    {
+        return precision;
+    }
+
+    inline void setPrecision(int prec)
+    {
+        precision = prec;
+    }
+
     inline int getDenominator() const
     {
         return denominator;
@@ -343,6 +353,10 @@ public:
     static const Quantity Gauss;
 
     static const Quantity Weber;
+    static const Quantity WeberPerMeter;
+
+    static const Quantity CoulombPerSquareMeter;
+    static const Quantity CoulombPerCubicMeter;
 
     // static const Quantity Oersted;
 

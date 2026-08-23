@@ -42,21 +42,31 @@ namespace Gui
  * progressive STEP import, where the model grows on screen and the user
  * has every reason to orbit it while it does.
  *
- * While an instance of this class is alive, both filters make an exception
- * for mouse input aimed at a 3D view, so orbit/pan/zoom keep working. The
- * exception is deliberately narrow:
+ * While an instance of this class is alive, both filters let pointer input
+ * through, so the window stays alive under the mouse:
  *
- * - Only mouse input (press, release, double click, move, enter/leave and
- *   native gestures) passes; navigation reads its modifiers off those
- *   events, so no keyboard event has to be let through. Keys therefore
- *   stay blocked, which keeps Escape doing what it does for every other
- *   long operation: cancel it.
- * - Only events aimed at a 3D view pass. Menus, the tree and the task
- *   panel stay inert, and QEvent::ContextMenu stays blocked even over a
- *   3D view, so a right-drag orbits without opening a menu of commands.
- * - Nothing here makes the document safe to *edit* mid-operation. The
- *   caller owns that; the progressive import gates document-mutating
- *   commands through App::Document::LiveImport.
+ * - Only pointer input (press, release, double click, move, enter/leave,
+ *   wheel and native gestures) passes; navigation reads its modifiers off
+ *   those events, so no keyboard event has to be let through. Keys stay
+ *   blocked, which keeps Escape doing what it does for every other long
+ *   operation: cancel it. QEvent::ContextMenu stays blocked too, so a
+ *   right-drag orbits without opening a menu of commands, and the tree
+ *   cannot offer the document-altering entries that bypass Command.
+ * - It passes whatever the pointer is aimed at, not only a 3D view. This
+ *   was learned the hard way: an application-level filter sees every mouse
+ *   event TWICE, first addressed to the QWidgetWindow and only then to the
+ *   widget Qt dispatches it to. Swallowing the window-level event means
+ *   the widget-level one never happens, so a rule phrased in terms of the
+ *   target widget approves an event that was already eaten -- which left
+ *   the whole GUI deaf to the mouse, 3D view included, with only the wheel
+ *   working because neither filter blocks it.
+ * - Refusing the *edit* is therefore not this class's job, and cannot be:
+ *   what protects the document is App::Document::LiveImport, which makes
+ *   Command::invoke() refuse every AlterDoc command, and the same status
+ *   consulted by the few document mutations that do not go through a
+ *   Command (tree drop, tree double-click edit). Everything that only
+ *   looks -- view commands, selection, panels -- keeps working, which is
+ *   the point: a live view the user cannot click is not live.
  *
  * \code
  * Gui::LiveViewInteraction navigable;  // while this scope pumps events

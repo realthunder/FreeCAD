@@ -712,12 +712,15 @@ void PropertyData::addProperty(OffsetBase offsetBase,const char* PropName, Prope
     {
         short offset = offsetBase.getOffsetTo(Prop);
         if(offset < 0)
-            THROWM(Base::RuntimeError, "Invalid static property")
+            THROWM(Base::RuntimeError,
+                   std::string("Invalid static property '") + PropName + "'")
         auto &index = propertyData.get<1>();
         auto it = index.find(PropName);
         if(it == index.end()) {
             if(parentMerged)
-                THROWM(Base::RuntimeError, "Cannot add static property")
+                THROWM(Base::RuntimeError,
+                       std::string("Cannot add static property '") + PropName
+                           + "': the class property table was already merged with its parent's")
             index.emplace(PropName, PropertyGroup, PropertyDocu, offset, Type);
         } else{
 #ifdef FC_DEBUG

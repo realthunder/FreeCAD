@@ -559,7 +559,8 @@ void Document::_abortTransaction()
         mUndoMap.erase(d->activeUndoTransaction->getID());
         delete d->activeUndoTransaction;
         d->activeUndoTransaction = nullptr;
-        signalAbortTransaction(*this);
+        // signalAbortTransaction is emitted by the caller, once the enclosing
+        // TransactionGuard has flushed the property changes this rollback deferred
     }
 }
 
@@ -569,6 +570,15 @@ bool Document::hasPendingTransaction() const
         return true;
     else
         return false;
+}
+
+int Document::getBookedTransactionID() const
+{
+    if (d->activeUndoTransaction)
+        return d->activeUndoTransaction->getID();
+    int tid = 0;
+    GetApplication().getActiveTransaction(&tid);
+    return tid;
 }
 
 int Document::getTransactionID(bool undo, unsigned pos) const {
@@ -1108,16 +1118,31 @@ void Document::Save (Base::Writer &writer) const
     // restore is pulled back in here), and only then do the document's own
     // properties run -- which is where a document-wide store collects what
     // the objects have just made ready (docs/SharedShapeStorage.md).
+    auto saveClock = std::chrono::steady_clock::now();
+    auto saveSplit = [&saveClock]() {
+        auto now = std::chrono::steady_clock::now();
+        double secs = std::chrono::duration<double>(now - saveClock).count();
+        saveClock = now;
+        return secs;
+    };
     for (auto o : d->objectArray) {
+        if (d->saveSeq) {
+            d->saveSeq->next();
+        }
         o->beforeSave(writer);
     }
     beforeSave(writer);
+    const double tBefore = saveSplit();
 
     d->Hasher->Save(writer);
+    const double tHasher = saveSplit();
 
     writer.decInd();
 
     PropertyContainer::Save(writer);
+    const double tOwn = saveSplit();
+    FC_LOG("save " << getName() << ": beforeSave " << tBefore << "s, hasher "
+            << tHasher << "s, document properties " << tOwn << "s");
 
     // writing the features types
     writeObjects(d->objectArray, writer);
@@ -1713,6 +1738,13 @@ void Document::applyDefaults(DocumentObject *obj)
 void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
                             Base::Writer &writer) const
 {
+    auto passClock = std::chrono::steady_clock::now();
+    auto passSplit = [&passClock]() {
+        auto now = std::chrono::steady_clock::now();
+        double secs = std::chrono::duration<double>(now - passClock).count();
+        passClock = now;
+        return secs;
+    };
     // writing the features types
     writer.incInd(); // indentation for 'Objects count'
     writer.Stream() << writer.ind() << "<Objects Count=\"" << obj.size();
@@ -1724,6 +1756,12 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
 
     if(!isExporting(nullptr)) {
         for(auto o : obj) {
+            // The dependency section is a full pass of its own, resolving
+            // every object's out-list. Cheap on the reference document
+            // (0.04s), but it is a pass and it is counted as one.
+            if (d->saveSeq) {
+                d->saveSeq->next();
+            }
             const auto &outList = o->getOutList(DocumentObject::OutListNoHidden
                                                 | DocumentObject::OutListNoXLinked);
             std::set<App::DocumentObject*> outSet(outList.begin(),outList.end());
@@ -1749,10 +1787,14 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
         }
     }
 
+    const double tDeps = passSplit();
     // Rebuilt by the loop below, and read while this save writes its entries.
     d->splitXmlEntries.clear();
     std::vector<DocumentObject*>::const_iterator it;
     for (it = obj.begin(); it != obj.end(); ++it) {
+        if (d->saveSeq) {
+            d->saveSeq->next();
+        }
         writer.Stream() << writer.ind() << "<Object "
         << "type=\"" << (*it)->getTypeId().getName()     << "\" "
         << "name=\"" << (*it)->getExportName()       << "\" "
@@ -1811,9 +1853,11 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
     // block would make every one of those files depend on a document-wide
     // record -- a third object of some class appearing would rewrite the
     // other two, which is the diff a directory layout exists to not have.
+    const double tHeaders = passSplit();
     std::map<std::string, SharedDefaults> defaults;
     if (!writer.isSplitXML())
         buildDefaults(writer, obj, defaults);
+    const double tDefaults = passSplit();
 
     // writing the features itself
     writer.Stream() << writer.ind() << "<ObjectData Count=\"";
@@ -1843,8 +1887,12 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
         };
         pointAtDefaults(true);
         try {
-            for (it = obj.begin(); it != obj.end(); ++it)
+            for (it = obj.begin(); it != obj.end(); ++it) {
+                if (d->saveSeq) {
+                    d->saveSeq->next();
+                }
                 writeObject(writer,*it);
+            }
         }
         catch (...) {
             pointAtDefaults(false);
@@ -1852,7 +1900,9 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
         }
         pointAtDefaults(false);
         if (!defaults.empty())
-            FC_LOG("save " << getName() << ": " << obj.size() << " objects, "
+            FC_LOG("save " << getName() << ": deps " << tDeps << "s, headers "
+                    << tHeaders << "s, defaults " << tDefaults << "s, data "
+                    << passSplit() << "s; " << obj.size() << " objects, "
                     << defaults.size() << " class defaults, "
                     << (PropertyContainer::savedDefaults - elided)
                     << " properties left out, written anyway: "
@@ -2679,6 +2729,43 @@ bool Document::saveToFile(const char* filename) const
     // keep its parked entry across the rename -- and on Windows the index's
     // own open handle can fail the rename outright. Faulting everything in
     // here costs what the save was going to read anyway.
+    // ONE sequence for the whole save, started before the flush below because
+    // that flush is most of it: on a document just opened, serving the parked
+    // shapes is some 25 of a 30 second save, and it used to be reported by
+    // whichever drain launcher happened to still be alive -- so the status
+    // text came from the save and the bar's numbers and its remaining-time
+    // estimate came from the drain, which is how a 30 second save advertised
+    // three and a half minutes. Five passes over the objects are known now --
+    // staging their blob content, letting each settle what it is about to
+    // write, then the dependency, Objects and ObjectData sections -- plus
+    // whatever is still parked; the later phases restate the total from their
+    // own base as they learn their size.
+    Base::SequencerLauncher seqSave(
+            "Saving document...",
+            d->deferredFiles.size() + d->objectArray.size() * 5);
+    // A save that throws still has to put the document back as it found it.
+    class SaveSeqGuard
+    {
+    public:
+        SaveSeqGuard(DocumentP* p, Base::SequencerLauncher* seq)
+            : d(p)
+        {
+            d->saveSeq = seq;
+        }
+        ~SaveSeqGuard()
+        {
+            d->saveSeq = nullptr;
+        }
+        SaveSeqGuard(const SaveSeqGuard&) = delete;
+        SaveSeqGuard& operator=(const SaveSeqGuard&) = delete;
+
+    private:
+        DocumentP* d;
+    } saveSeqGuard(d, &seqSave);
+    // A save is its own job: whatever background fill or drain is still
+    // running from the open must not be read as containing it.
+    seqSave.setStandalone();
+
     const_cast<Document*>(this)->flushDeferredFiles();
 
     signalStartSave(*this, filename);
@@ -2824,6 +2911,27 @@ bool Document::saveToFile(const char* filename) const
 }
 
 void Document::save(Base::Writer &writer, bool archive) const {
+    // Lend the save's sequence to the writer for the phases it owns. Null on
+    // an export, which writes objects through here without a save around it.
+    class WriterProgress
+    {
+    public:
+        WriterProgress(Base::Writer& w, Base::SequencerLauncher* seq)
+            : writer(w)
+        {
+            writer.setProgress(seq);
+        }
+        ~WriterProgress()
+        {
+            writer.setProgress(nullptr);
+        }
+        WriterProgress(const WriterProgress&) = delete;
+        WriterProgress& operator=(const WriterProgress&) = delete;
+
+    private:
+        Base::Writer& writer;
+    } writerProgress(writer, d->saveSeq);
+
     if(!archive) {
         writer.setFileVersion(2);
         writer.setForceXML(ForceXML.getValue());
@@ -2838,8 +2946,17 @@ void Document::save(Base::Writer &writer, bool archive) const {
     writer.setSchemaVersion(resolveSchemaVersion(writer));
     // Collect before anything is written: the included files go into the
     // archive ahead of the objects and views that refer to them.
+    auto phaseClock = std::chrono::steady_clock::now();
+    auto phaseSplit = [&phaseClock]() {
+        auto now = std::chrono::steady_clock::now();
+        double secs = std::chrono::duration<double>(now - phaseClock).count();
+        phaseClock = now;
+        return secs;
+    };
     getFileBlobManager().beginSave(writer);
+    const double tBegin = phaseSplit();
     collectFileBlobs();
+    const double tCollect = phaseSplit();
 
     writer.putNextEntry("Document.xml");
 
@@ -2857,13 +2974,27 @@ void Document::save(Base::Writer &writer, bool archive) const {
 
     // The included files, one entry per distinct content, straight behind
     // Document.xml and ahead of every entry the file channel will add.
+    const double tObjects = phaseSplit();
+    const size_t objectSteps = d->saveSeq ? d->saveSeq->progress() : 0;
     getFileBlobManager().writeBlobs(writer);
+    const size_t blobSteps = (d->saveSeq ? d->saveSeq->progress() : 0) - objectSteps;
 
     // Special handling for Gui document.
     signalSaveDocument(writer);
 
     // write additional files
+    const double tBlobs = phaseSplit();
+    const size_t beforeFiles = d->saveSeq ? d->saveSeq->progress() : 0;
     writer.writeFiles();
+    const double tFiles = phaseSplit();
+    if (d->saveSeq) {
+        FC_LOG("save " << getName() << ": " << objectSteps << " steps to the objects, "
+                << blobSteps << " blob entries, "
+                << (d->saveSeq->progress() - beforeFiles) << " file entries, of "
+                << d->saveSeq->numberOfSteps() << " reported; begin " << tBegin
+                << "s, collect " << tCollect << "s, objects " << tObjects
+                << "s, blobs " << tBlobs << "s, files " << tFiles << "s");
+    }
 
     if (writer.hasErrors()) {
         THROWM(Base::FileException, "Failed to write all data to file")
@@ -3064,7 +3195,16 @@ void Document::cancelDeferredFile(Base::Persistence *obj)
 
 void Document::flushDeferredFiles()
 {
+    // The drain's own sequence, if a slice left one running, is about to have
+    // its backlog taken away from under it -- and while it lives it is the
+    // outermost sequence on this thread, so it, not the save, is what the
+    // consolidated status bar reports. Retire it here and let the save's
+    // sequence, which spans this loop, be the one the user sees.
+    d->deferServeSeq.reset();
     while (!d->deferredFiles.empty()) {
+        if (d->saveSeq) {
+            d->saveSeq->next();
+        }
         auto key = d->deferredFiles.begin()->first;
         auto oit = d->objectMap.find(key.first);
         App::Property *prop = oit == d->objectMap.end() ? nullptr
@@ -3506,7 +3646,16 @@ void Document::collectFileBlobs(const std::vector<App::DocumentObject*>& objs) c
     };
 
     collect(this);
+    // Staging the blob content is a phase of its own, and on a large document
+    // the longest one before anything is written: 21 of a 31 second save on
+    // the 18142-object reference, during which the bar used to sit still. It
+    // does not restate the total -- one pass per object is already part of
+    // the three the save budgeted for, and restating here once shrank the
+    // total to this phase alone and left the bar pinned at full for the rest.
     for (auto obj : objs.empty() ? d->objectArray : objs) {
+        if (d->saveSeq) {
+            d->saveSeq->next();
+        }
         collect(obj);
     }
 
@@ -5287,12 +5436,18 @@ std::string Document::getUniqueObjectName(const char *Name) const
             }
         }
 
-        std::vector<std::string> names;
-        names.reserve(d->objectMap.size());
-        for (pos = d->objectMap.begin();pos != d->objectMap.end();++pos) {
-            names.push_back(pos->first);
-        }
-        return Base::Tools::getUniqueName(CleanName, names, 3);
+        // Hand the names over one at a time. Copying them into a vector
+        // first is the whole cost of this call once a document holds
+        // thousands of objects, and every one of those adds pays it: an
+        // import of 13636 IFC products, all of them named 'Component', spent
+        // most of addObject() here.
+        auto it = d->objectMap.begin();
+        auto next = [&]() -> const char * {
+            if (it == d->objectMap.end())
+                return nullptr;
+            return (it++)->first.c_str();
+        };
+        return Base::Tools::getUniqueName(CleanName, next, 3);
     }
 }
 

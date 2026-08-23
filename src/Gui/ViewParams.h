@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:587)
+// Auto generated code (Gui/ViewParams.py:597)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -2035,6 +2035,26 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter LiveImportPumpInterval
+    ///
+    /// Minimum interval in milliseconds between two turns of the event
+    /// loop while a live import fills the document. The import holds the
+    /// main thread, so the view only sees input and paints where the
+    /// import hands the loop a slice, and on its own the progress bar
+    /// does that on a 200 ms update throttle -- a slideshow to someone
+    /// orbiting the model. Offering the loop a turn costs nothing when
+    /// nothing is queued, and what a frame costs is bounded by
+    /// LiveImportRedrawBudget rather than by how often a turn is
+    /// offered. Set zero to pump at every offer.
+    static const long & getLiveImportPumpInterval();
+    static const long & defaultLiveImportPumpInterval();
+    static void removeLiveImportPumpInterval();
+    static void setLiveImportPumpInterval(const long &v);
+    static const char *docLiveImportPumpInterval();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter RenderHighlightPolygonOffsetFactor
     static const double & getRenderHighlightPolygonOffsetFactor();
     static const double & defaultRenderHighlightPolygonOffsetFactor();
@@ -2225,7 +2245,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:593)
+    // Auto generated code (Gui/ViewParams.py:603)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2256,7 +2276,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:606)
+// Auto generated code (Gui/ViewParams.py:616)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

@@ -102,7 +102,8 @@ int TopoShapeShellPy::PyInit(PyObject* args, PyObject* /*kwd*/)
         Py::Sequence list(obj);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
             if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapeFacePy::Type))) {
-                const TopoDS_Shape& sh = static_cast<TopoShapeFacePy*>((*it).ptr())->
+                Py::Object pyItem(*it);
+                const TopoDS_Shape& sh = static_cast<TopoShapeFacePy*>(pyItem.ptr())->
                     getTopoShapePtr()->getShape();
                 if (!sh.IsNull())
                     builder.Add(shell, sh);

@@ -35,8 +35,7 @@ from . import linear
 
 
 def create(doc, name="Electrostatic"):
-    return femutils.createObject(
-        doc, name, Proxy, ViewProxy)
+    return femutils.createObject(doc, name, Proxy, ViewProxy)
 
 
 class Proxy(linear.Proxy, equationbase.ElectrostaticProxy):
@@ -44,44 +43,29 @@ class Proxy(linear.Proxy, equationbase.ElectrostaticProxy):
     Type = "Fem::EquationElmerElectrostatic"
 
     def __init__(self, obj):
-        super(Proxy, self).__init__(obj)
+        super().__init__(obj)
 
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateCapacitanceMatrix",
-            "Electrostatic",
-            ""
+            "App::PropertyBool", "CalculateCapacitanceMatrix", "Electrostatic", "", locked=True
         )
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateElectricEnergy",
-            "Electrostatic",
-            ""
+            "App::PropertyBool", "CalculateElectricEnergy", "Electrostatic", "", locked=True
         )
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateElectricField",
-            "Electrostatic",
-            ""
+            "App::PropertyBool", "CalculateElectricField", "Electrostatic", "", locked=True
         )
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateElectricFlux",
-            "Electrostatic",
-            ""
+            "App::PropertyBool", "CalculateElectricFlux", "Electrostatic", "", locked=True
         )
         obj.addProperty(
-            "App::PropertyBool",
-            "CalculateSurfaceCharge",
-            "Electrostatic",
-            ""
+            "App::PropertyBool", "CalculateSurfaceCharge", "Electrostatic", "", locked=True
         )
         """
         obj.addProperty(
             "App::PropertyInteger",
             "CapacitanceBodies",
             "Electrostatic",
-            ""
+            "", locked=True
         )
         """
         obj.addProperty(
@@ -91,13 +75,15 @@ class Proxy(linear.Proxy, equationbase.ElectrostaticProxy):
             (
                 "File where capacitance matrix is being saved\n"
                 "Only used if 'CalculateCapacitanceMatrix' is true"
-            )
+            ),
+            locked=True,
         )
         obj.addProperty(
             "App::PropertyBool",
             "ConstantWeights",
             "Electrostatic",
-            "Use constant weighting for results"
+            "Use constant weighting for results",
+            locked=True,
         )
         obj.addProperty(
             "App::PropertyFloat",
@@ -106,7 +92,8 @@ class Proxy(linear.Proxy, equationbase.ElectrostaticProxy):
             (
                 "Potential difference in Volt for which capacitance is\n"
                 "calculated if 'CalculateCapacitanceMatrix' is false"
-            )
+            ),
+            locked=True,
         )
 
         obj.CapacitanceMatrixFilename = "cmatrix.dat"
@@ -116,5 +103,6 @@ class Proxy(linear.Proxy, equationbase.ElectrostaticProxy):
 
 class ViewProxy(linear.ViewProxy, equationbase.ElectrostaticViewProxy):
     pass
+
 
 ##  @}

@@ -66,6 +66,7 @@ class DeformationWriter:
         s["Optimize Bandwidth"] = True
         s["Stabilize"] = equation.Stabilize
         s["Variable"] = equation.Variable
+        s["Variable DOFs"] = self.write.getCoordSystemDimension()
         return s
 
     def handleDeformationEquation(self, bodies, equation):
@@ -92,18 +93,20 @@ class DeformationWriter:
                 for name in obj.References[0][1]:
                     self.write.boundary(name, "Displacement 1", 0.0)
                     self.write.boundary(name, "Displacement 2", 0.0)
-                    self.write.boundary(name, "Displacement 3", 0.0)
+                    if self.write.getCoordSystemDimension() == 3:
+                        self.write.boundary(name, "Displacement 3", 0.0)
                 self.write.handled(obj)
         for obj in self.write.getMember("Fem::ConstraintForce"):
             if obj.References:
                 for name in obj.References[0][1]:
                     force = float(obj.Force.getValueAs("N"))
                     self.write.boundary(name, "Force 1", obj.DirectionVector.x * force)
-                    self.write.boundary(name, "Force 2", obj.DirectionVector.y * force)
-                    self.write.boundary(name, "Force 3", obj.DirectionVector.z * force)
                     self.write.boundary(name, "Force 1 Normalize by Area", True)
+                    self.write.boundary(name, "Force 2", obj.DirectionVector.y * force)
                     self.write.boundary(name, "Force 2 Normalize by Area", True)
-                    self.write.boundary(name, "Force 3 Normalize by Area", True)
+                    if self.write.getCoordSystemDimension() == 3:
+                        self.write.boundary(name, "Force 3", obj.DirectionVector.z * force)
+                        self.write.boundary(name, "Force 3 Normalize by Area", True)
                 self.write.handled(obj)
         for obj in self.write.getMember("Fem::ConstraintDisplacement"):
             if obj.References:
@@ -148,10 +151,10 @@ class DeformationWriter:
         obj = self.write.getSingleMember("Fem::ConstraintSelfWeight")
         if obj is not None:
             for name in bodies:
-                gravity = self.write.convert(self.write.constsdef["Gravity"], "L/T^2")
+                gravity = self.write.convert(obj.GravityAcceleration.toStr(), "L/T^2")
                 if self.write.getBodyMaterial(name) is None:
                     raise general_writer.WriteError(
-                        "The body {} is not referenced in any material.\n\n".format(name)
+                        f"The body {name} is not referenced in any material.\n\n"
                     )
                 m = self.write.getBodyMaterial(name).Material
 
@@ -164,9 +167,9 @@ class DeformationWriter:
                     dimension = "M/L^2"
                 density = self.write.convert(densityQuantity, dimension)
 
-                force1 = gravity * obj.Gravity_x * density
-                force2 = gravity * obj.Gravity_y * density
-                force3 = gravity * obj.Gravity_z * density
+                force1 = gravity * obj.GravityDirection.x * density
+                force2 = gravity * obj.GravityDirection.y * density
+                force3 = gravity * obj.GravityDirection.z * density
                 self.write.bodyForce(name, "Stress Bodyforce 1", force1)
                 self.write.bodyForce(name, "Stress Bodyforce 2", force2)
                 self.write.bodyForce(name, "Stress Bodyforce 3", force3)
@@ -187,23 +190,19 @@ class DeformationWriter:
         # temperature
         tempObj = self.write.getSingleMember("Fem::ConstraintInitialTemperature")
         if tempObj is not None:
-            refTemp = float(tempObj.initialTemperature.getValueAs("K"))
+            refTemp = float(tempObj.InitialTemperature.getValueAs("K"))
             for name in bodies:
                 self.write.material(name, "Reference Temperature", refTemp)
         # get the material data for all bodies
         for obj in self.write.getMember("App::MaterialObject"):
             m = obj.Material
-            refs = (
-                obj.References[0][1]
-                if obj.References
-                else self.write.getAllBodies()
-            )
+            refs = obj.References[0][1] if obj.References else self.write.getAllBodies()
             for name in (n for n in refs if n in bodies):
                 # don't evaluate fluid material
                 if self.write.isBodyMaterialFluid(name):
                     break
                 if "YoungsModulus" not in m:
-                    Console.PrintMessage("m: {}\n".format(m))
+                    Console.PrintMessage(f"m: {m}\n")
                     # it is no fluid but also no solid
                     # -> user set no material reference at all
                     # that now material is known
@@ -213,28 +212,19 @@ class DeformationWriter:
                     )
                 self.write.material(name, "Name", m["Name"])
                 if density_needed is True:
-                    self.write.material(
-                        name, "Density",
-                        self.write.getDensity(m)
-                    )
-                self.write.material(
-                    name, "Youngs Modulus",
-                    self._getYoungsModulus(m)
-                )
-                self.write.material(
-                    name, "Poisson ratio",
-                    float(m["PoissonRatio"])
-                )
+                    self.write.material(name, "Density", self.write.getDensity(m))
+                self.write.material(name, "Youngs Modulus", self._getYoungsModulus(m))
+                self.write.material(name, "Poisson ratio", float(m["PoissonRatio"]))
                 if tempObj:
                     self.write.material(
-                        name, "Heat expansion Coefficient",
-                        self.write.convert(m["ThermalExpansionCoefficient"], "O^-1")
+                        name,
+                        "Heat expansion Coefficient",
+                        self.write.convert(m["ThermalExpansionCoefficient"], "O^-1"),
                     )
 
     def _getYoungsModulus(self, m):
         youngsModulus = self.write.convert(m["YoungsModulus"], "M/(L*T^2)")
-        if self.write.getMeshDimension() == 2:
-            youngsModulus *= 1e3
         return youngsModulus
+
 
 ##  @}
