@@ -287,8 +287,8 @@ It needs installing, plus a `freecad-rt-feedstock` change for releases.
 
 ## Ledger
 
-**Phases 3 and 1 are done.** Phase 2 has not started, and is now the next
-piece of work -- the residual test failures below point straight at it.
+**Phases 3, 1 and 2 are done.** What is left of the gate is not Area work;
+see "Where phase 2 stands" below.
 
 | date | phase | repo | commit | what |
 |---|---|---|---|---|
@@ -309,6 +309,13 @@ piece of work -- the residual test failures below point straight at it.
 | 2026-08-23 | 1 | fcad | `9ddfcd71e8` | expose ParameterGrp::RenameGrp to Python |
 | 2026-08-23 | 1 | fcad | `5b308e9506` | let Python call libarea Subtract and Union |
 | 2026-08-23 | 1 | fcad | `121b01661f` | run the ported tree against this fork's runtime |
+| 2026-08-23 | 2 | fcad | `e00436d5ee` | Part: OCCT bug 1330 wrapper for ShapeAnalysis_FreeBounds |
+| 2026-08-23 | 2 | fcad | `eec88438e8` | Part: CrossSection accepts the tolerance its own cut adds |
+| 2026-08-23 | 2 | fcad | `065eb8defa` | Area: slice sections from the right side of the plane |
+| 2026-08-23 | 2 | fcad | `912e40dbec` | Area: no edge split outside its own parameter range |
+| 2026-08-23 | 2 | fcad | `a7d0212889` | Area: rest machining measures what the tool can reach |
+| 2026-08-23 | 2 | fcad | `f784942bc7` | Area: narrow a stepover that would leave material |
+| 2026-08-23 | 2 | fcad | `fba9f6b5d5` | App: let a dynamic property be renamed |
 
 ### What was verified
 
@@ -409,29 +416,99 @@ Two things worth knowing about running the suite:
   clearing is its own piece of work, and upstream has not done theirs
   either.
 
+### Where phase 2 stands
+
+`TestCAMApp`: **1343 tests, 13 failures, 5 errors**, down from 17 and 9. Of
+the eleven non-adaptive problems phase 2 set out to clear, **eight are gone**
+and the fifteen adaptive ones are untouched, as planned.
+
+Cleared: the four `TestPathPocket` zero-loop cases, and the four
+`TestPathHelix` errors (those were never geometry -- see `renameProperty`
+below).
+
+What upstream's Area delta actually came to, once clang-format was normalised
+away on both sides: **+400 / -281**, not the +1,422 / -726 the raw file diff
+shows. Most of the rest was the Clipper2 migration phase 3 had already done,
+`FC_TIME_*` instrumentation upstream deleted and this fork keeps, and the
+`enum2` change the plan says not to adopt. Normalising with `clang-format`
+before diffing is the trick that makes this reviewable; do it again next time.
+
+Ported: the slicer plane-normal fix, the `CrossSection` face-tolerance fix,
+both OCCT bug 1330 wrappers (new `Part/App/ShapeAnalysis_FreeBoundsFix.*`),
+the WireJoiner edge-split clamp, the `getRestArea` rework, and `makeOffset`
+gap detection with the new `ForceMaxStepover` parameter.
+
+**Deliberately not ported: upstream's `FuzzyHelper` / `FCBRepAlgoAPI_*`.**
+Upstream applies a global boolean fuzz by default across Part and CAM wraps
+its slicing in `withBooleanFuzzy(0.0, ...)` to switch it *off*. This fork has
+no such global -- its booleans take a fuzz per call and default to none -- so
+the wrapper would set zero where zero already holds. The half that does
+matter, letting the plane test allow for the tolerance the cut introduces, is
+in `CrossSection` using plain `mkCut.FuzzyValue()`, which stays correct if
+that subsystem ever arrives.
+
+`LastStepover` and `PocketLastStepover` are gone with upstream's rewrite. Old
+documents carrying either will report an unknown property on load; nothing in
+the tree reads them any more.
+
+### The two core-API gaps phase 1 did not find
+
+Neither is Area work, and between them they hid the state of the gate.
+
+1. **`renameProperty` did not exist here** (fixed, `fba9f6b5d5`). Fifteen
+   call sites across CAM, BIM and Fem rename a property when restoring an
+   older document, and every one of them threw `AttributeError` partway
+   through its migration. For the CAM pockets that meant `ZigZagAngle` never
+   became `Angle` and the operation could not execute at all. Upstream's
+   transaction support and `signalRenameDynamicProperty` are not ported: this
+   fork's property editor renames a property *group*, not a property, so the
+   only callers are restore-time migrations.
+
+2. **`obj.recompute()` does not recompute an up-to-date object.**
+   `Document::_recomputeFeature` skips the work unless the object is in
+   error, enforced, restoring, or has a touched non-output property --
+   `DocumentParams::getOptimizeRecompute()`, on by default, with no upstream
+   equivalent. `Document::recomputeFeature()` is the explicit
+   "recompute this object now" entry point and it inherits the skip.
+
+   This is why `TestSlicer.test_17748_cam_profile` still reads 3 Z depths:
+   the assertion was measuring the path **stored in the file**, never a fresh
+   one. Recompute it for real and the answer is right -- four depths,
+   -18/-15/-10/-5. Proved directly: with `OptimizeRecompute` set false the
+   whole `TestSlicer` module passes; with the default it fails 3 != 4.
+
+   **The geometry is correct. The test is blocked on this and nothing else.**
+   Left alone deliberately: `recomputeFeature` has 373 C++ callers and
+   `.recompute()` 1,638 Python ones, and the parameter is a deliberate fork
+   optimisation on a project whose stated goal is large-model performance.
+   Making the explicit single-object entry point enforce, and leaving the
+   document-wide dependency walk to keep eliding, is the obvious fix and is
+   the fork author's call to make.
+
+### Still failing, and genuinely geometry
+
+Two, both real differences and neither a stale path:
+
+- `TestPathProfile.TestPathProfile.test01` -- the inner loop matches exactly;
+  the outer one is off by one lattice step (`X23.55` for `X23.54`, `Y14.05`
+  for `Y14.0`). Phase 3 already retuned this test once (`e5c59ec710`), so
+  read that commit before touching it again.
+- `TestPathProfile.TestPathOpenProfile.test02` -- an open profile yields 2
+  moves where the test wants at least 3.
+
 ### Next
 
-**Phase 2: take upstream's Area.cpp work** (user, 2026-08-23: start it next
-session). Phase 3 made this an ordinary diff rather than a hand translation:
-both sides are Clipper2-typed now, so upstream's +1,422 / -726 since the merge
-base -- the OCCT `ConnectWiresToWires` / `ConnectEdgesToWires` workarounds and
-the slicer fixes -- port as normal.
+Three pieces, in the order they are worth doing:
 
-The gate is the 11 geometry failures listed under "Where phase 1 stands". They
-are the reason to do this phase, and the way to tell it worked:
-`TestPathProfile` test01 should stop giving `X23.55` where it wants `X23.54`,
-the four `TestPathPocket` cases should stop returning zero loops, and
-`TestSlicer.test_17748_cam_profile` should find 4 Z depths rather than 3. Run
-the suite under a tty (see the note above) or it dies partway.
+1. **Decide the `recompute()` question above.** It is one small change to
+   `Document::recomputeFeature` and it closes the phase 2 gate test.
+2. The two profile failures.
+3. Adaptive clearing (15 tests), still its own piece of work: upstream's
+   `Adaptive2d.Execute` takes a fourth `clearedArea` argument and this fork's
+   `Adaptive.cpp` is the three-argument one.
 
-Two things phase 2 does **not** cover, so do not be surprised when they still
-fail: the 15 adaptive-clearing tests, which need the fourth `clearedArea`
-argument on `Adaptive2d.Execute` and are their own piece of work; and
-`Mod/Area`'s public surface, which phase 1 deliberately did not grow -- if
-upstream's Area.cpp lands `getClearedArea` differently, revisit
-`Path::clearedAreaFromPath` then.
+`Mod/Area`'s public surface still did not grow. `getClearedArea` left it
+altogether -- upstream's replacement takes a `Toolpath*`, and phase 1 had
+already put that on the CAM side as `Path::clearedAreaFromPath`.
 
-Bring the fork-local Area delta through unharmed. The one place both sides
-moved is the fill-rule parameters on `Subtract` and `Union`: this fork keeps
-them, upstream hard-coded `FillRule::EvenOdd`. Reinstate them on upstream's
-`Clip()`, which still takes rules.
+Run the suite under a tty (`script -qec ... /dev/null`) or it dies partway.
