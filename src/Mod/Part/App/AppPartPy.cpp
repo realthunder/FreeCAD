@@ -2527,9 +2527,32 @@ private:
     // One connected run, in input order; whatever does not join it is dropped.
     static Py::List sortOneRun(std::list<TopoShape>& edges, bool keepOrder, double tol)
     {
+        std::size_t count = edges.size();
         Py::List sorted_list;
         for (const auto &edge : TopoShape::sortEdges(edges, keepOrder, tol))
             sorted_list.append(Py::asObject(new TopoShapeEdgePy(new TopoShape(edge))));
+        // sortEdges() erases what it consumed, so anything still in the list
+        // is silently thrown away. The safe callers pass one connected wire
+        // and never leave a remainder, so only real data loss warns here.
+        if (!edges.empty()) {
+            std::string src = "<unknown>";
+            int line = 0;
+            if (PyFrameObject *frame = PyEval_GetFrame()) {
+                line = PyFrame_GetLineNumber(frame);
+#if PY_VERSION_HEX < 0x030b0000
+                src = PyUnicode_AsUTF8(frame->f_code->co_filename);
+#else
+                PyCodeObject *code = PyFrame_GetCode(frame);
+                src = PyUnicode_AsUTF8(code->co_filename);
+                Py_DECREF(code);
+#endif
+            }
+            Base::Console().Warning("Part.__sortEdges__ dropped %zu of %zu edges; "
+                                    "it returns only the first connected run. Use "
+                                    "Part.makeWires to keep every run. Called from "
+                                    "%s:%d\n",
+                                    edges.size(), count, src.c_str(), line);
+        }
         return sorted_list;
     }
 
