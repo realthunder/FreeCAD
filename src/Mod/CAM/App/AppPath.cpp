@@ -25,7 +25,7 @@
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 
-#include "AreaPy.h"
+#include <Mod/Area/App/AreaPy.h>
 #include "Command.h"
 #include "CommandPy.h"
 #include "FeatureArea.h"
@@ -70,7 +70,9 @@ PyMOD_INIT_FUNC(PathApp)
     // Add Types to module
     Base::Interpreter().addType(&Path::CommandPy ::Type, pathModule, "Command");
     Base::Interpreter().addType(&Path::PathPy ::Type, pathModule, "Path");
-    Base::Interpreter().addType(&Path::AreaPy ::Type, pathModule, "Area");
+    // The area engine is its own module in this fork, but it is still
+    // published as Path.Area so that every existing caller keeps working.
+    Base::Interpreter().addType(&AreaLib::AreaPy ::Type, pathModule, "Area");
 
     PyObject* voronoiModule(module.getAttr("Voronoi").ptr());
     Base::Interpreter().addType(&Path::VoronoiPy ::Type, voronoiModule, "Diagram");

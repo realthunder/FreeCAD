@@ -76,20 +76,16 @@ App::DocumentObjectExecReturn* FeatureArea::execute()
 {
     myInited = true;
 
-    Base::TimeTracker tracker("FeatureArea::execute");
 
     std::vector<App::DocumentObject*> links = Sources.getValues();
     if (links.empty()) {
         return new App::DocumentObjectExecReturn("No shapes linked");
     }
 
-    for (std::vector<App::DocumentObject*>::iterator it = links.begin(); it != links.end(); ++it) {
-        if (!(*it && (*it)->isDerivedFrom<Part::Feature>())) {
-            return new App::DocumentObjectExecReturn(
-                "Linked object is not a Part object (has no Shape)."
-            );
-        }
-        TopoDS_Shape shape = static_cast<Part::Feature*>(*it)->Shape.getShape().getShape();
+    for (auto obj : links) {
+        // Part::Feature::getShape resolves links and sub-elements, which a
+        // plain isDerivedFrom/Shape read does not.
+        TopoDS_Shape shape = Part::Feature::getShape(obj);
         if (shape.IsNull()) {
             return new App::DocumentObjectExecReturn("Linked shape object is empty");
         }
@@ -108,10 +104,7 @@ App::DocumentObjectExecReturn* FeatureArea::execute()
     myArea.setPlane(workPlane);
 
     for (std::vector<App::DocumentObject*>::iterator it = links.begin(); it != links.end(); ++it) {
-        myArea.add(
-            static_cast<Part::Feature*>(*it)->Shape.getShape().getShape(),
-            PARAM_PROP_ARGS(AREA_PARAMS_OPCODE)
-        );
+        myArea.add(Part::Feature::getShape(*it), PARAM_PROP_ARGS(AREA_PARAMS_OPCODE));
     }
 
     myShapes.clear();

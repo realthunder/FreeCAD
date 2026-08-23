@@ -289,10 +289,10 @@ See the file save policy below on how to deal with name conflicts.</string>
              <string>Select one of the post processors as the default</string>
             </property>
             <property name="prefEntry" stdset="0">
-             <string notr="true">DefaultPostProcessor</string>
+             <cstring>DefaultPostProcessor</cstring>
             </property>
             <property name="prefPath" stdset="0">
-             <string notr="true">Mod/CAM</string>
+             <cstring>Mod/CAM</cstring>
             </property>
            </widget>
           </item>

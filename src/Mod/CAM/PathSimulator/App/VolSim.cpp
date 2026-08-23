@@ -725,7 +725,7 @@ cSimTool::cSimTool(const TopoDS_Shape& toolShape, float res)
     bool shapeIsValid = aChecker.IsValid() ? true : false;
 
     if (!shapeIsValid) {
-        throw Base::RuntimeError("Path Simulation: Error in tool geometry");
+        THROWM(Base::RuntimeError, "Path Simulation: Error in tool geometry")
     }
 
     Bnd_Box boundBox;

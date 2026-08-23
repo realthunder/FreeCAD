@@ -35,10 +35,9 @@
 #include <vector>
 
 // Boost
-#include <boost/geometry.hpp>
+// Through this fork's wrapper, which works around a boost.geometry bug.
+#include <boost_geometry.hpp>
 #include <boost/algorithm/string.hpp>
-#include <boost/geometry/geometries/register/point.hpp>
-#include <boost/geometry/index/rtree.hpp>
 #include <boost/range/adaptor/transformed.hpp>
 
 // OCC

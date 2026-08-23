@@ -36,7 +36,7 @@
 #include <Gui/Camera.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
-#include <Gui/Navigation/NavigationStyle.h>
+#include <Gui/NavigationStyle.h>
 #include <Gui/SoFCDB.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>

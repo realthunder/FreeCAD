@@ -28,7 +28,8 @@
 #include <App/PropertyUnits.h>
 #include "Mod/Part/App/PartFeature.h"
 
-#include "Area.h"
+#include <Mod/CAM/PathGlobal.h>
+#include <Mod/Area/App/Area.h>
 
 
 namespace Path

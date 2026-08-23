@@ -29,7 +29,7 @@
 #include "FeatureAreaPy.h"
 #include "FeatureAreaPy.cpp"
 
-#include "AreaPy.h"
+#include <Mod/Area/App/AreaPy.h>
 
 
 using namespace Path;
@@ -47,15 +47,12 @@ PyObject* FeatureAreaPy::getArea(PyObject* args)
         return nullptr;
     }
 
-    return new AreaPy(new Area(getFeatureAreaPtr()->getArea()));
+    return new AreaLib::AreaPy(new Area(getFeatureAreaPtr()->getArea()));
 }
 
 PyObject* FeatureAreaPy::setParams(PyObject* args, PyObject* keywds)
 {
-    static const std::array<const char*, 43> kwlist {
-        PARAM_FIELD_STRINGS(NAME, AREA_PARAMS_CONF),
-        nullptr
-    };
+    static char* kwlist[] = {PARAM_FIELD_STRINGS(NAME, AREA_PARAMS_CONF), nullptr};
 
     // Declare variables defined in the NAME field of the CONF parameter list
     PARAM_PY_DECLARE(PARAM_FNAME, AREA_PARAMS_CONF);
@@ -70,7 +67,7 @@ PyObject* FeatureAreaPy::setParams(PyObject* args, PyObject* keywds)
     PARAM_FOREACH(AREA_SET, AREA_PARAMS_CONF)
 
     // Parse arguments to overwrite CONF variables
-    if (!Base::Wrapped_ParseTupleAndKeywords(
+    if (!PyArg_ParseTupleAndKeywords(
             args,
             keywds,
             "|" PARAM_PY_KWDS(AREA_PARAMS_CONF),
@@ -82,9 +79,7 @@ PyObject* FeatureAreaPy::setParams(PyObject* args, PyObject* keywds)
 
 #define AREA_GET(_param) \
     feature->PARAM_FNAME(_param).setValue( \
-        static_cast<PARAM_BASE_TYPE(_param)>( \
-            PARAM_TYPED(PARAM_CAST_PY_, _param)(PARAM_FNAME(_param), _param) \
-        ) \
+        PARAM_TYPED(PARAM_CAST_PY_, _param)(PARAM_FNAME(_param)) \
     );
 
     // populate properties with the CONF variables
