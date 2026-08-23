@@ -316,6 +316,7 @@ see "Where phase 2 stands" below.
 | 2026-08-23 | 2 | fcad | `a7d0212889` | Area: rest machining measures what the tool can reach |
 | 2026-08-23 | 2 | fcad | `f784942bc7` | Area: narrow a stepover that would leave material |
 | 2026-08-23 | 2 | fcad | `fba9f6b5d5` | App: let a dynamic property be renamed |
+| 2026-08-24 | 2 | fcad | `28c2fe5f54` | App: a migrated object leaves restore touched |
 
 ### What was verified
 
@@ -418,13 +419,13 @@ Two things worth knowing about running the suite:
 
 ### Where phase 2 stands
 
-`TestCAMApp`: **1343 tests, 13 failures, 5 errors**, down from 17 and 9. Of
-the eleven non-adaptive problems phase 2 set out to clear, **eight are gone**
+`TestCAMApp`: **1343 tests, 12 failures, 5 errors**, down from 17 and 9. Of
+the eleven non-adaptive problems phase 2 set out to clear, **nine are gone**
 and the fifteen adaptive ones are untouched, as planned.
 
-Cleared: the four `TestPathPocket` zero-loop cases, and the four
-`TestPathHelix` errors (those were never geometry -- see `renameProperty`
-below).
+Cleared: the four `TestPathPocket` zero-loop cases, the four `TestPathHelix`
+errors, and `TestSlicer.test_17748_cam_profile`. Only the first four were
+geometry; the rest were the two core gaps below.
 
 What upstream's Area delta actually came to, once clang-format was normalised
 away on both sides: **+400 / -281**, not the +1,422 / -726 the raw file diff
@@ -464,30 +465,38 @@ Neither is Area work, and between them they hid the state of the gate.
    fork's property editor renames a property *group*, not a property, so the
    only callers are restore-time migrations.
 
-2. **`obj.recompute()` does not recompute an up-to-date object.**
-   `Document::_recomputeFeature` skips the work unless the object is in
-   error, enforced, restoring, or has a touched non-output property --
-   `DocumentParams::getOptimizeRecompute()`, on by default, with no upstream
-   equivalent. `Document::recomputeFeature()` is the explicit
-   "recompute this object now" entry point and it inherits the skip.
+2. **A migrated object came out of restore marked up to date** (fixed,
+   `28c2fe5f54`). `afterRestore` purges the touched flag that restoring an
+   object's properties sets -- right, because a document that was only
+   loaded is not out of date. But `onDocumentRestored()` runs inside that
+   same window and that is where migrations live, so the purge swallowed
+   their edits too: the object came out `Up-to-date` while carrying
+   properties it had just renamed. Being up to date it then declined to
+   recompute, and `obj.recompute()` returned having done nothing.
 
-   This is why `TestSlicer.test_17748_cam_profile` still reads 3 Z depths:
-   the assertion was measuring the path **stored in the file**, never a fresh
-   one. Recompute it for real and the answer is right -- four depths,
-   -18/-15/-10/-5. Proved directly: with `OptimizeRecompute` set false the
-   whole `TestSlicer` module passes; with the default it fails 3 != 4.
+   That is what made `TestSlicer.test_17748_cam_profile` read 3 Z depths --
+   the assertion was measuring the path **stored in the file**, because the
+   operation had never run. The purge now happens before
+   `onDocumentRestored()` rather than after, and an object the migration
+   touched goes to `addRecomputeObject`, the same route Part's restore-time
+   migrations already take, which also marks the document as wanting a
+   recompute so the GUI can say so.
 
-   **The geometry is correct. The test is blocked on this and nothing else.**
-   Left alone deliberately: `recomputeFeature` has 373 C++ callers and
-   `.recompute()` 1,638 Python ones, and the parameter is a deliberate fork
-   optimisation on a project whose stated goal is large-model performance.
-   Making the explicit single-object entry point enforce, and leaving the
-   document-wide dependency walk to keep eliding, is the obvious fix and is
-   the fork author's call to make.
+   ! **The wrong turn, worth not repeating.** The first diagnosis blamed
+   `DocumentParams::getOptimizeRecompute()` -- which makes
+   `Document::_recomputeFeature` skip an object that is not touched -- and
+   proposed making `Document::recomputeFeature()` enforce. That would have
+   papered over the real defect. `recompute()` declining to recompute an
+   object that is genuinely up to date is **correct**;
+   `obj.enforceRecompute()` is already there for the opt-in case; and
+   needing to force one is the sign that something is wrong with the
+   object, not with recompute. Here it was that nothing had recorded the
+   migration.
 
 ### Still failing, and genuinely geometry
 
-Two, both real differences and neither a stale path:
+Two, both real differences and neither a stale path. They are all that is
+left of the eleven; the other 15 are the parked adaptive group:
 
 - `TestPathProfile.TestPathProfile.test01` -- the inner loop matches exactly;
   the outer one is off by one lattice step (`X23.55` for `X23.54`, `Y14.05`
@@ -498,12 +507,10 @@ Two, both real differences and neither a stale path:
 
 ### Next
 
-Three pieces, in the order they are worth doing:
+Two pieces:
 
-1. **Decide the `recompute()` question above.** It is one small change to
-   `Document::recomputeFeature` and it closes the phase 2 gate test.
-2. The two profile failures.
-3. Adaptive clearing (15 tests), still its own piece of work: upstream's
+1. The two profile failures above.
+2. Adaptive clearing (15 tests), still its own piece of work: upstream's
    `Adaptive2d.Execute` takes a fourth `clearedArea` argument and this fork's
    `Adaptive.cpp` is the three-argument one.
 
