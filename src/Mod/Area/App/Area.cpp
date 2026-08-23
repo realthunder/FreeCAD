@@ -74,6 +74,7 @@
 #include <Base/Exception.h>
 #include <Base/Tools.h>
 #include <Mod/Part/App/CrossSection.h>
+#include <Mod/Part/App/ShapeAnalysis_FreeBoundsFix.h>
 #include <Mod/Part/App/FaceMakerBullseye.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <libarea/Area.h>
@@ -1523,7 +1524,9 @@ std::vector<shared_ptr<Area> > Area::makeSections(
                 if (hitMin) continue;
                 hitMin = true;
                 double zNew = zMin + myParams.SectionTolerance;
-                AREA_WARN("hit bottom " << z << ',' << zMin << ',' << zNew);
+                // Only worth warning about when we chose the heights ourselves
+                if (_heights.empty() && FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
+                    AREA_WARN("hit bottom " << z << ',' << zMin << ',' << zNew);
                 z = zNew;
             }
             else if (zMax - z < myParams.SectionTolerance) {
@@ -1587,11 +1590,14 @@ std::vector<shared_ptr<Area> > Area::makeSections(
                 builder.MakeCompound(comp);
 
                 for (TopExp_Explorer xp(s.shape.Moved(loc), TopAbs_SOLID); xp.More(); xp.Next()) {
-                    showShape(xp.Current(), nullptr, "section_%u_shape", i);
+                    showShape(xp.Current(), nullptr, "section_%zu_shape", i);
                     std::list<TopoDS_Wire> wires;
-                    Part::CrossSection section(a, b, c, xp.Current());
-                    wires = section.slice(-d);
-                    showShapes(wires, nullptr, "section_%u_wire", i);
+                    // Slice with the plane normal reversed. It is the same
+                    // plane either way, but the normal picks which half space
+                    // the cut keeps, and keeping the wrong one loses a level.
+                    Part::CrossSection section(-a, -b, -c, xp.Current());
+                    wires = section.slice(d);
+                    showShapes(wires, nullptr, "section_%zu_wire", i);
                     if (wires.empty()) {
                         AREA_LOG("Section returns no wires");
                         continue;
@@ -1610,7 +1616,7 @@ std::vector<shared_ptr<Area> > Area::makeSections(
                         if (shape.IsNull())
                             AREA_WARN("FaceMakerBullseye return null shape on section");
                         else {
-                            showShape(shape, nullptr, "section_%u_face", i);
+                            showShape(shape, nullptr, "section_%zu_face", i);
                             for (auto it = wires.begin(), itNext = it; it != wires.end(); it = itNext) {
                                 ++itNext;
                                 if (BRep_Tool::IsClosed(*it))
@@ -1633,7 +1639,7 @@ std::vector<shared_ptr<Area> > Area::makeSections(
                 // Make sure the compound has at least one edge
                 if (TopExp_Explorer(comp, TopAbs_EDGE).More()) {
                     const TopoDS_Shape& shape = comp.Moved(locInverse);
-                    showShape(shape, nullptr, "section_%u_result", i);
+                    showShape(shape, nullptr, "section_%zu_result", i);
                     area->add(shape, s.op);
                 }
                 else if (area->myShapes.empty()) {
@@ -1649,7 +1655,7 @@ std::vector<shared_ptr<Area> > Area::makeSections(
             if (!area->myShapes.empty()) {
                 sections.push_back(area);
                 FC_TIME_LOG(t1, "makeSection " << z);
-                showShape(area->getShape(), nullptr, "section_%u_final", i);
+                showShape(area->getShape(), nullptr, "section_%zu_final", i);
                 break;
             }
             if (retried) {
@@ -2381,7 +2387,7 @@ TopoDS_Shape Area::toShape(const CCurve& _c, const gp_Trsf* trsf, int reorient) 
     }
 #endif
 
-    ShapeAnalysis_FreeBounds::ConnectEdgesToWires(
+    Part::Fix_ShapeAnalysis_FreeBounds_ConnectEdgesToWires(
         hEdges, Precision::Confusion(), Standard_False, hWires);
     if (!hWires->Length())
         return shape;
