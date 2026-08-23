@@ -411,7 +411,27 @@ Two things worth knowing about running the suite:
 
 ### Next
 
-**Phase 1: port CAM** (user, 2026-08-23: start it next session). Nothing
-in it depends on a Clipper decision any more. The recipe is in the Phase 1
-section above; the FEM port (`f3bb79474b` and the eight commits after it)
-is the worked example, and `TestCAMApp` is the green gate.
+**Phase 2: take upstream's Area.cpp work** (user, 2026-08-23: start it next
+session). Phase 3 made this an ordinary diff rather than a hand translation:
+both sides are Clipper2-typed now, so upstream's +1,422 / -726 since the merge
+base -- the OCCT `ConnectWiresToWires` / `ConnectEdgesToWires` workarounds and
+the slicer fixes -- port as normal.
+
+The gate is the 11 geometry failures listed under "Where phase 1 stands". They
+are the reason to do this phase, and the way to tell it worked:
+`TestPathProfile` test01 should stop giving `X23.55` where it wants `X23.54`,
+the four `TestPathPocket` cases should stop returning zero loops, and
+`TestSlicer.test_17748_cam_profile` should find 4 Z depths rather than 3. Run
+the suite under a tty (see the note above) or it dies partway.
+
+Two things phase 2 does **not** cover, so do not be surprised when they still
+fail: the 15 adaptive-clearing tests, which need the fourth `clearedArea`
+argument on `Adaptive2d.Execute` and are their own piece of work; and
+`Mod/Area`'s public surface, which phase 1 deliberately did not grow -- if
+upstream's Area.cpp lands `getClearedArea` differently, revisit
+`Path::clearedAreaFromPath` then.
+
+Bring the fork-local Area delta through unharmed. The one place both sides
+moved is the fill-rule parameters on `Subtract` and `Union`: this fork keeps
+them, upstream hard-coded `FillRule::EvenOdd`. Reinstate them on upstream's
+`Clip()`, which still takes rules.
