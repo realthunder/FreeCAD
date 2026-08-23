@@ -31,18 +31,20 @@
  * See \ref ParamPage "here" for details of parameter definition.
  */
 
+#include "ClipperEnums.h"
 #include "ParamsHelper.h"
 
 /** clipper fill type */
 #define AREA_CLIPPER_FILL_TYPE \
-    (NonZero)(EvenOdd)(Positive)(Negative),(ClipperLib::PolyFillType,ClipperLib::pft)
+    (NonZero)(EvenOdd)(Positive)(Negative),\
+        (Clipper2Lib::FillRule,AreaLib::ClipperEnum::Fill)
 
 /** Parameters of clipper fill types */
 #define AREA_PARAMS_CLIPPER_FILL \
     ((enum2,subject_fill,SubjectFill,0,\
-        "ClipperLib subject fill type. \nSee https://goo.gl/5pYQQP",AREA_CLIPPER_FILL_TYPE))\
+        "Clipper subject fill rule. \nSee https://goo.gl/5pYQQP",AREA_CLIPPER_FILL_TYPE))\
     ((enum2,clip_fill,ClipFill,0,\
-        "ClipperLib clip fill type. \nSee https://goo.gl/5pYQQP",AREA_CLIPPER_FILL_TYPE))
+        "Clipper clip fill rule. \nSee https://goo.gl/5pYQQP",AREA_CLIPPER_FILL_TYPE))
 
 /** Deflection parameter */
 #define AREA_PARAMS_DEFLECTION \
@@ -65,11 +67,11 @@
     ((bool,explode,Explode,false,\
         "If true, Area will explode the first shape into disconnected open edges, \n"\
         "with all curves discretized, so that later operations like 'Difference' \n"\
-        "behave like wire cutting. Without exploding, 'Difference' in ClipperLib\n"\
+        "behave like wire cutting. Without exploding, 'Difference' in Clipper\n"\
         "behave like face cutting."))\
     ((enum,open_mode,OpenMode,0,\
         "Specify how to handle open wires. 'None' means combin without openeration.\n"\
-        "'Edges' means separate to edges before Union. ClipperLib seems to have an.\n"\
+        "'Edges' means separate to edges before Union. Clipper seems to have an.\n"\
         "urge to close open wires.",(None)(Union)(Edges)))\
     AREA_PARAMS_DEFLECTION \
     AREA_PARAMS_CLIPPER_FILL
@@ -97,7 +99,7 @@
     ((short,min_arc_points,MinArcPoints,4,"Minimum segments for arc discretization"))\
     ((short,max_arc_points,MaxArcPoints,100,"Maximum segments for arc discretization (ignored currently)"))\
     ((double,clipper_scale,ClipperScale,1e7,\
-        "ClipperLib operate on integers. This is the scale factor to convert\n"\
+        "Clipper operates on integers. This is the scale factor to convert\n"\
         "floating points.",App::PropertyFloat))
 
 /** Pocket parameters
@@ -180,9 +182,10 @@
 #define AREA_PARAMS_OFFSET_CONF \
     AREA_PARAMS_OFFSET_ALGO \
     ((enum2,join_type,JoinType,0,"ClipperOffset join type. \nSee https://goo.gl/4odfQh",\
-        (Round)(Square)(Miter),(ClipperLib::JoinType,ClipperLib::jt)))\
+        (Round)(Square)(Miter),(Clipper2Lib::JoinType,AreaLib::ClipperEnum::Join)))\
     ((enum2,end_type,EndType,0,"\nClipperOffset end type. See https://goo.gl/tj7gkX",\
-        (OpenRound)(ClosedPolygon)(ClosedLine)(OpenSquare)(OpenButt),(ClipperLib::EndType,ClipperLib::et)))\
+        (OpenRound)(ClosedPolygon)(ClosedLine)(OpenSquare)(OpenButt),\
+        (Clipper2Lib::EndType,AreaLib::ClipperEnum::End)))\
     ((double,miter_limit,MiterLimit,2.0,\
         "Miter limit for joint type Miter. See https://goo.gl/K8xX9h",App::PropertyFloat))\
     ((double,round_precision,RoundPrecision,0.0,\

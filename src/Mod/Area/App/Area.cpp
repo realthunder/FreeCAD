@@ -455,19 +455,19 @@ void Area::clean(bool deleteShapes) {
     }
 }
 
-static inline ClipperLib::ClipType toClipperOp(short op) {
+static inline Clipper2Lib::ClipType toClipperOp(short op) {
     switch (op) {
     case Area::OperationUnion:
-        return ClipperLib::ctUnion;
+        return Clipper2Lib::ClipType::Union;
         break;
     case Area::OperationDifference:
-        return ClipperLib::ctDifference;
+        return Clipper2Lib::ClipType::Difference;
         break;
     case Area::OperationIntersection:
-        return ClipperLib::ctIntersection;
+        return Clipper2Lib::ClipType::Intersection;
         break;
     case Area::OperationXor:
-        return ClipperLib::ctXor;
+        return Clipper2Lib::ClipType::Xor;
         break;
     default:
         THROWM(Base::ValueError, "invalid Operation")
@@ -550,12 +550,12 @@ std::shared_ptr<Area> Area::getRestArea(std::vector<std::shared_ptr<Area>> clear
 
     // remaining = A - prevCleared
     CArea remaining(*myArea);
-    remaining.Clip(toClipperOp(Area::OperationDifference), &*(clearedAreasInPlane.myArea), SubjectFill, ClipFill);
+    remaining.Clip(toClipperOp(Area::OperationDifference), *(clearedAreasInPlane.myArea), SubjectFill, ClipFill);
 
     // rest = intersect(A, offset(remaining, dTool))
     CArea restCArea(remaining);
     restCArea.OffsetWithClipper(diameter + buffer, JoinType, EndType, myParams.MiterLimit, roundPrecision);
-    restCArea.Clip(toClipperOp(Area::OperationIntersection), &*myArea, SubjectFill, ClipFill);
+    restCArea.Clip(toClipperOp(Area::OperationIntersection), *myArea, SubjectFill, ClipFill);
 
     gp_Trsf trsf(myTrsf.Inverted());
     TopoDS_Shape restShape = Area::toShape(restCArea, false, &trsf);
@@ -1760,7 +1760,7 @@ void Area::build() {
                     if (op == OperationCompound)
                         myArea->m_curves.splice(myArea->m_curves.end(), areaClip.m_curves);
                     else {
-                        myArea->Clip(toClipperOp(op), &areaClip, SubjectFill, ClipFill);
+                        myArea->Clip(toClipperOp(op), areaClip, SubjectFill, ClipFill);
                         areaClip.m_curves.clear();
                     }
                 }
@@ -1782,7 +1782,7 @@ void Area::build() {
             if(op == OperationCompound)
                 myArea->m_curves.splice(myArea->m_curves.end(),areaClip.m_curves);
             else{
-                myArea->Clip(toClipperOp(op),&areaClip,SubjectFill,ClipFill);
+                myArea->Clip(toClipperOp(op), areaClip, SubjectFill, ClipFill);
             }
         }
         myArea->m_curves.splice(myArea->m_curves.end(), myAreaOpen->m_curves);
@@ -2083,7 +2083,7 @@ void Area::makeOffset(list<shared_ptr<CArea> >& areas,
             area.Offset(-offset);
             if (areaOpen.m_curves.size()) {
                 areaOpen.Thicken(offset);
-                area.Clip(ClipperLib::ctUnion, &areaOpen, SubjectFill, ClipFill);
+                area.Clip(Clipper2Lib::ClipType::Union, areaOpen, SubjectFill, ClipFill);
             }
             break;
         case Area::AlgoClipperOffset:
@@ -2236,7 +2236,7 @@ TopoDS_Shape Area::makePocket(int index, PARAM_ARGS(PARAM_FARG, AREA_PARAMS_POCK
         auto area = *myArea;
         area.OffsetWithClipper(-tool_radius - extra_offset, JoinType, EndType,
             myParams.MiterLimit, myParams.RoundPrecision);
-        out.Clip(toClipperOp(OperationIntersection), &area, SubjectFill, ClipFill);
+        out.Clip(toClipperOp(OperationIntersection), area, SubjectFill, ClipFill);
         done = true;
         break;
     }default:
