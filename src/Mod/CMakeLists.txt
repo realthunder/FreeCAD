@@ -74,9 +74,9 @@ if(BUILD_AREA)
     add_subdirectory(Area)
 endif(BUILD_AREA)
 
-if(BUILD_PATH)
-    add_subdirectory(Path)
-endif(BUILD_PATH)
+if(BUILD_CAM)
+    add_subdirectory(CAM)
+endif(BUILD_CAM)
 
 if(BUILD_PLOT)
   add_subdirectory(Plot)

@@ -55,7 +55,15 @@ def Startup():
         from Path.Main.Gui import Fixture
         from Path.Main.Gui import Inspect
         from Path.Main.Gui import Simulator
-        from Path.Main.Gui import SimulatorGL
+
+        # The GL simulator is an optional build (BUILD_CAM_SIMULATOR_GL). Its
+        # module imports the CAMSimulator extension at the top, so when that
+        # was not built the import has to be allowed to fail -- and quietly,
+        # since not building it is the default here.
+        try:
+            from Path.Main.Gui import SimulatorGL  # noqa: F401
+        except ImportError:
+            Path.Log.info("CAM: the GL simulator was not built, skipping its command")
 
         from Path.Main.Sanity import Sanity
 

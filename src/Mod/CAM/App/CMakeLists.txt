@@ -4,16 +4,29 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     add_definitions(-fext-numeric-literals) #fix for gcc and qt5
 endif()
 
+include_directories(
+    ${CMAKE_BINARY_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${Boost_INCLUDE_DIRS}
+    ${OCC_INCLUDE_DIR}
+    ${EIGEN3_INCLUDE_DIR}
+    ${PYTHON_INCLUDE_DIRS}
+    ${ZLIB_INCLUDE_DIR}
+    ${XercesC_INCLUDE_DIRS}
+)
+link_directories(${OCC_LIBRARY_DIR})
+
 set(Path_LIBS
     Part
-    area-native
+    Area
     FreeCADApp
 )
 
 generate_from_py(Command)
 generate_from_py(Path)
 generate_from_py(FeaturePathCompound)
-generate_from_py(Area)
 generate_from_py(FeatureArea)
 generate_from_py(Voronoi)
 generate_from_py(VoronoiCell)
@@ -27,8 +40,6 @@ SET(Python_SRCS
     PathPyImp.cpp
     FeaturePathCompound.pyi
     FeaturePathCompoundPyImp.cpp
-    Area.pyi
-    AreaPyImp.cpp
     FeatureArea.pyi
     FeatureAreaPyImp.cpp
     Voronoi.pyi
@@ -60,10 +71,8 @@ SET(Path_SRCS
     FeaturePathCompound.h
     FeaturePathShape.cpp
     FeaturePathShape.h
-    Area.cpp
-    Area.h
-    AreaParams.h
-    ParamsHelper.h
+    AreaToolpath.cpp
+    AreaToolpath.h
     FeatureArea.cpp
     FeatureArea.h
     PathSegmentWalker.h
