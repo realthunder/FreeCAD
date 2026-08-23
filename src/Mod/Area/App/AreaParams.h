@@ -91,9 +91,16 @@
         "Point coincidence tolerance",App::PropertyPrecision))\
     AREA_PARAMS_FIT_ARCS \
     ((bool,clipper_simple,Simplify,false,\
-        "Simplify polygons after operation. See https://goo.gl/Mh9XK1"))\
+        "No effect. This asked Clipper1 for strictly simple output, which\n"\
+        "Clipper2 always produces, so there is nothing left to ask for. Kept\n"\
+        "so documents that stored it still load."))\
     ((double,clipper_clean_distance,CleanDistance,0.0,\
-        "Clean polygon smaller than this distance. See https://goo.gl/jox3JY",App::PropertyLength))\
+        "Simplify the result, dropping vertices that lie within this distance\n"\
+        "of the line their neighbours make. 0 leaves the result alone.\n"\
+        "Note this changed meaning with Clipper2: it used to merge vertices\n"\
+        "closer together than this, and now it is a Douglas-Peucker tolerance,\n"\
+        "so the same number kept from an older document simplifies differently.",\
+        App::PropertyLength))\
     ((double,accuracy,Accuracy,0.01,"Arc fitting accuracy",App::PropertyPrecision))\
     ((double,units,Unit,1.0,"Scaling factor for conversion to inch",App::PropertyFloat))\
     ((short,min_arc_points,MinArcPoints,4,"Minimum segments for arc discretization"))\
