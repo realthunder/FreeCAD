@@ -299,6 +299,38 @@ def setColor(obj, ifcproduct):
         obj.ViewObject.ShapeColor = color[:3]
 
 
+def makeLayer(name):
+    """makes a Draft layer that leaves its children's own colours alone
+
+    A Layer paints every object added to it with its own LineColor and
+    ShapeAppearance -- unconditionally, because Layer.onChanged() passes
+    old_prop=None for a newly added child, which is the "overwrite whatever
+    is there" case. What the IFC file says an element looks like is not a
+    default to be improved on, so the two override switches go off before
+    any member arrives.
+
+    This used not to matter: the layer add ran inside createProduct(),
+    one line before setColor(), so the colour landed after the stamp and
+    won. Batching the adds into applyLayers() moved them to the end of the
+    import, after every setColor() -- and the stamp started landing on top
+    of the colours instead, turning 2904 of the 13758 products of one IFC
+    building the layer's default grey.
+    """
+
+    layer = Draft.make_layer(name)
+    vobj = getattr(layer, "ViewObject", None)
+    if vobj is not None:
+        # Upstream renamed OverrideShapeColorChildren to
+        # OverrideShapeAppearanceChildren; both names are tolerated so this
+        # keeps working against either Draft.
+        for prop in ("OverrideLineColorChildren",
+                     "OverrideShapeColorChildren",
+                     "OverrideShapeAppearanceChildren"):
+            if hasattr(vobj, prop):
+                setattr(vobj, prop, False)
+    return layer
+
+
 def createLayer(obj, ifcproduct):
     """queues a component for its layers -- applyLayers() does the assigning"""
 
@@ -309,7 +341,7 @@ def createLayer(obj, ifcproduct):
         for rep in ifcproduct.Representation.Representations:
             for layer in rep.LayerAssignments:
                 if not layer.id() in layers:
-                    layers[layer.id()] = Draft.make_layer(layer.Name)
+                    layers[layer.id()] = makeLayer(layer.Name)
                 layermembers.setdefault(layer.id(), []).append(obj)
 
 
