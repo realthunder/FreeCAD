@@ -23,6 +23,7 @@
  ***************************************************************************/
 
 
+#include <App/DocumentObjectGroup.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Control.h>
 
@@ -50,9 +51,39 @@ void ViewProviderPathCompound::unsetEdit(int ModNum)
     Gui::Control().closeDialog();
 }
 
+/// Collect everything reachable inside obj, if obj is a group.
+static void getObjectsInGroup(App::DocumentObject* obj, std::set<App::DocumentObject*>& objs)
+{
+    if (auto grp = Base::freecad_dynamic_cast<App::DocumentObjectGroup>(obj)) {
+        for (auto child : grp->Group.getValues()) {
+            if (objs.insert(child).second) {
+                getObjectsInGroup(child, objs);
+            }
+        }
+    }
+}
+
 std::vector<App::DocumentObject*> ViewProviderPathCompound::claimChildren() const
 {
-    return std::vector<App::DocumentObject*>(getObject<Path::FeatureCompound>()->Group.getValues());
+    auto feat = getObject<Path::FeatureCompound>();
+    auto res = feat->Group.getValues();
+    // A path already shown inside one of the sub-groups must not be claimed
+    // here as well, or the tree would show it twice.
+    std::set<App::DocumentObject*> objs;
+    const auto& groups = feat->Groups.getValues();
+    for (auto obj : groups) {
+        getObjectsInGroup(obj, objs);
+    }
+    for (auto it = res.begin(); it != res.end();) {
+        if (objs.count(*it)) {
+            it = res.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+    res.insert(res.end(), groups.begin(), groups.end());
+    return res;
 }
 
 bool ViewProviderPathCompound::canDragObjects() const
@@ -70,9 +101,47 @@ bool ViewProviderPathCompound::canDropObjects() const
     return true;
 }
 
+bool ViewProviderPathCompound::canDropObject(App::DocumentObject* obj) const
+{
+    auto feat = getObject<Path::FeatureCompound>();
+    return obj && obj->getNameInDocument()
+        && (obj->isDerivedFrom<App::DocumentObjectGroup>()
+            || feat->Group.find(obj->getNameInDocument()));
+}
+
 void ViewProviderPathCompound::dropObject(App::DocumentObject* obj)
 {
-    getObject<Path::FeatureCompound>()->addObject(obj);
+    auto feat = getObject<Path::FeatureCompound>();
+    if (obj->isDerivedFrom<App::DocumentObjectGroup>()
+        && !feat->Groups.find(obj->getNameInDocument())) {
+        auto groups = feat->Groups.getValues();
+        groups.push_back(obj);
+        feat->Groups.setValues(std::move(groups));
+    }
+    else if (auto grp = App::GroupExtension::getGroupOfObject(obj)) {
+        // Dropped back onto the compound itself: take it out of the sub-group
+        // it currently sits in, so it is claimed here again.
+        if (feat->Group.find(grp->getNameInDocument())) {
+            grp->getExtensionByType<App::GroupExtension>()->removeObject(obj);
+            feat->Group.touch();
+        }
+    }
+}
+
+bool ViewProviderPathCompound::canReorderObject(App::DocumentObject* obj,
+                                                App::DocumentObject* before)
+{
+    auto feat = getObject<Path::FeatureCompound>();
+    return canReorderObjectInProperty(&feat->Group, obj, before)
+        || canReorderObjectInProperty(&feat->Groups, obj, before);
+}
+
+bool ViewProviderPathCompound::reorderObjects(const std::vector<App::DocumentObject*>& objs,
+                                              App::DocumentObject* before)
+{
+    auto feat = getObject<Path::FeatureCompound>();
+    return reorderObjectsInProperty(&feat->Group, objs, before)
+        || reorderObjectsInProperty(&feat->Groups, objs, before);
 }
 
 QIcon ViewProviderPathCompound::getIcon() const

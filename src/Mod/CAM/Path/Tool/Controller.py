@@ -323,7 +323,7 @@ class ToolController:
             obj.recompute()
 
     def onDelete(self, obj, arg2=None):
-        if hasattr(obj.Tool, "InList") and len(obj.Tool.InList) == 1:
+        if hasattr(obj, "Tool") and hasattr(obj.Tool, "InList") and len(obj.Tool.InList) == 1:
             if hasattr(obj.Tool.Proxy, "onDelete"):
                 obj.Tool.Proxy.onDelete(obj.Tool)
 
@@ -453,7 +453,7 @@ class ToolController:
     def getTool(self, obj):
         """returns the tool associated with this tool controller"""
         Path.Log.track()
-        return obj.Tool
+        return getattr(obj, "Tool", None)
 
     def ensureToolBit(self, obj):
         if not hasattr(obj, "Tool"):

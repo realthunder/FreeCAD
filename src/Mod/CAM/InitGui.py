@@ -128,7 +128,12 @@ class CAMWorkbench(Workbench):
         postcmdlist = ["CAM_Post", "CAM_PostSelected"]
         toolcmdlist = ["CAM_Inspect", "CAM_SelectLoop", "CAM_OpActiveToggle"]
 
-        simcmdlist = ["CAM_SimulatorGL", "CAM_Simulator"]
+        # CAM_SimulatorGL only exists when the optional GL simulator was built
+        simcmdlist = [
+            cmd
+            for cmd in ("CAM_SimulatorGL", "CAM_Simulator")
+            if cmd in FreeCADGui.listCommands()
+        ]
         prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/CAM")
         simLegacy = prefs.GetBool("DefaultSimulatorLegacy", False)
         if simLegacy:
@@ -418,6 +423,40 @@ class CAMWorkbench(Workbench):
         if onlyJob or onlyOps or onlyShapes or onlyTool or startPoint:
             self.appendContextMenu("", "Separator")
 
+
+def create_group(_cmd, _idx):
+    """Std_Group inside a Job: make the new group a sub-group of the Job's
+    operations compound, so the tree shows it under the Job rather than at
+    document root. Returning False stops the standard command from also running.
+    """
+    job = None
+    sels = FreeCADGui.Selection.getSelection()
+    from PathScripts import PathUtils
+    from Path.Op import Base as PathOp
+
+    for sel in sels:
+        if not isinstance(getattr(sel, "Proxy", None), PathOp.ObjectOp):
+            return
+        try:
+            parent = PathUtils.findParentJob(sel)
+        except Exception:
+            return
+        if not parent:
+            return
+        if not job:
+            job = parent
+        elif job != parent:
+            return
+    if not job:
+        return
+    group = job.Document.addObject("App::DocumentObjectGroup", "Group")
+    group.addObjects(sels)
+    job.Operations.Groups += [group]
+    FreeCAD.ActiveDocument.recompute()
+    return False
+
+
+FreeCADGui.Command.registerCallback("Std_Group", create_group)
 
 FreeCADGui.addWorkbench(CAMWorkbench())
 

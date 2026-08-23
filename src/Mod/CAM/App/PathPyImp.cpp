@@ -28,8 +28,10 @@
 #include "PathPy.h"
 #include "PathPy.cpp"
 
-#include "Area.h"
-#include "AreaPy.h"
+#include <Mod/Area/App/Area.h>
+#include <Mod/Area/App/AreaPy.h>
+
+#include "AreaToolpath.h"
 #include "CommandPy.h"
 
 
@@ -63,8 +65,12 @@ int PathPy::PyInit(PyObject* args, PyObject* /*kwd*/)
         if (pcObj) {
             Py::List list(pcObj);
             for (Py::List::iterator it = list.begin(); it != list.end(); ++it) {
-                if (PyObject_TypeCheck((*it).ptr(), &(Path::CommandPy::Type))) {
-                    Path::Command& cmd = *static_cast<Path::CommandPy*>((*it).ptr())->getCommandPtr();
+                // Hold the item: the sequence may build it on demand, and a
+                // bare ptr() would be dangling by the next line.
+                Py::Object pyItem(*it);
+                if (PyObject_TypeCheck(pyItem.ptr(), &(Path::CommandPy::Type))) {
+                    Path::Command& cmd =
+                        *static_cast<Path::CommandPy*>(pyItem.ptr())->getCommandPtr();
                     getToolpathPtr()->addCommand(cmd);
                 }
                 else {
@@ -102,8 +108,12 @@ void PathPy::setCommands(Py::List list)
 {
     getToolpathPtr()->clear();
     for (Py::List::iterator it = list.begin(); it != list.end(); ++it) {
-        if (PyObject_TypeCheck((*it).ptr(), &(Path::CommandPy::Type))) {
-            Path::Command& cmd = *static_cast<Path::CommandPy*>((*it).ptr())->getCommandPtr();
+        // Hold the item: the sequence may build it on demand, and a
+        // bare ptr() would be dangling by the next line.
+        Py::Object pyItem(*it);
+        if (PyObject_TypeCheck(pyItem.ptr(), &(Path::CommandPy::Type))) {
+            Path::Command& cmd =
+                *static_cast<Path::CommandPy*>(pyItem.ptr())->getCommandPtr();
             getToolpathPtr()->addCommand(cmd);
         }
         else {
@@ -162,8 +172,12 @@ PyObject* PathPy::addCommands(PyObject* args)
     if (PyArg_ParseTuple(args, "O!", &(PyList_Type), &o)) {
         Py::List list(o);
         for (Py::List::iterator it = list.begin(); it != list.end(); ++it) {
-            if (PyObject_TypeCheck((*it).ptr(), &(Path::CommandPy::Type))) {
-                Path::Command& cmd = *static_cast<Path::CommandPy*>((*it).ptr())->getCommandPtr();
+            // Hold the item: the sequence may build it on demand, and a
+            // bare ptr() would be dangling by the next line.
+            Py::Object pyItem(*it);
+            if (PyObject_TypeCheck(pyItem.ptr(), &(Path::CommandPy::Type))) {
+                Path::Command& cmd =
+                    *static_cast<Path::CommandPy*>(pyItem.ptr())->getCommandPtr();
                 getToolpathPtr()->addCommand(cmd);
             }
         }
@@ -252,9 +266,10 @@ PyObject* PathPy::getClearedArea(PyObject* args)
             return nullptr;
         }
         const Py::BoundingBox bbox(pyBbox, false);
-        std::shared_ptr<Area> clearedArea
-            = Area::getClearedArea(getToolpathPtr(), diameter, zmax, bbox.getValue());
-        auto pyClearedArea = Py::asObject(new AreaPy(new Area(*clearedArea, true)));
+        // Lives on this side, not in the area engine: it walks a Toolpath.
+        std::shared_ptr<Area> clearedArea =
+            Path::clearedAreaFromPath(*getToolpathPtr(), diameter, zmax, bbox.getValue());
+        auto pyClearedArea = Py::asObject(new AreaLib::AreaPy(new Area(*clearedArea, true)));
         return Py::new_reference_to(pyClearedArea);
     }
     PY_CATCH

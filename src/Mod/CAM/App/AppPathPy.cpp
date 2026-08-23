@@ -26,6 +26,7 @@
 #include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
+#include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Vertex.hxx>
@@ -42,52 +43,17 @@
 #include <Base/Stream.h>
 #include <Base/VectorPy.h>
 #include <Mod/Part/App/OCCError.h>
+#include <Mod/Part/App/PartPyCXX.h>
 #include <Mod/Part/App/TopoShapePy.h>
 
-#include "Area.h"
+#include <Mod/Area/App/Area.h>
+#include "AreaToolpath.h"
 #include "PathPy.h"
 #include "FeaturePath.h"
 
 
-#define PATH_CATCH \
-    catch (Standard_Failure & e) \
-    { \
-        std::string str; \
-        Standard_CString msg = e.GetMessageString(); \
-        str += typeid(e).name(); \
-        str += " "; \
-        if (msg) { \
-            str += msg; \
-        } \
-        else { \
-            str += "No OCCT Exception Message"; \
-        } \
-        Base::Console().error(str.c_str()); \
-        PyErr_SetString(Part::PartExceptionOCCError, str.c_str()); \
-    } \
-    catch (Base::Exception & e) \
-    { \
-        std::string str; \
-        str += "FreeCAD exception thrown ("; \
-        str += e.what(); \
-        str += ")"; \
-        e.reportException(); \
-        PyErr_SetString(Base::PyExc_FC_GeneralError, str.c_str()); \
-    } \
-    catch (std::exception & e) \
-    { \
-        std::string str; \
-        str += "STL exception thrown ("; \
-        str += e.what(); \
-        str += ")"; \
-        Base::Console().error(str.c_str()); \
-        PyErr_SetString(Base::PyExc_FC_GeneralError, str.c_str()); \
-    } \
-    catch (const char* e) \
-    { \
-        PyErr_SetString(Base::PyExc_FC_GeneralError, e); \
-    } \
-    throw Py::Exception();
+// Part's own handler chain, which this macro used to spell out again.
+#define PATH_CATCH _PY_CATCH_OCC(throw Py::Exception())
 
 namespace PathApp
 {
@@ -164,6 +130,14 @@ public:
                   "\n* start (Vector()): optional start "
                   "position.\n" PARAM_PY_DOC(ARG, AREA_PARAMS_ARC_PLANE)
                       PARAM_PY_DOC(ARG, AREA_PARAMS_SORT)
+        );
+        add_varargs_method(
+            "shapeFromPath",
+            &Module::shapeFromPath,
+            "shapeFromPath(path : Path.Path, filter=[] : List[Int]): Returns a shape "
+            "generated from a given path\n\n"
+            "path: input path object\n"
+            "filter: optional filter of indices of the g-code command in the path to skip"
         );
         initialize("This module is the Path module.");  // register with Python
 
@@ -435,12 +409,16 @@ private:
         ) {
             Py::Sequence shapeSeq(pShapes);
             for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-                PyObject* item = (*it).ptr();
-                if (!PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
+                // Hold the item: the sequence may build it on demand, and
+                // a bare ptr() would be dangling by the next line.
+                Py::Object item(*it);
+                if (!PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
                     PyErr_SetString(PyExc_TypeError, "non-shape object in sequence");
                     throw Py::Exception();
                 }
-                shapes.push_back(static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape());
+                shapes.push_back(
+                    static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr()->getShape()
+                );
             }
         }
 
@@ -453,7 +431,7 @@ private:
         try {
             gp_Pnt pend;
             std::unique_ptr<Path::Toolpath> path(new Path::Toolpath);
-            Path::Area::toPath(
+            Path::areaToPath(
                 *path,
                 shapes,
                 start ? &pstart : nullptr,
@@ -511,12 +489,16 @@ private:
         ) {
             Py::Sequence shapeSeq(pShapes);
             for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-                PyObject* item = (*it).ptr();
-                if (!PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
+                // Hold the item: the sequence may build it on demand, and
+                // a bare ptr() would be dangling by the next line.
+                Py::Object item(*it);
+                if (!PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type))) {
                     PyErr_SetString(PyExc_TypeError, "non-shape object in sequence");
                     throw Py::Exception();
                 }
-                shapes.push_back(static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape());
+                shapes.push_back(
+                    static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr()->getShape()
+                );
             }
         }
 
@@ -553,6 +535,38 @@ private:
             }
 
             return ret;
+        }
+        PATH_CATCH
+    }
+
+    Py::Object shapeFromPath(const Py::Tuple& args)
+    {
+        PyObject* pyPath;
+        PyObject* pyFilter = Py_None;
+        if (!PyArg_ParseTuple(args.ptr(), "O!|O", &Path::PathPy::Type, &pyPath, &pyFilter)) {
+            throw Py::Exception();
+        }
+
+        std::set<int> filter;
+        if (pyFilter != Py_None) {
+            const char* err = "Expects the second argument to be a list of integer";
+            if (!PySequence_Check(pyFilter)) {
+                throw Py::TypeError(err);
+            }
+            Py::Sequence filterSeq(pyFilter);
+            for (Py::Sequence::iterator it = filterSeq.begin(); it != filterSeq.end(); ++it) {
+                PyObject* idx = PyNumber_Long((*it).ptr());
+                if (!idx) {
+                    PyErr_Clear();
+                    throw Py::TypeError(err);
+                }
+                filter.insert(Py::Int(Py::asObject(idx)));
+            }
+        }
+        try {
+            Part::TopoShape s =
+                Path::shapeFromPath(*static_cast<Path::PathPy*>(pyPath)->getToolpathPtr(), filter);
+            return Part::shape2pyshape(s);
         }
         PATH_CATCH
     }

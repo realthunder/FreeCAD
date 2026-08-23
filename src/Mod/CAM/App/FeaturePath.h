@@ -23,9 +23,12 @@
 
 #pragma once
 
+#include <set>
+
 #include <App/DocumentObject.h>
 #include <App/GeoFeature.h>
 #include <App/FeaturePython.h>
+#include <Mod/Part/App/PartFeature.h>
 
 #include "PropertyPath.h"
 
@@ -33,8 +36,12 @@
 namespace Path
 {
 
-class PathExport Feature: public App::GeoFeature
+// Derived from Part::Feature, not App::GeoFeature: this fork can build a real
+// shape out of a toolpath (see BuildShape below), which means the feature has
+// to own a Shape property and be pickable like any other piece of geometry.
+class PathExport Feature: public Part::Feature
 {
+    using inherited = Part::Feature;
     PROPERTY_HEADER_WITH_OVERRIDE(Path::Feature);
 
 public:
@@ -55,12 +62,21 @@ public:
     PyObject* getPyObject() override;
 
     PropertyPath Path;
+    /// Build a wire shape out of the toolpath, rather than only drawing it
+    App::PropertyBool BuildShape;
+    /// Command numbers to leave out of the shape, one-based
+    App::PropertyIntegerList CommandFilter;
 
 
 protected:
     /// get called by the container when a property has changed
     void onChanged(const App::Property* prop) override;
 };
+
+/// Build a wire compound from the moves of a toolpath, skipping any command
+/// whose one-based number is in the filter. Rapids are skipped as well: only
+/// cutting moves become edges.
+Part::TopoShape PathExport shapeFromPath(const Toolpath& path, const std::set<int>& filter = {});
 
 using FeaturePython = App::FeaturePythonT<Feature>;
 

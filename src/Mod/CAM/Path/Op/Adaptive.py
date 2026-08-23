@@ -40,7 +40,7 @@ import FreeCAD
 import time
 import json
 import math
-import area
+import libarea as area
 import Constants
 from FreeCAD import BoundBox
 from PySide.QtCore import QT_TRANSLATE_NOOP

@@ -22,6 +22,9 @@
  ***************************************************************************/
 
 
+#include <App/FeaturePythonPyImp.h>
+#include <App/GroupExtension.h>
+
 #include "FeaturePathCompound.h"
 #include "Command.h"
 #include "FeaturePathCompoundPy.h"
@@ -36,6 +39,13 @@ PROPERTY_SOURCE(Path::FeatureCompound, Path::Feature)
 FeatureCompound::FeatureCompound()
 {
     ADD_PROPERTY_TYPE(Group, (nullptr), "Base", Prop_None, "Ordered list of paths to combine");
+    ADD_PROPERTY_TYPE(
+        Groups,
+        (nullptr),
+        "Base",
+        Prop_None,
+        "Groups of paths for better organization"
+    );
     ADD_PROPERTY_TYPE(
         UsePlacements,
         (false),
@@ -75,6 +85,26 @@ App::DocumentObjectExecReturn* FeatureCompound::execute()
 
     result.setCenter(Path.getValue().getCenter());
     Path.setValue(result);
+
+    // Drop any sub-group that has since been claimed by another group: the
+    // tree shows a child under one parent only, and a stale entry here would
+    // make this compound claim it too.
+    auto groups = Groups.getValues();
+    for (auto it = groups.begin(); it != groups.end();) {
+        if (App::GroupExtension::getGroupOfObject(*it)) {
+            it = groups.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+    if (groups != Groups.getValues()) {
+        Groups.setValues(std::move(groups));
+    }
+    else {
+        // Refresh the view provider's claimed children even when nothing moved
+        Groups.touch();
+    }
 
     return App::DocumentObject::StdReturn;
 }

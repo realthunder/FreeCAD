@@ -90,6 +90,9 @@ public:
 
     void showBoundingBox(bool show) override;
 
+    void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
+    bool doubleClicked() override;
+
     friend class PathSelectionObserver;
 
 private:
@@ -107,6 +110,7 @@ protected:
 
     void onChanged(const App::Property* prop) override;
     unsigned long getBoundColor() const override;
+    bool setEdit(int ModNum) override;
 
     SoCoordinate3* pcLineCoords;
     SoCoordinate3* pcMarkerCoords;

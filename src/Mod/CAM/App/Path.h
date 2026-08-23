@@ -53,6 +53,11 @@ public:
     void SaveDocFile(Base::Writer& writer) const override;
     void RestoreDocFile(Base::Reader& reader) override;
 
+    // Restore into a Toolpath owned by someone else: PropertyPath drives the
+    // file read through its own object, so the reader must register that owner
+    // and not this bare Toolpath.
+    void _Restore(Base::XMLReader& reader, Base::Persistence* owner);
+
     // interface
     void clear();                                         // clears the internal data
     void addCommand(const Command& Cmd);                  // adds a command at the end
@@ -91,9 +96,15 @@ public:
     }
     void setCenter(const Base::Vector3d& c);
 
+    // Name the document file this toolpath saves into. Without it every
+    // toolpath in a document would be written as <ObjectName>.nc, and a
+    // compound path holding several of them would overwrite its own files.
+    void setFileName(const char* name) const;
+
     static const int SchemaVersion = 2;
 
 protected:
+    mutable std::string filename;
     std::vector<Command> vpcCommands;
     Base::Vector3d center;
     // KDL::Path_Composite *pcPath;

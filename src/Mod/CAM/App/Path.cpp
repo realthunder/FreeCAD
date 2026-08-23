@@ -22,6 +22,8 @@
  ***************************************************************************/
 
 
+#include <boost/algorithm/string.hpp>
+
 #include <App/Application.h>
 #include <Base/Console.h>
 #include <Base/Reader.h>
@@ -145,7 +147,7 @@ void Toolpath::insertCommand(const Command& Cmd, int pos)
         vpcCommands.insert(vpcCommands.begin() + pos, Cmd);
     }
     else {
-        throw Base::IndexError("Index not in range");
+        THROWM(Base::IndexError, "Index not in range")
     }
     recalculate();
 }
@@ -159,7 +161,7 @@ void Toolpath::deleteCommand(int pos)
         vpcCommands.erase(vpcCommands.begin() + pos);
     }
     else {
-        throw Base::IndexError("Index not in range");
+        THROWM(Base::IndexError, "Index not in range")
     }
     recalculate();
 }
@@ -516,7 +518,7 @@ void Toolpath::recalculate()  // recalculates the path cache
             }
         }
     } catch (KDL::Error &e) {
-        throw Base::RuntimeError(e.Description());
+        THROWM(Base::RuntimeError, e.Description())
     }
 #endif
 }
@@ -525,7 +527,9 @@ void Toolpath::recalculate()  // recalculates the path cache
 
 unsigned int Toolpath::getMemSize() const
 {
-    return toGCode().size();
+    // An estimate. The exact answer means rendering every command to GCode,
+    // and this is called often enough on large paths for that to show.
+    return vpcCommands.size() * 100;
 }
 
 void Toolpath::setCenter(const Base::Vector3d& c)
@@ -547,14 +551,20 @@ void Toolpath::Save(Writer& writer) const
                         << SchemaVersion << "\">" << std::endl;
         writer.incInd();
         saveCenter(writer, center);
-        for (unsigned int i = 0; i < getSize(); i++) {
-            vpcCommands[i].Save(writer);
+        // One character stream of GCode lines, not one XML element per
+        // command: a path of any size is mostly commands, and the element
+        // form costs several times the bytes and the parse time.
+        writer.Stream() << writer.ind() << "<Commands>\n";
+        auto& s = writer.beginCharStream() << '\n';
+        for (const auto& cmd : vpcCommands) {
+            s << cmd.toGCode() << '\n';
         }
+        writer.endCharStream() << '\n' << writer.ind() << "</Commands>\n";
         writer.decInd();
     }
     else {
         writer.Stream() << writer.ind() << "<Path file=\""
-                        << writer.addFile((writer.ObjectName + ".nc").c_str(), this)
+                        << writer.addFile((filename + ".nc").c_str(), this)
                         << "\" version=\"" << SchemaVersion << "\">" << std::endl;
         writer.incInd();
         saveCenter(writer, center);
@@ -563,23 +573,69 @@ void Toolpath::Save(Writer& writer) const
     writer.Stream() << writer.ind() << "</Path>" << std::endl;
 }
 
+void Toolpath::setFileName(const char* file) const
+{
+    if (!file) {
+        file = "";
+    }
+    filename = file;
+}
+
 void Toolpath::SaveDocFile(Base::Writer& writer) const
 {
-    if (toGCode().empty()) {
-        return;
+    // Streamed a command at a time rather than through toGCode(), which would
+    // materialise the whole path as one string first.
+    for (const auto& cmd : vpcCommands) {
+        writer.Stream() << cmd.toGCode() << '\n';
     }
-    writer.Stream() << toGCode();
 }
 
 void Toolpath::Restore(XMLReader& reader)
 {
-    reader.readElement("Path");
-    std::string file(reader.getAttribute<const char*>("file"));
+    _Restore(reader, this);
+}
 
-    if (!file.empty()) {
-        // initiate a file read
-        reader.addFile(file.c_str(), this);
+void Toolpath::_Restore(XMLReader& reader, Base::Persistence* owner)
+{
+    reader.readElement("Path");
+
+    if (reader.hasAttribute("file")) {
+        std::string file(reader.getAttribute<const char*>("file"));
+        if (!file.empty()) {
+            // initiate a file read
+            reader.addFile(file.c_str(), owner);
+        }
     }
+    unsigned count = reader.getAttribute<unsigned long>("count", 0);
+    if (reader.hasAttribute("version")) {
+        int version = reader.getAttribute<long>("version");
+        if (version >= Toolpath::SchemaVersion) {
+            reader.readElement("Center");
+            double x = reader.getAttribute<double>("x");
+            double y = reader.getAttribute<double>("y");
+            double z = reader.getAttribute<double>("z");
+            Base::Vector3d center(x, y, z);
+            setCenter(center);
+        }
+    }
+    clear();
+    if (count) {
+        reader.readElement("Commands");
+        auto& s = reader.beginCharStream();
+        vpcCommands.resize(count);
+        std::string line;
+        for (auto& cmd : vpcCommands) {
+            while (std::getline(s, line)) {
+                boost::trim(line);
+                if (!line.empty()) {
+                    break;
+                }
+            }
+            cmd.setFromGCode(line);
+        }
+        reader.readEndElement("Commands");
+    }
+    reader.readEndElement("Path");
 }
 
 // The previous implementation read the file word-by-word, merging all content into a single string.
@@ -605,7 +661,8 @@ void Toolpath::addCommandNoRecalc(const Command& Cmd)
 void Toolpath::RestoreDocFile(Base::Reader& reader)
 {
     std::string line;
-    while (std::getline(reader.getStream(), line)) {
+    // Base::Reader is itself an std::istream in this fork, so it is read directly.
+    while (std::getline(reader, line)) {
         if (!line.empty()) {
             Command cmd;
             cmd.setFromGCode(line);

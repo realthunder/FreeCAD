@@ -39,7 +39,11 @@ public:
     bool canDragObjects() const override;
     void dragObject(App::DocumentObject*) override;
     bool canDropObjects() const override;
+    bool canDropObject(App::DocumentObject* obj) const override;
     void dropObject(App::DocumentObject*) override;
+    bool canReorderObject(App::DocumentObject* obj, App::DocumentObject* before) override;
+    bool reorderObjects(const std::vector<App::DocumentObject*>& objs,
+                        App::DocumentObject* before) override;
     QIcon getIcon() const override;
 
 protected:

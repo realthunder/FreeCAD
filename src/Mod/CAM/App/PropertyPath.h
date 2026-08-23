@@ -66,6 +66,14 @@ public:
     unsigned int getMemSize() const override;
     //@}
 
+    // App::Property::isSame is pure virtual in this fork. A toolpath is
+    // expensive to compare and nothing here depends on the answer, so it
+    // reports "not the same" and the caller does the work.
+    bool isSame(const App::Property&) const override
+    {
+        return false;
+    }
+
 private:
     Toolpath _Path;
 };

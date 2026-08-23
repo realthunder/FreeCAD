@@ -70,7 +70,7 @@ void PropertyPath::setPyObject(PyObject* value)
     else {
         std::string error = std::string("type must be 'Path', not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -96,30 +96,22 @@ unsigned int PropertyPath::getMemSize() const
 
 void PropertyPath::Save(Base::Writer& writer) const
 {
+    // The toolpath writes its own document file, so it has to be told the name
+    // this property owns. Left to itself it would use the object name, and a
+    // compound path holding several toolpaths would collide with itself.
+    _Path.setFileName(getFileName().c_str());
     _Path.Save(writer);
 }
 
 void PropertyPath::Restore(Base::XMLReader& reader)
 {
-    reader.readElement("Path");
-
-    std::string file(reader.getAttribute<const char*>("file"));
-    if (!file.empty()) {
-        // initiate a file read
-        reader.addFile(file.c_str(), this);
-    }
-
-    if (reader.hasAttribute("version")) {
-        int version = reader.getAttribute<long>("version");
-        if (version >= Toolpath::SchemaVersion) {
-            reader.readElement("Center");
-            double x = reader.getAttribute<double>("x");
-            double y = reader.getAttribute<double>("y");
-            double z = reader.getAttribute<double>("z");
-            Base::Vector3d center(x, y, z);
-            _Path.setCenter(center);
-        }
-    }
+    // Toolpath::_Restore reads both forms -- the referenced document file and
+    // the inline command stream -- so the property no longer parses the
+    // element itself. It passes itself as the owner, because it is the
+    // property, not the bare toolpath, that the reader must call back.
+    aboutToSetValue();
+    _Path._Restore(reader, this);
+    hasSetValue();
 }
 
 void PropertyPath::SaveDocFile(Base::Writer&) const
@@ -129,21 +121,10 @@ void PropertyPath::SaveDocFile(Base::Writer&) const
 
 void PropertyPath::RestoreDocFile(Base::Reader& reader)
 {
-    App::PropertyContainer* container = getContainer();
-    App::DocumentObject* obj = nullptr;
-    if (container->isDerivedFrom<App::DocumentObject>()) {
-        obj = static_cast<App::DocumentObject*>(container);
-    }
-
-    if (obj) {
-        obj->setStatus(App::ObjectStatus::Restore, true);
-    }
-
+    // No Restore status juggling here: in this fork the document already holds
+    // the restoring object in that state for the whole of its restore, and
+    // clearing it here would end it early for everything that follows.
     aboutToSetValue();
     _Path.RestoreDocFile(reader);
     hasSetValue();
-
-    if (obj) {
-        obj->setStatus(App::ObjectStatus::Restore, false);
-    }
 }

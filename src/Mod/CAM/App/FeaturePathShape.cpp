@@ -26,6 +26,7 @@
 #include <TopoDS_Shape.hxx>
 
 
+#include "AreaToolpath.h"
 #include "FeaturePathShape.h"
 
 
@@ -60,18 +61,17 @@ App::DocumentObjectExecReturn* FeatureShape::execute()
     gp_Pnt pstart(v.x, v.y, v.z);
 
     std::list<TopoDS_Shape> shapes;
-    for (std::vector<App::DocumentObject*>::iterator it = links.begin(); it != links.end(); ++it) {
-        if (!(*it && (*it)->isDerivedFrom<Part::Feature>())) {
-            continue;
-        }
-        const TopoDS_Shape& shape = static_cast<Part::Feature*>(*it)->Shape.getShape().getShape();
+    for (auto obj : links) {
+        // Part::Feature::getShape resolves links and sub-elements, which a
+        // plain isDerivedFrom/Shape read does not.
+        TopoDS_Shape shape = Part::Feature::getShape(obj);
         if (shape.IsNull()) {
             continue;
         }
         shapes.push_back(shape);
     }
 
-    Area::toPath(
+    areaToPath(
         path,
         shapes,
         UseStartPoint.getValue() ? &pstart : nullptr,

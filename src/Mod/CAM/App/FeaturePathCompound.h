@@ -41,6 +41,8 @@ public:
     ~FeatureCompound() override;
 
     App::PropertyLinkList Group;
+    /// Sub-groups of paths, for organising a large compound in the tree
+    App::PropertyLinkList Groups;
     App::PropertyBool UsePlacements;
 
     /// returns the type name of the ViewProvider
