@@ -2501,7 +2501,12 @@ private:
         Py::Sequence list(obj);
         std::list<TopoShape> edges;
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* item = (*it).ptr();
+            // Hold the reference while the borrowed pointer is in use. A
+            // Part.ShapeList builds an element only when one is asked for, so
+            // the sequence keeps no reference of its own and the one the
+            // iterator made is the only one there is.
+            Py::Object held(*it);
+            PyObject* item = held.ptr();
             if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
                 const TopoShape& sh = *static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr();
                 if (sh.shapeType(true) == TopAbs_EDGE)
@@ -2534,7 +2539,12 @@ private:
         Py::Sequence list(obj);
         std::list<TopoShape> edges;
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* item = (*it).ptr();
+            // Hold the reference while the borrowed pointer is in use. A
+            // Part.ShapeList builds an element only when one is asked for, so
+            // the sequence keeps no reference of its own and the one the
+            // iterator made is the only one there is.
+            Py::Object held(*it);
+            PyObject* item = held.ptr();
             if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
                 const TopoShape& sh = *static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr();
                 if (sh.shapeType(true) == TopAbs_EDGE)
