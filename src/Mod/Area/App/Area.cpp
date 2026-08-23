@@ -26,6 +26,7 @@
 #define BOOST_GEOMETRY_DISABLE_DEPRECATED_03_WARNING
 
 #ifndef _PreComp_
+# include <algorithm>
 # include <cfloat>
 # include <boost_geometry.hpp>
 # include <boost/range/adaptor/indexed.hpp>
@@ -42,6 +43,7 @@
 # include <BRepBuilderAPI_MakeVertex.hxx>
 # include <BRepBuilderAPI_MakeWire.hxx>
 # include <BRepExtrema_DistShapeShape.hxx>
+# include <BRepExtrema_SupportType.hxx>
 # include <BRepLib.hxx>
 # include <BRepLib_MakeFace.hxx>
 # include <BRepLib_FindSurface.hxx>
@@ -852,7 +854,22 @@ struct WireJoiner {
                     BRepExtrema_DistShapeShape extss(
                         BRepBuilderAPI_MakeVertex(p), info.edge);
                     if (extss.IsDone() && extss.NbSolution()) {
-                        const gp_Pnt& pp = extss.PointOnShape2(1);
+                        gp_Pnt pp = extss.PointOnShape2(1);
+
+                        // DistShapeShape is content to return a parameter a
+                        // little outside the edge bounds (around 1e-7 in
+                        // parameter space). We are about to split the edge at
+                        // this point, and splitting it outside its own range
+                        // yields a degenerate piece that the joiner then keeps
+                        // trying to split again. Pull the point back in.
+                        if (extss.SupportTypeShape2(1) == BRepExtrema_IsOnEdge) {
+                            Standard_Real par, efirst, elast;
+                            extss.ParOnEdgeS2(1, par);
+                            Handle(Geom_Curve) c = BRep_Tool::Curve(info.edge, efirst, elast);
+                            if (par < efirst || par > elast)
+                                pp = c->Value(std::max(efirst, std::min(elast, par)));
+                        }
+
                         if (pp.SquareDistance(p) <= Precision::SquareConfusion()) {
                             pt = pp;
                             intersects = true;
