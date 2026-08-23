@@ -369,7 +369,8 @@ PyObject* ViewProviderPy::reorderObjects(PyObject *args)
         else if (PySequence_Check(pyobj)) {
             Py::Sequence seq(pyobj);
             for (Py::Sequence::iterator it = seq.begin(); it != seq.end(); ++it) {
-                PyObject* item = (*it).ptr();
+                Py::Object itemRef(*it);
+                PyObject* item = itemRef.ptr();
                 if (!PyObject_TypeCheck(item, &App::DocumentObjectPy::Type))
                     THROWM(Base::TypeError, "Expected document object inside sequence")
                 objs.push_back(static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr());
@@ -398,7 +399,8 @@ PyObject* ViewProviderPy::canReorderObject(PyObject *args)
         else if (PySequence_Check(pyobj)) {
             Py::Sequence seq(pyobj);
             for (Py::Sequence::iterator it = seq.begin(); it != seq.end(); ++it) {
-                PyObject* item = (*it).ptr();
+                Py::Object itemRef(*it);
+                PyObject* item = itemRef.ptr();
                 if (!PyObject_TypeCheck(item, &App::DocumentObjectPy::Type))
                     THROWM(Base::TypeError, "Expected document object inside sequence")
                 objs.push_back(static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr());

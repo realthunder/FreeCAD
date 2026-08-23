@@ -97,7 +97,8 @@ void PathPy::setCommands(Py::List list)
     getToolpathPtr()->clear();
     for (Py::List::iterator it = list.begin(); it != list.end(); ++it) {
         if (PyObject_TypeCheck((*it).ptr(), &(Path::CommandPy::Type))) {
-            Path::Command &cmd = *static_cast<Path::CommandPy*>((*it).ptr())->getCommandPtr();
+            Py::Object pyItem(*it);
+            Path::Command &cmd = *static_cast<Path::CommandPy*>(pyItem.ptr())->getCommandPtr();
             getToolpathPtr()->addCommand(cmd);
         } else {
             throw Py::TypeError("The list can only contain Path Commands");

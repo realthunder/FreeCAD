@@ -323,7 +323,8 @@ PyObject *ComplexGeoDataPy::setElementName(PyObject *args, PyObject *kwds) {
         else if(PySequence_Check(pySid)) {
             Py::Sequence seq(pySid);
             for(auto it=seq.begin();it!=seq.end();++it) {
-                auto ptr = (*it).ptr();
+                Py::Object ptrRef(*it);
+                auto ptr = ptrRef.ptr();
                 if(PyObject_TypeCheck(ptr,&App::StringIDPy::Type))
                     sids.push_back(static_cast<App::StringIDPy*>(ptr)->getStringIDPtr());
                 else

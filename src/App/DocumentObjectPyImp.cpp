@@ -561,7 +561,8 @@ PyObject* DocumentObjectPy::getSubObject(PyObject *args, PyObject *keywds)
         single = false;
         Py::Sequence shapeSeq(obj);
         for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-            PyObject* item = (*it).ptr();
+            Py::Object itemRef(*it);
+            PyObject* item = itemRef.ptr();
             if (PyUnicode_Check(item)) {
                 subs.emplace_back(PyUnicode_AsUTF8(item));
             }

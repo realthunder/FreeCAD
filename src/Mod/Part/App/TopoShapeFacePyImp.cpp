@@ -321,7 +321,8 @@ int TopoShapeFacePy::PyInit(PyObject* args, PyObject* /*kwd*/)
             if (PySequence_Check(pcPyShapeOrList)){
                 Py::Sequence list(pcPyShapeOrList);
                 for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-                    PyObject* item = (*it).ptr();
+                    Py::Object itemRef(*it);
+                    PyObject* item = itemRef.ptr();
                     if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
                         auto& sh = *static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr();
                         fm->addTopoShape(sh);

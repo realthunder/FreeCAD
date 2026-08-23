@@ -129,7 +129,8 @@ private:
         TechDraw::DrawPage* page = nullptr;
         Py::Sequence list(object);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* item = (*it).ptr();
+            Py::Object itemRef(*it);
+            PyObject* item = itemRef.ptr();
             if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
                 App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
                 if (obj->isDerivedFrom<TechDraw::DrawPage>()) {

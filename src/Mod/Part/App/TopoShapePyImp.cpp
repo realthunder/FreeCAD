@@ -855,7 +855,8 @@ PyObject*  TopoShapePy::fuse(PyObject *args, PyObject *kwds) const
         std::vector<TopoDS_Shape> shapeVec;
         Py::Sequence shapeSeq(pcObj);
         for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-            PyObject* item = (*it).ptr();
+            Py::Object itemRef(*it);
+            PyObject* item = itemRef.ptr();
             if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
                 shapeVec.push_back(static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape());
             }
@@ -894,7 +895,8 @@ PyObject*  TopoShapePy::multiFuse(PyObject *args, PyObject *kwds) const
     std::vector<TopoDS_Shape> shapeVec;
     Py::Sequence shapeSeq(pcObj);
     for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-        PyObject* item = (*it).ptr();
+        Py::Object itemRef(*it);
+        PyObject* item = itemRef.ptr();
         if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
             shapeVec.push_back(static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape());
         }
@@ -955,7 +957,8 @@ PyObject*  TopoShapePy::common(PyObject *args) const
         std::vector<TopoDS_Shape> shapeVec;
         Py::Sequence shapeSeq(pcObj);
         for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-            PyObject* item = (*it).ptr();
+            Py::Object itemRef(*it);
+            PyObject* item = itemRef.ptr();
             if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
                 shapeVec.push_back(static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape());
             }
@@ -1007,7 +1010,8 @@ PyObject*  TopoShapePy::section(PyObject *args) const
         std::vector<TopoDS_Shape> shapeVec;
         Py::Sequence shapeSeq(pcObj);
         for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-            PyObject* item = (*it).ptr();
+            Py::Object itemRef(*it);
+            PyObject* item = itemRef.ptr();
             if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
                 shapeVec.push_back(static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape());
             }
@@ -1108,7 +1112,8 @@ PyObject*  TopoShapePy::cut(PyObject *args) const
         std::vector<TopoDS_Shape> shapeVec;
         Py::Sequence shapeSeq(pcObj);
         for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-            PyObject* item = (*it).ptr();
+            Py::Object itemRef(*it);
+            PyObject* item = itemRef.ptr();
             if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
                 shapeVec.push_back(static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape());
             }
@@ -1158,7 +1163,8 @@ PyObject*  TopoShapePy::generalFuse(PyObject *args) const
     std::vector<TopoDS_Shape> shapeVec;
     Py::Sequence shapeSeq(pcObj);
     for (Py::Sequence::iterator it = shapeSeq.begin(); it != shapeSeq.end(); ++it) {
-        PyObject* item = (*it).ptr();
+        Py::Object itemRef(*it);
+        PyObject* item = itemRef.ptr();
         if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
             shapeVec.push_back(static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape());
         }
@@ -1605,7 +1611,8 @@ PyObject* TopoShapePy::makeFillet(PyObject *args) const
             Py::Sequence list(obj);
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                 if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapePy::Type))) {
-                    const TopoDS_Shape& edge = static_cast<TopoShapePy*>((*it).ptr())->getTopoShapePtr()->getShape();
+                    Py::Object pyItem(*it);
+                    const TopoDS_Shape& edge = static_cast<TopoShapePy*>(pyItem.ptr())->getTopoShapePtr()->getShape();
                     if (edge.ShapeType() == TopAbs_EDGE) {
                         //Add edge to fillet algorithm
                         mkFillet.Add(radius1, radius2, TopoDS::Edge(edge));
@@ -1626,7 +1633,8 @@ PyObject* TopoShapePy::makeFillet(PyObject *args) const
             Py::Sequence list(obj);
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                 if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapePy::Type))) {
-                    const TopoDS_Shape& edge = static_cast<TopoShapePy*>((*it).ptr())->getTopoShapePtr()->getShape();
+                    Py::Object pyItem(*it);
+                    const TopoDS_Shape& edge = static_cast<TopoShapePy*>(pyItem.ptr())->getTopoShapePtr()->getShape();
                     if (edge.ShapeType() == TopAbs_EDGE) {
                         //Add edge to fillet algorithm
                         mkFillet.Add(radius, TopoDS::Edge(edge));
@@ -1676,7 +1684,8 @@ PyObject* TopoShapePy::makeChamfer(PyObject *args) const
             Py::Sequence list(obj);
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                 if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapePy::Type))) {
-                    const TopoDS_Shape& edge = static_cast<TopoShapePy*>((*it).ptr())->getTopoShapePtr()->getShape();
+                    Py::Object pyItem(*it);
+                    const TopoDS_Shape& edge = static_cast<TopoShapePy*>(pyItem.ptr())->getTopoShapePtr()->getShape();
                     if (edge.ShapeType() == TopAbs_EDGE) {
                         //Add edge to fillet algorithm
                         const TopoDS_Face& face = TopoDS::Face(mapEdgeFace.FindFromKey(edge).First());
@@ -1702,7 +1711,8 @@ PyObject* TopoShapePy::makeChamfer(PyObject *args) const
             Py::Sequence list(obj);
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                 if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapePy::Type))) {
-                    const TopoDS_Shape& edge = static_cast<TopoShapePy*>((*it).ptr())->getTopoShapePtr()->getShape();
+                    Py::Object pyItem(*it);
+                    const TopoDS_Shape& edge = static_cast<TopoShapePy*>(pyItem.ptr())->getTopoShapePtr()->getShape();
                     if (edge.ShapeType() == TopAbs_EDGE) {
                         //Add edge to fillet algorithm
                         const TopoDS_Face& face = TopoDS::Face(mapEdgeFace.FindFromKey(edge).First());
@@ -1742,7 +1752,8 @@ PyObject* TopoShapePy::makeThickness(PyObject *args) const
         Py::Sequence list(obj);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
             if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapePy::Type))) {
-                const TopoDS_Shape& shape = static_cast<TopoShapePy*>((*it).ptr())->getTopoShapePtr()->getShape();
+                Py::Object pyItem(*it);
+                const TopoDS_Shape& shape = static_cast<TopoShapePy*>(pyItem.ptr())->getTopoShapePtr()->getShape();
                 facesToRemove.Append(shape);
             }
         }
@@ -2072,7 +2083,8 @@ PyObject* TopoShapePy::project(PyObject *args) const
         Py::Sequence list(obj);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
             if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapePy::Type))) {
-                const TopoDS_Shape& shape = static_cast<TopoShapePy*>((*it).ptr())->getTopoShapePtr()->getShape();
+                Py::Object pyItem(*it);
+                const TopoDS_Shape& shape = static_cast<TopoShapePy*>(pyItem.ptr())->getTopoShapePtr()->getShape();
                 algo.Add(shape);
             }
         }

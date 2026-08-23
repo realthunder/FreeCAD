@@ -263,7 +263,8 @@ bool ViewProviderFeaturePythonImp::claimChildren(std::vector<App::DocumentObject
     try {
         Py::Sequence list(Base::pyCall(py_claimChildren.ptr()));
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* item = (*it).ptr();
+            Py::Object itemRef(*it);
+            PyObject* item = itemRef.ptr();
             if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
                 App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
                 children.push_back(obj);

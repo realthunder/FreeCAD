@@ -487,7 +487,8 @@ private:
 
         Py::Sequence list(input);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* value = (*it).ptr();
+            Py::Object valueRef(*it);
+            PyObject* value = valueRef.ptr();
             if (PyObject_TypeCheck(value, &(Base::VectorPy::Type))) {
                 Base::VectorPy* pcObject = static_cast<Base::VectorPy*>(value);
                 Base::Vector3d* val = pcObject->getVectorPtr();
@@ -528,7 +529,8 @@ private:
         Base::Vector3f point;
         Py::Sequence list(input);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* value = (*it).ptr();
+            Py::Object valueRef(*it);
+            PyObject* value = valueRef.ptr();
             if (PyObject_TypeCheck(value, &(Base::VectorPy::Type))) {
                 Base::VectorPy* pcObject = static_cast<Base::VectorPy*>(value);
                 Base::Vector3d* val = pcObject->getVectorPtr();
@@ -582,7 +584,8 @@ private:
         std::vector<Wm4::Vector3d> points;
         points.reserve(list.size());
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* value = (*it).ptr();
+            Py::Object valueRef(*it);
+            PyObject* value = valueRef.ptr();
             if (PyObject_TypeCheck(value, &(Base::VectorPy::Type))) {
                 Base::VectorPy* pcObject = static_cast<Base::VectorPy*>(value);
                 Base::Vector3d* val = pcObject->getVectorPtr();

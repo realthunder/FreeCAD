@@ -290,7 +290,8 @@ private:
             std::vector<App::DocumentObject*> objs;
             std::map<Part::Feature*, std::vector<App::Color>> partColor;
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-                PyObject* item = (*it).ptr();
+                Py::Object itemRef(*it);
+                PyObject* item = itemRef.ptr();
                 if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
                     auto pydoc = static_cast<App::DocumentObjectPy*>(item);
                     objs.push_back(pydoc->getDocumentObjectPtr());

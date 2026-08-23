@@ -64,7 +64,8 @@ static bool getOptions(PyObject *tuple, ViewProviderSavedView::CaptureOptions &o
             }
             Py::Sequence seq(args);
             for (auto it = seq.begin(); it != seq.end(); ++it) {
-                PyObject* item = (*it).ptr();
+                Py::Object itemRef(*it);
+                PyObject* item = itemRef.ptr();
                 if (PyUnicode_Check(item)) {
                     opts.push_back(PyUnicode_AsUTF8(item));
                 }else{

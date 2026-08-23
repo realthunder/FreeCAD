@@ -965,7 +965,8 @@ private:
 
         Py::Sequence list(object);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* item = (*it).ptr();
+            Py::Object itemRef(*it);
+            PyObject* item = itemRef.ptr();
             if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
                 App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
                 if (obj->isDerivedFrom<Part::Feature>()) {
@@ -1113,7 +1114,8 @@ private:
             Py::Sequence list(obj);
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                 if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapeFacePy::Type))) {
-                    const TopoDS_Shape& sh = static_cast<TopoShapeFacePy*>((*it).ptr())->
+                    Py::Object pyItem(*it);
+                    const TopoDS_Shape& sh = static_cast<TopoShapeFacePy*>(pyItem.ptr())->
                         getTopoShapePtr()->getShape();
                     if (!sh.IsNull())
                         builder.Add(shell, sh);
@@ -1173,7 +1175,8 @@ private:
                 if (PySequence_Check(pcPyShapeOrList)){
                     Py::Sequence list(pcPyShapeOrList);
                     for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-                        PyObject* item = (*it).ptr();
+                        Py::Object itemRef(*it);
+                        PyObject* item = itemRef.ptr();
                         if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
                             const TopoDS_Shape& sh = static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape();
                             fm->addShape(sh);
@@ -1280,7 +1283,8 @@ private:
                 auto iter = tuple.begin();
                 if (!PyObject_TypeCheck((*iter).ptr(), &(Part::TopoShapePy::Type)))
                     throw Py::TypeError(err);
-                const TopoDS_Shape& sh = static_cast<TopoShapePy*>((*iter).ptr())->getTopoShapePtr()->getShape();
+                Py::Object pyItem(*iter);
+                const TopoDS_Shape& sh = static_cast<TopoShapePy*>(pyItem.ptr())->getTopoShapePtr()->getShape();
                 f(sh, (*iter).ptr(), err);
             }
         }
@@ -1346,7 +1350,8 @@ private:
             int numConstraints = 0;
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                 if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapePy::Type))) {
-                    const TopoDS_Shape& sh = static_cast<TopoShapePy*>((*it).ptr())->
+                    Py::Object pyItem(*it);
+                    const TopoDS_Shape& sh = static_cast<TopoShapePy*>(pyItem.ptr())->
                         getTopoShapePtr()->getShape();
                     if (!sh.IsNull()) {
                         if (sh.ShapeType() == TopAbs_EDGE) {
@@ -2183,7 +2188,8 @@ private:
 
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
             if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapePy::Type))) {
-                const TopoDS_Shape& sh = static_cast<TopoShapePy*>((*it).ptr())->
+                Py::Object pyItem(*it);
+                const TopoDS_Shape& sh = static_cast<TopoShapePy*>(pyItem.ptr())->
                     getTopoShapePtr()->getShape();
                 profiles.Append(sh);
             }
@@ -2462,7 +2468,8 @@ private:
         Py::Sequence list(obj);
         std::vector<TopoDS_Edge> edges;
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* item = (*it).ptr();
+            Py::Object itemRef(*it);
+            PyObject* item = itemRef.ptr();
             if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
                 const TopoDS_Shape& sh = static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr()->getShape();
                 if (sh.ShapeType() == TopAbs_EDGE)
