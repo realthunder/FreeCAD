@@ -2495,82 +2495,61 @@ private:
 
         return root_list;
     }
-    Py::Object sortEdges(const Py::Tuple& args)
+    // __sortEdges__ and sortEdges take the same arguments and want the same
+    // edges out of them. They differ only in what they report: the first
+    // connected run, or every run. This is the half they share.
+    static std::list<TopoShape> edgesToSort(const Py::Tuple& args, bool& keepOrder, double& tol)
     {
         PyObject *obj;
-        PyObject *keepOrder = Py_False;
-        double tol = 0;
-        if (!PyArg_ParseTuple(args.ptr(), "O|dO", &obj, &tol, &keepOrder))
+        PyObject *pyKeepOrder = Py_False;
+        tol = 0;
+        if (!PyArg_ParseTuple(args.ptr(), "O|dO", &obj, &tol, &pyKeepOrder))
             Base::PyException::ThrowException();
+        keepOrder = Base::asBoolean(pyKeepOrder);
 
         Py::Sequence list(obj);
         std::list<TopoShape> edges;
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            // Hold the reference while the borrowed pointer is in use. A
-            // Part.ShapeList builds an element only when one is asked for, so
-            // the sequence keeps no reference of its own and the one the
-            // iterator made is the only one there is.
-            Py::Object held(*it);
-            PyObject* item = held.ptr();
-            if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
-                const TopoShape& sh = *static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr();
-                if (sh.shapeType(true) == TopAbs_EDGE)
-                    edges.push_back(sh);
-                else {
-                    throw Py::TypeError("shape is not an edge");
-                }
-            }
-            else {
+            // Hold the item. A sequence that builds what it returns keeps no
+            // reference of its own -- Part.ShapeList, or any Python class with
+            // such a __getitem__ -- so this is the only one there is.
+            Py::Object item(*it);
+            if (!PyObject_TypeCheck(item.ptr(), &(Part::TopoShapePy::Type)))
                 throw Py::TypeError("item is not a shape");
-            }
+            const TopoShape& sh = *static_cast<Part::TopoShapePy*>(item.ptr())->getTopoShapePtr();
+            if (sh.shapeType(true) != TopAbs_EDGE)
+                throw Py::TypeError("shape is not an edge");
+            edges.push_back(sh);
         }
+        return edges;
+    }
 
+    // One connected run, in input order; whatever does not join it is dropped.
+    static Py::List sortOneRun(std::list<TopoShape>& edges, bool keepOrder, double tol)
+    {
         Py::List sorted_list;
-        for (const auto &edge : TopoShape::sortEdges(edges, PyObject_IsTrue(keepOrder), tol)) {
+        for (const auto &edge : TopoShape::sortEdges(edges, keepOrder, tol))
             sorted_list.append(Py::asObject(new TopoShapeEdgePy(new TopoShape(edge))));
-        }
-
         return sorted_list;
+    }
+
+    Py::Object sortEdges(const Py::Tuple& args)
+    {
+        bool keepOrder = false;
+        double tol = 0;
+        std::list<TopoShape> edges = edgesToSort(args, keepOrder, tol);
+        return sortOneRun(edges, keepOrder, tol);
     }
     Py::Object sortEdges2(const Py::Tuple& args)
     {
-        PyObject *obj;
-        PyObject *keepOrder = Py_False;
+        bool keepOrder = false;
         double tol = 0;
-        if (!PyArg_ParseTuple(args.ptr(), "O|dO", &obj, &tol, &keepOrder)) {
-            Base::PyException::ThrowException();
-        }
+        std::list<TopoShape> edges = edgesToSort(args, keepOrder, tol);
 
-        Py::Sequence list(obj);
-        std::list<TopoShape> edges;
-        for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            // Hold the reference while the borrowed pointer is in use. A
-            // Part.ShapeList builds an element only when one is asked for, so
-            // the sequence keeps no reference of its own and the one the
-            // iterator made is the only one there is.
-            Py::Object held(*it);
-            PyObject* item = held.ptr();
-            if (PyObject_TypeCheck(item, &(Part::TopoShapePy::Type))) {
-                const TopoShape& sh = *static_cast<Part::TopoShapePy*>(item)->getTopoShapePtr();
-                if (sh.shapeType(true) == TopAbs_EDGE)
-                    edges.push_back(sh);
-                else {
-                    throw Py::TypeError("shape is not an edge");
-                }
-            }
-            else {
-                throw Py::TypeError("item is not a shape");
-            }
-        }
-
+        // sortEdges() consumes what it returns, so this drains the list.
         Py::List root_list;
-        while(!edges.empty()) {
-            Py::List sorted_list;
-            for (const auto &edge : TopoShape::sortEdges(edges, Base::asBoolean(keepOrder), tol)) {
-                sorted_list.append(Py::asObject(new TopoShapeEdgePy(new TopoShape(edge))));
-            }
-            root_list.append(sorted_list);
-        }
+        while (!edges.empty())
+            root_list.append(sortOneRun(edges, keepOrder, tol));
         return root_list;
     }
     Py::Object toPythonOCC(const Py::Tuple& args)
