@@ -500,47 +500,25 @@ void Area::add(const TopoDS_Shape& shape, short op) {
     myShapes.emplace_back(op, shape);
 }
 
-std::shared_ptr<Area> Area::getClearedArea(double tipDiameter, double diameter) {
-    build();
 #define AREA_MY(_param) myParams.PARAM_FNAME(_param)
-    PARAM_ENUM_CONVERT(AREA_MY, PARAM_FNAME, PARAM_ENUM_EXCEPT, AREA_PARAMS_OFFSET_CONF);
-    PARAM_ENUM_CONVERT(AREA_MY, PARAM_FNAME, PARAM_ENUM_EXCEPT, AREA_PARAMS_CLIPPER_FILL);
-    (void)SubjectFill;
-    (void)ClipFill;
-
-    // Do not fit arcs after these offsets; it introduces unnecessary approximation error, and all off
-    // those arcs will be converted back to segments again for clipper differencing in getRestArea anyway
-    CAreaConfig conf(myParams, /*no_fit_arcs*/ true);
-
-    const double roundPrecision = myParams.Accuracy;
-    const double buffer = 2 * roundPrecision;
-
-    // A = myArea
-    // prevCenters = offset(A, -rTip)
-    const double rTip = tipDiameter / 2.;
-    CArea prevCenter(*myArea);
-    prevCenter.OffsetWithClipper(-rTip, JoinType, EndType, myParams.MiterLimit, roundPrecision);
-
-    // prevCleared = offset(prevCenter, r).
-    CArea prevCleared(prevCenter);
-    prevCleared.OffsetWithClipper(diameter / 2. + buffer, JoinType, EndType, myParams.MiterLimit, roundPrecision);
-
-    std::shared_ptr<Area> clearedArea = make_shared<Area>(*this);
-    clearedArea->myArea.reset(new CArea(prevCleared));
-
-    return clearedArea;
-}
 
 std::shared_ptr<Area> Area::getRestArea(std::vector<std::shared_ptr<Area>> clearedAreas, double diameter) {
     build();
     PARAM_ENUM_CONVERT(AREA_MY, PARAM_FNAME, PARAM_ENUM_EXCEPT, AREA_PARAMS_OFFSET_CONF);
     PARAM_ENUM_CONVERT(AREA_MY, PARAM_FNAME, PARAM_ENUM_EXCEPT, AREA_PARAMS_CLIPPER_FILL);
 
-    const double roundPrecision = myParams.Accuracy;
-    const double buffer = 2 * roundPrecision;
+    // Precision losses in arc/segment conversions, in multiples of Accuracy:
+    // 2.3 generating the gcode (see CCurve::CheckForArc in libarea/Curve.cpp),
+    // 1 converting a gcode arc back to segments, 1 in Thicken() of the cleared
+    // area, and 2 here offsetting the target area in and back out. The cleared
+    // areas arrive oversized by buffer to absorb that; compensate for it below.
+    AreaParams params = myParams;
+    params.Accuracy = myParams.Accuracy * .7 / 4;  // 2.3 is already in the gcode
+    const double buffer = myParams.Accuracy * 3;
+    const double roundPrecision = params.Accuracy;
 
     // transform all clearedAreas into our workplane
-    Area clearedAreasInPlane(&myParams);
+    Area clearedAreasInPlane(&params);
     clearedAreasInPlane.myArea.reset(new CArea());
     for (std::shared_ptr<Area> clearedArea : clearedAreas) {
       gp_Trsf trsf = clearedArea->myTrsf;
@@ -551,18 +529,29 @@ std::shared_ptr<Area> Area::getRestArea(std::vector<std::shared_ptr<Area>> clear
           &myWorkPlane);
     }
 
-    // remaining = A - prevCleared
-    CArea remaining(*myArea);
+    // Only the part of the area the tool can actually reach counts as
+    // clearable: offsetting in by the radius and back out drops anything too
+    // narrow to enter, which would otherwise be reported as rest forever.
+    CArea clearable(*myArea);
+    clearable.OffsetWithClipper(-diameter / 2, JoinType, EndType, params.MiterLimit, roundPrecision);
+    clearable.OffsetWithClipper(diameter / 2, JoinType, EndType, params.MiterLimit, roundPrecision);
+
+    // remaining = clearable - prevCleared
+    CArea remaining(clearable);
     remaining.Clip(toClipperOp(Area::OperationDifference), *(clearedAreasInPlane.myArea), SubjectFill, ClipFill);
 
-    // rest = intersect(A, offset(remaining, dTool))
+    // rest = intersect(clearable, offset(remaining, dTool)). The extra buffer
+    // cancels the oversizing the cleared areas were built with.
     CArea restCArea(remaining);
-    restCArea.OffsetWithClipper(diameter + buffer, JoinType, EndType, myParams.MiterLimit, roundPrecision);
-    restCArea.Clip(toClipperOp(Area::OperationIntersection), *myArea, SubjectFill, ClipFill);
+    restCArea.OffsetWithClipper(diameter + buffer, JoinType, EndType, params.MiterLimit, roundPrecision);
+    restCArea.Clip(toClipperOp(Area::OperationIntersection), clearable, SubjectFill, ClipFill);
 
+    if (restCArea.m_curves.empty())
+        return {};
+
+    std::shared_ptr<Area> restArea = make_shared<Area>(&params);
     gp_Trsf trsf(myTrsf.Inverted());
     TopoDS_Shape restShape = Area::toShape(restCArea, false, &trsf);
-    std::shared_ptr<Area> restArea = make_shared<Area>(&myParams);
     restArea->add(restShape, OperationCompound);
 
     return restArea;
