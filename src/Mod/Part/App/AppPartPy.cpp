@@ -2546,10 +2546,13 @@ private:
         double tol = 0;
         std::list<TopoShape> edges = edgesToSort(args, keepOrder, tol);
 
-        // sortEdges() consumes what it returns, so this drains the list.
         Py::List root_list;
-        while (!edges.empty())
-            root_list.append(sortOneRun(edges, keepOrder, tol));
+        for (const auto &run : TopoShape::sortEdgesAll(edges, keepOrder, tol)) {
+            Py::List sorted_list;
+            for (const auto &edge : run)
+                sorted_list.append(Py::asObject(new TopoShapeEdgePy(new TopoShape(edge))));
+            root_list.append(sorted_list);
+        }
         return root_list;
     }
     Py::Object toPythonOCC(const Py::Tuple& args)

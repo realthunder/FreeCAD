@@ -463,6 +463,12 @@ public:
      * @return Return a list of ordered connected edges.
      */
     static std::deque<TopoShape> sortEdges(std::list<TopoShape> &edges, bool keepOrder=false, double tol=0.0);
+    /** Every connected run, in one pass.
+     *
+     * Same answer as calling sortEdges() until the list empties, but it
+     * walks the edges once instead of once per run.
+     */
+    static std::vector<std::deque<TopoShape>> sortEdgesAll(std::list<TopoShape> &edges, bool keepOrder=false, double tol=0.0);
 
     /** Make a compound shape
      * 
