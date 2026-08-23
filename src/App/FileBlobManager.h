@@ -177,6 +177,21 @@ public:
      * needs rather than dropping it silently.
      */
     virtual bool blobContentNeedsStore() const { return false; }
+
+    /** Tell a referrer the content it is waiting for is not coming.
+     *
+     * Called once the archive is drained and the blob this property asked for
+     * was not in it, which is the point at which "not read yet" becomes "not
+     * there". A property that can stand in for the missing content -- from a
+     * library, a default, anything it can name without inventing it -- does so
+     * here and answers true, so the document degrades instead of losing the
+     * value outright.
+     *
+     * Whatever it puts in place is a stand-in, not the content: the property
+     * still owes the document the reference it was restored from, so saving
+     * must write back what the file said rather than what the stand-in is.
+     */
+    virtual bool blobUnavailable() { return false; }
 };
 
 /** Per-document store of the files referenced by PropertyFileIncluded.
