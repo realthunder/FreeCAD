@@ -284,7 +284,8 @@ PyObject* TopoShapeSolidPy::offsetFaces(PyObject *args) const
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
             if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapePy::Type))) {
                 // set offset of the requested faces
-                const TopoDS_Shape& face = static_cast<TopoShapePy*>((*it).ptr())->getTopoShapePtr()->getShape();
+                Py::Object pyItem(*it);
+                const TopoDS_Shape& face = static_cast<TopoShapePy*>(pyItem.ptr())->getTopoShapePtr()->getShape();
                 builder.SetOffsetOnFace(TopoDS::Face(face), offset);
             }
         }

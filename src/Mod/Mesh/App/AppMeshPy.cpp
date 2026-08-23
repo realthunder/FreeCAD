@@ -487,9 +487,9 @@ private:
 
         Py::Sequence list(input);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* value = (*it).ptr();
-            if (PyObject_TypeCheck(value, &(Base::VectorPy::Type))) {
-                Base::VectorPy* pcObject = static_cast<Base::VectorPy*>(value);
+            Py::Object value(*it);
+            if (PyObject_TypeCheck(value.ptr(), &(Base::VectorPy::Type))) {
+                Base::VectorPy* pcObject = static_cast<Base::VectorPy*>(value.ptr());
                 Base::Vector3d* val = pcObject->getVectorPtr();
 
 
@@ -528,9 +528,9 @@ private:
         Base::Vector3f point;
         Py::Sequence list(input);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* value = (*it).ptr();
-            if (PyObject_TypeCheck(value, &(Base::VectorPy::Type))) {
-                Base::VectorPy* pcObject = static_cast<Base::VectorPy*>(value);
+            Py::Object value(*it);
+            if (PyObject_TypeCheck(value.ptr(), &(Base::VectorPy::Type))) {
+                Base::VectorPy* pcObject = static_cast<Base::VectorPy*>(value.ptr());
                 Base::Vector3d* val = pcObject->getVectorPtr();
                 point.Set(float(val->x), float(val->y), float(val->z));
                 polyFit.AddPoint(point);
@@ -582,9 +582,9 @@ private:
         std::vector<Wm4::Vector3d> points;
         points.reserve(list.size());
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* value = (*it).ptr();
-            if (PyObject_TypeCheck(value, &(Base::VectorPy::Type))) {
-                Base::VectorPy* pcObject = static_cast<Base::VectorPy*>(value);
+            Py::Object value(*it);
+            if (PyObject_TypeCheck(value.ptr(), &(Base::VectorPy::Type))) {
+                Base::VectorPy* pcObject = static_cast<Base::VectorPy*>(value.ptr());
                 Base::Vector3d* val = pcObject->getVectorPtr();
                 Wm4::Vector3d pt;
                 pt[0] = val->x;

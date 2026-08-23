@@ -290,12 +290,12 @@ private:
             std::vector<App::DocumentObject*> objs;
             std::map<Part::Feature*, std::vector<App::Color>> partColor;
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-                PyObject* item = (*it).ptr();
-                if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
-                    auto pydoc = static_cast<App::DocumentObjectPy*>(item);
+                Py::Object item(*it);
+                if (PyObject_TypeCheck(item.ptr(), &(App::DocumentObjectPy::Type))) {
+                    auto pydoc = static_cast<App::DocumentObjectPy*>(item.ptr());
                     objs.push_back(pydoc->getDocumentObjectPtr());
                 }
-                else if (PyTuple_Check(item) && PyTuple_Size(item) == 2) {
+                else if (PyTuple_Check(item.ptr()) && PyTuple_Size(item.ptr()) == 2) {
                     Py::Tuple tuple(*it);
                     Py::Object item0 = tuple.getItem(0);
                     Py::Object item1 = tuple.getItem(1);

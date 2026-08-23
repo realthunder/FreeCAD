@@ -2897,6 +2897,13 @@ bool TopoShape::fix()
     ShapeFix_Shape fix(copy._Shape);
     fix.Perform();
 
+    // The fix changed nothing, so there is nothing to redo on the original
+    // and no element names to remap; the only question left is whether the
+    // shape was valid to begin with. makEWires() fix()es every wire it
+    // builds, which makes this the hot case.
+    if (fix.Shape().IsSame(copy.getShape()))
+        return BRepCheck_Analyzer(copy.getShape()).IsValid();
+
     BRepCheck_Analyzer aChecker(fix.Shape());
     if (!aChecker.IsValid())
         return false;
@@ -2978,6 +2985,12 @@ bool TopoShape::fix(double precision, double mintol, double maxtol)
     ShapeFix_Shape fix(copy._Shape);
     if (!doFix(fix, copy, copiedShape))
         return false;
+    // The dry run on the copy changed nothing, so redoing it on the original
+    // would only set the identical shape back and remap identical element
+    // names. makEWires() fix()es every wire it builds, which makes the
+    // nothing-to-fix case the hot one.
+    if (copiedShape.IsSame(copy.getShape()))
+        return true;
     ShapeFix_Shape fixThis(_Shape);
     TopoDS_Shape fixedShape;
     if (doFix(fixThis, *this, fixedShape))

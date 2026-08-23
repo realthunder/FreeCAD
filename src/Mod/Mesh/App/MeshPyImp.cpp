@@ -730,7 +730,8 @@ PyObject* MeshPy::addFacets(PyObject* args)
         MeshCore::MeshGeomFacet facet;
         for (Py::List::iterator it = list_f.begin(); it != list_f.end(); ++it) {
             if ((*it).isType(vFType)) {
-                Mesh::FacetPy* face = static_cast<Mesh::FacetPy*>((*it).ptr());
+                Py::Object pyItem(*it);
+                Mesh::FacetPy* face = static_cast<Mesh::FacetPy*>(pyItem.ptr());
                 facets.push_back(*face->getFacetPtr());
             }
             else if ((*it).isSequence()) {

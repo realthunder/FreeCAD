@@ -530,14 +530,16 @@ class _Space(ArchComponent.Component):
             sh = obj.Shape.copy()
             cutplane, v1, v2 = ArchCommands.getCutVolume(pl, sh)
             e = sh.section(cutplane)
-            e = Part.__sortEdges__(e.Edges)
-            w = Part.Wire(e)
+            # The section of a space with a courtyard or shaft is several
+            # wires; keep them all, or the footprint comes back filled
+            # (__sortEdges__ returns only the first connected run).
+            f = Part.Face(Part.makeWires(e.Edges).Wires)
             dv = FreeCAD.Vector(
                 obj.Shape.CenterOfMass.x, obj.Shape.CenterOfMass.y, obj.Shape.BoundBox.ZMin
             )
             dv = dv.sub(obj.Shape.CenterOfMass)
-            w.translate(dv)
-            return Part.Face(w)
+            f.translate(dv)
+            return f
         except Part.OCCError:
             return None
 

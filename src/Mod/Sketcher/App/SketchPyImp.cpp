@@ -82,7 +82,8 @@ PyObject* SketchPy::addGeometry(PyObject* args)
         Py::Sequence list(pcObj);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
             if (PyObject_TypeCheck((*it).ptr(), &(Part::GeometryPy::Type))) {
-                Part::Geometry* geo = static_cast<Part::GeometryPy*>((*it).ptr())->getGeometryPtr();
+                Py::Object pyItem(*it);
+                Part::Geometry* geo = static_cast<Part::GeometryPy*>(pyItem.ptr())->getGeometryPtr();
                 geoList.push_back(geo);
             }
         }
@@ -114,7 +115,8 @@ PyObject* SketchPy::addConstraint(PyObject* args)
         Py::Sequence list(pcObj);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
             if (PyObject_TypeCheck((*it).ptr(), &(ConstraintPy::Type))) {
-                Constraint* con = static_cast<ConstraintPy*>((*it).ptr())->getConstraintPtr();
+                Py::Object pyItem(*it);
+                Constraint* con = static_cast<ConstraintPy*>(pyItem.ptr())->getConstraintPtr();
                 values.push_back(con);
             }
         }

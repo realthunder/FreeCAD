@@ -80,7 +80,8 @@ int TopoShapeCompSolidPy::PyInit(PyObject* args, PyObject* /*kwd*/)
         Py::Sequence list(pcObj);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
             if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapeSolidPy::Type))) {
-                const TopoDS_Shape& sh = static_cast<TopoShapePy*>((*it).ptr())->
+                Py::Object pyItem(*it);
+                const TopoDS_Shape& sh = static_cast<TopoShapePy*>(pyItem.ptr())->
                     getTopoShapePtr()->getShape();
                 if (!sh.IsNull())
                     builder.Add(Comp, sh);

@@ -387,8 +387,10 @@ def cleanFaces(shape):
         for i in isle:
             fset.append(find(i))
         bounds = getBoundary(fset)
-        shp = Part.Wire(Part.__sortEdges__(bounds))
-        shp = Part.Face(shp)
+        # The boundary of an island with a hole is several wires; keep them
+        # all, or the hole is silently filled (__sortEdges__ returns only the
+        # first connected run).
+        shp = Part.Face(Part.makeWires(bounds).Wires)
         if shp.normalAt(0.5, 0.5) != find(isle[0]).normalAt(0.5, 0.5):
             shp.reverse()
         newfaces.append(shp)

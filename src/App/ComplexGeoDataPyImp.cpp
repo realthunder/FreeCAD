@@ -323,9 +323,9 @@ PyObject *ComplexGeoDataPy::setElementName(PyObject *args, PyObject *kwds) {
         else if(PySequence_Check(pySid)) {
             Py::Sequence seq(pySid);
             for(auto it=seq.begin();it!=seq.end();++it) {
-                auto ptr = (*it).ptr();
-                if(PyObject_TypeCheck(ptr,&App::StringIDPy::Type))
-                    sids.push_back(static_cast<App::StringIDPy*>(ptr)->getStringIDPtr());
+                Py::Object ptr(*it);
+                if(PyObject_TypeCheck(ptr.ptr(),&App::StringIDPy::Type))
+                    sids.push_back(static_cast<App::StringIDPy*>(ptr.ptr())->getStringIDPtr());
                 else
                     throw Py::TypeError("expect StringID in sid sequence");
             }

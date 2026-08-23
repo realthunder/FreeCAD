@@ -239,10 +239,10 @@ private:
 
         Py::Sequence list(object);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* item = (*it).ptr();
-            if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
+            Py::Object item(*it);
+            if (PyObject_TypeCheck(item.ptr(), &(App::DocumentObjectPy::Type))) {
                 App::DocumentObject* obj
-                    = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
+                    = static_cast<App::DocumentObjectPy*>(item.ptr())->getDocumentObjectPtr();
                 if (obj->isDerivedFrom<Fem::FemMeshObject>()) {
                     auto femMesh = static_cast<FemMeshObject*>(obj)->FemMesh.getValue();
                     if (file.hasExtension({"vtk", "vtu"})) {
