@@ -287,7 +287,7 @@ It needs installing, plus a `freecad-rt-feedstock` change for releases.
 
 ## Ledger
 
-Phase 3 is landing. Phases 1 and 2 have not started.
+**Phase 3 is done.** Phases 1 and 2 have not started.
 
 | date | phase | repo | commit | what |
 |---|---|---|---|---|
@@ -296,12 +296,42 @@ Phase 3 is landing. Phases 1 and 2 have not started.
 | 2026-08-23 | 3 | libarea | `b8ae05b` | move CArea onto Clipper2 |
 | 2026-08-23 | 3 | libarea | `f9d09f7` | golden-value test for the clipping operations |
 | 2026-08-23 | 3 | fcad | `73fbf0c250` | Mod/Area follows, with ClipperEnums.h |
+| 2026-08-23 | -- | fcad | `67a64914fb` | correct the enum-index claim above |
+| 2026-08-23 | 3 | ifcopenshell | `f1d7b3130` | the 2D subtraction follows |
+| 2026-08-23 | 3 | fcad | `15074c1fed` | say what Simplify and CleanDistance now do |
+| 2026-08-23 | 3 | libarea-feedstock | `658974d` | libarea 0.2.0 |
+| 2026-08-23 | 3 | fcad | `e5c59ec710` | profile test was pinning Clipper1's rounding |
 
-Still open in phase 3:
+### What was verified
 
-- IfcOpenShell's `boolean_utils_2d.cpp` is migrated in the working tree
-  but not yet built or committed.
-- `libarea-feedstock` needs a version bump to 0.2.0 for released packages.
-- Defects 1 and 2 above are inherited as-is and not yet addressed:
-  `Simplify` is now dead here too, and `CleanDistance` means what
-  `SimplifyPath` means rather than what `CleanPolygon` meant.
+- libarea's own suite: 14 cases, all pass. Ten of the eleven operations
+  compared bit-identical against the Clipper1 build; the arc case moved
+  closer to the exact answer.
+- The feedstock's consumer test (the arc round trip, which is the whole
+  point of the library) builds and passes against the installed 0.2.0.
+- fcad builds clean, all targets.
+- The four Area enum properties still read NonZero, NonZero, Round,
+  OpenRound with their original labels; every index round trips through
+  the Python parameters; an outward offset gives round corners at
+  JoinType index 0 and mitred at index 2.
+- IfcOpenShell's OpenCASCADE geometry kernel compiles and links.
+- `TestPathApp`: 458 tests, 0 failures. The 40 errors are pre-existing
+  and unrelated -- 38 are `NameError: pythonopen` in the post-processor
+  scripts, 2 are `TestPathOpUtil` hitting a null shape out of
+  `makEWires`. Both sets fail identically without this work.
+
+### Still open
+
+- The libarea tag `v0.2.0` has to be created and pushed before the
+  feedstock builds. Nothing here has been pushed.
+- `Simplify` is now inert (Clipper2 has no StrictlySimple). It is kept
+  and says so; removing it is a separate decision about document
+  compatibility.
+- Clipper1 is still built inside libarea because
+  `Mod/Area/PyArea/Adaptive.cpp` drives it directly. Migrating adaptive
+  clearing is its own piece of work, and upstream has not done theirs
+  either.
+
+### Next
+
+Phase 1: port CAM. Nothing in it now depends on a Clipper decision.
