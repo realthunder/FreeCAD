@@ -193,7 +193,7 @@ PUBLIC compile definition on the `area` target, because `USINGZ` changes
 `Point64`'s layout and a consumer compiled without it would disagree
 about the ABI.
 
-### Two upstream defects -- do not import these
+### Three upstream defects -- do not import these
 
 1. **`Simplify` is dead code upstream.** `m_clipper_simple` is declared
    (`Area.h:59`), defined (`Area.cpp:19`), exposed as a FreeCAD/Python
@@ -204,21 +204,43 @@ about the ABI.
    now calls `SimplifyPath(p, m_clipper_clean_distance, is_closed)`.
    Same property name, same stored value in existing documents, different
    geometry out.
+3. **The enum parameters read back as the wrong value.** This one changes
+   toolpaths. `subject_fill`, `clip_fill`, `join_type` and `end_type` are
+   declared `enum2`, which is an `App::PropertyEnumeration` -- it stores a
+   *presentation index*. Upstream's migration writes the qualified Clipper2
+   values into the parameter list and casts that index straight to the
+   enumerator, but Clipper2 numbers its enumerators in a different order
+   than the list presents them:
 
-### What upstream got right: persisted enum indices
+   | list index | shown | Clipper2 enumerator at that number |
+   |---|---|---|
+   | 0 | NonZero | `FillRule::EvenOdd` |
+   | 0 | Round | `JoinType::Square` |
+   | 0 | OpenRound | `EndType::Polygon` |
 
-The property enum ordering is preserved exactly, so documents do not
-break. Keep it that way.
+   Measured on a built tree with upstream's scheme in place: a fresh
+   `Path::FeatureArea` came up with `SubjectFill` reading **EvenOdd** where
+   the default says NonZero, `JoinType` reading **Miter** where it says
+   Round, and `EndType` reading **Butt** where it says OpenRound. The
+   property editor also offered `"Clipper2Lib::FillRule::NonZero"` as the
+   label, because the list is stringified to build the enumeration.
 
-| index | JoinType v1 -> v2 | EndType v1 -> v2 |
-|---|---|---|
-| 0 | Round -> Round | OpenRound -> Round |
-| 1 | Square -> Square | ClosedPolygon -> Polygon |
-| 2 | Miter -> Miter | ClosedLine -> Joined |
-| 3 | -- | OpenSquare -> Square |
-| 4 | -- | OpenButt -> Butt |
+   The fix here is `src/Mod/Area/App/ClipperEnums.h`: give each Clipper2
+   value a flat, paste-friendly alias so the original `PARAM_ENUM_CONVERT`
+   machinery -- which converts index to value through a generated switch,
+   and is correct by construction -- keeps working. The list order is what
+   documents persist, so it does not change:
 
-Clipper2's new `Bevel` is deliberately not exposed.
+   | index | JoinType | EndType | FillRule |
+   |---|---|---|---|
+   | 0 | Round | OpenRound -> `Round` | NonZero |
+   | 1 | Square | ClosedPolygon -> `Polygon` | EvenOdd |
+   | 2 | Miter | ClosedLine -> `Joined` | Positive |
+   | 3 | -- | OpenSquare -> `Square` | Negative |
+   | 4 | -- | OpenButt -> `Butt` | -- |
+
+   Clipper2's new `JoinType::Bevel` is deliberately not offered: adding it
+   anywhere but the end would renumber what documents already hold.
 
 ## Phase 3 blast radius
 
@@ -265,8 +287,21 @@ It needs installing, plus a `freecad-rt-feedstock` change for releases.
 
 ## Ledger
 
-Nothing has landed yet.
+Phase 3 is landing. Phases 1 and 2 have not started.
 
-| date | phase | commit | what |
-|---|---|---|---|
-| | | | |
+| date | phase | repo | commit | what |
+|---|---|---|---|---|
+| 2026-08-23 | -- | fcad | `fbf4fded22` | this document |
+| 2026-08-23 | 3 | libarea | `3f02bed` | vendor Clipper2 beside Clipper1, SOVERSION 1 |
+| 2026-08-23 | 3 | libarea | `b8ae05b` | move CArea onto Clipper2 |
+| 2026-08-23 | 3 | libarea | `f9d09f7` | golden-value test for the clipping operations |
+| 2026-08-23 | 3 | fcad | `73fbf0c250` | Mod/Area follows, with ClipperEnums.h |
+
+Still open in phase 3:
+
+- IfcOpenShell's `boolean_utils_2d.cpp` is migrated in the working tree
+  but not yet built or committed.
+- `libarea-feedstock` needs a version bump to 0.2.0 for released packages.
+- Defects 1 and 2 above are inherited as-is and not yet addressed:
+  `Simplify` is now dead here too, and `CleanDistance` means what
+  `SimplifyPath` means rather than what `CleanPolygon` meant.
