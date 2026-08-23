@@ -46,6 +46,7 @@
 #include "DocumentObject.h"
 #include "DocumentObjectExtension.h"
 #include "DocumentObjectGroup.h"
+#include "Expression.h"
 #include "GeoFeature.h"
 #include "GeoFeatureGroupExtension.h"
 #include "InputStratum.h"
@@ -922,6 +923,44 @@ bool DocumentObject::removeDynamicProperty(const char* name)
     }
 
     return TransactionalObject::removeDynamicProperty(name);
+}
+
+bool DocumentObject::renameDynamicProperty(Property *prop, const char *name)
+{
+    if (!prop || testStatus(ObjectStatus::Destroy))
+        return false;
+
+    // Expressions are bound by property name, so lift any that target this
+    // property off it before the rename and put them back afterwards, under
+    // the new name. Setting an identifier to a null expression removes it.
+    auto expressions = ExpressionEngine.getExpressions();
+    std::vector<App::ObjectIdentifier> movedIds;
+    std::vector<std::shared_ptr<Expression> > movedExprs;
+
+    for (const auto& it : expressions) {
+        if (it.first.getProperty() == prop) {
+            movedIds.push_back(it.first);
+            movedExprs.push_back(it.second->copy());
+        }
+    }
+
+    for (const auto& it : movedIds)
+        ExpressionEngine.setValue(it, std::shared_ptr<Expression>());
+
+    bool renamed = TransactionalObject::renameDynamicProperty(prop, name);
+
+    if (renamed) {
+        App::ObjectIdentifier renamedId(prop->getContainer(), std::string(name));
+        for (auto& expr : movedExprs)
+            ExpressionEngine.setValue(renamedId, expr);
+    }
+    else {
+        // Put them back where they were
+        for (size_t i = 0; i < movedIds.size(); ++i)
+            ExpressionEngine.setValue(movedIds[i], movedExprs[i]);
+    }
+
+    return renamed;
 }
 
 App::Property* DocumentObject::addDynamicProperty(
