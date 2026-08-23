@@ -3457,22 +3457,9 @@ bool Document::afterRestore(const std::vector<DocumentObject *> &objArray, bool 
                 FC_ERR("Expression engine failed to restore " << obj->getFullName() << ": " << returnCode->Why);
                 d->addRecomputeLog(returnCode);
             }
-            // Restoring an object writes every one of its properties, which
-            // marks it touched; that is not a change, and the purge at the
-            // end of this loop is what takes it back off again. Do that here
-            // instead, before onDocumentRestored() runs, so that whatever a
-            // migration does in there is still visible when it returns. A
-            // migration edits the object exactly as a user would, and an
-            // object it has edited is out of step with its stored result --
-            // it has to come out of the restore needing a recompute, or the
-            // only way to get a correct answer out of it is to force one.
-            if(!touched && !obj->isError())
-                obj->purgeTouched();
             obj->onDocumentRestored();
             if(touched)
                 d->touchedObjs.insert(obj);
-            else if(obj->isTouched())
-                addRecomputeObject(obj);
         }
         catch (const Base::Exception& e) {
             d->addRecomputeLog(e.what(),obj);
