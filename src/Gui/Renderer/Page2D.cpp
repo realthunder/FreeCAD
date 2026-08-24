@@ -509,9 +509,16 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
     vg::transformScale(ctx, band, band);
     for (Item* item : drawOrder) {
         if (!item->recorded) {
-            if (!vg::isValid(item->list))
+            if (!vg::isValid(item->list)) {
                 item->list =
                     vg::createCommandList(ctx, vg::CommandListFlags::Cacheable);
+                if (!vg::isValid(item->list)) {
+                    // Out of command list slots: skip rather than hand vg
+                    // an invalid handle. The counter keeps it visible.
+                    ++stats.droppedItems;
+                    continue;
+                }
+            }
             else
                 vg::resetCommandList(ctx, item->list);
             vg::beginCommandList(ctx, item->list);

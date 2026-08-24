@@ -147,6 +147,7 @@ public:
         uint32_t itemRecords = 0;  // op buffers replayed into command lists
         uint32_t listSubmits = 0;  // command lists submitted to vg
         uint32_t bandCrossings = 0;// renders whose band differs from the last
+        uint32_t droppedItems = 0; // no command list slot left (uint16 space)
     };
     const Counters& counters() const { return stats; }
 

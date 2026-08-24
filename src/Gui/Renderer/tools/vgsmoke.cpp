@@ -34,6 +34,7 @@
 // Exit code 0 iff every check passed. Dumps are PPM for eyeballing
 // (--page2d appends a stage letter to the dump name).
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -327,6 +328,67 @@ static int runVgScenario(Offscreen& target, const char* fontPath,
     return ok ? 0 : 1;
 }
 
+// Retained-store scaling: N stroke items, then the per-frame cost of
+// replay (same view), pan, in-band zoom, and a band crossing. This is
+// the number the whole design argues about -- Qt raster repaints cost
+// 3-4 us/item every frame (doc sec 15); the retained page must make an
+// unchanged frame cheap. Informational, never fails.
+static void runBench(Offscreen& target, uint32_t count)
+{
+    using Render::Page2D;
+    using Render::Vg2D;
+    using clock_t_ = std::chrono::steady_clock;
+
+    if (!Vg2D::instance().init()) {
+        fprintf(stderr, "bench skipped: no vg context\n");
+        return;
+    }
+    Page2D page;
+    // Short two-segment polyline strokes in a grid, page coords spread
+    // over ~4x the viewport so zooming has content to pull in.
+    const uint32_t cols = (uint32_t)ceilf(sqrtf((float)count));
+    for (uint32_t i = 0; i < count; ++i) {
+        float x = (float)(i % cols) * 12.0f;
+        float y = (float)(i / cols) * 12.0f;
+        Page2D::Recorder rec;
+        rec.beginPath();
+        rec.moveTo(x, y);
+        rec.lineTo(x + 8.0f, y + 4.0f);
+        rec.lineTo(x + 10.0f, y + 9.0f);
+        rec.stroke(0xf0f0f0ff, 1.5f);
+        page.setItem(i + 1, Page2D::Kind::Edge, 0, std::move(rec));
+    }
+
+    Page2D::View view;
+    auto frameMs = [&](const char* what) {
+        page.setView(view);
+        auto t0 = clock_t_::now();
+        page.render(0, target.width, target.height);
+        bgfx::touch(0);
+        bgfx::frame();
+        double ms = std::chrono::duration<double, std::milli>(
+                        clock_t_::now() - t0).count();
+        printf("  %-28s %8.2f ms  (%.2f us/item)\n", what, ms,
+               ms * 1000.0 / count);
+    };
+
+    printf("bench: %u stroke items\n", count);
+    frameMs("first frame (record all)");
+    frameMs("unchanged frame (replay)");
+    view.panX = 31.0f;
+    view.panY = 17.0f;
+    frameMs("pan frame (replay)");
+    view.zoom = 1.31f;
+    frameMs("in-band zoom (replay)");
+    view.zoom = 2.7f;
+    frameMs("band crossing (re-tess)");
+    view.zoom = 2.71f;
+    frameMs("post-crossing (replay)");
+
+    page.clear();
+    Vg2D::instance().shutdown();
+}
+
 // The M1 scenario: a retained Page2D driven through view changes.
 static int runPage2DScenario(Offscreen& target, const char* fontPath,
                              const char* outPath)
@@ -501,6 +563,7 @@ int main(int argc, char** argv)
     const char* fontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
     bgfx::RendererType::Enum type = bgfx::RendererType::Count; // auto
     bool page2d = false;
+    uint32_t bench = 0;
 
     for (int i = 1; i < argc; ++i) {
         auto next = [&]() -> const char* {
@@ -523,6 +586,8 @@ int main(int argc, char** argv)
             outPath = next();
         else if (!strcmp(argv[i], "--page2d"))
             page2d = true;
+        else if (!strcmp(argv[i], "--bench"))
+            bench = (uint32_t)strtoul(next(), nullptr, 10);
         else if (!strcmp(argv[i], "--size")) {
             unsigned w = 0, h = 0;
             if (sscanf(next(), "%ux%u", &w, &h) != 2 || !w || !h) {
@@ -571,8 +636,13 @@ int main(int argc, char** argv)
     Offscreen target;
     target.create(width, height);
 
-    int res = page2d ? runPage2DScenario(target, fontPath, outPath)
-                     : runVgScenario(target, fontPath, outPath);
+    int res = 0;
+    if (bench)
+        runBench(target, bench);
+    else if (page2d)
+        res = runPage2DScenario(target, fontPath, outPath);
+    else
+        res = runVgScenario(target, fontPath, outPath);
 
     target.destroy();
     bgfx::shutdown();

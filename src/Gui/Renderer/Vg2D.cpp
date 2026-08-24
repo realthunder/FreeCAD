@@ -57,10 +57,12 @@ bool Vg2D::init()
     cfg.m_MaxFonts = 8;
     cfg.m_MaxStateStackSize = 32;
     cfg.m_MaxImages = 16;
-    // One command list per page item: a real drawing holds thousands of
-    // edges. The context allocates a slot table up front; a slot is a
-    // small struct, so this is a few MB of table, not geometry.
-    cfg.m_MaxCommandLists = 16384;
+    // One command list per page item: a real drawing holds tens of
+    // thousands of edges. The context allocates the slot table up front
+    // at 40 bytes a slot, so the uint16 handle space costs ~2.6MB --
+    // taken whole rather than sized down, because a page over the limit
+    // does not degrade, it drops items (Page2D counts the drops).
+    cfg.m_MaxCommandLists = 65534;
     cfg.m_MaxVBVertices = 65536;
     cfg.m_FontAtlasImageFlags = vg::ImageFlags::Filter_Bilinear;
     cfg.m_MaxCommandListDepth = 16;
