@@ -39,8 +39,10 @@
 #include <App/AutoTransaction.h>
 #include <App/Document.h>
 #include <Base/Parameter.h>
+#include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Document.h>
+#include <Gui/ViewProviderDocumentObject.h>
 #include <Gui/NavigationStyle.h>
 #include <Gui/Selection.h>
 #include <Gui/View3DInventor.h>
@@ -436,15 +438,21 @@ void QGVPage::drawVgPreview(QPainter* painter)
     }
     else {
         // X/Y moves purge their touch on the App side and signal
-        // nothing; catch them by comparing against the fed position.
+        // nothing -- and a Visibility toggle signals nothing either;
+        // catch both by comparing against what was last fed.
         for (auto& v : m_vgViews) {
             if (m_vgDirty.count(v.first))
                 continue;
             auto dv = dynamic_cast<TechDraw::DrawView*>(
                 page->getDocument()->getObject(v.first.c_str()));
-            if (dv
-                && ((float)dv->X.getValue() != v.second.fedX
-                    || (float)dv->Y.getValue() != v.second.fedY))
+            if (!dv)
+                continue;
+            auto vpd = dynamic_cast<Gui::ViewProviderDocumentObject*>(
+                Gui::Application::Instance->getViewProvider(dv));
+            const int8_t visNow = !vpd || vpd->isShow() ? 1 : 0;
+            if ((float)dv->X.getValue() != v.second.fedX
+                || (float)dv->Y.getValue() != v.second.fedY
+                || visNow != v.second.fedVisible)
                 m_vgDirty.insert(v.first);
         }
     }
@@ -482,6 +490,9 @@ void QGVPage::drawVgPreview(QPainter* painter)
             }
             it->second.fedX = (float)dv->X.getValue();
             it->second.fedY = (float)dv->Y.getValue();
+            auto vpd = dynamic_cast<Gui::ViewProviderDocumentObject*>(
+                Gui::Application::Instance->getViewProvider(dv));
+            it->second.fedVisible = !vpd || vpd->isShow() ? 1 : 0;
         }
     }
 

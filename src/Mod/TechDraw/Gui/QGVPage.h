@@ -229,6 +229,8 @@ private:
         uint32_t layer = 0;
         float fedX = 0.0f;
         float fedY = 0.0f;
+        // Visibility carries no signal either; -1 = not fed yet.
+        int8_t fedVisible = -1;
         fastsignals::scoped_connection repaint;
     };
     void drawVgPreview(QPainter* painter);
