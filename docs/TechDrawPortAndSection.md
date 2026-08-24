@@ -1296,3 +1296,67 @@ wasm target has neither the header path nor the source.
   QGSPage population step for annotations, which needs the Gui layer;
   the geometry tier alone would serve. Same boundary the 3D headless
   serve has (docs/ComputeBoundaries.md).
+
+## 25. Implementation status (2026-08-24, later still): M3 is built -- a page streams to the browser
+
+The wire of section 24 is implemented end to end and verified: a
+TechDraw page served from a desktop (or Xvfb) FreeCAD renders live in
+the wasm viewer over the scene stream, and an edit arrives as a delta.
+
+**What landed, by commit:**
+
+- `f081c893b8` -- the FCPD payload. SceneDump exports the object-
+  section codec (`writeObjectSection`/`readObjectSection`, kept beside
+  the splice in the same file so the bytes cannot drift), and
+  Page2DWire rides it. Page2D grew the wire entry points: the damage
+  journal (`takeChanges`), raw-op `setItem`, item/image enumeration,
+  byte-based fonts, and `opsBounds`. Round-trip verified including the
+  critical case: a delta produced by the server's own
+  `spliceObjectDelta` on a page payload parses back with removals,
+  changed entries and inline chunk bytes.
+- `c08fa4e4f2` -- the publisher. `TechDrawGui.servePage(page, port)`
+  creates a PageServe: its own document group `<doc>:<page>` (`:`
+  because `#` starts a URL fragment in the `?doc=` query -- and note
+  the server does not URL-decode query values, so the name must be
+  sent unencoded), a headless Page2D fed the renderPageVg way and
+  damaged the drawVgPreview way, publishes coalesced through a queued
+  timer. Verified in Xvfb 18/18: full root, every blob answering its
+  sha1 key, 204 while unchanged, a view move as a partial delta with
+  inline bytes, a view delete as an explicit removal.
+- `d49c59e5ce` -- the viewer. FCPD routes at the single payload
+  funnel; page mode drives `Page2D::render` on a backbuffer view id in
+  the reserved top granule, with pan/wheel-about-cursor/pinch, a
+  viewer-drawn paper sheet (id ~0, below the template by insertion
+  order), double-click refit, session-change reset at the same seam as
+  the 3D model, page live keys in the store sweep, and a "page" field
+  in the hello. vg-renderer joins the wasm build as a local target
+  (embedded essl shaders; no shaderc work) -- also repairing the
+  viewer build the compositor commit had broken.
+
+**End-to-end (headless Chrome against the Xvfb publisher):** the
+browser applies `page v1, 13 items named`, fetches 16 chunks through
+the batch endpoint, and the canvas shows the sheet -- ink counts
+within 3% of the desktop `renderPageVg` reference. After `view.X += 60`
+on the publisher, the browser applies v2 and the view's ink moved by
+exactly the predicted 222 px (600 Rez x 0.370 zoom) while the
+template ink stayed put, pixel-diff confirmed.
+
+**Traps for the next session:**
+
+- Chrome `--headless=new --screenshot --timeout=N` shoots at the page
+  load event, long before any scene arrives -- every such shot shows
+  the empty viewer. `--virtual-time-budget=30000` is what lets the
+  fetch, the WS payload and the apply all run before the shot.
+- An emcmake configure under the conda env inherits `-march=nocona`
+  in CFLAGS/CXXFLAGS and breaks the wasm cross-compile; clear them
+  (the env is still needed for its python >= 3.10, which emscripten
+  requires). The vite inspector bundle needs the address-space cap
+  raised (node wasm allocation vs limited.sh's 24GB RLIMIT_AS).
+- `urllib.parse.quote` percent-encodes `:`; the server compares query
+  values literally. Send group names raw.
+
+**Open, deliberately (24.6):** template sharpness is fixed at serve
+scale 2.0; page picking/ops (the entry info strings are reserved);
+in-browser verification of the delta-specific viewer branches (base-
+mismatch resync, removals) rides the shared apply path and the wire
+smoke, not a dedicated browser test.
