@@ -23,13 +23,16 @@
 #ifndef _PreComp_
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #endif
 
 #include <BRepAdaptor_Curve.hxx>
 #include <GCPnts_QuasiUniformDeflection.hxx>
 
 #include <QAbstractGraphicsShapeItem>
+#include <QBrush>
 #include <QColor>
+#include <QFile>
 #include <QFont>
 #include <QFontMetricsF>
 #include <QGraphicsEllipseItem>
@@ -44,6 +47,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
+#include <QPixmap>
 #include <QSvgRenderer>
 #include <QTextBlock>
 #include <QTextDocument>
@@ -58,10 +62,12 @@
 #include <Mod/TechDraw/App/CenterLine.h>
 #include <Mod/TechDraw/App/Cosmetic.h>
 #include <Mod/TechDraw/App/DrawGeomHatch.h>
+#include <Mod/TechDraw/App/DrawHatch.h>
 #include <Mod/TechDraw/App/DrawPage.h>
 #include <Mod/TechDraw/App/DrawSVGTemplate.h>
 #include <Mod/TechDraw/App/DrawUtil.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
+#include <Mod/TechDraw/App/DrawViewSection.h>
 #include <Mod/TechDraw/App/Geometry.h>
 #include <Mod/TechDraw/App/HatchLine.h>
 #include <Mod/TechDraw/App/LineGenerator.h>
@@ -70,13 +76,16 @@
 #include "PageFeed.h"
 #include "PreferencesGui.h"
 #include "QGIDecoration.h"
+#include "QGIMatting.h"
 #include "QGIPrimPath.h"
 #include "QGIView.h"
 #include "QGSPage.h"
 #include "Rez.h"
 #include "ViewProviderGeomHatch.h"
+#include "ViewProviderHatch.h"
 #include "ViewProviderPage.h"
 #include "ViewProviderViewPart.h"
+#include "ViewProviderViewSection.h"
 
 using namespace TechDrawGui;
 using Render::Page2D;
@@ -399,15 +408,13 @@ bool emitEdge(Page2D::Recorder& rec, const TechDraw::BaseGeomPtr& geom,
     }
 }
 
-// A face as closed polyline sub-paths (one per wire), filled even-odd:
-// holes come out as holes without native hole support in vg. Wire edges
-// are stitched with the same nearest-endpoint heuristic the Qt path
-// builder uses.
-void emitFace(Page2D::Recorder& rec, const TechDraw::FacePtr& face, float ox,
-              float oy, float deflection, uint32_t color)
+// A face's wires as closed view-local contours, stitched with the same
+// nearest-endpoint heuristic the Qt path builder uses. Shared by the
+// even-odd fill, the section-edge stroke and the hatch rasterizer.
+std::vector<std::vector<Pt>> faceContours(const TechDraw::FacePtr& face,
+                                          float deflection)
 {
-    rec.beginPath();
-    bool any = false;
+    std::vector<std::vector<Pt>> contours;
     std::vector<Pt> pts;
     for (TechDraw::Wire* wire : face->wires) {
         std::vector<Pt> contour;
@@ -428,17 +435,30 @@ void emitFace(Page2D::Recorder& rec, const TechDraw::FacePtr& face, float ox,
             else
                 contour = pts;
         }
-        if (contour.size() < 3)
-            continue;
+        if (contour.size() >= 3)
+            contours.push_back(std::move(contour));
+    }
+    return contours;
+}
+
+// Emit the contours as closed sub-paths of one vg path; false when the
+// face degenerated to nothing.
+bool emitFacePath(Page2D::Recorder& rec,
+                  const std::vector<std::vector<Pt>>& contours, float ox,
+                  float oy)
+{
+    if (contours.empty())
+        return false;
+    rec.beginPath();
+    for (const std::vector<Pt>& contour : contours) {
         rec.moveTo(ox + contour[0].x, oy + contour[0].y);
         for (size_t i = 1; i < contour.size(); ++i)
             rec.lineTo(ox + contour[i].x, oy + contour[i].y);
         rec.closePath();
-        any = true;
     }
-    if (any)
-        rec.fillConcave(color, /*evenOdd*/ true);
+    return true;
 }
+
 
 // ---- Qt scene capture: the annotation tier ------------------------------
 
@@ -918,6 +938,302 @@ geomHatchForFace(int i, const std::vector<TechDraw::DrawGeomHatch*>& objs)
     return nullptr;
 }
 
+// The SVG/bitmap hatch object claiming face i (QGIViewPart::faceIsHatched).
+TechDraw::DrawHatch*
+regularHatchForFace(int i, const std::vector<TechDraw::DrawHatch*>& objs)
+{
+    for (TechDraw::DrawHatch* h : objs) {
+        for (const std::string& s : h->Source.getSubValues()) {
+            if (TechDraw::DrawUtil::getIndexFromName(s) == i)
+                return h;
+        }
+    }
+    return nullptr;
+}
+
+// ---- PAT dashed hatch lines ---------------------------------------------
+//
+// Mirrors PATPathMaker: a PAT dash cell is signed -- mark >= 0, space
+// < 0, a zero "dot" drawn one pen-width long -- decoded to Rez units
+// scaled by the pattern scale, and walked from the pattern start point
+// so parallel lines phase against each other like the Qt tier.
+
+std::vector<double> decodePatDashSpec(TechDraw::DashSpec spec,
+                                      double weightMm, double scale)
+{
+    // The pen width feeding the dot length goes through Rez twice --
+    // QGIFace hands PATPathMaker a Rez width and decodeDashSpec
+    // applies Rez again. Kept bug-compatible: parity against the Qt
+    // page is the contract here.
+    double penWidth = Rez::guiX(Rez::guiX(weightMm));
+    if (penWidth <= 0.01)
+        penWidth = 0.01;
+    std::vector<double> cells;
+    for (double d : spec.get()) {
+        const double cell =
+            TechDraw::DrawUtil::fpCompare(d, 0.0) ? penWidth : Rez::guiX(d);
+        cells.push_back(scale * cell);
+    }
+    return cells;
+}
+
+double patDashLength(const std::vector<double>& cells)
+{
+    double length = 0.0;
+    for (double d : cells)
+        length += std::fabs(d);
+    return length;
+}
+
+// Remaining pattern length past offset (PATPathMaker::dashRemain).
+double patDashRemain(const std::vector<double>& cells, double offset)
+{
+    const double length = patDashLength(cells);
+    if (offset > length)
+        return 0.0;
+    return length - offset;
+}
+
+// The pattern re-phased to start at offset (PATPathMaker::offsetDash).
+std::vector<double> patOffsetDash(const std::vector<double>& cells,
+                                  double offset)
+{
+    if (offset > patDashLength(cells))
+        return cells;
+    double accum = 0.0;
+    size_t i = 0;
+    for (; i < cells.size(); ++i) {
+        accum += std::fabs(cells[i]);
+        if (accum > offset)
+            break;
+    }
+    if (i >= cells.size())
+        return cells;
+    std::vector<double> result;
+    const double firstCell = accum - offset;
+    result.push_back(cells[i] < 0.0 ? -firstCell : firstCell);
+    for (size_t j = i + 1; j < cells.size(); ++j)
+        result.push_back(cells[j]);
+    return result;
+}
+
+// Walk one straight run start->end (Rez units) emitting the signed
+// cells (PATPathMaker::dashedPPath). The trimmed hatch geometry lives
+// in the y-up projection space -- unlike the stored view geometry --
+// so y negates going onto the y-down page, exactly like the Qt tier
+// (verified empirically: +y mirrors the hatch off an off-center face).
+void emitPatDashedLine(Page2D::Recorder& rec, const Base::Vector3d& start,
+                       const Base::Vector3d& end,
+                       const std::vector<double>& cells, float ox, float oy)
+{
+    Base::Vector3d dir = end - start;
+    const double lineLength = dir.Length();
+    if (lineLength < 1e-9)
+        return;
+    dir.Normalize();
+    rec.moveTo(ox + (float)start.x, oy - (float)start.y);
+    if (cells.empty()) {
+        rec.lineTo(ox + (float)end.x, oy - (float)end.y);
+        return;
+    }
+    double travel = 0.0;
+    Base::Vector3d cur = start;
+    long seg = 0;
+    while (travel < lineLength && seg <= 10000) {
+        for (double d : cells) {
+            travel += std::fabs(d);
+            Base::Vector3d segEnd = cur + dir * std::fabs(d);
+            bool stop = false;
+            if ((start - segEnd).Length() > lineLength) {
+                segEnd = end;
+                stop = true;
+            }
+            if (d < 0.0)
+                rec.moveTo(ox + (float)segEnd.x, oy - (float)segEnd.y);
+            else
+                rec.lineTo(ox + (float)segEnd.x, oy - (float)segEnd.y);
+            ++seg;
+            if (stop || seg > 10000)
+                break;
+            cur = segEnd;
+        }
+    }
+}
+
+// One trimmed line set into the recorder, dashed per its PAT spec
+// (QGIFace::lineSetToFillItems). Returns whether anything was emitted;
+// the caller opened the path and strokes it once.
+bool emitPatLineSet(Page2D::Recorder& rec, TechDraw::LineSet& ls,
+                    double weightMm, double fillScale, float ox, float oy)
+{
+    bool any = false;
+    for (const TechDraw::BaseGeomPtr& geom : ls.getGeoms()) {
+        Base::Vector3d gStart = geom->getStartPoint();
+        gStart.z = 0.0;
+        Base::Vector3d gEnd = geom->getEndPoint();
+        gEnd.z = 0.0;
+        if (!ls.isDashed()) {
+            rec.moveTo(ox + (float)Rez::guiX(gStart.x),
+                       oy - (float)Rez::guiX(gStart.y));
+            rec.lineTo(ox + (float)Rez::guiX(gEnd.x),
+                       oy - (float)Rez::guiX(gEnd.y));
+            any = true;
+            continue;
+        }
+        const std::vector<double> cells =
+            decodePatDashSpec(ls.getDashSpec(), weightMm, fillScale);
+        double offset = 0.0;
+        Base::Vector3d pStart = ls.getPatternStartPoint(geom, offset,
+                                                        fillScale);
+        pStart.z = 0.0;
+        offset = Rez::guiX(offset);
+        if (TechDraw::DrawUtil::fpCompare(offset, 0.0, 0.00001)) {
+            emitPatDashedLine(rec, Rez::guiX(pStart), Rez::guiX(gEnd), cells,
+                              ox, oy);
+            if (!pStart.IsEqual(gStart, 0.00001))
+                emitPatDashedLine(rec, Rez::guiX(pStart), Rez::guiX(gStart),
+                                  decodePatDashSpec(
+                                      ls.getDashSpec().reversed(), weightMm,
+                                      fillScale),
+                                  ox, oy);
+        }
+        else {
+            // Pattern start outside this line: draw the stub with the
+            // pattern re-phased (PATPathMaker::geomToStubbyLine).
+            const double remain = patDashRemain(cells, offset);
+            Base::Vector3d newEnd =
+                gStart + ls.getUnitDir() * Rez::appX(remain);
+            if ((newEnd - gStart).Length() > (gEnd - gStart).Length())
+                newEnd = gEnd;
+            const double rePhase =
+                Rez::guiX(fillScale * ls.getDashSpec().length()) - remain;
+            emitPatDashedLine(rec, Rez::guiX(gStart), Rez::guiX(newEnd),
+                              patOffsetDash(cells, rePhase), ox, oy);
+        }
+        any = true;
+    }
+    return any;
+}
+
+// ---- SVG / bitmap hatch fills -------------------------------------------
+
+struct HatchFill
+{
+    bool svg = false;          // svg tile array vs bitmap texture
+    std::string file;          // resolved pattern file (SvgIncluded)
+    QColor color = Qt::black;  // svg stroke recolor
+    double scale = 1.0;
+    double rotation = 0.0;     // degrees, about the face center
+    Base::Vector3d offset;     // tile-grid shift, scene units
+};
+
+// Rasterize a tiled hatch fill clipped to the face outline into the
+// image registry and emit it over the face bbox. Mirrors QGIFace:
+// SvgFill is an array of 64x64*scale tiles rotated about the face
+// center and shifted by the offset, recolored by replacing the
+// pattern's stroke color; BitmapFill is a texture brush of the
+// (pre-rotated) pixmap anchored at the view origin. Returns false --
+// without touching the image slot -- when nothing could be rasterized,
+// so the caller can fall back to the plain fill.
+bool emitHatchRaster(Page2D& out, Page2D::Recorder& rec, uint64_t imageId,
+                     const std::vector<std::vector<Pt>>& contours, float ox,
+                     float oy, const HatchFill& fill)
+{
+    if (contours.empty() || fill.file.empty())
+        return false;
+    float minX = std::numeric_limits<float>::max(), minY = minX;
+    float maxX = std::numeric_limits<float>::lowest(), maxY = maxX;
+    for (const std::vector<Pt>& contour : contours) {
+        for (const Pt& p : contour) {
+            minX = std::min(minX, p.x);
+            minY = std::min(minY, p.y);
+            maxX = std::max(maxX, p.x);
+            maxY = std::max(maxY, p.y);
+        }
+    }
+    const float w = maxX - minX, h = maxY - minY;
+    if (!(w > 0.0f) || !(h > 0.0f))
+        return false;
+
+    QFile f(QString::fromUtf8(fill.file.c_str()));
+    if (!f.open(QFile::ReadOnly))
+        return false;
+    QByteArray bytes = f.readAll();
+
+    QSvgRenderer renderer;
+    QPixmap pix;
+    if (fill.svg) {
+        // Recolor exactly like QGIFace::loadSvgHatch: the pattern
+        // declares its stroke either as a style property or as an
+        // attribute of its own.
+        const QByteArray prefix =
+            bytes.contains("stroke:") ? QByteArrayLiteral("stroke:")
+                                      : QByteArrayLiteral("stroke=\"");
+        bytes.replace(prefix + QByteArrayLiteral("#000000"),
+                      prefix + fill.color.name().toUtf8());
+        if (!renderer.load(bytes) || !renderer.isValid())
+            return false;
+    }
+    else {
+        if (!pix.loadFromData(bytes) || pix.isNull())
+            return false;
+        if (fill.rotation != 0.0) {
+            QTransform rotator;
+            rotator.rotate(fill.rotation);
+            pix = pix.transformed(rotator);
+        }
+    }
+
+    // Page units are Rez: 1:1 is ~254 dpi on page, capped so a huge
+    // face cannot allocate an unbounded texture.
+    const double k = std::min(1.0, 2048.0 / std::max(w, h));
+    const int ipw = std::max(1, (int)std::lround(w * k));
+    const int iph = std::max(1, (int)std::lround(h * k));
+    QImage image(ipw, iph, QImage::Format_RGBA8888);
+    image.fill(Qt::transparent);
+    {
+        QPainter painter(&image);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.scale(k, k);
+        painter.translate(-minX, -minY);
+        QPainterPath clip;
+        clip.setFillRule(Qt::OddEvenFill);
+        for (const std::vector<Pt>& contour : contours) {
+            clip.moveTo(contour[0].x, contour[0].y);
+            for (size_t i = 1; i < contour.size(); ++i)
+                clip.lineTo(contour[i].x, contour[i].y);
+            clip.closeSubpath();
+        }
+        painter.setClipPath(clip);
+        if (fill.svg) {
+            const double tile = 64.0 * (fill.scale > 0.0 ? fill.scale : 1.0);
+            const double cx = minX + w / 2.0, cy = minY + h / 2.0;
+            painter.translate(cx, cy);
+            painter.rotate(fill.rotation);
+            // Tile outward from the face center (the Qt tile array is
+            // centered on the face too); the radius covers the bbox at
+            // any rotation. Same runaway cap as the Qt tier.
+            const double radius = std::hypot(w, h) / 2.0;
+            const int n = (int)std::ceil(radius / tile) + 1;
+            long tiles = 0;
+            for (int ix = -n; ix < n && tiles <= 10000; ++ix) {
+                for (int iy = -n; iy < n && tiles <= 10000; ++iy, ++tiles) {
+                    renderer.render(&painter,
+                                    QRectF(ix * tile + fill.offset.x,
+                                           iy * tile + fill.offset.y, tile,
+                                           tile));
+                }
+            }
+        }
+        else {
+            painter.fillPath(clip, QBrush(pix));
+        }
+    }
+    out.setImage(imageId, (uint16_t)ipw, (uint16_t)iph, image.constBits());
+    rec.image(imageId, ox + minX, oy + minY, w, h);
+    return true;
+}
+
 } // namespace
 
 void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
@@ -945,6 +1261,9 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
             if (!out.hasItem(id))
                 break;
             out.removeItem(id);
+            // A face item may own a raster hatch image under its id.
+            if (out.hasImage(id))
+                out.removeImage(id);
         }
     };
 
@@ -962,6 +1281,21 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
             vpp = dynamic_cast<ViewProviderPage*>(gdoc->getViewProvider(page));
     }
     const bool frames = !vpp || vpp->getFrameState();
+
+    // Per-view Visibility: a hidden view feeds nothing, and everything
+    // it ever fed is swept so toggling it clears the retained page
+    // (the capture and decoration tiers already judge the Qt item's
+    // visibility themselves).
+    if (vp && !vp->isShow()) {
+        const Page2D::ItemId uid = itemId(name, 'u', 0);
+        if (out.hasItem(uid))
+            out.removeItem(uid);
+        if (out.hasImage(uid))
+            out.removeImage(uid);
+        for (char tag : {'f', 'h', 'e', 'v', 's', 'S'})
+            sweep(tag, 0);
+        return;
+    }
 
     uint32_t faceColor = style.faceColor;
     if (vp) {
@@ -991,6 +1325,12 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
             urec.image(uid, ox + (float)Rez::guiX(urect[0]),
                        oy - (float)Rez::guiX(urect[1] + urect[3]),
                        (float)Rez::guiX(urect[2]), (float)Rez::guiX(urect[3]));
+            // Kind::Face draw order inside the view (underlay under
+            // fills under section faces) is the feed order: re-adding
+            // instead of updating keeps the sequence fresh even when a
+            // re-feed changes the item population.
+            if (out.hasItem(uid))
+                out.removeItem(uid);
             out.setItem(uid, Page2D::Kind::Face, layer, std::move(urec));
             shadedUnderlay = true;
         }
@@ -1002,25 +1342,56 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         }
     }
 
-    // Faces: the fill, then any PAT geometric hatch as a Decoration item
-    // riding the same index (drawn between fills and edges by Kind
-    // order). PAT dash specifications draw solid for now; SVG/bitmap
-    // hatches (DrawHatch) are not represented yet and leave the plain
-    // fill.
+    // Faces: the fill -- or a rasterized SVG/bitmap hatch (DrawHatch)
+    // in its place -- then any PAT geometric hatch as a Decoration
+    // item riding the same index (drawn between fills and edges by
+    // Kind order), dashed per its PAT spec.
     std::vector<TechDraw::DrawGeomHatch*> geomHatches = dvp->getGeomHatches();
+    std::vector<TechDraw::DrawHatch*> regularHatches = dvp->getHatches();
     uint32_t index = 0;
     for (const TechDraw::FacePtr& face : dvp->getFaceGeometry()) {
+        const std::vector<std::vector<Pt>> contours =
+            faceContours(face, style.deflection);
+        const Page2D::ItemId fid = itemId(name, 'f', index);
+        // Geometric hatch wins over an svg/bitmap hatch on the same
+        // face, exactly like QGIViewPart.
+        TechDraw::DrawGeomHatch* gh =
+            geomHatchForFace((int)index, geomHatches);
+        TechDraw::DrawHatch* fh =
+            gh ? nullptr : regularHatchForFace((int)index, regularHatches);
+
         Page2D::Recorder rec;
-        if (!shadedUnderlay && (faceColor & 0xff) != 0)
-            emitFace(rec, face, ox, oy, style.deflection, faceColor);
-        out.setItem(itemId(name, 'f', index), Page2D::Kind::Face, layer,
-                    std::move(rec));
+        // The plain fill draws under any hatch -- QGIFace keeps its
+        // solid base fill (m_fillDef) in every hatch mode.
+        if (!shadedUnderlay && (faceColor & 0xff) != 0
+            && emitFacePath(rec, contours, ox, oy))
+            rec.fillConcave(faceColor, /*evenOdd*/ true);
+        bool rasterized = false;
+        if (fh) {
+            HatchFill hf;
+            hf.svg = fh->isSvgHatch();
+            hf.file = fh->SvgIncluded.getValue();
+            if (auto hvp = gdoc ? dynamic_cast<ViewProviderHatch*>(
+                                      gdoc->getViewProvider(fh))
+                                : nullptr) {
+                hf.color = hvp->HatchColor.getValue().asValue<QColor>();
+                if (hvp->HatchScale.getValue() > 0.0)
+                    hf.scale = hvp->HatchScale.getValue();
+                hf.rotation = hvp->HatchRotation.getValue();
+                hf.offset = hvp->HatchOffset.getValue();
+            }
+            rasterized = emitHatchRaster(out, rec, fid, contours, ox, oy, hf);
+        }
+        if (!rasterized && out.hasImage(fid))
+            out.removeImage(fid);
+        if (out.hasItem(fid))
+            out.removeItem(fid);
+        out.setItem(fid, Page2D::Kind::Face, layer, std::move(rec));
 
         Page2D::Recorder hrec;
-        if (TechDraw::DrawGeomHatch* gh =
-                geomHatchForFace((int)index, geomHatches)) {
+        if (gh) {
             uint32_t hatchColor = 0x000000ff;
-            float hatchWidth = 1.0f;
+            double weightMm = 1.0;
             if (auto ghvp = gdoc ? dynamic_cast<ViewProviderGeomHatch*>(
                                        gdoc->getViewProvider(gh))
                                  : nullptr) {
@@ -1028,23 +1399,18 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
                     TechDraw::Preferences::getAccessibleColor(
                         ghvp->ColorPattern.getValue())
                         .asValue<QColor>());
-                hatchWidth = (float)Rez::guiX(ghvp->WeightPattern.getValue());
+                weightMm = ghvp->WeightPattern.getValue();
             }
+            const double hatchScale = gh->ScalePattern.getValue() > 0.0
+                ? gh->ScalePattern.getValue()
+                : 1.0;
             hrec.beginPath();
             bool any = false;
-            for (TechDraw::LineSet& ls : gh->getTrimmedLines((int)index)) {
-                for (const TechDraw::BaseGeomPtr& g : ls.getGeoms()) {
-                    const Base::Vector3d s = g->getStartPoint();
-                    const Base::Vector3d e = g->getEndPoint();
-                    hrec.moveTo(ox + (float)Rez::guiX(s.x),
-                                oy + (float)Rez::guiX(s.y));
-                    hrec.lineTo(ox + (float)Rez::guiX(e.x),
-                                oy + (float)Rez::guiX(e.y));
-                    any = true;
-                }
-            }
-            if (any && hatchWidth > 0.0f)
-                hrec.stroke(hatchColor, hatchWidth);
+            for (TechDraw::LineSet& ls : gh->getTrimmedLines((int)index))
+                any = emitPatLineSet(hrec, ls, weightMm, hatchScale, ox, oy)
+                    || any;
+            if (any && weightMm > 0.0)
+                hrec.stroke(hatchColor, (float)Rez::guiX(weightMm));
         }
         out.setItem(itemId(name, 'h', index), Page2D::Kind::Decoration,
                     layer, std::move(hrec));
@@ -1052,6 +1418,89 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
     }
     sweep('f', index);
     sweep('h', index);
+
+    // Section cut-surface faces ride above the regular fills and below
+    // the hatch decorations and edges -- ZVALUE::SECTIONFACE in the Qt
+    // tier maps to Kind::Face at a later draw sequence here. Mirrors
+    // QGIViewSection::drawSectionFace: fill per CutSurfaceDisplay
+    // (transparent while the shaded underlay renders the cut surface),
+    // optional face-outline edges, PAT hatch lines as a Decoration.
+    uint32_t sIndex = 0;
+    if (auto dvs = dynamic_cast<TechDraw::DrawViewSection*>(dvp)) {
+        auto svp = dynamic_cast<ViewProviderViewSection*>(vp);
+        const bool sectionEdges = dvs->showSectionEdges();
+        const uint32_t sectionEdgeColor = vp
+            ? packColor(PreferencesGui::getAccessibleQColor(
+                  PreferencesGui::normalQColor()))
+            : style.edgeColor;
+        const float sectionEdgeWidth =
+            vp ? (float)Rez::guiX(vp->lineWidthScaled()) : style.edgeWidth;
+        for (const TechDraw::FacePtr& face : dvs->getTDFaceGeometry()) {
+            const std::vector<std::vector<Pt>> contours =
+                faceContours(face, style.deflection);
+            const Page2D::ItemId sid = itemId(name, 's', sIndex);
+            Page2D::Recorder rec;
+            Page2D::Recorder hrec;
+            bool rasterized = false;
+            if (svp && !dvs->CutSurfaceDisplay.isValue("Hide")) {
+                QColor fc =
+                    svp->CutSurfaceColor.getValue().asValue<QColor>();
+                fc.setAlpha(
+                    (100 - svp->CutSurfaceTransparency.getValue()) * 255
+                    / 100);
+                if (shadedUnderlay)
+                    fc.setAlpha(0);
+                // The cut color fills under every display mode --
+                // QGIFace keeps its solid base fill under svg tiles
+                // and PAT lines alike.
+                if (fc.alpha() != 0 && emitFacePath(rec, contours, ox, oy))
+                    rec.fillConcave(packColor(fc), /*evenOdd*/ true);
+                if (dvs->CutSurfaceDisplay.isValue("SvgHatch")) {
+                    HatchFill hf;
+                    hf.svg = true;
+                    hf.file = dvs->SvgIncluded.getValue();
+                    hf.color = svp->HatchColor.getValue().asValue<QColor>();
+                    if (dvs->HatchScale.getValue() > 0.0)
+                        hf.scale = dvs->HatchScale.getValue();
+                    hf.rotation = dvs->HatchRotation.getValue();
+                    hf.offset = dvs->HatchOffset.getValue();
+                    rasterized =
+                        emitHatchRaster(out, rec, sid, contours, ox, oy, hf);
+                }
+                else if (dvs->CutSurfaceDisplay.isValue("PatHatch")) {
+                    const double weightMm = svp->WeightPattern.getValue();
+                    const double hatchScale = dvs->HatchScale.getValue() > 0.0
+                        ? dvs->HatchScale.getValue()
+                        : 1.0;
+                    hrec.beginPath();
+                    bool any = false;
+                    std::vector<TechDraw::LineSet> lineSets =
+                        dvs->getDrawableLines((int)sIndex);
+                    for (TechDraw::LineSet& ls : lineSets)
+                        any = emitPatLineSet(hrec, ls, weightMm, hatchScale,
+                                             ox, oy)
+                            || any;
+                    if (any && weightMm > 0.0)
+                        hrec.stroke(packColor(svp->GeomHatchColor.getValue()
+                                                  .asValue<QColor>()),
+                                    (float)Rez::guiX(weightMm));
+                }
+            }
+            if (!rasterized && out.hasImage(sid))
+                out.removeImage(sid);
+            if (sectionEdges && sectionEdgeWidth > 0.0f
+                && emitFacePath(rec, contours, ox, oy))
+                rec.stroke(sectionEdgeColor, sectionEdgeWidth);
+            if (out.hasItem(sid))
+                out.removeItem(sid);
+            out.setItem(sid, Page2D::Kind::Face, layer, std::move(rec));
+            out.setItem(itemId(name, 'S', sIndex), Page2D::Kind::Decoration,
+                        layer, std::move(hrec));
+            ++sIndex;
+        }
+    }
+    sweep('s', sIndex);
+    sweep('S', sIndex);
 
     index = 0;
     int iEdge = 0;
@@ -1183,6 +1632,23 @@ void PageFeed::feedViewDecorations(QGIView* qgiv, Page2D& out, uint32_t layer)
     purgeCapturedImages(out, imgs);
     out.setItem(itemId(name, 'd', 0), Page2D::Kind::Decoration, layer,
                 std::move(rec));
+
+    // The detail-view matting ring is a plain QGraphicsItemGroup, not
+    // a QGIDecoration, and must mask the geometry that overflows the
+    // detail circle: it goes out as its own item above the edges
+    // (ZVALUE::MATTING in the Qt tier maps to Kind::Annotation here).
+    Page2D::Recorder mrec;
+    imgs.tag = 'k';
+    imgs.index = 0;
+    if (qgiv->isVisible()) {
+        for (QGraphicsItem* child : qgiv->childItems()) {
+            if (dynamic_cast<QGIMatting*>(child))
+                captureItemTree(child, mrec, qgiv, &imgs);
+        }
+    }
+    purgeCapturedImages(out, imgs);
+    out.setItem(itemId(name, 'm', 0), Page2D::Kind::Annotation, layer,
+                std::move(mrec));
 }
 
 void PageFeed::feedTemplate(TechDraw::DrawPage* page, Page2D& out,
