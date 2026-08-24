@@ -158,6 +158,8 @@ SET(FemExampleMeshes_SRCS
     femexamples/meshes/mesh_selfweight_cantilever_tetra10.py
     femexamples/meshes/mesh_square_pipe_end_twisted_tria6.py
     femexamples/meshes/mesh_thermomech_bimetal_tetra10.py
+    femexamples/meshes/mesh_thermomech_flow1d_seg3.py
+    femexamples/meshes/mesh_thermomech_spine_tetra10.py
     femexamples/meshes/mesh_transform_beam_hinged_tetra10.py
     femexamples/meshes/mesh_transform_torque_tetra10.py
     femexamples/meshes/mesh_truss_crane_seg2.py
@@ -380,6 +382,11 @@ SET(FemTests_SRCS
     femtest/__init__.py
     femtest/test_commands.sh
     femtest/test_information.md
+)
+
+SET(FemTestsFunction_SRCS
+    femtest/function_tests/__init__.py
+    femtest/function_tests/test_support_utils.py
 )
 
 SET(FemTestsApp_SRCS
@@ -618,6 +625,7 @@ SET(FemAllScripts
     ${FemSolverMystran_SRCS}
     ${FemSolverZ88_SRCS}
     ${FemTests_SRCS}
+    ${FemTestsFunction_SRCS}
     ${FemTestsApp_SRCS}
     ${FemTestsFiles_SRCS}
     ${FemTestsCcx_SRCS}
@@ -658,6 +666,7 @@ INSTALL(FILES ${FemSolverFenics_SRCS} DESTINATION Mod/Fem/femsolver/fenics)
 INSTALL(FILES ${FemSolverMystran_SRCS} DESTINATION Mod/Fem/femsolver/mystran)
 INSTALL(FILES ${FemSolverZ88_SRCS} DESTINATION Mod/Fem/femsolver/z88)
 INSTALL(FILES ${FemTests_SRCS} DESTINATION Mod/Fem/femtest)
+INSTALL(FILES ${FemTestsFunction_SRCS} DESTINATION Mod/Fem/femtest/function_tests)
 INSTALL(FILES ${FemTestsApp_SRCS} DESTINATION Mod/Fem/femtest/app)
 INSTALL(FILES ${FemTestsFiles_SRCS} DESTINATION Mod/Fem/femtest/data)
 INSTALL(FILES ${FemTestsCcx_SRCS} DESTINATION Mod/Fem/femtest/data/calculix)
