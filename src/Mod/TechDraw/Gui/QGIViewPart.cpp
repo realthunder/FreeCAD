@@ -58,8 +58,10 @@
 #include "QGIMatting.h"
 #include "QGISectionLine.h"
 #include "QGIVertex.h"
+#include "QGCustomImage.h"
 #include "QGIViewPart.h"
 #include "Rez.h"
+#include "ShadedUnderlay.h"
 #include "ViewProviderGeomHatch.h"
 #include "ViewProviderHatch.h"
 #include "ViewProviderViewPart.h"
@@ -196,6 +198,8 @@ void QGIViewPart::drawViewPart()
     removePrimitives();//clean the slate
     removeDecorations();
 
+    drawShadedUnderlay();
+
     if (viewPart->handleFaces() && !viewPart->CoarseView.getValue()) {
         drawAllFaces();
     }
@@ -203,6 +207,53 @@ void QGIViewPart::drawViewPart()
     drawAllEdges();
 
     drawAllVertexes();
+}
+
+//! The shaded-view hybrid's raster underlay (doc sec 26): capture (or
+//! re-validate) the shaded raster for this projection, then show it
+//! under every face/edge/vertex of the view at its registration rect.
+void QGIViewPart::drawShadedUnderlay()
+{
+    if (m_underlay) {
+        if (scene())
+            scene()->removeItem(m_underlay);
+        delete m_underlay;
+        m_underlay = nullptr;
+    }
+
+    auto dvp(static_cast<TechDraw::DrawViewPart*>(getViewObject()));
+    if (!dvp->Shaded.getValue())
+        return;
+
+    // Deterministic and byte-compared: when nothing about the
+    // projection changed this re-render writes nothing back.
+    ShadedUnderlay::update(dvp);
+
+    const char* file = dvp->UnderlayImage.getValue();
+    const std::vector<double>& rectVals = dvp->UnderlayRect.getValues();
+    if (!file || !file[0] || rectVals.size() != 4)
+        return;
+    QPixmap pix;
+    if (!pix.load(QString::fromUtf8(file), "PNG") || pix.isNull())
+        return;
+
+    auto* image = new QGCustomImage;
+    image->load(pix);
+    addToGroup(image);
+    // Above the plain face fill (which would otherwise paint opaque
+    // over the shading), below hatches and edges.
+    image->setZValue(ZVALUE::FACE + 5);
+    // The rect is view 2D mm, centroid origin, +Y up; item coordinates
+    // are Rez-scaled with Y inverted, so the rect's top edge (y + h)
+    // becomes the item's origin row.
+    const double xMm = rectVals[0];
+    const double yMm = rectVals[1];
+    const double wMm = rectVals[2];
+    const double hMm = rectVals[3];
+    image->setTransform(QTransform::fromScale(Rez::guiX(wMm) / pix.width(),
+                                              Rez::guiX(hMm) / pix.height()));
+    image->setPos(Rez::guiX(xMm), Rez::guiX(-(yMm + hMm)));
+    m_underlay = image;
 }
 
 void QGIViewPart::drawAllFaces(void)
