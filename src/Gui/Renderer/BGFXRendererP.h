@@ -2224,6 +2224,13 @@ public:
 extern BGFXRendererLibP _BGFXLib;
 extern BGFXRendererLib BGFXLib;
 
+#ifndef FC_RENDERER_STANDALONE
+/// The bgfx implementation of the draw facade (BGFXDrawDevice.cpp,
+/// desktop build only). BGFXRendererLib::drawDevice hands it out once
+/// the device is up.
+DrawDevice *fcBGFXDrawDevice();
+#endif
+
 } // namespace Renderer
 
 // Geometry vertex stream built from the separate MeshData attribute

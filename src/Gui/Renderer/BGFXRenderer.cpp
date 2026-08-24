@@ -945,6 +945,23 @@ bool BGFXRendererLib::warmup(QOpenGLWidget *widget, const std::string &type,
     return true;
 }
 
+DrawDevice *BGFXRendererLib::drawDevice() const
+{
+#ifdef FC_RENDERER_STANDALONE
+    // The standalone viewer has no facade consumer, and its source
+    // list does not carry BGFXDrawDevice.cpp.
+    return nullptr;
+#else
+    // Null until the device is up (prepare() ran): the facade hands
+    // out resources bgfx must exist to create. The consumer treats
+    // null as "not yet" and asks again -- warmup or the first 3D view
+    // flips it, and the device then stays up until the app quits.
+    if (_BGFXLib.currentType == RendererType::Noop)
+        return nullptr;
+    return fcBGFXDrawDevice();
+#endif
+}
+
 std::unique_ptr<Renderer> BGFXRendererLib::create(
         const std::string &type, QOpenGLWidget *widget,
         bool publishOnly) const
