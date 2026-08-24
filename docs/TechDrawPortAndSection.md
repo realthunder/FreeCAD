@@ -578,3 +578,99 @@ What was not measured here: the real `QGIViewPart` per-item paint cost
 (the numbers above are a synthetic floor), and no profiling of an
 actual large TechDraw page -- no such document exists on this box yet.
 The 6.0x/HLR numbers of sections 9-10 are unaffected.
+
+## 16. Decision and implementation plan (2026-08-24): vg-renderer is vendored
+
+Decision (user): the 2D vector engine is **vg-renderer**, vendored as a
+git submodule from the project's own fork, like bgfx:
+
+    src/3rdParty/vg-renderer  ->  https://github.com/realthunder/vg-renderer.git
+    pinned at d4568242 ("Merge pull request #50 ... update_simd", 2026-05)
+
+### Why vg-renderer over the vendored NanoVG
+
+Both are bgfx-friendly fontstash-based vector engines with a
+NanoVG-shaped API. The workload -- a retained page of tens of
+thousands of strokes -- decides it:
+
+- **Command lists with tessellation caching**: record a path once,
+  replay without re-tessellating. NanoVG is strictly immediate-mode
+  and re-flattens every path every frame, which is the same
+  O(N)-per-frame CPU tax section 15 measured in Qt.
+- **Batching**: same-state paths merge into few draw calls, with
+  specialized shader programs (solid / gradient / image / stencil).
+  NanoVG is one uber-shader with per-draw uniform pressure.
+- **Stencil clip in/out**: TechDraw detail views crop to a circle.
+- Alive upstream (last commit 2026-05, contributors besides the
+  author); BSD-2-Clause; libtess2 + fontstash + stb_truetype vendored
+  inside, so no new external dependencies.
+
+Known gaps, accepted with workarounds: **no polygon holes** (hatching
+is generated geometry anyway, and the user-supplied indexed-triangle
+API covers holed face fills), no font blur / letter-spacing, no skew.
+NanoVG stays in the tree regardless (it rides the bgfx submodule) but
+nothing of ours will depend on it.
+
+### Compatibility probe (already run, 2026-08-24)
+
+`-fsyntax-only` of `src/vg.cpp`, `path.cpp`, `stroker.cpp` against the
+vendored bgfx/bx headers found exactly two issues, both build-level,
+zero API drift in the code itself:
+
+1. `BX_CONFIG_DEBUG` must be defined by the including build script
+   (bgfx.cmake does the same dance).
+2. The checked-in `src/shaders/*.bin.h` were baked by an **older
+   shaderc**: our bgfx's `embedded_shader.h` expects `_dxbc`-suffixed
+   arrays, the baked ones still carry `_dx9`/`_dx11`. The `.sc`
+   sources ship, so the fix is to **regenerate the embedded shaders
+   with the in-tree shaderc** and commit them to the fork. The baked
+   set already includes `essl`, so the wasm tier is covered once
+   regenerated.
+
+### Implementation plan (next session starts here)
+
+**M0 -- build.** Wire the submodule into CMake: compile `src/*.cpp`,
+`src/libs/*.cpp`, `src/libtess2/*.c` into (or beside) the
+`FreeCADRenderer` lib when `BUILD_BGFX=ON`; define `BX_CONFIG_DEBUG`
+per config; regenerate the embedded shaders (fold into the
+`Renderer_assets` shaderc flow or a one-shot committed to the fork).
+Smoke test: draw paths + text into an offscreen bgfx target headless
+-- no display, no Qt.
+
+**M1 -- the engine layer.** Two new translation units in
+`src/Gui/Renderer/`:
+
+- `Vg2D*`: context lifecycle around `vg::createContext`, one bgfx view
+  per page surface, frame begin/end, DPI and view transform.
+- `Page2D*`: the retained page store. Items keyed by stable ids
+  (edge / face / vertex / annotation / decoration), each item one vg
+  command list; damage-driven re-record, never rebuild-the-world
+  (the project's incremental-by-default policy applies). **Zoom
+  bands**: a cached tessellation is valid within a scale band
+  (factor-of-2 to start); crossing a band re-records, so AA fringe
+  width and flattening tolerance stay honest. Verify early how
+  command-list replay behaves under a changed transform -- this is
+  the one vg-renderer property section 15 flagged as unverified.
+  Text through fontstash at screen-space sizes, re-rasterized per
+  band; SDF only if banding artifacts show.
+
+**M2 -- the TechDraw feed.** Extract `DrawViewPart` results
+(`GeometryObject` BaseGeom edges, vertices, faces) into `Page2D`.
+Hatch and holed face fills arrive pre-generated (lines / indexed
+triangles), sidestepping the no-holes gap. Desktop host for
+verification: render-to-texture composited the way the 3D renderer
+already composites with Coin; `QGSPage` keeps owning interaction and
+annotation editing -- this milestone renders, it does not select.
+Templates (SVG) are out of scope here; rasterize or skip until a
+vector story is designed.
+
+**M3 -- the wire.** Serialize `Page2D` (this is amendment 7's
+persisted view geometry, now with a concrete consumer) over the
+SceneServer channel as journal/delta updates; the wasm viewer renders
+it with the same vg code on the essl backend. A drawing page becomes
+a streamable document like the 3D scene.
+
+**Non-goals of this arc**: replacing `QGraphicsScene` interaction on
+desktop, GPU HLR (refuted, section 9), and the section-cut work
+(items 1-4, an independent arc). The Qt-side repaint fixes of
+section 15 remain worth doing on their own and do not conflict.
