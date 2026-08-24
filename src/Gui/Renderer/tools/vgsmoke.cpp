@@ -142,6 +142,9 @@ struct Offscreen
     void destroy()
     {
         bgfx::destroy(fb);
+        // The frame buffer does not own its attachments.
+        bgfx::destroy(color);
+        bgfx::destroy(depth);
         bgfx::destroy(staging);
     }
 

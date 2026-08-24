@@ -25,25 +25,36 @@
 #include <cstring>
 #include <map>
 
+#include "Page2D.h"
+
+// The record/storage side of Page2D is always built, so consumers
+// (the TechDraw feed) link unconditionally; everything touching
+// vg/bgfx compiles only with the bgfx renderer, and the render entry
+// points degrade to a false return without it.
+#ifdef HAVE_BGFX
 #include <bgfx/bgfx.h>
 #include <bx/math.h>
 
 #include <vg/vg.h>
 
-#include "Page2D.h"
 #include "Vg2D.h"
+#endif
 
 using namespace Render;
 
 struct Page2D::Private
 {
+    // The invalid vg command list handle index, kept as a raw uint16
+    // so the item storage builds without the vg headers.
+    static const uint16_t kNoList = 0xffff;
+
     struct Item
     {
         Kind kind = Kind::Face;
         uint32_t layer = 0;
         uint64_t seq = 0;
         std::vector<uint8_t> ops;
-        vg::CommandListHandle list = VG_INVALID_HANDLE;
+        uint16_t list = kNoList;
         bool recorded = false;
     };
 
@@ -52,14 +63,21 @@ struct Page2D::Private
     bool orderDirty = false;
     uint64_t nextSeq = 0;
     float lastBandScale = 0.0f;
+    // The Vg2D generation the item handles were created under: when the
+    // vg context is destroyed and rebuilt, every handle is dead and the
+    // items must forget them rather than submit into the new context.
+    uint32_t vgGeneration = 0;
 
     void releaseList(Item& item)
     {
-        if (!vg::isValid(item.list))
-            return;
-        if (Vg2D::instance().initialized())
-            vg::destroyCommandList(Vg2D::instance().context(), item.list);
-        item.list = VG_INVALID_HANDLE;
+#ifdef HAVE_BGFX
+        if (item.list != kNoList && Vg2D::instance().initialized()
+            && vgGeneration == Vg2D::instance().generation()) {
+            vg::CommandListHandle handle {item.list};
+            vg::destroyCommandList(Vg2D::instance().context(), handle);
+        }
+#endif
+        item.list = kNoList;
         item.recorded = false;
     }
 };
@@ -139,12 +157,6 @@ struct OpReader
         return v;
     }
 };
-
-vg::Color decodeColor(uint32_t rgba)
-{
-    return vg::color4ub((uint8_t)(rgba >> 24), (uint8_t)(rgba >> 16),
-                        (uint8_t)(rgba >> 8), (uint8_t)rgba);
-}
 
 } // namespace
 
@@ -306,12 +318,62 @@ void Page2D::Recorder::triangles(const float* xy, uint32_t numVertices,
     putU32(ops, rgba);
 }
 
+#ifdef HAVE_BGFX
+
+static vg::Color decodeColor(uint32_t rgba)
+{
+    return vg::color4ub((uint8_t)(rgba >> 24), (uint8_t)(rgba >> 16),
+                        (uint8_t)(rgba >> 8), (uint8_t)rgba);
+}
+
+// The fixed payload bytes that must follow each opcode (the variable
+// parts -- polyline points, triangle arrays, text -- are checked where
+// they are read). This buffer is the M3 wire format, so replay treats
+// it as untrusted input: a short or corrupt buffer stops the replay, it
+// never reads past the end.
+static size_t opFixedSize(Op op)
+{
+    switch (op) {
+    case Op::BeginPath:
+    case Op::ClosePath:
+        return 0;
+    case Op::MoveTo:
+    case Op::LineTo:
+    case Op::Stroke:
+        return 8;
+    case Op::CubicTo:
+    case Op::FillLinearGradient:
+        return 24;
+    case Op::QuadraticTo:
+    case Op::Rect:
+    case Op::Ellipse:
+        return 16;
+    case Op::Arc:
+        return 21;
+    case Op::Circle:
+        return 12;
+    case Op::Polyline:
+    case Op::FillConvex:
+    case Op::Triangles:
+        return 4;
+    case Op::FillConcave:
+        return 5;
+    case Op::Text:
+        return 1;
+    }
+    return SIZE_MAX; // unknown opcode: newer writer, stop
+}
+
 // Replay one op buffer into the currently recording vg command list.
 static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops)
 {
     OpReader r {ops.data(), ops.data() + ops.size()};
     while (!r.done()) {
-        switch ((Op)r.u8()) {
+        const Op op = (Op)r.u8();
+        const size_t need = opFixedSize(op);
+        if (need == SIZE_MAX || !r.fits(need))
+            return;
+        switch (op) {
         case Op::BeginPath:
             vg::beginPath(ctx);
             break;
@@ -362,7 +424,7 @@ static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops)
         }
         case Op::Polyline: {
             uint32_t n = r.u32();
-            if (!r.fits(sizeof(float) * 2 * n))
+            if (n < 2 || !r.fits(sizeof(float) * 2 * n))
                 return;
             // Copy out of the byte-packed buffer (alignment, and wasm
             // will not tolerate unaligned float loads). vg::polyline
@@ -402,7 +464,7 @@ static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops)
         }
         case Op::Text: {
             uint8_t nameLen = r.u8();
-            if (!r.fits(nameLen))
+            if (!r.fits((size_t)nameLen + 20)) // name + size/color/x/y/len
                 return;
             char name[256];
             memcpy(name, r.p, nameLen);
@@ -427,17 +489,21 @@ static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops)
         }
         case Op::Triangles: {
             uint32_t nv = r.u32();
-            if (!r.fits(sizeof(float) * 2 * nv))
+            if (!nv || !r.fits(sizeof(float) * 2 * nv + 4))
                 return;
             std::vector<float> pos(2 * nv);
             memcpy(pos.data(), r.p, sizeof(float) * 2 * nv);
             r.p += sizeof(float) * 2 * nv;
             uint32_t ni = r.u32();
-            if (!r.fits(sizeof(uint16_t) * ni))
+            if (!ni || ni % 3 || !r.fits(sizeof(uint16_t) * ni + 4))
                 return;
             std::vector<uint16_t> idx(ni);
             memcpy(idx.data(), r.p, sizeof(uint16_t) * ni);
             r.p += sizeof(uint16_t) * ni;
+            for (uint16_t i : idx) {
+                if (i >= nv)
+                    return;
+            }
             vg::Color c = decodeColor(r.u32());
             vg::ImageHandle noImage = VG_INVALID_HANDLE;
             vg::indexedTriList(ctx, pos.data(), nullptr, nv, &c, 1, idx.data(),
@@ -451,6 +517,8 @@ static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops)
         }
     }
 }
+
+#endif // HAVE_BGFX
 
 Page2D::Page2D()
     : d(new Private)
@@ -511,12 +579,25 @@ float Page2D::bandScale(float zoom)
     return exp2f(roundf(log2f(zoom)));
 }
 
+#ifdef HAVE_BGFX
+
 bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
 {
     Vg2D& vg2d = Vg2D::instance();
     if (!vg2d.initialized() && !vg2d.init())
         return false;
     vg::Context* ctx = vg2d.context();
+
+    // A destroyed-and-rebuilt vg context invalidated every command list
+    // handle: forget them (nothing to destroy, the context took them
+    // along) and re-record from the retained ops.
+    if (d->vgGeneration != vg2d.generation()) {
+        for (auto& v : d->items) {
+            v.second.list = Private::kNoList;
+            v.second.recorded = false;
+        }
+        d->vgGeneration = vg2d.generation();
+    }
 
     const float band = bandScale(pageView.zoom);
     if (band != d->lastBandScale) {
@@ -546,26 +627,32 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
     vg::begin(ctx, viewId, width, height, pageView.devicePixelRatio);
     vg::transformScale(ctx, band, band);
     for (Private::Item* item : d->drawOrder) {
+        // Placeholder items (a feed keeps ids contiguous by storing
+        // empty content for skipped geometry) cost nothing here.
+        if (item->ops.empty())
+            continue;
+        vg::CommandListHandle list {item->list};
         if (!item->recorded) {
-            if (!vg::isValid(item->list)) {
-                item->list =
-                    vg::createCommandList(ctx, vg::CommandListFlags::Cacheable);
-                if (!vg::isValid(item->list)) {
+            if (!vg::isValid(list)) {
+                list = vg::createCommandList(ctx,
+                                             vg::CommandListFlags::Cacheable);
+                if (!vg::isValid(list)) {
                     // Out of command list slots: skip rather than hand vg
                     // an invalid handle. The counter keeps it visible.
                     ++stats.droppedItems;
                     continue;
                 }
+                item->list = list.idx;
             }
             else
-                vg::resetCommandList(ctx, item->list);
-            vg::beginCommandList(ctx, item->list);
+                vg::resetCommandList(ctx, list);
+            vg::beginCommandList(ctx, list);
             replayOps(ctx, item->ops);
             vg::endCommandList(ctx);
             item->recorded = true;
             ++stats.itemRecords;
         }
-        vg::submitCommandList(ctx, item->list);
+        vg::submitCommandList(ctx, list);
         ++stats.listSubmits;
     }
     vg::end(ctx);
@@ -623,9 +710,17 @@ bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
         init.resolution.width = 0;
         init.resolution.height = 0;
         init.resolution.reset = BGFX_RESET_NONE;
-        if (bgfx::init(init))
+        if (bgfx::init(init)) {
             _offscreenDeviceUp = true;
-        // else: a device already exists (the 3D renderer's); use it.
+        }
+        else if (bgfx::getCaps()->limits.maxViews == 0) {
+            // init() refuses both when a device already exists (fine,
+            // share it) and when it genuinely cannot come up (no
+            // Vulkan ICD, ...). getCaps() returns the zero-initialized
+            // global until some init succeeds, so a zero view limit
+            // tells the two apart.
+            return false;
+        }
     }
 
     const uint64_t rtFlags = BGFX_TEXTURE_RT;
@@ -641,7 +736,10 @@ bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
         BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK);
 
     // The page draws on the offscreen view id pair right below bgfx's
-    // ceiling, out of the way of any 3D viewer's blocks.
+    // ceiling. The 3D renderer's block allocator keeps its hands off
+    // the top granule (BGFXRendererLibP::reserveBlock reserves it for
+    // exactly this), so these ids never collide with a live viewer on
+    // a shared device.
     const uint16_t viewId = (uint16_t)(bgfx::getCaps()->limits.maxViews - 2);
     bgfx::setViewFrameBuffer(viewId, fb);
     bgfx::setViewRect(viewId, 0, 0, width, height);
@@ -665,6 +763,10 @@ bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
     bgfx::FrameBufferHandle noFb = BGFX_INVALID_HANDLE;
     bgfx::setViewFrameBuffer(viewId, noFb);
     bgfx::destroy(fb);
+    // The frame buffer was created without texture ownership: the
+    // render targets are destroyed here or they leak per call.
+    bgfx::destroy(color);
+    bgfx::destroy(depth);
     bgfx::destroy(staging);
 
     if (!ok)
@@ -686,3 +788,17 @@ bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
     }
     return true;
 }
+
+#else // !HAVE_BGFX
+
+bool Page2D::render(uint16_t, uint16_t, uint16_t)
+{
+    return false;
+}
+
+bool Page2D::renderOffscreen(uint16_t, uint16_t, std::vector<uint8_t>&)
+{
+    return false;
+}
+
+#endif // HAVE_BGFX

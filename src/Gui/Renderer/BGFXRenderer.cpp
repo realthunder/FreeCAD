@@ -22,6 +22,7 @@
 
 
 #include "BGFXRendererP.h"
+#include "Vg2D.h"
 
 extern "C" int _main_(int, char**) {
     return 0;
@@ -1006,6 +1007,12 @@ bool BGFXRendererLibP::reserveBlock(BGFXView *view, uint16_t need)
     if (granules.empty()) {
         const uint32_t maxViews = bgfx::getCaps()->limits.maxViews;
         granules.assign(maxViews / kIdGranule, 0);
+        // The top granule belongs to Page2D::renderOffscreen, which
+        // draws on the fixed id pair just under the ceiling; a viewer
+        // block landing there would have its draws redirected into the
+        // page's framebuffer.
+        if (!granules.empty())
+            granules.back() = 1;
     }
     if (view->viewSpan >= need)
         return true;
@@ -1622,6 +1629,10 @@ void BGFXRendererLibP::shutdown()
             bgfx::destroy(v.second.prog);
     }
     userPrograms.clear();
+    // The 2D page engine's vg context lives on this device: destroy it
+    // while bgfx is still alive, and bump its generation so retained
+    // pages forget their now-dead command list handles.
+    Vg2D::instance().shutdown();
     bgfx::shutdown();
 #ifndef FC_RENDERER_STANDALONE
     if (window) {

@@ -41,7 +41,9 @@ class RendererExport Vg2D
 {
 public:
     /// The process-wide instance. Does not create the vg context; call
-    /// init() (idempotent) once bgfx is initialized.
+    /// init() (idempotent) once bgfx is initialized. Deliberately
+    /// leaked: a static-destruction-order teardown would touch bgfx
+    /// after the renderer shut it down.
     static Vg2D& instance();
 
     /// Create the vg context if it does not exist yet. Requires an
@@ -53,6 +55,11 @@ public:
     void shutdown();
 
     bool initialized() const { return ctx != nullptr; }
+
+    /// Bumped by every shutdown(): a retained page whose stored
+    /// generation differs holds handles into a destroyed context and
+    /// must forget them (Page2D does this on render).
+    uint32_t generation() const { return gen; }
 
     vg::Context* context() const { return ctx; }
 
@@ -69,11 +76,12 @@ public:
 
 private:
     Vg2D() = default;
-    ~Vg2D();
+    ~Vg2D() = default;
     Vg2D(const Vg2D&) = delete;
     Vg2D& operator=(const Vg2D&) = delete;
 
     vg::Context* ctx = nullptr;
+    uint32_t gen = 0;
 };
 
 } // namespace Render

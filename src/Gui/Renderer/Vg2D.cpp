@@ -36,13 +36,11 @@ static std::map<std::string, vg::FontHandle> _fonts;
 
 Vg2D& Vg2D::instance()
 {
-    static Vg2D inst;
-    return inst;
-}
-
-Vg2D::~Vg2D()
-{
-    shutdown();
+    // Leaked on purpose: a function-local static would be destroyed
+    // after the renderer has already shut bgfx down, and destroying
+    // the vg context then touches a dead device.
+    static Vg2D* inst = new Vg2D;
+    return *inst;
 }
 
 bool Vg2D::init()
@@ -81,6 +79,8 @@ void Vg2D::shutdown()
     vg::destroyContext(ctx);
     ctx = nullptr;
     _fonts.clear();
+    // Every command list handle out there died with the context.
+    ++gen;
 }
 
 vg::FontHandle Vg2D::loadFont(const char* name, const void* data, uint32_t size)

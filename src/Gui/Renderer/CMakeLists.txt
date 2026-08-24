@@ -4,9 +4,9 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 file(GLOB CMakeCache RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}/CMakeCache.txt)
 
-set(Renderer_Headers Renderer.h SceneDump.h SceneLadder.h ProxyHierarchy.h ProxyStore.h OcclusionCull.h MaskedOcclusion.h Simd4.h CullBenefit.h MeshSimplify.h OccluderMesh.h MeshSource.h SceneServer.h)
+set(Renderer_Headers Renderer.h Page2D.h SceneDump.h SceneLadder.h ProxyHierarchy.h ProxyStore.h OcclusionCull.h MaskedOcclusion.h Simd4.h CullBenefit.h MeshSimplify.h OccluderMesh.h MeshSource.h SceneServer.h)
 set(Renderer_HPP_SRCS ${Renderer_Headers})
-set(Renderer_CPP_SRCS Renderer.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp ProxyStore.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp OccluderMesh.cpp MeshSource.cpp SceneServer.cpp)
+set(Renderer_CPP_SRCS Renderer.cpp Page2D.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp ProxyStore.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp OccluderMesh.cpp MeshSource.cpp SceneServer.cpp)
 set(Renderer_LIBS FreeCADBase
                   ${QtCore_LIBRARIES}
                   ${QtWidgets_LIBRARIES}
@@ -35,9 +35,8 @@ if(BUILD_BGFX)
         BGFXScene.cpp
         BGFXFrame.cpp
         Vg2D.cpp
-        Page2D.cpp
     )
-    list(APPEND Renderer_HPP_SRCS BGFXRenderer.h BGFXRendererP.h Vg2D.h Page2D.h)
+    list(APPEND Renderer_HPP_SRCS BGFXRenderer.h BGFXRendererP.h Vg2D.h)
     # Private: nothing outside this library calls bgfx, and example-common
     # carries bgfx's own entry point, which asks any executable that links
     # it for a _main_ it does not have.
