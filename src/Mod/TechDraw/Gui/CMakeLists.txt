@@ -339,6 +339,8 @@ SET(TechDrawGuiView_SRCS
     ZVALUE.h
     QGIGhostHighlight.cpp
     QGIGhostHighlight.h
+    PageFeed.cpp
+    PageFeed.h
     PathBuilder.cpp
     PathBuilder.h
 )

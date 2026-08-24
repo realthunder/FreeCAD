@@ -35,6 +35,7 @@
 #include <Mod/Part/App/OCCError.h>
 #include <Mod/TechDraw/App/DrawPage.h>
 #include <Mod/TechDraw/App/DrawPagePy.h>
+#include <Mod/TechDraw/App/DrawViewPart.h>
 #include <Mod/TechDraw/App/DrawViewPy.h>  // generated from DrawViewPy.xml
 
 #include "MDIViewPage.h"
@@ -43,6 +44,12 @@
 #include "ViewProviderPage.h"
 #include "ViewProviderDrawingView.h"
 #include "PagePrinter.h"
+
+#include <QImage>
+
+#include <Gui/Renderer/Page2D.h>
+#include "PageFeed.h"
+#include "Rez.h"
 
 
 namespace TechDrawGui {
@@ -60,6 +67,10 @@ public:
         );
         add_varargs_method("exportPageAsSvg", &Module::exportPageAsSvg,
             "exportPageAsSvg(DrawPageObject, FilePath) -- print page as Svg to file."
+        );
+        add_varargs_method("renderPageVg", &Module::renderPageVg,
+            "renderPageVg(DrawPageObject, FilePath, [width, height]) -- render the page "
+            "through the vg 2D engine into an image file; returns a dict of feed counters."
         );
         add_varargs_method("addQGIToView", &Module::addQGIToView,
             "addQGIToView(View, QGraphicsItem) -- insert graphics item into view's graphic."
@@ -209,6 +220,68 @@ private:
     }
 
 //!exportPageAsSvg(PageObject, FullPath)
+    //! Verification host for the 2D page engine (M2): feed the page into
+    //! a Render::Page2D and render it offscreen -- no scene, no widget.
+    Py::Object renderPageVg(const Py::Tuple& args)
+    {
+        PyObject* pageObj;
+        char* name;
+        int width = 1024;
+        int height = 768;
+        if (!PyArg_ParseTuple(args.ptr(), "Oet|ii", &pageObj, "utf-8", &name,
+                              &width, &height)) {
+            throw Py::TypeError("expected (Page, path, [width, height])");
+        }
+        std::string filePath(name);
+        PyMem_Free(name);
+
+        if (!PyObject_TypeCheck(pageObj, &TechDraw::DrawPagePy::Type)) {
+            throw Py::TypeError("expected a Drawing Page");
+        }
+        auto page = static_cast<TechDraw::DrawPagePy*>(pageObj)
+                        ->getDrawPagePtr();
+
+        // HLR and face extraction run on worker threads; a caller that
+        // wants the full drawing pumps the event loop until this is 0.
+        long pendingViews = 0;
+        for (App::DocumentObject* obj : page->getAllViews()) {
+            auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(obj);
+            if (dvp && (dvp->waitingForHlr() || dvp->waitingForFaces()))
+                ++pendingViews;
+        }
+
+        Render::Page2D page2d;
+        PageFeed::feedPage(page, page2d);
+
+        // Fit the page sheet into the target image. Page content lives
+        // at scene y in [-height, 0] (page coordinates are y-up).
+        const double sheetW = Rez::guiX(page->getPageWidth());
+        const double sheetH = Rez::guiX(page->getPageHeight());
+        Render::Page2D::View view;
+        if (sheetW > 0.0 && sheetH > 0.0)
+            view.zoom = (float)std::min(width / sheetW, height / sheetH);
+        view.panY = (float)(view.zoom * sheetH);
+        page2d.setView(view);
+
+        std::vector<uint8_t> rgba;
+        if (!page2d.renderOffscreen((uint16_t)width, (uint16_t)height, rgba)) {
+            throw Py::RuntimeError("vg offscreen render failed (bgfx?)");
+        }
+        QImage image(rgba.data(), width, height, width * 4,
+                     QImage::Format_RGBA8888);
+        if (!image.save(QString::fromUtf8(filePath.c_str()))) {
+            throw Py::RuntimeError("could not save image to " + filePath);
+        }
+
+        const Render::Page2D::Counters& counters = page2d.counters();
+        Py::Dict result;
+        result.setItem("itemRecords", Py::Long((long)counters.itemRecords));
+        result.setItem("listSubmits", Py::Long((long)counters.listSubmits));
+        result.setItem("droppedItems", Py::Long((long)counters.droppedItems));
+        result.setItem("pendingViews", Py::Long(pendingViews));
+        return result;
+    }
+
     Py::Object exportPageAsSvg(const Py::Tuple& args)
     {
         PyObject *pageObj;
