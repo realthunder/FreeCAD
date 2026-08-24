@@ -1360,3 +1360,136 @@ scale 2.0; page picking/ops (the entry info strings are reserved);
 in-browser verification of the delta-specific viewer branches (base-
 mismatch resync, removals) rides the shared apply path and the wire
 smoke, not a dedicated browser test.
+
+## 26. Design (2026-08-24): the shaded-view hybrid -- raster underlay under exact-HLR edges
+
+Section 22 recorded the decision: a shaded drawing view is a hybrid,
+the way SolidWorks/Inventor/NX plot one -- a shaded raster underlay
+with the vector exact-HLR edges drawn crisp on top. This section is
+the working design for building it.
+
+### 26.1 Object model: properties on DrawViewPart, not a new type
+
+The hybrid is not a new view type; it is an appearance of the view
+`DrawViewPart` already is. The HLR edge overlay it needs is exactly
+what the view computes today, for the same Source, Direction,
+XDirection, Scale and Rotation. So the underlay hangs off
+`DrawViewPart` itself, and section views and detail views inherit the
+capability for free later (v1 targets plain part views; sections cut
+their source, so their underlay needs the cut solid and stays off
+until wired):
+
+- `Shaded` (`App::PropertyBool`, default false) -- turn the underlay
+  on.
+- `UnderlayImage` (`App::PropertyFileIncluded`, `Prop_Output`) -- the
+  captured PNG, persisted in the document the way
+  `DrawViewImage::ImageIncluded` is. `Prop_Output` because the
+  capture is *derived* state written back by the Gui tier: writing it
+  must not re-touch the view, or every capture would schedule the HLR
+  it was triggered by.
+- `UnderlayResolution` (`App::PropertyFloat`, px per page mm, default
+  10.0 -- about 254 dpi on paper) -- capture density.
+- `UnderlayRect` (`App::PropertyFloatList`, `Prop_Output`, hidden) --
+  registration: `[x, y, w, h]` of the raster in the view's own 2D
+  coordinate system (mm, centroid-origin, +Y up, pre-invertY), written
+  by the capture beside the pixels.
+
+A restored document carries the last capture in the property, so the
+page shows a shaded view immediately -- in FreeCADCmd-less viewers,
+in a PageServe publisher before any recompute, and in the browser --
+and a Gui session re-captures only when the projection actually
+changes.
+
+### 26.2 The capture: a private Coin scene, not a viewport grab
+
+Section 22 sketched the capture on the bgfx offscreen path. First
+recon amends that: `Renderer::renderOffscreen` renders "an ordinary
+frame with the same feeds" -- the whole visible scene, plus the
+selection, preselection and overlay feeds, under whatever AO/bloom/
+temporal state the interactive view is in. Making that deterministic
+for a drawing would need a per-capture object include-filter in the
+Renderer API plus feed stripping, and it only exists at all when the
+user runs render-cache mode 3 with a backend selected. The underlay
+must not depend on any of that.
+
+So the first build captures from a **private Coin scene**:
+
+    SoSeparator
+      SoOrthographicCamera   (from getProjectionCS + Rotation)
+      SoDirectionalLight     (headlight, camera-aligned)
+      <ViewProvider roots of the resolved Source objects>
+
+rendered by `SoFCOffscreenRenderer` at `UnderlayResolution`, RGBA
+with a fully transparent background, PNG'd into `UnderlayImage`.
+Nothing else can leak in: no selection highlight, no other objects,
+no navigation chrome, no temporal state. It works in every GUI build,
+with or without the bgfx renderer. The seam is one function --
+`captureShadedUnderlay(DrawViewPart*) -> QImage + rect` -- and the
+bgfx-quality capture (PBR materials, matcap, AO baked into the
+underlay) remains the recorded follow-up behind the same seam, which
+is when the per-capture object filter earns its place in the
+Renderer API.
+
+### 26.3 Registration, the whole game
+
+`makeGeometryForShape` fixes the coordinate contract: the HLR input
+is the source shape *centered on its centroid* in
+`getProjectionCS()`, *scaled* by Scale, then *rotated* by Rotation
+about the CS axis; the projected 2D geometry therefore lives in a
+centroid-origin mm system aligned with the CS's XDirection/
+YDirection. The capture mirrors each step exactly:
+
+- Camera: orthographic, aimed along -Direction, right/up = the CS
+  XDirection/YDirection rotated by Rotation about the axis (the exact
+  mirror of `centerScaleRotate`'s `rotateShape`).
+- Window: the bounding box, in those camera coordinates, of the
+  centered *unscaled* source shape -- computed from the same source
+  shape the HLR consumed, not from scene graph bounds. `UnderlayRect`
+  is that window times Scale.
+- Raster size: window extents times Scale times
+  `UnderlayResolution`, so one raster pixel is a fixed fraction of a
+  page mm regardless of model size.
+
+The Qt item then draws the pixmap at `UnderlayRect` (invertY applied
+like every other view child) with no further transform, and the HLR
+edges land on the raster's silhouette boundary by construction. The
+verification test asserts exactly that, in pixels, on the real GPU.
+Perspective views (`Perspective`/`Focus`) are out of v1's scope: the
+underlay stays off for them (a matching SoPerspectiveCamera is
+possible later, but registration against perspective HLR needs its
+own math and its own test).
+
+### 26.4 Trigger and cadence
+
+The capture belongs to the Gui tier (ViewProviderViewPart), runs when
+the view's HLR geometry has rebuilt (the same signal QGIViewPart
+redraws on -- after async HLR completes, never racing it), and is
+guarded by a capture key: source objects' geometry stamp + Direction
++ XDirection + Scale + Rotation + resolution + the source colors'
+hash. Same key, no capture, no property write -- a repaint must not
+dirty the document or touch the disk. `Prop_Output` keeps the write
+from re-touching the view when a capture does happen.
+
+### 26.5 Display tiers
+
+- **Qt page**: `QGIViewPart` gains a pixmap child (reusing
+  `QGCustomImage`) at the lowest zValue of the view -- under faces,
+  hatches and edges -- fed from `UnderlayImage` bytes at
+  `UnderlayRect`.
+- **vg page**: free by construction -- the feed's capture walker
+  already rasterizes `QGraphicsPixmapItem` children into Page2D image
+  ops in encounter order (section 21), and the underlay is just one
+  more, layered below the view's stroke items.
+- **The wire**: image items already stream as content-addressed RGBA
+  chunks (section 24), so a served page carries the underlay with
+  zero new wire code.
+
+### 26.6 Milestones
+
+- S1: the four properties on `DrawViewPart`, restore-compatible.
+- S2: the capture helper + ViewProvider trigger.
+- S3: the `QGIViewPart` underlay item; real-GPU registration test
+  (silhouette-on-boundary within ~2 px, Scale and Rotation cases,
+  restore-without-recapture case).
+- S4: vg feed + served-page verification; implementation-status
+  section.
