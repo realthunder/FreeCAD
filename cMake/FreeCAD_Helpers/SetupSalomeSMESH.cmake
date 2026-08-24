@@ -3,12 +3,17 @@ macro(SetupSalomeSMESH)
 
     # Salome SMESH sources are under src/3rdParty now
     if(BUILD_SMESH)
+        # set the internal smesh version -- only for the bundled sources. An
+        # external SMESH carries its own, found before this macro runs, and
+        # overwriting it here compiles the pre-9 branches against a 9.x SMESH.
+        if(NOT FREECAD_USE_EXTERNAL_SMESH)
         # set the internal smesh version:
         # see src/3rdParty/salomonemesh/CMakeLists.txt and commit https://github.com/FreeCAD/FreeCAD/commit/666a3e5 and https://forum.freecad.org/viewtopic.php?f=10&t=30838
         set(SMESH_VERSION_MAJOR 7)
         set(SMESH_VERSION_MINOR 7)
         set(SMESH_VERSION_PATCH 1)
         set(SMESH_VERSION_TWEAK 0)
+        endif()
 
         #if we use smesh we definitely also need vtk, no matter of external or internal smesh
         set (VTK_COMPONENTS
@@ -51,6 +56,14 @@ macro(SetupSalomeSMESH)
         if(AVAILABLE_VTK_COMPONENTS)
             message(STATUS "VTK components: ${AVAILABLE_VTK_COMPONENTS}")
             find_package(VTK COMPONENTS ${AVAILABLE_VTK_COMPONENTS} REQUIRED NO_MODULE)
+            # VTK 9 dropped VTK_INCLUDE_DIRS, but several modules still list it and
+            # get their VTK headers only because the bundled SMESH target happens to
+            # propagate them. An external SMESH is linked as plain library paths and
+            # propagates nothing, so MeshPart then compiles SMESH headers without
+            # vtkType.h. Recover the directory from the imported target.
+            if(NOT VTK_INCLUDE_DIRS AND TARGET VTK::CommonCore)
+                get_target_property(VTK_INCLUDE_DIRS VTK::CommonCore INTERFACE_INCLUDE_DIRECTORIES)
+            endif()
         else()
             message(STATUS "VTK components: not found or used")
             find_package(VTK REQUIRED NO_MODULE)
@@ -144,6 +157,17 @@ macro(SetupSalomeSMESH)
             endif()
             set (SMESH_INCLUDE_DIR ${SMESH_INCLUDE_PATH})
             set(EXTERNAL_SMESH_LIBS ${SMESH_LIBRARIES})
+            # The bundled SMESH is a CMake target and carries VTK in its link
+            # interface. An external SMESH is linked as plain library paths and
+            # carries nothing, so Fem and MeshPart would link without VTK and
+            # fail on vtkPolyData::New(), vtkPythonUtil and the module registrars.
+            if(${VTK_MAJOR_VERSION} GREATER_EQUAL 9)
+                foreach(_smesh_vtk ${AVAILABLE_VTK_COMPONENTS})
+                    list(APPEND EXTERNAL_SMESH_LIBS VTK::${_smesh_vtk})
+                endforeach()
+            else()
+                list(APPEND EXTERNAL_SMESH_LIBS ${VTK_LIBRARIES})
+            endif()
 
             include_directories(${SMESH_INCLUDE_DIR})
         endif()
