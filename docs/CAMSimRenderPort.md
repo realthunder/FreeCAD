@@ -33,13 +33,26 @@ simulator that absorption into `SceneDump`/`SceneServer` would have
 bought. Immediate-mode plugin draws do not stream; Blender does not
 stream addon draws either.
 
-**SSAO is IN stage 1** (ruled 2026-08-24). It is off by default and a
-toolbar toggle, so it was a candidate to cut -- but under the
-permanent-consumer ruling the SSAO chain (MRT G-buffer, float targets,
-kernel-array uniforms, noise texture, blur chain, multi-pass resolve)
-is the canonical advanced-plugin workload: porting it proves the API
-for the whole class, and the simulator stays visually identical at
-every toggle setting.
+**The sim's SSAO chain is NOT ported; AO comes from the engine as a
+built-in effect** (ruled 2026-08-24, superseding the same-day port-it
+lean). The engine already carries two AO implementations behind one
+entry point (`BGFXView::submitAOResolve`: the classic kernel SSAO and
+XeGTAO, selected by `method`); porting the simulator's hand-rolled
+chain would have added a third. Instead the API grows its next Blender
+layer -- built-in shaders one level up is **built-in effects**: the
+consumer supplies the input the effect declares and gets a result
+texture back, never seeing the passes in between. AO/GTAO is the first
+such effect, the simulator its first consumer, and the simulator's AO
+toggle comes back *better* than before (GTAO instead of a 16-sample
+kernel SSAO). The visual change at toggle-on is accepted as the
+upgrade it is.
+
+What this removes from the port: `shaderSSAO`, `shaderSSAOBlur`, the
+SSAO and blur FBOs, the 4x4 noise texture, and the kernel-array
+uniform (the fiddliest repack in the whole port). What stays: the MRT
+G-buffer and the deferred resolve -- those are structural (the
+non-SSAO path resolves from the same G-buffer, and the G-buffer is the
+frame cache that lets a repaint skip the CSG).
 
 Staging keeps a working simulator at every commit, and the shader port
 (step 2 below) is done once.
@@ -98,6 +111,11 @@ framebuffers and a 4x4 noise texture.
 **State** -- colour mask, cull face, depth func (`LESS`/`GREATER`/
 `EQUAL`), depth mask, stencil func + op, blend, polygon offset, line
 width.
+
+Of that inventory, the SSAO chain -- `shaderSSAO`, `shaderSSAOBlur`,
+the SSAO and blur FBOs, the noise texture, the kernel uniform -- is
+NOT ported (section 1): the engine AO effect replaces it. It stays
+listed above because it is what the code contains today.
 
 **The state is the interesting part.** `MillSimulation` touches GL only
 in seven tiny functions (`MillSimulation.cpp:176-235`): `GlsimStart`,
@@ -162,6 +180,25 @@ risks). `StencilState` carries func, ref, mask and the
 
 Roughly 25 entry points -- sized to the table in section 2, not to bgfx.
 
+**The effect tier.** One layer above the draw calls, the facade offers
+engine-internal screen-space effects as services. The first is AO:
+
+```
+EffectHandle createEffect(EffectType);          // EffectType::AO first
+// input: normal + linear depth in the engine's prepass packing
+// (what BGFXView calls aoNormalZ), plus the projection params;
+// output: an R8 AO texture the caller samples.
+TextureHandle runEffect(EffectHandle, unsigned firstPass,
+                        TextureHandle normalZ, const EffectParams &);
+```
+
+The consumer renders its input in the declared packing, hands it over
+with a range of its own pass ids for the effect's internal passes
+(depth pyramid, gen, denoise), and samples the result -- it never sees
+the implementation, and the engine keeps one AO implementation for
+everyone. The `method` choice (classic/GTAO) and tuning ride
+`EffectParams`, defaulting to the engine's own render params.
+
 Implementation lives in a new `BGFXDrawDevice.cpp`, built only under
 `BUILD_BGFX`. Without it `instance()` returns null and the simulator
 keeps its GL path, which is what makes the staged build-out below safe.
@@ -183,7 +220,8 @@ Each step builds and leaves a working simulator.
    `BGFXDrawDevice.cpp`; `CAMSimulator` links `FreeCADRenderer`.
    Nothing calls it yet. *Done when:* the tree builds with BGFX on and
    off, and `instance()` is non-null at runtime once a 3D view exists.
-2. **Shaders.** The 15 sources become `.sc` files under
+2. **Shaders.** The sources minus the two SSAO ones (13) become `.sc`
+   files under
    `src/Mod/CAM/PathSimulator/AppGL/shaders/`, compiled into the pack by
    `fc_bgfx_compile_shaders(SHADERDIR ...)` -- that function already
    takes the directory as a parameter, so the sources stay in the CAM
@@ -192,19 +230,28 @@ Each step builds and leaves a working simulator.
 3. **Resources.** `SimShapes`, `StockObject`, `SolidObject`,
    `MillPathLine`, `Texture` create facade buffers and textures. Draw
    calls still go through GL.
-4. **Targets and fullscreen passes.** `SimDisplay`'s G-buffer, SSAO and
-   blur FBOs become facade targets; the four fullscreen quad draws move
-   over.
+4. **Targets and fullscreen passes.** `SimDisplay`'s G-buffer becomes
+   facade targets (the SSAO and blur FBOs are dropped, section 1); the
+   fullscreen resolve draws move over with `ssaoActive` forced off for
+   now.
 5. **State.** The seven `Glsim*` functions become the state accumulator;
    every draw site submits with explicit state and stencil.
 6. **Frame.** `DlgCAMSimulator::paintGL` drives
    `beginFrame`/`endFrame`. This is the commit where bgfx first draws
    the simulator.
-7. **Remove the GL path.** Delete `OpenGlWrapper.{h,cpp}`, the inline
+7. **The AO effect service.** Lift the engine's AO block
+   (`submitAOResolve` and its targets/programs) into an
+   instantiable-per-consumer form, expose it through the facade's
+   effect tier, adapt the sim's geometry pass to also write the
+   prepass packing, and wire the toolbar toggle to it. This is the
+   step that restores AO -- as GTAO.
+8. **Remove the GL path.** Delete `OpenGlWrapper.{h,cpp}`, the inline
    GLSL in `Shader.cpp`, and drop `${OPENGL_gl_LIBRARY}` and
    `${QtOpenGL_LIBRARIES}` from the `CAMSimulator` target.
 
-Steps 3 and 4 are independent of each other; 5 depends on 3.
+Steps 3 and 4 are independent of each other; 5 depends on 3; 7 can
+land any time after 6 (the sim runs with AO disabled until it does),
+and 8 waits for 7 so the GL build remains the comparison point.
 
 
 ## 5. Risks, each with its substitute
