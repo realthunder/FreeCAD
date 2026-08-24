@@ -32,6 +32,8 @@
 
 #include "SimDisplay.h"
 
+#include <Gui/Renderer/DrawSurface.h>
+
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <algorithm>
@@ -87,6 +89,30 @@ void SimDisplay::InitShaders()
 
     // Mill Path Line Shader
     shaderLinePath.CompileShader("PathLine", VertShader3DLine, FragShader3DLine);
+
+    if (auto* dev = Render::DrawDevice::instance()) {
+        // The same programs from the compiled shader pack
+        // (AppGL/shaders/*.sc), minus the dead GL ones (SimFbo, the
+        // closer geometry pass) and the SSAO chain the engine AO
+        // effect replaces.
+        mRProgDiffuse = dev->createProgram("vs_camsim_norm", "fs_camsim_diffuse");
+        mRProgInvDiffuse = dev->createProgram("vs_camsim_invnorm", "fs_camsim_diffuse");
+        mRProgFlat = dev->createProgram("vs_camsim_norm", "fs_camsim_flat");
+        mRProgGeom = dev->createProgram("vs_camsim_geom", "fs_camsim_geom");
+        mRProgLighting = dev->createProgram("vs_camsim_fbo", "fs_camsim_lighting");
+        mRProgLine = dev->createProgram("vs_camsim_line", "fs_camsim_line");
+        mRUniNormalRot = dev->createUniform("u_simNormalRot", Render::UniformType::Mat4);
+        mRUniLightPos = dev->createUniform("u_simLightPos", Render::UniformType::Vec4);
+        mRUniLightColor = dev->createUniform("u_simLightColor", Render::UniformType::Vec4);
+        mRUniLightAmbient = dev->createUniform("u_simLightAmbient", Render::UniformType::Vec4);
+        mRUniObjectColor = dev->createUniform("u_simObjectColor", Render::UniformType::Vec4);
+        mRUniObjectColorAlpha = dev->createUniform("u_simObjectColorAlpha", Render::UniformType::Vec4);
+        mRUniParams = dev->createUniform("u_simParams", Render::UniformType::Vec4);
+        mRSampColor = dev->createUniform("s_simColor", Render::UniformType::Sampler);
+        mRSampPosition = dev->createUniform("s_simPosition", Render::UniformType::Sampler);
+        mRSampNormal = dev->createUniform("s_simNormal", Render::UniformType::Sampler);
+        mRSampAo = dev->createUniform("s_simAo", Render::UniformType::Sampler);
+    }
 }
 
 void SimDisplay::CreateFboQuad()
@@ -101,6 +127,13 @@ void SimDisplay::CreateFboQuad()
     glGenBuffers(1, &mFboQuadVBO);
     glBindBuffer(GL_ARRAY_BUFFER, mFboQuadVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices[0], GL_STATIC_DRAW);
+
+    if (auto* dev = Render::DrawDevice::instance()) {
+        Render::VertexLayout layout;
+        layout.add(Render::DrawAttrib::Position, 2, Render::DrawAttribType::Float)
+            .add(Render::DrawAttrib::TexCoord0, 2, Render::DrawAttribType::Float);
+        mRQuadVbo = dev->createVertexBuffer(quadVertices, sizeof(quadVertices), layout);
+    }
 }
 
 void SimDisplay::SetupVertexAttribs() const
@@ -183,6 +216,24 @@ void SimDisplay::CreateDisplayFbos()
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    if (auto* dev = Render::DrawDevice::instance()) {
+        // Same G-buffer as facade textures: the RGB32F attachments
+        // become RGBA32F (no 3-channel float targets in the backend)
+        // and the depth/stencil renderbuffer becomes a D24S8 texture.
+        // Point filtering, matching the GL parameters above.
+        uint32_t flags = Render::TexturePoint | Render::TextureClamp;
+        mRColTexture = dev->createRenderTexture(
+            mWidth, mHeight, Render::DrawTextureFormat::RGBA8, flags);
+        mRPosTexture = dev->createRenderTexture(
+            mWidth, mHeight, Render::DrawTextureFormat::RGBA32F, flags);
+        mRNormTexture = dev->createRenderTexture(
+            mWidth, mHeight, Render::DrawTextureFormat::RGBA32F, flags);
+        mRDepthTexture = dev->createRenderTexture(
+            mWidth, mHeight, Render::DrawTextureFormat::D24S8, 0);
+        Render::TextureHandle colors[3] = {mRColTexture, mRPosTexture, mRNormTexture};
+        mRTarget = dev->createTarget(colors, 3, mRDepthTexture);
+    }
 }
 
 void SimDisplay::CreateSsaoFbos()
@@ -280,6 +331,29 @@ void SimDisplay::CleanFbos()
     GLDELETE_TEXTURE(mFboSsaoBlurTexture);
     GLDELETE_TEXTURE(mFboRandTexture);
     GLDELETE_RENDERBUFFER(mRboDepthStencil);
+
+    if (auto* dev = Render::DrawDevice::instance()) {
+        if (mRTarget.valid()) {
+            dev->destroy(mRTarget);
+        }
+        if (mRColTexture.valid()) {
+            dev->destroy(mRColTexture);
+        }
+        if (mRPosTexture.valid()) {
+            dev->destroy(mRPosTexture);
+        }
+        if (mRNormTexture.valid()) {
+            dev->destroy(mRNormTexture);
+        }
+        if (mRDepthTexture.valid()) {
+            dev->destroy(mRDepthTexture);
+        }
+    }
+    mRTarget = {};
+    mRColTexture = {};
+    mRPosTexture = {};
+    mRNormTexture = {};
+    mRDepthTexture = {};
 }
 
 void SimDisplay::CleanGL()
@@ -298,6 +372,34 @@ void SimDisplay::CleanGL()
     shaderSSAO.Destroy();
     shaderSSAOLighting.Destroy();
     shaderSSAOBlur.Destroy();
+
+    if (auto* dev = Render::DrawDevice::instance()) {
+        Render::ProgramHandle progs[] = {mRProgDiffuse, mRProgInvDiffuse,
+            mRProgFlat, mRProgGeom, mRProgLighting, mRProgLine};
+        for (auto& p : progs) {
+            if (p.valid()) {
+                dev->destroy(p);
+            }
+        }
+        Render::UniformHandle unis[] = {mRUniNormalRot, mRUniLightPos,
+            mRUniLightColor, mRUniLightAmbient, mRUniObjectColor,
+            mRUniObjectColorAlpha, mRUniParams, mRSampColor,
+            mRSampPosition, mRSampNormal, mRSampAo};
+        for (auto& u : unis) {
+            if (u.valid()) {
+                dev->destroy(u);
+            }
+        }
+        if (mRQuadVbo.valid()) {
+            dev->destroy(mRQuadVbo);
+        }
+    }
+    mRProgDiffuse = mRProgInvDiffuse = mRProgFlat = {};
+    mRProgGeom = mRProgLighting = mRProgLine = {};
+    mRUniNormalRot = mRUniLightPos = mRUniLightColor = {};
+    mRUniLightAmbient = mRUniObjectColor = mRUniObjectColorAlpha = {};
+    mRUniParams = mRSampColor = mRSampPosition = mRSampNormal = mRSampAo = {};
+    mRQuadVbo = {};
 
     displayInitiated = false;
 }
@@ -455,6 +557,44 @@ void SimDisplay::RenderResultSSAO(bool recalculate)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     SetupVertexAttribs();
     glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
+void SimDisplay::RenderResultFacade(Render::DrawSurface* surface, unsigned pass)
+{
+    if (!surface || !mRProgLighting.valid() || !mRQuadVbo.valid()) {
+        return;
+    }
+    // The GL resolve's uniform values, vec3 padded to vec4. The light
+    // position is uploaded as-is even though the G-buffer is
+    // view-space -- the GL path does the same, so the (camera-locked)
+    // lighting matches it exactly.
+    float v[4];
+    auto vec4of = [&v](const vec3& src) {
+        v[0] = src[0];
+        v[1] = src[1];
+        v[2] = src[2];
+        v[3] = 0.0f;
+        return v;
+    };
+    surface->setUniform(mRUniLightPos, vec4of(lightPos));
+    surface->setUniform(mRUniLightColor, vec4of(lightColor));
+    surface->setUniform(mRUniLightAmbient, vec4of(ambientCol));
+    // y = ssaoActive, off until the AO effect lands (step 7).
+    float params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    surface->setUniform(mRUniParams, params);
+    surface->setTexture(0, mRSampColor, mRColTexture);
+    surface->setTexture(1, mRSampPosition, mRPosTexture);
+    surface->setTexture(2, mRSampNormal, mRNormTexture);
+    // The shader branches away from the AO sample, but the slot must
+    // still hold a valid texture on every backend.
+    surface->setTexture(3, mRSampAo, mRColTexture);
+    Render::DrawState state;
+    state.depthWrite = false;
+    state.depthFunc = Render::CompareFunc::Always;
+    state.blend = Render::BlendMode::Alpha;
+    surface->setState(state);
+    surface->setVertexBuffer(mRQuadVbo);
+    surface->submit(pass, mRProgLighting);
 }
 
 void SimDisplay::SetPathColor(const vec3& normal, const vec3& rapid)

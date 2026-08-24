@@ -24,6 +24,8 @@
 
 #pragma once
 
+#include <Gui/Renderer/DrawDevice.h>
+
 #include "Shader.h"
 #include "StockObject.h"
 #include <Inventor/SbRotation.h>
@@ -60,6 +62,11 @@ public:
     void RenderResult(bool recalculate, bool ssao);
     void RenderResultStandard();
     void RenderResultSSAO(bool recalculate);
+    // The facade deferred resolve (docs/CAMSimRenderPort.md step 4):
+    // the lighting quad submitted into one pass of the given surface.
+    // Dormant until step 6's frame driver hands a surface; AO stays
+    // off until the effect service (step 7) supplies its texture.
+    void RenderResultFacade(Render::DrawSurface* surface, unsigned pass);
     void SetupLinePathPass(int curSegment, bool isHidden);
     void UpdateWindowScale(int width, int height);
     void UpdateCamera(const SoCamera& camera);
@@ -126,6 +133,34 @@ protected:
     unsigned int mFboNormTexture = 0;
     unsigned int mRboDepthStencil = 0;
     unsigned int mFboQuadVBO = 0;
+
+    // The facade side (docs/CAMSimRenderPort.md step 4): the same
+    // G-buffer, quad and programs as facade resources. The GL pair of
+    // each leaves with the last step of the port. The SSAO chain has
+    // no facade counterpart -- the engine's AO effect replaces it.
+    Render::VertexBufferHandle mRQuadVbo;
+    Render::TextureHandle mRColTexture;
+    Render::TextureHandle mRPosTexture;
+    Render::TextureHandle mRNormTexture;
+    Render::TextureHandle mRDepthTexture;
+    Render::TargetHandle mRTarget;
+    Render::ProgramHandle mRProgDiffuse;
+    Render::ProgramHandle mRProgInvDiffuse;
+    Render::ProgramHandle mRProgFlat;
+    Render::ProgramHandle mRProgGeom;
+    Render::ProgramHandle mRProgLighting;
+    Render::ProgramHandle mRProgLine;
+    Render::UniformHandle mRUniNormalRot;
+    Render::UniformHandle mRUniLightPos;
+    Render::UniformHandle mRUniLightColor;
+    Render::UniformHandle mRUniLightAmbient;
+    Render::UniformHandle mRUniObjectColor;
+    Render::UniformHandle mRUniObjectColorAlpha;
+    Render::UniformHandle mRUniParams;
+    Render::UniformHandle mRSampColor;
+    Render::UniformHandle mRSampPosition;
+    Render::UniformHandle mRSampNormal;
+    Render::UniformHandle mRSampAo;
 
     // ssao frame buffers
     bool mSsaoValid = false;
