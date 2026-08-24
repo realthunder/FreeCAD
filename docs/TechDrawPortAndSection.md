@@ -941,3 +941,70 @@ band-scale rasterization -- which would also cover symbols,
 spreadsheets, images and bitmap hatches), then the real compositor
 (GL-context sharing instead of readback+QImage). M3 (the SceneServer
 wire) untouched.
+
+## 21. Implementation status (2026-08-24, later still): the template and image tier
+
+Templates, `DrawViewSymbol`, `DrawViewImage` and spreadsheet views now
+reach the vg page as rasterized images. Verified 20/20 on the real GPU
+(RTX 3060 via VirtualGL egl0 + Xvfb, NVIDIA banner checked): offscreen
+ink probes for the template frame, title block, a red SVG symbol and a
+green view image at their page positions; interactive pure-Qt vs
+pure-vg centroids within 15px and title-block ink within 40 percent;
+template damage (editable-text edit) proven by pixel diff; a zoom-band
+crossing re-rasterizes without incident.
+
+**The engine side.** `Page2D` gains an image registry:
+`setImage(id, w, h, rgba, repeat)` copies and retains straight-alpha
+RGBA8 pixels -- like fonts, registration is legal before any GPU
+context exists, and the pixels follow every context rebuild. A new
+`Image` op (id + page rect, 24 payload bytes) replays as
+`vg::createImagePattern` + rect fill; vg's image patterns are
+frame-transient and both the direct and the cached command-list replay
+recreate them with local-handle remapping, so pattern fills cache like
+everything else. The one wrinkle is that a recorded command list bakes
+the `vg::ImageHandle` value: the registry keeps an *image epoch*,
+bumped whenever a handle is created or destroyed, and items whose ops
+referenced an image (resolved or not) re-record when the epoch moved.
+Same-size pixel damage takes `vg::updateImage` in place -- no epoch
+move, recorded lists stay valid. Uploads are counted
+(`Counters::imageUploads`, exposed by `renderPageVg`). Vg2D's context
+now allows 256 images and 256 per-frame image patterns.
+
+**The feed side.** `PageFeed::feedTemplate` rasterizes the page's
+`DrawSVGTemplate` (`processTemplate()`, the same processed SVG string
+the Qt tier loads) with `QSvgRenderer` into the registry and records a
+single sheet-rect image item on layer 0; views now feed on layers >= 1.
+The raster scale is the zoom band, so the sheet re-sharpens as the
+user zooms; the interactive host folds band + template name +
+editable-text values into a stamp and re-feeds on change, the
+offscreen host rasterizes at its fit zoom. The capture walker gained
+`QGraphicsSvgItem` and `QGraphicsPixmapItem` branches: symbols,
+spreadsheet views and view images rasterize at their on-page size
+(capped 2048) into per-view image ids ('i'/'j' tags, stale tail
+purged on re-capture) and record under the item's scene transform, so
+rotation and scale ride the transform ops.
+
+**The Qt crash found on the way.** Rasterizing the *stock TechDraw
+templates* above roughly 3x their SVG default size segfaults inside
+Qt's raster engine: FreeType returns `Raster_Overflow` for a glyph
+("render glyph failed err=62") and `QFontEngineFT::loadGlyph` then
+dereferences the failed glyph. Reproduced standalone with nothing but
+`QSvgRenderer` + `QImage` at Qt 6.10.1; the trigger is the templates'
+Inkscape `line-height:0%` text constructs, and the exact threshold is
+glyph-cache-state dependent (removing one unrelated `<text>` moves
+it). The feed therefore never asks QSvgRenderer for more than 2x the
+SVG's own default size (template and captured SVGs alike) -- beyond
+that zoom the template goes gently soft instead of the process dying.
+The Qt tier itself shares this hazard in principle
+(`QGraphicsSvgItem` at deep zoom); not addressed here.
+
+**Not fed yet**: SVG/bitmap `DrawHatch` face fills (the registry and
+the repeat-sampling flag are ready for them; the face path fill with
+an image pattern is the missing feed code). Frames/captions stay
+Qt-only. The spreadsheet view rides the capture's SVG branch (its
+QGI is an SVG item); native cell ops remain a possible later upgrade.
+
+**M2 remainder now**: the real compositor (GL-context sharing instead
+of readback+QImage). Then M3, the SceneServer wire -- for which image
+items already retain their pixels, so the wire story is bytes we
+already hold.
