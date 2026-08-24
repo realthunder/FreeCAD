@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <set>
 
 #include "Page2D.h"
 
@@ -85,6 +86,13 @@ struct Page2D::Private
 
     std::map<ImageId, PageImage> images;
     uint32_t imageEpoch = 1;
+
+    // The wire journal (sec 24): ids changed or removed since the last
+    // takeChanges. Kept as sets -- a re-damaged item is one entry --
+    // and drained by the single publisher.
+    std::set<ItemId> wireItems, wireItemsRemoved;
+    std::set<ImageId> wireImages, wireImagesRemoved;
+    bool wireCleared = false;
 
     std::map<ItemId, Item> items;
     std::vector<Item*> drawOrder;
@@ -243,6 +251,50 @@ struct OpReader
         return v;
     }
 };
+
+// The fixed payload bytes that must follow each opcode (the variable
+// parts -- polyline points, triangle arrays, text -- are checked where
+// they are read). This buffer is the M3 wire format, so replay treats
+// it as untrusted input: a short or corrupt buffer stops the replay, it
+// never reads past the end.
+size_t opFixedSize(Op op)
+{
+    switch (op) {
+    case Op::BeginPath:
+    case Op::ClosePath:
+        return 0;
+    case Op::MoveTo:
+    case Op::LineTo:
+    case Op::Stroke:
+        return 8;
+    case Op::CubicTo:
+    case Op::FillLinearGradient:
+        return 24;
+    case Op::QuadraticTo:
+    case Op::Rect:
+    case Op::Ellipse:
+        return 16;
+    case Op::Arc:
+        return 21;
+    case Op::Circle:
+        return 12;
+    case Op::Polyline:
+    case Op::FillConvex:
+    case Op::Triangles:
+        return 4;
+    case Op::FillConcave:
+        return 5;
+    case Op::Text:
+        return 1;
+    case Op::PushTransform:
+        return 24;
+    case Op::PopTransform:
+        return 0;
+    case Op::Image:
+        return 24;
+    }
+    return SIZE_MAX; // unknown opcode: newer writer, stop
+}
 
 } // namespace
 
@@ -434,50 +486,6 @@ static vg::Color decodeColor(uint32_t rgba)
 {
     return vg::color4ub((uint8_t)(rgba >> 24), (uint8_t)(rgba >> 16),
                         (uint8_t)(rgba >> 8), (uint8_t)rgba);
-}
-
-// The fixed payload bytes that must follow each opcode (the variable
-// parts -- polyline points, triangle arrays, text -- are checked where
-// they are read). This buffer is the M3 wire format, so replay treats
-// it as untrusted input: a short or corrupt buffer stops the replay, it
-// never reads past the end.
-static size_t opFixedSize(Op op)
-{
-    switch (op) {
-    case Op::BeginPath:
-    case Op::ClosePath:
-        return 0;
-    case Op::MoveTo:
-    case Op::LineTo:
-    case Op::Stroke:
-        return 8;
-    case Op::CubicTo:
-    case Op::FillLinearGradient:
-        return 24;
-    case Op::QuadraticTo:
-    case Op::Rect:
-    case Op::Ellipse:
-        return 16;
-    case Op::Arc:
-        return 21;
-    case Op::Circle:
-        return 12;
-    case Op::Polyline:
-    case Op::FillConvex:
-    case Op::Triangles:
-        return 4;
-    case Op::FillConcave:
-        return 5;
-    case Op::Text:
-        return 1;
-    case Op::PushTransform:
-        return 24;
-    case Op::PopTransform:
-        return 0;
-    case Op::Image:
-        return 24;
-    }
-    return SIZE_MAX; // unknown opcode: newer writer, stop
 }
 
 // What replay needs beyond the vg context: the image registry to
@@ -710,6 +718,12 @@ Page2D::~Page2D()
 
 void Page2D::setItem(ItemId id, Kind kind, uint32_t layer, Recorder&& content)
 {
+    setItem(id, kind, layer, std::move(content.ops));
+}
+
+void Page2D::setItem(ItemId id, Kind kind, uint32_t layer,
+                     std::vector<uint8_t>&& ops)
+{
     Private::Item& item = d->items[id];
     if (item.seq == 0)
         item.seq = ++d->nextSeq;
@@ -718,12 +732,14 @@ void Page2D::setItem(ItemId id, Kind kind, uint32_t layer, Recorder&& content)
         item.layer = layer;
         d->orderDirty = true;
     }
-    item.ops = std::move(content.ops);
+    item.ops = std::move(ops);
     // Damage: keep the command list, re-record it from the new ops at
     // the next render.
     item.recorded = false;
     if (d->drawOrder.empty() || d->items.size() != d->drawOrder.size())
         d->orderDirty = true;
+    d->wireItems.insert(id);
+    d->wireItemsRemoved.erase(id);
 }
 
 void Page2D::removeItem(ItemId id)
@@ -734,6 +750,8 @@ void Page2D::removeItem(ItemId id)
     d->releaseList(it->second);
     d->items.erase(it);
     d->orderDirty = true;
+    d->wireItems.erase(id);
+    d->wireItemsRemoved.insert(id);
 }
 
 bool Page2D::hasItem(ItemId id) const
@@ -752,6 +770,13 @@ void Page2D::clear()
         d->releaseImage(v.second);
     d->images.clear();
     d->releaseTarget();
+    // The journal after a clear describes the state built since it;
+    // whatever the consumer held is gone wholesale.
+    d->wireItems.clear();
+    d->wireItemsRemoved.clear();
+    d->wireImages.clear();
+    d->wireImagesRemoved.clear();
+    d->wireCleared = true;
 }
 
 void Page2D::setImage(ImageId id, uint16_t width, uint16_t height,
@@ -774,6 +799,8 @@ void Page2D::setImage(ImageId id, uint16_t width, uint16_t height,
     img.repeat = repeat;
     img.pixels.assign(rgba, rgba + (size_t)width * height * 4);
     ++img.version;
+    d->wireImages.insert(id);
+    d->wireImagesRemoved.erase(id);
 }
 
 void Page2D::removeImage(ImageId id)
@@ -788,11 +815,265 @@ void Page2D::removeImage(ImageId id)
     // command lists rather than submit a destroyed handle.
     if (hadHandle)
         ++d->imageEpoch;
+    d->wireImages.erase(id);
+    d->wireImagesRemoved.insert(id);
 }
 
 bool Page2D::hasImage(ImageId id) const
 {
     return d->images.count(id) != 0;
+}
+
+void Page2D::takeChanges(Changes& out)
+{
+    out.items.assign(d->wireItems.begin(), d->wireItems.end());
+    out.itemsRemoved.assign(d->wireItemsRemoved.begin(),
+                            d->wireItemsRemoved.end());
+    out.images.assign(d->wireImages.begin(), d->wireImages.end());
+    out.imagesRemoved.assign(d->wireImagesRemoved.begin(),
+                             d->wireImagesRemoved.end());
+    out.cleared = d->wireCleared;
+    d->wireItems.clear();
+    d->wireItemsRemoved.clear();
+    d->wireImages.clear();
+    d->wireImagesRemoved.clear();
+    d->wireCleared = false;
+}
+
+bool Page2D::itemInfo(ItemId id, Kind& kind, uint32_t& layer,
+                      const std::vector<uint8_t>** ops) const
+{
+    auto it = d->items.find(id);
+    if (it == d->items.end())
+        return false;
+    kind = it->second.kind;
+    layer = it->second.layer;
+    if (ops)
+        *ops = &it->second.ops;
+    return true;
+}
+
+bool Page2D::imageInfo(ImageId id, uint16_t& width, uint16_t& height,
+                       bool& repeat, const std::vector<uint8_t>** pixels) const
+{
+    auto it = d->images.find(id);
+    if (it == d->images.end())
+        return false;
+    width = it->second.width;
+    height = it->second.height;
+    repeat = it->second.repeat;
+    if (pixels)
+        *pixels = &it->second.pixels;
+    return true;
+}
+
+void Page2D::forEachItem(const std::function<void(ItemId, Kind, uint32_t,
+                                                  const std::vector<uint8_t>&)>& fn) const
+{
+    for (const auto& v : d->items)
+        fn(v.first, v.second.kind, v.second.layer, v.second.ops);
+}
+
+void Page2D::forEachImage(const std::function<void(ImageId, uint16_t, uint16_t,
+                                                   bool, const std::vector<uint8_t>&)>& fn) const
+{
+    for (const auto& v : d->images)
+        fn(v.first, v.second.width, v.second.height, v.second.repeat,
+           v.second.pixels);
+}
+
+bool Page2D::opsBounds(const std::vector<uint8_t>& ops, float box[4])
+{
+    // A transform stack of 2x3 affines (column-vector convention, like
+    // the PushTransform op): points map through the composed top.
+    struct Mtx
+    {
+        float m11 = 1, m12 = 0, m21 = 0, m22 = 1, dx = 0, dy = 0;
+    };
+    std::vector<Mtx> stack(1);
+    bool any = false;
+    float minX = 0, minY = 0, maxX = 0, maxY = 0;
+    auto point = [&](float x, float y) {
+        const Mtx& m = stack.back();
+        const float tx = m.m11 * x + m.m21 * y + m.dx;
+        const float ty = m.m12 * x + m.m22 * y + m.dy;
+        if (!any) {
+            minX = maxX = tx;
+            minY = maxY = ty;
+            any = true;
+            return;
+        }
+        minX = std::min(minX, tx);
+        maxX = std::max(maxX, tx);
+        minY = std::min(minY, ty);
+        maxY = std::max(maxY, ty);
+    };
+    // All four corners: two opposite ones do not bound a rect once a
+    // transform rotates it.
+    auto rectBox = [&](float x0, float y0, float x1, float y1) {
+        point(x0, y0);
+        point(x1, y0);
+        point(x0, y1);
+        point(x1, y1);
+    };
+    auto circleBox = [&](float cx, float cy, float rx, float ry) {
+        // The pre-transform box's corners bound the mapped ellipse
+        // under any affine map (convexity).
+        rectBox(cx - rx, cy - ry, cx + rx, cy + ry);
+    };
+
+    OpReader r {ops.data(), ops.data() + ops.size()};
+    while (!r.done()) {
+        const Op op = (Op)r.u8();
+        const size_t need = opFixedSize(op);
+        if (need == SIZE_MAX || !r.fits(need))
+            break;
+        switch (op) {
+        case Op::BeginPath:
+        case Op::ClosePath:
+        case Op::PopTransform:
+            if (op == Op::PopTransform && stack.size() > 1)
+                stack.pop_back();
+            break;
+        case Op::MoveTo:
+        case Op::LineTo: {
+            float x = r.f(), y = r.f();
+            point(x, y);
+            break;
+        }
+        case Op::CubicTo: {
+            for (int i = 0; i < 3; ++i) {
+                float x = r.f(), y = r.f();
+                point(x, y);
+            }
+            break;
+        }
+        case Op::QuadraticTo: {
+            for (int i = 0; i < 2; ++i) {
+                float x = r.f(), y = r.f();
+                point(x, y);
+            }
+            break;
+        }
+        case Op::Arc: {
+            float cx = r.f(), cy = r.f(), rr = r.f();
+            r.f();
+            r.f();
+            r.u8();
+            circleBox(cx, cy, rr, rr);
+            break;
+        }
+        case Op::Rect: {
+            float x = r.f(), y = r.f(), w = r.f(), h = r.f();
+            rectBox(x, y, x + w, y + h);
+            break;
+        }
+        case Op::Circle: {
+            float cx = r.f(), cy = r.f(), rr = r.f();
+            circleBox(cx, cy, rr, rr);
+            break;
+        }
+        case Op::Ellipse: {
+            float cx = r.f(), cy = r.f(), rx = r.f(), ry = r.f();
+            circleBox(cx, cy, rx, ry);
+            break;
+        }
+        case Op::Polyline: {
+            uint32_t n = r.u32();
+            if (!r.fits((size_t)n * 8))
+                return any;
+            for (uint32_t i = 0; i < n; ++i) {
+                float x = r.f(), y = r.f();
+                point(x, y);
+            }
+            break;
+        }
+        case Op::FillConvex:
+            r.u32();
+            break;
+        case Op::FillConcave:
+            r.u32();
+            r.u8();
+            break;
+        case Op::FillLinearGradient:
+            for (int i = 0; i < 4; ++i)
+                r.f();
+            r.u32();
+            r.u32();
+            break;
+        case Op::Stroke:
+            r.u32();
+            r.f();
+            break;
+        case Op::Text: {
+            uint8_t nameLen = r.u8();
+            if (!r.fits((size_t)nameLen + 20))
+                return any;
+            for (uint8_t i = 0; i < nameLen; ++i)
+                r.u8();
+            float size = r.f();
+            r.u32();
+            float x = r.f(), y = r.f();
+            uint32_t textLen = r.u32();
+            if (!r.fits(textLen))
+                return any;
+            r.p += textLen;
+            // The anchor plus an estimated extent: enough for
+            // prioritization, not for exact culling.
+            rectBox(x, y - size, x + 0.7f * size * (float)textLen,
+                    y + 0.4f * size);
+            break;
+        }
+        case Op::Triangles: {
+            uint32_t nv = r.u32();
+            if (!r.fits((size_t)nv * 8 + 4))
+                return any;
+            for (uint32_t i = 0; i < nv; ++i) {
+                float x = r.f(), y = r.f();
+                point(x, y);
+            }
+            uint32_t ni = r.u32();
+            if (!r.fits((size_t)ni * 2 + 4))
+                return any;
+            r.p += (size_t)ni * 2;
+            r.u32();
+            break;
+        }
+        case Op::PushTransform: {
+            Mtx m;
+            m.m11 = r.f();
+            m.m12 = r.f();
+            m.m21 = r.f();
+            m.m22 = r.f();
+            m.dx = r.f();
+            m.dy = r.f();
+            const Mtx& t = stack.back();
+            // Compose under the current top: p' = t * (m * p).
+            Mtx c;
+            c.m11 = t.m11 * m.m11 + t.m21 * m.m12;
+            c.m12 = t.m12 * m.m11 + t.m22 * m.m12;
+            c.m21 = t.m11 * m.m21 + t.m21 * m.m22;
+            c.m22 = t.m12 * m.m21 + t.m22 * m.m22;
+            c.dx = t.m11 * m.dx + t.m21 * m.dy + t.dx;
+            c.dy = t.m12 * m.dx + t.m22 * m.dy + t.dy;
+            stack.push_back(c);
+            break;
+        }
+        case Op::Image: {
+            r.u64();
+            float x = r.f(), y = r.f(), w = r.f(), h = r.f();
+            rectBox(x, y, x + w, y + h);
+            break;
+        }
+        }
+    }
+    if (any) {
+        box[0] = minX;
+        box[1] = minY;
+        box[2] = maxX;
+        box[3] = maxY;
+    }
+    return any;
 }
 
 float Page2D::bandScale(float zoom)
@@ -1148,6 +1429,19 @@ void Page2D::registerFont(const char* name, const char* path)
         Vg2D::instance().loadFontFile(name, path);
 }
 
+void Page2D::registerFont(const char* name, const void* data, uint32_t size)
+{
+    if (name && data && size)
+        Vg2D::instance().loadFont(name, data, size);
+}
+
+void Page2D::forEachFont(const std::function<void(const std::string&,
+                                                  const uint8_t*,
+                                                  uint32_t)>& fn)
+{
+    Vg2D::instance().forEachFont(fn);
+}
+
 #else // !HAVE_BGFX
 
 bool Page2D::render(uint16_t, uint16_t, uint16_t)
@@ -1166,5 +1460,13 @@ uintptr_t Page2D::renderToTexture(uint16_t, uint16_t)
 }
 
 void Page2D::registerFont(const char*, const char*) {}
+
+void Page2D::registerFont(const char*, const void*, uint32_t) {}
+
+void Page2D::forEachFont(const std::function<void(const std::string&,
+                                                  const uint8_t*,
+                                                  uint32_t)>&)
+{
+}
 
 #endif // HAVE_BGFX

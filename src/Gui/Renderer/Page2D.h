@@ -40,6 +40,7 @@
 /// fringe and flattening tolerance honest.
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -143,9 +144,52 @@ public:
     /// Define or replace (= damage) an item. Layer orders items
     /// (ascending) before kind and insertion order do.
     void setItem(ItemId id, Kind kind, uint32_t layer, Recorder&& content);
+    /// Same, from a raw op buffer -- the wire consumer's entry point
+    /// (docs/TechDrawPortAndSection.md sec 24). Replay bounds-checks
+    /// every op, so a truncated or hostile buffer draws what parses
+    /// and stops; it cannot read out of bounds.
+    void setItem(ItemId id, Kind kind, uint32_t layer,
+                 std::vector<uint8_t>&& ops);
     void removeItem(ItemId id);
     bool hasItem(ItemId id) const;
     void clear();
+
+    /// Wire support (sec 24). The page journals which items and images
+    /// changed or went away since the last take; one consumer -- the
+    /// publisher -- drains it and re-serializes only those. `cleared`
+    /// reports an intervening clear(), after which the sets name the
+    /// state built since, and the consumer must drop what it held.
+    struct Changes
+    {
+        std::vector<ItemId> items;
+        std::vector<ItemId> itemsRemoved;
+        std::vector<ImageId> images;
+        std::vector<ImageId> imagesRemoved;
+        bool cleared = false;
+        bool empty() const
+        {
+            return !cleared && items.empty() && itemsRemoved.empty()
+                && images.empty() && imagesRemoved.empty();
+        }
+    };
+    void takeChanges(Changes& out);
+
+    /// Wire access to the retained state. The ops/pixels pointers are
+    /// valid until the item or image is next modified.
+    bool itemInfo(ItemId id, Kind& kind, uint32_t& layer,
+                  const std::vector<uint8_t>** ops) const;
+    bool imageInfo(ImageId id, uint16_t& width, uint16_t& height,
+                   bool& repeat, const std::vector<uint8_t>** pixels) const;
+    void forEachItem(const std::function<void(ItemId, Kind, uint32_t,
+                                              const std::vector<uint8_t>&)>& fn) const;
+    void forEachImage(const std::function<void(ImageId, uint16_t, uint16_t,
+                                               bool, const std::vector<uint8_t>&)>& fn) const;
+
+    /// The page-coordinate hull of an op buffer: [minX, minY, maxX,
+    /// maxY], transform ops honored. Advisory (text extends past its
+    /// anchor by an estimated pad) -- what an entry's bbox on the wire
+    /// carries. False when the buffer holds no geometry.
+    static bool opsBounds(const std::vector<uint8_t>& ops, float box[4]);
 
     /// Register or replace (= damage) the pixels image ops refer to:
     /// tightly packed straight-alpha RGBA8, row 0 on top, copied and
@@ -188,6 +232,15 @@ public:
     /// one is torn down; the bytes are retained and the font follows
     /// every context. Re-registering a name is a no-op.
     static void registerFont(const char* name, const char* path);
+    /// Same, from bytes -- the wire consumer's form (a streamed font
+    /// has no file). The bytes are copied and retained.
+    static void registerFont(const char* name, const void* data,
+                             uint32_t size);
+    /// Visit every registered font's retained bytes -- what the wire
+    /// producer puts behind content keys.
+    static void forEachFont(const std::function<void(const std::string&,
+                                                     const uint8_t*,
+                                                     uint32_t)>& fn);
 
     /// Offscreen convenience for verification hosts and tools: ensure a
     /// bgfx device exists (bringing one up headless if nothing did),

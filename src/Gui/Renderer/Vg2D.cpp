@@ -154,3 +154,11 @@ vg::FontHandle Vg2D::font(const char* name) const
     auto it = _fonts.find(name ? name : "");
     return it == _fonts.end() ? vg::FontHandle(VG_INVALID_HANDLE) : it->second;
 }
+
+void Vg2D::forEachFont(const std::function<void(const std::string&,
+                                                const uint8_t*,
+                                                uint32_t)>& fn) const
+{
+    for (const auto& kv : _fontData)
+        fn(kv.first, kv.second.data(), (uint32_t)kv.second.size());
+}

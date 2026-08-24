@@ -667,6 +667,43 @@ RendererExport bool spliceObjectDelta(
         std::vector<uint8_t> &out,
         const ChunkBytesFor &bytesFor = {});
 
+/// The object-list section codec, exported for payload formats that
+/// ride the server's splice path with their own root layout
+/// (docs/TechDrawPortAndSection.md sec 24 -- the 2D page). The bytes
+/// are exactly what a scene root's `[listBegin, listEnd)` span holds,
+/// which is the admission price of spliceObjectDelta: the server
+/// rewrites that span with this encoding and copies everything else
+/// verbatim.
+///
+/// write: \a bytesFor non-null marks the DELTA form -- every entry is
+/// followed by a flag byte and, when the provider answers its key, the
+/// chunk's own bytes inline (v37). The section itself cannot say which
+/// form it is; the payload's baseVersion field does, so the caller
+/// must keep the two consistent.
+RendererExport bool writeObjectSection(
+        std::vector<uint8_t> &out,
+        const std::vector<uint64_t> &removed,
+        const std::vector<SceneSnapshot::ObjectEntry> &entries,
+        const ChunkBytesFor *bytesFor = nullptr);
+
+/// One parsed entry: the reference, and the chunk bytes when the delta
+/// carried them inline.
+struct ObjectSectionEntry {
+    SceneSnapshot::ObjectEntry entry;
+    bool hasInline = false;
+    std::vector<uint8_t> inlineData;
+};
+
+/// Parse a section written by writeObjectSection, advancing \a p; \a
+/// deltaForm must repeat what the payload's baseVersion said (nonzero
+/// = delta), because the flag byte's presence is decided there. False
+/// leaves \a p unspecified.
+RendererExport bool readObjectSection(
+        const uint8_t *&p, const uint8_t *end,
+        bool deltaForm,
+        std::vector<uint64_t> &removed,
+        std::vector<ObjectSectionEntry> &entries);
+
 RendererExport bool saveSceneSnapshot(const char *path,
                                       const SceneSnapshot &snap);
 RendererExport bool loadSceneSnapshot(const char *path,

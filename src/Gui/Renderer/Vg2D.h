@@ -29,6 +29,7 @@
 /// retained page content and drives this context per frame.
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 #include <vg/vg.h>
@@ -76,6 +77,13 @@ public:
 
     /// The handle registered under name, or an invalid handle.
     vg::FontHandle font(const char* name) const;
+
+    /// Visit every registered font's retained bytes -- the wire
+    /// producer enumerates these to put fonts behind content keys
+    /// (docs/TechDrawPortAndSection.md sec 24).
+    void forEachFont(const std::function<void(const std::string& name,
+                                              const uint8_t* data,
+                                              uint32_t size)>& fn) const;
 
 private:
     Vg2D() = default;
