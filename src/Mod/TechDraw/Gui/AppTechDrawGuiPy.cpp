@@ -235,6 +235,11 @@ private:
         std::string filePath(name);
         PyMem_Free(name);
 
+        // The render path takes uint16 dimensions; validate before the
+        // cast or the QImage stride would outrun the pixel buffer.
+        if (width < 1 || height < 1 || width > 16384 || height > 16384) {
+            throw Py::ValueError("width/height must be within 1..16384");
+        }
         if (!PyObject_TypeCheck(pageObj, &TechDraw::DrawPagePy::Type)) {
             throw Py::TypeError("expected a Drawing Page");
         }

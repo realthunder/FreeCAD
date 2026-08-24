@@ -125,6 +125,21 @@ bool emitEdge(Page2D::Recorder& rec, const TechDraw::BaseGeomPtr& geom,
                    (float)Rez::guiX(circle->radius));
         return true;
     }
+    case ARCOFCIRCLE: {
+        // Native vg arc: re-flattened per zoom band like circles, and
+        // (M3) ~22 bytes on the wire instead of a point list. vg's arc
+        // angles are clockwise-from-x-axis in the same y-down space the
+        // geometry lives in; (start, end, cw) and its reversed twin
+        // denote the same circle segment, so getReversed() is moot for
+        // a stroke.
+        auto aoc = std::static_pointer_cast<AOC>(geom);
+        rec.beginPath();
+        rec.arc(ox + (float)Rez::guiX(aoc->center.x),
+                oy + (float)Rez::guiX(aoc->center.y),
+                (float)Rez::guiX(aoc->radius), (float)aoc->startAngle,
+                (float)aoc->endAngle, aoc->cw);
+        return true;
+    }
     case BEZIER: {
         auto bez = std::static_pointer_cast<BezierSegment>(geom);
         const auto& p = bez->pnts;
@@ -240,51 +255,63 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
     const float ox = (float)Rez::guiX(dvp->X.getValue());
     const float oy = (float)-Rez::guiX(dvp->Y.getValue());
 
+    // Every index gets a setItem even when its geometry is skipped (an
+    // empty recorder draws nothing): id presence then stays contiguous
+    // per kind, which is what lets the trailing sweep below find and
+    // remove everything a previous, larger feed of this view created.
+    // Without it, a model edit that shrinks the drawing would keep the
+    // stale items rendering pre-edit geometry in a long-lived page.
+    auto sweep = [&](char kindTag, uint32_t from) {
+        for (uint32_t i = from;; ++i) {
+            Page2D::ItemId id = itemId(name, kindTag, i);
+            if (!out.hasItem(id))
+                break;
+            out.removeItem(id);
+        }
+    };
+
+    uint32_t index = 0;
     if ((style.faceColor & 0xff) != 0) {
-        uint32_t index = 0;
         for (const TechDraw::FacePtr& face : dvp->getFaceGeometry()) {
             Page2D::Recorder rec;
             emitFace(rec, face, ox, oy, style.deflection, style.faceColor);
-            if (!rec.empty())
-                out.setItem(itemId(name, 'f', index), Page2D::Kind::Face,
-                            layer, std::move(rec));
+            out.setItem(itemId(name, 'f', index), Page2D::Kind::Face, layer,
+                        std::move(rec));
             ++index;
         }
     }
+    sweep('f', index);
 
-    uint32_t index = 0;
+    index = 0;
     const bool showHidden = dvp->HardHidden.getValue();
     for (const TechDraw::BaseGeomPtr& geom : dvp->getEdgeGeometry()) {
         Page2D::Recorder rec;
         bool visible = geom->getHlrVisible();
-        if (!visible && !showHidden) {
-            ++index;
-            continue;
+        if (visible || showHidden) {
+            if (emitEdge(rec, geom, ox, oy, style.deflection))
+                rec.stroke(visible ? style.edgeColor : style.hiddenColor,
+                           visible ? style.edgeWidth : style.hiddenWidth);
         }
-        if (emitEdge(rec, geom, ox, oy, style.deflection))
-            rec.stroke(visible ? style.edgeColor : style.hiddenColor,
-                       visible ? style.edgeWidth : style.hiddenWidth);
-        if (!rec.empty())
-            out.setItem(itemId(name, 'e', index), Page2D::Kind::Edge, layer,
-                        std::move(rec));
+        out.setItem(itemId(name, 'e', index), Page2D::Kind::Edge, layer,
+                    std::move(rec));
         ++index;
     }
+    sweep('e', index);
 
     index = 0;
     for (const TechDraw::VertexPtr& vert : dvp->getVertexGeometry()) {
-        if (vert->isCenter() || vert->isReference()) {
-            ++index;
-            continue;
-        }
         Page2D::Recorder rec;
-        rec.beginPath();
-        rec.circle(ox + (float)Rez::guiX(vert->x()),
-                   oy + (float)Rez::guiX(vert->y()), style.vertexRadius);
-        rec.fillConvex(style.vertexColor);
+        if (!vert->isCenter() && !vert->isReference()) {
+            rec.beginPath();
+            rec.circle(ox + (float)Rez::guiX(vert->x()),
+                       oy + (float)Rez::guiX(vert->y()), style.vertexRadius);
+            rec.fillConvex(style.vertexColor);
+        }
         out.setItem(itemId(name, 'v', index), Page2D::Kind::Vertex, layer,
                     std::move(rec));
         ++index;
     }
+    sweep('v', index);
 }
 
 void PageFeed::feedPage(TechDraw::DrawPage* page, Page2D& out)

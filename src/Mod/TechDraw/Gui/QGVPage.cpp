@@ -368,19 +368,41 @@ void QGVPage::drawVgPreview(QPainter* painter)
     if (!page)
         return;
 
+    // The view runs with CacheBackground, which would freeze this
+    // layer at its first paint; drop the cache while the preview is
+    // active (queued -- this runs inside a paint event).
+    if (cacheMode() != QGraphicsView::CacheNone) {
+        QMetaObject::invokeMethod(
+            this,
+            [this]() {
+                setCacheMode(QGraphicsView::CacheNone);
+                resetCachedContent();
+                viewport()->update();
+            },
+            Qt::QueuedConnection);
+    }
+
     if (!m_vgPage)
         m_vgPage = std::make_unique<Render::Page2D>();
 
     // Re-feed while any view still computes on its worker, then once
     // more when everything settled. Coarse damage for the preview: the
-    // stable item ids already confine a re-feed to changed content.
+    // stable item ids already confine a re-feed to changed content, and
+    // a change in the view set itself (a deleted view's items would
+    // survive any re-feed) resets the retained page wholesale.
     bool pending = false;
+    size_t structure = 0;
     for (App::DocumentObject* obj : page->getAllViews()) {
+        structure = structure * 31
+            + std::hash<std::string> {}(obj->getNameInDocument());
         auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(obj);
-        if (dvp && (dvp->waitingForHlr() || dvp->waitingForFaces())) {
+        if (dvp && (dvp->waitingForHlr() || dvp->waitingForFaces()))
             pending = true;
-            break;
-        }
+    }
+    if (structure != m_vgPageStructure) {
+        m_vgPage->clear();
+        m_vgPageStructure = structure;
+        m_vgPageDirty = true;
     }
     if (m_vgPageDirty || pending) {
         PageFeed::feedPage(page, *m_vgPage);

@@ -212,6 +212,7 @@ private:
     void drawVgPreview(QPainter* painter);
     std::unique_ptr<Render::Page2D> m_vgPage;
     bool m_vgPageDirty = true;
+    size_t m_vgPageStructure = 0;
 };
 
 }// namespace TechDrawGui
