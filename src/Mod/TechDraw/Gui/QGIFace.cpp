@@ -154,7 +154,21 @@ void QGIFace::setPrettyNormal() {
     } else {
         m_brush.setTexture(QPixmap());
     }
+    // drop back below the shaded underlay (see raiseForHighlight)
+    if (zValue() == ZVALUE::FACE + 6) {
+        setZValue(ZVALUE::FACE);
+    }
     QGIPrimPath::setPrettyNormal();
+}
+
+//! a highlight-state face must paint above the shaded underlay
+//! (ZVALUE::FACE + 5) or the raster hides the hover/select fill; only
+//! plain faces at ZVALUE::FACE move, section faces stay where they are
+void QGIFace::raiseForHighlight()
+{
+    if (zValue() == ZVALUE::FACE) {
+        setZValue(ZVALUE::FACE + 6);
+    }
 }
 
 /// show the face style & colour in pre-select configuration
@@ -162,6 +176,7 @@ void QGIFace::setPrettyPre() {
 //    Base::Console().Message("QGIF::setPrettyPre()\n");
     m_fillStyleCurrent = Qt::SolidPattern;
     m_brush.setTexture(QPixmap());
+    raiseForHighlight();
     QGIPrimPath::setPrettyPre();
 }
 
@@ -170,6 +185,7 @@ void QGIFace::setPrettySel() {
 //    Base::Console().Message("QGIF::setPrettySel()\n");
     m_fillStyleCurrent = Qt::SolidPattern;
     m_brush.setTexture(QPixmap());
+    raiseForHighlight();
     QGIPrimPath::setPrettySel();
 }
 
