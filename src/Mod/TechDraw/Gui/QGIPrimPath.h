@@ -91,6 +91,13 @@ public:
     virtual void setPreselect(bool enable);
     virtual void setTools() const;
 
+    /// The pen/brush paint() would use right now (setTools() applied):
+    /// what the 2D page capture (PageFeed) reads. This class draws from
+    /// its own members, not QGraphicsPathItem state, so a plain pen()
+    /// does not exist.
+    QPen currentPen() const { setTools(); return m_pen; }
+    QBrush currentBrush() const { setTools(); return m_brush; }
+
 
 protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent *event) override;

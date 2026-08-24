@@ -404,12 +404,12 @@ void QGVPage::drawVgPreview(QPainter* painter)
         m_vgDirty.clear();
         uint32_t layer = 0;
         for (App::DocumentObject* obj : page->getAllViews()) {
-            auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(obj);
-            if (dvp && dvp->getNameInDocument()) {
-                std::string name = dvp->getNameInDocument();
+            auto dv = dynamic_cast<TechDraw::DrawView*>(obj);
+            if (dv && dv->getNameInDocument()) {
+                std::string name = dv->getNameInDocument();
                 VgViewTrack& track = m_vgViews[name];
                 track.layer = layer;
-                track.repaint = dvp->signalGuiPaint.connect(
+                track.repaint = dv->signalGuiPaint.connect(
                     [this, name](const TechDraw::DrawView*) {
                         m_vgDirty.insert(name);
                         viewport()->update();
@@ -425,11 +425,11 @@ void QGVPage::drawVgPreview(QPainter* painter)
         for (auto& v : m_vgViews) {
             if (m_vgDirty.count(v.first))
                 continue;
-            auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(
+            auto dv = dynamic_cast<TechDraw::DrawView*>(
                 page->getDocument()->getObject(v.first.c_str()));
-            if (dvp
-                && ((float)dvp->X.getValue() != v.second.fedX
-                    || (float)dvp->Y.getValue() != v.second.fedY))
+            if (dv
+                && ((float)dv->X.getValue() != v.second.fedX
+                    || (float)dv->Y.getValue() != v.second.fedY))
                 m_vgDirty.insert(v.first);
         }
     }
@@ -445,14 +445,28 @@ void QGVPage::drawVgPreview(QPainter* painter)
             auto it = m_vgViews.find(name);
             if (it == m_vgViews.end())
                 continue;
-            auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(
+            auto dv = dynamic_cast<TechDraw::DrawView*>(
                 page->getDocument()->getObject(name.c_str()));
-            if (!dvp)
+            if (!dv)
                 continue;
-            PageFeed::feedViewPart(dvp, *m_vgPage, PageFeed::Style(),
-                                   it->second.layer);
-            it->second.fedX = (float)dvp->X.getValue();
-            it->second.fedY = (float)dvp->Y.getValue();
+            QGIView* qgiv = m_scene ? m_scene->findQViewForDocObj(dv)
+                                    : nullptr;
+            if (auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(dv)) {
+                PageFeed::feedViewPart(dvp, *m_vgPage, PageFeed::Style(),
+                                       it->second.layer);
+                if (qgiv)
+                    PageFeed::feedViewDecorations(qgiv, *m_vgPage,
+                                                  it->second.layer);
+            }
+            else if (qgiv) {
+                // The annotation tier: the capture converts the QGI
+                // subtree the Qt tier has already laid out by the time
+                // this paint runs.
+                PageFeed::feedViewCapture(qgiv, *m_vgPage,
+                                          it->second.layer);
+            }
+            it->second.fedX = (float)dv->X.getValue();
+            it->second.fedY = (float)dv->Y.getValue();
         }
     }
 

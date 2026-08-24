@@ -45,6 +45,8 @@ class Page2D;
 
 namespace TechDrawGui {
 
+class QGIView;
+
 class TechDrawGuiExport PageFeed
 {
 public:
@@ -78,6 +80,25 @@ public:
     /// Feed one view's edges/vertices/faces as items at the given layer.
     static void feedViewPart(TechDraw::DrawViewPart* dvp, Render::Page2D& out,
                              const Style& style, uint32_t layer);
+
+    /// The annotation tier (dimensions, balloons, annotations, leaders,
+    /// ...): capture the view's already-laid-out Qt scene item subtree
+    /// as one Annotation item -- shape items become path ops, text items
+    /// become fontstash text runs (rotated text rides a transform op).
+    /// The Qt tier stays the single layout implementation; this converts
+    /// its result. Nested QGIViews are skipped (they feed under their
+    /// own ids). A hidden view records an empty item, clearing stale
+    /// content.
+    static void feedViewCapture(QGIView* qgiv, Render::Page2D& out,
+                                uint32_t layer);
+
+    /// The decorations a part view carries as Qt-side children with no
+    /// App-side geometry (section lines, detail highlights, view center
+    /// lines): captured like feedViewCapture but restricted to
+    /// QGIDecoration children -- everything else of a part view is fed
+    /// from App data by feedViewPart.
+    static void feedViewDecorations(QGIView* qgiv, Render::Page2D& out,
+                                    uint32_t layer);
 };
 
 } // namespace TechDrawGui

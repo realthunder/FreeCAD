@@ -255,6 +255,36 @@ private:
                 ++pendingViews;
         }
 
+        // The annotation tier (dimensions, balloons, ...) converts the
+        // laid-out Qt scene items, and those exist only once the page
+        // was shown. Populate the scene here without any widget when a
+        // view has no item yet -- QGSPage is pure QGraphicsScene.
+        if (Gui::Document* gdoc =
+                Gui::Application::Instance->getDocument(page->getDocument())) {
+            auto vpp = dynamic_cast<TechDrawGui::ViewProviderPage*>(
+                gdoc->getViewProvider(page));
+            TechDrawGui::QGSPage* qgs = vpp ? vpp->getQGSPage() : nullptr;
+            if (qgs) {
+                bool missing = false;
+                for (App::DocumentObject* obj : page->getAllViews()) {
+                    if (!qgs->findQViewForDocObj(obj)) {
+                        missing = true;
+                        break;
+                    }
+                }
+                if (missing) {
+                    qgs->addChildrenToPage();
+                    qgs->redrawAllViews();
+                }
+                // A dimension's QGI is often created the moment
+                // page.addView() fires -- before its references are
+                // assigned -- and stays unparented (= placed at the
+                // scene origin) until something settles parentage; the
+                // shown path does this in fixOrphans.
+                qgs->setViewParents();
+            }
+        }
+
         Render::Page2D page2d;
         PageFeed::feedPage(page, page2d);
 

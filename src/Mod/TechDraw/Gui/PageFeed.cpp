@@ -21,15 +21,32 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+#include <algorithm>
 #include <cmath>
 #endif
 
 #include <BRepAdaptor_Curve.hxx>
 #include <GCPnts_QuasiUniformDeflection.hxx>
 
+#include <QAbstractGraphicsShapeItem>
 #include <QColor>
+#include <QFont>
+#include <QFontMetricsF>
+#include <QGraphicsEllipseItem>
+#include <QGraphicsLineItem>
+#include <QGraphicsPathItem>
+#include <QGraphicsPolygonItem>
+#include <QGraphicsRectItem>
+#include <QGraphicsTextItem>
+#include <QPainterPath>
 #include <QPen>
+#include <QTextBlock>
+#include <QTextDocument>
+#include <QTextLayout>
+#include <QTransform>
 
+#include <App/Application.h>
+#include <Base/Console.h>
 #include <Gui/Application.h>
 #include <Gui/Document.h>
 #include <Gui/Renderer/Page2D.h>
@@ -46,6 +63,10 @@
 
 #include "PageFeed.h"
 #include "PreferencesGui.h"
+#include "QGIDecoration.h"
+#include "QGIPrimPath.h"
+#include "QGIView.h"
+#include "QGSPage.h"
 #include "Rez.h"
 #include "ViewProviderGeomHatch.h"
 #include "ViewProviderPage.h"
@@ -412,6 +433,362 @@ void emitFace(Page2D::Recorder& rec, const TechDraw::FacePtr& face, float ox,
         rec.fillConcave(color, /*evenOdd*/ true);
 }
 
+// ---- Qt scene capture: the annotation tier ------------------------------
+
+// FC_PAGE2D_TRACE=1 logs what the capture walker sees per item --
+// the diagnosis knob for "this view has no ink".
+bool traceCapture()
+{
+    static bool on = [] {
+        const char* e = getenv("FC_PAGE2D_TRACE");
+        return e && *e && strcmp(e, "0") != 0;
+    }();
+    return on;
+}
+//
+// Dimensions, balloons, annotations and leaders are laid out by the Qt
+// tier (QGIViewDimension alone is 2700 lines of ISO/ASME placement); the
+// feed does not duplicate that. It converts the laid-out QGraphicsItem
+// subtree: shape items to path ops, text items to fontstash text runs.
+
+// Register the fonts TechDraw ships (the same files loadTechDrawResource
+// hands to Qt) with the 2D engine, keyed so vgFontKey below finds them.
+void ensureVgFonts()
+{
+    static bool once = [] {
+        const std::string dir = App::Application::getResourceDir()
+            + "Mod/TechDraw/Resources/fonts/";
+        Page2D::registerFont("osifont", (dir + "osifont-lgpl3fe.ttf").c_str());
+        Page2D::registerFont("osifont#italic",
+                             (dir + "osifont-italic.ttf").c_str());
+        Page2D::registerFont("y14.5-2009", (dir + "Y14.5-2018.ttf").c_str());
+        Page2D::registerFont("y14.5-freecad",
+                             (dir + "Y14.5-FreeCAD.ttf").c_str());
+        return true;
+    }();
+    (void)once;
+}
+
+// Map a Qt font to a registered engine font. Only the shipped TechDraw
+// fonts exist engine-side for now; any other family falls back to
+// osifont (TechDraw's default), bold has no variant, and italic only
+// one for osifont.
+const char* vgFontKey(const QFont& font)
+{
+    const QString family = font.family().toLower();
+    if (family.startsWith(QLatin1String("y14.5-freecad")))
+        return "y14.5-freecad";
+    if (family.startsWith(QLatin1String("y14.5")))
+        return "y14.5-2009";
+    return font.italic() ? "osifont#italic" : "osifont";
+}
+
+float avgScale(const QTransform& t)
+{
+    const double det = std::abs(t.determinant());
+    return det > 0.0 ? (float)std::sqrt(det) : 1.0f;
+}
+
+// A pen's stroke width in page units. Width 0 is Qt's cosmetic
+// hairline, drawn one device pixel at any zoom -- a concept a retained
+// page has no analog for; the ISO 0.35mm standard line reads the same
+// at page scale (balloon leaders and bubbles arrive this way).
+float penWidth(const QPen& pen, const QTransform& t)
+{
+    const double w =
+        pen.widthF() > 0.0 ? pen.widthF() : Rez::guiX(0.35);
+    return (float)w * avgScale(t);
+}
+
+// Replay a QPainterPath's elements into the recorder, mapped to page
+// coordinates. vg keeps the path current across fill and stroke, so
+// one capture serves both.
+void capturePainterPath(Page2D::Recorder& rec, const QPainterPath& path,
+                        const QTransform& t)
+{
+    rec.beginPath();
+    const int n = path.elementCount();
+    for (int i = 0; i < n; ++i) {
+        const QPainterPath::Element el = path.elementAt(i);
+        const QPointF p = t.map(QPointF(el.x, el.y));
+        switch (el.type) {
+        case QPainterPath::MoveToElement:
+            rec.moveTo((float)p.x(), (float)p.y());
+            break;
+        case QPainterPath::LineToElement:
+            rec.lineTo((float)p.x(), (float)p.y());
+            break;
+        case QPainterPath::CurveToElement: {
+            if (i + 2 >= n)
+                return;
+            const QPainterPath::Element e1 = path.elementAt(i + 1);
+            const QPainterPath::Element e2 = path.elementAt(i + 2);
+            const QPointF c2 = t.map(QPointF(e1.x, e1.y));
+            const QPointF end = t.map(QPointF(e2.x, e2.y));
+            rec.cubicTo((float)p.x(), (float)p.y(), (float)c2.x(),
+                        (float)c2.y(), (float)end.x(), (float)end.y());
+            i += 2;
+            break;
+        }
+        default:
+            break;
+        }
+    }
+}
+
+// Qt dash patterns are specified in pen-width units.
+std::vector<float> penDashes(const QPen& pen, const QTransform& t)
+{
+    std::vector<float> dashes;
+    if (pen.style() == Qt::SolidLine || pen.style() == Qt::NoPen)
+        return dashes;
+    const float w = penWidth(pen, t);
+    for (qreal d : pen.dashPattern())
+        dashes.push_back((float)d * w);
+    return dashes;
+}
+
+void captureDashedPath(Page2D::Recorder& rec, const QPainterPath& path,
+                       const QTransform& t, const std::vector<float>& dashes)
+{
+    rec.beginPath();
+    for (const QPolygonF& poly : path.toSubpathPolygons(t)) {
+        std::vector<Pt> pts;
+        pts.reserve(poly.size());
+        for (const QPointF& p : poly)
+            pts.push_back({(float)p.x(), (float)p.y()});
+        emitDashedPolyline(rec, pts, 0.0f, 0.0f, dashes);
+    }
+}
+
+void emitStyledPath(Page2D::Recorder& rec, const QPainterPath& path,
+                    const QTransform& t, const QPen& pen, const QBrush& brush)
+{
+    if (path.isEmpty())
+        return;
+    const bool fill = brush.style() != Qt::NoBrush && brush.color().alpha();
+    const bool stroke = pen.style() != Qt::NoPen && pen.color().alpha();
+    if (!fill && !stroke)
+        return;
+
+    const std::vector<float> dashes = penDashes(pen, t);
+    if (fill || dashes.empty())
+        capturePainterPath(rec, path, t);
+    if (fill)
+        rec.fillConcave(packColor(brush.color()),
+                        path.fillRule() == Qt::OddEvenFill);
+    if (stroke) {
+        if (!dashes.empty())
+            captureDashedPath(rec, path, t, dashes);
+        rec.stroke(packColor(pen.color()), penWidth(pen, t));
+    }
+}
+
+// TechDraw's own path items (edges, dimension lines, arrows, section
+// marks, ...) derive from QGIPrimPath, which draws from its own
+// pen/brush members on a plain QGraphicsItem.
+void capturePrimPath(Page2D::Recorder& rec, QGIPrimPath* item)
+{
+    emitStyledPath(rec, item->path(), item->sceneTransform(),
+                   item->currentPen(), item->currentBrush());
+}
+
+void captureShapeItem(Page2D::Recorder& rec, QAbstractGraphicsShapeItem* item)
+{
+    QPainterPath path;
+    if (auto pathItem = dynamic_cast<QGraphicsPathItem*>(item))
+        path = pathItem->path();
+    else if (auto ellipse = dynamic_cast<QGraphicsEllipseItem*>(item)) {
+        if (ellipse->startAngle() == 0 && ellipse->spanAngle() == 360 * 16)
+            path.addEllipse(ellipse->rect());
+        else {
+            path.arcMoveTo(ellipse->rect(), ellipse->startAngle() / 16.0);
+            path.arcTo(ellipse->rect(), ellipse->startAngle() / 16.0,
+                       ellipse->spanAngle() / 16.0);
+        }
+    }
+    else if (auto rect = dynamic_cast<QGraphicsRectItem*>(item))
+        path.addRect(rect->rect());
+    else if (auto poly = dynamic_cast<QGraphicsPolygonItem*>(item))
+        path.addPolygon(poly->polygon());
+    else
+        return;
+    emitStyledPath(rec, path, item->sceneTransform(), item->pen(),
+                   item->brush());
+}
+
+void captureLineItem(Page2D::Recorder& rec, QGraphicsLineItem* item)
+{
+    const QPen pen = item->pen();
+    if (pen.style() == Qt::NoPen || !pen.color().alpha())
+        return;
+    const QTransform t = item->sceneTransform();
+    const QPointF p1 = t.map(item->line().p1());
+    const QPointF p2 = t.map(item->line().p2());
+    rec.beginPath();
+    const std::vector<float> dashes = penDashes(pen, t);
+    if (dashes.empty()) {
+        rec.moveTo((float)p1.x(), (float)p1.y());
+        rec.lineTo((float)p2.x(), (float)p2.y());
+    }
+    else {
+        std::vector<Pt> pts {{(float)p1.x(), (float)p1.y()},
+                             {(float)p2.x(), (float)p2.y()}};
+        emitDashedPolyline(rec, pts, 0.0f, 0.0f, dashes);
+    }
+    rec.stroke(packColor(pen.color()), penWidth(pen, t));
+}
+
+// Text: one run per (line x fragment) of the laid-out document, at its
+// baseline, in the fragment's own font and color -- this keeps rich
+// text (annotations are HTML) faithful without rendering HTML engine-
+// side. A rotated or scaled item wraps its runs in a transform op; the
+// common upright label goes out pre-mapped.
+void captureTextItem(Page2D::Recorder& rec, QGraphicsTextItem* item)
+{
+    QTextDocument* doc = item->document();
+    if (!doc)
+        return;
+    const QTransform t = item->sceneTransform();
+    const bool upright = t.type() <= QTransform::TxTranslate;
+    bool pushed = false;
+    for (QTextBlock block = doc->begin(); block != doc->end();
+         block = block.next()) {
+        QTextLayout* layout = block.layout();
+        if (!layout)
+            continue;
+        const QPointF blockPos = layout->position();
+        const QString blockText = block.text();
+        for (int li = 0; li < layout->lineCount(); ++li) {
+            const QTextLine line = layout->lineAt(li);
+            if (!line.isValid())
+                continue;
+            const int lineStart = line.textStart();
+            const int lineEnd = lineStart + line.textLength();
+            for (QTextBlock::iterator fi = block.begin(); !fi.atEnd();
+                 ++fi) {
+                const QTextFragment frag = fi.fragment();
+                if (!frag.isValid())
+                    continue;
+                const int fragStart = frag.position() - block.position();
+                const int start = std::max(fragStart, lineStart);
+                const int end =
+                    std::min(fragStart + frag.length(), lineEnd);
+                if (start >= end)
+                    continue;
+                const QString run = blockText.mid(start, end - start);
+                if (run.trimmed().isEmpty())
+                    continue;
+                // The fragment format carries only what HTML/CSS set
+                // explicitly; a plain-text item's font lives on the
+                // item. Merge: item font under, set properties over.
+                const QTextCharFormat cf = frag.charFormat();
+                QFont font = item->font();
+                const QFont cff = cf.font();
+                if (cf.hasProperty(QTextFormat::FontFamilies))
+                    font.setFamily(cff.family());
+                if (cf.hasProperty(QTextFormat::FontItalic))
+                    font.setItalic(cff.italic());
+                if (cf.hasProperty(QTextFormat::FontPixelSize))
+                    font.setPixelSize(cff.pixelSize());
+                else if (cf.hasProperty(QTextFormat::FontPointSize))
+                    font.setPointSizeF(cff.pointSizeF());
+                float size = (float)font.pixelSize();
+                if (size <= 0.0f && font.pointSizeF() > 0.0)
+                    size = (float)(font.pointSizeF() * 96.0 / 72.0);
+                if (size <= 0.0f)
+                    continue;
+                // Qt's pixel size sets the em square; fontstash (stb)
+                // scales so ascent-descent equals the size. Hand vg the
+                // Qt line height so glyphs come out Qt-sized.
+                {
+                    const QFontMetricsF fm(font);
+                    const double lineH = fm.ascent() + fm.descent();
+                    if (lineH > 0.0)
+                        size = (float)lineH;
+                }
+                const QColor color = cf.foreground().style() != Qt::NoBrush
+                    ? cf.foreground().color()
+                    : item->defaultTextColor();
+                const float x =
+                    (float)(blockPos.x() + line.cursorToX(start));
+                const float y =
+                    (float)(blockPos.y() + line.y() + line.ascent());
+                const QByteArray utf8 = run.toUtf8();
+                if (traceCapture())
+                    Base::Console().Message(
+                        "PageFeed:     text run %s size=%.1f at %.1f,%.1f "
+                        "upright=%d font=%s\n",
+                        utf8.constData(), size, x, y, upright ? 1 : 0,
+                        vgFontKey(font));
+                if (upright) {
+                    rec.text(vgFontKey(font), size, packColor(color),
+                             x + (float)t.dx(), y + (float)t.dy(),
+                             utf8.constData());
+                }
+                else {
+                    if (!pushed) {
+                        const float mtx[6] = {
+                            (float)t.m11(), (float)t.m12(), (float)t.m21(),
+                            (float)t.m22(), (float)t.dx(), (float)t.dy()};
+                        rec.pushTransform(mtx);
+                        pushed = true;
+                    }
+                    rec.text(vgFontKey(font), size, packColor(color), x, y,
+                             utf8.constData());
+                }
+            }
+        }
+    }
+    if (pushed)
+        rec.popTransform();
+}
+
+// Depth-first over the item subtree in paint order (parent under
+// children, siblings by z-value). Nested QGIViews are other document
+// objects: they feed under their own ids. Visibility is judged
+// relative to the captured root (isVisibleTo), never absolutely: a
+// host that photographs the vg layer alone hides the Qt items, and
+// that must not read as "the drawing is empty".
+void captureItemTree(QGraphicsItem* item, Page2D::Recorder& rec,
+                     const QGraphicsItem* root)
+{
+    if (!item)
+        return;
+    if (item != root) {
+        if (!item->isVisibleTo(root)) {
+            if (traceCapture())
+                Base::Console().Message("PageFeed:   skip hidden %s\n",
+                                        typeid(*item).name());
+            return;
+        }
+        if (dynamic_cast<QGIView*>(item))
+            return;
+    }
+    if (traceCapture()) {
+        const QRectF r = item->sceneBoundingRect();
+        Base::Console().Message(
+            "PageFeed:   item %s rect(%.0f,%.0f %.0fx%.0f) bytes=%zu\n",
+            typeid(*item).name(), r.x(), r.y(), r.width(), r.height(),
+            rec.bytes().size());
+    }
+    if (auto text = dynamic_cast<QGraphicsTextItem*>(item))
+        captureTextItem(rec, text);
+    else if (auto prim = dynamic_cast<QGIPrimPath*>(item))
+        capturePrimPath(rec, prim);
+    else if (auto shape = dynamic_cast<QAbstractGraphicsShapeItem*>(item))
+        captureShapeItem(rec, shape);
+    else if (auto line = dynamic_cast<QGraphicsLineItem*>(item))
+        captureLineItem(rec, line);
+    QList<QGraphicsItem*> children = item->childItems();
+    std::stable_sort(children.begin(), children.end(),
+                     [](const QGraphicsItem* a, const QGraphicsItem* b) {
+                         return a->zValue() < b->zValue();
+                     });
+    for (QGraphicsItem* child : children)
+        captureItemTree(child, rec, root);
+}
+
 // The hatch object claiming face i, if any (QGIViewPart::faceIsGeomHatched).
 TechDraw::DrawGeomHatch*
 geomHatchForFace(int i, const std::vector<TechDraw::DrawGeomHatch*>& objs)
@@ -600,6 +977,55 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
     sweep('v', index);
 }
 
+void PageFeed::feedViewCapture(QGIView* qgiv, Page2D& out, uint32_t layer)
+{
+    if (!qgiv)
+        return;
+    TechDraw::DrawView* feature = qgiv->getViewObject();
+    const char* name = feature ? feature->getNameInDocument() : nullptr;
+    if (!name)
+        return;
+    ensureVgFonts();
+    Page2D::Recorder rec;
+    if (traceCapture()) {
+        QGraphicsItem* parent = qgiv->parentItem();
+        Base::Console().Message(
+            "PageFeed: capture %s featVis=%d itemVis=%d parent=%s "
+            "pos=%.0f,%.0f\n",
+            name, qgiv->isVisible() ? 1 : 0,
+            static_cast<QGraphicsItem*>(qgiv)->isVisible() ? 1 : 0,
+            parent ? typeid(*parent).name() : "none", qgiv->pos().x(),
+            qgiv->pos().y());
+    }
+    if (qgiv->isVisible())
+        captureItemTree(qgiv, rec, qgiv);
+    if (traceCapture())
+        Base::Console().Message("PageFeed: capture %s -> %zu bytes\n", name,
+                                rec.bytes().size());
+    out.setItem(itemId(name, 'a', 0), Page2D::Kind::Annotation, layer,
+                std::move(rec));
+}
+
+void PageFeed::feedViewDecorations(QGIView* qgiv, Page2D& out, uint32_t layer)
+{
+    if (!qgiv)
+        return;
+    TechDraw::DrawView* feature = qgiv->getViewObject();
+    const char* name = feature ? feature->getNameInDocument() : nullptr;
+    if (!name)
+        return;
+    ensureVgFonts();
+    Page2D::Recorder rec;
+    if (qgiv->isVisible()) {
+        for (QGraphicsItem* child : qgiv->childItems()) {
+            if (dynamic_cast<QGIDecoration*>(child))
+                captureItemTree(child, rec, qgiv);
+        }
+    }
+    out.setItem(itemId(name, 'd', 0), Page2D::Kind::Decoration, layer,
+                std::move(rec));
+}
+
 void PageFeed::feedPage(TechDraw::DrawPage* page, Page2D& out)
 {
     feedPage(page, out, Style());
@@ -610,10 +1036,27 @@ void PageFeed::feedPage(TechDraw::DrawPage* page, Page2D& out,
 {
     if (!page)
         return;
+    // The annotation tier converts the laid-out Qt scene items; resolve
+    // the page's scene where the Gui side has one (it exists for every
+    // page of a Gui document, shown or not).
+    QGSPage* qgs = nullptr;
+    Gui::Document* gdoc =
+        Gui::Application::Instance->getDocument(page->getDocument());
+    if (gdoc) {
+        if (auto vpp =
+                dynamic_cast<ViewProviderPage*>(gdoc->getViewProvider(page)))
+            qgs = vpp->getQGSPage();
+    }
     uint32_t layer = 0;
     for (App::DocumentObject* obj : page->getAllViews()) {
-        if (auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(obj))
+        QGIView* qgiv = qgs ? qgs->findQViewForDocObj(obj) : nullptr;
+        if (auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(obj)) {
             feedViewPart(dvp, out, style, layer);
+            if (qgiv)
+                feedViewDecorations(qgiv, out, layer);
+        }
+        else if (qgiv)
+            feedViewCapture(qgiv, out, layer);
         ++layer;
     }
 }
