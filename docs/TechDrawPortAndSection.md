@@ -1052,3 +1052,68 @@ smooth gradients on export.
 
 **Sequencing:** this arc queues *after* the current order finishes
 (the real compositor, then the M3 SceneServer wire).
+
+## 23. Implementation status (2026-08-24, later still): the real compositor
+
+The readback+QImage preview is retired from the interactive path: the
+vg page now renders into a persistent texture on the shared bgfx
+device and a textured blit composites it into the QGVPage viewport --
+no per-frame GPU->CPU->GPU round trip. Verified 16/16 (plus the
+previous suite's 20/20 re-run through it) on the RTX 3060.
+
+**How it composites.** The 3D renderer already solved this problem:
+its bgfx GL device lives on a Qt-created QOpenGLContext share-grouped
+with `QOpenGLContext::globalShareContext()`, so its textures are
+visible to every Qt GL widget, and each frame does a context dance
+(widget out, device in for `bgfx::frame()`, widget back) because the
+single-threaded GL device executes its frame in whichever context is
+current. The page compositor rides exactly that arrangement:
+
+- `RendererLib` grows three hooks -- `deviceSharesQtGL()` /
+  `deviceMakeCurrent()` / `deviceDoneCurrent()` -- surfaced as
+  `RendererFactory` statics; the bgfx lib answers from `_BGFXLib`.
+  `deviceSharesQtGL` requires the *running* backend to be OpenGL
+  (`bgfx::getRendererType()`), not just the lib's `currentType`: a
+  lost init race against an already-up headless Vulkan device leaves
+  `currentType` stale, and trusting it would hand a Vulkan handle to a
+  GL blitter.
+- `Page2D::renderToTexture(w, h)` renders into a page-owned
+  color+depth target (recreated on resize, forgotten on device
+  generation change), clears it transparent, pumps the device frame
+  under the device's context, and returns
+  `bgfx::getInternal(color)` -- the native GL texture id. vg's
+  src-alpha blend over a transparent clear accumulates premultiplied
+  alpha, so the host composites with (ONE, ONE_MINUS_SRC_ALPHA).
+- `QGVPage::drawVgPreview` switches its viewport to QOpenGLWidget
+  (queued -- the decision is taken inside the old viewport's paint),
+  warms the device if nothing did (`RendererFactory::warmup("bgfx -
+  OpenGL")` -- in practice the application startup warmup has already
+  paid this), and inside `beginNativePainting` blits the page texture
+  with a `QOpenGLTextureBlitter` under the scene items. Preference
+  `PageRendererVgComposite` (default on) gates it; every missing
+  precondition falls back to the readback path -- except a failed
+  frame on a shared GL device, which skips the frame rather than pump
+  `renderOffscreen`'s `bgfx::frame()` into the widget's context.
+- `renderOffscreen` itself now runs its frames under the device
+  context when the device is the shared-GL one, which is what a GUI
+  process has after startup warmup -- previously its frames executed
+  against whatever context happened to be current.
+
+**Portability note (the wasm tier).** The compositor is deliberately a
+thin desktop-only wrapper: `render(viewId, w, h)` remains the whole
+portable engine (pure bgfx + vg, no Qt), which is what the
+standalone/wasm viewer will drive directly on a backbuffer view in M3
+-- there is nothing to composite there, and the device hooks compile
+to `return false` under FC_RENDERER_STANDALONE.
+
+**Test notes** (td_vgtest6.py, and td_vgtest5.py updated): a
+QOpenGLWidget viewport defeats both `QWidget::grab()` (renders via
+QWidget::render, missing GL content) and PySide's wrapper (the
+viewport surfaces as bare QWidget; shiboken wrapInstance returns the
+existing wrapper, so grabFramebuffer stays unreachable) -- grabs read
+the real window pixels via `QScreen::grabWindow` and crop the
+viewport.
+
+**M2 is now complete.** Remaining before M3: nothing engine-side; the
+wire (serialize Page2D items + images + fonts over SceneServer to the
+wasm viewer) is next.
