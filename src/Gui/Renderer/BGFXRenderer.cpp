@@ -946,6 +946,48 @@ bool BGFXRendererLib::warmup(QOpenGLWidget *widget, const std::string &type,
     return true;
 }
 
+bool BGFXRendererLib::deviceSharesQtGL() const
+{
+#ifdef FC_RENDERER_STANDALONE
+    return false;
+#else
+    // currentType is OpenGL only when prepare() took the GL path (the
+    // context handed to bgfx is the Qt one built against the global
+    // share context); a positive view limit is the proof some init
+    // actually succeeded -- getCaps() is the zeroed global until then.
+    // getRendererType() is the running device's own answer: prepare()
+    // leaves currentType set when its init lost the race to a device
+    // somebody else (Page2D's headless Vulkan) already brought up, and
+    // trusting currentType alone would hand a Vulkan handle to a GL
+    // compositor.
+    return _BGFXLib.currentType == RendererType::OpenGL
+        && _BGFXLib.context != nullptr
+        && QOpenGLContext::globalShareContext() != nullptr
+        && bgfx::getCaps()->limits.maxViews > 0
+        && bgfx::getRendererType() == bgfx::RendererType::OpenGL;
+#endif
+}
+
+bool BGFXRendererLib::deviceMakeCurrent()
+{
+#ifdef FC_RENDERER_STANDALONE
+    return false;
+#else
+    if (!deviceSharesQtGL())
+        return false;
+    _BGFXLib.makeCurrent();
+    return QOpenGLContext::currentContext() == _BGFXLib.context.get();
+#endif
+}
+
+void BGFXRendererLib::deviceDoneCurrent()
+{
+#ifndef FC_RENDERER_STANDALONE
+    if (_BGFXLib.context)
+        _BGFXLib.doneCurrent();
+#endif
+}
+
 std::unique_ptr<Renderer> BGFXRendererLib::create(
         const std::string &type, QOpenGLWidget *widget,
         bool publishOnly) const

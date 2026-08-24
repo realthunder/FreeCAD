@@ -199,6 +199,24 @@ public:
     bool renderOffscreen(uint16_t width, uint16_t height,
                          std::vector<uint8_t>& rgba);
 
+    /// The interactive desktop compositor: render the page into a
+    /// persistent page-owned color target (transparent background,
+    /// premultiplied alpha) on the shared bgfx device and return the
+    /// target's native OpenGL texture id for the host to composite
+    /// into its own Qt GL widget -- possible because the device's GL
+    /// context sits in Qt's global share group
+    /// (RendererFactory::deviceSharesQtGL). Returns 0 when that
+    /// precondition fails (no device, non-GL backend, standalone
+    /// build); the host falls back to renderOffscreen. Call with no GL
+    /// context current -- the device frame runs under the device's own
+    /// context, and the caller re-acquires its own afterwards. The id
+    /// stays valid until the next call or clear().
+    ///
+    /// Desktop-only by design: the wasm/standalone tier composites
+    /// nothing -- it calls render() directly with a view id on the
+    /// backbuffer.
+    uintptr_t renderToTexture(uint16_t width, uint16_t height);
+
 private:
     // All vg types stay out of this header: consumers of the page
     // (the TechDraw feed, the wire) see only ids, ops and pixels.

@@ -40,6 +40,9 @@ public:
             bool publishOnly = false) const override;
     virtual bool warmup(QOpenGLWidget *widget, const std::string &type,
                         WarmupTiming *timing = nullptr) override;
+    virtual bool deviceSharesQtGL() const override;
+    virtual bool deviceMakeCurrent() override;
+    virtual void deviceDoneCurrent() override;
 };
 
 class BGFXRenderer : public Renderer

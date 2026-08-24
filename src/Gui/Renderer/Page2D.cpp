@@ -109,6 +109,41 @@ struct Page2D::Private
         item.recorded = false;
     }
 
+    // The interactive compositor's persistent render target (desktop
+    // path; raw bgfx handle indices so the storage builds without the
+    // bgfx headers). 0xffff = none.
+    uint16_t rtFb = 0xffff;
+    uint16_t rtColor = 0xffff;
+    uint16_t rtDepth = 0xffff;
+    uint16_t rtW = 0;
+    uint16_t rtH = 0;
+
+    void releaseTarget()
+    {
+#ifdef HAVE_BGFX
+        // A generation mismatch means the device the handles lived on
+        // is gone (Vg2D tears down right before bgfx does): forgetting
+        // them is the only legal move.
+        if (Vg2D::instance().initialized()
+            && vgGeneration == Vg2D::instance().generation()) {
+            if (rtFb != 0xffff) {
+                bgfx::FrameBufferHandle h {rtFb};
+                bgfx::destroy(h);
+            }
+            if (rtColor != 0xffff) {
+                bgfx::TextureHandle h {rtColor};
+                bgfx::destroy(h);
+            }
+            if (rtDepth != 0xffff) {
+                bgfx::TextureHandle h {rtDepth};
+                bgfx::destroy(h);
+            }
+        }
+#endif
+        rtFb = rtColor = rtDepth = 0xffff;
+        rtW = rtH = 0;
+    }
+
     void releaseImage(PageImage& img)
     {
 #ifdef HAVE_BGFX
@@ -716,6 +751,7 @@ void Page2D::clear()
     for (auto& v : d->images)
         d->releaseImage(v.second);
     d->images.clear();
+    d->releaseTarget();
 }
 
 void Page2D::setImage(ImageId id, uint16_t width, uint16_t height,
@@ -949,6 +985,15 @@ bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
         }
     }
 
+    // On a shared Qt-GL device (the interactive compositor's, or a 3D
+    // view's) the frames pumped below execute GL and need the device's
+    // own context current -- the headless devices this path brings up
+    // itself (Vulkan) need nothing. Callers of this offscreen entry
+    // hold no GL context of their own.
+    const bool sharedGL = RendererFactory::deviceSharesQtGL();
+    if (sharedGL && !RendererFactory::deviceMakeCurrent())
+        return false;
+
     const uint64_t rtFlags = BGFX_TEXTURE_RT;
     bgfx::TextureHandle color = bgfx::createTexture2D(
         width, height, false, 1, bgfx::TextureFormat::BGRA8, rtFlags);
@@ -994,6 +1039,8 @@ bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
     bgfx::destroy(color);
     bgfx::destroy(depth);
     bgfx::destroy(staging);
+    if (sharedGL)
+        RendererFactory::deviceDoneCurrent();
 
     if (!ok)
         return false;
@@ -1015,6 +1062,86 @@ bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
     return true;
 }
 
+uintptr_t Page2D::renderToTexture(uint16_t width, uint16_t height)
+{
+    if (!width || !height)
+        return 0;
+    // GL device in Qt's share group or nothing: Vulkan (or a headless
+    // device renderOffscreen brought up) cannot hand a texture to a Qt
+    // GL widget, and the standalone/wasm tier never composites -- it
+    // renders straight into a backbuffer view.
+    if (!RendererFactory::deviceSharesQtGL())
+        return 0;
+
+    // A torn-down-and-rebuilt device took the target's handles with
+    // it; render() below re-syncs the items and images the same way.
+    if (Vg2D::instance().generation() != d->vgGeneration) {
+        d->rtFb = d->rtColor = d->rtDepth = 0xffff;
+        d->rtW = d->rtH = 0;
+    }
+    if (d->rtFb != 0xffff && (d->rtW != width || d->rtH != height))
+        d->releaseTarget();
+    if (d->rtFb == 0xffff) {
+        bgfx::TextureHandle color = bgfx::createTexture2D(
+            width, height, false, 1, bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_RT);
+        bgfx::TextureHandle depth = bgfx::createTexture2D(
+            width, height, false, 1, bgfx::TextureFormat::D24S8,
+            BGFX_TEXTURE_RT_WRITE_ONLY);
+        if (!bgfx::isValid(color) || !bgfx::isValid(depth)) {
+            if (bgfx::isValid(color))
+                bgfx::destroy(color);
+            if (bgfx::isValid(depth))
+                bgfx::destroy(depth);
+            return 0;
+        }
+        bgfx::TextureHandle attachments[] = {color, depth};
+        bgfx::FrameBufferHandle fb =
+            bgfx::createFrameBuffer(2, attachments, false);
+        if (!bgfx::isValid(fb)) {
+            bgfx::destroy(color);
+            bgfx::destroy(depth);
+            return 0;
+        }
+        d->rtColor = color.idx;
+        d->rtDepth = depth.idx;
+        d->rtFb = fb.idx;
+        d->rtW = width;
+        d->rtH = height;
+    }
+
+    // Same view id pair as renderOffscreen: the top granule the 3D
+    // renderer's block allocator leaves alone.
+    const uint16_t viewId = (uint16_t)(bgfx::getCaps()->limits.maxViews - 2);
+    bgfx::FrameBufferHandle fb {d->rtFb};
+    bgfx::setViewFrameBuffer(viewId, fb);
+    bgfx::setViewRect(viewId, 0, 0, width, height);
+    // Transparent clear: the host paints the sheet and backdrop itself
+    // and composites this layer with premultiplied alpha (vg's
+    // src-alpha blend over transparent black accumulates exactly
+    // that).
+    bgfx::setViewClear(viewId,
+                       BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH | BGFX_CLEAR_STENCIL,
+                       0x00000000, 1.0f, 0);
+
+    const bool ok = render(viewId, width, height);
+    bgfx::touch(viewId);
+
+    // The single-threaded GL device executes the frame in whichever
+    // context is current; the caller released its own before calling.
+    if (!RendererFactory::deviceMakeCurrent())
+        return 0;
+    bgfx::frame();
+    RendererFactory::deviceDoneCurrent();
+
+    bgfx::FrameBufferHandle noFb = BGFX_INVALID_HANDLE;
+    bgfx::setViewFrameBuffer(viewId, noFb);
+    if (!ok)
+        return 0;
+    bgfx::TextureHandle color {d->rtColor};
+    return bgfx::getInternal(color);
+}
+
 void Page2D::registerFont(const char* name, const char* path)
 {
     if (name && path)
@@ -1031,6 +1158,11 @@ bool Page2D::render(uint16_t, uint16_t, uint16_t)
 bool Page2D::renderOffscreen(uint16_t, uint16_t, std::vector<uint8_t>&)
 {
     return false;
+}
+
+uintptr_t Page2D::renderToTexture(uint16_t, uint16_t)
+{
+    return 0;
 }
 
 void Page2D::registerFont(const char*, const char*) {}

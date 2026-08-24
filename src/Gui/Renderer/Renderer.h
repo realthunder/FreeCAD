@@ -2910,6 +2910,20 @@ public:
     };
     virtual bool warmup(QOpenGLWidget *, const std::string &,
                         WarmupTiming * = nullptr) { return false; }
+
+    /// Whether this backend's device is up on OpenGL through a context
+    /// in Qt's global share group -- the precondition for a host to
+    /// composite a backend-rendered texture into its own Qt GL widget
+    /// (the 2D page engine's interactive path does exactly that).
+    virtual bool deviceSharesQtGL() const { return false; }
+    /// Make the device's own GL context current / release it, for
+    /// engine code that must pump a backend frame outside a 3D view's
+    /// paint (the single-threaded GL device executes its frame in
+    /// whichever context is current). Only meaningful when
+    /// deviceSharesQtGL(); the caller owns re-acquiring its own
+    /// context afterwards.
+    virtual bool deviceMakeCurrent() { return false; }
+    virtual void deviceDoneCurrent() {}
 };
 
 /// CPU accounting for the part of a frame that is *not* the renderer's.
@@ -3036,6 +3050,13 @@ public:
     /// scene-stream thread cap.
     static void setMaxViewIds(int count);
     static int maxViewIds();
+
+    /// The RendererLib device-context hooks, resolved over the
+    /// registered backends (the process has at most one device; the
+    /// first lib that answers wins). See RendererLib::deviceSharesQtGL.
+    static bool deviceSharesQtGL();
+    static bool deviceMakeCurrent();
+    static void deviceDoneCurrent();
 };
 
 } // namespace Render
