@@ -40,6 +40,10 @@
 
 #include <Base/Type.h>
 
+QT_BEGIN_NAMESPACE
+class QOpenGLTextureBlitter;
+QT_END_NAMESPACE
+
 namespace App
 {
 class DocumentObject;
@@ -233,6 +237,12 @@ private:
     std::set<std::string> m_vgDirty;
     size_t m_vgPageStructure = 0;
     size_t m_vgTemplateStamp = 0;
+    // The GL compositor's state: the blitter lives in the viewport's
+    // context, warmup is attempted once, the active log line printed
+    // once.
+    QOpenGLTextureBlitter* m_vgBlitter = nullptr;
+    bool m_vgWarmupTried = false;
+    bool m_vgCompositeLogged = false;
 };
 
 }// namespace TechDrawGui

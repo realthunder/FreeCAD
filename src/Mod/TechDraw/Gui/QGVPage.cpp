@@ -51,8 +51,14 @@
 #include <Mod/TechDraw/App/DrawSVGTemplate.h>
 
 #include <QImage>
+#include <QOpenGLContext>
+#include <QOpenGLFunctions>
+#include <QOpenGLTextureBlitter>
+#include <QOpenGLWidget>
+#include <QPaintEngine>
 
 #include <Gui/Renderer/Page2D.h>
+#include <Gui/Renderer/Renderer.h>
 #include <Mod/TechDraw/App/Preferences.h>
 
 #include "MDIViewPage.h"
@@ -223,6 +229,14 @@ QGVPage::QGVPage(ViewProviderPage* vpPage, QGSPage* scenePage, QWidget* parent)
 
 QGVPage::~QGVPage()
 {
+    if (m_vgBlitter) {
+        // The blitter's GL program lives in the viewport's context;
+        // destroying it needs that context current or the destructor
+        // leaks with a warning.
+        if (auto glvp = qobject_cast<QOpenGLWidget*>(viewport()))
+            glvp->makeCurrent();
+        delete m_vgBlitter;
+    }
     delete bkgBrush;
     delete m_navStyle;
     d->detach();
@@ -500,8 +514,101 @@ void QGVPage::drawVgPreview(QPainter* painter)
     view.zoom = (float)transform().m11();
     view.panX = (float)origin.x();
     view.panY = (float)origin.y();
-    m_vgPage->setView(view);
 
+    // The real compositor: with a GL viewport whose context shares
+    // with the bgfx device, the page renders into a persistent texture
+    // and a textured blit puts it under the scene items -- no
+    // readback, no QImage. Everything below degrades to the readback
+    // path when a piece is missing (non-GL viewport on the first
+    // paint, a Vulkan device, no device at all and warmup refused).
+    const bool wantComposite =
+        TechDraw::Preferences::getPreferenceGroup("General")
+            ->GetBool("PageRendererVgComposite", true);
+    auto glvp = qobject_cast<QOpenGLWidget*>(viewport());
+    if (wantComposite && !glvp) {
+        // Switch the viewport to GL for the next paint; this one is
+        // the old viewport's own paint event, so it cannot be
+        // destroyed from here.
+        QMetaObject::invokeMethod(
+            this,
+            [this]() {
+                if (!qobject_cast<QOpenGLWidget*>(viewport())) {
+                    setRenderer(OpenGL);
+                    setCacheMode(QGraphicsView::CacheNone);
+                    viewport()->update();
+                }
+            },
+            Qt::QueuedConnection);
+    }
+    if (wantComposite && glvp
+        && painter->paintEngine()->type() == QPaintEngine::OpenGL2) {
+        if (!Render::RendererFactory::deviceSharesQtGL()
+            && !m_vgWarmupTried) {
+            // Bring the device up exactly as the first 3D view would;
+            // the desktop bgfx backend is GL, which is what sharing
+            // needs. Once per page host -- a refusal will not change.
+            m_vgWarmupTried = true;
+            Render::RendererFactory::warmup("bgfx - OpenGL", glvp);
+        }
+        if (Render::RendererFactory::deviceSharesQtGL()) {
+            const qreal dpr = glvp->devicePixelRatioF();
+            Render::Page2D::View pv = view;
+            pv.zoom *= (float)dpr;
+            pv.panX *= (float)dpr;
+            pv.panY *= (float)dpr;
+            pv.devicePixelRatio = (float)dpr;
+            m_vgPage->setView(pv);
+            const int pw = (int)std::lround(viewport()->width() * dpr);
+            const int ph = (int)std::lround(viewport()->height() * dpr);
+
+            painter->beginNativePainting();
+            // The device frame runs under the device's own context;
+            // hand the widget's back first (its makeCurrent() also
+            // re-binds the widget framebuffer afterwards).
+            glvp->doneCurrent();
+            const uintptr_t tex =
+                m_vgPage->renderToTexture((uint16_t)pw, (uint16_t)ph);
+            glvp->makeCurrent();
+            if (tex) {
+                auto* f = QOpenGLContext::currentContext()->functions();
+                // The QPainter GL engine leaves its clip machinery on;
+                // this quad is the whole viewport.
+                f->glDisable(GL_SCISSOR_TEST);
+                f->glDisable(GL_STENCIL_TEST);
+                f->glDisable(GL_DEPTH_TEST);
+                f->glViewport(0, 0, pw, ph);
+                // vg blended onto a transparent clear = premultiplied.
+                f->glEnable(GL_BLEND);
+                f->glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA,
+                                       GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+                if (!m_vgBlitter)
+                    m_vgBlitter = new QOpenGLTextureBlitter;
+                if (!m_vgBlitter->isCreated())
+                    m_vgBlitter->create();
+                const QRect all(0, 0, pw, ph);
+                m_vgBlitter->bind();
+                m_vgBlitter->blit(
+                    (GLuint)tex,
+                    QOpenGLTextureBlitter::targetTransform(all, all),
+                    QOpenGLTextureBlitter::OriginBottomLeft);
+                m_vgBlitter->release();
+                f->glDisable(GL_BLEND);
+            }
+            painter->endNativePainting();
+            if (tex && !m_vgCompositeLogged) {
+                m_vgCompositeLogged = true;
+                Base::Console().Log(
+                    "QGVPage: vg compositor active (shared-GL texture)\n");
+            }
+            // With a shared GL device the readback fallback is not an
+            // option from inside this paint -- renderOffscreen would
+            // pump the device's frame into the widget's context. A
+            // failed frame skips; the next paint retries.
+            return;
+        }
+    }
+
+    m_vgPage->setView(view);
     const int width = viewport()->width();
     const int height = viewport()->height();
     std::vector<uint8_t> rgba;
