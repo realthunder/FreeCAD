@@ -1198,7 +1198,8 @@ what makes the server's inline-delta catch-up (v37) work unchanged.
 
 A `PageServeSource` in TechDrawGui, mirroring Gui's SceneServeSource,
 exposed as `TechDrawGui.servePage(page, port=0)`. Its document group
-is `<document>#<page>` (label: the page's Label), so a 3D serve of the
+is `<document>:<page>` (label: the page's Label; ':' because the
+name rides a `?doc=` query where '#' would start a URL fragment), so a 3D serve of the
 same document and any number of served pages coexist -- each group has
 one publisher claim, and the survey confirmed a shared group would
 lock the second claimant out.

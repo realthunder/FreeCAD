@@ -49,6 +49,7 @@
 
 #include <Gui/Renderer/Page2D.h>
 #include "PageFeed.h"
+#include "PageServe.h"
 #include "Rez.h"
 
 
@@ -71,6 +72,14 @@ public:
         add_varargs_method("renderPageVg", &Module::renderPageVg,
             "renderPageVg(DrawPageObject, FilePath, [width, height]) -- render the page "
             "through the vg 2D engine into an image file; returns a dict of feed counters."
+        );
+        add_varargs_method("servePage", &Module::servePage,
+            "servePage(DrawPageObject, port=0) -- serve the page over the scene stream "
+            "as its own document group; port > 0 starts the shared listener. Returns "
+            "the group name viewers join with."
+        );
+        add_varargs_method("unservePage", &Module::unservePage,
+            "unservePage(DrawPageObject) -- stop serving the page."
         );
         add_varargs_method("addQGIToView", &Module::addQGIToView,
             "addQGIToView(View, QGraphicsItem) -- insert graphics item into view's graphic."
@@ -318,6 +327,40 @@ private:
         result.setItem("imageUploads", Py::Long((long)counters.imageUploads));
         result.setItem("pendingViews", Py::Long(pendingViews));
         return result;
+    }
+
+    Py::Object servePage(const Py::Tuple& args)
+    {
+        PyObject* pageObj;
+        int port = 0;
+        if (!PyArg_ParseTuple(args.ptr(), "O|i", &pageObj, &port)) {
+            throw Py::TypeError("expected (Page, [port])");
+        }
+        if (!PyObject_TypeCheck(pageObj, &TechDraw::DrawPagePy::Type)) {
+            throw Py::TypeError("expected a Drawing Page");
+        }
+        auto page = static_cast<TechDraw::DrawPagePy*>(pageObj)
+                        ->getDrawPagePtr();
+        PageServe* source = PageServe::serve(page, port);
+        if (!source) {
+            throw Py::RuntimeError("could not serve the page");
+        }
+        return Py::String(source->group());
+    }
+
+    Py::Object unservePage(const Py::Tuple& args)
+    {
+        PyObject* pageObj;
+        if (!PyArg_ParseTuple(args.ptr(), "O", &pageObj)) {
+            throw Py::TypeError("expected (Page)");
+        }
+        if (!PyObject_TypeCheck(pageObj, &TechDraw::DrawPagePy::Type)) {
+            throw Py::TypeError("expected a Drawing Page");
+        }
+        auto page = static_cast<TechDraw::DrawPagePy*>(pageObj)
+                        ->getDrawPagePtr();
+        PageServe::unserve(page);
+        return Py::None();
     }
 
     Py::Object exportPageAsSvg(const Py::Tuple& args)
