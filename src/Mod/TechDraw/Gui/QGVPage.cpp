@@ -47,9 +47,16 @@
 #include <Gui/View3DInventorViewer.h>
 
 #include <Mod/TechDraw/App/DrawPage.h>
+#include <Mod/TechDraw/App/DrawViewPart.h>
 #include <Mod/TechDraw/App/DrawSVGTemplate.h>
 
+#include <QImage>
+
+#include <Gui/Renderer/Page2D.h>
+#include <Mod/TechDraw/App/Preferences.h>
+
 #include "MDIViewPage.h"
+#include "PageFeed.h"
 #include "PreferencesGui.h"
 #include "QGSPage.h"
 #include "QGVNavStyleBlender.h"
@@ -343,6 +350,63 @@ void QGVPage::drawBackground(QPainter* painter, const QRectF&)
 
     painter->drawRect(poly.boundingRect());
 
+    painter->restore();
+
+    // The vg 2D page engine preview (milestone M2): draw the page's
+    // geometry through Render::Page2D underneath the scene items.
+    // Runtime-gated; this is the verification tier of the new page
+    // renderer, not yet its interactive integration.
+    if (TechDraw::Preferences::getPreferenceGroup("General")
+            ->GetBool("PageRendererVg", false)) {
+        drawVgPreview(painter);
+    }
+}
+
+void QGVPage::drawVgPreview(QPainter* painter)
+{
+    TechDraw::DrawPage* page = getDrawPage();
+    if (!page)
+        return;
+
+    if (!m_vgPage)
+        m_vgPage = std::make_unique<Render::Page2D>();
+
+    // Re-feed while any view still computes on its worker, then once
+    // more when everything settled. Coarse damage for the preview: the
+    // stable item ids already confine a re-feed to changed content.
+    bool pending = false;
+    for (App::DocumentObject* obj : page->getAllViews()) {
+        auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(obj);
+        if (dvp && (dvp->waitingForHlr() || dvp->waitingForFaces())) {
+            pending = true;
+            break;
+        }
+    }
+    if (m_vgPageDirty || pending) {
+        PageFeed::feedPage(page, *m_vgPage);
+        m_vgPageDirty = pending;
+    }
+
+    // Map the QGraphicsView transform onto the page view: uniform
+    // scale, scene origin in viewport coordinates as the pan.
+    const QPointF origin = mapFromScene(QPointF(0.0, 0.0));
+    Render::Page2D::View view;
+    view.zoom = (float)transform().m11();
+    view.panX = (float)origin.x();
+    view.panY = (float)origin.y();
+    m_vgPage->setView(view);
+
+    const int width = viewport()->width();
+    const int height = viewport()->height();
+    std::vector<uint8_t> rgba;
+    if (!m_vgPage->renderOffscreen((uint16_t)width, (uint16_t)height, rgba))
+        return;
+
+    QImage image(rgba.data(), width, height, width * 4,
+                 QImage::Format_RGBA8888);
+    painter->save();
+    painter->resetTransform();
+    painter->drawImage(0, 0, image);
     painter->restore();
 }
 

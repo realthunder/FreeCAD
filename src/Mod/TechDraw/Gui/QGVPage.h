@@ -28,6 +28,8 @@
 #include <memory>
 
 #include <QGraphicsView>
+
+#include <memory>
 #include <QLabel>
 #include <QPainterPath>
 
@@ -57,6 +59,11 @@ class DrawViewBalloon;
 class DrawRichAnno;
 class DrawWeldSymbol;
 }// namespace TechDraw
+
+namespace Render
+{
+class Page2D;
+}
 
 namespace TechDrawGui
 {
@@ -89,6 +96,9 @@ public:
 
     void setRenderer(RendererType type = Native);
     void drawBackground(QPainter* painter, const QRectF& rect) override;
+
+    /// Mark the vg page preview stale; the next repaint re-feeds it.
+    void invalidateVgPage() { m_vgPageDirty = true; }
 
     QGSPage* getScene() { return m_scene; }
 
@@ -196,6 +206,12 @@ private:
 
     MDIViewPage* m_parentMDI;
     QContextMenuEvent* m_saveContextEvent;
+
+    // The vg 2D page engine preview (docs/TechDrawPortAndSection.md
+    // sec 16, milestone M2): parameter-gated, drawn under the scene.
+    void drawVgPreview(QPainter* painter);
+    std::unique_ptr<Render::Page2D> m_vgPage;
+    bool m_vgPageDirty = true;
 };
 
 }// namespace TechDrawGui
