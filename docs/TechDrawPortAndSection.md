@@ -851,3 +851,93 @@ process lifetime.
 **M2 remainder now**: dimensions/annotations/balloons, templates, then
 the real compositor (GL-context sharing instead of readback+QImage).
 M3 (the SceneServer wire) untouched.
+
+## 20. Implementation status (2026-08-24, later still): the annotation tier
+
+Dimensions, balloons, annotations -- and with them leaders, weld
+symbols, and every other view whose drawing is Qt-side layout -- now
+reach the vg page. Verified 19/19 on the real GPU (RTX 3060 via
+VirtualGL egl0 + Xvfb, NVIDIA banner checked).
+
+**The design call: capture, not port.** `QGIViewDimension` alone is
+2700 lines of ISO/ASME placement math, and the Qt tier remains the
+interaction owner either way; porting it would have created a second
+layout implementation that drifts. Instead `PageFeed::feedViewCapture`
+converts the *already laid-out* QGraphicsItem subtree of a non-part
+view into one `Annotation` item: path items become path ops, text
+documents become per-line, per-fragment fontstash text runs. The Qt
+tier stays the single source of layout truth; the vg tier renders its
+result. Consequences worth knowing:
+
+- `QGIPrimPath` in this fork derives from plain `QGraphicsItem` and
+  draws from its own pen/brush members; new `currentPen()` /
+  `currentBrush()` accessors (setTools() applied) expose what paint()
+  would use. The dash-pattern preservation fix of `544320bbdf` is what
+  makes the captured pens carry their patterns.
+- Text: Qt's `pixelSize` sets the em square, fontstash (stb_truetype)
+  scales so ascent-descent equals the size -- the capture hands vg the
+  Qt line height (`QFontMetricsF` ascent+descent), or glyphs come out
+  ~30% small. Rich text (annotations are HTML) keeps per-fragment
+  fonts and colors; a fragment format only carries what CSS set, so it
+  is merged over the item font. Rotated labels (ISO vertical
+  dimensions, `Rotation` on annotations) wrap their runs in the new
+  PushTransform/PopTransform ops.
+- Fonts: the four shipped TechDraw TTFs register with the engine under
+  family keys ("osifont", "y14.5-2009", "y14.5-freecad", an italic
+  variant); any other family falls back to osifont. Vg2D retains font
+  bytes for the process life, so registration is legal before any GPU
+  context exists and survives context rebuilds.
+- Cosmetic width-0 pens (balloon leaders and bubbles arrive this way)
+  have no retained-page analog of "one device pixel at any zoom"; they
+  map to the ISO 0.35mm line.
+- Visibility is judged relative to the captured root
+  (`isVisibleTo`), never absolutely: a host that hides the Qt items to
+  photograph the vg layer alone must not read "empty drawing". The
+  flip side stands as a design note for M3: a *hidden* Qt item stops
+  laying itself out, so the pure-vg future needs the Qt tier laid out
+  but not painted, not deleted.
+- Part views additionally capture their `QGIDecoration` children
+  (section lines, detail highlights, view center lines) as one
+  Decoration item -- Qt-side drawings with no App-side geometry that
+  the App-data feed could never see.
+
+**Damage**: the QGVPage preview tracks every `DrawView` through the
+same signalGuiPaint + fed-position-compare scheme that covered parts;
+a dirty annotation view re-captures on the next paint, by which time
+the Qt tier has redrawn it.
+
+**The never-shown page trap** (offscreen host): a dimension's QGI is
+created the instant `page.addView()` fires -- *before* its references
+are assigned -- so `findParent` fails and the item sits unparented at
+the scene origin, drawing the whole dimension in the page's bottom
+left. The shown path repairs this in `fixOrphans` -> `setViewParents`;
+`renderPageVg` now populates missing items *and* calls
+`setViewParents()` after. The test asserts dimension ink at the
+measured view's position to pin this.
+
+**Diagnosis knob**: `FC_PAGE2D_TRACE=1` logs every item the capture
+walker visits (type, scene rect, parent, bytes so far) and every text
+run (string, size, anchor, font key).
+
+**Not fed yet**: SVG-sourced content -- templates, `DrawViewSymbol`,
+`DrawViewSpreadsheet` (its cells are rects+lines+text generated as an
+SVG string App-side; the plan is native ops from the cell model, or it
+rides the template/image story), `DrawViewImage`, SVG/bitmap `DrawHatch`
+fills. Part-view frames/captions/labels are deliberately Qt-only.
+
+**Verification** (scratchpad td_vgtest4.py): a box view + red
+annotation + green balloon + blue dimension. Offscreen (page never
+shown): ink of each color at its expected page position, dimension ink
+at the *view* (the unparented regression), rotation grows the red
+bbox. Interactive: pure-Qt vs pure-vg grabs, red/blue/green centroids
+within 15px (blue compared inside the view region -- the Qt tier draws
+template title-block fields blue). Damage: label move via the position
+compare, balloon text edit via the signal (pixel-diff proof), view
+deletion via the structure rebuild. Edits run with Qt items visible --
+they are the layout source -- then items hide for the vg-only grab.
+
+**M2 remainder now**: templates (the SVG story, likely an image op +
+band-scale rasterization -- which would also cover symbols,
+spreadsheets, images and bitmap hatches), then the real compositor
+(GL-context sharing instead of readback+QImage). M3 (the SceneServer
+wire) untouched.
