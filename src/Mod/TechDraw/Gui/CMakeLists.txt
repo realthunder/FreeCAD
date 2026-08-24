@@ -208,6 +208,8 @@ SET(TechDrawGui_SRCS
     TaskActiveView.h
     Grabber3d.cpp
     Grabber3d.h
+    ShadedUnderlay.cpp
+    ShadedUnderlay.h
     TaskDetail.ui
     TaskDetail.cpp
     TaskDetail.h
