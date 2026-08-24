@@ -24,6 +24,8 @@
 
 #include "SimShapes.h"
 
+#include "SimDrawContext.h"
+
 #include "Shader.h"
 #include <algorithm>
 #include <cmath>
@@ -384,6 +386,10 @@ void Shape::Render() const
     SetupVertexAttribs();
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
     glDrawElements(GL_TRIANGLES, numIndices, GL_UNSIGNED_SHORT, nullptr);
+
+    if (gSimDraw.active()) {
+        gSimDraw.submitIndexed(rVbo, rIbo);
+    }
 }
 
 void Shape::Render(
@@ -392,6 +398,9 @@ void Shape::Render(
 ) const  // normals are rotated only
 {
     CurrentShader->UpdateModelMat(modelMat, normallMat);
+    if (gSimDraw.active()) {
+        gSimDraw.setModel(modelMat, normallMat);
+    }
     Render();
 }
 

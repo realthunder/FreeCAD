@@ -34,6 +34,8 @@
 
 #include <Gui/Renderer/DrawSurface.h>
 
+#include "SimDrawContext.h"
+
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <algorithm>
@@ -112,6 +114,19 @@ void SimDisplay::InitShaders()
         mRSampPosition = dev->createUniform("s_simPosition", Render::UniformType::Sampler);
         mRSampNormal = dev->createUniform("s_simNormal", Render::UniformType::Sampler);
         mRSampAo = dev->createUniform("s_simAo", Render::UniformType::Sampler);
+
+        gSimDraw.uniNormalRot = mRUniNormalRot;
+        gSimDraw.uniLightPos = mRUniLightPos;
+        gSimDraw.uniLightColor = mRUniLightColor;
+        gSimDraw.uniLightAmbient = mRUniLightAmbient;
+        gSimDraw.uniObjectColor = mRUniObjectColor;
+        gSimDraw.uniObjectColorAlpha = mRUniObjectColorAlpha;
+        gSimDraw.uniParams = mRUniParams;
+        // The light environment never changes after init (the GL path
+        // sets it once on each shader here too).
+        gSimDraw.setColor(gSimDraw.lightPos, lightPos, 0.0f);
+        gSimDraw.setColor(gSimDraw.lightColor, lightColor, 0.0f);
+        gSimDraw.setColor(gSimDraw.lightAmbient, ambientCol, 0.0f);
     }
 }
 
@@ -308,6 +323,11 @@ void SimDisplay::InitGL()
     // setup light object
     mlightObject.GenerateBoxStock(-0.5f, -0.5f, -0.5f, 1, 1, 1);
 
+    // The facade driver reads these at frame time; before the first
+    // camera update they must at least be defined.
+    mat4x4_identity(mMatLookAt);
+    mat4x4_identity(mProjMat);
+
     InitShaders();
     CreateFboQuad();
 
@@ -394,6 +414,12 @@ void SimDisplay::CleanGL()
             dev->destroy(mRQuadVbo);
         }
     }
+    gSimDraw.uniNormalRot = gSimDraw.uniLightPos = {};
+    gSimDraw.uniLightColor = gSimDraw.uniLightAmbient = {};
+    gSimDraw.uniObjectColor = gSimDraw.uniObjectColorAlpha = {};
+    gSimDraw.uniParams = {};
+    gSimDraw.program = {};
+
     mRProgDiffuse = mRProgInvDiffuse = mRProgFlat = {};
     mRProgGeom = mRProgLighting = mRProgLine = {};
     mRUniNormalRot = mRUniLightPos = mRUniLightColor = {};
@@ -412,6 +438,13 @@ void SimDisplay::PrepareFrameBuffer()
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
+
+    // The facade's G-buffer clear is the pass clear the frame driver
+    // configures; only the draw state accumulates here.
+    gSimDraw.pass = SimPassScene;
+    gSimDraw.cullEnabled = true;
+    gSimDraw.state.depthFunc = Render::CompareFunc::Less;
+    gSimDraw.state.depthWrite = true;
 }
 
 void SimDisplay::StartDepthPass()
@@ -421,6 +454,10 @@ void SimDisplay::StartDepthPass()
     glDepthMask(GL_TRUE);
     shaderFlat.Activate();
     shaderFlat.UpdateViewMat(mMatLookAt);
+
+    gSimDraw.state.depthFunc = Render::CompareFunc::Less;
+    gSimDraw.state.depthWrite = true;
+    gSimDraw.program = mRProgFlat;
 }
 
 void SimDisplay::StartGeometryPass(const vec3& objColor, bool invertNormals)
@@ -432,6 +469,12 @@ void SimDisplay::StartGeometryPass(const vec3& objColor, bool invertNormals)
     shaderGeom.UpdateObjColor(objColor);
     glEnable(GL_CULL_FACE);
     glDisable(GL_BLEND);
+
+    gSimDraw.program = mRProgGeom;
+    gSimDraw.params[0] = invertNormals ? 1.0f : 0.0f;
+    gSimDraw.setColor(gSimDraw.objectColor, objColor);
+    gSimDraw.cullEnabled = true;
+    gSimDraw.state.blend = Render::BlendMode::None;
 }
 
 // A 'closer' geometry pass is similar to std geometry pass, but render the objects
@@ -622,6 +665,19 @@ void SimDisplay::SetupLinePathPass(int curSegment, bool isHidden)
     shaderLinePath.UpdateObjColor(pathLineColorPassed);
     shaderLinePath.UpdateCurSegment(curSegment);
     shaderLinePath.UpdateViewMat(mMatLookAt);
+
+    // The backend draws 1px lines; the glLineWidth(2) has no
+    // equivalent (accepted, docs/CAMSimRenderPort.md section 5).
+    gSimDraw.state.depthFunc =
+        isHidden ? Render::CompareFunc::Greater : Render::CompareFunc::Less;
+    gSimDraw.state.depthWrite = false;
+    gSimDraw.state.blend = Render::BlendMode::Alpha;
+    gSimDraw.program = mRProgLine;
+    for (int i = 0; i < 4; i++) {
+        gSimDraw.objectColorAlpha[i] = pathLineColor[i];
+    }
+    gSimDraw.setColor(gSimDraw.objectColor, pathLineColorPassed);
+    gSimDraw.params[2] = (float)curSegment;
 }
 
 void SimDisplay::UpdateWindowScale(int width, int height)
@@ -751,6 +807,10 @@ void SimDisplay::UpdateProjectionMatrix()
         const float w = mCameraHeight * aspect;
         mat4x4_ortho(projmat, -w / 2, w / 2, -h / 2, h / 2, mCameraNearDistance, mCameraFarDistance);
     }
+
+    // Kept for the facade frame driver: passes take their projection
+    // at frame time (setPassTransform), not through a shader uniform.
+    mat4x4_dup(mProjMat, projmat);
 
     shader3D.Activate();
     shader3D.UpdateProjectionMat(projmat);

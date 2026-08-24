@@ -108,6 +108,9 @@ protected:
     vec3 pathLineColorPassed = {0.9f, 0.3f, 0.3f};
 
     mat4x4 mMatLookAt;
+    // The projection the facade frame driver reads (the GL path pushes
+    // it into each shader instead of keeping it).
+    mat4x4 mProjMat;
     StockObject mlightObject;
 
     int mWidth = -1;

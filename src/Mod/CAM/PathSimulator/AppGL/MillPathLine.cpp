@@ -3,6 +3,7 @@
 #include "MillPathLine.h"
 
 #include "Shader.h"
+#include "SimDrawContext.h"
 
 // include this last as the defines can mess up other includes
 #include "OpenGlWrapper.h"
@@ -90,6 +91,10 @@ void MillPathLine::Render()
 {
     SetupVertexAttibs();
     glDrawArrays(GL_LINE_STRIP, 0, mNumVerts);
+
+    if (gSimDraw.active()) {
+        gSimDraw.submitLines(mRVbo);
+    }
 }
 
 }  // namespace CAMSimulator
