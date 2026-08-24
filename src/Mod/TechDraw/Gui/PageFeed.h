@@ -48,6 +48,10 @@ namespace TechDrawGui {
 class TechDrawGuiExport PageFeed
 {
 public:
+    /// Fallback appearance. The feed reads the real appearance from the
+    /// view provider and the TechDraw preferences (line widths, face
+    /// color, per-edge cosmetic/GeomFormat formats, dash patterns);
+    /// these values apply only where no view provider exists.
     struct Style
     {
         uint32_t edgeColor = 0x000000ff;   // visible (hard/outline) edges

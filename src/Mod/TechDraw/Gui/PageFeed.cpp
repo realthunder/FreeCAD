@@ -27,16 +27,36 @@
 #include <BRepAdaptor_Curve.hxx>
 #include <GCPnts_QuasiUniformDeflection.hxx>
 
+#include <QColor>
+#include <QPen>
+
+#include <Gui/Application.h>
+#include <Gui/Document.h>
 #include <Gui/Renderer/Page2D.h>
+#include <Mod/TechDraw/App/CenterLine.h>
+#include <Mod/TechDraw/App/Cosmetic.h>
+#include <Mod/TechDraw/App/DrawGeomHatch.h>
 #include <Mod/TechDraw/App/DrawPage.h>
+#include <Mod/TechDraw/App/DrawUtil.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
 #include <Mod/TechDraw/App/Geometry.h>
+#include <Mod/TechDraw/App/HatchLine.h>
+#include <Mod/TechDraw/App/LineGenerator.h>
+#include <Mod/TechDraw/App/Preferences.h>
 
 #include "PageFeed.h"
+#include "PreferencesGui.h"
 #include "Rez.h"
+#include "ViewProviderGeomHatch.h"
+#include "ViewProviderPage.h"
+#include "ViewProviderViewPart.h"
 
 using namespace TechDrawGui;
 using Render::Page2D;
+
+// BaseGeom::source() values (same local convention as QGIViewPart.cpp)
+#define COSMETICEDGE 1
+#define CENTERLINE 2
 
 namespace {
 
@@ -107,6 +127,158 @@ void emitPolyline(Page2D::Recorder& rec, const std::vector<Pt>& pts,
         xy.push_back(oy + p.y);
     }
     rec.polyline(xy.data(), (uint32_t)pts.size());
+}
+
+uint32_t packColor(const QColor& c)
+{
+    return ((uint32_t)c.red() << 24) | ((uint32_t)c.green() << 16)
+        | ((uint32_t)c.blue() << 8) | (uint32_t)c.alpha();
+}
+
+// Walk a polyline alternating pen-down/pen-up runs of the given lengths
+// (page units), phase starting pen-down at the path start like Qt.
+void emitDashedPolyline(Page2D::Recorder& rec, const std::vector<Pt>& pts,
+                        float ox, float oy, const std::vector<float>& dashes)
+{
+    if (pts.size() < 2 || dashes.empty())
+        return;
+    size_t di = 0;
+    float remain = dashes[0];
+    bool down = true;
+    float cx = ox + pts[0].x, cy = oy + pts[0].y;
+    rec.moveTo(cx, cy);
+    for (size_t i = 1; i < pts.size(); ++i) {
+        const float ex = ox + pts[i].x, ey = oy + pts[i].y;
+        float segLen = std::hypot(ex - cx, ey - cy);
+        while (segLen > 0.0f) {
+            if (remain <= segLen) {
+                const float t = remain / segLen;
+                cx += (ex - cx) * t;
+                cy += (ey - cy) * t;
+                segLen -= remain;
+                if (down)
+                    rec.lineTo(cx, cy);
+                down = !down;
+                if (down)
+                    rec.moveTo(cx, cy);
+                di = (di + 1) % dashes.size();
+                remain = dashes[di];
+            }
+            else {
+                remain -= segLen;
+                if (down)
+                    rec.lineTo(ex, ey);
+                cx = ex;
+                cy = ey;
+                segLen = 0.0f;
+            }
+        }
+    }
+}
+
+// The edge-class show/hide matrix (QGIViewPart::showThisEdge).
+bool showEdgeClass(TechDraw::DrawViewPart* dvp,
+                   const TechDraw::BaseGeomPtr& geom)
+{
+    using namespace TechDraw;
+    const edgeClass cls = geom->getClassOfEdge();
+    if (geom->getHlrVisible()) {
+        return cls == ecHARD || cls == ecOUTLINE
+            || (cls == ecSMOOTH && dvp->SmoothVisible.getValue())
+            || (cls == ecSEAM && dvp->SeamVisible.getValue())
+            || (cls == ecUVISO && dvp->IsoVisible.getValue());
+    }
+    return ((cls == ecHARD || cls == ecOUTLINE) && dvp->HardHidden.getValue())
+        || (cls == ecSMOOTH && dvp->SmoothHidden.getValue())
+        || (cls == ecSEAM && dvp->SeamHidden.getValue())
+        || (cls == ecUVISO && dvp->IsoHidden.getValue());
+}
+
+struct EdgeStroke
+{
+    uint32_t color = 0x000000ff;
+    float width = 6.0f;         // Rez
+    std::vector<float> dashes;  // Rez; empty = solid
+    bool show = true;
+};
+
+// Per-edge appearance, mirroring QGIViewPart::drawAllEdges: cosmetic
+// edge / centerline formats, GeomFormat overrides, the hidden-line pen
+// and the iso-line width. Dash patterns come from the same
+// LineGenerator pens the Qt tier uses; Qt specifies them in pen-width
+// units, so page-unit lengths scale by the stroke width.
+EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
+                             ViewProviderViewPart* vp,
+                             const TechDraw::BaseGeomPtr& geom, int iEdge,
+                             const PageFeed::Style& style)
+{
+    // Loads the ISO/ANSI line descriptions from disk once.
+    static TechDraw::LineGenerator lineGen;
+
+    EdgeStroke es;
+    const double lineWidthMm = vp ? vp->LineWidth.getValue() : 0.0;
+    es.color = vp ? packColor(PreferencesGui::getAccessibleQColor(
+                        PreferencesGui::normalQColor()))
+                  : style.edgeColor;
+    es.width = vp ? (float)Rez::guiX(lineWidthMm) : style.edgeWidth;
+    QPen pen(Qt::SolidLine);
+    bool formatVisible = true;
+
+    const TechDraw::LineFormat* format = nullptr;
+    if (geom->getCosmetic()) {
+        const int source = geom->source();
+        if (source == COSMETICEDGE) {
+            auto ce = dvp->getCosmeticEdge(geom->getCosmeticTag());
+            if (ce)
+                format = &ce->m_format;
+        }
+        else if (source == CENTERLINE) {
+            auto cl = dvp->getCenterLine(geom->getCosmeticTag());
+            if (cl)
+                format = &cl->m_format;
+        }
+    }
+    else {
+        TechDraw::GeomFormat* gf = dvp->getGeomFormatBySelection(iEdge);
+        if (gf)
+            format = &gf->m_format;
+    }
+    if (format) {
+        es.color = packColor(
+            TechDraw::Preferences::getAccessibleColor(format->m_color)
+                .asValue<QColor>());
+        pen = lineGen.getBestPen(format->getLineNumber(),
+                                 (Qt::PenStyle)format->m_style,
+                                 format->m_weight);
+        es.width = (float)Rez::guiX(format->m_weight);
+        formatVisible = format->m_visible;
+    }
+
+    if (!geom->getHlrVisible()) {
+        if (vp) {
+            pen = lineGen.getLinePen(TechDraw::Preferences::HiddenLineStyle(),
+                                     lineWidthMm);
+            es.width = (float)Rez::guiX(vp->HiddenWidth.getValue());
+        }
+        else {
+            es.color = style.hiddenColor;
+            es.width = style.hiddenWidth;
+        }
+    }
+
+    if (geom->getClassOfEdge() == TechDraw::ecUVISO && vp) {
+        pen = QPen(Qt::SolidLine);
+        es.width = (float)Rez::guiX(vp->IsoWidth.getValue());
+    }
+
+    es.show = showEdgeClass(dvp, geom)
+        && (formatVisible || (vp && vp->ShowAllEdges.getValue()));
+
+    if (pen.style() != Qt::SolidLine && es.width > 0.0f) {
+        for (qreal d : pen.dashPattern())
+            es.dashes.push_back((float)d * es.width);
+    }
+    return es;
 }
 
 // One standalone edge as a stroked path. Circles and beziers keep their
@@ -240,6 +412,19 @@ void emitFace(Page2D::Recorder& rec, const TechDraw::FacePtr& face, float ox,
         rec.fillConcave(color, /*evenOdd*/ true);
 }
 
+// The hatch object claiming face i, if any (QGIViewPart::faceIsGeomHatched).
+TechDraw::DrawGeomHatch*
+geomHatchForFace(int i, const std::vector<TechDraw::DrawGeomHatch*>& objs)
+{
+    for (TechDraw::DrawGeomHatch* h : objs) {
+        for (const std::string& s : h->Source.getSubValues()) {
+            if (TechDraw::DrawUtil::getIndexFromName(s) == i)
+                return h;
+        }
+    }
+    return nullptr;
+}
+
 } // namespace
 
 void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
@@ -270,42 +455,143 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         }
     };
 
+    // The per-view appearance lives on the Gui side: the view provider
+    // (line widths, face color, show-all-edges) and the page provider
+    // (the frame toggle that also hides vertices). Both may be absent
+    // in odd hosts; the Style fallbacks then apply.
+    Gui::Document* gdoc =
+        Gui::Application::Instance->getDocument(dvp->getDocument());
+    ViewProviderViewPart* vp = nullptr;
+    ViewProviderPage* vpp = nullptr;
+    if (gdoc) {
+        vp = dynamic_cast<ViewProviderViewPart*>(gdoc->getViewProvider(dvp));
+        if (TechDraw::DrawPage* page = dvp->findParentPage())
+            vpp = dynamic_cast<ViewProviderPage*>(gdoc->getViewProvider(page));
+    }
+    const bool frames = !vpp || vpp->getFrameState();
+
+    uint32_t faceColor = style.faceColor;
+    if (vp) {
+        QColor qc = vp->FaceColor.getValue().asValue<QColor>();
+        qc.setAlpha((100 - vp->FaceTransparency.getValue()) * 255 / 100);
+        faceColor = packColor(qc);
+    }
+    // Faces: the fill, then any PAT geometric hatch as a Decoration item
+    // riding the same index (drawn between fills and edges by Kind
+    // order). PAT dash specifications draw solid for now; SVG/bitmap
+    // hatches (DrawHatch) are not represented yet and leave the plain
+    // fill.
+    std::vector<TechDraw::DrawGeomHatch*> geomHatches = dvp->getGeomHatches();
     uint32_t index = 0;
-    if ((style.faceColor & 0xff) != 0) {
-        for (const TechDraw::FacePtr& face : dvp->getFaceGeometry()) {
-            Page2D::Recorder rec;
-            emitFace(rec, face, ox, oy, style.deflection, style.faceColor);
-            out.setItem(itemId(name, 'f', index), Page2D::Kind::Face, layer,
-                        std::move(rec));
-            ++index;
+    for (const TechDraw::FacePtr& face : dvp->getFaceGeometry()) {
+        Page2D::Recorder rec;
+        if ((faceColor & 0xff) != 0)
+            emitFace(rec, face, ox, oy, style.deflection, faceColor);
+        out.setItem(itemId(name, 'f', index), Page2D::Kind::Face, layer,
+                    std::move(rec));
+
+        Page2D::Recorder hrec;
+        if (TechDraw::DrawGeomHatch* gh =
+                geomHatchForFace((int)index, geomHatches)) {
+            uint32_t hatchColor = 0x000000ff;
+            float hatchWidth = 1.0f;
+            if (auto ghvp = gdoc ? dynamic_cast<ViewProviderGeomHatch*>(
+                                       gdoc->getViewProvider(gh))
+                                 : nullptr) {
+                hatchColor = packColor(
+                    TechDraw::Preferences::getAccessibleColor(
+                        ghvp->ColorPattern.getValue())
+                        .asValue<QColor>());
+                hatchWidth = (float)Rez::guiX(ghvp->WeightPattern.getValue());
+            }
+            hrec.beginPath();
+            bool any = false;
+            for (TechDraw::LineSet& ls : gh->getTrimmedLines((int)index)) {
+                for (const TechDraw::BaseGeomPtr& g : ls.getGeoms()) {
+                    const Base::Vector3d s = g->getStartPoint();
+                    const Base::Vector3d e = g->getEndPoint();
+                    hrec.moveTo(ox + (float)Rez::guiX(s.x),
+                                oy + (float)Rez::guiX(s.y));
+                    hrec.lineTo(ox + (float)Rez::guiX(e.x),
+                                oy + (float)Rez::guiX(e.y));
+                    any = true;
+                }
+            }
+            if (any && hatchWidth > 0.0f)
+                hrec.stroke(hatchColor, hatchWidth);
         }
+        out.setItem(itemId(name, 'h', index), Page2D::Kind::Decoration,
+                    layer, std::move(hrec));
+        ++index;
     }
     sweep('f', index);
+    sweep('h', index);
 
     index = 0;
-    const bool showHidden = dvp->HardHidden.getValue();
+    int iEdge = 0;
     for (const TechDraw::BaseGeomPtr& geom : dvp->getEdgeGeometry()) {
         Page2D::Recorder rec;
-        bool visible = geom->getHlrVisible();
-        if (visible || showHidden) {
-            if (emitEdge(rec, geom, ox, oy, style.deflection))
-                rec.stroke(visible ? style.edgeColor : style.hiddenColor,
-                           visible ? style.edgeWidth : style.hiddenWidth);
+        EdgeStroke es = resolveEdgeStroke(dvp, vp, geom, iEdge, style);
+        if (es.show && es.width > 0.0f) {
+            if (es.dashes.empty()) {
+                if (emitEdge(rec, geom, ox, oy, style.deflection))
+                    rec.stroke(es.color, es.width);
+            }
+            else {
+                // A dashed stroke flattens first: the dash walker needs
+                // arc length, and vg has no dashing of its own.
+                std::vector<Pt> pts;
+                discretize(geom, style.deflection, pts);
+                if (pts.size() >= 2) {
+                    rec.beginPath();
+                    emitDashedPolyline(rec, pts, ox, oy, es.dashes);
+                    rec.stroke(es.color, es.width);
+                }
+            }
         }
         out.setItem(itemId(name, 'e', index), Page2D::Kind::Edge, layer,
                     std::move(rec));
         ++index;
+        ++iEdge;
     }
     sweep('e', index);
 
+    // Vertex dots and arc center marks (QGIViewPart::drawAllVertexes):
+    // radius LineWidth * VertexScale, never in CoarseView or with
+    // frames off; center marks are crosses, gated by ArcCenterMarks.
+    const double vertexScale = TechDraw::Preferences::getPreferenceGroup(
+        "General")->GetFloat("VertexScale", 3.0);
+    const double lineWidthMm = vp ? vp->LineWidth.getValue() : 0.42;
+    const bool showVerts = !dvp->CoarseView.getValue() && frames;
+    const bool showCenters = vp && vp->ArcCenterMarks.getValue();
+    const uint32_t vertexColor = vp
+        ? packColor(PreferencesGui::getAccessibleQColor(
+              PreferencesGui::vertexQColor()))
+        : style.vertexColor;
     index = 0;
     for (const TechDraw::VertexPtr& vert : dvp->getVertexGeometry()) {
         Page2D::Recorder rec;
-        if (!vert->isCenter() && !vert->isReference()) {
+        const float vx = ox + (float)Rez::guiX(vert->x());
+        const float vy = oy + (float)Rez::guiX(vert->y());
+        if (vert->isCenter()) {
+            if (showCenters) {
+                const float half = (float)Rez::guiX(
+                    lineWidthMm * vertexScale * vp->CenterScale.getValue()
+                    / 2.0);
+                rec.beginPath();
+                rec.moveTo(vx - half, vy);
+                rec.lineTo(vx + half, vy);
+                rec.moveTo(vx, vy - half);
+                rec.lineTo(vx, vy + half);
+                rec.stroke(vertexColor, (float)Rez::guiX(lineWidthMm * 0.5));
+            }
+        }
+        else if (showVerts && !vert->isReference()) {
             rec.beginPath();
-            rec.circle(ox + (float)Rez::guiX(vert->x()),
-                       oy + (float)Rez::guiX(vert->y()), style.vertexRadius);
-            rec.fillConvex(style.vertexColor);
+            rec.circle(vx, vy,
+                       vp ? (float)Rez::guiX(lineWidthMm * vertexScale)
+                          : style.vertexRadius);
+            rec.fillConvex(vertexColor);
         }
         out.setItem(itemId(name, 'v', index), Page2D::Kind::Vertex, layer,
                     std::move(rec));
