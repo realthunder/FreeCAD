@@ -735,3 +735,41 @@ rotation / damage / removal with pixel probes at view-transformed
 positions and counter assertions; 24 checks, PASS on both backends.
 
 **Next: M2**, the TechDraw feed, per the plan above.
+
+## 18. Implementation status (2026-08-24, later): M2 renders real pages
+
+**The feed** (`6ca012ba5c`, hardening `50ed5a5cfd`):
+`TechDrawGui::PageFeed` converts DrawViewParts to Page2D items --
+edges/vertices/faces, ids hashed from the view's document name so a
+re-fed view damages exactly its own items. Generic/bezier/bspline
+keep exact form, circles stay native vg circles, arcs/ellipses are
+discretized from the projected occEdge for now (native arc ops are a
+listed refinement). Faces are per-wire closed contours stitched with
+the Qt path builder's nearest-endpoint heuristic and filled even-odd
+-- **vg's libtess2 even-odd fill over multiple subpaths does holes
+correctly** (fcvgsmoke stage h), so the 'no polygon holes' gap in
+section 16 is refuted and the indexed-triangle fallback is not needed
+for face fills.
+
+**Hosts.** `TechDrawGui.renderPageVg(page, path, [w,h])` renders a
+page offscreen and returns feed counters + `pendingViews` (HLR and
+face extraction are worker-thread async; pump the event loop until it
+reaches 0). The interactive tier (`cac5bf845b`): parameter
+`Mod/TechDraw/General/PageRendererVg` makes `QGVPage::drawBackground`
+draw the vg page under the Qt scene at the QGraphicsView transform --
+verified in the running GUI that the vg layer alone reproduces the
+page at the Qt items' exact positions.
+
+**What feeding real data taught** (all fixed): vg::polyline appends
+and null-derefs without a prior moveTo when VG_CHECK is compiled out;
+op-buffer payloads must be copied out before vg (alignment, wasm);
+never bgfx::renderFrame() in a process whose 3D renderer owns the
+device -- share via init()'s clean refusal; bgfx auto-select under a
+virtual X server lands on Mesa swrast and crashes, so the offscreen
+path defaults to Vulkan on Linux (FC_PAGE2D_RENDERER overrides).
+
+**M2 remainder**: per-view damage hooks (feed on geometry-changed
+signals instead of per-paint while pending), hatches, cosmetic
+edges/centerlines, dimensions/annotations/balloons, templates, then
+the real compositor (GL-context sharing instead of readback+QImage).
+M3 (the SceneServer wire) untouched.
