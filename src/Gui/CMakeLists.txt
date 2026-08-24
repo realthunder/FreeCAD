@@ -1225,6 +1225,7 @@ SOURCE_GROUP("Params" FILES ${Params_SRCS})
 # The view sources
 SET(View_CPP_SRCS
     MDIView.cpp
+    MDIViewWithCamera.cpp
     MDIViewPyImp.cpp
     MDIViewPyWrap.cpp
     GraphvizView.cpp
@@ -1233,6 +1234,7 @@ SET(View_CPP_SRCS
 )
 SET(View_HPP_SRCS
     MDIView.h
+    MDIViewWithCamera.h
     MDIViewPyWrap.h
     GraphvizView.h
     ImageView.h

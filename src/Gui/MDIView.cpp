@@ -105,6 +105,29 @@ MDIView::~MDIView()
     }
 }
 
+MDIView* MDIView::clone()
+{
+    return nullptr;
+}
+
+void MDIView::cloneFrom(const MDIView& from)
+{
+    setWindowTitle(from.windowTitle());
+    setWindowIcon(from.windowIcon());
+    resize(from.size());
+
+    // wstate is updated when changing from top-level mode to something else. This hasn't happened
+    // yet if the original widget is currently in top-level mode. In this case we want to use the
+    // actual windowState of the original widget instead of it's wstate.
+
+    if (from.currentViewMode() == TopLevel) {
+        wstate = from.windowState();
+    }
+    else {
+        wstate = from.wstate;
+    }
+}
+
 void MDIView::deleteSelf()
 {
     // When using QMdiArea make sure to remove the QMdiSubWindow
