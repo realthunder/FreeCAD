@@ -385,28 +385,75 @@ void QGVPage::drawVgPreview(QPainter* painter)
     if (!m_vgPage)
         m_vgPage = std::make_unique<Render::Page2D>();
 
-    // Re-feed while any view still computes on its worker, then once
-    // more when everything settled. Coarse damage for the preview: the
-    // stable item ids already confine a re-feed to changed content, and
-    // a change in the view set itself (a deleted view's items would
-    // survive any re-feed) resets the retained page wholesale.
-    bool pending = false;
+    // Structure pass: a cheap ordered hash of the view names. On a
+    // change (view added, removed or reordered -- a deleted view's
+    // items would survive any re-feed) the tracked set rebuilds and
+    // the retained page resets wholesale; that is the rare case. The
+    // common case, an edited view, arrives through signalGuiPaint --
+    // fired on the GUI thread when HLR lands, when faces land and on
+    // repaint-worthy property changes -- and damages only that view.
     size_t structure = 0;
     for (App::DocumentObject* obj : page->getAllViews()) {
-        structure = structure * 31
-            + std::hash<std::string> {}(obj->getNameInDocument());
-        auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(obj);
-        if (dvp && (dvp->waitingForHlr() || dvp->waitingForFaces()))
-            pending = true;
+        if (const char* name = obj->getNameInDocument())
+            structure = structure * 31 + std::hash<std::string> {}(name);
     }
     if (structure != m_vgPageStructure) {
-        m_vgPage->clear();
         m_vgPageStructure = structure;
-        m_vgPageDirty = true;
+        m_vgPage->clear();
+        m_vgViews.clear();
+        m_vgDirty.clear();
+        uint32_t layer = 0;
+        for (App::DocumentObject* obj : page->getAllViews()) {
+            auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(obj);
+            if (dvp && dvp->getNameInDocument()) {
+                std::string name = dvp->getNameInDocument();
+                VgViewTrack& track = m_vgViews[name];
+                track.layer = layer;
+                track.repaint = dvp->signalGuiPaint.connect(
+                    [this, name](const TechDraw::DrawView*) {
+                        m_vgDirty.insert(name);
+                        viewport()->update();
+                    });
+                m_vgDirty.insert(name);
+            }
+            ++layer;
+        }
     }
-    if (m_vgPageDirty || pending) {
-        PageFeed::feedPage(page, *m_vgPage);
-        m_vgPageDirty = pending;
+    else {
+        // X/Y moves purge their touch on the App side and signal
+        // nothing; catch them by comparing against the fed position.
+        for (auto& v : m_vgViews) {
+            if (m_vgDirty.count(v.first))
+                continue;
+            auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(
+                page->getDocument()->getObject(v.first.c_str()));
+            if (dvp
+                && ((float)dvp->X.getValue() != v.second.fedX
+                    || (float)dvp->Y.getValue() != v.second.fedY))
+                m_vgDirty.insert(v.first);
+        }
+    }
+
+    // Feed exactly the damaged views; stable item ids confine each
+    // feed to its own items. A view still computing on its worker gets
+    // fed with what it has -- completion signals more damage, so there
+    // is no per-paint re-feed while pending.
+    if (!m_vgDirty.empty()) {
+        std::set<std::string> dirty;
+        dirty.swap(m_vgDirty);
+        for (const std::string& name : dirty) {
+            auto it = m_vgViews.find(name);
+            if (it == m_vgViews.end())
+                continue;
+            auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(
+                page->getDocument()->getObject(name.c_str()));
+            if (!dvp)
+                continue;
+            PageFeed::feedViewPart(dvp, *m_vgPage, PageFeed::Style(),
+                                   it->second.layer);
+            it->second.fedX = (float)dvp->X.getValue();
+            it->second.fedY = (float)dvp->Y.getValue();
+        }
     }
 
     // Map the QGraphicsView transform onto the page view: uniform

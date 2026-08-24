@@ -25,13 +25,18 @@
 
 #include <Mod/TechDraw/TechDrawGlobal.h>
 
+#include <map>
 #include <memory>
+#include <set>
+#include <string>
 
 #include <QGraphicsView>
 
 #include <memory>
 #include <QLabel>
 #include <QPainterPath>
+
+#include <fastsignals/signal.h>
 
 #include <Base/Type.h>
 
@@ -97,8 +102,9 @@ public:
     void setRenderer(RendererType type = Native);
     void drawBackground(QPainter* painter, const QRectF& rect) override;
 
-    /// Mark the vg page preview stale; the next repaint re-feeds it.
-    void invalidateVgPage() { m_vgPageDirty = true; }
+    /// Mark the vg page preview stale; the next repaint rebuilds the
+    /// tracked view set and re-feeds everything.
+    void invalidateVgPage() { m_vgPageStructure = 0; }
 
     QGSPage* getScene() { return m_scene; }
 
@@ -209,9 +215,22 @@ private:
 
     // The vg 2D page engine preview (docs/TechDrawPortAndSection.md
     // sec 16, milestone M2): parameter-gated, drawn under the scene.
+    // Damage-driven: each tracked view's signalGuiPaint (HLR done,
+    // faces done, any repaint-worthy property change) marks only that
+    // view dirty; a paint re-feeds exactly the dirty views. X/Y carry
+    // no signal (the App side purges their touch), so the track caches
+    // the fed position and a paint-time compare catches moves.
+    struct VgViewTrack
+    {
+        uint32_t layer = 0;
+        float fedX = 0.0f;
+        float fedY = 0.0f;
+        fastsignals::scoped_connection repaint;
+    };
     void drawVgPreview(QPainter* painter);
     std::unique_ptr<Render::Page2D> m_vgPage;
-    bool m_vgPageDirty = true;
+    std::map<std::string, VgViewTrack> m_vgViews;
+    std::set<std::string> m_vgDirty;
     size_t m_vgPageStructure = 0;
 };
 
