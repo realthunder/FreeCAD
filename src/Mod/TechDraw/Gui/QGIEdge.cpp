@@ -123,4 +123,11 @@ void QGIEdge::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
 void QGIEdge::setLinePen(QPen linePen)
 {
     m_pen = linePen;
+    // Adopt the pen's style, or setTools() overwrites it with the stale
+    // m_styleCurrent right before painting and every dashed pen the
+    // LineGenerator builds -- hidden lines, cosmetic styles, ISO
+    // patterns -- draws solid. With the style in sync, the setStyle()
+    // there is a same-value no-op, which Qt guarantees keeps the pen's
+    // custom dash pattern.
+    m_styleCurrent = linePen.style();
 }

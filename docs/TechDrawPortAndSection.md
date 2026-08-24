@@ -813,14 +813,22 @@ order), colored and weighted from `ViewProviderGeomHatch`. PAT dash
 specifications draw solid for now; SVG/bitmap `DrawHatch` fills are
 not represented yet and leave the plain face fill.
 
-**A Qt-tier defect this exposed**: in this fork the Qt page draws
+**A Qt-tier defect this exposed, then fixed**: the Qt page drew
 every edge solid. `QGIPrimPath::setTools()` overwrites the pen style
-with `m_styleCurrent` right before painting, and nothing sets
+with `m_styleCurrent` right before painting, and nothing set
 `m_styleCurrent` for part-view edges (`setHiddenEdge` has no caller),
 so every dashed pen `LineGenerator` builds -- hidden lines, cosmetic
-styles, ISO patterns -- is silently discarded. The vg tier honors
-them; the difference is vg being right, not a feed bug, and it stays
-until the Qt side is fixed (or retired by this arc).
+styles, ISO patterns -- was silently discarded. Fixed by making
+`setLinePen` adopt the pen's style into `m_styleCurrent` (the
+`setStyle` in `setTools` is then a same-value no-op, which Qt
+guarantees preserves the pen's custom dash pattern) in `QGIEdge` and
+the three decorations that take `LineGenerator` pens
+(`QGICenterLine`, `QGISectionLine`, `QGIHighlight`); the latter two
+composites also now hand the pen itself to their `QGIEdge` sub-item,
+which previously received only a style enum and so could never carry
+a custom pattern. `setStyle()`-only callers still override, since the
+style forward stays after the pen forward. Verified: the Qt tier now
+draws the test's dashed cosmetic line identically to vg.
 
 **Verification** (scratchpad td_vgtest3.py pattern): a page with two
 views of a holed box, a geometric hatch, a dashed cosmetic line and

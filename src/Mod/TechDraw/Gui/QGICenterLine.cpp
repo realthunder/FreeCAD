@@ -139,4 +139,8 @@ void QGICenterLine::setTools()
 void QGICenterLine::setLinePen(QPen isoPen)
 {
     m_pen = isoPen;
+    // Keep the style in sync or setTools() overwrites it and drops the
+    // pen's dash pattern (see QGIEdge::setLinePen). The DashDotLine
+    // branch there stays reachable through setStyle().
+    m_styleCurrent = isoPen.style();
 }

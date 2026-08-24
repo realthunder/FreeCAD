@@ -572,6 +572,9 @@ int QGISectionLine::getPrefSectionStandard()
 
 void QGISectionLine::setTools()
 {
+    // The pen carries the dash pattern; hand it to the edge before the
+    // style, so a caller that only used setStyle() still overrides.
+    m_line->setLinePen(m_pen);
     m_line->setStyle(m_styleCurrent);
     m_line->setWidth(m_width);
     m_line->setNormalColor(m_colCurrent);
@@ -752,4 +755,6 @@ void QGISectionLine::setSymbolOffsets(const QPointF &p1, const QPointF &p2)
 void QGISectionLine::setLinePen(QPen isoPen)
 {
     m_pen = isoPen;
+    // Style rides the pen; setTools() forwards both to the line edge.
+    m_styleCurrent = isoPen.style();
 }
