@@ -101,6 +101,11 @@ ViewProviderViewPart::ViewProviderViewPart()
     weight = TechDraw::LineGroup::getDefaultWidth("Extra");
     ADD_PROPERTY_TYPE(ExtraWidth, (weight), group, App::Prop_None, "The thickness of LineGroup Extra lines, if enabled");
 
+    ADD_PROPERTY_TYPE(LineScale, (1.0), group, App::Prop_None,
+                      "Multiplier applied to every line width this view draws");
+    ADD_PROPERTY_TYPE(VertexScale, (Preferences::vertexScale()), group, App::Prop_None,
+                      "Vertex dot size as a multiple of the visible line width");
+
     double defScale = Preferences::getPreferenceGroup("Decorations")->GetFloat("CenterMarkScale", 0.50);
     bool   defShowCenters = Preferences::getPreferenceGroup("Decorations")->GetBool("ShowCenterMarks", false);
 
@@ -182,6 +187,8 @@ void ViewProviderViewPart::onChanged(const App::Property* prop)
         prop == &(HiddenWidth) ||
         prop == &(IsoWidth) ||
         prop == &(ExtraWidth) ||
+        prop == &(LineScale) ||
+        prop == &(VertexScale) ||
         prop == &(HighlightAdjust) ||
         prop == &(ArcCenterMarks) ||
         prop == &(CenterScale) ||

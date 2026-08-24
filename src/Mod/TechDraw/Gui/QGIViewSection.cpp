@@ -66,7 +66,7 @@ void QGIViewSection::drawSectionFace()
         return;
     }
 
-    float lineWidth    = sectionVp->LineWidth.getValue();
+    float lineWidth    = sectionVp->lineWidthScaled();
 
     std::vector<TechDraw::FacePtr>::iterator fit = sectionFaces.begin();
     int i = 0;

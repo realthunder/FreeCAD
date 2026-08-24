@@ -243,7 +243,7 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
     static TechDraw::LineGenerator lineGen;
 
     EdgeStroke es;
-    const double lineWidthMm = vp ? vp->LineWidth.getValue() : 0.0;
+    const double lineWidthMm = vp ? vp->lineWidthScaled() : 0.0;
     es.color = vp ? packColor(PreferencesGui::getAccessibleQColor(
                         PreferencesGui::normalQColor()))
                   : style.edgeColor;
@@ -271,13 +271,14 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
             format = &gf->m_format;
     }
     if (format) {
+        const double weight =
+            vp ? vp->formatWeightScaled(format->m_weight) : format->m_weight;
         es.color = packColor(
             TechDraw::Preferences::getAccessibleColor(format->m_color)
                 .asValue<QColor>());
         pen = lineGen.getBestPen(format->getLineNumber(),
-                                 (Qt::PenStyle)format->m_style,
-                                 format->m_weight);
-        es.width = (float)Rez::guiX(format->m_weight);
+                                 (Qt::PenStyle)format->m_style, weight);
+        es.width = (float)Rez::guiX(weight);
         formatVisible = format->m_visible;
     }
 
@@ -285,7 +286,7 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
         if (vp) {
             pen = lineGen.getLinePen(TechDraw::Preferences::HiddenLineStyle(),
                                      lineWidthMm);
-            es.width = (float)Rez::guiX(vp->HiddenWidth.getValue());
+            es.width = (float)Rez::guiX(vp->hiddenWidthScaled());
         }
         else {
             es.color = style.hiddenColor;
@@ -295,7 +296,7 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
 
     if (geom->getClassOfEdge() == TechDraw::ecUVISO && vp) {
         pen = QPen(Qt::SolidLine);
-        es.width = (float)Rez::guiX(vp->IsoWidth.getValue());
+        es.width = (float)Rez::guiX(vp->isoWidthScaled());
     }
 
     es.show = showEdgeClass(dvp, geom)
@@ -1084,9 +1085,9 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
     // Vertex dots and arc center marks (QGIViewPart::drawAllVertexes):
     // radius LineWidth * VertexScale, never in CoarseView or with
     // frames off; center marks are crosses, gated by ArcCenterMarks.
-    const double vertexScale = TechDraw::Preferences::getPreferenceGroup(
-        "General")->GetFloat("VertexScale", 3.0);
-    const double lineWidthMm = vp ? vp->LineWidth.getValue() : 0.42;
+    const double vertexScale =
+        vp ? vp->VertexScale.getValue() : TechDraw::Preferences::vertexScale();
+    const double lineWidthMm = vp ? vp->lineWidthScaled() : 0.42;
     const bool showVerts = !dvp->CoarseView.getValue() && frames;
     const bool showCenters = vp && vp->ArcCenterMarks.getValue();
     const uint32_t vertexColor = vp

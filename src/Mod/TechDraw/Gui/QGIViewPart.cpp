@@ -395,28 +395,28 @@ void QGIViewPart::drawAllEdges()
                 int lineNumber = gf->m_format.getLineNumber();
                 int qtStyle = gf->m_format.m_style;
                 item->setLinePen(m_dashedLineGenerator->getBestPen(lineNumber, (Qt::PenStyle)qtStyle,
-                                                     gf->m_format.m_weight));
+                                                     vp->formatWeightScaled(gf->m_format.m_weight)));
                 // but we need to actually draw the lines in QGScene coords (0.1 mm).
-                item->setWidth(Rez::guiX(gf->m_format.m_weight));
+                item->setWidth(Rez::guiX(vp->formatWeightScaled(gf->m_format.m_weight)));
                 showItem = gf->m_format.m_visible;
             } else {
                 // unformatted line, draw as continuous line
-                item->setLinePen(m_dashedLineGenerator->getLinePen(1, vp->LineWidth.getValue()));
-                item->setWidth(Rez::guiX(vp->LineWidth.getValue()));
+                item->setLinePen(m_dashedLineGenerator->getLinePen(1, vp->lineWidthScaled()));
+                item->setWidth(Rez::guiX(vp->lineWidthScaled()));
             }
         }
 
         if (!(*itGeom)->getHlrVisible()) {
             item->setLinePen(m_dashedLineGenerator->getLinePen(Preferences::HiddenLineStyle(),
-                                                               vp->LineWidth.getValue()));
-            item->setWidth(Rez::guiX(vp->HiddenWidth.getValue()));   //thin
+                                                               vp->lineWidthScaled()));
+            item->setWidth(Rez::guiX(vp->hiddenWidthScaled()));   //thin
             item->setZValue(ZVALUE::HIDEDGE);
         }
 
         if ((*itGeom)->getClassOfEdge()  == ecUVISO) {
             // we don't have a style option for iso-parametric lines so draw continuous
-            item->setLinePen(m_dashedLineGenerator->getLinePen(1, vp->IsoWidth.getValue()));
-            item->setWidth(Rez::guiX(vp->IsoWidth.getValue()));   //graphic
+            item->setLinePen(m_dashedLineGenerator->getLinePen(1, vp->isoWidthScaled()));
+            item->setWidth(Rez::guiX(vp->isoWidthScaled()));   //graphic
         }
 
         item->setPos(0.0, 0.0);//now at group(0, 0)
@@ -442,8 +442,8 @@ void QGIViewPart::drawAllVertexes()
     auto dvp(static_cast<TechDraw::DrawViewPart*>(getViewObject()));
     auto vp(static_cast<ViewProviderViewPart*>(getViewProvider(getViewObject())));
 
-    float lineWidth = vp->LineWidth.getValue() * lineScaleFactor;     //thick
-    double vertexScaleFactor = Preferences::getPreferenceGroup("General")->GetFloat("VertexScale", 3.0);
+    float lineWidth = vp->lineWidthScaled() * lineScaleFactor;     //thick
+    double vertexScaleFactor = vp->VertexScale.getValue();
     QColor vertexColor = PreferencesGui::getAccessibleQColor(PreferencesGui::vertexQColor());
 
     const std::vector<TechDraw::VertexPtr>& verts = dvp->getVertexGeometry();
@@ -563,10 +563,11 @@ bool QGIViewPart::formatGeomFromCosmetic(std::string cTag, QGIEdge* item)
     if (ce) {
         App::Color color = Preferences::getAccessibleColor(ce->m_format.m_color);
         item->setNormalColor(color.asValue<QColor>());
+        auto vp = static_cast<ViewProviderViewPart*>(getViewProvider(getViewObject()));
         item->setLinePen(m_dashedLineGenerator->getBestPen(ce->m_format.getLineNumber(),
                                                      (Qt::PenStyle)ce->m_format.m_style,
-                                                     ce->m_format.m_weight));
-        item->setWidth(Rez::guiX(ce->m_format.m_weight));
+                                                     vp->formatWeightScaled(ce->m_format.m_weight)));
+        item->setWidth(Rez::guiX(vp->formatWeightScaled(ce->m_format.m_weight)));
         result = ce->m_format.m_visible;
     }
     return result;
@@ -582,10 +583,11 @@ bool QGIViewPart::formatGeomFromCenterLine(std::string cTag, QGIEdge* item)
     if (cl) {
         App::Color color = Preferences::getAccessibleColor(cl->m_format.m_color);
         item->setNormalColor(color.asValue<QColor>());
+        auto vp = static_cast<ViewProviderViewPart*>(getViewProvider(getViewObject()));
         item->setLinePen(m_dashedLineGenerator->getBestPen(cl->m_format.getLineNumber(),
                                                      (Qt::PenStyle)cl->m_format.m_style,
-                                                     cl->m_format.m_weight));
-        item->setWidth(Rez::guiX(cl->m_format.m_weight));
+                                                     vp->formatWeightScaled(cl->m_format.m_weight)));
+        item->setWidth(Rez::guiX(vp->formatWeightScaled(cl->m_format.m_weight)));
         result = cl->m_format.m_visible;
     }
     return result;
@@ -779,8 +781,8 @@ void QGIViewPart::drawSectionLine(TechDraw::DrawViewSection* viewSection, bool b
         // sectionLines are typically ISO 8 (long dash, short dash) or ISO 4 (long dash, dot)
         sectionLine->setLinePen(
                 m_dashedLineGenerator->getLinePen((size_t)vp->SectionLineStyle.getValue(),
-                                                    vp->HiddenWidth.getValue()));
-        sectionLine->setWidth(Rez::guiX(vp->HiddenWidth.getValue()));
+                                                    vp->hiddenWidthScaled()));
+        sectionLine->setWidth(Rez::guiX(vp->hiddenWidthScaled()));
         double fontSize = Preferences::dimFontSizeMM();
         sectionLine->setFont(getFont(), fontSize);
         sectionLine->setZValue(ZVALUE::SECTIONLINE);
@@ -857,8 +859,8 @@ void QGIViewPart::drawComplexSectionLine(TechDraw::DrawViewSection* viewSection,
     // sectionLines are typically ISO 8 (long dash, short dash) or ISO 4 (long dash, dot)
     sectionLine->setLinePen(
                             m_dashedLineGenerator->getLinePen((size_t)vp->SectionLineStyle.getValue(),
-                                 vp->HiddenWidth.getValue()));
-    sectionLine->setWidth(Rez::guiX(vp->HiddenWidth.getValue()));
+                                 vp->hiddenWidthScaled()));
+    sectionLine->setWidth(Rez::guiX(vp->hiddenWidthScaled()));
     double fontSize = Preferences::dimFontSizeMM();
     sectionLine->setFont(getFont(), fontSize);
     sectionLine->setZValue(ZVALUE::SECTIONLINE);
@@ -897,8 +899,8 @@ void QGIViewPart::drawCenterLines(bool b)
             centerLine->setIntersection(horiz && vert);
             centerLine->setBounds(-xVal, -yVal, xVal, yVal);
             centerLine->setLinePen(m_dashedLineGenerator->getLinePen((size_t)Preferences::CenterLineStyle(),
-                                  vp->HiddenWidth.getValue()));
-            centerLine->setWidth(Rez::guiX(vp->HiddenWidth.getValue()));
+                                  vp->hiddenWidthScaled()));
+            centerLine->setWidth(Rez::guiX(vp->hiddenWidthScaled()));
             centerLine->setColor(Qt::green);
             centerLine->setZValue(ZVALUE::SECTIONLINE);
             centerLine->draw();
@@ -914,8 +916,8 @@ void QGIViewPart::drawCenterLines(bool b)
             centerLine->setIntersection(horiz && vert);
             centerLine->setBounds(-xVal, -yVal, xVal, yVal);
             centerLine->setLinePen(m_dashedLineGenerator->getLinePen((size_t)Preferences::CenterLineStyle(),
-                                  vp->HiddenWidth.getValue()));
-            centerLine->setWidth(Rez::guiX(vp->HiddenWidth.getValue()));
+                                  vp->hiddenWidthScaled()));
+            centerLine->setWidth(Rez::guiX(vp->hiddenWidthScaled()));
             centerLine->setColor(Qt::red);
             centerLine->setZValue(ZVALUE::SECTIONLINE);
             centerLine->draw();
@@ -975,8 +977,8 @@ void QGIViewPart::drawHighlight(TechDraw::DrawViewDetail* viewDetail, bool b)
         highlight->setBounds(center.x - radius, center.y + radius, center.x + radius,
                              center.y - radius);
         highlight->setLinePen(m_dashedLineGenerator->getLinePen((size_t)vp->HighlightLineStyle.getValue(),
-                             vp->IsoWidth.getValue()));
-        highlight->setWidth(Rez::guiX(vp->IsoWidth.getValue()));
+                             vp->isoWidthScaled()));
+        highlight->setWidth(Rez::guiX(vp->isoWidthScaled()));
         highlight->setFont(getFont(), fontSize);
         highlight->setZValue(ZVALUE::HIGHLIGHT);
         highlight->setReferenceAngle(vpDetail->HighlightAdjust.getValue());

@@ -48,6 +48,17 @@ public:
     App::PropertyLength HiddenWidth;
     App::PropertyLength IsoWidth;
     App::PropertyLength ExtraWidth;
+    App::PropertyFloat  LineScale;
+    App::PropertyFloat  VertexScale;
+
+    /** The widths as drawn: LineScale multiplies every stroke this
+     * view produces (edges, cosmetics and formats included), so
+     * consumers must read these, never the raw properties. */
+    double lineWidthScaled() const { return LineWidth.getValue() * LineScale.getValue(); }
+    double hiddenWidthScaled() const { return HiddenWidth.getValue() * LineScale.getValue(); }
+    double isoWidthScaled() const { return IsoWidth.getValue() * LineScale.getValue(); }
+    double extraWidthScaled() const { return ExtraWidth.getValue() * LineScale.getValue(); }
+    double formatWeightScaled(double weight) const { return weight * LineScale.getValue(); }
     App::PropertyBool   ArcCenterMarks;
     App::PropertyFloat  CenterScale;
     App::PropertyBool   HorizCenterLine;
