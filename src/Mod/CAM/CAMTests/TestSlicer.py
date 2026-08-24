@@ -29,6 +29,21 @@ import FreeCAD
 FIXTURE_PATH = pathlib.Path(__file__).parent / "Fixtures"
 
 
+def _recompute(obj):
+    """Recompute obj whether or not it is already up to date.
+
+    These fixtures carry a toolpath saved by the FreeCAD that had the bug
+    under test. The object is up to date with respect to its own inputs --
+    nothing about it changed, only the code that turns them into a path -- so
+    this fork, which recomputes an object when it needs it rather than
+    whenever asked, leaves it alone. The request has to be explicit here or
+    the assertions below read the path stored in the file and pass whatever
+    the slicer does.
+    """
+    obj.enforceRecompute()
+    obj.recompute()
+
+
 def _get_z_depths(obj, z_max=0):
     """Return sorted list of unique Z values <= z_max from a CAM path object."""
     zs = set()
@@ -51,11 +66,11 @@ class TestSlicer(unittest.TestCase):
         doc = FreeCAD.openDocument(str(FIXTURE_PATH / "test_17748_cam_profile.FCStd"))
         try:
             pocket = doc.getObject("Pocket_Shape")
-            pocket.recompute()
+            _recompute(pocket)
             self.assertEqual(len(_get_z_depths(pocket)), 4)
 
             millface = doc.getObject("MillFace")
-            millface.recompute()
+            _recompute(millface)
             self.assertEqual(len(_get_z_depths(millface)), 2)
         finally:
             FreeCAD.closeDocument(doc.Name)
@@ -69,7 +84,7 @@ class TestSlicer(unittest.TestCase):
         doc = FreeCAD.openDocument(str(FIXTURE_PATH / "test_28534_truncated_pocket.FCStd"))
         try:
             obj = doc.getObject("Pocket_Shape")
-            obj.recompute()
+            _recompute(obj)
             zs = _get_z_depths(obj)
             self.assertEqual(len(zs), 3)
         finally:
