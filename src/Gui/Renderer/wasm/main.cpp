@@ -34,6 +34,8 @@
 #include <bx/math.h>
 
 #include "BGFXRenderer.h"
+#include "Page2D.h"
+#include "Page2DWire.h"
 #include "SceneDump.h"
 #include "SceneLadder.h"
 #include "StandalonePlatform.h"
@@ -2169,6 +2171,131 @@ static void relightForCamera(const float *viewMtx)
     s_renderer->setViewLightConfig(out);
 }
 
+//////////////////////////////////////////////////////////////////////
+// The 2D page tier (docs/TechDrawPortAndSection.md sec 24.4): a joined
+// document group serving FCPD payloads flips the viewer into page
+// mode -- the same vg engine the desktop runs (Page2D), driven
+// directly on a backbuffer view with its own pan/zoom. The payload and
+// chunk plumbing lives with the blob store further down; here is the
+// state, the frame, and what the input handlers branch on.
+
+static std::unique_ptr<Render::Page2D> s_page;
+static bool s_pageMode = false;
+static uint64_t s_pageVersion = 0;   // last applied page publish
+static uint64_t s_pageSession = 0;
+static float s_pageW = 0.0f;         // the sheet, Rez units
+static float s_pageH = 0.0f;
+static bool s_pageUserView = false;  // pan/zoom taken by the user
+static Render::Page2D::View s_pageView;
+
+/// What the stream last named per item / image, and who waits on which
+/// chunk key. Font names are process-wide (Vg2D registry).
+static std::map<uint64_t, std::string> s_pageItemKey;
+static std::map<uint64_t, std::string> s_pageImageApplied;
+struct PageImageMeta {
+    uint16_t w = 0;
+    uint16_t h = 0;
+    bool repeat = false;
+};
+static std::map<uint64_t, PageImageMeta> s_pageImageMeta;
+static std::map<std::string, std::set<uint64_t>> s_pageItemWanted;
+static std::map<std::string, std::set<uint64_t>> s_pageImageWanted;
+static std::map<std::string, std::string> s_pageFontWanted; // key -> name
+static std::set<std::string> s_pageFontsApplied;
+
+/// The paper sheet, drawn by this viewer (on desktop the Qt scene
+/// paints it; the stream carries only what the page contains). Item
+/// ids from the stream are FNV hashes; ~0 is not one of them.
+static const uint64_t kPaperItemId = ~uint64_t(0);
+
+// Defined with the blob store below.
+static bool applyPagePayload(uint64_t version, const char *data,
+                             size_t size);
+static void pageBlobResolved(const std::string &key, const uint8_t *data,
+                             size_t size);
+static void pageBlobFailed(const std::string &key);
+
+static void pageFit()
+{
+    if (!(s_pageW > 0.0f) || !(s_pageH > 0.0f) || s_width <= 0
+            || s_height <= 0)
+        return;
+    const float zoom = 0.95f * std::min(float(s_width) / s_pageW,
+                                        float(s_height) / s_pageH);
+    s_pageView.zoom = zoom;
+    // Page content lives at y in [-H, 0] (page y-up): panY is the
+    // screen y of page y = 0, so this centers the sheet.
+    s_pageView.panX = 0.5f * (float(s_width) - zoom * s_pageW);
+    s_pageView.panY = zoom * s_pageH
+        + 0.5f * (float(s_height) - zoom * s_pageH);
+    s_pageView.rotation = 0.0f;
+    markDirty();
+}
+
+static void pagePaper()
+{
+    if (!s_page || !(s_pageW > 0.0f))
+        return;
+    Render::Page2D::Recorder rec;
+    rec.rect(0.0f, -s_pageH, s_pageW, s_pageH);
+    rec.fillConvex(0xffffffff);
+    s_page->setItem(kPaperItemId, Render::Page2D::Kind::Face, 0,
+                    std::move(rec));
+}
+
+/// The page's chunk keys, for the store sweep's live set.
+static void notePageLiveKeys(std::set<std::string> &live)
+{
+    for (const auto &kv : s_pageItemKey)
+        live.insert(kv.second);
+    for (const auto &kv : s_pageImageApplied)
+        live.insert(kv.second);
+    for (const auto &kv : s_pageItemWanted)
+        live.insert(kv.first);
+    for (const auto &kv : s_pageImageWanted)
+        live.insert(kv.first);
+}
+
+/// The page-mode frame. False = not handled (not in page mode, or the
+/// bgfx device is not up yet -- then one 3D frame runs and brings it
+/// up; vg cannot initialize before it).
+static bool renderPageFrame()
+{
+    if (!s_pageMode || !s_page)
+        return false;
+    if (bgfx::getRendererType() == bgfx::RendererType::Noop)
+        return false;
+    if (s_dirtyFrames > 0) {
+        --s_dirtyFrames;
+    }
+    else {
+        updateHud(true);
+        s_lastFrameNow = 0.0;
+        return true;
+    }
+    // A fixed id in the top granule the 3D renderer's block allocator
+    // reserves for Page2D (BGFXRenderer.cpp, reserveBlock); its own
+    // offscreen pair uses maxViews-2/-1, which never run in this tier.
+    const uint16_t viewId =
+        uint16_t(bgfx::getCaps()->limits.maxViews - 3);
+    bgfx::FrameBufferHandle noFb = BGFX_INVALID_HANDLE;
+    bgfx::setViewFrameBuffer(viewId, noFb);
+    bgfx::setViewRect(viewId, 0, 0, uint16_t(s_width),
+                      uint16_t(s_height));
+    // The backdrop behind the sheet; the paper item paints the sheet.
+    bgfx::setViewClear(viewId,
+                       BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH
+                           | BGFX_CLEAR_STENCIL,
+                       0x55585cff, 1.0f, 0);
+    s_pageView.devicePixelRatio = s_dpr;
+    s_page->setView(s_pageView);
+    s_page->render(viewId, uint16_t(s_width), uint16_t(s_height));
+    bgfx::touch(viewId);
+    bgfx::frame();
+    updateHud(false);
+    return true;
+}
+
 static void mainLoop()
 {
     const double frameNow = emscripten_get_now();
@@ -2197,8 +2324,16 @@ static void mainLoop()
         // whole model stays visible in the new aspect.
         if (!s_userCam)
             fitCamera();
+        if (s_pageMode && !s_pageUserView)
+            pageFit();
         markDirty();
     }
+
+    // Page mode: the vg frame instead of the 3D renderer's. A false
+    // return means the device is not up yet -- the 3D frame below runs
+    // once and brings it up.
+    if (s_pageMode && renderPageFrame())
+        return;
 
     updateQuality();
 
@@ -2471,8 +2606,21 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
     s_dragging = false;
     if (s_clickOk && std::abs(int(e->clientX) - s_downX) <= 6
             && std::abs(int(e->clientY) - s_downY) <= 6) {
-        tapOrDouble(float(e->clientX), float(e->clientY), e->ctrlKey,
-                    e->shiftKey);
+        if (s_pageMode) {
+            // No picking on a page yet (doc sec 24.6); a double click
+            // refits the sheet.
+            static double lastUp = 0.0;
+            const double now = emscripten_get_now();
+            if (now - lastUp < 350.0) {
+                s_pageUserView = false;
+                pageFit();
+            }
+            lastUp = now;
+        }
+        else {
+            tapOrDouble(float(e->clientX), float(e->clientY), e->ctrlKey,
+                        e->shiftKey);
+        }
     }
     s_clickOk = false;
     return EM_TRUE;
@@ -2492,6 +2640,13 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
     int dy = int(e->clientY) - s_lastY;
     s_lastX = int(e->clientX);
     s_lastY = int(e->clientY);
+    if (s_pageMode) {
+        // A page has no orbit: every drag pans, in device pixels.
+        s_pageView.panX += float(dx) * s_dpr;
+        s_pageView.panY += float(dy) * s_dpr;
+        s_pageUserView = true;
+        return EM_TRUE;
+    }
     if (s_panning) {
         const float scale = panScale();
         // Grab-pan: the scene follows the cursor. CamFrame::right is the
@@ -2510,6 +2665,20 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
 static EM_BOOL onWheel(int, const EmscriptenWheelEvent *e, void *)
 {
     interact();
+    if (s_pageMode) {
+        // Zoom about the cursor: the page point under it stays put.
+        const float f = e->deltaY > 0 ? (1.0f / 1.15f) : 1.15f;
+        const float zoom =
+            bx::clamp(s_pageView.zoom * f, 0.002f, 1000.0f);
+        const float applied = zoom / s_pageView.zoom;
+        const float mx = float(e->mouse.targetX) * s_dpr;
+        const float my = float(e->mouse.targetY) * s_dpr;
+        s_pageView.panX = mx - applied * (mx - s_pageView.panX);
+        s_pageView.panY = my - applied * (my - s_pageView.panY);
+        s_pageView.zoom = zoom;
+        s_pageUserView = true;
+        return EM_TRUE;
+    }
     s_dist *= e->deltaY > 0 ? 1.1f : (1.0f / 1.1f);
     s_dist = bx::clamp(s_dist, 0.01f * s_diag, 50.0f * s_diag);
     return EM_TRUE;
@@ -2726,7 +2895,12 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
         // stale one before the geometry can move.
         clearCubeHover();
         clearButtonHover();
-        if (e->numTouches == 1 && n == 1) {
+        if (s_pageMode) {
+            // No tap-pick and no loupe on a page: fingers only pan and
+            // pinch it.
+            s_tapOk = false;
+        }
+        else if (e->numTouches == 1 && n == 1) {
             s_tapOk = true;
             s_tapX = x[0];
             s_tapY = y[0];
@@ -2762,7 +2936,37 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
             return EM_TRUE;
         }
         interact();
-        if (n == 1) {
+        if (s_pageMode) {
+            if (n == 1) {
+                s_pageView.panX += (x[0] - s_touchX[0]) * s_dpr;
+                s_pageView.panY += (y[0] - s_touchY[0]) * s_dpr;
+            }
+            else if (n == 2) {
+                s_pageView.panX +=
+                    0.5f * (x[0] - s_touchX[0] + x[1] - s_touchX[1])
+                    * s_dpr;
+                s_pageView.panY +=
+                    0.5f * (y[0] - s_touchY[0] + y[1] - s_touchY[1])
+                    * s_dpr;
+                const float oldDist = std::hypot(s_touchX[1] - s_touchX[0],
+                                                 s_touchY[1] - s_touchY[0]);
+                const float newDist = std::hypot(x[1] - x[0], y[1] - y[0]);
+                if (oldDist > 1.0f && newDist > 1.0f) {
+                    const float zoom = bx::clamp(
+                        s_pageView.zoom * newDist / oldDist, 0.002f,
+                        1000.0f);
+                    // Pinch zooms about the midpoint, in device px.
+                    const float f = zoom / s_pageView.zoom;
+                    const float mx = 0.5f * (x[0] + x[1]) * s_dpr;
+                    const float my = 0.5f * (y[0] + y[1]) * s_dpr;
+                    s_pageView.panX = mx - f * (mx - s_pageView.panX);
+                    s_pageView.panY = my - f * (my - s_pageView.panY);
+                    s_pageView.zoom = zoom;
+                }
+            }
+            s_pageUserView = true;
+        }
+        else if (n == 1) {
             // Drag past the slop cancels the tap so orbit doesn't also pick,
             // and says this press was a camera gesture, not a hold.
             if (std::abs(x[0] - s_tapX) > 8.0f
@@ -3922,6 +4126,7 @@ static void sweepStore()
     note(s_snap);
     if (s_pendingValid)
         note(s_pendingSnap);
+    notePageLiveKeys(live);
     std::vector<std::pair<double, std::string>> order;
     for (const auto &kv : s_storeMeta) {
         if (!live.count(kv.first))
@@ -4096,6 +4301,8 @@ static void blobResolved(const std::string &key, BlobData data,
                 std::printf("fcviewer: blob store to IndexedDB failed\n");
             });
     }
+    if (data)
+        pageBlobResolved(key, data->data(), data->size());
     if (!s_batchApplying)
         resolvePending();
 }
@@ -4106,6 +4313,7 @@ static void blobFailed(const std::string &key)
     s_netInFlight.erase(key);
     s_blobFailed.insert(key);
     std::printf("fcviewer: blob %s unavailable, dropped\n", key.c_str());
+    pageBlobFailed(key);
     if (!s_batchApplying)
         resolvePending();
 }
@@ -4349,6 +4557,219 @@ static void requestBlob(const std::string &key, uint32_t size = 0)
         });
 }
 
+//////////////////////////////////////////////////////////////////////
+// Page-tier chunk plumbing (doc sec 24.4): the wanted tables the page
+// state above declared, resolved through the same kind-blind blob
+// machinery the 3D tier fetches with.
+
+/// A chunk the page waits on landed (any route: cache, IndexedDB,
+/// network, inline delta bytes).
+static void pageBlobResolved(const std::string &key, const uint8_t *data,
+                             size_t size)
+{
+    auto wi = s_pageItemWanted.find(key);
+    if (wi != s_pageItemWanted.end()) {
+        for (uint64_t id : wi->second) {
+            // Apply only if the stream still names this key for the id
+            // (a later publish may have re-keyed it while the fetch
+            // was out).
+            auto ck = s_pageItemKey.find(id);
+            if (ck == s_pageItemKey.end() || ck->second != key)
+                continue;
+            Render::Page2D::Kind kind;
+            uint32_t layer = 0;
+            std::vector<uint8_t> ops;
+            if (Render::decodePageItemChunk(data, size, kind, layer, ops))
+                s_page->setItem(id, kind, layer, std::move(ops));
+            else
+                std::printf("fcviewer: page item chunk %s undecodable\n",
+                            key.c_str());
+        }
+        s_pageItemWanted.erase(wi);
+        markDirty();
+    }
+    auto ii = s_pageImageWanted.find(key);
+    if (ii != s_pageImageWanted.end()) {
+        for (uint64_t id : ii->second) {
+            const PageImageMeta &meta = s_pageImageMeta[id];
+            if (size == size_t(meta.w) * meta.h * 4) {
+                s_page->setImage(id, meta.w, meta.h, data, meta.repeat);
+                s_pageImageApplied[id] = key;
+            }
+            else {
+                std::printf("fcviewer: page image chunk %s wrong size\n",
+                            key.c_str());
+            }
+        }
+        s_pageImageWanted.erase(ii);
+        markDirty();
+    }
+    auto fi = s_pageFontWanted.find(key);
+    if (fi != s_pageFontWanted.end()) {
+        Render::Page2D::registerFont(fi->second.c_str(), data,
+                                     uint32_t(size));
+        s_pageFontsApplied.insert(fi->second);
+        s_pageFontWanted.erase(fi);
+        markDirty();
+    }
+}
+
+static void pageBlobFailed(const std::string &key)
+{
+    s_pageItemWanted.erase(key);
+    s_pageImageWanted.erase(key);
+    s_pageFontWanted.erase(key);
+}
+
+/// Want a chunk: the cache answers now, everything else answers
+/// through blobResolved.
+static void pageWantChunk(const std::string &key, uint32_t size)
+{
+    auto it = s_blobCache.find(key);
+    if (it != s_blobCache.end() && it->second) {
+        pageBlobResolved(key, it->second->data(), it->second->size());
+        return;
+    }
+    requestBlob(key, size);
+}
+
+static bool applyPagePayload(uint64_t version, const char *data,
+                             size_t size)
+{
+    Render::PageSnapshot snap;
+    if (!Render::loadPageSnapshot(data, size, snap)) {
+        std::printf("fcviewer: page payload parse FAILED\n");
+        return false;
+    }
+    if (!s_page)
+        s_page = std::make_unique<Render::Page2D>();
+
+    // A version means something only within the run that issued it --
+    // the same v35 contract as the scene stream; the blob cache
+    // survives (content keys).
+    if (snap.sessionId != s_pageSession) {
+        if (s_pageSession)
+            std::printf("fcviewer: page session changed, dropping the "
+                        "page\n");
+        s_pageSession = snap.sessionId;
+        s_page->clear();
+        s_pageItemKey.clear();
+        s_pageImageApplied.clear();
+        s_pageImageMeta.clear();
+        s_pageItemWanted.clear();
+        s_pageImageWanted.clear();
+        s_pageFontWanted.clear();
+        s_pageVersion = 0;
+        s_pageUserView = false;
+    }
+    else if (s_pageMode && version == s_pageVersion)
+        return true; // the reconnect echo, already applied
+
+    if (snap.baseVersion && snap.baseVersion != s_pageVersion) {
+        // A delta chained onto a version this viewer does not hold:
+        // ask for the full payload; the push loop answers in order.
+        std::printf("fcviewer: page delta base %llu != held %llu, "
+                    "resync\n",
+                    (unsigned long long)snap.baseVersion,
+                    (unsigned long long)s_pageVersion);
+        if (s_wsOpen) {
+            static const char resync[] = "{\"cmd\":\"resync\"}";
+            emscripten_websocket_send_utf8_text(
+                s_ws, const_cast<char *>(resync));
+        }
+        return true;
+    }
+
+    const bool full = snap.baseVersion == 0;
+    const bool firstSheet = !(s_pageW > 0.0f);
+    s_pageMode = true;
+    s_pageW = snap.pageWidth;
+    s_pageH = snap.pageHeight;
+    pagePaper();
+    if (firstSheet || !s_pageUserView)
+        pageFit();
+
+    for (const auto &f : snap.fonts) {
+        if (s_pageFontsApplied.count(f.name))
+            continue;
+        s_pageFontWanted[f.key] = f.name;
+        pageWantChunk(f.key, f.size);
+    }
+
+    for (const auto &img : snap.images) {
+        PageImageMeta meta;
+        meta.w = img.width;
+        meta.h = img.height;
+        meta.repeat = img.repeat != 0;
+        s_pageImageMeta[img.id] = meta;
+        auto it = s_pageImageApplied.find(img.id);
+        if (it != s_pageImageApplied.end() && it->second == img.key)
+            continue;
+        s_pageImageWanted[img.key].insert(img.id);
+        pageWantChunk(img.key, img.size);
+    }
+    if (full) {
+        std::set<uint64_t> namedImages;
+        for (const auto &img : snap.images)
+            namedImages.insert(img.id);
+        for (auto it = s_pageImageApplied.begin();
+             it != s_pageImageApplied.end();) {
+            if (!namedImages.count(it->first)) {
+                s_page->removeImage(it->first);
+                s_pageImageMeta.erase(it->first);
+                it = s_pageImageApplied.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
+
+    for (uint64_t id : snap.removed) {
+        s_page->removeItem(id);
+        s_pageItemKey.erase(id);
+    }
+    std::set<uint64_t> named;
+    for (auto &up : snap.updates) {
+        const uint64_t id = up.entry.objectKey;
+        named.insert(id);
+        auto ck = s_pageItemKey.find(id);
+        if (ck != s_pageItemKey.end() && ck->second == up.entry.key)
+            continue; // unchanged: the retained item stands
+        s_pageItemKey[id] = up.entry.key;
+        s_pageItemWanted[up.entry.key].insert(id);
+        if (up.hasInline) {
+            // v37: a delta's chunk rides inline -- ingest under its
+            // key, store included, then resolve like any arrival.
+            auto bytes = std::make_shared<std::vector<uint8_t>>(
+                std::move(up.inlineData));
+            blobResolved(up.entry.key, bytes, false);
+        }
+        else
+            pageWantChunk(up.entry.key, up.entry.size);
+    }
+    if (full) {
+        // A full root retires what it does not name.
+        for (auto it = s_pageItemKey.begin(); it != s_pageItemKey.end();) {
+            if (!named.count(it->first)) {
+                s_page->removeItem(it->first);
+                it = s_pageItemKey.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
+
+    s_pageVersion = version;
+    // Ride the shared stream-position state, so reconnects and the
+    // polling fallback report where this viewer actually is.
+    s_sessionId = snap.sessionId;
+    s_sceneVersion = version;
+    std::printf("fcviewer: page v%llu, %zu items named, sheet %.0fx%.0f\n",
+                (unsigned long long)version, snap.updates.size(),
+                (double)s_pageW, (double)s_pageH);
+    markDirty();
+    return true;
+}
 
 /// Assemble a snapshot out of the payloads that have arrived so far.
 /// False means it cannot be applied at all and the caller must ask for
@@ -5806,8 +6227,27 @@ static bool applyScenePayload(const char *data, size_t size)
         return false;
     uint64_t version = 0;
     std::memcpy(&version, data, sizeof(version));
+    // The 2D page tier: an FCPD payload routes to the page store (doc
+    // sec 24.4). Its own format-skew probe mirrors the scene one
+    // below -- sceneSnapshotVersion answers 0 for a foreign magic, so
+    // that probe can never see a newer page format.
+    if (uint32_t pv = Render::pageSnapshotVersion(data + 8, size - 8)) {
+        if (pv > Render::pageDumpVersion()) {
+            std::printf("fcviewer: page format v%u newer than built "
+                        "v%u, reloading\n", pv, Render::pageDumpVersion());
+            char bust[32];
+            std::snprintf(bust, sizeof(bust), "p%u", pv);
+            fcviewer_reload(bust);
+            return true;
+        }
+        return applyPagePayload(version, data + 8, size - 8);
+    }
     Render::SceneSnapshot snap;
     if (Render::loadSceneSnapshot(data + 8, size - 8, snap)) {
+        // A scene payload means the joined group serves 3D: leave page
+        // mode (the page store keeps its state -- switching back is a
+        // session change and resets it there).
+        s_pageMode = false;
         // A version means something only within the run that issued it
         // (SceneDump.h, v35). A restarted backend counts from one
         // again, so the version we hold can name a publish that never
@@ -6376,7 +6816,8 @@ static std::string s_buildStamp;
 static void sendHello()
 {
     std::string hello = "{\"cmd\":\"hello\",\"snapshot\":"
-        + std::to_string(Render::sceneDumpVersion());
+        + std::to_string(Render::sceneDumpVersion())
+        + ",\"page\":" + std::to_string(Render::pageDumpVersion());
     if (!s_buildStamp.empty())
         hello += ",\"build\":\"" + s_buildStamp + "\"";
     // The document wire (docs/MultiDocServe.md §4): which document to

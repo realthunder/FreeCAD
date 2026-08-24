@@ -12,7 +12,7 @@
 # captured on the desktop with FC_BGFX_DUMP_SCENE (see ../SceneDump.h).
 
 cmake_minimum_required(VERSION 3.20)
-project(FreeCADRendererWasm CXX)
+project(FreeCADRendererWasm C CXX)
 
 if(NOT EMSCRIPTEN)
     message(FATAL_ERROR "This project must be configured with emcmake/emcc.")
@@ -40,8 +40,41 @@ set(BGFX_CONFIG_VIDEO OFF CACHE BOOL "" FORCE)
 set(BGFX_OPENGLES_VERSION 30 CACHE STRING "" FORCE)
 add_subdirectory(${FC_SRC}/3rdParty/bgfx bgfx EXCLUDE_FROM_ALL)
 
+# vg-renderer, for the 2D page tier (docs/TechDrawPortAndSection.md
+# sec 24). Defined locally -- the 3rdParty block is Qt/FreeCAD-shaped
+# and cannot be included here. Its shaders are committed embedded C
+# arrays carrying an essl variant, so the WebGL backend needs no
+# shaderc pass.
+set(FC_VG ${FC_SRC}/3rdParty/vg-renderer)
+add_library(vg-renderer STATIC
+    ${FC_VG}/src/vg.cpp
+    ${FC_VG}/src/path.cpp
+    ${FC_VG}/src/stroker.cpp
+    ${FC_VG}/src/vg_util.cpp
+    ${FC_VG}/src/libs/fontstash.cpp
+    ${FC_VG}/src/libs/stb_truetype.cpp
+    ${FC_VG}/src/libtess2/bucketalloc.c
+    ${FC_VG}/src/libtess2/dict.c
+    ${FC_VG}/src/libtess2/geom.c
+    ${FC_VG}/src/libtess2/mesh.c
+    ${FC_VG}/src/libtess2/priorityq.c
+    ${FC_VG}/src/libtess2/sweep.c
+    ${FC_VG}/src/libtess2/tess.c
+)
+target_include_directories(vg-renderer PUBLIC ${FC_VG}/include)
+target_link_libraries(vg-renderer PUBLIC bx bgfx)
+target_compile_definitions(vg-renderer PRIVATE
+    BGFX_PLATFORM_SUPPORTS_DXBC=0
+    BGFX_PLATFORM_SUPPORTS_DXIL=0)
+set_target_properties(vg-renderer PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON)
+
 add_executable(fcviewer
     main.cpp
+    ../Page2D.cpp
+    ../Page2DWire.cpp
+    ../Vg2D.cpp
     ../Renderer.cpp
     ../SceneDump.cpp
     ../SceneLadder.cpp
@@ -82,7 +115,7 @@ target_include_directories(fcviewer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
-target_link_libraries(fcviewer PRIVATE bgfx bimg bx)
+target_link_libraries(fcviewer PRIVATE vg-renderer bgfx bimg bx)
 
 # The shaders compile at build time from source (no committed .bin
 # files). An Emscripten build cannot build the host shaderc tool itself,
