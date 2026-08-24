@@ -276,7 +276,12 @@ void QGIViewPart::drawAllFaces(void)
     int iFace(0);
     for (auto& face : faceGeoms) {
         QGIFace* newFace = drawFace(face, iFace);
-        if (faceColor.isValid()) {
+        if (m_underlay) {
+            // The shaded underlay replaces the plain face fill (doc
+            // sec 26) -- an opaque fill above it would hide it.
+            newFace->setFillMode(QGIFace::NoFill);
+        }
+        else if (faceColor.isValid()) {
             newFace->setFillColor(faceColor);
             newFace->setFillMode(faceColor.alpha() ? QGIFace::PlainFill : QGIFace::NoFill);
         }

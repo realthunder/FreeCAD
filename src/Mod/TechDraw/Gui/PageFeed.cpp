@@ -968,6 +968,39 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         qc.setAlpha((100 - vp->FaceTransparency.getValue()) * 255 / 100);
         faceColor = packColor(qc);
     }
+    // The shaded underlay (doc sec 26): one image item under the view's
+    // geometry. Kind::Face keeps it below hatches and edges by kind
+    // order; the plain face fill is skipped while it is active -- the
+    // shading IS the fill (the Qt tier does the same).
+    bool shadedUnderlay = false;
+    {
+        const Page2D::ItemId uid = itemId(name, 'u', 0);
+        const char* ufile =
+            dvp->Shaded.getValue() ? dvp->UnderlayImage.getValue() : nullptr;
+        const std::vector<double>& urect = dvp->UnderlayRect.getValues();
+        QImage uimg;
+        if (ufile && ufile[0] && urect.size() == 4
+            && uimg.load(QString::fromUtf8(ufile), "PNG")) {
+            uimg = uimg.convertToFormat(QImage::Format_RGBA8888);
+            out.setImage(uid, (uint16_t)uimg.width(), (uint16_t)uimg.height(),
+                         uimg.constBits());
+            Page2D::Recorder urec;
+            // The rect is view 2D mm, centroid origin, +Y up; the page
+            // is y-down Rez units.
+            urec.image(uid, ox + (float)Rez::guiX(urect[0]),
+                       oy - (float)Rez::guiX(urect[1] + urect[3]),
+                       (float)Rez::guiX(urect[2]), (float)Rez::guiX(urect[3]));
+            out.setItem(uid, Page2D::Kind::Face, layer, std::move(urec));
+            shadedUnderlay = true;
+        }
+        else {
+            if (out.hasItem(uid))
+                out.removeItem(uid);
+            if (out.hasImage(uid))
+                out.removeImage(uid);
+        }
+    }
+
     // Faces: the fill, then any PAT geometric hatch as a Decoration item
     // riding the same index (drawn between fills and edges by Kind
     // order). PAT dash specifications draw solid for now; SVG/bitmap
@@ -977,7 +1010,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
     uint32_t index = 0;
     for (const TechDraw::FacePtr& face : dvp->getFaceGeometry()) {
         Page2D::Recorder rec;
-        if ((faceColor & 0xff) != 0)
+        if (!shadedUnderlay && (faceColor & 0xff) != 0)
             emitFace(rec, face, ox, oy, style.deflection, faceColor);
         out.setItem(itemId(name, 'f', index), Page2D::Kind::Face, layer,
                     std::move(rec));

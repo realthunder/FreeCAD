@@ -51,7 +51,9 @@
 #include <Gui/SoFCOffscreenRenderer.h>
 #include <Gui/ViewProvider.h>
 #include <Mod/TechDraw/App/DrawUtil.h>
+#include <Mod/TechDraw/App/DrawViewDetail.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
+#include <Mod/TechDraw/App/DrawViewSection.h>
 
 #include "ShadedUnderlay.h"
 
@@ -118,6 +120,13 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
     // Perspective registration against perspective HLR is its own math
     // and its own test; the underlay stays off for it (doc sec 26.3).
     if (dvp->Perspective.getValue())
+        return false;
+    // v1 scope (doc sec 26.1): plain part views. A section cuts its
+    // source and a detail clips it -- their underlay must render the
+    // derived shape, not the raw source, or the raster shows material
+    // the edges do not.
+    if (dvp->isDerivedFrom(TechDraw::DrawViewSection::getClassTypeId())
+        || dvp->isDerivedFrom(TechDraw::DrawViewDetail::getClassTypeId()))
         return false;
 
     TopoDS_Shape shape = dvp->getSourceShape();
