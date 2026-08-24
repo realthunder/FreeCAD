@@ -773,3 +773,73 @@ signals instead of per-paint while pending), hatches, cosmetic
 edges/centerlines, dimensions/annotations/balloons, templates, then
 the real compositor (GL-context sharing instead of readback+QImage).
 M3 (the SceneServer wire) untouched.
+
+## 19. Implementation status (2026-08-24, later still): damage hooks, formats, hatches
+
+Three items of the M2 remainder landed and are verified on the real
+GPU (RTX 3060 via VirtualGL egl0 + Xvfb; NVIDIA banner checked in the
+run log).
+
+**Per-view damage hooks** (`QGVPage`). The preview no longer re-feeds
+the page per paint while views compute. Each tracked `DrawViewPart`'s
+`signalGuiPaint` -- fired on the GUI thread when HLR lands, when faces
+land, and on repaint-worthy property changes (hatch and cosmetic edits
+included: their view providers call `requestPaint()` on the parent
+view) -- marks exactly that view dirty; the next paint feeds only the
+dirty views. Two cases the signal does not cover: X/Y moves purge
+their touch on the App side and signal nothing, so the track caches
+the fed position and a paint-time compare catches them; a change in
+the view set itself (add / remove / reorder, detected by an ordered
+hash of the view names) rebuilds the tracked set and resets the
+retained page wholesale -- the rare case, and the only correct answer
+for deletion, whose items no re-feed would ever visit.
+
+**Edge formats and view styling** (`PageFeed`). The feed now resolves
+per-edge appearance the way `QGIViewPart::drawAllEdges` does: cosmetic
+edge and centerline `LineFormat`s, `GeomFormat` overrides, the
+hidden-line pen and `HiddenWidth`, the iso-line width, the
+`showThisEdge` class-visibility matrix, `ShowAllEdges`, and the view
+provider's `LineWidth` / `FaceColor` / `FaceTransparency`. Vertex dots
+and arc center-mark crosses follow `drawAllVertexes` (LineWidth x
+VertexScale sizing, CoarseView / frame gates, `ArcCenterMarks`). Dash
+patterns come from the same `LineGenerator` pens the Qt tier
+constructs, converted to page-unit run lengths and walked over the
+flattened curve by the feed, because vg has no dashing of its own.
+
+**Geometric hatches** (`PageFeed`). A face claimed by a
+`DrawGeomHatch` emits its `getTrimmedLines()` line sets as one
+`Decoration` item per face (drawn between fills and edges by Kind
+order), colored and weighted from `ViewProviderGeomHatch`. PAT dash
+specifications draw solid for now; SVG/bitmap `DrawHatch` fills are
+not represented yet and leave the plain face fill.
+
+**A Qt-tier defect this exposed**: in this fork the Qt page draws
+every edge solid. `QGIPrimPath::setTools()` overwrites the pen style
+with `m_styleCurrent` right before painting, and nothing sets
+`m_styleCurrent` for part-view edges (`setHiddenEdge` has no caller),
+so every dashed pen `LineGenerator` builds -- hidden lines, cosmetic
+styles, ISO patterns -- is silently discarded. The vg tier honors
+them; the difference is vg being right, not a feed bug, and it stays
+until the Qt side is fixed (or retired by this arc).
+
+**Verification** (scratchpad td_vgtest3.py pattern): a page with two
+views of a holed box, a geometric hatch, a dashed cosmetic line and
+hidden lines, driven under xvfb+VirtualGL. Offscreen render probes
+hatch/cosmetic/edge ink and dash gaps; the interactive tier is
+compared pure-Qt vs pure-vg (same viewport, items hidden for the vg
+grab) -- ink counts within 40% and geometry bboxes within 12px, the
+label rows excluded (annotations are not fed yet); damage is exercised
+live by a model edit (hatch ink changes), an X move (position compare
+path), and a view deletion (no stale ink). 14/14 checks pass.
+
+WARNING -- test-harness trap that cost half a session: PySide6's
+`QGraphicsScene.items()` / `childItems()` return wrappers for
+C++-owned `QGraphicsItem`s (not QObjects), and when those temporary
+wrappers are garbage-collected PySide deletes the C++ items -- the
+whole Qt item tier silently vanishes from the scene. Any test script
+touching scene items must keep every returned list referenced for the
+process lifetime.
+
+**M2 remainder now**: dimensions/annotations/balloons, templates, then
+the real compositor (GL-context sharing instead of readback+QImage).
+M3 (the SceneServer wire) untouched.
