@@ -143,22 +143,14 @@ public:
 
         PyModule_AddObject(m_module, "Voronoi", voronoi.module().ptr());
 
-        // Expose Clipper2 join types
-        PyModule_AddIntConstant(
-            m_module,
-            "ClipperJoinTypeRound",
-            static_cast<int>(Clipper2Lib::JoinType::Round)
-        );
-        PyModule_AddIntConstant(
-            m_module,
-            "ClipperJoinTypeSquare",
-            static_cast<int>(Clipper2Lib::JoinType::Square)
-        );
-        PyModule_AddIntConstant(
-            m_module,
-            "ClipperJoinTypeMiter",
-            static_cast<int>(Clipper2Lib::JoinType::Miter)
-        );
+        // Expose the join types an Area JoinType parameter accepts. That
+        // parameter is a PropertyEnumeration, so its value is the position in
+        // the list AREA_PARAMS_OFFSET_CONF declares -- Round, Square, Miter --
+        // and not Clipper2's own enumerator, which numbers them differently
+        // and has a fourth. Area::JoinType* is that position.
+        PyModule_AddIntConstant(m_module, "ClipperJoinTypeRound", Path::Area::JoinTypeRound);
+        PyModule_AddIntConstant(m_module, "ClipperJoinTypeSquare", Path::Area::JoinTypeSquare);
+        PyModule_AddIntConstant(m_module, "ClipperJoinTypeMiter", Path::Area::JoinTypeMiter);
     }
 
     ~Module() override
