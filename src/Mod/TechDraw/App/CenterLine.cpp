@@ -31,6 +31,9 @@
     #include <TopoDS_Shape.hxx>
 #endif
 
+// boost/uuid/uuid_generators.hpp used to pull this in; boost 1.90 does not.
+#include <boost/random.hpp>
+
 #include <BRepTools.hxx>
 
 #include <Base/Console.h>

@@ -26,6 +26,9 @@
 #include <cmath>
 #endif
 
+// boost/uuid/uuid_generators.hpp used to pull this in; boost 1.90 does not.
+#include <boost/random.hpp>
+
 #include <Base/Reader.h>
 #include <Base/Tools.h>
 #include <Base/Writer.h>
