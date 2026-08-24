@@ -881,3 +881,144 @@ What it trades:
   rather than at restore time.
 - `getMemSize()` deliberately does not fault in — memory accounting is
   not a use.
+
+## 15. Design: the GUI stays usable while the document fills
+
+sec 4, sec 13 and sec 14 all move work out of the blocking open and into slices
+the event loop drives. That buys nothing on its own if the user cannot
+act during those slices, and they could not: the mouse was dead for the
+whole load. Two separate mechanisms held it, and neither was aimed at a
+load.
+
+### 15.1 The input claim outlives the phase that made it
+
+`ProgressBar::eventFilter` is installed on the application and swallows
+press (with a beep), release, move, double click, enter, leave, native
+gesture and context menu while a sequence runs. Its only exemption is
+`Gui::LiveViewInteraction`, which until now was constructed solely by
+`Gui.setLiveImport()` -- an *import* feature. A load never engaged it.
+
+The claim also outlives its phase. Only a **blocking** sequence installs
+the filter (`d->filterHeld`), and the teardown that releases it is
+deferred behind a grace timer that any following sequence re-arms. A
+load's blocking open is followed immediately by `KeepInteractive`
+sequences -- the view-provider drain of sec 13, then "Building visuals..."
+of sec 4 -- so a filter taken for a phase of seconds is held for the entire
+load. `KeepInteractive` correctly declines to install one but cannot
+release one already held.
+
+WARNING -- The wheel worked throughout, which reads like a deliberate exemption
+and is not one: `QEvent::Wheel` appears in neither the swallow list nor
+the press case and falls through the `default:` arm. Nothing exempted
+navigation.
+
+**`Gui::Application::refreshLiveLoad()`** engages the same pair an import
+does -- `LiveViewInteraction` for the pointer, and
+`App::Document::LiveImport` to protect the half-filled document. It
+recomputes from live state rather than counting up and down, so a call
+too many is free and a load that dies without finishing is repaired by
+the next one; a stuck claim would otherwise refuse every altering command
+for the rest of the session. It is called at the load's start, its
+finish, the end of the view-provider drain, and from
+`setBuildingVisuals()`, which is the only notice this side gets that the
+visual drain is over.
+
+WARNING -- The starting document is passed **explicitly**: App emits
+`signalStartRestoreDocument` one line *before* `setStatus(Restoring,
+true)`, so at that call site the status bits do not yet say what is true.
+A document already live for an import is left alone -- not ours to set,
+so not ours to clear.
+
+### 15.2 A command is judged by what it changes, not what it declares
+
+With the pointer through, the document needs protecting from what the
+pointer can reach. The first gate read `Command::eType`, and that is not
+evidence: it defaults to `AlterDoc|Alter3DView|AlterSelection`, so most
+commands claim to alter the document whether or not they touch it, and
+**138 commands overwrite it with a bare `ForEdit`** and escaped the gate
+entirely -- `Std_Delete` among them, which is how an object came to be
+deleted in the middle of an import. The gate was simultaneously too
+strict, refusing commands that only look, and too loose, admitting one
+that deletes.
+
+So the question is asked where the answer is certain: **at the write.**
+`App::Document::UserEditGuard` is alive while a command runs, and
+`checkUserEdit()` throws if a document carrying `LiveImport` is changed,
+naming the object and property -- which the command itself could not have
+done. It is checked at the four places a change actually happens:
+
+| site | covers |
+|---|---|
+| `DocumentObject::touch()` | direct touches |
+| the property write in `DocumentObject::onChanged()` | every property assignment |
+| `Document::addObject()` (both overloads) | creation |
+| `Document::removeObject()` / `removeObjects()` | deletion |
+
+The last two carry the weight: neither goes through `touch()`, so they
+are what covers delete, cut, paste and duplicate -- **and every
+third-party command**, which a list of names never will.
+
+**What stays allowed, deliberately:**
+
+- **`Visibility`.** Showing and hiding is looking, and it is what a user
+  reaches for while watching a model arrive. Exempted **by identity**,
+  not by its `Property::Output` status: `Shape` carries `Output` too, and
+  assigning a shape *is* an edit. There are two Visibility properties --
+  the object's and the view provider's -- and one exemption covers both,
+  because the view provider mirrors its own onto the object.
+- **View provider properties**, which no chokepoint above can see: every
+  one is in App, and a `ViewProvider` is a separate `PropertyContainer`.
+  This is right rather than merely convenient -- they are presentation,
+  the class the live view exists to keep usable, and `RestoreDrainGuard`
+  already draws the same line from the other side ("replayed view work
+  must not modify the document").
+- **`isPerformingTransaction()`** -- undo, redo and rollback take an edit
+  away rather than make one.
+
+**What a write-time guard cannot cover is still refused by name**, and
+the list is eight rather than most of the application: `Std_Undo` and
+`Std_Redo`, because a bulk transaction replay left half-done by a throw
+is worse than one never started; and `Std_Refresh`, `Std_Revert`,
+`Std_Quit`, `Std_MergeProjects`, `Std_Import`, `Std_ProjectUtil`, which
+damage the document without changing an object at all.
+
+NOTE -- **Saving is deliberately not on that list.** `Gui::Document::Save()`
+calls `flushDeferredRestore()`, which runs the sec 13 drain to completion
+before writing -- so a save during the drain is already safe. That flush
+is a no-op only while `Restoring` is set, which is the narrower window
+`Std_Save*` is refused in.
+
+A refusal explains itself in the report view, not only in a status-bar
+hint that is gone in three seconds, and it distinguishes a load from an
+import: both set `LiveImport`, so a user opening a file was being told
+the document was "busy importing", which was not true.
+
+### 15.3 Three traps this design walked into
+
+- WARNING (severe) -- **A throw during stack unwinding terminates the process.** The
+  guard first wrapped `_invoke()`, which contains the `AutoTransaction`.
+  A refusal unwound into that transaction's rollback, whose own
+  `removeObject()` hit the still-live guard and threw again. Fixed twice
+  over: the guard is declared **after** the committer, so it is destroyed
+  **before** it, and rollback is exempt outright.
+- WARNING -- **`Prop_Output` is the wrong filter for "is this an edit".** It
+  covers `Shape` as well as `Visibility`. The check therefore runs on
+  every property write, with the one exemption named by identity.
+- WARNING -- **No exception type escapes a command's own `catch (...)`.**
+  `Std_Delete` catches `Base::Exception` and raises a modal "Delete
+  failed" carrying this message. That is the command's doing and no
+  choice of exception avoids it; `AbortException` is used so that
+  `_invoke()` itself adds no second dialog. A modal **hangs an
+  `xvfb` run** -- a harness must dismiss modals
+  (`QApplication.activeModalWidget().close()` on a timer) or the test
+  looks like an infinite loop.
+
+### 15.4 Verified
+
+With the document live: `Std_Undo` refused by name; `Std_Delete` trapped
+at `removeObject` with both objects still present, and working again the
+moment `LiveImport` cleared; `Std_ToggleVisibility` allowed, flipping the
+object's `Visibility` and the view provider's together; a view-provider
+property change allowed. The pointer half was confirmed by hand on the
+real GPU -- mouse buttons responsive during a load, which was the symptom
+this section started from.

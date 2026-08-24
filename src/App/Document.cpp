@@ -1484,6 +1484,82 @@ Document::RestoringScopeGuard::~RestoringScopeGuard()
         globalIsRestoring = false;
 }
 
+namespace
+{
+// Global rather than per document: a command is one action of the user, and
+// what it may not do is change ANY document that is still filling -- not only
+// the one that happened to be active when it started.
+bool s_userEditing = false;
+}  // namespace
+
+Document::UserEditGuard::UserEditGuard()
+    : toggled(!s_userEditing)
+{
+    if (toggled) {
+        s_userEditing = true;
+    }
+}
+
+Document::UserEditGuard::~UserEditGuard()
+{
+    if (toggled) {
+        s_userEditing = false;
+    }
+}
+
+bool Document::isUserEditing()
+{
+    return s_userEditing;
+}
+
+void Document::checkUserEdit(const Document *doc, const DocumentObject *obj,
+                             const Property *prop)
+{
+    if (!s_userEditing || !doc || !doc->testStatus(Status::LiveImport)) {
+        return;
+    }
+    // Undoing, redoing or rolling back is the machinery taking an edit AWAY,
+    // not a command making one -- and refusing it is worse than useless: a
+    // command that hits this check unwinds through its transaction's own
+    // rollback, and a throw during stack unwinding terminates the process.
+    if (doc->isPerformingTransaction()) {
+        return;
+    }
+    // Showing and hiding is looking, not editing, and it is the one thing a
+    // user reaches for while watching a model arrive. There are two
+    // Visibility properties -- this one and the view provider's -- and the
+    // view provider's write lands here too, because it mirrors itself onto
+    // the object. Exempted by identity rather than by its Output status:
+    // Shape carries Output as well, and assigning a shape IS an edit.
+    if (obj && prop == &obj->Visibility) {
+        return;
+    }
+    // Named as precisely as the caller knew, because the whole point is that
+    // the command did not say what it was going to do -- so the report has to.
+    std::ostringstream str;
+    str << "The document '" << doc->getName() << "' is still being filled in, and a"
+           " command may not change it until that finishes. Stopped at ";
+    if (obj && prop && prop->getName()) {
+        str << obj->getNameInDocument() << '.' << prop->getName();
+    }
+    else if (obj) {
+        str << obj->getNameInDocument();
+    }
+    else {
+        str << "a change to the document";
+    }
+    str << ". Looking, selecting and moving the camera keep working.";
+    // Said here, where the object and property are still known -- the command
+    // itself could not have said it, which is the whole reason for this check.
+    Base::Console().warning("%s\n", str.str().c_str());
+    // AbortException rather than a plain error: Command::_invoke() already
+    // treats it as "this operation stopped, and has explained itself", so it
+    // unwinds without the modal dialog a Base::Exception would raise -- and a
+    // modal dialog is exactly what a user clicking through a live load must
+    // not be given.
+    throw Base::AbortException(str.str().c_str());
+}
+
 Document::RestoreDrainGuard::RestoreDrainGuard(Document *doc)
     : doc(doc)
     , toggled(doc && !doc->testStatus(Status::RestoreDrain))
@@ -4665,6 +4741,11 @@ bool Document::recomputeFeature(DocumentObject* Feat, bool recursive)
 DocumentObject * Document::addObject(const char* sType, const char* pObjectName,
                                      bool isNew, const char* viewType, bool isPartial)
 {
+    // Creating or deleting an object is a change this document may not take
+    // while it is still filling itself in (Document::UserEditGuard). Neither
+    // goes through DocumentObject::touch(), so each is asked here -- which
+    // also covers the commands no name list would know about.
+    checkUserEdit(this, nullptr, nullptr);
     Base::Type type = Base::Type::getTypeIfDerivedFrom(sType, App::DocumentObject::getClassTypeId(), true);
     if (type.isBad()) {
         std::stringstream str;
@@ -4843,6 +4924,11 @@ std::vector<DocumentObject *> Document::addObjects(const char* sType, const std:
 
 void Document::addObject(DocumentObject* pcObject, const char* pObjectName, bool activate)
 {
+    // Creating or deleting an object is a change this document may not take
+    // while it is still filling itself in (Document::UserEditGuard). Neither
+    // goes through DocumentObject::touch(), so each is asked here -- which
+    // also covers the commands no name list would know about.
+    checkUserEdit(this, nullptr, nullptr);
     if (pcObject->getDocument()) {
         THROWM(Base::RuntimeError, "Document object is already added to a document")
     }
@@ -4929,6 +5015,11 @@ void Document::_addObject(DocumentObject* pcObject, const char* pObjectName)
 /// Remove an object out of the document
 void Document::removeObject(const char* sName)
 {
+    // Creating or deleting an object is a change this document may not take
+    // while it is still filling itself in (Document::UserEditGuard). Neither
+    // goes through DocumentObject::touch(), so each is asked here -- which
+    // also covers the commands no name list would know about.
+    checkUserEdit(this, nullptr, nullptr);
     auto pos = d->objectMap.find(sName);
 
     // name not found?
@@ -5133,6 +5224,11 @@ void Document::removePendingProperty(Property *prop)
 
 void Document::removeObjects(const std::vector<std::string> &objs)
 {
+    // Creating or deleting an object is a change this document may not take
+    // while it is still filling itself in (Document::UserEditGuard). Neither
+    // goes through DocumentObject::touch(), so each is asked here -- which
+    // also covers the commands no name list would know about.
+    checkUserEdit(this, nullptr, nullptr);
     if (_RemovingObjects) {
         FC_ERR("recursive calling of Document.removeObjects()");
         return;

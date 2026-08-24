@@ -243,6 +243,47 @@ public:
      */
     void setBuildingVisuals(bool building);
     bool isBuildingVisuals() const;
+
+    /** Re-decide whether a progressive load owns the GUI, and say so.
+     *
+     * A load freezes the mouse exactly as a long operation does: the
+     * progress bar's application-wide filter swallows pointer input while a
+     * sequence runs, and its one exemption is Gui::LiveViewInteraction,
+     * which until now only a progressive IMPORT ever constructed. The
+     * filter is claimed by the blocking open and released on a teardown
+     * debounced behind a grace timer, which the KeepInteractive sequences
+     * that follow a load keep re-arming -- so the claim outlives the phase
+     * that made it and the view stays dead for the whole load. (The wheel
+     * kept working only because neither filter lists QEvent::Wheel.)
+     *
+     * So a load engages the same pair an import does: LiveViewInteraction,
+     * which lets pointer input reach the view, and
+     * App::Document::LiveImport, which is what actually protects the
+     * half-filled document -- Command::invoke() refuses every AlterDoc
+     * command while it is set, as do the few tree mutations that do not go
+     * through a Command.
+     *
+     * Call this at every transition of a load: its start, its finish, the
+     * end of the deferred view-provider drain, and the end of the visual
+     * drain. It reads the current state rather than counting, so a call too
+     * many costs nothing and a load that dies without finishing is undone
+     * by the next one.
+     *
+     * \a starting is the document whose restore is beginning, if any: App
+     * emits signalStartRestoreDocument BEFORE it sets the Restoring bit, so
+     * at that one call site the status bits do not yet say what is true.
+     */
+    void refreshLiveLoad(const App::Document* starting = nullptr);
+
+    /** Whether \a doc is mid-LOAD rather than mid-import.
+     *
+     * Both set App::Document::LiveImport, and everything that refuses to
+     * touch the document reads that one bit -- but a user told "busy
+     * importing" while opening a file is being told something that is not
+     * true. Answers off the set refreshLiveLoad() claimed, so an import's
+     * own documents answer false.
+     */
+    bool isLiveLoad(const App::Document* doc) const;
     //@}
 
     void checkForDeprecatedSettings();

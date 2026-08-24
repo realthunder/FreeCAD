@@ -2622,6 +2622,12 @@ void Document::slotStartRestoreDocument(const App::Document& doc)
     d->_deferSweepTime = d->_deferModeTime = FC_DURATION(0);
     ViewProvider::VisualBuildTime = ViewProvider::VisualMeshTime = FC_DURATION(0);
     ViewProvider::VisualBuildCount = 0;
+
+    // The open is about to claim the application's input filter, and it
+    // pumps events while it holds it -- so the regime that lets the pointer
+    // through has to be in place before the first of them, not after. Named
+    // explicitly because App has not set the Restoring bit yet.
+    Application::Instance->refreshLiveLoad(&doc);
 }
 
 void Document::slotFinishRestoreObject(const App::DocumentObject &obj) {
@@ -2753,6 +2759,12 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
     // what defaults the objects the file carried no record for.
     if (d->_deferVPs)
         scheduleDeferredRestore();
+
+    // With nothing parked this is where the load ends, so the claim on the
+    // input has to be given back here or it is never given back at all.
+    // With view providers parked it is not the end, and refreshLiveLoad()
+    // reads that off the drain rather than being told.
+    Application::Instance->refreshLiveLoad();
 }
 
 void Document::slotShowHidden(const App::Document& doc)
@@ -3140,6 +3152,9 @@ void Document::finishDeferredRestore()
     d->_deferFinish.clear();
     d->_restoreDefaults.clear();
     d->_deferVPs = false;
+    // One of the two phases that outlive the blocking open; the visual drain
+    // reports the other through Application::setBuildingVisuals().
+    Application::Instance->refreshLiveLoad();
 
     // The showable/children refresh the load skipped, over the full set,
     // and the active-object highlight the tree never got.
