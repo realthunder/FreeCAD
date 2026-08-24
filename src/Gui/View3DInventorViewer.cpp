@@ -1964,7 +1964,10 @@ void View3DInventorViewer::addViewProvider(ViewProvider* pcProvider)
     SoSeparator* root = pcProvider->getRoot();
 
     if (root) {
-        if(!guiDocument->isClaimed3D(pcProvider) && pcProvider->canAddToSceneGraph()) {
+        // A document-less viewer (the CAM simulator's camera-only
+        // Dummy3DViewer) has no guiDocument; nothing is claimed then.
+        if((!guiDocument || !guiDocument->isClaimed3D(pcProvider))
+                && pcProvider->canAddToSceneGraph()) {
             if (pcProvider->isPartOfPhysicalObject()) {
                 pcViewProviderRoot->addChild(root);
             }
@@ -2033,7 +2036,7 @@ void View3DInventorViewer::toggleViewProvider(ViewProvider *vp) {
 void View3DInventorViewer::appendDetailPath(SoPath *path, ViewProvider *vp)
 {
     if (_ViewProviderSet.count(vp)
-            && !guiDocument->isClaimed3D(vp))
+            && (!guiDocument || !guiDocument->isClaimed3D(vp)))
     {
         path->append(pcViewProviderRoot);
         if (!vp->isPartOfPhysicalObject())
