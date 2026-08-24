@@ -378,3 +378,203 @@ engine as a whole.
   interaction, which upstream has no test for.
 - `DrawComplexSection` was not examined separately; it has its own
   cutting-tool construction and the fork has +127/-95 in it.
+
+## 13. Addendum (2026-08-24): deeper verification, and what the doc missed
+
+Sections 13-15 were added after a second review pass: re-reading the
+code paths named above, reading the OCCT sources they call, and
+surveying what commercial CAD does for the same problems. The original
+conclusions all survived; four things were missing.
+
+**The per-solid cut loop is deliberate, and must survive any refactor.**
+`doSectionCut` comments why it cuts each solid individually: "to avoid
+issues where a compound BaseShape does not cut correctly". One
+degenerate solid poisons only its own result. OCCT does offer the
+tempting shortcut of a single multi-argument boolean
+(`SetArguments`/`SetTools`), whose pave filler prunes non-intersecting
+sub-shape pairs through a bounding-box tree and would deliver much of
+the classify win for free -- but it gives up exactly that fault
+isolation. The right shape stays: classify per solid (section 10), cut
+only the straddlers, each in its own `BRepAlgoAPI_Cut`.
+
+**`SetRunParallel` is one line away and never set.** `BRepAlgoAPI_Algo`
+publicly re-exposes `BOPAlgo_Options::SetRunParallel`
+(occt `BRepAlgoAPI_Algo.hxx`), and the pave filler fans its stages out
+over a thread pool when it is on. TechDraw never enables it. For the
+few straddlers that are genuinely expensive this is internal
+parallelism inside one cut, complementing proposal item 2's
+across-solid parallelism (which wins when straddlers are many and
+small).
+
+**TechDraw loads the whole model into HLR as ONE shape.**
+`GeometryObject::projectShape` calls `brep_hlr->Add(inShape)` once with
+the full compound. Inside OCCT, `HLRBRep_InternalAlgo::Hide()` is a
+pairwise loop over *loaded* shapes with a very fast fixed-point minmax
+rejection per pair (`HLRBRep_InternalAlgo.cxx`, the `0x80008000` test)
+-- machinery that never fires when n=1. Loading per-solid would let
+OCCT skip whole non-overlapping pairs, and the `Hide(i, j)` group for a
+fixed `i` writes only shape i's edge status, so it is also the natural
+parallelization seam if HLR ever does become the bottleneck. Two
+caveats: the shared `HLRBRep_Data` makes that parallelism nontrivial,
+and section 9's measurement says HLR is not the bottleneck today. OCCT
+`TKHLR` itself contains zero uses of `OSD_Parallel` -- the algorithm is
+entirely single-threaded as shipped. Record the seam; do not build it
+yet.
+
+**The draft tier already exists and the doc ignored it.** `DrawViewPart`
+has a `CoarseView` property; `GeometryObject::projectShapeWithPolygonAlgo`
+runs `HLRBRep_PolyAlgo`, the tessellation-based HLR. Notably the coarse
+path runs *synchronously* (it is fast) while the exact path goes to the
+`QFutureWatcher` worker (`DrawViewPart.cpp` ~342-369). Proposal item 5
+is therefore half built, and the missing half is wiring, not machinery:
+show the coarse result immediately, swap in the exact one when the
+worker finishes.
+
+## 14. Prior art: how commercial CAD handles the same problems
+
+The industry converged on exactly the two-tier architecture sections
+8-9 grope toward, which both validates the proposal and names the UX.
+
+- **Autodesk Inventor, "raster views"** (shipping since ~2012): a new
+  drawing view appears immediately as a raster image (green corner
+  glyphs), a background process per view computes the precise vector
+  geometry, the view swaps to precise when done, and annotation is
+  allowed meanwhile. This is "preview instantly, compute exactly later"
+  as a product feature. With both tiers already in `DrawViewPart`
+  (section 13), this fork is a wiring change away from the same UX.
+- **SolidWorks**: two view qualities (draft = tessellation, high =
+  exact), and since 2020 **Detailing Mode**: a drawing opens with no
+  model data loaded at all -- the view geometry is cached in the
+  drawing file, so a large-assembly drawing opens in seconds and
+  annotates without recompute. TechDraw's `KeepUpdated` gate skips the
+  recompute but does not persist the projection; the lesson is to
+  **persist the projected 2D geometry in the document** so display
+  never needs the kernel. That serialized vector page is also exactly
+  what the browser/streaming tier would want.
+- **Onshape**: drawings are computed server-side, asynchronously --
+  proposal item 4's "first customer for out-of-process OCCT" framing is
+  Onshape's production architecture.
+- **The HLR market**: most vendors license **Siemens D-Cubed HLM**
+  rather than writing HLR (Autodesk, PTC, Onshape, Shapr3D, IronCAD,
+  ZWCAD are on Siemens' licensee list). HLM is a CPU component:
+  exact, tolerant and **faceted** geometry in one engine, with
+  visible/hidden/silhouette/outline segments and face-region output for
+  hatching. Two readings: (a) nobody ships GPU HLR for dimensioned
+  drawings -- exactness and associativity force a geometric algorithm,
+  independently confirming section 9's measured refutation; (b) faceted
+  input as a first-class citizen means a mesh tier is considered good
+  enough for real drawings when tolerances are handled -- `CoarseView`
+  is respectable, not a hack. (The academic side agrees: Benard &
+  Hertzmann's "Line Drawings from 3D Models" covers exact-topology
+  contour visibility on meshes; Blender's Line Art modifier ships it.)
+- **Graphics-only sections**: SolidWorks offers graphics-only section
+  views (GPU clip + cap, recommended for very large models) beside
+  geometric ones; Fusion 360's section analysis is graphics-only, full
+  stop. The stencil caps of section 8 are that tier, already built.
+
+Amendments this makes to the section 11 proposal:
+
+6. **Raster-first views** (Inventor pattern): render the `CoarseView`
+   projection immediately on every view update, swap in exact HLR when
+   the worker delivers. Mark the view as provisional while coarse.
+7. **Persist view geometry** (SolidWorks Detailing Mode lesson): store
+   the projected page in the `.FCStd` so opening a drawing runs zero
+   kernel work, and the streaming tier can serve pages without OCCT.
+8. Record the OCCT seams (this section and 13) so later work does not
+   rediscover them: `SetRunParallel`, per-solid `Add()` into HLR, and
+   the reason the per-solid cut loop exists.
+
+## 15. The 2D page itself: what Qt rendering costs, and whether bgfx should draw it
+
+The question behind the question: TechDraw's output is a
+`QGraphicsScene` drawn by Qt's raster paint engine. Is that a problem
+on large drawings, and is a bgfx 2D backend worth building?
+
+### What the code does today
+
+- One `QGraphicsItem` per edge, vertex and face
+  (`QGIViewPart::drawViewPart`); a `QGIViewPart` is a
+  `QGraphicsItemGroup` of them. A section view of a large assembly is
+  tens of thousands of items.
+- `QGIPrimPath::paint` is a straight `painter->drawPath(m_path)` --
+  every repaint re-strokes every visible path through the CPU raster
+  engine, antialiased (`QGVPage` sets `QPainter::Antialiasing`).
+- Items are `NoCache` (`QGIView.cpp:78`), and the Native (raster)
+  viewport is `FullViewportUpdate` (`QGVPage.cpp:361`) -- so *any* item
+  update, e.g. a hover highlight, repaints the entire viewport. The
+  OpenGL viewport branch gets `SmartViewportUpdate` but is disabled
+  with the comment "gives rotten quality, don't use this" (the Qt GL
+  paint engine has no decent AA without MSAA).
+- All of it runs on the GUI thread.
+
+### Measured (offscreen, conda Qt 6.10.1, 1920x1200, AA on, one
+`QGraphicsPathItem` per path, each path 3 line segments + 1 cubic)
+
+| paths | bare QPainter | scene render, first | scene render, warm | warm us/item |
+| --- | --- | --- | --- | --- |
+| 1000 | 5.9 ms | 9.9 ms | 2.8 ms | 2.8 |
+| 5000 | 27.6 ms | 52.6 ms | 14.6 ms | 2.9 |
+| 20000 | 103.7 ms | 271.6 ms | 67.5 ms | 3.4 |
+| 50000 | 220.7 ms | 830.8 ms | 181.5 ms | 3.6 |
+
+Roughly **3-4 us per item per full repaint**, single-threaded, and the
+real items are heavier than this floor (per-item pens, cosmetic width
+scaling, custom paint). So: a 5k-edge page repaints in ~15 ms and is
+fine; 20k is ~70 ms (14 fps) and marginal; 50k is ~180 ms (5 fps) and
+fails -- and with `FullViewportUpdate`, *hovering the cursor over one
+edge* pays the full number. The failure regime is exactly the
+large-assembly drawings this project cares about.
+
+### The cheap fixes are Qt-side, not GPU
+
+1. **Stop repainting the world per hover.** `FullViewportUpdate` was
+   chosen for the raster path; Qt's default is `MinimalViewportUpdate`,
+   which repaints only the changed items' rects. If Full was a
+   workaround for stale bounding rects (the shape/bounding-rect caching
+   in `QGIPrimPath` hints at such a history), fixing the invalidation
+   is worth it: it turns hover/selection from O(page) into O(item).
+   This is the single highest-leverage change and costs one line plus
+   debugging.
+2. **Cache what does not change.** During pan/zoom the page content is
+   static; `QGraphicsView` already caches the background layer only.
+   Group-level pixmap caching (per `QGIViewPart`) would make pan free
+   and zoom a scale-blit until the transform settles, at the price of
+   re-rendering the pixmap on zoom end. Per-item
+   `DeviceCoordinateCache` at 50k items would thrash memory; the group
+   is the right granularity.
+
+### Is bgfx 2D worth it?
+
+**Not for desktop performance alone** -- the Qt-side fixes above
+recover interactivity for far less work, and 180 ms for a full 50k-edge
+re-render only hurts when it happens per interaction.
+
+**Yes on strategic grounds, for the same reason the 3D renderer
+exists**: a `QGraphicsScene` cannot run in the browser/mobile tier at
+all. A TechDraw page today is unreachable from the wasm viewer. The
+assets are already in place:
+
+- the vendored bgfx tree carries the **NanoVG port**
+  (`src/3rdParty/bgfx/bgfx/examples/common/nanovg`) -- paths, fills,
+  strokes and fontstash text on any bgfx backend; `vg-renderer` is a
+  maintained alternative in the same family;
+- the 3D renderer already draws antialiased lines at model scale from
+  retained buffers -- a drawing page is the trivial special case
+  (orthographic, fixed z, no occlusion);
+- a page is *retained* geometry: tessellate once per view update, then
+  every frame is a handful of draws. The per-frame CPU tessellation
+  that limits NanoVG-style immediate-mode use does not apply.
+
+The shape of the work, when the browser tier needs drawings: keep the
+`QGraphicsScene` as the desktop interaction and annotation layer (it is
+where 100 commits of the fork's selection work lives), and add a
+renderer page backend fed by the same projected geometry --
+the 2D analog of "Coin stays, the renderer draws alongside". Combined
+with amendment 7 (persisted view geometry), a drawing page becomes a
+streamable document like the 3D scene: serve the vector page, render it
+with NanoVG-on-bgfx in the browser, annotate on the desktop.
+
+What was not measured here: the real `QGIViewPart` per-item paint cost
+(the numbers above are a synthetic floor), and no profiling of an
+actual large TechDraw page -- no such document exists on this box yet.
+The 6.0x/HLR numbers of sections 9-10 are unaffected.
