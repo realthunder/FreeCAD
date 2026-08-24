@@ -1663,3 +1663,83 @@ capture shades uniformly with one source color (per-face fidelity for
 CUT shapes would need the cut solid fed to the backend); aligned
 complex sections stay unshaded; the vg tier still has no section-face
 (hatch) items of its own.
+
+## 29. Implementation status (2026-08-25): the vg-page parity gaps are closed
+
+The "finish the vg renderer" order: the recorded parity gaps of the vg
+page against the Qt page (secs 19, 21, 28) are closed. What landed, all
+in `PageFeed.cpp` unless noted:
+
+- **SVG/bitmap DrawHatch fills.** A hatched face rasterizes its tiled
+  fill clipped to the face outline into the page's image registry
+  (`emitHatchRaster`) and emits it as an image op inside the face's
+  own 'f' item, over the plain fill -- QGIFace keeps its solid base
+  fill (`m_fillDef = SolidPattern`) under every hatch mode, so the vg
+  feed does too. SVG tiles mirror `buildSvgHatch`: 64x64-unit tiles at
+  `HatchScale`, rotated about the face center, shifted by
+  `HatchOffset`, recolored by replacing the pattern's
+  `stroke:`/`stroke="` declaration of `#000000` with `HatchColor`.
+  Bitmaps mirror `BitmapFill`: the pixmap pre-rotated, applied as a
+  texture brush anchored at the view origin. The raster image shares
+  the face item's id; the item sweep removes both.
+- **PAT dash specs.** Geom hatch line sets walk their DashSpec like
+  `PATPathMaker`: signed cells (mark >= 0 / space < 0, a zero dot one
+  pen-width long -- with the Qt tier's double-Rez pen width kept
+  bug-compatible), decoded at the pattern scale, phased from
+  `getPatternStartPoint` with the offset/stub re-phasing logic.
+- **The PAT y trap (real bug fixed).** `getTrimmedLines` geometry is in
+  the y-UP projection space, unlike the stored (inverted) view
+  geometry: PAT line y NEGATES onto the page, exactly as
+  `PATPathMaker::dashedPPath` does. The old feed drew hatch lines at
+  +y -- verified mirrored off an off-center face (td_vgtest7's
+  two-box view; the earlier centered-face rigs could not see it).
+- **Section cut-surface faces.** `DrawViewSection::getTDFaceGeometry`
+  feeds as 's' (fill, `Kind::Face`) + 'S' (PAT lines, Decoration)
+  items mirroring `QGIViewSection::drawSectionFace`: cut color fill
+  under every CutSurfaceDisplay mode (alpha 0 while the shaded
+  underlay is active), SvgHatch through the same rasterizer (section
+  properties: `SvgIncluded`, `HatchScale/Rotation/Offset`, VP
+  `HatchColor`), PatHatch through `getDrawableLines` + the dash
+  walker, face-outline strokes per `showSectionEdges`. Z-order:
+  Kind::Face items draw in feed sequence, so the view feeds underlay
+  -> fills -> section faces and re-adds (remove-then-set) each feed to
+  keep that sequence fresh -- ZVALUE::SECTIONFACE semantics without a
+  new Kind.
+- **Per-view Visibility.** A hidden view (`vp->isShow()` false) feeds
+  nothing and sweeps everything it ever fed. QGVPage's paint-time
+  compare (QGVPage.cpp/.h) now also tracks `fedVisible` next to
+  fedX/fedY -- a Visibility toggle signals nothing, same as X/Y moves.
+  The sec-28 trap ("crop by page position, never hide views") is
+  retired.
+- **Detail matting.** QGIMatting is a plain QGraphicsItemGroup, not a
+  QGIDecoration -- the decoration capture missed it. It now captures
+  into its own 'm' item at `Kind::Annotation` (ZVALUE::MATTING is
+  above edges). Section lines and detail highlights were already
+  captured (QGIDecoration children); verified, not assumed.
+
+**Verified 31/31** on the RTX 3060 (VirtualGL egl0 + Xvfb, NVIDIA
+banner checked), td_vgtest7.py in the session scratchpad: offscreen
+renderPageVg probes (hatch ink, dash gap runs, per-face position
+ground truth on off-center faces, section fills in all three modes,
+matting ring circumference 36/36, hide/reshow), and Qt-vs-vg viewport
+compares per color class (ink counts, centroids/bboxes within 15px)
+through the GL compositor, plus interactive damage checks (Visibility
+toggle both ways, hatch VP recolor).
+
+Traps for the next session:
+- GL-viewport grabs in tests: `QWidget::grab()` misses GL content and
+  PySide wraps the viewport as a bare QWidget (no `grabFramebuffer`)
+  -- use `QScreen::grabWindow(win.winId())` and crop the viewport
+  rect (sec 23's trap; it bit again).
+- Thin hatch strokes (hatch45R's ~1-unit lines) anti-alias to pale
+  tints over a colored base fill -- color-probe rigs need
+  `HatchScale >= 3` or tolerant predicates.
+- The template's editable-text underlines (blue click affordances) are
+  Qt-editing aids and are deliberately NOT fed; exclude the title
+  block from color parity windows.
+- The shipped FCPAT.pat has no dashed pattern -- rigs write their own
+  (`*VGDASH` / `0, 0,0, 0,5, 5,-3`).
+
+Still open, known and accepted: view frames and labels are Qt-only
+(editing chrome); the derived-shape capture limitations of sec 28
+stand.
