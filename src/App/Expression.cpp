@@ -2869,7 +2869,7 @@ const std::vector<FunctionExpression::FunctionInfo> &FunctionExpression::getFunc
                                  "Projects the point to a line defined by a base point and direction"},
         {VNORMALIZE, "vnormalize", "vnormalize(vector) -> vector\n\n"
                                    "Normalize the vector"},
-        {VPLANEDIST, "VPLANEDIST",
+        {VPLANEDIST, "vplanedist",
             "vplanedist(point:vector, base:vector, normal:vector) -> float\n\n"
             "Returns the distance from a point to a plane defined by a base point and normal direction"},
         {VPLANEPROJ, "vplaneproj",

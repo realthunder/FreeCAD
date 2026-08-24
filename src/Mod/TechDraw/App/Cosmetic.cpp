@@ -28,6 +28,9 @@
 # include <boost/uuid/uuid_io.hpp>
 #endif
 
+// boost/uuid/uuid_generators.hpp used to pull this in; boost 1.90 does not.
+#include <boost/random.hpp>
+
 #include <App/Application.h>
 #include <Base/Vector3D.h>
 #include <Mod/TechDraw/App/CosmeticEdgePy.h>

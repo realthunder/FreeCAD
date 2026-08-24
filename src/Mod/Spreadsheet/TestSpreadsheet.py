@@ -1144,7 +1144,13 @@ class SpreadsheetCases(unittest.TestCase):
         self.doc.recompute()
         sheet.set("A3", "")
         sheet.set("A3", "A1")
-        self.assertEqual(sheet.getContents("A3"), "'A1")
+        # This fork prefixes the quote only where the text would not survive a
+        # round trip without it (40d3459534). "A1" does, so it is stored and
+        # read back verbatim; what issue 4156 asks is that the cell stays text
+        # instead of turning into a reference once A1 holds a value.
+        self.assertEqual(sheet.getContents("A3"), "A1")
+        self.doc.recompute()
+        self.assertEqual(sheet.get("A3"), "A1")
 
     def testInsertRowsAlias(self):
         """Regression test for issue 4429; insert rows to sheet with aliases"""
@@ -1532,6 +1538,22 @@ class SpreadsheetCases(unittest.TestCase):
         sheet = self.doc.getObject("Spreadsheet")
         self.assertEqual(sheet.getContents("A1"), "'36C")
         self.assertEqual(sheet.get("A1"), "36C")
+
+    def testIssue6395Markup(self):
+        """Testing strings whose first character is cell markup are saved and restored"""
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("A1", "'=1+1")  # a leading '=' would be read back as an expression
+        sheet.set("A2", "''hello")  # a leading quote is the string marker itself
+        self.doc.recompute()
+
+        self.doc.saveAs(self.TempPath + os.sep + "stringmarkup.fcstd")
+        FreeCAD.closeDocument(self.doc.Name)
+
+        self.doc = FreeCAD.openDocument(self.TempPath + os.sep + "stringmarkup.fcstd")
+
+        sheet = self.doc.getObject("Spreadsheet")
+        self.assertEqual(sheet.get("A1"), "=1+1")
+        self.assertEqual(sheet.get("A2"), "'hello")
 
     def testVectorFunctions(self):
         sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")

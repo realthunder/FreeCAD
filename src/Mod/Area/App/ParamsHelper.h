@@ -50,15 +50,15 @@
  * double check your macro definition of the parameter is correctly, not missing
  * or having extra parenthesis or comma.  Then, you can use the CMake
  * intermediate file target to get the preprocessor output for checking. For
- * example, for a file located at \c src/Mod/Path/App/Area.cpp,
+ * example, for a file located at \c src/Mod/Area/App/Area.cpp,
  * \code{.sh}
- *     cd <your_build_dir>/src/Mod/Path/App
+ *     cd <your_build_dir>/src/Mod/Area/App
  *     make Area.cpp.i
  * \endcode
  *
  * The preprocessed intermediate output will be at,
  * \code{.sh}
- *     <your_build_dir>/src/Mod/Path/App.CMakeFiles/Path.dir/Area.cpp.i
+ *     <your_build_dir>/src/Mod/Area/App.CMakeFiles/Area.dir/Area.cpp.i
  * \endcode
  *
  * \section Introduction of Boost.Preprocessor

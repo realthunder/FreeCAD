@@ -61,6 +61,37 @@ class MaterialBlobTestCases(unittest.TestCase):
             if name in FreeCAD.listDocuments():
                 FreeCAD.closeDocument(name)
         shutil.rmtree(self.tmp, ignore_errors=True)
+        self.restoreSaveMaterialCards()
+
+    # -- settings this case depends on -------------------------------------
+
+    DOC_PARAMS = "User parameter:BaseApp/Preferences/Document"
+
+    def stateSaveMaterialCards(self, value):
+        """State the SaveMaterialCards setting this case depends on.
+
+        It defaults ON, which writes a stock card's content into the document
+        as a .FCMat file. A case that predates that default, or that is about
+        the other mode, says so rather than inheriting whatever is set.
+
+        tearDown puts the parameter back, and REMOVES it when it was unset --
+        leaving a stale one behind makes every later run of the whole suite
+        disagree with a fresh one, which is exactly how these failures hid.
+        """
+        params = FreeCAD.ParamGet(self.DOC_PARAMS)
+        self._savedCardsKey = "SaveMaterialCards" in params.GetBools()
+        self._savedCards = params.GetBool("SaveMaterialCards", True)
+        params.SetBool("SaveMaterialCards", value)
+
+    def restoreSaveMaterialCards(self):
+        if not hasattr(self, "_savedCardsKey"):
+            return
+        params = FreeCAD.ParamGet(self.DOC_PARAMS)
+        if self._savedCardsKey:
+            params.SetBool("SaveMaterialCards", self._savedCards)
+        else:
+            params.RemBool("SaveMaterialCards")
+        del self._savedCardsKey
 
     # -- fixtures ---------------------------------------------------------
 
@@ -166,15 +197,32 @@ class MaterialBlobTestCases(unittest.TestCase):
 
     def testStockCardIsNotCarried(self):
         """
-        A document using only installed cards costs no extra bytes: the hash
-        says which card it is and every reader with the library has it.
+        With SaveMaterialCards off, a document using only installed cards
+        costs no extra bytes: the hash says which card it is and every reader
+        with the library has it. That is the trade the setting makes -- see
+        testStockCardIsCarriedByDefault for the other side of it.
         """
+        self.stateSaveMaterialCards(False)
         doc = self.newDocument()
         self.boxWithMaterial(doc)
         project = self.projectPath()
         doc.saveAs(project)
         self.assertFalse([n for n in self.blobEntries(project) if n.endswith(".FCMat")])
         self.assertIn("PropertyMaterial hash", self.documentXml(project))
+
+    def testStockCardIsCarriedByDefault(self):
+        """
+        By default the card travels even though it is installed here, because
+        the library moves: a reader whose copy of that card has since changed,
+        or who never had it, still gets the material the document was authored
+        with. testStockCardIsNotCarried covers the opposite setting.
+        """
+        self.stateSaveMaterialCards(True)
+        doc = self.newDocument()
+        self.boxWithMaterial(doc)
+        project = self.projectPath()
+        doc.saveAs(project)
+        self.assertEqual(len([n for n in self.blobEntries(project) if n.endswith(".FCMat")]), 1)
 
     def testEditedCardIsCarried(self):
         """A card that is not installed anywhere else travels with it."""

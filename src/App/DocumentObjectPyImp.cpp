@@ -131,6 +131,26 @@ PyObject*  DocumentObjectPy::removeProperty(PyObject *args)
     return Py_BuildValue("O", (ok ? Py_True : Py_False));
 }
 
+PyObject*  DocumentObjectPy::renameProperty(PyObject *args)
+{
+    char *oldName;
+    char *newName;
+    if (!PyArg_ParseTuple(args, "ss", &oldName, &newName))
+        return nullptr;
+
+    Property *prop = getDocumentObjectPtr()->getDynamicPropertyByName(oldName);
+    if (!prop) {
+        PyErr_Format(PyExc_AttributeError,
+                "Object has no dynamic property '%s'", oldName);
+        return nullptr;
+    }
+
+    PY_TRY {
+        bool ok = getDocumentObjectPtr()->renameDynamicProperty(prop, newName);
+        return Py_BuildValue("O", (ok ? Py_True : Py_False));
+    } PY_CATCH
+}
+
 PyObject*  DocumentObjectPy::supportedProperties(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ""))

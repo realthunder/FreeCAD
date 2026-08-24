@@ -52,8 +52,11 @@ Debug builds; only the prebuilt deps (Qt, Python, boost, …) are release.
 - **miniforge**: `~/miniforge3` (deliberately NOT activated in `.bashrc`).
 - **env**: `~/works/sw/fcad/.conda/freecad` — the path the repo's `conda-linux*`
   CMake presets hardcode. Gitignored.
-- **Solved/pinned versions**: Qt 6.10.1 + PySide6/shiboken6 6.10.1 (pinned in
-  `<env>/conda-meta/pinned`), Python 3.12, gcc 15.2, cmake 4.2, boost 1.85, eigen 5.0.1.
+- **Solved/pinned versions**: Qt 6.11.2 + PySide6/shiboken6 6.11.2 and vtk 9.6.2
+  (all pinned in `<env>/conda-meta/pinned`), Python 3.12, gcc 15.2, cmake 4.2,
+  boost 1.90, eigen 5.0.1. The Qt/boost/vtk trio deliberately tracks the stack
+  conda-forge builds smesh and FreeCAD against -- see the FEM section for why
+  they cannot be chosen independently.
 - **Wrapper script**: `~/works/sw/fcad/.conda/run.sh` — activates the env and strips
   `-O2`/`-DNDEBUG` from conda's release-tuned `CFLAGS/CXXFLAGS` (they would silently turn
   `CMAKE_BUILD_TYPE=Debug` into optimized-debug) while keeping the rest — the
@@ -69,11 +72,12 @@ Debug builds; only the prebuilt deps (Qt, Python, boost, …) are release.
 ```sh
 ~/miniforge3/bin/mamba create -y -p ~/works/sw/fcad/.conda/freecad \
   gcc_linux-64 gxx_linux-64 cmake ninja make swig pkg-config \
-  qt6-main pyside6 \
-  python=3.12 boost-cpp eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype \
+  qt6-main=6.11.2 pyside6=6.11.2 \
+  python=3.12 libboost-devel eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype \
   expat libgl-devel libglx-devel libopengl-devel libegl-devel xorg-libxmu xorg-libxi \
   fmt pybind11 numpy matplotlib-base
-printf 'qt6-main ==6.10.1\npyside6 ==6.10.1\n' > ~/works/sw/fcad/.conda/freecad/conda-meta/pinned
+printf 'qt6-main ==6.11.2\npyside6 ==6.11.2\nvtk-base ==9.6.2\nvtk-io-ffmpeg ==9.6.2\n' \
+  > ~/works/sw/fcad/.conda/freecad/conda-meta/pinned
 ```
 
 Notes on non-obvious packages: `expat` (not just `libexpat`) so Coin's
@@ -142,33 +146,170 @@ $RUN cmake --build ~/works/sw/pivy/build_conda_debug && $RUN cmake --install ~/w
 
 The user preset `conda-debug-local` (in `CMakeUserPresets.json`, gitignored) inherits
 the repo's `conda-linux-debug` preset and overrides: build dir
-`build/conda-debug`, `CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` pointing at the
-local `install/conda-debug` (OCCT, 7.7.2) and `install/conda-debug` (Coin) prefixes,
-`CMAKE_POLICY_VERSION_MINIMUM=3.5` (for bgfx's old cmake_minimum_required
-under cmake 4), `BUILD_BGFX=ON`, and `BUILD_FEM/BUILD_WEB/FREECAD_USE_PCL/`
-`FREECAD_USE_EXTERNAL_SMESH/ENABLE_DEVELOPER_TESTS` OFF (avoids VTK/netgen/WebEngine/
-PCL/smesh packages; enable selectively when needed — conda-forge now has qt6-webengine).
+`build/conda-debug-occt801`, `CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` pointing at the
+local `occt/install/conda-debug-801` (OCCT 8.0.1) and `coin/install/conda-debug`
+prefixes, `CMAKE_POLICY_VERSION_MINIMUM=3.5` (for bgfx's old cmake_minimum_required
+under cmake 4), `BUILD_BGFX=ON`, `BUILD_FEM=ON` plus the three FEM dependency paths
+(next section), and `BUILD_WEB`/`FREECAD_USE_PCL`/`FREECAD_USE_EXTERNAL_SMESH`/
+`ENABLE_DEVELOPER_TESTS` OFF (avoids netgen/WebEngine/PCL/external-smesh packages;
+enable selectively when needed -- conda-forge now has qt6-webengine).
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
 cd ~/works/sw/fcad
 $RUN cmake --preset conda-debug-local
-$RUN cmake --build build/conda-debug   # ninja, add -j N to limit parallelism
+$RUN cmake --build build/conda-debug-occt801   # ninja, add -j N to limit parallelism
 ```
 
-*** **There is no debug 8.0.1 stack on this box** (checked 2026-08-18). The
-debug OCCT prefix `occt/install/conda-debug` is **7.7.2**, and 8.0.1 exists
-only as `conda-relwithdebinfo-801` and `conda-tsan-801`. A debugger session
-therefore runs the **7.7.2 side** of everything version-guarded, and a change
-that compiles only against the 8.0.1 fork has to be built in one of those two.
-Earlier revisions of this section described a `build/conda-debug-occt801` and a
-`conda-debug-occt772` preset; neither the directories nor the presets exist any
-more, which follows from 7.7.2 being frozen (`docs/Backport772.md`) and the
-801 stack becoming the only development target.
+**The debug stack is OCCT 8.0.1.** `occt/install/conda-debug-801` is what
+`conda-debug-local` points at, so a debugger session runs the 8.0.1 side of
+everything version-guarded. `occt/install/conda-debug` is the frozen **7.7.2**
+prefix, reached through the `conda-debug-occt772` preset (`build/conda-debug`)
+and kept only as the compile check for the guarded paths -- 7.7.2 is frozen,
+see `docs/Backport772.md`. An earlier revision of this section said no debug
+8.0.1 stack existed; that stopped being true once `conda-debug-801` was built,
+and the two presets it claimed were gone are both live.
 
 Sources build against both OCCT versions (`OCC_VERSION_HEX` guards; features that
-need the 8.0.1 fork — parallel healing, streamed STEP transfer — fall back to the
+need the 8.0.1 fork -- parallel healing, streamed STEP transfer -- fall back to the
 one-shot path on 7.7.2).
+
+### FEM, and the external SMESH it links
+
+**FEM is part of the standard dev build.** Both conda presets set `BUILD_FEM=ON`
+plus `FREECAD_USE_EXTERNAL_SMESH=ON` and `BUILD_FEM_NETGEN=ON`. (`BUILD_FEM`
+defaults ON in the repo anyway -- the user presets used to override it OFF, and
+that override is why the FEM suites sat out every local test run.) The separate
+`build/fem-eval` tree the FEM port used is retired.
+
+Everything FEM needs lives in `.conda/freecad` itself -- there is **no separate
+dependency prefix**, and the presets pass no VTK/SMESH/MEDFile/HDF5 paths at
+all. That only works because the env now matches the stack these packages are
+built for, which is upstream's stack:
+
+| | version | why |
+|---|---|---|
+| `qt6-main` / `pyside6` | 6.11.2 | what conda-forge builds vtk 9.6.2 against |
+| `libboost` | 1.90 | smesh's imported targets name `Boost::*`; 1.85 could not satisfy them |
+| `vtk-base` / `vtk-io-ffmpeg` | **9.6.2, pinned** | see below -- do not let this drift |
+| `smesh` | 9.9.0.0 `h64e8fc7_26` from **realthunder** | our fork's feedstock; conda-forge has no occt 8.x build |
+
+```sh
+mamba install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
+  qt6-main=6.11.2 pyside6=6.11.2 libboost-devel tbb-devel \
+  "vtk-base==9.6.2" "vtk-io-ffmpeg==9.6.2" libmed hdf5 libxml2-devel
+mamba install -p ~/works/sw/fcad/.conda/freecad --no-deps realthunder::smesh
+```
+
+*** **`smesh` must be installed with `--no-deps`.** It depends on conda-forge's
+`occt`, and letting that in puts a second OCCT in the env with the *same*
+SONAMEs (`libTK*.so.8.0`) as our fork's local install -- whichever the loader
+reaches first wins, and the fork's features would vanish silently. With
+`--no-deps` the env carries no occt at all and smesh's `libTK*.so.8.0` are
+resolved by our own 8.0.1 build. Everything else smesh needs (vtk, boost, tbb)
+is installed explicitly above.
+
+*** **Why VTK is pinned to 9.6.2 when conda-forge is already on 9.7.0.** Not a
+workaround, and not smesh's recipe -- which asks for a bare `vtk`. conda-forge's
+`occt 8.0.1` ships two variants, and the VTK-enabled one
+(`all_hbdb0871_200`, built 2026-07-31) carries a run-export pin
+`vtk-base >=9.6.2,<9.6.3`. smesh builds against occt, gets the `all_` variant,
+and inherits that pin; its own `run_exports` then passes it to us. Nothing
+downstream of `occt-all` can move to 9.7 until conda-forge rebuilds occt. This
+is also why upstream's own freecad 1.1.3 sits on vtk 9.6.2. The pins are
+recorded in `.conda/freecad/conda-meta/pinned`:
+
+```
+qt6-main ==6.11.2
+pyside6 ==6.11.2
+vtk-base ==9.6.2
+vtk-io-ffmpeg ==9.6.2
+```
+
+*** **The lever, when we publish our own occt 8.0.1:** FreeCAD uses none of
+OCCT's VTK bridge -- no `IVtk*` anywhere in `src/`, and `FindOCC.cmake` never
+links `TKIVtk` -- and our local OCCT builds already pass `-DUSE_VTK=OFF`.
+Publishing a **novtk** occt variant to the `realthunder` channel therefore cuts
+the vtk 9.6.2 constraint out of our stack entirely and lets smesh track whatever
+VTK is current.
+
+`gmsh` and CalculiX are found through **preferences, not `PATH`**
+(`Mod/Fem/Gmsh:gmshBinaryPath`, `Mod/Fem/Ccx:ccxBinaryPath`); set them with
+`ParamGet(...).SetString`, never by hand-editing `user.cfg`.
+
+*** **Do not "fix" a FEM test failure before checking the build tree for stale
+files.** `fc_copy_sources` copies but never deletes, so a tree that once built
+an older FEM keeps modules and test data the sources dropped years ago. That
+alone produced 5 reds in one run: four z88 cases comparing against a `51.txt`
+the writer stopped emitting, and an Elmer proxy assert satisfied by a leftover
+`femsolver/elmer/solver.py`. The check is one diff:
+
+```sh
+diff <(cd src/Mod/Fem && find . -name '*.py' | sort) \
+     <(cd build/conda-debug-occt801/Mod/Fem && find . -name '*.py' | grep -v __pycache__ | sort)
+```
+
+Anything present only on the build side is stale: `rm -rf <build>/Mod/Fem` and
+rebuild.
+
+#### What the external-SMESH switch cost
+
+The external-SMESH path had never been exercised in this fork. Six defects, all
+fixed -- three in `cMake/FindSMESH.cmake`:
+
+- `find_package(VTK REQUIRED)` with no components requires **every** module VTK
+  was built with, and 9.6's `xdmf3` demands `Boost 1.90 EXACT`. It now asks for
+  one module; `SetupSalomeSMESH()` finds the real list immediately after.
+- It built its include list as a single string spanning source lines, so each
+  entry carried a newline and a tab and reached the compiler as
+  `-I"<sourcedir><tab><realpath>"`.
+- A packaged SMESH exports imported targets naming `Boost::filesystem`,
+  `Boost::regex`, `Boost::serialization` and `Boost::thread`, and CMake rejects
+  the config outright if those targets do not exist yet. Upstream survives only
+  because VTK's config happens to run its own `find_package(Boost <exact>)`
+  first -- an accident that holds only while the env's Boost is exactly the one
+  VTK was built against. `FindSMESH.cmake` now asks for those four directly.
+
+two in `SetupSalomeSMESH()`, both the same shape (the bundled SMESH is a CMake
+target carrying VTK in its interface; an external one is plain library paths
+carrying nothing):
+
+- VTK 9 dropped `VTK_INCLUDE_DIRS`, which `Fem` and `MeshPart` still list, so
+  MeshPart compiled SMESH headers without `vtkType.h`. Recovered from
+  `VTK::CommonCore`.
+- No VTK libraries reached the link, so `Fem.so` failed on `vtkPolyData::New()`,
+  `vtkPythonUtil` and the module registrars. The available component list is now
+  appended to `EXTERNAL_SMESH_LIBS` as `VTK::<component>` targets.
+
+and one shared by both paths:
+
+- `SetupSalomeSMESH()` hardcodes the bundled SMESH version 7.7.1, so when the
+  version does not come from a config every `#if SMESH_VERSION_MAJOR >= 9` in
+  `src/Mod/Fem` compiled its pre-9 branch against a 9.x SMESH. The version is
+  now read from the package's `SMESHConfig.cmake`, and the hardcoded block
+  applies only to the bundled sources.
+
+`SetupBoost()` also still asked for the **`system`** component, which Boost 1.90
+no longer exports (it is header-only, and nothing in `src/` includes
+`boost/system`). Upstream dropped it already; so have we.
+
+#### Netgen
+
+Two different consumers, easy to confuse:
+
+- **SMESH's `NETGENPlugin`** (C++, in-process; the legacy "FEM mesh from shape
+  by Netgen"). Bundled in our smesh package as `libNETGENPlugin.so` against a
+  private `libnglib4smesh.so`, with no `netgen` package dependency. Covered.
+- **`femmesh/netgentools.py`** (upstream's newer mesher, with its own task panel
+  and preferences page). It runs out-of-process like gmsh -- `QProcess` on a
+  generated script -- but the interpreter defaults to **FreeCAD's own python**,
+  so the `netgen` **python package** must be importable from `.conda/freecad`.
+  conda-forge's netgen pins `occt >=8.0.0,<8.0.1`, which occt 8.0.1 cannot
+  satisfy (measured: the solve fails), so a single-environment install needs the
+  same feedstock fork gmsh got. Note upstream's own conda package does **not**
+  depend on netgen either, so shipping without it is no worse than upstream;
+  the `NetgenPythonPath` preference points it at a prefix of its own, exactly as
+  `gmshBinaryPath` does for gmsh.
 
 ### An optimized stack, for measuring anything
 

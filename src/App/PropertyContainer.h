@@ -321,6 +321,9 @@ public:
   virtual bool removeDynamicProperty(const char* name) {
       return dynamicProps.removeDynamicProperty(name);
   }
+  virtual bool renameDynamicProperty(Property *prop, const char *name) {
+      return dynamicProps.renameDynamicProperty(prop, name);
+  }
   virtual std::vector<std::string> getDynamicPropertyNames() const {
       return dynamicProps.getDynamicPropertyNames();
   }

@@ -1,0 +1,224 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+# ***************************************************************************
+# *   Copyright (c) 2018 Kresimir Tusek <kresimir.tusek@gmail.com>          *
+# *                                                                         *
+# *   This file is part of the FreeCAD CAx development system.              *
+# *                                                                         *
+# *   This library is free software; you can redistribute it and/or         *
+# *   modify it under the terms of the GNU Library General Public           *
+# *   License as published by the Free Software Foundation; either          *
+# *   version 2 of the License, or (at your option) any later version.      *
+# *                                                                         *
+# *   This library  is distributed in the hope that it will be useful,      *
+# *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+# *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+# *   GNU Library General Public License for more details.                  *
+# *                                                                         *
+# *   You should have received a copy of the GNU Library General Public     *
+# *   License along with this library; see the file COPYING.LIB. If not,    *
+# *   write to the Free Software Foundation, Inc., 59 Temple Place,         *
+# *   Suite 330, Boston, MA  02111-1307, USA                                *
+# *                                                                         *
+# ***************************************************************************
+
+import FreeCADGui
+import FreeCAD
+import Path.Op.Adaptive as PathAdaptive
+import Path.Op.Gui.Base as PathOpGui
+import Path.Op.Gui.FeatureExtension as PathFeatureExtensionsGui
+from PySide import QtCore
+
+import Path.Base.Gui.Util as PathGuiUtil
+from Path.Base.Gui.Util import QuantitySpinBox
+
+
+class TaskPanelOpPage(PathOpGui.TaskPanelPage):
+    def getForm(self):
+        """getForm() ... return UI"""
+
+        form = FreeCADGui.PySideUic.loadUi(":/panels/PageOpAdaptiveEdit.ui")
+        comboToPropertyMap = [("Side", "Side"), ("OperationType", "OperationType")]
+
+        enumTups = PathAdaptive.PathAdaptive.propertyEnumerations(dataType="raw")
+
+        self.populateCombobox(form, enumTups, comboToPropertyMap)
+        return form
+
+    def initPage(self, obj):
+        self.HelixMaxPitchSpinBox = QuantitySpinBox(self.form.HelixMaxPitch, obj, "HelixMaxPitch")
+        self.LiftDistanceSpinBox = QuantitySpinBox(self.form.LiftDistance, obj, "LiftDistance")
+        self.KeepToolDownRatioSpinBox = QuantitySpinBox(
+            self.form.KeepToolDownRatio, obj, "KeepToolDownRatio"
+        )
+        self.StockToLeaveSpinBox = QuantitySpinBox(self.form.StockToLeave, obj, "StockToLeave")
+
+        # Use user's preferred length unit
+        self.form.stepOverDistance.setProperty(
+            "unit", FreeCAD.Units.Quantity("1 mm").getUserPreferred()[2]
+        )
+
+        # Connect controls to keep step over percent and distance in sync
+        self.form.stepOver.valueChanged.connect(lambda: self.updateStepOverDistance(obj))
+        self.form.stepOverDistance.valueChanged.connect(lambda: self.updateStepOverPercent(obj))
+        self.form.stepOverDistance.editingFinished.connect(lambda: self.updateStepOverDistance(obj))
+
+    def updateData(self, obj, prop):
+        """updateData(obj, prop) ... react to ToolController changes made on the
+        shared Tool Controller page to keep step over distance in sync with the
+        (possibly new) tool diameter."""
+        if prop == "ToolController":
+            self.updateStepOverDistance(obj)
+
+    def updateQuantitySpinBoxes(self, index=None):
+        self.HelixMaxPitchSpinBox.updateWidget()
+        self.LiftDistanceSpinBox.updateWidget()
+        self.KeepToolDownRatioSpinBox.updateWidget()
+        self.StockToLeaveSpinBox.updateWidget()
+
+    def getSignalsForUpdate(self, obj):
+        """getSignalsForUpdate(obj) ... return list of signals for updating obj"""
+        signals = []
+        signals.append(self.form.Side.currentIndexChanged)
+        signals.append(self.form.OperationType.currentIndexChanged)
+        signals.append(self.form.stepOver.valueChanged)
+        signals.append(self.form.Tolerance.valueChanged)
+        signals.append(self.form.HelixMaxRampAngle.valueChanged)
+        signals.append(self.form.HelixMaxPitch.valueChanged)
+        signals.append(self.form.HelixConeAngle.valueChanged)
+        signals.append(self.form.HelixMaxDiameterPercent.valueChanged)
+        signals.append(self.form.HelixMinDiameterPercent.valueChanged)
+        signals.append(self.form.LiftDistance.valueChanged)
+        signals.append(self.form.KeepToolDownRatio.valueChanged)
+        signals.append(self.form.StockToLeave.valueChanged)
+        if hasattr(self.form.ForceInsideOut, "checkStateChanged"):  # Qt version >= 6.7.0
+            signals.append(self.form.ForceInsideOut.checkStateChanged)
+            signals.append(self.form.useOutline.checkStateChanged)
+            signals.append(self.form.useRestMachining.checkStateChanged)
+        else:  # Qt version < 6.7.0
+            signals.append(self.form.ForceInsideOut.stateChanged)
+            signals.append(self.form.useOutline.stateChanged)
+            signals.append(self.form.useRestMachining.stateChanged)
+        signals.append(self.form.StopButton.toggled)
+        return signals
+
+    def updateStepOverDistance(self, obj):
+        """Update step over distance from percent"""
+        if hasattr(obj, "ToolController") and obj.ToolController:
+            toolDiameter = obj.ToolController.Tool.Diameter.Value
+            percent = self.form.stepOver.value()
+            distance = toolDiameter * percent / 100.0
+            self.form.stepOverDistance.blockSignals(True)
+            self.form.stepOverDistance.setProperty("rawValue", distance)
+            self.form.stepOverDistance.blockSignals(False)
+
+    def updateStepOverPercent(self, obj):
+        """Update step over percent when distance changes"""
+        if hasattr(obj, "ToolController") and obj.ToolController:
+            toolDiameter = obj.ToolController.Tool.Diameter.Value
+            if toolDiameter > 0:
+                distance = self.form.stepOverDistance.property("rawValue")
+                percent = (distance / toolDiameter) * 100.0
+                percent = max(0.1, min(100.0, percent))
+
+                self.form.stepOver.blockSignals(True)
+                self.form.stepOver.setValue(percent)
+                self.form.stepOver.blockSignals(False)
+                self.getFields(obj)
+
+    def setFields(self, obj):
+        self.updateQuantitySpinBoxes()
+        self.selectInComboBox(obj.Side, self.form.Side)
+        self.selectInComboBox(obj.OperationType, self.form.OperationType)
+        self.form.stepOver.setValue(obj.StepOverPercent)
+        self.updateStepOverDistance(obj)
+
+        self.form.Tolerance.setValue(int(obj.Tolerance * 100))
+
+        self.form.HelixMaxRampAngle.setText(
+            FreeCAD.Units.Quantity(obj.HelixMaxRampAngle, FreeCAD.Units.Angle).UserString
+        )
+
+        self.form.HelixConeAngle.setText(
+            FreeCAD.Units.Quantity(obj.HelixConeAngle, FreeCAD.Units.Angle).UserString
+        )
+
+        self.form.HelixMaxDiameterPercent.setValue(obj.HelixMaxDiameterPercent)
+        self.form.HelixMinDiameterPercent.setValue(obj.HelixMinDiameterPercent)
+
+        self.form.ForceInsideOut.setChecked(obj.ForceInsideOut)
+        self.form.useOutline.setChecked(obj.UseOutline)
+        self.form.useRestMachining.setChecked(obj.UseRestMachining)
+        self.form.StopButton.setChecked(obj.Stopped)
+        obj.setEditorMode("AdaptiveInputState", 2)  # hide this property
+        obj.setEditorMode("AdaptiveOutputState", 2)  # hide this property
+        obj.setEditorMode("StopProcessing", 2)  # hide this property
+        obj.setEditorMode("Stopped", 2)  # hide this property
+
+    def getFields(self, obj):
+        self.HelixMaxPitchSpinBox.updateProperty()
+        self.LiftDistanceSpinBox.updateProperty()
+        self.KeepToolDownRatioSpinBox.updateProperty()
+        self.StockToLeaveSpinBox.updateProperty()
+
+        if obj.Side != str(self.form.Side.currentData()):
+            obj.Side = str(self.form.Side.currentData())
+
+        if obj.OperationType != str(self.form.OperationType.currentData()):
+            obj.OperationType = str(self.form.OperationType.currentData())
+
+        if obj.StepOverPercent != self.form.stepOver.value():
+            obj.StepOverPercent = self.form.stepOver.value()
+
+        if obj.HelixMaxDiameterPercent != self.form.HelixMaxDiameterPercent.value():
+            obj.HelixMaxDiameterPercent = self.form.HelixMaxDiameterPercent.value()
+
+        if obj.HelixMinDiameterPercent != self.form.HelixMinDiameterPercent.value():
+            obj.HelixMinDiameterPercent = self.form.HelixMinDiameterPercent.value()
+
+        obj.Tolerance = 1.0 * self.form.Tolerance.value() / 100.0
+        PathGuiUtil.updateInputField(obj, "HelixMaxRampAngle", self.form.HelixMaxRampAngle)
+        PathGuiUtil.updateInputField(obj, "HelixConeAngle", self.form.HelixConeAngle)
+
+        obj.ForceInsideOut = self.form.ForceInsideOut.isChecked()
+        obj.UseOutline = self.form.useOutline.isChecked()
+        obj.UseRestMachining = self.form.useRestMachining.isChecked()
+        obj.Stopped = self.form.StopButton.isChecked()
+        if obj.Stopped:
+            self.form.StopButton.setChecked(False)  # reset the button
+            obj.StopProcessing = True
+
+        obj.setEditorMode("AdaptiveInputState", 2)  # hide this property
+        obj.setEditorMode("AdaptiveOutputState", 2)  # hide this property
+        obj.setEditorMode("StopProcessing", 2)  # hide this property
+        obj.setEditorMode("Stopped", 2)  # hide this property
+
+    def taskPanelBaseLocationPage(self, obj, features):
+        if not hasattr(self, "extensionsPanel"):
+            self.extensionsPanel = PathFeatureExtensionsGui.TaskPanelExtensionPage(obj, features)
+        return self.extensionsPanel
+
+    def registerSignalHandlers(self, obj):
+        self.form.KeepToolDownToggle.clicked.connect(self.keepToolDownRatioToggle)
+
+    def keepToolDownRatioToggle(self):
+        if self.obj.KeepToolDownRatio == 0:
+            self.obj.setExpression("KeepToolDownRatio", "OpToolDiameter")
+            self.KeepToolDownRatioSpinBox.refresh_expression_icon(True)
+        else:
+            self.obj.clearExpression("KeepToolDownRatio")
+            self.obj.KeepToolDownRatio = 0
+            self.KeepToolDownRatioSpinBox.refresh_expression_icon(False)
+        self.updateQuantitySpinBoxes()
+        self.setDirty()
+
+
+Command = PathOpGui.SetupOperation(
+    "Adaptive",
+    PathAdaptive.Create,
+    TaskPanelOpPage,
+    "CAM_Adaptive",
+    QtCore.QT_TRANSLATE_NOOP("CAM_Adaptive", "Adaptive"),
+    QtCore.QT_TRANSLATE_NOOP("CAM_Adaptive", "Adaptive clearing and profiling"),
+    PathAdaptive.SetupProperties,
+)

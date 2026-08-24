@@ -330,13 +330,30 @@ void init_pyarea(py::module &m){
         .def("MaxY", &CBox2D::MaxY)
     ;
 
+    // Clipper2's fill rule. Subtract and Union take one per operand in this
+    // fork -- upstream dropped the arguments and hard-coded EvenOdd -- so the
+    // type has to be visible for their defaults to be expressible, and for a
+    // caller that wants NonZero to be able to say so.
+    py::enum_<Clipper2Lib::FillRule>(m, "FillRule")
+        .value("EvenOdd", Clipper2Lib::FillRule::EvenOdd)
+        .value("NonZero", Clipper2Lib::FillRule::NonZero)
+        .value("Positive", Clipper2Lib::FillRule::Positive)
+        .value("Negative", Clipper2Lib::FillRule::Negative)
+    ;
+
     py::class_<CArea>(m, "Area") 
         .def(py::init<>())
         .def("getCurves", &getCurves)
         .def("append",&CArea::append)
-        .def("Subtract",&CArea::Subtract)
+        .def("Subtract",&CArea::Subtract,
+             py::arg("a2"),
+             py::arg("subject_fill") = Clipper2Lib::FillRule::EvenOdd,
+             py::arg("clip_fill") = Clipper2Lib::FillRule::EvenOdd)
         .def("Intersect",&CArea::Intersect)
-        .def("Union",&CArea::Union)
+        .def("Union",&CArea::Union,
+             py::arg("a2"),
+             py::arg("subject_fill") = Clipper2Lib::FillRule::EvenOdd,
+             py::arg("clip_fill") = Clipper2Lib::FillRule::EvenOdd)
         .def("Offset",&CArea::Offset)
         .def("FitArcs",&CArea::FitArcs)
         .def("text", &print_area)
@@ -383,7 +400,16 @@ void init_pyarea(py::module &m){
 		.def_readwrite("HelixCenterPoint",&AdaptiveOutput::HelixCenterPoint)
 		.def_readwrite("StartPoint",&AdaptiveOutput::StartPoint)
 		.def_readwrite("AdaptivePaths",&AdaptiveOutput::AdaptivePaths)
-		.def_readwrite("ReturnMotionType",&AdaptiveOutput::ReturnMotionType);
+		.def_readwrite("ReturnMotionType",&AdaptiveOutput::ReturnMotionType)
+		.def_readwrite("ClearedArea",&AdaptiveOutput::ClearedArea)
+		.def_readwrite("clipperScale",&AdaptiveOutput::clipperScale)
+		.def_readwrite("StartPointNotFound",&AdaptiveOutput::StartPointNotFound)
+		.def_readwrite("LeadPathFailed",&AdaptiveOutput::LeadPathFailed)
+		.def_readwrite("UnexpectedRotateIterations",&AdaptiveOutput::UnexpectedRotateIterations)
+		.def_readwrite("TooManyFailedEngagements",&AdaptiveOutput::TooManyFailedEngagements)
+		.def_readwrite("UnclearedAreaRemains",&AdaptiveOutput::UnclearedAreaRemains)
+		.def_readwrite("FailedToSetUpFinishingPass",&AdaptiveOutput::FailedToSetUpFinishingPass)
+		.def_readwrite("FinishingLeadInFailed",&AdaptiveOutput::FinishingLeadInFailed);
 
 	py::class_<Adaptive2d>(m, "Adaptive2d")
 		.def(py::init<>())
@@ -391,10 +417,10 @@ void init_pyarea(py::module &m){
 	 	.def_readwrite("stepOverFactor", &Adaptive2d::stepOverFactor)
 	 	.def_readwrite("toolDiameter", &Adaptive2d::toolDiameter)
         .def_readwrite("stockToLeave", &Adaptive2d::stockToLeave)
-		.def_readwrite("helixRampDiameter", &Adaptive2d::helixRampDiameter)
+		.def_readwrite("helixRampTargetDiameter", &Adaptive2d::helixRampTargetDiameter)
+		.def_readwrite("helixRampMinDiameter", &Adaptive2d::helixRampMinDiameter)
         .def_readwrite("forceInsideOut", &Adaptive2d::forceInsideOut)
         .def_readwrite("finishingProfile", &Adaptive2d::finishingProfile)
-		//.def_readwrite("polyTreeNestingLimit", &Adaptive2d::polyTreeNestingLimit)
 		.def_readwrite("tolerance", &Adaptive2d::tolerance)
         .def_readwrite("keepToolDownDistRatio", &Adaptive2d::keepToolDownDistRatio)
 		.def_readwrite("opType", &Adaptive2d::opType);

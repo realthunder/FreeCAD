@@ -3,7 +3,10 @@ macro(SetupBoost)
 
     set(_boost_TEST_VERSIONS ${Boost_ADDITIONAL_VERSIONS})
 
-    set (BOOST_COMPONENTS filesystem program_options regex system thread date_time)
+    # Boost.System is header-only and 1.90 no longer exports a component for it;
+    # nothing in src/ includes boost/system either. Upstream dropped it (and
+    # boost::filesystem, which this fork still uses) for the same reason.
+    set (BOOST_COMPONENTS filesystem program_options regex thread date_time)
     find_package(Boost ${BOOST_MIN_VERSION}
         COMPONENTS ${BOOST_COMPONENTS} REQUIRED)
 

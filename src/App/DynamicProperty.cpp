@@ -252,6 +252,44 @@ bool DynamicProperty::removeProperty(const Property *prop)
     return false;
 }
 
+bool DynamicProperty::renameDynamicProperty(Property* prop, const char* newName)
+{
+    auto &propIndex = props.get<1>();
+    auto propIt = propIndex.find(prop);
+    if (propIt == propIndex.end())
+        return false;
+
+    if (prop->testStatus(Property::LockDynamic))
+        FC_THROWM(Base::RuntimeError, "Property " << prop->getName() << " is locked");
+    if (!prop->testStatus(Property::PropDynamic))
+        FC_THROWM(Base::RuntimeError, "Property " << prop->getName() << " is not dynamic");
+
+    PropertyContainer *container = prop->getContainer();
+    if (container && container->getPropertyByName(newName))
+        FC_THROWM(Base::NameError, "Property " << container->getFullName()
+                << '.' << newName << " already exists");
+
+    if (Base::Tools::getIdentifier(newName) != newName)
+        FC_THROWM(Base::NameError, "Invalid property name '" << newName << "'");
+
+    auto &nameIndex = props.get<0>();
+    auto nameIt = nameIndex.find(propIt->getName());
+    if (nameIt == nameIndex.end())
+        FC_THROWM(Base::RuntimeError, "Property " << propIt->getName() << " not found in index");
+
+    // The name is the hash key of index 0, so it has to change through modify()
+    // for the container to rehash it. pName is cleared because PropData::name
+    // is what owns the memory from here on, and myName has to be re-pointed at
+    // it: the old buffer is gone.
+    nameIndex.modify(nameIt, [&](PropData &d) {
+        d.name = newName;
+        d.pName = nullptr;
+        d.property->myName = d.name.c_str();
+    });
+
+    return true;
+}
+
 bool DynamicProperty::removeDynamicProperty(const char* name)
 {
     auto &index = props.get<0>();

@@ -154,6 +154,9 @@ protected:
     void makeOffset(std::list<std::shared_ptr<CArea> >& areas,
         PARAM_ARGS_DEF(PARAM_FARG, AREA_PARAMS_OFFSET), bool from_center = false);
 
+    /** Offset the combined area once, by the given amount */
+    std::shared_ptr<CArea> performSingleOffset(double offset);
+
     /** Make a pocket of the combined shape
      *
      * User #AREA_PARAMS_POCKET setting in myParams.
@@ -243,7 +246,6 @@ public:
         const std::vector<double>& heights = std::vector<double>(),
         const TopoDS_Shape& plane = TopoDS_Shape());
 
-    std::shared_ptr<Area> getClearedArea(double tipDiameter, double diameter);
     std::shared_ptr<Area> getRestArea(std::vector<std::shared_ptr<Area>> clearedAreas, double diameter);
     TopoDS_Shape toTopoShape();
 

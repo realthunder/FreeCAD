@@ -110,7 +110,10 @@
 # include <ctime>
 # include <memory>
 #endif //_PreComp_
+
 
+// boost/uuid/uuid_generators.hpp used to pull this in; boost 1.90 does not.
+#include <boost/random.hpp>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Reader.h>

@@ -121,7 +121,8 @@ macro(InitializeFreeCADBuildOptions)
     option(BUILD_PART "Build the FreeCAD part module" ON)
     option(BUILD_PART_DESIGN "Build the FreeCAD part design module" ON)
     option(BUILD_AREA "Build the FreeCAD 2D area engine (libarea/Clipper)" ON)
-    option(BUILD_PATH "Build the FreeCAD path module" ON)
+    option(BUILD_CAM "Build the FreeCAD CAM module" ON)
+    option(BUILD_CAM_SIMULATOR_GL "Build the CAM simulator's own OpenGL viewer" OFF)
     option(BUILD_ASSEMBLY "Build the FreeCAD Assembly module" ON)
     option(BUILD_PLOT "Build the FreeCAD plot module" ON)
     option(BUILD_POINTS "Build the FreeCAD points module" ON)
@@ -173,10 +174,11 @@ macro(InitializeFreeCADBuildOptions)
         set(BUILD_SMESH ON )
     endif()
 
-    # for Windows the minimum required cmake version is 3.4.3 to build the Path module
-    if(WIN32 AND CMAKE_VERSION VERSION_LESS 3.4.3)
-        message(WARNING "Disable Path, requires cmake >= 3.4.3 in order to build this module")
-        set(BUILD_PATH OFF )
+    # CAM's tsp_solver and FlatMesh both bind through pybind11. Setting the
+    # normal variable here wins over the option() in SetupPybind11, which runs
+    # after this file and honours a value that is already set (CMP0077).
+    if(BUILD_CAM OR BUILD_FLAT_MESH)
+        set(FREECAD_USE_PYBIND11 ON )
     endif()
 
     # force build directory to be different to source directory
