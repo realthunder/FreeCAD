@@ -2188,6 +2188,12 @@ public:
     /// is full -- the caller falls back to Coin for this frame rather
     /// than submitting ids bgfx would abort on.
     bool reserveBlock(BGFXView *view, uint16_t need);
+    /// The raw allocator under reserveBlock/releaseBlock: a contiguous
+    /// id block held in (id, span), granule-rounded. Draw surfaces
+    /// (BGFXDrawDevice.cpp) hold their pass blocks through these, so
+    /// their ids never collide with the viewers'.
+    bool reserveIds(uint16_t &id, uint16_t &span, uint16_t need);
+    void releaseIds(uint16_t &id, uint16_t &span);
 
     std::map<std::string, RendererType::Enum> typeMap = {
 #ifdef FC_RENDERER_STANDALONE

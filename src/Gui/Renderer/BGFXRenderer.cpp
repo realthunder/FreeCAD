@@ -1006,29 +1006,30 @@ std::unique_ptr<Renderer> BGFXRendererLib::create(
 }
 
 /////////////////////////////////////////////////////////
-void BGFXRendererLibP::releaseBlock(BGFXView *view)
+void BGFXRendererLibP::releaseIds(uint16_t &id, uint16_t &span)
 {
-    if (!view->viewSpan)
+    if (!span)
         return;
-    const int first = view->viewId / kIdGranule;
-    const int count = view->viewSpan / kIdGranule;
+    const int first = id / kIdGranule;
+    const int count = span / kIdGranule;
     for (int g = first; g < first + count && g < int(granules.size()); ++g)
         granules[g] = 0;
-    view->viewId = 0;
-    view->viewSpan = 0;
+    id = 0;
+    span = 0;
 }
 
-bool BGFXRendererLibP::reserveBlock(BGFXView *view, uint16_t need)
+bool BGFXRendererLibP::reserveIds(uint16_t &id, uint16_t &span,
+                                  uint16_t need)
 {
     if (granules.empty()) {
         const uint32_t maxViews = bgfx::getCaps()->limits.maxViews;
         granules.assign(maxViews / kIdGranule, 0);
     }
-    if (view->viewSpan >= need)
+    if (span >= need)
         return true;
-    const uint16_t oldId = view->viewId;
-    const uint16_t oldSpan = view->viewSpan;
-    releaseBlock(view);
+    const uint16_t oldId = id;
+    const uint16_t oldSpan = span;
+    releaseIds(id, span);
     const int want = (need + kIdGranule - 1) / kIdGranule;
     for (int g = 0; g + want <= int(granules.size()); ++g) {
         int run = 0;
@@ -1040,20 +1041,8 @@ bool BGFXRendererLibP::reserveBlock(BGFXView *view, uint16_t need)
         }
         for (int i = 0; i < want; ++i)
             granules[g + i] = 1;
-        view->viewId = uint16_t(g * kIdGranule);
-        view->viewSpan = uint16_t(want * kIdGranule);
-        if (getenv("FC_BGFX_DEBUG_VIEWS")) {
-            int taken = 0;
-            for (uint8_t u : granules)
-                taken += u;
-            fprintf(stderr,
-                    "bgfx view ids: viewer %p needs %d, block %d..%d;"
-                    " %d of %d ids held by %d viewer(s)\n",
-                    (void *)view->widget, int(need), int(view->viewId),
-                    int(view->viewId + view->viewSpan - 1),
-                    taken * kIdGranule, int(granules.size()) * kIdGranule,
-                    int(views.size()));
-        }
+        id = uint16_t(g * kIdGranule);
+        span = uint16_t(want * kIdGranule);
         return true;
     }
     // No room. Take the old block back (it was just freed, so this
@@ -1061,9 +1050,34 @@ bool BGFXRendererLibP::reserveBlock(BGFXView *view, uint16_t need)
     for (int g = oldId / kIdGranule;
          g < (oldId + oldSpan) / kIdGranule; ++g)
         granules[g] = 1;
-    view->viewId = oldId;
-    view->viewSpan = oldSpan;
+    id = oldId;
+    span = oldSpan;
     return false;
+}
+
+void BGFXRendererLibP::releaseBlock(BGFXView *view)
+{
+    releaseIds(view->viewId, view->viewSpan);
+}
+
+bool BGFXRendererLibP::reserveBlock(BGFXView *view, uint16_t need)
+{
+    const uint16_t hadSpan = view->viewSpan;
+    if (!reserveIds(view->viewId, view->viewSpan, need))
+        return false;
+    if (view->viewSpan != hadSpan && getenv("FC_BGFX_DEBUG_VIEWS")) {
+        int taken = 0;
+        for (uint8_t u : granules)
+            taken += u;
+        fprintf(stderr,
+                "bgfx view ids: viewer %p needs %d, block %d..%d;"
+                " %d of %d ids held by %d viewer(s)\n",
+                (void *)view->widget, int(need), int(view->viewId),
+                int(view->viewId + view->viewSpan - 1),
+                taken * kIdGranule, int(granules.size()) * kIdGranule,
+                int(views.size()));
+    }
+    return true;
 }
 
 /////////////////////////////////////////////////////////
