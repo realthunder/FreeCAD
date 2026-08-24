@@ -6250,6 +6250,89 @@ void View3DInventorViewer::pubSeekToPoint(const SbVec3f& pos)
     this->seekToPoint(pos);
 }
 
+bool View3DInventorViewer::setCamera(const char* pCamera, int animateDuration)
+{
+    // Moved here from View3DInventor::setCamera so that viewers without
+    // an MDI view around them (the CAM simulator's Dummy3DViewer) can
+    // apply a saved camera too; the view-level wrapper keeps the
+    // camera-binding and draw-style tail.
+    SoCamera * CamViewer = getSoRenderManager()->getCamera();
+    if (!CamViewer) {
+        THROWM(Base::RuntimeError, "No camera set so far...")
+    }
+
+    SoInput in;
+    in.setBuffer((void*)pCamera,std::strlen(pCamera));
+
+    SoNode * Cam;
+    SoDB::read(&in,Cam);
+
+    if (!Cam || !Cam->isOfType(SoCamera::getClassTypeId())) {
+        THROWM(Base::RuntimeError, "Camera settings failed to read")
+    }
+
+    // this is to make sure to reliably delete the node
+    CoinPtr<SoNode> camPtr(Cam, true);
+
+    // toggle between perspective and orthographic camera
+    if (Cam->getTypeId() != CamViewer->getTypeId()) {
+        setCameraType(Cam->getTypeId());
+        CamViewer = getSoRenderManager()->getCamera();
+    }
+
+    SoPerspectiveCamera  * CamViewerP = nullptr;
+    SoOrthographicCamera * CamViewerO = nullptr;
+
+    if (CamViewer->getTypeId() == SoPerspectiveCamera::getClassTypeId()) {
+        CamViewerP = static_cast<SoPerspectiveCamera *>(CamViewer);  // safe downward cast, knows the type
+    }
+    else if (CamViewer->getTypeId() == SoOrthographicCamera::getClassTypeId()) {
+        CamViewerO = static_cast<SoOrthographicCamera *>(CamViewer);  // safe downward cast, knows the type
+    }
+
+    if (Cam->getTypeId() == SoPerspectiveCamera::getClassTypeId()) {
+        if (CamViewerP){
+            CamViewerP->nearDistance  = static_cast<SoPerspectiveCamera *>(Cam)->nearDistance;
+            CamViewerP->farDistance   = static_cast<SoPerspectiveCamera *>(Cam)->farDistance;
+            CamViewerP->focalDistance = static_cast<SoPerspectiveCamera *>(Cam)->focalDistance;
+            if (animateDuration) {
+                moveCameraTo(static_cast<SoPerspectiveCamera *>(Cam)->orientation.getValue(),
+                             static_cast<SoPerspectiveCamera *>(Cam)->position.getValue(),
+                             animateDuration);
+            } else {
+                CamViewerP->position      = static_cast<SoPerspectiveCamera *>(Cam)->position;
+                CamViewerP->orientation   = static_cast<SoPerspectiveCamera *>(Cam)->orientation;
+            }
+        }
+        else {
+            THROWM(Base::TypeError, "Camera type mismatch")
+        }
+    }
+    else if (Cam->getTypeId() == SoOrthographicCamera::getClassTypeId()) {
+        if (CamViewerO){
+            CamViewerO->viewportMapping  = static_cast<SoOrthographicCamera *>(Cam)->viewportMapping;
+            CamViewerO->nearDistance     = static_cast<SoOrthographicCamera *>(Cam)->nearDistance;
+            CamViewerO->farDistance      = static_cast<SoOrthographicCamera *>(Cam)->farDistance;
+            CamViewerO->focalDistance    = static_cast<SoOrthographicCamera *>(Cam)->focalDistance;
+            CamViewerO->aspectRatio      = static_cast<SoOrthographicCamera *>(Cam)->aspectRatio ;
+            CamViewerO->height           = static_cast<SoOrthographicCamera *>(Cam)->height;
+            if (animateDuration) {
+                moveCameraTo(static_cast<SoOrthographicCamera *>(Cam)->orientation.getValue(),
+                             static_cast<SoOrthographicCamera *>(Cam)->position.getValue(),
+                             animateDuration);
+            } else {
+                CamViewerO->position         = static_cast<SoOrthographicCamera *>(Cam)->position;
+                CamViewerO->orientation      = static_cast<SoOrthographicCamera *>(Cam)->orientation;
+            }
+        }
+        else {
+            THROWM(Base::TypeError, "Camera type mismatch")
+        }
+    }
+
+    return true;
+}
+
 void View3DInventorViewer::setCameraOrientation(const SbRotation& orientation, bool moveToCenter)
 {
     navigation->setCameraOrientation(orientation, moveToCenter);
