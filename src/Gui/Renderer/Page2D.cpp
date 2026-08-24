@@ -21,15 +21,48 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <map>
 
 #include <bgfx/bgfx.h>
 #include <bx/math.h>
+
+#include <vg/vg.h>
 
 #include "Page2D.h"
 #include "Vg2D.h"
 
 using namespace Render;
+
+struct Page2D::Private
+{
+    struct Item
+    {
+        Kind kind = Kind::Face;
+        uint32_t layer = 0;
+        uint64_t seq = 0;
+        std::vector<uint8_t> ops;
+        vg::CommandListHandle list = VG_INVALID_HANDLE;
+        bool recorded = false;
+    };
+
+    std::map<ItemId, Item> items;
+    std::vector<Item*> drawOrder;
+    bool orderDirty = false;
+    uint64_t nextSeq = 0;
+    float lastBandScale = 0.0f;
+
+    void releaseList(Item& item)
+    {
+        if (!vg::isValid(item.list))
+            return;
+        if (Vg2D::instance().initialized())
+            vg::destroyCommandList(Vg2D::instance().context(), item.list);
+        item.list = VG_INVALID_HANDLE;
+        item.recorded = false;
+    }
+};
 
 // The op buffer: 1-byte opcode, raw little-endian payload. This is the
 // item's retained representation and (M3) its wire format, so nothing
@@ -331,8 +364,15 @@ static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops)
             uint32_t n = r.u32();
             if (!r.fits(sizeof(float) * 2 * n))
                 return;
-            vg::polyline(ctx, (const float*)r.p, n);
+            // Copy out of the byte-packed buffer (alignment, and wasm
+            // will not tolerate unaligned float loads). vg::polyline
+            // only appends: the current subpath must be started first.
+            std::vector<float> xy(2 * n);
+            memcpy(xy.data(), r.p, sizeof(float) * 2 * n);
             r.p += sizeof(float) * 2 * n;
+            vg::moveTo(ctx, xy[0], xy[1]);
+            if (n > 1)
+                vg::polyline(ctx, xy.data() + 2, n - 1);
             break;
         }
         case Op::FillConvex:
@@ -389,16 +429,19 @@ static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops)
             uint32_t nv = r.u32();
             if (!r.fits(sizeof(float) * 2 * nv))
                 return;
-            const float* pos = (const float*)r.p;
+            std::vector<float> pos(2 * nv);
+            memcpy(pos.data(), r.p, sizeof(float) * 2 * nv);
             r.p += sizeof(float) * 2 * nv;
             uint32_t ni = r.u32();
             if (!r.fits(sizeof(uint16_t) * ni))
                 return;
-            const uint16_t* idx = (const uint16_t*)r.p;
+            std::vector<uint16_t> idx(ni);
+            memcpy(idx.data(), r.p, sizeof(uint16_t) * ni);
             r.p += sizeof(uint16_t) * ni;
             vg::Color c = decodeColor(r.u32());
             vg::ImageHandle noImage = VG_INVALID_HANDLE;
-            vg::indexedTriList(ctx, pos, nullptr, nv, &c, 1, idx, ni, noImage);
+            vg::indexedTriList(ctx, pos.data(), nullptr, nv, &c, 1, idx.data(),
+                               ni, noImage);
             break;
         }
         default:
@@ -409,61 +452,56 @@ static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops)
     }
 }
 
+Page2D::Page2D()
+    : d(new Private)
+{
+}
+
 Page2D::~Page2D()
 {
     clear();
 }
 
-void Page2D::releaseList(Item& item)
-{
-    if (!vg::isValid(item.list))
-        return;
-    if (Vg2D::instance().initialized())
-        vg::destroyCommandList(Vg2D::instance().context(), item.list);
-    item.list = VG_INVALID_HANDLE;
-    item.recorded = false;
-}
-
 void Page2D::setItem(ItemId id, Kind kind, uint32_t layer, Recorder&& content)
 {
-    Item& item = items[id];
+    Private::Item& item = d->items[id];
     if (item.seq == 0)
-        item.seq = ++nextSeq;
+        item.seq = ++d->nextSeq;
     if (item.kind != kind || item.layer != layer) {
         item.kind = kind;
         item.layer = layer;
-        orderDirty = true;
+        d->orderDirty = true;
     }
     item.ops = std::move(content.ops);
     // Damage: keep the command list, re-record it from the new ops at
     // the next render.
     item.recorded = false;
-    if (drawOrder.empty() || items.size() != drawOrder.size())
-        orderDirty = true;
+    if (d->drawOrder.empty() || d->items.size() != d->drawOrder.size())
+        d->orderDirty = true;
 }
 
 void Page2D::removeItem(ItemId id)
 {
-    auto it = items.find(id);
-    if (it == items.end())
+    auto it = d->items.find(id);
+    if (it == d->items.end())
         return;
-    releaseList(it->second);
-    items.erase(it);
-    orderDirty = true;
+    d->releaseList(it->second);
+    d->items.erase(it);
+    d->orderDirty = true;
 }
 
 bool Page2D::hasItem(ItemId id) const
 {
-    return items.count(id) != 0;
+    return d->items.count(id) != 0;
 }
 
 void Page2D::clear()
 {
-    for (auto& v : items)
-        releaseList(v.second);
-    items.clear();
-    drawOrder.clear();
-    orderDirty = false;
+    for (auto& v : d->items)
+        d->releaseList(v.second);
+    d->items.clear();
+    d->drawOrder.clear();
+    d->orderDirty = false;
 }
 
 float Page2D::bandScale(float zoom)
@@ -481,33 +519,33 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
     vg::Context* ctx = vg2d.context();
 
     const float band = bandScale(pageView.zoom);
-    if (band != lastBandScale) {
-        if (lastBandScale != 0.0f)
+    if (band != d->lastBandScale) {
+        if (d->lastBandScale != 0.0f)
             ++stats.bandCrossings;
-        lastBandScale = band;
+        d->lastBandScale = band;
         // Nothing to invalidate here: each cached command list keys on
         // the vg state scale and re-tessellates itself when it changes.
     }
 
-    if (orderDirty) {
-        drawOrder.clear();
-        drawOrder.reserve(items.size());
-        for (auto& v : items)
-            drawOrder.push_back(&v.second);
-        std::sort(drawOrder.begin(), drawOrder.end(),
-                  [](const Item* a, const Item* b) {
+    if (d->orderDirty) {
+        d->drawOrder.clear();
+        d->drawOrder.reserve(d->items.size());
+        for (auto& v : d->items)
+            d->drawOrder.push_back(&v.second);
+        std::sort(d->drawOrder.begin(), d->drawOrder.end(),
+                  [](const Private::Item* a, const Private::Item* b) {
                       if (a->layer != b->layer)
                           return a->layer < b->layer;
                       if (a->kind != b->kind)
                           return (uint8_t)a->kind < (uint8_t)b->kind;
                       return a->seq < b->seq;
                   });
-        orderDirty = false;
+        d->orderDirty = false;
     }
 
     vg::begin(ctx, viewId, width, height, pageView.devicePixelRatio);
     vg::transformScale(ctx, band, band);
-    for (Item* item : drawOrder) {
+    for (Private::Item* item : d->drawOrder) {
         if (!item->recorded) {
             if (!vg::isValid(item->list)) {
                 item->list =
@@ -547,5 +585,104 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
     bx::mtxOrtho(proj, 0.0f, (float)width, (float)height, 0.0f, 0.0f, 1.0f,
                  0.0f, bgfx::getCaps()->homogeneousDepth);
     bgfx::setViewTransform(viewId, viewMtx, proj);
+    return true;
+}
+
+// Whether renderOffscreen() itself brought the bgfx device up. When the
+// process already initialized bgfx (the 3D renderer), init() below
+// simply fails and we use the existing device.
+static bool _offscreenDeviceUp = false;
+
+bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
+                             std::vector<uint8_t>& rgba)
+{
+    if (!width || !height)
+        return false;
+    if (!_offscreenDeviceUp && !Vg2D::instance().initialized()) {
+        // Bring up a headless device: all-null platform data with the
+        // mandatory 0x0 backbuffer. No renderFrame() first -- in a GUI
+        // process the 3D renderer may already own an initialized bgfx,
+        // and pumping its render loop from here executes its pending
+        // commands out of band. init() on an initialized bgfx is a
+        // harmless refusal, and then we share the existing device.
+        bgfx::Init init;
+#ifdef __linux__
+        // Auto-selection takes OpenGL when a DISPLAY exists, and under a
+        // virtual X server that is Mesa swrast, which crashes in bgfx's
+        // headless context path. Vulkan needs no display at all.
+        init.type = bgfx::RendererType::Vulkan;
+#endif
+        if (const char* env = getenv("FC_PAGE2D_RENDERER")) {
+            if (!strcmp(env, "gl"))
+                init.type = bgfx::RendererType::OpenGL;
+            else if (!strcmp(env, "vk"))
+                init.type = bgfx::RendererType::Vulkan;
+            else if (!strcmp(env, "auto"))
+                init.type = bgfx::RendererType::Count;
+        }
+        init.resolution.width = 0;
+        init.resolution.height = 0;
+        init.resolution.reset = BGFX_RESET_NONE;
+        if (bgfx::init(init))
+            _offscreenDeviceUp = true;
+        // else: a device already exists (the 3D renderer's); use it.
+    }
+
+    const uint64_t rtFlags = BGFX_TEXTURE_RT;
+    bgfx::TextureHandle color = bgfx::createTexture2D(
+        width, height, false, 1, bgfx::TextureFormat::BGRA8, rtFlags);
+    bgfx::TextureHandle depth = bgfx::createTexture2D(
+        width, height, false, 1, bgfx::TextureFormat::D24S8,
+        BGFX_TEXTURE_RT_WRITE_ONLY);
+    bgfx::TextureHandle attachments[] = {color, depth};
+    bgfx::FrameBufferHandle fb = bgfx::createFrameBuffer(2, attachments, false);
+    bgfx::TextureHandle staging = bgfx::createTexture2D(
+        width, height, false, 1, bgfx::TextureFormat::BGRA8,
+        BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK);
+
+    // The page draws on the offscreen view id pair right below bgfx's
+    // ceiling, out of the way of any 3D viewer's blocks.
+    const uint16_t viewId = (uint16_t)(bgfx::getCaps()->limits.maxViews - 2);
+    bgfx::setViewFrameBuffer(viewId, fb);
+    bgfx::setViewRect(viewId, 0, 0, width, height);
+    bgfx::setViewClear(viewId,
+                       BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH | BGFX_CLEAR_STENCIL,
+                       0xffffffff, 1.0f, 0);
+
+    bool ok = render(viewId, width, height);
+    bgfx::touch(viewId);
+    bgfx::frame();
+
+    std::vector<uint8_t> raw((size_t)width * height * 4);
+    if (ok) {
+        bgfx::blit((uint16_t)(viewId + 1), staging, 0, 0, color, 0, 0, width,
+                   height);
+        uint32_t ready = bgfx::readTexture(staging, raw.data());
+        for (uint32_t frameNo = bgfx::frame(); frameNo < ready;)
+            frameNo = bgfx::frame();
+    }
+
+    bgfx::FrameBufferHandle noFb = BGFX_INVALID_HANDLE;
+    bgfx::setViewFrameBuffer(viewId, noFb);
+    bgfx::destroy(fb);
+    bgfx::destroy(staging);
+
+    if (!ok)
+        return false;
+
+    // BGRA rows (bottom-up on GL) -> tight RGBA rows, top-down.
+    const bool flipY = bgfx::getCaps()->originBottomLeft;
+    rgba.resize(raw.size());
+    for (uint32_t y = 0; y < height; ++y) {
+        const uint8_t* src =
+            &raw[(size_t)(flipY ? height - 1 - y : y) * width * 4];
+        uint8_t* dst = &rgba[(size_t)y * width * 4];
+        for (uint32_t x = 0; x < width; ++x, src += 4, dst += 4) {
+            dst[0] = src[2];
+            dst[1] = src[1];
+            dst[2] = src[0];
+            dst[3] = src[3];
+        }
+    }
     return true;
 }

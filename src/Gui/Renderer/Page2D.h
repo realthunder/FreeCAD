@@ -40,11 +40,9 @@
 /// fringe and flattening tolerance honest.
 
 #include <cstdint>
-#include <map>
+#include <memory>
 #include <string>
 #include <vector>
-
-#include <vg/vg.h>
 
 #include "Renderer.h"
 
@@ -121,7 +119,7 @@ public:
         std::vector<uint8_t> ops;
     };
 
-    Page2D() = default;
+    Page2D();
     ~Page2D();
     Page2D(const Page2D&) = delete;
     Page2D& operator=(const Page2D&) = delete;
@@ -154,26 +152,22 @@ public:
     /// The band scale the current view quantizes to (exposed for tests).
     static float bandScale(float zoom);
 
+    /// Offscreen convenience for verification hosts and tools: ensure a
+    /// bgfx device exists (bringing one up headless if nothing did),
+    /// render this page once into a private offscreen target and return
+    /// tightly packed RGBA8 pixels, row 0 on top. Not a per-frame path.
+    /// Fails when bgfx cannot come up -- or was brought up by someone
+    /// else in a state we cannot verify; test hosts run without the 3D
+    /// renderer active.
+    bool renderOffscreen(uint16_t width, uint16_t height,
+                         std::vector<uint8_t>& rgba);
+
 private:
-    struct Item;
-    void releaseList(Item& item);
-
-    struct Item
-    {
-        Kind kind = Kind::Face;
-        uint32_t layer = 0;
-        uint64_t seq = 0;
-        std::vector<uint8_t> ops;
-        vg::CommandListHandle list = VG_INVALID_HANDLE;
-        bool recorded = false;
-    };
-
-    std::map<ItemId, Item> items;
-    std::vector<Item*> drawOrder;
-    bool orderDirty = false;
-    uint64_t nextSeq = 0;
+    // All vg types stay out of this header: consumers of the page
+    // (the TechDraw feed, the wire) see only ids, ops and pixels.
+    struct Private;
+    std::unique_ptr<Private> d;
     View pageView;
-    float lastBandScale = 0.0f;
     Counters stats;
 };
 

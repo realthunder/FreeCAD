@@ -550,6 +550,29 @@ static int runPage2DScenario(Offscreen& target, const char* fontPath,
     check("removed edge gone", probe(60, 150) == 'k');
     check("others still there", probe(60, 50) == 'g' && probe(190, 50) == 'b');
 
+    // Stage h: a hole. Two concentric closed contours in one path,
+    // filled even-odd -- the face-with-hole representation the TechDraw
+    // feed uses (vg has no native holes; this is the workaround).
+    {
+        Page2D::Recorder rec;
+        rec.beginPath();
+        rec.moveTo(300.0f, 300.0f);
+        rec.lineTo(420.0f, 300.0f);
+        rec.lineTo(420.0f, 420.0f);
+        rec.lineTo(300.0f, 420.0f);
+        rec.closePath();
+        rec.moveTo(340.0f, 340.0f);
+        rec.lineTo(380.0f, 340.0f);
+        rec.lineTo(380.0f, 380.0f);
+        rec.lineTo(340.0f, 380.0f);
+        rec.closePath();
+        rec.fillConcave(0xdc3232ff, /*evenOdd*/ true);
+        page.setItem(6, Page2D::Kind::Face, 0, std::move(rec));
+    }
+    render("even-odd hole fill");
+    check("ring filled", probe(320, 360) == 'r');
+    check("hole empty", probe(360, 360) == 'k');
+
     page.clear();
     Vg2D::instance().shutdown();
     return ok ? 0 : 1;
