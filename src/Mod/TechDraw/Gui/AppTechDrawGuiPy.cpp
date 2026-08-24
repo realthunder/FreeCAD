@@ -285,17 +285,19 @@ private:
             }
         }
 
-        Render::Page2D page2d;
-        PageFeed::feedPage(page, page2d);
-
         // Fit the page sheet into the target image. Page content lives
-        // at scene y in [-height, 0] (page coordinates are y-up).
+        // at scene y in [-height, 0] (page coordinates are y-up). The
+        // zoom is known before the feed so the template rasterizes at
+        // the resolution it will actually show at.
         const double sheetW = Rez::guiX(page->getPageWidth());
         const double sheetH = Rez::guiX(page->getPageHeight());
         Render::Page2D::View view;
         if (sheetW > 0.0 && sheetH > 0.0)
             view.zoom = (float)std::min(width / sheetW, height / sheetH);
         view.panY = (float)(view.zoom * sheetH);
+
+        Render::Page2D page2d;
+        PageFeed::feedPage(page, page2d, PageFeed::Style(), view.zoom);
         page2d.setView(view);
 
         std::vector<uint8_t> rgba;
@@ -313,6 +315,7 @@ private:
         result.setItem("itemRecords", Py::Long((long)counters.itemRecords));
         result.setItem("listSubmits", Py::Long((long)counters.listSubmits));
         result.setItem("droppedItems", Py::Long((long)counters.droppedItems));
+        result.setItem("imageUploads", Py::Long((long)counters.imageUploads));
         result.setItem("pendingViews", Py::Long(pendingViews));
         return result;
     }

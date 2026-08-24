@@ -35,11 +35,16 @@
 #include <QGraphicsEllipseItem>
 #include <QGraphicsLineItem>
 #include <QGraphicsPathItem>
+#include <QGraphicsPixmapItem>
 #include <QGraphicsPolygonItem>
 #include <QGraphicsRectItem>
+#include <QGraphicsSvgItem>
 #include <QGraphicsTextItem>
+#include <QImage>
+#include <QPainter>
 #include <QPainterPath>
 #include <QPen>
+#include <QSvgRenderer>
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QTextLayout>
@@ -54,6 +59,7 @@
 #include <Mod/TechDraw/App/Cosmetic.h>
 #include <Mod/TechDraw/App/DrawGeomHatch.h>
 #include <Mod/TechDraw/App/DrawPage.h>
+#include <Mod/TechDraw/App/DrawSVGTemplate.h>
 #include <Mod/TechDraw/App/DrawUtil.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
 #include <Mod/TechDraw/App/Geometry.h>
@@ -744,6 +750,111 @@ void captureTextItem(Page2D::Recorder& rec, QGraphicsTextItem* item)
         rec.popTransform();
 }
 
+// Raster capture: SVG and pixmap items (DrawViewSymbol, DrawViewImage,
+// DrawViewSpreadsheet, ...) have no path/text representation to
+// convert, so their pixels go into the page's image registry and the
+// item records an image op under the Qt item's transform. Image ids
+// are allocated per captured view in encounter order; re-capturing a
+// view overwrites the same ids and the caller purges the tail.
+struct CaptureImages
+{
+    Page2D* page = nullptr;
+    const char* name = "";
+    char tag = 'i';
+    uint32_t index = 0;
+};
+
+// Emit the image (already in the registry) over the item's local rect,
+// mapped by its scene transform.
+void emitCapturedImage(Page2D::Recorder& rec, uint64_t imageId,
+                       const QRectF& local, const QTransform& t)
+{
+    const float mtx[6] = {(float)t.m11(), (float)t.m12(), (float)t.m21(),
+                          (float)t.m22(), (float)t.dx(),  (float)t.dy()};
+    rec.pushTransform(mtx);
+    rec.image(imageId, (float)local.x(), (float)local.y(),
+              (float)local.width(), (float)local.height());
+    rec.popTransform();
+}
+
+// Scene pixels per local unit along each axis, for choosing a raster
+// resolution that matches what the item covers on the page.
+QSizeF mappedScale(const QTransform& t)
+{
+    return {std::hypot(t.m11(), t.m12()), std::hypot(t.m21(), t.m22())};
+}
+
+void captureSvgItem(Page2D::Recorder& rec, QGraphicsSvgItem* item,
+                    CaptureImages* imgs)
+{
+    if (!imgs || !imgs->page)
+        return;
+    QSvgRenderer* renderer = item->renderer();
+    const QRectF local = item->boundingRect();
+    if (!renderer || !renderer->isValid() || local.isEmpty())
+        return;
+    // Page units are Rez (10 px per mm): rasterizing at the on-page
+    // size is ~254 dpi at 1:1 zoom, plenty until deep zoom. Capped so
+    // a page-sized SVG cannot allocate an unbounded texture.
+    const QSizeF s = mappedScale(item->sceneTransform());
+    double pw = local.width() * s.width();
+    double ph = local.height() * s.height();
+    double k = std::min(1.0, 2048.0 / std::max(pw, ph));
+    // Same Qt raster-engine crash guard as the template: never ask
+    // QSvgRenderer for more than 2x the SVG's own size (see
+    // feedTemplate).
+    const QSize ds = renderer->defaultSize();
+    if (ds.width() > 0 && ds.height() > 0)
+        k = std::min(k, std::min(2.0 * ds.width() / std::max(1.0, pw),
+                                 2.0 * ds.height() / std::max(1.0, ph)));
+    const int ipw = std::max(1, (int)std::lround(pw * k));
+    const int iph = std::max(1, (int)std::lround(ph * k));
+    QImage image(ipw, iph, QImage::Format_RGBA8888);
+    image.fill(Qt::transparent);
+    {
+        QPainter painter(&image);
+        painter.setRenderHint(QPainter::Antialiasing);
+        renderer->render(&painter, QRectF(0, 0, ipw, iph));
+    }
+    const uint64_t id = itemId(imgs->name, imgs->tag, imgs->index++);
+    imgs->page->setImage(id, (uint16_t)ipw, (uint16_t)iph,
+                         image.constBits());
+    emitCapturedImage(rec, id, local, item->sceneTransform());
+}
+
+void capturePixmapItem(Page2D::Recorder& rec, QGraphicsPixmapItem* item,
+                       CaptureImages* imgs)
+{
+    if (!imgs || !imgs->page)
+        return;
+    const QPixmap& pm = item->pixmap();
+    if (pm.isNull())
+        return;
+    QImage image = pm.toImage();
+    if (std::max(image.width(), image.height()) > 2048)
+        image = image.scaled(2048, 2048, Qt::KeepAspectRatio,
+                             Qt::SmoothTransformation);
+    image = image.convertToFormat(QImage::Format_RGBA8888);
+    const QRectF local(item->offset(),
+                       QSizeF(pm.width(), pm.height()));
+    const uint64_t id = itemId(imgs->name, imgs->tag, imgs->index++);
+    imgs->page->setImage(id, (uint16_t)image.width(),
+                         (uint16_t)image.height(), image.constBits());
+    emitCapturedImage(rec, id, local, item->sceneTransform());
+}
+
+// Re-capturing a view may emit fewer images than the previous capture:
+// drop the registry tail so replaced content does not pin dead pixels.
+void purgeCapturedImages(Page2D& out, const CaptureImages& imgs)
+{
+    for (uint32_t idx = imgs.index;; ++idx) {
+        const uint64_t id = itemId(imgs.name, imgs.tag, idx);
+        if (!out.hasImage(id))
+            break;
+        out.removeImage(id);
+    }
+}
+
 // Depth-first over the item subtree in paint order (parent under
 // children, siblings by z-value). Nested QGIViews are other document
 // objects: they feed under their own ids. Visibility is judged
@@ -751,7 +862,7 @@ void captureTextItem(Page2D::Recorder& rec, QGraphicsTextItem* item)
 // host that photographs the vg layer alone hides the Qt items, and
 // that must not read as "the drawing is empty".
 void captureItemTree(QGraphicsItem* item, Page2D::Recorder& rec,
-                     const QGraphicsItem* root)
+                     const QGraphicsItem* root, CaptureImages* imgs)
 {
     if (!item)
         return;
@@ -780,13 +891,17 @@ void captureItemTree(QGraphicsItem* item, Page2D::Recorder& rec,
         captureShapeItem(rec, shape);
     else if (auto line = dynamic_cast<QGraphicsLineItem*>(item))
         captureLineItem(rec, line);
+    else if (auto svg = dynamic_cast<QGraphicsSvgItem*>(item))
+        captureSvgItem(rec, svg, imgs);
+    else if (auto pix = dynamic_cast<QGraphicsPixmapItem*>(item))
+        capturePixmapItem(rec, pix, imgs);
     QList<QGraphicsItem*> children = item->childItems();
     std::stable_sort(children.begin(), children.end(),
                      [](const QGraphicsItem* a, const QGraphicsItem* b) {
                          return a->zValue() < b->zValue();
                      });
     for (QGraphicsItem* child : children)
-        captureItemTree(child, rec, root);
+        captureItemTree(child, rec, root, imgs);
 }
 
 // The hatch object claiming face i, if any (QGIViewPart::faceIsGeomHatched).
@@ -997,8 +1112,13 @@ void PageFeed::feedViewCapture(QGIView* qgiv, Page2D& out, uint32_t layer)
             parent ? typeid(*parent).name() : "none", qgiv->pos().x(),
             qgiv->pos().y());
     }
+    CaptureImages imgs;
+    imgs.page = &out;
+    imgs.name = name;
+    imgs.tag = 'i';
     if (qgiv->isVisible())
-        captureItemTree(qgiv, rec, qgiv);
+        captureItemTree(qgiv, rec, qgiv, &imgs);
+    purgeCapturedImages(out, imgs);
     if (traceCapture())
         Base::Console().Message("PageFeed: capture %s -> %zu bytes\n", name,
                                 rec.bytes().size());
@@ -1016,14 +1136,85 @@ void PageFeed::feedViewDecorations(QGIView* qgiv, Page2D& out, uint32_t layer)
         return;
     ensureVgFonts();
     Page2D::Recorder rec;
+    CaptureImages imgs;
+    imgs.page = &out;
+    imgs.name = name;
+    imgs.tag = 'j';
     if (qgiv->isVisible()) {
         for (QGraphicsItem* child : qgiv->childItems()) {
             if (dynamic_cast<QGIDecoration*>(child))
-                captureItemTree(child, rec, qgiv);
+                captureItemTree(child, rec, qgiv, &imgs);
         }
     }
+    purgeCapturedImages(out, imgs);
     out.setItem(itemId(name, 'd', 0), Page2D::Kind::Decoration, layer,
                 std::move(rec));
+}
+
+void PageFeed::feedTemplate(TechDraw::DrawPage* page, Page2D& out,
+                            float rasterScale)
+{
+    if (!page)
+        return;
+    // One well-known item below every view (views feed at layer >= 1),
+    // one image slot it draws.
+    const uint64_t item = itemId("__page_template", 't', 0);
+    const uint64_t image = itemId("__page_template", 'i', 0);
+
+    // The SVG tier has no vector story yet (deliberate: the template is
+    // static content, rasterized once per zoom band); a page without an
+    // SVG template -- none, or the rare parametric one -- clears the
+    // item so stale pixels never survive a template swap.
+    auto tmpl = dynamic_cast<TechDraw::DrawSVGTemplate*>(
+        page->Template.getValue());
+    const double sheetW = tmpl ? Rez::guiX(tmpl->getWidth()) : 0.0;
+    const double sheetH = tmpl ? Rez::guiX(tmpl->getHeight()) : 0.0;
+    QByteArray svg;
+    if (tmpl && sheetW > 0.0 && sheetH > 0.0)
+        svg = tmpl->processTemplate().toUtf8();
+    QSvgRenderer renderer(svg);
+    if (svg.isEmpty() || !renderer.isValid()) {
+        out.setItem(item, Page2D::Kind::Face, 0, Page2D::Recorder());
+        out.removeImage(image);
+        return;
+    }
+
+    // Rasterize at the band scale the host asks for, capped: sheet
+    // size is Rez units (A4 landscape ~2970), so the cap bounds the
+    // texture at deep zoom and the template merely stops sharpening.
+    // The second cap is a crash guard, not a memory one: Qt's raster
+    // engine segfaults in FreeType (raster overflow -> null glyph
+    // deref) when the stock templates' text -- Inkscape line-height:0%
+    // constructs -- rasterizes above roughly 3x the SVG's own size;
+    // verified standalone with plain QSvgRenderer at Qt 6.10. 2x keeps
+    // a safety margin, and the templates' smallest text is still ~17px
+    // there.
+    if (!(rasterScale > 0.0f))
+        rasterScale = 1.0f;
+    const QSize defSize = renderer.defaultSize();
+    double scale = std::min(
+        (double)rasterScale, 4096.0 / std::max(sheetW, sheetH));
+    if (defSize.width() > 0 && defSize.height() > 0)
+        scale = std::min(scale,
+                         std::min(2.0 * defSize.width() / sheetW,
+                                  2.0 * defSize.height() / sheetH));
+    const int pw = std::max(1, (int)std::lround(sheetW * scale));
+    const int ph = std::max(1, (int)std::lround(sheetH * scale));
+    QImage raster(pw, ph, QImage::Format_RGBA8888);
+    raster.fill(Qt::transparent);
+    {
+        QPainter painter(&raster);
+        painter.setRenderHint(QPainter::Antialiasing);
+        // Stretch to the sheet aspect, exactly as QGISVGTemplate scales
+        // the SVG's default size onto the page.
+        renderer.render(&painter, QRectF(0, 0, pw, ph));
+    }
+    out.setImage(image, (uint16_t)pw, (uint16_t)ph, raster.constBits());
+
+    // Page coordinates: the sheet spans x in [0, W], y in [-H, 0].
+    Page2D::Recorder rec;
+    rec.image(image, 0.0f, (float)-sheetH, (float)sheetW, (float)sheetH);
+    out.setItem(item, Page2D::Kind::Face, 0, std::move(rec));
 }
 
 void PageFeed::feedPage(TechDraw::DrawPage* page, Page2D& out)
@@ -1032,10 +1223,11 @@ void PageFeed::feedPage(TechDraw::DrawPage* page, Page2D& out)
 }
 
 void PageFeed::feedPage(TechDraw::DrawPage* page, Page2D& out,
-                        const Style& style)
+                        const Style& style, float templateRasterScale)
 {
     if (!page)
         return;
+    feedTemplate(page, out, templateRasterScale);
     // The annotation tier converts the laid-out Qt scene items; resolve
     // the page's scene where the Gui side has one (it exists for every
     // page of a Gui document, shown or not).
@@ -1047,7 +1239,8 @@ void PageFeed::feedPage(TechDraw::DrawPage* page, Page2D& out,
                 dynamic_cast<ViewProviderPage*>(gdoc->getViewProvider(page)))
             qgs = vpp->getQGSPage();
     }
-    uint32_t layer = 0;
+    // Layer 0 is the template's; views draw above it.
+    uint32_t layer = 1;
     for (App::DocumentObject* obj : page->getAllViews()) {
         QGIView* qgiv = qgs ? qgs->findQViewForDocObj(obj) : nullptr;
         if (auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(obj)) {

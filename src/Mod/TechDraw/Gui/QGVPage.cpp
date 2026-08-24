@@ -399,10 +399,11 @@ void QGVPage::drawVgPreview(QPainter* painter)
     }
     if (structure != m_vgPageStructure) {
         m_vgPageStructure = structure;
-        m_vgPage->clear();
+        m_vgPage->clear(); // drops the image registry too
+        m_vgTemplateStamp = 0;
         m_vgViews.clear();
         m_vgDirty.clear();
-        uint32_t layer = 0;
+        uint32_t layer = 1; // layer 0 is the template's
         for (App::DocumentObject* obj : page->getAllViews()) {
             auto dv = dynamic_cast<TechDraw::DrawView*>(obj);
             if (dv && dv->getNameInDocument()) {
@@ -467,6 +468,28 @@ void QGVPage::drawVgPreview(QPainter* painter)
             }
             it->second.fedX = (float)dv->X.getValue();
             it->second.fedY = (float)dv->Y.getValue();
+        }
+    }
+
+    // The template: rasterized SVG, re-fed when its content changes
+    // (template swap, editable text edit) or when the zoom crosses a
+    // band -- the raster tracks the band scale so the sheet stays
+    // sharp. The stamp folds all of that into one comparison.
+    {
+        const float band =
+            Render::Page2D::bandScale((float)transform().m11());
+        size_t stamp = std::hash<float> {}(band);
+        if (App::DocumentObject* tmpl = page->Template.getValue()) {
+            if (const char* tname = tmpl->getNameInDocument())
+                stamp = stamp * 31 + std::hash<std::string> {}(tname);
+            if (auto svgt = dynamic_cast<TechDraw::DrawSVGTemplate*>(tmpl)) {
+                for (const auto& kv : svgt->EditableTexts.getValues())
+                    stamp = stamp * 31 + std::hash<std::string> {}(kv.second);
+            }
+        }
+        if (stamp != m_vgTemplateStamp) {
+            m_vgTemplateStamp = stamp;
+            PageFeed::feedTemplate(page, *m_vgPage, band);
         }
     }
 

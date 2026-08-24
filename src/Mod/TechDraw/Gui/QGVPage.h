@@ -232,6 +232,7 @@ private:
     std::map<std::string, VgViewTrack> m_vgViews;
     std::set<std::string> m_vgDirty;
     size_t m_vgPageStructure = 0;
+    size_t m_vgTemplateStamp = 0;
 };
 
 }// namespace TechDrawGui

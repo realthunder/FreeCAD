@@ -70,12 +70,24 @@ public:
         float deflection = 0.5f;
     };
 
-    /// Feed every DrawViewPart of the page. Item ids derive from the
-    /// view's document name, so re-feeding an edited view damages only
-    /// its items.
+    /// Feed every DrawViewPart of the page, and the template. Item ids
+    /// derive from the view's document name, so re-feeding an edited
+    /// view damages only its items. Views land on layers >= 1; layer 0
+    /// is the template's.
     static void feedPage(TechDraw::DrawPage* page, Render::Page2D& out);
     static void feedPage(TechDraw::DrawPage* page, Render::Page2D& out,
-                         const Style& style);
+                         const Style& style,
+                         float templateRasterScale = 1.0f);
+
+    /// The page's SVG template, rasterized (QSvgRenderer) into the
+    /// page's image registry at rasterScale pixels per Rez unit --
+    /// pass the current zoom band so the sheet stays sharp; capped at
+    /// 4096 px, so deep zoom stops sharpening rather than exploding
+    /// the texture. Re-feeding replaces the raster (an edit of the
+    /// template's editable texts, or a band crossing); the item id is
+    /// stable and the sheet always draws on layer 0, below every view.
+    static void feedTemplate(TechDraw::DrawPage* page, Render::Page2D& out,
+                             float rasterScale);
 
     /// Feed one view's edges/vertices/faces as items at the given layer.
     static void feedViewPart(TechDraw::DrawViewPart* dvp, Render::Page2D& out,
