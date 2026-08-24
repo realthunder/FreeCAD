@@ -64,9 +64,14 @@ public:
     void RenderResultSSAO(bool recalculate);
     // The facade deferred resolve (docs/CAMSimRenderPort.md step 4):
     // the lighting quad submitted into one pass of the given surface.
-    // Dormant until step 6's frame driver hands a surface; AO stays
-    // off until the effect service (step 7) supplies its texture.
+    // AO stays off until the effect service (step 7) supplies its
+    // texture.
     void RenderResultFacade(Render::DrawSurface* surface, unsigned pass);
+    // Per-frame pass configuration for the facade frame (step 6):
+    // targets, clears, ordering and transforms of the four passes
+    // (SimDrawContext.h). Called by the frame driver between
+    // beginFrame and the draws.
+    void ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& bgnd);
     void SetupLinePathPass(int curSegment, bool isHidden);
     void UpdateWindowScale(int width, int height);
     void UpdateCamera(const SoCamera& camera);

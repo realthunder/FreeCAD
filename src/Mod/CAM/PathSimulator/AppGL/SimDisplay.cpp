@@ -638,6 +638,55 @@ void SimDisplay::RenderResultFacade(Render::DrawSurface* surface, unsigned pass)
     surface->setState(state);
     surface->setVertexBuffer(mRQuadVbo);
     surface->submit(pass, mRProgLighting);
+    gSimDraw.submitted = true;
+}
+
+void SimDisplay::ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& bgnd)
+{
+    if (!surface || !mRTarget.valid()) {
+        return;
+    }
+    for (unsigned p = SimPassScene; p <= SimPassPath; p++) {
+        surface->setPassTarget(p, mRTarget);
+        surface->setPassRect(p, 0, 0, mWidth, mHeight);
+        // The CSG depends on draws landing in submission order.
+        surface->setPassSequential(p, true);
+    }
+    // The G-buffer clear (the GL path's PrepareFrameBuffer); it runs
+    // only when the pass draws, so a cached frame keeps the buffer.
+    surface->setPassClear(SimPassScene, 0x00000000, 1.0f, 0,
+                          Render::ClearColor | Render::ClearDepth
+                              | Render::ClearStencil);
+    surface->setPassClear(SimPassBaseShape, 0, 1.0f, 0, Render::ClearNone);
+    surface->setPassClear(SimPassPath, 0, 1.0f, 0, Render::ClearNone);
+    const float* view = &mMatLookAt[0][0];
+    surface->setPassTransform(SimPassScene, view, &mProjMat[0][0]);
+    // The base shape's glPolygonOffset(0, -2) becomes this pass's
+    // slightly-closer projection -- the same trick the GL path's
+    // (unused) GeomCloser shader carried.
+    mat4x4 biased;
+    mat4x4_dup(biased, mProjMat);
+    biased[2][2] *= 0.99999f;
+    surface->setPassTransform(SimPassBaseShape, view, &biased[0][0]);
+    surface->setPassTransform(SimPassPath, view, &mProjMat[0][0]);
+    // The resolve draws to the surface backbuffer, cleared to the
+    // background color (the GL path's glClearColor at Render start).
+    surface->setPassTarget(SimPassResolve, {});
+    surface->setPassRect(SimPassResolve, 0, 0, mWidth, mHeight);
+    surface->setPassSequential(SimPassResolve, false);
+    auto channel = [](float c) {
+        if (c < 0.0f) {
+            c = 0.0f;
+        }
+        if (c > 1.0f) {
+            c = 1.0f;
+        }
+        return uint32_t(c * 255.0f + 0.5f);
+    };
+    uint32_t rgba = (channel(bgnd[0]) << 24) | (channel(bgnd[1]) << 16)
+        | (channel(bgnd[2]) << 8) | 0xff;
+    surface->setPassClear(SimPassResolve, rgba, 1.0f, 0,
+                          Render::ClearColor | Render::ClearDepth);
 }
 
 void SimDisplay::SetPathColor(const vec3& normal, const vec3& rapid)

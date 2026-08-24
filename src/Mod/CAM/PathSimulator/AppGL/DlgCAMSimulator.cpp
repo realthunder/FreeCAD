@@ -25,9 +25,14 @@
 
 #include "DlgCAMSimulator.h"
 
+#include <App/Application.h>
+#include <Base/Parameter.h>
+#include <Gui/Renderer/DrawSurface.h>
+
 #include "Dummy3DViewer.h"
 #include "GuiDisplay.h"
 #include "MillSimulation.h"
+#include "SimDrawContext.h"
 #include "ViewCAMSimulator.h"
 #include <Gui/View3DInventorViewer.h>
 #include <Inventor/nodes/SoCamera.h>
@@ -484,6 +489,54 @@ void DlgCAMSimulator::initializeGL()
     gOpenGLFunctions.initializeOpenGLFunctions();
 }
 
+void DlgCAMSimulator::beginFacadeFrame()
+{
+    // The transition switch (docs/CAMSimRenderPort.md step 6): lets a
+    // session fall back to the raw-GL path while both exist; it is
+    // deleted with that path in the port's last step.
+    static ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/CAM"
+    );
+    if (!hGrp->GetBool("UseFacadeRender", true)) {
+        mDrawSurface.reset();
+        gSimDraw.surface = nullptr;
+        return;
+    }
+    if (!Render::DrawDevice::instance()) {
+        // Device gone (or never up): surface handles died with it.
+        mDrawSurface.reset();
+        gSimDraw.surface = nullptr;
+        return;
+    }
+    if (!mDrawSurface) {
+        mDrawSurface = Render::DrawSurface::create(this, SimPassCount);
+    }
+    if (!mDrawSurface) {
+        return;
+    }
+    const qreal ratio = devicePixelRatioF();
+    const int w = int(width() * ratio);
+    const int h = int(height() * ratio);
+    if (!mDrawSurface->beginFrame(w, h)) {
+        return;
+    }
+    mMillSimulator->simDisplay.ConfigureFacadeFrame(mDrawSurface.get(),
+                                                    mMillSimulator->bgndColor);
+    gSimDraw.submitted = false;
+    gSimDraw.surface = mDrawSurface.get();
+}
+
+void DlgCAMSimulator::endFacadeFrame()
+{
+    if (!gSimDraw.surface) {
+        return;
+    }
+    gSimDraw.surface = nullptr;
+    if (gSimDraw.submitted) {
+        mDrawSurface->endFrame();
+    }
+}
+
 void DlgCAMSimulator::paintGL()
 {
     updateResources();
@@ -516,7 +569,9 @@ void DlgCAMSimulator::paintGL()
 #endif
 
 
+    beginFacadeFrame();
     mMillSimulator->ProcessSim(elapsed);
+    endFacadeFrame();
 
     mLastProcessSim = now;
 }

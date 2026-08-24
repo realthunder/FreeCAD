@@ -64,6 +64,7 @@ void SimDrawContext::submitIndexed(Render::VertexBufferHandle vb,
     surface->setVertexBuffer(vb);
     surface->setIndexBuffer(ib);
     surface->submit(pass, program);
+    submitted = true;
 }
 
 void SimDrawContext::submitLines(Render::VertexBufferHandle vb)
@@ -74,6 +75,7 @@ void SimDrawContext::submitLines(Render::VertexBufferHandle vb)
     push(Render::PrimitiveType::LineStrip, false);
     surface->setVertexBuffer(vb);
     surface->submit(pass, program);
+    submitted = true;
 }
 
 }  // namespace CAMSimulator

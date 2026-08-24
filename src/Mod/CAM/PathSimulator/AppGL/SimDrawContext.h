@@ -89,6 +89,10 @@ struct SimDrawContext
 
     SimDrawContext();
 
+    /// Any submit landed since the frame driver reset it; a frame
+    /// with none skips endFrame (nothing to blit over the GL output).
+    bool submitted = false;
+
     bool active() const
     {
         return surface != nullptr;

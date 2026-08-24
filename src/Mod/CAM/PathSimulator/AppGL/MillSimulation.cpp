@@ -462,6 +462,10 @@ void MillSimulation::Render()
         simDisplay.RenderResult(false, mViewSSAO);
     }
 
+    if (gSimDraw.active()) {
+        simDisplay.RenderResultFacade(gSimDraw.surface, SimPassResolve);
+    }
+
     /*   if (mDebug > 0) {
            mat4x4 test;
            mat4x4_identity(test);
