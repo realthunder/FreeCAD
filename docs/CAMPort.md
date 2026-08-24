@@ -193,6 +193,17 @@ PUBLIC compile definition on the `area` target, because `USINGZ` changes
 `Point64`'s layout and a consumer compiled without it would disagree
 about the ABI.
 
+> **This was overtaken by the adaptive port.** Upstream's reworked adaptive
+> clearing tags its input points with an index and reads the index back off
+> the clip results, on both Clipper sides -- so libarea 0.3.0 turns on
+> `use_xyz` and, as foreseen above, `USINGZ` as a PUBLIC definition, and
+> bumps SOVERSION to 2. `CArea` pays eight bytes a point for something it
+> does not use. Upstream avoids that by building a second Clipper2 with
+> `USINGZ` and linking only that into the adaptive code; that does not work
+> here, where `CArea` is on Clipper2 as well, because the two builds share
+> the `Clipper2Lib` namespace and one process would hold both under one set
+> of symbols. IfcOpenShell has to be rebuilt against it.
+
 ### Three upstream defects -- do not import these
 
 1. **`Simplify` is dead code upstream.** `m_clipper_simple` is declared
@@ -524,47 +535,71 @@ Neither is Area work, and between them they hid the state of the gate.
    CAM tests that open a fixture recompute the document over objects they
    have just changed.
 
-### Still failing, and genuinely geometry
+### The two geometry failures were one binding bug
 
-Two, both real differences and neither a stale path. They are all that is
-left of the eleven; the other 15 are the parked adaptive group:
+Both were `Path.ClipperJoinType*`, exported by phase 1 as Clipper2's own
+enumerator values (`AppPathPy.cpp`). The only reader is Profile, which puts
+them in an Area call's `JoinType` -- a `PropertyEnumeration`, whose value is
+the position in the list `AREA_PARAMS_OFFSET_CONF` declares, Round, Square,
+Miter. Clipper2 numbers its four Square, Bevel, Round, Miter. So Round asked
+for Miter, Square asked for Round, and Miter asked for a fourth entry that is
+not in the list.
 
-- `TestPathProfile.TestPathProfile.test01` -- the inner loop matches exactly;
-  the outer one is off by one lattice step: wants `X23.54 Y23.54`, `Y14.0`,
-  `I-9.55 J-9.55`, gets `X23.55 Y23.55`, `Y14.05`, `I-9.54 J-9.54`.
+Upstream writes the qualified Clipper values into the parameter list itself,
+which makes the stored index the enumerator's own number and the two agree.
+This fork keeps the names in the list and converts (`ClipperEnums.h` says
+why), so the constants have to be the position: `Area::JoinType*`, out of the
+same list. Fixed in `d57800311b`.
 
-  **This looks like a regression rather than a port gap, and there is a lead.**
-  Phase 3's `e5c59ec710` retuned the then-current
-  `Mod/Path/PathTests/TestPathProfile.py` off this fork's own measured
-  Clipper2 output, and the numbers it measured are exactly the ones upstream's
-  CAM test expects today -- they differ only in the sign of a zero. So the
-  fork produced the right answer at phase 3 and produces a different one now.
-  Bisect the commits in between, with a probe that recomputes the Profile
-  operation and prints its gcode moves rather than the whole suite:
+- `TestPathProfile.test01` profiled a rounded rectangle with a miter join.
+  The corner radius came out 13.495 instead of 13.5 and the tangent points
+  0.05 off -- which read as "off by one lattice step" and sent the first look
+  at it into the Area geometry, where nothing was wrong.
+- `TestPathOpenProfile.test02` profiles two open edges and wants the round
+  join between them. A miter join gave it a sharp corner: two moves where it
+  expects three.
 
-      git log --oneline 73fbf0c250..HEAD -- src/Mod/Area src/Mod/CAM/App \
-          src/Mod/CAM/Path/Op/Profile.py
+The probe that found it swapped the op's `areaOpAreaParams` for the one the
+pre-port fork used, one difference at a time. Worth reusing: the failing
+values came back exactly, from Python, with no rebuild.
 
-  The phase 2 Area commits are in that range and are suspects, in particular
-  `f784942bc7` (gap detection can move `offset` itself by bisection) and
-  `a7d0212889` (the `Accuracy * .7 / 4` rework) -- as is phase 1's wholesale
-  op-code swap `d4d6c2f4bb`. Measure, do not assume. Note `e5c59ec710` edited
-  a file phase 1 has since deleted, so read the commit, not the tree.
-- `TestPathProfile.TestPathOpenProfile.test02` -- an open profile yields 2
-  moves where the test wants at least 3 ("2 offset triangle legs and an arc
-  between", so the arc is what is missing). Not investigated.
+### Adaptive clearing: upstream's rework, taken wholesale
 
-### Next
+`Adaptive.cpp` and `Adaptive.hpp` here were upstream's, unmodified -- the
+fork has only ever moved them. Upstream has since rewritten most of the
+algorithm, and the fourth `clearedArea` argument was only the visible edge
+of it: rest machining from a cleared area handed in, a helix ramp that
+searches between a target and a minimum diameter, link paths found rather
+than assumed, finishing passes only over what is not already clear, and an
+area total plus seven warning flags on every output. The CAM workbench taken
+in phase 1 is the caller of all of that.
 
-Two pieces:
+So both files were taken wholesale again at `11bee82d6c` (`890aafb36c`),
+with one edit -- the include line, which reads the two Clippers out of the
+libarea package. The bindings in `pyarea.cpp` grew the fourth argument, the
+two helix diameters, and the output's `ClearedArea`, `clipperScale` and
+warning flags. Nothing else needed adapting: the file has no FreeCAD
+dependencies, and with the two Z switches defined it compiled unchanged.
 
-1. The two profile failures above.
-2. Adaptive clearing (15 tests), still its own piece of work: upstream's
-   `Adaptive2d.Execute` takes a fourth `clearedArea` argument and this fork's
-   `Adaptive.cpp` is the three-argument one.
+The dependency work is the real cost, and it is written up under
+"Z-coordinates are not the differentiator" above: libarea 0.3.0, SOVERSION
+2, IfcOpenShell rebuilt. `src/Mod/Area/CMakeLists.txt` asks for 0.3.0 by
+version, because an older one does not merely lack a feature -- it disagrees
+about the layout of a point.
+
+### Where the port stands
+
+**`TestCAMApp` is green: 1343 tests, no failures, no errors** (44 skipped, 5
+expected failures). It was 17 failures and 9 errors after phase 1, then 12
+and 5, then 10 and 5 once the join type was fixed -- every one of those 15
+adaptive.
 
 `Mod/Area`'s public surface still did not grow. `getClearedArea` left it
 altogether -- upstream's replacement takes a `Toolpath*`, and phase 1 had
 already put that on the CAM side as `Path::clearedAreaFromPath`.
 
 Run the suite under a tty (`script -qec ... /dev/null`) or it dies partway.
+
+Still open, all of it listed under "Still open" further up: the ifcopenshell
+feedstock, the 2D subtraction never having been shown to run, and `Simplify`
+being inert.
