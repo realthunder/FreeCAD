@@ -33,6 +33,14 @@ simulator that absorption into `SceneDump`/`SceneServer` would have
 bought. Immediate-mode plugin draws do not stream; Blender does not
 stream addon draws either.
 
+**SSAO is IN stage 1** (ruled 2026-08-24). It is off by default and a
+toolbar toggle, so it was a candidate to cut -- but under the
+permanent-consumer ruling the SSAO chain (MRT G-buffer, float targets,
+kernel-array uniforms, noise texture, blur chain, multi-pass resolve)
+is the canonical advanced-plugin workload: porting it proves the API
+for the whole class, and the simulator stays visually identical at
+every toggle setting.
+
 Staging keeps a working simulator at every commit, and the shader port
 (step 2 below) is done once.
 
