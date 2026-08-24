@@ -52,6 +52,7 @@ class RendererExport Page2D
 {
 public:
     using ItemId = uint64_t;
+    using ImageId = uint64_t;
 
     /// Draw order between items of the same layer; also what a feed or
     /// a picker can use to tell geometry classes apart.
@@ -120,6 +121,12 @@ public:
                        const uint16_t* indices, uint32_t numIndices,
                        uint32_t rgba);
 
+        /// Draw a registered image over the page rect [x, y, w, h]
+        /// (bilinear). The id refers to the page's image registry; an
+        /// op whose image is not registered yet draws nothing and the
+        /// item redraws by itself once the image arrives.
+        void image(ImageId id, float x, float y, float w, float h);
+
         bool empty() const { return ops.empty(); }
         const std::vector<uint8_t>& bytes() const { return ops; }
 
@@ -140,6 +147,20 @@ public:
     bool hasItem(ItemId id) const;
     void clear();
 
+    /// Register or replace (= damage) the pixels image ops refer to:
+    /// tightly packed straight-alpha RGBA8, row 0 on top, copied and
+    /// retained -- like fonts, registration is legal before any GPU
+    /// context exists and the pixels follow every context rebuild. A
+    /// producer re-rasterizing for a new zoom band simply calls this
+    /// again; same-size replacements update the texture in place,
+    /// resizes recreate it (and the referencing items re-record on the
+    /// next render). repeat tiles the image outside [0,1) UV; the
+    /// default clamps its edge pixels.
+    void setImage(ImageId id, uint16_t width, uint16_t height,
+                  const uint8_t* rgba, bool repeat = false);
+    void removeImage(ImageId id);
+    bool hasImage(ImageId id) const;
+
     void setView(const View& v) { pageView = v; }
     const View& view() const { return pageView; }
 
@@ -155,6 +176,7 @@ public:
         uint32_t listSubmits = 0;  // command lists submitted to vg
         uint32_t bandCrossings = 0;// renders whose band differs from the last
         uint32_t droppedItems = 0; // no command list slot left (uint16 space)
+        uint32_t imageUploads = 0; // image textures created or updated
     };
     const Counters& counters() const { return stats; }
 

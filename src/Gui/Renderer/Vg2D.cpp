@@ -56,10 +56,15 @@ bool Vg2D::init()
     // reads bgfx::getCaps() and creates GPU resources.
     vg::ContextConfig cfg;
     cfg.m_MaxGradients = 256;
-    cfg.m_MaxImagePatterns = 64;
+    // Image patterns are frame-transient: every image op drawn in a
+    // frame consumes one slot, so this bounds visible image draws.
+    cfg.m_MaxImagePatterns = 256;
     cfg.m_MaxFonts = 8;
     cfg.m_MaxStateStackSize = 32;
-    cfg.m_MaxImages = 16;
+    // Template + symbols + view images + bitmap hatch tiles; the slot
+    // table is a few dozen bytes per entry, textures are created only
+    // for registered images.
+    cfg.m_MaxImages = 256;
     // One command list per page item: a real drawing holds tens of
     // thousands of edges. The context allocates the slot table up front
     // at 40 bytes a slot, so the uint16 handle space costs ~2.6MB --

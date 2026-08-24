@@ -42,11 +42,31 @@
 
 using namespace Render;
 
+namespace {
+
+// A registered image: the retained straight-alpha RGBA8 pixels plus
+// the vg image handle they are uploaded under. Kept at namespace scope
+// so the replay functions below can resolve image ops without access
+// to Page2D's private parts.
+struct PageImage
+{
+    std::vector<uint8_t> pixels;
+    uint16_t width = 0;
+    uint16_t height = 0;
+    bool repeat = false;
+    uint16_t handle = 0xffff; // vg::ImageHandle index, 0xffff = none
+    uint32_t version = 0;     // bumped by setImage
+    uint32_t uploaded = 0;    // version the current handle carries
+};
+
+} // namespace
+
 struct Page2D::Private
 {
     // The invalid vg command list handle index, kept as a raw uint16
     // so the item storage builds without the vg headers.
     static const uint16_t kNoList = 0xffff;
+    static const uint16_t kNoImage = 0xffff;
 
     struct Item
     {
@@ -56,7 +76,15 @@ struct Page2D::Private
         std::vector<uint8_t> ops;
         uint16_t list = kNoList;
         bool recorded = false;
+        // Image ops bake the vg image handle into the recorded command
+        // list; when any registry handle is recreated (imageEpoch
+        // moves), an item that references images re-records.
+        bool usesImages = false;
+        uint32_t imageEpoch = 0;
     };
+
+    std::map<ImageId, PageImage> images;
+    uint32_t imageEpoch = 1;
 
     std::map<ItemId, Item> items;
     std::vector<Item*> drawOrder;
@@ -79,6 +107,19 @@ struct Page2D::Private
 #endif
         item.list = kNoList;
         item.recorded = false;
+    }
+
+    void releaseImage(PageImage& img)
+    {
+#ifdef HAVE_BGFX
+        if (img.handle != kNoImage && Vg2D::instance().initialized()
+            && vgGeneration == Vg2D::instance().generation()) {
+            vg::ImageHandle handle {img.handle};
+            vg::destroyImage(Vg2D::instance().context(), handle);
+        }
+#endif
+        img.handle = kNoImage;
+        img.uploaded = 0;
     }
 };
 
@@ -107,6 +148,7 @@ enum class Op : uint8_t {
     Triangles,
     PushTransform,
     PopTransform,
+    Image,
 };
 
 void putBytes(std::vector<uint8_t>& out, const void* p, size_t n)
@@ -147,6 +189,13 @@ struct OpReader
     uint32_t u32()
     {
         uint32_t v;
+        memcpy(&v, p, sizeof(v));
+        p += sizeof(v);
+        return v;
+    }
+    uint64_t u64()
+    {
+        uint64_t v;
         memcpy(&v, p, sizeof(v));
         p += sizeof(v);
         return v;
@@ -334,6 +383,16 @@ void Page2D::Recorder::triangles(const float* xy, uint32_t numVertices,
     putU32(ops, rgba);
 }
 
+void Page2D::Recorder::image(ImageId id, float x, float y, float w, float h)
+{
+    putOp(ops, Op::Image);
+    putBytes(ops, &id, sizeof(id));
+    putF(ops, x);
+    putF(ops, y);
+    putF(ops, w);
+    putF(ops, h);
+}
+
 #ifdef HAVE_BGFX
 
 static vg::Color decodeColor(uint32_t rgba)
@@ -380,15 +439,28 @@ static size_t opFixedSize(Op op)
         return 24;
     case Op::PopTransform:
         return 0;
+    case Op::Image:
+        return 24;
     }
     return SIZE_MAX; // unknown opcode: newer writer, stop
 }
+
+// What replay needs beyond the vg context: the image registry to
+// resolve image ops against, and whether any image op was seen (valid
+// or not -- a not-yet-registered image must still re-record the item
+// once it arrives).
+struct ReplayEnv
+{
+    const std::map<Page2D::ImageId, PageImage>* images = nullptr;
+    bool usedImages = false;
+};
 
 // Replay one op buffer into the currently recording vg command list.
 // stateDepth counts unmatched PushTransform states; the caller pops
 // what is left so a truncated or malformed buffer cannot leak state
 // pushes into the next item.
-static void replayOpsInner(vg::Context* ctx, OpReader& r, int& stateDepth)
+static void replayOpsInner(vg::Context* ctx, OpReader& r, int& stateDepth,
+                           ReplayEnv& env)
 {
     while (!r.done()) {
         const Op op = (Op)r.u8();
@@ -551,6 +623,26 @@ static void replayOpsInner(vg::Context* ctx, OpReader& r, int& stateDepth)
             vg::popState(ctx);
             --stateDepth;
             break;
+        case Op::Image: {
+            uint64_t id = r.u64();
+            float x = r.f(), y = r.f(), w = r.f(), h = r.f();
+            env.usedImages = true;
+            if (!env.images || !(w > 0.0f) || !(h > 0.0f))
+                break;
+            auto it = env.images->find(id);
+            if (it == env.images->end() || it->second.handle == 0xffff)
+                break;
+            vg::ImageHandle img {it->second.handle};
+            vg::ImagePatternHandle pattern =
+                vg::createImagePattern(ctx, x, y, w, h, 0.0f, img);
+            if (!vg::isValid(pattern))
+                break;
+            vg::beginPath(ctx);
+            vg::rect(ctx, x, y, w, h);
+            vg::fillPath(ctx, pattern, vg::color4ub(255, 255, 255, 255),
+                         vg::FillFlags::ConvexAA);
+            break;
+        }
         default:
             // Unknown op: the buffer is from a newer writer; stop rather
             // than misparse the rest.
@@ -559,11 +651,12 @@ static void replayOpsInner(vg::Context* ctx, OpReader& r, int& stateDepth)
     }
 }
 
-static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops)
+static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops,
+                      ReplayEnv& env)
 {
     OpReader r {ops.data(), ops.data() + ops.size()};
     int stateDepth = 0;
-    replayOpsInner(ctx, r, stateDepth);
+    replayOpsInner(ctx, r, stateDepth, env);
     while (stateDepth-- > 0)
         vg::popState(ctx);
 }
@@ -620,6 +713,50 @@ void Page2D::clear()
     d->items.clear();
     d->drawOrder.clear();
     d->orderDirty = false;
+    for (auto& v : d->images)
+        d->releaseImage(v.second);
+    d->images.clear();
+}
+
+void Page2D::setImage(ImageId id, uint16_t width, uint16_t height,
+                      const uint8_t* rgba, bool repeat)
+{
+    if (!width || !height || !rgba) {
+        removeImage(id);
+        return;
+    }
+    PageImage& img = d->images[id];
+    // A size or sampler change needs a new texture; releasing the
+    // handle here makes the upload pass create one (and the epoch move
+    // re-records the items that baked the old handle).
+    if (img.handle != Private::kNoImage
+        && (img.width != width || img.height != height
+            || img.repeat != repeat))
+        d->releaseImage(img);
+    img.width = width;
+    img.height = height;
+    img.repeat = repeat;
+    img.pixels.assign(rgba, rgba + (size_t)width * height * 4);
+    ++img.version;
+}
+
+void Page2D::removeImage(ImageId id)
+{
+    auto it = d->images.find(id);
+    if (it == d->images.end())
+        return;
+    const bool hadHandle = it->second.handle != Private::kNoImage;
+    d->releaseImage(it->second);
+    d->images.erase(it);
+    // Items whose ops still reference the id must drop it from their
+    // command lists rather than submit a destroyed handle.
+    if (hadHandle)
+        ++d->imageEpoch;
+}
+
+bool Page2D::hasImage(ImageId id) const
+{
+    return d->images.count(id) != 0;
 }
 
 float Page2D::bandScale(float zoom)
@@ -646,7 +783,39 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
             v.second.list = Private::kNoList;
             v.second.recorded = false;
         }
+        for (auto& v : d->images) {
+            v.second.handle = Private::kNoImage;
+            v.second.uploaded = 0;
+        }
         d->vgGeneration = vg2d.generation();
+    }
+
+    // Upload pass: bring every registered image's texture in sync with
+    // its retained pixels. Same-size damage updates the texture in
+    // place (recorded command lists stay valid); a new or recreated
+    // handle moves the epoch so referencing items re-record below.
+    for (auto& v : d->images) {
+        PageImage& img = v.second;
+        if (img.uploaded == img.version && img.handle != Private::kNoImage)
+            continue;
+        if (img.handle != Private::kNoImage) {
+            vg::ImageHandle handle {img.handle};
+            vg::updateImage(ctx, handle, 0, 0, img.width, img.height,
+                            img.pixels.data());
+        }
+        else {
+            uint32_t flags = vg::ImageFlags::Filter_Bilinear;
+            if (!img.repeat)
+                flags |= vg::ImageFlags::Clamp_UV;
+            vg::ImageHandle handle = vg::createImage(
+                ctx, img.width, img.height, flags, img.pixels.data());
+            if (!vg::isValid(handle))
+                continue; // out of image slots; retried next render
+            img.handle = handle.idx;
+            ++d->imageEpoch;
+        }
+        img.uploaded = img.version;
+        ++stats.imageUploads;
     }
 
     const float band = bandScale(pageView.zoom);
@@ -681,6 +850,9 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
         // empty content for skipped geometry) cost nothing here.
         if (item->ops.empty())
             continue;
+        if (item->recorded && item->usesImages
+            && item->imageEpoch != d->imageEpoch)
+            item->recorded = false;
         vg::CommandListHandle list {item->list};
         if (!item->recorded) {
             if (!vg::isValid(list)) {
@@ -697,9 +869,13 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
             else
                 vg::resetCommandList(ctx, list);
             vg::beginCommandList(ctx, list);
-            replayOps(ctx, item->ops);
+            ReplayEnv env;
+            env.images = &d->images;
+            replayOps(ctx, item->ops, env);
             vg::endCommandList(ctx);
             item->recorded = true;
+            item->usesImages = env.usedImages;
+            item->imageEpoch = d->imageEpoch;
             ++stats.itemRecords;
         }
         vg::submitCommandList(ctx, list);
