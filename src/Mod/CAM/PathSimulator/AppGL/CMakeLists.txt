@@ -6,6 +6,10 @@ set(CAMSimulator_LIBS
     Mesh
     FreeCADApp
     FreeCADGui
+    # The draw facade (Gui/Renderer/DrawDevice.h) the simulator's
+    # rendering is moving onto (docs/CAMSimRenderPort.md). The raw-GL
+    # libraries below leave with the last step of that port.
+    FreeCADRenderer
     ${QtOpenGL_LIBRARIES}
     ${OPENGL_gl_LIBRARY}
 )
@@ -95,7 +99,13 @@ target_include_directories(
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_BINARY_DIR}/src
     ${CMAKE_CURRENT_BINARY_DIR}
+    # Dummy3DViewer pulls Gui/View3DInventorViewer.h, which includes
+    # Coin headers; the local Coin fork lives outside the conda prefix.
+    ${COIN3D_INCLUDE_DIRS}
 )
+# The Part/Path link interfaces carry bare -lTK* entries; the local
+# OCCT install lives outside the default linker search path.
+target_link_directories(CAMSimulator PRIVATE ${OCC_LIBRARY_DIR})
 target_link_libraries(CAMSimulator ${CAMSimulator_LIBS})
 
 if(FREECAD_USE_PCH)
