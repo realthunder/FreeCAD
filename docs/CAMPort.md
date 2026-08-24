@@ -530,11 +530,29 @@ Two, both real differences and neither a stale path. They are all that is
 left of the eleven; the other 15 are the parked adaptive group:
 
 - `TestPathProfile.TestPathProfile.test01` -- the inner loop matches exactly;
-  the outer one is off by one lattice step (`X23.55` for `X23.54`, `Y14.05`
-  for `Y14.0`). Phase 3 already retuned this test once (`e5c59ec710`), so
-  read that commit before touching it again.
+  the outer one is off by one lattice step: wants `X23.54 Y23.54`, `Y14.0`,
+  `I-9.55 J-9.55`, gets `X23.55 Y23.55`, `Y14.05`, `I-9.54 J-9.54`.
+
+  **This looks like a regression rather than a port gap, and there is a lead.**
+  Phase 3's `e5c59ec710` retuned the then-current
+  `Mod/Path/PathTests/TestPathProfile.py` off this fork's own measured
+  Clipper2 output, and the numbers it measured are exactly the ones upstream's
+  CAM test expects today -- they differ only in the sign of a zero. So the
+  fork produced the right answer at phase 3 and produces a different one now.
+  Bisect the commits in between, with a probe that recomputes the Profile
+  operation and prints its gcode moves rather than the whole suite:
+
+      git log --oneline 73fbf0c250..HEAD -- src/Mod/Area src/Mod/CAM/App \
+          src/Mod/CAM/Path/Op/Profile.py
+
+  The phase 2 Area commits are in that range and are suspects, in particular
+  `f784942bc7` (gap detection can move `offset` itself by bisection) and
+  `a7d0212889` (the `Accuracy * .7 / 4` rework) -- as is phase 1's wholesale
+  op-code swap `d4d6c2f4bb`. Measure, do not assume. Note `e5c59ec710` edited
+  a file phase 1 has since deleted, so read the commit, not the tree.
 - `TestPathProfile.TestPathOpenProfile.test02` -- an open profile yields 2
-  moves where the test wants at least 3.
+  moves where the test wants at least 3 ("2 offset triangle legs and an arc
+  between", so the arc is what is missing). Not investigated.
 
 ### Next
 
