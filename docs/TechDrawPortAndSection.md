@@ -1117,3 +1117,181 @@ viewport.
 **M2 is now complete.** Remaining before M3: nothing engine-side; the
 wire (serialize Page2D items + images + fonts over SceneServer to the
 wasm viewer) is next.
+
+## 24. Design (2026-08-24): M3, the wire -- a page as a streamable document
+
+The goal restated from section 16: a drawing page becomes a streamable
+document like the 3D scene -- the desktop (or a headless server)
+publishes the page's retained Page2D content over SceneStreamServer,
+and the wasm viewer renders it with the same vg code on the essl
+backend. The survey that produced this design covered three seams: the
+server's delta machinery, the wasm viewer's payload path, and the
+TechDraw damage cadence. The findings dictate almost everything.
+
+### 24.1 The transport is reused whole, because the splice parses nothing
+
+`spliceObjectDelta` (SceneDump.cpp) -- the function the server uses to
+catch up a viewer that is behind -- makes exactly five assumptions
+about a payload: a u64 baseVersion field at `spans.baseVersionAt`
+(before the list), the object-list section occupying exactly
+`[listBegin, listEnd)` in `writeObjectSection`'s encoding, everything
+outside those regions independent of the base version (it is copied
+verbatim), entries keyed so the server's blob store can answer them
+inline (v37), and `baseVersion != 0`. It never reads the magic, the
+version, or any other byte of the payload.
+
+So the page payload is its own format under its own magic (`FCPD`,
+version 1), and the server -- publish, per-viewer catch-up, blob
+store, history window, grants, document groups -- is reused with zero
+changes. The cost of admission is that the page's item list must use
+the exact scene entry codec. To keep that from drifting, the codec is
+exported from SceneDump.cpp as a `writeObjectSection` /
+`readObjectSection` pair (the writer wraps the internal template the
+scene root already uses; the reader is new, written next to it in the
+same file) instead of being duplicated in the page serializer.
+
+### 24.2 The payload
+
+All little-endian, `str` = u32 length + bytes, mirroring SceneDump:
+
+```
+u32  magic 'FCPD'          u32  version (1)
+u64  manifestVersion
+u64  baseVersion           <- spans.baseVersionAt
+u64  sessionId
+f32  pageWidth, pageHeight (Rez units)
+fonts:  u32 n x [ str name, str blobKey, u32 size ]
+images: u32 n x [ u64 imageId, u16 w, u16 h, u8 repeat,
+                  str blobKey, u32 size ]
+items:                     <- spans.listBegin
+    the writeObjectSection encoding: removed ids, then entries
+    [ u64 itemId, f32 bbox[6], four empty info strings, u8 incomplete,
+      group ref (str chunkKey + u32 size),
+      delta form only: u8 flag + optional inline chunk bytes ]
+                           <- spans.listEnd  (nothing follows)
+```
+
+The font and image tables ride before the list, so a spliced delta
+carries the *latest* tables verbatim -- the same rule as the 3D root's
+inline volatile state, and correct for the same reason: they are
+idempotent to re-apply, and small (a page has four fonts and a handful
+of rasters). Everything bulky is behind content keys.
+
+Three chunk kinds, all content-addressed (sha1, like every blob):
+
+- **Item chunk**: u8 kind, u32 layer, then the item's op buffer
+  verbatim -- the position-independent page-coordinate representation
+  M1 built is the wire format, as designed. Kind or layer changes
+  re-key the chunk, which is correct: the entry is the delta unit.
+- **Image chunk**: the raw RGBA8 pixels (dimensions ride in the root's
+  image table). Identical re-rasters dedup by content.
+- **Font chunk**: the font file bytes. Vg2D already retains them.
+
+The entry's `info` strings stay empty in v1 (the picker, when it
+comes, will want the owning view's identity there); `bbox` carries the
+item's page-space bounds with z = 0, computed conservatively from the
+op buffer's coordinates -- what lets a viewer cull or prioritize items
+it has not fetched. The entry key IS the chunk key: that identity is
+what makes the server's inline-delta catch-up (v37) work unchanged.
+
+### 24.3 The publisher
+
+A `PageServeSource` in TechDrawGui, mirroring Gui's SceneServeSource,
+exposed as `TechDrawGui.servePage(page, port=0)`. Its document group
+is `<document>#<page>` (label: the page's Label), so a 3D serve of the
+same document and any number of served pages coexist -- each group has
+one publisher claim, and the survey confirmed a shared group would
+lock the second claimant out.
+
+- **Feed**: it owns a headless Page2D and feeds it the renderPageVg
+  way -- populate the ViewProviderPage's QGSPage without any widget
+  (addChildrenToPage / redrawAllViews / setViewParents) so the
+  annotation tier has laid-out Qt items to capture, then
+  PageFeed::feedPage. The template rasterizes at a fixed scale 2.0
+  (the interactive path's 2x-of-default cap; a viewer-driven re-raster
+  is future work, noted in 24.6).
+- **Damage**: per-view `DrawView::signalGuiPaint` marks the view
+  dirty; `DrawPage::signalGuiPaint` plus a structure hash covers
+  add/remove; the X/Y compare and the template stamp mirror
+  QGVPage::drawVgPreview. All of it coalesces into a single-shot
+  zero-interval timer -- crucially, the queued hop also orders the
+  re-feed AFTER ViewProviderDrawingView::onGuiRepaint has refreshed
+  the Qt layout the capture tier photographs.
+- **Publish**: re-feed dirty views into the Page2D, take its change
+  journal (new: Page2D::takeChanges -- setItem/removeItem/setImage/
+  removeImage record ids since the last take, so only damaged items
+  are re-hashed), rebuild changed entries, `diffObjectLists` against
+  the previous publish's list, retain-or-publish every named chunk
+  (the chunkBlobs discipline: `retainBlob || publishBlob`, inside the
+  serialization pass, every publish, every key -- a missed retain
+  404s two publishes later), then `beginPublish`/`publish`. A deleted
+  view's items arrive as explicit removals via the per-kind
+  contiguous-id sweep the feed already guarantees.
+
+### 24.4 The viewer
+
+The wasm viewer routes on magic at the single funnel every transport
+passes through (applyScenePayload, right after the u64 stream-version
+prefix): `FCSD` parses as today, `FCPD` enters the page path.
+
+- **Store**: a viewer-side Page2D plus the id -> key tables from the
+  root. A full root (baseVersion 0) lists every item: ids the viewer
+  holds that the list does not name are removed -- same contract as
+  the 3D object model. Chunks resolve through the existing kind-blind
+  blob machinery (requestBlob -> IndexedDB -> GET /blob or the POST
+  /blobs batch) untouched; the page drain hooks in beside
+  resolvePending, and sweepStore learns the page's live keys so the
+  budget sweep does not collect them. Inline v37 delta bytes ingest
+  directly, store included. Fonts land through a new byte-based
+  Page2D::registerFont overload (Vg2D::loadFont already takes bytes;
+  re-registering a name is already a no-op). Applying an item takes a
+  new setItem overload accepting the raw op buffer (replay is already
+  bounds-checked; a truncated buffer draws what fits).
+- **Render**: a page-mode branch in mainLoop -- skip the 3D
+  renderer's frame, set view rect + clear on a fixed id in the top
+  view-id granule the renderer already reserves for Page2D, call
+  page->render(viewId, w, h), then bgfx::frame(). The one wrinkle the
+  survey found: the bgfx device in this tier comes up inside
+  BGFXRenderer's first render, so page mode keeps routing through the
+  3D render until the device exists, then branches. Pan/zoom/touch
+  handlers get an early page-mode branch driving Page2D::View (fit on
+  first payload: zoom = min(w/sheetW, h/sheetH), panY = zoom*sheetH,
+  the renderPageVg framing); devicePixelRatio rides s_dpr.
+- **Switch/reset**: the sessionId-change seam in applyScenePayload is
+  the one place that knows a document switch happened; it resets the
+  page store exactly as it resets the object model, and payload
+  arrival decides the mode (a scene payload leaves page mode, a page
+  payload enters it).
+- **Version skew**: sceneSnapshotVersion answers 0 for a foreign
+  magic, so the reload probe cannot see a newer page format. The page
+  branch carries its own probe (page version > built -> reload with
+  its own bust string), and the hello grows a "page" field so the
+  backend's mismatch check covers both formats.
+
+### 24.5 Build
+
+vg-renderer enters the wasm viewer as a local target in
+wasm/CMakeLists.txt (the 3rdParty block is Qt-shaped and cannot be
+included): the 11 C/C++ sources, PUBLIC include, DXBC/DXIL=0 defines,
+linked with bx/bgfx -- its shaders are committed embedded C arrays
+carrying essl, so the WebGL backend needs no shaderc work at all.
+Page2D.cpp and Vg2D.cpp join the fcviewer sources. This also repairs
+the wasm build, which commit c857d4dda3 broke: BGFXRenderer.cpp now
+includes Vg2D.h and calls Vg2D::shutdown() unconditionally, and the
+wasm target has neither the header path nor the source.
+
+### 24.6 Open questions carried forward
+
+- Template sharpness: the served raster is fixed at scale 2.0; a
+  viewer zooming past it gets softness. The fix -- a control op asking
+  the publisher to re-rasterize at a named band, answered by the next
+  publish re-keying the image chunk -- fits the protocol as designed,
+  and simply is not v1.
+- Interaction: picks and semantic ops on page items (select a
+  dimension, edit its value) are the thin-client vocabulary of
+  docs/ThinClient.md applied to 2D; the entry info strings are
+  reserved for exactly that.
+- A page served without any Gui document (FreeCADCmd) still needs the
+  QGSPage population step for annotations, which needs the Gui layer;
+  the geometry tier alone would serve. Same boundary the 3D headless
+  serve has (docs/ComputeBoundaries.md).
