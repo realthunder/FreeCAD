@@ -1577,3 +1577,89 @@ Open, deliberately:
   re-raise above the raster.
 - Sources nested in transformed containers capture untransformed
   (ViewProvider root == world only for top-level objects).
+
+## 28. Implementation status (2026-08-25): section 27's open list is closed
+
+All five open items above are done, in commits `6575fbd643`
+(sections/details), `61e103abe9` (face highlight), `6c74e12d6b`
+(nested sources -- a test verdict, no code), `61727f1d1b`
+(perspective), `30a0fd9bdd` (bgfx-quality capture). Every claim below
+was verified on the real GPU (VirtualGL egl0 + Xvfb, NVIDIA banner
+checked; rigs td_shaded3/5/6/7/8 in the session scratchpad beside the
+original td_shaded1/2), and the ortho, section/detail and perspective
+rigs pass together against the final tree.
+
+- **Sections and details** (25 Qt-tier + 8 vg-tier checks): the
+  capture resolves the DERIVED shape -- `getCutShapeRaw()` for a
+  section, `getDetailShape()` for a detail -- and renders its
+  triangulation as an indexed face set (Coin crease normals, the first
+  source's ShapeColor), since the cut solid exists nowhere in the 3D
+  scene. The camera math needed almost nothing: a section's
+  `getRotatedCS()`/`getOriginalCentroid()` give the right frame by
+  virtual dispatch; a detail mirrors detailExec (base view's
+  projection CS, the anchor lifted to R3 as the 2D origin, its own
+  Rotation). Aligned complex sections (centerShapeXY, no centroid
+  chain) stay unshaded. Display side, the cut-surface base fill goes
+  transparent while the underlay is active -- in a straight-on section
+  the whole view IS the cut face, and the opaque fill was burying the
+  raster; hatch lines still draw above it.
+- **Face highlight** raises to FACE + 6 (above the raster at FACE + 5,
+  below hatches) on pre-select/select and drops back on normal;
+  the select of a face flips its region to the selection color above
+  the raster and restores exactly on clear.
+- **Nested-container sources REGISTER** -- the sec 27 worry is
+  refuted by probes: a source nested in a placed App::Part (both HLR
+  shape and VP root carry only the object's own placement), an
+  App::Part source (both carry the container transform), and an
+  App::Link source (both carry the link placement) all hold
+  registration. The stale capture comment said otherwise and is gone.
+- **Perspective views** (14 checks): the HLR's perspective projector
+  is an eye at +Focus over the centroid plane projecting the SCALED
+  shape (u = x*f/(f-z)), i.e. Focus/scale from the unscaled side. The
+  capture mirrors it with an asymmetric SoFrustumCamera whose section
+  at the centroid plane is exactly the registration rect; the rect
+  comes from the projected corners of the view-frame bounds (central
+  projection preserves convexity in front of the eye). A shape
+  reaching the eye stays unshaded. Registration holds through Focus
+  changes, Rotation, and perspective sections.
+- **bgfx-quality capture** (18 checks): `Renderer::setCaptureFilter`
+  restricts renderOffscreen to the named objects' draws (resolved
+  through the resident objectInfo table) with selection/highlight/
+  overlay feeds stripped, a flat white background, the default
+  camera-aligned headlight, and settle frames for temporal
+  convergence -- all swapped in and restored around the frame, with
+  drawListVersion untouched so the mesh collector's keep-set stays
+  the full scene's. ShadedUnderlay prefers it whenever a 3D view of
+  the source document runs a backend
+  (TechDraw/General/ShadedUnderlayBackend, default on) and the same
+  camera volume hands over as matrices; refusals fall back to the
+  Coin capture.
+
+Traps burned in this round:
+
+- A test section whose plane is PARALLEL to the base view's projection
+  plane throws `gp_Dir zero norm` drawing the section line on the base
+  view -- real sections cut perpendicular to the base view.
+- The engine's finished frame carries no meaningful alpha:
+  `QOpenGLFramebufferObject::toImage()` premultiplies and zeroed every
+  color under alpha 0. Read the pixels directly and key the exact
+  white clear -- and re-bind the capture FBO first, because the
+  engine's frame leaves its own readback FBO on the GL READ binding.
+- The viewer feeds the backend's lights for the INTERACTIVE camera;
+  under the capture camera they point anywhere and the model rendered
+  near-black. The default ViewLightConfig (fixed camera-aligned
+  headlight) is the correct capture state.
+- Render-cache mode 3 evicts a hidden object's caches; with a backend
+  attached, `SoFCSwitch::switchOverride` renders BLANK for a 3D-hidden
+  source (nothing behind the switch to draw). Hidden sources now
+  tessellate into the Coin capture directly, with their own
+  ShapeColor.
+- The vg tier ignores per-view Visibility -- isolating one view by
+  hiding the others works on the Qt scene only; on renderPageVg crop
+  analysis windows around the views' page positions instead.
+
+Still open, known and accepted: the derived-shape (section/detail)
+capture shades uniformly with one source color (per-face fidelity for
+CUT shapes would need the cut solid fed to the backend); aligned
+complex sections stay unshaded; the vg tier still has no section-face
+(hatch) items of its own.
