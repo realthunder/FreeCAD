@@ -95,6 +95,49 @@ if (BUILD_BGFX)
     # the others. Costs one GL query object and eight bytes of handle
     # table per slot.
     target_compile_definitions(bgfx PUBLIC BGFX_CONFIG_MAX_OCCLUSION_QUERIES=2048)
+
+    # vg-renderer: the 2D vector engine for drawing pages (TechDraw), a
+    # retained command-list renderer on top of bgfx -- see
+    # docs/TechDrawPortAndSection.md section 16 for why it was chosen.
+    # Vendored as a submodule like bgfx itself; libtess2, fontstash and
+    # stb_truetype live inside it, so it adds no external dependency.
+    # Upstream builds with GENie and ships no CMake, so the target is
+    # defined here.
+    add_library(vg-renderer STATIC
+        vg-renderer/src/vg.cpp
+        vg-renderer/src/path.cpp
+        vg-renderer/src/stroker.cpp
+        vg-renderer/src/vg_util.cpp
+        vg-renderer/src/libs/fontstash.cpp
+        vg-renderer/src/libs/stb_truetype.cpp
+        vg-renderer/src/libtess2/bucketalloc.c
+        vg-renderer/src/libtess2/dict.c
+        vg-renderer/src/libtess2/geom.c
+        vg-renderer/src/libtess2/mesh.c
+        vg-renderer/src/libtess2/priorityq.c
+        vg-renderer/src/libtess2/sweep.c
+        vg-renderer/src/libtess2/tess.c
+    )
+    target_include_directories(vg-renderer PUBLIC vg-renderer/include)
+    # vg/vg.h includes bx headers, so bx must be PUBLIC -- which also
+    # inherits bx's PUBLIC BX_CONFIG_DEBUG define, without which bx
+    # headers refuse to compile.
+    target_link_libraries(vg-renderer PUBLIC bx bgfx)
+    # The embedded shaders are baked by vg-renderer/src/shaders/rebake.sh,
+    # which runs shaderc on a Linux host and therefore cannot produce the
+    # two Direct3D bytecode profiles; embedded_shader.h's platform-support
+    # switches exist to be overridden for exactly this case. Nothing is
+    # lost: the renderer's own runtime shader packs are glsl/spirv/essl
+    # only, so the bgfx backend never runs on Direct3D anyway.
+    target_compile_definitions(vg-renderer PRIVATE
+        BGFX_PLATFORM_SUPPORTS_DXBC=0
+        BGFX_PLATFORM_SUPPORTS_DXIL=0)
+    # C++20 to match bgfx/bx (bx headers require it); PIC because the
+    # static archive links into the FreeCADRenderer shared lib.
+    set_target_properties(vg-renderer PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        POSITION_INDEPENDENT_CODE ON)
 endif()
 
 if (BUILD_DILIGENT)

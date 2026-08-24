@@ -39,7 +39,7 @@ if(BUILD_BGFX)
     # Private: nothing outside this library calls bgfx, and example-common
     # carries bgfx's own entry point, which asks any executable that links
     # it for a _main_ it does not have.
-    list(APPEND Renderer_PRIVATE_LIBS bgfx bx bimg example-common)
+    list(APPEND Renderer_PRIVATE_LIBS bgfx bx bimg example-common vg-renderer)
 endif(BUILD_BGFX)
 
 if(BUILD_DILIGENT)
@@ -182,6 +182,17 @@ endif(BUILD_BGFX)
 add_executable(fcscenediff tools/scenediff.cpp)
 target_link_libraries(fcscenediff ${Library})
 SET_BIN_DIR(fcscenediff fcscenediff)
+
+if(BUILD_BGFX)
+    # Offscreen vg-renderer smoke test (paths + text into a headless bgfx
+    # frame buffer, pixels read back and checked). Build-tree developer
+    # tool like fcscenediff -- not installed. Links vg-renderer/bgfx
+    # directly, no Qt and no ${Library}.
+    add_executable(fcvgsmoke tools/vgsmoke.cpp)
+    target_link_libraries(fcvgsmoke vg-renderer bgfx bx)
+    set_target_properties(fcvgsmoke PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    SET_BIN_DIR(fcvgsmoke fcvgsmoke)
+endif()
 
 if (Renderer_Assets)
     install(FILES ${Renderer_Assets} DESTINATION ${CMAKE_INSTALL_DATADIR}/Renderer)
