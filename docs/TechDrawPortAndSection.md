@@ -674,3 +674,64 @@ a streamable document like the 3D scene.
 desktop, GPU HLR (refuted, section 9), and the section-cut work
 (items 1-4, an independent arc). The Qt-side repaint fixes of
 section 15 remain worth doing on their own and do not conflict.
+
+## 17. Implementation status (2026-08-24): M0 and M1 are built and measured
+
+**M0 landed** (`585020be66`; vg fork `a3c0800`). vg-renderer compiles
+as a static lib beside bgfx and links into `FreeCADRenderer`;
+`fcvgsmoke` draws paths + text into an offscreen frame buffer with
+bgfx brought up headless -- PASS on Vulkan and OpenGL, NVIDIA, no
+display. Traps that cost time, so they are written down: headless
+bgfx in our fork *requires* a 0x0 resolution with all-null platform
+data (a non-zero size fails init with no message); the embedded
+shaders were rebaked (`src/shaders/rebake.sh` in the fork) with
+glsl/essl/spv/wgsl/mtl, and consumers define
+`BGFX_PLATFORM_SUPPORTS_DXBC=0/_DXIL=0` because a Linux host cannot
+produce the two Direct3D profiles; GL read-back is bottom-up
+(`caps->originBottomLeft`).
+
+**M1 landed** (`19a3d3632c`, `a00bb0e51e`): `Vg2D` (context + font
+registry) and `Page2D` (the retained store) in `src/Gui/Renderer/`.
+Items hold their content as a position-independent op buffer in page
+coordinates -- the retained representation, the damage re-record
+source, and (M3) the wire format -- replayed into one Cacheable vg
+command list each.
+
+**The section-15 open question is answered from vg's source, then
+confirmed by test**: the command-list cache keys on the state's
+average scale with an *exact equality* check
+(`submitCommandList`/`updateState`; translation and rotation do not
+enter `m_AvgScale`). Replay under a changed scale therefore cannot
+happen -- but any continuous zoom through the vg transform would
+re-tessellate every list every frame. So the zoom bands moved down a
+level: `Page2D` keeps only the power-of-two band scale in the vg
+state and applies pan, rotation and the bounded residual
+(1/sqrt(2)..sqrt(2)) in the bgfx view matrix. Within a band, vg
+replays cached tessellation for every unchanged item; on a crossing,
+vg itself re-records each cache at the new scale. Item re-records
+happen only on damage. Rotation is clockwise-positive on screen (Qt
+convention); bx's rotZ turns the other way, so the sign flips at the
+matrix.
+
+**Measured** (fcvgsmoke --bench, RTX 3060, Vulkan, offscreen 640x480,
+two-segment stroke items):
+
+    items   record-all   replay (unchanged/pan/zoom)   band crossing
+    2k      11.0 ms      0.3-0.5 ms                    0.7 ms
+    20k     27.0 ms      2.1-3.0 ms                    5.3 ms
+    50k     52.1 ms      5.6-6.9 ms                    13.2 ms
+
+Replay is 0.11-0.26 us/item against the 3-4 us/item Qt raster tax of
+section 15 -- ~25x -- and, unlike Qt's FullViewportUpdate, an
+unchanged frame does not rescale with hover or selection churn at
+all. Command list slots take the whole uint16 handle space (65534; a
+page beyond that drops items and counts them in
+`Counters::droppedItems` -- found by the 20k bench crashing at the
+old 16384 cap with `VG_CHECK` compiled out).
+
+Correctness gate: `fcvgsmoke --page2d` drives one retained page
+through identity / pan / in-band zoom / band crossing / 90deg
+rotation / damage / removal with pixel probes at view-transformed
+positions and counter assertions; 24 checks, PASS on both backends.
+
+**Next: M2**, the TechDraw feed, per the plan above.
