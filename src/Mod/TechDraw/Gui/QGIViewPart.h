@@ -78,6 +78,8 @@ public:
     virtual void drawAllEdges();
     virtual void drawAllVertexes();
     virtual void drawShadedUnderlay();
+    //! whether the shaded raster underlay is active on this view
+    bool hasShadedUnderlay() const { return m_underlay != nullptr; }
 
     bool showThisEdge(TechDraw::BaseGeomPtr geom);
 

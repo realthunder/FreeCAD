@@ -87,6 +87,12 @@ void QGIViewSection::drawSectionFace()
 
         QColor faceColor = (sectionVp->CutSurfaceColor.getValue()).asValue<QColor>();
         faceColor.setAlpha((100 - sectionVp->CutSurfaceTransparency.getValue())*255/100);
+        if (hasShadedUnderlay()) {
+            // The shaded underlay renders the cut surface itself (doc
+            // sec 26): an opaque base fill above it would hide the
+            // shading. Hatch lines still draw over the raster.
+            faceColor.setAlpha(0);
+        }
         newFace->setFillColor(faceColor);
 
         if (section->CutSurfaceDisplay.isValue("Color")) {

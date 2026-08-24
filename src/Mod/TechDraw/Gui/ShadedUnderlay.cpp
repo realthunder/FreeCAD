@@ -29,8 +29,14 @@
 #include <QFile>
 
 #include <BRepBndLib.hxx>
+#include <BRepMesh_IncrementalMesh.hxx>
+#include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
+#include <Poly_Triangulation.hxx>
+#include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax3.hxx>
@@ -39,17 +45,23 @@
 
 #include <Inventor/SbRotation.h>
 #include <Inventor/actions/SoGLRenderAction.h>
+#include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
+#include <Inventor/nodes/SoIndexedFaceSet.h>
+#include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoShapeHints.h>
 #endif// #ifndef _PreComp_
 
 #include <App/DocumentObject.h>
+#include <App/PropertyStandard.h>
 #include <Base/Console.h>
 #include <Gui/Application.h>
 #include <Gui/Inventor/SoFCSwitch.h>
 #include <Gui/SoFCOffscreenRenderer.h>
 #include <Gui/ViewProvider.h>
+#include <Mod/TechDraw/App/DrawComplexSection.h>
 #include <Mod/TechDraw/App/DrawUtil.h>
 #include <Mod/TechDraw/App/DrawViewDetail.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
@@ -111,6 +123,106 @@ bool sameCapture(const QImage& a, const QImage& b)
     return pixels == 0 || double(total) / double(pixels) <= 1.0;
 }
 
+// The base view of a section or detail. BaseView is declared on each
+// derived class separately, so resolve it by name.
+DrawViewPart* baseViewOf(const DrawViewPart* dvp)
+{
+    auto* prop = dynamic_cast<App::PropertyLink*>(
+        const_cast<DrawViewPart*>(dvp)->getPropertyByName("BaseView"));
+    return prop ? dynamic_cast<DrawViewPart*>(prop->getValue()) : nullptr;
+}
+
+// The shading color for a derived (cut/clipped) shape. The derived
+// geometry does not exist in the 3D scene, so it cannot inherit the
+// sources' per-object materials -- it is shaded uniformly with the
+// first source object's ShapeColor (following BaseView for views that
+// carry no Source of their own). Per-face fidelity is the bgfx capture
+// follow-up (doc sec 26.2).
+SbColor shadeColor(DrawViewPart* dvp)
+{
+    for (int depth = 0; dvp && depth < 8; ++depth) {
+        for (auto* obj : sourcesOf(dvp)) {
+            auto* vp = Gui::Application::Instance->getViewProvider(obj);
+            if (!vp)
+                continue;
+            auto* prop =
+                dynamic_cast<App::PropertyColor*>(vp->getPropertyByName("ShapeColor"));
+            if (prop) {
+                const auto c = prop->getValue();
+                return {c.r, c.g, c.b};
+            }
+        }
+        dvp = baseViewOf(dvp);
+    }
+    return {0.8F, 0.8F, 0.8F};
+}
+
+// A derived shape as a shaded Coin scene: the shape's triangulation as
+// one indexed face set. Normals are Coin-generated with a crease angle
+// -- tessellated curvature shades smooth, real corners crease.
+SoSeparator* buildMeshNode(const TopoDS_Shape& shape, const SbColor& color)
+{
+    Bnd_Box bounds;
+    BRepBndLib::Add(shape, bounds, /*useTriangulation*/ false);
+    if (bounds.IsVoid())
+        return nullptr;
+    const double diag = std::sqrt(bounds.SquareExtent());
+    // Relative deflection; the raster caps at kMaxUnderlayPixels per
+    // side, where 0.25% of the diagonal is around a pixel.
+    BRepMesh_IncrementalMesh mesher(shape, std::max(diag * 0.0025, 1e-4), Standard_False, 0.5,
+                                    Standard_True);
+    (void)mesher;
+
+    std::vector<SbVec3f> points;
+    std::vector<int32_t> indices;
+    for (TopExp_Explorer expl(shape, TopAbs_FACE); expl.More(); expl.Next()) {
+        const TopoDS_Face& face = TopoDS::Face(expl.Current());
+        TopLoc_Location loc;
+        Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(face, loc);
+        if (tri.IsNull())
+            continue;
+        const gp_Trsf& trsf = loc.Transformation();
+        const bool reversed = (face.Orientation() == TopAbs_REVERSED);
+        const int base = int(points.size());
+        const int nbNodes = tri->NbNodes();
+        for (int i = 1; i <= nbNodes; ++i) {
+            const gp_Pnt p = tri->Node(i).Transformed(trsf);
+            points.emplace_back(float(p.X()), float(p.Y()), float(p.Z()));
+        }
+        const int nbTris = tri->NbTriangles();
+        for (int i = 1; i <= nbTris; ++i) {
+            int n1{}, n2{}, n3{};
+            tri->Triangle(i).Get(n1, n2, n3);
+            if (reversed)
+                std::swap(n2, n3);
+            indices.push_back(base + n1 - 1);
+            indices.push_back(base + n2 - 1);
+            indices.push_back(base + n3 - 1);
+            indices.push_back(-1);
+        }
+    }
+    if (indices.empty())
+        return nullptr;
+
+    auto sep = new SoSeparator;
+    auto hints = new SoShapeHints;
+    hints->vertexOrdering = SoShapeHints::COUNTERCLOCKWISE;
+    // Two-sided lighting: cut and clipped shapes expose interior faces.
+    hints->shapeType = SoShapeHints::UNKNOWN_SHAPE_TYPE;
+    hints->creaseAngle = 0.6F;
+    sep->addChild(hints);
+    auto material = new SoMaterial;
+    material->diffuseColor = color;
+    sep->addChild(material);
+    auto coords = new SoCoordinate3;
+    coords->point.setValues(0, int(points.size()), points.data());
+    sep->addChild(coords);
+    auto faceSet = new SoIndexedFaceSet;
+    faceSet->coordIndex.setValues(0, int(indices.size()), indices.data());
+    sep->addChild(faceSet);
+    return sep;
+}
+
 }// namespace
 
 bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
@@ -121,31 +233,76 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
     // and its own test; the underlay stays off for it (doc sec 26.3).
     if (dvp->Perspective.getValue())
         return false;
-    // v1 scope (doc sec 26.1): plain part views. A section cuts its
-    // source and a detail clips it -- their underlay must render the
-    // derived shape, not the raw source, or the raster shows material
-    // the edges do not.
-    if (dvp->isDerivedFrom(TechDraw::DrawViewSection::getClassTypeId())
-        || dvp->isDerivedFrom(TechDraw::DrawViewDetail::getClassTypeId()))
-        return false;
 
-    TopoDS_Shape shape = dvp->getSourceShape();
-    if (shape.IsNull())
-        return false;
+    // What to render and through which frame. A plain part view
+    // renders its sources' ViewProvider roots; a section or a detail
+    // projects a DERIVED shape (the cut solid / the clipped region)
+    // that exists nowhere in the 3D scene, so its capture tessellates
+    // that shape instead -- through the same window math, mirroring
+    // each type's own centering step for step.
+    TopoDS_Shape shape;    // bounds (and, derived, the scene) in frame F
+    gp_Ax2 viewCS;         // the camera frame, in F
+    gp_Pnt gCentroid;      // the view's 2D origin, in F
+    bool derived = false;  // scene = tessellated shape, not VP roots
 
-    // The frame the projected geometry is computed in: the projection
-    // CS rotated by -Rotation, which is how makeGeometryForShape's
-    // rotating of the shape by +Rotation reads from the camera's side.
-    gp_Ax2 viewCS = dvp->getRotatedCS();
+    if (auto* dvd = dynamic_cast<TechDraw::DrawViewDetail*>(dvp)) {
+        auto* baseDvp = dynamic_cast<DrawViewPart*>(dvd->BaseView.getValue());
+        if (!baseDvp)
+            return false;
+        // Null until the async intersection lands; the paint that
+        // follows it captures.
+        shape = dvd->getDetailShape();
+        if (shape.IsNull())
+            return false;
+        // Mirror detailExec: the clipped shape lives in the base
+        // view's centered frame; the 2D origin is the anchor lifted to
+        // R3, and the camera is the BASE view's projection CS (a
+        // detail of a rotated section gets that rotation baked into
+        // the shape it is handed) rotated by the detail's own
+        // Rotation.
+        const gp_Ax2 baseCS = baseDvp->getProjectionCS();
+        gCentroid = DU::togp_Pnt(DU::toR3(baseCS, dvd->AnchorPoint.getValue()));
+        const gp_Ax1 rotationAxis(gp_Pnt(0.0, 0.0, 0.0), baseCS.Direction());
+        viewCS = baseCS.Rotated(rotationAxis, -dvd->Rotation.getValue() * M_PI / 180.0);
+        derived = true;
+    }
+    else if (auto* dvs = dynamic_cast<TechDraw::DrawViewSection*>(dvp)) {
+        // An aligned complex section projects an unfolded fiction
+        // through centerShapeXY, not the centroid chain -- no raster
+        // can register against that; it stays unshaded.
+        auto* dcs = dynamic_cast<TechDraw::DrawComplexSection*>(dvs);
+        if (dcs && dcs->ProjectionStrategy.getValue() != 0)
+            return false;
+        // Null until the async cut lands.
+        shape = dvs->getCutShapeRaw();
+        if (shape.IsNull())
+            return false;
+        // Virtual dispatch gives the section CS and the centroid its
+        // prepareShape computed for the cut shape -- the same members
+        // the base-view math reads.
+        viewCS = dvp->getRotatedCS();
+        gCentroid = DU::togp_Pnt(dvp->getOriginalCentroid());
+        derived = true;
+    }
+    else {
+        shape = dvp->getSourceShape();
+        if (shape.IsNull())
+            return false;
+        // The frame the projected geometry is computed in: the
+        // projection CS rotated by -Rotation, which is how
+        // makeGeometryForShape's rotating of the shape by +Rotation
+        // reads from the camera's side.
+        viewCS = dvp->getRotatedCS();
+        // The exact centroid the HLR chain centered the shape on. Not
+        // recomputed here: ShapeUtils::findCentroid reads
+        // triangulation-dependent bounds, and a recompute after the 3D
+        // view tessellates would drift the rect (measured 0.02mm) and
+        // re-capture an unchanged projection.
+        gCentroid = DU::togp_Pnt(dvp->getOriginalCentroid());
+    }
+
     gp_Trsf toView;
     toView.SetTransformation(gp_Ax3(viewCS));
-
-    // The exact centroid the HLR chain centered the shape on. Not
-    // recomputed here: ShapeUtils::findCentroid reads triangulation-
-    // dependent bounds, and a recompute after the 3D view tessellates
-    // would drift the rect (measured 0.02mm) and re-capture an
-    // unchanged projection.
-    gp_Pnt gCentroid = DU::togp_Pnt(dvp->getOriginalCentroid());
     gp_Pnt vCentroid = gCentroid.Transformed(toView);
 
     // Source bounds in the view frame. Conservative bounds only pad the
@@ -224,16 +381,24 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
     root->addChild(camera);
     root->addChild(light);
     int fed = 0;
-    for (auto* obj : sourcesOf(dvp)) {
-        auto* vp = Gui::Application::Instance->getViewProvider(obj);
-        if (!vp || !vp->getRoot())
-            continue;
-        // The root is the object as the 3D view shows it, in world
-        // coordinates for a top-level object. A source nested in a
-        // transformed container is captured untransformed for now --
-        // out of registration until container transforms are resolved.
-        root->addChild(vp->getRoot());
-        ++fed;
+    if (derived) {
+        if (SoSeparator* node = buildMeshNode(shape, shadeColor(dvp))) {
+            root->addChild(node);
+            ++fed;
+        }
+    }
+    else {
+        for (auto* obj : sourcesOf(dvp)) {
+            auto* vp = Gui::Application::Instance->getViewProvider(obj);
+            if (!vp || !vp->getRoot())
+                continue;
+            // The root is the object as the 3D view shows it, in world
+            // coordinates for a top-level object. A source nested in a
+            // transformed container is captured untransformed for now --
+            // out of registration until container transforms are resolved.
+            root->addChild(vp->getRoot());
+            ++fed;
+        }
     }
     if (!fed) {
         root->unref();
