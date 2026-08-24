@@ -33,6 +33,7 @@
 
 #include <App/DocumentObject.h>
 #include <App/FeaturePython.h>
+#include <App/PropertyFile.h>
 #include <App/PropertyLinks.h>
 #include <Base/BoundBox.h>
 #include <Mod/TechDraw/TechDrawGlobal.h>
@@ -121,6 +122,16 @@ public:
     App::PropertyInteger IsoCount;
 
     App::PropertyInteger ScrubCount;
+
+    // The shaded-view hybrid (docs/TechDrawPortAndSection.md sec 26): a
+    // raster shaded underlay drawn beneath the exact-HLR edges. The
+    // image and its registration rect are derived state written back by
+    // the Gui capture (Prop_Output -- writing them must not re-touch
+    // the view).
+    App::PropertyBool Shaded;
+    App::PropertyFileIncluded UnderlayImage;
+    App::PropertyFloat UnderlayResolution;
+    App::PropertyFloatList UnderlayRect;
 
     short mustExecute() const override;
     App::DocumentObjectExecReturn* execute() override;

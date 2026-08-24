@@ -146,6 +146,18 @@ DrawViewPart::DrawViewPart(void)
     ADD_PROPERTY_TYPE(ScrubCount, (Preferences::scrubCount()), sgroup, App::Prop_None,
                       "The number of times FreeCAD should try to clean the HLR result.");
 
+    static const char* ugroup = "Shaded Underlay";
+    ADD_PROPERTY_TYPE(Shaded, (false), ugroup, App::Prop_None,
+                      "Draw a shaded raster underlay beneath the projected edges");
+    ADD_PROPERTY_TYPE(UnderlayImage, (nullptr), ugroup,
+                      App::PropertyType(App::Prop_Output | App::Prop_ReadOnly),
+                      "The captured shaded underlay image");
+    ADD_PROPERTY_TYPE(UnderlayResolution, (10.0), ugroup, App::Prop_None,
+                      "Underlay capture density in pixels per page mm");
+    ADD_PROPERTY_TYPE(UnderlayRect, (0.0), ugroup,
+                      App::PropertyType(App::Prop_Output | App::Prop_Hidden),
+                      "Registration rect [x, y, w, h] of the underlay in view coordinates (mm)");
+
     //initialize bbox to non-garbage
     bbox = Base::BoundBox3d(Base::Vector3d(0.0, 0.0, 0.0), 0.0);
 }
