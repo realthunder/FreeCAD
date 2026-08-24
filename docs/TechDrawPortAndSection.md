@@ -1493,3 +1493,87 @@ from re-touching the view when a capture does happen.
   restore-without-recapture case).
 - S4: vg feed + served-page verification; implementation-status
   section.
+
+## 27. Implementation status (2026-08-24, later still): the shaded-view hybrid is built
+
+Section 26's design is implemented and verified on the real GPU; the
+hybrid works on the Qt page, the vg page, and in the browser over the
+M3 wire. Commits: `5363ca92d9` (properties), `d8b6a2da56` (capture),
+`2a54a5d705` (Qt display), `db805002fa` (vg feed + wire), after
+`d8529cb747` (the design) and `9bcf4aac72` (an incidental Part
+portability fix found trying the 7.7.2 debug tree, which remains
+unbuildable -- ShapeRefSet needs the 801 fork's BRepTools_ShapeSet
+accessors).
+
+What landed, by tier:
+
+- **DrawViewPart** carries `Shaded`, `UnderlayImage`
+  (PropertyFileIncluded, Prop_Output), `UnderlayResolution` (px per
+  page mm, default 10) and `UnderlayRect` (view-2D mm, centroid
+  origin, +Y up). mustExecute's whitelist means a Shaded toggle never
+  re-runs HLR.
+- **ShadedUnderlay** (TechDrawGui) renders the Source ViewProvider
+  roots in a private Coin scene -- SoOrthographicCamera on
+  `getRotatedCS`, window from geometry bounds around
+  `getOriginalCentroid`, `SoFCSwitch::switchOverride` so 3D-hidden
+  sources still capture, white-at-alpha-0 background -- through
+  SoQtOffscreenRenderer, and writes back only when the picture
+  really changed.
+- **QGIViewPart** re-validates the capture on draw and shows the
+  pixmap at UnderlayRect; **feedViewPart** emits it as a Kind::Face
+  image item. Both tiers treat Shaded as "the shading is the fill":
+  the plain face fill is skipped while the underlay is active
+  (hatches still draw above it, by z / kind order). The wire needed
+  zero changes -- the underlay is one more image chunk.
+
+Verified (VirtualGL egl0 + Xvfb, NVIDIA banner checked; scripts
+td_shaded1/2 in the session scratchpad): 19/19 Qt-tier checks --
+rect/px math against known geometry, capture content and orientation
+(green boss top-right), silhouette-boundary probes (the HLR edges lie
+on the raster boundary within 6 px at 3 px/mm) for the plain, 30deg-
+rotated and reopened page, no-rewrite idempotency across redraws,
+Shaded-off sweep, save/reopen restore -- and 9/9 vg-tier checks
+including qt/vg shade-region parity and the renderPageVg registration
+probes. Headless Chrome against a PageServe publisher shows the
+shaded view under the vector edges in the wasm viewer.
+
+Traps burned in this build, for the record:
+
+- `SoQtOffscreenRenderer`'s default internal texture format is a
+  float FBO (`GL_RGB32F_ARB`) and reads back as full-frame dithered
+  garbage on this stack (NVIDIA 3060 via VirtualGL EGL, and plain
+  probes reproduce it standalone) -- ask for `GL_RGBA8`.
+- Bounds and centroids that touch triangulation are not stable
+  across a session: `BRepBndLib::Add(useTriangulation=true)` and
+  `ShapeUtils::findCentroid` (AddOptimal on triangulation) both move
+  once the 3D view tessellates. The capture uses geometry bounds and
+  the HLR's own saved centroid. Note the corollary: **TechDraw's own
+  projection drifts ~0.02mm between sessions** for the same reason
+  (the HLR centroid is recomputed on open at whatever tessellation
+  state exists), so "the same document produces the same page" is
+  only true to that tolerance.
+- GL renders of an unchanged scene are not byte-stable (channel
+  jitter up to 16 counts on curved-face gradients between render
+  paths); byte-equality is the wrong idempotency guard for any
+  write-back-a-render scheme -- compare with a tolerance.
+- Chrome's `--virtual-time-budget` only works for the wasm viewer
+  when the profile has the wasm cached: on a cold profile virtual
+  time expires inside the download and every shot is the loading
+  screen. Prime the cache with one real-time run (`--timeout`), then
+  shoot with virtual time on the same `--user-data-dir`.
+
+Open, deliberately:
+
+- Sections and details are guarded out of the capture (the underlay
+  must render the cut/clipped shape); wiring them means feeding the
+  section's cut solid through the same camera math.
+- Perspective views stay unshaded (sec 26.3).
+- The capture quality upgrade -- bgfx offscreen with a per-capture
+  object filter for PBR/AO-grade underlays -- remains the recorded
+  follow-up behind the `ShadedUnderlay::capture` seam.
+- Face selection highlight sits under the underlay on the Qt tier
+  (the fill is suppressed, but QGIFace's hover/select painting is
+  too); if this bothers in practice, highlight-state faces should
+  re-raise above the raster.
+- Sources nested in transformed containers capture untransformed
+  (ViewProvider root == world only for top-level objects).
