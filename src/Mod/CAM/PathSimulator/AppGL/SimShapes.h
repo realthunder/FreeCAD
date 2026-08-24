@@ -26,6 +26,9 @@
 
 #include <QOpenGLFunctions>
 #include <vector>
+
+#include <Gui/Renderer/DrawDevice.h>
+
 #include "linmath.h"
 
 #define SET_DUAL(var, idx, y, z) \
@@ -80,6 +83,11 @@ public:
     uint vbo = 0;
     uint ibo = 0;
     int numIndices = 0;
+    // The same geometry as facade resources (docs/CAMSimRenderPort.md
+    // step 3). Both live until the port's last step deletes the GL
+    // pair; invalid while no backend device is up.
+    Render::VertexBufferHandle rVbo;
+    Render::IndexBufferHandle rIbo;
 
 public:
     void Render() const;

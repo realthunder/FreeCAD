@@ -38,6 +38,12 @@ Texture::~Texture()
 void Texture::DestroyTexture()
 {
     GLDELETE_TEXTURE(mTextureId);
+    if (auto* dev = Render::DrawDevice::instance()) {
+        if (mRTexture.valid()) {
+            dev->destroy(mRTexture);
+        }
+    }
+    mRTexture = {};
 }
 
 bool Texture::LoadImage(unsigned int* image, int _width, int _height)
@@ -53,6 +59,16 @@ bool Texture::LoadImage(unsigned int* image, int _width, int _height)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
     glBindTexture(GL_TEXTURE_2D, 0);
+    if (auto* dev = Render::DrawDevice::instance()) {
+        // Linear filtering + clamp, matching the GL parameters above.
+        mRTexture = dev->createTexture2D(
+            width,
+            height,
+            Render::DrawTextureFormat::RGBA8,
+            Render::TextureClamp,
+            image
+        );
+    }
     return true;
 }
 

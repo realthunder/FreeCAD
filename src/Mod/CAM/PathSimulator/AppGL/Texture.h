@@ -24,6 +24,8 @@
 
 #pragma once
 
+#include <Gui/Renderer/DrawDevice.h>
+
 namespace CAMSimulator
 {
 
@@ -53,6 +55,9 @@ public:
 
 protected:
     unsigned int mTextureId = 0;
+    // The same image as a facade texture (docs/CAMSimRenderPort.md
+    // step 3); invalid while no backend device is up.
+    Render::TextureHandle mRTexture;
 };
 
 }  // namespace CAMSimulator

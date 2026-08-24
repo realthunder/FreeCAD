@@ -346,6 +346,22 @@ void Shape::GenerateModel(const float* vbuffer, const GLushort* ibuffer, int num
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, nIndices * sizeof(GLushort), ibuffer, GL_STATIC_DRAW);
 
     numIndices = nIndices;
+
+    if (auto* dev = Render::DrawDevice::instance()) {
+        // A regenerated shape (glGenBuffers just replaced the GL ids
+        // the same way) must not leak the previous handles.
+        if (rVbo.valid()) {
+            dev->destroy(rVbo);
+        }
+        if (rIbo.valid()) {
+            dev->destroy(rIbo);
+        }
+        Render::VertexLayout layout;
+        layout.add(Render::DrawAttrib::Position, 3, Render::DrawAttribType::Float)
+            .add(Render::DrawAttrib::Normal, 3, Render::DrawAttribType::Float);
+        rVbo = dev->createVertexBuffer(vbuffer, numVerts * sizeof(Vertex), layout);
+        rIbo = dev->createIndexBuffer(ibuffer, nIndices * sizeof(GLushort));
+    }
 }
 
 void Shape::SetupVertexAttribs() const
@@ -383,6 +399,18 @@ void Shape::FreeResources()
 {
     GLDELETE_BUFFER(vbo);
     GLDELETE_BUFFER(ibo);
+    // No device: the backend went down and took the resources with it,
+    // so the stale handles are only cleared.
+    if (auto* dev = Render::DrawDevice::instance()) {
+        if (rVbo.valid()) {
+            dev->destroy(rVbo);
+        }
+        if (rIbo.valid()) {
+            dev->destroy(rIbo);
+        }
+    }
+    rVbo = {};
+    rIbo = {};
 }
 
 Shape::~Shape()
