@@ -47,6 +47,7 @@
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
+#include <Inventor/nodes/SoFrustumCamera.h>
 #include <Inventor/nodes/SoIndexedFaceSet.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
@@ -229,10 +230,6 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
 {
     if (!dvp || !Gui::Application::Instance)
         return false;
-    // Perspective registration against perspective HLR is its own math
-    // and its own test; the underlay stays off for it (doc sec 26.3).
-    if (dvp->Perspective.getValue())
-        return false;
 
     // What to render and through which frame. A plain part view
     // renders its sources' ViewProvider roots; a section or a detail
@@ -327,10 +324,57 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
     // The 2D window in page mm, centroid origin, +Y up -- the same
     // frame the projected edges live in before invertY.
     const double marginMm = kMarginPx / resolution;
-    const double x0 = (xMin - vCentroid.X()) * scale - marginMm;
-    const double y0 = (yMin - vCentroid.Y()) * scale - marginMm;
-    const double w = (xMax - xMin) * scale + 2.0 * marginMm;
-    const double h = (yMax - yMin) * scale + 2.0 * marginMm;
+    const bool perspective = dvp->Perspective.getValue();
+    // The HLR projects the SCALED shape with focal length Focus (eye
+    // on the view axis at +Focus over the centroid plane, projecting
+    // onto that plane: u = x * f / (f - z)); from the unscaled side
+    // that reads as a focal distance of Focus/scale.
+    const double focusM = dvp->Focus.getValue() / scale;
+    double x0, y0, w, h;
+    if (perspective) {
+        if (!(focusM > 0.0))
+            return false;
+        // a shape reaching the eye cannot project
+        if (zMax - vCentroid.Z() >= focusM * 0.99)
+            return false;
+        // The projection of the bounds box is the hull of its
+        // projected corners (central projection preserves convexity
+        // in front of the eye), so the corner extremes bound the
+        // whole projection.
+        double uMin = 0.0, uMax = 0.0, vMin = 0.0, vMax = 0.0;
+        bool first = true;
+        for (int ix = 0; ix < 2; ++ix)
+            for (int iy = 0; iy < 2; ++iy)
+                for (int iz = 0; iz < 2; ++iz) {
+                    const double dx = (ix ? xMax : xMin) - vCentroid.X();
+                    const double dy = (iy ? yMax : yMin) - vCentroid.Y();
+                    const double dz = (iz ? zMax : zMin) - vCentroid.Z();
+                    const double q = focusM / (focusM - dz);
+                    const double u = scale * dx * q;
+                    const double v = scale * dy * q;
+                    if (first) {
+                        uMin = uMax = u;
+                        vMin = vMax = v;
+                        first = false;
+                    }
+                    else {
+                        uMin = std::min(uMin, u);
+                        uMax = std::max(uMax, u);
+                        vMin = std::min(vMin, v);
+                        vMax = std::max(vMax, v);
+                    }
+                }
+        x0 = uMin - marginMm;
+        y0 = vMin - marginMm;
+        w = uMax - uMin + 2.0 * marginMm;
+        h = vMax - vMin + 2.0 * marginMm;
+    }
+    else {
+        x0 = (xMin - vCentroid.X()) * scale - marginMm;
+        y0 = (yMin - vCentroid.Y()) * scale - marginMm;
+        w = (xMax - xMin) * scale + 2.0 * marginMm;
+        h = (yMax - yMin) * scale + 2.0 * marginMm;
+    }
     if (w <= 0.0 || h <= 0.0)
         return false;
     rect = QRectF(x0, y0, w, h);
@@ -350,14 +394,45 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
     const SbVec3f back(float(viewCS.Direction().X()), float(viewCS.Direction().Y()),
                        float(viewCS.Direction().Z()));
 
-    const double centerX = vCentroid.X() + rect.center().x() / scale;
-    const double centerY = vCentroid.Y() + rect.center().y() / scale;
     const double depth = std::max(zMax - zMin, 1.0);
-    const double camZ = zMax + depth;
 
-    auto camera = new SoOrthographicCamera;
-    camera->position =
-        right * float(centerX) + up * float(centerY) + back * float(camZ);
+    SoCamera* camera = nullptr;
+    if (perspective) {
+        // The eye of the HLR's perspective projector, mirrored: on
+        // the view axis through the centroid, focusM over the
+        // centroid plane. The window is off-axis in general, so the
+        // camera is an asymmetric frustum whose section at the
+        // centroid plane is exactly the rect (in model units).
+        auto frustum = new SoFrustumCamera;
+        const double eyeZ = vCentroid.Z() + focusM;
+        frustum->position = right * float(vCentroid.X()) + up * float(vCentroid.Y())
+            + back * float(eyeZ);
+        const double distToShape = eyeZ - zMax;// > 0 by the guard above
+        const double nearD = std::max(focusM * 1e-3, distToShape * 0.5);
+        frustum->nearDistance = float(nearD);
+        frustum->farDistance = float(eyeZ - zMin + depth);
+        // glFrustum semantics: the window edges are given at the near
+        // plane; scale the centroid-plane window down by near/focusM.
+        const double ratio = nearD / focusM;
+        frustum->left = float(x0 / scale * ratio);
+        frustum->right = float((x0 + w) / scale * ratio);
+        frustum->bottom = float(y0 / scale * ratio);
+        frustum->top = float((y0 + h) / scale * ratio);
+        camera = frustum;
+    }
+    else {
+        const double centerX = vCentroid.X() + rect.center().x() / scale;
+        const double centerY = vCentroid.Y() + rect.center().y() / scale;
+        const double camZ = zMax + depth;
+        auto ortho = new SoOrthographicCamera;
+        ortho->position =
+            right * float(centerX) + up * float(centerY) + back * float(camZ);
+        ortho->height = float(h / scale);
+        ortho->aspectRatio = float(w / h);
+        ortho->nearDistance = float(depth * 0.5);
+        ortho->farDistance = float(camZ - zMin + depth);
+        camera = ortho;
+    }
     // Rows are the images of the camera axes under Coin's row-vector
     // convention: right, up, back(+N) -- the camera looks along -N.
     SbMatrix orient(right[0], right[1], right[2], 0.0F,
@@ -365,13 +440,9 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
                     back[0], back[1], back[2], 0.0F,
                     0.0F, 0.0F, 0.0F, 1.0F);
     camera->orientation = SbRotation(orient);
-    camera->height = float(h / scale);
-    camera->aspectRatio = float(w / h);
     // The raster maps the window to the full image exactly; the
     // viewport's rounded pixel aspect must not re-adjust the window.
     camera->viewportMapping = SoCamera::LEAVE_ALONE;
-    camera->nearDistance = float(depth * 0.5);
-    camera->farDistance = float(camZ - zMin + depth);
 
     auto light = new SoDirectionalLight;
     light->direction.setValue(-back);
