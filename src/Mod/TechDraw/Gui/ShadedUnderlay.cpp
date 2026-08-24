@@ -27,6 +27,10 @@
 #include <QBuffer>
 #include <QDir>
 #include <QFile>
+#include <QOpenGLContext>
+#include <QOpenGLFramebufferObject>
+#include <QOpenGLFunctions>
+#include <QOpenGLWidget>
 
 #include <BRepBndLib.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
@@ -55,18 +59,25 @@
 #include <Inventor/nodes/SoShapeHints.h>
 #endif// #ifndef _PreComp_
 
+#include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/PropertyStandard.h>
 #include <Base/Console.h>
 #include <Gui/Application.h>
+#include <Gui/Document.h>
 #include <Gui/Inventor/SoFCSwitch.h>
+#include <Gui/Renderer/Renderer.h>
 #include <Gui/SoFCOffscreenRenderer.h>
+#include <Gui/View3DInventor.h>
+#include <Gui/View3DInventorViewer.h>
 #include <Gui/ViewProvider.h>
+#include <Mod/Part/App/PartFeature.h>
 #include <Mod/TechDraw/App/DrawComplexSection.h>
 #include <Mod/TechDraw/App/DrawUtil.h>
 #include <Mod/TechDraw/App/DrawViewDetail.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
 #include <Mod/TechDraw/App/DrawViewSection.h>
+#include <Mod/TechDraw/App/Preferences.h>
 
 #include "ShadedUnderlay.h"
 
@@ -222,6 +233,114 @@ SoSeparator* buildMeshNode(const TopoDS_Shape& shape, const SbColor& color)
     faceSet->coordIndex.setValues(0, int(indices.size()), indices.data());
     sep->addChild(faceSet);
     return sep;
+}
+
+// The bgfx-quality capture -- doc sec 26.2's recorded follow-up. When
+// a 3D view of the source document runs a backend renderer, capture
+// through it instead of the private Coin scene: the backend's
+// PBR/AO/matcap-grade shading, with the per-capture object filter
+// (Renderer::setCaptureFilter) keeping selection, overlays and every
+// other object out of the frame. Registration is identical by
+// construction: the same camera volume, handed over as matrices. Any
+// refusal -- no backend, a 3D-hidden source (no scene draws), a
+// backend without the filter -- falls back to the Coin capture.
+bool captureViaBackend(DrawViewPart* dvp, SoCamera* camera, int wPx, int hPx,
+                       QImage& image)
+{
+    if (!TechDraw::Preferences::getPreferenceGroup("General")
+             ->GetBool("ShadedUnderlayBackend", true))
+        return false;
+    const std::vector<App::DocumentObject*> sources = sourcesOf(dvp);
+    if (sources.empty())
+        return false;
+    Gui::Document* gdoc =
+        Gui::Application::Instance->getDocument(sources.front()->getDocument());
+    if (!gdoc)
+        return false;
+    Render::Renderer* renderer = nullptr;
+    Gui::View3DInventorViewer* viewer = nullptr;
+    for (auto* view :
+         gdoc->getMDIViewsOfType(Gui::View3DInventor::getClassTypeId())) {
+        auto* v3d = static_cast<Gui::View3DInventor*>(view);
+        if (auto* r = v3d->getViewer()->getExternalRenderer()) {
+            renderer = r;
+            viewer = v3d->getViewer();
+            break;
+        }
+    }
+    if (!renderer || !viewer)
+        return false;
+    std::vector<std::pair<std::string, std::string>> ids;
+    ids.reserve(sources.size());
+    for (auto* obj : sources)
+        ids.emplace_back(obj->getDocument()->getName(), obj->getNameInDocument());
+    if (!renderer->setCaptureFilter(ids))
+        return false;
+
+    SbMatrix viewMat, projMat;
+    camera->getViewVolume(0.0F).getMatrices(viewMat, projMat);
+
+    auto* glWidget = qobject_cast<QOpenGLWidget*>(viewer->viewport());
+    if (!glWidget) {
+        renderer->clearCaptureFilter();
+        return false;
+    }
+    QOpenGLContext* previous = QOpenGLContext::currentContext();
+    QSurface* previousSurface = previous ? previous->surface() : nullptr;
+    glWidget->makeCurrent();
+    bool ok = false;
+    std::vector<unsigned char> pixels;
+    {
+        QOpenGLFramebufferObject fbo(wPx, hPx, QOpenGLFramebufferObject::Depth);
+        fbo.bind();
+        QOpenGLFunctions* gl = nullptr;
+        if (QOpenGLContext* ctx = QOpenGLContext::currentContext())
+            gl = ctx->functions();
+        if (gl)
+            gl->glViewport(0, 0, wPx, hPx);
+        ok = renderer->renderOffscreen(QColor(255, 255, 255, 255),
+                                       &viewMat.getValue(), &projMat.getValue(),
+                                       wPx, hPx);
+        if (ok && gl) {
+            // Read the pixels directly: the engine's finished frame
+            // does not maintain a meaningful alpha channel, and
+            // QOpenGLFramebufferObject::toImage's premultiplied
+            // conversion would zero every color under it. Re-bind
+            // first -- the engine's frame leaves its own readback FBO
+            // on the READ binding, which is what glReadPixels reads.
+            fbo.bind();
+            pixels.resize(size_t(wPx) * hPx * 4);
+            gl->glReadPixels(0, 0, wPx, hPx, GL_RGBA, GL_UNSIGNED_BYTE,
+                             pixels.data());
+        }
+        fbo.release();
+    }
+    glWidget->doneCurrent();
+    if (previous && previousSurface)
+        previous->makeCurrent(previousSurface);
+    renderer->clearCaptureFilter();
+    if (!ok || pixels.empty()) {
+        Base::Console().Log("ShadedUnderlay: backend render refused\n");
+        return false;
+    }
+    // GL reads bottom-up; the image is top-down. Alpha comes from
+    // keying the exact clear color, like the Coin offscreen renderer
+    // does (the anti-aliased fringe blends toward white -- invisible
+    // on paper).
+    image = QImage(wPx, hPx, QImage::Format_ARGB32);
+    for (int y = 0; y < hPx; ++y) {
+        const unsigned char* src = pixels.data() + size_t(hPx - 1 - y) * wPx * 4;
+        QRgb* dst = reinterpret_cast<QRgb*>(image.scanLine(y));
+        for (int x = 0; x < wPx; ++x) {
+            const unsigned char r = src[size_t(x) * 4];
+            const unsigned char g = src[size_t(x) * 4 + 1];
+            const unsigned char b = src[size_t(x) * 4 + 2];
+            dst[x] = (r == 255 && g == 255 && b == 255) ? qRgba(255, 255, 255, 0)
+                                                        : qRgba(r, g, b, 255);
+        }
+    }
+    Base::Console().Log("ShadedUnderlay: backend capture used\n");
+    return true;
 }
 
 }// namespace
@@ -463,6 +582,26 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
             auto* vp = Gui::Application::Instance->getViewProvider(obj);
             if (!vp || !vp->getRoot())
                 continue;
+            if (!vp->isShow()) {
+                // A 3D-hidden source may have nothing behind its root
+                // to draw: render-cache mode 3 evicts a hidden
+                // object's caches, and with a backend attached the
+                // switch override renders blank. Tessellate its shape
+                // instead -- same frame (own placement), its own
+                // ShapeColor.
+                TopoDS_Shape hiddenShape = Part::Feature::getShape(obj);
+                SbColor color(0.8F, 0.8F, 0.8F);
+                if (auto* prop = dynamic_cast<App::PropertyColor*>(
+                        vp->getPropertyByName("ShapeColor"))) {
+                    const auto c = prop->getValue();
+                    color = SbColor(c.r, c.g, c.b);
+                }
+                if (SoSeparator* node = buildMeshNode(hiddenShape, color)) {
+                    root->addChild(node);
+                    ++fed;
+                }
+                continue;
+            }
             // The root carries the same frame the HLR shape resolves
             // to: an object's own placement (containers do not project
             // into a member's root, and Part::Feature::getShape does
@@ -476,6 +615,15 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
     if (!fed) {
         root->unref();
         return false;
+    }
+
+    // Prefer the backend renderer's capture when one is running --
+    // quality follows the 3D view. Derived shapes (cut solid, clipped
+    // region) exist nowhere in the backend's scene feed, so they
+    // always render the private Coin scene.
+    if (!derived && captureViaBackend(dvp, camera, wPx, hPx, image)) {
+        root->unref();
+        return true;
     }
 
     Gui::SoQtOffscreenRenderer renderer{SbViewportRegion(short(wPx), short(hPx))};

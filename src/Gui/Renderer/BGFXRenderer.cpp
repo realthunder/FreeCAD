@@ -118,12 +118,135 @@ bool BGFXRenderer::renderOffscreen(const QColor &col,
     // on-screen frame sees the mismatch and sizes the view back.
     _BGFXLib.captureWidth = uint16_t(width);
     _BGFXLib.captureHeight = uint16_t(height);
-    const bool ok = render(col, viewMatrix, projMatrix);
+    bool ok = false;
+    if (pimpl->captureFilter)
+        ok = renderFiltered(col, viewMatrix, projMatrix);
+    else
+        ok = render(col, viewMatrix, projMatrix);
     _BGFXLib.captureWidth = 0;
     _BGFXLib.captureHeight = 0;
     return ok;
 #endif
 }
+
+bool BGFXRenderer::setCaptureFilter(
+        const std::vector<std::pair<std::string, std::string>> &objects)
+{
+#ifdef FC_RENDERER_STANDALONE
+    (void)objects;
+    return false;
+#else
+    pimpl->captureFilter = false;
+    pimpl->captureKeys.clear();
+    if (objects.empty())
+        return false;
+    // Resolve identities to objectKeys through the resident table. One
+    // object owns any number of keys (one per producing node path).
+    std::unordered_map<uint64_t, size_t> keyOwner;
+    for (const auto &entry : pimpl->objectInfo) {
+        for (size_t i = 0; i < objects.size(); ++i) {
+            if (entry.second.doc == objects[i].first
+                    && entry.second.obj == objects[i].second) {
+                keyOwner.emplace(entry.first, i);
+                break;
+            }
+        }
+    }
+    if (keyOwner.empty())
+        return false;
+    // Every named object must have at least one draw in the RESIDENT
+    // scene: the info table keeps residue for keys that left, and a
+    // 3D-hidden object has no draws at all -- a capture that silently
+    // omitted a source would register a wrong picture, so the caller
+    // gets a refusal to fall back on instead.
+    std::vector<char> present(objects.size(), 0);
+    for (const auto &draw : pimpl->scene) {
+        auto it = keyOwner.find(draw.objectKey);
+        if (it != keyOwner.end())
+            present[it->second] = 1;
+    }
+    for (char c : present)
+        if (!c)
+            return false;
+    pimpl->captureKeys.reserve(keyOwner.size());
+    for (const auto &entry : keyOwner)
+        pimpl->captureKeys.insert(entry.first);
+    pimpl->captureFilter = true;
+    return true;
+#endif
+}
+
+void BGFXRenderer::clearCaptureFilter()
+{
+    pimpl->captureFilter = false;
+    pimpl->captureKeys.clear();
+}
+
+#ifndef FC_RENDERER_STANDALONE
+// The capture frame with the object filter applied: swap in a scene
+// reduced to the filtered draws with the selection / preselection /
+// overlay feeds stripped and a flat transparent background, render --
+// with settle frames first, so temporal accumulation converges on the
+// capture camera before the frame that is read back -- then restore
+// every feed. drawListVersion is deliberately NOT bumped: the mesh
+// collector's keep-set stays the full scene's, so no resident buffer
+// is freed behind the on-screen view by a capture.
+bool BGFXRenderer::renderFiltered(const QColor &col,
+                                  const void *viewMatrix,
+                                  const void *projMatrix)
+{
+    auto &p = *pimpl;
+    Render::DrawCallList filtered;
+    filtered.reserve(p.scene.size());
+    for (const auto &draw : p.scene)
+        if (p.captureKeys.count(draw.objectKey))
+            filtered.push_back(draw);
+    if (filtered.empty())
+        return false;
+
+    auto savedScene = std::move(p.scene);
+    p.scene = std::move(filtered);
+    auto savedSelections = std::move(p.selections);
+    p.selections.clear();
+    auto savedOverlays = std::move(p.overlays);
+    p.overlays.clear();
+    auto savedHighlight = std::move(p.highlight);
+    p.highlight.clear();
+    // hiddenKeys hides scene draws whose whole-object on-top selection
+    // copies draw instead; those copies were just stripped.
+    auto savedHidden = std::move(p.hiddenKeys);
+    p.hiddenKeys.clear();
+    const Render::Background savedBackground = p.background;
+    p.background = Render::Background();
+    p.background.fromColor = 0xFFFFFFFFu;// opaque white; the caller keys it
+    // The viewer feeds its lights for the INTERACTIVE camera; under
+    // the capture camera they can point anywhere. The default config
+    // asks for the fixed camera-aligned headlight.
+    const Render::ViewLightConfig savedLights = p.viewlightconf;
+    p.viewlightconf = Render::ViewLightConfig();
+    ++p.cullSceneVersion;
+    p.buildInstanceGroups();
+    p.sceneDirty = true;
+
+    constexpr int kCaptureSettleFrames = 8;
+    bool ok = false;
+    for (int i = 0; i < kCaptureSettleFrames; ++i)
+        ok = render(col, viewMatrix, projMatrix);
+
+    p.scene = std::move(savedScene);
+    p.selections = std::move(savedSelections);
+    p.overlays = std::move(savedOverlays);
+    p.highlight = std::move(savedHighlight);
+    p.hiddenKeys = std::move(savedHidden);
+    p.background = savedBackground;
+    p.viewlightconf = savedLights;
+    ++p.cullSceneVersion;
+    p.buildInstanceGroups();
+    p.sceneDirty = true;
+    p.levelPlanner.markDirty();
+    return ok;
+}
+#endif
 
 bool BGFXRenderer::publish(const QColor &col,
                            const void *viewMatrix,

@@ -8450,6 +8450,14 @@ public:
                 publishedIds[d.mesh->cacheId] = d.mesh->generation;
         return publishedIds;
     }
+    /// The per-capture object filter (Renderer::setCaptureFilter):
+    /// while active, renderOffscreen() swaps in a scene reduced to
+    /// draws whose objectKey is in this set, with selection /
+    /// highlight / overlay feeds stripped and a flat transparent
+    /// background, then restores everything.
+    std::unordered_set<uint64_t> captureKeys;
+    bool captureFilter = false;
+
     std::map<int, Render::DrawCallList> selections;
     // Overlay feeds keyed by producer id (Renderer::setOverlay); map
     // order assigns the (limited) overlay view slots deterministically.

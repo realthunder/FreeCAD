@@ -61,6 +61,17 @@ public:
                                  const void *viewMatrix,
                                  const void *projMatrix,
                                  int width, int height) override;
+    virtual bool setCaptureFilter(
+            const std::vector<std::pair<std::string, std::string>> &objects)
+            override;
+    virtual void clearCaptureFilter() override;
+private:
+#ifndef FC_RENDERER_STANDALONE
+    bool renderFiltered(const QColor &bg,
+                        const void *viewMatrix,
+                        const void *projMatrix);
+#endif
+public:
     virtual bool publish(const QColor &bg,
                          const void *viewMatrix,
                          const void *projMatrix,

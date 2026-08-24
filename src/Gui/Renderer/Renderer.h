@@ -2491,6 +2491,25 @@ public:
         return false;
     }
 
+    /// Restrict subsequent renderOffscreen() frames to the scene draws
+    /// of the named objects ({document internal name, object internal
+    /// name}, as in ObjectInfo), with the selection, preselection and
+    /// overlay feeds stripped and the window background flat
+    /// transparent -- the per-capture object filter of the shaded-
+    /// underlay capture (docs/TechDrawPortAndSection.md sec 26.2).
+    /// Returns false when the backend cannot filter (the default) or
+    /// when any named object has no draw in the resident scene (a
+    /// 3D-hidden source has none) -- the caller must then fall back to
+    /// its own capture path. Active until clearCaptureFilter(); the
+    /// caller owns that bracket.
+    virtual bool setCaptureFilter(
+            const std::vector<std::pair<std::string, std::string>> &objects)
+    {
+        (void)objects;
+        return false;
+    }
+    virtual void clearCaptureFilter() {}
+
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) = 0;
 
