@@ -34,8 +34,10 @@ if(BUILD_BGFX)
         BGFXViewLifecycle.cpp
         BGFXScene.cpp
         BGFXFrame.cpp
+        Vg2D.cpp
+        Page2D.cpp
     )
-    list(APPEND Renderer_HPP_SRCS BGFXRenderer.h BGFXRendererP.h)
+    list(APPEND Renderer_HPP_SRCS BGFXRenderer.h BGFXRendererP.h Vg2D.h Page2D.h)
     # Private: nothing outside this library calls bgfx, and example-common
     # carries bgfx's own entry point, which asks any executable that links
     # it for a _main_ it does not have.
@@ -189,7 +191,7 @@ if(BUILD_BGFX)
     # tool like fcscenediff -- not installed. Links vg-renderer/bgfx
     # directly, no Qt and no ${Library}.
     add_executable(fcvgsmoke tools/vgsmoke.cpp)
-    target_link_libraries(fcvgsmoke vg-renderer bgfx bx)
+    target_link_libraries(fcvgsmoke ${Library} vg-renderer bgfx bx)
     set_target_properties(fcvgsmoke PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
     SET_BIN_DIR(fcvgsmoke fcvgsmoke)
 endif()
