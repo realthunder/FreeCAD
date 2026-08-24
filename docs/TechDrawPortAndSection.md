@@ -1008,3 +1008,47 @@ QGI is an SVG item); native cell ops remain a possible later upgrade.
 of readback+QImage). Then M3, the SceneServer wire -- for which image
 items already retain their pixels, so the wire story is bytes we
 already hold.
+
+## 22. Decision (2026-08-24): vectorizing shaded 3D views -- hybrid first
+
+Today a shaded/rendered 3D view lands on a page as a raster screenshot
+(ActiveView -> `DrawViewImage`). The orthographic part views are
+already vector -- OCCT exact HLR emits real curves -- so this concerns
+only the shaded-picture path. Prior art, for the record:
+
+- SolidWorks / Inventor / NX: wireframe and hidden-line drawing views
+  are vector (exact or tessellated HLR); *shaded* views are raster
+  embeds at a configurable DPI, normally **hybrid** -- raster shading
+  underlay with the vector HLR edges drawn on top, so prints and PDF
+  keep crisp edges over the shading.
+- AutoCAD: plots viewports vector for wireframe/hidden visual styles,
+  raster the moment shading/rendering is involved.
+- Full-vector shading (each visible face region a filled polygon via
+  2D booleans of the projected faces in depth order, or PDF Gouraud
+  triangle meshes) exists in export pipelines but is rare in
+  mainstream CAD.
+
+**User decision (2026-08-24): do the hybrid first; the full-vector
+flat-shaded approach stays a future enhancement.**
+
+The hybrid, sketched: one view object that pairs (a) a shaded raster
+of the model at the view's *orthographic* camera -- the underlay,
+which on the vg page is exactly the Page2D image op shipped in section
+21, and on the Qt tier an image item under the edge items -- with (b)
+the exact-HLR vector edge overlay a `DrawViewPart` already computes
+for that same projection. Registration is the whole game: the shaded
+capture must be rendered with the same orthographic camera, scale and
+crop as the HLR projection, not grabbed from an interactive viewport;
+the bgfx renderer's offscreen path can produce that deterministically.
+Resolution rides the zoom band like the template raster.
+
+The future enhancement, deliberately deferred: full-vector flat-shaded
+views -- project the visible faces, subtract in depth order (painter's
+algorithm) with 2D booleans, fill each surviving region with its
+face's shaded flat color. The standing rule that planar 2D booleans go
+through the libarea/Clipper stack makes this fork unusually well
+placed for it; PDF Gouraud shading could later refine flat color into
+smooth gradients on export.
+
+**Sequencing:** this arc queues *after* the current order finishes
+(the real compositor, then the M3 SceneServer wire).
