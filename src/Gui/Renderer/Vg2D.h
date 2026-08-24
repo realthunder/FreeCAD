@@ -64,8 +64,11 @@ public:
     vg::Context* context() const { return ctx; }
 
     /// Register a font under a name the page items refer to. The data
-    /// is copied; replacing an existing name is refused (fontstash has
-    /// no unload), returning the existing handle.
+    /// is copied and retained for the process life: registering before
+    /// init() is legal (the handle appears when a context comes up, the
+    /// call returns an invalid one), and a context rebuild re-creates
+    /// every registered font. Replacing an existing name is refused
+    /// (fontstash has no unload), returning the existing handle.
     vg::FontHandle loadFont(const char* name, const void* data, uint32_t size);
 
     /// Convenience: read the file and loadFont() it.

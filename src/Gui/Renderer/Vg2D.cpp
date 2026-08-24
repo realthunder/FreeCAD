@@ -33,6 +33,11 @@ using namespace Render;
 static bx::DefaultAllocator _allocator;
 
 static std::map<std::string, vg::FontHandle> _fonts;
+// Registered font bytes, retained for the process life: registration is
+// legal before any context exists (the TechDraw feed records pages
+// before the first render), and a context rebuild re-creates every
+// handle from these.
+static std::map<std::string, std::vector<uint8_t>> _fontData;
 
 Vg2D& Vg2D::instance()
 {
@@ -69,6 +74,15 @@ bool Vg2D::init()
     // matrix. vg resetting the transform at end() would overwrite that.
     cfg.m_ResetViewTransformOnEnd = false;
     ctx = vg::createContext(&_allocator, &cfg);
+    if (ctx) {
+        for (auto& kv : _fontData) {
+            vg::FontHandle handle =
+                vg::createFont(ctx, kv.first.c_str(), kv.second.data(),
+                               (uint32_t)kv.second.size(), 0);
+            if (vg::isValid(handle))
+                _fonts[kv.first] = handle;
+        }
+    }
     return ctx != nullptr;
 }
 
@@ -85,14 +99,20 @@ void Vg2D::shutdown()
 
 vg::FontHandle Vg2D::loadFont(const char* name, const void* data, uint32_t size)
 {
-    if (!ctx || !name || !data || !size)
+    if (!name || !data || !size)
         return VG_INVALID_HANDLE;
-    auto it = _fonts.find(name);
-    if (it != _fonts.end())
-        return it->second;
-    // No DontCopyData: vg copies, the caller's buffer can go away.
-    vg::FontHandle handle = vg::createFont(
-        ctx, name, (uint8_t*)const_cast<void*>(data), size, 0);
+    if (_fontData.count(name)) {
+        auto it = _fonts.find(name);
+        return it == _fonts.end() ? vg::FontHandle(VG_INVALID_HANDLE)
+                                  : it->second;
+    }
+    const uint8_t* bytes = (const uint8_t*)data;
+    _fontData[name].assign(bytes, bytes + size);
+    if (!ctx) // registered; the handle appears when init() runs
+        return VG_INVALID_HANDLE;
+    // No DontCopyData: vg copies, our retained buffer stays ours.
+    vg::FontHandle handle =
+        vg::createFont(ctx, name, _fontData[name].data(), size, 0);
     if (vg::isValid(handle))
         _fonts[name] = handle;
     return handle;
@@ -100,11 +120,13 @@ vg::FontHandle Vg2D::loadFont(const char* name, const void* data, uint32_t size)
 
 vg::FontHandle Vg2D::loadFontFile(const char* name, const char* path)
 {
-    if (!ctx || !path)
+    if (!name || !path)
         return VG_INVALID_HANDLE;
-    auto it = _fonts.find(name ? name : "");
-    if (it != _fonts.end())
-        return it->second;
+    if (_fontData.count(name)) {
+        auto it = _fonts.find(name);
+        return it == _fonts.end() ? vg::FontHandle(VG_INVALID_HANDLE)
+                                  : it->second;
+    }
     std::vector<uint8_t> data;
     if (FILE* f = fopen(path, "rb")) {
         fseek(f, 0, SEEK_END);

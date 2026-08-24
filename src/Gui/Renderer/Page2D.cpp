@@ -105,6 +105,8 @@ enum class Op : uint8_t {
     Stroke,
     Text,
     Triangles,
+    PushTransform,
+    PopTransform,
 };
 
 void putBytes(std::vector<uint8_t>& out, const void* p, size_t n)
@@ -304,6 +306,20 @@ void Page2D::Recorder::text(const char* font, float size, uint32_t rgba,
     putBytes(ops, utf8, textLen);
 }
 
+void Page2D::Recorder::pushTransform(const float mtx[6])
+{
+    if (!mtx)
+        return;
+    putOp(ops, Op::PushTransform);
+    for (int i = 0; i < 6; ++i)
+        putF(ops, mtx[i]);
+}
+
+void Page2D::Recorder::popTransform()
+{
+    putOp(ops, Op::PopTransform);
+}
+
 void Page2D::Recorder::triangles(const float* xy, uint32_t numVertices,
                                  const uint16_t* indices, uint32_t numIndices,
                                  uint32_t rgba)
@@ -360,14 +376,20 @@ static size_t opFixedSize(Op op)
         return 5;
     case Op::Text:
         return 1;
+    case Op::PushTransform:
+        return 24;
+    case Op::PopTransform:
+        return 0;
     }
     return SIZE_MAX; // unknown opcode: newer writer, stop
 }
 
 // Replay one op buffer into the currently recording vg command list.
-static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops)
+// stateDepth counts unmatched PushTransform states; the caller pops
+// what is left so a truncated or malformed buffer cannot leak state
+// pushes into the next item.
+static void replayOpsInner(vg::Context* ctx, OpReader& r, int& stateDepth)
 {
-    OpReader r {ops.data(), ops.data() + ops.size()};
     while (!r.done()) {
         const Op op = (Op)r.u8();
         const size_t need = opFixedSize(op);
@@ -510,12 +532,40 @@ static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops)
                                ni, noImage);
             break;
         }
+        case Op::PushTransform: {
+            // Bound the depth: this is wire input, and vg's state stack
+            // is finite (32 entries, shared with the submit machinery).
+            if (stateDepth >= 16)
+                return;
+            float m[6];
+            for (int i = 0; i < 6; ++i)
+                m[i] = r.f();
+            vg::pushState(ctx);
+            vg::transformMult(ctx, m, vg::TransformOrder::Post);
+            ++stateDepth;
+            break;
+        }
+        case Op::PopTransform:
+            if (stateDepth <= 0)
+                return; // malformed: more pops than pushes
+            vg::popState(ctx);
+            --stateDepth;
+            break;
         default:
             // Unknown op: the buffer is from a newer writer; stop rather
             // than misparse the rest.
             return;
         }
     }
+}
+
+static void replayOps(vg::Context* ctx, const std::vector<uint8_t>& ops)
+{
+    OpReader r {ops.data(), ops.data() + ops.size()};
+    int stateDepth = 0;
+    replayOpsInner(ctx, r, stateDepth);
+    while (stateDepth-- > 0)
+        vg::popState(ctx);
 }
 
 #endif // HAVE_BGFX
@@ -789,6 +839,12 @@ bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
     return true;
 }
 
+void Page2D::registerFont(const char* name, const char* path)
+{
+    if (name && path)
+        Vg2D::instance().loadFontFile(name, path);
+}
+
 #else // !HAVE_BGFX
 
 bool Page2D::render(uint16_t, uint16_t, uint16_t)
@@ -800,5 +856,7 @@ bool Page2D::renderOffscreen(uint16_t, uint16_t, std::vector<uint8_t>&)
 {
     return false;
 }
+
+void Page2D::registerFont(const char*, const char*) {}
 
 #endif // HAVE_BGFX

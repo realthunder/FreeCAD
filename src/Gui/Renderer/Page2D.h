@@ -105,6 +105,15 @@ public:
         void text(const char* font, float size, uint32_t rgba, float x, float y,
                   const char* utf8);
 
+        /// Push a coordinate transform: ops until the matching pop see
+        /// their coordinates mapped by the 2x3 affine [m11 m12 m21 m22
+        /// dx dy] (column-vector: x' = m11*x + m21*y + dx), composed
+        /// under the page view. Rotated or scaled text is the intended
+        /// use; plain geometry is cheaper pre-mapped by the feed.
+        /// Pushes must balance within the item; replay pops leftovers.
+        void pushTransform(const float mtx[6]);
+        void popTransform();
+
         /// Pre-triangulated geometry (holed face fills arrive here).
         /// Solid color across all vertices.
         void triangles(const float* xy, uint32_t numVertices,
@@ -151,6 +160,12 @@ public:
 
     /// The band scale the current view quantizes to (exposed for tests).
     static float bandScale(float zoom);
+
+    /// Register a font file under the registry name text ops refer to.
+    /// Legal any time -- before any GPU context exists, and again after
+    /// one is torn down; the bytes are retained and the font follows
+    /// every context. Re-registering a name is a no-op.
+    static void registerFont(const char* name, const char* path);
 
     /// Offscreen convenience for verification hosts and tools: ensure a
     /// bgfx device exists (bringing one up headless if nothing did),
