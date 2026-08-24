@@ -392,10 +392,12 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
             auto* vp = Gui::Application::Instance->getViewProvider(obj);
             if (!vp || !vp->getRoot())
                 continue;
-            // The root is the object as the 3D view shows it, in world
-            // coordinates for a top-level object. A source nested in a
-            // transformed container is captured untransformed for now --
-            // out of registration until container transforms are resolved.
+            // The root carries the same frame the HLR shape resolves
+            // to: an object's own placement (containers do not project
+            // into a member's root, and Part::Feature::getShape does
+            // not apply them either), a container's or Link's root its
+            // own transform plus its children -- verified for nested,
+            // container and Link sources by registration probes.
             root->addChild(vp->getRoot());
             ++fed;
         }
