@@ -102,6 +102,7 @@
 #include "Utilities.h"
 #include "View.h"
 #include "View3DInventor.h"
+#include "ViewArea.h"
 #include "View3DInventorViewer.h"
 #include "ViewParams.h"
 #include "ViewProviderMeasureDistance.h"
@@ -2579,6 +2580,106 @@ void StdCmdViewCreate::activated(int iMsg)
 bool StdCmdViewCreate::isActive()
 {
     return (getActiveGuiDocument()!=NULL);
+}
+
+//===========================================================================
+// Std_ViewSplitRight / Std_ViewSplitDown / Std_ViewSplitClose
+//
+// Blender-style split view areas (docs/SplitViews.md). Splitting a view
+// that still lives in a plain MDI tab first wraps it into a ViewArea.
+//===========================================================================
+
+static void splitActiveView(Qt::Orientation orientation)
+{
+    auto view = qobject_cast<View3DInventor*>(getMainWindow()->activeWindow());
+    if (!view)
+        return;
+    ViewArea *area = ViewArea::areaOf(view);
+    if (!area)
+        area = ViewArea::wrap(view);
+    if (!area)
+        return;
+    if (auto cell = area->cellOf(view))
+        area->splitCell(cell, orientation);
+}
+
+DEF_STD_CMD_A(StdCmdViewSplitRight)
+
+StdCmdViewSplitRight::StdCmdViewSplitRight()
+  : Command("Std_ViewSplitRight")
+{
+    sGroup      = "Standard-View";
+    sMenuText   = QT_TR_NOOP("Split view right");
+    sToolTipText= QT_TR_NOOP("Splits the active view area side by side, with the new view on the right");
+    sWhatsThis  = "Std_ViewSplitRight";
+    sStatusTip  = sToolTipText;
+    eType       = Alter3DView;
+}
+
+void StdCmdViewSplitRight::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    splitActiveView(Qt::Horizontal);
+}
+
+bool StdCmdViewSplitRight::isActive()
+{
+    return qobject_cast<View3DInventor*>(getMainWindow()->activeWindow()) != nullptr;
+}
+
+DEF_STD_CMD_A(StdCmdViewSplitDown)
+
+StdCmdViewSplitDown::StdCmdViewSplitDown()
+  : Command("Std_ViewSplitDown")
+{
+    sGroup      = "Standard-View";
+    sMenuText   = QT_TR_NOOP("Split view down");
+    sToolTipText= QT_TR_NOOP("Splits the active view area top and bottom, with the new view below");
+    sWhatsThis  = "Std_ViewSplitDown";
+    sStatusTip  = sToolTipText;
+    eType       = Alter3DView;
+}
+
+void StdCmdViewSplitDown::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    splitActiveView(Qt::Vertical);
+}
+
+bool StdCmdViewSplitDown::isActive()
+{
+    return qobject_cast<View3DInventor*>(getMainWindow()->activeWindow()) != nullptr;
+}
+
+DEF_STD_CMD_A(StdCmdViewSplitClose)
+
+StdCmdViewSplitClose::StdCmdViewSplitClose()
+  : Command("Std_ViewSplitClose")
+{
+    sGroup      = "Standard-View";
+    sMenuText   = QT_TR_NOOP("Close split view");
+    sToolTipText= QT_TR_NOOP("Closes the active view area cell, its space goes to the neighbors");
+    sWhatsThis  = "Std_ViewSplitClose";
+    sStatusTip  = sToolTipText;
+    eType       = Alter3DView;
+}
+
+void StdCmdViewSplitClose::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    auto view = getMainWindow()->activeWindow();
+    ViewArea *area = ViewArea::areaOf(view);
+    if (!area)
+        return;
+    if (auto cell = area->cellOf(view))
+        area->closeCell(cell);
+}
+
+bool StdCmdViewSplitClose::isActive()
+{
+    auto view = getMainWindow()->activeWindow();
+    ViewArea *area = ViewArea::areaOf(view);
+    return area && area->cellCount() > 1;
 }
 
 //===========================================================================
@@ -5187,6 +5288,9 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdViewIvIssueCamPos());
 
     rcCmdMgr.addCommand(new StdCmdViewCreate());
+    rcCmdMgr.addCommand(new StdCmdViewSplitRight());
+    rcCmdMgr.addCommand(new StdCmdViewSplitDown());
+    rcCmdMgr.addCommand(new StdCmdViewSplitClose());
     rcCmdMgr.addCommand(new StdViewScreenShot());
     rcCmdMgr.addCommand(new StdViewLoadImage());
     rcCmdMgr.addCommand(new StdCmdSaveView());

@@ -116,6 +116,7 @@
 #include "SelectionFilterPy.h"
 #include "SoQtOffscreenRendererPy.h"
 #include "SplitView3DInventor.h"
+#include "ViewArea.h"
 #include "TaskView/TaskView.h"
 #include "TaskView/TaskDialogPython.h"
 #include "ToolBarManager.h"
@@ -2255,6 +2256,7 @@ void Application::initTypes()
     Gui::View3DInventor                         ::init();
     Gui::AbstractSplitView                      ::init();
     Gui::SplitView3DInventor                    ::init();
+    Gui::ViewArea                               ::init();
     Gui::TextDocumentEditorView                 ::init();
     Gui::EditorView                             ::init();
     Gui::PythonEditorView                       ::init();

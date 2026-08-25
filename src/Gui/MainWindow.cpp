@@ -1632,9 +1632,17 @@ void MainWindow::onSetActiveSubWindow(QWidget *window)
 
 void MainWindow::setActiveWindow(MDIView* view)
 {
+    // A container view (Gui::ViewArea) resolves to its focused embedded
+    // child, so the active view is always one commands can work on.
+    if (view)
+        view = view->activeSubView();
     if (!view || d->activeView == view)
         return;
-    onSetActiveSubWindow(view->parentWidget());
+    // An embedded view's QMdiSubWindow is not its direct parent; walk up.
+    QWidget* sub = view->parentWidget();
+    while (sub && !qobject_cast<QMdiSubWindow*>(sub))
+        sub = sub->parentWidget();
+    onSetActiveSubWindow(sub);
     d->activeView = view;
     Application::Instance->viewActivated(view);
     updateActions();
@@ -1645,6 +1653,10 @@ void MainWindow::onWindowActivated(QMdiSubWindow* w)
     if (!w)
         return;
     auto view = dynamic_cast<MDIView*>(w->widget());
+    // A container view (Gui::ViewArea) resolves to its focused embedded
+    // child, so the active view is always one commands can work on.
+    if (view)
+        view = view->activeSubView();
     if(view == d->activeView)
         return;
 

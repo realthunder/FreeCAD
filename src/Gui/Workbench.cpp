@@ -715,7 +715,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
     // View
     auto view = new MenuItem( menuBar );
     view->setCommand("&View");
-    *view << "Std_ViewCreate" << "Std_OrthographicCamera" << "Std_PerspectiveCamera" << "Std_MainFullscreen" << "Separator"
+    *view << "Std_ViewCreate" << "Std_ViewSplitRight" << "Std_ViewSplitDown" << "Std_ViewSplitClose" << "Std_OrthographicCamera" << "Std_PerspectiveCamera" << "Std_MainFullscreen" << "Separator"
           << stdviews << "Std_FreezeViews" << "Std_DrawStyle" << "Std_SelOptions"
           << "Separator" << view3d << zoom
           << "Std_ViewDockUndockFullscreen" << "Std_AxisCross" << "Std_ToggleClipPlane" << "Std_ClipPlaneDragger"
