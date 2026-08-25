@@ -3115,10 +3115,7 @@ TEST_F(TopoShapeExpansionTest, DISABLED_makEBSplineFace)
 // removeShape take and return TopoDS_Shape and carry no element map. That is a
 // feature gap, not a rename -- see docs/UpstreamNameMap.md section 8.
 
-// DISABLED: an empty-description C++ exception escapes the operation.
-// An open finding from the phase 3 harvest, see docs/UpstreamNameMap.md
-// section 8. Re-enable it with the fix, not before.
-TEST_F(TopoShapeExpansionTest, DISABLED_makEEvolve)
+TEST_F(TopoShapeExpansionTest, makEEvolve)
 {
     BRepBuilderAPI_MakePolygon polygon(
         gp_Pnt(0.0, 0.0, 0.0),

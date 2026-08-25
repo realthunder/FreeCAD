@@ -1774,7 +1774,7 @@ TopoShape &TopoShape::makEEvolve(const TopoShape &spine,
 
     GeomAbs_JoinType joinType;
     switch (join) {
-        case JoinType::Arc:
+    case JoinType::Tangent:
         joinType = GeomAbs_Tangent;
         break;
     case JoinType::Intersection:
