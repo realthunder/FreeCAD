@@ -116,6 +116,15 @@ public:
      */
     bool closeCell(ViewAreaCell *cell);
 
+    /** Replace \a cell's content with \a view -- the Blender "switch
+     * the area's editor" operation. The old child goes through its
+     * normal close path (which may refuse); \a view may currently be
+     * hosted in the MDI area (its tab is taken over) or be parentless.
+     * Returns false if the old child refused to close or \a view is
+     * embedded elsewhere.
+     */
+    bool setCellView(ViewAreaCell *cell, MDIView *view);
+
     /// The focused child view; what activation resolves to.
     MDIView *activeSubView() override;
 
@@ -144,6 +153,9 @@ protected:
     void collapseCell(ViewAreaCell *cell);
 
 private:
+    /// Take an MDI-hosted view out of its QMdiSubWindow, keeping it alive.
+    static void stealFromMdiArea(MDIView *view);
+
     QSplitter *_rootSplitter;
     QPointer<ViewAreaCell> _activeCell;
     bool _closing = false;

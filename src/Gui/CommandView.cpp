@@ -2683,6 +2683,74 @@ bool StdCmdViewSplitClose::isActive()
 }
 
 //===========================================================================
+// Std_ViewCellShowObject
+//
+// The Blender "switch the area's editor" operation: host the selected
+// object's own view (a TechDraw page, a spreadsheet, ...) in the active
+// view area cell. Works for any object whose view provider offers an
+// MDIView; show() is used to materialize it, which for such objects is
+// plain visibility semantics.
+//===========================================================================
+DEF_STD_CMD_A(StdCmdViewCellShowObject)
+
+StdCmdViewCellShowObject::StdCmdViewCellShowObject()
+  : Command("Std_ViewCellShowObject")
+{
+    sGroup      = "Standard-View";
+    sMenuText   = QT_TR_NOOP("Show object in view cell");
+    sToolTipText= QT_TR_NOOP("Shows the selected object's view (e.g. a TechDraw page) in the active view area cell");
+    sWhatsThis  = "Std_ViewCellShowObject";
+    sStatusTip  = sToolTipText;
+    eType       = Alter3DView;
+}
+
+static Gui::ViewProviderDocumentObject *selectedViewBearingProvider()
+{
+    auto objs = Gui::Selection().getObjectsOfType(App::DocumentObject::getClassTypeId());
+    if (objs.size() != 1)
+        return nullptr;
+    return dynamic_cast<ViewProviderDocumentObject*>(
+            Application::Instance->getViewProvider(objs.front()));
+}
+
+void StdCmdViewCellShowObject::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    auto vp = selectedViewBearingProvider();
+    if (!vp)
+        return;
+
+    auto active = getMainWindow()->activeWindow();
+    ViewArea *area = ViewArea::areaOf(active);
+    if (!area) {
+        area = ViewArea::wrap(active);
+        if (!area)
+            return;
+    }
+    auto cell = area->cellOf(area->activeSubView());
+    if (!cell)
+        return;
+
+    MDIView *view = vp->getMDIView();
+    if (!view) {
+        vp->show();
+        view = vp->getMDIView();
+    }
+    if (!view || view == active)
+        return;
+    area->setCellView(cell, view);
+}
+
+bool StdCmdViewCellShowObject::isActive()
+{
+    if (!selectedViewBearingProvider())
+        return false;
+    auto view = getMainWindow()->activeWindow();
+    return ViewArea::areaOf(view)
+        || qobject_cast<View3DInventor*>(view) != nullptr;
+}
+
+//===========================================================================
 // Std_ToggleNavigation
 //===========================================================================
 DEF_STD_CMD_A(StdCmdToggleNavigation)
@@ -5291,6 +5359,7 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdViewSplitRight());
     rcCmdMgr.addCommand(new StdCmdViewSplitDown());
     rcCmdMgr.addCommand(new StdCmdViewSplitClose());
+    rcCmdMgr.addCommand(new StdCmdViewCellShowObject());
     rcCmdMgr.addCommand(new StdViewScreenShot());
     rcCmdMgr.addCommand(new StdViewLoadImage());
     rcCmdMgr.addCommand(new StdCmdSaveView());

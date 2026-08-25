@@ -145,12 +145,23 @@ ViewArea *ViewArea::areaOf(const QWidget *w)
     return nullptr;
 }
 
-ViewArea *ViewArea::wrap(MDIView *view)
+void ViewArea::stealFromMdiArea(MDIView *view)
 {
-    if (!view)
-        return nullptr;
     auto sub = qobject_cast<QMdiSubWindow*>(view->parentWidget());
     if (!sub)
+        return;
+    // Undo the addWindow plumbing; hostView re-establishes what an
+    // embedded view needs. removeWindow also detaches the sub window
+    // from the MDI area without deleting the view.
+    getMainWindow()->removeWindow(view, false);
+    sub->setWidget(nullptr);
+    view->setParent(nullptr);
+    sub->deleteLater();
+}
+
+ViewArea *ViewArea::wrap(MDIView *view)
+{
+    if (!view || !qobject_cast<QMdiSubWindow*>(view->parentWidget()))
         return nullptr;
 
     auto mw = getMainWindow();
@@ -160,19 +171,34 @@ ViewArea *ViewArea::wrap(MDIView *view)
     area->setWindowTitle(view->windowTitle());
     area->setWindowIcon(view->windowIcon());
 
-    // Undo the addWindow plumbing; hostView re-establishes what an
-    // embedded view needs. removeWindow also detaches the sub window
-    // from the MDI area without deleting the view.
-    mw->removeWindow(view, false);
-    sub->setWidget(nullptr);
-    view->setParent(nullptr);
-    sub->deleteLater();
-
+    stealFromMdiArea(view);
     area->activeCell()->hostView(view);
     mw->addWindow(area);
     if (wasActive)
         mw->setActiveWindow(view);
     return area;
+}
+
+bool ViewArea::setCellView(ViewAreaCell *cell, MDIView *view)
+{
+    if (!cell || cell->area() != this || !view)
+        return false;
+    if (cell->childView() == view)
+        return true;
+    if (areaOf(view))
+        return false;  // embedded in a cell already (here or elsewhere)
+
+    if (MDIView *old = cell->childView()) {
+        if (!old->close())
+            return false;
+        // The old view is on its way out (delete-on-close); detach it
+        // from the cell so the newcomer takes its place immediately.
+        cell->releaseView();
+    }
+    stealFromMdiArea(view);
+    cell->hostView(view);
+    setActiveCell(cell);
+    return true;
 }
 
 ViewAreaCell *ViewArea::cellOf(const MDIView *view) const
