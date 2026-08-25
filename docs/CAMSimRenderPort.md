@@ -267,7 +267,8 @@ and 8 waits for 7 so the GL build remains the comparison point.
   full stop. One site: `SimDisplay.cpp:478`, `glLineWidth(2)`, the tool
   path overlay. Either accept 1px or expand the strip to camera-facing
   quads. Decide when step 4 lands; accepting 1px first keeps the step
-  small.
+  small. RESOLVED as the quads: 1px was the stand-in through the
+  port, and the expansion landed right after step 8 (section 7).
 - **bgfx has no 32-bit integer vertex attribute.** `MillPathPosition`
   carries `int SegmentId` through `glVertexAttribIPointer`. bgfx's
   `AttribType` is `Uint8`/`Uint10`/`Int16`/`Half`/`Float` only, so the
@@ -362,3 +363,16 @@ Fixed on the way: `View3DInventorViewer::addViewProvider` crashed on
 the document-less Dummy3DViewer (first time the AppGL simulator ever
 ran in this fork), and the AO effect's first implementation cached
 `c_str()` of a temporary shader path.
+
+**Post-port: the tool-path width came back.** The 1px stand-in was
+replaced by screen-facing quads: each strip segment becomes two
+triangles whose vertices carry both endpoints plus (segment index,
+side), and the vertex shader offsets them half the line width along
+the segment's screen-space perpendicular (u_simParams.w, in pixels --
+half of GL's glLineWidth(2)). Non-indexed on purpose (16-bit indices
+would overflow on long paths), culling off for the pass (quad winding
+follows each segment's screen direction). Verified against the
+GL-path reference frame: the lines are back at 2px in the same rows
+and columns; what remains differing is sub-pixel placement and
+endpoint caps, which GL's own wide-line rasterization rule decided
+differently.

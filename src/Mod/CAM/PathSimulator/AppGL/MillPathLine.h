@@ -26,10 +26,12 @@ public:
     std::vector<MillPathPosition> MillPathPointsBuffer;
 
 protected:
-    int mNumVerts = 0;
-    // The path as a facade buffer: pos3 + the SegmentId as one float
-    // in TexCoord0 -- the backend has no 32-bit integer attribute
-    // (exact below 2^24 segments).
+    // The path as camera-facing quads (the backend draws only 1px
+    // lines, so the GL path's glLineWidth(2) is done in the vertex
+    // shader): six vertices per segment, each carrying its endpoint,
+    // the other endpoint, and (segment index, screen side). The
+    // SegmentId travels as a float -- the backend has no 32-bit
+    // integer attribute (exact below 2^24 segments).
     Render::VertexBufferHandle mRVbo;
 };
 

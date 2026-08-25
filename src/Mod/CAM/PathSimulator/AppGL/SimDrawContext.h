@@ -106,8 +106,10 @@ struct SimDrawContext
 
     /// One indexed-triangle draw with everything accumulated.
     void submitIndexed(Render::VertexBufferHandle vb, Render::IndexBufferHandle ib);
-    /// One line-strip draw; the line shader has no model transform.
-    void submitLines(Render::VertexBufferHandle vb);
+    /// One non-indexed triangle draw without a model transform (the
+    /// tool path's screen-facing quads; its shader works in clip
+    /// space).
+    void submitTriangles(Render::VertexBufferHandle vb);
 
 private:
     void push(Render::PrimitiveType primitive, bool withTransform);

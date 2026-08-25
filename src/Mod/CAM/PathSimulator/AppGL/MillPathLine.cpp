@@ -9,31 +9,56 @@ namespace CAMSimulator
 
 void MillPathLine::GenerateModel()
 {
-    mNumVerts = MillPathPointsBuffer.size();
-
-    if (auto* dev = Render::DrawDevice::instance()) {
+    auto* dev = Render::DrawDevice::instance();
+    if (dev) {
         if (mRVbo.valid()) {
             dev->destroy(mRVbo);
         }
-        // The struct's int SegmentId converts to float for the facade
-        // copy; the GL path's non-integer attribute pointer converted
-        // the same way at fetch time.
-        std::vector<float> converted;
-        converted.reserve(MillPathPointsBuffer.size() * 4);
-        for (const auto& p : MillPathPointsBuffer) {
-            converted.push_back(p.X);
-            converted.push_back(p.Y);
-            converted.push_back(p.Z);
-            converted.push_back((float)p.SegmentId);
+        mRVbo = {};
+        // Each strip segment becomes one screen-facing quad (two
+        // triangles, non-indexed -- 16-bit indices would overflow on
+        // long paths). A vertex is: its endpoint (Position), the
+        // OTHER endpoint (Normal -- the shader needs both to find the
+        // screen direction), and (segment index, side) in TexCoord0.
+        // The far endpoint's vertices flip the side sign so both ends
+        // offset to the same screen side; vs_camsim_line.sc keeps the
+        // story.
+        const size_t n = MillPathPointsBuffer.size();
+        if (n >= 2) {
+            std::vector<float> verts;
+            verts.reserve((n - 1) * 6 * 8);
+            auto emit = [&verts](const MillPathPosition& at,
+                                 const MillPathPosition& other,
+                                 float side) {
+                verts.push_back(at.X);
+                verts.push_back(at.Y);
+                verts.push_back(at.Z);
+                verts.push_back(other.X);
+                verts.push_back(other.Y);
+                verts.push_back(other.Z);
+                verts.push_back((float)at.SegmentId);
+                verts.push_back(side);
+            };
+            for (size_t i = 0; i + 1 < n; i++) {
+                const auto& p0 = MillPathPointsBuffer[i];
+                const auto& p1 = MillPathPointsBuffer[i + 1];
+                emit(p0, p1, 1.0f);
+                emit(p0, p1, -1.0f);
+                emit(p1, p0, -1.0f);
+                emit(p0, p1, -1.0f);
+                emit(p1, p0, 1.0f);
+                emit(p1, p0, -1.0f);
+            }
+            Render::VertexLayout layout;
+            layout.add(Render::DrawAttrib::Position, 3, Render::DrawAttribType::Float)
+                .add(Render::DrawAttrib::Normal, 3, Render::DrawAttribType::Float)
+                .add(Render::DrawAttrib::TexCoord0, 2, Render::DrawAttribType::Float);
+            mRVbo = dev->createVertexBuffer(
+                verts.data(),
+                (unsigned int)(verts.size() * sizeof(float)),
+                layout
+            );
         }
-        Render::VertexLayout layout;
-        layout.add(Render::DrawAttrib::Position, 3, Render::DrawAttribType::Float)
-            .add(Render::DrawAttrib::TexCoord0, 1, Render::DrawAttribType::Float);
-        mRVbo = dev->createVertexBuffer(
-            converted.data(),
-            (unsigned int)(converted.size() * sizeof(float)),
-            layout
-        );
     }
 
     // free
@@ -54,7 +79,7 @@ void MillPathLine::Clear()
 void MillPathLine::Render()
 {
     if (gSimDraw.active()) {
-        gSimDraw.submitLines(mRVbo);
+        gSimDraw.submitTriangles(mRVbo);
     }
 }
 

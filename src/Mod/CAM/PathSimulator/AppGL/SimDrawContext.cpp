@@ -67,12 +67,12 @@ void SimDrawContext::submitIndexed(Render::VertexBufferHandle vb,
     submitted = true;
 }
 
-void SimDrawContext::submitLines(Render::VertexBufferHandle vb)
+void SimDrawContext::submitTriangles(Render::VertexBufferHandle vb)
 {
     if (!surface || !program.valid() || !vb.valid()) {
         return;
     }
-    push(Render::PrimitiveType::LineStrip, false);
+    push(Render::PrimitiveType::Triangles, false);
     surface->setVertexBuffer(vb);
     surface->submit(pass, program);
     submitted = true;

@@ -380,19 +380,22 @@ void SimDisplay::SetPathColor(const vec3& normal, const vec3& rapid)
 
 void SimDisplay::SetupLinePathPass(int curSegment, bool isHidden)
 {
-    // The backend draws 1px lines; the GL path's glLineWidth(2) had
-    // no equivalent (accepted, docs/CAMSimRenderPort.md section 5).
     pathLineColor[3] = isHidden ? 0.1f : 1.0f;
     gSimDraw.state.depthFunc =
         isHidden ? Render::CompareFunc::Greater : Render::CompareFunc::Less;
     gSimDraw.state.depthWrite = false;
     gSimDraw.state.blend = Render::BlendMode::Alpha;
+    // The quads' winding depends on each segment's screen direction.
+    gSimDraw.cullEnabled = false;
     gSimDraw.program = mRProgLine;
     for (int i = 0; i < 4; i++) {
         gSimDraw.objectColorAlpha[i] = pathLineColor[i];
     }
     gSimDraw.setColor(gSimDraw.objectColor, pathLineColorPassed);
     gSimDraw.params[2] = (float)curSegment;
+    // Half the GL path's glLineWidth(2), in pixels: the vertex shader
+    // offsets each quad side by this much from the segment.
+    gSimDraw.params[3] = 1.0f;
 }
 
 void SimDisplay::UpdateWindowScale(int width, int height)
