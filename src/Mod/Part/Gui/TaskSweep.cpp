@@ -51,6 +51,7 @@
 #include <Gui/ViewProvider.h>
 #include <Gui/WaitCursor.h>
 #include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/ShapeAnalysis_FreeBoundsFix.h>
 
 #include "TaskSweep.h"
 #include "ui_TaskSweep.h"
@@ -190,7 +191,7 @@ void SweepWidget::findShapes()
             }
             // or all children are edges
             else if (hEdges->Length() == numChilds) {
-                ShapeAnalysis_FreeBounds::ConnectEdgesToWires(hEdges,
+                Part::Fix_ShapeAnalysis_FreeBounds_ConnectEdgesToWires(hEdges,
                     Precision::Confusion(), Standard_False, hWires);
                 if (hWires->Length() == 1)
                     shape = hWires->Value(1);
@@ -259,7 +260,7 @@ bool SweepWidget::isPathValid(const Gui::SelectionObject& sel) const
             for (TopExp_Explorer xp(shape.getShape(), TopAbs_EDGE); xp.More(); xp.Next())
                 hEdges->Append(xp.Current());
 
-            ShapeAnalysis_FreeBounds::ConnectEdgesToWires(hEdges, Precision::Confusion(), Standard_True, hWires);
+            Part::Fix_ShapeAnalysis_FreeBounds_ConnectEdgesToWires(hEdges, Precision::Confusion(), Standard_True, hWires);
             int len = hWires->Length();
             if (len != 1)
                 return false;

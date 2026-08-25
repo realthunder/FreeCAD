@@ -213,6 +213,7 @@
 #include "Tools.h"
 #include "FaceMaker.h"
 #include "BRepOffsetAPI_MakeOffsetFix.h"
+#include "ShapeAnalysis_FreeBoundsFix.h"
 #include "Geometry.h"
 #include "FaceMakerBullseye.h"
 #include "PartParams.h"
@@ -3307,7 +3308,7 @@ TopoShape &TopoShape::makEWires(const std::vector<TopoShape> &shapes,
         }
         if(!hEdges->Length())
             HANDLE_NULL_SHAPE;
-        ShapeAnalysis_FreeBounds::ConnectEdgesToWires(hEdges, tol, Standard_True, hWires);
+        Fix_ShapeAnalysis_FreeBounds_ConnectEdgesToWires(hEdges, tol, Standard_True, hWires);
         if(!hWires->Length())
             HANDLE_NULL_SHAPE;
 
