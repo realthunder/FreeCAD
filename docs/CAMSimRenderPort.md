@@ -1,7 +1,9 @@
 # CAM simulator render port
 
-Porting the CAM simulator's rendering off raw OpenGL. Survey and
-decisions are settled; this is the plan of record.
+Porting the CAM simulator's rendering off raw OpenGL. **COMPLETE
+2026-08-25**: all eight steps landed; the simulator draws entirely
+through the facade, and the raw-GL path is deleted. Section 7 records
+what the execution added to this plan.
 
 Related: `docs/RenderEngine.md` (the bgfx engine), `docs/RendererPlan.md`
 (the engine's own build log).
@@ -306,3 +308,57 @@ a unit test.
 - Watch specifically for the CSG going wrong (stock that should have
   been cut still drawn, or cuts eating too much), which is what a
   mis-ordered pass or a dropped stencil state looks like.
+
+
+## 7. Execution record (2026-08-25)
+
+All eight steps landed in one pass, each verified before the next.
+What the plan did not know in advance:
+
+- **More of the GL path was dead than listed.** The 2DTex shader pair
+  was declared but never compiled into a program; `Texture` and
+  `TextureLoader` had no callers at all; `StartCloserGeometryPass` and
+  `RenderLightObject` were never called (so the GeomCloser program was
+  not ported either -- its projection trick lives on as the base-shape
+  pass's depth bias). `lightLinear`, the screen-dimension uniforms and
+  `UpdateStartEnd` crossed into no ported shader.
+- **The segment-id attribute rides TexCoord0**, not a second texcoord
+  slot: the facade's attribute enum is sized to its consumers, and the
+  line shader reads `a_texcoord0.x`.
+- **The base-shape polygon offset became a pass**, not a DrawState
+  field: a backend pass has one projection, so `SimPassBaseShape`
+  draws with a slightly-closer copy of it (the GeomCloser scale
+  factor). `DrawState::depthBias` stays declared but unimplemented.
+- **The path-line pass needs its own colour+depth target.** A
+  one-output fragment shader stores undefined values into MRT
+  attachments it does not declare; the AO effect made that visible as
+  a broad occlusion streak along the rapid lines. The line pass now
+  targets colour+depth only, sharing the same attachments.
+- **The AO input is a fourth G-buffer attachment**: the geometry pass
+  writes the engine's prepass packing (octahedral viewer-facing
+  normal + positive linear view depth) alongside its own outputs.
+  `octEncode` is copied into the CAM shader because the CAM shader
+  tree compiles without the engine's include directory.
+- **The effect implementation duplicates the engine's submit sequence**
+  (BGFXViewEffects.cpp) rather than refactoring BGFXView's members
+  into a shared chain -- zero regression risk to the engine; the two
+  copies are cross-referenced and must be kept in step.
+- **A `UseFacadeRender` preference existed for steps 6-7 only**, as
+  the A/B switch (the render path selection always warms the backend,
+  so no session would otherwise reach the GL comparison leg). It was
+  deleted with the GL path.
+
+Verification ran as planned, plus a scripted harness: a probe drives
+`CAMSimulator.PathSim` directly (tool, G-code, stock), sets the stage
+slider to 60% and screenshots under xvfb. The facade image came out
+pixel-identical to the GL one except the tool-path overlay, where
+every differing pixel was the documented 2px-to-1px line-width
+substitute; AO on-vs-off is pure darkening; and the GL-path deletion
+left the facade output bit-identical. On real hardware (WSLg d3d12)
+the surface presents and runs clean -- Wayland cannot screen-grab, so
+the pixel evidence is the llvmpipe A/B.
+
+Fixed on the way: `View3DInventorViewer::addViewProvider` crashed on
+the document-less Dummy3DViewer (first time the AppGL simulator ever
+ran in this fork), and the AO effect's first implementation cached
+`c_str()` of a temporary shader path.
