@@ -286,3 +286,47 @@ there is a different mechanism with the same UX:
 
 Sections above this line are the plan; implementation notes get appended per
 milestone as sections 7+.
+
+## 7. M0 + M2 + M3(a) implementation notes (2026-08-25)
+
+Landed as three commits: the container core, heterogeneous cells, and
+default-on. `src/Gui/ViewArea.{h,cpp}`; commands in `CommandView.cpp`.
+
+Deviations from and refinements of the plan:
+
+- Commands are named for the user-visible direction, not the Qt
+  orientation: `Std_ViewSplitRight` (side by side), `Std_ViewSplitDown`
+  (stacked), `Std_ViewSplitClose`, plus `Std_ViewCellShowObject` -- the
+  generic switch-the-editor operation. It resolves the selected object's
+  view via `ViewProvider::getMDIView()` (materializing it with
+  `vp->show()` when absent), so core Gui needs no TechDraw dependency;
+  any view-bearing object type works.
+- The activation virtual is `MDIView::activeSubView()`;
+  `MainWindow::setActiveWindow`/`onWindowActivated` resolve through it
+  and walk the widget chain up to the real `QMdiSubWindow`.
+- `isBackgroundView()` moved up to `MDIView` unchanged;
+  `View3DInventor`'s override defers to the enclosing container.
+- TechDraw pages needed exactly two fixes: `ViewProviderPage` nulls its
+  raw `QGVPage*` on view destruction (an embedded view dies without
+  passing `removeMDIView`), and `showMaximized` is skipped for embedded
+  views. The one-host-per-page rule holds: hosting a page steals its
+  open MDI tab into the cell.
+
+Lifecycle traps found by test, all fixed in the M3 commit:
+
+- Adding the two virtuals to `MDIView` shifts every subclass vtable:
+  workbench Gui libraries MUST be rebuilt (a partial build crashed at
+  the Start page with a garbage slot call).
+- A closed cell child is delete-on-close DEFERRED: it can outlive the
+  document (nested event loops postpone deferred deletes), and the
+  viewer's Coin sensors keep firing until the widget dies --
+  `deferRedraw` read a freed `Gui::Document`.
+  `View3DInventor::closeEvent` now decouples the viewer on any accepted
+  close.
+- `setCurrentViewMode(TopLevel)` reparents an embedded child away
+  without killing it; the cell watches `ChildRemoved` and collapses.
+
+Still open for M3(b): layout persistence -- the `<ViewArea>` block in
+GuiDocument.xml recording the splitter tree (orientation/sizes, leaf ->
+view id or page object name); without it a multi-cell layout reopens as
+one container per saved camera, single-cell each.
