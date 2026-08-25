@@ -373,3 +373,163 @@ closed donor containers linger hidden until the event loop runs their
 deferred delete; maximize state is session-only; the per-cell content
 menu (5.5) is still command+selection driven, no corner button UI yet.
 M4 (wasm tier) untouched.
+
+## 9. M4 design pass (2026-08-25)
+
+The wasm tier per 5.7, refined against the code as it stands. The
+desktop container (sec 5.1-5.6) is not involved: the browser viewer has
+one canvas and one process-wide renderer, so the split is N sub-views
+rendered by that one renderer, with DOM chrome owning the gestures.
+
+### 9.1 Content model: cells select among RESIDENT stores
+
+What a wasm cell can show is bounded by what the connection has: the
+wire serves ONE group at a time (a scene payload flips s_pageMode off,
+a page payload flips it on -- main.cpp applyScenePayload/
+applyPagePayload), and per 5.7 the wire does not change in M4. Both
+stores are resident at once, though: leaving page mode keeps the page
+store's state, and the 3D snapshot stays while a page is served. So:
+
+- A cell's content is `3d` or `page`, selecting between the RESIDENT
+  scene and the RESIDENT page store.
+- Live deltas flow only for the currently served group; a cell showing
+  the other store shows its last-resident state. That is exactly the
+  staleness the full-canvas page/3D toggle has today -- no regression,
+  just visible side by side now.
+- Serving two groups concurrently over one connection (true live mixed
+  content) is a wire change: backlog, not M4.
+- The current full-canvas page mode becomes a one-page-cell layout, as
+  planned.
+
+### 9.2 Renderer API (survey verdict + design)
+
+Frame-path survey (2026-08-25) established:
+
+- Everything camera/screen-space sized is per-BGFXView and tagged
+  LifeSized in forEachHandle (scene MSAA, OIT, AO pyramid, volumetrics
+  + history, media intervals, bloom, sceneCopy/present/accum/refl,
+  debug + id readback), alongside the temporal caches (camFrameHash,
+  accumFrames/accumProj, volAccumFrames, aoMapHash, refl/medium sample
+  indices) -- all SINGLE-SLOT: alternating two cameras through them
+  would never converge TAA/GTAO accumulation.
+- Camera-INDEPENDENT and therefore shared: shadow map set +
+  shadowMapHash (hashed from light matrices + casters only,
+  BGFXFrame.cpp ~2377), bulb shadow atlas, the LifeProgram bucket
+  (programs/uniforms/stand-in textures -- relink is seconds on some
+  GL), the GPU geometry/texture caches (meshes/geometries/textures/
+  textureArrays -- per-BGFXView today, so N full views would N-fold
+  geometry VRAM: the killer argument against N BGFXViews), and the
+  particle state (stepping an emitter twice a frame double-steps it).
+- Every scene pass renders into view->bgfxFbo, not the backbuffer;
+  only ViewPresent (standalone) touches the backbuffer, via a
+  fullscreen triangle whose UV is 0..1 of the source regardless of
+  view rect (vs_fc_comp.sc). So per-sub-view SIZED targets + a
+  per-sub-view rect on the ONE setViewRect in configPresent
+  (BGFXFrame.cpp ~3608) composes correctly with no shader change.
+  Sub-rects inside one shared canvas-sized bgfxFbo would instead need
+  UV remapping in every fullscreen pass: rejected.
+- The overlay slots already run 9 (rect, camera) pairs into one
+  framebuffer per frame, and BGFXDrawSurface already holds a second
+  independent id block from the granule pool: both halves of the
+  mechanism exist. Nothing yet runs the full pipeline twice inside
+  one bgfx::frame() -- render() ends with the frame boundary, so it
+  splits into a submit half and an endFrame half (present + frame +
+  stats tail), the host calling submit N times, endFrame once.
+
+Design:
+
+- `Render::Renderer` grows
+
+      struct SubViewFrame {
+          int id;               // stable client token
+          int x, y, width, height;   // backbuffer rect, device px
+          const void *viewMatrix;
+          const void *projMatrix;
+      };
+      virtual bool renderSubViews(const QColor &bg,
+                                  const SubViewFrame *subs, int n);
+
+  Default returns false (Coin/other backends). render() stays and
+  becomes the n==1, full-canvas case internally.
+- BGFXView keeps its member layout, but the per-sub-view group (the
+  LifeSized handles, width/height/effW/effH/ssaoW/ssaoH, the id block
+  fields viewId/viewSpan/viewLive/sinkView/idMap/passMark + sink
+  targets, the temporal caches, warmup/targetsFailed) is declared
+  through one X-macro list that also generates a SubViewBank struct
+  and the stash/load swap. Sub-view i is rendered by loading bank i
+  into the members, running the submit half, and stashing back --
+  use sites stay untouched, and a new member added to the list is
+  per-sub-view by construction. Bank 0 is the implicit full-canvas
+  sub-view; desktop behavior is unchanged.
+- One frame counter tick per wall-clock frame (endFrame), not per
+  submit -- the mesh TTL (lastUsed + 2 < frame) keeps its meaning.
+  collectMeshes runs once per frame.
+- bgfx::reset keeps the CANVAS size; the per-bank width/height is the
+  target size (the standaloneWidth==view->width equality splits into
+  those two roles).
+- Known approximations, deliberate: groundCam (shadow-ground sizing),
+  relightForCamera and setAutoZoomScale follow the ACTIVE sub-view
+  only -- they are feed-level, and per-sub-view values would thrash
+  the shared shadowMapHash every pass. The GPU occlusion-query path
+  carries cross-frame verdicts per camera and is disabled for n > 1;
+  the software masked cull (the WebGL2 tier's path) is stateless per
+  pass and unaffected.
+- Id budget: a block per sub-view from the existing granule pool
+  (~13 ids each); refusal falls back exactly as today.
+
+### 9.3 wasm-side state (main.cpp)
+
+Today's camera is file-scope globals (s_center/s_yaw/s_pitch/s_roll/
+s_dist/s_panX/s_panY, s_userCam), the page view likewise (s_pageView,
+s_pageUserView), and one render call per frame. M4 bundles them:
+
+- `struct SubView { int id; content (3d|page); rect (device px, from
+  the chrome); orbit camera fields; userCam; Page2D::View pageView;
+  pageUserView; }` in a flat list owned by main.cpp, plus the active
+  sub-view index. Single-entry list at startup == today's viewer.
+- The frame loop renders the list: 3D cells through the new renderer
+  entry (9.2), page cells through Page2D::render on their own view ids
+  with the cell's rect (render() grows an x,y origin for its
+  setViewRect; the Page2D store is retained/damage-based, so two draws
+  a frame with setView() between them reuse the retained content).
+- Input routing: pointer events hit-test the rect list (down/wheel/
+  touch start pick the cell and focus it; drags stay with the cell
+  that took the press, as the desktop gestures do). The cell's camera
+  or pageView takes the interaction; pick/hover raycasts unproject
+  with the cell's camera and rect. The NaviCube and ?cam= apply to the
+  active cell.
+- Fit-on-resize keeps its rule per cell: a cell whose user has not
+  taken the camera re-fits when its rect changes.
+- Per-sub-view state stays in the client (5.7): nothing joins the wire
+  or the SceneDump snapshot.
+
+### 9.4 DOM chrome (web/src)
+
+A new `splitview.ts` module in the Solid chrome, mounted over the
+canvas like the panels but full-viewport:
+
+- The layout is a binary splitter tree in CSS-pixel space, same
+  H{permille|...} shape as the desktop token (sec 8) so a layout could
+  round-trip later; leaves are cells.
+- Cell divs are `pointer-events: none` overlays (the canvas keeps its
+  emscripten handlers) EXCEPT the interactive chrome: two 14px corner
+  zones per cell (top-right, bottom-left, invisible until hovered,
+  cross cursor -- ViewAreaZone parity) and the border handles.
+- The gesture state machine mirrors ViewAreaZone exactly (ViewArea.cpp
+  ~250-360): 12px manhattan threshold; inward drag splits on the
+  dominant axis and the rest of the drag live-adjusts the fresh
+  border; outward drag arms a join consuming the neighbor entered,
+  with a dim overlay + arrow on the target; dragging back inside
+  disarms (also right at the press point); release with an armed
+  target closes it. Border drag resizes; the border carries a context
+  menu (split/close entries) later -- menu parity is polish, gesture
+  parity is M4.
+- Rect push: on every layout change the chrome calls a new export
+  `fcviewer_set_layout(json)` -- an array of {id, x, y, w, h, content}
+  in CSS px (C++ folds in the dpr, as canvasPos does). The C++ side
+  answers with nothing; it re-fits cameras for resized cells and drops
+  state for vanished ids.
+- The active cell gets a subtle border highlight; a small per-cell
+  content chip (3D / Page) appears only when both stores are resident.
+- The HUD card, menus and panels stay global (per-cell later if ever).
+
