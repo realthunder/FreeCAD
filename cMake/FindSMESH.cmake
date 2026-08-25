@@ -75,20 +75,28 @@ IF(SMESH_LIBRARY)
     endforeach()
     message(STATUS "External SMESH version: ${SMESH_VERSION_MAJOR}.${SMESH_VERSION_MINOR}.${SMESH_VERSION_PATCH}.${SMESH_VERSION_TWEAK}")
   endif()
-  set(SMESH_LIBRARIES
-    ${SMESH_LIBRARY_DIR}/libDriver.so
-    ${SMESH_LIBRARY_DIR}/libDriverDAT.so
-    ${SMESH_LIBRARY_DIR}/libDriverSTL.so
-    ${SMESH_LIBRARY_DIR}/libDriverUNV.so
-    ${SMESH_LIBRARY_DIR}/libSMDS.so
-    ${SMESH_LIBRARY_DIR}/libSMESH.so
-    ${SMESH_LIBRARY_DIR}/libSMESHDS.so
-    ${SMESH_LIBRARY_DIR}/libStdMeshers.so
-  )
+  # Name the sibling components through find_library rather than by filename.
+  # Spelling them "lib<name>.so" only ever worked on Unix: the same package on
+  # Windows carries an import library, SMESH.lib, and the hardcoded names left
+  # the link line pointing at files that are not there. NO_DEFAULT_PATH keeps
+  # the search inside the directory the SMESH library itself came from.
+  set(SMESH_LIBRARIES)
+  foreach(_smesh_comp Driver DriverDAT DriverSTL DriverUNV SMDS SMESH SMESHDS StdMeshers)
+    find_library(SMESH_${_smesh_comp}_LIBRARY ${_smesh_comp}
+      HINTS ${SMESH_LIBRARY_DIR} NO_DEFAULT_PATH)
+    if(NOT SMESH_${_smesh_comp}_LIBRARY)
+      message(FATAL_ERROR "SMESH component ${_smesh_comp} not found in ${SMESH_LIBRARY_DIR}")
+    endif()
+    list(APPEND SMESH_LIBRARIES ${SMESH_${_smesh_comp}_LIBRARY})
+  endforeach()
   # A packaged SMESH may also carry the NETGEN plugin (the conda smesh package
   # links its own nglib), which is what -DFCWithNetgen then talks to.
-  if(BUILD_FEM_NETGEN AND EXISTS ${SMESH_LIBRARY_DIR}/libNETGENPlugin.so)
-    list(APPEND SMESH_LIBRARIES ${SMESH_LIBRARY_DIR}/libNETGENPlugin.so)
+  if(BUILD_FEM_NETGEN)
+    find_library(SMESH_NETGENPlugin_LIBRARY NETGENPlugin
+      HINTS ${SMESH_LIBRARY_DIR} NO_DEFAULT_PATH)
+    if(SMESH_NETGENPlugin_LIBRARY)
+      list(APPEND SMESH_LIBRARIES ${SMESH_NETGENPlugin_LIBRARY})
+    endif()
   endif()
   set(EXTERNAL_SMESH_LIBS ${SMESH_LIBRARIES})
 ELSE(SMESH_LIBRARY)

@@ -169,7 +169,14 @@ macro(SetupSalomeSMESH)
                 list(APPEND EXTERNAL_SMESH_LIBS ${VTK_LIBRARIES})
             endif()
 
-            include_directories(${SMESH_INCLUDE_DIR})
+            # SMESH's include directories are deliberately NOT added globally.
+            # Fem, Fem/Gui and MeshPart -- the only three consumers -- already
+            # list SMESH_INCLUDE_DIR themselves, and the bundled path never
+            # added them project-wide either. Adding them here put smesh's
+            # Kernel directory ahead of src/ for every translation unit, and on
+            # a case-insensitive filesystem its "utilities.h" then answered
+            # Gui's "#include <Utilities.h>" -- which fails on Windows at the
+            # pthread.h that SALOME header wants.
         endif()
 
         set(SMESH_FOUND TRUE)
