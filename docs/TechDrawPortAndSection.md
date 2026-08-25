@@ -1822,3 +1822,121 @@ Still open, known and accepted: aligned complex sections stay
 unshaded; the bgfx-grade capture still excludes derived shapes (the cut solid exists nowhere
 in the backend scene; feeding it as a transient capture scene remains
 the far option).
+
+## 31. Implementation status (2026-08-25): the underlay gap closure -- stored frames, prepared-space capture, aligned sections, backend derived capture
+
+The order: close ALL of section 30's accepted gaps. All four are
+closed, verified 0-fail on the RTX 3060 (VirtualGL egl0 + Xvfb,
+NVIDIA banner checked per run): the new rigs td_shaded10 (chains,
+aligned, >500 faces) and td_shaded11 (backend derived capture), plus
+td_shaded9 and td_shaded3 re-passing as regressions.
+
+### 31.1 Gap 1: the exact build-time frame is stored, not re-derived
+
+Every derived view now records the transform mapping its derived
+shape back to the global source frame, composed at build launch from
+the same parameters the worker consumes and committed in the async
+callbacks BESIDE the shapes they describe (an input recomputed
+mid-cut cannot desynchronize them). Transient, like the shapes: they
+rebuild on recompute/restore.
+
+- `DrawViewSection`: `m_cutFrame` (`m_cutShapeRaw` -> global,
+  resolved through `getShapeToCutFrame()`, which mirrors
+  `getShapeToCut()`'s branches through the BaseView chain) and
+  `m_preparedFrame` (`m_preparedShape` -> global, carrying the
+  1/Scale factor), committed in `prepareShape`.
+- `DrawViewDetail`: `m_detailFrame` and `m_scaledFrame`, composed in
+  `detailExec`, committed in `onMakeDetailFinished`.
+- `DrawViewPart::getShapeForDetailFrame()` (virtual) hands a base
+  view's frame to a detail on it; the section override composes
+  uncentering and unrotation onto `m_cutFrame`; the complex-section
+  override answers FALSE for the Aligned strategy (the unfolded
+  fiction is not one rigid move).
+
+`ShadedUnderlay`'s resolver reads the stored frame instead of
+re-deriving base rotation + bbox centroid: the 0.1mm drift tolerance
+is gone (uniform 1e-3 now), and detail-of-section, detail-of-detail
+and section-with-detail-ancestor chains all resolve per-face colors.
+A detail's cut-born faces take the NEAREST section ancestor's
+CutSurfaceColor when that section displays "Color" -- a detail of a
+section shows the same cut faces its base colors.
+
+### 31.2 Gaps 2+3: prepared-space capture and the persistent per-view scene
+
+The derived-shape capture no longer renders the raw cut/detail shape
+through re-derived camera math: it renders the PREPARED shape -- the
+exact HLR input (`m_preparedShape` / `m_scaledShape`), already
+centered, scaled and rotated into projection space -- under a
+straight-on camera (`getProjectionCS()` / `m_viewAxis`) with the 2D
+origin at the CS origin and window scale 1. Registration is by
+construction: whatever fiction prepareShape built is what HLR
+projected. That closes gap 3 for free -- an aligned complex section's
+prepared shape IS its unfolded fiction, so it captures like any
+other section (uniform color: no rigid frame exists for probes).
+
+The scene is PERSISTENT per view (`ShadedUnderlay.cpp`'s
+`PreparedScene` cache, keyed on the view, evicted on
+`signalDeletedObject`): tessellation and per-face classification run
+once per geometry change (staleness = the prepared shape's TShape
+identity + the source set), and each capture only resolves CURRENT
+colors from the cached classification records
+(`FaceClassRec`: on-source-face / on-source-boundary / cut-born /
+unclaimed) and updates the palette -- so a recolor or a
+CutSurfaceDisplay toggle follows without a single distance query
+(the grid rig's recolor: 60s-timeout before, 1.5s after). The
+former hard 500-face cap became the `ShadedUnderlayMaxFaces`
+preference (default 5000); a 600-face compound-grid section resolves
+full per-face colors with zero fallback.
+
+### 31.3 Gap 4: the backend renders the dedicated scene
+
+`Render::Renderer::setCaptureScene(DrawCallList&&)` /
+`clearCaptureScene()`: a transient supplied scene that stands in for
+the resident scene feed during `renderOffscreen`, through the same
+swap-and-restore body as the section-26.2 object filter
+(`BGFXRenderer::renderSwappedScene`, refactored out of
+`renderFiltered`). No `drawListVersion` bump: supplied meshes upload
+on demand at submission like the highlight feed's and TTL-collect
+after the capture; resident buffers stay under the keep-set.
+
+`ShadedUnderlay::captureSceneViaBackend` builds the feed from the
+dedicated scene exactly the way the interactive view is fed: a
+private headless-seeded `SoFCRenderCacheManager::traverse` over the
+scene root, `RendererBridge::translate` on the resulting vertex-cache
+map, then the shared FBO/readback dance (refactored into
+`renderBackendFrame`). Per-face colors survive the pipeline (the
+vertex cache captures per-vertex diffuse via the primitive material
+index). Refusals fall back to the Coin offscreen render as before.
+
+### 31.4 Traps this session paid for (do not rediscover)
+
+- `BRepExtrema_DistShapeShape` reports an inner solution ONLY against
+  a SOLID. Probed against a COMPOUND of solids it returns the
+  distance to the nearest boundary -- every cut-born face of a
+  compound source reads unclaimed (1mm to the wall, over tolerance),
+  and the whole section shades fallback. The resolver explodes each
+  source into per-solid probe targets (bbox-pruned) for exactly this
+  reason.
+- A `DrawComplexSection` created Aligned FROM THE START (scripting)
+  had a null `m_toolFaceShape`: only the Offset path's
+  `makeCuttingTool` built it, and `BRepBuilderAPI_Copy` on the null
+  shape threw, killing the aligned-pieces job ("failed to make
+  alignedPieces"). The GUI flow masked it (the dialog's first
+  recompute runs while ProjectionStrategy still defaults to Offset).
+  Fixed: the aligned branch builds the tool when missing. Scripted
+  aligned sections ALSO need `XDirection` set explicitly --
+  `SectionDirection` "Aligned" reads the CS from the properties, and
+  an unset XDirection is a zero vector that throws gp_Dir at
+  recompute.
+- A detail-of-section consumes the section's ASYNC cut result; a
+  recompute that ran before the cut landed just misses, and nothing
+  re-triggers it. Rigs must re-touch the detail after the base
+  section's underlay confirms the cut is in.
+- Rig isolation: `RenderCache=3` and the Render Type PERSIST in user
+  parameters across rig runs -- a "Coin-path" rig inherits the
+  backend from an earlier backend rig unless it resets
+  `View/RenderCache` itself.
+- Classification totals are logged per build ("classified N faces
+  (a source, b cut-born, c fallback)") -- read them before theorizing
+  about wrong colors: all-fallback means the probes miss (frame),
+  source-but-wrong-color means palette resolution.
