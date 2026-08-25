@@ -7,6 +7,7 @@ import { Inspector } from './inspector';
 import { HudCard } from './hud';
 import { LauncherMenu } from './menu';
 import { LoupeOverlay } from './loupe';
+import { SplitOverlay } from './splitview';
 import type { LoupeMark } from './loupe';
 import { NARROW } from './panel';
 import type { SelectionItem, Subject } from './control';
@@ -158,6 +159,7 @@ document.body.appendChild(host);
 
 render(() => (
   <>
+    <SplitOverlay />
     <Inspector selection={selection} request={request}
                onCardOpen={setCardOpen} viewOnly={viewOnly} />
     <LoupeOverlay mark={loupe} />

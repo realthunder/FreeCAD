@@ -14,6 +14,10 @@ declare global {
     /// 4 vertex.
     fcviewerSetSelMode?: (mode: number) => void;
     fcviewerSetPickFilter?: (filter: number) => void;
+    /// Split-view layout push (main.cpp fcviewer_set_layout,
+    /// docs/SplitViews.md sec 9.4): "id,x,y,w,h,p;..." in CSS px on
+    /// the canvas, empty string = single full-canvas view.
+    fcviewerSetLayout?: (spec: string) => void;
     /// Switch to another served document (main.cpp fcviewer_switch_doc,
     /// docs/MultiDocServe.md §6).
     fcviewerSwitchDoc?: (name: string) => void;

@@ -446,6 +446,15 @@ EM_JS(void, fcviewer_install_control, (), {
     window.fcviewerSetPickFilter = function(f) {
         _fcviewer_set_pick_filter(f | 0);
     };
+    // The split-view chrome's layout push (docs/SplitViews.md sec 9.4):
+    // "id,x,y,w,h,p;..." in CSS px, "" = single full-canvas view.
+    window.fcviewerSetLayout = function(spec) {
+        var len = lengthBytesUTF8(spec) + 1;
+        var buf = _malloc(len);
+        stringToUTF8(spec, buf, len);
+        _fcviewer_set_layout(buf);
+        _free(buf);
+    };
     // The menu's document switch (docs/MultiDocServe.md §6).
     window.fcviewerSwitchDoc = function(name) {
         var len = lengthBytesUTF8(name) + 1;
