@@ -1372,10 +1372,7 @@ TEST_F(TopoShapeExpansionTest, makEShellClosed)
     EXPECT_STREQ(result.shapeName().c_str(), "Shell");
 }
 
-// DISABLED: a self-intersecting shell raises nothing instead of Base::CADKernelError.
-// An open finding from the phase 3 harvest, see docs/UpstreamNameMap.md
-// section 8. Re-enable it with the fix, not before.
-TEST_F(TopoShapeExpansionTest, DISABLED_makEShellIntersecting)
+TEST_F(TopoShapeExpansionTest, makEShellIntersecting)
 {
     // Arrange
     auto [cube1, cube2] = CreateTwoCubes();

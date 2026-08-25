@@ -3583,10 +3583,15 @@ TopoShape &TopoShape::makEShell(bool silent, const char *op) {
             FC_THROWM(NullShapeException, "Failed to make shell");
         }
 
-        if (!tmp.hasSubShape(TopAbs_SHELL)) {
+        // The result must BE a shell, not merely contain one. Sewing a set of
+        // faces that cannot form a single shell hands back a compound of
+        // shells, and accepting that here would return a compound from
+        // makEShell() with no error at all.
+        if (tmp.getShape().ShapeType() != TopAbs_SHELL) {
             if (silent)
                 return *this;
-            FC_THROWM(Base::CADKernelError, "Failed to make shell");
+            FC_THROWM(Base::CADKernelError, "Failed to make shell: unexpected output shape type "
+                    << shapeName(tmp.getShape().ShapeType(), true));
         }
 
         *this = tmp;
