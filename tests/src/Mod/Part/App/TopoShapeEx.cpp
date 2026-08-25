@@ -1873,10 +1873,7 @@ TEST_F(TopoShapeExpansionTest, makELoftAllowsDistinctProfilesWithSameCenter)  //
     EXPECT_NEAR(getArea(loft->getShape()), 10.0 * 10.0 - 5.0 * 5.0, 1e-6);
 }
 
-// DISABLED: raw StdFail_NotDone escapes instead of Base::CADKernelError; this is upstream 9ee2c74545, already flagged as applicable.
-// An open finding from the phase 3 harvest, see docs/UpstreamNameMap.md
-// section 8. Re-enable it with the fix, not before.
-TEST_F(TopoShapeExpansionTest, DISABLED_makELoftRejectsCoincidentProfiles)  // NOLINT
+TEST_F(TopoShapeExpansionTest, makELoftRejectsCoincidentProfiles)  // NOLINT
 {
     // The fix for issue #5855 must still hold: lofting through coincident profiles (for example the
     // same sketch used as more than one section) crashes OCCT, so makELoft has to reject it.

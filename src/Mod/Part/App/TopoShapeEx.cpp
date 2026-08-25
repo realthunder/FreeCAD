@@ -2106,6 +2106,43 @@ TopoShape &TopoShape::makELoft(const std::vector<TopoShape> &shapes,
                                Standard_Integer maxDegree,
                                const char *op)
 {
+    // Returns true if the two profiles are different enough to loft between.
+    auto checkProfiles = [](const TopoShape &sh1, const TopoShape &sh2) {
+        // The same TShape may be used with different locations, and two
+        // different locations can still carry the same transformation, so
+        // compare the matrices rather than the locations.
+        if (sh1.getShape().IsPartner(sh2.getShape())) {
+            TopLoc_Location loc1 = sh1.getShape().Location();
+            TopLoc_Location loc2 = sh2.getShape().Location();
+            Base::Matrix4D mat1 = TopoShape::convert(loc1.Transformation());
+            Base::Matrix4D mat2 = TopoShape::convert(loc2.Transformation());
+            return mat1 != mat2;
+        }
+
+        // Different shapes: a differing bounding box already settles it.
+        try {
+            Bnd_Box bounds1;
+            Bnd_Box bounds2;
+            BRepBndLib::Add(sh1.getShape(), bounds1);
+            BRepBndLib::Add(sh2.getShape(), bounds2);
+            if (!bounds1.CornerMin().IsEqual(bounds2.CornerMin(), Precision::Confusion()))
+                return true;
+            if (!bounds1.CornerMax().IsEqual(bounds2.CornerMax(), Precision::Confusion()))
+                return true;
+        }
+        catch (const Standard_Failure &) {
+            return false;
+        }
+
+        Base::Vector3d center1;
+        Base::Vector3d center2;
+        if (!sh1.getCenterOfGravity(center1))
+            return true;
+        if (!sh2.getCenterOfGravity(center2))
+            return true;
+        return !center1.IsEqual(center2, Precision::Confusion());
+    };
+
     if(!op) op = Part::OpCodes::Loft;
 
     // http://opencascade.blogspot.com/2010/01/surface-modeling-part5.html
@@ -2116,8 +2153,17 @@ TopoShape &TopoShape::makELoft(const std::vector<TopoShape> &shapes,
     if (shapes.size() < 2)
         FC_THROWM(Base::CADKernelError,"Need at least two vertices, edges or wires to create loft face");
 
-    for(auto &sh : profiles) {
-        const auto &shape = sh.getShape();
+    // A loft only makes sense if consecutive profiles are actually distinct.
+    // Identical profiles make OCCT crash or hang, so reject them up front.
+    // Distinctness is decided cheaply, in increasing order of cost, and the
+    // centre of gravity is only the last resort: two concentric squares of
+    // different size share a centre and are still perfectly good profiles.
+    for(size_t i=0; i<profiles.size(); ++i) {
+        if(i > 0 && !checkProfiles(profiles[i], profiles[i-1])) {
+            FC_THROWM(Base::CADKernelError,
+                    "Segments of a loft do not have sufficient separation");
+        }
+        const auto &shape = profiles[i].getShape();
         if(shape.ShapeType() == TopAbs_VERTEX)
             aGenerator.AddVertex(TopoDS::Vertex (shape));
         else
