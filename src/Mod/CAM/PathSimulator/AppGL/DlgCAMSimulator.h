@@ -73,7 +73,7 @@ public:
 
 public:
     std::vector<Vertex> verts;
-    std::vector<GLushort> indices;
+    std::vector<uint16_t> indices;
     bool needsUpdate = false;
 };
 

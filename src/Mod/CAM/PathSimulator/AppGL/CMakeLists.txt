@@ -6,12 +6,9 @@ set(CAMSimulator_LIBS
     Mesh
     FreeCADApp
     FreeCADGui
-    # The draw facade (Gui/Renderer/DrawDevice.h) the simulator's
-    # rendering is moving onto (docs/CAMSimRenderPort.md). The raw-GL
-    # libraries below leave with the last step of that port.
+    # All of the simulator's rendering goes through the draw facade
+    # (Gui/Renderer/DrawDevice.h; docs/CAMSimRenderPort.md).
     FreeCADRenderer
-    ${QtOpenGL_LIBRARIES}
-    ${OPENGL_gl_LIBRARY}
 )
 
 SET(CAMSimulator_SRCS_Python
@@ -47,10 +44,6 @@ SET(CAMSimulator_SRCS_Core
     MillPathSegment.h
     MillSimulation.cpp
     MillSimulation.h
-    OpenGlWrapper.cpp
-    OpenGlWrapper.h
-    Shader.cpp
-    Shader.h
     SimDrawContext.cpp
     SimDrawContext.h
     SimDisplay.cpp
@@ -61,10 +54,6 @@ SET(CAMSimulator_SRCS_Core
     StockObject.h
     SolidObject.cpp
     SolidObject.h
-    Texture.cpp
-    Texture.h
-    TextureLoader.cpp
-    TextureLoader.h
     ViewCAMSimulator.cpp
     ViewCAMSimulator.h
     Dummy3DViewer.cpp

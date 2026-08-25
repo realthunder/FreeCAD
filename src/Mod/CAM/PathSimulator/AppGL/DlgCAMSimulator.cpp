@@ -25,8 +25,6 @@
 
 #include "DlgCAMSimulator.h"
 
-#include <App/Application.h>
-#include <Base/Parameter.h>
 #include <Gui/Renderer/DrawSurface.h>
 
 #include "Dummy3DViewer.h"
@@ -41,8 +39,6 @@
 #include <limits>
 #include <numeric>
 
-// include this last as the defines can mess up other includes
-#include "OpenGlWrapper.h"
 
 using namespace std::literals;
 
@@ -486,22 +482,12 @@ void DlgCAMSimulator::updateCamera()
 
 void DlgCAMSimulator::initializeGL()
 {
-    gOpenGLFunctions.initializeOpenGLFunctions();
+    // Nothing: the facade surface owns all drawing; the widget's GL
+    // context only receives endFrame's blit.
 }
 
 void DlgCAMSimulator::beginFacadeFrame()
 {
-    // The transition switch (docs/CAMSimRenderPort.md step 6): lets a
-    // session fall back to the raw-GL path while both exist; it is
-    // deleted with that path in the port's last step.
-    static ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Mod/CAM"
-    );
-    if (!hGrp->GetBool("UseFacadeRender", true)) {
-        mDrawSurface.reset();
-        gSimDraw.surface = nullptr;
-        return;
-    }
     if (!Render::DrawDevice::instance()) {
         // Device gone (or never up): surface handles died with it.
         mDrawSurface.reset();

@@ -24,7 +24,7 @@
 
 #pragma once
 
-#include <QOpenGLFunctions>
+#include <cstdint>
 #include <vector>
 
 #include <Gui/Renderer/DrawDevice.h>
@@ -80,12 +80,8 @@ public:
     ~Shape();
 
 public:
-    uint vbo = 0;
-    uint ibo = 0;
-    int numIndices = 0;
-    // The same geometry as facade resources (docs/CAMSimRenderPort.md
-    // step 3). Both live until the port's last step deletes the GL
-    // pair; invalid while no backend device is up.
+    // Facade resources; invalid while no backend device is up (the
+    // shape then simply has nothing to draw).
     Render::VertexBufferHandle rVbo;
     Render::IndexBufferHandle rIbo;
 
@@ -93,7 +89,7 @@ public:
     void Render() const;
     void Render(const mat4x4& modelMat, const mat4x4& normallMat) const;
     void FreeResources();
-    void SetModelData(const std::vector<Vertex>& vbuffer, const std::vector<GLushort>& ibuffer);
+    void SetModelData(const std::vector<Vertex>& vbuffer, const std::vector<uint16_t>& ibuffer);
     void RotateProfile(
         const float* profPoints,
         int nPoints,
@@ -128,8 +124,7 @@ public:
     static int lastNumSlices;
 
 protected:
-    void GenerateModel(const float* vbuffer, const GLushort* ibuffer, int numVerts, int numIndices);
-    void SetupVertexAttribs() const;
+    void GenerateModel(const float* vbuffer, const uint16_t* ibuffer, int numVerts, int numIndices);
     void CalculateExtrudeBufferSizes(
         int nProfilePoints,
         bool capStart,
