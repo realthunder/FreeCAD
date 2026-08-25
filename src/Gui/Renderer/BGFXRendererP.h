@@ -8457,6 +8457,12 @@ public:
     /// background, then restores everything.
     std::unordered_set<uint64_t> captureKeys;
     bool captureFilter = false;
+    /// The transient supplied scene (Renderer::setCaptureScene): while
+    /// active, renderOffscreen() renders these draws instead of the
+    /// resident scene, through the same swap-and-restore body as the
+    /// object filter. Takes precedence over captureFilter.
+    Render::DrawCallList captureScene;
+    bool captureSceneActive = false;
 
     std::map<int, Render::DrawCallList> selections;
     // Overlay feeds keyed by producer id (Renderer::setOverlay); map

@@ -119,7 +119,10 @@ bool BGFXRenderer::renderOffscreen(const QColor &col,
     _BGFXLib.captureWidth = uint16_t(width);
     _BGFXLib.captureHeight = uint16_t(height);
     bool ok = false;
-    if (pimpl->captureFilter)
+    if (pimpl->captureSceneActive)
+        ok = renderSwappedScene(Render::DrawCallList(pimpl->captureScene),
+                                col, viewMatrix, projMatrix);
+    else if (pimpl->captureFilter)
         ok = renderFiltered(col, viewMatrix, projMatrix);
     else
         ok = render(col, viewMatrix, projMatrix);
@@ -182,15 +185,34 @@ void BGFXRenderer::clearCaptureFilter()
     pimpl->captureKeys.clear();
 }
 
+bool BGFXRenderer::setCaptureScene(DrawCallList &&draws)
+{
+#ifdef FC_RENDERER_STANDALONE
+    (void)draws;
+    return false;
+#else
+    pimpl->captureScene.clear();
+    pimpl->captureSceneActive = false;
+    if (draws.empty())
+        return false;
+    pimpl->captureScene = std::move(draws);
+    pimpl->captureSceneActive = true;
+    return true;
+#endif
+}
+
+void BGFXRenderer::clearCaptureScene()
+{
+    pimpl->captureScene.clear();
+    pimpl->captureSceneActive = false;
+}
+
 #ifndef FC_RENDERER_STANDALONE
 // The capture frame with the object filter applied: swap in a scene
-// reduced to the filtered draws with the selection / preselection /
-// overlay feeds stripped and a flat transparent background, render --
-// with settle frames first, so temporal accumulation converges on the
-// capture camera before the frame that is read back -- then restore
-// every feed. drawListVersion is deliberately NOT bumped: the mesh
-// collector's keep-set stays the full scene's, so no resident buffer
-// is freed behind the on-screen view by a capture.
+// reduced to the filtered draws. drawListVersion is deliberately NOT
+// bumped by the swap (renderSwappedScene): the mesh collector's
+// keep-set stays the full scene's, so no resident buffer is freed
+// behind the on-screen view by a capture.
 bool BGFXRenderer::renderFiltered(const QColor &col,
                                   const void *viewMatrix,
                                   const void *projMatrix)
@@ -201,11 +223,29 @@ bool BGFXRenderer::renderFiltered(const QColor &col,
     for (const auto &draw : p.scene)
         if (p.captureKeys.count(draw.objectKey))
             filtered.push_back(draw);
-    if (filtered.empty())
+    return renderSwappedScene(std::move(filtered), col, viewMatrix, projMatrix);
+}
+
+// The shared capture-frame body: swap \a scene in for the resident
+// feeds with the selection / preselection / overlay feeds stripped and
+// a flat transparent background, render -- with settle frames first,
+// so temporal accumulation converges on the capture camera before the
+// frame that is read back -- then restore every feed. Works for both
+// resident draws (the object filter) and freshly translated ones (the
+// supplied capture scene): meshes the resident keep-set does not cover
+// upload on demand at submission, like the highlight feed's, and
+// TTL-collect once the capture stops drawing them.
+bool BGFXRenderer::renderSwappedScene(Render::DrawCallList &&sceneDraws,
+                                      const QColor &col,
+                                      const void *viewMatrix,
+                                      const void *projMatrix)
+{
+    auto &p = *pimpl;
+    if (sceneDraws.empty())
         return false;
 
     auto savedScene = std::move(p.scene);
-    p.scene = std::move(filtered);
+    p.scene = std::move(sceneDraws);
     auto savedSelections = std::move(p.selections);
     p.selections.clear();
     auto savedOverlays = std::move(p.overlays);

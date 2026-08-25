@@ -2510,6 +2510,28 @@ public:
     }
     virtual void clearCaptureFilter() {}
 
+    /// Provide a transient scene for subsequent renderOffscreen()
+    /// frames: the supplied draws stand in for the resident scene feed
+    /// during the capture -- selection, preselection and overlay feeds
+    /// stripped, flat background, default camera-aligned headlight --
+    /// without disturbing the resident feeds or their GPU residency.
+    /// This is the shaded-underlay derived-shape capture (docs/
+    /// TechDrawPortAndSection.md sec 31): a section's cut solid or a
+    /// detail's clipped region exists nowhere in the resident scene, so
+    /// the caller builds a dedicated Coin scene, runs it through the
+    /// render-cache pipeline (SoFCRenderCacheManager::traverse +
+    /// RendererBridge::translate) and hands the translated draws here.
+    /// Returns false when the backend cannot render a supplied scene
+    /// (the default). Active until clearCaptureScene(); the caller owns
+    /// that bracket. Takes precedence over setCaptureFilter() while
+    /// both are set.
+    virtual bool setCaptureScene(DrawCallList &&draws)
+    {
+        (void)draws;
+        return false;
+    }
+    virtual void clearCaptureScene() {}
+
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) = 0;
 

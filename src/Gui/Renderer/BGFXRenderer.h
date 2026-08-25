@@ -65,11 +65,20 @@ public:
             const std::vector<std::pair<std::string, std::string>> &objects)
             override;
     virtual void clearCaptureFilter() override;
+    virtual bool setCaptureScene(DrawCallList &&draws) override;
+    virtual void clearCaptureScene() override;
 private:
 #ifndef FC_RENDERER_STANDALONE
     bool renderFiltered(const QColor &bg,
                         const void *viewMatrix,
                         const void *projMatrix);
+    /// The shared capture-frame body: swap \a scene in for the resident
+    /// feeds (selection/overlay/highlight stripped, flat background,
+    /// default headlight), render with settle frames, restore.
+    bool renderSwappedScene(DrawCallList &&scene,
+                            const QColor &bg,
+                            const void *viewMatrix,
+                            const void *projMatrix);
 #endif
 public:
     virtual bool publish(const QColor &bg,
