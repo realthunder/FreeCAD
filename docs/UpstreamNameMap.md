@@ -288,11 +288,17 @@ mapped names, erase on it without reading anything first, and the map still
 has every entry. Pinned by `testEraseOnADeferredMapStillErases`, which fails
 without the fix.
 
-**Separate defect, not fixed:** the Python binding for `setElementName`
-documents "name: the new name for the element, None to remove the mapping",
-but its argument format is `"s|ssOOi"`, and `s` rejects `None` with a
-`TypeError`. The empty string works. Either the format wants `z` for that
-parameter or the docstring wants correcting.
+The Python binding for `setElementName` now honours the `None` its docstring
+has always promised. Its argument format was `"s|ssOOi"`, and `s` rejects
+`None` with a `TypeError`, so only the empty string worked; it is `"s|zzOOi"`
+now, for `name` and `postfix` both, matching the documented signature.
+
+A removal there does *not* go through the encoder. Handing an empty name to
+`encodeElementName` is harmless with the default arguments -- it returns early
+when there is no postfix and no tag -- but given either one it appends them
+and hands back a real name, so the call would quietly *create* a mapping
+instead of removing one. The binding erases outright instead. Pinned by
+`testEraseByNoneIgnoresPostfixAndTag`, which fails without that branch.
 
 ## 8. Phase 3 result: the harvest list
 

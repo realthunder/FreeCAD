@@ -56,6 +56,27 @@ class ElementNameTest(unittest.TestCase):
         self.assertTrue(self.box.eraseElementName(second))
         self.assertEqual(len(self.box.ElementMap), 1)
 
+    def testEraseByNone(self):
+        # The documented spelling: None removes the mapping.
+        self.box.setElementName("Edge1", "FIRST", overwrite=True)
+        self.assertEqual(len(self.box.ElementMap), 1)
+        self.assertEqual(self.box.setElementName("Edge1", None), "")
+        self.assertEqual(len(self.box.ElementMap), 0)
+
+    def testEraseByEmptyString(self):
+        # The empty string has always meant the same thing and still does.
+        self.box.setElementName("Edge1", "FIRST", overwrite=True)
+        self.assertEqual(self.box.setElementName("Edge1", ""), "")
+        self.assertEqual(len(self.box.ElementMap), 0)
+
+    def testEraseByNoneIgnoresPostfixAndTag(self):
+        # A removal is a removal. Running the empty name through the encoder
+        # instead would append the postfix and tag to it and quietly create a
+        # mapping rather than remove one.
+        self.box.setElementName("Edge1", "FIRST", overwrite=True)
+        self.assertEqual(self.box.setElementName("Edge1", None, postfix="ABC", tag=7), "")
+        self.assertEqual(len(self.box.ElementMap), 0)
+
     def testEraseOnADeferredMapStillErases(self):
         # A shape derived from another carries its element map in the cache and
         # only materialises it when something flushes. Erasing before that used
