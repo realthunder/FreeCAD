@@ -2831,16 +2831,32 @@ void Document::applyViewAreaLayouts(const std::list<MDIView*> &views)
     std::set<MDIView*> used;
     std::set<ViewArea*> donors;
 
+    // A 3D-view leaf: by persistent name (N:<name>) as saved now, or by
+    // save order (L<i>) as files saved before views had names carry.
+    auto resolve3D = [&ordered](const std::string &token) -> MDIView* {
+        if (token.compare(0, 2, "N:") == 0) {
+            for (auto v : ordered) {
+                if (v->getPersistentName() == token.substr(2))
+                    return v;
+            }
+        }
+        else if (token.size() > 1 && token[0] == 'L') {
+            size_t idx = strtoul(token.c_str() + 1, nullptr, 10);
+            if (idx < ordered.size())
+                return ordered[idx];
+        }
+        return nullptr;
+    };
+
     for (const auto &layout : d->_viewAreaLayouts) {
         // A single-leaf layout whose view is already hosted alone in a
         // container (the default hosting) needs no rebuild.
-        if (layout.size() > 1 && layout[0] == 'L'
-                && layout.find('{') == std::string::npos) {
-            size_t idx = strtoul(layout.c_str() + 1, nullptr, 10);
-            if (idx < ordered.size() && !used.count(ordered[idx])) {
-                if (auto host = ViewArea::areaOf(ordered[idx])) {
+        if (layout.find('{') == std::string::npos) {
+            MDIView *lone = resolve3D(layout);
+            if (lone && !used.count(lone)) {
+                if (auto host = ViewArea::areaOf(lone)) {
                     if (host->cellCount() == 1) {
-                        used.insert(ordered[idx]);
+                        used.insert(lone);
                         continue;
                     }
                 }
@@ -2854,13 +2870,8 @@ void Document::applyViewAreaLayouts(const std::list<MDIView*> &views)
 
         bool ok = area->applyLayout(layout,
                 [&](const std::string &token) -> MDIView* {
-            MDIView *view = nullptr;
-            if (token.size() > 1 && token[0] == 'L') {
-                size_t idx = strtoul(token.c_str() + 1, nullptr, 10);
-                if (idx < ordered.size())
-                    view = ordered[idx];
-            }
-            else if (token.compare(0, 2, "O:") == 0) {
+            MDIView *view = resolve3D(token);
+            if (!view && token.compare(0, 2, "O:") == 0) {
                 auto obj = getDocument()->getObject(token.c_str() + 2);
                 if (obj) {
                     if (auto vp = getViewProvider(obj)) {
@@ -3597,9 +3608,12 @@ void Document::SaveDocFile (Base::Writer &writer) const
         }
     }
 
-    // Split view container layouts: leaves name a 3D view by its save
-    // order above (L<i>) or an object-provided view (a TechDraw page)
-    // by its object name (O:<name>) -- docs/SplitViews.md sec 5.6.
+    // Split view container layouts: leaves name a 3D view by its
+    // persistent name (N:<name>, see Gui::BaseView) or an
+    // object-provided view (a TechDraw page) by its object name
+    // (O:<name>) -- docs/SplitViews.md sec 5.6. The reader still takes
+    // the positional form (L<i>, the view's save order above) that
+    // files saved before views had names carry.
     std::vector<std::string> areaLayouts;
     for (const auto & v : mdi) {
         auto area = qobject_cast<ViewArea*>(v);
@@ -3607,8 +3621,12 @@ void Document::SaveDocFile (Base::Writer &writer) const
             continue;
         std::string layout = area->layoutString([&](MDIView *child) -> std::string {
             for (size_t i = 0; i < view3Ds.size(); ++i) {
-                if (view3Ds[i] == child)
-                    return "L" + std::to_string(i);
+                if (view3Ds[i] != child)
+                    continue;
+                const std::string &name = child->getPersistentName();
+                if (!name.empty())
+                    return "N:" + name;
+                return "L" + std::to_string(i);
             }
             // Object views name their object as the widget objectName
             // (MDIViewPage::setDocumentObject); prefer that -- a map

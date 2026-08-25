@@ -242,8 +242,8 @@ Compatibility notes:
   `SetCamera` + `<View3D>` block).
 - The container persists its layout as its own `<ViewArea>` block inside the
   existing per-view property section of GuiDocument.xml: the splitter tree
-  with orientation/sizes and, per leaf, the child view's id (3D) or page
-  object name. Old files without the block open as a single cell; old
+  with orientation/sizes and, per leaf, the child view's persistent name
+  (3D, see Gui::BaseView) or page object name. Old files without the block open as a single cell; old
   FreeCAD builds reading new files ignore the unknown view type by the
   existing versioned-restore rules (`Document::RestoreDocFile` skips view
   entries it cannot resolve).
@@ -347,9 +347,14 @@ the drag point; not worth the asymmetry yet).
 
 M3(b) (persistence): `<ViewArea layout="..."/>` elements after the
 `<View3D>` blocks, counted by a `viewareas` attribute on `<Camera>` so
-old files read unchanged. Format: `H{330,670|L0,V{500,500|L1,O:Page}}`
--- permille sizes (floored at 50 so a save while maximized cannot
-restore a cell invisible), `L<i>` = 3D view by camera save order,
+old files read unchanged. Format:
+`H{330,670|N:View1,V{500,500|N:View2,O:Page}}` -- permille sizes
+(floored at 50 so a save while maximized cannot restore a cell
+invisible), `N:<name>` = 3D view by its persistent name (Gui::BaseView,
+adopted 2026-08-25 when the name feature landed; a bare name cannot be
+the token because a leading `V` reads as a vertical splitter),
+`L<i>` = 3D view by camera save order (the pre-name form, still read
+for files saved in between and the fallback for a nameless view),
 `O:<name>` = object view by document object name. The object token
 comes from the view's Qt objectName (MDIViewPage sets it to the page
 name) -- a provider-map scan is WRONG, a TechDraw template's provider
