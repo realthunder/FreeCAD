@@ -244,11 +244,37 @@ bool BGFXRenderer::Private::render(const QColor &col,
         view->init(!progChanged);
     }
 
+    if (!bgfx::isValid(view->bgfxFbo)
+            && (!subCtx.active || subCtx.warm)) {
+        // The build found the handle pool exhausted: the creates
+        // stacked on destroys this un-flushed frame has queued but
+        // not reclaimed (a layout change frees old-size targets and
+        // dropped banks in one burst). Nothing is queued at this
+        // point -- a plain render is the frame's only producer, and a
+        // warm submit (prepareSubViews) runs between frames -- so a
+        // frame boundary here commits only that backlog. Cross it,
+        // and retry the build once in-frame: the one-black-frame
+        // retry becomes invisible. Submits of a renderSubViews
+        // sequence keep the bail-and-heal-next-frame path instead; a
+        // boundary there would commit the queued page-cell and
+        // sibling passes and drop their rects from this frame's
+        // composite.
+        bgfx::frame();
+        view->targetsFailed = false;
+        view->init(true);
+    }
     if (!bgfx::isValid(view->bgfxFbo)) {
         RENDER_ERR("bgfx: sub-view " << subCtx.id
                    << " frame bailed: no scene framebuffer (targetsFailed="
                    << int(view->targetsFailed) << ")");
         return false;
+    }
+    if (subCtx.warm) {
+        // A warm-up submit (prepareSubViews): the point was building
+        // the fresh bank's targets ahead of the real sequence, and
+        // they are built. Nothing is drawn; the caller crosses the
+        // frame boundary that realizes the creates.
+        return true;
     }
 #else
     // Only a shader-generation or MSAA change actually invalidates the

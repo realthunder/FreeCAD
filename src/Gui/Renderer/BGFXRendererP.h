@@ -8517,6 +8517,13 @@ public:
         bool active = false;
         bool first = false;
         bool last = false;
+        /// A warm-up submit: run the frame path only through target
+        /// allocation for a fresh bank, draw nothing, tick nothing.
+        /// prepareSubViews warms every unseen id this way, between
+        /// frames -- each with its own frame boundary to allocate
+        /// against -- so a renderSubViews sequence never meets a
+        /// fresh bank mid-frame.
+        bool warm = false;
         int id = 0;
         int x = 0, y = 0, w = 0, h = 0;
     } subCtx;

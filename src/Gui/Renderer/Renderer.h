@@ -2501,6 +2501,22 @@ public:
     /// (targets, view-id block). Never id 0 -- that is the implicit
     /// full-canvas sub-view every plain render() uses.
     virtual void dropSubView(int id) { (void)id; }
+    /// Prepare the backend for a renderSubViews frame: build the sized
+    /// targets of every unseen sub-view id up front, each against a
+    /// freshly reclaimed handle pool, and release what the layout
+    /// obsoletes (the implicit full-canvas sub-view's targets when no
+    /// sub is id 0), so the frame itself allocates nothing and never
+    /// bails. Idempotent and cheap once every bank is warm, so the
+    /// host may simply call it at the top of every layout frame -- but
+    /// it crosses backend frame boundaries, so it must run while
+    /// nothing of the upcoming frame is queued (before any page-cell
+    /// draw). Optional: a backend without it just heals the first
+    /// frame or two after a layout change.
+    virtual void prepareSubViews(const QColor &bg,
+                                 const SubViewFrame *subs, int count)
+    {
+        (void)bg; (void)subs; (void)count;
+    }
 
     /// Render one frame for an offscreen capture -- a screenshot or an
     /// image export -- instead of the on-screen one. Two things differ

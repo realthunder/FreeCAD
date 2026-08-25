@@ -2461,56 +2461,85 @@ static void renderLayoutFrame()
     mats.reserve(s_subViews.size());
     int activeFrame = -1;
 
+    // Two passes: the 3D cells' frames are built (and their banks
+    // warmed) BEFORE any page cell queues a draw -- prepareSubViews
+    // crosses frame boundaries, and a boundary after a page draw is
+    // queued would commit it early and drop the page rect from this
+    // frame's composite.
     for (size_t i = 0; i < s_subViews.size(); ++i) {
         WasmSubView &c = s_subViews[i];
+        if (c.page)
+            continue;
         const int dx = int(c.x * s_dpr + 0.5f);
         const int dy = int(c.y * s_dpr + 0.5f);
         const int dw = int(c.w * s_dpr + 0.5f);
         const int dh = int(c.h * s_dpr + 0.5f);
         if (dw <= 0 || dh <= 0)
             continue;
-        if (c.page) {
-            if (pageK >= kMaxPageCells)
-                continue;
-            const uint16_t vid = uint16_t(pageBase - pageK);
-            ++pageK;
-            anyPage = true;
-            bgfx::FrameBufferHandle noFb = BGFX_INVALID_HANDLE;
-            bgfx::setViewFrameBuffer(vid, noFb);
-            bgfx::setViewRect(vid, uint16_t(dx), uint16_t(dy),
-                              uint16_t(dw), uint16_t(dh));
-            bgfx::setViewClear(vid,
-                               BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH
-                                   | BGFX_CLEAR_STENCIL,
-                               0x55585cff, 1.0f, 0);
-            if (s_page && s_pageW > 0.0f) {
-                // The view rect above places the cell; render() only
-                // needs the rect's size for its projection.
-                c.pageView.devicePixelRatio = s_dpr;
-                s_page->setView(c.pageView);
-                s_page->render(vid, uint16_t(dw), uint16_t(dh));
-            }
-            bgfx::touch(vid);
-        }
-        else {
-            mats.emplace_back();
-            auto &m = mats.back();
-            loadSubCam(c);
-            buildCamera(m.data(), m.data() + 16, dw, dh);
-            Render::Renderer::SubViewFrame f;
-            f.id = c.id;
-            f.x = dx;
-            f.y = dy;
-            f.width = dw;
-            f.height = dh;
-            f.viewMatrix = m.data();
-            f.projMatrix = m.data() + 16;
-            if (int(i) == s_activeSub)
-                activeFrame = int(frames.size());
-            frames.push_back(f);
-        }
+        mats.emplace_back();
+        auto &m = mats.back();
+        loadSubCam(c);
+        buildCamera(m.data(), m.data() + 16, dw, dh);
+        Render::Renderer::SubViewFrame f;
+        f.id = c.id;
+        f.x = dx;
+        f.y = dy;
+        f.width = dw;
+        f.height = dh;
+        f.viewMatrix = m.data();
+        f.projMatrix = m.data() + 16;
+        if (int(i) == s_activeSub)
+            activeFrame = int(frames.size());
+        frames.push_back(f);
     }
     loadSubCam(s_subViews[s_activeSub]);
+
+    QColor bg((s_snap.clearColor >> 24) & 0xff,
+              (s_snap.clearColor >> 16) & 0xff,
+              (s_snap.clearColor >> 8) & 0xff);
+    if (!frames.empty()) {
+        // Idempotent per-frame warm-up (docs/SplitViews.md sec 10, the
+        // bail quirk): build fresh banks' targets each in its own
+        // committed frame, and release the full-canvas bank a layout
+        // obsoletes. Once every bank is warm this is a handful of map
+        // lookups. Sitting here rather than in fcviewer_set_layout, it
+        // also covers a layout restored before the renderer existed.
+        s_renderer->prepareSubViews(bg, frames.data(),
+                                    int(frames.size()));
+    }
+
+    for (size_t i = 0; i < s_subViews.size(); ++i) {
+        WasmSubView &c = s_subViews[i];
+        if (!c.page)
+            continue;
+        const int dx = int(c.x * s_dpr + 0.5f);
+        const int dy = int(c.y * s_dpr + 0.5f);
+        const int dw = int(c.w * s_dpr + 0.5f);
+        const int dh = int(c.h * s_dpr + 0.5f);
+        if (dw <= 0 || dh <= 0)
+            continue;
+        if (pageK >= kMaxPageCells)
+            continue;
+        const uint16_t vid = uint16_t(pageBase - pageK);
+        ++pageK;
+        anyPage = true;
+        bgfx::FrameBufferHandle noFb = BGFX_INVALID_HANDLE;
+        bgfx::setViewFrameBuffer(vid, noFb);
+        bgfx::setViewRect(vid, uint16_t(dx), uint16_t(dy),
+                          uint16_t(dw), uint16_t(dh));
+        bgfx::setViewClear(vid,
+                           BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH
+                               | BGFX_CLEAR_STENCIL,
+                           0x55585cff, 1.0f, 0);
+        if (s_page && s_pageW > 0.0f) {
+            // The view rect above places the cell; render() only
+            // needs the rect's size for its projection.
+            c.pageView.devicePixelRatio = s_dpr;
+            s_page->setView(c.pageView);
+            s_page->render(vid, uint16_t(dw), uint16_t(dh));
+        }
+        bgfx::touch(vid);
+    }
 
     bool framePumped = false;
     if (!frames.empty()) {
@@ -2521,9 +2550,6 @@ static void renderLayoutFrame()
         relightForCamera(am);
         s_renderer->setAutoZoomScale(
             s_dist * std::tan(0.5f * kFovY * bx::kPi / 180.0f) * 0.0857f);
-        QColor bg((s_snap.clearColor >> 24) & 0xff,
-                  (s_snap.clearColor >> 16) & 0xff,
-                  (s_snap.clearColor >> 8) & 0xff);
         const double renderT0 = emscripten_get_now();
         s_renderer->renderSubViews(bg, frames.data(),
                                    int(frames.size()));

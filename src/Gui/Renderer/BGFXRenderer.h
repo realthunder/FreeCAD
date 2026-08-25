@@ -70,6 +70,9 @@ public:
                                 const SubViewFrame *subs,
                                 int count) override;
     virtual void dropSubView(int id) override;
+    virtual void prepareSubViews(const QColor &bg,
+                                 const SubViewFrame *subs,
+                                 int count) override;
     virtual bool setCaptureFilter(
             const std::vector<std::pair<std::string, std::string>> &objects)
             override;

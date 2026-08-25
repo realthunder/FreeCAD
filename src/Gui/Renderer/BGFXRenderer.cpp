@@ -100,6 +100,36 @@ bool BGFXRenderer::render(const QColor &col,
     return ok;
 }
 
+#ifdef FC_RENDERER_STANDALONE
+/// With a split layout up no sub is bank 0, so the implicit
+/// full-canvas bank's targets -- a whole MSAA scene + AO + OIT set at
+/// canvas size -- are dead weight. Release them (the same dance
+/// dropSubView does); clearing the layout rebuilds through the
+/// ordinary fresh-bank path, and the clear adopts a 3D cell's camera,
+/// so the bank carries no state worth keeping either.
+static void releaseBankZero(BGFXView *view,
+                            const Render::Renderer::SubViewFrame *subs,
+                            int count)
+{
+    for (int i = 0; i < count; ++i) {
+        if (subs[i].id == 0)
+            return;
+    }
+    const bool bank0Held = view->activeSub == 0
+        ? bgfx::isValid(view->bgfxFbo)
+        : (view->subBanks.count(0)
+           && bgfx::isValid(view->subBanks.at(0).bgfxFbo));
+    if (!bank0Held)
+        return;
+    const int park = subs[0].id;
+    view->selectSubView(0);
+    view->destroyTargets();
+    _BGFXLib.releaseIds(view->viewId, view->viewSpan);
+    view->selectSubView(park);
+    view->subBanks.erase(0);
+}
+#endif
+
 bool BGFXRenderer::renderSubViews(const QColor &col,
                                   const SubViewFrame *subs, int count)
 {
@@ -113,6 +143,11 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         return false;
     if (count == 1 && subs[0].id == 0)
         return render(col, subs[0].viewMatrix, subs[0].projMatrix);
+    auto vit0 = _BGFXLib.views.find(pimpl->widget);
+    BGFXView *view =
+        vit0 != _BGFXLib.views.end() ? vit0->second.get() : nullptr;
+    if (view)
+        releaseBankZero(view, subs, count);
     bool ok = true;
     for (int i = 0; i < count; ++i) {
         const SubViewFrame &s = subs[i];
@@ -177,6 +212,60 @@ void BGFXRenderer::dropSubView(int id)
     _BGFXLib.releaseIds(view->viewId, view->viewSpan);
     view->selectSubView(0);
     view->subBanks.erase(id);
+}
+
+void BGFXRenderer::prepareSubViews(const QColor &col,
+                                   const SubViewFrame *subs, int count)
+{
+#ifndef FC_RENDERER_STANDALONE
+    (void)col; (void)subs; (void)count;
+#else
+    if (!subs || count <= 0)
+        return;
+    auto it = _BGFXLib.views.find(pimpl->widget);
+    BGFXView *view =
+        it != _BGFXLib.views.end() ? it->second.get() : nullptr;
+    // No view yet means no first frame yet: that frame builds
+    // everything from scratch anyway, with nothing to reclaim.
+    if (!view)
+        return;
+    releaseBankZero(view, subs, count);
+    // Warm every unseen id: a fresh bank allocates a full target set,
+    // and stacked on the resident banks (plus whatever destroys the
+    // layout change just queued -- released old-size targets, dropped
+    // banks, bank 0 above) that create burst can exhaust the handle
+    // pool mid-frame, latching targetsFailed and rendering the cell
+    // black for its first frame ("sub-view N frame bailed"). A warm
+    // submit runs the frame path only through target allocation
+    // (subCtx.warm, with the in-frame retry available because nothing
+    // of an on-screen frame is queued between frames), and the frame
+    // boundary after each realizes its creates and reclaims the
+    // queued destroys before the next bank allocates. These extra
+    // frames draw nothing and, in the browser, never composite.
+    for (int i = 0; i < count; ++i) {
+        const SubViewFrame &s = subs[i];
+        if (s.width <= 0 || s.height <= 0)
+            continue;
+        if (s.id == view->activeSub || view->subBanks.count(s.id))
+            continue;
+        auto &ctx = pimpl->subCtx;
+        ctx = {};
+        ctx.active = true;
+        ctx.warm = true;
+        ctx.id = s.id;
+        ctx.x = s.x;
+        ctx.y = s.y;
+        ctx.w = s.width;
+        ctx.h = s.height;
+        _BGFXLib.standaloneSubWidth = uint16_t(s.width);
+        _BGFXLib.standaloneSubHeight = uint16_t(s.height);
+        pimpl->render(col, s.viewMatrix, s.projMatrix);
+        bgfx::frame();
+    }
+    pimpl->subCtx = {};
+    _BGFXLib.standaloneSubWidth = 0;
+    _BGFXLib.standaloneSubHeight = 0;
+#endif
 }
 
 bool BGFXRenderer::renderOffscreen(const QColor &col,
