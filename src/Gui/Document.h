@@ -249,8 +249,13 @@ public:
      * this plus the default hosting.
      */
     View3DInventor *createView3D();
-    /// Create a clone of the given view
-    Gui::MDIView* cloneView(Gui::MDIView*);
+    /** Create a clone of the given view.
+     * With \a transferEdit (the default) an active editing view
+     * provider moves to the clone -- what the callers replacing the
+     * original view want. A split keeping both views passes false so
+     * the edit stays where the user is working.
+     */
+    Gui::MDIView* cloneView(Gui::MDIView*, bool transferEdit = true);
     /** send messages to the active view
      * Send a specific massage to the active view and is able to receive a
      * return message

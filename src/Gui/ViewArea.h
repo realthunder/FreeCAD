@@ -35,6 +35,7 @@ namespace Gui {
 class ViewArea;
 class ViewAreaCell;
 class ViewAreaZone;
+class ViewAreaMenuButton;
 
 /** The splitter used inside a ViewArea.
  *
@@ -49,6 +50,17 @@ public:
     ViewAreaSplitter(Qt::Orientation orientation, QWidget *parent = nullptr);
 
     void dragSplitter(int pos, int index) { moveSplitter(pos, index); }
+
+    /// What applyLayout's parser asked setSizes for. A never-shown
+    /// splitter neither answers sizes() with those values nor honors
+    /// them at realization (the missing space is handed out EQUALLY,
+    /// skewing every ratio toward even) -- so the root-adoption step
+    /// reads THIS, and resizeEvent re-applies it, scaled, at the first
+    /// real geometry.
+    QList<int> initialSizes;
+
+protected:
+    void resizeEvent(QResizeEvent *) override;
 
 protected:
     QSplitterHandle *createHandle() override;
@@ -78,6 +90,10 @@ public:
     void hostView(MDIView *view);
     /// Detach the child view from the cell without deleting it.
     MDIView *releaseView();
+    /// The per-cell menu (docs/SplitViews.md sec 5.4/5.5): cell
+    /// management plus the content selector. Opened by the corner
+    /// button; \a globalPos anchors it.
+    void showCellMenu(const QPoint &globalPos);
 
 protected:
     void paintEvent(QPaintEvent *) override;
@@ -89,6 +105,7 @@ private:
     QPointer<MDIView> _child;
     ViewAreaZone *_zoneTopRight;
     ViewAreaZone *_zoneBottomLeft;
+    ViewAreaMenuButton *_menuButton;
 
     friend class ViewArea;
 };
@@ -210,6 +227,18 @@ public:
      */
     void toggleMaximizeCell(ViewAreaCell *cell);
     ViewAreaCell *maximizedCell() const { return _maximizedCell; }
+    /** Maximize \a cell once the container has its first real
+     * geometry. Restoring a saved maximize cannot toggle right away:
+     * toggleMaximizeCell records the pre-maximize splitter state to
+     * put back later, and recording before layout captures degenerate
+     * sizes -- un-maximizing then lost the saved proportions.
+     */
+    void setPendingMaximize(ViewAreaCell *cell);
+    /// The pre-maximize sizes of \a sp while a cell is maximized;
+    /// empty when not maximized or \a sp is not recorded. What lets
+    /// layoutString persist the underlying proportions rather than the
+    /// degenerate hidden-sibling ones.
+    QList<int> preMaximizeSizes(const QSplitter *sp) const;
 
     /** Serialize the splitter tree for GuiDocument.xml: leaves through
      * \a leafToken (empty result drops the leaf), groups as
@@ -252,6 +281,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *) override;
+    void resizeEvent(QResizeEvent *) override;
     void setActiveCell(ViewAreaCell *cell, bool activateWindow = true);
     void onFocusChanged(QWidget *old, QWidget *now);
     /// Qt-level destruction of a hosted child view (e.g. document close).
@@ -262,11 +292,24 @@ protected:
 private:
     /// Take an MDI-hosted view out of its QMdiSubWindow, keeping it alive.
     static void stealFromMdiArea(MDIView *view);
+    /// Fire a queued setPendingMaximize once geometry is real.
+    void armPendingMaximize();
+
+    /// What toggleMaximizeCell must put back: the splitter's full
+    /// state, plus its plain sizes so layoutString can persist the
+    /// UNDERLYING proportions while a cell is maximized (saveState is
+    /// an opaque blob; sizes are readable).
+    struct MaximizeState {
+        QPointer<QSplitter> splitter;
+        QByteArray state;
+        QList<int> sizes;
+    };
 
     ViewAreaSplitter *_rootSplitter;
     QPointer<ViewAreaCell> _activeCell;
     QPointer<ViewAreaCell> _maximizedCell;
-    std::vector<std::pair<QPointer<QSplitter>, QByteArray>> _maximizeRestore;
+    QPointer<ViewAreaCell> _pendingMaximize;
+    std::vector<MaximizeState> _maximizeRestore;
     bool _closing = false;
 
     friend class ViewAreaCell;

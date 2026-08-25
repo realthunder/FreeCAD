@@ -137,7 +137,10 @@ struct DocumentP
 
     std::vector<CameraInfo>     _savedViews;
     std::map<int, std::string>  _view3DContents;
-    std::vector<std::string>    _viewAreaLayouts;
+    /// Saved split-view containers: the layout string plus the leaf
+    /// token of the maximized cell (empty = none) -- docs/SplitViews.md
+    /// sec 5.6.
+    std::vector<std::pair<std::string, std::string>> _viewAreaLayouts;
     /// The name each of them was saved under, see Gui::BaseView.
     std::map<int, std::string>  _view3DNames;
 
@@ -2585,7 +2588,9 @@ void Document::RestoreDocFile(Base::Reader &reader)
         d->_viewAreaLayouts.clear();
         for (int i=0; i<viewAreaCount; ++i) {
             xmlReader.readElement("ViewArea");
-            d->_viewAreaLayouts.emplace_back(xmlReader.getAttribute("layout", ""));
+            d->_viewAreaLayouts.emplace_back(
+                    xmlReader.getAttribute("layout", ""),
+                    xmlReader.getAttribute("maximized", ""));
         }
     }
 
@@ -2848,7 +2853,8 @@ void Document::applyViewAreaLayouts(const std::list<MDIView*> &views)
         return nullptr;
     };
 
-    for (const auto &layout : d->_viewAreaLayouts) {
+    for (const auto &entry : d->_viewAreaLayouts) {
+        const std::string &layout = entry.first;
         // A single-leaf layout whose view is already hosted alone in a
         // container (the default hosting) needs no rebuild.
         if (layout.find('{') == std::string::npos) {
@@ -2899,6 +2905,28 @@ void Document::applyViewAreaLayouts(const std::list<MDIView*> &views)
                 area->setWindowIcon(front->windowIcon());
         }
         getMainWindow()->addWindow(area);
+
+        // A maximize saved with the layout comes back maximized; the
+        // resolver here is read-only (the leaf already resolved and is
+        // hosted in a cell of this very container). Deferred to the
+        // event loop: toggleMaximizeCell records the pre-maximize
+        // splitter state to restore later, and recording it before the
+        // fresh container has laid out captures degenerate sizes --
+        // un-maximizing then lost the saved proportions to a 50/50.
+        if (!entry.second.empty()) {
+            MDIView *view = resolve3D(entry.second);
+            if (!view && entry.second.compare(0, 2, "O:") == 0) {
+                if (auto obj = getDocument()->getObject(
+                            entry.second.c_str() + 2)) {
+                    if (auto vp = getViewProvider(obj))
+                        view = vp->getMDIView();
+                }
+            }
+            if (view) {
+                if (auto cell = area->cellOf(view))
+                    area->setPendingMaximize(cell);
+            }
+        }
     }
 
     // A donor container whose only view moved into a rebuilt layout is
@@ -3614,12 +3642,12 @@ void Document::SaveDocFile (Base::Writer &writer) const
     // (O:<name>) -- docs/SplitViews.md sec 5.6. The reader still takes
     // the positional form (L<i>, the view's save order above) that
     // files saved before views had names carry.
-    std::vector<std::string> areaLayouts;
+    std::vector<std::pair<std::string, std::string>> areaLayouts;
     for (const auto & v : mdi) {
         auto area = qobject_cast<ViewArea*>(v);
         if (!area)
             continue;
-        std::string layout = area->layoutString([&](MDIView *child) -> std::string {
+        auto leafToken = [&](MDIView *child) -> std::string {
             for (size_t i = 0; i < view3Ds.size(); ++i) {
                 if (view3Ds[i] != child)
                     continue;
@@ -3642,9 +3670,18 @@ void Document::SaveDocFile (Base::Writer &writer) const
                 }
             }
             return {};
-        });
-        if (!layout.empty())
-            areaLayouts.push_back(std::move(layout));
+        };
+        std::string layout = area->layoutString(leafToken);
+        if (layout.empty())
+            continue;
+        // The maximized cell rides along as its leaf token; the layout
+        // itself keeps the underlying proportions (preMaximizeSizes).
+        std::string maximized;
+        if (auto mc = area->maximizedCell()) {
+            if (mc->childView())
+                maximized = leafToken(mc->childView());
+        }
+        areaLayouts.emplace_back(std::move(layout), std::move(maximized));
     }
 
     writer.Stream() << writer.ind() << "<Camera";
@@ -3700,7 +3737,11 @@ void Document::SaveDocFile (Base::Writer &writer) const
 
     for (const auto &layout : areaLayouts) {
         writer.Stream() << writer.ind() << "<ViewArea layout=\""
-            << encodeAttribute(layout) << "\"/>\n";
+            << encodeAttribute(layout.first) << "\"";
+        if (!layout.second.empty())
+            writer.Stream() << " maximized=\""
+                << encodeAttribute(layout.second) << "\"";
+        writer.Stream() << "/>\n";
     }
 
     writer.decInd(); // indentation for camera settings
@@ -3951,7 +3992,7 @@ MDIView *Document::createView(const Base::Type& typeId)
     return nullptr;
 }
 
-Gui::MDIView* Document::cloneView(Gui::MDIView* oldview)
+Gui::MDIView* Document::cloneView(Gui::MDIView* oldview, bool transferEdit)
 {
     if (!oldview)
         return nullptr;
@@ -3979,9 +4020,12 @@ Gui::MDIView* Document::cloneView(Gui::MDIView* oldview)
         view3D->setWindowIcon(oldview->windowIcon());
         view3D->resize(oldview->size());
 
-        // FIXME: Add parameter to define behaviour by the calling instance
-        // View provider editing
-        if (d->_editViewProvider) {
+        // View provider editing: callers REPLACING the original view
+        // move the active edit to the clone; a split keeping both
+        // (ViewArea::cloneChildFor) leaves it where the user works --
+        // the fresh cell must not steal the dragger out from under an
+        // ongoing edit.
+        if (transferEdit && d->_editViewProvider) {
             firstView->getViewer()->resetEditingViewProvider();
             view3D->getViewer()->setEditingViewProvider(d->_editViewProvider, d->_editMode);
         }

@@ -30,11 +30,15 @@
 # include <QMdiSubWindow>
 # include <QMenu>
 # include <QMouseEvent>
+# include <QTimer>
 # include <QPainter>
 # include <QPainterPath>
 # include <QSplitter>
 # include <QVBoxLayout>
 #endif
+
+#include <App/Document.h>
+#include <App/DocumentObject.h>
 
 #include "ViewArea.h"
 
@@ -42,8 +46,78 @@
 #include "Document.h"
 #include "MainWindow.h"
 #include "View3DInventor.h"
+#include "ViewProviderDocumentObject.h"
 
 using namespace Gui;
+
+namespace Gui {
+
+/** The per-cell menu button (docs/SplitViews.md sec 5.4/5.5).
+ *
+ * A small grip in the cell's top-left corner opening the cell
+ * management + content menu. Subtle until hovered, so it does not
+ * compete with the scene; it is the discoverable counterpart of the
+ * invisible corner action zones.
+ */
+class ViewAreaMenuButton : public QWidget
+{
+public:
+    static constexpr int Size = 16;
+
+    explicit ViewAreaMenuButton(ViewAreaCell *cell)
+        : QWidget(cell)
+        , _cell(cell)
+    {
+        // No Q_OBJECT here (the class lives in this .cpp), so the
+        // object name is what tests and stylesheets can find it by.
+        setObjectName(QStringLiteral("ViewAreaMenuButton"));
+        setCursor(Qt::ArrowCursor);
+        setToolTip(QObject::tr("View cell menu"));
+    }
+
+protected:
+    void mousePressEvent(QMouseEvent *ev) override
+    {
+        if (ev->button() != Qt::LeftButton)
+            return QWidget::mousePressEvent(ev);
+        ev->accept();
+        _cell->showCellMenu(mapToGlobal(QPoint(0, height())));
+    }
+    void enterEvent(QEnterEvent *ev) override
+    {
+        QWidget::enterEvent(ev);
+        _hover = true;
+        update();
+    }
+    void leaveEvent(QEvent *ev) override
+    {
+        QWidget::leaveEvent(ev);
+        _hover = false;
+        update();
+    }
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        QColor c = palette().color(_hover ? QPalette::Highlight
+                                          : QPalette::WindowText);
+        c.setAlpha(_hover ? 230 : 90);
+        QPen pen(c);
+        pen.setWidth(2);
+        p.setPen(pen);
+        const int m = 4;
+        for (int i = 0; i < 3; ++i) {
+            int y = m + i * (Size - 2 * m) / 2;
+            p.drawLine(m, y, Size - m, y);
+        }
+    }
+
+private:
+    ViewAreaCell *_cell;
+    bool _hover = false;
+};
+
+} // namespace Gui
 
 namespace {
 
@@ -130,6 +204,30 @@ protected:
 // ViewAreaSplitter
 // ----------------------------------------------------------------------------
 
+/// setSizes with a sum below the splitter's extent distributes the
+/// missing space EQUALLY, skewing every ratio toward even -- permille
+/// lists and sizes recorded at another window size both hit it. Scale
+/// to the current total first (when there is one).
+static void applySizesScaled(QSplitter *sp, const QList<int> &sizes)
+{
+    int sum = 0;
+    for (int v : sizes)
+        sum += v;
+    if (sum <= 0)
+        return;
+    int total = 0;
+    for (int v : sp->sizes())
+        total += v;
+    if (total <= 0) {
+        sp->setSizes(sizes);
+        return;
+    }
+    QList<int> scaled;
+    for (int v : sizes)
+        scaled.append(int(qint64(v) * total / sum));
+    sp->setSizes(scaled);
+}
+
 ViewAreaSplitter::ViewAreaSplitter(Qt::Orientation orientation, QWidget *parent)
     : QSplitter(orientation, parent)
 {
@@ -139,6 +237,27 @@ ViewAreaSplitter::ViewAreaSplitter(Qt::Orientation orientation, QWidget *parent)
 QSplitterHandle *ViewAreaSplitter::createHandle()
 {
     return new ViewAreaSplitterHandle(orientation(), this);
+}
+
+void ViewAreaSplitter::resizeEvent(QResizeEvent *ev)
+{
+    QSplitter::resizeEvent(ev);
+    // The first REAL geometry is where a pre-show setSizes has just
+    // been mangled (see initialSizes): re-apply the intended shares,
+    // scaled to what the splitter actually got. Only a VISIBLE resize
+    // with a real extent counts -- hidden widgets get default-size
+    // resizes whose consumption would throw the shares away.
+    if (!initialSizes.isEmpty() && isVisible()) {
+        int total = 0;
+        const QList<int> live = sizes();
+        for (int v : live)
+            total += v;
+        if (total > 0) {
+            QList<int> pending = initialSizes;
+            initialSizes.clear();
+            applySizesScaled(this, pending);
+        }
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -154,6 +273,7 @@ ViewAreaCell::ViewAreaCell(ViewArea *area)
     lay->setSpacing(0);
     _zoneTopRight = new ViewAreaZone(this, ViewAreaZone::TopRight);
     _zoneBottomLeft = new ViewAreaZone(this, ViewAreaZone::BottomLeft);
+    _menuButton = new ViewAreaMenuButton(this);
 }
 
 ViewAreaCell::~ViewAreaCell() = default;
@@ -169,9 +289,15 @@ void ViewAreaCell::hostView(MDIView *view)
     view->show();
 
     // The connections MainWindow::addWindow makes for top level views;
-    // an embedded view still reports to the status bar.
+    // an embedded view still reports to the status bar, and it still
+    // hears window-state changes of the other MDI views -- that relay
+    // is what arms View3DInventor's stop-spin timer when another tab
+    // maximizes over this one (a spinning view nobody can see would
+    // keep burning frames without it).
     QObject::connect(view, &MDIView::message,
                      getMainWindow(), &MainWindow::showMessage);
+    QObject::connect(getMainWindow(), &MainWindow::windowStateChanged,
+                     view, &MDIView::windowStateChanged);
     // Qt-level destruction of the child (e.g. the document is closing
     // and deleteSelf ran) collapses the cell.
     QPointer<ViewAreaCell> self(this);
@@ -182,6 +308,7 @@ void ViewAreaCell::hostView(MDIView *view)
     });
     _zoneTopRight->raise();
     _zoneBottomLeft->raise();
+    _menuButton->raise();
     update();
 }
 
@@ -191,6 +318,8 @@ void ViewAreaCell::resizeEvent(QResizeEvent *ev)
     const int z = ViewAreaZone::Size;
     _zoneTopRight->setGeometry(width() - z, 0, z, z);
     _zoneBottomLeft->setGeometry(0, height() - z, z, z);
+    _menuButton->setGeometry(0, 0, ViewAreaMenuButton::Size,
+                             ViewAreaMenuButton::Size);
 }
 
 MDIView *ViewAreaCell::releaseView()
@@ -204,6 +333,8 @@ MDIView *ViewAreaCell::releaseView()
     QObject::disconnect(view, nullptr, _area, nullptr);
     QObject::disconnect(view, &MDIView::message,
                         getMainWindow(), &MainWindow::showMessage);
+    QObject::disconnect(getMainWindow(), &MainWindow::windowStateChanged,
+                        view, &MDIView::windowStateChanged);
     layout()->removeWidget(view);
     view->setParent(nullptr);
     return view;
@@ -231,6 +362,125 @@ void ViewAreaCell::paintEvent(QPaintEvent *ev)
         pen.setWidth(1);
         p.setPen(pen);
         p.drawRect(rect().adjusted(0, 0, -1, -1));
+    }
+}
+
+void ViewAreaCell::showCellMenu(const QPoint &globalPos)
+{
+    ViewArea *area = _area;
+    if (!area)
+        return;
+    QMenu menu;
+    QPointer<ViewAreaCell> self(this);
+
+    // Content selector first (docs/SplitViews.md sec 5.5): the 3D
+    // view, then one entry per object-provided view -- objects whose
+    // view is already materialized wherever it lives, plus TechDraw
+    // pages by type. The page type resolves by NAME so Gui keeps no
+    // TechDraw link dependency; with the module not loaded there are
+    // no pages to list anyway.
+    Gui::Document *doc = area->getGuiDocument();
+    MDIView *child = _child;
+    QAction *act3d = nullptr;
+    if (doc) {
+        act3d = menu.addAction(tr("3D view"));
+        act3d->setCheckable(true);
+        act3d->setChecked(qobject_cast<View3DInventor*>(child) != nullptr);
+        const Base::Type pageType = Base::Type::fromName("TechDraw::DrawPage");
+        for (auto obj : doc->getDocument()->getObjects()) {
+            auto vp = dynamic_cast<ViewProviderDocumentObject*>(
+                    Application::Instance->getViewProvider(obj));
+            if (!vp)
+                continue;
+            MDIView *objView = vp->getMDIView();
+            const bool typed = pageType != Base::Type::badType()
+                && obj->getTypeId().isDerivedFrom(pageType);
+            if (!objView && !typed)
+                continue;
+            QAction *act = menu.addAction(
+                    QString::fromUtf8(obj->Label.getValue()));
+            act->setCheckable(true);
+            act->setChecked(objView && objView == child);
+            act->setData(QString::fromUtf8(obj->getNameInDocument()));
+        }
+        menu.addSeparator();
+    }
+
+    QAction *splitH = menu.addAction(tr("Split horizontal"));
+    QAction *splitV = menu.addAction(tr("Split vertical"));
+    QAction *maximize = menu.addAction(area->maximizedCell() == this
+            ? tr("Restore layout") : tr("Maximize view"));
+    maximize->setEnabled(area->cellCount() > 1
+            || area->maximizedCell() == this);
+    QAction *close = menu.addAction(tr("Close view"));
+    close->setEnabled(area->cellCount() > 1);
+
+    QAction *picked = menu.exec(globalPos);
+    if (!picked || !self)
+        return;
+    if (picked == splitH) {
+        area->splitCell(this, Qt::Horizontal);
+    }
+    else if (picked == splitV) {
+        area->splitCell(this, Qt::Vertical);
+    }
+    else if (picked == maximize) {
+        area->toggleMaximizeCell(area->maximizedCell() ? area->maximizedCell()
+                                                       : this);
+    }
+    else if (picked == close) {
+        area->closeCell(this);
+    }
+    else if (picked == act3d) {
+        if (qobject_cast<View3DInventor*>(childView()) || !doc)
+            return;
+        // Clone a 3D view the user already has -- a sibling cell's
+        // first (its camera is this area's context), else any of the
+        // document's -- or create a bare one when there is none.
+        MDIView *fresh = nullptr;
+        for (auto cell : area->cells()) {
+            if (cell != this
+                    && qobject_cast<View3DInventor*>(cell->childView())) {
+                fresh = area->cloneChildFor(cell);
+                break;
+            }
+        }
+        if (!fresh) {
+            for (auto view : doc->getMDIViews()) {
+                if (auto view3d = qobject_cast<View3DInventor*>(view)) {
+                    if (auto host = ViewArea::areaOf(view3d)) {
+                        if (auto cell = host->cellOf(view3d)) {
+                            fresh = host->cloneChildFor(cell);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (!fresh)
+            fresh = doc->createView3D();
+        if (fresh)
+            area->setCellView(this, fresh);
+    }
+    else if (doc && picked->data().isValid()) {
+        // An object entry: materialize its view (plain visibility
+        // semantics for view-bearing objects) and host it here --
+        // the Std_ViewCellShowObject behavior without the selection.
+        QByteArray objName = picked->data().toString().toUtf8();
+        auto obj = doc->getDocument()->getObject(objName.constData());
+        if (!obj)
+            return;
+        auto vp = dynamic_cast<ViewProviderDocumentObject*>(
+                Application::Instance->getViewProvider(obj));
+        if (!vp)
+            return;
+        MDIView *view = vp->getMDIView();
+        if (!view) {
+            vp->show();
+            view = vp->getMDIView();
+        }
+        if (view && view != childView())
+            area->setCellView(this, view);
     }
 }
 
@@ -528,7 +778,7 @@ MDIView *ViewArea::cloneChildFor(ViewAreaCell *cell)
         Gui::Document *doc = view3d->getGuiDocument();
         if (!doc)
             return nullptr;
-        MDIView *clone = doc->cloneView(view3d);
+        MDIView *clone = doc->cloneView(view3d, /*transferEdit*/ false);
         if (!clone)
             return nullptr;
         const char *camera = nullptr;
@@ -619,8 +869,14 @@ void ViewArea::toggleMaximizeCell(ViewAreaCell *cell)
         for (auto sp : findChildren<QSplitter*>())
             sp->show();
         for (auto &state : _maximizeRestore) {
-            if (state.first)
-                state.first->restoreState(state.second);
+            if (!state.splitter)
+                continue;
+            state.splitter->restoreState(state.state);
+            // The plain sizes beat the opaque blob when both exist: a
+            // state captured before the splitter was laid out (the
+            // restored-maximize-on-reopen path) restores to equal
+            // shares, while the recorded sizes carry the layout.
+            applySizesScaled(state.splitter, state.sizes);
         }
         _maximizeRestore.clear();
         _maximizedCell = nullptr;
@@ -630,8 +886,18 @@ void ViewArea::toggleMaximizeCell(ViewAreaCell *cell)
         return;
 
     _maximizeRestore.clear();
-    for (auto sp : findChildren<QSplitter*>())  // includes the root
-        _maximizeRestore.emplace_back(sp, sp->saveState());
+    for (auto sp : findChildren<QSplitter*>()) {  // includes the root
+        // Intended shares beat live ones while a restored layout has
+        // not been laid out yet (initialSizes still pending): sizes()
+        // then reads the equal-distribution defaults, and both the
+        // un-maximize and a save-while-maximized would keep THOSE.
+        QList<int> sizes = sp->sizes();
+        if (auto vsp = qobject_cast<ViewAreaSplitter*>(sp)) {
+            if (!vsp->initialSizes.isEmpty())
+                sizes = vsp->initialSizes;
+        }
+        _maximizeRestore.push_back({sp, sp->saveState(), sizes});
+    }
 
     // Along the path from the cell to the root, hide every sibling; the
     // splitters give hidden widgets no space, so the cell takes it all.
@@ -648,6 +914,51 @@ void ViewArea::toggleMaximizeCell(ViewAreaCell *cell)
     }
     _maximizedCell = cell;
     setActiveCell(cell);
+}
+
+void ViewArea::setPendingMaximize(ViewAreaCell *cell)
+{
+    _pendingMaximize = cell;
+    // Already sized (the container was added and laid out before the
+    // caller armed this): fire now; otherwise the first real resize
+    // does.
+    if (width() > 0 && height() > 0)
+        armPendingMaximize();
+}
+
+void ViewArea::armPendingMaximize()
+{
+    if (!_pendingMaximize)
+        return;
+    auto cell = _pendingMaximize;
+    _pendingMaximize = nullptr;
+    QPointer<ViewArea> self(this);
+    QPointer<ViewAreaCell> cellPtr(cell);
+    // One tick later: the splitters consume their pending layout
+    // sizes DURING the current layout pass, and the maximize capture
+    // must read the realized values, not the defaults.
+    QTimer::singleShot(0, this, [self, cellPtr]() {
+        if (self && cellPtr && !self->maximizedCell())
+            self->toggleMaximizeCell(cellPtr);
+    });
+}
+
+void ViewArea::resizeEvent(QResizeEvent *ev)
+{
+    MDIView::resizeEvent(ev);
+    if (width() > 0 && height() > 0)
+        armPendingMaximize();
+}
+
+QList<int> ViewArea::preMaximizeSizes(const QSplitter *sp) const
+{
+    if (!_maximizedCell)
+        return {};
+    for (const auto &state : _maximizeRestore) {
+        if (state.splitter == sp)
+            return state.sizes;
+    }
+    return {};
 }
 
 bool ViewArea::closeCell(ViewAreaCell *cell)
@@ -745,7 +1056,7 @@ void ViewArea::onFocusChanged(QWidget *old, QWidget *now)
     }
 }
 
-static std::string layoutNode(const QWidget *w,
+static std::string layoutNode(const QWidget *w, const ViewArea *area,
         const std::function<std::string(MDIView*)> &leafToken)
 {
     if (auto cell = qobject_cast<const ViewAreaCell*>(const_cast<QWidget*>(w))) {
@@ -758,10 +1069,15 @@ static std::string layoutNode(const QWidget *w,
         return {};
     std::vector<std::string> parts;
     std::vector<int> sizes;
-    QList<int> spSizes = const_cast<QSplitter*>(sp)->sizes();
+    // While a cell is maximized the live sizes are degenerate (the
+    // hidden siblings report nothing); the recorded pre-maximize
+    // sizes are the layout worth keeping.
+    QList<int> spSizes = area ? area->preMaximizeSizes(sp) : QList<int>();
+    if (spSizes.isEmpty())
+        spSizes = const_cast<QSplitter*>(sp)->sizes();
     int total = 0;
     for (int i = 0; i < sp->count(); ++i) {
-        std::string sub = layoutNode(sp->widget(i), leafToken);
+        std::string sub = layoutNode(sp->widget(i), area, leafToken);
         if (sub.empty())
             continue;
         int px = (i < spSizes.size()) ? spSizes[i] : 1;
@@ -794,7 +1110,8 @@ std::string ViewArea::layoutString(
         const std::function<std::string(MDIView*)> &leafToken) const
 {
     return layoutNode(_rootSplitter->count() == 1
-            ? _rootSplitter->widget(0) : (QWidget*)_rootSplitter, leafToken);
+            ? _rootSplitter->widget(0) : (QWidget*)_rootSplitter, this,
+            leafToken);
 }
 
 namespace {
@@ -863,6 +1180,7 @@ struct LayoutParser
             for (int v : childSizes)
                 qsizes.append(std::max(v, 1));
             sp->setSizes(qsizes);
+            sp->initialSizes = qsizes;
             return sp;
         }
         // leaf token: up to , } or end
@@ -896,8 +1214,12 @@ bool ViewArea::applyLayout(const std::string &layout,
         w->deleteLater();
     }
     if (auto sp = qobject_cast<ViewAreaSplitter*>(tree)) {
-        // adopt the parsed tree's root as the container root
-        QList<int> sizes = sp->sizes();
+        // Adopt the parsed tree's root as the container root. The
+        // sizes come from what the parser ASKED for -- a never-shown
+        // splitter answers sizes() with its defaults, which flattened
+        // every restored root to equal shares.
+        QList<int> sizes = sp->initialSizes.isEmpty() ? sp->sizes()
+                                                      : sp->initialSizes;
         _rootSplitter->setOrientation(sp->orientation());
         while (sp->count()) {
             QWidget *w = sp->widget(0);
@@ -906,7 +1228,10 @@ bool ViewArea::applyLayout(const std::string &layout,
             w->show();
         }
         delete sp;
-        _rootSplitter->setSizes(sizes);
+        // Realized already (a live re-apply): scaled now. Fresh (the
+        // restore path): the first real resize applies it.
+        _rootSplitter->initialSizes = sizes;
+        applySizesScaled(_rootSplitter, sizes);
     }
     else
         _rootSplitter->addWidget(tree);
@@ -997,6 +1322,16 @@ void ViewArea::deleteSelf()
 {
     _closing = true;
     MDIView::deleteSelf();
+    // MDIView::deleteSelf closes the QMdiSubWindow shell, but a close
+    // only hides it: the TAB it holds in the MDI tab bar lives until
+    // the DEFERRED delete runs, which a nested event loop postpones
+    // indefinitely -- a dead container tab lingering after its last
+    // view moved elsewhere. Detach the shell now, the way
+    // MainWindow::removeWindow does.
+    if (auto sub = qobject_cast<QMdiSubWindow*>(parentWidget())) {
+        if (sub->parent())
+            sub->setParent(nullptr);
+    }
 }
 
 void ViewArea::viewAll()

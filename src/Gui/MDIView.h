@@ -208,6 +208,10 @@ private:
     MDIViewPy *mdiViewPy = nullptr;
 
     friend class MainWindow;
+    // Embedded split-view children re-make MainWindow's
+    // windowStateChanged connection themselves (ViewArea.cpp
+    // hostView/releaseView).
+    friend class ViewAreaCell;
 };
 
 } // namespace Gui
