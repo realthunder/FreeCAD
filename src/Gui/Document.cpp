@@ -76,6 +76,7 @@
 #include "Thumbnail.h"
 #include "Tree.h"
 #include "View3DInventor.h"
+#include "ViewArea.h"
 #include "View3DInventorViewer.h"
 #include "RenderParams.h"
 #include "ViewParams.h"
@@ -3704,7 +3705,22 @@ MDIView *Document::createView(const Base::Type& typeId)
                 view3D->getViewer()->setOverrideMode(mode);
         }
 
-        getMainWindow()->addWindow(view3D);
+        // The default viewer window is a split view container holding the
+        // 3D view as its first cell (docs/SplitViews.md sec 5.6), so the
+        // user can split it or host other content without a wrap step.
+        auto hGrp = App::GetApplication().GetParameterGroupByPath(
+                "User parameter:BaseApp/Preferences/View");
+        if (hGrp->GetBool("UseViewArea", true)) {
+            auto area = new ViewArea(this, getMainWindow());
+            area->setWindowTitle(title);
+            area->setWindowModified(this->isModified());
+            area->setWindowIcon(view3D->windowIcon());
+            area->resize(400, 300);
+            area->activeCell()->hostView(view3D);
+            getMainWindow()->addWindow(area);
+        }
+        else
+            getMainWindow()->addWindow(view3D);
         setModified(false);
         ViewProviderAppearance::onViewCreated(getDocument());
         return view3D;

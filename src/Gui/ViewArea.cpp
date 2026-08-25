@@ -85,13 +85,28 @@ MDIView *ViewAreaCell::releaseView()
     MDIView *view = _child;
     if (!view)
         return nullptr;
+    // Cleared first: the reparenting below delivers ChildRemoved, which
+    // must read as an intentional release, not the child being torn away.
+    _child = nullptr;
     QObject::disconnect(view, nullptr, _area, nullptr);
     QObject::disconnect(view, &MDIView::message,
                         getMainWindow(), &MainWindow::showMessage);
     layout()->removeWidget(view);
     view->setParent(nullptr);
-    _child = nullptr;
     return view;
+}
+
+void ViewAreaCell::childEvent(QChildEvent *ev)
+{
+    QWidget::childEvent(ev);
+    // The hosted view can be reparented away without dying -- e.g.
+    // MDIView::setCurrentViewMode(TopLevel) pulls it out as a window of
+    // its own. An empty tile serves nobody; give its space back.
+    if (ev->removed() && _child && ev->child() == _child) {
+        _child = nullptr;
+        if (_area)
+            _area->childViewGone(this);
+    }
 }
 
 void ViewAreaCell::paintEvent(QPaintEvent *ev)
@@ -452,6 +467,16 @@ bool ViewArea::canClose()
             return doc->canClose(true, true);
     }
     return true;
+}
+
+void ViewArea::closeEvent(QCloseEvent *e)
+{
+    MDIView::closeEvent(e);
+    // Accepted means the container is going away (delete on close); the
+    // deletion is deferred, and the children may be torn down first by
+    // the document. No cell collapsing on a dying container.
+    if (e->isAccepted())
+        _closing = true;
 }
 
 void ViewArea::deleteSelf()

@@ -186,6 +186,7 @@ private:
     void applySettings();
 
 protected:
+    void closeEvent(QCloseEvent* e) override;
     void windowStateChanged(QWidget* view) override;
     void dropEvent        (QDropEvent      * e) override;
     void dragEnterEvent   (QDragEnterEvent * e) override;

@@ -60,6 +60,7 @@ public:
 
 protected:
     void paintEvent(QPaintEvent *) override;
+    void childEvent(QChildEvent *) override;
 
 private:
     ViewArea *_area;
@@ -145,6 +146,7 @@ public:
     void restoreOverrideCursor() override;
 
 protected:
+    void closeEvent(QCloseEvent *) override;
     void setActiveCell(ViewAreaCell *cell, bool activateWindow = true);
     void onFocusChanged(QWidget *old, QWidget *now);
     /// Qt-level destruction of a hosted child view (e.g. document close).

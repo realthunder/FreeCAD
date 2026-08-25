@@ -229,6 +229,20 @@ bool View3DInventor::ApplySettings::isApplying()
     return _ApplyingSettings > 0;
 }
 
+void View3DInventor::closeEvent(QCloseEvent* e)
+{
+    MDIView::closeEvent(e);
+    // An accepted close means this view is going away (delete on close),
+    // but the deletion is deferred and can outlive the document -- a
+    // split view cell closed mid-session sits in the deferred-delete
+    // queue while the document may be torn down, and the viewer's Coin
+    // sensors keep firing until the widget actually dies (deferRedraw
+    // reads the document). Decouple the viewer now; null is a supported
+    // state (deleteSelf uses the same).
+    if (e->isAccepted() && _viewer)
+        _viewer->setDocument(nullptr);
+}
+
 void View3DInventor::deleteSelf()
 {
     _viewer->setSceneGraph(nullptr);
