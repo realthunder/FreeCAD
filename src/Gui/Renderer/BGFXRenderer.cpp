@@ -100,6 +100,72 @@ bool BGFXRenderer::render(const QColor &col,
     return ok;
 }
 
+bool BGFXRenderer::renderSubViews(const QColor &col,
+                                  const SubViewFrame *subs, int count)
+{
+#ifndef FC_RENDERER_STANDALONE
+    // The desktop composes split views through per-widget views
+    // (Gui::ViewArea); nothing asks for this there.
+    (void)col; (void)subs; (void)count;
+    return false;
+#else
+    if (!subs || count <= 0)
+        return false;
+    if (count == 1 && subs[0].id == 0)
+        return render(col, subs[0].viewMatrix, subs[0].projMatrix);
+    bool ok = true;
+    for (int i = 0; i < count; ++i) {
+        const SubViewFrame &s = subs[i];
+        if (s.width <= 0 || s.height <= 0) {
+            ok = false;
+            continue;
+        }
+        auto &ctx = pimpl->subCtx;
+        ctx.active = true;
+        ctx.first = (i == 0);
+        ctx.last = (i == count - 1);
+        ctx.id = s.id;
+        ctx.x = s.x;
+        ctx.y = s.y;
+        ctx.w = s.width;
+        ctx.h = s.height;
+        _BGFXLib.standaloneSubWidth = uint16_t(s.width);
+        _BGFXLib.standaloneSubHeight = uint16_t(s.height);
+        const bool subOk = render(col, s.viewMatrix, s.projMatrix);
+        ok = subOk && ok;
+        // The frame boundary lives in the LAST submit; if that one
+        // bailed before reaching it, cross it here so the earlier
+        // sub-views' queued work (and any queued destroys) still
+        // executes rather than piling into the next frame.
+        if (ctx.last && !subOk)
+            bgfx::frame();
+    }
+    pimpl->subCtx = {};
+    _BGFXLib.standaloneSubWidth = 0;
+    _BGFXLib.standaloneSubHeight = 0;
+    return ok;
+#endif
+}
+
+void BGFXRenderer::dropSubView(int id)
+{
+    if (id == 0)
+        return;
+    auto it = _BGFXLib.views.find(pimpl->widget);
+    if (it == _BGFXLib.views.end())
+        return;
+    BGFXView *view = it->second.get();
+    if (view->activeSub != id && !view->subBanks.count(id))
+        return;
+    // Load the bank, take its targets and id block, and drop it. The
+    // queued destroys execute at the next frame boundary.
+    view->selectSubView(id);
+    view->destroyTargets();
+    _BGFXLib.releaseIds(view->viewId, view->viewSpan);
+    view->selectSubView(0);
+    view->subBanks.erase(id);
+}
+
 bool BGFXRenderer::renderOffscreen(const QColor &col,
                                    const void *viewMatrix,
                                    const void *projMatrix,
@@ -1270,6 +1336,10 @@ bool BGFXRendererLibP::reserveIds(uint16_t &id, uint16_t &span,
 void BGFXRendererLibP::releaseBlock(BGFXView *view)
 {
     releaseIds(view->viewId, view->viewSpan);
+    // Inactive sub-view banks hold id blocks of their own
+    // (docs/SplitViews.md sec 9.2).
+    for (auto &v : view->subBanks)
+        releaseIds(v.second.viewId, v.second.viewSpan);
 }
 
 bool BGFXRendererLibP::reserveBlock(BGFXView *view, uint16_t need)

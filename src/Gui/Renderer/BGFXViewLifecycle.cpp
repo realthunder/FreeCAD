@@ -58,6 +58,17 @@ void ensureProgram(bgfx::ProgramHandle &h, const char *vsName,
 
 BGFXView::~BGFXView()
 {
+    // Inactive sub-view banks hold sized targets of their own; sweep
+    // each before the shared teardown (docs/SplitViews.md sec 9.2).
+    // Their id blocks are the lib's to give back (releaseBlock).
+    if (!subBanks.empty()) {
+        stashSubView(subBanks[activeSub]);
+        for (auto &v : subBanks) {
+            loadSubView(v.second);
+            destroyTargets();
+        }
+        subBanks.clear();
+    }
     destroy();
     for (auto &v : particles)
         v.second.destroy();
@@ -743,8 +754,10 @@ void BGFXView::init(bool keepShared)
     else
         destroy();
 #ifdef FC_RENDERER_STANDALONE
-    width = _BGFXLib.standaloneWidth;
-    height = _BGFXLib.standaloneHeight;
+    // The sub-view rect while a renderSubViews submit is sizing us,
+    // the canvas otherwise (docs/SplitViews.md sec 9.2).
+    width = _BGFXLib.viewTargetWidth();
+    height = _BGFXLib.viewTargetHeight();
     // The sampled scene color under MSAA becomes a multisampled
     // renderbuffer plus a resolve texture; the present pass samples
     // the resolve (WebGL2 backs both via renderbufferStorageMultisample

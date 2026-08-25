@@ -142,6 +142,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
         return false;
 #endif
 
+#ifdef FC_RENDERER_STANDALONE
+    // Split-view frame: swap in the sub-view's state bank
+    // (docs/SplitViews.md sec 9.2). A plain render() is bank 0 -- the
+    // full-canvas sub-view -- which also puts the members back after a
+    // renderSubViews sequence ended on another bank.
+    view->selectSubView(subCtx.active ? subCtx.id : 0);
+#endif
+
     // A shader pack that could not supply a core program keeps the
     // view down: without this the torn-down view (no framebuffer)
     // matches the re-init condition below and every frame would
@@ -209,18 +217,25 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // rather than view->outputTransform, which a debug view mode zeroes
     // -- looking at the depth buffer must not reallocate the targets.
     view->hdrWanted = outconf.transform != Render::OutputConfig::None;
+    // What the view's targets should measure: the sub-view rect while
+    // a renderSubViews submit is active, the canvas otherwise. The
+    // backbuffer itself always tracks the canvas -- the two sizes are
+    // one and the same only in the plain single-view case.
+    if (_BGFXLib.standaloneWidth != _BGFXLib.resetWidth
+            || _BGFXLib.standaloneHeight != _BGFXLib.resetHeight) {
+        bgfx::reset(_BGFXLib.standaloneWidth,
+                    _BGFXLib.standaloneHeight,
+                    BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY);
+        _BGFXLib.resetWidth = _BGFXLib.standaloneWidth;
+        _BGFXLib.resetHeight = _BGFXLib.standaloneHeight;
+    }
     if (progChanged
-            || _BGFXLib.standaloneWidth != view->width
-            || _BGFXLib.standaloneHeight != view->height
+            || _BGFXLib.viewTargetWidth() != view->width
+            || _BGFXLib.viewTargetHeight() != view->height
             || _BGFXLib.effectResolution != view->effectScale
             || _BGFXLib.ssaoResolution != view->ssaoScale
             || view->hdrScene != view->hdrSceneWanted()
             || warmupReinit) {
-        if (_BGFXLib.standaloneWidth != view->width
-                || _BGFXLib.standaloneHeight != view->height)
-            bgfx::reset(_BGFXLib.standaloneWidth,
-                        _BGFXLib.standaloneHeight,
-                        BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY);
         view->init(!progChanged);
     }
 
@@ -3605,7 +3620,19 @@ bool BGFXRenderer::Private::render(const QColor &col,
         bgfx::setViewFrameBuffer(id, target);
         bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
                            clearColor, 1.0f, 0);
+#ifdef FC_RENDERER_STANDALONE
+        // A split-view submit presents into its sub-view's rect of the
+        // backbuffer; the source UV stays 0..1 of this sub-view's own
+        // full scene target (vs_fc_comp.sc), so this one rect is the
+        // whole composition step (docs/SplitViews.md sec 9.2).
+        if (subCtx.active)
+            bgfx::setViewRect(id, uint16_t(subCtx.x), uint16_t(subCtx.y),
+                              uint16_t(subCtx.w), uint16_t(subCtx.h));
+        else
+            bgfx::setViewRect(id, 0, 0, width, height);
+#else
         bgfx::setViewRect(id, 0, 0, width, height);
+#endif
         bgfx::setViewTransform(id, nullptr, nullptr);
         bgfx::setViewMode(id, bgfx::ViewMode::Default);
         bgfx::touch(id);
@@ -3844,7 +3871,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
     bgfx::setViewTransform(view->sinkView, nullptr, nullptr);
     bgfx::setViewMode(view->sinkView, bgfx::ViewMode::Default);
 
-    ++view->frame;
+    // One tick per wall-clock frame: a multi-sub-view frame stamps
+    // every submit with the same number, so the mesh TTL
+    // (lastUsed + 2 < frame) keeps meaning frames, not submits.
+    if (!subCtx.active || subCtx.first)
+        ++view->frame;
     view->drawcount = 0;
     // The submission phase starts here. A bgfx uniform holds its
     // value for the rest of the frame once set, so setting the
@@ -5837,7 +5868,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
     }
 
     cpuMark(CpuPostSel);
-    view->collectMeshes(publishedMeshes(), gatedOnlyMeshes);
+    // Collect once per wall frame, after the LAST sub-view has stamped
+    // what it uses -- an earlier submit would sweep meshes a later
+    // sub-view still draws this very frame.
+    if (!subCtx.active || subCtx.last)
+        view->collectMeshes(publishedMeshes(), gatedOnlyMeshes);
 
     // Anything that reached the discard view drew nothing: the pass
     // declaration above missed a case the submission side takes.
@@ -5878,6 +5913,15 @@ bool BGFXRenderer::Private::render(const QColor &col,
     uint32_t frameNum = 0;
 #ifdef FC_RENDERER_STANDALONE
     view->present();
+    if (subCtx.active && !subCtx.last) {
+        // A mid-sequence sub-view submit: its passes (present
+        // included) are queued; the frame boundary and the whole
+        // post-frame tail belong to the last submit
+        // (docs/SplitViews.md sec 9.2).
+        renderOk = true;
+        hasScene = !scene.empty();
+        return true;
+    }
     frameNum = timedBgfxFrame();
 #else
     // The output colour transform, when one is selected: encode the

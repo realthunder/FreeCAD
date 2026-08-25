@@ -62,6 +62,14 @@ public:
                                  const void *viewMatrix,
                                  const void *projMatrix,
                                  int width, int height) override;
+    /// Split-view frame (docs/SplitViews.md sec 9.2): N sub-views of
+    /// the resident scene, per-sub-view camera + backbuffer rect, one
+    /// backend frame. Standalone builds only; the desktop composes
+    /// through per-widget views instead and returns false.
+    virtual bool renderSubViews(const QColor &bg,
+                                const SubViewFrame *subs,
+                                int count) override;
+    virtual void dropSubView(int id) override;
     virtual bool setCaptureFilter(
             const std::vector<std::pair<std::string, std::string>> &objects)
             override;

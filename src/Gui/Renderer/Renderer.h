@@ -2472,6 +2472,36 @@ public:
                         const void *viewMatrix,
                         const void *projMatrix) = 0;
 
+    /// One sub-view of a split-view frame (docs/SplitViews.md sec 9.2):
+    /// a viewport rect on the output backbuffer, in device pixels, and
+    /// the camera to render the resident scene with there. \a id is a
+    /// stable client token naming the sub-view across frames -- the
+    /// backend keys its per-sub-view state (sized targets, temporal
+    /// accumulation) on it, so a layout change that keeps a cell keeps
+    /// its id.
+    struct SubViewFrame {
+        int id = 0;
+        int x = 0, y = 0;
+        int width = 0, height = 0;
+        const void *viewMatrix = nullptr;
+        const void *projMatrix = nullptr;
+    };
+    /// Render one frame as \a count sub-views tiling the backbuffer:
+    /// the same resident scene feeds every sub-view, each drawn with
+    /// its own camera into its own rect, inside a single backend frame.
+    /// Returns false when the backend does not support it (the
+    /// default), in which case the caller renders whole via render().
+    virtual bool renderSubViews(const QColor &bg,
+                                const SubViewFrame *subs, int count)
+    {
+        (void)bg; (void)subs; (void)count;
+        return false;
+    }
+    /// Release the per-sub-view state a vanished sub-view id holds
+    /// (targets, view-id block). Never id 0 -- that is the implicit
+    /// full-canvas sub-view every plain render() uses.
+    virtual void dropSubView(int id) { (void)id; }
+
     /// Render one frame for an offscreen capture -- a screenshot or an
     /// image export -- instead of the on-screen one. Two things differ
     /// from render(): the frame is rendered at \a width x \a height

@@ -69,6 +69,7 @@
 # endif
 #endif
 
+#include <algorithm>
 #include <cfloat>
 #include <thread>
 #include <chrono>
@@ -1747,6 +1748,8 @@ public:
             init.platformData.nwh = windowHandle;
             init.resolution.width = standaloneWidth;
             init.resolution.height = standaloneHeight;
+            resetWidth = standaloneWidth;
+            resetHeight = standaloneHeight;
             // MAXANISOTROPY is required for BGFX_SAMPLER_*_ANISOTROPIC to have
             // any effect: bgfx only raises its internal m_maxAnisotropy (and
             // thus honors the per-sampler anisotropic flags) when this reset
@@ -2123,6 +2126,24 @@ public:
     // Scene render-target sample count (BGFXRenderer::setMSAASamples);
     // a change re-creates the view targets on the next render().
     int standaloneSamples = 4;
+    /// Sub-view target size override (renderSubViews,
+    /// docs/SplitViews.md sec 9.2): while non-zero the view's targets
+    /// size to the sub-view rect instead of the canvas -- the
+    /// standalone twin of the desktop captureWidth/Height below.
+    /// 0 = follow the canvas, which is every plain render().
+    uint16_t standaloneSubWidth = 0;
+    uint16_t standaloneSubHeight = 0;
+    /// What the backbuffer was last sized to (bgfx::init/reset).
+    /// Distinct from the view target size since sub-views: a view
+    /// whose targets are a sub-view rect must not read the size
+    /// mismatch against the canvas as a canvas resize.
+    uint16_t resetWidth = 0;
+    uint16_t resetHeight = 0;
+    /// The size a standalone view's targets build at.
+    uint16_t viewTargetWidth() const
+    { return standaloneSubWidth ? standaloneSubWidth : standaloneWidth; }
+    uint16_t viewTargetHeight() const
+    { return standaloneSubHeight ? standaloneSubHeight : standaloneHeight; }
 #else
     // Scene render-target sample count override (BGFXRenderer::setMSAASamples,
     // driven by the AntiAliasing preference). -1 = follow the host GL widget's
@@ -6059,8 +6080,11 @@ public:
         return idMap[p];
     }
 
-    uint16_t width;
-    uint16_t height;
+    // 0 until the first init() sizes the targets -- and the value a
+    // fresh sub-view bank starts from, so it must not be garbage: the
+    // resize check compares it.
+    uint16_t width = 0;
+    uint16_t height = 0;
     // Reduced resolution of the expensive screen-space effect passes
     // (planar/ground reflection re-render, SSAO resolve) -- effectScale of
     // the view resolution, clamped in init(). The main scene, the geometry
@@ -6864,6 +6888,109 @@ public:
     /// rebuilt around the new one.
     bool blitSourceEncoded = false;
 #endif
+
+    // ---- Per-sub-view state banks (docs/SplitViews.md sec 9.2) ----
+    //
+    // renderSubViews drives ONE BGFXView through N (viewport, camera)
+    // sub-views per wall-clock frame, all sharing the resident scene.
+    // What is per-camera is exactly the state destroyTargets() sweeps
+    // or resets -- the LifeSized targets, their sizes and exist/fail
+    // bookkeeping, the temporal hashes and accumulation counters --
+    // plus the pass-id block; the shared remainder (programs,
+    // uniforms, uploaded scene caches, particle state, the
+    // caps-derived m_* ability flags) keeps its single copy.
+    //
+    // The members stay right where they are declared: sub-view i is
+    // rendered by swapping bank i into them and stashing it back out
+    // afterwards, so no use site changes, and a field added to the
+    // list below is per-sub-view by construction. Bank id 0 is the
+    // implicit full-canvas sub-view every plain render() uses;
+    // desktop frames never leave it.
+#define FC_SUBVIEW_FIELDS(X) \
+    X(viewId) X(viewSpan) X(viewLive) X(sinkView) X(idMap) X(passMark) \
+    X(sinkHits) X(sinkPasses) X(sinkReported) \
+    X(sinkFbo) X(sinkColor) X(sinkDepth) \
+    X(width) X(height) X(effectScale) X(effW) X(effH) \
+    X(ssaoScale) X(ssaoW) X(ssaoH) X(msaaSamples) X(hdrScene) \
+    X(bgfxFbo) X(bgfxColor) X(bgfxDepth) \
+    X(oitFbo) X(oitAccum) X(oitReveal) \
+    X(debugSceneFbo) X(debugSceneTex) X(debugSceneDepth) X(idReadTex) \
+    X(aoPrepassFbo) X(aoGenFbo) X(aoBlurFbo) X(aoMipFbo) \
+    X(aoNormalZ) X(aoDepth) X(aoTex) X(aoBlurTex) X(aoNoiseTex) \
+    X(aoMipTex) X(aoMipCount) X(aoMapHash) \
+    X(volFbo) X(volHistFbo) X(volTex) X(volFrontTex) \
+    X(volHistTex) X(volHistFrontTex) X(volAccumFrames) \
+    X(bloomFbo) X(bloomBlurFbo) X(bloomTex) X(bloomBlurTex) \
+    X(bulbShadowFbo) X(bulbShadowValid) X(bulbShadowHash) \
+    X(waterFrontFbo) X(waterBackFbo) X(glassFrontFbo) X(glassBackFbo) \
+    X(cloudFrontFbo) X(cloudBackFbo) X(fireFrontFbo) X(fireBackFbo) \
+    X(waterFrontTex) X(waterBackTex) X(waterFrontDepth) X(waterBackDepth) \
+    X(glassFrontTex) X(glassBackTex) X(glassFrontDepth) X(glassBackDepth) \
+    X(cloudFrontTex) X(cloudBackTex) X(cloudFrontDepth) X(cloudBackDepth) \
+    X(fireFrontTex) X(fireBackTex) X(fireFrontDepth) X(fireBackDepth) \
+    X(sceneCopyTex) X(sceneCopyFbo) X(presentTex) X(presentFbo) \
+    X(accumTex) X(accumFbo) X(accumFrames) X(accumProj) \
+    X(accumQuietFrames) X(accumReported) \
+    X(reflTex) X(reflDepth) X(reflFbo) \
+    X(reflSampleIndex) X(mediumSampleIndex) \
+    X(shadowSize) X(shadowFbo) X(shadowDepth) X(shadowTex) \
+    X(shadowBlurTex) X(shadowBlurFbo) X(shadowBlurBackFbo) \
+    X(shadowTintTex) X(shadowTintFbo) X(shadowTintBlurTex) \
+    X(shadowTintBlurFbo) X(shadowTintBlurBackFbo) X(shadowMapHash) \
+    X(m_lineQuadVb) X(m_lineQuadIb) \
+    X(camFrameHash) X(warmup) X(targetsFailed) \
+    X(effectFailed) X(glassSeen)
+
+    struct SubViewBank {
+#define FC_SV_DECL(f) decltype(BGFXView::f) f;
+        FC_SUBVIEW_FIELDS(FC_SV_DECL)
+#undef FC_SV_DECL
+    };
+    template <typename T>
+    static void svAssign(T &dst, const T &src) { dst = src; }
+    template <typename T, size_t N>
+    static void svAssign(T (&dst)[N], const T (&src)[N])
+    { std::copy(src, src + N, dst); }
+    void stashSubView(SubViewBank &b) const
+    {
+#define FC_SV_STASH(f) svAssign(b.f, f);
+        FC_SUBVIEW_FIELDS(FC_SV_STASH)
+#undef FC_SV_STASH
+    }
+    void loadSubView(const SubViewBank &b)
+    {
+#define FC_SV_LOAD(f) svAssign(f, b.f);
+        FC_SUBVIEW_FIELDS(FC_SV_LOAD)
+#undef FC_SV_LOAD
+    }
+    /// The pristine bank captured at construction: what a sub-view
+    /// that has never rendered starts from -- every handle invalid,
+    /// size 0, hashes 0 -- so its first frame takes the ordinary
+    /// build path. The in-class initializers stay the single source
+    /// of truth for what "fresh" means.
+    SubViewBank freshBank;
+    /// Inactive sub-views by client id. The ACTIVE sub-view lives in
+    /// the members themselves, never in the map.
+    std::map<int, SubViewBank> subBanks;
+    int activeSub = 0;
+    BGFXView() { stashSubView(freshBank); }
+    /// Swap sub-view \a id into the members (a no-op when it already
+    /// is). An id never seen before starts from freshBank.
+    void selectSubView(int id)
+    {
+        if (id == activeSub)
+            return;
+        stashSubView(subBanks[activeSub]);
+        auto it = subBanks.find(id);
+        if (it == subBanks.end()) {
+            loadSubView(freshBank);
+        }
+        else {
+            loadSubView(it->second);
+            subBanks.erase(it);
+        }
+        activeSub = id;
+    }
 };
 
 
@@ -8368,6 +8495,22 @@ public:
     bool _deinit = false;
     RendererType::Enum type;
     std::string typeName;
+
+    /// The sub-view currently being submitted (renderSubViews,
+    /// docs/SplitViews.md sec 9.2). While active, render() runs as one
+    /// submit of a multi-sub-view frame: the view swaps to the bank
+    /// named by id, the present pass lands at (x, y, w, h) of the
+    /// backbuffer, and only the LAST submit crosses the frame boundary
+    /// (bgfx::frame + the post-frame tail); only the FIRST ticks the
+    /// per-frame counters. Inactive on every plain render(), which is
+    /// bank 0 at full canvas.
+    struct SubViewCtx {
+        bool active = false;
+        bool first = false;
+        bool last = false;
+        int id = 0;
+        int x = 0, y = 0, w = 0, h = 0;
+    } subCtx;
 
     // CPU-side scene data fed through Render::Renderer's scene API. GPU
     // upload happens lazily during render(), so the feed may arrive before
