@@ -56,6 +56,31 @@ class ElementNameTest(unittest.TestCase):
         self.assertTrue(self.box.eraseElementName(second))
         self.assertEqual(len(self.box.ElementMap), 1)
 
+    def testEraseOnADeferredMapStillErases(self):
+        # A shape derived from another carries its element map in the cache and
+        # only materialises it when something flushes. Erasing before that used
+        # to be a silent no-op, because the erase looked at an element map that
+        # was still null.
+        self.box.setElementName("Edge1", "FIRST", overwrite=True)
+
+        # A separate child, read normally, tells us what the map holds. Reading
+        # it flushes that copy, so it cannot be the one under test.
+        expected = len(self.box.Edges[0].ElementMap) - 1
+
+        # This child is untouched, so its map is still deferred.
+        child = self.box.Edges[0]
+        child.setElementName("Edge1", "")  # an empty name means erase
+        self.assertEqual(len(child.ElementMap), expected)
+
+    def testEraseElementNameOnADeferredMapStillErases(self):
+        # Same again through the explicit API.
+        self.box.setElementName("Edge1", "FIRST", overwrite=True)
+        expected = len(self.box.Edges[0].ElementMap) - 1
+
+        child = self.box.Edges[0]
+        self.assertTrue(child.eraseElementName("Edge1"))
+        self.assertEqual(len(child.ElementMap), expected)
+
     def testMappedNameAcceptsTheSubnamePrefix(self):
         # Mapped names appear semicolon-prefixed inside a subname; take either.
         name = self.box.setElementName("Edge1", "PREFIXED", overwrite=True)

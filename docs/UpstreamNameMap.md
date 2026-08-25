@@ -278,11 +278,21 @@ counts. `ComplexGeoData::getElementName`, the general-purpose name guesser,
 uses the permissive default, which is why the binding does not route through
 it. Covered by `parttests/ElementNameTest.py`.
 
-**Known inconsistency, not changed here:** `setElementName`'s own erase path
-(passing an empty `MappedName`) does *not* flush, so on a shape whose map is
-still in the cache it silently erases nothing. Routing it through
-`eraseElementName` would fix that, but it is a behaviour change to a
-long-standing path and is left for a separate decision.
+`setElementName`'s own erase path -- passing an empty `MappedName` -- now
+routes through `eraseElementName` too, so it flushes as well. It did not
+before, which meant that on a shape whose map was still deferred in the cache
+it silently erased nothing: `_elementMap` was null, the `if (_elementMap)`
+guard skipped the erase, and the element reappeared as soon as anything
+flushed. Reproducible in three lines -- take `box.Edges[0]` from a box with
+mapped names, erase on it without reading anything first, and the map still
+has every entry. Pinned by `testEraseOnADeferredMapStillErases`, which fails
+without the fix.
+
+**Separate defect, not fixed:** the Python binding for `setElementName`
+documents "name: the new name for the element, None to remove the mapping",
+but its argument format is `"s|ssOOi"`, and `s` rejects `None` with a
+`TypeError`. The empty string works. Either the format wants `z` for that
+parameter or the docstring wants correcting.
 
 ## 8. Phase 3 result: the harvest list
 

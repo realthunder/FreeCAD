@@ -1348,8 +1348,11 @@ MappedName ComplexGeoData::setElementName(const IndexedName & element,
     if(!element)
         THROWM(Base::ValueError, "Invalid input")
     if(!name)  {
-        if(_elementMap)
-            _elementMap->erase(element);
+        // An empty name means "erase". Go through eraseElementName rather than
+        // touching _elementMap directly: the map may still be deferred in the
+        // cache, in which case _elementMap is null here and the erase would
+        // silently do nothing. eraseElementName flushes first.
+        eraseElementName(element);
         return MappedName();
     }
 
