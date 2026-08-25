@@ -28,6 +28,7 @@ if(FREETYPE_FOUND)
     set(Part_LIBS
         ${Part_LIBS}
         ${FREETYPE_LIBRARIES}
+        harfbuzz::harfbuzz
     )
 endif(FREETYPE_FOUND)
 
