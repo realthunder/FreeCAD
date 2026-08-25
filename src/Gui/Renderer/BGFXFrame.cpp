@@ -142,13 +142,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
         return false;
 #endif
 
-#ifdef FC_RENDERER_STANDALONE
     // Split-view frame: swap in the sub-view's state bank
-    // (docs/SplitViews.md sec 9.2). A plain render() is bank 0 -- the
-    // full-canvas sub-view -- which also puts the members back after a
-    // renderSubViews sequence ended on another bank.
+    // (docs/SplitViews.md sec 9.2, sec 13 for the desktop tier). A
+    // plain render() is bank 0 -- the full-canvas sub-view -- which
+    // also puts the members back after a renderSubViews sequence
+    // ended on another bank.
     view->selectSubView(subCtx.active ? subCtx.id : 0);
-#endif
 
     // A shader pack that could not supply a core program keeps the
     // view down: without this the torn-down view (no framebuffer)
@@ -4114,7 +4113,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 maskedCull.cull(culler.hierarchy(), viewMat, projf,
                                 float(view->height), sceneCulled, owner);
             }
-            else if (caps && (caps->supported & BGFX_CAPS_OCCLUSION_QUERY)) {
+            else if (caps && (caps->supported & BGFX_CAPS_OCCLUSION_QUERY)
+                     && !subCtx.active) {
+                // Bypassed for sub-view frames: a query's verdict is
+                // per-camera and lands frames later -- alternating N
+                // cameras through the shared lease pool would apply
+                // one cell's answers to another's frame. The software
+                // masked cull above is stateless per pass and keeps
+                // working (docs/SplitViews.md sec 9.2).
                 driveOcclusionCull(*view, culler, cullBatch, cullQueries,
                                    viewMat, projf,
                                    float(view->height), sceneCulled,
@@ -5987,7 +5993,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
     cpuMark(CpuCtxIn);
     QOpenGLContext::currentContext()->extraFunctions()
         ->glBindFramebuffer(GL_FRAMEBUFFER, GLuint(hostFbo));
-    view->blit(dumpPending ? &pendingDump : nullptr, &lastStats);
+    view->blit(dumpPending ? &pendingDump : nullptr, &lastStats,
+               subCtx.active ? subCtx.x : 0,
+               subCtx.active ? subCtx.y : 0,
+               subCtx.active ? widget->height() : 0);
     cpuMark(CpuBlit);
     if (dumpPending && !pendingDump.overlays) {
         // That frame went to the screen as well as to the capture, and

@@ -860,3 +860,45 @@ and plain-GL mode keep widget composition.
   camera (renderOffscreen already takes explicit matrices+size).
 - **isBackgroundView / target release**: the canvas answers for all
   its cells; per-cell release stops making sense (drop whole-canvas).
+
+### 13.5 D1 implementation notes (2026-08-25)
+
+The renderer half is BUILT (both tiers compile; the desktop shared
+path is regression-clean -- the polish smoke reruns byte-identical):
+
+- BGFXView::blit takes a destination rect (dstX, dstY top-left widget
+  coords + dstH for the GL y-flip; zeros keep the full-surface
+  transfer). Color AND depth both land at the rect, so the Coin
+  residue pass composites depth-tested per cell.
+- The desktop blit FBO cache (fbo/fboDepth/hasFBO/blitColorId/
+  blitSourceEncoded) is banked via FC_SUBVIEW_FIELDS_HOST, a
+  desktop-only extension of the bank field list -- it wraps one
+  bank's textures and must swap with them.
+- The frame-entry selectSubView and the whole bank machinery now run
+  on the desktop path too (they were standalone-gated); a plain
+  render() stays bank 0 and swaps nothing.
+- Desktop renderSubViews: one ORDINARY desktop frame per submit --
+  sized through the captureWidth override exactly as renderOffscreen,
+  blitted to the sub rect of whatever framebuffer the caller bound.
+  No wall-frame batching: there is no backbuffer swap on this path,
+  the blit is the composition, and per-submit frame boundaries mean
+  fresh banks allocate against a drained pool -- so desktop
+  prepareSubViews is releaseBankZero only, no warm pass.
+- The GPU occlusion-query cull is bypassed for sub-view frames
+  (per-camera verdicts landing frames later must not cross cells);
+  the software masked cull keeps working per pass.
+
+NOT yet consumed: D2 (the ViewArea canvas) is next-session work.
+Survey nuggets for it, from this pass:
+
+- The scene FEED happens during Coin traversal (selectionRoot's
+  external-renderer capture inside the widget's paint) -- a canvas
+  mode must run the child's traversal in the canvas context or
+  nothing feeds; there is no paint-free feed path on the desktop.
+- A hidden QWidget's update() is a no-op, so the child viewers'
+  scheduleRedraw must be redirected to the canvas -- a small
+  QuarterWidget hook (redraw() indirection) in our fork.
+- Cells must become background-less widgets so the canvas sibling
+  UNDER the splitter tree shows through (Qt composites siblings by
+  stacking order; the join overlay already relies on this class of
+  behavior).

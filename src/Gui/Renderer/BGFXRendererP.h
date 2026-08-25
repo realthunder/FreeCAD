@@ -5927,8 +5927,14 @@ public:
                                const unsigned char *color,
                                int width, int height);
 
+    /// Transfer the finished frame (color + depth) into the caller's
+    /// bound framebuffer. dstH names the destination surface's height
+    /// for a sub-view blit -- the rect (dstX, dstY) is top-left
+    /// widget coords, flipped against it into GL's bottom-left; 0
+    /// keeps the full-surface transfer every plain frame does.
     void blit(const Render::FrameDumpRequest *dump,
-              Render::RenderStats *stats);
+              Render::RenderStats *stats,
+              int dstX = 0, int dstY = 0, int dstH = 0);
 #endif // !FC_RENDERER_STANDALONE
 
     QOpenGLWidget *widget = nullptr;
@@ -6906,7 +6912,16 @@ public:
     // list below is per-sub-view by construction. Bank id 0 is the
     // implicit full-canvas sub-view every plain render() uses;
     // desktop frames never leave it.
+#ifndef FC_RENDERER_STANDALONE
+// Desktop-only bank fields: the cached GL blit framebuffer wraps ONE
+// bank's textures, so it swaps with them (docs/SplitViews.md 13.3).
+#define FC_SUBVIEW_FIELDS_HOST(X) \
+    X(fbo) X(fboDepth) X(blitColorId) X(hasFBO) X(blitSourceEncoded)
+#else
+#define FC_SUBVIEW_FIELDS_HOST(X)
+#endif
 #define FC_SUBVIEW_FIELDS(X) \
+    FC_SUBVIEW_FIELDS_HOST(X) \
     X(viewId) X(viewSpan) X(viewLive) X(sinkView) X(idMap) X(passMark) \
     X(sinkHits) X(sinkPasses) X(sinkReported) \
     X(sinkFbo) X(sinkColor) X(sinkDepth) \

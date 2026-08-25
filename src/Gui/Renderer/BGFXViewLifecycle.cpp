@@ -1587,7 +1587,8 @@ bool BGFXView::writeDumpImage(const std::string &path,
 }
 
 void BGFXView::blit(const Render::FrameDumpRequest *dump,
-          Render::RenderStats *stats)
+          Render::RenderStats *stats,
+          int dstX, int dstY, int dstH)
 {
     // Only GL 1.1 is exported by Windows' opengl32, so the framebuffer entry
     // points below must be resolved against the current context rather than
@@ -1652,10 +1653,14 @@ void BGFXView::blit(const Render::FrameDumpRequest *dump,
         }
     }
 
+    // A sub-view lands at its rect of the destination surface; the
+    // caller's y is top-left, GL's is bottom-left.
+    const int dx0 = dstX;
+    const int dy0 = dstH > 0 ? dstH - dstY - height : 0;
     f->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prevFbo);
     f->glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
     f->glBlitFramebuffer(0, 0, width, height,
-                         0, 0, width, height,
+                         dx0, dy0, dx0 + width, dy0 + height,
                          GL_COLOR_BUFFER_BIT,
                          GL_NEAREST);
     if (glGetError() != GL_NO_ERROR) {
@@ -1672,7 +1677,7 @@ void BGFXView::blit(const Render::FrameDumpRequest *dump,
     }
     f->glBindFramebuffer(GL_READ_FRAMEBUFFER, fboDepth);
     f->glBlitFramebuffer(0, 0, width, height,
-                         0, 0, width, height,
+                         dx0, dy0, dx0 + width, dy0 + height,
                          GL_DEPTH_BUFFER_BIT,
                          GL_NEAREST);
     checkGLError("blit depth");

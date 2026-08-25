@@ -100,7 +100,6 @@ bool BGFXRenderer::render(const QColor &col,
     return ok;
 }
 
-#ifdef FC_RENDERER_STANDALONE
 /// With a split layout up no sub is bank 0, so the implicit
 /// full-canvas bank's targets -- a whole MSAA scene + AO + OIT set at
 /// canvas size -- are dead weight. Release them (the same dance
@@ -128,16 +127,63 @@ static void releaseBankZero(BGFXView *view,
     view->selectSubView(park);
     view->subBanks.erase(0);
 }
-#endif
 
 bool BGFXRenderer::renderSubViews(const QColor &col,
                                   const SubViewFrame *subs, int count)
 {
 #ifndef FC_RENDERER_STANDALONE
-    // The desktop composes split views through per-widget views
-    // (Gui::ViewArea); nothing asks for this there.
-    (void)col; (void)subs; (void)count;
-    return false;
+    // Desktop (docs/SplitViews.md sec 13): the host is ONE canvas
+    // widget, and each sub-view submit is an ordinary desktop frame --
+    // render into the bank's sized targets (the captureWidth override
+    // is the sizing channel, exactly as renderOffscreen uses it), then
+    // blit color + depth into the caller's bound framebuffer at the
+    // sub-view rect. No wall-frame batching: there is no backbuffer
+    // swap on this path, the blit IS the composition, and per-submit
+    // frame boundaries reclaim destroys so fresh banks allocate
+    // against a drained pool without a warm-up pass.
+    if (!subs || count <= 0)
+        return false;
+    if (count == 1 && subs[0].id == 0)
+        return render(col, subs[0].viewMatrix, subs[0].projMatrix);
+    {
+        auto vit0 = _BGFXLib.views.find(pimpl->widget);
+        if (vit0 != _BGFXLib.views.end())
+            releaseBankZero(vit0->second.get(), subs, count);
+    }
+    bool ok = true;
+    for (int i = 0; i < count; ++i) {
+        const SubViewFrame &s = subs[i];
+        if (s.width <= 0 || s.height <= 0) {
+            ok = false;
+            continue;
+        }
+        auto &ctx = pimpl->subCtx;
+        ctx = {};
+        ctx.active = true;
+        ctx.first = (i == 0);
+        ctx.last = (i == count - 1);
+        ctx.id = s.id;
+        ctx.x = s.x;
+        ctx.y = s.y;
+        ctx.w = s.width;
+        ctx.h = s.height;
+        _BGFXLib.captureWidth = uint16_t(s.width);
+        _BGFXLib.captureHeight = uint16_t(s.height);
+        ok = render(col, s.viewMatrix, s.projMatrix) && ok;
+    }
+    pimpl->subCtx = {};
+    _BGFXLib.captureWidth = 0;
+    _BGFXLib.captureHeight = 0;
+    // As on the standalone side: every submit crossed a frame
+    // boundary, so a bank that latched targetsFailed is owed its
+    // one retry per wall frame.
+    auto vit = _BGFXLib.views.find(pimpl->widget);
+    if (vit != _BGFXLib.views.end()) {
+        vit->second->targetsFailed = false;
+        for (auto &b : vit->second->subBanks)
+            b.second.targetsFailed = false;
+    }
+    return ok;
 #else
     if (!subs || count <= 0)
         return false;
@@ -218,7 +264,15 @@ void BGFXRenderer::prepareSubViews(const QColor &col,
                                    const SubViewFrame *subs, int count)
 {
 #ifndef FC_RENDERER_STANDALONE
-    (void)col; (void)subs; (void)count;
+    // Desktop submits each cross their own frame boundary, so fresh
+    // banks already allocate against a reclaimed pool -- no warm-up
+    // pass; only the full-canvas bank release applies.
+    (void)col;
+    if (!subs || count <= 0)
+        return;
+    auto it = _BGFXLib.views.find(pimpl->widget);
+    if (it != _BGFXLib.views.end())
+        releaseBankZero(it->second.get(), subs, count);
 #else
     if (!subs || count <= 0)
         return;

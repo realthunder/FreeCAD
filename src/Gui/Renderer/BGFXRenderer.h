@@ -62,10 +62,13 @@ public:
                                  const void *viewMatrix,
                                  const void *projMatrix,
                                  int width, int height) override;
-    /// Split-view frame (docs/SplitViews.md sec 9.2): N sub-views of
-    /// the resident scene, per-sub-view camera + backbuffer rect, one
-    /// backend frame. Standalone builds only; the desktop composes
-    /// through per-widget views instead and returns false.
+    /// Split-view frame (docs/SplitViews.md sec 9.2, sec 13): N
+    /// sub-views of the resident scene, per-sub-view camera + rect,
+    /// one BGFXView with per-sub-view state banks. Standalone: one
+    /// backend frame, rects on the backbuffer in device px. Desktop:
+    /// one ordinary frame per submit, each blitted (color + depth)
+    /// into the caller's bound framebuffer at its rect, in the host
+    /// widget's coordinate units.
     virtual bool renderSubViews(const QColor &bg,
                                 const SubViewFrame *subs,
                                 int count) override;
