@@ -693,15 +693,74 @@ static CamFrame camFrame()
     return f;
 }
 
+// ---- Split-view layout (docs/SplitViews.md sec 9.1/9.3) ------------
+//
+// The DOM chrome tiles the canvas into cells and pushes their rects
+// through fcviewer_set_layout; each cell shows the RESIDENT scene (a
+// 3D camera of its own) or the RESIDENT page (a pan/zoom of its own).
+// The ACTIVE cell's state lives in the ordinary globals (s_yaw,
+// s_pageView, ...) exactly as without a layout -- switching the active
+// cell stashes them into its entry and loads the next one's -- so the
+// whole input/fit/pick machinery keeps reading the globals it always
+// read. An empty list is "no layout": today's single full-canvas view.
+struct WasmSubView {
+    int id = 0;               ///< stable chrome-issued token (>= 1)
+    bool page = false;        ///< content: the page store vs the scene
+    float x = 0, y = 0, w = 0, h = 0;   ///< rect, CSS px on the canvas
+    // Stashed orbit camera (inactive cells only; the active cell's is
+    // live in the globals).
+    float center[3] = {0.0f, 0.0f, 0.0f};
+    float panX = 0.0f, panY = 0.0f;
+    float yaw = 0.785f, pitch = 0.5f, roll = 0.0f;
+    float dist = 10.0f;
+    bool userCam = false;
+    // Stashed page view.
+    Render::Page2D::View pageView;
+    bool pageUserView = false;
+};
+static std::vector<WasmSubView> s_subViews;
+static int s_activeSub = 0;
+
+/// The active viewport rect in device px: the active cell's, or the
+/// whole canvas without a layout. Every screen-space computation --
+/// rays, aspect, fits, pan scale -- reads these so it is right in both
+/// worlds.
+static float vpX()
+{ return s_subViews.empty() ? 0.0f : s_subViews[s_activeSub].x * s_dpr; }
+static float vpY()
+{ return s_subViews.empty() ? 0.0f : s_subViews[s_activeSub].y * s_dpr; }
+static float vpW()
+{
+    return s_subViews.empty() ? float(s_width)
+                              : s_subViews[s_activeSub].w * s_dpr;
+}
+static float vpH()
+{
+    return s_subViews.empty() ? float(s_height)
+                              : s_subViews[s_activeSub].h * s_dpr;
+}
+/// Which cell a device-px canvas point is in; the current active cell
+/// when it is in none (a border, a rounding seam).
+static int cellIndexAt(float px, float py)
+{
+    for (size_t i = 0; i < s_subViews.size(); ++i) {
+        const WasmSubView &c = s_subViews[i];
+        if (px >= c.x * s_dpr && px < (c.x + c.w) * s_dpr
+                && py >= c.y * s_dpr && py < (c.y + c.h) * s_dpr)
+            return int(i);
+    }
+    return s_activeSub;
+}
+
 /// World-space ray through a canvas pixel of the current camera.
 static void screenRay(float px, float py, bx::Vec3 &orig, bx::Vec3 &rdir)
 {
     CamFrame f = camFrame();
-    const float aspect = s_height > 0
-        ? float(s_width) / float(s_height) : 1.0f;
+    const float vw = vpW(), vh = vpH();
+    const float aspect = vh > 0.0f ? vw / vh : 1.0f;
     const float th = std::tan(0.5f * kFovY * bx::kPi / 180.0f);
-    const float nx = s_width > 0 ? 2.0f * px / float(s_width) - 1.0f : 0.0f;
-    const float ny = s_height > 0 ? 1.0f - 2.0f * py / float(s_height) : 0.0f;
+    const float nx = vw > 0.0f ? 2.0f * (px - vpX()) / vw - 1.0f : 0.0f;
+    const float ny = vh > 0.0f ? 1.0f - 2.0f * (py - vpY()) / vh : 0.0f;
     bx::Vec3 fwd = bx::normalize(bx::sub(f.at, f.eye));
     // The camera's right axis is cross(forward, up) — CamFrame::right
     // is its negation (the orbit frame kept the historical pan
@@ -714,7 +773,8 @@ static void screenRay(float px, float py, bx::Vec3 &orig, bx::Vec3 &rdir)
                 bx::mul(f.up, ny * th))));
 }
 
-static void buildCamera(float *viewMtx, float *projMtx)
+static void buildCamera(float *viewMtx, float *projMtx,
+                        int vw = 0, int vh = 0)
 {
     CamFrame f = camFrame();
     // Right-handed like the Coin camera the renderer's shading assumes
@@ -722,8 +782,13 @@ static void buildCamera(float *viewMtx, float *projMtx)
     // frame's own up so camera roll is reflected in the view matrix.
     bx::mtxLookAt(viewMtx, f.eye, f.at, f.up, bx::Handedness::Right);
 
-    const float aspect = s_height > 0
-        ? float(s_width) / float(s_height) : 1.0f;
+    // Aspect of the viewport this camera draws: an explicit sub-view
+    // rect when given (renderLayoutFrame), the canvas otherwise.
+    if (vw <= 0 || vh <= 0) {
+        vw = s_width;
+        vh = s_height;
+    }
+    const float aspect = vh > 0 ? float(vw) / float(vh) : 1.0f;
     // Fit the depth range to the scene instead of standing well clear of
     // it. 4 * diag put the far plane eight bounding-radii out and let the
     // near plane clamp to 0.001 * diag, which on the rack model is a
@@ -839,8 +904,8 @@ static bool projectToScreen(const bx::Vec3 &p, const CamFrame &f,
     const bx::Vec3 rightCam = bx::neg(f.right);
     const float nx = bx::dot(w, rightCam) / (depth * th * aspect);
     const float ny = bx::dot(w, f.up) / (depth * th);
-    sx = (nx + 1.0f) * 0.5f * float(s_width);
-    sy = (1.0f - ny) * 0.5f * float(s_height);
+    sx = vpX() + (nx + 1.0f) * 0.5f * vpW();
+    sy = vpY() + (1.0f - ny) * 0.5f * vpH();
     return true;
 }
 
@@ -923,8 +988,7 @@ static PickHit pickScene(float px, float py)
     screenRay(px, py, orig, rdir);
     const CamFrame f = camFrame();
     const bx::Vec3 fwd = bx::normalize(bx::sub(f.at, f.eye));
-    const float aspect = s_height > 0
-        ? float(s_width) / float(s_height) : 1.0f;
+    const float aspect = vpH() > 0.0f ? vpW() / vpH() : 1.0f;
     const float th = std::tan(0.5f * kFovY * bx::kPi / 180.0f);
     const float radius = pickRadiusPx();
     const float rdotf = bx::dot(rdir, fwd);  // ray-param -> forward-depth
@@ -1090,22 +1154,25 @@ static int s_btnHiliteDraw = -2;          // button draw index currently tinted
 static void overlayRect(const Render::OverlayAnchor &a,
                         int &rx, int &ry, int &rw, int &rh)
 {
+    const int vx = int(vpX()), vy = int(vpY());
+    const int vw = int(vpW()), vh = int(vpH());
     if (a.corner == Render::OverlayAnchor::FullViewport) {
-        rx = ry = 0;
-        rw = s_width;
-        rh = s_height;
+        rx = vx;
+        ry = vy;
+        rw = vw;
+        rh = vh;
         return;
     }
     int edge = int(std::max(1.0f,
-        a.sizeFraction * float(std::min(s_width, s_height))));
+        a.sizeFraction * float(std::min(vw, vh))));
     rw = rh = edge;
     const bool right = a.corner == Render::OverlayAnchor::BottomRight
         || a.corner == Render::OverlayAnchor::TopRight;
     const bool top = a.corner == Render::OverlayAnchor::TopLeft
         || a.corner == Render::OverlayAnchor::TopRight;
     const int mx = int(a.marginX), my = int(a.marginY);
-    rx = std::max(0, right ? s_width - edge - mx : mx);
-    ry = std::max(0, top ? my : s_height - edge - my);
+    rx = vx + std::max(0, right ? vw - edge - mx : mx);
+    ry = vy + std::max(0, top ? my : vh - edge - my);
 }
 
 /// If canvas pixel (px, py) lands on the NaviCube overlay, return in
@@ -2217,17 +2284,17 @@ static void pageBlobFailed(const std::string &key);
 
 static void pageFit()
 {
-    if (!(s_pageW > 0.0f) || !(s_pageH > 0.0f) || s_width <= 0
-            || s_height <= 0)
+    const float vw = vpW(), vh = vpH();
+    if (!(s_pageW > 0.0f) || !(s_pageH > 0.0f) || vw <= 0.0f
+            || vh <= 0.0f)
         return;
-    const float zoom = 0.95f * std::min(float(s_width) / s_pageW,
-                                        float(s_height) / s_pageH);
+    const float zoom = 0.95f * std::min(vw / s_pageW, vh / s_pageH);
     s_pageView.zoom = zoom;
     // Page content lives at y in [-H, 0] (page y-up): panY is the
-    // screen y of page y = 0, so this centers the sheet.
-    s_pageView.panX = 0.5f * (float(s_width) - zoom * s_pageW);
-    s_pageView.panY = zoom * s_pageH
-        + 0.5f * (float(s_height) - zoom * s_pageH);
+    // screen y of page y = 0, so this centers the sheet. Pan is
+    // viewport-local, so a page cell fits inside its own rect.
+    s_pageView.panX = 0.5f * (vw - zoom * s_pageW);
+    s_pageView.panY = zoom * s_pageH + 0.5f * (vh - zoom * s_pageH);
     s_pageView.rotation = 0.0f;
     markDirty();
 }
@@ -2296,6 +2363,275 @@ static bool renderPageFrame()
     return true;
 }
 
+// ---- Split-view layout: state switching and the layout frame ----------
+// (docs/SplitViews.md sec 9.3; the early block above holds the cell
+// list and the viewport accessors.)
+
+/// Stash the live globals into a cell / load a cell into them. The
+/// globals ARE the active cell's state; these run only on activation
+/// changes and around the per-cell work in renderLayoutFrame.
+static void stashSubCam(WasmSubView &c)
+{
+    std::memcpy(c.center, s_center, sizeof(c.center));
+    c.panX = s_panX;
+    c.panY = s_panY;
+    c.yaw = s_yaw;
+    c.pitch = s_pitch;
+    c.roll = s_roll;
+    c.dist = s_dist;
+    c.userCam = s_userCam;
+    c.pageView = s_pageView;
+    c.pageUserView = s_pageUserView;
+}
+
+static void loadSubCam(const WasmSubView &c)
+{
+    std::memcpy(s_center, c.center, sizeof(s_center));
+    s_panX = c.panX;
+    s_panY = c.panY;
+    s_yaw = c.yaw;
+    s_pitch = c.pitch;
+    s_roll = c.roll;
+    s_dist = c.dist;
+    s_userCam = c.userCam;
+    s_pageView = c.pageView;
+    s_pageUserView = c.pageUserView;
+}
+
+/// Whether pointer input is over page content: the active cell's
+/// content with a layout, the wire-driven page mode without one.
+static bool activeIsPage()
+{
+    if (!s_subViews.empty())
+        return s_subViews[s_activeSub].page;
+    return s_pageMode;
+}
+
+static void setActiveSub(int idx)
+{
+    if (s_subViews.empty() || idx == s_activeSub || idx < 0
+            || idx >= int(s_subViews.size()))
+        return;
+    stashSubCam(s_subViews[s_activeSub]);
+    s_activeSub = idx;
+    loadSubCam(s_subViews[s_activeSub]);
+}
+
+/// Pointer-position activation (Blender's active-follows-cursor): the
+/// cell under a press, a wheel, or a hover becomes the active one.
+static void setActiveSubAt(float px, float py)
+{
+    if (!s_subViews.empty())
+        setActiveSub(cellIndexAt(px, py));
+}
+
+/// One wall-clock frame of a split layout: page cells on the fixed
+/// top-granule ids, 3D cells through renderSubViews -- every cell into
+/// its own rect of the same backbuffer, one bgfx frame for all
+/// (docs/SplitViews.md sec 9.2/9.3).
+static void renderLayoutFrame()
+{
+    if (!s_renderer)
+        return;
+    stashSubCam(s_subViews[s_activeSub]);
+
+    // Page2D's fixed id sits just under its offscreen pair
+    // (renderPageFrame); further page cells walk down from it, still
+    // inside the top granule the 3D block allocator never touches
+    // (8 ids: the offscreen pair + up to 5 page cells + this base).
+    const uint16_t pageBase =
+        uint16_t(bgfx::getCaps()->limits.maxViews - 3);
+    static const int kMaxPageCells = 5;
+    int pageK = 0;
+    bool anyPage = false;
+
+    static std::vector<Render::Renderer::SubViewFrame> frames;
+    static std::vector<std::array<float, 32>> mats;
+    frames.clear();
+    mats.clear();
+    mats.reserve(s_subViews.size());
+    int activeFrame = -1;
+
+    for (size_t i = 0; i < s_subViews.size(); ++i) {
+        WasmSubView &c = s_subViews[i];
+        const int dx = int(c.x * s_dpr + 0.5f);
+        const int dy = int(c.y * s_dpr + 0.5f);
+        const int dw = int(c.w * s_dpr + 0.5f);
+        const int dh = int(c.h * s_dpr + 0.5f);
+        if (dw <= 0 || dh <= 0)
+            continue;
+        if (c.page) {
+            if (pageK >= kMaxPageCells)
+                continue;
+            const uint16_t vid = uint16_t(pageBase - pageK);
+            ++pageK;
+            anyPage = true;
+            bgfx::FrameBufferHandle noFb = BGFX_INVALID_HANDLE;
+            bgfx::setViewFrameBuffer(vid, noFb);
+            bgfx::setViewRect(vid, uint16_t(dx), uint16_t(dy),
+                              uint16_t(dw), uint16_t(dh));
+            bgfx::setViewClear(vid,
+                               BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH
+                                   | BGFX_CLEAR_STENCIL,
+                               0x55585cff, 1.0f, 0);
+            if (s_page && s_pageW > 0.0f) {
+                // The view rect above places the cell; render() only
+                // needs the rect's size for its projection.
+                c.pageView.devicePixelRatio = s_dpr;
+                s_page->setView(c.pageView);
+                s_page->render(vid, uint16_t(dw), uint16_t(dh));
+            }
+            bgfx::touch(vid);
+        }
+        else {
+            mats.emplace_back();
+            auto &m = mats.back();
+            loadSubCam(c);
+            buildCamera(m.data(), m.data() + 16, dw, dh);
+            Render::Renderer::SubViewFrame f;
+            f.id = c.id;
+            f.x = dx;
+            f.y = dy;
+            f.width = dw;
+            f.height = dh;
+            f.viewMatrix = m.data();
+            f.projMatrix = m.data() + 16;
+            if (int(i) == s_activeSub)
+                activeFrame = int(frames.size());
+            frames.push_back(f);
+        }
+    }
+    loadSubCam(s_subViews[s_activeSub]);
+
+    bool framePumped = false;
+    if (!frames.empty()) {
+        // Feed-level camera-relative state follows the ACTIVE sub-view
+        // (docs/SplitViews.md sec 9.2, known approximations).
+        const float *am = static_cast<const float *>(
+            frames[activeFrame >= 0 ? activeFrame : 0].viewMatrix);
+        relightForCamera(am);
+        s_renderer->setAutoZoomScale(
+            s_dist * std::tan(0.5f * kFovY * bx::kPi / 180.0f) * 0.0857f);
+        QColor bg((s_snap.clearColor >> 24) & 0xff,
+                  (s_snap.clearColor >> 16) & 0xff,
+                  (s_snap.clearColor >> 8) & 0xff);
+        const double renderT0 = emscripten_get_now();
+        s_renderer->renderSubViews(bg, frames.data(),
+                                   int(frames.size()));
+        const double rdt = emscripten_get_now() - renderT0;
+        s_renderMs = s_renderMs > 0.0 ? s_renderMs * 0.9 + rdt * 0.1 : rdt;
+        // Success or bail, the frame boundary was crossed (the last
+        // submit, or renderSubViews' own drain).
+        framePumped = true;
+    }
+    if (!framePumped && anyPage
+            && bgfx::getRendererType() != bgfx::RendererType::Noop) {
+        // All-page layout: pump the frame the way renderPageFrame does.
+        bgfx::frame();
+    }
+    updateHud(false);
+}
+
+/// The DOM chrome's layout push: "id,x,y,w,h,p;..." in CSS px on the
+/// canvas (p = 1 for a page cell), empty = back to the single
+/// full-canvas view. Cell state is keyed on id: cells that stay keep
+/// their camera / page view, new 3D cells clone the active camera
+/// (desktop split parity), new page cells fit their rect, and a
+/// resized cell whose user has not taken the view re-fits.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_layout(const char *spec)
+{
+    if (!s_subViews.empty())
+        stashSubCam(s_subViews[s_activeSub]);
+    const int oldActiveId =
+        s_subViews.empty() ? 0 : s_subViews[s_activeSub].id;
+
+    std::vector<WasmSubView> next;
+    std::vector<bool> fits;
+    const char *q = spec ? spec : "";
+    while (*q) {
+        WasmSubView c;
+        int pg = 0;
+        int n = std::sscanf(q, "%d,%f,%f,%f,%f,%d", &c.id, &c.x, &c.y,
+                            &c.w, &c.h, &pg);
+        const char *semi = std::strchr(q, ';');
+        q = semi ? semi + 1 : q + std::strlen(q);
+        if (n != 6 || c.id <= 0 || c.w <= 0.0f || c.h <= 0.0f)
+            continue;
+        c.page = pg != 0;
+        bool fit = false;
+        const WasmSubView *prev = nullptr;
+        for (const auto &o : s_subViews) {
+            if (o.id == c.id && o.page == c.page) {
+                prev = &o;
+                break;
+            }
+        }
+        if (prev) {
+            std::memcpy(c.center, prev->center, sizeof(c.center));
+            c.panX = prev->panX;
+            c.panY = prev->panY;
+            c.yaw = prev->yaw;
+            c.pitch = prev->pitch;
+            c.roll = prev->roll;
+            c.dist = prev->dist;
+            c.userCam = prev->userCam;
+            c.pageView = prev->pageView;
+            c.pageUserView = prev->pageUserView;
+            const bool resized = prev->w != c.w || prev->h != c.h;
+            fit = resized && (c.page ? !c.pageUserView : !c.userCam);
+        }
+        else if (c.page) {
+            fit = true;   // a fresh page cell frames the sheet
+        }
+        else {
+            // Clone the live camera, like the desktop split does.
+            stashSubCam(c);
+        }
+        next.push_back(c);
+        fits.push_back(fit);
+    }
+
+    // 3D cells that vanished give their renderer bank back.
+    for (const auto &o : s_subViews) {
+        if (o.page)
+            continue;
+        bool kept = false;
+        for (const auto &c : next)
+            kept = kept || (!c.page && c.id == o.id);
+        if (!kept && s_renderer)
+            s_renderer->dropSubView(o.id);
+    }
+
+    s_subViews = std::move(next);
+    s_activeSub = 0;
+    for (size_t i = 0; i < s_subViews.size(); ++i) {
+        if (s_subViews[i].id == oldActiveId)
+            s_activeSub = int(i);
+    }
+
+    // Fits run through the globals + viewport accessors, so each cell
+    // is made active for its own fit.
+    const int keepActive = s_activeSub;
+    for (size_t i = 0; i < s_subViews.size(); ++i) {
+        if (!fits[i])
+            continue;
+        s_activeSub = int(i);
+        loadSubCam(s_subViews[i]);
+        if (s_subViews[i].page) {
+            s_pageUserView = false;
+            pageFit();
+        }
+        else {
+            fitCamera();
+        }
+        stashSubCam(s_subViews[i]);
+    }
+    s_activeSub = keepActive;
+    if (!s_subViews.empty())
+        loadSubCam(s_subViews[s_activeSub]);
+    markDirty();
+}
+
 static void mainLoop()
 {
     const double frameNow = emscripten_get_now();
@@ -2322,17 +2658,22 @@ static void mainLoop()
         Render::BGFXRenderer::setWindowSize(iw, ih);
         // Until the user takes the camera, reframe on resize/rotation so the
         // whole model stays visible in the new aspect.
-        if (!s_userCam)
-            fitCamera();
-        if (s_pageMode && !s_pageUserView)
-            pageFit();
+        // With a layout the chrome re-pushes the cell rects on a
+        // resize and the push re-fits; the whole-canvas fits below
+        // would act on the active cell against a stale rect.
+        if (s_subViews.empty()) {
+            if (!s_userCam)
+                fitCamera();
+            if (s_pageMode && !s_pageUserView)
+                pageFit();
+        }
         markDirty();
     }
 
     // Page mode: the vg frame instead of the 3D renderer's. A false
     // return means the device is not up yet -- the 3D frame below runs
     // once and brings it up.
-    if (s_pageMode && renderPageFrame())
+    if (s_subViews.empty() && s_pageMode && renderPageFrame())
         return;
 
     updateQuality();
@@ -2390,6 +2731,11 @@ static void mainLoop()
     // somewhere else (shell.html).
     reportHeap();
 
+    if (!s_subViews.empty()) {
+        renderLayoutFrame();
+        return;
+    }
+
     float viewMtx[16], projMtx[16];
     buildCamera(viewMtx, projMtx);
     // The camera-relative lights, for the same reason as the autozoom
@@ -2435,7 +2781,7 @@ static float panScale()
     // buffer's device-px height, and drag deltas come in CSS px, so fold in
     // the dpr (buffer = css * dpr).
     return 2.0f * s_dist * std::tan(0.5f * kFovY * bx::kPi / 180.0f)
-        * s_dpr / float(s_height > 0 ? s_height : 1);
+        * s_dpr / (vpH() > 0.0f ? vpH() : 1.0f);
 }
 
 // Click detection (mouseup without meaningful drag) for the roundtrip
@@ -2559,6 +2905,14 @@ static void updateHoverAt(float clientX, float clientY)
     clientToCanvas(clientX, clientY, px, py);
     s_mouseX = px;
     s_mouseY = py;
+    // The cell under the cursor is the active one (Blender's
+    // active-follows-cursor); page cells have no scene hover.
+    setActiveSubAt(px, py);
+    if (activeIsPage()) {
+        std::snprintf(s_hoverDesc, sizeof(s_hoverDesc), "page");
+        applyHover(PickHit{});
+        return;
+    }
     // NaviCube face hover highlight wins over scene preselection: when the
     // cursor is over the cube, tint the face and clear any scene hover.
     if (updateCubeHover(px, py)) {
@@ -2585,6 +2939,11 @@ static void updateHover(const EmscriptenMouseEvent *e)
 
 static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent *e, void *)
 {
+    {
+        float px, py;
+        canvasPos(e, px, py);
+        setActiveSubAt(px, py);
+    }
     s_coarsePointer = false;
     s_dragging = true;
     s_panning = e->button == 2 || e->shiftKey;
@@ -2606,7 +2965,7 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
     s_dragging = false;
     if (s_clickOk && std::abs(int(e->clientX) - s_downX) <= 6
             && std::abs(int(e->clientY) - s_downY) <= 6) {
-        if (s_pageMode) {
+        if (activeIsPage()) {
             // No picking on a page yet (doc sec 24.6); a double click
             // refits the sheet.
             static double lastUp = 0.0;
@@ -2640,7 +2999,7 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
     int dy = int(e->clientY) - s_lastY;
     s_lastX = int(e->clientX);
     s_lastY = int(e->clientY);
-    if (s_pageMode) {
+    if (activeIsPage()) {
         // A page has no orbit: every drag pans, in device pixels.
         s_pageView.panX += float(dx) * s_dpr;
         s_pageView.panY += float(dy) * s_dpr;
@@ -2664,15 +3023,19 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
 
 static EM_BOOL onWheel(int, const EmscriptenWheelEvent *e, void *)
 {
+    setActiveSubAt(float(e->mouse.targetX) * s_dpr,
+                   float(e->mouse.targetY) * s_dpr);
     interact();
-    if (s_pageMode) {
-        // Zoom about the cursor: the page point under it stays put.
+    if (activeIsPage()) {
+        // Zoom about the cursor: the page point under it stays put --
+        // in viewport-local device px, since a page cell's pan is
+        // local to its own rect.
         const float f = e->deltaY > 0 ? (1.0f / 1.15f) : 1.15f;
         const float zoom =
             bx::clamp(s_pageView.zoom * f, 0.002f, 1000.0f);
         const float applied = zoom / s_pageView.zoom;
-        const float mx = float(e->mouse.targetX) * s_dpr;
-        const float my = float(e->mouse.targetY) * s_dpr;
+        const float mx = float(e->mouse.targetX) * s_dpr - vpX();
+        const float my = float(e->mouse.targetY) * s_dpr - vpY();
         s_pageView.panX = mx - applied * (mx - s_pageView.panX);
         s_pageView.panY = my - applied * (my - s_pageView.panY);
         s_pageView.zoom = zoom;
@@ -2886,6 +3249,11 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
     }
 
     if (type == EMSCRIPTEN_EVENT_TOUCHSTART) {
+        if (n >= 1) {
+            float px, py;
+            clientToCanvas(x[0], y[0], px, py);
+            setActiveSubAt(px, py);
+        }
         // A fingertip aims far more coarsely than a cursor (pickRadiusPx),
         // unless a stylus was hovering just now — then this contact is its
         // tip and stays fine.
@@ -2895,7 +3263,7 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
         // stale one before the geometry can move.
         clearCubeHover();
         clearButtonHover();
-        if (s_pageMode) {
+        if (activeIsPage()) {
             // No tap-pick and no loupe on a page: fingers only pan and
             // pinch it.
             s_tapOk = false;
@@ -2936,7 +3304,7 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
             return EM_TRUE;
         }
         interact();
-        if (s_pageMode) {
+        if (activeIsPage()) {
             if (n == 1) {
                 s_pageView.panX += (x[0] - s_touchX[0]) * s_dpr;
                 s_pageView.panY += (y[0] - s_touchY[0]) * s_dpr;
@@ -2955,10 +3323,11 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
                     const float zoom = bx::clamp(
                         s_pageView.zoom * newDist / oldDist, 0.002f,
                         1000.0f);
-                    // Pinch zooms about the midpoint, in device px.
+                    // Pinch zooms about the midpoint, in
+                    // viewport-local device px.
                     const float f = zoom / s_pageView.zoom;
-                    const float mx = 0.5f * (x[0] + x[1]) * s_dpr;
-                    const float my = 0.5f * (y[0] + y[1]) * s_dpr;
+                    const float mx = 0.5f * (x[0] + x[1]) * s_dpr - vpX();
+                    const float my = 0.5f * (y[0] + y[1]) * s_dpr - vpY();
                     s_pageView.panX = mx - f * (mx - s_pageView.panX);
                     s_pageView.panY = my - f * (my - s_pageView.panY);
                     s_pageView.zoom = zoom;
@@ -3083,8 +3452,7 @@ static bool fitCamera()
             bx::normalize(bx::cross(dir, bx::Vec3(0.0f, 0.0f, 1.0f)));
         const bx::Vec3 up = bx::normalize(bx::cross(right, dir));
         const bx::Vec3 c(s_center[0], s_center[1], s_center[2]);
-        const float aspect = s_height > 0
-            ? float(s_width) / float(s_height) : 1.0f;
+        const float aspect = vpH() > 0.0f ? vpW() / vpH() : 1.0f;
         const float tanV = std::tan(0.5f * kFovY * bx::kPi / 180.0f);
         const float invH = 1.0f / (tanV * aspect);   // per-lateral-unit distance
         const float invV = 1.0f / tanV;
@@ -5179,7 +5547,7 @@ static Render::RungRanker makeRanker()
     put(view.right, cam.right);
     put(view.up, cam.up);
     view.fovY = kFovY;
-    view.aspect = s_height > 0 ? float(s_width) / float(s_height) : 1.0f;
+    view.aspect = vpH() > 0.0f ? vpW() / vpH() : 1.0f;
 
     Render::LadderWeights weights;
     weights.acquire = s_fetchSizeWeight;
@@ -5293,7 +5661,7 @@ static void planIfStale(Render::SceneSnapshot &target)
     Render::PlanParams params;
     params.budgetBytes = geometryBudget();
     params.tolerancePx = s_lodPx;
-    params.viewportPx = float(s_height);
+    params.viewportPx = vpH();
     // Per-object grants for the executor's needed sets and the
     // per-instance draw binding (§7, "one rung per instance").
     params.objectErr = &s_objectErr;
