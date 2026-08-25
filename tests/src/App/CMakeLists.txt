@@ -59,15 +59,13 @@ add_test(NAME RestoreDrain_tests_run COMMAND RestoreDrain_tests_run)
 # then sat unbuilt in Tests_run for two years. Give them an executable of
 # their own, like the suites above, so they actually run.
 #
-# ElementMap.cpp is deliberately not in this list. It constructs
-# Data::ElementMap directly, which upstream declares in ElementMap.h but
-# this fork defines inside ElementMap.cpp as an implementation detail --
-# nothing outside that translation unit can name the type. Reviving that
-# suite means moving ~950 lines of class into a public header, which is a
-# decision about the fork's encapsulation, not a test fix. See
+# ElementMap.cpp drives the map through ComplexGeoData rather than
+# constructing Data::ElementMap, which this fork keeps inside its own
+# translation unit. See the comment at the top of that file, and
 # docs/UpstreamNameMap.md section 7.
 add_executable(Toponaming_tests_run
     ${CMAKE_CURRENT_SOURCE_DIR}/ComplexGeoData.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ElementMap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/IndexedName.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MappedElement.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MappedName.cpp

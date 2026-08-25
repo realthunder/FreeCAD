@@ -3,43 +3,101 @@
 #include "gtest/gtest.h"
 
 #include <App/Application.h>
+#include <App/ComplexGeoData.h>
 #include <App/ElementMap.h>
+#include <Base/BoundBox.h>
 #include <src/App/InitApplication.h>
 
 // NOLINTBEGIN(readability-magic-numbers)
 
+// This fork keeps class Data::ElementMap inside src/App/ElementMap.cpp, so no
+// other translation unit can name the type, let alone construct one. That is
+// deliberate: the map is reached through Data::ComplexGeoData, which owns it
+// and is the only thing that ever creates one.
+//
+// So this suite drives the map the way the rest of the codebase does, through
+// ComplexGeoData's public API. Every call below is a thin pass-through to the
+// ElementMap method of the same job -- setElementName -> ElementMap::addName,
+// getElementMappedNames -> findAll, setMappedChildElements -> addChildElements,
+// and so on -- so the coverage lands where it is meant to without the class
+// leaving its translation unit.
+//
+// Upstream's equivalent suite constructs Data::ElementMap directly, because
+// upstream moved setElementName and the hasher onto the map itself. See
+// docs/UpstreamNameMap.md section 7 for that divergence.
 
-// this is a "holder" class used for simpler testing of ElementMap in the context of a class
-class LessComplexPart
+namespace
+{
+
+/// The smallest concrete ComplexGeoData that can hold an element map.
+class ElementMapHost: public Data::ComplexGeoData
+{
+public:
+    explicit ElementMapHost(long tag = 0)
+    {
+        Tag = tag;
+    }
+
+    const std::vector<const char*>& getElementTypes() const override
+    {
+        static const std::vector<const char*> types {"Face", "Edge", "Vertex"};
+        return types;
+    }
+    unsigned long countSubElements(const char* Type) const override
+    {
+        (void)Type;
+        return 0;
+    }
+    Data::Segment* getSubElement(const char* Type, unsigned long number) const override
+    {
+        (void)Type;
+        (void)number;
+        return nullptr;
+    }
+    void setTransform(const Base::Matrix4D& rclTrf) override
+    {
+        (void)rclTrf;
+    }
+    Base::Matrix4D getTransform() const override
+    {
+        return {};
+    }
+    void transformGeometry(const Base::Matrix4D& rclMat) override
+    {
+        (void)rclMat;
+    }
+    Base::BoundBox3d getBoundBox() const override
+    {
+        return {};
+    }
+    bool isSame(const Data::ComplexGeoData& other) const override
+    {
+        return this == &other;
+    }
+};
+
+/// A stand-in for a real part: six faces, mapped to themselves, and a hasher.
+/// The faces are what the "mimic" cases below name against.
+class LessComplexPart: public ElementMapHost
 {
 public:
     LessComplexPart(long tag, const std::string& nameStr, App::StringHasherRef hasher)
-        : elementMapPtr(std::make_shared<Data::ElementMap>())
-        , Tag(tag)
+        : ElementMapHost(tag)
         , name(nameStr)
     {
-        // object also have Vertexes etc and the face count varies; but that is not important
-        // here since we are not testing a real model
-        // the "MappedName" is left blank for now
-        Data::IndexedName face1("Face", 1);
-        Data::IndexedName face2("Face", 2);
-        Data::IndexedName face3("Face", 3);
-        Data::IndexedName face4("Face", 4);
-        Data::IndexedName face5("Face", 5);
-        Data::IndexedName face6("Face", 6);
-        elementMapPtr->hasher = hasher;
-        elementMapPtr->setElementName(face1, Data::MappedName(face1), Tag);
-        elementMapPtr->setElementName(face2, Data::MappedName(face2), Tag);
-        elementMapPtr->setElementName(face3, Data::MappedName(face3), Tag);
-        elementMapPtr->setElementName(face4, Data::MappedName(face4), Tag);
-        elementMapPtr->setElementName(face5, Data::MappedName(face5), Tag);
-        elementMapPtr->setElementName(face6, Data::MappedName(face6), Tag);
+        Hasher = hasher;
+        // A part also has vertexes and so on, and the face count varies; that is
+        // not important here because this is not a real model.
+        for (int i = 1; i <= 6; ++i) {
+            Data::IndexedName face("Face", i);
+            setElementName(face, Data::MappedName(face));
+        }
     }
 
-    Data::ElementMapPtr elementMapPtr;
-    mutable long Tag;
     Data::MappedName name;
 };
+
+}  // namespace
 
 class ElementMapTest: public ::testing::Test
 {
@@ -72,22 +130,22 @@ protected:
 TEST_F(ElementMapTest, defaultConstruction)
 {
     // Act
-    Data::ElementMap elementMap = Data::ElementMap();
+    ElementMapHost elementMap;
 
     // Assert
-    EXPECT_EQ(elementMap.size(), 0);
+    EXPECT_EQ(elementMap.getElementMapSize(), 0);
 }
 
 TEST_F(ElementMapTest, setElementNameDefaults)
 {
     // Arrange
-    Data::ElementMap elementMap;
+    ElementMapHost elementMap;
     Data::IndexedName element("Edge", 1);
     Data::MappedName mappedName("TEST");
 
     // Act
-    auto resultName = elementMap.setElementName(element, mappedName, 0);
-    auto mappedToElement = elementMap.find(element);
+    auto resultName = elementMap.setElementName(element, mappedName);
+    auto mappedToElement = elementMap.getMappedName(element);
 
     // Assert
     EXPECT_EQ(resultName, mappedName);
@@ -97,16 +155,16 @@ TEST_F(ElementMapTest, setElementNameDefaults)
 TEST_F(ElementMapTest, setElementNameNoOverwrite)
 {
     // Arrange
-    Data::ElementMap elementMap;
+    ElementMapHost elementMap;
     Data::IndexedName element("Edge", 1);
     Data::MappedName mappedName("TEST");
     Data::MappedName anotherMappedName("ANOTHERTEST");
 
     // Act
-    auto resultName = elementMap.setElementName(element, mappedName, 0);
-    auto resultName2 = elementMap.setElementName(element, anotherMappedName, 0, _sids, false);
-    auto mappedToElement = elementMap.find(element);
-    auto findAllResult = elementMap.findAll(element);
+    auto resultName = elementMap.setElementName(element, mappedName);
+    auto resultName2 = elementMap.setElementName(element, anotherMappedName, _sids, false);
+    auto mappedToElement = elementMap.getMappedName(element);
+    auto findAllResult = elementMap.getElementMappedNames(element);
 
     // Assert
     EXPECT_EQ(resultName, mappedName);
@@ -120,16 +178,16 @@ TEST_F(ElementMapTest, setElementNameNoOverwrite)
 TEST_F(ElementMapTest, setElementNameWithOverwrite)
 {
     // Arrange
-    Data::ElementMap elementMap;
+    ElementMapHost elementMap;
     Data::IndexedName element("Edge", 1);
     Data::MappedName mappedName("TEST");
     Data::MappedName anotherMappedName("ANOTHERTEST");
 
     // Act
-    auto resultName = elementMap.setElementName(element, mappedName, 0);
-    auto resultName2 = elementMap.setElementName(element, anotherMappedName, 0, _sids, true);
-    auto mappedToElement = elementMap.find(element);
-    auto findAllResult = elementMap.findAll(element);
+    auto resultName = elementMap.setElementName(element, mappedName);
+    auto resultName2 = elementMap.setElementName(element, anotherMappedName, _sids, true);
+    auto mappedToElement = elementMap.getMappedName(element);
+    auto findAllResult = elementMap.getElementMappedNames(element);
 
     // Assert
     EXPECT_EQ(resultName, mappedName);
@@ -142,89 +200,59 @@ TEST_F(ElementMapTest, setElementNameWithOverwrite)
 TEST_F(ElementMapTest, setElementNameWithHashing)
 {
     // Arrange
-    Data::ElementMap elementMap;
+    ElementMapHost elementMap;
     std::ostringstream ss;
     Data::IndexedName element("Edge", 1);
     Data::MappedName elementNameHolder(element);  // Will get modified by the encoder
     const Data::MappedName expectedName(element);
 
     // Act
-    elementMap
-        .encodeElementName(element.getType()[0], elementNameHolder, ss, nullptr, 0, nullptr, 0);
-    auto resultName = elementMap.setElementName(element, elementNameHolder, 0, _sids);
-    auto mappedToElement = elementMap.find(element);
+    elementMap.encodeElementName(element.getType()[0], elementNameHolder, ss, nullptr, nullptr, 0);
+    auto resultName = elementMap.setElementName(element, elementNameHolder, _sids);
+    auto mappedToElement = elementMap.getMappedName(element);
 
     // Assert
     EXPECT_EQ(resultName, expectedName);
     EXPECT_EQ(mappedToElement, expectedName);
 }
 
-TEST_F(ElementMapTest, eraseMappedName)
-{
-    // Arrange
-    Data::ElementMap elementMap;
-    Data::IndexedName element("Edge", 1);
-    Data::MappedName mappedName("TEST");
-    Data::MappedName anotherMappedName("ANOTHERTEST");
-    elementMap.setElementName(element, mappedName, 0);
-    elementMap.setElementName(element, anotherMappedName, 0);
-
-    // Act
-    auto sizeBefore = elementMap.size();
-    auto findAllBefore = elementMap.findAll(element);
-
-    elementMap.erase(anotherMappedName);
-    auto sizeAfter = elementMap.size();
-    auto findAllAfter = elementMap.findAll(element);
-
-    elementMap.erase(anotherMappedName);
-    auto sizeAfterRepeat = elementMap.size();
-    auto findAllAfterRepeat = elementMap.findAll(element);
-
-    // Assert
-    EXPECT_EQ(sizeBefore, 2);
-    EXPECT_EQ(findAllBefore.size(), 2);
-    EXPECT_EQ(findAllBefore[0].first, mappedName);
-    EXPECT_EQ(findAllBefore[1].first, anotherMappedName);
-
-    EXPECT_EQ(sizeAfter, 1);
-    EXPECT_EQ(findAllAfter.size(), 1);
-    EXPECT_EQ(findAllAfter[0].first, mappedName);
-
-    EXPECT_EQ(sizeAfterRepeat, 1);
-    EXPECT_EQ(findAllAfterRepeat.size(), 1);
-    EXPECT_EQ(findAllAfterRepeat[0].first, mappedName);
-}
+// Upstream's eraseMappedName case is not ported. It calls
+// Data::ElementMap::erase(const MappedName&), which drops one of an element's
+// several mapped names. This fork exposes no public equivalent: passing an
+// empty MappedName to ComplexGeoData::setElementName erases the whole indexed
+// name, which is what eraseIndexedName below covers, and setElementMap rebuilds
+// the map rather than erasing from it. See docs/UpstreamNameMap.md section 7.
 
 TEST_F(ElementMapTest, eraseIndexedName)
 {
     // Arrange
     // Create two elements, edge1 and edge2, that have two mapped names each.
-    Data::ElementMap elementMap;
+    ElementMapHost elementMap;
 
     Data::IndexedName element("Edge", 1);
     Data::MappedName mappedName("TEST");
     Data::MappedName anotherMappedName("ANOTHERTEST");
-    elementMap.setElementName(element, mappedName, 0);
-    elementMap.setElementName(element, anotherMappedName, 0);
+    elementMap.setElementName(element, mappedName);
+    elementMap.setElementName(element, anotherMappedName);
 
     Data::IndexedName element2("Edge", 2);
     Data::MappedName mappedName2("TEST2");
     Data::MappedName anotherMappedName2("ANOTHERTEST2");
-    elementMap.setElementName(element2, mappedName2, 0);
-    elementMap.setElementName(element2, anotherMappedName2, 0);
+    elementMap.setElementName(element2, mappedName2);
+    elementMap.setElementName(element2, anotherMappedName2);
 
     // Act
-    auto sizeBefore = elementMap.size();
-    auto findAllBefore = elementMap.findAll(element2);
+    auto sizeBefore = elementMap.getElementMapSize();
+    auto findAllBefore = elementMap.getElementMappedNames(element2);
 
-    elementMap.erase(element2);
-    auto sizeAfter = elementMap.size();
-    auto findAllAfter = elementMap.findAll(element2);
+    // An empty mapped name erases the indexed name.
+    elementMap.setElementName(element2, Data::MappedName());
+    auto sizeAfter = elementMap.getElementMapSize();
+    auto findAllAfter = elementMap.getElementMappedNames(element2);
 
-    elementMap.erase(element2);
-    auto sizeAfterRepeat = elementMap.size();
-    auto findAllAfterRepeat = elementMap.findAll(element2);
+    elementMap.setElementName(element2, Data::MappedName());
+    auto sizeAfterRepeat = elementMap.getElementMapSize();
+    auto findAllAfterRepeat = elementMap.getElementMappedNames(element2);
 
     // Assert
     EXPECT_EQ(sizeBefore, 4);
@@ -243,23 +271,23 @@ TEST_F(ElementMapTest, findMappedName)
 {
     // Arrange
     // Create two elements, edge1 and edge2, that have two mapped names each.
-    Data::ElementMap elementMap;
+    ElementMapHost elementMap;
 
     Data::IndexedName element("Edge", 1);
     Data::MappedName mappedName("TEST");
     Data::MappedName anotherMappedName("ANOTHERTEST");
-    elementMap.setElementName(element, mappedName, 0);
-    elementMap.setElementName(element, anotherMappedName, 0);
+    elementMap.setElementName(element, mappedName);
+    elementMap.setElementName(element, anotherMappedName);
 
     Data::IndexedName element2("Edge", 2);
     Data::MappedName mappedName2("TEST2");
     Data::MappedName anotherMappedName2("ANOTHERTEST2");
-    elementMap.setElementName(element2, mappedName2, 0);
-    elementMap.setElementName(element2, anotherMappedName2, 0);
+    elementMap.setElementName(element2, mappedName2);
+    elementMap.setElementName(element2, anotherMappedName2);
 
     // Act
-    auto findResult = elementMap.find(mappedName);
-    auto findResult2 = elementMap.find(mappedName2);
+    auto findResult = elementMap.getIndexedName(mappedName);
+    auto findResult2 = elementMap.getIndexedName(mappedName2);
 
     // Assert
     EXPECT_EQ(findResult, element);
@@ -270,24 +298,24 @@ TEST_F(ElementMapTest, findIndexedName)
 {
     // Arrange
     // Create two elements, edge1 and edge2, that have two mapped names each.
-    Data::ElementMap elementMap;
+    ElementMapHost elementMap;
 
     Data::IndexedName element("Edge", 1);
     Data::MappedName mappedName("TEST");
     Data::MappedName anotherMappedName("ANOTHERTEST");
-    elementMap.setElementName(element, mappedName, 0);
-    elementMap.setElementName(element, anotherMappedName, 0);
+    elementMap.setElementName(element, mappedName);
+    elementMap.setElementName(element, anotherMappedName);
 
     Data::IndexedName element2("Edge", 2);
     Data::MappedName mappedName2("TEST2");
     Data::MappedName anotherMappedName2("ANOTHERTEST2");
-    elementMap.setElementName(element2, mappedName2, 0);
-    elementMap.setElementName(element2, anotherMappedName2, 0);
+    elementMap.setElementName(element2, mappedName2);
+    elementMap.setElementName(element2, anotherMappedName2);
 
     // Act
     // they return the first mapped name
-    auto findResult = elementMap.find(element);
-    auto findResult2 = elementMap.find(element2);
+    auto findResult = elementMap.getMappedName(element);
+    auto findResult2 = elementMap.getMappedName(element2);
 
     // Assert
     EXPECT_EQ(findResult, mappedName);
@@ -298,24 +326,23 @@ TEST_F(ElementMapTest, findAll)
 {
     // Arrange
     // Create two elements, edge1 and edge2, that have two mapped names each.
-    Data::ElementMap elementMap;
+    ElementMapHost elementMap;
 
     Data::IndexedName element("Edge", 1);
     Data::MappedName mappedName("TEST");
     Data::MappedName anotherMappedName("ANOTHERTEST");
-    elementMap.setElementName(element, mappedName, 0);
-    elementMap.setElementName(element, anotherMappedName, 0);
+    elementMap.setElementName(element, mappedName);
+    elementMap.setElementName(element, anotherMappedName);
 
     Data::IndexedName element2("Edge", 2);
     Data::MappedName mappedName2("TEST2");
     Data::MappedName anotherMappedName2("ANOTHERTEST2");
-    elementMap.setElementName(element2, mappedName2, 0);
-    elementMap.setElementName(element2, anotherMappedName2, 0);
+    elementMap.setElementName(element2, mappedName2);
+    elementMap.setElementName(element2, anotherMappedName2);
 
     // Act
-    // they return the first mapped name
-    auto findResult = elementMap.findAll(element);
-    auto findResult2 = elementMap.findAll(element2);
+    auto findResult = elementMap.getElementMappedNames(element);
+    auto findResult2 = elementMap.getElementMappedNames(element2);
 
     // Assert
     EXPECT_EQ(findResult.size(), 2);
@@ -336,9 +363,8 @@ TEST_F(ElementMapTest, mimicOnePart)
     LessComplexPart cube(1L, "Box", _hasher);
 
     // Act
-    auto children = cube.elementMapPtr->getAll();
-    ss << docName << "#" << cube.name << "."
-       << cube.elementMapPtr->find(Data::IndexedName("Face", 6));
+    auto children = cube.getElementMap();
+    ss << docName << "#" << cube.name << "." << cube.getMappedName(Data::IndexedName("Face", 6));
 
     // Assert
     EXPECT_EQ(children.size(), 6);
@@ -363,7 +389,7 @@ TEST_F(ElementMapTest, mimicSimpleUnion)
     //   pattern: new doc, create Cube, create Cylinder, Union of both (Cube first)
     std::ostringstream ss;
     std::ostringstream finalSs;
-    char* docName = "Unnamed";
+    const char* docName = "Unnamed";
 
     LessComplexPart cube(1L, "Box", _hasher);
     LessComplexPart cylinder(2L, "Cylinder", _hasher);
@@ -376,42 +402,32 @@ TEST_F(ElementMapTest, mimicSimpleUnion)
 
     // Act
     //   act: simulate a union/fuse operation
-    auto parent = cube.elementMapPtr->getAll()[5];
-    Data::MappedName postfixHolder(std::string(Data::POSTFIX_MOD) + "2");
-    unionPart.elementMapPtr->encodeElementName(postfixHolder[0],
-                                               postfixHolder,
-                                               ss,
-                                               nullptr,
-                                               unionPart.Tag,
-                                               nullptr,
-                                               unionPart.Tag);
-    auto postfixStr = postfixHolder.toString() + Data::ELEMENT_MAP_PREFIX + PartOp;
+    auto parent = cube.getElementMap()[5];
+    Data::MappedName postfixHolder(Data::modPostfix() + "2");
+    unionPart.encodeElementName(postfixHolder[0], postfixHolder, ss, nullptr, nullptr,
+                                unionPart.Tag);
+    auto postfixStr = postfixHolder.toString() + Data::elementMapPrefix() + PartOp;
 
     //   act: with the fuse op, name against the cube's Face6
     Data::MappedName uface3Holder(parent.index);
     // we will invoke the encoder for face 3
-    unionPart.elementMapPtr->encodeElementName(uface3Holder[0],
-                                               uface3Holder,
-                                               ss,
-                                               nullptr,
-                                               unionPart.Tag,
-                                               postfixStr.c_str(),
-                                               cube.Tag);
-    unionPart.elementMapPtr->setElementName(uface3, uface3Holder, unionPart.Tag, nullptr, true);
+    unionPart.encodeElementName(uface3Holder[0], uface3Holder, ss, nullptr, postfixStr.c_str(),
+                                cube.Tag);
+    unionPart.setElementName(uface3, uface3Holder, nullptr, true);
 
     // act: generate a full toponame string for testing  purposes
     finalSs << docName << "#" << unionPart.name;
     finalSs << ".";
-    finalSs << Data::ELEMENT_MAP_PREFIX + unionPart.elementMapPtr->find(uface3).toString();
+    finalSs << Data::elementMapPrefix() + unionPart.getMappedName(uface3).toString();
     finalSs << ".";
     finalSs << uface3;
 
     // Assert
     EXPECT_EQ(postfixStr, ":M2;FUS");
-    EXPECT_EQ(unionPart.elementMapPtr->find(uface3).toString(), "Face6;:M2;FUS;:H1:8,F");
+    EXPECT_EQ(unionPart.getMappedName(uface3).toString(), "Face6;:M2;FUS;:H1:8,F");
     EXPECT_EQ(finalSs.str(), "Unnamed#Fusion.;Face6;:M2;FUS;:H1:8,F.Face3");
 
-    // explanation of "Fusion.;Face6;:M2;FUS;:H2:3,F.Face3" toponame
+    // explanation of "Fusion.;Face6;:M2;FUS;:H2:3,F" toponame
     // Note: every postfix is prefixed by semicolon
     // Note: the start/middle/end are separated by periods
     //
@@ -436,35 +452,25 @@ TEST_F(ElementMapTest, mimicOperationAgainstSelf)
     // we are only going to simulate one face for testing purpose
     Data::IndexedName uface3("Face", 3);
     auto PartOp = "MYS";
-    auto ownFace6 = finalPart.elementMapPtr->getAll()[5];
+    auto ownFace6 = finalPart.getElementMap()[5];
     Data::MappedName uface3Holder(ownFace6.index);
-    auto workbenchId = std::string(Data::POSTFIX_MOD) + "9999";
+    auto workbenchId = Data::modPostfix() + "9999";
 
     // Act
     //   act: with the mystery op, name against its own Face6 for some reason
     Data::MappedName postfixHolder(workbenchId);
-    finalPart.elementMapPtr->encodeElementName(postfixHolder[0],
-                                               postfixHolder,
-                                               ss,
-                                               nullptr,
-                                               finalPart.Tag,
-                                               nullptr,
-                                               finalPart.Tag);
-    auto postfixStr = postfixHolder.toString() + Data::ELEMENT_MAP_PREFIX + PartOp;
+    finalPart.encodeElementName(postfixHolder[0], postfixHolder, ss, nullptr, nullptr,
+                                finalPart.Tag);
+    auto postfixStr = postfixHolder.toString() + Data::elementMapPrefix() + PartOp;
     // we will invoke the encoder for face 3
-    finalPart.elementMapPtr->encodeElementName(uface3Holder[0],
-                                               uface3Holder,
-                                               ss,
-                                               nullptr,
-                                               finalPart.Tag,
-                                               postfixStr.c_str(),
-                                               finalPart.Tag);
+    finalPart.encodeElementName(uface3Holder[0], uface3Holder, ss, nullptr, postfixStr.c_str(),
+                                finalPart.Tag);
     // override not forced
-    finalPart.elementMapPtr->setElementName(uface3, uface3Holder, finalPart.Tag, nullptr, false);
+    finalPart.setElementName(uface3, uface3Holder, nullptr, false);
 
     // Assert
     EXPECT_EQ(postfixStr, ":M9999;MYS");
-    EXPECT_EQ(finalPart.elementMapPtr->find(uface3).toString(), "Face3");  // override not forced
+    EXPECT_EQ(finalPart.getMappedName(uface3).toString(), "Face3");  // override not forced
     EXPECT_EQ(uface3Holder.toString(), "Face6;:M9999;MYS;:H63:b,F");
     // explaining ";Face6;:M2;MYS;:H2:3,F" name:
     //
@@ -479,17 +485,17 @@ TEST_F(ElementMapTest, mimicOperationAgainstSelf)
 TEST_F(ElementMapTest, hasChildElementMapTest)
 {
     // Arrange
-    Data::ElementMap::MappedChildElements child =
+    Data::MappedChildElements child =
         {Data::IndexedName("face", 1), 2, 7, 4L, Data::ElementMapPtr(), QByteArray(""), _sid};
-    std::vector<Data::ElementMap::MappedChildElements> children = {child};
+    std::vector<Data::MappedChildElements> children = {child};
     LessComplexPart cubeFull(3L, "FullBox", _hasher);
-    cubeFull.elementMapPtr->addChildElements(cubeFull.Tag, children);
+    cubeFull.setMappedChildElements(children);
     //
     LessComplexPart cubeWithoutChildren(2L, "EmptyBox", _hasher);
 
     // Act
-    bool resultFull = cubeFull.elementMapPtr->hasChildElementMap();
-    bool resultWhenEmpty = cubeWithoutChildren.elementMapPtr->hasChildElementMap();
+    bool resultFull = cubeFull.hasChildElementMap();
+    bool resultWhenEmpty = cubeWithoutChildren.hasChildElementMap();
 
     // Assert
     EXPECT_TRUE(resultFull);
@@ -501,7 +507,7 @@ TEST_F(ElementMapTest, hashChildMapsTest)
     // Arrange
     LessComplexPart cube(1L, "Box", _hasher);
     auto childOneName = Data::IndexedName("Ping", 1);
-    Data::ElementMap::MappedChildElements childOne = {
+    Data::MappedChildElements childOne = {
         childOneName,
         2,
         7,
@@ -509,12 +515,12 @@ TEST_F(ElementMapTest, hashChildMapsTest)
         Data::ElementMapPtr(),
         QByteArray("abcdefghij"),  // postfix must be 10 or more bytes to invoke hasher
         _sid};
-    std::vector<Data::ElementMap::MappedChildElements> children = {childOne};
-    cube.elementMapPtr->addChildElements(cube.Tag, children);
+    std::vector<Data::MappedChildElements> children = {childOne};
+    cube.setMappedChildElements(children);
     auto before = _hasher->getIDMap();
 
     // Act
-    cube.elementMapPtr->hashChildMaps(cube.Tag);
+    cube.hashChildMaps();
 
     // Assert
     auto after = _hasher->getIDMap();
@@ -526,7 +532,7 @@ TEST_F(ElementMapTest, addAndGetChildElementsTest)
 {
     // Arrange
     LessComplexPart cube(1L, "Box", _hasher);
-    Data::ElementMap::MappedChildElements childOne = {
+    Data::MappedChildElements childOne = {
         Data::IndexedName("Ping", 1),
         2,
         7,
@@ -534,24 +540,22 @@ TEST_F(ElementMapTest, addAndGetChildElementsTest)
         Data::ElementMapPtr(),
         QByteArray("abcdefghij"),  // postfix must be 10 or more bytes to invoke hasher
         _sid};
-    Data::ElementMap::MappedChildElements childTwo =
+    Data::MappedChildElements childTwo =
         {Data::IndexedName("Pong", 2), 2, 7, 4L, Data::ElementMapPtr(), QByteArray("abc"), _sid};
-    std::vector<Data::ElementMap::MappedChildElements> children = {childOne, childTwo};
+    std::vector<Data::MappedChildElements> children = {childOne, childTwo};
 
     // Act
-    cube.elementMapPtr->addChildElements(cube.Tag, children);
-    auto result = cube.elementMapPtr->getChildElements();
+    cube.setMappedChildElements(children);
+    auto result = cube.getMappedChildElements();
 
     // Assert
     EXPECT_EQ(result.size(), 2);
-    EXPECT_TRUE(
-        std::any_of(result.begin(), result.end(), [](Data::ElementMap::MappedChildElements e) {
-            return e.indexedName.toString() == "Ping1";
-        }));
-    EXPECT_TRUE(
-        std::any_of(result.begin(), result.end(), [](Data::ElementMap::MappedChildElements e) {
-            return e.indexedName.toString() == "Pong2";
-        }));
+    EXPECT_TRUE(std::any_of(result.begin(), result.end(), [](const Data::MappedChildElements& e) {
+        return e.indexedName.toString() == "Ping1";
+    }));
+    EXPECT_TRUE(std::any_of(result.begin(), result.end(), [](const Data::MappedChildElements& e) {
+        return e.indexedName.toString() == "Pong2";
+    }));
 }
 
 // NOLINTEND(readability-magic-numbers)

@@ -184,7 +184,7 @@ port them, and do not port a hunk that depends on them.**
    APPLIES are confirmed and can go in without waiting for the suite;
    `41d1aed844` is standalone and is the cheapest first.
 
-## 7. Open: Data::ElementMap is opaque here
+## 7. Data::ElementMap is opaque here, and stays that way
 
 Upstream declares `class ElementMap` in `src/App/ElementMap.h`, so anything
 can construct one. This fork declares only `class ElementMap;` there and
@@ -192,28 +192,61 @@ defines the class -- about 950 lines, lines 250 to 1202 -- inside
 `src/App/ElementMap.cpp`. Nothing outside that translation unit can name the
 type; every user goes through `ComplexGeoData`.
 
+**Ruling, 2026-08-25: the internals stay out of the header.** Moving ~950
+lines of a hot implementation class into a widely included header, to serve
+tests, was rejected. It is an encapsulation this fork means to keep.
+
 That is an encapsulation difference, not a naming one, and the name map does
 not translate it. It has two consequences for the harvest:
 
-- `tests/src/App/ElementMap.cpp` (557 lines) cannot be revived as written.
-  It constructs `Data::ElementMap` directly in most of its cases. It is
-  therefore **not** in the `Toponaming_tests_run` target.
 - Any ported hunk that names `Data::ElementMap` outside `ElementMap.cpp`
   needs rerouting through `ComplexGeoData`'s public API first.
+- Upstream's `tests/src/App/ElementMap.cpp` constructs the map directly in
+  every case, because upstream moved `setElementName` and the hasher *onto*
+  the map. Here `setElementName` is still `ComplexGeoData`'s -- upstream's own
+  header says so: "The original function was in the context of
+  ComplexGeoData, which provided `Tag` access, now you must pass in
+  `long masterTag` explicitly."
 
-Where the upstream test only wanted a *populated map* rather than the class
-itself, rerouting is mechanical and was done: `ComplexGeoData::setElementName`
-creates the map on first use, and `resetElementMap()` with no argument swaps
-the current map out and returns it. That is how the ComplexGeoData suite was
-revived without touching the fork's encapsulation.
+### How the suite was revived anyway
 
-**The decision this leaves open** is whether to move the class into the
-header. In favour: it restores direct coverage of the fork's least-tested
-core type and makes future upstream hunks drop in. Against: it is a ~950-line
-move out of a hot translation unit into a widely included header, it exposes
-internals that are currently free to change, and it is a refactor of exactly
-the subsystem the harvest is trying to test -- doing it before the tests
-exist inverts the safety net. Not started; awaiting a ruling.
+Rerouting turned out to cover the whole thing. Every member the upstream
+suite touches has a public `ComplexGeoData` wrapper that is a thin
+pass-through to the `ElementMap` method of the same job, so the coverage
+lands where it is meant to:
+
+| upstream, on `ElementMap` | here, on `ComplexGeoData` |
+|---------------------------|---------------------------|
+| `setElementName(idx, name, masterTag, sids, overwrite)` | `setElementName(idx, name, sids, overwrite)`, tag taken from `Tag` |
+| `find(IndexedName)` | `getMappedName` |
+| `find(MappedName)` | `getIndexedName` |
+| `findAll` | `getElementMappedNames` |
+| `size` | `getElementMapSize` |
+| `getAll` | `getElementMap` |
+| `erase(IndexedName)` | `setElementName(idx, MappedName())` -- an empty name erases |
+| `addChildElements(tag, children)` | `setMappedChildElements(children)` |
+| `getChildElements` | `getMappedChildElements` |
+| `hasChildElementMap` | same name |
+| `hashChildMaps(tag)` | `hashChildMaps()` |
+| `encodeElementName(type, name, ss, sids, masterTag, postfix, tag)` | `encodeElementName(type, name, ss, sids, postfix, tag)` |
+| `elementMap->hasher` | the `Hasher` member of `ComplexGeoData` |
+| `Data::ElementMap::MappedChildElements` | `Data::MappedChildElements`, same seven fields in the same order |
+
+The suite's `LessComplexPart` holder becomes a small concrete
+`ComplexGeoData` subclass instead of a class holding an `ElementMapPtr`,
+which is closer to how the map is really used.
+
+**15 of upstream's 16 cases port and pass**, including
+`mimicSimpleUnion`, which asserts the exact encoded name
+`Face6;:M2;FUS;:H1:8,F` -- so this fork's encoder agrees with upstream's
+expectation character for character.
+
+The one case that does not port is `eraseMappedName`, which calls
+`ElementMap::erase(const MappedName&)` to drop one of an element's several
+mapped names. There is no public equivalent: an empty `MappedName` erases the
+whole indexed name (that is `eraseIndexedName`, which is covered), and
+`setElementMap` rebuilds the map rather than erasing from it. Left out, with
+a comment in the file saying why.
 
 ## 8. Phase 3 result: the harvest list
 
