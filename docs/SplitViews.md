@@ -1058,3 +1058,67 @@ Consequences for the ladder:
   (`BGFXView::submitTessellation`), and `applyOverrideMode()` already
   refuses Coin's `HIDDEN_LINE` whenever a renderer exists, so the Coin
   half is dead code on the default configuration.
+
+## 16. D3 implementation notes: per-cell chrome (2026-08-26)
+
+### 16.1 Widget chrome already stacks above the canvas -- measured
+
+13.4 named "widget-over-GL stacking" as a risk for D2+, and 14.5 read
+the invisible active-cell border as evidence of it. **It is not a
+risk: plain child widgets of a cell paint above the canvas.**
+
+Measured (`d3b.py`, RTX 3060 under Xvfb): the 16x16
+`ViewAreaMenuButton` at each cell's top-left draws 221 and 218 ink
+pixels over its local background with the canvas ON, and 218/218 with
+it OFF. Same picture either way -- Qt composites the plain child over
+the QOpenGLWidget sibling exactly as it does over the child
+View3DInventor.
+
+So the zones, the menu button and the join overlays need nothing, and
+per-cell chrome that CAN be a widget should stay one. Only content the
+backend owns (the NaviCube, the axis cross) needs the per-bank work in
+16.2.
+
+### 16.2 The active-cell border was never visible on EITHER path
+
+Chasing the border turned up a defect older than the canvas.
+`ViewAreaCell::paintEvent` drew it on the cell itself -- but the cell's
+layout has zero contents margins and the child view fills it, and the
+child is painted over its parent. **The border has always been drawn
+underneath the child view.** The canvas did not hide it; the canvas
+just made it noticeable, because 14.5 went looking for it.
+
+The fix follows 16.1: `ViewAreaHighlight`, a raised child widget of the
+cell, drawn over the child view and over the canvas alike -- one
+implementation for both paths instead of a GL one for the canvas and a
+Qt one for widget composition.
+
+- **Masked to the ring.** The widget is sized to the whole cell, then
+  `setMask`ed to the 1px border. It therefore overlaps the GL surface
+  by only the pixels it draws, rather than laying a full-cell
+  translucent widget over it. The mask is in local coordinates, so
+  `refit()` re-cuts it on every resize.
+- **`WA_TransparentForMouseEvents`**, or a full-cell child would eat
+  every press before the cell's filter forwarded it.
+- **Raised UNDER the zones and the menu button** (`hostView` raises it
+  first), so a corner grip stays whole where the ring crosses it.
+- **Activation repaints the widget, not the cell.**
+  `ViewArea::setActiveCell` called `old->update()` / `cell->update()`,
+  which now repaints everything except the thing that changed;
+  `updateHighlight()` replaces both.
+- **A cellCount change rides the resize.** The border is suppressed
+  below two cells; a join resizes the survivor and a split resizes
+  both, so `resizeEvent` -> `refit()` + `update()` covers the
+  transition without a separate hook.
+
+Verified (`d3a.py`, real GPU): sampling 12 points around each cell's
+border ring against the palette Highlight colour the cell itself
+reads -- active cell 12/12, inactive 0/12, with the canvas ON; the
+highlight follows a click to the other cell (0/12 and 12/12 after);
+and with the canvas OFF the same samples read 12/12 and 0/12, so
+`paths-agree-active` and `paths-agree-inactive` are both true. Before
+this change the canvas-OFF leg read 0/12 on the ACTIVE cell -- the
+defect above, caught by the smoke rather than assumed.
+
+Regression: `canvas.py` and `mixed.py` (the D2 smokes) both reproduce
+their sec 14 baselines line for line.

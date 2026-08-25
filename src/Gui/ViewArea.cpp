@@ -118,6 +118,64 @@ private:
     bool _hover = false;
 };
 
+/** The active cell's border, drawn as a widget rather than as paint on
+ * the cell itself.
+ *
+ * The cell's own paintEvent cannot show this. Its layout has zero
+ * margins and the child view fills it, so the border was painted
+ * UNDERNEATH the child and never seen on widget composition; and on the
+ * unified canvas the GL sibling covers the cell's backing store as well
+ * (docs/SplitViews.md sec 13.4). A raised child widget is drawn over
+ * both -- measured, sec 16.1 -- which makes this the one implementation
+ * that serves the canvas and widget composition alike.
+ *
+ * Masked to the border ring, so although it is sized to the whole cell
+ * it overlaps the GL surface by only the pixels it draws.
+ */
+class ViewAreaHighlight : public QWidget
+{
+public:
+    static constexpr int Width = 1;
+
+    explicit ViewAreaHighlight(ViewAreaCell *cell)
+        : QWidget(cell)
+        , _cell(cell)
+    {
+        // No Q_OBJECT here (the class lives in this .cpp), so the object
+        // name is what tests can find it by -- as for the menu button.
+        setObjectName(QStringLiteral("ViewAreaHighlight"));
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+        setFocusPolicy(Qt::NoFocus);
+    }
+
+    /// Re-fit to the cell and re-cut the ring mask. Call on every cell
+    /// resize; the mask is in local coordinates, so it does not survive
+    /// a size change.
+    void refit()
+    {
+        setGeometry(_cell->rect());
+        setMask(QRegion(rect())
+                - QRegion(rect().adjusted(Width, Width, -Width, -Width)));
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        ViewArea *area = _cell->area();
+        if (!area || area->activeCell() != _cell || area->cellCount() < 2)
+            return;
+        QPainter p(this);
+        QPen pen(palette().color(QPalette::Highlight));
+        pen.setWidth(Width);
+        p.setPen(pen);
+        p.drawRect(rect().adjusted(0, 0, -Width, -Width));
+    }
+
+private:
+    ViewAreaCell *_cell;
+};
+
 } // namespace Gui
 
 namespace {
@@ -275,9 +333,18 @@ ViewAreaCell::ViewAreaCell(ViewArea *area)
     _zoneTopRight = new ViewAreaZone(this, ViewAreaZone::TopRight);
     _zoneBottomLeft = new ViewAreaZone(this, ViewAreaZone::BottomLeft);
     _menuButton = new ViewAreaMenuButton(this);
+    _highlight = new ViewAreaHighlight(this);
 }
 
 ViewAreaCell::~ViewAreaCell() = default;
+
+void ViewAreaCell::updateHighlight()
+{
+    // Re-fit as well as repaint: the mask is in local coordinates and a
+    // resize this cell never saw would leave it cut for the old size.
+    _highlight->refit();
+    _highlight->update();
+}
 
 void ViewAreaCell::hostView(MDIView *view)
 {
@@ -307,6 +374,7 @@ void ViewAreaCell::hostView(MDIView *view)
         if (self)
             area->childViewGone(self);
     });
+    _highlight->raise();
     _zoneTopRight->raise();
     _zoneBottomLeft->raise();
     _menuButton->raise();
@@ -321,6 +389,8 @@ void ViewAreaCell::resizeEvent(QResizeEvent *ev)
     _zoneBottomLeft->setGeometry(0, height() - z, z, z);
     _menuButton->setGeometry(0, 0, ViewAreaMenuButton::Size,
                              ViewAreaMenuButton::Size);
+    _highlight->refit();
+    _highlight->update();
 }
 
 MDIView *ViewAreaCell::releaseView()
@@ -360,14 +430,10 @@ void ViewAreaCell::childEvent(QChildEvent *ev)
 
 void ViewAreaCell::paintEvent(QPaintEvent *ev)
 {
+    // The active-cell border is NOT drawn here: the child view fills the
+    // cell and is painted over it, so nothing drawn on the cell itself
+    // is ever seen. ViewAreaHighlight, a raised child, carries it.
     QWidget::paintEvent(ev);
-    if (_area && _area->activeCell() == this && _area->cellCount() > 1) {
-        QPainter p(this);
-        QPen pen(palette().color(QPalette::Highlight));
-        pen.setWidth(1);
-        p.setPen(pen);
-        p.drawRect(rect().adjusted(0, 0, -1, -1));
-    }
 }
 
 void ViewAreaCell::showCellMenu(const QPoint &globalPos)
@@ -1081,10 +1147,12 @@ void ViewArea::setActiveCell(ViewAreaCell *cell, bool activateWindow)
     if (_activeCell != cell) {
         auto old = _activeCell;
         _activeCell = cell;
+        // The border lives on a child widget, so updating the cell
+        // alone would repaint everything except the thing that changed.
         if (old)
-            old->update();
+            old->updateHighlight();
         if (cell)
-            cell->update();
+            cell->updateHighlight();
         // The unified canvas feeds its backend from the ACTIVE cell, so
         // the Coin residue -- draggers above all -- lands where the
         // user is working (docs/SplitViews.md sec 13).

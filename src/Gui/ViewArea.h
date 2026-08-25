@@ -37,6 +37,7 @@ class ViewAreaCanvas;
 class ViewAreaCell;
 class ViewAreaZone;
 class ViewAreaMenuButton;
+class ViewAreaHighlight;
 
 /** The splitter used inside a ViewArea.
  *
@@ -95,6 +96,9 @@ public:
     /// management plus the content selector. Opened by the corner
     /// button; \a globalPos anchors it.
     void showCellMenu(const QPoint &globalPos);
+    /// Repaint the active-cell border. It lives on a raised child
+    /// widget, so update() on the cell does not reach it.
+    void updateHighlight();
 
 protected:
     void paintEvent(QPaintEvent *) override;
@@ -107,6 +111,7 @@ private:
     ViewAreaZone *_zoneTopRight;
     ViewAreaZone *_zoneBottomLeft;
     ViewAreaMenuButton *_menuButton;
+    ViewAreaHighlight *_highlight;
 
     friend class ViewArea;
 };
