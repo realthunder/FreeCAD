@@ -645,19 +645,33 @@ resolved to `conda.anaconda.org` — so give the channel URL directly.
 ::   pkgs_dirs / envs_dirs pointed at the big drive
 conda create -y -p D:\Zheng.Lei\sw\fcad\.conda\freecad ^
   --override-channels -c https://prefix.dev/conda-forge ^
-  python=3.12 qt6-main=6.10.1 pyside6=6.10.1 ^
+  python=3.12 qt6-main=6.11.2 pyside6=6.11.2 qt6-webengine=6.11.2 ^
   cmake ninja swig pkg-config ^
-  libboost-devel=1.85 eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype expat ^
-  fmt pybind11 numpy matplotlib-base
+  libboost-devel=1.90 eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype expat ^
+  fmt pybind11 numpy matplotlib-base ^
+  tbb-devel "vtk-base==9.6.2" "vtk-io-ffmpeg==9.6.2" libmed hdf5 libxml2-devel lazy_loader
 ```
 
-Pin `qt6-main`, `pyside6` and the three `libboost*` packages in
-`<env>\conda-meta\pinned` so a later `conda install` cannot bump them.
+The Qt/boost/vtk trio is the one the Linux stack pins, and for the same reason:
+it is the stack conda-forge builds smesh against. See the Linux
+[FEM section](#fem-and-the-external-smesh-it-links) for why the three cannot be
+chosen independently. Pin them in `<env>\conda-meta\pinned` so a later
+`conda install` cannot bump them:
 
-**Boost must be 1.85, not current.** `SetupBoost.cmake` requires the `system`
-component, but Boost.System has been header-only since 1.69 and 1.91 ships no
-`boost_system` library and no CMake config for it, so `find_package` fails outright.
-1.85 also matches the Linux box.
+```
+qt6-main ==6.11.2
+qt6-webengine ==6.11.2
+pyside6 ==6.11.2
+vtk-base ==9.6.2
+vtk-io-ffmpeg ==9.6.2
+python ==3.12.*
+```
+
+**Boost 1.85 used to be forced here; it no longer is.** `SetupBoost.cmake`
+required the `system` component, which has been header-only since 1.69 and which
+current Boost ships neither as a library nor as a CMake config, so `find_package`
+failed outright. That request is gone, and the stack moved to 1.90 with the rest
+of the FEM dependencies.
 
 **PySide6 quirk, the Windows form of the one the Linux stack has.**
 `PySide6Config.cmake` computes `PACKAGE_PREFIX_DIR` as `<env>\Library` and then
@@ -670,7 +684,72 @@ mklink /J "<env>\Library\typesystems" "<env>\Library\share\PySide6\typesystems"
 mklink /J "<env>\Library\glue"        "<env>\Library\share\PySide6\glue"
 ```
 
-Redo them after any pyside6 reinstall.
+Redo them after any pyside6 reinstall -- a plain version bump keeps them, because
+the junction targets under `share\PySide6\` survive it.
+
+### SMESH: install it without letting conda resolve `occt`
+
+`smesh` comes from the **realthunder** channel (conda-forge has no occt 8.x
+build), and it has to arrive without its `occt` dependency: conda-forge's occt
+would put a second OCCT in the env carrying the same `TK*.dll` names as our
+fork's local install, and whichever the loader reaches first wins.
+
+*** **`--no-deps` does not do this.** Neither conda 26.3 nor mamba 2.5 skips the
+solve for it -- both still refuse with "smesh requires occt >=8.0.1, which does
+not exist". What does bypass the solver is an `@EXPLICIT` spec file: it installs
+exactly the listed URLs, additively, and writes a normal `conda-meta` record.
+
+```bat
+:: smesh_explicit.txt
+::   @EXPLICIT
+::   https://conda.anaconda.org/realthunder/win-64/smesh-9.9.0.0-hfd32127_26.conda
+conda install -p <env> -y --file smesh_explicit.txt
+```
+
+Check afterwards that `<env>\Library\bin` carries `SMESH.dll` and friends and
+**no** `TK*.dll`. The consequence to remember: the installed record still names
+the `occt` dependency, so a later plain `conda install` into this env has to be
+given the same explicit-file treatment.
+
+`cMake/FindSMESH.cmake` then finds it with no extra hints -- the env's `Library`
+is already first on `CMAKE_PREFIX_PATH`. Two things about that path are worth
+knowing:
+
+- Its component list used to be spelled `lib<name>.so`, which no Windows package
+  has. It goes through `find_library` now, so the same code picks up `SMESH.lib`
+  here and `libSMESH.so` on Linux.
+- `SetupSalomeSMESH()` used to hand SMESH's include directories to
+  `include_directories()` at the top level, so every translation unit in the
+  project compiled with smesh's `Kernel` directory ahead of `src/`. On a
+  case-insensitive filesystem that directory's `utilities.h` answers Gui's
+  `#include <Utilities.h>`, and the build dies in `StyleParameters/Parser.cpp`
+  on the `pthread.h` that SALOME header wants. The global call is gone; Fem,
+  Fem/Gui and MeshPart -- the only three consumers -- already list the
+  directories themselves, which is also how the bundled SMESH path has always
+  worked.
+- `BUILD_FEM_NETGEN=ON` is answered by the `NETGENPlugin` the smesh package
+  bundles, so the configure line `Could NOT find Netgen (missing: Netgen_DIR)`
+  is expected and harmless -- it refers to a standalone Netgen this build does
+  not use.
+
+*** **The netgen path needs `pthreads-win32` in the env.** The `NETGENPlugin_*`
+headers pull SALOME's `utilities.h`, and its `LocalTraceBufferPool.hxx` includes
+`<pthread.h>` and `<semaphore.h>` unconditionally -- FreeCAD's own bundled SMESH
+carries a trimmed `utilities.h` and never hits this, which is why no Windows
+build saw it before. Two files need it, `Fem/App/FemMeshShapeNetgenObject.cpp`
+and `MeshPart/App/Mesher.cpp`. Nothing calls a pthread function, so the headers
+alone settle it and no library reaches the link line:
+
+```bat
+:: pthreads_explicit.txt
+::   @EXPLICIT
+::   https://prefix.dev/conda-forge/win-64/pthreads-win32-2.9.1-hfa6e2cd_3.tar.bz2
+conda install -p <env> -y --file pthreads_explicit.txt
+```
+
+The explicit-file form is used here for the reason given above: the env's smesh
+record names an `occt` no channel can supply, so every plain `conda install`
+into it now fails to solve.
 
 ### The dev shell: `.conda\run.cmd`
 
