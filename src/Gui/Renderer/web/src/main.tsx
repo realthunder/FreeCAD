@@ -71,6 +71,10 @@ window.addEventListener('fc:docs', (e: Event) => {
 const switchDoc = (name: string) => {
   window.fcviewerSwitchDoc?.(name);
   setDocs((d) => ({ ...d, current: name }));
+  // The split chrome re-keys its persisted layout on this -- it cannot
+  // learn the switch from 'fc:docs', since no docs push follows one.
+  window.dispatchEvent(new CustomEvent('fc:docswitch',
+                                       { detail: { current: name } }));
 };
 // One document needs no section — unless it is not the one this viewer
 // is on (an unknown ?doc= joined nothing, and the section is the way

@@ -41,6 +41,38 @@ interface HandleRect {
 
 let nextId = 2;
 
+// ---- Layout persistence --------------------------------------------
+//
+// The desktop persists layouts per document in GuiDocument.xml; the
+// browser equivalent is localStorage on this device, keyed by the
+// served document. A layout is chrome state, not document content, and
+// different devices legitimately want different splits of the same
+// document -- which is also why there is no server-side store: it
+// would be a wire change M4 deliberately avoided (docs/SplitViews.md
+// sec 9.1). Saved on every tree change, restored once the viewer is up
+// and re-keyed when the served document becomes known or changes.
+type SavedNode = { id?: number; page?: boolean; dir?: 'h' | 'v';
+                   ratio?: number; a?: SavedNode; b?: SavedNode };
+const toSaved = (n: Node): SavedNode => n.cell
+  ? { id: n.id, page: n.page }
+  : { dir: n.dir, ratio: n.ratio, a: toSaved(n.a), b: toSaved(n.b) };
+const fromSaved = (s: SavedNode | undefined): Node | null => {
+  if (!s || typeof s !== 'object') return null;
+  if (s.dir === 'h' || s.dir === 'v') {
+    if (typeof s.ratio !== 'number'
+        || !Number.isFinite(s.ratio)) return null;
+    const a = fromSaved(s.a);
+    const b = fromSaved(s.b);
+    return a && b ? { cell: false, dir: s.dir,
+                      ratio: Math.min(1 - MIN_RATIO,
+                                      Math.max(MIN_RATIO, s.ratio)),
+                      a, b } : null;
+  }
+  // Stored ids are not trusted across sessions: every restored cell is
+  // renumbered, so a corrupt store cannot produce duplicate ids.
+  return { cell: true, id: 0, page: !!s.page };
+};
+
 export function SplitOverlay() {
   const [root, setRoot] = createSignal<Node>(
     { cell: true, id: 1, page: false }, { equals: false });
@@ -102,7 +134,84 @@ export function SplitOverlay() {
       .join(';');
     window.fcviewerSetLayout?.(spec);
   };
-  const changed = () => { setRoot(root()); push(); };
+  const changed = () => { setRoot(root()); push(); save(); };
+
+  // Which store the layout lives in: the served document's name once
+  // known ('fc:docs' / a switch), else the scene URL -- so a plain
+  // single-document serve still remembers its split.
+  let docKey = '';
+  const sceneKey = (() => {
+    try { return new URLSearchParams(location.search).get('scene') ?? ''; }
+    catch { return ''; }
+  })();
+  const storeKey = () => 'fc.split.' + (docKey || '@' + sceneKey);
+
+  let saveTimer: number | undefined;
+  const save = () => {
+    window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+      try {
+        const r = root();
+        if (r.cell) localStorage.removeItem(storeKey());
+        else localStorage.setItem(
+          storeKey(), JSON.stringify({ v: 1, tree: toSaved(r) }));
+      }
+      catch {}   // private mode, quota: no memory, no error
+    }, 300);
+  };
+
+  /// Adopt the stored layout for the current key: restore it, or
+  /// collapse to the single view when the (new) document has none.
+  const adopt = () => {
+    let r: Node | null = null;
+    try {
+      const raw = localStorage.getItem(storeKey());
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (s?.v === 1) r = fromSaved(s.tree);
+      }
+    }
+    catch {}
+    if (r && !r.cell) {
+      const renumber = (n: Node) => {
+        if (n.cell) n.id = nextId++;
+        else { renumber(n.a); renumber(n.b); }
+      };
+      renumber(r);
+      setRoot(r);
+      push();
+    }
+    else if (!root().cell) {
+      setRoot({ cell: true, id: nextId++, page: false });
+      push();
+    }
+  };
+
+  // Restore once the viewer side is up (the chrome usually mounts
+  // before the WASM module registers its exports; a push before that
+  // would be dropped on the floor), and re-key when the served
+  // document becomes known or changes.
+  const ready = window.setInterval(() => {
+    if (!window.fcviewerSetLayout) return;
+    window.clearInterval(ready);
+    adopt();
+  }, 250);
+  const onDocs = (e: Event) => {
+    const cur = (e as CustomEvent).detail?.current;
+    const key = typeof cur === 'string' ? cur : '';
+    if (key === docKey) return;
+    docKey = key;
+    // Not ready yet: the readiness poll above adopts with this key
+    // when it fires.
+    if (window.fcviewerSetLayout) adopt();
+  };
+  window.addEventListener('fc:docs', onDocs);
+  window.addEventListener('fc:docswitch', onDocs);
+  onCleanup(() => {
+    window.clearInterval(ready);
+    window.removeEventListener('fc:docs', onDocs);
+    window.removeEventListener('fc:docswitch', onDocs);
+  });
 
   // ---- Tree surgery -------------------------------------------------
 
