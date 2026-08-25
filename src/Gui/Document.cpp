@@ -136,6 +136,7 @@ struct DocumentP
 
     std::vector<CameraInfo>     _savedViews;
     std::map<int, std::string>  _view3DContents;
+    std::vector<std::string>    _viewAreaLayouts;
 
     Application*    _pcAppWnd;
     // the doc/Document
@@ -2546,6 +2547,7 @@ void Document::RestoreDocFile(Base::Reader &reader)
         int cameraBinding = xmlReader.getAttributeAsInteger("binding", "0");
         int cameraId = xmlReader.getAttributeAsInteger("id", "0");
         int view3dCount = xmlReader.getAttributeAsInteger("view3d", "0");
+        int viewAreaCount = xmlReader.getAttributeAsInteger("viewareas", "0");
 
         cameraSettings.clear();
         if(xmlReader.hasAttribute("settings"))
@@ -2572,6 +2574,12 @@ void Document::RestoreDocFile(Base::Reader &reader)
             xmlReader.readElement("View3D");
             int id = xmlReader.getAttributeAsInteger("id");
             d->_view3DContents[id] = xmlReader.readCharacters();
+        }
+
+        d->_viewAreaLayouts.clear();
+        for (int i=0; i<viewAreaCount; ++i) {
+            xmlReader.readElement("ViewArea");
+            d->_viewAreaLayouts.emplace_back(xmlReader.getAttribute("layout", ""));
         }
     }
 
@@ -2693,8 +2701,15 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
 
     auto views = getMDIViewsOfType(View3DInventor::getClassTypeId());
     if(views.size()) {
+        // With saved split view layouts the extra views are created
+        // bare; applyViewAreaLayouts below places them into cells.
+        bool useLayouts = !d->_viewAreaLayouts.empty()
+            && App::GetApplication().GetParameterGroupByPath(
+                    "User parameter:BaseApp/Preferences/View")
+                ->GetBool("UseViewArea", true);
         while(views.size() < d->_savedViews.size())
-            views.push_back(createView(View3DInventor::getClassTypeId()));
+            views.push_back(useLayouts ? createView3D()
+                    : createView(View3DInventor::getClassTypeId()));
 
         size_t i=0;
         std::map<int, std::vector<std::pair<std::string,std::string>>> onTopObjs;
@@ -2750,7 +2765,19 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
             if(it != viewMap.end())
                 view->bindCamera(it->second->getCamera());
         }
+
+        if (useLayouts && !d->_deferVPs) {
+            // With parked view providers the object views (TechDraw
+            // pages) cannot materialize yet; finishDeferredRestore
+            // applies the layouts after the drain.
+            applyViewAreaLayouts(views);
+            d->_viewAreaLayouts.clear();
+        }
+        else if (!useLayouts)
+            d->_viewAreaLayouts.clear();
     }
+    else
+        d->_viewAreaLayouts.clear();
 
     // reset modified flag
     setModified(doc.testStatus(App::Document::LinkStampChanged));
@@ -2766,6 +2793,92 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
     // With view providers parked it is not the end, and refreshLiveLoad()
     // reads that off the drain rather than being told.
     Application::Instance->refreshLiveLoad();
+}
+
+void Document::applyViewAreaLayouts(const std::list<MDIView*> &views)
+{
+    std::vector<MDIView*> ordered(views.begin(), views.end());
+    std::set<MDIView*> used;
+    std::set<ViewArea*> donors;
+
+    for (const auto &layout : d->_viewAreaLayouts) {
+        // A single-leaf layout whose view is already hosted alone in a
+        // container (the default hosting) needs no rebuild.
+        if (layout.size() > 1 && layout[0] == 'L'
+                && layout.find('{') == std::string::npos) {
+            size_t idx = strtoul(layout.c_str() + 1, nullptr, 10);
+            if (idx < ordered.size() && !used.count(ordered[idx])) {
+                if (auto host = ViewArea::areaOf(ordered[idx])) {
+                    if (host->cellCount() == 1) {
+                        used.insert(ordered[idx]);
+                        continue;
+                    }
+                }
+            }
+        }
+        auto area = new ViewArea(this, getMainWindow());
+        QString title = QStringLiteral("%1 : %2[*]")
+            .arg(QString::fromUtf8(getDocument()->Label.getValue()))
+            .arg(d->_iWinCount++);
+        area->setWindowTitle(title);
+
+        bool ok = area->applyLayout(layout,
+                [&](const std::string &token) -> MDIView* {
+            MDIView *view = nullptr;
+            if (token.size() > 1 && token[0] == 'L') {
+                size_t idx = strtoul(token.c_str() + 1, nullptr, 10);
+                if (idx < ordered.size())
+                    view = ordered[idx];
+            }
+            else if (token.compare(0, 2, "O:") == 0) {
+                auto obj = getDocument()->getObject(token.c_str() + 2);
+                if (obj) {
+                    if (auto vp = getViewProvider(obj)) {
+                        view = vp->getMDIView();
+                        if (!view) {
+                            vp->show();
+                            view = vp->getMDIView();
+                        }
+                    }
+                }
+            }
+            if (!view || used.count(view))
+                return nullptr;
+            if (auto donor = ViewArea::areaOf(view))
+                donors.insert(donor);
+            used.insert(view);
+            return view;
+        });
+        if (!ok) {
+            area->deleteSelf();
+            continue;
+        }
+        if (MDIView *front = area->activeSubView()) {
+            if (front != area)
+                area->setWindowIcon(front->windowIcon());
+        }
+        getMainWindow()->addWindow(area);
+    }
+
+    // A donor container whose only view moved into a rebuilt layout is
+    // an empty shell now.
+    for (auto donor : donors) {
+        bool any = false;
+        for (auto cell : donor->cells()) {
+            if (cell->childView()) {
+                any = true;
+                break;
+            }
+        }
+        if (!any)
+            donor->deleteSelf();
+    }
+
+    // Bare-created views no layout referenced still need a home.
+    for (auto view : ordered) {
+        if (!used.count(view) && !view->parentWidget())
+            getMainWindow()->addWindow(view);
+    }
 }
 
 void Document::slotShowHidden(const App::Document& doc)
@@ -3189,6 +3302,14 @@ void Document::finishDeferredRestore()
         d->_pcDocument->clearRestoreDrainReport();
     }
 
+    // Split view layouts wait for the drain: only now can an object
+    // view (a TechDraw page) be materialized and placed into its cell.
+    if (!d->_viewAreaLayouts.empty()) {
+        auto views = getMDIViewsOfType(View3DInventor::getClassTypeId());
+        applyViewAreaLayouts(views);
+        d->_viewAreaLayouts.clear();
+    }
+
     // Whatever the drain's phase zero did not get through is this document's
     // own business from here on -- see runDeferredServeSlice().
     if (d->_pcDocument->hasDeferredFiles())
@@ -3446,11 +3567,44 @@ void Document::SaveDocFile (Base::Writer &writer) const
         }
     }
 
+    // Split view container layouts: leaves name a 3D view by its save
+    // order above (L<i>) or an object-provided view (a TechDraw page)
+    // by its object name (O:<name>) -- docs/SplitViews.md sec 5.6.
+    std::vector<std::string> areaLayouts;
+    for (const auto & v : mdi) {
+        auto area = qobject_cast<ViewArea*>(v);
+        if (!area)
+            continue;
+        std::string layout = area->layoutString([&](MDIView *child) -> std::string {
+            for (size_t i = 0; i < view3Ds.size(); ++i) {
+                if (view3Ds[i] == child)
+                    return "L" + std::to_string(i);
+            }
+            // Object views name their object as the widget objectName
+            // (MDIViewPage::setDocumentObject); prefer that -- a map
+            // scan can hit a subsidiary provider first (a TechDraw
+            // template reports its page's view too) whose show() could
+            // not recreate the view on restore.
+            QByteArray objName = child->objectName().toUtf8();
+            if (!objName.isEmpty()) {
+                if (auto obj = getDocument()->getObject(objName.constData())) {
+                    auto vp = getViewProvider(obj);
+                    if (vp && vp->getMDIView() == child)
+                        return std::string("O:") + objName.constData();
+                }
+            }
+            return {};
+        });
+        if (!layout.empty())
+            areaLayouts.push_back(std::move(layout));
+    }
+
     writer.Stream() << writer.ind() << "<Camera";
     if(cameraInfo.size())
         writer.Stream() << " extra=\"" << cameraInfo.size()-1 << "\" id=\""
             << cameraInfo[0].id << "\" binding=\"" << cameraInfo[0].binding << "\""
-            << " view3d=\"" << view3Ds.size() << "\"";
+            << " view3d=\"" << view3Ds.size() << "\""
+            << " viewareas=\"" << areaLayouts.size() << "\"";
     if(writer.getFileVersion() > 1) {
         writer.Stream() << ">\n";
         writer.beginCharStream() << '\n' << getCameraSettings();
@@ -3490,6 +3644,11 @@ void Document::SaveDocFile (Base::Writer &writer) const
         view->Save(stringWriter);
         writer.beginCharStream() << '\n' << stringWriter.getString();
         writer.endCharStream() << '\n' << writer.ind() << "</View3D>\n";
+    }
+
+    for (const auto &layout : areaLayouts) {
+        writer.Stream() << writer.ind() << "<ViewArea layout=\""
+            << encodeAttribute(layout) << "\"/>\n";
     }
 
     writer.decInd(); // indentation for camera settings
@@ -3650,13 +3809,11 @@ void Document::addRootObjectsToGroup(const std::vector<App::DocumentObject*>& ob
     grpExt->addObjects(grpNewObjects);
 }
 
-MDIView *Document::createView(const Base::Type& typeId)
+View3DInventor *Document::createView3D()
 {
-    if (!typeId.isDerivedFrom(MDIView::getClassTypeId()))
-        return nullptr;
-
-    std::list<MDIView*> theViews = this->getMDIViewsOfType(typeId);
-    if (typeId == View3DInventor::getClassTypeId()) {
+    std::list<MDIView*> theViews =
+        this->getMDIViewsOfType(View3DInventor::getClassTypeId());
+    {
 
         QtGLWidget* shareWidget = nullptr;
         // VBO rendering doesn't work correctly when we don't share the OpenGL widgets
@@ -3705,6 +3862,22 @@ MDIView *Document::createView(const Base::Type& typeId)
                 view3D->getViewer()->setOverrideMode(mode);
         }
 
+        setModified(false);
+        ViewProviderAppearance::onViewCreated(getDocument());
+        return view3D;
+    }
+}
+
+MDIView *Document::createView(const Base::Type& typeId)
+{
+    if (!typeId.isDerivedFrom(MDIView::getClassTypeId()))
+        return nullptr;
+
+    if (typeId == View3DInventor::getClassTypeId()) {
+        auto view3D = createView3D();
+        if (!view3D)
+            return nullptr;
+
         // The default viewer window is a split view container holding the
         // 3D view as its first cell (docs/SplitViews.md sec 5.6), so the
         // user can split it or host other content without a wrap step.
@@ -3712,7 +3885,7 @@ MDIView *Document::createView(const Base::Type& typeId)
                 "User parameter:BaseApp/Preferences/View");
         if (hGrp->GetBool("UseViewArea", true)) {
             auto area = new ViewArea(this, getMainWindow());
-            area->setWindowTitle(title);
+            area->setWindowTitle(view3D->windowTitle());
             area->setWindowModified(this->isModified());
             area->setWindowIcon(view3D->windowIcon());
             area->resize(400, 300);
@@ -3721,8 +3894,6 @@ MDIView *Document::createView(const Base::Type& typeId)
         }
         else
             getMainWindow()->addWindow(view3D);
-        setModified(false);
-        ViewProviderAppearance::onViewCreated(getDocument());
         return view3D;
     }
     return nullptr;

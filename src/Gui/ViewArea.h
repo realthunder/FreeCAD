@@ -23,6 +23,8 @@
 #ifndef GUI_VIEWAREA_H
 #define GUI_VIEWAREA_H
 
+#include <functional>
+#include <string>
 #include <vector>
 #include <QPointer>
 #include <QSplitter>
@@ -208,6 +210,26 @@ public:
      */
     void toggleMaximizeCell(ViewAreaCell *cell);
     ViewAreaCell *maximizedCell() const { return _maximizedCell; }
+
+    /** Serialize the splitter tree for GuiDocument.xml: leaves through
+     * \a leafToken (empty result drops the leaf), groups as
+     * orientation + permille sizes. Example: "H{330,670|L0,V{500,500|L1,O:Page}}".
+     */
+    std::string layoutString(
+            const std::function<std::string(MDIView*)> &leafToken) const;
+    /** Rebuild the tree of a FRESH container (single empty cell) from a
+     * layoutString. Leaves resolve through \a tokenToView (null skips
+     * the leaf); single-child groups flatten. Returns false when
+     * nothing could be resolved (the container is left with one empty
+     * cell).
+     */
+    bool applyLayout(const std::string &layout,
+            const std::function<MDIView*(const std::string&)> &tokenToView);
+    /** Detach \a view from wherever it is hosted -- a cell (the cell
+     * stays, empty), an MDI tab (taken over), or nowhere -- so it can
+     * be hosted in a cell.
+     */
+    static void detachViewForHosting(MDIView *view);
 
     /// The focused child view; what activation resolves to.
     MDIView *activeSubView() override;

@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <cctype>
 # include <QApplication>
 # include <QCloseEvent>
 # include <QContextMenuEvent>
@@ -742,6 +743,188 @@ void ViewArea::onFocusChanged(QWidget *old, QWidget *now)
             break;
         }
     }
+}
+
+static std::string layoutNode(const QWidget *w,
+        const std::function<std::string(MDIView*)> &leafToken)
+{
+    if (auto cell = qobject_cast<const ViewAreaCell*>(const_cast<QWidget*>(w))) {
+        if (cell->childView())
+            return leafToken(cell->childView());
+        return {};
+    }
+    auto sp = qobject_cast<const QSplitter*>(w);
+    if (!sp)
+        return {};
+    std::vector<std::string> parts;
+    std::vector<int> sizes;
+    QList<int> spSizes = const_cast<QSplitter*>(sp)->sizes();
+    int total = 0;
+    for (int i = 0; i < sp->count(); ++i) {
+        std::string sub = layoutNode(sp->widget(i), leafToken);
+        if (sub.empty())
+            continue;
+        int px = (i < spSizes.size()) ? spSizes[i] : 1;
+        parts.push_back(std::move(sub));
+        sizes.push_back(px);
+        total += px;
+    }
+    if (parts.empty())
+        return {};
+    if (parts.size() == 1)
+        return parts.front();
+    std::string res(sp->orientation() == Qt::Horizontal ? "H{" : "V{");
+    for (size_t i = 0; i < sizes.size(); ++i) {
+        // permille, floored at 50 so a save while a cell is collapsed
+        // (e.g. maximized) does not restore it invisible
+        int f = total > 0 ? (sizes[i] * 1000 + total / 2) / total : 0;
+        res += std::to_string(std::max(f, 50));
+        res += (i + 1 < sizes.size()) ? "," : "|";
+    }
+    for (size_t i = 0; i < parts.size(); ++i) {
+        res += parts[i];
+        if (i + 1 < parts.size())
+            res += ",";
+    }
+    res += "}";
+    return res;
+}
+
+std::string ViewArea::layoutString(
+        const std::function<std::string(MDIView*)> &leafToken) const
+{
+    return layoutNode(_rootSplitter->count() == 1
+            ? _rootSplitter->widget(0) : (QWidget*)_rootSplitter, leafToken);
+}
+
+namespace {
+
+/// Recursive-descent parser for the layoutString format.
+struct LayoutParser
+{
+    const std::string &s;
+    size_t pos = 0;
+    ViewArea *area;
+    const std::function<Gui::MDIView*(const std::string&)> &resolve;
+
+    // Build the node at pos into a widget (a cell or a splitter);
+    // returns null when nothing under it resolved.
+    QWidget *node(std::function<ViewAreaCell*()> makeCell)
+    {
+        if (pos >= s.size())
+            return nullptr;
+        if (s[pos] == 'H' || s[pos] == 'V') {
+            Qt::Orientation o = (s[pos] == 'H') ? Qt::Horizontal : Qt::Vertical;
+            ++pos;
+            if (pos >= s.size() || s[pos] != '{')
+                return nullptr;
+            ++pos;
+            std::vector<int> sizes;
+            int cur = 0;
+            while (pos < s.size() && s[pos] != '|') {
+                if (s[pos] == ',') {
+                    sizes.push_back(cur);
+                    cur = 0;
+                }
+                else if (isdigit(static_cast<unsigned char>(s[pos])))
+                    cur = cur * 10 + (s[pos] - '0');
+                ++pos;
+            }
+            sizes.push_back(cur);
+            if (pos < s.size())
+                ++pos;  // '|'
+            auto sp = new ViewAreaSplitter(o);
+            std::vector<int> childSizes;
+            size_t childIdx = 0;
+            while (pos < s.size() && s[pos] != '}') {
+                QWidget *sub = node(makeCell);
+                if (sub) {
+                    sp->addWidget(sub);
+                    childSizes.push_back(childIdx < sizes.size()
+                            ? sizes[childIdx] : 100);
+                }
+                ++childIdx;
+                if (pos < s.size() && s[pos] == ',')
+                    ++pos;
+            }
+            if (pos < s.size())
+                ++pos;  // '}'
+            if (sp->count() == 0) {
+                delete sp;
+                return nullptr;
+            }
+            if (sp->count() == 1) {
+                QWidget *lone = sp->widget(0);
+                lone->setParent(nullptr);
+                delete sp;
+                return lone;
+            }
+            QList<int> qsizes;
+            for (int v : childSizes)
+                qsizes.append(std::max(v, 1));
+            sp->setSizes(qsizes);
+            return sp;
+        }
+        // leaf token: up to , } or end
+        size_t start = pos;
+        while (pos < s.size() && s[pos] != ',' && s[pos] != '}')
+            ++pos;
+        std::string token = s.substr(start, pos - start);
+        Gui::MDIView *view = token.empty() ? nullptr : resolve(token);
+        if (!view)
+            return nullptr;
+        ViewArea::detachViewForHosting(view);
+        ViewAreaCell *cell = makeCell();
+        cell->hostView(view);
+        return cell;
+    }
+};
+
+} // anonymous namespace
+
+bool ViewArea::applyLayout(const std::string &layout,
+        const std::function<MDIView*(const std::string&)> &tokenToView)
+{
+    LayoutParser parser{layout, 0, this, tokenToView};
+    QWidget *tree = parser.node([this]() { return new ViewAreaCell(this); });
+    if (!tree)
+        return false;
+    // Replace the fresh container's single empty cell.
+    while (_rootSplitter->count()) {
+        QWidget *w = _rootSplitter->widget(0);
+        w->setParent(nullptr);
+        w->deleteLater();
+    }
+    if (auto sp = qobject_cast<ViewAreaSplitter*>(tree)) {
+        // adopt the parsed tree's root as the container root
+        QList<int> sizes = sp->sizes();
+        _rootSplitter->setOrientation(sp->orientation());
+        while (sp->count()) {
+            QWidget *w = sp->widget(0);
+            w->setParent(nullptr);
+            _rootSplitter->addWidget(w);
+            w->show();
+        }
+        delete sp;
+        _rootSplitter->setSizes(sizes);
+    }
+    else
+        _rootSplitter->addWidget(tree);
+    auto all = cells();
+    setActiveCell(all.empty() ? nullptr : all.front(), false);
+    return true;
+}
+
+void ViewArea::detachViewForHosting(MDIView *view)
+{
+    if (!view)
+        return;
+    if (auto area = areaOf(view)) {
+        if (auto cell = area->cellOf(view))
+            cell->releaseView();
+        return;
+    }
+    stealFromMdiArea(view);
 }
 
 MDIView *ViewArea::activeSubView()

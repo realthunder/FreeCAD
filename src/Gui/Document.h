@@ -56,6 +56,7 @@ namespace Gui {
 
 class BaseView;
 class MDIView;
+class View3DInventor;
 class ViewProvider;
 class ViewProviderDocumentObject;
 class Application;
@@ -243,6 +244,11 @@ public:
     Gui::MDIView* getEditingView(void) const;
     /// Create a new view
     MDIView *createView(const Base::Type& typeId);
+    /** Create a 3D view without hosting it anywhere -- the layout
+     * restore places these into split view cells itself. createView is
+     * this plus the default hosting.
+     */
+    View3DInventor *createView3D();
     /// Create a clone of the given view
     Gui::MDIView* cloneView(Gui::MDIView*);
     /** send messages to the active view
@@ -398,6 +404,10 @@ protected:
 private:
     //handles the scene graph nodes to correctly group child and parents
     void handleChildren3D(ViewProvider* viewProvider, bool deleting=false);
+
+    /// Rebuild the saved split view containers on restore, placing the
+    /// (bare-created) 3D views and object views into cells
+    void applyViewAreaLayouts(const std::list<MDIView*> &views);
 
     /// Build and restore one captured view provider during the load itself,
     /// handing its archive file requests to the archive's reader
