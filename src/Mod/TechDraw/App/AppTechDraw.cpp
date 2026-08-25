@@ -27,6 +27,7 @@
 #include "CenterLine.h"
 #include "CosmeticExtension.h"
 #include "Cosmetic.h"
+#include "DrawBrokenView.h"
 #include "DrawComplexSection.h"
 #include "DrawGeomHatch.h"
 #include "DrawHatch.h"
@@ -93,6 +94,7 @@ PyMOD_INIT_FUNC(TechDraw)
 
     TechDraw::DrawViewSection     ::init();
     TechDraw::DrawComplexSection     ::init();
+    TechDraw::DrawBrokenView      ::init();
     TechDraw::DrawViewDimension   ::init();
     TechDraw::DrawViewDimExtent   ::init();
     TechDraw::LandmarkDimension     ::init();
@@ -138,6 +140,7 @@ PyMOD_INIT_FUNC(TechDraw)
     TechDraw::DrawViewPartPython  ::init();
     TechDraw::DrawViewSectionPython::init();
     TechDraw::DrawComplexSectionPython ::init();
+    TechDraw::DrawBrokenViewPython::init();
     TechDraw::DrawTemplatePython  ::init();
     TechDraw::DrawViewSymbolPython::init();
     TechDraw::DrawLeaderLinePython::init();

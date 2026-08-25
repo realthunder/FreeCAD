@@ -472,6 +472,17 @@ int Preferences::HiddenLineStyle()
     return getPreferenceGroup("Decorations")->GetInt("LineStyleHidden", 1) + 1;
 }
 
+int Preferences::BreakLineStyle()
+{
+    return getPreferenceGroup("Decorations")->GetInt("LineStyleBreak", 0) + 1;
+}
+
+int Preferences::BreakType()
+{
+    // 2 = DrawBrokenView::BreakType::SIMPLE
+    return getPreferenceGroup("Decorations")->GetInt("BreakType", 2);
+}
+
 int Preferences::LineSpacingISO()
 {
     return getPreferenceGroup("Dimensions")->GetInt("LineSpacingFactorISO", 2);

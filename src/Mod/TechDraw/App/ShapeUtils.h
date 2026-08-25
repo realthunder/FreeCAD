@@ -107,6 +107,7 @@ public:
     static TopoDS_Shape projectFace(const TopoDS_Shape& face, const gp_Ax2& CS);
 
     static std::pair<Base::Vector3d, Base::Vector3d> getEdgeEnds(TopoDS_Edge edge);
+    static bool edgesAreParallel(TopoDS_Edge edge0, TopoDS_Edge edge1);
 
     static bool isShapeReallyNull(TopoDS_Shape shape);
 };

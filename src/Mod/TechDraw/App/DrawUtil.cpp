@@ -50,6 +50,7 @@
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
+#include <gp.hxx>
 #include <gp_Ax3.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Elips.hxx>
@@ -758,6 +759,90 @@ Base::Vector3d DrawUtil::closestBasis(gp_Dir gDir, gp_Ax2 coordSys)
 
     //should not get to here
     return Base::Vector3d(xCS.X(), xCS.Y(), xCS.Z());
+}
+
+//! returns +/- stdX, stdY or stdZ.
+Base::Vector3d DrawUtil::closestBasisOriented(Base::Vector3d v)
+{
+    Base::Vector3d stdX(1.0, 0.0, 0.0);
+    Base::Vector3d stdY(0.0, 1.0, 0.0);
+    Base::Vector3d stdZ(0.0, 0.0, 1.0);
+    Base::Vector3d stdXr(-1.0, 0.0, 0.0);
+    Base::Vector3d stdYr(0.0, -1.0, 0.0);
+    Base::Vector3d stdZr(0.0, 0.0, -1.0);
+
+    //first check if already a basis
+    if (v.Dot(stdX) == 1.0 || v.Dot(stdY) == 1.0 || v.Dot(stdZ) == 1.0) {
+        return v;
+    }
+    if (v.Dot(stdX) == -1.0 || v.Dot(stdY) == -1.0 || v.Dot(stdZ) == -1.0) {
+        return v;
+    }
+
+    //not a basis. find smallest angle with a basis.
+    double angleX, angleY, angleZ, angleXr, angleYr, angleZr, angleMin;
+    angleX = stdX.GetAngle(v);
+    angleY = stdY.GetAngle(v);
+    angleZ = stdZ.GetAngle(v);
+    angleXr = stdXr.GetAngle(v);
+    angleYr = stdYr.GetAngle(v);
+    angleZr = stdZr.GetAngle(v);
+
+    angleMin = std::min({angleX, angleY, angleZ, angleXr, angleYr, angleZr});
+    if (angleX == angleMin) {
+        return stdX;
+    }
+    if (angleY == angleMin) {
+        return stdY;
+    }
+    if (angleZ == angleMin) {
+        return stdZ;
+    }
+    if (angleXr == angleMin) {
+        return stdXr;
+    }
+    if (angleYr == angleMin) {
+        return stdYr;
+    }
+    if (angleZr == angleMin) {
+        return stdZr;
+    }
+
+    //should not get to here
+    return stdX;
+}
+
+//! zero out the component of inVec that lies along directionToMask.
+//! directionToMask must be a cardinal direction.
+gp_Vec DrawUtil::maskDirection(gp_Vec inVec, gp_Dir directionToMask)
+{
+    if (fpCompare(std::fabs(directionToMask.Dot(gp::OX().Direction())), 1.0, EWTOLERANCE)) {
+        return {0.0, inVec.Y(), inVec.Z()};
+    }
+    if (fpCompare(std::fabs(directionToMask.Dot(gp::OY().Direction())), 1.0, EWTOLERANCE)) {
+        return {inVec.X(), 0.0, inVec.Z()};
+    }
+    if (fpCompare(std::fabs(directionToMask.Dot(gp::OZ().Direction())), 1.0, EWTOLERANCE)) {
+        return {inVec.X(), inVec.Y(), 0.0};
+    }
+
+    Base::Console().Warning("DU::maskDirection - directionToMask is not cardinal\n");
+    return {};
+}
+
+Base::Vector3d DrawUtil::maskDirection(Base::Vector3d inVec, Base::Vector3d directionToMask)
+{
+    gp_Vec gMasked = maskDirection(togp_Vec(inVec), togp_Dir(directionToMask));
+    return toVector3d(gMasked);
+}
+
+//! the coordinate of inPoint along cardinal.  cardinal must be a cardinal
+//! direction.
+double DrawUtil::coordinateForDirection(Base::Vector3d inPoint, Base::Vector3d cardinal)
+{
+    auto masked = maskDirection(inPoint, cardinal);
+    auto stripped = inPoint - masked;
+    return stripped.x + stripped.y + stripped.z;
 }
 
 double DrawUtil::getWidthInDirection(gp_Dir direction, TopoDS_Shape& shape)

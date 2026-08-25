@@ -376,3 +376,16 @@ bool  ShapeUtils::isShapeReallyNull(TopoDS_Shape shape)
     return shape.IsNull() || !TopoDS_Iterator(shape).More();
 }
 
+
+//! true if edge0 and edge1 are parallel (within EWTOLERANCE)
+bool ShapeUtils::edgesAreParallel(TopoDS_Edge edge0, TopoDS_Edge edge1)
+{
+    std::pair<Base::Vector3d, Base::Vector3d> ends0 = getEdgeEnds(edge0);
+    Base::Vector3d vec0 = ends0.second - ends0.first;
+    vec0.Normalize();
+    std::pair<Base::Vector3d, Base::Vector3d> ends1 = getEdgeEnds(edge1);
+    Base::Vector3d vec1 = ends1.second - ends1.first;
+    vec1.Normalize();
+    double dot = fabs(vec0.Dot(vec1));
+    return DU::fpCompare(dot, 1.0, EWTOLERANCE);
+}
