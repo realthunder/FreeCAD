@@ -1493,7 +1493,7 @@ TopoShape TopoShape::getSubTopoShape(TopAbs_ShapeEnum type, int idx, bool silent
     auto &info = _Cache->getInfo(type);
     if(idx > info.count()) {
         if(!silent)
-            FC_THROWM(Base::ValueError,"Shape index " << idx << " out of bound "  << info.count());
+            FC_THROWM(Base::IndexError,"Shape index " << idx << " out of bound "  << info.count());
         return TopoShape();
     }
 

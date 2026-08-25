@@ -172,10 +172,9 @@ class PartTestBSplineCurve(unittest.TestCase):
             box.getElement("InvalidName")
         with self.assertRaises(ValueError):
             box.getElement("Face6_abc")
-        # a well formed name whose index is out of range: this fork checks the bound
-        # itself and reports it, rather than letting OCCT raise a Standard_Failure,
-        # so it comes back as a ValueError like the two malformed names above
-        with self.assertRaises(ValueError):
+        # getSubTopoShape catches this before it gets to OCC, so the error changes:
+        # with self.assertRaises(Part.OCCError):
+        with self.assertRaises(IndexError):
             box.getElement("Face7")
 
     def tearDown(self):

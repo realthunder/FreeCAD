@@ -358,8 +358,8 @@ part of the harvest.
 ### The 14 findings, and the phase 4 triage of them
 
 Each was a `DISABLED_` case in the suite. **All fourteen have now been through
-the section 4 filter.** Four were genuine fork defects and are fixed; the rest
-are not ours to port.
+the section 4 filter.** Six were genuine fork defects and are fixed; three are
+upstream's own difference, two are a separate defect, and three remain open.
 
 Method: for each case, the fork's implementation was compared against upstream's
 current text *and* against the text upstream had in the commit that first
@@ -368,7 +368,7 @@ introduced at transfer time is upstream's, and skipped. A difference upstream
 introduced *later*, over text that still matches ours, is a real fix, and is
 ported.
 
-#### Fixed -- real fork defects (4)
+#### Fixed -- real fork defects (6)
 
 | case | defect | upstream |
 |------|--------|----------|
@@ -376,17 +376,17 @@ ported.
 | `makERuledSurfaceWires` | the automatic-orientation test sampled each curve at its first and last parameter. On a **closed** curve those are the same point, so the vector between them is zero and the reversal decision was noise: area 2.02 instead of 4 | `3a6f70946a` (#16013), pre-fix text byte-identical to ours |
 | `makEShellIntersecting` | checked whether the sewing result *had* a shell sub-shape. A compound of shells does, so `makEShell(silent=false)` returned a compound and raised nothing | upstream's later fix over `9f3d6543c6`, byte-identical to ours |
 | `makEEvolve` | `JoinType::Arc` mapped to `GeomAbs_Tangent` and `Tangent` fell through to `Arc` -- swapped. OCCT rejects anything above `GeomAbs_Arc`, so every default-argument evolve threw a bare `Standard_NotImplemented` | transferred in with the same defect as `110f3e000d`, corrected later |
+| `getSubTopoShapeByEnum` | an out-of-range subshape index raised `Base::ValueError`, which is Python's `ValueError`. An index past the end is what `IndexError` is for, and upstream says so | `76df39e99d` -- `Base::IndexError`, and only for the out-of-bound branch. The invalid index, invalid type and invalid name branches stay `ValueError` on both sides |
+| `getSubTopoShapeByStringNames` | the same site: the by-string overload resolves the name and then routes through the by-enum one | as above |
 
 Note that `makERuledSurfaceWires`'s **element names fell into line by themselves**
 once the surface was built the right way round. A naming mismatch is not
 necessarily a naming bug.
 
-#### Skipped -- upstream's difference, not ours (5)
+#### Skipped -- upstream's difference, not ours (3)
 
 | case | why |
 |------|-----|
-| `getSubTopoShapeByEnum` | we raise `Base::ValueError` for an out-of-range index, upstream `Base::IndexError`. Upstream wrote `IndexError` in `76df39e99d`, the very commit that transferred the function in, and never changed it. **Expectation adapted, case enabled.** |
-| `getSubTopoShapeByStringNames` | same root cause; the same test already expects our `ValueError` for an invalid name. **Expectation adapted, case enabled.** |
 | `makERevolve` | our `makERevolve` ends with `fix()`, added because `BRepPrimAPI_MakeRevol` can produce a surface with reversed parameters (realthunder/FreeCAD#559). Upstream has no such call, and that `fix()` is what stamps the extra `;:M;MAK` step. A deliberate fork delta. |
 | `makEBSplineFace` | the two implementations genuinely differ. Ours does geometric edge matching and transfers names through `makESHAPE` with `aFace(Tag, Hasher, ..)`; upstream's maps by index and ends in `setElementComboName` with `aFace(0, Hasher, ..)`, which is why its expectation carries no tag postfixes at all despite tagged inputs. Upstream's own source marks that path `TODO: Is this correct?`. |
 | `makEOffset2D` | the input wire is a rectangle, so it has four edges. Our map names all four plus four vertices; upstream's expectation names two edges and two vertices and carries a doubled `;OFF` step. **Ours is the more complete map.** Upstream's only later change to this function -- collecting face wires with `getSubTopoShapes` instead of `splitWires` -- is not on the path a wire input takes. |

@@ -928,11 +928,6 @@ TEST_F(TopoShapeExpansionTest, getOrderedVertexes)
     //    EXPECT_THROW(cube1.getOrderedEdges(), NullShapeException);  // No Map
 }
 
-// This fork raises Base::ValueError for an out-of-range subshape index, where upstream
-// raises Base::IndexError. Upstream wrote IndexError in the very commit that transferred
-// this function in (76df39e99d) -- our text has always said ValueError and no upstream fix
-// ever touched it, so the expectation is adapted rather than the code. See
-// docs/UpstreamNameMap.md section 8.
 TEST_F(TopoShapeExpansionTest, getSubTopoShapeByEnum)
 {
     // Arrange
@@ -949,7 +944,7 @@ TEST_F(TopoShapeExpansionTest, getSubTopoShapeByEnum)
     EXPECT_EQ(subShape2.getShape().ShapeType(), TopAbs_FACE);
     EXPECT_EQ(subShape2.getShape().ShapeType(), TopAbs_FACE);
     EXPECT_TRUE(noshape1.isNull());
-    EXPECT_THROW(cube1TS.getSubTopoShape(TopAbs_FACE, 7), Base::ValueError);  // Out of range
+    EXPECT_THROW(cube1TS.getSubTopoShape(TopAbs_FACE, 7), Base::IndexError);  // Out of range
 }
 
 TEST_F(TopoShapeExpansionTest, getSubTopoShapeByStringDefaults)
@@ -978,11 +973,6 @@ TEST_F(TopoShapeExpansionTest, getSubTopoShapeByStringDefaults)
     EXPECT_EQ(subShape2.getShape().ShapeType(), TopAbs_FACE);
 }
 
-// This fork raises Base::ValueError for an out-of-range subshape index, where upstream
-// raises Base::IndexError. Upstream wrote IndexError in the very commit that transferred
-// this function in (76df39e99d) -- our text has always said ValueError and no upstream fix
-// ever touched it, so the expectation is adapted rather than the code. See
-// docs/UpstreamNameMap.md section 8.
 TEST_F(TopoShapeExpansionTest, getSubTopoShapeByStringNames)
 {
     // Arrange
@@ -999,7 +989,7 @@ TEST_F(TopoShapeExpansionTest, getSubTopoShapeByStringNames)
     EXPECT_EQ(subShape2.getShape().ShapeType(), TopAbs_FACE);
     EXPECT_EQ(subShape3.getShape().ShapeType(), TopAbs_FACE);
     EXPECT_TRUE(noshape1.isNull());
-    EXPECT_THROW(cube1TS.getSubTopoShape("Face7"), Base::ValueError);          // Out of range
+    EXPECT_THROW(cube1TS.getSubTopoShape("Face7"), Base::IndexError);          // Out of range
     EXPECT_THROW(cube1TS.getSubTopoShape("WOOHOO", false), Base::ValueError);  // Invalid
 }
 
