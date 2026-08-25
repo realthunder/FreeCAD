@@ -42,8 +42,11 @@ enum : unsigned
     SimPassScene = 0,      ///< stencil CSG, cut coloring, the tool
     SimPassBaseShape = 1,  ///< base shape, depth-biased projection
     SimPassPath = 2,       ///< tool-path lines
-    SimPassResolve = 3,    ///< backbuffer: deferred lighting quad
-    SimPassCount = 4,
+    SimPassAOFirst = 3,    ///< the AO effect's internal pass range
+    /// Backbuffer: the deferred lighting quad, after the AO result it
+    /// samples.
+    SimPassResolve = SimPassAOFirst + Render::kAOEffectPasses,
+    SimPassCount = SimPassResolve + 1,
 };
 
 /// The facade-side current state. The GL path keeps state in the

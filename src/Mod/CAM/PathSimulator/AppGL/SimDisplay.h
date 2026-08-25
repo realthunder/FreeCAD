@@ -67,6 +67,12 @@ public:
     // AO stays off until the effect service (step 7) supplies its
     // texture.
     void RenderResultFacade(Render::DrawSurface* surface, unsigned pass);
+    // The AO effect run (docs/CAMSimRenderPort.md step 7): hands the
+    // G-buffer's prepass attachment to the engine's AO service in the
+    // SimPassAOFirst range and keeps the result for the resolve. On a
+    // cached frame (recalculate false) the previous result stands --
+    // the effect's targets persist between frames.
+    void RunAOFacade(Render::DrawSurface* surface, bool enabled, bool recalculate);
     // Per-frame pass configuration for the facade frame (step 6):
     // targets, clears, ordering and transforms of the four passes
     // (SimDrawContext.h). Called by the frame driver between
@@ -150,8 +156,20 @@ protected:
     Render::TextureHandle mRColTexture;
     Render::TextureHandle mRPosTexture;
     Render::TextureHandle mRNormTexture;
+    // The engine prepass packing (oct normal + linear view depth) the
+    // AO effect reads; written by the geometry pass as attachment 3.
+    Render::TextureHandle mRNormalZTexture;
     Render::TextureHandle mRDepthTexture;
     Render::TargetHandle mRTarget;
+    // Colour + depth only, sharing the G-buffer's attachments: the
+    // path-line pass draws here so a program with one output cannot
+    // scribble undefined values into the position/normal/prepass
+    // attachments (an AO streak along the rapid lines, found the
+    // moment the effect first ran).
+    Render::TargetHandle mRPathTarget;
+    Render::EffectHandle mREffectAO;
+    // The last AO run's result; invalid = no AO for the resolve.
+    Render::TextureHandle mRLastAO;
     Render::ProgramHandle mRProgDiffuse;
     Render::ProgramHandle mRProgInvDiffuse;
     Render::ProgramHandle mRProgFlat;

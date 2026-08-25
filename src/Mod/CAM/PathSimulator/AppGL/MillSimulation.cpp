@@ -449,6 +449,7 @@ void MillSimulation::Render()
 
     // render the simulation offscreen in an FBO
 
+    const bool recalculated = simDisplay.updateDisplay;
     if (simDisplay.updateDisplay) {
         simDisplay.PrepareFrameBuffer();
         RenderSimulation();
@@ -463,6 +464,7 @@ void MillSimulation::Render()
     }
 
     if (gSimDraw.active()) {
+        simDisplay.RunAOFacade(gSimDraw.surface, mViewSSAO, recalculated);
         simDisplay.RenderResultFacade(gSimDraw.surface, SimPassResolve);
     }
 

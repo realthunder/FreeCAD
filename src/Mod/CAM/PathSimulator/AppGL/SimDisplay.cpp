@@ -127,6 +127,8 @@ void SimDisplay::InitShaders()
         gSimDraw.setColor(gSimDraw.lightPos, lightPos, 0.0f);
         gSimDraw.setColor(gSimDraw.lightColor, lightColor, 0.0f);
         gSimDraw.setColor(gSimDraw.lightAmbient, ambientCol, 0.0f);
+
+        mREffectAO = dev->createEffect(Render::EffectType::AO);
     }
 }
 
@@ -244,10 +246,14 @@ void SimDisplay::CreateDisplayFbos()
             mWidth, mHeight, Render::DrawTextureFormat::RGBA32F, flags);
         mRNormTexture = dev->createRenderTexture(
             mWidth, mHeight, Render::DrawTextureFormat::RGBA32F, flags);
+        mRNormalZTexture = dev->createRenderTexture(
+            mWidth, mHeight, Render::DrawTextureFormat::RGBA32F, flags);
         mRDepthTexture = dev->createRenderTexture(
             mWidth, mHeight, Render::DrawTextureFormat::D24S8, 0);
-        Render::TextureHandle colors[3] = {mRColTexture, mRPosTexture, mRNormTexture};
-        mRTarget = dev->createTarget(colors, 3, mRDepthTexture);
+        Render::TextureHandle colors[4] = {mRColTexture, mRPosTexture,
+                                           mRNormTexture, mRNormalZTexture};
+        mRTarget = dev->createTarget(colors, 4, mRDepthTexture);
+        mRPathTarget = dev->createTarget(&mRColTexture, 1, mRDepthTexture);
     }
 }
 
@@ -356,6 +362,9 @@ void SimDisplay::CleanFbos()
         if (mRTarget.valid()) {
             dev->destroy(mRTarget);
         }
+        if (mRPathTarget.valid()) {
+            dev->destroy(mRPathTarget);
+        }
         if (mRColTexture.valid()) {
             dev->destroy(mRColTexture);
         }
@@ -365,15 +374,21 @@ void SimDisplay::CleanFbos()
         if (mRNormTexture.valid()) {
             dev->destroy(mRNormTexture);
         }
+        if (mRNormalZTexture.valid()) {
+            dev->destroy(mRNormalZTexture);
+        }
         if (mRDepthTexture.valid()) {
             dev->destroy(mRDepthTexture);
         }
     }
     mRTarget = {};
+    mRPathTarget = {};
     mRColTexture = {};
     mRPosTexture = {};
     mRNormTexture = {};
+    mRNormalZTexture = {};
     mRDepthTexture = {};
+    mRLastAO = {};
 }
 
 void SimDisplay::CleanGL()
@@ -413,7 +428,12 @@ void SimDisplay::CleanGL()
         if (mRQuadVbo.valid()) {
             dev->destroy(mRQuadVbo);
         }
+        if (mREffectAO.valid()) {
+            dev->destroy(mREffectAO);
+        }
     }
+    mREffectAO = {};
+    mRLastAO = {};
     gSimDraw.uniNormalRot = gSimDraw.uniLightPos = {};
     gSimDraw.uniLightColor = gSimDraw.uniLightAmbient = {};
     gSimDraw.uniObjectColor = gSimDraw.uniObjectColorAlpha = {};
@@ -622,15 +642,17 @@ void SimDisplay::RenderResultFacade(Render::DrawSurface* surface, unsigned pass)
     surface->setUniform(mRUniLightPos, vec4of(lightPos));
     surface->setUniform(mRUniLightColor, vec4of(lightColor));
     surface->setUniform(mRUniLightAmbient, vec4of(ambientCol));
-    // y = ssaoActive, off until the AO effect lands (step 7).
-    float params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    // y = ssaoActive: on when the AO effect ran this frame or its
+    // cached result stands (RunAOFacade).
+    const bool aoOn = mRLastAO.valid();
+    float params[4] = {0.0f, aoOn ? 1.0f : 0.0f, 0.0f, 0.0f};
     surface->setUniform(mRUniParams, params);
     surface->setTexture(0, mRSampColor, mRColTexture);
     surface->setTexture(1, mRSampPosition, mRPosTexture);
     surface->setTexture(2, mRSampNormal, mRNormTexture);
-    // The shader branches away from the AO sample, but the slot must
-    // still hold a valid texture on every backend.
-    surface->setTexture(3, mRSampAo, mRColTexture);
+    // With AO off the shader branches away from the sample, but the
+    // slot must still hold a valid texture on every backend.
+    surface->setTexture(3, mRSampAo, aoOn ? mRLastAO : mRColTexture);
     Render::DrawState state;
     state.depthWrite = false;
     state.depthFunc = Render::CompareFunc::Always;
@@ -641,13 +663,32 @@ void SimDisplay::RenderResultFacade(Render::DrawSurface* surface, unsigned pass)
     gSimDraw.submitted = true;
 }
 
+void SimDisplay::RunAOFacade(Render::DrawSurface* surface, bool enabled, bool recalculate)
+{
+    if (!enabled || !surface || !mREffectAO.valid()
+        || !mRNormalZTexture.valid()) {
+        mRLastAO = {};
+        return;
+    }
+    if (!recalculate && mRLastAO.valid()) {
+        return;
+    }
+    Render::EffectParams params;
+    // The engine's automatic radius is 5% of the scene bounding-sphere
+    // size; the stock's largest dimension stands in for it here.
+    params.radius = 0.05f * 1.7320508f * mMaxStockDimension;
+    params.proj = &mProjMat[0][0];
+    mRLastAO = surface->runEffect(mREffectAO, SimPassAOFirst,
+                                  mRNormalZTexture, params);
+}
+
 void SimDisplay::ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& bgnd)
 {
     if (!surface || !mRTarget.valid()) {
         return;
     }
     for (unsigned p = SimPassScene; p <= SimPassPath; p++) {
-        surface->setPassTarget(p, mRTarget);
+        surface->setPassTarget(p, p == SimPassPath ? mRPathTarget : mRTarget);
         surface->setPassRect(p, 0, 0, mWidth, mHeight);
         // The CSG depends on draws landing in submission order.
         surface->setPassSequential(p, true);
