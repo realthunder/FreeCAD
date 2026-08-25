@@ -5327,12 +5327,16 @@ GeomBSplineSurface::~GeomBSplineSurface() = default;
 void GeomBSplineSurface::Trim(double u1, double u2, double v1, double v2)
 {
     try {
+        double bu1 {};
+        double bu2 {};
+        double bv1 {};
+        double bv2 {};
+        mySurface->Bounds(bu1, bu2, bv1, bv2);
         if (mySurface->IsUPeriodic() && u2 < u1) {
-            // wraps over origin
-            u2 = u1 + 1.0;
+            u2 = u1 + (bu2 - bu1);  // wraps over origin: u2 needs one extra lap
         }
         if (mySurface->IsVPeriodic() && v2 < v1) {
-            v2 = v1 + 1.0;
+            v2 = v1 + (bv2 - bv1);
         }
         mySurface =
             GeomConvert::SplitBSplineSurface(mySurface, u1, u2, v1, v2, Precision::Confusion());
