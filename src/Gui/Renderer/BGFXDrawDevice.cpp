@@ -21,6 +21,7 @@
  ****************************************************************************/
 
 #include <cstdio>
+#include <map>
 
 #include "BGFXRendererP.h"
 #include "DrawDevice.h"
@@ -289,6 +290,332 @@ uint16_t toBgfxClearFlags(Render::ClearFlags flags)
         res |= BGFX_CLEAR_STENCIL;
     return res;
 }
+
+/// One AO effect instance (the facade effect tier's first service;
+/// docs/CAMSimRenderPort.md step 7). Its own copy of the engine's AO
+/// resolve chain -- targets, noise, depth pyramid, and the submit
+/// sequence of BGFXView::submitAOResolve -- instantiated per consumer
+/// instead of refactoring the view's members out from under the
+/// engine. The programs and shaders ARE the engine's (same pack);
+/// keep the submit sequence in step with BGFXViewEffects.cpp when
+/// either changes.
+class BGFXAOEffect {
+public:
+    int width = 0;
+    int height = 0;
+    static constexpr int kMipLevels = 6;
+    static constexpr int kSamples = 16;
+    bgfx::TextureHandle aoTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle aoBlurTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle noiseTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle genFbo = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle blurFbo = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle mipTex[kMipLevels];
+    bgfx::FrameBufferHandle mipFbo[kMipLevels];
+    int mipCount = 0;
+    bgfx::ProgramHandle progSsao = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle progGtao = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle progGtaoDepth = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle progGtaoBlur = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle progSsaoBlur = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_aoParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_aoParams2 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_aoKernel = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texNormalZ = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texAONoise = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texAO = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texAOMip[kMipLevels];
+
+    BGFXAOEffect()
+    {
+        for (int m = 0; m < kMipLevels; ++m) {
+            mipTex[m] = BGFX_INVALID_HANDLE;
+            mipFbo[m] = BGFX_INVALID_HANDLE;
+            s_texAOMip[m] = BGFX_INVALID_HANDLE;
+        }
+    }
+
+    ~BGFXAOEffect()
+    {
+        destroyTargets();
+        if (_BGFXLib.currentType == bgfx::RendererType::Noop)
+            return;
+        bgfx::ProgramHandle progs[] = {progSsao, progGtao, progGtaoDepth,
+                                       progGtaoBlur, progSsaoBlur};
+        for (auto h : progs)
+            if (bgfx::isValid(h))
+                bgfx::destroy(h);
+        bgfx::UniformHandle unis[] = {u_aoParams, u_aoParams2, u_aoKernel,
+                                      s_texNormalZ, s_texAONoise, s_texAO};
+        for (auto h : unis)
+            if (bgfx::isValid(h))
+                bgfx::destroy(h);
+        for (int m = 0; m < kMipLevels; ++m)
+            if (bgfx::isValid(s_texAOMip[m]))
+                bgfx::destroy(s_texAOMip[m]);
+    }
+
+    bool init()
+    {
+        // By value: shaderPath() returns a temporary, and its c_str()
+        // must outlive all five loads.
+        const std::string path = _BGFXLib.shaderPath();
+        progSsao = fcLoadProgram("vs_fc_comp", "fs_fc_ssao", path.c_str());
+        progGtao = fcLoadProgram("vs_fc_comp", "fs_fc_gtao", path.c_str());
+        progGtaoDepth = fcLoadProgram("vs_fc_comp", "fs_fc_gtao_depths",
+                                      path.c_str());
+        progGtaoBlur = fcLoadProgram("vs_fc_comp", "fs_fc_gtao_blur",
+                                     path.c_str());
+        progSsaoBlur = fcLoadProgram("vs_fc_comp", "fs_fc_ssao_blur",
+                                     path.c_str());
+        if (!bgfx::isValid(progSsao) || !bgfx::isValid(progSsaoBlur))
+            return false;
+        u_aoParams = bgfx::createUniform("u_aoParams",
+                                         bgfx::UniformType::Vec4);
+        u_aoParams2 = bgfx::createUniform("u_aoParams2",
+                                          bgfx::UniformType::Vec4);
+        u_aoKernel = bgfx::createUniform("u_aoKernel",
+                                         bgfx::UniformType::Vec4, kSamples);
+        s_texNormalZ = bgfx::createUniform("s_texNormalZ",
+                                           bgfx::UniformType::Sampler);
+        s_texAONoise = bgfx::createUniform("s_texAONoise",
+                                           bgfx::UniformType::Sampler);
+        s_texAO = bgfx::createUniform("s_texAO",
+                                      bgfx::UniformType::Sampler);
+        for (int m = 0; m < kMipLevels; ++m) {
+            // 1-based, matching the fs_fc_gtao sampler declarations.
+            char name[24];
+            std::snprintf(name, sizeof(name), "s_texAOMip%d", m + 1);
+            s_texAOMip[m] = bgfx::createUniform(name,
+                                                bgfx::UniformType::Sampler);
+        }
+        return true;
+    }
+
+    void destroyTargets()
+    {
+        if (_BGFXLib.currentType != bgfx::RendererType::Noop) {
+            if (bgfx::isValid(genFbo))
+                bgfx::destroy(genFbo);
+            if (bgfx::isValid(blurFbo))
+                bgfx::destroy(blurFbo);
+            if (bgfx::isValid(aoTex))
+                bgfx::destroy(aoTex);
+            if (bgfx::isValid(aoBlurTex))
+                bgfx::destroy(aoBlurTex);
+            if (bgfx::isValid(noiseTex))
+                bgfx::destroy(noiseTex);
+            for (int m = 0; m < kMipLevels; ++m) {
+                if (bgfx::isValid(mipFbo[m]))
+                    bgfx::destroy(mipFbo[m]);
+                if (bgfx::isValid(mipTex[m]))
+                    bgfx::destroy(mipTex[m]);
+                mipFbo[m] = BGFX_INVALID_HANDLE;
+                mipTex[m] = BGFX_INVALID_HANDLE;
+            }
+        }
+        genFbo = blurFbo = BGFX_INVALID_HANDLE;
+        aoTex = aoBlurTex = noiseTex = BGFX_INVALID_HANDLE;
+        mipCount = 0;
+        width = height = 0;
+    }
+
+    bool ensureTargets(int w, int h)
+    {
+        if (w == width && h == height && bgfx::isValid(aoTex))
+            return true;
+        destroyTargets();
+        width = w;
+        height = h;
+        const uint64_t resFlags = BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;   // linear
+        aoTex = bgfx::createTexture2D(uint16_t(w), uint16_t(h), false, 1,
+                                      bgfx::TextureFormat::R8, resFlags);
+        aoBlurTex = bgfx::createTexture2D(uint16_t(w), uint16_t(h), false,
+                                          1, bgfx::TextureFormat::R8,
+                                          resFlags);
+        if (!bgfx::isValid(aoTex) || !bgfx::isValid(aoBlurTex))
+            return false;
+        genFbo = bgfx::createFrameBuffer(1, &aoTex, false);
+        blurFbo = bgfx::createFrameBuffer(1, &aoBlurTex, false);
+        if (!bgfx::isValid(genFbo) || !bgfx::isValid(blurFbo))
+            return false;
+        // The engine's fixed 4x4 noise: rotation vectors in .xy plus a
+        // Bayer dither in .z (BGFXViewLifecycle.cpp keeps the story).
+        static const uint8_t noise[64] = {
+            0xa2, 0x05, 0x00, 0xff, 0x11, 0xc0, 0x88, 0xff,
+            0xee, 0xc0, 0x22, 0xff, 0x25, 0xd9, 0xaa, 0xff,
+            0x27, 0x23, 0xcc, 0xff, 0x63, 0x03, 0x44, 0xff,
+            0x20, 0xd4, 0xee, 0xff, 0x2a, 0xde, 0x66, 0xff,
+            0x90, 0xfe, 0x33, 0xff, 0x9b, 0xfc, 0xbb, 0xff,
+            0xae, 0x09, 0x11, 0xff, 0xef, 0xbe, 0x99, 0xff,
+            0xd8, 0x23, 0xff, 0xff, 0x3a, 0x15, 0x77, 0xff,
+            0x00, 0x87, 0xdd, 0xff, 0xe8, 0xc9, 0x55, 0xff,
+        };
+        noiseTex = bgfx::createTexture2D(4, 4, false, 1,
+            bgfx::TextureFormat::RGBA8,
+            BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT,
+            bgfx::copy(noise, sizeof(noise)));
+        const auto *caps = bgfx::getCaps();
+        const uint64_t mipFlags = BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        const bool mipR32 = 0 != (caps->formats[bgfx::TextureFormat::R32F]
+                                  & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+        const bool mipR16 = 0 != (caps->formats[bgfx::TextureFormat::R16F]
+                                  & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+        mipCount = (mipR32 || mipR16) && bgfx::isValid(progGtaoDepth)
+            ? kMipLevels : 0;
+        for (int m = 0; m < mipCount; ++m) {
+            const uint16_t mw = uint16_t(std::max(1, w >> (m + 1)));
+            const uint16_t mh = uint16_t(std::max(1, h >> (m + 1)));
+            mipTex[m] = bgfx::createTexture2D(mw, mh, false, 1,
+                mipR32 ? bgfx::TextureFormat::R32F
+                       : bgfx::TextureFormat::R16F, mipFlags);
+            if (bgfx::isValid(mipTex[m]))
+                mipFbo[m] = bgfx::createFrameBuffer(1, &mipTex[m], false);
+            if (!bgfx::isValid(mipFbo[m])) {
+                mipCount = m;
+                break;
+            }
+        }
+        return true;
+    }
+
+    void fullscreen(bgfx::ViewId id, bgfx::ProgramHandle prog)
+    {
+        TransientVertex::init();
+        if (bgfx::getAvailTransientVertexBuffer(
+                    3, TransientVertex::ms_layout) < 3)
+            return;
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::allocTransientVertexBuffer(&tvb, 3,
+                                         TransientVertex::ms_layout);
+        auto *v = reinterpret_cast<TransientVertex *>(tvb.data);
+        v[0] = {-1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+        v[1] = { 3.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+        v[2] = {-1.0f,  3.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        bgfx::submit(id, prog);
+    }
+
+    void configureView(bgfx::ViewId id, bgfx::FrameBufferHandle fb,
+                       int w, int h, const float *proj)
+    {
+        static const float ident[16] = {1, 0, 0, 0, 0, 1, 0, 0,
+                                        0, 0, 1, 0, 0, 0, 0, 1};
+        bgfx::setViewFrameBuffer(id, fb);
+        bgfx::setViewRect(id, 0, 0, uint16_t(w), uint16_t(h));
+        bgfx::setViewClear(id, BGFX_CLEAR_NONE);
+        bgfx::setViewMode(id, bgfx::ViewMode::Default);
+        bgfx::setViewTransform(id, ident, proj);
+    }
+
+    /// The engine's AO resolve sequence (submitAOResolve with
+    /// temporalIndex 0 and no interaction fast path), drawn into the
+    /// surface's pass range starting at baseId. Returns the result
+    /// texture: aoTex for GTAO (the denoise ping-pongs back into it),
+    /// aoBlurTex for the classic chain.
+    Render::TextureHandle run(uint16_t firstViewId, int w, int h,
+                              bgfx::TextureHandle normalZ,
+                              const Render::EffectParams &params)
+    {
+        if (!params.proj || !bgfx::isValid(normalZ) || w <= 0 || h <= 0)
+            return {};
+        if (!ensureTargets(w, h))
+            return {};
+        static const float kernel[kSamples][4] = {
+            {-0.058091f, 0.018602f, 0.079242f, 0.0f},
+            {-0.016977f, 0.100367f, 0.018809f, 0.0f},
+            {-0.042287f, 0.079676f, 0.069813f, 0.0f},
+            {0.010341f, 0.119322f, 0.054631f, 0.0f},
+            {0.012528f, 0.147272f, 0.050676f, 0.0f},
+            {-0.131686f, -0.100976f, 0.088122f, 0.0f},
+            {0.120937f, 0.161185f, 0.103557f, 0.0f},
+            {0.024414f, -0.112444f, 0.246757f, 0.0f},
+            {-0.050206f, -0.180815f, 0.265349f, 0.0f},
+            {0.057177f, 0.368457f, 0.094947f, 0.0f},
+            {0.223564f, 0.320370f, 0.226476f, 0.0f},
+            {0.173264f, -0.484121f, 0.107897f, 0.0f},
+            {0.046909f, 0.076361f, 0.599589f, 0.0f},
+            {0.263978f, 0.433148f, 0.473845f, 0.0f},
+            {-0.768430f, 0.171215f, 0.053107f, 0.0f},
+            {0.429038f, 0.201413f, 0.754499f, 0.0f},
+        };
+        const bool gtao = params.method != 0 && bgfx::isValid(progGtao);
+        const float radius = params.radius > 0.0f ? params.radius : 10.0f;
+        const float intensity =
+            params.intensity > 0.0f ? params.intensity : 1.0f;
+        const float aoPower = gtao ? 2.2f : 2.5f;
+        bgfx::ViewId id = firstViewId;
+        const bool depthMips = gtao && mipCount > 0;
+        if (depthMips) {
+            uint16_t sw = uint16_t(w);
+            uint16_t sh = uint16_t(h);
+            for (int m = 0; m < mipCount; ++m) {
+                configureView(id, mipFbo[m], std::max(1, w >> (m + 1)),
+                              std::max(1, h >> (m + 1)), params.proj);
+                float dparams[4] = {m == 0 ? 0.0f : 1.0f, radius,
+                                    float(sw), float(sh)};
+                bgfx::setUniform(u_aoParams, dparams);
+                bgfx::setTexture(0, s_texNormalZ,
+                                 m == 0 ? normalZ : mipTex[m - 1]);
+                fullscreen(id, progGtaoDepth);
+                ++id;
+                sw = uint16_t(std::max(1, w >> (m + 1)));
+                sh = uint16_t(std::max(1, h >> (m + 1)));
+            }
+        }
+        // The input is RGBA32F, so the fp16 coplanarity-guard flag
+        // (paramZ bit 1) stays clear; no interaction fast path and no
+        // temporal index for a facade run.
+        const float paramZ = gtao ? 0.0f : 0.02f * radius;
+        float genParams[4] = {radius, intensity, paramZ, aoPower};
+        bgfx::setUniform(u_aoParams, genParams);
+        if (gtao) {
+            float params2[4] = {9.0f, 6.0f,
+                                depthMips ? float(mipCount) : 0.0f, 1.0f};
+            bgfx::setUniform(u_aoParams2, params2);
+            for (int m = 0; m < kMipLevels; ++m)
+                bgfx::setTexture(uint8_t(2 + m), s_texAOMip[m],
+                                 depthMips ? mipTex[m] : normalZ);
+        }
+        else {
+            float params2[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            bgfx::setUniform(u_aoParams2, params2);
+            bgfx::setUniform(u_aoKernel, kernel, kSamples);
+        }
+        bgfx::setTexture(0, s_texNormalZ, normalZ);
+        bgfx::setTexture(1, s_texAONoise, noiseTex);
+        configureView(id, genFbo, w, h, params.proj);
+        fullscreen(id, gtao ? progGtao : progSsao);
+        ++id;
+
+        bgfx::setTexture(0, s_texAO, aoTex);
+        if (gtao && bgfx::isValid(progGtaoBlur)) {
+            bgfx::setTexture(1, s_texNormalZ, normalZ);
+            configureView(id, blurFbo, w, h, params.proj);
+            fullscreen(id, progGtaoBlur);
+            ++id;
+            bgfx::setTexture(0, s_texAO, aoBlurTex);
+            bgfx::setTexture(1, s_texNormalZ, normalZ);
+            configureView(id, genFbo, w, h, params.proj);
+            fullscreen(id, progGtaoBlur);
+            return {aoTex.idx};
+        }
+        configureView(id, blurFbo, w, h, params.proj);
+        fullscreen(id, progSsaoBlur);
+        return {aoBlurTex.idx};
+    }
+};
+
+/// Live effect instances, keyed by the facade EffectHandle id. The
+/// device creates and destroys them; a surface's runEffect resolves
+/// its handle here.
+std::map<uint16_t, std::unique_ptr<BGFXAOEffect>> _aoEffects;
+uint16_t _nextEffectId = 0;
 
 /// The per-widget frame surface (DrawSurface.h): a contiguous view-id
 /// block from the shared granule pool (so surface passes never collide
@@ -582,12 +909,15 @@ public:
                                     const Render::EffectParams &params)
                                     override
     {
-        // The effect tier arrives with step 7 of the port.
-        (void)effect;
-        (void)firstPass;
-        (void)normalZ;
-        (void)params;
-        return {};
+        if (!inFrame || !effect.valid() || !normalZ.valid())
+            return {};
+        if (firstPass + Render::kAOEffectPasses > numPasses)
+            return {};
+        auto it = _aoEffects.find(effect.idx);
+        if (it == _aoEffects.end())
+            return {};
+        return it->second->run(uint16_t(baseId + firstPass), width, height,
+                               bgfx::TextureHandle{normalZ.idx}, params);
     }
 };
 
@@ -735,14 +1065,23 @@ public:
 
     Render::EffectHandle createEffect(Render::EffectType type) override
     {
-        // The effect tier arrives with step 7 of the port (the AO
-        // service); until then no effect exists to instantiate.
-        (void)type;
-        return {};
+        if (!available() || type != Render::EffectType::AO)
+            return {};
+        auto effect = std::make_unique<BGFXAOEffect>();
+        if (!effect->init())
+            return {};
+        // Skip the invalid-handle value; ids otherwise just count up
+        // (a session does not create effects in numbers).
+        uint16_t id = _nextEffectId++;
+        if (id == Render::InvalidDrawId)
+            id = _nextEffectId++;
+        _aoEffects[id] = std::move(effect);
+        return {id};
     }
     void destroy(Render::EffectHandle handle) override
     {
-        (void)handle;
+        if (handle.valid())
+            _aoEffects.erase(handle.idx);
     }
 
     std::unique_ptr<Render::DrawSurface> createSurface(

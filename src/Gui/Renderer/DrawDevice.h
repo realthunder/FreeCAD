@@ -248,13 +248,28 @@ enum class EffectType : uint8_t {
     AO,
 };
 
-/// Tuning for one effect run. Zero-initialized means "the engine's own
-/// render-param defaults"; fields grow with the effects (step 7 of the
-/// port adds the AO set).
+/// Passes an AO effect run may draw in: up to 6 depth-pyramid levels,
+/// the gen pass and two denoise passes. The consumer reserves this
+/// many pass ids from its surface for runEffect's firstPass range.
+constexpr unsigned kAOEffectPasses = 9;
+
+/// Tuning for one effect run. Zero-initialized means "the effect's
+/// defaults"; fields grow with the effects (step 7 of the port adds
+/// the AO set).
 struct EffectParams {
-    /// AO: -1 = engine default, else the engine's method index
-    /// (classic kernel / GTAO).
+    /// AO: -1 = the effect's default (GTAO when its programs loaded),
+    /// else the engine's method index (0 classic kernel / 1 GTAO).
     int method = -1;
+    /// AO: sample radius in the consumer's view units; 0 = a small
+    /// generic default -- pass a scene-derived value (the engine uses
+    /// 5% of the scene bounding-sphere size) for a comparable look.
+    float radius = 0.0f;
+    /// AO: occlusion darkening strength; 0 = the engine default (1).
+    float intensity = 0.0f;
+    /// The projection the effect input was rendered with (16 floats,
+    /// column-major). Required for AO -- the gen pass reconstructs
+    /// view-space positions from the input's linear depth with it.
+    const float *proj = nullptr;
 };
 
 /// Process-wide resource ownership of the draw facade. One per
@@ -320,6 +335,14 @@ public:
     /// Instantiate a built-in effect. Runs through
     /// DrawSurface::runEffect, which owns the pass ids the effect's
     /// internal passes draw in.
+    ///
+    /// The AO effect's input texture is the engine's prepass packing:
+    /// octahedral-encoded viewer-facing view-space normal in .xy,
+    /// positive linear view depth in .z, .w = 1 for written fragments
+    /// (the target must clear to 0 so the background reads .w = 0).
+    /// Rendered by the consumer into an RGBA32F attachment of its own
+    /// target; the result comes back as an R8 occlusion texture
+    /// (1 = open).
     virtual EffectHandle createEffect(EffectType type) = 0;
     virtual void destroy(EffectHandle) = 0;
 
