@@ -31,7 +31,7 @@
 #include <Mod/CAM/App/CommandPy.h>
 #include <Mod/Part/App/TopoShapePy.h>
 
-#include "DocumentPy.h"
+#include <Gui/DocumentPy.h>
 // inclusion of the generated files (generated out of CAMSimPy.xml)
 #include "CAMSimPy.h"
 #include "CAMSimPy.cpp"

@@ -6,8 +6,9 @@ set(CAMSimulator_LIBS
     Mesh
     FreeCADApp
     FreeCADGui
-    ${QtOpenGL_LIBRARIES}
-    ${OPENGL_gl_LIBRARY}
+    # All of the simulator's rendering goes through the draw facade
+    # (Gui/Renderer/DrawDevice.h; docs/CAMSimRenderPort.md).
+    FreeCADRenderer
 )
 
 SET(CAMSimulator_SRCS_Python
@@ -43,10 +44,8 @@ SET(CAMSimulator_SRCS_Core
     MillPathSegment.h
     MillSimulation.cpp
     MillSimulation.h
-    OpenGlWrapper.cpp
-    OpenGlWrapper.h
-    Shader.cpp
-    Shader.h
+    SimDrawContext.cpp
+    SimDrawContext.h
     SimDisplay.cpp
     SimDisplay.h
     SimShapes.cpp
@@ -55,10 +54,6 @@ SET(CAMSimulator_SRCS_Core
     StockObject.h
     SolidObject.cpp
     SolidObject.h
-    Texture.cpp
-    Texture.h
-    TextureLoader.cpp
-    TextureLoader.h
     ViewCAMSimulator.cpp
     ViewCAMSimulator.h
     Dummy3DViewer.cpp
@@ -95,7 +90,13 @@ target_include_directories(
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_BINARY_DIR}/src
     ${CMAKE_CURRENT_BINARY_DIR}
+    # Dummy3DViewer pulls Gui/View3DInventorViewer.h, which includes
+    # Coin headers; the local Coin fork lives outside the conda prefix.
+    ${COIN3D_INCLUDE_DIRS}
 )
+# The Part/Path link interfaces carry bare -lTK* entries; the local
+# OCCT install lives outside the default linker search path.
+target_link_directories(CAMSimulator PRIVATE ${OCC_LIBRARY_DIR})
 target_link_libraries(CAMSimulator ${CAMSimulator_LIBS})
 
 if(FREECAD_USE_PCH)
@@ -108,6 +109,31 @@ endif(FREECAD_USE_PCH)
 if (FREECAD_WARN_ERROR)
     target_compile_warn_error(CAMSimulator)
 endif()
+
+if(BUILD_BGFX)
+    # The simulator's shaders (shaders/*.sc, ported from the GLSL 1.20
+    # sources in Shader.cpp; docs/CAMSimRenderPort.md step 2) compile
+    # with the same machinery as the engine's own and land in the same
+    # runtime pack: the facade's DrawDevice::createProgram() resolves
+    # names against the engine's shader path, and the Renderer's
+    # install(DIRECTORY) of that pack ships whatever is in it. The
+    # camsim_ name prefix keeps them clear of the engine's fc_ set.
+    include(${CMAKE_SOURCE_DIR}/src/Gui/Renderer/BGFXShaders.cmake)
+    set(CAMSIM_SHADER_PROFILES glsl spirv essl)
+    if(APPLE)
+        list(APPEND CAMSIM_SHADER_PROFILES metal)
+    endif()
+    fc_bgfx_compile_shaders(CAMSimulator_ShaderBins
+        SHADERC   $<TARGET_FILE:shaderc>
+        SHADERDIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders
+        BGFXINC   ${CMAKE_SOURCE_DIR}/src/3rdParty/bgfx/bgfx/src
+        OUTDIR    ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/bgfx/assets/shaders
+        PROFILES  ${CAMSIM_SHADER_PROFILES}
+        DEPENDS   shaderc)
+    add_custom_target(CAMSimulator_Shaders ALL
+        DEPENDS ${CAMSimulator_ShaderBins})
+    add_dependencies(CAMSimulator CAMSimulator_Shaders)
+endif(BUILD_BGFX)
 
 SET_BIN_DIR(CAMSimulator CAMSimulator /Mod/CAM)
 SET_PYTHON_PREFIX_SUFFIX(CAMSimulator)

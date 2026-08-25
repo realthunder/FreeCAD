@@ -71,6 +71,13 @@ public:
      */
     ~MDIView() override;
 
+    /// A new view of the same kind on the same document, or null when
+    /// the view type does not support cloning (upstream MDIView API).
+    virtual MDIView* clone();
+    /// Copy the window chrome -- title, icon, size, window state --
+    /// from \a from onto this view (upstream MDIView API).
+    void cloneFrom(const MDIView& from);
+
     using QMainWindow::isHidden;
 
     /// get called when the document is updated

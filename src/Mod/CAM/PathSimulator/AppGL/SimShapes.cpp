@@ -24,13 +24,14 @@
 
 #include "SimShapes.h"
 
-#include "Shader.h"
+#include <cmath>
+
+#include "SimDrawContext.h"
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
 
-// include this last as the defines can mess up other includes
-#include "OpenGlWrapper.h"
 
 namespace CAMSimulator
 {
@@ -76,7 +77,7 @@ void Shape::RotateProfile(
     numIndices = (nPoints - 1) * nSlices * 6;
 
     std::vector<Vertex> vbuffer(numVerts);
-    std::vector<GLushort> ibuffer(numIndices);
+    std::vector<uint16_t> ibuffer(numIndices);
     int nsinvals = nSlices;
     if (isHalfTurn) {
         nsinvals *= 2;
@@ -187,7 +188,7 @@ void Shape::ExtrudeProfileRadial(
     int vc2start = vc2idx;
 
     std::vector<Vertex> vbuffer(numVerts);
-    std::vector<GLushort> ibuffer(numIndices);
+    std::vector<uint16_t> ibuffer(numIndices);
 
     bool is_clockwise = angleRad > 0;
     angleRad = (float)fabs(angleRad);
@@ -235,7 +236,7 @@ void Shape::ExtrudeProfileRadial(
         vbuffer[vidx++] = {x2, y2, z2, nx, ny, nz};
 
         // face have 2 triangles { 0, 2, 3, 0, 3, 1 };
-        GLushort vistart = i * 4;
+        uint16_t vistart = i * 4;
         if (is_clockwise) {
             SET_TRIPLE(ibuffer, iidx, vistart, vistart + 2, vistart + 3);
             SET_TRIPLE(ibuffer, iidx, vistart, vistart + 3, vistart + 1);
@@ -286,7 +287,7 @@ void Shape::ExtrudeProfileLinear(
     int vc2start = vc2idx;
 
     std::vector<Vertex> vbuffer(numVerts);
-    std::vector<GLushort> ibuffer(numIndices);
+    std::vector<uint16_t> ibuffer(numIndices);
 
     for (int i = 0; i < nPoints; i++) {
         // hollow pipe verts
@@ -310,7 +311,7 @@ void Shape::ExtrudeProfileLinear(
         vbuffer[vidx++] = {toX, y2, z2 + toZ, 0, ny, nz};
 
         // face have 2 triangles { 0, 2, 3, 0, 3, 1 };
-        GLushort vistart = i * 4;
+        uint16_t vistart = i * 4;
         SET_TRIPLE(ibuffer, iidx, vistart, vistart + 2, vistart + 3);
         SET_TRIPLE(ibuffer, iidx, vistart, vistart + 3, vistart + 1);
 
@@ -331,43 +332,34 @@ void Shape::ExtrudeProfileLinear(
     SetModelData(vbuffer, ibuffer);
 }
 
-void Shape::GenerateModel(const float* vbuffer, const GLushort* ibuffer, int numVerts, int nIndices)
+void Shape::GenerateModel(const float* vbuffer, const uint16_t* ibuffer, int numVerts, int nIndices)
 {
-    // GLuint vbo, ibo, vao;
-
-    // vertex buffer
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, numVerts * sizeof(Vertex), vbuffer, GL_STATIC_DRAW);
-
-    // index buffer
-    glGenBuffers(1, &ibo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, nIndices * sizeof(GLushort), ibuffer, GL_STATIC_DRAW);
-
-    numIndices = nIndices;
+    if (auto* dev = Render::DrawDevice::instance()) {
+        // A regenerated shape must not leak the previous handles.
+        if (rVbo.valid()) {
+            dev->destroy(rVbo);
+        }
+        if (rIbo.valid()) {
+            dev->destroy(rIbo);
+        }
+        Render::VertexLayout layout;
+        layout.add(Render::DrawAttrib::Position, 3, Render::DrawAttribType::Float)
+            .add(Render::DrawAttrib::Normal, 3, Render::DrawAttribType::Float);
+        rVbo = dev->createVertexBuffer(vbuffer, numVerts * sizeof(Vertex), layout);
+        rIbo = dev->createIndexBuffer(ibuffer, nIndices * sizeof(uint16_t));
+    }
 }
 
-void Shape::SetupVertexAttribs() const
-{
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, x));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, nx));
-}
-
-void Shape::SetModelData(const std::vector<Vertex>& vbuffer, const std::vector<GLushort>& ibuffer)
+void Shape::SetModelData(const std::vector<Vertex>& vbuffer, const std::vector<uint16_t>& ibuffer)
 {
     GenerateModel((const float*)vbuffer.data(), ibuffer.data(), (int)vbuffer.size(), (int)ibuffer.size());
 }
 
 void Shape::Render() const
 {
-    SetupVertexAttribs();
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
-    glDrawElements(GL_TRIANGLES, numIndices, GL_UNSIGNED_SHORT, nullptr);
+    if (gSimDraw.active()) {
+        gSimDraw.submitIndexed(rVbo, rIbo);
+    }
 }
 
 void Shape::Render(
@@ -375,14 +367,26 @@ void Shape::Render(
     const mat4x4& normallMat
 ) const  // normals are rotated only
 {
-    CurrentShader->UpdateModelMat(modelMat, normallMat);
+    if (gSimDraw.active()) {
+        gSimDraw.setModel(modelMat, normallMat);
+    }
     Render();
 }
 
 void Shape::FreeResources()
 {
-    GLDELETE_BUFFER(vbo);
-    GLDELETE_BUFFER(ibo);
+    // No device: the backend went down and took the resources with it,
+    // so the stale handles are only cleared.
+    if (auto* dev = Render::DrawDevice::instance()) {
+        if (rVbo.valid()) {
+            dev->destroy(rVbo);
+        }
+        if (rIbo.valid()) {
+            dev->destroy(rIbo);
+        }
+    }
+    rVbo = {};
+    rIbo = {};
 }
 
 Shape::~Shape()

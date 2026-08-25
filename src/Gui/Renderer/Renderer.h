@@ -51,6 +51,7 @@ class QColor;
 namespace Render {
 
 class RenderLib;
+class DrawDevice;
 
 /// CPU-side snapshot of one geometry cache (SoFCVertexCache on the Gui side).
 /// All array pointers stay valid for as long as `owner` is held. Backends key
@@ -2910,6 +2911,13 @@ public:
     };
     virtual bool warmup(QOpenGLWidget *, const std::string &,
                         WarmupTiming * = nullptr) { return false; }
+
+    /// The backend's immediate-mode draw facade (DrawDevice.h,
+    /// docs/CAMSimRenderPort.md section 3), or null: the backend does
+    /// not implement the facade, or its graphics device is not up yet.
+    /// A virtual rather than a hard-linked entry point so that any
+    /// backend can implement it.
+    virtual DrawDevice *drawDevice() const { return nullptr; }
 };
 
 /// CPU accounting for the part of a frame that is *not* the renderer's.
@@ -3017,6 +3025,10 @@ public:
     /// RendererLib::warmup.
     static bool warmup(const std::string &type, QOpenGLWidget *widget,
                        RendererLib::WarmupTiming *timing = nullptr);
+    /// The first registered backend's draw facade (DrawDevice.h), or
+    /// null while none has its device up. DrawDevice::instance() is
+    /// the public door to this.
+    static DrawDevice *drawDevice();
     static void registerLib(RendererLib *);
     static void setResourcePath(const std::string &path);
     static const std::string &resourcePath();

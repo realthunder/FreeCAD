@@ -44,6 +44,11 @@
 
 class SoCamera;
 
+namespace Render
+{
+class DrawSurface;
+}
+
 namespace Gui
 {
 class MDIView;
@@ -68,7 +73,7 @@ public:
 
 public:
     std::vector<Vertex> verts;
-    std::vector<GLushort> indices;
+    std::vector<uint16_t> indices;
     bool needsUpdate = false;
 };
 
@@ -132,6 +137,13 @@ protected:
     void paintGL() override;
     void resizeGL(int w, int h) override;
 
+    // The facade frame around ProcessSim (docs/CAMSimRenderPort.md
+    // step 6): begin opens the surface frame and activates the draw
+    // context, end runs the backend frame and blits -- or backs out
+    // untouched when nothing was submitted (the GL output stands).
+    void beginFacadeFrame();
+    void endFacadeFrame();
+
     void updateGui();
 
 private:
@@ -157,6 +169,11 @@ private:
 
     GuiDisplay* mGui = nullptr;
     Dummy3DViewer* mDummyViewer = nullptr;
+
+    // The draw-facade frame surface; null until the backend device is
+    // up (the GL path stands alone until then), dropped if it goes
+    // back down.
+    std::unique_ptr<Render::DrawSurface> mDrawSurface;
 };
 
 }  // namespace CAMSimulator

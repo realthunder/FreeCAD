@@ -100,6 +100,29 @@ ln -sfn share/PySide6/typesystems typesystems
 ln -sfn share/PySide6/glue glue
 ```
 
+### Packages from the realthunder channel
+
+`libarea` (FreeCAD's Area module and, in the same process, ifcopenshell)
+is a package, not a local build:
+
+```sh
+conda install -p ~/works/sw/fcad/.conda/freecad -c realthunder libarea
+```
+
+Unlike OCCT and Coin it goes **into the env prefix**, not a sibling
+install dir: both consumers link it, and two copies would mean two
+`ClipperLib`s in one process, which is the thing splitting it out was
+meant to prevent.
+
+It used to be built by hand from `~/works/sw/libarea` straight into the
+prefix. That is obsolete as of 2026-08-25, when the feedstock started
+building on all four platforms and published 0.3.1; a hand-install leaves
+files conda does not know about, and this box had accumulated two
+sonames' worth of them. If `.conda/freecad/lib/libarea.so.*` exists with
+no matching `conda-meta/libarea-*.json`, that is the old arrangement:
+delete those files (`lib/libarea.so*`, `include/libarea`,
+`lib/cmake/libarea`) before installing the package over them.
+
 ### Building the dependencies (conda stack)
 
 Build dirs / installs are parallel to the system stack and never collide:

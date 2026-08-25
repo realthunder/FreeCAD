@@ -25,9 +25,12 @@
 
 #include "DlgCAMSimulator.h"
 
+#include <Gui/Renderer/DrawSurface.h>
+
 #include "Dummy3DViewer.h"
 #include "GuiDisplay.h"
 #include "MillSimulation.h"
+#include "SimDrawContext.h"
 #include "ViewCAMSimulator.h"
 #include <Gui/View3DInventorViewer.h>
 #include <Inventor/nodes/SoCamera.h>
@@ -36,8 +39,6 @@
 #include <limits>
 #include <numeric>
 
-// include this last as the defines can mess up other includes
-#include "OpenGlWrapper.h"
 
 using namespace std::literals;
 
@@ -481,7 +482,45 @@ void DlgCAMSimulator::updateCamera()
 
 void DlgCAMSimulator::initializeGL()
 {
-    gOpenGLFunctions.initializeOpenGLFunctions();
+    // Nothing: the facade surface owns all drawing; the widget's GL
+    // context only receives endFrame's blit.
+}
+
+void DlgCAMSimulator::beginFacadeFrame()
+{
+    if (!Render::DrawDevice::instance()) {
+        // Device gone (or never up): surface handles died with it.
+        mDrawSurface.reset();
+        gSimDraw.surface = nullptr;
+        return;
+    }
+    if (!mDrawSurface) {
+        mDrawSurface = Render::DrawSurface::create(this, SimPassCount);
+    }
+    if (!mDrawSurface) {
+        return;
+    }
+    const qreal ratio = devicePixelRatioF();
+    const int w = int(width() * ratio);
+    const int h = int(height() * ratio);
+    if (!mDrawSurface->beginFrame(w, h)) {
+        return;
+    }
+    mMillSimulator->simDisplay.ConfigureFacadeFrame(mDrawSurface.get(),
+                                                    mMillSimulator->bgndColor);
+    gSimDraw.submitted = false;
+    gSimDraw.surface = mDrawSurface.get();
+}
+
+void DlgCAMSimulator::endFacadeFrame()
+{
+    if (!gSimDraw.surface) {
+        return;
+    }
+    gSimDraw.surface = nullptr;
+    if (gSimDraw.submitted) {
+        mDrawSurface->endFrame();
+    }
 }
 
 void DlgCAMSimulator::paintGL()
@@ -516,7 +555,9 @@ void DlgCAMSimulator::paintGL()
 #endif
 
 
+    beginFacadeFrame();
     mMillSimulator->ProcessSim(elapsed);
+    endFacadeFrame();
 
     mLastProcessSim = now;
 }

@@ -24,6 +24,8 @@
 
 #include "MillPathSegment.h"
 
+#include <cassert>
+
 #include "GlUtils.h"
 #include <cmath>
 #include <iostream>

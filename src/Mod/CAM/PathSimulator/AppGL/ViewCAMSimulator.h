@@ -56,7 +56,7 @@ public:
     static ViewCAMSimulator& instance(Gui::Document* doc = nullptr);
     DlgCAMSimulator& dlg();
 
-    bool onMsg(const char* pMsg) override;
+    bool onMsg(const char* pMsg, const char** ppReturn) override;
     bool onHasMsg(const char* pMsg) const override;
 
     const std::string& getCamera() const override;

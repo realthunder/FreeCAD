@@ -90,11 +90,11 @@ public:
     const MillSimulationState& GetState() const;
 
     void SetBoxStock(float x, float y, float z, float l, float w, float h);
-    void SetArbitraryStock(const std::vector<Vertex>& verts, const std::vector<GLushort>& indices);
+    void SetArbitraryStock(const std::vector<Vertex>& verts, const std::vector<uint16_t>& indices);
     void SetStockVisible(bool b);
     bool IsStockVisible() const;
 
-    void SetBaseObject(const std::vector<Vertex>& verts, const std::vector<GLushort>& indices);
+    void SetBaseObject(const std::vector<Vertex>& verts, const std::vector<uint16_t>& indices);
     void SetBaseVisible(bool b);
     bool IsBaseVisible() const;
 

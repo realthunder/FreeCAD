@@ -25,11 +25,10 @@
 #include "MillSimulation.h"
 
 #include "GlUtils.h"
+#include "SimDrawContext.h"
 #include <algorithm>
 #include <iostream>
 
-// include this last as the defines can mess up other includes
-#include "OpenGlWrapper.h"
 
 using namespace std::literals;
 
@@ -175,63 +174,79 @@ bool MillSimulation::ToolExists(int toolid)
 
 void MillSimulation::GlsimStart()
 {
-    glDisable(GL_BLEND);
-    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-    glEnable(GL_STENCIL_TEST);
+    gSimDraw.state.blend = Render::BlendMode::None;
+    gSimDraw.state.colorWrite = false;
+    gSimDraw.state.alphaWrite = false;
+    gSimDraw.stencil.enabled = true;
 }
 
 void MillSimulation::GlsimToolStep1(void)
 {
-    glCullFace(GL_BACK);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_FALSE);
-    glStencilFunc(GL_ALWAYS, 1, 0xFF);
-    glStencilOp(GL_ZERO, GL_ZERO, GL_REPLACE);
+    gSimDraw.cullFace = Render::CullMode::Back;
+    gSimDraw.state.depthFunc = Render::CompareFunc::Less;
+    gSimDraw.state.depthWrite = false;
+    gSimDraw.stencil.func = Render::CompareFunc::Always;
+    gSimDraw.stencil.ref = 1;
+    gSimDraw.stencil.readMask = 0xff;
+    gSimDraw.stencil.stencilFail = Render::StencilOp::Zero;
+    gSimDraw.stencil.depthFail = Render::StencilOp::Zero;
+    gSimDraw.stencil.depthPass = Render::StencilOp::Replace;
 }
 
 void MillSimulation::GlsimToolStep2(void)
 {
-    glCullFace(GL_FRONT);
-    glDepthFunc(GL_GREATER);
-    glDepthMask(GL_TRUE);
-    glStencilFunc(GL_EQUAL, 1, 0xFF);
-    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    gSimDraw.cullFace = Render::CullMode::Front;
+    gSimDraw.state.depthFunc = Render::CompareFunc::Greater;
+    gSimDraw.state.depthWrite = true;
+    gSimDraw.stencil.func = Render::CompareFunc::Equal;
+    gSimDraw.stencil.ref = 1;
+    gSimDraw.stencil.readMask = 0xff;
+    gSimDraw.stencil.stencilFail = Render::StencilOp::Keep;
+    gSimDraw.stencil.depthFail = Render::StencilOp::Keep;
+    gSimDraw.stencil.depthPass = Render::StencilOp::Keep;
 }
 
 void MillSimulation::GlsimClipBack(void)
 {
-    glCullFace(GL_FRONT);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_FALSE);
-    glStencilFunc(GL_ALWAYS, 1, 0xFF);
-    glStencilOp(GL_REPLACE, GL_REPLACE, GL_ZERO);
+    gSimDraw.cullFace = Render::CullMode::Front;
+    gSimDraw.state.depthFunc = Render::CompareFunc::Less;
+    gSimDraw.state.depthWrite = false;
+    gSimDraw.stencil.func = Render::CompareFunc::Always;
+    gSimDraw.stencil.ref = 1;
+    gSimDraw.stencil.readMask = 0xff;
+    gSimDraw.stencil.stencilFail = Render::StencilOp::Replace;
+    gSimDraw.stencil.depthFail = Render::StencilOp::Replace;
+    gSimDraw.stencil.depthPass = Render::StencilOp::Zero;
 }
 
 void MillSimulation::GlsimRenderStock(void)
 {
-    glCullFace(GL_BACK);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glDepthFunc(GL_EQUAL);
-    glEnable(GL_STENCIL_TEST);
-    glStencilFunc(GL_EQUAL, 1, 0xFF);
-    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    gSimDraw.cullFace = Render::CullMode::Back;
+    gSimDraw.state.colorWrite = true;
+    gSimDraw.state.alphaWrite = true;
+    gSimDraw.state.depthFunc = Render::CompareFunc::Equal;
+    gSimDraw.stencil.enabled = true;
+    gSimDraw.stencil.func = Render::CompareFunc::Equal;
+    gSimDraw.stencil.ref = 1;
+    gSimDraw.stencil.readMask = 0xff;
+    gSimDraw.stencil.stencilFail = Render::StencilOp::Keep;
+    gSimDraw.stencil.depthFail = Render::StencilOp::Keep;
+    gSimDraw.stencil.depthPass = Render::StencilOp::Keep;
 }
 
 void MillSimulation::GlsimRenderTools(void)
 {
-    glCullFace(GL_FRONT);
+    gSimDraw.cullFace = Render::CullMode::Front;
 }
 
 void MillSimulation::GlsimEnd(void)
 {
-    glCullFace(GL_BACK);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-
-    glDisable(GL_STENCIL_TEST);
-    glStencilFunc(GL_ALWAYS, 1, 0xFF);
+    gSimDraw.cullFace = Render::CullMode::Back;
+    gSimDraw.state.colorWrite = true;
+    gSimDraw.state.alphaWrite = true;
+    gSimDraw.state.depthFunc = Render::CompareFunc::Less;
+    gSimDraw.state.depthWrite = true;
+    gSimDraw.stencil = {};
 }
 
 void MillSimulation::renderSegmentForward(int iSeg)
@@ -352,11 +367,13 @@ void MillSimulation::RenderPath()
     if (!mViewPath) {
         return;
     }
+    gSimDraw.pass = SimPassPath;
     simDisplay.SetupLinePathPass(mPathStep, false);
     millPathLine.Render();
     simDisplay.SetupLinePathPass(mPathStep, true);
     millPathLine.Render();
-    glDepthMask(GL_TRUE);
+    gSimDraw.state.depthWrite = true;
+    gSimDraw.pass = SimPassScene;
 }
 
 void MillSimulation::RenderBaseShape()
@@ -365,11 +382,13 @@ void MillSimulation::RenderBaseShape()
         return;
     }
     simDisplay.StartDepthPass();
-    glPolygonOffset(0, -2);
-    glEnable(GL_POLYGON_OFFSET_FILL);
     simDisplay.StartGeometryPass(baseShapeColor, false);
+    // The depth-biased projection pass substitutes the GL path's
+    // glPolygonOffset (SimPassBaseShape); backend passes run in id
+    // order, so the draw still lands after the CSG.
+    gSimDraw.pass = SimPassBaseShape;
     mBaseShape.render();
-    glDisable(GL_POLYGON_OFFSET_FILL);
+    gSimDraw.pass = SimPassScene;
 }
 
 void MillSimulation::Render()
@@ -378,24 +397,27 @@ void MillSimulation::Render()
         return;
     }
 
-    // set background
-    glClearColor(bgndColor[0], bgndColor[1], bgndColor[2], 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    // Without an active facade frame (no backend device) there is
+    // nothing to draw into.
+    if (!gSimDraw.active()) {
+        return;
+    }
 
-    // render the simulation offscreen in an FBO
-
-    if (simDisplay.updateDisplay) {
+    // The CSG renders into the G-buffer only when something changed;
+    // a cached frame goes straight to the resolve, which reads the
+    // preserved targets.
+    const bool recalculated = simDisplay.updateDisplay;
+    if (recalculated) {
         simDisplay.PrepareFrameBuffer();
         RenderSimulation();
         RenderTool();
         RenderBaseShape();
         RenderPath();
         simDisplay.updateDisplay = false;
-        simDisplay.RenderResult(true, mViewSSAO);
     }
-    else {
-        simDisplay.RenderResult(false, mViewSSAO);
-    }
+
+    simDisplay.RunAOFacade(gSimDraw.surface, mViewSSAO, recalculated);
+    simDisplay.RenderResultFacade(gSimDraw.surface, SimPassResolve);
 
     /*   if (mDebug > 0) {
            mat4x4 test;
@@ -409,8 +431,6 @@ void MillSimulation::Render()
            }
            p->render(mDebug);
        }*/
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void MillSimulation::ProcessSim(const clock::duration& elapsed)
@@ -486,7 +506,7 @@ void MillSimulation::SetBoxStock(float x, float y, float z, float l, float w, fl
 
 void MillSimulation::SetArbitraryStock(
     const std::vector<Vertex>& verts,
-    const std::vector<GLushort>& indices
+    const std::vector<uint16_t>& indices
 )
 {
     mStockObject.GenerateSolid(verts, indices);
@@ -508,7 +528,7 @@ bool MillSimulation::IsStockVisible() const
     return mViewItems & VIEWITEM_SIMULATION;
 }
 
-void MillSimulation::SetBaseObject(const std::vector<Vertex>& verts, const std::vector<GLushort>& indices)
+void MillSimulation::SetBaseObject(const std::vector<Vertex>& verts, const std::vector<uint16_t>& indices)
 {
     mBaseShape.GenerateSolid(verts, indices);
 }

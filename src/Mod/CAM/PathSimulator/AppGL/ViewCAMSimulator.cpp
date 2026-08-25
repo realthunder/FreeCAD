@@ -106,8 +106,12 @@ ViewCAMSimulator::ViewCAMSimulator(Gui::Document* pcDocument, QWidget* parent, Q
 #endif
 }
 
-bool ViewCAMSimulator::onMsg(const char* pMsg)
+bool ViewCAMSimulator::onMsg(const char* pMsg, const char** ppReturn)
 {
+    // This fork's message handler carries a return-string slot
+    // (upstream's does not); none of the messages below produce one.
+    (void)ppReturn;
+
     // TODO: this is a near 1-to-1 code duplication from View3DInventor.cpp
 
     if (pMsg == "ViewFit"sv) {

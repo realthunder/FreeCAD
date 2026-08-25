@@ -4,7 +4,9 @@ add_subdirectory(App)
 
 # AppGL is ~7,800 lines of hand-written desktop OpenGL with its own viewer.
 # That runs against this fork's renderer direction, so it is off unless asked
-# for, and gets revisited as renderer work rather than as part of CAM.
+# for. The revisit is underway: docs/CAMSimRenderPort.md ports its rendering
+# onto the FreeCADRenderer draw facade (Gui/Renderer/DrawDevice.h), stage by
+# stage; turn this on to work on that port.
 if(BUILD_CAM_SIMULATOR_GL)
     add_subdirectory(AppGL)
 endif(BUILD_CAM_SIMULATOR_GL)
