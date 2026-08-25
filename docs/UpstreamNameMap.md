@@ -153,6 +153,10 @@ Verified applications of the filter:
 | `41d1aed844` OCCT bug 1330 | **APPLIES, partly done** | the fork has `ShapeAnalysis_FreeBoundsFix` (added 2026-08-23, `e00436d5ee`) but wired only 2 of ~8 call sites |
 | `140c9febc4` (#22889 sort crash) | SKIP | fixes `ElementNameComparator`, which upstream invented in `ef2ef6d7aa`; the fork has never had it |
 | `0a3677b9eb` | SKIP | operator-precedence slip in a sanity check upstream itself added |
+| `3a6f70946a` ruled surface (#16013) | **APPLIES, done** | fork sampled closed curves at their coincident end points |
+| `9f3d6543c6` -> shell type check | **APPLIES, done** | fork accepted any result *containing* a shell |
+| `110f3e000d` -> evolve join type | **APPLIES, done** | fork mapped `JoinType::Arc` to `GeomAbs_Tangent` |
+| `76df39e99d` getSubTopoShape | SKIP | upstream wrote `IndexError` in the transfer commit itself; our `ValueError` was never upstream's |
 
 ## 5. Reject list
 
@@ -351,35 +355,78 @@ part of the harvest.
   keep no element map. Those two cases are dropped, not disabled -- there is
   nothing here to call. **A feature gap, not a rename.**
 
-### The 14 findings
+### The 14 findings, and the phase 4 triage of them
 
-Each is a `DISABLED_` case in the suite with a one-line note at its
-definition. **None has been through the section 4 filter yet** -- that
-triage is the first step of phase 4, and until it is done none of these
-should be called a fork bug.
+Each was a `DISABLED_` case in the suite. **All fourteen have now been through
+the section 4 filter.** Four were genuine fork defects and are fixed; the rest
+are not ours to port.
 
-| case | symptom |
-|------|---------|
-| `makELoftRejectsCoincidentProfiles` | raw `StdFail_NotDone` escapes instead of `Base::CADKernelError`. This is upstream `9ee2c74545`, already independently confirmed as applicable in section 4 -- **the strongest candidate, and the one to fix first.** |
-| `makEShellIntersecting` | a self-intersecting shell raises nothing where `Base::CADKernelError` is expected |
-| `getSubTopoShapeByEnum` | an out-of-range subshape throws something other than `Base::IndexError` |
-| `getSubTopoShapeByStringNames` | same, by string name |
-| `makEEvolve` | an empty-description C++ exception escapes the operation |
-| `makESlice` | the slice comes back empty (length 0, wrong shape type) |
-| `makESlices` | the slices come back empty; the test then indexes an empty vector and aborts |
-| `makERuledSurfaceEdges` | the result carries an entirely empty element map |
-| `makERuledSurfaceWires` | area 2.02 where 4 is expected, and different element names |
-| `makESolid` | no tag or child-map postfixes at all, and 24 edges where 12 are expected |
-| `makERevolve` | one face is named `...;:M;MAK;:H2:7,F` where a plain `;:G;RVL` form is expected |
-| `makEBSplineFace` | names carry full tag/hasher postfixes where plain `Edge1;BSF` forms are expected |
-| `makEOffset2D` | names lack the trailing `;OFF;:H1:4,E` step, and there are 4 source edges where 2 are expected |
-| `setElementComboNameCompound` | the name comes out without the `;:H,E` tag postfix |
+Method: for each case, the fork's implementation was compared against upstream's
+current text *and* against the text upstream had in the commit that first
+transferred that function in from this fork. A difference that upstream
+introduced at transfer time is upstream's, and skipped. A difference upstream
+introduced *later*, over text that still matches ours, is a real fix, and is
+ported.
 
-The last five are element-map naming differences, which is exactly the shape
-the section 4 filter exists for: upstream transcribed this fork's naming, so a
-mismatch may be upstream's transcription rather than our defect. The first
-seven -- wrong exception type, empty result, empty map -- are behavioural and
-much less likely to be transcription artifacts.
+#### Fixed -- real fork defects (4)
+
+| case | defect | upstream |
+|------|--------|----------|
+| `makELoftRejectsCoincidentProfiles` | no guard at all against identical loft profiles; a raw `StdFail_NotDone` escaped | `9ee2c74545` (#5855), as later refined by their PR #29982 -- the naive centre-of-gravity test is too strict and rejects concentric squares |
+| `makERuledSurfaceWires` | the automatic-orientation test sampled each curve at its first and last parameter. On a **closed** curve those are the same point, so the vector between them is zero and the reversal decision was noise: area 2.02 instead of 4 | `3a6f70946a` (#16013), pre-fix text byte-identical to ours |
+| `makEShellIntersecting` | checked whether the sewing result *had* a shell sub-shape. A compound of shells does, so `makEShell(silent=false)` returned a compound and raised nothing | upstream's later fix over `9f3d6543c6`, byte-identical to ours |
+| `makEEvolve` | `JoinType::Arc` mapped to `GeomAbs_Tangent` and `Tangent` fell through to `Arc` -- swapped. OCCT rejects anything above `GeomAbs_Arc`, so every default-argument evolve threw a bare `Standard_NotImplemented` | transferred in with the same defect as `110f3e000d`, corrected later |
+
+Note that `makERuledSurfaceWires`'s **element names fell into line by themselves**
+once the surface was built the right way round. A naming mismatch is not
+necessarily a naming bug.
+
+#### Skipped -- upstream's difference, not ours (5)
+
+| case | why |
+|------|-----|
+| `getSubTopoShapeByEnum` | we raise `Base::ValueError` for an out-of-range index, upstream `Base::IndexError`. Upstream wrote `IndexError` in `76df39e99d`, the very commit that transferred the function in, and never changed it. **Expectation adapted, case enabled.** |
+| `getSubTopoShapeByStringNames` | same root cause; the same test already expects our `ValueError` for an invalid name. **Expectation adapted, case enabled.** |
+| `makERevolve` | our `makERevolve` ends with `fix()`, added because `BRepPrimAPI_MakeRevol` can produce a surface with reversed parameters (realthunder/FreeCAD#559). Upstream has no such call, and that `fix()` is what stamps the extra `;:M;MAK` step. A deliberate fork delta. |
+| `makEBSplineFace` | the two implementations genuinely differ. Ours does geometric edge matching and transfers names through `makESHAPE` with `aFace(Tag, Hasher, ..)`; upstream's maps by index and ends in `setElementComboName` with `aFace(0, Hasher, ..)`, which is why its expectation carries no tag postfixes at all despite tagged inputs. Upstream's own source marks that path `TODO: Is this correct?`. |
+| `makEOffset2D` | the input wire is a rectangle, so it has four edges. Our map names all four plus four vertices; upstream's expectation names two edges and two vertices and carries a doubled `;OFF` step. **Ours is the more complete map.** Upstream's only later change to this function -- collecting face wires with `getSubTopoShapes` instead of `splitWires` -- is not on the path a wire input takes. |
+
+#### Not a naming bug -- a separate defect (2)
+
+`makESlice` and `makESlices` are byte-equivalent to upstream's, and so is
+`CrossSection::slice` where the work actually happens. Reproduced outside the
+test entirely:
+
+    Part.makeBox(1,1,1).slice(Vector(1,0,0), 0.5)   -> 0 wires
+    Part.makeBox(2,2,2).slice(Vector(1,0,0), 1.0)   -> 1 wire
+
+**`Part.slice()` returns nothing for any box of size 1 or less, at any offset,
+while size 2 and above works.** It is scale dependent, not offset dependent, and
+a translated unit box fails too. This is a live, user-visible defect in cross
+sections of small shapes -- most likely an OCCT 8.0.1 change, since upstream's
+CI captured these expectations on 7.x -- and it wants its own investigation
+rather than being carried as a topo-naming finding.
+
+#### Still open -- ours, but not explained yet (3)
+
+`setElementComboNameCompound`, `makESolid` and `makERuledSurfaceEdges` all show
+this fork producing a poorer element map than upstream: a bare `Edge1` where
+upstream has `Edge1;:H,E`, 52 bare entries where upstream distinguishes the two
+shells of a compound with `;:H,E` and `;:C1;:H:4,E`, and an empty map where
+upstream names nine elements.
+
+**No upstream fix applies to any of them.** `makESHAPE`, `mapSubElement`,
+`encodeElementName`, `setElementName`, `makECompound`, `makESolid` and
+`makERuledSurface` were each diffed against upstream and are equivalent modulo
+the renames in section 1 and the enum table above. So the divergence is not a
+missing upstream fix; it is something in our own naming path.
+
+The prime suspect is the **deferred element map, which is fork-only** --
+`hasPendingElementMap()`, `_ParentCache`, `_Cache->cachedElementMap` and a real
+`TopoShape::flushElementMap()`, where upstream's `flushElementMap()` is an empty
+stub. Note that `flushElementMap()`'s `_ParentCache` branch re-maps through
+`self.mapSubElement(parent)` with **no op string**, which is exactly the shape of
+"names arrive without their postfixes". That is where to start.
 
 Re-enable a case by deleting its `DISABLED_` prefix, together with the fix,
 and not before.
