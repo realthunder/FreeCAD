@@ -1940,3 +1940,61 @@ index). Refusals fall back to the Coin offscreen render as before.
   (a source, b cut-born, c fallback)") -- read them before theorizing
   about wrong colors: all-fallback means the probes miss (frame),
   source-but-wrong-color means palette resolution.
+
+## 32. Implementation status (2026-08-25): DrawBrokenView is ported
+
+The selective port recommended in section 6 has begun: `DrawBrokenView`
+(item 2 of the list) is in, App + Gui + command.  Notes and decisions:
+
+- **No FCBRepAlgoAPI port was needed.** Upstream's own
+  `DrawBrokenView::apply1Break` had already retreated to plain
+  `BRepAlgoAPI_Cut` (their comment: FCBRepAlgoAPI refuses to cut
+  compounds, github issue 27414), so the `FCBRepAlgoAPI_Cut.h` include
+  was vestigial and is dropped.  The section-4 blocker list overstated
+  this one.
+- **Shims added** (all verbatim ports of small upstream helpers):
+  `DrawUtil::closestBasisOriented` / `maskDirection` /
+  `coordinateForDirection`, `ShapeUtils::edgesAreParallel`,
+  `ShapeExtractor::isSketchObject`, `pointPair::scale`,
+  `Preferences::BreakLineStyle`.  `Preferences::BreakType` returns
+  `int` here rather than upstream's `DrawBrokenView::BreakType` --
+  including DrawBrokenView.h from Preferences.h for one default value
+  was not worth the header coupling; the single use site casts.
+- **Python binding** rewritten from upstream's `.pyi` to this tree's
+  `DrawBrokenViewPy.xml` + PyImp pattern (3 methods:
+  `mapPoint3dToView`, `mapPoint2dFromView`, `getCompressedCenter`).
+- **The dimension remap** (true distances across breaks) lands in this
+  fork's `DrawViewDimension::getDimValue` projected-Distance branch;
+  upstream had refactored the same logic into `getProjectedDimValue`,
+  which does not exist here.
+- **QGIBreakLine** keeps the fork's per-class Qt type convention
+  (`QGraphicsItem::UserType + 178`), not upstream's `QGIUserTypes`
+  enum, and `drawBreakLines` uses the scaled accessors
+  (`hiddenWidthScaled`) per the per-view LineScale rule.
+- **ShadedUnderlay: broken views are guarded out** (capture returns
+  false).  The generic branch would render the UNBROKEN sources -- the
+  projection no longer matches the 3D scene -- and the compressed shape
+  is not kept in prepared space, so the derived-scene path cannot
+  register either without new plumbing.  If an underlay is ever wanted
+  here: run `centerScaleRotate` over `m_compressedShape` with
+  `m_saveCentroid`/Scale/Rotation and take the section branch.  Also
+  the natural reason there is no vg/PageFeed change: break-line
+  decorations feed through the generic QGIDecoration capture.
+- The command is written in this tree's idiom (CmdTechDrawView's
+  selection loop + cmdAppDocument/cmdAppObjectArgs), with upstream's
+  NoResolve second pass to dig break sketches out of Body subnames.
+  Upstream's `checkDirectionVsBasis` helper does not exist here and is
+  not needed: DrawBrokenView snaps directions with
+  `closestBasisOriented` internally.
+
+Verified: headless smoke (box 100mm, sketch break 30..70, Gap 10 ->
+compressed span exactly 70.0, `mapPoint2dFromView` round-trip exactly
+100.0, 8 coarse-HLR edges = two rectangles); GUI smoke under
+xvfb+vglrun (command registered, QGIBreakLine item present in the page
+scene, survives a BreakLineType flip).
+
+Still open from the section 6 list: `LineFormat`/`Tag`, `CommandAlign`,
+`QGVNavStyleSolidWorks` (item 3), and the `DimensionAutoCorrect` /
+`ShapeFinder` decision (item 4).  The `isSame()` chore (section 4) did
+not arise: it bites only when adopting upstream's property-list
+classes, and this port keeps the fork's.
