@@ -80,6 +80,12 @@ printf 'qt6-main ==6.11.2\npyside6 ==6.11.2\nvtk-base ==9.6.2\nvtk-io-ffmpeg ==9
   > ~/works/sw/fcad/.conda/freecad/conda-meta/pinned
 ```
 
+Two things the create line deliberately leaves out, because neither may be
+solved normally in this env: `smesh` (see
+[FEM](#fem-and-the-external-smesh-it-links)) and `ifcopenshell` (see
+[IfcOpenShell](#ifcopenshell-for-archbim)). Both link OCCT, and both must
+arrive without conda-forge's `occt`.
+
 Notes on non-obvious packages: `expat` (not just `libexpat`) so Coin's
 `USE_EXTERNAL_EXPAT` finds headers; the `libgl*/libegl*-devel` set provides GL headers
 and libs the conda toolchain uses instead of the system's; `fmt`/`pybind11` are wanted
@@ -310,6 +316,60 @@ Two different consumers, easy to confuse:
   depend on netgen either, so shipping without it is no worse than upstream;
   the `NetgenPythonPath` preference points it at a prefix of its own, exactly as
   `gmshBinaryPath` does for gmsh.
+
+### IfcOpenShell, for Arch/BIM
+
+**IfcOpenShell is part of the standard dev env**, the same way FEM is. Without it
+the BIM workbench loads but every IFC path in it is dead: `nativeifc` imports,
+the import/export commands appear, and the first one that touches a file raises
+`No module named 'ifcopenshell'`. It is a Python package, so nothing in the
+build depends on it -- which is exactly why it kept being left out.
+
+*** **Whatever supplies it must not bring an `occt` with it.** IfcOpenShell
+links OCCT, and every packaged build depends on the conda-forge `occt`. Letting
+that in puts a second OCCT in the prefix under the *same* library names as our
+fork's local install, and the process then runs whichever the loader reached
+first -- the same hazard the smesh section describes, and the reason smesh is
+installed with no `occt` either. The two boxes answer it differently:
+
+| | what supplies it | 2D booleans via libarea |
+|---|---|---|
+| Linux | the fork built from source into the conda prefix | yes |
+| Windows | conda-forge `ifcopenshell`, installed without `occt` | no |
+
+On Linux it is the fork (`realthunder/IfcOpenShell`, branch `LinkVibe`),
+rebuilt into the conda prefix so it links `libarea.so.1` -- see the ledger in
+`docs/CAMPort.md`, which is also where the one open question about that path
+lives.
+
+On Windows there is no fork build, and the packaged one is upstream 0.8.5:
+
+```bat
+:: ifc_explicit.txt -- @EXPLICIT, then the URLs conda solved for, minus occt:
+::   cgal-cpp geos gflags gmp mpfr rocksdb shapely ifcopenshell
+conda install -p <env> -y --file ifc_explicit.txt
+```
+
+Get that URL list by solving `ifcopenshell` into a **throwaway env** that
+carries this env's python and pins, then subtracting what is already installed
+and dropping `occt` (and the `vtk` metapackage, which only enters through
+occt's `all_` variant). The explicit-file form is required for the reason the
+smesh section gives -- no plain `conda install` solves in this env any more.
+
+**The version skew is real and it works.** conda-forge builds ifcopenshell
+0.8.5 against occt **8.0.0**; our fork is 8.0.1. With no occt in the prefix its
+`TK*.dll` imports are answered by the fork build `FreeCAD.exe` has already
+loaded, and the whole path holds -- `ifcopenshell.geom` imports (that is the
+half that links OCCT; the bare `import ifcopenshell` does not), and an
+`IfcExtrudedAreaSolid` tessellates through it. Measured, not assumed; a symbol
+mismatch would show as "the specified procedure could not be found". Re-check
+it after either side moves.
+
+What Windows gives up by taking the packaged build is the fork's 2D boolean
+path -- `boolean_subtraction_2d_using_area`, the one that goes through libarea
+rather than the 3D kernel. Closing that means building the fork here, or
+rewiring `ifcopenshell-feedstock` off the upstream tarball onto the `LinkVibe`
+branch, which `docs/CAMPort.md` already lists as a separate job.
 
 ### An optimized stack, for measuring anything
 
@@ -750,6 +810,12 @@ conda install -p <env> -y --file pthreads_explicit.txt
 The explicit-file form is used here for the reason given above: the env's smesh
 record names an `occt` no channel can supply, so every plain `conda install`
 into it now fails to solve.
+
+### IfcOpenShell
+
+Also part of the standard env, and it carries the same do-not-bring-an-occt
+rule. The recipe and what the version skew costs are in
+[IfcOpenShell, for Arch/BIM](#ifcopenshell-for-archbim) with the rest of it.
 
 ### The dev shell: `.conda\run.cmd`
 
