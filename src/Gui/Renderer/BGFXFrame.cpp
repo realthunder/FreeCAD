@@ -232,6 +232,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (progChanged
             || _BGFXLib.viewTargetWidth() != view->width
             || _BGFXLib.viewTargetHeight() != view->height
+            // The lost-framebuffer case rebuilds once, not every
+            // frame, exactly as on the desktop side below: without
+            // this a bank whose init failed once stayed torn down
+            // (and its sub-view black) for good.
+            || (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
             || _BGFXLib.effectResolution != view->effectScale
             || _BGFXLib.ssaoResolution != view->ssaoScale
             || view->hdrScene != view->hdrSceneWanted()
@@ -239,8 +244,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
         view->init(!progChanged);
     }
 
-    if (!bgfx::isValid(view->bgfxFbo))
+    if (!bgfx::isValid(view->bgfxFbo)) {
+        RENDER_ERR("bgfx: sub-view " << subCtx.id
+                   << " frame bailed: no scene framebuffer (targetsFailed="
+                   << int(view->targetsFailed) << ")");
         return false;
+    }
 #else
     // Only a shader-generation or MSAA change actually invalidates the
     // programs (MSAA also re-decides m_oit, i.e. which programs exist).

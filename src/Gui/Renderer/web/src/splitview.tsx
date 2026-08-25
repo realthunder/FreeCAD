@@ -136,6 +136,11 @@ export function SplitOverlay() {
     if (!gp) setRoot(sibling);
     else if (gp.a === p) gp.a = sibling;
     else gp.b = sibling;
+    // A tree collapsed to one cell pushes '' and the viewer shows its
+    // ordinary wire-driven content -- reflect that here, or a lone
+    // Page cell would claim content the C++ side is not showing.
+    const r = root();
+    if (r.cell) r.page = false;
     changed();
   };
 
@@ -175,13 +180,25 @@ export function SplitOverlay() {
   const cellRectOf = (cell: CellNode) =>
     layout().cells.find((c) => c.node === cell) ?? null;
 
+  // The drag listens on the WINDOW, not the pressed element: every
+  // tree change re-renders the cell divs, so the corner zone that
+  // took the press dies mid-gesture -- element pointer capture then
+  // silently drops the live resize and the pointerup, and the stale
+  // drag corrupts the next gesture.
   const zoneDown = (cell: CellNode, ev: PointerEvent) => {
     if (ev.button !== 0) return;
     const rect = cellRectOf(cell);
     if (!rect) return;
     drag = { cell, rect, startX: ev.clientX, startY: ev.clientY,
              resize: null };
-    (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+    const move = (mv: PointerEvent) => zoneMove(mv);
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      zoneUp();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
     ev.preventDefault();
   };
   const zoneMove = (ev: PointerEvent) => {
@@ -248,12 +265,8 @@ export function SplitOverlay() {
   const handleDown = (split: SplitNode, ev: PointerEvent) => {
     if (ev.button !== 0) return;
     ev.preventDefault();
-    const el = ev.currentTarget as HTMLElement;
-    el.setPointerCapture(ev.pointerId);
-    // The split's own rect: union of both sides.
-    const rects = layout();
-    const mine = rects.handles.find((h) => h.node === split);
-    if (!mine) return;
+    // Window listeners for the same reason as zoneDown: the handle
+    // div itself is recreated on every ratio change.
     const move = (mv: PointerEvent) => {
       // Recover the split's base rect from its children each move --
       // an ancestor resize may have moved it.
@@ -268,11 +281,11 @@ export function SplitOverlay() {
       changed();
     };
     const up = () => {
-      el.removeEventListener('pointermove', move);
-      el.removeEventListener('pointerup', up);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
     };
-    el.addEventListener('pointermove', move);
-    el.addEventListener('pointerup', up);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
   };
 
   const unionRect = (split: SplitNode) => {
@@ -304,14 +317,10 @@ export function SplitOverlay() {
                         width: `${c.w}px`, height: `${c.h}px` }}>
             <div class="fc-split-zone fc-split-zone-tr"
                  title="Drag in to split, out to join"
-                 onPointerDown={[zoneDown, c.node]}
-                 onPointerMove={zoneMove}
-                 onPointerUp={zoneUp} />
+                 onPointerDown={[zoneDown, c.node]} />
             <div class="fc-split-zone fc-split-zone-bl"
                  title="Drag in to split, out to join"
-                 onPointerDown={[zoneDown, c.node]}
-                 onPointerMove={zoneMove}
-                 onPointerUp={zoneUp} />
+                 onPointerDown={[zoneDown, c.node]} />
             {multi() && (
               <div class="fc-split-chip">
                 <button classList={{ on: !c.node.page }}

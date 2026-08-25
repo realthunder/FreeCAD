@@ -2570,12 +2570,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_layout(const char *spec)
         bool fit = false;
         const WasmSubView *prev = nullptr;
         for (const auto &o : s_subViews) {
-            if (o.id == c.id && o.page == c.page) {
+            if (o.id == c.id) {
                 prev = &o;
                 break;
             }
         }
         if (prev) {
+            // Matched on id alone: a content flip (the 3D/Page chip)
+            // keeps BOTH state sets -- flipping to Page and back must
+            // not lose the cell's camera.
             std::memcpy(c.center, prev->center, sizeof(c.center));
             c.panX = prev->panX;
             c.panY = prev->panY;
@@ -2587,7 +2590,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_layout(const char *spec)
             c.pageView = prev->pageView;
             c.pageUserView = prev->pageUserView;
             const bool resized = prev->w != c.w || prev->h != c.h;
-            fit = resized && (c.page ? !c.pageUserView : !c.userCam);
+            const bool flipped = prev->page != c.page;
+            fit = (resized || flipped)
+                && (c.page ? !c.pageUserView : !c.userCam);
         }
         else if (c.page) {
             fit = true;   // a fresh page cell frames the sheet
@@ -2598,6 +2603,20 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_layout(const char *spec)
         }
         next.push_back(c);
         fits.push_back(fit);
+    }
+
+    // Clearing the layout adopts a 3D cell's camera for the single
+    // view -- the last-active one when it is 3D, else any 3D cell.
+    // Without this a page-cell-active clear left the page cell's
+    // untouched default orbit on the full canvas.
+    if (next.empty() && !s_subViews.empty()) {
+        const WasmSubView *adopt = nullptr;
+        for (const auto &o : s_subViews) {
+            if (!o.page && (!adopt || o.id == oldActiveId))
+                adopt = &o;
+        }
+        if (adopt)
+            loadSubCam(*adopt);
     }
 
     // 3D cells that vanished give their renderer bank back.

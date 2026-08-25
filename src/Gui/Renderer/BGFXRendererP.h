@@ -6980,10 +6980,19 @@ public:
     {
         if (id == activeSub)
             return;
+        const decltype(msaaSamples) liveMsaa = msaaSamples;
         stashSubView(subBanks[activeSub]);
         auto it = subBanks.find(id);
         if (it == subBanks.end()) {
             loadSubView(freshBank);
+            // A fresh bank's zeroed sample count must not read as an
+            // MSAA change: the programs are shared and already right,
+            // and init(false) mid-frame destroys and relinks them per
+            // bank -- twice in one un-flushed frame that exhausted the
+            // handle pool and blacked the sub-view out. Inheriting the
+            // live count leaves only the size mismatch, which is the
+            // keepShared init the fresh bank actually needs.
+            msaaSamples = liveMsaa;
         }
         else {
             loadSubView(it->second);

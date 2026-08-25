@@ -143,6 +143,19 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
     pimpl->subCtx = {};
     _BGFXLib.standaloneSubWidth = 0;
     _BGFXLib.standaloneSubHeight = 0;
+    // A bank whose init found the handle pool full latched
+    // targetsFailed, and on the desktop nothing clears it until a
+    // size or program change -- because a bailed single-view frame
+    // never reaches bgfx::frame(). A multi-sub-view frame DOES (the
+    // healthy siblings pump it, or the drain above), so the destroyed
+    // handles are reclaimed every wall frame and one retry per frame
+    // neither spins nor eats the pool it waits on.
+    auto vit = _BGFXLib.views.find(pimpl->widget);
+    if (vit != _BGFXLib.views.end()) {
+        vit->second->targetsFailed = false;
+        for (auto &b : vit->second->subBanks)
+            b.second.targetsFailed = false;
+    }
     return ok;
 #endif
 }
