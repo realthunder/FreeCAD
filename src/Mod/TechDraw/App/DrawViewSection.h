@@ -28,6 +28,7 @@
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Shape.hxx>
 #include <gp_Ax2.hxx>
+#include <gp_Trsf.hxx>
 
 #include <App/DocumentObject.h>
 #include <App/FeaturePython.h>
@@ -159,8 +160,18 @@ public:
 
     TopoDS_Shape getCutShape() const { return m_cutShape; }
     TopoDS_Shape getCutShapeRaw() const { return m_cutShapeRaw; }
+    TopoDS_Shape getPreparedShape() const { return m_preparedShape; }
+
+    //! The exact build-time frames (doc sec 31), committed together
+    //! with the shapes they describe: m_cutShapeRaw -> global, and
+    //! m_preparedShape -> global (the latter carries the 1/Scale
+    //! factor).  False while no cut has finished, or when the frame is
+    //! not rigid (an aligned complex section's unfolded fiction).
+    bool getCutShapeFrame(gp_Trsf& frame) const;
+    bool getPreparedFrame(gp_Trsf& frame) const;
 
     TopoDS_Shape getShapeForDetail() const override;
+    bool getShapeForDetailFrame(gp_Trsf& frame) const override;
 
     static const char* SectionDirEnums[];
     static const char* CutSurfaceEnums[];
@@ -202,6 +213,23 @@ protected:
 
     TopoDS_Shape m_cutShape;        // centered, scaled, rotated result of cut
     TopoDS_Shape m_cutShapeRaw;     // raw result of cut w/o center/scale/rotate
+
+    //! Frame of the shape getShapeToCut() returns -> global, resolved
+    //! through the BaseView chain's stored frames (a detail ancestor
+    //! hands over its own centered frame).
+    gp_Trsf getShapeToCutFrame(bool& valid) const;
+
+    // The build-time frames.  Pending values are captured with the cut
+    // input at launch (execute()) and committed next to the shapes they
+    // describe (prepareShape), so an input recomputed mid-cut cannot
+    // desynchronize them.  Transient: the shapes rebuild on
+    // recompute/restore and the frames rebuild with them.
+    gp_Trsf m_cutFrame;             // m_cutShapeRaw -> global
+    bool m_cutFrameValid = false;
+    gp_Trsf m_preparedFrame;        // m_preparedShape -> global (with 1/Scale)
+    bool m_preparedFrameValid = false;
+    gp_Trsf m_pendingCutFrame;
+    bool m_pendingCutFrameValid = false;
 
     void onDocumentRestored() override;
     void setupObject() override;

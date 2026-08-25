@@ -263,6 +263,11 @@ TopoDS_Shape DrawComplexSection::prepareShape(const TopoDS_Shape& cutShape, doub
         return TopoDS_Shape();
     }
 
+    // The unfolded fiction is not one rigid move of the cut shape: a
+    // stale valid frame from a strategy switch must not survive.
+    m_preparedFrameValid = false;
+    m_cutFrameValid = false;
+
     TopoDS_Shape centeredShape = ShapeUtils::centerShapeXY(m_alignResult, getProjectionCS());
     m_preparedShape = ShapeUtils::scaleShape(centeredShape, getScale());
     if (!DrawUtil::fpCompare(Rotation.getValue(), 0.0)) {
@@ -705,6 +710,16 @@ TopoDS_Shape DrawComplexSection::getShapeForDetail() const
     }
     //Aligned
     return m_preparedShape;
+}
+
+bool DrawComplexSection::getShapeForDetailFrame(gp_Trsf& frame) const
+{
+    if (ProjectionStrategy.getValue() == 0) {//Offset
+        return DrawViewSection::getShapeForDetailFrame(frame);
+    }
+    //Aligned: the unfolded fiction has no rigid map to the global frame
+    frame = gp_Trsf();
+    return false;
 }
 
 TopoDS_Wire DrawComplexSection::makeProfileWire() const

@@ -203,6 +203,18 @@ TopoDS_Shape DrawViewPart::getShapeForDetail() const
     return ShapeUtils::rotateShape(getSourceShape(true), getProjectionCS(), Rotation.getValue());
 }
 
+bool DrawViewPart::getShapeForDetailFrame(gp_Trsf& frame) const
+{
+    // getShapeForDetail rotates the (global-frame) source shape by
+    // +Rotation about the projection CS axis; the frame back is the
+    // inverse rotation.
+    frame = gp_Trsf();
+    if (!DrawUtil::fpCompare(Rotation.getValue(), 0.0)) {
+        frame.SetRotation(getProjectionCS().Axis(), -Rotation.getValue() * M_PI / 180.0);
+    }
+    return true;
+}
+
 //! combine the regular links and xlinks into a single list
 std::vector<App::DocumentObject*> DrawViewPart::getAllSources() const
 {
