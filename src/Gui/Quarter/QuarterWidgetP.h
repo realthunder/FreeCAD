@@ -34,6 +34,7 @@
 \**************************************************************************/
 
 #include <Inventor/SbBasic.h>
+#include <functional>
 #include <QList>
 #include <QUrl>
 #include <QtOpenGL.h>
@@ -90,6 +91,11 @@ public:
   bool addactions;
   bool processdelayqueue;
   QUrl navigationModeFile;
+  /// Installed by a host that draws this widget's scene somewhere else
+  /// (the ViewArea unified canvas, docs/SplitViews.md sec 13): with the
+  /// widget hidden, update() is a no-op, so redraw() has to reach the
+  /// canvas instead of this widget's own viewport.
+  std::function<void(bool)> redrawredirect;
   SoScXMLStateMachine * currentStateMachine;
   qreal device_pixel_ratio;
 

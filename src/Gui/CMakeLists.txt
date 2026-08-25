@@ -886,6 +886,7 @@ SET(View3D_CPP_SRCS
     SplitView3DInventor.cpp
     View.cpp
     ViewArea.cpp
+    ViewAreaCanvas.cpp
     View3DInventor.cpp
     View3DInventorExamples.cpp
     View3DInventorSelection.cpp
@@ -914,6 +915,7 @@ SET(View3D_SRCS
     SplitView3DInventor.h
     View.h
     ViewArea.h
+    ViewAreaCanvas.h
     View3DInventor.h
     View3DInventorExamples.h
     View3DInventorSelection.h

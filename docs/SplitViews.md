@@ -902,3 +902,121 @@ Survey nuggets for it, from this pass:
   UNDER the splitter tree shows through (Qt composites siblings by
   stacking order; the join overlay already relies on this class of
   behavior).
+
+## 14. D2 implementation notes: the ViewArea unified canvas (2026-08-25)
+
+D2 of the sec 13.3 ladder is BUILT and verified on the real GPU (RTX
+3060, xvfb + VirtualGL). Pref-gated `View/UnifiedCanvas`, default OFF,
+applied live in both directions (`ViewParams::onUnifiedCanvasChanged`
+re-syncs every open container).
+
+### 14.1 What it is
+
+`Gui::ViewAreaCanvas` (src/Gui/ViewAreaCanvas.{h,cpp}) is a
+QOpenGLWidget child of the ViewArea, sized to the root splitter's rect
+and lowered under it. It owns ONE backend instance
+(`RendererFactory::create(type, canvas)`), and the container's 3D cells
+become banks of it. A canvas frame is:
+
+1. one `SubViewFrame` per claimed cell -- the cell rect in canvas
+   DEVICE pixels, top-left origin, plus that cell's own camera read
+   against the CELL's aspect ratio;
+2. `prepareSubViews` then `renderSubViews` (D1's desktop path: one
+   ordinary frame per submit, blitted colour+depth to the sub rect);
+3. the FEEDING cell's Coin residue through
+   `View3DInventorViewer::renderCanvasResidue`, then a follow-up frame
+   if `needsRedraw()` -- the same one-frame-lag rule renderScene()
+   already lives by (the feed happens during the traversal, which runs
+   after the backend pass).
+
+The child View3DInventors stay: out of the cell's layout, resized to the
+cell rect by hand, and hidden. Not reparented -- `ViewAreaCell::childEvent`
+reads a reparent as the view being torn away and collapses the tile.
+
+### 14.2 The pieces it needed
+
+- **`View3DInventorViewer::adoptRenderer(shared, feed)`**. `_pimpl->renderer`
+  became a `shared_ptr`, so the canvas's instance can be handed to every
+  cell; `feed` selects the ONE cell whose render-cache manager states the
+  scene to it. Two managers pushing `setScene()` at one backend would
+  overwrite each other, so the rest supply only a camera. The feed
+  follows the ACTIVE cell (`ViewArea::setActiveCell` re-syncs) so
+  draggers land where the user is working; moving it costs a
+  re-translation of the caches the new feeder already holds
+  (`SoFCRenderer::feedExternal` -- no traversal).
+- **`QuarterWidget::setRedrawRedirect`**. A hidden widget's `update()`
+  is a no-op, so every redraw Coin schedules for a child would be
+  dropped; the redirect sends it to the canvas.
+- **`renderCanvasResidue(origin, size, backendDrawn)`**. Sets the render
+  manager's viewport region to the cell rect ORIGIN INCLUDED (Coin draws
+  where the region says), scissors the whole traversal to it -- both of
+  renderScene's clears are framebuffer-wide -- and runs renderScene with
+  `canvasResidue` set, which skips the backend frame the canvas already
+  drew.
+- **Input forwarding by cell rect**. The canvas installs an event filter
+  on each claimed cell and re-sends mouse/wheel/key events to the hidden
+  child's GL widget at the coordinates it would have seen. Presses also
+  set the active cell directly: a hidden widget cannot take focus, so
+  activation can no longer ride `ViewArea::onFocusChanged`.
+- **Cells go background-less** (`WA_NoSystemBackground`) so the canvas
+  sibling under the splitter tree shows through.
+
+### 14.3 Traps hit
+
+- **The forwarded event climbs straight back in.** The hidden child is
+  still a CHILD of the cell, so anything it leaves unaccepted propagates
+  up into the cell -- and into the filter that forwarded it, which
+  forwards it again. Two clicks were enough to blow the stack (SIGSEGV).
+  Fixed with a re-entrancy flag (`_forwarding`); while set, the filter
+  lets the event climb past.
+- **A sub-view blit rect is in the destination framebuffer's own
+  pixels.** D1 passed `widget->height()` (logical) as the y-flip
+  reference; the destination is the widget's FBO, which is DPR-scaled.
+  Now `height() * devicePixelRatioF()`, and the canvas states its rects
+  in device pixels.
+- **A claim is against a cell AND its child.** `setCellView` swaps the
+  content under a claimed cell; without comparing the child the newcomer
+  would never be hidden or adopted. `ViewAreaCell::releaseView` also
+  releases the claim before the view leaves.
+- **Teardown must not restore backends.** `releaseAll(false)` from the
+  ViewArea destructor detaches without giving each viewer a backend of
+  its own -- otherwise two are created only to be destroyed with the
+  widgets a moment later.
+- **A maximized layout hides every other tile**, so `claimable()` skips
+  invisible cells and a single visible cell drops the canvas entirely
+  (nothing to share). The same rule keeps an unsplit view on the plain
+  path, which is why the regression smokes are byte-identical.
+
+### 14.4 Verified
+
+- Two cells, one canvas: both render their own camera, and the picture
+  is PIXEL-IDENTICAL to widget composition except the active-cell
+  border (see 14.5). 0 "frame bailed" lines.
+- Three cells: all three claimed, all three render.
+- Mixed: a TechDraw page cell stays widget-composed and visible while
+  the two 3D cells stay canvas-drawn -- the sec 13.2 narrowing, working.
+- Activation follows a click into a cell (each cell's camera stamped and
+  read back through the active view).
+- Pref off at runtime: canvas gone, children visible, same picture.
+- Regression with the pref off (the default): the polish, default,
+  layout, gesture, M0 and page smokes all reproduce their baselines
+  exactly.
+
+### 14.5 Known gaps, all D3/D4 work
+
+- **The active-cell highlight border is invisible** under the canvas:
+  the cell paints it into the backing store and the GL sibling covers
+  it. This is 13.4's widget-over-GL stacking risk, and 13.3's D3 already
+  names "active highlight on the canvas".
+- **Only the feeding cell composites Coin residue.** The others draw the
+  resident scene through their camera and nothing else -- correct today
+  because the feed follows activation, but per-cell chrome (NaviCube,
+  axis cross) is D3.
+- **Overlay captures outlive their feed.** A cell that stopped feeding
+  leaves its overlay entries resident in the backend, and they are drawn
+  in EVERY sub-view. They currently overlap exactly (same anchor), so it
+  looks right; per-sub-view overlay feeds are D3.
+- **Per-cell display modes** still fall back to widget composition
+  (D4's pass filter).
+- Cells showing a DIFFERENT document are not claimed: one canvas draws
+  one resident scene.

@@ -5993,10 +5993,15 @@ bool BGFXRenderer::Private::render(const QColor &col,
     cpuMark(CpuCtxIn);
     QOpenGLContext::currentContext()->extraFunctions()
         ->glBindFramebuffer(GL_FRAMEBUFFER, GLuint(hostFbo));
+    // A sub-view rect is stated in the DESTINATION framebuffer's own
+    // pixels -- the widget's device pixels -- because that is what the
+    // blit writes into and what the y-flip has to measure against.
     view->blit(dumpPending ? &pendingDump : nullptr, &lastStats,
                subCtx.active ? subCtx.x : 0,
                subCtx.active ? subCtx.y : 0,
-               subCtx.active ? widget->height() : 0);
+               subCtx.active
+                   ? int(widget->height() * widget->devicePixelRatioF() + 0.5)
+                   : 0);
     cpuMark(CpuBlit);
     if (dumpPending && !pendingDump.overlays) {
         // That frame went to the screen as well as to the capture, and

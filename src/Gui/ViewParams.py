@@ -168,6 +168,14 @@ Params = [
         "render engine. NOT a user setting -- the path is chosen at\n"
         "startup (RenderParams::selectRenderPath), which overrides\n"
         "whatever a config carries. Set it at runtime to compare paths."),
+    ParamBool('UnifiedCanvas', False, on_change=True,
+        title='Unified split-view canvas',
+        doc="Draw all the 3D cells of a split view (ViewArea) into ONE\n"
+        "canvas widget, as sub-views of a single render backend, instead\n"
+        "of composing each cell's own widget. One backend instance and\n"
+        "one copy of the GPU scene serve every cell (the browser tier's\n"
+        "model). Experimental; needs the render engine (render cache\n"
+        "mode 3). See docs/SplitViews.md sec 13."),
     ParamBool('RandomColor', False),
     ParamHex('BoundingBoxColor', 0xffffffff),
     ParamHex('AnnotationTextColor', 0xffffffff),

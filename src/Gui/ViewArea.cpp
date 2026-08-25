@@ -41,6 +41,7 @@
 #include <App/DocumentObject.h>
 
 #include "ViewArea.h"
+#include "ViewAreaCanvas.h"
 
 #include "Application.h"
 #include "Document.h"
@@ -327,6 +328,10 @@ MDIView *ViewAreaCell::releaseView()
     MDIView *view = _child;
     if (!view)
         return nullptr;
+    // A canvas-drawn cell holds the view hidden, out of the layout and
+    // on the shared backend; hand all of that back before it leaves.
+    if (_area && _area->canvas())
+        _area->canvas()->releaseCell(this);
     // Cleared first: the reparenting below delivers ChildRemoved, which
     // must read as an intentional release, not the child being torn away.
     _child = nullptr;
@@ -664,6 +669,13 @@ ViewArea::ViewArea(Gui::Document* pcDocument, QWidget* parent, Qt::WindowFlags w
 ViewArea::~ViewArea()
 {
     _closing = true;
+    // Before the cells go: releasing a claim puts a hidden child view
+    // back in its cell's layout and hands its viewer its own backend.
+    if (_canvas) {
+        _canvas->releaseAll(false);
+        delete _canvas;
+        _canvas = nullptr;
+    }
 }
 
 const char *ViewArea::getName() const
@@ -735,6 +747,7 @@ bool ViewArea::setCellView(ViewAreaCell *cell, MDIView *view)
     stealFromMdiArea(view);
     cell->hostView(view);
     setActiveCell(cell);
+    syncCanvas();
     return true;
 }
 
@@ -840,6 +853,7 @@ ViewAreaCell *ViewArea::splitCell(ViewAreaCell *cell, Qt::Orientation orientatio
 
     newCell->hostView(child);
     setActiveCell(cell, false);
+    syncCanvas();
     return newCell;
 }
 
@@ -880,6 +894,7 @@ void ViewArea::toggleMaximizeCell(ViewAreaCell *cell)
         }
         _maximizeRestore.clear();
         _maximizedCell = nullptr;
+        syncCanvas();
         return;
     }
     if (!cell || cell->area() != this || cellCount() < 2)
@@ -914,6 +929,9 @@ void ViewArea::toggleMaximizeCell(ViewAreaCell *cell)
     }
     _maximizedCell = cell;
     setActiveCell(cell);
+    // One visible tile: the canvas has nothing to share and stands
+    // down, giving the maximized cell its own widget composition back.
+    syncCanvas();
 }
 
 void ViewArea::setPendingMaximize(ViewAreaCell *cell)
@@ -948,6 +966,35 @@ void ViewArea::resizeEvent(QResizeEvent *ev)
     MDIView::resizeEvent(ev);
     if (width() > 0 && height() > 0)
         armPendingMaximize();
+    syncCanvas();
+}
+
+void ViewArea::syncCanvas()
+{
+    if (_closing)
+        return;
+    if (!ViewAreaCanvas::wanted()) {
+        // Turned off (or the render engine went away): give every cell
+        // back its own widget composition and drop the shared backend.
+        if (_canvas) {
+            _canvas->releaseAll();
+            delete _canvas;
+            _canvas = nullptr;
+        }
+        return;
+    }
+    if (!_canvas)
+        _canvas = new ViewAreaCanvas(this);
+    // The canvas is the ground the splitter tree stands on: same rect,
+    // bottom of the stack, with the claimed cells painting no
+    // background of their own so it shows through.
+    _canvas->setGeometry(_rootSplitter->geometry());
+    _canvas->sync();
+}
+
+void ViewArea::setCanvasActiveCell(ViewAreaCell *cell)
+{
+    setActiveCell(cell);
 }
 
 QList<int> ViewArea::preMaximizeSizes(const QSplitter *sp) const
@@ -1008,6 +1055,7 @@ void ViewArea::collapseCell(ViewAreaCell *cell)
         auto all = cells();
         setActiveCell(all.empty() ? nullptr : all.front());
     }
+    syncCanvas();
 }
 
 void ViewArea::childViewGone(ViewAreaCell *cell)
@@ -1037,6 +1085,11 @@ void ViewArea::setActiveCell(ViewAreaCell *cell, bool activateWindow)
             old->update();
         if (cell)
             cell->update();
+        // The unified canvas feeds its backend from the ACTIVE cell, so
+        // the Coin residue -- draggers above all -- lands where the
+        // user is working (docs/SplitViews.md sec 13).
+        if (_canvas)
+            _canvas->sync();
     }
     if (activateWindow && cell && cell->childView())
         getMainWindow()->setActiveWindow(cell->childView());

@@ -516,7 +516,25 @@ struct View3DInventorViewer::Private
 
     SoFCDisplayModeElement::HiddenLineConfig hiddenLineConfig;
 
-    std::unique_ptr<Renderer> renderer;
+    // Shared, not owned outright: a ViewArea unified canvas
+    // (docs/SplitViews.md sec 13) hands the SAME backend instance to
+    // every 3D cell it hosts, so that N cells cost one backend and one
+    // copy of the GPU scene. A view outside a canvas is still the sole
+    // owner of what it created.
+    std::shared_ptr<Renderer> renderer;
+    // Set while this viewer is one cell of a unified canvas: the
+    // canvas has already run the backend pass for every cell
+    // (Renderer::renderSubViews) into the framebuffer it bound, so
+    // renderScene() must not render a frame of its own -- it only
+    // composites this cell's Coin residue, into the cell rect of the
+    // canvas. Carries whether that backend pass succeeded.
+    bool canvasResidue = false;
+    bool canvasBackendDrawn = false;
+    // Whether `renderer` is the canvas's instance rather than this
+    // viewer's own, and whether this viewer is the cell that states the
+    // scene to it (exactly one cell of a canvas may).
+    bool adoptedRenderer = false;
+    bool feedsRenderer = false;
 
     // Overlay captures (raw-GL overlay Coin-ification): mirror the
     // foreground superimposition and the corner axis cross to the
@@ -4074,6 +4092,134 @@ Render::Renderer *View3DInventorViewer::getExternalRenderer() const
     return _pimpl->renderer.get();
 }
 
+std::shared_ptr<Render::Renderer> View3DInventorViewer::sharedRenderer() const
+{
+    return _pimpl->renderer;
+}
+
+QColor View3DInventorViewer::feedRendererBackground()
+{
+    // What renderScene() resolves for its own frame, minus the Coin
+    // gradient-node dance: the backend draws the background itself, so
+    // a canvas frame (docs/SplitViews.md sec 13) only has to state it
+    // and know the flat colour a failed pass should clear with.
+    QColor col;
+    if (overrideBGColor)
+        col = App::Color(overrideBGColor).asValue<QColor>();
+    else
+        col = this->backgroundColor();
+    if (_pimpl->renderer)
+        _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
+    return col;
+}
+
+bool View3DInventorViewer::hasAdoptedRenderer() const
+{
+    return _pimpl->adoptedRenderer;
+}
+
+void View3DInventorViewer::adoptRenderer(
+        const std::shared_ptr<Render::Renderer> &renderer, bool feed)
+{
+    if (!renderer) {
+        if (!_pimpl->adoptedRenderer)
+            return;
+        // Give the viewer back its own backend. Drop the adopted one
+        // exactly as setRendererType does when it swaps instances: the
+        // overlay captures and the scene feed both name a backend.
+        _pimpl->clearOverlayCaptures();
+        if (selectionRoot)
+            selectionRoot->setExternalRenderer(nullptr);
+        _pimpl->renderer.reset();
+        _pimpl->adoptedRenderer = false;
+        _pimpl->canvasResidue = false;
+        const int mode = int(ViewParams::getRenderCache());
+        setRendererType(mode == 3 ? RenderParams::getType() : std::string());
+        getSoRenderManager()->scheduleRedraw();
+        return;
+    }
+    if (_pimpl->renderer != renderer) {
+        // Whatever this viewer held is not what it will feed; the
+        // captures and the scene feed are both stated per backend.
+        _pimpl->clearOverlayCaptures();
+        if (selectionRoot)
+            selectionRoot->setExternalRenderer(nullptr);
+        // Only a backend this viewer owned alone is forgotten -- the
+        // canvas's instance stays fed by whichever cell feeds it.
+        if (_pimpl->renderer && _pimpl->renderer.use_count() == 1)
+            ObjectMetaFeed::instance().forget(_pimpl->renderer.get());
+        _pimpl->renderer = renderer;
+        _pimpl->adoptedRenderer = true;
+        // Detached above: whatever this viewer fed, it fed the old one.
+        _pimpl->feedsRenderer = false;
+    }
+    if (!selectionRoot)
+        return;
+    const bool fed = _pimpl->feedsRenderer;
+    if (fed == feed)
+        return;
+    _pimpl->feedsRenderer = feed;
+    if (feed) {
+        App::PropertyContainer *settings = _pimpl->renderSettings();
+        selectionRoot->setExternalRenderer(renderer.get(), settings);
+        Gui::initRenderProperties(settings);
+        applyRendererAntiAliasing();
+    }
+    else {
+        // Detaching leaves the backend holding the scene this manager
+        // stated; the cell that takes over restates it whole
+        // (SoFCRenderer::setExternalRenderer feeds on attach), so
+        // nothing is lost and the backend never runs empty.
+        selectionRoot->setExternalRenderer(nullptr);
+    }
+}
+
+void View3DInventorViewer::renderCanvasResidue(const SbVec2s &origin,
+                                               const SbVec2s &size,
+                                               bool backendDrawn)
+{
+    if (size[0] <= 0 || size[1] <= 0)
+        return;
+    // Coin draws where its viewport region says, origin included, so
+    // the cell rect IS the viewport region for this traversal. The
+    // widget-sized region comes back afterwards: everything else that
+    // reads it (the camera aspect, picking) wants the plain one.
+    SoRenderManager *manager = getSoRenderManager();
+    const SbViewportRegion saved = manager->getViewportRegion();
+    SbViewportRegion vp(size[0], size[1]);
+    vp.setViewportPixels(origin[0], origin[1], size[0], size[1]);
+    manager->setViewportRegion(vp);
+
+    // Scissor for the whole residue: renderScene() clears (a failed
+    // backend pass, and the closing alpha fixup) with calls that are
+    // framebuffer-wide, and this cell owns only its rect of the canvas.
+    GLboolean hadScissor = glIsEnabled(GL_SCISSOR_TEST);
+    GLint savedBox[4] = {0, 0, 0, 0};
+    glGetIntegerv(GL_SCISSOR_BOX, savedBox);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(origin[0], origin[1], size[0], size[1]);
+
+    _pimpl->canvasResidue = true;
+    _pimpl->canvasBackendDrawn = backendDrawn;
+    try {
+        renderScene();
+    }
+    catch (...) {
+        _pimpl->canvasResidue = false;
+        glScissor(savedBox[0], savedBox[1], savedBox[2], savedBox[3]);
+        if (!hadScissor)
+            glDisable(GL_SCISSOR_TEST);
+        manager->setViewportRegion(saved);
+        throw;
+    }
+    _pimpl->canvasResidue = false;
+
+    glScissor(savedBox[0], savedBox[1], savedBox[2], savedBox[3]);
+    if (!hadScissor)
+        glDisable(GL_SCISSOR_TEST);
+    manager->setViewportRegion(saved);
+}
+
 bool View3DInventorViewer::applyRendererAntiAliasing()
 {
     if (!_pimpl->renderer)
@@ -4095,6 +4241,12 @@ void View3DInventorViewer::setRenderSettings(App::PropertyContainer *container)
 
 void View3DInventorViewer::setRendererType(const std::string &type)
 {
+    // Selecting a backend of its own ends any unified-canvas adoption
+    // (docs/SplitViews.md sec 13); the flags describe THIS viewer's
+    // relationship to whatever `renderer` ends up holding.
+    _pimpl->adoptedRenderer = false;
+    _pimpl->feedsRenderer = !type.empty() && type != "Default";
+
     // An empty or 'Default' type selects the plain GL pipeline. A failed
     // RendererFactory::create() also returns null, falling back to plain GL.
     if (type.empty() || type == "Default") {
@@ -5392,7 +5544,23 @@ void View3DInventorViewer::renderScene()
 
     bool externalRendered = false;
     SoCamera* cam = getSoRenderManager()->getCamera();
-    if (cam && _pimpl->renderer) {
+    if (_pimpl->canvasResidue) {
+        // One cell of a ViewArea unified canvas (docs/SplitViews.md sec
+        // 13). The canvas already ran the backend pass for every cell of
+        // the layout -- one renderSubViews call, one backend, one copy
+        // of the scene -- into the framebuffer it has bound, so this
+        // traversal is the Coin residue of THIS cell and nothing else:
+        // no frame of our own, and no clear, because the cell rect
+        // already holds the backend's colour and depth. The caller has
+        // scissored us to that rect, so the fallback clear below cannot
+        // reach the neighbours.
+        externalRendered = _pimpl->canvasBackendDrawn;
+        if (!externalRendered) {
+            glClearColor(col.redF(), col.greenF(), col.blueF(), 0.0F);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        }
+    }
+    else if (cam && _pimpl->renderer) {
         SbMatrix viewMat, projMat;
         const SbViewportRegion vp = getSoRenderManager()->getViewportRegion();
         SbViewVolume vol = cam->getViewVolume(vp.getViewportAspectRatio());

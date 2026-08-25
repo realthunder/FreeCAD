@@ -33,6 +33,7 @@
 namespace Gui {
 
 class ViewArea;
+class ViewAreaCanvas;
 class ViewAreaCell;
 class ViewAreaZone;
 class ViewAreaMenuButton;
@@ -260,6 +261,21 @@ public:
      */
     static void detachViewForHosting(MDIView *view);
 
+    /** Bring the unified canvas (docs/SplitViews.md sec 13) in line with
+     * the current layout, or tear it down when it is not wanted. One
+     * canvas draws every 3D cell as a sub-view of a single backend
+     * instead of composing each cell's own GL widget; the pref is
+     * View/UnifiedCanvas, default off. Idempotent -- called after every
+     * layout, activation and size change.
+     */
+    void syncCanvas();
+    /// The unified canvas, or null when the container composes widgets.
+    ViewAreaCanvas *canvas() const { return _canvas; }
+    /// Make \a cell the active tile. Public for the canvas: its cells'
+    /// child views are hidden, so activation can no longer ride the
+    /// child's focus event.
+    void setCanvasActiveCell(ViewAreaCell *cell);
+
     /// The focused child view; what activation resolves to.
     MDIView *activeSubView() override;
 
@@ -306,6 +322,7 @@ private:
     };
 
     ViewAreaSplitter *_rootSplitter;
+    ViewAreaCanvas *_canvas = nullptr;
     QPointer<ViewAreaCell> _activeCell;
     QPointer<ViewAreaCell> _maximizedCell;
     QPointer<ViewAreaCell> _pendingMaximize;
