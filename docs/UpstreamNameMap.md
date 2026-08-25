@@ -215,6 +215,90 @@ internals that are currently free to change, and it is a refactor of exactly
 the subsystem the harvest is trying to test -- doing it before the tests
 exist inverts the safety net. Not started; awaiting a ruling.
 
+## 8. Phase 3 result: the harvest list
+
+Upstream's `tests/src/Mod/Part/App/TopoShapeExpansion.cpp` (3472 lines,
+87 cases) is ported to `tests/src/Mod/Part/App/TopoShapeEx.cpp` and builds as
+`TopoShapeEx_tests_run`. **73 cases pass against this fork's TopoShapeEx.cpp
+unmodified.** That is the first coverage the file has ever had.
+
+The translation cost was small, as section 1 predicted: the 34-name method
+map, `findSubShapesWithSharedVertex` -> `searchSubShape`,
+`makeShapeWithElementMap` -> `makESHAPE`, and dropping the
+`TopoShapeMapper.h` include because this fork keeps `MapperMaker`,
+`MapperHistory` and `TopoShape::Mapper` in `TopoShape.h` already.
+
+### A second class of divergence: enums that were bools
+
+Upstream replaced several of this fork's `bool` parameters with scoped enums,
+and says so in its own header comments ("This replaces a boolean parameter in
+the original Toponaming branch by realthunder"). Each enumerator maps back to
+a bool:
+
+| upstream enumerator | this fork |
+|---------------------|-----------|
+| `SingleShapeCompoundCreationPolicy::returnShape` / `::forceCompound` | `force` = `false` / `true` |
+| `HistoryTraceType::stopOnTypeChange` / `::followTypeChange` | `sameType` = `true` / `false` (note the inversion) |
+| `MapElement::noMap` / `::map` | `mapElement` = `false` / `true` |
+| `LinearizeFace::noFaces` / `::linearizeFaces` | `face` = `false` / `true` |
+| `LinearizeEdge::noEdges` / `::linearizeEdges` | `edge` = `false` / `true` |
+| `IsSolid::notSolid` / `::solid` | `isSolid` = `false` / `true` |
+| `IsRuled::notRuled` / `::ruled` | `isRuled` = `false` / `true` |
+| `IsClosed::notClosed` / `::closed` | `isClosed` = `false` / `true` |
+| `MakeSolid::noSolid` / `::makeSolid` | `makeSolid` = `false` / `true` |
+| `ChamferType::equalDistance` | the default `asAngle` = `false` |
+
+`Data::TraceCallback` is also a member typedef of `ComplexGeoData` here, not a
+namespace-level name.
+
+Nine of those ten enums do not exist in this fork at all. `HistoryTraceType`
+is the exception, and it is adopted only halfway: `TopoShape.h` line 115
+declares it and `TopoShapeCache.h`'s `ShapeRelationKey` takes it, but
+`TopoShape::cacheRelatedElements` and `getRelatedElementsCached` still take
+`bool sameType`. So the type is in the tree while the call sites that would
+use it are not. Worth tidying, in one direction or the other, but it is not
+part of the harvest.
+
+### Not portable at all
+
+- `replaceElementShape` and `removeElementShape` have no counterpart. This
+  fork's `replaceShape` / `removeShape` take and return `TopoDS_Shape` and
+  keep no element map. Those two cases are dropped, not disabled -- there is
+  nothing here to call. **A feature gap, not a rename.**
+
+### The 14 findings
+
+Each is a `DISABLED_` case in the suite with a one-line note at its
+definition. **None has been through the section 4 filter yet** -- that
+triage is the first step of phase 4, and until it is done none of these
+should be called a fork bug.
+
+| case | symptom |
+|------|---------|
+| `makELoftRejectsCoincidentProfiles` | raw `StdFail_NotDone` escapes instead of `Base::CADKernelError`. This is upstream `9ee2c74545`, already independently confirmed as applicable in section 4 -- **the strongest candidate, and the one to fix first.** |
+| `makEShellIntersecting` | a self-intersecting shell raises nothing where `Base::CADKernelError` is expected |
+| `getSubTopoShapeByEnum` | an out-of-range subshape throws something other than `Base::IndexError` |
+| `getSubTopoShapeByStringNames` | same, by string name |
+| `makEEvolve` | an empty-description C++ exception escapes the operation |
+| `makESlice` | the slice comes back empty (length 0, wrong shape type) |
+| `makESlices` | the slices come back empty; the test then indexes an empty vector and aborts |
+| `makERuledSurfaceEdges` | the result carries an entirely empty element map |
+| `makERuledSurfaceWires` | area 2.02 where 4 is expected, and different element names |
+| `makESolid` | no tag or child-map postfixes at all, and 24 edges where 12 are expected |
+| `makERevolve` | one face is named `...;:M;MAK;:H2:7,F` where a plain `;:G;RVL` form is expected |
+| `makEBSplineFace` | names carry full tag/hasher postfixes where plain `Edge1;BSF` forms are expected |
+| `makEOffset2D` | names lack the trailing `;OFF;:H1:4,E` step, and there are 4 source edges where 2 are expected |
+| `setElementComboNameCompound` | the name comes out without the `;:H,E` tag postfix |
+
+The last five are element-map naming differences, which is exactly the shape
+the section 4 filter exists for: upstream transcribed this fork's naming, so a
+mismatch may be upstream's transcription rather than our defect. The first
+seven -- wrong exception type, empty result, empty map -- are behavioural and
+much less likely to be transcription artifacts.
+
+Re-enable a case by deleting its `DISABLED_` prefix, together with the fix,
+and not before.
+
 See also [Backport772.md](./Backport772.md) for the sibling policy on the
 frozen OCCT 7.7.2 branch, and [UpstreamCoreSync.md](./UpstreamCoreSync.md)
 for the general "adopt the name, keep an alias" rule that this document
