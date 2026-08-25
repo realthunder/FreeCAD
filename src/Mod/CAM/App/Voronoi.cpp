@@ -21,6 +21,8 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <numbers>
+
 #include <Base/Vector3D.h>
 #include <Base/Tools.h>
 
