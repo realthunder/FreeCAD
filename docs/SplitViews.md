@@ -587,3 +587,98 @@ stateless software cull); bank 0's full-canvas targets stay allocated
 while a layout is up (release is polish); layouts are session-only in
 the browser (no persistence); the desktop tier does not use
 renderSubViews (ViewArea composes whole widgets).
+
+
+## 11. Polish pass: bail quirk, bank 0, browser persistence (2026-08-25)
+
+Three of sec 10's known limits closed (the user's split-view polish
+order). Verified together on real Chrome against a served demo-water
+scene: gesture split, reload-restore, join, orbit, and 6 API
+split/clear cycles -- zero "frame bailed" lines anywhere in the run.
+
+### 11.1 The bail quirk: prepareSubViews warm-up + in-frame retry
+
+The first frame after a layout push bailed once per new bank: a fresh
+bank's init() allocates a full target set inside an un-flushed frame,
+stacked on the resident banks' handles and on whatever destroys the
+layout change queued (resized targets, dropped banks) -- destroys bgfx
+reclaims only at frame boundaries -- so the create burst could find
+the handle pool exhausted, latch targetsFailed, and render the cell
+black until the next wall frame's retry.
+
+Two mechanisms replace the visible retry:
+
+- `Renderer::prepareSubViews(bg, subs, n)` (BGFXRenderer.cpp): for
+  every unseen id, run a WARM submit -- the frame path with
+  `subCtx.warm` set runs only through target allocation and returns
+  before anything is drawn or ticked -- then cross a frame boundary,
+  so each fresh bank allocates against a freshly reclaimed pool and
+  its creates are realized before the next bank's burst. Idempotent
+  and near-free once every bank is warm (map lookups), so
+  renderLayoutFrame simply calls it every layout frame, BEFORE any
+  page cell queues a draw -- prepareSubViews crosses frame
+  boundaries, and a boundary after a queued page draw would commit it
+  early and drop that rect from the frame's composite. Sitting in the
+  frame loop rather than fcviewer_set_layout also covers a layout
+  restored before the renderer exists (11.3).
+- The standalone frame path retries in-frame when the build fails
+  with nothing queued (`!subCtx.active || subCtx.warm`): pump
+  bgfx::frame() to reclaim the destroy backlog, clear the latch,
+  init once more. This is what heals the return to single view --
+  the layout clear drops every cell bank and then plain-renders a
+  bank released by 11.2, all in one frame. Mid-sequence submits keep
+  the bail-and-heal-next-frame path: a boundary there would commit
+  queued sibling/page passes early (same composite argument).
+
+The warm flag is deliberate about what it skips: no frame-counter
+tick and no collectMeshes (a restore pushing several fresh banks
+would otherwise age the mesh TTL several frames in one RAF and sweep
+meshes the siblings still draw), no particle stepping, no draws.
+
+### 11.2 Bank 0 released under a layout
+
+Chrome-issued cell ids are >= 1, so with any layout up the implicit
+full-canvas bank is dead weight -- a whole MSAA scene + AO + OIT +
+present set at canvas size. renderSubViews and prepareSubViews both
+run `releaseBankZero`: when no sub is id 0 and bank 0 still holds a
+live framebuffer, it gets the dropSubView dance (destroyTargets,
+releaseIds, erase), and the return to the single view rebuilds
+through the ordinary fresh-bank path -- protected by the in-frame
+retry above. The map-entry erase matters: a stashed bank full of
+destroyed handles would otherwise resume with stale temporal state.
+All-page layouts keep bank 0 allocated (renderSubViews never runs);
+rare enough to leave.
+
+### 11.3 Browser layout persistence (localStorage)
+
+Decision: localStorage on the chrome side, keyed by the served
+document -- `fc.split.<docName>`, falling back to
+`fc.split.@<scene-url>` when no document name is known. A layout is
+chrome state, not document content (different devices legitimately
+want different splits of the same document -- the desktop analog
+persists per install's GuiDocument.xml), and a server-side store via
+SceneServer grants would be the wire change M4 deliberately avoided.
+Cameras are NOT persisted: restored cells clone the live camera /
+fit, like any fresh cell.
+
+Mechanics (web/src/splitview.tsx):
+
+- Saved on every tree change through the changed() funnel, debounced
+  300ms: `{v:1, tree}` with cells `{id,page}` and splits
+  `{dir,ratio,a,b}`. A tree collapsed to one cell REMOVES the entry.
+- Restored when the viewer side is up -- a 250ms poll for
+  window.fcviewerSetLayout, since the chrome usually mounts before
+  the WASM module registers its exports and a push before that is
+  silently dropped -- and re-keyed on 'fc:docs' (initial identity)
+  and 'fc:docswitch' (a custom event main.tsx dispatches from
+  switchDoc, because no docs push follows a switch). A key change
+  with nothing stored collapses to the single view.
+- Restored cells are renumbered from nextId: stored ids are not
+  trusted, so a corrupt store cannot produce duplicate ids (set_layout
+  matches cells by id alone, sec 10).
+
+Known cosmetic, pre-existing: one "pass map: N draw(s) went to the
+discard view from pass 6" line per fresh bank's first frame (the
+report is once per bank by construction -- sinkReported is a bank
+field); it predates this pass and costs one pass's pixels for one
+frame.
