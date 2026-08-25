@@ -747,3 +747,116 @@ Three stacked causes, all fixed in ViewArea.cpp:
 
 Smoke round trip: a 70/30 split, maximized, saved, reopened (comes
 back maximized), un-maximized -- restores 0.70 exactly (was 0.50).
+
+
+## 13. Desktop tier onto renderSubViews: design pass (2026-08-25)
+
+The last M4 known limit: the desktop container composes whole child
+widgets -- every 3D cell is a View3DInventor whose QuarterWidget owns
+a GL surface, and every such widget gets its OWN BGFXView in
+_BGFXLib.views (keyed by QOpenGLWidget). N cells therefore carry N
+copies of the GPU scene caches (the killer argument sec 9.2 already
+named), N context dances and N blits per wall frame. The order: one
+canvas, N cameras+rects -- the wasm model.
+
+### 13.1 Ground truth (desktop composite, surveyed)
+
+- Desktop bgfx runs on its OWN QOpenGLContext, built against Qt's
+  global share context (deviceSharesQtGL). A frame renders into
+  view->bgfxFbo on that context, then BGFXView::blit transfers color
+  AND depth into whatever framebuffer the caller has bound -- the
+  widget's own for on-screen (View3DInventorViewer::renderScene
+  restores hostFbo before the blit), a capture target for
+  renderOffscreen.
+- Coin then composites everything the backend does not claim ON TOP,
+  inside the same widget context, depth-tested against the blitted
+  backend depth. In backend mode that residue is small (the backend
+  draws claimed scene, background, captured overlays) but includes
+  the EDITING draggers and any uncached custom nodes.
+- The blit FBO cache (fbo/fboDepth/hasFBO/blitColorId/
+  blitSourceEncoded) wraps ONE view's textures and is NOT in
+  FC_SUBVIEW_FIELDS -- per-bank textures need it banked on desktop.
+- The bank machinery itself (SubViewBank, selectSubView, subCtx) is
+  compiled in both builds already; only the frame-path entry points
+  (selectSubView at frame start, sub-view sizing, the present rect)
+  are standalone-gated today.
+- Each viewer FEEDS its own renderer instance from its own
+  selectionRoot capture; one document shown in N cells captures N
+  near-identical scenes.
+
+### 13.2 Decision
+
+One canvas per container, hidden-but-sized children as the
+compatibility spine:
+
+- The container hosts ONE QOpenGLWidget canvas; it is the single
+  _BGFXLib.views key for the whole area, and cells are banks of its
+  one BGFXView -- the same architecture, and largely the same code,
+  as the wasm tier. ONE renderer instance, owned by the canvas
+  hosting, fed by the ACTIVE 3D cell's viewer (cells share the
+  resident scene, wasm sec 9.1 parity).
+- Child View3DInventors STAY -- hidden but resized to their cell
+  rects. Everything that made M0 cheap keeps working unchanged:
+  activation resolution, the 53 activeWindow() call sites, camera
+  persistence, message routing, AND all input math -- events
+  forwarded to a hidden widget of the right size need no coordinate
+  model at all beyond the cell offset.
+- Per submit, the desktop frame runs as today (its own bgfx::frame
+  per submit is FINE on desktop -- there is no backbuffer swap, the
+  blit is the composition, so the wasm's one-wall-frame batching is
+  unnecessary); the blit gains a destination rect.
+- Coin residue runs per cell after the backend blit: viewport +
+  scissor to the cell rect, the child viewer's render action applied
+  in the canvas context. This is the deep risk (13.4).
+
+What this deliberately narrows, exactly as the wasm tier did: cells
+of one canvas show the SAME resident scene (per-cell display override
+modes need per-cell feeds and fall back to widget composition; a
+later per-sub-view pass filter -- faces vs lines per bank -- can
+bring Blender-style per-viewport shading back cheaply). Page cells
+and plain-GL mode keep widget composition.
+
+### 13.3 Milestones
+
+- **D1 -- renderer: desktop renderSubViews** (this session). Un-gate
+  the bank machinery for the desktop frame path: selectSubView at
+  frame entry, subCtx-driven target sizing (subCtx.w/h beats
+  viewWidth/viewHeight, the captureWidth pattern), blit to a
+  destination rect (GL y-flip against the canvas height), the blit
+  FBO cache banked via a desktop-only FC_SUBVIEW_FIELDS extension,
+  releaseBankZero + prepareSubViews enabled for desktop (each warm
+  submit is an ordinary desktop frame; the in-frame retry gate stays
+  as is because every desktop submit crosses its own frame
+  boundary). Occlusion queries bypass for n > 1 as on wasm.
+- **D2 -- ViewArea unified canvas**, pref-gated
+  (View/UnifiedCanvas, default OFF until proven): a canvas widget
+  under the splitter tree's 3D cells; children hidden-but-sized;
+  canvas paint = renderSubViews over the 3D cell list + per-cell
+  Coin residue; input forwarding by cell rect (sendEvent to the
+  hidden child). Cells with non-3D or per-cell-override content stay
+  widget-composed (mixed mode: the canvas covers the 3D subset).
+- **D3 -- per-cell chrome parity**: NaviCube/axis cross per bank
+  (per-sub-view overlay feeds), active highlight on the canvas,
+  gesture overlays above it.
+- **D4 -- per-sub-view display styles**: a pass filter per bank
+  (shaded / wireframe / hidden-line per cell) restoring per-viewport
+  shading without per-cell feeds.
+
+### 13.4 Named risks (for D2+)
+
+- **Coin cache contexts**: a child's GL caches are keyed to its own
+  cache-context id; traversing into the canvas context needs the
+  render action's cache context aligned to the canvas (same share
+  group makes the objects valid; the id keys the caches). Quarter
+  assigns ids per widget -- the residue pass must run the child's
+  scene with the CANVAS's id or Coin rebuilds/mixes caches.
+- **Widget-over-GL stacking**: zones, menu button and join overlays
+  must stack above the canvas (Qt composites plain children over a
+  QOpenGLWidget sibling, but ordering quirks are real).
+- **Editing**: the dragger residue must land in the right cell;
+  setEdit stays with the child viewer, which no longer paints.
+- **Screenshot/print/offscreen**: per-child paths key off the child
+  widget; they must route to the canvas renderer with the child's
+  camera (renderOffscreen already takes explicit matrices+size).
+- **isBackgroundView / target release**: the canvas answers for all
+  its cells; per-cell release stops making sense (drop whole-canvas).
