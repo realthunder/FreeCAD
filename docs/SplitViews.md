@@ -330,3 +330,41 @@ Still open for M3(b): layout persistence -- the `<ViewArea>` block in
 GuiDocument.xml recording the splitter tree (orientation/sizes, leaf ->
 view id or page object name); without it a multi-cell layout reopens as
 one container per saved camera, single-cell each.
+
+## 8. M1 + M3(b) implementation notes (2026-08-25)
+
+M1 (gestures): corner action zones exactly as planned in 5.4, with two
+refinements -- the zones are invisible until hovered (Blender's are
+too), and join-cancel is drag-back-inside rather than Esc (no keyboard
+grab needed; returning to the press point also cancels, which required
+running the disarm check BEFORE the split-start threshold). The border
+menu on splitter handles carries close-left/right entries; maximize
+(Std_ViewSplitMaximize) hides every sibling along the cell's path to
+the root and restores the saved per-splitter states, and is unwound
+automatically by split/close/replace. New splits always place the new
+cell right/below regardless of drag direction (Blender places it at
+the drag point; not worth the asymmetry yet).
+
+M3(b) (persistence): `<ViewArea layout="..."/>` elements after the
+`<View3D>` blocks, counted by a `viewareas` attribute on `<Camera>` so
+old files read unchanged. Format: `H{330,670|L0,V{500,500|L1,O:Page}}`
+-- permille sizes (floored at 50 so a save while maximized cannot
+restore a cell invisible), `L<i>` = 3D view by camera save order,
+`O:<name>` = object view by document object name. The object token
+comes from the view's Qt objectName (MDIViewPage sets it to the page
+name) -- a provider-map scan is WRONG, a TechDraw template's provider
+answers getMDIView() with its page's view and its show() cannot
+recreate anything. Restore bare-creates the extra 3D views
+(Document::createView3D) and applyViewAreaLayouts rebuilds containers,
+materializing object views with vp->show(); a single-leaf layout whose
+view already sits alone in a container is left in place. With the
+progressive load's parked view providers the layouts apply in
+finishDeferredRestore -- object views cannot exist before the drain.
+
+Known rough edges, deliberate for now: cloneView transfers an active
+editing view provider to the new cell on split; embedded children skip
+the MainWindow windowStateChanged relay (spin-stop on tab switch);
+closed donor containers linger hidden until the event loop runs their
+deferred delete; maximize state is session-only; the per-cell content
+menu (5.5) is still command+selection driven, no corner button UI yet.
+M4 (wasm tier) untouched.
