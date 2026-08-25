@@ -2588,7 +2588,7 @@ int SketchObject::fillet(int GeoId1, int GeoId2, const Base::Vector3d& refPnt1,
 
         // create arc from known parameters and lines
         std::unique_ptr<Part::GeomArcOfCircle> arc(
-            Part::createFilletGeometry(lineSeg1, lineSeg2, filletCenter, radius));
+            Part::create2LinesFilletGeometry(lineSeg1, lineSeg2, filletCenter, radius));
         if (!arc) {
             return -1;
         }
@@ -6985,9 +6985,13 @@ bool SketchObject::decreaseBSplineDegree(int GeoId, int degreedecrement /*= 1*/)
         int maxdegree = cdegree - degreedecrement;
         if (maxdegree == 0)
             return false;
-        bool ok = bspline->approximate(Precision::Confusion(), 20, maxdegree, 0);
-        if (!ok)
+        // approximate() now reports failure by throwing; keep this path silent.
+        try {
+            bspline->approximate(Precision::Confusion(), 20, maxdegree, GeomAbs_C0);
+        }
+        catch (const Base::CADKernelError&) {
             return false;
+        }
     }
     catch (const Base::Exception& e) {
         Base::Console().Error("%s\n", e.what());
@@ -8411,10 +8415,9 @@ bool SketchObject::simplifyBSpline(Part::GeomBSplineCurve *bspline, const std::s
         if (bspline->getDegree() > maxDegree) {
             std::string err;
             try {
-                if (bspline->approximate(ExternalBSplineTolerance.getValue(), 20,
-                                         ExternalBSplineMaxDegree.getValue(), 0))
-                    return true;
-                err = "not done";
+                bspline->approximate(ExternalBSplineTolerance.getValue(), 20,
+                                     ExternalBSplineMaxDegree.getValue(), GeomAbs_C0);
+                return true;
             } catch (Base::Exception &e) {
                 err = e.what();
             }
