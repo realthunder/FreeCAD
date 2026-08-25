@@ -1453,6 +1453,109 @@ one. In order:
     reason `shadowRenderPropertyNames()` exists as one list rather than
     a scattering of string tests.
 
+**Stage 5 -- the display styles themselves move to the backend. ORDERED
+2026-08-26 (user), not started.** Stage 4 removed one draw style because
+the Coin node behind it (`SoShadowGroup`) had a backend counterpart. This
+stage generalizes that: **remove the legacy Coin implementation of every
+remaining display style -- Tessellation first, then the ones built the
+same way -- and let the backend produce the effect.**
+
+The styles are not one mechanism. What is being removed differs per row,
+so the taxonomy comes first.
+
+### 5.1 How a display style reaches the pixels today
+
+Four separate mechanisms, all of them Coin traversal state set per
+viewer, all of them global to that viewer:
+
+| style | mechanism | backend today |
+| --- | --- | --- |
+| Points, Wireframe, Shaded, Flat Lines | `SoFCSwitch` **named override** -- `SoFCDisplayModeElement::get(state)` matched against `childNames`, so a different display-mode child of each ViewProvider's switch is traversed | nothing style-specific: the capture just sees whatever child was traversed |
+| Tessellation | `SoOverrideElement` DRAW_STYLE = LINES (the only place in the tree that overrides it) **plus** `SoRenderManager::HIDDEN_LINE` | `DrawCall::drawstyle` + `drawstyleoverride` -> `BGFXView::submitTessellation` (already the real implementation, see below) |
+| Hidden Line | `SoFCDisplayModeElement` HiddenLineConfig, read by BOTH the cache (`SoFCRenderCache.cpp:1140`) and Coin's own `SoFCRenderer` (`:2867`) | `Render::HiddenLineConfig` + `DrawCall::outline`, resolved per render by the bridge |
+| No Shading | `View3DInventorViewer::shading = false` + the element's mode name | -- |
+
+Tessellation is the one the order names first because it is already
+DONE on the backend side and the Coin half is already known-broken in
+composited mode. `applyOverrideMode()` carries the note: Coin's
+`HIDDEN_LINE` opens with a framebuffer-wide `clearBuffers(TRUE, TRUE)`
+that runs *after* the backend's frame lands in the same buffer and
+throws it away, so the viewer already selects `AS_IS` whenever a
+renderer exists. The Coin path is therefore dead code on the default
+configuration -- reachable only at cache 0, which stages 2 and 3 made a
+developer's A-B route. **That is the shape of the whole stage:** the
+backend implementation exists, the Coin one is retained only for a path
+no user is on, and keeping both is what costs.
+
+### 5.2 What keeping the Coin mechanism actually costs
+
+Three things, and the third is the one that made this urgent:
+
+- **A style change is a re-traversal and a re-capture.** The named
+  override and the display-mode element are traversal *inputs*, so
+  switching Wireframe -> Shaded invalidates the caches and re-feeds the
+  backend a scene whose geometry did not change. A backend draw-time
+  style is a uniform and a pass filter.
+- **Two implementations of one effect drift.** Hidden Line is the live
+  example: the same `HiddenLineConfig` is consumed by the cache (feeding
+  the backend) and by `SoFCRenderer` (drawing it in GL), and stage 1a
+  already found one defect that shipped inert because a second path
+  masked it.
+- **The style is per-viewer state, which is why split views cannot have
+  per-cell styles.** On the unified canvas (docs/SplitViews.md sec 13.3)
+  N cells are N banks of ONE backend fed by ONE viewer's traversal. A
+  style that lives in traversal state cannot differ per bank without N
+  feeds -- which is the whole thing the canvas exists to avoid. A style
+  that is a backend draw-time parameter differs per bank for free. **The
+  split-view D4 milestone is this stage's first consumer**, and D4's
+  "pass filter per bank" is exactly the mechanism this stage builds.
+
+### 5.3 The shape of the replacement (sketch, to be designed)
+
+A per-view (later per-**sub-view**) `Render::DrawStyleConfig` sitting
+beside `LightConfig` and `HiddenLineConfig`, set through
+`Renderer::setDrawStyle`-shaped API and applied at submit:
+
+- **Points / Wireframe** become a submit-time primitive selection over
+  the SAME captured draws -- the machinery `submitTessellation` already
+  is, generalized from "the override says LINES" to "this view's style
+  says LINES". Note the two are genuinely different effects and the
+  DrawCall comment already distinguishes them: Tessellation fills the
+  faces in the background colour to occlude, a plain wireframe does not.
+- **Shaded / Flat Lines** become a pass filter -- faces only, or faces
+  plus the line feeds -- over the same scene. Both are already separate
+  buckets in the renderer.
+- **No Shading** becomes a lighting flag on the material path.
+- **Hidden Line** already has its config on the backend; what goes is
+  `SoFCRenderer`'s duplicate.
+
+! **The named override is NOT purely presentational, and that is the
+risk to survey first.** `SoFCSwitch`'s `childNames` match means a
+ViewProvider may put genuinely *different geometry* under each display
+mode -- not the same shape drawn differently. Where that is true, the
+backend cannot reproduce the style from one capture and the feed must
+still switch. Surveying which ViewProviders do this, and what they put
+there, is step one of this stage; the answer decides whether Class-A
+styles can move at all or whether only Tessellation / Hidden Line /
+No Shading do.
+
+! `App::PropertyEnumeration` persists as an index. Stage 4e's rule
+stands and `ViewParams.py` states it: styles are appended, never
+removed from the middle, and `kLegacyShadowDrawStyle` asserts the
+list length. **This stage removes implementations, not menu entries** --
+a user still picks Wireframe, it is just drawn by the backend. If any
+entry does have to go, it needs 4e's migration treatment.
+
+### 5.4 Order
+
+1. Survey the `SoFCSwitch` named-override users (the 5.3 risk).
+2. Tessellation: delete the `SoRenderManager::HIDDEN_LINE` selection and
+   the `AS_IS` workaround with it; the backend is already the
+   implementation. Smallest, and self-contained.
+3. No Shading, then Hidden Line's `SoFCRenderer` half.
+4. Class A (Points / Wireframe / Shaded / Flat Lines) as far as the
+   survey allows -- this is split-view D4.
+
 Not in scope, and not close: Coin as scene graph, traversal and picking.
 Replacing that is a different project — the backend has no picking at all
 and the whole feed is built on Coin traversal.

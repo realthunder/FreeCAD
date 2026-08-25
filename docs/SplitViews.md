@@ -1020,3 +1020,41 @@ reads a reparent as the view being torn away and collapses the tile.
   (D4's pass filter).
 - Cells showing a DIFFERENT document are not claimed: one canvas draws
   one resident scene.
+
+## 15. Direction change: D4 becomes the Coin display-mode removal (2026-08-26)
+
+User order, 2026-08-26: **remove the legacy Tessellation display mode
+and the Coin-based display modes like it, and use the backend to achieve
+the same effect.** Recorded in full as
+`docs/CoinRetirement.md` **Stage 5** (taxonomy, cost, replacement
+sketch, order); this section is only what it changes for this ladder.
+
+**D4 is that stage's first consumer, and its mechanism is the same
+one.** 13.2 narrowed the canvas by saying per-cell display override
+modes "need per-cell feeds and fall back to widget composition", with a
+later per-sub-view pass filter as the way back. Stage 5 says the pass
+filter is not a split-view special case at all -- it is how every
+display style should work, because a style that lives in Coin traversal
+state (`SoFCDisplayModeElement`, the `SoFCSwitch` named override,
+`SoRenderManager::HIDDEN_LINE`) is per-VIEWER state, and the canvas has
+one viewer feeding N banks. Once a style is a backend draw-time
+parameter, per-cell styles cost a per-bank field and nothing else, and
+the widget-composition fallback for override modes can go.
+
+Consequences for the ladder:
+
+- **D3 is unchanged and still next** -- per-cell chrome parity
+  (NaviCube/axis cross per bank, active highlight on the canvas, gesture
+  overlays above it). It does not touch display styles.
+- **D4 is no longer "add a pass filter for split views".** It is the
+  split-view half of Stage 5, and it inherits Stage 5's step 1: survey
+  which ViewProviders put genuinely different GEOMETRY under each
+  display-mode child of their `SoFCSwitch`. Where that is true the style
+  cannot be reproduced from one capture, and those cells keep the
+  widget-composition fallback; where it is false (the expected common
+  case) the cell becomes a bank field.
+- **Stage 5 step 2 (Tessellation) is independent of split views** and
+  can land first: the backend already implements it
+  (`BGFXView::submitTessellation`), and `applyOverrideMode()` already
+  refuses Coin's `HIDDEN_LINE` whenever a renderer exists, so the Coin
+  half is dead code on the default configuration.
