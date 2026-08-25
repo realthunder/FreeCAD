@@ -533,3 +533,57 @@ canvas like the panels but full-viewport:
   content chip (3D / Page) appears only when both stores are resident.
 - The HUD card, menus and panels stay global (per-cell later if ever).
 
+
+## 10. M4 implementation notes (2026-08-25)
+
+Landed as four commits: the renderer support (M4a), the wasm-side
+plumbing (M4b), the DOM chrome (M4c), and the smoke fixes. Verified in
+real Chrome (native box, display :1) against a served demo-water scene
+via a puppeteer-core drive: corner-drag split, independent per-cell
+orbit (each cell with its own NaviCube and axis cross), border resize,
+content chip to a page cell (backdrop-only when no page is served),
+join drag with the dim + arrow overlay, and collapse back to the
+single full-canvas view adopting a 3D cell's camera. Screenshots and
+scripts in the session scratchpad (split-real.js, split-gesture.js);
+serve rig: renderer-serve.sh with FC_BUILD=build/conda-relwithdebinfo-801
++ wasm-viewer.sh.
+
+Deviations from the sec 9 design, and traps burned:
+
+- Page2D::render never needed an origin overload: the CALLER owns the
+  page view's setViewRect (renderPageFrame always did), so a page
+  cell just sets its rect before render(vid, w, h).
+- A fresh SubViewBank's zeroed msaaSamples reads as an MSAA change,
+  and progChanged runs init(false) -- destroy + relink of the SHARED
+  program set, once per fresh bank, all in one un-flushed frame. The
+  handle pool (reclaimed only at frame boundaries) ran out, the
+  bank's init failed, targetsFailed latched, and the cell rendered
+  BLACK forever -- the standalone frame path lacked the desktop's
+  "rebuild once, not every frame" lost-framebuffer clause. Three
+  fixes: fresh banks inherit the live sample count in selectSubView,
+  the standalone path gets the clause, and renderSubViews clears the
+  latch once per wall frame (a multi-sub-view frame reaches
+  bgfx::frame(), so a retry neither spins nor eats the pool).
+- DOM gesture drags MUST listen on the window for the drag lifetime,
+  never rely on element pointer capture: every tree change re-renders
+  the chrome's cell divs, killing the element that captured the
+  pointer -- the post-split live resize and the pointerup silently
+  died, and the surviving stale drag object turned the next join
+  gesture into a phantom resize.
+- set_layout matches cells on id ALONE: matching on (id, content)
+  made the 3D/Page chip flip look like a new cell and reset the
+  hidden state set (a cell flipped to Page and back lost its camera).
+  Clearing the layout adopts a 3D cell's camera (last-active
+  preferred) for the single view; the chrome resets a lone surviving
+  cell to 3D so its label matches the wire-driven single view.
+- The first frame after a layout push can still bail once per new
+  bank while the pool catches up (console: "sub-view N frame
+  bailed"); it self-heals on the next frame via the retry.
+
+Known limits, deliberate for M4: feed-level camera state (ground
+sizing, relight, autozoom scale) follows the ACTIVE cell; the GPU
+occlusion-query path is bypassed implicitly (the WebGL2 tier uses the
+stateless software cull); bank 0's full-canvas targets stay allocated
+while a layout is up (release is polish); layouts are session-only in
+the browser (no persistence); the desktop tier does not use
+renderSubViews (ViewArea composes whole widgets).
