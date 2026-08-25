@@ -84,6 +84,7 @@ public:
     bool showThisEdge(TechDraw::BaseGeomPtr geom);
 
     virtual void drawAllSectionLines();
+    virtual void drawBreakLines();
     virtual void drawSectionLine(TechDraw::DrawViewSection* s, bool b);
     virtual void drawComplexSectionLine(TechDraw::DrawViewSection* viewSection, bool b);
     virtual void drawCenterLines(bool b);

@@ -92,6 +92,7 @@
 #include <Gui/View3DInventorViewer.h>
 #include <Gui/ViewProvider.h>
 #include <Mod/Part/App/PartFeature.h>
+#include <Mod/TechDraw/App/DrawBrokenView.h>
 #include <Mod/TechDraw/App/DrawUtil.h>
 #include <Mod/TechDraw/App/DrawViewDetail.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
@@ -1028,6 +1029,14 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
     gp_Ax2 viewCS;         // the camera frame, in F
     gp_Pnt gCentroid;      // the view's 2D origin, in F
     bool derived = false;  // scene = the dedicated prepared-shape scene
+
+    if (dynamic_cast<TechDraw::DrawBrokenView*>(dvp)) {
+        // A broken view projects a shape whose pieces were cut apart and
+        // moved together; the sources' 3D scene no longer matches the
+        // projection, and the compressed shape is not kept in prepared
+        // space, so neither capture path can register. No underlay.
+        return false;
+    }
 
     if (auto* dvd = dynamic_cast<TechDraw::DrawViewDetail*>(dvp)) {
         // Null until the async intersection lands; the paint that

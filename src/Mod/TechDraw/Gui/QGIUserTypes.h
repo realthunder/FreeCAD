@@ -40,6 +40,7 @@ QGICenterLine: 174
 QGIDimLines: 175
 QGIHighlight: 176
 QGIGhostHighlight: 177
+QGIBreakLine: 178
 QGICaption: 180
 QGIViewImage: 200
 QGCustomImage: 201

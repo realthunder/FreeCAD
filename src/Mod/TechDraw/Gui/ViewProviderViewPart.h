@@ -65,6 +65,8 @@ public:
     App::PropertyBool   VertCenterLine;
     App::PropertyBool   ShowSectionLine;
     App::PropertyEnumeration   SectionLineStyle;
+    App::PropertyEnumeration   BreakLineType;
+    App::PropertyEnumeration   BreakLineStyle;
     App::PropertyColor  SectionLineColor;
     App::PropertyBool   SectionLineMarks;
     App::PropertyEnumeration   HighlightLineStyle;

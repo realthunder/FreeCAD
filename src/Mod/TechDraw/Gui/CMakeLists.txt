@@ -316,6 +316,8 @@ SET(TechDrawGuiView_SRCS
     QGIDimLines.h
     QGISectionLine.cpp
     QGISectionLine.h
+    QGIBreakLine.cpp
+    QGIBreakLine.h
     QGIDecoration.cpp
     QGIDecoration.h
     QGICenterLine.cpp

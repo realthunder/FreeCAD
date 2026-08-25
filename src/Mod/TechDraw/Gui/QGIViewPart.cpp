@@ -44,6 +44,7 @@
 #include <Mod/TechDraw/App/DrawUtil.h>
 #include <Mod/TechDraw/App/DrawViewDetail.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
+#include <Mod/TechDraw/App/DrawBrokenView.h>
 #include <Mod/TechDraw/App/DrawViewSection.h>
 #include <Mod/TechDraw/App/Geometry.h>
 
@@ -56,6 +57,7 @@
 #include "QGIFace.h"
 #include "QGIHighlight.h"
 #include "QGIMatting.h"
+#include "QGIBreakLine.h"
 #include "QGISectionLine.h"
 #include "QGIVertex.h"
 #include "QGCustomImage.h"
@@ -172,6 +174,7 @@ void QGIViewPart::draw()
 
     drawViewPart();
     drawAllHighlights();
+    drawBreakLines();
     drawMatting();
     //this is old C/L
     drawCenterLines(true);//have to draw centerlines after border to get size correct.
@@ -708,6 +711,45 @@ void QGIViewPart::drawAllSectionLines()
                 drawSectionLine(r, true);
             }
         }
+    }
+}
+
+void QGIViewPart::drawBreakLines()
+{
+    auto dbv = dynamic_cast<TechDraw::DrawBrokenView*>(getViewObject());
+    if (!dbv) {
+        return;
+    }
+
+    auto vp = static_cast<ViewProviderViewPart*>(getViewProvider(getViewObject()));
+    if (!vp) {
+        return;
+    }
+
+    auto breakType = static_cast<DrawBrokenView::BreakType>(vp->BreakLineType.getValue());
+    auto breaks = dbv->Breaks.getValues();
+    for (auto& breakObj : breaks) {
+        QGIBreakLine* breakLine = new QGIBreakLine();
+        addToGroup(breakLine);
+
+        Base::Vector3d direction = dbv->guiDirectionFromObj(*breakObj);
+        breakLine->setDirection(direction);
+        // the bounds describe two corners of the removed area in the view
+        std::pair<Base::Vector3d, Base::Vector3d> bounds = dbv->breakBoundsFromObj(*breakObj);
+        // the bounds are in 3d form, so we need to invert & rez them
+        Base::Vector3d topLeft = Rez::guiX(DrawUtil::invertY(bounds.first));
+        Base::Vector3d bottomRight = Rez::guiX(DrawUtil::invertY(bounds.second));
+        breakLine->setBounds(topLeft, bottomRight);
+        breakLine->setPos(0.0, 0.0);
+        breakLine->setLinePen(
+            m_dashedLineGenerator->getLinePen(vp->BreakLineStyle.getValue(), vp->hiddenWidthScaled()));
+        breakLine->setWidth(Rez::guiX(vp->hiddenWidthScaled()));
+        breakLine->setBreakType(breakType);
+        breakLine->setZValue(ZVALUE::SECTIONLINE);
+        App::Color color = Preferences::getAccessibleColor(PreferencesGui::breaklineColor());
+        breakLine->setBreakColor(color.asValue<QColor>());
+        breakLine->setRotation(-dbv->Rotation.getValue());
+        breakLine->draw();
     }
 }
 
