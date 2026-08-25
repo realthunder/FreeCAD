@@ -320,6 +320,12 @@ void DrawComplexSection::makeSectionCut(const TopoDS_Shape& baseShape)
 
         params.featureName = getFullName();
         params.rawShape = BRepBuilderAPI_Copy(baseShape).Shape();
+        if (m_toolFaceShape.IsNull()) {
+            //only the Offset path (DVS::makeSectionCut -> makeCuttingTool)
+            //builds the tool face; a section created Aligned from the start
+            //(scripting) has none yet and the null copy below would throw
+            makeCuttingTool(m_shapeSize);
+        }
         params.toolFaceShape = BRepBuilderAPI_Copy(m_toolFaceShape).Shape();
         params.projectionStrategy = ProjectionStrategy.getValue();
         params.sectionNormal = SectionNormal.getValue();
