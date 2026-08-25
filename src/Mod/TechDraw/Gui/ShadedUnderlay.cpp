@@ -32,20 +32,29 @@
 #include <QOpenGLFunctions>
 #include <QOpenGLWidget>
 
+#include <algorithm>
+
 #include <BRepBndLib.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
+#include <Geom_Surface.hxx>
 #include <Poly_Triangulation.hxx>
+#include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax3.hxx>
 #include <gp_Pnt.hxx>
+#include <gp_Pnt2d.hxx>
 #include <gp_Trsf.hxx>
+#include <gp_Vec.hxx>
 
 #include <Inventor/SbRotation.h>
 #include <Inventor/actions/SoGLRenderAction.h>
@@ -54,6 +63,7 @@
 #include <Inventor/nodes/SoFrustumCamera.h>
 #include <Inventor/nodes/SoIndexedFaceSet.h>
 #include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/nodes/SoMaterialBinding.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoShapeHints.h>
@@ -78,6 +88,7 @@
 #include <Mod/TechDraw/App/DrawViewPart.h>
 #include <Mod/TechDraw/App/DrawViewSection.h>
 #include <Mod/TechDraw/App/Preferences.h>
+#include <Mod/TechDraw/App/ShapeUtils.h>
 
 #include "ShadedUnderlay.h"
 
@@ -144,12 +155,10 @@ DrawViewPart* baseViewOf(const DrawViewPart* dvp)
     return prop ? dynamic_cast<DrawViewPart*>(prop->getValue()) : nullptr;
 }
 
-// The shading color for a derived (cut/clipped) shape. The derived
-// geometry does not exist in the 3D scene, so it cannot inherit the
-// sources' per-object materials -- it is shaded uniformly with the
+// The uniform fallback color for a derived (cut/clipped) shape: the
 // first source object's ShapeColor (following BaseView for views that
-// carry no Source of their own). Per-face fidelity is the bgfx capture
-// follow-up (doc sec 26.2).
+// carry no Source of their own). Used whole when no face->color
+// resolver is available (doc sec 30), per-face as its last resort.
 SbColor shadeColor(DrawViewPart* dvp)
 {
     for (int depth = 0; dvp && depth < 8; ++depth) {
@@ -169,10 +178,277 @@ SbColor shadeColor(DrawViewPart* dvp)
     return {0.8F, 0.8F, 0.8F};
 }
 
+// One source object's geometry and colors, for mapping the faces of a
+// derived (cut/clipped) shape back to their origins. The shape is the
+// object's own (global frame, placement applied) -- the same frame the
+// cut input was built from.
+struct SourceColorEntry
+{
+    TopoDS_Shape shape;
+    Bnd_Box box;// enlarged by the probe tolerance
+    SbColor uniform;
+    bool hasFaceColors = false;
+    TopTools_IndexedMapOfShape faceMap;
+    std::vector<SbColor> faceColors;// by faceMap index - 1
+};
+
+// Maps a face of the derived shape to a color by geometry, not by
+// history: the cut/clip runs in a worker with a plain BRepAlgoAPI (no
+// element map survives it), but every face of the result either lies
+// ON a source's boundary (a surviving piece of a source face -- same
+// surface, so distance is essentially zero) or strictly INSIDE a
+// source solid (a face born of the cut). One exact probe point per
+// face decides which, robust against TrimAfterCut and per-solid cut
+// failures re-ordering the piece compound (which breaks any index
+// scheme).
+struct DerivedColorResolver
+{
+    std::vector<SourceColorEntry> entries;
+    gp_Trsf toGlobal;// derived-frame point -> source global frame
+    double tol = 1e-3;
+    SbColor fallback{0.8F, 0.8F, 0.8F};
+    bool useCutColor = false;
+    SbColor cutColor{0.8F, 0.8F, 0.8F};
+
+    SbColor colorOf(const gp_Pnt& probeLocal) const
+    {
+        const gp_Pnt probe = probeLocal.Transformed(toGlobal);
+        BRepBuilderAPI_MakeVertex mkVertex(probe);
+        const SourceColorEntry* inner = nullptr;
+        for (const auto& entry : entries) {
+            if (entry.box.IsOut(probe))
+                continue;
+            BRepExtrema_DistShapeShape dss(mkVertex.Vertex(), entry.shape);
+            if (!dss.IsDone() || dss.NbSolution() < 1)
+                continue;
+            // A probe strictly inside the solid reports distance zero
+            // as an "inner solution", NOT a boundary hit -- that is
+            // precisely a face born of the cut. Hold the owner and
+            // keep looking: another source may own the surface itself.
+            if (dss.InnerSolution()) {
+                if (!inner)
+                    inner = &entry;
+                continue;
+            }
+            if (dss.Value() > tol)
+                continue;
+            if (entry.hasFaceColors) {
+                for (int i = 1; i <= dss.NbSolution(); ++i) {
+                    const TopoDS_Shape& support = dss.SupportOnShape2(i);
+                    if (support.ShapeType() != TopAbs_FACE)
+                        continue;
+                    const int idx = entry.faceMap.FindIndex(support);
+                    if (idx > 0)
+                        return entry.faceColors[size_t(idx) - 1];
+                }
+            }
+            return entry.uniform;
+        }
+        // Born of the cut: the section's cut surface color when the
+        // view displays one; otherwise the owning solid's body color.
+        if (inner)
+            return useCutColor ? cutColor : inner->uniform;
+        return fallback;
+    }
+
+    // A point ON the face, interior: the UV centroid of a triangle
+    // evaluated on the exact surface. The mesh nodes themselves sit up
+    // to a deflection off a curved surface -- far beyond the probe
+    // tolerance -- so only fall back to a node average (and likely the
+    // fallback color) when the triangulation carries no UV.
+    SbColor faceColor(const TopoDS_Face& face, const Handle(Poly_Triangulation)& tri,
+                      const TopLoc_Location& loc) const
+    {
+        if (tri.IsNull() || tri->NbTriangles() < 1)
+            return fallback;
+        int n1{}, n2{}, n3{};
+        tri->Triangle(1).Get(n1, n2, n3);
+        if (tri->HasUVNodes()) {
+            TopLoc_Location surfLoc;
+            Handle(Geom_Surface) surf = BRep_Tool::Surface(face, surfLoc);
+            if (!surf.IsNull()) {
+                const gp_Pnt2d uv1 = tri->UVNode(n1);
+                const gp_Pnt2d uv2 = tri->UVNode(n2);
+                const gp_Pnt2d uv3 = tri->UVNode(n3);
+                const double u = (uv1.X() + uv2.X() + uv3.X()) / 3.0;
+                const double v = (uv1.Y() + uv2.Y() + uv3.Y()) / 3.0;
+                return colorOf(surf->Value(u, v).Transformed(surfLoc.Transformation()));
+            }
+        }
+        const gp_Trsf& trsf = loc.Transformation();
+        const gp_Pnt p1 = tri->Node(n1).Transformed(trsf);
+        const gp_Pnt p2 = tri->Node(n2).Transformed(trsf);
+        const gp_Pnt p3 = tri->Node(n3).Transformed(trsf);
+        return colorOf(gp_Pnt((p1.X() + p2.X() + p3.X()) / 3.0,
+                              (p1.Y() + p2.Y() + p3.Y()) / 3.0,
+                              (p1.Z() + p2.Z() + p3.Z()) / 3.0));
+    }
+};
+
+// The classification cap: a derived shape with more faces than this
+// keeps the uniform color rather than pay a distance query per face.
+constexpr int kMaxResolverFaces = 500;
+
+// Solids only: the cut input is solids (doSectionCut explores
+// TopAbs_SOLID) and the detail clip intersects solids/shells, so a 2D
+// source (a sketch lying on a model face would false-hit the boundary
+// probe) contributes nothing and is skipped.
+bool appendSourceEntry(App::DocumentObject* obj, double tol,
+                       std::vector<SourceColorEntry>& out)
+{
+    TopoDS_Shape shape = Part::Feature::getShape(obj);
+    if (shape.IsNull() || !TopExp_Explorer(shape, TopAbs_SOLID).More())
+        return false;
+    SourceColorEntry entry;
+    entry.shape = shape;
+    BRepBndLib::Add(shape, entry.box, /*useTriangulation*/ false);
+    if (entry.box.IsVoid())
+        return false;
+    entry.box.Enlarge(tol);
+    auto* vp = Gui::Application::Instance->getViewProvider(obj);
+    if (auto* prop = vp ? dynamic_cast<App::PropertyColor*>(
+                         vp->getPropertyByName("ShapeColor"))
+                        : nullptr) {
+        const auto c = prop->getValue();
+        entry.uniform = SbColor(c.r, c.g, c.b);
+    }
+    else {
+        entry.uniform = SbColor(0.8F, 0.8F, 0.8F);
+    }
+    if (auto* prop = vp ? dynamic_cast<App::PropertyColorList*>(
+                         vp->getPropertyByName("DiffuseColor"))
+                        : nullptr) {
+        TopExp::MapShapes(shape, TopAbs_FACE, entry.faceMap);
+        const auto& colors = prop->getValues();
+        if (int(colors.size()) == entry.faceMap.Extent() && colors.size() > 1) {
+            entry.faceColors.reserve(colors.size());
+            for (const auto& c : colors)
+                entry.faceColors.emplace_back(c.r, c.g, c.b);
+            entry.hasFaceColors = true;
+        }
+    }
+    out.push_back(std::move(entry));
+    return true;
+}
+
+// The resolver for a section's cut shape or a detail's clipped region.
+// False when the mapping back to the sources is not available (a
+// detail in the base-view chain puts the shape in a frame this cannot
+// invert exactly) or not worth building (single plain-colored source
+// and no cut surface color to place); the caller then shades uniform.
+bool buildDerivedResolver(DrawViewPart* dvp, const TopoDS_Shape& derivedShape,
+                          const SbColor& fallback, DerivedColorResolver& resolver)
+{
+    int nFaces = 0;
+    for (TopExp_Explorer expl(derivedShape, TopAbs_FACE); expl.More(); expl.Next())
+        ++nFaces;
+    if (nFaces > kMaxResolverFaces) {
+        Base::Console().Log("ShadedUnderlay: %d faces exceed the per-face color cap\n",
+                            nFaces);
+        return false;
+    }
+
+    DrawViewPart* sourceView = nullptr;
+    if (auto* dvs = dynamic_cast<TechDraw::DrawViewSection*>(dvp)) {
+        // The cut input is the BaseView chain's source shape, in the
+        // global frame all the way down a section chain. A detail
+        // ancestor hands over its own centered frame instead -- skip.
+        DrawViewPart* base = baseViewOf(dvs);
+        while (dynamic_cast<TechDraw::DrawViewSection*>(base))
+            base = baseViewOf(base);
+        if (!base || dynamic_cast<TechDraw::DrawViewDetail*>(base))
+            return false;
+        sourceView = base;
+        resolver.tol = 1e-3;
+        resolver.useCutColor = dvs->CutSurfaceDisplay.isValue("Color");
+        if (resolver.useCutColor) {
+            auto* vp = Gui::Application::Instance->getViewProvider(dvs);
+            auto* prop = vp ? dynamic_cast<App::PropertyColor*>(
+                             vp->getPropertyByName("CutSurfaceColor"))
+                            : nullptr;
+            if (prop) {
+                const auto c = prop->getValue();
+                resolver.cutColor = SbColor(c.r, c.g, c.b);
+            }
+            else {
+                resolver.useCutColor = false;
+            }
+        }
+    }
+    else if (auto* dvd = dynamic_cast<TechDraw::DrawViewDetail*>(dvp)) {
+        // detailExec hands makeDetailShape the base's shape rotated by
+        // the base Rotation and centered on its bbox centroid; invert
+        // that here. The centroid is re-derived (it is not stored
+        // alone), and bbox centers read triangulation-dependent bounds
+        // that can drift a few hundredths -- so the detail probe runs
+        // with a matching looser tolerance, degrading at worst to the
+        // owner's uniform color, never to a wrong owner's.
+        auto* base = dynamic_cast<DrawViewPart*>(dvd->BaseView.getValue());
+        if (!base || dynamic_cast<TechDraw::DrawViewSection*>(base)
+            || dynamic_cast<TechDraw::DrawViewDetail*>(base))
+            return false;
+        sourceView = base;
+        TopoDS_Shape src = base->getSourceShape();
+        if (src.IsNull())
+            return false;
+        const double rotDeg = base->Rotation.getValue();
+        TopoDS_Shape rotated = src;
+        gp_Trsf unrotate;
+        if (!TechDraw::DrawUtil::fpCompare(rotDeg, 0.0)) {
+            // The detail was built from getShapeForDetail's FUSED
+            // sources; the unfused compound has the identical bbox, so
+            // the centroid matches without paying the fuse.
+            rotated = TechDraw::ShapeUtils::rotateShape(src, base->getProjectionCS(),
+                                                        rotDeg);
+            unrotate.SetRotation(base->getProjectionCS().Axis(),
+                                 -rotDeg * M_PI / 180.0);
+        }
+        const gp_Pnt center =
+            TechDraw::ShapeUtils::findCentroid(rotated, base->Direction.getValue());
+        gp_Trsf uncenter;
+        uncenter.SetTranslation(gp_Vec(center.X(), center.Y(), center.Z()));
+        resolver.toGlobal = unrotate.Multiplied(uncenter);
+        resolver.tol = 0.1;
+    }
+    else {
+        return false;
+    }
+
+    for (auto* obj : sourcesOf(sourceView))
+        appendSourceEntry(obj, resolver.tol, resolver.entries);
+    if (resolver.entries.empty())
+        return false;
+    resolver.fallback = fallback;
+    if (resolver.entries.size() == 1 && !resolver.entries.front().hasFaceColors
+        && !resolver.useCutColor)
+        return false;// uniform would resolve identically, for free
+    return true;
+}
+
+// The resolver for a single object's own shape (the hidden-source
+// tessellation path): identity frame, every face on its own boundary.
+// Only worth building when the object carries per-face colors.
+bool buildObjectResolver(App::DocumentObject* obj, const SbColor& fallback,
+                         DerivedColorResolver& resolver)
+{
+    if (!appendSourceEntry(obj, resolver.tol, resolver.entries))
+        return false;
+    if (!resolver.entries.front().hasFaceColors)
+        return false;
+    int nFaces = resolver.entries.front().faceMap.Extent();
+    if (nFaces > kMaxResolverFaces)
+        return false;
+    resolver.fallback = fallback;
+    return true;
+}
+
 // A derived shape as a shaded Coin scene: the shape's triangulation as
 // one indexed face set. Normals are Coin-generated with a crease angle
-// -- tessellated curvature shades smooth, real corners crease.
-SoSeparator* buildMeshNode(const TopoDS_Shape& shape, const SbColor& color)
+// -- tessellated curvature shades smooth, real corners crease. With a
+// resolver, faces take their mapped colors through a per-face-indexed
+// material palette; without one, the single color covers everything.
+SoSeparator* buildMeshNode(const TopoDS_Shape& shape, const SbColor& color,
+                           const DerivedColorResolver* resolver = nullptr)
 {
     Bnd_Box bounds;
     BRepBndLib::Add(shape, bounds, /*useTriangulation*/ false);
@@ -187,12 +463,22 @@ SoSeparator* buildMeshNode(const TopoDS_Shape& shape, const SbColor& color)
 
     std::vector<SbVec3f> points;
     std::vector<int32_t> indices;
+    std::vector<SbColor> palette;
+    std::vector<int32_t> matIndices;// per triangle, parallel to indices
     for (TopExp_Explorer expl(shape, TopAbs_FACE); expl.More(); expl.Next()) {
         const TopoDS_Face& face = TopoDS::Face(expl.Current());
         TopLoc_Location loc;
         Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(face, loc);
         if (tri.IsNull())
             continue;
+        int32_t matIndex = 0;
+        if (resolver) {
+            const SbColor c = resolver->faceColor(face, tri, loc);
+            auto found = std::find(palette.begin(), palette.end(), c);
+            matIndex = int32_t(found - palette.begin());
+            if (found == palette.end())
+                palette.push_back(c);
+        }
         const gp_Trsf& trsf = loc.Transformation();
         const bool reversed = (face.Orientation() == TopAbs_REVERSED);
         const int base = int(points.size());
@@ -211,6 +497,7 @@ SoSeparator* buildMeshNode(const TopoDS_Shape& shape, const SbColor& color)
             indices.push_back(base + n2 - 1);
             indices.push_back(base + n3 - 1);
             indices.push_back(-1);
+            matIndices.push_back(matIndex);
         }
     }
     if (indices.empty())
@@ -224,13 +511,23 @@ SoSeparator* buildMeshNode(const TopoDS_Shape& shape, const SbColor& color)
     hints->creaseAngle = 0.6F;
     sep->addChild(hints);
     auto material = new SoMaterial;
-    material->diffuseColor = color;
+    if (palette.size() > 1)
+        material->diffuseColor.setValues(0, int(palette.size()), palette.data());
+    else
+        material->diffuseColor = palette.empty() ? color : palette.front();
     sep->addChild(material);
+    if (palette.size() > 1) {
+        auto binding = new SoMaterialBinding;
+        binding->value = SoMaterialBinding::PER_FACE_INDEXED;
+        sep->addChild(binding);
+    }
     auto coords = new SoCoordinate3;
     coords->point.setValues(0, int(points.size()), points.data());
     sep->addChild(coords);
     auto faceSet = new SoIndexedFaceSet;
     faceSet->coordIndex.setValues(0, int(indices.size()), indices.data());
+    if (palette.size() > 1)
+        faceSet->materialIndex.setValues(0, int(matIndices.size()), matIndices.data());
     sep->addChild(faceSet);
     return sep;
 }
@@ -572,7 +869,15 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
     root->addChild(light);
     int fed = 0;
     if (derived) {
-        if (SoSeparator* node = buildMeshNode(shape, shadeColor(dvp))) {
+        // Per-face color fidelity: map each face of the cut/clipped
+        // shape back to its source (piece colors, per-face DiffuseColor,
+        // the cut surface color for faces born of the cut). When no
+        // mapping is available the first source's color covers all.
+        const SbColor uniform = shadeColor(dvp);
+        DerivedColorResolver resolver;
+        const bool perFace = buildDerivedResolver(dvp, shape, uniform, resolver);
+        if (SoSeparator* node =
+                buildMeshNode(shape, uniform, perFace ? &resolver : nullptr)) {
             root->addChild(node);
             ++fed;
         }
@@ -596,7 +901,10 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
                     const auto c = prop->getValue();
                     color = SbColor(c.r, c.g, c.b);
                 }
-                if (SoSeparator* node = buildMeshNode(hiddenShape, color)) {
+                DerivedColorResolver resolver;
+                const bool perFace = buildObjectResolver(obj, color, resolver);
+                if (SoSeparator* node = buildMeshNode(hiddenShape, color,
+                                                      perFace ? &resolver : nullptr)) {
                     root->addChild(node);
                     ++fed;
                 }

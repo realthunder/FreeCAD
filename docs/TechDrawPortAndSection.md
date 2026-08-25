@@ -1743,3 +1743,82 @@ Traps for the next session:
 Still open, known and accepted: view frames and labels are Qt-only
 (editing chrome); the derived-shape capture limitations of sec 28
 stand.
+
+## 30. Implementation status (2026-08-25): per-face colors for the derived-shape capture
+
+The per-face section capture order: the section/detail shaded underlay
+no longer shades the whole cut/clipped shape with the first source's
+color. `ShadedUnderlay.cpp` grows a geometric face->color resolver
+(`DerivedColorResolver`) and `buildMeshNode` grows a per-face-indexed
+material palette (`SoMaterialBinding::PER_FACE_INDEXED`, one material
+index per triangle, palette of unique colors).
+
+**Mechanism -- geometry, not history.** The cut runs in a worker
+through plain `BRepAlgoAPI_Cut` (no element map survives it), and the
+recorded index mapping (piece i of the cut compound -> source solid i)
+is broken by both `TrimAfterCut` (the second pass re-cuts the whole
+compound, restructuring it) and per-solid cut failures (skipped
+pieces shift the order). Instead, every face of the derived shape is
+classified by one exact probe point -- the UV centroid of its first
+triangle evaluated on the actual surface (mesh nodes sit a deflection
+off curved faces, far beyond tolerance):
+
+- probe ON a source shape's boundary (`BRepExtrema_DistShapeShape`
+  boundary solution within tolerance): a surviving piece of a source
+  face. Color = that source face's `DiffuseColor` entry when the VP
+  carries a per-face list matching the face map, else the source's
+  `ShapeColor`.
+- probe strictly INSIDE a source solid: a face born of the cut.
+  Color = the section VP's `CutSurfaceColor` when `CutSurfaceDisplay`
+  is "Color" (matching what the unshaded raster shows there), else
+  the owning solid's body color (Hide and both hatch modes -- the
+  hatch draws above the underlay).
+- sources are the BaseView chain's (the cut input is the base view's
+  source shape, in the global frame all the way down a section
+  chain); per object, `Part::Feature::getShape` in the same frame the
+  HLR input was built from. 2D sources are skipped (no solids).
+
+**The OCCT trap that cost the first run:** `BRepExtrema_DistShapeShape`
+reports a point inside a solid as distance ZERO -- an "inner
+solution", not a boundary hit. Without checking `InnerSolution()`,
+every cut-born face classifies as on-boundary and takes the owner
+color; the cut color never appears. The resolver treats an inner
+solution as the born-of-cut signal directly (no separate
+`BRepClass3d_SolidClassifier` pass needed).
+
+Frames: a section's `getCutShapeRaw` is saved before prepareShape's
+move/scale/rotate, so probes map to the sources identity. A detail's
+`getDetailShape` lives in the base view's rotated-then-centered frame;
+the resolver inverts that (unrotate by the base `Rotation` about the
+projection CS axis, uncenter by the re-derived bbox centroid -- the
+unfused compound has the identical bbox as the fused input, so the
+centroid matches without paying the fuse) with a loosened 0.1mm
+tolerance for the known triangulation-state bbox drift; at worst a
+face degrades to its owner's uniform color, never to a wrong owner's.
+Skipped (uniform shade as before): a detail whose base is itself a
+section or detail, a section with a detail in its BaseView chain, and
+derived shapes beyond 500 faces (a distance query per face). The
+hidden-source tessellation path reuses the resolver for per-face
+`DiffuseColor` on its own shape (identity frame, only built when a
+per-face list exists).
+
+**Verified 24/24** on the RTX 3060 (VirtualGL egl0 + Xvfb, NVIDIA
+banner checked), td_shaded9.py in the session scratchpad: a red
+sphere poking through the cut plane (red annulus around the
+cut-colored disc, bbox containment), a kept-side green box (body
+color), a per-face DiffuseColor box (+X face magenta shows, cyan
+faces must not), stacking bands, a two-source detail (both colors,
+green above red), CutSurfaceColor recolor blue -> yellow re-captures
+and follows, CutSurfaceDisplay "Hide" restores the owner-color disc.
+td_shaded3 (sec 28's sections/details rig) re-passes 0-fail --
+default SvgHatch display keeps owner-colored cut faces, unchanged.
+
+Trap for the next session: the section view CS can flip the image
+vertically vs the base view (higher-z geometry landing lower in the
+capture) -- assert band ORDER agnostically (middle-between-outers),
+not absolute up/down.
+
+Still open, known and accepted: aligned complex sections stay
+unshaded; the bgfx-grade capture still excludes derived shapes (the cut solid exists nowhere
+in the backend scene; feeding it as a transient capture scene remains
+the far option).
