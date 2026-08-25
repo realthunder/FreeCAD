@@ -1745,10 +1745,7 @@ TEST_F(TopoShapeExpansionTest, DISABLED_makERuledSurfaceEdges)
     ));
 }
 
-// DISABLED: wrong area (2.02 vs 4) and different element names.
-// An open finding from the phase 3 harvest, see docs/UpstreamNameMap.md
-// section 8. Re-enable it with the fix, not before.
-TEST_F(TopoShapeExpansionTest, DISABLED_makERuledSurfaceWires)
+TEST_F(TopoShapeExpansionTest, makERuledSurfaceWires)
 {
     // Arrange
     auto [cube1, cube2] = CreateTwoCubes();
