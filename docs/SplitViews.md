@@ -682,3 +682,68 @@ discard view from pass 6" line per fresh bank's first frame (the
 report is once per bank by construction -- sinkReported is a bank
 field); it predates this pass and costs one pass's pixels for one
 frame.
+
+
+## 12. Desktop polish pass (2026-08-25)
+
+The split-views-built rough-edge list, closed. Verified by an Xvfb
+smoke (split_polish_smoke.py, session scratchpad) plus the M0-M3
+smokes re-run as regression.
+
+- **Per-cell menu button** (5.4/5.5): a 16px grip in every cell's
+  top-left corner (objectName `ViewAreaMenuButton` -- the class lives
+  in ViewArea.cpp without Q_OBJECT, so the name is what tests and
+  stylesheets find it by), subtle until hovered. Its menu is the
+  content selector -- "3D view" plus one entry per object-provided
+  view (materialized views anywhere, TechDraw pages by type name, no
+  Gui->TechDraw dependency) -- then Split horizontal/vertical,
+  Maximize/Restore, Close. The 3D entry clones a sibling 3D cell
+  first (its camera is the area's context), any document 3D view
+  second, bare createView3D last.
+- **Split during edit**: Document::cloneView grew a transferEdit
+  parameter (default true keeps the view-mode-workaround and
+  settings-dialog callers, which replace the original view).
+  ViewArea::cloneChildFor passes false: the editing view provider
+  stays in the view the user is editing in, instead of the fresh
+  cell stealing the dragger mid-edit.
+- **Window-state relay**: hostView/releaseView now make/break the
+  MainWindow::windowStateChanged connection addWindow/removeWindow
+  manage for top-level views (MDIView befriends ViewAreaCell for
+  it), so an embedded 3D view hears another tab maximize over it and
+  arms its stop-spin timer.
+- **Dead containers vanish promptly**: ViewArea::deleteSelf detaches
+  the QMdiSubWindow shell from the MDI area after the close --
+  MDIView::deleteSelf only close()s it, which hides but keeps its
+  TAB until the deferred delete runs, indefinitely in a nested event
+  loop. The restore path's empty donors (materialize-then-rebuild)
+  measurably stopped lingering: the M3b smoke's reopen went from 2
+  areas / 4 tabs to 1 / 2.
+- **Maximize persists**: the `<ViewArea>` element carries a
+  `maximized="<leaf token>"` attribute; restore re-maximizes via
+  ViewArea::setPendingMaximize (deferred one tick past real
+  geometry, see below). While maximized, layoutString saves the
+  UNDERLYING proportions -- toggleMaximizeCell records each
+  splitter's plain sizes next to its opaque saveState blob, and
+  preMaximizeSizes feeds them to the serializer.
+
+The proportions hunt uncovered a pre-existing bug worth naming:
+**applyLayout flattened every restored layout to near-equal shares.**
+Three stacked causes, all fixed in ViewArea.cpp:
+
+- The root-adoption step read `sp->sizes()` off the parser's
+  never-shown splitter, which does not answer with what setSizes
+  stored. It now reads the parser's intent (`ViewAreaSplitter::
+  initialSizes`).
+- setSizes with a sum below the splitter's extent hands the missing
+  space out EQUALLY, skewing every ratio toward even (a permille
+  list on a 1500px splitter restored 0.70 as 0.64). All re-apply
+  paths go through `applySizesScaled`, which scales to the live
+  total first.
+- A pre-show setSizes is mangled at realization, so
+  ViewAreaSplitter::resizeEvent re-applies initialSizes at the first
+  VISIBLE resize with a real extent -- hidden default-size resizes
+  must not consume it, and the maximize capture prefers a
+  still-pending initialSizes over live sizes for the same reason.
+
+Smoke round trip: a 70/30 split, maximized, saved, reopened (comes
+back maximized), un-maximized -- restores 0.70 exactly (was 0.50).
