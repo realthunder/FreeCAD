@@ -25,13 +25,32 @@
 
 #include <vector>
 #include <QPointer>
+#include <QSplitter>
 #include "MDIView.h"
-
-class QSplitter;
 
 namespace Gui {
 
 class ViewArea;
+class ViewAreaCell;
+class ViewAreaZone;
+
+/** The splitter used inside a ViewArea.
+ *
+ * Adds public splitter dragging (for the live resize that follows a
+ * corner-drag split) and a context menu on its handles.
+ */
+class GuiExport ViewAreaSplitter : public QSplitter
+{
+    Q_OBJECT
+
+public:
+    ViewAreaSplitter(Qt::Orientation orientation, QWidget *parent = nullptr);
+
+    void dragSplitter(int pos, int index) { moveSplitter(pos, index); }
+
+protected:
+    QSplitterHandle *createHandle() override;
+};
 
 /** One tile of a ViewArea.
  *
@@ -61,12 +80,61 @@ public:
 protected:
     void paintEvent(QPaintEvent *) override;
     void childEvent(QChildEvent *) override;
+    void resizeEvent(QResizeEvent *) override;
 
 private:
     ViewArea *_area;
     QPointer<MDIView> _child;
+    ViewAreaZone *_zoneTopRight;
+    ViewAreaZone *_zoneBottomLeft;
 
     friend class ViewArea;
+};
+
+/** A Blender-style corner action zone.
+ *
+ * Every cell carries one in its top right and bottom left corner.
+ * Dragging from it INTO the cell splits it along the dominant drag
+ * axis, then keeps adjusting the new border until release; dragging
+ * ACROSS the cell border into an adjacent sibling cell arms a join --
+ * the doomed neighbor dims under an arrow overlay, releasing commits,
+ * dragging back cancels (docs/SplitViews.md sec 5.4).
+ */
+class GuiExport ViewAreaZone : public QWidget
+{
+    Q_OBJECT
+
+public:
+    enum Corner { TopRight, BottomLeft };
+    ViewAreaZone(ViewAreaCell *cell, Corner corner);
+
+    static constexpr int Size = 14;
+
+protected:
+    void mousePressEvent(QMouseEvent *) override;
+    void mouseMoveEvent(QMouseEvent *) override;
+    void mouseReleaseEvent(QMouseEvent *) override;
+    void paintEvent(QPaintEvent *) override;
+    void enterEvent(QEnterEvent *) override;
+    void leaveEvent(QEvent *) override;
+
+private:
+    void armJoin(ViewAreaCell *target, Qt::Orientation axis, bool after);
+    void disarmJoin();
+    void endDrag();
+
+    ViewAreaCell *_cell;
+    Corner _corner;
+    bool _hover = false;
+    bool _dragging = false;
+    QPoint _pressGlobal;
+    // live resize of the border created by a split
+    QPointer<ViewAreaSplitter> _resizeSplitter;
+    int _resizeIndex = -1;
+    Qt::Orientation _resizeOrientation = Qt::Horizontal;
+    // armed join
+    QPointer<ViewAreaCell> _joinTarget;
+    QPointer<QWidget> _joinOverlay;
 };
 
 /** A Blender-style tiled container of embedded views.
@@ -126,6 +194,21 @@ public:
      */
     bool setCellView(ViewAreaCell *cell, MDIView *view);
 
+    /** The adjacent sibling cell a join from \a cell along \a axis can
+     * consume (Blender's aligned-edge rule: same parent splitter, leaf
+     * only). \a after selects the right/bottom neighbor. Null when the
+     * join is not legal.
+     */
+    ViewAreaCell *joinTargetFor(ViewAreaCell *cell, Qt::Orientation axis,
+                                bool after) const;
+
+    /** Blender's maximize-area: temporarily give \a cell the whole
+     * container; calling again (or with the maximized cell) restores
+     * the layout. Split/close/replace operations restore first.
+     */
+    void toggleMaximizeCell(ViewAreaCell *cell);
+    ViewAreaCell *maximizedCell() const { return _maximizedCell; }
+
     /// The focused child view; what activation resolves to.
     MDIView *activeSubView() override;
 
@@ -158,8 +241,10 @@ private:
     /// Take an MDI-hosted view out of its QMdiSubWindow, keeping it alive.
     static void stealFromMdiArea(MDIView *view);
 
-    QSplitter *_rootSplitter;
+    ViewAreaSplitter *_rootSplitter;
     QPointer<ViewAreaCell> _activeCell;
+    QPointer<ViewAreaCell> _maximizedCell;
+    std::vector<std::pair<QPointer<QSplitter>, QByteArray>> _maximizeRestore;
     bool _closing = false;
 
     friend class ViewAreaCell;

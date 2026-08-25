@@ -2683,6 +2683,42 @@ bool StdCmdViewSplitClose::isActive()
 }
 
 //===========================================================================
+// Std_ViewSplitMaximize
+//===========================================================================
+DEF_STD_CMD_A(StdCmdViewSplitMaximize)
+
+StdCmdViewSplitMaximize::StdCmdViewSplitMaximize()
+  : Command("Std_ViewSplitMaximize")
+{
+    sGroup      = "Standard-View";
+    sMenuText   = QT_TR_NOOP("Maximize view cell");
+    sToolTipText= QT_TR_NOOP("Temporarily gives the active view area cell the whole window; invoke again to restore the layout");
+    sWhatsThis  = "Std_ViewSplitMaximize";
+    sStatusTip  = sToolTipText;
+    eType       = Alter3DView;
+}
+
+void StdCmdViewSplitMaximize::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    auto view = getMainWindow()->activeWindow();
+    ViewArea *area = ViewArea::areaOf(view);
+    if (!area)
+        return;
+    if (area->maximizedCell())
+        area->toggleMaximizeCell(area->maximizedCell());
+    else if (auto cell = area->cellOf(area->activeSubView()))
+        area->toggleMaximizeCell(cell);
+}
+
+bool StdCmdViewSplitMaximize::isActive()
+{
+    auto view = getMainWindow()->activeWindow();
+    ViewArea *area = ViewArea::areaOf(view);
+    return area && (area->cellCount() > 1 || area->maximizedCell());
+}
+
+//===========================================================================
 // Std_ViewCellShowObject
 //
 // The Blender "switch the area's editor" operation: host the selected
@@ -5359,6 +5395,7 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdViewSplitRight());
     rcCmdMgr.addCommand(new StdCmdViewSplitDown());
     rcCmdMgr.addCommand(new StdCmdViewSplitClose());
+    rcCmdMgr.addCommand(new StdCmdViewSplitMaximize());
     rcCmdMgr.addCommand(new StdCmdViewCellShowObject());
     rcCmdMgr.addCommand(new StdViewScreenShot());
     rcCmdMgr.addCommand(new StdViewLoadImage());

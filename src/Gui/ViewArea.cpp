@@ -25,8 +25,12 @@
 #ifndef _PreComp_
 # include <QApplication>
 # include <QCloseEvent>
+# include <QContextMenuEvent>
 # include <QMdiSubWindow>
+# include <QMenu>
+# include <QMouseEvent>
 # include <QPainter>
+# include <QPainterPath>
 # include <QSplitter>
 # include <QVBoxLayout>
 #endif
@@ -40,6 +44,102 @@
 
 using namespace Gui;
 
+namespace {
+
+/// The dim-plus-arrow overlay shown over the cell a join will consume.
+class ViewAreaJoinOverlay : public QWidget
+{
+public:
+    ViewAreaJoinOverlay(QWidget *target, Qt::Orientation axis, bool after)
+        : QWidget(target)
+        , axis(axis)
+        , after(after)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+        setGeometry(target->rect());
+        show();
+        raise();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.fillRect(rect(), QColor(0, 0, 0, 96));
+        // Arrow pointing the way the join swallows: from the source
+        // cell into this one.
+        p.setRenderHint(QPainter::Antialiasing);
+        QPointF c(width() / 2.0, height() / 2.0);
+        double s = qMin(qMin(width(), height()) / 6.0, 28.0);
+        QPainterPath path;
+        // tip forward along the join direction, tail behind
+        QPointF dir = (axis == Qt::Horizontal)
+            ? QPointF(after ? 1 : -1, 0) : QPointF(0, after ? 1 : -1);
+        QPointF ortho(-dir.y(), dir.x());
+        path.moveTo(c + dir * s);
+        path.lineTo(c - dir * s * 0.4 + ortho * s);
+        path.lineTo(c - dir * s * 0.4 - ortho * s);
+        path.closeSubpath();
+        p.fillPath(path, QColor(255, 255, 255, 200));
+    }
+
+private:
+    Qt::Orientation axis;
+    bool after;
+};
+
+/// Splitter handle with a small management menu.
+class ViewAreaSplitterHandle : public QSplitterHandle
+{
+public:
+    using QSplitterHandle::QSplitterHandle;
+
+protected:
+    void contextMenuEvent(QContextMenuEvent *ev) override
+    {
+        auto sp = splitter();
+        ViewArea *area = ViewArea::areaOf(sp);
+        if (!area)
+            return QSplitterHandle::contextMenuEvent(ev);
+        int idx = sp->indexOf(this);  // handle i sits after widget i-1
+        auto before = qobject_cast<ViewAreaCell*>(sp->widget(idx - 1));
+        auto behind = qobject_cast<ViewAreaCell*>(sp->widget(idx));
+        bool horiz = (orientation() == Qt::Horizontal);
+
+        QMenu menu;
+        QAction *closeBefore = menu.addAction(horiz
+            ? QObject::tr("Close left view") : QObject::tr("Close top view"));
+        closeBefore->setEnabled(before != nullptr);
+        QAction *closeBehind = menu.addAction(horiz
+            ? QObject::tr("Close right view") : QObject::tr("Close bottom view"));
+        closeBehind->setEnabled(behind != nullptr);
+        QAction *picked = menu.exec(ev->globalPos());
+        if (picked == closeBefore && before)
+            area->closeCell(before);
+        else if (picked == closeBehind && behind)
+            area->closeCell(behind);
+        ev->accept();
+    }
+};
+
+} // anonymous namespace
+
+// ----------------------------------------------------------------------------
+// ViewAreaSplitter
+// ----------------------------------------------------------------------------
+
+ViewAreaSplitter::ViewAreaSplitter(Qt::Orientation orientation, QWidget *parent)
+    : QSplitter(orientation, parent)
+{
+    setChildrenCollapsible(false);
+}
+
+QSplitterHandle *ViewAreaSplitter::createHandle()
+{
+    return new ViewAreaSplitterHandle(orientation(), this);
+}
+
 // ----------------------------------------------------------------------------
 // ViewAreaCell
 // ----------------------------------------------------------------------------
@@ -51,6 +151,8 @@ ViewAreaCell::ViewAreaCell(ViewArea *area)
     auto lay = new QVBoxLayout(this);
     lay->setContentsMargins(0, 0, 0, 0);
     lay->setSpacing(0);
+    _zoneTopRight = new ViewAreaZone(this, ViewAreaZone::TopRight);
+    _zoneBottomLeft = new ViewAreaZone(this, ViewAreaZone::BottomLeft);
 }
 
 ViewAreaCell::~ViewAreaCell() = default;
@@ -77,7 +179,17 @@ void ViewAreaCell::hostView(MDIView *view)
         if (self)
             area->childViewGone(self);
     });
+    _zoneTopRight->raise();
+    _zoneBottomLeft->raise();
     update();
+}
+
+void ViewAreaCell::resizeEvent(QResizeEvent *ev)
+{
+    QWidget::resizeEvent(ev);
+    const int z = ViewAreaZone::Size;
+    _zoneTopRight->setGeometry(width() - z, 0, z, z);
+    _zoneBottomLeft->setGeometry(0, height() - z, z, z);
 }
 
 MDIView *ViewAreaCell::releaseView()
@@ -122,6 +234,164 @@ void ViewAreaCell::paintEvent(QPaintEvent *ev)
 }
 
 // ----------------------------------------------------------------------------
+// ViewAreaZone
+// ----------------------------------------------------------------------------
+
+ViewAreaZone::ViewAreaZone(ViewAreaCell *cell, Corner corner)
+    : QWidget(cell)
+    , _cell(cell)
+    , _corner(corner)
+{
+    setCursor(Qt::CrossCursor);
+    setMouseTracking(true);
+}
+
+void ViewAreaZone::mousePressEvent(QMouseEvent *ev)
+{
+    if (ev->button() != Qt::LeftButton)
+        return QWidget::mousePressEvent(ev);
+    _dragging = true;
+    _pressGlobal = ev->globalPosition().toPoint();
+    ev->accept();
+}
+
+void ViewAreaZone::mouseMoveEvent(QMouseEvent *ev)
+{
+    if (!_dragging)
+        return QWidget::mouseMoveEvent(ev);
+    QPoint g = ev->globalPosition().toPoint();
+
+    // Once a split happened the rest of the drag adjusts the fresh
+    // border, wherever the cursor goes.
+    if (_resizeSplitter) {
+        int pos = (_resizeOrientation == Qt::Horizontal)
+            ? _resizeSplitter->mapFromGlobal(g).x()
+            : _resizeSplitter->mapFromGlobal(g).y();
+        _resizeSplitter->dragSplitter(pos, _resizeIndex);
+        return;
+    }
+
+    QPoint d = g - _pressGlobal;
+    ViewArea *area = _cell->area();
+    QRect cellRect(_cell->mapToGlobal(QPoint(0, 0)), _cell->size());
+    if (cellRect.contains(g)) {
+        // Back inside always cancels an armed join, even right at the
+        // press point where the split threshold below is not met.
+        disarmJoin();
+        if (d.manhattanLength() < 12)
+            return;
+        // Inward drag: split along the dominant axis.
+        Qt::Orientation o = (qAbs(d.x()) >= qAbs(d.y()))
+            ? Qt::Horizontal : Qt::Vertical;
+        ViewAreaCell *fresh = area->splitCell(_cell, o);
+        if (fresh) {
+            auto sp = qobject_cast<ViewAreaSplitter*>(fresh->parentWidget());
+            if (sp) {
+                _resizeSplitter = sp;
+                _resizeOrientation = o;
+                // Handle i sits before widget i; the fresh cell's index
+                // names the border between it and the split cell.
+                _resizeIndex = sp->indexOf(fresh);
+            }
+        }
+    }
+    else {
+        // Outward drag: arm a join that consumes the neighbor the
+        // cursor entered; dragging back disarms.
+        Qt::Orientation axis;
+        bool after;
+        if (g.x() > cellRect.right()) {
+            axis = Qt::Horizontal; after = true;
+        }
+        else if (g.x() < cellRect.left()) {
+            axis = Qt::Horizontal; after = false;
+        }
+        else if (g.y() > cellRect.bottom()) {
+            axis = Qt::Vertical; after = true;
+        }
+        else {
+            axis = Qt::Vertical; after = false;
+        }
+        ViewAreaCell *target = area->joinTargetFor(_cell, axis, after);
+        if (target != _joinTarget) {
+            disarmJoin();
+            if (target)
+                armJoin(target, axis, after);
+        }
+    }
+}
+
+void ViewAreaZone::mouseReleaseEvent(QMouseEvent *ev)
+{
+    if (!_dragging)
+        return QWidget::mouseReleaseEvent(ev);
+    ViewAreaCell *target = _joinTarget;
+    ViewArea *area = _cell->area();
+    endDrag();
+    if (target)
+        area->closeCell(target);
+    ev->accept();
+}
+
+void ViewAreaZone::armJoin(ViewAreaCell *target, Qt::Orientation axis, bool after)
+{
+    _joinTarget = target;
+    // The arrow points the way the source expands -- into the target.
+    _joinOverlay = new ViewAreaJoinOverlay(target, axis, after);
+}
+
+void ViewAreaZone::disarmJoin()
+{
+    if (_joinOverlay)
+        _joinOverlay->deleteLater();
+    _joinOverlay = nullptr;
+    _joinTarget = nullptr;
+}
+
+void ViewAreaZone::endDrag()
+{
+    disarmJoin();
+    _dragging = false;
+    _resizeSplitter = nullptr;
+    _resizeIndex = -1;
+}
+
+void ViewAreaZone::enterEvent(QEnterEvent *ev)
+{
+    QWidget::enterEvent(ev);
+    _hover = true;
+    update();
+}
+
+void ViewAreaZone::leaveEvent(QEvent *ev)
+{
+    QWidget::leaveEvent(ev);
+    _hover = false;
+    update();
+}
+
+void ViewAreaZone::paintEvent(QPaintEvent *)
+{
+    if (!_hover)
+        return;  // invisible until hovered, like Blender's action zones
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    QPen pen(palette().color(QPalette::Highlight));
+    pen.setWidth(2);
+    p.setPen(pen);
+    // Diagonal grip strokes facing the cell interior.
+    const int s = Size;
+    if (_corner == TopRight) {
+        p.drawLine(2, 2, s - 3, s - 3);
+        p.drawLine(s / 2, 2, s - 3, s / 2);
+    }
+    else {
+        p.drawLine(2, 2, s - 3, s - 3);
+        p.drawLine(2, s / 2, s / 2, s - 3);
+    }
+}
+
+// ----------------------------------------------------------------------------
 // ViewArea
 // ----------------------------------------------------------------------------
 
@@ -130,8 +400,7 @@ PROPERTY_SOURCE_ABSTRACT(Gui::ViewArea, Gui::MDIView)
 ViewArea::ViewArea(Gui::Document* pcDocument, QWidget* parent, Qt::WindowFlags wflags)
     : MDIView(pcDocument, parent, wflags)
 {
-    _rootSplitter = new QSplitter(Qt::Horizontal, this);
-    _rootSplitter->setChildrenCollapsible(false);
+    _rootSplitter = new ViewAreaSplitter(Qt::Horizontal, this);
     setCentralWidget(_rootSplitter);
 
     auto cell = new ViewAreaCell(this);
@@ -202,6 +471,8 @@ bool ViewArea::setCellView(ViewAreaCell *cell, MDIView *view)
         return true;
     if (areaOf(view))
         return false;  // embedded in a cell already (here or elsewhere)
+    if (_maximizedCell)
+        toggleMaximizeCell(_maximizedCell);
 
     if (MDIView *old = cell->childView()) {
         if (!old->close())
@@ -277,6 +548,8 @@ ViewAreaCell *ViewArea::splitCell(ViewAreaCell *cell, Qt::Orientation orientatio
 {
     if (!cell || cell->area() != this)
         return nullptr;
+    if (_maximizedCell)
+        toggleMaximizeCell(_maximizedCell);
     MDIView *child = newChild ? newChild : cloneChildFor(cell);
     if (!child)
         return nullptr;
@@ -303,8 +576,7 @@ ViewAreaCell *ViewArea::splitCell(ViewAreaCell *cell, Qt::Orientation orientatio
     else {
         // Crossing direction: nest a new splitter in the cell's place.
         QList<int> sizes = splitter->sizes();
-        auto nested = new QSplitter(orientation);
-        nested->setChildrenCollapsible(false);
+        auto nested = new ViewAreaSplitter(orientation);
         int half = (orientation == Qt::Horizontal ? cell->width()
                                                   : cell->height()) / 2;
         splitter->replaceWidget(idx, nested);
@@ -320,10 +592,69 @@ ViewAreaCell *ViewArea::splitCell(ViewAreaCell *cell, Qt::Orientation orientatio
     return newCell;
 }
 
+ViewAreaCell *ViewArea::joinTargetFor(ViewAreaCell *cell, Qt::Orientation axis,
+                                      bool after) const
+{
+    if (!cell || cell->area() != this)
+        return nullptr;
+    auto sp = qobject_cast<QSplitter*>(cell->parentWidget());
+    if (!sp || sp->orientation() != axis || sp->count() < 2)
+        return nullptr;
+    int idx = sp->indexOf(cell) + (after ? 1 : -1);
+    if (idx < 0 || idx >= sp->count())
+        return nullptr;
+    // Leaf only: a nested splitter neighbor does not share its full
+    // border with this one cell (Blender's aligned-edge rule).
+    return qobject_cast<ViewAreaCell*>(sp->widget(idx));
+}
+
+void ViewArea::toggleMaximizeCell(ViewAreaCell *cell)
+{
+    if (_maximizedCell) {
+        for (auto sub : findChildren<ViewAreaCell*>()) {
+            if (sub->area() == this)
+                sub->show();
+        }
+        for (auto sp : findChildren<QSplitter*>())
+            sp->show();
+        for (auto &state : _maximizeRestore) {
+            if (state.first)
+                state.first->restoreState(state.second);
+        }
+        _maximizeRestore.clear();
+        _maximizedCell = nullptr;
+        return;
+    }
+    if (!cell || cell->area() != this || cellCount() < 2)
+        return;
+
+    _maximizeRestore.clear();
+    for (auto sp : findChildren<QSplitter*>())  // includes the root
+        _maximizeRestore.emplace_back(sp, sp->saveState());
+
+    // Along the path from the cell to the root, hide every sibling; the
+    // splitters give hidden widgets no space, so the cell takes it all.
+    QWidget *w = cell;
+    while (w && w != this) {
+        QWidget *parent = w->parentWidget();
+        if (auto sp = qobject_cast<QSplitter*>(parent)) {
+            for (int i = 0; i < sp->count(); ++i) {
+                if (sp->widget(i) != w)
+                    sp->widget(i)->hide();
+            }
+        }
+        w = parent;
+    }
+    _maximizedCell = cell;
+    setActiveCell(cell);
+}
+
 bool ViewArea::closeCell(ViewAreaCell *cell)
 {
     if (!cell || cell->area() != this)
         return false;
+    if (_maximizedCell)
+        toggleMaximizeCell(_maximizedCell);
     if (cellCount() <= 1)
         return close();
 
