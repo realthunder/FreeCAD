@@ -80,6 +80,19 @@ to one element
           </UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="eraseElementName">
+      <Documentation>
+          <UserDocu>
+eraseElementName(name), Erase an element name mapping
+
+name: either an element name (e.g. Edge1), which erases every mapped name of
+      that element, or a mapped name, which erases only that one name and
+      leaves the element's other names in place.
+
+Returns True if something was erased.
+          </UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getElementName" Const="true">
       <Documentation>
           <UserDocu>getElementName(name,direction=0) - Return a mapped element name or reverse</UserDocu>

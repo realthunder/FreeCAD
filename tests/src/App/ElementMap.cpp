@@ -25,6 +25,9 @@
 // Upstream's equivalent suite constructs Data::ElementMap directly, because
 // upstream moved setElementName and the hasher onto the map itself. See
 // docs/UpstreamNameMap.md section 7 for that divergence.
+//
+// eraseElementName was added to ComplexGeoData for this suite: erasing a single
+// mapped name had no public route before, only the whole indexed name.
 
 namespace
 {
@@ -216,12 +219,59 @@ TEST_F(ElementMapTest, setElementNameWithHashing)
     EXPECT_EQ(mappedToElement, expectedName);
 }
 
-// Upstream's eraseMappedName case is not ported. It calls
-// Data::ElementMap::erase(const MappedName&), which drops one of an element's
-// several mapped names. This fork exposes no public equivalent: passing an
-// empty MappedName to ComplexGeoData::setElementName erases the whole indexed
-// name, which is what eraseIndexedName below covers, and setElementMap rebuilds
-// the map rather than erasing from it. See docs/UpstreamNameMap.md section 7.
+TEST_F(ElementMapTest, eraseMappedName)
+{
+    // Arrange
+    ElementMapHost elementMap;
+    Data::IndexedName element("Edge", 1);
+    Data::MappedName mappedName("TEST");
+    Data::MappedName anotherMappedName("ANOTHERTEST");
+    elementMap.setElementName(element, mappedName);
+    elementMap.setElementName(element, anotherMappedName);
+
+    // Act
+    auto sizeBefore = elementMap.getElementMapSize();
+    auto findAllBefore = elementMap.getElementMappedNames(element);
+
+    auto erased = elementMap.eraseElementName(anotherMappedName);
+    auto sizeAfter = elementMap.getElementMapSize();
+    auto findAllAfter = elementMap.getElementMappedNames(element);
+
+    auto erasedRepeat = elementMap.eraseElementName(anotherMappedName);
+    auto sizeAfterRepeat = elementMap.getElementMapSize();
+    auto findAllAfterRepeat = elementMap.getElementMappedNames(element);
+
+    // Assert
+    EXPECT_EQ(sizeBefore, 2);
+    EXPECT_EQ(findAllBefore.size(), 2);
+    EXPECT_EQ(findAllBefore[0].first, mappedName);
+    EXPECT_EQ(findAllBefore[1].first, anotherMappedName);
+
+    // Only the named one goes; the element keeps its other name.
+    EXPECT_TRUE(erased);
+    EXPECT_EQ(sizeAfter, 1);
+    EXPECT_EQ(findAllAfter.size(), 1);
+    EXPECT_EQ(findAllAfter[0].first, mappedName);
+
+    // Erasing it again is a no-op that reports it found nothing.
+    EXPECT_FALSE(erasedRepeat);
+    EXPECT_EQ(sizeAfterRepeat, 1);
+    EXPECT_EQ(findAllAfterRepeat.size(), 1);
+    EXPECT_EQ(findAllAfterRepeat[0].first, mappedName);
+}
+
+TEST_F(ElementMapTest, eraseElementNameUnmapped)
+{
+    // Arrange
+    ElementMapHost elementMap;
+    elementMap.setElementName(Data::IndexedName("Edge", 1), Data::MappedName("TEST"));
+
+    // Act & Assert: erasing something that was never mapped reports false and
+    // leaves the map alone.
+    EXPECT_FALSE(elementMap.eraseElementName(Data::MappedName("NOSUCHNAME")));
+    EXPECT_FALSE(elementMap.eraseElementName(Data::IndexedName("Edge", 99)));
+    EXPECT_EQ(elementMap.getElementMapSize(), 1);
+}
 
 TEST_F(ElementMapTest, eraseIndexedName)
 {
@@ -245,12 +295,11 @@ TEST_F(ElementMapTest, eraseIndexedName)
     auto sizeBefore = elementMap.getElementMapSize();
     auto findAllBefore = elementMap.getElementMappedNames(element2);
 
-    // An empty mapped name erases the indexed name.
-    elementMap.setElementName(element2, Data::MappedName());
+    elementMap.eraseElementName(element2);
     auto sizeAfter = elementMap.getElementMapSize();
     auto findAllAfter = elementMap.getElementMappedNames(element2);
 
-    elementMap.setElementName(element2, Data::MappedName());
+    elementMap.eraseElementName(element2);
     auto sizeAfterRepeat = elementMap.getElementMapSize();
     auto findAllAfterRepeat = elementMap.getElementMappedNames(element2);
 

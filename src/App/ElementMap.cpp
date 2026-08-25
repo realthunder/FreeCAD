@@ -1393,6 +1393,31 @@ MappedName ComplexGeoData::setElementName(const IndexedName & element,
     
 }
 
+// Both overloads flush first. An unflushed shape can be carrying its element
+// map in the cache rather than in _elementMap, and the flush is what installs
+// it -- erasing before that would either do nothing at all or be undone when
+// the map finally arrives.
+
+bool ComplexGeoData::eraseElementName(const MappedName & name)
+{
+    if (!name)
+        return false;
+    flushElementMap();
+    if (!_elementMap)
+        return false;
+    return _elementMap->erase(name);
+}
+
+bool ComplexGeoData::eraseElementName(const IndexedName & element)
+{
+    if (!element)
+        return false;
+    flushElementMap();
+    if (!_elementMap)
+        return false;
+    return _elementMap->erase(element);
+}
+
 char ComplexGeoData::elementType(const Data::MappedName &name) const
 {
     if(!name)

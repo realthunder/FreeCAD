@@ -223,7 +223,8 @@ lands where it is meant to:
 | `findAll` | `getElementMappedNames` |
 | `size` | `getElementMapSize` |
 | `getAll` | `getElementMap` |
-| `erase(IndexedName)` | `setElementName(idx, MappedName())` -- an empty name erases |
+| `erase(MappedName)` | `eraseElementName(MappedName)` |
+| `erase(IndexedName)` | `eraseElementName(IndexedName)` |
 | `addChildElements(tag, children)` | `setMappedChildElements(children)` |
 | `getChildElements` | `getMappedChildElements` |
 | `hasChildElementMap` | same name |
@@ -236,17 +237,52 @@ The suite's `LessComplexPart` holder becomes a small concrete
 `ComplexGeoData` subclass instead of a class holding an `ElementMapPtr`,
 which is closer to how the map is really used.
 
-**15 of upstream's 16 cases port and pass**, including
+**All 16 of upstream's cases port and pass**, including
 `mimicSimpleUnion`, which asserts the exact encoded name
 `Face6;:M2;FUS;:H1:8,F` -- so this fork's encoder agrees with upstream's
 expectation character for character.
 
-The one case that does not port is `eraseMappedName`, which calls
+### eraseElementName
+
+One case, `eraseMappedName`, needed an API that did not exist. It calls
 `ElementMap::erase(const MappedName&)` to drop one of an element's several
-mapped names. There is no public equivalent: an empty `MappedName` erases the
-whole indexed name (that is `eraseIndexedName`, which is covered), and
-`setElementMap` rebuilds the map rather than erasing from it. Left out, with
-a comment in the file saying why.
+mapped names, and `ComplexGeoData` had no public route to that: passing an
+empty `MappedName` to `setElementName` erases the whole indexed name, and
+`setElementMap` rebuilds the map rather than erasing from it.
+
+`ComplexGeoData::eraseElementName` was added to close the gap, in two
+overloads mirroring `ElementMap::erase`:
+
+    bool eraseElementName(const MappedName & name);     // just that name
+    bool eraseElementName(const IndexedName & element); // all of the element's
+
+Both return whether anything was found, and **both flush the element map
+first**. That matters: an unflushed `TopoShape` can be carrying its map in the
+cache rather than in `_elementMap`, and `flushElementMap()` is what installs
+it, so erasing before the flush would either do nothing or be undone when the
+map finally arrives. The read accessors -- `getMappedName`,
+`getElementMappedNames` -- already flush for the same reason.
+
+The Python binding takes one string and splits on what it is: an element name
+such as `Edge1` erases the whole element, anything else is treated as a mapped
+name and erases only itself. That is the same split as the two C++ overloads.
+
+**Trap in making that split.** `IndexedName`'s constructor that takes the list
+of element types defaults to `allowOthers=true`, which means it accepts any
+bare word as a type it has not seen before. So `IndexedName("SECOND", types)`
+is *not* null, and a mapped name called `SECOND` parses as an indexed name. A
+binding written the obvious way sends it down the indexed branch, the lookup
+finds nothing, and the erase silently reports `False` while the name is still
+in the map. Pass `allowOthers=false` so only a type the shape actually has
+counts. `ComplexGeoData::getElementName`, the general-purpose name guesser,
+uses the permissive default, which is why the binding does not route through
+it. Covered by `parttests/ElementNameTest.py`.
+
+**Known inconsistency, not changed here:** `setElementName`'s own erase path
+(passing an empty `MappedName`) does *not* flush, so on a shape whose map is
+still in the cache it silently erases nothing. Routing it through
+`eraseElementName` would fix that, but it is a behaviour change to a
+long-standing path and is left for a separate decision.
 
 ## 8. Phase 3 result: the harvest list
 

@@ -272,6 +272,26 @@ public:
                               const ElementIDRefs * sid = nullptr,
                               bool overwrite = false);
 
+    /** Erase a mapped element name
+     *
+     * @param name: the mapped name to erase
+     *
+     * @return Returns true if the name was found and erased.
+     *
+     * An element can have more than one mapped name. This erases only the
+     * given one and leaves the element's other names in place. Use the
+     * IndexedName overload to erase all of them at once.
+     */
+    bool eraseElementName(const MappedName & name);
+
+    /** Erase all mapped names of an element
+     *
+     * @param element: the element whose mapped names are erased
+     *
+     * @return Returns true if the element was found and erased.
+     */
+    bool eraseElementName(const IndexedName & element);
+
     void setMappedChildElements(const std::vector<MappedChildElements> & children);
     std::vector<MappedChildElements> getMappedChildElements() const;
      

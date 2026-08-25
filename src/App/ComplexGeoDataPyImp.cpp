@@ -262,6 +262,33 @@ PyObject* ComplexGeoDataPy::getElementName(PyObject *args) const
         return Py::new_reference_to(Py::String(res.index.appendToStringBuffer(s)));
 }
 
+PyObject *ComplexGeoDataPy::eraseElementName(PyObject *args) {
+    const char *input;
+    if (!PyArg_ParseTuple(args, "s", &input))
+        return NULL;
+
+    PY_TRY {
+        // An indexed name erases the whole element, a mapped name just itself,
+        // which is the same split as the two C++ overloads.
+        //
+        // allowOthers=false is what makes the split work: with the default,
+        // IndexedName accepts any bare word as a type it has not seen before,
+        // so a mapped name like "SECOND" would parse as indexed and the erase
+        // would look in the wrong direction and silently find nothing. Only a
+        // type this shape actually has counts as an indexed name.
+        Data::IndexedName index(input, getComplexGeoDataPtr()->getElementTypes(), false);
+        if (index)
+            return Py::new_reference_to(
+                    Py::Boolean(getComplexGeoDataPtr()->eraseElementName(index)));
+
+        // Accept the ";"-prefixed form that mapped names take inside a subname.
+        const char *mapped = Data::isMappedElement(input);
+        Data::MappedName name(mapped ? mapped : input);
+        return Py::new_reference_to(
+                Py::Boolean(getComplexGeoDataPtr()->eraseElementName(name)));
+    }PY_CATCH
+}
+
 PyObject* ComplexGeoDataPy::getElementIndexedName(PyObject *args) const
 {
     char* input;
