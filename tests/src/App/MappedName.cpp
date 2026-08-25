@@ -51,7 +51,7 @@ TEST(MappedName, namedConstructionWithMaxSize)
 TEST(MappedName, namedConstructionDiscardPrefix)
 {
     // Arrange
-    std::string name = std::string(Data::ELEMENT_MAP_PREFIX) + "TEST";
+    std::string name = Data::elementMapPrefix() + "TEST";
 
     // Act
     Data::MappedName mappedName(name.c_str());
@@ -80,7 +80,7 @@ TEST(MappedName, stringNamedConstruction)
 TEST(MappedName, stringNamedConstructionDiscardPrefix)
 {
     // Arrange
-    std::string name = std::string(Data::ELEMENT_MAP_PREFIX) + "TEST";
+    std::string name = Data::elementMapPrefix() + "TEST";
 
     // Act
     Data::MappedName mappedName(name);
@@ -567,7 +567,7 @@ TEST(MappedName, appendToBufferWithPrefix)
     // Arrange
     Data::MappedName mappedName(Data::MappedName("TEST"), "POSTFIXTEST");
     std::string buffer("STUFF");
-    std::string elemMapPrefix = Data::ELEMENT_MAP_PREFIX;
+    std::string elemMapPrefix = Data::elementMapPrefix();
 
     // Act
     mappedName.appendToBufferWithPrefix(buffer);
@@ -593,7 +593,7 @@ TEST(MappedName, toPrefixedString)
     // Arrange
     Data::MappedName mappedName(Data::MappedName("TEST"), "POSTFIXTEST");
     std::string buffer("STUFF");
-    std::string elemMapPrefix = Data::ELEMENT_MAP_PREFIX;
+    std::string elemMapPrefix = Data::elementMapPrefix();
 
     // Act
     buffer += mappedName.toPrefixedString();

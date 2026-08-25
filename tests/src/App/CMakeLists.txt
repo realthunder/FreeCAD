@@ -3,17 +3,11 @@ target_sources(
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/Application.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Branding.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/ComplexGeoData.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Document.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Expression.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/ElementMap.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/IndexedName.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/License.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/MappedElement.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/MappedName.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Metadata.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Property.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/StringHasher.cpp
 )
 
 # The deferred archive-entry restore (docs/DocumentLoad.md §14) is App's own
@@ -57,3 +51,33 @@ target_include_directories(RestoreDrain_tests_run PRIVATE
     ${XercesC_INCLUDE_DIRS})
 target_link_libraries(RestoreDrain_tests_run gtest_main FreeCADApp FreeCADBase)
 add_test(NAME RestoreDrain_tests_run COMMAND RestoreDrain_tests_run)
+
+# The element-map core -- IndexedName, MappedName, MappedElement, the
+# StringHasher that backs them, ElementMap itself, and ComplexGeoData's
+# serialization of the map -- is the oldest part of the topological-naming
+# work and the least covered. These suites arrived from upstream in 2023 and
+# then sat unbuilt in Tests_run for two years. Give them an executable of
+# their own, like the suites above, so they actually run.
+#
+# ElementMap.cpp is deliberately not in this list. It constructs
+# Data::ElementMap directly, which upstream declares in ElementMap.h but
+# this fork defines inside ElementMap.cpp as an implementation detail --
+# nothing outside that translation unit can name the type. Reviving that
+# suite means moving ~950 lines of class into a public header, which is a
+# decision about the fork's encapsulation, not a test fix. See
+# docs/UpstreamNameMap.md section 7.
+add_executable(Toponaming_tests_run
+    ${CMAKE_CURRENT_SOURCE_DIR}/ComplexGeoData.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/IndexedName.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MappedElement.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MappedName.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/StringHasher.cpp)
+target_include_directories(Toponaming_tests_run PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/src
+    ${Python3_INCLUDE_DIRS}
+    ${XercesC_INCLUDE_DIRS})
+target_link_libraries(Toponaming_tests_run gtest_main FreeCADApp FreeCADBase
+    ${QtCore_LIBRARIES} fmt::fmt)
+add_test(NAME Toponaming_tests_run COMMAND Toponaming_tests_run)

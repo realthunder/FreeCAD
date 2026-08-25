@@ -184,6 +184,37 @@ port them, and do not port a hunk that depends on them.**
    APPLIES are confirmed and can go in without waiting for the suite;
    `41d1aed844` is standalone and is the cheapest first.
 
+## 7. Open: Data::ElementMap is opaque here
+
+Upstream declares `class ElementMap` in `src/App/ElementMap.h`, so anything
+can construct one. This fork declares only `class ElementMap;` there and
+defines the class -- about 950 lines, lines 250 to 1202 -- inside
+`src/App/ElementMap.cpp`. Nothing outside that translation unit can name the
+type; every user goes through `ComplexGeoData`.
+
+That is an encapsulation difference, not a naming one, and the name map does
+not translate it. It has two consequences for the harvest:
+
+- `tests/src/App/ElementMap.cpp` (557 lines) cannot be revived as written.
+  It constructs `Data::ElementMap` directly in most of its cases. It is
+  therefore **not** in the `Toponaming_tests_run` target.
+- Any ported hunk that names `Data::ElementMap` outside `ElementMap.cpp`
+  needs rerouting through `ComplexGeoData`'s public API first.
+
+Where the upstream test only wanted a *populated map* rather than the class
+itself, rerouting is mechanical and was done: `ComplexGeoData::setElementName`
+creates the map on first use, and `resetElementMap()` with no argument swaps
+the current map out and returns it. That is how the ComplexGeoData suite was
+revived without touching the fork's encapsulation.
+
+**The decision this leaves open** is whether to move the class into the
+header. In favour: it restores direct coverage of the fork's least-tested
+core type and makes future upstream hunks drop in. Against: it is a ~950-line
+move out of a hot translation unit into a widely included header, it exposes
+internals that are currently free to change, and it is a refactor of exactly
+the subsystem the harvest is trying to test -- doing it before the tests
+exist inverts the safety net. Not started; awaiting a ruling.
+
 See also [Backport772.md](./Backport772.md) for the sibling policy on the
 frozen OCCT 7.7.2 branch, and [UpstreamCoreSync.md](./UpstreamCoreSync.md)
 for the general "adopt the name, keep an alias" rule that this document

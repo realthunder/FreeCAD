@@ -15,9 +15,10 @@
 class ConcreteComplexGeoDataForTesting: public Data::ComplexGeoData
 {
 public:
-    std::vector<const char*> getElementTypes() const override
+    const std::vector<const char*>& getElementTypes() const override
     {
-        return {"EDGE"};
+        static const std::vector<const char*> types {"EDGE"};
+        return types;
     }
 
     unsigned long countSubElements(const char* Type) const override
@@ -52,6 +53,12 @@ public:
     {
         return Base::BoundBox3d();
     }
+
+    // Pure virtual in this fork; identity is enough for these tests.
+    bool isSame(const Data::ComplexGeoData& other) const override
+    {
+        return this == &other;
+    }
 };
 
 class ComplexGeoDataTest: public ::testing::Test
@@ -80,11 +87,9 @@ protected:
 
     std::tuple<Data::IndexedName, Data::MappedName> createMappedName(const std::string& name)
     {
-        auto elementMap = std::make_shared<Data::ElementMap>();
-        cgd().resetElementMap(elementMap);
         auto mappedName = Data::MappedName(name.c_str());
         auto indexedName = Data::IndexedName(_complexGeoData.getElementTypes().front(), 1);
-        elementMap->setElementName(indexedName, mappedName, 0);
+        cgd().setElementName(indexedName, mappedName);
         return std::make_tuple(indexedName, mappedName);
     }
 
@@ -134,11 +139,9 @@ TEST_F(ComplexGeoDataTest, getMappedNameDisallowUnmappedNoMap)  // NOLINT
 TEST_F(ComplexGeoDataTest, getMappedNameDisallowUnmappedWithMap)  // NOLINT
 {
     // Arrange
-    auto elementMap = std::make_shared<Data::ElementMap>();
-    cgd().resetElementMap(elementMap);
     auto mappedName = Data::MappedName("TestMappedName");
     auto indexedName = Data::IndexedName("EDGE", 1);
-    elementMap->setElementName(indexedName, mappedName, 0);
+    cgd().setElementName(indexedName, mappedName);
 
     // Act
     auto result = cgd().getMappedName(indexedName, false);
@@ -212,11 +215,9 @@ TEST_F(ComplexGeoDataTest, getElementMappedNamesNoMapNoUnmapped)  // NOLINT
 TEST_F(ComplexGeoDataTest, getElementMappedNamesWithMapNoUnmapped)  // NOLINT
 {
     // Arrange
-    auto elementMap = std::make_shared<Data::ElementMap>();
-    cgd().resetElementMap(elementMap);
     auto mappedName = Data::MappedName("TestMappedName");
     auto indexedName = Data::IndexedName("EDGE", 1);
-    elementMap->setElementName(indexedName, mappedName, 0);
+    cgd().setElementName(indexedName, mappedName);
 
     // Act
     auto result = cgd().getElementMappedNames(indexedName, false);
@@ -318,7 +319,7 @@ TEST_F(ComplexGeoDataTest, elementTypeCharMappedNameWithPrefix)  // NOLINT
     int size {0};
     Data::MappedName mappedName;
     Data::IndexedName indexedName;
-    auto name = fmt::format("{}TestMappedElement:;", Data::ELEMENT_MAP_PREFIX);
+    auto name = fmt::format("{}TestMappedElement:;", Data::elementMapPrefix());
     std::tie(indexedName, mappedName) = createMappedName(name);
 
     // Act
@@ -340,10 +341,10 @@ TEST_F(ComplexGeoDataTest, resetElementMapNoArgument)  // NOLINT
 TEST_F(ComplexGeoDataTest, resetElementMapWithArgument)  // NOLINT
 {
     // Arrange
-    auto elementMap = std::make_shared<Data::ElementMap>();
-    auto mappedName = Data::MappedName("TestMappedName");
-    auto indexedName = Data::IndexedName("EDGE", 1);
-    elementMap->setElementName(indexedName, mappedName, 0);
+    cgd().setElementName(Data::IndexedName("EDGE", 1),
+                         Data::MappedName("TestMappedName"));
+    auto elementMap = cgd().resetElementMap();
+    ASSERT_EQ(cgd().getElementMapSize(), 0);
 
     // Act
     cgd().resetElementMap(elementMap);
@@ -355,8 +356,6 @@ TEST_F(ComplexGeoDataTest, resetElementMapWithArgument)  // NOLINT
 TEST_F(ComplexGeoDataTest, setAndGetElementMap)  // NOLINT
 {
     // Arrange
-    auto elementMap = std::make_shared<Data::ElementMap>();
-    cgd().resetElementMap(elementMap);
     std::vector<Data::MappedElement> vecMappedElements;
     auto mappedNameA = Data::MappedName("TestMappedNameA");
     auto indexedNameA = Data::IndexedName("EDGE", 1);
@@ -378,11 +377,8 @@ TEST_F(ComplexGeoDataTest, setAndGetElementMap)  // NOLINT
 TEST_F(ComplexGeoDataTest, getElementMapSize)  // NOLINT
 {
     // Arrange
-    auto elementMap = std::make_shared<Data::ElementMap>();
-    auto mappedName = Data::MappedName("TestMappedName");
-    auto indexedName = Data::IndexedName("EDGE", 1);
-    elementMap->setElementName(indexedName, mappedName, 0);
-    cgd().resetElementMap(elementMap);
+    cgd().setElementName(Data::IndexedName("EDGE", 1),
+                         Data::MappedName("TestMappedName"));
 
     // Act
     auto result = cgd().getElementMapSize();
