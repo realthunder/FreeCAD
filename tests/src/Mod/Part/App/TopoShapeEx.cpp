@@ -2443,12 +2443,7 @@ TEST_F(TopoShapeExpansionTest, makEFillet)
     ));
 }
 
-// DISABLED, phase 4 verdict: NOT A NAMING BUG. makESlice is byte-equivalent to upstream's;
-// the work happens in CrossSection::slice, whose text also matches upstream's. Reproduced
-// outside the test: Part.slice() returns nothing for any box of size 1 or less, at any
-// offset, while size 2 and above works. That is a separate, user-visible defect (scale
-// dependent, most likely an OCCT 8.0.1 change) and wants its own investigation.
-TEST_F(TopoShapeExpansionTest, DISABLED_makESlice)
+TEST_F(TopoShapeExpansionTest, makESlice)
 {
     // Arrange
     auto [cube1, cube2] = CreateTwoCubes();  // TopoShape version works too
@@ -2478,9 +2473,7 @@ TEST_F(TopoShapeExpansionTest, DISABLED_makESlice)
     ));
 }
 
-// DISABLED, phase 4 verdict: NOT A NAMING BUG. Same root cause as makESlice above -- the
-// unit-cube slice returns nothing, so the test indexes an empty vector and aborts.
-TEST_F(TopoShapeExpansionTest, DISABLED_makESlices)
+TEST_F(TopoShapeExpansionTest, makESlices)
 {
     // Arrange
     auto [cube1, cube2] = CreateTwoCubes();

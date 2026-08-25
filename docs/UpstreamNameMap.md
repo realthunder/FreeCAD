@@ -358,8 +358,8 @@ part of the harvest.
 ### The 14 findings, and the phase 4 triage of them
 
 Each was a `DISABLED_` case in the suite. **All fourteen have now been through
-the section 4 filter.** Six were genuine fork defects and are fixed; three are
-upstream's own difference, two are a separate defect, and three remain open.
+the section 4 filter.** Eight were genuine fork defects and are fixed; three
+are upstream's own difference, and three remain open.
 
 Method: for each case, the fork's implementation was compared against upstream's
 current text *and* against the text upstream had in the commit that first
@@ -368,7 +368,7 @@ introduced at transfer time is upstream's, and skipped. A difference upstream
 introduced *later*, over text that still matches ours, is a real fix, and is
 ported.
 
-#### Fixed -- real fork defects (6)
+#### Fixed -- real fork defects (8)
 
 | case | defect | upstream |
 |------|--------|----------|
@@ -378,6 +378,8 @@ ported.
 | `makEEvolve` | `JoinType::Arc` mapped to `GeomAbs_Tangent` and `Tangent` fell through to `Arc` -- swapped. OCCT rejects anything above `GeomAbs_Arc`, so every default-argument evolve threw a bare `Standard_NotImplemented` | transferred in with the same defect as `110f3e000d`, corrected later |
 | `getSubTopoShapeByEnum` | an out-of-range subshape index raised `Base::ValueError`, which is Python's `ValueError`. An index past the end is what `IndexError` is for, and upstream says so | `76df39e99d` -- `Base::IndexError`, and only for the out-of-bound branch. The invalid index, invalid type and invalid name branches stay `ValueError` on both sides |
 | `getSubTopoShapeByStringNames` | the same site: the by-string overload resolves the name and then routes through the by-enum one | as above |
+| `makESlice` | `TopoCrossSection::sliceSolid` closed with `makEWires(edges, prefix, true)`. That third argument used to be `keepOrder`; it is `double tol` now, so the literal `true` asked for a connection tolerance of **1mm** | upstream passes the same stale `true` and is unharmed: their wire builder never read `tol` at all. See below |
+| `makESlices` | the same call site -- `makESlices` loops `TopoCrossSection::slice` | as above |
 
 Note that `makERuledSurfaceWires`'s **element names fell into line by themselves**
 once the surface was built the right way round. A naming mismatch is not
@@ -391,21 +393,43 @@ necessarily a naming bug.
 | `makEBSplineFace` | the two implementations genuinely differ. Ours does geometric edge matching and transfers names through `makESHAPE` with `aFace(Tag, Hasher, ..)`; upstream's maps by index and ends in `setElementComboName` with `aFace(0, Hasher, ..)`, which is why its expectation carries no tag postfixes at all despite tagged inputs. Upstream's own source marks that path `TODO: Is this correct?`. |
 | `makEOffset2D` | the input wire is a rectangle, so it has four edges. Our map names all four plus four vertices; upstream's expectation names two edges and two vertices and carries a doubled `;OFF` step. **Ours is the more complete map.** Upstream's only later change to this function -- collecting face wires with `getSubTopoShapes` instead of `splitWires` -- is not on the path a wire input takes. |
 
-#### Not a naming bug -- a separate defect (2)
+#### The slice defect, and why the phase 4 verdict on it was wrong
 
-`makESlice` and `makESlices` are byte-equivalent to upstream's, and so is
-`CrossSection::slice` where the work actually happens. Reproduced outside the
-test entirely:
+Phase 4 recorded `makESlice` and `makESlices` as "not a naming bug, a separate
+defect", on the grounds that the functions were byte-equivalent to upstream's
+and that
 
     Part.makeBox(1,1,1).slice(Vector(1,0,0), 0.5)   -> 0 wires
     Part.makeBox(2,2,2).slice(Vector(1,0,0), 1.0)   -> 1 wire
 
-**`Part.slice()` returns nothing for any box of size 1 or less, at any offset,
-while size 2 and above works.** It is scale dependent, not offset dependent, and
-a translated unit box fails too. This is a live, user-visible defect in cross
-sections of small shapes -- most likely an OCCT 8.0.1 change, since upstream's
-CI captured these expectations on 7.x -- and it wants its own investigation
-rather than being carried as a topo-naming finding.
+looked like a kernel change. It was not. A pure-OCCT program walking the whole
+of `CrossSection::sliceSolid` -- half space, cut, section-face pick,
+`ConnectWiresToWires`, `ShapeFix_Wire` -- returns one wire at every size from
+0.25 to 10 on OCCT 8.0.1. The kernel was never the problem, and neither was
+`CrossSection`: Python's `Shape.slice()` does not call it. It calls `makESlice`,
+which uses **`TopoCrossSection`**, the element-map-aware twin further down the
+same file.
+
+Its last step was
+
+    TopoShape(face.Tag).makEWires(face.getSubTopoShapes(TopAbs_EDGE), prefix.c_str(), true)
+
+The third parameter of `makEWires` was `bool keepOrder` when that line was
+written. It is `double tol` today, so `true` became a connection tolerance of
+**1mm**, and every section wire whose edges were shorter than that collapsed.
+That is why the cutoff sat exactly at a box of size 1.
+
+Upstream carries the identical stale `true`. It does them no harm because their
+wire builder still grows each wire by re-offering every remaining edge to
+`BRepBuilderAPI_MakeWire`, and that loop never reads `tol`. This fork replaced
+it on 2026-08-23 with a one-pass sort into runs, which does honour `tol` -- so
+the fork's own optimisation is what turned a dormant upstream typo into a live
+defect. It is a clean instance of the hazard [[fork-runtime-divergences]]
+describes: ported upstream code that compiles fine and breaks at runtime.
+
+Letting `tol` default (`Precision::Confusion()`) fixes it, and both element maps
+then match upstream's recorded expectations exactly -- which is the evidence
+that the defaulted call, and not the ordered variant, is what the line meant.
 
 #### Still open -- ours, but not explained yet (3)
 
