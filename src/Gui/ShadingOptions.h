@@ -55,6 +55,20 @@ class View3DInventorViewer;
  * the per-frame config feed re-reads (SoFCRendererBridge::translate*).
  * Those properties exist only once a renderer backend has been selected,
  * so the whole section disables itself and says why when it is not.
+ *
+ * Each control writes TWICE: that property, and the preference the
+ * property was seeded from. Showing the menu reads the view back, so
+ * what is ticked is always what the window in front of you is drawn
+ * with; changing it here says "this is how I want it drawn", which
+ * covers the next view too --
+ * View3DInventorViewer::materializeRenderProps starts every Render_*
+ * from its RenderParams twin. Without the second write, a look chosen
+ * here had to be chosen again in every new window, and made to stick in
+ * a preference page nobody would think to visit for it.
+ *
+ * Editing the same property in the property editor deliberately does
+ * NOT touch the preference. That is an edit to one view, which is what
+ * a property editor is for.
  */
 class GuiExport ShadingOptionsWidget : public QWidget
 {
@@ -79,7 +93,15 @@ private:
     void updateCavityRadiusEnabled();
     /// Grey the tint row unless the matcap model is on and available.
     void updateMatcapTintEnabled();
-    void setFlag(const char *name, bool value);
+    /// Grey the copy-the-image box unless there is an image to copy.
+    void updateEnvEmbedEnabled();
+    /// Set a Render_<name> bool on the active view and, when \a pref is
+    /// given, the preference behind it -- see the class comment.
+    void setFlag(const char *name, bool value,
+                 void (*pref)(const bool &) = nullptr);
+    /// What the "Image..." entry says on hover: how to choose a file
+    /// that works, with \a current named above it when there is one.
+    QString envImageToolTip(const QString &current = QString()) const;
     /// Ask for an environment image and hand it to Render_PBREnvImage.
     /// Cancelling leaves the preset that is in effect selected.
     void chooseEnvImage();
@@ -102,6 +124,7 @@ private:
     QLabel *envLabel;
     QComboBox *envCombo;
     QCheckBox *envBgCheck;
+    QCheckBox *envEmbedCheck;
     /// Index of the combo's trailing "Image..." entry -- the presets are
     /// the enumeration's own values and sit at 0..n-1 before it.
     int envImageIndex = -1;

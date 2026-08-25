@@ -85,6 +85,12 @@ class MaterialSyncTestCases(unittest.TestCase):
             shutil.rmtree(folder, ignore_errors=True)
             self.MaterialManager.refresh()
 
+    def restoreLibraryCard(self, card):
+        """Put a card back under its own uuid, so the library has it again."""
+        self.MaterialManager.save("User", card, CARD, overwrite=True)
+        self.MaterialManager.refresh()
+        return self.MaterialManager.getMaterial(card.UUID)
+
     def newLibraryCard(self, density="7850.0 kg/m^3"):
         """A card in the User library, with a uuid of its own."""
         material = Materials.Material()
@@ -239,6 +245,13 @@ class MaterialSyncTestCases(unittest.TestCase):
         The strongest case for the command: a document from someone else whose
         card this installation could not resolve, and a library that does have
         it. Nothing else can put those two together.
+
+        Making the stored content unreadable is not enough on its own to
+        produce that state -- restore falls back to resolving the uuid against
+        the library, exactly as upstream does -- so this installation must not
+        have the card either. Both halves are done here: the content the
+        document names is made unproducible, and the card is taken out of the
+        library it was created in.
         """
         card = self.newLibraryCard(density="7850.0 kg/m^3")
         doc = self.newDocument()
@@ -253,13 +266,16 @@ class MaterialSyncTestCases(unittest.TestCase):
         self.rewriteDocumentXml(
             project, lambda xml: re.sub(r'hash="[0-9a-f]*"', 'hash="%s"' % ("0" * 40), xml)
         )
+        self.removeLibraryCard()
         reopened = self.openDocument(project)
         obj = reopened.Box
         self.assertFalse(obj.ShapeMaterial.PhysicalModels)
         self.assertEqual(obj.ShapeMaterial.UUID, card.UUID)
+        self.assertEqual(self.status(obj), "Absent")
 
         # The library has the card the document names. That is a divergence,
         # and taking the library's side of it is the relink.
+        self.restoreLibraryCard(card)
         self.assertEqual(self.status(obj), "Diverged")
         self.assertTrue(Materials.updateFromLibrary(obj, "ShapeMaterial"))
         self.assertAlmostEqual(self.density(obj.ShapeMaterial), 7850.0, places=6)

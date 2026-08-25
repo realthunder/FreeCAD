@@ -265,10 +265,24 @@ BlobReferrer FileBlobManager::referrerOf(const Property* prop, const DocumentObj
         object = Base::freecad_dynamic_cast<DocumentObject>(prop->getContainer());
     }
     if (!object || !object->isAttachedToDocument()) {
-        // Nothing anchors a name: a document-level property would take the
-        // document's own name, which a save-as changes, and a view's own
-        // properties belong to no object at all. Leaving the name empty
-        // leaves the content named by its hash, which at least does not move.
+        // No object anchors a name -- a document-level property, or a view's
+        // own property. Both still have one: the property names itself, and
+        // getPersistentName() is what the container is called in its own
+        // document across a save and a reload. That is not getFullName():
+        // a view's carries an id from a process-wide counter, and the same
+        // document saved id 5 in one session and 4 in the next, so a name
+        // built from it would move the file on every save. A view's
+        // persistent name is stored in the document and given back to it,
+        // so View1.Render_PBREnvImageData stays that view's file however
+        // many views the document has.
+        if (prop->hasName()) {
+            const std::string container =
+                prop->getContainer() ? prop->getContainer()->getPersistentName()
+                                     : std::string();
+            referrer.name = container.empty()
+                ? prop->getName()
+                : container + "." + prop->getName();
+        }
         return referrer;
     }
 
@@ -297,6 +311,7 @@ void FileBlobManager::beginSave(Base::Writer& writer)
     // Referrers are recomputed from scratch every save. Nothing is carried
     // forward, so a deleted object cannot leave a name behind it.
     _saveRefs.clear();
+    _saveExts.clear();
     // Decided once, before a single referrer has been written. Below schema 5
     // the properties still carry their own copies; above ForceXML level 3 the
     // caller wants a document that carries its content inside the XML, which
@@ -342,6 +357,16 @@ void FileBlobManager::noteReferenced(const FileBlobHandle& blob, const BlobRefer
     auto& slot = _saveSet[blob->hash()];
     expiring = std::move(slot);
     slot = blob;
+
+    // What the content is, kept apart from who refers to it: a referrer
+    // that cannot name the file can still say what kind of file it is,
+    // and a blob named by its hash has nowhere else to get that from.
+    if (!referrer.ext.empty()) {
+        auto& ext = _saveExts[blob->hash()];
+        if (ext.empty()) {
+            ext = referrer.ext;
+        }
+    }
 
     if (referrer.name.empty()) {
         // A caller that cannot say who is referring -- a property writing
@@ -404,9 +429,11 @@ FileBlobManager::planSave(const std::map<std::string, BlobIndexEntry>& previous)
     const std::vector<FileBlobHandle> pending = collected();
 
     std::unordered_map<std::string, std::vector<BlobReferrer>> refs;
+    std::unordered_map<std::string, std::string> knownExts;
     {
         std::lock_guard<std::mutex> guard(_mutex);
         refs = _saveRefs;
+        knownExts = _saveExts;
     }
 
     std::vector<SaveEntry> entries;
@@ -422,8 +449,13 @@ FileBlobManager::planSave(const std::map<std::string, BlobIndexEntry>& previous)
         if (found != refs.end()) {
             mine = found->second;
         }
+        // An object behind the referrer wins the name: an unanchored one
+        // carries id 0 and would otherwise sort first and take the name of
+        // content it merely shares -- Box.Shape is the better name for a
+        // shape a view property happens to hold a copy of.
         std::sort(mine.begin(), mine.end(), [](const BlobReferrer& a, const BlobReferrer& b) {
-            return std::tie(a.id, a.name) < std::tie(b.id, b.name);
+            return std::make_tuple(a.id == 0, a.id, a.name)
+                 < std::make_tuple(b.id == 0, b.id, b.name);
         });
 
         SaveEntry entry;
@@ -449,9 +481,13 @@ FileBlobManager::planSave(const std::map<std::string, BlobIndexEntry>& previous)
             // Nothing can name it -- a view's own property, or a caller that
             // did not say who was referring. Content addressing is then all
             // there is, and a hash at least does not move while the content
-            // does not.
+            // does not. The extension stays: a name says nothing about the
+            // content, but the file still has to be openable by whoever
+            // reads it back, and a stored environment image that arrived
+            // as a bare hash was taken for something Qt could read.
             stem = blob->hash();
-            ext.clear();
+            auto known = knownExts.find(blob->hash());
+            ext = known != knownExts.end() ? known->second : std::string();
         }
         // *** The stem is Object.Property, and both halves are named by
         // whoever made them: an object's name only has to be a Python

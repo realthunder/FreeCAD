@@ -28,6 +28,7 @@
 # include <QApplication>
 # include <QCheckBox>
 # include <QFileInfo>
+# include <QHBoxLayout>
 # include <QLabel>
 # include <QMessageBox>
 # include <QRadioButton>
@@ -137,6 +138,8 @@ struct DocumentP
     std::vector<CameraInfo>     _savedViews;
     std::map<int, std::string>  _view3DContents;
     std::vector<std::string>    _viewAreaLayouts;
+    /// The name each of them was saved under, see Gui::BaseView.
+    std::map<int, std::string>  _view3DNames;
 
     Application*    _pcAppWnd;
     // the doc/Document
@@ -1792,19 +1795,25 @@ public:
         auto layout = new QVBoxLayout(this);
         layout->setContentsMargins(0, 6, 0, 0);
 
-        // Titled like the storage group below it: the format a save is about
-        // to write is always on screen, named, whichever way it is set.
-        auto format = new QLabel(QObject::tr("Document format"), this);
+        // Two rows, each one line: what the save writes, then how shapes are
+        // stored in it. The labels are short enough to sit beside their
+        // controls; what each one costs is one hover away, in the tooltip.
+        auto formatRow = new QHBoxLayout;
+        auto format = new QLabel(QObject::tr("Document format:"), this);
         format->setStyleSheet(QStringLiteral("font-weight:bold;"));
-        layout->addWidget(format);
+        formatRow->addWidget(format);
 
-        standard = new QRadioButton(QObject::tr(
-                    "Standard format \xe2\x80\x94 readable by every FreeCAD version"), this);
-        compactBtn = new QRadioButton(QObject::tr(
-                    "Compact format \xe2\x80\x94 smaller and faster to load; "
-                    "this FreeCAD only"), this);
-        layout->addWidget(standard);
-        layout->addWidget(compactBtn);
+        standard = new QRadioButton(QObject::tr("Standard"), this);
+        standard->setToolTip(QObject::tr(
+                    "The format every FreeCAD version can open."));
+        compactBtn = new QRadioButton(QObject::tr("Compact"), this);
+        compactBtn->setToolTip(QObject::tr(
+                    "Smaller files that load faster, readable by this "
+                    "FreeCAD only."));
+        formatRow->addWidget(standard);
+        formatRow->addWidget(compactBtn);
+        formatRow->addStretch();
+        layout->addLayout(formatRow);
 
         compactBtn->setChecked(compact);
         standard->setChecked(!compact);
@@ -1813,44 +1822,36 @@ public:
         // these costs compatibility. A file missing a pcurve a plane can rebuild, or
         // naming one table entry from two records, is ordinary BRep that every
         // FreeCAD has always read.
-        auto storage = new QLabel(QObject::tr("Shape storage"), this);
+        auto storageRow = new QHBoxLayout;
+        auto storage = new QLabel(QObject::tr("Shape storage:"), this);
         storage->setStyleSheet(QStringLiteral("font-weight:bold;"));
-        layout->addSpacing(6);
-        layout->addWidget(storage);
+        storageRow->addWidget(storage);
 
-        dedupPCurves = new QCheckBox(QObject::tr(
-                    "Store each 2D curve once, and leave out the ones reading "
-                    "the file computes again"), this);
+        dedupPCurves = new QCheckBox(QObject::tr("2D curves"), this);
         dedupPCurves->setToolTip(QObject::tr(
-                    "A curve computed twice used to be written twice, and a "
-                    "curve on a flat face need not be written at all because "
-                    "the kernel projects it back. Neither changes the shape "
-                    "that comes back, and the file still opens anywhere."));
-        dedupCongruent = new QCheckBox(QObject::tr(
-                    "Store one copy of parts that are the same shape in "
-                    "different places"), this);
+                    "Store each 2D curve once, and leave out the ones loading "
+                    "computes again. Same shape, and the file still opens "
+                    "anywhere."));
+        dedupCongruent = new QCheckBox(QObject::tr("Repeated parts"), this);
         dedupCongruent->setToolTip(QObject::tr(
-                    "Parts repeated at different positions are stored once "
-                    "with the motion between them recorded, which sharing by "
-                    "content alone cannot do when the position is baked into "
-                    "the coordinates. Two parts are only ever merged once the "
-                    "motion has been recovered and checked."));
-        dedupGeometry = new QCheckBox(QObject::tr(
-                    "Share surfaces and curves between the parts that have "
-                    "them in common"), this);
+                    "Store one copy of parts that are the same shape in "
+                    "different places, with the motion between them recorded. "
+                    "Merged only once that motion has been checked."));
+        dedupGeometry = new QCheckBox(QObject::tr("Shared geometry"), this);
         dedupGeometry->setToolTip(QObject::tr(
-                    "Every part stores its own table of surfaces and curves, "
-                    "and about half of what those tables hold is written "
-                    "again by some other part. With this on a part names what "
-                    "another one already holds. It is off by default because "
-                    "it makes one part's geometry depend on another part's "
+                    "Let a part name surfaces and curves another part already "
+                    "stores, saving about half of those tables. Off by "
+                    "default: it makes one part depend on the other part's "
                     "file being there."));
         dedupPCurves->setChecked(App::DocumentParams::getDedupShapePCurves());
         dedupCongruent->setChecked(App::DocumentParams::getDedupCongruentShapes());
         dedupGeometry->setChecked(App::DocumentParams::getDedupCrossFileGeometry());
-        layout->addWidget(dedupPCurves);
-        layout->addWidget(dedupCongruent);
-        layout->addWidget(dedupGeometry);
+        storageRow->addWidget(dedupPCurves);
+        storageRow->addWidget(dedupCongruent);
+        storageRow->addWidget(dedupGeometry);
+        storageRow->addStretch();
+        layout->addSpacing(2);
+        layout->addLayout(storageRow);
 
         apply();
         QObject::connect(compactBtn, &QRadioButton::toggled,
@@ -2570,9 +2571,14 @@ void Document::RestoreDocFile(Base::Reader &reader)
         }
 
         d->_view3DContents.clear();
+        d->_view3DNames.clear();
         for (int i=0; i<view3dCount; ++i) {
             xmlReader.readElement("View3D");
             int id = xmlReader.getAttributeAsInteger("id");
+            // Read before the characters are drained, and absent from files
+            // written before views had a name -- those views keep the one
+            // they were handed when they were created.
+            d->_view3DNames[id] = xmlReader.getAttribute("name", "");
             d->_view3DContents[id] = xmlReader.readCharacters();
         }
 
@@ -2724,6 +2730,30 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
                         onTopObjs[id].emplace_back(std::move(name), std::move(subname));
                 }
             }
+        }
+
+        // Names first, before anything is restored into a view. A view
+        // created for this load was handed an auto name out of the same
+        // "View<n>" pool, so a name coming back from the file can be held
+        // by the wrong view; it is taken from whoever has it, and every
+        // view left nameless is given a free one at the end.
+        size_t named = 0;
+        for (auto v : views) {
+            if (named == d->_savedViews.size())
+                break;
+            auto &info = d->_savedViews[named++];
+            auto it = d->_view3DNames.find(info.id);
+            if (it == d->_view3DNames.end() || it->second.empty())
+                continue;
+            for (auto other : getViews()) {
+                if (other != v && other->getPersistentName() == it->second)
+                    other->setPersistentName(std::string());
+            }
+            v->setPersistentName(it->second);
+        }
+        for (auto v : getViews()) {
+            if (v->getPersistentName().empty())
+                v->setPersistentName(uniqueViewName(v));
         }
 
         std::map<int,View3DInventor*> viewMap;
@@ -3639,7 +3669,11 @@ void Document::SaveDocFile (Base::Writer &writer) const
     stringWriter.setForceXML(4);
     stringWriter.setSchemaVersion(writer.getSchemaVersion());
     for (auto view : view3Ds) {
-        writer.Stream() << writer.ind() << "<View3D id=\"" << view->getID() << "\">";
+        // The name is the view's identity across the save; the id only
+        // correlates this file's own <Camera>/<View3D> entries, and comes
+        // from a counter the next session starts over.
+        writer.Stream() << writer.ind() << "<View3D id=\"" << view->getID()
+            << "\" name=\"" << encodeAttribute(view->getPersistentName()) << "\">";
         stringWriter.clear();
         view->Save(stringWriter);
         writer.beginCharStream() << '\n' << stringWriter.getString();
@@ -4177,6 +4211,27 @@ BaseView *Document::getViewByID(int id) const
             return view;
     }
     return nullptr;
+}
+
+std::string Document::uniqueViewName(const Gui::BaseView *except) const
+{
+    std::set<std::string> taken;
+    for (auto view : d->baseViews) {
+        if (view != except) {
+            taken.insert(view->getPersistentName());
+        }
+    }
+    for (auto view : d->passiveViews) {
+        if (view != except) {
+            taken.insert(view->getPersistentName());
+        }
+    }
+    for (int n = 1;; ++n) {
+        std::string name = "View" + std::to_string(n);
+        if (taken.find(name) == taken.end()) {
+            return name;
+        }
+    }
 }
 
 std::list<MDIView*> Document::getMDIViewsOfType(const Base::Type& typeId) const

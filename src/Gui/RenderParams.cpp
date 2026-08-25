@@ -384,7 +384,7 @@ public:
         funcs["PBREnvIntensity"] = &RenderParamsP::updatePBREnvIntensity;
         PBREnvImage = this->handle->GetASCII("PBREnvImage", "");
         funcs["PBREnvImage"] = &RenderParamsP::updatePBREnvImage;
-        PBREnvEmbed = this->handle->GetBool("PBREnvEmbed", false);
+        PBREnvEmbed = this->handle->GetBool("PBREnvEmbed", true);
         funcs["PBREnvEmbed"] = &RenderParamsP::updatePBREnvEmbed;
         PBREnvBackground = this->handle->GetBool("PBREnvBackground", true);
         funcs["PBREnvBackground"] = &RenderParamsP::updatePBREnvBackground;
@@ -880,7 +880,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvEmbed(RenderParamsP *self) {
-        self->PBREnvEmbed = self->handle->GetBool("PBREnvEmbed", false);
+        self->PBREnvEmbed = self->handle->GetBool("PBREnvEmbed", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvBackground(RenderParamsP *self) {
@@ -4633,6 +4633,27 @@ const char *RenderParams::docPBREnvImage() {
 "needs the output colour transform on, since it is the exposure\n"
 "that decides how its range lands on the screen.\n"
 "\n"
+"What to load, in short:\n"
+"\n"
+" - A Radiance .hdr or .pic. OpenEXR is NOT read: anything\n"
+"   that is not Radiance goes through Qt, which has no EXR\n"
+"   plugin, so an .exr loads nothing and the procedural\n"
+"   environment stays on.\n"
+" - 2:1 proportions, so it is taken as a lat-long panorama\n"
+"   and not as a mirror ball. Up is +Z, and the middle of\n"
+"   the image faces +X.\n"
+" - 1K or 2K is plenty. The picture is held as 32-bit float\n"
+"   RGB (2K is about 25 MB, 8K about 400 MB) and is baked\n"
+"   into a 128 pixel per face cubemap, so a larger one\n"
+"   costs memory without showing more.\n"
+" - Free CC0 panoramas: polyhaven.com/hdris.\n"
+"\n"
+"Drawn as the background it is deliberately soft -- the\n"
+"background pass reads a blurred level of that cubemap, the\n"
+"way a real backdrop is out of focus -- so expect a wash of\n"
+"the photo's colours there rather than the photo. The\n"
+"lighting and the reflections use the sharp levels.\n"
+"\n"
 "Empty falls back to that dialog's current image, then to the\n"
 "procedural environment.");
 }
@@ -4666,7 +4687,12 @@ const char *RenderParams::docPBREnvEmbed() {
 "so it travels with the file instead of depending on the\n"
 "original path. The copy lives in the view's\n"
 "Render_PBREnvImageData property and takes precedence over the\n"
-"image path while set.");
+"image path while set.\n"
+"\n"
+"On by default: a document whose lighting depends on a file\n"
+"somewhere on one machine opens lit differently everywhere\n"
+"else, and the path is the part of the setting least likely\n"
+"to survive the trip.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -4676,7 +4702,7 @@ const bool & RenderParams::getPBREnvEmbed() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const bool & RenderParams::defaultPBREnvEmbed() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 

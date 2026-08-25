@@ -523,6 +523,8 @@ SET(Part_SRCS
     BSplineCurveBiArcs.h
     CrossSection.cpp
     CrossSection.h
+    ShapeAnalysis_FreeBoundsFix.cpp
+    ShapeAnalysis_FreeBoundsFix.h
     ExtrusionHelper.cpp
     ExtrusionHelper.h
     GeometryExtension.cpp

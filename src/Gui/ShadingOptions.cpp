@@ -145,12 +145,45 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     // after choosing the model, with the 3D view in sight.
     envLabel = new QLabel(tr("Environment:"), this);
     envCombo = new QComboBox(this);
-    envCombo->addItem(tr("Studio"));
-    envCombo->addItem(tr("Gradient"));
-    envCombo->addItem(tr("Overcast"));
-    envCombo->addItem(tr("Sunset"));
-    envCombo->addItem(tr("Interior"));
-    envCombo->addItem(tr("Light tent"));
+    // The character of each one goes on the entry rather than into the
+    // combo's own tooltip: which preset is the choice actually being
+    // made here, and the names are the one thing that cannot say how
+    // they differ. All six carry the same mean radiance, so none of
+    // this is about brightness -- it is about where the light comes
+    // from and whether anything in it has an edge.
+    auto addEnvPreset = [this](const QString &name, const QString &tip) {
+        envCombo->addItem(name);
+        envCombo->setItemData(envCombo->count() - 1, tip, Qt::ToolTipRole);
+    };
+    addEnvPreset(tr("Studio"),
+                 tr("Four soft boxes on a dark surround. The widest contrast "
+                    "of the six,\nwith rectangular sources a polished surface "
+                    "can reflect as sources --\nwhich is what makes it look "
+                    "polished."));
+    addEnvPreset(tr("Gradient"),
+                 tr("Ground, horizon and sky in one smooth ramp, with no edge "
+                    "anywhere\nand barely one stop from top to bottom. Nothing "
+                    "in it reads as a\nlight, so every roughness reflects the "
+                    "same flat grey. The oldest of\nthe six, kept so an older "
+                    "document can have its look back."));
+    addEnvPreset(tr("Overcast"),
+                 tr("A bright dome weighted to the zenith, so the light "
+                    "arrives from above\nand the band behind the model stays "
+                    "dark enough for a near-white part\nto stand against it."));
+    addEnvPreset(tr("Sunset"),
+                 tr("A low warm sun over a deep sky: the widest span of hue "
+                    "here, warm\ndown one side of a part and cool down the "
+                    "other."));
+    addEnvPreset(tr("Interior"),
+                 tr("One window and a ceiling panel in a room with close "
+                    "walls. The\ncrispest key of the six, and where a view "
+                    "starts."));
+    addEnvPreset(tr("Light tent"),
+                 tr("A box of white panels, bright below as well as above. "
+                    "The only one\nthat lights the wall of a standing "
+                    "cylinder -- that wall reflects the\nhalf of the sphere "
+                    "under the horizon, which is floor, and dark, in\nevery "
+                    "other preset."));
     // An image is the same choice as a preset rather than a modifier of
     // one: the renderer takes one INSTEAD of the other
     // (SoFCRendererBridge::translatePBR resolves the image first and
@@ -160,8 +193,15 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     envCombo->insertSeparator(envCombo->count());
     envImageIndex = envCombo->count();
     envCombo->addItem(tr("Image..."));
-    envCombo->setToolTip(doc(RenderParams::docPBREnvPreset()));
+    envCombo->setToolTip(
+        tr("What the scene stands in: the surroundings that light it, and "
+           "that\nits reflections show. A preset, or an image of your own."));
     envLabel->setToolTip(envCombo->toolTip());
+    // What a usable environment image has to be -- the format, the
+    // proportions, the size -- said on the entry that opens the file
+    // dialog, which is the last moment before the choice is made.
+    // refresh() puts the current file above it once there is one.
+    envCombo->setItemData(envImageIndex, envImageToolTip(), Qt::ToolTipRole);
     // The environment lights the scene whether or not it is DRAWN --
     // the flag gates the background pass alone. So this is the switch
     // for "light it like a studio, keep my background", which is a
@@ -169,10 +209,17 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     // into the preferences.
     envBgCheck = new QCheckBox(tr("as background"), this);
     envBgCheck->setToolTip(doc(RenderParams::docPBREnvBackground()));
+    // A path is the part of this setting least likely to survive being
+    // sent to somebody else, so the copy that travels with the document
+    // is offered where the image is picked rather than in the property
+    // editor. Nothing to copy for a preset, so it greys out for one.
+    envEmbedCheck = new QCheckBox(tr("keep a copy"), this);
+    envEmbedCheck->setToolTip(doc(RenderParams::docPBREnvEmbed()));
     auto envRow = new QHBoxLayout;
     envRow->setContentsMargins(0, 0, 0, 0);
     envRow->addWidget(envCombo, 1);
     envRow->addWidget(envBgCheck);
+    envRow->addWidget(envEmbedCheck);
     layout->addWidget(envLabel, 2, 0);
     layout->addLayout(envRow, 2, 1);
 
@@ -283,7 +330,10 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
             setModel(false, true);
     });
     connect(envBgCheck, &QCheckBox::toggled, this, [this](bool on) {
-        setFlag("PBREnvBackground", on);
+        setFlag("PBREnvBackground", on, &RenderParams::setPBREnvBackground);
+    });
+    connect(envEmbedCheck, &QCheckBox::toggled, this, [this](bool on) {
+        setFlag("PBREnvEmbed", on, &RenderParams::setPBREnvEmbed);
     });
     connect(envCombo, qOverload<int>(&QComboBox::currentIndexChanged),
             this, [this](int index) {
@@ -300,6 +350,7 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
         if (auto prop = renderProp<App::PropertyEnumeration>(activeView(),
                                                             "PBREnvPreset"))
             prop->setValue(long(index));
+        RenderParams::setPBREnvPreset(long(index));
     });
     connect(matcapCombo, qOverload<int>(&QComboBox::currentIndexChanged),
             this, [this](int index) {
@@ -308,6 +359,7 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
         if (auto prop = renderProp<App::PropertyEnumeration>(activeView(),
                                                             "MatcapPreset"))
             prop->setValue(long(index));
+        RenderParams::setMatcapPreset(long(index));
     });
     connect(matcapTintSlider, &QSlider::valueChanged, this, [this](int value) {
         matcapTintValue->setText(tr("%1 %").arg(value));
@@ -316,9 +368,10 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
         if (auto prop = renderProp<App::PropertyFloat>(activeView(),
                                                        "MatcapTint"))
             prop->setValue(double(value) / 100.0);
+        RenderParams::setMatcapTint(double(value) / 100.0);
     });
     connect(cavityCheck, &QCheckBox::toggled, this, [this](bool on) {
-        setFlag("Cavity", on);
+        setFlag("Cavity", on, &RenderParams::setCavity);
         updateCavityRadiusEnabled();
     });
     connect(cavityRadiusSlider, &QSlider::valueChanged, this, [this](int value) {
@@ -328,16 +381,17 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
         if (auto prop = renderProp<App::PropertyFloat>(activeView(),
                                                        "CavityRadius"))
             prop->setValue(double(value));
+        RenderParams::setCavityRadius(double(value));
     });
     connect(aoCheck, &QCheckBox::toggled, this, [this](bool on) {
-        setFlag("AO", on);
+        setFlag("AO", on, &RenderParams::setAO);
     });
     connect(shadowCheck, &QCheckBox::toggled, this, [this](bool on) {
         if (!loading)
             setShadow(on);
     });
     connect(bloomCheck, &QCheckBox::toggled, this, [this](bool on) {
-        setFlag("Bloom", on);
+        setFlag("Bloom", on, &RenderParams::setBloom);
     });
 }
 
@@ -354,16 +408,16 @@ App::PropertyContainer *ShadingOptionsWidget::activeView() const
 void ShadingOptionsWidget::setShadow(bool on)
 {
     auto view = activeView();
-    if (!view)
-        return;
     if (auto prop = renderProp<App::PropertyBool>(view, "Light"))
         prop->setValue(on);
+    RenderParams::setLight(on);
     // The map follows the light on, and is left alone otherwise:
     // Render_Shadow drops the map while keeping the scene lit, which is
     // a state worth being able to hold.
     if (on) {
         if (auto prop = renderProp<App::PropertyBool>(view, "Shadow"))
             prop->setValue(true);
+        RenderParams::setShadow(true);
     }
 }
 
@@ -394,20 +448,55 @@ void ShadingOptionsWidget::setModel(bool pbr, bool matcap)
         prop->setValue(pbr);
     if (auto prop = renderProp<App::PropertyBool>(view, "Matcap"))
         prop->setValue(matcap);
+    RenderParams::setPBR(pbr);
+    RenderParams::setMatcap(matcap);
     envLabel->setEnabled(pbr);
     envCombo->setEnabled(pbr);
     envBgCheck->setEnabled(pbr);
+    updateEnvEmbedEnabled();
     matcapLabel->setEnabled(matcap);
     matcapCombo->setEnabled(matcap);
     updateMatcapTintEnabled();
 }
 
-void ShadingOptionsWidget::setFlag(const char *name, bool value)
+void ShadingOptionsWidget::setFlag(const char *name, bool value,
+                                   void (*pref)(const bool &))
 {
     if (loading)
         return;
     if (auto prop = renderProp<App::PropertyBool>(activeView(), name))
         prop->setValue(value);
+    if (pref)
+        pref(value);
+}
+
+QString ShadingOptionsWidget::envImageToolTip(const QString &current) const
+{
+    // What to go and find, in the four facts that decide whether the
+    // file works at all. The reasons behind each of them, and the rest
+    // of the behaviour, are in RenderParams::docPBREnvImage, which the
+    // property editor shows and which has room for them.
+    QString tip = tr(
+        "Light the scene with your own panorama.\n"
+        "\n"
+        "Wants a 2:1 lat-long Radiance .hdr at 1K or 2K. An .exr will not\n"
+        "load, and an 8-bit photo has too little range to light with.\n"
+        "Free ones: polyhaven.com/hdris. Shown as the background it is\n"
+        "deliberately soft.");
+    if (current.isEmpty())
+        return tip;
+    // The file first: once one is loaded, which one is the question this
+    // entry raises, and the instructions are behind it.
+    return current + QLatin1String("\n\n") + tip;
+}
+
+void ShadingOptionsWidget::updateEnvEmbedEnabled()
+{
+    // A preset has no file to copy, so the box would be a control that
+    // does nothing -- and worse, one that claims the document is
+    // carrying something it is not.
+    envEmbedCheck->setEnabled(envCombo->isEnabled()
+                              && !envImageName().isEmpty());
 }
 
 QString ShadingOptionsWidget::envImageName() const
@@ -461,8 +550,10 @@ void ShadingOptionsWidget::chooseEnvImage()
     // Cancelled: the combo has already moved onto the image entry, and
     // refresh puts it back on the preset that is still lighting the
     // scene.
-    if (!path.isEmpty())
+    if (!path.isEmpty()) {
         prop->setValue(path.toUtf8().constData());
+        RenderParams::setPBREnvImage(path.toUtf8().constData());
+    }
     refresh();
 }
 
@@ -473,6 +564,7 @@ void ShadingOptionsWidget::clearEnvImage()
         if (prop->getValue() && prop->getValue()[0])
             prop->setValue("");
     }
+    RenderParams::setPBREnvImage("");
     // The path change drops the embedded copy through
     // View3DInventorViewer::syncEnvImageEmbed -- except on a restored
     // document, whose path is already empty while the copy still lights
@@ -509,8 +601,8 @@ void ShadingOptionsWidget::refresh()
         envCombo->setItemText(envImageIndex, envImage.isEmpty()
                 ? tr("Image...")
                 : QFileInfo(envImage).fileName());
-        envCombo->setItemData(envImageIndex, envImage.isEmpty()
-                ? QVariant() : QVariant(envImage), Qt::ToolTipRole);
+        envCombo->setItemData(envImageIndex, envImageToolTip(envImage),
+                              Qt::ToolTipRole);
     }
     if (!envImage.isEmpty() && envImageIndex >= 0)
         envCombo->setCurrentIndex(envImageIndex);
@@ -522,6 +614,10 @@ void ShadingOptionsWidget::refresh()
     // while the renderer went on drawing the environment.
     envBgCheck->setChecked(renderFlag(view, "PBREnvBackground",
                                       RenderParams::getPBREnvBackground()));
+    // Defaults ON as well, and for the same reason the fallback is the
+    // parameter rather than a literal.
+    envEmbedCheck->setChecked(renderFlag(view, "PBREnvEmbed",
+                                         RenderParams::getPBREnvEmbed()));
     if (auto prop = renderProp<App::PropertyEnumeration>(view, "MatcapPreset"))
         matcapCombo->setCurrentIndex(int(prop->getValue()));
     if (auto prop = renderProp<App::PropertyFloat>(view, "MatcapTint"))
@@ -553,6 +649,7 @@ void ShadingOptionsWidget::refresh()
     envLabel->setEnabled(available && pbr && !matcap);
     envCombo->setEnabled(available && pbr && !matcap);
     envBgCheck->setEnabled(available && pbr && !matcap);
+    updateEnvEmbedEnabled();
     matcapLabel->setEnabled(available && matcap);
     matcapCombo->setEnabled(available && matcap);
     updateMatcapTintEnabled();

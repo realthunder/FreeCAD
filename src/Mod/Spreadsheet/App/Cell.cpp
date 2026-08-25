@@ -274,8 +274,8 @@ bool Cell::getStringContent(std::string& s, bool persistent) const
         auto sexpr = SimpleStatement::cast<App::StringExpression>(expression.get());
         if(sexpr) {
             s = sexpr->getText();
-            if (tryParseExpression(s.c_str())) {
-                // If the text can be potentially auto parsed as an expression,
+            if (needsQuotePrefix(s)) {
+                // If the text would not come back as this same string,
                 // prepend a single quote to force it to be a string.
                 s.insert(s.begin(), '\'');
             }
@@ -366,6 +366,19 @@ void Cell::setContent(const char * value, bool eval)
             setParseException(e.what());
         }
     }
+}
+
+bool Cell::needsQuotePrefix(const std::string &text) const
+{
+    if (text.empty())
+        return false;
+    // setContent() consumes a leading '=' (as an expression) and a leading
+    // quote (as the string marker itself), so a text starting with either
+    // would not come back unchanged. Anything that parses as a number or
+    // quantity would come back as one, too.
+    if (text[0] == '=' || text[0] == '\'')
+        return true;
+    return tryParseExpression(text.c_str()) != nullptr;
 }
 
 App::ExpressionPtr Cell::tryParseExpression(const char *value) const

@@ -148,11 +148,6 @@ static const PyMethodDef areaOverrides[] = {
         "of this Area is used if section mode is 'Workplane'.",
     },
     {
-        "getClearedArea",nullptr,0,
-        "getClearedArea(tipDiameter, diameter):\n"
-        "Gets the area cleared when a tool maximally clears this area. This method assumes a tool tip diameter 'tipDiameter' traces the full area, and that (perhaps at a different height on the tool) this clears a different region with tool diameter 'diameter'.\n",
-    },
-    {
         "getRestArea",nullptr,0,
         "getRestArea(clearedAreas, diameter):\n"
         "Rest machining: gets the area left to be machined, assuming some of this area has already been cleared previous tool paths.\n"
@@ -403,18 +398,6 @@ PyObject* AreaPy::makeSections(PyObject *args, PyObject *keywds)
     } PY_CATCH_OCC
 }
 
-PyObject* AreaPy::getClearedArea(PyObject *args)
-{
-    PY_TRY {
-        double tipDiameter, diameter;
-        if (!PyArg_ParseTuple(args, "dd", &tipDiameter, &diameter))
-            return nullptr;
-        std::shared_ptr<Area> clearedArea = getAreaPtr()->getClearedArea(tipDiameter, diameter);
-        auto pyClearedArea = Py::asObject(new AreaPy(new Area(*clearedArea, true)));
-        return Py::new_reference_to(pyClearedArea);
-    } PY_CATCH_OCC
-}
-
 PyObject* AreaPy::getRestArea(PyObject *args)
 {
     PY_TRY {
@@ -440,6 +423,8 @@ PyObject* AreaPy::getRestArea(PyObject *args)
         }
 
         std::shared_ptr<Area> restArea = getAreaPtr()->getRestArea(clearedAreas, diameter);
+        if (!restArea)
+            Py_RETURN_NONE;
         auto pyRestArea = Py::asObject(new AreaPy(new Area(*restArea, true)));
         return Py::new_reference_to(pyRestArea);
     } PY_CATCH_OCC

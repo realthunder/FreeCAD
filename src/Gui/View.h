@@ -90,6 +90,24 @@ public:
 
     std::string getFullName(bool python=false) const override;
 
+    /** @name The name this view answers to in its own document
+     *
+     * Unique within the document, saved with the view and given back to it
+     * on reload -- unlike getID(), which is a process-wide counter no file
+     * records. It is what names the included files a view's own properties
+     * own (App::FileBlobManager::referrerOf), so two views each holding an
+     * environment image keep them apart.
+     *
+     * An identity rather than a label, like a document object's Name: it is
+     * read-only from Python, and the setter is here for the two that hand
+     * it out -- the constructor, and Gui::Document restoring the name its
+     * file recorded. What a view is CALLED is its window title.
+     */
+    //@{
+    std::string getPersistentName() const override { return _name; }
+    void setPersistentName(const std::string &name) { _name = name; }
+    //@}
+
     /** @name methods to override
      */
     //@{
@@ -121,6 +139,8 @@ protected:
     bool bIsDetached{false};
     bool bIsPassive{false};
     int _id{0};
+    /// See getPersistentName(); empty for a view with no document.
+    std::string _name;
 };
 
 } // namespace Gui

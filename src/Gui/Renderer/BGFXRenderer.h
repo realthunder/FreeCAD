@@ -43,6 +43,7 @@ public:
     virtual bool deviceSharesQtGL() const override;
     virtual bool deviceMakeCurrent() override;
     virtual void deviceDoneCurrent() override;
+    virtual DrawDevice *drawDevice() const override;
 };
 
 class BGFXRenderer : public Renderer

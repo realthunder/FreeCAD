@@ -31,18 +31,20 @@
  * See \ref ParamPage "here" for details of parameter definition.
  */
 
+#include "ClipperEnums.h"
 #include "ParamsHelper.h"
 
 /** clipper fill type */
 #define AREA_CLIPPER_FILL_TYPE \
-    (NonZero)(EvenOdd)(Positive)(Negative),(ClipperLib::PolyFillType,ClipperLib::pft)
+    (NonZero)(EvenOdd)(Positive)(Negative),\
+        (Clipper2Lib::FillRule,AreaLib::ClipperEnum::Fill)
 
 /** Parameters of clipper fill types */
 #define AREA_PARAMS_CLIPPER_FILL \
     ((enum2,subject_fill,SubjectFill,0,\
-        "ClipperLib subject fill type. \nSee https://goo.gl/5pYQQP",AREA_CLIPPER_FILL_TYPE))\
+        "Clipper subject fill rule. \nSee https://goo.gl/5pYQQP",AREA_CLIPPER_FILL_TYPE))\
     ((enum2,clip_fill,ClipFill,0,\
-        "ClipperLib clip fill type. \nSee https://goo.gl/5pYQQP",AREA_CLIPPER_FILL_TYPE))
+        "Clipper clip fill rule. \nSee https://goo.gl/5pYQQP",AREA_CLIPPER_FILL_TYPE))
 
 /** Deflection parameter */
 #define AREA_PARAMS_DEFLECTION \
@@ -65,11 +67,11 @@
     ((bool,explode,Explode,false,\
         "If true, Area will explode the first shape into disconnected open edges, \n"\
         "with all curves discretized, so that later operations like 'Difference' \n"\
-        "behave like wire cutting. Without exploding, 'Difference' in ClipperLib\n"\
+        "behave like wire cutting. Without exploding, 'Difference' in Clipper\n"\
         "behave like face cutting."))\
     ((enum,open_mode,OpenMode,0,\
         "Specify how to handle open wires. 'None' means combin without openeration.\n"\
-        "'Edges' means separate to edges before Union. ClipperLib seems to have an.\n"\
+        "'Edges' means separate to edges before Union. Clipper seems to have an.\n"\
         "urge to close open wires.",(None)(Union)(Edges)))\
     AREA_PARAMS_DEFLECTION \
     AREA_PARAMS_CLIPPER_FILL
@@ -89,15 +91,22 @@
         "Point coincidence tolerance",App::PropertyPrecision))\
     AREA_PARAMS_FIT_ARCS \
     ((bool,clipper_simple,Simplify,false,\
-        "Simplify polygons after operation. See https://goo.gl/Mh9XK1"))\
+        "No effect. This asked Clipper1 for strictly simple output, which\n"\
+        "Clipper2 always produces, so there is nothing left to ask for. Kept\n"\
+        "so documents that stored it still load."))\
     ((double,clipper_clean_distance,CleanDistance,0.0,\
-        "Clean polygon smaller than this distance. See https://goo.gl/jox3JY",App::PropertyLength))\
+        "Simplify the result, dropping vertices that lie within this distance\n"\
+        "of the line their neighbours make. 0 leaves the result alone.\n"\
+        "Note this changed meaning with Clipper2: it used to merge vertices\n"\
+        "closer together than this, and now it is a Douglas-Peucker tolerance,\n"\
+        "so the same number kept from an older document simplifies differently.",\
+        App::PropertyLength))\
     ((double,accuracy,Accuracy,0.01,"Arc fitting accuracy",App::PropertyPrecision))\
     ((double,units,Unit,1.0,"Scaling factor for conversion to inch",App::PropertyFloat))\
     ((short,min_arc_points,MinArcPoints,4,"Minimum segments for arc discretization"))\
     ((short,max_arc_points,MaxArcPoints,100,"Maximum segments for arc discretization (ignored currently)"))\
     ((double,clipper_scale,ClipperScale,1e7,\
-        "ClipperLib operate on integers. This is the scale factor to convert\n"\
+        "Clipper operates on integers. This is the scale factor to convert\n"\
         "floating points.",App::PropertyFloat))
 
 /** Pocket parameters
@@ -112,16 +121,16 @@
 	((double,max_offset,PocketMaxOffset,0.0,"Maximum offset for pocketing",App::PropertyDistance))\
 	((double,stepover,PocketStepover,0.0,\
         "Cutter diameter to step over on each pass. If =0, use ToolRadius.",App::PropertyLength))\
-	((double,last_stepover,PocketLastStepover,0.0,\
-        "Cutter diameter to step over for the last loop when using offset pocket.\n"\
-        "If =0, use 0.5*ToolRadius.", App::PropertyLength))\
 	((bool,from_center,FromCenter,false,"Start pocketing from center"))\
 	((double,angle,Angle,45,"Pattern angle in degree",App::PropertyAngle))\
 	((double,angle_shift,AngleShift,0.0,"Pattern angle shift for each section", App::PropertyAngle))\
 	((double,shift,Shift,0.0,"Pattern shift distance for each section.\n"\
         "The pocket pattern will be shifted in orthogonal direction by this amount for each section.\n"\
         "This gives a 3D pattern mainly for 3D printing. The shift only applies to 'Offset', 'Grid'\n"\
-        "and 'Triangle'", App::PropertyDistance))
+        "and 'Triangle'", App::PropertyDistance))\
+	((bool,force_max_stepover,ForceMaxStepover,false,\
+        "Force the maximum stepover even where it leaves material behind. Without this,\n"\
+        "a large stepover (over 50%) may be reduced to keep the passes overlapping."))
 
 #define AREA_PARAMS_POCKET_CONF \
     ((bool,thicken,Thicken,false,"Thicken the resulting wires with ToolRadius"))
@@ -139,10 +148,7 @@
         "Offset value, positive for expansion, negative for shrinking",App::PropertyDistance))\
     ((long,extra_pass,ExtraPass,0,"Number of extra offset pass to generate."))\
     ((double,stepover,Stepover,0.0,\
-        "Cutter diameter to step over on each pass. If =0, use Offset",App::PropertyLength))\
-	((double,last_stepover,LastStepover,0.0,\
-        "Cutter diameter to step over for the last loop when shrinking with ExtraPass<0, i.e. for\n"\
-        "offset pocketing. If =0, use 0.5*Offset.", App::PropertyLength))
+        "Cutter diameter to step over on each pass. If =0, use Offset",App::PropertyLength))
 
 #define AREA_PARAMS_SECTION_EXTRA \
     ((enum,mode,SectionMode,2,"Section offset coordinate mode.\n"\
@@ -180,9 +186,10 @@
 #define AREA_PARAMS_OFFSET_CONF \
     AREA_PARAMS_OFFSET_ALGO \
     ((enum2,join_type,JoinType,0,"ClipperOffset join type. \nSee https://goo.gl/4odfQh",\
-        (Round)(Square)(Miter),(ClipperLib::JoinType,ClipperLib::jt)))\
+        (Round)(Square)(Miter),(Clipper2Lib::JoinType,AreaLib::ClipperEnum::Join)))\
     ((enum2,end_type,EndType,0,"\nClipperOffset end type. See https://goo.gl/tj7gkX",\
-        (OpenRound)(ClosedPolygon)(ClosedLine)(OpenSquare)(OpenButt),(ClipperLib::EndType,ClipperLib::et)))\
+        (OpenRound)(ClosedPolygon)(ClosedLine)(OpenSquare)(OpenButt),\
+        (Clipper2Lib::EndType,AreaLib::ClipperEnum::End)))\
     ((double,miter_limit,MiterLimit,2.0,\
         "Miter limit for joint type Miter. See https://goo.gl/K8xX9h",App::PropertyFloat))\
     ((double,round_precision,RoundPrecision,0.0,\

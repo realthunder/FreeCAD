@@ -22,6 +22,8 @@
  ***************************************************************************/
 
 
+#include <numbers>
+
 #include <Inventor/SbMatrix.h>
 #include <Inventor/SbRotation.h>
 #include <Inventor/SbVec3f.h>

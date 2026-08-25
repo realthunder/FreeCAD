@@ -1346,6 +1346,69 @@ Note that FreeCAD has no other environment mechanism to honor: Coin's
 in the tree, and the Texture mapping dialog is the only place a user
 picks an environment image today.
 
+#### Choosing an image that works
+
+The four things that decide whether a user image lights the scene like a
+place or like nothing at all. The Shading popup's *Image...* entry names
+them in a sentence each on hover; the reasons are here and in
+`RenderParams::docPBREnvImage`, which the property editor shows.
+
+- **A Radiance `.hdr` or `.pic`, not an `.exr`.** `loadParamImage` reads
+  Radiance itself and hands everything else to Qt, which has no OpenEXR
+  plugin -- so an `.exr` loads nothing, the environment falls back to the
+  procedural preset, and the only symptom is that the picture did not
+  take effect. LDR formats (`.png`, `.jpg`, ...) do load, but see below.
+- **2:1 proportions**, or `sampleEnvImage` reads the file as a mirror
+  ball rather than a panorama, and an ordinary photograph unwrapped that
+  way is unrecognisable. The threshold is `width >= height * 3/2`. Up is
+  +Z and the middle of the image faces +X.
+- **1K or 2K.** The picture is held as 32-bit float RGB -- 2K is about
+  25 MB, 8K about 400 MB -- and is then integrated into a
+  `kEnvSize` (128) per face cubemap, so a larger source costs memory and
+  load time without putting anything more on screen.
+- **Real radiance, which is what the HDR formats are for.** A sky is
+  thousands of times brighter than the wall beneath it; an 8-bit image
+  cannot hold that ratio, and an environment whose whole range fits in
+  one stop lights a model flatly however good the photograph is. An HDR
+  environment also wants `Render_OutputTransform` on `sRGB`, since the
+  exposure is what decides where its range lands on the display.
+  `Render_PBREnvIntensity` scales it.
+
+Free CC0 panoramas in the right format: <https://polyhaven.com/hdris>.
+
+Expect the **background** to be a soft wash of the image rather than the
+image: `submitEnvBackground` samples the cube at LOD 2 (32x32 per face),
+deliberately, because a backdrop is out of focus and because the blur is
+what lets a small bright source bleed into a gentle falloff instead of
+sitting in the frame as a rectangle. The lighting and the reflections
+read the sharp levels.
+
+#### Where the settings live
+
+Every knob in the Shading popup is stored twice, and the split is the
+point:
+
+- The **view property** (`Render_PBREnvImage`, `Render_PBR`, ...) is what
+  the frame is drawn from, and travels in the document.
+- The **preference** (`RenderParams`, group
+  `BaseApp/Preferences/View/Render`) is what a *new* view starts in:
+  `View3DInventorViewer::materializeRenderProps` seeds each Render_*
+  property from its RenderParams twin the first time a backend is
+  selected on a view.
+
+Showing the popup reads the active view back, so what is ticked is what
+the window in front of you is drawn with. Changing something there
+writes both -- the view now, and the preference so the next window
+agrees. Editing the same property in the **property editor** writes only
+the view: that is an edit to one window, which is what a property editor
+is for, and it deliberately leaves the preference alone.
+
+`Render_PBREnvEmbed` (**on by default**) copies the chosen image into
+`Render_PBREnvImageData` so the document carries its own lighting; the
+copy wins over the path wherever both are set. The popup offers it as
+*keep a copy* beside the environment combo, greyed out for a preset,
+which has no file to copy.
+
 ## 5. User shader framework
 
 User-loadable shaders are document objects riding the standard

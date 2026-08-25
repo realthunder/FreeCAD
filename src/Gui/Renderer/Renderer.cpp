@@ -114,6 +114,15 @@ void RendererFactory::registerLib(RendererLib *lib)
     _rendererLibs.push_back(lib);
 }
 
+DrawDevice *RendererFactory::drawDevice()
+{
+    for (auto lib : _rendererLibs) {
+        if (auto device = lib->drawDevice())
+            return device;
+    }
+    return nullptr;
+}
+
 std::vector<std::string> RendererFactory::types()
 {
     std::vector<std::string> res;

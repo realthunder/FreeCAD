@@ -48,6 +48,9 @@ class MDIView;
 class MainWindow;
 class MenuItem;
 class PreferencePackManager;
+namespace StyleParameters {
+class ParameterManager;
+}
 class ViewProvider;
 class ViewProviderDocumentObject;
 enum  class HighlightMode;
@@ -306,6 +309,10 @@ public:
     //@{
     /// Activate a stylesheet
     void setStyleSheet(const QString& qssFile, bool tiledBackground);
+    /// Set the Qt widget style: "FreeCAD" is the bundled Fusion-based
+    /// proxy style, "System" clears the override, anything else is
+    /// looked up in QStyleFactory.
+    void setStyle(const QString& name);
     QString replaceVariablesInQss(QString qssText);
     /** Apply the palette named by MainWindow/ColorScheme.
      *
@@ -325,6 +332,12 @@ public:
     static void resolveAutoTheme();
     /// Whether the platform reports a dark system color scheme.
     static bool systemPrefersDarkScheme();
+    /// Whether the appearance in effect is dark: the color scheme the
+    /// active theme pinned, or the desktop's when nothing is pinned.
+    /// The one answer for code that used to sniff "dark" out of the
+    /// stylesheet filename, which the parameterized FreeCAD.qss never
+    /// carries.
+    static bool isDarkTheme();
     /** Make widgets resolve against the current application palette again.
      *
      * Needed after a theme change: Qt restores a widget to the palette it held
@@ -375,6 +388,10 @@ public:
     //@}
 
     Gui::PreferencePackManager* prefPackManager();
+
+    /// The style parameter evaluator behind themed stylesheets
+    Gui::StyleParameters::ParameterManager* styleParameterManager();
+    void initStyleParameterManager();
 
     /** @name Init, Destruct an Access methods */
     //@{

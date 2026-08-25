@@ -38,6 +38,7 @@ SET(Area_SRCS
     AppArea.cpp
     Area.cpp
     Area.h
+    ClipperEnums.h
     AreaParams.h
     ParamsHelper.h
     PreCompiled.cpp

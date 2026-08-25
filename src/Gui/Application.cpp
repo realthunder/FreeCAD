@@ -41,6 +41,7 @@
 # include <QRegularExpressionMatch>
 # include <QStatusBar>
 # include <QStyle>
+# include <QStyleFactory>
 # include <QStyleHints>
 # include <QStyleOptionMenuItem>
 # include <QSurfaceFormat>
@@ -105,7 +106,13 @@
 #include "LiveViewInteraction.h"
 #include "MainWindow.h"
 #include "Macro.h"
+#include "MDIViewWithCamera.h"
 #include "PreferencePackManager.h"
+#include "StyleParameters/ParameterManager.h"
+#include "FreeCADStyle.h"
+#include "ParamHandler.h"
+#include <ranges>
+#include <Base/ServiceProvider.h>
 #include "PythonConsolePy.h"
 #include "PythonDebugger.h"
 #include "RenderParams.h"
@@ -227,6 +234,7 @@ struct ApplicationP
 
         // Create the Theme Manager
         prefPackManager = new PreferencePackManager();
+        styleParameterManager = new StyleParameters::ParameterManager();
         timer.setSingleShot(true);
         QObject::connect(&timer, &QTimer::timeout, [this](){onTimer();});
     }
@@ -235,6 +243,7 @@ struct ApplicationP
     {
         delete macroMngr;
         delete prefPackManager;
+        delete styleParameterManager;
     }
 
     void onTimer() {
@@ -252,6 +261,11 @@ struct ApplicationP
     Gui::Document*  editDocument{nullptr};
     MacroManager*  macroMngr;
     PreferencePackManager* prefPackManager;
+    /// Evaluates the style parameters themed stylesheets substitute
+    StyleParameters::ParameterManager* styleParameterManager;
+    /// The parameter source fed from the active theme's YAML file;
+    /// setStyleSheet() re-points it whenever the theme changes
+    StyleParameters::YamlParameterSource* themeParametersSource = nullptr;
     /// List of all registered views
     std::list<Gui::BaseView*> passive;
     bool isClosing{false};
@@ -409,6 +423,64 @@ namespace {
         std::string filter = str.str();
         App::GetApplication().addImportType(filter.c_str(), "FreeCADGui");
     }
+}
+
+namespace {
+
+// The parameter file the active theme reads its style parameters from:
+// an explicit override wins, otherwise the theme's own file next to the
+// stylesheets (the "qss" search path set up in initApplication()).
+std::string styleParametersFilePath()
+{
+    const auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/MainWindow");
+    if (const std::string& path = hGrp->GetASCII("ThemeStyleParametersFile");
+        !path.empty()) {
+        return path;
+    }
+    return "qss:parameters/" + hGrp->GetASCII("Theme", "Classic") + ".yaml";
+}
+
+}  // anonymous namespace
+
+void Application::initStyleParameterManager()
+{
+    // Upstream also registers parameter-change handlers here; this fork
+    // already reapplies the stylesheet through the delayed handlers in
+    // DlgSettingsTheme::attachObserver, and setStyleSheet() re-derives the
+    // theme parameter file on every apply, so only the sources are wired.
+    Base::registerServiceImplementation<StyleParameters::ParameterSource>(
+        new StyleParameters::BuiltInParameterSource(
+            {.name = QT_TR_NOOP("Built-in Parameters")}));
+
+    // Upstream keeps a "Theme Parameters - Fallback" source reading
+    // Themes/UserTokens, marked in their code for removal before release;
+    // it is not inherited here.
+
+    d->themeParametersSource = new StyleParameters::YamlParameterSource(
+        styleParametersFilePath(),
+        {.name = QT_TR_NOOP("Theme Parameters"),
+         .options = StyleParameters::ParameterSourceOption::UserEditable});
+    Base::registerServiceImplementation<StyleParameters::ParameterSource>(
+        d->themeParametersSource);
+
+    Base::registerServiceImplementation<StyleParameters::ParameterSource>(
+        new StyleParameters::UserParameterSource(
+            App::GetApplication().GetParameterGroupByPath(
+                "User parameter:BaseApp/Preferences/Themes/UserParameters"),
+            {.name = QT_TR_NOOP("User Parameters"),
+             .options = StyleParameters::ParameterSource::UserEditable}));
+
+    // Registration pushed each source to the provider's front, so walking
+    // the provided list in reverse hands addSource() the least important
+    // source first -- the manager, in turn, prefers the source added last.
+    const auto sources =
+        Base::provideServiceImplementations<StyleParameters::ParameterSource>();
+    for (auto* source : std::views::all(sources) | std::views::reverse) {
+        d->styleParameterManager->addSource(source);
+    }
+
+    Base::registerServiceImplementation(d->styleParameterManager);
 }
 
 Application::Application(bool GUIenabled)
@@ -614,6 +686,10 @@ Application::Application(bool GUIenabled)
     View3DInventorViewerPy      ::init_type();
 
     d = new ApplicationP(GUIenabled);
+
+    if (GUIenabled) {
+        initStyleParameterManager();
+    }
 
     // global access
     Instance = this;
@@ -2117,6 +2193,49 @@ Gui::PreferencePackManager* Application::prefPackManager()
     return d->prefPackManager;
 }
 
+Gui::StyleParameters::ParameterManager* Application::styleParameterManager()
+{
+    return d->styleParameterManager;
+}
+
+void Application::setStyle(const QString& name)
+{
+    // The style in effect before any theme touched it, so "System"
+    // can go back to it. Upstream returns nullptr there and leaves
+    // whatever style the previous theme set -- a one-way door once a
+    // pack has asked for "FreeCAD".
+    static const QString platformStyle = qApp->style()->objectName();
+
+    const auto createStyleFromName = [](const QString& name) -> QStyle* {
+        if (name == QStringLiteral("FreeCAD")) {
+            return new FreeCADStyle();
+        }
+
+        if (name.compare(QStringLiteral("System"), Qt::CaseInsensitive) == 0) {
+            return QStyleFactory::create(platformStyle);
+        }
+
+        return QStyleFactory::create(name);
+    };
+
+    const auto requiresEventFilter = [](QStyle* style) {
+        // for now only FreeCAD style requires additional event processing
+        return qobject_cast<FreeCADStyle*>(style) != nullptr;
+    };
+
+    if (auto* current = qApp->style(); current && requiresEventFilter(current)) {
+        qApp->removeEventFilter(current);
+    }
+
+    if (auto* style = createStyleFromName(name)) {
+        qApp->setStyle(style);
+
+        if (requiresEventFilter(style)) {
+            qApp->installEventFilter(style);
+        }
+    }
+}
+
 
 //**************************************************************************
 // Init, Destruct and singleton
@@ -2253,6 +2372,7 @@ void Application::initTypes()
     // views
     Gui::BaseView                               ::init();
     Gui::MDIView                                ::init();
+    Gui::MDIViewWithCamera                      ::init();
     Gui::View3DInventor                         ::init();
     Gui::AbstractSplitView                      ::init();
     Gui::SplitView3DInventor                    ::init();
@@ -2951,6 +3071,20 @@ void postMainWindowSetup(MainWindow &mw)
         mw.loadWindowSettings();
     }
 
+    // The Qt widget style the theme asks for. Applied before the
+    // stylesheet, which paints over whichever style it was written for;
+    // an empty or unknown name leaves the platform style alone.
+    {
+        static ParamHandlers qtStyleHandlers;
+        auto applyQtStyle = [](ParameterGrp::handle grp) {
+            Application::Instance->setStyle(
+                QString::fromUtf8(grp->GetASCII("QtStyle").c_str()));
+        };
+        qtStyleHandlers.addDelayedHandler("BaseApp/Preferences/MainWindow",
+                                          "QtStyle", applyQtStyle);
+        applyQtStyle(hGrp);
+    }
+
     std::string style = hGrp->GetASCII("StyleSheet");
     if (style.empty()) {
         // check the branding settings
@@ -3309,6 +3443,29 @@ bool Application::systemPrefersDarkScheme()
 #endif
 }
 
+bool Application::isDarkTheme()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    // The scheme in effect: the theme's own pin, or the desktop's answer
+    // when the theme follows it. Never unset here -- unlike
+    // systemPrefersDarkScheme(), the pin is exactly what is being asked.
+    if (qGuiApp) {
+        return qGuiApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    }
+#endif
+    // No scheme API (or no GUI yet): fall back to the filename sniff this
+    // helper exists to replace.
+    const std::string sheet = App::GetApplication()
+                                  .GetParameterGroupByPath(
+                                      "User parameter:BaseApp/Preferences/MainWindow")
+                                  ->GetASCII("StyleSheet");
+    std::string lower = sheet;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return std::tolower(c);
+    });
+    return lower.find("dark") != std::string::npos;
+}
+
 void Application::resolveAutoTheme()
 {
     // Pinning the palette emits colorSchemeChanged, and reading the desktop
@@ -3414,10 +3571,32 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
 
     mw->setProperty("fc_currentStyleSheet", qssFile);
 
+    // The theme may have changed along with the stylesheet; follow it
+    // before any substitution below, and drop values resolved under the
+    // previous theme.
+    if (d->themeParametersSource) {
+        d->themeParametersSource->changeFilePath(styleParametersFilePath());
+        d->styleParameterManager->reload();
+    }
+
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow");
     QString iconSet = QString::fromUtf8(hGrp->GetASCII("IconSet").c_str());
     if (!iconSet.isEmpty())
         getMainWindow()->setOverrideExtraIcons(iconSet);
+
+    // Styles every theme shares (defaults.qss): our own widgets' bits
+    // that should not depend on which sheet is active, preincluded
+    // ahead of the theme sheet exactly as upstream does -- and served
+    // even with no sheet at all, which is how the Classic theme gets
+    // them.
+    const QString defaultStyleSheet = [this]() {
+        QFile f(QStringLiteral("qss:defaults.qss"));
+        if (!f.open(QFile::ReadOnly)) {
+            return QString();
+        }
+        QTextStream in(&f);
+        return replaceVariablesInQss(in.readAll());
+    }();
 
     if (!qssFile.isEmpty()) {
         // Search for stylesheet in user-defined search paths.
@@ -3438,7 +3617,8 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
 
             QString styleSheetContent = replaceVariablesInQss(str.readAll());
 
-            qApp->setStyleSheet(styleSheetContent);
+            qApp->setStyleSheet(defaultStyleSheet + QStringLiteral("\n")
+                                + styleSheetContent);
 
             ActionStyleEvent e(ActionStyleEvent::Clear);
             qApp->sendEvent(mw, &e);
@@ -3466,13 +3646,13 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
     }
     else {
         if (tiledBackground) {
-            qApp->setStyleSheet(QString());
+            qApp->setStyleSheet(defaultStyleSheet);
             ActionStyleEvent e(ActionStyleEvent::Restore);
             qApp->sendEvent(getMainWindow(), &e);
             mdi->setBackground(QPixmap(QStringLiteral("images:background.png")));
         }
         else {
-            qApp->setStyleSheet(QString());
+            qApp->setStyleSheet(defaultStyleSheet);
             ActionStyleEvent e(ActionStyleEvent::Restore);
             qApp->sendEvent(getMainWindow(), &e);
             mdi->setBackground(QBrush(QColor(160,160,160)));
@@ -3611,7 +3791,14 @@ QString Application::replaceVariablesInQss(QString qssText)
                         variable.second);
     }
 
-    return qssText;
+    // The legacy pass above serves the per-theme sheets and runs first, so
+    // everything it defines is already text by now. What remains goes to
+    // the style parameter evaluator: @Name looked up across the parameter
+    // sources (theme YAML, user overrides, built-ins) and @{expression}
+    // evaluated, which is the whole vocabulary of FreeCAD.qss. A name
+    // neither pass knows is substituted empty, with a warning naming it.
+    return QString::fromStdString(
+        d->styleParameterManager->replacePlaceholders(qssText.toStdString()));
 }
 
 void Application::checkForDeprecatedSettings()

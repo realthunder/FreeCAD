@@ -61,12 +61,44 @@ class ShapeTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="fc_shape_test_")
         self.docs = []
+        self.stateSaveMaterialCards(False)
 
     def tearDown(self):
         for name in list(self.docs):
             if name in FreeCAD.listDocuments():
                 FreeCAD.closeDocument(name)
         shutil.rmtree(self.tmp, ignore_errors=True)
+        self.restoreSaveMaterialCards()
+
+    # -- settings this case depends on -------------------------------------
+
+    DOC_PARAMS = "User parameter:BaseApp/Preferences/Document"
+
+    def stateSaveMaterialCards(self, value):
+        """State the SaveMaterialCards setting this case depends on.
+
+        It defaults ON, which writes a stock card's content into the document
+        as a .FCMat file. These cases predate that default and assume a
+        document that carries no card, so they say so rather than inherit it.
+
+        tearDown puts the parameter back, and REMOVES it when it was unset --
+        leaving a stale one behind makes every later run of the whole suite
+        disagree with a fresh one, which is exactly how these failures hid.
+        """
+        params = FreeCAD.ParamGet(self.DOC_PARAMS)
+        self._savedCardsKey = "SaveMaterialCards" in params.GetBools()
+        self._savedCards = params.GetBool("SaveMaterialCards", True)
+        params.SetBool("SaveMaterialCards", value)
+
+    def restoreSaveMaterialCards(self):
+        if not hasattr(self, "_savedCardsKey"):
+            return
+        params = FreeCAD.ParamGet(self.DOC_PARAMS)
+        if self._savedCardsKey:
+            params.SetBool("SaveMaterialCards", self._savedCards)
+        else:
+            params.RemBool("SaveMaterialCards")
+        del self._savedCardsKey
 
     # -- fixtures ----------------------------------------------------------
 

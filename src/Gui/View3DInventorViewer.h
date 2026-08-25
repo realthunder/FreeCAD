@@ -468,6 +468,13 @@ public:
      * set.
      */
     void setCameraOrientation(const SbRotation& orientation, bool moveToCenter = false);
+    /// Apply a camera saved as an Inventor node string (the form
+    /// SoFCDB::writeNodesToString produces): switches the camera type
+    /// when it differs and copies the camera fields, animating the move
+    /// when \a animateDuration (ms) is nonzero. Throws on a string that
+    /// does not parse to a camera. The view-level wrapper
+    /// View3DInventor::setCamera adds the draw-style tail on top.
+    bool setCamera(const char* pCamera, int animateDuration = 0);
     void setCameraType(SoType type) override;
     void moveCameraTo(const SbRotation& orientation, const SbVec3f& position, int duration = -1);
     /**

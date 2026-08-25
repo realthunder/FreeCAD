@@ -1151,7 +1151,10 @@ QPushButton {
   background-color: #696969;
   color: White;
   border-radius: 2px;
-  padding: 2px;
+  /* room around the label, or a plain button collapses to its text
+     (QDialogButtonBox min-width below does not reach hand-built
+     layouts such as the view turntable's Play/Close) */
+  padding: 3px 14px;
   outline: none;
   border: none;
 }
@@ -2781,6 +2784,13 @@ QMenuBar[foldable="true"] {
 WindowDecorationButton {
   background: transparent;
   border: none;
+  /* Pinned, because the QPushButton rule above is written for dialog buttons:
+     its side padding -- and in some sheets a min-width in the tens of pixels
+     -- turns a caption button holding one 16px glyph into a slab over 100px
+     wide. 46px is the width the platform gives its own caption buttons. */
+  min-width: 46px;
+  max-width: 46px;
+  padding: 0px;
 }
 
 WindowDecorationButton:hover {

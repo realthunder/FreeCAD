@@ -2157,6 +2157,27 @@ public:
     /// needs the output colour transform on, since it is the exposure
     /// that decides how its range lands on the screen.
     /// 
+    /// What to load, in short:
+    /// 
+    ///  - A Radiance .hdr or .pic. OpenEXR is NOT read: anything
+    ///    that is not Radiance goes through Qt, which has no EXR
+    ///    plugin, so an .exr loads nothing and the procedural
+    ///    environment stays on.
+    ///  - 2:1 proportions, so it is taken as a lat-long panorama
+    ///    and not as a mirror ball. Up is +Z, and the middle of
+    ///    the image faces +X.
+    ///  - 1K or 2K is plenty. The picture is held as 32-bit float
+    ///    RGB (2K is about 25 MB, 8K about 400 MB) and is baked
+    ///    into a 128 pixel per face cubemap, so a larger one
+    ///    costs memory without showing more.
+    ///  - Free CC0 panoramas: polyhaven.com/hdris.
+    /// 
+    /// Drawn as the background it is deliberately soft -- the
+    /// background pass reads a blurred level of that cubemap, the
+    /// way a real backdrop is out of focus -- so expect a wash of
+    /// the photo's colours there rather than the photo. The
+    /// lighting and the reflections use the sharp levels.
+    /// 
     /// Empty falls back to that dialog's current image, then to the
     /// procedural environment.
     static const std::string & getPBREnvImage();
@@ -2175,6 +2196,11 @@ public:
     /// original path. The copy lives in the view's
     /// Render_PBREnvImageData property and takes precedence over the
     /// image path while set.
+    /// 
+    /// On by default: a document whose lighting depends on a file
+    /// somewhere on one machine opens lit differently everywhere
+    /// else, and the path is the part of the setting least likely
+    /// to survive the trip.
     static const bool & getPBREnvEmbed();
     static const bool & defaultPBREnvEmbed();
     static void removePBREnvEmbed();

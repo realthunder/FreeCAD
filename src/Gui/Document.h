@@ -267,6 +267,13 @@ public:
     void attachView(Gui::BaseView* pcView, bool bPassiv=false);
     /// Detach a view (get called by the MDIView destructor)
     void detachView(Gui::BaseView* pcView, bool bPassiv=false);
+    /** A view name no view of this document holds, "View<n>".
+     *
+     * Handed out when a view joins the document and kept by it from then on
+     * -- see Gui::BaseView::getPersistentName(). @a except is left out of
+     * the search, so a view can ask whether it may keep the name it has.
+     */
+    std::string uniqueViewName(const Gui::BaseView *except = nullptr) const;
     /// helper for selection
     ViewProviderDocumentObject* getViewProviderByPathFromTail(SoPath * path) const;
     /// helper for selection

@@ -118,8 +118,8 @@ directories = [
         "tsdir": "Gui/Resources/translations",
     },
     {
-        "tsname": "Path",
-        "workingdir": "./src/Mod/Path/",
+        "tsname": "CAM",
+        "workingdir": "./src/Mod/CAM/",
         "tsdir": "Gui/Resources/translations",
     },
     {

@@ -1,0 +1,130 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/***************************************************************************
+ *   Copyright (c) 2014 Yorik van Havre <yorik@uncreated.net>              *
+ *                                                                         *
+ *   This file is part of the FreeCAD CAx development system.              *
+ *                                                                         *
+ *   This library is free software; you can redistribute it and/or         *
+ *   modify it under the terms of the GNU Library General Public           *
+ *   License as published by the Free Software Foundation; either          *
+ *   version 2 of the License, or (at your option) any later version.      *
+ *                                                                         *
+ *   This library  is distributed in the hope that it will be useful,      *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU Library General Public License for more details.                  *
+ *                                                                         *
+ *   You should have received a copy of the GNU Library General Public     *
+ *   License along with this library; see the file COPYING.LIB. If not,    *
+ *   write to the Free Software Foundation, Inc., 59 Temple Place,         *
+ *   Suite 330, Boston, MA  02111-1307, USA                                *
+ *                                                                         *
+ ***************************************************************************/
+
+#include <sstream>
+
+
+#include <App/DocumentObject.h>
+#include <App/PropertyContainer.h>
+#include <Base/Reader.h>
+#include <Base/Writer.h>
+
+#include "PropertyPath.h"
+#include "PathPy.h"
+
+
+using namespace Path;
+
+TYPESYSTEM_SOURCE(Path::PropertyPath, App::Property)
+
+PropertyPath::PropertyPath()
+{}
+
+PropertyPath::~PropertyPath()
+{}
+
+void PropertyPath::setValue(const Toolpath& pa)
+{
+    aboutToSetValue();
+    _Path = pa;
+    hasSetValue();
+}
+
+
+const Toolpath& PropertyPath::getValue() const
+{
+    return _Path;
+}
+
+PyObject* PropertyPath::getPyObject()
+{
+    return new PathPy(new Toolpath(_Path));
+}
+
+void PropertyPath::setPyObject(PyObject* value)
+{
+    if (PyObject_TypeCheck(value, &(PathPy::Type))) {
+        PathPy* pcObject = static_cast<PathPy*>(value);
+        setValue(*pcObject->getToolpathPtr());
+    }
+    else {
+        std::string error = std::string("type must be 'Path', not ");
+        error += value->ob_type->tp_name;
+        THROWM(Base::TypeError, error)
+    }
+}
+
+App::Property* PropertyPath::Copy() const
+{
+    PropertyPath* prop = new PropertyPath();
+    prop->_Path = this->_Path;
+
+    return prop;
+}
+
+void PropertyPath::Paste(const App::Property& from)
+{
+    aboutToSetValue();
+    _Path = dynamic_cast<const PropertyPath&>(from)._Path;
+    hasSetValue();
+}
+
+unsigned int PropertyPath::getMemSize() const
+{
+    return _Path.getMemSize();
+}
+
+void PropertyPath::Save(Base::Writer& writer) const
+{
+    // The toolpath writes its own document file, so it has to be told the name
+    // this property owns. Left to itself it would use the object name, and a
+    // compound path holding several toolpaths would collide with itself.
+    _Path.setFileName(getFileName().c_str());
+    _Path.Save(writer);
+}
+
+void PropertyPath::Restore(Base::XMLReader& reader)
+{
+    // Toolpath::_Restore reads both forms -- the referenced document file and
+    // the inline command stream -- so the property no longer parses the
+    // element itself. It passes itself as the owner, because it is the
+    // property, not the bare toolpath, that the reader must call back.
+    aboutToSetValue();
+    _Path._Restore(reader, this);
+    hasSetValue();
+}
+
+void PropertyPath::SaveDocFile(Base::Writer&) const
+{
+    // does nothing
+}
+
+void PropertyPath::RestoreDocFile(Base::Reader& reader)
+{
+    // No Restore status juggling here: in this fork the document already holds
+    // the restoring object in that state for the whole of its restore, and
+    // clearing it here would end it early for everything that follows.
+    aboutToSetValue();
+    _Path.RestoreDocFile(reader);
+    hasSetValue();
+}

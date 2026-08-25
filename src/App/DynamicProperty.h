@@ -111,6 +111,8 @@ public:
       false is returned.
      */
     bool removeDynamicProperty(const char* name);
+    /** Rename a dynamic property, keeping the property object itself */
+    bool renameDynamicProperty(Property* prop, const char* newName);
     /// Remove pre-existing property, which will not be deleted.
     bool removeProperty(const Property *prop);
     /// Get a list of all dynamic properties.

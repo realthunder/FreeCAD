@@ -272,6 +272,25 @@ PyObject* DocumentPy::activeView(PyObject *args)
     PY_CATCH;
 }
 
+PyObject* DocumentPy::getView(PyObject *args) const
+{
+    char* name;
+    if (!PyArg_ParseTuple(args, "s", &name))
+        return nullptr;
+
+    PY_TRY {
+        // Among the MDI views: a name is unique over every view the document
+        // has, but only an MDI view has a Python object to hand back.
+        for (auto view : getDocumentPtr()->getMDIViews()) {
+            if (view->getPersistentName() == name) {
+                return view->getPyObject();
+            }
+        }
+        Py_Return;
+    }
+    PY_CATCH;
+}
+
 PyObject* DocumentPy::mdiViewsOfType(PyObject *args) const
 {
     char* sType;

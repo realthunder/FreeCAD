@@ -165,9 +165,9 @@ locations = [
         "../Mod/PartDesign/Gui/Resources/PartDesign.qrc",
     ],
     [
-        "Path",
-        "../Mod/Path/Gui/Resources/translations",
-        "../Mod/Path/Gui/Resources/Path.qrc",
+        "CAM",
+        "../Mod/CAM/Gui/Resources/translations",
+        "../Mod/CAM/Gui/Resources/Path.qrc",
     ],
     [
         "Points",

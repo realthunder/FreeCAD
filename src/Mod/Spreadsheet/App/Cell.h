@@ -154,6 +154,9 @@ public:
 
     App::ExpressionPtr tryParseExpression(const char *) const;
 
+    /// Whether the given cell text must be stored with a leading quote to survive a round trip
+    bool needsQuotePrefix(const std::string &) const;
+
     App::CellAddress getAddress() const
     {
         return address;

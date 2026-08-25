@@ -41,6 +41,12 @@ inline bool intersects(Geometry const& box, Ray const &ray);
 template <>
 inline bool intersects<MySbBox3f>(MySbBox3f const& box, Ray const &ray);
 
+// Boost 1.90's rtree calls the three-argument
+// geometry::intersects(g1, g2, strategy). Without a matching overload the generic
+// boost template is chosen instead and concept-checks Ray, which is not a geometry.
+template <class Geometry, class Strategy>
+inline bool intersects(Geometry const& box, Ray const &ray, Strategy const &);
+
 }}
 
 #include <boost_geometry.hpp>
@@ -116,6 +122,11 @@ inline bool intersects(Geometry const& box, Ray const &ray) {
 template <>
 inline bool intersects<MySbBox3f>(MySbBox3f const& box, Ray const &ray) {
     return !box.isEmpty() && ray.action->intersect(box);
+}
+
+template <class Geometry, class Strategy>
+inline bool intersects(Geometry const& box, Ray const &ray, Strategy const &) {
+    return intersects(box, ray);
 }
 
 }}

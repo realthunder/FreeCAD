@@ -30,6 +30,7 @@
 # include <BRepBuilderAPI_MakeFace.hxx>
 # include <BRepBuilderAPI_MakeWire.hxx>
 # include <BRepPrimAPI_MakeHalfSpace.hxx>
+# include <BRep_Tool.hxx>
 # include <gp_Pln.hxx>
 # include <Precision.hxx>
 # include <ShapeAnalysis_FreeBounds.hxx>
@@ -44,6 +45,7 @@
 #endif
 
 #include "CrossSection.h"
+#include "ShapeAnalysis_FreeBoundsFix.h"
 #include "TopoShapeOpCode.h"
 
 using namespace Part;
@@ -138,6 +140,11 @@ void CrossSection::sliceSolid(double d, const TopoDS_Shape& shape, std::list<Top
     BRepAlgoAPI_Cut mkCut(shape, solid);
 
     if (mkCut.IsDone()) {
+        // The cut may have been run with a non-zero fuzzy value, and the faces
+        // it produces carry a tolerance of their own. Both move the section
+        // face off the exact slice plane, so allow for them here instead of
+        // demanding an exact hit.
+        Standard_Real fuzzyTol = mkCut.FuzzyValue();
         TopTools_IndexedMapOfShape mapOfFaces;
         TopExp::MapShapes(mkCut.Shape(), TopAbs_FACE, mapOfFaces);
         for (int i=1; i<=mapOfFaces.Extent(); i++) {
@@ -145,8 +152,9 @@ void CrossSection::sliceSolid(double d, const TopoDS_Shape& shape, std::list<Top
             BRepAdaptor_Surface adapt(face);
             if (adapt.GetType() == GeomAbs_Plane) {
                 gp_Pln plane = adapt.Plane();
+                Standard_Real tol = BRep_Tool::Tolerance(face) + fuzzyTol;
                 if (plane.Axis().IsParallel(slicePlane.Axis(), Precision::Confusion()) &&
-                    plane.Distance(slicePlane.Location()) < Precision::Confusion()) {
+                    plane.Distance(slicePlane.Location()) < tol) {
                     // sort and repair the wires
                     TopTools_IndexedMapOfShape mapOfWires;
                     TopExp::MapShapes(face, TopAbs_WIRE, mapOfWires);
@@ -200,7 +208,8 @@ void CrossSection::connectWires (const TopTools_IndexedMapOfShape& wireMap, std:
     }
 
     Handle(TopTools_HSequenceOfShape) hSorted = new TopTools_HSequenceOfShape();
-    ShapeAnalysis_FreeBounds::ConnectWiresToWires(hWires, Precision::Confusion(), false, hSorted);
+    Fix_ShapeAnalysis_FreeBounds_ConnectWiresToWires(hWires, Precision::Confusion(),
+                                                    false, hSorted);
 
     for (int i=1; i<=hSorted->Length(); i++) {
         const TopoDS_Wire& new_wire = TopoDS::Wire(hSorted->Value(i));

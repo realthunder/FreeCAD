@@ -27,6 +27,9 @@
     #include <boost/uuid/uuid_io.hpp>
 #endif // _PreComp_
 
+
+// boost/uuid/uuid_generators.hpp used to pull this in; boost 1.90 does not.
+#include <boost/random.hpp>
 #include <App/Application.h>
 #include <Base/Persistence.h>
 #include <Base/Vector3D.h>

@@ -1,5 +1,7 @@
 
 SET(Stylesheets_Files
+    "FreeCAD.qss"
+    "defaults.qss"
     "Behave-dark.qss"
     "Dark.qss"
     "Darker.qss"
@@ -8,6 +10,11 @@ SET(Stylesheets_Files
     "ProDark.qss"
     "Dark-modern.qss"
     "Light-modern.qss"
+)
+
+SET(Parameters_Files
+    "parameters/Dark.yaml"
+    "parameters/Light.yaml"
 )
 
 SET(Overlay_Stylesheets_Files
@@ -58,13 +65,22 @@ FILE(GLOB Images_Files RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
 
 SOURCE_GROUP("images_dark-light" FILES ${Images_Files})
 
+FILE(GLOB Images_Classic_Files RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/images_classic/*.svg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/images_classic/*.png"
+)
+
+SOURCE_GROUP("images_classic" FILES ${Images_Classic_Files})
+
 ADD_CUSTOM_TARGET(Stylesheets_data ALL
-    SOURCES ${Stylesheets_Files} ${Images_Files} ${Overlay_Stylesheets_Files} ${Menu_Stylesheets_Files}
+    SOURCES ${Stylesheets_Files} ${Parameters_Files} ${Images_Files} ${Images_Classic_Files} ${Overlay_Stylesheets_Files} ${Menu_Stylesheets_Files}
 )
 
 fc_copy_sources(Stylesheets_data "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Gui/Stylesheets"
                                   ${Stylesheets_Files}
+                                  ${Parameters_Files}
                                   ${Images_Files}
+                                  ${Images_Classic_Files}
                                   ${Overlay_Stylesheets_Files}
                                   ${Menu_Stylesheets_Files})
 
@@ -92,4 +108,16 @@ INSTALL(
          ${Images_Files}
     DESTINATION
         ${CMAKE_INSTALL_DATADIR}/Gui/Stylesheets/images_dark-light
+)
+INSTALL(
+    FILES
+         ${Images_Classic_Files}
+    DESTINATION
+        ${CMAKE_INSTALL_DATADIR}/Gui/Stylesheets/images_classic
+)
+INSTALL(
+    FILES
+         ${Parameters_Files}
+    DESTINATION
+        ${CMAKE_INSTALL_DATADIR}/Gui/Stylesheets/parameters
 )

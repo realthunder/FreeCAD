@@ -19,7 +19,7 @@ macro(CheckInterModuleDependencies)
 
     REQUIRES_MODS(BUILD_AREA               BUILD_PART)
     # BIM needs the 2D area engine for opening subtractions. It takes it from
-    # BUILD_AREA and not from BUILD_PATH, because REQUIRES_MODS turns a
+    # BUILD_AREA and not from BUILD_CAM, because REQUIRES_MODS turns a
     # dependent module off rather than erroring, so depending on an optional
     # CAM workbench would make BIM disappear from any build without it.
     REQUIRES_MODS(BUILD_BIM                BUILD_PART BUILD_MESH BUILD_MESH_PART BUILD_DRAFT BUILD_AREA)
@@ -39,8 +39,8 @@ macro(CheckInterModuleDependencies)
     REQUIRES_MODS(BUILD_FLAT_MESH          BUILD_MESH_PART)
     REQUIRES_MODS(BUILD_OPENSCAD           BUILD_MESH_PART BUILD_DRAFT)
     REQUIRES_MODS(BUILD_PART_DESIGN        BUILD_SKETCHER)
-    # REQUIRES_MODS(BUILD_PATH               BUILD_PART BUILD_MESH BUILD_ROBOT)
-    REQUIRES_MODS(BUILD_PATH               BUILD_PART BUILD_MESH BUILD_AREA)
+    # REQUIRES_MODS(BUILD_CAM                BUILD_PART BUILD_MESH BUILD_ROBOT)
+    REQUIRES_MODS(BUILD_CAM                BUILD_PART BUILD_MESH BUILD_AREA)
     REQUIRES_MODS(BUILD_REVERSEENGINEERING BUILD_PART BUILD_MESH)
     REQUIRES_MODS(BUILD_ROBOT              BUILD_PART)
     REQUIRES_MODS(BUILD_SANDBOX            BUILD_PART BUILD_MESH)
