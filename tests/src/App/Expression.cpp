@@ -28,25 +28,19 @@ TEST(Expression, tokenizePi)
 
 TEST(Expression, toString)
 {
-    App::UnitExpression expr{nullptr, Base::Quantity{}, "pi rad"};
-    EXPECT_EQ(expr.toString(), "pi rad");
+    auto expr = App::UnitExpression::create(nullptr, "rad");
+    EXPECT_EQ(expr->toString(), "rad");
 }
 
 TEST(Expression, test_pi_rad)
 {
-    auto constant = std::make_unique<App::ConstantExpression>(nullptr, "pi");
-    auto unit = std::make_unique<App::UnitExpression>(nullptr, Base::Quantity{}, "rad");
-    auto op = std::make_unique<App::OperatorExpression>(nullptr, constant.get(), App::OperatorExpression::UNIT, unit.get());
-    EXPECT_EQ(op->toString(), "pi rad");
-    op.release();
+    auto expr = App::Expression::parse(nullptr, "pi rad");
+    EXPECT_EQ(expr->toString(), "pi rad");
 }
 
 TEST(Expression, test_e_rad)
 {
-    auto constant = std::make_unique<App::ConstantExpression>(nullptr, "e");
-    auto unit = std::make_unique<App::UnitExpression>(nullptr, Base::Quantity{}, "rad");
-    auto op = std::make_unique<App::OperatorExpression>(nullptr, constant.get(), App::OperatorExpression::UNIT, unit.get());
-    EXPECT_EQ(op->toString(), "e rad");
-    op.release();
+    auto expr = App::Expression::parse(nullptr, "e rad");
+    EXPECT_EQ(expr->toString(), "e rad");
 }
 // clang-format on
