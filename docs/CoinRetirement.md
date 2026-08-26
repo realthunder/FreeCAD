@@ -1555,8 +1555,12 @@ entry does have to go, it needs 4e's migration treatment.
 3. No Shading, then Hidden Line's `SoFCRenderer` half. **Also already
    satisfied, see 5.6.**
 4. Class A (Points / Wireframe / Shaded / Flat Lines) as far as the
-   survey allows -- this is split-view D4. **This is where the whole
-   stage's remaining work is; design in 5.7.**
+   survey allows -- this is split-view D4. **Built 2026-08-26 (D4a), see
+   docs/SplitViews.md sec 17: the mask, the SubViewFrame field, the
+   submit filter, and the traversal blanked on a canvas.** What is left
+   is 5.7's other half -- the superset capture plus a per-draw own-mode
+   mask -- without which a cell asking for a style its object's OWN
+   display mode does not carry draws nothing for that object.
 
 ! **USER RULING 2026-08-26: the Coin fallback keeps working. Take the
 backend route only when a backend is there.** This amends step 2, which
