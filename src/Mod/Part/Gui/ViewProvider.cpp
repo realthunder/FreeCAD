@@ -74,6 +74,7 @@ QPixmap ViewProviderPart::getTagIcon() const
     return QPixmap();
 }
 
+#ifdef FC_NO_ELEMENT_MAP
 void ViewProviderPart::applyColor(const Part::ShapeHistory& hist,
                                   const std::vector<App::Color>& colBase,
                                   std::vector<App::Color>& colBool)
@@ -87,6 +88,7 @@ void ViewProviderPart::applyColor(const Part::ShapeHistory& hist,
         }
     }
 }
+#endif
 
 void ViewProviderPart::applyTransparency(const float& transparency,
                                   std::vector<App::Color>& colors)

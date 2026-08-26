@@ -78,6 +78,7 @@ bool ViewProviderBoolean::canReplaceObject(App::DocumentObject*, App::DocumentOb
 void ViewProviderBoolean::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);
+#ifdef FC_NO_ELEMENT_MAP
     if (prop->is<Part::PropertyShapeHistory>()) {
         const std::vector<Part::ShapeHistory>& hist = static_cast<const Part::PropertyShapeHistory*>
             (prop)->getValues();
@@ -138,7 +139,8 @@ void ViewProviderBoolean::updateData(const App::Property* prop)
             }
         }
     }
-    else if (prop->isDerivedFrom<App::PropertyLink>()) {
+#endif
+    if (prop->isDerivedFrom<App::PropertyLink>()) {
         App::DocumentObject *pBase = static_cast<const App::PropertyLink*>(prop)->getValue();
         if (pBase)
             Gui::Application::Instance->hideViewProvider(pBase);
@@ -177,6 +179,7 @@ std::vector<App::DocumentObject*> ViewProviderMultiFuse::claimChildren()const
 void ViewProviderMultiFuse::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);
+#ifdef FC_NO_ELEMENT_MAP
     if (prop->is<Part::PropertyShapeHistory>()) {
         const std::vector<Part::ShapeHistory>& hist = static_cast<const Part::PropertyShapeHistory*>
             (prop)->getValues();
@@ -224,7 +227,8 @@ void ViewProviderMultiFuse::updateData(const App::Property* prop)
 
         this->DiffuseColor.setValues(colBool);
     }
-    else if (prop->isDerivedFrom<App::PropertyLinkList>()) {
+#endif
+    if (prop->isDerivedFrom<App::PropertyLinkList>()) {
         std::vector<App::DocumentObject*> pShapes = static_cast<const App::PropertyLinkList*>(prop)->getValues();
         for (auto it : pShapes) {
             if (it) {
@@ -310,6 +314,7 @@ std::vector<App::DocumentObject*> ViewProviderMultiCommon::claimChildren()const
 void ViewProviderMultiCommon::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);
+#ifdef FC_NO_ELEMENT_MAP
     if (prop->is<Part::PropertyShapeHistory>()) {
         const std::vector<Part::ShapeHistory>& hist = static_cast<const Part::PropertyShapeHistory*>
             (prop)->getValues();
@@ -357,7 +362,8 @@ void ViewProviderMultiCommon::updateData(const App::Property* prop)
 
         this->DiffuseColor.setValues(colBool);
     }
-    else if (prop->isDerivedFrom<App::PropertyLinkList>()) {
+#endif
+    if (prop->isDerivedFrom<App::PropertyLinkList>()) {
         std::vector<App::DocumentObject*> pShapes = static_cast<const App::PropertyLinkList*>(prop)->getValues();
         for (auto it : pShapes) {
             if (it) {
