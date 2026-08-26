@@ -634,7 +634,7 @@ that the frame presents and the depth ordering is right rather than a
 pixel compare.
 
 
-### 8.8 Execution record (2026-08-27, steps 1-2 landed)
+### 8.8 Execution record (2026-08-27, steps 1-3 landed)
 
 **Steps 1 and 2 are done and verified** (`6479247e61`). What the plan
 did not know in advance:
@@ -669,45 +669,67 @@ did not know in advance:
   than the simulator, so that the API and its first consumer could
   fail separately. Worth keeping that order.
 
-**Step 3 is written but blocked on a rendering defect.** The
-simulator attaches, the widget stack switches (`Dummy3DViewer` paints,
-`DlgCAMSimulator` hides), redraw requests go to the host's render
-manager instead of the hidden widget, and the viewer's stock/base
-view providers stop mirroring the simulator's shapes -- they would
-otherwise draw the stock UNCUT over the carved one. All of that
-works. What does not is the image:
+**Step 3 is DONE** (`6c55968dde`). The simulator attaches, the widget
+stack switches (`Dummy3DViewer` paints, `DlgCAMSimulator` hides),
+redraw requests go to the host's render manager instead of the hidden
+widget, and the viewer's stock/base view providers stop mirroring the
+simulator's shapes -- they would otherwise draw the stock UNCUT over
+the carved one. Verified attached and standalone side by side under
+xvfb: same stock, same carved channel, same tool, same path line.
 
-> Inside a host frame, a consumer draw that samples **three or more
-> distinct attachments of a framebuffer the consumer rendered to
-> earlier in the same frame** produces nothing at all -- not even the
-> view's clear. Two attachments draw fine. The same four-attachment
-> draw in the simulator's own standalone frame draws fine. So does it
-> inside a host frame if the G-buffer was not rendered to that frame.
+**! The mirrors are also what the camera was framed on.** Turning them
+off empties the viewer's scene graph, and `viewAll()` frames the scene
+graph -- so the camera the simulator reads (`SimDisplay::UpdateCamera`,
+off `Dummy3DViewer`) was left sitting on the origin at unit distance
+with the stock entirely outside its frustum. The simulator then drew a
+perfectly correct picture of nothing: an empty G-buffer, a resolve of
+an empty G-buffer, a composite of that. Every visible symptom was
+downstream of one wrong matrix.
 
-Bisected by binding stages one at a time: colour alone, colour +
-position, and colour + position-twice all draw; adding the third
-distinct attachment kills the draw whatever it is (substituting the
-position texture for the normal restores it, so the count is what
-matters, not the texture). Reproduced on llvmpipe **and** on Mesa's
-d3d12 driver with a real AMD GPU, so it is not a software-rasterizer
-artifact -- which was the first suspicion, and the reason the d3d12
-leg is now part of the harness (`GALLIUM_DRIVER=d3d12
-MESA_LOADER_DRIVER_OVERRIDE=d3d12 LIBGL_ALWAYS_SOFTWARE=0` under
-`xvfb-run` gives hardware GL *and* a screen grab, which the WSLg
-Wayland route never did).
+The fix is `ViewCAMSimulator::viewFit()`, which every view fit now goes
+through: it frames the union of the viewer's own scene bounds and the
+bounds of the shapes the SIMULATOR draws itself
+(`DlgCAMSimulator::simulationBoundBox`), so it is right whichever side
+is holding the geometry, and it resets the height angle the way
+`viewAll()` does. The general lesson for the rest of stage 2: **moving
+a shape out of the viewer's scene graph moves it out of every service
+that reads that scene graph**, and framing is only the first of those.
 
-Ruled out along the way: idle temporal accumulation (off by default),
-the output colour transform, a later host pass overwriting the target
-(the consumer block was moved to just before the present pass and
-nothing changed), depth or stencil rejection, and stale texture
-bindings leaking from the host's draws (bgfx clears binds at every
-submit).
+**The defect recorded here on 2026-08-27 was not real.** The previous
+session's rule -- "a consumer draw sampling three or more distinct
+attachments of a framebuffer it rendered to earlier in the same host
+frame produces nothing" -- did not survive re-testing. It came from a
+probe that was confounded: with the camera wrong the G-buffer was
+empty in *every* attached run, so what the probe was actually varying
+was not the thing under test. Re-tested directly, each claimed
+ingredient came apart:
 
-The simulator's deferred resolve samples exactly four: colour,
-view-space position, view-space normal, and the AO term. The
-restructure already made for step 4 -- the resolve lands in the
-simulator's own colour target and a **composite** pass carries that
-one RGBA8 image into the surface's target (`SimPassComposite`) --
-does not help, because the resolve is the draw that is dropped. It is
-kept anyway: it is where step 4's `gl_FragDepth` write belongs, and it
-leaves exactly one texture crossing into the host's frame.
+- a consumer pass CAN clear and draw into the host's scene target from
+  inside the host frame, and it reaches the screen;
+- the attachment count of the consumer's own G-buffer (1, 2 or 4)
+  changes nothing;
+- every consumer draw is submitted and counted by bgfx (`numDraw` is
+  identical in working and failing runs), and a bgfx view-switch trace
+  shows the clears landing on the right framebuffer;
+- bgfx is built with `BX_CONFIG_DEBUG=1`, so `GL_CHECK`/`BX_ASSERT` is
+  live: there are no GL errors anywhere in the frame.
+
+Worth keeping from that search: the harness leg that gives hardware GL
+*and* a screen grab at once, which the WSLg Wayland route never did --
+`GALLIUM_DRIVER=d3d12 MESA_LOADER_DRIVER_OVERRIDE=d3d12
+LIBGL_ALWAYS_SOFTWARE=0` under `xvfb-run`.
+
+Step 3 also lands the composite pass the plan did not name: the
+deferred resolve writes into the simulator's own colour target and one
+textured quad (`SimPassComposite`) carries that image into whatever
+the surface composites into -- its own backbuffer standalone, the
+host's scene target attached. Exactly one texture crosses into the
+host's frame, and that quad is where step 4's `gl_FragDepth` write
+belongs.
+
+**Known and open for step 4:** attached output is visibly lighter than
+standalone. That is the double-encode risk of section 8.6 arriving on
+schedule -- the host's scene colour is RGBA16F holding linear light,
+the simulator shades in display space, and the output transform
+encodes the result a second time. `hostLinearColor()` is already on
+the surface; the decode belongs in the composite shader.
