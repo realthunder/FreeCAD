@@ -1548,13 +1548,114 @@ entry does have to go, it needs 4e's migration treatment.
 
 ### 5.4 Order
 
-1. Survey the `SoFCSwitch` named-override users (the 5.3 risk).
-2. Tessellation: delete the `SoRenderManager::HIDDEN_LINE` selection and
-   the `AS_IS` workaround with it; the backend is already the
-   implementation. Smallest, and self-contained.
-3. No Shading, then Hidden Line's `SoFCRenderer` half.
+1. Survey the `SoFCSwitch` named-override users (the 5.3 risk). **Done
+   2026-08-26 -- see 5.5.**
+2. Tessellation: the backend is already the implementation. **Already
+   satisfied, see 5.6 -- nothing to delete under the ruling below.**
+3. No Shading, then Hidden Line's `SoFCRenderer` half. **Also already
+   satisfied, see 5.6.**
 4. Class A (Points / Wireframe / Shaded / Flat Lines) as far as the
-   survey allows -- this is split-view D4.
+   survey allows -- this is split-view D4. **This is where the whole
+   stage's remaining work is; design in 5.7.**
+
+! **USER RULING 2026-08-26: the Coin fallback keeps working. Take the
+backend route only when a backend is there.** This amends step 2, which
+said to *delete* Coin's `SoRenderManager::HIDDEN_LINE` selection: the
+Coin implementation of every style in this stage stays, and stays
+correct, on the cache-0 path. What the stage removes is not the code but
+the *double-run* -- the rule is one implementation per frame, chosen by
+whether `_pimpl->renderer` exists, never both and never neither. Note
+that `View/RenderCache` now defaults to **3**, so the backend is the
+default path and Coin is the fallback; sec 2's "defaults to 0" is stale.
+
+### 5.5 The survey (step 1), done 2026-08-26
+
+**Result: no ViewProvider in the tree puts genuinely different geometry
+under a display-mode name. The 5.3 risk does not materialize, and Class A
+can move.**
+
+Only four of the eight style names ever reach `SoFCSwitch` as a named
+override. `SoFCUnifiedSelection::Private::applyOverrideMode` translates
+first (`SoFCUnifiedSelection.cpp:928`): `As Is` -> empty name (no
+override at all), `Tessellation` -> `Shaded`, and both `Hidden Line` and
+`No Shading` -> `Flat Lines`. So the names the switch matches are exactly
+**Points, Wireframe, Shaded, Flat Lines** -- the Class-A four -- and the
+other four styles ride on top of a Class-A child.
+
+Every registrant of those four names, and what is under each:
+
+| ViewProvider | registers | what the children are |
+| --- | --- | --- |
+| `Part/Gui/ViewProviderExt.cpp:2365` | all four | **nested subsets of the same nodes.** `Flat Lines` = offset + `Shaded` + wireframe group + `Points`; `Wireframe` = wireframe group + `Points`. The face/line/point sets are one set of nodes composed differently. |
+| `Mesh/Gui/ViewProvider.cpp:467` | Shaded, Wireframe, Flat Lines | same `pcHighlight` (the mesh) in all of them; the roots differ only in preceding state -- draw style, light model, material binding, line colour. `Flat Lines` = face group + wire separator, both wrapping that one node. |
+| `Points/Gui/ViewProvider.cpp:409` | Shaded | same `pcHighlight` as its own `Point` mode, plus a normals node. |
+| `Fem/Gui/ViewProviderFemMesh.cpp:333` | Wireframe (`Private::dm_wire`) | `pcWireRoot` is a child of `dm_face_wire`, `dm_face_wire_node` and `dm_wire_node` -- literally the same node, composed in. |
+
+Nothing else registers a Class-A name; the ~50 other `addDisplayMaskMode`
+calls use names no override ever asks for (`Base`, `Group`, `Link`,
+`ComboView`, `VRML`, `Edge`, `Solids`, `ColorShaded`, FEM's `Faces` /
+`Nodes` / `Faces & Wireframe`, ...), so those ViewProviders fall through
+to `whichChild` under any style, exactly as they do today.
+
+! **`Point` is not `Points`.** Mesh and Points both register the singular
+`Point`, which no override ever matches, so the `Points` style leaves
+them on their own mode. Only Part has a `Points` child. Pre-existing, and
+the backend route must reproduce it rather than "fix" it -- a Mesh that
+suddenly went to points under the Points style would be a visible change
+of behaviour, not a bug fix.
+
+! **`ViewProvider.addDisplayMaskMode` is exposed to Python**
+(`ViewProviderPyImp.cpp`), so the set of registrants is open. The
+conclusion above holds for the tree; a third-party ViewProvider could
+still put anything under `Shaded`. That is an argument for the feed
+keeping the switch as the fallback path (5.7), not for abandoning the
+move.
+
+### 5.6 What steps 2 and 3 turned out to be
+
+Under the 5.4 ruling, **both are already satisfied** -- the gates exist,
+each in a different place, and the survey's value here was finding that
+out before writing code:
+
+- **Tessellation**: `applyOverrideMode()` picks `AS_IS` when
+  `_pimpl->renderer` exists and `HIDDEN_LINE` when it does not
+  (`View3DInventorViewer.cpp:2374`), plus the sticky re-decide when the
+  backend is switched on or off under the style already applied
+  (`:4371`). That *is* the ruling's shape, written before the ruling.
+- **Hidden Line**: `SoFCRenderer::render()` returns at `:2852` on
+  `external->canSkipInternal()`, and `showHiddenLine` is resolved at
+  `:2867` -- *after* that return. Coin's entire hidden-line draw is
+  already unreachable with a backend present, and intact without one.
+- **No Shading**: reaches the backend as a material flag --
+  `SoFCRendererBridge.cpp:859` sets `res.lighting = m.lightmodel !=
+  SoLazyElement::BASE_COLOR`, fed by the `SoLightModelElement` BASE_COLOR
+  override `applyOverrideMode` installs. Both paths read the same
+  traversal state; neither draws over the other.
+
+So the stage does not open with a deletion. It opens with Class A.
+
+### 5.7 Class A / D4: the design the survey allows
+
+Because the four children are bucket compositions of shared nodes, a
+Class-A style is a **bucket mask**, and the backend already sorts draws
+into face / line / point buckets. Two pieces:
+
+- **A per-draw bucket mask carrying the object's own display mode.**
+  Needed because "As Is" is not a style the backend can filter for: with
+  no override the switch traverses `whichChild`, so which buckets an
+  object wants is per-object state that today is expressed by *which
+  child was traversed*. Three bits on the material captures it.
+- **A per-view -- and for split views per-sub-view -- style mask.** The
+  effective mask is the view's when a style is overriding, the object's
+  when the style is `As Is`. That is precisely today's semantics: an
+  override already replaces every object's own mode, which is why the
+  per-object mask is not consulted under one.
+
+The feed then captures the **superset** child (`Flat Lines` where the
+ViewProvider has one) whenever any bank overrides, and the banks filter.
+This is the piece that makes D4 possible at all: one feed, N banks, N
+styles. Without it a style is traversal state and the unified canvas
+cannot vary it per cell (5.2).
 
 Not in scope, and not close: Coin as scene graph, traversal and picking.
 Replacing that is a different project — the backend has no picking at all
