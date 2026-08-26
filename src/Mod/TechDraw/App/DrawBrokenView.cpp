@@ -68,6 +68,8 @@
 #include <gp_Pln.hxx>
 #include <gp_Pnt.hxx>
 
+#include <numbers>
+
 #include <App/Document.h>
 #include <Base/BoundBox.h>
 #include <Base/Console.h>
