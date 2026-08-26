@@ -73,6 +73,10 @@ To change a Python API, edit the **`.xml`** and the **`PyImp.cpp`** — never th
 
 ## Tests
 
+**Status, how to run each suite, and what is deliberately skipped: `docs/Testing.md`.**
+Both suites are green -- Python 2628 OK, C++ 445/445 -- and `ENABLE_DEVELOPER_TESTS=ON`
+is safe to leave on. `FreeCADCmd -t 0` needs a pty; see the doc.
+
 - **C++ (GoogleTest)**: `tests/src/`, mirroring the source tree (`App/`, `Base/`, `Gui/`, `Mod/`, `Misc/`). Run via `ctest` in the build dir, or a test binary directly with `--gtest_filter='Suite.Case'`.
 - **Python**: the `Test` workbench at `src/Mod/Test/` (`TestApp.py`, `Document.py`, `BaseTests.py`, …) plus per-module tests. Run with `FreeCADCmd -t <TestModule>` or, in the Python console, `import Test; Test.runTestApp()`.
 
