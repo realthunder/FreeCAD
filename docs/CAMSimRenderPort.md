@@ -1,9 +1,11 @@
 # CAM simulator render port
 
-Porting the CAM simulator's rendering off raw OpenGL. **COMPLETE
-2026-08-25**: all eight steps landed; the simulator draws entirely
-through the facade, and the raw-GL path is deleted. Section 7 records
-what the execution added to this plan.
+Porting the CAM simulator's rendering off raw OpenGL. **Stage 1 is
+COMPLETE (2026-08-25)**: all eight steps landed; the simulator draws
+entirely through the facade, and the raw-GL path is deleted. Section 7
+records what the execution added to that plan. **Stage 2 -- the
+borrowed frame -- is planned in section 8** and is what makes the
+facade an overlay API rather than a widget-owning one.
 
 Related: `docs/RenderEngine.md` (the bgfx engine), `docs/RendererPlan.md`
 (the engine's own build log).
@@ -376,3 +378,257 @@ GL-path reference frame: the lines are back at 2px in the same rows
 and columns; what remains differing is sub-pixel placement and
 endpoint caps, which GL's own wide-line rasterization rule decided
 differently.
+
+
+## 8. Stage 2 -- the borrowed frame
+
+Stage 1 gave the simulator a device. Stage 2 gives it a **place in
+somebody else's frame**, which is the one thing an immediate-mode
+plugin API cannot be useful without: a consumer that can only own a
+whole widget can never be an overlay, and can never sort against the
+document's own geometry.
+
+The ruling in section 1 named three extensions -- scene-depth
+compositing, an overlay hook on ordinary 3D views, and Python
+bindings later. Read against the code, the first two are **one
+mechanism seen from two sides**. Compositing means the consumer's
+draws and the scene's draws share a depth buffer; sharing a depth
+buffer means drawing into the host's target; drawing into the host's
+target means submitting inside the host's frame, because a bgfx
+frame boundary is process-wide and only one party may cross it. So
+there is one thing to build -- a `DrawSurface` that attaches to an
+engine view instead of owning a `QOpenGLWidget` -- and both items
+fall out of it. Python bindings stay deferred: freezing a scripting
+surface before the C++ shape has a second user would be the wrong
+order.
+
+### 8.1 What the simulator gets out of it
+
+`Dummy3DViewer` is a full `View3DInventorViewer` that **never
+paints**: `discardPaintEvent_` defaults true (`Dummy3DViewer.h:49`)
+and only the disabled `#else` side-by-side branch at
+`ViewCAMSimulator.cpp:96` turns it off. It exists for its camera and
+its navigation, and it carries two `TopoShapeViewProvider`s -- stock
+and base -- that are built, fed by `setStockShape`/`setBaseShape`,
+and then never rendered. The simulator draws its own stock through
+the CSG and the base shape not at all.
+
+With a borrowed frame that viewer becomes the real one. The document
+geometry -- the job's base shape, fixtures, whatever else is in the
+document -- draws through the engine with its PBR, shadows and GTAO,
+and the simulator's carved stock sorts against it by depth instead
+of being pasted over it by Qt's widget stacking. The three-widget
+`QStackedLayout::StackAll` stack collapses: `GuiDisplay` stays a
+plain Qt toolbar over the top, and `DlgCAMSimulator` stops being a
+`QOpenGLWidget` at all.
+
+That is the flagship-consumer argument made concrete. Nothing about
+it absorbs the simulator into `BGFXScene` -- the CSG stays the
+simulator's, in the simulator's tree, drawn through the public API.
+
+### 8.2 Where a consumer's passes go
+
+bgfx orders draws by **view id**, not by submission order, so a
+consumer that must interleave with the scene cannot simply take a
+block from the granule pool the way stage 1's surface does
+(`BGFXDrawDevice.cpp:1097`): a pool block lands wherever there is
+room, which is nowhere in particular relative to the host's ids.
+The ids have to come out of the host's own block, at the right point
+in the host's own order.
+
+The engine already has exactly the machinery for that. A `BGFXView`
+declares which passes it will use each frame (`declPass`/`declPasses`,
+`BGFXFrame.cpp:3780`), sizes its block to that count
+(`passesNeeded`), and hands the live passes consecutive ids **in
+enum order** (`mapPasses`, `BGFXRendererP.h:6008`). An undeclared
+pass costs nothing. So the consumer block is a new run in the
+`PassView` enum, declared live only while a consumer is attached:
+
+```
+ViewSectionCapTransp,
+ViewConsumer0,      // attached DrawSurface passes (docs sec 8)
+...                 // 16 of them, like the bulb-shadow block
+ViewConsumer15,
+ViewBloomBright,
+```
+
+Sixteen because the simulator needs thirteen (four draw passes --
+scene, base shape, path, resolve -- plus nine for the AO effect) and
+a round block leaves headroom for the next consumer. `mapPasses`
+needs no change beyond the enum growing; `passesNeeded` already
+counts only what is marked.
+
+**Placement: after `ViewSectionCapTransp`, before `ViewBloomBright`.**
+That puts consumer output inside the scene composite -- bloom, the
+user post stage, debug visualization, and idle accumulation all see
+it -- while on-top geometry, the selection highlight and the overlay
+block still draw over it. Sorting against transparent scene geometry
+is given up (the consumer draws after the WBOIT resolve, so it
+occludes transparents rather than blending with them); the
+simulator's stock is opaque, and a documented limit beats a second
+insertion point.
+
+### 8.3 The API
+
+Two additions, both in the backend-free headers.
+
+`Renderer` grows a consumer registration -- a virtual, like every
+other engine feed, so a second backend can implement it:
+
+```
+class FrameConsumer {
+public:
+    virtual ~FrameConsumer();
+    /// Passes wanted inside the host frame, <= kMaxConsumerPasses.
+    virtual unsigned framePasses() const = 0;
+    /// Submit into the host's frame. Called once per host frame,
+    /// after the scene composite and before the overlays; the
+    /// surface's passes are live only for the duration of the call.
+    virtual void drawFrame(DrawSurface &surface) = 0;
+};
+
+virtual void setFrameConsumer(FrameConsumer *consumer) { }
+```
+
+`DrawSurface` grows the host-frame half, plus a second way to make
+one:
+
+```
+/// A surface attached to \a renderer's view: its passes are ids
+/// inside that view's frame, and the host owns the frame boundary.
+/// Null when the renderer has no device (render cache is not the
+/// renderer mode, no backend built) -- the caller falls back to
+/// create(widget, n).
+static std::unique_ptr<DrawSurface> attach(Renderer *renderer,
+                                           unsigned numPasses);
+
+bool attached() const;          // false = owns a widget (stage 1)
+TargetHandle hostTarget() const;  // the host's scene colour+depth
+TextureHandle hostColor() const;
+TextureHandle hostDepth() const;
+void hostSize(int &w, int &h) const;
+/// True when the host's scene colour holds LINEAR light (the
+/// colour-managed RGBA16F target). A consumer that shades in
+/// display space must encode before writing -- see the risk below.
+bool hostLinearColor() const;
+```
+
+On an attached surface `beginFrame`/`endFrame` are no-ops that return
+true: the host has already begun the frame, and `bgfx::frame()`
+belongs to it. Everything else -- `setPassTarget`, `setState`,
+`setStencil`, `submit`, `runEffect` -- behaves identically, which is
+the point: **the consumer's drawing code does not know which flavour
+of surface it holds.** Only target selection and the resolve differ.
+
+Implementation: `BGFXDrawSurface` splits its id source (pool block vs
+host `idMap`) and its frame boundary (context dance + blit vs
+nothing). The rest of the class is unchanged.
+
+### 8.4 Compositing without giving up the CSG
+
+The simulator is deferred: geometry into its own G-buffer, then a
+fullscreen resolve. The naive reading of "share the depth buffer" is
+to hang the sim's G-buffer off the host's depth attachment so the
+CSG depth-tests against document geometry directly. That is wrong
+twice: the CSG's stencil work would collide with whatever the engine
+put in the shared stencil, and a pass cannot read the depth it is
+writing.
+
+It is also unnecessary. The CSG is self-contained -- stock minus
+tools, correct in isolation -- and occlusion against the document
+only has to be right **at composite time**. So:
+
+- the G-buffer, its depth/stencil, and all seven `Glsim*` states stay
+  exactly as stage 1 left them, private to the consumer;
+- only the **resolve** changes. Instead of a plain fullscreen draw
+  into the surface's own backbuffer, it targets `hostTarget()`,
+  writes `gl_FragDepth` from the sim's own depth, and runs with
+  depth test LESS and depth write on.
+
+Pixels where the simulator's stock is nearer than the document win
+and stamp their depth; pixels where it is not are left to the scene;
+and the passes downstream (on-top, highlight, overlays) see a depth
+buffer that includes the stock. One shader change and one target
+change, and the sim's own pipeline is untouched.
+
+The G-buffer must size to `hostSize()`, not to the widget:
+`Render_EffectResolution` and the sub-view banks both mean the host's
+scene target is not always the widget's pixel size.
+
+### 8.5 Work breakdown
+
+Each step builds and leaves a working simulator.
+
+1. **The attached surface.** `FrameConsumer`, `Renderer::
+   setFrameConsumer`, the `ViewConsumer0..15` block and its
+   declaration, and the attached `BGFXDrawSurface` flavour. *Done
+   when:* a probe consumer draws one triangle inside a real 3D view's
+   frame, on the engine's ids, with no second `bgfx::frame()`.
+2. **Host accessors.** `hostTarget/hostColor/hostDepth/hostSize/
+   hostLinearColor`. *Done when:* the probe triangle depth-tests
+   against document geometry and is correctly encoded in both the
+   RGBA8 and the RGBA16F host configurations.
+3. **The simulator attaches.** `DlgCAMSimulator` becomes a
+   `FrameConsumer` rather than a `QOpenGLWidget` when the viewer has
+   a renderer; `Dummy3DViewer` paints; the widget stack loses a
+   layer. The resolve still writes into a private target and blits,
+   so the image is stage 1's. *Done when:* the simulator runs
+   attached and looks unchanged.
+4. **The composite resolve.** `gl_FragDepth` + host encoding +
+   `hostTarget`. This is the commit where the stock and the document
+   first occlude each other.
+5. **Camera and input.** `SimDisplay::UpdateCamera` reads the host
+   camera directly; the copy through `MDIViewWithCamera` goes away
+   where it becomes redundant.
+6. **Fallback and cleanup.** Keep `create(widget, n)` as the path for
+   a viewer with no renderer (render cache not in the renderer mode),
+   document which path runs when, and delete what died -- the
+   `#if 1`/`#else` debug branch, `discardPaintEvent_`, and the stock
+   view provider if the engine now draws it.
+
+Steps 1 and 2 are the API; 3 through 5 are the consumer; 6 waits for
+all of them.
+
+### 8.6 Risks, each with its substitute
+
+- **Double-encoded colour.** The host's scene colour is RGBA16F
+  holding linear light whenever colour management is on (`hdrScene`,
+  `BGFXViewLifecycle.cpp:823`), and the output transform encodes it
+  at present time. The simulator shades in display space. Writing its
+  colour straight in would send it through the transform twice.
+  *Substitute:* `hostLinearColor()` and a decode in the resolve
+  shader; the standalone path leaves it alone.
+- **MSAA host target.** The scene target carries the view's MSAA
+  flags. Draws into it are fine, but `gl_FragDepth` defeats early-z
+  and forces per-sample evaluation on some drivers. *Substitute:*
+  accepted -- the resolve is one fullscreen pass, and correctness
+  beats the early-z it costs.
+- **No host renderer.** Render cache outside the renderer mode means
+  `getExternalRenderer()` is null and there is no frame to borrow.
+  *Substitute:* the stage 1 standalone surface stays, and the
+  simulator picks its flavour at construction. This is why step 6
+  keeps rather than deletes it.
+- **View-id budget.** An attached consumer adds up to 16 ids to the
+  host view's block. *Substitute:* they are declared only while a
+  consumer is attached, and `reserveBlock` already fails soft (the
+  view sits the frame out and Coin composites).
+- **Re-entrancy.** `drawFrame` runs inside the engine's frame. A
+  consumer that touched scene state, resized, or asked for a repaint
+  from there would corrupt the frame in progress. *Substitute:* say
+  so in the header, and give the surface nothing that could -- the
+  attached flavour exposes no frame-boundary call at all.
+- **Stencil sharing.** The consumer's private depth/stencil keeps the
+  CSG's stencil traffic out of the host's buffer. *Substitute:* none
+  needed; this is why 8.4 keeps the G-buffer private.
+
+### 8.7 Verification
+
+The stage 1 harness extended (`scratchpad/simab/sim_ab.py`): the same
+scripted `CAMSimulator.PathSim` run, screenshotted under xvfb, in
+three legs -- standalone (stage 1's image, the regression baseline),
+attached with no document geometry (must be pixel-identical to it
+modulo the host's colour transform), and attached with a base shape
+visible (the new case: the stock must occlude and be occluded).
+Real-GPU confirmation on WSLg d3d12 as before, where the evidence is
+that the frame presents and the depth ordering is right rather than a
+pixel compare.
