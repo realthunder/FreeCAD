@@ -190,6 +190,8 @@
 
 #include <array>
 #include <deque>
+#include <mutex>
+#include <set>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/iostreams/device/array.hpp>
 #include <boost/iostreams/stream.hpp>
@@ -240,6 +242,43 @@ namespace bio = boost::iostreams;
 #define HANDLE_NULL_SHAPE _HANDLE_NULL_SHAPE("Null shape",true)
 #define HANDLE_NULL_INPUT _HANDLE_NULL_SHAPE("Null input shape",true)
 #define WARN_NULL_INPUT _HANDLE_NULL_SHAPE("Null input shape",false)
+
+/** Should this operation report that it could not name its result?
+ *
+ * An input shape carrying no element map is frequently CORRECT -- program
+ * generated and imported geometry has none -- and a genuine naming failure is
+ * developer information that no end user can act on. So the report is off by
+ * default and has two doors, either of which opens it: the PartParams
+ * preference, for the workbench author who wants to know whether the shapes
+ * they build can be named, and the module log level, for a developer who has
+ * already raised it and should not have to find a preference as well.
+ */
+static bool reportUnnamedInput(const char *op)
+{
+    long mode = PartParams::getWarnUnnamedInput();
+    if (mode <= 0)
+        return FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG);
+    if (mode > 1)
+        return true;
+
+    // Mode 1 reports each op code once per document recompute. Without that
+    // dedup the setting is useless in the very case it was asked for: a
+    // generator building the same feature over and over -- a fastener
+    // workbench making screws -- would report once per screw.
+    static std::mutex mutex;
+    static std::set<std::string> reported;
+    static bool subscribed = []() {
+        App::GetApplication().signalBeforeRecomputeDocument.connect(
+                [](const App::Document &) {
+                    std::lock_guard<std::mutex> guard(mutex);
+                    reported.clear();
+                });
+        return true;
+    }();
+    (void)subscribed;
+    std::lock_guard<std::mutex> guard(mutex);
+    return reported.insert(op ? op : "").second;
+}
 
 static void expandCompound(const TopoShape &shape, std::vector<TopoShape> &res) {
     if(shape.isNull())
@@ -1094,6 +1133,21 @@ bool TopoShape::canMapElement(const TopoShape &other) const {
 void TopoShape::mapSubElement(const std::vector<TopoShape> &shapes, const char *op) {
     if (shapes.empty() || this->Tag == -1)
         return;
+
+    size_t canMap = 0;
+    for (auto & s : shapes) {
+        if (canMapElement(s))
+            ++canMap;
+    }
+    if (!canMap) {
+        // Both paths below skip an input they cannot map, so this was already
+        // a no-op -- only a silent one.
+        if (reportUnnamedInput(op))
+            FC_WARN((op ? op : "mapSubElement") << ": none of " << shapes.size()
+                    << " input shapes carry an element map, so nothing was mapped"
+                       " onto the result (tag " << Tag << ")");
+        return;
+    }
 
     if (shapeType(true) == TopAbs_COMPOUND) {
         int count = 0;
@@ -4106,12 +4160,19 @@ TopoShape &TopoShape::makESHAPE(const TopoDS_Shape &shape, const Mapper &mapper,
         if(canMapElement(shape))
             ++canMap;
     }
-    if(!canMap)
-        return *this;
-    if(canMap!=shapes.size() && FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
-        FC_WARN("Not all input shapes are mappable");
-
     if(!op) op = Part::OpCodes::Maker;
+
+    if(!canMap) {
+        if(reportUnnamedInput(op))
+            FC_WARN(op << ": none of " << shapes.size()
+                    << " input shapes carry an element map, so the result (tag "
+                    << Tag << ") gets none either");
+        return *this;
+    }
+    if(canMap!=shapes.size() && reportUnnamedInput(op))
+        FC_WARN(op << ": only " << canMap << " of " << shapes.size()
+                << " input shapes carry an element map (tag " << Tag << ")");
+
     std::string _op = op;
     _op += '_';
 

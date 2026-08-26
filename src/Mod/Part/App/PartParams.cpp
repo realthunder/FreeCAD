@@ -61,6 +61,7 @@ public:
     bool ShareStoredSubShapes;
     long BorrowBelowFace;
     unsigned long LoftMaxDegree;
+    long WarnUnnamedInput;
     double MinimumDeviation;
     double MeshDeviation;
     double MeshAngularDeflection;
@@ -113,6 +114,8 @@ public:
         funcs["BorrowBelowFace"] = &PartParamsP::updateBorrowBelowFace;
         LoftMaxDegree = this->handle->GetUnsigned("LoftMaxDegree", 5);
         funcs["LoftMaxDegree"] = &PartParamsP::updateLoftMaxDegree;
+        WarnUnnamedInput = this->handle->GetInt("WarnUnnamedInput", 0);
+        funcs["WarnUnnamedInput"] = &PartParamsP::updateWarnUnnamedInput;
         MinimumDeviation = this->handle->GetFloat("MinimumDeviation", 0.05);
         funcs["MinimumDeviation"] = &PartParamsP::updateMinimumDeviation;
         MeshDeviation = this->handle->GetFloat("MeshDeviation", 0.2);
@@ -224,6 +227,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLoftMaxDegree(PartParamsP *self) {
         self->LoftMaxDegree = self->handle->GetUnsigned("LoftMaxDegree", 5);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWarnUnnamedInput(PartParamsP *self) {
+        self->WarnUnnamedInput = self->handle->GetInt("WarnUnnamedInput", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateMinimumDeviation(PartParamsP *self) {
@@ -832,6 +839,42 @@ void PartParams::setLoftMaxDegree(const unsigned long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void PartParams::removeLoftMaxDegree() {
     instance()->handle->RemoveUnsigned("LoftMaxDegree");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *PartParams::docWarnUnnamedInput() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Report a shape operation whose input shapes carry no element map, so\n"
+"the result cannot be named either. This is off by default because an\n"
+"absent element map is frequently correct -- program generated and\n"
+"imported geometry has none -- and because a genuine naming failure is\n"
+"developer information that an end user cannot act on. Turn it on when\n"
+"writing a workbench that builds shapes and wants its element names to\n"
+"survive a recompute. 0 off, 1 report each operation once per document\n"
+"recompute, 2 report every occurrence. Raising the Part module's log\n"
+"level to LOG reports every occurrence too, without this preference.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & PartParams::getWarnUnnamedInput() {
+    return instance()->WarnUnnamedInput;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & PartParams::defaultWarnUnnamedInput() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void PartParams::setWarnUnnamedInput(const long &v) {
+    instance()->handle->SetInt("WarnUnnamedInput",v);
+    instance()->WarnUnnamedInput = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void PartParams::removeWarnUnnamedInput() {
+    instance()->handle->RemoveInt("WarnUnnamedInput");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
