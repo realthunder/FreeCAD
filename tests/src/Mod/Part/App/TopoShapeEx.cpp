@@ -8,6 +8,8 @@
 
 #include "PartTestHelpers.h"
 
+#include <functional>
+
 #include <boost/core/ignore_unused.hpp>
 #include <BRepAdaptor_CompCurve.hxx>
 #include <BRepAdaptor_Surface.hxx>
@@ -3453,6 +3455,233 @@ TEST_F(TopoShapeExpansionTest, DISABLED_makEOffset2D)
             "Vertex3;:G;OFF;:H1:7,E;OFF;:H1:4,E",
         }
     ));
+}
+
+// The generalisation of the single expectation that caught 4b5240c553, where
+// makERuledSurface laundered its tag through a raw TopoDS round-trip and every
+// edge of the result came back unnamed.
+//
+// Give an operation inputs that carry a tag, and the result must come back
+// both named and self-consistent. Neither half is checked anywhere else: the
+// per-operation cases above assert exact names, which is a stricter test but
+// only of the operations someone thought to write down, and no test at all
+// looked at whether a map that exists actually agrees with itself.
+//
+// This is also the only place the two can be checked. A broken element map is
+// developer information -- see ComplexGeoData::checkElementMap and PartParams
+// WarnUnnamedInput -- so nothing reports it to a user, and a regression here
+// would otherwise reach a release unremarked.
+namespace
+{
+// One operation, applied to inputs the caller has tagged.
+struct NamedOp
+{
+    const char* name;
+    std::function<TopoShape()> run;
+};
+
+testing::AssertionResult mapIsNamedAndConsistent(const NamedOp& op)
+{
+    TopoShape result;
+    try {
+        result = op.run();
+    }
+    catch (Base::Exception& e) {
+        return testing::AssertionFailure() << op.name << " threw: " << e.what();
+    }
+    if (result.isNull()) {
+        return testing::AssertionFailure() << op.name << " produced a null shape";
+    }
+    if (result.getElementMapSize() == 0) {
+        return testing::AssertionFailure()
+            << op.name << " produced no element map from tagged inputs";
+    }
+    std::vector<std::string> problems;
+    int count = result.checkElementMap(&problems);
+    if (count == 0) {
+        return testing::AssertionSuccess();
+    }
+    auto failure = testing::AssertionFailure()
+        << op.name << " produced an inconsistent element map, " << count << " problems:";
+    for (const auto& problem : problems) {
+        failure << "\n    " << problem;
+    }
+    return failure;
+}
+}  // namespace
+
+TEST_F(TopoShapeExpansionTest, makEOperationsNameTheirResults)
+{
+    // Arrange -- inputs built the way the per-operation cases above build
+    // theirs, because several makE* are particular about what they accept:
+    // makESolid wants shells, makELoft wants sections that are all open or all
+    // closed, makEThickSolid wants a solid.
+    auto [cube1, cube2] = CreateTwoCubes();
+    TopoShape cube1TS {cube1, 2L};
+    TopoShape cube2TS {cube2, 3L};
+
+    auto [face, wire, edge1, edge2, edge3, edge4] = CreateRectFace();
+    boost::ignore_unused(face, edge3, edge4);
+    TopoShape wireTS {wire, 4L};
+    TopoShape edge1TS {edge1, 5L};
+    TopoShape edge2TS {edge2, 6L};
+
+    auto liftedWire = wire;
+    auto lift {gp_Trsf()};
+    lift.SetTranslation(gp_Pnt(0.0, 0.0, 0.0), gp_Pnt(0.0, 0.0, 10.0));
+    liftedWire.Move(TopLoc_Location(lift));
+    TopoShape liftedWireTS {liftedWire, 7L};
+
+    auto railEdge1 = BRepBuilderAPI_MakeEdge(gp_Pnt(0.0, 0.0, 0.0), gp_Pnt(0.0, 0.0, 8.0)).Edge();
+    auto railEdge2 = BRepBuilderAPI_MakeEdge(gp_Pnt(2.5, 0.0, 0.0), gp_Pnt(2.5, 0.0, 8.0)).Edge();
+    TopoShape railEdge1TS {railEdge1, 8L};
+    TopoShape railEdge2TS {railEdge2, 9L};
+
+    TopExp_Explorer exp(cube1, TopAbs_SHELL);
+    TopoShape shell1TS {exp.Current(), 2L};
+    exp.Init(cube2, TopAbs_SHELL);
+    TopoShape shell2TS {exp.Current(), 3L};
+
+    std::vector<NamedOp> ops {
+        {"makECompound",
+         [&]() {
+             TopoShape result {1L};
+             result.makECompound({cube1TS, cube2TS});
+             return result;
+         }},
+        {"makEWires",
+         [&]() {
+             TopoShape result {1L};
+             result.makEWires({edge1TS, edge2TS});
+             return result;
+         }},
+        {"makEFace",
+         [&]() {
+             TopoShape result {1L};
+             result.makEFace(wireTS);
+             return result;
+         }},
+        {"makESolid",
+         [&]() {
+             TopoShape shells {1L};
+             shells.makECompound({shell1TS, shell2TS});
+             TopoShape result {1L};
+             result.makESolid(shells);
+             return result;
+         }},
+        {"makEBooleanFuse",
+         [&]() {
+             TopoShape result {1L};
+             result.makEBoolean(Part::OpCodes::Fuse, {cube1TS, cube2TS});
+             return result;
+         }},
+        {"makEBooleanCut",
+         [&]() {
+             TopoShape result {1L};
+             result.makEBoolean(Part::OpCodes::Cut, {cube1TS, cube2TS});
+             return result;
+         }},
+        {"makEPrism",
+         [&]() {
+             TopoShape faceTS {1L};
+             faceTS.makEFace(wireTS);
+             faceTS.Tag = 10L;
+             TopoShape result {1L};
+             result.makEPrism(faceTS, gp_Vec(0.0, 0.0, 1.0));
+             return result;
+         }},
+        {"makERuledSurface",
+         [&]() {
+             TopoShape result {1L};
+             result.makERuledSurface({railEdge1TS, railEdge2TS}, 0);
+             return result;
+         }},
+        {"makELoft",
+         [&]() {
+             TopoShape result {1L};
+             result.makELoft({wireTS, liftedWireTS}, Standard_False, Standard_False);
+             return result;
+         }},
+        {"makEMirror",
+         [&]() {
+             gp_Ax2 axis {gp_Pnt {0, 0, 0}, gp_Dir {1, 0, 0}};
+             TopoShape result {1L};
+             result.makEMirror(cube1TS, axis);
+             return result;
+         }},
+        {"makETransform",
+         [&]() {
+             Base::Matrix4D mat;
+             mat.move(1.0, 2.0, 3.0);
+             TopoShape result {1L};
+             result.makETransform(cube1TS, mat);
+             return result;
+         }},
+        {"makECopy",
+         [&]() {
+             TopoShape result {1L};
+             result.makECopy(cube1TS);
+             return result;
+         }},
+        {"makEThickSolid",
+         [&]() {
+             TopoShape solidTS {cube1, 2L};
+             auto faces = solidTS.getSubTopoShapes(TopAbs_FACE);
+             faces[0].Tag = 11L;
+             faces[1].Tag = 12L;
+             TopoShape result {1L};
+             result.makEThickSolid(solidTS, {faces[0], faces[1]}, 0.1, 1e-07);
+             return result;
+         }},
+    };
+
+    // Act & Assert
+    for (const auto& op : ops) {
+        EXPECT_TRUE(mapIsNamedAndConsistent(op));
+    }
+}
+
+// An assertion that cannot fail proves nothing, so this corrupts a map three
+// ways and checks that checkElementMap reports each one. Without it the sweep
+// above would still pass if checkElementMap were a stub returning zero.
+TEST_F(TopoShapeExpansionTest, checkElementMapCatchesCorruption)
+{
+    // Arrange -- a cube named by a compound, so its map is real
+    auto [cube1, cube2] = CreateTwoCubes();
+    TopoShape cube1TS {cube1, 2L};
+    TopoShape shape {1L};
+    shape.makECompound({cube1TS});
+    ASSERT_GT(shape.getElementMapSize(), 0u);
+    ASSERT_EQ(shape.checkElementMap(), 0);
+
+    // Act & Assert -- a name for a face the shape does not have
+    std::vector<std::string> problems;
+    shape.setElementName(IndexedName("Face", 99), MappedName("madeUpFace"));
+    EXPECT_EQ(shape.checkElementMap(&problems), 1);
+    ASSERT_EQ(problems.size(), 1U);
+    EXPECT_NE(problems.front().find("Face99"), std::string::npos);
+    EXPECT_NE(problems.front().find("has only 6 Face"), std::string::npos);
+
+    // ... and a child element map claiming more faces than there are
+    auto children = shape.getMappedChildElements();
+    ASSERT_FALSE(children.empty());
+    for (auto& child : children) {
+        child.count += 100;
+    }
+    shape.setMappedChildElements(children);
+    problems.clear();
+    EXPECT_GT(shape.checkElementMap(&problems), 0);
+    bool sawChild = false;
+    for (const auto& problem : problems) {
+        sawChild = sawChild || problem.find("child element map") != std::string::npos;
+    }
+    EXPECT_TRUE(sawChild) << "no child element map problem among "
+                          << problems.size() << " reported";
+
+    // ... and a clean map still reports nothing
+    TopoShape clean {1L};
+    clean.makECompound({cube1TS});
+    EXPECT_EQ(clean.checkElementMap(), 0);
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
