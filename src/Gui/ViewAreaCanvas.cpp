@@ -428,6 +428,13 @@ void ViewAreaCanvas::paintGL()
         s.height = r.height();
         s.viewMatrix = &viewMat.getValue();
         s.projMatrix = &projMat.getValue();
+        // ...and this cell's own display style. Every cell is a real
+        // viewer with its own override mode, which until now could not
+        // show: only the feeder traverses, so a non-feeding cell's
+        // style change reached nothing. As a backend bucket filter it
+        // costs the frame nothing and differs per bank for free
+        // (docs/CoinRetirement.md 5.7).
+        s.drawStyle = viewer->drawStyleMask();
         subs.push_back(s);
         rects.push_back(r);
         drawnCells.push_back(c.cell);

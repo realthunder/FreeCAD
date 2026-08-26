@@ -2344,6 +2344,21 @@ void View3DInventorViewer::setOverrideMode(const std::string& mode)
     Application::Instance->signalViewModeChanged(_pimpl->view);
 }
 
+unsigned char View3DInventorViewer::drawStyleMaskFromName(const char *mode)
+{
+    if (!mode || !mode[0])
+        return Render::StyleAsIs;
+    if (SoFCUnifiedSelection::DisplayModeShaded == mode)
+        return Render::StyleShaded;
+    if (SoFCUnifiedSelection::DisplayModeFlatLines == mode)
+        return Render::StyleFlatLines;
+    if (SoFCUnifiedSelection::DisplayModeWireframe == mode)
+        return Render::StyleWireframe;
+    if (SoFCUnifiedSelection::DisplayModePoints == mode)
+        return Render::StylePoints;
+    return Render::StyleAsIs;
+}
+
 void View3DInventorViewer::applyOverrideMode()
 {
     this->overrideBGColor = 0;

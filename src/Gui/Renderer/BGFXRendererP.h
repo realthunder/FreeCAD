@@ -6988,6 +6988,16 @@ public:
     /// the members themselves, never in the map.
     std::map<int, SubViewBank> subBanks;
     int activeSub = 0;
+    /// The Class-A display style the submit in progress draws with
+    /// (docs/CoinRetirement.md 5.7): a DrawStyleMask that admits a
+    /// draw when `(mask >> material.type) & 1`. Restated from
+    /// SubViewCtx at the top of every frame, so it is deliberately
+    /// NOT a bank field -- a cell whose style changed needs nothing
+    /// invalidated, the next frame simply filters differently.
+    /// StyleAsIs on every frame outside a unified canvas, where the
+    /// Coin traversal that produced the capture applied the style
+    /// already.
+    uint8_t drawStyleMask = Render::StyleAsIs;
     BGFXView() { stashSubView(freshBank); }
     /// Swap sub-view \a id into the members (a no-op when it already
     /// is). An id never seen before starts from freshBank.
@@ -8541,6 +8551,11 @@ public:
         bool warm = false;
         int id = 0;
         int x = 0, y = 0, w = 0, h = 0;
+        /// This sub-view's Class-A display style (SubViewFrame::
+        /// drawStyle, docs/CoinRetirement.md 5.7). Not a bank field:
+        /// it is restated by every submit rather than carried across
+        /// frames, so a cell whose style changed needs no bank reset.
+        uint8_t style = Render::StyleAsIs;
     } subCtx;
 
     // CPU-side scene data fed through Render::Renderer's scene API. GPU

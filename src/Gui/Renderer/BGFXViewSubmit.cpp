@@ -642,6 +642,22 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     const Render::Material &mat = draw.material;
     if (!draw.mesh || draw.mesh->numVertices == 0)
         return;
+    // This sub-view's Class-A display style, as a bucket filter over
+    // the scene every sub-view shares (docs/CoinRetirement.md 5.7):
+    // Shaded keeps the faces, Wireframe the lines and points, Points
+    // the points. StyleAsIs -- every frame outside a unified canvas --
+    // keeps everything, because there the Coin traversal applied the
+    // style before the capture.
+    //
+    // Gizmo draws are exempt. A Class-A style reaches the pixels by
+    // selecting a different child of a ViewProvider's display-mode
+    // switch, so it never touched the navigation gizmos, which sit
+    // under no such switch; skipbounds is exactly the flag that marks
+    // them. Filtering them would make the rotation-centre sphere
+    // vanish in Wireframe, which Coin never does.
+    if (drawStyleMask != Render::StyleAsIs && !draw.skipbounds
+            && !((drawStyleMask >> mat.type) & 1))
+        return;
 
     GpuMesh *mesh = getMesh(*draw.mesh);
     // An exhausted handle pool leaves the upload invalid; binding

@@ -1205,3 +1205,67 @@ into the captured graph by the viewer that owns it. (And
 `View3DInventorViewer::setAxisCross`, the Python API, is a different
 thing again: it puts an `SoAxisCrossKit` in the SCENE at the origin, not
 the corner chrome that `axiscrossEnabled` controls.)
+
+## 17. D4 implementation notes: a display style per cell (2026-08-26)
+
+D4 is the split-view half of `docs/CoinRetirement.md` stage 5, and its
+survey (5.5) is what made it small: every ViewProvider in the tree
+composes the same nodes under its display-mode children, so a Class-A
+style (Points / Wireframe / Shaded / Flat Lines) is a **bucket mask**,
+not a different scene. The backend already sorts draws into face, line
+and point buckets (`Render::Material::type`), so the style is a filter
+at submit and differs per bank for free.
+
+**What was broken.** Every cell is a real `View3DInventorViewer` with
+its own `overrideMode`, so a cell already *had* a style -- it just could
+not show. Only the feeder traverses (sec 13.3), so a non-feeding cell's
+style change reached nothing at all, and the feeder's style was baked
+into the capture every cell shares. Setting a style in one cell either
+did nothing or changed all of them.
+
+**The mechanism, four pieces.**
+
+- `Render::DrawStyleMask` (Renderer.h): bit *i* is `Material::Type` *i*,
+  so a style admits a draw when `(mask >> mat.type) & 1`. The masks come
+  straight off the survey -- `StyleWireframe` is lines **and** points,
+  because Part's Wireframe root contains its Points root. Zero
+  (`StyleAsIs`) means no filter.
+- `SubViewFrame::drawStyle` carries it per cell, the same way D3c put
+  `subView` on `OverlayAnchor`: on the struct the host already fills, so
+  no new API and no new call order.
+- `SubViewCtx::style` -> `BGFXView::drawStyleMask`, restated at the top
+  of every frame. Deliberately **not** a bank field: a style change
+  invalidates nothing, the next frame simply filters differently.
+- `BGFXView::submit` returns early on a draw the mask excludes.
+
+**The traversal has to stop applying the style, and only on a canvas.**
+`SoFCUnifiedSelection::Private::applyOverrideMode` now blanks a Class-A
+mode when `pcViewer->hasAdoptedRenderer()`. That is the D4 half of the
+stage-5 ruling: the backend route is taken only where there is a
+backend, and a plain view -- and cache 0, where there is no backend at
+all -- keeps the Coin traversal doing exactly what it did. Only the four
+bucket styles are blanked; Hidden Line, No Shading and Tessellation are
+extra traversal state rather than a bucket selection, so they stay
+viewer-wide and unchanged.
+
+! **A style change is no longer a re-capture.** With the override out of
+the traversal, switching a cell from Shaded to Wireframe touches no
+scene-graph state, dirties no cache and re-feeds nothing -- it changes
+one byte on next frame's `SubViewFrame`. That is the second of the three
+costs stage 5.2 named, collected as a side effect of the first.
+
+! **Gizmo draws are exempt from the filter.** A Class-A style reaches
+the pixels by selecting a different child of a ViewProvider's
+display-mode switch, so it never touched the navigation gizmos -- they
+sit under no such switch. `DrawCall::skipbounds` is exactly the flag
+that marks them, and filtering them would make the rotation-centre
+sphere vanish in Wireframe, which Coin never does.
+
+! **Known limitation: an object whose OWN display mode is not a
+superset of the cell's style.** The capture now holds each object's own
+mode, so a cell asking for Shaded finds no faces for an object the user
+put in Wireframe, and draws nothing for it where Coin would have shown
+its Shaded child. Everything in a default mode (Flat Lines, which
+carries all three buckets) is exact. The fix is CoinRetirement 5.7's
+other half -- capture the superset child and tag each draw with the
+object's own mask -- and it is not built.

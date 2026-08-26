@@ -301,6 +301,19 @@ public:
     void setOverrideMode(const std::string &mode);
     void applyOverrideMode();
     std::string getOverrideMode() const {return overrideMode;}
+    /// This viewer's display style as a Render::DrawStyleMask, or
+    /// Render::StyleAsIs when the style is not one the backend can draw
+    /// by filtering (docs/CoinRetirement.md 5.7). What a unified canvas
+    /// puts on its SubViewFrame so each cell draws the shared scene in
+    /// its own style.
+    unsigned char drawStyleMask() const
+    { return drawStyleMaskFromName(overrideMode.c_str()); }
+    /// The mask a display style name filters with. Only the four
+    /// Class-A styles have one: Hidden Line, No Shading and
+    /// Tessellation are not bucket selections, they are extra traversal
+    /// state, so they stay with the Coin traversal and report
+    /// StyleAsIs.
+    static unsigned char drawStyleMaskFromName(const char *mode);
     const SoFCDisplayModeElement::HiddenLineConfig &getHiddenLineConfig() const;
     //@}
 

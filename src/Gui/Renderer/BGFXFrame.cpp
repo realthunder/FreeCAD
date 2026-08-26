@@ -148,6 +148,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // also puts the members back after a renderSubViews sequence
     // ended on another bank.
     view->selectSubView(subCtx.active ? subCtx.id : 0);
+    // ...and its display style, which unlike the bank is restated
+    // rather than carried: the cell owns it, the backend only filters
+    // by it (docs/CoinRetirement.md 5.7).
+    view->drawStyleMask = subCtx.active ? subCtx.style : Render::StyleAsIs;
 
     // A shader pack that could not supply a core program keeps the
     // view down: without this the torn-down view (no framebuffer)

@@ -2342,6 +2342,30 @@ struct Material {
     float clipplanes[MaxClipPlanes][4];
 };
 
+/// Which primitive buckets a Class-A display style draws
+/// (docs/CoinRetirement.md 5.7). Bit i is Material::Type i, so a style
+/// admits a draw when `(mask >> mat.type) & 1`.
+///
+/// The masks are read straight off what the ViewProviders put under
+/// each display-mode child of their SoFCSwitch, which the stage-5
+/// survey found to be nested subsets of one set of nodes: Shaded is the
+/// faces, Wireframe is the lines AND the points (Part's Wireframe root
+/// contains its Points root), Flat Lines is all three.
+///
+/// StyleAsIs (zero) means *no* style override -- every draw the feed
+/// captured is drawn. That is what "As Is" means, and it is what every
+/// frame outside a unified canvas uses, because there the style is
+/// still applied by the Coin traversal that produced the capture.
+enum DrawStyleMask : uint8_t {
+    StyleAsIs      = 0,
+    StyleFaces     = 1 << Material::Triangle,
+    StyleLines     = 1 << Material::Line,
+    StylePoints    = 1 << Material::Point,
+    StyleShaded    = StyleFaces,
+    StyleWireframe = StyleLines | StylePoints,
+    StyleFlatLines = StyleFaces | StyleLines | StylePoints,
+};
+
 /// One draw of (a part of) a mesh with a material and model transform.
 struct DrawCall {
     Material material;
@@ -2495,6 +2519,18 @@ public:
         int width = 0, height = 0;
         const void *viewMatrix = nullptr;
         const void *projMatrix = nullptr;
+        /// The Class-A display style this sub-view draws the shared
+        /// scene with (docs/CoinRetirement.md 5.7, docs/SplitViews.md
+        /// sec 17): a DrawStyleMask filtering the captured draws by
+        /// primitive bucket at submit. StyleAsIs -- the default and
+        /// every non-canvas frame -- draws what the feed captured.
+        ///
+        /// This is what lets N cells of ONE backend, fed by ONE
+        /// traversal, show N different display styles. A style applied
+        /// in the traversal instead would be baked into the shared
+        /// capture, which is the whole reason the canvas could not vary
+        /// it per cell.
+        uint8_t drawStyle = StyleAsIs;
     };
     /// Render one frame as \a count sub-views tiling the backbuffer:
     /// the same resident scene feeds every sub-view, each drawn with

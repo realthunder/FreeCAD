@@ -115,6 +115,14 @@ public:
     static SbName DisplayModeFlatLines;
     static SbName DisplayModeAsIs;
     static SbName DisplayModeNoShading;
+    /// The remaining two Class-A style names. Unlike the six above,
+    /// nothing in the traversal special-cases them -- they reach
+    /// SoFCDisplayModeElement as they stand -- but the backend's
+    /// per-cell style filter has to recognize them
+    /// (docs/CoinRetirement.md 5.7), and a second spelling of a style
+    /// name in a second file is how two implementations drift apart.
+    static SbName DisplayModeWireframe;
+    static SbName DisplayModePoints;
 
     void doAction(SoAction *action) override;
     //void GLRender(SoGLRenderAction * action) override;

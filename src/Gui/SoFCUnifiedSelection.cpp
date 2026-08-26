@@ -924,12 +924,31 @@ SbName SoFCUnifiedSelection::DisplayModeHiddenLine("Hidden Line");
 SbName SoFCUnifiedSelection::DisplayModeFlatLines("Flat Lines");
 SbName SoFCUnifiedSelection::DisplayModeAsIs("As Is");
 SbName SoFCUnifiedSelection::DisplayModeNoShading("No Shading");
+SbName SoFCUnifiedSelection::DisplayModeWireframe("Wireframe");
+SbName SoFCUnifiedSelection::DisplayModePoints("Points");
 
 void SoFCUnifiedSelection::Private::applyOverrideMode(SoState * state) const
 {
     bool shading = true;
     if (state->isElementEnabled(SoFCDisplayModeElement::getClassStackIndex())) {
         SbName mode = master->overrideMode.getValue();
+        // Split-view D4: on a unified canvas a Class-A style is a
+        // backend draw-time filter, one mask per cell
+        // (docs/CoinRetirement.md 5.7), so the traversal must not apply
+        // it. N cells are N banks of ONE backend fed by ONE traversal;
+        // a style baked in here is the FEEDING cell's style appearing
+        // in every cell, which is exactly what it does today and what
+        // D4 exists to undo. What is left in the capture is each
+        // object's own display mode, which is what the cells filter.
+        //
+        // Only the four bucket styles -- drawStyleMaskFromName is
+        // non-zero for those alone. Hidden Line, No Shading and
+        // Tessellation are extra traversal state rather than a bucket
+        // selection, so they stay here and stay viewer-wide.
+        if (pcViewer && pcViewer->hasAdoptedRenderer()
+                && View3DInventorViewer::drawStyleMaskFromName(
+                        mode.getString()) != 0)
+            mode = SbName::empty();
         bool hiddenline = false;
         if (mode == DisplayModeTessellation) {
             shading = false;
