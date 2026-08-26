@@ -815,20 +815,26 @@ TEST_F(TopoShapeExpansionTest, setElementComboName)
     // The detailed forms of names are covered in encodeElementName tests
 }
 
-// DISABLED, phase 4 verdict: OPEN. The combo name comes out without the ";:H,E" tag
-// postfix, so the mapped name this fork hands back for Edge1 after makECompound is bare.
-// setElementComboName, encodeElementName and setElementName are all textually equivalent
-// to upstream's, so there is no upstream fix to port; the divergence is in our own naming
-// and needs its own investigation. Prime suspect is the fork-only deferred element map
-// (upstream's flushElementMap() is an empty stub).
-TEST_F(TopoShapeExpansionTest, DISABLED_setElementComboNameCompound)
+// Adapted from upstream's expectation, deliberately. Upstream hands makECompound two
+// wires carrying no tag, no element map and no parent cache; this fork declines to map
+// such a child (see docs/UpstreamNameMap.md section 8), so the test supplies a tag.
+// With one, the name gains the tag digits -- ";:H3,E" where upstream, mapping a tag-0
+// child through its forceTag path, writes ";:H,E" with none -- and the combo name picks
+// up a trailing ";:H3:16,E" because encodeElementName reuses the tag it finds already in
+// the input name instead of re-encoding a fresh one.
+TEST_F(TopoShapeExpansionTest, setElementComboNameCompound)
 {
     // Arrange
     auto edge1 = BRepBuilderAPI_MakeEdge(gp_Pnt(0.0, 0.0, 0.0), gp_Pnt(1.0, 0.0, 0.0)).Edge();
     auto wire1 = BRepBuilderAPI_MakeWire({edge1}).Wire();
     auto wire2 = BRepBuilderAPI_MakeWire({edge1}).Wire();
     TopoShape topoShape {2L};
-    topoShape.makECompound({wire1, wire2});  // Quality of shape doesn't matter
+    // Supply a tag for each wire.  A shape carrying no tag, no element map and
+    // no parent cache carries no naming information at all, and this fork
+    // deliberately declines to map such a child -- see the note in
+    // docs/UpstreamNameMap.md section 8.
+    topoShape.makECompound({TopoShape(wire1, 3L), TopoShape(wire2, 4L)}
+    );  // Quality of shape doesn't matter
     Data::MappedName edgeName = topoShape.getMappedName(Data::IndexedName::fromConst("Edge", 1), true);
     Data::MappedName faceName = topoShape.getMappedName(Data::IndexedName::fromConst("Face", 7), true);
     Data::MappedName faceName2 = topoShape.getMappedName(Data::IndexedName::fromConst("Face", 8), true);
@@ -843,7 +849,7 @@ TEST_F(TopoShapeExpansionTest, DISABLED_setElementComboNameCompound)
     // ASSERT
     EXPECT_STREQ(
         result.toString().c_str(),
-        "Edge1;:H,E;CMN(Face7|Face8);Copy"
+        "Edge1;:H3,E;CMN(Face7|Face8);Copy;:H3:16,E"
     );  // Changed with PR#12471. Probably will change again
         // after importing other TopoNaming logics
     // The detailed forms of names are covered in encodeElementName tests
@@ -2781,13 +2787,15 @@ TEST_F(TopoShapeExpansionTest, makEGTransformWithMap)
 // Not testing _makETransform as it is a thin wrapper that calls the same places as the four
 // preceding tests.
 
-// DISABLED, phase 4 verdict: OPEN. Both trees produce 52 map entries; ours are bare
-// ("Edge1".."Edge24") where upstream's carry tag and child postfixes ("Edge1;:H,E" and
-// "Edge1;:C1;:H:4,E"), so upstream records which shell of the compound an element came from
-// and we do not. makESolid, makECompound, mapSubElement and makESHAPE are all equivalent to
-// upstream's, so no upstream fix applies. Shares a root cause with
-// setElementComboNameCompound above.
-TEST_F(TopoShapeExpansionTest, DISABLED_makESolid)
+// Adapted from upstream's expectation, deliberately, and the fork's map is the richer of
+// the two. Upstream explores both shells out as raw TopoDS, so they reach makECompound
+// with no tag and no element map; this fork declines to map such a child (see
+// docs/UpstreamNameMap.md section 8), so the test supplies each shell the tag of the cube
+// it came from. Upstream then tells the two shells apart POSITIONALLY -- ";:H,E" for the
+// first child and ";:C1;:H:4,E" for the second, where ":C1" is just "child index 1" --
+// while this fork tells them apart by OWNER, ";:H1" versus ";:H2". The tag survives a
+// reordering of the compound; the child index does not.
+TEST_F(TopoShapeExpansionTest, makESolid)
 {
     // Arrange
     auto [cube1, cube2] = CreateTwoCubes();
@@ -2801,7 +2809,9 @@ TEST_F(TopoShapeExpansionTest, DISABLED_makESolid)
     auto shell1 = exp.Current();
     exp.Init(topoShape2.getShape(), TopAbs_SHELL);
     auto shell2 = exp.Current();
-    TopoShape& topoShape3 = topoShape1.makECompound({shell1, shell2});
+    // Supply the tag of the cube each shell was explored out of; see the note
+    // in docs/UpstreamNameMap.md section 8.
+    TopoShape& topoShape3 = topoShape1.makECompound({TopoShape(shell1, 1L), TopoShape(shell2, 2L)});
     TopoShape& result = topoShape1.makESolid(topoShape3);  // Need the single parm form
     auto elements = elementMap(result);
     Base::BoundBox3d bb = result.getBoundBox();
@@ -2814,19 +2824,19 @@ TEST_F(TopoShapeExpansionTest, DISABLED_makESolid)
     EXPECT_TRUE(allElementsMatch(
         result,
         {
-            "Edge10;:C1;:H:4,E",  "Edge10;:H,E",  "Edge11;:C1;:H:4,E",  "Edge11;:H,E",
-            "Edge12;:C1;:H:4,E",  "Edge12;:H,E",  "Edge1;:C1;:H:4,E",   "Edge1;:H,E",
-            "Edge2;:C1;:H:4,E",   "Edge2;:H,E",   "Edge3;:C1;:H:4,E",   "Edge3;:H,E",
-            "Edge4;:C1;:H:4,E",   "Edge4;:H,E",   "Edge5;:C1;:H:4,E",   "Edge5;:H,E",
-            "Edge6;:C1;:H:4,E",   "Edge6;:H,E",   "Edge7;:C1;:H:4,E",   "Edge7;:H,E",
-            "Edge8;:C1;:H:4,E",   "Edge8;:H,E",   "Edge9;:C1;:H:4,E",   "Edge9;:H,E",
-            "Face1;:C1;:H:4,F",   "Face1;:H,F",   "Face2;:C1;:H:4,F",   "Face2;:H,F",
-            "Face3;:C1;:H:4,F",   "Face3;:H,F",   "Face4;:C1;:H:4,F",   "Face4;:H,F",
-            "Face5;:C1;:H:4,F",   "Face5;:H,F",   "Face6;:C1;:H:4,F",   "Face6;:H,F",
-            "Vertex1;:C1;:H:4,V", "Vertex1;:H,V", "Vertex2;:C1;:H:4,V", "Vertex2;:H,V",
-            "Vertex3;:C1;:H:4,V", "Vertex3;:H,V", "Vertex4;:C1;:H:4,V", "Vertex4;:H,V",
-            "Vertex5;:C1;:H:4,V", "Vertex5;:H,V", "Vertex6;:C1;:H:4,V", "Vertex6;:H,V",
-            "Vertex7;:C1;:H:4,V", "Vertex7;:H,V", "Vertex8;:C1;:H:4,V", "Vertex8;:H,V",
+            "Edge1;:H1,E",   "Edge1;:H2,E",   "Edge2;:H1,E",   "Edge2;:H2,E",
+            "Edge3;:H1,E",   "Edge3;:H2,E",   "Edge4;:H1,E",   "Edge4;:H2,E",
+            "Edge5;:H1,E",   "Edge5;:H2,E",   "Edge6;:H1,E",   "Edge6;:H2,E",
+            "Edge7;:H1,E",   "Edge7;:H2,E",   "Edge8;:H1,E",   "Edge8;:H2,E",
+            "Edge9;:H1,E",   "Edge9;:H2,E",   "Edge10;:H1,E",  "Edge10;:H2,E",
+            "Edge11;:H1,E",  "Edge11;:H2,E",  "Edge12;:H1,E",  "Edge12;:H2,E",
+            "Face1;:H1,F",   "Face1;:H2,F",   "Face2;:H1,F",   "Face2;:H2,F",
+            "Face3;:H1,F",   "Face3;:H2,F",   "Face4;:H1,F",   "Face4;:H2,F",
+            "Face5;:H1,F",   "Face5;:H2,F",   "Face6;:H1,F",   "Face6;:H2,F",
+            "Vertex1;:H1,V", "Vertex1;:H2,V", "Vertex2;:H1,V", "Vertex2;:H2,V",
+            "Vertex3;:H1,V", "Vertex3;:H2,V", "Vertex4;:H1,V", "Vertex4;:H2,V",
+            "Vertex5;:H1,V", "Vertex5;:H2,V", "Vertex6;:H1,V", "Vertex6;:H2,V",
+            "Vertex7;:H1,V", "Vertex7;:H2,V", "Vertex8;:H1,V", "Vertex8;:H2,V",
         }
     ));
 }

@@ -431,26 +431,80 @@ Letting `tol` default (`Precision::Confusion()`) fixes it, and both element maps
 then match upstream's recorded expectations exactly -- which is the evidence
 that the defaulted call, and not the ordered variant, is what the line meant.
 
-#### Still open -- ours, but not explained yet (3)
+#### The last three -- resolved 2026-08-26 (1 fixed, 2 accepted deltas)
 
-`setElementComboNameCompound`, `makESolid` and `makERuledSurfaceEdges` all show
-this fork producing a poorer element map than upstream: a bare `Edge1` where
-upstream has `Edge1;:H,E`, 52 bare entries where upstream distinguishes the two
-shells of a compound with `;:H,E` and `;:C1;:H:4,E`, and an empty map where
-upstream names nine elements.
+`setElementComboNameCompound`, `makESolid` and `makERuledSurfaceEdges` all showed
+this fork producing a poorer element map than upstream. They share one mechanism,
+and it is **not** the one this section used to name.
 
-**No upstream fix applies to any of them.** `makESHAPE`, `mapSubElement`,
-`encodeElementName`, `setElementName`, `makECompound`, `makESolid` and
-`makERuledSurface` were each diffed against upstream and are equivalent modulo
-the renames in section 1 and the enum table above. So the divergence is not a
-missing upstream fix; it is something in our own naming path.
+**The old hypothesis was wrong.** It read: "the prime suspect is the deferred
+element map, which is fork-only". It is not fork-only -- upstream has
+`_parentCache`, `cachedElementMap` and `hasPendingElementMap()` too. What is
+fork-only is **two `canMapElement` guards deciding when to engage that
+machinery**, both deliberate commits of ours:
 
-The prime suspect is the **deferred element map, which is fork-only** --
-`hasPendingElementMap()`, `_ParentCache`, `_Cache->cachedElementMap` and a real
-`TopoShape::flushElementMap()`, where upstream's `flushElementMap()` is an empty
-stub. Note that `flushElementMap()`'s `_ParentCache` branch re-maps through
-`self.mapSubElement(parent)` with **no op string**, which is exactly the shape of
-"names arrive without their postfixes". That is where to start.
+- **Gate 1, `9934ab77b3`** (2022-11-13) "avoid unnecessary element name mapping
+  in TopoShape" -- `mapSubElement(vector,op)`, the compound fast path: both loops
+  skip `!canMapElement(s)` where upstream skips only `s.isNull()`.
+- **Gate 2, `5e30aab680`** (2024-02-09) "fix useless delayed element mapping" --
+  `Ancestry::_getTopoShape` arms `res._ParentCache` only
+  `if (res.canMapElement(parent))`.
+
+`canMapElement` is false exactly when a shape carries **no naming information at
+all**: `Tag == 0`, no element map, no pending map. That bounds both gates -- a
+tagged feature shape in a document recompute never trips either one.
+
+**makERuledSurfaceEdges was a real fork defect, and is fixed** (`4b5240c553`),
+without touching gate 2. Our own code laundered the tag away:
+
+    TopoShape res(ruledShape.Located(TopLoc_Location()));   // OCCT's capital-L
+
+`TopoDS_Shape::Located()` returns a `TopoDS_Shape`, so the staging object went
+through the raw constructor and landed at `Tag 0`. Every edge `searchSubShape()
+then handed back inherited that 0, failed `canMapElement`, and `makESHAPE`
+counted `canMap == 0` and returned before naming anything. The fix uses the
+lowercase `TopoShape::located()`, which does `auto res = *this` and so preserves
+tag, hasher and map:
+
+    TopoShape res = TopoShape(Tag, Hasher, ruledShape).located();
+
+`this->Tag` is the right tag and not an arbitrary one: `res` is only a staging
+object, since the function ends with `makESHAPE(res.getShape(), ..)` on `*this*`,
+whose first act is `setShape(res.getShape())`. **The names do not change**, because
+`encodeElementName` early-outs on `if(!tag || tag==Tag) return;` -- `tag == Tag`
+behaves exactly like `tag == 0`. Upstream reaches that line with no tag; we now
+reach it with the right one.
+
+**setElementComboNameCompound and makESolid are accepted fork deltas.** Here the
+untagged input originates in the *caller*, not in our code: both tests build raw
+`TopoDS` (via `BRepBuilderAPI_MakeWire`, via `TopExp_Explorer`) and hand it to
+`makECompound`, so there is no laundered tag to restore. **Gate 1 stays**
+(USER RULING 2026-08-26) and the tests were adapted to supply a tag instead.
+
+With a tag supplied the fork names them, and for `makESolid` **the fork's map is
+the richer of the two**:
+
+    upstream   Edge1;:H,E   and   Edge1;:C1;:H:4,E     -- by child POSITION
+    fork       Edge1;:H1,E  and   Edge1;:H2,E          -- by owner TAG
+
+`;:C1` is only "child index 1"; a tag survives a reordering of the compound,
+a child index does not. For `setElementComboNameCompound` the supplied tag adds
+the tag digits (`;:H3,E` where upstream's tag-0 forceTag path writes `;:H,E` with
+none) and a trailing `;:H3:16,E`, because `encodeElementName` reuses a tag it
+finds already present in the input name rather than encoding a fresh one.
+
+**Traps worth keeping from this round:**
+
+- `encodeElementName` treats `tag == Tag` **exactly like** `tag == 0` -- both
+  return before writing any postfix. A name with no tag decoration therefore does
+  not prove the shape was untagged.
+- `;:H` with **no** hex digits means `tag == 0` reached the `forceTag` path; the
+  digits are omitted, not defaulted.
+- `resetElementMap(nullptr)` does **not** clear `_ParentCache` -- the reset sits
+  inside `if (elementMap)`. A null argument is a no-op, so a pending map survives it.
+- `TopoShapeCache.cpp` and `TopoShapeExpansion.cpp` exist in the tree but are
+  **commented out** of `src/Mod/Part/App/CMakeLists.txt`. They are upstream
+  reference copies, not compiled -- do not edit them expecting an effect.
 
 Re-enable a case by deleting its `DISABLED_` prefix, together with the fix,
 and not before.
