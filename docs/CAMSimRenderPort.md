@@ -632,3 +632,82 @@ visible (the new case: the stock must occlude and be occluded).
 Real-GPU confirmation on WSLg d3d12 as before, where the evidence is
 that the frame presents and the depth ordering is right rather than a
 pixel compare.
+
+
+### 8.8 Execution record (2026-08-27, steps 1-2 landed)
+
+**Steps 1 and 2 are done and verified** (`6479247e61`). What the plan
+did not know in advance:
+
+- **The renderer owns the attached surface, not the consumer.** The
+  plan's `DrawSurface::attach(Renderer*, n)` factory became
+  `Renderer::setFrameConsumer(FrameConsumer*)`: the renderer builds the
+  surface, sizes it to the consumer's pass count, binds this frame's
+  ids and target for the duration of one `drawFrame` call and unbinds
+  after. Lifetime, id validity and frame scope then have one owner
+  instead of two, and a consumer that squirrelled the surface away can
+  submit nothing outside the callback. A consumer's *drawing* code is
+  still identical in both flavours, which is what the plan actually
+  wanted -- the simulator's `drawFrame(DrawSurface&)` is called by the
+  host when attached and by its own `paintGL` when not.
+- **`hostTarget()` reads correctly in both flavours** because an
+  invalid `TargetHandle` already meant "this surface's backbuffer".
+  `setPassTarget(pass, surface.hostTarget())` therefore needs no test
+  of which flavour it is -- which is what makes one drawing path
+  possible.
+- **! A pass with no stated transform inherits a stale one.** A
+  backend view's transform is sticky, and an attached surface's ids
+  are reassigned every frame from whatever is live, so an id that
+  carried the scene camera last frame would apply it to a clip-space
+  fullscreen quad this frame. Every pass now states its transform,
+  identity included.
+- The pass block is `ViewConsumer0..15`, sixteen, declared live only
+  as far as the consumer asked. `NumConsumerViews` is counted between
+  enum entries like the overlay block, so inserting a pass into the
+  run cannot desync it.
+- Verification was a probe consumer on a real `BGFXRenderer` rather
+  than the simulator, so that the API and its first consumer could
+  fail separately. Worth keeping that order.
+
+**Step 3 is written but blocked on a rendering defect.** The
+simulator attaches, the widget stack switches (`Dummy3DViewer` paints,
+`DlgCAMSimulator` hides), redraw requests go to the host's render
+manager instead of the hidden widget, and the viewer's stock/base
+view providers stop mirroring the simulator's shapes -- they would
+otherwise draw the stock UNCUT over the carved one. All of that
+works. What does not is the image:
+
+> Inside a host frame, a consumer draw that samples **three or more
+> distinct attachments of a framebuffer the consumer rendered to
+> earlier in the same frame** produces nothing at all -- not even the
+> view's clear. Two attachments draw fine. The same four-attachment
+> draw in the simulator's own standalone frame draws fine. So does it
+> inside a host frame if the G-buffer was not rendered to that frame.
+
+Bisected by binding stages one at a time: colour alone, colour +
+position, and colour + position-twice all draw; adding the third
+distinct attachment kills the draw whatever it is (substituting the
+position texture for the normal restores it, so the count is what
+matters, not the texture). Reproduced on llvmpipe **and** on Mesa's
+d3d12 driver with a real AMD GPU, so it is not a software-rasterizer
+artifact -- which was the first suspicion, and the reason the d3d12
+leg is now part of the harness (`GALLIUM_DRIVER=d3d12
+MESA_LOADER_DRIVER_OVERRIDE=d3d12 LIBGL_ALWAYS_SOFTWARE=0` under
+`xvfb-run` gives hardware GL *and* a screen grab, which the WSLg
+Wayland route never did).
+
+Ruled out along the way: idle temporal accumulation (off by default),
+the output colour transform, a later host pass overwriting the target
+(the consumer block was moved to just before the present pass and
+nothing changed), depth or stencil rejection, and stale texture
+bindings leaking from the host's draws (bgfx clears binds at every
+submit).
+
+The simulator's deferred resolve samples exactly four: colour,
+view-space position, view-space normal, and the AO term. The
+restructure already made for step 4 -- the resolve lands in the
+simulator's own colour target and a **composite** pass carries that
+one RGBA8 image into the surface's target (`SimPassComposite`) --
+does not help, because the resolve is the draw that is dropped. It is
+kept anyway: it is where step 4's `gl_FragDepth` write belongs, and it
+leaves exactly one texture crossing into the host's frame.
