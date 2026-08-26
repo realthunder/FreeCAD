@@ -672,9 +672,9 @@ PieMenu::PieMenu(QMenu *menu, const char *param, QWidget *parent)
                 c = 0;
         }
         if (color.isEmpty()) {
-            auto hGrp = App::GetApplication().GetParameterGroupByPath(
-                    "User parameter:BaseApp/Preferences/MainWindow");
-            if (hGrp->GetASCII("StyleSheet", "").find("Dark") != std::string::npos)
+            // The scheme in effect, not the stylesheet filename: the
+            // parameterized FreeCAD.qss serves both schemes under one name.
+            if (Application::isDarkTheme())
                 color = QStringLiteral("#6e6e6e");
             else
                 color = QStringLiteral("palette(window)");

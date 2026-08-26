@@ -40,6 +40,7 @@
 #include <Gui/MainWindow.h>
 #include <Gui/Selection.h>
 
+#include <Mod/TechDraw/App/DrawBrokenView.h>
 #include <Mod/TechDraw/App/DrawGeomHatch.h>
 #include <Mod/TechDraw/App/DrawHatch.h>
 #include <Mod/TechDraw/App/DrawLeaderLine.h>
@@ -101,6 +102,11 @@ ViewProviderViewPart::ViewProviderViewPart()
     weight = TechDraw::LineGroup::getDefaultWidth("Extra");
     ADD_PROPERTY_TYPE(ExtraWidth, (weight), group, App::Prop_None, "The thickness of LineGroup Extra lines, if enabled");
 
+    ADD_PROPERTY_TYPE(LineScale, (1.0), group, App::Prop_None,
+                      "Multiplier applied to every line width this view draws");
+    ADD_PROPERTY_TYPE(VertexScale, (Preferences::vertexScale()), group, App::Prop_None,
+                      "Vertex dot size as a multiple of the visible line width");
+
     double defScale = Preferences::getPreferenceGroup("Decorations")->GetFloat("CenterMarkScale", 0.50);
     bool   defShowCenters = Preferences::getPreferenceGroup("Decorations")->GetBool("ShowCenterMarks", false);
 
@@ -114,12 +120,15 @@ ViewProviderViewPart::ViewProviderViewPart()
     if (bodyName == "ISO") {
         SectionLineStyle.setEnums(ISOLineName::ISOLineNameEnums);
         HighlightLineStyle.setEnums(ISOLineName::ISOLineNameEnums);
+        BreakLineStyle.setEnums(ISOLineName::ISOLineNameEnums);
     } else if (bodyName == "ANSI") {
         SectionLineStyle.setEnums(ANSILineName::ANSILineNameEnums);
         HighlightLineStyle.setEnums(ANSILineName::ANSILineNameEnums);
+        BreakLineStyle.setEnums(ANSILineName::ANSILineNameEnums);
     } else if (bodyName == "ASME") {
     SectionLineStyle.setEnums(ASMELineName::ASMELineNameEnums);
         HighlightLineStyle.setEnums(ASMELineName::ASMELineNameEnums);
+        BreakLineStyle.setEnums(ASMELineName::ASMELineNameEnums);
     }
 
     //properties that affect Section Line
@@ -139,6 +148,14 @@ ViewProviderViewPart::ViewProviderViewPart()
     ADD_PROPERTY_TYPE(HighlightAdjust, (0.0), hgroup, App::Prop_None, "Adjusts the rotation of the Detail highlight label");
 
     ADD_PROPERTY_TYPE(HighlightOffset ,(0.0), hgroup, App::Prop_None, "Adjust offset of the Detail highlight label");
+
+    // properties that affect Broken Views
+    static const char *bvgroup = "Broken View";
+    BreakLineType.setEnums(DrawBrokenView::BreakTypeEnums);
+    ADD_PROPERTY_TYPE(BreakLineType, (Preferences::BreakType()), bvgroup, App::Prop_None,
+                        "Adjusts the type of break line depiction on broken views");
+    ADD_PROPERTY_TYPE(BreakLineStyle, (Preferences::BreakLineStyle()), bvgroup, App::Prop_None,
+                        "Set break line style if applicable");
 
     ADD_PROPERTY_TYPE(ShowAllEdges ,(false)    ,dgroup, App::Prop_None, "Temporarily show invisible lines");
 
@@ -182,6 +199,8 @@ void ViewProviderViewPart::onChanged(const App::Property* prop)
         prop == &(HiddenWidth) ||
         prop == &(IsoWidth) ||
         prop == &(ExtraWidth) ||
+        prop == &(LineScale) ||
+        prop == &(VertexScale) ||
         prop == &(HighlightAdjust) ||
         prop == &(ArcCenterMarks) ||
         prop == &(CenterScale) ||
@@ -194,7 +213,9 @@ void ViewProviderViewPart::onChanged(const App::Property* prop)
         prop == &(HorizCenterLine) ||
         prop == &(VertCenterLine)  ||
         prop == &(FaceColor) ||
-        prop == &(FaceTransparency)) {
+        prop == &(FaceTransparency) ||
+        prop == &(BreakLineType) ||
+        prop == &(BreakLineStyle)) {
         // redraw QGIVP
         QGIView* qgiv = getQView();
         if (qgiv) {

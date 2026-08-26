@@ -1039,10 +1039,30 @@ QuarterWidget::redraw(bool force)
   // Note that, the recursive repaint is not infinite due to setting
   // 'processdelayqueue = false' above. However, it does cause annoying
   // flickering, and actually crash on Windows.
+  // Hosted in a unified canvas: this widget is hidden and draws
+  // nothing of its own, so its update() would be a no-op. The canvas
+  // takes the redraw instead (docs/SplitViews.md sec 13).
+  if (PRIVATE(this)->redrawredirect) {
+    PRIVATE(this)->redrawredirect(force);
+    return;
+  }
+
   if (!force)
     this->viewport()->update();
   else
     this->viewport()->repaint();
+}
+
+void
+QuarterWidget::setRedrawRedirect(std::function<void(bool)> fn)
+{
+  PRIVATE(this)->redrawredirect = std::move(fn);
+}
+
+bool
+QuarterWidget::hasRedrawRedirect() const
+{
+  return bool(PRIVATE(this)->redrawredirect);
 }
 
 /*!

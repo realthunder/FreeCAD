@@ -252,6 +252,19 @@ public:
       return nullptr;
   }
 
+  /** A name for this container that a save and a reload will produce again,
+   * or empty when it has none.
+   *
+   * Included files owned by a container that no document object anchors are
+   * named with it -- see FileBlobManager::referrerOf(). getFullName() cannot
+   * serve there: a view's carries Gui::BaseView::getID(), a process-wide
+   * counter that no file records, so the same view answers to a different
+   * name in the next session.
+   */
+  virtual std::string getPersistentName() const {
+      return {};
+  }
+
   /// find a property by its name
   virtual Property *getPropertyByName(const char* name) const;
   /// get the name of a property

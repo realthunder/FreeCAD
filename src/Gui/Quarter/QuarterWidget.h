@@ -36,6 +36,8 @@
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 
+#include <functional>
+
 #include <QColor>
 #include <QGraphicsView>
 #include <QUrl>
@@ -156,6 +158,15 @@ public:
   QCursor stateCursor(const SbName & state);
 
   uint32_t getCacheContextId() const;
+
+  /// Send this widget's scheduled redraws somewhere else. A ViewArea
+  /// unified canvas (docs/SplitViews.md sec 13) hides its child
+  /// viewers and draws their scenes itself; a hidden widget's update()
+  /// is a no-op, so without this every redraw Coin schedules for the
+  /// child would be dropped on the floor. \a fn receives redraw()'s
+  /// force flag. Pass an empty function to restore the normal path.
+  void setRedrawRedirect(std::function<void(bool)> fn);
+  bool hasRedrawRedirect() const;
 
   virtual void setSceneGraph(SoNode * root);
   virtual SoNode * getSceneGraph() const;

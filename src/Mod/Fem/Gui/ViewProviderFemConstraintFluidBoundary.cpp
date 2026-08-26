@@ -22,6 +22,8 @@
  ***************************************************************************/
 
 
+#include <numbers>
+
 #include <Inventor/SbRotation.h>
 #include <Inventor/SbVec3f.h>
 #include <Inventor/nodes/SoMultipleCopy.h>

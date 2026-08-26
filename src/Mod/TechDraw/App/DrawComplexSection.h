@@ -63,6 +63,7 @@ public:
     bool waitingForAlign(void) const { return m_waitingForAlign; }
 
     TopoDS_Shape getShapeForDetail() const override;
+    bool getShapeForDetailFrame(gp_Trsf& frame) const override;
 
     void onMakeAlignedPiecedFinished(std::shared_ptr<TopoDS_Shape> result);
     void onSectionCutFinished(std::shared_ptr<TopoDS_Shape> result) override;

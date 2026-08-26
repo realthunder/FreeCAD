@@ -142,6 +142,17 @@ bool BGFXRenderer::Private::render(const QColor &col,
         return false;
 #endif
 
+    // Split-view frame: swap in the sub-view's state bank
+    // (docs/SplitViews.md sec 9.2, sec 13 for the desktop tier). A
+    // plain render() is bank 0 -- the full-canvas sub-view -- which
+    // also puts the members back after a renderSubViews sequence
+    // ended on another bank.
+    view->selectSubView(subCtx.active ? subCtx.id : 0);
+    // ...and its display style, which unlike the bank is restated
+    // rather than carried: the cell owns it, the backend only filters
+    // by it (docs/CoinRetirement.md 5.7).
+    view->drawStyleMask = subCtx.active ? subCtx.style : Render::StyleAsIs;
+
     // A shader pack that could not supply a core program keeps the
     // view down: without this the torn-down view (no framebuffer)
     // matches the re-init condition below and every frame would
@@ -209,23 +220,65 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // rather than view->outputTransform, which a debug view mode zeroes
     // -- looking at the depth buffer must not reallocate the targets.
     view->hdrWanted = outconf.transform != Render::OutputConfig::None;
+    // What the view's targets should measure: the sub-view rect while
+    // a renderSubViews submit is active, the canvas otherwise. The
+    // backbuffer itself always tracks the canvas -- the two sizes are
+    // one and the same only in the plain single-view case.
+    if (_BGFXLib.standaloneWidth != _BGFXLib.resetWidth
+            || _BGFXLib.standaloneHeight != _BGFXLib.resetHeight) {
+        bgfx::reset(_BGFXLib.standaloneWidth,
+                    _BGFXLib.standaloneHeight,
+                    BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY);
+        _BGFXLib.resetWidth = _BGFXLib.standaloneWidth;
+        _BGFXLib.resetHeight = _BGFXLib.standaloneHeight;
+    }
     if (progChanged
-            || _BGFXLib.standaloneWidth != view->width
-            || _BGFXLib.standaloneHeight != view->height
+            || _BGFXLib.viewTargetWidth() != view->width
+            || _BGFXLib.viewTargetHeight() != view->height
+            // The lost-framebuffer case rebuilds once, not every
+            // frame, exactly as on the desktop side below: without
+            // this a bank whose init failed once stayed torn down
+            // (and its sub-view black) for good.
+            || (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
             || _BGFXLib.effectResolution != view->effectScale
             || _BGFXLib.ssaoResolution != view->ssaoScale
             || view->hdrScene != view->hdrSceneWanted()
             || warmupReinit) {
-        if (_BGFXLib.standaloneWidth != view->width
-                || _BGFXLib.standaloneHeight != view->height)
-            bgfx::reset(_BGFXLib.standaloneWidth,
-                        _BGFXLib.standaloneHeight,
-                        BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY);
         view->init(!progChanged);
     }
 
-    if (!bgfx::isValid(view->bgfxFbo))
+    if (!bgfx::isValid(view->bgfxFbo)
+            && (!subCtx.active || subCtx.warm)) {
+        // The build found the handle pool exhausted: the creates
+        // stacked on destroys this un-flushed frame has queued but
+        // not reclaimed (a layout change frees old-size targets and
+        // dropped banks in one burst). Nothing is queued at this
+        // point -- a plain render is the frame's only producer, and a
+        // warm submit (prepareSubViews) runs between frames -- so a
+        // frame boundary here commits only that backlog. Cross it,
+        // and retry the build once in-frame: the one-black-frame
+        // retry becomes invisible. Submits of a renderSubViews
+        // sequence keep the bail-and-heal-next-frame path instead; a
+        // boundary there would commit the queued page-cell and
+        // sibling passes and drop their rects from this frame's
+        // composite.
+        bgfx::frame();
+        view->targetsFailed = false;
+        view->init(true);
+    }
+    if (!bgfx::isValid(view->bgfxFbo)) {
+        RENDER_ERR("bgfx: sub-view " << subCtx.id
+                   << " frame bailed: no scene framebuffer (targetsFailed="
+                   << int(view->targetsFailed) << ")");
         return false;
+    }
+    if (subCtx.warm) {
+        // A warm-up submit (prepareSubViews): the point was building
+        // the fresh bank's targets ahead of the real sequence, and
+        // they are built. Nothing is drawn; the caller crosses the
+        // frame boundary that realizes the creates.
+        return true;
+    }
 #else
     // Only a shader-generation or MSAA change actually invalidates the
     // programs (MSAA also re-decides m_oit, i.e. which programs exist).
@@ -3482,6 +3535,51 @@ bool BGFXRenderer::Private::render(const QColor &col,
         bgfx::setViewTransform(id, nullptr, nullptr);
         bgfx::touch(id);
     };
+    // The overlay feeds THIS frame draws, resolved once.
+    //
+    // Two filters, and they must be applied in ONE place: the slot a
+    // pass is configured for (configOverlay) and the slot the
+    // submission loop assigns have to name the same feed, and they
+    // agreed only by both walking the whole map. They did not agree on
+    // a chromeless dump, where the submission loop skipped chrome and
+    // the config loop did not -- so every slot past the first skipped
+    // one was set up from the wrong anchor.
+    //
+    //  - sub-view: OverlayAnchor::subView 0 is every sub-view (one
+    //    viewer's chrome in all of them, and what a plain render()
+    //    draws); a non-zero id is one cell's own, drawn only in that
+    //    cell's sub-view frame (docs/SplitViews.md sec 16.3).
+    //  - chrome: a dump asked for without overlays keeps the in-scene
+    //    and foreground feeds and drops the viewport chrome (the
+    //    reasoning is at the submission loop below).
+    std::vector<std::pair<int, const OverlayFeed *>> frameOverlays;
+    frameOverlays.reserve(overlays.size());
+    for (const auto &ov : overlays) {
+        const auto &a = ov.second.anchor;
+        if (a.subView != 0 && a.subView != subCtx.id)
+            continue;
+        const bool isChrome =
+            !a.sceneCamera
+            && (a.corner != Render::OverlayAnchor::FullViewport
+                || a.pixelSpace);
+        if (chromelessDump && isChrome)
+            continue;
+        frameOverlays.emplace_back(ov.first, &ov.second);
+    }
+    {
+        // Same knob as dumpFeed: which feeds a sub-view frame admitted,
+        // against how many the backend holds. A cell drawing no chrome
+        // while its feed is present is the difference between these two.
+        static const bool dbg = getenv("FC_BGFX_DEBUG_FEED") != nullptr;
+        if (dbg) {
+            fprintf(stderr, "bgfx frame sub=%d admits %zu of %zu overlays:",
+                    subCtx.id, frameOverlays.size(), overlays.size());
+            for (const auto &f : frameOverlays)
+                fprintf(stderr, " %d", f.first);
+            fprintf(stderr, "\n");
+        }
+    }
+
     auto configOverlay = [&](int i, uint16_t id) {
         // Overlay feed slot: derive the viewport rect and the
         // camera from the declarative anchor each frame, so
@@ -3490,9 +3588,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // viewer's own orbit camera.
         // Only the slots the frame's overlays fill are mapped.
         int slot = i - V::ViewOverlay0;
-        auto ovIt = overlays.begin();
-        std::advance(ovIt, slot);
-        const Render::OverlayAnchor *anchor = &ovIt->second.anchor;
+        const Render::OverlayAnchor *anchor = &frameOverlays[slot].second->anchor;
         if (anchor->sceneCamera) {
             // In-scene overlay (editing graph, dimensions): draw over
             // the whole viewport with the main scene camera so the
@@ -3605,7 +3701,19 @@ bool BGFXRenderer::Private::render(const QColor &col,
         bgfx::setViewFrameBuffer(id, target);
         bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
                            clearColor, 1.0f, 0);
+#ifdef FC_RENDERER_STANDALONE
+        // A split-view submit presents into its sub-view's rect of the
+        // backbuffer; the source UV stays 0..1 of this sub-view's own
+        // full scene target (vs_fc_comp.sc), so this one rect is the
+        // whole composition step (docs/SplitViews.md sec 9.2).
+        if (subCtx.active)
+            bgfx::setViewRect(id, uint16_t(subCtx.x), uint16_t(subCtx.y),
+                              uint16_t(subCtx.w), uint16_t(subCtx.h));
+        else
+            bgfx::setViewRect(id, 0, 0, width, height);
+#else
         bgfx::setViewRect(id, 0, 0, width, height);
+#endif
         bgfx::setViewTransform(id, nullptr, nullptr);
         bgfx::setViewMode(id, bgfx::ViewMode::Default);
         bgfx::touch(id);
@@ -3735,7 +3843,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     declPass(V::ViewOnTop, true, configScene);
     declPass(V::ViewHighlight, true, configScene);
     for (int s = 0; s < int(V::NumOverlayViews); ++s)
-        declPass(V::ViewOverlay0 + s, s < int(overlays.size()),
+        declPass(V::ViewOverlay0 + s, s < int(frameOverlays.size()),
                  configOverlay);
     // After the overlays: everything ahead of these two passes is what
     // the accumulation covers. An overlay drawn from its own camera is
@@ -3844,7 +3952,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
     bgfx::setViewTransform(view->sinkView, nullptr, nullptr);
     bgfx::setViewMode(view->sinkView, bgfx::ViewMode::Default);
 
-    ++view->frame;
+    // One tick per wall-clock frame: a multi-sub-view frame stamps
+    // every submit with the same number, so the mesh TTL
+    // (lastUsed + 2 < frame) keeps meaning frames, not submits.
+    if (!subCtx.active || subCtx.first)
+        ++view->frame;
     view->drawcount = 0;
     // The submission phase starts here. A bgfx uniform holds its
     // value for the rest of the frame once set, so setting the
@@ -4048,7 +4160,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 maskedCull.cull(culler.hierarchy(), viewMat, projf,
                                 float(view->height), sceneCulled, owner);
             }
-            else if (caps && (caps->supported & BGFX_CAPS_OCCLUSION_QUERY)) {
+            else if (caps && (caps->supported & BGFX_CAPS_OCCLUSION_QUERY)
+                     && !subCtx.active) {
+                // Bypassed for sub-view frames: a query's verdict is
+                // per-camera and lands frames later -- alternating N
+                // cameras through the shared lease pool would apply
+                // one cell's answers to another's frame. The software
+                // masked cull above is stateless per pass and keeps
+                // working (docs/SplitViews.md sec 9.2).
                 driveOcclusionCull(*view, culler, cullBatch, cullQueries,
                                    viewMat, projf,
                                    float(view->height), sceneCulled,
@@ -5753,16 +5872,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // is what makes the exported colours mean anything, so an export
         // of a coloured result without it is the wrong picture -- and
         // the Coin path this stands in for always kept it.
-        const bool skipChrome = dumpPending && !pendingDump.overlays;
+        // Which feeds these are, and why some are dropped, is resolved
+        // in frameOverlays above.
         int slot = 0;
-        for (const auto &ov : overlays) {
-            const auto &ovAnchor = ov.second.anchor;
-            const bool isChrome =
-                !ovAnchor.sceneCamera
-                && (ovAnchor.corner != Render::OverlayAnchor::FullViewport
-                    || ovAnchor.pixelSpace);
-            if (skipChrome && isChrome)
-                continue;
+        for (const auto &ov : frameOverlays) {
             if (slot >= BGFXView::NumOverlayViews) {
                 static bool warned = false;
                 if (!warned) {
@@ -5781,7 +5894,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
             // with the main view+proj, so their billboard text keeps the
             // main-scene sizing (overlayAnchor stays null); pixelSpace
             // overlays carry no billboard text.
-            const Render::OverlayAnchor &anchor = ov.second.anchor;
+            const Render::OverlayAnchor &anchor = ov.second->anchor;
             if (!anchor.sceneCamera && !anchor.pixelSpace) {
                 view->overlayAnchor = &anchor;
                 // Rect pixel height the overlay renders into (mirrors the
@@ -5796,7 +5909,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 view->overlayAnchor = nullptr;
                 view->overlayRectHeight = 0.f;
             }
-            for (const auto &draw : ov.second.draws)
+            for (const auto &draw : ov.second->draws)
                 view->submit(draw, viewMat);
             ++slot;
         }
@@ -5837,7 +5950,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
     }
 
     cpuMark(CpuPostSel);
-    view->collectMeshes(publishedMeshes(), gatedOnlyMeshes);
+    // Collect once per wall frame, after the LAST sub-view has stamped
+    // what it uses -- an earlier submit would sweep meshes a later
+    // sub-view still draws this very frame.
+    if (!subCtx.active || subCtx.last)
+        view->collectMeshes(publishedMeshes(), gatedOnlyMeshes);
 
     // Anything that reached the discard view drew nothing: the pass
     // declaration above missed a case the submission side takes.
@@ -5878,6 +5995,15 @@ bool BGFXRenderer::Private::render(const QColor &col,
     uint32_t frameNum = 0;
 #ifdef FC_RENDERER_STANDALONE
     view->present();
+    if (subCtx.active && !subCtx.last) {
+        // A mid-sequence sub-view submit: its passes (present
+        // included) are queued; the frame boundary and the whole
+        // post-frame tail belong to the last submit
+        // (docs/SplitViews.md sec 9.2).
+        renderOk = true;
+        hasScene = !scene.empty();
+        return true;
+    }
     frameNum = timedBgfxFrame();
 #else
     // The output colour transform, when one is selected: encode the
@@ -5908,7 +6034,15 @@ bool BGFXRenderer::Private::render(const QColor &col,
     cpuMark(CpuCtxIn);
     QOpenGLContext::currentContext()->extraFunctions()
         ->glBindFramebuffer(GL_FRAMEBUFFER, GLuint(hostFbo));
-    view->blit(dumpPending ? &pendingDump : nullptr, &lastStats);
+    // A sub-view rect is stated in the DESTINATION framebuffer's own
+    // pixels -- the widget's device pixels -- because that is what the
+    // blit writes into and what the y-flip has to measure against.
+    view->blit(dumpPending ? &pendingDump : nullptr, &lastStats,
+               subCtx.active ? subCtx.x : 0,
+               subCtx.active ? subCtx.y : 0,
+               subCtx.active
+                   ? int(widget->height() * widget->devicePixelRatioF() + 0.5)
+                   : 0);
     cpuMark(CpuBlit);
     if (dumpPending && !pendingDump.overlays) {
         // That frame went to the screen as well as to the capture, and

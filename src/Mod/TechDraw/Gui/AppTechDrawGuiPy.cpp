@@ -35,6 +35,7 @@
 #include <Mod/Part/App/OCCError.h>
 #include <Mod/TechDraw/App/DrawPage.h>
 #include <Mod/TechDraw/App/DrawPagePy.h>
+#include <Mod/TechDraw/App/DrawViewPart.h>
 #include <Mod/TechDraw/App/DrawViewPy.h>  // generated from DrawViewPy.xml
 
 #include "MDIViewPage.h"
@@ -43,6 +44,13 @@
 #include "ViewProviderPage.h"
 #include "ViewProviderDrawingView.h"
 #include "PagePrinter.h"
+
+#include <QImage>
+
+#include <Gui/Renderer/Page2D.h>
+#include "PageFeed.h"
+#include "PageServe.h"
+#include "Rez.h"
 
 
 namespace TechDrawGui {
@@ -60,6 +68,18 @@ public:
         );
         add_varargs_method("exportPageAsSvg", &Module::exportPageAsSvg,
             "exportPageAsSvg(DrawPageObject, FilePath) -- print page as Svg to file."
+        );
+        add_varargs_method("renderPageVg", &Module::renderPageVg,
+            "renderPageVg(DrawPageObject, FilePath, [width, height]) -- render the page "
+            "through the vg 2D engine into an image file; returns a dict of feed counters."
+        );
+        add_varargs_method("servePage", &Module::servePage,
+            "servePage(DrawPageObject, port=0) -- serve the page over the scene stream "
+            "as its own document group; port > 0 starts the shared listener. Returns "
+            "the group name viewers join with."
+        );
+        add_varargs_method("unservePage", &Module::unservePage,
+            "unservePage(DrawPageObject) -- stop serving the page."
         );
         add_varargs_method("addQGIToView", &Module::addQGIToView,
             "addQGIToView(View, QGraphicsItem) -- insert graphics item into view's graphic."
@@ -209,6 +229,140 @@ private:
     }
 
 //!exportPageAsSvg(PageObject, FullPath)
+    //! Verification host for the 2D page engine (M2): feed the page into
+    //! a Render::Page2D and render it offscreen -- no scene, no widget.
+    Py::Object renderPageVg(const Py::Tuple& args)
+    {
+        PyObject* pageObj;
+        char* name;
+        int width = 1024;
+        int height = 768;
+        if (!PyArg_ParseTuple(args.ptr(), "Oet|ii", &pageObj, "utf-8", &name,
+                              &width, &height)) {
+            throw Py::TypeError("expected (Page, path, [width, height])");
+        }
+        std::string filePath(name);
+        PyMem_Free(name);
+
+        // The render path takes uint16 dimensions; validate before the
+        // cast or the QImage stride would outrun the pixel buffer.
+        if (width < 1 || height < 1 || width > 16384 || height > 16384) {
+            throw Py::ValueError("width/height must be within 1..16384");
+        }
+        if (!PyObject_TypeCheck(pageObj, &TechDraw::DrawPagePy::Type)) {
+            throw Py::TypeError("expected a Drawing Page");
+        }
+        auto page = static_cast<TechDraw::DrawPagePy*>(pageObj)
+                        ->getDrawPagePtr();
+
+        // HLR and face extraction run on worker threads; a caller that
+        // wants the full drawing pumps the event loop until this is 0.
+        long pendingViews = 0;
+        for (App::DocumentObject* obj : page->getAllViews()) {
+            auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(obj);
+            if (dvp && (dvp->waitingForHlr() || dvp->waitingForFaces()))
+                ++pendingViews;
+        }
+
+        // The annotation tier (dimensions, balloons, ...) converts the
+        // laid-out Qt scene items, and those exist only once the page
+        // was shown. Populate the scene here without any widget when a
+        // view has no item yet -- QGSPage is pure QGraphicsScene.
+        if (Gui::Document* gdoc =
+                Gui::Application::Instance->getDocument(page->getDocument())) {
+            auto vpp = dynamic_cast<TechDrawGui::ViewProviderPage*>(
+                gdoc->getViewProvider(page));
+            TechDrawGui::QGSPage* qgs = vpp ? vpp->getQGSPage() : nullptr;
+            if (qgs) {
+                bool missing = false;
+                for (App::DocumentObject* obj : page->getAllViews()) {
+                    if (!qgs->findQViewForDocObj(obj)) {
+                        missing = true;
+                        break;
+                    }
+                }
+                if (missing) {
+                    qgs->addChildrenToPage();
+                    qgs->redrawAllViews();
+                }
+                // A dimension's QGI is often created the moment
+                // page.addView() fires -- before its references are
+                // assigned -- and stays unparented (= placed at the
+                // scene origin) until something settles parentage; the
+                // shown path does this in fixOrphans.
+                qgs->setViewParents();
+            }
+        }
+
+        // Fit the page sheet into the target image. Page content lives
+        // at scene y in [-height, 0] (page coordinates are y-up). The
+        // zoom is known before the feed so the template rasterizes at
+        // the resolution it will actually show at.
+        const double sheetW = Rez::guiX(page->getPageWidth());
+        const double sheetH = Rez::guiX(page->getPageHeight());
+        Render::Page2D::View view;
+        if (sheetW > 0.0 && sheetH > 0.0)
+            view.zoom = (float)std::min(width / sheetW, height / sheetH);
+        view.panY = (float)(view.zoom * sheetH);
+
+        Render::Page2D page2d;
+        PageFeed::feedPage(page, page2d, PageFeed::Style(), view.zoom);
+        page2d.setView(view);
+
+        std::vector<uint8_t> rgba;
+        if (!page2d.renderOffscreen((uint16_t)width, (uint16_t)height, rgba)) {
+            throw Py::RuntimeError("vg offscreen render failed (bgfx?)");
+        }
+        QImage image(rgba.data(), width, height, width * 4,
+                     QImage::Format_RGBA8888);
+        if (!image.save(QString::fromUtf8(filePath.c_str()))) {
+            throw Py::RuntimeError("could not save image to " + filePath);
+        }
+
+        const Render::Page2D::Counters& counters = page2d.counters();
+        Py::Dict result;
+        result.setItem("itemRecords", Py::Long((long)counters.itemRecords));
+        result.setItem("listSubmits", Py::Long((long)counters.listSubmits));
+        result.setItem("droppedItems", Py::Long((long)counters.droppedItems));
+        result.setItem("imageUploads", Py::Long((long)counters.imageUploads));
+        result.setItem("pendingViews", Py::Long(pendingViews));
+        return result;
+    }
+
+    Py::Object servePage(const Py::Tuple& args)
+    {
+        PyObject* pageObj;
+        int port = 0;
+        if (!PyArg_ParseTuple(args.ptr(), "O|i", &pageObj, &port)) {
+            throw Py::TypeError("expected (Page, [port])");
+        }
+        if (!PyObject_TypeCheck(pageObj, &TechDraw::DrawPagePy::Type)) {
+            throw Py::TypeError("expected a Drawing Page");
+        }
+        auto page = static_cast<TechDraw::DrawPagePy*>(pageObj)
+                        ->getDrawPagePtr();
+        PageServe* source = PageServe::serve(page, port);
+        if (!source) {
+            throw Py::RuntimeError("could not serve the page");
+        }
+        return Py::String(source->group());
+    }
+
+    Py::Object unservePage(const Py::Tuple& args)
+    {
+        PyObject* pageObj;
+        if (!PyArg_ParseTuple(args.ptr(), "O", &pageObj)) {
+            throw Py::TypeError("expected (Page)");
+        }
+        if (!PyObject_TypeCheck(pageObj, &TechDraw::DrawPagePy::Type)) {
+            throw Py::TypeError("expected a Drawing Page");
+        }
+        auto page = static_cast<TechDraw::DrawPagePy*>(pageObj)
+                        ->getDrawPagePtr();
+        PageServe::unserve(page);
+        return Py::None();
+    }
+
     Py::Object exportPageAsSvg(const Py::Tuple& args)
     {
         PyObject *pageObj;

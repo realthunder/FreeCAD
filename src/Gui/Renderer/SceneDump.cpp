@@ -266,7 +266,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     (LightConfig::groundFollowCamera). A snapshot older than this
 //     was written by a build that only had the scene-bounds sizing, so
 //     it reads as off and lays its ground out the way it was measured.
-const uint32_t kVersion = 68;
+const uint32_t kVersion = 69;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -3259,6 +3259,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.f(a.marginX);    // v5
         w.f(a.marginY);
         w.b(a.sceneCamera); // v6
+        w.i32(a.subView);   // v69
         writeFeed(ov.draws, 0, true);
     }
 
@@ -3735,6 +3736,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 a.marginY = r.f();
             }
             a.sceneCamera = version >= 6 ? r.b() : false;
+            a.subView = version >= 69 ? r.i32() : 0;
             snap.overlays.push_back(std::move(ov));
             readFeed(snap.overlays.back().draws, GroupTarget::Overlay,
                      snap.overlays.size() - 1);
@@ -4289,6 +4291,95 @@ bool Render::spliceObjectDelta(
     std::memcpy(out.data() + spans.baseVersionAt, &baseVersion,
                 sizeof(baseVersion));
     return true;
+}
+
+bool Render::writeObjectSection(
+        std::vector<uint8_t> &out,
+        const std::vector<uint64_t> &removed,
+        const std::vector<SceneSnapshot::ObjectEntry> &entries,
+        const ChunkBytesFor *bytesFor)
+{
+    Writer w;
+    w.vec = &out;
+    std::vector<const SceneSnapshot::ObjectEntry *> refs;
+    refs.reserve(entries.size());
+    for (const auto &e : entries)
+        refs.push_back(&e);
+    ::writeObjectSection(w, removed, refs, bytesFor);
+    return w.ok;
+}
+
+bool Render::readObjectSection(
+        const uint8_t *&p, const uint8_t *end,
+        bool deltaForm,
+        std::vector<uint64_t> &removed,
+        std::vector<ObjectSectionEntry> &entries)
+{
+    // A bounds-checked cursor over the section bytes. The limits
+    // mirror the snapshot reader's (loadSnapshotFp): identity strings
+    // 0x1000, chunk keys 128, inline chunks 0x2000000, list sizes
+    // 0x1000000.
+    bool ok = true;
+    auto raw = [&](void *dst, size_t n) {
+        if (!ok || size_t(end - p) < n) {
+            ok = false;
+            return;
+        }
+        std::memcpy(dst, p, n);
+        p += n;
+    };
+    auto rU8 = [&]() { uint8_t v = 0; raw(&v, 1); return v; };
+    auto rU32 = [&]() { uint32_t v = 0; raw(&v, 4); return v; };
+    auto rU64 = [&]() { uint64_t v = 0; raw(&v, 8); return v; };
+    auto rStr = [&](std::string &s, uint32_t maxLen) {
+        uint32_t len = rU32();
+        if (!ok || len > maxLen || size_t(end - p) < len) {
+            ok = false;
+            return;
+        }
+        s.assign(reinterpret_cast<const char *>(p), len);
+        p += len;
+    };
+
+    uint32_t nremoved = rU32();
+    if (!ok || nremoved > 0x1000000u)
+        return false;
+    removed.reserve(removed.size() + nremoved);
+    for (uint32_t i = 0; ok && i < nremoved; ++i)
+        removed.push_back(rU64());
+
+    uint32_t nobj = rU32();
+    if (!ok || nobj > 0x1000000u)
+        return false;
+    entries.reserve(entries.size() + nobj);
+    for (uint32_t i = 0; ok && i < nobj; ++i) {
+        ObjectSectionEntry e;
+        e.entry.objectKey = rU64();
+        raw(e.entry.bbox, 6 * sizeof(float));
+        rStr(e.entry.info.doc, 0x1000u);
+        rStr(e.entry.info.obj, 0x1000u);
+        rStr(e.entry.info.label, 0x1000u);
+        rStr(e.entry.info.type, 0x1000u);
+        e.entry.incomplete = rU8() != 0;
+        // Always the out-of-band reference form (writeGroupRef): a
+        // format riding this codec has no inline-group alternative.
+        if (rU8() != 1)
+            return false;
+        rStr(e.entry.key, 128);
+        e.entry.size = rU32();
+        if (deltaForm && rU8()) {
+            uint32_t len = rU32();
+            if (!ok || len > 0x2000000u || size_t(end - p) < len)
+                return false;
+            e.inlineData.assign(p, p + len);
+            e.hasInline = true;
+            p += len;
+        }
+        if (!ok)
+            return false;
+        entries.push_back(std::move(e));
+    }
+    return ok;
 }
 
 bool Render::saveSceneSnapshot(const char *path, const SceneSnapshot &snap)

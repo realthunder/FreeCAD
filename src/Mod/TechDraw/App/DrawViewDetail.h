@@ -24,6 +24,7 @@
 #define DrawViewDetail_h_
 
 #include <gp_Ax2.hxx>
+#include <gp_Trsf.hxx>
 #include <TopoDS_Shape.hxx>
 
 #include <App/DocumentObject.h>
@@ -88,6 +89,18 @@ public:
 
     std::vector<DrawViewDetail*> getDetailRefs() const override;
     TopoDS_Shape getDetailShape() const { return m_detailShape; }
+    TopoDS_Shape getScaledShape() const { return m_scaledShape; }
+    //! the CS the scaled shape was projected through (the base view's
+    //! projection CS; the detail Rotation is baked into the shape)
+    gp_Ax2 getDetailViewAxis() const { return m_viewAxis; }
+
+    //! The exact build-time frames (doc sec 31), composed at detailExec
+    //! launch and committed with the shapes: m_detailShape -> global,
+    //! and m_scaledShape -> global (the latter carries the 1/Scale
+    //! factor).  False while no detail has finished, or when the base
+    //! chain has no rigid frame (an aligned complex section).
+    bool getDetailFrame(gp_Trsf& frame) const;
+    bool getScaledFrame(gp_Trsf& frame) const;
 
 protected:
     struct Output {
@@ -121,6 +134,17 @@ protected:
 
     TopoDS_Shape m_scaledShape;
     gp_Ax2 m_viewAxis;
+
+    // build-time frames; pendings are composed at detailExec launch
+    // from the same params the worker consumes, committed in
+    // onMakeDetailFinished.  Transient, like the shapes they describe.
+    gp_Trsf m_detailFrame;          // m_detailShape -> global
+    gp_Trsf m_scaledFrame;          // m_scaledShape -> global (with 1/Scale)
+    bool m_detailFrameValid = false;
+    bool m_scaledFrameValid = false;
+    gp_Trsf m_pendingDetailFrame;
+    gp_Trsf m_pendingScaledFrame;
+    bool m_pendingFramesValid = false;
 
     DrawViewPart* m_saveDvp;
     DrawViewSection* m_saveDvs;

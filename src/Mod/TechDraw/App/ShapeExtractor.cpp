@@ -356,3 +356,9 @@ TopoDS_Shape ShapeExtractor::getLocatedShape(const App::DocumentObject* docObj)
         return shape.getShape();
 }
 
+
+bool ShapeExtractor::isSketchObject(const App::DocumentObject* obj)
+{
+    // use name lookup to avoid a dependency on the Sketcher module
+    return obj->isDerivedFrom(Base::Type::fromName("Sketcher::SketchObject"));
+}

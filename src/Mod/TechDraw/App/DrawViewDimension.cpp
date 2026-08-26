@@ -69,6 +69,7 @@
 
 #include "DrawViewDimension.h"
 #include "DimensionFormatter.h"
+#include "DrawBrokenView.h"
 #include "DrawUtil.h"
 #include "DrawViewPart.h"
 #include "Geometry.h"
@@ -577,6 +578,20 @@ double DrawViewDimension::getDimValue()
         }
         if (Type.isValue("Distance") || Type.isValue("DistanceX") || Type.isValue("DistanceY")) {
             pointPair pts = getLinearPoints();
+            auto dbv = dynamic_cast<DrawBrokenView*>(getViewPart());
+            if (dbv) {
+                // raw pts from view are inverted Y, so we need to un-invert them
+                // before mapping.  raw pts are scaled, so we need to unscale them
+                // for mapPoint2dFromView, then rescale them for the distance
+                // calculation below.
+                double scale = getViewPart()->getScale();
+                pts.invertY();
+                pts.scale(1.0 / scale);
+                pts.first(dbv->mapPoint2dFromView(pts.first()));
+                pts.second(dbv->mapPoint2dFromView(pts.second()));
+                pts.invertY();
+                pts.scale(scale);
+            }
             Base::Vector3d dimVec = pts.first() - pts.second();
             if (Type.isValue("Distance")) {
                 result = dimVec.Length() / getViewPart()->getScale();

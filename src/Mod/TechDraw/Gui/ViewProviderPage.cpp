@@ -25,6 +25,7 @@
 #ifndef _PreComp_
 # include <QAction>
 # include <QList>
+# include <QMdiSubWindow>
 # include <QMenu>
 # include <QMessageBox>
 # include <QPointer>
@@ -303,7 +304,10 @@ bool ViewProviderPage::showMDIViewPage()
     m_graphicsView->centerOnPage();
 
     m_mdiView->viewAll();
-    m_mdiView->showMaximized();
+    // Maximizing is MDI-tab behavior; a view embedded in a split view
+    // cell keeps the cell's geometry.
+    if (qobject_cast<QMdiSubWindow*>(m_mdiView->parentWidget()))
+        m_mdiView->showMaximized();
 
     setGrid();
 
@@ -316,6 +320,14 @@ void ViewProviderPage::createMDIViewPage()
 {
     Gui::Document* doc = Gui::Application::Instance->getDocument(pcObject->getDocument());
     m_mdiView = new MDIViewPage(this, doc, Gui::getMainWindow());
+    // m_mdiView is a QPointer and clears itself, but m_graphicsView is
+    // raw and dies with the view (it is a Qt child of it). The MDI
+    // removal path below nulls it, but a view embedded in a split view
+    // cell (Gui::ViewArea) is deleted without passing through
+    // removeMDIView, so track destruction directly. Context is the
+    // scene: owned by this view provider, it outlives the view.
+    QObject::connect(m_mdiView, &QObject::destroyed, m_graphicsScene,
+                     [this]() { m_graphicsView = nullptr; });
     if (!m_graphicsView) {
         m_graphicsView = new QGVPage(this, m_graphicsScene, m_mdiView);
         std::string objName = m_pageName + "View";

@@ -22,6 +22,8 @@
  **************************************************************************/
 
 #include <QContextMenuEvent>
+#include <QCoreApplication>
+#include <QKeyEvent>
 #include <QMenu>
 
 
@@ -186,13 +188,11 @@ MaterialTreeWidget::~MaterialTreeWidget()
 
 QSize MaterialTreeWidget::sizeHint() const
 {
-    if (!m_expanded) {
-        // When not expanded, the size height is the same as m_material
-        QSize size = m_material->sizeHint();
-        size.setWidth(minimumWidth);
-        return size;
-    }
-    return QWidget::sizeHint();
+    // One row, always: the list is a popup window now and asks this
+    // widget for no room at all.
+    QSize size = m_material->sizeHint();
+    size.setWidth(minimumWidth);
+    return size;
 }
 
 QSize MaterialTreeWidget::treeSizeHint() const
@@ -202,20 +202,43 @@ QSize MaterialTreeWidget::treeSizeHint() const
 
 void MaterialTreeWidget::setTreeSizeHint(const QSize& hint)
 {
+    // The size of the popup rather than of a panel inside this widget,
+    // which is the same number doing the same job: how much list there
+    // is to see at once.
     m_treeSizeHint = hint;
     m_materialTree->setMinimumSize(m_treeSizeHint);
-    m_materialTree->adjustSize();
-    adjustSize();
+    if (m_popup->isVisible()) {
+        m_popup->resize(std::max(width(), m_treeSizeHint.width()),
+                        m_treeSizeHint.height());
+    }
+}
+
+int MaterialTreeWidget::iconExtent()
+{
+    auto treeParam = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Material/TreeWidget");
+    return qBound(MinIconExtent,
+                  int(treeParam->GetInt("IconSize", DefaultIconExtent)),
+                  MaxIconExtent);
 }
 
 void MaterialTreeWidget::createLayout()
 {
     m_material = new QLineEdit(this);
+    m_material->setPlaceholderText(tr("Type to search materials"));
+    m_material->setClearButtonEnabled(true);
     m_expand = new QPushButton(this);
     m_expand->setIcon(style()->standardIcon(QStyle::SP_TitleBarUnshadeButton));
-    m_materialTree = new QTreeView(this);
-    m_filterCombo = new QComboBox(this);
-    m_editor = new QPushButton(tr("Launch Editor"), this);
+    // The list is a popup, not a panel this widget makes room for. It
+    // held the dialogs open at five hundred pixels of tree whether or
+    // not anyone was choosing a material, and a picker is a thing you
+    // use for two seconds. Everything that belongs to choosing -- the
+    // tree, the filter, the way into the editor -- goes inside it.
+    m_popup = new QFrame(this, Qt::Popup);
+    m_popup->setFrameStyle(QFrame::StyledPanel | QFrame::Raised);
+    m_materialTree = new QTreeView(m_popup);
+    m_filterCombo = new QComboBox(m_popup);
+    m_editor = new QPushButton(tr("Launch Editor"), m_popup);
 
     m_materialTree->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
     m_materialTree->setMinimumSize(m_treeSizeHint);
@@ -229,9 +252,7 @@ void MaterialTreeWidget::createLayout()
 
     auto treeParam = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Material/TreeWidget");
-    const int extent = qBound(MinIconExtent,
-                              int(treeParam->GetInt("IconSize", DefaultIconExtent)),
-                              MaxIconExtent);
+    const int extent = iconExtent();
     m_materialTree->setIconSize(QSize(extent, extent));
 
     auto materialLayout = new QHBoxLayout();
@@ -239,22 +260,22 @@ void MaterialTreeWidget::createLayout()
     materialLayout->addWidget(m_expand);
     // materialLayout->setSizeConstraint(QLayout::SetMinimumSize);
 
-    auto treeLayout = new QHBoxLayout();
-    treeLayout->addWidget(m_materialTree);
-
     auto buttonLayout = new QHBoxLayout();
     buttonLayout->addWidget(m_filterCombo);
     buttonLayout->addItem(new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Preferred));
     buttonLayout->addWidget(m_editor);
 
+    auto popupLayout = new QVBoxLayout(m_popup);
+    popupLayout->setContentsMargins(0, 0, 0, 0);
+    popupLayout->addWidget(m_materialTree);
+    popupLayout->addItem(buttonLayout);
+
     auto layout = new QVBoxLayout();
     layout->setContentsMargins(0, 9, 0, 9);
     layout->addItem(materialLayout);
-    layout->addItem(treeLayout);
-    layout->addItem(buttonLayout);
     setLayout(layout);
 
-    setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
+    setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
 
     // Set the filter if using a filter list
     if (hasMultipleFilters()) {
@@ -263,9 +284,31 @@ void MaterialTreeWidget::createLayout()
 
     fillFilterCombo();
 
-    // Start in the previous expanded state
-    auto expanded = treeParam->GetBool("WidgetExpanded", false);
-    setExpanded(expanded);
+    // NOT the stored expanded state: that used to mean "the panel is
+    // already open", which cost nothing but height. Opening a popup
+    // window over the dialog the moment it appears is a different thing
+    // entirely, and not one anybody asked for.
+    m_expanded = false;
+    setFilterVisible(true);
+
+    // Typing searches, and searching shows what it found. Between them
+    // this is the whole interaction: the list opens when it has
+    // something to say and closes as soon as a material is picked.
+    m_material->installEventFilter(this);
+    m_popup->installEventFilter(this);
+    connect(m_material, &QLineEdit::textEdited, this, [this](const QString& text) {
+        // Growing text gets the rest of the name written for it and the
+        // card it names highlighted in the list; shrinking text does
+        // not, or Backspace would be undone as fast as it is pressed.
+        const bool grew = text.length() > m_typed.length();
+        m_typed = text;
+        filterTree(QModelIndex(), text);
+        showPopup();
+        if (grew) {
+            inlineComplete(text);
+        }
+    });
+    connect(m_materialTree, &QTreeView::clicked, this, &MaterialTreeWidget::onTreeClicked);
 
     connect(m_expand, &QPushButton::clicked, this, &MaterialTreeWidget::expandClicked);
     connect(m_editor, &QPushButton::clicked, this, &MaterialTreeWidget::editorClicked);
@@ -277,33 +320,197 @@ void MaterialTreeWidget::createLayout()
 
 void MaterialTreeWidget::setExpanded(bool open)
 {
-    m_materialTree->setVisible(open);
-    m_editor->setVisible(open);
-
-    setFilterVisible(open);
-
-    m_expanded = open;
-
     if (open) {
-        m_expand->setIcon(style()->standardIcon(QStyle::SP_TitleBarShadeButton));
+        showPopup();
     }
     else {
-        m_expand->setIcon(style()->standardIcon(QStyle::SP_TitleBarUnshadeButton));
+        hidePopup();
     }
+}
 
-    // m_materialTree->adjustSize();
-    adjustSize();
+void MaterialTreeWidget::showPopup()
+{
+    if (m_popup->isVisible()) {
+        return;
+    }
+    // Under the box and as wide as the whole widget, which is where a
+    // drop-down would be: the list belongs to the field it is filling
+    // in, and lining them up is what says so.
+    const QPoint corner = mapToGlobal(QPoint(0, height()));
+    const QSize size(std::max(width(), m_treeSizeHint.width()),
+                     m_treeSizeHint.height());
+    m_popup->setGeometry(QRect(corner, size));
+    m_popup->show();
+    // The keyboard stays in the line edit -- typing is the point -- and
+    // eventFilter() hands the arrow keys down to the tree.
+    m_material->setFocus();
+
+    m_expanded = true;
+    m_expand->setIcon(style()->standardIcon(QStyle::SP_TitleBarShadeButton));
     Q_EMIT onExpanded(m_expanded);
+}
+
+void MaterialTreeWidget::hidePopup()
+{
+    if (!m_popup->isVisible() && !m_expanded) {
+        return;
+    }
+    m_popup->hide();
+    m_expanded = false;
+    m_expand->setIcon(style()->standardIcon(QStyle::SP_TitleBarUnshadeButton));
+    Q_EMIT onExpanded(m_expanded);
+}
+
+bool MaterialTreeWidget::filterTree(const QModelIndex& parent, const QString& text)
+{
+    auto model = qobject_cast<QStandardItemModel*>(m_materialTree->model());
+    if (!model) {
+        return false;
+    }
+    bool anyShown = false;
+    for (int row = 0; row < model->rowCount(parent); ++row) {
+        const QModelIndex index = model->index(row, 0, parent);
+        // Depth first: a library is worth showing when something inside
+        // it matches, even though the library's own name does not.
+        const bool childShown = filterTree(index, text);
+        const bool selfShown =
+            text.isEmpty() || index.data(Qt::DisplayRole).toString().contains(text, Qt::CaseInsensitive);
+        const bool shown = selfShown || childShown;
+        m_materialTree->setRowHidden(row, parent, !shown);
+        if (childShown && !text.isEmpty()) {
+            // A branch kept for what is inside it has to be open, or the
+            // match sits behind a collapsed arrow and reads as no match.
+            m_materialTree->expand(index);
+        }
+        anyShown = anyShown || shown;
+    }
+    return anyShown;
+}
+
+QModelIndex MaterialTreeWidget::firstPrefixMatch(const QModelIndex& parent,
+                                                 const QString& text) const
+{
+    auto model = qobject_cast<QStandardItemModel*>(m_materialTree->model());
+    if (!model) {
+        return {};
+    }
+    for (int row = 0; row < model->rowCount(parent); ++row) {
+        const QModelIndex index = model->index(row, 0, parent);
+        if (m_materialTree->isRowHidden(row, parent)) {
+            continue;
+        }
+        // A card only: a library called "Steel Library" is not something
+        // the box can be completed to, because it cannot be chosen.
+        if (!index.data(Qt::UserRole).toString().isEmpty()
+            && index.data(Qt::DisplayRole).toString().startsWith(text, Qt::CaseInsensitive)) {
+            return index;
+        }
+        const QModelIndex found = firstPrefixMatch(index, text);
+        if (found.isValid()) {
+            return found;
+        }
+    }
+    return {};
+}
+
+void MaterialTreeWidget::inlineComplete(const QString& typed)
+{
+    if (typed.isEmpty()) {
+        return;
+    }
+    const QModelIndex match = firstPrefixMatch(QModelIndex(), typed);
+    if (!match.isValid()) {
+        return;
+    }
+    const QString name = match.data(Qt::DisplayRole).toString();
+    {
+        // Only the text: selecting the row in the tree would apply the
+        // material, and a name half typed is not a decision yet.
+        QSignalBlocker block(m_material);
+        m_material->setText(name);
+        // The part nobody typed stays selected, so the next keystroke
+        // replaces it and Enter accepts it.
+        m_material->setSelection(int(typed.length()), int(name.length() - typed.length()));
+    }
+    // NoUpdate: current, not selected. Selecting is what applies a
+    // material, and a name half typed is not a decision yet.
+    m_materialTree->selectionModel()->setCurrentIndex(match, QItemSelectionModel::NoUpdate);
+    m_materialTree->scrollTo(match);
+}
+
+void MaterialTreeWidget::onTreeClicked(const QModelIndex& index)
+{
+    // Selecting is what applies the material (onSelectMaterial); this
+    // decides only whether the list has finished its job. A library or a
+    // folder has no uuid and is something to open, not something to
+    // choose.
+    if (index.data(Qt::UserRole).toString().isEmpty()) {
+        m_materialTree->setExpanded(index, !m_materialTree->isExpanded(index));
+        return;
+    }
+    // A row reached with the arrow keys is current but not selected --
+    // inlineComplete() leaves it that way on purpose -- and selecting is
+    // what applies it. A row that was clicked is already selected, and
+    // selecting it again changes nothing.
+    m_materialTree->selectionModel()->select(index, QItemSelectionModel::ClearAndSelect);
+    hidePopup();
+}
+
+bool MaterialTreeWidget::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == m_popup && event->type() == QEvent::Hide) {
+        // A Qt::Popup closes itself on the first click outside it, so
+        // this is where the arrow on the button learns about it.
+        m_expanded = false;
+        m_expand->setIcon(style()->standardIcon(QStyle::SP_TitleBarUnshadeButton));
+        Q_EMIT onExpanded(false);
+        return false;
+    }
+    if (watched != m_material) {
+        return QWidget::eventFilter(watched, event);
+    }
+    if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::FocusIn) {
+        // Clicking the box offers everything, the way clicking a
+        // drop-down does. Whatever was typed stays as the filter.
+        showPopup();
+    }
+    else if (event->type() == QEvent::KeyPress && m_popup->isVisible()) {
+        auto key = static_cast<QKeyEvent*>(event)->key();
+        switch (key) {
+            case Qt::Key_Escape:
+                hidePopup();
+                return true;
+            case Qt::Key_Up:
+            case Qt::Key_Down:
+            case Qt::Key_PageUp:
+            case Qt::Key_PageDown:
+                // Walking the list without leaving the box: the tree is
+                // where the keys mean something, and the box is where
+                // the next character has to land.
+                QCoreApplication::sendEvent(m_materialTree, event);
+                return true;
+            case Qt::Key_Return:
+            case Qt::Key_Enter: {
+                const QModelIndex current = m_materialTree->currentIndex();
+                if (current.isValid()) {
+                    onTreeClicked(current);
+                }
+                return true;
+            }
+            default:
+                break;
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void MaterialTreeWidget::setFilterVisible(bool open)
 {
-    if (open && hasMultipleFilters()) {
-        m_filterCombo->setVisible(true);
-    }
-    else {
-        m_filterCombo->setVisible(false);
-    }
+    // The combo lives in the popup, so it is shown exactly when it has
+    // something to choose between; \a open is what it used to depend on
+    // and is now the popup's own business.
+    Q_UNUSED(open)
+    m_filterCombo->setVisible(hasMultipleFilters());
 }
 
 void MaterialTreeWidget::fillFilterCombo()

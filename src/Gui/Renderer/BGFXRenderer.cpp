@@ -22,6 +22,7 @@
 
 
 #include "BGFXRendererP.h"
+#include "Vg2D.h"
 
 extern "C" int _main_(int, char**) {
     return 0;
@@ -99,6 +100,231 @@ bool BGFXRenderer::render(const QColor &col,
     return ok;
 }
 
+/// With a split layout up no sub is bank 0, so the implicit
+/// full-canvas bank's targets -- a whole MSAA scene + AO + OIT set at
+/// canvas size -- are dead weight. Release them (the same dance
+/// dropSubView does); clearing the layout rebuilds through the
+/// ordinary fresh-bank path, and the clear adopts a 3D cell's camera,
+/// so the bank carries no state worth keeping either.
+static void releaseBankZero(BGFXView *view,
+                            const Render::Renderer::SubViewFrame *subs,
+                            int count)
+{
+    for (int i = 0; i < count; ++i) {
+        if (subs[i].id == 0)
+            return;
+    }
+    const bool bank0Held = view->activeSub == 0
+        ? bgfx::isValid(view->bgfxFbo)
+        : (view->subBanks.count(0)
+           && bgfx::isValid(view->subBanks.at(0).bgfxFbo));
+    if (!bank0Held)
+        return;
+    const int park = subs[0].id;
+    view->selectSubView(0);
+    view->destroyTargets();
+    _BGFXLib.releaseIds(view->viewId, view->viewSpan);
+    view->selectSubView(park);
+    view->subBanks.erase(0);
+}
+
+bool BGFXRenderer::renderSubViews(const QColor &col,
+                                  const SubViewFrame *subs, int count)
+{
+#ifndef FC_RENDERER_STANDALONE
+    // Desktop (docs/SplitViews.md sec 13): the host is ONE canvas
+    // widget, and each sub-view submit is an ordinary desktop frame --
+    // render into the bank's sized targets (the captureWidth override
+    // is the sizing channel, exactly as renderOffscreen uses it), then
+    // blit color + depth into the caller's bound framebuffer at the
+    // sub-view rect. No wall-frame batching: there is no backbuffer
+    // swap on this path, the blit IS the composition, and per-submit
+    // frame boundaries reclaim destroys so fresh banks allocate
+    // against a drained pool without a warm-up pass.
+    if (!subs || count <= 0)
+        return false;
+    if (count == 1 && subs[0].id == 0)
+        return render(col, subs[0].viewMatrix, subs[0].projMatrix);
+    {
+        auto vit0 = _BGFXLib.views.find(pimpl->widget);
+        if (vit0 != _BGFXLib.views.end())
+            releaseBankZero(vit0->second.get(), subs, count);
+    }
+    bool ok = true;
+    for (int i = 0; i < count; ++i) {
+        const SubViewFrame &s = subs[i];
+        if (s.width <= 0 || s.height <= 0) {
+            ok = false;
+            continue;
+        }
+        auto &ctx = pimpl->subCtx;
+        ctx = {};
+        ctx.active = true;
+        ctx.first = (i == 0);
+        ctx.last = (i == count - 1);
+        ctx.id = s.id;
+        ctx.x = s.x;
+        ctx.y = s.y;
+        ctx.w = s.width;
+        ctx.h = s.height;
+        ctx.style = s.drawStyle;
+        _BGFXLib.captureWidth = uint16_t(s.width);
+        _BGFXLib.captureHeight = uint16_t(s.height);
+        ok = render(col, s.viewMatrix, s.projMatrix) && ok;
+    }
+    pimpl->subCtx = {};
+    _BGFXLib.captureWidth = 0;
+    _BGFXLib.captureHeight = 0;
+    // As on the standalone side: every submit crossed a frame
+    // boundary, so a bank that latched targetsFailed is owed its
+    // one retry per wall frame.
+    auto vit = _BGFXLib.views.find(pimpl->widget);
+    if (vit != _BGFXLib.views.end()) {
+        vit->second->targetsFailed = false;
+        for (auto &b : vit->second->subBanks)
+            b.second.targetsFailed = false;
+    }
+    return ok;
+#else
+    if (!subs || count <= 0)
+        return false;
+    if (count == 1 && subs[0].id == 0)
+        return render(col, subs[0].viewMatrix, subs[0].projMatrix);
+    auto vit0 = _BGFXLib.views.find(pimpl->widget);
+    BGFXView *view =
+        vit0 != _BGFXLib.views.end() ? vit0->second.get() : nullptr;
+    if (view)
+        releaseBankZero(view, subs, count);
+    bool ok = true;
+    for (int i = 0; i < count; ++i) {
+        const SubViewFrame &s = subs[i];
+        if (s.width <= 0 || s.height <= 0) {
+            ok = false;
+            continue;
+        }
+        auto &ctx = pimpl->subCtx;
+        ctx.active = true;
+        ctx.first = (i == 0);
+        ctx.last = (i == count - 1);
+        ctx.id = s.id;
+        ctx.x = s.x;
+        ctx.y = s.y;
+        ctx.w = s.width;
+        ctx.h = s.height;
+        ctx.style = s.drawStyle;
+        _BGFXLib.standaloneSubWidth = uint16_t(s.width);
+        _BGFXLib.standaloneSubHeight = uint16_t(s.height);
+        const bool subOk = render(col, s.viewMatrix, s.projMatrix);
+        ok = subOk && ok;
+        // The frame boundary lives in the LAST submit; if that one
+        // bailed before reaching it, cross it here so the earlier
+        // sub-views' queued work (and any queued destroys) still
+        // executes rather than piling into the next frame.
+        if (ctx.last && !subOk)
+            bgfx::frame();
+    }
+    pimpl->subCtx = {};
+    _BGFXLib.standaloneSubWidth = 0;
+    _BGFXLib.standaloneSubHeight = 0;
+    // A bank whose init found the handle pool full latched
+    // targetsFailed, and on the desktop nothing clears it until a
+    // size or program change -- because a bailed single-view frame
+    // never reaches bgfx::frame(). A multi-sub-view frame DOES (the
+    // healthy siblings pump it, or the drain above), so the destroyed
+    // handles are reclaimed every wall frame and one retry per frame
+    // neither spins nor eats the pool it waits on.
+    auto vit = _BGFXLib.views.find(pimpl->widget);
+    if (vit != _BGFXLib.views.end()) {
+        vit->second->targetsFailed = false;
+        for (auto &b : vit->second->subBanks)
+            b.second.targetsFailed = false;
+    }
+    return ok;
+#endif
+}
+
+void BGFXRenderer::dropSubView(int id)
+{
+    if (id == 0)
+        return;
+    auto it = _BGFXLib.views.find(pimpl->widget);
+    if (it == _BGFXLib.views.end())
+        return;
+    BGFXView *view = it->second.get();
+    if (view->activeSub != id && !view->subBanks.count(id))
+        return;
+    // Load the bank, take its targets and id block, and drop it. The
+    // queued destroys execute at the next frame boundary.
+    view->selectSubView(id);
+    view->destroyTargets();
+    _BGFXLib.releaseIds(view->viewId, view->viewSpan);
+    view->selectSubView(0);
+    view->subBanks.erase(id);
+}
+
+void BGFXRenderer::prepareSubViews(const QColor &col,
+                                   const SubViewFrame *subs, int count)
+{
+#ifndef FC_RENDERER_STANDALONE
+    // Desktop submits each cross their own frame boundary, so fresh
+    // banks already allocate against a reclaimed pool -- no warm-up
+    // pass; only the full-canvas bank release applies.
+    (void)col;
+    if (!subs || count <= 0)
+        return;
+    auto it = _BGFXLib.views.find(pimpl->widget);
+    if (it != _BGFXLib.views.end())
+        releaseBankZero(it->second.get(), subs, count);
+#else
+    if (!subs || count <= 0)
+        return;
+    auto it = _BGFXLib.views.find(pimpl->widget);
+    BGFXView *view =
+        it != _BGFXLib.views.end() ? it->second.get() : nullptr;
+    // No view yet means no first frame yet: that frame builds
+    // everything from scratch anyway, with nothing to reclaim.
+    if (!view)
+        return;
+    releaseBankZero(view, subs, count);
+    // Warm every unseen id: a fresh bank allocates a full target set,
+    // and stacked on the resident banks (plus whatever destroys the
+    // layout change just queued -- released old-size targets, dropped
+    // banks, bank 0 above) that create burst can exhaust the handle
+    // pool mid-frame, latching targetsFailed and rendering the cell
+    // black for its first frame ("sub-view N frame bailed"). A warm
+    // submit runs the frame path only through target allocation
+    // (subCtx.warm, with the in-frame retry available because nothing
+    // of an on-screen frame is queued between frames), and the frame
+    // boundary after each realizes its creates and reclaims the
+    // queued destroys before the next bank allocates. These extra
+    // frames draw nothing and, in the browser, never composite.
+    for (int i = 0; i < count; ++i) {
+        const SubViewFrame &s = subs[i];
+        if (s.width <= 0 || s.height <= 0)
+            continue;
+        if (s.id == view->activeSub || view->subBanks.count(s.id))
+            continue;
+        auto &ctx = pimpl->subCtx;
+        ctx = {};
+        ctx.active = true;
+        ctx.warm = true;
+        ctx.id = s.id;
+        ctx.x = s.x;
+        ctx.y = s.y;
+        ctx.w = s.width;
+        ctx.h = s.height;
+        ctx.style = s.drawStyle;
+        _BGFXLib.standaloneSubWidth = uint16_t(s.width);
+        _BGFXLib.standaloneSubHeight = uint16_t(s.height);
+        pimpl->render(col, s.viewMatrix, s.projMatrix);
+        bgfx::frame();
+    }
+    pimpl->subCtx = {};
+    _BGFXLib.standaloneSubWidth = 0;
+    _BGFXLib.standaloneSubHeight = 0;
+#endif
+}
+
 bool BGFXRenderer::renderOffscreen(const QColor &col,
                                    const void *viewMatrix,
                                    const void *projMatrix,
@@ -117,12 +343,175 @@ bool BGFXRenderer::renderOffscreen(const QColor &col,
     // on-screen frame sees the mismatch and sizes the view back.
     _BGFXLib.captureWidth = uint16_t(width);
     _BGFXLib.captureHeight = uint16_t(height);
-    const bool ok = render(col, viewMatrix, projMatrix);
+    bool ok = false;
+    if (pimpl->captureSceneActive)
+        ok = renderSwappedScene(Render::DrawCallList(pimpl->captureScene),
+                                col, viewMatrix, projMatrix);
+    else if (pimpl->captureFilter)
+        ok = renderFiltered(col, viewMatrix, projMatrix);
+    else
+        ok = render(col, viewMatrix, projMatrix);
     _BGFXLib.captureWidth = 0;
     _BGFXLib.captureHeight = 0;
     return ok;
 #endif
 }
+
+bool BGFXRenderer::setCaptureFilter(
+        const std::vector<std::pair<std::string, std::string>> &objects)
+{
+#ifdef FC_RENDERER_STANDALONE
+    (void)objects;
+    return false;
+#else
+    pimpl->captureFilter = false;
+    pimpl->captureKeys.clear();
+    if (objects.empty())
+        return false;
+    // Resolve identities to objectKeys through the resident table. One
+    // object owns any number of keys (one per producing node path).
+    std::unordered_map<uint64_t, size_t> keyOwner;
+    for (const auto &entry : pimpl->objectInfo) {
+        for (size_t i = 0; i < objects.size(); ++i) {
+            if (entry.second.doc == objects[i].first
+                    && entry.second.obj == objects[i].second) {
+                keyOwner.emplace(entry.first, i);
+                break;
+            }
+        }
+    }
+    if (keyOwner.empty())
+        return false;
+    // Every named object must have at least one draw in the RESIDENT
+    // scene: the info table keeps residue for keys that left, and a
+    // 3D-hidden object has no draws at all -- a capture that silently
+    // omitted a source would register a wrong picture, so the caller
+    // gets a refusal to fall back on instead.
+    std::vector<char> present(objects.size(), 0);
+    for (const auto &draw : pimpl->scene) {
+        auto it = keyOwner.find(draw.objectKey);
+        if (it != keyOwner.end())
+            present[it->second] = 1;
+    }
+    for (char c : present)
+        if (!c)
+            return false;
+    pimpl->captureKeys.reserve(keyOwner.size());
+    for (const auto &entry : keyOwner)
+        pimpl->captureKeys.insert(entry.first);
+    pimpl->captureFilter = true;
+    return true;
+#endif
+}
+
+void BGFXRenderer::clearCaptureFilter()
+{
+    pimpl->captureFilter = false;
+    pimpl->captureKeys.clear();
+}
+
+bool BGFXRenderer::setCaptureScene(DrawCallList &&draws)
+{
+#ifdef FC_RENDERER_STANDALONE
+    (void)draws;
+    return false;
+#else
+    pimpl->captureScene.clear();
+    pimpl->captureSceneActive = false;
+    if (draws.empty())
+        return false;
+    pimpl->captureScene = std::move(draws);
+    pimpl->captureSceneActive = true;
+    return true;
+#endif
+}
+
+void BGFXRenderer::clearCaptureScene()
+{
+    pimpl->captureScene.clear();
+    pimpl->captureSceneActive = false;
+}
+
+#ifndef FC_RENDERER_STANDALONE
+// The capture frame with the object filter applied: swap in a scene
+// reduced to the filtered draws. drawListVersion is deliberately NOT
+// bumped by the swap (renderSwappedScene): the mesh collector's
+// keep-set stays the full scene's, so no resident buffer is freed
+// behind the on-screen view by a capture.
+bool BGFXRenderer::renderFiltered(const QColor &col,
+                                  const void *viewMatrix,
+                                  const void *projMatrix)
+{
+    auto &p = *pimpl;
+    Render::DrawCallList filtered;
+    filtered.reserve(p.scene.size());
+    for (const auto &draw : p.scene)
+        if (p.captureKeys.count(draw.objectKey))
+            filtered.push_back(draw);
+    return renderSwappedScene(std::move(filtered), col, viewMatrix, projMatrix);
+}
+
+// The shared capture-frame body: swap \a scene in for the resident
+// feeds with the selection / preselection / overlay feeds stripped and
+// a flat transparent background, render -- with settle frames first,
+// so temporal accumulation converges on the capture camera before the
+// frame that is read back -- then restore every feed. Works for both
+// resident draws (the object filter) and freshly translated ones (the
+// supplied capture scene): meshes the resident keep-set does not cover
+// upload on demand at submission, like the highlight feed's, and
+// TTL-collect once the capture stops drawing them.
+bool BGFXRenderer::renderSwappedScene(Render::DrawCallList &&sceneDraws,
+                                      const QColor &col,
+                                      const void *viewMatrix,
+                                      const void *projMatrix)
+{
+    auto &p = *pimpl;
+    if (sceneDraws.empty())
+        return false;
+
+    auto savedScene = std::move(p.scene);
+    p.scene = std::move(sceneDraws);
+    auto savedSelections = std::move(p.selections);
+    p.selections.clear();
+    auto savedOverlays = std::move(p.overlays);
+    p.overlays.clear();
+    auto savedHighlight = std::move(p.highlight);
+    p.highlight.clear();
+    // hiddenKeys hides scene draws whose whole-object on-top selection
+    // copies draw instead; those copies were just stripped.
+    auto savedHidden = std::move(p.hiddenKeys);
+    p.hiddenKeys.clear();
+    const Render::Background savedBackground = p.background;
+    p.background = Render::Background();
+    p.background.fromColor = 0xFFFFFFFFu;// opaque white; the caller keys it
+    // The viewer feeds its lights for the INTERACTIVE camera; under
+    // the capture camera they can point anywhere. The default config
+    // asks for the fixed camera-aligned headlight.
+    const Render::ViewLightConfig savedLights = p.viewlightconf;
+    p.viewlightconf = Render::ViewLightConfig();
+    ++p.cullSceneVersion;
+    p.buildInstanceGroups();
+    p.sceneDirty = true;
+
+    constexpr int kCaptureSettleFrames = 8;
+    bool ok = false;
+    for (int i = 0; i < kCaptureSettleFrames; ++i)
+        ok = render(col, viewMatrix, projMatrix);
+
+    p.scene = std::move(savedScene);
+    p.selections = std::move(savedSelections);
+    p.overlays = std::move(savedOverlays);
+    p.highlight = std::move(savedHighlight);
+    p.hiddenKeys = std::move(savedHidden);
+    p.background = savedBackground;
+    p.viewlightconf = savedLights;
+    ++p.cullSceneVersion;
+    p.buildInstanceGroups();
+    p.sceneDirty = true;
+    p.levelPlanner.markDirty();
+    return ok;
+}
+#endif
 
 bool BGFXRenderer::publish(const QColor &col,
                            const void *viewMatrix,
@@ -945,6 +1334,48 @@ bool BGFXRendererLib::warmup(QOpenGLWidget *widget, const std::string &type,
     return true;
 }
 
+bool BGFXRendererLib::deviceSharesQtGL() const
+{
+#ifdef FC_RENDERER_STANDALONE
+    return false;
+#else
+    // currentType is OpenGL only when prepare() took the GL path (the
+    // context handed to bgfx is the Qt one built against the global
+    // share context); a positive view limit is the proof some init
+    // actually succeeded -- getCaps() is the zeroed global until then.
+    // getRendererType() is the running device's own answer: prepare()
+    // leaves currentType set when its init lost the race to a device
+    // somebody else (Page2D's headless Vulkan) already brought up, and
+    // trusting currentType alone would hand a Vulkan handle to a GL
+    // compositor.
+    return _BGFXLib.currentType == RendererType::OpenGL
+        && _BGFXLib.context != nullptr
+        && QOpenGLContext::globalShareContext() != nullptr
+        && bgfx::getCaps()->limits.maxViews > 0
+        && bgfx::getRendererType() == bgfx::RendererType::OpenGL;
+#endif
+}
+
+bool BGFXRendererLib::deviceMakeCurrent()
+{
+#ifdef FC_RENDERER_STANDALONE
+    return false;
+#else
+    if (!deviceSharesQtGL())
+        return false;
+    _BGFXLib.makeCurrent();
+    return QOpenGLContext::currentContext() == _BGFXLib.context.get();
+#endif
+}
+
+void BGFXRendererLib::deviceDoneCurrent()
+{
+#ifndef FC_RENDERER_STANDALONE
+    if (_BGFXLib.context)
+        _BGFXLib.doneCurrent();
+#endif
+}
+
 DrawDevice *BGFXRendererLib::drawDevice() const
 {
 #ifdef FC_RENDERER_STANDALONE
@@ -1024,6 +1455,12 @@ bool BGFXRendererLibP::reserveIds(uint16_t &id, uint16_t &span,
     if (granules.empty()) {
         const uint32_t maxViews = bgfx::getCaps()->limits.maxViews;
         granules.assign(maxViews / kIdGranule, 0);
+        // The top granule belongs to Page2D::renderOffscreen, which
+        // draws on the fixed id pair just under the ceiling; a viewer
+        // block landing there would have its draws redirected into the
+        // page's framebuffer.
+        if (!granules.empty())
+            granules.back() = 1;
     }
     if (span >= need)
         return true;
@@ -1058,6 +1495,10 @@ bool BGFXRendererLibP::reserveIds(uint16_t &id, uint16_t &span,
 void BGFXRendererLibP::releaseBlock(BGFXView *view)
 {
     releaseIds(view->viewId, view->viewSpan);
+    // Inactive sub-view banks hold id blocks of their own
+    // (docs/SplitViews.md sec 9.2).
+    for (auto &v : view->subBanks)
+        releaseIds(v.second.viewId, v.second.viewSpan);
 }
 
 bool BGFXRendererLibP::reserveBlock(BGFXView *view, uint16_t need)
@@ -1653,6 +2094,10 @@ void BGFXRendererLibP::shutdown()
             bgfx::destroy(v.second.prog);
     }
     userPrograms.clear();
+    // The 2D page engine's vg context lives on this device: destroy it
+    // while bgfx is still alive, and bump its generation so retained
+    // pages forget their now-dead command list handles.
+    Vg2D::instance().shutdown();
     bgfx::shutdown();
 #ifndef FC_RENDERER_STANDALONE
     if (window) {

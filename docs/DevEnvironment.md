@@ -80,6 +80,12 @@ printf 'qt6-main ==6.11.2\npyside6 ==6.11.2\nvtk-base ==9.6.2\nvtk-io-ffmpeg ==9
   > ~/works/sw/fcad/.conda/freecad/conda-meta/pinned
 ```
 
+Two things the create line deliberately leaves out, because neither may be
+solved normally in this env: `smesh` (see
+[FEM](#fem-and-the-external-smesh-it-links)) and `ifcopenshell` (see
+[IfcOpenShell](#ifcopenshell-for-archbim)). Both link OCCT, and both must
+arrive without conda-forge's `occt`.
+
 Notes on non-obvious packages: `expat` (not just `libexpat`) so Coin's
 `USE_EXTERNAL_EXPAT` finds headers; the `libgl*/libegl*-devel` set provides GL headers
 and libs the conda toolchain uses instead of the system's; `fmt`/`pybind11` are wanted
@@ -333,6 +339,60 @@ Two different consumers, easy to confuse:
   depend on netgen either, so shipping without it is no worse than upstream;
   the `NetgenPythonPath` preference points it at a prefix of its own, exactly as
   `gmshBinaryPath` does for gmsh.
+
+### IfcOpenShell, for Arch/BIM
+
+**IfcOpenShell is part of the standard dev env**, the same way FEM is. Without it
+the BIM workbench loads but every IFC path in it is dead: `nativeifc` imports,
+the import/export commands appear, and the first one that touches a file raises
+`No module named 'ifcopenshell'`. It is a Python package, so nothing in the
+build depends on it -- which is exactly why it kept being left out.
+
+*** **Whatever supplies it must not bring an `occt` with it.** IfcOpenShell
+links OCCT, and every packaged build depends on the conda-forge `occt`. Letting
+that in puts a second OCCT in the prefix under the *same* library names as our
+fork's local install, and the process then runs whichever the loader reached
+first -- the same hazard the smesh section describes, and the reason smesh is
+installed with no `occt` either. The two boxes answer it differently:
+
+| | what supplies it | 2D booleans via libarea |
+|---|---|---|
+| Linux | the fork built from source into the conda prefix | yes |
+| Windows | conda-forge `ifcopenshell`, installed without `occt` | no |
+
+On Linux it is the fork (`realthunder/IfcOpenShell`, branch `LinkVibe`),
+rebuilt into the conda prefix so it links `libarea.so.1` -- see the ledger in
+`docs/CAMPort.md`, which is also where the one open question about that path
+lives.
+
+On Windows there is no fork build, and the packaged one is upstream 0.8.5:
+
+```bat
+:: ifc_explicit.txt -- @EXPLICIT, then the URLs conda solved for, minus occt:
+::   cgal-cpp geos gflags gmp mpfr rocksdb shapely ifcopenshell
+conda install -p <env> -y --file ifc_explicit.txt
+```
+
+Get that URL list by solving `ifcopenshell` into a **throwaway env** that
+carries this env's python and pins, then subtracting what is already installed
+and dropping `occt` (and the `vtk` metapackage, which only enters through
+occt's `all_` variant). The explicit-file form is required for the reason the
+smesh section gives -- no plain `conda install` solves in this env any more.
+
+**The version skew is real and it works.** conda-forge builds ifcopenshell
+0.8.5 against occt **8.0.0**; our fork is 8.0.1. With no occt in the prefix its
+`TK*.dll` imports are answered by the fork build `FreeCAD.exe` has already
+loaded, and the whole path holds -- `ifcopenshell.geom` imports (that is the
+half that links OCCT; the bare `import ifcopenshell` does not), and an
+`IfcExtrudedAreaSolid` tessellates through it. Measured, not assumed; a symbol
+mismatch would show as "the specified procedure could not be found". Re-check
+it after either side moves.
+
+What Windows gives up by taking the packaged build is the fork's 2D boolean
+path -- `boolean_subtraction_2d_using_area`, the one that goes through libarea
+rather than the 3D kernel. Closing that means building the fork here, or
+rewiring `ifcopenshell-feedstock` off the upstream tarball onto the `LinkVibe`
+branch, which `docs/CAMPort.md` already lists as a separate job.
 
 ### An optimized stack, for measuring anything
 
@@ -668,19 +728,33 @@ resolved to `conda.anaconda.org` — so give the channel URL directly.
 ::   pkgs_dirs / envs_dirs pointed at the big drive
 conda create -y -p D:\Zheng.Lei\sw\fcad\.conda\freecad ^
   --override-channels -c https://prefix.dev/conda-forge ^
-  python=3.12 qt6-main=6.10.1 pyside6=6.10.1 ^
+  python=3.12 qt6-main=6.11.2 pyside6=6.11.2 qt6-webengine=6.11.2 ^
   cmake ninja swig pkg-config ^
-  libboost-devel=1.85 eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype expat ^
-  fmt pybind11 numpy matplotlib-base
+  libboost-devel=1.90 eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype expat ^
+  fmt pybind11 numpy matplotlib-base ^
+  tbb-devel "vtk-base==9.6.2" "vtk-io-ffmpeg==9.6.2" libmed hdf5 libxml2-devel lazy_loader
 ```
 
-Pin `qt6-main`, `pyside6` and the three `libboost*` packages in
-`<env>\conda-meta\pinned` so a later `conda install` cannot bump them.
+The Qt/boost/vtk trio is the one the Linux stack pins, and for the same reason:
+it is the stack conda-forge builds smesh against. See the Linux
+[FEM section](#fem-and-the-external-smesh-it-links) for why the three cannot be
+chosen independently. Pin them in `<env>\conda-meta\pinned` so a later
+`conda install` cannot bump them:
 
-**Boost must be 1.85, not current.** `SetupBoost.cmake` requires the `system`
-component, but Boost.System has been header-only since 1.69 and 1.91 ships no
-`boost_system` library and no CMake config for it, so `find_package` fails outright.
-1.85 also matches the Linux box.
+```
+qt6-main ==6.11.2
+qt6-webengine ==6.11.2
+pyside6 ==6.11.2
+vtk-base ==9.6.2
+vtk-io-ffmpeg ==9.6.2
+python ==3.12.*
+```
+
+**Boost 1.85 used to be forced here; it no longer is.** `SetupBoost.cmake`
+required the `system` component, which has been header-only since 1.69 and which
+current Boost ships neither as a library nor as a CMake config, so `find_package`
+failed outright. That request is gone, and the stack moved to 1.90 with the rest
+of the FEM dependencies.
 
 **PySide6 quirk, the Windows form of the one the Linux stack has.**
 `PySide6Config.cmake` computes `PACKAGE_PREFIX_DIR` as `<env>\Library` and then
@@ -693,7 +767,78 @@ mklink /J "<env>\Library\typesystems" "<env>\Library\share\PySide6\typesystems"
 mklink /J "<env>\Library\glue"        "<env>\Library\share\PySide6\glue"
 ```
 
-Redo them after any pyside6 reinstall.
+Redo them after any pyside6 reinstall -- a plain version bump keeps them, because
+the junction targets under `share\PySide6\` survive it.
+
+### SMESH: install it without letting conda resolve `occt`
+
+`smesh` comes from the **realthunder** channel (conda-forge has no occt 8.x
+build), and it has to arrive without its `occt` dependency: conda-forge's occt
+would put a second OCCT in the env carrying the same `TK*.dll` names as our
+fork's local install, and whichever the loader reaches first wins.
+
+*** **`--no-deps` does not do this.** Neither conda 26.3 nor mamba 2.5 skips the
+solve for it -- both still refuse with "smesh requires occt >=8.0.1, which does
+not exist". What does bypass the solver is an `@EXPLICIT` spec file: it installs
+exactly the listed URLs, additively, and writes a normal `conda-meta` record.
+
+```bat
+:: smesh_explicit.txt
+::   @EXPLICIT
+::   https://conda.anaconda.org/realthunder/win-64/smesh-9.9.0.0-hfd32127_26.conda
+conda install -p <env> -y --file smesh_explicit.txt
+```
+
+Check afterwards that `<env>\Library\bin` carries `SMESH.dll` and friends and
+**no** `TK*.dll`. The consequence to remember: the installed record still names
+the `occt` dependency, so a later plain `conda install` into this env has to be
+given the same explicit-file treatment.
+
+`cMake/FindSMESH.cmake` then finds it with no extra hints -- the env's `Library`
+is already first on `CMAKE_PREFIX_PATH`. Two things about that path are worth
+knowing:
+
+- Its component list used to be spelled `lib<name>.so`, which no Windows package
+  has. It goes through `find_library` now, so the same code picks up `SMESH.lib`
+  here and `libSMESH.so` on Linux.
+- `SetupSalomeSMESH()` used to hand SMESH's include directories to
+  `include_directories()` at the top level, so every translation unit in the
+  project compiled with smesh's `Kernel` directory ahead of `src/`. On a
+  case-insensitive filesystem that directory's `utilities.h` answers Gui's
+  `#include <Utilities.h>`, and the build dies in `StyleParameters/Parser.cpp`
+  on the `pthread.h` that SALOME header wants. The global call is gone; Fem,
+  Fem/Gui and MeshPart -- the only three consumers -- already list the
+  directories themselves, which is also how the bundled SMESH path has always
+  worked.
+- `BUILD_FEM_NETGEN=ON` is answered by the `NETGENPlugin` the smesh package
+  bundles, so the configure line `Could NOT find Netgen (missing: Netgen_DIR)`
+  is expected and harmless -- it refers to a standalone Netgen this build does
+  not use.
+
+*** **The netgen path needs `pthreads-win32` in the env.** The `NETGENPlugin_*`
+headers pull SALOME's `utilities.h`, and its `LocalTraceBufferPool.hxx` includes
+`<pthread.h>` and `<semaphore.h>` unconditionally -- FreeCAD's own bundled SMESH
+carries a trimmed `utilities.h` and never hits this, which is why no Windows
+build saw it before. Two files need it, `Fem/App/FemMeshShapeNetgenObject.cpp`
+and `MeshPart/App/Mesher.cpp`. Nothing calls a pthread function, so the headers
+alone settle it and no library reaches the link line:
+
+```bat
+:: pthreads_explicit.txt
+::   @EXPLICIT
+::   https://prefix.dev/conda-forge/win-64/pthreads-win32-2.9.1-hfa6e2cd_3.tar.bz2
+conda install -p <env> -y --file pthreads_explicit.txt
+```
+
+The explicit-file form is used here for the reason given above: the env's smesh
+record names an `occt` no channel can supply, so every plain `conda install`
+into it now fails to solve.
+
+### IfcOpenShell
+
+Also part of the standard env, and it carries the same do-not-bring-an-occt
+rule. The recipe and what the version skew costs are in
+[IfcOpenShell, for Arch/BIM](#ifcopenshell-for-archbim) with the rest of it.
 
 ### The dev shell: `.conda\run.cmd`
 

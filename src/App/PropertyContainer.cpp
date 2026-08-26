@@ -619,6 +619,32 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
                 if(prop)
                     prop->setStatusValue(status.to_ulong());
             }
+            // A property class registers its type in the Python init of the
+            // module that owns it, so a property whose class lives in another
+            // module answers badType until something imports that module --
+            // Part::Feature's ShapeMaterial is a Materials::PropertyMaterial,
+            // and no headless session imports Materials. Every other restore
+            // path resolves a saved type name through Base::Type with
+            // bLoadModule set (Document::addObject for objects,
+            // DynamicProperty for dynamic ones), which loads the module named
+            // by the type's own prefix. This is the one path that compares the
+            // name instead of resolving it, so it read "type changed" where
+            // there was only a module not loaded yet, and
+            // handleChangedPropertyType dropped the value without a word.
+            // Ask for the module here too -- only when the property cannot
+            // name its own type, so a real type change still goes where it
+            // went before, and Type::importModule remembers what it loaded.
+            if (prop && prop->getTypeId().isBad() && !TypeName.empty()) {
+                try {
+                    Base::Type::importModule(TypeName.c_str());
+                }
+                catch (const Base::Exception &e) {
+                    FC_LOG("no module for " << TypeName << ": " << e.what());
+                }
+                catch (const std::exception &e) {
+                    FC_LOG("no module for " << TypeName << ": " << e.what());
+                }
+            }
             // name and type match
             if (prop && strcmp(prop->getTypeId().getName(), TypeName.c_str()) == 0) {
                 if (!prop->testStatus(Property::Transient) 

@@ -17,6 +17,7 @@ class CUSTOMTITLEBARKIT_EXPORT FoldableMenuBar : public QWidget {
     Q_PROPERTY(bool foldable READ isFoldable WRITE setFoldable)
     Q_PROPERTY(bool expanded READ isExpanded WRITE setExpanded NOTIFY expandedChanged)
     Q_PROPERTY(int revealWidth READ revealWidth WRITE setRevealWidth)
+    Q_PROPERTY(int clickGuard READ clickGuard WRITE setClickGuard)
 
 public:
     explicit FoldableMenuBar(QWidget *parent = nullptr);
@@ -56,6 +57,19 @@ public:
 
     int revealWidth() const;
     void setRevealWidth(int w);
+
+    /*! How long a click on the brand widget is ignored after the bar unfolds,
+     * in milliseconds. 0 turns the guard off.
+     *
+     * Resting the pointer on the brand is enough to unfold the bar, and the
+     * click many hands make in the same movement then lands on a button whose
+     * job is to fold away what has just appeared. Inside this window that
+     * click does nothing at all. Clicking a folded bar open is exempt, see
+     * eventFilter(): the guard is there for the unfold the user did not ask
+     * for, and must never make a deliberate click feel ignored.
+     */
+    void setClickGuard(int ms);
+    int clickGuard() const;
 
 Q_SIGNALS:
     void expandedChanged(bool expanded);

@@ -11,6 +11,7 @@
         <file>icons/actions/TechDraw_ArchView.svg</file>
         <file>icons/actions/TechDraw_ClipGroup.svg</file>
         <file>icons/actions/TechDraw_ClipGroupAdd.svg</file>
+        <file>icons/actions/TechDraw_BrokenView.svg</file>
         <file>icons/actions/TechDraw_ClipGroupRemove.svg</file>
         <file>icons/actions/TechDraw_CosmeticEraser.svg</file>
         <file>icons/actions/TechDraw_CosmeticVertex.svg</file>

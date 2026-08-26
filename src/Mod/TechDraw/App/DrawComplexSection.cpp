@@ -263,6 +263,11 @@ TopoDS_Shape DrawComplexSection::prepareShape(const TopoDS_Shape& cutShape, doub
         return TopoDS_Shape();
     }
 
+    // The unfolded fiction is not one rigid move of the cut shape: a
+    // stale valid frame from a strategy switch must not survive.
+    m_preparedFrameValid = false;
+    m_cutFrameValid = false;
+
     TopoDS_Shape centeredShape = ShapeUtils::centerShapeXY(m_alignResult, getProjectionCS());
     m_preparedShape = ShapeUtils::scaleShape(centeredShape, getScale());
     if (!DrawUtil::fpCompare(Rotation.getValue(), 0.0)) {
@@ -320,6 +325,12 @@ void DrawComplexSection::makeSectionCut(const TopoDS_Shape& baseShape)
 
         params.featureName = getFullName();
         params.rawShape = BRepBuilderAPI_Copy(baseShape).Shape();
+        if (m_toolFaceShape.IsNull()) {
+            //only the Offset path (DVS::makeSectionCut -> makeCuttingTool)
+            //builds the tool face; a section created Aligned from the start
+            //(scripting) has none yet and the null copy below would throw
+            makeCuttingTool(m_shapeSize);
+        }
         params.toolFaceShape = BRepBuilderAPI_Copy(m_toolFaceShape).Shape();
         params.projectionStrategy = ProjectionStrategy.getValue();
         params.sectionNormal = SectionNormal.getValue();
@@ -699,6 +710,16 @@ TopoDS_Shape DrawComplexSection::getShapeForDetail() const
     }
     //Aligned
     return m_preparedShape;
+}
+
+bool DrawComplexSection::getShapeForDetailFrame(gp_Trsf& frame) const
+{
+    if (ProjectionStrategy.getValue() == 0) {//Offset
+        return DrawViewSection::getShapeForDetailFrame(frame);
+    }
+    //Aligned: the unfolded fiction has no rigid map to the global frame
+    frame = gp_Trsf();
+    return false;
 }
 
 TopoDS_Wire DrawComplexSection::makeProfileWire() const

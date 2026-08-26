@@ -40,6 +40,9 @@ public:
             bool publishOnly = false) const override;
     virtual bool warmup(QOpenGLWidget *widget, const std::string &type,
                         WarmupTiming *timing = nullptr) override;
+    virtual bool deviceSharesQtGL() const override;
+    virtual bool deviceMakeCurrent() override;
+    virtual void deviceDoneCurrent() override;
     virtual DrawDevice *drawDevice() const override;
 };
 
@@ -59,6 +62,40 @@ public:
                                  const void *viewMatrix,
                                  const void *projMatrix,
                                  int width, int height) override;
+    /// Split-view frame (docs/SplitViews.md sec 9.2, sec 13): N
+    /// sub-views of the resident scene, per-sub-view camera + rect,
+    /// one BGFXView with per-sub-view state banks. Standalone: one
+    /// backend frame, rects on the backbuffer in device px. Desktop:
+    /// one ordinary frame per submit, each blitted (color + depth)
+    /// into the caller's bound framebuffer at its rect, in the host
+    /// widget's coordinate units.
+    virtual bool renderSubViews(const QColor &bg,
+                                const SubViewFrame *subs,
+                                int count) override;
+    virtual void dropSubView(int id) override;
+    virtual void prepareSubViews(const QColor &bg,
+                                 const SubViewFrame *subs,
+                                 int count) override;
+    virtual bool setCaptureFilter(
+            const std::vector<std::pair<std::string, std::string>> &objects)
+            override;
+    virtual void clearCaptureFilter() override;
+    virtual bool setCaptureScene(DrawCallList &&draws) override;
+    virtual void clearCaptureScene() override;
+private:
+#ifndef FC_RENDERER_STANDALONE
+    bool renderFiltered(const QColor &bg,
+                        const void *viewMatrix,
+                        const void *projMatrix);
+    /// The shared capture-frame body: swap \a scene in for the resident
+    /// feeds (selection/overlay/highlight stripped, flat background,
+    /// default headlight), render with settle frames, restore.
+    bool renderSwappedScene(DrawCallList &&scene,
+                            const QColor &bg,
+                            const void *viewMatrix,
+                            const void *projMatrix);
+#endif
+public:
     virtual bool publish(const QColor &bg,
                          const void *viewMatrix,
                          const void *projMatrix,

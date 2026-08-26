@@ -23,6 +23,7 @@
  ***************************************************************************/
 
 #include <algorithm>
+#include <numbers>
 
 
 #include <BRepBndLib.hxx>

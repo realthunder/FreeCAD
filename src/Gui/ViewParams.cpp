@@ -36,6 +36,7 @@
 #include "OverlayWidgets.h"
 #include "Widgets.h"
 #include "MainWindow.h"
+#include "ViewArea.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
 #include "QSint/actionpanel/taskheader_p.h"
@@ -63,6 +64,7 @@ public:
     bool EnableSelection;
     bool EnablePreselection;
     long RenderCache;
+    bool UnifiedCanvas;
     bool RandomColor;
     unsigned long BoundingBoxColor;
     unsigned long AnnotationTextColor;
@@ -255,6 +257,8 @@ public:
         funcs["EnablePreselection"] = &ViewParamsP::updateEnablePreselection;
         RenderCache = this->handle->GetInt("RenderCache", 3);
         funcs["RenderCache"] = &ViewParamsP::updateRenderCache;
+        UnifiedCanvas = this->handle->GetBool("UnifiedCanvas", false);
+        funcs["UnifiedCanvas"] = &ViewParamsP::updateUnifiedCanvas;
         RandomColor = this->handle->GetBool("RandomColor", false);
         funcs["RandomColor"] = &ViewParamsP::updateRandomColor;
         BoundingBoxColor = this->handle->GetUnsigned("BoundingBoxColor", 0xFFFFFFFF);
@@ -649,6 +653,14 @@ public:
         if (self->RenderCache != v) {
             self->RenderCache = v;
             ViewParams::onRenderCacheChanged();
+        }
+    }
+    // Auto generated code (Tools/params_utils.py:318)
+    static void updateUnifiedCanvas(ViewParamsP *self) {
+        auto v = self->handle->GetBool("UnifiedCanvas", false);
+        if (self->UnifiedCanvas != v) {
+            self->UnifiedCanvas = v;
+            ViewParams::onUnifiedCanvasChanged();
         }
     }
     // Auto generated code (Tools/params_utils.py:310)
@@ -1538,6 +1550,39 @@ void ViewParams::setRenderCache(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void ViewParams::removeRenderCache() {
     instance()->handle->RemoveInt("RenderCache");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docUnifiedCanvas() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Draw all the 3D cells of a split view (ViewArea) into ONE\n"
+"canvas widget, as sub-views of a single render backend, instead\n"
+"of composing each cell's own widget. One backend instance and\n"
+"one copy of the GPU scene serve every cell (the browser tier's\n"
+"model). Experimental; needs the render engine (render cache\n"
+"mode 3). See docs/SplitViews.md sec 13.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & ViewParams::getUnifiedCanvas() {
+    return instance()->UnifiedCanvas;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & ViewParams::defaultUnifiedCanvas() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setUnifiedCanvas(const bool &v) {
+    instance()->handle->SetBool("UnifiedCanvas",v);
+    instance()->UnifiedCanvas = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeUnifiedCanvas() {
+    instance()->handle->RemoveBool("UnifiedCanvas");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -6514,7 +6559,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:632)
+// Auto generated code (Gui/ViewParams.py:640)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6559,7 +6604,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:640)
+// Auto generated code (Gui/ViewParams.py:648)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6572,7 +6617,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:650)
+// Auto generated code (Gui/ViewParams.py:658)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -6585,13 +6630,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:660)
+// Auto generated code (Gui/ViewParams.py:668)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:667)
+// Auto generated code (Gui/ViewParams.py:675)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -6599,7 +6644,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:676)
+// Auto generated code (Gui/ViewParams.py:684)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6611,7 +6656,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:689)
+// Auto generated code (Gui/ViewParams.py:697)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)
@@ -6652,6 +6697,16 @@ void ViewParams::onSectionHatchTextureChanged() {
 
 void ViewParams::onRenderCacheChanged() {
     onSectionHatchTextureChanged();
+}
+
+void ViewParams::onUnifiedCanvasChanged() {
+    // Applied live, both ways: a container either builds its canvas and
+    // takes its 3D cells over, or hands every cell back its own widget
+    // composition (docs/SplitViews.md sec 13).
+    if (auto mw = getMainWindow()) {
+        for (auto area : mw->findChildren<ViewArea*>())
+            area->syncCanvas();
+    }
 }
 
 bool ViewParams::isUsingRenderer()

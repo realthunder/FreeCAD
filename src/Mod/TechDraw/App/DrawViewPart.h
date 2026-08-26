@@ -30,9 +30,11 @@
 
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Wire.hxx>
+#include <gp_Trsf.hxx>
 
 #include <App/DocumentObject.h>
 #include <App/FeaturePython.h>
+#include <App/PropertyFile.h>
 #include <App/PropertyLinks.h>
 #include <Base/BoundBox.h>
 #include <Mod/TechDraw/TechDrawGlobal.h>
@@ -122,6 +124,16 @@ public:
 
     App::PropertyInteger ScrubCount;
 
+    // The shaded-view hybrid (docs/TechDrawPortAndSection.md sec 26): a
+    // raster shaded underlay drawn beneath the exact-HLR edges. The
+    // image and its registration rect are derived state written back by
+    // the Gui capture (Prop_Output -- writing them must not re-touch
+    // the view).
+    App::PropertyBool Shaded;
+    App::PropertyFileIncluded UnderlayImage;
+    App::PropertyFloat UnderlayResolution;
+    App::PropertyFloatList UnderlayRect;
+
     short mustExecute() const override;
     App::DocumentObjectExecReturn* execute() override;
     const char* getViewProviderName() const override { return "TechDrawGui::ViewProviderViewPart"; }
@@ -200,6 +212,13 @@ public:
 
     virtual TopoDS_Shape getSourceShape(bool fuse = false) const;
     virtual TopoDS_Shape getShapeForDetail() const;
+    //! The exact transform mapping getShapeForDetail()'s result frame
+    //! back to the global (source) frame -- the inverse of whatever
+    //! rotation/centering that method applied, composed with the frame
+    //! of the shape it started from (doc sec 31).  False when no rigid
+    //! map exists (an aligned complex section's unfolded fiction) or
+    //! the frame is not known yet.
+    virtual bool getShapeForDetailFrame(gp_Trsf& frame) const;
     std::vector<App::DocumentObject*> getAllSources() const;
 
     // debug routines

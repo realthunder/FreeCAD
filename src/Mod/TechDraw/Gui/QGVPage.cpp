@@ -39,17 +39,32 @@
 #include <App/AutoTransaction.h>
 #include <App/Document.h>
 #include <Base/Parameter.h>
+#include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Document.h>
+#include <Gui/ViewProviderDocumentObject.h>
 #include <Gui/NavigationStyle.h>
 #include <Gui/Selection.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 
 #include <Mod/TechDraw/App/DrawPage.h>
+#include <Mod/TechDraw/App/DrawViewPart.h>
 #include <Mod/TechDraw/App/DrawSVGTemplate.h>
 
+#include <QImage>
+#include <QOpenGLContext>
+#include <QOpenGLFunctions>
+#include <QOpenGLTextureBlitter>
+#include <QOpenGLWidget>
+#include <QPaintEngine>
+
+#include <Gui/Renderer/Page2D.h>
+#include <Gui/Renderer/Renderer.h>
+#include <Mod/TechDraw/App/Preferences.h>
+
 #include "MDIViewPage.h"
+#include "PageFeed.h"
 #include "PreferencesGui.h"
 #include "QGSPage.h"
 #include "QGVNavStyleBlender.h"
@@ -216,6 +231,14 @@ QGVPage::QGVPage(ViewProviderPage* vpPage, QGSPage* scenePage, QWidget* parent)
 
 QGVPage::~QGVPage()
 {
+    if (m_vgBlitter) {
+        // The blitter's GL program lives in the viewport's context;
+        // destroying it needs that context current or the destructor
+        // leaks with a warning.
+        if (auto glvp = qobject_cast<QOpenGLWidget*>(viewport()))
+            glvp->makeCurrent();
+        delete m_vgBlitter;
+    }
     delete bkgBrush;
     delete m_navStyle;
     d->detach();
@@ -343,6 +366,271 @@ void QGVPage::drawBackground(QPainter* painter, const QRectF&)
 
     painter->drawRect(poly.boundingRect());
 
+    painter->restore();
+
+    // The vg 2D page engine preview (milestone M2): draw the page's
+    // geometry through Render::Page2D underneath the scene items.
+    // Runtime-gated; this is the verification tier of the new page
+    // renderer, not yet its interactive integration.
+    if (TechDraw::Preferences::getPreferenceGroup("General")
+            ->GetBool("PageRendererVg", false)) {
+        drawVgPreview(painter);
+    }
+}
+
+void QGVPage::drawVgPreview(QPainter* painter)
+{
+    TechDraw::DrawPage* page = getDrawPage();
+    if (!page)
+        return;
+
+    // The view runs with CacheBackground, which would freeze this
+    // layer at its first paint; drop the cache while the preview is
+    // active (queued -- this runs inside a paint event).
+    if (cacheMode() != QGraphicsView::CacheNone) {
+        QMetaObject::invokeMethod(
+            this,
+            [this]() {
+                setCacheMode(QGraphicsView::CacheNone);
+                resetCachedContent();
+                viewport()->update();
+            },
+            Qt::QueuedConnection);
+    }
+
+    if (!m_vgPage)
+        m_vgPage = std::make_unique<Render::Page2D>();
+
+    // Structure pass: a cheap ordered hash of the view names. On a
+    // change (view added, removed or reordered -- a deleted view's
+    // items would survive any re-feed) the tracked set rebuilds and
+    // the retained page resets wholesale; that is the rare case. The
+    // common case, an edited view, arrives through signalGuiPaint --
+    // fired on the GUI thread when HLR lands, when faces land and on
+    // repaint-worthy property changes -- and damages only that view.
+    size_t structure = 0;
+    for (App::DocumentObject* obj : page->getAllViews()) {
+        if (const char* name = obj->getNameInDocument())
+            structure = structure * 31 + std::hash<std::string> {}(name);
+    }
+    if (structure != m_vgPageStructure) {
+        m_vgPageStructure = structure;
+        m_vgPage->clear(); // drops the image registry too
+        m_vgTemplateStamp = 0;
+        m_vgViews.clear();
+        m_vgDirty.clear();
+        uint32_t layer = 1; // layer 0 is the template's
+        for (App::DocumentObject* obj : page->getAllViews()) {
+            auto dv = dynamic_cast<TechDraw::DrawView*>(obj);
+            if (dv && dv->getNameInDocument()) {
+                std::string name = dv->getNameInDocument();
+                VgViewTrack& track = m_vgViews[name];
+                track.layer = layer;
+                track.repaint = dv->signalGuiPaint.connect(
+                    [this, name](const TechDraw::DrawView*) {
+                        m_vgDirty.insert(name);
+                        viewport()->update();
+                    });
+                m_vgDirty.insert(name);
+            }
+            ++layer;
+        }
+    }
+    else {
+        // X/Y moves purge their touch on the App side and signal
+        // nothing -- and a Visibility toggle signals nothing either;
+        // catch both by comparing against what was last fed.
+        for (auto& v : m_vgViews) {
+            if (m_vgDirty.count(v.first))
+                continue;
+            auto dv = dynamic_cast<TechDraw::DrawView*>(
+                page->getDocument()->getObject(v.first.c_str()));
+            if (!dv)
+                continue;
+            auto vpd = dynamic_cast<Gui::ViewProviderDocumentObject*>(
+                Gui::Application::Instance->getViewProvider(dv));
+            const int8_t visNow = !vpd || vpd->isShow() ? 1 : 0;
+            if ((float)dv->X.getValue() != v.second.fedX
+                || (float)dv->Y.getValue() != v.second.fedY
+                || visNow != v.second.fedVisible)
+                m_vgDirty.insert(v.first);
+        }
+    }
+
+    // Feed exactly the damaged views; stable item ids confine each
+    // feed to its own items. A view still computing on its worker gets
+    // fed with what it has -- completion signals more damage, so there
+    // is no per-paint re-feed while pending.
+    if (!m_vgDirty.empty()) {
+        std::set<std::string> dirty;
+        dirty.swap(m_vgDirty);
+        for (const std::string& name : dirty) {
+            auto it = m_vgViews.find(name);
+            if (it == m_vgViews.end())
+                continue;
+            auto dv = dynamic_cast<TechDraw::DrawView*>(
+                page->getDocument()->getObject(name.c_str()));
+            if (!dv)
+                continue;
+            QGIView* qgiv = m_scene ? m_scene->findQViewForDocObj(dv)
+                                    : nullptr;
+            if (auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(dv)) {
+                PageFeed::feedViewPart(dvp, *m_vgPage, PageFeed::Style(),
+                                       it->second.layer);
+                if (qgiv)
+                    PageFeed::feedViewDecorations(qgiv, *m_vgPage,
+                                                  it->second.layer);
+            }
+            else if (qgiv) {
+                // The annotation tier: the capture converts the QGI
+                // subtree the Qt tier has already laid out by the time
+                // this paint runs.
+                PageFeed::feedViewCapture(qgiv, *m_vgPage,
+                                          it->second.layer);
+            }
+            it->second.fedX = (float)dv->X.getValue();
+            it->second.fedY = (float)dv->Y.getValue();
+            auto vpd = dynamic_cast<Gui::ViewProviderDocumentObject*>(
+                Gui::Application::Instance->getViewProvider(dv));
+            it->second.fedVisible = !vpd || vpd->isShow() ? 1 : 0;
+        }
+    }
+
+    // The template: rasterized SVG, re-fed when its content changes
+    // (template swap, editable text edit) or when the zoom crosses a
+    // band -- the raster tracks the band scale so the sheet stays
+    // sharp. The stamp folds all of that into one comparison.
+    {
+        const float band =
+            Render::Page2D::bandScale((float)transform().m11());
+        size_t stamp = std::hash<float> {}(band);
+        if (App::DocumentObject* tmpl = page->Template.getValue()) {
+            if (const char* tname = tmpl->getNameInDocument())
+                stamp = stamp * 31 + std::hash<std::string> {}(tname);
+            if (auto svgt = dynamic_cast<TechDraw::DrawSVGTemplate*>(tmpl)) {
+                for (const auto& kv : svgt->EditableTexts.getValues())
+                    stamp = stamp * 31 + std::hash<std::string> {}(kv.second);
+            }
+        }
+        if (stamp != m_vgTemplateStamp) {
+            m_vgTemplateStamp = stamp;
+            PageFeed::feedTemplate(page, *m_vgPage, band);
+        }
+    }
+
+    // Map the QGraphicsView transform onto the page view: uniform
+    // scale, scene origin in viewport coordinates as the pan.
+    const QPointF origin = mapFromScene(QPointF(0.0, 0.0));
+    Render::Page2D::View view;
+    view.zoom = (float)transform().m11();
+    view.panX = (float)origin.x();
+    view.panY = (float)origin.y();
+
+    // The real compositor: with a GL viewport whose context shares
+    // with the bgfx device, the page renders into a persistent texture
+    // and a textured blit puts it under the scene items -- no
+    // readback, no QImage. Everything below degrades to the readback
+    // path when a piece is missing (non-GL viewport on the first
+    // paint, a Vulkan device, no device at all and warmup refused).
+    const bool wantComposite =
+        TechDraw::Preferences::getPreferenceGroup("General")
+            ->GetBool("PageRendererVgComposite", true);
+    auto glvp = qobject_cast<QOpenGLWidget*>(viewport());
+    if (wantComposite && !glvp) {
+        // Switch the viewport to GL for the next paint; this one is
+        // the old viewport's own paint event, so it cannot be
+        // destroyed from here.
+        QMetaObject::invokeMethod(
+            this,
+            [this]() {
+                if (!qobject_cast<QOpenGLWidget*>(viewport())) {
+                    setRenderer(OpenGL);
+                    setCacheMode(QGraphicsView::CacheNone);
+                    viewport()->update();
+                }
+            },
+            Qt::QueuedConnection);
+    }
+    if (wantComposite && glvp
+        && painter->paintEngine()->type() == QPaintEngine::OpenGL2) {
+        if (!Render::RendererFactory::deviceSharesQtGL()
+            && !m_vgWarmupTried) {
+            // Bring the device up exactly as the first 3D view would;
+            // the desktop bgfx backend is GL, which is what sharing
+            // needs. Once per page host -- a refusal will not change.
+            m_vgWarmupTried = true;
+            Render::RendererFactory::warmup("bgfx - OpenGL", glvp);
+        }
+        if (Render::RendererFactory::deviceSharesQtGL()) {
+            const qreal dpr = glvp->devicePixelRatioF();
+            Render::Page2D::View pv = view;
+            pv.zoom *= (float)dpr;
+            pv.panX *= (float)dpr;
+            pv.panY *= (float)dpr;
+            pv.devicePixelRatio = (float)dpr;
+            m_vgPage->setView(pv);
+            const int pw = (int)std::lround(viewport()->width() * dpr);
+            const int ph = (int)std::lround(viewport()->height() * dpr);
+
+            painter->beginNativePainting();
+            // The device frame runs under the device's own context;
+            // hand the widget's back first (its makeCurrent() also
+            // re-binds the widget framebuffer afterwards).
+            glvp->doneCurrent();
+            const uintptr_t tex =
+                m_vgPage->renderToTexture((uint16_t)pw, (uint16_t)ph);
+            glvp->makeCurrent();
+            if (tex) {
+                auto* f = QOpenGLContext::currentContext()->functions();
+                // The QPainter GL engine leaves its clip machinery on;
+                // this quad is the whole viewport.
+                f->glDisable(GL_SCISSOR_TEST);
+                f->glDisable(GL_STENCIL_TEST);
+                f->glDisable(GL_DEPTH_TEST);
+                f->glViewport(0, 0, pw, ph);
+                // vg blended onto a transparent clear = premultiplied.
+                f->glEnable(GL_BLEND);
+                f->glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA,
+                                       GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+                if (!m_vgBlitter)
+                    m_vgBlitter = new QOpenGLTextureBlitter;
+                if (!m_vgBlitter->isCreated())
+                    m_vgBlitter->create();
+                const QRect all(0, 0, pw, ph);
+                m_vgBlitter->bind();
+                m_vgBlitter->blit(
+                    (GLuint)tex,
+                    QOpenGLTextureBlitter::targetTransform(all, all),
+                    QOpenGLTextureBlitter::OriginBottomLeft);
+                m_vgBlitter->release();
+                f->glDisable(GL_BLEND);
+            }
+            painter->endNativePainting();
+            if (tex && !m_vgCompositeLogged) {
+                m_vgCompositeLogged = true;
+                Base::Console().Log(
+                    "QGVPage: vg compositor active (shared-GL texture)\n");
+            }
+            // With a shared GL device the readback fallback is not an
+            // option from inside this paint -- renderOffscreen would
+            // pump the device's frame into the widget's context. A
+            // failed frame skips; the next paint retries.
+            return;
+        }
+    }
+
+    m_vgPage->setView(view);
+    const int width = viewport()->width();
+    const int height = viewport()->height();
+    std::vector<uint8_t> rgba;
+    if (!m_vgPage->renderOffscreen((uint16_t)width, (uint16_t)height, rgba))
+        return;
+
+    QImage image(rgba.data(), width, height, width * 4,
+                 QImage::Format_RGBA8888);
+    painter->save();
+    painter->resetTransform();
+    painter->drawImage(0, 0, image);
     painter->restore();
 }
 

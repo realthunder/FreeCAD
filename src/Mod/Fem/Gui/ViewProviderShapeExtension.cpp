@@ -20,6 +20,8 @@
  ******************************************************************************/
 
 
+#include <numbers>
+
 #include <Gui/Application.h>
 #include <Gui/Document.h>
 #include <App/Document.h>

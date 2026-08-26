@@ -151,7 +151,7 @@ public:
     /// the tab stack behind a maximized sibling. Asked (not remembered)
     /// whenever the render engine reconsiders releasing this view's
     /// targets; see View3DInventorViewer::armBackgroundRelease.
-    bool isBackgroundView() const;
+    bool isBackgroundView() const override;
     bool containsViewProvider(const ViewProvider*) const override;
 
     template<class PropT, class ValueT, class CallbackT>
@@ -186,6 +186,7 @@ private:
     void applySettings();
 
 protected:
+    void closeEvent(QCloseEvent* e) override;
     void windowStateChanged(QWidget* view) override;
     void dropEvent        (QDropEvent      * e) override;
     void dragEnterEvent   (QDragEnterEvent * e) override;

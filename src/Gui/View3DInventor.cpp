@@ -78,6 +78,7 @@
 #include "SoFCVectorizeSVGAction.h"
 #include "View3DInventorExamples.h"
 #include "View3DInventorViewer.h"
+#include "ViewArea.h"
 #include "View3DInventorPy.h"
 #include "ViewProvider.h"
 #include "WaitCursor.h"
@@ -226,6 +227,20 @@ View3DInventor::ApplySettings::~ApplySettings()
 bool View3DInventor::ApplySettings::isApplying()
 {
     return _ApplyingSettings > 0;
+}
+
+void View3DInventor::closeEvent(QCloseEvent* e)
+{
+    MDIView::closeEvent(e);
+    // An accepted close means this view is going away (delete on close),
+    // but the deletion is deferred and can outlive the document -- a
+    // split view cell closed mid-session sits in the deferred-delete
+    // queue while the document may be torn down, and the viewer's Coin
+    // sensors keep firing until the widget actually dies (deferRedraw
+    // reads the document). Decouple the viewer now; null is a supported
+    // state (deleteSelf uses the same).
+    if (e->isAccepted() && _viewer)
+        _viewer->setDocument(nullptr);
 }
 
 void View3DInventor::deleteSelf()
@@ -1011,32 +1026,13 @@ void View3DInventor::windowStateChanged(QWidget* view)
 
 bool View3DInventor::isBackgroundView() const
 {
-    // Genuinely hidden, or minimized: nobody is looking, either way.
-    if (!isVisible() || isMinimized())
-        return true;
-    // A view in a window of its own answers for itself, and isVisible()
-    // above was the whole of that answer. A maximized sibling on the
-    // other screen hides nothing.
-    if (isWindow())
-        return false;
-    // Inside the MDI area "hidden" is not a visibility. A tabbed MDI
-    // keeps every child visible and stacks the current one, maximized,
-    // over the rest -- switching tabs even delivers a hide immediately
-    // followed by a show to the view being left, which is why this is
-    // not a question the Qt visibility flags can answer. What being in
-    // the background means there is that somebody else is maximized
-    // over me; in the tiled modes nobody is maximized, and no view is
-    // in the background because they are all on screen at once.
-    if (isMaximized())
-        return false;
-    auto mw = getMainWindow();
-    if (!mw)
-        return false;
-    for (auto w : mw->windows()) {
-        if (w != this && !w->isWindow() && w->isMaximized())
-            return true;
-    }
-    return false;
+    // A cell of a split view area is never maximized itself and would
+    // wrongly see its own (maximized) container as "somebody maximized
+    // over me". The container's status answers for its visible cells; a
+    // cell hidden inside the container answers for itself.
+    if (auto area = ViewArea::areaOf(this))
+        return !isVisible() || area->isBackgroundView();
+    return MDIView::isBackgroundView();
 }
 
 void View3DInventor::stopAnimating()

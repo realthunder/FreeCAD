@@ -299,6 +299,15 @@ struct OverlayAnchor {
     /// set, all corner/fov/ortho/cameraDistance/orient/pixelSpace fields
     /// are ignored.
     bool sceneCamera = false;
+    /// Which sub-view this feed belongs to (Renderer::renderSubViews).
+    /// 0 -- the default -- means every sub-view, which is one viewer's
+    /// chrome shown in all of them and what a plain render() draws. A
+    /// non-zero id is one cell's OWN chrome (its NaviCube, its corner
+    /// axis cross), drawn only in that cell's sub-view frame: the
+    /// split-view unified canvas gives every cell a bank of one backend,
+    /// so without this every cell would draw the feeding cell's cube,
+    /// turned by the feeding cell's camera (docs/SplitViews.md sec 16.3).
+    int subView = 0;
 
     bool operator==(const OverlayAnchor &o) const {
         return corner == o.corner && sizeFraction == o.sizeFraction
@@ -308,6 +317,7 @@ struct OverlayAnchor {
             && orientFromScene == o.orientFromScene
             && pixelSpace == o.pixelSpace
             && sceneCamera == o.sceneCamera
+            && subView == o.subView
             && marginX == o.marginX && marginY == o.marginY;
     }
     bool operator!=(const OverlayAnchor &o) const { return !(*this == o); }
@@ -2332,6 +2342,30 @@ struct Material {
     float clipplanes[MaxClipPlanes][4];
 };
 
+/// Which primitive buckets a Class-A display style draws
+/// (docs/CoinRetirement.md 5.7). Bit i is Material::Type i, so a style
+/// admits a draw when `(mask >> mat.type) & 1`.
+///
+/// The masks are read straight off what the ViewProviders put under
+/// each display-mode child of their SoFCSwitch, which the stage-5
+/// survey found to be nested subsets of one set of nodes: Shaded is the
+/// faces, Wireframe is the lines AND the points (Part's Wireframe root
+/// contains its Points root), Flat Lines is all three.
+///
+/// StyleAsIs (zero) means *no* style override -- every draw the feed
+/// captured is drawn. That is what "As Is" means, and it is what every
+/// frame outside a unified canvas uses, because there the style is
+/// still applied by the Coin traversal that produced the capture.
+enum DrawStyleMask : uint8_t {
+    StyleAsIs      = 0,
+    StyleFaces     = 1 << Material::Triangle,
+    StyleLines     = 1 << Material::Line,
+    StylePoints    = 1 << Material::Point,
+    StyleShaded    = StyleFaces,
+    StyleWireframe = StyleLines | StylePoints,
+    StyleFlatLines = StyleFaces | StyleLines | StylePoints,
+};
+
 /// One draw of (a part of) a mesh with a material and model transform.
 struct DrawCall {
     Material material;
@@ -2472,6 +2506,64 @@ public:
                         const void *viewMatrix,
                         const void *projMatrix) = 0;
 
+    /// One sub-view of a split-view frame (docs/SplitViews.md sec 9.2):
+    /// a viewport rect on the output backbuffer, in device pixels, and
+    /// the camera to render the resident scene with there. \a id is a
+    /// stable client token naming the sub-view across frames -- the
+    /// backend keys its per-sub-view state (sized targets, temporal
+    /// accumulation) on it, so a layout change that keeps a cell keeps
+    /// its id.
+    struct SubViewFrame {
+        int id = 0;
+        int x = 0, y = 0;
+        int width = 0, height = 0;
+        const void *viewMatrix = nullptr;
+        const void *projMatrix = nullptr;
+        /// The Class-A display style this sub-view draws the shared
+        /// scene with (docs/CoinRetirement.md 5.7, docs/SplitViews.md
+        /// sec 17): a DrawStyleMask filtering the captured draws by
+        /// primitive bucket at submit. StyleAsIs -- the default and
+        /// every non-canvas frame -- draws what the feed captured.
+        ///
+        /// This is what lets N cells of ONE backend, fed by ONE
+        /// traversal, show N different display styles. A style applied
+        /// in the traversal instead would be baked into the shared
+        /// capture, which is the whole reason the canvas could not vary
+        /// it per cell.
+        uint8_t drawStyle = StyleAsIs;
+    };
+    /// Render one frame as \a count sub-views tiling the backbuffer:
+    /// the same resident scene feeds every sub-view, each drawn with
+    /// its own camera into its own rect, inside a single backend frame.
+    /// Returns false when the backend does not support it (the
+    /// default), in which case the caller renders whole via render().
+    virtual bool renderSubViews(const QColor &bg,
+                                const SubViewFrame *subs, int count)
+    {
+        (void)bg; (void)subs; (void)count;
+        return false;
+    }
+    /// Release the per-sub-view state a vanished sub-view id holds
+    /// (targets, view-id block). Never id 0 -- that is the implicit
+    /// full-canvas sub-view every plain render() uses.
+    virtual void dropSubView(int id) { (void)id; }
+    /// Prepare the backend for a renderSubViews frame: build the sized
+    /// targets of every unseen sub-view id up front, each against a
+    /// freshly reclaimed handle pool, and release what the layout
+    /// obsoletes (the implicit full-canvas sub-view's targets when no
+    /// sub is id 0), so the frame itself allocates nothing and never
+    /// bails. Idempotent and cheap once every bank is warm, so the
+    /// host may simply call it at the top of every layout frame -- but
+    /// it crosses backend frame boundaries, so it must run while
+    /// nothing of the upcoming frame is queued (before any page-cell
+    /// draw). Optional: a backend without it just heals the first
+    /// frame or two after a layout change.
+    virtual void prepareSubViews(const QColor &bg,
+                                 const SubViewFrame *subs, int count)
+    {
+        (void)bg; (void)subs; (void)count;
+    }
+
     /// Render one frame for an offscreen capture -- a screenshot or an
     /// image export -- instead of the on-screen one. Two things differ
     /// from render(): the frame is rendered at \a width x \a height
@@ -2491,6 +2583,47 @@ public:
         (void)width; (void)height;
         return false;
     }
+
+    /// Restrict subsequent renderOffscreen() frames to the scene draws
+    /// of the named objects ({document internal name, object internal
+    /// name}, as in ObjectInfo), with the selection, preselection and
+    /// overlay feeds stripped and the window background flat
+    /// transparent -- the per-capture object filter of the shaded-
+    /// underlay capture (docs/TechDrawPortAndSection.md sec 26.2).
+    /// Returns false when the backend cannot filter (the default) or
+    /// when any named object has no draw in the resident scene (a
+    /// 3D-hidden source has none) -- the caller must then fall back to
+    /// its own capture path. Active until clearCaptureFilter(); the
+    /// caller owns that bracket.
+    virtual bool setCaptureFilter(
+            const std::vector<std::pair<std::string, std::string>> &objects)
+    {
+        (void)objects;
+        return false;
+    }
+    virtual void clearCaptureFilter() {}
+
+    /// Provide a transient scene for subsequent renderOffscreen()
+    /// frames: the supplied draws stand in for the resident scene feed
+    /// during the capture -- selection, preselection and overlay feeds
+    /// stripped, flat background, default camera-aligned headlight --
+    /// without disturbing the resident feeds or their GPU residency.
+    /// This is the shaded-underlay derived-shape capture (docs/
+    /// TechDrawPortAndSection.md sec 31): a section's cut solid or a
+    /// detail's clipped region exists nowhere in the resident scene, so
+    /// the caller builds a dedicated Coin scene, runs it through the
+    /// render-cache pipeline (SoFCRenderCacheManager::traverse +
+    /// RendererBridge::translate) and hands the translated draws here.
+    /// Returns false when the backend cannot render a supplied scene
+    /// (the default). Active until clearCaptureScene(); the caller owns
+    /// that bracket. Takes precedence over setCaptureFilter() while
+    /// both are set.
+    virtual bool setCaptureScene(DrawCallList &&draws)
+    {
+        (void)draws;
+        return false;
+    }
+    virtual void clearCaptureScene() {}
 
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) = 0;
@@ -2912,6 +3045,19 @@ public:
     virtual bool warmup(QOpenGLWidget *, const std::string &,
                         WarmupTiming * = nullptr) { return false; }
 
+    /// Whether this backend's device is up on OpenGL through a context
+    /// in Qt's global share group -- the precondition for a host to
+    /// composite a backend-rendered texture into its own Qt GL widget
+    /// (the 2D page engine's interactive path does exactly that).
+    virtual bool deviceSharesQtGL() const { return false; }
+    /// Make the device's own GL context current / release it, for
+    /// engine code that must pump a backend frame outside a 3D view's
+    /// paint (the single-threaded GL device executes its frame in
+    /// whichever context is current). Only meaningful when
+    /// deviceSharesQtGL(); the caller owns re-acquiring its own
+    /// context afterwards.
+    virtual bool deviceMakeCurrent() { return false; }
+    virtual void deviceDoneCurrent() {}
     /// The backend's immediate-mode draw facade (DrawDevice.h,
     /// docs/CAMSimRenderPort.md section 3), or null: the backend does
     /// not implement the facade, or its graphics device is not up yet.
@@ -3048,6 +3194,13 @@ public:
     /// scene-stream thread cap.
     static void setMaxViewIds(int count);
     static int maxViewIds();
+
+    /// The RendererLib device-context hooks, resolved over the
+    /// registered backends (the process has at most one device; the
+    /// first lib that answers wins). See RendererLib::deviceSharesQtGL.
+    static bool deviceSharesQtGL();
+    static bool deviceMakeCurrent();
+    static void deviceDoneCurrent();
 };
 
 } // namespace Render

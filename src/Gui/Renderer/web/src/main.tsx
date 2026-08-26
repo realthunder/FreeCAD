@@ -7,6 +7,7 @@ import { Inspector } from './inspector';
 import { HudCard } from './hud';
 import { LauncherMenu } from './menu';
 import { LoupeOverlay } from './loupe';
+import { SplitOverlay } from './splitview';
 import type { LoupeMark } from './loupe';
 import { NARROW } from './panel';
 import type { SelectionItem, Subject } from './control';
@@ -70,6 +71,10 @@ window.addEventListener('fc:docs', (e: Event) => {
 const switchDoc = (name: string) => {
   window.fcviewerSwitchDoc?.(name);
   setDocs((d) => ({ ...d, current: name }));
+  // The split chrome re-keys its persisted layout on this -- it cannot
+  // learn the switch from 'fc:docs', since no docs push follows one.
+  window.dispatchEvent(new CustomEvent('fc:docswitch',
+                                       { detail: { current: name } }));
 };
 // One document needs no section — unless it is not the one this viewer
 // is on (an unknown ?doc= joined nothing, and the section is the way
@@ -158,6 +163,7 @@ document.body.appendChild(host);
 
 render(() => (
   <>
+    <SplitOverlay />
     <Inspector selection={selection} request={request}
                onCardOpen={setCardOpen} viewOnly={viewOnly} />
     <LoupeOverlay mark={loupe} />

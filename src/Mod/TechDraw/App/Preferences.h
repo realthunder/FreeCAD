@@ -121,6 +121,10 @@ public:
     static int CenterLineStyle();
     static int HighlightLineStyle();
     static int HiddenLineStyle();
+    static int BreakLineStyle();
+    //! default break type for broken views, as an int to avoid pulling
+    //! DrawBrokenView.h in here; cast to DrawBrokenView::BreakType at use.
+    static int BreakType();
     static int LineCapStyle();
     static int LineCapIndex();
 

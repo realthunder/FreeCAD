@@ -232,6 +232,41 @@ void DrawViewDetail::detailExec(const TopoDS_Shape& shape, DrawViewPart* dvp, Dr
         params.scale = getScale();
         params.featureName = getFullName();
         params.moveShape = (dvs == nullptr);
+
+        // The exact build-time frames (doc sec 31), composed from the
+        // same params the worker consumes and committed with the shapes
+        // in onMakeDetailFinished.
+        // m_detailShape lives in the input frame moved by -shapeCenter
+        // (when the worker centers at all); the input frame is what the
+        // base's getShapeForDetail applied.
+        gp_Trsf inputFrame;
+        m_pendingFramesValid = dvp->getShapeForDetailFrame(inputFrame);
+        m_pendingDetailFrame = inputFrame;
+        if (params.moveShape) {
+            gp_Trsf uncenter;
+            uncenter.SetTranslation(gp_Vec(params.shapeCenter.x, params.shapeCenter.y,
+                                           params.shapeCenter.z));
+            m_pendingDetailFrame = inputFrame.Multiplied(uncenter);
+        }
+        // m_scaledShape = rotate(scale(move(detailShape, -anchorR3)));
+        // invert each step.
+        Base::Vector3d anchorR3 = DrawUtil::toR3(params.viewAxis, params.anchorPoint);
+        gp_Trsf unanchor;
+        unanchor.SetTranslation(gp_Vec(anchorR3.x, anchorR3.y, anchorR3.z));
+        gp_Trsf unscale;
+        if (params.scale > 0.0) {
+            unscale.SetScale(gp_Pnt(0.0, 0.0, 0.0), 1.0 / params.scale);
+        }
+        else {
+            m_pendingFramesValid = false;
+        }
+        gp_Trsf unrotate;
+        if (!DrawUtil::fpCompare(params.rotation, 0.0)) {
+            unrotate.SetRotation(params.viewAxis.Axis(), -params.rotation * M_PI / 180.0);
+        }
+        m_pendingScaledFrame =
+            m_pendingDetailFrame.Multiplied(unanchor.Multiplied(unscale.Multiplied(unrotate)));
+
         waitingForDetail(true);
         m_detailWatcher->setFuture(QtConcurrent::run(
             [params] {
@@ -390,6 +425,11 @@ void DrawViewDetail::onMakeDetailFinished(std::shared_ptr<Output> output)
     m_scaledShape = output->shape;
     m_detailShape = output->detailShape;
     m_saveCentroid += output->centroid;
+    // commit the frames beside the shapes they describe (doc sec 31)
+    m_detailFrame = m_pendingDetailFrame;
+    m_scaledFrame = m_pendingScaledFrame;
+    m_detailFrameValid = m_pendingFramesValid;
+    m_scaledFrameValid = m_pendingFramesValid;
 
     //ancestor's buildGeometryObject will run HLR and face finding in a separate thread
     buildGeometryObject(m_scaledShape, m_viewAxis);
@@ -430,6 +470,18 @@ TopoDS_Shape DrawViewDetail::projectEdgesOntoFace(TopoDS_Shape& edgeShape, TopoD
 std::vector<DrawViewDetail*> DrawViewDetail::getDetailRefs() const
 {
     return std::vector<DrawViewDetail*>();
+}
+
+bool DrawViewDetail::getDetailFrame(gp_Trsf& frame) const
+{
+    frame = m_detailFrame;
+    return m_detailFrameValid;
+}
+
+bool DrawViewDetail::getScaledFrame(gp_Trsf& frame) const
+{
+    frame = m_scaledFrame;
+    return m_scaledFrameValid;
 }
 
 double DrawViewDetail::getFudgeRadius() { return Radius.getValue() * m_fudge; }

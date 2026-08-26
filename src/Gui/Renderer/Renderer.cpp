@@ -131,6 +131,34 @@ std::vector<std::string> RendererFactory::types()
     return res;
 }
 
+bool RendererFactory::deviceSharesQtGL()
+{
+    for (RendererLib *lib : _rendererLibs) {
+        if (lib->deviceSharesQtGL())
+            return true;
+    }
+    return false;
+}
+
+bool RendererFactory::deviceMakeCurrent()
+{
+    for (RendererLib *lib : _rendererLibs) {
+        if (lib->deviceMakeCurrent())
+            return true;
+    }
+    return false;
+}
+
+void RendererFactory::deviceDoneCurrent()
+{
+    for (RendererLib *lib : _rendererLibs) {
+        if (lib->deviceSharesQtGL()) {
+            lib->deviceDoneCurrent();
+            return;
+        }
+    }
+}
+
 bool RendererFactory::warmup(const std::string &type, QOpenGLWidget *widget,
                              RendererLib::WarmupTiming *timing)
 {

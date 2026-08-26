@@ -301,6 +301,32 @@ public:
     void setOverrideMode(const std::string &mode);
     void applyOverrideMode();
     std::string getOverrideMode() const {return overrideMode;}
+    /// This viewer's display style as a Render::DrawStyleMask, or
+    /// Render::StyleAsIs when the style is not one the backend can draw
+    /// by filtering (docs/CoinRetirement.md 5.7). What a unified canvas
+    /// puts on its SubViewFrame so each cell draws the shared scene in
+    /// its own style.
+    unsigned char drawStyleMask() const
+    { return drawStyleMaskFromName(overrideMode.c_str()); }
+    /// The mask a display style name filters with. Only the four
+    /// Class-A styles have one: Hidden Line, No Shading and
+    /// Tessellation are not bucket selections, they are extra traversal
+    /// state, so they stay with the Coin traversal and report
+    /// StyleAsIs.
+    static unsigned char drawStyleMaskFromName(const char *mode);
+    /// The display mode name this viewer's traversal CAPTURES with:
+    /// its own style, or none while a canvas is filtering styles per
+    /// cell (setCanvasStyleFiltered).
+    const char *captureOverrideMode() const;
+    /// Tell a canvas cell that the canvas is drawing its cells' styles
+    /// as backend bucket filters (docs/SplitViews.md sec 17), so this
+    /// viewer's traversal must capture every object in its OWN display
+    /// mode instead of applying the style. Re-applies the override,
+    /// which dirties the capture. False -- the default, and what a
+    /// canvas whose cells all share a style uses -- leaves the
+    /// traversal applying the style exactly as a plain view does.
+    void setCanvasStyleFiltered(bool on);
+    bool canvasStyleFiltered() const;
     const SoFCDisplayModeElement::HiddenLineConfig &getHiddenLineConfig() const;
     //@}
 
@@ -572,6 +598,60 @@ public:
     /// frame-capture Python API (saveRenderDump/getRenderStats) arms
     /// one-shot readbacks on it (docs/RenderDebug.md §4).
     Render::Renderer *getExternalRenderer() const;
+    /// The backend as a shared handle, so that a ViewArea unified canvas
+    /// can hand the same instance to every 3D cell it hosts
+    /// (docs/SplitViews.md sec 13). Null when there is no backend.
+    std::shared_ptr<Render::Renderer> sharedRenderer() const;
+    /// State this viewer's background (flat or gradient) to the backend
+    /// it feeds and return the flat colour behind it -- what a unified
+    /// canvas frame needs before rendering its sub-views, and what it
+    /// clears with if the backend pass fails.
+    QColor feedRendererBackground();
+    /** Use \a renderer instead of creating a backend of this viewer's
+     * own -- what a unified canvas does to its cells, so that N cells
+     * cost ONE backend instance and one copy of the GPU scene
+     * (docs/SplitViews.md sec 13).
+     *
+     * \a feed selects whether this viewer's render-cache manager is the
+     * one that states the scene to it. Exactly one cell of a canvas may
+     * feed: two managers pushing setScene() at one backend would
+     * overwrite each other's scene. The rest supply only a camera, and
+     * draw the same resident scene through it. Passing a null \a
+     * renderer detaches and puts the viewer back on its own backend
+     * (setRendererType).
+     */
+    void adoptRenderer(const std::shared_ptr<Render::Renderer> &renderer,
+                       bool feed, int subView = 0);
+    /** Feed this viewer's overlay captures -- its NaviCube, its corner
+     * axis cross, its foreground root -- into the adopted backend,
+     * scoped to the sub-view it was adopted as.
+     *
+     * renderScene() does this for a viewer that paints. A canvas cell
+     * that is not the feeder never paints, so without this its chrome
+     * would never reach the backend and every cell would show the
+     * FEEDING cell's cube, turned by the feeding cell's camera
+     * (docs/SplitViews.md sec 16.3). Cheap: the capture traversals are
+     * over the chrome graphs alone, not the scene.
+     *
+     * Must be called with the canvas's GL context current.
+     */
+    void updateCanvasOverlays();
+    /// Whether this viewer is a cell of a unified canvas (adoptRenderer
+    /// with a live renderer).
+    bool hasAdoptedRenderer() const;
+    /** Composite this viewer's Coin residue into one cell of a unified
+     * canvas (docs/SplitViews.md sec 13).
+     *
+     * The canvas has already drawn the backend pass for every cell into
+     * the framebuffer it has bound; this draws what the backend does not
+     * claim -- draggers, uncached custom nodes -- into \a origin / \a
+     * size, a rect of the canvas in GL device pixels (origin bottom
+     * left). \a backendDrawn says whether the backend pass succeeded, so
+     * a failed one still gets its background clear. Must be called with
+     * the canvas's GL context current.
+     */
+    void renderCanvasResidue(const SbVec2s &origin, const SbVec2s &size,
+                             bool backendDrawn);
     /// Apply the current AntiAliasing preference to the external render
     /// backend (if any) and schedule a redraw. Returns true when a backend
     /// handled it — the caller then skips the Coin view-clone that a plain-GL

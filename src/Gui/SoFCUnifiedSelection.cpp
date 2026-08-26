@@ -924,6 +924,8 @@ SbName SoFCUnifiedSelection::DisplayModeHiddenLine("Hidden Line");
 SbName SoFCUnifiedSelection::DisplayModeFlatLines("Flat Lines");
 SbName SoFCUnifiedSelection::DisplayModeAsIs("As Is");
 SbName SoFCUnifiedSelection::DisplayModeNoShading("No Shading");
+SbName SoFCUnifiedSelection::DisplayModeWireframe("Wireframe");
+SbName SoFCUnifiedSelection::DisplayModePoints("Points");
 
 void SoFCUnifiedSelection::Private::applyOverrideMode(SoState * state) const
 {

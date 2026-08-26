@@ -146,6 +146,18 @@ DrawViewPart::DrawViewPart(void)
     ADD_PROPERTY_TYPE(ScrubCount, (Preferences::scrubCount()), sgroup, App::Prop_None,
                       "The number of times FreeCAD should try to clean the HLR result.");
 
+    static const char* ugroup = "Shaded Underlay";
+    ADD_PROPERTY_TYPE(Shaded, (false), ugroup, App::Prop_None,
+                      "Draw a shaded raster underlay beneath the projected edges");
+    ADD_PROPERTY_TYPE(UnderlayImage, (nullptr), ugroup,
+                      App::PropertyType(App::Prop_Output | App::Prop_ReadOnly),
+                      "The captured shaded underlay image");
+    ADD_PROPERTY_TYPE(UnderlayResolution, (10.0), ugroup, App::Prop_None,
+                      "Underlay capture density in pixels per page mm");
+    ADD_PROPERTY_TYPE(UnderlayRect, (0.0), ugroup,
+                      App::PropertyType(App::Prop_Output | App::Prop_Hidden),
+                      "Registration rect [x, y, w, h] of the underlay in view coordinates (mm)");
+
     //initialize bbox to non-garbage
     bbox = Base::BoundBox3d(Base::Vector3d(0.0, 0.0, 0.0), 0.0);
 }
@@ -189,6 +201,18 @@ TopoDS_Shape DrawViewPart::getSourceShape(bool fuse) const
 TopoDS_Shape DrawViewPart::getShapeForDetail() const
 {
     return ShapeUtils::rotateShape(getSourceShape(true), getProjectionCS(), Rotation.getValue());
+}
+
+bool DrawViewPart::getShapeForDetailFrame(gp_Trsf& frame) const
+{
+    // getShapeForDetail rotates the (global-frame) source shape by
+    // +Rotation about the projection CS axis; the frame back is the
+    // inverse rotation.
+    frame = gp_Trsf();
+    if (!DrawUtil::fpCompare(Rotation.getValue(), 0.0)) {
+        frame.SetRotation(getProjectionCS().Axis(), -Rotation.getValue() * M_PI / 180.0);
+    }
+    return true;
 }
 
 //! combine the regular links and xlinks into a single list

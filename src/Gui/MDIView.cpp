@@ -322,6 +322,36 @@ void MDIView::windowStateChanged(QWidget* view)
     Q_UNUSED(view)
 }
 
+bool MDIView::isBackgroundView() const
+{
+    // Genuinely hidden, or minimized: nobody is looking, either way.
+    if (!isVisible() || isMinimized())
+        return true;
+    // A view in a window of its own answers for itself, and isVisible()
+    // above was the whole of that answer. A maximized sibling on the
+    // other screen hides nothing.
+    if (isWindow())
+        return false;
+    // Inside the MDI area "hidden" is not a visibility. A tabbed MDI
+    // keeps every child visible and stacks the current one, maximized,
+    // over the rest -- switching tabs even delivers a hide immediately
+    // followed by a show to the view being left, which is why this is
+    // not a question the Qt visibility flags can answer. What being in
+    // the background means there is that somebody else is maximized
+    // over me; in the tiled modes nobody is maximized, and no view is
+    // in the background because they are all on screen at once.
+    if (isMaximized())
+        return false;
+    auto mw = getMainWindow();
+    if (!mw)
+        return false;
+    for (auto w : mw->windows()) {
+        if (w != this && !w->isWindow() && w->isMaximized())
+            return true;
+    }
+    return false;
+}
+
 void MDIView::print(QPrinter* printer)
 {
     Q_UNUSED(printer);

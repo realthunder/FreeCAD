@@ -4,9 +4,9 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 file(GLOB CMakeCache RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}/CMakeCache.txt)
 
-set(Renderer_Headers Renderer.h DrawDevice.h DrawSurface.h SceneDump.h SceneLadder.h ProxyHierarchy.h ProxyStore.h OcclusionCull.h MaskedOcclusion.h Simd4.h CullBenefit.h MeshSimplify.h OccluderMesh.h MeshSource.h SceneServer.h)
+set(Renderer_Headers Renderer.h Page2D.h Page2DWire.h DrawDevice.h DrawSurface.h SceneDump.h SceneLadder.h ProxyHierarchy.h ProxyStore.h OcclusionCull.h MaskedOcclusion.h Simd4.h CullBenefit.h MeshSimplify.h OccluderMesh.h MeshSource.h SceneServer.h)
 set(Renderer_HPP_SRCS ${Renderer_Headers})
-set(Renderer_CPP_SRCS Renderer.cpp DrawDevice.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp ProxyStore.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp OccluderMesh.cpp MeshSource.cpp SceneServer.cpp)
+set(Renderer_CPP_SRCS Renderer.cpp Page2D.cpp Page2DWire.cpp DrawDevice.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp ProxyStore.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp OccluderMesh.cpp MeshSource.cpp SceneServer.cpp)
 set(Renderer_LIBS FreeCADBase
                   ${QtCore_LIBRARIES}
                   ${QtWidgets_LIBRARIES}
@@ -35,12 +35,13 @@ if(BUILD_BGFX)
         BGFXViewLifecycle.cpp
         BGFXScene.cpp
         BGFXFrame.cpp
+        Vg2D.cpp
     )
-    list(APPEND Renderer_HPP_SRCS BGFXRenderer.h BGFXRendererP.h)
+    list(APPEND Renderer_HPP_SRCS BGFXRenderer.h BGFXRendererP.h Vg2D.h)
     # Private: nothing outside this library calls bgfx, and example-common
     # carries bgfx's own entry point, which asks any executable that links
     # it for a _main_ it does not have.
-    list(APPEND Renderer_PRIVATE_LIBS bgfx bx bimg example-common)
+    list(APPEND Renderer_PRIVATE_LIBS bgfx bx bimg example-common vg-renderer)
 endif(BUILD_BGFX)
 
 if(BUILD_DILIGENT)
@@ -183,6 +184,17 @@ endif(BUILD_BGFX)
 add_executable(fcscenediff tools/scenediff.cpp)
 target_link_libraries(fcscenediff ${Library})
 SET_BIN_DIR(fcscenediff fcscenediff)
+
+if(BUILD_BGFX)
+    # Offscreen vg-renderer smoke test (paths + text into a headless bgfx
+    # frame buffer, pixels read back and checked). Build-tree developer
+    # tool like fcscenediff -- not installed. Links vg-renderer/bgfx
+    # directly, no Qt and no ${Library}.
+    add_executable(fcvgsmoke tools/vgsmoke.cpp)
+    target_link_libraries(fcvgsmoke ${Library} vg-renderer bgfx bx)
+    set_target_properties(fcvgsmoke PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    SET_BIN_DIR(fcvgsmoke fcvgsmoke)
+endif()
 
 if (Renderer_Assets)
     install(FILES ${Renderer_Assets} DESTINATION ${CMAKE_INSTALL_DATADIR}/Renderer)

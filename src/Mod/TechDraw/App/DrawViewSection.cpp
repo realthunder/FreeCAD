@@ -372,6 +372,58 @@ TopoDS_Shape DrawViewSection::getShapeForDetail() const
     return ShapeUtils::rotateShape(getCutShape(), getProjectionCS(), Rotation.getValue());
 }
 
+gp_Trsf DrawViewSection::getShapeToCutFrame(bool& valid) const
+{
+    // Mirrors getShapeToCut()'s branches: the frame of the shape it
+    // would return, read off the BaseView chain's stored frames.
+    App::DocumentObject* base = BaseView.getValue();
+    if (base && base->isDerivedFrom<TechDraw::DrawViewSection>()) {
+        auto* dvs = static_cast<TechDraw::DrawViewSection*>(base);
+        if (UsePreviousCut.getValue()) {
+            gp_Trsf frame;
+            valid = dvs->getCutShapeFrame(frame);
+            return frame;
+        }
+        return dvs->getShapeToCutFrame(valid);
+    }
+    if (base && base->isDerivedFrom<TechDraw::DrawViewDetail>()) {
+        auto* dvd = static_cast<TechDraw::DrawViewDetail*>(base);
+        gp_Trsf frame;
+        valid = dvd->getDetailFrame(frame);
+        return frame;
+    }
+    // a plain base view's source shape is in the global frame
+    valid = base && base->isDerivedFrom<TechDraw::DrawViewPart>();
+    return gp_Trsf();
+}
+
+bool DrawViewSection::getCutShapeFrame(gp_Trsf& frame) const
+{
+    frame = m_cutFrame;
+    return m_cutFrameValid;
+}
+
+bool DrawViewSection::getPreparedFrame(gp_Trsf& frame) const
+{
+    frame = m_preparedFrame;
+    return m_preparedFrameValid;
+}
+
+bool DrawViewSection::getShapeForDetailFrame(gp_Trsf& frame) const
+{
+    // getShapeForDetail rotates the CENTERED cut shape (m_cutShape =
+    // raw moved by -m_saveCentroid) by +Rotation about the projection
+    // CS axis; invert both steps, then map raw -> global.
+    gp_Trsf unrotate;
+    if (!DrawUtil::fpCompare(Rotation.getValue(), 0.0)) {
+        unrotate.SetRotation(getProjectionCS().Axis(), -Rotation.getValue() * M_PI / 180.0);
+    }
+    gp_Trsf uncenter;
+    uncenter.SetTranslation(gp_Vec(m_saveCentroid.x, m_saveCentroid.y, m_saveCentroid.z));
+    frame = m_cutFrame.Multiplied(uncenter.Multiplied(unrotate));
+    return m_cutFrameValid;
+}
+
 App::DocumentObjectExecReturn* DrawViewSection::execute()
 {
     //    Base::Console().Message("DVS::execute() - %s\n", getNameInDocument());
@@ -403,6 +455,10 @@ App::DocumentObjectExecReturn* DrawViewSection::execute()
     // save important info for later use
     m_shapeSize = sqrt(centerBox.SquareExtent());
     m_saveShape = baseShape;
+    // The frame of the cut input, captured with the shape itself (doc
+    // sec 31); committed to m_cutFrame beside m_cutShapeRaw when the
+    // async cut lands in prepareShape.
+    m_pendingCutFrame = getShapeToCutFrame(m_pendingCutFrameValid);
 
     bool haveX = checkXDirection();
     if (!haveX) {
@@ -614,6 +670,9 @@ TopoDS_Shape DrawViewSection::prepareShape(const TopoDS_Shape& rawShape, double 
         Base::Vector3d centroid(inputCenter.X(), inputCenter.Y(), inputCenter.Z());
 
         m_cutShapeRaw = rawShape;
+        // commit the frame beside the shape it describes (doc sec 31)
+        m_cutFrame = m_pendingCutFrame;
+        m_cutFrameValid = m_pendingCutFrameValid;
         preparedShape = ShapeUtils::moveShape(rawShape, centroid * -1.0);
         m_cutShape = preparedShape;
         m_saveCentroid = centroid;
@@ -624,6 +683,21 @@ TopoDS_Shape DrawViewSection::prepareShape(const TopoDS_Shape& rawShape, double 
             preparedShape =
                 ShapeUtils::rotateShape(preparedShape, m_projectionCS, Rotation.getValue());
         }
+
+        // m_preparedShape -> global: invert rotate, then scale, then
+        // centering, then map the raw frame out.
+        gp_Trsf unrotate;
+        if (!DrawUtil::fpCompare(Rotation.getValue(), 0.0)) {
+            unrotate.SetRotation(m_projectionCS.Axis(), -Rotation.getValue() * M_PI / 180.0);
+        }
+        gp_Trsf unscale;
+        if (getScale() > 0.0) {
+            unscale.SetScale(gp_Pnt(0.0, 0.0, 0.0), 1.0 / getScale());
+        }
+        gp_Trsf uncenter;
+        uncenter.SetTranslation(gp_Vec(centroid.x, centroid.y, centroid.z));
+        m_preparedFrame = m_cutFrame.Multiplied(uncenter.Multiplied(unscale.Multiplied(unrotate)));
+        m_preparedFrameValid = m_cutFrameValid && getScale() > 0.0;
         if (debugSection()) {
             BRepTools::Write(m_cutShape, "DVSCutShape.brep");// debug
             //            DrawUtil::dumpCS("DVS::makeSectionCut - CS to GO",

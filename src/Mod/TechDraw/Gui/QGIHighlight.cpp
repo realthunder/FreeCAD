@@ -279,6 +279,9 @@ void QGIHighlight::setTools()
     m_brush.setStyle(m_brushCurrent);
     m_brush.setColor(m_colCurrent);
 
+    // The pen carries the dash pattern; hand it to the shape edge
+    // before the style, so a setStyle()-only caller still overrides.
+    m_shape->setLinePen(m_pen);
     m_shape->setWidth(m_width);
     m_shape->setStyle(m_styleCurrent);
 }
@@ -317,4 +320,6 @@ QPainterPath QGIHighlight::shape() const
 void QGIHighlight::setLinePen(QPen isoPen)
 {
     m_pen = isoPen;
+    // Style rides the pen; setTools() forwards both to the shape edge.
+    m_styleCurrent = isoPen.style();
 }

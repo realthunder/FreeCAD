@@ -73,6 +73,7 @@ public:
     void setPrettyNormal() override;
     void setPrettyPre() override;
     void setPrettySel() override;
+    void raiseForHighlight();
     void setDrawEdges(bool b);
     virtual void setOutline(const QPainterPath& path);
 

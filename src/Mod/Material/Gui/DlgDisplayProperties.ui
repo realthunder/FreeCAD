@@ -435,10 +435,16 @@
          </widget>
         </item>
         <item row="5" column="1">
-         <widget class="QComboBox" name="comboFinish">
+         <widget class="QLineEdit" name="editFinish">
           <property name="toolTip">
            <string>The machining the surface was given, shaded as relief.
-Pick a preset, then size it below.</string>
+Start typing, or click for the list; then size it below.</string>
+          </property>
+          <property name="placeholderText">
+           <string>None</string>
+          </property>
+          <property name="clearButtonEnabled">
+           <bool>true</bool>
           </property>
          </widget>
         </item>

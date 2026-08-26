@@ -51,6 +51,7 @@ class QGIFace;
 class QGIEdge;
 class QGIHighlight;
 class PathBuilder;
+class QGCustomImage;
 
 class TechDrawGuiExport QGIViewPart : public QGIView
 {
@@ -76,10 +77,14 @@ public:
     virtual void drawAllFaces();
     virtual void drawAllEdges();
     virtual void drawAllVertexes();
+    virtual void drawShadedUnderlay();
+    //! whether the shaded raster underlay is active on this view
+    bool hasShadedUnderlay() const { return m_underlay != nullptr; }
 
     bool showThisEdge(TechDraw::BaseGeomPtr geom);
 
     virtual void drawAllSectionLines();
+    virtual void drawBreakLines();
     virtual void drawSectionLine(TechDraw::DrawViewSection* s, bool b);
     virtual void drawComplexSectionLine(TechDraw::DrawViewSection* viewSection, bool b);
     virtual void drawCenterLines(bool b);
@@ -139,6 +144,7 @@ protected:
 
 private:
     QList<QGraphicsItem*> deleteItems;
+    QGCustomImage* m_underlay = nullptr;
     std::unordered_map<const App::DocumentObject*, std::vector<QGIFace*>> m_hatchedFaces;
     PathBuilder* m_pathBuilder;
     TechDraw::LineGenerator* m_dashedLineGenerator;

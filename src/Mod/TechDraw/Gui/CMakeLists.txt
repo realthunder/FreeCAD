@@ -208,6 +208,8 @@ SET(TechDrawGui_SRCS
     TaskActiveView.h
     Grabber3d.cpp
     Grabber3d.h
+    ShadedUnderlay.cpp
+    ShadedUnderlay.h
     TaskDetail.ui
     TaskDetail.cpp
     TaskDetail.h
@@ -314,6 +316,8 @@ SET(TechDrawGuiView_SRCS
     QGIDimLines.h
     QGISectionLine.cpp
     QGISectionLine.h
+    QGIBreakLine.cpp
+    QGIBreakLine.h
     QGIDecoration.cpp
     QGIDecoration.h
     QGICenterLine.cpp
@@ -339,6 +343,10 @@ SET(TechDrawGuiView_SRCS
     ZVALUE.h
     QGIGhostHighlight.cpp
     QGIGhostHighlight.h
+    PageFeed.cpp
+    PageFeed.h
+    PageServe.cpp
+    PageServe.h
     PathBuilder.cpp
     PathBuilder.h
 )

@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:597)
+// Auto generated code (Gui/ViewParams.py:605)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -136,6 +136,24 @@ public:
     static void setRenderCache(const long &v);
     static const char *docRenderCache();
     static void onRenderCacheChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UnifiedCanvas
+    ///
+    /// Draw all the 3D cells of a split view (ViewArea) into ONE
+    /// canvas widget, as sub-views of a single render backend, instead
+    /// of composing each cell's own widget. One backend instance and
+    /// one copy of the GPU scene serve every cell (the browser tier's
+    /// model). Experimental; needs the render engine (render cache
+    /// mode 3). See docs/SplitViews.md sec 13.
+    static const bool & getUnifiedCanvas();
+    static const bool & defaultUnifiedCanvas();
+    static void removeUnifiedCanvas();
+    static void setUnifiedCanvas(const bool &v);
+    static const char *docUnifiedCanvas();
+    static void onUnifiedCanvasChanged();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -2245,7 +2263,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:603)
+    // Auto generated code (Gui/ViewParams.py:611)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2276,7 +2294,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:616)
+// Auto generated code (Gui/ViewParams.py:624)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

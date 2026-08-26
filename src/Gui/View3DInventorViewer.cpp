@@ -516,7 +516,31 @@ struct View3DInventorViewer::Private
 
     SoFCDisplayModeElement::HiddenLineConfig hiddenLineConfig;
 
-    std::unique_ptr<Renderer> renderer;
+    /// Set while a unified canvas is drawing its cells' styles as
+    /// backend bucket filters: this viewer's traversal then captures
+    /// every object in its OWN display mode and applies no style of
+    /// its own (setCanvasStyleFiltered).
+    bool canvasStyleFiltered = false;
+
+    // Shared, not owned outright: a ViewArea unified canvas
+    // (docs/SplitViews.md sec 13) hands the SAME backend instance to
+    // every 3D cell it hosts, so that N cells cost one backend and one
+    // copy of the GPU scene. A view outside a canvas is still the sole
+    // owner of what it created.
+    std::shared_ptr<Renderer> renderer;
+    // Set while this viewer is one cell of a unified canvas: the
+    // canvas has already run the backend pass for every cell
+    // (Renderer::renderSubViews) into the framebuffer it bound, so
+    // renderScene() must not render a frame of its own -- it only
+    // composites this cell's Coin residue, into the cell rect of the
+    // canvas. Carries whether that backend pass succeeded.
+    bool canvasResidue = false;
+    bool canvasBackendDrawn = false;
+    // Whether `renderer` is the canvas's instance rather than this
+    // viewer's own, and whether this viewer is the cell that states the
+    // scene to it (exactly one cell of a canvas may).
+    bool adoptedRenderer = false;
+    bool feedsRenderer = false;
 
     // Overlay captures (raw-GL overlay Coin-ification): mirror the
     // foreground superimposition and the corner axis cross to the
@@ -533,6 +557,17 @@ struct View3DInventorViewer::Private
         OverlayDimensions = 8,
         OverlayDebugLabel = 9,
     };
+    /// The ids above are per VIEWER. A unified-canvas cell offsets them
+    /// by its sub-view id times this stride, because the backend's
+    /// overlay map is keyed by producer id ALONE and every cell of a
+    /// canvas feeds the same backend -- unoffset, two cells' NaviCubes
+    /// would be one entry that each overwrote in turn
+    /// (docs/SplitViews.md sec 16.3). Must exceed the largest id above.
+    static constexpr int OverlayIdStride = 16;
+    /// Which sub-view (canvas cell) this viewer's feeds belong to; 0
+    /// when it is not a canvas cell, which is the "every sub-view"
+    /// scope and the plain single-view case alike.
+    int canvasSubView = 0;
     struct OverlayCapture {
         CoinPtr<SoNode> root;
         // The capture runs inside its own tiny GL render action traversal
@@ -820,6 +855,18 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
         owner->getSoRenderManager()->getViewportRegion());
     captureAction.setCacheContext(glra->getCacheContext());
 
+    // Publish one capture: scope the anchor to this viewer's sub-view,
+    // offset the id past every other cell's, and run the capture
+    // traversal. Every feed below goes through here, so the scoping
+    // cannot be forgotten at one site.
+    auto feedOverlay = [&](OverlayCapture &capture, int base,
+                           Render::OverlayAnchor anchor) {
+        anchor.subView = canvasSubView;
+        capture.manager->setExternalOverlay(
+            renderer.get(), canvasSubView * OverlayIdStride + base, anchor);
+        captureAction.apply(capture.applyRoot);
+    };
+
     if (!foregroundCapture.manager)
         initCapture(foregroundCapture, owner->foregroundroot);
     // Full-viewport orthographic anchor mirroring the foreground root's own
@@ -830,9 +877,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
     fgAnchor.cameraDistance = 5.0F;
     fgAnchor.nearPlane = 0.0F;
     fgAnchor.farPlane = 10.0F;
-    foregroundCapture.manager->setExternalOverlay(
-        renderer.get(), OverlayForeground, fgAnchor);
-    captureAction.apply(foregroundCapture.applyRoot);
+    feedOverlay(foregroundCapture, OverlayForeground, fgAnchor);
 
     if (owner->axiscrossEnabled) {
         if (!axisCrossCapture.manager)
@@ -852,9 +897,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
         anchor.nearPlane = 0.1F;
         anchor.farPlane = 10.0F;
         anchor.orientFromScene = true;
-        axisCrossCapture.manager->setExternalOverlay(
-            renderer.get(), OverlayAxisCross, anchor);
-        captureAction.apply(axisCrossCapture.applyRoot);
+        feedOverlay(axisCrossCapture, OverlayAxisCross, anchor);
     }
     else if (axisCrossCapture.manager) {
         // Detaching removes the overlay from the backend.
@@ -902,9 +945,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             for (auto graph : itemGraphs)
                 aggRoot->addChild(graph);
         }
-        graphicsItemsCapture.manager->setExternalOverlay(
-            renderer.get(), OverlayGraphicsItems, pixelAnchor);
-        captureAction.apply(graphicsItemsCapture.applyRoot);
+        feedOverlay(graphicsItemsCapture, OverlayGraphicsItems, pixelAnchor);
     }
     else {
         dropCapture(graphicsItemsCapture, OverlayGraphicsItems);
@@ -973,9 +1014,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             fpsFedText = fpsText;
             fpsFedVp = vpsize;
         }
-        fpsTextCapture.manager->setExternalOverlay(
-            renderer.get(), OverlayFpsText, pixelAnchor);
-        captureAction.apply(fpsTextCapture.applyRoot);
+        feedOverlay(fpsTextCapture, OverlayFpsText, pixelAnchor);
     }
     else {
         dropCapture(fpsTextCapture, OverlayFpsText);
@@ -1126,9 +1165,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             debugLabelFedText = debugLabel;
             debugLabelFedVp = vpsize;
         }
-        debugLabelCapture.manager->setExternalOverlay(
-            renderer.get(), OverlayDebugLabel, pixelAnchor);
-        captureAction.apply(debugLabelCapture.applyRoot);
+        feedOverlay(debugLabelCapture, OverlayDebugLabel, pixelAnchor);
     }
     else {
         dropCapture(debugLabelCapture, OverlayDebugLabel);
@@ -1152,20 +1189,23 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             dropCapture(capture, id);
         if (!capture.manager)
             initCapture(capture, graph);
-        capture.manager->setExternalOverlay(renderer.get(), id, anchor);
-        captureAction.apply(capture.applyRoot);
+        feedOverlay(capture, id, anchor);
     };
     if (owner->naviCubeEnabled && owner->naviCube) {
         Render::OverlayAnchor cubeAnchor;
-        feedNaviGraph(naviCubeCapture, OverlayNaviCube,
-                      owner->naviCube->getOverlayCubeGraph(cubeAnchor),
-                      cubeAnchor);
+        SoSeparator *cubeGraph = owner->naviCube->getOverlayCubeGraph(cubeAnchor);
+        FC_TRACE("navicube sub " << canvasSubView
+                 << ": graph " << (cubeGraph ? 1 : 0));
+        feedNaviGraph(naviCubeCapture, OverlayNaviCube, cubeGraph, cubeAnchor);
         Render::OverlayAnchor btnAnchor;
         feedNaviGraph(naviButtonCapture, OverlayNaviButtons,
                       owner->naviCube->getOverlayButtonGraph(btnAnchor),
                       btnAnchor);
     }
     else {
+        FC_TRACE("navicube sub " << canvasSubView << ": off (enabled "
+                 << int(owner->naviCubeEnabled) << ", cube "
+                 << (owner->naviCube ? 1 : 0) << ")");
         dropCapture(naviCubeCapture, OverlayNaviCube);
         dropCapture(naviButtonCapture, OverlayNaviButtons);
     }
@@ -1184,9 +1224,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             initCapture(editingCapture, owner->pcEditingRoot);
         Render::OverlayAnchor editAnchor;
         editAnchor.sceneCamera = true;
-        editingCapture.manager->setExternalOverlay(
-            renderer.get(), OverlayEditing, editAnchor);
-        captureAction.apply(editingCapture.applyRoot);
+        feedOverlay(editingCapture, OverlayEditing, editAnchor);
         editingBackendFed = true;
     }
     else {
@@ -1218,9 +1256,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             initCapture(dimensionCapture, owner->dimensionRoot);
         Render::OverlayAnchor dimAnchor;
         dimAnchor.sceneCamera = true;
-        dimensionCapture.manager->setExternalOverlay(
-            renderer.get(), OverlayDimensions, dimAnchor);
-        captureAction.apply(dimensionCapture.applyRoot);
+        feedOverlay(dimensionCapture, OverlayDimensions, dimAnchor);
     }
     else {
         dropCapture(dimensionCapture, OverlayDimensions);
@@ -1232,7 +1268,8 @@ void View3DInventorViewer::Private::clearOverlayCaptures()
     for (auto capture : {&foregroundCapture, &axisCrossCapture,
                          &graphicsItemsCapture, &fpsTextCapture,
                          &naviCubeCapture, &naviButtonCapture,
-                         &editingCapture, &dimensionCapture}) {
+                         &editingCapture, &dimensionCapture,
+                         &debugLabelCapture}) {
         if (capture->manager) {
             capture->manager->setExternalOverlay(
                 nullptr, 0, Render::OverlayAnchor());
@@ -2313,10 +2350,30 @@ void View3DInventorViewer::setOverrideMode(const std::string& mode)
     Application::Instance->signalViewModeChanged(_pimpl->view);
 }
 
+unsigned char View3DInventorViewer::drawStyleMaskFromName(const char *mode)
+{
+    if (!mode || !mode[0])
+        return Render::StyleAsIs;
+    if (SoFCUnifiedSelection::DisplayModeShaded == mode)
+        return Render::StyleShaded;
+    if (SoFCUnifiedSelection::DisplayModeFlatLines == mode)
+        return Render::StyleFlatLines;
+    if (SoFCUnifiedSelection::DisplayModeWireframe == mode)
+        return Render::StyleWireframe;
+    if (SoFCUnifiedSelection::DisplayModePoints == mode)
+        return Render::StylePoints;
+    return Render::StyleAsIs;
+}
+
 void View3DInventorViewer::applyOverrideMode()
 {
     this->overrideBGColor = 0;
-    auto views = getDocument()->getViewProvidersOfType(Gui::ViewProvider::getClassTypeId());
+    // The selection root is what every branch below writes to, and a
+    // viewer being torn down or detached from a canvas has none. Worth
+    // stating rather than assuming: this is now called from
+    // adoptRenderer, which runs while a cell is being released.
+    if (!this->selectionRoot)
+        return;
 
     const char * mode = this->overrideMode.c_str();
     if (SoFCUnifiedSelection::DisplayModeNoShading == mode) {
@@ -2350,9 +2407,42 @@ void View3DInventorViewer::applyOverrideMode()
     }
     else {
         this->shading = true;
-        this->selectionRoot->overrideMode = overrideMode.c_str();
+        this->selectionRoot->overrideMode = captureOverrideMode();
         this->getSoRenderManager()->setRenderMode(SoRenderManager::AS_IS);
     }
+}
+
+const char *View3DInventorViewer::captureOverrideMode() const
+{
+    // Which display mode this viewer's traversal CAPTURES with, which
+    // is its own style everywhere except a canvas cell whose canvas has
+    // decided to filter styles per cell. There this one traversal feeds
+    // every cell, so baking a style into it would show one cell's style
+    // in all of them; the capture holds each object's own mode instead
+    // and each cell filters buckets (docs/SplitViews.md sec 17). The
+    // canvas only chooses that when it has established that no object's
+    // own mode makes the two disagree -- otherwise the odd cells leave
+    // the canvas and traverse for themselves.
+    if (_pimpl->canvasStyleFiltered
+            && drawStyleMaskFromName(overrideMode.c_str()) != Render::StyleAsIs)
+        return "";
+    return overrideMode.c_str();
+}
+
+bool View3DInventorViewer::canvasStyleFiltered() const
+{
+    return _pimpl->canvasStyleFiltered;
+}
+
+void View3DInventorViewer::setCanvasStyleFiltered(bool on)
+{
+    if (_pimpl->canvasStyleFiltered == on)
+        return;
+    _pimpl->canvasStyleFiltered = on;
+    // Re-applied rather than merely stored: it decides a field of the
+    // selection root, and changing that field is what dirties the
+    // capture so the next frame is fed the newly traversed scene.
+    applyOverrideMode();
 }
 
 const SoFCDisplayModeElement::HiddenLineConfig &
@@ -4074,6 +4164,164 @@ Render::Renderer *View3DInventorViewer::getExternalRenderer() const
     return _pimpl->renderer.get();
 }
 
+std::shared_ptr<Render::Renderer> View3DInventorViewer::sharedRenderer() const
+{
+    return _pimpl->renderer;
+}
+
+QColor View3DInventorViewer::feedRendererBackground()
+{
+    // What renderScene() resolves for its own frame, minus the Coin
+    // gradient-node dance: the backend draws the background itself, so
+    // a canvas frame (docs/SplitViews.md sec 13) only has to state it
+    // and know the flat colour a failed pass should clear with.
+    QColor col;
+    if (overrideBGColor)
+        col = App::Color(overrideBGColor).asValue<QColor>();
+    else
+        col = this->backgroundColor();
+    if (_pimpl->renderer)
+        _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
+    return col;
+}
+
+bool View3DInventorViewer::hasAdoptedRenderer() const
+{
+    return _pimpl->adoptedRenderer;
+}
+
+void View3DInventorViewer::adoptRenderer(
+        const std::shared_ptr<Render::Renderer> &renderer, bool feed,
+        int subView)
+{
+    if (!renderer) {
+        if (!_pimpl->adoptedRenderer)
+            return;
+        _pimpl->canvasSubView = 0;
+        // Give the viewer back its own backend. Drop the adopted one
+        // exactly as setRendererType does when it swaps instances: the
+        // overlay captures and the scene feed both name a backend.
+        _pimpl->clearOverlayCaptures();
+        if (selectionRoot)
+            selectionRoot->setExternalRenderer(nullptr);
+        _pimpl->renderer.reset();
+        _pimpl->adoptedRenderer = false;
+        _pimpl->canvasResidue = false;
+        // Leaving the canvas puts the style back in this viewer's own
+        // traversal, where it means what it means on a plain view.
+        _pimpl->canvasStyleFiltered = false;
+        applyOverrideMode();
+        const int mode = int(ViewParams::getRenderCache());
+        setRendererType(mode == 3 ? RenderParams::getType() : std::string());
+        getSoRenderManager()->scheduleRedraw();
+        return;
+    }
+    _pimpl->canvasSubView = subView;
+    if (_pimpl->renderer != renderer) {
+        // Whatever this viewer held is not what it will feed; the
+        // captures and the scene feed are both stated per backend.
+        _pimpl->clearOverlayCaptures();
+        if (selectionRoot)
+            selectionRoot->setExternalRenderer(nullptr);
+        // Only a backend this viewer owned alone is forgotten -- the
+        // canvas's instance stays fed by whichever cell feeds it.
+        if (_pimpl->renderer && _pimpl->renderer.use_count() == 1)
+            ObjectMetaFeed::instance().forget(_pimpl->renderer.get());
+        _pimpl->renderer = renderer;
+        _pimpl->adoptedRenderer = true;
+        // Detached above: whatever this viewer fed, it fed the old one.
+        _pimpl->feedsRenderer = false;
+    }
+    if (!selectionRoot)
+        return;
+    const bool fed = _pimpl->feedsRenderer;
+    if (fed == feed)
+        return;
+    _pimpl->feedsRenderer = feed;
+    if (feed) {
+        App::PropertyContainer *settings = _pimpl->renderSettings();
+        selectionRoot->setExternalRenderer(renderer.get(), settings);
+        Gui::initRenderProperties(settings);
+        applyRendererAntiAliasing();
+    }
+    else {
+        // Detaching leaves the backend holding the scene this manager
+        // stated; the cell that takes over restates it whole
+        // (SoFCRenderer::setExternalRenderer feeds on attach), so
+        // nothing is lost and the backend never runs empty.
+        selectionRoot->setExternalRenderer(nullptr);
+    }
+}
+
+void View3DInventorViewer::updateCanvasOverlays()
+{
+    if (!_pimpl->renderer || !_pimpl->adoptedRenderer) {
+        FC_TRACE("canvas overlays: not adopted (renderer "
+                 << (_pimpl->renderer ? 1 : 0) << ", adopted "
+                 << int(_pimpl->adoptedRenderer) << ")");
+        return;
+    }
+    // The captures only read the action for its cache context; the
+    // traversal they run is their own.
+    auto *glra = getSoRenderManager()->getGLRenderAction();
+    if (!glra) {
+        FC_TRACE("canvas overlays: no GL render action");
+        return;
+    }
+    const SbVec2s vp = getSoRenderManager()
+        ->getViewportRegion().getViewportSizePixels();
+    FC_TRACE("canvas overlays: sub " << _pimpl->canvasSubView
+             << " axiscross " << int(axiscrossEnabled)
+             << " vp " << vp[0] << "x" << vp[1]);
+    _pimpl->updateOverlayCaptures(glra);
+}
+
+void View3DInventorViewer::renderCanvasResidue(const SbVec2s &origin,
+                                               const SbVec2s &size,
+                                               bool backendDrawn)
+{
+    if (size[0] <= 0 || size[1] <= 0)
+        return;
+    // Coin draws where its viewport region says, origin included, so
+    // the cell rect IS the viewport region for this traversal. The
+    // widget-sized region comes back afterwards: everything else that
+    // reads it (the camera aspect, picking) wants the plain one.
+    SoRenderManager *manager = getSoRenderManager();
+    const SbViewportRegion saved = manager->getViewportRegion();
+    SbViewportRegion vp(size[0], size[1]);
+    vp.setViewportPixels(origin[0], origin[1], size[0], size[1]);
+    manager->setViewportRegion(vp);
+
+    // Scissor for the whole residue: renderScene() clears (a failed
+    // backend pass, and the closing alpha fixup) with calls that are
+    // framebuffer-wide, and this cell owns only its rect of the canvas.
+    GLboolean hadScissor = glIsEnabled(GL_SCISSOR_TEST);
+    GLint savedBox[4] = {0, 0, 0, 0};
+    glGetIntegerv(GL_SCISSOR_BOX, savedBox);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(origin[0], origin[1], size[0], size[1]);
+
+    _pimpl->canvasResidue = true;
+    _pimpl->canvasBackendDrawn = backendDrawn;
+    try {
+        renderScene();
+    }
+    catch (...) {
+        _pimpl->canvasResidue = false;
+        glScissor(savedBox[0], savedBox[1], savedBox[2], savedBox[3]);
+        if (!hadScissor)
+            glDisable(GL_SCISSOR_TEST);
+        manager->setViewportRegion(saved);
+        throw;
+    }
+    _pimpl->canvasResidue = false;
+
+    glScissor(savedBox[0], savedBox[1], savedBox[2], savedBox[3]);
+    if (!hadScissor)
+        glDisable(GL_SCISSOR_TEST);
+    manager->setViewportRegion(saved);
+}
+
 bool View3DInventorViewer::applyRendererAntiAliasing()
 {
     if (!_pimpl->renderer)
@@ -4095,6 +4343,12 @@ void View3DInventorViewer::setRenderSettings(App::PropertyContainer *container)
 
 void View3DInventorViewer::setRendererType(const std::string &type)
 {
+    // Selecting a backend of its own ends any unified-canvas adoption
+    // (docs/SplitViews.md sec 13); the flags describe THIS viewer's
+    // relationship to whatever `renderer` ends up holding.
+    _pimpl->adoptedRenderer = false;
+    _pimpl->feedsRenderer = !type.empty() && type != "Default";
+
     // An empty or 'Default' type selects the plain GL pipeline. A failed
     // RendererFactory::create() also returns null, falling back to plain GL.
     if (type.empty() || type == "Default") {
@@ -5392,7 +5646,23 @@ void View3DInventorViewer::renderScene()
 
     bool externalRendered = false;
     SoCamera* cam = getSoRenderManager()->getCamera();
-    if (cam && _pimpl->renderer) {
+    if (_pimpl->canvasResidue) {
+        // One cell of a ViewArea unified canvas (docs/SplitViews.md sec
+        // 13). The canvas already ran the backend pass for every cell of
+        // the layout -- one renderSubViews call, one backend, one copy
+        // of the scene -- into the framebuffer it has bound, so this
+        // traversal is the Coin residue of THIS cell and nothing else:
+        // no frame of our own, and no clear, because the cell rect
+        // already holds the backend's colour and depth. The caller has
+        // scissored us to that rect, so the fallback clear below cannot
+        // reach the neighbours.
+        externalRendered = _pimpl->canvasBackendDrawn;
+        if (!externalRendered) {
+            glClearColor(col.redF(), col.greenF(), col.blueF(), 0.0F);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        }
+    }
+    else if (cam && _pimpl->renderer) {
         SbMatrix viewMat, projMat;
         const SbViewportRegion vp = getSoRenderManager()->getViewportRegion();
         SbViewVolume vol = cam->getViewVolume(vp.getViewportAspectRatio());
@@ -5539,7 +5809,10 @@ void View3DInventorViewer::renderScene()
     outFps.stop();
     {
         Render::FrameOutsideScope outCaps(Render::FrameOutside::Captures);
-        if (_pimpl->renderer)
+        // On a canvas the captures are driven for EVERY cell before the
+        // frame (updateCanvasOverlays); the residue pass runs after it,
+        // so repeating them here would only re-feed what was just drawn.
+        if (_pimpl->renderer && !_pimpl->canvasResidue)
             _pimpl->updateOverlayCaptures(glra);
     }
 

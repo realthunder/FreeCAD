@@ -241,7 +241,7 @@ int countOf(const TopoDS_Shape& shape, TopAbs_ShapeEnum type)
 gp_Pnt sampleSurface(const TopoDS_Face& face, double u, double v)
 {
     TopLoc_Location loc;
-    const occ::handle<Geom_Surface> surface = BRep_Tool::Surface(face, loc);
+    const Handle(Geom_Surface) surface = BRep_Tool::Surface(face, loc);
     if (surface.IsNull())
         return gp_Pnt(0., 0., 0.);
     gp_Pnt point = surface->Value(u, v);
@@ -268,8 +268,8 @@ bool surfacesAgree(const TopoDS_Shape& from, const TopoDS_Shape& to, const gp_Tr
         const TopoDS_Face& b = TopoDS::Face(toFaces(i));
         TopLoc_Location aLoc;
         TopLoc_Location bLoc;
-        const occ::handle<Geom_Surface> aSurface = BRep_Tool::Surface(a, aLoc);
-        const occ::handle<Geom_Surface> bSurface = BRep_Tool::Surface(b, bLoc);
+        const Handle(Geom_Surface) aSurface = BRep_Tool::Surface(a, aLoc);
+        const Handle(Geom_Surface) bSurface = BRep_Tool::Surface(b, bLoc);
         if (aSurface.IsNull() != bSurface.IsNull())
             return false;
         if (aSurface.IsNull())

@@ -28,6 +28,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFontComboBox>
+#include <QFrame>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QRadioButton>
@@ -84,6 +85,15 @@ public:
         QWidget* parent = nullptr);
     explicit MaterialTreeWidget(QWidget* parent = nullptr);
     ~MaterialTreeWidget() override;
+
+    /** How big a card's icon is drawn here, in pixels
+     *
+     * The user's IconSize preference, clamped to what is legible. Public
+     * because the other picture-lists in the same dialogs -- the surface
+     * finishes above this one -- have to be drawn at the same size for
+     * the dialog to read as one thing.
+     */
+    static int iconExtent();
 
     /** Set the material by specifying its UUID
      */
@@ -176,6 +186,9 @@ private Q_SLOTS:
     void onSelectMaterial(const QItemSelection& selected, const QItemSelection& deselected);
     void onDoubleClick(const QModelIndex& index);
     void onFilter(const QString& text);
+    /// A row clicked in the list: a card is the answer and closes it, a
+    /// library or folder is a branch to open.
+    void onTreeClicked(const QModelIndex& index);
 
 private:
     // UI minimum sizes
@@ -190,6 +203,8 @@ private:
 
     QLineEdit* m_material;
     QPushButton* m_expand;
+    /// The window the list lives in. Everything below is inside it.
+    QFrame* m_popup;
     QTreeView* m_materialTree;
     QPushButton* m_editor;
     QComboBox* m_filterCombo;
@@ -198,6 +213,9 @@ private:
 
     QString m_materialDisplay;
     QString m_uuid;
+    /// What the box held before the last keystroke, which is how a
+    /// deletion is told from an insertion -- see inlineComplete().
+    QString m_typed;
 
     std::list<QString> _favorites;
     std::list<QString> _recents;
@@ -232,6 +250,31 @@ protected:
     /** Create the widgets UI objects
      */
     void createLayout();
+
+    /// Put the list on screen under the box, and take it away again.
+    void showPopup();
+    void hidePopup();
+    /** Hide every row that neither matches \a text nor holds something
+     * that does, and open the branches that survived.
+     *
+     * Rows hidden in the view rather than filtered through a proxy
+     * model: everything else here reaches for the QStandardItemModel
+     * directly (itemFromIndex, invisibleRootItem), and a proxy in
+     * between would have made every one of those wrong.
+     *
+     * \return whether anything under \a parent is still shown.
+     */
+    bool filterTree(const QModelIndex& parent, const QString& text);
+    /// The first card still shown whose name starts with \a text, which
+    /// is the one the box completes to. Depth first, so it is the first
+    /// one a reader would come to going down the list.
+    QModelIndex firstPrefixMatch(const QModelIndex& parent, const QString& text) const;
+    /// Write the rest of that card's name after what was typed,
+    /// selected, and make it the current row of the list.
+    void inlineComplete(const QString& typed);
+    /// Typing, arrow keys and Escape in the box; the popup closing
+    /// itself when something outside it is clicked.
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
     bool findInTree(const QStandardItem& node, QModelIndex* index, const QString& uuid);
     QModelIndex findInTree(const QString& uuid);

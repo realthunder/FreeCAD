@@ -48,6 +48,8 @@ static QColor      selectQColor();
 static QColor      preselectQColor();
 static App::Color  sectionLineColor();
 static QColor      sectionLineQColor();
+static App::Color  breaklineColor();
+static QColor      breaklineQColor();
 static App::Color  centerColor();
 static QColor      centerQColor();
 static QColor      vertexQColor();

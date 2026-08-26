@@ -22,6 +22,7 @@
  ***************************************************************************/
 
 #include <limits>
+#include <numbers>
 
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <Geom_Parabola.hxx>

@@ -84,6 +84,19 @@ public:
     void onRelabel(Gui::Document *pDoc) override;
     virtual void viewAll();
 
+    /** The view that should be reported active when this view's window
+     * activates. Container views (Gui::ViewArea) return their focused
+     * embedded child so that MainWindow::activeWindow() always resolves
+     * to a working view; plain views return themselves.
+     */
+    virtual MDIView *activeSubView() { return this; }
+
+    /** Whether nobody is looking at this view -- hidden, minimized, or
+     * behind a maximized sibling in the tabbed MDI area. Render engines
+     * use this to release per-view GPU targets.
+     */
+    virtual bool isBackgroundView() const;
+
     /// Message handler
     bool onMsg(const char* pMsg,const char** ppReturn) override;
     /// Message handler test
@@ -195,6 +208,10 @@ private:
     MDIViewPy *mdiViewPy = nullptr;
 
     friend class MainWindow;
+    // Embedded split-view children re-make MainWindow's
+    // windowStateChanged connection themselves (ViewArea.cpp
+    // hostView/releaseView).
+    friend class ViewAreaCell;
 };
 
 } // namespace Gui

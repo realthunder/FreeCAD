@@ -552,3 +552,106 @@
 }
 .fc-loupe-ring-halo { stroke-width: 4.5; }
 .fc-loupe-leader-halo { stroke-width: 4; stroke-dasharray: 3 3; }
+
+/* ---- Split-view chrome (docs/SplitViews.md sec 9.4) ---------------- */
+/* The overlay tiles the canvas; cells are transparent windows onto it
+ * (the canvas owns scene gestures), and only the corner zones, the
+ * border handles and the content chip take the pointer. */
+
+.fc-split-root {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.fc-split-cell {
+  position: absolute;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+/* The join gesture's "this one will be eaten" overlay. */
+.fc-split-cell.fc-split-join {
+  background: rgba(0, 0, 0, 0.35);
+}
+.fc-split-arrow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Corner action zones: invisible until hovered, like Blender's. */
+.fc-split-zone {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: crosshair;
+  opacity: 0;
+}
+.fc-split-zone:hover {
+  opacity: 1;
+  background:
+    linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, 0.5) 50%);
+  border-radius: 2px;
+}
+.fc-split-zone-tr { top: 0; right: 0; }
+.fc-split-zone-bl { bottom: 0; left: 0; }
+.fc-split-zone-bl:hover {
+  background:
+    linear-gradient(-45deg, transparent 50%, rgba(255, 255, 255, 0.5) 50%);
+}
+
+/* Border handles: a hairline that widens to the pointer. */
+.fc-split-handle {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: row-resize;
+  background:
+    linear-gradient(to bottom, transparent 2px,
+                    rgba(255, 255, 255, 0.35) 2px,
+                    rgba(255, 255, 255, 0.35) 4px, transparent 4px);
+}
+.fc-split-handle.vert {
+  cursor: col-resize;
+  background:
+    linear-gradient(to right, transparent 2px,
+                    rgba(255, 255, 255, 0.35) 2px,
+                    rgba(255, 255, 255, 0.35) 4px, transparent 4px);
+}
+
+/* Per-cell content chip: what this cell shows. Faint until hovered. */
+.fc-split-chip {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  gap: 2px;
+  pointer-events: auto;
+  touch-action: none;
+  opacity: 0.35;
+  transition: opacity 0.15s;
+}
+.fc-split-chip:hover { opacity: 1; }
+.fc-split-chip button {
+  font: 11px system-ui, sans-serif;
+  color: #e8e8ea;
+  background: rgba(28, 30, 34, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+.fc-split-chip button.on {
+  background: rgba(70, 110, 180, 0.9);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.fc-split-chip .fc-split-close {
+  color: #f0a0a0;
+}

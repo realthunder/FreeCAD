@@ -121,6 +121,19 @@ void Box::Restore(Base::XMLReader &reader)
             if(prop)
                 prop->setStatusValue(status.to_ulong());
         }
+        // This loop is a copy of PropertyContainer::Restore, kept for the
+        // l/w/h migration below, so it needs what that one does: a property
+        // class registers its type in the Python init of the module that
+        // owns it, and a Box carries a Materials::PropertyMaterial. Without
+        // this the card is dropped, in silence, in any session that has not
+        // imported Materials -- see PropertyContainer::Restore.
+        if (prop && prop->getTypeId().isBad() && TypeName && TypeName[0]) {
+            try {
+                Base::Type::importModule(TypeName);
+            }
+            catch (const Base::Exception &) {}
+            catch (const std::exception &) {}
+        }
         if (prop && strcmp(prop->getTypeId().getName(), TypeName) == 0) {
             if (!prop->testStatus(App::Property::Transient)
                     && !status.test(App::Property::Transient)

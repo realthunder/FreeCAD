@@ -92,6 +92,14 @@ void pointPair::invertY()
     m_second = DU::invertY(m_second);
 }
 
+void pointPair::scale(double factor)
+{
+    m_first = m_first * factor;
+    m_second = m_second * factor;
+    m_overrideFirst = m_overrideFirst * factor;
+    m_overrideSecond = m_overrideSecond * factor;
+}
+
 void pointPair::dump(const std::string& text) const
 {
     Base::Console().Message("pointPair - %s\n", text.c_str());

@@ -56,6 +56,8 @@ public:
 
     static TopoDS_Shape getLocatedShape(const App::DocumentObject* docObj);
 
+    static bool isSketchObject(const App::DocumentObject* obj);
+
 protected:
 
 private:
