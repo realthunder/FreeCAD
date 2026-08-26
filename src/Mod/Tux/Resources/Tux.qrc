@@ -73,6 +73,8 @@
         <file>icons/NavigationRevit_Rotate.svg</file>
         <file>icons/NavigationRevit_light.svg</file>
         <file>icons/NavigationRevit_dark.svg</file>
+        <file>icons/NavigationSolidWorks_light.svg</file>
+        <file>icons/NavigationSolidWorks_dark.svg</file>
         <file>icons/NavigationTouchpad_Pan.svg</file>
         <file>icons/NavigationTouchpad_PanTouch.svg</file>
         <file>icons/NavigationTouchpad_RotateAlt.svg</file>
@@ -86,6 +88,11 @@
         <file>icons/NavigationTouchpad_ZoomAlt.svg</file>
         <file>icons/NavigationTouchpad_Zoom.svg</file>
         <file>icons/NavigationTouchpad_ZoomTouch.svg</file>
+        <file>icons/Navigation_Mouse_CtrlMiddle.svg</file>
+        <file>icons/Navigation_Mouse_Left.svg</file>
+        <file>icons/Navigation_Mouse_Middle.svg</file>
+        <file>icons/Navigation_Mouse_Scroll.svg</file>
+        <file>icons/Navigation_Mouse_ShiftMiddle.svg</file>
         <file>icons/NavigationUndefined.svg</file>
         <file>translations/Tux_af.qm</file>
         <file>translations/Tux_zh-CN.qm</file>
