@@ -876,6 +876,7 @@ SET(View3D_CPP_SRCS
     CADNavigationStyle.cpp
     RevitNavigationStyle.cpp
     BlenderNavigationStyle.cpp
+    SolidWorksNavigationStyle.cpp
     MayaGestureNavigationStyle.cpp
     OpenCascadeNavigationStyle.cpp
     OpenSCADNavigationStyle.cpp
