@@ -8,6 +8,7 @@
 
 #include "Base/Exception.h"
 #include "Base/Reader.h"
+#include <src/TempDirectory.h>
 #include <array>
 #include <boost/filesystem.hpp>
 #include <fmt/format.h>
@@ -21,9 +22,12 @@ protected:
     void SetUp() override
     {
         XERCES_CPP_NAMESPACE_QUALIFIER XMLPlatformUtils::Initialize();
-        _tempDir = fs::temp_directory_path();
-        std::string filename = "unit_test_Reader.xml";
-        _tempFile = _tempDir / filename;
+        // A directory of this fixture's own, not a fixed name in the shared
+        // temp directory. gtest_discover_tests runs every case as a separate
+        // process, so under "ctest -j" several of them are live at once and a
+        // shared filename means one is writing the file, or removing it in
+        // TearDown, while another is still reading it.
+        _tempFile = fs::path(_tempDir.string()) / "unit_test_Reader.xml";
     }
 
     void TearDown() override
@@ -31,9 +35,7 @@ protected:
         if (inputStream.is_open()) {
             inputStream.close();
         }
-        if (fs::exists(_tempFile)) {
-            fs::remove(_tempFile);
-        }
+        // _tempDir removes itself, and the file with it.
     }
 
     void givenDataAsXMLStream(const std::string& data)
@@ -55,7 +57,7 @@ protected:
 
 private:
     std::unique_ptr<Base::XMLReader> _reader;
-    fs::path _tempDir;
+    tests::TempDirectory _tempDir {"unit_test_Reader"};
     fs::path _tempFile;
     std::ifstream inputStream;
 };
