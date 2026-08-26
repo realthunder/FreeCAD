@@ -516,6 +516,12 @@ struct View3DInventorViewer::Private
 
     SoFCDisplayModeElement::HiddenLineConfig hiddenLineConfig;
 
+    /// Set while a unified canvas is drawing its cells' styles as
+    /// backend bucket filters: this viewer's traversal then captures
+    /// every object in its OWN display mode and applies no style of
+    /// its own (setCanvasStyleFiltered).
+    bool canvasStyleFiltered = false;
+
     // Shared, not owned outright: a ViewArea unified canvas
     // (docs/SplitViews.md sec 13) hands the SAME backend instance to
     // every 3D cell it hosts, so that N cells cost one backend and one
@@ -2362,7 +2368,12 @@ unsigned char View3DInventorViewer::drawStyleMaskFromName(const char *mode)
 void View3DInventorViewer::applyOverrideMode()
 {
     this->overrideBGColor = 0;
-    auto views = getDocument()->getViewProvidersOfType(Gui::ViewProvider::getClassTypeId());
+    // The selection root is what every branch below writes to, and a
+    // viewer being torn down or detached from a canvas has none. Worth
+    // stating rather than assuming: this is now called from
+    // adoptRenderer, which runs while a cell is being released.
+    if (!this->selectionRoot)
+        return;
 
     const char * mode = this->overrideMode.c_str();
     if (SoFCUnifiedSelection::DisplayModeNoShading == mode) {
@@ -2396,9 +2407,42 @@ void View3DInventorViewer::applyOverrideMode()
     }
     else {
         this->shading = true;
-        this->selectionRoot->overrideMode = overrideMode.c_str();
+        this->selectionRoot->overrideMode = captureOverrideMode();
         this->getSoRenderManager()->setRenderMode(SoRenderManager::AS_IS);
     }
+}
+
+const char *View3DInventorViewer::captureOverrideMode() const
+{
+    // Which display mode this viewer's traversal CAPTURES with, which
+    // is its own style everywhere except a canvas cell whose canvas has
+    // decided to filter styles per cell. There this one traversal feeds
+    // every cell, so baking a style into it would show one cell's style
+    // in all of them; the capture holds each object's own mode instead
+    // and each cell filters buckets (docs/SplitViews.md sec 17). The
+    // canvas only chooses that when it has established that no object's
+    // own mode makes the two disagree -- otherwise the odd cells leave
+    // the canvas and traverse for themselves.
+    if (_pimpl->canvasStyleFiltered
+            && drawStyleMaskFromName(overrideMode.c_str()) != Render::StyleAsIs)
+        return "";
+    return overrideMode.c_str();
+}
+
+bool View3DInventorViewer::canvasStyleFiltered() const
+{
+    return _pimpl->canvasStyleFiltered;
+}
+
+void View3DInventorViewer::setCanvasStyleFiltered(bool on)
+{
+    if (_pimpl->canvasStyleFiltered == on)
+        return;
+    _pimpl->canvasStyleFiltered = on;
+    // Re-applied rather than merely stored: it decides a field of the
+    // selection root, and changing that field is what dirties the
+    // capture so the next frame is fed the newly traversed scene.
+    applyOverrideMode();
 }
 
 const SoFCDisplayModeElement::HiddenLineConfig &
@@ -4163,6 +4207,10 @@ void View3DInventorViewer::adoptRenderer(
         _pimpl->renderer.reset();
         _pimpl->adoptedRenderer = false;
         _pimpl->canvasResidue = false;
+        // Leaving the canvas puts the style back in this viewer's own
+        // traversal, where it means what it means on a plain view.
+        _pimpl->canvasStyleFiltered = false;
+        applyOverrideMode();
         const int mode = int(ViewParams::getRenderCache());
         setRendererType(mode == 3 ? RenderParams::getType() : std::string());
         getSoRenderManager()->scheduleRedraw();

@@ -38,9 +38,17 @@
 # include <Inventor/nodes/SoCamera.h>
 #endif
 
+#include <cstring>
+
+#include <QTimer>
+#include <map>
+
 #include <Base/Console.h>
 
 #include "ViewAreaCanvas.h"
+#include "Application.h"
+#include "Document.h"
+#include "ViewProviderDocumentObject.h"
 #include "RenderParams.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -81,6 +89,36 @@ ViewAreaCanvas::ViewAreaCanvas(ViewArea *area)
     // surface, not a target.
     setAttribute(Qt::WA_TransparentForMouseEvents, true);
     setFocusPolicy(Qt::NoFocus);
+    // A display style is per viewer, and a cell whose style differs
+    // from the shared one has to leave the canvas (claimable()). The
+    // layout has not changed, so nothing else would re-run the claim
+    // set; this is the only notification a style change sends.
+    // Debounced, because both notifications below can arrive in
+    // bursts and each one costs a walk of the document.
+    _resync = new QTimer(this);
+    _resync->setSingleShot(true);
+    _resync->setInterval(150);
+    connect(_resync, &QTimer::timeout, this, [this]() { sync(); });
+
+    QPointer<ViewAreaCanvas> self(this);
+    _styleConn = Application::Instance->signalViewModeChanged.connect(
+            [self](const MDIView *) {
+                if (self)
+                    self->scheduleSync();
+            });
+    // ...and an object's own display mode is the other input to
+    // resolveDisplayStyles(): changing one can make a filter that was
+    // sound stop being sound, or the reverse. Visibility counts too --
+    // the test only weighs objects that are shown.
+    _objConn = Application::Instance->signalChangedObject.connect(
+            [self](const Gui::ViewProvider &, const App::Property &prop) {
+                if (!self)
+                    return;
+                const char *name = prop.getName();
+                if (name && (strcmp(name, "DisplayMode") == 0
+                             || strcmp(name, "Visibility") == 0))
+                    self->scheduleSync();
+            });
 }
 
 ViewAreaCanvas::~ViewAreaCanvas()
@@ -108,10 +146,130 @@ View3DInventorViewer *ViewAreaCanvas::viewerOf(const ViewAreaCell *cell)
     return view ? view->getViewer() : nullptr;
 }
 
+void ViewAreaCanvas::resolveDisplayStyles()
+{
+    // One canvas draws ONE resident scene through ONE traversal, so
+    // there are only two ways it can serve cells that are in different
+    // display styles, and this picks between them (sec 17):
+    //
+    // - FILTER. The traversal captures every object in its own display
+    //   mode and each cell drops the primitive buckets its style does
+    //   not draw. Cheap -- one capture, and a style change costs no
+    //   re-traversal at all -- but a style is an OVERRIDE, which a
+    //   filter reproduces only while no object's own mode can tell the
+    //   two apart. styleConflicts() is that test.
+    // - SPLIT OFF. The odd cells stop being claimable, leave the
+    //   canvas and render themselves, exactly as a cell showing another
+    //   document does. Their own Coin traversal then applies their
+    //   style, so an override is an override. Correct by construction,
+    //   and it costs those cells their share of the shared scene.
+    //
+    // Cells that already agree need neither: the traversal applies the
+    // one style they share, which is what a plain view does and what
+    // this did before per-cell styles existed.
+    _style.clear();
+    _filtered = false;
+
+    std::map<std::string, int> votes;
+    const ViewAreaCell *active = _area ? _area->activeCell() : nullptr;
+    std::string activeStyle;
+    bool activeIs3D = false;
+    for (auto cell : _area->cells()) {
+        auto viewer = viewerOf(cell);
+        if (!viewer || !cell->isVisibleTo(_area))
+            continue;
+        MDIView *view = cell->childView();
+        if (!view || view->getGuiDocument() != _area->getGuiDocument())
+            continue;
+        const std::string mode = viewer->getOverrideMode();
+        ++votes[mode];
+        if (cell == active) {
+            activeStyle = mode;
+            activeIs3D = true;
+        }
+    }
+    if (votes.empty())
+        return;
+
+    if (votes.size() > 1) {
+        std::vector<std::string> styles;
+        styles.reserve(votes.size());
+        for (const auto &v : votes)
+            styles.push_back(v.first);
+        if (!styleConflicts(styles)) {
+            _filtered = true;
+            return;
+        }
+    }
+
+    // One style survives on the canvas: the one the most cells share,
+    // so setting one cell of four to Wireframe costs that one cell its
+    // place and leaves the other three sharing. The active cell breaks
+    // a tie, which in the two-cell case keeps the cell the user is
+    // working in.
+    int bestVotes = 0;
+    for (const auto &v : votes) {
+        if (v.second > bestVotes
+                || (v.second == bestVotes && activeIs3D
+                    && v.first == activeStyle)) {
+            _style = v.first;
+            bestVotes = v.second;
+        }
+    }
+}
+
+bool ViewAreaCanvas::styleConflicts(
+        const std::vector<std::string> &styles) const
+{
+    // A style is an override: it traverses the child of each object's
+    // display-mode switch that carries the style's NAME, whatever the
+    // object's own mode is. A per-cell bucket filter over a capture
+    // taken in the objects' own modes gives the same pixels only when
+    // every object's own mode already carries the buckets the style
+    // asks for -- the survey (docs/CoinRetirement.md 5.5) is what makes
+    // that a bucket question at all, the mode children being nested
+    // subsets of one set of nodes.
+    //
+    // So the test is per OBJECT, not per view: two cells in different
+    // styles are not a conflict by themselves, and on a document whose
+    // objects are all in the default mode there is never one.
+    Gui::Document *doc = _area ? _area->getGuiDocument() : nullptr;
+    if (!doc)
+        return true;
+    unsigned char wanted = Render::StyleAsIs;
+    for (const auto &s : styles)
+        wanted = static_cast<unsigned char>(
+                wanted | View3DInventorViewer::drawStyleMaskFromName(s.c_str()));
+    if (wanted == Render::StyleAsIs)
+        return false;   // every cell is As Is: the capture already is that
+
+    for (auto vp : doc->getViewProvidersOfType(
+                 Gui::ViewProviderDocumentObject::getClassTypeId())) {
+        if (!vp->isVisible())
+            continue;
+        const unsigned char own =
+            View3DInventorViewer::drawStyleMaskFromName(
+                    vp->getActiveDisplayMode().c_str());
+        // A mode this cannot weigh -- a name no style shares, like
+        // Mesh's "Point" or FEM's "Faces & Wireframe" -- is treated as
+        // a conflict. Being wrong the safe way costs a cell its share
+        // of the canvas; being wrong the other way draws the document
+        // incorrectly.
+        if ((own & wanted) != wanted)
+            return true;
+    }
+    return false;
+}
+
 bool ViewAreaCanvas::claimable(const ViewAreaCell *cell) const
 {
     auto viewer = viewerOf(cell);
     if (!viewer)
+        return false;
+    // While the canvas serves ONE style, a cell in another one is not
+    // claimable and keeps its own GL surface (resolveDisplayStyles).
+    // While it is filtering, every style is served and this passes.
+    if (!_filtered && viewer->getOverrideMode() != _style)
         return false;
     // A maximized layout hides every other tile; a hidden cell has no
     // rect to draw into, and the one left has nothing to share.
@@ -261,6 +419,16 @@ void ViewAreaCanvas::setFeeder(ViewAreaCell *cell)
         viewer->adoptRenderer(_renderer, true, claimId(cell));
 }
 
+void ViewAreaCanvas::scheduleSync()
+{
+    // A pending sync is simply restarted, so a burst collapses to one
+    // run after it goes quiet rather than one run per notification.
+    if (_resync)
+        _resync->start();
+    else
+        sync();
+}
+
 void ViewAreaCanvas::sync()
 {
     // Re-entrancy guard. claim() pulls a widget out of a layout, hides
@@ -302,6 +470,10 @@ void ViewAreaCanvas::syncOnce()
         hide();
         return;
     }
+
+    // How this canvas serves its cells' styles, before anything is
+    // tested against it -- claimable() reads the answer.
+    resolveDisplayStyles();
 
     // Claim set first: whatever the layout now offers, minus what the
     // canvas cannot draw.
@@ -347,6 +519,15 @@ void ViewAreaCanvas::syncOnce()
     for (auto cell : want) {
         if (!claims(cell))
             claim(cell, _nextId++);
+    }
+
+    // Whether the shared traversal applies a style or captures the
+    // objects' own modes for the cells to filter. Set after the claim
+    // set is settled, because a cell that just left the canvas has to
+    // be told to go back to applying its own style.
+    for (auto &c : _cells) {
+        if (auto v = viewerOf(c.cell))
+            v->setCanvasStyleFiltered(_filtered);
     }
 
     // The feed follows the active cell so the Coin residue -- draggers
@@ -428,13 +609,11 @@ void ViewAreaCanvas::paintGL()
         s.height = r.height();
         s.viewMatrix = &viewMat.getValue();
         s.projMatrix = &projMat.getValue();
-        // ...and this cell's own display style. Every cell is a real
-        // viewer with its own override mode, which until now could not
-        // show: only the feeder traverses, so a non-feeding cell's
-        // style change reached nothing. As a backend bucket filter it
-        // costs the frame nothing and differs per bank for free
-        // (docs/CoinRetirement.md 5.7).
-        s.drawStyle = viewer->drawStyleMask();
+        // This cell's style, as a bucket filter over the shared
+        // capture -- but only while the canvas is filtering. When it
+        // serves one style the traversal applied it already, and every
+        // claimed cell is in that style, so there is nothing to filter.
+        s.drawStyle = _filtered ? viewer->drawStyleMask() : Render::StyleAsIs;
         subs.push_back(s);
         rects.push_back(r);
         drawnCells.push_back(c.cell);

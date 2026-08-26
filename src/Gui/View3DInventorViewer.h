@@ -314,6 +314,19 @@ public:
     /// state, so they stay with the Coin traversal and report
     /// StyleAsIs.
     static unsigned char drawStyleMaskFromName(const char *mode);
+    /// The display mode name this viewer's traversal CAPTURES with:
+    /// its own style, or none while a canvas is filtering styles per
+    /// cell (setCanvasStyleFiltered).
+    const char *captureOverrideMode() const;
+    /// Tell a canvas cell that the canvas is drawing its cells' styles
+    /// as backend bucket filters (docs/SplitViews.md sec 17), so this
+    /// viewer's traversal must capture every object in its OWN display
+    /// mode instead of applying the style. Re-applies the override,
+    /// which dirties the capture. False -- the default, and what a
+    /// canvas whose cells all share a style uses -- leaves the
+    /// traversal applying the style exactly as a plain view does.
+    void setCanvasStyleFiltered(bool on);
+    bool canvasStyleFiltered() const;
     const SoFCDisplayModeElement::HiddenLineConfig &getHiddenLineConfig() const;
     //@}
 

@@ -1205,67 +1205,90 @@ into the captured graph by the viewer that owns it. (And
 `View3DInventorViewer::setAxisCross`, the Python API, is a different
 thing again: it puts an `SoAxisCrossKit` in the SCENE at the origin, not
 the corner chrome that `axiscrossEnabled` controls.)
-
 ## 17. D4 implementation notes: a display style per cell (2026-08-26)
 
-D4 is the split-view half of `docs/CoinRetirement.md` stage 5, and its
-survey (5.5) is what made it small: every ViewProvider in the tree
-composes the same nodes under its display-mode children, so a Class-A
-style (Points / Wireframe / Shaded / Flat Lines) is a **bucket mask**,
-not a different scene. The backend already sorts draws into face, line
-and point buckets (`Render::Material::type`), so the style is a filter
-at submit and differs per bank for free.
+D4 is the split-view half of `docs/CoinRetirement.md` stage 5. It went
+through one wrong design before this one, and the correction is the
+point of the section, so it is recorded rather than tidied away.
 
-**What was broken.** Every cell is a real `View3DInventorViewer` with
-its own `overrideMode`, so a cell already *had* a style -- it just could
-not show. Only the feeder traverses (sec 13.3), so a non-feeding cell's
-style change reached nothing at all, and the feeder's style was baked
-into the capture every cell shares. Setting a style in one cell either
-did nothing or changed all of them.
+**The rule, stated by the user:** `As Is` respects each object's own
+`DisplayMode`; any other style **overrides** it, for every object. That
+is what Coin does, and it was not to change.
 
-**The mechanism, four pieces.**
+**Why a canvas makes that hard.** A style is an override applied by the
+Coin traversal, and a unified canvas has exactly ONE feeder -- "two
+feeds at one backend overwrite each other's scene" (`adoptRenderer`).
+So one traversal produces the capture that every cell draws, and
+whatever style that traversal ran under is baked into it. That is why a
+non-feeding cell's style change showed nothing before D4.
 
-- `Render::DrawStyleMask` (Renderer.h): bit *i* is `Material::Type` *i*,
-  so a style admits a draw when `(mask >> mat.type) & 1`. The masks come
-  straight off the survey -- `StyleWireframe` is lines **and** points,
-  because Part's Wireframe root contains its Points root. Zero
-  (`StyleAsIs`) means no filter.
-- `SubViewFrame::drawStyle` carries it per cell, the same way D3c put
-  `subView` on `OverlayAnchor`: on the struct the host already fills, so
-  no new API and no new call order.
-- `SubViewCtx::style` -> `BGFXView::drawStyleMask`, restated at the top
-  of every frame. Deliberately **not** a bank field: a style change
-  invalidates nothing, the next frame simply filters differently.
-- `BGFXView::submit` returns early on a draw the mask excludes.
+**The design that was wrong.** First attempt made a Class-A style a
+bucket filter at submit: the traversal captured each object's own mode
+and each cell dropped the primitive buckets its style does not draw
+(`Render::DrawStyleMask` on `SubViewFrame`). It passed its own smoke,
+because everything in the test was in the default `Flat Lines`. But a
+filter is not an override. Measured, with a box whose own `DisplayMode`
+is `Wireframe`, in a cell asking for `Shaded`:
 
-**The traversal has to stop applying the style, and only on a canvas.**
-`SoFCUnifiedSelection::Private::applyOverrideMode` now blanks a Class-A
-mode when `pcViewer->hasAdoptedRenderer()`. That is the D4 half of the
-stage-5 ruling: the backend route is taken only where there is a
-backend, and a plain view -- and cache 0, where there is no backend at
-all -- keeps the Coin traversal doing exactly what it did. Only the four
-bucket styles are blanked; Hidden Line, No Shading and Tessellation are
-extra traversal state rather than a bucket selection, so they stay
-viewer-wide and unchanged.
+| | single view (Coin) | canvas cell (filter) |
+| --- | --- | --- |
+| ink | **24434** | **0** |
 
-! **A style change is no longer a re-capture.** With the override out of
-the traversal, switching a cell from Shaded to Wireframe touches no
-scene-graph state, dirties no cache and re-feeds nothing -- it changes
-one byte on next frame's `SubViewFrame`. That is the second of the three
-costs stage 5.2 named, collected as a side effect of the first.
+Coin traverses the object's `Shaded` child and shows faces; the filter
+has no faces to keep and shows nothing. A filter can only ever remove.
 
-! **Gizmo draws are exempt from the filter.** A Class-A style reaches
-the pixels by selecting a different child of a ViewProvider's
-display-mode switch, so it never touched the navigation gizmos -- they
-sit under no such switch. `DrawCall::skipbounds` is exactly the flag
-that marks them, and filtering them would make the rotation-centre
-sphere vanish in Wireframe, which Coin never does.
+**The design that is right, and it was already in the tree.** A style
+that cannot be served by the shared capture is the same kind of
+conflict as a cell showing another document, which `claimable()` has
+always handled by letting that cell keep its own widget composition. So
+the odd cell simply stops being claimable, leaves the canvas, and
+renders itself -- and its own Coin traversal then applies its style,
+which makes the override an override *by construction*. `syncOnce()`
+already rebuilds the claim set from scratch every sync, so the cell
+comes back the moment it can be served again; nothing new was needed
+for either direction.
 
-! **Known limitation: an object whose OWN display mode is not a
-superset of the cell's style.** The capture now holds each object's own
-mode, so a cell asking for Shaded finds no faces for an object the user
-put in Wireframe, and draws nothing for it where Coin would have shown
-its Shaded child. Everything in a default mode (Flat Lines, which
-carries all three buckets) is exact. The fix is CoinRetirement 5.7's
-other half -- capture the superset child and tag each draw with the
-object's own mask -- and it is not built.
+**The filter is kept, but only where it is provably identical.** Two
+cells in different styles are not a conflict by themselves. The
+question is per OBJECT: filtering a capture taken in the objects' own
+modes equals the override exactly when every visible object's own mode
+already carries the buckets the style asks for. `styleConflicts()` is
+that test, and on a document whose objects are all in the default mode
+it is always false -- so the common case keeps one capture, one scene,
+and a style change that costs no re-traversal at all.
+
+`ViewAreaCanvas::resolveDisplayStyles()` picks between three states
+once per sync:
+
+- **one style** -- every claimable cell agrees. The traversal applies
+  it, exactly as a plain view does and exactly as this did before
+  per-cell styles existed. No filtering.
+- **filtering** -- the styles differ and `styleConflicts()` says
+  nothing in the document can tell a filter from the override. Every
+  cell stays claimed; the traversal captures own modes
+  (`View3DInventorViewer::setCanvasStyleFiltered`), each cell filters.
+- **split off** -- the styles differ and something does conflict. The
+  style the most cells share keeps the canvas (the active cell breaks a
+  tie), and the rest are released to their own backends.
+
+**Debounced.** The conflict test walks every visible view provider, and
+its two inputs -- `signalViewModeChanged`, and `signalChangedObject`
+filtered to `DisplayMode` / `Visibility` -- arrive in bursts: an
+import, a delete of a hundred objects, a visibility sweep. A restarting
+150 ms `QTimer` collapses a burst into one walk, and also stops a cell
+being handed its own backend and having it taken away again midway
+through one.
+
+! **An unrecognized display mode counts as a conflict.** Mesh's
+`Point`, FEM's `Faces & Wireframe` and anything a Python ViewProvider
+registers have no bucket mask, so the test cannot weigh them and
+returns true. Being wrong that way costs a cell its share of the
+canvas; being wrong the other way draws the document incorrectly.
+
+Verified (RTX 3060, xvfb + vglrun egl0), box with own `DisplayMode` =
+`Wireframe`, two cells: both `As Is` -> canvas on, ink `[1063, 1063]`;
+cell 1 -> `Shaded` -> canvas off, ink `[1063, 24460]` dark `[494, 0]`,
+i.e. that cell shows the faces the single view shows (24434); own mode
+-> `Flat Lines` with both styles untouched -> canvas back on by itself,
+ink `[24846, 24459]` dark `[391, 0]`, the styled cell now served by
+filtering; cell 1 -> `As Is` -> one style again, ink `[24846, 24846]`.

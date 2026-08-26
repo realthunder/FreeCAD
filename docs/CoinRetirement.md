@@ -1555,12 +1555,14 @@ entry does have to go, it needs 4e's migration treatment.
 3. No Shading, then Hidden Line's `SoFCRenderer` half. **Also already
    satisfied, see 5.6.**
 4. Class A (Points / Wireframe / Shaded / Flat Lines) as far as the
-   survey allows -- this is split-view D4. **Built 2026-08-26 (D4a), see
-   docs/SplitViews.md sec 17: the mask, the SubViewFrame field, the
-   submit filter, and the traversal blanked on a canvas.** What is left
-   is 5.7's other half -- the superset capture plus a per-draw own-mode
-   mask -- without which a cell asking for a style its object's OWN
-   display mode does not carry draws nothing for that object.
+   survey allows -- this is split-view D4. **Built 2026-08-26, see
+   docs/SplitViews.md sec 17.** Not the way 5.7 sketched: a style is an
+   OVERRIDE, and a draw-time filter can only remove, so the two differ
+   for any object whose own display mode lacks what the style asks for
+   (measured: ink 24434 vs 0). The backend filter is kept only where a
+   per-object test proves it identical to the override; where it is
+   not, the odd cell leaves the canvas and traverses for itself, which
+   is the escape hatch a cell showing another document already used.
 
 ! **USER RULING 2026-08-26: the Coin fallback keeps working. Take the
 backend route only when a backend is there.** This amends step 2, which
@@ -1639,6 +1641,17 @@ out before writing code:
 So the stage does not open with a deletion. It opens with Class A.
 
 ### 5.7 Class A / D4: the design the survey allows
+
+! **Superseded 2026-08-26 by what was actually built** -- see
+docs/SplitViews.md sec 17. The sketch below treats a Class-A style as
+something the backend can reproduce from one capture. It cannot: the
+style is an override, which traverses a DIFFERENT child of each
+object's display-mode switch, and no filter over one capture can put
+back geometry that capture does not hold. The per-draw own-mode mask
+proposed below was also rejected on the ground that an object's display
+mode is Coin traversal's business and the backend must stay agnostic to
+it. What survives is the bucket-mask observation itself, which is what
+makes the per-object conflict test possible. Kept for the reasoning.
 
 Because the four children are bucket compositions of shared nodes, a
 Class-A style is a **bucket mask**, and the backend already sorts draws

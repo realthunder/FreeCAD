@@ -24,10 +24,16 @@
 #define GUI_VIEWAREACANVAS_H
 
 #include <memory>
+#include <string>
+
+#include <FCGlobal.h>
+#include <fastsignals/connection.h>
 #include <vector>
 
 #include <QOpenGLWidget>
 #include <QPointer>
+
+class QTimer;
 
 #include "Renderer/Renderer.h"
 
@@ -115,6 +121,15 @@ private:
     /// shared backend: a 3D view of the canvas's own document, so that
     /// it shows the resident scene the canvas feeds.
     bool claimable(const ViewAreaCell *cell) const;
+    /// Decide how this canvas serves its cells' display styles, and
+    /// set _style / _filtered accordingly. Called once per sync,
+    /// before anything is tested against them.
+    void resolveDisplayStyles();
+    /// Whether any visible object's own display mode would make a
+    /// per-cell bucket filter disagree with the override the style
+    /// actually is. The lazy half of sec 17: styles that differ are
+    /// not a conflict by themselves.
+    bool styleConflicts(const std::vector<std::string> &styles) const;
     void claim(ViewAreaCell *cell, int id);
     void release(ViewAreaCell *cell, bool restoreBackend = true);
     /// Point the shared backend's scene feed at \a cell's viewer, and
@@ -150,6 +165,30 @@ private:
     /// recorded yet -- twice.
     bool _syncing = false;
     bool _syncAgain = false;
+    /// The display style a cell must be in to be claimable, when the
+    /// canvas is serving ONE style (_filtered false). Empty and
+    /// unused while it is filtering.
+    std::string _style;
+    /// The canvas is drawing its cells' styles as per-cell backend
+    /// bucket filters, so the shared traversal captures each object in
+    /// its own display mode and every cell is claimable whatever its
+    /// style. Only chosen when styleConflicts() says nothing in the
+    /// document can tell the filter apart from the override.
+    bool _filtered = false;
+    /// A style change on any view re-runs the claim set: it can pull a
+    /// cell out of the canvas or hand one back.
+    fastsignals::scoped_connection _styleConn;
+    /// An object's own display mode (and its visibility) is the other
+    /// input to the conflict test, so a change to either re-runs it.
+    fastsignals::scoped_connection _objConn;
+    /// Coalesces those re-syncs. The conflict test walks every visible
+    /// view provider, and a bulk edit -- an import, a delete of a
+    /// hundred objects, a visibility sweep -- fires one signal per
+    /// object; one walk per burst is enough. It also keeps a cell from
+    /// being handed its own backend and then having it taken away
+    /// again halfway through such a burst.
+    QTimer *_resync = nullptr;
+    void scheduleSync();
 };
 
 } // namespace Gui
