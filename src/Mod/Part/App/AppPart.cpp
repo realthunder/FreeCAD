@@ -398,6 +398,19 @@ PyMOD_INIT_FUNC(Part)
     Base::Interpreter().addType(&Part::ChFi2d_ChamferAPIPy::Type, chFi2d, "ChamferAPI");
     Base::Interpreter().addType(&Part::ChFi2d_FilletAPIPy::Type, chFi2d, "FilletAPI");
 
+    // Part::Feature carries a Materials card property, and the Materials
+    // module registers its own types in its Python init. A session that never
+    // imports it -- any FreeCADCmd script, which is every headless pipeline we
+    // run -- leaves ShapeMaterial's type id at badType, so restoring a
+    // document whose XML says "Materials::PropertyMaterial" is a type
+    // mismatch: PropertyContainer::Restore hands it to
+    // handleChangedPropertyType, which says nothing and does nothing. The
+    // card is dropped without a word, the property keeps the default it was
+    // constructed with, and the next save writes that default over what the
+    // document said. Loading the module here is what makes the property the
+    // type it claims to be.
+    Base::Interpreter().loadModule("Materials");
+
     Part::TopoShape             ::init();
     Part::PropertyPartShape     ::init();
     Part::PropertyShapeStore    ::init();

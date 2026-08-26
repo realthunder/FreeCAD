@@ -566,3 +566,55 @@ The GUI adds two commands next to `Std_SetMaterial`, and the workbench
 manipulator puts them in the Tree and View context menus only when the current
 selection has a material they apply to -- a command that is greyed out nine
 times in ten is clutter in a menu that is already long.
+
+## 14. When the library moves: the stand-in, and what it does not change
+
+Sec 5 leaves a stock card's content out of the document on the reasoning that
+any installation holding the library can produce it again. That reasoning is
+true only while the library does not move, and it moved: retuning the default
+appearance changed what the `Default` card contains, so its content hash
+changed with it, and every document saved before that names a hash no installed
+card answers to. One IFC building (13642 objects sharing that one card) is the
+case that made it visible.
+
+Three things answer it, and they are deliberately separate:
+
+- **The content is carried now.** `DocumentParams::SaveMaterialCards` defaults
+  to true, so `storesContent()` writes stock cards too. It costs one copy per
+  document however many objects share it, and it takes the whole class of
+  failure off the table for anything saved from here on.
+- **A hash miss falls back to the uuid.** Once the archive is drained and the
+  blob was not in it -- the point at which "not read yet" becomes "not there"
+  -- `blobUnavailable()` offers the referrer a stand-in, and `PropertyMaterial`
+  answers with the library's card for the uuid sitting in the same XML element.
+  The value stays *unresolved* on purpose: `contentHash()` keeps answering with
+  the hash the file recorded, so a re-save writes the reference the document
+  was saved with rather than whatever this installation happens to hold.
+- **The warning names the blob once.** `dispatchPending()` groups by hash and
+  reports how many properties wanted it and how many stood in, because one
+  absent blob is one defect in the document however many properties name it.
+
+**What a hash miss never was, measured:** it does not change what is drawn. The
+drawn appearance is the view provider's own `ShapeAppearance`, restored from
+`GuiDocument.xml` independently of the card, and restore assigns the card
+without signalling (`assign()` takes no `aboutToSetValue`/`hasSetValue`, so
+opening a document does not mark it modified), which is exactly what stops
+`ViewProviderGeometryObject::updateData` from pulling the card's appearance
+over it. Verified with one document opened twice, once with a resolvable hash
+and once with the hash doctored to a value nothing answers: the app-side card
+reads `Copper-230` both times, and the drawn appearance is identical both times
+(diffuse `0.800 0.800 0.902`, shininess `0.3729`). What a miss costs is the
+material's identity -- what the dialog reports, and what a re-save would write
+-- which is what the stand-in restores.
+
+**! The property must be the type it claims to be.** `Part::Feature`'s
+`ShapeMaterial` is a `Materials::PropertyMaterial`, and the Materials module
+registers its types in its own Python init. A session that never imports it --
+any `FreeCADCmd` script -- left that type id at `badType`, so restoring
+`type="Materials::PropertyMaterial"` was a type mismatch:
+`PropertyContainer::Restore` hands a mismatch to `handleChangedPropertyType`,
+whose default says nothing and does nothing. The card was dropped in silence,
+the property kept the `Default` it was constructed with, and the next save
+wrote that default over what the document said -- a headless re-save destroying
+the assignment it was never told it had lost. `Part`'s module init loads
+`Materials` for that reason.
