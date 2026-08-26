@@ -70,6 +70,7 @@
 #endif
 
 #include <algorithm>
+#include <type_traits>
 #include <cfloat>
 #include <thread>
 #include <chrono>
@@ -6962,7 +6963,8 @@ public:
 #undef FC_SV_DECL
     };
     template <typename T>
-    static void svAssign(T &dst, const T &src) { dst = src; }
+    static std::enable_if_t<!std::is_array<T>::value>
+    svAssign(T &dst, const T &src) { dst = src; }
     template <typename T, size_t N>
     static void svAssign(T (&dst)[N], const T (&src)[N])
     { std::copy(src, src + N, dst); }
