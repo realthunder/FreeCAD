@@ -2178,13 +2178,11 @@ context menu (`bcc15c7632`) -- flagged, not scheduled.
 
 ### 33.7 The revised order
 
-1. **`DimensionAutoCorrect`** -- graft upstream's class onto the fork's
-   existing exact-match path; transplant `DimensionReferences`,
-   `GeometryMatcher`, `DimensionGeometry` (nothing to re-apply); shim
-   `getLocatedShape` / `getLastTerm`; drop `ShapeOption`; keep the fork's
-   `THROWM` / `Prop_None` / `DrawBrokenView` deltas.  Gains: similar-
-   geometry matching, 3D matching, broken-reference repair.
+1. **`DimensionAutoCorrect`** -- see section 34: measured, the class is
+   mostly hollow and what is worth taking is the canonical-frame fix.
+   **Built 2026-08-26.**
 2. **`CommandAlign`** -- additive command, no renderer contact.
+   **Built 2026-08-26.**
 3. **`QGVNavStyleSolidWorks`** + `Gui` `SolidWorksNavigationStyle` --
    additive, input only, lowest value.
 4. On demand only: `ToolHandler`, `canRecomputeOnWorker`, the
@@ -2193,3 +2191,128 @@ context menu (`bcc15c7632`) -- flagged, not scheduled.
 Dropped from the plan: `LineFormat`, `Tag`, `QGIDatumLabel`,
 `ShapeFinder`.  Still scope OUT: the `QGI*` selection layer, upstream's
 `TechDrawHandler`, wholesale adoption.
+
+
+## 34. Implementation status (2026-08-26): items 1 and 2 of 33.7 are built,
+and item 1 turned out to be a bug fix
+
+Section 33.3 promoted `DimensionAutoCorrect` to first on the strength of a
+file-level reading -- 687 lines, "similar-geometry matching, 3D matching,
+broken-reference repair".  Reading the implementation corrects that, and
+the correction is worth more than the original claim.
+
+### 34.1 What upstream's DimensionAutoCorrect actually contains
+
+**All four `findSimilar*` methods are unimplemented stubs.** So are
+`searchViewForSimilarEdge` and the `exact` parameter threaded through
+`searchObjForVert` / `searchObjForEdge`.  Each returns false (or an empty
+reference) after a "not implemented yet" comment.  Phase 2 was designed
+and never written.
+
+**`BoxCorners` is written and never read.** `saveFeatureBox()` fills it
+from the view bounding box; `getSavedBox()` reads it and has no callers.
+It is scaffolding for the phase that does not exist, and adopting it would
+add a persisted property to every dimension in every document for nothing.
+
+So the class is the fork's own exact-match logic, re-housed, plus a 3d
+object cache and a per-reference state vector.  **The fork already ships
+the exact-match logic** -- `SavedGeometry` + `updateSavedGeometry` /
+`compareSavedGeometry` / `fixExactMatch`, driven by the same
+`GeometryMatcher` and gated by the same `Preferences::autoCorrectDimRefs()`
+-- with `handleNoExactMatch()` sitting where upstream's phase 2 would go,
+carrying the comment "this is where we insert the clever logic".  Both
+sides stopped at the same place.
+
+### 34.2 The one thing in there that matters, and it is a bug
+
+Upstream's `ReferenceEntry::asCanonicalTopoShape` removes the view
+**rotation** as well as the scale.  The fork's `asTopoShape` removes only
+the scale.  That is not a refactor, it is a defect:
+
+> Saved reference geometry carried the view rotation it was captured at,
+> and was compared against display geometry carrying the rotation the view
+> has now.  Rotate a view and every reference looks changed.
+
+Measured, `100x100` square view, dimension on `(Vertex0, Vertex1)`:
+
+| | references | value |
+| --- | --- | --- |
+| at rotation 0 | `(Vertex0, Vertex1)` | 100.000000 |
+| after rotating 90 deg | **`(Vertex1, Vertex3)`** | 100.000000 |
+
+The failed comparison sends it into the exact-match recovery, and on a
+symmetric shape a rotated corner sits exactly where a different corner
+used to be -- so the recovery "repairs" the dimension onto geometry the
+user never picked, and leaves it there.  The value survives only because
+the square is symmetric.
+
+Fixed in `37cb56d3a0` by comparing in a canonical frame (unscaled and
+unrotated) when saving, when comparing, and when searching for a
+replacement.
+
+**Trap:** do not port `asCanonicalTopoShape` verbatim.  Upstream's
+`asTopoShape` returns raw display geometry and the canonical form removes
+the scale; the fork's `asTopoShape` has already removed it.  Copying the
+helper across unscales twice.
+
+**Trap:** the stored frame negates Y relative to the Python accessors.
+`getVertexBySelection` reporting `(-50, -50)` corresponds to `(-50, 50)`
+in `SavedGeometry`.  A test that constructs saved geometry from accessor
+values without the flip matches neither frame and looks like a broken fix.
+That cost one debugging round.
+
+### 34.3 Migrating documents written before the fix
+
+There is no version stamp on `SavedGeometry`, so
+`migrateSavedGeometryFrame()` tests the frame itself: an entry that fails
+to match canonically but matches once the rotation is put back was written
+by the old code and is rewritten in place; one that matches canonically is
+already current; one that matches neither is a genuine change and is left
+to the normal path.  Exact, lossless, and it needs no new property.
+
+**Trap:** `execute()` also runs while the document is still restoring,
+against a view that has not projected yet. The first version marked the
+migration done on that pass, spent the one chance a document gets, and let
+the wrong-corner repoint through anyway.  The migration now reports
+whether it could evaluate, and is only marked done once the view has
+geometry.
+
+### 34.4 CommandAlign
+
+Ported in `89c3734af6`, +390/-0 across 12 files, nothing removed and
+nothing in the selection layer touched.  Supporting helpers are new entry
+points beside existing ones: `DrawUtil::getIndexFromName` over a list and
+`isGeomTypeConsistent`, `QGIVertex::toVector2d` and
+`vector2dBetweenPoints`, `QGIView::getObjects<T>`, three
+`DrawGuiUtil::rotateToAlign` overloads.
+
+Two deliberate deviations: the rotation is wrapped in
+`openCommand`/`commitCommand` (upstream sets the property bare, so its
+version leaves no undo entry), and the selected sub-elements are found by
+searching the selection for the view rather than taking entry 0, because a
+Link selection resolves to an object that need not be first.
+
+**Trap:** `CoarseView` suppresses `QGIVertex` items entirely
+(`QGIViewPart::showVertices` returns false for it), so the two-vertex path
+cannot fire in a coarse view.  That is upstream behaviour, not a port
+artifact -- but it means a headless-style smoke with `CoarseView=True`
+tests nothing here and hangs on the warning modal.
+
+### 34.5 Test state
+
+Rigs in the session scratchpad, following the DrawBrokenView convention of
+not committing them: `align_smoke.py` (20/20), `dimref_suite.py`
+(rotation invariance across 90/45/180/-30, plus a genuine renumbering that
+must still be recovered), `mig_write.py` + `mig_read.py` (the two-process
+old-format migration).  All green under Xvfb on the real GPU.
+
+### 34.6 Where this leaves the plan
+
+Item 1 of 33.7 is **done as a bug fix, not as a class adoption**.  If
+upstream ever implements the phase-2 stubs, the class becomes worth
+revisiting -- and the fork's `handleNoExactMatch()` is the hook it would
+land on.  Until then there is nothing there to take.
+
+Item 2 is done.  **Item 3 (`QGVNavStyleSolidWorks` + the `Gui`
+`SolidWorksNavigationStyle` the fork also lacks) is the only thing left on
+the revised order**, and it is the lowest-value entry on it.
