@@ -104,6 +104,7 @@ SET(TechDrawGui_SRCS
     AppTechDrawGui.cpp
     AppTechDrawGuiPy.cpp
     Command.cpp
+    CommandAlign.cpp
     CommandCreateDims.cpp
     CommandDecorate.cpp
     CommandAnnotate.cpp

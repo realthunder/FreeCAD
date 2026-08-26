@@ -41,6 +41,7 @@ using namespace TechDrawGui;
     qApp->translate("Workbench", "Extensions: Dimensions");
     qApp->translate("Workbench", "Annotations");
     qApp->translate("Workbench", "Stacking");
+    qApp->translate("Workbench", "Aligning");
     qApp->translate("Workbench", "Add Lines");
     qApp->translate("Workbench", "Add Vertices");
     qApp->translate("Workbench", "TechDraw");
@@ -171,6 +172,12 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     *stacking << "TechDraw_StackUp";
     *stacking << "TechDraw_StackDown";
 
+    // aligning
+    Gui::MenuItem* aligning = new Gui::MenuItem;
+    aligning->setCommand("Aligning");
+    *aligning << "TechDraw_AlignVertexesVertically";
+    *aligning << "TechDraw_AlignVertexesHorizontally";
+
     // lines
     Gui::MenuItem* lines = new Gui::MenuItem;
     lines->setCommand("Add Lines");
@@ -268,6 +275,7 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     *draw << symbols;
     *draw << "Separator";
     *draw << stacking;
+    *draw << aligning;
     *draw << "Separator";
     *draw << toolattrib;
     *draw << toolcenter;

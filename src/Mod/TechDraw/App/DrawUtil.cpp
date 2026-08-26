@@ -103,6 +103,34 @@ using namespace TechDraw;
     }
 }
 
+//! the indexes of a list of geometry names, in the same order
+std::vector<int> DrawUtil::getIndexFromName(const std::vector<std::string>& geomNames)
+{
+    std::vector<int> result;
+    result.reserve(geomNames.size());
+    for (const std::string& geomName : geomNames) {
+        result.push_back(getIndexFromName(geomName));
+    }
+    return result;
+}
+
+//! true if every name in the list is of the same geometry type (all Vertex,
+//! all Edge, ...).  an empty list is trivially consistent.
+bool DrawUtil::isGeomTypeConsistent(const std::vector<std::string>& geomNames)
+{
+    if (geomNames.empty()) {
+        return true;
+    }
+
+    std::string reference = getGeomTypeFromName(geomNames.front());
+    for (const std::string& geomName : geomNames) {
+        if (reference != getGeomTypeFromName(geomName)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::string DrawUtil::getGeomTypeFromName(const std::string& geomName)
 {
     if (geomName.empty()) {

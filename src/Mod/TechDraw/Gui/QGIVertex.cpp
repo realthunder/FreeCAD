@@ -53,3 +53,15 @@ void QGIVertex::setRadius(float r)
     p.addEllipse(-r/2.0, -r/2.0, r, r);
     setPath(p);
 }
+
+Base::Vector2d QGIVertex::toVector2d() const
+{
+    QPointF center = boundingRect().center();
+    center = mapToScene(center);
+    return Base::Vector2d(center.x(), center.y());
+}
+
+Base::Vector2d QGIVertex::vector2dBetweenPoints(const QGIVertex* p2) const
+{
+    return p2->toVector2d() - toVector2d();
+}

@@ -67,6 +67,9 @@
 #include "DlgPageChooser.h"
 #include "DrawGuiUtil.h"
 #include "MDIViewPage.h"
+#include "QGIEdge.h"
+#include "QGIVertex.h"
+#include "QGIViewPart.h"
 #include "QGSPage.h"
 #include "ViewProviderPage.h"
 
@@ -568,4 +571,82 @@ void DrawGuiUtil::setSelectedTree(QGraphicsItem *item, bool selected)
             setSelectedTree(child, selected);
         }
     }
+}
+
+//! the view that owns a QGI child item, or nullptr if the child is not
+//! parented to a part view.
+static DrawViewPart* ownerViewPart(const QGraphicsItem* item)
+{
+    if (!item) {
+        return nullptr;
+    }
+
+    auto view = dynamic_cast<QGIViewPart*>(item->parentItem());
+    if (!view) {
+        return nullptr;
+    }
+    return dynamic_cast<DrawViewPart*>(view->getViewObject());
+}
+
+void DrawGuiUtil::rotateToAlign(const QGIEdge* edge, const Base::Vector2d& direction)
+{
+    DrawViewPart* dvp = ownerViewPart(edge);
+    if (!dvp) {
+        return;
+    }
+
+    const BaseGeomPtrVector geometry = dvp->getEdgeGeometry();
+    int index = edge->getProjIndex();
+    if (index < 0 || index >= static_cast<int>(geometry.size())) {
+        return;
+    }
+
+    std::vector<Base::Vector3d> endPoints = geometry.at(index)->findEndPoints();
+    if (endPoints.size() < 2) {
+        return;
+    }
+
+    Base::Vector3d oldDirection3d = endPoints.at(0) - endPoints.at(1);
+    Base::Vector2d oldDirection2d(oldDirection3d.x, oldDirection3d.y);
+    rotateToAlign(dvp, oldDirection2d, direction);
+}
+
+void DrawGuiUtil::rotateToAlign(const QGIVertex* p1, const QGIVertex* p2,
+                                const Base::Vector2d& direction)
+{
+    if (!p1 || !p2 || p1->parentItem() != p2->parentItem()) {
+        Base::Console().error("Vertices have to be from the same view\n");
+        return;
+    }
+
+    DrawViewPart* dvp = ownerViewPart(p1);
+    if (!dvp) {
+        return;
+    }
+
+    rotateToAlign(dvp, p1->vector2dBetweenPoints(p2), direction);
+}
+
+void DrawGuiUtil::rotateToAlign(DrawViewPart* view, const Base::Vector2d& oldDirection,
+                                const Base::Vector2d& newDirection)
+{
+    if (!view) {
+        return;
+    }
+
+    // pointing counterclockwise means we have to rotate clockwise, and back
+    int cw = newDirection.Angle() > oldDirection.Angle() ? -1 : 1;
+
+    double toRotate = Base::toDegrees(newDirection.GetAngle(oldDirection));
+
+    // rotate the least amount that achieves the alignment: correct by -35
+    // rather than by 145
+    if (toRotate > 90.0) {
+        toRotate -= 180.0;
+    }
+    else if (toRotate < -90.0) {
+        toRotate += 180.0;
+    }
+
+    view->Rotation.setValue(view->Rotation.getValue() + toRotate * cw);
 }
