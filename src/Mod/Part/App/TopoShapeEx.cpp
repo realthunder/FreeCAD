@@ -1957,7 +1957,7 @@ TopoShape &TopoShape::makERuledSurface(const std::vector<TopoShape> &shapes,
     // without any API to provide relationship to the output edges. So we have
     // to use searchSubShape() to build the relationship by ourselves.
 
-    TopoShape res(ruledShape.Located(TopLoc_Location()));
+    TopoShape res = TopoShape(Tag, Hasher, ruledShape).located();
     std::vector<TopoShape> edges;
     for (const auto &c : curves) {
         for (const auto &e : c.getSubTopoShapes(TopAbs_EDGE)) {

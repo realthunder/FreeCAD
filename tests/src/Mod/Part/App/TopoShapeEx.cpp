@@ -1702,11 +1702,7 @@ TEST_F(TopoShapeExpansionTest, linearizeFace)
     EXPECT_EQ(surface2.GetType(), GeomAbs_Plane);
 }
 
-// DISABLED, phase 4 verdict: OPEN. The result carries an empty element map where upstream
-// names nine elements. makERuledSurface is now equivalent to upstream's (the orientation
-// fix landed), so no upstream fix remains to port. The inputs here are raw edges with tags
-// but no element maps, which makes canMapElement the thing to look at.
-TEST_F(TopoShapeExpansionTest, DISABLED_makERuledSurfaceEdges)
+TEST_F(TopoShapeExpansionTest, makERuledSurfaceEdges)
 {
     // Arrange
     auto edge1 = BRepBuilderAPI_MakeEdge(gp_Pnt(0.0, 0.0, 0.0), gp_Pnt(0.0, 0.0, 8.0)).Edge();
