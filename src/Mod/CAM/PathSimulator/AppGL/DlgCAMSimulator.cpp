@@ -127,8 +127,7 @@ void DlgCAMSimulator::connectTo(GuiDisplay& gui, Dummy3DViewer& dv)
 
     mDummyViewer = &dv;
 
-    mDummyViewer->setStockVisible(mMillSimulator->IsStockVisible());
-    mDummyViewer->setBaseVisible(mMillSimulator->IsBaseVisible());
+    syncViewerMirrors();
 
     // connect gui and dummy viewer
 
@@ -301,12 +300,13 @@ static SimShape getMeshData(const Part::TopoShape& shape, float resolution)
 void DlgCAMSimulator::setStockShape(const Part::TopoShape& shape, float resolution)
 {
     mStock = getMeshData(shape, resolution);
+    mStockBox = shape.getBoundBox();
 
-    if (mDummyViewer) {
+    if (mDummyViewer && mirrorsToViewer()) {
         mDummyViewer->setStockShape(shape);
     }
 
-    update();
+    requestRedraw();
 }
 
 void DlgCAMSimulator::setStockVisible(bool b)
@@ -317,22 +317,23 @@ void DlgCAMSimulator::setStockVisible(bool b)
 
     mMillSimulator->SetStockVisible(b);
 
-    if (mDummyViewer) {
+    if (mDummyViewer && mirrorsToViewer()) {
         mDummyViewer->setStockVisible(b);
     }
 
-    update();
+    requestRedraw();
 }
 
 void DlgCAMSimulator::setBaseShape(const Part::TopoShape& shape, float resolution)
 {
     mBase = getMeshData(shape, resolution);
+    mBaseBox = shape.getBoundBox();
 
-    if (mDummyViewer) {
+    if (mDummyViewer && mirrorsToViewer()) {
         mDummyViewer->setBaseShape(shape);
     }
 
-    update();
+    requestRedraw();
 }
 
 void DlgCAMSimulator::setBaseVisible(bool b)
@@ -343,11 +344,11 @@ void DlgCAMSimulator::setBaseVisible(bool b)
 
     mMillSimulator->SetBaseVisible(b);
 
-    if (mDummyViewer) {
+    if (mDummyViewer && mirrorsToViewer()) {
         mDummyViewer->setBaseVisible(b);
     }
 
-    update();
+    requestRedraw();
 }
 
 // this is very similar to DemoMode::getDirection in Gui/DemoMode.cpp
@@ -384,7 +385,7 @@ void DlgCAMSimulator::setRotateEnabled(bool b)
 void DlgCAMSimulator::setBackgroundColor(const QColor& c)
 {
     mMillSimulator->SetBackgroundColor({c.redF(), c.greenF(), c.blueF()});
-    update();
+    requestRedraw();
 }
 
 void DlgCAMSimulator::setPathColor(const QColor& normal, const QColor& rapid)
@@ -398,7 +399,7 @@ void DlgCAMSimulator::timerEvent(QTimerEvent* event)
 {
     (void)event;
 
-    update();
+    requestRedraw();
 
     // TODO: keep things simple for now, should probably only update gui if something changed
 
@@ -464,10 +465,9 @@ void DlgCAMSimulator::updateResources()
     }
 }
 
-void DlgCAMSimulator::updateWindowScale()
+void DlgCAMSimulator::updateWindowScale(int w, int h)
 {
-    const qreal ratio = devicePixelRatioF();
-    mMillSimulator->UpdateWindowScale(width() * ratio, height() * ratio);
+    mMillSimulator->UpdateWindowScale(w, h);
 }
 
 void DlgCAMSimulator::updateCamera()
@@ -486,80 +486,159 @@ void DlgCAMSimulator::initializeGL()
     // context only receives endFrame's blit.
 }
 
-void DlgCAMSimulator::beginFacadeFrame()
+bool DlgCAMSimulator::beginFacadeFrame()
 {
     if (!Render::DrawDevice::instance()) {
         // Device gone (or never up): surface handles died with it.
         mDrawSurface.reset();
         gSimDraw.surface = nullptr;
-        return;
+        return false;
     }
     if (!mDrawSurface) {
         mDrawSurface = Render::DrawSurface::create(this, SimPassCount);
     }
     if (!mDrawSurface) {
-        return;
+        return false;
     }
     const qreal ratio = devicePixelRatioF();
     const int w = int(width() * ratio);
     const int h = int(height() * ratio);
-    if (!mDrawSurface->beginFrame(w, h)) {
-        return;
-    }
-    mMillSimulator->simDisplay.ConfigureFacadeFrame(mDrawSurface.get(),
-                                                    mMillSimulator->bgndColor);
-    gSimDraw.submitted = false;
-    gSimDraw.surface = mDrawSurface.get();
+    return mDrawSurface->beginFrame(w, h);
 }
 
 void DlgCAMSimulator::endFacadeFrame()
 {
-    if (!gSimDraw.surface) {
+    if (!mDrawSurface) {
         return;
     }
-    gSimDraw.surface = nullptr;
     if (gSimDraw.submitted) {
         mDrawSurface->endFrame();
     }
 }
 
-void DlgCAMSimulator::paintGL()
+void DlgCAMSimulator::syncViewerMirrors()
+{
+    if (!mDummyViewer) {
+        return;
+    }
+    const bool mirror = mirrorsToViewer();
+    mDummyViewer->setStockVisible(mirror && mMillSimulator->IsStockVisible());
+    mDummyViewer->setBaseVisible(mirror && mMillSimulator->IsBaseVisible());
+}
+
+Base::BoundBox3d DlgCAMSimulator::simulationBoundBox() const
+{
+    // Both shapes unconditionally: when the mirrors ARE on, the
+    // viewer's own scene bounds already cover them and the union is a
+    // no-op, so the caller needs no test of which path is running.
+    Base::BoundBox3d box = mStockBox;
+    if (mBaseBox.IsValid()) {
+        box.Add(mBaseBox);
+    }
+    return box;
+}
+
+bool DlgCAMSimulator::mirrorsToViewer() const
+{
+    // The viewer carries its own stock and base view providers, fed
+    // in step with the simulator's copies. They were dead weight while
+    // the viewer never painted; now that it does, they would draw the
+    // stock UNCUT over the carved one -- the same object rendered
+    // twice, and the wrong one on top. The simulator draws both
+    // shapes itself (the stock's material removal IS its rendering),
+    // so while attached the mirrors stay off.
+    //
+    // Handing the BASE shape to the engine instead, to get it lit
+    // like the rest of the document, is the natural follow-on once
+    // the resolve interleaves by depth (docs/CAMSimRenderPort.md
+    // sec 8.4); until then it would simply sit on top.
+    return !isAttached();
+}
+
+void DlgCAMSimulator::requestRedraw()
+{
+    if (isAttached() && mDummyViewer) {
+        // The render manager's own request, not QWidget::update(): a
+        // Quarter viewer redraws when its manager is asked to, and
+        // that is the call every other producer in the Gui uses.
+        if (auto* mgr = mDummyViewer->getSoRenderManager()) {
+            mgr->scheduleRedraw();
+        }
+        return;
+    }
+    update();
+}
+
+unsigned DlgCAMSimulator::framePasses() const
+{
+    return SimPassCount;
+}
+
+void DlgCAMSimulator::attachToHost(Gui::View3DInventorViewer* viewer)
+{
+    Render::Renderer* host = viewer ? viewer->getExternalRenderer() : nullptr;
+    if (host == mHostRenderer) {
+        return;
+    }
+    if (mHostRenderer) {
+        mHostRenderer->setFrameConsumer(nullptr);
+        mHostRenderer = nullptr;
+    }
+    if (!host) {
+        // No frame to borrow: back to drawing this widget, which is
+        // what the standalone surface below does.
+        syncViewerMirrors();
+        return;
+    }
+    host->setFrameConsumer(this);
+    mHostRenderer = host;
+    // Attachment changes who draws the stock and the base, so the
+    // viewer's mirror providers have to be told again.
+    syncViewerMirrors();
+    // The standalone surface's handles are the device's, not the
+    // host's, and nothing will drive them again.
+    mDrawSurface.reset();
+    gSimDraw.surface = nullptr;
+}
+
+void DlgCAMSimulator::drawFrame(Render::DrawSurface& surface)
 {
     updateResources();
 
     // We need to call updateWindowScale on every render since the devicePixelRatio we get in
     // resizeGL might be wrong on the first resize.
 
-    updateWindowScale();
+    int w = 0;
+    int h = 0;
+    surface.hostSize(w, h);
+    updateWindowScale(w, h);
     updateCamera();
 
     const auto now = clock::now();
     const auto elapsed = mLastProcessSim != clock::time_point::min() ? now - mLastProcessSim : 0s;
 
-#if 0
-
-    static std::deque<clock::duration> q;
-    while (q.size() >= 60) {
-        q.pop_front();
-    }
-
-    q.push_back(elapsed);
-
-    const auto average = std::accumulate(q.begin(), q.end(), clock::duration()) / (float)q.size();
-
-    std::cerr
-        << "elapsed: "
-        << std::chrono::duration_cast<std::chrono::duration<float, std::milli>>(average).count()
-        << "ms" << std::endl;
-
-#endif
-
-
-    beginFacadeFrame();
+    mMillSimulator->simDisplay.ConfigureFacadeFrame(&surface,
+                                                    mMillSimulator->bgndColor);
+    gSimDraw.submitted = false;
+    gSimDraw.surface = &surface;
     mMillSimulator->ProcessSim(elapsed);
-    endFacadeFrame();
+    gSimDraw.surface = nullptr;
 
     mLastProcessSim = now;
+}
+
+void DlgCAMSimulator::paintGL()
+{
+    // Attached, the host's frame drives drawFrame() and this widget is
+    // hidden; a stray paint must not open a second frame.
+    if (isAttached()) {
+        return;
+    }
+    if (!beginFacadeFrame()) {
+        return;
+    }
+    drawFrame(*mDrawSurface);
+    endFacadeFrame();
 }
 
 void DlgCAMSimulator::resizeGL(int w, int h)

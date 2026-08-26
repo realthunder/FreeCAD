@@ -28,6 +28,7 @@
 
 #include "DlgCAMSimulator.h"
 #include "Dummy3DViewer.h"
+#include "ViewCAMSimulator.h"
 #include <string_view>
 
 using namespace std::literals;
@@ -36,9 +37,13 @@ using namespace Gui;
 namespace CAMSimulator
 {
 
-View3DSettings::View3DSettings(ParameterGrp::handle hGrp, Dummy3DViewer& view, DlgCAMSimulator& dlg)
+View3DSettings::View3DSettings(ParameterGrp::handle hGrp,
+                               Dummy3DViewer& view,
+                               DlgCAMSimulator& dlg,
+                               ViewCAMSimulator& owner)
     : Gui::View3DSettings(hGrp, &view)
     , mView(view)
+    , mOwner(owner)
     , mDlg(dlg)
 {}
 
@@ -109,6 +114,14 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::
     }
     else {
         Gui::View3DSettings::OnChange(rCaller, Reason);
+    }
+
+    if (Reason == "RenderCache"sv) {
+        // The base just decided whether the viewer has a renderer at
+        // all, and creating one destroys the old -- which forgot its
+        // consumer. Re-decide which path the simulator draws through
+        // (docs/CAMSimRenderPort.md sec 8).
+        mOwner.updateHostAttachment();
     }
 
     // apply settings to dlg

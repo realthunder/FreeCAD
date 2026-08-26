@@ -57,6 +57,7 @@ void SimDisplay::InitShaders()
     mRProgGeom = dev->createProgram("vs_camsim_geom", "fs_camsim_geom");
     mRProgLighting = dev->createProgram("vs_camsim_fbo", "fs_camsim_lighting");
     mRProgLine = dev->createProgram("vs_camsim_line", "fs_camsim_line");
+    mRProgCopy = dev->createProgram("vs_camsim_fbo", "fs_camsim_fbo");
     mRUniNormalRot = dev->createUniform("u_simNormalRot", Render::UniformType::Mat4);
     mRUniLightPos = dev->createUniform("u_simLightPos", Render::UniformType::Vec4);
     mRUniLightColor = dev->createUniform("u_simLightColor", Render::UniformType::Vec4);
@@ -68,6 +69,7 @@ void SimDisplay::InitShaders()
     mRSampPosition = dev->createUniform("s_simPosition", Render::UniformType::Sampler);
     mRSampNormal = dev->createUniform("s_simNormal", Render::UniformType::Sampler);
     mRSampAo = dev->createUniform("s_simAo", Render::UniformType::Sampler);
+    mRSampTex = dev->createUniform("s_simTex", Render::UniformType::Sampler);
 
     gSimDraw.uniNormalRot = mRUniNormalRot;
     gSimDraw.uniLightPos = mRUniLightPos;
@@ -121,6 +123,12 @@ void SimDisplay::CreateDisplayFbos()
                                        mRNormTexture, mRNormalZTexture};
     mRTarget = dev->createTarget(colors, 4, mRDepthTexture);
     mRPathTarget = dev->createTarget(&mRColTexture, 1, mRDepthTexture);
+    // The resolve's output. Colour only -- the composite that reads it
+    // needs no depth of its own, and giving it none keeps the sim's
+    // depth/stencil out of the pass that crosses into a host frame.
+    mRResolveTexture = dev->createRenderTexture(
+        mWidth, mHeight, Render::DrawTextureFormat::RGBA8, flags);
+    mRResolveTarget = dev->createTarget(&mRResolveTexture, 1, {});
 }
 
 SimDisplay::~SimDisplay()
@@ -170,9 +178,17 @@ void SimDisplay::CleanFbos()
         if (mRDepthTexture.valid()) {
             dev->destroy(mRDepthTexture);
         }
+        if (mRResolveTarget.valid()) {
+            dev->destroy(mRResolveTarget);
+        }
+        if (mRResolveTexture.valid()) {
+            dev->destroy(mRResolveTexture);
+        }
     }
     mRTarget = {};
     mRPathTarget = {};
+    mRResolveTarget = {};
+    mRResolveTexture = {};
     mRColTexture = {};
     mRPosTexture = {};
     mRNormTexture = {};
@@ -187,7 +203,8 @@ void SimDisplay::CleanGL()
 
     if (auto* dev = Render::DrawDevice::instance()) {
         Render::ProgramHandle progs[] = {mRProgDiffuse, mRProgInvDiffuse,
-            mRProgFlat, mRProgGeom, mRProgLighting, mRProgLine};
+            mRProgFlat, mRProgGeom, mRProgLighting, mRProgLine,
+            mRProgCopy};
         for (auto& p : progs) {
             if (p.valid()) {
                 dev->destroy(p);
@@ -196,7 +213,7 @@ void SimDisplay::CleanGL()
         Render::UniformHandle unis[] = {mRUniNormalRot, mRUniLightPos,
             mRUniLightColor, mRUniLightAmbient, mRUniObjectColor,
             mRUniObjectColorAlpha, mRUniParams, mRSampColor,
-            mRSampPosition, mRSampNormal, mRSampAo};
+            mRSampPosition, mRSampNormal, mRSampAo, mRSampTex};
         for (auto& u : unis) {
             if (u.valid()) {
                 dev->destroy(u);
@@ -218,10 +235,11 @@ void SimDisplay::CleanGL()
     gSimDraw.program = {};
 
     mRProgDiffuse = mRProgInvDiffuse = mRProgFlat = {};
-    mRProgGeom = mRProgLighting = mRProgLine = {};
+    mRProgGeom = mRProgLighting = mRProgLine = mRProgCopy = {};
     mRUniNormalRot = mRUniLightPos = mRUniLightColor = {};
     mRUniLightAmbient = mRUniObjectColor = mRUniObjectColorAlpha = {};
     mRUniParams = mRSampColor = mRSampPosition = mRSampNormal = mRSampAo = {};
+    mRSampTex = {};
     mRQuadVbo = {};
 
     displayInitiated = false;
@@ -306,11 +324,30 @@ void SimDisplay::ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& 
     biased[2][2] *= 0.99999f;
     surface->setPassTransform(SimPassBaseShape, view, &biased[0][0]);
     surface->setPassTransform(SimPassPath, view, &mProjMat[0][0]);
-    // The resolve draws to the surface backbuffer, cleared to the
-    // background color.
-    surface->setPassTarget(SimPassResolve, {});
+    // The resolve lands in the sim's own colour target, cleared fully
+    // transparent so that the G-buffer's coverage survives as alpha
+    // for the composite to blend with.
+    surface->setPassTarget(SimPassResolve, mRResolveTarget);
     surface->setPassRect(SimPassResolve, 0, 0, mWidth, mHeight);
     surface->setPassSequential(SimPassResolve, false);
+    surface->setPassClear(SimPassResolve, 0x00000000, 1.0f, 0,
+                          Render::ClearColor);
+
+    // The composite draws into whatever this surface composites into:
+    // its own backbuffer standalone, the host's scene target attached
+    // (docs/CAMSimRenderPort.md sec 8.4). hostTarget() answers both --
+    // it is the invalid handle, i.e. "my backbuffer", when there is no
+    // host.
+    surface->setPassTarget(SimPassComposite, surface->hostTarget());
+    surface->setPassRect(SimPassComposite, 0, 0, mWidth, mHeight);
+    surface->setPassSequential(SimPassComposite, false);
+    if (surface->attached()) {
+        // The host drew its own background and its own scene into that
+        // target already. Clearing here would erase them.
+        surface->setPassClear(SimPassComposite, 0, 1.0f, 0,
+                              Render::ClearNone);
+        return;
+    }
     auto channel = [](float c) {
         if (c < 0.0f) {
             c = 0.0f;
@@ -322,8 +359,25 @@ void SimDisplay::ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& 
     };
     uint32_t rgba = (channel(bgnd[0]) << 24) | (channel(bgnd[1]) << 16)
         | (channel(bgnd[2]) << 8) | 0xff;
-    surface->setPassClear(SimPassResolve, rgba, 1.0f, 0,
+    surface->setPassClear(SimPassComposite, rgba, 1.0f, 0,
                           Render::ClearColor | Render::ClearDepth);
+}
+
+void SimDisplay::RenderCompositeFacade(Render::DrawSurface* surface,
+                                       unsigned pass)
+{
+    if (!surface || !mRProgCopy.valid() || !mRQuadVbo.valid()
+            || !mRResolveTexture.valid()) {
+        return;
+    }
+    surface->setTexture(0, mRSampTex, mRResolveTexture);
+    Render::DrawState state;
+    state.depthWrite = false;
+    state.depthFunc = Render::CompareFunc::Always;
+    state.blend = Render::BlendMode::Alpha;
+    surface->setState(state);
+    surface->setVertexBuffer(mRQuadVbo);
+    surface->submit(pass, mRProgCopy);
 }
 
 void SimDisplay::RenderResultFacade(Render::DrawSurface* surface, unsigned pass)
@@ -360,7 +414,10 @@ void SimDisplay::RenderResultFacade(Render::DrawSurface* surface, unsigned pass)
     Render::DrawState state;
     state.depthWrite = false;
     state.depthFunc = Render::CompareFunc::Always;
-    state.blend = Render::BlendMode::Alpha;
+    // Into the sim's own resolve target, which the composite pass then
+    // blends: written verbatim so the G-buffer's coverage alpha
+    // survives to that blend.
+    state.blend = Render::BlendMode::None;
     surface->setState(state);
     surface->setVertexBuffer(mRQuadVbo);
     surface->submit(pass, mRProgLighting);

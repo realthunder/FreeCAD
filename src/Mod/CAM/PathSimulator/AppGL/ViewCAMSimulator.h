@@ -69,6 +69,19 @@ private:
     void initCamera();
     void cloneCamera(SoCamera& camera);
     void applySettings();
+    /// Frame the camera on everything there is to see -- the viewer's
+    /// own scene AND the shapes the simulator draws itself, which
+    /// while attached are not in that scene. Every "view fit" goes
+    /// through here rather than calling the viewer's viewAll().
+    void viewFit();
+
+public:
+    /// Decide between the attached and the standalone drawing path
+    /// and put the widget stack in the matching shape. Called at
+    /// construction and again whenever the viewer's renderer could
+    /// have changed -- a render-cache preference change destroys the
+    /// renderer, and a destroyed renderer has forgotten its consumer.
+    void updateHostAttachment();
 
 protected:
     GuiDisplay* mGui = nullptr;

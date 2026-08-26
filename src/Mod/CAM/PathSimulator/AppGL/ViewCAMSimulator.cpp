@@ -40,11 +40,13 @@
 #include <Gui/SoFCDB.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
+#include <Inventor/SbBox3f.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <QPointer>
 #include <QStackedLayout>
 #include <QStackedWidget>
+#include <cmath>
 #include <string_view>
 
 using namespace std::literals;
@@ -91,6 +93,14 @@ ViewCAMSimulator::ViewCAMSimulator(Gui::Document* pcDocument, QWidget* parent, Q
 
     setCentralWidget(stack);
 
+    // Draw inside the 3D view's own frame if it has a renderer to
+    // borrow (docs/CAMSimRenderPort.md sec 8). Then the viewer paints
+    // -- it has held the stock and base view providers all along and
+    // never rendered them -- and the simulator's widget goes away,
+    // because two stacked QOpenGLWidgets means the top one hides the
+    // bottom whether it drew anything or not.
+    updateHostAttachment();
+
 #else
 
     mDummyViewer->discardPaintEvent_ = false;
@@ -115,7 +125,7 @@ bool ViewCAMSimulator::onMsg(const char* pMsg, const char** ppReturn)
     // TODO: this is a near 1-to-1 code duplication from View3DInventor.cpp
 
     if (pMsg == "ViewFit"sv) {
-        mDummyViewer->viewAll();
+        viewFit();
         return true;
     }
     else if (pMsg == "ViewBottom"sv) {
@@ -234,7 +244,7 @@ void ViewCAMSimulator::onSimulationStarted()
 {
     // fit camera to scene
 
-    mDummyViewer->viewAll();
+    viewFit();
 
     // window title and activate
 
@@ -266,6 +276,46 @@ void ViewCAMSimulator::cloneCamera(SoCamera& camera)
     mDummyViewer->setCamera(str.c_str());
 }
 
+void ViewCAMSimulator::updateHostAttachment()
+{
+    if (!mDlg || !mDummyViewer) {
+        return;
+    }
+    mDlg->attachToHost(mDummyViewer);
+    const bool attached = mDlg->isAttached();
+    mDummyViewer->discardPaintEvent_ = !attached;
+    mDlg->setVisible(!attached);
+    if (attached) {
+        mDummyViewer->raise();
+        mGui->raise();
+    }
+}
+
+void ViewCAMSimulator::viewFit()
+{
+    const Base::BoundBox3d sim =
+        mDlg ? mDlg->simulationBoundBox() : Base::BoundBox3d();
+    if (!sim.IsValid()) {
+        // Nothing simulated yet: the viewer's scene is all there is.
+        mDummyViewer->viewAll();
+        return;
+    }
+    SbBox3f box(float(sim.MinX), float(sim.MinY), float(sim.MinZ),
+                float(sim.MaxX), float(sim.MaxY), float(sim.MaxZ));
+    const SbBox3f scene = mDummyViewer->getBoundingBox();
+    if (!scene.isEmpty()) {
+        box.extendBy(scene);
+    }
+    // viewAll() resets the height angle before it frames, and the two
+    // together are what "view fit" has always meant here; framing the
+    // box without it would fit a different camera.
+    SoCamera* cam = mDummyViewer->getSoRenderManager()->getCamera();
+    if (cam && cam->getTypeId().isDerivedFrom(SoPerspectiveCamera::getClassTypeId())) {
+        static_cast<SoPerspectiveCamera*>(cam)->heightAngle = float(M_PI / 4.0);
+    }
+    mDummyViewer->viewBoundBox(box);
+}
+
 void ViewCAMSimulator::applySettings()
 {
     assert(mDummyViewer && mDlg);
@@ -278,7 +328,7 @@ void ViewCAMSimulator::applySettings()
         "User parameter:BaseApp/Preferences/Mod/CAM"
     );
 
-    mViewSettings = std::make_unique<CAMSimulator::View3DSettings>(hGrpView, *mDummyViewer, *mDlg);
+    mViewSettings = std::make_unique<CAMSimulator::View3DSettings>(hGrpView, *mDummyViewer, *mDlg, *this);
     mCAMSettings = std::make_unique<CAMSettings>(hGrpCAM, *mDlg);
 
     mViewSettings->applySettings();

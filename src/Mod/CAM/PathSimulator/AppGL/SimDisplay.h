@@ -55,6 +55,9 @@ public:
     // The deferred lighting resolve: one quad submitted into `pass`,
     // sampling the G-buffer and the last AO result (RunAOFacade).
     void RenderResultFacade(Render::DrawSurface* surface, unsigned pass);
+    // The composite: the resolve's image blended into whatever the
+    // surface composites into (SimPassComposite).
+    void RenderCompositeFacade(Render::DrawSurface* surface, unsigned pass);
     // The AO effect run: hands the G-buffer's prepass attachment to
     // the engine's AO service in the SimPassAOFirst range and keeps
     // the result for the resolve. On a cached frame (recalculate
@@ -130,6 +133,13 @@ protected:
     // attachments (an AO streak along the rapid lines, found the
     // moment the effect first ran).
     Render::TargetHandle mRPathTarget;
+    // The resolve's own output, and the target that holds it. The
+    // deferred resolve lands here rather than straight in the
+    // surface's composite target, so that the only texture the
+    // composite pass carries across is this one RGBA8 image -- see
+    // SimPassComposite and docs/CAMSimRenderPort.md sec 8.4.
+    Render::TextureHandle mRResolveTexture;
+    Render::TargetHandle mRResolveTarget;
     Render::EffectHandle mREffectAO;
     // The last AO run's result; invalid = no AO for the resolve.
     Render::TextureHandle mRLastAO;
@@ -139,6 +149,9 @@ protected:
     Render::ProgramHandle mRProgGeom;
     Render::ProgramHandle mRProgLighting;
     Render::ProgramHandle mRProgLine;
+    // The plain fullscreen texture copy (fs_camsim_fbo) the composite
+    // pass draws with.
+    Render::ProgramHandle mRProgCopy;
     Render::UniformHandle mRUniNormalRot;
     Render::UniformHandle mRUniLightPos;
     Render::UniformHandle mRUniLightColor;
@@ -150,6 +163,7 @@ protected:
     Render::UniformHandle mRSampPosition;
     Render::UniformHandle mRSampNormal;
     Render::UniformHandle mRSampAo;
+    Render::UniformHandle mRSampTex;
 };
 
 }  // namespace CAMSimulator

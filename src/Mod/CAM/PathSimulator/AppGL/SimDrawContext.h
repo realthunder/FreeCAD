@@ -46,7 +46,16 @@ enum : unsigned
     /// Backbuffer: the deferred lighting quad, after the AO result it
     /// samples.
     SimPassResolve = SimPassAOFirst + Render::kAOEffectPasses,
-    SimPassCount = SimPassResolve + 1,
+    /// The finished image blended into whatever the surface
+    /// composites into -- its own backbuffer standalone, the host's
+    /// scene target attached (docs/CAMSimRenderPort.md sec 8.4).
+    ///
+    /// A pass of its own rather than pointing the resolve straight at
+    /// that target: the resolve samples the whole G-buffer, and the
+    /// composite samples ONE RGBA8 texture. That difference is not
+    /// cosmetic -- see the execution record.
+    SimPassComposite = SimPassResolve + 1,
+    SimPassCount = SimPassComposite + 1,
 };
 
 /// The facade-side current state. The GL path keeps state in the

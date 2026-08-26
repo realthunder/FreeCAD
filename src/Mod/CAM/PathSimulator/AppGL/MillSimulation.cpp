@@ -418,6 +418,7 @@ void MillSimulation::Render()
 
     simDisplay.RunAOFacade(gSimDraw.surface, mViewSSAO, recalculated);
     simDisplay.RenderResultFacade(gSimDraw.surface, SimPassResolve);
+    simDisplay.RenderCompositeFacade(gSimDraw.surface, SimPassComposite);
 
     /*   if (mDebug > 0) {
            mat4x4 test;
