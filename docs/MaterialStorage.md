@@ -616,5 +616,25 @@ any `FreeCADCmd` script -- left that type id at `badType`, so restoring
 whose default says nothing and does nothing. The card was dropped in silence,
 the property kept the `Default` it was constructed with, and the next save
 wrote that default over what the document said -- a headless re-save destroying
-the assignment it was never told it had lost. `Part`'s module init loads
-`Materials` for that reason.
+the assignment it was never told it had lost.
+
+That hole is in the restore path, not in Materials. FreeCAD already loads the
+module a saved type name points at: `Base::Type::importModule` cuts the prefix
+off `Materials::PropertyMaterial` and imports `Materials`, and every other
+restore path asks for it -- `Document::addObject` for object types,
+`DynamicProperty::_addDynamicProperty` for dynamic properties, both through
+`getTypeIfDerivedFrom(..., bLoadModule = true)`. Static properties were the
+exception: `PropertyContainer::Restore` compares the saved type name against
+the property's own type id as a string and never resolves it, so nothing asked
+for the module. It now asks, and only when the property cannot name its own
+type -- a genuine type change still goes to `handleChangedPropertyType` exactly
+as before. The same hole applied to every property class owned by a module
+other than its object's, `Mesh::PropertyMaterial` among them.
+
+`Part::Box` needed the same line separately: it keeps a hand-written copy of
+that loop for the ancient `l`/`w`/`h` migration, and a copy does not inherit a
+fix. It is the only such copy in the tree -- `Part2DObject` and `Circle`
+delegate to the base -- but it is worth knowing that a primitive can restore
+by different code than every other object, because a test written around
+`Part::Box` measures that code and not the common one. This one did, for an
+hour.
