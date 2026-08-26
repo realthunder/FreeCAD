@@ -2251,11 +2251,44 @@ public:
 extern BGFXRendererLibP _BGFXLib;
 extern BGFXRendererLib BGFXLib;
 
+/// The engine-facing half of an ATTACHED draw surface
+/// (docs/CAMSimRenderPort.md sec 8). The surface class itself stays
+/// private to BGFXDrawDevice.cpp; the frame path drives it through
+/// this, binding the host state for the duration of one
+/// FrameConsumer::drawFrame call and unbinding it afterwards, so that
+/// a consumer holding the surface past the callback can submit
+/// nothing.
+class BGFXHostSurface {
+public:
+    virtual ~BGFXHostSurface() {}
+    /// The consumer-facing object handed to FrameConsumer::drawFrame.
+    virtual Render::DrawSurface &surface() = 0;
+    /// Bind this frame: \a ids are the host view ids the consumer's
+    /// passes 0..numIds-1 map to (in that order), and the rest
+    /// describes the target they default to.
+    virtual void bindFrame(const uint16_t *ids, unsigned numIds,
+                           bgfx::FrameBufferHandle target,
+                           bgfx::TextureHandle color,
+                           bgfx::TextureHandle depth,
+                           int width, int height, bool linearColor) = 0;
+    virtual void unbindFrame() = 0;
+    /// Passes the surface was built for -- the consumer's own count,
+    /// fixed at creation.
+    virtual unsigned passes() const = 0;
+};
+
 #ifndef FC_RENDERER_STANDALONE
 /// The bgfx implementation of the draw facade (BGFXDrawDevice.cpp,
 /// desktop build only). BGFXRendererLib::drawDevice hands it out once
 /// the device is up.
 DrawDevice *fcBGFXDrawDevice();
+
+/// A surface for \a numPasses consumer passes, or null when the
+/// device is down or the count exceeds what a host frame offers.
+/// Desktop only, like the rest of the facade: the standalone build
+/// has no outside consumers to serve and does not compile
+/// BGFXDrawDevice.cpp.
+std::unique_ptr<BGFXHostSurface> fcBGFXCreateHostSurface(unsigned numPasses);
 #endif
 
 } // namespace Renderer
@@ -4099,6 +4132,36 @@ public:
                             // solids, after the transparent bucket like
                             // GL's grouped section pass; stencil-cleared
                             // because the outline views left marks
+        ViewConsumer0,      // an attached FrameConsumer's own passes
+                            // (Renderer::setFrameConsumer,
+                            // docs/CAMSimRenderPort.md sec 8): a module
+                            // outside the engine -- the CAM simulator --
+                            // drawing through the immediate-mode facade
+                            // on this view's ids, into this view's
+                            // scene target. Placed here so its output
+                            // is inside the composite (bloom, the user
+                            // post stage, debug, accumulation all see
+                            // it) while the on-top, highlight and
+                            // overlay buckets still draw over it. Live
+                            // only while a consumer is registered, and
+                            // only as many as it asked for
+        ViewConsumer1,
+        ViewConsumer2,
+        ViewConsumer3,
+        ViewConsumer4,
+        ViewConsumer5,
+        ViewConsumer6,
+        ViewConsumer7,
+        ViewConsumer8,
+        ViewConsumer9,
+        ViewConsumer10,
+        ViewConsumer11,
+        ViewConsumer12,
+        ViewConsumer13,
+        ViewConsumer14,
+        ViewConsumer15,     // sized for the simulator's thirteen (four
+                            // draw passes and the AO effect's nine)
+                            // with headroom for the next consumer
         ViewBloomBright,    // bloom bright pass: the finished scene
                             // (opaque + water + transparent, before the
                             // on-top/UI buckets) box-downsampled to the
@@ -4177,6 +4240,10 @@ public:
     // ViewPresent: anything inserted between the two has to leave this
     // reading 9, or the overlay loop claims ids that belong to it.
     enum { NumOverlayViews = ViewAccum - ViewOverlay0 };
+    /// Pass ids an attached FrameConsumer may claim. Same rule as the
+    /// overlay block above: counted between the two enum entries, so
+    /// inserting a pass into the run cannot desync it.
+    enum { NumConsumerViews = ViewBloomBright - ViewConsumer0 };
 
     /// One stateful emitter's particle state (docs/RenderEngine.md
     /// §5.8): two RGBA32F attachment pairs that ping-pong once per
@@ -8674,6 +8741,19 @@ public:
         Render::OverlayAnchor anchor;
     };
     std::map<int, OverlayFeed> overlays;
+
+    /// The module drawing its own passes inside this renderer's frames
+    /// (Renderer::setFrameConsumer, docs/CAMSimRenderPort.md sec 8),
+    /// and the surface it draws through. The surface is sized to the
+    /// consumer's pass count at registration and owned here, so a
+    /// consumer that goes away cannot leave one behind, and it is null
+    /// whenever the backend device is down -- in which case the
+    /// consumer never gets called and keeps its own path.
+    Render::FrameConsumer *frameConsumer = nullptr;
+    std::unique_ptr<Render::BGFXHostSurface> consumerSurface;
+    /// Passes consumerSurface was built for; a consumer that changes
+    /// its count has to re-register, and this is what notices.
+    unsigned consumerPasses = 0;
     Render::DrawCallList highlight;
     std::unordered_set<uint64_t> hiddenKeys;
     std::unordered_set<const Render::DrawCall *> dupDraws;

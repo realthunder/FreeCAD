@@ -121,6 +121,7 @@ public:
     virtual void setOverlay(int id, DrawCallList &&draws,
                             const OverlayAnchor &anchor) override;
     virtual void removeOverlay(int id) override;
+    virtual void setFrameConsumer(FrameConsumer *consumer) override;
     virtual void setHiddenLineConfig(const HiddenLineConfig &config) override;
     virtual void setSectionConfig(const SectionConfig &config) override;
     virtual void setAOConfig(const AOConfig &config) override;

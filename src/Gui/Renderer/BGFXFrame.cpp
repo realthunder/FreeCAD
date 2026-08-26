@@ -3834,6 +3834,18 @@ bool BGFXRenderer::Private::render(const QColor &col,
     declPass(V::ViewTransparent, true, configTransparent);
     declPass(V::ViewOITComposite, oitActive, configScene);
     declPass(V::ViewSectionCapTransp, true, configScene);
+    // An attached consumer's passes (docs/CAMSimRenderPort.md sec 8).
+    // A null config: the consumer states its own targets, rects,
+    // clears and transforms through the facade's setPass* calls, which
+    // run later in the frame than this loop and so have the last word
+    // anyway. Declared one at a time rather than as a group so that
+    // the ones it did not ask for are declared-but-dead instead of
+    // undeclared, which the pass table reports as a bug.
+    const int consumerPassCount =
+        (frameConsumer && consumerSurface && !subCtx.warm)
+            ? int(consumerPasses) : 0;
+    for (int c = 0; c < int(V::NumConsumerViews); ++c)
+        declPass(V::ViewConsumer0 + c, c < consumerPassCount, nullptr);
     declPasses(V::ViewBloomBright, V::ViewBloomBlurV, bloomActive,
                configBloom);
     declPass(V::ViewBloomApply, bloomActive, configScene);
@@ -5916,6 +5928,29 @@ bool BGFXRenderer::Private::render(const QColor &col,
         view->overlayView = -1;
         view->overlayAnchor = nullptr;
         view->overlayRectHeight = 0.f;
+    }
+
+    // The attached frame consumer (docs/CAMSimRenderPort.md sec 8).
+    // Submitted here for reading order only: its pass ids sit between
+    // the transparent bucket and bloom, and it is those ids -- not
+    // this position -- that place its draws in the frame.
+    //
+    // Bound for the duration of the call and unbound after, so a
+    // consumer that squirrelled the surface away cannot submit
+    // outside it. Everything the callback may need about where it is
+    // drawing rides the bind: the scene target, its attachments, its
+    // pixel size (which is the SCENE target's, not the widget's) and
+    // whether its colour is linear.
+    if (consumerPassCount > 0) {
+        uint16_t ids[BGFXView::NumConsumerViews];
+        for (int c = 0; c < consumerPassCount; ++c)
+            ids[c] = view->vid(V::ViewConsumer0 + c);
+        consumerSurface->bindFrame(ids, unsigned(consumerPassCount),
+                                   view->bgfxFbo, view->bgfxColor,
+                                   view->bgfxDepth, int(view->width),
+                                   int(view->height), view->hdrScene);
+        frameConsumer->drawFrame(consumerSurface->surface());
+        consumerSurface->unbindFrame();
     }
 
     // Idle temporal accumulation. Submitted here for reading order --

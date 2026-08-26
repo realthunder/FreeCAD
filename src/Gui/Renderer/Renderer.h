@@ -52,6 +52,7 @@ namespace Render {
 
 class RenderLib;
 class DrawDevice;
+class DrawSurface;
 
 /// CPU-side snapshot of one geometry cache (SoFCVertexCache on the Gui side).
 /// All array pointers stay valid for as long as `owner` is held. Backends key
@@ -2479,6 +2480,44 @@ enum SelIdBits : int {
     SelIdSelected = SelIdFull | SelIdPartial,
 };
 
+/// A consumer that draws its own passes inside a renderer's frame
+/// (docs/CAMSimRenderPort.md section 8 -- the borrowed frame).
+///
+/// The immediate-mode facade (DrawDevice.h) lets an outside module
+/// draw with the backend; on its own it only lets that module own a
+/// whole widget. A FrameConsumer instead draws INSIDE a 3D view's
+/// frame, on pass ids taken from that view's own block, against that
+/// view's scene target -- which is what makes its geometry sort with
+/// the document's by depth rather than sit on top of it.
+///
+/// The renderer owns the surface and the frame boundary. Register with
+/// Renderer::setFrameConsumer, and draw when drawFrame() is called:
+/// there is no beginFrame/endFrame to run, because the host has
+/// already begun the frame and bgfx's frame boundary is process-wide.
+class RendererExport FrameConsumer
+{
+public:
+    virtual ~FrameConsumer();
+
+    /// How many passes to reserve inside the host frame. Read once
+    /// per registration, so a consumer whose pass count changes
+    /// re-registers. More than the host offers is refused (nothing is
+    /// drawn) rather than silently clamped, because a clamp would put
+    /// the consumer's last passes in somebody else's view id.
+    virtual unsigned framePasses() const = 0;
+
+    /// Draw into \a surface. Called once per host frame, after the
+    /// scene composite and before the on-top, highlight and overlay
+    /// passes.
+    ///
+    /// The surface's passes are live only for the duration of this
+    /// call. Nothing here may cross the frame boundary or disturb the
+    /// frame in progress: no scene feeds, no resize, no repaint
+    /// request, and above all no bgfx frame of its own (the facade
+    /// gives an attached surface no way to ask for one).
+    virtual void drawFrame(DrawSurface &surface) = 0;
+};
+
 class RendererExport Renderer
 {
 public:
@@ -2750,6 +2789,13 @@ public:
                             const OverlayAnchor &anchor)
     { (void)id; (void)draws; (void)anchor; }
     virtual void removeOverlay(int id) { (void)id; }
+    /// Register (or clear, with null) the consumer that draws its own
+    /// passes inside this renderer's frames (FrameConsumer above).
+    /// One at a time: registering a second replaces the first, whose
+    /// surface is destroyed. Backends that do not implement the draw
+    /// facade ignore this, and the consumer keeps its own path.
+    virtual void setFrameConsumer(FrameConsumer *consumer)
+    { (void)consumer; }
     /// Per-frame hidden-line draw style state (resolved from the traversal
     /// state each render, like the GL renderer does).
     virtual void setHiddenLineConfig(const HiddenLineConfig &config)

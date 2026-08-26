@@ -843,6 +843,36 @@ void BGFXRenderer::removeOverlay(int id)
         pimpl->sceneDirty = true;
 }
 
+void BGFXRenderer::setFrameConsumer(FrameConsumer *consumer)
+{
+    pimpl->frameConsumer = nullptr;
+    pimpl->consumerSurface.reset();
+    pimpl->consumerPasses = 0;
+    if (!consumer)
+        return;
+#ifdef FC_RENDERER_STANDALONE
+    // No draw facade in the browser tier: nothing outside the engine
+    // links against it there, and BGFXDrawDevice.cpp is not built.
+    (void)consumer;
+#else
+    const unsigned want = consumer->framePasses();
+    // Refused, not clamped: a clamp would leave the consumer's last
+    // passes submitting into whatever view id follows the block, which
+    // is another part of this very frame.
+    auto surface = fcBGFXCreateHostSurface(want);
+    if (!surface) {
+        RENDER_ERR("frame consumer wants " << want
+                   << " passes; a host frame offers "
+                   << int(BGFXView::NumConsumerViews)
+                   << " and the device must be up. It is not attached.");
+        return;
+    }
+    pimpl->consumerSurface = std::move(surface);
+    pimpl->consumerPasses = want;
+    pimpl->frameConsumer = consumer;
+#endif
+}
+
 void BGFXRenderer::setHighlight(DrawCallList &&draws, bool wholeOnTop)
 {
     dumpFeed("hl", wholeOnTop, draws);

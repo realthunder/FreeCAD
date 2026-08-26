@@ -205,6 +205,12 @@ Renderer::~Renderer()
     notifyActivityObservers();
 }
 
+// Out of line so that the vtable of a consumer defined outside this
+// library (the CAM simulator) has a home here rather than in every
+// translation unit that sees the header.
+FrameConsumer::~FrameConsumer()
+{}
+
 int Renderer::activeCount()
 {
     return _ActiveCount;
