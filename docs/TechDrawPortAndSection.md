@@ -2384,16 +2384,10 @@ what makes "SolidWorks" appear in Preferences.  The page picks the style up
 live -- `QGVPage`'s `ParameterGrp` observer calls `setNavigationStyle()` on
 any `NavigationStyle` parameter change.
 
-**TRAP: The `Mod/Tux` navigation indicator is deliberately NOT extended.**
-Its menu is a hardcoded `a0..a10` list, and adding an entry is not
-additive here: upstream's SolidWorks tooltip draws a generic
-`Navigation_Mouse_{Left,Scroll,Middle,ShiftMiddle,CtrlMiddle}.svg` set that
-the fork does not have, while the fork's Tux still uses per-style gesture
-icons -- and already ships TinkerCAD referencing four
-`NavigationTinkerCAD_*.svg` files that are not in its icon directory.
-Extending it means porting an icon scheme, which is the same
-organization-not-feature profile that got `LineFormat`/`Tag` dropped in
-33.4.  A style missing from that menu degrades to its "Undefined" entry.
+The `Mod/Tux` navigation indicator is a separate hardcoded `a0..a10` menu
+that the type system does not reach.  It was extended on request -- see
+35.4.  Left alone, a style missing from it degrades to its "Undefined"
+entry, so this is polish rather than a functional gap.
 
 ### 35.3 Test state: 16/16, each gesture run against the sibling as a control
 
@@ -2432,3 +2426,54 @@ Two traps paid for in that rig:
   known trap, nothing to do with navigation.  Hide the template item first,
   and note it only sticks **after** the page view exists; setting it before
   `page.ViewObject.show()` is overridden when the view is built.
+
+### 35.4 The Tux indicator, and a correction about its icons
+
+Added on request: the navigation indicator now carries a SolidWorks entry,
+sitting alphabetically between Revit and TinkerCAD.
+
+**Correction to what 35.2 first said.**  The claim that the fork's Tux
+"ships TinkerCAD referencing four icons that are not in its icon
+directory" is **wrong**.  The files are indeed absent, but `Tux.qrc` maps
+the names onto sibling artwork with `alias=`:
+
+    <file alias="icons/NavigationTinkerCAD_Select.svg">icons/NavigationOpenCascade_Select.svg</file>
+
+So nothing in that menu is broken, and the fork already has an established
+way to give a style an entry without drawing new artwork.  That route was
+available here too and was **not** taken: upstream's generic mouse icons
+name the actual modifier (`ShiftMiddle`, `CtrlMiddle`), whereas aliasing a
+sibling would have shown Blender's or OpenCascade's artwork under
+SolidWorks' bindings, where the modifiers differ -- a misleading picture is
+worse than an extra file.
+
+What went in: seven upstream icons (`NavigationSolidWorks_{dark,light}.svg`
+for the menu, and the five `Navigation_Mouse_{Left,Scroll,Middle,
+ShiftMiddle,CtrlMiddle}.svg` the tooltip draws), seven `Tux.qrc` lines, and
+fifteen lines of `NavigationIndicatorGui.py` -- the action, its place in
+the menu, the tooltip, and the tooltip-toggle line.  The tooltip markup is
+upstream's, which needed no adaptation: it already builds from the same
+`text01..text10` strings this file defines, and ends with the same
+rotation-focus line the fork's own Revit tooltip uses.  SolidWorks is the
+only entry using the generic set; the other ten keep their per-style
+gesture icons.
+
+Notes for anyone touching this again:
+
+- `Tux_rc.py` is **generated** from `Tux.qrc` by `PYSIDE_WRAP_RC`, so a new
+  icon needs `ninja Tux` before it exists at runtime.  Editing the qrc
+  alone changes nothing in a built tree.
+- The menu order is the `menu.addAction` order, not the `aN` numbering, so
+  a new entry can be appended as `a11` and still display in the right
+  place.  `setCurrent()` iterates `gStyle.actions()` and needs no edit.
+- Since the fork's indicator hardcodes `_dark.svg` (it has no theme switch,
+  unlike upstream's `StyleSheetType`), the `_light` icon is carried for
+  parity with its ten siblings but is not referenced.
+
+`tux_smoke.py` in the session scratchpad, 10/10 on the real GPU: the action
+exists, is labelled, its menu icon resolves, it sits between Revit and
+TinkerCAD, its tooltip names the style and **every one of its five `<img>`
+sources resolves to a non-null pixmap**, and selecting the style makes it
+the menu's default action, hides the "Undefined" entry and moves the
+indicator's icon.  The image check is the one that matters: a tooltip
+referencing a name absent from the resource fails silently at render time.
