@@ -46,6 +46,7 @@ class TopoShape;
 
 namespace TechDraw
 {
+class DrawViewPart;
 
 //a convenient way of handling object+subName references
 class TechDrawExport ReferenceEntry
@@ -72,6 +73,18 @@ public:
     Part::TopoShape asTopoShape() const;
     Part::TopoShape asTopoShapeVertex(TopoDS_Vertex &vert) const;
     Part::TopoShape asTopoShapeEdge(TopoDS_Edge& edge) const;
+
+    //! the reference geometry in a frame that does not move with the view:
+    //! asTopoShape() already removes the view scale, this also removes the
+    //! view rotation.  saved reference geometry has to be compared in this
+    //! frame or rotating a view makes every reference look changed -- and on
+    //! a symmetric shape it makes a rotated element look like a different
+    //! element, which silently repoints the dimension.
+    Part::TopoShape asCanonicalTopoShape() const;
+
+    //! remove a view's rotation from an already unscaled shape.
+    static Part::TopoShape unrotateForView(const Part::TopoShape& unscaledShape,
+                                           const DrawViewPart& dvp);
 
     bool is3d() const;
     bool isValid() const;

@@ -29,6 +29,7 @@
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <TopExp.hxx>
+#include <gp_Ax2.hxx>
 
 #include <App/GeoFeature.h>
 #include <Base/Console.h>
@@ -136,6 +137,45 @@ Part::TopoShape ReferenceEntry::asTopoShapeVertex(TopoDS_Vertex& vert) const
     }
     BRepBuilderAPI_MakeVertex mkVert(DU::togp_Pnt(point));
     return { mkVert.Vertex() };
+}
+
+//! remove the view rotation from a shape that has already had the view scale
+//! removed.  the rotation is undone in the inverted (Qt) frame the projected
+//! geometry lives in, which is why the shape is flipped either side of it.
+Part::TopoShape ReferenceEntry::unrotateForView(const Part::TopoShape& unscaledShape,
+                                                const DrawViewPart& dvp)
+{
+    double rotationDeg = dvp.Rotation.getValue();
+    if (rotationDeg == 0.0) {
+        return unscaledShape;
+    }
+
+    TopoDS_Shape shape = unscaledShape.getShape();
+    if (shape.IsNull()) {
+        return unscaledShape;
+    }
+
+    gp_Ax2 OXYZ;
+    shape = ShapeUtils::invertGeometry(shape);
+    shape = ShapeUtils::rotateShape(shape, OXYZ, -rotationDeg);
+    shape = ShapeUtils::invertGeometry(shape);
+    return {shape};
+}
+
+Part::TopoShape ReferenceEntry::asCanonicalTopoShape() const
+{
+    if (is3d()) {
+        // a 3d reference is already in the model frame
+        return asTopoShape();
+    }
+
+    auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(getObject());
+    if (!dvp) {
+        return asTopoShape();
+    }
+
+    // asTopoShape() has already removed the view scale
+    return unrotateForView(asTopoShape(), *dvp);
 }
 
 Part::TopoShape ReferenceEntry::asTopoShapeEdge(TopoDS_Edge &edge) const

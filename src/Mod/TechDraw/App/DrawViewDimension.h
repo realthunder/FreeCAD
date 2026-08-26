@@ -196,6 +196,7 @@ protected:
 
     bool okToProceed();
     void updateSavedGeometry();
+    bool migrateSavedGeometryFrame();
     bool compareSavedGeometry();
     bool fixExactMatch();
     void handleNoExactMatch();
@@ -225,6 +226,9 @@ private:
     GeometryMatcher* m_matcher;
 
     bool m_referencesCorrect;
+    //! saved geometry is only checked for the pre-rotation-independent
+    //! frame once per session, on the first execute after a restore
+    bool m_savedGeometryFrameChecked {false};
 };
 
 } //namespace TechDraw
