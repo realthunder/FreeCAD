@@ -27,6 +27,21 @@ QMargins resizeBorder(HWND handle)
         + ::GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
     return {cx, cy, cx, cy};
 }
+
+// LOCAL DIVERGENCE: IsZoomed() alone is a state race. WM_NCCALCSIZE for a
+// maximize arrives while the transition is in flight, and WS_MAXIMIZE is not
+// reliably set yet -- which is why the inset below never fired. The placement
+// is committed earlier, so ask both.
+bool isMaximized(HWND handle)
+{
+    if (::IsZoomed(handle)) {
+        return true;
+    }
+    WINDOWPLACEMENT placement = {};
+    placement.length = sizeof(placement);
+    return ::GetWindowPlacement(handle, &placement)
+        && placement.showCmd == SW_SHOWMAXIMIZED;
+}
 }  // namespace
 
 // Initialize height to 35 to ensure WM_NCHITTEST works before the first resize event
@@ -178,7 +193,7 @@ bool WinTitleBarBackend::handleNativeEvent(const QByteArray& eventType, void* me
                 // frame gone the top border's worth of title bar is off the top
                 // of the monitor, taking the logo and the window buttons with
                 // it. Give the border back on all four sides.
-                if (::IsZoomed(msg->hwnd)) {
+                if (isMaximized(msg->hwnd)) {
                     const QMargins border = resizeBorder(msg->hwnd);
                     params.rgrc[0].left += border.left();
                     params.rgrc[0].top += border.top();
@@ -291,7 +306,49 @@ bool WinTitleBarBackend::handleNativeEvent(const QByteArray& eventType, void* me
             // to as well, where a contents margin is not. Doing both left an
             // empty border all round a maximized window.
             m_window->setContentsMargins(QMargins());
-            return false;
+
+            // LOCAL DIVERGENCE: ask for the border overhang a maximized window
+            // is supposed to have, because this one does not get it.
+            //
+            // Windows grows a maximized WS_OVERLAPPED window past the work area
+            // by the resize border on every side, expecting the frame to
+            // swallow it -- that is the overhang WM_NCCALCSIZE above insets
+            // back out. attach() makes this window WS_POPUP (Qt's frameless
+            // form) and re-adds WS_THICKFRAME behind Qt's back, and a WS_POPUP
+            // window is maximized to the work area EXACTLY. So there is no
+            // overhang, the inset above has nothing to give back, and the
+            // client area ends up equal to the window rect.
+            //
+            // Qt does not follow: it still books frame margins from the style
+            // bits (8px for WS_THICKFRAME) and, when maximized, places
+            // geometry() at frameGeometry() inset by them. Its client origin
+            // is then 8px inside the real one, and every mapToGlobal /
+            // mapFromGlobal in the window is off by that much -- widgets
+            // respond 8px diagonally away from where they are drawn.
+            //
+            // Requesting the overhang makes the inset above land the client
+            // area exactly on the work area, which is what Qt already
+            // believes. Nothing moves on screen; the two accounts agree.
+            HMONITOR monitor = ::MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO info = {};
+            info.cbSize = sizeof(info);
+            if (!::GetMonitorInfoW(monitor, &info)) {
+                return false;
+            }
+            const QMargins border = resizeBorder(msg->hwnd);
+            auto* mmi = reinterpret_cast<MINMAXINFO*>(msg->lParam);
+            // ptMaxPosition is relative to the monitor's own origin.
+            mmi->ptMaxPosition.x = info.rcWork.left - info.rcMonitor.left - border.left();
+            mmi->ptMaxPosition.y = info.rcWork.top - info.rcMonitor.top - border.top();
+            mmi->ptMaxSize.x =
+                (info.rcWork.right - info.rcWork.left) + border.left() + border.right();
+            mmi->ptMaxSize.y =
+                (info.rcWork.bottom - info.rcWork.top) + border.top() + border.bottom();
+            // Without this the max TRACK size caps ptMaxSize back to the
+            // work area and the overhang is silently dropped again.
+            mmi->ptMaxTrackSize = mmi->ptMaxSize;
+            *result = 0;
+            return true;
         }
 
         default:
