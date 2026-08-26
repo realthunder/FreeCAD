@@ -24,6 +24,7 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <sstream>
 # include <QApplication>
 # include <QKeyEvent>
 # include <QLayout>
@@ -133,6 +134,15 @@ bool ViewAreaCanvas::claims(const ViewAreaCell *cell) const
     return false;
 }
 
+int ViewAreaCanvas::claimId(const ViewAreaCell *cell) const
+{
+    for (const auto &c : _cells) {
+        if (c.cell == cell)
+            return c.id;
+    }
+    return 0;
+}
+
 QRect ViewAreaCanvas::cellRect(const ViewAreaCell *cell) const
 {
     if (!cell)
@@ -168,7 +178,7 @@ void ViewAreaCanvas::claim(ViewAreaCell *cell, int id)
     cell->setFocusPolicy(Qt::StrongFocus);
     cell->installEventFilter(this);
 
-    viewer->adoptRenderer(_renderer, false);
+    viewer->adoptRenderer(_renderer, false, id);
     QPointer<ViewAreaCanvas> self(this);
     viewer->setRedrawRedirect([self](bool force) {
         if (!self)
@@ -245,13 +255,45 @@ void ViewAreaCanvas::setFeeder(ViewAreaCell *cell)
     // Order matters: the old feed goes first, or the backend would
     // briefly hold two managers' claims on one scene.
     if (auto old = viewerOf(_feeder))
-        old->adoptRenderer(_renderer, false);
+        old->adoptRenderer(_renderer, false, claimId(_feeder));
     _feeder = cell;
     if (auto viewer = viewerOf(cell))
-        viewer->adoptRenderer(_renderer, true);
+        viewer->adoptRenderer(_renderer, true, claimId(cell));
 }
 
 void ViewAreaCanvas::sync()
+{
+    // Re-entrancy guard. claim() pulls a widget out of a layout, hides
+    // it, installs an event filter and adopts a backend -- any of which
+    // can deliver a child or activation event that lands back in
+    // ViewArea::setActiveCell, which calls sync(). The nested run got
+    // there BEFORE claim() recorded its entry (the push_back is its
+    // last statement), saw the cell as unclaimed and claimed it a
+    // SECOND time under a second id.
+    //
+    // Two entries for one cell meant the canvas drew a phantom third
+    // sub-view; and because a viewer carries only the id of its LAST
+    // adoption, that cell fed its chrome under one id while its phantom
+    // bank rendered under the other. Invisible until D3c, when the id
+    // started deciding CONTENT and not just which bank -- the cell drew
+    // no NaviCube and no axis cross at all (docs/SplitViews.md 16.3).
+    //
+    // Dropped rather than queued would lose a real layout change, so a
+    // nested call is remembered and replayed once the outer one is done.
+    if (_syncing) {
+        _syncAgain = true;
+        return;
+    }
+    _syncing = true;
+    syncOnce();
+    _syncing = false;
+    if (_syncAgain) {
+        _syncAgain = false;
+        sync();
+    }
+}
+
+void ViewAreaCanvas::syncOnce()
 {
     if (!_area)
         return;
@@ -370,6 +412,14 @@ void ViewAreaCanvas::paintGL()
         SbMatrix &projMat = mats[mats.size() - 1];
         vol.getMatrices(viewMat, projMat);
 
+        // This cell's own chrome -- its NaviCube, its corner axis cross
+        // -- scoped to its bank. Only the FEEDER paints (renderScene is
+        // what normally drives these), so without this every cell would
+        // draw the feeder's cube turned by the feeder's camera
+        // (docs/SplitViews.md sec 16.3). Done before the frame, so all
+        // the feeds are resident by the time any sub-view renders.
+        viewer->updateCanvasOverlays();
+
         Render::Renderer::SubViewFrame s;
         s.id = c.id;
         s.x = r.x();
@@ -381,6 +431,14 @@ void ViewAreaCanvas::paintGL()
         subs.push_back(s);
         rects.push_back(r);
         drawnCells.push_back(c.cell);
+    }
+
+    if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_TRACE)) {
+        std::ostringstream ids;
+        for (const auto &c : _cells)
+            ids << ' ' << c.id << (c.cell == _feeder ? "*" : "");
+        FC_TRACE("canvas frame: claims" << ids.str() << ", drawing "
+                 << subs.size() << " sub-views");
     }
 
     bool drawn = false;

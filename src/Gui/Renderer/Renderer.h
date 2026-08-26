@@ -299,6 +299,15 @@ struct OverlayAnchor {
     /// set, all corner/fov/ortho/cameraDistance/orient/pixelSpace fields
     /// are ignored.
     bool sceneCamera = false;
+    /// Which sub-view this feed belongs to (Renderer::renderSubViews).
+    /// 0 -- the default -- means every sub-view, which is one viewer's
+    /// chrome shown in all of them and what a plain render() draws. A
+    /// non-zero id is one cell's OWN chrome (its NaviCube, its corner
+    /// axis cross), drawn only in that cell's sub-view frame: the
+    /// split-view unified canvas gives every cell a bank of one backend,
+    /// so without this every cell would draw the feeding cell's cube,
+    /// turned by the feeding cell's camera (docs/SplitViews.md sec 16.3).
+    int subView = 0;
 
     bool operator==(const OverlayAnchor &o) const {
         return corner == o.corner && sizeFraction == o.sizeFraction
@@ -308,6 +317,7 @@ struct OverlayAnchor {
             && orientFromScene == o.orientFromScene
             && pixelSpace == o.pixelSpace
             && sceneCamera == o.sceneCamera
+            && subView == o.subView
             && marginX == o.marginX && marginY == o.marginY;
     }
     bool operator!=(const OverlayAnchor &o) const { return !(*this == o); }

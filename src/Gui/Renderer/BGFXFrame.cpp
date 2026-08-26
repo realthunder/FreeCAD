@@ -3531,6 +3531,51 @@ bool BGFXRenderer::Private::render(const QColor &col,
         bgfx::setViewTransform(id, nullptr, nullptr);
         bgfx::touch(id);
     };
+    // The overlay feeds THIS frame draws, resolved once.
+    //
+    // Two filters, and they must be applied in ONE place: the slot a
+    // pass is configured for (configOverlay) and the slot the
+    // submission loop assigns have to name the same feed, and they
+    // agreed only by both walking the whole map. They did not agree on
+    // a chromeless dump, where the submission loop skipped chrome and
+    // the config loop did not -- so every slot past the first skipped
+    // one was set up from the wrong anchor.
+    //
+    //  - sub-view: OverlayAnchor::subView 0 is every sub-view (one
+    //    viewer's chrome in all of them, and what a plain render()
+    //    draws); a non-zero id is one cell's own, drawn only in that
+    //    cell's sub-view frame (docs/SplitViews.md sec 16.3).
+    //  - chrome: a dump asked for without overlays keeps the in-scene
+    //    and foreground feeds and drops the viewport chrome (the
+    //    reasoning is at the submission loop below).
+    std::vector<std::pair<int, const OverlayFeed *>> frameOverlays;
+    frameOverlays.reserve(overlays.size());
+    for (const auto &ov : overlays) {
+        const auto &a = ov.second.anchor;
+        if (a.subView != 0 && a.subView != subCtx.id)
+            continue;
+        const bool isChrome =
+            !a.sceneCamera
+            && (a.corner != Render::OverlayAnchor::FullViewport
+                || a.pixelSpace);
+        if (chromelessDump && isChrome)
+            continue;
+        frameOverlays.emplace_back(ov.first, &ov.second);
+    }
+    {
+        // Same knob as dumpFeed: which feeds a sub-view frame admitted,
+        // against how many the backend holds. A cell drawing no chrome
+        // while its feed is present is the difference between these two.
+        static const bool dbg = getenv("FC_BGFX_DEBUG_FEED") != nullptr;
+        if (dbg) {
+            fprintf(stderr, "bgfx frame sub=%d admits %zu of %zu overlays:",
+                    subCtx.id, frameOverlays.size(), overlays.size());
+            for (const auto &f : frameOverlays)
+                fprintf(stderr, " %d", f.first);
+            fprintf(stderr, "\n");
+        }
+    }
+
     auto configOverlay = [&](int i, uint16_t id) {
         // Overlay feed slot: derive the viewport rect and the
         // camera from the declarative anchor each frame, so
@@ -3539,9 +3584,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // viewer's own orbit camera.
         // Only the slots the frame's overlays fill are mapped.
         int slot = i - V::ViewOverlay0;
-        auto ovIt = overlays.begin();
-        std::advance(ovIt, slot);
-        const Render::OverlayAnchor *anchor = &ovIt->second.anchor;
+        const Render::OverlayAnchor *anchor = &frameOverlays[slot].second->anchor;
         if (anchor->sceneCamera) {
             // In-scene overlay (editing graph, dimensions): draw over
             // the whole viewport with the main scene camera so the
@@ -3796,7 +3839,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     declPass(V::ViewOnTop, true, configScene);
     declPass(V::ViewHighlight, true, configScene);
     for (int s = 0; s < int(V::NumOverlayViews); ++s)
-        declPass(V::ViewOverlay0 + s, s < int(overlays.size()),
+        declPass(V::ViewOverlay0 + s, s < int(frameOverlays.size()),
                  configOverlay);
     // After the overlays: everything ahead of these two passes is what
     // the accumulation covers. An overlay drawn from its own camera is
@@ -5825,16 +5868,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // is what makes the exported colours mean anything, so an export
         // of a coloured result without it is the wrong picture -- and
         // the Coin path this stands in for always kept it.
-        const bool skipChrome = dumpPending && !pendingDump.overlays;
+        // Which feeds these are, and why some are dropped, is resolved
+        // in frameOverlays above.
         int slot = 0;
-        for (const auto &ov : overlays) {
-            const auto &ovAnchor = ov.second.anchor;
-            const bool isChrome =
-                !ovAnchor.sceneCamera
-                && (ovAnchor.corner != Render::OverlayAnchor::FullViewport
-                    || ovAnchor.pixelSpace);
-            if (skipChrome && isChrome)
-                continue;
+        for (const auto &ov : frameOverlays) {
             if (slot >= BGFXView::NumOverlayViews) {
                 static bool warned = false;
                 if (!warned) {
@@ -5853,7 +5890,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
             // with the main view+proj, so their billboard text keeps the
             // main-scene sizing (overlayAnchor stays null); pixelSpace
             // overlays carry no billboard text.
-            const Render::OverlayAnchor &anchor = ov.second.anchor;
+            const Render::OverlayAnchor &anchor = ov.second->anchor;
             if (!anchor.sceneCamera && !anchor.pixelSpace) {
                 view->overlayAnchor = &anchor;
                 // Rect pixel height the overlay renders into (mirrors the
@@ -5868,7 +5905,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 view->overlayAnchor = nullptr;
                 view->overlayRectHeight = 0.f;
             }
-            for (const auto &draw : ov.second.draws)
+            for (const auto &draw : ov.second->draws)
                 view->submit(draw, viewMat);
             ++slot;
         }

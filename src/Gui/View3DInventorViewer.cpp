@@ -551,6 +551,17 @@ struct View3DInventorViewer::Private
         OverlayDimensions = 8,
         OverlayDebugLabel = 9,
     };
+    /// The ids above are per VIEWER. A unified-canvas cell offsets them
+    /// by its sub-view id times this stride, because the backend's
+    /// overlay map is keyed by producer id ALONE and every cell of a
+    /// canvas feeds the same backend -- unoffset, two cells' NaviCubes
+    /// would be one entry that each overwrote in turn
+    /// (docs/SplitViews.md sec 16.3). Must exceed the largest id above.
+    static constexpr int OverlayIdStride = 16;
+    /// Which sub-view (canvas cell) this viewer's feeds belong to; 0
+    /// when it is not a canvas cell, which is the "every sub-view"
+    /// scope and the plain single-view case alike.
+    int canvasSubView = 0;
     struct OverlayCapture {
         CoinPtr<SoNode> root;
         // The capture runs inside its own tiny GL render action traversal
@@ -838,6 +849,18 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
         owner->getSoRenderManager()->getViewportRegion());
     captureAction.setCacheContext(glra->getCacheContext());
 
+    // Publish one capture: scope the anchor to this viewer's sub-view,
+    // offset the id past every other cell's, and run the capture
+    // traversal. Every feed below goes through here, so the scoping
+    // cannot be forgotten at one site.
+    auto feedOverlay = [&](OverlayCapture &capture, int base,
+                           Render::OverlayAnchor anchor) {
+        anchor.subView = canvasSubView;
+        capture.manager->setExternalOverlay(
+            renderer.get(), canvasSubView * OverlayIdStride + base, anchor);
+        captureAction.apply(capture.applyRoot);
+    };
+
     if (!foregroundCapture.manager)
         initCapture(foregroundCapture, owner->foregroundroot);
     // Full-viewport orthographic anchor mirroring the foreground root's own
@@ -848,9 +871,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
     fgAnchor.cameraDistance = 5.0F;
     fgAnchor.nearPlane = 0.0F;
     fgAnchor.farPlane = 10.0F;
-    foregroundCapture.manager->setExternalOverlay(
-        renderer.get(), OverlayForeground, fgAnchor);
-    captureAction.apply(foregroundCapture.applyRoot);
+    feedOverlay(foregroundCapture, OverlayForeground, fgAnchor);
 
     if (owner->axiscrossEnabled) {
         if (!axisCrossCapture.manager)
@@ -870,9 +891,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
         anchor.nearPlane = 0.1F;
         anchor.farPlane = 10.0F;
         anchor.orientFromScene = true;
-        axisCrossCapture.manager->setExternalOverlay(
-            renderer.get(), OverlayAxisCross, anchor);
-        captureAction.apply(axisCrossCapture.applyRoot);
+        feedOverlay(axisCrossCapture, OverlayAxisCross, anchor);
     }
     else if (axisCrossCapture.manager) {
         // Detaching removes the overlay from the backend.
@@ -920,9 +939,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             for (auto graph : itemGraphs)
                 aggRoot->addChild(graph);
         }
-        graphicsItemsCapture.manager->setExternalOverlay(
-            renderer.get(), OverlayGraphicsItems, pixelAnchor);
-        captureAction.apply(graphicsItemsCapture.applyRoot);
+        feedOverlay(graphicsItemsCapture, OverlayGraphicsItems, pixelAnchor);
     }
     else {
         dropCapture(graphicsItemsCapture, OverlayGraphicsItems);
@@ -991,9 +1008,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             fpsFedText = fpsText;
             fpsFedVp = vpsize;
         }
-        fpsTextCapture.manager->setExternalOverlay(
-            renderer.get(), OverlayFpsText, pixelAnchor);
-        captureAction.apply(fpsTextCapture.applyRoot);
+        feedOverlay(fpsTextCapture, OverlayFpsText, pixelAnchor);
     }
     else {
         dropCapture(fpsTextCapture, OverlayFpsText);
@@ -1144,9 +1159,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             debugLabelFedText = debugLabel;
             debugLabelFedVp = vpsize;
         }
-        debugLabelCapture.manager->setExternalOverlay(
-            renderer.get(), OverlayDebugLabel, pixelAnchor);
-        captureAction.apply(debugLabelCapture.applyRoot);
+        feedOverlay(debugLabelCapture, OverlayDebugLabel, pixelAnchor);
     }
     else {
         dropCapture(debugLabelCapture, OverlayDebugLabel);
@@ -1170,20 +1183,23 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             dropCapture(capture, id);
         if (!capture.manager)
             initCapture(capture, graph);
-        capture.manager->setExternalOverlay(renderer.get(), id, anchor);
-        captureAction.apply(capture.applyRoot);
+        feedOverlay(capture, id, anchor);
     };
     if (owner->naviCubeEnabled && owner->naviCube) {
         Render::OverlayAnchor cubeAnchor;
-        feedNaviGraph(naviCubeCapture, OverlayNaviCube,
-                      owner->naviCube->getOverlayCubeGraph(cubeAnchor),
-                      cubeAnchor);
+        SoSeparator *cubeGraph = owner->naviCube->getOverlayCubeGraph(cubeAnchor);
+        FC_TRACE("navicube sub " << canvasSubView
+                 << ": graph " << (cubeGraph ? 1 : 0));
+        feedNaviGraph(naviCubeCapture, OverlayNaviCube, cubeGraph, cubeAnchor);
         Render::OverlayAnchor btnAnchor;
         feedNaviGraph(naviButtonCapture, OverlayNaviButtons,
                       owner->naviCube->getOverlayButtonGraph(btnAnchor),
                       btnAnchor);
     }
     else {
+        FC_TRACE("navicube sub " << canvasSubView << ": off (enabled "
+                 << int(owner->naviCubeEnabled) << ", cube "
+                 << (owner->naviCube ? 1 : 0) << ")");
         dropCapture(naviCubeCapture, OverlayNaviCube);
         dropCapture(naviButtonCapture, OverlayNaviButtons);
     }
@@ -1202,9 +1218,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             initCapture(editingCapture, owner->pcEditingRoot);
         Render::OverlayAnchor editAnchor;
         editAnchor.sceneCamera = true;
-        editingCapture.manager->setExternalOverlay(
-            renderer.get(), OverlayEditing, editAnchor);
-        captureAction.apply(editingCapture.applyRoot);
+        feedOverlay(editingCapture, OverlayEditing, editAnchor);
         editingBackendFed = true;
     }
     else {
@@ -1236,9 +1250,7 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             initCapture(dimensionCapture, owner->dimensionRoot);
         Render::OverlayAnchor dimAnchor;
         dimAnchor.sceneCamera = true;
-        dimensionCapture.manager->setExternalOverlay(
-            renderer.get(), OverlayDimensions, dimAnchor);
-        captureAction.apply(dimensionCapture.applyRoot);
+        feedOverlay(dimensionCapture, OverlayDimensions, dimAnchor);
     }
     else {
         dropCapture(dimensionCapture, OverlayDimensions);
@@ -1250,7 +1262,8 @@ void View3DInventorViewer::Private::clearOverlayCaptures()
     for (auto capture : {&foregroundCapture, &axisCrossCapture,
                          &graphicsItemsCapture, &fpsTextCapture,
                          &naviCubeCapture, &naviButtonCapture,
-                         &editingCapture, &dimensionCapture}) {
+                         &editingCapture, &dimensionCapture,
+                         &debugLabelCapture}) {
         if (capture->manager) {
             capture->manager->setExternalOverlay(
                 nullptr, 0, Render::OverlayAnchor());
@@ -4119,11 +4132,13 @@ bool View3DInventorViewer::hasAdoptedRenderer() const
 }
 
 void View3DInventorViewer::adoptRenderer(
-        const std::shared_ptr<Render::Renderer> &renderer, bool feed)
+        const std::shared_ptr<Render::Renderer> &renderer, bool feed,
+        int subView)
 {
     if (!renderer) {
         if (!_pimpl->adoptedRenderer)
             return;
+        _pimpl->canvasSubView = 0;
         // Give the viewer back its own backend. Drop the adopted one
         // exactly as setRendererType does when it swaps instances: the
         // overlay captures and the scene feed both name a backend.
@@ -4138,6 +4153,7 @@ void View3DInventorViewer::adoptRenderer(
         getSoRenderManager()->scheduleRedraw();
         return;
     }
+    _pimpl->canvasSubView = subView;
     if (_pimpl->renderer != renderer) {
         // Whatever this viewer held is not what it will feed; the
         // captures and the scene feed are both stated per backend.
@@ -4172,6 +4188,29 @@ void View3DInventorViewer::adoptRenderer(
         // nothing is lost and the backend never runs empty.
         selectionRoot->setExternalRenderer(nullptr);
     }
+}
+
+void View3DInventorViewer::updateCanvasOverlays()
+{
+    if (!_pimpl->renderer || !_pimpl->adoptedRenderer) {
+        FC_TRACE("canvas overlays: not adopted (renderer "
+                 << (_pimpl->renderer ? 1 : 0) << ", adopted "
+                 << int(_pimpl->adoptedRenderer) << ")");
+        return;
+    }
+    // The captures only read the action for its cache context; the
+    // traversal they run is their own.
+    auto *glra = getSoRenderManager()->getGLRenderAction();
+    if (!glra) {
+        FC_TRACE("canvas overlays: no GL render action");
+        return;
+    }
+    const SbVec2s vp = getSoRenderManager()
+        ->getViewportRegion().getViewportSizePixels();
+    FC_TRACE("canvas overlays: sub " << _pimpl->canvasSubView
+             << " axiscross " << int(axiscrossEnabled)
+             << " vp " << vp[0] << "x" << vp[1]);
+    _pimpl->updateOverlayCaptures(glra);
 }
 
 void View3DInventorViewer::renderCanvasResidue(const SbVec2s &origin,
@@ -5707,7 +5746,10 @@ void View3DInventorViewer::renderScene()
     outFps.stop();
     {
         Render::FrameOutsideScope outCaps(Render::FrameOutside::Captures);
-        if (_pimpl->renderer)
+        // On a canvas the captures are driven for EVERY cell before the
+        // frame (updateCanvasOverlays); the residue pass runs after it,
+        // so repeating them here would only re-feed what was just drawn.
+        if (_pimpl->renderer && !_pimpl->canvasResidue)
             _pimpl->updateOverlayCaptures(glra);
     }
 

@@ -595,7 +595,21 @@ public:
      * (setRendererType).
      */
     void adoptRenderer(const std::shared_ptr<Render::Renderer> &renderer,
-                       bool feed);
+                       bool feed, int subView = 0);
+    /** Feed this viewer's overlay captures -- its NaviCube, its corner
+     * axis cross, its foreground root -- into the adopted backend,
+     * scoped to the sub-view it was adopted as.
+     *
+     * renderScene() does this for a viewer that paints. A canvas cell
+     * that is not the feeder never paints, so without this its chrome
+     * would never reach the backend and every cell would show the
+     * FEEDING cell's cube, turned by the feeding cell's camera
+     * (docs/SplitViews.md sec 16.3). Cheap: the capture traversals are
+     * over the chrome graphs alone, not the scene.
+     *
+     * Must be called with the canvas's GL context current.
+     */
+    void updateCanvasOverlays();
     /// Whether this viewer is a cell of a unified canvas (adoptRenderer
     /// with a live renderer).
     bool hasAdoptedRenderer() const;

@@ -1122,3 +1122,86 @@ defect above, caught by the smoke rather than assumed.
 
 Regression: `canvas.py` and `mixed.py` (the D2 smokes) both reproduce
 their sec 14 baselines line for line.
+
+### 16.3 Per-sub-view overlay feeds
+
+The last D3 item, and the one that needed work in three layers.
+
+**The problem.** Every cell of a canvas is a bank of ONE backend, and
+that backend's overlay map is keyed by **producer id alone**. Only the
+FEEDING cell ran its overlay captures (they happen inside
+`renderScene`, and no other cell paints), and what it fed was drawn in
+every sub-view. So each cell drew the FEEDER's NaviCube, turned by the
+FEEDER's camera -- and 14.5's "overlay captures outlive their feed" was
+the same defect seen from the other side.
+
+**The fix, in three parts:**
+
+- **A sub-view scope on the anchor.** `Render::OverlayAnchor` gains
+  `int subView` -- 0 meaning every sub-view, which is one viewer's
+  chrome in all of them and what a plain `render()` draws. Putting it on
+  the ANCHOR rather than in the `setOverlay` signature means it rides
+  through `SoFCRenderer` and `SceneDump` (v69) with no API change, and
+  `setExternalOverlay`'s early-out re-keys correctly when a cell's id
+  changes, because the anchor is part of what it compares.
+- **Ids offset per cell.** `OverlayIdStride` (16, > the largest
+  `OverlayId`): a cell feeds under `subView * 16 + base`, so two cells'
+  NaviCubes are two map entries instead of one that each overwrites in
+  turn. Every feed goes through one `feedOverlay` lambda in
+  `updateOverlayCaptures`, so the scoping cannot be forgotten at one of
+  the eight sites.
+- **The canvas drives every claimed cell.**
+  `View3DInventorViewer::updateCanvasOverlays()` runs the capture
+  traversals without painting; `ViewAreaCanvas::paintGL` calls it for
+  each cell it is about to draw, before the frame, so all feeds are
+  resident by the time any sub-view renders. `renderScene` skips its own
+  call while `canvasResidue` is set -- the canvas has already driven it.
+
+Frame side: the two overlay loops (`configOverlay`, which sets a slot's
+viewport and camera, and the submission loop) now walk ONE resolved
+`frameOverlays` list. **They disagreed before**: the submission loop
+skipped viewport chrome on a chromeless dump and the config loop did
+not, so every slot past the first skipped one was configured from the
+wrong anchor. Resolving both filters -- sub-view and chrome -- in one
+place fixes that as a side effect of needing it for this.
+
+**Two defects this turned up, both invisible until the id decided
+content.**
+
+- !! **A re-entrant `sync()` double-claimed a cell.** `claim()` records
+  its entry LAST, after pulling the child out of the layout, hiding it,
+  installing the event filter and adopting the backend -- any of which
+  can deliver an event that reaches `ViewArea::setActiveCell`, which
+  calls `sync()`. The nested run saw the cell as unclaimed and claimed
+  it again under a second id. The canvas then drew a phantom third
+  sub-view, and since a viewer carries only the id of its LAST
+  adoption, that cell fed its chrome under one id while its phantom
+  bank rendered under the other -- so it drew NO chrome at all. Fixed
+  with a `_syncing` guard that replays one nested call after the outer
+  one finishes (dropping it would lose a real layout change). Same
+  class as 14's forwarded-event recursion.
+- **The global `ShowNaviCube` preference does not reach a cloned view.**
+  Enabling it after a split left one cell's viewer with
+  `naviCubeEnabled` false, so that cell had no cube to feed. Enabling it
+  BEFORE the split -- so the clone inherits it at construction --
+  reaches every viewer. Not fixed here (it is a `View3DSettings`
+  question, not a canvas one) and recorded so the next reader does not
+  spend the time again. The smoke sets the preference up front.
+
+**Verified, real GPU** (`d3d.py`): two cells, both showing their own
+NaviCube and corner axis cross. With the same camera in both, their
+chrome corners agree (216/11400 samples differ, the scene behind the
+chrome). Turn ONLY the non-feeding cell to Top: its chrome follows its
+own camera (964/11400 differ) while the feeding cell's does not move at
+all (0/11400), and the two cells' chrome now disagrees (1180/11400). The
+picture reads FRONT in one cube and TOP in the other. Regression:
+`canvas.py`, `mixed.py` and `d3a.py` all reproduce their baselines.
+
+! **Choosing the subject matters here.** The corner axis cross alone
+cannot prove this: its anchor is `orientFromScene`, so the BACKEND turns
+it by the frame's view matrix and a single shared feed would still look
+per-cell. The NaviCube is the discriminator -- its orientation is baked
+into the captured graph by the viewer that owns it. (And
+`View3DInventorViewer::setAxisCross`, the Python API, is a different
+thing again: it puts an `SoAxisCrossKit` in the SCENE at the origin, not
+the corner chrome that `axiscrossEnabled` controls.)

@@ -266,7 +266,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     (LightConfig::groundFollowCamera). A snapshot older than this
 //     was written by a build that only had the scene-bounds sizing, so
 //     it reads as off and lays its ground out the way it was measured.
-const uint32_t kVersion = 68;
+const uint32_t kVersion = 69;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -3259,6 +3259,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.f(a.marginX);    // v5
         w.f(a.marginY);
         w.b(a.sceneCamera); // v6
+        w.i32(a.subView);   // v69
         writeFeed(ov.draws, 0, true);
     }
 
@@ -3735,6 +3736,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 a.marginY = r.f();
             }
             a.sceneCamera = version >= 6 ? r.b() : false;
+            a.subView = version >= 69 ? r.i32() : 0;
             snap.overlays.push_back(std::move(ov));
             readFeed(snap.overlays.back().draws, GroupTarget::Overlay,
                      snap.overlays.size() - 1);

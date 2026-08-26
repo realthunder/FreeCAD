@@ -125,6 +125,11 @@ private:
     /// Re-send \a event to \a cell's hidden child, at the coordinates
     /// the child would have seen had it been the widget on screen.
     bool forwardEvent(ViewAreaCell *cell, QEvent *event);
+    /// One pass of sync(); call sync(), which guards re-entrancy.
+    void syncOnce();
+    /// The sub-view id \a cell is claimed under, or 0 if it is not
+    /// claimed. Cells feed their chrome under this id.
+    int claimId(const ViewAreaCell *cell) const;
     /// The cell rect in this canvas's device pixels, top-left origin.
     QRect cellRect(const ViewAreaCell *cell) const;
 
@@ -139,6 +144,12 @@ private:
     /// climbs straight back into the cell -- and into this filter,
     /// which would forward it again, and again.
     bool _forwarding = false;
+    /// Set while sync() is mutating the claim list. A claim's side
+    /// effects can deliver events that call sync() again, and a nested
+    /// run would claim a cell whose entry the outer one has not
+    /// recorded yet -- twice.
+    bool _syncing = false;
+    bool _syncAgain = false;
 };
 
 } // namespace Gui
