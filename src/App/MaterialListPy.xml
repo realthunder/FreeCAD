@@ -312,15 +312,24 @@ private:
 
     /** @name The shared bodies of the per field accessors
      *
-     * The member pointer travels as void * because the binding generator
-     * gives this class no place to name the types, and every caller
-     * casts back the type it passed in.
+     * Each takes the member it is to call, with that member's own type. A
+     * pointer to member function is two words on this ABI -- the entry
+     * point and the this-adjustment -- so it must not travel as a void *:
+     * the adjustment would be dropped on the way in, read back off
+     * whatever followed the argument on the way out, and added to this.
      */
     //@{
-    PyObject *colorGet(PyObject *args, void *getter);
-    PyObject *colorSet(PyObject *args, void *setter, void *allsetter);
-    PyObject *floatGet(PyObject *args, void *getter);
-    PyObject *floatSet(PyObject *args, void *setter, void *allsetter);
+    using ColorGetter = Color (MaterialList::*)(int) const;
+    using ColorSetter = void (MaterialList::*)(int, const Color &amp;);
+    using ColorAllSetter = void (MaterialList::*)(const Color &amp;);
+    using FloatGetter = float (MaterialList::*)(int) const;
+    using FloatSetter = void (MaterialList::*)(int, float);
+    using FloatAllSetter = void (MaterialList::*)(float);
+
+    PyObject *colorGet(PyObject *args, ColorGetter getter);
+    PyObject *colorSet(PyObject *args, ColorSetter setter, ColorAllSetter allsetter);
+    PyObject *floatGet(PyObject *args, FloatGetter getter);
+    PyObject *floatSet(PyObject *args, FloatSetter setter, FloatAllSetter allsetter);
     /// The (index, slot, value) an argument list states; no index answers
     /// -1, which the texture writers read as "every entry"
     bool textureArgs(PyObject *args, const char *format, int &amp;idx, uint8_t &amp;slot,

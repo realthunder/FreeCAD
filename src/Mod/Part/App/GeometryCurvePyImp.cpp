@@ -1250,7 +1250,7 @@ PyObject* GeometryCurvePy::toLine(PyObject *args) const
     if (!PyArg_ParseTuple(args, "|O", &clone))
         return 0;
     PY_TRY {
-        auto res = getGeomCurvePtr()->toLine(PyObject_IsTrue(clone));
+        auto res = getGeomCurvePtr()->toLine(PyObject_IsTrue(clone) ? CopyTag : NewTag);
         if (!res)
             Py_Return;
         return new LinePy(res);
@@ -1263,7 +1263,7 @@ PyObject* GeometryCurvePy::toLineSegment(PyObject *args) const
     if (!PyArg_ParseTuple(args, "|O", &clone))
         return 0;
     PY_TRY {
-        auto res = getGeomCurvePtr()->toLineSegment(PyObject_IsTrue(clone));
+        auto res = getGeomCurvePtr()->toLineSegment(PyObject_IsTrue(clone) ? CopyTag : NewTag);
         if (!res)
             Py_Return;
         return new LineSegmentPy(res);

@@ -1,8 +1,22 @@
 #include "gtest/gtest.h"
 
 #include "App/PropertyLinks.h"
+#include <src/App/InitApplication.h>
 
-TEST(PropertyLink, TestSetValues)
+// The Application has to exist before a property may be touched: this fork's
+// Property::touch() asks GetApplication().isClosingAll() before it does
+// anything, and GetApplication() hands back a null reference until then. The
+// other suites in this directory take the same step for the same reason.
+class PropertyLink: public ::testing::Test
+{
+protected:
+    static void SetUpTestSuite()
+    {
+        tests::initApplication();
+    }
+};
+
+TEST_F(PropertyLink, TestSetValues)
 {
     App::PropertyLinkSubList prop;
     std::vector<App::DocumentObject*> objs {nullptr, nullptr};

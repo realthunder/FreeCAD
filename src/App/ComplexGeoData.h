@@ -272,6 +272,26 @@ public:
                               const ElementIDRefs * sid = nullptr,
                               bool overwrite = false);
 
+    /** Erase a mapped element name
+     *
+     * @param name: the mapped name to erase
+     *
+     * @return Returns true if the name was found and erased.
+     *
+     * An element can have more than one mapped name. This erases only the
+     * given one and leaves the element's other names in place. Use the
+     * IndexedName overload to erase all of them at once.
+     */
+    bool eraseElementName(const MappedName & name);
+
+    /** Erase all mapped names of an element
+     *
+     * @param element: the element whose mapped names are erased
+     *
+     * @return Returns true if the element was found and erased.
+     */
+    bool eraseElementName(const IndexedName & element);
+
     void setMappedChildElements(const std::vector<MappedChildElements> & children);
     std::vector<MappedChildElements> getMappedChildElements() const;
      
@@ -280,6 +300,26 @@ public:
 
     /// Check if there is child element map
     bool hasChildElementMap() const;
+
+    /** Check the element map against the geometry it names
+     *
+     * Verifies that every mapped name refers to a sub-element the shape
+     * actually has, that the name and index lookups agree in both directions,
+     * that no name is mapped to the same element twice, that every string id
+     * still belongs to this shape's hasher, and that each child element map
+     * covers a range the shape can supply. Child maps are checked recursively.
+     *
+     * Nothing in a running application calls this. A broken element map is not
+     * something an end user can act on, so it is not reported to them; this
+     * exists for tests, which are the only thing that catches a naming
+     * regression with nobody watching.
+     *
+     * @param problems: optional, receives one line describing each problem
+     *
+     * @return Returns the number of problems found, zero if the map is
+     * self-consistent and names only live geometry.
+     */
+    int checkElementMap(std::vector<std::string> * problems = nullptr) const;
 
     /// Append the Tag (if and only if it is non zero) into the element map
     virtual void reTagElementMap(long tag,

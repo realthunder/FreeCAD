@@ -1,11 +1,14 @@
 #include "gtest/gtest.h"
 #include <Base/Tools.h>
 #include <bitset>
+#include <vector>
 
 // NOLINTBEGIN(cppcoreguidelines-*,readability-*)
 TEST(BaseToolsSuite, TestUniqueName1)
 {
-    EXPECT_EQ(Base::Tools::getUniqueName("Body", {}), "Body");
+    // Spelled out because this fork carries a second overload taking a
+    // generator, and a bare {} is ambiguous against both.
+    EXPECT_EQ(Base::Tools::getUniqueName("Body", std::vector<std::string> {}), "Body");
 }
 
 TEST(BaseToolsSuite, TestUniqueName2)

@@ -222,7 +222,13 @@ public:
             }
             catch (Base::Exception&) {
             }
-            if (!ok && owner) {
+            if (!ok) {
+                // No owner needed: isSimpleExpression below rejects every
+                // variable reference, so nothing that survives it could have
+                // consulted one. Requiring an owner here only denied the
+                // fallback to a spin box that was never bound to a property,
+                // which made the same typed text -- "1mm/10", "1mm+2mm" --
+                // accepted in one field and rejected in the next.
                 try {
                     auto expr = App::ExpressionParser::parse(owner, copy2.toUtf8().constData());
                     if (App::isSimpleExpression(expr.get())) {

@@ -76,9 +76,11 @@ public:
     void updateData(const App::Property *) override;
 
 protected:
+#ifdef FC_NO_ELEMENT_MAP
     void applyColor(const Part::ShapeHistory& hist,
                     const std::vector<App::Color>& colBase,
                     std::vector<App::Color>& colBool);
+#endif
     void applyTransparency(const float& transparency,
                     std::vector<App::Color>& colors);
 };

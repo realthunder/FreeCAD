@@ -190,6 +190,8 @@
 
 #include <array>
 #include <deque>
+#include <mutex>
+#include <set>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/iostreams/device/array.hpp>
 #include <boost/iostreams/stream.hpp>
@@ -213,6 +215,7 @@
 #include "Tools.h"
 #include "FaceMaker.h"
 #include "BRepOffsetAPI_MakeOffsetFix.h"
+#include "ShapeAnalysis_FreeBoundsFix.h"
 #include "Geometry.h"
 #include "FaceMakerBullseye.h"
 #include "PartParams.h"
@@ -239,6 +242,43 @@ namespace bio = boost::iostreams;
 #define HANDLE_NULL_SHAPE _HANDLE_NULL_SHAPE("Null shape",true)
 #define HANDLE_NULL_INPUT _HANDLE_NULL_SHAPE("Null input shape",true)
 #define WARN_NULL_INPUT _HANDLE_NULL_SHAPE("Null input shape",false)
+
+/** Should this operation report that it could not name its result?
+ *
+ * An input shape carrying no element map is frequently CORRECT -- program
+ * generated and imported geometry has none -- and a genuine naming failure is
+ * developer information that no end user can act on. So the report is off by
+ * default and has two doors, either of which opens it: the PartParams
+ * preference, for the workbench author who wants to know whether the shapes
+ * they build can be named, and the module log level, for a developer who has
+ * already raised it and should not have to find a preference as well.
+ */
+static bool reportUnnamedInput(const char *op)
+{
+    long mode = PartParams::getWarnUnnamedInput();
+    if (mode <= 0)
+        return FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG);
+    if (mode > 1)
+        return true;
+
+    // Mode 1 reports each op code once per document recompute. Without that
+    // dedup the setting is useless in the very case it was asked for: a
+    // generator building the same feature over and over -- a fastener
+    // workbench making screws -- would report once per screw.
+    static std::mutex mutex;
+    static std::set<std::string> reported;
+    static bool subscribed = []() {
+        App::GetApplication().signalBeforeRecomputeDocument.connect(
+                [](const App::Document &) {
+                    std::lock_guard<std::mutex> guard(mutex);
+                    reported.clear();
+                });
+        return true;
+    }();
+    (void)subscribed;
+    std::lock_guard<std::mutex> guard(mutex);
+    return reported.insert(op ? op : "").second;
+}
 
 static void expandCompound(const TopoShape &shape, std::vector<TopoShape> &res) {
     if(shape.isNull())
@@ -1094,6 +1134,21 @@ void TopoShape::mapSubElement(const std::vector<TopoShape> &shapes, const char *
     if (shapes.empty() || this->Tag == -1)
         return;
 
+    size_t canMap = 0;
+    for (auto & s : shapes) {
+        if (canMapElement(s))
+            ++canMap;
+    }
+    if (!canMap) {
+        // Both paths below skip an input they cannot map, so this was already
+        // a no-op -- only a silent one.
+        if (reportUnnamedInput(op))
+            FC_WARN((op ? op : "mapSubElement") << ": none of " << shapes.size()
+                    << " input shapes carry an element map, so nothing was mapped"
+                       " onto the result (tag " << Tag << ")");
+        return;
+    }
+
     if (shapeType(true) == TopAbs_COMPOUND) {
         int count = 0;
         for (auto & s : shapes) {
@@ -1492,7 +1547,7 @@ TopoShape TopoShape::getSubTopoShape(TopAbs_ShapeEnum type, int idx, bool silent
     auto &info = _Cache->getInfo(type);
     if(idx > info.count()) {
         if(!silent)
-            FC_THROWM(Base::ValueError,"Shape index " << idx << " out of bound "  << info.count());
+            FC_THROWM(Base::IndexError,"Shape index " << idx << " out of bound "  << info.count());
         return TopoShape();
     }
 
@@ -1773,7 +1828,7 @@ TopoShape &TopoShape::makEEvolve(const TopoShape &spine,
 
     GeomAbs_JoinType joinType;
     switch (join) {
-        case JoinType::Arc:
+    case JoinType::Tangent:
         joinType = GeomAbs_Tangent;
         break;
     case JoinType::Intersection:
@@ -1905,16 +1960,20 @@ TopoShape &TopoShape::makERuledSurface(const std::vector<TopoShape> &shapes,
         }
 
         if (!a1.IsNull() && !a2.IsNull()) {
+            // Sample near, not at, the ends of the parameter range. A closed
+            // curve -- a wire around a face, say -- has the same point at both
+            // ends, which makes the vector below degenerate and the
+            // orientation test meaningless.
             // get end points of 1st curve
-            gp_Pnt p1 = a1->Value(a1->FirstParameter());
-            gp_Pnt p2 = a1->Value(a1->LastParameter());
+            gp_Pnt p1 = a1->Value(0.9 * a1->FirstParameter() + 0.1 * a1->LastParameter());
+            gp_Pnt p2 = a1->Value(0.1 * a1->FirstParameter() + 0.9 * a1->LastParameter());
             if (S1.getShape().Orientation() == TopAbs_REVERSED) {
                 std::swap(p1, p2);
             }
 
             // get end points of 2nd curve
-            gp_Pnt p3 = a2->Value(a2->FirstParameter());
-            gp_Pnt p4 = a2->Value(a2->LastParameter());
+            gp_Pnt p3 = a2->Value(0.9 * a2->FirstParameter() + 0.1 * a2->LastParameter());
+            gp_Pnt p4 = a2->Value(0.1 * a2->FirstParameter() + 0.9 * a2->LastParameter());
             if (S2.getShape().Orientation() == TopAbs_REVERSED) {
                 std::swap(p3, p4);
             }
@@ -1952,7 +2011,7 @@ TopoShape &TopoShape::makERuledSurface(const std::vector<TopoShape> &shapes,
     // without any API to provide relationship to the output edges. So we have
     // to use searchSubShape() to build the relationship by ourselves.
 
-    TopoShape res(ruledShape.Located(TopLoc_Location()));
+    TopoShape res = TopoShape(Tag, Hasher, ruledShape).located();
     std::vector<TopoShape> edges;
     for (const auto &c : curves) {
         for (const auto &e : c.getSubTopoShapes(TopAbs_EDGE)) {
@@ -2101,6 +2160,43 @@ TopoShape &TopoShape::makELoft(const std::vector<TopoShape> &shapes,
                                Standard_Integer maxDegree,
                                const char *op)
 {
+    // Returns true if the two profiles are different enough to loft between.
+    auto checkProfiles = [](const TopoShape &sh1, const TopoShape &sh2) {
+        // The same TShape may be used with different locations, and two
+        // different locations can still carry the same transformation, so
+        // compare the matrices rather than the locations.
+        if (sh1.getShape().IsPartner(sh2.getShape())) {
+            TopLoc_Location loc1 = sh1.getShape().Location();
+            TopLoc_Location loc2 = sh2.getShape().Location();
+            Base::Matrix4D mat1 = TopoShape::convert(loc1.Transformation());
+            Base::Matrix4D mat2 = TopoShape::convert(loc2.Transformation());
+            return mat1 != mat2;
+        }
+
+        // Different shapes: a differing bounding box already settles it.
+        try {
+            Bnd_Box bounds1;
+            Bnd_Box bounds2;
+            BRepBndLib::Add(sh1.getShape(), bounds1);
+            BRepBndLib::Add(sh2.getShape(), bounds2);
+            if (!bounds1.CornerMin().IsEqual(bounds2.CornerMin(), Precision::Confusion()))
+                return true;
+            if (!bounds1.CornerMax().IsEqual(bounds2.CornerMax(), Precision::Confusion()))
+                return true;
+        }
+        catch (const Standard_Failure &) {
+            return false;
+        }
+
+        Base::Vector3d center1;
+        Base::Vector3d center2;
+        if (!sh1.getCenterOfGravity(center1))
+            return true;
+        if (!sh2.getCenterOfGravity(center2))
+            return true;
+        return !center1.IsEqual(center2, Precision::Confusion());
+    };
+
     if(!op) op = Part::OpCodes::Loft;
 
     // http://opencascade.blogspot.com/2010/01/surface-modeling-part5.html
@@ -2111,8 +2207,17 @@ TopoShape &TopoShape::makELoft(const std::vector<TopoShape> &shapes,
     if (shapes.size() < 2)
         FC_THROWM(Base::CADKernelError,"Need at least two vertices, edges or wires to create loft face");
 
-    for(auto &sh : profiles) {
-        const auto &shape = sh.getShape();
+    // A loft only makes sense if consecutive profiles are actually distinct.
+    // Identical profiles make OCCT crash or hang, so reject them up front.
+    // Distinctness is decided cheaply, in increasing order of cost, and the
+    // centre of gravity is only the last resort: two concentric squares of
+    // different size share a centre and are still perfectly good profiles.
+    for(size_t i=0; i<profiles.size(); ++i) {
+        if(i > 0 && !checkProfiles(profiles[i], profiles[i-1])) {
+            FC_THROWM(Base::CADKernelError,
+                    "Segments of a loft do not have sufficient separation");
+        }
+        const auto &shape = profiles[i].getShape();
         if(shape.ShapeType() == TopAbs_VERTEX)
             aGenerator.AddVertex(TopoDS::Vertex (shape));
         else
@@ -3307,7 +3412,7 @@ TopoShape &TopoShape::makEWires(const std::vector<TopoShape> &shapes,
         }
         if(!hEdges->Length())
             HANDLE_NULL_SHAPE;
-        ShapeAnalysis_FreeBounds::ConnectEdgesToWires(hEdges, tol, Standard_True, hWires);
+        Fix_ShapeAnalysis_FreeBounds_ConnectEdgesToWires(hEdges, tol, Standard_True, hWires);
         if(!hWires->Length())
             HANDLE_NULL_SHAPE;
 
@@ -3532,10 +3637,15 @@ TopoShape &TopoShape::makEShell(bool silent, const char *op) {
             FC_THROWM(NullShapeException, "Failed to make shell");
         }
 
-        if (!tmp.hasSubShape(TopAbs_SHELL)) {
+        // The result must BE a shell, not merely contain one. Sewing a set of
+        // faces that cannot form a single shell hands back a compound of
+        // shells, and accepting that here would return a compound from
+        // makEShell() with no error at all.
+        if (tmp.getShape().ShapeType() != TopAbs_SHELL) {
             if (silent)
                 return *this;
-            FC_THROWM(Base::CADKernelError, "Failed to make shell");
+            FC_THROWM(Base::CADKernelError, "Failed to make shell: unexpected output shape type "
+                    << shapeName(tmp.getShape().ShapeType(), true));
         }
 
         *this = tmp;
@@ -4050,12 +4160,19 @@ TopoShape &TopoShape::makESHAPE(const TopoDS_Shape &shape, const Mapper &mapper,
         if(canMapElement(shape))
             ++canMap;
     }
-    if(!canMap)
-        return *this;
-    if(canMap!=shapes.size() && FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
-        FC_WARN("Not all input shapes are mappable");
-
     if(!op) op = Part::OpCodes::Maker;
+
+    if(!canMap) {
+        if(reportUnnamedInput(op))
+            FC_WARN(op << ": none of " << shapes.size()
+                    << " input shapes carry an element map, so the result (tag "
+                    << Tag << ") gets none either");
+        return *this;
+    }
+    if(canMap!=shapes.size() && reportUnnamedInput(op))
+        FC_WARN(op << ": only " << canMap << " of " << shapes.size()
+                << " input shapes carry an element map (tag " << Tag << ")");
+
     std::string _op = op;
     _op += '_';
 

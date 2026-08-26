@@ -88,6 +88,16 @@ Params = [
         "surface the face carries -- so this is sound only where the geometry is\n"
         "shared too, and it is off wherever DedupCrossFileGeometry is."),
     ParamUInt("LoftMaxDegree", 5),
+    ParamInt("WarnUnnamedInput", 0,
+        "Report a shape operation whose input shapes carry no element map, so\n"
+        "the result cannot be named either. This is off by default because an\n"
+        "absent element map is frequently correct -- program generated and\n"
+        "imported geometry has none -- and because a genuine naming failure is\n"
+        "developer information that an end user cannot act on. Turn it on when\n"
+        "writing a workbench that builds shapes and wants its element names to\n"
+        "survive a recompute. 0 off, 1 report each operation once per document\n"
+        "recompute, 2 report every occurrence. Raising the Part module's log\n"
+        "level to LOG reports every occurrence too, without this preference."),
     _MinimumDeviation,
     _MeshDeviation,
     _MeshAngularDeflection,

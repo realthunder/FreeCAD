@@ -59,10 +59,12 @@ std::vector<App::DocumentObject*> ViewProviderRuledSurface::claimChildren() cons
 void ViewProviderRuledSurface::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);
+#ifdef FC_NO_ELEMENT_MAP
     if (prop->is<Part::PropertyShapeHistory>()) {
         //const std::vector<Part::ShapeHistory>& hist = static_cast<const Part::PropertyShapeHistory*>
         //    (prop)->getValues();
     }
+#endif
     /*  //The following hides the Children shapes. If the edges from which the Ruled Surface was created
      * were selected from the subshapes of another shape, it is likely that one would not want to hide the shape
      * hence this section is commented out

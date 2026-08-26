@@ -422,13 +422,6 @@ PyObject *MaterialListPy::setMaterial(PyObject *args)
 namespace
 {
 
-using ColorGetter = Color (MaterialList::*)(int) const;
-using ColorSetter = void (MaterialList::*)(int, const Color &);
-using ColorAllSetter = void (MaterialList::*)(const Color &);
-using FloatGetter = float (MaterialList::*)(int) const;
-using FloatSetter = void (MaterialList::*)(int, float);
-using FloatAllSetter = void (MaterialList::*)(float);
-
 /// A colour out of a Python 3- or 4-tuple, or a packed integer
 bool colorOf(PyObject *value, Color &color)
 {
@@ -479,7 +472,7 @@ uint8_t slotOf(const char *name)
 
 }  // namespace
 
-PyObject *MaterialListPy::colorGet(PyObject *args, void *getter)
+PyObject *MaterialListPy::colorGet(PyObject *args, ColorGetter getter)
 {
     Py_ssize_t where = 0;
     if (!PyArg_ParseTuple(args, "n", &where)) {
@@ -491,19 +484,17 @@ PyObject *MaterialListPy::colorGet(PyObject *args, void *getter)
         if (!indexOf(where, list().getSize(), idx)) {
             return nullptr;
         }
-        auto get = reinterpret_cast<ColorGetter &>(getter);
-        return Py::new_reference_to(colorTuple((list().*get)(idx)));
+        return Py::new_reference_to(colorTuple((list().*getter)(idx)));
     }
     PY_CATCH
 }
 
-PyObject *MaterialListPy::colorSet(PyObject *args, void *setter, void *allsetter)
+PyObject *MaterialListPy::colorSet(PyObject *args, ColorSetter setter,
+                                   ColorAllSetter allsetter)
 {
     Py_ssize_t where = 0;
     PyObject *value = nullptr;
     Color color;
-    auto one = reinterpret_cast<ColorSetter &>(setter);
-    auto all = reinterpret_cast<ColorAllSetter &>(allsetter);
     if (PyArg_ParseTuple(args, "nO", &where, &value)) {
         if (!colorOf(value, color) || !writable()) {
             return nullptr;
@@ -514,7 +505,7 @@ PyObject *MaterialListPy::colorSet(PyObject *args, void *setter, void *allsetter
             if (!indexOf(where, list().getSize(), idx, true)) {
                 return nullptr;
             }
-            edit([&](MaterialList &values) { (values.*one)(idx, color); }, idx);
+            edit([&](MaterialList &values) { (values.*setter)(idx, color); }, idx);
             Py_Return;
         }
         PY_CATCH
@@ -528,13 +519,13 @@ PyObject *MaterialListPy::colorSet(PyObject *args, void *setter, void *allsetter
     }
     PY_TRY
     {
-        edit([&](MaterialList &values) { (values.*all)(color); });
+        edit([&](MaterialList &values) { (values.*allsetter)(color); });
         Py_Return;
     }
     PY_CATCH
 }
 
-PyObject *MaterialListPy::floatGet(PyObject *args, void *getter)
+PyObject *MaterialListPy::floatGet(PyObject *args, FloatGetter getter)
 {
     Py_ssize_t where = 0;
     if (!PyArg_ParseTuple(args, "n", &where)) {
@@ -546,18 +537,16 @@ PyObject *MaterialListPy::floatGet(PyObject *args, void *getter)
         if (!indexOf(where, list().getSize(), idx)) {
             return nullptr;
         }
-        auto get = reinterpret_cast<FloatGetter &>(getter);
-        return Py::new_reference_to(Py::Float((list().*get)(idx)));
+        return Py::new_reference_to(Py::Float((list().*getter)(idx)));
     }
     PY_CATCH
 }
 
-PyObject *MaterialListPy::floatSet(PyObject *args, void *setter, void *allsetter)
+PyObject *MaterialListPy::floatSet(PyObject *args, FloatSetter setter,
+                                   FloatAllSetter allsetter)
 {
     Py_ssize_t where = 0;
     double value = 0.0;
-    auto one = reinterpret_cast<FloatSetter &>(setter);
-    auto all = reinterpret_cast<FloatAllSetter &>(allsetter);
     if (PyArg_ParseTuple(args, "nd", &where, &value)) {
         if (!writable()) {
             return nullptr;
@@ -568,7 +557,7 @@ PyObject *MaterialListPy::floatSet(PyObject *args, void *setter, void *allsetter
             if (!indexOf(where, list().getSize(), idx, true)) {
                 return nullptr;
             }
-            edit([&](MaterialList &values) { (values.*one)(idx, static_cast<float>(value)); },
+            edit([&](MaterialList &values) { (values.*setter)(idx, static_cast<float>(value)); },
                  idx);
             Py_Return;
         }
@@ -583,7 +572,7 @@ PyObject *MaterialListPy::floatSet(PyObject *args, void *setter, void *allsetter
     }
     PY_TRY
     {
-        edit([&](MaterialList &values) { (values.*all)(static_cast<float>(value)); });
+        edit([&](MaterialList &values) { (values.*allsetter)(static_cast<float>(value)); });
         Py_Return;
     }
     PY_CATCH
@@ -591,106 +580,98 @@ PyObject *MaterialListPy::floatSet(PyObject *args, void *setter, void *allsetter
 
 PyObject *MaterialListPy::getDiffuseColor(PyObject *args)
 {
-    ColorGetter get = &MaterialList::getDiffuseColor;
-    return colorGet(args, reinterpret_cast<void *&>(get));
+    return colorGet(args, &MaterialList::getDiffuseColor);
 }
 
 PyObject *MaterialListPy::setDiffuseColor(PyObject *args)
 {
-    ColorSetter one = static_cast<ColorSetter>(&MaterialList::setDiffuseColor);
-    ColorAllSetter all = static_cast<ColorAllSetter>(&MaterialList::setDiffuseColor);
-    return colorSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+    return colorSet(args,
+                    static_cast<ColorSetter>(&MaterialList::setDiffuseColor),
+                    static_cast<ColorAllSetter>(&MaterialList::setDiffuseColor));
 }
 
 PyObject *MaterialListPy::getAmbientColor(PyObject *args)
 {
-    ColorGetter get = &MaterialList::getAmbientColor;
-    return colorGet(args, reinterpret_cast<void *&>(get));
+    return colorGet(args, &MaterialList::getAmbientColor);
 }
 
 PyObject *MaterialListPy::setAmbientColor(PyObject *args)
 {
-    ColorSetter one = static_cast<ColorSetter>(&MaterialList::setAmbientColor);
-    ColorAllSetter all = static_cast<ColorAllSetter>(&MaterialList::setAmbientColor);
-    return colorSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+    return colorSet(args,
+                    static_cast<ColorSetter>(&MaterialList::setAmbientColor),
+                    static_cast<ColorAllSetter>(&MaterialList::setAmbientColor));
 }
 
 PyObject *MaterialListPy::getSpecularColor(PyObject *args)
 {
-    ColorGetter get = &MaterialList::getSpecularColor;
-    return colorGet(args, reinterpret_cast<void *&>(get));
+    return colorGet(args, &MaterialList::getSpecularColor);
 }
 
 PyObject *MaterialListPy::setSpecularColor(PyObject *args)
 {
-    ColorSetter one = static_cast<ColorSetter>(&MaterialList::setSpecularColor);
-    ColorAllSetter all = static_cast<ColorAllSetter>(&MaterialList::setSpecularColor);
-    return colorSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+    return colorSet(args,
+                    static_cast<ColorSetter>(&MaterialList::setSpecularColor),
+                    static_cast<ColorAllSetter>(&MaterialList::setSpecularColor));
 }
 
 PyObject *MaterialListPy::getEmissiveColor(PyObject *args)
 {
-    ColorGetter get = &MaterialList::getEmissiveColor;
-    return colorGet(args, reinterpret_cast<void *&>(get));
+    return colorGet(args, &MaterialList::getEmissiveColor);
 }
 
 PyObject *MaterialListPy::setEmissiveColor(PyObject *args)
 {
-    ColorSetter one = static_cast<ColorSetter>(&MaterialList::setEmissiveColor);
-    ColorAllSetter all = static_cast<ColorAllSetter>(&MaterialList::setEmissiveColor);
-    return colorSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+    return colorSet(args,
+                    static_cast<ColorSetter>(&MaterialList::setEmissiveColor),
+                    static_cast<ColorAllSetter>(&MaterialList::setEmissiveColor));
 }
 
 PyObject *MaterialListPy::getShininess(PyObject *args)
 {
-    FloatGetter get = &MaterialList::getShininess;
-    return floatGet(args, reinterpret_cast<void *&>(get));
+    return floatGet(args, &MaterialList::getShininess);
 }
 
 PyObject *MaterialListPy::setShininess(PyObject *args)
 {
-    FloatSetter one = static_cast<FloatSetter>(&MaterialList::setShininess);
-    FloatAllSetter all = static_cast<FloatAllSetter>(&MaterialList::setShininess);
-    return floatSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+    return floatSet(args,
+                    static_cast<FloatSetter>(&MaterialList::setShininess),
+                    static_cast<FloatAllSetter>(&MaterialList::setShininess));
 }
 
 PyObject *MaterialListPy::getTransparency(PyObject *args)
 {
-    FloatGetter get = &MaterialList::getTransparency;
-    return floatGet(args, reinterpret_cast<void *&>(get));
+    return floatGet(args, &MaterialList::getTransparency);
 }
 
 PyObject *MaterialListPy::setTransparency(PyObject *args)
 {
-    FloatSetter one = static_cast<FloatSetter>(&MaterialList::setTransparency);
-    FloatAllSetter all = static_cast<FloatAllSetter>(&MaterialList::setTransparency);
-    return floatSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+    return floatSet(args,
+                    static_cast<FloatSetter>(&MaterialList::setTransparency),
+                    static_cast<FloatAllSetter>(&MaterialList::setTransparency));
 }
 
 PyObject *MaterialListPy::getMetallic(PyObject *args)
 {
-    FloatGetter get = &MaterialList::getMetallic;
-    return floatGet(args, reinterpret_cast<void *&>(get));
+    return floatGet(args, &MaterialList::getMetallic);
 }
 
 PyObject *MaterialListPy::setMetallic(PyObject *args)
 {
-    FloatSetter one = static_cast<FloatSetter>(&MaterialList::setMetallic);
-    FloatAllSetter all = static_cast<FloatAllSetter>(&MaterialList::setMetallic);
-    return floatSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+    return floatSet(args,
+                    static_cast<FloatSetter>(&MaterialList::setMetallic),
+                    static_cast<FloatAllSetter>(&MaterialList::setMetallic));
 }
 
 PyObject *MaterialListPy::getRoughness(PyObject *args)
 {
-    FloatGetter get = &MaterialList::getRoughness;
-    return floatGet(args, reinterpret_cast<void *&>(get));
+    return floatGet(args, &MaterialList::getRoughness);
 }
 
 PyObject *MaterialListPy::setRoughness(PyObject *args)
 {
-    FloatSetter one = static_cast<FloatSetter>(&MaterialList::setRoughness);
-    FloatAllSetter all = static_cast<FloatAllSetter>(&MaterialList::setRoughness);
-    return floatSet(args, reinterpret_cast<void *&>(one), reinterpret_cast<void *&>(all));
+    return floatSet(args,
+                    static_cast<FloatSetter>(&MaterialList::setRoughness),
+                    static_cast<FloatAllSetter>(&MaterialList::setRoughness));
 }
 
 // ---------------------------------------------------------------------

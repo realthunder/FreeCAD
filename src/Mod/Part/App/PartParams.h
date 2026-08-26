@@ -295,6 +295,26 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter WarnUnnamedInput
+    ///
+    /// Report a shape operation whose input shapes carry no element map, so
+    /// the result cannot be named either. This is off by default because an
+    /// absent element map is frequently correct -- program generated and
+    /// imported geometry has none -- and because a genuine naming failure is
+    /// developer information that an end user cannot act on. Turn it on when
+    /// writing a workbench that builds shapes and wants its element names to
+    /// survive a recompute. 0 off, 1 report each operation once per document
+    /// recompute, 2 report every occurrence. Raising the Part module's log
+    /// level to LOG reports every occurrence too, without this preference.
+    static const long & getWarnUnnamedInput();
+    static const long & defaultWarnUnnamedInput();
+    static void removeWarnUnnamedInput();
+    static void setWarnUnnamedInput(const long &v);
+    static const char *docWarnUnnamedInput();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter MinimumDeviation
     static const double & getMinimumDeviation();
     static const double & defaultMinimumDeviation();

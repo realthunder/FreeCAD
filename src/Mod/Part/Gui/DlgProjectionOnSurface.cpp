@@ -54,6 +54,8 @@
 #include <Gui/SelectionObject.h>
 #include <Inventor/SbVec3d.h>
 
+#include <Mod/Part/App/ShapeAnalysis_FreeBoundsFix.h>
+
 #include "DlgProjectionOnSurface.h"
 #include "ui_DlgProjectionOnSurface.h"
 #include "ViewProviderExt.h"
@@ -845,7 +847,6 @@ TopoDS_Wire PartGui::DlgProjectionOnSurface::sort_and_heal_wire(const std::vecto
 {
   // try to sort and heal all wires
 // if the wires are not clean making a face will fail!
-  ShapeAnalysis_FreeBounds shapeAnalyzer;
   Handle(TopTools_HSequenceOfShape) shapeList = new TopTools_HSequenceOfShape;
   Handle(TopTools_HSequenceOfShape) aWireHandle;
   Handle(TopTools_HSequenceOfShape) aWireWireHandle;
@@ -855,8 +856,8 @@ TopoDS_Wire PartGui::DlgProjectionOnSurface::sort_and_heal_wire(const std::vecto
     shapeList->Append(it);
   }
 
-  shapeAnalyzer.ConnectEdgesToWires(shapeList, 0.0001, false, aWireHandle);
-  shapeAnalyzer.ConnectWiresToWires(aWireHandle, 0.0001, false, aWireWireHandle);
+  Part::Fix_ShapeAnalysis_FreeBounds_ConnectEdgesToWires(shapeList, 0.0001, false, aWireHandle);
+  Part::Fix_ShapeAnalysis_FreeBounds_ConnectWiresToWires(aWireHandle, 0.0001, false, aWireWireHandle);
   if (!aWireWireHandle)
       return {};
   for (auto it = 1; it <= aWireWireHandle->Length(); ++it)

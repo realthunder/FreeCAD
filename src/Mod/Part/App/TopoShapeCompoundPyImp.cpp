@@ -33,6 +33,7 @@
 # include <TopTools_HSequenceOfShape.hxx>
 #endif
 
+#include "ShapeAnalysis_FreeBoundsFix.h"
 #include "TopoShapeOpCode.h"
 #include "PartPyCXX.h"
 #include "OCCError.h"
@@ -150,7 +151,7 @@ PyObject* TopoShapeCompoundPy::connectEdgesToWires(PyObject *args) const
         for (TopExp_Explorer xp(s, TopAbs_EDGE); xp.More(); xp.Next())
             hEdges->Append(xp.Current());
 
-        ShapeAnalysis_FreeBounds::ConnectEdgesToWires(hEdges, tol, Base::asBoolean(shared), hWires);
+        Fix_ShapeAnalysis_FreeBounds_ConnectEdgesToWires(hEdges, tol, Base::asBoolean(shared), hWires);
 
         TopoDS_Compound comp;
         BRep_Builder builder;

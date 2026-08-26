@@ -828,7 +828,15 @@ PyObject* BSplineCurvePy::approximate(PyObject *args, PyObject *kwds)
         else
             c = GeomAbs_C2;
 
-        bool ok = this->getGeomBSplineCurvePtr()->approximate(tol3d, segMax, degMax, c);
+        // approximate() reports failure by throwing rather than returning a status,
+        // so map that back onto this binding's long-standing True/False result.
+        bool ok = true;
+        try {
+            this->getGeomBSplineCurvePtr()->approximate(tol3d, segMax, degMax, c);
+        }
+        catch (const Base::CADKernelError&) {
+            ok = false;
+        }
         return Py_BuildValue("O", (ok ? Py_True : Py_False));
     }
 

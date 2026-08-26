@@ -65,6 +65,7 @@ bool ViewProviderCompound::onDelete(const std::vector<std::string> &)
 void ViewProviderCompound::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);
+#ifdef FC_NO_ELEMENT_MAP
     if (prop->is<Part::PropertyShapeHistory>()) {
         const std::vector<Part::ShapeHistory>& hist = static_cast<const Part::PropertyShapeHistory*>
             (prop)->getValues();
@@ -131,7 +132,8 @@ void ViewProviderCompound::updateData(const App::Property* prop)
 
         this->DiffuseColor.setValues(compCol);
     }
-    else if (prop->isDerivedFrom<App::PropertyLinkList>()) {
+#endif
+    if (prop->isDerivedFrom<App::PropertyLinkList>()) {
         const std::vector<App::DocumentObject *>& pBases = static_cast<const App::PropertyLinkList*>(prop)->getValues();
         for (auto pBase : pBases) {
             if (pBase) Gui::Application::Instance->hideViewProvider(pBase);

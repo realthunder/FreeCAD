@@ -262,6 +262,33 @@ PyObject* ComplexGeoDataPy::getElementName(PyObject *args) const
         return Py::new_reference_to(Py::String(res.index.appendToStringBuffer(s)));
 }
 
+PyObject *ComplexGeoDataPy::eraseElementName(PyObject *args) {
+    const char *input;
+    if (!PyArg_ParseTuple(args, "s", &input))
+        return NULL;
+
+    PY_TRY {
+        // An indexed name erases the whole element, a mapped name just itself,
+        // which is the same split as the two C++ overloads.
+        //
+        // allowOthers=false is what makes the split work: with the default,
+        // IndexedName accepts any bare word as a type it has not seen before,
+        // so a mapped name like "SECOND" would parse as indexed and the erase
+        // would look in the wrong direction and silently find nothing. Only a
+        // type this shape actually has counts as an indexed name.
+        Data::IndexedName index(input, getComplexGeoDataPtr()->getElementTypes(), false);
+        if (index)
+            return Py::new_reference_to(
+                    Py::Boolean(getComplexGeoDataPtr()->eraseElementName(index)));
+
+        // Accept the ";"-prefixed form that mapped names take inside a subname.
+        const char *mapped = Data::isMappedElement(input);
+        Data::MappedName name(mapped ? mapped : input);
+        return Py::new_reference_to(
+                Py::Boolean(getComplexGeoDataPtr()->eraseElementName(name)));
+    }PY_CATCH
+}
+
 PyObject* ComplexGeoDataPy::getElementIndexedName(PyObject *args) const
 {
     char* input;
@@ -313,7 +340,7 @@ PyObject *ComplexGeoDataPy::setElementName(PyObject *args, PyObject *kwds) {
     PyObject *overwrite = Py_False;
 
     static char *kwlist[] = {"element", "name", "postfix", "overwrite", "sid", "tag", NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|ssOOi", kwlist, 
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|zzOOi", kwlist, 
                 &element,&name,&postfix,&overwrite,&pySid,&tag))
         return NULL;
     ElementIDRefs sids;
@@ -334,6 +361,15 @@ PyObject *ComplexGeoDataPy::setElementName(PyObject *args, PyObject *kwds) {
     }
     PY_TRY {
         Data::IndexedName index(element, getComplexGeoDataPtr()->getElementTypes());
+        if (!name || !name[0]) {
+            // Documented as "None to remove the mapping", and an empty string
+            // has always meant the same. Erase outright rather than running an
+            // empty name through the encoder: with a postfix or a tag also
+            // given, the encoder would append to it and hand back a real name,
+            // so the call would create a mapping instead of removing one.
+            getComplexGeoDataPtr()->eraseElementName(index);
+            return Py::new_reference_to(Py::String(""));
+        }
         Data::MappedName mapped = Data::MappedName::fromRawData(name);
         std::ostringstream ss;
         getComplexGeoDataPtr()->encodeElementName(getComplexGeoDataPtr()->elementType(index),

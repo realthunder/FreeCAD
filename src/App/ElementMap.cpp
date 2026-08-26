@@ -24,6 +24,11 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+#include <algorithm>
+#include <cstring>
+#include <set>
+#include <sstream>
+#include <string>
 #include <unordered_map>
 #ifdef FC_RANDOMIZE_DUPLICATE_INDEX
 #include <random>
@@ -1183,6 +1188,155 @@ public:
         return ret;
     }
 
+    /** Validate this map against the geometry it names.
+     *
+     * See ComplexGeoData::checkElementMap for what is checked and why this
+     * exists at all.
+     */
+    int check(const ComplexGeoData & master,
+              std::vector<std::string> * problems,
+              std::set<const ElementMap*> & visited,
+              bool ownGeometry = true) const
+    {
+        if (!visited.insert(this).second)
+            return 0;
+
+        int count = 0;
+        std::ostringstream ss;
+        auto report = [&](const std::string & msg) {
+            ++count;
+            if (problems)
+                problems->push_back(msg);
+        };
+
+        // A name may legitimately appear under several indexed names -- that is
+        // what a child element map does -- but not twice under the same one.
+        std::set<MappedName> seen;
+
+        // Only a type the geometry declares can be counted. Anything else --
+        // and a map may legitimately hold names of a type this shape does not
+        // enumerate -- would count as zero and make every one of its names look
+        // out of range, so the range check is skipped rather than faked.
+        //
+        // A child element map names a DIFFERENT shape, in that shape's own index
+        // space and possibly against its own hasher, so neither the count nor
+        // the hasher of `master` says anything about it. Recursion therefore
+        // clears ownGeometry and checks only what is intrinsic to the map: that
+        // its two directions agree and that it maps nothing twice.
+        const auto & types = master.getElementTypes();
+
+        for (auto & v : this->indexedNames) {
+            const char * type = v.first;
+            const auto & indices = v.second;
+            bool counted = ownGeometry
+                && std::any_of(types.begin(), types.end(), [type](const char * t) {
+                       return std::strcmp(t, type) == 0;
+                   });
+            // Index 0 is never a real element; IndexedName counts from one.
+            long live = counted ? (long)master.countSubElements(type) : -1;
+
+            for (int idx = 1; idx < (int)indices.names.size(); ++idx) {
+                seen.clear();
+                for (const MappedNameRef * ref = &indices.names[idx]; ref; ref = ref->next.get()) {
+                    if (!*ref)
+                        continue;
+                    IndexedName indexed(type, idx);
+
+                    if (counted && idx > live) {
+                        ss.str("");
+                        ss << ref->name << " names " << indexed << ", but the shape has only "
+                           << live << ' ' << type;
+                        report(ss.str());
+                    }
+
+                    if (!seen.insert(ref->name).second) {
+                        ss.str("");
+                        ss << ref->name << " is mapped to " << indexed << " more than once";
+                        report(ss.str());
+                    }
+
+                    // The reverse index must agree, or a lookup by name and a
+                    // lookup by index answer differently.
+                    auto it = this->mappedNames.find(ref->name);
+                    if (it == this->mappedNames.end()) {
+                        ss.str("");
+                        ss << ref->name << " names " << indexed
+                           << " but is absent from the reverse index";
+                        report(ss.str());
+                    }
+                    else if (it->second != indexed) {
+                        ss.str("");
+                        ss << ref->name << " names " << indexed
+                           << " but the reverse index says " << it->second;
+                        report(ss.str());
+                    }
+
+                    // A string id that no longer belongs to the shape's own
+                    // hasher cannot be resolved back to text, so the name it
+                    // helped shorten can never be decoded again. This is the
+                    // live counterpart of the "invalid string id" count the
+                    // restore paths already keep.
+                    for (const auto & sid : ref->sids) {
+                        if (!sid) {
+                            ss.str("");
+                            ss << ref->name << " on " << indexed
+                               << " holds a null string id";
+                            report(ss.str());
+                        }
+                        else if (ownGeometry && master.Hasher
+                                 && !sid.isFromSameHasher(master.Hasher)) {
+                            ss.str("");
+                            ss << ref->name << " on " << indexed << " holds string id "
+                               << sid.value() << ", which belongs to another hasher";
+                            report(ss.str());
+                        }
+                    }
+                }
+            }
+
+            for (auto & vv : indices.children) {
+                const auto & child = vv.second;
+                if (child.count < 0 || child.offset < 0) {
+                    ss.str("");
+                    ss << "child element map of " << type << " has count " << child.count
+                       << " and offset " << child.offset;
+                    report(ss.str());
+                }
+                else if (counted && child.offset + child.count > live) {
+                    ss.str("");
+                    ss << "child element map of " << type << " covers " << type << ' '
+                       << child.offset + 1 << " to " << child.offset + child.count
+                       << ", but the shape has only " << live;
+                    report(ss.str());
+                }
+                if (child.elementMap)
+                    count += child.elementMap->check(master, problems, visited, false);
+            }
+        }
+
+        // The forward pass above only reaches names the reverse index also
+        // holds; this catches the other direction, a reverse entry pointing at
+        // an index that no longer carries it.
+        for (auto & v : this->mappedNames) {
+            auto ref = findMappedRef(v.second);
+            bool found = false;
+            for (; ref; ref = ref->next.get()) {
+                if (*ref && ref->name == v.first) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                ss.str("");
+                ss << "the reverse index maps " << v.first << " to " << v.second
+                   << ", which does not carry it";
+                report(ss.str());
+            }
+        }
+
+        return count;
+    }
+
 private:
     std::map<const char *, IndexedElements, CStringComp> indexedNames;
 
@@ -1348,8 +1502,11 @@ MappedName ComplexGeoData::setElementName(const IndexedName & element,
     if(!element)
         THROWM(Base::ValueError, "Invalid input")
     if(!name)  {
-        if(_elementMap)
-            _elementMap->erase(element);
+        // An empty name means "erase". Go through eraseElementName rather than
+        // touching _elementMap directly: the map may still be deferred in the
+        // cache, in which case _elementMap is null here and the erase would
+        // silently do nothing. eraseElementName flushes first.
+        eraseElementName(element);
         return MappedName();
     }
 
@@ -1391,6 +1548,31 @@ MappedName ComplexGeoData::setElementName(const IndexedName & element,
         sid = &_sid;
     }
     
+}
+
+// Both overloads flush first. An unflushed shape can be carrying its element
+// map in the cache rather than in _elementMap, and the flush is what installs
+// it -- erasing before that would either do nothing at all or be undone when
+// the map finally arrives.
+
+bool ComplexGeoData::eraseElementName(const MappedName & name)
+{
+    if (!name)
+        return false;
+    flushElementMap();
+    if (!_elementMap)
+        return false;
+    return _elementMap->erase(name);
+}
+
+bool ComplexGeoData::eraseElementName(const IndexedName & element)
+{
+    if (!element)
+        return false;
+    flushElementMap();
+    if (!_elementMap)
+        return false;
+    return _elementMap->erase(element);
 }
 
 char ComplexGeoData::elementType(const Data::MappedName &name) const
@@ -1922,6 +2104,15 @@ bool ComplexGeoData::hasChildElementMap() const
 {
     flushElementMap();
     return _elementMap && _elementMap->hasChildElementMap();
+}
+
+int ComplexGeoData::checkElementMap(std::vector<std::string> * problems) const
+{
+    flushElementMap();
+    if (!_elementMap)
+        return 0;
+    std::set<const ElementMap*> visited;
+    return _elementMap->check(*this, problems, visited);
 }
 
 ElementMapPtr ComplexGeoData::resetElementMap(ElementMapPtr elementMap)

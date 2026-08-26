@@ -203,6 +203,7 @@ ViewProviderFillet::~ViewProviderFillet() = default;
 void ViewProviderFillet::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);
+#ifdef FC_NO_ELEMENT_MAP
     if (prop->is<Part::PropertyShapeHistory>()) {
         const std::vector<Part::ShapeHistory>& hist = static_cast<const Part::PropertyShapeHistory*>
             (prop)->getValues();
@@ -246,6 +247,7 @@ void ViewProviderFillet::updateData(const App::Property* prop)
             }
         }
     }
+#endif
 }
 
 void ViewProviderFillet::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
@@ -313,6 +315,7 @@ ViewProviderChamfer::~ViewProviderChamfer() = default;
 void ViewProviderChamfer::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);
+#ifdef FC_NO_ELEMENT_MAP
     if (prop->is<Part::PropertyShapeHistory>()) {
         const std::vector<Part::ShapeHistory>& hist = static_cast<const Part::PropertyShapeHistory*>
             (prop)->getValues();
@@ -356,6 +359,7 @@ void ViewProviderChamfer::updateData(const App::Property* prop)
             }
         }
     }
+#endif
 }
 
 void ViewProviderChamfer::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)

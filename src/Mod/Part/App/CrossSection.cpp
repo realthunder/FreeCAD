@@ -314,8 +314,11 @@ void TopoCrossSection::sliceSolid(int idx, double d,
                 gp_Pln plane = adapt.Plane();
                 if (plane.Axis().IsParallel(slicePlane.Axis(), Precision::Confusion()) &&
                     plane.Distance(slicePlane.Location()) < Precision::Confusion()) {
+                    // The third argument used to be keepOrder and is the
+                    // connection tolerance now, so the literal true that used
+                    // to sit here asked for a tolerance of 1mm. Let it default.
                     auto repaired_wires = TopoShape(face.Tag).makEWires(
-                            face.getSubTopoShapes(TopAbs_EDGE),prefix.c_str(),true).getSubTopoShapes(TopAbs_WIRE);
+                            face.getSubTopoShapes(TopAbs_EDGE),prefix.c_str()).getSubTopoShapes(TopAbs_WIRE);
                     wires.insert(wires.end(),repaired_wires.begin(),repaired_wires.end());
                 }
             }

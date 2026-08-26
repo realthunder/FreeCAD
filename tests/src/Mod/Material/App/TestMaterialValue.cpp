@@ -20,11 +20,7 @@
  *                                                                         *
  **************************************************************************/
 
-#include "gtest/gtest.h"
-
-#include <Mod/Material/App/PreCompiled.h>
-#ifndef _PreComp_
-#endif
+#include <gtest/gtest.h>
 
 #include <QMetaType>
 #include <QString>
@@ -42,22 +38,7 @@
 class TestMaterialValue : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
-    // if (App::Application::GetARGC() == 0) {
-    //     constexpr int argc = 1;
-    //     std::array<char*, argc> argv {"FreeCAD"};
-    //     App::Application::Config()["ExeName"] = "FreeCAD";
-    //     App::Application::init(argc, argv.data());
-    // }
   }
-
-//   void SetUp() override {
-//     _modelManager = new Materials::ModelManager();
-//     _materialManager = new Materials::MaterialManager();
-//   }
-
-  // void TearDown() override {}
-//   Materials::ModelManager* _modelManager;
-//   Materials::MaterialManager* _materialManager;
 };
 
 TEST_F(TestMaterialValue, TestNoneType)
@@ -97,7 +78,7 @@ TEST_F(TestMaterialValue, TestBooleanType)
     EXPECT_FALSE(variant.toString().isNull());
     EXPECT_FALSE(variant.toString().isEmpty());
     EXPECT_EQ(variant.toString().size(), 5);
-    EXPECT_EQ(variant.toString(), QString::fromStdString("false"));
+    EXPECT_EQ(variant.toString(), QStringLiteral("false"));
     EXPECT_EQ(variant.toBool(), false);
 }
 
@@ -112,7 +93,7 @@ TEST_F(TestMaterialValue, TestIntegerType)
     EXPECT_FALSE(variant.toString().isNull());
     EXPECT_FALSE(variant.toString().isEmpty());
     EXPECT_EQ(variant.toString().size(), 1);
-    EXPECT_EQ(variant.toString(), QString::fromStdString("0"));
+    EXPECT_EQ(variant.toString(), QStringLiteral("0"));
     EXPECT_EQ(variant.toInt(), 0);
 }
 
@@ -127,7 +108,7 @@ TEST_F(TestMaterialValue, TestFloatType)
     EXPECT_FALSE(variant.toString().isNull());
     EXPECT_FALSE(variant.toString().isEmpty());
     EXPECT_EQ(variant.toString().size(), 1);
-    EXPECT_EQ(variant.toString(), QString::fromStdString("0"));
+    EXPECT_EQ(variant.toString(), QStringLiteral("0"));
     EXPECT_EQ(variant.toFloat(), 0);
 }
 
@@ -145,7 +126,7 @@ TEST_F(TestMaterialValue, TestQuantityType)
     EXPECT_EQ(variant.toString().size(), 0);
     auto quantity = variant.value<Base::Quantity>();
     EXPECT_FALSE(quantity.isValid());
-    EXPECT_EQ(quantity.getUserString(), "nan ");
+    EXPECT_EQ(quantity.getUserString(), "nan");
     EXPECT_TRUE(std::isnan(quantity.getValue()));
 
     // Test a copy
@@ -161,7 +142,7 @@ TEST_F(TestMaterialValue, TestQuantityType)
     EXPECT_EQ(variant.toString().size(), 0);
     quantity = variant.value<Base::Quantity>();
     EXPECT_FALSE(quantity.isValid());
-    EXPECT_EQ(quantity.getUserString(), "nan ");
+    EXPECT_EQ(quantity.getUserString(), "nan");
     EXPECT_TRUE(std::isnan(quantity.getValue()));
 }
 
@@ -187,7 +168,7 @@ TEST_F(TestMaterialValue, TestArray2DType)
 {
     EXPECT_THROW(auto mat1 = Materials::MaterialValue(Materials::MaterialValue::Array2D), Materials::InvalidMaterialType);
 
-    auto mat2 = Materials::Material2DArray();
+    auto mat2 = Materials::Array2D();
     EXPECT_EQ(mat2.getType(), Materials::MaterialValue::Array2D);
     EXPECT_TRUE(mat2.isNull());
     EXPECT_EQ(mat2.rows(), 0);
@@ -197,7 +178,7 @@ TEST_F(TestMaterialValue, TestArray3DType)
 {
     EXPECT_THROW(auto mat1 = Materials::MaterialValue(Materials::MaterialValue::Array3D), Materials::InvalidMaterialType);
 
-    auto mat2 = Materials::Material3DArray();
+    auto mat2 = Materials::Array3D();
     mat2.setColumns(2);
     EXPECT_EQ(mat2.getType(), Materials::MaterialValue::Array3D);
     EXPECT_TRUE(mat2.isNull());
@@ -295,7 +276,6 @@ TEST_F(TestMaterialValue, TestArray3DType)
     mat2.setValue(0, 1, Base::Quantity::parse("9.8 m/s/s"));
     EXPECT_TRUE(mat2.getValue(0, 1).isValid());
     EXPECT_THROW(mat2.setValue(0, 2, Base::Quantity::parse("32 C")), Materials::InvalidIndex);
-
 }
 
 // clang-format on

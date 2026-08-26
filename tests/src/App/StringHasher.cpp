@@ -255,8 +255,8 @@ TEST_F(StringIDTest, toStringWithoutIndex)  // NOLINT
     auto idB = App::StringID(bigHex, QByteArray {"data", 4});
 
     // Act
-    auto resultA = idA.toString();
-    auto resultB = idB.toString();
+    auto resultA = idA.toString(0);
+    auto resultB = idB.toString(0);
 
     // Assert
     EXPECT_EQ(std::string("#1"), resultA);

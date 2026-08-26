@@ -297,6 +297,26 @@ TopoShape::TopoShape(const TopoDS_Shape &shape, long tag, App::StringHasherRef h
     Hasher = hasher;
 }
 
+std::pair<std::string, unsigned long> TopoShape::getElementTypeAndIndex(const char* RawName)
+{
+    // Unlike ComplexGeoData::getTypeAndIndex, which splits any name at all,
+    // this accepts only the three element types a shape actually has, and only
+    // with a real index: "Facer" and a bare "Vertex" are not elements.
+    std::string strName = Data::oldElementName(RawName);
+    const char* Name = strName.c_str();
+    int index = 0;
+    std::string element;
+    boost::regex ex("^(Face|Edge|Vertex)([1-9][0-9]*)$");
+    boost::cmatch what;
+
+    if (boost::regex_match(Name, what, ex)) {
+        element = what[1].str();
+        index = std::atoi(what[2].str().c_str());
+    }
+
+    return std::make_pair(element, index);
+}
+
 const std::vector<const char*>& TopoShape::getElementTypes() const
 {
     static const std::vector<const char*> temp = {"Face","Edge","Vertex"};

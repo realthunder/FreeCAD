@@ -20,26 +20,26 @@
  *                                                                         *
  **************************************************************************/
 
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
 
-#include <Mod/Material/App/PreCompiled.h>
-#ifndef _PreComp_
-#endif
-
+#include <QLocale>
 #include <QMetaType>
 #include <QString>
 
 #include <App/Application.h>
+#include <Base/Interpreter.h>
 #include <Base/Quantity.h>
 #include <Gui/MetaTypes.h>
+#include <src/App/InitApplication.h>
 
 #include <Mod/Material/App/MaterialManager.h>
+#include <Mod/Material/App/MaterialValue.h>
 #include <Mod/Material/App/Model.h>
 #include <Mod/Material/App/ModelManager.h>
 #include <Mod/Material/App/ModelUuids.h>
 
 #ifdef _MSC_VER
-#pragma warning(disable : 4834)
+# pragma warning(disable : 4834)
 #endif
 
 // clang-format off
@@ -48,16 +48,14 @@ class TestMaterial : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     if (App::Application::GetARGC() == 0) {
-        constexpr int argc = 1;
-        std::array<char*, argc> argv {"FreeCAD"};
-        App::Application::Config()["ExeName"] = "FreeCAD";
-        App::Application::init(argc, argv.data());
+        tests::initApplication();
     }
   }
 
   void SetUp() override {
-    _modelManager = new Materials::ModelManager();
-    _materialManager = new Materials::MaterialManager();
+    Base::Interpreter().runString("import Part");
+    _modelManager = &(Materials::ModelManager::getManager());
+    _materialManager = &(Materials::MaterialManager::getManager());
   }
 
   // void TearDown() override {}
@@ -67,62 +65,66 @@ class TestMaterial : public ::testing::Test {
 
 TEST_F(TestMaterial, TestInstallation)
 {
-    EXPECT_NE(_modelManager, nullptr);
+    ASSERT_NE(_modelManager, nullptr);
 
     // We should have loaded at least the system library
-    auto libraries = _materialManager->getMaterialLibraries();
+    auto libraries = _materialManager->getLibraries();
     ASSERT_GT(libraries->size(), 0);
 
     // We should have at least one material
-    auto materials = _materialManager->getMaterials();
+    auto materials = _materialManager->getLocalMaterials();
     ASSERT_GT(materials->size(), 0);
 }
 
 TEST_F(TestMaterial, TestMaterialsWithModel)
 {
+    ASSERT_NE(_materialManager, nullptr);
+
     auto materials = _materialManager->materialsWithModel(
-        QString::fromStdString("f6f9e48c-b116-4e82-ad7f-3659a9219c50")); // IsotropicLinearElastic
+        QStringLiteral("f6f9e48c-b116-4e82-ad7f-3659a9219c50")); // IsotropicLinearElastic
     EXPECT_GT(materials->size(), 0);
 
     auto materialsComplete = _materialManager->materialsWithModelComplete(
-        QString::fromStdString("f6f9e48c-b116-4e82-ad7f-3659a9219c50"));  // IsotropicLinearElastic
+        QStringLiteral("f6f9e48c-b116-4e82-ad7f-3659a9219c50"));  // IsotropicLinearElastic
     EXPECT_LE(materialsComplete->size(), materials->size());
 
     auto materialsLinearElastic = _materialManager->materialsWithModel(
-        QString::fromStdString("7b561d1d-fb9b-44f6-9da9-56a4f74d7536")); // LinearElastic
+        QStringLiteral("7b561d1d-fb9b-44f6-9da9-56a4f74d7536")); // LinearElastic
 
     // All LinearElastic models should be in IsotropicLinearElastic since it is inherited
     EXPECT_LE(materialsLinearElastic->size(), materials->size());
-    for (auto itp = materialsLinearElastic->begin(); itp != materialsLinearElastic->end(); itp++) {
-        auto mat = itp->first;
+    for (auto &itp : *materialsLinearElastic) {
+        auto mat = itp.first;
         EXPECT_NO_THROW(materials->at(mat));
     }
 }
 
 TEST_F(TestMaterial, TestMaterialByPath)
 {
+    ASSERT_NE(_materialManager, nullptr);
+
     auto steel = _materialManager->getMaterialByPath(
-        QString::fromStdString("Standard/Metal/Steel/CalculiX-Steel.FCMat"),
-        QString::fromStdString("System"));
+        QStringLiteral("Standard/Metal/Steel/CalculiX-Steel.FCMat"),
+        QStringLiteral("System"));
     EXPECT_NE(&steel, nullptr);
-    EXPECT_EQ(steel->getName(), QString::fromStdString("CalculiX-Steel"));
-    EXPECT_EQ(steel->getUUID(), QString::fromStdString("92589471-a6cb-4bbc-b748-d425a17dea7d"));
+    EXPECT_EQ(steel->getName(), QStringLiteral("CalculiX-Steel"));
+    EXPECT_EQ(steel->getUUID(), QStringLiteral("92589471-a6cb-4bbc-b748-d425a17dea7d"));
 
     // The same but with a leading '/'
     auto steel2 = _materialManager->getMaterialByPath(
-        QString::fromStdString("/Standard/Metal/Steel/CalculiX-Steel.FCMat"),
-        QString::fromStdString("System"));
+        QStringLiteral("/Standard/Metal/Steel/CalculiX-Steel.FCMat"),
+        QStringLiteral("System"));
     EXPECT_NE(&steel2, nullptr);
-    EXPECT_EQ(steel2->getName(), QString::fromStdString("CalculiX-Steel"));
-    EXPECT_EQ(steel2->getUUID(), QString::fromStdString("92589471-a6cb-4bbc-b748-d425a17dea7d"));
+    EXPECT_EQ(steel2->getName(), QStringLiteral("CalculiX-Steel"));
+    EXPECT_EQ(steel2->getUUID(), QStringLiteral("92589471-a6cb-4bbc-b748-d425a17dea7d"));
 
     // Same with the library name as a prefix
     auto steel3 = _materialManager->getMaterialByPath(
-        QString::fromStdString("/System/Standard/Metal/Steel/CalculiX-Steel.FCMat"),
-        QString::fromStdString("System"));
+        QStringLiteral("/System/Standard/Metal/Steel/CalculiX-Steel.FCMat"),
+        QStringLiteral("System"));
     EXPECT_NE(&steel3, nullptr);
-    EXPECT_EQ(steel3->getName(), QString::fromStdString("CalculiX-Steel"));
-    EXPECT_EQ(steel3->getUUID(), QString::fromStdString("92589471-a6cb-4bbc-b748-d425a17dea7d"));
+    EXPECT_EQ(steel3->getName(), QStringLiteral("CalculiX-Steel"));
+    EXPECT_EQ(steel3->getUUID(), QStringLiteral("92589471-a6cb-4bbc-b748-d425a17dea7d"));
 }
 
 TEST_F(TestMaterial, TestAddPhysicalModel)
@@ -215,16 +217,20 @@ TEST_F(TestMaterial, TestAddAppearanceModel)
     EXPECT_EQ(models->size(), 0);
 }
 
-std::string parseQuantity(const char *string)
+QString parseQuantity(const std::string& value)
 {
-    return Base::Quantity::parse(string).getUserString();
+    auto quantity = Base::Quantity::parse(value);
+    quantity.setFormat(Materials::MaterialValue::getQuantityFormat());
+    return QString::fromStdString(quantity.getUserString());
 }
 
 TEST_F(TestMaterial, TestCalculiXSteel)
 {
-    auto steel = _materialManager->getMaterial(QString::fromStdString("92589471-a6cb-4bbc-b748-d425a17dea7d"));
-    EXPECT_EQ(steel->getName(), QString::fromStdString("CalculiX-Steel"));
-    EXPECT_EQ(steel->getUUID(), QString::fromStdString("92589471-a6cb-4bbc-b748-d425a17dea7d"));
+    ASSERT_NE(_materialManager, nullptr);
+
+    auto steel = _materialManager->getMaterial(QStringLiteral("92589471-a6cb-4bbc-b748-d425a17dea7d"));
+    EXPECT_EQ(steel->getName(), QStringLiteral("CalculiX-Steel"));
+    EXPECT_EQ(steel->getUUID(), QStringLiteral("92589471-a6cb-4bbc-b748-d425a17dea7d"));
 
     EXPECT_TRUE(steel->hasPhysicalModel(Materials::ModelUUIDs::ModelUUID_Mechanical_Density)); // Density
     EXPECT_TRUE(steel->hasPhysicalModel(Materials::ModelUUIDs::ModelUUID_Mechanical_IsotropicLinearElastic)); // IsotropicLinearElastic
@@ -234,109 +240,113 @@ TEST_F(TestMaterial, TestCalculiXSteel)
 
     EXPECT_TRUE(steel->isPhysicalModelComplete(Materials::ModelUUIDs::ModelUUID_Mechanical_Density)); // Density
     EXPECT_FALSE(steel->isPhysicalModelComplete(Materials::ModelUUIDs::ModelUUID_Mechanical_IsotropicLinearElastic)); // IsotropicLinearElastic - incomplete
-    EXPECT_TRUE(steel->isPhysicalModelComplete(Materials::ModelUUIDs::ModelUUID_Thermal_Default)); // Thermal
+    EXPECT_FALSE(steel->isPhysicalModelComplete(Materials::ModelUUIDs::ModelUUID_Thermal_Default)); // Thermal
     EXPECT_FALSE(steel->isPhysicalModelComplete(Materials::ModelUUIDs::ModelUUID_Mechanical_LinearElastic)); // Legacy linear elastic - Not in the model
     EXPECT_TRUE(steel->isAppearanceModelComplete(Materials::ModelUUIDs::ModelUUID_Rendering_Basic)); // BasicRendering - inherited from Steel.FCMat
 
-    EXPECT_TRUE(steel->hasPhysicalProperty(QString::fromStdString("Density")));
-    EXPECT_TRUE(steel->hasPhysicalProperty(QString::fromStdString("BulkModulus")));
-    EXPECT_TRUE(steel->hasPhysicalProperty(QString::fromStdString("PoissonRatio")));
-    EXPECT_TRUE(steel->hasPhysicalProperty(QString::fromStdString("YoungsModulus")));
-    EXPECT_TRUE(steel->hasPhysicalProperty(QString::fromStdString("ShearModulus")));
-    EXPECT_TRUE(steel->hasPhysicalProperty(QString::fromStdString("SpecificHeat")));
-    EXPECT_TRUE(steel->hasPhysicalProperty(QString::fromStdString("ThermalConductivity")));
-    EXPECT_TRUE(steel->hasPhysicalProperty(QString::fromStdString("ThermalExpansionCoefficient")));
-    EXPECT_TRUE(steel->hasAppearanceProperty(QString::fromStdString("AmbientColor")));
-    EXPECT_TRUE(steel->hasAppearanceProperty(QString::fromStdString("DiffuseColor")));
-    EXPECT_TRUE(steel->hasAppearanceProperty(QString::fromStdString("EmissiveColor")));
-    EXPECT_TRUE(steel->hasAppearanceProperty(QString::fromStdString("Shininess")));
-    EXPECT_TRUE(steel->hasAppearanceProperty(QString::fromStdString("SpecularColor")));
-    EXPECT_TRUE(steel->hasAppearanceProperty(QString::fromStdString("Transparency")));
+    EXPECT_TRUE(steel->hasPhysicalProperty(QStringLiteral("Density")));
+    EXPECT_TRUE(steel->hasPhysicalProperty(QStringLiteral("BulkModulus")));
+    EXPECT_TRUE(steel->hasPhysicalProperty(QStringLiteral("PoissonRatio")));
+    EXPECT_TRUE(steel->hasPhysicalProperty(QStringLiteral("YoungsModulus")));
+    EXPECT_TRUE(steel->hasPhysicalProperty(QStringLiteral("ShearModulus")));
+    EXPECT_TRUE(steel->hasPhysicalProperty(QStringLiteral("SpecificHeat")));
+    EXPECT_TRUE(steel->hasPhysicalProperty(QStringLiteral("ThermalConductivity")));
+    EXPECT_TRUE(steel->hasPhysicalProperty(QStringLiteral("ThermalExpansionCoefficient")));
+    EXPECT_TRUE(steel->hasAppearanceProperty(QStringLiteral("AmbientColor")));
+    EXPECT_TRUE(steel->hasAppearanceProperty(QStringLiteral("DiffuseColor")));
+    EXPECT_TRUE(steel->hasAppearanceProperty(QStringLiteral("EmissiveColor")));
+    EXPECT_TRUE(steel->hasAppearanceProperty(QStringLiteral("Shininess")));
+    EXPECT_TRUE(steel->hasAppearanceProperty(QStringLiteral("SpecularColor")));
+    EXPECT_TRUE(steel->hasAppearanceProperty(QStringLiteral("Transparency")));
 
     auto& properties = steel->getPhysicalProperties();
-    EXPECT_NO_THROW(properties.at(QString::fromStdString("Density")));
-    EXPECT_NO_THROW(properties.at(QString::fromStdString("BulkModulus"))); // This is different from the Python behaviour
-    EXPECT_NO_THROW(properties.at(QString::fromStdString("PoissonRatio")));
-    EXPECT_NO_THROW(properties.at(QString::fromStdString("YoungsModulus")));
-    EXPECT_NO_THROW(properties.at(QString::fromStdString("ShearModulus")));
-    EXPECT_NO_THROW(properties.at(QString::fromStdString("SpecificHeat")));
-    EXPECT_NO_THROW(properties.at(QString::fromStdString("ThermalConductivity")));
-    EXPECT_NO_THROW(properties.at(QString::fromStdString("ThermalExpansionCoefficient")));
-    EXPECT_THROW(properties.at(QString::fromStdString("AmbientColor")), std::out_of_range);
-    EXPECT_THROW(properties.at(QString::fromStdString("DiffuseColor")), std::out_of_range);
-    EXPECT_THROW(properties.at(QString::fromStdString("EmissiveColor")), std::out_of_range);
-    EXPECT_THROW(properties.at(QString::fromStdString("Shininess")), std::out_of_range);
-    EXPECT_THROW(properties.at(QString::fromStdString("SpecularColor")), std::out_of_range);
-    EXPECT_THROW(properties.at(QString::fromStdString("Transparency")), std::out_of_range);
+    EXPECT_NO_THROW(properties.at(QStringLiteral("Density")));
+    EXPECT_NO_THROW(properties.at(QStringLiteral("BulkModulus"))); // This is different from the Python behaviour
+    EXPECT_NO_THROW(properties.at(QStringLiteral("PoissonRatio")));
+    EXPECT_NO_THROW(properties.at(QStringLiteral("YoungsModulus")));
+    EXPECT_NO_THROW(properties.at(QStringLiteral("ShearModulus")));
+    EXPECT_NO_THROW(properties.at(QStringLiteral("SpecificHeat")));
+    EXPECT_NO_THROW(properties.at(QStringLiteral("ThermalConductivity")));
+    EXPECT_NO_THROW(properties.at(QStringLiteral("ThermalExpansionCoefficient")));
+    EXPECT_THROW(properties.at(QStringLiteral("AmbientColor")), std::out_of_range);
+    EXPECT_THROW(properties.at(QStringLiteral("DiffuseColor")), std::out_of_range);
+    EXPECT_THROW(properties.at(QStringLiteral("EmissiveColor")), std::out_of_range);
+    EXPECT_THROW(properties.at(QStringLiteral("Shininess")), std::out_of_range);
+    EXPECT_THROW(properties.at(QStringLiteral("SpecularColor")), std::out_of_range);
+    EXPECT_THROW(properties.at(QStringLiteral("Transparency")), std::out_of_range);
 
     auto& properties1 = steel->getAppearanceProperties();
-    EXPECT_THROW(properties1.at(QString::fromStdString("Density")), std::out_of_range);
-    EXPECT_THROW(properties1.at(QString::fromStdString("BulkModulus")), std::out_of_range);
-    EXPECT_THROW(properties1.at(QString::fromStdString("PoissonRatio")), std::out_of_range);
-    EXPECT_THROW(properties1.at(QString::fromStdString("YoungsModulus")), std::out_of_range);
-    EXPECT_THROW(properties1.at(QString::fromStdString("ShearModulus")), std::out_of_range);
-    EXPECT_THROW(properties1.at(QString::fromStdString("SpecificHeat")), std::out_of_range);
-    EXPECT_THROW(properties1.at(QString::fromStdString("ThermalConductivity")), std::out_of_range);
-    EXPECT_THROW(properties1.at(QString::fromStdString("ThermalExpansionCoefficient")), std::out_of_range);
-    EXPECT_NO_THROW(properties1.at(QString::fromStdString("AmbientColor")));
-    EXPECT_NO_THROW(properties1.at(QString::fromStdString("DiffuseColor")));
-    EXPECT_NO_THROW(properties1.at(QString::fromStdString("EmissiveColor")));
-    EXPECT_NO_THROW(properties1.at(QString::fromStdString("Shininess")));
-    EXPECT_NO_THROW(properties1.at(QString::fromStdString("SpecularColor")));
-    EXPECT_NO_THROW(properties1.at(QString::fromStdString("Transparency")));
+    EXPECT_THROW(properties1.at(QStringLiteral("Density")), std::out_of_range);
+    EXPECT_THROW(properties1.at(QStringLiteral("BulkModulus")), std::out_of_range);
+    EXPECT_THROW(properties1.at(QStringLiteral("PoissonRatio")), std::out_of_range);
+    EXPECT_THROW(properties1.at(QStringLiteral("YoungsModulus")), std::out_of_range);
+    EXPECT_THROW(properties1.at(QStringLiteral("ShearModulus")), std::out_of_range);
+    EXPECT_THROW(properties1.at(QStringLiteral("SpecificHeat")), std::out_of_range);
+    EXPECT_THROW(properties1.at(QStringLiteral("ThermalConductivity")), std::out_of_range);
+    EXPECT_THROW(properties1.at(QStringLiteral("ThermalExpansionCoefficient")), std::out_of_range);
+    EXPECT_NO_THROW(properties1.at(QStringLiteral("AmbientColor")));
+    EXPECT_NO_THROW(properties1.at(QStringLiteral("DiffuseColor")));
+    EXPECT_NO_THROW(properties1.at(QStringLiteral("EmissiveColor")));
+    EXPECT_NO_THROW(properties1.at(QStringLiteral("Shininess")));
+    EXPECT_NO_THROW(properties1.at(QStringLiteral("SpecularColor")));
+    EXPECT_NO_THROW(properties1.at(QStringLiteral("Transparency")));
 
-    EXPECT_FALSE(properties[QString::fromStdString("Density")]->isNull());
-    EXPECT_TRUE(properties[QString::fromStdString("BulkModulus")]->isNull());
-    EXPECT_FALSE(properties[QString::fromStdString("PoissonRatio")]->isNull());
-    EXPECT_FALSE(properties[QString::fromStdString("YoungsModulus")]->isNull());
-    EXPECT_TRUE(properties[QString::fromStdString("ShearModulus")]->isNull());
-    EXPECT_FALSE(properties[QString::fromStdString("SpecificHeat")]->isNull());
-    EXPECT_FALSE(properties[QString::fromStdString("ThermalConductivity")]->isNull());
-    EXPECT_FALSE(properties[QString::fromStdString("ThermalExpansionCoefficient")]->isNull());
-    EXPECT_FALSE(properties1[QString::fromStdString("AmbientColor")]->isNull());
-    EXPECT_FALSE(properties1[QString::fromStdString("DiffuseColor")]->isNull());
-    EXPECT_FALSE(properties1[QString::fromStdString("EmissiveColor")]->isNull());
-    EXPECT_FALSE(properties1[QString::fromStdString("Shininess")]->isNull());
-    EXPECT_FALSE(properties1[QString::fromStdString("SpecularColor")]->isNull());
-    EXPECT_FALSE(properties1[QString::fromStdString("Transparency")]->isNull());
+    EXPECT_FALSE(properties[QStringLiteral("Density")]->isNull());
+    EXPECT_TRUE(properties[QStringLiteral("BulkModulus")]->isNull());
+    EXPECT_FALSE(properties[QStringLiteral("PoissonRatio")]->isNull());
+    EXPECT_FALSE(properties[QStringLiteral("YoungsModulus")]->isNull());
+    EXPECT_TRUE(properties[QStringLiteral("ShearModulus")]->isNull());
+    EXPECT_FALSE(properties[QStringLiteral("SpecificHeat")]->isNull());
+    EXPECT_FALSE(properties[QStringLiteral("ThermalConductivity")]->isNull());
+    EXPECT_FALSE(properties[QStringLiteral("ThermalExpansionCoefficient")]->isNull());
+    EXPECT_FALSE(properties1[QStringLiteral("AmbientColor")]->isNull());
+    EXPECT_FALSE(properties1[QStringLiteral("DiffuseColor")]->isNull());
+    EXPECT_FALSE(properties1[QStringLiteral("EmissiveColor")]->isNull());
+    EXPECT_FALSE(properties1[QStringLiteral("Shininess")]->isNull());
+    EXPECT_FALSE(properties1[QStringLiteral("SpecularColor")]->isNull());
+    EXPECT_FALSE(properties1[QStringLiteral("Transparency")]->isNull());
 
-    EXPECT_EQ(properties[QString::fromStdString("Density")]->getString(), parseQuantity("7900.00 kg/m^3"));
-    EXPECT_EQ(properties[QString::fromStdString("PoissonRatio")]->getString(), QString::fromStdString("0.3"));
-    EXPECT_EQ(properties[QString::fromStdString("YoungsModulus")]->getString(), parseQuantity("210.00 GPa"));
-    EXPECT_EQ(properties[QString::fromStdString("SpecificHeat")]->getString(), parseQuantity("590.00 J/kg/K"));
-    EXPECT_EQ(properties[QString::fromStdString("ThermalConductivity")]->getString(), parseQuantity("43.00 W/m/K"));
-    EXPECT_EQ(properties[QString::fromStdString("ThermalExpansionCoefficient")]->getString(), parseQuantity("12.00 µm/m/K"));
-    EXPECT_EQ(properties1[QString::fromStdString("AmbientColor")]->getString(), QString::fromStdString("(0.0020, 0.0020, 0.0020, 1.0)"));
-    EXPECT_EQ(properties1[QString::fromStdString("DiffuseColor")]->getString(), QString::fromStdString("(0.0000, 0.0000, 0.0000, 1.0)"));
-    EXPECT_EQ(properties1[QString::fromStdString("EmissiveColor")]->getString(), QString::fromStdString("(0.0000, 0.0000, 0.0000, 1.0)"));
-    EXPECT_EQ(properties1[QString::fromStdString("Shininess")]->getString(), QString::fromStdString("0.06"));
-    EXPECT_EQ(properties1[QString::fromStdString("SpecularColor")]->getString(), QString::fromStdString("(0.9800, 0.9800, 0.9800, 1.0)"));
-    EXPECT_EQ(properties1[QString::fromStdString("Transparency")]->getString(), QString::fromStdString("0"));
+    QLocale locale;
+    EXPECT_EQ(properties[QStringLiteral("Density")]->getString(), parseQuantity("7900.00 kg/m^3"));
+    EXPECT_EQ(properties[QStringLiteral("PoissonRatio")]->getString(), locale.toString(0.3));
+    EXPECT_EQ(properties[QStringLiteral("YoungsModulus")]->getString(), parseQuantity("210.00 GPa"));
+    EXPECT_EQ(properties[QStringLiteral("SpecificHeat")]->getString(), parseQuantity("590.00 J/kg/K"));
+    EXPECT_EQ(properties[QStringLiteral("ThermalConductivity")]->getString(), parseQuantity("43.00 W/m/K"));
+    EXPECT_EQ(properties[QStringLiteral("ThermalExpansionCoefficient")]->getString(), parseQuantity("12.00 um/m/K"));
+    // The appearance CalculiX-Steel inherits from Appearance/Steel.FCMat was
+    // retuned on this fork: the renderer's BRDF is linear, so the cards store
+    // linear colours and the metals sit on measured F0. Upstream still has the
+    // near-black diffuse and 0.98 specular of the old Phong presets.
+    EXPECT_EQ(properties1[QStringLiteral("AmbientColor")]->getString(), QStringLiteral("(0.2629, 0.2636, 0.2667, 1.0)"));
+    EXPECT_EQ(properties1[QStringLiteral("DiffuseColor")]->getString(), QStringLiteral("(0.4107, 0.4117, 0.4162, 1.0)"));
+    EXPECT_EQ(properties1[QStringLiteral("EmissiveColor")]->getString(), QStringLiteral("(0.0000, 0.0000, 0.0000, 1.0)"));
+    EXPECT_EQ(properties1[QStringLiteral("Shininess")]->getString(), locale.toString(0.6));
+    EXPECT_EQ(properties1[QStringLiteral("SpecularColor")]->getString(), QStringLiteral("(0.7748, 0.7766, 0.7846, 1.0)"));
+    EXPECT_EQ(properties1[QStringLiteral("Transparency")]->getString(), QStringLiteral("0"));
 
-    EXPECT_TRUE(properties[QString::fromStdString("BulkModulus")]->getString().isEmpty());
-    EXPECT_TRUE(properties[QString::fromStdString("ShearModulus")]->getString().isEmpty());
+    EXPECT_TRUE(properties[QStringLiteral("BulkModulus")]->getString().isEmpty());
+    EXPECT_TRUE(properties[QStringLiteral("ShearModulus")]->getString().isEmpty());
 
     // These are the preferred method of access
     //
-    EXPECT_FLOAT_EQ(steel->getPhysicalQuantity(QString::fromStdString("Density")).getValue(), 7.9e-06);
-    EXPECT_FLOAT_EQ(steel->getPhysicalValue(QString::fromStdString("PoissonRatio")).toDouble(), 0.3);
-    EXPECT_FLOAT_EQ(steel->getPhysicalQuantity(QString::fromStdString("YoungsModulus")).getValue(), 210000000.0);
-    EXPECT_FLOAT_EQ(steel->getPhysicalQuantity(QString::fromStdString("SpecificHeat")).getValue(), 590000000.0);
-    EXPECT_FLOAT_EQ(steel->getPhysicalQuantity(QString::fromStdString("ThermalConductivity")).getValue(), 43000.0);
-    EXPECT_FLOAT_EQ(steel->getPhysicalQuantity(QString::fromStdString("ThermalExpansionCoefficient")).getValue(), 1.2e-05);
-    EXPECT_EQ(steel->getAppearanceValue(QString::fromStdString("AmbientColor")), QString::fromStdString("(0.0020, 0.0020, 0.0020, 1.0)"));
-    EXPECT_EQ(steel->getAppearanceValue(QString::fromStdString("DiffuseColor")), QString::fromStdString("(0.0000, 0.0000, 0.0000, 1.0)"));
-    EXPECT_EQ(steel->getAppearanceValue(QString::fromStdString("EmissiveColor")), QString::fromStdString("(0.0000, 0.0000, 0.0000, 1.0)"));
-    EXPECT_FLOAT_EQ(steel->getAppearanceValue(QString::fromStdString("Shininess")).toDouble(), 0.06);
-    EXPECT_EQ(steel->getAppearanceValue(QString::fromStdString("SpecularColor")), QString::fromStdString("(0.9800, 0.9800, 0.9800, 1.0)"));
-    EXPECT_FLOAT_EQ(steel->getAppearanceValue(QString::fromStdString("Transparency")).toDouble(), 0.0);
+    EXPECT_DOUBLE_EQ(steel->getPhysicalQuantity(QStringLiteral("Density")).getValue(), 7.9e-06);
+    EXPECT_NEAR(steel->getPhysicalValue(QStringLiteral("PoissonRatio")).toDouble(), 0.3, 1e-6);
+    EXPECT_DOUBLE_EQ(steel->getPhysicalQuantity(QStringLiteral("YoungsModulus")).getValue(), 210000000.0);
+    EXPECT_DOUBLE_EQ(steel->getPhysicalQuantity(QStringLiteral("SpecificHeat")).getValue(), 590000000.0);
+    EXPECT_DOUBLE_EQ(steel->getPhysicalQuantity(QStringLiteral("ThermalConductivity")).getValue(), 43000.0);
+    EXPECT_DOUBLE_EQ(steel->getPhysicalQuantity(QStringLiteral("ThermalExpansionCoefficient")).getValue(), 1.2e-05);
+    EXPECT_EQ(steel->getAppearanceValue(QStringLiteral("AmbientColor")), QStringLiteral("(0.2629, 0.2636, 0.2667, 1.0)"));
+    EXPECT_EQ(steel->getAppearanceValue(QStringLiteral("DiffuseColor")), QStringLiteral("(0.4107, 0.4117, 0.4162, 1.0)"));
+    EXPECT_EQ(steel->getAppearanceValue(QStringLiteral("EmissiveColor")), QStringLiteral("(0.0000, 0.0000, 0.0000, 1.0)"));
+    EXPECT_NEAR(steel->getAppearanceValue(QStringLiteral("Shininess")).toDouble(), 0.6, 1e-6);
+    EXPECT_EQ(steel->getAppearanceValue(QStringLiteral("SpecularColor")), QStringLiteral("(0.7748, 0.7766, 0.7846, 1.0)"));
+    EXPECT_DOUBLE_EQ(steel->getAppearanceValue(QStringLiteral("Transparency")).toDouble(), 0.0);
 
-    EXPECT_EQ(steel->getPhysicalQuantity(QString::fromStdString("Density")).getUserString(), parseQuantity("7900.00 kg/m^3"));
-    EXPECT_EQ(steel->getPhysicalQuantity(QString::fromStdString("YoungsModulus")).getUserString(), parseQuantity("210.00 GPa"));
-    EXPECT_EQ(steel->getPhysicalQuantity(QString::fromStdString("SpecificHeat")).getUserString(), parseQuantity("590.00 J/kg/K"));
-    EXPECT_EQ(steel->getPhysicalQuantity(QString::fromStdString("ThermalConductivity")).getUserString(), parseQuantity("43.00 W/m/K"));
-    EXPECT_EQ(steel->getPhysicalQuantity(QString::fromStdString("ThermalExpansionCoefficient")).getUserString(), parseQuantity("12.00 µm/m/K"));
-
+    EXPECT_EQ(steel->getPhysicalQuantity(QStringLiteral("Density")).getUserString(), parseQuantity("7900.00 kg/m^3").toStdString());
+    EXPECT_EQ(steel->getPhysicalQuantity(QStringLiteral("YoungsModulus")).getUserString(), parseQuantity("210.00 GPa").toStdString());
+    EXPECT_EQ(steel->getPhysicalQuantity(QStringLiteral("SpecificHeat")).getUserString(), parseQuantity("590.00 J/kg/K").toStdString());
+    EXPECT_EQ(steel->getPhysicalQuantity(QStringLiteral("ThermalConductivity")).getUserString(), parseQuantity("43.00 W/m/K").toStdString());
+    EXPECT_EQ(steel->getPhysicalQuantity(QStringLiteral("ThermalExpansionCoefficient")).getUserString(), parseQuantity("12.00 um/m/K").toStdString());
 }
 
 TEST_F(TestMaterial, TestColumns)
@@ -352,20 +362,20 @@ TEST_F(TestMaterial, TestColumns)
     models = testMaterial.getPhysicalModels();
     EXPECT_EQ(models->size(), 1);
 
-    EXPECT_TRUE(testMaterial.hasPhysicalProperty(QString::fromStdString("TestArray2D")));
-    auto array2d = testMaterial.getPhysicalProperty(QString::fromStdString("TestArray2D"))->getMaterialValue();
+    EXPECT_TRUE(testMaterial.hasPhysicalProperty(QStringLiteral("TestArray2D")));
+    auto array2d = testMaterial.getPhysicalProperty(QStringLiteral("TestArray2D"))->getMaterialValue();
     EXPECT_TRUE(array2d);
-    EXPECT_EQ(static_cast<Materials::Material2DArray &>(*array2d).columns(), 2);
+    EXPECT_EQ(dynamic_cast<Materials::Array2D &>(*array2d).columns(), 2);
 
-    EXPECT_TRUE(testMaterial.hasPhysicalProperty(QString::fromStdString("TestArray2D3Column")));
-    auto array2d3Column = testMaterial.getPhysicalProperty(QString::fromStdString("TestArray2D3Column"))->getMaterialValue();
+    EXPECT_TRUE(testMaterial.hasPhysicalProperty(QStringLiteral("TestArray2D3Column")));
+    auto array2d3Column = testMaterial.getPhysicalProperty(QStringLiteral("TestArray2D3Column"))->getMaterialValue();
     EXPECT_TRUE(array2d3Column);
-    EXPECT_EQ(static_cast<Materials::Material2DArray &>(*array2d3Column).columns(), 3);
+    EXPECT_EQ(dynamic_cast<Materials::Array2D &>(*array2d3Column).columns(), 3);
 
-    EXPECT_TRUE(testMaterial.hasPhysicalProperty(QString::fromStdString("TestArray3D")));
-    auto array3d = testMaterial.getPhysicalProperty(QString::fromStdString("TestArray3D"))->getMaterialValue();
+    EXPECT_TRUE(testMaterial.hasPhysicalProperty(QStringLiteral("TestArray3D")));
+    auto array3d = testMaterial.getPhysicalProperty(QStringLiteral("TestArray3D"))->getMaterialValue();
     EXPECT_TRUE(array3d);
-    EXPECT_EQ(static_cast<Materials::Material3DArray &>(*array3d).columns(), 2);
+    EXPECT_EQ(dynamic_cast<Materials::Array3D &>(*array3d).columns(), 2);
 }
 
 // clang-format on

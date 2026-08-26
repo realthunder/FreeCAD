@@ -44,6 +44,7 @@
 #include <Gui/ViewProvider.h>
 
 #include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/ShapeAnalysis_FreeBoundsFix.h>
 
 #include "TaskLoft.h"
 #include "ui_TaskLoft.h"
@@ -128,7 +129,7 @@ void LoftWidget::findShapes()
             }
             // or all children are edges
             else if (hEdges->Length() == numChilds) {
-                ShapeAnalysis_FreeBounds::ConnectEdgesToWires(hEdges,
+                Part::Fix_ShapeAnalysis_FreeBounds_ConnectEdgesToWires(hEdges,
                     Precision::Confusion(), Standard_False, hWires);
                 if (hWires->Length() == 1)
                     shape = hWires->Value(1);
