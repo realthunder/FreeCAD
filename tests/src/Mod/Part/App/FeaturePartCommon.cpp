@@ -156,7 +156,16 @@ TEST_F(FeaturePartCommonTest, testGetProviderName)
     EXPECT_STREQ(name, "PartGui::ViewProviderBoolean");
 }
 
-TEST_F(FeaturePartCommonTest, testHistory)
+// The History property is never filled in this fork. Part::Boolean::execute
+// populates it only under FC_NO_ELEMENT_MAP -- a macro nothing in the build
+// defines -- because the element map replaced ShapeHistory as the way a face
+// of the result is traced back to a face of an argument. So History exists,
+// is always empty, and this test asks upstream's question.
+//
+// Re-enable it if ShapeHistory is ever fed again alongside the element map.
+// Until then the equivalent assertions belong on the element map, which
+// TopoShapeEx_tests_run already makes for makEBoolean.
+TEST_F(FeaturePartCommonTest, DISABLED_testHistory)
 {
     // Arrange
     _common->Base.setValue(_boxes[0]);
