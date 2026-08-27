@@ -1025,8 +1025,50 @@ Cost: a different simulator (dexel/voxel), much slower, and meshing
 every frame for live scrubbing would hurt. Meshing ON DEMAND -- "the
 shape at step N" -- is the feasible shape of it.
 
-### 11.3 Which
+### 11.3 Ruled: both, swapped on run state
 
-A for live scrubbing in the normal view, B for handing back a shape.
-The request as phrased ("even partially, mill in progress") reads as
-scrubbing, so A first, after stage 3.
+**Pixels while the simulator is running; a mesh once it stops** --
+debounced, and computed off the GUI thread. Ruled 2026-08-27. Stage 3
+comes first.
+
+So Route A is the live view and Route B is what settles in its place
+when the operator stops to look at something. Neither replaces the
+other.
+
+### 11.4 What already exists (checked, not assumed)
+
+Both halves are further along than section 11.2 suggested.
+
+- `PathSimulator/App/` is built **unconditionally** -- `CMakeLists.txt`
+  gates only `AppGL` behind `BUILD_CAM_SIMULATOR_GL`. The volumetric
+  simulator is in every build.
+- It has a full Python API already (`PathSim.pyi`):
+  `BeginSimulation(stock, resolution)`, `SetToolShape`,
+  `ApplyCommand(placement, command)` and
+  **`GetResultMesh() -> tuple[Mesh, Mesh]`** (outer, inner).
+
+`ApplyCommand` being per-command is what makes "the shape at step N"
+reachable at all. So the work is not building either half -- it is the
+SWAP.
+
+### 11.5 The open questions the swap raises
+
+- **! Two simulators, two states.** `AppGL/MillSimulation` and
+  `App/PathSim` are independent, and the mesh must land at the same
+  point in the path as the pixels it replaces or the swap will jump.
+  The volumetric side steps whole COMMANDS (`ApplyCommand`); the GL
+  side tracks `mPathStep` plus a `mSubStep` within a segment. Those
+  granularities may not meet, in which case the swap is only exact at
+  command boundaries. Settle this before designing the debounce --
+  it decides whether "stopped" can mean anywhere or only at a
+  boundary.
+- **Threading.** The tessellation goes to a worker; anything touching
+  the document or the Coin graph must come back to the GUI thread.
+- **Where the mesh lives, and this needs a ruling.** A document object
+  is selectable, measurable and exportable -- the whole point of
+  Route B -- but adds to the tree and the undo stack, and it is
+  transient by nature. A view-provider-only scene graph picks but is
+  not an object. Not decided.
+- **Debounce hook.** `MillSimulationState::mSimPlaying` with
+  `SetPlaying(b)` is the running/stopped signal;
+  `MillSimulation.cpp:556` clears it at the end of a run.
