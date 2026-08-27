@@ -393,3 +393,39 @@ Ruled by the user:
 Ruled 2026-08-28 (second round): the dependency graph is category
 DocView, and a new 3D view always SPLITS (confirmed). Nothing remains
 open; P0 is a go.
+
+## 9. P0 implementation notes (2026-08-28)
+
+Landed as `0985c292a5` (policy) + `10af0c1f8f` (lifetime fixes). What
+the plan did not know:
+
+- `applyLayout` per-leaf tolerance ALREADY existed: the LayoutParser
+  skips an unresolved leaf, flattens single-child groups, and returns
+  false only when NOTHING resolved (the `deleteSelf` at
+  Document.cpp:2901 fires only then). The sec 6 work item was free.
+- `splitCell` keeps the ORIGINAL cell active on purpose (gesture
+  splits stay where the user is), so the policy needed its own
+  activation hook: `ViewArea::activateCellOf(view)`. The MRU state is
+  one int stamp per cell bumped in `setActiveCell`.
+- Restore does not rely on any `isRestoring` flag: the legacy
+  multi-camera branch (Document.cpp:2716) calls the new
+  `ViewPlacement::placeTab` directly, and `hostArea` refuses an area
+  with no `parentWidget()` -- layout restore hosts views into a
+  ViewArea it is still assembling and adds it to the MDI area only
+  afterwards, so a page's `show()` firing mid-parse cannot join (or
+  mutate) the half-built tree.
+- The probe (5 steps under xvfb: doc tab / 3D split / sheet split /
+  dep-graph reuse / second doc tab) exposed a PRE-EXISTING lifetime
+  race that `setCellView` makes easy to reach: `MDIView::closeEvent`
+  detached the view from the document's list but left `_pcDocument`
+  set, counting on the deferred destructor to finish -- a document
+  closed in the same event-loop turn left the destructor's `onClose`
+  walking a freed document. Fixed by finishing the detach at
+  closeEvent time, plus a null-parent guard in
+  `MainWindow::removeWindow` for views replaced out of a cell
+  (parentless, delete pending).
+- Not yet probed: the CAM simulator's split placement (needs a Job
+  document; the one-line conversion in `ViewCAMSimulator::instance` is
+  identical in kind to the sheet/page ones, but the simulator's
+  stacked widget in a half-width cell deserves an eyeball before the
+  workstream closes).
