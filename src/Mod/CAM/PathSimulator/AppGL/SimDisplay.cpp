@@ -37,6 +37,7 @@
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <algorithm>
+#include <cstring>
 #include <numbers>
 
 #include "SimDrawContext.h"
@@ -71,6 +72,7 @@ void SimDisplay::InitShaders()
     mRSampAo = dev->createUniform("s_simAo", Render::UniformType::Sampler);
     mRSampTex = dev->createUniform("s_simTex", Render::UniformType::Sampler);
     mRUniComposite = dev->createUniform("u_simComposite", Render::UniformType::Vec4);
+    mRUniDepthXform = dev->createUniform("u_simDepthXform", Render::UniformType::Mat4);
 
     gSimDraw.uniNormalRot = mRUniNormalRot;
     gSimDraw.uniLightPos = mRUniLightPos;
@@ -215,7 +217,7 @@ void SimDisplay::CleanGL()
             mRUniLightColor, mRUniLightAmbient, mRUniObjectColor,
             mRUniObjectColorAlpha, mRUniParams, mRSampColor,
             mRSampPosition, mRSampNormal, mRSampAo, mRSampTex,
-            mRUniComposite};
+            mRUniComposite, mRUniDepthXform};
         for (auto& u : unis) {
             if (u.valid()) {
                 dev->destroy(u);
@@ -241,7 +243,7 @@ void SimDisplay::CleanGL()
     mRUniNormalRot = mRUniLightPos = mRUniLightColor = {};
     mRUniLightAmbient = mRUniObjectColor = mRUniObjectColorAlpha = {};
     mRUniParams = mRSampColor = mRSampPosition = mRSampNormal = mRSampAo = {};
-    mRSampTex = mRUniComposite = {};
+    mRSampTex = mRUniComposite = mRUniDepthXform = {};
     mRQuadVbo = {};
 
     displayInitiated = false;
@@ -373,17 +375,53 @@ void SimDisplay::RenderCompositeFacade(Render::DrawSurface* surface,
         return;
     }
     surface->setTexture(0, mRSampTex, mRResolveTexture);
+
+    // Attached, this pass also places the simulator's stock in the
+    // depth buffer it shares with the host scene, so the two occlude
+    // each other (docs/CAMSimRenderPort.md sec 8.4). The simulator's
+    // own depth buffer cannot be handed over: its near/far come from
+    // the stock size rather than from the camera
+    // (UpdateCameraProjection), so it is a different depth space
+    // entirely. What IS common is view space -- both cameras are the
+    // same camera -- so the depth is rebuilt from the G-buffer's
+    // view-space position through this matrix.
+    mat4x4 depthXform;
+    mat4x4_identity(depthXform);
+    bool writeDepth = false;
+    float hostView[16];
+    float hostProj[16];
+    if (surface->hostCamera(hostView, hostProj) && mRPosTexture.valid()) {
+        mat4x4 simToWorld;
+        mat4x4_invert(simToWorld, mMatLookAt);
+        mat4x4 hv;
+        mat4x4 hp;
+        std::memcpy(&hv[0][0], hostView, sizeof(hv));
+        std::memcpy(&hp[0][0], hostProj, sizeof(hp));
+        mat4x4 toHostView;
+        mat4x4_mul(toHostView, hv, simToWorld);
+        mat4x4_mul(depthXform, hp, toHostView);
+        writeDepth = true;
+        surface->setTexture(1, mRSampPosition, mRPosTexture);
+    }
+
     // The destination decides whether the image is light or pixels:
     // the host's colour-managed scene target holds linear light and
     // its present pass encodes on the way out, so a display-space
     // image must be decoded here to avoid being encoded twice. The
     // standalone backbuffer is display space already.
+    Render::DrawDevice* dev = Render::DrawDevice::instance();
     const float composite[4] = {surface->hostLinearColor() ? 1.0f : 0.0f,
-                                0.0f, 0.0f, 0.0f};
+                                writeDepth ? 1.0f : 0.0f,
+                                dev && dev->homogeneousDepth() ? 1.0f : 0.0f,
+                                0.0f};
     surface->setUniform(mRUniComposite, composite);
+    surface->setUniform(mRUniDepthXform, &depthXform[0][0]);
     Render::DrawState state;
-    state.depthWrite = false;
-    state.depthFunc = Render::CompareFunc::Always;
+    // Writing depth means testing against it too: the host's scene
+    // geometry is already in there, and the nearer of the two wins.
+    state.depthWrite = writeDepth;
+    state.depthFunc = writeDepth ? Render::CompareFunc::LEqual
+                                 : Render::CompareFunc::Always;
     state.blend = Render::BlendMode::Alpha;
     surface->setState(state);
     surface->setVertexBuffer(mRQuadVbo);

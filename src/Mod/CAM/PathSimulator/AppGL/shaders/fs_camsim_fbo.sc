@@ -17,13 +17,25 @@ $input v_texcoord0
  * is the point of putting the image into the scene buffer at all: it
  * is light in there like everything else, and the default exposure of
  * one is the exact identity.
+ *
+ * u_simComposite.y is set when the destination's depth is shared with
+ * a host scene, and this pass has to place the simulator's stock in
+ * it so the two occlude each other. The simulator's own depth buffer
+ * is no use for that -- it is a private frustum, derived from the
+ * stock size rather than from the camera -- so the depth is rebuilt
+ * from the G-buffer's view-space position through u_simDepthXform,
+ * which carries a texel from the simulator's view space all the way
+ * into the host's clip space. .z says which clip convention that
+ * lands in (see DrawDevice::homogeneousDepth).
  */
 
 #include <bgfx_shader.sh>
 
 SAMPLER2D(s_simTex, 0);
+SAMPLER2D(s_simPosition, 1);
 
 uniform vec4 u_simComposite;
+uniform mat4 u_simDepthXform;
 
 /// sRGB -> linear (IEC 61966-2-1), the inverse of the engine's
 /// fcEncodeSRGB in fs_fc_present.sc. Keep the two in step.
@@ -37,10 +49,41 @@ vec3 camsimDecodeSRGB(vec3 c)
 void main()
 {
 	vec4 color = texture2D(s_simTex, v_texcoord0);
+	if (color.a <= 0.0)
+	{
+		// Nothing of the simulator here. Discarding rather than
+		// blending a transparent texel keeps this pass out of the
+		// depth buffer everywhere it has nothing to say.
+		discard;
+	}
 	if (u_simComposite.x > 0.5)
 	{
 		// Alpha is coverage, never light: it is not decoded.
 		color.rgb = camsimDecodeSRGB(color.rgb);
 	}
+	// Always assigned: a shader that writes gl_FragDepth on only some
+	// paths leaves it undefined on the others. The quad's own depth is
+	// what the standalone path wants, and there depth writes are off
+	// anyway.
+	float depth = gl_FragCoord.z;
+	if (u_simComposite.y > 0.5)
+	{
+		vec4 pos = texture2D(s_simPosition, v_texcoord0);
+		// Texels the geometry pass never wrote -- the tool path over
+		// the background, which draws into a target that shares only
+		// colour and depth -- have no position to place. They take the
+		// far plane, so the host's own geometry decides whether they
+		// are seen: the path is an overlay on the stock, not a solid
+		// with a depth of its own.
+		depth = 1.0;
+		if (pos.w > 0.5)
+		{
+			vec4 clip = mul(u_simDepthXform, vec4(pos.xyz, 1.0));
+			float ndc = clip.z / clip.w;
+			depth = u_simComposite.z > 0.5 ? ndc * 0.5 + 0.5 : ndc;
+			depth = clamp(depth, 0.0, 1.0);
+		}
+	}
+	gl_FragDepth = depth;
 	gl_FragColor = color;
 }

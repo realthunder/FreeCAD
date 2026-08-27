@@ -5939,8 +5939,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // consumer that squirrelled the surface away cannot submit
     // outside it. Everything the callback may need about where it is
     // drawing rides the bind: the scene target, its attachments, its
-    // pixel size (which is the SCENE target's, not the widget's) and
-    // whether its colour is linear.
+    // pixel size (which is the SCENE target's, not the widget's),
+    // whether its colour is linear, and the camera the target was
+    // drawn with -- the last so a consumer can put its own image into
+    // the depth buffer this frame shares. The projection is the one
+    // the scene actually used, jitter included while the idle
+    // accumulator is refining.
     if (consumerPassCount > 0) {
         uint16_t ids[BGFXView::NumConsumerViews];
         for (int c = 0; c < consumerPassCount; ++c)
@@ -5948,7 +5952,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
         consumerSurface->bindFrame(ids, unsigned(consumerPassCount),
                                    view->bgfxFbo, view->bgfxColor,
                                    view->bgfxDepth, int(view->width),
-                                   int(view->height), view->hdrScene);
+                                   int(view->height), view->hdrScene,
+                                   view->viewMatrix, view->projMatrix);
         frameConsumer->drawFrame(consumerSurface->surface());
         consumerSurface->unbindFrame();
     }

@@ -21,6 +21,7 @@
  ****************************************************************************/
 
 #include <cstdio>
+#include <cstring>
 #include <map>
 
 #include "BGFXRendererP.h"
@@ -661,6 +662,12 @@ public:
     bgfx::TextureHandle hostColorTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle hostDepthTex = BGFX_INVALID_HANDLE;
     bool hostLinear = false;
+    /// The host camera of the bound frame, column-major. Only valid
+    /// between bindFrame and unbindFrame -- the host's is a different
+    /// camera every frame.
+    bool hostCameraValid = false;
+    float hostViewMtx[16] = {0};
+    float hostProjMtx[16] = {0};
 
     /// The bgfx view id a pass draws in.
     bgfx::ViewId viewIdOf(unsigned pass) const
@@ -1025,6 +1032,15 @@ public:
     {
         return hostLinear;
     }
+
+    bool hostCamera(float view[16], float proj[16]) const override
+    {
+        if (!isAttached || !hostCameraValid)
+            return false;
+        std::memcpy(view, hostViewMtx, sizeof(hostViewMtx));
+        std::memcpy(proj, hostProjMtx, sizeof(hostProjMtx));
+        return true;
+    }
 };
 
 /// The engine-facing driver of an attached surface
@@ -1058,7 +1074,8 @@ public:
                    bgfx::FrameBufferHandle target,
                    bgfx::TextureHandle colorTex,
                    bgfx::TextureHandle depthTex,
-                   int width, int height, bool linearColor) override
+                   int width, int height, bool linearColor,
+                   const float *viewMtx, const float *projMtx) override
     {
         if (numIds < s.numPasses)
             return;
@@ -1074,6 +1091,11 @@ public:
         s.width = width;
         s.height = height;
         s.hostLinear = linearColor;
+        s.hostCameraValid = viewMtx && projMtx;
+        if (s.hostCameraValid) {
+            std::memcpy(s.hostViewMtx, viewMtx, sizeof(s.hostViewMtx));
+            std::memcpy(s.hostProjMtx, projMtx, sizeof(s.hostProjMtx));
+        }
         s.inFrame = true;
         // The ids move between frames (mapPasses reassigns from what
         // is live), so every pass is re-stated every frame rather than
@@ -1103,6 +1125,7 @@ public:
     void unbindFrame() override
     {
         s.inFrame = false;
+        s.hostCameraValid = false;
     }
 };
 
@@ -1111,6 +1134,12 @@ public:
     bool available() const override
     {
         return _BGFXLib.currentType != bgfx::RendererType::Noop;
+    }
+
+    bool homogeneousDepth() const override
+    {
+        const bgfx::Caps *caps = bgfx::getCaps();
+        return caps && caps->homogeneousDepth;
     }
 
     Render::VertexBufferHandle createVertexBuffer(

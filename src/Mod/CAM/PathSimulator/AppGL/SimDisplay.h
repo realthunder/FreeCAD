@@ -150,10 +150,17 @@ protected:
     Render::ProgramHandle mRProgLighting;
     Render::ProgramHandle mRProgLine;
     // The fullscreen copy (fs_camsim_fbo) the composite pass draws
-    // with, and its one parameter: x is set when the destination holds
-    // linear light and the image has to be decoded on the way in.
+    // with, and its parameters: x is set when the destination holds
+    // linear light and the image has to be decoded on the way in, y
+    // when the destination's depth is shared with a host scene and
+    // this pass has to write into it, z for that host's clip-depth
+    // convention.
     Render::ProgramHandle mRProgCopy;
     Render::UniformHandle mRUniComposite;
+    // Simulator view space -> host clip space, the matrix that places
+    // the simulator's image in the host's depth buffer. Only used, and
+    // only meaningful, on an attached surface.
+    Render::UniformHandle mRUniDepthXform;
     Render::UniformHandle mRUniNormalRot;
     Render::UniformHandle mRUniLightPos;
     Render::UniformHandle mRUniLightColor;

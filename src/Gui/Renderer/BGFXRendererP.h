@@ -2265,12 +2265,15 @@ public:
     virtual Render::DrawSurface &surface() = 0;
     /// Bind this frame: \a ids are the host view ids the consumer's
     /// passes 0..numIds-1 map to (in that order), and the rest
-    /// describes the target they default to.
+    /// describes the target they default to. \a viewMtx and \a projMtx
+    /// are the camera that target was drawn with, which is what lets a
+    /// consumer put its own image into the shared depth buffer.
     virtual void bindFrame(const uint16_t *ids, unsigned numIds,
                            bgfx::FrameBufferHandle target,
                            bgfx::TextureHandle color,
                            bgfx::TextureHandle depth,
-                           int width, int height, bool linearColor) = 0;
+                           int width, int height, bool linearColor,
+                           const float *viewMtx, const float *projMtx) = 0;
     virtual void unbindFrame() = 0;
     /// Passes the surface was built for -- the consumer's own count,
     /// fixed at creation.

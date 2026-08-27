@@ -89,6 +89,16 @@ public:
     /// to this.
     virtual void hostSize(int &width, int &height) const
     { width = 0; height = 0; }
+    /// The camera hostTarget() was drawn with this frame: \a view and
+    /// \a proj are column-major 4x4, as in GL. False when there is no
+    /// host (a standalone surface), leaving both untouched.
+    ///
+    /// A consumer needs these to place its own image in the host's
+    /// depth: its geometry is in its own view space, and only the
+    /// host's view-projection says where that lands in the depth
+    /// buffer everything else in the frame shares.
+    virtual bool hostCamera(float view[16], float proj[16]) const
+    { (void)view; (void)proj; return false; }
     /// True when hostTarget()'s colour holds LINEAR light -- the
     /// colour-managed floating-point scene target, which an output
     /// transform encodes later. A consumer that shades in display

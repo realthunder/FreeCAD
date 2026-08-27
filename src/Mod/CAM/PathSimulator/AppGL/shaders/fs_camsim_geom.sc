@@ -1,9 +1,10 @@
 $input v_normal, v_position
 
 /*
- * FragShaderGeom: the G-buffer write -- color, view-space position,
- * view-space normal (the GL path's RGB32F attachments become RGBA32F,
- * bgfx has no 3-channel float targets), plus the engine's prepass
+ * FragShaderGeom: the G-buffer write -- color, view-space position
+ * (.w = 1 where written), view-space normal (the GL path's RGB32F
+ * attachments become RGBA32F, bgfx has no 3-channel float
+ * targets), plus the engine's prepass
  * packing in attachment 3 for the AO effect service: octahedral
  * viewer-facing normal + positive linear view depth, .w = 1 marking
  * written fragments (the pass clear leaves the background at 0).
@@ -31,7 +32,11 @@ void main()
 {
 	vec3 n = normalize(v_normal);
 	gl_FragData[0] = vec4(u_simObjectColor.rgb, 1.0);
-	gl_FragData[1] = vec4(v_position, 0.0);
+	// .w = 1 marks a written texel: the pass clear leaves the
+	// background at 0, and the composite needs to tell "no geometry
+	// here" from "geometry at the view-space origin" before it turns
+	// this position into a depth (fs_camsim_fbo).
+	gl_FragData[1] = vec4(v_position, 1.0);
 	gl_FragData[2] = vec4(n, 0.0);
 	// Face the normal toward the viewer for the AO input, as the
 	// engine prepass does (view ray = position for perspective, the
