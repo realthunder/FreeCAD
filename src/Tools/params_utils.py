@@ -1253,6 +1253,14 @@ class ParamShortcutEdit(ParamProxy):
     WidgetType = "Gui::PrefAccelLineEdit"
     WidgetSetter = "setDisplayText"
 
+    def widget_default_expr(self, param):
+        # AccelLineEdit::setDisplayText takes the std::string itself,
+        # where the QLineEdit setter a string parameter normally feeds
+        # takes a QString -- so the parameter's wrapped expression does
+        # not compile here.
+        return (f"{param.namespace}::{param.class_name}"
+                f"::default{param.name}()")
+
 
 class Property:
     def __init__(self, name, property_type, doc, group=None, prop_flags=None, static=False):
