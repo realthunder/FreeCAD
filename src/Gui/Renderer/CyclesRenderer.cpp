@@ -21,12 +21,15 @@
  ***************************************************************************/
 
 #include "CyclesRenderer.h"
+#include "CyclesSceneP.h"
+#include "Environment.h"
 
 #ifdef HAVE_CYCLES
 
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <chrono>
 #include <mutex>
 
 #include <QImage>
@@ -37,6 +40,7 @@
 #include "device/device.h"
 #include "scene/background.h"
 #include "scene/camera.h"
+#include "scene/film.h"
 #include "scene/mesh.h"
 #include "scene/object.h"
 #include "scene/pass.h"
@@ -69,6 +73,13 @@ std::vector<DeviceInfo> devices()
 }
 
 bool renderTestScene(const std::string &, int, int, int, const std::string &, std::string *error)
+{
+    if (error)
+        *error = "this build carries no Cycles engine (BUILD_CYCLES is off)";
+    return false;
+}
+
+bool renderScene(const SceneInput &, const std::string &, int, const std::string &, std::string *error, RenderReport *)
 {
     if (error)
         *error = "this build carries no Cycles engine (BUILD_CYCLES is off)";
@@ -129,6 +140,18 @@ unsigned char encode(float v)
     return static_cast<unsigned char>(std::lround(e * 255.0f));
 }
 
+/// 0xRRGGBBAA authored colour, decoded to linear when managed.
+void unpackAuthored(uint32_t rgba, float out[4], bool managed)
+{
+    out[0] = ((rgba >> 24) & 0xff) / 255.0f;
+    out[1] = ((rgba >> 16) & 0xff) / 255.0f;
+    out[2] = ((rgba >> 8) & 0xff) / 255.0f;
+    out[3] = (rgba & 0xff) / 255.0f;
+    if (managed)
+        for (int i = 0; i < 3; ++i)
+            out[i] = srgbToLinear(out[i]);
+}
+
 ccl::Shader *makeDiffuse(ccl::Scene *scene, const char *name, ccl::float3 color)
 {
     ccl::Shader *shader = scene->create_node<ccl::Shader>();
@@ -185,6 +208,157 @@ std::vector<DeviceInfo> devices()
     return out;
 }
 
+namespace {
+
+/// The session parameters every offline render here uses: the named
+/// device, denoising on the same device (a debug build asserts when
+/// that is left unset -- a default DeviceInfo carries the CPU id with
+/// no description, and the session compares the two), one tile,
+/// blocking.
+bool sessionParams(const std::string &deviceType,
+                   int samples,
+                   ccl::SessionParams &sp,
+                   std::string &error)
+{
+    ccl::DeviceType type = ccl::Device::type_from_string(deviceType.c_str());
+    if (type == ccl::DEVICE_NONE) {
+        error = "unknown device type '" + deviceType + "'";
+        return false;
+    }
+    // DEVICE_MASK() spells its cast unqualified, for use inside ccl.
+    ccl::vector<ccl::DeviceInfo> found =
+        ccl::Device::available_devices(ccl::DeviceTypeMask(1 << type));
+    if (found.empty()) {
+        error = "no " + deviceType + " device is available";
+        return false;
+    }
+    sp.device = found.front();
+    sp.denoise_device = sp.device;
+    sp.background = true;
+    sp.headless = true;
+    sp.samples = samples;
+    sp.use_auto_tile = false;
+    sp.tile_size = 0;
+    return true;
+}
+
+/// Bottom-up linear RGBA float to a top-down encoded PNG, composited
+/// over \a background where the film was transparent: a flat colour,
+/// or the vertical gradient the viewer draws (its radial form is
+/// approximated by the same vertical ramp). The encode is the file's
+/// -- the viewport will hand the linear frame to the output transform
+/// instead.
+bool writePng(const std::string &path,
+              int width,
+              int height,
+              const std::vector<float> &pixels,
+              const Render::Background &background,
+              bool managed,
+              std::string &error)
+{
+    float from[4], to[4], mid[4];
+    unpackAuthored(background.fromColor, from, managed);
+    unpackAuthored(background.toColor, to, managed);
+    unpackAuthored(background.midColor, mid, managed);
+    QImage image(width, height, QImage::Format_RGB888);
+    for (int y = 0; y < height; ++y) {
+        // Top row first in the file, and t = 0 at the top of the ramp.
+        const float t = height > 1 ? float(y) / float(height - 1) : 0.0f;
+        float bg[3];
+        for (int i = 0; i < 3; ++i) {
+            if (background.type == Render::Background::Flat)
+                bg[i] = from[i];
+            else if (background.hasMid)
+                bg[i] = t < 0.5f ? from[i] + (mid[i] - from[i]) * (t * 2.0f)
+                                 : mid[i] + (to[i] - mid[i]) * ((t - 0.5f) * 2.0f);
+            else
+                bg[i] = from[i] + (to[i] - from[i]) * t;
+        }
+        const float *src = pixels.data() + size_t(height - 1 - y) * size_t(width) * 4;
+        unsigned char *dst = image.scanLine(y);
+        for (int x = 0; x < width; ++x, src += 4, dst += 3) {
+            // Cycles' combined pass is premultiplied.
+            const float a = std::clamp(src[3], 0.0f, 1.0f);
+            for (int i = 0; i < 3; ++i) {
+                const float v = src[i] + bg[i] * (1.0f - a);
+                dst[i] = managed ? encode(v)
+                                 : static_cast<unsigned char>(
+                                       std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f));
+            }
+        }
+    }
+    if (!image.save(QString::fromStdString(path))) {
+        error = "could not write " + path;
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+bool renderScene(const SceneInput &input,
+                 const std::string &path,
+                 int samples,
+                 const std::string &deviceType,
+                 std::string *error,
+                 RenderReport *report)
+{
+    auto fail = [error](const std::string &message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    const int width = input.camera.width;
+    const int height = input.camera.height;
+    if (width < 1 || height < 1 || samples < 1)
+        return fail("width, height and samples must be positive");
+
+    initOnce();
+    std::string message;
+    ccl::SessionParams sp;
+    if (!sessionParams(deviceType, samples, sp, message))
+        return fail(message);
+    ccl::SceneParams scp;
+
+    auto session = std::make_unique<ccl::Session>(sp, scp);
+    auto driver = std::make_unique<CaptureDriver>();
+    CaptureDriver *capture = driver.get();
+    session->set_output_driver(std::move(driver));
+
+    const bool managed = input.output.transform == OutputConfig::SRGB;
+    RenderReport local;
+    RenderReport &rep = report ? *report : local;
+    SceneTranslator translator(session->scene.get(), managed);
+    translator.translate(input, rep);
+    if (rep.objects == 0)
+        return fail("nothing to render: the scene has no surface draws");
+
+    ccl::Pass *pass = session->scene->create_node<ccl::Pass>();
+    pass->set_name(ccl::ustring("combined"));
+    pass->set_type(ccl::PASS_COMBINED);
+
+    ccl::BufferParams bp;
+    bp.width = width;
+    bp.height = height;
+    bp.full_width = width;
+    bp.full_height = height;
+
+    const auto t0 = std::chrono::steady_clock::now();
+    session->reset(sp, bp);
+    session->start();
+    session->wait();
+    rep.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+    if (session->progress.get_error())
+        return fail("Cycles: " + session->progress.get_error_message());
+    if (!capture->done)
+        return fail("Cycles produced no frame");
+    if (!writePng(path, capture->width, capture->height, capture->pixels,
+                  input.background, managed, message))
+        return fail(message);
+    return true;
+}
+
 bool renderTestScene(const std::string &path,
                      int width,
                      int height,
@@ -202,26 +376,10 @@ bool renderTestScene(const std::string &path,
 
     initOnce();
 
-    ccl::DeviceType type = ccl::Device::type_from_string(deviceType.c_str());
-    if (type == ccl::DEVICE_NONE)
-        return fail("unknown device type '" + deviceType + "'");
-    // DEVICE_MASK() spells its cast unqualified, for use inside ccl.
-    ccl::vector<ccl::DeviceInfo> found =
-        ccl::Device::available_devices(ccl::DeviceTypeMask(1 << type));
-    if (found.empty())
-        return fail("no " + deviceType + " device is available");
-
+    std::string message;
     ccl::SessionParams sp;
-    sp.device = found.front();
-    // Denoise where we render. Left unset, a default-constructed
-    // DeviceInfo carries the CPU id with no description, and the
-    // session's equality check on the two asserts in a debug build.
-    sp.denoise_device = sp.device;
-    sp.background = true;
-    sp.headless = true;
-    sp.samples = samples;
-    sp.use_auto_tile = false;
-    sp.tile_size = 0;
+    if (!sessionParams(deviceType, samples, sp, message))
+        return fail(message);
     ccl::SceneParams scp;
 
     // The session owns the scene and the driver; it is torn down at
@@ -305,20 +463,10 @@ bool renderTestScene(const std::string &path,
     if (!capture->done)
         return fail("Cycles produced no frame");
 
-    // Bottom-up linear float to a top-down encoded PNG.
-    QImage image(capture->width, capture->height, QImage::Format_RGB888);
-    for (int y = 0; y < capture->height; ++y) {
-        const float *src = capture->pixels.data()
-                           + size_t(capture->height - 1 - y) * size_t(capture->width) * 4;
-        unsigned char *dst = image.scanLine(y);
-        for (int x = 0; x < capture->width; ++x, src += 4, dst += 3) {
-            dst[0] = encode(src[0]);
-            dst[1] = encode(src[1]);
-            dst[2] = encode(src[2]);
-        }
-    }
-    if (!image.save(QString::fromStdString(path)))
-        return fail("could not write " + path);
+    // The sky is opaque, so there is nothing to composite over.
+    if (!writePng(path, capture->width, capture->height, capture->pixels,
+                  Render::Background(), true, message))
+        return fail(message);
     return true;
 }
 

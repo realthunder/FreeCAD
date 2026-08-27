@@ -191,6 +191,23 @@ chrome included, when that is what you want.</UserDocu>
         <UserDocu>saveVectorGraphic()</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="cyclesRender" Keyword="true">
+      <Documentation>
+        <UserDocu>cyclesRender(path, width=640, height=480, samples=64, device='CPU') -> dict
+
+Path trace this view with the Cycles engine to a PNG at path
+(docs/CyclesIntegration.md phase 3): the view's render-cache scene,
+its PBR/output/light/background settings and its current camera,
+framed for width x height, with samples per pixel on the named
+device ("CPU", "CUDA", ...). Blocks until the render is done.
+Requires the render-cache bridge (render cache mode 3) and a build
+with BUILD_CYCLES.
+
+Returns a dict of what the translation made of the scene: meshes,
+objects, shaders, triangles, skipped (draws with no path-traced
+form: lines, points, gizmos, effect volumes), seconds.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="saveRenderDump" Keyword="true">
       <Documentation>
         <UserDocu>saveRenderDump(path, source='renderer', mode=None, metadata=True)

@@ -43,6 +43,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include "Camera.h"
+#include "Renderer/CyclesRenderer.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
 #include "ViewProviderDocumentObject.h"
@@ -867,6 +868,43 @@ static void writeRenderDumpSidecar(View3DInventor *view,
         throw Py::RuntimeError("Cannot write sidecar JSON: "
                                + imagePath + ".json");
     file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+}
+
+PyObject* View3DInventorPy::cyclesRender(PyObject *args, PyObject *kwds)
+{
+    char *cPath;
+    int width = 640;
+    int height = 480;
+    int samples = 64;
+    const char *device = "CPU";
+    static char *kwlist[] = {"path", "width", "height", "samples", "device", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "et|iiis", kwlist,
+                                     "utf-8", &cPath, &width, &height, &samples, &device))
+        return nullptr;
+    std::string path(cPath);
+    PyMem_Free(cPath);
+
+    View3DInventorViewer *viewer = getView3DInventorPtr()->getViewer();
+    std::string error;
+    Render::Cycles::RenderReport report;
+    bool ok = false;
+    // The render blocks for as long as the samples take and touches no
+    // Python; the snapshot before it is Coin, not Python, either.
+    Py_BEGIN_ALLOW_THREADS
+    ok = viewer->renderWithCycles(path, width, height, samples, device, &error, &report);
+    Py_END_ALLOW_THREADS
+    if (!ok) {
+        PyErr_SetString(PyExc_RuntimeError, error.c_str());
+        return nullptr;
+    }
+    Py::Dict dict;
+    dict.setItem("meshes", Py::Long(report.meshes));
+    dict.setItem("objects", Py::Long(report.objects));
+    dict.setItem("shaders", Py::Long(report.shaders));
+    dict.setItem("triangles", Py::Long(report.triangles));
+    dict.setItem("skipped", Py::Long(report.skipped));
+    dict.setItem("seconds", Py::Float(report.seconds));
+    return Py::new_reference_to(dict);
 }
 
 PyObject* View3DInventorPy::saveRenderDump(PyObject *args, PyObject *kwds)

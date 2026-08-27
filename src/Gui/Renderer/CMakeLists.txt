@@ -80,7 +80,7 @@ endif(BUILD_DILIGENT)
 # engine absent.
 list(APPEND Renderer_HPP_SRCS CyclesRenderer.h)
 if(BUILD_CYCLES)
-    add_library(FreeCADRendererCycles OBJECT CyclesRenderer.cpp CyclesRenderer.h)
+    add_library(FreeCADRendererCycles OBJECT CyclesRenderer.cpp CyclesScene.cpp CyclesRenderer.h CyclesSceneP.h)
     target_link_libraries(FreeCADRendererCycles
         PUBLIC cycles_embed
         PRIVATE FreeCADBase ${QtCore_LIBRARIES} ${QtWidgets_LIBRARIES})

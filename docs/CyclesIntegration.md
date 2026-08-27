@@ -2,8 +2,9 @@
 
 Bringing Blender's Cycles path tracer into the fork as a vendored
 renderer, feeding a 3D view that draws nothing of its own but the
-selection highlight. **Nothing is built yet** -- this is the plan and
-the rulings, written 2026-08-27; work starts next session.
+selection highlight. Written 2026-08-27 as the plan and the rulings;
+phases 0-3 are built (section 8 carries the record per phase, section
+6.2 the translation as it stands). Phase 4, the viewport, is next.
 
 Related: `docs/RenderEngine.md` (the bgfx engine that hosts the blit),
 `docs/CAMSimRenderPort.md` (sections 8 and 10 -- the borrowed-frame
@@ -406,6 +407,133 @@ pre-encoded. Material colours likewise go to Cycles linear, matching
 the rule already recorded for the bgfx path.
 
 
+### 6.2 What the translation does (phase 3, built 2026-08-28)
+
+`src/Gui/Renderer/CyclesScene.cpp` (`SceneTranslator`, internal header
+`CyclesSceneP.h`) turns a `Render::Cycles::SceneInput` into a
+`ccl::Scene`. The input is the backend-neutral contract every backend
+already consumes -- `Render::DrawCallList` (MeshData + Material +
+model transform), `PBRConfig`, `OutputConfig`, `LightConfig`,
+`Background`, and the two GL-layout camera matrices `render()` takes
+-- so the layer names no Gui type by construction (section 7). The
+Gui side is `View3DInventorViewer::renderWithCycles()`: it translates
+the view's render cache with `RendererBridge::translate` (the same
+call `SoFCRenderer::feedExternal` makes for the bgfx backend), reads
+the configs off the view's settings with the bridge's per-view
+translators, takes the camera off the Coin camera, and hands the
+result to `Render::Cycles::renderScene()`. Python:
+`view.cyclesRender(path, width, height, samples, device)`, returning
+the translation report (meshes, objects, shaders, triangles, skipped,
+seconds).
+
+- **Geometry.** Only filled triangle draws. Each distinct
+  (cacheId, generation, index range, shader) becomes one `ccl::Mesh`
+  and every draw of it one `ccl::Object` with the draw's transform,
+  so the render cache's instancing carries across unchanged: a link
+  of a body is a second Object on the first body's Mesh. Vertex
+  normals ride `ATTR_STD_VERTEX_NORMAL` with smooth triangles; a
+  cache without normals shades flat.
+- **Colour lives on the Object.** The uniform shader graph reads
+  `ObjectInfo.Color` / `ObjectInfo.Alpha` into the Principled BSDF's
+  base colour and alpha, so colour variants of one mesh share both
+  the mesh and the shader. That is the trick Blender uses for its
+  object colour, and the same split the TShape render cache made on
+  the way in (`docs/TShapeRenderCache.md`). Shaders are keyed on the
+  rest -- metallic, roughness, emissive, glass IOR -- and deduplicated
+  across the scene.
+- **Per-vertex and per-face material** draws (`pervertexcolor`, the
+  12-byte `MeshData::materials` stream) resolve their surface per
+  vertex on the CPU and carry it as three vertex attributes
+  (`fc_base`, `fc_pbr` = metallic/roughness/alpha, `fc_emissive`)
+  read by ONE shared attribute shader. A vertex-painted mesh with a
+  thousand colours is one shader, not a thousand.
+- **Material arithmetic is the bgfx path's, ported.** The Khronos
+  spec-gloss solve (`fcBaseFromSpecular`) where nothing states a
+  metalness and `PBRConfig::fromSpecular` asks for it; the
+  shininess-to-roughness mapping the frame selects
+  (`BGFXView::setTriangleFrameState`, the odds transform or the GL
+  exponent, then the fourth root); authored colours and the byte
+  streams decoded to linear when the output transform is colour
+  managed. `Render_Glass` becomes transmission at the stated IOR and
+  roughness; `Render_Light` bodies and unlit draws become emission;
+  `transparent` draws and per-vertex alpha go through the BSDF's
+  alpha.
+- **Environment.** The procedural presets were `BGFXView` members;
+  they are now `Render::envRadianceProcedural` / `sampleEnvImage` in
+  `Environment.h`, shared by the cube map and by Cycles. The Cycles
+  side bakes the environment (preset or user picture) to an
+  equirectangular float image served through a custom
+  `ccl::ImageLoader` into an `EnvironmentTextureNode`, at
+  `envIntensity`. The film's exposure is `OutputConfig::exposure`.
+  The environment is the visible background only where the engine
+  would show it -- PBR on AND `envBackground` (the flag defaults to
+  true, but a Phong frame draws its gradient regardless); otherwise
+  the film is transparent and the PNG
+  writer composites over the view's flat or gradient background --
+  the same composition the viewport will do (host background, Cycles
+  blit over it).
+- **Light.** `LightConfig` becomes a `SunLight` (strength = colour x
+  intensity, half a degree of disc) or a `SpotLight` whose radiant
+  power is the config's irradiance at the distance to the scene
+  centre, so a spot lights the model as brightly as the sun would.
+  Without a light the environment is the only illumination, which for
+  a path tracer is the honest reading of a view with no light.
+- **Camera.** Cycles looks down its own +Z; the camera matrix is
+  `inverse(view) * scale(1, 1, -1)`, Blender's own flip. The
+  projection is read back into the near/far clip and the VIEWPLANE
+  rather than a field of view, which keeps off-centre projections (a
+  boxZoom, a tiled capture) honest; perspective uses a 90 degree
+  fov so the plane is stated in tangents, orthographic in camera
+  units. `farclip` MUST be set: Cycles defaults it to 1e4, which is
+  inside a millimetre-unit model.
+
+**Skipped, and counted in the report:** lines and points (the host's
+overlay, section 5.1), wireframe draw styles, on-top draws,
+navigation gizmos (`skipbounds`), stand-in boxes, and the
+water/cloud/fire/fountain bodies (volumes of the volumetric pass).
+**Not yet translated:** textures (unit-0, per-face, bump, emissive,
+metallic-roughness maps), surface finishes, section clip planes and
+caps, and user shaders. Each is a later step of phase 3, not a
+design gap: Cycles has an image texture node, a displacement path,
+and the clipping can be done with the same mesh-cutting the section
+caps use.
+
+Verified 2026-08-28 (scratchpad `cycles_scene_probe.py` under xvfb: a
+floor, a red box and an `App::Link` of it, a six-colour per-face box,
+a Phong "gold" cylinder -- near-black diffuse, gold specular -- and a
+half-transparent sphere): report `meshes 5, objects 6, shaders 3,
+triangles 522, skipped 12` -- the link shares the box's mesh, the 12
+skipped draws are the edge and vertex sets. The gold reads as metal,
+the per-face colours arrive per face, the sphere is translucent, the
+gradient background composites under the transparent film. Camera
+checks: the sphere renders as a circle in both projections, the
+orthographic sphere is 29 px for a 369.86 camera height over 384 rows
+(as computed), and the floor spans the same pixel range as the live
+viewport grab in both projections. CPU (Debug) 640x480 at 64 spp:
+21 s; CUDA: 0.5 s, and the two agree to 4/255 at most. Trap on the
+way: `view.saveImage(path, w, h)` is NOT a framing reference -- Coin's
+offscreen render keeps the viewer camera's viewport adjustment, so at
+another aspect its picture is squeezed; use `saveRenderDump(source=
+'framebuffer')` at the viewport's own size.
+
+Traps this step paid for:
+
+- `ccl::Attribute` has no `data_float3()` in this Cycles; the accessor
+  is `data_for_write<T>()`, and T must be the STORAGE type: a normal
+  attribute stores `packed_normal`, any other float3 attribute
+  `packed_float3` -- `float3` itself is 16 bytes on SSE and trips the
+  element-size assert (SIGABRT in a debug build).
+- The camera-invisible flag is `PATH_RAY_VISIBILITY_CAMERA`, not
+  `PATH_RAY_CAMERA` (which is a different bit set).
+- The kernel's equirectangular lookup is `u = 0.5 - atan2(y, x) /
+  2pi`, `v = 1 - acos(z) / pi`, and a loader-supplied image has row 0
+  at v = 0 -- the nadir. Bake with that or the sky ends up on the
+  floor.
+- `ImageMetaData` for a loader image: `channels = 4`, `type =
+  IMAGE_DATA_TYPE_FLOAT4`, colorspace scene linear; the pixel buffer
+  is then width x height x 4 floats, no `conform_pixels` needed.
+
+
 ## 7. Preparing for out of process
 
 Cycles is a better candidate for process isolation than OCCT: it is
@@ -478,7 +606,9 @@ Phase 2 -- into the tree, no FreeCAD scene yet. **Done 2026-08-28.**
    `DEVICE_MASK()` spells its cast unqualified, for use inside `ccl`
    only.
 
-Phase 3 -- scene translation (section 6).
+Phase 3 -- scene translation (section 6). **Steps 9 and 10 done
+2026-08-28** (section 6.2); the texture, finish, clipping and user
+shader translations remain.
 
 9. Render cache -> Mesh/Object/Camera/Background, geometry first.
 10. Materials, per-face slots, environment.

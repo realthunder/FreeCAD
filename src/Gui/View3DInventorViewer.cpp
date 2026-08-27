@@ -102,6 +102,7 @@
 # include <QPainter>
 #endif
 
+#include <cstring>
 #include <Inventor/SbImage.h>
 #include <Inventor/sensors/SoTimerSensor.h>
 #include <Inventor/SoEventManager.h>
@@ -166,7 +167,9 @@
 #include "View3DInventorRiftViewer.h"
 #include "View3DViewerPy.h"
 
+#include "Inventor/SoFCRenderCache.h"
 #include "Inventor/SoFCRenderCacheManager.h"
+#include "Inventor/SoFCRendererBridge.h"
 #include <Inventor/draggers/SoCenterballDragger.h>
 #include <Inventor/annex/Profiler/SoProfiler.h>
 #include <Inventor/annex/HardCopy/SoVectorizePSAction.h>
@@ -184,6 +187,7 @@
 #include "Inventor/ScenePublishDelta.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderLink.h"
+#include "Renderer/CyclesRenderer.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
 #include "SceneControl.h"
@@ -2084,6 +2088,52 @@ void View3DInventorViewer::appendDetailPath(SoPath *path, ViewProvider *vp)
 SoFCRenderCacheManager *View3DInventorViewer::getRenderCacheManager() const
 {
     return selectionRoot ? selectionRoot->getRenderManager() : nullptr;
+}
+
+bool View3DInventorViewer::renderWithCycles(const std::string &path, int width, int height,
+                                            int samples, const std::string &device,
+                                            std::string *error,
+                                            Render::Cycles::RenderReport *report)
+{
+    auto fail = [error](const char *message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    if (!Render::Cycles::available())
+        return fail("this build carries no Cycles engine (BUILD_CYCLES is off)");
+    if (width < 1 || height < 1)
+        return fail("width and height must be positive");
+    SoFCRenderCacheManager *manager = getRenderCacheManager();
+    SoFCRenderCache *cache = manager ? manager->getSceneCache() : nullptr;
+    if (!cache)
+        return fail("the view has no render cache (render cache mode 3 is required)");
+    SoCamera *cam = getSoRenderManager()->getCamera();
+    if (!cam)
+        return fail("the view has no camera");
+
+    // The Gui side owns exactly this: the feed and the camera. The
+    // translation (Render::Cycles::renderScene) reads nothing from here.
+    Render::Cycles::SceneInput input;
+    input.draws = RendererBridge::translate(cache->getVertexCaches(true),
+                                            RendererBridge::SectionOnTop());
+    App::PropertyContainer *settings = _pimpl->renderSettings();
+    input.pbr = RendererBridge::translatePBRConfig(settings);
+    input.output = RendererBridge::translateOutputConfig(settings);
+    input.light = RendererBridge::translateLightConfig(nullptr, settings);
+    input.background = _pimpl->backgroundFeed(backgroundColor());
+
+    // Framed for the requested size, not the widget's: the camera's
+    // viewport mapping adjusts the volume to the aspect asked for.
+    SbMatrix viewMat, projMat;
+    SbViewVolume vol = cam->getViewVolume(float(width) / float(height));
+    vol.getMatrices(viewMat, projMat);
+    std::memcpy(input.camera.view, viewMat.getValue(), sizeof(input.camera.view));
+    std::memcpy(input.camera.proj, projMat.getValue(), sizeof(input.camera.proj));
+    input.camera.width = width;
+    input.camera.height = height;
+
+    return Render::Cycles::renderScene(input, path, samples, device, error, report);
 }
 
 void View3DInventorViewer::setEditingTransform(const Base::Matrix4D &mat)

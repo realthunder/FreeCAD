@@ -55,6 +55,7 @@ class SoTransform;
 class SoText2;
 class SoGetBoundingBoxAction;
 class SoFCRenderCacheManager;
+namespace Render::Cycles { struct RenderReport; }
 
 class SoSeparator;
 class SoDetail;
@@ -727,6 +728,22 @@ public:
     /// The render cache manager of this view's selection root (null
     /// when the render-cache bridge is inactive)
     SoFCRenderCacheManager *getRenderCacheManager() const;
+
+    /** Path trace this view with Cycles to a PNG (docs/CyclesIntegration.md
+     * phase 3).
+     *
+     * Snapshots what the view's render cache holds -- the same translated
+     * draw list the bgfx backend is fed -- with the view's PBR, output,
+     * light and background settings and its current camera, framed for
+     * \a width x \a height, and renders it with \a samples per pixel on
+     * the device of the given type ("CPU", "CUDA", ...). Blocks until
+     * the render is done. Requires the render-cache bridge (render cache
+     * mode 3). Returns false with \a error set on failure; \a report, if
+     * given, receives what the translation made of the scene.
+     */
+    bool renderWithCycles(const std::string &path, int width, int height, int samples,
+                          const std::string &device, std::string *error,
+                          Render::Cycles::RenderReport *report = nullptr);
 
     struct Private;
     friend struct Private;

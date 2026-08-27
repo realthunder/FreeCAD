@@ -1,0 +1,705 @@
+/***************************************************************************
+ *   Copyright (c) 2026 Zheng Lei (realthunder) <realthunder.dev@gmail.com>*
+ *                                                                         *
+ *   This file is part of the FreeCAD CAx development system.              *
+ *                                                                         *
+ *   This library is free software; you can redistribute it and/or         *
+ *   modify it under the terms of the GNU Library General Public           *
+ *   License as published by the Free Software Foundation; either          *
+ *   version 2 of the License, or (at your option) any later version.      *
+ *                                                                         *
+ *   This library  is distributed in the hope that it will be useful,      *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU Library General Public License for more details.                  *
+ *                                                                         *
+ *   You should have received a copy of the GNU Library General Public     *
+ *   License along with this library; see the file COPYING.LIB. If not,    *
+ *   write to the Free Software Foundation, Inc., 59 Temple Place,         *
+ *   Suite 330, Boston, MA  02111-1307, USA                                *
+ *                                                                         *
+ ***************************************************************************/
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <memory>
+#include <sstream>
+#include <vector>
+
+#include "CyclesSceneP.h"
+#include "Environment.h"
+
+#include "kernel/types.h"
+#include "scene/attribute.h"
+#include "scene/background.h"
+#include "scene/camera.h"
+#include "scene/film.h"
+#include "scene/image.h"
+#include "scene/image_loader.h"
+#include "scene/light.h"
+#include "scene/mesh.h"
+#include "scene/object.h"
+#include "scene/scene.h"
+#include "scene/shader.h"
+#include "scene/shader_graph.h"
+#include "scene/shader_nodes.h"
+#include "util/colorspace.h"
+#include "util/image_metadata.h"
+#include "util/transform.h"
+
+namespace Render::Cycles {
+
+namespace {
+
+constexpr float kPi = 3.14159265358979323846f;
+
+/// 0xRRGGBBAA authored colour to linear rgb + coverage alpha, the C++
+/// twin of the bgfx path's unpackAuthoredColor: decoded when the
+/// pipeline is colour managed, taken raw when it is not (then the two
+/// errors cancel the way they always did). Alpha is never decoded.
+void unpackAuthored(uint32_t rgba, float out[4], bool managed)
+{
+    out[0] = ((rgba >> 24) & 0xff) / 255.0f;
+    out[1] = ((rgba >> 16) & 0xff) / 255.0f;
+    out[2] = ((rgba >> 8) & 0xff) / 255.0f;
+    out[3] = (rgba & 0xff) / 255.0f;
+    if (managed)
+        for (int i = 0; i < 3; ++i)
+            out[i] = srgbToLinear(out[i]);
+}
+
+/// Same for the rgb(a)8 byte streams (vertex colours, the per-face
+/// material stream), which fc_color.sh decodes on the GPU.
+void unpackBytes(const uint8_t *p, int n, float out[4], bool managed)
+{
+    for (int i = 0; i < 4; ++i)
+        out[i] = i < n ? p[i] / 255.0f : 1.0f;
+    if (managed)
+        for (int i = 0; i < 3; ++i)
+            out[i] = srgbToLinear(out[i]);
+}
+
+float perceivedBrightness(const float c[3])
+{
+    return std::sqrt(0.299f * c[0] * c[0] + 0.587f * c[1] * c[1] + 0.114f * c[2] * c[2]);
+}
+
+/// Khronos' specular-glossiness to metallic-roughness solve, the C++
+/// twin of fcBaseFromSpecular in fc_mesh_lighting.sh: the metalness
+/// for which a dielectric f0 of 0.04 and a base colour reproduce the
+/// Phong diffuse/specular pair, then the base recombined from both
+/// readings, trusting the specular one as the surface turns metallic.
+void baseFromSpecular(const float diffuse[3], const float spec[3], float base[3], float &metal)
+{
+    const float dielectric = 0.04f;
+    const float oneMinusSS = 1.0f - std::max({spec[0], spec[1], spec[2]});
+    const float ds = perceivedBrightness(diffuse);
+    const float ss = perceivedBrightness(spec);
+    const float b = ds * oneMinusSS / (1.0f - dielectric) + ss - 2.0f * dielectric;
+    const float c = dielectric - ss;
+    const float disc = std::max(b * b - 4.0f * dielectric * c, 0.0f);
+    metal = ss < dielectric
+        ? 0.0f
+        : std::clamp((-b + std::sqrt(disc)) / (2.0f * dielectric), 0.0f, 1.0f);
+    const float wd = oneMinusSS / (1.0f - dielectric) / std::max(1.0f - metal, 1.0e-4f);
+    const float m2 = metal * metal;
+    for (int i = 0; i < 3; ++i) {
+        const float fromDiffuse = diffuse[i] * wd;
+        const float fromSpec = (spec[i] - dielectric * (1.0f - metal)) / std::max(metal, 1.0e-4f);
+        base[i] = std::clamp(fromDiffuse + (fromSpec - fromDiffuse) * m2, 0.0f, 1.0f);
+    }
+}
+
+/// Phong shininess (0..1) to GGX roughness, as BGFXView::
+/// setTriangleFrameState does it: the exponent the frame's mapping
+/// reads out of the shininess, then the fourth root of 2 / (n + 2).
+float roughnessFromShininess(float shininess, int mapping)
+{
+    shininess = std::clamp(shininess, 0.0f, 1.0f);
+    float exponent;
+    if (mapping == 1) {
+        const float denom = std::max(1.0f - shininess, 1.0e-4f);
+        exponent = 128.0f * shininess / denom;
+    }
+    else
+        exponent = shininess * 128.0f;
+    return std::pow(2.0f / (exponent + 2.0f), 0.25f);
+}
+
+/// GL-layout (column-major) 4x4 to Cycles' 3x4 affine.
+ccl::Transform toTransform(const float m[16])
+{
+    ccl::Transform t;
+    t.x = ccl::make_float4(m[0], m[4], m[8], m[12]);
+    t.y = ccl::make_float4(m[1], m[5], m[9], m[13]);
+    t.z = ccl::make_float4(m[2], m[6], m[10], m[14]);
+    return t;
+}
+
+/// An affine frame whose z axis is \a z (unit), for placing a light.
+ccl::Transform frameAlongZ(const float z[3], const float origin[3])
+{
+    ccl::float3 az = ccl::normalize(ccl::make_float3(z[0], z[1], z[2]));
+    ccl::float3 helper = std::fabs(az.z) < 0.9f ? ccl::make_float3(0.0f, 0.0f, 1.0f)
+                                                : ccl::make_float3(1.0f, 0.0f, 0.0f);
+    ccl::float3 ax = ccl::normalize(ccl::cross(helper, az));
+    ccl::float3 ay = ccl::cross(az, ax);
+    ccl::Transform t;
+    t.x = ccl::make_float4(ax.x, ay.x, az.x, origin[0]);
+    t.y = ccl::make_float4(ax.y, ay.y, az.y, origin[1]);
+    t.z = ccl::make_float4(ax.z, ay.z, az.z, origin[2]);
+    return t;
+}
+
+/// The environment baked to an equirectangular float picture the
+/// engine's image manager serves to the world shader. Baked, rather
+/// than described, because the procedural presets are C++ functions
+/// of direction (Environment.h) with no Cycles node equivalent, and
+/// baking a user picture through the same sampler keeps both the
+/// sphere-map convention and the sRGB decode in one place.
+///
+/// Layout follows the kernel's direction_to_equirectangular: column u
+/// = 0.5 - atan2(y, x) / 2pi, row v = 1 - acos(z) / pi, row 0 at the
+/// nadir.
+class BakedEnvironment : public ccl::ImageLoader
+{
+public:
+    BakedEnvironment(const PBRConfig &pbr, bool managed, int width, int height)
+        : width(width)
+        , height(height)
+    {
+        rgba.resize(size_t(width) * size_t(height) * 4);
+        for (int y = 0; y < height; ++y) {
+            const float v = (y + 0.5f) / height;
+            const float theta = (1.0f - v) * kPi;
+            const float st = std::sin(theta);
+            const float ct = std::cos(theta);
+            for (int x = 0; x < width; ++x) {
+                const float u = (x + 0.5f) / width;
+                const float phi = (0.5f - u) * 2.0f * kPi;
+                const float d[3] = {st * std::cos(phi), st * std::sin(phi), ct};
+                float *px = rgba.data() + (size_t(y) * width + x) * 4;
+                px[0] = px[1] = px[2] = 0.0f;
+                envRadiance(pbr, d, px, managed);
+                px[3] = 1.0f;
+            }
+        }
+    }
+
+    bool load_metadata(ccl::ImageMetaData &metadata,
+                       const ccl::ImageLoaderParams & /*params*/,
+                       ccl::Progress & /*progress*/) override
+    {
+        metadata.width = width;
+        metadata.height = height;
+        metadata.channels = 4;
+        metadata.type = ccl::IMAGE_DATA_TYPE_FLOAT4;
+        metadata.colorspace = ccl::u_colorspace_scene_linear;
+        metadata.is_compressible_as_srgb = false;
+        return true;
+    }
+
+    bool load_pixels(const ccl::ImageMetaData & /*metadata*/, void *pixels) override
+    {
+        std::memcpy(pixels, rgba.data(), rgba.size() * sizeof(float));
+        return true;
+    }
+
+    ccl::string name() const override
+    {
+        return "FreeCAD environment";
+    }
+
+    bool equals(const ccl::ImageLoader &other) const override
+    {
+        return this == &other;
+    }
+
+private:
+    int width;
+    int height;
+    std::vector<float> rgba;
+};
+
+}  // namespace
+
+SceneTranslator::SceneTranslator(ccl::Scene *scene, bool colorManaged)
+    : scene(scene)
+    , managed(colorManaged)
+{}
+
+void SceneTranslator::translate(const SceneInput &input, RenderReport &report)
+{
+    translateCamera(input.camera);
+    translateWorld(input.pbr, input.output);
+
+    float sceneMin[3] = {0.0f, 0.0f, 0.0f};
+    float sceneMax[3] = {-1.0f, -1.0f, -1.0f};
+    for (const DrawCall &draw : input.draws) {
+        if (!translateDraw(draw, input.pbr, report)) {
+            ++report.skipped;
+            continue;
+        }
+        if (draw.bboxMin[0] > draw.bboxMax[0])
+            continue;
+        if (sceneMin[0] > sceneMax[0]) {
+            std::copy(draw.bboxMin, draw.bboxMin + 3, sceneMin);
+            std::copy(draw.bboxMax, draw.bboxMax + 3, sceneMax);
+            continue;
+        }
+        for (int i = 0; i < 3; ++i) {
+            sceneMin[i] = std::min(sceneMin[i], draw.bboxMin[i]);
+            sceneMax[i] = std::max(sceneMax[i], draw.bboxMax[i]);
+        }
+    }
+    translateLight(input.light, sceneMin, sceneMax);
+
+    report.meshes = int(meshes.size());
+    report.shaders = int(shaders.size()) + (attrShader ? 1 : 0);
+}
+
+void SceneTranslator::translateCamera(const CameraInput &camera)
+{
+    ccl::Camera *cam = scene->camera;
+    const float *p = camera.proj;
+    cam->set_full_width(camera.width);
+    cam->set_full_height(camera.height);
+
+    // Cycles' camera looks down its own +Z; a GL eye space looks down
+    // -Z. Blender's sync flips the same axis on its camera matrix, and
+    // the flip is what keeps the image unmirrored: eye x stays x.
+    ccl::Transform camToWorld = ccl::transform_inverse(toTransform(camera.view))
+                                * ccl::transform_scale(1.0f, 1.0f, -1.0f);
+    cam->set_matrix(camToWorld);
+
+    // The projection is read back into what Cycles wants stated: the
+    // clip range, and the viewplane -- the screen-space rectangle the
+    // raster covers. Off-centre projections (a boxZoom, a tiled
+    // capture) survive that way; a field of view alone would not
+    // carry them.
+    const bool ortho = p[15] != 0.0f;
+    if (ortho) {
+        cam->set_camera_type(ccl::CAMERA_ORTHOGRAPHIC);
+        cam->set_nearclip((1.0f + p[14]) / p[10]);
+        cam->set_farclip((p[14] - 1.0f) / p[10]);
+        // x_ndc = p0 x + p12: the plane in camera units.
+        cam->set_viewplane_left((-1.0f - p[12]) / p[0]);
+        cam->set_viewplane_right((1.0f - p[12]) / p[0]);
+        cam->set_viewplane_bottom((-1.0f - p[13]) / p[5]);
+        cam->set_viewplane_top((1.0f - p[13]) / p[5]);
+    }
+    else {
+        cam->set_camera_type(ccl::CAMERA_PERSPECTIVE);
+        cam->set_nearclip(p[14] / (p[10] - 1.0f));
+        cam->set_farclip(p[14] / (p[10] + 1.0f));
+        // A 90 degree fov makes Cycles' perspective scale exactly one,
+        // so the viewplane is stated in tangents: at z = -1 in eye
+        // space, x_ndc = p0 x - p8.
+        cam->set_fov(kPi * 0.5f);
+        cam->set_viewplane_left((-1.0f + p[8]) / p[0]);
+        cam->set_viewplane_right((1.0f + p[8]) / p[0]);
+        cam->set_viewplane_bottom((-1.0f + p[9]) / p[5]);
+        cam->set_viewplane_top((1.0f + p[9]) / p[5]);
+    }
+    cam->need_flags_update = true;
+    cam->need_device_update = true;
+}
+
+void SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &output)
+{
+    // The exposure is a multiplier on the linear frame before it is
+    // encoded, and only a colour-managed frame has one
+    // (OutputConfig::exposure); Cycles' film applies exactly that.
+    scene->film->set_exposure(output.transform == OutputConfig::SRGB && output.exposure > 0.0f
+                              ? output.exposure : 1.0f);
+
+    // The environment lights the scene either way; whether it is SEEN
+    // is envBackground -- which the engine honours only while PBR is
+    // on (a Phong frame draws its gradient whatever the flag says), so
+    // the same gate applies here. Where it is not seen, the film goes
+    // transparent and the frame is composited over the host's own
+    // background -- which is how the viewport will do it too (the host
+    // draws its gradient, the Cycles image blits over it).
+    scene->background->set_transparent(!(pbr.enabled && pbr.envBackground));
+
+    const int width = pbr.envImage && pbr.envImage->width > 0
+        ? std::clamp(pbr.envImage->width, 256, 4096) : 1024;
+    const int height = std::max(width / 2, 128);
+    auto loader = std::make_unique<BakedEnvironment>(pbr, managed, width, height);
+    ccl::ImageParams params;
+    params.interpolation = ccl::INTERPOLATION_LINEAR;
+    params.extension = ccl::EXTENSION_REPEAT;
+    params.colorspace = ccl::u_colorspace_scene_linear;
+
+    ccl::Shader *shader = scene->default_background;
+    auto graph = std::make_unique<ccl::ShaderGraph>();
+    auto *env = graph->create_node<ccl::EnvironmentTextureNode>();
+    env->handle = scene->image_manager->add_image(std::move(loader), params);
+    env->set_projection(ccl::NODE_ENVIRONMENT_EQUIRECTANGULAR);
+    env->set_colorspace(ccl::u_colorspace_scene_linear);
+    auto *bg = graph->create_node<ccl::BackgroundNode>();
+    bg->set_strength(std::max(pbr.envIntensity, 0.0f));
+    graph->connect(env->output("Color"), bg->input("Color"));
+    graph->connect(bg->output("Background"), graph->output()->input("Surface"));
+    shader->set_graph(std::move(graph));
+    shader->tag_update(scene);
+}
+
+void SceneTranslator::translateLight(const LightConfig &light,
+                                     const float sceneMin[3],
+                                     const float sceneMax[3])
+{
+    if (!light.valid)
+        return;
+    float color[4];
+    unpackAuthored(light.color, color, managed);
+    const float intensity = std::max(light.intensity, 0.0f);
+
+    ccl::Light *node = nullptr;
+    ccl::Transform tfm;
+    if (light.spot) {
+        auto *spot = scene->create_node<ccl::SpotLight>();
+        // A point light's strength is radiant power; the config's
+        // intensity is the irradiance it delivers at the scene, as a
+        // sun's is. Convert at the distance to the scene centre so a
+        // spot lights the model as brightly as the sun would.
+        float centre[3];
+        float dist2 = 0.0f;
+        for (int i = 0; i < 3; ++i) {
+            centre[i] = sceneMin[i] <= sceneMax[i]
+                ? 0.5f * (sceneMin[i] + sceneMax[i]) : light.position[i];
+            const float d = centre[i] - light.position[i];
+            dist2 += d * d;
+        }
+        const float power = intensity * 4.0f * kPi * std::max(dist2, 1.0f);
+        spot->set_strength(ccl::make_float3(color[0], color[1], color[2]) * power);
+        spot->set_angle(2.0f * std::clamp(light.cutOffAngle, 0.01f, kPi * 0.5f));
+        spot->set_smooth(std::clamp(light.dropOffRate, 0.0f, 1.0f));
+        spot->set_radius(0.0f);
+        // Cycles emits a spot along MINUS its frame's z.
+        const float back[3] = {-light.direction[0], -light.direction[1], -light.direction[2]};
+        tfm = frameAlongZ(back, light.position);
+        node = spot;
+    }
+    else {
+        auto *sun = scene->create_node<ccl::SunLight>();
+        sun->set_strength(ccl::make_float3(color[0], color[1], color[2]) * intensity);
+        // Half a degree, the real sun: enough to soften the shadow
+        // edge the way the engine's filtered shadow map does.
+        sun->set_angle(0.5f * kPi / 180.0f);
+        // Cycles reads the direction TOWARD a sun off minus its z, so
+        // the frame's z is the config's light-to-scene direction.
+        const float origin[3] = {0.0f, 0.0f, 0.0f};
+        tfm = frameAlongZ(light.direction, origin);
+        node = sun;
+    }
+    node->set_cast_shadow(light.shadow);
+    node->set_use_mis(true);
+    ccl::array<ccl::Node *> used;
+    used.push_back_slow(scene->default_light);
+    node->set_used_shaders(used);
+
+    ccl::Object *object = scene->create_node<ccl::Object>();
+    object->set_tfm(tfm);
+    object->set_visibility(ccl::PATH_RAY_VISIBILITY_ALL & ~ccl::PATH_RAY_VISIBILITY_CAMERA);
+    object->set_geometry(node);
+}
+
+SceneTranslator::Surface SceneTranslator::resolveSurface(const Material &m,
+                                                         const PBRConfig &pbr,
+                                                         const uint8_t *vertexColor,
+                                                         const uint8_t *materialStream) const
+{
+    Surface s;
+    float diffuse[4];
+    if (vertexColor)
+        unpackBytes(vertexColor, 4, diffuse, managed);
+    else
+        unpackAuthored(m.diffuse, diffuse, managed);
+    float specular[4];
+    float emissive[4];
+    float shininess = m.shininess;
+    float streamMetal = -1.0f;
+    float streamRough = -1.0f;
+    if (materialStream) {
+        // rgba8 emissive, rgb8 specular + quantized shininess, then
+        // the palette indices this translation does not read yet.
+        unpackBytes(materialStream, 4, emissive, managed);
+        unpackBytes(materialStream + 4, 3, specular, managed);
+        shininess = materialStream[7] / 255.0f;
+        if (m.perfacepbr) {
+            streamMetal = materialStream[3] / 255.0f;
+            streamRough = materialStream[7] / 255.0f;
+        }
+    }
+    else {
+        unpackAuthored(m.specular, specular, managed);
+        unpackAuthored(m.emissive, emissive, managed);
+    }
+
+    std::copy(diffuse, diffuse + 3, s.base);
+    s.alpha = 1.0f;
+    if (m.transparent || vertexColor)
+        s.alpha = diffuse[3];
+
+    // Metalness: the material's own, the stream's, the frame's; and
+    // where none of them states one, the Phong specular colour read as
+    // material data (PBRConfig::fromSpecular).
+    float metal = m.metallic >= 0.0f ? m.metallic : streamMetal >= 0.0f ? streamMetal : pbr.metallic;
+    if (pbr.fromSpecular && m.metallic < 0.0f && streamMetal < 0.0f && pbr.metallic <= 0.0f)
+        baseFromSpecular(diffuse, specular, s.base, metal);
+    s.metallic = std::clamp(metal, 0.0f, 1.0f);
+
+    float rough = m.roughness >= 0.0f ? m.roughness : streamRough >= 0.0f ? streamRough : pbr.roughness;
+    if (rough <= 0.0f)
+        rough = roughnessFromShininess(shininess, pbr.shininessMapping);
+    s.roughness = std::clamp(rough, 0.02f, 1.0f);
+
+    std::copy(emissive, emissive + 3, s.emissive);
+    if (emissive[0] > 0.0f || emissive[1] > 0.0f || emissive[2] > 0.0f)
+        s.emissiveStrength = 1.0f;
+
+    if (!m.lighting) {
+        s.unlit = true;
+        s.emissiveStrength = 1.0f;
+    }
+    if (m.lightsource) {
+        // A bulb: unshaded at its colour and bright by its intensity,
+        // and in a path tracer it actually lights its surroundings.
+        s.unlit = true;
+        s.emissiveStrength = m.lightintensity > 0.0f ? m.lightintensity : 1.0f;
+    }
+    if (m.glass) {
+        s.glass = true;
+        s.ior = m.glassior > 0.0f ? m.glassior : 1.5f;
+        s.glassRoughness = std::clamp(m.glassroughness, 0.0f, 1.0f);
+        s.alpha = 1.0f;
+    }
+    return s;
+}
+
+ccl::Shader *SceneTranslator::uniformShader(const Surface &s)
+{
+    // The base colour and the alpha are the object's, so the key is
+    // everything else; two draws that differ only in colour share
+    // the shader as they share the mesh.
+    std::ostringstream key;
+    key.precision(4);
+    key << (s.unlit ? "u" : s.glass ? "g" : "p") << ':' << s.metallic << ':' << s.roughness
+        << ':' << s.emissive[0] << ',' << s.emissive[1] << ',' << s.emissive[2]
+        << ':' << s.emissiveStrength << ':' << s.ior << ':' << s.glassRoughness;
+    auto it = shaders.find(key.str());
+    if (it != shaders.end())
+        return it->second;
+
+    ccl::Shader *shader = scene->create_node<ccl::Shader>();
+    shader->name = ccl::ustring(key.str());
+    auto graph = std::make_unique<ccl::ShaderGraph>();
+    auto *info = graph->create_node<ccl::ObjectInfoNode>();
+    if (s.unlit) {
+        auto *emission = graph->create_node<ccl::EmissionNode>();
+        emission->set_strength(s.emissiveStrength);
+        graph->connect(info->output("Color"), emission->input("Color"));
+        graph->connect(emission->output("Emission"), graph->output()->input("Surface"));
+    }
+    else {
+        auto *bsdf = graph->create_node<ccl::PrincipledBsdfNode>();
+        bsdf->set_metallic(s.metallic);
+        bsdf->set_roughness(s.glass ? s.glassRoughness : s.roughness);
+        bsdf->set_ior(s.ior);
+        if (s.glass)
+            bsdf->set_transmission_weight(1.0f);
+        if (s.emissiveStrength > 0.0f) {
+            bsdf->set_emission_color(ccl::make_float3(s.emissive[0], s.emissive[1], s.emissive[2]));
+            bsdf->set_emission_strength(s.emissiveStrength);
+        }
+        graph->connect(info->output("Color"), bsdf->input("Base Color"));
+        if (!s.glass)
+            graph->connect(info->output("Alpha"), bsdf->input("Alpha"));
+        graph->connect(bsdf->output("BSDF"), graph->output()->input("Surface"));
+    }
+    shader->set_graph(std::move(graph));
+    shader->tag_update(scene);
+    shaders[key.str()] = shader;
+    return shader;
+}
+
+ccl::Shader *SceneTranslator::attributeShader()
+{
+    if (attrShader)
+        return attrShader;
+    // One graph for every per-vertex draw: the mesh carries the
+    // resolved surface as attributes (fc_base, fc_pbr = metallic /
+    // roughness / alpha, fc_emissive), which is what keeps a
+    // thousand-colour vertex-painted mesh at one shader instead of
+    // a thousand.
+    ccl::Shader *shader = scene->create_node<ccl::Shader>();
+    shader->name = ccl::ustring("fc_attributes");
+    auto graph = std::make_unique<ccl::ShaderGraph>();
+    auto *base = graph->create_node<ccl::AttributeNode>();
+    base->set_attribute(ccl::ustring("fc_base"));
+    auto *pbrAttr = graph->create_node<ccl::AttributeNode>();
+    pbrAttr->set_attribute(ccl::ustring("fc_pbr"));
+    auto *emissive = graph->create_node<ccl::AttributeNode>();
+    emissive->set_attribute(ccl::ustring("fc_emissive"));
+    auto *split = graph->create_node<ccl::SeparateXYZNode>();
+    auto *bsdf = graph->create_node<ccl::PrincipledBsdfNode>();
+    bsdf->set_emission_strength(1.0f);
+    graph->connect(pbrAttr->output("Vector"), split->input("Vector"));
+    graph->connect(base->output("Color"), bsdf->input("Base Color"));
+    graph->connect(split->output("X"), bsdf->input("Metallic"));
+    graph->connect(split->output("Y"), bsdf->input("Roughness"));
+    graph->connect(split->output("Z"), bsdf->input("Alpha"));
+    graph->connect(emissive->output("Color"), bsdf->input("Emission Color"));
+    graph->connect(bsdf->output("BSDF"), graph->output()->input("Surface"));
+    shader->set_graph(std::move(graph));
+    shader->tag_update(scene);
+    attrShader = shader;
+    return shader;
+}
+
+bool SceneTranslator::translateDraw(const DrawCall &draw, const PBRConfig &pbr, RenderReport &report)
+{
+    const Material &m = draw.material;
+    // A path tracer renders surfaces. Lines and points are the host's
+    // overlay (docs/CyclesIntegration.md sec 5.1); a wireframe draw
+    // style, an on-top draw and a navigation gizmo are not scene
+    // content; a stand-in box is not the shape; and the effect bodies
+    // are volumes the volumetric pass raymarches, not geometry.
+    if (m.type != Material::Triangle || m.drawstyle != Material::DrawFilled)
+        return false;
+    if (m.ontop || draw.skipbounds || draw.standIn)
+        return false;
+    if (m.water || m.cloud || m.fire || m.fountain)
+        return false;
+    const MeshData *mesh = draw.mesh.get();
+    if (!mesh || !mesh->positions || mesh->numTriangleIndices < 3)
+        return false;
+
+    int start = draw.indexStart;
+    int count = draw.indexCount > 0 ? draw.indexCount : mesh->numTriangleIndices - start;
+    if (start < 0 || count < 3 || start + count > mesh->numTriangleIndices)
+        return false;
+    count -= count % 3;
+
+    const bool perVertex = m.pervertexcolor || (m.perfacematerial && mesh->materials);
+    const uint8_t *stream = m.perfacematerial ? mesh->materials : nullptr;
+
+    // The resolved surface of the draw's scalars; per-vertex draws
+    // re-resolve per vertex below, with the scalars as the fallback
+    // for what the streams do not carry.
+    const Surface uniform = resolveSurface(m, pbr, nullptr, nullptr);
+    ccl::Shader *shader = perVertex ? attributeShader() : uniformShader(uniform);
+
+    // Mesh identity: the cache contract (cacheId + generation names
+    // the arrays), the index range, and what the shading needs baked
+    // into the mesh -- the shader, and for per-vertex draws every
+    // scalar the attributes were resolved from.
+    std::ostringstream key;
+    key << mesh->cacheId << ':' << mesh->generation << ':' << start << ':' << count << ':'
+        << static_cast<const void *>(shader);
+    if (perVertex) {
+        key.precision(4);
+        key << ':' << m.diffuse << ':' << m.specular << ':' << m.emissive << ':' << m.shininess
+            << ':' << m.metallic << ':' << m.roughness << ':' << m.transparent << ':'
+            << m.perfacepbr << ':' << m.lighting << ':' << m.glass << ':' << m.lightsource;
+    }
+    const std::string meshKey = key.str();
+
+    ccl::Mesh *cmesh = nullptr;
+    auto found = meshes.find(meshKey);
+    if (found != meshes.end())
+        cmesh = found->second;
+    else {
+        // Compact the vertex set the range touches.
+        const int32_t *idx = mesh->triangleIndices + start;
+        std::vector<int> remap(size_t(mesh->numVertices), -1);
+        std::vector<int> verts;
+        std::vector<int> tris;
+        tris.reserve(size_t(count));
+        for (int i = 0; i < count; ++i) {
+            const int32_t v = idx[i];
+            if (v < 0 || v >= mesh->numVertices)
+                return false;
+            if (remap[size_t(v)] < 0) {
+                remap[size_t(v)] = int(verts.size());
+                verts.push_back(v);
+            }
+            tris.push_back(remap[size_t(v)]);
+        }
+
+        cmesh = scene->create_node<ccl::Mesh>();
+        cmesh->name = ccl::ustring(meshKey);
+        ccl::array<ccl::Node *> used;
+        used.push_back_slow(shader);
+        cmesh->set_used_shaders(used);
+        cmesh->resize_mesh(int(verts.size()), int(tris.size() / 3));
+
+        ccl::packed_float3 *P = cmesh->get_position_for_write();
+        for (size_t i = 0; i < verts.size(); ++i) {
+            const float *p = mesh->positions + size_t(verts[i]) * 3;
+            P[i] = ccl::packed_float3(ccl::make_float3(p[0], p[1], p[2]));
+        }
+        std::copy(tris.begin(), tris.end(), cmesh->get_triangles().data());
+        std::ranges::fill(cmesh->get_shader(), 0);
+
+        // The cache's vertex normals carry the smooth shading (hard
+        // edges are already split vertices); without them the faces
+        // shade flat, as they do in the host.
+        bool smooth = mesh->normals != nullptr;
+        if (smooth) {
+            ccl::Attribute *attr = cmesh->attributes.add(ccl::ATTR_STD_VERTEX_NORMAL);
+            // Storage is Cycles' packed types, not float3 (which is 16
+            // bytes on SSE): packed_normal here, packed_float3 below.
+            ccl::packed_normal *N = attr->data_for_write<ccl::packed_normal>();
+            for (size_t i = 0; i < verts.size(); ++i) {
+                const float *n = mesh->normals + size_t(verts[i]) * 3;
+                ccl::float3 v = ccl::make_float3(n[0], n[1], n[2]);
+                const float len = ccl::len(v);
+                N[i] = ccl::packed_normal(len > 1.0e-12f ? v / len : ccl::make_float3(0.0f, 0.0f, 1.0f));
+            }
+        }
+        std::ranges::fill(cmesh->get_smooth(), smooth);
+
+        if (perVertex) {
+            ccl::Attribute *aBase = cmesh->attributes.add(ccl::ustring("fc_base"), ccl::TypeColor,
+                                                          ccl::ATTR_ELEMENT_VERTEX);
+            ccl::Attribute *aPbr = cmesh->attributes.add(ccl::ustring("fc_pbr"), ccl::TypeVector,
+                                                         ccl::ATTR_ELEMENT_VERTEX);
+            ccl::Attribute *aEmissive = cmesh->attributes.add(ccl::ustring("fc_emissive"),
+                                                              ccl::TypeColor,
+                                                              ccl::ATTR_ELEMENT_VERTEX);
+            ccl::packed_float3 *B = aBase->data_for_write<ccl::packed_float3>();
+            ccl::packed_float3 *R = aPbr->data_for_write<ccl::packed_float3>();
+            ccl::packed_float3 *E = aEmissive->data_for_write<ccl::packed_float3>();
+            for (size_t i = 0; i < verts.size(); ++i) {
+                const size_t v = size_t(verts[i]);
+                const uint8_t *color = m.pervertexcolor && mesh->colors ? mesh->colors + v * 4 : nullptr;
+                const uint8_t *ms = stream ? stream + v * size_t(MeshData::MaterialStride) : nullptr;
+                const Surface s = resolveSurface(m, pbr, color, ms);
+                B[i] = ccl::packed_float3(ccl::make_float3(s.base[0], s.base[1], s.base[2]));
+                R[i] = ccl::packed_float3(ccl::make_float3(s.metallic, s.roughness, s.alpha));
+                E[i] = ccl::packed_float3(ccl::make_float3(s.emissive[0] * s.emissiveStrength,
+                                                           s.emissive[1] * s.emissiveStrength,
+                                                           s.emissive[2] * s.emissiveStrength));
+            }
+        }
+
+        cmesh->tag_triangles_modified();
+        cmesh->tag_shader_modified();
+        cmesh->tag_smooth_modified();
+        meshes[meshKey] = cmesh;
+        report.triangles += long(tris.size() / 3);
+    }
+
+    ccl::Object *object = scene->create_node<ccl::Object>();
+    object->set_geometry(cmesh);
+    object->set_tfm(draw.identity ? ccl::transform_identity() : toTransform(draw.model));
+    object->set_color(ccl::make_float3(uniform.base[0], uniform.base[1], uniform.base[2]));
+    object->set_alpha(uniform.alpha);
+    ++report.objects;
+    return true;
+}
+
+}  // namespace Render::Cycles

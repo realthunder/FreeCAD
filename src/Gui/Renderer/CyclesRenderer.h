@@ -51,6 +51,57 @@ RendererExport bool available();
 /// engine.
 RendererExport std::vector<DeviceInfo> devices();
 
+/// The camera of a render: the same two GL-layout matrices every
+/// backend's render() takes (world -> eye, then eye -> clip), plus the
+/// pixel size they were built for. Perspective or orthographic is read
+/// off the projection.
+struct CameraInput {
+    float view[16];
+    float proj[16];
+    int width = 0;
+    int height = 0;
+};
+
+/// What the translation layer reads (docs/CyclesIntegration.md sec 6
+/// and 7): the backend-neutral draw list every backend is fed, the
+/// per-frame configs that describe how it looks, and the camera. No
+/// Gui type anywhere, so the whole thing can be produced on a server
+/// and rendered elsewhere.
+struct SceneInput {
+    DrawCallList draws;
+    PBRConfig pbr;
+    OutputConfig output;
+    LightConfig light;
+    Background background;
+    CameraInput camera;
+};
+
+/// What the translation made of a SceneInput, for the caller to
+/// report (and a probe to assert on).
+struct RenderReport {
+    int meshes = 0;      ///< distinct Cycles meshes (shared by instances)
+    int objects = 0;     ///< instances placed
+    int shaders = 0;     ///< distinct surface shaders
+    long triangles = 0;  ///< triangles across the distinct meshes
+    int skipped = 0;     ///< draws the translation has no use for (lines,
+                         ///< points, gizmos, effect volumes, wireframes)
+    double seconds = 0;  ///< wall time of the render itself
+};
+
+/// Phase 3 of the plan: translate \a scene and path trace it to a PNG
+/// at \a path with \a samples per pixel on the device of the given
+/// type. The image is composited over the scene's background (the
+/// environment where PBRConfig::envBackground asks for it, else the
+/// flat or gradient Background) and encoded once for the file. Blocks
+/// until the render is done. On failure returns false with \a error
+/// set.
+RendererExport bool renderScene(const SceneInput &scene,
+                                const std::string &path,
+                                int samples,
+                                const std::string &deviceType,
+                                std::string *error,
+                                RenderReport *report = nullptr);
+
 /// Phase 2 of the plan: render a hard-coded scene (a cube on a floor
 /// under a uniform sky) to a PNG at \a path, with \a samples per pixel
 /// on the device of the given type. Proves that the engine starts a
