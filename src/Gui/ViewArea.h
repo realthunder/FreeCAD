@@ -112,6 +112,10 @@ private:
     ViewAreaZone *_zoneBottomLeft;
     ViewAreaMenuButton *_menuButton;
     ViewAreaHighlight *_highlight;
+    /// Activation order stamp (ViewArea::_mruCounter at last
+    /// activation); the placement policy's reuse step picks the
+    /// highest among matching cells.
+    int _mruStamp = 0;
 
     friend class ViewArea;
 };
@@ -218,6 +222,21 @@ public:
      * embedded elsewhere.
      */
     bool setCellView(ViewAreaCell *cell, MDIView *view);
+
+    /** The most-recently-active cell whose child view satisfies
+     * \a pred, or null -- the placement policy's reuse candidate
+     * (docs/ViewPlacement.md sec 3.2). Cells never activated rank
+     * lowest, in tree order.
+     */
+    ViewAreaCell *lastUsedCell(
+            const std::function<bool(MDIView*)> &pred) const;
+
+    /** Make the cell hosting \a view the active tile and activate its
+     * window; false if \a view is not hosted here. The placement
+     * policy's activation step -- splitCell deliberately keeps the
+     * ORIGINAL cell active for gesture splits.
+     */
+    bool activateCellOf(MDIView *view);
 
     /** The adjacent sibling cell a join from \a cell along \a axis can
      * consume (Blender's aligned-edge rule: same parent splitter, leaf
@@ -333,6 +352,7 @@ private:
     QPointer<ViewAreaCell> _pendingMaximize;
     std::vector<MaximizeState> _maximizeRestore;
     bool _closing = false;
+    int _mruCounter = 0;
 
     friend class ViewAreaCell;
 };

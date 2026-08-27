@@ -51,6 +51,7 @@
 
 #include "Action.h"
 #include "Application.h"
+#include "ViewPlacement.h"
 #include "BitmapFactory.h"
 #include "Command.h"
 #include "Control.h"
@@ -617,7 +618,8 @@ void StdCmdDependencyGraph::activated(int iMsg)
     App::Document* doc = App::GetApplication().getActiveDocument();
     auto view = new Gui::GraphvizView(*doc);
     view->setWindowTitle(qApp->translate("Std_DependencyGraph","Dependency graph"));
-    getMainWindow()->addWindow(view);
+    ViewPlacement::place(view, ViewPlacement::Category::DocView,
+                         Application::Instance->getDocument(doc));
 }
 
 bool StdCmdDependencyGraph::isActive()

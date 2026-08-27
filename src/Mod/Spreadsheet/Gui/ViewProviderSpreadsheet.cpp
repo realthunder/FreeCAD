@@ -33,6 +33,7 @@
 #include <Gui/BitmapFactory.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/ViewPlacement.h>
 #include <Gui/View3DInventor.h>
 #include <Mod/Spreadsheet/App/Sheet.h>
 
@@ -160,7 +161,8 @@ SheetView* ViewProviderSheet::showSpreadsheetView()
         view->setWindowIcon(Gui::BitmapFactory().pixmap(":icons/Spreadsheet.svg"));
         view->setWindowTitle(QString::fromUtf8(pcObject->Label.getValue())
                              + QStringLiteral("[*]"));
-        Gui::getMainWindow()->addWindow(view);
+        Gui::ViewPlacement::place(view,
+                Gui::ViewPlacement::Category::DocView, doc);
         startEditing();
     }
 

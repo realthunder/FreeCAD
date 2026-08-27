@@ -41,6 +41,7 @@
 #include <Gui/BitmapFactory.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/ViewPlacement.h>
 #include <Gui/ViewProviderDocumentObject.h>
 #include <Mod/TechDraw/App/DrawHatch.h>
 #include <Mod/TechDraw/App/DrawLeaderLine.h>
@@ -341,8 +342,8 @@ void ViewProviderPage::createMDIViewPage()
 
     m_mdiView->setWindowTitle(tabTitle + QStringLiteral("[*]"));
     m_mdiView->setWindowIcon(Gui::BitmapFactory().pixmap("TechDraw_TreePage"));
-    Gui::getMainWindow()->addWindow(m_mdiView);
-    Gui::getMainWindow()->setActiveWindow(m_mdiView);
+    Gui::ViewPlacement::place(m_mdiView,
+            Gui::ViewPlacement::Category::DocView, doc);
 }
 
 //NOTE: removing MDIViewPage (parent) destroys QGVPage (eventually)

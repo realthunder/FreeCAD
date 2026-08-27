@@ -30,6 +30,7 @@
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/MainWindow.h>
+#include <Gui/ViewPlacement.h>
 #include <Gui/ViewProviderDocumentObjectGroup.h>
 #include <Mod/Drawing/App/FeaturePage.h>
 
@@ -166,7 +167,8 @@ DrawingView* ViewProviderDrawingPage::showDrawingView()
         view->setObjectName(QString::fromUtf8(objname));
         view->onRelabel(doc);
         view->setDocumentObject(pcObject->getNameInDocument());
-        Gui::getMainWindow()->addWindow(view);
+        Gui::ViewPlacement::place(view,
+                Gui::ViewPlacement::Category::DocView, doc);
     }
 
     return view;

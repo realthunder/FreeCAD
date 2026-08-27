@@ -848,6 +848,31 @@ int ViewArea::cellCount() const
     return n;
 }
 
+ViewAreaCell *ViewArea::lastUsedCell(
+        const std::function<bool(MDIView*)> &pred) const
+{
+    ViewAreaCell *best = nullptr;
+    int bestStamp = -1;
+    for (auto cell : cells()) {
+        if (!pred(cell->childView()))
+            continue;
+        if (cell->_mruStamp > bestStamp) {
+            best = cell;
+            bestStamp = cell->_mruStamp;
+        }
+    }
+    return best;
+}
+
+bool ViewArea::activateCellOf(MDIView *view)
+{
+    auto cell = cellOf(view);
+    if (!cell)
+        return false;
+    setActiveCell(cell);
+    return true;
+}
+
 MDIView *ViewArea::cloneChildFor(ViewAreaCell *cell)
 {
     MDIView *child = cell->childView();
@@ -1147,6 +1172,8 @@ void ViewArea::setActiveCell(ViewAreaCell *cell, bool activateWindow)
     if (_activeCell != cell) {
         auto old = _activeCell;
         _activeCell = cell;
+        if (cell)
+            cell->_mruStamp = ++_mruCounter;
         // The border lives on a child widget, so updating the cell
         // alone would repaint everything except the thing that changed.
         if (old)

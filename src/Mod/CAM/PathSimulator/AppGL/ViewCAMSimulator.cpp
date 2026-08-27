@@ -36,6 +36,7 @@
 #include <Gui/Camera.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/ViewPlacement.h>
 #include <Gui/NavigationStyle.h>
 #include <Gui/SoFCDB.h>
 #include <Gui/View3DInventor.h>
@@ -405,7 +406,8 @@ ViewCAMSimulator& ViewCAMSimulator::instance(Gui::Document* doc)
         }
 
         viewCAMSimulator = new ViewCAMSimulator(doc, nullptr);
-        getMainWindow()->addWindow(viewCAMSimulator);
+        Gui::ViewPlacement::place(viewCAMSimulator,
+                Gui::ViewPlacement::Category::DocView, doc);
     }
     else if (doc && doc != viewCAMSimulator->getGuiDocument()) {
         // If a document is provided, we make sure that the returned instance belongs to that
@@ -423,7 +425,8 @@ ViewCAMSimulator& ViewCAMSimulator::instance(Gui::Document* doc)
         auto old = viewCAMSimulator.get();
 
         viewCAMSimulator = old->clone(doc);
-        getMainWindow()->addWindow(viewCAMSimulator);
+        Gui::ViewPlacement::place(viewCAMSimulator,
+                Gui::ViewPlacement::Category::DocView, doc);
 
         old->deleteSelf();
     }
