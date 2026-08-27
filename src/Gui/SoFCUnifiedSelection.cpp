@@ -2169,6 +2169,7 @@ void SoFCSelectionRoot::NodeKey::noteOrigin(SoFCSelectionRoot *node)
     auto o = std::make_shared<Origin>();
     o->doc = obj->getDocument()->getName();
     o->obj = obj->getNameInDocument();
+    origins.push_back(o);
     origin = std::move(o);
 }
 
@@ -2185,6 +2186,10 @@ void SoFCSelectionRoot::NodeKey::append(const std::shared_ptr<NodeKey> &_other)
     if (other.data.back() + data.back() <= data.size()-1) {
         memcpy(&data[data.back()], &other.data[0], other.data.back());
         data.back() += other.data.back();
+        // The merged level's own origins come with its ids; the levels
+        // behind other->next keep theirs and getOriginPath() walks on.
+        origins.insert(origins.end(),
+                       other.origins.begin(), other.origins.end());
         this->next = _other->next;
     } else
         this->next = _other;

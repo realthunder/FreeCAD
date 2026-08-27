@@ -521,6 +521,7 @@ protected:
             data.back() = 0;
             next.reset();
             origin.reset();
+            origins.clear();
         }
 
         /// The deepest chain node's document object, if any node in the
@@ -528,6 +529,23 @@ protected:
         /// hash() or operator==.
         const std::shared_ptr<const Origin> & getOrigin() const {
             return origin;
+        }
+
+        /// The chain of document objects the key's node chain passes
+        /// through, outermost first, ending at getOrigin()'s object.
+        /// Appended to \a path in walk order; consecutive nodes owned by
+        /// the same object each contribute an entry (collapse duplicates
+        /// on the consumer side if unwanted). Derived data like origin:
+        /// not part of hash() or operator==. What a per-view display
+        /// mode override matches against (docs/CoinRetirement.md 5.9):
+        /// the leaf alone cannot say which CONTAINER a draw was reached
+        /// through, and an override on a Link/group/assembly must reach
+        /// the child draws below it.
+        void getOriginPath(
+                std::vector<std::shared_ptr<const Origin>> &path) const {
+            path.insert(path.end(), origins.begin(), origins.end());
+            if (next)
+                next->getOriginPath(path);
         }
 
         std::size_t hash(std::size_t seed = 0) const {
@@ -600,6 +618,12 @@ protected:
 
         std::shared_ptr<NodeKey> next;
         std::shared_ptr<const Origin> origin;
+        /// Origins of THIS level's own pushes, in push order (outermost
+        /// first); the deeper levels' origins live on their own keys and
+        /// getOriginPath() walks the chain. Kept per level because a
+        /// child key is shared by every parent that appends it, so a
+        /// flattened path cannot be stored on the shared child.
+        std::vector<std::shared_ptr<const Origin>> origins;
 
         // data.back() (i.e. the last element) stores the data count
         std::array<uint8_t, 32> data;

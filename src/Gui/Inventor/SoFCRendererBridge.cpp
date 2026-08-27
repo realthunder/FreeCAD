@@ -1361,6 +1361,25 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                     Render::ObjectInfo info;
                     info.doc = org->doc;
                     info.obj = org->obj;
+                    // The container chain above the leaf, for per-view
+                    // display mode overrides to match against
+                    // (docs/CoinRetirement.md 5.9). Same once-per-key
+                    // cost class as the leaf strings above; consecutive
+                    // nodes owned by one object collapse to one step.
+                    std::vector<std::shared_ptr<
+                            const SoFCRenderCache::CacheKey::Origin>>
+                        chain;
+                    ventry.key->getOriginPath(chain);
+                    info.path.reserve(chain.size());
+                    for (const auto &org2 : chain) {
+                        if (!org2)
+                            continue;
+                        if (!info.path.empty()
+                                && info.path.back().obj == org2->obj
+                                && info.path.back().doc == org2->doc)
+                            continue;
+                        info.path.push_back({org2->doc, org2->obj});
+                    }
                     if (addedInfo)
                         (*addedInfo)[draw.objectKey] = info;
                     (*objectInfo)[draw.objectKey] = std::move(info);

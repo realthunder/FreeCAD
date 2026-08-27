@@ -2494,11 +2494,31 @@ typedef std::vector<DrawCall> DrawCallList;
 /// ⚠️ Every one of these strings is UTF-8 and may hold any character a
 /// Python identifier may — internal names included. Nothing here may be
 /// byte-inspected, case-folded or truncated.
+/// One step of ObjectInfo::path: a document object on the scene-graph
+/// node chain that produced a draw.
+struct ObjectRef {
+    std::string doc;    ///< document internal name
+    std::string obj;    ///< object internal name
+
+    bool operator==(const ObjectRef &o) const
+    { return obj == o.obj && doc == o.doc; }
+};
+
 struct ObjectInfo {
     std::string doc;    ///< document internal name (identity)
     std::string obj;    ///< object internal name (identity)
     std::string label;  ///< user-visible label, presentation only
     std::string type;   ///< DocumentObject type id, e.g. "Part::Box"
+    /// The chain of document objects the draw's node path passes
+    /// through, outermost first, ending at {doc, obj}; consecutive
+    /// duplicates collapsed. Identity only, like doc/obj -- what a
+    /// per-view display mode override entry matches against
+    /// (docs/CoinRetirement.md 5.9): the leaf alone cannot say which
+    /// CONTAINER the draw was reached through, and an override on a
+    /// Link/group/assembly must reach the child draws below it. Not
+    /// serialized by SceneDump: a remote viewer holds no per-view
+    /// override table to resolve against.
+    std::vector<ObjectRef> path;
 };
 
 typedef std::unordered_map<uint64_t, ObjectInfo> ObjectInfoMap;
