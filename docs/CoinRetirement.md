@@ -2078,18 +2078,65 @@ rebuild with the same User1 status the sync path uses, and re-syncing
 the row from the active view afterward (without which the row shows
 "Use View Mode" over a live entry and "clearing" it is a no-op).
 
-**Known name-mapping gap (pre-existing, now visible).** The override
-map stores USER-facing display mode names, but the switch children
-carry MASK mode names, and some providers map between them in
-`setDisplayMode()`: Mesh's user "Points" is mask child "Point", the
-Points provider maps "Intensity" to "Color" and binds per-vertex data
-as a side effect. For such providers a non-standard override is inert
-(no child of that name -- the own-mode fallback), and additive capture
-of a side-effect mode would capture the subgraph without the data
-binding. Providers whose names coincide -- FemMesh, and any Python
-provider using `addDisplayMode` -- resolve fully. Closing the gap
-needs a queryable user-name -> mask-name mapping on the provider;
-left open.
+**The name-mapping gap, CLOSED for the in-tree providers
+(2026-08-27, follow-up session).** The override map stores USER-facing
+display mode names, but the switch children carry MASK mode names --
+two namespaces the base ViewProvider separates on purpose (each
+provider's `setDisplayMode()` is the documented translation point,
+and the mapping can be many-to-one with data-binding side effects) --
+and the collision dates to the pre-2011 SVN era: upstream still
+carries it identically and never notices, because upstream's only
+mask-name consumer runs through the owning `setDisplayMode()`. Our
+named-override machinery matches childNames from the OUTSIDE, so it
+finally mattered. Resolved by making the two-layer split unnecessary
+where it was arbitrary and impossible where it was real:
+
+- **Points provider restructured**: "Intensity" is its own mask child
+  with its own material (it used to share pcColorMat with "Color" --
+  the binding side effect that made the modes mutually exclusive per
+  scene graph), all vertex data (colors, greys, normals) binds
+  EAGERLY on data change (`applyVertexData`, with the count-mismatch
+  fallback moved to bind time: an invalid list flips the material
+  binding to OVERALL and the child renders as plain points), and the
+  mask names now equal the user names ("Point" -> "Points",
+  "Intensity" added). `setDisplayMode` is a pass-through. Two views
+  can show "Color" and "Intensity" at once.
+- **Mesh's point mask child renamed** "Point" -> "Points" (mask names
+  are not persisted; DisplayMode stores user names, so old files are
+  unaffected).
+- **Class-A override VALUES now resolve through the additive capture
+  too**: parse gives every named entry its interned modeId beside the
+  Class-A nameBit/mask, and the admission prefers the tagged subgraph
+  (mask over the superset stays as the fallback for a switch the
+  interest capture did not cover). Required because the
+  nested-subset assumption behind the masks is Part-specific: Mesh's
+  "Flat Lines" superset child contains NO point rendering, so no mask
+  can serve a "Points" override on Mesh. The switch also records
+  traversedMode in the named-override branch now -- the style-named
+  child the flow takes can itself be the override's mode.
+- **The backend renders `Triangle + DrawPoints` as corner points**
+  (`submitVertexPoints`, reusing the outline passes' per-corner
+  instance buffer): Mesh's own "Points" display mode rendered as
+  SOLID SHADED under the backend before -- a pre-existing gap the rig
+  exposed (only DrawLines had the Tessellation path). Returns in
+  every non-normal pass: dots must not occupy the depth prepass or
+  cast a solid shadow.
+
+What remains open is only the third-party case: a provider whose user
+names map to differently named mask children, or whose modes bind
+data at activation, falls back to the object's own mode under an
+override. The contract for provider authors is now simply: name mask
+children after the user modes, bind data eagerly.
+
+Verified rig `pts.py` (RTX 3060, xvfb + vglrun egl0): Points feature
+with red Color and dark Intensity lists -- P-base own modes
+(points-ink 2659, color-red 1545, intensity-dark 1538), PA override
+Color red==own-color 1545 and clears to 0, PB 2-cell canvas Color and
+Intensity SIMULTANEOUSLY [red 1650 / dark 1624, zero leakage], M Mesh
+own "Points" ink 347 (was 55255 == shaded before the DrawPoints fix),
+override==own 347, clear returns 55255. nsm 6/6, ovr / ovrsave (same
+ink as the mask path -- the tagged subgraph is pixel-equal for Part),
+d4 8/8, d4mode all green after.
 
 **Verified (RTX 3060, xvfb + vglrun egl0)**, rig `nsm.py`: an
 `App::FeaturePython` whose provider registers two non-Class-A modes,
