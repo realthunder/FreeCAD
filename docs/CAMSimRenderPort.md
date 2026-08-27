@@ -1064,11 +1064,48 @@ SWAP.
   boundary.
 - **Threading.** The tessellation goes to a worker; anything touching
   the document or the Coin graph must come back to the GUI thread.
-- **Where the mesh lives, and this needs a ruling.** A document object
-  is selectable, measurable and exportable -- the whole point of
-  Route B -- but adds to the tree and the undo stack, and it is
-  transient by nature. A view-provider-only scene graph picks but is
-  not an object. Not decided.
+- **Where the mesh lives: RULED.** It goes on the Job's `Stock`
+  object as a property, and its view object gains a display mode to
+  choose the uncut or the cut shape. See 11.6.
 - **Debounce hook.** `MillSimulationState::mSimPlaying` with
   `SetPlaying(b)` is the running/stopped signal;
   `MillSimulation.cpp:556` clears it at the end of a run.
+
+### 11.6 The cut mesh lives on the Stock object (ruled 2026-08-27)
+
+**A property on `Stock` persists the mesh; a display mode on its view
+object chooses uncut or cut.** That keeps one object where there would
+otherwise be two, and the mesh survives save and reload with the
+document rather than being recomputed on open.
+
+What the code looks like today, checked:
+
+- `Stock` is a `Part::FeaturePython` (`Path/Main/Stock.py:396`), so its
+  view provider is the Part one, and its display modes are Part's
+  (Flat Lines, Shaded, Wireframe, Points). `SetupStockObject` leaves it
+  on `Wireframe` at `Transparency = 90` -- deliberately unobtrusive,
+  which a solid cut mesh will want to override in its own mode.
+- Its Python view provider proxy is
+  `Path.Base.Gui.IconViewProvider.ViewProvider`, which exists ONLY to
+  supply an icon. Its `attach()` records `vobj`/`obj` and builds no
+  scene graph, and it declares no display modes.
+- `Mesh::PropertyMeshKernel` is a registered property type
+  (`MeshProperties.cpp:46`, deriving `App::PropertyComplexGeoData`),
+  so `addProperty` can create it and it persists.
+
+The work, then:
+
+1. Add the mesh property in `SetupStockObject`, alongside the existing
+   `StockType`.
+2. Give `Stock` its own view provider rather than the bare icon one --
+   or extend that one -- so it can `addDisplayMode` a node for the cut
+   mesh, list it in `getDisplayModes`, and rebuild the node from
+   `updateData` when the property changes. On a `Part::FeaturePython`
+   a Python proxy's display modes are ADDED to the Part ones, so the
+   uncut modes stay as they are.
+3. Keep `dumps`/`loads` in step with any new proxy state.
+
+! The mesh is only pickable, and so only measurable, in the mode that
+shows it. That is the point of putting it behind a display mode, but
+it does mean "select the cut shape" and "select the stock" are the
+same object in different modes, not two things.
