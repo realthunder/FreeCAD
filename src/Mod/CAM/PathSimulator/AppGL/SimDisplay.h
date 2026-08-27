@@ -149,9 +149,11 @@ protected:
     Render::ProgramHandle mRProgGeom;
     Render::ProgramHandle mRProgLighting;
     Render::ProgramHandle mRProgLine;
-    // The plain fullscreen texture copy (fs_camsim_fbo) the composite
-    // pass draws with.
+    // The fullscreen copy (fs_camsim_fbo) the composite pass draws
+    // with, and its one parameter: x is set when the destination holds
+    // linear light and the image has to be decoded on the way in.
     Render::ProgramHandle mRProgCopy;
+    Render::UniformHandle mRUniComposite;
     Render::UniformHandle mRUniNormalRot;
     Render::UniformHandle mRUniLightPos;
     Render::UniformHandle mRUniLightColor;

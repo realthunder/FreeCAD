@@ -70,6 +70,7 @@ void SimDisplay::InitShaders()
     mRSampNormal = dev->createUniform("s_simNormal", Render::UniformType::Sampler);
     mRSampAo = dev->createUniform("s_simAo", Render::UniformType::Sampler);
     mRSampTex = dev->createUniform("s_simTex", Render::UniformType::Sampler);
+    mRUniComposite = dev->createUniform("u_simComposite", Render::UniformType::Vec4);
 
     gSimDraw.uniNormalRot = mRUniNormalRot;
     gSimDraw.uniLightPos = mRUniLightPos;
@@ -213,7 +214,8 @@ void SimDisplay::CleanGL()
         Render::UniformHandle unis[] = {mRUniNormalRot, mRUniLightPos,
             mRUniLightColor, mRUniLightAmbient, mRUniObjectColor,
             mRUniObjectColorAlpha, mRUniParams, mRSampColor,
-            mRSampPosition, mRSampNormal, mRSampAo, mRSampTex};
+            mRSampPosition, mRSampNormal, mRSampAo, mRSampTex,
+            mRUniComposite};
         for (auto& u : unis) {
             if (u.valid()) {
                 dev->destroy(u);
@@ -239,7 +241,7 @@ void SimDisplay::CleanGL()
     mRUniNormalRot = mRUniLightPos = mRUniLightColor = {};
     mRUniLightAmbient = mRUniObjectColor = mRUniObjectColorAlpha = {};
     mRUniParams = mRSampColor = mRSampPosition = mRSampNormal = mRSampAo = {};
-    mRSampTex = {};
+    mRSampTex = mRUniComposite = {};
     mRQuadVbo = {};
 
     displayInitiated = false;
@@ -371,6 +373,14 @@ void SimDisplay::RenderCompositeFacade(Render::DrawSurface* surface,
         return;
     }
     surface->setTexture(0, mRSampTex, mRResolveTexture);
+    // The destination decides whether the image is light or pixels:
+    // the host's colour-managed scene target holds linear light and
+    // its present pass encodes on the way out, so a display-space
+    // image must be decoded here to avoid being encoded twice. The
+    // standalone backbuffer is display space already.
+    const float composite[4] = {surface->hostLinearColor() ? 1.0f : 0.0f,
+                                0.0f, 0.0f, 0.0f};
+    surface->setUniform(mRUniComposite, composite);
     Render::DrawState state;
     state.depthWrite = false;
     state.depthFunc = Render::CompareFunc::Always;
