@@ -5243,6 +5243,11 @@ public:
     /// from Coin.
     void submitTessellation(const Render::DrawCall &draw,
                             const float *viewMatrix, uint16_t viewId);
+    /// The Points draw style analogue: a filled-triangle draw carrying
+    /// SoDrawStyleElement::POINTS renders as its corner points
+    /// (BGFXViewOverlay.cpp).
+    void submitVertexPoints(const Render::DrawCall &draw,
+                            const float *viewMatrix, uint16_t viewId);
 
     /// Does this draw need a discard-clipping shader variant: its own
     /// section planes, or the mirror pass's water/ground plane.

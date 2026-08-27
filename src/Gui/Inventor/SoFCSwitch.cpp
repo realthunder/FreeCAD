@@ -264,6 +264,15 @@ SoFCSwitch::doAction(SoAction *action)
     {
       for(int i=0, c=std::min(childNames.getNum(),this->getNumChildren()); i<c; ++i) {
         if(childNames[i] == name) {
+          // The style-named child the normal flow takes can itself be
+          // in the interest set -- Class-A override values ride it too
+          // since the Mesh finding -- and then the untagged draws
+          // below already ARE that mode: record it, or the resolution
+          // would wait for a tagged copy that will not exist.
+          if (interest) {
+            if (uint16_t tid = interest->idOf(childNames[i]))
+              SoFCModeInterestElement::set(state, tid, interestbits);
+          }
           traverseHead(action, i);
           traverseChild(action, i);
           traverseTail(action, i);

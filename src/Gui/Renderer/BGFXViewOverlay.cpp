@@ -218,6 +218,61 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
     ++drawcount;
 }
 
+void BGFXView::submitVertexPoints(const Render::DrawCall &draw,
+                                  const float *viewMatrix, uint16_t viewId)
+{
+    // The Points draw style: filled triangles carrying
+    // SoDrawStyleElement::POINTS -- Mesh's "Points" display mode
+    // re-styles its face set -- draw as their corner points, which the
+    // GL renderer gets from glPolygonMode POINT. Reuses the outline
+    // passes' per-corner instance buffer: one instance per triangle
+    // index, so a shared vertex draws once per corner -- coincident
+    // dots, invisible and cheap at point sizes.
+    if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
+        return;
+    GpuMesh *gpu = getMesh(*draw.mesh);
+    if (!bgfx::isValid(gpu->geom->vbh))
+        return;
+    gpu->geom->ensureOutline(*draw.mesh);
+    if (!bgfx::isValid(gpu->geom->triCornerInst))
+        return;
+
+    const Render::Material &mat = draw.material;
+    const bool clipped = clipActiveFor(mat);
+    float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float color[4];
+    unpackAuthoredColor(mat.diffuse, color, colorManaged());
+    color[3] = 1.0f;
+    float pointParams[4] = {0.0f,
+                            qMax(1.0f, std::floor(mat.pointsize + 0.5f)),
+                            0.0f, 1.0f};
+    bgfx::setUniform(u_matColor, color);
+    bgfx::setUniform(u_matEmissive, zero);
+    bgfx::setUniform(u_matSpecular, zero);
+    bgfx::setUniform(u_params, pointParams);
+    if (clipped)
+        setClipUniforms(mat);
+    setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
+                     (float)height);
+    LineQuadVertex::init();
+    bgfx::setVertexBuffer(0, m_lineQuadVb);
+    bgfx::setIndexBuffer(m_lineQuadIb);
+    // A partial index range maps 1:1 onto the corner instances (one
+    // per triangle index position), like the tessellation edges.
+    uint32_t start = draw.indexCount > 0 ? uint32_t(draw.indexStart) : 0;
+    uint32_t count = draw.indexCount > 0
+        ? uint32_t(draw.indexCount)
+        : uint32_t(draw.mesh->numTriangleIndices);
+    if (count == 0)
+        return;
+    bgfx::setInstanceDataBuffer(gpu->geom->triCornerInst, start, count);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                   | BGFX_STATE_WRITE_Z | BGFX_STATE_MSAA
+                   | BGFX_STATE_DEPTH_TEST_LEQUAL);
+    bgfx::submit(vid(viewId), clipped ? m_progPointClip : m_progPoint);
+    ++drawcount;
+}
+
 void BGFXView::submitOutline(const Render::DrawCall &draw, uint32_t refCounter,
                    const OutlineSpec &spec)
 {

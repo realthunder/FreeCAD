@@ -109,9 +109,12 @@ bool BGFXView::styleAdmits(const Render::DrawCall &draw)
         return true;
     const OvStyle *ov = lookupStyleOverride(draw.objectKey);
     if (ov && ov->modeId) {
-        // The override names a NON-STANDARD mode (5.9 "Non-standard
-        // modes") -- a different subgraph, captured additively and
-        // tagged, never a mask over the superset:
+        // The override names a mode (5.9 "Non-standard modes" -- and
+        // since the Mesh finding, Class-A values too): the mode is its
+        // own SUBGRAPH, captured additively and tagged, not a mask
+        // over the superset -- a mask cannot serve a mode whose
+        // buckets the superset child does not contain (Mesh's
+        // "Points": its Flat Lines child has no point rendering).
         //
         // - a tagged draw is the mode's own subgraph: admitted exactly
         //   when it is THIS mode's;
@@ -120,18 +123,24 @@ bool BGFXView::styleAdmits(const Render::DrawCall &draw)
         // - otherwise, when the switch has a child of the mode's name
         //   (the interest bit), the tagged subgraph replaces the
         //   normal draws: suppress them;
-        // - and when it has none, the entry does not apply to the
-        //   object at all -- its own mode, the same fallback a Class-A
-        //   style takes through registeredStyles.
+        // - a Class-A entry the additive capture did not cover (an
+        //   interest list past its budget) falls back to the mask
+        //   over the superset, where the name is registered;
+        // - and an object with no child of the name keeps its own
+        //   mode, the same fallback a Class-A style takes.
         if (draw.capturedMode)
             return draw.capturedMode == ov->modeId;
         if (draw.traversedMode == ov->modeId)
             return true;
         if (ov->interestBit && (draw.interestBits & ov->interestBit))
             return false;
-        return draw.ownStyle == Render::StyleAsIs
-            || draw.ownStyle == Render::StyleUnknown
-            || (draw.ownStyle & Render::styleBitOf(draw.material)) != 0;
+        uint8_t effective = draw.ownStyle;
+        if (!ov->interestBit && ov->nameBit
+                && (draw.registeredStyles & ov->nameBit))
+            effective = ov->mask;
+        return effective == Render::StyleAsIs
+            || effective == Render::StyleUnknown
+            || (effective & Render::styleBitOf(draw.material)) != 0;
     }
     if (draw.capturedMode) {
         // An additively captured draw serves exactly one thing: an
@@ -822,6 +831,21 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
             && mat.drawstyle == Render::Material::DrawLines
             && pass == PassNormal && !ontop && !mat.ontop && !selPass) {
         submitTessellation(draw, viewMatrix, ViewOpaque);
+        return;
+    }
+    // Points draw style: filled triangles carrying SoDrawStyleElement::
+    // POINTS -- Mesh's "Points" display mode re-styles its face set --
+    // draw as their corner points, which GL gets from glPolygonMode
+    // POINT. Unlike Tessellation this returns in EVERY other pass:
+    // dots must not occupy the depth prepass as a solid or cast a
+    // solid shadow. Not for a scene-wide drawstyle override -- that is
+    // Tessellation's discriminator and no display mode overrides to
+    // POINTS.
+    if (mat.type == Render::Material::Triangle
+            && mat.drawstyle == Render::Material::DrawPoints
+            && !mat.drawstyleoverride) {
+        if (pass == PassNormal && !ontop && !mat.ontop && !selPass)
+            submitVertexPoints(draw, viewMatrix, ViewOpaque);
         return;
     }
     // Hidden-line hideSeam: whole-cache line draws switch to the

@@ -1245,21 +1245,24 @@ Render::StyleOverrideTable parseObjectDisplayModes(
             ov.pin = true;
         }
         else {
+            // EVERY named mode resolves by additive capture first
+            // (5.9 "Non-standard modes"): the feed captures the named
+            // child tagged with this interned id and the entry admits
+            // exactly the draws so tagged -- the mode's own subgraph,
+            // not a mask approximation of it. That is the only way a
+            // mode can reach an object whose superset child does not
+            // contain its buckets (Mesh's "Points": the Flat Lines
+            // child has no point rendering at all). A mode no object
+            // registers -- a stale value, a viewer-level name like
+            // "Hidden Line" -- stays inert through the same fallback
+            // a Class-A style takes: no child of that name, the
+            // object keeps its own mode.
+            ov.modeId = Render::internModeName(mode.c_str());
+            // The Class-A mask stays as the fallback for a switch the
+            // additive capture has not covered (an interest list past
+            // its 16-entry budget).
             ov.nameBit = Gui::styleNameBitOf(mode.c_str());
-            if (!ov.nameBit) {
-                // A mode outside the four Class-A names is a different
-                // subgraph, not a mask over the superset capture
-                // (5.9 "Non-standard modes"): the feed captures the
-                // named child ADDITIVELY, tagged with this interned
-                // id, and the entry admits exactly the draws so
-                // tagged. A mode no object registers -- a stale value,
-                // a viewer-level name like "Hidden Line" -- stays
-                // inert through the same fallback a Class-A style
-                // takes: no child of that name, the object keeps its
-                // own mode.
-                ov.modeId = Render::internModeName(mode.c_str());
-            }
-            else
+            if (ov.nameBit)
                 ov.mask =
                     View3DInventorViewer::drawStyleMaskFromName(mode.c_str());
         }
