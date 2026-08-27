@@ -2172,16 +2172,28 @@ SoFCSelectionRoot::NodeKey::getSecondaryContext(Stack &stack, SoNode *node)
 
 void SoFCSelectionRoot::NodeKey::noteOrigin(SoFCSelectionRoot *node)
 {
+    std::shared_ptr<const Origin> o;
     auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
             node->getViewProvider());
-    if (!vpd)
-        return;
-    auto obj = vpd->getObject();
-    if (!obj || !obj->isAttachedToDocument() || !obj->getDocument())
-        return;
-    auto o = std::make_shared<Origin>();
-    o->doc = obj->getDocument()->getName();
-    o->obj = obj->getNameInDocument();
+    if (vpd) {
+        auto obj = vpd->getObject();
+        if (!obj || !obj->isAttachedToDocument() || !obj->getDocument())
+            return;
+        auto own = std::make_shared<Origin>();
+        own->doc = obj->getDocument()->getName();
+        own->obj = obj->getNameInDocument();
+        o = std::move(own);
+    }
+    else {
+        // A node standing in for an object whose provider it does not
+        // own -- a Link's snapshot of the linked scene graph
+        // (setNodeOrigin). Without this the linked object is absent
+        // from every chain it appears on, and the deepest object a
+        // draw through a link names is the link itself.
+        o = node->nodeOrigin;
+        if (!o)
+            return;
+    }
     origins.push_back(o);
     origin = std::move(o);
 }
@@ -2265,6 +2277,18 @@ void SoFCSelectionRoot::finish()
 
 void SoFCSelectionRoot::setViewProvider(ViewProvider *vp) {
     viewProvider = vp;
+}
+
+void SoFCSelectionRoot::setNodeOrigin(const App::DocumentObject *obj)
+{
+    if (!obj || !obj->isAttachedToDocument() || !obj->getDocument()) {
+        nodeOrigin.reset();
+        return;
+    }
+    auto o = std::make_shared<NodeKey::Origin>();
+    o->doc = obj->getDocument()->getName();
+    o->obj = obj->getNameInDocument();
+    nodeOrigin = std::move(o);
 }
 
 SoFCSelectionRoot *SoFCSelectionRoot::getCurrentRoot(bool front, SoFCSelectionRoot *def) {

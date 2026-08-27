@@ -400,11 +400,22 @@ bool BGFXRenderer::setCaptureFilter(
         return false;
     // Resolve identities to objectKeys through the resident table. One
     // object owns any number of keys (one per producing node path).
+    //
+    // A named object matches anywhere on a key's CONTAINER CHAIN, not
+    // just as its leaf: a source that is a group, an assembly or a
+    // link owns no draws of its own, and the draws below it name the
+    // leaf shape. The chain ends at the leaf, so this still matches a
+    // plain object named directly.
     std::unordered_map<uint64_t, size_t> keyOwner;
     for (const auto &entry : pimpl->objectInfo) {
         for (size_t i = 0; i < objects.size(); ++i) {
-            if (entry.second.doc == objects[i].first
-                    && entry.second.obj == objects[i].second) {
+            bool hit = entry.second.doc == objects[i].first
+                    && entry.second.obj == objects[i].second;
+            for (auto it = entry.second.path.begin();
+                    !hit && it != entry.second.path.end(); ++it)
+                hit = it->doc == objects[i].first
+                    && it->obj == objects[i].second;
+            if (hit) {
                 keyOwner.emplace(entry.first, i);
                 break;
             }

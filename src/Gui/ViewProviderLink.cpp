@@ -96,6 +96,17 @@ static std::unordered_map<SoNode*, std::pair<App::Document*, App::DocumentObject
 
 static inline void _registerLinkNode(SoNode *node, const App::DocumentObject *obj=nullptr)
 {
+    // The node stands in for \a obj without owning its ViewProvider:
+    // a link renders the linked object by copying the linked provider
+    // root's children under a node of its own, so that provider's root
+    // -- the node that would say which object this is -- is never
+    // traversed. Tell the node itself, so a render cache key composed
+    // below the link still names the linked object on its container
+    // chain (SoFCSelectionRoot::setNodeOrigin, docs/CoinRetirement.md
+    // 5.9); without it a per-view display mode override on a linked
+    // object never reached its draws.
+    if (node->isOfType(SoFCSelectionRoot::getClassTypeId()))
+        static_cast<SoFCSelectionRoot*>(node)->setNodeOrigin(obj);
     if (!obj)
         _LinkNodeMap.erase(node);
     else {

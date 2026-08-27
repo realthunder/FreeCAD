@@ -65,6 +65,7 @@ class Renderer;
 
 namespace App {
 class PropertyContainer;
+class DocumentObject;
 }
 
 namespace Gui {
@@ -326,6 +327,18 @@ public:
 
     ViewProvider *getViewProvider() const {return viewProvider;}
     void setViewProvider(ViewProvider *vp);
+
+    /// Which document object this node's subtree renders, for a node
+    /// that stands in for one whose ViewProvider it does NOT own. A
+    /// Link is the case: LinkInfo::getSnapshot copies the linked
+    /// ViewProvider root's CHILDREN under a node of the link's own, so
+    /// the linked provider's root is never traversed and the key's
+    /// origin walk sees no object below the link at all -- which left
+    /// every draw made through a link attributed to the LINK, with the
+    /// linked object missing from the container chain a per-view
+    /// display mode override matches against
+    /// (docs/CoinRetirement.md 5.9). A null object clears it.
+    void setNodeOrigin(const App::DocumentObject *obj);
 
     void GLRenderBelowPath(SoGLRenderAction * action) override;
     void GLRenderInPath(SoGLRenderAction * action) override;
@@ -700,6 +713,10 @@ protected:
     SoFCSelectionCounter selCounter;
 
     ViewProvider *viewProvider;
+
+    /// setNodeOrigin(): resolved once when the node is bound to the
+    /// object, so composing a key only copies the shared pointer.
+    std::shared_ptr<const NodeKey::Origin> nodeOrigin;
 
     int renderPathCode=0;
 
