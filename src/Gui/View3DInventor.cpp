@@ -1248,13 +1248,20 @@ Render::StyleOverrideTable parseObjectDisplayModes(
             ov.nameBit = Gui::styleNameBitOf(mode.c_str());
             if (!ov.nameBit) {
                 // A mode outside the four Class-A names is a different
-                // subgraph, not a mask over the superset capture; it
-                // waits for the additive capture (5.9 "Non-standard
-                // modes"). Inert, not an error.
-                continue;
+                // subgraph, not a mask over the superset capture
+                // (5.9 "Non-standard modes"): the feed captures the
+                // named child ADDITIVELY, tagged with this interned
+                // id, and the entry admits exactly the draws so
+                // tagged. A mode no object registers -- a stale value,
+                // a viewer-level name like "Hidden Line" -- stays
+                // inert through the same fallback a Class-A style
+                // takes: no child of that name, the object keeps its
+                // own mode.
+                ov.modeId = Render::internModeName(mode.c_str());
             }
-            ov.mask =
-                View3DInventorViewer::drawStyleMaskFromName(mode.c_str());
+            else
+                ov.mask =
+                    View3DInventorViewer::drawStyleMaskFromName(mode.c_str());
         }
         if (key.find('.') == std::string::npos) {
             // Bare form: the object wherever it appears in this view.

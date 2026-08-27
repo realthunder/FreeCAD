@@ -167,20 +167,26 @@ bool BGFXRenderer::Private::render(const QColor &col,
     const Render::StyleOverrideTable *ovt =
         subCtx.active ? subCtx.styleOverrides : mainStyleOverrides;
     if (ovt && !ovt->entries.empty()) {
+        const uint32_t interestVersion =
+                captureInterest ? captureInterest->version : 0;
         auto &c = view->subOvCaches[subCtx.active ? subCtx.id : 0];
         if (c.tableVersion != ovt->version
-                || c.infoVersion != objectInfoStamp) {
+                || c.infoVersion != objectInfoStamp
+                || c.interestVersion != interestVersion) {
             c.map.clear();
             c.tableVersion = ovt->version;
             c.infoVersion = objectInfoStamp;
+            c.interestVersion = interestVersion;
         }
         view->ovCache = &c;
         view->ovTable = ovt;
         view->ovInfo = &objectInfo;
+        view->ovInterest = captureInterest;
     } else {
         view->ovCache = nullptr;
         view->ovTable = nullptr;
         view->ovInfo = nullptr;
+        view->ovInterest = nullptr;
     }
 
     // A shader pack that could not supply a core program keeps the

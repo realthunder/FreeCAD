@@ -40,6 +40,7 @@
 
 #include "InventorBase.h"
 #include "Inventor/SoFCDetail.h"
+#include "Inventor/SoFCDisplayModeElement.h"
 #include "Inventor/SoFCSwitch.h"
 
 #include "SoFCSelectionContext.h"
@@ -108,6 +109,15 @@ public:
     SoSFBool useNewSelection;
 
     SoSFName overrideMode;
+
+    /// The capture's additive-mode interest set (docs/CoinRetirement.md
+    /// 5.9 "Non-standard modes"), pushed onto SoFCDisplayModeElement
+    /// beside overrideMode by every traversal. The caller (the viewer)
+    /// owns the storage and keeps it alive while it is set; null (the
+    /// default) means no interest. Not a field: content changes reach
+    /// the caches through the element's matches(), which compares the
+    /// set's version -- the caller schedules the redraw.
+    void setCaptureInterest(const SoFCDisplayModeElement::CaptureInterest *interest);
 
     static SbName DisplayModeTessellation;
     static SbName DisplayModeShaded;

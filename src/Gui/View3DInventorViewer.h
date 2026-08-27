@@ -83,6 +83,7 @@ namespace Quarter = SIM::Coin3D::Quarter;
 namespace Render {
 class Renderer;
 struct StyleOverrideTable;
+struct CaptureInterestTable;
 }
 
 namespace App {
@@ -362,6 +363,21 @@ public:
     /// Shading and Tessellation are traversal state, not bucket
     /// selections, and keep their plain capture).
     bool hasObjectStyleOverrides() const;
+    /// Additive-mode interest imposed by a unified canvas
+    /// (docs/CoinRetirement.md 5.9 "Non-standard modes"): the UNION of
+    /// every cell's non-standard override modes, as interned ids
+    /// (Render::internModeName). The shared capture must traverse the
+    /// union whichever cell feeds it, so the canvas imposes it on
+    /// every claimed viewer; an empty vector (the default, and what a
+    /// cell leaving the canvas is reset to) leaves the viewer's own
+    /// overrides as the only interest source.
+    void setImposedCaptureInterest(std::vector<uint16_t> ids);
+    /// The capture's interest list handed to the backend
+    /// (Renderer::setCaptureInterest), or null when empty. Built from
+    /// this view's own non-standard override modes plus the imposed
+    /// set, in the SAME order as the list pushed to the traversal --
+    /// the order is the interestBits bit assignment.
+    const Render::CaptureInterestTable *captureInterestTable() const;
     const SoFCDisplayModeElement::HiddenLineConfig &getHiddenLineConfig() const;
     //@}
 
@@ -819,6 +835,9 @@ private:
     static void deselectCB(void * viewer, SoPath * path);
     static SoPath * pickFilterCB(void * viewer, const SoPickedPoint * pp);
     void initialize();
+    /// Rebuild the additive-mode interest (own overrides + imposed),
+    /// push it to the selection root, and schedule the re-capture.
+    void rebuildCaptureInterest();
     void drawAxisCross();
     static void drawArrow();
     static void drawSingleBackground(const QColor&);

@@ -76,6 +76,8 @@ public:
     virtual void setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
                                   bool fromSuperset,
                                   const StyleOverrideTable *overrides) override;
+    virtual void setCaptureInterest(
+            const CaptureInterestTable *table) override;
     virtual void prepareSubViews(const QColor &bg,
                                  const SubViewFrame *subs,
                                  int count) override;

@@ -107,8 +107,41 @@ bool BGFXView::styleAdmits(const Render::DrawCall &draw)
     // differently and each must be admitted on its own.
     if (draw.skipbounds)
         return true;
+    const OvStyle *ov = lookupStyleOverride(draw.objectKey);
+    if (ov && ov->modeId) {
+        // The override names a NON-STANDARD mode (5.9 "Non-standard
+        // modes") -- a different subgraph, captured additively and
+        // tagged, never a mask over the superset:
+        //
+        // - a tagged draw is the mode's own subgraph: admitted exactly
+        //   when it is THIS mode's;
+        // - an untagged draw whose switch normally traversed this very
+        //   mode already IS it -- no tagged copy exists, draw as is;
+        // - otherwise, when the switch has a child of the mode's name
+        //   (the interest bit), the tagged subgraph replaces the
+        //   normal draws: suppress them;
+        // - and when it has none, the entry does not apply to the
+        //   object at all -- its own mode, the same fallback a Class-A
+        //   style takes through registeredStyles.
+        if (draw.capturedMode)
+            return draw.capturedMode == ov->modeId;
+        if (draw.traversedMode == ov->modeId)
+            return true;
+        if (ov->interestBit && (draw.interestBits & ov->interestBit))
+            return false;
+        return draw.ownStyle == Render::StyleAsIs
+            || draw.ownStyle == Render::StyleUnknown
+            || (draw.ownStyle & Render::styleBitOf(draw.material)) != 0;
+    }
+    if (draw.capturedMode) {
+        // An additively captured draw serves exactly one thing: an
+        // override resolving to its very mode. Every other resolution
+        // -- a Class-A override, a pin, the view style, plain "As Is"
+        // -- must drop it, or the object double-draws.
+        return false;
+    }
     uint8_t effective = drawStyleMask;
-    if (const OvStyle *ov = lookupStyleOverride(draw.objectKey)) {
+    if (ov) {
         effective = ov->pin ? draw.ownStyle
             : (draw.registeredStyles & ov->nameBit) ? ov->mask
                                                     : draw.ownStyle;
@@ -144,6 +177,13 @@ const BGFXView::OvStyle *BGFXView::lookupStyleOverride(uint64_t objectKey)
                         s.mask = ov.mask;
                         s.nameBit = ov.nameBit;
                         s.pin = ov.pin;
+                        s.modeId = ov.modeId;
+                        // The mode's interestBits bit under the
+                        // capture's interest list; 0 when the list
+                        // does not carry the mode (never captured:
+                        // the entry falls back to the own mode).
+                        s.interestBit = (ov.modeId && ovInterest)
+                                ? ovInterest->bitOf(ov.modeId) : 0;
                         s.has = true;
                     }
                 }

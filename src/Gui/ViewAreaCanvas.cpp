@@ -446,6 +446,7 @@ void ViewAreaCanvas::release(ViewAreaCell *cell, bool restoreBackend)
         return;
     if (auto viewer = viewerOf(cell)) {
         viewer->setRedrawRedirect({});
+        viewer->setImposedCaptureInterest({});
         if (restoreBackend) {
             viewer->adoptRenderer({}, false);
         }
@@ -608,9 +609,30 @@ void ViewAreaCanvas::syncOnce()
         _serve == ServeSuperset ? View3DInventorViewer::CanvasStyleSuperset
       : _serve == ServeFilter   ? View3DInventorViewer::CanvasStyleFilter
                                 : View3DInventorViewer::CanvasStyleOff;
+    // The additive-mode interest (docs/CoinRetirement.md 5.9
+    // "Non-standard modes"): the UNION of every cell's non-standard
+    // override modes, imposed on every claimed viewer -- the shared
+    // capture must traverse the union whichever cell feeds it, and the
+    // feed follows the active cell.
+    std::vector<uint16_t> interest;
+    if (_serve == ServeSuperset) {
+        for (auto &c : _cells) {
+            auto v = viewerOf(c.cell);
+            const Render::StyleOverrideTable *ovt =
+                    v ? v->objectStyleOverrides() : nullptr;
+            if (!ovt)
+                continue;
+            for (const auto &ov : ovt->entries) {
+                if (ov.modeId)
+                    interest.push_back(ov.modeId);
+            }
+        }
+    }
     for (auto &c : _cells) {
-        if (auto v = viewerOf(c.cell))
+        if (auto v = viewerOf(c.cell)) {
             v->setCanvasStyleMode(capture);
+            v->setImposedCaptureInterest(interest);
+        }
     }
 
     // The feed follows the active cell so the Coin residue -- draggers
@@ -739,6 +761,11 @@ void ViewAreaCanvas::paintGL()
         // Built up front so the frame itself allocates nothing: a fresh
         // bank's target set created mid-frame can exhaust the handle
         // pool and render its cell black (docs/SplitViews.md sec 11.1).
+        // The capture's interest list (5.9 "Non-standard modes"): the
+        // feeder's, which under ServeSuperset is the imposed union --
+        // the SAME list, in the same order, the traversal captured
+        // under, so the backend's interestBits mapping lines up.
+        _renderer->setCaptureInterest(feeder->captureInterestTable());
         _renderer->prepareSubViews(col, subs.data(), int(subs.size()));
         drawn = _renderer->renderSubViews(col, subs.data(), int(subs.size()));
     }

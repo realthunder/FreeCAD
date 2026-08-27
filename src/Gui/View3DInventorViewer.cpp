@@ -532,6 +532,19 @@ struct View3DInventorViewer::Private
     Render::StyleOverrideTable styleOverrides;
     uint32_t styleOverrideSerial = 0;
 
+    /// The capture's additive-mode interest (docs/CoinRetirement.md
+    /// 5.9 "Non-standard modes"): the Coin-side list pushed to the
+    /// traversal (via the selection root) and the Render-side list
+    /// handed to the backend -- SAME content in the SAME order,
+    /// because the order is the interestBits bit assignment. Built
+    /// from this view's own non-standard override modes plus what a
+    /// unified canvas imposes (the union across its cells); the
+    /// serial keeps both versions monotonic and in lockstep.
+    SoFCDisplayModeElement::CaptureInterest captureInterest;
+    Render::CaptureInterestTable interestTable;
+    std::vector<uint16_t> imposedInterest;
+    uint32_t captureInterestSerial = 0;
+
     // Shared, not owned outright: a ViewArea unified canvas
     // (docs/SplitViews.md sec 13) hands the SAME backend instance to
     // every 3D cell it hosts, so that N cells cost one backend and one
@@ -2471,6 +2484,7 @@ void View3DInventorViewer::setObjectStyleOverrides(
 {
     table.version = ++_pimpl->styleOverrideSerial;
     _pimpl->styleOverrides = std::move(table);
+    rebuildCaptureInterest();
     // Re-evaluate the capture: entering or leaving the superset flip
     // above dirties it through the selection root's field; a content
     // change under an unchanged capture still needs a redraw, where
@@ -2491,6 +2505,64 @@ View3DInventorViewer::objectStyleOverrides() const
     if (_pimpl->styleOverrides.entries.empty())
         return nullptr;
     return &_pimpl->styleOverrides;
+}
+
+void View3DInventorViewer::rebuildCaptureInterest()
+{
+    // The id set: this view's own non-standard override modes, plus
+    // what a unified canvas imposed. Sorted so the same set always
+    // yields the same list whichever viewer builds it -- on a canvas
+    // every claimed viewer is imposed the same union, so the feed can
+    // migrate between them without moving the bit assignment.
+    std::vector<uint16_t> ids;
+    for (const auto &ov : _pimpl->styleOverrides.entries) {
+        if (ov.modeId)
+            ids.push_back(ov.modeId);
+    }
+    ids.insert(ids.end(), _pimpl->imposedInterest.begin(),
+               _pimpl->imposedInterest.end());
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    // interestBits is 16 bits wide; anything beyond stays inert, the
+    // same as before the mode was overridden at all.
+    if (ids.size() > 16) {
+        FC_WARN("capture interest truncated: " << ids.size()
+                << " non-standard override modes, 16 supported");
+        ids.resize(16);
+    }
+    if (ids == _pimpl->interestTable.ids)
+        return;
+
+    const uint32_t version = ++_pimpl->captureInterestSerial;
+    _pimpl->interestTable.ids = std::move(ids);
+    _pimpl->interestTable.version = version;
+    _pimpl->captureInterest.modes.clear();
+    for (uint16_t id : _pimpl->interestTable.ids) {
+        if (const char *name = Render::internedModeName(id))
+            _pimpl->captureInterest.modes.emplace_back(SbName(name), id);
+    }
+    _pimpl->captureInterest.version = version;
+    if (selectionRoot)
+        selectionRoot->setCaptureInterest(&_pimpl->captureInterest);
+    // The traversal state moved (SoFCDisplayModeElement carries the
+    // set): the caches that read it re-capture on the next traversal.
+    getSoRenderManager()->scheduleRedraw();
+}
+
+void View3DInventorViewer::setImposedCaptureInterest(std::vector<uint16_t> ids)
+{
+    if (ids == _pimpl->imposedInterest)
+        return;
+    _pimpl->imposedInterest = std::move(ids);
+    rebuildCaptureInterest();
+}
+
+const Render::CaptureInterestTable *
+View3DInventorViewer::captureInterestTable() const
+{
+    if (_pimpl->interestTable.ids.empty())
+        return nullptr;
+    return &_pimpl->interestTable;
 }
 
 bool View3DInventorViewer::hasObjectStyleOverrides() const
@@ -4031,6 +4103,7 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
         else
             _pimpl->renderer->setMainViewStyle(
                     Render::StyleAsIs, 0, false, nullptr);
+        _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         externalRendered = _pimpl->renderer->renderOffscreen(
                 col, &viewMat.getValue(), &projMat.getValue(), width, height);
@@ -5767,6 +5840,7 @@ void View3DInventorViewer::renderScene()
         else
             _pimpl->renderer->setMainViewStyle(
                     Render::StyleAsIs, 0, false, nullptr);
+        _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         // render() publishes on the way past when something is listening
         // (docs/HeadlessServe.md §4), and a published object entry names

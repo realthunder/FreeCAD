@@ -7012,6 +7012,15 @@ public:
         uint8_t nameBit = 0;
         bool pin = false;
         bool has = false;
+        /// Non-standard mode entry (docs/CoinRetirement.md 5.9
+        /// "Non-standard modes"): the mode's interned id, and its
+        /// DrawCall::interestBits bit under the capture's interest
+        /// list (0 when the list does not carry it, in which case the
+        /// mode was never captured and the entry resolves to the
+        /// object's own mode). mask/nameBit are meaningless when
+        /// modeId is set.
+        uint16_t modeId = 0;
+        uint16_t interestBit = 0;
     };
     /// Lazily filled objectKey -> override cache of ONE sub-view's
     /// table. Lazy rather than a bulk pass because updateObjectInfo()
@@ -7022,6 +7031,10 @@ public:
     struct OvCache {
         uint32_t tableVersion = 0;
         uint32_t infoVersion = 0;
+        /// The capture-interest list's version (0 = none): the list
+        /// defines the id->bit mapping the cached interestBit values
+        /// were resolved under, so a moved list invalidates them.
+        uint32_t interestVersion = 0;
         std::unordered_map<uint64_t, OvStyle> map;
     };
     /// Per sub-view id; erased with the bank in dropSubView.
@@ -7032,6 +7045,10 @@ public:
     OvCache *ovCache = nullptr;
     const Render::StyleOverrideTable *ovTable = nullptr;
     const Render::ObjectInfoMap *ovInfo = nullptr;
+    /// The capture's additive-mode interest list (5.9 "Non-standard
+    /// modes"), latched beside the table; what maps an entry's modeId
+    /// to its DrawCall::interestBits bit.
+    const Render::CaptureInterestTable *ovInterest = nullptr;
     /// The override for \a objectKey, or null (BGFXViewSubmit.cpp).
     const OvStyle *lookupStyleOverride(uint64_t objectKey);
     /// Whether this sub-view's per-object style resolution (override,
@@ -8619,6 +8636,11 @@ public:
     uint8_t mainStyleName = 0;
     bool mainFromSuperset = false;
     const Render::StyleOverrideTable *mainStyleOverrides = nullptr;
+    /// The capture's additive-mode interest list, stated through
+    /// setCaptureInterest() (docs/CoinRetirement.md 5.9 "Non-standard
+    /// modes"). One per renderer -- the interest belongs to the shared
+    /// capture, not to a sub-view. The producer owns the storage.
+    const Render::CaptureInterestTable *captureInterest = nullptr;
 
     // CPU-side scene data fed through Render::Renderer's scene API. GPU
     // upload happens lazily during render(), so the feed may arrive before

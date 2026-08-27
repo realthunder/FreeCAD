@@ -279,6 +279,11 @@ void BGFXRenderer::setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
     pimpl->mainStyleOverrides = overrides;
 }
 
+void BGFXRenderer::setCaptureInterest(const CaptureInterestTable *table)
+{
+    pimpl->captureInterest = (table && !table->ids.empty()) ? table : nullptr;
+}
+
 void BGFXRenderer::prepareSubViews(const QColor &col,
                                    const SubViewFrame *subs, int count)
 {

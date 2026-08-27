@@ -211,6 +211,11 @@ public:
     bool handleEvent(SoHandleEventAction * action);
     void applyOverrideMode(SoState * state) const;
 
+    /// The capture's additive-mode interest set (5.9 "Non-standard
+    /// modes"); owned by the viewer, pushed onto the element in
+    /// applyOverrideMode.
+    const SoFCDisplayModeElement::CaptureInterest *captureInterest = nullptr;
+
     uint32_t getSelectionColor() const {
         float t = 0.f;
         if (ViewParams::getShowSelectionOnTop())
@@ -965,13 +970,21 @@ void SoFCUnifiedSelection::Private::applyOverrideMode(SoState * state) const
             mode = SbName::empty();
 
         SoFCDisplayModeElement::set(state, master, mode, hiddenline,
-                pcViewer ? &pcViewer->getHiddenLineConfig() : nullptr);
+                pcViewer ? &pcViewer->getHiddenLineConfig() : nullptr,
+                captureInterest);
     }
 
     if (!shading && state->isElementEnabled(SoLightModelElement::getClassStackIndex())) {
         SoOverrideElement::setLightModelOverride(state, master, TRUE);
         SoLightModelElement::set(state, SoLightModelElement::BASE_COLOR);
     }
+}
+
+void SoFCUnifiedSelection::setCaptureInterest(
+        const SoFCDisplayModeElement::CaptureInterest *interest)
+{
+    pimpl->captureInterest =
+        (interest && !interest->modes.empty()) ? interest : nullptr;
 }
 
 bool SoFCUnifiedSelection::Private::checkSelection(SelectionChanges::MsgType selType, const App::SubObjectT &objT)
