@@ -860,3 +860,80 @@ is no third case. It is still maintained coherently (fed, cloned,
 counted in the viewer's bounds), and the plan's condition for
 deleting it -- "if the engine now draws it" -- is not met, so it
 stays until someone decides whether an uncut-stock view is wanted.
+
+## 9. The legacy GL renderer is permanent, not a transition
+
+Stage 1 step 8 deleted the raw-GL path on the reasoning that "the
+render path selection always brings the backend up in this fork", so a
+missing backend meant a blank simulator "as designed".
+
+**That reasoning does not survive the build options.** `BUILD_BGFX`
+defaults OFF, and so does `BUILD_CAM_SIMULATOR_GL`
+(`InitializeFreeCADBuildOptions.cmake`). An ordinary build has no
+backend to draw through at all, and a session that has never warmed
+one does not either. What step 8 described as designed behaviour is
+just a simulator that does not work.
+
+So the deletion is reverted (`2dc2abf6e6`) and the GL renderer is a
+permanent second path, not a stage of the port. Both are supported.
+
+### 9.1 Which one draws
+
+`DlgCAMSimulator::useLegacyGL()`:
+
+- **Legacy GL** when `Render::DrawDevice::instance()` is null -- bgfx
+  not built, a backend that would not start, or nothing has warmed one
+  -- or when the `Mod/CAM` `ForceLegacyGLRender` preference asks for
+  it. The preference is what makes the two comparable on one machine,
+  and gives a user whose driver the backend dislikes somewhere to
+  stand. It takes effect when the simulator is reopened: a running
+  simulation holds buffers built for the path in force when it was set
+  up.
+- **The facade** otherwise, standalone or attached.
+
+A forced-legacy session never attaches to a host frame: legacy GL owns
+the widget's own context and cannot draw inside somebody else's.
+
+### 9.2 ! The two are mutually exclusive, which they were not before
+
+The `UseFacadeRender` switch of steps 3-7 let BOTH paths run every
+frame -- that is what made the A/B comparison possible, and it was
+harmless while the facade owned its own widget.
+
+It is **not** harmless now. Attached, the simulator draws inside the
+HOST's frame (section 8), and a stray `glEnable` or `glDepthFunc`
+there desynchronises the backend's state cache -- corrupting the
+document's rendering, not just the simulator's.
+
+So every GL call in the shared files sits behind
+`SimDrawContext::legacyGL`. The flag is set by the frame driver
+**before resources are built** as well as before the draws, because
+the buffers and shaders are made lazily from `updateResources()` and
+each path must build only its own. `SimDrawContext` was always the
+place the two paths meet; this is one more field of that.
+
+Two things that are safe without a guard, and say so where they live:
+`GLDELETE` tests the id, and `Shader::Destroy` tests the program --
+both no-ops for resources the legacy path never created.
+
+`Texture` and `TextureLoader` stay deleted. They had no callers even
+before the port, so restoring them would restore dead code rather than
+rendering.
+
+### 9.3 Verification
+
+Three legs of the stage 2 harness on the piercing-bar scene
+(`SIM_BASE=3 SIM_BOTH=1`, plus `SIM_LEGACY=1` for the third):
+
+- attached facade -- pixel-identical to before the restoration;
+- standalone facade -- pixel-identical;
+- legacy GL vs the facade -- 657 differing pixels of 465600, every one
+  of them on the tool-path lines. That is the documented
+  `glLineWidth(2)` versus screen-facing-quads substitute (section 5),
+  and nothing else in the picture moved.
+
+**! The audit that matters is not just `gl*(` calls.** The first pass
+guarded those and left `CurrentShader->UpdateModelMat` in
+`Shape::Render` unguarded -- a null dereference the moment the facade
+drew, because nothing had compiled a Shader. Grep for the shader
+objects and `CurrentShader` too.
