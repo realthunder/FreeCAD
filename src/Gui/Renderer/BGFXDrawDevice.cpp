@@ -651,13 +651,6 @@ public:
     /// Attached-flavour state; all inert on a standalone surface.
     bool isAttached = false;
     std::vector<uint16_t> hostIds;
-    /// The effect tier hands a run a base id and takes the ids after
-    /// it, so it needs the block to be contiguous. It always is --
-    /// consumer passes are consecutive enum entries and mapPasses
-    /// assigns live passes consecutively -- but a future frame path
-    /// that broke it would otherwise scribble into a neighbour's view,
-    /// so it is checked rather than assumed.
-    bool idsContiguous = true;
     bgfx::FrameBufferHandle hostFb = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle hostColorTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle hostDepthTex = BGFX_INVALID_HANDLE;
@@ -985,8 +978,22 @@ public:
             return {};
         if (firstPass + Render::kAOEffectPasses > numPasses)
             return {};
-        if (isAttached && !idsContiguous)
-            return {};
+        if (isAttached) {
+            // The effect tier hands its run a base id and uses the
+            // ids after it, so the ids must be consecutive across the
+            // effect's own range. They are whenever the range sits
+            // inside ONE consumer run (consecutive enum entries,
+            // consecutively mapped) -- but the scene and overlay runs
+            // are not contiguous with each other, and a frame path
+            // change could break the rule some other way, so it is
+            // checked rather than assumed: a violation would scribble
+            // into a neighbour's view.
+            for (unsigned p = firstPass + 1;
+                 p < firstPass + Render::kAOEffectPasses; ++p) {
+                if (hostIds[p] != uint16_t(hostIds[p - 1] + 1))
+                    return {};
+            }
+        }
         auto it = _aoEffects.find(effect.idx);
         if (it == _aoEffects.end())
             return {};
@@ -1074,12 +1081,8 @@ public:
     {
         if (bind.numIds < s.numPasses)
             return;
-        s.idsContiguous = true;
-        for (unsigned p = 0; p < s.numPasses; ++p) {
+        for (unsigned p = 0; p < s.numPasses; ++p)
             s.hostIds[p] = bind.ids[p];
-            if (p && bind.ids[p] != uint16_t(bind.ids[p - 1] + 1))
-                s.idsContiguous = false;
-        }
         s.hostFb = bind.target;
         s.hostColorTex = bind.color;
         s.hostDepthTex = bind.depth;
@@ -1110,10 +1113,9 @@ public:
             lastW = bind.width;
             lastH = bind.height;
             std::printf("bgfx: attached draw surface first frame %dx%d "
-                        "(passes %u at %u, contiguous %d, linear %d)\n",
+                        "(passes %u at %u, linear %d)\n",
                         bind.width, bind.height, s.numPasses,
-                        unsigned(bind.ids[0]), int(s.idsContiguous),
-                        int(bind.linearColor));
+                        unsigned(bind.ids[0]), int(bind.linearColor));
             std::fflush(stdout);
         }
     }
@@ -1322,12 +1324,15 @@ DrawDevice *fcBGFXDrawDevice()
     return &_drawDevice;
 }
 
-std::unique_ptr<BGFXHostSurface> fcBGFXCreateHostSurface(unsigned numPasses)
+std::unique_ptr<BGFXHostSurface> fcBGFXCreateHostSurface(
+        unsigned scenePasses, unsigned overlayPasses)
 {
-    if (_BGFXLib.currentType == bgfx::RendererType::Noop || !numPasses
-            || numPasses > unsigned(BGFXView::NumConsumerViews))
+    if (_BGFXLib.currentType == bgfx::RendererType::Noop
+            || scenePasses + overlayPasses == 0
+            || scenePasses > unsigned(BGFXView::NumConsumerSceneViews)
+            || overlayPasses > unsigned(BGFXView::NumConsumerOverlayViews))
         return nullptr;
-    return std::make_unique<BGFXHostSurfaceImpl>(numPasses);
+    return std::make_unique<BGFXHostSurfaceImpl>(scenePasses + overlayPasses);
 }
 
 } // namespace Render

@@ -2506,9 +2506,20 @@ public:
     /// the consumer's last passes in somebody else's view id.
     virtual unsigned framePasses() const = 0;
 
-    /// Draw into \a surface. Called once per host frame, after the
-    /// scene composite and before the on-top, highlight and overlay
-    /// passes.
+    /// Of framePasses(), how many TRAILING passes belong in the
+    /// overlay run -- drawn after the transparent composite, against
+    /// the frame's finished depth. The rest are the scene run, drawn
+    /// while the scene is still being composed: volumetric fog, water
+    /// and glass, transparent geometry and everything after them see
+    /// the scene run's output and the depth it writes. Ordering
+    /// within each run follows pass index. Read at registration like
+    /// framePasses(), and refused the same way when a run is over
+    /// what the host offers (docs/CAMSimRenderPort.md sec 10.2).
+    virtual unsigned overlayPasses() const { return 0; }
+
+    /// Draw into \a surface. Called once per host frame; each pass's
+    /// draws land where its run places them (overlayPasses() above),
+    /// always before the on-top, highlight and overlay-feed passes.
     ///
     /// The surface's passes are live only for the duration of this
     /// call. Nothing here may cross the frame boundary or disturb the
