@@ -207,6 +207,13 @@ public:
     static ViewArea *wrap(MDIView *view);
 
     ViewAreaCell *activeCell() const { return _activeCell; }
+    /** Hint the corner zones (ViewAreaCell::showZoneHint) of the cells
+     * \a handle borders, clearing every other cell's hint; \a on false
+     * clears them all. A hovered splitter handle asks for this, so a
+     * border points at the gesture that makes and removes it
+     * (docs/SplitViews.md sec 18).
+     */
+    void showZoneHintAt(const QSplitterHandle *handle, bool on);
     ViewAreaCell *cellOf(const MDIView *view) const;
     std::vector<ViewAreaCell*> cells() const;
     int cellCount() const;

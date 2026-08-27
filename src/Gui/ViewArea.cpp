@@ -235,6 +235,18 @@ public:
     using QSplitterHandle::QSplitterHandle;
 
 protected:
+    void enterEvent(QEnterEvent *ev) override
+    {
+        QSplitterHandle::enterEvent(ev);
+        if (ViewArea *area = ViewArea::areaOf(splitter()))
+            area->showZoneHintAt(this, true);
+    }
+    void leaveEvent(QEvent *ev) override
+    {
+        QSplitterHandle::leaveEvent(ev);
+        if (ViewArea *area = ViewArea::areaOf(splitter()))
+            area->showZoneHintAt(this, false);
+    }
     void contextMenuEvent(QContextMenuEvent *ev) override
     {
         auto sp = splitter();
@@ -837,6 +849,39 @@ bool ViewArea::setCellView(ViewAreaCell *cell, MDIView *view)
     setActiveCell(cell);
     syncCanvas();
     return true;
+}
+
+void ViewArea::showZoneHintAt(const QSplitterHandle *handle, bool on)
+{
+    QRect h;
+    bool horiz = true;
+    if (on && handle) {
+        h = QRect(handle->mapToGlobal(QPoint(0, 0)), handle->size());
+        horiz = handle->orientation() == Qt::Horizontal;
+    }
+    for (ViewAreaCell *cell : cells()) {
+        bool borders = false;
+        if (!h.isNull() && cell->isVisible()) {
+            const QRect r(cell->mapToGlobal(QPoint(0, 0)), cell->size());
+            // Two conditions, because a handle in a nested tree runs
+            // past cells it does not touch: the cell must overlap the
+            // handle ALONG its length, and one of its edges ACROSS the
+            // handle must be the handle's own. Testing only the first
+            // lights up the whole subtree; only the second lights up
+            // every cell in the row.
+            const bool along = horiz
+                ? (r.top() <= h.bottom() && r.bottom() >= h.top())
+                : (r.left() <= h.right() && r.right() >= h.left());
+            const int slack = 2;  // frame width and rounding
+            const bool edge = horiz
+                ? (qAbs(r.right() + 1 - h.left()) <= slack
+                   || qAbs(r.left() - h.right() - 1) <= slack)
+                : (qAbs(r.bottom() + 1 - h.top()) <= slack
+                   || qAbs(r.top() - h.bottom() - 1) <= slack);
+            borders = along && edge;
+        }
+        cell->showZoneHint(borders);
+    }
 }
 
 ViewAreaCell *ViewArea::cellOf(const MDIView *view) const

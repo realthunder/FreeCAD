@@ -194,9 +194,9 @@ Rules:
   (a translucent child widget), release executes, Esc cancels.
 - Splitter borders: native QSplitter resize; right-click on a handle opens
   Split Horizontal / Split Vertical / Join menu.
-- Hovering the per-cell menu button also reveals both corner zones (sec 18):
-  the button is the only always-discoverable cell chrome, so it is what
-  points at the two invisible ones.
+- Hovering the per-cell menu button, or any splitter handle, also reveals
+  the corner zones (sec 18): the visible chrome is what points at the two
+  invisible ones.
 - Per-cell menu (small button in the cell's top-left corner, later a full
   content switcher, sec 5.5): Split H, Split V, Maximize/Restore cell (the
   Blender Ctrl-Space behavior: temporarily collapse the tree to one cell,
@@ -1296,7 +1296,7 @@ i.e. that cell shows the faces the single view shows (24434); own mode
 ink `[24846, 24459]` dark `[391, 0]`, the styled cell now served by
 filtering; cell 1 -> `As Is` -> one style again, ink `[24846, 24846]`.
 
-## 18. The menu button points at the corner zones (2026-08-28)
+## 18. The visible chrome points at the corner zones (2026-08-28)
 
 The corner action zones paint nothing until the cursor is inside them
 (sec 5.4, Blender's behavior). That is fine once you know they exist and
@@ -1317,3 +1317,20 @@ resting frame.
 - `ViewAreaCell::showZoneHint(bool)` forwards to both zones; the menu
   button's `enterEvent`/`leaveEvent` call it. The cell owns both zones,
   which is why the pairing lives there and not in the zone.
+
+A splitter handle is the second such trigger, and the better one: a user
+who has found the border is already thinking about the layout, and the
+corner zones are how that border is made and removed.
+`ViewAreaSplitterHandle::enterEvent` calls `ViewArea::showZoneHintAt`,
+which lights the cells that handle borders and clears every other cell.
+
+- Bordering is decided geometrically, not from the splitter tree: a
+  handle's own children are only two widgets, and either may be a nested
+  splitter whose leaves partly touch the handle and partly do not.
+- Both halves of the test are needed. A cell must overlap the handle
+  ALONG its length and have an edge ACROSS it that is the handle's own
+  edge (2px of slack for the frame). Dropping the second lights the whole
+  row; dropping the first lights the whole subtree.
+- Verified on a 4-cell nested tree (Xvfb, probe_handlehint.py): each of
+  the three handles lit exactly the cells its rect abuts -- the root
+  handle three of them, the nested ones two -- and leaving cleared them.
