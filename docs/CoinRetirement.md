@@ -1962,6 +1962,45 @@ entry (prune opportunistically, never a load-time error), and edits
 bypass undo (view properties sit outside document transactions, as
 `DrawStyle` already does).
 
+**Built 2026-08-27** -- plumbing `0b930ae8be`, storage + resolution +
+capture `04d40f633e`, UI `7a86098ae5`, instancing fix `5b8d9016ca`.
+The additive capture for non-standard modes is the one part still
+open. Two findings from the build:
+
+- **An instance group is not one object.** The instanced submit path
+  merges draws by geometry and material, NOT by objectKey, and drew
+  the prototype for every member with no style resolution at all --
+  so an override on one box leaked onto every identical box, and a
+  canvas cell WITHOUT the override showed the superset capture. This
+  was a latent 5.8 gap too: two same-geometry objects on a styled
+  canvas took the same wrong path; d4mode never saw it because it
+  measures one box. `BGFXView::styleAdmits` now carries the whole
+  resolution and both the per-draw submit and the instanced partition
+  ask it; a member the style drops leaves the group for the per-draw
+  loop (which filters it) but still casts shadows, exactly as the
+  per-draw caster path would.
+- **Adding a property to ViewProviderDocumentObject is an ABI break
+  for every workbench.** The DisplayModeInView row grew the base
+  class; a rebuild of FreeCADGui alone left PartGui constructing on
+  the old layout and crashing inside attach with stacks that pointed
+  everywhere but the cause. Full rebuild after base-class header
+  changes, always.
+
+**Verified (RTX 3060, xvfb + vglrun egl0)**, rigs `ovr.py` /
+`ovrsave.py`, a Box and a Link of it (identical geometry = the
+instancing case), own mode Wireframe throughout:
+
+    A  row override Shaded (bare "Box"): ink 3600 == plain Shaded
+       3600; the Link stays 240 == its wireframe 240; clearing the row
+       returns 239 == 239.
+    B  command override "Link." Shaded: Link half 3600, the original
+       Box EXACTLY its 239 baseline; stored = {"Link.": "Shaded"};
+       clear-all returns 240 == 240.
+    C  2-cell canvas, override in cell 0 only: [3600, 179], cell 1
+       exactly its 179 base -- ServeSuperset resolving per cell.
+    D  save / close / reopen: the row reads Shaded, own mode
+       Wireframe, ink 16900 == the pre-save 16900.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is
