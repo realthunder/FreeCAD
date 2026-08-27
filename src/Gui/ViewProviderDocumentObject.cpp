@@ -546,7 +546,8 @@ void ViewProviderDocumentObject::attach(App::DocumentObject *pcObj)
     // The per-view override row (docs/CoinRetirement.md 5.9): "Use
     // View Mode" and "As Is" first, then every mode this provider
     // registers -- which is how non-standard modes are reachable per
-    // object even though only the four Class-A names resolve today.
+    // object; they resolve through the additive capture (5.9
+    // "Non-standard modes").
     {
         std::vector<std::string> inview;
         auto modes = this->getDisplayModes();
@@ -555,8 +556,24 @@ void ViewProviderDocumentObject::attach(App::DocumentObject *pcObj)
         inview.emplace_back("As Is");
         for (auto &m : modes)
             inview.push_back(std::move(m));
+        // User1: rebuilding the enum resets the row's value, and
+        // onChanged would read that as the user choosing "Use View
+        // Mode" and ERASE the object's entry from the active view's
+        // map. Deferred VP restore made this real: a Python provider
+        // attaches after the restored view is already active, and the
+        // rebuild silently dropped the just-restored override.
+        Base::ObjectStatusLocker<App::Property::Status, App::Property>
+            guard(App::Property::User1, &DisplayModeInView);
         DisplayModeInView.setEnumVector(std::move(inview));
         DisplayModeInView.setPersistEnums(false);
+        // ...and the rebuild reset the row's value, so read it back
+        // from the view it presents. Without this a provider attached
+        // AFTER the view -- deferred VP restore -- shows "Use View
+        // Mode" over a live entry, and "clearing" the row is then a
+        // no-op that leaves the override in place.
+        if (auto aview = Base::freecad_dynamic_cast<View3DInventor>(
+                Application::Instance->activeView()))
+            syncDisplayModeInView(aview);
     }
 
     if(!isRestoring()) {
