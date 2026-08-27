@@ -278,6 +278,14 @@ void BGFXView::submitOutline(const Render::DrawCall &draw, uint32_t refCounter,
 {
     if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
         return;
+    // An outline is shading, so it belongs to whatever the per-object
+    // style resolution decided about the draw itself
+    // (docs/CoinRetirement.md 5.13): a draw this sub-view does not
+    // show must not leave its silhouette behind, and the ADDITIVELY
+    // captured copy of an overridden object must not outline the same
+    // object twice. submit() asks the same question of the fill.
+    if (!styleAdmits(draw))
+        return;
     // Validate the edge passes up front so a mesh that cannot draw
     // them leaves no stray stencil marks.
     GpuMesh *gpu = getMesh(*draw.mesh);
@@ -328,6 +336,11 @@ bool BGFXView::submitOutlineMark(const Render::DrawCall &draw,
 {
     if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
         return false;
+    // Also reached directly, for the whole-scene silhouette: the same
+    // rule, and the same answer as the edges pass below, so a dropped
+    // draw leaves no stencil mark for edges that never come.
+    if (!styleAdmits(draw))
+        return false;
     const Render::MeshData &mesh = *draw.mesh;
     if (count <= 0) {
         start = 0;
@@ -369,6 +382,8 @@ void BGFXView::submitOutlineEdges(const Render::DrawCall &draw,
                         uint32_t refCounter, const OutlineSpec &spec)
 {
     if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
+        return;
+    if (!styleAdmits(draw))
         return;
     const Render::MeshData &mesh = *draw.mesh;
     int start = spec.start;

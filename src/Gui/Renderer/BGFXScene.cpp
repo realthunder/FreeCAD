@@ -29,17 +29,41 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
                   uint16_t height,
                   uint32_t clearColor)
 {
-    snap.scene = scene;
+    // The ADDITIVELY captured copies of an overridden object's display
+    // mode (docs/CoinRetirement.md 5.10) stay home. A snapshot is what
+    // the dump and serve tiers replay, and they have neither the
+    // override table nor the per-draw resolution that picks ONE of the
+    // copies -- sending both would draw the object twice. Dropped, the
+    // object arrives in the mode the normal flow traversed, which is
+    // what a served scene has always shown of a view's overrides
+    // (5.13). Only ever a copy loop while an interest capture is
+    // running; otherwise no draw is tagged and this is the plain
+    // assignment it was.
+    auto copyFeed = [this](const Render::DrawCallList &src) {
+        if (!captureInterest)
+            return src;
+        Render::DrawCallList out;
+        out.reserve(src.size());
+        for (const auto &d : src) {
+            if (!d.capturedMode)
+                out.push_back(d);
+        }
+        return out;
+    };
+
+    snap.scene = copyFeed(scene);
     snap.objectInfo = &objectInfo;
     snap.objectMeta = &objectMeta;
-    snap.selections.assign(selections.begin(), selections.end());
-    snap.highlight = highlight;
+    snap.selections.reserve(selections.size());
+    for (const auto &sel : selections)
+        snap.selections.emplace_back(sel.first, copyFeed(sel.second));
+    snap.highlight = copyFeed(highlight);
     snap.highlightWholeOnTop = hlWholeOnTop;
     for (const auto &ov : overlays) {
         Render::SceneSnapshot::Overlay sov;
         sov.id = ov.first;
         sov.anchor = ov.second.anchor;
-        sov.draws = ov.second.draws;
+        sov.draws = copyFeed(ov.second.draws);
         snap.overlays.push_back(std::move(sov));
     }
     snap.background = background;

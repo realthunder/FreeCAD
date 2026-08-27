@@ -1460,7 +1460,8 @@ map (5.9), the additive capture that serves non-standard modes and
 Mesh-shaped switches (5.10) and the cell-style half of that capture,
 which retires the canvas eviction rule (5.11), are built and verified,
 and show-on-top persistence has moved onto the same view-property
-machinery (5.12); what remains open is listed at the end of 5.11. Stage 4 removed one draw style because
+machinery (5.12) and the tagged-draw holes are closed (5.13); what
+remains open is listed at the end of 5.11. Stage 4 removed one draw style because
 the Coin node behind it (`SoShadowGroup`) had a backend counterpart. This
 stage generalizes that: **remove the legacy Coin implementation of every
 remaining display style -- Tessellation first, then the ones built the
@@ -2248,11 +2249,12 @@ changes no pixels where the mask already served.
 
 **Still open** (unchanged from 5.10 unless noted): the show-on-top
 persistence migration -- **done in 5.12**; the selection/highlight feed
-does not filter tagged draws; `SceneDump` does not carry `capturedMode` /
-`traversedMode` / `interestBits`; `DisplayModeInView` rows for
-foreign-document objects are not re-synced on table change; and
-third-party providers that map user names onto differently named mask
-children still fall back to the object's own mode.
+and `SceneDump` tagged-draw holes -- **done in 5.13**, which also found
+that whole-object selection ignores the display mode outright, in Coin
+as well; `DisplayModeInView` rows for foreign-document objects are not
+re-synced on table change; and third-party providers that map user
+names onto differently named mask children still fall back to the
+object's own mode.
 
 ### 5.12 Show-on-top persistence moves onto the view (2026-08-27)
 
@@ -2329,6 +2331,56 @@ green box hidden behind a large one, visible only while it is on top:
   that points at Part's tessellation and says nothing about the header
   that moved. Same class as the `ViewProviderDocumentObject` property
   add in 5.9: **full rebuild after a property add.**
+
+### 5.13 The tagged-draw holes: outlines and the served scene (2026-08-27)
+
+The third item of the 5.10 list, and the one that turned out to be
+mostly a different question than it looked.
+
+**Outlines now obey the style resolution.** `BGFXView::submit()` asks
+`styleAdmits()` of every draw, and the highlight and selection feeds go
+through it, so their FILLS were already resolved per object. The
+outline entry points were not: `submitOutline`, `submitOutlineMark` and
+`submitOutlineEdges` drew whatever they were handed. A draw this
+sub-view suppresses -- because its style names another mode, or because
+the mode's ADDITIVELY captured copy replaces it -- would leave its
+silhouette behind, and an overridden object could be outlined twice,
+once from each copy. All three now return early on `styleAdmits`, and
+the mark/edges pair agrees by construction so no stray stencil mark is
+left for edges that never come.
+
+**The served scene drops tagged draws.** `SceneDump` carries neither
+`capturedMode` nor `ownStyle`/`registeredStyles`, and the remote viewer
+has no override table -- there is nothing at the far end that could
+pick one of two copies of an object, so it would draw both.
+`makeSnapshot()` now filters the additively captured draws out of the
+scene, selection, highlight and overlay feeds, and only while an
+interest capture is running (with no interest list no draw is tagged
+and the filter is the plain copy it always was). A served scene then
+shows the object in the mode the normal flow traversed, which is what
+serving a view's overrides has always shown -- minus the double draw.
+Carrying the resolution to the browser tier is a feature, not a hole,
+and is not attempted here.
+
+**What the rig turned up instead.** `seltag.py` puts the `nsm.py`
+provider -- modes `Cube` (a 10-unit cube) and `Ball` (radius 1),
+geometry nothing alike -- in a view and selects it:
+
+    own=Cube  ink 66342   selection delta 66342
+    own=Ball  ink  1197   selection delta 66342
+    override=Ball  ink 1532 (draws as the ball)  selection delta 66342
+
+A whole-object selection highlights the CUBE even when the view draws
+only the ball, with or without an override. It is not the tagged-draw
+hole and not a backend defect: a `Part::Box` in `Wireframe` selects as
+a solid filled box too (flat-lines ink 55982, wireframe ink 2474,
+selection delta 66977), and **the Coin path at render cache 0 does
+exactly the same**. Whole-object selection has always ignored the
+display mode. Whether it should is a UI ruling, not a bug fix, so it is
+recorded here and left alone.
+
+`sbn`, `nsm`, `pts`, `ovr`, `d4` 8/8 and `d4mode` green after, all
+unchanged to the pixel.
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 
