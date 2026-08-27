@@ -47,26 +47,48 @@ content menu already follows this. The placement policy below deliberately
 keeps that property: it only ever creates a split when the user's chosen
 default says so, and never rearranges existing cells.
 
-### 1.4 CAD packages
+### 1.4 CAD packages (deep survey 2026-08-28)
 
-- SolidWorks / classic MDI CAD: every document (part, assembly, drawing) is
-  its own window; making a drawing from a part opens a new window. Viewport
-  splits (two/four view) exist WITHIN a window and always show the same
-  document. Windows are managed via a Window menu.
-- NX: named viewport "layouts" (L1..) per window -- again same-document.
-- Fusion 360: one tab per design across the top; a drawing becomes another
-  document tab.
-- Onshape: one graphics area, a bottom tab manager listing Part Studios,
-  Assemblies and Drawings of ONE document; switching tabs switches the
-  graphics area; "open in new browser tab" is the escape hatch.
+- SOLIDWORKS: classic MDI child windows and NO document tab bar (users have
+  requested one for 15+ years); switching is the Window menu / Ctrl+Tab.
+  Viewport splits (Single / Two-H / Two-V / Four View) exist WITHIN one
+  window, always show the SAME document, and are not even persisted --
+  returning to Single View discards the arrangement. Link Views syncs
+  pan/zoom across orthogonal panes only.
+- Siemens NX: the canonical NAMED layout system -- View > Layout, fixed
+  grids L1..L9, a named model view assigned per cell, saved BY NAME in the
+  part file, Replace View swaps one cell. NX 12+ adds tabbed multi-window
+  with tab tear-off to floating windows.
+- AutoCAD: the other named-layout system -- VPORTS viewport configurations
+  saved in the DWG (Single, Two V/H, Three x6, Four x3), restorable even
+  into paper space. One file tab per drawing; since 2022 a tab can be torn
+  off into a floating OS window (SYSFLOATING).
+- Creo: one window per object through Creo 12; Creo 13 switched the DEFAULT
+  to tabs in one main window, with a global "Open objects in tabs" setting
+  and drag-out-to-window -- the most direct prior art for a user-selectable
+  tabs-vs-windows policy switch. No viewport split in modeling.
+- Fusion 360: one tab per design; a drawing becomes another document tab;
+  Multiple Views is a fixed 2x2 quad toggle; zero placement preferences.
+- Onshape: bottom tab manager, one active tab per browser window; the
+  placement rule is documented verbatim: "A newly created tab is placed
+  directly to the right of the currently active tab and is made active
+  immediately." No splits at all; multi-view = more browser windows.
+- Rhino is the opposite pole: a quad viewport layout IS the default working
+  surface (template-defined, stored in the .3dm), with free split/float/
+  overlap commands but no named layouts. Our UseViewArea=true single-cell
+  default plus cheap split gestures covers that persona without imposing it.
 
-Lesson: CAD users universally expect DOCUMENTS to be tabs. Splits/viewports
-are for looking at one document from several angles at once. Our proposed
-defaults match this exactly.
-
-- Rhino is the exception worth noting: a fixed 4-viewport layout is the
-  DEFAULT working surface. Our UseViewArea=true single-cell default plus
-  cheap split gestures covers that persona without imposing it.
+Lessons: (1) documents are tabs/windows and splits show the SAME document --
+NO surveyed product tiles different documents in one split, which validates
+the policy's never-cross-documents rule (sec 3.3). (2) A newly opened
+document is always activated; nothing opens in the background. (3)
+Configuration is thin everywhere: a global preference plus per-action
+gestures; no product ships a per-document-type placement rule table. (4)
+Tab tear-off to a floating window is the modern convergent feature (AutoCAD
+2022, NX 12, Creo 13, Blender) -- our Floating target and the P3 drag
+gestures line up with it. (5) Simulation-result COMPARISON converges on a
+bounded n-up of at most 4 panes with a camera-sync toggle (SOLIDWORKS
+Compare Results, Fusion Compare, NX L2/L4 post views).
 
 ### 1.5 Editors and browsers
 
@@ -242,10 +264,17 @@ tabs" without demoting the category default for pages and the simulator.
 
 ### 4.4 Later gestures (out of first scope, recorded)
 
-Drag an MDI tab and drop it onto a cell to move that view into the split
-(VS Code drag-to-split; the machinery is `detachViewForHosting` +
-`setCellView`, only the drop target UI is new). Complements, not replaces,
-the policy.
+- Drag an MDI tab and drop it onto a cell to move that view into the split
+  (VS Code drag-to-split; the machinery is `detachViewForHosting` +
+  `setCellView`, only the drop target UI is new). Complements, not
+  replaces, the policy.
+- Named cell layouts (NX Layouts / AutoCAD VPORTS are the prior art):
+  save/recall a ViewArea arrangement by name. `layoutString` is already the
+  serialization; only naming, storage scope (per document vs global) and UI
+  are missing.
+- Linked navigation across cells (SOLIDWORKS Link Views, the sim-compare
+  camera sync every vendor ships): a per-area toggle synchronizing the
+  cameras of its 3D cells.
 
 ## 5. Call-site conversion
 
