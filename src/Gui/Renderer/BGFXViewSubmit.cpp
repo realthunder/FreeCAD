@@ -655,8 +655,12 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     // under no such switch; skipbounds is exactly the flag that marks
     // them. Filtering them would make the rotation-centre sphere
     // vanish in Wireframe, which Coin never does.
+    // The bucket is what the draw RENDERS as, not mat.type: Mesh builds
+    // its Wireframe and Point modes by re-styling one mesh node, so
+    // they arrive as Material::Triangle and filtering on the type alone
+    // dropped them (Render::styleBitOf).
     if (drawStyleMask != Render::StyleAsIs && !draw.skipbounds
-            && !((drawStyleMask >> mat.type) & 1))
+            && !(drawStyleMask & Render::styleBitOf(mat)))
         return;
 
     GpuMesh *mesh = getMesh(*draw.mesh);

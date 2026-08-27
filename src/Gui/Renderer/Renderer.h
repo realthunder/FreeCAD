@@ -2366,6 +2366,34 @@ enum DrawStyleMask : uint8_t {
     StyleFlatLines = StyleFaces | StyleLines | StylePoints,
 };
 
+/// Which bucket a draw actually RENDERS as, which is not always its
+/// Material::Type.
+///
+/// The mask above reads a draw's bucket off `mat.type`, which is right
+/// only while a ViewProvider builds its display-mode children out of
+/// separate face, line and point geometry -- which is what Part does.
+/// Mesh does not: its "Wireframe" and "Point" children are the SAME
+/// mesh node re-styled by an SoDrawStyle (Mod/Mesh/Gui/ViewProvider.cpp
+/// -- pcLineStyle is LINES, pcPointStyle is POINTS), so the cache emits
+/// them as Material::Triangle carrying a drawstyle. Classifying those
+/// by type alone files a wireframe rendering under faces, and a
+/// Wireframe filter then drops the mesh entirely.
+///
+/// A scene-wide drawstyle OVERRIDE is not reclassified: that is the
+/// Tessellation display mode, whose filled faces still occupy their
+/// faces bucket (they are drawn to occlude), and `drawstyleoverride` is
+/// exactly what tells it from a plain SoDrawStyle node in the graph.
+inline uint8_t styleBitOf(const Material &mat)
+{
+    if (mat.type == Material::Triangle && !mat.drawstyleoverride) {
+        if (mat.drawstyle == Material::DrawLines)
+            return StyleLines;
+        if (mat.drawstyle == Material::DrawPoints)
+            return StylePoints;
+    }
+    return static_cast<uint8_t>(1u << mat.type);
+}
+
 /// One draw of (a part of) a mesh with a material and model transform.
 struct DrawCall {
     Material material;
