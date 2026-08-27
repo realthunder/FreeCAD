@@ -32,7 +32,7 @@ from params_utils import auto_comment
 
 sys.path.append(path.join(path.dirname(
     path.dirname(path.dirname(path.abspath(__file__)))), 'Gui'))
-import ViewParams, TreeParams, ExprParams, OverlayParams
+import ViewParams, TreeParams, ExprParams, OverlayParams, OpenViewParams
 
 Title = 'UI'
 NameSpace = 'Gui'
@@ -44,10 +44,19 @@ _ViewParams = { param.name : param for param in ViewParams.Params }
 _TreeParams = { param.name : param for param in TreeParams.Params }
 _ExprParams = { param.name : param for param in ExprParams.Params }
 _OverlayParams = { param.name : param for param in OverlayParams.Params }
+_OpenViewParams = { param.name : param for param in OpenViewParams.Params }
 
 ParamGroup = (
     ('General', [_ViewParams[name] for name in (
         'TextCursorWidth',
+    )]),
+
+    ('Views', [_ViewParams['UseViewArea']]
+              + [_OpenViewParams[name] for name in (
+        'DocumentTarget',
+        'DocViewTarget',
+        'UtilityTarget',
+        'SplitDirection',
     )]),
 
     ('Tree view', [_TreeParams[name] for name in (

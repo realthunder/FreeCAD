@@ -1224,6 +1224,7 @@ SOURCE_GROUP("Widget" FILES ${Widget_SRCS})
 
 SET(Params_CPP_SRCS
     ViewParams.cpp
+    OpenViewParams.cpp
     RenderParams.cpp
     ExprParams.cpp
     ReportViewParams.cpp
@@ -1236,6 +1237,7 @@ SET(Params_CPP_SRCS
 
 SET(Params_HPP_SRCS
     ViewParams.h
+    OpenViewParams.h
     RenderParams.h
     ExprParams.h
     ReportViewParams.h

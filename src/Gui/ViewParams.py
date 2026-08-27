@@ -154,6 +154,10 @@ class ParamAnimationCurve(ParamProxy):
     {param.widget_name}->setCurrentIndex({param.namespace}::{param.class_name}::default{param.name}());''')
 
 Params = [
+    ParamBool('UseViewArea', True, title="Tile views inside one tab",
+        doc="Host views in a split-capable view area, so that several views\n"
+            "can share one tab side by side. Off, every view gets its own tab\n"
+            "and the split placement choices below do not apply."),
     ParamBool('UseNewSelection', True),
     ParamBool('UseSelectionRoot', True),
     ParamBool('EnableSelection', True,

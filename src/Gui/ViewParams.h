@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:605)
+// Auto generated code (Gui/ViewParams.py:609)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -76,6 +76,20 @@ namespace Gui {
 class GuiExport ViewParams {
 public:
     static ParameterGrp::handle getHandle();
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UseViewArea
+    ///
+    /// Host views in a split-capable view area, so that several views
+    /// can share one tab side by side. Off, every view gets its own tab
+    /// and the split placement choices below do not apply.
+    static const bool & getUseViewArea();
+    static const bool & defaultUseViewArea();
+    static void removeUseViewArea();
+    static void setUseViewArea(const bool &v);
+    static const char *docUseViewArea();
+    //@}
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
@@ -2263,7 +2277,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:611)
+    // Auto generated code (Gui/ViewParams.py:615)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2294,7 +2308,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:624)
+// Auto generated code (Gui/ViewParams.py:628)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

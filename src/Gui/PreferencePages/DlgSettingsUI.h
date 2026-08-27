@@ -31,10 +31,10 @@ import DlgSettingsUI
 DlgSettingsUI.declare_begin()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:516)
+// Auto generated code (Tools/params_utils.py:519)
 #include <Gui/PropertyPage.h>
 #include <Gui/PrefWidgets.h>
-// Auto generated code (Tools/params_utils.py:523)
+// Auto generated code (Tools/params_utils.py:526)
 class QLabel;
 class QGroupBox;
 
@@ -71,12 +71,25 @@ protected:
 
 private:
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupGeneral = nullptr;
     QLabel *labelTextCursorWidth = nullptr;
     Gui::PrefSpinBox *TextCursorWidth = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:426)
+    QGroupBox * groupViews = nullptr;
+    Gui::PrefCheckBox *UseViewArea = nullptr;
+    QLabel *labelDocumentTarget = nullptr;
+    Gui::PrefComboBox *DocumentTarget = nullptr;
+    QLabel *labelDocViewTarget = nullptr;
+    Gui::PrefComboBox *DocViewTarget = nullptr;
+    QLabel *labelUtilityTarget = nullptr;
+    Gui::PrefComboBox *UtilityTarget = nullptr;
+    QLabel *labelSplitDirection = nullptr;
+    Gui::PrefComboBox *SplitDirection = nullptr;
+    QLabel *hintSplitDirection = nullptr;
+
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupTreeview = nullptr;
     QLabel *labelItemBackground = nullptr;
     Gui::PrefColorButton *ItemBackground = nullptr;
@@ -89,7 +102,7 @@ private:
     Gui::PrefCheckBox *HideHeaderView = nullptr;
     Gui::PrefCheckBox *TreeToolTipIcon = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupExpression = nullptr;
     Gui::PrefCheckBox *AutoHideEditorIcon = nullptr;
     QLabel *labelEditorTrigger = nullptr;
@@ -98,7 +111,7 @@ private:
     QLabel *labelEditDialogBGAlpha = nullptr;
     Gui::PrefSpinBox *EditDialogBGAlpha = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupPiemenu = nullptr;
     QLabel *labelPieMenuIconSize = nullptr;
     Gui::PrefSpinBox *PieMenuIconSize = nullptr;
@@ -119,7 +132,7 @@ private:
     Gui::PrefComboBox *PieMenuAnimationCurve = nullptr;
     Gui::PrefCheckBox *PieMenuPopup = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupOverlay = nullptr;
     Gui::PrefCheckBox *DockOverlayHideTabBar = nullptr;
     Gui::PrefCheckBox *DockOverlayHidePropertyViewScrollBar = nullptr;
@@ -196,7 +209,7 @@ import DlgSettingsUI
 DlgSettingsUI.declare_end()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:570)
+// Auto generated code (Tools/params_utils.py:573)
 };
 } // namespace Dialog
 } // namespace Gui

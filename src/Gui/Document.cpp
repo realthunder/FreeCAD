@@ -2716,9 +2716,7 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
         // With saved split view layouts the extra views are created
         // bare; applyViewAreaLayouts below places them into cells.
         bool useLayouts = !d->_viewAreaLayouts.empty()
-            && App::GetApplication().GetParameterGroupByPath(
-                    "User parameter:BaseApp/Preferences/View")
-                ->GetBool("UseViewArea", true);
+            && ViewParams::getUseViewArea();
         while(views.size() < d->_savedViews.size()) {
             // Restore never consults the placement policy (docs/
             // ViewPlacement.md sec 3.3): without saved layouts the

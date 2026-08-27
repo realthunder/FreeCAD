@@ -429,3 +429,45 @@ the plan did not know:
   identical in kind to the sheet/page ones, but the simulator's
   stacked widget in a half-width cell deserves an eyeball before the
   workstream closes).
+
+## 10. P1 implementation notes (2026-08-28)
+
+The configuration surface of sec 4.1, live: a "Views" group at the top of
+Display -> UI, holding the `UseViewArea` checkbox, the three target combos,
+the split direction combo and the Alt hint line.
+
+- **A new generated params module**, `Gui/OpenViewParams.py` ->
+  `OpenViewParams.h/.cpp` (cog, like ViewParams/ExprParams). It owns the
+  four `View/OpenView` parameters, and `ViewPlacement.cpp` now reads them
+  through its accessors instead of `GetASCII` with local default strings.
+  That is the point of the module: the page writes and the policy reads the
+  same generated definition, so the words cannot drift apart. `UseViewArea`
+  belongs to `View`, not `View/OpenView`, so it was declared in
+  `ViewParams.py` -- one param per path, which is what a params module is.
+- **The stored value is the WORD, never the position.** params_utils'
+  `ParamComboBox` stores the item index, which would make the parameter
+  meaningless on any reorder and unreadable to the policy. The local
+  `ParamTargetCombo` proxy instead sets each item's data to its ASCII value
+  and sets the widget's `prefType` property to `QByteArray` -- the switch
+  that makes `Gui::PrefComboBox::save/restorePreferences` use item data as
+  ASCII (PrefWidgets.cpp). The same proxy emits the hint label, so it is
+  translated by the generated `retranslateUi` like everything else.
+- **The greying**, hand-written in `DlgSettingsUI::init()`: unchecking
+  `UseViewArea` disables the split direction row and the `Split`/`NewSplit`
+  ITEMS of the three target combos (via the model's item flags) while
+  leaving `Tab`/`Floating` selectable. The choices stay visible because
+  they are what the checkbox buys.
+- **A generator bug surfaced on the way** and is fixed separately:
+  `ParamShortcutEdit` inherited `ParamString`'s QString-wrapped default
+  expression, but `AccelLineEdit::setDisplayText` takes the `std::string`.
+  Any regeneration of a page carrying one (here: Expression's
+  `EditorTrigger`) emitted code that does not compile -- which is why the
+  checked-in file disagreed with its own generator.
+- Verified by an Xvfb probe (`probe_prefs.py`, this session's scratchpad):
+  the four combos carry the expected ASCII data and translated texts, the
+  defaults are Tab/Split/Tab/Auto, the hint line is present, unchecking
+  greys exactly the split items and rechecking restores them, accepting the
+  dialog stores `DocViewTarget=Tab` as a word, and the policy then opens a
+  second 3D view as a new tab -- and splits again once the value goes back.
+- P2 (the Alt inversion itself) is still not built; the hint line announces
+  it, which was the ruling.

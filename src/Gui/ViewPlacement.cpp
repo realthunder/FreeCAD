@@ -30,7 +30,9 @@
 #include "MDIView.h"
 #include "MainWindow.h"
 #include "View3DInventor.h"
+#include "OpenViewParams.h"
 #include "ViewArea.h"
+#include "ViewParams.h"
 
 using namespace Gui;
 
@@ -38,36 +40,28 @@ namespace {
 
 enum class Target { Tab, Split, NewSplit, Floating };
 
-ParameterGrp::handle openViewGroup()
-{
-    return App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/View/OpenView");
-}
-
 bool useViewArea()
 {
-    return App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/View")
-        ->GetBool("UseViewArea", true);
+    return ViewParams::getUseViewArea();
 }
 
 Target targetFor(ViewPlacement::Category cat)
 {
-    const char *key = "DocViewTarget";
-    const char *def = "Split";
+    // The value is an ASCII word, and the preference page writes the
+    // same words through Gui::PrefComboBox item data -- both sides go
+    // through OpenViewParams so the two cannot drift apart.
+    const std::string &(*getter)() = &OpenViewParams::getDocViewTarget;
     switch (cat) {
     case ViewPlacement::Category::Document:
-        key = "DocumentTarget";
-        def = "Tab";
+        getter = &OpenViewParams::getDocumentTarget;
         break;
     case ViewPlacement::Category::DocView:
         break;
     case ViewPlacement::Category::Utility:
-        key = "UtilityTarget";
-        def = "Tab";
+        getter = &OpenViewParams::getUtilityTarget;
         break;
     }
-    std::string v = openViewGroup()->GetASCII(key, def);
+    const std::string &v = getter();
     if (v == "Split")
         return Target::Split;
     if (v == "NewSplit")
@@ -81,7 +75,7 @@ Target targetFor(ViewPlacement::Category cat)
 // Auto picking the cell's longer side (docs/ViewPlacement.md sec 4.1).
 Qt::Orientation splitDirection(const ViewAreaCell *cell)
 {
-    std::string v = openViewGroup()->GetASCII("SplitDirection", "Auto");
+    const std::string &v = OpenViewParams::getSplitDirection();
     if (v == "Right")
         return Qt::Horizontal;
     if (v == "Down")
