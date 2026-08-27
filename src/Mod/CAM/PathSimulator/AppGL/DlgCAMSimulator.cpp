@@ -127,6 +127,14 @@ void DlgCAMSimulator::connectTo(GuiDisplay& gui, Dummy3DViewer& dv)
 
     mDummyViewer = &dv;
 
+    // The viewer's own providers draw in the same colours the
+    // simulator draws its copies in, so the picture does not change
+    // when a shape crosses from one to the other.
+    const vec3& sc = mMillSimulator->stockColor;
+    const vec3& bc = mMillSimulator->baseShapeColor;
+    mDummyViewer->setStockColor(sc[0], sc[1], sc[2]);
+    mDummyViewer->setBaseColor(bc[0], bc[1], bc[2]);
+
     syncViewerMirrors();
 
     // connect gui and dummy viewer
@@ -302,7 +310,7 @@ void DlgCAMSimulator::setStockShape(const Part::TopoShape& shape, float resoluti
     mStock = getMeshData(shape, resolution);
     mStockBox = shape.getBoundBox();
 
-    if (mDummyViewer && mirrorsToViewer()) {
+    if (mDummyViewer && mirrorsStockToViewer()) {
         mDummyViewer->setStockShape(shape);
     }
 
@@ -317,7 +325,7 @@ void DlgCAMSimulator::setStockVisible(bool b)
 
     mMillSimulator->SetStockVisible(b);
 
-    if (mDummyViewer && mirrorsToViewer()) {
+    if (mDummyViewer && mirrorsStockToViewer()) {
         mDummyViewer->setStockVisible(b);
     }
 
@@ -329,7 +337,7 @@ void DlgCAMSimulator::setBaseShape(const Part::TopoShape& shape, float resolutio
     mBase = getMeshData(shape, resolution);
     mBaseBox = shape.getBoundBox();
 
-    if (mDummyViewer && mirrorsToViewer()) {
+    if (mDummyViewer && mirrorsBaseToViewer()) {
         mDummyViewer->setBaseShape(shape);
     }
 
@@ -344,7 +352,7 @@ void DlgCAMSimulator::setBaseVisible(bool b)
 
     mMillSimulator->SetBaseVisible(b);
 
-    if (mDummyViewer && mirrorsToViewer()) {
+    if (mDummyViewer && mirrorsBaseToViewer()) {
         mDummyViewer->setBaseVisible(b);
     }
 
@@ -521,9 +529,11 @@ void DlgCAMSimulator::syncViewerMirrors()
     if (!mDummyViewer) {
         return;
     }
-    const bool mirror = mirrorsToViewer();
-    mDummyViewer->setStockVisible(mirror && mMillSimulator->IsStockVisible());
-    mDummyViewer->setBaseVisible(mirror && mMillSimulator->IsBaseVisible());
+    mDummyViewer->setStockVisible(mirrorsStockToViewer()
+                                  && mMillSimulator->IsStockVisible());
+    mDummyViewer->setBaseVisible(mirrorsBaseToViewer()
+                                 && mMillSimulator->IsBaseVisible());
+    mMillSimulator->SetBaseDrawnByHost(isAttached());
 }
 
 Base::BoundBox3d DlgCAMSimulator::simulationBoundBox() const
@@ -538,21 +548,35 @@ Base::BoundBox3d DlgCAMSimulator::simulationBoundBox() const
     return box;
 }
 
-bool DlgCAMSimulator::mirrorsToViewer() const
+bool DlgCAMSimulator::mirrorsStockToViewer() const
 {
-    // The viewer carries its own stock and base view providers, fed
-    // in step with the simulator's copies. They were dead weight while
-    // the viewer never painted; now that it does, they would draw the
-    // stock UNCUT over the carved one -- the same object rendered
-    // twice, and the wrong one on top. The simulator draws both
-    // shapes itself (the stock's material removal IS its rendering),
-    // so while attached the mirrors stay off.
-    //
-    // Handing the BASE shape to the engine instead, to get it lit
-    // like the rest of the document, is the natural follow-on once
-    // the resolve interleaves by depth (docs/CAMSimRenderPort.md
-    // sec 8.4); until then it would simply sit on top.
+    // The viewer carries its own stock view provider, fed in step with
+    // the simulator's copy. It was dead weight while the viewer never
+    // painted; now that it does, it would draw the stock UNCUT over
+    // the carved one -- the same object rendered twice, and the wrong
+    // one on top. Nothing but the simulator can draw the carved stock:
+    // the material removal IS its rendering, and there is no mesh of
+    // the result to hand over. So while attached this mirror stays
+    // off.
     return !isAttached();
+}
+
+bool DlgCAMSimulator::mirrorsBaseToViewer() const
+{
+    // The base shape is the opposite case. It is ordinary document
+    // geometry -- the simulator only ever drew it flat, biased a
+    // fraction closer to stand in for a polygon offset -- so while
+    // attached the engine draws it instead, with the document's
+    // lighting, and the carved stock sorts against it through the
+    // depth the composite now writes (docs/CAMSimRenderPort.md
+    // sec 8.4). MillSimulation::SetBaseDrawnByHost is the other half:
+    // without it both would draw it.
+    //
+    // Fed even while standalone, where the viewer never paints: that
+    // is what lets a later attach just work. syncViewerMirrors
+    // restates visibility, not geometry, so a provider that was never
+    // given the shape would stay empty.
+    return true;
 }
 
 void DlgCAMSimulator::requestRedraw()

@@ -39,8 +39,10 @@ public:
 
     void setStockShape(const Part::TopoShape& shape);
     void setStockVisible(bool b);
+    void setStockColor(float r, float g, float b);
     void setBaseShape(const Part::TopoShape& shape);
     void setBaseVisible(bool b);
+    void setBaseColor(float r, float g, float b);
 
 protected:
     void paintEvent(QPaintEvent* event) override;

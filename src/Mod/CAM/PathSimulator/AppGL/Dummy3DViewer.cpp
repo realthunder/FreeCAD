@@ -56,6 +56,11 @@ void Dummy3DViewer::setStockVisible(bool b)
     stockViewProvider.setShapeVisible(b);
 }
 
+void Dummy3DViewer::setStockColor(float r, float g, float b)
+{
+    stockViewProvider.setShapeColor(r, g, b);
+}
+
 void Dummy3DViewer::setBaseShape(const Part::TopoShape& shape)
 {
     baseViewProvider.setShape(shape);
@@ -64,6 +69,11 @@ void Dummy3DViewer::setBaseShape(const Part::TopoShape& shape)
 void Dummy3DViewer::setBaseVisible(bool b)
 {
     baseViewProvider.setShapeVisible(b);
+}
+
+void Dummy3DViewer::setBaseColor(float r, float g, float b)
+{
+    baseViewProvider.setShapeColor(r, g, b);
 }
 
 void Dummy3DViewer::paintEvent(QPaintEvent* event)

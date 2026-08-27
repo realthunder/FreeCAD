@@ -24,6 +24,7 @@
 
 #include "TopoShapeViewProvider.h"
 
+#include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoSwitch.h>
 #include <Mod/Part/App/TopoShape.h>
@@ -33,6 +34,11 @@ namespace CAMSimulator
 
 TopoShapeViewProvider::TopoShapeViewProvider()
 {
+    // Ahead of the switch, so it applies to whatever shape is in it:
+    // the face set read below carries no material of its own.
+    pcMaterial = new SoMaterial;
+    pcRoot->addChild(pcMaterial);
+
     pcSwitch = new SoSwitch;
     pcRoot->addChild(pcSwitch);
 
@@ -83,6 +89,11 @@ void TopoShapeViewProvider::setShape(const Part::TopoShape& shape)
 void TopoShapeViewProvider::setShapeVisible(bool b)
 {
     pcSwitch->whichChild = b ? SO_SWITCH_ALL : SO_SWITCH_NONE;
+}
+
+void TopoShapeViewProvider::setShapeColor(float r, float g, float b)
+{
+    pcMaterial->diffuseColor.setValue(r, g, b);
 }
 
 } /* namespace CAMSimulator */

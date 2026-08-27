@@ -26,6 +26,8 @@
 
 #include <Gui/ViewProvider.h>
 
+class SoMaterial;
+
 namespace Part
 {
 class TopoShape;
@@ -44,8 +46,15 @@ public:
     void setShape(const Part::TopoShape& shape);
 
     void setShapeVisible(bool b);
+    /// The shape's diffuse colour. TopoShape::exportFaceSet writes no
+    /// material of its own when it is given no face colours, so
+    /// without this the shape inherits whatever the traversal happens
+    /// to be carrying -- which through the renderer is nothing, and
+    /// draws black.
+    void setShapeColor(float r, float g, float b);
 
 private:
+    SoMaterial* pcMaterial = nullptr;
     SoSwitch* pcSwitch = nullptr;
     SoNode* pcShape = nullptr;
 };

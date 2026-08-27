@@ -157,8 +157,8 @@ public:
     }
 
     /// The bounds of the shapes the SIMULATOR draws itself, for a view
-    /// fit. While attached those shapes are deliberately absent from
-    /// the viewer's scene graph (mirrorsToViewer), so a fit computed
+    /// fit. While attached the stock is deliberately absent from
+    /// the viewer's scene graph (mirrorsStockToViewer), so a fit computed
     /// from that scene alone frames an empty world and leaves the
     /// camera on top of the origin -- with the stock outside the
     /// frustum, which is nothing drawn at all rather than something
@@ -196,10 +196,11 @@ protected:
     /// simulator's state and the current attachment.
     void syncViewerMirrors();
 
-    /// Whether the viewer's own stock/base view providers should
-    /// follow the simulator's shapes. False while attached -- see the
-    /// definition.
-    bool mirrorsToViewer() const;
+    /// Whether the viewer's own view provider for each shape should
+    /// follow the simulator's copy. The two shapes answer differently
+    /// while attached -- see the definitions.
+    bool mirrorsStockToViewer() const;
+    bool mirrorsBaseToViewer() const;
 
     /// Ask for another frame. Attached, that is the HOST's frame --
     /// this widget is hidden and never paints, so update() on it would

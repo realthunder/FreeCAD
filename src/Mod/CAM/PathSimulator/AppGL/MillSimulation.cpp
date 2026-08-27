@@ -378,7 +378,7 @@ void MillSimulation::RenderPath()
 
 void MillSimulation::RenderBaseShape()
 {
-    if ((mViewItems & VIEWITEM_BASE_SHAPE) == 0) {
+    if ((mViewItems & VIEWITEM_BASE_SHAPE) == 0 || mBaseDrawnByHost) {
         return;
     }
     simDisplay.StartDepthPass();
@@ -547,6 +547,17 @@ void MillSimulation::SetBaseVisible(bool b)
 bool MillSimulation::IsBaseVisible() const
 {
     return mViewItems & VIEWITEM_BASE_SHAPE;
+}
+
+void MillSimulation::SetBaseDrawnByHost(bool b)
+{
+    if (b == mBaseDrawnByHost) {
+        return;
+    }
+    mBaseDrawnByHost = b;
+    // The base shape is in the G-buffer the CSG leaves behind, so the
+    // cached frame has to be rebuilt to add or drop it.
+    simDisplay.updateDisplay = true;
 }
 
 void MillSimulation::UpdateWindowScale(int width, int height)

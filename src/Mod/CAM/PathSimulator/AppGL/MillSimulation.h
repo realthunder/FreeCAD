@@ -97,6 +97,13 @@ public:
     void SetBaseObject(const std::vector<Vertex>& verts, const std::vector<uint16_t>& indices);
     void SetBaseVisible(bool b);
     bool IsBaseVisible() const;
+    /// The base shape is ordinary document geometry, so while the
+    /// simulator borrows a host frame the engine draws it -- lit like
+    /// the rest of the document, and sorted against the carved stock
+    /// through the shared depth buffer. The simulator must then not
+    /// draw it a second time. Visibility is unaffected: this says WHO
+    /// draws the base shape, IsBaseVisible says WHETHER.
+    void SetBaseDrawnByHost(bool b);
 
     void SetPathVisible(bool b);
     void EnableSsao(bool b);
@@ -124,6 +131,8 @@ protected:
 
 protected:
     bool simulationInitiated = false;
+    /// Set while the host draws the base shape (SetBaseDrawnByHost).
+    bool mBaseDrawnByHost = false;
 
     // protected:
 public:
