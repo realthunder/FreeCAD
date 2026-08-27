@@ -976,3 +976,57 @@ the host can interleave a consumer's translucent output separately
 from its opaque output. Design the two together -- one change may
 serve both -- and see section 8.8's lead on the stock view provider
 while doing it.
+
+## 11. Requested: the cut shape in the NORMAL 3D view
+
+Asked for 2026-08-27, not designed. Today the simulator's picture
+lives only in its own MDI window; the normal 3D view shows the Job's
+`Stock`, which is an ordinary document object
+(`Path/Main/Stock.py`, `addObject("Part::FeaturePython", "Stock")`)
+and is always the UNCUT shape. The request is to see the carved
+result -- partially carved, mill in progress -- in the normal view.
+
+Two routes, complementary rather than competing.
+
+### 11.1 Route A -- the renderer route (pixels)
+
+`Renderer::setFrameConsumer` is per-RENDERER, and every 3D view has
+its own, so a consumer can attach to ANY view. Section 8 built that,
+and step 4 gave the consumer a way to sort against the host's document
+geometry by depth. Pointing `DlgCAMSimulator` at the document's main
+3D view is therefore closer to a configuration change than to new
+machinery.
+
+What it costs:
+
+- render cache must be in the renderer mode. Legacy GL cannot borrow
+  a frame, so this feature has no fallback (section 9).
+- The Job's `Stock` object would draw UNCUT over the carved one --
+  the mirror problem of section 8.8, one level up. It has to be
+  hidden while the simulator draws.
+- One consumer per view.
+- **Pixels only.** No geometry: nothing to select, snap to, measure,
+  export or save, and a click on the carved surface hits whatever is
+  behind it.
+
+! The main 3D view has far more to sort against than the simulator's
+window, transparent geometry included -- which is exactly what section
+10 is meant to lift. Route A wants the stage 3 contract, not the
+current one, so stage 3 comes first.
+
+### 11.2 Route B -- the geometry route (a real shape)
+
+`PathSimulator/App/VolSim.cpp`, the older CPU volumetric simulator,
+already tessellates to a mesh (`Tessellate(meshOuter, meshInner)`).
+That yields an actual object: selectable, measurable, exportable,
+storable in the document.
+
+Cost: a different simulator (dexel/voxel), much slower, and meshing
+every frame for live scrubbing would hurt. Meshing ON DEMAND -- "the
+shape at step N" -- is the feasible shape of it.
+
+### 11.3 Which
+
+A for live scrubbing in the normal view, B for handing back a shape.
+The request as phrased ("even partially, mill in progress") reads as
+scrubbing, so A first, after stage 3.
