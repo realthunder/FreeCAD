@@ -1454,7 +1454,11 @@ one. In order:
     a scattering of string tests.
 
 **Stage 5 -- the display styles themselves move to the backend. ORDERED
-2026-08-26 (user), not started.** Stage 4 removed one draw style because
+2026-08-26 (user); largely done 2026-08-27** -- the survey (5.5), the
+Class-A per-view resolution (5.7/5.8), the per-object per-view override
+map (5.9) and the additive capture that serves non-standard modes and
+Mesh-shaped switches (5.10) are built and verified; what remains open
+is listed at the end of 5.10. Stage 4 removed one draw style because
 the Coin node behind it (`SoShadowGroup`) had a backend counterpart. This
 stage generalizes that: **remove the legacy Coin implementation of every
 remaining display style -- Tessellation first, then the ones built the
