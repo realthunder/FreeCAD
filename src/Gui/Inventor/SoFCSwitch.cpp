@@ -201,9 +201,9 @@ SoFCSwitch::doAction(SoAction *action)
     const int numnames = std::min(childNames.getNum(), this->getNumChildren());
     const int own = this->whichChild.getValue();
     for (int i = 0; i < numnames; ++i) {
-      registered |= Gui::styleNameBitOf(childNames[i].getString());
+      registered |= Gui::styleNameBitOf(childNames[i]);
       if (i == own)
-        ownmask = Gui::drawStyleMaskFromModeName(childNames[i].getString());
+        ownmask = Gui::drawStyleMaskFromModeName(childNames[i]);
     }
     SoFCOwnDisplayModeElement::set(state, ownmask, registered);
   }

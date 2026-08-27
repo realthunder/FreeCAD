@@ -709,8 +709,11 @@ void ViewAreaCanvas::paintGL()
         std::ostringstream ids;
         for (const auto &c : _cells)
             ids << ' ' << c.id << (c.cell == _feeder ? "*" : "");
+        const char *serve = _serve == ServeSuperset ? "superset"
+                          : _serve == ServeFilter   ? "filter"
+                                                    : "one-style";
         FC_TRACE("canvas frame: claims" << ids.str() << ", drawing "
-                 << subs.size() << " sub-views");
+                 << subs.size() << " sub-views, styles " << serve);
     }
 
     bool drawn = false;

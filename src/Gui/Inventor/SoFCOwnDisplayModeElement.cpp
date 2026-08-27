@@ -89,19 +89,41 @@ SoFCOwnDisplayModeElement::get(SoState * const state,
 }
 
 uint8_t
+Gui::drawStyleMaskFromModeName(const SbName &mode)
+{
+  if (mode == SbName::empty())
+    return Render::StyleAsIs;
+  if (mode == SoFCUnifiedSelection::DisplayModeShaded)
+    return Render::StyleShaded;
+  if (mode == SoFCUnifiedSelection::DisplayModeFlatLines)
+    return Render::StyleFlatLines;
+  if (mode == SoFCUnifiedSelection::DisplayModeWireframe)
+    return Render::StyleWireframe;
+  if (mode == SoFCUnifiedSelection::DisplayModePoints)
+    return Render::StylePoints;
+  return SoFCOwnDisplayModeElement::Unknown;
+}
+
+uint8_t
 Gui::drawStyleMaskFromModeName(const char *mode)
 {
   if (!mode || !mode[0])
     return Render::StyleAsIs;
-  if (SoFCUnifiedSelection::DisplayModeShaded == mode)
-    return Render::StyleShaded;
-  if (SoFCUnifiedSelection::DisplayModeFlatLines == mode)
-    return Render::StyleFlatLines;
-  if (SoFCUnifiedSelection::DisplayModeWireframe == mode)
-    return Render::StyleWireframe;
-  if (SoFCUnifiedSelection::DisplayModePoints == mode)
-    return Render::StylePoints;
-  return SoFCOwnDisplayModeElement::Unknown;
+  return drawStyleMaskFromModeName(SbName(mode));
+}
+
+uint8_t
+Gui::styleNameBitOf(const SbName &mode)
+{
+  if (mode == SoFCUnifiedSelection::DisplayModeShaded)
+    return SoFCOwnDisplayModeElement::HasShaded;
+  if (mode == SoFCUnifiedSelection::DisplayModeFlatLines)
+    return SoFCOwnDisplayModeElement::HasFlatLines;
+  if (mode == SoFCUnifiedSelection::DisplayModeWireframe)
+    return SoFCOwnDisplayModeElement::HasWireframe;
+  if (mode == SoFCUnifiedSelection::DisplayModePoints)
+    return SoFCOwnDisplayModeElement::HasPoints;
+  return 0;
 }
 
 uint8_t
@@ -109,15 +131,7 @@ Gui::styleNameBitOf(const char *mode)
 {
   if (!mode || !mode[0])
     return 0;
-  if (SoFCUnifiedSelection::DisplayModeShaded == mode)
-    return SoFCOwnDisplayModeElement::HasShaded;
-  if (SoFCUnifiedSelection::DisplayModeFlatLines == mode)
-    return SoFCOwnDisplayModeElement::HasFlatLines;
-  if (SoFCUnifiedSelection::DisplayModeWireframe == mode)
-    return SoFCOwnDisplayModeElement::HasWireframe;
-  if (SoFCUnifiedSelection::DisplayModePoints == mode)
-    return SoFCOwnDisplayModeElement::HasPoints;
-  return 0;
+  return styleNameBitOf(SbName(mode));
 }
 
 // vim: noai:ts=2:sw=2

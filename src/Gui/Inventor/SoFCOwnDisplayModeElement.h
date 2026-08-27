@@ -24,6 +24,7 @@
 #define FC_SOFCOWNDISPLAYMODEELEMENT_H
 
 #include <FCGlobal.h>
+#include <Inventor/SbName.h>
 #include <Inventor/elements/SoInt32Element.h>
 
 /** The OWN display mode of the shapes that follow, in traversal state.
@@ -111,10 +112,17 @@ namespace Gui {
 ///
 /// The single home of this mapping; View3DInventorViewer's
 /// drawStyleMaskFromName() delegates here.
+///
+/// Prefer the SbName overloads on a traversal path. Coin interns names,
+/// so SbName against SbName is a pointer compare, while SbName against
+/// a `const char *` is a strcmp -- and SoFCSwitch asks this of every
+/// display-mode child of every object it traverses, every frame.
+GuiExport uint8_t drawStyleMaskFromModeName(const SbName &mode);
 GuiExport uint8_t drawStyleMaskFromModeName(const char *mode);
 
 /// The SoFCOwnDisplayModeElement::StyleNameBit of a Class-A style name,
 /// or 0 for any other name.
+GuiExport uint8_t styleNameBitOf(const SbName &mode);
 GuiExport uint8_t styleNameBitOf(const char *mode);
 
 } // namespace Gui
