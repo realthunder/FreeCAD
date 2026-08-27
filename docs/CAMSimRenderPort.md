@@ -852,14 +852,27 @@ says so where it lives:
   `updateHostAttachment` now documents which of the two paths runs
   when and what each costs.
 
-**Open, for a ruling rather than a guess: the stock view provider now
-renders in no configuration.** Attached, its mirror is off because
-only the simulator can draw the carved stock. Standalone, it is fed
-but the viewer never paints. With the side-by-side branch gone there
-is no third case. It is still maintained coherently (fed, cloned,
-counted in the viewer's bounds), and the plan's condition for
-deleting it -- "if the engine now draws it" -- is not met, so it
-stays until someone decides whether an uncut-stock view is wanted.
+**The stock view provider stays.** An earlier draft of this section
+said it "renders in no configuration", which conflated two objects.
+What is on SCREEN is the CSG's output, and that always includes the
+stock: `mPathStep` starts at -1 and every segment loop in
+`RenderSimulation` is bounded by it, so at the start -- and at any
+rewound point, since the simulator is a movie player -- the CSG draws
+the stock and subtracts nothing. The uncut stock is on screen there.
+
+What never paints is `Dummy3DViewer::stockViewProvider`, the second
+Coin-side copy the ENGINE would draw: its mirror is off when attached
+(only the simulator can draw the CARVED stock -- the material removal
+IS its rendering, and there is no mesh of the result), and standalone
+the viewer does not paint at all.
+
+That distinction is also a design lead for section 10. At
+`mPathStep == -1` the CSG result IS exactly the uncut stock, so the
+engine could legitimately own the stock in that state and draw it with
+the document's PBR, shadows and GTAO, the simulator standing down
+until the first cut -- at the cost of a hand-back when the first cut
+lands. So the provider is a live asset for the next contract rather
+than a leftover, and it is kept on that ground.
 
 ## 9. The legacy GL renderer is permanent, not a transition
 
@@ -937,3 +950,29 @@ guarded those and left `CurrentShader->UpdateModelMat` in
 `Shape::Render` unguarded -- a null dereference the moment the facade
 drew, because nothing had compiled a Shader. Grep for the shader
 objects and `CurrentShader` too.
+
+## 10. Stage 3 -- a more capable contract (ruled, not yet designed)
+
+Stage 2's contract carries exactly ONE finished RGBA8 image and one
+depth per pixel across into the host frame. That bought a clean, cheap
+boundary, and it costs two things that are now to be recovered rather
+than accepted.
+
+**The tool path's hidden-line pass.** `MillSimulation::RenderPath`
+draws the path twice -- `depthFunc LESS` at full alpha for the visible
+run, then `depthFunc GREATER` at alpha 0.1 for the part that runs
+INSIDE the material, so the operator can see where the tool goes. It
+is a deliberate x-ray. Because the simulator composites one image, the
+opaque stock and that translucent overlay occlude as a single layer,
+so host geometry in front covers both at once (section 8.9).
+
+**Transparent scene geometry** (section 8.2). The consumer draws after
+the WBOIT resolve, so it occludes transparents rather than blending
+with them.
+
+These are the same underlying trade seen twice: one image crossing the
+boundary cannot sort per-layer. The contract needs depth per pass, so
+the host can interleave a consumer's translucent output separately
+from its opaque output. Design the two together -- one change may
+serve both -- and see section 8.8's lead on the stock view provider
+while doing it.
