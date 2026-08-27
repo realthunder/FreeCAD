@@ -194,6 +194,9 @@ Rules:
   (a translucent child widget), release executes, Esc cancels.
 - Splitter borders: native QSplitter resize; right-click on a handle opens
   Split Horizontal / Split Vertical / Join menu.
+- Hovering the per-cell menu button also reveals both corner zones (sec 18):
+  the button is the only always-discoverable cell chrome, so it is what
+  points at the two invisible ones.
 - Per-cell menu (small button in the cell's top-left corner, later a full
   content switcher, sec 5.5): Split H, Split V, Maximize/Restore cell (the
   Blender Ctrl-Space behavior: temporarily collapse the tree to one cell,
@@ -1292,3 +1295,25 @@ i.e. that cell shows the faces the single view shows (24434); own mode
 -> `Flat Lines` with both styles untouched -> canvas back on by itself,
 ink `[24846, 24459]` dark `[391, 0]`, the styled cell now served by
 filtering; cell 1 -> `As Is` -> one style again, ink `[24846, 24846]`.
+
+## 18. The menu button points at the corner zones (2026-08-28)
+
+The corner action zones paint nothing until the cursor is inside them
+(sec 5.4, Blender's behavior). That is fine once you know they exist and
+useless before: a 14px transparent corner advertises nothing, and the
+split/join gesture is the main thing a cell can do.
+
+The menu button is the one piece of cell chrome that IS visible unprompted
+(a grip in the top-left corner, sec 12). So hovering it now reveals both
+zones as well -- top-right and bottom-left light up together with the
+button, and go dark again when the cursor leaves. Learning one gesture
+surfaces the other two corners for free, and nothing is added to the
+resting frame.
+
+- `ViewAreaZone::setHint(bool)` is the second reason to paint. `paintEvent`
+  draws on `_hover || _hint`, and a hinted-only zone drops the grip strokes
+  to alpha 130, so a zone the cursor is actually on still reads as the
+  live one.
+- `ViewAreaCell::showZoneHint(bool)` forwards to both zones; the menu
+  button's `enterEvent`/`leaveEvent` call it. The cell owns both zones,
+  which is why the pairing lives there and not in the zone.

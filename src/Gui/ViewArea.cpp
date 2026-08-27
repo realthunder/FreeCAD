@@ -88,12 +88,17 @@ protected:
     {
         QWidget::enterEvent(ev);
         _hover = true;
+        // The corner zones are invisible until touched, so a user who
+        // never guesses they are there never finds them. Reaching the
+        // one piece of visible cell chrome shows both of them.
+        _cell->showZoneHint(true);
         update();
     }
     void leaveEvent(QEvent *ev) override
     {
         QWidget::leaveEvent(ev);
         _hover = false;
+        _cell->showZoneHint(false);
         update();
     }
     void paintEvent(QPaintEvent *) override
@@ -344,6 +349,12 @@ void ViewAreaCell::updateHighlight()
     // resize this cell never saw would leave it cut for the old size.
     _highlight->refit();
     _highlight->update();
+}
+
+void ViewAreaCell::showZoneHint(bool on)
+{
+    _zoneTopRight->setHint(on);
+    _zoneBottomLeft->setHint(on);
 }
 
 void ViewAreaCell::hostView(MDIView *view)
@@ -678,6 +689,14 @@ void ViewAreaZone::endDrag()
     _resizeIndex = -1;
 }
 
+void ViewAreaZone::setHint(bool on)
+{
+    if (_hint == on)
+        return;
+    _hint = on;
+    update();
+}
+
 void ViewAreaZone::enterEvent(QEnterEvent *ev)
 {
     QWidget::enterEvent(ev);
@@ -694,11 +713,14 @@ void ViewAreaZone::leaveEvent(QEvent *ev)
 
 void ViewAreaZone::paintEvent(QPaintEvent *)
 {
-    if (!_hover)
+    if (!_hover && !_hint)
         return;  // invisible until hovered, like Blender's action zones
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    QPen pen(palette().color(QPalette::Highlight));
+    QColor c = palette().color(QPalette::Highlight);
+    if (!_hover)
+        c.setAlpha(130);  // a pointed-out zone, not one under the cursor
+    QPen pen(c);
     pen.setWidth(2);
     p.setPen(pen);
     // Diagonal grip strokes facing the cell interior.

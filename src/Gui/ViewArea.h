@@ -96,6 +96,11 @@ public:
     /// management plus the content selector. Opened by the corner
     /// button; \a globalPos anchors it.
     void showCellMenu(const QPoint &globalPos);
+    /// Reveal (or hide again) the two corner action zones without the
+    /// cursor being on them. Hovering the menu button asks for this:
+    /// the button is the discoverable chrome, so it is where the
+    /// invisible zones get pointed out (docs/SplitViews.md sec 5.4).
+    void showZoneHint(bool on);
     /// Repaint the active-cell border. It lives on a raised child
     /// widget, so update() on the cell does not reach it.
     void updateHighlight();
@@ -139,6 +144,10 @@ public:
 
     static constexpr int Size = 14;
 
+    /// Paint the grip although the cursor is elsewhere, dimmer than a
+    /// real hover. Driven by the cell's menu button (showZoneHint).
+    void setHint(bool on);
+
 protected:
     void mousePressEvent(QMouseEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
@@ -155,6 +164,7 @@ private:
     ViewAreaCell *_cell;
     Corner _corner;
     bool _hover = false;
+    bool _hint = false;
     bool _dragging = false;
     QPoint _pressGlobal;
     // live resize of the border created by a split
