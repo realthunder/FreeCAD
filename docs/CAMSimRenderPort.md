@@ -1173,6 +1173,71 @@ leg, whose diff class now includes path colour as documented in 10.4.
 Real GPU on WSLg d3d12 as before: the frame presents and the ordering
 is right.
 
+### 10.9 Execution record (2026-08-27, all five steps)
+
+Landed as `b4f0021ab0` (step 1), `b68334fee3` (step 2, and with it
+step 4), `e25f107dbc` (step 3), `a9055242dd` (step 5). What the plan
+did not know in advance:
+
+- **Step 4 collapsed into step 2.** Shrinking the overlay block to
+  four made the old placement impossible for a fourteen-pass
+  consumer, so the moment the runs split, the simulator HAD to take
+  the scene run -- which is what `overlayPasses()`'s all-scene
+  default does. There was nothing left for a separate step 4 commit
+  to do.
+- **Step 4's transparent-geometry evidence lives in the probe, not
+  the harness.** The simulator's own window has no transparent
+  document geometry to stage -- its viewer's scene graph holds
+  exactly the stock and base mirrors -- so the 10.8 transparent-pane
+  scene is not stageable there today; it becomes stageable when a
+  consumer attaches to a document view (section 11.1). The probe
+  carries the evidence instead: it hand-builds a scene feed (a
+  `MeshData`/`DrawCall` made from static arrays -- the facade needs
+  no Coin cache to be fed) with a half-transparent quad in front of a
+  consumer scene-run triangle, and the quad's WBOIT blend lands OVER
+  the triangle at the numerically exact linear 50/50
+  (188/188/188-class pixels, the sRGB re-encode of 0.5). Under the
+  old contract that pixel was pure triangle. The overlay-run triangle
+  draws unblended over the result, and an unused scene pass stays
+  declared-but-dead.
+- **Fog was not separately probed.** Volumetric inscatter needs a
+  light and medium configuration a bare probe does not carry; the
+  placement mechanism it rides -- pass-id order -- is the same one
+  the WBOIT evidence exercises, and `ViewConsumerScene0` sits before
+  `ViewCaustics` and `ViewVolApply` by construction.
+- **Two probe traps, for the next probe author.**
+  `QOpenGLWidget::grabFramebuffer` reads back BLACK: it re-renders
+  into a grab FBO the backend's external blit never reaches -- grab
+  the screen (`QScreen::grabWindow`) and crop the widget's rect, the
+  way the sim harness always has. And a standalone probe must set
+  `Qt::AA_ShareOpenGLContexts` before `QApplication` (what
+  `Gui::Application` does at startup) or the library context cannot
+  blit into the widget's FBO at all -- the same all-black symptom
+  from a different cause.
+- **The effect tier's contiguity check narrowed** from
+  whole-id-array to the effect's own pass range: the two runs are
+  not contiguous with each other by construction, and only the range
+  the effect draws in has to be.
+- **The composite-depth degeneracy lives in the simulator, not the
+  surface.** A standalone surface has no camera to answer
+  `hostCamera()` with; `RenderCompositeFacade` supplies its own view
+  and projection as the fallback, which is where the "one code path"
+  of 10.3 actually sits.
+- **The coplanar z-fight stipple (10.7) did not materialize** -- the
+  visible path renders solid over the carved floor on llvmpipe and on
+  the d3d12 real-GPU leg both. The substitute stays in 10.7 unused.
+
+Verification came out as 10.8 promised, minus the unstageable pane
+scene above: the attached and standalone piercing-bar legs each
+differ from their stage 2 baselines in 1013 pixels, every one on the
+path lines -- the exact-colour change of 10.4 plus the recovered
+x-ray, a faint stripe crossing the bar in both flavours (attached:
+the ENGINE-drawn bar -- the section 8.9 loss, recovered and widened
+as ruled). The AO leg at the renumbered effect range is pure
+darkening over the scene (the only brighter pixels are the toggled
+toolbar button's own icon). The legacy GL leg is BIT-IDENTICAL to its
+prior-session baseline -- the restoration's A/B stands untouched.
+
 ## 11. Requested: the cut shape in the NORMAL 3D view
 
 Asked for 2026-08-27, not designed. Today the simulator's picture
