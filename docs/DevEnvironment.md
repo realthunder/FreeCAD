@@ -173,31 +173,47 @@ $RUN cmake --build ~/works/sw/pivy/build_conda_debug && $RUN cmake --install ~/w
 
 ### Building FreeCAD (conda stack)
 
-The user preset `conda-debug-local` (in `CMakeUserPresets.json`, gitignored) inherits
-the repo's `conda-linux-debug` preset and overrides: build dir
-`build/conda-debug-occt801`, `CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` pointing at the
-local `occt/install/conda-debug-801` (OCCT 8.0.1) and `coin/install/conda-debug`
-prefixes, `CMAKE_POLICY_VERSION_MINIMUM=3.5` (for bgfx's old cmake_minimum_required
-under cmake 4), `BUILD_BGFX=ON`, `BUILD_FEM=ON` plus the three FEM dependency paths
-(next section), and `BUILD_WEB`/`FREECAD_USE_PCL`/`FREECAD_USE_EXTERNAL_SMESH`/
-`ENABLE_DEVELOPER_TESTS` OFF (avoids netgen/WebEngine/PCL/external-smesh packages;
-enable selectively when needed -- conda-forge now has qt6-webengine).
+*** **The standard build is the RelWithDebInfo one, and so is every test run.**
+`conda-relwithdebinfo-801` -> `build/conda-relwithdebinfo-801` is the tree that
+gets built, tested and measured. The debug preset below exists for debugger
+sessions; it is not what the suites run on, and a claim about "the primary
+tree" that names a debug dir is wrong.
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
 cd ~/works/sw/fcad
-$RUN cmake --preset conda-debug-local
-$RUN cmake --build build/conda-debug-occt801   # ninja, add -j N to limit parallelism
+$RUN cmake --preset conda-relwithdebinfo-801
+$RUN cmake --build build/conda-relwithdebinfo-801   # ninja, add -j N to limit parallelism
 ```
 
-**The debug stack is OCCT 8.0.1.** `occt/install/conda-debug-801` is what
-`conda-debug-local` points at, so a debugger session runs the 8.0.1 side of
-everything version-guarded. `occt/install/conda-debug` is the frozen **7.7.2**
-prefix, reached through the `conda-debug-occt772` preset (`build/conda-debug`)
-and kept only as the compile check for the guarded paths -- 7.7.2 is frozen,
-see `docs/Backport772.md`. An earlier revision of this section said no debug
-8.0.1 stack existed; that stopped being true once `conda-debug-801` was built,
-and the two presets it claimed were gone are both live.
+It inherits the repo's `conda-linux-release` preset and points
+`CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` at `occt/install/conda-relwithdebinfo-801`
+(OCCT 8.0.1) and `coin/install/conda-relwithdebinfo`, with
+`CMAKE_POLICY_VERSION_MINIMUM=3.5` (for bgfx's old cmake_minimum_required under
+cmake 4), `BUILD_BGFX=ON` and `ENABLE_DEVELOPER_TESTS=ON`.
+
+The debug preset `conda-debug-local` (in `CMakeUserPresets.json`, gitignored)
+inherits `conda-linux-debug` and overrides: build dir
+`build/conda-debug-occt801`, `CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` pointing at
+the local `occt/install/conda-debug-801` (OCCT 8.0.1) and
+`coin/install/conda-debug` prefixes, plus the same policy shim and `BUILD_BGFX`.
+
+```sh
+$RUN cmake --preset conda-debug-local
+$RUN cmake --build build/conda-debug-occt801
+```
+
+**Both stacks are OCCT 8.0.1; there is no 7.7.2 on this box any more.** The
+frozen 7.7.2 prefixes (`occt/install/conda-debug`,
+`occt/install/conda-relwithdebinfo`) and the FreeCAD trees that linked them
+(`build/conda-debug`, `build/conda-relwithdebinfo`) were deleted on 2026-08-28,
+together with their OCCT build dirs -- about 21GB. They had stopped being a
+usable compile check well before that: `Mod/Part/App/ShapeRefSet.cpp` calls
+`BRepTools_ShapeSet::Curves2d()` and siblings that exist only on occt
+`LinkVibe-801`, unguarded, so 7.7.2 could not compile `Mod/Part` at all. 7.7.2
+is frozen -- see `docs/Backport772.md`; if the guarded paths ever need checking
+again, rebuild the prefix from the recipe above with `-DCMAKE_BUILD_TYPE` to
+taste and the `LinkVibe` branch.
 
 Sources build against both OCCT versions (`OCC_VERSION_HEX` guards; features that
 need the 8.0.1 fork -- parallel healing, streamed STEP transfer -- fall back to the
@@ -275,7 +291,7 @@ the writer stopped emitting, and an Elmer proxy assert satisfied by a leftover
 
 ```sh
 diff <(cd src/Mod/Fem && find . -name '*.py' | sort) \
-     <(cd build/conda-debug-occt801/Mod/Fem && find . -name '*.py' | grep -v __pycache__ | sort)
+     <(cd build/conda-relwithdebinfo-801/Mod/Fem && find . -name '*.py' | grep -v __pycache__ | sort)
 ```
 
 Anything present only on the build side is stale: `rm -rf <build>/Mod/Fem` and
@@ -512,9 +528,10 @@ gets detected but its headers are not on the conda sysroot's search path, so the
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
-$RUN ~/works/sw/fcad/build/conda-debug/bin/FreeCAD     # GUI (WSLg)
-$RUN ~/works/sw/fcad/build/conda-debug/bin/FreeCADCmd  # headless
-$RUN gdb --args ~/works/sw/fcad/build/conda-debug/bin/FreeCADCmd script.py
+$RUN ~/works/sw/fcad/build/conda-relwithdebinfo-801/bin/FreeCAD     # GUI (WSLg)
+$RUN ~/works/sw/fcad/build/conda-relwithdebinfo-801/bin/FreeCADCmd  # headless
+# gdb: use the debug tree, which carries unoptimized frames
+$RUN gdb --args ~/works/sw/fcad/build/conda-debug-occt801/bin/FreeCADCmd script.py
 ```
 
 - All of fcad/OCCT/Coin have full debug info; gdb breakpoints resolve with source lines
@@ -550,7 +567,7 @@ $RUN gdb --args ~/works/sw/fcad/build/conda-debug/bin/FreeCADCmd script.py
 
 ```sh
 # headless kernel sanity (expects volume 500 and "SMOKE OK" pattern)
-$RUN build/conda-debug/bin/FreeCADCmd /path/to/smoke.py
+$RUN build/conda-relwithdebinfo-801/bin/FreeCADCmd /path/to/smoke.py
 # GUI + PySide6: launch and confirm no "No module named 'PySide6'" in output,
 # Draft/Arch/Assembly/AddonManager appear in the workbench selector
 ```

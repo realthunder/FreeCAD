@@ -1,7 +1,13 @@
 # Test suites and their status
 
-Status as of **2026-08-26**, measured on `build/conda-debug-occt801` (OCCT
-8.0.1, the primary tree). Both suites are green.
+Status as of **2026-08-28**, measured on `build/conda-relwithdebinfo-801`
+(OCCT 8.0.1). Both suites are green.
+
+*** **The suites run on the RelWithDebInfo tree.** `conda-relwithdebinfo-801`
+-> `build/conda-relwithdebinfo-801` is the standard build and the one every
+test run uses. `conda-debug-local` -> `build/conda-debug-occt801` is for
+debugger sessions only. An earlier revision of this page named the debug tree
+as "the primary tree"; that was wrong.
 
 | Suite | Result |
 |---|---|
@@ -16,7 +22,7 @@ in section 6.
 
 ### Python
 
-    cd build/conda-debug-occt801
+    cd build/conda-relwithdebinfo-801
     script -qec "~/works/sw/fcad/.conda/run.sh ./bin/FreeCADCmd -t 0" /dev/null > pytest.log
 
 **The `script -qec ... /dev/null` wrapper is not optional.** `FreeCADCmd -t 0`
@@ -30,9 +36,9 @@ the Python console `import Test; Test.runTestApp()`.
 
 The suites are built only when `ENABLE_DEVELOPER_TESTS` is on:
 
-    cmake -S . -B build/conda-debug-occt801 -DENABLE_DEVELOPER_TESTS=ON
-    ~/works/sw/fcad/.conda/run.sh cmake --build build/conda-debug-occt801
-    cd build/conda-debug-occt801 && ~/works/sw/fcad/.conda/run.sh ctest
+    cmake -S . -B build/conda-relwithdebinfo-801 -DENABLE_DEVELOPER_TESTS=ON
+    ~/works/sw/fcad/.conda/run.sh cmake --build build/conda-relwithdebinfo-801
+    cd build/conda-relwithdebinfo-801 && ~/works/sw/fcad/.conda/run.sh ctest
 
 **The flag is safe to leave on.** It used to break a plain `ninja` and there
 was a standing rule to keep it off; that rule is retired, every target
