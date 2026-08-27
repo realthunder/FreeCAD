@@ -31,6 +31,7 @@
 #include <queue>
 #include <functional>
 #include <chrono>
+#include <vector>
 
 #include <QOpenGLWidget>
 #include <QPainter>
@@ -40,7 +41,9 @@
 #include <QMouseEvent>
 #include <QOpenGLContext>
 
+#include <Base/BoundBox.h>
 #include <Mod/Part/App/TopoShape.h>
+#include <Gui/Renderer/Renderer.h>
 
 class SoCamera;
 
@@ -53,6 +56,7 @@ namespace Gui
 {
 class MDIView;
 class Document;
+class View3DInventorViewer;
 }  // namespace Gui
 
 namespace CAMSimulator
@@ -60,6 +64,8 @@ namespace CAMSimulator
 
 // use short declaration as using 'include' causes a header loop
 class MillSimulation;
+struct MillMotion;
+struct SimProgress;
 struct MillSimulationState;
 struct Vertex;
 class ViewCAMSimulator;
@@ -73,7 +79,7 @@ public:
 
 public:
     std::vector<Vertex> verts;
-    std::vector<uint16_t> indices;
+    std::vector<GLushort> indices;
     bool needsUpdate = false;
 };
 
@@ -86,7 +92,18 @@ public:
     float resolution;
 };
 
-class DlgCAMSimulator: public QOpenGLWidget
+/// The simulator's drawing, in both of the facade's flavours
+/// (docs/CAMSimRenderPort.md sections 3 and 8).
+///
+/// ATTACHED is the normal one: the widget is hidden and drawFrame()
+/// runs inside the 3D view's own frame, so the carved stock shares
+/// that view's target and sorts with the document's geometry.
+/// STANDALONE is the fallback for a view with no renderer to borrow
+/// (render cache outside the renderer mode): the widget draws itself,
+/// through its own surface and its own backbuffer, exactly as stage 1
+/// left it. Only the surface differs -- drawFrame() is the same code
+/// either way.
+class DlgCAMSimulator: public QOpenGLWidget, public Render::FrameConsumer
 {
     Q_OBJECT
 
@@ -100,12 +117,17 @@ public:
     void cloneFrom(const DlgCAMSimulator& from);
 
     static DlgCAMSimulator* instance(Gui::Document* doc = nullptr);
+    /// The live simulator's dialog, or null; never creates one.
+    static DlgCAMSimulator* existingInstance();
 
     void setAnimating(bool animating);
     void startSimulation(const Part::TopoShape& stock, float quality);
     void resetSimulation();
 
     void addGcodeCommand(const char* cmd);
+    SimProgress progress() const;
+    const std::vector<int>& lineTable() const;
+    const MillMotion* motion(int index) const;
     void addTool(
         const std::vector<float>& toolProfilePoints,
         int toolNumber,
@@ -123,6 +145,45 @@ public:
     void setBackgroundColor(const QColor& c);
     void setPathColor(const QColor& normal, const QColor& rapid);
 
+    /// Render::FrameConsumer: one simulation step drawn into \a
+    /// surface. Called by the host renderer once per frame when
+    /// attached, and by paintGL through the standalone surface when
+    /// not.
+    unsigned framePasses() const override;
+    unsigned overlayPasses() const override;
+    void drawFrame(Render::DrawSurface& surface) override;
+
+    /// Try to draw inside \a viewer's renderer instead of this
+    /// widget. Does nothing (and leaves the standalone path in place)
+    /// when the viewer has no renderer -- render cache outside the
+    /// renderer mode, or a backend that could not start. Re-called
+    /// whenever that could have changed, because a renderer swap
+    /// forgets its consumer.
+    void attachToHost(Gui::View3DInventorViewer* viewer);
+    bool isAttached() const
+    {
+        return mHostRenderer != nullptr;
+    }
+
+    /// Fan the drawing out to an ADDITIONAL host view's renderer
+    /// (docs/CAMSimRenderPort.md sec 11.9): the same consumer
+    /// registered on that view's renderer too, drawing the same
+    /// simulation under its own per-host context. The primary
+    /// attachment (attachToHost) keeps deciding who owns this
+    /// widget's picture; extra hosts only receive frames. False when
+    /// the viewer has no renderer to borrow, or legacy GL is forced.
+    bool attachExtraHost(Gui::View3DInventorViewer* viewer);
+    void detachExtraHost(Gui::View3DInventorViewer* viewer);
+
+    /// The bounds of the shapes the SIMULATOR draws itself, for a view
+    /// fit. While attached the stock is deliberately absent from
+    /// the viewer's scene graph (mirrorsStockToViewer), so a fit computed
+    /// from that scene alone frames an empty world and leaves the
+    /// camera on top of the origin -- with the stock outside the
+    /// frustum, which is nothing drawn at all rather than something
+    /// mis-framed. Invalid when no stock has been set yet.
+    Base::BoundBox3d simulationBoundBox() const;
+
 Q_SIGNALS:
     void simulationStarted();
 
@@ -130,21 +191,63 @@ protected:
     void timerEvent(QTimerEvent* event) override;
 
     void updateResources();
-    void updateWindowScale();
-    void updateCamera();
+    /// \a width and \a height in device pixels of whatever is being
+    /// drawn into -- the widget standalone, the host's scene target
+    /// attached, which is not always the same size.
+    void updateWindowScale(int width, int height);
+    /// Feed the simulator the camera of the host that is DRAWING: an
+    /// extra host's own view camera when \a surface is one of theirs,
+    /// the dummy viewer's otherwise. The CSG carves in screen space
+    /// under this camera, so only a host's own camera puts the carve
+    /// where that view looks (docs/CAMSimRenderPort.md sec 11.9).
+    void updateCamera(const Render::DrawSurface* surface);
+    /// An extra host's view is being destroyed: its renderer and
+    /// surface die with it, so clean up only our side -- the per-host
+    /// context under its surface key, and the list entry.
+    void extraHostGone(Gui::View3DInventorViewer* viewer);
 
     void initializeGL() override;
     void paintGL() override;
     void resizeGL(int w, int h) override;
 
-    // The facade frame around ProcessSim (docs/CAMSimRenderPort.md
-    // step 6): begin opens the surface frame and activates the draw
-    // context, end runs the backend frame and blits -- or backs out
-    // untouched when nothing was submitted (the GL output stands).
-    void beginFacadeFrame();
+    // The STANDALONE frame boundary around drawFrame(): begin creates
+    // and opens this widget's own surface, end runs the backend frame
+    // and blits it into the widget -- or backs out untouched when
+    // nothing was submitted. Neither runs while attached: there the
+    // host owns the boundary.
+    bool beginFacadeFrame();
     void endFacadeFrame();
 
+    /// Whether the legacy raw-GL renderer draws this frame instead of
+    /// the facade. True when there is no backend device to draw
+    /// through, or when the Mod/CAM ForceLegacyGLRender preference
+    /// asks for it. See the definition.
+    static bool useLegacyGL();
+    /// The Mod/CAM ForceLegacyGLRender preference on its own, without
+    /// the device test. Changing it takes effect when the simulator is
+    /// reopened: the buffers and shaders a running simulation holds
+    /// were built for the path that was in force when it was set up.
+    static bool forceLegacyGLPref();
+    /// One legacy-GL frame into this widget's own context, the
+    /// counterpart of drawFrame() for the facade.
+    void drawFrameLegacyGL();
+
     void updateGui();
+
+    /// Restate the viewer's stock/base view providers from the
+    /// simulator's state and the current attachment.
+    void syncViewerMirrors();
+
+    /// Whether the viewer's own view provider for each shape should
+    /// follow the simulator's copy. The two shapes answer differently
+    /// while attached -- see the definitions.
+    bool mirrorsStockToViewer() const;
+    bool mirrorsBaseToViewer() const;
+
+    /// Ask for another frame. Attached, that is the HOST's frame --
+    /// this widget is hidden and never paints, so update() on it would
+    /// stop the simulation dead the moment it attached.
+    void requestRedraw();
 
 private:
     bool mNeedsInitialize = false;
@@ -169,6 +272,34 @@ private:
 
     GuiDisplay* mGui = nullptr;
     Dummy3DViewer* mDummyViewer = nullptr;
+
+    // The bounds of the stock and base shapes as handed in, kept
+    // because the meshes above are the simulator's own copies and the
+    // viewer may not be holding the shapes at all -- see
+    // simulationBoundBox().
+    Base::BoundBox3d mStockBox;
+    Base::BoundBox3d mBaseBox;
+
+    /// The renderer whose frames this consumer draws in, or null when
+    /// standalone. Not owned; cleared when the host goes away.
+    Render::Renderer* mHostRenderer = nullptr;
+
+    /// One extra attached host (attachExtraHost): the renderer whose
+    /// frames the consumer draws in, the viewer whose render manager
+    /// redraws are asked from and whose camera drives this host's
+    /// carve, and the consumer surface the renderer serves us --
+    /// captured at attach time because it is the per-host context key
+    /// (SimDisplay::DropHost) and the cleanup paths need it after the
+    /// renderer is already gone. None of the three is owned; `gone`
+    /// watches for the view being destroyed under us.
+    struct HostAttachment
+    {
+        Render::Renderer* renderer = nullptr;
+        Gui::View3DInventorViewer* viewer = nullptr;
+        Render::DrawSurface* surface = nullptr;
+        QMetaObject::Connection gone;
+    };
+    std::vector<HostAttachment> mExtraHosts;
 
     // The draw-facade frame surface; null until the backend device is
     // up (the GL path stands alone until then), dropped if it goes

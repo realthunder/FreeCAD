@@ -22,67 +22,29 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
+#include "OpenGlWrapper.h"
 
-#include "Dummy3DViewer.h"
-
-using namespace Gui;
+#include <iostream>
 
 namespace CAMSimulator
 {
 
-Dummy3DViewer::Dummy3DViewer(QWidget* parent)
-    : View3DInventorViewer(parent)
+QOpenGLExtraFunctions gOpenGLFunctions;
+
+void GLClearError()
 {
-    addViewProvider(&stockViewProvider);
-    addViewProvider(&baseViewProvider);
+    while (glGetError() != GL_NO_ERROR)
+        ;
 }
 
-void Dummy3DViewer::cloneFrom(Dummy3DViewer& viewer)
+bool GLLogError()
 {
-    // move view providers from viewer to us
-
-    stockViewProvider = std::move(viewer.stockViewProvider);
-    baseViewProvider = std::move(viewer.baseViewProvider);
-}
-
-void Dummy3DViewer::setStockShape(const Part::TopoShape& shape)
-{
-    stockViewProvider.setShape(shape);
-}
-
-void Dummy3DViewer::setStockVisible(bool b)
-{
-    stockViewProvider.setShapeVisible(b);
-}
-
-void Dummy3DViewer::setStockColor(float r, float g, float b)
-{
-    stockViewProvider.setShapeColor(r, g, b);
-}
-
-void Dummy3DViewer::setBaseShape(const Part::TopoShape& shape)
-{
-    baseViewProvider.setShape(shape);
-}
-
-void Dummy3DViewer::setBaseVisible(bool b)
-{
-    baseViewProvider.setShapeVisible(b);
-}
-
-void Dummy3DViewer::setBaseColor(float r, float g, float b)
-{
-    baseViewProvider.setShapeColor(r, g, b);
-}
-
-void Dummy3DViewer::paintEvent(QPaintEvent* event)
-{
-    if (discardPaintEvent_) {
-        return;
+    bool isError = false;
+    while (GLenum err = glGetError()) {
+        std::cout << "[Opengl Error] (" << err << ")" << std::endl;
+        isError = true;
     }
-
-    View3DInventorViewer::paintEvent(event);
+    return isError;
 }
 
 }  // namespace CAMSimulator

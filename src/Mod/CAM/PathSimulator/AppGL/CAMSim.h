@@ -68,6 +68,19 @@ public:
     );
     void SetBaseShape(const Part::TopoShape& baseShape, float resolution);
     void AddCommand(Command* cmd);
+    /// The running GL simulation's position, per-line motion table
+    /// and parsed motions -- the stop-swap driver's view of where
+    /// the pixels stand (docs/CAMSimRenderPort.md 11.7.2).
+    SimProgress GetProgress() const;
+    std::vector<int> GetLineTable() const;
+    const MillMotion* GetMotion(int index) const;
+    /// Fan the live simulator's drawing out to the document's own 3D
+    /// view as an additional host, and back off it
+    /// (docs/CAMSimRenderPort.md sec 11.9). No simulator window, no
+    /// document 3D view, or no renderer to borrow -> false, and
+    /// neither call ever creates the simulator window.
+    bool AttachDocumentView();
+    void DetachDocumentView();
 };
 
 }  // namespace CAMSimulator

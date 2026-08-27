@@ -78,6 +78,7 @@
 #include "Tree.h"
 #include "View3DInventor.h"
 #include "ViewArea.h"
+#include "ViewPlacement.h"
 #include "View3DInventorViewer.h"
 #include "RenderParams.h"
 #include "ViewParams.h"
@@ -2692,12 +2693,16 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
         // With saved split view layouts the extra views are created
         // bare; applyViewAreaLayouts below places them into cells.
         bool useLayouts = !d->_viewAreaLayouts.empty()
-            && App::GetApplication().GetParameterGroupByPath(
-                    "User parameter:BaseApp/Preferences/View")
-                ->GetBool("UseViewArea", true);
-        while(views.size() < d->_savedViews.size())
-            views.push_back(useLayouts ? createView3D()
-                    : createView(View3DInventor::getClassTypeId()));
+            && ViewParams::getUseViewArea();
+        while(views.size() < d->_savedViews.size()) {
+            // Restore never consults the placement policy (docs/
+            // ViewPlacement.md sec 3.3): without saved layouts the
+            // extra views open as their own tabs, as they were saved.
+            auto view3D = createView3D();
+            if (view3D && !useLayouts)
+                ViewPlacement::placeTab(view3D, this);
+            views.push_back(view3D);
+        }
 
         size_t i=0;
         // The LEGACY on-top store (docs/CoinRetirement.md 5.12): "<view
@@ -3979,26 +3984,17 @@ MDIView *Document::createView(const Base::Type& typeId)
         return nullptr;
 
     if (typeId == View3DInventor::getClassTypeId()) {
+        // An additional view of a document that already shows one is
+        // placed by the DocView policy (a split by default); the first
+        // view is the Document category (a tab by default). See
+        // docs/ViewPlacement.md.
+        bool additional = !getMDIViews().empty();
         auto view3D = createView3D();
         if (!view3D)
             return nullptr;
-
-        // The default viewer window is a split view container holding the
-        // 3D view as its first cell (docs/SplitViews.md sec 5.6), so the
-        // user can split it or host other content without a wrap step.
-        auto hGrp = App::GetApplication().GetParameterGroupByPath(
-                "User parameter:BaseApp/Preferences/View");
-        if (hGrp->GetBool("UseViewArea", true)) {
-            auto area = new ViewArea(this, getMainWindow());
-            area->setWindowTitle(view3D->windowTitle());
-            area->setWindowModified(this->isModified());
-            area->setWindowIcon(view3D->windowIcon());
-            area->resize(400, 300);
-            area->activeCell()->hostView(view3D);
-            getMainWindow()->addWindow(area);
-        }
-        else
-            getMainWindow()->addWindow(view3D);
+        ViewPlacement::place(view3D,
+                additional ? ViewPlacement::Category::DocView
+                           : ViewPlacement::Category::Document, this);
         return view3D;
     }
     return nullptr;

@@ -79,7 +79,7 @@ public:
 
     /// Records one item's content in page coordinates. Filled by the
     /// feed, handed to setItem(); the page keeps the bytes.
-    class Recorder
+    class RendererExport Recorder
     {
     public:
         void beginPath();

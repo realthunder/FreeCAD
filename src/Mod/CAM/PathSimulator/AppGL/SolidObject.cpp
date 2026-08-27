@@ -62,7 +62,7 @@ void SolidObject::render()
     shape.Render(mModelMat, mModelMat);  // model is not rotated hence both are identity matrix
 }
 
-void SolidObject::GenerateSolid(const std::vector<Vertex>& verts, const std::vector<uint16_t>& indices)
+void SolidObject::GenerateSolid(const std::vector<Vertex>& verts, const std::vector<GLushort>& indices)
 {
     shape.SetModelData(verts, indices);
 

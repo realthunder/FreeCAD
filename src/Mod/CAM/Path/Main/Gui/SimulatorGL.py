@@ -26,7 +26,10 @@ Command and task window handler for the OpenGL based CAM simulator
 
 import math
 import os
+import threading
+import traceback
 import FreeCAD
+import Path
 import Path.Base.Util as PathUtil
 import Path.Dressup.Utils as PathDressup
 from PathScripts import PathUtils
@@ -83,6 +86,291 @@ def TSError(msg):
     QtGui.QMessageBox.information(None, "Path Simulation", msg)
 
 
+class _CutMeshWorker(threading.Thread):
+    """Replays a stopped GL simulation through the volumetric
+    simulator and meshes the result (docs/CAMSimRenderPort.md
+    11.7.3). The items list is precomputed on the GUI thread; this
+    thread only applies it -- the PathSim bindings release the GIL,
+    which is what keeps the GUI live while it grinds. The un-machined
+    and machined result halves are merged, un-machined first, and the
+    split recorded for the Cut display mode's two-tone colouring."""
+
+    def __init__(self, items, stockShape, resolution, toolAccuracy, initialPos, key):
+        super().__init__(daemon=True)
+        self.items = items
+        self.stockShape = stockShape
+        self.resolution = resolution
+        self.toolAccuracy = toolAccuracy
+        self.initialPos = initialPos
+        self.key = key
+        self.cancelled = False
+        self.result = None
+        self.error = None
+
+    def run(self):
+        try:
+            import PathSimulator
+
+            sim = PathSimulator.PathSim()
+            sim.BeginSimulation(self.stockShape, self.resolution)
+            pos = Placement(self.initialPos, Rotation())
+            for kind, payload in self.items:
+                if self.cancelled:
+                    return
+                if kind == "tool":
+                    sim.SetToolShape(payload, self.toolAccuracy)
+                else:
+                    pos = sim.ApplyCommand(pos, payload)
+            if self.cancelled:
+                return
+            outer, inner = sim.GetResultMesh()
+            uncut = outer.CountFacets
+            outer.addMesh(inner)
+            if not self.cancelled:
+                self.result = (self.key, outer, uncut)
+        except Exception:
+            self.error = traceback.format_exc()
+
+
+class _CutMeshSwap:
+    """The run-state swap, Route B half (docs/CAMSimRenderPort.md
+    11.7): polls the GL simulator, and once it has stood still for
+    the debounce interval, replays the consumed motions through the
+    volumetric simulator on a worker thread and lands the merged
+    result on the Job's Stock object through its Cut display mode.
+    Play reverses the landing and the pixels take over again.
+
+    The replay runs off the GL parser's own motion list rather than
+    the original commands: sticky words are resolved, drill cycles
+    already expanded, and the final motion truncates cleanly at the
+    sub-step interpolant -- so the mesh lands exactly where the
+    pixels stopped, mid-command included. Rapids are fed too (the GL
+    sim cuts on every move; the volumetric one treats G0 as G1)."""
+
+    POLL_MS = 250
+    QUIET_POLLS = 2
+
+    def __init__(self, millSim, job, quality):
+        self.millSim = millSim
+        self.stockObj = job.Stock
+        prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/CAM")
+        self.showInDocView = prefs.GetBool("SimulatorShowInDocumentView", True)
+        self.docAttached = False
+        self.savedDocVisibility = None
+        self.stockShape = job.Stock.Shape
+        accuracy = max(0.1, 1.1 - 0.1 * quality)
+        bb = self.stockShape.BoundBox
+        self.resolution = 0.01 * accuracy * max(bb.XLength, bb.YLength)
+        self.toolAccuracy = 0.05 * accuracy
+        self.initialPos = Vector(0, 0, bb.ZMax)
+        self.toolShapes = {}
+        self.worker = None
+        self.landed = False
+        self.savedMode = None
+        self.savedVisibility = None
+        self.lastMeshedKey = None
+        self.lastPos = None
+        self.quiet = 0
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self._poll)
+        self.timer.start(self.POLL_MS)
+
+    def addTool(self, toolNumber, shape):
+        self.toolShapes[toolNumber] = shape
+
+    def stop(self):
+        """Panel closing: stop observing. A landed mesh stays -- the
+        settled cut shape outliving the simulator is the feature."""
+        self.timer.stop()
+        self._cancelWorker()
+        self._detachDocView()
+
+    def _attachDocView(self):
+        """Route A in the document view (docs/CAMSimRenderPort.md sec
+        11.9 stage 3): while the pixels are the only carve there is,
+        fan the simulator's drawing out to the document's own 3D view,
+        and hide the Stock there -- its uncut wireframe would sit on
+        top of the carved one. False from the attach (no renderer to
+        borrow) just leaves the document view alone."""
+        if self.docAttached or not self.showInDocView:
+            return
+        if not self.millSim.AttachDocumentView():
+            return
+        self.docAttached = True
+        vobj = self.stockObj.ViewObject
+        self.savedDocVisibility = vobj.Visibility
+        vobj.Visibility = False
+
+    def _detachDocView(self):
+        if not self.docAttached:
+            return
+        self.millSim.DetachDocumentView()
+        self.docAttached = False
+        if self.savedDocVisibility is not None:
+            self.stockObj.ViewObject.Visibility = self.savedDocVisibility
+            self.savedDocVisibility = None
+
+    def _cancelWorker(self):
+        if self.worker is not None:
+            self.worker.cancelled = True
+            self.worker = None
+
+    def _poll(self):
+        try:
+            playing, motionIndex, fraction = self.millSim.GetProgress()
+            key = (motionIndex, round(fraction, 4))
+            if playing:
+                self.quiet = 0
+                self._cancelWorker()
+                self._unland()
+                self._attachDocView()
+                self.lastPos = key
+                return
+            if motionIndex < 0:
+                return
+            if key != self.lastPos:
+                # Scrubbing moves the pixels just like playing does:
+                # the document view follows them, and the landing
+                # below takes it back when the position settles.
+                self._attachDocView()
+                self.lastPos = key
+                self.quiet = 0
+                return
+            worker = self.worker
+            if worker is not None:
+                if worker.error:
+                    self.worker = None
+                    FreeCAD.Console.PrintError(
+                        "CAM cut mesh replay failed:\n" + worker.error
+                    )
+                elif worker.result is not None:
+                    self.worker = None
+                    self._land(*worker.result)
+                return
+            if key == self.lastMeshedKey:
+                return
+            self.quiet += 1
+            if self.quiet >= self.QUIET_POLLS:
+                self.quiet = 0
+                self._startWorker(motionIndex, fraction)
+        except Exception:
+            # The document or the Stock can go away under the timer;
+            # stop observing rather than fail once per poll.
+            self.stop()
+            raise
+
+    def _startWorker(self, motionIndex, fraction):
+        items = self._buildItems(motionIndex, fraction)
+        if not items:
+            return
+        key = (motionIndex, round(fraction, 4))
+        self.worker = _CutMeshWorker(
+            items, self.stockShape, self.resolution, self.toolAccuracy, self.initialPos, key
+        )
+        self.worker.start()
+
+    def _buildItems(self, motionIndex, fraction):
+        """Everything the GL sim has consumed, as ("tool", shape) and
+        ("cmd", Path.Command) entries ready for the worker's dumb
+        apply loop: arcs expanded to chords sized by the resolution
+        (the expansion Simulator.py always fed VolSim), the final
+        motion truncated at the consumed fraction."""
+        sim = self.millSim
+        first = sim.GetMotion(0)
+        if first is None:
+            return None
+        items = [("cmd", Path.Command("G0", {"X": first["x"], "Y": first["y"], "Z": first["z"]}))]
+        curTool = None
+        prev = first
+        for m in range(1, motionIndex + 1):
+            motion = sim.GetMotion(m)
+            if motion is None:
+                break
+            tool = motion["tool"]
+            if tool != curTool and tool in self.toolShapes:
+                items.append(("tool", self.toolShapes[tool]))
+                curTool = tool
+            frac = fraction if m == motionIndex else 1.0
+            self._motionCommands(items, prev, motion, frac)
+            prev = motion
+        return items
+
+    def _motionCommands(self, items, prev, motion, frac):
+        if motion["type"] == "line":
+            x = prev["x"] + (motion["x"] - prev["x"]) * frac
+            y = prev["y"] + (motion["y"] - prev["y"]) * frac
+            z = prev["z"] + (motion["z"] - prev["z"]) * frac
+            items.append(("cmd", Path.Command("G1", {"X": x, "Y": y, "Z": z})))
+            return
+        if motion["type"] not in ("cw", "ccw"):
+            return
+        # i/j hold the centre offset from the start point, raw from
+        # the g-code word
+        cx = prev["x"] + motion["i"]
+        cy = prev["y"] + motion["j"]
+        radius = math.sqrt(motion["i"] ** 2 + motion["j"] ** 2)
+        if radius < 1e-9:
+            return
+        a0 = math.atan2(prev["y"] - cy, prev["x"] - cx)
+        a1 = math.atan2(motion["y"] - cy, motion["x"] - cx)
+        da = a1 - a0
+        if motion["type"] == "ccw":
+            da = da % (2 * math.pi)
+        else:
+            da = -((-da) % (2 * math.pi))
+        da *= frac
+        dzTotal = (motion["z"] - prev["z"]) * frac
+        n = max(1, math.ceil(math.sqrt(radius * da * da / self.resolution)))
+        for i in range(1, n + 1):
+            a = a0 + da * i / n
+            items.append(
+                (
+                    "cmd",
+                    Path.Command(
+                        "G1",
+                        {
+                            "X": cx + radius * math.cos(a),
+                            "Y": cy + radius * math.sin(a),
+                            "Z": prev["z"] + dzTotal * i / n,
+                        },
+                    ),
+                )
+            )
+
+    def _land(self, key, mesh, uncut):
+        import Path.Main.Gui.Stock as PathStockGui
+
+        # The mesh replaces the pixels: the document view goes back to
+        # drawing its own objects -- the Stock, now in its Cut mode --
+        # before the landing below makes that mode current.
+        self._detachDocView()
+
+        stock = self.stockObj
+        PathStockGui.EnsureViewProvider(stock)
+        stock.CutMesh = mesh
+        stock.CutMeshUncutCount = uncut
+        vobj = stock.ViewObject
+        if not self.landed:
+            self.savedMode = vobj.DisplayMode
+            self.savedVisibility = vobj.Visibility
+        if "Cut" in vobj.getEnumerationsOfProperty("DisplayMode"):
+            vobj.DisplayMode = "Cut"
+        vobj.Visibility = True
+        self.landed = True
+        self.lastMeshedKey = key
+
+    def _unland(self):
+        if not self.landed:
+            return
+        vobj = self.stockObj.ViewObject
+        if self.savedMode:
+            vobj.DisplayMode = self.savedMode
+        if self.savedVisibility is not None:
+            vobj.Visibility = self.savedVisibility
+        self.landed = False
+        self.lastMeshedKey = None
+
+
 class CAMSimulation:
     """Handles and prepares CAM jobs for simulation"""
 
@@ -107,6 +395,7 @@ class CAMSimulation:
         self.busy = False
         self.operations = []
         self.baseShape = None
+        self.cutSwap = None
 
     def Connect(self, but, sig):
         """Connect task panel buttons"""
@@ -337,12 +626,18 @@ class CAMSimulation:
     def SimPlay(self):
         """Activate the simulation"""
         self.SetupSimulation()
+        if self.cutSwap is not None:
+            self.cutSwap.stop()
         self.millSim.ResetSimulation(FreeCADGui.getDocument(self.job.Document))
+        # Observes the run and lands the cut mesh on the Stock when
+        # it stops (docs/CAMSimRenderPort.md sec 11.7)
+        self.cutSwap = _CutMeshSwap(self.millSim, self.job, self.quality)
         for op in self.activeOps:
             tool = PathDressup.toolController(op).Tool
             toolNumber = PathDressup.toolController(op).ToolNumber
             toolProfile = self.GetToolProfile(tool, 0.5)
             self.millSim.AddTool(toolProfile, toolNumber, tool.Diameter, 1)
+            self.cutSwap.addTool(toolNumber, tool.Shape)
             opCommands = PathUtils.getPathWithPlacement(op).Commands
             for cmd in opCommands:
                 self.millSim.AddCommand(cmd)
@@ -352,6 +647,9 @@ class CAMSimulation:
 
     def cancel(self):
         """Cancel the simulation"""
+        if self.cutSwap is not None:
+            self.cutSwap.stop()
+            self.cutSwap = None
 
 
 class CommandCAMSimulate:

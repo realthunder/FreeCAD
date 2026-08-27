@@ -124,6 +124,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <vector>
 
 // FreeType Headers

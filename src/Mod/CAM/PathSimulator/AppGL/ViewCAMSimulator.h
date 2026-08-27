@@ -31,6 +31,7 @@ class SoCamera;
 namespace Gui
 {
 class View3DSettings;
+class View3DInventorViewer;
 }  // namespace Gui
 
 namespace CAMSimulator
@@ -54,6 +55,9 @@ public:
     ViewCAMSimulator* clone(Gui::Document* doc);
 
     static ViewCAMSimulator& instance(Gui::Document* doc = nullptr);
+    /// The live simulator view, or null -- for callers that must not
+    /// CREATE one as a side effect (the progress getters).
+    static ViewCAMSimulator* existing();
     DlgCAMSimulator& dlg();
 
     bool onMsg(const char* pMsg, const char** ppReturn) override;
@@ -69,6 +73,32 @@ private:
     void initCamera();
     void cloneCamera(SoCamera& camera);
     void applySettings();
+    /// Frame the camera on everything there is to see -- the viewer's
+    /// own scene AND the shapes the simulator draws itself, which
+    /// while attached are not in that scene. Every "view fit" goes
+    /// through here rather than calling the viewer's viewAll().
+    void viewFit();
+
+public:
+    /// Decide between the attached and the standalone drawing path
+    /// and put the widget stack in the matching shape. Called at
+    /// construction and again whenever the viewer's renderer could
+    /// have changed -- a render-cache preference change destroys the
+    /// renderer, and a destroyed renderer has forgotten its consumer.
+    void updateHostAttachment();
+
+    /// Fan the simulator's drawing out to (or back off) the
+    /// DOCUMENT's own 3D view -- the first View3DInventor of this
+    /// view's document (docs/CAMSimRenderPort.md sec 11.9). False
+    /// when there is no such view, or it has no renderer to borrow.
+    bool attachDocumentView();
+    void detachDocumentView();
+
+private:
+    /// The document 3D view the two calls above act on, or null.
+    Gui::View3DInventorViewer* documentViewer() const;
+
+public:
 
 protected:
     GuiDisplay* mGui = nullptr;

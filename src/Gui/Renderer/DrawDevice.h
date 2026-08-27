@@ -294,6 +294,15 @@ public:
     /// device in that state, so this mostly answers "still?".
     virtual bool available() const = 0;
 
+    /// The clip-space depth convention of this device: true when the
+    /// near plane maps to NDC z = -1 (OpenGL), false when it maps to
+    /// z = 0 (D3D, Vulkan, Metal). A consumer that writes gl_FragDepth
+    /// has to map its own clip z into window depth itself, and that
+    /// mapping is the only place the two differ -- pass this in as a
+    /// uniform rather than testing the shader language, so the answer
+    /// comes from the device that will actually run the draw.
+    virtual bool homogeneousDepth() const = 0;
+
     virtual VertexBufferHandle createVertexBuffer(
             const void *data, uint32_t bytes, const VertexLayout &layout) = 0;
     /// \a int32: 32-bit indices instead of 16.

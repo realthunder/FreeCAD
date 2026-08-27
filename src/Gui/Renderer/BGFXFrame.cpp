@@ -3876,6 +3876,26 @@ bool BGFXRenderer::Private::render(const QColor &col,
     declPass(V::ViewCavity, cavityActive, configScene);
     declPass(V::ViewGroundReflApply, groundReflActive, configScene);
     declPass(V::ViewOutline, true, configScene);
+    // An attached consumer's passes, scene run (docs/CAMSimRenderPort
+    // .md sec 10.2): placed while the scene is still being composed,
+    // so the caustics, the volumetric apply, water and glass and the
+    // transparent bucket all see the consumer's output and the depth
+    // its composite writes. A null config: the consumer states its
+    // own targets, rects, clears and transforms through the facade's
+    // setPass* calls, which run later in the frame than this loop and
+    // so have the last word anyway. Declared one at a time rather
+    // than as a group so that the ones it did not ask for are
+    // declared-but-dead instead of undeclared, which the pass table
+    // reports as a bug.
+    const int consumerPassCount =
+        (frameConsumer && consumerSurface && !subCtx.warm)
+            ? int(consumerPasses) : 0;
+    const int consumerOverlayCount =
+        consumerPassCount ? int(consumerOverlayPasses) : 0;
+    const int consumerSceneCount = consumerPassCount - consumerOverlayCount;
+    for (int c = 0; c < int(V::NumConsumerSceneViews); ++c)
+        declPass(V::ViewConsumerScene0 + c, c < consumerSceneCount,
+                 nullptr);
     declPass(V::ViewCaustics, waterActive && volconf.caustics,
              configScene);
     declPass(V::ViewVolApply, volActive, configScene);
@@ -3887,6 +3907,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
     declPass(V::ViewTransparent, true, configTransparent);
     declPass(V::ViewOITComposite, oitActive, configScene);
     declPass(V::ViewSectionCapTransp, true, configScene);
+    // The consumer's overlay run: translucent output testing the
+    // frame's FINISHED depth, after the WBOIT resolve (sec 10.2).
+    for (int c = 0; c < int(V::NumConsumerOverlayViews); ++c)
+        declPass(V::ViewConsumerOverlay0 + c, c < consumerOverlayCount,
+                 nullptr);
     declPasses(V::ViewBloomBright, V::ViewBloomBlurV, bloomActive,
                configBloom);
     declPass(V::ViewBloomApply, bloomActive, configScene);
@@ -5986,6 +6011,49 @@ bool BGFXRenderer::Private::render(const QColor &col,
         view->overlayView = -1;
         view->overlayAnchor = nullptr;
         view->overlayRectHeight = 0.f;
+    }
+
+    // The attached frame consumer (docs/CAMSimRenderPort.md sec 8,
+    // runs split per sec 10.2). Submitted here for reading order
+    // only: the scene run's ids sit before the caustics and the
+    // volumetric apply, the overlay run's between the transparent
+    // bucket and bloom, and it is those ids -- not this position --
+    // that place its draws in the frame. The consumer's pass numbers
+    // are contiguous 0..N-1; the ids array concatenates the two runs
+    // in that order.
+    //
+    // Bound for the duration of the call and unbound after, so a
+    // consumer that squirrelled the surface away cannot submit
+    // outside it. Everything the callback may need about where it is
+    // drawing rides the bind: the scene target, its attachments, its
+    // pixel size (which is the SCENE target's, not the widget's),
+    // whether its colour is linear, and the camera the target was
+    // drawn with -- the last so a consumer can put its own image into
+    // the depth buffer this frame shares. The projection is the one
+    // the scene actually used, jitter included while the idle
+    // accumulator is refining.
+    if (consumerPassCount > 0) {
+        uint16_t ids[BGFXView::NumConsumerSceneViews
+                     + BGFXView::NumConsumerOverlayViews];
+        int nids = 0;
+        for (int c = 0; c < consumerSceneCount; ++c)
+            ids[nids++] = view->vid(V::ViewConsumerScene0 + c);
+        for (int c = 0; c < consumerOverlayCount; ++c)
+            ids[nids++] = view->vid(V::ViewConsumerOverlay0 + c);
+        BGFXHostSurface::FrameBind bind;
+        bind.ids = ids;
+        bind.numIds = unsigned(consumerPassCount);
+        bind.target = view->bgfxFbo;
+        bind.color = view->bgfxColor;
+        bind.depth = view->bgfxDepth;
+        bind.width = int(view->width);
+        bind.height = int(view->height);
+        bind.linearColor = view->hdrScene;
+        bind.viewMtx = view->viewMatrix;
+        bind.projMtx = view->projMatrix;
+        consumerSurface->bindFrame(bind);
+        frameConsumer->drawFrame(consumerSurface->surface());
+        consumerSurface->unbindFrame();
     }
 
     // Idle temporal accumulation. Submitted here for reading order --

@@ -26,6 +26,8 @@
 #include "CAMSim.h"
 
 #include "DlgCAMSimulator.h"
+#include "MillSimulation.h"
+#include "ViewCAMSimulator.h"
 #include <string>
 #include <vector>
 
@@ -69,6 +71,41 @@ void CAMSim::AddCommand(Command* cmd)
 {
     std::string gline = cmd->toGCode();
     DlgCAMSimulator::instance()->addGcodeCommand(gline.c_str());
+}
+
+// The getters go through existingInstance(): instance() CREATES the
+// simulator view when there is none, and an idle observer poking at
+// progress must not open a window as a side effect.
+
+SimProgress CAMSim::GetProgress() const
+{
+    DlgCAMSimulator* dlg = DlgCAMSimulator::existingInstance();
+    return dlg ? dlg->progress() : SimProgress();
+}
+
+std::vector<int> CAMSim::GetLineTable() const
+{
+    DlgCAMSimulator* dlg = DlgCAMSimulator::existingInstance();
+    return dlg ? dlg->lineTable() : std::vector<int>();
+}
+
+const MillMotion* CAMSim::GetMotion(int index) const
+{
+    DlgCAMSimulator* dlg = DlgCAMSimulator::existingInstance();
+    return dlg ? dlg->motion(index) : nullptr;
+}
+
+bool CAMSim::AttachDocumentView()
+{
+    ViewCAMSimulator* view = ViewCAMSimulator::existing();
+    return view && view->attachDocumentView();
+}
+
+void CAMSim::DetachDocumentView()
+{
+    if (ViewCAMSimulator* view = ViewCAMSimulator::existing()) {
+        view->detachDocumentView();
+    }
 }
 
 }  // namespace CAMSimulator

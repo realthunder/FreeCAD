@@ -96,6 +96,11 @@ public:
     /// management plus the content selector. Opened by the corner
     /// button; \a globalPos anchors it.
     void showCellMenu(const QPoint &globalPos);
+    /// Reveal (or hide again) the two corner action zones without the
+    /// cursor being on them. Hovering the menu button asks for this:
+    /// the button is the discoverable chrome, so it is where the
+    /// invisible zones get pointed out (docs/SplitViews.md sec 5.4).
+    void showZoneHint(bool on);
     /// Repaint the active-cell border. It lives on a raised child
     /// widget, so update() on the cell does not reach it.
     void updateHighlight();
@@ -112,6 +117,10 @@ private:
     ViewAreaZone *_zoneBottomLeft;
     ViewAreaMenuButton *_menuButton;
     ViewAreaHighlight *_highlight;
+    /// Activation order stamp (ViewArea::_mruCounter at last
+    /// activation); the placement policy's reuse step picks the
+    /// highest among matching cells.
+    int _mruStamp = 0;
 
     friend class ViewArea;
 };
@@ -135,6 +144,10 @@ public:
 
     static constexpr int Size = 14;
 
+    /// Paint the grip although the cursor is elsewhere, dimmer than a
+    /// real hover. Driven by the cell's menu button (showZoneHint).
+    void setHint(bool on);
+
 protected:
     void mousePressEvent(QMouseEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
@@ -151,6 +164,7 @@ private:
     ViewAreaCell *_cell;
     Corner _corner;
     bool _hover = false;
+    bool _hint = false;
     bool _dragging = false;
     QPoint _pressGlobal;
     // live resize of the border created by a split
@@ -193,6 +207,13 @@ public:
     static ViewArea *wrap(MDIView *view);
 
     ViewAreaCell *activeCell() const { return _activeCell; }
+    /** Hint the corner zones (ViewAreaCell::showZoneHint) of the cells
+     * \a handle borders, clearing every other cell's hint; \a on false
+     * clears them all. A hovered splitter handle asks for this, so a
+     * border points at the gesture that makes and removes it
+     * (docs/SplitViews.md sec 18).
+     */
+    void showZoneHintAt(const QSplitterHandle *handle, bool on);
     ViewAreaCell *cellOf(const MDIView *view) const;
     std::vector<ViewAreaCell*> cells() const;
     int cellCount() const;
@@ -218,6 +239,21 @@ public:
      * embedded elsewhere.
      */
     bool setCellView(ViewAreaCell *cell, MDIView *view);
+
+    /** The most-recently-active cell whose child view satisfies
+     * \a pred, or null -- the placement policy's reuse candidate
+     * (docs/ViewPlacement.md sec 3.2). Cells never activated rank
+     * lowest, in tree order.
+     */
+    ViewAreaCell *lastUsedCell(
+            const std::function<bool(MDIView*)> &pred) const;
+
+    /** Make the cell hosting \a view the active tile and activate its
+     * window; false if \a view is not hosted here. The placement
+     * policy's activation step -- splitCell deliberately keeps the
+     * ORIGINAL cell active for gesture splits.
+     */
+    bool activateCellOf(MDIView *view);
 
     /** The adjacent sibling cell a join from \a cell along \a axis can
      * consume (Blender's aligned-edge rule: same parent splitter, leaf
@@ -333,6 +369,7 @@ private:
     QPointer<ViewAreaCell> _pendingMaximize;
     std::vector<MaximizeState> _maximizeRestore;
     bool _closing = false;
+    int _mruCounter = 0;
 
     friend class ViewAreaCell;
 };

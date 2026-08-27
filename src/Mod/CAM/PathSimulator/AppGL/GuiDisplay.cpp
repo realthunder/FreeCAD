@@ -28,6 +28,8 @@
 #include <cmath>
 #include <limits>
 
+// include this last as the defines can mess up other includes
+#include "OpenGlWrapper.h"
 
 namespace CAMSimulator
 {

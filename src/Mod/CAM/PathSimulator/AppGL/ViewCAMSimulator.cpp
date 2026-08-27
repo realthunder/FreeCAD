@@ -36,15 +36,18 @@
 #include <Gui/Camera.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/ViewPlacement.h>
 #include <Gui/NavigationStyle.h>
 #include <Gui/SoFCDB.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
+#include <Inventor/SbBox3f.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <QPointer>
 #include <QStackedLayout>
 #include <QStackedWidget>
+#include <cmath>
 #include <string_view>
 
 using namespace std::literals;
@@ -85,25 +88,17 @@ ViewCAMSimulator::ViewCAMSimulator(Gui::Document* pcDocument, QWidget* parent, Q
     stack->addWidget(mGui);
     stack->addWidget(mDlg);
 
-#if 1
-
     stack->addWidget(mDummyViewer);
 
     setCentralWidget(stack);
 
-#else
-
-    mDummyViewer->discardPaintEvent_ = false;
-
-    auto container = new QWidget;
-    auto container_layout = new QHBoxLayout;
-    container->setLayout(container_layout);
-    container_layout->addWidget(stack, 1);
-    container_layout->addWidget(mDummyViewer, 1);
-
-    setCentralWidget(container);
-
-#endif
+    // Draw inside the 3D view's own frame if it has a renderer to
+    // borrow (docs/CAMSimRenderPort.md sec 8). Then the viewer paints
+    // -- it has held the stock and base view providers all along and
+    // never rendered them -- and the simulator's widget goes away,
+    // because two stacked QOpenGLWidgets means the top one hides the
+    // bottom whether it drew anything or not.
+    updateHostAttachment();
 }
 
 bool ViewCAMSimulator::onMsg(const char* pMsg, const char** ppReturn)
@@ -115,7 +110,7 @@ bool ViewCAMSimulator::onMsg(const char* pMsg, const char** ppReturn)
     // TODO: this is a near 1-to-1 code duplication from View3DInventor.cpp
 
     if (pMsg == "ViewFit"sv) {
-        mDummyViewer->viewAll();
+        viewFit();
         return true;
     }
     else if (pMsg == "ViewBottom"sv) {
@@ -234,7 +229,7 @@ void ViewCAMSimulator::onSimulationStarted()
 {
     // fit camera to scene
 
-    mDummyViewer->viewAll();
+    viewFit();
 
     // window title and activate
 
@@ -266,6 +261,91 @@ void ViewCAMSimulator::cloneCamera(SoCamera& camera)
     mDummyViewer->setCamera(str.c_str());
 }
 
+void ViewCAMSimulator::updateHostAttachment()
+{
+    // Which of the two paths runs, and what each costs
+    // (docs/CAMSimRenderPort.md sec 8):
+    //
+    // ATTACHED -- the 3D view has a renderer to borrow, which means
+    //   the render cache is in the renderer mode and a backend
+    //   started. The viewer paints, the simulator draws inside its
+    //   frame on its pass ids, and the two sort against each other by
+    //   depth. mDlg is hidden: two stacked QOpenGLWidgets means the
+    //   top one hides the bottom whether it drew anything or not.
+    //
+    // STANDALONE -- no renderer (render cache elsewhere, no backend
+    //   built, or a backend that would not start). The simulator owns
+    //   mDlg and its own surface, the viewer does not paint at all,
+    //   and the picture is the simulator's alone. This is why
+    //   discardPaintEvent_ and DrawSurface::create(widget, n) both
+    //   stay: they are this path, not leftovers of the port.
+    //
+    // Re-called whenever the answer could have changed, because a
+    // renderer swap forgets its consumer.
+    if (!mDlg || !mDummyViewer) {
+        return;
+    }
+    mDlg->attachToHost(mDummyViewer);
+    const bool attached = mDlg->isAttached();
+    mDummyViewer->discardPaintEvent_ = !attached;
+    mDlg->setVisible(!attached);
+    if (attached) {
+        mDummyViewer->raise();
+        mGui->raise();
+    }
+}
+
+Gui::View3DInventorViewer* ViewCAMSimulator::documentViewer() const
+{
+    Gui::Document* doc = getGuiDocument();
+    if (!doc) {
+        return nullptr;
+    }
+    for (Gui::MDIView* mdi : doc->getMDIViewsOfType(View3DInventor::getClassTypeId())) {
+        return static_cast<View3DInventor*>(mdi)->getViewer();
+    }
+    return nullptr;
+}
+
+bool ViewCAMSimulator::attachDocumentView()
+{
+    Gui::View3DInventorViewer* viewer = documentViewer();
+    return viewer && mDlg && mDlg->attachExtraHost(viewer);
+}
+
+void ViewCAMSimulator::detachDocumentView()
+{
+    Gui::View3DInventorViewer* viewer = documentViewer();
+    if (viewer && mDlg) {
+        mDlg->detachExtraHost(viewer);
+    }
+}
+
+void ViewCAMSimulator::viewFit()
+{
+    const Base::BoundBox3d sim =
+        mDlg ? mDlg->simulationBoundBox() : Base::BoundBox3d();
+    if (!sim.IsValid()) {
+        // Nothing simulated yet: the viewer's scene is all there is.
+        mDummyViewer->viewAll();
+        return;
+    }
+    SbBox3f box(float(sim.MinX), float(sim.MinY), float(sim.MinZ),
+                float(sim.MaxX), float(sim.MaxY), float(sim.MaxZ));
+    const SbBox3f scene = mDummyViewer->getBoundingBox();
+    if (!scene.isEmpty()) {
+        box.extendBy(scene);
+    }
+    // viewAll() resets the height angle before it frames, and the two
+    // together are what "view fit" has always meant here; framing the
+    // box without it would fit a different camera.
+    SoCamera* cam = mDummyViewer->getSoRenderManager()->getCamera();
+    if (cam && cam->getTypeId().isDerivedFrom(SoPerspectiveCamera::getClassTypeId())) {
+        static_cast<SoPerspectiveCamera*>(cam)->heightAngle = float(M_PI / 4.0);
+    }
+    mDummyViewer->viewBoundBox(box);
+}
+
 void ViewCAMSimulator::applySettings()
 {
     assert(mDummyViewer && mDlg);
@@ -278,7 +358,7 @@ void ViewCAMSimulator::applySettings()
         "User parameter:BaseApp/Preferences/Mod/CAM"
     );
 
-    mViewSettings = std::make_unique<CAMSimulator::View3DSettings>(hGrpView, *mDummyViewer, *mDlg);
+    mViewSettings = std::make_unique<CAMSimulator::View3DSettings>(hGrpView, *mDummyViewer, *mDlg, *this);
     mCAMSettings = std::make_unique<CAMSettings>(hGrpCAM, *mDlg);
 
     mViewSettings->applySettings();
@@ -306,6 +386,11 @@ ViewCAMSimulator* ViewCAMSimulator::clone(Gui::Document* doc)
     return viewCam;
 }
 
+ViewCAMSimulator* ViewCAMSimulator::existing()
+{
+    return viewCAMSimulator;
+}
+
 ViewCAMSimulator& ViewCAMSimulator::instance(Gui::Document* doc)
 {
     // The first call comes from CAMSim::resetSimulation giving us the correct document. All
@@ -321,7 +406,8 @@ ViewCAMSimulator& ViewCAMSimulator::instance(Gui::Document* doc)
         }
 
         viewCAMSimulator = new ViewCAMSimulator(doc, nullptr);
-        getMainWindow()->addWindow(viewCAMSimulator);
+        Gui::ViewPlacement::place(viewCAMSimulator,
+                Gui::ViewPlacement::Category::DocView, doc);
     }
     else if (doc && doc != viewCAMSimulator->getGuiDocument()) {
         // If a document is provided, we make sure that the returned instance belongs to that
@@ -339,7 +425,8 @@ ViewCAMSimulator& ViewCAMSimulator::instance(Gui::Document* doc)
         auto old = viewCAMSimulator.get();
 
         viewCAMSimulator = old->clone(doc);
-        getMainWindow()->addWindow(viewCAMSimulator);
+        Gui::ViewPlacement::place(viewCAMSimulator,
+                Gui::ViewPlacement::Category::DocView, doc);
 
         old->deleteSelf();
     }

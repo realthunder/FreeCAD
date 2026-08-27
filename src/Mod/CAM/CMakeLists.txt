@@ -103,6 +103,7 @@ SET(PathPythonMainGui_SRCS
     Path/Main/Gui/SanityCmd.py
     Path/Main/Gui/Simulator.py
     Path/Main/Gui/SimulatorGL.py
+    Path/Main/Gui/Stock.py
 )
 
 SET(PathPythonMainSanity_SRCS

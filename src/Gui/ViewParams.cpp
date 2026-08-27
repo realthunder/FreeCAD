@@ -59,6 +59,7 @@ class ViewParamsP: public ParameterGrp::ObserverType {
 public:
     ParameterGrp::handle handle;
     std::unordered_map<const char *,void(*)(ViewParamsP*),App::CStringHasher,App::CStringHasher> funcs;
+    bool UseViewArea;
     bool UseNewSelection;
     bool UseSelectionRoot;
     bool EnableSelection;
@@ -247,6 +248,8 @@ public:
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
         handle->Attach(this);
 
+        UseViewArea = this->handle->GetBool("UseViewArea", true);
+        funcs["UseViewArea"] = &ViewParamsP::updateUseViewArea;
         UseNewSelection = this->handle->GetBool("UseNewSelection", true);
         funcs["UseNewSelection"] = &ViewParamsP::updateUseNewSelection;
         UseSelectionRoot = this->handle->GetBool("UseSelectionRoot", true);
@@ -631,6 +634,10 @@ public:
     }
 
 
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateUseViewArea(ViewParamsP *self) {
+        self->UseViewArea = self->handle->GetBool("UseViewArea", true);
+    }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateUseNewSelection(ViewParamsP *self) {
         self->UseNewSelection = self->handle->GetBool("UseNewSelection", true);
@@ -1408,6 +1415,36 @@ ViewParamsP *instance() {
 // Auto generated code (Tools/params_utils.py:343)
 ParameterGrp::handle ViewParams::getHandle() {
     return instance()->handle;
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docUseViewArea() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Host views in a split-capable view area, so that several views\n"
+"can share one tab side by side. Off, every view gets its own tab\n"
+"and the split placement choices below do not apply.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & ViewParams::getUseViewArea() {
+    return instance()->UseViewArea;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & ViewParams::defaultUseViewArea() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setUseViewArea(const bool &v) {
+    instance()->handle->SetBool("UseViewArea",v);
+    instance()->UseViewArea = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeUseViewArea() {
+    instance()->handle->RemoveBool("UseViewArea");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -6559,7 +6596,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:640)
+// Auto generated code (Gui/ViewParams.py:644)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6604,7 +6641,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:648)
+// Auto generated code (Gui/ViewParams.py:652)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6617,7 +6654,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:658)
+// Auto generated code (Gui/ViewParams.py:662)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -6630,13 +6667,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:668)
+// Auto generated code (Gui/ViewParams.py:672)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:675)
+// Auto generated code (Gui/ViewParams.py:679)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -6644,7 +6681,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:684)
+// Auto generated code (Gui/ViewParams.py:688)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6656,7 +6693,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:697)
+// Auto generated code (Gui/ViewParams.py:701)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)

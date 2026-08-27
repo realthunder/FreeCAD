@@ -33,20 +33,41 @@ namespace CAMSimulator
 {
 
 /// The simulator's passes on its draw surface, in backend submission
-/// order (docs/CAMSimRenderPort.md step 5). All of the first three
-/// target the G-buffer; the split exists because a backend pass has
-/// ONE projection, and the base shape substitutes its glPolygonOffset
-/// with a depth-biased projection of its own.
+/// order. The first two target the G-buffer; the split exists because
+/// a backend pass has ONE projection, and the base shape substitutes
+/// its glPolygonOffset with a depth-biased projection of its own. The
+/// trailing two are the surface's OVERLAY run
+/// (docs/CAMSimRenderPort.md sec 10.4): the tool path, drawn after
+/// the composite into its destination, against the depth it wrote --
+/// which attached places the hidden pass's x-ray against the WHOLE
+/// frame's depth, document geometry included.
 enum : unsigned
 {
     SimPassScene = 0,      ///< stencil CSG, cut coloring, the tool
     SimPassBaseShape = 1,  ///< base shape, depth-biased projection
-    SimPassPath = 2,       ///< tool-path lines
-    SimPassAOFirst = 3,    ///< the AO effect's internal pass range
-    /// Backbuffer: the deferred lighting quad, after the AO result it
-    /// samples.
+    SimPassAOFirst = 2,    ///< the AO effect's internal pass range
+    /// The deferred lighting quad, into the sim's own resolve target,
+    /// after the AO result it samples.
     SimPassResolve = SimPassAOFirst + Render::kAOEffectPasses,
-    SimPassCount = SimPassResolve + 1,
+    /// The finished image blended into whatever the surface
+    /// composites into -- its own backbuffer standalone, the host's
+    /// scene target attached -- carrying the stock's depth with it
+    /// (docs/CAMSimRenderPort.md secs 8.4, 10.3).
+    ///
+    /// A pass of its own rather than pointing the resolve straight at
+    /// that target: the resolve samples the whole G-buffer, and the
+    /// composite samples ONE RGBA8 texture. That difference is not
+    /// cosmetic -- see the execution record.
+    SimPassComposite = SimPassResolve + 1,
+    /// The overlay run: the path's visible draw (depth LESS, full
+    /// alpha), then its hidden x-ray (GREATER, 10%), in the TARGET
+    /// camera's clip space.
+    SimPassPathVisible = SimPassComposite + 1,
+    SimPassPathHidden = SimPassPathVisible + 1,
+    SimPassCount = SimPassPathHidden + 1,
+    /// How many of those trail into the overlay run
+    /// (Render::FrameConsumer::overlayPasses).
+    SimOverlayPasses = SimPassCount - SimPassPathVisible,
 };
 
 /// The facade-side current state. The GL path keeps state in the
@@ -87,7 +108,9 @@ struct SimDrawContext
     float lightAmbient[4];
     float objectColor[4];
     float objectColorAlpha[4];
-    /// x = invertedNormals, y = ssaoActive, z = curSegment.
+    /// x = invertedNormals (geometry passes) / decode-to-linear (the
+    /// line passes, sec 10.4); y = ssaoActive; z = curSegment;
+    /// w = the line half-width in pixels.
     float params[4];
 
     SimDrawContext();
@@ -100,6 +123,19 @@ struct SimDrawContext
     {
         return surface != nullptr;
     }
+
+    /// True while the LEGACY raw-GL path owns the picture this frame.
+    ///
+    /// The two paths are mutually exclusive, and the flag is what
+    /// makes them so. Every GL call in the simulator is guarded by it,
+    /// because a stray glEnable/glDepthFunc issued while the backend
+    /// owns the context desynchronises the backend's state cache --
+    /// and attached (docs/CAMSimRenderPort.md sec 8) the simulator
+    /// draws inside the HOST's frame, where that would corrupt the
+    /// document's rendering, not just its own.
+    ///
+    /// Set by DlgCAMSimulator::selectRenderPath once per frame.
+    bool legacyGL = false;
 
     void setModel(const mat4x4& modelMat, const mat4x4& normalMat);
     void setColor(float* dst, const vec3& src, float w = 1.0f);

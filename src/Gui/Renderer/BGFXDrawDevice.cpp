@@ -21,6 +21,7 @@
  ****************************************************************************/
 
 #include <cstdio>
+#include <cstring>
 #include <map>
 
 #include "BGFXRendererP.h"
@@ -617,13 +618,25 @@ public:
 std::map<uint16_t, std::unique_ptr<BGFXAOEffect>> _aoEffects;
 uint16_t _nextEffectId = 0;
 
-/// The per-widget frame surface (DrawSurface.h): a contiguous view-id
-/// block from the shared granule pool (so surface passes never collide
-/// with the viewers'), the surface's own backbuffer target, and the
-/// frame plumbing proven by the engine -- submissions happen on the
-/// widget's context (bgfx encoding is CPU-side), endFrame runs
-/// bgfx::frame() on the library context and blits the finished colour
-/// into whatever framebuffer the widget had bound at beginFrame.
+/// The frame surface (DrawSurface.h), in both flavours.
+///
+/// STANDALONE (created by createSurface, owns a QOpenGLWidget): a
+/// contiguous view-id block from the shared granule pool -- so surface
+/// passes never collide with the viewers' -- the surface's own
+/// backbuffer target, and the frame plumbing proven by the engine:
+/// submissions happen on the widget's context (bgfx encoding is
+/// CPU-side), endFrame runs bgfx::frame() on the library context and
+/// blits the finished colour into whatever framebuffer the widget had
+/// bound at beginFrame.
+///
+/// ATTACHED (docs/CAMSimRenderPort.md sec 8, driven through
+/// BGFXHostSurface): no widget, no id block and no backbuffer. The
+/// pass ids are the host view's own, rebound every frame because
+/// mapPasses reassigns them; the default target is the host's scene
+/// framebuffer; and there is no frame boundary here at all -- the
+/// host's render() owns it. bindFrame/unbindFrame bracket the one
+/// FrameConsumer::drawFrame call the ids are valid for, so a consumer
+/// that kept the surface can submit nothing outside it.
 class BGFXDrawSurface : public Render::DrawSurface {
 public:
     QOpenGLWidget *widget = nullptr;
@@ -634,6 +647,28 @@ public:
     int height = 0;
     int hostFbo = 0;
     bool inFrame = false;
+
+    /// Attached-flavour state; all inert on a standalone surface.
+    bool isAttached = false;
+    std::vector<uint16_t> hostIds;
+    bgfx::FrameBufferHandle hostFb = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle hostColorTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle hostDepthTex = BGFX_INVALID_HANDLE;
+    bool hostLinear = false;
+    /// The host camera of the bound frame, column-major. Only valid
+    /// between bindFrame and unbindFrame -- the host's is a different
+    /// camera every frame.
+    bool hostCameraValid = false;
+    float hostViewMtx[16] = {0};
+    float hostProjMtx[16] = {0};
+
+    /// The bgfx view id a pass draws in.
+    bgfx::ViewId viewIdOf(unsigned pass) const
+    {
+        if (isAttached)
+            return bgfx::ViewId(pass < hostIds.size() ? hostIds[pass] : 0);
+        return bgfx::ViewId(baseId + pass);
+    }
 
     struct PassConfig {
         Render::TargetHandle target;
@@ -698,9 +733,14 @@ public:
     void applyPass(unsigned pass)
     {
         const auto &conf = passes[pass];
-        const bgfx::ViewId id = bgfx::ViewId(baseId + pass);
+        const bgfx::ViewId id = viewIdOf(pass);
+        // A pass given no target of its own draws into the surface's
+        // default: its own backbuffer standalone, the host's scene
+        // target attached. That is what makes
+        // setPassTarget(p, hostTarget()) mean the same thing in both.
         bgfx::setViewFrameBuffer(id, conf.target.valid()
-                ? bgfx::FrameBufferHandle{conf.target.idx} : backbuffer);
+                ? bgfx::FrameBufferHandle{conf.target.idx}
+                : (isAttached ? hostFb : backbuffer));
         if (conf.haveRect)
             bgfx::setViewRect(id, uint16_t(conf.rect[0]),
                               uint16_t(conf.rect[1]),
@@ -715,12 +755,34 @@ public:
                            conf.clearDepth, conf.clearStencil);
         bgfx::setViewMode(id, conf.sequential
                 ? bgfx::ViewMode::Sequential : bgfx::ViewMode::Default);
+        // ! Every pass states its transform, even the ones that want
+        // identity. A backend view's transform is STICKY, and an
+        // attached surface's ids are the host's -- reassigned every
+        // frame from whichever passes are live, so an id that carried
+        // the scene camera last frame would silently apply it to a
+        // clip-space fullscreen quad this frame and put the draw off
+        // screen. (A standalone surface owns its ids and would inherit
+        // only from itself, but one rule is cheaper than two.)
+        static const float kIdentity[16] = {1, 0, 0, 0,
+                                            0, 1, 0, 0,
+                                            0, 0, 1, 0,
+                                            0, 0, 0, 1};
         if (conf.haveTransform)
             bgfx::setViewTransform(id, conf.view, conf.proj);
+        else
+            bgfx::setViewTransform(id, kIdentity, kIdentity);
     }
 
     bool beginFrame(int w, int h) override
     {
+        // Attached: the host began the frame and owns its boundary.
+        // Answering with whether it is bound lets a consumer's draw
+        // code keep the begin/draw/end shape it has standalone.
+        if (isAttached) {
+            (void)w;
+            (void)h;
+            return inFrame;
+        }
         if (!deviceUp() || w <= 0 || h <= 0 || !idSpan)
             return false;
         auto *ctx = QOpenGLContext::currentContext();
@@ -752,6 +814,10 @@ public:
 
     void endFrame() override
     {
+        // Attached: bgfx::frame() belongs to the host, and calling it
+        // here would end the host's frame under it.
+        if (isAttached)
+            return;
         if (!inFrame)
             return;
         inFrame = false;
@@ -899,8 +965,7 @@ public:
             bgfx::discard();
             return;
         }
-        bgfx::submit(bgfx::ViewId(baseId + pass),
-                     bgfx::ProgramHandle{program.idx});
+        bgfx::submit(viewIdOf(pass), bgfx::ProgramHandle{program.idx});
     }
 
     Render::TextureHandle runEffect(Render::EffectHandle effect,
@@ -913,11 +978,152 @@ public:
             return {};
         if (firstPass + Render::kAOEffectPasses > numPasses)
             return {};
+        if (isAttached) {
+            // The effect tier hands its run a base id and uses the
+            // ids after it, so the ids must be consecutive across the
+            // effect's own range. They are whenever the range sits
+            // inside ONE consumer run (consecutive enum entries,
+            // consecutively mapped) -- but the scene and overlay runs
+            // are not contiguous with each other, and a frame path
+            // change could break the rule some other way, so it is
+            // checked rather than assumed: a violation would scribble
+            // into a neighbour's view.
+            for (unsigned p = firstPass + 1;
+                 p < firstPass + Render::kAOEffectPasses; ++p) {
+                if (hostIds[p] != uint16_t(hostIds[p - 1] + 1))
+                    return {};
+            }
+        }
         auto it = _aoEffects.find(effect.idx);
         if (it == _aoEffects.end())
             return {};
-        return it->second->run(uint16_t(baseId + firstPass), width, height,
+        return it->second->run(viewIdOf(firstPass), width, height,
                                bgfx::TextureHandle{normalZ.idx}, params);
+    }
+
+    bool attached() const override
+    {
+        return isAttached;
+    }
+
+    Render::TargetHandle hostTarget() const override
+    {
+        // Standalone: an invalid handle, which setPassTarget already
+        // reads as "this surface's own backbuffer".
+        if (!isAttached || !bgfx::isValid(hostFb))
+            return {};
+        return {hostFb.idx};
+    }
+
+    Render::TextureHandle hostColor() const override
+    {
+        const bgfx::TextureHandle t = isAttached ? hostColorTex : color;
+        return bgfx::isValid(t) ? Render::TextureHandle{t.idx}
+                                : Render::TextureHandle{};
+    }
+
+    Render::TextureHandle hostDepth() const override
+    {
+        const bgfx::TextureHandle t = isAttached ? hostDepthTex : depth;
+        return bgfx::isValid(t) ? Render::TextureHandle{t.idx}
+                                : Render::TextureHandle{};
+    }
+
+    void hostSize(int &w, int &h) const override
+    {
+        w = width;
+        h = height;
+    }
+
+    bool hostLinearColor() const override
+    {
+        return hostLinear;
+    }
+
+    bool hostCamera(float view[16], float proj[16]) const override
+    {
+        if (!isAttached || !hostCameraValid)
+            return false;
+        std::memcpy(view, hostViewMtx, sizeof(hostViewMtx));
+        std::memcpy(proj, hostProjMtx, sizeof(hostProjMtx));
+        return true;
+    }
+};
+
+/// The engine-facing driver of an attached surface
+/// (BGFXHostSurface, BGFXRendererP.h). It owns the surface; the frame
+/// path owns it.
+class BGFXHostSurfaceImpl : public Render::BGFXHostSurface {
+public:
+    BGFXDrawSurface s;
+    int lastW = 0;
+    int lastH = 0;
+
+    explicit BGFXHostSurfaceImpl(unsigned numPasses)
+    {
+        s.isAttached = true;
+        s.numPasses = numPasses;
+        s.passes.resize(numPasses);
+        s.hostIds.assign(numPasses, 0);
+    }
+
+    Render::DrawSurface &surface() override
+    {
+        return s;
+    }
+
+    unsigned passes() const override
+    {
+        return s.numPasses;
+    }
+
+    void bindFrame(const FrameBind &bind) override
+    {
+        if (bind.numIds < s.numPasses)
+            return;
+        for (unsigned p = 0; p < s.numPasses; ++p)
+            s.hostIds[p] = bind.ids[p];
+        s.hostFb = bind.target;
+        s.hostColorTex = bind.color;
+        s.hostDepthTex = bind.depth;
+        s.width = bind.width;
+        s.height = bind.height;
+        s.hostLinear = bind.linearColor;
+        s.hostCameraValid = bind.viewMtx && bind.projMtx;
+        if (s.hostCameraValid) {
+            std::memcpy(s.hostViewMtx, bind.viewMtx, sizeof(s.hostViewMtx));
+            std::memcpy(s.hostProjMtx, bind.projMtx, sizeof(s.hostProjMtx));
+        }
+        s.inFrame = true;
+        // The ids move between frames (mapPasses reassigns from what
+        // is live), so every pass is re-stated every frame rather than
+        // relying on bgfx's sticky per-view state.
+        for (unsigned p = 0; p < s.numPasses; ++p)
+            s.applyPass(p);
+        if (!s.presented || bind.width != lastW || bind.height != lastH) {
+            // The attached counterpart of the standalone surface's
+            // first-frame line: outside a debugger it is the only sign
+            // that a consumer is drawing in a host frame at all, and
+            // which ids it got. Restated on a resize, because the
+            // first host frame of a session is at the widget's
+            // pre-layout size and a consumer that never followed the
+            // host's later size would look exactly like one that never
+            // drew again.
+            s.presented = true;
+            lastW = bind.width;
+            lastH = bind.height;
+            std::printf("bgfx: attached draw surface first frame %dx%d "
+                        "(passes %u at %u, linear %d)\n",
+                        bind.width, bind.height, s.numPasses,
+                        unsigned(bind.ids[0]), int(bind.linearColor));
+            std::fflush(stdout);
+        }
+    }
+
+    void unbindFrame() override
+    {
+        s.inFrame = false;
+        s.hostCameraValid = false;
     }
 };
 
@@ -926,6 +1132,12 @@ public:
     bool available() const override
     {
         return _BGFXLib.currentType != bgfx::RendererType::Noop;
+    }
+
+    bool homogeneousDepth() const override
+    {
+        const bgfx::Caps *caps = bgfx::getCaps();
+        return caps && caps->homogeneousDepth;
     }
 
     Render::VertexBufferHandle createVertexBuffer(
@@ -1110,6 +1322,17 @@ namespace Render {
 DrawDevice *fcBGFXDrawDevice()
 {
     return &_drawDevice;
+}
+
+std::unique_ptr<BGFXHostSurface> fcBGFXCreateHostSurface(
+        unsigned scenePasses, unsigned overlayPasses)
+{
+    if (_BGFXLib.currentType == bgfx::RendererType::Noop
+            || scenePasses + overlayPasses == 0
+            || scenePasses > unsigned(BGFXView::NumConsumerSceneViews)
+            || overlayPasses > unsigned(BGFXView::NumConsumerOverlayViews))
+        return nullptr;
+    return std::make_unique<BGFXHostSurfaceImpl>(scenePasses + overlayPasses);
 }
 
 } // namespace Render

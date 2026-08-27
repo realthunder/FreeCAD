@@ -39,13 +39,21 @@ public:
 
     void setStockShape(const Part::TopoShape& shape);
     void setStockVisible(bool b);
+    void setStockColor(float r, float g, float b);
     void setBaseShape(const Part::TopoShape& shape);
     void setBaseVisible(bool b);
+    void setBaseColor(float r, float g, float b);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
 
 public:
+    /// The viewer paints only while the simulator is attached to it
+    /// (ViewCAMSimulator::updateHostAttachment). Standalone the
+    /// simulator owns the picture and this viewer is here for its
+    /// camera and its navigation alone -- painting would put an empty
+    /// scene over the simulator's output. Defaults to true because
+    /// that is the state before anything has attached.
     bool discardPaintEvent_ = true;
 
 private:

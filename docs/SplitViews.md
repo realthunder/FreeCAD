@@ -194,6 +194,9 @@ Rules:
   (a translucent child widget), release executes, Esc cancels.
 - Splitter borders: native QSplitter resize; right-click on a handle opens
   Split Horizontal / Split Vertical / Join menu.
+- Hovering the per-cell menu button, or any splitter handle, also reveals
+  the corner zones (sec 18): the visible chrome is what points at the two
+  invisible ones.
 - Per-cell menu (small button in the cell's top-left corner, later a full
   content switcher, sec 5.5): Split H, Split V, Maximize/Restore cell (the
   Blender Ctrl-Space behavior: temporarily collapse the tree to one cell,
@@ -1323,3 +1326,41 @@ What changed here concretely:
   claimed by a filtering canvas and drawn without the traversal state
   those modes are made of; such a cell now shares a canvas only with
   cells in the same mode.
+## 18. The visible chrome points at the corner zones (2026-08-28)
+
+The corner action zones paint nothing until the cursor is inside them
+(sec 5.4, Blender's behavior). That is fine once you know they exist and
+useless before: a 14px transparent corner advertises nothing, and the
+split/join gesture is the main thing a cell can do.
+
+The menu button is the one piece of cell chrome that IS visible unprompted
+(a grip in the top-left corner, sec 12). So hovering it now reveals both
+zones as well -- top-right and bottom-left light up together with the
+button, and go dark again when the cursor leaves. Learning one gesture
+surfaces the other two corners for free, and nothing is added to the
+resting frame.
+
+- `ViewAreaZone::setHint(bool)` is the second reason to paint. `paintEvent`
+  draws on `_hover || _hint`, and a hinted-only zone drops the grip strokes
+  to alpha 130, so a zone the cursor is actually on still reads as the
+  live one.
+- `ViewAreaCell::showZoneHint(bool)` forwards to both zones; the menu
+  button's `enterEvent`/`leaveEvent` call it. The cell owns both zones,
+  which is why the pairing lives there and not in the zone.
+
+A splitter handle is the second such trigger, and the better one: a user
+who has found the border is already thinking about the layout, and the
+corner zones are how that border is made and removed.
+`ViewAreaSplitterHandle::enterEvent` calls `ViewArea::showZoneHintAt`,
+which lights the cells that handle borders and clears every other cell.
+
+- Bordering is decided geometrically, not from the splitter tree: a
+  handle's own children are only two widgets, and either may be a nested
+  splitter whose leaves partly touch the handle and partly do not.
+- Both halves of the test are needed. A cell must overlap the handle
+  ALONG its length and have an edge ACROSS it that is the handle's own
+  edge (2px of slack for the frame). Dropping the second lights the whole
+  row; dropping the first lights the whole subtree.
+- Verified on a 4-cell nested tree (Xvfb, probe_handlehint.py): each of
+  the three handles lit exactly the cells its rect abuts -- the root
+  handle three of them, the nested ones two -- and leaving cleared them.

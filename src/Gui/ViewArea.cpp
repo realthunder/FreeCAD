@@ -88,12 +88,17 @@ protected:
     {
         QWidget::enterEvent(ev);
         _hover = true;
+        // The corner zones are invisible until touched, so a user who
+        // never guesses they are there never finds them. Reaching the
+        // one piece of visible cell chrome shows both of them.
+        _cell->showZoneHint(true);
         update();
     }
     void leaveEvent(QEvent *ev) override
     {
         QWidget::leaveEvent(ev);
         _hover = false;
+        _cell->showZoneHint(false);
         update();
     }
     void paintEvent(QPaintEvent *) override
@@ -230,6 +235,18 @@ public:
     using QSplitterHandle::QSplitterHandle;
 
 protected:
+    void enterEvent(QEnterEvent *ev) override
+    {
+        QSplitterHandle::enterEvent(ev);
+        if (ViewArea *area = ViewArea::areaOf(splitter()))
+            area->showZoneHintAt(this, true);
+    }
+    void leaveEvent(QEvent *ev) override
+    {
+        QSplitterHandle::leaveEvent(ev);
+        if (ViewArea *area = ViewArea::areaOf(splitter()))
+            area->showZoneHintAt(this, false);
+    }
     void contextMenuEvent(QContextMenuEvent *ev) override
     {
         auto sp = splitter();
@@ -344,6 +361,12 @@ void ViewAreaCell::updateHighlight()
     // resize this cell never saw would leave it cut for the old size.
     _highlight->refit();
     _highlight->update();
+}
+
+void ViewAreaCell::showZoneHint(bool on)
+{
+    _zoneTopRight->setHint(on);
+    _zoneBottomLeft->setHint(on);
 }
 
 void ViewAreaCell::hostView(MDIView *view)
@@ -678,6 +701,14 @@ void ViewAreaZone::endDrag()
     _resizeIndex = -1;
 }
 
+void ViewAreaZone::setHint(bool on)
+{
+    if (_hint == on)
+        return;
+    _hint = on;
+    update();
+}
+
 void ViewAreaZone::enterEvent(QEnterEvent *ev)
 {
     QWidget::enterEvent(ev);
@@ -694,11 +725,14 @@ void ViewAreaZone::leaveEvent(QEvent *ev)
 
 void ViewAreaZone::paintEvent(QPaintEvent *)
 {
-    if (!_hover)
+    if (!_hover && !_hint)
         return;  // invisible until hovered, like Blender's action zones
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    QPen pen(palette().color(QPalette::Highlight));
+    QColor c = palette().color(QPalette::Highlight);
+    if (!_hover)
+        c.setAlpha(130);  // a pointed-out zone, not one under the cursor
+    QPen pen(c);
     pen.setWidth(2);
     p.setPen(pen);
     // Diagonal grip strokes facing the cell interior.
@@ -817,6 +851,39 @@ bool ViewArea::setCellView(ViewAreaCell *cell, MDIView *view)
     return true;
 }
 
+void ViewArea::showZoneHintAt(const QSplitterHandle *handle, bool on)
+{
+    QRect h;
+    bool horiz = true;
+    if (on && handle) {
+        h = QRect(handle->mapToGlobal(QPoint(0, 0)), handle->size());
+        horiz = handle->orientation() == Qt::Horizontal;
+    }
+    for (ViewAreaCell *cell : cells()) {
+        bool borders = false;
+        if (!h.isNull() && cell->isVisible()) {
+            const QRect r(cell->mapToGlobal(QPoint(0, 0)), cell->size());
+            // Two conditions, because a handle in a nested tree runs
+            // past cells it does not touch: the cell must overlap the
+            // handle ALONG its length, and one of its edges ACROSS the
+            // handle must be the handle's own. Testing only the first
+            // lights up the whole subtree; only the second lights up
+            // every cell in the row.
+            const bool along = horiz
+                ? (r.top() <= h.bottom() && r.bottom() >= h.top())
+                : (r.left() <= h.right() && r.right() >= h.left());
+            const int slack = 2;  // frame width and rounding
+            const bool edge = horiz
+                ? (qAbs(r.right() + 1 - h.left()) <= slack
+                   || qAbs(r.left() - h.right() - 1) <= slack)
+                : (qAbs(r.bottom() + 1 - h.top()) <= slack
+                   || qAbs(r.top() - h.bottom() - 1) <= slack);
+            borders = along && edge;
+        }
+        cell->showZoneHint(borders);
+    }
+}
+
 ViewAreaCell *ViewArea::cellOf(const MDIView *view) const
 {
     if (!view)
@@ -846,6 +913,31 @@ int ViewArea::cellCount() const
             ++n;
     }
     return n;
+}
+
+ViewAreaCell *ViewArea::lastUsedCell(
+        const std::function<bool(MDIView*)> &pred) const
+{
+    ViewAreaCell *best = nullptr;
+    int bestStamp = -1;
+    for (auto cell : cells()) {
+        if (!pred(cell->childView()))
+            continue;
+        if (cell->_mruStamp > bestStamp) {
+            best = cell;
+            bestStamp = cell->_mruStamp;
+        }
+    }
+    return best;
+}
+
+bool ViewArea::activateCellOf(MDIView *view)
+{
+    auto cell = cellOf(view);
+    if (!cell)
+        return false;
+    setActiveCell(cell);
+    return true;
 }
 
 MDIView *ViewArea::cloneChildFor(ViewAreaCell *cell)
@@ -1147,6 +1239,8 @@ void ViewArea::setActiveCell(ViewAreaCell *cell, bool activateWindow)
     if (_activeCell != cell) {
         auto old = _activeCell;
         _activeCell = cell;
+        if (cell)
+            cell->_mruStamp = ++_mruCounter;
         // The border lives on a child widget, so updating the cell
         // alone would repaint everything except the thing that changed.
         if (old)

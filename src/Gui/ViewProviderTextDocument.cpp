@@ -32,10 +32,12 @@
 
 #include "ViewProviderTextDocument.h"
 #include "ActionFunction.h"
+#include "Application.h"
 #include "Document.h"
 #include "MainWindow.h"
 #include "PythonEditor.h"
 #include "TextDocumentEditorView.h"
+#include "ViewPlacement.h"
 #include "ViewProviderDocumentObject.h"
 #include "Widgets.h"
 
@@ -91,10 +93,11 @@ bool ViewProviderTextDocument::doubleClicked()
         FontName.touch();
         SyntaxHighlighter.touch();
 
-        getMainWindow()->addWindow(
-            new TextDocumentEditorView {
+        auto view = new TextDocumentEditorView {
                 static_cast<App::TextDocument*>(getObject()),
-                editorWidget, getMainWindow()});
+                editorWidget, getMainWindow()};
+        ViewPlacement::place(view, ViewPlacement::Category::DocView,
+                Application::Instance->getDocument(getObject()->getDocument()));
     }
     return true;
 }
@@ -145,7 +148,9 @@ bool ViewProviderTextDocument::activateView() const
     for (auto v : views) {
         auto textView = static_cast<TextDocumentEditorView *>(v);
         if (textView->getTextObject() == getObject()) {
-            getMainWindow()->setActiveWindow(textView);
+            // Always an already-open view: this is the reveal half of
+            // rule 0, so Alt relocates it.
+            ViewPlacement::reveal(textView, getDocument(), true);
             return true;
         }
     }

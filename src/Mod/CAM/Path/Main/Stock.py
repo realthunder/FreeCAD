@@ -91,8 +91,46 @@ def shapeBoundBox(obj):
     return None
 
 
+def _addCutMeshProperty(obj):
+    """The simulated cut result (docs/CAMSimRenderPort.md sec 11.6):
+    written by the CAM simulator when a run stops, shown by the view
+    provider's Cut display mode, persists with the document. Output
+    status keeps a landing mesh from dirtying the job's recompute
+    DAG. Skipped quietly in a build without the Mesh module, where
+    the property type does not exist -- neither does the simulator."""
+    if hasattr(obj, "CutMesh"):
+        return
+    try:
+        import Mesh  # noqa: F401 -- registers Mesh::PropertyMeshKernel
+    except ImportError:
+        return
+    obj.addProperty(
+        "Mesh::PropertyMeshKernel",
+        "CutMesh",
+        "Stock",
+        QT_TRANSLATE_NOOP("App::Property", "The simulated cut result, meshed"),
+    )
+    obj.setPropertyStatus("CutMesh", "Output")
+    # CutMesh is the un-machined and machined halves merged, un-machined
+    # first; this count is where the split lies, so the Cut display mode
+    # can colour the two ranges the way the simulator draws them. -1
+    # means unknown (single colour).
+    obj.addProperty(
+        "App::PropertyInteger",
+        "CutMeshUncutCount",
+        "Stock",
+        QT_TRANSLATE_NOOP(
+            "App::Property", "Leading facets of CutMesh on the original stock surface"
+        ),
+    )
+    obj.CutMeshUncutCount = -1
+    obj.setPropertyStatus("CutMeshUncutCount", "Output")
+    obj.setEditorMode("CutMeshUncutCount", 2)  # hide
+
+
 class Stock(object):
     def onDocumentRestored(self, obj):
+        _addCutMeshProperty(obj)
         if hasattr(obj, "StockType"):
             obj.setEditorMode("StockType", 2)  # hide
 
@@ -350,6 +388,7 @@ class StockCreateCylinder(Stock):
 
 def SetupStockObject(obj, stockType):
     Path.Log.track(obj.Label, stockType)
+    _addCutMeshProperty(obj)
     if FreeCAD.GuiUp and obj.ViewObject:
         obj.addProperty(
             "App::PropertyString",
@@ -360,15 +399,12 @@ def SetupStockObject(obj, stockType):
         obj.StockType = stockType
         obj.setEditorMode("StockType", 2)  # hide
 
-        # If I don't rename the module then usage as Path.Base.Gui.IconViewProvider below
-        # 'causes above Path.Log.track(...) to fail with - claiming that Path is accessed
-        # before it's assigned.
-        # Alternative _another_ `import Path` statement in front of `Path.Log.track(...)`
-        # also prevents the issue from happening.
-        # Go figure.
-        import Path.Base.Gui.IconViewProvider as PathIconViewProvider
+        # Renamed on import: an `import Path.` dotted form here makes the
+        # Path.Log.track(...) above fail, claiming Path is accessed before
+        # assignment (the old IconViewProvider import hit the same thing).
+        import Path.Main.Gui.Stock as PathStockGui
 
-        PathIconViewProvider.ViewProvider(obj.ViewObject, "Stock")
+        PathStockGui.ViewProvider(obj.ViewObject, "Stock")
         obj.ViewObject.Transparency = 90
         obj.ViewObject.PointSize = 5
         obj.ViewObject.DisplayMode = "Wireframe"

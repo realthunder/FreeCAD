@@ -32,6 +32,7 @@
 #include <Mod/Part/App/TopoShapePy.h>
 
 #include <Gui/DocumentPy.h>
+#include "MillSimulation.h"
 // inclusion of the generated files (generated out of CAMSimPy.xml)
 #include "CAMSimPy.h"
 #include "CAMSimPy.cpp"
@@ -39,6 +40,92 @@
 
 namespace CAMSimulator
 {
+
+PyObject* CAMSimPy::AttachDocumentView(PyObject* args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+    return Py_BuildValue("O", getCAMSimPtr()->AttachDocumentView() ? Py_True : Py_False);
+}
+
+PyObject* CAMSimPy::DetachDocumentView(PyObject* args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+    getCAMSimPtr()->DetachDocumentView();
+    Py_IncRef(Py_None);
+    return Py_None;
+}
+
+PyObject* CAMSimPy::GetProgress(PyObject* args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+    SimProgress progress = getCAMSimPtr()->GetProgress();
+    return Py_BuildValue(
+        "(Oif)",
+        progress.playing ? Py_True : Py_False,
+        progress.motionIndex,
+        (double)progress.fraction
+    );
+}
+
+PyObject* CAMSimPy::GetLineTable(PyObject* args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+    std::vector<int> table = getCAMSimPtr()->GetLineTable();
+    PyObject* list = PyList_New((Py_ssize_t)table.size());
+    for (size_t i = 0; i < table.size(); i++) {
+        PyList_SET_ITEM(list, (Py_ssize_t)i, PyLong_FromLong(table[i]));
+    }
+    return list;
+}
+
+PyObject* CAMSimPy::GetMotion(PyObject* args)
+{
+    int index;
+    if (!PyArg_ParseTuple(args, "i", &index)) {
+        return nullptr;
+    }
+    const MillMotion* motion = getCAMSimPtr()->GetMotion(index);
+    if (!motion) {
+        Py_IncRef(Py_None);
+        return Py_None;
+    }
+    static const char* const typeNames[]
+        = {"nop", "line", "cw", "ccw", "drill", "tool"};
+    int type = (int)motion->cmd;
+    const char* typeName
+        = (type >= 0 && type <= (int)eChangeTool) ? typeNames[type] : "nop";
+    return Py_BuildValue(
+        "{s:s,s:i,s:f,s:f,s:f,s:f,s:f,s:f,s:f,s:f}",
+        "type",
+        typeName,
+        "tool",
+        motion->tool,
+        "x",
+        (double)motion->x,
+        "y",
+        (double)motion->y,
+        "z",
+        (double)motion->z,
+        "i",
+        (double)motion->i,
+        "j",
+        (double)motion->j,
+        "k",
+        (double)motion->k,
+        "r",
+        (double)motion->r,
+        "retractZ",
+        (double)motion->retract_z
+    );
+}
 
 // returns a string which represents the object e.g. when printed in python
 std::string CAMSimPy::representation() const

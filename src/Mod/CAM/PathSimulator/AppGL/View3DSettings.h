@@ -30,17 +30,25 @@ namespace CAMSimulator
 {
 
 class Dummy3DViewer;
+class ViewCAMSimulator;
 class DlgCAMSimulator;
 
 class View3DSettings: public Gui::View3DSettings
 {
 public:
-    explicit View3DSettings(ParameterGrp::handle hGrp, Dummy3DViewer& view, DlgCAMSimulator& dlg);
+    explicit View3DSettings(ParameterGrp::handle hGrp,
+                            Dummy3DViewer& view,
+                            DlgCAMSimulator& dlg,
+                            ViewCAMSimulator& owner);
 
     void OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::MessageType Reason) override;
 
 private:
     Dummy3DViewer& mView;
+    /// The MDI view that owns the widget stack -- held by reference
+    /// rather than found from the widget tree, because
+    /// ViewCAMSimulator carries no Q_OBJECT to qobject_cast to.
+    ViewCAMSimulator& mOwner;
     DlgCAMSimulator& mDlg;
 };
 

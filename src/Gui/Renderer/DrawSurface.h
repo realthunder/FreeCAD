@@ -24,14 +24,21 @@
 #define RENDERER_DRAWSURFACE_H
 
 /// \file DrawSurface.h
-/// The per-widget half of the immediate-mode draw facade
-/// (docs/CAMSimRenderPort.md section 3; the device half is
-/// DrawDevice.h). A DrawSurface owns a contiguous block of backend
-/// view ids -- "passes" here, numbered 0..numPasses-1 in submission
-/// order -- and the frame plumbing that lets a QOpenGLWidget's
-/// paintGL draw through the backend: beginFrame targets the widget,
-/// endFrame runs the backend frame and blits the result into the
-/// widget's framebuffer.
+/// The per-frame half of the immediate-mode draw facade
+/// (docs/CAMSimRenderPort.md sections 3 and 8; the device half is
+/// DrawDevice.h). A DrawSurface offers a block of backend view ids --
+/// "passes" here, numbered 0..numPasses-1 in submission order -- and
+/// the frame plumbing to draw in them.
+///
+/// It comes in two flavours. A STANDALONE surface owns a
+/// QOpenGLWidget: it holds its own id block and its own backbuffer,
+/// and its paintGL drives beginFrame/endFrame, which run the backend
+/// frame and blit the result into the widget. An ATTACHED surface
+/// draws inside a 3D view's frame instead: its ids come out of that
+/// view's own block, its default target is that view's scene target,
+/// and the host owns the frame boundary. Only the way a surface is
+/// obtained differs -- Render::FrameConsumer hands out the attached
+/// ones -- and everything below reads the same on either.
 
 #include "DrawDevice.h"
 
@@ -42,10 +49,62 @@ public:
     /// A surface drawing into \a widget through \a numPasses passes.
     /// Null while DrawDevice::instance() is null, and on failure
     /// (passes exhausted -- every 3D view holds a block too).
+    ///
+    /// This is the standalone flavour: it owns the widget, and the
+    /// caller drives beginFrame/endFrame from paintGL. The other
+    /// flavour is attached -- created by the renderer and handed to a
+    /// FrameConsumer inside a host frame (Renderer.h,
+    /// docs/CAMSimRenderPort.md section 8). Everything below behaves
+    /// the same in both, which is the point: a consumer's drawing code
+    /// does not know which one it holds.
     static std::unique_ptr<DrawSurface> create(QOpenGLWidget *widget,
                                                unsigned numPasses);
 
     virtual ~DrawSurface();
+
+    /// True for a surface drawing inside a host frame. On one of
+    /// those beginFrame/endFrame are no-ops -- the host owns the
+    /// frame boundary -- and the host accessors below describe what
+    /// this frame is being drawn into.
+    virtual bool attached() const { return false; }
+
+    /// The target a consumer should composite its finished image
+    /// into: the host's scene colour+depth when attached, and an
+    /// invalid handle otherwise -- which setPassTarget already reads
+    /// as "this surface's own backbuffer". So
+    ///
+    ///     surface.setPassTarget(resolvePass, surface.hostTarget());
+    ///
+    /// is right in both flavours and needs no test of which one it is.
+    virtual TargetHandle hostTarget() const { return {}; }
+    /// The colour and depth attachments of hostTarget(), for a
+    /// consumer that needs to sample rather than only write them.
+    /// Both are the surface's own backbuffer attachments when not
+    /// attached.
+    virtual TextureHandle hostColor() const { return {}; }
+    virtual TextureHandle hostDepth() const { return {}; }
+    /// The pixel size of hostTarget(), which is NOT always the
+    /// widget's: a host's scene target follows its own effect
+    /// resolution and its sub-view banks. Size intermediate targets
+    /// to this.
+    virtual void hostSize(int &width, int &height) const
+    { width = 0; height = 0; }
+    /// The camera hostTarget() was drawn with this frame: \a view and
+    /// \a proj are column-major 4x4, as in GL. False when there is no
+    /// host (a standalone surface), leaving both untouched.
+    ///
+    /// A consumer needs these to place its own image in the host's
+    /// depth: its geometry is in its own view space, and only the
+    /// host's view-projection says where that lands in the depth
+    /// buffer everything else in the frame shares.
+    virtual bool hostCamera(float view[16], float proj[16]) const
+    { (void)view; (void)proj; return false; }
+    /// True when hostTarget()'s colour holds LINEAR light -- the
+    /// colour-managed floating-point scene target, which an output
+    /// transform encodes later. A consumer that shades in display
+    /// space must decode to linear before writing, or its colour goes
+    /// through that transform twice.
+    virtual bool hostLinearColor() const { return false; }
 
     /// Start a frame at the widget's current size. False when the
     /// backend cannot draw this frame; the caller skips to its

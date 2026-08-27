@@ -70,6 +70,7 @@
 #endif
 
 #include <algorithm>
+#include <type_traits>
 #include <cfloat>
 #include <thread>
 #include <chrono>
@@ -2251,11 +2252,70 @@ public:
 extern BGFXRendererLibP _BGFXLib;
 extern BGFXRendererLib BGFXLib;
 
+/// The engine-facing half of an ATTACHED draw surface
+/// (docs/CAMSimRenderPort.md sec 8). The surface class itself stays
+/// private to BGFXDrawDevice.cpp; the frame path drives it through
+/// this, binding the host state for the duration of one
+/// FrameConsumer::drawFrame call and unbinding it afterwards, so that
+/// a consumer holding the surface past the callback can submit
+/// nothing.
+class BGFXHostSurface {
+public:
+    virtual ~BGFXHostSurface() {}
+
+    /// Everything a consumer's one drawFrame call needs to know about
+    /// the frame it is drawing into. One struct rather than positional
+    /// parameters: the list is long enough that positions stopped
+    /// being readable, and stage 3 adds to it.
+    struct FrameBind {
+        /// The host view ids the consumer's passes 0..numIds-1 map to,
+        /// in that order.
+        const uint16_t *ids = nullptr;
+        unsigned numIds = 0;
+        /// The target those passes default to -- the host's scene
+        /// framebuffer -- and its attachments, for a consumer that
+        /// samples rather than only writes them.
+        bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle color = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle depth = BGFX_INVALID_HANDLE;
+        /// The target's pixel size (the SCENE target's, not the
+        /// widget's).
+        int width = 0;
+        int height = 0;
+        /// True when the colour attachment holds linear light.
+        bool linearColor = false;
+        /// The camera the target was drawn with, column-major 4x4 --
+        /// what lets a consumer put its own image into the shared
+        /// depth buffer. Null when unavailable.
+        const float *viewMtx = nullptr;
+        const float *projMtx = nullptr;
+    };
+
+    /// The consumer-facing object handed to FrameConsumer::drawFrame.
+    virtual Render::DrawSurface &surface() = 0;
+    /// Bind this frame for the one drawFrame call \a bind describes.
+    virtual void bindFrame(const FrameBind &bind) = 0;
+    virtual void unbindFrame() = 0;
+    /// Passes the surface was built for -- the consumer's own count,
+    /// fixed at creation.
+    virtual unsigned passes() const = 0;
+};
+
 #ifndef FC_RENDERER_STANDALONE
 /// The bgfx implementation of the draw facade (BGFXDrawDevice.cpp,
 /// desktop build only). BGFXRendererLib::drawDevice hands it out once
 /// the device is up.
 DrawDevice *fcBGFXDrawDevice();
+
+/// A surface for \a scenePasses + \a overlayPasses consumer passes.
+/// The split exists to validate each run against its enum block --
+/// the surface itself carries only the total, and the id mapping
+/// rides bindFrame. Null when the device is down or a run exceeds
+/// what a host frame offers. Desktop only, like the rest of the
+/// facade: the standalone build has no outside consumers to serve
+/// and does not compile BGFXDrawDevice.cpp.
+std::unique_ptr<BGFXHostSurface> fcBGFXCreateHostSurface(
+        unsigned scenePasses, unsigned overlayPasses);
 #endif
 
 } // namespace Renderer
@@ -4039,6 +4099,42 @@ public:
                             // (after all opaque geometry so the depth
                             // test sees the whole scene, before the
                             // transparent bucket blends over them)
+        ViewConsumerScene0, // an attached FrameConsumer's scene-run
+                            // passes (Renderer::setFrameConsumer,
+                            // docs/CAMSimRenderPort.md sec 10.2): a
+                            // module outside the engine -- the CAM
+                            // simulator -- drawing through the
+                            // immediate-mode facade on this view's
+                            // ids, into this view's scene target.
+                            // Placed while the scene is still being
+                            // composed: everything from here on --
+                            // caustics, the volumetric apply, water
+                            // and glass surfaces, WBOIT and its
+                            // composite -- sees the consumer's opaque
+                            // output and the depth its composite
+                            // writes, so transparent document geometry
+                            // blends OVER the consumer's image instead
+                            // of being occluded by it. Live only while
+                            // a consumer is registered, and only as
+                            // many as it asked for
+        ViewConsumerScene1,
+        ViewConsumerScene2,
+        ViewConsumerScene3,
+        ViewConsumerScene4,
+        ViewConsumerScene5,
+        ViewConsumerScene6,
+        ViewConsumerScene7,
+        ViewConsumerScene8,
+        ViewConsumerScene9,
+        ViewConsumerScene10,
+        ViewConsumerScene11,
+        ViewConsumerScene12,
+        ViewConsumerScene13,
+        ViewConsumerScene14,
+        ViewConsumerScene15, // sized for the simulator's thirteen (two
+                            // geometry passes, the AO effect's nine,
+                            // resolve, composite) with headroom for
+                            // the next consumer
         ViewCaustics,       // fullscreen additive water caustics splat
                             // over the prepass surfaces inside the water
                             // interval — before the volumetric apply so
@@ -4099,6 +4195,25 @@ public:
                             // solids, after the transparent bucket like
                             // GL's grouped section pass; stencil-cleared
                             // because the outline views left marks
+        ViewConsumerOverlay0, // an attached FrameConsumer's
+                            // overlay-run passes
+                            // (FrameConsumer::overlayPasses,
+                            // docs/CAMSimRenderPort.md sec 10.2):
+                            // translucent consumer output that must
+                            // test the frame's FINISHED depth -- the
+                            // tool path's hidden-line x-ray. Inside
+                            // the composite like the scene run (bloom,
+                            // the user post stage, debug and
+                            // accumulation all see it), but after the
+                            // WBOIT resolve, so it draws over the
+                            // blended transparents; the on-top,
+                            // highlight and overlay buckets still
+                            // draw over it
+        ViewConsumerOverlay1,
+        ViewConsumerOverlay2,
+        ViewConsumerOverlay3, // four: the simulator needs two, and a
+                            // consumer wanting more re-opens the
+                            // split's sizing (docs sec 10.7)
         ViewBloomBright,    // bloom bright pass: the finished scene
                             // (opaque + water + transparent, before the
                             // on-top/UI buckets) box-downsampled to the
@@ -4177,6 +4292,12 @@ public:
     // ViewPresent: anything inserted between the two has to leave this
     // reading 9, or the overlay loop claims ids that belong to it.
     enum { NumOverlayViews = ViewAccum - ViewOverlay0 };
+    /// Pass ids an attached FrameConsumer may claim, per run
+    /// (docs/CAMSimRenderPort.md sec 10.2). Same rule as the overlay
+    /// block above: counted between enum entries, so inserting a pass
+    /// into a run cannot desync it.
+    enum { NumConsumerSceneViews = ViewCaustics - ViewConsumerScene0 };
+    enum { NumConsumerOverlayViews = ViewBloomBright - ViewConsumerOverlay0 };
 
     /// One stateful emitter's particle state (docs/RenderEngine.md
     /// §5.8): two RGBA32F attachment pairs that ping-pong once per
@@ -6967,7 +7088,8 @@ public:
 #undef FC_SV_DECL
     };
     template <typename T>
-    static void svAssign(T &dst, const T &src) { dst = src; }
+    static std::enable_if_t<!std::is_array<T>::value>
+    svAssign(T &dst, const T &src) { dst = src; }
     template <typename T, size_t N>
     static void svAssign(T (&dst)[N], const T (&src)[N])
     { std::copy(src, src + N, dst); }
@@ -8782,6 +8904,22 @@ public:
         Render::OverlayAnchor anchor;
     };
     std::map<int, OverlayFeed> overlays;
+
+    /// The module drawing its own passes inside this renderer's frames
+    /// (Renderer::setFrameConsumer, docs/CAMSimRenderPort.md sec 8),
+    /// and the surface it draws through. The surface is sized to the
+    /// consumer's pass count at registration and owned here, so a
+    /// consumer that goes away cannot leave one behind, and it is null
+    /// whenever the backend device is down -- in which case the
+    /// consumer never gets called and keeps its own path.
+    Render::FrameConsumer *frameConsumer = nullptr;
+    std::unique_ptr<Render::BGFXHostSurface> consumerSurface;
+    /// Passes consumerSurface was built for; a consumer that changes
+    /// its count has to re-register, and this is what notices.
+    unsigned consumerPasses = 0;
+    /// Of consumerPasses, the trailing overlay-run count
+    /// (FrameConsumer::overlayPasses; the rest are the scene run).
+    unsigned consumerOverlayPasses = 0;
     Render::DrawCallList highlight;
     std::unordered_set<uint64_t> hiddenKeys;
     std::unordered_set<const Render::DrawCall *> dupDraws;

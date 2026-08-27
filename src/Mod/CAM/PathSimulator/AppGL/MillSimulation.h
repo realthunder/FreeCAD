@@ -57,6 +57,19 @@ struct MillSimulationState
     bool mSingleStep = false;
 };
 
+/// Where the simulation stands, for an outside observer -- the
+/// stop-swap driver reading the GL sim's position to replay it
+/// through the volumetric one (docs/CAMSimRenderPort.md 11.7.2).
+struct SimProgress
+{
+    bool playing = false;
+    /// Index into the parsed motion list (GCodeParser::Operations)
+    /// of the motion being cut; -1 before the first cut.
+    int motionIndex = -1;
+    /// Consumed fraction of that motion, in (0, 1].
+    float fraction = 0.0f;
+};
+
 class MillSimulation: private MillSimulationState
 {
     typedef std::chrono::steady_clock clock;
@@ -81,6 +94,18 @@ public:
     bool LoadGCodeFile(const char* fileName);
     bool AddGcodeLine(const char* line);
 
+    SimProgress GetProgress() const;
+    /// Motions parsed per g-code line: entry i is Operations.size()
+    /// after line i was added, so a motion index maps back to the
+    /// line -- and through the caller's own feed order, to the Path
+    /// command -- it came from. Empty for LoadGCodeFile input.
+    const std::vector<int>& GetLineTable() const
+    {
+        return mLineMotionEnd;
+    }
+    /// The parsed motion at \a index, or null when out of range.
+    const MillMotion* GetMotion(int index) const;
+
     void SetPlaying(bool b);
     void SingleStep();
     void SetSpeed(int s);
@@ -90,13 +115,20 @@ public:
     const MillSimulationState& GetState() const;
 
     void SetBoxStock(float x, float y, float z, float l, float w, float h);
-    void SetArbitraryStock(const std::vector<Vertex>& verts, const std::vector<uint16_t>& indices);
+    void SetArbitraryStock(const std::vector<Vertex>& verts, const std::vector<GLushort>& indices);
     void SetStockVisible(bool b);
     bool IsStockVisible() const;
 
-    void SetBaseObject(const std::vector<Vertex>& verts, const std::vector<uint16_t>& indices);
+    void SetBaseObject(const std::vector<Vertex>& verts, const std::vector<GLushort>& indices);
     void SetBaseVisible(bool b);
     bool IsBaseVisible() const;
+    /// The base shape is ordinary document geometry, so while the
+    /// simulator borrows a host frame the engine draws it -- lit like
+    /// the rest of the document, and sorted against the carved stock
+    /// through the shared depth buffer. The simulator must then not
+    /// draw it a second time. Visibility is unaffected: this says WHO
+    /// draws the base shape, IsBaseVisible says WHETHER.
+    void SetBaseDrawnByHost(bool b);
 
     void SetPathVisible(bool b);
     void EnableSsao(bool b);
@@ -124,17 +156,18 @@ protected:
 
 protected:
     bool simulationInitiated = false;
+    /// Set while the host draws the base shape (SetBaseDrawnByHost).
+    bool mBaseDrawnByHost = false;
 
     // protected:
 public:
     std::vector<EndMill*> mToolTable;
     GCodeParser mCodeParser;
+    std::vector<int> mLineMotionEnd;
     SimDisplay simDisplay;
     MillPathLine millPathLine;
     std::vector<MillPathSegment*> MillPathSegments;
 
-    int mWidth = -1;
-    int mHeight = -1;
 
     StockObject mStockObject;
     SolidObject mBaseShape;
