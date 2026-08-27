@@ -1631,3 +1631,120 @@ What building them settled:
 Harness: scratchpad swap4/probe.py (job + hand-fed sim + seek +
 land/re-land asserts + screenshot), stock1/probe.py (the Stock
 half alone).
+
+### 11.9 Route A shape: multiple hosts, evaluated (2026-08-28)
+
+Asked for instead of ruling on 11.7.1's single-host toggle: what
+would it take for the sim to draw in MORE than one view at once --
+its own window AND the document view -- and is it worth it. "Multiple
+consumer" has two readings; they are independent:
+
+- **One consumer, many hosts** (the sim registered on several
+  renderers). This is the one the UX needs, and the evaluation
+  below.
+- **Many consumers, one renderer** (several plugins inside one
+  view's frame). Orthogonal: a consumer list plus a pass-budget
+  split per renderer. Nothing today needs it; not evaluated
+  further.
+
+#### What the survey found (all checked, not assumed)
+
+- **The renderer API is ALREADY multi-host.** setFrameConsumer's
+  state lives per-renderer (BGFXRenderer pimpl: frameConsumer +
+  consumerSurface); registering the same consumer object on two
+  renderers creates two surfaces, and each host frame hands its own
+  surface to drawFrame. No API change, no contract change beyond
+  wording.
+- **The sim's stepping is TIME-based, not call-based.** SimNext
+  converts elapsed wall time to steps, so two hosts calling
+  drawFrame at independent cadences advance the animation by
+  exactly wall time between them -- no double-advance, no
+  advance/render split needed. mSingleStep consumes its one step on
+  whichever host draws first; the other renders the new state.
+  ProcessSim = SimNext + Render is already two calls.
+- **What is actually per-host is SimDisplay's render state**: the
+  G-buffer set (colour + position + normal + normalZ + depth), the
+  resolve and AO textures/targets, mWidth/mHeight, and the camera
+  matrices (mMatLookAt/mProjMat -- the CSG is VIEW-DEPENDENT, the
+  carve is computed in screen space under the host camera). Roughly
+  15 members become a per-host context struct keyed by the
+  DrawSurface; MillSimulation (segments, tools, step state, clock)
+  stays shared. DlgCAMSimulator's single mHostRenderer becomes a
+  small list; updateCamera reads the host that is drawing;
+  requestRedraw asks every attached host's render manager.
+
+#### The two real costs
+
+- **The CSG runs per host per frame.** The material removal IS the
+  rendering, under each host's camera -- there is no shared carve
+  to reuse. Today the G-buffer doubles as a per-camera cache
+  (repaints without a step advance skip the CSG); per-host contexts
+  keep that property per view, but a playing simulation pays the
+  full stencil CSG once per attached view per frame. The document
+  view is usually the BIGGER viewport, so while attached and
+  playing, expect the sim's GPU cost to roughly track total
+  attached pixels -- 2-3x the sim window alone. Parked views do not
+  repaint and cost nothing (idle accumulation etc. notwithstanding).
+- **G-buffer memory per host.** Colour RGBA8 + two RGB32F +
+  normalZ + depth is on the order of 40-50 bytes per pixel: a 2MP
+  document view adds ~80-100MB while the simulator is attached to
+  it. Demand-allocated and freed on detach (the handle-pool
+  discipline), but real. The alternative -- ONE max-size G-buffer
+  shared sequentially within the frame (view-id blocks do not
+  interleave, so host A's passes complete before host B's) -- was
+  considered and REJECTED: it kills the per-camera cache (each
+  host's repaint clobbers the other's cached carve, so every
+  repaint of either view re-runs the CSG for both) and buys only
+  memory that detach already reclaims.
+
+#### What it buys
+
+- The operator keeps the dedicated sim window -- controls, isolated
+  navigation, guaranteed framing -- AND sees the carve in context in
+  the document view, sorted against the real model, transparents,
+  section planes, the works (stage 3's contract). No modal toggle,
+  no "which view has the picture" state to explain, no mirror
+  fallback in the sim window.
+- The per-host context refactor is the same shape a consumer needs
+  to appear in SPLIT VIEWS of one document (docs/SplitViews.md) --
+  single-host code can never serve those.
+- Route B is unchanged and still owns the stopped state.
+
+#### What stays true regardless
+
+- Doc-view pixels remain pixels: nothing selectable, clicks fall
+  through (11.1). The Job's Stock still has to hide while attached,
+  and the sim must not draw its base copy there (the model is real
+  geometry in that view). Per-host who-draws-what booleans already
+  exist (SetBaseDrawnByHost); they become per-host config.
+- Legacy GL is single-host by nature (it owns its widget) and is
+  untouched.
+
+#### Assessment
+
+The blocker named in 11.7.1 -- "one host at a time, single-size
+G-buffer" -- turned out to be the sim's bookkeeping, not the
+architecture: the API is already multi-host and the clock already
+composes. The honest cost is the per-host CSG run (GPU, while
+playing, proportional to attached pixels) and ~100MB per attached
+2MP view, both bounded by "detach when not wanted". The work is a
+mechanical-but-wide SimDisplay refactor (per-host context struct,
+~15 members, every method that touches targets/camera/size picks a
+context) plus small DlgCAMSimulator list-keeping -- comfortably
+smaller than stage 3, larger than the 11.7.1 toggle. Staging that
+keeps a working simulator at every step:
+
+1. Per-host context refactor with exactly ONE host -- pure
+   mechanical move, verified bit-identical against the stage 3
+   baselines (s3att/s3std/gl1).
+2. Host list + per-surface context lookup + redraw fan-out; the
+   sim window and a second attach verified side by side.
+3. The document-view attach itself: Stock hiding, base
+   disposition, camera source, detach on view close -- 11.7.1's
+   plumbing, now additive instead of a toggle.
+
+RECOMMENDED if the both-views UX is wanted (and it reads like it
+is): the refactor is the right long-term shape (split views want it
+too), the runtime costs are opt-in by attachment, and the staging
+keeps every intermediate state shippable. The 11.7.1 toggle remains
+the cheap fallback if priorities shift.
