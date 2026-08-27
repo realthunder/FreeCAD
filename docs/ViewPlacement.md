@@ -390,10 +390,6 @@ Ruled by the user:
 5. Inversion on an already-open view closes it and reopens it on the other
    side (specified as a state-preserving relocate, sec 4.2).
 
-Still open:
-
-1. Dependency graph: DocView (splits beside the model, my lean -- it is a
-   read-alongside view) or Utility (tab)?
-2. Interpretation to confirm: a new 3D view (Std_ViewCreate) always
-   SPLITS -- it never replaces a non-3D cell's content, per the symmetric
-   reading of ruling 1. If instead it should reuse a non-3D cell, say so.
+Ruled 2026-08-28 (second round): the dependency graph is category
+DocView, and a new 3D view always SPLITS (confirmed). Nothing remains
+open; P0 is a go.
