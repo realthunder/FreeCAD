@@ -1964,8 +1964,8 @@ bypass undo (view properties sit outside document transactions, as
 
 **Built 2026-08-27** -- plumbing `0b930ae8be`, storage + resolution +
 capture `04d40f633e`, UI `7a86098ae5`, instancing fix `5b8d9016ca`.
-The additive capture for non-standard modes is the one part still
-open. Two findings from the build:
+The additive capture for non-standard modes followed the same day --
+see 5.10. Two findings from the build:
 
 - **An instance group is not one object.** The instanced submit path
   merges draws by geometry and material, NOT by objectKey, and drew
@@ -2000,6 +2000,113 @@ instancing case), own mode Wireframe throughout:
        exactly its 179 base -- ServeSuperset resolving per cell.
     D  save / close / reopen: the row reads Shaded, own mode
        Wireframe, ink 16900 == the pre-save 16900.
+
+### 5.10 The additive capture: non-standard modes resolve (2026-08-27)
+
+The last open piece of 5.9, built and verified the same day. An
+override value outside the four Class-A names -- a different SUBGRAPH
+no mask over the superset capture can produce -- now renders, by
+capturing the named child IN ADDITION to the normal flow and resolving
+it per view at submit.
+
+**The moving parts.**
+
+- `Render::internModeName()` -- a process-lifetime intern table for
+  mode names, so a draw's tag and an override entry meet at submit as
+  an integer compare and no Coin type crosses into Render.
+  `StyleOverride::modeId` carries it; the parse no longer skips
+  non-standard values.
+- The INTEREST SET: each viewer builds, from its own table's
+  non-standard entries plus what a unified canvas imposes (the UNION
+  across cells, so the feed can migrate), a list of (name, id) pairs
+  -- `SoFCDisplayModeElement::CaptureInterest`, pushed onto the
+  element by `applyOverrideMode` beside the override mode. The
+  element's `matches()` compares the list's version, which is what
+  re-captures the scene when the interest moves: the caches that read
+  it mismatch on the next traversal. The order of the list is the
+  contract -- it assigns the `interestBits` bits -- so the SAME list
+  is handed to the backend (`Renderer::setCaptureInterest`). 16
+  entries max (the bit budget); the excess is dropped with a warning
+  and stays inert.
+- `SoFCSwitch::doAction`, in the named-override branch: reads the
+  interest, writes `SoFCModeInterestElement` (which interest modes
+  this switch has a child for, and -- when the child the normal flow
+  takes is itself interest-named -- its id as `traversedMode`), then
+  after the normal traversal walks the interest-named children it did
+  NOT take, each under `SoFCCapturedModeElement` carrying the mode's
+  id (set/set-back, no state push, like the other mode elements). The
+  tag element is enabled ONLY for the capture-building actions, which
+  is also the gate on the traversal -- picking and bounding boxes
+  stay on the normal flow.
+- The cache captures all three values into the Material (they join
+  the batching key: a tagged draw must not merge with the normal
+  flow's), the bridge copies them onto `DrawCall::capturedMode /
+  traversedMode / interestBits`, and the cache manager's
+  multiple-caches-per-node machinery gives the additively traversed
+  shared child its own cache generation instead of thrashing the
+  normal flow's.
+
+**The admission rule** (`BGFXView::styleAdmits`, first clause), for an
+override resolving to non-standard mode M:
+
+    tagged draw            -> admitted iff its tag IS M
+    untagged, traversedMode == M
+                           -> admitted (the normal flow already IS
+                              the mode; no tagged copy exists)
+    untagged, switch registers M (interest bit)
+                           -> suppressed (the tagged subgraph
+                              replaces it)
+    untagged, no child of that name
+                           -> the object's own mode, the same
+                              fallback a Class-A style takes
+
+And unconditionally: a TAGGED draw under any other resolution -- a
+Class-A override, a pin, the view style, plain "As Is", another
+cell -- is dropped, or the object double-draws. The `traversedMode`
+clause was the subtle one: without it, an override naming the mode
+the switch already shows either vanishes the object (suppressed with
+no tagged copy) or double-draws it (normal flow plus additive copy),
+depending on which child the superset flow took.
+
+**Two restore defects the rig exposed** (both in
+`ViewProviderDocumentObject::attach`): rebuilding the
+DisplayModeInView enum fires `onChanged` with the row reset to "Use
+View Mode", and under DEFERRED VP restore the provider attaches after
+the restored view is already active -- so the rebuild ERASED the
+just-restored override from the view's map. Fixed by marking the
+rebuild with the same User1 status the sync path uses, and re-syncing
+the row from the active view afterward (without which the row shows
+"Use View Mode" over a live entry and "clearing" it is a no-op).
+
+**Known name-mapping gap (pre-existing, now visible).** The override
+map stores USER-facing display mode names, but the switch children
+carry MASK mode names, and some providers map between them in
+`setDisplayMode()`: Mesh's user "Points" is mask child "Point", the
+Points provider maps "Intensity" to "Color" and binds per-vertex data
+as a side effect. For such providers a non-standard override is inert
+(no child of that name -- the own-mode fallback), and additive capture
+of a side-effect mode would capture the subgraph without the data
+binding. Providers whose names coincide -- FemMesh, and any Python
+provider using `addDisplayMode` -- resolve fully. Closing the gap
+needs a queryable user-name -> mask-name mapping on the provider;
+left open.
+
+**Verified (RTX 3060, xvfb + vglrun egl0)**, rig `nsm.py`: an
+`App::FeaturePython` whose provider registers two non-Class-A modes,
+"Cube" (a 10-unit cube) and "Ball" (a radius-1 sphere) -- honest
+names, no side effects:
+
+    base   own=Cube ink 29415, own=Ball ink 535
+    A      own=Cube, row override Ball: ink 633 (the ball); clearing
+           returns 29415 (the cube).
+    A2     own=Ball, override Cube: ink 29415 -- the override ADDS
+           the cube the own mode does not draw.
+    C      save / close / reopen: row reads Ball, map intact, ink
+           633; clearing returns 29415.
+    B      2-cell canvas, override in cell 0 only: [712, 29416] --
+           the tagged draws do not leak into the As Is cell.
+
+ovr / ovrsave / d4 (8/8) / d4mode all green after.
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 
