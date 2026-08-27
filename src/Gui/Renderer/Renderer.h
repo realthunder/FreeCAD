@@ -2537,6 +2537,42 @@ struct ObjectMeta {
 typedef std::unordered_map<std::string,
         std::unordered_map<std::string, ObjectMeta>> ObjectMetaMap;
 
+/// One per-view per-object display mode override entry
+/// (docs/CoinRetirement.md 5.9), parsed by the producer from the view's
+/// ObjectDisplayModes property into resolved {doc, obj} steps so the
+/// backend never touches a document.
+struct StyleOverride {
+    /// The objects the entry names, outermost first. Rooted: the first
+    /// element must BE ObjectInfo::path[0] and the rest must follow it
+    /// in order (an ordered subsequence, not a contiguous run, because
+    /// a subname elides objects the scene chain contains -- a Link's
+    /// target has a chain step but no subname token). Bare (one
+    /// element, rooted false): the element may sit anywhere on the
+    /// path -- the object wherever it appears in this view.
+    std::vector<ObjectRef> path;
+    bool rooted = true;
+    /// The style to draw the matched objects with, when the entry's
+    /// mode is one of the four Class-A names and the object's switch
+    /// registers that name (DrawCall::registeredStyles) -- the same
+    /// rule a view style follows. pin instead means the entry is
+    /// "As Is": the object follows its OWN mode, escaping the view
+    /// style (SolidWorks' "Default Display").
+    uint8_t mask = StyleAsIs;
+    uint8_t nameBit = 0;
+    bool pin = false;
+};
+
+/// A view's override table, handed to the backend by pointer: per
+/// sub-view via SubViewFrame::styleOverrides, for the plain view via
+/// setMainViewStyle(). The producer owns the storage and keeps it
+/// alive while the backend may render with it; version is bumped on
+/// every content change and is what the backend's resolved
+/// objectKey cache keys on (together with objectInfoVersion()).
+struct StyleOverrideTable {
+    std::vector<StyleOverride> entries;
+    uint32_t version = 0;
+};
+
 /// Flag bits of the selection ids fed through Renderer::addSelection
 /// (mirroring SoFCRenderer::SelIdBits — the producer side of the feed).
 enum SelIdBits : int {
@@ -2614,6 +2650,14 @@ public:
         /// does not hold.
         uint8_t drawStyleName = 0;
         bool styleFromSuperset = false;
+        /// This sub-view's per-object display mode overrides
+        /// (docs/CoinRetirement.md 5.9), resolved per draw as the FIRST
+        /// clause before the style above. Only meaningful under a
+        /// superset capture -- an override can ADD geometry, which a
+        /// filter over any other capture cannot serve. The producer
+        /// owns the table and keeps it alive across the frame; null
+        /// means no overrides.
+        const StyleOverrideTable *styleOverrides = nullptr;
     };
     /// Render one frame as \a count sub-views tiling the backbuffer:
     /// the same resident scene feeds every sub-view, each drawn with
@@ -2630,6 +2674,22 @@ public:
     /// (targets, view-id block). Never id 0 -- that is the implicit
     /// full-canvas sub-view every plain render() uses.
     virtual void dropSubView(int id) { (void)id; }
+    /// The plain (whole-canvas, sub-view id 0) frame's display style
+    /// context (docs/CoinRetirement.md 5.9): the view's own Class-A
+    /// style as mask + name bit, whether the feed captured the
+    /// superset child, and the view's per-object override table (the
+    /// caller owns it and keeps it alive; null = none). A plain view
+    /// normally leaves all of this at rest -- its traversal applies
+    /// its style -- but a view with overrides captures the superset
+    /// like a canvas cell and needs the backend to resolve the style
+    /// per object the same way.
+    virtual void setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
+                                  bool fromSuperset,
+                                  const StyleOverrideTable *overrides)
+    {
+        (void)styleMask; (void)styleNameBit;
+        (void)fromSuperset; (void)overrides;
+    }
     /// Prepare the backend for a renderSubViews frame: build the sized
     /// targets of every unseen sub-view id up front, each against a
     /// freshly reclaimed handle pool, and release what the layout

@@ -7002,6 +7002,39 @@ public:
     /// the SUPERSET child. Restated every frame beside the mask.
     uint8_t drawStyleName = 0;
     bool styleFromSuperset = false;
+
+    /// A per-object display mode override resolved against one draw's
+    /// object (docs/CoinRetirement.md 5.9). `has` false = the object
+    /// matched no entry (cached so the table is walked once per
+    /// objectKey, not once per draw per frame).
+    struct OvStyle {
+        uint8_t mask = Render::StyleAsIs;
+        uint8_t nameBit = 0;
+        bool pin = false;
+        bool has = false;
+    };
+    /// Lazily filled objectKey -> override cache of ONE sub-view's
+    /// table. Lazy rather than a bulk pass because updateObjectInfo()
+    /// deliberately does not bump objectInfoVersion(): a key first
+    /// seen after the bulk resolve would miss a pass-built table,
+    /// while a lazy miss resolves it on first sight. Cleared when the
+    /// table's version or the stated info version moves.
+    struct OvCache {
+        uint32_t tableVersion = 0;
+        uint32_t infoVersion = 0;
+        std::unordered_map<uint64_t, OvStyle> map;
+    };
+    /// Per sub-view id; erased with the bank in dropSubView.
+    std::map<int, OvCache> subOvCaches;
+    /// The submit in progress: the current sub-view's cache/table/info,
+    /// latched at the top of the frame beside drawStyleMask. All null
+    /// outside a frame whose view has overrides.
+    OvCache *ovCache = nullptr;
+    const Render::StyleOverrideTable *ovTable = nullptr;
+    const Render::ObjectInfoMap *ovInfo = nullptr;
+    /// The override for \a objectKey, or null (BGFXViewSubmit.cpp).
+    const OvStyle *lookupStyleOverride(uint64_t objectKey);
+
     BGFXView() { stashSubView(freshBank); }
     /// Swap sub-view \a id into the members (a no-op when it already
     /// is). An id never seen before starts from freshBank.
@@ -8565,7 +8598,21 @@ public:
         /// OBJECT (5.8) instead of applied flat to every draw.
         uint8_t styleName = 0;
         bool fromSuperset = false;
+        /// The cell's per-object override table (5.9), restated per
+        /// submit like the style; the producer owns the storage.
+        const Render::StyleOverrideTable *styleOverrides = nullptr;
     } subCtx;
+
+    /// The plain (sub-view id 0) frame's style context, stated by the
+    /// host through setMainViewStyle() (docs/CoinRetirement.md 5.9).
+    /// All at rest -- StyleAsIs, no superset, no overrides -- except on
+    /// a view whose override table is non-empty, which captures the
+    /// superset and leaves the per-object resolution to the backend
+    /// exactly like a canvas cell.
+    uint8_t mainStyleMask = Render::StyleAsIs;
+    uint8_t mainStyleName = 0;
+    bool mainFromSuperset = false;
+    const Render::StyleOverrideTable *mainStyleOverrides = nullptr;
 
     // CPU-side scene data fed through Render::Renderer's scene API. GPU
     // upload happens lazily during render(), so the feed may arrive before
@@ -8574,6 +8621,11 @@ public:
     /// Draw identity resolved by the producer (setObjectInfo); consulted
     /// by the snapshot writer for the published object entries.
     Render::ObjectInfoMap objectInfo;
+    /// Renderer::objectInfoVersion() mirrored here when the table is
+    /// stated whole -- the Private has no owner backpointer, and the
+    /// frame path needs the stamp to invalidate the per-sub-view
+    /// override caches (BGFXView::OvCache).
+    uint32_t objectInfoStamp = 0;
     /// The labels those identities carry to a viewer (setObjectMeta),
     /// pushed by the serving source when a document changes them rather
     /// than rebuilt per publish. Empty on a view nobody serves.

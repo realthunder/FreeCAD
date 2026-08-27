@@ -524,6 +524,14 @@ struct View3DInventorViewer::Private
     View3DInventorViewer::CanvasStyleMode canvasStyleMode =
         View3DInventorViewer::CanvasStyleOff;
 
+    /// This view's per-object display mode overrides
+    /// (docs/CoinRetirement.md 5.9), parsed by View3DInventor from its
+    /// ObjectDisplayModes property. The backend keeps a POINTER to
+    /// this table across frames, so it lives here for the viewer's
+    /// lifetime; the serial keeps version monotonic across re-parses.
+    Render::StyleOverrideTable styleOverrides;
+    uint32_t styleOverrideSerial = 0;
+
     // Shared, not owned outright: a ViewArea unified canvas
     // (docs/SplitViews.md sec 13) hands the SAME backend instance to
     // every 3D cell it hosts, so that N cells cost one backend and one
@@ -2444,9 +2452,57 @@ const char *View3DInventorViewer::captureOverrideMode() const
             return "";
         break;
     case CanvasStyleOff:
+        // A plain view whose per-object override table is non-empty
+        // captures the superset too (docs/CoinRetirement.md 5.9): an
+        // override can ADD geometry the object's own mode does not
+        // draw. The backend then applies this view's own style per
+        // object (setMainViewStyle in renderScene) exactly as a canvas
+        // cell's -- so only flip when a backend exists to do that;
+        // without one the Coin traversal would DRAW the superset.
+        if (_pimpl->renderer && hasObjectStyleOverrides())
+            return SoFCUnifiedSelection::DisplayModeFlatLines.getString();
         break;
     }
     return overrideMode.c_str();
+}
+
+void View3DInventorViewer::setObjectStyleOverrides(
+        Render::StyleOverrideTable &&table)
+{
+    table.version = ++_pimpl->styleOverrideSerial;
+    _pimpl->styleOverrides = std::move(table);
+    // Re-evaluate the capture: entering or leaving the superset flip
+    // above dirties it through the selection root's field; a content
+    // change under an unchanged capture still needs a redraw, where
+    // the bumped version makes the backend re-resolve.
+    applyOverrideMode();
+    getSoRenderManager()->scheduleRedraw();
+    // A unified canvas re-picks its style service off this signal:
+    // overrides force the superset service (ViewAreaCanvas::
+    // resolveDisplayStyles), so their coming or going is a mode change
+    // in the same sense a style change is.
+    if (_pimpl->view)
+        Application::Instance->signalViewModeChanged(_pimpl->view);
+}
+
+const Render::StyleOverrideTable *
+View3DInventorViewer::objectStyleOverrides() const
+{
+    if (_pimpl->styleOverrides.entries.empty())
+        return nullptr;
+    return &_pimpl->styleOverrides;
+}
+
+bool View3DInventorViewer::hasObjectStyleOverrides() const
+{
+    if (_pimpl->styleOverrides.entries.empty())
+        return false;
+    // Only a style the backend can resolve over a superset capture can
+    // host overrides: "As Is" or a Class-A name. Hidden Line, No
+    // Shading and Tessellation are traversal state -- their capture
+    // stays their own, and the overrides lie dormant.
+    return SoFCUnifiedSelection::DisplayModeAsIs == overrideMode.c_str()
+        || Gui::styleNameBitOf(overrideMode.c_str()) != 0;
 }
 
 View3DInventorViewer::CanvasStyleMode
@@ -3965,6 +4021,16 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
         SbViewportRegion capvp {short(width), short(height)};
         SbViewVolume vol = cam->getViewVolume(capvp.getViewportAspectRatio());
         vol.getMatrices(viewMat, projMat);
+        // Same style context as the on-screen frame (docs/
+        // CoinRetirement.md 5.9): a capture of a view with per-object
+        // overrides must resolve them the same way.
+        if (hasObjectStyleOverrides())
+            _pimpl->renderer->setMainViewStyle(
+                    drawStyleMask(), drawStyleNameBit(),
+                    true, objectStyleOverrides());
+        else
+            _pimpl->renderer->setMainViewStyle(
+                    Render::StyleAsIs, 0, false, nullptr);
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         externalRendered = _pimpl->renderer->renderOffscreen(
                 col, &viewMat.getValue(), &projMat.getValue(), width, height);
@@ -5688,6 +5754,19 @@ void View3DInventorViewer::renderScene()
         const SbViewportRegion vp = getSoRenderManager()->getViewportRegion();
         SbViewVolume vol = cam->getViewVolume(vp.getViewportAspectRatio());
         vol.getMatrices(viewMat, projMat);
+        // The plain frame's style context (docs/CoinRetirement.md
+        // 5.9): at rest unless this view carries per-object display
+        // mode overrides, in which case the traversal captured the
+        // SUPERSET child (captureOverrideMode) and the backend applies
+        // this view's own style per object, exactly as it would a
+        // canvas cell's, with the override table as the first clause.
+        if (hasObjectStyleOverrides())
+            _pimpl->renderer->setMainViewStyle(
+                    drawStyleMask(), drawStyleNameBit(),
+                    true, objectStyleOverrides());
+        else
+            _pimpl->renderer->setMainViewStyle(
+                    Render::StyleAsIs, 0, false, nullptr);
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         // render() publishes on the way past when something is listening
         // (docs/HeadlessServe.md §4), and a published object entry names

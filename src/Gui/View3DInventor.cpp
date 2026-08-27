@@ -55,6 +55,10 @@
 
 #include <App/DocumentObject.h>
 #include <App/Document.h>
+#include <sstream>
+#include "Inventor/SoFCOwnDisplayModeElement.h"
+#include "Renderer/Renderer.h"
+#include "SoFCUnifiedSelection.h"
 #include <Base/Builder3D.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
@@ -107,6 +111,11 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
             "Show navigation cube in this view");
     ADD_PROPERTY_TYPE(ThumbnailView, (false), nullptr, App::Prop_None,
             "Mark this view for capturing document thumbnail on saving");
+    ADD_PROPERTY_TYPE(ObjectDisplayModes, (), nullptr, App::Prop_Hidden,
+            "Per-object display mode overrides of this view.\n"
+            "Key: a subname path (one occurrence) or a bare internal\n"
+            "name (the object anywhere in this view); value: a display\n"
+            "mode name, with 'As Is' pinning the object to its own mode.");
 
     stack = new QStackedWidget(this);
     // important for highlighting
@@ -1209,6 +1218,88 @@ void View3DInventor::Restore(Base::XMLReader &reader)
     migrateShadowProperties(this);
 }
 
+namespace {
+/// Parse the ObjectDisplayModes property (docs/CoinRetirement.md 5.9)
+/// into backend override entries, resolving every path element to its
+/// true {document, object} pair so the backend never touches a
+/// document. An unresolvable key -- its object was deleted -- is INERT
+/// rather than an error: the entry stays in the map and revives when
+/// the property is next touched with the object back.
+Render::StyleOverrideTable parseObjectDisplayModes(
+        const std::map<std::string, std::string> &modes,
+        App::Document *doc)
+{
+    Render::StyleOverrideTable table;
+    if (!doc)
+        return table;
+    for (const auto &kv : modes) {
+        const std::string &key = kv.first;
+        const std::string &mode = kv.second;
+        if (key.empty() || mode.empty())
+            continue;
+        Render::StyleOverride ov;
+        if (SoFCUnifiedSelection::DisplayModeAsIs == mode.c_str()) {
+            // Pin to the object's own mode: escapes the view style
+            // (SolidWorks' "Default Display").
+            ov.pin = true;
+        }
+        else {
+            ov.nameBit = Gui::styleNameBitOf(mode.c_str());
+            if (!ov.nameBit) {
+                // A mode outside the four Class-A names is a different
+                // subgraph, not a mask over the superset capture; it
+                // waits for the additive capture (5.9 "Non-standard
+                // modes"). Inert, not an error.
+                continue;
+            }
+            ov.mask =
+                View3DInventorViewer::drawStyleMaskFromName(mode.c_str());
+        }
+        if (key.find('.') == std::string::npos) {
+            // Bare form: the object wherever it appears in this view.
+            // "Doc#Obj" names an object of another document shown here
+            // through a link; a plain name is of this view's document.
+            ov.rooted = false;
+            auto sep = key.find('#');
+            if (sep != std::string::npos)
+                ov.path.push_back({key.substr(0, sep),
+                                   key.substr(sep + 1)});
+            else
+                ov.path.push_back({doc->getName(), key});
+        }
+        else {
+            // Path form: one occurrence, resolved token by token so
+            // every element carries its true document -- getSubObject
+            // follows links across documents the same way the scene
+            // graph does.
+            ov.rooted = true;
+            std::istringstream iss(key);
+            std::string tok;
+            App::DocumentObject *cur = nullptr;
+            bool ok = true;
+            while (std::getline(iss, tok, '.')) {
+                if (tok.empty())
+                    continue;
+                if (!cur)
+                    cur = doc->getObject(tok.c_str());
+                else
+                    cur = cur->getSubObject((tok + ".").c_str());
+                if (!cur || !cur->isAttachedToDocument()) {
+                    ok = false;
+                    break;
+                }
+                ov.path.push_back({cur->getDocument()->getName(),
+                                   cur->getNameInDocument()});
+            }
+            if (!ok || ov.path.empty())
+                continue;
+        }
+        table.entries.push_back(std::move(ov));
+    }
+    return table;
+}
+} // namespace
+
 void View3DInventor::onChanged(const App::Property *prop)
 {
     if (_viewer) {
@@ -1218,6 +1309,12 @@ void View3DInventor::onChanged(const App::Property *prop)
                         App::Property::User1, &DrawStyle);
                 _viewer->setOverrideMode(DrawStyle.getValueAsString());
             }
+        }
+        else if (prop == &ObjectDisplayModes) {
+            _viewer->setObjectStyleOverrides(parseObjectDisplayModes(
+                    ObjectDisplayModes.getValues(),
+                    getGuiDocument() ? getGuiDocument()->getDocument()
+                                     : nullptr));
         }
         _viewer->onViewPropertyChanged(*prop);
     }

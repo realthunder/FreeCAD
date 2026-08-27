@@ -150,10 +150,38 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->selectSubView(subCtx.active ? subCtx.id : 0);
     // ...and its display style, which unlike the bank is restated
     // rather than carried: the cell owns it, the backend only filters
-    // by it (docs/CoinRetirement.md 5.7).
-    view->drawStyleMask = subCtx.active ? subCtx.style : Render::StyleAsIs;
-    view->drawStyleName = subCtx.active ? subCtx.styleName : uint8_t(0);
-    view->styleFromSuperset = subCtx.active && subCtx.fromSuperset;
+    // by it (docs/CoinRetirement.md 5.7). A plain render() takes the
+    // main-view context stated through setMainViewStyle() -- at rest
+    // (StyleAsIs, no superset) except on a view whose per-object
+    // override table is non-empty (5.9).
+    view->drawStyleMask = subCtx.active ? subCtx.style : mainStyleMask;
+    view->drawStyleName = subCtx.active ? subCtx.styleName : mainStyleName;
+    view->styleFromSuperset = subCtx.active ? subCtx.fromSuperset
+                                            : mainFromSuperset;
+    // The sub-view's per-object override table (5.9), and its resolved
+    // objectKey cache: cleared when the table's content version or the
+    // stated object-info version moved, filled lazily at submit
+    // (BGFXView::lookupStyleOverride) so keys added by
+    // updateObjectInfo -- which deliberately does not bump the info
+    // version -- resolve on first sight.
+    const Render::StyleOverrideTable *ovt =
+        subCtx.active ? subCtx.styleOverrides : mainStyleOverrides;
+    if (ovt && !ovt->entries.empty()) {
+        auto &c = view->subOvCaches[subCtx.active ? subCtx.id : 0];
+        if (c.tableVersion != ovt->version
+                || c.infoVersion != objectInfoStamp) {
+            c.map.clear();
+            c.tableVersion = ovt->version;
+            c.infoVersion = objectInfoStamp;
+        }
+        view->ovCache = &c;
+        view->ovTable = ovt;
+        view->ovInfo = &objectInfo;
+    } else {
+        view->ovCache = nullptr;
+        view->ovTable = nullptr;
+        view->ovInfo = nullptr;
+    }
 
     // A shader pack that could not supply a core program keeps the
     // view down: without this the torn-down view (no framebuffer)

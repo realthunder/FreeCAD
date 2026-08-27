@@ -170,6 +170,7 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         ctx.style = s.drawStyle;
         ctx.styleName = s.drawStyleName;
         ctx.fromSuperset = s.styleFromSuperset;
+        ctx.styleOverrides = s.styleOverrides;
         _BGFXLib.captureWidth = uint16_t(s.width);
         _BGFXLib.captureHeight = uint16_t(s.height);
         ok = render(col, s.viewMatrix, s.projMatrix) && ok;
@@ -216,6 +217,7 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         ctx.style = s.drawStyle;
         ctx.styleName = s.drawStyleName;
         ctx.fromSuperset = s.styleFromSuperset;
+        ctx.styleOverrides = s.styleOverrides;
         _BGFXLib.standaloneSubWidth = uint16_t(s.width);
         _BGFXLib.standaloneSubHeight = uint16_t(s.height);
         const bool subOk = render(col, s.viewMatrix, s.projMatrix);
@@ -264,6 +266,17 @@ void BGFXRenderer::dropSubView(int id)
     _BGFXLib.releaseIds(view->viewId, view->viewSpan);
     view->selectSubView(0);
     view->subBanks.erase(id);
+    view->subOvCaches.erase(id);
+}
+
+void BGFXRenderer::setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
+                                    bool fromSuperset,
+                                    const StyleOverrideTable *overrides)
+{
+    pimpl->mainStyleMask = styleMask;
+    pimpl->mainStyleName = styleNameBit;
+    pimpl->mainFromSuperset = fromSuperset;
+    pimpl->mainStyleOverrides = overrides;
 }
 
 void BGFXRenderer::prepareSubViews(const QColor &col,
@@ -320,6 +333,7 @@ void BGFXRenderer::prepareSubViews(const QColor &col,
         ctx.style = s.drawStyle;
         ctx.styleName = s.drawStyleName;
         ctx.fromSuperset = s.styleFromSuperset;
+        ctx.styleOverrides = s.styleOverrides;
         _BGFXLib.standaloneSubWidth = uint16_t(s.width);
         _BGFXLib.standaloneSubHeight = uint16_t(s.height);
         pimpl->render(col, s.viewMatrix, s.projMatrix);
@@ -724,6 +738,7 @@ void BGFXRenderer::setObjectInfo(ObjectInfoMap &&info)
 {
     pimpl->objectInfo = std::move(info);
     noteObjectInfoStated();
+    pimpl->objectInfoStamp = objectInfoVersion();
     // Identity rides the published root's object entries; a change to
     // it alone (rename) only reaches viewers with the next publish.
     pimpl->feedDirty = true;

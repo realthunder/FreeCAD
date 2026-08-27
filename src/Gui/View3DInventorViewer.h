@@ -82,6 +82,7 @@ namespace Quarter = SIM::Coin3D::Quarter;
 
 namespace Render {
 class Renderer;
+struct StyleOverrideTable;
 }
 
 namespace App {
@@ -342,6 +343,25 @@ public:
     /// Re-applies the override, which is what dirties the capture.
     void setCanvasStyleMode(CanvasStyleMode mode);
     CanvasStyleMode canvasStyleMode() const;
+    /// This view's per-object display mode overrides
+    /// (docs/CoinRetirement.md 5.9), parsed from View3DInventor's
+    /// ObjectDisplayModes property into backend entries. Takes
+    /// ownership, bumps the table's version, and re-applies the
+    /// override mode: a view with overrides captures the SUPERSET
+    /// child even outside a canvas, because an override can ADD
+    /// geometry the object's own mode does not draw.
+    void setObjectStyleOverrides(Render::StyleOverrideTable &&table);
+    /// The table above, or null when it is empty. The pointer stays
+    /// valid for the viewer's lifetime; a unified canvas puts it on
+    /// its SubViewFrame, the plain frame states it through
+    /// Renderer::setMainViewStyle.
+    const Render::StyleOverrideTable *objectStyleOverrides() const;
+    /// Whether overrides exist AND this viewer's style can host them:
+    /// the backend resolves them over a superset capture, which only
+    /// an "As Is" or Class-A styled view produces (Hidden Line, No
+    /// Shading and Tessellation are traversal state, not bucket
+    /// selections, and keep their plain capture).
+    bool hasObjectStyleOverrides() const;
     const SoFCDisplayModeElement::HiddenLineConfig &getHiddenLineConfig() const;
     //@}
 

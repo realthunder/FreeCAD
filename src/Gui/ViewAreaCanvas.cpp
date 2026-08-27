@@ -176,6 +176,7 @@ void ViewAreaCanvas::resolveDisplayStyles()
     const ViewAreaCell *active = _area ? _area->activeCell() : nullptr;
     std::string activeStyle;
     bool activeIs3D = false;
+    bool overrides = false;
     for (auto cell : _area->cells()) {
         auto viewer = viewerOf(cell);
         if (!viewer || !cell->isVisibleTo(_area))
@@ -185,6 +186,12 @@ void ViewAreaCanvas::resolveDisplayStyles()
             continue;
         const std::string mode = viewer->getOverrideMode();
         ++votes[mode];
+        // A cell whose view carries per-object display mode overrides
+        // (docs/CoinRetirement.md 5.9) needs the superset capture and
+        // per-object resolution even when every cell agrees on a
+        // style: the one-style and filter services have no override
+        // clause to resolve.
+        overrides = overrides || viewer->hasObjectStyleOverrides();
         if (cell == active) {
             activeStyle = mode;
             activeIs3D = true;
@@ -193,7 +200,7 @@ void ViewAreaCanvas::resolveDisplayStyles()
     if (votes.empty())
         return;
 
-    if (votes.size() > 1) {
+    if (votes.size() > 1 || overrides) {
         std::vector<std::string> styles;
         styles.reserve(votes.size());
         bool servable = true;
@@ -211,7 +218,10 @@ void ViewAreaCanvas::resolveDisplayStyles()
                     && !Gui::styleNameBitOf(v.first.c_str()))
                 servable = false;
         }
-        if (servable && !styleConflicts(styles)) {
+        // Overrides rule the flat services out: they resolve per
+        // object over a superset capture, which neither the one-style
+        // traversal nor a per-cell bucket filter provides (5.9).
+        if (!overrides && servable && !styleConflicts(styles)) {
             _serve = ServeFilter;
             return;
         }
@@ -699,6 +709,13 @@ void ViewAreaCanvas::paintGL()
             s.drawStyle = viewer->drawStyleMask();
             s.drawStyleName = viewer->drawStyleNameBit();
             s.styleFromSuperset = (_serve == ServeSuperset);
+            // The cell's per-object overrides (5.9), resolved by the
+            // backend as the first clause; only a superset capture can
+            // host them, which resolveDisplayStyles guarantees is the
+            // service whenever any cell carries overrides.
+            if (_serve == ServeSuperset
+                    && viewer->hasObjectStyleOverrides())
+                s.styleOverrides = viewer->objectStyleOverrides();
         }
         subs.push_back(s);
         rects.push_back(r);

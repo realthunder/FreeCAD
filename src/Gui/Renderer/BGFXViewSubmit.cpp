@@ -31,7 +31,77 @@ bool faceTexOnMeshUV(const Render::Material &mat)
     return mat.texturepalette && !mat.texturepalette->entries.empty()
         && mat.facetexscale <= 0.0f;
 }
+
+/// How well one override entry matches a draw's container chain
+/// (docs/CoinRetirement.md 5.9): -1 = no match, otherwise a score
+/// ordering DEEPEST decision point first -- an entry that names an
+/// object deeper on the chain beats one naming an ancestor, whatever
+/// their forms -- with a rooted entry beating a bare one at equal
+/// depth.
+///
+/// A rooted entry must anchor at path[0] and its remaining elements
+/// must follow IN ORDER, but not contiguously: a subname elides
+/// objects the scene chain contains (a Link's target has a chain step
+/// but no subname token), so the pattern is an ordered subsequence.
+/// A bare entry's single element may sit anywhere on the path.
+int matchStyleOverride(const Render::StyleOverride &ov,
+                       const std::vector<Render::ObjectRef> &path)
+{
+    if (ov.path.empty() || path.empty())
+        return -1;
+    if (!ov.rooted) {
+        for (int i = int(path.size()) - 1; i >= 0; --i) {
+            if (ov.path[0] == path[size_t(i)])
+                return i * 2;
+        }
+        return -1;
+    }
+    if (!(ov.path[0] == path[0]))
+        return -1;
+    size_t p = 1;
+    size_t depth = 0;
+    for (size_t i = 1; p < ov.path.size() && i < path.size(); ++i) {
+        if (ov.path[p] == path[i]) {
+            depth = i;
+            ++p;
+        }
+    }
+    if (p != ov.path.size())
+        return -1;
+    return int(depth) * 2 + 1;
+}
 } // namespace
+
+const BGFXView::OvStyle *BGFXView::lookupStyleOverride(uint64_t objectKey)
+{
+    if (!ovCache || !ovTable || !objectKey)
+        return nullptr;
+    auto it = ovCache->map.find(objectKey);
+    if (it == ovCache->map.end()) {
+        // First sight of this key under the current table: walk the
+        // entries once and cache the outcome either way, so the table
+        // costs one hash lookup per draw after this.
+        OvStyle s;
+        if (ovInfo) {
+            auto oit = ovInfo->find(objectKey);
+            if (oit != ovInfo->end() && !oit->second.path.empty()) {
+                int best = -1;
+                for (const auto &ov : ovTable->entries) {
+                    int score = matchStyleOverride(ov, oit->second.path);
+                    if (score > best) {
+                        best = score;
+                        s.mask = ov.mask;
+                        s.nameBit = ov.nameBit;
+                        s.pin = ov.pin;
+                        s.has = true;
+                    }
+                }
+            }
+        }
+        it = ovCache->map.emplace(objectKey, s).first;
+    }
+    return it->second.has ? &it->second : nullptr;
+}
 
 void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,
                       bool mapped)
@@ -677,7 +747,19 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     // vanish in Wireframe, which Coin never does.
     if (!draw.skipbounds) {
         uint8_t effective = drawStyleMask;
-        if (styleFromSuperset) {
+        // The per-object per-view override is the FIRST clause of the
+        // resolution (docs/CoinRetirement.md 5.9): an entry naming this
+        // draw's object -- or a container above it -- replaces the
+        // view's style for it. The same registered-name rule applies as
+        // for a view style; a pin ("As Is") holds the object to its own
+        // mode, escaping the view style. Only ever non-null under a
+        // superset capture.
+        if (const OvStyle *ov = lookupStyleOverride(draw.objectKey)) {
+            effective = ov->pin ? draw.ownStyle
+                : (draw.registeredStyles & ov->nameBit) ? ov->mask
+                                                        : draw.ownStyle;
+        }
+        else if (styleFromSuperset) {
             effective = (drawStyleName
                          && (draw.registeredStyles & drawStyleName))
                     ? drawStyleMask : draw.ownStyle;

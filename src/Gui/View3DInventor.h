@@ -92,6 +92,18 @@ public:
     App::PropertyEnumeration DrawStyle;
     App::PropertyBool ShowNaviCube;
     App::PropertyBool ThumbnailView;
+    /// Per-object display mode overrides of THIS view
+    /// (docs/CoinRetirement.md 5.9). Key: a subname path rooted at a
+    /// top-level object of the view's document ("Asm.Sub.Part.", one
+    /// occurrence -- the same shape show-on-top uses), or a bare
+    /// internal name ("Part", optionally "Doc#Part" for an object of
+    /// another document shown through a link) meaning the object
+    /// wherever it appears in this view. Value: a display mode name;
+    /// "As Is" pins the object to its own mode, escaping the view
+    /// style. Rides the view's Save/Restore into GuiDocument.xml like
+    /// DrawStyle; stays Hidden -- the property editor edits it through
+    /// the ViewProvider's DisplayModeInView row instead.
+    App::PropertyMap ObjectDisplayModes;
 
     View3DInventor(Gui::Document* pcDocument, QWidget* parent, const QtGLWidget* sharewidget = nullptr, Qt::WindowFlags wflags=Qt::WindowFlags());
     ~View3DInventor() override;
