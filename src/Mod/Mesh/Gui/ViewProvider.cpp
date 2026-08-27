@@ -473,7 +473,10 @@ void ViewProviderMesh::attach(App::DocumentObject* pcFeat)
     pcPointRoot->addChild(pcShapeMaterial);
     pcPointRoot->addChild(pcMatBinding);
     pcPointRoot->addChild(pcHighlight);
-    addDisplayMaskMode(pcPointRoot, "Point");
+    // Named after the user-facing mode ("Points", like Part), so the
+    // per-view display mode overrides -- which select mask children
+    // by NAME -- can reach it (docs/CoinRetirement.md 5.10).
+    addDisplayMaskMode(pcPointRoot, "Points");
 
     // wires
     SoLightModel* pcLightModel = new SoLightModel();
@@ -686,7 +689,7 @@ void ViewProviderMesh::setDisplayMode(const char* ModeName)
         setDisplayMaskMode("Shaded");
     }
     else if (strcmp("Points", ModeName) == 0) {
-        setDisplayMaskMode("Point");
+        setDisplayMaskMode("Points");
     }
     else if (strcmp("Flat Lines", ModeName) == 0) {
         setDisplayMaskMode("Flat Lines");
