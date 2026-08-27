@@ -1491,30 +1491,49 @@ and starts a worker `threading.Thread`:
   the thread finishes its current command and exits. Results carry
   their snapshot and are dropped when it is no longer the current
   one.
-- **The truncated tail (11.5's PROPOSAL, refined).** The GL sim's
-  position is a MOTION index + fraction, and one command can have
-  expanded to several motions -- so the tail is synthesized from the
-  MOTIONS, not by editing the command: for the partial command's
-  fully-consumed motions, per-motion commands (G1 from endpoints,
-  G2/G3 keeping the parser's i/j/k centre); for the partial motion,
-  the same with the endpoint at the interpolant (arcs interpolate
-  the sweep angle, drills the plunge depth). Sub-resolution
-  differences from VolSim's own voxel size swallow the rounding.
-- **Landing (GUI thread)**: set `Stock.CutMesh` (the outer mesh; the
-  inner is VolSim's coloured-cut variant, unused here), switch the
-  view object to the `Cut` display mode and show it, and stand the
-  sim's stock draw down (`SetStockVisible(false)` on the sim side,
-  NOT the document object). Tool and path overlay keep drawing --
-  PROPOSED, on the argument that the path over the settled mesh is
-  exactly the x-ray feature (10.4). On play: reverse in order (sim
-  stock back on, Stock object back to hidden-while-attached, mode
-  restored) before the first new frame.
+- **The truncated tail (11.5's PROPOSAL, refined) -- and then the
+  whole replay went the tail's way.** The GL sim's position is a
+  MOTION index + fraction, so the tail was to be synthesized from
+  motions while whole commands replayed verbatim. Building it
+  showed the parser had already done the hard part for EVERY
+  motion: sticky words resolved, drill cycles pre-expanded into
+  moves (GCodeParser::AddLine splits G73/G81/G82/G83 into approach/
+  plunge/retract), tool-change lines contributing no motion at all.
+  So the BUILT replay runs entirely off the motion list -- lines as
+  G1 to the (fraction-interpolated) endpoint, arcs as G1 chords
+  over the fraction-scaled sweep (the raw i/j centre offsets ride
+  on the motion), tool changes where the motion's tool number
+  flips. Exact parity with what the GL sim executed, one code
+  path, no boundary between "whole" and "partial". Rapids are fed
+  too: the GL sim cuts on every move and VolSim treats G0 as G1 --
+  Simulator.py's skipping of rapids is a fidelity bug this replay
+  does not copy.
+- **The two meshes are halves, not variants** (checked in
+  `cStock::Tessellate`): `outer` holds the facets still on the
+  ORIGINAL stock surface, `inner` the MACHINED facets -- each alone
+  has holes, the shape is their union. So the landing merges them,
+  outer first, and records the outer facet count in a second
+  property; the Cut mode then colours the two ranges separately
+  (per-face material binding), keeping the two-tone picture the GL
+  sim draws (stockColor for virgin surface, cutColor for cuts) --
+  the swap does not flatten the image to one colour.
+- **Landing (GUI thread)**: set `Stock.CutMesh` (merged) and
+  `CutMeshUncutCount`, switch the view object to the `Cut` display
+  mode and show it, and stand the sim's stock draw down
+  (`SetStockVisible(false)` on the sim side, NOT the document
+  object). Tool and path overlay keep drawing -- PROPOSED, on the
+  argument that the path over the settled mesh is exactly the x-ray
+  feature (10.4). On play: reverse in order (sim stock back on,
+  Stock object back to hidden-while-attached, mode restored) before
+  the first new frame.
 
 #### 11.7.4 The Stock object half (ruled in 11.6, concrete shape)
 
 - `SetupStockObject` adds `Mesh::PropertyMeshKernel` `CutMesh`
   (group "Stock", `Prop_Output` so it never touches the recompute
-  DAG), and `onDocumentRestored` back-fills it into old documents.
+  DAG) plus `CutMeshUncutCount` (integer: leading facets of CutMesh
+  that are un-machined stock surface, -1 = unknown/single-colour),
+  and `onDocumentRestored` back-fills both into old documents.
 - A `StockViewProvider` in the stock's own Gui module extends
   `IconViewProvider.ViewProvider`: `attach()` builds an
   `SoSeparator` (`SoCoordinate3` + `SoNormal` + `SoIndexedFaceSet`)
@@ -1525,9 +1544,16 @@ and starts a worker `threading.Thread`:
   keep the icon behaviour. Existing documents restore the OLD proxy
   class; `onDocumentRestored` swaps it. On a `Part::FeaturePython`
   the proxy's modes ADD to Part's, so Wireframe et al. survive.
-- The mesh mode carries its own face material (the uncut stock's
-  translucent wireframe look is wrong for a solid carve): PROPOSED
-  plain shaded with the sim's stock colour preference.
+- The mesh mode carries its own materials (the uncut stock's
+  translucent wireframe look is wrong for a solid carve): the GL
+  sim's stockColor for the un-machined facet range and its cutColor
+  for the machined one, per-face-indexed off `CutMeshUncutCount`.
+- **Replay detail from `Simulator.py` (checked)**: VolSim's
+  `ApplyCommand` is only fed linear moves there -- arcs are expanded
+  to G1 chains sized by the resolution, and drill cycles (G73/G81/
+  G82/G83) to G0/G1 sequences, by the DRIVER. The swap's replay
+  reuses that expansion for whole commands, and the motion-derived
+  tail runs through the same helper.
 
 #### 11.7.5 Work breakdown
 
@@ -1554,3 +1580,52 @@ proposal); path overlay staying up over the settled mesh (11.7.3);
 the Cut mode's material (11.7.4). Still pending from stage 3:
 BUILD_BGFX / BUILD_CAM_SIMULATOR_GL defaults, and the sim-window
 stock view provider's disposition (10.5).
+
+### 11.8 Steps 1-4 built and verified (2026-08-28)
+
+Commits: b03c3c5543 (core enum fix), 34f3c92cef (Stock half),
+ec57a5bb72 (progress surface), ff6131161d (GIL release),
+acce852d23 (the swap driver). Route A -- step 5 -- is NOT built;
+its UX shape is still open for ruling (11.7.1).
+
+What building them settled:
+
+- **The core had a real migration gap.** A proxy swapped in after
+  the view provider attached (every pre-feature document, since the
+  Gui restores proxies AFTER the App side's onDocumentRestored --
+  which is why EnsureViewProvider is called lazily by the driver,
+  not eagerly at restore) could register display mask modes but
+  never get them into the DisplayMode enum, stated only in
+  attach(). ViewProviderFeaturePython::onChanged(Proxy) now
+  restates the enum on a late swap; the probe drives the swap BOTH
+  ways (icon proxy back in, then EnsureViewProvider) and selects
+  Cut afterwards.
+- **CAMSim getters must not create.** DlgCAMSimulator::instance()
+  builds the simulator MDI view on demand -- the first smoke run
+  opened a window from a bare GetProgress(). The getters go through
+  a new existingInstance() that returns null instead.
+- **VolSim's two result meshes are halves, not variants** (11.7.4):
+  outer = facets still on the original stock surface, inner =
+  machined. Merged outer-first; CutMeshUncutCount records the
+  split; the Cut mode colours the ranges per-face-indexed
+  (SoMaterialBinding PER_FACE_INDEXED, two-entry material) in the
+  GL sim's stockColor/cutColor.
+- **Verification** (xvfb, real Job): stock1 probe -- property
+  status Output + touch-clean landing (nothing in the recompute
+  DAG moves), Cut in the enum, two-tone index ranges, migration,
+  mesh + mode + rebuilt node across save/reload. swap4 probe --
+  hand-fed G-code with an arc, stage-slider seek to 60%: debounced
+  worker replay lands a 566-facet two-tone mesh at motion 3
+  fraction 0.92 (a MID-ARC truncation); re-seek to 35% re-lands
+  290 facets; screenshot shows the carved slot on the Stock in the
+  NORMAL 3D view, blue virgin surface, green cut. Teardown abort
+  at exit is the known WSLg one, after DONE.
+- The landed mesh deliberately SURVIVES closing the simulator --
+  the settled cut shape outliving the run is the point of Route B.
+  A stale landed mesh from a previous run also stays visible while
+  a NEW run's pixels play in the sim window; the first stop of the
+  new run overwrites it. Revisit only if it confuses.
+
+Harness: scratchpad swap4/probe.py (job + hand-fed sim + seek +
+land/re-land asserts + screenshot), stock1/probe.py (the Stock
+half alone).
