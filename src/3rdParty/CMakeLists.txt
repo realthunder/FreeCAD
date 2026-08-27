@@ -140,6 +140,41 @@ if (BUILD_BGFX)
         POSITION_INDEPENDENT_CODE ON)
 endif()
 
+if(BUILD_CYCLES)
+    # Cycles (docs/CyclesIntegration.md): Blender's path tracer, vendored
+    # like bgfx but, unlike bgfx, not self-contained -- it links
+    # OpenImageIO, TBB, Embree and OpenImageDenoise from the environment.
+    # WITH_LIBS_PRECOMPILED is the Blender bundle route, refused because
+    # the bundle ships its own TBB and this process already links TBB
+    # through OCCT (sec 3 of the doc). The OFF list is dead weight for a
+    # CAD viewport; OpenSubdiv is the one worth revisiting. The tree
+    # comes in through CYCLES_EMBEDDED, which skips its executable,
+    # install and CTest and exports the cycles_embed target instead.
+    # Cache entries rather than plain variables on purpose: the tree's
+    # cmake_minimum_required(3.10) puts its option() calls on the old
+    # behaviour, where a plain variable is clobbered by the default.
+    set(CYCLES_EMBEDDED ON CACHE BOOL "" FORCE)
+    set(WITH_LIBS_PRECOMPILED OFF CACHE BOOL "" FORCE)
+    foreach(_cycles_off
+            WITH_CYCLES_OSL
+            WITH_CYCLES_USD
+            WITH_CYCLES_HYDRA_RENDER_DELEGATE
+            WITH_CYCLES_ALEMBIC
+            WITH_CYCLES_OPENVDB
+            WITH_CYCLES_NANOVDB
+            WITH_CYCLES_OPENSUBDIV
+            WITH_CYCLES_STANDALONE_GUI)
+        set(${_cycles_off} OFF CACHE BOOL "" FORCE)
+    endforeach()
+    unset(_cycles_off)
+    set(WITH_CYCLES_EMBREE ON CACHE BOOL "" FORCE)
+    set(WITH_CYCLES_OPENIMAGEDENOISE ON CACHE BOOL "" FORCE)
+    # GPU devices keep the tree's defaults (CUDA, OptiX, HIP on where the
+    # platform allows); OptiX needs OPTIX_ROOT_DIR and disables itself
+    # otherwise. Kernel binaries stay off: they compile at runtime.
+    add_subdirectory(cycles)
+endif()
+
 if (BUILD_DILIGENT)
     add_subdirectory(Diligent/DiligentCore)
     add_subdirectory(Diligent/DiligentFX)

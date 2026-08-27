@@ -72,6 +72,49 @@ if(BUILD_DILIGENT)
 
 endif(BUILD_DILIGENT)
 
+# The Cycles unit (docs/CyclesIntegration.md). One source either way:
+# built with the engine it is an object library of its own, because the
+# Cycles headers come with the SSE4.2 flags and feature defines that
+# cycles_embed carries and nothing else in this library should compile
+# under them; built without, the same file is the stub that reports the
+# engine absent.
+list(APPEND Renderer_HPP_SRCS CyclesRenderer.h)
+if(BUILD_CYCLES)
+    add_library(FreeCADRendererCycles OBJECT CyclesRenderer.cpp CyclesRenderer.h)
+    target_link_libraries(FreeCADRendererCycles
+        PUBLIC cycles_embed
+        PRIVATE FreeCADBase ${QtCore_LIBRARIES} ${QtWidgets_LIBRARIES})
+    # FreeCADRenderer_EXPORTS: the objects land in the FreeCADRenderer
+    # shared library, so RendererExport has to mean export here too.
+    target_compile_definitions(FreeCADRendererCycles PRIVATE HAVE_CYCLES FreeCADRenderer_EXPORTS)
+    set_target_properties(FreeCADRendererCycles PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        POSITION_INDEPENDENT_CODE ON)
+    list(APPEND Renderer_PRIVATE_LIBS FreeCADRendererCycles)
+
+    # The GPU devices compile their kernels at runtime from source:
+    # nvcc is run on source/kernel/device/<api>/kernel.cu with -I on
+    # source/, which the kernel includes "kernel/..." and "util/..."
+    # against. So those two trees ship beside the binary, at the
+    # resource path CyclesRenderer.cpp hands path_init(), in the build
+    # tree and the install alike -- the arrangement the standalone
+    # install uses (docs/CyclesIntegration.md sec 4.1).
+    set(_cycles_src ${CMAKE_SOURCE_DIR}/src/3rdParty/cycles/src)
+    set(_cycles_out ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/cycles/source)
+    add_custom_target(Renderer_cycles_source ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different ${_cycles_src}/kernel ${_cycles_out}/kernel
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different ${_cycles_src}/util ${_cycles_out}/util
+        COMMENT "cycles kernel source"
+        VERBATIM)
+    install(DIRECTORY ${_cycles_src}/kernel ${_cycles_src}/util
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/Renderer/cycles/source)
+    unset(_cycles_src)
+    unset(_cycles_out)
+else()
+    list(APPEND Renderer_CPP_SRCS CyclesRenderer.cpp)
+endif()
+
 set(Renderer_SRCS ${Renderer_CPP_SRCS} ${Renderer_HPP_SRCS})
 
 # Create the library

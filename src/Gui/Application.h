@@ -485,6 +485,8 @@ public:
     static PyObject* sServeClients             (PyObject *self,PyObject *args);
     static PyObject* sServeSetClientMode       (PyObject *self,PyObject *args);
     static PyObject* sServeKickClient          (PyObject *self,PyObject *args);
+    static PyObject* sCyclesDevices            (PyObject *self,PyObject *args);
+    static PyObject* sCyclesRenderTest         (PyObject *self,PyObject *args,PyObject *kwd);
     static PyObject* sServeGrants              (PyObject *self,PyObject *args);
     static PyObject* sServeSetGrants           (PyObject *self,PyObject *args);
     static PyObject* sServeStop                (PyObject *self,PyObject *args);

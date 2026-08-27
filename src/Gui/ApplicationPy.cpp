@@ -56,6 +56,7 @@
 #include "Document.h"
 #include "SceneServeSource.h"
 #include "Renderer/SceneServer.h"
+#include "Renderer/CyclesRenderer.h"
 #include "DocumentObserverPython.h"
 #include "DownloadManager.h"
 #include "EditorView.h"
@@ -215,6 +216,21 @@ PyMethodDef Application::Methods[] = {
    "For code that is worth skipping while one runs. Selecting each\n"
    "created object, for one, costs a selection round trip and a tree\n"
    "expand and scroll that nobody can act on until the import ends."},
+  {"cyclesDevices",           (PyCFunction) Application::sCyclesDevices, METH_VARARGS,
+   "cyclesDevices() -> list\n"
+   "\n"
+   "The compute devices the Cycles path tracer can render on, one dict\n"
+   "each: type ('CPU', 'CUDA', 'OPTIX', 'HIP', ...) and description.\n"
+   "Empty when the build carries no Cycles engine (BUILD_CYCLES)."},
+  {"cyclesRenderTest",        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) (void)>( Application::sCyclesRenderTest )), METH_VARARGS|METH_KEYWORDS,
+   "cyclesRenderTest(path, width=640, height=480, samples=64, device='CPU') -> bool\n"
+   "\n"
+   "Render Cycles' built-in test scene (a cube on a floor under a\n"
+   "uniform sky) to a PNG. No document is involved: this is the\n"
+   "engine's start, render, hand back and tear down inside this\n"
+   "process, nothing more (docs/CyclesIntegration.md sec 8, phase 2).\n"
+   "Blocks until the render is done. Raises RuntimeError with the\n"
+   "engine's message on failure."},
   {"serveDocument",           (PyCFunction) Application::sServeDocument, METH_VARARGS,
    "serveDocument(doc, port=0) -> bool\n"
    "\n"
@@ -1074,6 +1090,47 @@ PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)
     // device is created, so this works with no 3D view and no display.
     bool ok = Gui::SceneServeSource::serve(guiDoc, port) != nullptr;
     return Py::new_reference_to(Py::Boolean(ok));
+}
+
+PyObject* Application::sCyclesDevices(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+
+    Py::List list;
+    for (const Render::Cycles::DeviceInfo &device : Render::Cycles::devices()) {
+        Py::Dict dict;
+        dict.setItem("type", Py::String(device.type));
+        dict.setItem("description", Py::String(device.description));
+        list.append(dict);
+    }
+    return Py::new_reference_to(list);
+}
+
+PyObject* Application::sCyclesRenderTest(PyObject * /*self*/, PyObject *args, PyObject *kwd)
+{
+    const char *path = "";
+    int width = 640;
+    int height = 480;
+    int samples = 64;
+    const char *device = "CPU";
+    static char *kwlist[] = {"path", "width", "height", "samples", "device", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwd, "s|iiis", kwlist,
+                                     &path, &width, &height, &samples, &device))
+        return nullptr;
+
+    // The render blocks for as long as the samples take; nothing in it
+    // touches Python, so let other threads have the interpreter.
+    std::string error;
+    bool ok = false;
+    Py_BEGIN_ALLOW_THREADS
+    ok = Render::Cycles::renderTestScene(path, width, height, samples, device, &error);
+    Py_END_ALLOW_THREADS
+    if (!ok) {
+        PyErr_SetString(PyExc_RuntimeError, error.c_str());
+        return nullptr;
+    }
+    Py_RETURN_TRUE;
 }
 
 PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)
