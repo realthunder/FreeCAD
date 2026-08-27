@@ -531,6 +531,17 @@ protected:
                     ViewProviderT::DisplayMode.touch();
                     ViewProviderT::setOverrideMode(viewerMode);
                 }
+                else {
+                    // A proxy swapped in after attach -- document
+                    // migration replacing a restored proxy with a
+                    // richer class -- can bring new display modes,
+                    // and attach() is the only place the enum is
+                    // stated. Restate it, or the new modes are
+                    // registered mask modes the DisplayMode
+                    // property refuses to select.
+                    ViewProviderT::DisplayMode.setEnumVector(
+                        this->getDisplayModes());
+                }
                 if(!this->testStatus(Gui::isRestoring) && 
                     ViewProviderT::canAddToSceneGraph()!=this->canAddToSceneGraph())
                 {
