@@ -1642,16 +1642,22 @@ So the stage does not open with a deletion. It opens with Class A.
 
 ### 5.7 Class A / D4: the design the survey allows
 
-! **Superseded 2026-08-26 by what was actually built** -- see
-docs/SplitViews.md sec 17. The sketch below treats a Class-A style as
-something the backend can reproduce from one capture. It cannot: the
-style is an override, which traverses a DIFFERENT child of each
-object's display-mode switch, and no filter over one capture can put
-back geometry that capture does not hold. The per-draw own-mode mask
-proposed below was also rejected on the ground that an object's display
-mode is Coin traversal's business and the backend must stay agnostic to
-it. What survives is the bucket-mask observation itself, which is what
-makes the per-object conflict test possible. Kept for the reasoning.
+! **Superseded 2026-08-26, then REINSTATED 2026-08-27 -- see 5.8.**
+The first half of the note below stands: a Class-A style is an
+override, which traverses a DIFFERENT child of each object's
+display-mode switch, and no filter over one capture can put back
+geometry that capture does not hold. That is why D4a's plain filter
+could not serve every case.
+
+The second half -- the rejection of the per-draw own-mode mask, on the
+ground that an object's display mode is Coin traversal's business and
+the backend must stay agnostic to it -- **was wrong, and 5.8 reverses
+it.** Rhino, SolidWorks and Blender all treat an object's display mode
+as a draw-time attribute of the object and resolve the style per object
+per view in the renderer. FreeCAD treats it as traversal state only
+because SoFCSwitch's named-child mechanism makes it so, which is the
+very thing this stage exists to retire. The sketch below is therefore
+close to what was built; 5.8 records where it was wrong in detail.
 
 Because the four children are bucket compositions of shared nodes, a
 Class-A style is a **bucket mask**, and the backend already sorts draws
@@ -1677,6 +1683,144 @@ cannot vary it per cell (5.2).
 Not in scope, and not close: Coin as scene graph, traversal and picking.
 Replacing that is a different project — the backend has no picking at all
 and the whole feed is built on Coin traversal.
+
+### 5.8 D4b: the style resolves per object per view (2026-08-27)
+
+**User ruling: "what other CAD and blender do", then "rhino model".**
+The question put to the user was whether to build a narrowed
+optimization or revisit 5.7's rejection; the answer named the
+precedent instead, so the precedent is what this follows.
+
+**What the precedents actually do.** All three separate a per-viewport
+setting from a per-object one and combine them *at draw time*:
+
+- **Blender** -- viewport shading (Wireframe/Solid/Material
+  Preview/Rendered) lives in each 3D viewport's own header
+  (`View3D.shading`), so two areas differ freely. Per object, "Display
+  As" is documented as a REDUCTION: "display the object with less
+  detail, going from removing the textures to only showing a bounding
+  box". The object setting caps the viewport's.
+- **Rhino** -- display mode is a viewport property (the stock
+  four-viewport layout ships wireframe orthos and a shaded
+  perspective). Per object: "Sets the object to display with the
+  viewport display mode, or allows you to select a display mode for the
+  object to override the display mode of the current viewport. How the
+  object displays in other viewports is not affected", plus a dialog
+  listing every viewport. Per-object-per-viewport overrides are not
+  expressible unless both inputs meet at draw time.
+- **SolidWorks** -- per-component display (Wireframe / HLV / HLR /
+  Shaded / Shaded With Edges / **Default Display**) held in Display
+  States, so components in one view carry different styles at once.
+  "Default Display" is exactly our `As Is`.
+
+Where they disagree: Blender's object setting is a CAP (an AND), while
+Rhino's and SolidWorks' REPLACES the view's. FreeCAD already matches the
+CAD reading -- the D4a rule that `As Is` respects an object's
+DisplayMode and any other style overrides it -- and the user chose the
+Rhino model explicitly, so replace is what is built.
+
+**The resolution.** Three inputs, resolved per object per view:
+
+    effective = object-in-view override   if set   (not yet built, see below)
+              : the view's style          if not As Is AND the object's
+                                           switch registers that NAME
+              : the object's own mode     otherwise
+
+The middle clause's second half is not a concession. An override whose
+name a switch has no child for **already** does not apply -- which is
+why Mesh's `Point` is untouched by a `Points` style, the pre-existing
+quirk 5.5 said to reproduce rather than fix. Stating it as a rule
+removes the special cases instead of adding them.
+
+**The traversal change is small**, because the superset capture needs
+no new switching logic at all: `captureOverrideMode()` returning
+`Flat Lines` already makes SoFCSwitch traverse the superset child. The
+only new duty is RECORDING what was overridden. `SoFCSwitch::doAction`
+now writes `SoFCOwnDisplayModeElement` -- the mode the object is in, as
+a `DrawStyleMask`, and which of the four style NAMES its switch has a
+child for -- which `SoFCRenderCache` captures into the material (it is
+part of the batching key: draws whose objects are in different modes
+must not merge) and `SoFCRendererBridge` puts on `DrawCall::ownStyle` /
+`registeredStyles`. `BGFXView::submit` resolves the three cases above.
+
+Style names need their own bits (`StyleNameBit`) because the bucket
+masks overlap -- Shaded is the faces bit, Wireframe and Flat Lines are
+unions -- so OR-ing bucket masks cannot spell a SET of names.
+
+**The canvas picks the cheapest service that works** (`StyleService`),
+so nothing that worked before pays more:
+
+1. `ServeOneStyle` -- the cells agree; the traversal applies the style,
+   as a plain view does.
+2. `ServeFilter` -- own-mode capture, flat per-cell masks. No extra
+   capture at all. Chosen only where `styleConflicts()` proves no
+   object's own mode can tell a filter from an override.
+3. `ServeSuperset` -- superset capture, per-object resolution. Serves
+   any mix, including one cell `As Is` beside an override. Pays for it
+   by tessellating faces a wireframe cell will not draw, so it is tried
+   last.
+
+`supersetBlocked()` is the residual limit, and it is narrow. A superset
+capture traverses each object's `Flat Lines` child; not every
+ViewProvider has one. Points registers `Point`/`Shaded`/`Color`; FEM's
+mesh registers `Wireframe` among six names of its own. For those the
+capture falls through to the object's own mode, which is right unless a
+cell's style would have applied to that object anyway -- and it applies
+exactly when the switch has a child of that NAME. Only there must the
+odd cell still leave the canvas.
+
+**Two live defects fell out of the survey**, both pre-existing in D4a:
+
+- **A draw's bucket is not always its `Material::Type`.** Mesh's
+  `Wireframe` and `Point` children are the SAME mesh node re-styled by
+  an `SoDrawStyle` (`pcLineStyle` is LINES, `pcPointStyle` is POINTS),
+  so the cache emits them as `Material::Triangle` carrying a drawstyle.
+  Two cells, one `As Is` and one `Wireframe`, over Mesh objects whose
+  own mode is `Wireframe` passed `styleConflicts()` -- both masks are
+  `Lines|Points` -- and then filtered every Triangle draw away, so the
+  meshes vanished. `Render::styleBitOf()` classifies by what a draw
+  RENDERS as. A scene-wide drawstyle override is deliberately not
+  reclassified: that is Tessellation, whose filled faces still occupy
+  the faces bucket because they are drawn to occlude.
+- **Hidden Line, No Shading and Tessellation are not bucket
+  selections.** Their mask is `StyleAsIs`, so a filtering canvas
+  claimed such a cell and drew it the shared capture with none of the
+  traversal state those modes are made of. They now share a canvas only
+  with cells in the same mode.
+
+**Measured (RTX 3060, xvfb + vglrun egl0).** `d4mode` measures a plain
+view and the canvas in one run, so session drift cancels:
+
+    single own=Wireframe  style=Shaded  ink= 30456     canvas ink= 30464
+    single own=Flat Lines style=Shaded  ink= 30456     canvas ink= 30464
+
+The canvas row was **0** before -- the filter had nothing to keep -- and
+the two canvas rows now agree with each other, which is what
+substitution means: a Shaded override shows the same faces whatever the
+object's own mode. `d4rel` phase B (own mode Wireframe, one cell
+Shaded) now keeps `canvas=True` with `ink=[1079, 30464]`: the cell that
+used to be evicted stays on the shared canvas and still shows the
+override. Its V2 verdict ("conflicting cell splits off") is inverted on
+purpose.
+
+**What remains: the per-object-per-view override**, the first clause of
+the resolution and the reason the Rhino model was chosen. The
+architecture now carries it -- `DrawCall::objectKey` resolves to
+`ObjectInfo{doc, obj}` already -- so what is missing is storage and UI:
+
+- `App::PropertyMap ViewDisplayModes` on `ViewProviderDocumentObject`,
+  keyed by `MDIView::getPersistentName()`, which is already unique per
+  view and already saved in `GuiDocument.xml`. No new persistence
+  format.
+- A transient `App::PropertyEnumeration DisplayModeInView` in the
+  property editor, enum `["Use View Mode"] + getDisplayModes()`, reading
+  and writing the entry for the ACTIVE view and refreshed when the
+  active view changes -- the user's choice among the three forms
+  offered. The property editor has no `PropertyMap` item, so the
+  storage map stays hidden.
+- A context submenu ("Display mode in this view") and a "Clear per-view
+  overrides" command, which Rhino ships for the same reason: per-view
+  state that is invisible is hard to reason about.
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 
