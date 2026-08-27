@@ -54,6 +54,7 @@
 #include "QGCustomImage.h"
 #include "QGCustomLabel.h"
 #include "QGICaption.h"
+#include "QGIEdge.h"
 #include "QGIVertex.h"
 #include "QGIViewClip.h"
 #include "QGSPage.h"
@@ -824,5 +825,29 @@ void QGIView::makeMark(QPointF pos, QColor color)
 {
     makeMark(pos.x(), pos.y(), color);
 }
+
+//! collect the child items of type T whose projection index appears in
+//! indexes.  T is a pointer type; T::Type identifies the QGraphicsItem
+//! subclass, so unrelated children are skipped without a dynamic_cast.
+template <typename T>
+std::vector<T> QGIView::getObjects(const std::vector<int>& indexes)
+{
+    std::vector<T> result;
+    for (QGraphicsItem* child : childItems()) {
+        if (child->type() != std::remove_pointer<T>::type::Type) {
+            continue;
+        }
+
+        T object = static_cast<T>(child);
+        if (std::find(indexes.begin(), indexes.end(), object->getProjIndex())
+            != indexes.end()) {
+            result.push_back(object);
+        }
+    }
+    return result;
+}
+
+template std::vector<QGIVertex*> QGIView::getObjects<QGIVertex*>(const std::vector<int>&);
+template std::vector<QGIEdge*> QGIView::getObjects<QGIEdge*>(const std::vector<int>&);
 
 #include <Mod/TechDraw/Gui/moc_QGIView.cpp>

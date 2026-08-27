@@ -401,6 +401,13 @@ App::DocumentObjectExecReturn* DrawViewDimension::execute()
     resetAngular();
     resetArc();
 
+    if (!m_savedGeometryFrameChecked) {
+        // execute() also runs while a document is still being restored, before
+        // the view has projected anything.  the check has to survive that, or
+        // the one migration a document gets is spent on an empty view.
+        m_savedGeometryFrameChecked = migrateSavedGeometryFrame();
+    }
+
     const std::vector<TopoShape> savedGeometry = SavedGeometry.getValues();
     if (!savedGeometry.empty()) {
         // we can only correct references if we have saved geometry for comparison
@@ -1418,7 +1425,7 @@ void DrawViewDimension::updateSavedGeometry()
             continue;
         }
         if (entry.isValid()) {
-            newGeometry.push_back(entry.asTopoShape());
+            newGeometry.push_back(entry.asCanonicalTopoShape());
         } else {
         // use old geometry entry? null shape? have to put something in the vector
         // so SavedGeometry and references stay in sync.
@@ -1439,6 +1446,75 @@ void DrawViewDimension::updateSavedGeometry()
 // when they were created.
 // returns true if the saved geometry is the same as the current reference geometry
 // returns false if the saved geometry is different from the the current reference geometry
+//! saved reference geometry used to be stored in the view's rotated frame.
+//! it is stored unrotated now, so that rotating a view does not make every
+//! reference look changed.  a document written by the older code has to be
+//! brought forward, and there is no version stamp to test -- so test the
+//! frame itself.  an entry that does not match in the canonical frame but
+//! does match once the rotation is put back was written by the old code and
+//! is rewritten in place.  one that matches canonically is already current,
+//! and one that matches neither is a real change for execute() to handle.
+bool DrawViewDimension::migrateSavedGeometryFrame()
+{
+    auto dvp = getViewPart();
+    if (!dvp) {
+        return false;
+    }
+    if (dvp->Rotation.getValue() == 0.0) {
+        // the two frames coincide, so there is nothing to bring forward
+        return true;
+    }
+    if (dvp->getVertexGeometry().empty() && dvp->getEdgeGeometry().empty()) {
+        // the view has not projected yet, so there is nothing to compare against
+        return false;
+    }
+
+    std::vector<TopoShape> saved = SavedGeometry.getValues();
+    if (saved.empty()) {
+        // nothing stored, and whatever is stored later is written in the
+        // canonical frame by updateSavedGeometry
+        return true;
+    }
+
+    ReferenceVector references = getEffectiveReferences();
+    if (references.size() != saved.size()) {
+        // out of step with the references, so we can not tell which entry is
+        // which.  leave it for the normal comparison path.
+        return true;
+    }
+
+    bool migrated {false};
+    bool anyChecked {false};
+    for (size_t iGeom = 0; iGeom < saved.size(); iGeom++) {
+        if (!references.at(iGeom).isValid()) {
+            continue;
+        }
+
+        anyChecked = true;
+        Part::TopoShape canonical = references.at(iGeom).asCanonicalTopoShape();
+        if (m_matcher->compareGeometry(saved.at(iGeom), canonical)) {
+            // already stored unrotated
+            continue;
+        }
+        if (!m_matcher->compareGeometry(saved.at(iGeom), references.at(iGeom).asTopoShape())) {
+            // matches neither frame, so this is a genuine change
+            continue;
+        }
+
+        saved.at(iGeom) = canonical;
+        migrated = true;
+    }
+
+    if (migrated) {
+        SavedGeometry.setValues(saved);
+        Base::Console().Log(
+            "%s - saved reference geometry brought into the unrotated frame\n",
+            getNameInDocument());
+    }
+
+    return anyChecked;
+}
+
 bool DrawViewDimension::compareSavedGeometry()
 {
 //    Base::Console().Message("DVD::compareSavedGeometry() - isRestoring: %d\n", isRestoring());
@@ -1453,7 +1529,7 @@ bool DrawViewDimension::compareSavedGeometry()
     ReferenceVector references = getEffectiveReferences();
     std::vector<Part::TopoShape> referenceGeometry;
     for (auto& entry : references) {
-        referenceGeometry.push_back(entry.asTopoShape());
+        referenceGeometry.push_back(entry.asCanonicalTopoShape());
     }
     if (savedGeometry.size() != referenceGeometry.size()) {
 //        Base::Console().Message("DVD::compareSavedGeometry - geometry sizes have changed\n");
@@ -1571,7 +1647,8 @@ std::string DrawViewDimension::recoverChangedEdge2d(int iReference)
     std::vector<TechDraw::BaseGeomPtr> gEdges = getViewPart()->getEdgeGeometry();
     int iEdge = 0;
     for (auto& edge : gEdges) {
-        Part::TopoShape temp = edge->asTopoShape(scale);
+        Part::TopoShape temp =
+            ReferenceEntry::unrotateForView(edge->asTopoShape(scale), *getViewPart());
         if (savedGeometryItem.getTypeId() != temp.getTypeId()) {
             // if the typeIds don't match, we can not compare the geometry
 //            Base::Console().Message("DVD::recoverChangedEdge2d - types do not match\n");
@@ -1601,7 +1678,8 @@ std::string DrawViewDimension::recoverChangedVertex2d(int iReference)
     std::vector<TechDraw::VertexPtr> gVertexAll = getViewPart()->getVertexGeometry();
     int iVertex = 0;
     for (auto& vert : gVertexAll) {
-        Part::TopoShape temp = vert->asTopoShape(scale);
+        Part::TopoShape temp =
+            ReferenceEntry::unrotateForView(vert->asTopoShape(scale), *getViewPart());
         bool isSame = m_matcher->compareGeometry(savedGeometryItem, temp);
         if (isSame) {
             return std::string("Vertex") + std::to_string(iVertex);

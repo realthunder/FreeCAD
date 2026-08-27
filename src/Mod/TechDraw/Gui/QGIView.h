@@ -114,6 +114,11 @@ public:
     void makeMark(Base::Vector3d pos, QColor color = Qt::red);
     void makeMark(QPointF pos, QColor color = Qt::red);
 
+    //! the child items of type T whose projection index is in indexes.
+    //! explicitly instantiated for QGIVertex* and QGIEdge* in QGIView.cpp.
+    template <typename T>
+    std::vector<T> getObjects(const std::vector<int>& indexes);
+
 
     /** Methods to ensure that Y-Coordinates are orientated correctly.
      * @{ */

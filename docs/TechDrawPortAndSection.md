@@ -1998,3 +1998,321 @@ Still open from the section 6 list: `LineFormat`/`Tag`, `CommandAlign`,
 `ShapeFinder` decision (item 4).  The `isSame()` chore (section 4) did
 not arise: it bites only when adopting upstream's property-list
 classes, and this port keeps the fork's.
+
+## 33. Re-evaluation (2026-08-26): the section 6 plan, re-measured
+
+Section 6 was written on 2026-08-24 against upstream `2bb00c9186` and
+fork `4b5977c92b`.  Since then the fork gained 188 commits (31 of them
+in TechDraw) and upstream gained 114 (10 in TechDraw).  The plan does
+not survive unchanged: **item 4, ranked last and gated on an
+architectural decision, is now the cheapest remaining work, and item 1,
+"do this first regardless", has lost its only customer.**
+
+### 33.1 The numbers, re-measured
+
+Same BASE trick (`a662fbb2ff`), same exclusions:
+
+| | files | lines | commits |
+| --- | --- | --- | --- |
+| TechDraw, fork, 2026-08-24 | 177 | +4339 / -3100 | 100 |
+| TechDraw, fork, **now** | **204** | **+11497 / -3126** | **159** |
+| TechDraw, upstream, now | 582 | +37168 / -22718 | -- |
+
+The fork's added lines nearly tripled.  Almost all of it is four new
+subsystems, and for the first time there are files the fork has that
+upstream does not:
+
+| file | added |
+| --- | --- |
+| `Gui/PageFeed.cpp` | 1755 |
+| `Gui/ShadedUnderlay.cpp` | 1384 |
+| `App/DrawBrokenView.cpp` | 1228 |
+| `Gui/PageServe.cpp` | 540 |
+
+`DrawBrokenView` came *from* upstream (section 32).  The other three are
+the vg-renderer page feed, the WebSocket page publisher and the shaded
+raster underlay -- fork-only, and they change the porting rules below.
+
+### 33.2 Blocker list: what closed on its own
+
+Four entries of the section 4 list are gone without anyone porting them:
+
+- `App::TransactionName`, `App::TransactionCloseMode` -- **present**, in
+  `src/App/TransactionDefs.h`, landed by `ea62a190fd` (the additive core
+  APIs the Material port needed).
+- `Base::Color::fromValue` -- **present**.
+- `ShapeExtractor::getLocatedShape`, `stripInfiniteShapes`,
+  `isSketchObject` -- **present**, added by the DrawBrokenView port.
+- `Mod/Part/App/FCBRepAlgoAPI_*` -- **not needed**; section 32 showed
+  upstream itself cuts with plain `BRepAlgoAPI_Cut` and the include was
+  vestigial.
+
+`Part::ShapeOption` is still absent and still does not matter: every
+upstream call is
+`getShape(obj, ShapeOption::ResolveLink | ShapeOption::Transform)`, and
+the fork's `Part::Feature::getShape` already defaults `resolveLink=true,
+transform=true`.  The call site becomes `getShape(obj)`.
+
+### 33.3 Item 4 dissolves into a shim -- promote it to first
+
+Section 6 gated `DimensionAutoCorrect` behind "decide whether ShapeFinder
+or the fork's Link resolution is the sub-element story".  Measured, that
+decision does not exist.  The entire `ShapeFinder` surface upstream
+TechDraw touches is **three statics**:
+
+| upstream | fork answer |
+| --- | --- |
+| `ShapeFinder::getLocatedShape(obj, subName)` | `Part::Feature::getShape(obj, subName)` -- the fork resolves link and transform by default |
+| `ShapeFinder::stripInfiniteShapes` | `ShapeExtractor::stripInfiniteShapes`, already present |
+| `ShapeFinder::getLastTerm(subName)` | last `.`-segment helper, ~5 lines |
+
+So: **do not port `ShapeFinder` (582 lines) and do not decide anything.**
+Shim two functions and the fork's own Link resolution *is* the
+implementation, which was always the answer we wanted.
+
+Better still, the dependency stack is already here and the fork has not
+touched it -- a transplant with nothing to re-apply:
+
+| file | fork delta vs BASE |
+| --- | --- |
+| `App/DimensionReferences.{h,cpp}` | +2/-2 |
+| `App/GeometryMatcher.{h,cpp}` | untouched |
+| `App/DimensionGeometry.{h,cpp}` | +9/-0 |
+| `App/DrawViewDimension.{h,cpp}` | +62/-46, all mechanical |
+
+And this is not a missing feature, it is an **older generation of a
+feature the fork already ships**.  The fork has `SavedGeometry` +
+`updateSavedGeometry` / `compareSavedGeometry` / `fixExactMatch` inline
+in `DrawViewDimension`, driven by the same `GeometryMatcher` and gated
+by the same `Preferences::autoCorrectDimRefs()`.  Upstream lifted that
+into a 687-line `DimensionAutoCorrect` and extended it with **similar**
+(not just exact) matching, in 2D and 3D, plus `fixBrokenReferences`.
+The wiring into `DrawViewDimension` is 8 touchpoints, one new
+`BoxCorners` property, and one member.
+
+That makes it a targeted graft, not a wholesale file adoption -- upstream
+also rewrote `DrawViewDimension.cpp` by +801/-1090 for unrelated reasons
+and none of that has to come along.
+
+The fork's `+62/-46` to re-apply on top: `Prop_Output` -> `Prop_None` on
+the format properties, `throw` -> `THROWM`, and the `DrawBrokenView`
+dimension remap in `getDimValue`.
+
+### 33.4 Item 3 splits: one keep, two drops
+
+- **`CommandAlign`** (183 lines) -- **keep**.  Aligns views by rotating
+  so two picked vertices land horizontal or vertical.  Needs only
+  `Gui/Selection`, `DrawUtil`, `QGIView`, `ViewProviderViewPart` -- no
+  `ToolHandler`, no selection-layer contact.  Draws nothing, so no vg or
+  underlay work.  Cheapest real feature on the list.
+- **`QGVNavStyleSolidWorks`** (173 lines) -- **keep, low priority**.
+  Purely additive alongside 11 identical siblings, input-only, so again
+  no vg or underlay work.  Note it is a two-part port: it pairs with
+  upstream's `Gui/Navigation/SolidWorksNavigationStyle.cpp`, which the
+  fork also lacks (and the fork keeps nav styles flat in `src/Gui/`, not
+  in a `Navigation/` subdir).
+- **`LineFormat` / `Tag`** -- **drop**.  Re-read, these are code
+  organization, not features.  `LineFormat` is the fork's class moved out
+  of `Cosmetic.h` into its own file; the only functional gain is a
+  "current line format" global (`getCurrentLineFormat` and friends) and a
+  5-arg constructor.  `Tag` is a uuid base class extracted from
+  `CosmeticEdge` / `CenterLine` / `Geometry` -- it carries `Save`/
+  `Restore`, so adopting it is a persistence change to three
+  document-bearing classes for zero user-visible gain.  `Cosmetic.h` is
+  fork-heavy and `PageFeed` now consumes `LineFormat`.  Not worth it.
+
+`QGIDatumLabel` gets the same verdict as `Tag`: upstream split it out of
+`QGIViewDimension.h`, where the fork still has it.  A split that collides
+with both the fork's QGI rework and the vg dimension capture, for no
+feature.  **Drop.**
+
+### 33.5 Item 1 loses its customer -- demote it
+
+Section 6 said to do `Gui/ToolHandler.h` + `canRecomputeOnWorker` + the
+`Gui::Command` transaction overloads "first regardless".  Two of those
+four unblock nothing now: `TransactionDefs.h` landed on its own (33.2),
+and `ToolHandler`'s only TechDraw consumer is `TechDrawHandler`, which
+is upstream's rewrite of the selection layer -- explicitly scope OUT.
+None of the three items kept above needs any of it.
+
+**Demote to: port on demand.**  It stops being a prerequisite and becomes
+a cost of whichever future feature actually calls for it.
+
+### 33.6 Two new rules, from what the fork built since
+
+**Every ported Gui item now has a second renderer to satisfy.**  A
+TechDraw page is drawn twice here -- Qt `QGraphicsScene`, and the vg
+feed via `PageFeed` for the browser tier -- and `DrawViewPart`
+descendants additionally have to answer to `ShadedUnderlay`.  So the
+port checklist grew a row:
+
+| what the item does | vg / underlay cost |
+| --- | --- |
+| App only (`DimensionAutoCorrect`) | none |
+| input only (`QGVNavStyleSolidWorks`) | none |
+| a command that draws nothing (`CommandAlign`) | none |
+| a new `QGI*` decoration (`QGIBreakLine`, done) | rides the generic `QGIDecoration` capture |
+| a new `DrawViewPart` descendant (`DrawBrokenView`, done) | needs an explicit `ShadedUnderlay` decision -- it was guarded out |
+| **re-shaping an existing `QGI*`** (`QGIDatumLabel`) | **touches `PageFeed`; avoid** |
+
+All three kept items sit in the free rows.  That is not a coincidence --
+it is the same property that made them cheap in the first place.
+
+**The selection layer is diverging faster, not slower.**  All ten
+upstream TechDraw commits since the evaluation land in the files the
+fork rewrote hardest:
+
+| upstream commit | file | fork delta on that file |
+| --- | --- | --- |
+| `bcc15c7632` context-aware context menus (+281) | `MDIViewPage.cpp` | +299/-162, plus split-view integration |
+| `da103eb753` selection helpers -> templates/lambdas | `MDIViewPage.cpp` | same |
+| `3356db3290` balloon selection and hover | `QGIPrimPath.cpp` | +111/-44 |
+| `f217f35957` hover fires twice | `QGIViewBalloon.cpp` | fork reworked hover |
+| `5e469ce2fd` view frame visibility on selection | `QGIView.cpp` | +93/-30 |
+
+`MDIViewPage`, `QGSPage` and `QGVPage` are now *also* wired into the
+split-view `ViewArea` canvas, so they are doubly forked.  Section 6's
+"leave the `QGI*` selection layer alone" holds harder than when it was
+written.  The one upstream item there worth wanting is the context-aware
+context menu (`bcc15c7632`) -- flagged, not scheduled.
+
+### 33.7 The revised order
+
+1. **`DimensionAutoCorrect`** -- see section 34: measured, the class is
+   mostly hollow and what is worth taking is the canonical-frame fix.
+   **Built 2026-08-26.**
+2. **`CommandAlign`** -- additive command, no renderer contact.
+   **Built 2026-08-26.**
+3. **`QGVNavStyleSolidWorks`** + `Gui` `SolidWorksNavigationStyle` --
+   additive, input only, lowest value.
+4. On demand only: `ToolHandler`, `canRecomputeOnWorker`, the
+   `Gui::Command` transaction overloads.
+
+Dropped from the plan: `LineFormat`, `Tag`, `QGIDatumLabel`,
+`ShapeFinder`.  Still scope OUT: the `QGI*` selection layer, upstream's
+`TechDrawHandler`, wholesale adoption.
+
+
+## 34. Implementation status (2026-08-26): items 1 and 2 of 33.7 are built,
+and item 1 turned out to be a bug fix
+
+Section 33.3 promoted `DimensionAutoCorrect` to first on the strength of a
+file-level reading -- 687 lines, "similar-geometry matching, 3D matching,
+broken-reference repair".  Reading the implementation corrects that, and
+the correction is worth more than the original claim.
+
+### 34.1 What upstream's DimensionAutoCorrect actually contains
+
+**All four `findSimilar*` methods are unimplemented stubs.** So are
+`searchViewForSimilarEdge` and the `exact` parameter threaded through
+`searchObjForVert` / `searchObjForEdge`.  Each returns false (or an empty
+reference) after a "not implemented yet" comment.  Phase 2 was designed
+and never written.
+
+**`BoxCorners` is written and never read.** `saveFeatureBox()` fills it
+from the view bounding box; `getSavedBox()` reads it and has no callers.
+It is scaffolding for the phase that does not exist, and adopting it would
+add a persisted property to every dimension in every document for nothing.
+
+So the class is the fork's own exact-match logic, re-housed, plus a 3d
+object cache and a per-reference state vector.  **The fork already ships
+the exact-match logic** -- `SavedGeometry` + `updateSavedGeometry` /
+`compareSavedGeometry` / `fixExactMatch`, driven by the same
+`GeometryMatcher` and gated by the same `Preferences::autoCorrectDimRefs()`
+-- with `handleNoExactMatch()` sitting where upstream's phase 2 would go,
+carrying the comment "this is where we insert the clever logic".  Both
+sides stopped at the same place.
+
+### 34.2 The one thing in there that matters, and it is a bug
+
+Upstream's `ReferenceEntry::asCanonicalTopoShape` removes the view
+**rotation** as well as the scale.  The fork's `asTopoShape` removes only
+the scale.  That is not a refactor, it is a defect:
+
+> Saved reference geometry carried the view rotation it was captured at,
+> and was compared against display geometry carrying the rotation the view
+> has now.  Rotate a view and every reference looks changed.
+
+Measured, `100x100` square view, dimension on `(Vertex0, Vertex1)`:
+
+| | references | value |
+| --- | --- | --- |
+| at rotation 0 | `(Vertex0, Vertex1)` | 100.000000 |
+| after rotating 90 deg | **`(Vertex1, Vertex3)`** | 100.000000 |
+
+The failed comparison sends it into the exact-match recovery, and on a
+symmetric shape a rotated corner sits exactly where a different corner
+used to be -- so the recovery "repairs" the dimension onto geometry the
+user never picked, and leaves it there.  The value survives only because
+the square is symmetric.
+
+Fixed in `37cb56d3a0` by comparing in a canonical frame (unscaled and
+unrotated) when saving, when comparing, and when searching for a
+replacement.
+
+**Trap:** do not port `asCanonicalTopoShape` verbatim.  Upstream's
+`asTopoShape` returns raw display geometry and the canonical form removes
+the scale; the fork's `asTopoShape` has already removed it.  Copying the
+helper across unscales twice.
+
+**Trap:** the stored frame negates Y relative to the Python accessors.
+`getVertexBySelection` reporting `(-50, -50)` corresponds to `(-50, 50)`
+in `SavedGeometry`.  A test that constructs saved geometry from accessor
+values without the flip matches neither frame and looks like a broken fix.
+That cost one debugging round.
+
+### 34.3 Migrating documents written before the fix
+
+There is no version stamp on `SavedGeometry`, so
+`migrateSavedGeometryFrame()` tests the frame itself: an entry that fails
+to match canonically but matches once the rotation is put back was written
+by the old code and is rewritten in place; one that matches canonically is
+already current; one that matches neither is a genuine change and is left
+to the normal path.  Exact, lossless, and it needs no new property.
+
+**Trap:** `execute()` also runs while the document is still restoring,
+against a view that has not projected yet. The first version marked the
+migration done on that pass, spent the one chance a document gets, and let
+the wrong-corner repoint through anyway.  The migration now reports
+whether it could evaluate, and is only marked done once the view has
+geometry.
+
+### 34.4 CommandAlign
+
+Ported in `89c3734af6`, +390/-0 across 12 files, nothing removed and
+nothing in the selection layer touched.  Supporting helpers are new entry
+points beside existing ones: `DrawUtil::getIndexFromName` over a list and
+`isGeomTypeConsistent`, `QGIVertex::toVector2d` and
+`vector2dBetweenPoints`, `QGIView::getObjects<T>`, three
+`DrawGuiUtil::rotateToAlign` overloads.
+
+Two deliberate deviations: the rotation is wrapped in
+`openCommand`/`commitCommand` (upstream sets the property bare, so its
+version leaves no undo entry), and the selected sub-elements are found by
+searching the selection for the view rather than taking entry 0, because a
+Link selection resolves to an object that need not be first.
+
+**Trap:** `CoarseView` suppresses `QGIVertex` items entirely
+(`QGIViewPart::showVertices` returns false for it), so the two-vertex path
+cannot fire in a coarse view.  That is upstream behaviour, not a port
+artifact -- but it means a headless-style smoke with `CoarseView=True`
+tests nothing here and hangs on the warning modal.
+
+### 34.5 Test state
+
+Rigs in the session scratchpad, following the DrawBrokenView convention of
+not committing them: `align_smoke.py` (20/20), `dimref_suite.py`
+(rotation invariance across 90/45/180/-30, plus a genuine renumbering that
+must still be recovered), `mig_write.py` + `mig_read.py` (the two-process
+old-format migration).  All green under Xvfb on the real GPU.
+
+### 34.6 Where this leaves the plan
+
+Item 1 of 33.7 is **done as a bug fix, not as a class adoption**.  If
+upstream ever implements the phase-2 stubs, the class becomes worth
+revisiting -- and the fork's `handleNoExactMatch()` is the hook it would
+land on.  Until then there is nothing there to take.
+
+Item 2 is done.  **Item 3 (`QGVNavStyleSolidWorks` + the `Gui`
+`SolidWorksNavigationStyle` the fork also lacks) is the only thing left on
+the revised order**, and it is the lowest-value entry on it.

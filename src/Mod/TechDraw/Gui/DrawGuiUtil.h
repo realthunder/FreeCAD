@@ -27,6 +27,7 @@
 #include <QCoreApplication>
 #include <QGraphicsItem>
 
+#include <Base/Tools2D.h>
 #include <Base/Vector3D.h>
 #include <Mod/TechDraw/TechDrawGlobal.h>
 
@@ -45,6 +46,7 @@ class Feature;
 
 namespace TechDraw {
 class DrawPage;
+class DrawViewPart;
 class LineGenerator;
 }
 namespace Gui {
@@ -53,6 +55,8 @@ class Command;
 
 namespace TechDrawGui
 {
+class QGIEdge;
+class QGIVertex;
 
 /// Convenient utility functions for TechDraw Gui Module
 class TechDrawGuiExport DrawGuiUtil {
@@ -80,6 +84,16 @@ class TechDrawGuiExport DrawGuiUtil {
 
     static bool isSelectedInTree(QGraphicsItem *item);
     static void setSelectedTree(QGraphicsItem *item, bool selected);
+
+    //! rotate the owning view so that the picked geometry lines up with
+    //! direction.  the view is rotated by the smallest angle that achieves
+    //! the alignment, so a 145 degree correction is applied as -35.
+    static void rotateToAlign(const QGIEdge* edge, const Base::Vector2d& direction);
+    static void rotateToAlign(const QGIVertex* p1, const QGIVertex* p2,
+                              const Base::Vector2d& direction);
+    static void rotateToAlign(TechDraw::DrawViewPart* view,
+                              const Base::Vector2d& oldDirection,
+                              const Base::Vector2d& newDirection);
 
 };
 

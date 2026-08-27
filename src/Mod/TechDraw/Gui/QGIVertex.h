@@ -23,6 +23,7 @@
 #ifndef DRAWINGGUI_QGRAPHICSITEMVERTEX_H
 #define DRAWINGGUI_QGRAPHICSITEMVERTEX_H
 
+#include <Base/Tools2D.h>
 #include <Mod/TechDraw/TechDrawGlobal.h>
 
 # include "QGIPrimPath.h"
@@ -43,6 +44,11 @@ public:
 
     float getRadius() { return m_radius; }
     virtual void setRadius(float r);
+
+    //! own position in scene coordinates
+    Base::Vector2d toVector2d() const;
+    //! the vector drawn from own position to p2
+    Base::Vector2d vector2dBetweenPoints(const QGIVertex* p2) const;
 
 protected:
     bool multiselectEligible() override { return true; }
