@@ -22,6 +22,10 @@
 
 #include "PreCompiled.h"
 
+#ifndef _PreComp_
+# include <QGuiApplication>
+#endif
+
 #include <App/Application.h>
 #include <Base/Parameter.h>
 
@@ -43,6 +47,28 @@ enum class Target { Tab, Split, NewSplit, Floating };
 bool useViewArea()
 {
     return ViewParams::getUseViewArea();
+}
+
+bool inversionSuppressed = false;
+
+// The escape hatch of docs/ViewPlacement.md sec 4.2. The PHYSICAL key
+// state at request time is what counts, not the modifiers carried by
+// whatever event started the chain -- an opener is often several
+// signals away from the click or keystroke the user made.
+bool altInversion()
+{
+    return !inversionSuppressed
+        && QGuiApplication::queryKeyboardModifiers().testFlag(Qt::AltModifier);
+}
+
+// Tab <-> Split for this one view. Floating is not part of the
+// inversion: it is a different axis, and a user who asked for floating
+// windows did not ask for a tab.
+Target invert(Target target)
+{
+    return target == Target::Tab ? Target::Split
+         : target == Target::Floating ? Target::Floating
+         : Target::Tab;
 }
 
 Target targetFor(ViewPlacement::Category cat)
@@ -184,11 +210,71 @@ void ViewPlacement::placeTab(MDIView *view, Gui::Document *doc)
         getMainWindow()->addWindow(view);
 }
 
+namespace {
+
+// Alt on an already-open view (docs/ViewPlacement.md sec 4.2): move it
+// to the inverted placement. Specified as close-and-reopen, done as a
+// state-preserving move -- observably the same, minus the state loss.
+void relocate(MDIView *view, Gui::Document *doc)
+{
+    if (auto area = ViewArea::areaOf(view)) {
+        // In a cell: pop out to its own tab. The emptied cell goes only
+        // AFTER the view has a new home -- closing it first can close
+        // the whole area, and a document momentarily without any view
+        // is a question nobody here wants to answer.
+        auto cell = area->cellOf(view);
+        ViewArea::detachViewForHosting(view);
+        ViewPlacement::placeTab(view, doc);
+        getMainWindow()->setActiveWindow(view);
+        if (cell)
+            area->closeCell(cell);
+        return;
+    }
+
+    // In a tab (or floating): drop into the document's area. NewSplit,
+    // not Split: a move must not evict -- and close -- the view sitting
+    // in the cell the reuse step would have picked.
+    ViewArea *host = hostArea(ViewPlacement::Category::DocView, doc);
+    if (!host || host->cellOf(view)) {
+        getMainWindow()->setActiveWindow(view);
+        return;
+    }
+    ViewArea::detachViewForHosting(view);
+    if (!placeInArea(host, view, Target::NewSplit))
+        ViewPlacement::placeTab(view, doc);  // refused: put it back
+    getMainWindow()->setActiveWindow(view);
+}
+
+} // anonymous namespace
+
+ViewPlacement::SuppressAltInversion::SuppressAltInversion(bool suppress)
+    : _previous(inversionSuppressed)
+{
+    inversionSuppressed = inversionSuppressed || suppress;
+}
+
+ViewPlacement::SuppressAltInversion::~SuppressAltInversion()
+{
+    inversionSuppressed = _previous;
+}
+
+void ViewPlacement::reveal(MDIView *view, Gui::Document *doc, bool alreadyOpen)
+{
+    if (!view)
+        return;
+    if (alreadyOpen && altInversion())
+        relocate(view, doc);
+    else
+        getMainWindow()->setActiveWindow(view);
+}
+
 void ViewPlacement::place(MDIView *view, Category cat, Gui::Document *doc)
 {
     if (!view)
         return;
     Target target = targetFor(cat);
+    if (altInversion())
+        target = invert(target);
 
     if (target == Target::Floating) {
         // Not through placeTab: a floating 3D view must not be wrapped

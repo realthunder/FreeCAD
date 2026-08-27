@@ -53,6 +53,7 @@
 
 #include "Command.h"
 #include "Action.h"
+#include "ViewPlacement.h"
 #include "Application.h"
 #include "BitmapFactory.h"
 #include "Control.h"
@@ -445,12 +446,33 @@ void Command::onInvoke(int index) {
     }
 }
 
+namespace {
+
+// Does this command's own shortcut carry Alt? Then Alt is down because
+// the user pressed that shortcut, not because they are asking for the
+// inverted view placement (docs/ViewPlacement.md sec 4.2, caveat b).
+bool shortcutCarriesAlt(const Gui::Action *action)
+{
+    if (!action || !action->action())
+        return false;
+    const QKeySequence seq = action->action()->shortcut();
+    for (int i = 0; i < seq.count(); ++i) {
+        if (seq[i].keyboardModifiers().testFlag(Qt::AltModifier))
+            return true;
+    }
+    return false;
+}
+
+} // anonymous namespace
+
 void Command::invoke(int i, TriggerSource trigger)
 {
     if (trigger != TriggerNone)
         CmdHistoryAction::onInvokeCommand(getName());
 
     CommandTrigger cmdTrigger(_trigger,trigger);
+    ViewPlacement::SuppressAltInversion altInversion(
+            trigger != TriggerNone && shortcutCarriesAlt(_pcAction));
 
     onInvoke(i);
 

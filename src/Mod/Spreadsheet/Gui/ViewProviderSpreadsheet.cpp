@@ -110,22 +110,24 @@ QIcon ViewProviderSheet::getIcon() const
 bool ViewProviderSheet::setEdit(int ModNum)
 {
     if (ModNum == ViewProvider::Default) {
-        if (!this->view) {
+        const bool alreadyOpen = (this->view != nullptr);
+        if (!alreadyOpen) {
             showSpreadsheetView();
             view->viewAll();
         }
-        Gui::getMainWindow()->setActiveWindow(this->view);
+        Gui::ViewPlacement::reveal(this->view, getDocument(), alreadyOpen);
     }
     return false;
 }
 
 bool ViewProviderSheet::doubleClicked()
 {
-    if (!this->view) {
+    const bool alreadyOpen = (this->view != nullptr);
+    if (!alreadyOpen) {
         showSpreadsheetView();
         view->viewAll();
     }
-    Gui::getMainWindow()->setActiveWindow(this->view);
+    Gui::ViewPlacement::reveal(this->view, getDocument(), alreadyOpen);
     return true;
 }
 

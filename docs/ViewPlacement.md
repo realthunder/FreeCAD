@@ -471,3 +471,53 @@ the split direction combo and the Alt hint line.
   second 3D view as a new tab -- and splits again once the value goes back.
 - P2 (the Alt inversion itself) is still not built; the hint line announces
   it, which was the ruling.
+
+## 11. P2 implementation notes (2026-08-28)
+
+The Alt inversion of sec 4.2, live. Holding Alt while something opens
+swaps Tab and Split for that one view; holding it while REVEALING a view
+that is already open moves that view to the inverted placement instead.
+
+- **The modifier is read from the X server, not from an event**:
+  `QGuiApplication::queryKeyboardModifiers()` at request time. An opener
+  is usually several signals away from the click or keystroke that
+  started it, and the event's own modifiers are long gone by then.
+- **Floating is not part of the inversion.** It is a different axis, and
+  a user who asked for floating windows did not ask for a tab.
+- **The relocate is a move, not a close-and-reopen** (sec 4.2 allowed
+  either): `ViewArea::detachViewForHosting` then re-place. Out of a cell
+  it goes to a tab; out of a tab it goes into the document's area. Two
+  details matter. The emptied cell is closed only AFTER the view has its
+  new home -- closing it first can close the whole area, leaving the
+  document momentarily with no view at all. And the inbound direction
+  uses `NewSplit`, never `Split`: a move must not evict, and thereby
+  close, whatever sits in the cell the reuse step would have picked.
+- **Reveal has to know whether the view is new.** The openers that
+  reveal (TechDraw and Drawing pages, spreadsheets, text documents) call
+  `ViewPlacement::reveal(view, doc, alreadyOpen)` and pass false for a
+  view the policy has just created -- that one was placed with the
+  inversion already applied, and inverting it again would only undo it.
+- **Caveat (b) is honored in one place**: `Command::invoke` wraps the
+  call in `ViewPlacement::SuppressAltInversion` when the invocation came
+  from an action whose own shortcut carries Alt. Alt is then down
+  because the user pressed that shortcut.
+- Verified by an Xvfb probe (`probe_alt.py`, this session's scratchpad)
+  that holds Alt **for real** through XTEST -- the policy queries the
+  server, so a synthesized Qt event would not be seen. All eight legs
+  pass: with the preference on Split a plain open splits and an Alt open
+  takes a tab; with it on Tab the two swap; an open spreadsheet
+  relocates out of its cell to a tab and back into a cell, the same view
+  object surviving both moves; a plain reveal moves nothing; a command
+  given an `Alt+Y` shortcut does NOT invert while the same command with
+  `Ctrl+Shift+Y` does.
+
+Two notes for whoever probes this next. The preference dialog's OK
+writes EVERY page's widgets, so a probe that opens it leaves explicit
+values in the real `user.cfg` -- and an exit-time abort (WSLg) can lose
+the probe's own cleanup, so a later probe silently runs against the
+value the earlier one left. Set the preference each leg depends on
+rather than trusting the ambient one. And PySide hands back an
+invalidated wrapper once a new widget lands on a freed address, which
+makes `findChildren` raise from the inside where no per-item filter can
+help: ask a view where it lives by walking its own ancestors instead of
+scanning the widget tree.

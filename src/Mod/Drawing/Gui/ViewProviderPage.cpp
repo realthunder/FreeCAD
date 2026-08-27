@@ -151,8 +151,9 @@ bool ViewProviderDrawingPage::setEdit(int ModNum)
 
 bool ViewProviderDrawingPage::doubleClicked(void)
 {
+    const bool alreadyOpen = (this->view != nullptr);
     show();
-    Gui::getMainWindow()->setActiveWindow(this->view);
+    Gui::ViewPlacement::reveal(this->view, getDocument(), alreadyOpen);
     return true;
 }
 

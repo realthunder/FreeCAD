@@ -61,6 +61,37 @@ GuiExport void place(MDIView *view, Category cat, Gui::Document *doc);
  */
 GuiExport void placeTab(MDIView *view, Gui::Document *doc);
 
+/** Rule 0, reveal-if-open: activate \a view, which the opener found
+ * already open. When \a alreadyOpen is true and Alt is held, the view
+ * is RELOCATED to the inverted placement first -- one sitting in a cell
+ * pops out to its own tab, a tabbed one drops into the document's area
+ * (docs/ViewPlacement.md sec 4.2).
+ *
+ * A view the policy has just created passes \a alreadyOpen false: it
+ * was placed with the inversion already applied, and inverting it a
+ * second time would only undo it.
+ */
+GuiExport void reveal(MDIView *view, Gui::Document *doc, bool alreadyOpen);
+
+/** Scoped suppression of the Alt inversion.
+ *
+ * A command whose own keyboard shortcut carries Alt has Alt physically
+ * down at the moment it fires, which is not the user asking for the
+ * inverted placement (docs/ViewPlacement.md sec 4.2, caveat b).
+ */
+class GuiExport SuppressAltInversion
+{
+public:
+    explicit SuppressAltInversion(bool suppress = true);
+    ~SuppressAltInversion();
+
+    SuppressAltInversion(const SuppressAltInversion &) = delete;
+    SuppressAltInversion &operator=(const SuppressAltInversion &) = delete;
+
+private:
+    bool _previous;
+};
+
 } // namespace ViewPlacement
 } // namespace Gui
 

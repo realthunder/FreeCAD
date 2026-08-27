@@ -148,7 +148,9 @@ bool ViewProviderTextDocument::activateView() const
     for (auto v : views) {
         auto textView = static_cast<TextDocumentEditorView *>(v);
         if (textView->getTextObject() == getObject()) {
-            getMainWindow()->setActiveWindow(textView);
+            // Always an already-open view: this is the reveal half of
+            // rule 0, so Alt relocates it.
+            ViewPlacement::reveal(textView, getDocument(), true);
             return true;
         }
     }

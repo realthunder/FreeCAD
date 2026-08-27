@@ -266,9 +266,13 @@ void ViewProviderPage::unsetEdit(int ModNum)
 
 bool ViewProviderPage::doubleClicked(void)
 {
+    // Whether the page was already open decides what Alt means here: a
+    // view the policy just placed is placed inverted already, an
+    // existing one gets relocated (docs/ViewPlacement.md sec 4.2).
+    const bool alreadyOpen = (m_mdiView != nullptr);
     show();
     if (m_mdiView) {
-        Gui::getMainWindow()->setActiveWindow(m_mdiView);
+        Gui::ViewPlacement::reveal(m_mdiView, getDocument(), alreadyOpen);
     }
     return true;
 }
