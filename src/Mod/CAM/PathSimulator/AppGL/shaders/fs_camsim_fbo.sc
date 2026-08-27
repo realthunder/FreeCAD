@@ -72,12 +72,11 @@ void main()
 	if (u_simComposite.y > 0.5)
 	{
 		vec4 pos = texture2D(s_simPosition, v_texcoord0);
-		// Texels the geometry pass never wrote -- the tool path over
-		// the background, which draws into a target that shares only
-		// colour and depth -- have no position to place. They take the
-		// far plane, so the host's own geometry decides whether they
-		// are seen: the path is an overlay on the stock, not a solid
-		// with a depth of its own.
+		// Texels the geometry pass never wrote have no position to
+		// place and take the far plane. Since the tool path moved to
+		// the overlay run (sec 10.4) every covered texel should carry
+		// the marker; the guard stays so a future colour-only writer
+		// cannot place phantom geometry at the view-space origin.
 		depth = 1.0;
 		if (pos.w > 0.5)
 		{

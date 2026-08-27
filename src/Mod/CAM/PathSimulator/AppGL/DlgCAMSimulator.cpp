@@ -633,6 +633,12 @@ unsigned DlgCAMSimulator::framePasses() const
     return SimPassCount;
 }
 
+unsigned DlgCAMSimulator::overlayPasses() const
+{
+    // The tool-path passes (docs/CAMSimRenderPort.md sec 10.4).
+    return SimOverlayPasses;
+}
+
 void DlgCAMSimulator::attachToHost(Gui::View3DInventorViewer* viewer)
 {
     // Legacy GL owns the widget's own context and cannot draw inside

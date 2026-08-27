@@ -164,12 +164,6 @@ protected:
     Render::TextureHandle mRNormalZTexture;
     Render::TextureHandle mRDepthTexture;
     Render::TargetHandle mRTarget;
-    // Colour + depth only, sharing the G-buffer's attachments: the
-    // path-line pass draws here so a program with one output cannot
-    // scribble undefined values into the position/normal/prepass
-    // attachments (an AO streak along the rapid lines, found the
-    // moment the effect first ran).
-    Render::TargetHandle mRPathTarget;
     // The resolve's own output, and the target that holds it. The
     // deferred resolve lands here rather than straight in the
     // surface's composite target, so that the only texture the

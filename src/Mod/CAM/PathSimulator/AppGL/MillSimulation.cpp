@@ -421,9 +421,10 @@ void MillSimulation::RenderPath()
     if (!mViewPath) {
         return;
     }
-    gSimDraw.pass = SimPassPath;
+    gSimDraw.pass = SimPassPathVisible;
     simDisplay.SetupLinePathPass(mPathStep, false);
     millPathLine.Render();
+    gSimDraw.pass = SimPassPathHidden;
     simDisplay.SetupLinePathPass(mPathStep, true);
     millPathLine.Render();
     if (gSimDraw.legacyGL) {
@@ -480,7 +481,13 @@ void MillSimulation::Render()
         RenderSimulation();
         RenderTool();
         RenderBaseShape();
-        RenderPath();
+        if (gSimDraw.legacyGL) {
+            // Legacy draws the path into its FBO with the rest; the
+            // facade draws it below, every frame -- it is an
+            // overlay-run pass now, not part of the cached G-buffer
+            // (docs/CAMSimRenderPort.md sec 10.4).
+            RenderPath();
+        }
         simDisplay.updateDisplay = false;
     }
 
@@ -492,6 +499,10 @@ void MillSimulation::Render()
         simDisplay.RunAOFacade(gSimDraw.surface, mViewSSAO, recalculated);
         simDisplay.RenderResultFacade(gSimDraw.surface, SimPassResolve);
         simDisplay.RenderCompositeFacade(gSimDraw.surface, SimPassComposite);
+        // The path draws against the depth the composite just wrote,
+        // in the overlay run -- every frame, not only on a
+        // recalculate.
+        RenderPath();
     }
 
     /*   if (mDebug > 0) {

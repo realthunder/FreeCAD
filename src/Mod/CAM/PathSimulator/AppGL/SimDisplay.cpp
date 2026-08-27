@@ -268,7 +268,6 @@ void SimDisplay::CreateDisplayFbos()
         Render::TextureHandle colors[4] = {mRColTexture, mRPosTexture,
                                            mRNormTexture, mRNormalZTexture};
         mRTarget = dev->createTarget(colors, 4, mRDepthTexture);
-        mRPathTarget = dev->createTarget(&mRColTexture, 1, mRDepthTexture);
         // The resolve's output. Colour only -- the composite that
         // reads it needs no depth of its own, and giving it none keeps
         // the sim's depth/stencil out of the pass that crosses into a
@@ -387,9 +386,6 @@ void SimDisplay::CleanFbos()
         if (mRTarget.valid()) {
             dev->destroy(mRTarget);
         }
-        if (mRPathTarget.valid()) {
-            dev->destroy(mRPathTarget);
-        }
         if (mRColTexture.valid()) {
             dev->destroy(mRColTexture);
         }
@@ -413,7 +409,6 @@ void SimDisplay::CleanFbos()
         }
     }
     mRTarget = {};
-    mRPathTarget = {};
     mRResolveTarget = {};
     mRResolveTexture = {};
     mRColTexture = {};
@@ -819,8 +814,8 @@ void SimDisplay::ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& 
     if (!surface || !mRTarget.valid()) {
         return;
     }
-    for (unsigned p = SimPassScene; p <= SimPassPath; p++) {
-        surface->setPassTarget(p, p == SimPassPath ? mRPathTarget : mRTarget);
+    for (unsigned p = SimPassScene; p <= SimPassBaseShape; p++) {
+        surface->setPassTarget(p, mRTarget);
         surface->setPassRect(p, 0, 0, mWidth, mHeight);
         // The CSG depends on draws landing in submission order.
         surface->setPassSequential(p, true);
@@ -831,7 +826,6 @@ void SimDisplay::ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& 
                           Render::ClearColor | Render::ClearDepth
                               | Render::ClearStencil);
     surface->setPassClear(SimPassBaseShape, 0, 1.0f, 0, Render::ClearNone);
-    surface->setPassClear(SimPassPath, 0, 1.0f, 0, Render::ClearNone);
     const float* view = &mMatLookAt[0][0];
     surface->setPassTransform(SimPassScene, view, &mProjMat[0][0]);
     // The base shape's glPolygonOffset(0, -2) became this pass's
@@ -841,7 +835,24 @@ void SimDisplay::ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& 
     mat4x4_dup(biased, mProjMat);
     biased[2][2] *= 0.99999f;
     surface->setPassTransform(SimPassBaseShape, view, &biased[0][0]);
-    surface->setPassTransform(SimPassPath, view, &mProjMat[0][0]);
+    // The tool-path passes: the overlay run, drawn after the
+    // composite into its destination against the depth it wrote
+    // (docs/CAMSimRenderPort.md sec 10.4). Their camera is the
+    // TARGET's -- the host's when attached, the sim's own when not --
+    // matching the space the composite's depth is in.
+    float pathView[16];
+    float pathProj[16];
+    if (!surface->hostCamera(pathView, pathProj)) {
+        std::memcpy(pathView, &mMatLookAt[0][0], sizeof(pathView));
+        std::memcpy(pathProj, &mProjMat[0][0], sizeof(pathProj));
+    }
+    for (unsigned p = SimPassPathVisible; p <= SimPassPathHidden; p++) {
+        surface->setPassTarget(p, surface->hostTarget());
+        surface->setPassRect(p, 0, 0, mWidth, mHeight);
+        surface->setPassSequential(p, false);
+        surface->setPassClear(p, 0, 1.0f, 0, Render::ClearNone);
+        surface->setPassTransform(p, pathView, pathProj);
+    }
     // The resolve lands in the sim's own colour target, cleared fully
     // transparent so that the G-buffer's coverage survives as alpha
     // for the composite to blend with.
@@ -909,8 +920,14 @@ void SimDisplay::SetupLinePathPass(int curSegment, bool isHidden)
         shaderLinePath.UpdateViewMat(mMatLookAt);
     }
 
-    // The backend draws 1px lines; the glLineWidth(2) has no
-    // equivalent (accepted, docs/CAMSimRenderPort.md section 5).
+    // Facade: an overlay-run pass over the composited image. The
+    // destination holds LINEAR light when the host's scene target
+    // does, and the line colours are display-space constants -- the
+    // shader decodes them on u_simParams.x, like the composite
+    // decodes its image (docs/CAMSimRenderPort.md sec 10.4).
+    gSimDraw.params[0] =
+        (gSimDraw.surface && gSimDraw.surface->hostLinearColor()) ? 1.0f
+                                                                  : 0.0f;
     gSimDraw.state.depthFunc =
         isHidden ? Render::CompareFunc::Greater : Render::CompareFunc::Less;
     gSimDraw.state.depthWrite = false;

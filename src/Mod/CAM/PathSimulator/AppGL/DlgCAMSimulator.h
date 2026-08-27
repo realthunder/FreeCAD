@@ -142,6 +142,7 @@ public:
     /// attached, and by paintGL through the standalone surface when
     /// not.
     unsigned framePasses() const override;
+    unsigned overlayPasses() const override;
     void drawFrame(Render::DrawSurface& surface) override;
 
     /// Try to draw inside \a viewer's renderer instead of this
