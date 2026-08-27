@@ -1804,23 +1804,163 @@ override. Its V2 verdict ("conflicting cell splits off") is inverted on
 purpose.
 
 **What remains: the per-object-per-view override**, the first clause of
-the resolution and the reason the Rhino model was chosen. The
-architecture now carries it -- `DrawCall::objectKey` resolves to
-`ObjectInfo{doc, obj}` already -- so what is missing is storage and UI:
+the resolution and the reason the Rhino model was chosen. Its design is
+5.9 -- an earlier plan that stored the map on every
+`ViewProviderDocumentObject` was implemented and then withdrawn on the
+user's ruling, so 5.9 is the one to build from.
 
-- `App::PropertyMap ViewDisplayModes` on `ViewProviderDocumentObject`,
-  keyed by `MDIView::getPersistentName()`, which is already unique per
-  view and already saved in `GuiDocument.xml`. No new persistence
-  format.
-- A transient `App::PropertyEnumeration DisplayModeInView` in the
-  property editor, enum `["Use View Mode"] + getDisplayModes()`, reading
-  and writing the entry for the ACTIVE view and refreshed when the
-  active view changes -- the user's choice among the three forms
-  offered. The property editor has no `PropertyMap` item, so the
-  storage map stays hidden.
-- A context submenu ("Display mode in this view") and a "Clear per-view
-  overrides" command, which Rhino ships for the same reason: per-view
+### 5.9 The feature side: the override map lives on the view (2026-08-27)
+
+**User ruling: "store the information in view."** The first approved
+plan -- `App::PropertyMap ViewDisplayModes` on every
+`ViewProviderDocumentObject`, keyed by `MDIView::getPersistentName()` --
+was implemented, then withdrawn: it charges every object in every
+document an empty map (~110 bytes plus a parse) whether or not the
+feature is ever used. The cost of a per-view feature must be per view.
+
+**Storage.** `App::PropertyMap ObjectDisplayModes` on `View3DInventor`,
+a static property beside `DrawStyle`/`ShowNaviCube`/`ThumbnailView`.
+The view is itself a property container whose `Save` is embedded in
+`GuiDocument.xml` per view (`Document.cpp` writes `view->Save()` into
+the `<View3D>` element), so the map needs no key (the view is the key),
+no hand-rolled persistence, and costs one empty map per VIEW. The
+property editor has no `PropertyMap` item, so the map stays Hidden.
+
+Contrast with show-on-top, the other per-view object list: that one is
+a lazily created dynamic `App::PropertyStringList "OnTopObjects"` on
+the APP document with `"<viewID>:<subname>"` entries and a hand-rolled
+save/restore pair in `Document.cpp` -- machinery a view property gets
+for free. Migrating it onto the view is filed as a follow-up task; the
+legacy document property must keep restoring for existing files.
+
+**Entries -- both semantics, per the user's ruling of 2026-08-27:**
+
+- key, path form: a subname path rooted at a top-level object of the
+  view's document (`"Asm.Sub.Part."`, show-on-top's shape) -- a
+  CONTEXT-AWARE override naming one occurrence. A cross-document leaf
+  is reached through the local Link in the path, so no document prefix
+  is needed; this dodges show-on-top's own-document limitation by
+  construction rather than by adding one.
+- key, bare form: an object's internal name with no dot
+  (`"Part"`) -- CONTEXT-FREE, the object wherever it appears in this
+  view.
+- value: a display mode name -- ANY name the target's switch
+  registers, not only the four style names (user extension,
+  2026-08-27; see "Non-standard modes" below). `As Is` as a VALUE
+  means "follow the object's own DisplayMode" -- it escapes a view
+  style that would otherwise override, which is SolidWorks' "Default
+  Display" made explicit.
+- absent: the 5.8 resolution applies unchanged.
+
+The most specific matching entry wins: deepest path first, bare name
+last, and the 5.8 rule that a style applies only where the object's
+switch registers that NAME carries over to overrides verbatim.
+
+**Why context-aware at all -- the precedents.** Every assembly-centric
+CAD keys display overrides by occurrence: SolidWorks' Component
+Display (Wireframe/HLV/HLR/Shaded/Shaded With Edges/Default Display)
+applies per component instance and is held in Display States, so two
+instances of one part differ side by side; CATIA stores graphic
+properties on the Instance versus the Reference with explicit
+inheritance between them; NX saves per-component display overrides in
+the assembly file. Rhino and Blender have no occurrence concept -- the
+block/collection instance OBJECT carries the override, which is
+exactly what our `App::Link` already provides (a Link substitutes its
+own presentation for the linked object's; that IS a context-aware
+display override, one container level deep). In a Link-based assembly
+every occurrence is a real Link object, so the bare form alone already
+matches Rhino/Blender power; the path form adds the shared
+sub-assembly case -- `AsmA.Sub.Part` styled apart from
+`AsmB.Sub.Part` -- the same case show-on-top's paths exist for.
+
+**Resolution -- and the finding that shaped it.** The backend's
+`DrawCall::objectKey` is a hash of the chain of `SoFCSelectionRoot`
+selnodeids (`NodeKey`), so it is already OCCURRENCE identity: one Part
+under two Links yields two keys. But `NodeKey::Origin` records only
+the DEEPEST chain node's `{doc, obj}` (`noteOrigin`), so a draw under
+a container names the leaf child, not the container -- which means
+even a bare-form override on a Link/group/assembly needs ancestry
+matching, or it would only ever work on naked leaf objects. Both
+forms therefore share one mechanism:
+
+- `NodeKey::Origin` grows into the PATH of chain objects (every
+  chain node owned by a ViewProviderDocumentObject, deepest last),
+  captured where the origin is captured today -- key composition, the
+  only moment the whole chain is in hand -- and deduplicated per
+  unique key, so the added string cost is bounded by the number of
+  distinct keys, not draws. `Render::ObjectInfo` carries the path.
+- The view hands its backend the name-keyed table; the backend
+  resolves it ONCE into `objectKey -> style mask` against the
+  `ObjectInfo` paths (rooted-prefix match for path entries,
+  contains-element for bare entries), caches the result, and
+  invalidates on `Renderer::objectInfoVersion()` or a table change.
+- `BGFXView::submit` consults that map as the FIRST clause of the 5.8
+  resolution.
+
+**Non-standard modes (user extension, 2026-08-27).** An override value
+that is one of the four style names resolves on the shared superset
+capture as a mask, exactly as a view style does. A value naming any
+OTHER registered mode -- Points' `Point`/`Shaded`/`Color`, FemMesh's
+six own names, a workbench's custom mode -- is a DIFFERENT SUBGRAPH:
+no mask over the superset capture can produce it. Those resolve by
+additive capture:
+
+- The views sharing a capture (one viewer, or a canvas's cells)
+  assemble an INTEREST SET from their tables: object path -> the set
+  of non-standard mode names any override wants. Handed to the
+  capture side; changing it invalidates the affected object's cache
+  and re-captures (a user gesture, so the cost lands on an edit, not
+  on a frame).
+- For an object in the interest set, `SoFCSwitch::doAction` traverses
+  the named children IN ADDITION to the superset child, each under
+  `SoFCOwnDisplayModeElement` carrying the name of the mode child
+  being traversed, so every draw is tagged with the mode subgraph it
+  came from. The tag joins the material batching key (which 5.8
+  already grew for own-mode bytes) -- draws from different mode
+  children must not merge.
+- At submit, when the effective mode for (object, view) is
+  non-standard, a draw passes if its captured-mode tag equals the
+  effective name (interned `SbName` compare -- the 5.8 strcmp trap
+  applies), and the superset draws for that object are suppressed in
+  that view. Objects without non-standard overrides pay nothing new.
+
+This also narrows `supersetBlocked()`: an object whose switch lacks a
+`Flat Lines` child but registers a cell's style NAME can now be served
+by capturing that named child additively instead of evicting the cell
+from the canvas -- the same mechanism, driven by the cell style rather
+than an override entry. Worth folding in, but as a follow-up: the
+eviction rule stays correct meanwhile.
+
+**Capture.** A view whose map is non-empty needs the superset capture
+even as a plain non-canvas view: an override can ADD geometry the
+object's own mode does not draw (own mode `Wireframe`, override
+`Shaded`). The plain viewer flips `captureOverrideMode` when overrides
+exist; a canvas treats any cell with overrides as `ServeSuperset`, and
+`supersetBlocked()` applies to override names the same way it applies
+to cell styles (until the additive capture above absorbs it).
+
+**UI.** Two entry points, one per key form:
+
+- The property editor row already settled by the user: a transient
+  `App::PropertyEnumeration DisplayModeInView` on the ViewProvider,
+  enum `["Use View Mode"] + getDisplayModes()`, reading and writing
+  the ACTIVE view's map and refreshed on active-view change. It
+  writes the BARE form -- the property editor shows an object, not an
+  occurrence. Because the list is the ViewProvider's own DisplayMode
+  enum, non-standard modes appear in it with no special-casing --
+  which is what makes the extension above reachable from the UI.
+- A tree context submenu ("Display mode in this view"), sitting where
+  show-on-top's commands sit, writing the PATH form -- the tree item
+  is the thing that knows its full path. Plus a "Clear per-view
+  overrides" command; Rhino ships one for the same reason: per-view
   state that is invisible is hard to reason about.
+
+**Accepted trade-offs** (each matching show-on-top's behavior):
+overrides die with their view (Rhino keeps them object-side; the
+storage ruling decides otherwise), a deleted object leaves an inert
+entry (prune opportunistically, never a load-time error), and edits
+bypass undo (view properties sit outside document transactions, as
+`DrawStyle` already does).
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 
