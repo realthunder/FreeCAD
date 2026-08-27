@@ -90,11 +90,11 @@ public:
     const MillSimulationState& GetState() const;
 
     void SetBoxStock(float x, float y, float z, float l, float w, float h);
-    void SetArbitraryStock(const std::vector<Vertex>& verts, const std::vector<uint16_t>& indices);
+    void SetArbitraryStock(const std::vector<Vertex>& verts, const std::vector<GLushort>& indices);
     void SetStockVisible(bool b);
     bool IsStockVisible() const;
 
-    void SetBaseObject(const std::vector<Vertex>& verts, const std::vector<uint16_t>& indices);
+    void SetBaseObject(const std::vector<Vertex>& verts, const std::vector<GLushort>& indices);
     void SetBaseVisible(bool b);
     bool IsBaseVisible() const;
     /// The base shape is ordinary document geometry, so while the

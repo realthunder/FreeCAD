@@ -110,6 +110,19 @@ struct SimDrawContext
         return surface != nullptr;
     }
 
+    /// True while the LEGACY raw-GL path owns the picture this frame.
+    ///
+    /// The two paths are mutually exclusive, and the flag is what
+    /// makes them so. Every GL call in the simulator is guarded by it,
+    /// because a stray glEnable/glDepthFunc issued while the backend
+    /// owns the context desynchronises the backend's state cache --
+    /// and attached (docs/CAMSimRenderPort.md sec 8) the simulator
+    /// draws inside the HOST's frame, where that would corrupt the
+    /// document's rendering, not just its own.
+    ///
+    /// Set by DlgCAMSimulator::selectRenderPath once per frame.
+    bool legacyGL = false;
+
     void setModel(const mat4x4& modelMat, const mat4x4& normalMat);
     void setColor(float* dst, const vec3& src, float w = 1.0f);
 

@@ -25,6 +25,8 @@
 
 #include "DlgCAMSimulator.h"
 
+#include <App/Application.h>
+#include <Base/Parameter.h>
 #include <Gui/Renderer/DrawSurface.h>
 
 #include "Dummy3DViewer.h"
@@ -39,6 +41,8 @@
 #include <limits>
 #include <numeric>
 
+// include this last as the defines can mess up other includes
+#include "OpenGlWrapper.h"
 
 using namespace std::literals;
 
@@ -217,6 +221,13 @@ void DlgCAMSimulator::setAnimating(bool animating)
 
 void DlgCAMSimulator::startSimulation(const Part::TopoShape& stock, float quality)
 {
+    // Which renderer draws decides which resources get built, and
+    // simulationStarted below reaches a paint before this returns. In
+    // practice the buffers are built inside that frame, where the
+    // driver has already set the flag -- but stating it here as well
+    // means nothing depends on that ordering holding.
+    gSimDraw.legacyGL = useLegacyGL();
+
     mQuality = quality;
     mNeedsInitialize = true;
 
@@ -490,13 +501,37 @@ void DlgCAMSimulator::updateCamera()
 
 void DlgCAMSimulator::initializeGL()
 {
-    // Nothing: the facade surface owns all drawing; the widget's GL
-    // context only receives endFrame's blit.
+    gOpenGLFunctions.initializeOpenGLFunctions();
+}
+
+bool DlgCAMSimulator::forceLegacyGLPref()
+{
+    static ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/CAM"
+    );
+    return hGrp->GetBool("ForceLegacyGLRender", false);
+}
+
+bool DlgCAMSimulator::useLegacyGL()
+{
+    // The legacy raw-GL renderer draws whenever there is no backend to
+    // draw through: BUILD_BGFX off (both default OFF, so this is the
+    // ORDINARY build), a backend that would not start, or a session
+    // where nothing has brought one up yet. Without it the simulator
+    // is simply blank in those builds.
+    //
+    // The preference forces it on where a backend does exist, which is
+    // what makes the two comparable on one machine and gives a user
+    // whose driver the backend dislikes somewhere to stand.
+    if (forceLegacyGLPref()) {
+        return true;
+    }
+    return Render::DrawDevice::instance() == nullptr;
 }
 
 bool DlgCAMSimulator::beginFacadeFrame()
 {
-    if (!Render::DrawDevice::instance()) {
+    if (useLegacyGL() || !Render::DrawDevice::instance()) {
         // Device gone (or never up): surface handles died with it.
         mDrawSurface.reset();
         gSimDraw.surface = nullptr;
@@ -600,7 +635,12 @@ unsigned DlgCAMSimulator::framePasses() const
 
 void DlgCAMSimulator::attachToHost(Gui::View3DInventorViewer* viewer)
 {
-    Render::Renderer* host = viewer ? viewer->getExternalRenderer() : nullptr;
+    // Legacy GL owns the widget's own context and cannot draw inside
+    // somebody else's frame, so a forced-legacy session never attaches.
+    // The device half of useLegacyGL() needs no test here: with no
+    // device there is no renderer to borrow either.
+    Render::Renderer* host =
+        (viewer && !forceLegacyGLPref()) ? viewer->getExternalRenderer() : nullptr;
     if (host == mHostRenderer) {
         return;
     }
@@ -627,6 +667,8 @@ void DlgCAMSimulator::attachToHost(Gui::View3DInventorViewer* viewer)
 
 void DlgCAMSimulator::drawFrame(Render::DrawSurface& surface)
 {
+    // The facade owns this frame; no GL call may reach the context.
+    gSimDraw.legacyGL = false;
     updateResources();
 
     // We need to call updateWindowScale on every render since the devicePixelRatio we get in
@@ -658,11 +700,46 @@ void DlgCAMSimulator::paintGL()
     if (isAttached()) {
         return;
     }
+    if (useLegacyGL()) {
+        drawFrameLegacyGL();
+        return;
+    }
     if (!beginFacadeFrame()) {
         return;
     }
     drawFrame(*mDrawSurface);
     endFacadeFrame();
+}
+
+void DlgCAMSimulator::drawFrameLegacyGL()
+{
+    // The pre-port renderer, drawing straight into this widget's own
+    // GL context. Same simulation, same frame shape as drawFrame():
+    // resources, size, camera, then one ProcessSim. What differs is
+    // where the draws go -- gSimDraw.legacyGL sends them to GL and
+    // leaves the facade dormant, and there is no frame boundary to
+    // open because the widget's context is already current.
+    //
+    // Set before updateResources(), not just around the draws: the
+    // buffers and shaders are built lazily from there, and each path
+    // builds only its own.
+    gSimDraw.legacyGL = true;
+    updateResources();
+
+    const qreal ratio = devicePixelRatioF();
+    updateWindowScale(int(width() * ratio), int(height() * ratio));
+    updateCamera();
+
+    const auto now = clock::now();
+    const auto elapsed = mLastProcessSim != clock::time_point::min()
+        ? now - mLastProcessSim
+        : 0s;
+
+    gSimDraw.surface = nullptr;
+    gSimDraw.submitted = false;
+    mMillSimulator->ProcessSim(elapsed);
+
+    mLastProcessSim = now;
 }
 
 void DlgCAMSimulator::resizeGL(int w, int h)

@@ -6,9 +6,15 @@ set(CAMSimulator_LIBS
     Mesh
     FreeCADApp
     FreeCADGui
-    # All of the simulator's rendering goes through the draw facade
-    # (Gui/Renderer/DrawDevice.h; docs/CAMSimRenderPort.md).
+    # The simulator draws through the draw facade
+    # (Gui/Renderer/DrawDevice.h, docs/CAMSimRenderPort.md) when there
+    # is a backend to draw through, and through the raw-GL renderer
+    # below when there is not -- which is the ordinary build, since
+    # BUILD_BGFX defaults OFF. Both are permanent; neither library set
+    # can go.
     FreeCADRenderer
+    ${QtOpenGL_LIBRARIES}
+    ${OPENGL_gl_LIBRARY}
 )
 
 SET(CAMSimulator_SRCS_Python
@@ -44,6 +50,10 @@ SET(CAMSimulator_SRCS_Core
     MillPathSegment.h
     MillSimulation.cpp
     MillSimulation.h
+    OpenGlWrapper.cpp
+    OpenGlWrapper.h
+    Shader.cpp
+    Shader.h
     SimDrawContext.cpp
     SimDrawContext.h
     SimDisplay.cpp

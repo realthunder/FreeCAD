@@ -76,7 +76,7 @@ public:
 
 public:
     std::vector<Vertex> verts;
-    std::vector<uint16_t> indices;
+    std::vector<GLushort> indices;
     bool needsUpdate = false;
 };
 
@@ -189,6 +189,21 @@ protected:
     // host owns the boundary.
     bool beginFacadeFrame();
     void endFacadeFrame();
+
+    /// Whether the legacy raw-GL renderer draws this frame instead of
+    /// the facade. True when there is no backend device to draw
+    /// through -- which is the ordinary build, since BUILD_BGFX
+    /// defaults OFF -- or when the Mod/CAM ForceLegacyGLRender
+    /// preference asks for it. See the definition.
+    static bool useLegacyGL();
+    /// The Mod/CAM ForceLegacyGLRender preference on its own, without
+    /// the device test. Changing it takes effect when the simulator is
+    /// reopened: the buffers and shaders a running simulation holds
+    /// were built for the path that was in force when it was set up.
+    static bool forceLegacyGLPref();
+    /// One legacy-GL frame into this widget's own context, the
+    /// counterpart of drawFrame() for the facade.
+    void drawFrameLegacyGL();
 
     void updateGui();
 

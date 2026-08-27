@@ -22,36 +22,29 @@
  *                                                                         *
  ***************************************************************************/
 
-#pragma once
+#include "OpenGlWrapper.h"
 
-#include "SimShapes.h"
-#include "linmath.h"
-#include <vector>
+#include <iostream>
 
 namespace CAMSimulator
 {
 
-class SolidObject
+QOpenGLExtraFunctions gOpenGLFunctions;
+
+void GLClearError()
 {
-public:
-    SolidObject();
-    virtual ~SolidObject();
+    while (glGetError() != GL_NO_ERROR)
+        ;
+}
 
-    void Clear();
-
-    void SetPosition(vec3 position);
-
-    /// Calls the display list.
-    virtual void render();
-    Shape shape;
-    void GenerateSolid(const std::vector<Vertex>& verts, const std::vector<GLushort>& indices);
-    vec3 center = {};
-    vec3 size = {};
-    vec3 position = {};
-    bool isValid = false;
-
-protected:
-    mat4x4 mModelMat;
-};
+bool GLLogError()
+{
+    bool isError = false;
+    while (GLenum err = glGetError()) {
+        std::cout << "[Opengl Error] (" << err << ")" << std::endl;
+        isError = true;
+    }
+    return isError;
+}
 
 }  // namespace CAMSimulator
