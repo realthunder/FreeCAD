@@ -1596,7 +1596,10 @@ void MainWindow::removeWindow(Gui::MDIView* view, bool close)
         // d->mdiArea->removeSubWindow(parent);
     }
 
-    if(close)
+    // A view replaced out of a ViewArea cell arrives here half-closed:
+    // released from the cell (no parent) with its deferred delete still
+    // pending. There is nothing to close on its behalf.
+    if(close && parent)
         parent->deleteLater();
     updateActions();
 }

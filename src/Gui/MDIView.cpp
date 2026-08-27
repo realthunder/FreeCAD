@@ -298,8 +298,20 @@ void MDIView::closeEvent(QCloseEvent *e)
         if (!bIsPassive) {
             // must be detached so that the last view can get asked
             Document* doc = this->getGuiDocument();
-            if (doc && !doc->isLastView())
+            if (doc && !doc->isLastView()) {
                 doc->detachView(this);
+                // detachView drops the view from the document's list but
+                // used to leave _pcDocument set, counting on the DEFERRED
+                // destructor's onClose to finish the detach. The deferred
+                // delete can outlive the document -- a script closing the
+                // document in the same event-loop turn, or a ViewArea cell
+                // replacement followed by a document close -- and onClose
+                // then walked into a freed document. The view is doomed
+                // here (delete-on-close is queued), so finish the detach
+                // now.
+                _pcDocument = nullptr;
+                bIsDetached = true;
+            }
         }
 
         // Note: When using QMdiArea we must not use removeWindow()
