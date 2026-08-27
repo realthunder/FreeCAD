@@ -31,6 +31,7 @@
 #include <Inventor/SbRotation.h>
 #include <Inventor/SbVec3f.h>
 #include <QOpenGLFunctions>
+#include <memory>
 #include <numbers>
 #include <random>
 #include <vector>
@@ -57,6 +58,13 @@ struct Point3D
 /// adds the per-surface list.
 struct SimHostContext
 {
+    /// The surface this context serves, the key SetCurrentHost looks
+    /// up. Null for the default context, which serves the legacy GL
+    /// path (single-host by nature: it owns the widget). Borrowed;
+    /// the owner drops the context (DropHost) before the surface
+    /// dies.
+    Render::DrawSurface* surface = nullptr;
+
     int width = -1;
     int height = -1;
 
@@ -106,7 +114,20 @@ struct SimHostContext
 class SimDisplay
 {
 public:
+    SimDisplay();
     ~SimDisplay();
+
+    /// Select -- creating on first sight -- the per-host context for
+    /// \a surface; every camera/size/G-buffer operation until the
+    /// next call acts on it. Null selects the default context (the
+    /// legacy GL path). Called at the top of each frame, before the
+    /// frame's resource updates.
+    void SetCurrentHost(Render::DrawSurface* surface);
+    /// Drop \a surface's context and release its resources, called
+    /// before the surface dies -- a host detaching, the standalone
+    /// surface resetting. The default context is never dropped.
+    void DropHost(Render::DrawSurface* surface);
+
     void InitGL();
     void CleanGL();
     void CleanFbos();
@@ -175,21 +196,24 @@ private:
 
     SimHostContext& current()
     {
-        return mHost;
+        return *mCurrent;
     }
     const SimHostContext& current() const
     {
-        return mHost;
+        return *mCurrent;
     }
     /// Release \a host's facade G-buffer and resolve resources. Kept:
     /// its AO effect, which survives a resize (its targets follow the
     /// input size on their own).
     void DestroyHostFbos(SimHostContext& host);
 
-    /// The hosts this display serves -- exactly one until the
-    /// multi-host stage adds the per-surface list
-    /// (docs/CAMSimRenderPort.md sec 11.9).
-    SimHostContext mHost;
+    /// The hosts this display serves: front() is the default context
+    /// (null surface); per-surface contexts follow, created by
+    /// SetCurrentHost and removed by DropHost. unique_ptr so the
+    /// references current() hands out stay stable while the list
+    /// grows (docs/CAMSimRenderPort.md sec 11.9).
+    std::vector<std::unique_ptr<SimHostContext>> mHosts;
+    SimHostContext* mCurrent = nullptr;
 
 protected:
     // shaders

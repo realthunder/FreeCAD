@@ -168,8 +168,6 @@ public:
     MillPathLine millPathLine;
     std::vector<MillPathSegment*> MillPathSegments;
 
-    int mWidth = -1;
-    int mHeight = -1;
 
     StockObject mStockObject;
     SolidObject mBaseShape;

@@ -581,10 +581,6 @@ void MillSimulation::InitDisplay(float quality)
         mToolTable[i]->GenerateDisplayLists(quality);
     }
 
-    // Make sure the next call to UpdateWindowScale will not return early.
-    mWidth = -1;
-    mHeight = -1;
-
     // init 3d display
     simDisplay.InitGL();
 }
@@ -652,13 +648,8 @@ void MillSimulation::SetBaseDrawnByHost(bool b)
 
 void MillSimulation::UpdateWindowScale(int width, int height)
 {
-    if (width == mWidth && height == mHeight) {
-        return;
-    }
-
-    mWidth = width;
-    mHeight = height;
-
+    // No dedup here: the size is per HOST now, and SimDisplay's check
+    // against the current host's own size is the one that counts.
     simDisplay.UpdateWindowScale(width, height);
 }
 

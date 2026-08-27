@@ -41,6 +41,24 @@
 namespace CAMSimulator
 {
 
+PyObject* CAMSimPy::AttachDocumentView(PyObject* args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+    return Py_BuildValue("O", getCAMSimPtr()->AttachDocumentView() ? Py_True : Py_False);
+}
+
+PyObject* CAMSimPy::DetachDocumentView(PyObject* args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+    getCAMSimPtr()->DetachDocumentView();
+    Py_IncRef(Py_None);
+    return Py_None;
+}
+
 PyObject* CAMSimPy::GetProgress(PyObject* args)
 {
     if (!PyArg_ParseTuple(args, "")) {

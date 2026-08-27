@@ -82,3 +82,18 @@ class CAMSim(BaseClass):
         r, retractZ), or None when out of range.
         """
         ...
+
+    def AttachDocumentView(self) -> bool:
+        """
+        Fan the running simulator's drawing out to the document's own 3D
+        view as an additional host. False when there is no simulator
+        window, no document 3D view, or no renderer to borrow; never
+        creates the simulator window.
+        """
+        ...
+
+    def DetachDocumentView(self) -> None:
+        """
+        Undo AttachDocumentView for the document's 3D view.
+        """
+        ...

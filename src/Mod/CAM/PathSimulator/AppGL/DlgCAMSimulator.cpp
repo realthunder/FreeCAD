@@ -92,6 +92,11 @@ DlgCAMSimulator::DlgCAMSimulator(QWidget* parent)
 DlgCAMSimulator::~DlgCAMSimulator()
 {
     makeCurrent();
+    // Extra hosts are other views' renderers and outlive this dialog:
+    // leave no dangling consumer registered on them.
+    while (!mExtraHosts.empty()) {
+        detachExtraHost(mExtraHosts.back().viewer);
+    }
     mMillSimulator = nullptr;
 }
 
@@ -554,6 +559,7 @@ bool DlgCAMSimulator::beginFacadeFrame()
 {
     if (useLegacyGL() || !Render::DrawDevice::instance()) {
         // Device gone (or never up): surface handles died with it.
+        mMillSimulator->simDisplay.DropHost(mDrawSurface.get());
         mDrawSurface.reset();
         gSimDraw.surface = nullptr;
         return false;
@@ -637,6 +643,13 @@ bool DlgCAMSimulator::mirrorsBaseToViewer() const
 
 void DlgCAMSimulator::requestRedraw()
 {
+    // Every extra host redraws too: each runs the simulator's passes
+    // inside its own frame.
+    for (const auto& e : mExtraHosts) {
+        if (auto* mgr = e.viewer ? e.viewer->getSoRenderManager() : nullptr) {
+            mgr->scheduleRedraw();
+        }
+    }
     if (isAttached() && mDummyViewer) {
         // The render manager's own request, not QWidget::update(): a
         // Quarter viewer redraws when its manager is asked to, and
@@ -672,6 +685,8 @@ void DlgCAMSimulator::attachToHost(Gui::View3DInventorViewer* viewer)
         return;
     }
     if (mHostRenderer) {
+        mMillSimulator->simDisplay.DropHost(
+            mHostRenderer->frameConsumerSurface());
         mHostRenderer->setFrameConsumer(nullptr);
         mHostRenderer = nullptr;
     }
@@ -688,14 +703,56 @@ void DlgCAMSimulator::attachToHost(Gui::View3DInventorViewer* viewer)
     syncViewerMirrors();
     // The standalone surface's handles are the device's, not the
     // host's, and nothing will drive them again.
+    mMillSimulator->simDisplay.DropHost(mDrawSurface.get());
     mDrawSurface.reset();
     gSimDraw.surface = nullptr;
+}
+
+bool DlgCAMSimulator::attachExtraHost(Gui::View3DInventorViewer* viewer)
+{
+    if (!viewer || forceLegacyGLPref()) {
+        return false;
+    }
+    Render::Renderer* host = viewer->getExternalRenderer();
+    if (!host) {
+        return false;
+    }
+    if (host == mHostRenderer) {
+        // Already receiving frames as the primary.
+        return true;
+    }
+    for (auto& e : mExtraHosts) {
+        if (e.renderer == host) {
+            e.viewer = viewer;
+            return true;
+        }
+    }
+    host->setFrameConsumer(this);
+    mExtraHosts.push_back({host, viewer});
+    return true;
+}
+
+void DlgCAMSimulator::detachExtraHost(Gui::View3DInventorViewer* viewer)
+{
+    for (auto it = mExtraHosts.begin(); it != mExtraHosts.end(); ++it) {
+        if (it->viewer != viewer) {
+            continue;
+        }
+        mMillSimulator->simDisplay.DropHost(
+            it->renderer->frameConsumerSurface());
+        it->renderer->setFrameConsumer(nullptr);
+        mExtraHosts.erase(it);
+        return;
+    }
 }
 
 void DlgCAMSimulator::drawFrame(Render::DrawSurface& surface)
 {
     // The facade owns this frame; no GL call may reach the context.
     gSimDraw.legacyGL = false;
+    // Selected before anything touches display state: the resource
+    // updates and everything below act on this surface's context.
+    mMillSimulator->simDisplay.SetCurrentHost(&surface);
     updateResources();
 
     // We need to call updateWindowScale on every render since the devicePixelRatio we get in
@@ -751,6 +808,7 @@ void DlgCAMSimulator::drawFrameLegacyGL()
     // buffers and shaders are built lazily from there, and each path
     // builds only its own.
     gSimDraw.legacyGL = true;
+    mMillSimulator->simDisplay.SetCurrentHost(nullptr);
     updateResources();
 
     const qreal ratio = devicePixelRatioF();

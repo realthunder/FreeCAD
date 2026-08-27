@@ -50,6 +50,62 @@ namespace CAMSimulator
 
 constexpr auto pi = std::numbers::pi_v<float>;
 
+SimDisplay::SimDisplay()
+{
+    // The default context; the per-surface ones come and go.
+    mHosts.push_back(std::make_unique<SimHostContext>());
+    mCurrent = mHosts.front().get();
+}
+
+void SimDisplay::SetCurrentHost(Render::DrawSurface* surface)
+{
+    SimHostContext* found = nullptr;
+    for (auto& h : mHosts) {
+        if (h->surface == surface) {
+            found = h.get();
+            break;
+        }
+    }
+    if (!found) {
+        auto ctx = std::make_unique<SimHostContext>();
+        ctx->surface = surface;
+        found = ctx.get();
+        mHosts.push_back(std::move(ctx));
+    }
+    mCurrent = found;
+    // Each host has its own AO effect (its targets cache that host's
+    // last run), created here rather than in InitShaders because a
+    // per-surface context can appear at any time after init.
+    if (surface && !found->effectAO.valid()) {
+        if (auto* dev = Render::DrawDevice::instance()) {
+            found->effectAO = dev->createEffect(Render::EffectType::AO);
+        }
+    }
+}
+
+void SimDisplay::DropHost(Render::DrawSurface* surface)
+{
+    if (!surface) {
+        return;
+    }
+    for (auto it = mHosts.begin(); it != mHosts.end(); ++it) {
+        if ((*it)->surface != surface) {
+            continue;
+        }
+        DestroyHostFbos(**it);
+        if ((*it)->effectAO.valid()) {
+            if (auto* dev = Render::DrawDevice::instance()) {
+                dev->destroy((*it)->effectAO);
+            }
+        }
+        if (mCurrent == it->get()) {
+            mCurrent = mHosts.front().get();
+        }
+        mHosts.erase(it);
+        return;
+    }
+}
+
 void SimDisplay::InitShaders()
 {
     if (gSimDraw.legacyGL) {
@@ -135,9 +191,6 @@ void SimDisplay::InitShaders()
         gSimDraw.setColor(gSimDraw.lightColor, lightColor, 0.0f);
         gSimDraw.setColor(gSimDraw.lightAmbient, ambientCol, 0.0f);
 
-        // Per host in principle (the effect's targets cache that
-        // host's last run); created here for the one host there is.
-        current().effectAO = dev->createEffect(Render::EffectType::AO);
     }
 }
 
@@ -467,11 +520,20 @@ void SimDisplay::CleanGL()
         if (mRQuadVbo.valid()) {
             dev->destroy(mRQuadVbo);
         }
-        if (current().effectAO.valid()) {
-            dev->destroy(current().effectAO);
+    }
+    // Every host's resources, and the per-surface contexts
+    // themselves: a full teardown forgets the surfaces too.
+    for (auto& h : mHosts) {
+        DestroyHostFbos(*h);
+        if (h->effectAO.valid()) {
+            if (auto* dev = Render::DrawDevice::instance()) {
+                dev->destroy(h->effectAO);
+            }
+            h->effectAO = {};
         }
     }
-    current().effectAO = {};
+    mHosts.erase(mHosts.begin() + 1, mHosts.end());
+    mCurrent = mHosts.front().get();
     gSimDraw.uniNormalRot = gSimDraw.uniLightPos = {};
     gSimDraw.uniLightColor = gSimDraw.uniLightAmbient = {};
     gSimDraw.uniObjectColor = gSimDraw.uniObjectColorAlpha = {};
@@ -492,9 +554,11 @@ void SimDisplay::CleanGL()
 void SimDisplay::InvalidateDisplay()
 {
     // The SIMULATION changed, so every host's cached carve is stale
-    // (one host until the multi-host stage; camera and size changes
-    // mark only their own host, in the Update* methods).
-    current().updateDisplay = true;
+    // (camera and size changes mark only their own host, in the
+    // Update* methods).
+    for (auto& h : mHosts) {
+        h->updateDisplay = true;
+    }
 }
 
 bool SimDisplay::NeedsRecalculate() const

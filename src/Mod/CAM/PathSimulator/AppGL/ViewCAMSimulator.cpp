@@ -294,6 +294,32 @@ void ViewCAMSimulator::updateHostAttachment()
     }
 }
 
+Gui::View3DInventorViewer* ViewCAMSimulator::documentViewer() const
+{
+    Gui::Document* doc = getGuiDocument();
+    if (!doc) {
+        return nullptr;
+    }
+    for (Gui::MDIView* mdi : doc->getMDIViewsOfType(View3DInventor::getClassTypeId())) {
+        return static_cast<View3DInventor*>(mdi)->getViewer();
+    }
+    return nullptr;
+}
+
+bool ViewCAMSimulator::attachDocumentView()
+{
+    Gui::View3DInventorViewer* viewer = documentViewer();
+    return viewer && mDlg && mDlg->attachExtraHost(viewer);
+}
+
+void ViewCAMSimulator::detachDocumentView()
+{
+    Gui::View3DInventorViewer* viewer = documentViewer();
+    if (viewer && mDlg) {
+        mDlg->detachExtraHost(viewer);
+    }
+}
+
 void ViewCAMSimulator::viewFit()
 {
     const Base::BoundBox3d sim =

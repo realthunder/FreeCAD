@@ -31,6 +31,7 @@
 #include <queue>
 #include <functional>
 #include <chrono>
+#include <vector>
 
 #include <QOpenGLWidget>
 #include <QPainter>
@@ -164,6 +165,16 @@ public:
         return mHostRenderer != nullptr;
     }
 
+    /// Fan the drawing out to an ADDITIONAL host view's renderer
+    /// (docs/CAMSimRenderPort.md sec 11.9): the same consumer
+    /// registered on that view's renderer too, drawing the same
+    /// simulation under its own per-host context. The primary
+    /// attachment (attachToHost) keeps deciding who owns this
+    /// widget's picture; extra hosts only receive frames. False when
+    /// the viewer has no renderer to borrow, or legacy GL is forced.
+    bool attachExtraHost(Gui::View3DInventorViewer* viewer);
+    void detachExtraHost(Gui::View3DInventorViewer* viewer);
+
     /// The bounds of the shapes the SIMULATOR draws itself, for a view
     /// fit. While attached the stock is deliberately absent from
     /// the viewer's scene graph (mirrorsStockToViewer), so a fit computed
@@ -263,6 +274,18 @@ private:
     /// The renderer whose frames this consumer draws in, or null when
     /// standalone. Not owned; cleared when the host goes away.
     Render::Renderer* mHostRenderer = nullptr;
+
+    /// One extra attached host (attachExtraHost): the renderer whose
+    /// frames the consumer draws in, and the viewer whose render
+    /// manager redraws are asked from. Neither is owned; the caller
+    /// detaches before a view goes away (the doc-view lifecycle work
+    /// is the next stage's).
+    struct HostAttachment
+    {
+        Render::Renderer* renderer = nullptr;
+        Gui::View3DInventorViewer* viewer = nullptr;
+    };
+    std::vector<HostAttachment> mExtraHosts;
 
     // The draw-facade frame surface; null until the backend device is
     // up (the GL path stands alone until then), dropped if it goes

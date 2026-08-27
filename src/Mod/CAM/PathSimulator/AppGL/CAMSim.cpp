@@ -27,6 +27,7 @@
 
 #include "DlgCAMSimulator.h"
 #include "MillSimulation.h"
+#include "ViewCAMSimulator.h"
 #include <string>
 #include <vector>
 
@@ -92,6 +93,19 @@ const MillMotion* CAMSim::GetMotion(int index) const
 {
     DlgCAMSimulator* dlg = DlgCAMSimulator::existingInstance();
     return dlg ? dlg->motion(index) : nullptr;
+}
+
+bool CAMSim::AttachDocumentView()
+{
+    ViewCAMSimulator* view = ViewCAMSimulator::existing();
+    return view && view->attachDocumentView();
+}
+
+void CAMSim::DetachDocumentView()
+{
+    if (ViewCAMSimulator* view = ViewCAMSimulator::existing()) {
+        view->detachDocumentView();
+    }
 }
 
 }  // namespace CAMSimulator
