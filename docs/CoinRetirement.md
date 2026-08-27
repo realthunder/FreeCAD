@@ -1460,8 +1460,9 @@ map (5.9), the additive capture that serves non-standard modes and
 Mesh-shaped switches (5.10) and the cell-style half of that capture,
 which retires the canvas eviction rule (5.11), are built and verified,
 and show-on-top persistence has moved onto the same view-property
-machinery (5.12) and the tagged-draw holes are closed (5.13); what
-remains open is listed at the end of 5.11. Stage 4 removed one draw style because
+machinery (5.12), the tagged-draw holes are closed (5.13) and the
+foreign-document rows re-sync (5.14); what remains open is listed at
+the end of 5.11. Stage 4 removed one draw style because
 the Coin node behind it (`SoShadowGroup`) had a backend counterpart. This
 stage generalizes that: **remove the legacy Coin implementation of every
 remaining display style -- Tessellation first, then the ones built the
@@ -2252,9 +2253,10 @@ persistence migration -- **done in 5.12**; the selection/highlight feed
 and `SceneDump` tagged-draw holes -- **done in 5.13**, which also found
 that whole-object selection ignores the display mode outright, in Coin
 as well; `DisplayModeInView` rows for foreign-document objects are not
-re-synced on table change; and third-party providers that map user
-names onto differently named mask children still fall back to the
-object's own mode.
+re-synced on table change -- **done in 5.14**, which found in passing
+that a foreign-document override never reaches the DRAWING (new, open);
+and third-party providers that map user names onto differently named
+mask children still fall back to the object's own mode.
 
 ### 5.12 Show-on-top persistence moves onto the view (2026-08-27)
 
@@ -2381,6 +2383,42 @@ recorded here and left alone.
 
 `sbn`, `nsm`, `pts`, `ovr`, `d4` 8/8 and `d4mode` green after, all
 unchanged to the pixel.
+
+### 5.14 Foreign-document rows, and what they revealed (2026-08-27)
+
+The last item of the 5.10 list. `View3DInventor::onChanged` keeps the
+`DisplayModeInView` rows honest when the table moves from anywhere but
+the rows themselves -- the context command, undo, a restore -- by
+sweeping the view's objects and re-syncing each. It swept the VIEW's
+own document only. An object shown here through a `Link` from ANOTHER
+document has its ViewProvider, and so its row, in THAT document's
+`Gui::Document`, so its row went stale: the entry key had a
+doc-qualified form (`"<doc>#<name>"`) from the start, but nothing ever
+told the far row about it. The sweep now walks every open document.
+`syncDisplayModeInView` writes nothing where the row already agrees, so
+the wider sweep is a read for all but the objects an edit moved.
+
+**And the rig found that a foreign-document entry never reaches the
+drawing at all.** `xdoc.py` -- document `XA` holds a `Wireframe` box,
+document `XB` links it, `XB`'s view is active:
+
+    foreign row set to Shaded, then cleared externally:
+        row Shaded -> "Use View Mode"          PASS (this fix)
+        ink 963 -> 963 -> 963                  the value never lands
+    the same override on a box of XB's OWN document:
+        ink 963 -> 24434 -> 963                lands
+    the PATH form, selecting the box through the link:
+        ink 963 -> 1658                        does not land either
+
+So the machinery works in that view, and both key forms fail for the
+same object once it belongs to another document -- which says the
+container chain the backend matches an entry against
+(`ObjectInfo::path`, built from the render cache's origin path) does not
+identify the foreign object, rather than that the bare match is wrong.
+Chasing that means going into how a cross-document `Link` composes its
+origins, which is its own piece of work; it is filed here, not fixed.
+Until then a per-object override reaches only objects of the view's own
+document -- the row will read back correctly and show nothing.
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 

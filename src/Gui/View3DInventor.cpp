@@ -54,6 +54,7 @@
 
 
 #include <App/DocumentObject.h>
+#include <App/Application.h>
 #include <App/Document.h>
 #include <sstream>
 #include "Inventor/SoFCOwnDisplayModeElement.h"
@@ -1364,8 +1365,21 @@ void View3DInventor::onChanged(const App::Property *prop)
             // change from anywhere -- the rows themselves, the context
             // command, undo, restore -- re-reads them.
             if (Application::Instance->activeView() == this) {
-                if (auto gdoc = getGuiDocument()) {
-                    for (auto obj : gdoc->getDocument()->getObjects()) {
+                // EVERY open document, not just this view's own: an
+                // object shown here through a Link lives in another
+                // document, and its ViewProvider -- the one carrying
+                // the DisplayModeInView row the user reads -- belongs
+                // to THAT document's Gui::Document. Keying the entry
+                // as "<doc>#<name>" was only half the story while the
+                // row was never told (docs/CoinRetirement.md 5.14).
+                // syncDisplayModeInView writes nothing where the row
+                // already agrees, so the sweep is a read for all but
+                // the few objects an edit actually moved.
+                for (auto appdoc : App::GetApplication().getDocuments()) {
+                    auto gdoc = Application::Instance->getDocument(appdoc);
+                    if (!gdoc)
+                        continue;
+                    for (auto obj : appdoc->getObjects()) {
                         if (auto vp = Base::freecad_dynamic_cast<
                                 ViewProviderDocumentObject>(
                                     gdoc->getViewProvider(obj)))
