@@ -727,9 +727,86 @@ host's scene target attached. Exactly one texture crosses into the
 host's frame, and that quad is where step 4's `gl_FragDepth` write
 belongs.
 
-**Known and open for step 4:** attached output is visibly lighter than
-standalone. That is the double-encode risk of section 8.6 arriving on
-schedule -- the host's scene colour is RGBA16F holding linear light,
+**Open at the end of step 3, closed by it:** attached output was
+visibly lighter than standalone. That is the double-encode risk of
+section 8.6 arriving on schedule -- the host's scene colour is
+RGBA16F holding linear light,
 the simulator shades in display space, and the output transform
-encodes the result a second time. `hostLinearColor()` is already on
-the surface; the decode belongs in the composite shader.
+encodes the result a second time. `hostLinearColor()` was already on
+the surface; the decode went into the composite shader (`b3f82b620b`).
+
+### 8.9 Execution record: step 4 (2026-08-27)
+
+The colour half landed first (`b3f82b620b`, the decode above). The
+depth half is `7b148e9cdf` plus `ec78d940e1`, and both were needed
+before anything could be seen: a consumer that writes depth into a
+frame containing nothing else to sort against looks exactly like one
+that does not.
+
+**The simulator's own depth buffer could not be handed over.**
+Section 8.4 says the resolve "writes `gl_FragDepth` from the sim's own
+depth" as though the value were already in the right space. It is not.
+`SimDisplay::UpdateCameraProjection` derives near and far from
+`mMaxStockDimension`, not from the camera, so the simulator's window
+depth is in a private frustum that has nothing to do with the host's.
+
+What the two DO share is view space -- both read the same camera --
+and the G-buffer already holds a view-space position per texel. So the
+composite transforms that position into the host's clip space and
+writes the result. The matrix is built on the CPU as
+`hostProj * hostView * inverse(simView)`, which is exact whatever the
+two cameras turn out to be, rather than assuming they agree.
+
+That needed one addition the plan did not list: **`DrawSurface::
+hostCamera`**, the host's view and projection for the bound frame,
+riding the frame bind next to the target and its size. It is the
+general form of what section 8.5 step 5 wants too. `DrawDevice::
+homogeneousDepth` came with it, so the clip convention is answered by
+the device that will run the draw rather than by the shader testing
+its own language.
+
+**! The position attachment needed a written-marker.** `.w` was 0
+everywhere; the clear is 0 too, so "no geometry here" and "geometry at
+the view-space origin" were the same texel. It is now 1 where the
+geometry pass wrote, and texels without it -- the tool path over the
+background, which draws into a target sharing only colour and depth --
+take the far plane.
+
+**The base shape moved to the engine** (`ec78d940e1`), which is what
+made the depth visible at all and is the thing section 8.1 promised.
+Step 3's reason for turning the mirror view providers off applies only
+to the stock: the material removal IS the simulator's rendering and
+there is no mesh of the result to hand over. The base shape has no
+such claim on it. So the mirror decision splits per shape, with
+`MillSimulation::SetBaseDrawnByHost` as the other half.
+
+**! A view provider with no material draws black through the
+renderer.** `TopoShape::exportFaceSet` writes a material only when it
+is given face colours, and `TopoShapeViewProvider` gave it none, so
+the shape inherited whatever the traversal was carrying -- nothing.
+It now carries an `SoMaterial` set to the colour the simulator draws
+the same shape in, so the picture does not jump when a shape crosses
+from one renderer to the other.
+
+**Verification.** The harness grew two shapes for it (`SIM_BASE=2`,
+`SIM_BASE=3`) and a `SIM_BOTH=1` that clicks `stockModelButton` twice
+-- the base is not visible by default, which is why the first attempts
+photographed nothing and proved nothing.
+
+The result that settles it is the piercing bar: a bar that starts in
+front of the stock, runs through it, and comes out behind. Attached,
+the front stub is visible, the middle is buried, the rear stub is
+visible, and the bar shows through where the tool has carved the
+channel down past it. Ordering alone cannot produce that picture --
+the depth VALUES have to be right, or the entry lands in the wrong
+place and the channel patch disappears. Against the standalone leg
+(where the simulator draws the bar itself) every occlusion boundary
+lands within one pixel.
+
+**Known consequence, accepted.** The tool path's hidden-line pass --
+drawn at 10% alpha where the path runs inside the material, so the
+operator can see where the tool goes -- is covered wherever host
+geometry is in front of it. The simulator composites one finished
+image, so the host occludes all of it at once, translucent overlay
+included. Recovering it would mean handing over depth per pass rather
+than one image, which is a different design from 8.4's.
