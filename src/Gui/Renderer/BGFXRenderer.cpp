@@ -880,6 +880,12 @@ void BGFXRenderer::setFrameConsumer(FrameConsumer *consumer)
 #endif
 }
 
+DrawSurface *BGFXRenderer::frameConsumerSurface()
+{
+    return pimpl->consumerSurface ? &pimpl->consumerSurface->surface()
+                                  : nullptr;
+}
+
 void BGFXRenderer::setHighlight(DrawCallList &&draws, bool wholeOnTop)
 {
     dumpFeed("hl", wholeOnTop, draws);

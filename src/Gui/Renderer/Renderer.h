@@ -2807,6 +2807,13 @@ public:
     /// facade ignore this, and the consumer keeps its own path.
     virtual void setFrameConsumer(FrameConsumer *consumer)
     { (void)consumer; }
+    /// The surface the registered FrameConsumer draws into, or null
+    /// when none is registered (or the backend serves no consumers).
+    /// Stable for the lifetime of the registration: a consumer keys
+    /// per-host state on it (docs/CAMSimRenderPort.md sec 11.9) and
+    /// drops that state when detaching, before the surface dies.
+    virtual DrawSurface *frameConsumerSurface()
+    { return nullptr; }
     /// Per-frame hidden-line draw style state (resolved from the traversal
     /// state each render, like the GL renderer does).
     virtual void setHiddenLineConfig(const HiddenLineConfig &config)
