@@ -476,7 +476,7 @@ void MillSimulation::Render()
 
     // render the simulation offscreen in an FBO
 
-    const bool recalculated = simDisplay.updateDisplay;
+    const bool recalculated = simDisplay.NeedsRecalculate();
     if (recalculated) {
         simDisplay.PrepareFrameBuffer();
         RenderSimulation();
@@ -489,7 +489,7 @@ void MillSimulation::Render()
             // (docs/CAMSimRenderPort.md sec 10.4).
             RenderPath();
         }
-        simDisplay.updateDisplay = false;
+        simDisplay.ClearRecalculate();
     }
 
     if (gSimDraw.legacyGL) {
@@ -570,7 +570,7 @@ void MillSimulation::SimNext(const clock::duration& elapsed)
 
     if (mCurStep != oldStep) {
         CalcSegmentPositions();
-        simDisplay.updateDisplay = true;
+        simDisplay.InvalidateDisplay();
     }
 }
 
@@ -611,7 +611,7 @@ void MillSimulation::SetStockVisible(bool b)
     }
 
     mViewItems ^= VIEWITEM_SIMULATION;
-    simDisplay.updateDisplay = true;
+    simDisplay.InvalidateDisplay();
 }
 
 bool MillSimulation::IsStockVisible() const
@@ -631,7 +631,7 @@ void MillSimulation::SetBaseVisible(bool b)
     }
 
     mViewItems ^= VIEWITEM_BASE_SHAPE;
-    simDisplay.updateDisplay = true;
+    simDisplay.InvalidateDisplay();
 }
 
 bool MillSimulation::IsBaseVisible() const
@@ -647,7 +647,7 @@ void MillSimulation::SetBaseDrawnByHost(bool b)
     mBaseDrawnByHost = b;
     // The base shape is in the G-buffer the CSG leaves behind, so the
     // cached frame has to be rebuilt to add or drop it.
-    simDisplay.updateDisplay = true;
+    simDisplay.InvalidateDisplay();
 }
 
 void MillSimulation::UpdateWindowScale(int width, int height)
@@ -669,7 +669,7 @@ void MillSimulation::SetPathVisible(bool b)
     }
 
     mViewPath = b;
-    simDisplay.updateDisplay = true;
+    simDisplay.InvalidateDisplay();
 }
 
 void MillSimulation::EnableSsao(bool b)
@@ -679,7 +679,7 @@ void MillSimulation::EnableSsao(bool b)
     }
 
     mViewSSAO = b;
-    simDisplay.updateDisplay = true;
+    simDisplay.InvalidateDisplay();
 }
 
 void MillSimulation::UpdateCamera(const SoCamera& camera)
@@ -736,7 +736,7 @@ void MillSimulation::SetPlaying(bool b)
     }
 
     mSimPlaying = b;
-    simDisplay.updateDisplay = true;
+    simDisplay.InvalidateDisplay();
 }
 
 void MillSimulation::SingleStep()
@@ -747,7 +747,7 @@ void MillSimulation::SingleStep()
 
     mSimPlaying = false;
     mSingleStep = true;
-    simDisplay.updateDisplay = true;
+    simDisplay.InvalidateDisplay();
 }
 
 void MillSimulation::SetSpeed(int s)
@@ -766,7 +766,7 @@ void MillSimulation::SetSimulationStage(float stage)
     mSingleStep = true;
     CalcSegmentPositions();
 
-    simDisplay.updateDisplay = true;
+    simDisplay.InvalidateDisplay();
 }
 
 void MillSimulation::SetState(const MillSimulationState& state)

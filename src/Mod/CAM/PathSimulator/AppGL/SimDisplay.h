@@ -46,6 +46,63 @@ struct Point3D
     float x, y, z;
 };
 
+/// The per-host render state (docs/CAMSimRenderPort.md sec 11.9):
+/// everything the simulator keeps per surface it draws into. The CSG
+/// is view-dependent -- the carve is computed in screen space under
+/// the host's camera -- so the camera, the size, and the G-buffer
+/// that caches the carve for that camera all live here, while
+/// MillSimulation's state (segments, tools, step, clock) and the
+/// device-wide resources (programs, uniforms, the quad) stay shared
+/// in SimDisplay. Exactly one instance until the multi-host stage
+/// adds the per-surface list.
+struct SimHostContext
+{
+    int width = -1;
+    int height = -1;
+
+    /// The carve cached in the G-buffer is stale for this host's
+    /// camera: re-run the CSG on its next frame.
+    bool updateDisplay = false;
+
+    mat4x4 matLookAt;
+    /// The projection the facade frame driver reads (the GL path
+    /// pushes it into each shader instead of keeping it).
+    mat4x4 projMat;
+
+    // The camera state the matrices were built from, kept to elide
+    // rebuilds when the camera has not moved.
+    bool cameraPerspective = true;
+    float cameraHeightAngle = std::numbers::pi / 4;
+    float cameraHeight = 100.0f;
+    float cameraNearDistance = 1.0f;
+    float cameraFarDistance = 100.0f;
+    SbVec3f cameraPosition;
+    SbRotation cameraOrientation;
+
+    // The facade G-buffer (docs/CAMSimRenderPort.md step 4): the same
+    // attachments as the legacy GL FBO, as facade resources.
+    Render::TextureHandle colTexture;
+    Render::TextureHandle posTexture;
+    Render::TextureHandle normTexture;
+    /// The engine prepass packing (oct normal + linear view depth) the
+    /// AO effect reads; written by the geometry pass as attachment 3.
+    Render::TextureHandle normalZTexture;
+    Render::TextureHandle depthTexture;
+    Render::TargetHandle target;
+    /// The resolve's own output, and the target that holds it. The
+    /// deferred resolve lands here rather than straight in the
+    /// surface's composite target, so that the only texture the
+    /// composite pass carries across is this one RGBA8 image -- see
+    /// SimPassComposite and docs/CAMSimRenderPort.md sec 8.4.
+    Render::TextureHandle resolveTexture;
+    Render::TargetHandle resolveTarget;
+    /// The engine AO effect run for this host; its internal targets
+    /// persist between frames, caching alongside the G-buffer.
+    Render::EffectHandle effectAO;
+    /// The last AO run's result; invalid = no AO for the resolve.
+    Render::TextureHandle lastAO;
+};
+
 class SimDisplay
 {
 public:
@@ -88,8 +145,16 @@ public:
     void SetPathColor(const vec3& normal, const vec3& rapid);
 
 public:
-    bool updateDisplay = false;
     bool displayInitiated = false;
+
+    /// Mark every host's cached carve stale: the SIMULATION changed,
+    /// as opposed to one host's camera or size, which mark only that
+    /// host stale (SimHostContext::updateDisplay).
+    void InvalidateDisplay();
+    /// Whether the current host's carve must be re-run this frame.
+    bool NeedsRecalculate() const;
+    /// The current host's cached carve is valid again.
+    void ClearRecalculate();
 
 protected:
     void InitShaders();
@@ -108,6 +173,24 @@ private:
     void UpdateViewMatrix();
     void UpdateProjectionMatrix();
 
+    SimHostContext& current()
+    {
+        return mHost;
+    }
+    const SimHostContext& current() const
+    {
+        return mHost;
+    }
+    /// Release \a host's facade G-buffer and resolve resources. Kept:
+    /// its AO effect, which survives a resize (its targets follow the
+    /// input size on their own).
+    void DestroyHostFbos(SimHostContext& host);
+
+    /// The hosts this display serves -- exactly one until the
+    /// multi-host stage adds the per-surface list
+    /// (docs/CAMSimRenderPort.md sec 11.9).
+    SimHostContext mHost;
+
 protected:
     // shaders
     Shader shader3D, shaderInv3D, shaderFlat, shaderSimFbo;
@@ -121,27 +204,12 @@ protected:
     vec4 pathLineColor = {0.0f, 0.9f, 0.0f, 1.0};
     vec3 pathLineColorPassed = {0.9f, 0.3f, 0.3f};
 
-    mat4x4 mMatLookAt;
-    // The projection the facade frame driver reads (the GL path pushes
-    // it into each shader instead of keeping it).
-    mat4x4 mProjMat;
     StockObject mlightObject;
-
-    int mWidth = -1;
-    int mHeight = -1;
 
     std::mt19937 generator;
     std::uniform_real_distribution<float> distr01;
 
-    bool mCameraPerspective = true;
-    float mCameraHeightAngle = std::numbers::pi / 4;
-    float mCameraHeight = 100.0f;
-    float mCameraNearDistance = 1.0f;
-    float mCameraFarDistance = 100.0f;
     float mMaxStockDimension = 100.0f;
-
-    SbVec3f mCameraPosition;
-    SbRotation mCameraOrientation;
 
     // base frame buffer
     unsigned int mFbo = 0;
@@ -151,29 +219,13 @@ protected:
     unsigned int mRboDepthStencil = 0;
     unsigned int mFboQuadVBO = 0;
 
-    // The facade side (docs/CAMSimRenderPort.md step 4): the same
-    // G-buffer, quad and programs as facade resources. The GL pair of
-    // each leaves with the last step of the port. The SSAO chain has
-    // no facade counterpart -- the engine's AO effect replaces it.
+    // The facade side (docs/CAMSimRenderPort.md step 4): the quad
+    // and programs as facade resources, shared by every host; the
+    // G-buffer and its companions are per host, in SimHostContext.
+    // The GL pair of each leaves with the last step of the port. The
+    // SSAO chain has no facade counterpart -- the engine's AO effect
+    // replaces it.
     Render::VertexBufferHandle mRQuadVbo;
-    Render::TextureHandle mRColTexture;
-    Render::TextureHandle mRPosTexture;
-    Render::TextureHandle mRNormTexture;
-    // The engine prepass packing (oct normal + linear view depth) the
-    // AO effect reads; written by the geometry pass as attachment 3.
-    Render::TextureHandle mRNormalZTexture;
-    Render::TextureHandle mRDepthTexture;
-    Render::TargetHandle mRTarget;
-    // The resolve's own output, and the target that holds it. The
-    // deferred resolve lands here rather than straight in the
-    // surface's composite target, so that the only texture the
-    // composite pass carries across is this one RGBA8 image -- see
-    // SimPassComposite and docs/CAMSimRenderPort.md sec 8.4.
-    Render::TextureHandle mRResolveTexture;
-    Render::TargetHandle mRResolveTarget;
-    Render::EffectHandle mREffectAO;
-    // The last AO run's result; invalid = no AO for the resolve.
-    Render::TextureHandle mRLastAO;
     Render::ProgramHandle mRProgDiffuse;
     Render::ProgramHandle mRProgInvDiffuse;
     Render::ProgramHandle mRProgFlat;

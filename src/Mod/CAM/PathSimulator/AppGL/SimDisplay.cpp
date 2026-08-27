@@ -135,7 +135,9 @@ void SimDisplay::InitShaders()
         gSimDraw.setColor(gSimDraw.lightColor, lightColor, 0.0f);
         gSimDraw.setColor(gSimDraw.lightAmbient, ambientCol, 0.0f);
 
-        mREffectAO = dev->createEffect(Render::EffectType::AO);
+        // Per host in principle (the effect's targets cache that
+        // host's last run); created here for the one host there is.
+        current().effectAO = dev->createEffect(Render::EffectType::AO);
     }
 }
 
@@ -183,7 +185,8 @@ void SimDisplay::CreateGBufTex(GLenum texUnit, GLint intFormat, GLenum format, G
     glActiveTexture(texUnit);
     glGenTextures(1, &texid);
     glBindTexture(GL_TEXTURE_2D, texid);
-    glTexImage2D(GL_TEXTURE_2D, 0, intFormat, mWidth, mHeight, 0, format, type, NULL);
+    glTexImage2D(
+        GL_TEXTURE_2D, 0, intFormat, current().width, current().height, 0, format, type, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
@@ -209,6 +212,7 @@ void SimDisplay::UniformCircle(vec3& randVec)
 
 void SimDisplay::CreateDisplayFbos()
 {
+    auto& host = current();
     if (gSimDraw.legacyGL) {
         // setup frame buffer for simulation
         glGenFramebuffers(1, &mFbo);
@@ -234,8 +238,8 @@ void SimDisplay::CreateDisplayFbos()
         glRenderbufferStorage(
             GL_RENDERBUFFER,
             GL_DEPTH24_STENCIL8,
-            mWidth,
-            mHeight
+            host.width,
+            host.height
         );  // use a single renderbuffer object for both a depth AND stencil buffer.
         glFramebufferRenderbuffer(
             GL_FRAMEBUFFER,
@@ -255,26 +259,26 @@ void SimDisplay::CreateDisplayFbos()
         // and the depth/stencil renderbuffer becomes a D24S8 texture.
         // Point filtering, matching the GL parameters above.
         uint32_t flags = Render::TexturePoint | Render::TextureClamp;
-        mRColTexture = dev->createRenderTexture(
-            mWidth, mHeight, Render::DrawTextureFormat::RGBA8, flags);
-        mRPosTexture = dev->createRenderTexture(
-            mWidth, mHeight, Render::DrawTextureFormat::RGBA32F, flags);
-        mRNormTexture = dev->createRenderTexture(
-            mWidth, mHeight, Render::DrawTextureFormat::RGBA32F, flags);
-        mRNormalZTexture = dev->createRenderTexture(
-            mWidth, mHeight, Render::DrawTextureFormat::RGBA32F, flags);
-        mRDepthTexture = dev->createRenderTexture(
-            mWidth, mHeight, Render::DrawTextureFormat::D24S8, 0);
-        Render::TextureHandle colors[4] = {mRColTexture, mRPosTexture,
-                                           mRNormTexture, mRNormalZTexture};
-        mRTarget = dev->createTarget(colors, 4, mRDepthTexture);
+        host.colTexture = dev->createRenderTexture(
+            host.width, host.height, Render::DrawTextureFormat::RGBA8, flags);
+        host.posTexture = dev->createRenderTexture(
+            host.width, host.height, Render::DrawTextureFormat::RGBA32F, flags);
+        host.normTexture = dev->createRenderTexture(
+            host.width, host.height, Render::DrawTextureFormat::RGBA32F, flags);
+        host.normalZTexture = dev->createRenderTexture(
+            host.width, host.height, Render::DrawTextureFormat::RGBA32F, flags);
+        host.depthTexture = dev->createRenderTexture(
+            host.width, host.height, Render::DrawTextureFormat::D24S8, 0);
+        Render::TextureHandle colors[4] = {host.colTexture, host.posTexture,
+                                           host.normTexture, host.normalZTexture};
+        host.target = dev->createTarget(colors, 4, host.depthTexture);
         // The resolve's output. Colour only -- the composite that
         // reads it needs no depth of its own, and giving it none keeps
         // the sim's depth/stencil out of the pass that crosses into a
         // host frame.
-        mRResolveTexture = dev->createRenderTexture(
-            mWidth, mHeight, Render::DrawTextureFormat::RGBA8, flags);
-        mRResolveTarget = dev->createTarget(&mRResolveTexture, 1, {});
+        host.resolveTexture = dev->createRenderTexture(
+            host.width, host.height, Render::DrawTextureFormat::RGBA8, flags);
+        host.resolveTarget = dev->createTarget(&host.resolveTexture, 1, {});
     }
 }
 
@@ -355,8 +359,8 @@ void SimDisplay::InitGL()
 
     // The facade driver reads these at frame time; before the first
     // camera update they must at least be defined.
-    mat4x4_identity(mMatLookAt);
-    mat4x4_identity(mProjMat);
+    mat4x4_identity(current().matLookAt);
+    mat4x4_identity(current().projMat);
 
     InitShaders();
     CreateFboQuad();
@@ -364,6 +368,45 @@ void SimDisplay::InitGL()
     displayInitiated = true;
 
     UpdateWindowScale(800, 600);
+}
+
+void SimDisplay::DestroyHostFbos(SimHostContext& host)
+{
+    if (auto* dev = Render::DrawDevice::instance()) {
+        if (host.target.valid()) {
+            dev->destroy(host.target);
+        }
+        if (host.colTexture.valid()) {
+            dev->destroy(host.colTexture);
+        }
+        if (host.posTexture.valid()) {
+            dev->destroy(host.posTexture);
+        }
+        if (host.normTexture.valid()) {
+            dev->destroy(host.normTexture);
+        }
+        if (host.normalZTexture.valid()) {
+            dev->destroy(host.normalZTexture);
+        }
+        if (host.depthTexture.valid()) {
+            dev->destroy(host.depthTexture);
+        }
+        if (host.resolveTarget.valid()) {
+            dev->destroy(host.resolveTarget);
+        }
+        if (host.resolveTexture.valid()) {
+            dev->destroy(host.resolveTexture);
+        }
+    }
+    host.target = {};
+    host.resolveTarget = {};
+    host.resolveTexture = {};
+    host.colTexture = {};
+    host.posTexture = {};
+    host.normTexture = {};
+    host.normalZTexture = {};
+    host.depthTexture = {};
+    host.lastAO = {};
 }
 
 void SimDisplay::CleanFbos()
@@ -382,41 +425,7 @@ void SimDisplay::CleanFbos()
     GLDELETE_TEXTURE(mFboRandTexture);
     GLDELETE_RENDERBUFFER(mRboDepthStencil);
 
-    if (auto* dev = Render::DrawDevice::instance()) {
-        if (mRTarget.valid()) {
-            dev->destroy(mRTarget);
-        }
-        if (mRColTexture.valid()) {
-            dev->destroy(mRColTexture);
-        }
-        if (mRPosTexture.valid()) {
-            dev->destroy(mRPosTexture);
-        }
-        if (mRNormTexture.valid()) {
-            dev->destroy(mRNormTexture);
-        }
-        if (mRNormalZTexture.valid()) {
-            dev->destroy(mRNormalZTexture);
-        }
-        if (mRDepthTexture.valid()) {
-            dev->destroy(mRDepthTexture);
-        }
-        if (mRResolveTarget.valid()) {
-            dev->destroy(mRResolveTarget);
-        }
-        if (mRResolveTexture.valid()) {
-            dev->destroy(mRResolveTexture);
-        }
-    }
-    mRTarget = {};
-    mRResolveTarget = {};
-    mRResolveTexture = {};
-    mRColTexture = {};
-    mRPosTexture = {};
-    mRNormTexture = {};
-    mRNormalZTexture = {};
-    mRDepthTexture = {};
-    mRLastAO = {};
+    DestroyHostFbos(current());
 }
 
 void SimDisplay::CleanGL()
@@ -458,12 +467,11 @@ void SimDisplay::CleanGL()
         if (mRQuadVbo.valid()) {
             dev->destroy(mRQuadVbo);
         }
-        if (mREffectAO.valid()) {
-            dev->destroy(mREffectAO);
+        if (current().effectAO.valid()) {
+            dev->destroy(current().effectAO);
         }
     }
-    mREffectAO = {};
-    mRLastAO = {};
+    current().effectAO = {};
     gSimDraw.uniNormalRot = gSimDraw.uniLightPos = {};
     gSimDraw.uniLightColor = gSimDraw.uniLightAmbient = {};
     gSimDraw.uniObjectColor = gSimDraw.uniObjectColorAlpha = {};
@@ -479,6 +487,24 @@ void SimDisplay::CleanGL()
     mRQuadVbo = {};
 
     displayInitiated = false;
+}
+
+void SimDisplay::InvalidateDisplay()
+{
+    // The SIMULATION changed, so every host's cached carve is stale
+    // (one host until the multi-host stage; camera and size changes
+    // mark only their own host, in the Update* methods).
+    current().updateDisplay = true;
+}
+
+bool SimDisplay::NeedsRecalculate() const
+{
+    return current().updateDisplay;
+}
+
+void SimDisplay::ClearRecalculate()
+{
+    current().updateDisplay = false;
 }
 
 void SimDisplay::PrepareFrameBuffer()
@@ -507,7 +533,7 @@ void SimDisplay::StartDepthPass()
         glDepthFunc(GL_LESS);
         glDepthMask(GL_TRUE);
         shaderFlat.Activate();
-        shaderFlat.UpdateViewMat(mMatLookAt);
+        shaderFlat.UpdateViewMat(current().matLookAt);
     }
 
     gSimDraw.state.depthFunc = Render::CompareFunc::Less;
@@ -521,7 +547,7 @@ void SimDisplay::StartGeometryPass(const vec3& objColor, bool invertNormals)
         glBindFramebuffer(GL_FRAMEBUFFER, mFbo);
         shaderGeom.Activate();
         shaderGeom.UpdateNormalState(invertNormals);
-        shaderGeom.UpdateViewMat(mMatLookAt);
+        shaderGeom.UpdateViewMat(current().matLookAt);
         shaderGeom.UpdateObjColor(objColor);
         glEnable(GL_CULL_FACE);
         glDisable(GL_BLEND);
@@ -544,7 +570,7 @@ void SimDisplay::StartCloserGeometryPass(const vec3& objColor)
     glBindFramebuffer(GL_FRAMEBUFFER, mFbo);
     shaderGeomCloser.Activate();
     shaderGeomCloser.UpdateNormalState(false);
-    shaderGeomCloser.UpdateViewMat(mMatLookAt);
+    shaderGeomCloser.UpdateViewMat(current().matLookAt);
     shaderGeomCloser.UpdateObjColor(objColor);
     glEnable(GL_CULL_FACE);
     glDisable(GL_BLEND);
@@ -625,7 +651,7 @@ void SimDisplay::RenderResultSSAO(bool recalculate)
         shaderSSAO.UpdateRandomTexSlot(0);
         shaderSSAO.UpdatePositionTexSlot(1);
         shaderSSAO.UpdateNormalTexSlot(2);
-        shaderSSAO.UpdateScreenDimension(mWidth, mHeight);
+        shaderSSAO.UpdateScreenDimension(current().width, current().height);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, mFboRandTexture);
@@ -644,7 +670,7 @@ void SimDisplay::RenderResultSSAO(bool recalculate)
         shaderSSAOBlur.UpdateSsaoTexSlot(0);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, mFboSsaoTexture);
-        shaderSSAOBlur.UpdateScreenDimension(mWidth, mHeight);
+        shaderSSAOBlur.UpdateScreenDimension(current().width, current().height);
         SetupVertexAttribs();
         glDrawArrays(GL_TRIANGLES, 0, 6);
     }
@@ -674,11 +700,12 @@ void SimDisplay::RenderResultSSAO(bool recalculate)
 void SimDisplay::RenderCompositeFacade(Render::DrawSurface* surface,
                                        unsigned pass)
 {
+    auto& host = current();
     if (!surface || !mRProgCopy.valid() || !mRQuadVbo.valid()
-            || !mRResolveTexture.valid()) {
+            || !host.resolveTexture.valid()) {
         return;
     }
-    surface->setTexture(0, mRSampTex, mRResolveTexture);
+    surface->setTexture(0, mRSampTex, host.resolveTexture);
 
     // This pass places the simulator's stock in the destination's
     // depth buffer -- shared with the host scene when attached, so the
@@ -702,7 +729,7 @@ void SimDisplay::RenderCompositeFacade(Render::DrawSurface* surface,
     bool writeDepth = false;
     float hostView[16];
     float hostProj[16];
-    if (mRPosTexture.valid()) {
+    if (host.posTexture.valid()) {
         mat4x4 hv;
         mat4x4 hp;
         if (surface->hostCamera(hostView, hostProj)) {
@@ -710,16 +737,16 @@ void SimDisplay::RenderCompositeFacade(Render::DrawSurface* surface,
             std::memcpy(&hp[0][0], hostProj, sizeof(hp));
         }
         else {
-            mat4x4_dup(hv, mMatLookAt);
-            mat4x4_dup(hp, mProjMat);
+            mat4x4_dup(hv, host.matLookAt);
+            mat4x4_dup(hp, host.projMat);
         }
         mat4x4 simToWorld;
-        mat4x4_invert(simToWorld, mMatLookAt);
+        mat4x4_invert(simToWorld, host.matLookAt);
         mat4x4 toHostView;
         mat4x4_mul(toHostView, hv, simToWorld);
         mat4x4_mul(depthXform, hp, toHostView);
         writeDepth = true;
-        surface->setTexture(1, mRSampPosition, mRPosTexture);
+        surface->setTexture(1, mRSampPosition, host.posTexture);
     }
 
     // The destination decides whether the image is light or pixels:
@@ -748,6 +775,7 @@ void SimDisplay::RenderCompositeFacade(Render::DrawSurface* surface,
 
 void SimDisplay::RenderResultFacade(Render::DrawSurface* surface, unsigned pass)
 {
+    auto& host = current();
     if (!surface || !mRProgLighting.valid() || !mRQuadVbo.valid()) {
         return;
     }
@@ -768,15 +796,15 @@ void SimDisplay::RenderResultFacade(Render::DrawSurface* surface, unsigned pass)
     surface->setUniform(mRUniLightAmbient, vec4of(ambientCol));
     // y = ssaoActive: on when the AO effect ran this frame or its
     // cached result stands (RunAOFacade).
-    const bool aoOn = mRLastAO.valid();
+    const bool aoOn = host.lastAO.valid();
     float params[4] = {0.0f, aoOn ? 1.0f : 0.0f, 0.0f, 0.0f};
     surface->setUniform(mRUniParams, params);
-    surface->setTexture(0, mRSampColor, mRColTexture);
-    surface->setTexture(1, mRSampPosition, mRPosTexture);
-    surface->setTexture(2, mRSampNormal, mRNormTexture);
+    surface->setTexture(0, mRSampColor, host.colTexture);
+    surface->setTexture(1, mRSampPosition, host.posTexture);
+    surface->setTexture(2, mRSampNormal, host.normTexture);
     // With AO off the shader branches away from the sample, but the
     // slot must still hold a valid texture on every backend.
-    surface->setTexture(3, mRSampAo, aoOn ? mRLastAO : mRColTexture);
+    surface->setTexture(3, mRSampAo, aoOn ? host.lastAO : host.colTexture);
     Render::DrawState state;
     state.depthWrite = false;
     state.depthFunc = Render::CompareFunc::Always;
@@ -792,31 +820,33 @@ void SimDisplay::RenderResultFacade(Render::DrawSurface* surface, unsigned pass)
 
 void SimDisplay::RunAOFacade(Render::DrawSurface* surface, bool enabled, bool recalculate)
 {
-    if (!enabled || !surface || !mREffectAO.valid()
-        || !mRNormalZTexture.valid()) {
-        mRLastAO = {};
+    auto& host = current();
+    if (!enabled || !surface || !host.effectAO.valid()
+        || !host.normalZTexture.valid()) {
+        host.lastAO = {};
         return;
     }
-    if (!recalculate && mRLastAO.valid()) {
+    if (!recalculate && host.lastAO.valid()) {
         return;
     }
     Render::EffectParams params;
     // The engine's automatic radius is 5% of the scene bounding-sphere
     // size; the stock's largest dimension stands in for it here.
     params.radius = 0.05f * 1.7320508f * mMaxStockDimension;
-    params.proj = &mProjMat[0][0];
-    mRLastAO = surface->runEffect(mREffectAO, SimPassAOFirst,
-                                  mRNormalZTexture, params);
+    params.proj = &host.projMat[0][0];
+    host.lastAO = surface->runEffect(host.effectAO, SimPassAOFirst,
+                                     host.normalZTexture, params);
 }
 
 void SimDisplay::ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& bgnd)
 {
-    if (!surface || !mRTarget.valid()) {
+    auto& host = current();
+    if (!surface || !host.target.valid()) {
         return;
     }
     for (unsigned p = SimPassScene; p <= SimPassBaseShape; p++) {
-        surface->setPassTarget(p, mRTarget);
-        surface->setPassRect(p, 0, 0, mWidth, mHeight);
+        surface->setPassTarget(p, host.target);
+        surface->setPassRect(p, 0, 0, host.width, host.height);
         // The CSG depends on draws landing in submission order.
         surface->setPassSequential(p, true);
     }
@@ -826,13 +856,13 @@ void SimDisplay::ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& 
                           Render::ClearColor | Render::ClearDepth
                               | Render::ClearStencil);
     surface->setPassClear(SimPassBaseShape, 0, 1.0f, 0, Render::ClearNone);
-    const float* view = &mMatLookAt[0][0];
-    surface->setPassTransform(SimPassScene, view, &mProjMat[0][0]);
+    const float* view = &host.matLookAt[0][0];
+    surface->setPassTransform(SimPassScene, view, &host.projMat[0][0]);
     // The base shape's glPolygonOffset(0, -2) became this pass's
     // slightly-closer projection -- the trick the GL path's (unused)
     // GeomCloser shader carried.
     mat4x4 biased;
-    mat4x4_dup(biased, mProjMat);
+    mat4x4_dup(biased, host.projMat);
     biased[2][2] *= 0.99999f;
     surface->setPassTransform(SimPassBaseShape, view, &biased[0][0]);
     // The tool-path passes: the overlay run, drawn after the
@@ -843,12 +873,12 @@ void SimDisplay::ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& 
     float pathView[16];
     float pathProj[16];
     if (!surface->hostCamera(pathView, pathProj)) {
-        std::memcpy(pathView, &mMatLookAt[0][0], sizeof(pathView));
-        std::memcpy(pathProj, &mProjMat[0][0], sizeof(pathProj));
+        std::memcpy(pathView, &host.matLookAt[0][0], sizeof(pathView));
+        std::memcpy(pathProj, &host.projMat[0][0], sizeof(pathProj));
     }
     for (unsigned p = SimPassPathVisible; p <= SimPassPathHidden; p++) {
         surface->setPassTarget(p, surface->hostTarget());
-        surface->setPassRect(p, 0, 0, mWidth, mHeight);
+        surface->setPassRect(p, 0, 0, host.width, host.height);
         surface->setPassSequential(p, false);
         surface->setPassClear(p, 0, 1.0f, 0, Render::ClearNone);
         surface->setPassTransform(p, pathView, pathProj);
@@ -856,8 +886,8 @@ void SimDisplay::ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& 
     // The resolve lands in the sim's own colour target, cleared fully
     // transparent so that the G-buffer's coverage survives as alpha
     // for the composite to blend with.
-    surface->setPassTarget(SimPassResolve, mRResolveTarget);
-    surface->setPassRect(SimPassResolve, 0, 0, mWidth, mHeight);
+    surface->setPassTarget(SimPassResolve, host.resolveTarget);
+    surface->setPassRect(SimPassResolve, 0, 0, host.width, host.height);
     surface->setPassSequential(SimPassResolve, false);
     surface->setPassClear(SimPassResolve, 0x00000000, 1.0f, 0,
                           Render::ClearColor);
@@ -868,7 +898,7 @@ void SimDisplay::ConfigureFacadeFrame(Render::DrawSurface* surface, const vec3& 
     // it is the invalid handle, i.e. "my backbuffer", when there is no
     // host.
     surface->setPassTarget(SimPassComposite, surface->hostTarget());
-    surface->setPassRect(SimPassComposite, 0, 0, mWidth, mHeight);
+    surface->setPassRect(SimPassComposite, 0, 0, host.width, host.height);
     surface->setPassSequential(SimPassComposite, false);
     if (surface->attached()) {
         // The host drew its own background and its own scene into that
@@ -917,7 +947,7 @@ void SimDisplay::SetupLinePathPass(int curSegment, bool isHidden)
         shaderLinePath.UpdateObjColorAlpha(pathLineColor);
         shaderLinePath.UpdateObjColor(pathLineColorPassed);
         shaderLinePath.UpdateCurSegment(curSegment);
-        shaderLinePath.UpdateViewMat(mMatLookAt);
+        shaderLinePath.UpdateViewMat(current().matLookAt);
     }
 
     // Facade: an overlay-run pass over the composited image. The
@@ -947,17 +977,18 @@ void SimDisplay::SetupLinePathPass(int curSegment, bool isHidden)
 
 void SimDisplay::UpdateWindowScale(int width, int height)
 {
-    if (!displayInitiated || (width == mWidth && height == mHeight)) {
+    auto& host = current();
+    if (!displayInitiated || (width == host.width && height == host.height)) {
         return;
     }
 
-    mWidth = width;
-    mHeight = height;
+    host.width = width;
+    host.height = height;
 
     if (mFbo != 0 && gSimDraw.legacyGL) {
         glBindFramebuffer(GL_FRAMEBUFFER, mFbo);
     }
-    if (mFbo != 0 || mRTarget.valid()) {
+    if (mFbo != 0 || host.target.valid()) {
         CleanFbos();
     }
 
@@ -978,22 +1009,24 @@ void SimDisplay::UpdateCamera(const SoCamera& camera)
 
 void SimDisplay::UpdateCameraView(const SoCamera& camera)
 {
+    auto& host = current();
 
     const SbVec3f position = camera.position.getValue();
     const SbRotation orientation = camera.orientation.getValue();
 
-    if (position == mCameraPosition && orientation == mCameraOrientation) {
+    if (position == host.cameraPosition && orientation == host.cameraOrientation) {
         return;
     }
 
-    mCameraPosition = position;
-    mCameraOrientation = orientation;
+    host.cameraPosition = position;
+    host.cameraOrientation = orientation;
 
     UpdateViewMatrix();
 }
 
 void SimDisplay::UpdateCameraProjection(const SoCamera& camera)
 {
+    auto& host = current();
     float heightAngle = std::numbers::pi / 4;
     float height = 100.0f;
 
@@ -1029,55 +1062,64 @@ void SimDisplay::UpdateCameraProjection(const SoCamera& camera)
         farDistance = mMaxStockDimension * 10.0f;
     }
 
-    if ((bool)perspective == mCameraPerspective && heightAngle == mCameraHeightAngle
-        && height == mCameraHeight && nearDistance == mCameraNearDistance
-        && farDistance == mCameraFarDistance) {
+    if ((bool)perspective == host.cameraPerspective && heightAngle == host.cameraHeightAngle
+        && height == host.cameraHeight && nearDistance == host.cameraNearDistance
+        && farDistance == host.cameraFarDistance) {
         return;
     }
 
-    mCameraPerspective = (bool)perspective;
-    mCameraHeightAngle = heightAngle;
-    mCameraHeight = height;
-    mCameraNearDistance = nearDistance;
-    mCameraFarDistance = farDistance;
+    host.cameraPerspective = (bool)perspective;
+    host.cameraHeightAngle = heightAngle;
+    host.cameraHeight = height;
+    host.cameraNearDistance = nearDistance;
+    host.cameraFarDistance = farDistance;
 
     UpdateProjectionMatrix();
 }
 
 void SimDisplay::UpdateViewMatrix()
 {
+    auto& host = current();
+
     SbVec3f up(0, 1, 0);
-    mCameraOrientation.multVec(up, up);
+    host.cameraOrientation.multVec(up, up);
 
     SbVec3f dir(0, 0, -1);
-    mCameraOrientation.multVec(dir, dir);
+    host.cameraOrientation.multVec(dir, dir);
 
-    const auto target = mCameraPosition + dir;
-    mat4x4_look_at(mMatLookAt, mCameraPosition.getValue(), target.getValue(), up.getValue());
+    const auto target = host.cameraPosition + dir;
+    mat4x4_look_at(
+        host.matLookAt, host.cameraPosition.getValue(), target.getValue(), up.getValue());
 
-    updateDisplay = true;
+    // The camera moved for THIS host: only its cached carve is stale.
+    host.updateDisplay = true;
 }
 
 void SimDisplay::UpdateProjectionMatrix()
 {
     // Setup projection
 
-    const float aspect = (float)mWidth / mHeight;
+    auto& host = current();
+    const float aspect = (float)host.width / host.height;
 
     mat4x4 projmat;
 
-    if (mCameraPerspective) {
-        mat4x4_perspective(projmat, mCameraHeightAngle, aspect, mCameraNearDistance, mCameraFarDistance);
+    if (host.cameraPerspective) {
+        mat4x4_perspective(
+            projmat, host.cameraHeightAngle, aspect, host.cameraNearDistance,
+            host.cameraFarDistance);
     }
     else {
-        const float h = mCameraHeight;
-        const float w = mCameraHeight * aspect;
-        mat4x4_ortho(projmat, -w / 2, w / 2, -h / 2, h / 2, mCameraNearDistance, mCameraFarDistance);
+        const float h = host.cameraHeight;
+        const float w = host.cameraHeight * aspect;
+        mat4x4_ortho(
+            projmat, -w / 2, w / 2, -h / 2, h / 2, host.cameraNearDistance,
+            host.cameraFarDistance);
     }
 
     // Kept for the facade frame driver: passes take their projection
     // at frame time (setPassTransform), not through a shader uniform.
-    mat4x4_dup(mProjMat, projmat);
+    mat4x4_dup(host.projMat, projmat);
 
     if (gSimDraw.legacyGL) {
         shader3D.Activate();
@@ -1098,7 +1140,7 @@ void SimDisplay::UpdateProjectionMatrix()
         shaderGeomCloser.UpdateProjectionMat(projmat);
     }
 
-    updateDisplay = true;
+    host.updateDisplay = true;
 }
 
 }  // namespace CAMSimulator
