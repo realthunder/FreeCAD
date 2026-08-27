@@ -685,27 +685,41 @@ void SimDisplay::RenderCompositeFacade(Render::DrawSurface* surface,
     }
     surface->setTexture(0, mRSampTex, mRResolveTexture);
 
-    // Attached, this pass also places the simulator's stock in the
-    // depth buffer it shares with the host scene, so the two occlude
-    // each other (docs/CAMSimRenderPort.md sec 8.4). The simulator's
-    // own depth buffer cannot be handed over: its near/far come from
-    // the stock size rather than from the camera
+    // This pass places the simulator's stock in the destination's
+    // depth buffer -- shared with the host scene when attached, so the
+    // two occlude each other (docs/CAMSimRenderPort.md sec 8.4), and
+    // the surface's own when standalone, where it is what the
+    // tool-path passes will test against (sec 10.3). The simulator's
+    // own G-buffer depth cannot be handed over: its near/far come
+    // from the stock size rather than from the camera
     // (UpdateCameraProjection), so it is a different depth space
     // entirely. What IS common is view space -- both cameras are the
     // same camera -- so the depth is rebuilt from the G-buffer's
     // view-space position through this matrix.
+    //
+    // Standalone there is no host camera and the target camera
+    // degenerates to the sim's own view and projection -- the
+    // transform collapses to the sim's projection -- which is the
+    // whole of the two-flavour difference: one code path, no
+    // writeDepth fork.
     mat4x4 depthXform;
     mat4x4_identity(depthXform);
     bool writeDepth = false;
     float hostView[16];
     float hostProj[16];
-    if (surface->hostCamera(hostView, hostProj) && mRPosTexture.valid()) {
-        mat4x4 simToWorld;
-        mat4x4_invert(simToWorld, mMatLookAt);
+    if (mRPosTexture.valid()) {
         mat4x4 hv;
         mat4x4 hp;
-        std::memcpy(&hv[0][0], hostView, sizeof(hv));
-        std::memcpy(&hp[0][0], hostProj, sizeof(hp));
+        if (surface->hostCamera(hostView, hostProj)) {
+            std::memcpy(&hv[0][0], hostView, sizeof(hv));
+            std::memcpy(&hp[0][0], hostProj, sizeof(hp));
+        }
+        else {
+            mat4x4_dup(hv, mMatLookAt);
+            mat4x4_dup(hp, mProjMat);
+        }
+        mat4x4 simToWorld;
+        mat4x4_invert(simToWorld, mMatLookAt);
         mat4x4 toHostView;
         mat4x4_mul(toHostView, hv, simToWorld);
         mat4x4_mul(depthXform, hp, toHostView);

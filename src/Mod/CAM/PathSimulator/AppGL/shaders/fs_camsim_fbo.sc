@@ -18,15 +18,18 @@ $input v_texcoord0
  * is light in there like everything else, and the default exposure of
  * one is the exact identity.
  *
- * u_simComposite.y is set when the destination's depth is shared with
- * a host scene, and this pass has to place the simulator's stock in
- * it so the two occlude each other. The simulator's own depth buffer
- * is no use for that -- it is a private frustum, derived from the
- * stock size rather than from the camera -- so the depth is rebuilt
- * from the G-buffer's view-space position through u_simDepthXform,
- * which carries a texel from the simulator's view space all the way
- * into the host's clip space. .z says which clip convention that
- * lands in (see DrawDevice::homogeneousDepth).
+ * u_simComposite.y asks this pass to place the simulator's stock in
+ * the destination's depth buffer -- shared with a host scene when
+ * attached, so the two occlude each other; the surface's own when
+ * standalone, where the tool-path passes test against it
+ * (docs/CAMSimRenderPort.md sec 10.3). The simulator's own depth
+ * buffer is no use for that -- it is a private frustum, derived from
+ * the stock size rather than from the camera -- so the depth is
+ * rebuilt from the G-buffer's view-space position through
+ * u_simDepthXform, which carries a texel from the simulator's view
+ * space all the way into the target camera's clip space (the host's
+ * camera attached, the sim's own standalone). .z says which clip
+ * convention that lands in (see DrawDevice::homogeneousDepth).
  */
 
 #include <bgfx_shader.sh>
