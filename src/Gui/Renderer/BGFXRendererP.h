@@ -7034,6 +7034,12 @@ public:
     const Render::ObjectInfoMap *ovInfo = nullptr;
     /// The override for \a objectKey, or null (BGFXViewSubmit.cpp).
     const OvStyle *lookupStyleOverride(uint64_t objectKey);
+    /// Whether this sub-view's per-object style resolution (override,
+    /// then view style where registered, then own mode -- 5.8/5.9)
+    /// admits \a draw's bucket. Asked by the per-draw submit AND by
+    /// the instanced group partition: a group merges by geometry and
+    /// material, not objectKey, so members can resolve differently.
+    bool styleAdmits(const Render::DrawCall &draw);
 
     BGFXView() { stashSubView(freshBank); }
     /// Swap sub-view \a id into the members (a no-op when it already

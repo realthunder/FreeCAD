@@ -5072,7 +5072,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         prepassInstanced.assign(scene.size(), 0);
         casterInstanced.assign(scene.size(), 0);
         std::vector<float> instData;
-        std::vector<int> vis, visOut, hidden;
+        std::vector<int> vis, visOut, hidden, styledOut;
         auto appendInstance = [&](int i) {
             const auto &d = scene[i];
             if (d.identity) {
@@ -5099,11 +5099,24 @@ bool BGFXRenderer::Private::render(const QColor &col,
             vis.clear();
             visOut.clear();
             hidden.clear();
+            styledOut.clear();
             for (int i : group.members) {
                 if (isHidden(scene[i]))
                     hidden.push_back(i);
                 else if (culled(scene[i]))
                     visOut.push_back(i);
+                else if (!view->styleAdmits(scene[i]))
+                    // A group merges draws by geometry and material,
+                    // not by objectKey, so its members can resolve to
+                    // different display styles (docs/CoinRetirement.md
+                    // 5.8, 5.9) -- one box overridden Shaded beside an
+                    // identical one left in Wireframe. A member the
+                    // style drops must not ride the group's submit; it
+                    // falls to the per-draw loop, whose submit filters
+                    // it the same way. It still CASTS, like the
+                    // per-draw path, whose caster submit is not style
+                    // filtered.
+                    styledOut.push_back(i);
                 else
                     vis.push_back(i);
             }
@@ -5161,8 +5174,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     appendInstance(i);
                 for (int i : hidden)
                     appendInstance(i);
+                // Style-dropped members cast like the per-draw path's.
+                for (int i : styledOut)
+                    appendInstance(i);
                 uint32_t total = uint32_t(vis.size() + visOut.size()
-                                          + hidden.size());
+                                          + hidden.size()
+                                          + styledOut.size());
                 if (total >= 2
                         && view->submitShadowCasterInstanced(
                             scene[group.members[0]], instData.data(),

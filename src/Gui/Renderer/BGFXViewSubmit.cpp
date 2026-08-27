@@ -72,6 +72,57 @@ int matchStyleOverride(const Render::StyleOverride &ov,
 }
 } // namespace
 
+bool BGFXView::styleAdmits(const Render::DrawCall &draw)
+{
+    // This sub-view's Class-A display style, resolved PER OBJECT the
+    // way Rhino and SolidWorks resolve a display mode
+    // (docs/CoinRetirement.md 5.8, 5.9), in order:
+    //
+    // - the per-object per-view override, when an entry names this
+    //   draw's object or a container above it. It replaces the view's
+    //   style for that object; a pin ("As Is") holds the object to its
+    //   own mode, escaping the view style. Only ever present under a
+    //   superset capture.
+    // - this sub-view's style, where the object's display-mode switch
+    //   carries a child of that style's NAME -- a style is an override,
+    //   and that is what an override does. Only under a superset
+    //   capture; without one the mask is applied flat, which is only
+    //   ever asked for where every cell's style provably removes
+    //   rather than adds (ViewAreaCanvas::styleConflicts).
+    // - the object's OWN mode otherwise: a sub-view showing "As Is",
+    //   and equally an object whose switch has no child of the asked
+    //   name, which today's traversal already leaves in its own mode.
+    // - nothing, when the own mode is StyleUnknown: a mode no mask can
+    //   describe must not be filtered by one.
+    //
+    // The bucket test is what the draw RENDERS as, not mat.type
+    // (Render::styleBitOf): Mesh re-styles one node into its Wireframe
+    // and Point modes. Gizmo draws are exempt -- a style selects
+    // display-mode children and the navigation gizmos sit under no
+    // such switch; skipbounds marks them.
+    //
+    // Both the per-draw submit and the instanced group partition ask
+    // this question: an instance group merges draws by geometry and
+    // material, NOT by objectKey, so its members can resolve
+    // differently and each must be admitted on its own.
+    if (draw.skipbounds)
+        return true;
+    uint8_t effective = drawStyleMask;
+    if (const OvStyle *ov = lookupStyleOverride(draw.objectKey)) {
+        effective = ov->pin ? draw.ownStyle
+            : (draw.registeredStyles & ov->nameBit) ? ov->mask
+                                                    : draw.ownStyle;
+    }
+    else if (styleFromSuperset) {
+        effective = (drawStyleName
+                     && (draw.registeredStyles & drawStyleName))
+                ? drawStyleMask : draw.ownStyle;
+    }
+    return effective == Render::StyleAsIs
+        || effective == Render::StyleUnknown
+        || (effective & Render::styleBitOf(draw.material)) != 0;
+}
+
 const BGFXView::OvStyle *BGFXView::lookupStyleOverride(uint64_t objectKey)
 {
     if (!ovCache || !ovTable || !objectKey)
@@ -712,63 +763,11 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     const Render::Material &mat = draw.material;
     if (!draw.mesh || draw.mesh->numVertices == 0)
         return;
-    // This sub-view's Class-A display style, as a bucket filter over the
-    // scene every sub-view shares (docs/CoinRetirement.md 5.7, 5.8):
-    // Shaded keeps the faces, Wireframe the lines and points, Points the
-    // points. The bucket is what the draw RENDERS as, not mat.type: Mesh
-    // builds its Wireframe and Point modes by re-styling one mesh node,
-    // so they arrive as Material::Triangle and filtering on the type
-    // alone dropped them (Render::styleBitOf).
-    //
-    // Which mask applies is resolved PER OBJECT, the way Rhino and
-    // SolidWorks resolve a display mode, and only under a superset
-    // capture -- one where the feed traversed the widest display-mode
-    // child instead of each object's own. Then:
-    //
-    // - this sub-view's style, where the object's display-mode switch
-    //   carries a child of that style's NAME. A style is an override,
-    //   and that is what an override does.
-    // - the object's OWN mode otherwise. That covers a sub-view showing
-    //   "As Is", and equally an object whose switch has no child of
-    //   that name -- which today's traversal already leaves in its own
-    //   mode (Mesh registers "Point", so a "Points" override misses it).
-    // - nothing, when the own mode is StyleUnknown: a mode no mask can
-    //   describe (FEM's "Faces & Wireframe") must not be filtered by one.
-    //
-    // Without a superset capture the mask is applied flat, which is only
-    // ever asked for where every cell's style provably removes rather
-    // than adds (ViewAreaCanvas::styleConflicts).
-    //
-    // Gizmo draws are exempt. A Class-A style reaches the pixels by
-    // selecting a different child of a ViewProvider's display-mode
-    // switch, so it never touched the navigation gizmos, which sit
-    // under no such switch; skipbounds is exactly the flag that marks
-    // them. Filtering them would make the rotation-centre sphere
-    // vanish in Wireframe, which Coin never does.
-    if (!draw.skipbounds) {
-        uint8_t effective = drawStyleMask;
-        // The per-object per-view override is the FIRST clause of the
-        // resolution (docs/CoinRetirement.md 5.9): an entry naming this
-        // draw's object -- or a container above it -- replaces the
-        // view's style for it. The same registered-name rule applies as
-        // for a view style; a pin ("As Is") holds the object to its own
-        // mode, escaping the view style. Only ever non-null under a
-        // superset capture.
-        if (const OvStyle *ov = lookupStyleOverride(draw.objectKey)) {
-            effective = ov->pin ? draw.ownStyle
-                : (draw.registeredStyles & ov->nameBit) ? ov->mask
-                                                        : draw.ownStyle;
-        }
-        else if (styleFromSuperset) {
-            effective = (drawStyleName
-                         && (draw.registeredStyles & drawStyleName))
-                    ? drawStyleMask : draw.ownStyle;
-        }
-        if (effective != Render::StyleAsIs
-                && effective != Render::StyleUnknown
-                && !(effective & Render::styleBitOf(mat)))
-            return;
-    }
+    // The per-object per-view display style resolution
+    // (docs/CoinRetirement.md 5.8, 5.9) -- see styleAdmits, which the
+    // instanced group partition shares.
+    if (!styleAdmits(draw))
+        return;
 
     GpuMesh *mesh = getMesh(*draw.mesh);
     // An exhausted handle pool leaves the upload invalid; binding
