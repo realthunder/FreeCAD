@@ -152,7 +152,9 @@ Full survey 2026-08-28; the facts the design rests on:
 Rule 0 (reveal-if-open, VS Code's `revealIfOpen` as an invariant): opening
 something that already has a view activates that view wherever it lives --
 tab, cell, or floating window. Unchanged from today; the policy runs only
-when a view is actually created.
+when a view is actually created. One exception, ruled 2026-08-28: with the
+Alt inversion held, an already-open view is RELOCATED to the inverted
+placement instead of just activated (sec 4.2).
 
 Three CATEGORIES -- few enough to explain in one sentence each, matching how
 every surveyed program divides the world:
@@ -166,17 +168,29 @@ every surveyed program divides the world:
 Each category has a default TARGET:
 
 - `Tab` -- a new MDI tab (today's behavior everywhere).
-- `Split` -- into the document's view area: REUSE the last-used other cell
-  if the area already has more than one, else SPLIT the active cell. (The
-  order's proposed default for document views; the reuse half is vim/emacs
-  "other window", the split half is VS Code "open to the side".)
+- `Split` -- into the document's view area: REUSE the most-recently-used
+  cell that hosts a NON-3D view, else SPLIT the active cell. (Ruled
+  2026-08-28: a 3D view's cell is never replaced -- 3D views are the
+  primary content; pages, sheets and the simulator share the auxiliary
+  slot(s). The reuse half is vim/emacs "other window", the split half is
+  VS Code "open to the side".)
 - `NewSplit` -- always split, never reuse a cell.
 - `Floating` -- a top-level window (`setCurrentViewMode(TopLevel)`).
+
+Two content rules sit above the targets (ruled 2026-08-28):
+
+- A non-3D view NEVER opens in place of a 3D view. The reuse step only
+  considers cells hosting non-3D content.
+- A new 3D view never reuses either -- it always splits (you asked for an
+  additional viewpoint, not to lose a page). So reuse is strictly non-3D
+  content replacing non-3D content.
 
 Defaults: Document=Tab, Document view=Split, Utility=Tab. `Tab` for
 documents matches every CAD package surveyed; `Split` for document views is
 the order's proposal and matches the "viewports look at one document"
-convention.
+convention. Document=Split IS offered (ruled 2026-08-28) -- opening new
+documents into the current area is allowed, just not the default; see the
+cross-document notes in sec 3.3.
 
 ### 3.2 Resolution algorithm (the whole policy, in order)
 
@@ -194,11 +208,12 @@ of the request).
    else fall back to Tab).
 5. If A has a maximized cell, un-maximize first (content must never land
    invisibly).
-6. Target Split and A has more than one cell: pick the most-recently-active
-   cell that is not the active cell and ask it to adopt V
+6. Target Split, V is non-3D, and A has at least one cell hosting a non-3D
+   view: pick the most-recently-active such cell and ask it to adopt V
    (`setCellView`-style; the outgoing child goes through its normal close
-   path). If the child REFUSES to close (unsaved editor), fall through to a
-   new split rather than fighting the veto.
+   path). Cells hosting 3D views are never candidates, and a 3D-view V
+   skips this step entirely. If the chosen child REFUSES to close (unsaved
+   editor), fall through to a new split rather than fighting the veto.
 7. Otherwise (single cell, or NewSplit, or step 6 refused):
    `A->splitCell(activeCell, direction, V)` where direction comes from the
    split-direction preference (sec 4.1); `Auto` picks the longer side of the
@@ -216,9 +231,16 @@ fallback is tree order after the active cell.
   which is refusable).
 - Never changes the layout shape except by the one split the user's chosen
   default asks for.
-- Never crosses documents: a view of D lands in D's area or a tab, never in
-  another document's area. (Cross-document cells stay possible manually and
-  as a future Document=Cell option; see SplitViews.md sec 5.2.)
+- The Document-view category never crosses documents: a view of D lands in
+  D's area or a tab, never in another document's area. The DOCUMENT
+  category may cross by explicit choice (Document=Split, or Alt inversion
+  on an open): the new document's first view then lands in the CURRENT
+  area, making that area host children of two documents -- which
+  SplitViews.md sec 5.2 already permits structurally. Consequence for
+  persistence: a `<ViewArea>` layout is saved in ONE document's
+  GuiDocument.xml, so a cell whose child belongs to another document is
+  skipped by the leaf-token writer and dropped on restore (same per-leaf
+  tolerance the simulator cell needs, sec 6).
 - Never runs for restore: document restore replays saved `<ViewArea>`
   layouts (Document.cpp:2833) and must stay byte-stable; the policy applies
   to interactively opened views only.
@@ -227,8 +249,7 @@ fallback is tree order after the active cell.
 
 ### 4.1 Preferences (`BaseApp/Preferences/View/OpenView`)
 
-- `DocumentTarget` = Tab | Floating (default Tab; Split intentionally not
-  offered until cross-document cells are in scope)
+- `DocumentTarget` = Tab | Split | Floating (default Tab)
 - `DocViewTarget` = Tab | Split | NewSplit | Floating (default Split)
 - `UtilityTarget` = Tab | Split | Floating (default Tab)
 - `SplitDirection` = Auto | Right | Down (default Auto = longer side)
@@ -236,33 +257,46 @@ fallback is tree order after the active cell.
 Exposed on a new "Views" group in the Display preferences page: three combo
 boxes and the direction combo, each with a one-line label ("New documents
 open in", "Additional views of a document open in", "Utility windows open
-in", "New splits go"). `UseViewArea` graduates from a hidden parameter to a
-checkbox on the same group, and disabling it greys the split choices.
+in", "New splits go"), plus a static hint line: "Hold Alt while opening to
+invert tab/split for that one view." (Ruled: the hint in preferences IS
+the discoverability story -- no alternate context-menu entries.)
+`UseViewArea` graduates from a hidden parameter to a checkbox on the same
+group, and disabling it greys the split choices.
 
-### 4.2 Per-action variants (the escape hatch, VS Code-style)
+### 4.2 The Alt inversion (the single escape hatch, ruled 2026-08-28)
 
-- Context menus that open views grow an alternate entry only where the
-  default is the other one: a TechDraw page's menu shows "Open in New Tab"
-  when the default is Split (and "Open in Split View" when the default is
-  Tab); same for spreadsheets and `Std_ViewCreate`'s menu entry.
-- Modifier inversion: holding Ctrl while double-clicking (or activating the
-  open action) inverts Tab <-> Split for that one open. Read via
-  `QGuiApplication::keyboardModifiers()` at request time; advertised in the
-  entries' tooltips.
-- The existing `Std_ViewCellShowObject` and the cell content menu remain the
-  "pull it in afterwards" path and are untouched.
+- Holding ALT while triggering an open (tree double-click, toolbar/menu
+  command) inverts Tab <-> Split for that one view. Read via
+  `QGuiApplication::queryKeyboardModifiers()` at request time. No
+  alternate context-menu entries (ruled); the preferences hint (sec 4.1)
+  documents it.
+- Already-open + Alt = RELOCATE (ruled): when rule 0 would merely activate
+  an existing view, Alt instead moves it to the inverted placement --
+  a view in a cell pops out to its own tab, a tabbed view drops into the
+  split. Specified as close-and-reopen; implemented as a state-preserving
+  move (`detachViewForHosting` + re-place), which is observably the same
+  minus the state loss.
+- Conflict check (done 2026-08-28): Alt is FREE on the paths that matter.
+  Tree `onDoubleClickItem` reads no modifiers today, and the Alt uses in
+  `Tree.cpp` sit elsewhere: Alt+click on an item's ICON routes to
+  `ViewProvider::iconMouseEvent` (Tree.cpp:2938), Alt suppresses the tree
+  context menu (Tree.cpp:1652), and Alt during tree DRAG means LinkAction
+  (Tree.cpp:3192) -- none fire on a plain double-click of the item label.
+  Caveats to carry into implementation: (a) double-clicking the item's
+  icon (not label) with Alt held is claimed by `iconMouseEvent` first;
+  (b) a command whose own keyboard shortcut contains Alt must suppress
+  inversion for keyboard activation; (c) some Linux window managers grab
+  Alt+drag (KDE window move) -- plain Alt+clicks still reach the app, but
+  this is worth a release-note line.
+- The existing `Std_ViewCellShowObject` and the cell content menu remain
+  the "pull it in afterwards" path and are untouched.
 
-### 4.3 Per-type overrides (advanced, parameter editor only)
+No per-view-type override settings (ruled 2026-08-28): the categories, the
+non-3D reuse rule and the Alt inversion are the whole configuration
+surface. Spreadsheets follow DocView=Split like pages -- they share the
+non-3D slot.
 
-A flat map `BaseApp/Preferences/View/OpenViewByType`: key = view type name
-(`TechDrawGui::MDIViewPage`, `SpreadsheetGui::SheetView`,
-`ViewCAMSimulator`, ...), value = a target name. Looked up before the
-category default. No GUI beyond the parameter editor -- this is the entire
-"rule engine", kept deliberately at emacs-lesson distance from the defaults.
-It exists precisely for calls like "spreadsheets are wide, I want them in
-tabs" without demoting the category default for pages and the simulator.
-
-### 4.4 Later gestures (out of first scope, recorded)
+### 4.3 Later gestures (out of first scope, recorded)
 
 - Drag an MDI tab and drop it onto a cell to move that view into the split
   (VS Code drag-to-split; the machinery is `detachViewForHosting` +
@@ -336,23 +370,30 @@ Specifics:
   `applyLayout`. Behavior change visible: pages/sheets/sim/second-3D open
   into splits by default.
 - P1 -- configuration surface: the Display preferences group (incl.
-  UseViewArea checkbox), per-type override map honored.
-- P2 -- per-action variants: alternate context-menu entries + Ctrl
-  inversion.
+  UseViewArea checkbox and the Alt hint line).
+- P2 -- the Alt inversion, including relocate-when-already-open and the
+  keyboard-shortcut suppression caveat.
 - P3 (unscheduled) -- tab-onto-cell drag; Document=Cell (cross-document
   cells); wasm-tier equivalent once the browser has layout chrome worth
   driving (SplitViews.md sec 5.7).
 
-## 8. Open questions (for the user)
+## 8. Rulings (2026-08-28) and what stays open
 
-1. Spreadsheets: keep them in the DocView=Split default (half-width sheets
-   can be cramped), or pre-seed `OpenViewByType` with SheetView=Tab? My
-   recommendation: keep Split, no pre-seed -- one policy, one story, and the
-   per-type override exists for those who disagree.
-2. Dependency graph: DocView (splits beside the model, my lean -- it is a
+Ruled by the user:
+
+1. A non-3D view never opens in place of a 3D view: reuse targets the
+   last-used NON-3D cell, else a new split (sec 3.1).
+2. Document=Split is offered, just not the default (sec 3.1, 3.3).
+3. Alt is the inversion modifier; conflicts checked (sec 4.2).
+4. No per-view-type settings; the Alt inversion is mentioned in the
+   preferences page rather than via context-menu variants (sec 4.1, 4.2).
+5. Inversion on an already-open view closes it and reopens it on the other
+   side (specified as a state-preserving relocate, sec 4.2).
+
+Still open:
+
+1. Dependency graph: DocView (splits beside the model, my lean -- it is a
    read-alongside view) or Utility (tab)?
-3. Is Ctrl the right inversion modifier, given Ctrl+click selection
-   conventions elsewhere in the tree? Alt is the alternative.
-4. Should Std_ViewCreate ALWAYS split (NewSplit) rather than reuse the last
-   cell? The order said "last split if more than one" -- confirmed as the
-   default for all DocView opens, or intended only for pages/sim?
+2. Interpretation to confirm: a new 3D view (Std_ViewCreate) always
+   SPLITS -- it never replaces a non-3D cell's content, per the symmetric
+   reading of ruling 1. If instead it should reuse a non-3D cell, say so.
