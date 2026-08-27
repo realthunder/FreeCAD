@@ -40,6 +40,13 @@ builds. It costs build time and nothing else.
 
 `ctest -j` is safe too, and is exercised -- see section 5.
 
+**Set `QT_QPA_PLATFORM=offscreen` for a headless run.** One suite,
+`QuantitySpinBox_Tests_run`, is a QtTest that constructs widgets, so with no
+`DISPLAY` it aborts on "could not connect to display" and ctest reports
+444/445. `offscreen` is enough -- it needs a platform plugin, not a GPU:
+
+    QT_QPA_PLATFORM=offscreen ~/works/sw/fcad/.conda/run.sh ctest -j6
+
 One binary directly, which is the fastest loop while working on a suite:
 
     ./tests/src/Mod/Part/TopoShapeEx_tests_run --gtest_filter='*makEBoolean*'
