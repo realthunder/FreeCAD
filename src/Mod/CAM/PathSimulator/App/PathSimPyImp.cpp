@@ -75,7 +75,13 @@ PyObject* PathSimPy::BeginSimulation(PyObject* args, PyObject* kwds)
     }
     PathSim* sim = getPathSimPtr();
     Part::TopoShape* stock = static_cast<Part::TopoShapePy*>(pObjStock)->getTopoShapePtr();
+    // Released so the stop-swap driver can replay on a worker thread
+    // without blocking the GUI (docs/CAMSimRenderPort.md 11.7.3);
+    // pure C++ on the simulator's own state, args keeps the Python
+    // owners of the borrowed pointers alive.
+    Py_BEGIN_ALLOW_THREADS
     sim->BeginSimulation(stock, resolution);
+    Py_END_ALLOW_THREADS
     Py_IncRef(Py_None);
     return Py_None;
 }
@@ -90,7 +96,10 @@ PyObject* PathSimPy::SetToolShape(PyObject* args)
     PathSim* sim = getPathSimPtr();
     const TopoDS_Shape& toolShape
         = static_cast<Part::TopoShapePy*>(pObjToolShape)->getTopoShapePtr()->getShape();
+    // GIL released as in BeginSimulation above.
+    Py_BEGIN_ALLOW_THREADS
     sim->SetToolShape(toolShape, resolution);
+    Py_END_ALLOW_THREADS
     Py_IncRef(Py_None);
     return Py_None;
 }
@@ -110,7 +119,10 @@ PyObject* PathSimPy::GetResultMesh(PyObject* args)
     Mesh::MeshPy* meshOuterpy = new Mesh::MeshPy(meshOuter);
     Mesh::MeshObject* meshInner = new Mesh::MeshObject();
     Mesh::MeshPy* meshInnerpy = new Mesh::MeshPy(meshInner);
+    // GIL released as in BeginSimulation above.
+    Py_BEGIN_ALLOW_THREADS
     stock->Tessellate(*meshOuter, *meshInner);
+    Py_END_ALLOW_THREADS
     PyObject* tuple = PyTuple_New(2);
     PyTuple_SetItem(tuple, 0, meshOuterpy);
     PyTuple_SetItem(tuple, 1, meshInnerpy);
@@ -138,7 +150,11 @@ PyObject* PathSimPy::ApplyCommand(PyObject* args, PyObject* kwds)
     PathSim* sim = getPathSimPtr();
     Base::Placement* pos = static_cast<Base::PlacementPy*>(pObjPlace)->getPlacementPtr();
     Path::Command* cmd = static_cast<Path::CommandPy*>(pObjCmd)->getCommandPtr();
-    Base::Placement* newpos = sim->ApplyCommand(pos, cmd);
+    // GIL released as in BeginSimulation above.
+    Base::Placement* newpos = nullptr;
+    Py_BEGIN_ALLOW_THREADS
+    newpos = sim->ApplyCommand(pos, cmd);
+    Py_END_ALLOW_THREADS
     // Base::Console().log("Done...\n");
     // Base::Console().Refresh();
     Base::PlacementPy* newposPy = new Base::PlacementPy(newpos);
