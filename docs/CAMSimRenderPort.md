@@ -2,10 +2,15 @@
 
 Porting the CAM simulator's rendering off raw OpenGL. **Stage 1 is
 COMPLETE (2026-08-25)**: all eight steps landed; the simulator draws
-entirely through the facade, and the raw-GL path is deleted. Section 7
-records what the execution added to that plan. **Stage 2 -- the
-borrowed frame -- is planned in section 8** and is what makes the
-facade an overlay API rather than a widget-owning one.
+through the facade, and section 7 records what the execution added to
+that plan. **Stage 2 -- the borrowed frame -- is COMPLETE
+(2026-08-27)**: section 8, with execution records in 8.8-8.10; the
+simulator draws inside a host view's frame and sorts against the
+document by depth. The **legacy raw-GL renderer is a permanent second
+path** (section 9), not a stage of the port. **Stage 3 -- the phased
+contract -- is DESIGNED in section 10**, not yet built; section 11
+holds the requested cut-shape-in-the-normal-view feature that follows
+it.
 
 Related: `docs/RenderEngine.md` (the bgfx engine), `docs/RendererPlan.md`
 (the engine's own build log).
@@ -466,7 +471,8 @@ block still draw over it. Sorting against transparent scene geometry
 is given up (the consumer draws after the WBOIT resolve, so it
 occludes transparents rather than blending with them); the
 simulator's stock is opaque, and a documented limit beats a second
-insertion point.
+insertion point. (Stage 3 adds that second insertion point after all
+-- section 10 -- once there is a second thing to place.)
 
 ### 8.3 The API
 
@@ -809,7 +815,8 @@ operator can see where the tool goes -- is covered wherever host
 geometry is in front of it. The simulator composites one finished
 image, so the host occludes all of it at once, translucent overlay
 included. Recovering it would mean handing over depth per pass rather
-than one image, which is a different design from 8.4's.
+than one image, which is a different design from 8.4's. (Recovered by
+stage 3, section 10 -- though not by depth-per-pass.)
 
 ### 8.10 Execution record: steps 5 and 6 (2026-08-27)
 
@@ -951,12 +958,12 @@ guarded those and left `CurrentShader->UpdateModelMat` in
 drew, because nothing had compiled a Shader. Grep for the shader
 objects and `CurrentShader` too.
 
-## 10. Stage 3 -- a more capable contract (ruled, not yet designed)
+## 10. Stage 3 -- the phased contract (designed 2026-08-27)
 
 Stage 2's contract carries exactly ONE finished RGBA8 image and one
 depth per pixel across into the host frame. That bought a clean, cheap
-boundary, and it costs two things that are now to be recovered rather
-than accepted.
+boundary, and it costs two things that are now recovered rather than
+accepted:
 
 **The tool path's hidden-line pass.** `MillSimulation::RenderPath`
 draws the path twice -- `depthFunc LESS` at full alpha for the visible
@@ -970,12 +977,201 @@ so host geometry in front covers both at once (section 8.9).
 the WBOIT resolve, so it occludes transparents rather than blending
 with them.
 
-These are the same underlying trade seen twice: one image crossing the
-boundary cannot sort per-layer. The contract needs depth per pass, so
-the host can interleave a consumer's translucent output separately
-from its opaque output. Design the two together -- one change may
-serve both -- and see section 8.8's lead on the stock view provider
-while doing it.
+The first framing of the fix was "depth per pass" -- hand a depth
+buffer over per layer so the host can interleave. **Rejected on
+audit.** Both losses turn out to be PLACEMENT problems, and the
+placement machinery is nearly all built already.
+
+### 10.1 The two facts that decide the design
+
+1. **The OIT framebuffer shares the scene depth attachment**
+   (`BGFXViewLifecycle.cpp:1190`, attached read-only). If the sim's
+   composite runs at a pass id BEFORE `ViewTransparent`, the WBOIT
+   accumulation depth-tests against the stock automatically. Nothing
+   new crosses the boundary. And the C++ call site of `drawFrame` is
+   reading order only -- the ids place the draws -- so an early
+   consumer block costs no restructuring of the frame path.
+2. **After the composite stamps the stock's depth, the host depth
+   buffer holds min(document, stock)** -- exactly the surface the
+   x-ray wants to test against. The facade already has per-pass
+   transforms and `hostCamera()`; the sim's world space IS the
+   document's (the depth transform is
+   `hostProj * hostView * inverse(simView)`); and the line vertex
+   shader reads only `u_viewProj` and `u_viewRect`, so it runs
+   unchanged under the host's camera. Re-submitting the path's two
+   draws in HOST clip space against the merged depth reproduces the
+   x-ray -- and extends it: the path now also shows faintly through
+   the engine-drawn base (which stage 2 silently lost from the
+   GREATER pass's reach) and through any other document geometry.
+
+What stays rejected: carrying per-layer depth textures across the
+boundary, or joining the consumer's translucent output into WBOIT
+itself. Far heavier, and a 10%-alpha line overlay does not justify it.
+
+Prior art agrees. Blender's viewport draw handlers solve the identical
+problem with placement tags (`PRE_VIEW` / `POST_VIEW` / `POST_PIXEL`),
+not with depth layers -- and since the facade's ambition is a
+`gpu`-module workalike (`docs/ExternalEngines.md` section 7), matching
+Blender's mechanism here is a point in favour, not a convenience.
+
+### 10.2 The contract: phase-tagged passes
+
+A consumer's passes split into two runs, each a block in the
+`PassView` enum, declared live only while a consumer is attached (the
+view-id budget is untouched otherwise):
+
+- **The scene run**, `ViewConsumerScene0..15` -- sixteen, sized like
+  the old block -- placed after `ViewOutline`, before `ViewCaustics`
+  and `ViewVolApply` (ruled: before `ViewVolApply`). Everything the
+  frame composes from there on sees the consumer's opaque output and
+  its depth: water caustics land on the stock, the volumetric fog
+  covers it, water and glass surfaces sort against it, WBOIT blends
+  transparent document geometry over it, and bloom, the user post
+  stage, debug visualization and idle accumulation see it as before.
+- **The overlay run**, `ViewConsumerOverlay0..3` -- the OLD block's
+  position (after `ViewSectionCapTransp`, before `ViewBloomBright`),
+  shrunk from sixteen to four now that the bulk of a consumer's work
+  belongs in the scene run. This is where translucent output that must
+  read the finished scene depth goes.
+
+The API change is one virtual next to `framePasses()`:
+
+```
+/// Of framePasses(), how many TRAILING passes belong in the overlay
+/// run -- drawn after the transparent composite, against the frame's
+/// finished depth. The rest are the scene run, drawn where the scene
+/// is still being composed (before volumetrics and transparency).
+/// Ordering within each run follows pass index, as before.
+virtual unsigned overlayPasses() const { return 0; }
+```
+
+Passes `0 .. N-overlay-1` are the scene run, the trailing `overlay`
+are the overlay run. The default is all-scene, which is where a
+consumer's composite belongs; the one existing consumer moves in the
+same commit. `bindFrame`'s ids array simply fills from the two enum
+runs -- the surface's pass numbering, targets, clears, sequential
+flags and transforms are untouched, so the consumer-side facade does
+not change shape at all.
+
+While `bindFrame` is being touched it folds its ten positional
+parameters into a bind-info struct; stage 3 adds to them, and the
+signature is past the point where positions are readable.
+
+### 10.3 The composite writes depth in BOTH flavours
+
+Standalone, `hostCamera()` degenerates to the sim's own view and
+projection (the depth transform collapses to `simProj`), and the
+composite writes depth there too -- `LEqual`, depth write on, into a
+target whose clear already includes depth. One code path instead of a
+`writeDepth` fork, and the property stage 1 bought -- the sim's
+drawing code does not know which flavour it holds -- extends to the
+depth write.
+
+That is what lets the path passes be uniform: they always draw after
+the composite, against the target's depth, under the target's camera
+-- the host's when attached, the sim's own when not.
+
+### 10.4 The path becomes an overlay-run draw against the merged depth
+
+`SimPassPath` leaves the G-buffer run entirely. `mRPathTarget` (the
+colour+depth-only alias target) is deleted, and the G-buffer cache
+goes back to holding geometry only -- the path is redrawn every frame
+as two draws in the overlay run, visible (`LESS`, full alpha) then
+hidden (`GREATER`, alpha 0.1), in the target camera's clip space. The
+sim's private near/far stops mattering for this pass: the path tests
+the merged depth directly.
+
+Consequences, each deliberate:
+
+- **Ruled: the x-ray widens.** Against min(document, stock) the faint
+  pass shows the path through ANY occluder -- stock, base, fixture,
+  any document geometry -- not only "inside the material". Accepted
+  as the better x-ray, not merely a recovery.
+- **The path's colour becomes exact.** It used to be baked into the
+  G-buffer albedo and ride through the deferred lighting and its
+  gamma; that modulation was incidental to the
+  depth-test-in-the-G-buffer arrangement, not a design. It now draws
+  in its stated colour, with the `hostLinearColor()` decode the
+  composite already does (`fs_camsim_line` grows the same decode).
+  The A/B diff class against legacy GL grows accordingly: path pixels
+  may differ in colour as well as in the width substitute.
+- **Residual, documented the way 8.2 was:** the translucent overlay
+  itself still cannot blend correctly with transparent DOCUMENT
+  geometry in front of it -- it draws after the OIT composite, over
+  the blended result. Fixing that means joining WBOIT, rejected
+  above.
+
+The sim's runs after the move: scene run of thirteen --
+`SimPassScene`, `SimPassBaseShape` (still real: standalone draws the
+base itself), the AO effect's nine, `SimPassResolve`,
+`SimPassComposite` -- and an overlay run of two. Fifteen passes, and
+the `SimPass*` enum renumbers once.
+
+### 10.5 Stock at mPathStep == -1: ruled, the engine does not take it
+
+Section 8.10's design lead -- the engine owning the uncut stock until
+the first cut -- is DECLINED (ruled 2026-08-27): no visual hand-back
+is wanted, and the lead cannot exist without one. The simulator draws
+the stock in every state, uncut included. With that, the ground 8.10
+kept `Dummy3DViewer::stockViewProvider` on is gone again; its
+disposition is an open question, and it is not to be deleted without
+a ruling.
+
+### 10.6 Work breakdown
+
+Each step builds and leaves both flavours and the legacy GL path
+working; legacy GL is untouched throughout (it never attaches,
+section 9).
+
+1. **The bind-info struct.** `bindFrame`'s parameters fold into one
+   struct. Mechanical, no behaviour change.
+2. **The phase contract.** `overlayPasses()`, the
+   `ViewConsumerScene0..15` run, the overlay run shrunk to four, the
+   declPass loops and the id mapping. *Done when:* a probe consumer
+   (not the simulator, same order as 8.8) draws a scene-run triangle
+   that the fog covers and transparent scene geometry blends over,
+   and an overlay-run triangle that draws over the OIT composite.
+3. **Composite depth in both flavours.** The standalone degeneracy of
+   10.3. *Done when:* the standalone image is pixel-identical and the
+   probe shows depth present behind it.
+4. **The simulator adopts the scene run.** *Done when:* transparent
+   document geometry blends over the carved stock and volumetrics
+   land on it; the attached image is otherwise unchanged.
+5. **The path moves to the overlay run.** `mRPathTarget` deleted, the
+   two host-space passes in, the decode in `fs_camsim_line`. *Done
+   when:* the x-ray is back, including through the engine-drawn base.
+6. **Doc.** The execution record.
+
+### 10.7 Risks, each with its substitute
+
+- **A pass with no stated transform inherits a stale one** (the 8.8
+  lesson). The two path passes state theirs every frame, host camera
+  or sim camera.
+- **Depth-domain seam on the visible path.** The stock's depth is
+  reconstructed per composite texel from the position attachment; the
+  path's is interpolated per fragment. Where the visible path lies
+  exactly on the stock surface the two can z-fight into stipple.
+  *Substitute if seen:* a slightly-closer projection on the path
+  passes, the `SimPassBaseShape` trick.
+- **The prepass-fed effects still do not see the stock.** Engine AO,
+  shadows, outlines and ground reflection read the prepass, which the
+  consumer is not in -- same as stage 2, unchanged; listed so nobody
+  hunts it as a regression of this stage.
+- **The overlay run is four wide.** A consumer wanting more re-opens
+  the split's sizing, not the facade's shape.
+- **Renumbering `SimPass*`.** The AO range rides `SimPassAOFirst`;
+  one definition, no scattered constants.
+
+### 10.8 Verification
+
+The stage 2 harness, extended: standalone leg (regression,
+pixel-identical), attached `SIM_BASE=3 SIM_BOTH=1` (the piercing bar
+-- the new picture is the faint path through the bar and the base),
+a transparent-pane scene (document glass in front of the stock must
+BLEND over it, the section 8.2 limit lifted), and the `SIM_LEGACY=1`
+leg, whose diff class now includes path colour as documented in 10.4.
+Real GPU on WSLg d3d12 as before: the frame presents and the ordering
+is right.
 
 ## 11. Requested: the cut shape in the NORMAL 3D view
 
@@ -1061,7 +1257,13 @@ SWAP.
   granularities may not meet, in which case the swap is only exact at
   command boundaries. Settle this before designing the debounce --
   it decides whether "stopped" can mean anywhere or only at a
-  boundary.
+  boundary. Proposed resolution (2026-08-27, not yet ruled):
+  `ApplyCommand` takes a placement plus a command, and G-code motions
+  interpolate, so a stop mid-segment can be met by SYNTHESIZING a
+  truncated final command -- the same command with its endpoint at
+  the GL sim's sub-step interpolant. The replay should also run from
+  a SNAPSHOT of the stopped state on the worker, aborted if play
+  resumes.
 - **Threading.** The tessellation goes to a worker; anything touching
   the document or the Coin graph must come back to the GUI thread.
 - **Where the mesh lives: RULED.** It goes on the Job's `Stock`
