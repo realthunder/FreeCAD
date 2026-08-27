@@ -29,11 +29,15 @@ Ruled 2026-08-27:
 - **GPU acceleration targets both NVIDIA and AMD.** NVIDIA is testable
   on this box, AMD is a ship target only. Section 4.
 - **The view draws only the selection highlight.** Cycles' image is the
-  base layer; no document geometry is drawn by the host. Section 5.
+  base layer; no shaded document geometry is drawn by the host.
+  Section 5.
+- **Selection stays with the host, picking and highlight both.** Depth
+  for the highlight comes from a host depth-only prepass, never from
+  Cycles' Depth pass. Ruled 2026-08-28 after checking what Blender does
+  (section 5.6).
 
 Deliberately NOT decided yet: whether the Cycles view is a mode on an
-existing 3D view or its own view type (section 5.4), and whether
-picking eventually moves to a Cycles id pass (section 5.5).
+existing 3D view or its own view type (section 5.4).
 
 
 ## 2. The fork
@@ -190,8 +194,11 @@ as a broken HIP port.
 
 The 3D view stays a real view: camera, navigation, selection and all
 the interaction machinery are unchanged. What changes is what gets
-drawn. The host draws **no document geometry**. Cycles' image is
+drawn. The host draws **no shaded document geometry**. Cycles' image is
 blitted as the base layer, and the selection highlight goes on top.
+What the host still rasterizes is a **depth-only prepass** of the
+scene (section 5.3) and whatever picking needs (section 5.5); neither
+produces colour.
 
 This is a large simplification and it is the reason the design is
 tractable. It means **Cycles geometry and bgfx geometry never have to
@@ -204,8 +211,10 @@ path-traced image is simply the bottom layer.
 `Render::FrameConsumer` (`src/Gui/Renderer/Renderer.h:2497`) is exactly
 the hook: `framePasses()`, `overlayPasses()`, and
 `drawFrame(DrawSurface &)`, drawing inside a 3D view's frame on pass
-ids from that view's own block. `7b148e9cdf` already established that a
-frame consumer may put its image into the host's depth.
+ids from that view's own block. `7b148e9cdf` established that a frame
+consumer may put its image into the host's depth; this consumer does
+not need to (section 5.3), so its blit runs with depth test and depth
+write both off -- the same quad Blender's display driver draws.
 
 Cycles emits a float buffer, not draw calls, so the consumer is thin:
 buffer -> texture -> one blit pass. Most of the work is in getting the
@@ -219,28 +228,41 @@ them. So the handoff must be a lock-and-copy (or an ownership swap)
 into a staging buffer done OUTSIDE `drawFrame`, with `drawFrame` only
 consuming what is already resident and uploaded.
 
-### 5.3 Both highlight routes
+### 5.3 Both highlight routes, one depth source
 
-Ruled: support both, and let the cheap one be the default.
+Ruled: support both, and let the cheap one be the default. Ruled
+after (2026-08-28): **the depth the highlight tests against is the
+host's own, from a depth-only prepass of the render cache -- not
+Cycles' Depth pass.** Section 5.6 records why.
 
 - **On-top route (cheap).** The highlight is drawn in the overlay run,
-  ignoring occlusion. No depth data leaves Cycles, no reconciliation
-  needed, and it works the moment the colour blit works. Highlights are
-  frequently drawn on top anyway, so this is a legitimate end state,
-  not just a stepping stone.
-- **Depth route (correct).** Cycles emits its **Depth AOV** alongside
-  the colour pass; that depth is blitted into the host depth and the
-  highlight depth-tests against it, so a highlight behind geometry is
-  properly hidden.
+  ignoring occlusion. It works the moment the colour blit works.
+  Highlights are frequently drawn on top anyway, so this is a
+  legitimate end state, not just a stepping stone. This is what
+  `ShowSelectionOnTop` already selects.
+- **Depth route (correct).** The host rasterizes the scene depth-only
+  (the mesh program already has this role: it is the AO block's
+  prepass, `docs/RenderEngine.md`), the Cycles colour is blitted over
+  it without touching depth, and the highlight depth-tests as it does
+  today (`OutlineSpec::depthTest`). Nothing leaves Cycles but colour,
+  so there is no depth-range reconciliation at all -- the trap the CAM
+  simulator paid for (stock-derived near/far) cannot occur, because
+  the depth was written by the host's own projection.
 
-  The known cost is depth-range reconciliation. The CAM simulator hit
-  precisely this: its near/far came from the stock size rather than the
-  camera, so its depth lived in a different space from the host's.
-  Cycles' depth is a distance in camera space, so it must be mapped
-  into the host's projection before it means anything. Budget for it.
+  Preferred shape of the depth route: not "hidden", but **dimmed** --
+  Blender's outline shader draws the visible part of a selected
+  outline at full alpha and the occluded part at a reduced alpha
+  (`alpha_occlu`), in a single pass. That gives both rulings from one
+  pipeline, with no mode switch.
 
-Build the on-top route first; it unblocks everything else and is the
-fallback if the depth mapping fights back.
+- **Cost control.** The depth prepass need not re-run on every Cycles
+  tile arrival; only camera and scene changes move it. Blender 2.93
+  gated its prepass on exactly this (`update_depth` false on the
+  no-rebuild redraws that progressive samples trigger). The idle
+  temporal accumulation code already tells a camera-move frame from a
+  refine frame, so the same signal serves here.
+
+Build the on-top route first; it unblocks everything else.
 
 ### 5.4 Which view
 
@@ -259,11 +281,50 @@ Open. Two shapes, both viable:
 Picking still needs geometry, and it is nearly free: the scene has to
 stay resident anyway to FEED Cycles, so Coin's CPU ray-pick keeps
 working untouched. Nothing special is required for selection to
-continue functioning while the view draws no geometry.
+continue functioning while the view draws no shaded geometry.
 
-A later upgrade, not a requirement: Cycles' **Object Index /
-Cryptomatte** pass would give pixel-accurate picking straight out of
-the render, with no CPU ray cast at all.
+Cycles' **Object Index / Cryptomatte** passes are NOT a picking route,
+now or later: they are object- or material-level, and CAD selects
+faces, edges and vertices. Blender does not pick from them either
+(section 5.6).
+
+### 5.6 What Blender does, and why the same answer holds here
+
+Checked against the sources 2026-08-28 (v2.93 and current `main`):
+
+- **Cycles supplies colour only.** `BlenderDisplayDriver::draw` blits
+  a half-float texture as a quad (`GPU_SHADER_3D_IMAGE`, premultiplied
+  alpha blend), with no depth test and no depth write, and the driver
+  never uploads a depth texture. Blender has never composited its
+  overlays against Cycles' Depth pass.
+- **Overlay depth is rasterized by the viewport.** In 2.93 the
+  external engine drew its own depth-only pass of every renderable
+  object after `view_draw`. In current `main` the overlay engine owns
+  it: `is_render_depth_available` is true only for Workbench and
+  (unscaled) EEVEE, and otherwise it "clears the depth and renders a
+  depth prepass". The external engine's leftover prepass is
+  grease-pencil-only and carries the comment "should ultimately be
+  replaced by render engine depth output" -- an aspiration never acted
+  on.
+- **The selection outline is one depth-aware pass.**
+  `overlay_outline_detect_frag.glsl` edge-detects an id buffer of the
+  selected objects and dims the result where
+  `ref_depth > scene_depth + epsilon` (`alpha_occlu`).
+- **Picking never touches the render engine.** The `select` draw
+  engine rasterizes ids into an offscreen u32 buffer with its own
+  shaders.
+
+Why Cycles depth is the wrong thing to test a highlight against, and
+worse for CAD than for Blender: it is **filtered** depth, averaged
+over the pixel filter at silhouettes (exactly where the outline lives)
+and smeared by depth of field; and it **lags**, because Cycles
+restarts on every camera move, so during navigation the depth would
+be the previous camera's at reduced resolution while the highlight is
+drawn with the current one. A host prepass is camera-synchronous and
+pixel-exact. The one legitimate case for engine depth is geometry the
+host does not have -- displacement, subdivision -- and with
+`WITH_CYCLES_OPENSUBDIV=OFF` and explicit CAD tessellation both sides
+see the same mesh.
 
 
 ## 6. Scene translation
@@ -362,8 +423,13 @@ Phase 4 -- the viewport.
 
 11. Progressive `OutputDriver` -> staging buffer -> texture ->
     `FrameConsumer` blit, on-top highlight route (section 5.3).
-12. Depth AOV and the depth-correct route.
-13. Cancel-on-camera-move, sample and time budget, denoise on.
+12. Host depth prepass under the blit, and the dimmed-when-occluded
+    highlight (section 5.3).
+13. Cancel-on-camera-move, sample and time budget, denoise on. Follow
+    Blender's navigation behaviour: restart at a coarse pixel size and
+    refine, the way its `preview_pixel_size` does -- the crisp
+    rasterized highlight over a blocky refining image is what makes
+    that acceptable.
 
 Phase 5 -- beyond the desktop: headless render served to the browser
 tier over the existing stream (section 7).
@@ -380,7 +446,8 @@ Each of these has already cost time somewhere in this tree:
 - **A conda solve that quietly downgrades boost** and breaks every
   binary in the env. Section 3.1.
 - **Depth in the wrong space** when a second renderer's image is
-  composited (the CAM simulator's stock-derived near/far). Section 5.3.
+  composited (the CAM simulator's stock-derived near/far). Avoided
+  outright here by never importing depth. Section 5.3.
 - **`drawFrame` is inside someone else's frame** -- no frame of its
   own, no resize, no repaint. Section 5.2.
 - A **slow AMD iGPU number** read as a broken HIP port. Section 4.2.
