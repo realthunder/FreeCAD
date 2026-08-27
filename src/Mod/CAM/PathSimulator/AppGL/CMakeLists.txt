@@ -9,9 +9,9 @@ set(CAMSimulator_LIBS
     # The simulator draws through the draw facade
     # (Gui/Renderer/DrawDevice.h, docs/CAMSimRenderPort.md) when there
     # is a backend to draw through, and through the raw-GL renderer
-    # below when there is not -- which is the ordinary build, since
-    # BUILD_BGFX defaults OFF. Both are permanent; neither library set
-    # can go.
+    # below when there is not -- a build without the bgfx submodule,
+    # a backend that would not start, or a session that never warmed
+    # one. Both are permanent; neither library set can go.
     FreeCADRenderer
     ${QtOpenGL_LIBRARIES}
     ${OPENGL_gl_LIBRARY}

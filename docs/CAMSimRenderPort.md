@@ -888,10 +888,12 @@ render path selection always brings the backend up in this fork", so a
 missing backend meant a blank simulator "as designed".
 
 **That reasoning does not survive the build options.** `BUILD_BGFX`
-defaults OFF, and so does `BUILD_CAM_SIMULATOR_GL`
-(`InitializeFreeCADBuildOptions.cmake`). An ordinary build has no
-backend to draw through at all, and a session that has never warmed
-one does not either. What step 8 described as designed behaviour is
+defaulted OFF at the time, and so did `BUILD_CAM_SIMULATOR_GL`
+(`InitializeFreeCADBuildOptions.cmake`; both default ON since
+2026-08-28 -- RULED -- with a graceful degrade when the bgfx
+submodule is not checked out). A build without the backend has
+nothing to draw through, and a session that has never warmed one
+does not either. What step 8 described as designed behaviour is
 just a simulator that does not work.
 
 So the deletion is reverted (`2dc2abf6e6`) and the GL renderer is a

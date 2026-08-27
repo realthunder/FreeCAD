@@ -536,10 +536,10 @@ bool DlgCAMSimulator::forceLegacyGLPref()
 bool DlgCAMSimulator::useLegacyGL()
 {
     // The legacy raw-GL renderer draws whenever there is no backend to
-    // draw through: BUILD_BGFX off (both default OFF, so this is the
-    // ORDINARY build), a backend that would not start, or a session
-    // where nothing has brought one up yet. Without it the simulator
-    // is simply blank in those builds.
+    // draw through: BUILD_BGFX off (a build without the submodule), a
+    // backend that would not start, or a session where nothing has
+    // brought one up yet. Without it the simulator is simply blank in
+    // those builds.
     //
     // The preference forces it on where a backend does exist, which is
     // what makes the two comparable on one machine and gives a user

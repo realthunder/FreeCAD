@@ -200,9 +200,8 @@ protected:
 
     /// Whether the legacy raw-GL renderer draws this frame instead of
     /// the facade. True when there is no backend device to draw
-    /// through -- which is the ordinary build, since BUILD_BGFX
-    /// defaults OFF -- or when the Mod/CAM ForceLegacyGLRender
-    /// preference asks for it. See the definition.
+    /// through, or when the Mod/CAM ForceLegacyGLRender preference
+    /// asks for it. See the definition.
     static bool useLegacyGL();
     /// The Mod/CAM ForceLegacyGLRender preference on its own, without
     /// the device test. Changing it takes effect when the simulator is
