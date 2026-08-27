@@ -1070,31 +1070,26 @@ public:
         return s.numPasses;
     }
 
-    void bindFrame(const uint16_t *ids, unsigned numIds,
-                   bgfx::FrameBufferHandle target,
-                   bgfx::TextureHandle colorTex,
-                   bgfx::TextureHandle depthTex,
-                   int width, int height, bool linearColor,
-                   const float *viewMtx, const float *projMtx) override
+    void bindFrame(const FrameBind &bind) override
     {
-        if (numIds < s.numPasses)
+        if (bind.numIds < s.numPasses)
             return;
         s.idsContiguous = true;
         for (unsigned p = 0; p < s.numPasses; ++p) {
-            s.hostIds[p] = ids[p];
-            if (p && ids[p] != uint16_t(ids[p - 1] + 1))
+            s.hostIds[p] = bind.ids[p];
+            if (p && bind.ids[p] != uint16_t(bind.ids[p - 1] + 1))
                 s.idsContiguous = false;
         }
-        s.hostFb = target;
-        s.hostColorTex = colorTex;
-        s.hostDepthTex = depthTex;
-        s.width = width;
-        s.height = height;
-        s.hostLinear = linearColor;
-        s.hostCameraValid = viewMtx && projMtx;
+        s.hostFb = bind.target;
+        s.hostColorTex = bind.color;
+        s.hostDepthTex = bind.depth;
+        s.width = bind.width;
+        s.height = bind.height;
+        s.hostLinear = bind.linearColor;
+        s.hostCameraValid = bind.viewMtx && bind.projMtx;
         if (s.hostCameraValid) {
-            std::memcpy(s.hostViewMtx, viewMtx, sizeof(s.hostViewMtx));
-            std::memcpy(s.hostProjMtx, projMtx, sizeof(s.hostProjMtx));
+            std::memcpy(s.hostViewMtx, bind.viewMtx, sizeof(s.hostViewMtx));
+            std::memcpy(s.hostProjMtx, bind.projMtx, sizeof(s.hostProjMtx));
         }
         s.inFrame = true;
         // The ids move between frames (mapPasses reassigns from what
@@ -1102,7 +1097,7 @@ public:
         // relying on bgfx's sticky per-view state.
         for (unsigned p = 0; p < s.numPasses; ++p)
             s.applyPass(p);
-        if (!s.presented || width != lastW || height != lastH) {
+        if (!s.presented || bind.width != lastW || bind.height != lastH) {
             // The attached counterpart of the standalone surface's
             // first-frame line: outside a debugger it is the only sign
             // that a consumer is drawing in a host frame at all, and
@@ -1112,12 +1107,13 @@ public:
             // host's later size would look exactly like one that never
             // drew again.
             s.presented = true;
-            lastW = width;
-            lastH = height;
+            lastW = bind.width;
+            lastH = bind.height;
             std::printf("bgfx: attached draw surface first frame %dx%d "
                         "(passes %u at %u, contiguous %d, linear %d)\n",
-                        width, height, s.numPasses, unsigned(ids[0]),
-                        int(s.idsContiguous), int(linearColor));
+                        bind.width, bind.height, s.numPasses,
+                        unsigned(bind.ids[0]), int(s.idsContiguous),
+                        int(bind.linearColor));
             std::fflush(stdout);
         }
     }

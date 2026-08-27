@@ -2261,19 +2261,39 @@ extern BGFXRendererLib BGFXLib;
 class BGFXHostSurface {
 public:
     virtual ~BGFXHostSurface() {}
+
+    /// Everything a consumer's one drawFrame call needs to know about
+    /// the frame it is drawing into. One struct rather than positional
+    /// parameters: the list is long enough that positions stopped
+    /// being readable, and stage 3 adds to it.
+    struct FrameBind {
+        /// The host view ids the consumer's passes 0..numIds-1 map to,
+        /// in that order.
+        const uint16_t *ids = nullptr;
+        unsigned numIds = 0;
+        /// The target those passes default to -- the host's scene
+        /// framebuffer -- and its attachments, for a consumer that
+        /// samples rather than only writes them.
+        bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle color = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle depth = BGFX_INVALID_HANDLE;
+        /// The target's pixel size (the SCENE target's, not the
+        /// widget's).
+        int width = 0;
+        int height = 0;
+        /// True when the colour attachment holds linear light.
+        bool linearColor = false;
+        /// The camera the target was drawn with, column-major 4x4 --
+        /// what lets a consumer put its own image into the shared
+        /// depth buffer. Null when unavailable.
+        const float *viewMtx = nullptr;
+        const float *projMtx = nullptr;
+    };
+
     /// The consumer-facing object handed to FrameConsumer::drawFrame.
     virtual Render::DrawSurface &surface() = 0;
-    /// Bind this frame: \a ids are the host view ids the consumer's
-    /// passes 0..numIds-1 map to (in that order), and the rest
-    /// describes the target they default to. \a viewMtx and \a projMtx
-    /// are the camera that target was drawn with, which is what lets a
-    /// consumer put its own image into the shared depth buffer.
-    virtual void bindFrame(const uint16_t *ids, unsigned numIds,
-                           bgfx::FrameBufferHandle target,
-                           bgfx::TextureHandle color,
-                           bgfx::TextureHandle depth,
-                           int width, int height, bool linearColor,
-                           const float *viewMtx, const float *projMtx) = 0;
+    /// Bind this frame for the one drawFrame call \a bind describes.
+    virtual void bindFrame(const FrameBind &bind) = 0;
     virtual void unbindFrame() = 0;
     /// Passes the surface was built for -- the consumer's own count,
     /// fixed at creation.

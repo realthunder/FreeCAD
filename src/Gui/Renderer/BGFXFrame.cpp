@@ -5949,11 +5949,18 @@ bool BGFXRenderer::Private::render(const QColor &col,
         uint16_t ids[BGFXView::NumConsumerViews];
         for (int c = 0; c < consumerPassCount; ++c)
             ids[c] = view->vid(V::ViewConsumer0 + c);
-        consumerSurface->bindFrame(ids, unsigned(consumerPassCount),
-                                   view->bgfxFbo, view->bgfxColor,
-                                   view->bgfxDepth, int(view->width),
-                                   int(view->height), view->hdrScene,
-                                   view->viewMatrix, view->projMatrix);
+        BGFXHostSurface::FrameBind bind;
+        bind.ids = ids;
+        bind.numIds = unsigned(consumerPassCount);
+        bind.target = view->bgfxFbo;
+        bind.color = view->bgfxColor;
+        bind.depth = view->bgfxDepth;
+        bind.width = int(view->width);
+        bind.height = int(view->height);
+        bind.linearColor = view->hdrScene;
+        bind.viewMtx = view->viewMatrix;
+        bind.projMtx = view->projMatrix;
+        consumerSurface->bindFrame(bind);
         frameConsumer->drawFrame(consumerSurface->surface());
         consumerSurface->unbindFrame();
     }
