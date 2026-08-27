@@ -87,8 +87,6 @@ ViewCAMSimulator::ViewCAMSimulator(Gui::Document* pcDocument, QWidget* parent, Q
     stack->addWidget(mGui);
     stack->addWidget(mDlg);
 
-#if 1
-
     stack->addWidget(mDummyViewer);
 
     setCentralWidget(stack);
@@ -100,20 +98,6 @@ ViewCAMSimulator::ViewCAMSimulator(Gui::Document* pcDocument, QWidget* parent, Q
     // because two stacked QOpenGLWidgets means the top one hides the
     // bottom whether it drew anything or not.
     updateHostAttachment();
-
-#else
-
-    mDummyViewer->discardPaintEvent_ = false;
-
-    auto container = new QWidget;
-    auto container_layout = new QHBoxLayout;
-    container->setLayout(container_layout);
-    container_layout->addWidget(stack, 1);
-    container_layout->addWidget(mDummyViewer, 1);
-
-    setCentralWidget(container);
-
-#endif
 }
 
 bool ViewCAMSimulator::onMsg(const char* pMsg, const char** ppReturn)
@@ -278,6 +262,25 @@ void ViewCAMSimulator::cloneCamera(SoCamera& camera)
 
 void ViewCAMSimulator::updateHostAttachment()
 {
+    // Which of the two paths runs, and what each costs
+    // (docs/CAMSimRenderPort.md sec 8):
+    //
+    // ATTACHED -- the 3D view has a renderer to borrow, which means
+    //   the render cache is in the renderer mode and a backend
+    //   started. The viewer paints, the simulator draws inside its
+    //   frame on its pass ids, and the two sort against each other by
+    //   depth. mDlg is hidden: two stacked QOpenGLWidgets means the
+    //   top one hides the bottom whether it drew anything or not.
+    //
+    // STANDALONE -- no renderer (render cache elsewhere, no backend
+    //   built, or a backend that would not start). The simulator owns
+    //   mDlg and its own surface, the viewer does not paint at all,
+    //   and the picture is the simulator's alone. This is why
+    //   discardPaintEvent_ and DrawSurface::create(widget, n) both
+    //   stay: they are this path, not leftovers of the port.
+    //
+    // Re-called whenever the answer could have changed, because a
+    // renderer swap forgets its consumer.
     if (!mDlg || !mDummyViewer) {
         return;
     }

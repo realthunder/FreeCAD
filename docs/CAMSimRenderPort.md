@@ -810,3 +810,53 @@ geometry is in front of it. The simulator composites one finished
 image, so the host occludes all of it at once, translucent overlay
 included. Recovering it would mean handing over depth per pass rather
 than one image, which is a different design from 8.4's.
+
+### 8.10 Execution record: steps 5 and 6 (2026-08-27)
+
+**Step 5 needed no code.** The plan expected `SimDisplay::UpdateCamera`
+to be reading a copy; it is not, and never was.
+`DlgCAMSimulator::updateCamera` reads `mDummyViewer->getCamera()`
+every frame -- the host viewer's own Coin camera, directly. The
+`MDIViewWithCamera` traffic is not a per-frame copy either: it is the
+string form of a camera, used twice, both one-shot. `initCamera`
+seeds the simulator's camera from the active 3D view when the window
+opens, and `cloneFrom` carries it across the widget rebuild on
+dock/undock. Neither is redundant, and deleting them would lose the
+simulator's opening view.
+
+Input was checked rather than assumed, because "the toolbar is a
+full-size overlay stacked on top of the viewer" looks like it should
+swallow every mouse event. It does not: `GuiDisplay::resizeEvent`
+already masks the widget to `childrenRegion()`, so only its controls
+hit-test, and what is under the middle of the viewport is the
+viewer's own viewport widget. A drag delivered to the viewer orbits
+the camera.
+
+**! A probe that sends synthetic mouse events must send them to the
+QGraphicsView, not to its viewport child.** `QApplication::widgetAt`
+answers with the viewport, which is the right answer for where a real
+mouse lands, but `sendEvent` to it bypasses the scroll-area routing
+that turns a mouse event into navigation -- so the camera does not
+move and the simulator looks broken when it is not. Send to
+`stack->widget(2)` (gui, dlg, viewer) with the middle button, which
+is what the CAD navigation style rotates on.
+
+**Step 6.** The `#if 1`/`#else` side-by-side debug branch is deleted.
+The other two candidates the plan listed are NOT dead, and each now
+says so where it lives:
+
+- `discardPaintEvent_` is the standalone path. The viewer must not
+  paint when the simulator owns the picture, or an empty scene lands
+  over the simulator's output.
+- `DrawSurface::create(widget, n)` likewise -- kept deliberately, and
+  `updateHostAttachment` now documents which of the two paths runs
+  when and what each costs.
+
+**Open, for a ruling rather than a guess: the stock view provider now
+renders in no configuration.** Attached, its mirror is off because
+only the simulator can draw the carved stock. Standalone, it is fed
+but the viewer never paints. With the side-by-side branch gone there
+is no third case. It is still maintained coherently (fed, cloned,
+counted in the viewer's bounds), and the plan's condition for
+deleting it -- "if the engine now draws it" -- is not met, so it
+stays until someone decides whether an uncut-stock view is wanted.
