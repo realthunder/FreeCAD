@@ -1460,10 +1460,11 @@ map (5.9), the additive capture that serves non-standard modes and
 Mesh-shaped switches (5.10) and the cell-style half of that capture,
 which retires the canvas eviction rule (5.11), are built and verified,
 and show-on-top persistence has moved onto the same view-property
-machinery (5.12), the tagged-draw holes are closed (5.13) and the
-foreign-document rows re-sync (5.14); what remains open is listed at
-the end of 5.11. Stage 4 removed one draw style because
-the Coin node behind it (`SoShadowGroup`) had a backend counterpart. This
+machinery (5.12), the tagged-draw holes are closed (5.13), the
+foreign-document rows re-sync (5.14) and an object shown through a
+link now names itself on the container chain, so an override reaches
+it (5.15); what remains open is listed at the end of 5.11. Stage 4
+removed one draw style because the Coin node behind it (`SoShadowGroup`) had a backend counterpart. This
 stage generalizes that: **remove the legacy Coin implementation of every
 remaining display style -- Tessellation first, then the ones built the
 same way -- and let the backend produce the effect.**
@@ -2254,9 +2255,10 @@ and `SceneDump` tagged-draw holes -- **done in 5.13**, which also found
 that whole-object selection ignores the display mode outright, in Coin
 as well; `DisplayModeInView` rows for foreign-document objects are not
 re-synced on table change -- **done in 5.14**, which found in passing
-that a foreign-document override never reaches the DRAWING (new, open);
-and third-party providers that map user names onto differently named
-mask children still fall back to the object's own mode.
+that an override never reaches the DRAWING of an object shown through a
+link -- **done in 5.15**; and third-party providers that map user names
+onto differently named mask children still fall back to the object's own
+mode.
 
 ### 5.12 Show-on-top persistence moves onto the view (2026-08-27)
 
@@ -2419,6 +2421,79 @@ Chasing that means going into how a cross-document `Link` composes its
 origins, which is its own piece of work; it is filed here, not fixed.
 Until then a per-object override reaches only objects of the view's own
 document -- the row will read back correctly and show nothing.
+
+**CLOSED by 5.15**, and the diagnosis above was half right: the chain
+does not identify the object, but nothing about it is cross-document.
+
+### 5.15 A link's snapshot names the linked object (2026-08-28)
+
+5.14's open finding, chased and fixed. It is not a foreign-document
+bug at all -- it is a LINK bug that only ever shows up across
+documents, because an object of another document can be reached no
+other way.
+
+**What the chain actually said.** `xchain.py` asks it in ink: with
+`XA`'s wireframe box shown in `XB` through a link, put the override on
+the LINK (`"Link."`, path form) and on the LINKED OBJECT (`"XA#Box"`,
+bare form), one at a time.
+
+    entry on the link           ink 963 -> 24434    the link IS on the chain
+    entry on the linked object  ink 963 ->   963    the object is NOT
+
+So the chain named the link and stopped. `LinkInfo::getSnapshot` builds
+the link's copy of the linked scene graph by taking the linked
+ViewProvider root's CHILDREN and re-parenting them under a fresh
+`SoFCSelectionRoot` of the link's own. The linked provider's root --
+the one node in that subtree whose `getViewProvider()` would say which
+object this is -- is therefore never traversed, and
+`NodeKey::noteOrigin`, which reads exactly that, records nothing for
+it. Every draw made through a link named the link as its deepest
+object.
+
+That is also why both key forms failed: the bare form had no chain
+element to match, and the path form's `Link.Box.` needs `Box` on the
+chain below `Link` just as much.
+
+**The fix.** `SoFCSelectionRoot` gains `setNodeOrigin(obj)`, an
+explicit "this node stands for that object" for a node that does not
+own the object's ViewProvider, and `noteOrigin` falls back to it.
+`ViewProviderLink`'s `_registerLinkNode` -- already the one place a
+link binds a stand-in node to a document object, for its own node map
+-- sets it, so every snapshot and every non-geo-group child node gets
+one. The chain through a link is now `Link, Box`, ending at the object
+that owns the geometry, exactly as a group's chain already ended at
+the child rather than the group.
+
+**Two consequences, both intended:**
+
+- `ObjectInfo::doc/obj` -- the DEEPEST chain object -- is now the
+  linked object rather than the link. `Renderer::setCaptureFilter`
+  resolved TechDraw's `Source` objects against that leaf alone, so a
+  source that owns no draws of its own would no longer resolve; it now
+  matches anywhere on the chain, which is what a group or assembly
+  source needed anyway. `tdcap.py` renders a shaded underlay from a
+  plain source and from a Link source: both take the backend path,
+  8 captures, 0 refusals, 9204 green pixels each.
+- A bare entry on an object now reaches its occurrences THROUGH links,
+  which is what 5.9 defines the bare form to be ("CONTEXT-FREE, the
+  object wherever it appears in this view"). `ovr.py`'s case A had
+  asserted the opposite -- that a bare row override on a Box leaves a
+  Link to that Box alone -- which was the bug written down as an
+  expectation. The rig now asserts the documented rule.
+
+**A measurement trap this cost an hour of confusion.** `xdoc.py` read
+the path form as still broken after the fix. It grabs the frame with
+the selection still standing, and a SELECTED object is drawn by the
+selection feed, which carries the object's own mode and not the view's
+resolution of it -- the same 5.13 finding seen from the other side (a
+wireframe box selects filled; an overridden-to-Shaded box selects
+wireframe). Clear the selection before measuring an override, or the
+frame reports the override missing whether or not it applied.
+
+Verified on the RTX 3060 (Xvfb + `vglrun -d egl0`): `xchain`, `xpath`,
+`xdoc`, `tdcap` green, and the display-mode set re-run unchanged --
+`ovr` (with case A corrected), `ovrsave`, `d4`, `d4mode`, `sbn`,
+`seltag`, `nsm`, `pts`, `ontop`.
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 
