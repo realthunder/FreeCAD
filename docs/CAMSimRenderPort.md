@@ -1748,3 +1748,100 @@ is): the refactor is the right long-term shape (split views want it
 too), the runtime costs are opt-in by attachment, and the staging
 keeps every intermediate state shippable. The 11.7.1 toggle remains
 the cheap fallback if priorities shift.
+
+### 11.10 Multi-host built, all three stages (2026-08-28)
+
+Four commits: e5e1e40986 (stage 1), 8451e63597 + 1d1784b168
+(stage 2), 7370cc2540 (stage 3). The 11.9 staging held; what follows
+is what the build added to it.
+
+#### Stage 1 -- the per-host context
+
+`SimHostContext` (SimDisplay.h) holds everything per-host: size, the
+camera dedup state and the matrices built from it, the facade
+G-buffer and resolve target, the AO effect with its cached result,
+and the recalculate flag. The public `updateDisplay` bool became an
+API -- `InvalidateDisplay()` (the SIMULATION changed: every host
+stale) vs `NeedsRecalculate()`/`ClearRecalculate()` (the current
+host's flag) -- because with more than one host the two meanings the
+bool conflated really are different operations; the camera and size
+paths set only their own host's flag. Legacy GL's FBOs and the
+shared programs/uniforms/quad stay on SimDisplay.
+
+Verified bit-identical the strong way: the committed d5 baselines
+turned out to carry an unknown env (the diffs against them were
+identical across leg pairs -- a scene difference, not a renderer
+one), so the pre-change tree was rebuilt from stash and re-run under
+the same flags. All four legs (attached / standalone / legacy GL /
+SSAO, SIM_BASE=3) diff 0 of 1260000 pixels against it.
+
+#### Stage 2 -- the host list
+
+`SetCurrentHost(surface)` selects-or-creates the context at the top
+of every frame (null = the default context, which serves legacy GL);
+`DropHost(surface)` releases one before its surface dies. The AO
+effect moved from InitShaders to context creation -- a per-surface
+context can appear at any time after init. One new engine API:
+`Renderer::frameConsumerSurface()`, the registered consumer's
+surface -- stable for the registration's lifetime, which makes it
+the context key, and recoverable at detach time.
+
+DlgCAMSimulator keeps the primary attachment (the sim window's
+dummy viewer, which still decides who owns the widget's picture) and
+grows `attachExtraHost`/`detachExtraHost` plus redraw fan-out to
+every host's render manager. The clock composed without any work,
+as 11.9 predicted: SimNext converts elapsed wall time to steps, so
+hosts drawing at independent cadences advance the one simulation by
+wall time. MillSimulation's own window-scale dedup was DELETED --
+per-host now, and SimDisplay's per-context check is the real one.
+`ViewCAMSimulator::attachDocumentView` wires the document's first
+View3DInventor as an extra host; Python reaches it through
+`PathSim.AttachDocumentView`/`DetachDocumentView`.
+
+#### Stage 3 -- the document-view attach for real
+
+- **Camera source**: updateCamera(surface) resolves the DRAWING
+  host's camera -- the extra host's own view camera, the dummy
+  viewer's otherwise. The projection near/far stay synthesized from
+  the stock size; identical fov/height and aspect mean the image
+  aligns, and the composite's depth transform uses the host's real
+  projection as before.
+- **Lifecycle**: the attachment records the consumer surface at
+  attach time (the cleanup paths need the KEY after the renderer is
+  freed -- DropHost never dereferences it); a refused registration
+  (pass budget) is a refused attach; the view's destroyed signal
+  drops our side only (by then the renderer and surface are already
+  gone); and requestRedraw self-heals when a render-cache change
+  silently replaces a view's renderer.
+- **Base disposition**: resolved to NO change. SetBaseDrawnByHost
+  stays global because it is true for every host that exists: the
+  sim window's mirror provider draws the base there, and in the
+  document view the base IS the document's own geometry.
+- **The driver**: _CutMeshSwap attaches while the pixels move --
+  playing or scrubbing -- hiding the Stock in the document view
+  (its uncut wireframe would sit on top of the carve), and
+  detaches as the first act of landing, so the document view goes
+  back to its own Stock in the Cut mode the landing selects.
+  Pref-gated: Mod/CAM `SimulatorShowInDocumentView`, default true.
+
+#### Verification record
+
+- The four A/B legs stayed 0-diff through every stage (m2, m3 runs
+  vs the regenerated stage-1 baselines).
+- Side-by-side probe (scratchpad sim_multi.py): the carve top-down
+  in the sim window and the stock front-on in the document view AT
+  ONCE -- two cameras, one simulation, per-host CSG. The document
+  view needs its camera placed explicitly in the probe (an empty
+  document gives view-fit nothing to frame).
+- End-to-end Job probe (swap5): seek -> "doc view ATTACHED (stock
+  visible=False)"; settle -> land 566 facets, "docAttached=False
+  stockVisible=True", mode Cut; reseek 35% -> the same cycle again,
+  re-landing 290 facets.
+- Closing the document view under a live attachment: the sim window
+  keeps drawing, no crash before teardown (the exit-time abort in
+  every probe log is the known pre-existing WSLg teardown crash).
+
+Still open, unchanged by this work: the stock view provider's
+disposition (10.5), and the poll defaults built as proposed
+(11.7.5). The per-host shape is the one split views will reuse
+(docs/SplitViews.md).
