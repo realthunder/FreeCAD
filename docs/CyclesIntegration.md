@@ -179,8 +179,14 @@ What was added to BUILD and RUN the kernels:
 - Kernels are compiled at runtime from **installed source**:
   `path_get("source")` resolves next to the binary, so a build-dir
   binary finds nothing -- `cmake --install` first, run `install/cycles`.
-  In tree, the same `source/kernel` tree has to ship beside the
-  FreeCAD binary.
+  In tree the build ships `source/{kernel,util}` to
+  `<resource>/Renderer/cycles/` (custom target `Renderer_cycles_source`
+  plus an install rule) and the unit hands `path_init()` that root.
+- **The CUDA device is listed only when nvcc can be found.** With no
+  precompiled binaries, `device/cuda/device.cpp` reports the device
+  available only if `cuewCompilerPath()` succeeds, so without
+  `CUDA_BIN_PATH` CUDA silently vanishes from the device list -- in
+  the standalone and in tree alike. It is not a library-path matter.
 
 Keep `WITH_CYCLES_CUDA_BINARIES=OFF` at first (it is already the
 default). Compiling the CUDA and OptiX kernel binaries is by a wide
@@ -246,10 +252,24 @@ Cycles emits a float buffer, not draw calls, so the consumer is thin:
 buffer -> texture -> one blit pass. Most of the work is in getting the
 buffer there safely, not in drawing it.
 
+**Use Cycles' `DisplayDriver`, not its `OutputDriver`, for the
+viewport** (`src/session/display_driver.h`). `OutputDriver` is the
+offline interface: a full-buffer callback when a tile finishes.
+`DisplayDriver` is what Blender's viewport implements: the engine
+calls `update_begin(params, width, height)` with the *effective*
+resolution (the progressive resolution divider already applied, so a
+coarse first pass needs no re-allocation), maps a half4 buffer the
+host owns (`map_texture_buffer`), fills it from its render threads,
+and `Session::draw()` -- called by the host, on the host's thread --
+invokes `draw(params)`. That split is exactly the lock-and-copy the
+paragraph below asks for, built into the interface; and its
+`GraphicsInteropBuffer` is the later zero-copy path (a GL pixel
+buffer object or Vulkan buffer the GPU device writes directly).
+
 **The threading rule is the first bug waiting to happen.**
 `drawFrame()`'s contract forbids crossing the frame boundary: no bgfx
 frame of its own, no resize, no repaint request. But Cycles runs its
-session on its own threads and calls the `OutputDriver` from one of
+session on its own threads and calls the driver's update methods from
 them. So the handoff must be a lock-and-copy (or an ownership swap)
 into a staging buffer done OUTSIDE `drawFrame`, with `drawFrame` only
 consuming what is already resident and uploaded.
@@ -432,14 +452,31 @@ Phase 1 -- GPU devices, still standalone.
 6. Enable `WITH_CYCLES_DEVICE_HIP` and confirm it BUILDS. Do not expect
    it to run here (section 4.2); record that it is unexercised.
 
-Phase 2 -- into the tree, no FreeCAD scene yet.
+Phase 2 -- into the tree, no FreeCAD scene yet. **Done 2026-08-28.**
 
 7. Submodule at `src/3rdParty/cycles`; a `BUILD_CYCLES` option
    defaulting **OFF** (bgfx and the CAM simulator default ON now, but
-   Cycles carries a heavy build and has to earn that).
+   Cycles carries a heavy build and has to earn that). The tree comes
+   in through the fork's `CYCLES_EMBEDDED` mode, which skips its
+   executable, install and CTest and exports one `cycles_embed`
+   INTERFACE target carrying the include directories, the
+   `CCL_NAMESPACE_BEGIN` and `WITH_*` definitions the headers branch
+   on, the SSE4.2 flags, and the library list. On the FreeCAD side the
+   Cycles-facing code is its own object library
+   (`FreeCADRendererCycles`), so nothing else in the renderer compiles
+   under those flags.
 8. A minimal renderer unit that renders a hard-coded scene to a buffer,
    driven from Python and saved to a file. This proves threading,
    lifetime and teardown with no translation layer in the way.
+   `Gui.cyclesDevices()` and `Gui.cyclesRenderTest(path, width,
+   height, samples, device)` in `src/Gui/Renderer/CyclesRenderer.cpp`:
+   a cube on a floor under a uniform sky, CPU and CUDA both, clean
+   exit. Two things the standalone could not show: a **debug build
+   asserts when `SessionParams::denoise_device` is left unset** (a
+   default `DeviceInfo` carries the CPU id with no description, and
+   `session.cpp` compares it with the render device), and
+   `DEVICE_MASK()` spells its cast unqualified, for use inside `ccl`
+   only.
 
 Phase 3 -- scene translation (section 6).
 
@@ -448,7 +485,7 @@ Phase 3 -- scene translation (section 6).
 
 Phase 4 -- the viewport.
 
-11. Progressive `OutputDriver` -> staging buffer -> texture ->
+11. `DisplayDriver` (section 5.2) -> staging buffer -> texture ->
     `FrameConsumer` blit, on-top highlight route (section 5.3).
 12. Host depth prepass under the blit, and the dimmed-when-occluded
     highlight (section 5.3).
