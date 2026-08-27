@@ -26,8 +26,9 @@ Ruled 2026-08-27:
   server process without a rewrite. Section 7.
 - **Both highlight routes are supported**, not one: the cheap on-top
   route and the depth-correct route. Section 5.3.
-- **GPU acceleration targets both NVIDIA and AMD.** NVIDIA is testable
-  on this box, AMD is a ship target only. Section 4.
+- **GPU acceleration targets both NVIDIA and AMD.** NVIDIA CUDA is
+  testable on this box; OptiX and AMD HIP are ship targets only.
+  Section 4.
 - **The view draws only the selection highlight.** Cycles' image is the
   base layer; no shaded document geometry is drawn by the host.
   Section 5.
@@ -133,33 +134,58 @@ that is the fallback shape if the solve turns hostile.
 
 ## 4. GPU devices
 
-### 4.1 NVIDIA -- available and testable on this box
+### 4.1 NVIDIA -- CUDA testable on this box, OptiX is not
 
-Verified 2026-08-27 on the WSL2 dev box:
+Verified 2026-08-28 on the WSL2 dev box (this corrects the 2026-08-27
+survey, which read a filename as a capability):
 
-- `/usr/lib/wsl/lib` carries **`libcuda.so.1` and `libnvoptix.so.1`**.
-  The OptiX runtime is passed through to WSL2, which was the open
-  question.
 - The GPU is an **RTX 3070 Ti Laptop, compute capability 8.6 (Ampere),
-  8GB VRAM**, driver 592.00. Ampere has RT cores, so the OptiX device
-  gets hardware ray traversal and will comfortably beat the plain CUDA
-  device. 8GB is the real constraint on scene size.
+  8GB VRAM**, driver 592.00. 8GB is the real constraint on scene size.
+- **CUDA works.** `libcuda.so.1` in `/usr/lib/wsl/lib` is the real
+  thing; the CUDA device enumerates and renders. Measured on
+  `examples/scene_monkey.xml` at 800x500: 64 samples CPU 4.3s / CUDA
+  1.3s wall, 1024 samples CPU 15.7s / CUDA 2.9s -- about 5x, after a
+  one-time 297s kernel compile.
+- **OptiX does NOT work here, and the file that suggested it would is
+  a decoy.** `/usr/lib/wsl/lib/libnvoptix.so.1` is a 10KB shim with
+  SONAME `libnvoptix_loader.so.1` that exports five `dxcore_*` helpers
+  and no OptiX entry point at all; `optixInit()` fails with
+  `OPTIX_ERROR_ENTRY_SYMBOL_NOT_FOUND` (7805). The 48MB `nvoptix.bin`
+  beside it in the driver store is not an ELF, and the shim's loader is
+  literally `get_library_path` + `dlopen`, so it cannot load that
+  either. NVIDIA does not support OptiX on WSL2. The known workaround
+  (Mitsuba's docs) is to extract `libnvoptix.so.1` and
+  `libnvidia-rtcore.so` from the version-matched *Linux* driver into
+  `C:\Windows\System32\lxss\lib` -- an admin-level change on the
+  Windows side that every driver update undoes. **Not done; OptiX is a
+  build-and-ship target like HIP until the user rules otherwise.**
+  The OptiX *device* builds and links fine; only the runtime is
+  missing.
 
-To BUILD the kernels, two things are missing and must be added:
+What was added to BUILD and RUN the kernels:
 
-- **nvcc.** conda-forge has `cuda-nvcc` (13.3 at survey time).
-  **Pin it deliberately.** Cycles' CUDA kernel build is version-picky
-  and Blender pins a specific CUDA in its bundle; taking whatever is
-  latest is how this breaks.
-- **OptiX SDK headers** (`OPTIX_ROOT_DIR`). These are **not on
-  conda-forge** -- NVIDIA licence. Either the headers-only SDK
-  download, or lift them out of Blender's `lib/linux_x64` bundle, which
-  ships them. This is the one place where Blender's bundle is still
-  useful to us.
+- **nvcc 12.9, in its own prefix `.conda/cuda-129`** (`cuda-nvcc=12.9`
+  + `cuda-cudart-dev=12.9`, 217MB). It cannot go into `.conda/freecad`,
+  which already pins `cuda-version 13.3`, and Cycles' runtime check
+  (`device/cuda/device_impl.cpp`) wants 10.2 <= CUDA < 13 -- above that
+  is only a logged warning, but Blender's supported range is the pin.
+  At runtime Cycles shells out to nvcc found via **`CUDA_BIN_PATH`**
+  (cuew), so the prefix's `bin` goes in that variable.
+- **OptiX SDK headers from `NVIDIA/optix-dev`** (GitHub, headers-only,
+  9.1.0; Cycles wants >= 8.0), cloned to `~/works/sw/optix-dev`. No
+  bundle lift needed. `OPTIX_ROOT_DIR` at configure time, and
+  `CYCLES_RUNTIME_OPTIX_ROOT_DIR` bakes the same path in for the
+  runtime kernel compile.
+- Kernels are compiled at runtime from **installed source**:
+  `path_get("source")` resolves next to the binary, so a build-dir
+  binary finds nothing -- `cmake --install` first, run `install/cycles`.
+  In tree, the same `source/kernel` tree has to ship beside the
+  FreeCAD binary.
 
 Keep `WITH_CYCLES_CUDA_BINARIES=OFF` at first (it is already the
 default). Compiling the CUDA and OptiX kernel binaries is by a wide
-margin the slowest part of a Cycles build.
+margin the slowest part of a Cycles build; the runtime compile caches
+under `~/.cache/cycles/kernels`.
 
 ### 4.2 AMD -- a ship target, not a test target
 
@@ -401,7 +427,8 @@ Phase 1 -- GPU devices, still standalone.
 
 5. Add `cuda-nvcc` (pinned) and the OptiX headers; enable
    `WITH_CYCLES_DEVICE_CUDA` and `WITH_CYCLES_DEVICE_OPTIX`; render the
-   same scene on OptiX and compare against the CPU image and timing.
+   same scene on CUDA and compare against the CPU image and timing.
+   OptiX builds but cannot run here (section 4.1).
 6. Enable `WITH_CYCLES_DEVICE_HIP` and confirm it BUILDS. Do not expect
    it to run here (section 4.2); record that it is unexercised.
 
@@ -451,3 +478,5 @@ Each of these has already cost time somewhere in this tree:
 - **`drawFrame` is inside someone else's frame** -- no frame of its
   own, no resize, no repaint. Section 5.2.
 - A **slow AMD iGPU number** read as a broken HIP port. Section 4.2.
+- **A driver library's filename read as a capability**
+  (`libnvoptix.so.1` on WSL2). Section 4.1.

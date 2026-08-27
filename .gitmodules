@@ -7,3 +7,6 @@
 [submodule "src/3rdParty/vg-renderer"]
 	path = src/3rdParty/vg-renderer
 	url = https://github.com/realthunder/vg-renderer.git
+[submodule "src/3rdParty/cycles"]
+	path = src/3rdParty/cycles
+	url = https://github.com/realthunder/cycles.git
