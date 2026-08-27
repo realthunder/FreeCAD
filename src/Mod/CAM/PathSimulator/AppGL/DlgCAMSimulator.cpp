@@ -515,14 +515,24 @@ void DlgCAMSimulator::updateWindowScale(int w, int h)
     mMillSimulator->UpdateWindowScale(w, h);
 }
 
-void DlgCAMSimulator::updateCamera()
+void DlgCAMSimulator::updateCamera(const Render::DrawSurface* surface)
 {
-    if (!mDummyViewer) {
-        return;
+    const SoCamera* camera = nullptr;
+    for (const auto& e : mExtraHosts) {
+        if (e.surface == surface) {
+            camera = e.viewer->getCamera();
+            break;
+        }
     }
-
-    const SoCamera& camera = *mDummyViewer->getCamera();
-    mMillSimulator->UpdateCamera(camera);
+    if (!camera) {
+        if (!mDummyViewer) {
+            return;
+        }
+        camera = mDummyViewer->getCamera();
+    }
+    if (camera) {
+        mMillSimulator->UpdateCamera(*camera);
+    }
 }
 
 void DlgCAMSimulator::initializeGL()
@@ -643,6 +653,22 @@ bool DlgCAMSimulator::mirrorsBaseToViewer() const
 
 void DlgCAMSimulator::requestRedraw()
 {
+    // Self-heal first: a render-cache change destroys and replaces a
+    // view's renderer, taking our registration and surface with it
+    // without a word. Detect the swap and clean up our side only --
+    // the old renderer is freed, so detachExtraHost must not run.
+    for (auto it = mExtraHosts.begin(); it != mExtraHosts.end();) {
+        if (it->viewer->getExternalRenderer() != it->renderer) {
+            disconnect(it->gone);
+            if (mMillSimulator) {
+                mMillSimulator->simDisplay.DropHost(it->surface);
+            }
+            it = mExtraHosts.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
     // Every extra host redraws too: each runs the simulator's passes
     // inside its own frame.
     for (const auto& e : mExtraHosts) {
@@ -728,7 +754,20 @@ bool DlgCAMSimulator::attachExtraHost(Gui::View3DInventorViewer* viewer)
         }
     }
     host->setFrameConsumer(this);
-    mExtraHosts.push_back({host, viewer});
+    // Null when the registration was REFUSED (pass budget): nothing
+    // attached, and there is no surface to key a context on.
+    Render::DrawSurface* surf = host->frameConsumerSurface();
+    if (!surf) {
+        return false;
+    }
+    HostAttachment entry;
+    entry.renderer = host;
+    entry.viewer = viewer;
+    entry.surface = surf;
+    entry.gone = connect(viewer, &QObject::destroyed, this, [this, viewer] {
+        extraHostGone(viewer);
+    });
+    mExtraHosts.push_back(std::move(entry));
     return true;
 }
 
@@ -738,9 +777,29 @@ void DlgCAMSimulator::detachExtraHost(Gui::View3DInventorViewer* viewer)
         if (it->viewer != viewer) {
             continue;
         }
-        mMillSimulator->simDisplay.DropHost(
-            it->renderer->frameConsumerSurface());
+        disconnect(it->gone);
+        mMillSimulator->simDisplay.DropHost(it->surface);
         it->renderer->setFrameConsumer(nullptr);
+        mExtraHosts.erase(it);
+        return;
+    }
+}
+
+void DlgCAMSimulator::extraHostGone(Gui::View3DInventorViewer* viewer)
+{
+    // Destruction order: the renderer -- and with it our registration
+    // and surface -- is already gone by the time the widget's
+    // destroyed signal fires, so unlike detachExtraHost this must not
+    // touch the renderer. Only drop the context filed under the dead
+    // surface's key (DropHost never dereferences it) and forget the
+    // entry.
+    for (auto it = mExtraHosts.begin(); it != mExtraHosts.end(); ++it) {
+        if (it->viewer != viewer) {
+            continue;
+        }
+        if (mMillSimulator) {
+            mMillSimulator->simDisplay.DropHost(it->surface);
+        }
         mExtraHosts.erase(it);
         return;
     }
@@ -762,7 +821,7 @@ void DlgCAMSimulator::drawFrame(Render::DrawSurface& surface)
     int h = 0;
     surface.hostSize(w, h);
     updateWindowScale(w, h);
-    updateCamera();
+    updateCamera(&surface);
 
     const auto now = clock::now();
     const auto elapsed = mLastProcessSim != clock::time_point::min() ? now - mLastProcessSim : 0s;
@@ -813,7 +872,7 @@ void DlgCAMSimulator::drawFrameLegacyGL()
 
     const qreal ratio = devicePixelRatioF();
     updateWindowScale(int(width() * ratio), int(height() * ratio));
-    updateCamera();
+    updateCamera(nullptr);
 
     const auto now = clock::now();
     const auto elapsed = mLastProcessSim != clock::time_point::min()

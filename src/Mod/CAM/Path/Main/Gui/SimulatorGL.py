@@ -153,6 +153,10 @@ class _CutMeshSwap:
     def __init__(self, millSim, job, quality):
         self.millSim = millSim
         self.stockObj = job.Stock
+        prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/CAM")
+        self.showInDocView = prefs.GetBool("SimulatorShowInDocumentView", True)
+        self.docAttached = False
+        self.savedDocVisibility = None
         self.stockShape = job.Stock.Shape
         accuracy = max(0.1, 1.1 - 0.1 * quality)
         bb = self.stockShape.BoundBox
@@ -179,6 +183,32 @@ class _CutMeshSwap:
         settled cut shape outliving the simulator is the feature."""
         self.timer.stop()
         self._cancelWorker()
+        self._detachDocView()
+
+    def _attachDocView(self):
+        """Route A in the document view (docs/CAMSimRenderPort.md sec
+        11.9 stage 3): while the pixels are the only carve there is,
+        fan the simulator's drawing out to the document's own 3D view,
+        and hide the Stock there -- its uncut wireframe would sit on
+        top of the carved one. False from the attach (no renderer to
+        borrow) just leaves the document view alone."""
+        if self.docAttached or not self.showInDocView:
+            return
+        if not self.millSim.AttachDocumentView():
+            return
+        self.docAttached = True
+        vobj = self.stockObj.ViewObject
+        self.savedDocVisibility = vobj.Visibility
+        vobj.Visibility = False
+
+    def _detachDocView(self):
+        if not self.docAttached:
+            return
+        self.millSim.DetachDocumentView()
+        self.docAttached = False
+        if self.savedDocVisibility is not None:
+            self.stockObj.ViewObject.Visibility = self.savedDocVisibility
+            self.savedDocVisibility = None
 
     def _cancelWorker(self):
         if self.worker is not None:
@@ -193,11 +223,16 @@ class _CutMeshSwap:
                 self.quiet = 0
                 self._cancelWorker()
                 self._unland()
+                self._attachDocView()
                 self.lastPos = key
                 return
             if motionIndex < 0:
                 return
             if key != self.lastPos:
+                # Scrubbing moves the pixels just like playing does:
+                # the document view follows them, and the landing
+                # below takes it back when the position settles.
+                self._attachDocView()
                 self.lastPos = key
                 self.quiet = 0
                 return
@@ -304,6 +339,11 @@ class _CutMeshSwap:
 
     def _land(self, key, mesh, uncut):
         import Path.Main.Gui.Stock as PathStockGui
+
+        # The mesh replaces the pixels: the document view goes back to
+        # drawing its own objects -- the Stock, now in its Cut mode --
+        # before the landing below makes that mode current.
+        self._detachDocView()
 
         stock = self.stockObj
         PathStockGui.EnsureViewProvider(stock)

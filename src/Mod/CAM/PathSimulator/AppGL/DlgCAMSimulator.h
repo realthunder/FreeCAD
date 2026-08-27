@@ -195,7 +195,16 @@ protected:
     /// drawn into -- the widget standalone, the host's scene target
     /// attached, which is not always the same size.
     void updateWindowScale(int width, int height);
-    void updateCamera();
+    /// Feed the simulator the camera of the host that is DRAWING: an
+    /// extra host's own view camera when \a surface is one of theirs,
+    /// the dummy viewer's otherwise. The CSG carves in screen space
+    /// under this camera, so only a host's own camera puts the carve
+    /// where that view looks (docs/CAMSimRenderPort.md sec 11.9).
+    void updateCamera(const Render::DrawSurface* surface);
+    /// An extra host's view is being destroyed: its renderer and
+    /// surface die with it, so clean up only our side -- the per-host
+    /// context under its surface key, and the list entry.
+    void extraHostGone(Gui::View3DInventorViewer* viewer);
 
     void initializeGL() override;
     void paintGL() override;
@@ -276,14 +285,19 @@ private:
     Render::Renderer* mHostRenderer = nullptr;
 
     /// One extra attached host (attachExtraHost): the renderer whose
-    /// frames the consumer draws in, and the viewer whose render
-    /// manager redraws are asked from. Neither is owned; the caller
-    /// detaches before a view goes away (the doc-view lifecycle work
-    /// is the next stage's).
+    /// frames the consumer draws in, the viewer whose render manager
+    /// redraws are asked from and whose camera drives this host's
+    /// carve, and the consumer surface the renderer serves us --
+    /// captured at attach time because it is the per-host context key
+    /// (SimDisplay::DropHost) and the cleanup paths need it after the
+    /// renderer is already gone. None of the three is owned; `gone`
+    /// watches for the view being destroyed under us.
     struct HostAttachment
     {
         Render::Renderer* renderer = nullptr;
         Gui::View3DInventorViewer* viewer = nullptr;
+        Render::DrawSurface* surface = nullptr;
+        QMetaObject::Connection gone;
     };
     std::vector<HostAttachment> mExtraHosts;
 
