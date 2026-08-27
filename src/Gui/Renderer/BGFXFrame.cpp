@@ -158,6 +158,21 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->drawStyleName = subCtx.active ? subCtx.styleName : mainStyleName;
     view->styleFromSuperset = subCtx.active ? subCtx.fromSuperset
                                             : mainFromSuperset;
+    // ...and, when the capture carried this style's mode additively,
+    // the id and bit that let the style be resolved from the mode's
+    // own tagged draws (docs/CoinRetirement.md 5.11). Both stay zero
+    // when the interest list does not carry the mode -- it was never
+    // captured, so the mask over the superset child is still the only
+    // answer there is.
+    view->drawStyleMode = 0;
+    view->drawStyleModeBit = 0;
+    if (view->styleFromSuperset && captureInterest) {
+        const uint16_t sm = subCtx.active ? subCtx.styleMode : mainStyleMode;
+        if (const uint16_t bit = sm ? captureInterest->bitOf(sm) : 0) {
+            view->drawStyleMode = sm;
+            view->drawStyleModeBit = bit;
+        }
+    }
     // The sub-view's per-object override table (5.9), and its resolved
     // objectKey cache: cleared when the table's content version or the
     // stated object-info version moved, filled lazily at submit
@@ -181,13 +196,15 @@ bool BGFXRenderer::Private::render(const QColor &col,
         view->ovCache = &c;
         view->ovTable = ovt;
         view->ovInfo = &objectInfo;
-        view->ovInterest = captureInterest;
     } else {
         view->ovCache = nullptr;
         view->ovTable = nullptr;
         view->ovInfo = nullptr;
-        view->ovInterest = nullptr;
     }
+    // Latched whether or not there is an override table: since 5.11 the
+    // sub-view's own STYLE can resolve through the interest list too,
+    // and lookupStyleOverride guards on ovCache/ovTable of its own.
+    view->ovInterest = captureInterest;
 
     // A shader pack that could not supply a core program keeps the
     // view down: without this the torn-down view (no framebuffer)

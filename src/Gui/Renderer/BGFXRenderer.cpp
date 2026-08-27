@@ -170,6 +170,7 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         ctx.style = s.drawStyle;
         ctx.styleName = s.drawStyleName;
         ctx.fromSuperset = s.styleFromSuperset;
+        ctx.styleMode = s.drawStyleMode;
         ctx.styleOverrides = s.styleOverrides;
         _BGFXLib.captureWidth = uint16_t(s.width);
         _BGFXLib.captureHeight = uint16_t(s.height);
@@ -217,6 +218,7 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         ctx.style = s.drawStyle;
         ctx.styleName = s.drawStyleName;
         ctx.fromSuperset = s.styleFromSuperset;
+        ctx.styleMode = s.drawStyleMode;
         ctx.styleOverrides = s.styleOverrides;
         _BGFXLib.standaloneSubWidth = uint16_t(s.width);
         _BGFXLib.standaloneSubHeight = uint16_t(s.height);
@@ -271,12 +273,14 @@ void BGFXRenderer::dropSubView(int id)
 
 void BGFXRenderer::setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
                                     bool fromSuperset,
-                                    const StyleOverrideTable *overrides)
+                                    const StyleOverrideTable *overrides,
+                                    uint16_t styleMode)
 {
     pimpl->mainStyleMask = styleMask;
     pimpl->mainStyleName = styleNameBit;
     pimpl->mainFromSuperset = fromSuperset;
     pimpl->mainStyleOverrides = overrides;
+    pimpl->mainStyleMode = styleMode;
 }
 
 void BGFXRenderer::setCaptureInterest(const CaptureInterestTable *table)
@@ -338,6 +342,7 @@ void BGFXRenderer::prepareSubViews(const QColor &col,
         ctx.style = s.drawStyle;
         ctx.styleName = s.drawStyleName;
         ctx.fromSuperset = s.styleFromSuperset;
+        ctx.styleMode = s.drawStyleMode;
         ctx.styleOverrides = s.styleOverrides;
         _BGFXLib.standaloneSubWidth = uint16_t(s.width);
         _BGFXLib.standaloneSubHeight = uint16_t(s.height);

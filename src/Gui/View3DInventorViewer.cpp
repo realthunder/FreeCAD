@@ -2360,6 +2360,9 @@ void View3DInventorViewer::setOverrideMode(const std::string& mode)
     }
 
     overrideMode = mode;
+    // The style's own mode id is part of the capture interest under a
+    // superset capture (docs/CoinRetirement.md 5.11).
+    rebuildCaptureInterest();
     applyOverrideMode();
 
     if (!_pimpl->view)
@@ -2436,6 +2439,25 @@ void View3DInventorViewer::applyOverrideMode()
 unsigned char View3DInventorViewer::drawStyleNameBit() const
 {
     return Gui::styleNameBitOf(overrideMode.c_str());
+}
+
+uint16_t View3DInventorViewer::drawStyleModeId() const
+{
+    // Only a Class-A name is a display mode a switch can have a child
+    // of; "As Is" and the traversal-state styles name no child.
+    if (!Gui::styleNameBitOf(overrideMode.c_str()))
+        return 0;
+    // And only where the capture is the SUPERSET child is there
+    // anything left to resolve -- the two cases captureOverrideMode()
+    // returns the superset for. Everywhere else the traversal applied
+    // this style itself, so asking the backend to resolve it again
+    // would draw it twice.
+    const bool superset = _pimpl->canvasStyleMode == CanvasStyleSuperset
+        || (_pimpl->canvasStyleMode == CanvasStyleOff
+                && _pimpl->renderer && hasObjectStyleOverrides());
+    if (!superset)
+        return 0;
+    return Render::internModeName(overrideMode.c_str());
 }
 
 const char *View3DInventorViewer::captureOverrideMode() const
@@ -2519,16 +2541,24 @@ void View3DInventorViewer::rebuildCaptureInterest()
         if (ov.modeId)
             ids.push_back(ov.modeId);
     }
+    // This view's own display STYLE, where the backend has to resolve
+    // it per object over a superset capture (docs/CoinRetirement.md
+    // 5.11): a style is an override, so its mode is captured the same
+    // additive way an override's is. On a canvas the same id arrives
+    // in the imposed union as well -- this is a set.
+    if (uint16_t styleId = drawStyleModeId())
+        ids.push_back(styleId);
     ids.insert(ids.end(), _pimpl->imposedInterest.begin(),
                _pimpl->imposedInterest.end());
     std::sort(ids.begin(), ids.end());
     ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
     // interestBits is 16 bits wide; anything beyond stays inert, the
     // same as before the mode was overridden at all.
-    if (ids.size() > 16) {
+    if (ids.size() > Render::CaptureInterestTable::MaxModes) {
         FC_WARN("capture interest truncated: " << ids.size()
-                << " non-standard override modes, 16 supported");
-        ids.resize(16);
+                << " additively captured modes, "
+                << Render::CaptureInterestTable::MaxModes << " supported");
+        ids.resize(Render::CaptureInterestTable::MaxModes);
     }
     if (ids == _pimpl->interestTable.ids)
         return;
@@ -2588,6 +2618,10 @@ void View3DInventorViewer::setCanvasStyleMode(CanvasStyleMode mode)
     if (_pimpl->canvasStyleMode == mode)
         return;
     _pimpl->canvasStyleMode = mode;
+    // The interest list carries this view's own style only while the
+    // capture is a superset one (drawStyleModeId), which is exactly
+    // what just moved.
+    rebuildCaptureInterest();
     // Re-applied rather than merely stored: it decides a field of the
     // selection root, and changing that field is what dirties the
     // capture so the next frame is fed the newly traversed scene.
@@ -4099,10 +4133,10 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
         if (hasObjectStyleOverrides())
             _pimpl->renderer->setMainViewStyle(
                     drawStyleMask(), drawStyleNameBit(),
-                    true, objectStyleOverrides());
+                    true, objectStyleOverrides(), drawStyleModeId());
         else
             _pimpl->renderer->setMainViewStyle(
-                    Render::StyleAsIs, 0, false, nullptr);
+                    Render::StyleAsIs, 0, false, nullptr, 0);
         _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         externalRendered = _pimpl->renderer->renderOffscreen(
@@ -5836,10 +5870,10 @@ void View3DInventorViewer::renderScene()
         if (hasObjectStyleOverrides())
             _pimpl->renderer->setMainViewStyle(
                     drawStyleMask(), drawStyleNameBit(),
-                    true, objectStyleOverrides());
+                    true, objectStyleOverrides(), drawStyleModeId());
         else
             _pimpl->renderer->setMainViewStyle(
-                    Render::StyleAsIs, 0, false, nullptr);
+                    Render::StyleAsIs, 0, false, nullptr, 0);
         _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         // render() publishes on the way past when something is listening

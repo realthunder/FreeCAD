@@ -7007,6 +7007,16 @@ public:
     /// the SUPERSET child. Restated every frame beside the mask.
     uint8_t drawStyleName = 0;
     bool styleFromSuperset = false;
+    /// This sub-view's style resolved as an ADDITIVE mode
+    /// (docs/CoinRetirement.md 5.11): the style name's interned id and
+    /// its DrawCall::interestBits bit, latched together at the top of
+    /// the frame and BOTH zero unless the capture's interest list
+    /// actually carries the mode. Non-zero means the style is served
+    /// by the mode's own tagged draws -- the same three rules an
+    /// override naming a mode follows -- instead of by a mask over the
+    /// superset child.
+    uint16_t drawStyleMode = 0;
+    uint16_t drawStyleModeBit = 0;
 
     /// A per-object display mode override resolved against one draw's
     /// object (docs/CoinRetirement.md 5.9). `has` false = the object
@@ -8626,6 +8636,9 @@ public:
         /// OBJECT (5.8) instead of applied flat to every draw.
         uint8_t styleName = 0;
         bool fromSuperset = false;
+        /// That style's mode id (SubViewFrame::drawStyleMode, 5.11),
+        /// when the capture also carries the mode additively.
+        uint16_t styleMode = 0;
         /// The cell's per-object override table (5.9), restated per
         /// submit like the style; the producer owns the storage.
         const Render::StyleOverrideTable *styleOverrides = nullptr;
@@ -8640,6 +8653,7 @@ public:
     uint8_t mainStyleMask = Render::StyleAsIs;
     uint8_t mainStyleName = 0;
     bool mainFromSuperset = false;
+    uint16_t mainStyleMode = 0;
     const Render::StyleOverrideTable *mainStyleOverrides = nullptr;
     /// The capture's additive-mode interest list, stated through
     /// setCaptureInterest() (docs/CoinRetirement.md 5.9 "Non-standard

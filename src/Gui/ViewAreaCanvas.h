@@ -130,12 +130,20 @@ private:
     /// actually is. The lazy half of sec 17: styles that differ are
     /// not a conflict by themselves.
     bool styleConflicts(const std::vector<std::string> &styles) const;
-    /// Whether any visible object would be served WRONG by a superset
-    /// capture: one whose display-mode switch has no "Flat Lines" child
-    /// to capture, yet does have a child named by one of \a styles, so
-    /// that the override genuinely applies to it and the superset does
-    /// not hold what it needs (docs/CoinRetirement.md 5.8).
-    bool supersetBlocked(const std::vector<std::string> &styles) const;
+    /// The additive-mode interest of the capture this canvas feeds
+    /// (docs/CoinRetirement.md 5.9 "Non-standard modes", 5.11): the
+    /// sorted union, over the cells this canvas can serve, of every
+    /// per-object override mode and every cell's own display STYLE
+    /// name, as interned ids. \a styleIds, when given, receives the
+    /// style half on its own -- what the budget test below needs.
+    std::vector<uint16_t> collectCaptureInterest(
+            std::vector<uint16_t> *styleIds) const;
+    /// Whether a cell's style would be served WRONG by a superset
+    /// capture. Since 5.11 the cells' style names ride the same
+    /// ADDITIVE capture the override modes do, so an object whose
+    /// switch has no "Flat Lines" child no longer blocks anything --
+    /// what is left is the interest list's 16-entry bit budget.
+    bool supersetBlocked() const;
     void claim(ViewAreaCell *cell, int id);
     void release(ViewAreaCell *cell, bool restoreBackend = true);
     /// Point the shared backend's scene feed at \a cell's viewer, and

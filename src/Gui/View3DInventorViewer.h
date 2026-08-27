@@ -320,6 +320,14 @@ public:
     /// to tell whether an object's display-mode switch has a child of
     /// that style's name (docs/CoinRetirement.md 5.8).
     unsigned char drawStyleNameBit() const;
+    /// This viewer's display style as an interned mode id
+    /// (Render::internModeName), for the backend to resolve the style
+    /// from the mode's own ADDITIVELY captured draws rather than from a
+    /// mask over the superset child (docs/CoinRetirement.md 5.11).
+    /// Zero unless the capture IS a superset capture and the style is
+    /// one of the four Class-A names -- outside those the traversal
+    /// applies the style itself and there is nothing to resolve.
+    uint16_t drawStyleModeId() const;
     /// The display mode name this viewer's traversal CAPTURES with:
     /// its own style, none, or the superset child -- see
     /// setCanvasStyleMode().
@@ -364,8 +372,9 @@ public:
     /// selections, and keep their plain capture).
     bool hasObjectStyleOverrides() const;
     /// Additive-mode interest imposed by a unified canvas
-    /// (docs/CoinRetirement.md 5.9 "Non-standard modes"): the UNION of
-    /// every cell's non-standard override modes, as interned ids
+    /// (docs/CoinRetirement.md 5.9 "Non-standard modes", 5.10): the
+    /// UNION of every cell's override modes AND of the cells' own
+    /// display STYLE names, as interned ids
     /// (Render::internModeName). The shared capture must traverse the
     /// union whichever cell feeds it, so the canvas imposes it on
     /// every claimed viewer; an empty vector (the default, and what a

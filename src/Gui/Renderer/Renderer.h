@@ -2627,6 +2627,11 @@ RendererExport const char *internedModeName(uint16_t id);
 /// version bumps on every content change; the backend's resolved
 /// override cache keys on it, because the id->bit mapping moved.
 struct CaptureInterestTable {
+    /// The bit budget: DrawCall::interestBits is 16 bits wide, so a
+    /// list longer than this cannot be expressed. The producer drops
+    /// and logs the excess.
+    static const size_t MaxModes = 16;
+
     std::vector<uint16_t> ids;
     uint32_t version = 0;
 
@@ -2717,6 +2722,20 @@ public:
         /// does not hold.
         uint8_t drawStyleName = 0;
         bool styleFromSuperset = false;
+        /// The interned id (internModeName) of that style's NAME, when
+        /// the capture carries the mode ADDITIVELY as well
+        /// (docs/CoinRetirement.md 5.11): a style is an override, and
+        /// an override's mode is its own SUBGRAPH -- a mask over the
+        /// superset child reproduces it only while the superset child
+        /// happens to contain the mode's buckets, which is a
+        /// Part-shaped assumption and not a rule (Mesh's "Flat Lines"
+        /// holds no point draws). Where the id is in the capture's
+        /// interest list the sub-view draws the mode's own tagged
+        /// draws and suppresses the untagged ones, exactly as an
+        /// override naming the mode does; where it is not, the mask
+        /// over the superset stays the answer. Zero outside a superset
+        /// capture and for "As Is".
+        uint16_t drawStyleMode = 0;
         /// This sub-view's per-object display mode overrides
         /// (docs/CoinRetirement.md 5.9), resolved per draw as the FIRST
         /// clause before the style above. Only meaningful under a
@@ -2752,10 +2771,11 @@ public:
     /// per object the same way.
     virtual void setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
                                   bool fromSuperset,
-                                  const StyleOverrideTable *overrides)
+                                  const StyleOverrideTable *overrides,
+                                  uint16_t styleMode = 0)
     {
         (void)styleMask; (void)styleNameBit;
-        (void)fromSuperset; (void)overrides;
+        (void)fromSuperset; (void)overrides; (void)styleMode;
     }
     /// The additive-mode interest list of the capture feeding this
     /// backend (docs/CoinRetirement.md 5.9 "Non-standard modes") --

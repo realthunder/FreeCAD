@@ -88,7 +88,10 @@ bool BGFXView::styleAdmits(const Render::DrawCall &draw)
     //   and that is what an override does. Only under a superset
     //   capture; without one the mask is applied flat, which is only
     //   ever asked for where every cell's style provably removes
-    //   rather than adds (ViewAreaCanvas::styleConflicts).
+    //   rather than adds (ViewAreaCanvas::styleConflicts). Where the
+    //   capture carried the style's mode additively (drawStyleMode,
+    //   5.11) the mode's own tagged draws serve it instead of a mask
+    //   over the superset child.
     // - the object's OWN mode otherwise: a sub-view showing "As Is",
     //   and equally an object whose switch has no child of the asked
     //   name, which today's traversal already leaves in its own mode.
@@ -142,11 +145,32 @@ bool BGFXView::styleAdmits(const Render::DrawCall &draw)
             || effective == Render::StyleUnknown
             || (effective & Render::styleBitOf(draw.material)) != 0;
     }
+    if (!ov && drawStyleMode) {
+        // No override entry names this object, and this sub-view's own
+        // style is one the capture carried ADDITIVELY (5.11): a style
+        // IS an override, so it resolves by the same three rules the
+        // clause above uses -- the mode's tagged draws are it, the
+        // normal flow already is it where the switch traversed that
+        // very child, and the untagged draws step aside where a tagged
+        // copy exists. This is what lets a cell whose style names a
+        // mode the superset child cannot produce (Mesh's "Points")
+        // stay on a shared canvas instead of being evicted from it.
+        //
+        // Falling through means the switch has no child of the name:
+        // the object keeps its own mode, the same fallback the mask
+        // path below reaches through registeredStyles.
+        if (draw.capturedMode)
+            return draw.capturedMode == drawStyleMode;
+        if (draw.traversedMode == drawStyleMode)
+            return true;
+        if (draw.interestBits & drawStyleModeBit)
+            return false;
+    }
     if (draw.capturedMode) {
         // An additively captured draw serves exactly one thing: an
-        // override resolving to its very mode. Every other resolution
-        // -- a Class-A override, a pin, the view style, plain "As Is"
-        // -- must drop it, or the object double-draws.
+        // override -- or, since 5.11, a view style -- resolving to its
+        // very mode. Every other resolution must drop it, or the
+        // object double-draws.
         return false;
     }
     uint8_t effective = drawStyleMask;

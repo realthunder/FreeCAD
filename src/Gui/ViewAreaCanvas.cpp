@@ -225,11 +225,12 @@ void ViewAreaCanvas::resolveDisplayStyles()
             _serve = ServeFilter;
             return;
         }
-        // A flat mask cannot serve these styles, but a superset capture
-        // can -- unless some object needs a style child the superset
-        // does not contain (5.8). Tried second because it is the one
-        // that costs an extra capture.
-        if (servable && !supersetBlocked(styles)) {
+        // A flat mask cannot serve these styles, but a superset
+        // capture can: where a style names a mode the superset child
+        // cannot produce, that named child is captured additively
+        // beside it (5.11). Tried second because it is the one that
+        // costs an extra capture.
+        if (servable && !supersetBlocked()) {
             _serve = ServeSuperset;
             return;
         }
@@ -294,47 +295,88 @@ bool ViewAreaCanvas::styleConflicts(
     return false;
 }
 
-bool ViewAreaCanvas::supersetBlocked(
-        const std::vector<std::string> &styles) const
+std::vector<uint16_t> ViewAreaCanvas::collectCaptureInterest(
+        std::vector<uint16_t> *styleIds) const
 {
-    // A superset capture traverses each object's "Flat Lines" child --
-    // the one the stage-5 survey found to contain what the other
-    // display-mode children contain (docs/CoinRetirement.md 5.5), so
-    // every cell can be served by filtering it back down.
+    // One shared traversal feeds every claimed cell, so it must
+    // traverse the union of what all of them need captured additively
+    // (docs/CoinRetirement.md 5.9 "Non-standard modes", 5.11): every
+    // cell's per-object override modes, and every cell's own display
+    // STYLE name -- a style is an override, and an override's mode is
+    // its own subgraph, not a mask over the superset child.
     //
-    // Not every ViewProvider has one. Points registers "Point",
-    // "Shaded" and "Color"; FEM's mesh registers "Wireframe" among six
-    // names of its own. For those the capture falls through to the
-    // object's own mode, which is right so long as no cell's style
-    // would have applied to that object anyway -- and a style applies
-    // exactly when the switch has a child of its NAME. Where it would
-    // have applied, the superset does not hold what the override needs
-    // and the odd cells must still leave the canvas.
-    Gui::Document *doc = _area ? _area->getGuiDocument() : nullptr;
-    if (!doc)
-        return true;
-
-    std::vector<const char *> wanted;
-    for (const auto &s : styles) {
-        if (Gui::styleNameBitOf(s.c_str()))
-            wanted.push_back(s.c_str());
-    }
-    if (wanted.empty())
-        return false;   // every cell is As Is: nothing overrides anything
-
-    const std::string superset =
-        SoFCUnifiedSelection::DisplayModeFlatLines.getString();
-    for (auto vp : doc->getViewProvidersOfType(
-                 Gui::ViewProviderDocumentObject::getClassTypeId())) {
-        if (!vp->isVisible())
+    // Sorted, because the ORDER is the interestBits bit assignment:
+    // that is what lets every claimed viewer build the identical list
+    // and the feed move between them without moving the bits.
+    std::vector<uint16_t> ids;
+    if (!_area)
+        return ids;
+    for (auto cell : _area->cells()) {
+        auto viewer = viewerOf(cell);
+        if (!viewer || !cell->isVisibleTo(_area))
             continue;
-        const std::vector<std::string> modes = vp->getDisplayMaskModes();
-        if (std::find(modes.begin(), modes.end(), superset) != modes.end())
+        MDIView *view = cell->childView();
+        if (!view || view->getGuiDocument() != _area->getGuiDocument())
             continue;
-        for (const char *w : wanted) {
-            if (std::find(modes.begin(), modes.end(), w) != modes.end())
-                return true;
+        const std::string mode = viewer->getOverrideMode();
+        // Only a Class-A name is a display mode an object's switch can
+        // have a child of; "As Is" overrides nothing, and Hidden Line,
+        // No Shading and Tessellation are traversal state, which never
+        // reaches a superset capture at all (resolveDisplayStyles).
+        if (Gui::styleNameBitOf(mode.c_str())) {
+            const uint16_t id = Render::internModeName(mode.c_str());
+            ids.push_back(id);
+            if (styleIds)
+                styleIds->push_back(id);
         }
+        if (const Render::StyleOverrideTable *ovt =
+                viewer->objectStyleOverrides()) {
+            for (const auto &ov : ovt->entries) {
+                if (ov.modeId)
+                    ids.push_back(ov.modeId);
+            }
+        }
+    }
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    if (styleIds) {
+        std::sort(styleIds->begin(), styleIds->end());
+        styleIds->erase(std::unique(styleIds->begin(), styleIds->end()),
+                        styleIds->end());
+    }
+    return ids;
+}
+
+bool ViewAreaCanvas::supersetBlocked() const
+{
+    // This used to answer "some object's ViewProvider has no superset
+    // child, yet does have a child named by one of the cells' styles"
+    // -- the override genuinely applies to that object and a mask over
+    // the superset cannot produce it, so the odd cells had to leave
+    // the canvas (docs/CoinRetirement.md 5.8).
+    //
+    // They no longer do. The cells' style names ride the same ADDITIVE
+    // capture the override modes already ride (5.11): the style-named
+    // child is traversed beside the normal flow and tagged, and the
+    // cell draws the tag. That serves the object with no superset
+    // child -- and, as with the Class-A override values, it also
+    // serves the object that HAS one whose contents the style's
+    // buckets are not inside of (Mesh's "Flat Lines" holds no point
+    // draws), which the mask silently got wrong.
+    //
+    // What is left is the bit budget. DrawCall::interestBits is 16
+    // bits, so a longer list is truncated (rebuildCaptureInterest) and
+    // a style whose id falls off the end is never captured at all --
+    // that cell would draw the objects' own modes and say nothing. It
+    // still has to leave.
+    std::vector<uint16_t> styleIds;
+    std::vector<uint16_t> ids = collectCaptureInterest(&styleIds);
+    if (ids.size() <= Render::CaptureInterestTable::MaxModes)
+        return false;
+    ids.resize(Render::CaptureInterestTable::MaxModes);
+    for (uint16_t id : styleIds) {
+        if (!std::binary_search(ids.begin(), ids.end(), id))
+            return true;
     }
     return false;
 }
@@ -610,24 +652,13 @@ void ViewAreaCanvas::syncOnce()
       : _serve == ServeFilter   ? View3DInventorViewer::CanvasStyleFilter
                                 : View3DInventorViewer::CanvasStyleOff;
     // The additive-mode interest (docs/CoinRetirement.md 5.9
-    // "Non-standard modes"): the UNION of every cell's non-standard
-    // override modes, imposed on every claimed viewer -- the shared
-    // capture must traverse the union whichever cell feeds it, and the
-    // feed follows the active cell.
+    // "Non-standard modes", 5.11): the UNION of every cell's override
+    // modes AND of the cells' own style names, imposed on every
+    // claimed viewer -- the shared capture must traverse the union
+    // whichever cell feeds it, and the feed follows the active cell.
     std::vector<uint16_t> interest;
-    if (_serve == ServeSuperset) {
-        for (auto &c : _cells) {
-            auto v = viewerOf(c.cell);
-            const Render::StyleOverrideTable *ovt =
-                    v ? v->objectStyleOverrides() : nullptr;
-            if (!ovt)
-                continue;
-            for (const auto &ov : ovt->entries) {
-                if (ov.modeId)
-                    interest.push_back(ov.modeId);
-            }
-        }
-    }
+    if (_serve == ServeSuperset)
+        interest = collectCaptureInterest(nullptr);
     for (auto &c : _cells) {
         if (auto v = viewerOf(c.cell)) {
             v->setCanvasStyleMode(capture);
@@ -731,6 +762,10 @@ void ViewAreaCanvas::paintGL()
             s.drawStyle = viewer->drawStyleMask();
             s.drawStyleName = viewer->drawStyleNameBit();
             s.styleFromSuperset = (_serve == ServeSuperset);
+            // ...and the style's own mode id, where the capture also
+            // carried the mode additively (5.11). Zero unless this is
+            // a superset capture, so the filter service is untouched.
+            s.drawStyleMode = viewer->drawStyleModeId();
             // The cell's per-object overrides (5.9), resolved by the
             // backend as the first clause; only a superset capture can
             // host them, which resolveDisplayStyles guarantees is the
