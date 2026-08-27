@@ -6998,6 +6998,10 @@ public:
     /// Coin traversal that produced the capture applied the style
     /// already.
     uint8_t drawStyleMask = Render::StyleAsIs;
+    /// The style name behind drawStyleMask, and whether the capture is
+    /// the SUPERSET child. Restated every frame beside the mask.
+    uint8_t drawStyleName = 0;
+    bool styleFromSuperset = false;
     BGFXView() { stashSubView(freshBank); }
     /// Swap sub-view \a id into the members (a no-op when it already
     /// is). An id never seen before starts from freshBank.
@@ -8556,6 +8560,11 @@ public:
         /// it is restated by every submit rather than carried across
         /// frames, so a cell whose style changed needs no bank reset.
         uint8_t style = Render::StyleAsIs;
+        /// That style's NAME bit, and whether the feed captured the
+        /// superset child; together they let the filter be resolved per
+        /// OBJECT (5.8) instead of applied flat to every draw.
+        uint8_t styleName = 0;
+        bool fromSuperset = false;
     } subCtx;
 
     // CPU-side scene data fed through Render::Renderer's scene API. GPU

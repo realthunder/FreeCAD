@@ -642,12 +642,32 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     const Render::Material &mat = draw.material;
     if (!draw.mesh || draw.mesh->numVertices == 0)
         return;
-    // This sub-view's Class-A display style, as a bucket filter over
-    // the scene every sub-view shares (docs/CoinRetirement.md 5.7):
-    // Shaded keeps the faces, Wireframe the lines and points, Points
-    // the points. StyleAsIs -- every frame outside a unified canvas --
-    // keeps everything, because there the Coin traversal applied the
-    // style before the capture.
+    // This sub-view's Class-A display style, as a bucket filter over the
+    // scene every sub-view shares (docs/CoinRetirement.md 5.7, 5.8):
+    // Shaded keeps the faces, Wireframe the lines and points, Points the
+    // points. The bucket is what the draw RENDERS as, not mat.type: Mesh
+    // builds its Wireframe and Point modes by re-styling one mesh node,
+    // so they arrive as Material::Triangle and filtering on the type
+    // alone dropped them (Render::styleBitOf).
+    //
+    // Which mask applies is resolved PER OBJECT, the way Rhino and
+    // SolidWorks resolve a display mode, and only under a superset
+    // capture -- one where the feed traversed the widest display-mode
+    // child instead of each object's own. Then:
+    //
+    // - this sub-view's style, where the object's display-mode switch
+    //   carries a child of that style's NAME. A style is an override,
+    //   and that is what an override does.
+    // - the object's OWN mode otherwise. That covers a sub-view showing
+    //   "As Is", and equally an object whose switch has no child of
+    //   that name -- which today's traversal already leaves in its own
+    //   mode (Mesh registers "Point", so a "Points" override misses it).
+    // - nothing, when the own mode is StyleUnknown: a mode no mask can
+    //   describe (FEM's "Faces & Wireframe") must not be filtered by one.
+    //
+    // Without a superset capture the mask is applied flat, which is only
+    // ever asked for where every cell's style provably removes rather
+    // than adds (ViewAreaCanvas::styleConflicts).
     //
     // Gizmo draws are exempt. A Class-A style reaches the pixels by
     // selecting a different child of a ViewProvider's display-mode
@@ -655,13 +675,18 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     // under no such switch; skipbounds is exactly the flag that marks
     // them. Filtering them would make the rotation-centre sphere
     // vanish in Wireframe, which Coin never does.
-    // The bucket is what the draw RENDERS as, not mat.type: Mesh builds
-    // its Wireframe and Point modes by re-styling one mesh node, so
-    // they arrive as Material::Triangle and filtering on the type alone
-    // dropped them (Render::styleBitOf).
-    if (drawStyleMask != Render::StyleAsIs && !draw.skipbounds
-            && !(drawStyleMask & Render::styleBitOf(mat)))
-        return;
+    if (!draw.skipbounds) {
+        uint8_t effective = drawStyleMask;
+        if (styleFromSuperset) {
+            effective = (drawStyleName
+                         && (draw.registeredStyles & drawStyleName))
+                    ? drawStyleMask : draw.ownStyle;
+        }
+        if (effective != Render::StyleAsIs
+                && effective != Render::StyleUnknown
+                && !(effective & Render::styleBitOf(mat)))
+            return;
+    }
 
     GpuMesh *mesh = getMesh(*draw.mesh);
     // An exhausted handle pool leaves the upload invalid; binding

@@ -152,6 +152,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // rather than carried: the cell owns it, the backend only filters
     // by it (docs/CoinRetirement.md 5.7).
     view->drawStyleMask = subCtx.active ? subCtx.style : Render::StyleAsIs;
+    view->drawStyleName = subCtx.active ? subCtx.styleName : uint8_t(0);
+    view->styleFromSuperset = subCtx.active && subCtx.fromSuperset;
 
     // A shader pack that could not supply a core program keeps the
     // view down: without this the torn-down view (no framebuffer)

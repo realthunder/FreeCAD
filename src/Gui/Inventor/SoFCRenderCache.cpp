@@ -74,6 +74,7 @@
 #include "SoFCPbrElement.h"
 #include "SoFCZoomOffsetElement.h"
 #include "SoFCDisplayModeElement.h"
+#include "SoFCOwnDisplayModeElement.h"
 
 #include <Gui/ViewProviderLink.h>
 
@@ -558,6 +559,11 @@ SoFCRenderCache::_Material::init(SoState * state)
       this->polygonoffsetstyle = style;
 
   this->drawstyle = SoDrawStyleElement::get(state);
+
+  // The object's own display mode, written by its SoFCSwitch. Read
+  // straight off the state rather than through _checkMaterial: it is
+  // not an overridable material quantity, just where in the tree we are.
+  SoFCOwnDisplayModeElement::get(state, this->ownstyle, this->registeredstyles);
 }
 
 template<class T>
@@ -620,6 +626,8 @@ SoFCRenderCacheP::captureMaterial(SoState * state)
 
   if (_checkMaterial(state, m, Material::FLAG_DRAW_STYLE, this->drawstyleelement))
     m.drawstyle = SoDrawStyleElement::get(state);
+
+  SoFCOwnDisplayModeElement::get(state, m.ownstyle, m.registeredstyles);
 
   if (_checkMaterial(state, m, Material::FLAG_SHADOW_STYLE, this->shadowstyleelement))
     m.shadowstyle = SoShadowStyleElement::get(state);

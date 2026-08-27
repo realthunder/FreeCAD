@@ -168,6 +168,8 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         ctx.w = s.width;
         ctx.h = s.height;
         ctx.style = s.drawStyle;
+        ctx.styleName = s.drawStyleName;
+        ctx.fromSuperset = s.styleFromSuperset;
         _BGFXLib.captureWidth = uint16_t(s.width);
         _BGFXLib.captureHeight = uint16_t(s.height);
         ok = render(col, s.viewMatrix, s.projMatrix) && ok;
@@ -212,6 +214,8 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         ctx.w = s.width;
         ctx.h = s.height;
         ctx.style = s.drawStyle;
+        ctx.styleName = s.drawStyleName;
+        ctx.fromSuperset = s.styleFromSuperset;
         _BGFXLib.standaloneSubWidth = uint16_t(s.width);
         _BGFXLib.standaloneSubHeight = uint16_t(s.height);
         const bool subOk = render(col, s.viewMatrix, s.projMatrix);
@@ -314,6 +318,8 @@ void BGFXRenderer::prepareSubViews(const QColor &col,
         ctx.w = s.width;
         ctx.h = s.height;
         ctx.style = s.drawStyle;
+        ctx.styleName = s.drawStyleName;
+        ctx.fromSuperset = s.styleFromSuperset;
         _BGFXLib.standaloneSubWidth = uint16_t(s.width);
         _BGFXLib.standaloneSubHeight = uint16_t(s.height);
         pimpl->render(col, s.viewMatrix, s.projMatrix);

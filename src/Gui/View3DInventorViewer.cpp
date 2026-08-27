@@ -154,6 +154,7 @@
 #include "SoFCOffscreenRenderer.h"
 #include "SoFCSelection.h"
 #include "Inventor/SoFCDisplayMode.h"
+#include "Inventor/SoFCOwnDisplayModeElement.h"
 #include "SoFCSelectionAction.h"
 #include "SoDatumLabel.h"
 #include "SoFCUnifiedSelection.h"
@@ -519,8 +520,9 @@ struct View3DInventorViewer::Private
     /// Set while a unified canvas is drawing its cells' styles as
     /// backend bucket filters: this viewer's traversal then captures
     /// every object in its OWN display mode and applies no style of
-    /// its own (setCanvasStyleFiltered).
-    bool canvasStyleFiltered = false;
+    /// its own (setCanvasStyleMode).
+    View3DInventorViewer::CanvasStyleMode canvasStyleMode =
+        View3DInventorViewer::CanvasStyleOff;
 
     // Shared, not owned outright: a ViewArea unified canvas
     // (docs/SplitViews.md sec 13) hands the SAME backend instance to
@@ -2352,17 +2354,15 @@ void View3DInventorViewer::setOverrideMode(const std::string& mode)
 
 unsigned char View3DInventorViewer::drawStyleMaskFromName(const char *mode)
 {
-    if (!mode || !mode[0])
-        return Render::StyleAsIs;
-    if (SoFCUnifiedSelection::DisplayModeShaded == mode)
-        return Render::StyleShaded;
-    if (SoFCUnifiedSelection::DisplayModeFlatLines == mode)
-        return Render::StyleFlatLines;
-    if (SoFCUnifiedSelection::DisplayModeWireframe == mode)
-        return Render::StyleWireframe;
-    if (SoFCUnifiedSelection::DisplayModePoints == mode)
-        return Render::StylePoints;
-    return Render::StyleAsIs;
+    // One home for the mapping (Gui::drawStyleMaskFromModeName), because
+    // the traversal needs it too -- SoFCSwitch reads an object's own mode
+    // with it.
+    //
+    // It answers Unknown for a name that is not one of the four, which is
+    // a distinction this overload's callers do not have: they ask about a
+    // VIEW's override mode, which is always "As Is" or one of the four.
+    const uint8_t mask = Gui::drawStyleMaskFromModeName(mode);
+    return mask == SoFCOwnDisplayModeElement::Unknown ? Render::StyleAsIs : mask;
 }
 
 void View3DInventorViewer::applyOverrideMode()
@@ -2412,33 +2412,54 @@ void View3DInventorViewer::applyOverrideMode()
     }
 }
 
+unsigned char View3DInventorViewer::drawStyleNameBit() const
+{
+    return Gui::styleNameBitOf(overrideMode.c_str());
+}
+
 const char *View3DInventorViewer::captureOverrideMode() const
 {
     // Which display mode this viewer's traversal CAPTURES with, which
     // is its own style everywhere except a canvas cell whose canvas has
-    // decided to filter styles per cell. There this one traversal feeds
-    // every cell, so baking a style into it would show one cell's style
-    // in all of them; the capture holds each object's own mode instead
-    // and each cell filters buckets (docs/SplitViews.md sec 17). The
-    // canvas only chooses that when it has established that no object's
-    // own mode makes the two disagree -- otherwise the odd cells leave
-    // the canvas and traverse for themselves.
-    if (_pimpl->canvasStyleFiltered
-            && drawStyleMaskFromName(overrideMode.c_str()) != Render::StyleAsIs)
-        return "";
+    // to serve cells in different styles. There this one traversal
+    // feeds every cell, so baking a style into it would show one cell's
+    // style in all of them.
+    switch (_pimpl->canvasStyleMode) {
+    case CanvasStyleSuperset:
+        // Capture the widest display-mode child there is, whatever this
+        // viewer's own style: a cell can then be shown a style that
+        // ADDS geometry its objects' own modes do not draw -- which a
+        // filter over an own-mode capture cannot do, because a filter
+        // only ever removes (docs/CoinRetirement.md 5.8). An object
+        // whose switch has no child of this name is left in its own
+        // mode by the traversal, which is exactly what the backend
+        // then reproduces.
+        return SoFCUnifiedSelection::DisplayModeFlatLines.getString();
+    case CanvasStyleFilter:
+        // The capture holds each object's own mode and each cell
+        // filters buckets out of it (docs/SplitViews.md sec 17). Only
+        // chosen where no object's own mode can tell a filter from the
+        // override a style really is.
+        if (drawStyleMaskFromName(overrideMode.c_str()) != Render::StyleAsIs)
+            return "";
+        break;
+    case CanvasStyleOff:
+        break;
+    }
     return overrideMode.c_str();
 }
 
-bool View3DInventorViewer::canvasStyleFiltered() const
+View3DInventorViewer::CanvasStyleMode
+View3DInventorViewer::canvasStyleMode() const
 {
-    return _pimpl->canvasStyleFiltered;
+    return _pimpl->canvasStyleMode;
 }
 
-void View3DInventorViewer::setCanvasStyleFiltered(bool on)
+void View3DInventorViewer::setCanvasStyleMode(CanvasStyleMode mode)
 {
-    if (_pimpl->canvasStyleFiltered == on)
+    if (_pimpl->canvasStyleMode == mode)
         return;
-    _pimpl->canvasStyleFiltered = on;
+    _pimpl->canvasStyleMode = mode;
     // Re-applied rather than merely stored: it decides a field of the
     // selection root, and changing that field is what dirties the
     // capture so the next frame is fed the newly traversed scene.
@@ -4209,7 +4230,7 @@ void View3DInventorViewer::adoptRenderer(
         _pimpl->canvasResidue = false;
         // Leaving the canvas puts the style back in this viewer's own
         // traversal, where it means what it means on a plain view.
-        _pimpl->canvasStyleFiltered = false;
+        _pimpl->canvasStyleMode = CanvasStyleOff;
         applyOverrideMode();
         const int mode = int(ViewParams::getRenderCache());
         setRendererType(mode == 3 ? RenderParams::getType() : std::string());

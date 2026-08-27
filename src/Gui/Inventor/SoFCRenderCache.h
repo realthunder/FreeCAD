@@ -352,6 +352,16 @@ public:
     int8_t materialbinding;
     int8_t vertexordering;
     int8_t drawstyle;
+    /// The display mode the OBJECT is in, and which Class-A style names
+    /// its display-mode switch has a child for -- captured from
+    /// SoFCOwnDisplayModeElement, which SoFCSwitch writes
+    /// (docs/CoinRetirement.md 5.8). What lets the backend resolve a
+    /// display style per object per view instead of the traversal
+    /// baking one style into the capture. Part of the material because
+    /// the material is the batching key: draws whose objects are in
+    /// different modes must not merge, since a cell filters on this.
+    uint8_t ownstyle;
+    uint8_t registeredstyles;
     int8_t polygonoffsetstyle;
     int8_t shadowstyle;
     int8_t depthfunc;
@@ -579,6 +589,10 @@ public:
         if (twoside > other.twoside) return false;
         if (drawstyle < other.drawstyle) return true;
         if (drawstyle > other.drawstyle) return false;
+        if (ownstyle < other.ownstyle) return true;
+        if (ownstyle > other.ownstyle) return false;
+        if (registeredstyles < other.registeredstyles) return true;
+        if (registeredstyles > other.registeredstyles) return false;
         if (polygonoffsetstyle < other.polygonoffsetstyle) return true;
         if (polygonoffsetstyle > other.polygonoffsetstyle) return false;
         if (polygonoffsetfactor < other.polygonoffsetfactor) return true;

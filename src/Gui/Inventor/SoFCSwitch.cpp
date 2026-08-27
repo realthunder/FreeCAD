@@ -30,6 +30,7 @@
 
 #include "SoFCSwitch.h"
 #include "SoFCDisplayModeElement.h"
+#include "SoFCOwnDisplayModeElement.h"
 
 using namespace Gui;
 
@@ -177,6 +178,35 @@ void
 SoFCSwitch::doAction(SoAction *action)
 {
   auto state = action->getState();
+
+  // Record which display mode this object is in, and which style names
+  // it has a child for, for whatever traverses below
+  // (docs/CoinRetirement.md 5.8). A display style is applied by
+  // traversing the style-NAMED child below, so by the time a shape is
+  // reached its own mode is gone; the renderer needs it to resolve a
+  // style per object per view, the way Rhino and SolidWorks do.
+  //
+  // Set once, before either branch, because the answer depends only on
+  // whichChild and childNames -- not on which child actually gets
+  // traversed. It is deliberately NOT scoped to the chosen child: a
+  // switch does not push state, so this reaches the rest of the
+  // enclosing separator, which is the ViewProvider's own root, and a
+  // ViewProvider has one display-mode switch. A nested switch (a Link's)
+  // overwrites it for its own subtree, which is the nearest-enclosing
+  // answer and the right one.
+  if (this->allowNamedOverride.getValue()
+      && state->isElementEnabled(SoFCOwnDisplayModeElement::getClassStackIndex())) {
+    uint8_t ownmask = SoFCOwnDisplayModeElement::Unknown;
+    uint8_t registered = 0;
+    const int numnames = std::min(childNames.getNum(), this->getNumChildren());
+    const int own = this->whichChild.getValue();
+    for (int i = 0; i < numnames; ++i) {
+      registered |= Gui::styleNameBitOf(childNames[i].getString());
+      if (i == own)
+        ownmask = Gui::drawStyleMaskFromModeName(childNames[i].getString());
+    }
+    SoFCOwnDisplayModeElement::set(state, ownmask, registered);
+  }
 
   uint32_t mask = ((uint32_t)SoSwitchElement::get(state)) & FC_SWITCH_MASK;
   int idx = -1;

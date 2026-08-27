@@ -314,19 +314,34 @@ public:
     /// state, so they stay with the Coin traversal and report
     /// StyleAsIs.
     static unsigned char drawStyleMaskFromName(const char *mode);
+    /// This viewer's display style as a StyleNameBit, for the backend
+    /// to tell whether an object's display-mode switch has a child of
+    /// that style's name (docs/CoinRetirement.md 5.8).
+    unsigned char drawStyleNameBit() const;
     /// The display mode name this viewer's traversal CAPTURES with:
-    /// its own style, or none while a canvas is filtering styles per
-    /// cell (setCanvasStyleFiltered).
+    /// its own style, none, or the superset child -- see
+    /// setCanvasStyleMode().
     const char *captureOverrideMode() const;
-    /// Tell a canvas cell that the canvas is drawing its cells' styles
-    /// as backend bucket filters (docs/SplitViews.md sec 17), so this
-    /// viewer's traversal must capture every object in its OWN display
-    /// mode instead of applying the style. Re-applies the override,
-    /// which dirties the capture. False -- the default, and what a
-    /// canvas whose cells all share a style uses -- leaves the
-    /// traversal applying the style exactly as a plain view does.
-    void setCanvasStyleFiltered(bool on);
-    bool canvasStyleFiltered() const;
+    /// What a unified canvas needs this viewer's traversal to capture,
+    /// because one canvas draws ONE resident scene through ONE
+    /// traversal and its cells may be in different display styles
+    /// (docs/CoinRetirement.md 5.7, 5.8; docs/SplitViews.md sec 17).
+    enum CanvasStyleMode : unsigned char {
+        /// Not on a canvas, or on one whose claimed cells all share a
+        /// style: capture with that style, exactly as a plain view.
+        CanvasStyleOff,
+        /// Capture every object in its OWN display mode; the cells
+        /// filter buckets out of it. Only usable where a filter and an
+        /// override cannot be told apart.
+        CanvasStyleFilter,
+        /// Capture the SUPERSET display-mode child, so a cell can be
+        /// served a style that ADDS geometry the object's own mode does
+        /// not draw. The cells resolve their style per object.
+        CanvasStyleSuperset,
+    };
+    /// Re-applies the override, which is what dirties the capture.
+    void setCanvasStyleMode(CanvasStyleMode mode);
+    CanvasStyleMode canvasStyleMode() const;
     const SoFCDisplayModeElement::HiddenLineConfig &getHiddenLineConfig() const;
     //@}
 

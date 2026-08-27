@@ -1486,6 +1486,12 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             // bounds and stays out of the scene's (Material::skipbounds).
             draw.skipbounds = material.skipbounds;
 
+            // The object's own display mode, so a view can resolve its
+            // display style per object instead of the traversal baking
+            // one style into this capture (5.8).
+            draw.ownStyle = material.ownstyle;
+            draw.registeredStyles = material.registeredstyles;
+
             // Measured once per entry per publish: the draw-entry build
             // above asked the same question of the same entry.
             const SbBox3f & bbox = ventry.getBoundingBox();

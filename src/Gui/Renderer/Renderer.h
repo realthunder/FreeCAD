@@ -2364,6 +2364,9 @@ enum DrawStyleMask : uint8_t {
     StyleShaded    = StyleFaces,
     StyleWireframe = StyleLines | StylePoints,
     StyleFlatLines = StyleFaces | StyleLines | StylePoints,
+    /// Not a mask: a display mode no mask can describe. See
+    /// DrawCall::ownStyle.
+    StyleUnknown   = 0xff,
 };
 
 /// Which bucket a draw actually RENDERS as, which is not always its
@@ -2431,6 +2434,23 @@ struct DrawCall {
     /// sphere moves with the spin, so a scene bound that counted it
     /// would move the ground and the clip planes while the view turns.
     bool skipbounds = false;
+    /// The display mode this draw's OBJECT is in, as a DrawStyleMask,
+    /// and which Class-A style NAMES its display-mode switch has a
+    /// child for (SoFCOwnDisplayModeElement::StyleNameBit bits).
+    ///
+    /// What lets one capture serve views in different display styles
+    /// (docs/CoinRetirement.md 5.8): the feed captures the SUPERSET
+    /// child and each view resolves its own style per object, the way
+    /// Rhino and SolidWorks do. `ownStyle` serves a view showing "As
+    /// Is"; `registeredStyles` reproduces the rule that a style whose
+    /// name an object's switch does not carry does not apply to that
+    /// object at all.
+    ///
+    /// ownStyle == StyleUnknown means the object's mode is not one of
+    /// the four (Mesh's "Point", FEM's "Faces & Wireframe"): its
+    /// buckets cannot be named, so nothing may filter this draw.
+    uint8_t ownStyle = StyleUnknown;
+    uint8_t registeredStyles = 0;
     /// This draw is a coarse stand-in for geometry that has not arrived:
     /// a unit box scaled onto the bounds above, the bottom rung of the
     /// fidelity ladder (docs/SceneStreaming.md §6). It occupies space —
@@ -2559,6 +2579,21 @@ public:
         /// capture, which is the whole reason the canvas could not vary
         /// it per cell.
         uint8_t drawStyle = StyleAsIs;
+        /// The style NAME above, as a StyleNameBit, and whether the
+        /// feed captured the SUPERSET child rather than each object's
+        /// own mode (docs/CoinRetirement.md 5.8).
+        ///
+        /// Under a superset capture the filter is resolved per object:
+        /// this sub-view's style where the object's display-mode switch
+        /// carries a child of that name, and the object's OWN mode
+        /// otherwise -- which is both what "As Is" means and what
+        /// already happens today to an object whose switch does not
+        /// carry the style's name (Mesh's "Point" under a "Points"
+        /// override). Without the superset flag a mask can only remove,
+        /// so it cannot serve a style that ADDS geometry the capture
+        /// does not hold.
+        uint8_t drawStyleName = 0;
+        bool styleFromSuperset = false;
     };
     /// Render one frame as \a count sub-views tiling the backbuffer:
     /// the same resident scene feeds every sub-view, each drawn with

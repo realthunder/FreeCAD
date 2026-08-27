@@ -85,6 +85,7 @@
 #include "Inventor/SoFCVertexCache.h"
 #include "Inventor/SoFCRenderCache.h"
 #include "Inventor/SoFCDisplayMode.h"
+#include "Inventor/SoFCOwnDisplayModeElement.h"
 #include "Inventor/SoFCShapeInfo.h"
 #include "Inventor/SoAutoZoomTranslation.h"
 #include "Inventor/SoFCRenderMaterial.h"
@@ -169,6 +170,7 @@ void Gui::SoFCDB::init()
     SoSelectionElementAction        ::initClass();
     SoVRMLAction                    ::initClass();
     SoFCDisplayModeElement          ::initClass();
+    SoFCOwnDisplayModeElement       ::initClass();
     SoFCDisplayMode                 ::initClass();
     SoSkipBoundingGroup             ::initClass();
     SoSkipBoundingBoxElement        ::initClass();
