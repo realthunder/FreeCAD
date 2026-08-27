@@ -1376,3 +1376,181 @@ The work, then:
 shows it. That is the point of putting it behind a display mode, but
 it does mean "select the cut shape" and "select the stock" are the
 same object in different modes, not two things.
+### 11.7 The design (2026-08-28)
+
+Written against the code, with the unruled calls marked PROPOSED.
+The rulings this rests on: both routes swapped on run state (11.3),
+the mesh on the Stock object behind a display mode (11.6), meshing
+debounced and off the GUI thread (11.3), and stage 3's phased
+contract, which is what lets the consumer's stock sort against a
+document view's transparents (10.2).
+
+#### 11.7.1 Route A mechanics -- what actually has to switch
+
+`DlgCAMSimulator::attachToHost()` already accepts any
+`View3DInventorViewer`; the target is the only thing hard-wired
+(`ViewCAMSimulator::updateHostAttachment` passes `mDummyViewer`).
+Attaching to a document view instead touches four things, all of them
+"which viewer" plumbing rather than new rendering:
+
+- **Camera.** The sim renders its G-buffer under its own camera and
+  the composite reprojects only DEPTH into the host's (10.3) -- the
+  colour is from the sim camera's viewpoint. Attached to the sim's
+  own window the two are the same camera, so nothing shows; attached
+  to a document view they are not, and the picture would be pasted
+  from the wrong viewpoint. So `updateCamera()` must read the
+  ATTACHED viewer's `SoCamera`, not `mDummyViewer`'s,
+  whenever the host is foreign. Navigation then comes free: the
+  document view owns its camera and the sim follows it.
+- **Redraw routing.** `requestRedraw()` asks the dummy viewer's
+  render manager; attached elsewhere it must ask the host view's.
+- **Who draws the stock.** The Job's `Stock` object is real document
+  geometry in that view and would draw UNCUT over the carve (11.1).
+  Hide it (`Visibility = False`) on attach, restore on detach. This
+  is the one place Route A touches the document.
+- **Who draws the base.** In the sim's window the base is a mirror
+  copy fed to the dummy viewer (8.4). In a document view the model
+  IS already there as the real objects, lit and selectable;
+  `SetBaseDrawnByHost(true)` stands the sim's copy down and nothing
+  needs feeding at all. Occlusion against the model comes through
+  the shared depth.
+
+One host at a time: `SimDisplay`'s G-buffer and resolve targets are
+single-size, recreated on `UpdateWindowScale` -- serving two
+differently-sized hosts would recreate them every frame. The
+consumer MOVES between hosts; it never draws in two.
+
+Detach triggers, both of which the sim window never had to face: the
+document view can CLOSE under the consumer (QObject::destroyed of
+the MDIView -> detach, restore Stock visibility), and its renderer
+can be torn down by a preference change (the existing
+`updateHostAttachment` re-call answers that when it runs; the
+attach-target bookkeeping moves into `DlgCAMSimulator` so both hosts
+are handled by one path).
+
+**PROPOSED UX (not ruled): a toggle button in `GuiDisplay`,**
+next to the existing view buttons -- "show in the 3D view". The sim
+window opens exactly as today and keeps every control; toggled on,
+the consumer re-targets to the job document's active 3D view, and
+the sim's own window falls back to its Coin mirrors (uncut stock +
+base -- the dummy viewer has held those providers all along). Toggle
+off, or close the sim, and everything restores. Alternative shape,
+listed for the ruling: never open the sim MDI window at all and run
+from the task panel alone -- rejected here because the playback
+controls (pause, speed, single-step) live in `GuiDisplay` and would
+all need a second home.
+
+#### 11.7.2 The stop swap -- who drives it
+
+The driver is PYTHON, in `SimulatorGL.py`. It already holds the
+job, the checked ops, each op's tool (profile AND solid shape) and
+the command lists it fed to the GL sim -- exactly the inputs
+`Simulator.py` feeds VolSim. The C++ side does not know the
+`Path::Command`s any more (they were flattened to `MillMotion`s at
+`AddCommand`), so driving the replay from C++ would mean
+reconstructing what Python still has.
+
+What C++ must newly surface (the `CAMSim` binding):
+
+- **A command-to-motion map.** `AddCommand` parses one command into
+  0..n `MillMotion`s (`GCodeParser::Operations`); recording the
+  motion count per command at that moment is the whole map.
+- **Progress.** `GetProgress() -> (motionIndex, fraction, playing)`:
+  `mPathStep` + `mSubStep / numSimSteps` from the last
+  `CalcSegmentPositions`, and `mSimPlaying`. Python inverts the map
+  to (commandIndex, motion-within-command, fraction).
+
+**PROPOSED: polling, not a callback.** A QTimer in the Python driver
+(~250 ms) polls `GetProgress()`; the debounce IS the poll -- N
+consecutive quiet polls with `playing == false` and an unchanged
+position (PROPOSED default: 2, i.e. ~0.5 s) starts the replay. A
+C++-to-Python callback would need lifetime and GIL care for no
+gain at this event rate.
+
+#### 11.7.3 The replay -- snapshot, thread, truncated tail
+
+On debounce expiry the driver snapshots `(commandIndex, fraction)`
+and starts a worker `threading.Thread`:
+
+    PathSim.BeginSimulation(stock, resolution)
+    for each active op up to the snapshot:
+        SetToolShape(op tool solid)
+        ApplyCommand(...) each WHOLE consumed command, verbatim
+    for the partially-consumed command:
+        synthesize the tail (below)
+    outer, inner = GetResultMesh()
+    marshal to the GUI thread; drop the result if cancelled
+
+- **GIL: the `PathSim` bindings must release it** around
+  `BeginSimulation` / `SetToolShape` / `ApplyCommand` /
+  `GetResultMesh` (`Py_BEGIN_ALLOW_THREADS`), or the "worker" blocks
+  the GUI anyway. They are pure C++ on their own state; nothing they
+  do touches Python.
+- **Cancel**: a flag checked between `ApplyCommand` calls. Play
+  resuming, a new stop superseding, or the panel closing sets it;
+  the thread finishes its current command and exits. Results carry
+  their snapshot and are dropped when it is no longer the current
+  one.
+- **The truncated tail (11.5's PROPOSAL, refined).** The GL sim's
+  position is a MOTION index + fraction, and one command can have
+  expanded to several motions -- so the tail is synthesized from the
+  MOTIONS, not by editing the command: for the partial command's
+  fully-consumed motions, per-motion commands (G1 from endpoints,
+  G2/G3 keeping the parser's i/j/k centre); for the partial motion,
+  the same with the endpoint at the interpolant (arcs interpolate
+  the sweep angle, drills the plunge depth). Sub-resolution
+  differences from VolSim's own voxel size swallow the rounding.
+- **Landing (GUI thread)**: set `Stock.CutMesh` (the outer mesh; the
+  inner is VolSim's coloured-cut variant, unused here), switch the
+  view object to the `Cut` display mode and show it, and stand the
+  sim's stock draw down (`SetStockVisible(false)` on the sim side,
+  NOT the document object). Tool and path overlay keep drawing --
+  PROPOSED, on the argument that the path over the settled mesh is
+  exactly the x-ray feature (10.4). On play: reverse in order (sim
+  stock back on, Stock object back to hidden-while-attached, mode
+  restored) before the first new frame.
+
+#### 11.7.4 The Stock object half (ruled in 11.6, concrete shape)
+
+- `SetupStockObject` adds `Mesh::PropertyMeshKernel` `CutMesh`
+  (group "Stock", `Prop_Output` so it never touches the recompute
+  DAG), and `onDocumentRestored` back-fills it into old documents.
+- A `StockViewProvider` in the stock's own Gui module extends
+  `IconViewProvider.ViewProvider`: `attach()` builds an
+  `SoSeparator` (`SoCoordinate3` + `SoNormal` + `SoIndexedFaceSet`)
+  registered via `addDisplayMode(sep, "Cut")`; `getDisplayModes`
+  lists it; `updateData` repopulates the coordinates from `CutMesh`
+  when it changes (points/facet index arrays through the Mesh
+  Python API's arrays, not per-vertex Python loops); `dumps`/`loads`
+  keep the icon behaviour. Existing documents restore the OLD proxy
+  class; `onDocumentRestored` swaps it. On a `Part::FeaturePython`
+  the proxy's modes ADD to Part's, so Wireframe et al. survive.
+- The mesh mode carries its own face material (the uncut stock's
+  translucent wireframe look is wrong for a solid carve): PROPOSED
+  plain shaded with the sim's stock colour preference.
+
+#### 11.7.5 Work breakdown
+
+1. **Stock half** (ruled, independent of every open UX call):
+   property + view provider + `Cut` display mode + restore path.
+   Verify headless-ish: assign a mesh from the console, switch
+   modes, save, reload.
+2. **Progress surface**: command-to-motion map in
+   `CAMSim::AddCommand`, `GetProgress` binding, `mSimPlaying`
+   exposure.
+3. **GIL release** in the four `PathSim` bindings.
+4. **Swap driver** in `SimulatorGL.py`: poll + debounce + worker
+   replay + truncated tail + landing/reversal.
+5. **Route A re-target**: camera source, redraw routing, stock/base
+   disposition, the GuiDisplay toggle, detach-on-close/teardown.
+6. **Doc + records.**
+
+Steps 1-3 carry no unruled decision; 4 carries the polling and
+tail proposals; 5 carries the UX proposal.
+
+Open for ruling: the 11.7.1 UX shape; polling + debounce default
+(11.7.2); tail synthesis from motions (11.7.3, refines 11.5's
+proposal); path overlay staying up over the settled mesh (11.7.3);
+the Cut mode's material (11.7.4). Still pending from stage 3:
+BUILD_BGFX / BUILD_CAM_SIMULATOR_GL defaults, and the sim-window
+stock view provider's disposition (10.5).
