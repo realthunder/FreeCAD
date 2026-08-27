@@ -465,6 +465,9 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->linepattern = 0xffff;
   this->type = 0;
   this->materialbinding = 0;
+  this->capturedmode = 0;
+  this->traversedmode = 0;
+  this->interestbits = 0;
   this->pervertexcolor = false;
   this->transptexture = false;
   this->lightmodel = SoLazyElement::PHONG;
@@ -564,6 +567,8 @@ SoFCRenderCache::_Material::init(SoState * state)
   // straight off the state rather than through _checkMaterial: it is
   // not an overridable material quantity, just where in the tree we are.
   SoFCOwnDisplayModeElement::get(state, this->ownstyle, this->registeredstyles);
+  this->capturedmode = SoFCCapturedModeElement::get(state);
+  SoFCModeInterestElement::get(state, this->traversedmode, this->interestbits);
 }
 
 template<class T>
@@ -628,6 +633,8 @@ SoFCRenderCacheP::captureMaterial(SoState * state)
     m.drawstyle = SoDrawStyleElement::get(state);
 
   SoFCOwnDisplayModeElement::get(state, m.ownstyle, m.registeredstyles);
+  m.capturedmode = SoFCCapturedModeElement::get(state);
+  SoFCModeInterestElement::get(state, m.traversedmode, m.interestbits);
 
   if (_checkMaterial(state, m, Material::FLAG_SHADOW_STYLE, this->shadowstyleelement))
     m.shadowstyle = SoShadowStyleElement::get(state);

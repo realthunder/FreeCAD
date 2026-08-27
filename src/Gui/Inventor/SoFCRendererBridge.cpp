@@ -1510,6 +1510,9 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             // one style into this capture (5.8).
             draw.ownStyle = material.ownstyle;
             draw.registeredStyles = material.registeredstyles;
+            draw.capturedMode = material.capturedmode;
+            draw.traversedMode = material.traversedmode;
+            draw.interestBits = material.interestbits;
 
             // Measured once per entry per publish: the draw-entry build
             // above asked the same question of the same entry.

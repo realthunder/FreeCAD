@@ -99,6 +99,85 @@ public:
   };
 };
 
+/** Additive-capture context of the shapes that follow
+ * (docs/CoinRetirement.md 5.9 "Non-standard modes").
+ *
+ * A per-view override may name a display mode outside the four Class-A
+ * styles (Mesh's "Point", FEM's own modes). That mode is a DIFFERENT
+ * SUBGRAPH -- no mask over the superset capture can produce it -- so
+ * SoFCSwitch traverses the named child IN ADDITION to the normal flow
+ * when the capture's interest set (SoFCDisplayModeElement::
+ * CaptureInterest) asks for it. This element carries the per-switch
+ * half of what the submit-side resolution needs, packed into the
+ * inherited int32:
+ *
+ * - \c traversedMode (high 16 bits) -- the interned id
+ *   (Render::internModeName) of the mode child the NORMAL flow
+ *   traversed, when that name is in the interest set, else 0. An
+ *   override naming this mode admits the untagged draws as they are:
+ *   they already ARE the mode, and no additively tagged copy exists.
+ * - \c interestBits (low 16 bits) -- bit i set = the switch has a
+ *   child named interest entry i. What tells "the override's mode was
+ *   captured additively, suppress the normal draws" from "the object
+ *   has no such mode child, fall back to its own mode".
+ *
+ * Like SoFCOwnDisplayModeElement it is written without a state push
+ * (a switch does not push), scoping it to the enclosing separator --
+ * the ViewProvider's root -- and overwritten by a nested switch.
+ */
+class GuiExport SoFCModeInterestElement : public SoInt32Element {
+  typedef SoInt32Element inherited;
+
+  SO_ELEMENT_HEADER(SoFCModeInterestElement);
+
+public:
+  static void initClass(void);
+
+protected:
+  virtual ~SoFCModeInterestElement();
+
+public:
+  virtual void init(SoState * state);
+
+  static void set(SoState * const state, uint16_t traversedmode, uint16_t interestbits);
+  static void get(SoState * const state, uint16_t & traversedmode, uint16_t & interestbits);
+
+  static int32_t pack(uint16_t traversedmode, uint16_t interestbits)
+  { return static_cast<int32_t>((uint32_t(traversedmode) << 16) | interestbits); }
+};
+
+/** The interned mode id of the ADDITIVELY traversed display-mode child
+ * the shapes that follow belong to (docs/CoinRetirement.md 5.9
+ * "Non-standard modes"), 0 during the normal flow.
+ *
+ * SoFCSwitch sets it around each extra named-child traversal and sets
+ * it back, so every draw captured from that subgraph is tagged with
+ * the mode it renders. A tagged draw serves exactly one thing: an
+ * override resolving to that very mode; every other view drops it.
+ *
+ * Enabled ONLY for the capture-building actions (GL render and
+ * callback): the additive traversal itself is gated on this element
+ * being enabled, which is what keeps picking and bounding boxes on
+ * the normal flow alone.
+ */
+class GuiExport SoFCCapturedModeElement : public SoInt32Element {
+  typedef SoInt32Element inherited;
+
+  SO_ELEMENT_HEADER(SoFCCapturedModeElement);
+
+public:
+  static void initClass(void);
+
+protected:
+  virtual ~SoFCCapturedModeElement();
+
+public:
+  virtual void init(SoState * state);
+
+  static void set(SoState * const state, uint16_t modeid);
+  static uint16_t get(SoState * const state);
+};
+
 namespace Gui {
 
 /// The primitive buckets a Class-A display mode NAME draws, as a

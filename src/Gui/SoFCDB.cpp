@@ -171,6 +171,8 @@ void Gui::SoFCDB::init()
     SoVRMLAction                    ::initClass();
     SoFCDisplayModeElement          ::initClass();
     SoFCOwnDisplayModeElement       ::initClass();
+    SoFCModeInterestElement         ::initClass();
+    SoFCCapturedModeElement         ::initClass();
     SoFCDisplayMode                 ::initClass();
     SoSkipBoundingGroup             ::initClass();
     SoSkipBoundingBoxElement        ::initClass();

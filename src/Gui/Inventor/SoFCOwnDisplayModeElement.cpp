@@ -88,6 +88,90 @@ SoFCOwnDisplayModeElement::get(SoState * const state,
   registeredmask = static_cast<uint8_t>((v >> 8) & 0xff);
 }
 
+SO_ELEMENT_SOURCE(SoFCModeInterestElement)
+
+void
+SoFCModeInterestElement::initClass(void)
+{
+  SO_ELEMENT_INIT_CLASS(SoFCModeInterestElement, inherited);
+
+  // Same action set as SoFCOwnDisplayModeElement: the capture builders
+  // plus the traversals that reach a shape at all; an element the
+  // state does not carry reads as "no interest here", the right answer
+  // outside any display-mode switch.
+  SO_ENABLE(SoGLRenderAction, SoFCModeInterestElement);
+  SO_ENABLE(SoCallbackAction, SoFCModeInterestElement);
+  SO_ENABLE(SoGetBoundingBoxAction, SoFCModeInterestElement);
+  SO_ENABLE(SoPickAction, SoFCModeInterestElement);
+  SO_ENABLE(SoGetPrimitiveCountAction, SoFCModeInterestElement);
+}
+
+SoFCModeInterestElement::~SoFCModeInterestElement()
+{
+}
+
+void
+SoFCModeInterestElement::init(SoState * state)
+{
+  inherited::init(state);
+  this->data = pack(0, 0);
+}
+
+void
+SoFCModeInterestElement::set(SoState * const state,
+                             uint16_t traversedmode,
+                             uint16_t interestbits)
+{
+  inherited::set(classStackIndex, state, pack(traversedmode, interestbits));
+}
+
+void
+SoFCModeInterestElement::get(SoState * const state,
+                             uint16_t & traversedmode,
+                             uint16_t & interestbits)
+{
+  const uint32_t v = static_cast<uint32_t>(
+      inherited::get(classStackIndex, state));
+  traversedmode = static_cast<uint16_t>(v >> 16);
+  interestbits = static_cast<uint16_t>(v & 0xffff);
+}
+
+SO_ELEMENT_SOURCE(SoFCCapturedModeElement)
+
+void
+SoFCCapturedModeElement::initClass(void)
+{
+  SO_ELEMENT_INIT_CLASS(SoFCCapturedModeElement, inherited);
+
+  // Capture builders ONLY (see the class comment): SoFCSwitch gates
+  // the additive traversal on this element being enabled.
+  SO_ENABLE(SoGLRenderAction, SoFCCapturedModeElement);
+  SO_ENABLE(SoCallbackAction, SoFCCapturedModeElement);
+}
+
+SoFCCapturedModeElement::~SoFCCapturedModeElement()
+{
+}
+
+void
+SoFCCapturedModeElement::init(SoState * state)
+{
+  inherited::init(state);
+  this->data = 0;
+}
+
+void
+SoFCCapturedModeElement::set(SoState * const state, uint16_t modeid)
+{
+  inherited::set(classStackIndex, state, static_cast<int32_t>(modeid));
+}
+
+uint16_t
+SoFCCapturedModeElement::get(SoState * const state)
+{
+  return static_cast<uint16_t>(inherited::get(classStackIndex, state));
+}
+
 uint8_t
 Gui::drawStyleMaskFromModeName(const SbName &mode)
 {

@@ -2451,6 +2451,28 @@ struct DrawCall {
     /// buckets cannot be named, so nothing may filter this draw.
     uint8_t ownStyle = StyleUnknown;
     uint8_t registeredStyles = 0;
+    /// Additive-capture context (docs/CoinRetirement.md 5.9
+    /// "Non-standard modes"), all interned mode ids / bits over the
+    /// capture's CaptureInterestTable, zero everywhere outside an
+    /// interest capture:
+    ///
+    /// - capturedMode: non-zero = this draw came from an ADDITIVELY
+    ///   traversed display-mode child of that name, captured beside
+    ///   the normal flow. Such a draw serves exactly one thing -- an
+    ///   override resolving to that very mode -- and is dropped by
+    ///   every other view, or it would double-draw the object.
+    /// - traversedMode: the mode name of the child the NORMAL flow
+    ///   traversed, when that name is in the interest set (else 0).
+    ///   An override naming it admits the untagged draws as they are:
+    ///   they already ARE the mode, and no tagged copy exists.
+    /// - interestBits: which interest modes the object's switch has a
+    ///   child for. What tells "the override's mode was captured
+    ///   additively, suppress the normal draws" from "the object has
+    ///   no such mode child, fall back to its own mode" -- the same
+    ///   fallback registeredStyles gives a Class-A style.
+    uint16_t capturedMode = 0;
+    uint16_t traversedMode = 0;
+    uint16_t interestBits = 0;
     /// This draw is a coarse stand-in for geometry that has not arrived:
     /// a unit box scaled onto the bounds above, the bottom rung of the
     /// fidelity ladder (docs/SceneStreaming.md §6). It occupies space —
@@ -2560,6 +2582,15 @@ struct StyleOverride {
     uint8_t mask = StyleAsIs;
     uint8_t nameBit = 0;
     bool pin = false;
+    /// Non-zero when the entry's mode is NOT one of the four Class-A
+    /// names (docs/CoinRetirement.md 5.9 "Non-standard modes"): the
+    /// interned id (internModeName) of the mode's name. Such a mode is
+    /// a different subgraph, not a mask over the superset capture --
+    /// the feed captures the named child ADDITIVELY, its draws tagged
+    /// with this id (DrawCall::capturedMode), and the entry admits
+    /// exactly the draws so tagged. mask/nameBit are meaningless when
+    /// this is set.
+    uint16_t modeId = 0;
 };
 
 /// A view's override table, handed to the backend by pointer: per
@@ -2571,6 +2602,42 @@ struct StyleOverride {
 struct StyleOverrideTable {
     std::vector<StyleOverride> entries;
     uint32_t version = 0;
+};
+
+/// Process-lifetime intern table for display mode NAMES outside the
+/// four Class-A styles (docs/CoinRetirement.md 5.9 "Non-standard
+/// modes"). A name's id is stable for the life of the process and
+/// never reused, so a draw tagged with it (DrawCall::capturedMode) and
+/// an override entry naming it (StyleOverride::modeId) can meet at
+/// submit with an integer compare, and no Coin type crosses into
+/// Render. 0 is never returned for a real name; null/empty -> 0.
+RendererExport uint16_t internModeName(const char *name);
+/// The name behind an interned id, or null for 0/unknown. The returned
+/// pointer lives as long as the process.
+RendererExport const char *internedModeName(uint16_t id);
+
+/// The capture's additive-mode interest list (docs/CoinRetirement.md
+/// 5.9 "Non-standard modes"): the interned ids of every non-standard
+/// mode any override of any view sharing the capture wants, in a fixed
+/// order. The ORDER is the contract: bit i of DrawCall::interestBits
+/// means "this draw's display-mode switch has a child named ids[i]",
+/// so the producer that pushes this list to the traversal must hand
+/// the SAME list here. At most 16 entries (the bit budget); the
+/// producer drops and logs the excess, whose modes stay inert.
+/// version bumps on every content change; the backend's resolved
+/// override cache keys on it, because the id->bit mapping moved.
+struct CaptureInterestTable {
+    std::vector<uint16_t> ids;
+    uint32_t version = 0;
+
+    /// The interestBits bit of \a modeId, or 0 when not listed.
+    uint16_t bitOf(uint16_t modeId) const {
+        for (size_t i = 0; i < ids.size(); ++i) {
+            if (ids[i] == modeId)
+                return uint16_t(1u << i);
+        }
+        return 0;
+    }
 };
 
 /// Flag bits of the selection ids fed through Renderer::addSelection
@@ -2689,6 +2756,18 @@ public:
     {
         (void)styleMask; (void)styleNameBit;
         (void)fromSuperset; (void)overrides;
+    }
+    /// The additive-mode interest list of the capture feeding this
+    /// backend (docs/CoinRetirement.md 5.9 "Non-standard modes") --
+    /// the SAME list, in the same order, that the producer pushed to
+    /// the traversal, because it defines what DrawCall::interestBits'
+    /// bits mean. One per renderer, not per sub-view: the interest is
+    /// a property of the shared capture. The caller owns the storage
+    /// and keeps it alive while the backend may render with it; null
+    /// (the default and the at-rest state) means no interest capture.
+    virtual void setCaptureInterest(const CaptureInterestTable *table)
+    {
+        (void)table;
     }
     /// Prepare the backend for a renderSubViews frame: build the sized
     /// targets of every unseen sub-view id up front, each against a
