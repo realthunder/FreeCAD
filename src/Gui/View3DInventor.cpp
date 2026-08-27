@@ -85,6 +85,7 @@
 #include "ViewArea.h"
 #include "View3DInventorPy.h"
 #include "ViewProvider.h"
+#include "ViewProviderDocumentObject.h"
 #include "WaitCursor.h"
 
 
@@ -1315,6 +1316,20 @@ void View3DInventor::onChanged(const App::Property *prop)
                     ObjectDisplayModes.getValues(),
                     getGuiDocument() ? getGuiDocument()->getDocument()
                                      : nullptr));
+            // Keep the DisplayModeInView rows honest while this is the
+            // view they present (docs/CoinRetirement.md 5.9): a table
+            // change from anywhere -- the rows themselves, the context
+            // command, undo, restore -- re-reads them.
+            if (Application::Instance->activeView() == this) {
+                if (auto gdoc = getGuiDocument()) {
+                    for (auto obj : gdoc->getDocument()->getObjects()) {
+                        if (auto vp = Base::freecad_dynamic_cast<
+                                ViewProviderDocumentObject>(
+                                    gdoc->getViewProvider(obj)))
+                            vp->syncDisplayModeInView(this);
+                    }
+                }
+            }
         }
         _viewer->onViewPropertyChanged(*prop);
     }

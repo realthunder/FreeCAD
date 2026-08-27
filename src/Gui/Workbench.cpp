@@ -590,6 +590,7 @@ void StdWorkbench::setupContextMenu(const char* recipient, MenuItem* item) const
         MenuItem* visu = new MenuItem;
         visu->setCommand("Visibility");
         *visu << "Std_ToggleVisibility" << "Std_ToggleGroupVisibility" << "Std_ToggleShowOnTop"
+                << "Std_DisplayModeInView"
                 << "Std_ShowSelection" << "Std_HideSelection" << "Std_SelectVisibleObjects";
         MenuItem* sel = new MenuItem;
         sel->setCommand("Selection");
@@ -706,7 +707,8 @@ MenuItem* StdWorkbench::setupMenuBar() const
     // Visibility
     auto visu = new MenuItem;
     visu->setCommand("Visibility");
-    *visu << "Std_ToggleVisibility" << "Std_ToggleShowOnTop" << "Std_ShowSelection" << "Std_HideSelection"
+    *visu << "Std_ToggleVisibility" << "Std_ToggleShowOnTop" << "Std_DisplayModeInView"
+          << "Std_ShowSelection" << "Std_HideSelection"
           << "Std_SelectVisibleObjects"
           << "Separator" << "Std_ToggleObjects" << "Std_ShowObjects" << "Std_HideObjects"
           << "Separator" << "Std_ToggleSelectability"

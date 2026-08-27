@@ -46,6 +46,7 @@ namespace Gui {
 
 class MDIView;
 class Document;
+class View3DInventor;
 
 class GuiExport ViewProviderDocumentObject : public ViewProvider
 {
@@ -60,6 +61,15 @@ public:
 
     // Display properties
     App::PropertyEnumeration DisplayMode;
+    /// Display mode override of this object in the ACTIVE 3D view
+    /// (docs/CoinRetirement.md 5.9). Transient presentation of the
+    /// view's own ObjectDisplayModes property -- the storage lives on
+    /// the view, this row only reads and writes the active view's
+    /// bare-name entry for this object. Enum: "Use View Mode" (no
+    /// override), "As Is" (pin to the object's own mode, escaping the
+    /// view style), then every display mode this provider registers --
+    /// non-standard ones included.
+    App::PropertyEnumeration DisplayModeInView;
     App::PropertyBool Visibility;
     App::PropertyBool ShowInTree;
     App::PropertyEnumeration OnTopWhenSelected;
@@ -72,6 +82,11 @@ public:
 
     virtual void attach(App::DocumentObject *pcObject);
     virtual void reattach(App::DocumentObject *);
+    /// Re-read DisplayModeInView from \a view's ObjectDisplayModes
+    /// entry for this object (null = no active 3D view, shows "Use
+    /// View Mode"). Called when the active view changes or the view's
+    /// table does; never writes back.
+    void syncDisplayModeInView(View3DInventor *view);
     void update(const App::Property*) override;
     /// Set the active mode, i.e. the first item of the 'Display' property.
     void setActiveMode();
