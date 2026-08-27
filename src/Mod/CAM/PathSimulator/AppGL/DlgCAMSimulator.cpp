@@ -202,6 +202,12 @@ DlgCAMSimulator* DlgCAMSimulator::instance(Gui::Document* doc)
     return &ViewCAMSimulator::instance(doc).dlg();
 }
 
+DlgCAMSimulator* DlgCAMSimulator::existingInstance()
+{
+    ViewCAMSimulator* view = ViewCAMSimulator::existing();
+    return view ? &view->dlg() : nullptr;
+}
+
 void DlgCAMSimulator::setAnimating(bool animating)
 {
     if (animating == mAnimating) {
@@ -250,6 +256,21 @@ void DlgCAMSimulator::resetSimulation()
 void DlgCAMSimulator::addGcodeCommand(const char* cmd)
 {
     mGCode.push_back(cmd);
+}
+
+SimProgress DlgCAMSimulator::progress() const
+{
+    return mMillSimulator->GetProgress();
+}
+
+const std::vector<int>& DlgCAMSimulator::lineTable() const
+{
+    return mMillSimulator->GetLineTable();
+}
+
+const MillMotion* DlgCAMSimulator::motion(int index) const
+{
+    return mMillSimulator->GetMotion(index);
 }
 
 void DlgCAMSimulator::addTool(

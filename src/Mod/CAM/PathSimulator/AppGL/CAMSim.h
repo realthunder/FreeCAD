@@ -68,6 +68,12 @@ public:
     );
     void SetBaseShape(const Part::TopoShape& baseShape, float resolution);
     void AddCommand(Command* cmd);
+    /// The running GL simulation's position, per-line motion table
+    /// and parsed motions -- the stop-swap driver's view of where
+    /// the pixels stand (docs/CAMSimRenderPort.md 11.7.2).
+    SimProgress GetProgress() const;
+    std::vector<int> GetLineTable() const;
+    const MillMotion* GetMotion(int index) const;
 };
 
 }  // namespace CAMSimulator

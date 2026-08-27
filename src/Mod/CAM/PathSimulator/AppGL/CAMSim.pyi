@@ -59,3 +59,26 @@ class CAMSim(BaseClass):
         Add a path command to the simulation.
         """
         ...
+
+    def GetProgress(self) -> tuple:
+        """
+        Where the running simulation stands: (playing, motionIndex, fraction).
+        motionIndex indexes the parsed motion list, -1 before the first cut;
+        fraction is the consumed part of that motion, in (0, 1].
+        """
+        ...
+
+    def GetLineTable(self) -> list:
+        """
+        Motions parsed per added command line: entry i is the total motion
+        count after line i (tool-change lines included), mapping a motion
+        index back to the command it came from.
+        """
+        ...
+
+    def GetMotion(self, index: int, /) -> Any:
+        """
+        The parsed motion at index as a dict (type, tool, x, y, z, i, j, k,
+        r, retractZ), or None when out of range.
+        """
+        ...

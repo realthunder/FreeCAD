@@ -63,6 +63,8 @@ namespace CAMSimulator
 
 // use short declaration as using 'include' causes a header loop
 class MillSimulation;
+struct MillMotion;
+struct SimProgress;
 struct MillSimulationState;
 struct Vertex;
 class ViewCAMSimulator;
@@ -114,12 +116,17 @@ public:
     void cloneFrom(const DlgCAMSimulator& from);
 
     static DlgCAMSimulator* instance(Gui::Document* doc = nullptr);
+    /// The live simulator's dialog, or null; never creates one.
+    static DlgCAMSimulator* existingInstance();
 
     void setAnimating(bool animating);
     void startSimulation(const Part::TopoShape& stock, float quality);
     void resetSimulation();
 
     void addGcodeCommand(const char* cmd);
+    SimProgress progress() const;
+    const std::vector<int>& lineTable() const;
+    const MillMotion* motion(int index) const;
     void addTool(
         const std::vector<float>& toolProfilePoints,
         int toolNumber,

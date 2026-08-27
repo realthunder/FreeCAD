@@ -54,6 +54,9 @@ public:
     ViewCAMSimulator* clone(Gui::Document* doc);
 
     static ViewCAMSimulator& instance(Gui::Document* doc = nullptr);
+    /// The live simulator view, or null -- for callers that must not
+    /// CREATE one as a side effect (the progress getters).
+    static ViewCAMSimulator* existing();
     DlgCAMSimulator& dlg();
 
     bool onMsg(const char* pMsg, const char** ppReturn) override;

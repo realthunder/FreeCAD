@@ -58,6 +58,7 @@ void MillSimulation::ClearMillPathSegments()
 void MillSimulation::Clear()
 {
     mCodeParser.Clear();
+    mLineMotionEnd.clear();
 
     ClearMillPathSegments();
 
@@ -697,7 +698,35 @@ bool MillSimulation::LoadGCodeFile(const char* fileName)
 
 bool MillSimulation::AddGcodeLine(const char* line)
 {
-    return mCodeParser.AddLine(line);
+    // Even a line that parses to nothing gets a table entry: the
+    // table stays 1:1 with the lines fed, which is what lets a
+    // motion index map back to a line index (GetLineTable).
+    bool ok = mCodeParser.AddLine(line);
+    mLineMotionEnd.push_back((int)mCodeParser.Operations.size());
+    return ok;
+}
+
+SimProgress MillSimulation::GetProgress() const
+{
+    SimProgress progress;
+    progress.playing = mSimPlaying;
+    if (mPathStep < 0 || mPathStep >= (int)MillPathSegments.size()) {
+        return progress;
+    }
+    const MillPathSegment* segment = MillPathSegments[mPathStep];
+    progress.motionIndex = segment->indexInArray;
+    progress.fraction = segment->numSimSteps > 0
+        ? (float)mSubStep / (float)segment->numSimSteps
+        : 1.0f;
+    return progress;
+}
+
+const MillMotion* MillSimulation::GetMotion(int index) const
+{
+    if (index < 0 || index >= (int)mCodeParser.Operations.size()) {
+        return nullptr;
+    }
+    return &mCodeParser.Operations[index];
 }
 
 void MillSimulation::SetPlaying(bool b)

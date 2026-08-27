@@ -57,6 +57,19 @@ struct MillSimulationState
     bool mSingleStep = false;
 };
 
+/// Where the simulation stands, for an outside observer -- the
+/// stop-swap driver reading the GL sim's position to replay it
+/// through the volumetric one (docs/CAMSimRenderPort.md 11.7.2).
+struct SimProgress
+{
+    bool playing = false;
+    /// Index into the parsed motion list (GCodeParser::Operations)
+    /// of the motion being cut; -1 before the first cut.
+    int motionIndex = -1;
+    /// Consumed fraction of that motion, in (0, 1].
+    float fraction = 0.0f;
+};
+
 class MillSimulation: private MillSimulationState
 {
     typedef std::chrono::steady_clock clock;
@@ -80,6 +93,18 @@ public:
 
     bool LoadGCodeFile(const char* fileName);
     bool AddGcodeLine(const char* line);
+
+    SimProgress GetProgress() const;
+    /// Motions parsed per g-code line: entry i is Operations.size()
+    /// after line i was added, so a motion index maps back to the
+    /// line -- and through the caller's own feed order, to the Path
+    /// command -- it came from. Empty for LoadGCodeFile input.
+    const std::vector<int>& GetLineTable() const
+    {
+        return mLineMotionEnd;
+    }
+    /// The parsed motion at \a index, or null when out of range.
+    const MillMotion* GetMotion(int index) const;
 
     void SetPlaying(bool b);
     void SingleStep();
@@ -138,6 +163,7 @@ protected:
 public:
     std::vector<EndMill*> mToolTable;
     GCodeParser mCodeParser;
+    std::vector<int> mLineMotionEnd;
     SimDisplay simDisplay;
     MillPathLine millPathLine;
     std::vector<MillPathSegment*> MillPathSegments;

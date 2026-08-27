@@ -359,6 +359,11 @@ ViewCAMSimulator* ViewCAMSimulator::clone(Gui::Document* doc)
     return viewCam;
 }
 
+ViewCAMSimulator* ViewCAMSimulator::existing()
+{
+    return viewCAMSimulator;
+}
+
 ViewCAMSimulator& ViewCAMSimulator::instance(Gui::Document* doc)
 {
     // The first call comes from CAMSim::resetSimulation giving us the correct document. All
