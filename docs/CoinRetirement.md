@@ -1456,9 +1456,10 @@ one. In order:
 **Stage 5 -- the display styles themselves move to the backend. ORDERED
 2026-08-26 (user); largely done 2026-08-27** -- the survey (5.5), the
 Class-A per-view resolution (5.7/5.8), the per-object per-view override
-map (5.9) and the additive capture that serves non-standard modes and
-Mesh-shaped switches (5.10) are built and verified; what remains open
-is listed at the end of 5.10. Stage 4 removed one draw style because
+map (5.9), the additive capture that serves non-standard modes and
+Mesh-shaped switches (5.10) and the cell-style half of that capture,
+which retires the canvas eviction rule (5.11), are built and verified;
+what remains open is listed at the end of 5.11. Stage 4 removed one draw style because
 the Coin node behind it (`SoShadowGroup`) had a backend counterpart. This
 stage generalizes that: **remove the legacy Coin implementation of every
 remaining display style -- Tessellation first, then the ones built the
@@ -1771,7 +1772,10 @@ mesh registers `Wireframe` among six names of its own. For those the
 capture falls through to the object's own mode, which is right unless a
 cell's style would have applied to that object anyway -- and it applies
 exactly when the switch has a child of that NAME. Only there must the
-odd cell still leave the canvas.
+odd cell still leave the canvas. **Superseded by 5.11**: the cell's
+style name now rides the additive capture, so that object is served
+rather than evicted, and the only thing left that can block a superset
+service is the interest list's 16-entry bit budget.
 
 **Two live defects fell out of the survey**, both pre-existing in D4a:
 
@@ -1933,7 +1937,7 @@ This also narrows `supersetBlocked()`: an object whose switch lacks a
 by capturing that named child additively instead of evicting the cell
 from the canvas -- the same mechanism, driven by the cell style rather
 than an override entry. Worth folding in, but as a follow-up: the
-eviction rule stays correct meanwhile.
+eviction rule stays correct meanwhile. **Done in 5.11.**
 
 **Capture.** A view whose map is non-empty needs the superset capture
 even as a plain non-canvas view: an override can ADD geometry the
@@ -2158,6 +2162,96 @@ names, no side effects:
            the tagged draws do not leak into the As Is cell.
 
 ovr / ovrsave / d4 (8/8) / d4mode all green after.
+
+### 5.11 The cell style rides the additive capture (2026-08-27)
+
+Closes the `supersetBlocked()` follow-up 5.9 filed and 5.10 named as the
+next item. A cell's display STYLE is an override -- that is the whole
+premise of the per-object resolution -- so it belongs in the same
+additive capture the per-object override modes already ride. It now is
+one: `ViewAreaCanvas::collectCaptureInterest()` builds the interest list
+from every cell's override modes AND every cell's own style name, and
+`BGFXView::styleAdmits()` resolves the style clause by the same three
+rules the override clause uses (tagged draw admitted iff it is this
+mode's; untagged admitted where `traversedMode` says the normal flow
+already IS the mode; untagged suppressed where the mode's interest bit
+says a tagged copy exists; otherwise fall through to the mask over the
+superset). The plain view carries it too, through a fifth argument to
+`Renderer::setMainViewStyle` -- a view with overrides captures the
+superset, and its own style needs resolving there for the same reason a
+cell's does.
+
+Two things follow.
+
+**The eviction rule retires.** `supersetBlocked()` used to answer "some
+object's switch has no `Flat Lines` child yet does have a child named by
+one of the cells' styles", and the odd cells left the canvas. That
+object is now served by capturing its style-named child additively, so
+the answer no longer depends on any ViewProvider's mask list. What is
+left is the bit budget: `DrawCall::interestBits` is 16 bits
+(`CaptureInterestTable::MaxModes`), a longer list is truncated, and a
+style whose id falls off the end was never captured -- that cell would
+silently draw the objects' own modes, so it still has to leave. The
+function now tests exactly that and nothing else.
+
+**A Mesh-shaped switch stops being a special case.** The same argument
+that forced Class-A override VALUES through the additive capture in 5.10
+-- the nested-subset assumption behind the masks is Part-specific --
+applies unchanged to a cell STYLE naming the same mode. Before this, an
+override reading "Points" on a Mesh object resolved correctly while a
+CELL in the Points style over the same object went through the mask; the
+two paths now agree because there is only one path.
+
+**What it costs.** The style ids join the interest list only under
+`ServeSuperset`, which is already the last service tried: a canvas whose
+cells provably differ by removal takes `ServeFilter` and captures
+nothing extra, and a single-style canvas takes `ServeOneStyle`. Where
+the superset IS the service, each cell style now costs one additive
+traversal of that named child per object that has one. That is the price
+of correctness the Mesh finding set, paid in the same coin.
+
+**A trap the rig hit first.** `StyleFlatLines` is
+`Faces|Lines|Points` -- an object whose own mode is `Flat Lines` never
+conflicts with a `Points` cell, so `styleConflicts()` sends that canvas
+down `ServeFilter` and the superset path is never reached. The first
+version of the rig set the mesh's own mode to `Flat Lines` and measured
+the filter service while believing it was measuring the superset one. A
+rig for this path must put the objects in a mode whose mask does NOT
+contain the cell style's buckets (`Shaded`, `Wireframe`), or it is
+testing the wrong service.
+
+**Verified (RTX 3060, xvfb + vglrun egl0)**, rig `sbn.py`, both cases a
+2-cell canvas in `[As Is | Points]`:
+
+    A  Mesh box, own "Shaded" (has a Flat Lines child, so this was
+       never evicted): As Is cell 55093 ink (own shaded 55255), Points
+       cell 351 (own points 347). Before the change: 345 -- the tagged
+       subgraph is pixel-equal to the mask here, which is the
+       non-regression half.
+    B  Points::Feature, own "Color" (RED points), no Flat Lines child
+       at all -- THE evicted case: As Is cell keeps its 916 red pixels,
+       Points cell shows the grey "Points" child instead (ink 1320 ==
+       the object's own Points ink, red 0).
+
+The trace is what separates before from after, the pixels being right
+either way (an evicted cell renders itself correctly -- that is the
+point of evicting it). In case B the pre-change build logs only
+`styles one-style` and the post-change build logs
+`claims 1 2*, drawing 2 sub-views, styles superset`: one capture, both
+cells, no eviction.
+
+`nsm` 6/6, `pts` (P-base / PA / PB / M) all PASS, `ovr`, `ovrsave`,
+`d4` 8/8 and `d4mode` all green after -- `d4mode` byte-identical to the
+5.10 run bar one pixel, which is the point: the extra additive capture
+changes no pixels where the mask already served.
+
+**Still open** (unchanged from 5.10 unless noted): the show-on-top
+persistence migration; the selection/highlight feed does not filter
+tagged draws; `SceneDump` does not carry `capturedMode` /
+`traversedMode` / `interestBits`; `DisplayModeInView` rows for
+foreign-document objects are not re-synced on table change; and
+third-party providers that map user names onto differently named mask
+children still fall back to the object's own mode.
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 
