@@ -104,6 +104,21 @@ public:
     /// DrawStyle; stays Hidden -- the property editor edits it through
     /// the ViewProvider's DisplayModeInView row instead.
     App::PropertyMap ObjectDisplayModes;
+    /// The objects this view is showing ON TOP -- drawn over
+    /// everything else, whatever occludes them (Std_ToggleShowOnTop).
+    /// One entry per object, as "<internal name>.<subname path>" with
+    /// the trailing dot the subname always carries and no element
+    /// name; the subname may be empty, which is the common case of a
+    /// whole top-level object.
+    ///
+    /// Rides the view's Save/Restore into GuiDocument.xml, like
+    /// ObjectDisplayModes and DrawStyle. It used to be a dynamic
+    /// PropertyStringList on the APP document, keyed by a view id that
+    /// the next session renumbers from a counter
+    /// (docs/CoinRetirement.md 5.12); old files are still read from
+    /// there and migrated on restore. Stays Hidden: the on-top set is
+    /// edited from the 3D view and the tree, not from a property row.
+    App::PropertyStringList OnTopObjects;
 
     View3DInventor(Gui::Document* pcDocument, QWidget* parent, const QtGLWidget* sharewidget = nullptr, Qt::WindowFlags wflags=Qt::WindowFlags());
     ~View3DInventor() override;
@@ -196,6 +211,9 @@ public:
 
 private:
     void applySettings();
+    /// Put the viewer's on-top group where OnTopObjects says: what
+    /// makes the property the storage rather than a record of it.
+    void applyOnTopObjects();
 
 protected:
     void closeEvent(QCloseEvent* e) override;

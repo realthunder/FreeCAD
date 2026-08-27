@@ -1458,8 +1458,9 @@ one. In order:
 Class-A per-view resolution (5.7/5.8), the per-object per-view override
 map (5.9), the additive capture that serves non-standard modes and
 Mesh-shaped switches (5.10) and the cell-style half of that capture,
-which retires the canvas eviction rule (5.11), are built and verified;
-what remains open is listed at the end of 5.11. Stage 4 removed one draw style because
+which retires the canvas eviction rule (5.11), are built and verified,
+and show-on-top persistence has moved onto the same view-property
+machinery (5.12); what remains open is listed at the end of 5.11. Stage 4 removed one draw style because
 the Coin node behind it (`SoShadowGroup`) had a backend counterpart. This
 stage generalizes that: **remove the legacy Coin implementation of every
 remaining display style -- Tessellation first, then the ones built the
@@ -2246,12 +2247,88 @@ cells, no eviction.
 changes no pixels where the mask already served.
 
 **Still open** (unchanged from 5.10 unless noted): the show-on-top
-persistence migration; the selection/highlight feed does not filter
-tagged draws; `SceneDump` does not carry `capturedMode` /
+persistence migration -- **done in 5.12**; the selection/highlight feed
+does not filter tagged draws; `SceneDump` does not carry `capturedMode` /
 `traversedMode` / `interestBits`; `DisplayModeInView` rows for
 foreign-document objects are not re-synced on table change; and
 third-party providers that map user names onto differently named mask
 children still fall back to the object's own mode.
+
+### 5.12 Show-on-top persistence moves onto the view (2026-08-27)
+
+The remaining item from 5.9's task list. The set of objects a view
+draws ON TOP -- over everything, whatever occludes them
+(`Std_ToggleShowOnTop`) -- was persisted as a **dynamic
+`App::PropertyStringList` on the APP document**, gathered at save time
+from every viewer and keyed by view id:
+
+    OnTopObjects = ["3:Back.", "3:Link.Box.", "5:Assembly.Part."]
+
+Three things are wrong with that. The id is a per-session counter, so
+the key only means anything inside one file's own `<View3D>` entries.
+The property is a visible row in the document's property editor, in
+`Document.xml`, and inside the undo stack, for what is view state and
+not model data. And it was gathered at save, so nothing between saves
+had a store at all.
+
+It is now `App::PropertyStringList OnTopObjects` **on
+`View3DInventor`**, exactly like `ObjectDisplayModes` (5.9): hidden,
+riding the view's own `Save`/`Restore` into `GuiDocument.xml`, with no
+id in it because the view IS the key. `Document::snapshotOnTopObjects()`
+hangs off `signalOnTopObject` and writes the property whenever the group
+moves, and `View3DInventor::onChanged` applies the property to the
+viewer -- the same two-directional pair `DrawStyle` uses, latched by the
+`User1` status bit so neither direction re-enters the other. The
+property is the store, not a record of one.
+
+**A bug fell out of it.** The legacy format was parsed with
+
+    if (iss >> id >> c)
+        if (std::getline(iss, name, '.') && std::getline(iss, subname))
+
+and the entry an object with an EMPTY subname writes is `"3:Back."` --
+the whole of a top-level object, which is the common case. After the
+first `getline` consumes `Back` and its delimiter the stream is at its
+end, so the second `getline` extracts nothing, sets `failbit`, and the
+entry is **dropped**. Measured directly:
+
+    8:Back.        -> DROPPED  name='Back' sub=''
+    8:Link.Box.    -> KEPT     name='Link' sub='Box.'
+
+So show-on-top has never survived a save/reopen for a plain object,
+only for one reached through a link. The new path splits at the first
+dot with `find` and treats a missing remainder as an empty subname.
+
+**Legacy restore.** An old file's app-document property is read once on
+restore, split per view id, and applied to each view's own property --
+but only where that property came back EMPTY, and only after
+`view->Restore`, because a file written after the move carries the
+authoritative copy and a file written before carries no view-side value
+at all. The dynamic property is then removed, so the next save writes
+only the new store.
+
+**Verified (RTX 3060, xvfb + vglrun egl0)**, rig `ontop.py` -- a small
+green box hidden behind a large one, visible only while it is on top:
+
+    N  save / close / reopen: on-top set back as ["Back."], green 29
+       == the pre-save 29 (hidden baseline 5). This is the case the
+       legacy parse dropped.
+    L  a file carrying ONLY the legacy app-document entry (its view id
+       read back out of the saved GuiDocument.xml): restores to
+       ["Back."], green 29, and the dynamic property is gone.
+    P  toggling off and on again: 5 -> 29, the property tracking the
+       group live rather than at save.
+
+`sbn`, `nsm`, `ovrsave`, `d4` green after.
+
+- **TRAP.** Adding a member to `View3DInventor` is an ABI break for
+  every module that includes its header, and `ninja FreeCADGui` does
+  not rebuild them. `PartGui::coarseTessellationLevel` does a
+  `qobject_cast<View3DInventor*>(activeView())` and then calls through
+  it, so the first `Part::Box` property edit segfaulted -- with a stack
+  that points at Part's tessellation and says nothing about the header
+  that moved. Same class as the `ViewProviderDocumentObject` property
+  add in 5.9: **full rebuild after a property add.**
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 

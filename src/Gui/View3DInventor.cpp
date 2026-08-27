@@ -59,6 +59,7 @@
 #include "Inventor/SoFCOwnDisplayModeElement.h"
 #include "Renderer/Renderer.h"
 #include "SoFCUnifiedSelection.h"
+#include "Selection.h"
 #include <Base/Builder3D.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
@@ -117,6 +118,9 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
             "Key: a subname path (one occurrence) or a bare internal\n"
             "name (the object anywhere in this view); value: a display\n"
             "mode name, with 'As Is' pinning the object to its own mode.");
+    ADD_PROPERTY_TYPE(OnTopObjects, (), nullptr, App::Prop_Hidden,
+            "Objects this view draws on top of everything else.\n"
+            "One entry per object, as '<internal name>.<subname path>'.");
 
     stack = new QStackedWidget(this);
     // important for highlighting
@@ -1311,6 +1315,35 @@ Render::StyleOverrideTable parseObjectDisplayModes(
 }
 } // namespace
 
+void View3DInventor::applyOnTopObjects()
+{
+    auto gdoc = getGuiDocument();
+    if (!_viewer || !gdoc || !gdoc->getDocument())
+        return;
+    // Read first: clearing the group emits the on-top signal, and the
+    // list must not be read through a property something else may be
+    // writing while this runs.
+    const std::vector<std::string> paths = OnTopObjects.getValues();
+    _viewer->clearGroupOnTop(true);
+    const char *docName = gdoc->getDocument()->getName();
+    for (const auto &path : paths) {
+        // "<name>.<subname>", the form SubObjectT::getSubNameNoElement
+        // (true) writes. The subname is EMPTY for a whole top-level
+        // object, which is the common case -- the app-document format
+        // this replaced parsed those with a getline that failed at end
+        // of string and dropped them, so a plain object on top never
+        // survived a save (docs/CoinRetirement.md 5.12).
+        const auto dot = path.find('.');
+        if (dot == std::string::npos)
+            continue;
+        _viewer->checkGroupOnTop(
+                SelectionChanges(SelectionChanges::AddSelection, docName,
+                                 path.substr(0, dot).c_str(),
+                                 path.c_str() + dot + 1),
+                true);
+    }
+}
+
 void View3DInventor::onChanged(const App::Property *prop)
 {
     if (_viewer) {
@@ -1339,6 +1372,19 @@ void View3DInventor::onChanged(const App::Property *prop)
                             vp->syncDisplayModeInView(this);
                     }
                 }
+            }
+        }
+        else if (prop == &OnTopObjects) {
+            // The property IS the on-top set's storage, so a change
+            // from anywhere -- restore, a macro, the migration of an
+            // old file -- puts the viewer where it says. User1 latches
+            // the direction: the snapshot that follows every on-top
+            // change (Document::snapshotOnTopObjects) writes back
+            // through this same property, and must not be re-applied.
+            if (!OnTopObjects.testStatus(App::Property::User1)) {
+                Base::ObjectStatusLocker<App::Property::Status, App::Property>
+                    guard(App::Property::User1, &OnTopObjects);
+                applyOnTopObjects();
             }
         }
         _viewer->onViewPropertyChanged(*prop);
