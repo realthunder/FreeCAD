@@ -162,14 +162,49 @@ $RUN cmake -S ~/works/sw/coin -B ~/works/sw/coin/build_conda_debug -G Ninja \
   -DCOIN_BUILD_TESTS=OFF -DCOIN_BUILD_DOCUMENTATION=OFF
 $RUN cmake --build ~/works/sw/coin/build_conda_debug && $RUN cmake --install ~/works/sw/coin/build_conda_debug
 
-# pivy — installs directly into the env's site-packages (no PYTHONPATH needed)
+# pivy (debug) -- its OWN prefix, NOT site-packages; see the warning below
 $RUN cmake -S ~/works/sw/pivy -B ~/works/sw/pivy/build_conda_debug -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_PREFIX_PATH=$HOME/works/sw/coin/install/conda-debug \
   -DCMAKE_INSTALL_RPATH=$HOME/works/sw/coin/install/conda-debug/lib \
+  -DPIVY_Python_SITEARCH=$HOME/works/sw/pivy/install/conda-debug \
   -DPython_EXECUTABLE=$HOME/works/sw/fcad/.conda/freecad/bin/python
 $RUN cmake --build ~/works/sw/pivy/build_conda_debug && $RUN cmake --install ~/works/sw/pivy/build_conda_debug
 ```
+
+*** **One pivy cannot serve both stacks, and installing to site-packages makes
+them fight.** pivy's `_coin.so` links `libCoinRT.so.80`, and the loader resolves
+that SONAME **once per process**. The release and debug Coin installs both
+provide it. Since pivy's install destination defaults to the env's single
+`site-packages`, whichever configuration was installed **last** silently wins
+for every stack -- which is why the pivy in `.conda/freecad` was found built
+against `coin/install/conda-relwithdebinfo` even though this recipe names
+`conda-debug`.
+
+`PIVY_Python_SITEARCH` (default: `Python_SITEARCH`) is the lever. Keep the
+**release** pivy in site-packages, where the standard build finds it with no
+PYTHONPATH, and give the **debug** pivy its own prefix, selected explicitly:
+
+```sh
+PYTHONPATH=$HOME/works/sw/pivy/install/conda-debug $RUN <debug FreeCAD or python>
+```
+
+Verified 2026-08-28 -- each loads the Coin it was built against, and a
+`FreeCADCmd` session that imports pivy maps exactly one `libCoinRT`:
+
+```sh
+python -c "from pivy import coin; print([l.split()[-1] for l in \
+  open('/proc/self/maps') if 'libCoinRT' in l])"
+# site-packages  -> .../coin/install/conda-relwithdebinfo/lib/libCoinRT.so.80.0.6
+# PYTHONPATH set -> .../coin/install/conda-debug/lib/libCoinRT.so.80.0.6
+```
+
+*** **The debug Coin install goes stale invisibly.** Nothing linked
+`coin/install/conda-debug` for two weeks while only the RelWithDebInfo stack was
+built, so it sat at 2026-08-14 and was missing `SoLazyElementEx.h`; the first
+debug FreeCAD build since then failed on `SoFCVertexCache.cpp` and
+`SoFCRenderCache.cpp`. Rebuild Coin **and** pivy debug before trusting a debug
+FreeCAD build -- a missing fork header is the signature.
 
 ### Building FreeCAD (conda stack)
 
@@ -551,8 +586,11 @@ gets detected but its headers are not on the conda sysroot's search path, so the
 RUN=~/works/sw/fcad/.conda/run.sh
 $RUN ~/works/sw/fcad/build/conda-relwithdebinfo-801/bin/FreeCAD     # GUI (WSLg)
 $RUN ~/works/sw/fcad/build/conda-relwithdebinfo-801/bin/FreeCADCmd  # headless
-# gdb: use the debug tree, which carries unoptimized frames
-$RUN gdb --args ~/works/sw/fcad/build/conda-debug-occt801/bin/FreeCADCmd script.py
+# gdb: use the debug tree, which carries unoptimized frames.
+# PYTHONPATH is REQUIRED here -- it selects the pivy built against the debug
+# Coin. Without it the debug binary pulls the release Coin through pivy.
+PYTHONPATH=$HOME/works/sw/pivy/install/conda-debug \
+  $RUN gdb --args ~/works/sw/fcad/build/conda-debug-occt801/bin/FreeCADCmd script.py
 ```
 
 - All of fcad/OCCT/Coin have full debug info; gdb breakpoints resolve with source lines
