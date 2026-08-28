@@ -50,29 +50,29 @@ using namespace Gui;
 namespace {
 
 // The Render_* dynamic properties are optional: a row is "overridden"
-// when its property exists on the view provider. ensureProp creates a
-// missing one (ViewProviderGeometryObject::addDynamicProperty applies
-// fresh properties immediately).
+// when its property exists on the view provider. The creation itself now
+// lives in ViewProviderGeometryObject.h, shared with the material-card
+// route, so that a property this panel makes and one a card makes are
+// made the same way; these are the local spellings of it.
+using Gui::getRenderProperty;
+using Gui::removeRenderProperty;
+
 template<class PropT>
 PropT *getProp(ViewProviderGeometryObject *vp, const char *name)
 {
-    return Base::freecad_dynamic_cast<PropT>(vp->getPropertyByName(name));
+    return getRenderProperty<PropT>(vp, name);
 }
 
 template<class PropT>
 PropT *ensureProp(ViewProviderGeometryObject *vp, const char *type,
                   const char *name, const char *doc)
 {
-    if (auto prop = getProp<PropT>(vp, name))
-        return prop;
-    return Base::freecad_dynamic_cast<PropT>(
-            vp->addDynamicProperty(type, name, "Render", doc));
+    return Gui::ensureRenderProperty<PropT>(vp, type, name, doc);
 }
 
 void removeProp(ViewProviderGeometryObject *vp, const char *name)
 {
-    if (vp->getPropertyByName(name))
-        vp->removeDynamicProperty(name);
+    removeRenderProperty(vp, name);
 }
 
 

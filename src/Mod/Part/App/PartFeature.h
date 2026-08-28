@@ -84,6 +84,7 @@ public:
     App::Material getMaterialAppearance() const override;
     /// Assign the appearance half of the material card
     void setMaterialAppearance(const App::Material& material) override;
+    App::MaterialRenderProperties getMaterialRenderProperties() const override;
 
     PyObject* getPyObject() override;
 

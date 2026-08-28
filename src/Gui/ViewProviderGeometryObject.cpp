@@ -24,6 +24,7 @@
 #include "ViewProviderDocumentObject.h"
 
 #ifndef _PreComp_
+# include <algorithm>
 # include <Inventor/SoPickedPoint.h>
 # include <Inventor/actions/SoRayPickAction.h>
 # include <Inventor/actions/SoSearchAction.h>
@@ -1301,6 +1302,13 @@ void ViewProviderGeometryObject::updateData(const App::Property* prop)
                     && material != defaultMaterial) {
                 ShapeAppearance.setValue(material);
                 materialAppearance = material;
+                // Only where the card is in control of the look: the same
+                // guard that stops us overwriting a hand-picked appearance
+                // has to stop us clearing a hand-set Render_Glass. A card
+                // stating none clears the previous card's, which is the
+                // point of applying it even when empty.
+                applyMaterialRenderProperties(
+                        this, geometry->getMaterialRenderProperties());
             }
         }
     }
@@ -1523,4 +1531,59 @@ void ViewProviderGeometryObject::showBoundingBox(bool show)
     if (pcBoundSwitch) {
         pcBoundSwitch->whichChild = (show ? 0 : -1);
     }
+}
+
+
+bool Gui::applyMaterialRenderProperties(ViewProviderGeometryObject *vp,
+                                        const App::MaterialRenderProperties &props)
+{
+    if (!vp) {
+        return false;
+    }
+
+    // Every property a card could have stated, so the ones it did NOT
+    // state are removed rather than left behind from a previous card.
+    // Grouped by feature: naming any property of a feature keeps that
+    // feature, naming none clears it whole, which is the same
+    // all-or-nothing the Render Settings panel applies.
+    static const char *glassProps[] = {
+        "Render_Glass", "Render_GlassIOR", "Render_GlassDensity",
+        "Render_GlassRoughness",
+    };
+
+    bool changed = false;
+    for (const char *name : glassProps) {
+        auto it = std::find_if(props.begin(), props.end(),
+                [name](const App::MaterialRenderProperty &p) {
+                    return p.name == name;
+                });
+        if (it == props.end()) {
+            if (vp->getPropertyByName(name)) {
+                removeRenderProperty(vp, name);
+                changed = true;
+            }
+            continue;
+        }
+        if (it->boolean) {
+            auto prop = ensureRenderProperty<App::PropertyBool>(
+                    vp, "App::PropertyBool", name,
+                    "Render the closed shape as a glass body of the render "
+                    "engine (refraction, absorption, reflection)");
+            bool value = it->value != 0.0;
+            if (prop && prop->getValue() != value) {
+                prop->setValue(value);
+                changed = true;
+            }
+        }
+        else {
+            auto prop = ensureRenderProperty<App::PropertyFloat>(
+                    vp, "App::PropertyFloat", name, "Stated by the material");
+            if (prop && prop->getValue() != it->value) {
+                prop->setValue(it->value);
+                changed = true;
+            }
+        }
+    }
+
+    return changed;
 }
