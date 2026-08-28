@@ -215,9 +215,11 @@ is frozen -- see `docs/Backport772.md`; if the guarded paths ever need checking
 again, rebuild the prefix from the recipe above with `-DCMAKE_BUILD_TYPE` to
 taste and the `LinkVibe` branch.
 
-Sources build against both OCCT versions (`OCC_VERSION_HEX` guards; features that
-need the 8.0.1 fork -- parallel healing, streamed STEP transfer -- fall back to the
-one-shot path on 7.7.2).
+Sources still carry `OCC_VERSION_HEX` guards (features that need the 8.0.1 fork
+-- parallel healing, streamed STEP transfer -- fall back to a one-shot path on
+7.7.2), but nothing on this box compiles the 7.7.2 side of them any more, so a
+change to a guarded path is not compile-checked here. `Mod/Part` could not build
+on 7.7.2 even before the prefixes were deleted.
 
 ### FEM, and the external SMESH it links
 
@@ -237,7 +239,7 @@ built for, which is upstream's stack:
 | `qt6-main` / `pyside6` | 6.11.2 | what conda-forge builds vtk 9.6.2 against |
 | `libboost` | 1.90 | smesh's imported targets name `Boost::*`; 1.85 could not satisfy them |
 | `vtk-base` / `vtk-io-ffmpeg` | **9.6.2, pinned** | see below -- do not let this drift |
-| `smesh` | 9.9.0.0 `h64e8fc7_26` from **realthunder** | our fork's feedstock; conda-forge has no occt 8.x build |
+| `smesh` | 9.9.0.0 `he923b5a_27` from **realthunder** | our fork's feedstock; conda-forge has no occt 8.x build |
 
 ```sh
 mamba install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
@@ -245,6 +247,25 @@ mamba install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
   "vtk-base==9.6.2" "vtk-io-ffmpeg==9.6.2" libmed hdf5 libxml2-devel
 mamba install -p ~/works/sw/fcad/.conda/freecad --no-deps realthunder::smesh
 ```
+
+*** **Two gotchas when running this on a box that is behind.** Both cost a
+false start on 2026-08-28:
+
+- **`conda-meta/pinned` blocks its own upgrade.** If the file still pins the
+  old Qt (`qt6-main ==6.10.1`), the solve fails with "qt6-main =6.11.2 is not
+  installable because it conflicts with any installable versions previously
+  reported". Rewrite `pinned` to the four pins above *first*, then install.
+- **`mamba repoquery` served a stale conda-forge index** and reported no
+  realthunder builds even under `--override-channels -c realthunder`, which
+  reads as "the package is gone". `conda search --override-channels -c
+  realthunder smesh` showed them immediately. Trust `conda search` here.
+
+Pass `--override-channels -c conda-forge`; without it the solve pulls in
+`repo.anaconda.com`. Dry-run it (`--dry-run`) before committing: the
+transaction should **remove exactly one package**, `boost-cpp 1.85.0`,
+superseded by libboost 1.90, and must leave freetype/freeimage/libstdcxx/gcc/
+python alone -- that is what lets the existing OCCT and Coin installs survive
+the upgrade instead of needing a rebuild.
 
 *** **`smesh` must be installed with `--no-deps`.** It depends on conda-forge's
 `occt`, and letting that in puts a second OCCT in the env with the *same*
