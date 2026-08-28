@@ -76,6 +76,7 @@ add_executable(fcviewer
     ../Page2DWire.cpp
     ../Vg2D.cpp
     ../Renderer.cpp
+    ../Environment.cpp
     ../SceneDump.cpp
     ../SceneLadder.cpp
     ../MeshSimplify.cpp
