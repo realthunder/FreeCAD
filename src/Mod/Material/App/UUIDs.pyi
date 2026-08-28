@@ -120,6 +120,9 @@ class UUIDs(BaseClass):
     VectorRendering: Final[str] = ...
     """UUID for model System:Rendering/VectorRendering"""
 
+    GlassRendering: Final[str] = ...
+    """UUID for model System:Rendering/GlassRendering"""
+
     RenderAppleseed: Final[str] = ...
     """UUID for model System:Rendering/RenderAppleseed"""
 
