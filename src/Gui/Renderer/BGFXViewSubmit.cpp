@@ -72,7 +72,7 @@ int matchStyleOverride(const Render::StyleOverride &ov,
 }
 } // namespace
 
-bool BGFXView::styleAdmits(const Render::DrawCall &draw)
+bool BGFXStyleState::styleAdmits(const Render::DrawCall &draw)
 {
     // This sub-view's Class-A display style, resolved PER OBJECT the
     // way Rhino and SolidWorks resolve a display mode
@@ -189,7 +189,8 @@ bool BGFXView::styleAdmits(const Render::DrawCall &draw)
         || (effective & Render::styleBitOf(draw.material)) != 0;
 }
 
-const BGFXView::OvStyle *BGFXView::lookupStyleOverride(uint64_t objectKey)
+const BGFXStyleState::OvStyle *
+BGFXStyleState::lookupStyleOverride(uint64_t objectKey)
 {
     if (!ovCache || !ovTable || !objectKey)
         return nullptr;
