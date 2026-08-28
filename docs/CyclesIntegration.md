@@ -121,6 +121,10 @@ ON; most of it is dead weight here:
 is already explicit, so subdivision buys little, but it is the one
 "off" that a future smooth-surface path might want back.
 
+**The recipe -- what to install, how to configure, and the one environment
+variable a CUDA run needs -- is `docs/DevEnvironment.md`, "Cycles (path-traced
+renderer)".** This section is the reasoning behind it; that one is what to type.
+
 ### 3.1 Installing the deps is itself a hazard
 
 **Solve the new packages in a scratch env first, never straight into

@@ -272,6 +272,93 @@ Sources still carry `OCC_VERSION_HEX` guards (features that need the 8.0.1 fork
 change to a guarded path is not compile-checked here. `Mod/Part` could not build
 on 7.7.2 even before the prefixes were deleted.
 
+### Cycles (path-traced renderer)
+
+**Cycles is OFF unless you ask for it.** `BUILD_CYCLES` defaults OFF and neither
+preset sets it, so a plain `cmake --preset conda-debug-local` gives a tree with
+no path tracer in it. There is deliberately no Cycles preset: the OptiX and CUDA
+prefixes are machine-specific, so the flags are stated on the command line.
+
+Why the integration looks the way it does -- why Blender's precompiled bundle is
+refused, which feature options are on, what works on which GPU -- is
+`docs/CyclesIntegration.md` sections 3 and 4. This section is only the recipe.
+
+**The dependencies live in `.conda/freecad` itself.** `openimageio` 3.1.15.0,
+`embree` 4.4.1 and `openimagedenoise` 2.5.1, joining the `openexr` 3.4.15 and
+`tbb` 2023.0.0 that were already there and are shared with OCCT:
+
+```sh
+conda install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
+    openimageio embree openimagedenoise
+```
+
+`docs/CyclesIntegration.md` sec 3.1 says to solve new packages in a scratch env
+first, and names a separate prefix as the fallback if the solve turns hostile.
+It did not: the solve moved none of `qt6-main`, `pyside6`, `boost`, `tbb` or
+`openexr`, so no separate prefix was needed. Check that again before adding
+anything else here -- the precedent for why is `cgal-cpp` silently downgrading
+boost and breaking every binary in the env.
+
+**nvcc gets its own prefix, and it has to.** `.conda/freecad` pins
+`cuda-version` 13.3, while Cycles' runtime check wants 10.2 <= CUDA < 13:
+
+```sh
+conda create -p ~/works/sw/fcad/.conda/cuda-129 -c conda-forge \
+    cuda-nvcc=12.9 cuda-cudart-dev=12.9
+```
+
+**OptiX** is headers-only, cloned from `NVIDIA/optix-dev` (9.1.0) to
+`~/works/sw/optix-dev`. It builds and links here but does not RUN on WSL2 --
+`libnvoptix.so.1` is a decoy shim; see sec 4.1 of the Cycles doc before spending
+any time on it.
+
+Configure and build:
+
+```sh
+RUN=~/works/sw/fcad/.conda/run.sh
+cd ~/works/sw/fcad
+$RUN cmake --preset conda-debug-local -DBUILD_CYCLES=ON \
+    -DOPTIX_ROOT_DIR=$HOME/works/sw/optix-dev \
+    -DCYCLES_RUNTIME_OPTIX_ROOT_DIR=$HOME/works/sw/optix-dev
+$RUN cmake --build build/conda-debug-occt801
+```
+
+(Same flags on `conda-relwithdebinfo-801` for the standard tree. Cycles is a
+heavy build; that is why it does not default on.)
+
+#### CUDA_BIN_PATH is a RUN-time variable, and forgetting it looks like a bug
+
+```sh
+export CUDA_BIN_PATH=$HOME/works/sw/fcad/.conda/cuda-129/bin
+```
+
+Cycles compiles its CUDA kernels at runtime by shelling out to nvcc, which it
+finds through `CUDA_BIN_PATH` (cuew), and `device/cuda/device.cpp` reports the
+CUDA device as available **only if that lookup succeeds**. Without the variable
+CUDA does not fail loudly -- it simply vanishes from the device list, in the
+standalone and in tree alike, which reads as a broken build rather than a
+missing environment variable. `.conda/run.sh` does not set it: run.sh is
+thirteen lines and knows nothing about CUDA. It must also reach a **serving**
+process, not just an interactive one.
+
+Kernels are compiled from **installed** source (`path_get("source")` resolves
+next to the binary), so a build-dir binary finds nothing until `cmake --install`
+has run; the results cache under `~/.cache/cycles/kernels`. The first CUDA
+kernel compile takes about 297s. `WITH_CYCLES_CUDA_BINARIES` stays OFF --
+precompiling the kernel binaries is by a wide margin the slowest part of a
+Cycles build.
+
+Verify, in the Python console:
+
+```python
+Gui.cyclesDevices()          # must list CPU *and* CUDA -- CPU only => CUDA_BIN_PATH
+Gui.cyclesRenderTest("/tmp/cycles.png", 640, 480, 64, "CUDA")
+```
+
+Then the real path, on a 3D view: `view.cyclesRender(path, width, height,
+samples, device)`, which returns the translation report.
+
+
 ### FEM, and the external SMESH it links
 
 **FEM is part of the standard dev build.** Both conda presets set `BUILD_FEM=ON`
