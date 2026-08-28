@@ -102,6 +102,7 @@
 # include <QPainter>
 #endif
 
+#include <cstring>
 #include <Inventor/SbImage.h>
 #include <Inventor/sensors/SoTimerSensor.h>
 #include <Inventor/SoEventManager.h>
@@ -167,7 +168,9 @@
 #include "View3DInventorRiftViewer.h"
 #include "View3DViewerPy.h"
 
+#include "Inventor/SoFCRenderCache.h"
 #include "Inventor/SoFCRenderCacheManager.h"
+#include "Inventor/SoFCRendererBridge.h"
 #include <Inventor/draggers/SoCenterballDragger.h>
 #include <Inventor/annex/Profiler/SoProfiler.h>
 #include <Inventor/annex/HardCopy/SoVectorizePSAction.h>
@@ -185,6 +188,7 @@
 #include "Inventor/ScenePublishDelta.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderLink.h"
+#include "Renderer/CyclesRenderer.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
 #include "SceneControl.h"
@@ -705,6 +709,37 @@ struct View3DInventorViewer::Private
     /// background, not the backend's clear color. Shared by the
     /// on-screen frame and offscreen captures.
     Render::Background backgroundFeed(const QColor &col) const;
+
+    /// The live Cycles session following this view
+    /// (docs/CyclesIntegration.md phase 4), and what it was last fed,
+    /// so a frame can tell a restated scene or setting from a camera
+    /// move. Fed from renderScene() just before the backend's frame.
+    std::unique_ptr<Render::Cycles::Viewport> cyclesViewport;
+    Render::Renderer *cyclesHost = nullptr;
+    /// The sub-view the consumer is registered under on cyclesHost: 0
+    /// on a view of its own, the claim id while it is a canvas cell.
+    int cyclesSubView = 0;
+    uint64_t cyclesSceneGen = 0;
+    bool cyclesFed = false;
+    Render::PBRConfig cyclesPbr;
+    Render::OutputConfig cyclesOutput;
+    Render::LightConfig cyclesLight;
+    Render::SectionConfig cyclesSection;
+    Render::Background cyclesBackground;
+    /// Feed the session: the camera at \a width x \a height, the scene
+    /// from \a manager's cache when the backend's generation or a
+    /// setting moved, and the consumer registered on the backend under
+    /// \a subView. The single-view frame passes its own cache and 0; a
+    /// canvas cell passes the feeder's cache and its claim id.
+    void feedCyclesViewport(const QColor &col, const SbMatrix &view,
+                            const SbMatrix &proj, int width, int height,
+                            SoFCRenderCacheManager *manager, int subView);
+    /// Take the consumer off the backend it is registered on, if that
+    /// backend is still the one this viewer holds. Every swap of
+    /// `renderer` goes through here first: a canvas's shared instance
+    /// outlives the cell that leaves it, and would go on calling a
+    /// consumer whose view is gone.
+    void detachCyclesConsumer();
 
     void updateOverlayCaptures(SoGLRenderAction *glra);
     void clearOverlayCaptures();
@@ -1654,6 +1689,10 @@ void View3DInventorViewer::init()
 
 View3DInventorViewer::~View3DInventorViewer()
 {
+    // The Cycles session first: its threads ask this widget to repaint,
+    // and destroying it joins them before anything they name goes.
+    setCyclesViewport(nullptr, nullptr);
+
     // to prevent following OpenGL error message: "Texture is not valid in the current context. Texture has not been destroyed"
     aboutToDestroyGLContext();
 
@@ -2107,6 +2146,213 @@ void View3DInventorViewer::appendDetailPath(SoPath *path, ViewProvider *vp)
 SoFCRenderCacheManager *View3DInventorViewer::getRenderCacheManager() const
 {
     return selectionRoot ? selectionRoot->getRenderManager() : nullptr;
+}
+
+bool View3DInventorViewer::renderWithCycles(const std::string &path, int width, int height,
+                                            int samples, const std::string &device,
+                                            std::string *error,
+                                            Render::Cycles::RenderReport *report)
+{
+    auto fail = [error](const char *message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    if (!Render::Cycles::available())
+        return fail("this build carries no Cycles engine (BUILD_CYCLES is off)");
+    if (width < 1 || height < 1)
+        return fail("width and height must be positive");
+    SoFCRenderCacheManager *manager = getRenderCacheManager();
+    SoFCRenderCache *cache = manager ? manager->getSceneCache() : nullptr;
+    if (!cache)
+        return fail("the view has no render cache (render cache mode 3 is required)");
+    SoCamera *cam = getSoRenderManager()->getCamera();
+    if (!cam)
+        return fail("the view has no camera");
+
+    // The Gui side owns exactly this: the feed and the camera. The
+    // translation (Render::Cycles::renderScene) reads nothing from here.
+    App::PropertyContainer *settings = _pimpl->renderSettings();
+    Render::Cycles::SceneInput input;
+    // The section style is the view's, exactly as SoFCRenderer reads
+    // it for the raster path: without it a concave section would be
+    // traced as a convex one.
+    RendererBridge::SectionOnTop section;
+    section.noOnTop = Gui::sectionStyle(settings, "NoOnTop", ViewParams::getNoSectionOnTop());
+    section.concave = Gui::sectionStyle(settings, "Concave", ViewParams::getSectionConcave());
+    input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
+    input.section = RendererBridge::translateSectionConfig(settings);
+    input.pbr = RendererBridge::translatePBRConfig(settings);
+    input.output = RendererBridge::translateOutputConfig(settings);
+    input.light = RendererBridge::translateLightConfig(nullptr, settings);
+    input.background = _pimpl->backgroundFeed(backgroundColor());
+
+    // Framed for the requested size, not the widget's: the camera's
+    // viewport mapping adjusts the volume to the aspect asked for.
+    SbMatrix viewMat, projMat;
+    SbViewVolume vol = cam->getViewVolume(float(width) / float(height));
+    vol.getMatrices(viewMat, projMat);
+    std::memcpy(input.camera.view, viewMat.getValue(), sizeof(input.camera.view));
+    std::memcpy(input.camera.proj, projMat.getValue(), sizeof(input.camera.proj));
+    input.camera.width = width;
+    input.camera.height = height;
+
+    return Render::Cycles::renderScene(input, path, samples, device, error, report);
+}
+
+bool View3DInventorViewer::setCyclesViewport(const Render::Cycles::ViewportOptions *options,
+                                             std::string *error)
+{
+    auto fail = [error](const std::string &message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    if (!options) {
+        if (_pimpl->cyclesViewport) {
+            // The registration dies with the consumer: a backend that
+            // still names it would draw into a freed object.
+            _pimpl->detachCyclesConsumer();
+            _pimpl->cyclesViewport.reset();
+            if (auto rm = getSoRenderManager())
+                rm->scheduleRedraw();
+        }
+        return true;
+    }
+    if (!Render::Cycles::available())
+        return fail("this build carries no Cycles engine (BUILD_CYCLES is off)");
+    if (!getRenderCacheManager())
+        return fail("the view has no render cache (render cache mode 3 is required)");
+    if (!_pimpl->renderer)
+        return fail("the view has no render backend to draw into");
+    std::string message;
+    auto viewport = Render::Cycles::Viewport::create(*options, &message);
+    if (!viewport)
+        return fail(message);
+    setCyclesViewport(nullptr, nullptr);
+    // Cycles' threads report a staged frame from wherever they run;
+    // the repaint request is queued to this widget's thread, and a
+    // queued call is dropped with its context, so a widget on its way
+    // out is safe to name here.
+    viewport->setRedrawCallback([this] {
+        QMetaObject::invokeMethod(this, [this] {
+            if (auto rm = getSoRenderManager())
+                rm->scheduleRedraw();
+        }, Qt::QueuedConnection);
+    });
+    _pimpl->cyclesViewport = std::move(viewport);
+    _pimpl->cyclesFed = false;
+    if (auto rm = getSoRenderManager())
+        rm->scheduleRedraw();
+    return true;
+}
+
+bool View3DInventorViewer::cyclesViewportStatus(Render::Cycles::ViewportStatus &status) const
+{
+    if (!_pimpl->cyclesViewport)
+        return false;
+    status = _pimpl->cyclesViewport->status();
+    return true;
+}
+
+void View3DInventorViewer::Private::detachCyclesConsumer()
+{
+    if (cyclesHost && cyclesHost == renderer.get()) {
+        cyclesHost->setExternalBaseLayer(false, cyclesSubView);
+        cyclesHost->setFrameConsumer(nullptr, cyclesSubView);
+    }
+    cyclesHost = nullptr;
+    cyclesSubView = 0;
+    cyclesFed = false;
+}
+
+void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
+                                                       const SbMatrix &view,
+                                                       const SbMatrix &proj,
+                                                       int width, int height,
+                                                       SoFCRenderCacheManager *manager,
+                                                       int subView)
+{
+    Render::Renderer *host = renderer.get();
+    Render::Cycles::Viewport *vp = cyclesViewport.get();
+    if (!host || !vp)
+        return;
+    // The registration is per backend instance and sub-view, and a
+    // backend may be swapped under the view (a renderer-type change, a
+    // canvas adoption); re-register whenever this is not the one that
+    // was registered, or its surface went away.
+    if (cyclesHost != host || cyclesSubView != subView
+            || !host->frameConsumerSurface(subView)) {
+        if (cyclesHost == host && cyclesSubView != subView) {
+            host->setExternalBaseLayer(false, cyclesSubView);
+            host->setFrameConsumer(nullptr, cyclesSubView);
+        }
+        host->setFrameConsumer(vp, subView);
+        // The backend draws no shaded colour of its own in this
+        // sub-view while the path tracer supplies it
+        // (docs/CyclesIntegration.md sec 5.3).
+        host->setExternalBaseLayer(host->frameConsumerSurface(subView) != nullptr,
+                                   subView);
+        cyclesHost = host;
+        cyclesSubView = subView;
+    }
+
+    Render::Cycles::CameraInput camera;
+    std::memcpy(camera.view, view.getValue(), sizeof(camera.view));
+    std::memcpy(camera.proj, proj.getValue(), sizeof(camera.proj));
+    camera.width = width;
+    camera.height = height;
+
+    App::PropertyContainer *settings = renderSettings();
+    Render::PBRConfig pbr = RendererBridge::translatePBRConfig(settings);
+    Render::SectionConfig secconf = RendererBridge::translateSectionConfig(settings);
+    Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
+    Render::LightConfig light = RendererBridge::translateLightConfig(nullptr, settings);
+    Render::Background background = backgroundFeed(col);
+    const uint64_t gen = host->sceneGeneration();
+    const bool sameBackground = background.type == cyclesBackground.type
+        && background.fromColor == cyclesBackground.fromColor
+        && background.toColor == cyclesBackground.toColor
+        && background.midColor == cyclesBackground.midColor
+        && background.hasMid == cyclesBackground.hasMid;
+    if (cyclesFed && gen == cyclesSceneGen && pbr == cyclesPbr && output == cyclesOutput
+        && light == cyclesLight && secconf == cyclesSection && sameBackground) {
+        vp->setCamera(camera);
+        return;
+    }
+    SoFCRenderCache *cache = manager ? manager->getSceneCache() : nullptr;
+    if (!cache)
+        return;
+    Render::Cycles::SceneInput input;
+    RendererBridge::SectionOnTop section;
+    section.noOnTop = Gui::sectionStyle(settings, "NoOnTop", ViewParams::getNoSectionOnTop());
+    section.concave = Gui::sectionStyle(settings, "Concave", ViewParams::getSectionConcave());
+    input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
+    input.section = secconf;
+    input.pbr = pbr;
+    input.output = output;
+    input.light = light;
+    input.background = background;
+    input.camera = camera;
+    vp->setScene(input);
+    cyclesFed = true;
+    cyclesSceneGen = gen;
+    cyclesPbr = pbr;
+    cyclesOutput = output;
+    cyclesLight = light;
+    cyclesSection = secconf;
+    cyclesBackground = background;
+}
+
+bool View3DInventorViewer::feedCanvasCyclesViewport(const QColor &col, const SbMatrix &view,
+                                                    const SbMatrix &proj, int width,
+                                                    int height, View3DInventorViewer *feeder)
+{
+    if (!_pimpl->cyclesViewport || !_pimpl->adoptedRenderer || !feeder)
+        return false;
+    _pimpl->feedCyclesViewport(col, view, proj, width, height,
+                               feeder->getRenderCacheManager(), _pimpl->canvasSubView);
+    return true;
 }
 
 void View3DInventorViewer::setEditingTransform(const Base::Matrix4D &mat)
@@ -4394,7 +4640,9 @@ void View3DInventorViewer::adoptRenderer(
         _pimpl->canvasSubView = 0;
         // Give the viewer back its own backend. Drop the adopted one
         // exactly as setRendererType does when it swaps instances: the
-        // overlay captures and the scene feed both name a backend.
+        // overlay captures, the scene feed and a Cycles consumer all
+        // name a backend.
+        _pimpl->detachCyclesConsumer();
         _pimpl->clearOverlayCaptures();
         if (selectionRoot)
             selectionRoot->setExternalRenderer(nullptr);
@@ -4413,7 +4661,9 @@ void View3DInventorViewer::adoptRenderer(
     _pimpl->canvasSubView = subView;
     if (_pimpl->renderer != renderer) {
         // Whatever this viewer held is not what it will feed; the
-        // captures and the scene feed are both stated per backend.
+        // captures, the scene feed and a Cycles consumer are all
+        // stated per backend.
+        _pimpl->detachCyclesConsumer();
         _pimpl->clearOverlayCaptures();
         if (selectionRoot)
             selectionRoot->setExternalRenderer(nullptr);
@@ -4547,6 +4797,7 @@ void View3DInventorViewer::setRendererType(const std::string &type)
     // RendererFactory::create() also returns null, falling back to plain GL.
     if (type.empty() || type == "Default") {
         if (_pimpl->renderer) {
+            _pimpl->detachCyclesConsumer();
             _pimpl->clearOverlayCaptures();
             if (selectionRoot)
                 selectionRoot->setExternalRenderer(nullptr);
@@ -4556,6 +4807,7 @@ void View3DInventorViewer::setRendererType(const std::string &type)
         }
     }
     else if (!_pimpl->renderer || _pimpl->renderer->type() != type) {
+        _pimpl->detachCyclesConsumer();
         _pimpl->clearOverlayCaptures();
         if (selectionRoot)
             selectionRoot->setExternalRenderer(nullptr);
@@ -5884,6 +6136,12 @@ void View3DInventorViewer::renderScene()
         // only a serving process builds the table at all.
         if (Render::SceneStreamServer::instance().running())
             ObjectMetaFeed::instance().feed(_pimpl->renderer.get());
+        // The live Cycles session, if one follows this view: fed
+        // before the backend's frame so its consumer draws this
+        // frame's scene and camera.
+        if (_pimpl->cyclesViewport)
+            _pimpl->feedCyclesViewport(col, viewMat, projMat, size[0], size[1],
+                                       getRenderCacheManager(), 0);
         // Everything past here for this frame is the renderer's own
         // account, which it times itself.
         outPre.stop();

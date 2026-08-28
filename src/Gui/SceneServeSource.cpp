@@ -32,12 +32,18 @@
 #include <Inventor/nodes/SoSeparator.h>
 #include <QApplication>
 #include <QColor>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QPointer>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <functional>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <vector>
 #endif
 
@@ -49,7 +55,11 @@
 #include "SceneServeSource.h"
 
 #include "Document.h"
+#include "Inventor/SoFCRenderCache.h"
 #include "Inventor/SoFCRenderCacheManager.h"
+#include "Inventor/SoFCRendererBridge.h"
+#include "Inventor/SoFCVertexCache.h"
+#include "Renderer/CyclesRenderer.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
 #include "RenderParams.h"
@@ -129,6 +139,85 @@ protected:
     }
 };
 
+/// A 4x4 from a JSON array of 16 numbers (GL layout, as the viewer
+/// builds it). False when absent or malformed.
+bool readMatrix(const QJsonObject &obj, const char *key, float out[16])
+{
+    const QJsonValue v = obj.value(QLatin1String(key));
+    if (!v.isArray())
+        return false;
+    const QJsonArray a = v.toArray();
+    if (a.size() != 16)
+        return false;
+    for (int i = 0; i < 16; ++i) {
+        if (!a.at(i).isDouble())
+            return false;
+        out[i] = float(a.at(i).toDouble());
+    }
+    return true;
+}
+
+/// The camera a cycles op or a cycles.camera message carries. False
+/// when either matrix or the size is missing.
+bool readCamera(const QJsonObject &obj, Render::Cycles::CameraInput &cam)
+{
+    if (!readMatrix(obj, "view", cam.view) || !readMatrix(obj, "proj", cam.proj))
+        return false;
+    cam.width = obj.value(QLatin1String("width")).toInt(0);
+    cam.height = obj.value(QLatin1String("height")).toInt(0);
+    return cam.width > 0 && cam.height > 0;
+}
+
+/// The served viewports of one source (docs/CyclesIntegration.md sec
+/// 7.1): one per connection that asked, keyed by connection id. Its
+/// own object, shared by pointer with the handlers the server calls
+/// on ITS threads, so that a camera message never has to touch the
+/// source -- and a source on its way out only clears the table. The
+/// map is written on the GUI thread (start, stop, feed, close) and
+/// read on a connection thread (a camera), under the mutex; the
+/// streams themselves are shared pointers so a camera in flight
+/// keeps its stream alive across a concurrent stop.
+struct CyclesStreams {
+    /// Connection id and the viewer's sub-view (the cell of a split
+    /// layout, 0 = its full canvas): a viewer may trace several cells,
+    /// each from its own camera, each a session of its own.
+    using Key = std::pair<uint64_t, int>;
+    std::mutex mutex;
+    std::map<Key, std::shared_ptr<Render::Cycles::FrameStream>> byClient;
+
+    std::shared_ptr<Render::Cycles::FrameStream> find(uint64_t client, int cell)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = byClient.find(Key(client, cell));
+        return it == byClient.end() ? nullptr : it->second;
+    }
+
+    /// Take one stream, or with \a cell < 0 every stream of the
+    /// connection, out of the table; the caller lets them die outside
+    /// the lock.
+    std::vector<std::shared_ptr<Render::Cycles::FrameStream>> take(uint64_t client, int cell)
+    {
+        std::vector<std::shared_ptr<Render::Cycles::FrameStream>> out;
+        std::lock_guard<std::mutex> lock(mutex);
+        for (auto it = byClient.begin(); it != byClient.end();) {
+            if (it->first.first == client && (cell < 0 || it->first.second == cell)) {
+                out.push_back(std::move(it->second));
+                it = byClient.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
+        return out;
+    }
+};
+
+/// The sub-view a cycles op names (0 when it names none).
+int cellOf(const QJsonObject &obj)
+{
+    return std::clamp(obj.value(QLatin1String("cell")).toInt(0), 0, 255);
+}
+
 }  // namespace
 
 class SceneServeSource::Private
@@ -158,8 +247,29 @@ public:
     QTimer timer;
     std::vector<fastsignals::scoped_connection> connections;
 
+    /// The served Cycles viewports (sec 7.1) and what they were last
+    /// fed: the scene as translated for them, kept so a stream that
+    /// starts between publishes gets it without another translation,
+    /// and the gate that says when it is stale -- the backend's scene
+    /// generation and the configs, exactly the desktop feed's
+    /// (View3DInventorViewer::Private::feedCyclesViewport).
+    std::shared_ptr<CyclesStreams> streams = std::make_shared<CyclesStreams>();
+    std::shared_ptr<const Render::Cycles::SceneInput> cyclesInput;
+    uint64_t cyclesSceneGen = 0;
+    Render::PBRConfig cyclesPbr;
+    Render::OutputConfig cyclesOutput;
+    Render::LightConfig cyclesLight;
+    Render::Background cyclesBackground;
+
     ~Private()
     {
+        // The path tracers first: each joins its encoder thread and
+        // tears its session down, and nothing below feeds them again.
+        {
+            std::lock_guard<std::mutex> lock(streams->mutex);
+            streams->byClient.clear();
+        }
+        cyclesInput.reset();
         // The label feed remembers renderers by address; this one is
         // about to stop being one.
         if (renderer)
@@ -220,6 +330,199 @@ public:
             .getMatrices(viewMat, projMat);
         std::memcpy(viewMatrix, viewMat.getValue(), 16 * sizeof(float));
         std::memcpy(projMatrix, projMat.getValue(), 16 * sizeof(float));
+    }
+
+    /// The scene for the served viewports, rebuilt when the gate says
+    /// it moved (or \a force), and fed to every stream -- or only to
+    /// \a only, a stream that just started. GUI thread, after the
+    /// traversal that built the caches. A stream whose viewer left is
+    /// dropped on the way.
+    void feedCyclesStreams(bool force,
+                           const std::shared_ptr<Render::Cycles::FrameStream> &only = nullptr)
+    {
+        std::vector<std::shared_ptr<Render::Cycles::FrameStream>> targets;
+        {
+            std::lock_guard<std::mutex> lock(streams->mutex);
+            for (auto it = streams->byClient.begin(); it != streams->byClient.end();) {
+                if (it->second->lost()) {
+                    it = streams->byClient.erase(it);
+                    continue;
+                }
+                if (!only || it->second == only)
+                    targets.push_back(it->second);
+                ++it;
+            }
+        }
+        if (targets.empty()) {
+            cyclesInput.reset();
+            return;
+        }
+        auto *manager = root ? root->getRenderManager() : nullptr;
+        if (!manager || !renderer)
+            return;
+        App::PropertyContainer *settings = &renderProps;
+        Render::PBRConfig pbr = RendererBridge::translatePBRConfig(settings);
+        Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
+        Render::LightConfig light = RendererBridge::translateLightConfig(nullptr, settings);
+        Render::Background background = backgroundFromPreferences();
+        const uint64_t gen = renderer->sceneGeneration();
+        const bool sameBackground = background.type == cyclesBackground.type
+            && background.fromColor == cyclesBackground.fromColor
+            && background.toColor == cyclesBackground.toColor
+            && background.midColor == cyclesBackground.midColor
+            && background.hasMid == cyclesBackground.hasMid;
+        const bool stale = force || !cyclesInput || gen != cyclesSceneGen
+            || !(pbr == cyclesPbr) || !(output == cyclesOutput) || !(light == cyclesLight)
+            || !sameBackground;
+        if (stale) {
+            SoFCRenderCache *cache = manager->getSceneCache();
+            if (!cache)
+                return;
+            auto input = std::make_shared<Render::Cycles::SceneInput>();
+            input->draws = RendererBridge::translate(cache->getVertexCaches(true),
+                                                     RendererBridge::SectionOnTop());
+            input->pbr = pbr;
+            input->output = output;
+            input->light = light;
+            input->background = background;
+            // The synthetic framing, for form's sake: a stream ignores
+            // it once its viewer has stated a camera, and the start op
+            // states one.
+            cameraMatrices(input->camera.view, input->camera.proj);
+            input->camera.width = kDefaultWidth;
+            input->camera.height = kDefaultHeight;
+            cyclesInput = input;
+            cyclesSceneGen = gen;
+            cyclesPbr = pbr;
+            cyclesOutput = output;
+            cyclesLight = light;
+            cyclesBackground = background;
+        }
+        else if (!only) {
+            // Nothing moved and nobody is new: the streams refine on.
+            return;
+        }
+        for (auto &stream : targets)
+            stream->setScene(*cyclesInput);
+    }
+
+    /// One "cycles" op (sec 7.1), on the GUI thread; the JSON answer.
+    QJsonObject cyclesOp(const QJsonObject &req, uint64_t client)
+    {
+        const QJsonValue id = req.value(QLatin1String("id"));
+        auto error = [&id](const char *code, const QString &message) {
+            QJsonObject r;
+            r[QLatin1String("id")] = id;
+            r[QLatin1String("ok")] = false;
+            r[QLatin1String("code")] = QLatin1String(code);
+            r[QLatin1String("message")] = message;
+            return r;
+        };
+        QJsonObject reply;
+        reply[QLatin1String("id")] = id;
+        reply[QLatin1String("ok")] = true;
+        const QString action = req.value(QLatin1String("action")).toString();
+        if (action == QLatin1String("devices")) {
+            QJsonArray list;
+            for (const auto &d : Render::Cycles::devices()) {
+                QJsonObject entry;
+                entry[QLatin1String("type")] = QString::fromStdString(d.type);
+                entry[QLatin1String("description")] = QString::fromStdString(d.description);
+                list.push_back(entry);
+            }
+            reply[QLatin1String("available")] = Render::Cycles::available();
+            reply[QLatin1String("devices")] = list;
+            return reply;
+        }
+        const int cell = cellOf(req);
+        reply[QLatin1String("cell")] = cell;
+        if (action == QLatin1String("stop")) {
+            auto gone = streams->take(client, cell);
+            gone.clear();
+            reply[QLatin1String("running")] = false;
+            return reply;
+        }
+        if (action == QLatin1String("status")) {
+            auto stream = streams->find(client, cell);
+            if (!stream) {
+                reply[QLatin1String("running")] = false;
+                return reply;
+            }
+            const Render::Cycles::ViewportStatus st = stream->status();
+            reply[QLatin1String("running")] = st.running && !stream->lost();
+            reply[QLatin1String("progress")] = double(st.progress);
+            reply[QLatin1String("status")] = QString::fromStdString(st.status);
+            reply[QLatin1String("error")] = QString::fromStdString(st.error);
+            reply[QLatin1String("sessions")] = st.sessions;
+            reply[QLatin1String("updates")] = st.updates;
+            QJsonObject report;
+            report[QLatin1String("meshes")] = st.report.meshes;
+            report[QLatin1String("objects")] = st.report.objects;
+            report[QLatin1String("shaders")] = st.report.shaders;
+            report[QLatin1String("triangles")] = double(st.report.triangles);
+            report[QLatin1String("skipped")] = st.report.skipped;
+            reply[QLatin1String("report")] = report;
+            return reply;
+        }
+        if (action != QLatin1String("start"))
+            return error("BadRequest", QStringLiteral("unknown cycles action"));
+        if (!Render::Cycles::available())
+            return error("NoEngine",
+                         QStringLiteral("this build carries no Cycles engine"));
+        if (!isValidSource())
+            return error("NoDocument", QStringLiteral("the document is not served"));
+
+        Render::Cycles::StreamOptions options;
+        options.cell = cell;
+        auto &vp = options.viewport;
+        if (req.contains(QLatin1String("device")))
+            vp.device = req.value(QLatin1String("device")).toString().toStdString();
+        vp.samples = req.value(QLatin1String("samples")).toInt(vp.samples);
+        vp.timeLimit = req.value(QLatin1String("timeLimit")).toDouble(vp.timeLimit);
+        vp.denoise = req.value(QLatin1String("denoise")).toBool(vp.denoise);
+        vp.pixelSize = req.value(QLatin1String("pixelSize")).toInt(vp.pixelSize);
+        options.quality = req.value(QLatin1String("quality")).toInt(options.quality);
+        options.minIntervalMs =
+            req.value(QLatin1String("minIntervalMs")).toInt(options.minIntervalMs);
+        options.maxPixels =
+            long(req.value(QLatin1String("maxPixels")).toDouble(double(options.maxPixels)));
+        Render::Cycles::CameraInput camera;
+        if (!readCamera(req, camera))
+            return error("BadRequest",
+                         QStringLiteral("a start needs view, proj, width and height"));
+
+        auto &server = Render::SceneStreamServer::instance();
+        std::string message;
+        auto stream = std::shared_ptr<Render::Cycles::FrameStream>(
+            Render::Cycles::FrameStream::create(
+                options,
+                [&server, client](std::vector<uint8_t> &&bytes) {
+                    return server.sendBinary(client, std::move(bytes));
+                },
+                [&server, client](const std::string &json) {
+                    server.sendControl(client, json);
+                },
+                &message));
+        if (!stream)
+            return error("NoDevice", QString::fromStdString(message));
+        stream->setCamera(camera);
+        std::shared_ptr<Render::Cycles::FrameStream> previous;
+        {
+            std::lock_guard<std::mutex> lock(streams->mutex);
+            auto &slot = streams->byClient[CyclesStreams::Key(client, cell)];
+            previous = std::move(slot);
+            slot = stream;
+        }
+        previous.reset();
+        feedCyclesStreams(false, stream);
+        reply[QLatin1String("running")] = true;
+        reply[QLatin1String("device")] = QString::fromStdString(vp.device);
+        return reply;
+    }
+
+    bool isValidSource() const
+    {
+        return renderer && root;
     }
 
     /// The scene as a pickable graph: the camera has to be a traversed
@@ -370,8 +673,59 @@ void SceneServeSource::installHandlers()
     // nothing from a view and never did — it works on the document.
     // Installed on this document's group, bound to this document: a
     // remote edit of "view3d" must land on the container the publish
-    // reads (docs/MultiDocServe.md §5).
-    installSceneControlHandler(pimpl->groupName);
+    // reads (docs/MultiDocServe.md sec 5). The served viewport's ops
+    // (docs/CyclesIntegration.md sec 7.1) are taken off the same
+    // channel first: a camera is applied right here on the connection
+    // thread -- it touches its stream and nothing else -- and the rest
+    // hop to the GUI thread like every other op.
+    const std::string docName = pimpl->groupName;
+    auto streams = pimpl->streams;
+    server.setControlHandler(
+        [self, docName, streams](Render::SceneControlRequest &&req) {
+            // Parsed here, on the connection thread (QJsonDocument is
+            // reentrant), and dispatched on the op's VALUE: a text
+            // match would depend on how the sender spaces its JSON.
+            const QJsonDocument parsed = QJsonDocument::fromJson(
+                QByteArray(req.json.data(), int(req.json.size())));
+            const QJsonObject obj = parsed.isObject() ? parsed.object() : QJsonObject();
+            const QString op = obj.value(QLatin1String("op")).toString();
+            if (op == QLatin1String("cycles.camera")) {
+                auto stream = streams->find(req.client, cellOf(obj));
+                Render::Cycles::CameraInput camera;
+                if (stream && readCamera(obj, camera))
+                    stream->setCamera(camera);
+                return;
+            }
+            const bool cyclesOp = op == QLatin1String("cycles");
+            auto shared = std::make_shared<Render::SceneControlRequest>(std::move(req));
+            QMetaObject::invokeMethod(qApp, [self, shared, docName, cyclesOp, obj]() {
+                if (cyclesOp) {
+                    QJsonObject reply;
+                    if (!self) {
+                        reply[QLatin1String("id")] = obj.value(QLatin1String("id"));
+                        reply[QLatin1String("ok")] = false;
+                        reply[QLatin1String("code")] = QLatin1String("NoDocument");
+                    }
+                    else {
+                        reply = self->pimpl->cyclesOp(obj, shared->client);
+                    }
+                    shared->reply(QJsonDocument(reply).toJson(QJsonDocument::Compact)
+                                      .toStdString());
+                    return;
+                }
+                shared->reply(handleSceneControlRequest(shared->json, docName,
+                                                        shared->viewOnly));
+            }, Qt::QueuedConnection);
+        }, docName);
+
+    // A viewer that leaves takes its served viewport with it -- the
+    // session is the expensive part, and nobody is looking.
+    server.setClientClosedHandler([streams](uint64_t client) {
+        QMetaObject::invokeMethod(qApp, [streams, client]() {
+            auto gone = streams->take(client, -1);
+            gone.clear();
+        }, Qt::QueuedConnection);
+    }, docName);
 
     // A finished level-generation job is announced by the next publish,
     // and this source publishes only when something asks it to. Without
@@ -607,9 +961,14 @@ bool SceneServeSource::publishNow()
     float projMatrix[16];
     pimpl->cameraMatrices(viewMatrix, projMatrix);
 
-    return pimpl->renderer->publish(QColor(0x33, 0x33, 0x33), viewMatrix,
-                                    projMatrix, kDefaultWidth,
-                                    kDefaultHeight);
+    const bool published = pimpl->renderer->publish(QColor(0x33, 0x33, 0x33),
+                                                    viewMatrix, projMatrix,
+                                                    kDefaultWidth, kDefaultHeight);
+    // The served viewports see this traversal's caches (docs/
+    // CyclesIntegration.md sec 7.1): their own gate says whether the
+    // scene moved, so this costs a few compares when nothing did.
+    pimpl->feedCyclesStreams(false);
+    return published;
 }
 
 #include "moc_SceneServeSource.cpp"

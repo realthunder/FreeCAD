@@ -2276,7 +2276,10 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
     // is filtered by type: only Coin's shadow directional light and
     // spot lights qualify.
     Render::LightConfig res;
-    const SoNodeList & lights = SoLightElement::getLights(state);
+    // No traversal (a snapshot taken outside a render, e.g. the Cycles
+    // path) has no light element to read; the view's own light below
+    // is all there is then.
+    const SoNodeList & lights = state ? SoLightElement::getLights(state) : SoNodeList();
     for (int i = 0; i < lights.getLength(); ++i) {
         SoNode * node = lights[i];
         if (!node || !node->isOfType(SoLight::getClassTypeId()))

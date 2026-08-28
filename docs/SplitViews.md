@@ -1364,3 +1364,27 @@ which lights the cells that handle borders and clears every other cell.
 - Verified on a 4-cell nested tree (Xvfb, probe_handlehint.py): each of
   the three handles lit exactly the cells its rect abuts -- the root
   handle three of them, the nested ones two -- and leaving cleared them.
+
+## 19. A frame consumer per cell (2026-08-28)
+
+The canvas can now host a path-traced cell beside a rasterized one:
+`view.cyclesViewport(...)` on a claimed cell traces that cell alone.
+The full record is `docs/CyclesIntegration.md` sec 5.11; what changed
+on the canvas side is small.
+
+- `Renderer::setFrameConsumer` / `frameConsumerSurface` /
+  `setExternalBaseLayer` take a sub-view id. The bgfx backend keeps a
+  consumer slot per bank and resolves the one of the submit in
+  progress beside `selectSubView`; `dropSubView` drops the slot too.
+  A consumer's `hostTarget()` inside a sub-view submit was already the
+  bank's target -- the cell -- so the blit needed nothing.
+- `ViewAreaCanvas::paintGL` calls
+  `View3DInventorViewer::feedCanvasCyclesViewport` for every drawn
+  cell before `renderSubViews`, with the cell's camera at the cell's
+  size and the feeder: the scene is the FEEDER's render cache, the
+  one traversal a canvas runs (sec 13.4), the camera and the render
+  settings the cell's own. The frame's background is resolved before
+  the loop now, for the same reason.
+- A viewer detaches its consumer from the shared backend before every
+  swap of `renderer` (adopt, give back, type change) -- the canvas's
+  instance outlives a cell that leaves, unlike a lone backend.

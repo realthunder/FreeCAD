@@ -149,6 +149,16 @@ macro(InitializeFreeCADBuildOptions)
         set(BUILD_BGFX OFF)
     endif()
     option(BUILD_DILIGENT "Build DiligentEngine renderer module" OFF)
+    # Blender's Cycles path tracer as a vendored renderer
+    # (docs/CyclesIntegration.md). OFF: it is a heavy build with
+    # environment dependencies (OpenImageIO, Embree, OpenImageDenoise),
+    # so it is asked for rather than degraded into like bgfx.
+    option(BUILD_CYCLES "Build the Cycles path tracer renderer module" OFF)
+    if(BUILD_CYCLES AND NOT EXISTS "${CMAKE_SOURCE_DIR}/src/3rdParty/cycles/CMakeLists.txt")
+        message(FATAL_ERROR "BUILD_CYCLES is ON but the cycles submodule is not "
+                            "checked out (git submodule update --init "
+                            "src/3rdParty/cycles).")
+    endif()
     option(BUILD_DILIGENT_SAMPLES "Build DiligentEngine samples" OFF)
     option(ENABLE_DEVELOPER_TESTS "Build the FreeCAD unit tests suit" OFF)
 

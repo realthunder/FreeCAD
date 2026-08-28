@@ -127,9 +127,10 @@ public:
     virtual void setOverlay(int id, DrawCallList &&draws,
                             const OverlayAnchor &anchor) override;
     virtual void removeOverlay(int id) override;
-    virtual void setFrameConsumer(FrameConsumer *consumer) override;
-    virtual DrawSurface *frameConsumerSurface() override;
+    virtual void setFrameConsumer(FrameConsumer *consumer, int subView) override;
+    virtual DrawSurface *frameConsumerSurface(int subView) override;
     virtual void setHiddenLineConfig(const HiddenLineConfig &config) override;
+    virtual void setExternalBaseLayer(bool on, int subView) override;
     virtual void setSectionConfig(const SectionConfig &config) override;
     virtual void setAOConfig(const AOConfig &config) override;
     virtual void setCavityConfig(const CavityConfig &config) override;

@@ -52,6 +52,7 @@ GuiDisplay::GuiDisplay(QWidget* parent)
     connect(ui->rotateButton, &QToolButton::toggled, this, &GuiDisplay::rotateEnableChanged);
     connect(ui->pathButton, &QToolButton::toggled, this, &GuiDisplay::pathVisibleChanged);
     connect(ui->ssaoButton, &QToolButton::toggled, this, &GuiDisplay::ssaoEnableChanged);
+    connect(ui->docViewButton, &QToolButton::toggled, this, &GuiDisplay::docViewEnableChanged);
 }
 
 GuiDisplay::~GuiDisplay()
@@ -210,6 +211,17 @@ void GuiDisplay::setSsaoEnabled(bool b)
 {
     QSignalBlocker blocker(ui->ssaoButton);
     ui->ssaoButton->setChecked(b);
+}
+
+void GuiDisplay::setDocViewEnabled(bool b)
+{
+    // The button is a wish, not a report: the attach can be refused
+    // (no renderer to borrow, legacy GL) and the checked state still
+    // means "do it where it is possible". Blocking the signal keeps
+    // the preference the one source of truth -- this setter is only
+    // ever called BY that preference.
+    QSignalBlocker blocker(ui->docViewButton);
+    ui->docViewButton->setChecked(b);
 }
 
 }  // namespace CAMSimulator

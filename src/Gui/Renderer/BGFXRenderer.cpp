@@ -255,6 +255,11 @@ void BGFXRenderer::dropSubView(int id)
 {
     if (id == 0)
         return;
+    // The consumer registered under the sub-view goes with it: its
+    // surface was bound to the bank's targets, and the host that
+    // registered it is being released from the canvas.
+    if (pimpl->consumerSlots.erase(id))
+        pimpl->clearConsumer();
     auto it = _BGFXLib.views.find(pimpl->widget);
     if (it == _BGFXLib.views.end())
         return;
@@ -738,6 +743,7 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
     dumpFeed("scene", 0, draws);
     pimpl->scene = std::move(draws);
     ++pimpl->drawListVersion;
+    noteSceneStated();
     // The occlusion index is partitioned from this list, and a stale
     // partition would mask draws by the bounds of whatever used to
     // occupy those rows. Rebuilt on the next frame that culls, never
@@ -885,19 +891,22 @@ void BGFXRenderer::removeOverlay(int id)
         pimpl->sceneDirty = true;
 }
 
-void BGFXRenderer::setFrameConsumer(FrameConsumer *consumer)
+void BGFXRenderer::setFrameConsumer(FrameConsumer *consumer, int subView)
 {
-    pimpl->frameConsumer = nullptr;
-    pimpl->consumerSurface.reset();
-    pimpl->consumerPasses = 0;
-    pimpl->consumerOverlayPasses = 0;
+    // The resolved copy may name the slot being replaced; the next
+    // submit resolves its own.
+    pimpl->clearConsumer();
+    auto it = pimpl->consumerSlots.find(subView);
+    if (it != pimpl->consumerSlots.end()) {
+        it->second.consumer = nullptr;
+        it->second.surface.reset();
+        it->second.passes = 0;
+        it->second.overlayPasses = 0;
+        if (!consumer && !it->second.externalBase)
+            pimpl->consumerSlots.erase(it);
+    }
     if (!consumer)
         return;
-#ifdef FC_RENDERER_STANDALONE
-    // No draw facade in the browser tier: nothing outside the engine
-    // links against it there, and BGFXDrawDevice.cpp is not built.
-    (void)consumer;
-#else
     const unsigned want = consumer->framePasses();
     const unsigned overlay = consumer->overlayPasses();
     // Refused, not clamped: a clamp would leave the consumer's last
@@ -915,17 +924,19 @@ void BGFXRenderer::setFrameConsumer(FrameConsumer *consumer)
                    " attached.");
         return;
     }
-    pimpl->consumerSurface = std::move(surface);
-    pimpl->consumerPasses = want;
-    pimpl->consumerOverlayPasses = overlay;
-    pimpl->frameConsumer = consumer;
-#endif
+    auto &slot = pimpl->consumerSlots[subView];
+    slot.surface = std::move(surface);
+    slot.passes = want;
+    slot.overlayPasses = overlay;
+    slot.consumer = consumer;
 }
 
-DrawSurface *BGFXRenderer::frameConsumerSurface()
+DrawSurface *BGFXRenderer::frameConsumerSurface(int subView)
 {
-    return pimpl->consumerSurface ? &pimpl->consumerSurface->surface()
-                                  : nullptr;
+    auto it = pimpl->consumerSlots.find(subView);
+    if (it == pimpl->consumerSlots.end() || !it->second.surface)
+        return nullptr;
+    return &it->second.surface->surface();
 }
 
 void BGFXRenderer::setHighlight(DrawCallList &&draws, bool wholeOnTop)
@@ -950,6 +961,23 @@ void BGFXRenderer::setHiddenLineConfig(const HiddenLineConfig &config)
         pimpl->hlconfig = config;
         pimpl->sceneDirty = true;
     }
+}
+
+void BGFXRenderer::setExternalBaseLayer(bool on, int subView)
+{
+    auto it = pimpl->consumerSlots.find(subView);
+    if (it == pimpl->consumerSlots.end()) {
+        if (!on)
+            return;
+        it = pimpl->consumerSlots.emplace(subView, Private::ConsumerSlot()).first;
+    }
+    if (it->second.externalBase == on)
+        return;
+    it->second.externalBase = on;
+    pimpl->sceneDirty = true;
+    if (!on && !it->second.consumer)
+        pimpl->consumerSlots.erase(it);
+    pimpl->clearConsumer();
 }
 
 void BGFXRenderer::setSectionConfig(const SectionConfig &config)
@@ -1463,19 +1491,15 @@ void BGFXRendererLib::deviceDoneCurrent()
 
 DrawDevice *BGFXRendererLib::drawDevice() const
 {
-#ifdef FC_RENDERER_STANDALONE
-    // The standalone viewer has no facade consumer, and its source
-    // list does not carry BGFXDrawDevice.cpp.
-    return nullptr;
-#else
     // Null until the device is up (prepare() ran): the facade hands
     // out resources bgfx must exist to create. The consumer treats
     // null as "not yet" and asks again -- warmup or the first 3D view
     // flips it, and the device then stays up until the app quits.
+    // The browser tier builds the facade too since the streamed
+    // frame's blit is a consumer (docs/CyclesIntegration.md sec 7.1).
     if (_BGFXLib.currentType == RendererType::Noop)
         return nullptr;
     return fcBGFXDrawDevice();
-#endif
 }
 
 std::unique_ptr<Renderer> BGFXRendererLib::create(

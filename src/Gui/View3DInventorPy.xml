@@ -191,6 +191,54 @@ chrome included, when that is what you want.</UserDocu>
         <UserDocu>saveVectorGraphic()</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="cyclesRender" Keyword="true">
+      <Documentation>
+        <UserDocu>cyclesRender(path, width=640, height=480, samples=64, device='CPU') -> dict
+
+Path trace this view with the Cycles engine to a PNG at path
+(docs/CyclesIntegration.md phase 3): the view's render-cache scene,
+its PBR/output/light/background settings and its current camera,
+framed for width x height, with samples per pixel on the named
+device ("CPU", "CUDA", ...). Blocks until the render is done.
+Requires the render-cache bridge (render cache mode 3) and a build
+with BUILD_CYCLES.
+
+Returns a dict of what the translation made of the scene: meshes,
+objects, shaders, triangles, skipped (draws with no path-traced
+form: lines, points, gizmos, effect volumes), seconds.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="cyclesViewport" Keyword="true">
+      <Documentation>
+        <UserDocu>cyclesViewport(enable=True, device='CPU', samples=256, timeLimit=0.0, denoise=True, pixelSize=1)
+
+Path trace this view live with the Cycles engine
+(docs/CyclesIntegration.md phase 4): a session on the named device
+("CPU", "CUDA", ...) follows the view's scene, settings and camera,
+and its progressively refined frame is drawn as the base layer of
+every frame, under the selection highlight. samples is the budget
+per pixel before the render rests, timeLimit a cap in seconds (0 =
+none), denoise applies OpenImageDenoise (fast quality) as the frame
+refines, pixelSize renders at 1/n resolution and scales up (Blender's
+preview pixel size). enable=False turns it off.
+Requires the render-cache bridge (render cache mode 3), a render
+backend and a build with BUILD_CYCLES.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="cyclesViewportStatus">
+      <Documentation>
+        <UserDocu>cyclesViewportStatus() -> dict or None
+
+What the live Cycles session of this view is doing, or None when
+cyclesViewport() is off: running, progress (0..1), status (the
+engine's text), error, the translation report of the scene as last
+stated (meshes, objects, shaders, triangles, skipped), what the last
+translation did (added, removed, restated objects; built, released
+meshes), and how the scene got there: sessions (started, each a
+device set-up) and updates (scenes restated in place under a running
+session).</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="saveRenderDump" Keyword="true">
       <Documentation>
         <UserDocu>saveRenderDump(path, source='renderer', mode=None, metadata=True)

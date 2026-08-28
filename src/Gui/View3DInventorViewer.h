@@ -55,6 +55,7 @@ class SoTransform;
 class SoText2;
 class SoGetBoundingBoxAction;
 class SoFCRenderCacheManager;
+namespace Render::Cycles { struct RenderReport; struct ViewportOptions; struct ViewportStatus; }
 
 class SoSeparator;
 class SoDetail;
@@ -787,6 +788,53 @@ public:
     /// The render cache manager of this view's selection root (null
     /// when the render-cache bridge is inactive)
     SoFCRenderCacheManager *getRenderCacheManager() const;
+
+    /** Path trace this view with Cycles to a PNG (docs/CyclesIntegration.md
+     * phase 3).
+     *
+     * Snapshots what the view's render cache holds -- the same translated
+     * draw list the bgfx backend is fed -- with the view's PBR, output,
+     * light and background settings and its current camera, framed for
+     * \a width x \a height, and renders it with \a samples per pixel on
+     * the device of the given type ("CPU", "CUDA", ...). Blocks until
+     * the render is done. Requires the render-cache bridge (render cache
+     * mode 3). Returns false with \a error set on failure; \a report, if
+     * given, receives what the translation made of the scene.
+     */
+    bool renderWithCycles(const std::string &path, int width, int height, int samples,
+                          const std::string &device, std::string *error,
+                          Render::Cycles::RenderReport *report = nullptr);
+
+    /** Path trace this view live with Cycles (docs/CyclesIntegration.md
+     * phase 4, the viewport).
+     *
+     * With \a options, a Cycles session on the named device follows this
+     * view: it is fed the render-cache scene whenever the backend's feed
+     * restates it (or a render setting changes), the camera whenever it
+     * moves, and its progressively refined frame is blitted over the
+     * backend's scene as the base layer of every frame. Null \a options
+     * turns it off. Requires the render-cache bridge (render cache mode
+     * 3) with a backend attached. Returns false with \a error set.
+     */
+    bool setCyclesViewport(const Render::Cycles::ViewportOptions *options,
+                           std::string *error);
+    /// What the live Cycles session is doing; false when there is none.
+    bool cyclesViewportStatus(Render::Cycles::ViewportStatus &status) const;
+    /** Feed this viewer's live Cycles session as one cell of a unified
+     * canvas (docs/CyclesIntegration.md sec 5.11).
+     *
+     * The canvas calls this for every cell before its renderSubViews
+     * frame, with the cell's camera matrices at its \a width x \a
+     * height and the cell that feeds the shared backend: the session
+     * takes its scene from \a feeder's render cache -- the one
+     * traversal a canvas runs -- and its camera from here, and its
+     * consumer is registered under this cell's sub-view id so it draws
+     * into this cell alone. Returns false, doing nothing, when this
+     * viewer has no Cycles session or is not a canvas cell.
+     */
+    bool feedCanvasCyclesViewport(const QColor &col, const SbMatrix &view,
+                                  const SbMatrix &proj, int width, int height,
+                                  View3DInventorViewer *feeder);
 
     struct Private;
     friend struct Private;

@@ -145,6 +145,13 @@ public:
     void setBackgroundColor(const QColor& c);
     void setPathColor(const QColor& normal, const QColor& rapid);
 
+    /// Show the "also draw in the document's 3D view" wish on the
+    /// overlay button. The preference is the one source of truth
+    /// (docs/CAMSimRenderPort.md sec 11.11): the button writes it,
+    /// CAMSettings observes it and calls this back, and the Python
+    /// driver re-reads it every poll.
+    void setDocViewEnabled(bool b);
+
     /// Render::FrameConsumer: one simulation step drawn into \a
     /// surface. Called by the host renderer once per frame when
     /// attached, and by paintGL through the standalone surface when

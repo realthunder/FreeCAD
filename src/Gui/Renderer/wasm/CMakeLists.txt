@@ -76,10 +76,16 @@ add_executable(fcviewer
     ../Page2DWire.cpp
     ../Vg2D.cpp
     ../Renderer.cpp
+    ../Environment.cpp
     ../SceneDump.cpp
     ../SceneLadder.cpp
     ../MeshSimplify.cpp
     ../BGFXRenderer.cpp
+    # The draw facade: the streamed frame is blitted through a
+    # FrameConsumer (docs/CyclesIntegration.md sec 7.1).
+    ../DrawDevice.cpp
+    ../BGFXDrawDevice.cpp
+    ../FrameImageConsumer.cpp
     ../BGFXFrame.cpp
     ../BGFXScene.cpp
     ../BGFXViewEffects.cpp
@@ -113,6 +119,7 @@ target_compile_definitions(fcviewer PRIVATE
 target_include_directories(fcviewer PRIVATE
     ${FC_SRC}                  # FCConfig.h
     ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${FC_SRC}/3rdParty/bgfx/bimg/3rdparty   # stb/stb_image.h, the frame decoder
 )
 
 target_link_libraries(fcviewer PRIVATE vg-renderer bgfx bimg bx)

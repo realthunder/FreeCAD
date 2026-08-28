@@ -2981,6 +2981,12 @@ public:
     //@{
     /// Replace the whole scene. An empty list clears it.
     virtual void setScene(DrawCallList &&draws) { (void)draws; }
+    /// How many times setScene() has restated the scene: a consumer
+    /// that derives something from the same feed (the Cycles viewport
+    /// re-translates the render cache, docs/CyclesIntegration.md sec
+    /// 5.2) compares this between frames instead of the draws. Every
+    /// override of setScene() owes a noteSceneStated().
+    uint64_t sceneGeneration() const { return scenegen; }
     /// Which document object each objectKey renders, resolved by the
     /// scene producer (the renderer itself has no document access — this
     /// library stays App-free). Replaced wholesale alongside setScene();
@@ -3044,22 +3050,48 @@ public:
     virtual void removeOverlay(int id) { (void)id; }
     /// Register (or clear, with null) the consumer that draws its own
     /// passes inside this renderer's frames (FrameConsumer above).
-    /// One at a time: registering a second replaces the first, whose
-    /// surface is destroyed. Backends that do not implement the draw
-    /// facade ignore this, and the consumer keeps its own path.
-    virtual void setFrameConsumer(FrameConsumer *consumer)
-    { (void)consumer; }
-    /// The surface the registered FrameConsumer draws into, or null
-    /// when none is registered (or the backend serves no consumers).
-    /// Stable for the lifetime of the registration: a consumer keys
-    /// per-host state on it (docs/CAMSimRenderPort.md sec 11.9) and
-    /// drops that state when detaching, before the surface dies.
-    virtual DrawSurface *frameConsumerSurface()
-    { return nullptr; }
+    /// One per sub-view: registering a second under the same \a subView
+    /// replaces the first, whose surface is destroyed. Backends that do
+    /// not implement the draw facade ignore this, and the consumer
+    /// keeps its own path.
+    ///
+    /// \a subView scopes the registration to one sub-view of a
+    /// renderSubViews frame (SubViewFrame::id), so that N cells of one
+    /// backend can each carry a consumer of their own -- a path-traced
+    /// cell beside a rasterized one (docs/CyclesIntegration.md sec
+    /// 5.11). 0, the default, is the implicit full-canvas sub-view a
+    /// plain render() draws, and what every non-canvas host uses. A
+    /// consumer registered under a sub-view is dropped with it
+    /// (dropSubView).
+    virtual void setFrameConsumer(FrameConsumer *consumer, int subView = 0)
+    { (void)consumer; (void)subView; }
+    /// The surface the FrameConsumer registered under \a subView draws
+    /// into, or null when none is registered there (or the backend
+    /// serves no consumers). Stable for the lifetime of the
+    /// registration: a consumer keys per-host state on it
+    /// (docs/CAMSimRenderPort.md sec 11.9) and drops that state when
+    /// detaching, before the surface dies.
+    virtual DrawSurface *frameConsumerSurface(int subView = 0)
+    { (void)subView; return nullptr; }
     /// Per-frame hidden-line draw style state (resolved from the traversal
     /// state each render, like the GL renderer does).
     virtual void setHiddenLineConfig(const HiddenLineConfig &config)
     { (void)config; }
+    /// The registered FrameConsumer supplies the shaded image of the
+    /// scene (a path tracer's, docs/CyclesIntegration.md sec 5.1 and
+    /// 5.3): the backend rasterizes its scene triangles depth-only, so
+    /// that everything it still draws -- feature lines and points,
+    /// selection and preselection, on-top draws, the host's own
+    /// effects -- occludes against its own depth over the consumer's
+    /// colour; transparent scene triangles are not drawn at all (the
+    /// consumer's image carries their alpha), and a non-on-top
+    /// selection fill dims where the scene depth hides it instead of
+    /// vanishing. Ignored by backends without a consumer. Scoped like
+    /// the registration: \a subView names the sub-view whose consumer
+    /// supplies the image, so only that cell of a split-view frame
+    /// gives up its raster shading.
+    virtual void setExternalBaseLayer(bool on, int subView = 0)
+    { (void)on; (void)subView; }
     /// Per-frame section fill (cap) configuration.
     virtual void setSectionConfig(const SectionConfig &config)
     { (void)config; }
@@ -3304,6 +3336,9 @@ protected:
     /// it, because a delta leaves the producer's copy still describing
     /// what the renderer holds.
     void noteObjectInfoStated() { ++infoversion; }
+    /// Record that setScene() has just restated the scene
+    /// (sceneGeneration() above).
+    void noteSceneStated() { ++scenegen; }
 
 private:
     static uint64_t nextInstanceId()
@@ -3313,6 +3348,7 @@ private:
     }
     const uint64_t instanceid = nextInstanceId();
     uint32_t infoversion = 0;
+    uint64_t scenegen = 0;
 };
 
 class RendererLib

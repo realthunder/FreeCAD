@@ -2301,9 +2301,8 @@ public:
     virtual unsigned passes() const = 0;
 };
 
-#ifndef FC_RENDERER_STANDALONE
 /// The bgfx implementation of the draw facade (BGFXDrawDevice.cpp,
-/// desktop build only). BGFXRendererLib::drawDevice hands it out once
+/// every tier). BGFXRendererLib::drawDevice hands it out once
 /// the device is up.
 DrawDevice *fcBGFXDrawDevice();
 
@@ -2311,12 +2310,11 @@ DrawDevice *fcBGFXDrawDevice();
 /// The split exists to validate each run against its enum block --
 /// the surface itself carries only the total, and the id mapping
 /// rides bindFrame. Null when the device is down or a run exceeds
-/// what a host frame offers. Desktop only, like the rest of the
-/// facade: the standalone build has no outside consumers to serve
-/// and does not compile BGFXDrawDevice.cpp.
+/// what a host frame offers. Built in the browser tier too: the
+/// streamed frame's blit is a consumer (docs/CyclesIntegration.md
+/// sec 7.1); only the widget-owning standalone surface is desktop.
 std::unique_ptr<BGFXHostSurface> fcBGFXCreateHostSurface(
         unsigned scenePasses, unsigned overlayPasses);
-#endif
 
 } // namespace Renderer
 
@@ -7065,6 +7063,12 @@ public:
     /// new to try.
     bool targetsFailed = false;
     bool ontop = false;   // route submits to the highlight pass
+    // This frame's shaded image comes from the attached consumer
+    // (Renderer::setExternalBaseLayer): scene triangles rasterize
+    // depth-only, lines/points and non-on-top selections draw in
+    // ViewOnTop over the consumer's blit, transparent scene triangles
+    // are skipped (docs/CyclesIntegration.md sec 5.3).
+    bool externalBase = false;
     bool selPass = false; // route opaque-view submits into ViewSelection
                           // (non-on-top selection draws follow the opaque
                           // scene in submission order, GL pass parity)
@@ -8918,21 +8922,62 @@ public:
     };
     std::map<int, OverlayFeed> overlays;
 
-    /// The module drawing its own passes inside this renderer's frames
+    /// A module drawing its own passes inside this renderer's frames
     /// (Renderer::setFrameConsumer, docs/CAMSimRenderPort.md sec 8),
     /// and the surface it draws through. The surface is sized to the
     /// consumer's pass count at registration and owned here, so a
     /// consumer that goes away cannot leave one behind, and it is null
     /// whenever the backend device is down -- in which case the
     /// consumer never gets called and keeps its own path.
+    struct ConsumerSlot {
+        Render::FrameConsumer *consumer = nullptr;
+        std::unique_ptr<Render::BGFXHostSurface> surface;
+        /// Passes the surface was built for; a consumer that changes
+        /// its count has to re-register, and this is what notices.
+        unsigned passes = 0;
+        /// Of passes, the trailing overlay-run count
+        /// (FrameConsumer::overlayPasses; the rest are the scene run).
+        unsigned overlayPasses = 0;
+        bool externalBase = false;  ///< Renderer::setExternalBaseLayer
+    };
+    /// One slot per sub-view id (Renderer::setFrameConsumer's subView;
+    /// 0 is the plain-render full-canvas sub-view), so that each cell
+    /// of a split-view frame can carry a consumer of its own
+    /// (docs/CyclesIntegration.md sec 5.11). A slot's surface draws
+    /// into that sub-view's bank targets: the consumer's hostTarget()
+    /// is the cell's scene target, not the canvas.
+    std::map<int, ConsumerSlot> consumerSlots;
+    /// The slot of the submit in progress, resolved by
+    /// selectConsumer() where the frame swaps in the sub-view's bank;
+    /// every read in the frame path goes through these. Cleared
+    /// whenever the slots change, so nothing dangles between frames.
     Render::FrameConsumer *frameConsumer = nullptr;
-    std::unique_ptr<Render::BGFXHostSurface> consumerSurface;
-    /// Passes consumerSurface was built for; a consumer that changes
-    /// its count has to re-register, and this is what notices.
+    Render::BGFXHostSurface *consumerSurface = nullptr;
     unsigned consumerPasses = 0;
-    /// Of consumerPasses, the trailing overlay-run count
-    /// (FrameConsumer::overlayPasses; the rest are the scene run).
     unsigned consumerOverlayPasses = 0;
+    bool externalBase = false;
+    void selectConsumer(int subView)
+    {
+        auto it = consumerSlots.find(subView);
+        if (it == consumerSlots.end()) {
+            clearConsumer();
+            return;
+        }
+        const ConsumerSlot &slot = it->second;
+        frameConsumer = slot.consumer;
+        consumerSurface = slot.surface.get();
+        consumerPasses = slot.passes;
+        consumerOverlayPasses = slot.overlayPasses;
+        externalBase = slot.externalBase;
+    }
+    void clearConsumer()
+    {
+        frameConsumer = nullptr;
+        consumerSurface = nullptr;
+        consumerPasses = 0;
+        consumerOverlayPasses = 0;
+        externalBase = false;
+    }
     Render::DrawCallList highlight;
     std::unordered_set<uint64_t> hiddenKeys;
     std::unordered_set<const Render::DrawCall *> dupDraws;

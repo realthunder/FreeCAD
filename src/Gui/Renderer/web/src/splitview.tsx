@@ -9,7 +9,8 @@
 // Cells are pointer-events: none so the canvas keeps every scene
 // gesture; only the corner zones, the border handles and the per-cell
 // content chip are interactive.
-import { For, createSignal, onCleanup } from 'solid-js';
+import { For, Show, createSignal, onCleanup } from 'solid-js';
+import type { CyclesDevice, CyclesState } from './control';
 
 type CellNode = { cell: true; id: number; page: boolean };
 type SplitNode = {
@@ -414,6 +415,41 @@ export function SplitOverlay() {
     changed();
   };
 
+  // Per-cell path tracing (docs/CyclesIntegration.md sec 7.1): the
+  // backend traces a cell from its own camera and streams the frame
+  // into it. The device list comes from the viewer menu's ask (window
+  // mirror + event, so a chrome mounting either side of it reads it);
+  // the state is the viewer's, per cell, as 'fc:cycles'.
+  const [ptDevices, setPtDevices] = createSignal<CyclesDevice[]>(
+    window.fcviewerCyclesDevices ?? []);
+  const [ptState, setPtState] = createSignal<Record<number, CyclesState>>(
+    { ...(window.fcviewerCycles ?? {}) });
+  const onPtDevices = (e: Event) => {
+    const d = (e as CustomEvent).detail;
+    setPtDevices(Array.isArray(d) ? d : []);
+  };
+  const onPtState = (e: Event) => {
+    const d = (e as CustomEvent).detail;
+    if (d && typeof d.cell === 'number')
+      setPtState((s) => ({ ...s, [d.cell]: d as CyclesState }));
+  };
+  window.addEventListener('fc:cyclesdevices', onPtDevices);
+  window.addEventListener('fc:cycles', onPtState);
+  onCleanup(() => {
+    window.removeEventListener('fc:cyclesdevices', onPtDevices);
+    window.removeEventListener('fc:cycles', onPtState);
+  });
+  const ptValue = (id: number) => {
+    const s = ptState()[id];
+    return s && s.on ? s.device : '';
+  };
+  const ptTitle = (id: number) => {
+    const s = ptState()[id];
+    if (!s || !s.on) return 'Path trace this view on the backend';
+    if (s.error) return `Path tracing: ${s.error}`;
+    return `Path tracing on ${s.device}: ${Math.round(s.progress * 100)}%`;
+  };
+
   const multi = () => !root().cell;
 
   return (
@@ -436,6 +472,19 @@ export function SplitOverlay() {
                         onClick={() => setPage(c.node, false)}>3D</button>
                 <button classList={{ on: c.node.page }}
                         onClick={() => setPage(c.node, true)}>Page</button>
+                <Show when={!c.node.page && ptDevices().length > 0}>
+                  <select class="fc-split-pt"
+                          classList={{ on: ptValue(c.node.id) !== '' }}
+                          title={ptTitle(c.node.id)}
+                          value={ptValue(c.node.id)}
+                          onChange={(e) => window.fcviewerSetCycles?.(
+                            e.currentTarget.value, c.node.id)}>
+                    <option value="">PT off</option>
+                    <For each={ptDevices()}>
+                      {(d) => <option value={d.type}>PT {d.type}</option>}
+                    </For>
+                  </select>
+                </Show>
                 <button class="fc-split-close" title="Close this view"
                         onClick={() => closeCell(c.node)}>x</button>
               </div>

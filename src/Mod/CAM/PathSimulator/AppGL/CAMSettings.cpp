@@ -50,6 +50,7 @@ void CAMSettings::applySettings()
 {
     OnChange(*hGrp, "DefaultNormalPathColor");
     OnChange(*hGrp, "DefaultRapidPathColor");
+    OnChange(*hGrp, "SimulatorShowInDocumentView");
 }
 
 void CAMSettings::OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::MessageType Reason)
@@ -73,6 +74,12 @@ void CAMSettings::OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::Mes
         rb = ((rcol >> 8) & 0xff) / 255.0;
 
         mDlg.setPathColor(QColor::fromRgbF(lr, lg, lb), QColor::fromRgbF(rr, rg, rb));
+    }
+    else if (Reason == "SimulatorShowInDocumentView"sv) {
+        // Whoever moved it -- the overlay button, the preferences
+        // page, a script -- the button shows the current wish
+        // (docs/CAMSimRenderPort.md sec 11.11).
+        mDlg.setDocViewEnabled(hGrp->GetBool("SimulatorShowInDocumentView", true));
     }
 }
 
