@@ -913,10 +913,13 @@ PyObject* View3DInventorPy::cyclesViewport(PyObject *args, PyObject *kwds)
     const char *device = "CPU";
     int samples = 256;
     double timeLimit = 0.0;
-    PyObject *denoiseObj = Py_False;
-    static char *kwlist[] = {"enable", "device", "samples", "timeLimit", "denoise", nullptr};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|OsidO", kwlist,
-                                     &enableObj, &device, &samples, &timeLimit, &denoiseObj))
+    PyObject *denoiseObj = Py_True;
+    int pixelSize = 1;
+    static char *kwlist[] = {"enable", "device", "samples", "timeLimit", "denoise", "pixelSize",
+                             nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|OsidOi", kwlist,
+                                     &enableObj, &device, &samples, &timeLimit, &denoiseObj,
+                                     &pixelSize))
         return nullptr;
 
     View3DInventorViewer *viewer = getView3DInventorPtr()->getViewer();
@@ -928,6 +931,7 @@ PyObject* View3DInventorPy::cyclesViewport(PyObject *args, PyObject *kwds)
         options.samples = samples;
         options.timeLimit = timeLimit;
         options.denoise = PyObject_IsTrue(denoiseObj) > 0;
+        options.pixelSize = pixelSize;
         ok = viewer->setCyclesViewport(&options, &error);
     }
     else {

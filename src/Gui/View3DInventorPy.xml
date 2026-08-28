@@ -210,7 +210,7 @@ form: lines, points, gizmos, effect volumes), seconds.</UserDocu>
     </Methode>
     <Methode Name="cyclesViewport" Keyword="true">
       <Documentation>
-        <UserDocu>cyclesViewport(enable=True, device='CPU', samples=256, timeLimit=0.0, denoise=False)
+        <UserDocu>cyclesViewport(enable=True, device='CPU', samples=256, timeLimit=0.0, denoise=True, pixelSize=1)
 
 Path trace this view live with the Cycles engine
 (docs/CyclesIntegration.md phase 4): a session on the named device
@@ -218,7 +218,9 @@ Path trace this view live with the Cycles engine
 and its progressively refined frame is drawn as the base layer of
 every frame, under the selection highlight. samples is the budget
 per pixel before the render rests, timeLimit a cap in seconds (0 =
-none), denoise applies OpenImageDenoise. enable=False turns it off.
+none), denoise applies OpenImageDenoise (fast quality) as the frame
+refines, pixelSize renders at 1/n resolution and scales up (Blender's
+preview pixel size). enable=False turns it off.
 Requires the render-cache bridge (render cache mode 3), a render
 backend and a build with BUILD_CYCLES.</UserDocu>
       </Documentation>

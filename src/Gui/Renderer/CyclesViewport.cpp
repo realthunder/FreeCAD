@@ -184,6 +184,7 @@ public:
         sp.headless = false;
         sp.use_resolution_divider = true;
         sp.time_limit = options.timeLimit;
+        sp.pixel_size = options.pixelSize > 0 ? options.pixelSize : 1;
         sessionParams = sp;
 
         ccl::SceneParams scp;
@@ -207,9 +208,17 @@ public:
 
         ccl::Scene *scene = session->scene.get();
         if (options.denoise) {
+            // The viewport's denoise is Blender's: fast quality and
+            // prefilter, on the render device where OpenImageDenoise
+            // supports it (Cycles falls back to its CPU denoiser
+            // otherwise). The high quality the offline render would
+            // want costs more per scheduled denoise than the samples
+            // between them.
             scene->integrator->set_use_denoise(true);
             scene->integrator->set_denoiser_type(ccl::DENOISER_OPENIMAGEDENOISE);
-            scene->integrator->set_denoise_use_gpu(false);
+            scene->integrator->set_denoiser_quality(ccl::DENOISER_QUALITY_FAST);
+            scene->integrator->set_denoiser_prefilter(ccl::DENOISER_PREFILTER_FAST);
+            scene->integrator->set_denoise_use_gpu(true);
         }
         ccl::Pass *pass = scene->create_node<ccl::Pass>();
         pass->set_name(ccl::ustring("combined"));

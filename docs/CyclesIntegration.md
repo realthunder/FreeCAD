@@ -520,6 +520,41 @@ clipped solids still draw in colour BEFORE the blit (they are covered
 by it), which is moot until clipping is translated (section 6.2's
 list).
 
+### 5.9 Budgets, denoise, pixel size (phase 4 step 13, built 2026-08-28)
+
+What step 13 asked for was mostly already in the session's own
+behaviour once step 11 ran it interactively; what remained was the
+knobs and one setting that mattered:
+
+- **Cancel on camera move** is `Session::reset()` on `setCamera()`
+  (section 5.7), and the coarse restart is Cycles' resolution
+  divider, on for the viewport session. `ViewportOptions::pixelSize`
+  (`SessionParams::pixel_size`, Blender's preview pixel size) renders
+  at 1/n resolution and scales up for a machine that needs it; 1 by
+  default.
+- **Budgets**: `samples` (256 by default) and `timeLimit` seconds
+  (0 = none) on `ViewportOptions`, reachable from
+  `view.cyclesViewport()`. No preference or UI yet -- section 5.4's
+  "which view" question decides where those live.
+- **Denoise is on by default**, and the setting that made that
+  possible is the QUALITY. With the integrator's default
+  (`DENOISER_QUALITY_HIGH`, accurate prefilter, on the CPU) the
+  interactive scheduler's periodic denoise cost more than the samples
+  between: CUDA reached 8 of 64 samples in 8 s where it finishes 64
+  in 1.5 s undenoised, and the Debug CPU 10 of 16 in 15 s. Blender's
+  viewport uses the fast quality and prefilter, and with those (and
+  `denoise_use_gpu` left true, so OpenImageDenoise runs on the render
+  device where it supports it and Cycles falls back to its CPU
+  denoiser otherwise) CUDA settles all 64 samples inside the same
+  8 s and the CPU its 16 inside 15 s. The offline `cyclesRender` is
+  unchanged: no denoise, as before.
+
+Verified 2026-08-28 with the step-11/12 probe and `denoise=True`:
+the settled frame is clean at 16 spp on the CPU, and the
+live-vs-offline mean moves from 2.8 to 3.5-5.0/255 -- the denoised
+frame against a noisy 16-64 spp reference, which is the difference
+one expects, not a defect.
+
 ## 6. Scene translation
 
 The bulk of the real work, and the fork is unusually well placed for
@@ -759,8 +794,8 @@ shader translations remain.
 9. Render cache -> Mesh/Object/Camera/Background, geometry first.
 10. Materials, per-face slots, environment.
 
-Phase 4 -- the viewport. **Steps 11 and 12 done 2026-08-28**
-(sections 5.7 and 5.8).
+Phase 4 -- the viewport. **Done 2026-08-28**: steps 11, 12 and 13
+(sections 5.7, 5.8 and 5.9).
 
 11. `DisplayDriver` (section 5.2) -> staging buffer -> texture ->
     `FrameConsumer` blit, on-top highlight route (section 5.3).

@@ -110,7 +110,10 @@ struct ViewportOptions {
     std::string device = "CPU";  ///< device type, as devices() names it
     int samples = 256;           ///< samples per pixel before it rests
     double timeLimit = 0.0;      ///< seconds per render, 0 = none
-    bool denoise = false;        ///< OpenImageDenoise on the result
+    bool denoise = true;         ///< OpenImageDenoise (fast quality) on
+                                 ///< the refining result
+    int pixelSize = 1;           ///< render at 1/n resolution and scale
+                                 ///< up (Blender's preview pixel size)
 };
 
 /// What the viewport session is doing, for a status line or a probe.
