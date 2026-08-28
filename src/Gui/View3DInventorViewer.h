@@ -760,6 +760,21 @@ public:
                            std::string *error);
     /// What the live Cycles session is doing; false when there is none.
     bool cyclesViewportStatus(Render::Cycles::ViewportStatus &status) const;
+    /** Feed this viewer's live Cycles session as one cell of a unified
+     * canvas (docs/CyclesIntegration.md sec 5.11).
+     *
+     * The canvas calls this for every cell before its renderSubViews
+     * frame, with the cell's camera matrices at its \a width x \a
+     * height and the cell that feeds the shared backend: the session
+     * takes its scene from \a feeder's render cache -- the one
+     * traversal a canvas runs -- and its camera from here, and its
+     * consumer is registered under this cell's sub-view id so it draws
+     * into this cell alone. Returns false, doing nothing, when this
+     * viewer has no Cycles session or is not a canvas cell.
+     */
+    bool feedCanvasCyclesViewport(const QColor &col, const SbMatrix &view,
+                                  const SbMatrix &proj, int width, int height,
+                                  View3DInventorViewer *feeder);
 
     struct Private;
     friend struct Private;

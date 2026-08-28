@@ -247,6 +247,11 @@ void BGFXRenderer::dropSubView(int id)
 {
     if (id == 0)
         return;
+    // The consumer registered under the sub-view goes with it: its
+    // surface was bound to the bank's targets, and the host that
+    // registered it is being released from the canvas.
+    if (pimpl->consumerSlots.erase(id))
+        pimpl->clearConsumer();
     auto it = _BGFXLib.views.find(pimpl->widget);
     if (it == _BGFXLib.views.end())
         return;
@@ -844,18 +849,27 @@ void BGFXRenderer::removeOverlay(int id)
         pimpl->sceneDirty = true;
 }
 
-void BGFXRenderer::setFrameConsumer(FrameConsumer *consumer)
+void BGFXRenderer::setFrameConsumer(FrameConsumer *consumer, int subView)
 {
-    pimpl->frameConsumer = nullptr;
-    pimpl->consumerSurface.reset();
-    pimpl->consumerPasses = 0;
-    pimpl->consumerOverlayPasses = 0;
+    // The resolved copy may name the slot being replaced; the next
+    // submit resolves its own.
+    pimpl->clearConsumer();
+    auto it = pimpl->consumerSlots.find(subView);
+    if (it != pimpl->consumerSlots.end()) {
+        it->second.consumer = nullptr;
+        it->second.surface.reset();
+        it->second.passes = 0;
+        it->second.overlayPasses = 0;
+        if (!consumer && !it->second.externalBase)
+            pimpl->consumerSlots.erase(it);
+    }
     if (!consumer)
         return;
 #ifdef FC_RENDERER_STANDALONE
     // No draw facade in the browser tier: nothing outside the engine
     // links against it there, and BGFXDrawDevice.cpp is not built.
     (void)consumer;
+    (void)subView;
 #else
     const unsigned want = consumer->framePasses();
     const unsigned overlay = consumer->overlayPasses();
@@ -874,17 +888,20 @@ void BGFXRenderer::setFrameConsumer(FrameConsumer *consumer)
                    " attached.");
         return;
     }
-    pimpl->consumerSurface = std::move(surface);
-    pimpl->consumerPasses = want;
-    pimpl->consumerOverlayPasses = overlay;
-    pimpl->frameConsumer = consumer;
+    auto &slot = pimpl->consumerSlots[subView];
+    slot.surface = std::move(surface);
+    slot.passes = want;
+    slot.overlayPasses = overlay;
+    slot.consumer = consumer;
 #endif
 }
 
-DrawSurface *BGFXRenderer::frameConsumerSurface()
+DrawSurface *BGFXRenderer::frameConsumerSurface(int subView)
 {
-    return pimpl->consumerSurface ? &pimpl->consumerSurface->surface()
-                                  : nullptr;
+    auto it = pimpl->consumerSlots.find(subView);
+    if (it == pimpl->consumerSlots.end() || !it->second.surface)
+        return nullptr;
+    return &it->second.surface->surface();
 }
 
 void BGFXRenderer::setHighlight(DrawCallList &&draws, bool wholeOnTop)
@@ -911,12 +928,21 @@ void BGFXRenderer::setHiddenLineConfig(const HiddenLineConfig &config)
     }
 }
 
-void BGFXRenderer::setExternalBaseLayer(bool on)
+void BGFXRenderer::setExternalBaseLayer(bool on, int subView)
 {
-    if (pimpl->externalBase != on) {
-        pimpl->externalBase = on;
-        pimpl->sceneDirty = true;
+    auto it = pimpl->consumerSlots.find(subView);
+    if (it == pimpl->consumerSlots.end()) {
+        if (!on)
+            return;
+        it = pimpl->consumerSlots.emplace(subView, Private::ConsumerSlot()).first;
     }
+    if (it->second.externalBase == on)
+        return;
+    it->second.externalBase = on;
+    pimpl->sceneDirty = true;
+    if (!on && !it->second.consumer)
+        pimpl->consumerSlots.erase(it);
+    pimpl->clearConsumer();
 }
 
 void BGFXRenderer::setSectionConfig(const SectionConfig &config)

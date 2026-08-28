@@ -313,15 +313,16 @@ Build the on-top route first; it unblocks everything else.
 
 ### 5.4 Which view
 
-Open. Two shapes, both viable:
+Both shapes are built; the UI for either is still open.
 
 - A **render mode toggled on an existing 3D view** -- fewest moving
-  parts, and the camera is already the right one.
+  parts, and the camera is already the right one. This is what
+  `view.cyclesViewport(...)` does (section 5.7).
 - A **Cycles cell beside the normal view**, with a linked camera, using
-  the split-view/ViewArea canvas that just landed
-  (`docs/SplitViews.md`). Model on the left, path-traced preview on the
-  right. This falls out of the placement work almost for free and is
-  the nicer product; it is worth prototyping once the mode works.
+  the split-view/ViewArea canvas (`docs/SplitViews.md`). Model on the
+  left, path-traced preview on the right. Section 5.11: the same call
+  on a cell of a unified canvas path traces that cell alone, and
+  `view.bindView(other)` links the cameras.
 
 ### 5.5 Picking
 
@@ -624,6 +625,128 @@ already has on the device.
   `updates` (restates in place), in the Python status dict, so a probe
   can assert the session count stays at one.
 
+### 5.11 A Cycles cell beside the normal view (built 2026-08-28)
+
+The unified canvas (`docs/SplitViews.md` sec 13) draws every 3D cell
+of a split view as one sub-view of ONE backend, in one
+`Renderer::renderSubViews` frame. Turning the viewport on in a cell
+did nothing there, for two reasons, and one of the three pieces the
+plan named turned out to be already in place.
+
+- **The feed ran only on the single-view frame.** `feedCyclesViewport`
+  was called from `View3DInventorViewer::renderScene()`, which a
+  canvas cell never runs -- `ViewAreaCanvas::paintGL` renders all the
+  cells itself. So a cell's session was never given a scene or a
+  camera.
+- **The consumer was one per backend.** `setFrameConsumer` held a
+  single consumer and a single `externalBase` flag, and the canvas
+  shares one backend across its cells. Had the feed run, every cell
+  of the canvas would have drawn the same path-traced image and given
+  up its raster shading.
+- **The blit was already per cell.** The plan's piece (b) -- scope the
+  consumer's draw to the sub-view rect -- was free: `renderSubViews`
+  renders each sub-view into that sub-view's BANK targets (sized to
+  the cell, `captureWidth` as the sizing channel) and then blits the
+  bank into the cell rect, and `FrameBind` hands the consumer the
+  bank's framebuffer and size. `hostTarget()` inside a sub-view submit
+  IS the cell.
+
+What was built:
+
+- **Consumer slots per sub-view.** `Renderer::setFrameConsumer`,
+  `frameConsumerSurface` and `setExternalBaseLayer` take a `subView`
+  (default 0, the implicit full-canvas sub-view every plain `render()`
+  draws, so the CAM simulator and the single-view path are unchanged).
+  The bgfx backend keeps a `std::map<int, ConsumerSlot>` -- consumer,
+  surface, pass counts, external-base flag -- and the frame path
+  resolves the slot of the submit in progress right where it swaps in
+  the sub-view's bank (`selectConsumer` beside `selectSubView` in
+  `BGFXFrame.cpp`), into the same members every downstream read
+  already used, so the pass declarations, the depth-only rasterization
+  and the bind all follow per cell without a use site changing.
+  `dropSubView` drops the slot with the bank.
+- **The feed from the canvas.** `ViewAreaCanvas::paintGL` calls
+  `View3DInventorViewer::feedCanvasCyclesViewport` for every cell it
+  draws, before `renderSubViews`, with the cell's camera at the cell's
+  size, the frame's background, and the FEEDER viewer. The scene comes
+  from the feeder's render cache: a non-feeder cell is hidden and
+  never traverses (its own cache is empty or stale), while the feeder
+  is exactly the traversal that stated the backend's scene -- so the
+  generation counter the feed compares against describes the same
+  draws. The camera and the render settings (PBR, output transform,
+  light, background) are the cell's own; the consumer is registered
+  under the cell's claim id.
+- **Detach on every backend swap.** `Private::detachCyclesConsumer()`
+  takes the consumer off the backend it is registered on, if that is
+  still the one the viewer holds, and every path that replaces
+  `renderer` calls it first: `adoptRenderer` (both joining a canvas
+  and getting a backend back), `setRendererType`, and turning the
+  viewport off. With a lone backend this was moot -- the registration
+  died with the backend -- but a canvas's instance outlives the cell
+  that leaves it, and would go on calling a consumer whose view is
+  gone. The feed re-registers on the next frame whenever the host, the
+  sub-view or the surface differ from what it registered
+  (`cyclesSubView` beside `cyclesHost`).
+
+Behaviour: a cell path traces under its own camera and its own
+session while the cell beside it rasterizes; two cells may both path
+trace; an edit restates every cell's session in place from the one
+cache (section 5.10); turning a cell off returns it to the raster
+frame; closing a cell -- session running -- tears its session down
+with the view, and the survivor, handed its own backend, keeps
+tracing on the single-view path.
+
+Known gaps:
+
+- `view.cyclesRender(...)` (the offline render, section 6.2) on a
+  non-feeder cell reads that cell's own cache, which the canvas does
+  not traverse. The probe takes its references through the feeder
+  with the cell's camera copied in; a product command would want the
+  same detour, or the offline path taught the feeder as the live one
+  was.
+- The cell's raster neighbours show the feeder's render settings (one
+  backend, one config) while the Cycles cell renders its own. Same
+  document, usually the same settings; noted, not addressed.
+- No UI beyond the Python call and `bindView` for the linked camera:
+  the "which view" question of section 5.4 is answered on the
+  mechanism side only.
+
+Verified under xvfb with a probe (scratchpad `cycles_cell_probe.py`,
+`probe.sh <device> <spp> <tag>`; unified canvas on, NaviCube and
+corner cross off, output transform sRGB): split right, the original
+cell active and feeding, the new one on the right. The probe grabs the
+canvas framebuffer, crops each cell's rect, and compares against an
+offline `cyclesRender` of that cell's camera at the cell's size; the
+non-feeder cell's reference goes through the feeder with the camera
+copied by `copyFieldValues` (the `getCamera()`/`setCamera()` string
+round trip reframes the view).
+
+- CPU, 16 spp, 28 checks, 0 failures. Cycles on in the non-feeder
+  cell alone: its frame matches the offline render at mean 0.04/255,
+  the feeder cell is still the raster frame (mean 0.0 against the
+  frame before), 5 objects from the feeder's cache, one session. Both
+  cells on: 0.03 and 0.04. The right cell's camera moved to a top
+  view: 0.03 both. An edit (the link moves): one `restated` object in
+  each session, no new session, 3.1 and 2.6 (the sampling restarts on
+  a different pattern). Right cell off: back to the raster frame
+  (mean 28 against its traced frame), the left keeps its session.
+  Closing the active cell with its session running: the survivor gets
+  its own backend, the canvas stands down, and the lone view's
+  session refines on the single-view path (5.3, the feature lines
+  the offline render has none of).
+- CUDA, 32 spp, the same 28 checks, 0 failures: 0.04 / 0.03 and 0.04
+  / 0.02 and 0.03 / 3.0 and 2.4 / 0.03 for the lone view, every settle
+  under a second.
+
+Two probe traps, neither a code defect: the first runs failed every
+compare at mean 13-17 with a black band under each cell -- the report
+view had auto-raised on a console message and taken 30 px off the
+canvas, and the fixed-size crops padded the missing rows; the
+`OutputWindow/checkShowReportView*` prefs off cure it. And the canvas
+frame draws no feature lines in these cells (raster or traced), so the
+edge-over-blit route of section 5.8 is exercised only by the lone-view
+step here.
+
 ## 6. Scene translation
 
 The bulk of the real work, and the fork is unusually well placed for
@@ -866,7 +989,9 @@ shader translations remain.
 Phase 4 -- the viewport. **Done 2026-08-28**: steps 11, 12 and 13
 (sections 5.7, 5.8 and 5.9), then the incremental scene update of
 section 5.10 -- a restate under a running session edits its scene in
-place instead of starting another.
+place instead of starting another -- and the Cycles cell of a split
+view (section 5.11), which needed the frame consumer scoped per
+sub-view.
 
 11. `DisplayDriver` (section 5.2) -> staging buffer -> texture ->
     `FrameConsumer` blit, on-top highlight route (section 5.3).

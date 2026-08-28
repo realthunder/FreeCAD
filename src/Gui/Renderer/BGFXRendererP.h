@@ -8803,26 +8803,66 @@ public:
     };
     std::map<int, OverlayFeed> overlays;
 
-    /// The module drawing its own passes inside this renderer's frames
+    /// A module drawing its own passes inside this renderer's frames
     /// (Renderer::setFrameConsumer, docs/CAMSimRenderPort.md sec 8),
     /// and the surface it draws through. The surface is sized to the
     /// consumer's pass count at registration and owned here, so a
     /// consumer that goes away cannot leave one behind, and it is null
     /// whenever the backend device is down -- in which case the
     /// consumer never gets called and keeps its own path.
+    struct ConsumerSlot {
+        Render::FrameConsumer *consumer = nullptr;
+        std::unique_ptr<Render::BGFXHostSurface> surface;
+        /// Passes the surface was built for; a consumer that changes
+        /// its count has to re-register, and this is what notices.
+        unsigned passes = 0;
+        /// Of passes, the trailing overlay-run count
+        /// (FrameConsumer::overlayPasses; the rest are the scene run).
+        unsigned overlayPasses = 0;
+        bool externalBase = false;  ///< Renderer::setExternalBaseLayer
+    };
+    /// One slot per sub-view id (Renderer::setFrameConsumer's subView;
+    /// 0 is the plain-render full-canvas sub-view), so that each cell
+    /// of a split-view frame can carry a consumer of its own
+    /// (docs/CyclesIntegration.md sec 5.11). A slot's surface draws
+    /// into that sub-view's bank targets: the consumer's hostTarget()
+    /// is the cell's scene target, not the canvas.
+    std::map<int, ConsumerSlot> consumerSlots;
+    /// The slot of the submit in progress, resolved by
+    /// selectConsumer() where the frame swaps in the sub-view's bank;
+    /// every read in the frame path goes through these. Cleared
+    /// whenever the slots change, so nothing dangles between frames.
     Render::FrameConsumer *frameConsumer = nullptr;
-    std::unique_ptr<Render::BGFXHostSurface> consumerSurface;
-    /// Passes consumerSurface was built for; a consumer that changes
-    /// its count has to re-register, and this is what notices.
+    Render::BGFXHostSurface *consumerSurface = nullptr;
     unsigned consumerPasses = 0;
-    /// Of consumerPasses, the trailing overlay-run count
-    /// (FrameConsumer::overlayPasses; the rest are the scene run).
     unsigned consumerOverlayPasses = 0;
+    bool externalBase = false;
+    void selectConsumer(int subView)
+    {
+        auto it = consumerSlots.find(subView);
+        if (it == consumerSlots.end()) {
+            clearConsumer();
+            return;
+        }
+        const ConsumerSlot &slot = it->second;
+        frameConsumer = slot.consumer;
+        consumerSurface = slot.surface.get();
+        consumerPasses = slot.passes;
+        consumerOverlayPasses = slot.overlayPasses;
+        externalBase = slot.externalBase;
+    }
+    void clearConsumer()
+    {
+        frameConsumer = nullptr;
+        consumerSurface = nullptr;
+        consumerPasses = 0;
+        consumerOverlayPasses = 0;
+        externalBase = false;
+    }
     Render::DrawCallList highlight;
     std::unordered_set<uint64_t> hiddenKeys;
     std::unordered_set<const Render::DrawCall *> dupDraws;
     Render::HiddenLineConfig hlconfig;
-    bool externalBase = false;  ///< Renderer::setExternalBaseLayer
     Render::SectionConfig secconf;
     Render::AOConfig aoconf;
     Render::CavityConfig cavityconf;

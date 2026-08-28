@@ -152,6 +152,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // rather than carried: the cell owns it, the backend only filters
     // by it (docs/CoinRetirement.md 5.7).
     view->drawStyleMask = subCtx.active ? subCtx.style : Render::StyleAsIs;
+    // ...and the frame consumer registered under it, if any, with
+    // whether that consumer supplies the sub-view's shaded image
+    // (docs/CyclesIntegration.md sec 5.11). Resolved per submit so a
+    // path-traced cell and a rasterized one share the one frame.
+    selectConsumer(subCtx.active ? subCtx.id : 0);
 
     // A shader pack that could not supply a core program keeps the
     // view down: without this the torn-down view (no framebuffer)

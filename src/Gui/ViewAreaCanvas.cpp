@@ -575,6 +575,10 @@ void ViewAreaCanvas::paintGL()
     std::vector<ViewAreaCell*> drawnCells;
     drawnCells.reserve(_cells.size());
 
+    // The one background of the frame, stated to the backend here and
+    // handed to the Cycles cells below.
+    QColor col = feeder->feedRendererBackground();
+
     for (auto &c : _cells) {
         auto viewer = viewerOf(c.cell);
         if (!viewer)
@@ -600,6 +604,14 @@ void ViewAreaCanvas::paintGL()
         // (docs/SplitViews.md sec 16.3). Done before the frame, so all
         // the feeds are resident by the time any sub-view renders.
         viewer->updateCanvasOverlays();
+        // A cell path traced by Cycles (docs/CyclesIntegration.md sec
+        // 5.11): its session is fed this cell's camera at the cell's
+        // size and the resident scene -- the feeder's render cache,
+        // the one traversal the canvas runs -- before the frame, and
+        // its consumer is registered under this cell's claim id so it
+        // draws into this cell's bank alone.
+        viewer->feedCanvasCyclesViewport(col, viewMat, projMat, r.width(),
+                                         r.height(), feeder);
 
         Render::Renderer::SubViewFrame s;
         s.id = c.id;
@@ -628,7 +640,6 @@ void ViewAreaCanvas::paintGL()
     }
 
     bool drawn = false;
-    QColor col = feeder->feedRendererBackground();
     if (!subs.empty()) {
         // Built up front so the frame itself allocates nothing: a fresh
         // bank's target set created mid-frame can exhaust the handle
