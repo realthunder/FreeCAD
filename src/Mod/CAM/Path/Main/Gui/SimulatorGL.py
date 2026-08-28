@@ -153,8 +153,11 @@ class _CutMeshSwap:
     def __init__(self, millSim, job, quality):
         self.millSim = millSim
         self.stockObj = job.Stock
-        prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/CAM")
-        self.showInDocView = prefs.GetBool("SimulatorShowInDocumentView", True)
+        # Re-read every poll, never cached: the simulator's overlay
+        # button writes this preference, so a cached copy would keep
+        # re-attaching after the operator switched it off
+        # (docs/CAMSimRenderPort.md sec 11.11).
+        self.prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/CAM")
         self.docAttached = False
         self.savedDocVisibility = None
         self.stockShape = job.Stock.Shape
@@ -192,7 +195,7 @@ class _CutMeshSwap:
         and hide the Stock there -- its uncut wireframe would sit on
         top of the carved one. False from the attach (no renderer to
         borrow) just leaves the document view alone."""
-        if self.docAttached or not self.showInDocView:
+        if self.docAttached or not self._showInDocView():
             return
         if not self.millSim.AttachDocumentView():
             return
@@ -200,6 +203,9 @@ class _CutMeshSwap:
         vobj = self.stockObj.ViewObject
         self.savedDocVisibility = vobj.Visibility
         vobj.Visibility = False
+
+    def _showInDocView(self):
+        return self.prefs.GetBool("SimulatorShowInDocumentView", True)
 
     def _detachDocView(self):
         if not self.docAttached:
@@ -217,6 +223,11 @@ class _CutMeshSwap:
 
     def _poll(self):
         try:
+            # Switched off mid-session (the overlay button or the
+            # preferences page): give the document view back now
+            # rather than at the next mesh landing.
+            if self.docAttached and not self._showInDocView():
+                self._detachDocView()
             playing, motionIndex, fraction = self.millSim.GetProgress()
             key = (motionIndex, round(fraction, 4))
             if playing:

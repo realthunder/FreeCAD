@@ -129,6 +129,18 @@ void DlgCAMSimulator::connectTo(GuiDisplay& gui, Dummy3DViewer& dv)
         mMillSimulator->EnableSsao(b);
     });
 
+    // The document-view attach is driven from Python (_CutMeshSwap),
+    // so the button cannot call it directly: it writes the preference
+    // the driver reads, which is also what the preferences page
+    // writes. CAMSettings observes the group and pushes the value
+    // back onto the button, so the two stay in step whichever one
+    // moved (docs/CAMSimRenderPort.md sec 11.11).
+    connect(&gui, &GuiDisplay::docViewEnableChanged, this, [](bool b) {
+        App::GetApplication()
+            .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/CAM")
+            ->SetBool("SimulatorShowInDocumentView", b);
+    });
+
     connect(&gui, &GuiDisplay::stockVisibleChanged, this, &DlgCAMSimulator::setStockVisible);
     connect(&gui, &GuiDisplay::baseVisibleChanged, this, &DlgCAMSimulator::setBaseVisible);
 
@@ -438,6 +450,13 @@ void DlgCAMSimulator::setPathColor(const QColor& normal, const QColor& rapid)
     const vec3 vnormal = {normal.redF(), normal.greenF(), normal.blueF()};
     const vec3 vrapid = {rapid.redF(), rapid.greenF(), rapid.blueF()};
     mMillSimulator->SetPathColor(vnormal, vrapid);
+}
+
+void DlgCAMSimulator::setDocViewEnabled(bool b)
+{
+    if (mGui) {
+        mGui->setDocViewEnabled(b);
+    }
 }
 
 void DlgCAMSimulator::timerEvent(QTimerEvent* event)

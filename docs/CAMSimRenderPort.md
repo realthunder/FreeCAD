@@ -1845,3 +1845,60 @@ Still open, unchanged by this work: the stock view provider's
 disposition (10.5), and the poll defaults built as proposed
 (11.7.5). The per-host shape is the one split views will reuse
 (docs/SplitViews.md).
+
+### 11.11 The attach toggle in the simulator overlay (2026-08-28)
+
+Section 11.10 left the document-view attach reachable only through
+`Mod/CAM SimulatorShowInDocumentView`, and the driver read that
+preference ONCE, into `_CutMeshSwap.showInDocView`, when the
+simulation panel opened -- so a change applied to the next session,
+not this one. This section closes both: the operator can see and
+drop the second host's GPU cost mid-session from the simulator's own
+overlay.
+
+#### The button
+
+`docViewButton`, a checkable auto-raise `QToolButton` at the end of
+the overlay row in `PathSimulator/AppGL/GuiDisplay.ui`, beside
+`pathButton` and `ssaoButton` whose pattern it follows. It carries an
+`objectName` so a probe can find it, and the icon is the core
+`:/icons/window-new.svg` -- there is no spare `gl_simulator` PNG, and
+"the drawing also goes to another window" is what the metaphor has to
+say. `GuiDisplay` exposes `setDocViewEnabled(bool)` (signal-blocked,
+like the other setters) and emits `docViewEnableChanged(bool)`.
+
+#### One source of truth: the preference
+
+The attach itself is driven from Python (`_CutMeshSwap`, which owns
+the Stock visibility save/restore and the attach/detach timing), so
+the C++ button must NOT call `AttachDocumentView` directly -- the
+driver would re-attach on the next movement and the two would fight.
+Instead:
+
+- the button WRITES `Mod/CAM SimulatorShowInDocumentView`
+  (`DlgCAMSimulator::connectTo`, a lambda on the signal);
+- `CAMSettings` -- already a `ParameterGrp::ObserverType` on that
+  group -- gained a `SimulatorShowInDocumentView` branch that pushes
+  the value back onto the button through
+  `DlgCAMSimulator::setDocViewEnabled`. That is also the
+  initialisation: `applySettings()` fires the same branch, and it
+  runs after `connectTo`, so `mGui` is there;
+- `_CutMeshSwap` re-reads the preference every poll
+  (`_showInDocView()`), and `_poll` detaches at once when it has gone
+  false rather than waiting for the next mesh landing.
+
+So the button, the preference and any future preferences-page
+checkbox all move the same value, in either direction, and the 250 ms
+poll is what "at once" means. The write-observe-setChecked round trip
+does not loop: the setter blocks the button's signal.
+
+#### Wish, not report
+
+The button stays checked when the attach is REFUSED (the document
+view has no renderer to borrow -- render cache outside mode 3, a
+backend that would not start, or the pass budget full). The checked
+state means "do this where it is possible", the tooltip says so, and
+the attach happens by itself once the view can host it, because the
+driver retries on every movement. Reporting the real state instead
+would need the refusal to travel back from Python to the button and
+would flicker with each renderer swap.

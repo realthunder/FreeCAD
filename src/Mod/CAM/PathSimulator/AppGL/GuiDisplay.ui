@@ -181,6 +181,23 @@
        </property>
       </widget>
      </item>
+     <item>
+      <widget class="QToolButton" name="docViewButton">
+       <property name="toolTip">
+        <string>Also draw the simulation in the document's 3D view while it moves. Takes effect where that view can host it; otherwise the setting waits.</string>
+       </property>
+       <property name="icon">
+        <iconset>
+         <normaloff>:/icons/window-new.svg</normaloff>:/icons/window-new.svg</iconset>
+       </property>
+       <property name="checkable">
+        <bool>true</bool>
+       </property>
+       <property name="autoRaise">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
     </layout>
    </item>
   </layout>
