@@ -76,6 +76,10 @@ struct SceneInput {
     LightConfig light;
     Background background;
     CameraInput camera;
+    /// How a section is filled (docs/CyclesIntegration.md sec 6.4).
+    /// The planes themselves ride the draws' materials; this is the
+    /// frame-level style the caps are built to.
+    SectionConfig section;
 };
 
 /// What the translation made of a SceneInput, for the caller to

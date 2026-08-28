@@ -701,6 +701,7 @@ struct View3DInventorViewer::Private
     Render::PBRConfig cyclesPbr;
     Render::OutputConfig cyclesOutput;
     Render::LightConfig cyclesLight;
+    Render::SectionConfig cyclesSection;
     Render::Background cyclesBackground;
     /// Feed the session: the camera at \a width x \a height, the scene
     /// from \a manager's cache when the backend's generation or a
@@ -2157,6 +2158,7 @@ bool View3DInventorViewer::renderWithCycles(const std::string &path, int width, 
     section.noOnTop = Gui::sectionStyle(settings, "NoOnTop", ViewParams::getNoSectionOnTop());
     section.concave = Gui::sectionStyle(settings, "Concave", ViewParams::getSectionConcave());
     input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
+    input.section = RendererBridge::translateSectionConfig(settings);
     input.pbr = RendererBridge::translatePBRConfig(settings);
     input.output = RendererBridge::translateOutputConfig(settings);
     input.light = RendererBridge::translateLightConfig(nullptr, settings);
@@ -2280,6 +2282,7 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
 
     App::PropertyContainer *settings = renderSettings();
     Render::PBRConfig pbr = RendererBridge::translatePBRConfig(settings);
+    Render::SectionConfig secconf = RendererBridge::translateSectionConfig(settings);
     Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
     Render::LightConfig light = RendererBridge::translateLightConfig(nullptr, settings);
     Render::Background background = backgroundFeed(col);
@@ -2290,7 +2293,7 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
         && background.midColor == cyclesBackground.midColor
         && background.hasMid == cyclesBackground.hasMid;
     if (cyclesFed && gen == cyclesSceneGen && pbr == cyclesPbr && output == cyclesOutput
-        && light == cyclesLight && sameBackground) {
+        && light == cyclesLight && secconf == cyclesSection && sameBackground) {
         vp->setCamera(camera);
         return;
     }
@@ -2302,6 +2305,7 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
     section.noOnTop = Gui::sectionStyle(settings, "NoOnTop", ViewParams::getNoSectionOnTop());
     section.concave = Gui::sectionStyle(settings, "Concave", ViewParams::getSectionConcave());
     input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
+    input.section = secconf;
     input.pbr = pbr;
     input.output = output;
     input.light = light;
@@ -2313,6 +2317,7 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
     cyclesPbr = pbr;
     cyclesOutput = output;
     cyclesLight = light;
+    cyclesSection = secconf;
     cyclesBackground = background;
 }
 

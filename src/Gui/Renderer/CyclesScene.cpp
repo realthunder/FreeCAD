@@ -153,6 +153,198 @@ ccl::Transform frameAlongZ(const float z[3], const float origin[3])
     return t;
 }
 
+/// The cap fill colour of a section, as the GL renderer and the bgfx
+/// backend compute it: the complement, with the muddy middle pushed
+/// to a readable grey and near-black lifted off the floor. Alpha is
+/// the material's.
+uint32_t invertCapColor(uint32_t col)
+{
+    auto inv = [](uint32_t c) -> uint32_t { return (c > 120 && c < 140) ? 180 : 255 - c; };
+    uint32_t r = inv((col >> 24) & 0xff);
+    uint32_t g = inv((col >> 16) & 0xff);
+    uint32_t b = inv((col >> 8) & 0xff);
+    if (r + g + b < 10)
+        r = g = b = 50;
+    return (r << 24) | (g << 16) | (b << 8) | (col & 0xff);
+}
+
+/// One filled cross-section: the triangles of \a mesh in [start,
+/// start + count) cut by \a plane (in the MESH's own space, the
+/// caller having pulled it back through the model transform), filled,
+/// and returned as local-space triangle corners -- 9 floats each.
+///
+/// Every triangle that crosses the plane contributes one segment, and
+/// those segments are the closed boundary of the cut region. The fill
+/// is a trapezoidal sweep in the plane's own 2D frame: sort the
+/// segment endpoints by height, and between two consecutive heights
+/// no segment begins or ends, so each span across that band is
+/// bounded by two straight edges and the quad between them IS the
+/// region -- exact, not a stair-step. Pairing the crossings even-odd
+/// is what fills a section with a hole in it (a tube, a bore)
+/// correctly, and it asks nothing of the mesh's winding, which is
+/// why this needs no loop chaining and no ear clipping.
+///
+/// The cut face points AWAY from the kept half (the solid is on the
+/// plane's positive side), so the triangles are wound for a geometric
+/// normal of -n.
+std::vector<float> buildCapTriangles(const MeshData &mesh,
+                                     int start,
+                                     int count,
+                                     const float plane[4])
+{
+    std::vector<float> out;
+    const float len = std::sqrt(plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2]);
+    if (len < 1.0e-12f)
+        return out;
+    const float N[3] = {plane[0] / len, plane[1] / len, plane[2] / len};
+    const float W = plane[3] / len;
+
+    // The plane's own frame: a foot point, and u x v = N.
+    float helper[3] = {0.0f, 0.0f, 1.0f};
+    if (std::fabs(N[2]) >= 0.9f) {
+        helper[0] = 1.0f;
+        helper[2] = 0.0f;
+    }
+    float u[3] = {helper[1] * N[2] - helper[2] * N[1],
+                  helper[2] * N[0] - helper[0] * N[2],
+                  helper[0] * N[1] - helper[1] * N[0]};
+    const float ulen = std::sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+    if (ulen < 1.0e-12f)
+        return out;
+    for (float &c : u)
+        c /= ulen;
+    const float v[3] = {N[1] * u[2] - N[2] * u[1],
+                        N[2] * u[0] - N[0] * u[2],
+                        N[0] * u[1] - N[1] * u[0]};
+    const float origin[3] = {-W * N[0], -W * N[1], -W * N[2]};
+
+    // The boundary segments, in the plane's 2D frame.
+    struct Seg {
+        float x0, y0, x1, y1;  // y0 <= y1
+    };
+    std::vector<Seg> segs;
+    const int32_t *idx = mesh.triangleIndices + start;
+    for (int t = 0; t + 2 < count; t += 3) {
+        float p[3][3];
+        float d[3];
+        bool bad = false;
+        for (int j = 0; j < 3; ++j) {
+            const int32_t vi = idx[t + j];
+            if (vi < 0 || vi >= mesh.numVertices) {
+                bad = true;
+                break;
+            }
+            const float *src = mesh.positions + size_t(vi) * 3;
+            std::copy(src, src + 3, p[j]);
+            d[j] = N[0] * p[j][0] + N[1] * p[j][1] + N[2] * p[j][2] + W;
+        }
+        if (bad)
+            continue;
+        float pts[2][2];
+        int n = 0;
+        for (int e = 0; e < 3 && n < 3; ++e) {
+            const int a = e;
+            const int b = (e + 1) % 3;
+            // A vertex exactly on the plane counts as kept, so a
+            // triangle yields either no crossing or exactly two.
+            if ((d[a] < 0.0f) == (d[b] < 0.0f))
+                continue;
+            const float f = d[a] / (d[a] - d[b]);
+            float q[3];
+            for (int k = 0; k < 3; ++k)
+                q[k] = p[a][k] + (p[b][k] - p[a][k]) * f - origin[k];
+            if (n < 2) {
+                pts[n][0] = q[0] * u[0] + q[1] * u[1] + q[2] * u[2];
+                pts[n][1] = q[0] * v[0] + q[1] * v[1] + q[2] * v[2];
+            }
+            ++n;
+        }
+        if (n != 2)
+            continue;
+        Seg seg;
+        if (pts[0][1] <= pts[1][1])
+            seg = Seg{pts[0][0], pts[0][1], pts[1][0], pts[1][1]};
+        else
+            seg = Seg{pts[1][0], pts[1][1], pts[0][0], pts[0][1]};
+        if (seg.y1 - seg.y0 > 0.0f)
+            segs.push_back(seg);
+    }
+    if (segs.empty())
+        return out;
+
+    // Sweep the bands. Sorting the segments by their lower end lets
+    // the active set be maintained instead of rescanned, which keeps
+    // a section of a million-triangle solid linear in its segments.
+    std::vector<float> heights;
+    heights.reserve(segs.size() * 2);
+    for (const Seg &sg : segs) {
+        heights.push_back(sg.y0);
+        heights.push_back(sg.y1);
+    }
+    std::sort(heights.begin(), heights.end());
+    heights.erase(std::unique(heights.begin(), heights.end()), heights.end());
+    std::vector<const Seg *> order;
+    order.reserve(segs.size());
+    for (const Seg &sg : segs)
+        order.push_back(&sg);
+    std::sort(order.begin(), order.end(),
+              [](const Seg *a, const Seg *b) { return a->y0 < b->y0; });
+
+    auto xAt = [](const Seg &sg, float y) {
+        return sg.x0 + (sg.x1 - sg.x0) * (y - sg.y0) / (sg.y1 - sg.y0);
+    };
+    auto emit = [&](float x, float y) {
+        for (int k = 0; k < 3; ++k)
+            out.push_back(origin[k] + x * u[k] + y * v[k]);
+    };
+
+    std::vector<const Seg *> active;
+    std::vector<std::pair<float, const Seg *>> crossings;
+    size_t next = 0;
+    for (size_t band = 0; band + 1 < heights.size(); ++band) {
+        const float lo = heights[band];
+        const float hi = heights[band + 1];
+        if (hi - lo <= 0.0f)
+            continue;
+        while (next < order.size() && order[next]->y0 <= lo)
+            active.push_back(order[next++]);
+        active.erase(std::remove_if(active.begin(), active.end(),
+                                    [lo](const Seg *sg) { return sg->y1 <= lo; }),
+                     active.end());
+        const float mid = 0.5f * (lo + hi);
+        crossings.clear();
+        for (const Seg *sg : active) {
+            if (sg->y0 > mid || sg->y1 < mid)
+                continue;
+            crossings.emplace_back(xAt(*sg, mid), sg);
+        }
+        std::sort(crossings.begin(), crossings.end(),
+                  [](const auto &a, const auto &b) { return a.first < b.first; });
+        // Even-odd: between the first and second crossing is inside,
+        // between the second and third outside, and so on -- which is
+        // what makes a bore in the section come out empty.
+        for (size_t i = 0; i + 1 < crossings.size(); i += 2) {
+            const Seg &a = *crossings[i].second;
+            const Seg &b = *crossings[i + 1].second;
+            const float axl = xAt(a, lo);
+            const float axh = xAt(a, hi);
+            const float bxl = xAt(b, lo);
+            const float bxh = xAt(b, hi);
+            if (bxl - axl <= 0.0f && bxh - axh <= 0.0f)
+                continue;
+            // Wound for a -N geometric normal: the cut face looks out
+            // of the solid, which sits on the plane's positive side.
+            emit(axl, lo);
+            emit(bxh, hi);
+            emit(bxl, lo);
+            emit(axl, lo);
+            emit(axh, hi);
+            emit(bxh, hi);
+        }
+    }
+    return out;
+}
+
 /// The environment baked to an equirectangular float picture the
 /// engine's image manager serves to the world shader. Baked, rather
 /// than described, because the procedural presets are C++ functions
@@ -249,7 +441,7 @@ bool SceneTranslator::translate(const SceneInput &input, RenderReport &report)
     report.skipped = 0;
     report.added = report.removed = report.restated = report.built = report.released = 0;
     for (const DrawCall &draw : input.draws) {
-        if (!translateDraw(draw, input.pbr, spare, report, changed)) {
+        if (!translateDraw(draw, input.pbr, input.section, spare, report, changed)) {
             ++report.skipped;
             continue;
         }
@@ -719,6 +911,7 @@ ccl::Shader *SceneTranslator::attributeShader(const Clip &clip)
 
 bool SceneTranslator::translateDraw(const DrawCall &draw,
                                     const PBRConfig &pbr,
+                                    const SectionConfig &section,
                                     Spare &spare,
                                     RenderReport &report,
                                     bool &changed)
@@ -893,7 +1086,148 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
     }
     inst.object = object;
     instances.push_back(std::move(inst));
+
+    translateCaps(draw, section, uniform, start, count, spare, report, changed);
     return true;
+}
+
+void SceneTranslator::translateCaps(const DrawCall &draw,
+                                    const SectionConfig &section,
+                                    const Surface &uniform,
+                                    int start,
+                                    int count,
+                                    Spare &spare,
+                                    RenderReport &report,
+                                    bool &changed)
+{
+    const Material &m = draw.material;
+    // The eligibility the bgfx backend uses for its stencil caps, so
+    // the two engines cap the same draws: a whole-object draw of a
+    // solid, sectioned, and the style asking for a fill.
+    if (m.numclipplanes == 0 || draw.partIndex >= 0)
+        return;
+    if (!section.fill && !m.clipconcave)
+        return;
+    const MeshData *mesh = draw.mesh.get();
+    if (!mesh || !(m.solidshape || mesh->hasSolid))
+        return;
+
+    // The cut face is the material's own surface in the fill colour:
+    // never emissive, never transmissive (a glass cap would show
+    // nothing, which is the one thing a cap must not do) and never
+    // metallic, because the fill colour is a drawing convention, not
+    // a measured reflectance. The colour rides the object, as every
+    // other colour here does.
+    Surface cap;
+    cap.roughness = uniform.glass ? 0.5f : uniform.roughness;
+    cap.alpha = uniform.alpha;
+    float fill[4];
+    unpackAuthored(section.fillInvert ? invertCapColor(m.diffuse) : m.diffuse, fill, managed);
+    std::copy(fill, fill + 3, cap.base);
+
+    const int planes = std::min<int>(m.numclipplanes, Material::MaxClipPlanes);
+    for (int i = 0; i < planes; ++i) {
+        // The cap of one plane is clipped by the remaining planes --
+        // its own is excluded, which is both what the GL renderer
+        // does and what keeps the cap off its own knife edge. Concave
+        // mode leaves it unclipped, the state GL renders it in.
+        Clip other;
+        if (!m.clipconcave) {
+            for (int j = 0; j < planes; ++j) {
+                if (j == i)
+                    continue;
+                std::copy(m.clipplanes[j], m.clipplanes[j] + 4, other.planes[other.num]);
+                ++other.num;
+            }
+        }
+        ccl::Shader *shader = uniformShader(cap, other);
+
+        // The plane pulled back into the mesh's own space, so that
+        // the cap is built once for a placement and rides the draw's
+        // transform like the geometry it caps.
+        float local[4];
+        if (draw.identity)
+            std::copy(m.clipplanes[i], m.clipplanes[i] + 4, local);
+        else {
+            const float *M = draw.model;
+            const float *n = m.clipplanes[i];
+            local[0] = M[0] * n[0] + M[1] * n[1] + M[2] * n[2];
+            local[1] = M[4] * n[0] + M[5] * n[1] + M[6] * n[2];
+            local[2] = M[8] * n[0] + M[9] * n[1] + M[10] * n[2];
+            local[3] = n[3] + M[12] * n[0] + M[13] * n[1] + M[14] * n[2];
+        }
+
+        std::ostringstream key;
+        key.precision(6);
+        key << mesh->cacheId << ':' << mesh->generation << ':' << start << ':' << count << "#cap:"
+            << local[0] << ',' << local[1] << ',' << local[2] << ',' << local[3] << ':'
+            << static_cast<const void *>(shader);
+        const std::string meshKey = key.str();
+
+        ccl::Mesh *cmesh = nullptr;
+        auto found = meshes.find(meshKey);
+        if (found != meshes.end())
+            cmesh = found->second.mesh;
+        else {
+            const std::vector<float> tris = buildCapTriangles(*mesh, start, count, local);
+            if (tris.size() < 9)
+                continue;
+            const int numtris = int(tris.size() / 9);
+            cmesh = scene->create_node<ccl::Mesh>();
+            cmesh->name = ccl::ustring(meshKey);
+            ccl::array<ccl::Node *> used;
+            used.push_back_slow(shader);
+            cmesh->set_used_shaders(used);
+            cmesh->resize_mesh(numtris * 3, numtris);
+            ccl::packed_float3 *P = cmesh->get_position_for_write();
+            for (int vi = 0; vi < numtris * 3; ++vi)
+                P[vi] = ccl::packed_float3(
+                    ccl::make_float3(tris[size_t(vi) * 3], tris[size_t(vi) * 3 + 1],
+                                     tris[size_t(vi) * 3 + 2]));
+            ccl::array<int> &indices = cmesh->get_triangles();
+            for (int vi = 0; vi < numtris * 3; ++vi)
+                indices[vi] = vi;
+            std::ranges::fill(cmesh->get_shader(), 0);
+            // Flat: the cut face IS flat, and its normal is the
+            // triangles' own.
+            std::ranges::fill(cmesh->get_smooth(), false);
+            cmesh->tag_triangles_modified();
+            cmesh->tag_shader_modified();
+            cmesh->tag_smooth_modified();
+            meshes[meshKey] = MeshEntry{cmesh, long(numtris)};
+            ++report.built;
+            changed = true;
+        }
+
+        Instance inst;
+        inst.key = meshKey + '|' + std::to_string(draw.objectKey);
+        inst.mesh = cmesh;
+        ccl::Object *object = nullptr;
+        auto spareIt = spare.find(inst.key);
+        if (spareIt != spare.end() && !spareIt->second.empty()) {
+            object = spareIt->second.back();
+            spareIt->second.pop_back();
+        }
+        bool created = false;
+        if (!object) {
+            object = scene->create_node<ccl::Object>();
+            object->set_geometry(cmesh);
+            created = true;
+            ++report.added;
+            changed = true;
+        }
+        object->set_tfm(draw.identity ? ccl::transform_identity() : toTransform(draw.model));
+        object->set_color(ccl::make_float3(cap.base[0], cap.base[1], cap.base[2]));
+        object->set_alpha(cap.alpha);
+        if (object->is_modified()) {
+            object->tag_update(scene);
+            if (!created)
+                ++report.restated;
+            changed = true;
+        }
+        inst.object = object;
+        instances.push_back(std::move(inst));
+    }
 }
 
 }  // namespace Render::Cycles

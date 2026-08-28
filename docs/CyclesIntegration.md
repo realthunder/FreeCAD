@@ -957,6 +957,79 @@ finishes, the section CAPS -- the cut is honest but hollow, which is
 section 6.4 -- and user shaders.
 
 
+### 6.4 Section caps (built 2026-08-28)
+
+Section 6.3 made the section cut; this fills it. The bgfx backend
+caps a section with a **stencil**: mark the clipped solid's back
+faces, draw a screen-aligned quad over the plane, keep the marked
+pixels. A path tracer has no stencil and no screen-space pass to
+hang one on -- so here the cap is **real geometry**, a cut face
+translated into the scene like any other mesh.
+
+**Which draws.** The eligibility is the bgfx backend's, so the two
+engines cap the same things: a whole-object triangle draw
+(`partIndex < 0`), sectioned (`numclipplanes > 0`), of a SOLID
+(`Material::solidshape` or `MeshData::hasSolid` -- an open surface
+has no inside to fill), with the style asking for a fill
+(`SectionConfig::fill`, or concave mode). `SceneInput` carries a
+`SectionConfig` for this, filled by both Gui feeds from
+`RendererBridge::translateSectionConfig`.
+
+**The cut face** (`buildCapTriangles`). Every triangle that crosses
+the plane contributes one segment -- a vertex exactly on the plane
+counts as kept, so a triangle yields either no crossing or exactly
+two -- and those segments are the closed boundary of the cut region
+in the plane's own 2D frame. The fill is a **trapezoidal sweep**:
+sort the segment endpoints by height; between two consecutive
+heights no segment begins or ends, so every span across that band is
+bounded by two straight edges and the quad between them IS the
+region. Exact, not a stair-step. Pairing the crossings **even-odd**
+is what leaves a bore in the section open, and it asks nothing of
+the mesh's winding -- which is why this needs no loop chaining, no
+nesting test, no hole bridging and no ear clipping, the four things
+that make a general polygon triangulator hard to get right. An
+active-edge list keeps it linear in the segments rather than
+quadratic. The triangles are wound for a geometric normal of -n:
+the solid is on the plane's positive side, so the cut face looks the
+other way.
+
+**Where it is built.** In the mesh's OWN space, with the plane
+pulled back through the model transform (`n_local = R^T n`,
+`w_local = w + dot(n, t)`), so the cap rides the draw's transform
+like the geometry it caps and two placements of one mesh keep their
+own caps. The cap is a mesh + object like any other instance, keyed
+so the restate of section 5.10 reconciles it with everything else: a
+moved section plane replaces the cap meshes and leaves the model's
+alone.
+
+**The cap's own shader.** The fill colour is the raster path's --
+`SectionConfig::fillInvert` and the same `invertCapColor`
+complement -- and it rides the object, as every colour here does.
+The surface is deliberately NOT the draw's: never emissive, never
+transmissive and never metallic, because a glass cap would show
+exactly nothing, which is the one thing a cap must not do. Only the
+roughness carries over. The cap is clipped by the OTHER planes and
+never by its own (that would put it on its own knife edge, where the
+sign of a zero decides whether the fill exists); concave mode leaves
+it unclipped, the state GL renders it in.
+
+**Not translated**: the hatch texture (`hatchEnable`/`hatchScale`)
+and `fillGroup`. The hatch is a raster device; grouping exists in
+the stencil path so that touching solids share one cap quad, and
+here each solid builds its own cut face, which needs no grouping to
+be correct.
+
+Verified 2026-08-28 (the same `clip/probe.py`, legs 5 and 6, CPU and
+CUDA): a 40 mm box cut at z <= 20 shows from above a cut face
+covering **1.014** of the unclipped silhouette with **0** green
+pixels left -- the fill, not the top of the box; a torus (R 20, r 8)
+cut through its equator shows an annulus of 31896 fill pixels with
+**0** of them inside a third of the outer radius, so the bore the
+even-odd pairing has to leave open is open, on a curved boundary.
+Object and mesh counts follow the caps exactly: 1/1 unclipped, 2/2
+with one plane, 3/3 with two.
+
+
 ## 7. Preparing for out of process
 
 Cycles is a better candidate for process isolation than OCCT: it is

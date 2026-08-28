@@ -182,6 +182,21 @@ private:
     ///  changed when a node was created or restated.
     bool translateDraw(const DrawCall &draw,
                        const PBRConfig &pbr,
+                       const SectionConfig &section,
+                       Spare &spare,
+                       RenderReport &report,
+                       bool &changed);
+
+    /// The cut faces of a clipped solid draw: one filled cross-section
+    /// per plane, as real geometry, because a path tracer has no
+    /// stencil to fake one with (docs/CyclesIntegration.md sec 6.4).
+    /// Placed like any other instance, so the restate reconciles them
+    /// with everything else.
+    void translateCaps(const DrawCall &draw,
+                       const SectionConfig &section,
+                       const Surface &uniform,
+                       int start,
+                       int count,
                        Spare &spare,
                        RenderReport &report,
                        bool &changed);
