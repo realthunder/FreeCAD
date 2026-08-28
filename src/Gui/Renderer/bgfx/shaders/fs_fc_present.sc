@@ -73,12 +73,26 @@ void main()
 	// Alpha is coverage, never light: neither exposed nor encoded.
 	if (mode > FC_OUTPUT_SRGB - 0.5 && mode < FC_OUTPUT_SRGB + 0.5)
 	{
+		// The frame is PREMULTIPLIED by that coverage: every blend
+		// upstream is an "over", and over a transparent background (an
+		// icon capture) the colour left behind is light * coverage.
+		// Neither the exposure nor the encode is linear, so both act on
+		// the light with the coverage divided out and put back after.
+		// Encoding the premultiplied value instead brightens exactly
+		// where the coverage is low -- the sRGB curve is concave, so
+		// encode(c * a) / a > encode(c) -- and a half-transparent sphere
+		// came back with its midtones clamped to white once the reader
+		// un-premultiplied it. On an opaque frame a is 1 and this is
+		// the identity.
+		float a = scene.a > 0.0 ? scene.a : 1.0;
+		vec3 c = scene.rgb / a;
 		// Exposure is a multiplier on LIGHT, so it belongs here, on the
 		// linear image, ahead of the encode -- and only here, because
 		// the same multiply applied to display numbers would not be an
 		// exposure at all.
-		scene.rgb = fcExpose(scene.rgb, u_outputParams.y);
-		scene.rgb = fcEncodeSRGB(scene.rgb);
+		c = fcExpose(c, u_outputParams.y);
+		c = fcEncodeSRGB(c);
+		scene.rgb = c * a;
 	}
 	gl_FragColor = scene;
 }
