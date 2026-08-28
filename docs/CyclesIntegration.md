@@ -869,7 +869,9 @@ metallic-roughness maps), surface finishes, section clip planes and
 caps, and user shaders. Each is a later step of phase 3, not a
 design gap: Cycles has an image texture node, a displacement path,
 and the clipping can be done with the same mesh-cutting the section
-caps use.
+caps use. Clip planes and caps landed after this was written
+(sections 6.3 and 6.4); the textures, finishes and user shaders are
+the node-graph work queued as phase 6 item 15 (section 8).
 
 Verified 2026-08-28 (scratchpad `cycles_scene_probe.py` under xvfb: a
 floor, a red box and an `App::Link` of it, a six-colour per-face box,
@@ -954,7 +956,7 @@ mesh, one object, one shader in every leg. CUDA agrees with CPU to
 
 Still not translated (the rest of the 6.2 list): textures, surface
 finishes, the section CAPS -- the cut is honest but hollow, which is
-section 6.4 -- and user shaders.
+section 6.4 -- and user shaders. The last three are phase 6 item 15.
 
 
 ### 6.4 Section caps (built 2026-08-28)
@@ -1284,6 +1286,49 @@ sub-view.
 
 Phase 5 -- beyond the desktop: headless render served to the browser
 tier over the existing stream. **Built 2026-08-28**, section 7.1.
+
+
+Phase 6 -- queued, not started. Two items, in this order.
+
+14. **Glass materials.** Glass exists as an effect but not as
+    something a user can pick: `Render_Glass` and its IOR, density
+    and roughness are per-object view properties the Render Settings
+    panel adds on demand (`TaskRenderSettings.cpp`), and the
+    Appearance library at
+    `src/Mod/Material/Resources/Materials/Appearance/` has 23 presets
+    and no glass among them -- every one of them states only
+    `BasicRendering`, which has no glass field to state. So the step
+    is two halves. First, appearance presets that carry glass (clear,
+    frosted, tinted at least), which needs an appearance model
+    holding the fork's glass fields -- upstream's Render Workbench
+    model `Render Glass` (`Render.Glass.IOR`, `.Color`, `.Bump`, ...)
+    is the obvious shape to follow rather than invent, though it has
+    no density or roughness. Second, applying such a material has to
+    reach the view: today nothing binds a material's fields to the
+    `Render_*` properties, so a glass preset would arrive inert.
+    Both backends read the result -- bgfx through the glass pass
+    (`docs/ShaderDesign.md` 3.8), Cycles through the transmission it
+    already builds in section 6.2 -- so nothing new is needed on the
+    Cycles side beyond what a richer glass material states.
+
+15. **Bridge the shader system to Cycles through the node API.** The
+    translator emits one fixed graph per material: a Principled BSDF
+    with the arithmetic of section 6.2 baked into its sockets. That
+    is why user shaders are still on the not-translated list -- there
+    is no path from a shader the user authored to anything Cycles
+    renders. Cycles' answer is its shader node graph
+    (`ccl::ShaderGraph`, `ccl::ShaderNode`, connected by socket
+    name), which is the same shape our own effects already have. The
+    step is to translate our shader/material description into that
+    graph instead of only into BSDF socket values, so an authored
+    surface path-traces as what it is. Scope to settle when it
+    starts: which of our shader system this covers -- the surface
+    finishes and texture maps of section 6.2's not-translated list
+    are node-graph work of exactly this kind, whereas a screen-space
+    effect (SSAO, outlines) has no node-graph meaning and stays the
+    raster path's. Trap already on record: **ccl connects sockets by
+    NAME**, so a socket renamed between Cycles versions fails at
+    graph build, not at compile.
 
 
 ## 9. Traps carried forward
