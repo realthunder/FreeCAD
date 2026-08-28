@@ -1257,21 +1257,28 @@ the Linux section gives for `CUDA_BIN_PATH`.
 
 Measured 2026-08-28, `cyclesRenderTest` at 640x480 / 64 samples:
 
-| Device | Hardware | Time |
-| --- | --- | --- |
-| CPU | Ryzen 9 6900HS | 1.6s |
-| CUDA | RTX 3070 Ti Laptop | 430.2s (cold nvcc kernel compile) |
-| OptiX | RTX 3070 Ti Laptop | 9.0s |
-| HIP | Radeon 680M, gfx1035 | 195.1s |
+| Device | Hardware | Cold | Warm |
+| --- | --- | --- | --- |
+| CPU | Ryzen 9 6900HS | 1.6s | 1.4s |
+| CUDA | RTX 3070 Ti Laptop | 430.2s | 0.5s |
+| OptiX | RTX 3070 Ti Laptop | 9.0s | 0.7s |
+| HIP | Radeon 680M, gfx1035 | 195.1s | 2.0s |
 
-**These are not performance numbers.** They are dominated by one-time kernel
-compiles that then cache; CUDA's 430s matches the ~297s sec 4.1 records for a
-cold compile, and OptiX's 9s is it reusing what CUDA had just built. Comparing
-devices needs a second run against warm caches. What the table does establish is
-that all four devices render, and that the four PNGs have four distinct
-checksums -- so the device argument is honoured rather than quietly falling back
-to CPU. Matching file sizes (158231/158231/158230/158231) are just PNG
-compressing four near-identical images of one scene, not evidence of a fallback.
+**Only the warm column is a performance number.** The cold one is dominated by
+one-time kernel compiles that then cache under `.cache/cycles/kernels`: CUDA's
+430s matches the ~297s sec 4.1 records for a cold compile, and OptiX's 9s is it
+reusing what CUDA had just built, not a faster compile.
+
+Warm, the ordering is the one sec 4.2 predicts. CUDA and OptiX come in around
+3x the CPU, and **HIP loses to the CPU** -- a 680M on shared system memory
+against eight Zen3+ cores with Embree. That is the expected result, not a broken
+HIP port; the AMD path is here for coverage of discrete Radeons. At this scene
+size all four are fast enough that the numbers are rough.
+
+All four devices render, and the four PNGs have four distinct checksums -- so
+the device argument is honoured rather than quietly falling back to CPU. The
+matching file sizes (158231/158231/158230/158231) are just PNG compressing four
+near-identical images of one scene, not evidence of a fallback.
 
 #### The one source fix Windows needed
 
@@ -1294,13 +1301,17 @@ appears ten times in this tree's `build.ninja` and every one is a full path.
 To call `Gui.cyclesDevices()` the Gui application has to exist -- under
 `FreeCADCmd` a bare `import FreeCADGui` gives the stub module, and
 `cyclesDevices` is not on it. The obvious move is `FreeCADGui.setupWithoutGUI()`,
-which is `Gui::Application(false)` and makes no window. **It does not work in
-this fork, and has not since 2021.** Use `FreeCAD.exe` with the script instead,
-where a real `QApplication` exists; `showMainWindow()` under `FreeCADCmd` also
-binds the methods but paints an unstyled window that never responds, because
-`FreeCADCmd` runs no event loop.
+which is `Gui::Application(false)` and makes no window. **Until it was fixed it
+aborted, and had done since 2021.** It no longer aborts, but it still does not
+bind the Application methods -- `Gui::Application(false)` does not add them to
+the module -- so it is not the route to `cyclesDevices()` either. Run the script
+under `FreeCAD.exe`, where a real `QApplication` exists. (`showMainWindow()`
+under `FreeCADCmd` does bind them, but paints an unstyled window that never
+responds, because `FreeCADCmd` runs no event loop. Do not use it.)
 
-Neither the diagnosis nor the breakage is Windows-specific. What happens:
+Both bugs below are fixed now. They are written down because the *shape* of the
+second one will disguise the next abort in this tree just as well, and because
+neither is Windows-specific. What used to happen:
 
 ```
 FreeCADGui_setupWithoutGUI            [Main/FreeCADGuiPy.cpp @ 201]
@@ -1314,13 +1325,14 @@ Qt6Core!QMessageLogger::fatal
 FreeCADGui!messageHandler             [Gui/Application.cpp @ 2308] -> abort()
 ```
 
-`CmdMacroPreselectCommands` holds `QMenu _menu` **by value**, and
+`CmdMacroPreselectCommands` held `QMenu _menu` **by value**, and
 `CommandManager`'s constructor creates that command unconditionally, so building
-the Gui application at all constructs a QWidget. With no `QApplication` Qt calls
-`qFatal`. The line dates to `227866ffd9` (2021-05-18).
+the Gui application at all constructed a QWidget. With no `QApplication` Qt calls
+`qFatal`. The line dates to `227866ffd9` (2021-05-18). Fixed by creating the
+menu on demand; every caller of it runs only once a GUI is up.
 
-**The second half is worse than the first, and it is what you will actually
-see.** `Application.cpp`'s `segmentation_fault_handler` **throws** on `SIGABRT`
+**The second half was worse than the first, and it is what you actually
+saw.** `Application.cpp`'s `segmentation_fault_handler` **throws** on `SIGABRT`
 (`THROWM(Base::AbnormalProgramTermination, ...)`). Throwing out of a signal
 handler reached through `abort()` lands the exception in a `noexcept` frame, so
 `terminate()` calls `abort()`, which raises `SIGABRT`, which re-enters the
@@ -1329,12 +1341,18 @@ handler -- forever. Each turn of the loop also runs `printBacktrace` ->
 through hundreds of MB and looks like a **hang** rather than a crash. Two runs of
 the same binary presented as "segfault" and as "hang"; they were the same fault.
 
-So: an `abort()` anywhere in this tree is disguised. When something appears to
-hang while growing in memory, attach and look for
-`segmentation_fault_handler` repeating up the stack -- and to find the *original*
-fault, breakpoint its first entry (`bu FreeCADApp!segmentation_fault_handler`)
-rather than reading the top of the stack, which is all recursion. `sxe av` will
-not catch it: the first event is not an access violation.
+Fixed by leaving the disposition at `SIG_DFL` for `SIGABRT` -- the arm that
+throws -- so the second `SIGABRT` ends the process the default way, after one
+backtrace. `SIGSEGV` keeps its re-arm, which a separate fix added on 2026-08-12
+so that a second fault in a session is still reported.
+
+The technique is worth keeping even so, because any *other* abort loop would
+look the same. When something appears to hang while growing in memory, attach
+and look for `segmentation_fault_handler` repeating up the stack -- and to find
+the *original* fault, breakpoint its first entry
+(`bu FreeCADApp!segmentation_fault_handler`) rather than reading the top of the
+stack, which is all recursion. `sxe av` will not catch it: the first event is
+not an access violation.
 
 ### Running the C++ (GoogleTest) suites
 
