@@ -189,7 +189,16 @@ PYTHONPATH, and give the **debug** pivy its own prefix, selected explicitly:
 PYTHONPATH=$HOME/works/sw/pivy/install/conda-debug $RUN <debug FreeCAD or python>
 ```
 
-Verified 2026-08-28 -- each loads the Coin it was built against, and a
+*** **In a headless session pivy alone decides which Coin loads.**
+`FreeCADCmd` does not link Coin itself, so nothing else pulls the SONAME in --
+the first `from pivy import coin` settles it for the process. Demonstrated on
+the debug FreeCAD build, 2026-08-28: **with** the PYTHONPATH above it maps
+`coin/install/conda-debug` and `occt/install/conda-debug-801`, one of each;
+**without** it, the same debug binary silently ran on the RelWithDebInfo Coin
+through the site-packages pivy. It does not fail, it just is not the stack you
+think you are debugging.
+
+Verified 2026-08-28 -- each pivy loads the Coin it was built against, and a
 `FreeCADCmd` session that imports pivy maps exactly one `libCoinRT`:
 
 ```sh
@@ -237,6 +246,13 @@ the local `occt/install/conda-debug-801` (OCCT 8.0.1) and
 $RUN cmake --preset conda-debug-local
 $RUN cmake --build build/conda-debug-occt801
 ```
+
+Built and verified 2026-08-28: clean build, `ctest` 445/445, and a headless
+run mapping exactly one Coin (`install/conda-debug`) and one OCCT
+(`install/conda-debug-801`). Testing on it is not the routine -- that stays on
+the RelWithDebInfo tree -- but the stack is known-good rather than assumed.
+Building it needs the debug **Coin and pivy** prefixes to be current first; see
+the two warnings in the dependency section.
 
 **Both stacks are OCCT 8.0.1; there is no 7.7.2 on this box any more.** The
 frozen 7.7.2 prefixes (`occt/install/conda-debug`,
