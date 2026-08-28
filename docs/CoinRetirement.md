@@ -2570,6 +2570,48 @@ what it was. A unified canvas still resolves per CELL, which one
 snapshot cannot express; the main view's style is what a served scene
 has always meant.
 
+### 5.17 Rows under a non-3D active view (2026-08-28)
+
+5.14 made the row sweep walk every open document when the TABLE moves.
+It left the other trigger behind: `Application::viewActivated` still
+swept the view's own document only, so activating a 3D view did not
+refresh the row of an object shown there through a Link from another
+document. And it returned early for a non-3D activation altogether --
+a Spreadsheet sheet or a TechDraw page becoming active left every row
+displaying the last 3D view's values as though they were still in
+force, while the write path (which re-checks `activeView()`) would
+have dropped any edit made against them.
+
+Both triggers now call one `ViewProviderDocumentObject::
+syncDisplayModeInViewAll(view)`, and a non-3D activation sweeps too,
+with a null view -- which `syncDisplayModeInView` already documented
+as "no active 3D view, shows Use View Mode". The rows then say what is
+true: there is no view whose entry they could be showing.
+
+Considered and dropped: marking the row read-only in that state, so an
+edit is impossible rather than silently dropped. `Property::setStatus`
+signals `onPropertyStatusChanged` on a ReadOnly change, which reaches
+the property editor per object -- on a King-sized document that is
+tens of thousands of signals on every switch between a 3D view and a
+sheet, in exchange for a nicety. The value sync alone is what 5.9
+designed.
+
+**Verified (RTX 3060, Xvfb)**, rig `dmv.py`:
+
+    A  3D view, no entry      row "Use View Mode"
+    B  set the row            row "Shaded", and the view's stored
+                              ObjectDisplayModes carries ("Box","Shaded")
+    C  sheet view active      row "Use View Mode"   <- the fix
+    D  back to the 3D view    row "Shaded", read back from the table
+
+- **RIG TRAP, cost three runs.** `Std_ViewCreate` in this fork adds a
+  second CELL to the same `ViewArea`, not a second MDI subwindow, and
+  a sheet opened from the tree becomes another cell too. So "activate
+  the other view" is a cell FOCUS change: `setActiveSubWindow` reports
+  success, activates nothing, and the rig then measures the new empty
+  cell and reads its own confusion as a product bug. Click into the
+  cell instead.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is

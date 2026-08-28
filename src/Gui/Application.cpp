@@ -1502,20 +1502,16 @@ void Application::viewActivated(MDIView* pcView)
 
     // The DisplayModeInView rows present the ACTIVE 3D view's
     // ObjectDisplayModes entries (docs/CoinRetirement.md 5.9), so a
-    // view change re-reads them for the view's own document.
-    // Deliberately skipped for non-3D activations: the rows then keep
-    // showing the last 3D view's state, and writing is a no-op because
-    // the write path re-checks activeView() itself.
-    if (auto v3d = Base::freecad_dynamic_cast<View3DInventor>(pcView)) {
-        if (auto gdoc = v3d->getGuiDocument()) {
-            for (auto obj : gdoc->getDocument()->getObjects()) {
-                if (auto vp = Base::freecad_dynamic_cast<
-                        ViewProviderDocumentObject>(
-                            gdoc->getViewProvider(obj)))
-                    vp->syncDisplayModeInView(v3d);
-            }
-        }
-    }
+    // view change re-reads them. Every open document, because an
+    // object shown here through a Link keeps its row in the document
+    // it belongs to (docs/CoinRetirement.md 5.14 fixed that for a
+    // table change and left the activation sweep behind). A NON-3D
+    // activation sweeps too, with no view: there is then no entry to
+    // present -- and no view for the write path to write to either --
+    // so the rows read "Use View Mode" instead of continuing to show
+    // the last 3D view's state as if it were still in force.
+    ViewProviderDocumentObject::syncDisplayModeInViewAll(
+            Base::freecad_dynamic_cast<View3DInventor>(pcView));
 
     // Set the new active document which is taken of the activated view. If, however,
     // this view is passive we let the currently active document unchanged as we would

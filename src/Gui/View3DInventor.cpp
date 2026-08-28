@@ -1364,29 +1364,8 @@ void View3DInventor::onChanged(const App::Property *prop)
             // view they present (docs/CoinRetirement.md 5.9): a table
             // change from anywhere -- the rows themselves, the context
             // command, undo, restore -- re-reads them.
-            if (Application::Instance->activeView() == this) {
-                // EVERY open document, not just this view's own: an
-                // object shown here through a Link lives in another
-                // document, and its ViewProvider -- the one carrying
-                // the DisplayModeInView row the user reads -- belongs
-                // to THAT document's Gui::Document. Keying the entry
-                // as "<doc>#<name>" was only half the story while the
-                // row was never told (docs/CoinRetirement.md 5.14).
-                // syncDisplayModeInView writes nothing where the row
-                // already agrees, so the sweep is a read for all but
-                // the few objects an edit actually moved.
-                for (auto appdoc : App::GetApplication().getDocuments()) {
-                    auto gdoc = Application::Instance->getDocument(appdoc);
-                    if (!gdoc)
-                        continue;
-                    for (auto obj : appdoc->getObjects()) {
-                        if (auto vp = Base::freecad_dynamic_cast<
-                                ViewProviderDocumentObject>(
-                                    gdoc->getViewProvider(obj)))
-                            vp->syncDisplayModeInView(this);
-                    }
-                }
-            }
+            if (Application::Instance->activeView() == this)
+                ViewProviderDocumentObject::syncDisplayModeInViewAll(this);
         }
         else if (prop == &OnTopObjects) {
             // The property IS the on-top set's storage, so a change
