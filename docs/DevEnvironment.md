@@ -709,17 +709,24 @@ not a render defect; the discriminator is a console line like
 
 ## Fallback stack: system gcc + apt Qt 6.4.2
 
-Kept intact and working, but **PySide6 is impossible here** (see above) — Python
-workbenches don't load. Useful as a second opinion against a very different
-Qt/compiler generation.
+**Not usable as it stands, 2026-08-28.** Two independent reasons: its OCCT is
+**7.7.2**, which can no longer compile `Mod/Part` at all
+(`ShapeRefSet.cpp` calls 8.0.1-only `BRepTools_ShapeSet` accessors, unguarded)
+and is frozen anyway; and **PySide6 is impossible here**, so Python workbenches
+do not load. The `debug-local` preset was dropped from `CMakeUserPresets.json`
+on 2026-08-28 -- it pointed at `occt/install/debug` and `coin/install/debug`,
+neither of which was ever built in this checkout, so it could not configure and
+was purely a trap. The notes below are kept as the recipe if the stack is ever
+wanted again, against an 8.0.1 OCCT.
 
 - apt deps: qt6-{base,base-private,svg,tools}-dev, qt6-tools-dev-tools, qt6-l10n-tools,
   libxerces-c-dev, libeigen3-dev, boost dev libs incl. libboost-python-dev,
   libyaml-cpp-dev, libfreeimage-dev, rapidjson-dev, GL/X11 dev, swig, cmake, ninja.
 - Builds: `<repo>/build_debug` → `<repo>/install/debug` (OCCT 7.7.2 here, configured with
   `-DCMAKE_INSTALL_RPATH='$ORIGIN'` — same transitivity reason as above).
-- fcad preset: `debug-local` (inherits `debug`, Makefiles, `build/debug`,
-  `FREECAD_QT_VERSION=6`, BUILD_BGFX=ON, BUILD_FEM/WEB=OFF). `sh src/make.sh -j8` works.
+- fcad preset: none any more. It was `debug-local` (inherit `debug`, Makefiles,
+  `build/debug`, `FREECAD_QT_VERSION=6`, BUILD_BGFX=ON, BUILD_FEM/WEB=OFF);
+  recreate it if the stack comes back. `sh src/make.sh -j8` was the build.
 - Runtime needs `PYTHONPATH=$HOME/works/sw/pivy/install/debug/lib/python3.12/site-packages`
   for pivy.
 
