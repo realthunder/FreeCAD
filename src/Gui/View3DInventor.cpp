@@ -54,7 +54,13 @@
 
 
 #include <App/DocumentObject.h>
+#include <App/Application.h>
 #include <App/Document.h>
+#include <sstream>
+#include "Inventor/SoFCOwnDisplayModeElement.h"
+#include "Renderer/Renderer.h"
+#include "SoFCUnifiedSelection.h"
+#include "Selection.h"
 #include <Base/Builder3D.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
@@ -81,6 +87,7 @@
 #include "ViewArea.h"
 #include "View3DInventorPy.h"
 #include "ViewProvider.h"
+#include "ViewProviderDocumentObject.h"
 #include "WaitCursor.h"
 
 
@@ -107,6 +114,14 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
             "Show navigation cube in this view");
     ADD_PROPERTY_TYPE(ThumbnailView, (false), nullptr, App::Prop_None,
             "Mark this view for capturing document thumbnail on saving");
+    ADD_PROPERTY_TYPE(ObjectDisplayModes, (), nullptr, App::Prop_Hidden,
+            "Per-object display mode overrides of this view.\n"
+            "Key: a subname path (one occurrence) or a bare internal\n"
+            "name (the object anywhere in this view); value: a display\n"
+            "mode name, with 'As Is' pinning the object to its own mode.");
+    ADD_PROPERTY_TYPE(OnTopObjects, (), nullptr, App::Prop_Hidden,
+            "Objects this view draws on top of everything else.\n"
+            "One entry per object, as '<internal name>.<subname path>'.");
 
     stack = new QStackedWidget(this);
     // important for highlighting
@@ -1209,6 +1224,127 @@ void View3DInventor::Restore(Base::XMLReader &reader)
     migrateShadowProperties(this);
 }
 
+namespace {
+/// Parse the ObjectDisplayModes property (docs/CoinRetirement.md 5.9)
+/// into backend override entries, resolving every path element to its
+/// true {document, object} pair so the backend never touches a
+/// document. An unresolvable key -- its object was deleted -- is INERT
+/// rather than an error: the entry stays in the map and revives when
+/// the property is next touched with the object back.
+Render::StyleOverrideTable parseObjectDisplayModes(
+        const std::map<std::string, std::string> &modes,
+        App::Document *doc)
+{
+    Render::StyleOverrideTable table;
+    if (!doc)
+        return table;
+    for (const auto &kv : modes) {
+        const std::string &key = kv.first;
+        const std::string &mode = kv.second;
+        if (key.empty() || mode.empty())
+            continue;
+        Render::StyleOverride ov;
+        if (SoFCUnifiedSelection::DisplayModeAsIs == mode.c_str()) {
+            // Pin to the object's own mode: escapes the view style
+            // (SolidWorks' "Default Display").
+            ov.pin = true;
+        }
+        else {
+            // EVERY named mode resolves by additive capture first
+            // (5.9 "Non-standard modes"): the feed captures the named
+            // child tagged with this interned id and the entry admits
+            // exactly the draws so tagged -- the mode's own subgraph,
+            // not a mask approximation of it. That is the only way a
+            // mode can reach an object whose superset child does not
+            // contain its buckets (Mesh's "Points": the Flat Lines
+            // child has no point rendering at all). A mode no object
+            // registers -- a stale value, a viewer-level name like
+            // "Hidden Line" -- stays inert through the same fallback
+            // a Class-A style takes: no child of that name, the
+            // object keeps its own mode.
+            ov.modeId = Render::internModeName(mode.c_str());
+            // The Class-A mask stays as the fallback for a switch the
+            // additive capture has not covered (an interest list past
+            // its 16-entry budget).
+            ov.nameBit = Gui::styleNameBitOf(mode.c_str());
+            if (ov.nameBit)
+                ov.mask =
+                    View3DInventorViewer::drawStyleMaskFromName(mode.c_str());
+        }
+        if (key.find('.') == std::string::npos) {
+            // Bare form: the object wherever it appears in this view.
+            // "Doc#Obj" names an object of another document shown here
+            // through a link; a plain name is of this view's document.
+            ov.rooted = false;
+            auto sep = key.find('#');
+            if (sep != std::string::npos)
+                ov.path.push_back({key.substr(0, sep),
+                                   key.substr(sep + 1)});
+            else
+                ov.path.push_back({doc->getName(), key});
+        }
+        else {
+            // Path form: one occurrence, resolved token by token so
+            // every element carries its true document -- getSubObject
+            // follows links across documents the same way the scene
+            // graph does.
+            ov.rooted = true;
+            std::istringstream iss(key);
+            std::string tok;
+            App::DocumentObject *cur = nullptr;
+            bool ok = true;
+            while (std::getline(iss, tok, '.')) {
+                if (tok.empty())
+                    continue;
+                if (!cur)
+                    cur = doc->getObject(tok.c_str());
+                else
+                    cur = cur->getSubObject((tok + ".").c_str());
+                if (!cur || !cur->isAttachedToDocument()) {
+                    ok = false;
+                    break;
+                }
+                ov.path.push_back({cur->getDocument()->getName(),
+                                   cur->getNameInDocument()});
+            }
+            if (!ok || ov.path.empty())
+                continue;
+        }
+        table.entries.push_back(std::move(ov));
+    }
+    return table;
+}
+} // namespace
+
+void View3DInventor::applyOnTopObjects()
+{
+    auto gdoc = getGuiDocument();
+    if (!_viewer || !gdoc || !gdoc->getDocument())
+        return;
+    // Read first: clearing the group emits the on-top signal, and the
+    // list must not be read through a property something else may be
+    // writing while this runs.
+    const std::vector<std::string> paths = OnTopObjects.getValues();
+    _viewer->clearGroupOnTop(true);
+    const char *docName = gdoc->getDocument()->getName();
+    for (const auto &path : paths) {
+        // "<name>.<subname>", the form SubObjectT::getSubNameNoElement
+        // (true) writes. The subname is EMPTY for a whole top-level
+        // object, which is the common case -- the app-document format
+        // this replaced parsed those with a getline that failed at end
+        // of string and dropped them, so a plain object on top never
+        // survived a save (docs/CoinRetirement.md 5.12).
+        const auto dot = path.find('.');
+        if (dot == std::string::npos)
+            continue;
+        _viewer->checkGroupOnTop(
+                SelectionChanges(SelectionChanges::AddSelection, docName,
+                                 path.substr(0, dot).c_str(),
+                                 path.c_str() + dot + 1),
+                true);
+    }
+}
+
 void View3DInventor::onChanged(const App::Property *prop)
 {
     if (_viewer) {
@@ -1217,6 +1353,52 @@ void View3DInventor::onChanged(const App::Property *prop)
                 Base::ObjectStatusLocker<App::Property::Status, App::Property> guard(
                         App::Property::User1, &DrawStyle);
                 _viewer->setOverrideMode(DrawStyle.getValueAsString());
+            }
+        }
+        else if (prop == &ObjectDisplayModes) {
+            _viewer->setObjectStyleOverrides(parseObjectDisplayModes(
+                    ObjectDisplayModes.getValues(),
+                    getGuiDocument() ? getGuiDocument()->getDocument()
+                                     : nullptr));
+            // Keep the DisplayModeInView rows honest while this is the
+            // view they present (docs/CoinRetirement.md 5.9): a table
+            // change from anywhere -- the rows themselves, the context
+            // command, undo, restore -- re-reads them.
+            if (Application::Instance->activeView() == this) {
+                // EVERY open document, not just this view's own: an
+                // object shown here through a Link lives in another
+                // document, and its ViewProvider -- the one carrying
+                // the DisplayModeInView row the user reads -- belongs
+                // to THAT document's Gui::Document. Keying the entry
+                // as "<doc>#<name>" was only half the story while the
+                // row was never told (docs/CoinRetirement.md 5.14).
+                // syncDisplayModeInView writes nothing where the row
+                // already agrees, so the sweep is a read for all but
+                // the few objects an edit actually moved.
+                for (auto appdoc : App::GetApplication().getDocuments()) {
+                    auto gdoc = Application::Instance->getDocument(appdoc);
+                    if (!gdoc)
+                        continue;
+                    for (auto obj : appdoc->getObjects()) {
+                        if (auto vp = Base::freecad_dynamic_cast<
+                                ViewProviderDocumentObject>(
+                                    gdoc->getViewProvider(obj)))
+                            vp->syncDisplayModeInView(this);
+                    }
+                }
+            }
+        }
+        else if (prop == &OnTopObjects) {
+            // The property IS the on-top set's storage, so a change
+            // from anywhere -- restore, a macro, the migration of an
+            // old file -- puts the viewer where it says. User1 latches
+            // the direction: the snapshot that follows every on-top
+            // change (Document::snapshotOnTopObjects) writes back
+            // through this same property, and must not be re-applied.
+            if (!OnTopObjects.testStatus(App::Property::User1)) {
+                Base::ObjectStatusLocker<App::Property::Status, App::Property>
+                    guard(App::Property::User1, &OnTopObjects);
+                applyOnTopObjects();
             }
         }
         _viewer->onViewPropertyChanged(*prop);

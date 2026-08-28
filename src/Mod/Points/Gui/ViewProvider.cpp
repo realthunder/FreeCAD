@@ -81,6 +81,14 @@ ViewProviderPoints::ViewProviderPoints()
     pcPointsNormal->ref();
     pcColorMat = new SoMaterial;
     pcColorMat->ref();
+    pcGreyMat = new SoMaterial;
+    pcGreyMat->ref();
+    pcColorBinding = new SoMaterialBinding;
+    pcColorBinding->value = SoMaterialBinding::OVERALL;
+    pcColorBinding->ref();
+    pcGreyBinding = new SoMaterialBinding;
+    pcGreyBinding->value = SoMaterialBinding::OVERALL;
+    pcGreyBinding->ref();
 
     pcPointStyle = new SoDrawStyle();
     pcPointStyle->ref();
@@ -94,6 +102,9 @@ ViewProviderPoints::~ViewProviderPoints()
     pcPointsCoord->unref();
     pcPointsNormal->unref();
     pcColorMat->unref();
+    pcGreyMat->unref();
+    pcColorBinding->unref();
+    pcGreyBinding->unref();
     pcPointStyle->unref();
 }
 
@@ -130,15 +141,78 @@ void ViewProviderPoints::setVertexGreyvalueMode(Points::PropertyGreyValueList* p
 {
     const std::vector<float>& val = pcProperty->getValues();
 
-    pcColorMat->diffuseColor.setNum(val.size());
-    SbColor* col = pcColorMat->diffuseColor.startEditing();
+    pcGreyMat->diffuseColor.setNum(val.size());
+    SbColor* col = pcGreyMat->diffuseColor.startEditing();
 
     std::size_t i = 0;
     for (float it : val) {
         col[i++].setValue(it, it, it);
     }
 
-    pcColorMat->diffuseColor.finishEditing();
+    pcGreyMat->diffuseColor.finishEditing();
+}
+
+void ViewProviderPoints::applyVertexData()
+{
+    if (!vertexDataDirty || !pcObject) {
+        return;
+    }
+    vertexDataDirty = false;
+
+    const int numPoints = pcPointsCoord->point.getNum();
+    App::PropertyColorList* colors = nullptr;
+    Points::PropertyGreyValueList* greys = nullptr;
+    Points::PropertyNormalList* normals = nullptr;
+    std::map<std::string, App::Property*> Map;
+    pcObject->getPropertyMap(Map);
+    for (auto& it : Map) {
+        Base::Type type = it.second->getTypeId();
+        if (!colors && type == App::PropertyColorList::getClassTypeId()) {
+            colors = static_cast<App::PropertyColorList*>(it.second);
+        }
+        else if (!greys && type == Points::PropertyGreyValueList::getClassTypeId()) {
+            greys = static_cast<Points::PropertyGreyValueList*>(it.second);
+        }
+        else if (!normals && type == Points::PropertyNormalList::getClassTypeId()) {
+            normals = static_cast<Points::PropertyNormalList*>(it.second);
+        }
+    }
+
+    if (colors && numPoints == colors->getSize()) {
+        setVertexColorMode(colors);
+        pcColorBinding->value = SoMaterialBinding::PER_VERTEX_INDEXED;
+    }
+    else {
+        pcColorMat->diffuseColor.setValue(SbColor(0.8f, 0.8f, 0.8f));
+        pcColorBinding->value = SoMaterialBinding::OVERALL;
+    }
+
+    if (greys && numPoints == greys->getSize()) {
+        setVertexGreyvalueMode(greys);
+        pcGreyBinding->value = SoMaterialBinding::PER_VERTEX_INDEXED;
+    }
+    else {
+        pcGreyMat->diffuseColor.setValue(SbColor(0.8f, 0.8f, 0.8f));
+        pcGreyBinding->value = SoMaterialBinding::OVERALL;
+    }
+
+    if (normals && numPoints == normals->getSize()) {
+        setVertexNormalMode(normals);
+    }
+    else {
+        pcPointsNormal->vector.setNum(0);
+    }
+}
+
+void ViewProviderPoints::updateData(const App::Property* prop)
+{
+    if (prop->is<Points::PropertyPointKernel>() || prop->is<App::PropertyColorList>()
+        || prop->is<Points::PropertyGreyValueList>() || prop->is<Points::PropertyNormalList>()) {
+        // The kernel counts too: validity is list size against point
+        // count, so new points revalidate every binding.
+        vertexDataDirty = true;
+    }
+    Gui::ViewProviderGeometryObject::updateData(prop);
 }
 
 void ViewProviderPoints::setVertexNormalMode(Points::PropertyNormalList* pcProperty)
@@ -158,90 +232,18 @@ void ViewProviderPoints::setVertexNormalMode(Points::PropertyNormalList* pcPrope
 
 void ViewProviderPoints::setDisplayMode(const char* ModeName)
 {
-    int numPoints = pcPointsCoord->point.getNum();
-
-    if (strcmp("Color", ModeName) == 0) {
-        std::map<std::string, App::Property*> Map;
-        pcObject->getPropertyMap(Map);
-        for (auto& it : Map) {
-            Base::Type type = it.second->getTypeId();
-            if (type == App::PropertyColorList::getClassTypeId()) {
-                App::PropertyColorList* colors = static_cast<App::PropertyColorList*>(it.second);
-                if (numPoints != colors->getSize()) {
-#ifdef FC_DEBUG
-                    SoDebugError::postWarning(
-                        "ViewProviderPoints::setDisplayMode",
-                        "The number of points (%d) doesn't match with the number of colors (%d).",
-                        numPoints,
-                        colors->getSize());
-#endif
-                    // fallback
-                    setDisplayMaskMode("Point");
-                }
-                else {
-                    setVertexColorMode(colors);
-                    setDisplayMaskMode("Color");
-                }
-                break;
-            }
-        }
-    }
-    else if (strcmp("Intensity", ModeName) == 0) {
-        std::map<std::string, App::Property*> Map;
-        pcObject->getPropertyMap(Map);
-        for (const auto& it : Map) {
-            Base::Type type = it.second->getTypeId();
-            if (type == Points::PropertyGreyValueList::getClassTypeId()) {
-                Points::PropertyGreyValueList* greyValues =
-                    static_cast<Points::PropertyGreyValueList*>(it.second);
-                if (numPoints != greyValues->getSize()) {
-#ifdef FC_DEBUG
-                    SoDebugError::postWarning("ViewProviderPoints::setDisplayMode",
-                                              "The number of points (%d) doesn't match with the "
-                                              "number of grey values (%d).",
-                                              numPoints,
-                                              greyValues->getSize());
-#endif
-                    // Intensity mode is not possible then set the default () mode instead.
-                    setDisplayMaskMode("Point");
-                }
-                else {
-                    setVertexGreyvalueMode((Points::PropertyGreyValueList*)it.second);
-                    setDisplayMaskMode("Color");
-                }
-                break;
-            }
-        }
-    }
-    else if (strcmp("Shaded", ModeName) == 0) {
-        std::map<std::string, App::Property*> Map;
-        pcObject->getPropertyMap(Map);
-        for (const auto& it : Map) {
-            Base::Type type = it.second->getTypeId();
-            if (type == Points::PropertyNormalList::getClassTypeId()) {
-                Points::PropertyNormalList* normals =
-                    static_cast<Points::PropertyNormalList*>(it.second);
-                if (numPoints != normals->getSize()) {
-#ifdef FC_DEBUG
-                    SoDebugError::postWarning(
-                        "ViewProviderPoints::setDisplayMode",
-                        "The number of points (%d) doesn't match with the number of normals (%d).",
-                        numPoints,
-                        normals->getSize());
-#endif
-                    // fallback
-                    setDisplayMaskMode("Point");
-                }
-                else {
-                    setVertexNormalMode(normals);
-                    setDisplayMaskMode("Shaded");
-                }
-                break;
-            }
-        }
-    }
-    else if (strcmp("Points", ModeName) == 0) {
-        setDisplayMaskMode("Point");
+    // Every user mode has its own mask child of the SAME name, with
+    // the vertex data bound eagerly on data change (applyVertexData)
+    // rather than here on activation (docs/CoinRetirement.md 5.10):
+    // a per-view display mode override renders the mode's subgraph
+    // without going through this function, and two views may show
+    // "Color" and "Intensity" at once. A mode whose data list is
+    // missing or mismatched keeps an OVERALL binding and renders as
+    // plain points -- what the old activation-time fallback showed.
+    applyVertexData();
+    if (strcmp("Color", ModeName) == 0 || strcmp("Intensity", ModeName) == 0
+        || strcmp("Shaded", ModeName) == 0 || strcmp("Points", ModeName) == 0) {
+        setDisplayMaskMode(ModeName);
     }
 
     ViewProviderGeometryObject::setDisplayMode(ModeName);
@@ -392,12 +394,18 @@ void ViewProviderScattered::attach(App::DocumentObject* pcObj)
 
     std::vector<std::string> modes = getDisplayModes();
 
+    // Mask mode names equal the user-facing display mode names, and
+    // "Color" / "Intensity" are separate subgraphs with their own
+    // materials, bound eagerly (docs/CoinRetirement.md 5.10): the
+    // per-view display mode overrides select these children by NAME
+    // and render them without setDisplayMode() running.
+
     // points part ---------------------------------------------
     SoGroup* pcPointRoot = new SoGroup();
     pcPointRoot->addChild(pcPointStyle);
     pcPointRoot->addChild(pcShapeMaterial);
     pcPointRoot->addChild(pcHighlight);
-    addDisplayMaskMode(pcPointRoot, "Point");
+    addDisplayMaskMode(pcPointRoot, "Points");
 
     // points shaded ---------------------------------------------
     if (std::find(modes.begin(), modes.end(), std::string("Shaded")) != modes.end()) {
@@ -409,17 +417,24 @@ void ViewProviderScattered::attach(App::DocumentObject* pcObj)
         addDisplayMaskMode(pcPointShadedRoot, "Shaded");
     }
 
-    // color shaded  ------------------------------------------
-    if (std::find(modes.begin(), modes.end(), std::string("Color")) != modes.end()
-        || std::find(modes.begin(), modes.end(), std::string("Intensity")) != modes.end()) {
-        SoGroup* pcColorShadedRoot = new SoGroup();
-        pcColorShadedRoot->addChild(pcPointStyle);
-        SoMaterialBinding* pcMatBinding = new SoMaterialBinding;
-        pcMatBinding->value = SoMaterialBinding::PER_VERTEX_INDEXED;
-        pcColorShadedRoot->addChild(pcColorMat);
-        pcColorShadedRoot->addChild(pcMatBinding);
-        pcColorShadedRoot->addChild(pcHighlight);
-        addDisplayMaskMode(pcColorShadedRoot, "Color");
+    // per-vertex color ------------------------------------------
+    if (std::find(modes.begin(), modes.end(), std::string("Color")) != modes.end()) {
+        SoGroup* pcColorRoot = new SoGroup();
+        pcColorRoot->addChild(pcPointStyle);
+        pcColorRoot->addChild(pcColorMat);
+        pcColorRoot->addChild(pcColorBinding);
+        pcColorRoot->addChild(pcHighlight);
+        addDisplayMaskMode(pcColorRoot, "Color");
+    }
+
+    // per-vertex intensity --------------------------------------
+    if (std::find(modes.begin(), modes.end(), std::string("Intensity")) != modes.end()) {
+        SoGroup* pcGreyRoot = new SoGroup();
+        pcGreyRoot->addChild(pcPointStyle);
+        pcGreyRoot->addChild(pcGreyMat);
+        pcGreyRoot->addChild(pcGreyBinding);
+        pcGreyRoot->addChild(pcHighlight);
+        addDisplayMaskMode(pcGreyRoot, "Intensity");
     }
 }
 
@@ -564,12 +579,18 @@ void ViewProviderStructured::attach(App::DocumentObject* pcObj)
 
     std::vector<std::string> modes = getDisplayModes();
 
+    // Mask mode names equal the user-facing display mode names, and
+    // "Color" / "Intensity" are separate subgraphs with their own
+    // materials, bound eagerly (docs/CoinRetirement.md 5.10): the
+    // per-view display mode overrides select these children by NAME
+    // and render them without setDisplayMode() running.
+
     // points part ---------------------------------------------
     SoGroup* pcPointRoot = new SoGroup();
     pcPointRoot->addChild(pcPointStyle);
     pcPointRoot->addChild(pcShapeMaterial);
     pcPointRoot->addChild(pcHighlight);
-    addDisplayMaskMode(pcPointRoot, "Point");
+    addDisplayMaskMode(pcPointRoot, "Points");
 
     // points shaded ---------------------------------------------
     if (std::find(modes.begin(), modes.end(), std::string("Shaded")) != modes.end()) {
@@ -581,17 +602,24 @@ void ViewProviderStructured::attach(App::DocumentObject* pcObj)
         addDisplayMaskMode(pcPointShadedRoot, "Shaded");
     }
 
-    // color shaded  ------------------------------------------
-    if (std::find(modes.begin(), modes.end(), std::string("Color")) != modes.end()
-        || std::find(modes.begin(), modes.end(), std::string("Intensity")) != modes.end()) {
-        SoGroup* pcColorShadedRoot = new SoGroup();
-        pcColorShadedRoot->addChild(pcPointStyle);
-        SoMaterialBinding* pcMatBinding = new SoMaterialBinding;
-        pcMatBinding->value = SoMaterialBinding::PER_VERTEX_INDEXED;
-        pcColorShadedRoot->addChild(pcColorMat);
-        pcColorShadedRoot->addChild(pcMatBinding);
-        pcColorShadedRoot->addChild(pcHighlight);
-        addDisplayMaskMode(pcColorShadedRoot, "Color");
+    // per-vertex color ------------------------------------------
+    if (std::find(modes.begin(), modes.end(), std::string("Color")) != modes.end()) {
+        SoGroup* pcColorRoot = new SoGroup();
+        pcColorRoot->addChild(pcPointStyle);
+        pcColorRoot->addChild(pcColorMat);
+        pcColorRoot->addChild(pcColorBinding);
+        pcColorRoot->addChild(pcHighlight);
+        addDisplayMaskMode(pcColorRoot, "Color");
+    }
+
+    // per-vertex intensity --------------------------------------
+    if (std::find(modes.begin(), modes.end(), std::string("Intensity")) != modes.end()) {
+        SoGroup* pcGreyRoot = new SoGroup();
+        pcGreyRoot->addChild(pcPointStyle);
+        pcGreyRoot->addChild(pcGreyMat);
+        pcGreyRoot->addChild(pcGreyBinding);
+        pcGreyRoot->addChild(pcHighlight);
+        addDisplayMaskMode(pcGreyRoot, "Intensity");
     }
 }
 
@@ -603,6 +631,13 @@ void ViewProviderStructured::updateData(const App::Property* prop)
         builder.createPoints(prop, pcPointsCoord, pcPoints);
 
         // The number of points might have changed, so force also a resize of the Inventor internals
+        setActiveMode();
+    }
+    else if (prop->is<Points::PropertyNormalList>()
+             || prop->is<Points::PropertyGreyValueList>()
+             || prop->is<App::PropertyColorList>()) {
+        // Rebind the per-mode subgraphs (applyVertexData via the mode
+        // reapply), as the scattered provider does.
         setActiveMode();
     }
 }

@@ -2316,3 +2316,164 @@ land on.  Until then there is nothing there to take.
 Item 2 is done.  **Item 3 (`QGVNavStyleSolidWorks` + the `Gui`
 `SolidWorksNavigationStyle` the fork also lacks) is the only thing left on
 the revised order**, and it is the lowest-value entry on it.
+
+## 35. Implementation status (2026-08-26): item 3 is built -- the port is complete
+
+`QGVNavStyleSolidWorks` and the `Gui` `SolidWorksNavigationStyle` are in.
+That closes the revised order of 33.7; nothing is left on it.
+
+### 35.1 Both halves are sibling adaptations, not verbatim copies
+
+Diffing upstream's two SolidWorks files against upstream's Blender files
+shows SolidWorks **is** the Blender style with pan and zoom swapped onto
+the other modifier:
+
+| | Blender | SolidWorks |
+| --- | --- | --- |
+| MMB | rotate | rotate |
+| CTRL + MMB | zoom | **pan** |
+| SHIFT + MMB | pan | **zoom** |
+| LMB + RMB | pan | (no such binding) |
+
+So each file was generated from **the fork's own sibling** and given that
+delta, rather than copied from upstream.  This matters because the fork's
+nav styles are an older upstream revision: upstream's
+`SolidWorksNavigationStyle.cpp` calls `updateSelectionStartPosition()`,
+`handleSelectionDragMotion()` and `setupPanningPlane()`, none of which
+exist here, and its `QGVNavStyleSolidWorks` uses `Base::Console().message`
+(lower case) and no `PreCompiled.h`.  A verbatim port compiles nowhere.
+
+Deviations from upstream, each deliberate:
+
+- **TRAP: Upstream's per-style `hasPanned/hasDragged/hasZoomed` reset block is
+  NOT ported.** The fork already resets those three centrally, in
+  `NavigationStyle::setViewingMode()` when the mode becomes `IDLE`
+  (`NavigationStyle.cpp:1367`).  Copying the block in would be dead
+  duplication.
+- **The `default:` reset-to-IDLE in the combo table IS ported**, unlike
+  the fork's older siblings which still have a bare `break;`.  Without it,
+  releasing the middle button while the modifier is still held leaves the
+  style stuck in `PANNING`/`ZOOMING` and the next bare mouse move keeps
+  panning.  The fork's Blender/Revit still carry that bug; this file does
+  not, and 35.3 tests exactly that.
+- The two `newmode = SELECTION` assignments the fork's Blender makes in
+  the pan/zoom motion branches are dropped, as upstream dropped them --
+  the combo table below re-derives the mode from the buttons on every
+  event, so they never survived anyway.
+- `lookAtPoint()`'s fork behaviour is **kept** (the fork's returns bool and
+  falls back to `panToCenter`; upstream's returns void), as is the fork's
+  inline panning-plane setup and its `lockButton1` handling.
+- **TRAP: Upstream's `QGVNavStyleSolidWorks::handleMouseReleaseEvent` nests
+  the `zoomingActive` stop inside `if (panningActive)`**, so a Shift + MMB
+  zoom never ends on button release -- only on Shift release.  Fixed here
+  by using the flat per-button structure the fork's `QGVNavStyleOCC`
+  already uses.
+
+### 35.2 Registration is five files, and the preferences UI is automatic
+
+`src/Gui/`: the class in `NavigationStyle.h`, the new
+`SolidWorksNavigationStyle.cpp`, one line in `CMakeLists.txt`, and
+`SolidWorksNavigationStyle::init()` in `SoFCDB.cpp`.  `src/Mod/TechDraw/Gui/`:
+the new pair, two lines of `CMakeLists.txt`, and the include plus
+`find("SolidWorks")` branch in `QGVPage::setNavigationStyle`.
+
+No UI file needs editing: `UserNavigationStyle::getUserFriendlyNames()`
+enumerates `Base::Type::getAllDerivedFrom(UserNavigationStyle)` and strips
+the namespace and the `NavigationStyle` suffix, so registering the type is
+what makes "SolidWorks" appear in Preferences.  The page picks the style up
+live -- `QGVPage`'s `ParameterGrp` observer calls `setNavigationStyle()` on
+any `NavigationStyle` parameter change.
+
+The `Mod/Tux` navigation indicator is a separate hardcoded `a0..a10` menu
+that the type system does not reach.  It was extended on request -- see
+35.4.  Left alone, a style missing from it degrades to its "Undefined"
+entry, so this is polish rather than a functional gap.
+
+### 35.3 Test state: 16/16, each gesture run against the sibling as a control
+
+`nav_smoke.py` in the session scratchpad (not committed, per the
+DrawBrokenView convention), on the real GPU (RTX 3060 verified in the log)
+under VirtualGL + Xvfb.  Every gesture runs twice, once under
+`Gui::BlenderNavigationStyle` and once under SolidWorks: **the Blender row
+is the control** -- if it does not show its own documented bindings then
+event injection is broken and the SolidWorks row proves nothing.
+
+3D half, classified from the camera (orientation -> rotate, ortho height
+-> zoom, position -> pan): both styles rotate on MMB; Blender zooms on
+CTRL and pans on SHIFT, SolidWorks pans on CTRL and zooms on SHIFT.  Plus
+the stuck-mode guard of 35.1: after releasing MMB with CTRL still held, two
+further bare mouse moves must move the camera by nothing.
+
+Page half, classified from the `QGVPage` transform and scrollbars: plain
+MMB pans under SolidWorks and does nothing under Blender; SHIFT + MMB
+zooms under SolidWorks and pans under Blender; CTRL + MMB pans under
+SolidWorks and does nothing under Blender.
+
+Two traps paid for in that rig:
+
+- **TRAP: The QGV styles read `QGuiApplication`'s GLOBAL mouse-button and
+  modifier state, not the event's.**  A synthetic `QMouseEvent` through
+  `sendEvent` therefore drives nothing -- the handler sees no buttons.
+  `QTest` goes through the window-system interface and does set that
+  state, but `QTest::mouseMove` carries no modifiers and **resets the
+  global modifier to none**.  The recipe that works: `QTest.mousePress` to
+  set the buttons, `QTest.keyPress(Key_Shift, ShiftModifier)` to set the
+  modifier, then deliver the moves with `sendEvent`, which leaves the
+  global state alone.  (The 3D half has no such problem: `syncModifierKeys`
+  reads the `SoEvent`, which Quarter fills from the Qt event.)
+- **TRAP: Scaling a page view past ~3x segfaults** in the Qt FreeType raster
+  engine on the stock template's `line-height:0%` text (`err=62`) -- the
+  known trap, nothing to do with navigation.  Hide the template item first,
+  and note it only sticks **after** the page view exists; setting it before
+  `page.ViewObject.show()` is overridden when the view is built.
+
+### 35.4 The Tux indicator, and a correction about its icons
+
+Added on request: the navigation indicator now carries a SolidWorks entry,
+sitting alphabetically between Revit and TinkerCAD.
+
+**Correction to what 35.2 first said.**  The claim that the fork's Tux
+"ships TinkerCAD referencing four icons that are not in its icon
+directory" is **wrong**.  The files are indeed absent, but `Tux.qrc` maps
+the names onto sibling artwork with `alias=`:
+
+    <file alias="icons/NavigationTinkerCAD_Select.svg">icons/NavigationOpenCascade_Select.svg</file>
+
+So nothing in that menu is broken, and the fork already has an established
+way to give a style an entry without drawing new artwork.  That route was
+available here too and was **not** taken: upstream's generic mouse icons
+name the actual modifier (`ShiftMiddle`, `CtrlMiddle`), whereas aliasing a
+sibling would have shown Blender's or OpenCascade's artwork under
+SolidWorks' bindings, where the modifiers differ -- a misleading picture is
+worse than an extra file.
+
+What went in: seven upstream icons (`NavigationSolidWorks_{dark,light}.svg`
+for the menu, and the five `Navigation_Mouse_{Left,Scroll,Middle,
+ShiftMiddle,CtrlMiddle}.svg` the tooltip draws), seven `Tux.qrc` lines, and
+fifteen lines of `NavigationIndicatorGui.py` -- the action, its place in
+the menu, the tooltip, and the tooltip-toggle line.  The tooltip markup is
+upstream's, which needed no adaptation: it already builds from the same
+`text01..text10` strings this file defines, and ends with the same
+rotation-focus line the fork's own Revit tooltip uses.  SolidWorks is the
+only entry using the generic set; the other ten keep their per-style
+gesture icons.
+
+Notes for anyone touching this again:
+
+- `Tux_rc.py` is **generated** from `Tux.qrc` by `PYSIDE_WRAP_RC`, so a new
+  icon needs `ninja Tux` before it exists at runtime.  Editing the qrc
+  alone changes nothing in a built tree.
+- The menu order is the `menu.addAction` order, not the `aN` numbering, so
+  a new entry can be appended as `a11` and still display in the right
+  place.  `setCurrent()` iterates `gStyle.actions()` and needs no edit.
+- Since the fork's indicator hardcodes `_dark.svg` (it has no theme switch,
+  unlike upstream's `StyleSheetType`), the `_light` icon is carried for
+  parity with its ten siblings but is not referenced.
+
+`tux_smoke.py` in the session scratchpad, 10/10 on the real GPU: the action
+exists, is labelled, its menu icon resolves, it sits between Revit and
+TinkerCAD, its tooltip names the style and **every one of its five `<img>`
+sources resolves to a non-null pixmap**, and selecting the style makes it
+the menu's default action, hides the "Undefined" entry and moves the
+indicator's icon.  The image check is the one that matters: a tooltip
+referencing a name absent from the resource fails silently at render time.

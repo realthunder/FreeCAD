@@ -1454,8 +1454,17 @@ one. In order:
     a scattering of string tests.
 
 **Stage 5 -- the display styles themselves move to the backend. ORDERED
-2026-08-26 (user), not started.** Stage 4 removed one draw style because
-the Coin node behind it (`SoShadowGroup`) had a backend counterpart. This
+2026-08-26 (user); largely done 2026-08-27** -- the survey (5.5), the
+Class-A per-view resolution (5.7/5.8), the per-object per-view override
+map (5.9), the additive capture that serves non-standard modes and
+Mesh-shaped switches (5.10) and the cell-style half of that capture,
+which retires the canvas eviction rule (5.11), are built and verified,
+and show-on-top persistence has moved onto the same view-property
+machinery (5.12), the tagged-draw holes are closed (5.13), the
+foreign-document rows re-sync (5.14) and an object shown through a
+link now names itself on the container chain, so an override reaches
+it (5.15); what remains open is listed at the end of 5.11. Stage 4
+removed one draw style because the Coin node behind it (`SoShadowGroup`) had a backend counterpart. This
 stage generalizes that: **remove the legacy Coin implementation of every
 remaining display style -- Tessellation first, then the ones built the
 same way -- and let the backend produce the effect.**
@@ -1642,16 +1651,22 @@ So the stage does not open with a deletion. It opens with Class A.
 
 ### 5.7 Class A / D4: the design the survey allows
 
-! **Superseded 2026-08-26 by what was actually built** -- see
-docs/SplitViews.md sec 17. The sketch below treats a Class-A style as
-something the backend can reproduce from one capture. It cannot: the
-style is an override, which traverses a DIFFERENT child of each
-object's display-mode switch, and no filter over one capture can put
-back geometry that capture does not hold. The per-draw own-mode mask
-proposed below was also rejected on the ground that an object's display
-mode is Coin traversal's business and the backend must stay agnostic to
-it. What survives is the bucket-mask observation itself, which is what
-makes the per-object conflict test possible. Kept for the reasoning.
+! **Superseded 2026-08-26, then REINSTATED 2026-08-27 -- see 5.8.**
+The first half of the note below stands: a Class-A style is an
+override, which traverses a DIFFERENT child of each object's
+display-mode switch, and no filter over one capture can put back
+geometry that capture does not hold. That is why D4a's plain filter
+could not serve every case.
+
+The second half -- the rejection of the per-draw own-mode mask, on the
+ground that an object's display mode is Coin traversal's business and
+the backend must stay agnostic to it -- **was wrong, and 5.8 reverses
+it.** Rhino, SolidWorks and Blender all treat an object's display mode
+as a draw-time attribute of the object and resolve the style per object
+per view in the renderer. FreeCAD treats it as traversal state only
+because SoFCSwitch's named-child mechanism makes it so, which is the
+very thing this stage exists to retire. The sketch below is therefore
+close to what was built; 5.8 records where it was wrong in detail.
 
 Because the four children are bucket compositions of shared nodes, a
 Class-A style is a **bucket mask**, and the backend already sorts draws
@@ -1677,6 +1692,808 @@ cannot vary it per cell (5.2).
 Not in scope, and not close: Coin as scene graph, traversal and picking.
 Replacing that is a different project — the backend has no picking at all
 and the whole feed is built on Coin traversal.
+
+### 5.8 D4b: the style resolves per object per view (2026-08-27)
+
+**User ruling: "what other CAD and blender do", then "rhino model".**
+The question put to the user was whether to build a narrowed
+optimization or revisit 5.7's rejection; the answer named the
+precedent instead, so the precedent is what this follows.
+
+**What the precedents actually do.** All three separate a per-viewport
+setting from a per-object one and combine them *at draw time*:
+
+- **Blender** -- viewport shading (Wireframe/Solid/Material
+  Preview/Rendered) lives in each 3D viewport's own header
+  (`View3D.shading`), so two areas differ freely. Per object, "Display
+  As" is documented as a REDUCTION: "display the object with less
+  detail, going from removing the textures to only showing a bounding
+  box". The object setting caps the viewport's.
+- **Rhino** -- display mode is a viewport property (the stock
+  four-viewport layout ships wireframe orthos and a shaded
+  perspective). Per object: "Sets the object to display with the
+  viewport display mode, or allows you to select a display mode for the
+  object to override the display mode of the current viewport. How the
+  object displays in other viewports is not affected", plus a dialog
+  listing every viewport. Per-object-per-viewport overrides are not
+  expressible unless both inputs meet at draw time.
+- **SolidWorks** -- per-component display (Wireframe / HLV / HLR /
+  Shaded / Shaded With Edges / **Default Display**) held in Display
+  States, so components in one view carry different styles at once.
+  "Default Display" is exactly our `As Is`.
+
+Where they disagree: Blender's object setting is a CAP (an AND), while
+Rhino's and SolidWorks' REPLACES the view's. FreeCAD already matches the
+CAD reading -- the D4a rule that `As Is` respects an object's
+DisplayMode and any other style overrides it -- and the user chose the
+Rhino model explicitly, so replace is what is built.
+
+**The resolution.** Three inputs, resolved per object per view:
+
+    effective = object-in-view override   if set   (not yet built, see below)
+              : the view's style          if not As Is AND the object's
+                                           switch registers that NAME
+              : the object's own mode     otherwise
+
+The middle clause's second half is not a concession. An override whose
+name a switch has no child for **already** does not apply -- which is
+why Mesh's `Point` is untouched by a `Points` style, the pre-existing
+quirk 5.5 said to reproduce rather than fix. Stating it as a rule
+removes the special cases instead of adding them.
+
+**The traversal change is small**, because the superset capture needs
+no new switching logic at all: `captureOverrideMode()` returning
+`Flat Lines` already makes SoFCSwitch traverse the superset child. The
+only new duty is RECORDING what was overridden. `SoFCSwitch::doAction`
+now writes `SoFCOwnDisplayModeElement` -- the mode the object is in, as
+a `DrawStyleMask`, and which of the four style NAMES its switch has a
+child for -- which `SoFCRenderCache` captures into the material (it is
+part of the batching key: draws whose objects are in different modes
+must not merge) and `SoFCRendererBridge` puts on `DrawCall::ownStyle` /
+`registeredStyles`. `BGFXView::submit` resolves the three cases above.
+
+Style names need their own bits (`StyleNameBit`) because the bucket
+masks overlap -- Shaded is the faces bit, Wireframe and Flat Lines are
+unions -- so OR-ing bucket masks cannot spell a SET of names.
+
+**The canvas picks the cheapest service that works** (`StyleService`),
+so nothing that worked before pays more:
+
+1. `ServeOneStyle` -- the cells agree; the traversal applies the style,
+   as a plain view does.
+2. `ServeFilter` -- own-mode capture, flat per-cell masks. No extra
+   capture at all. Chosen only where `styleConflicts()` proves no
+   object's own mode can tell a filter from an override.
+3. `ServeSuperset` -- superset capture, per-object resolution. Serves
+   any mix, including one cell `As Is` beside an override. Pays for it
+   by tessellating faces a wireframe cell will not draw, so it is tried
+   last.
+
+`supersetBlocked()` is the residual limit, and it is narrow. A superset
+capture traverses each object's `Flat Lines` child; not every
+ViewProvider has one. Points registers `Point`/`Shaded`/`Color`; FEM's
+mesh registers `Wireframe` among six names of its own. For those the
+capture falls through to the object's own mode, which is right unless a
+cell's style would have applied to that object anyway -- and it applies
+exactly when the switch has a child of that NAME. Only there must the
+odd cell still leave the canvas. **Superseded by 5.11**: the cell's
+style name now rides the additive capture, so that object is served
+rather than evicted, and the only thing left that can block a superset
+service is the interest list's 16-entry bit budget.
+
+**Two live defects fell out of the survey**, both pre-existing in D4a:
+
+- **A draw's bucket is not always its `Material::Type`.** Mesh's
+  `Wireframe` and `Point` children are the SAME mesh node re-styled by
+  an `SoDrawStyle` (`pcLineStyle` is LINES, `pcPointStyle` is POINTS),
+  so the cache emits them as `Material::Triangle` carrying a drawstyle.
+  Two cells, one `As Is` and one `Wireframe`, over Mesh objects whose
+  own mode is `Wireframe` passed `styleConflicts()` -- both masks are
+  `Lines|Points` -- and then filtered every Triangle draw away, so the
+  meshes vanished. `Render::styleBitOf()` classifies by what a draw
+  RENDERS as. A scene-wide drawstyle override is deliberately not
+  reclassified: that is Tessellation, whose filled faces still occupy
+  the faces bucket because they are drawn to occlude.
+- **Hidden Line, No Shading and Tessellation are not bucket
+  selections.** Their mask is `StyleAsIs`, so a filtering canvas
+  claimed such a cell and drew it the shared capture with none of the
+  traversal state those modes are made of. They now share a canvas only
+  with cells in the same mode.
+
+**Measured (RTX 3060, xvfb + vglrun egl0).** `d4mode` measures a plain
+view and the canvas in one run, so session drift cancels:
+
+    single own=Wireframe  style=Shaded  ink= 30456     canvas ink= 30464
+    single own=Flat Lines style=Shaded  ink= 30456     canvas ink= 30464
+
+The canvas row was **0** before -- the filter had nothing to keep -- and
+the two canvas rows now agree with each other, which is what
+substitution means: a Shaded override shows the same faces whatever the
+object's own mode. `d4rel` phase B (own mode Wireframe, one cell
+Shaded) now keeps `canvas=True` with `ink=[1079, 30464]`: the cell that
+used to be evicted stays on the shared canvas and still shows the
+override. Its V2 verdict ("conflicting cell splits off") is inverted on
+purpose.
+
+**What remains: the per-object-per-view override**, the first clause of
+the resolution and the reason the Rhino model was chosen. Its design is
+5.9 -- an earlier plan that stored the map on every
+`ViewProviderDocumentObject` was implemented and then withdrawn on the
+user's ruling, so 5.9 is the one to build from.
+
+### 5.9 The feature side: the override map lives on the view (2026-08-27)
+
+**User ruling: "store the information in view."** The first approved
+plan -- `App::PropertyMap ViewDisplayModes` on every
+`ViewProviderDocumentObject`, keyed by `MDIView::getPersistentName()` --
+was implemented, then withdrawn: it charges every object in every
+document an empty map (~110 bytes plus a parse) whether or not the
+feature is ever used. The cost of a per-view feature must be per view.
+
+**Storage.** `App::PropertyMap ObjectDisplayModes` on `View3DInventor`,
+a static property beside `DrawStyle`/`ShowNaviCube`/`ThumbnailView`.
+The view is itself a property container whose `Save` is embedded in
+`GuiDocument.xml` per view (`Document.cpp` writes `view->Save()` into
+the `<View3D>` element), so the map needs no key (the view is the key),
+no hand-rolled persistence, and costs one empty map per VIEW. The
+property editor has no `PropertyMap` item, so the map stays Hidden.
+
+Contrast with show-on-top, the other per-view object list: that one is
+a lazily created dynamic `App::PropertyStringList "OnTopObjects"` on
+the APP document with `"<viewID>:<subname>"` entries and a hand-rolled
+save/restore pair in `Document.cpp` -- machinery a view property gets
+for free. Migrating it onto the view is filed as a follow-up task; the
+legacy document property must keep restoring for existing files.
+
+**Entries -- both semantics, per the user's ruling of 2026-08-27:**
+
+- key, path form: a subname path rooted at a top-level object of the
+  view's document (`"Asm.Sub.Part."`, show-on-top's shape) -- a
+  CONTEXT-AWARE override naming one occurrence. A cross-document leaf
+  is reached through the local Link in the path, so no document prefix
+  is needed; this dodges show-on-top's own-document limitation by
+  construction rather than by adding one.
+- key, bare form: an object's internal name with no dot
+  (`"Part"`) -- CONTEXT-FREE, the object wherever it appears in this
+  view.
+- value: a display mode name -- ANY name the target's switch
+  registers, not only the four style names (user extension,
+  2026-08-27; see "Non-standard modes" below). `As Is` as a VALUE
+  means "follow the object's own DisplayMode" -- it escapes a view
+  style that would otherwise override, which is SolidWorks' "Default
+  Display" made explicit.
+- absent: the 5.8 resolution applies unchanged.
+
+The most specific matching entry wins: deepest path first, bare name
+last, and the 5.8 rule that a style applies only where the object's
+switch registers that NAME carries over to overrides verbatim.
+
+**Why context-aware at all -- the precedents.** Every assembly-centric
+CAD keys display overrides by occurrence: SolidWorks' Component
+Display (Wireframe/HLV/HLR/Shaded/Shaded With Edges/Default Display)
+applies per component instance and is held in Display States, so two
+instances of one part differ side by side; CATIA stores graphic
+properties on the Instance versus the Reference with explicit
+inheritance between them; NX saves per-component display overrides in
+the assembly file. Rhino and Blender have no occurrence concept -- the
+block/collection instance OBJECT carries the override, which is
+exactly what our `App::Link` already provides (a Link substitutes its
+own presentation for the linked object's; that IS a context-aware
+display override, one container level deep). In a Link-based assembly
+every occurrence is a real Link object, so the bare form alone already
+matches Rhino/Blender power; the path form adds the shared
+sub-assembly case -- `AsmA.Sub.Part` styled apart from
+`AsmB.Sub.Part` -- the same case show-on-top's paths exist for.
+
+**Resolution -- and the finding that shaped it.** The backend's
+`DrawCall::objectKey` is a hash of the chain of `SoFCSelectionRoot`
+selnodeids (`NodeKey`), so it is already OCCURRENCE identity: one Part
+under two Links yields two keys. But `NodeKey::Origin` records only
+the DEEPEST chain node's `{doc, obj}` (`noteOrigin`), so a draw under
+a container names the leaf child, not the container -- which means
+even a bare-form override on a Link/group/assembly needs ancestry
+matching, or it would only ever work on naked leaf objects. Both
+forms therefore share one mechanism:
+
+- `NodeKey::Origin` grows into the PATH of chain objects (every
+  chain node owned by a ViewProviderDocumentObject, deepest last),
+  captured where the origin is captured today -- key composition, the
+  only moment the whole chain is in hand -- and deduplicated per
+  unique key, so the added string cost is bounded by the number of
+  distinct keys, not draws. `Render::ObjectInfo` carries the path.
+- The view hands its backend the name-keyed table; the backend
+  resolves it ONCE into `objectKey -> style mask` against the
+  `ObjectInfo` paths (rooted-prefix match for path entries,
+  contains-element for bare entries), caches the result, and
+  invalidates on `Renderer::objectInfoVersion()` or a table change.
+- `BGFXView::submit` consults that map as the FIRST clause of the 5.8
+  resolution.
+
+**Non-standard modes (user extension, 2026-08-27).** An override value
+that is one of the four style names resolves on the shared superset
+capture as a mask, exactly as a view style does. A value naming any
+OTHER registered mode -- Points' `Point`/`Shaded`/`Color`, FemMesh's
+six own names, a workbench's custom mode -- is a DIFFERENT SUBGRAPH:
+no mask over the superset capture can produce it. Those resolve by
+additive capture:
+
+- The views sharing a capture (one viewer, or a canvas's cells)
+  assemble an INTEREST SET from their tables: object path -> the set
+  of non-standard mode names any override wants. Handed to the
+  capture side; changing it invalidates the affected object's cache
+  and re-captures (a user gesture, so the cost lands on an edit, not
+  on a frame).
+- For an object in the interest set, `SoFCSwitch::doAction` traverses
+  the named children IN ADDITION to the superset child, each under
+  `SoFCOwnDisplayModeElement` carrying the name of the mode child
+  being traversed, so every draw is tagged with the mode subgraph it
+  came from. The tag joins the material batching key (which 5.8
+  already grew for own-mode bytes) -- draws from different mode
+  children must not merge.
+- At submit, when the effective mode for (object, view) is
+  non-standard, a draw passes if its captured-mode tag equals the
+  effective name (interned `SbName` compare -- the 5.8 strcmp trap
+  applies), and the superset draws for that object are suppressed in
+  that view. Objects without non-standard overrides pay nothing new.
+
+This also narrows `supersetBlocked()`: an object whose switch lacks a
+`Flat Lines` child but registers a cell's style NAME can now be served
+by capturing that named child additively instead of evicting the cell
+from the canvas -- the same mechanism, driven by the cell style rather
+than an override entry. Worth folding in, but as a follow-up: the
+eviction rule stays correct meanwhile. **Done in 5.11.**
+
+**Capture.** A view whose map is non-empty needs the superset capture
+even as a plain non-canvas view: an override can ADD geometry the
+object's own mode does not draw (own mode `Wireframe`, override
+`Shaded`). The plain viewer flips `captureOverrideMode` when overrides
+exist; a canvas treats any cell with overrides as `ServeSuperset`, and
+`supersetBlocked()` applies to override names the same way it applies
+to cell styles (until the additive capture above absorbs it).
+
+**UI.** Two entry points, one per key form:
+
+- The property editor row already settled by the user: a transient
+  `App::PropertyEnumeration DisplayModeInView` on the ViewProvider,
+  enum `["Use View Mode"] + getDisplayModes()`, reading and writing
+  the ACTIVE view's map and refreshed on active-view change. It
+  writes the BARE form -- the property editor shows an object, not an
+  occurrence. Because the list is the ViewProvider's own DisplayMode
+  enum, non-standard modes appear in it with no special-casing --
+  which is what makes the extension above reachable from the UI.
+- A tree context submenu ("Display mode in this view"), sitting where
+  show-on-top's commands sit, writing the PATH form -- the tree item
+  is the thing that knows its full path. Plus a "Clear per-view
+  overrides" command; Rhino ships one for the same reason: per-view
+  state that is invisible is hard to reason about.
+
+**Accepted trade-offs** (each matching show-on-top's behavior):
+overrides die with their view (Rhino keeps them object-side; the
+storage ruling decides otherwise), a deleted object leaves an inert
+entry (prune opportunistically, never a load-time error), and edits
+bypass undo (view properties sit outside document transactions, as
+`DrawStyle` already does).
+
+**Built 2026-08-27** -- plumbing `0b930ae8be`, storage + resolution +
+capture `04d40f633e`, UI `7a86098ae5`, instancing fix `5b8d9016ca`.
+The additive capture for non-standard modes followed the same day --
+see 5.10. Two findings from the build:
+
+- **An instance group is not one object.** The instanced submit path
+  merges draws by geometry and material, NOT by objectKey, and drew
+  the prototype for every member with no style resolution at all --
+  so an override on one box leaked onto every identical box, and a
+  canvas cell WITHOUT the override showed the superset capture. This
+  was a latent 5.8 gap too: two same-geometry objects on a styled
+  canvas took the same wrong path; d4mode never saw it because it
+  measures one box. `BGFXView::styleAdmits` now carries the whole
+  resolution and both the per-draw submit and the instanced partition
+  ask it; a member the style drops leaves the group for the per-draw
+  loop (which filters it) but still casts shadows, exactly as the
+  per-draw caster path would.
+- **Adding a property to ViewProviderDocumentObject is an ABI break
+  for every workbench.** The DisplayModeInView row grew the base
+  class; a rebuild of FreeCADGui alone left PartGui constructing on
+  the old layout and crashing inside attach with stacks that pointed
+  everywhere but the cause. Full rebuild after base-class header
+  changes, always.
+
+**Verified (RTX 3060, xvfb + vglrun egl0)**, rigs `ovr.py` /
+`ovrsave.py`, a Box and a Link of it (identical geometry = the
+instancing case), own mode Wireframe throughout:
+
+    A  row override Shaded (bare "Box"): ink 3600 == plain Shaded
+       3600; the Link stays 240 == its wireframe 240; clearing the row
+       returns 239 == 239.
+    B  command override "Link." Shaded: Link half 3600, the original
+       Box EXACTLY its 239 baseline; stored = {"Link.": "Shaded"};
+       clear-all returns 240 == 240.
+    C  2-cell canvas, override in cell 0 only: [3600, 179], cell 1
+       exactly its 179 base -- ServeSuperset resolving per cell.
+    D  save / close / reopen: the row reads Shaded, own mode
+       Wireframe, ink 16900 == the pre-save 16900.
+
+### 5.10 The additive capture: non-standard modes resolve (2026-08-27)
+
+The last open piece of 5.9, built and verified the same day. An
+override value outside the four Class-A names -- a different SUBGRAPH
+no mask over the superset capture can produce -- now renders, by
+capturing the named child IN ADDITION to the normal flow and resolving
+it per view at submit.
+
+**The moving parts.**
+
+- `Render::internModeName()` -- a process-lifetime intern table for
+  mode names, so a draw's tag and an override entry meet at submit as
+  an integer compare and no Coin type crosses into Render.
+  `StyleOverride::modeId` carries it; the parse no longer skips
+  non-standard values.
+- The INTEREST SET: each viewer builds, from its own table's
+  non-standard entries plus what a unified canvas imposes (the UNION
+  across cells, so the feed can migrate), a list of (name, id) pairs
+  -- `SoFCDisplayModeElement::CaptureInterest`, pushed onto the
+  element by `applyOverrideMode` beside the override mode. The
+  element's `matches()` compares the list's version, which is what
+  re-captures the scene when the interest moves: the caches that read
+  it mismatch on the next traversal. The order of the list is the
+  contract -- it assigns the `interestBits` bits -- so the SAME list
+  is handed to the backend (`Renderer::setCaptureInterest`). 16
+  entries max (the bit budget); the excess is dropped with a warning
+  and stays inert.
+- `SoFCSwitch::doAction`, in the named-override branch: reads the
+  interest, writes `SoFCModeInterestElement` (which interest modes
+  this switch has a child for, and -- when the child the normal flow
+  takes is itself interest-named -- its id as `traversedMode`), then
+  after the normal traversal walks the interest-named children it did
+  NOT take, each under `SoFCCapturedModeElement` carrying the mode's
+  id (set/set-back, no state push, like the other mode elements). The
+  tag element is enabled ONLY for the capture-building actions, which
+  is also the gate on the traversal -- picking and bounding boxes
+  stay on the normal flow.
+- The cache captures all three values into the Material (they join
+  the batching key: a tagged draw must not merge with the normal
+  flow's), the bridge copies them onto `DrawCall::capturedMode /
+  traversedMode / interestBits`, and the cache manager's
+  multiple-caches-per-node machinery gives the additively traversed
+  shared child its own cache generation instead of thrashing the
+  normal flow's.
+
+**The admission rule** (`BGFXView::styleAdmits`, first clause), for an
+override resolving to non-standard mode M:
+
+    tagged draw            -> admitted iff its tag IS M
+    untagged, traversedMode == M
+                           -> admitted (the normal flow already IS
+                              the mode; no tagged copy exists)
+    untagged, switch registers M (interest bit)
+                           -> suppressed (the tagged subgraph
+                              replaces it)
+    untagged, no child of that name
+                           -> the object's own mode, the same
+                              fallback a Class-A style takes
+
+And unconditionally: a TAGGED draw under any other resolution -- a
+Class-A override, a pin, the view style, plain "As Is", another
+cell -- is dropped, or the object double-draws. The `traversedMode`
+clause was the subtle one: without it, an override naming the mode
+the switch already shows either vanishes the object (suppressed with
+no tagged copy) or double-draws it (normal flow plus additive copy),
+depending on which child the superset flow took.
+
+**Two restore defects the rig exposed** (both in
+`ViewProviderDocumentObject::attach`): rebuilding the
+DisplayModeInView enum fires `onChanged` with the row reset to "Use
+View Mode", and under DEFERRED VP restore the provider attaches after
+the restored view is already active -- so the rebuild ERASED the
+just-restored override from the view's map. Fixed by marking the
+rebuild with the same User1 status the sync path uses, and re-syncing
+the row from the active view afterward (without which the row shows
+"Use View Mode" over a live entry and "clearing" it is a no-op).
+
+**The name-mapping gap, CLOSED for the in-tree providers
+(2026-08-27, follow-up session).** The override map stores USER-facing
+display mode names, but the switch children carry MASK mode names --
+two namespaces the base ViewProvider separates on purpose (each
+provider's `setDisplayMode()` is the documented translation point,
+and the mapping can be many-to-one with data-binding side effects) --
+and the collision dates to the pre-2011 SVN era: upstream still
+carries it identically and never notices, because upstream's only
+mask-name consumer runs through the owning `setDisplayMode()`. Our
+named-override machinery matches childNames from the OUTSIDE, so it
+finally mattered. Resolved by making the two-layer split unnecessary
+where it was arbitrary and impossible where it was real:
+
+- **Points provider restructured**: "Intensity" is its own mask child
+  with its own material (it used to share pcColorMat with "Color" --
+  the binding side effect that made the modes mutually exclusive per
+  scene graph), all vertex data (colors, greys, normals) binds
+  EAGERLY on data change (`applyVertexData`, with the count-mismatch
+  fallback moved to bind time: an invalid list flips the material
+  binding to OVERALL and the child renders as plain points), and the
+  mask names now equal the user names ("Point" -> "Points",
+  "Intensity" added). `setDisplayMode` is a pass-through. Two views
+  can show "Color" and "Intensity" at once.
+- **Mesh's point mask child renamed** "Point" -> "Points" (mask names
+  are not persisted; DisplayMode stores user names, so old files are
+  unaffected).
+- **Class-A override VALUES now resolve through the additive capture
+  too**: parse gives every named entry its interned modeId beside the
+  Class-A nameBit/mask, and the admission prefers the tagged subgraph
+  (mask over the superset stays as the fallback for a switch the
+  interest capture did not cover). Required because the
+  nested-subset assumption behind the masks is Part-specific: Mesh's
+  "Flat Lines" superset child contains NO point rendering, so no mask
+  can serve a "Points" override on Mesh. The switch also records
+  traversedMode in the named-override branch now -- the style-named
+  child the flow takes can itself be the override's mode.
+- **The backend renders `Triangle + DrawPoints` as corner points**
+  (`submitVertexPoints`, reusing the outline passes' per-corner
+  instance buffer): Mesh's own "Points" display mode rendered as
+  SOLID SHADED under the backend before -- a pre-existing gap the rig
+  exposed (only DrawLines had the Tessellation path). Returns in
+  every non-normal pass: dots must not occupy the depth prepass or
+  cast a solid shadow.
+
+What remains open is only the third-party case: a provider whose user
+names map to differently named mask children, or whose modes bind
+data at activation, falls back to the object's own mode under an
+override. The contract for provider authors is now simply: name mask
+children after the user modes, bind data eagerly.
+
+Verified rig `pts.py` (RTX 3060, xvfb + vglrun egl0): Points feature
+with red Color and dark Intensity lists -- P-base own modes
+(points-ink 2659, color-red 1545, intensity-dark 1538), PA override
+Color red==own-color 1545 and clears to 0, PB 2-cell canvas Color and
+Intensity SIMULTANEOUSLY [red 1650 / dark 1624, zero leakage], M Mesh
+own "Points" ink 347 (was 55255 == shaded before the DrawPoints fix),
+override==own 347, clear returns 55255. nsm 6/6, ovr / ovrsave (same
+ink as the mask path -- the tagged subgraph is pixel-equal for Part),
+d4 8/8, d4mode all green after.
+
+**Verified (RTX 3060, xvfb + vglrun egl0)**, rig `nsm.py`: an
+`App::FeaturePython` whose provider registers two non-Class-A modes,
+"Cube" (a 10-unit cube) and "Ball" (a radius-1 sphere) -- honest
+names, no side effects:
+
+    base   own=Cube ink 29415, own=Ball ink 535
+    A      own=Cube, row override Ball: ink 633 (the ball); clearing
+           returns 29415 (the cube).
+    A2     own=Ball, override Cube: ink 29415 -- the override ADDS
+           the cube the own mode does not draw.
+    C      save / close / reopen: row reads Ball, map intact, ink
+           633; clearing returns 29415.
+    B      2-cell canvas, override in cell 0 only: [712, 29416] --
+           the tagged draws do not leak into the As Is cell.
+
+ovr / ovrsave / d4 (8/8) / d4mode all green after.
+
+### 5.11 The cell style rides the additive capture (2026-08-27)
+
+Closes the `supersetBlocked()` follow-up 5.9 filed and 5.10 named as the
+next item. A cell's display STYLE is an override -- that is the whole
+premise of the per-object resolution -- so it belongs in the same
+additive capture the per-object override modes already ride. It now is
+one: `ViewAreaCanvas::collectCaptureInterest()` builds the interest list
+from every cell's override modes AND every cell's own style name, and
+`BGFXView::styleAdmits()` resolves the style clause by the same three
+rules the override clause uses (tagged draw admitted iff it is this
+mode's; untagged admitted where `traversedMode` says the normal flow
+already IS the mode; untagged suppressed where the mode's interest bit
+says a tagged copy exists; otherwise fall through to the mask over the
+superset). The plain view carries it too, through a fifth argument to
+`Renderer::setMainViewStyle` -- a view with overrides captures the
+superset, and its own style needs resolving there for the same reason a
+cell's does.
+
+Two things follow.
+
+**The eviction rule retires.** `supersetBlocked()` used to answer "some
+object's switch has no `Flat Lines` child yet does have a child named by
+one of the cells' styles", and the odd cells left the canvas. That
+object is now served by capturing its style-named child additively, so
+the answer no longer depends on any ViewProvider's mask list. What is
+left is the bit budget: `DrawCall::interestBits` is 16 bits
+(`CaptureInterestTable::MaxModes`), a longer list is truncated, and a
+style whose id falls off the end was never captured -- that cell would
+silently draw the objects' own modes, so it still has to leave. The
+function now tests exactly that and nothing else.
+
+**A Mesh-shaped switch stops being a special case.** The same argument
+that forced Class-A override VALUES through the additive capture in 5.10
+-- the nested-subset assumption behind the masks is Part-specific --
+applies unchanged to a cell STYLE naming the same mode. Before this, an
+override reading "Points" on a Mesh object resolved correctly while a
+CELL in the Points style over the same object went through the mask; the
+two paths now agree because there is only one path.
+
+**What it costs.** The style ids join the interest list only under
+`ServeSuperset`, which is already the last service tried: a canvas whose
+cells provably differ by removal takes `ServeFilter` and captures
+nothing extra, and a single-style canvas takes `ServeOneStyle`. Where
+the superset IS the service, each cell style now costs one additive
+traversal of that named child per object that has one. That is the price
+of correctness the Mesh finding set, paid in the same coin.
+
+**A trap the rig hit first.** `StyleFlatLines` is
+`Faces|Lines|Points` -- an object whose own mode is `Flat Lines` never
+conflicts with a `Points` cell, so `styleConflicts()` sends that canvas
+down `ServeFilter` and the superset path is never reached. The first
+version of the rig set the mesh's own mode to `Flat Lines` and measured
+the filter service while believing it was measuring the superset one. A
+rig for this path must put the objects in a mode whose mask does NOT
+contain the cell style's buckets (`Shaded`, `Wireframe`), or it is
+testing the wrong service.
+
+**Verified (RTX 3060, xvfb + vglrun egl0)**, rig `sbn.py`, both cases a
+2-cell canvas in `[As Is | Points]`:
+
+    A  Mesh box, own "Shaded" (has a Flat Lines child, so this was
+       never evicted): As Is cell 55093 ink (own shaded 55255), Points
+       cell 351 (own points 347). Before the change: 345 -- the tagged
+       subgraph is pixel-equal to the mask here, which is the
+       non-regression half.
+    B  Points::Feature, own "Color" (RED points), no Flat Lines child
+       at all -- THE evicted case: As Is cell keeps its 916 red pixels,
+       Points cell shows the grey "Points" child instead (ink 1320 ==
+       the object's own Points ink, red 0).
+
+The trace is what separates before from after, the pixels being right
+either way (an evicted cell renders itself correctly -- that is the
+point of evicting it). In case B the pre-change build logs only
+`styles one-style` and the post-change build logs
+`claims 1 2*, drawing 2 sub-views, styles superset`: one capture, both
+cells, no eviction.
+
+`nsm` 6/6, `pts` (P-base / PA / PB / M) all PASS, `ovr`, `ovrsave`,
+`d4` 8/8 and `d4mode` all green after -- `d4mode` byte-identical to the
+5.10 run bar one pixel, which is the point: the extra additive capture
+changes no pixels where the mask already served.
+
+**Still open** (unchanged from 5.10 unless noted): the show-on-top
+persistence migration -- **done in 5.12**; the selection/highlight feed
+and `SceneDump` tagged-draw holes -- **done in 5.13**, which also found
+that whole-object selection ignores the display mode outright, in Coin
+as well; `DisplayModeInView` rows for foreign-document objects are not
+re-synced on table change -- **done in 5.14**, which found in passing
+that an override never reaches the DRAWING of an object shown through a
+link -- **done in 5.15**; and third-party providers that map user names
+onto differently named mask children still fall back to the object's own
+mode.
+
+### 5.12 Show-on-top persistence moves onto the view (2026-08-27)
+
+The remaining item from 5.9's task list. The set of objects a view
+draws ON TOP -- over everything, whatever occludes them
+(`Std_ToggleShowOnTop`) -- was persisted as a **dynamic
+`App::PropertyStringList` on the APP document**, gathered at save time
+from every viewer and keyed by view id:
+
+    OnTopObjects = ["3:Back.", "3:Link.Box.", "5:Assembly.Part."]
+
+Three things are wrong with that. The id is a per-session counter, so
+the key only means anything inside one file's own `<View3D>` entries.
+The property is a visible row in the document's property editor, in
+`Document.xml`, and inside the undo stack, for what is view state and
+not model data. And it was gathered at save, so nothing between saves
+had a store at all.
+
+It is now `App::PropertyStringList OnTopObjects` **on
+`View3DInventor`**, exactly like `ObjectDisplayModes` (5.9): hidden,
+riding the view's own `Save`/`Restore` into `GuiDocument.xml`, with no
+id in it because the view IS the key. `Document::snapshotOnTopObjects()`
+hangs off `signalOnTopObject` and writes the property whenever the group
+moves, and `View3DInventor::onChanged` applies the property to the
+viewer -- the same two-directional pair `DrawStyle` uses, latched by the
+`User1` status bit so neither direction re-enters the other. The
+property is the store, not a record of one.
+
+**A bug fell out of it.** The legacy format was parsed with
+
+    if (iss >> id >> c)
+        if (std::getline(iss, name, '.') && std::getline(iss, subname))
+
+and the entry an object with an EMPTY subname writes is `"3:Back."` --
+the whole of a top-level object, which is the common case. After the
+first `getline` consumes `Back` and its delimiter the stream is at its
+end, so the second `getline` extracts nothing, sets `failbit`, and the
+entry is **dropped**. Measured directly:
+
+    8:Back.        -> DROPPED  name='Back' sub=''
+    8:Link.Box.    -> KEPT     name='Link' sub='Box.'
+
+So show-on-top has never survived a save/reopen for a plain object,
+only for one reached through a link. The new path splits at the first
+dot with `find` and treats a missing remainder as an empty subname.
+
+**Legacy restore.** An old file's app-document property is read once on
+restore, split per view id, and applied to each view's own property --
+but only where that property came back EMPTY, and only after
+`view->Restore`, because a file written after the move carries the
+authoritative copy and a file written before carries no view-side value
+at all. The dynamic property is then removed, so the next save writes
+only the new store.
+
+**Verified (RTX 3060, xvfb + vglrun egl0)**, rig `ontop.py` -- a small
+green box hidden behind a large one, visible only while it is on top:
+
+    N  save / close / reopen: on-top set back as ["Back."], green 29
+       == the pre-save 29 (hidden baseline 5). This is the case the
+       legacy parse dropped.
+    L  a file carrying ONLY the legacy app-document entry (its view id
+       read back out of the saved GuiDocument.xml): restores to
+       ["Back."], green 29, and the dynamic property is gone.
+    P  toggling off and on again: 5 -> 29, the property tracking the
+       group live rather than at save.
+
+`sbn`, `nsm`, `ovrsave`, `d4` green after.
+
+- **TRAP.** Adding a member to `View3DInventor` is an ABI break for
+  every module that includes its header, and `ninja FreeCADGui` does
+  not rebuild them. `PartGui::coarseTessellationLevel` does a
+  `qobject_cast<View3DInventor*>(activeView())` and then calls through
+  it, so the first `Part::Box` property edit segfaulted -- with a stack
+  that points at Part's tessellation and says nothing about the header
+  that moved. Same class as the `ViewProviderDocumentObject` property
+  add in 5.9: **full rebuild after a property add.**
+
+### 5.13 The tagged-draw holes: outlines and the served scene (2026-08-27)
+
+The third item of the 5.10 list, and the one that turned out to be
+mostly a different question than it looked.
+
+**Outlines now obey the style resolution.** `BGFXView::submit()` asks
+`styleAdmits()` of every draw, and the highlight and selection feeds go
+through it, so their FILLS were already resolved per object. The
+outline entry points were not: `submitOutline`, `submitOutlineMark` and
+`submitOutlineEdges` drew whatever they were handed. A draw this
+sub-view suppresses -- because its style names another mode, or because
+the mode's ADDITIVELY captured copy replaces it -- would leave its
+silhouette behind, and an overridden object could be outlined twice,
+once from each copy. All three now return early on `styleAdmits`, and
+the mark/edges pair agrees by construction so no stray stencil mark is
+left for edges that never come.
+
+**The served scene drops tagged draws.** `SceneDump` carries neither
+`capturedMode` nor `ownStyle`/`registeredStyles`, and the remote viewer
+has no override table -- there is nothing at the far end that could
+pick one of two copies of an object, so it would draw both.
+`makeSnapshot()` now filters the additively captured draws out of the
+scene, selection, highlight and overlay feeds, and only while an
+interest capture is running (with no interest list no draw is tagged
+and the filter is the plain copy it always was). A served scene then
+shows the object in the mode the normal flow traversed, which is what
+serving a view's overrides has always shown -- minus the double draw.
+Carrying the resolution to the browser tier is a feature, not a hole,
+and is not attempted here.
+
+**What the rig turned up instead.** `seltag.py` puts the `nsm.py`
+provider -- modes `Cube` (a 10-unit cube) and `Ball` (radius 1),
+geometry nothing alike -- in a view and selects it:
+
+    own=Cube  ink 66342   selection delta 66342
+    own=Ball  ink  1197   selection delta 66342
+    override=Ball  ink 1532 (draws as the ball)  selection delta 66342
+
+A whole-object selection highlights the CUBE even when the view draws
+only the ball, with or without an override. It is not the tagged-draw
+hole and not a backend defect: a `Part::Box` in `Wireframe` selects as
+a solid filled box too (flat-lines ink 55982, wireframe ink 2474,
+selection delta 66977), and **the Coin path at render cache 0 does
+exactly the same**. Whole-object selection has always ignored the
+display mode. Whether it should is a UI ruling, not a bug fix, so it is
+recorded here and left alone.
+
+`sbn`, `nsm`, `pts`, `ovr`, `d4` 8/8 and `d4mode` green after, all
+unchanged to the pixel.
+
+### 5.14 Foreign-document rows, and what they revealed (2026-08-27)
+
+The last item of the 5.10 list. `View3DInventor::onChanged` keeps the
+`DisplayModeInView` rows honest when the table moves from anywhere but
+the rows themselves -- the context command, undo, a restore -- by
+sweeping the view's objects and re-syncing each. It swept the VIEW's
+own document only. An object shown here through a `Link` from ANOTHER
+document has its ViewProvider, and so its row, in THAT document's
+`Gui::Document`, so its row went stale: the entry key had a
+doc-qualified form (`"<doc>#<name>"`) from the start, but nothing ever
+told the far row about it. The sweep now walks every open document.
+`syncDisplayModeInView` writes nothing where the row already agrees, so
+the wider sweep is a read for all but the objects an edit moved.
+
+**And the rig found that a foreign-document entry never reaches the
+drawing at all.** `xdoc.py` -- document `XA` holds a `Wireframe` box,
+document `XB` links it, `XB`'s view is active:
+
+    foreign row set to Shaded, then cleared externally:
+        row Shaded -> "Use View Mode"          PASS (this fix)
+        ink 963 -> 963 -> 963                  the value never lands
+    the same override on a box of XB's OWN document:
+        ink 963 -> 24434 -> 963                lands
+    the PATH form, selecting the box through the link:
+        ink 963 -> 1658                        does not land either
+
+So the machinery works in that view, and both key forms fail for the
+same object once it belongs to another document -- which says the
+container chain the backend matches an entry against
+(`ObjectInfo::path`, built from the render cache's origin path) does not
+identify the foreign object, rather than that the bare match is wrong.
+Chasing that means going into how a cross-document `Link` composes its
+origins, which is its own piece of work; it is filed here, not fixed.
+Until then a per-object override reaches only objects of the view's own
+document -- the row will read back correctly and show nothing.
+
+**CLOSED by 5.15**, and the diagnosis above was half right: the chain
+does not identify the object, but nothing about it is cross-document.
+
+### 5.15 A link's snapshot names the linked object (2026-08-28)
+
+5.14's open finding, chased and fixed. It is not a foreign-document
+bug at all -- it is a LINK bug that only ever shows up across
+documents, because an object of another document can be reached no
+other way.
+
+**What the chain actually said.** `xchain.py` asks it in ink: with
+`XA`'s wireframe box shown in `XB` through a link, put the override on
+the LINK (`"Link."`, path form) and on the LINKED OBJECT (`"XA#Box"`,
+bare form), one at a time.
+
+    entry on the link           ink 963 -> 24434    the link IS on the chain
+    entry on the linked object  ink 963 ->   963    the object is NOT
+
+So the chain named the link and stopped. `LinkInfo::getSnapshot` builds
+the link's copy of the linked scene graph by taking the linked
+ViewProvider root's CHILDREN and re-parenting them under a fresh
+`SoFCSelectionRoot` of the link's own. The linked provider's root --
+the one node in that subtree whose `getViewProvider()` would say which
+object this is -- is therefore never traversed, and
+`NodeKey::noteOrigin`, which reads exactly that, records nothing for
+it. Every draw made through a link named the link as its deepest
+object.
+
+That is also why both key forms failed: the bare form had no chain
+element to match, and the path form's `Link.Box.` needs `Box` on the
+chain below `Link` just as much.
+
+**The fix.** `SoFCSelectionRoot` gains `setNodeOrigin(obj)`, an
+explicit "this node stands for that object" for a node that does not
+own the object's ViewProvider, and `noteOrigin` falls back to it.
+`ViewProviderLink`'s `_registerLinkNode` -- already the one place a
+link binds a stand-in node to a document object, for its own node map
+-- sets it, so every snapshot and every non-geo-group child node gets
+one. The chain through a link is now `Link, Box`, ending at the object
+that owns the geometry, exactly as a group's chain already ended at
+the child rather than the group.
+
+**Two consequences, both intended:**
+
+- `ObjectInfo::doc/obj` -- the DEEPEST chain object -- is now the
+  linked object rather than the link. `Renderer::setCaptureFilter`
+  resolved TechDraw's `Source` objects against that leaf alone, so a
+  source that owns no draws of its own would no longer resolve; it now
+  matches anywhere on the chain, which is what a group or assembly
+  source needed anyway. `tdcap.py` renders a shaded underlay from a
+  plain source and from a Link source: both take the backend path,
+  8 captures, 0 refusals, 9204 green pixels each.
+- A bare entry on an object now reaches its occurrences THROUGH links,
+  which is what 5.9 defines the bare form to be ("CONTEXT-FREE, the
+  object wherever it appears in this view"). `ovr.py`'s case A had
+  asserted the opposite -- that a bare row override on a Box leaves a
+  Link to that Box alone -- which was the bug written down as an
+  expectation. The rig now asserts the documented rule.
+
+**A measurement trap this cost an hour of confusion.** `xdoc.py` read
+the path form as still broken after the fix. It grabs the frame with
+the selection still standing, and a SELECTED object is drawn by the
+selection feed, which carries the object's own mode and not the view's
+resolution of it -- the same 5.13 finding seen from the other side (a
+wireframe box selects filled; an overridden-to-Shaded box selects
+wireframe). Clear the selection before measuring an override, or the
+frame reports the override missing whether or not it applied.
+
+Verified on the RTX 3060 (Xvfb + `vglrun -d egl0`): `xchain`, `xpath`,
+`xdoc`, `tdcap` green, and the display-mode set re-run unchanged --
+`ovr` (with case A corrected), `ovrsave`, `d4`, `d4mode`, `sbn`,
+`seltag`, `nsm`, `pts`, `ontop`.
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 

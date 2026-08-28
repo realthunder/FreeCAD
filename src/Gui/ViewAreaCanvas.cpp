@@ -49,6 +49,8 @@
 #include "Application.h"
 #include "Document.h"
 #include "ViewProviderDocumentObject.h"
+#include "SoFCUnifiedSelection.h"
+#include "Inventor/SoFCOwnDisplayModeElement.h"
 #include "RenderParams.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -168,12 +170,13 @@ void ViewAreaCanvas::resolveDisplayStyles()
     // one style they share, which is what a plain view does and what
     // this did before per-cell styles existed.
     _style.clear();
-    _filtered = false;
+    _serve = ServeOneStyle;
 
     std::map<std::string, int> votes;
     const ViewAreaCell *active = _area ? _area->activeCell() : nullptr;
     std::string activeStyle;
     bool activeIs3D = false;
+    bool overrides = false;
     for (auto cell : _area->cells()) {
         auto viewer = viewerOf(cell);
         if (!viewer || !cell->isVisibleTo(_area))
@@ -183,6 +186,12 @@ void ViewAreaCanvas::resolveDisplayStyles()
             continue;
         const std::string mode = viewer->getOverrideMode();
         ++votes[mode];
+        // A cell whose view carries per-object display mode overrides
+        // (docs/CoinRetirement.md 5.9) needs the superset capture and
+        // per-object resolution even when every cell agrees on a
+        // style: the one-style and filter services have no override
+        // clause to resolve.
+        overrides = overrides || viewer->hasObjectStyleOverrides();
         if (cell == active) {
             activeStyle = mode;
             activeIs3D = true;
@@ -191,13 +200,38 @@ void ViewAreaCanvas::resolveDisplayStyles()
     if (votes.empty())
         return;
 
-    if (votes.size() > 1) {
+    if (votes.size() > 1 || overrides) {
         std::vector<std::string> styles;
         styles.reserve(votes.size());
-        for (const auto &v : votes)
+        bool servable = true;
+        for (const auto &v : votes) {
             styles.push_back(v.first);
-        if (!styleConflicts(styles)) {
-            _filtered = true;
+            // Hidden Line, No Shading and Tessellation are not bucket
+            // selections -- they are extra traversal state (a hidden
+            // line config, a light model, a draw style override), so
+            // neither a filter nor a superset capture can produce one
+            // cell's from another's. A cell in one of them can share a
+            // canvas only with cells in the SAME one, which is the
+            // one-style path below.
+            if (!v.first.empty()
+                    && v.first != SoFCUnifiedSelection::DisplayModeAsIs.getString()
+                    && !Gui::styleNameBitOf(v.first.c_str()))
+                servable = false;
+        }
+        // Overrides rule the flat services out: they resolve per
+        // object over a superset capture, which neither the one-style
+        // traversal nor a per-cell bucket filter provides (5.9).
+        if (!overrides && servable && !styleConflicts(styles)) {
+            _serve = ServeFilter;
+            return;
+        }
+        // A flat mask cannot serve these styles, but a superset
+        // capture can: where a style names a mode the superset child
+        // cannot produce, that named child is captured additively
+        // beside it (5.11). Tried second because it is the one that
+        // costs an extra capture.
+        if (servable && !supersetBlocked()) {
+            _serve = ServeSuperset;
             return;
         }
     }
@@ -261,6 +295,92 @@ bool ViewAreaCanvas::styleConflicts(
     return false;
 }
 
+std::vector<uint16_t> ViewAreaCanvas::collectCaptureInterest(
+        std::vector<uint16_t> *styleIds) const
+{
+    // One shared traversal feeds every claimed cell, so it must
+    // traverse the union of what all of them need captured additively
+    // (docs/CoinRetirement.md 5.9 "Non-standard modes", 5.11): every
+    // cell's per-object override modes, and every cell's own display
+    // STYLE name -- a style is an override, and an override's mode is
+    // its own subgraph, not a mask over the superset child.
+    //
+    // Sorted, because the ORDER is the interestBits bit assignment:
+    // that is what lets every claimed viewer build the identical list
+    // and the feed move between them without moving the bits.
+    std::vector<uint16_t> ids;
+    if (!_area)
+        return ids;
+    for (auto cell : _area->cells()) {
+        auto viewer = viewerOf(cell);
+        if (!viewer || !cell->isVisibleTo(_area))
+            continue;
+        MDIView *view = cell->childView();
+        if (!view || view->getGuiDocument() != _area->getGuiDocument())
+            continue;
+        const std::string mode = viewer->getOverrideMode();
+        // Only a Class-A name is a display mode an object's switch can
+        // have a child of; "As Is" overrides nothing, and Hidden Line,
+        // No Shading and Tessellation are traversal state, which never
+        // reaches a superset capture at all (resolveDisplayStyles).
+        if (Gui::styleNameBitOf(mode.c_str())) {
+            const uint16_t id = Render::internModeName(mode.c_str());
+            ids.push_back(id);
+            if (styleIds)
+                styleIds->push_back(id);
+        }
+        if (const Render::StyleOverrideTable *ovt =
+                viewer->objectStyleOverrides()) {
+            for (const auto &ov : ovt->entries) {
+                if (ov.modeId)
+                    ids.push_back(ov.modeId);
+            }
+        }
+    }
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    if (styleIds) {
+        std::sort(styleIds->begin(), styleIds->end());
+        styleIds->erase(std::unique(styleIds->begin(), styleIds->end()),
+                        styleIds->end());
+    }
+    return ids;
+}
+
+bool ViewAreaCanvas::supersetBlocked() const
+{
+    // This used to answer "some object's ViewProvider has no superset
+    // child, yet does have a child named by one of the cells' styles"
+    // -- the override genuinely applies to that object and a mask over
+    // the superset cannot produce it, so the odd cells had to leave
+    // the canvas (docs/CoinRetirement.md 5.8).
+    //
+    // They no longer do. The cells' style names ride the same ADDITIVE
+    // capture the override modes already ride (5.11): the style-named
+    // child is traversed beside the normal flow and tagged, and the
+    // cell draws the tag. That serves the object with no superset
+    // child -- and, as with the Class-A override values, it also
+    // serves the object that HAS one whose contents the style's
+    // buckets are not inside of (Mesh's "Flat Lines" holds no point
+    // draws), which the mask silently got wrong.
+    //
+    // What is left is the bit budget. DrawCall::interestBits is 16
+    // bits, so a longer list is truncated (rebuildCaptureInterest) and
+    // a style whose id falls off the end is never captured at all --
+    // that cell would draw the objects' own modes and say nothing. It
+    // still has to leave.
+    std::vector<uint16_t> styleIds;
+    std::vector<uint16_t> ids = collectCaptureInterest(&styleIds);
+    if (ids.size() <= Render::CaptureInterestTable::MaxModes)
+        return false;
+    ids.resize(Render::CaptureInterestTable::MaxModes);
+    for (uint16_t id : styleIds) {
+        if (!std::binary_search(ids.begin(), ids.end(), id))
+            return true;
+    }
+    return false;
+}
+
 bool ViewAreaCanvas::claimable(const ViewAreaCell *cell) const
 {
     auto viewer = viewerOf(cell);
@@ -269,7 +389,7 @@ bool ViewAreaCanvas::claimable(const ViewAreaCell *cell) const
     // While the canvas serves ONE style, a cell in another one is not
     // claimable and keeps its own GL surface (resolveDisplayStyles).
     // While it is filtering, every style is served and this passes.
-    if (!_filtered && viewer->getOverrideMode() != _style)
+    if (_serve == ServeOneStyle && viewer->getOverrideMode() != _style)
         return false;
     // A maximized layout hides every other tile; a hidden cell has no
     // rect to draw into, and the one left has nothing to share.
@@ -368,6 +488,7 @@ void ViewAreaCanvas::release(ViewAreaCell *cell, bool restoreBackend)
         return;
     if (auto viewer = viewerOf(cell)) {
         viewer->setRedrawRedirect({});
+        viewer->setImposedCaptureInterest({});
         if (restoreBackend) {
             viewer->adoptRenderer({}, false);
         }
@@ -521,13 +642,28 @@ void ViewAreaCanvas::syncOnce()
             claim(cell, _nextId++);
     }
 
-    // Whether the shared traversal applies a style or captures the
-    // objects' own modes for the cells to filter. Set after the claim
-    // set is settled, because a cell that just left the canvas has to
-    // be told to go back to applying its own style.
+    // What the shared traversal captures: a style applied, the objects'
+    // own modes for the cells to filter, or the superset child for the
+    // cells to resolve per object. Set after the claim set is settled,
+    // because a cell that just left the canvas has to be told to go
+    // back to applying its own style.
+    const View3DInventorViewer::CanvasStyleMode capture =
+        _serve == ServeSuperset ? View3DInventorViewer::CanvasStyleSuperset
+      : _serve == ServeFilter   ? View3DInventorViewer::CanvasStyleFilter
+                                : View3DInventorViewer::CanvasStyleOff;
+    // The additive-mode interest (docs/CoinRetirement.md 5.9
+    // "Non-standard modes", 5.11): the UNION of every cell's override
+    // modes AND of the cells' own style names, imposed on every
+    // claimed viewer -- the shared capture must traverse the union
+    // whichever cell feeds it, and the feed follows the active cell.
+    std::vector<uint16_t> interest;
+    if (_serve == ServeSuperset)
+        interest = collectCaptureInterest(nullptr);
     for (auto &c : _cells) {
-        if (auto v = viewerOf(c.cell))
-            v->setCanvasStyleFiltered(_filtered);
+        if (auto v = viewerOf(c.cell)) {
+            v->setCanvasStyleMode(capture);
+            v->setImposedCaptureInterest(interest);
+        }
     }
 
     // The feed follows the active cell so the Coin residue -- draggers
@@ -621,11 +757,35 @@ void ViewAreaCanvas::paintGL()
         s.height = r.height();
         s.viewMatrix = &viewMat.getValue();
         s.projMatrix = &projMat.getValue();
-        // This cell's style, as a bucket filter over the shared
-        // capture -- but only while the canvas is filtering. When it
-        // serves one style the traversal applied it already, and every
-        // claimed cell is in that style, so there is nothing to filter.
-        s.drawStyle = _filtered ? viewer->drawStyleMask() : Render::StyleAsIs;
+        // This cell's style, for the backend to apply over the shared
+        // capture -- but only while the canvas is filtering or serving
+        // a superset. When it serves one style the traversal applied it
+        // already, and every claimed cell is in that style, so there is
+        // nothing left to do here.
+        //
+        // Under a superset capture the backend resolves the style per
+        // OBJECT, so it needs the style's NAME as well as its buckets:
+        // an object whose display-mode switch has no child of that name
+        // keeps its own mode, exactly as the traversal would leave it.
+        if (_serve == ServeOneStyle) {
+            s.drawStyle = Render::StyleAsIs;
+        }
+        else {
+            s.drawStyle = viewer->drawStyleMask();
+            s.drawStyleName = viewer->drawStyleNameBit();
+            s.styleFromSuperset = (_serve == ServeSuperset);
+            // ...and the style's own mode id, where the capture also
+            // carried the mode additively (5.11). Zero unless this is
+            // a superset capture, so the filter service is untouched.
+            s.drawStyleMode = viewer->drawStyleModeId();
+            // The cell's per-object overrides (5.9), resolved by the
+            // backend as the first clause; only a superset capture can
+            // host them, which resolveDisplayStyles guarantees is the
+            // service whenever any cell carries overrides.
+            if (_serve == ServeSuperset
+                    && viewer->hasObjectStyleOverrides())
+                s.styleOverrides = viewer->objectStyleOverrides();
+        }
         subs.push_back(s);
         rects.push_back(r);
         drawnCells.push_back(c.cell);
@@ -635,8 +795,11 @@ void ViewAreaCanvas::paintGL()
         std::ostringstream ids;
         for (const auto &c : _cells)
             ids << ' ' << c.id << (c.cell == _feeder ? "*" : "");
+        const char *serve = _serve == ServeSuperset ? "superset"
+                          : _serve == ServeFilter   ? "filter"
+                                                    : "one-style";
         FC_TRACE("canvas frame: claims" << ids.str() << ", drawing "
-                 << subs.size() << " sub-views");
+                 << subs.size() << " sub-views, styles " << serve);
     }
 
     bool drawn = false;
@@ -644,6 +807,11 @@ void ViewAreaCanvas::paintGL()
         // Built up front so the frame itself allocates nothing: a fresh
         // bank's target set created mid-frame can exhaust the handle
         // pool and render its cell black (docs/SplitViews.md sec 11.1).
+        // The capture's interest list (5.9 "Non-standard modes"): the
+        // feeder's, which under ServeSuperset is the imposed union --
+        // the SAME list, in the same order, the traversal captured
+        // under, so the backend's interestBits mapping lines up.
+        _renderer->setCaptureInterest(feeder->captureInterestTable());
         _renderer->prepareSubViews(col, subs.data(), int(subs.size()));
         drawn = _renderer->renderSubViews(col, subs.data(), int(subs.size()));
     }

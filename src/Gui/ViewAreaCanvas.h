@@ -122,7 +122,7 @@ private:
     /// it shows the resident scene the canvas feeds.
     bool claimable(const ViewAreaCell *cell) const;
     /// Decide how this canvas serves its cells' display styles, and
-    /// set _style / _filtered accordingly. Called once per sync,
+    /// set _style / _serve accordingly. Called once per sync,
     /// before anything is tested against them.
     void resolveDisplayStyles();
     /// Whether any visible object's own display mode would make a
@@ -130,6 +130,20 @@ private:
     /// actually is. The lazy half of sec 17: styles that differ are
     /// not a conflict by themselves.
     bool styleConflicts(const std::vector<std::string> &styles) const;
+    /// The additive-mode interest of the capture this canvas feeds
+    /// (docs/CoinRetirement.md 5.9 "Non-standard modes", 5.11): the
+    /// sorted union, over the cells this canvas can serve, of every
+    /// per-object override mode and every cell's own display STYLE
+    /// name, as interned ids. \a styleIds, when given, receives the
+    /// style half on its own -- what the budget test below needs.
+    std::vector<uint16_t> collectCaptureInterest(
+            std::vector<uint16_t> *styleIds) const;
+    /// Whether a cell's style would be served WRONG by a superset
+    /// capture. Since 5.11 the cells' style names ride the same
+    /// ADDITIVE capture the override modes do, so an object whose
+    /// switch has no "Flat Lines" child no longer blocks anything --
+    /// what is left is the interest list's 16-entry bit budget.
+    bool supersetBlocked() const;
     void claim(ViewAreaCell *cell, int id);
     void release(ViewAreaCell *cell, bool restoreBackend = true);
     /// Point the shared backend's scene feed at \a cell's viewer, and
@@ -166,15 +180,33 @@ private:
     bool _syncing = false;
     bool _syncAgain = false;
     /// The display style a cell must be in to be claimable, when the
-    /// canvas is serving ONE style (_filtered false). Empty and
-    /// unused while it is filtering.
+    /// canvas is serving ONE style (_serve == ServeOneStyle). Empty and
+    /// unused in the other two.
     std::string _style;
-    /// The canvas is drawing its cells' styles as per-cell backend
-    /// bucket filters, so the shared traversal captures each object in
-    /// its own display mode and every cell is claimable whatever its
-    /// style. Only chosen when styleConflicts() says nothing in the
-    /// document can tell the filter apart from the override.
-    bool _filtered = false;
+    /// How this canvas serves cells that are in different display
+    /// styles. One canvas draws ONE resident scene through ONE
+    /// traversal, so the three are genuinely different bargains
+    /// (docs/CoinRetirement.md 5.7, 5.8):
+    enum StyleService : uint8_t {
+        /// The traversal applies the one style every claimable cell
+        /// shares; a cell in another style is not claimable and renders
+        /// itself. What a plain view does, and the cheapest.
+        ServeOneStyle,
+        /// The traversal captures each object in its OWN mode and each
+        /// cell drops the buckets its style does not draw. Costs no
+        /// extra capture at all, but a flat mask can only REMOVE, so it
+        /// is chosen only where styleConflicts() proves no object's own
+        /// mode can tell the filter from the override.
+        ServeFilter,
+        /// The traversal captures the SUPERSET child and each cell
+        /// resolves its style per OBJECT in the backend. Serves any mix
+        /// of styles, including one cell "As Is" beside an override,
+        /// and pays for it by tessellating faces that a wireframe cell
+        /// will not draw -- so it is chosen only when ServeFilter
+        /// cannot do the job.
+        ServeSuperset,
+    };
+    StyleService _serve = ServeOneStyle;
     /// A style change on any view re-runs the claim set: it can pull a
     /// cell out of the canvas or hand one back.
     fastsignals::scoped_connection _styleConn;

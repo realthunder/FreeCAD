@@ -75,7 +75,8 @@ SoFCDisplayModeElement::set(SoState * const state,
                             SoNode * const node,
                             const SbName &mode,
                             SbBool hiddenLines,
-                            const HiddenLineConfig *pConfig)
+                            const HiddenLineConfig *pConfig,
+                            const CaptureInterest *interest)
 {
   auto element = static_cast<SoFCDisplayModeElement*>(
       inherited::getElement(state, classStackIndex, node));
@@ -89,7 +90,19 @@ SoFCDisplayModeElement::set(SoState * const state,
     float tmp;
     element->faceColor.setPackedValue(element->hiddenLineConfig.faceColor, tmp);
     element->lineColor.setPackedValue(element->hiddenLineConfig.lineColor, tmp);
+    element->captureInterest =
+        (interest && !interest->modes.empty()) ? interest : nullptr;
+    element->captureInterestVersion =
+        element->captureInterest ? interest->version : 0;
   }
+}
+
+const SoFCDisplayModeElement::CaptureInterest *
+SoFCDisplayModeElement::getCaptureInterest(SoState * const state)
+{
+  auto element = static_cast<const SoFCDisplayModeElement*>(
+      inherited::getConstElement(state, classStackIndex));
+  return element->captureInterest;
 }
 
 SoFCDisplayModeElement *
@@ -221,6 +234,8 @@ SoFCDisplayModeElement::matches(const SoElement * element) const
     return FALSE;
   auto other = static_cast<const SoFCDisplayModeElement *>(element);
   if (this->displayMode != other->displayMode
+      || this->captureInterest != other->captureInterest
+      || this->captureInterestVersion != other->captureInterestVersion
       || this->hiddenLines != other->hiddenLines
       || this->faceColor != other->lineColor
       || this->lineColor != other->lineColor
@@ -236,6 +251,8 @@ SoFCDisplayModeElement::copyMatchInfo(void) const
       SoFCDisplayModeElement::getClassTypeId().createInstance());
 
   element->displayMode = this->displayMode;
+  element->captureInterest = this->captureInterest;
+  element->captureInterestVersion = this->captureInterestVersion;
   element->hiddenLines = this->hiddenLines;
   element->hiddenLineConfig = this->hiddenLineConfig;
   element->faceColor = this->faceColor;
@@ -251,6 +268,8 @@ SoFCDisplayModeElement::init(SoState * state)
   this->displayMode = SbName::empty();
   this->hiddenLines = FALSE;
   this->hiddenLineConfig.reset();
+  this->captureInterest = nullptr;
+  this->captureInterestVersion = 0;
 }
 
 // vim: noai:ts=2:sw=2

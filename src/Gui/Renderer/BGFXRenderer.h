@@ -73,6 +73,12 @@ public:
                                 const SubViewFrame *subs,
                                 int count) override;
     virtual void dropSubView(int id) override;
+    virtual void setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
+                                  bool fromSuperset,
+                                  const StyleOverrideTable *overrides,
+                                  uint16_t styleMode = 0) override;
+    virtual void setCaptureInterest(
+            const CaptureInterestTable *table) override;
     virtual void prepareSubViews(const QColor &bg,
                                  const SubViewFrame *subs,
                                  int count) override;

@@ -140,6 +140,14 @@ ViewProviderDocumentObject::ViewProviderDocumentObject()
     static const char *sgroup = "Selection";
 
     ADD_PROPERTY_TYPE(DisplayMode, ((long)0), dogroup, App::Prop_None, "Set the display mode");
+    ADD_PROPERTY_TYPE(DisplayModeInView, ((long)0), dogroup, App::Prop_Transient,
+            "Display mode override of this object in the active 3D view.\n"
+            "Stored in the view (its ObjectDisplayModes property), so each\n"
+            "view can show the object differently. 'Use View Mode' means no\n"
+            "override; 'As Is' pins the object to its own display mode,\n"
+            "escaping the view's draw style.");
+    static const char *InViewEnumDefault[] = {"Use View Mode", "As Is", nullptr};
+    DisplayModeInView.setEnums(InViewEnumDefault);
     ADD_PROPERTY_TYPE(Visibility, (true), dogroup, App::Prop_None, "Show the object in the 3d view");
     ADD_PROPERTY_TYPE(ShowInTree, (true), dogroup, App::Prop_None, "Show the object in the tree view");
 
@@ -276,6 +284,39 @@ void ViewProviderDocumentObject::onChanged(const App::Property* prop)
 {
     if (prop == &DisplayMode) {
         setActiveMode();
+    }
+    else if (prop == &DisplayModeInView) {
+        // The row edits the ACTIVE 3D view's ObjectDisplayModes entry
+        // for this object (docs/CoinRetirement.md 5.9). User1 marks a
+        // sync FROM the view (syncDisplayModeInView), which must not
+        // write back.
+        if (!DisplayModeInView.testStatus(App::Property::User1)
+                && pcObject && pcObject->isAttachedToDocument()) {
+            auto view = Base::freecad_dynamic_cast<View3DInventor>(
+                    Application::Instance->activeView());
+            Gui::Document *vdoc = view ? view->getGuiDocument() : nullptr;
+            if (vdoc) {
+                // The bare form: this object anywhere in the view.
+                // Doc-qualified when the object lives in another
+                // document and shows here through a link.
+                std::string key;
+                if (pcObject->getDocument() == vdoc->getDocument())
+                    key = pcObject->getNameInDocument();
+                else
+                    key = std::string(pcObject->getDocument()->getName())
+                        + "#" + pcObject->getNameInDocument();
+                auto values = view->ObjectDisplayModes.getValues();
+                if (DisplayModeInView.getValue() == 0) {
+                    if (values.erase(key))
+                        view->ObjectDisplayModes.setValues(
+                                std::move(values));
+                }
+                else {
+                    values[key] = DisplayModeInView.getValueAsString();
+                    view->ObjectDisplayModes.setValues(std::move(values));
+                }
+            }
+        }
     }
     else if (prop == &ShadowStyle) {
         if(!pcShadowStyle && ShadowStyle.getValue()!=0) {
@@ -502,6 +543,39 @@ void ViewProviderDocumentObject::attach(App::DocumentObject *pcObj)
     DisplayMode.setEnumVector(this->getDisplayModes());
     DisplayMode.setPersistEnums(false);
 
+    // The per-view override row (docs/CoinRetirement.md 5.9): "Use
+    // View Mode" and "As Is" first, then every mode this provider
+    // registers -- which is how non-standard modes are reachable per
+    // object; they resolve through the additive capture (5.9
+    // "Non-standard modes").
+    {
+        std::vector<std::string> inview;
+        auto modes = this->getDisplayModes();
+        inview.reserve(modes.size() + 2);
+        inview.emplace_back("Use View Mode");
+        inview.emplace_back("As Is");
+        for (auto &m : modes)
+            inview.push_back(std::move(m));
+        // User1: rebuilding the enum resets the row's value, and
+        // onChanged would read that as the user choosing "Use View
+        // Mode" and ERASE the object's entry from the active view's
+        // map. Deferred VP restore made this real: a Python provider
+        // attaches after the restored view is already active, and the
+        // rebuild silently dropped the just-restored override.
+        Base::ObjectStatusLocker<App::Property::Status, App::Property>
+            guard(App::Property::User1, &DisplayModeInView);
+        DisplayModeInView.setEnumVector(std::move(inview));
+        DisplayModeInView.setPersistEnums(false);
+        // ...and the rebuild reset the row's value, so read it back
+        // from the view it presents. Without this a provider attached
+        // AFTER the view -- deferred VP restore -- shows "Use View
+        // Mode" over a live entry, and "clearing" the row is then a
+        // no-op that leaves the override in place.
+        if (auto aview = Base::freecad_dynamic_cast<View3DInventor>(
+                Application::Instance->activeView()))
+            syncDisplayModeInView(aview);
+    }
+
     if(!isRestoring()) {
         // set the active mode
         const char* defmode = this->getDefaultDisplayMode();
@@ -513,6 +587,44 @@ void ViewProviderDocumentObject::attach(App::DocumentObject *pcObj)
     callExtension(&ViewProviderExtension::extensionAttach,pcObj);
 
     updateChildren();
+}
+
+void ViewProviderDocumentObject::syncDisplayModeInView(View3DInventor *view)
+{
+    long v = 0;
+    Gui::Document *vdoc = view ? view->getGuiDocument() : nullptr;
+    if (vdoc && pcObject && pcObject->isAttachedToDocument()) {
+        const auto &values = view->ObjectDisplayModes.getValues();
+        if (!values.empty()) {
+            std::string key;
+            if (pcObject->getDocument() == vdoc->getDocument())
+                key = pcObject->getNameInDocument();
+            else
+                key = std::string(pcObject->getDocument()->getName())
+                    + "#" + pcObject->getNameInDocument();
+            auto it = values.find(key);
+            if (it != values.end()) {
+                // Map the stored mode name onto the row's enum. A name
+                // this provider does not register shows as "Use View
+                // Mode" rather than erroring: the row cannot express
+                // it, the entry itself stays untouched.
+                const auto &enums = DisplayModeInView.getEnumVector();
+                for (std::size_t i = 1; i < enums.size(); ++i) {
+                    if (enums[i] == it->second) {
+                        v = long(i);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (DisplayModeInView.getValue() != v) {
+        // User1 tells onChanged this is a sync FROM the view, not an
+        // edit to write back.
+        Base::ObjectStatusLocker<App::Property::Status, App::Property>
+            guard(App::Property::User1, &DisplayModeInView);
+        DisplayModeInView.setValue(v);
+    }
 }
 
 void ViewProviderDocumentObject::reattach(App::DocumentObject *pcObj) {

@@ -103,6 +103,13 @@ private:
   void traverseHead(SoAction *action, int idx);
   void traverseTail(SoAction *action, int idx);
   void traverseChild(SoAction *action, int idx);
+  /// Traverse the display-mode children the capture's interest set
+  /// names IN ADDITION to child \a taken, each tagged through
+  /// SoFCCapturedModeElement (docs/CoinRetirement.md 5.9 "Non-standard
+  /// modes"). \a interest is really a
+  /// SoFCDisplayModeElement::CaptureInterest; typed void here to keep
+  /// this header free of the element's.
+  void traverseAdditive(SoAction *action, int taken, const void *interest);
 };
 
 #endif // FC_SOFCSWITCH_H

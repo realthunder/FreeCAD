@@ -30,6 +30,7 @@
 
 #include "SoFCSwitch.h"
 #include "SoFCDisplayModeElement.h"
+#include "SoFCOwnDisplayModeElement.h"
 
 using namespace Gui;
 
@@ -178,6 +179,35 @@ SoFCSwitch::doAction(SoAction *action)
 {
   auto state = action->getState();
 
+  // Record which display mode this object is in, and which style names
+  // it has a child for, for whatever traverses below
+  // (docs/CoinRetirement.md 5.8). A display style is applied by
+  // traversing the style-NAMED child below, so by the time a shape is
+  // reached its own mode is gone; the renderer needs it to resolve a
+  // style per object per view, the way Rhino and SolidWorks do.
+  //
+  // Set once, before either branch, because the answer depends only on
+  // whichChild and childNames -- not on which child actually gets
+  // traversed. It is deliberately NOT scoped to the chosen child: a
+  // switch does not push state, so this reaches the rest of the
+  // enclosing separator, which is the ViewProvider's own root, and a
+  // ViewProvider has one display-mode switch. A nested switch (a Link's)
+  // overwrites it for its own subtree, which is the nearest-enclosing
+  // answer and the right one.
+  if (this->allowNamedOverride.getValue()
+      && state->isElementEnabled(SoFCOwnDisplayModeElement::getClassStackIndex())) {
+    uint8_t ownmask = SoFCOwnDisplayModeElement::Unknown;
+    uint8_t registered = 0;
+    const int numnames = std::min(childNames.getNum(), this->getNumChildren());
+    const int own = this->whichChild.getValue();
+    for (int i = 0; i < numnames; ++i) {
+      registered |= Gui::styleNameBitOf(childNames[i]);
+      if (i == own)
+        ownmask = Gui::drawStyleMaskFromModeName(childNames[i]);
+    }
+    SoFCOwnDisplayModeElement::set(state, ownmask, registered);
+  }
+
   uint32_t mask = ((uint32_t)SoSwitchElement::get(state)) & FC_SWITCH_MASK;
   int idx = -1;
 
@@ -196,22 +226,78 @@ SoFCSwitch::doAction(SoAction *action)
   {
     const SbName &name = SoFCDisplayModeElement::get(state);
 
+    // The capture's additive-mode interest (docs/CoinRetirement.md 5.9
+    // "Non-standard modes"): a per-view override may name a display
+    // mode outside the four Class-A styles, which is a different
+    // SUBGRAPH -- no mask over the superset capture can produce it --
+    // so the named children are traversed IN ADDITION to the normal
+    // flow, tagged, and resolved per view at submit. Gated on the tag
+    // element being enabled, which only the capture-building actions
+    // are, so picking and bounding boxes stay on the normal flow.
+    const SoFCDisplayModeElement::CaptureInterest *interest = nullptr;
+    if (this->allowNamedOverride.getValue()
+        && this->whichChild.getValue() >= 0
+        && state->isElementEnabled(
+                SoFCCapturedModeElement::getClassStackIndex()))
+      interest = SoFCDisplayModeElement::getCaptureInterest(state);
+    uint16_t interestbits = 0;
+    if (interest) {
+      const int numnames = std::min(childNames.getNum(),
+                                    this->getNumChildren());
+      for (int i = 0; i < numnames; ++i) {
+        uint16_t bit = 0;
+        interest->idOf(childNames[i], &bit);
+        interestbits |= bit;
+      }
+      // Like the own-mode element above: always SET, overwrite
+      // semantics, so a nested switch's shapes never inherit a
+      // container's answer. traversedMode stays 0 unless the normal
+      // flow below turns out to take an interest-named child.
+      SoFCModeInterestElement::set(state, 0, interestbits);
+      if (!interestbits)
+        interest = nullptr;
+    }
+
     if(this->whichChild.getValue()>=0 
         && this->allowNamedOverride.getValue()
         && name!=SbName::empty())
     {
       for(int i=0, c=std::min(childNames.getNum(),this->getNumChildren()); i<c; ++i) {
         if(childNames[i] == name) {
+          // The style-named child the normal flow takes can itself be
+          // in the interest set -- Class-A override values ride it too
+          // since the Mesh finding -- and then the untagged draws
+          // below already ARE that mode: record it, or the resolution
+          // would wait for a tagged copy that will not exist.
+          if (interest) {
+            if (uint16_t tid = interest->idOf(childNames[i]))
+              SoFCModeInterestElement::set(state, tid, interestbits);
+          }
           traverseHead(action, i);
           traverseChild(action, i);
           traverseTail(action, i);
+          if (interest)
+            traverseAdditive(action, i, interest);
           return;
         }
+      }
+    }
+    if (interest) {
+      // The normal flow is about to traverse whichChild; when its NAME
+      // is in the interest set, the untagged draws below already ARE
+      // that mode -- record it, so an override naming it admits them
+      // instead of waiting for a tagged copy that will not exist.
+      const int own = this->whichChild.getValue();
+      if (own < std::min(childNames.getNum(), this->getNumChildren())) {
+        if (uint16_t tid = interest->idOf(childNames[own]))
+          SoFCModeInterestElement::set(state, tid, interestbits);
       }
     }
     traverseHead(action, whichChild.getValue());
     inherited::doAction(action);
     traverseTail(action, whichChild.getValue());
+    if (interest)
+      traverseAdditive(action, whichChild.getValue(), interest);
     return;
   }
 
@@ -364,6 +450,32 @@ SoFCSwitch::traverseTail(SoAction *action, int idx)
     return;
 
   traverseChild(action, tail);
+}
+
+void
+SoFCSwitch::traverseAdditive(SoAction *action, int taken, const void *vinterest)
+{
+  auto interest =
+      static_cast<const SoFCDisplayModeElement::CaptureInterest *>(vinterest);
+  auto state = action->getState();
+  bool tagged = false;
+  const int numnames = std::min(childNames.getNum(), this->getNumChildren());
+  for (const auto &m : interest->modes) {
+    for (int j = 0; j < numnames; ++j) {
+      if (j != taken && childNames[j] == m.first) {
+        // Tag everything captured below with the mode it renders; a
+        // tagged draw is admitted only by an override resolving to
+        // exactly this mode (BGFXView::styleAdmits). Set/set-back
+        // rather than a state push, matching how this switch treats
+        // the display-mode elements throughout.
+        SoFCCapturedModeElement::set(state, m.second);
+        tagged = true;
+        traverseChild(action, j);
+      }
+    }
+  }
+  if (tagged)
+    SoFCCapturedModeElement::set(state, 0);
 }
 
 void

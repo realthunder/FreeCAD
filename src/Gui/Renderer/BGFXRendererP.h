@@ -5362,6 +5362,11 @@ public:
     /// from Coin.
     void submitTessellation(const Render::DrawCall &draw,
                             const float *viewMatrix, uint16_t viewId);
+    /// The Points draw style analogue: a filled-triangle draw carrying
+    /// SoDrawStyleElement::POINTS renders as its corner points
+    /// (BGFXViewOverlay.cpp).
+    void submitVertexPoints(const Render::DrawCall &draw,
+                            const float *viewMatrix, uint16_t viewId);
 
     /// Does this draw need a discard-clipping shader variant: its own
     /// section planes, or the mirror pass's water/ground plane.
@@ -7124,6 +7129,76 @@ public:
     /// Coin traversal that produced the capture applied the style
     /// already.
     uint8_t drawStyleMask = Render::StyleAsIs;
+    /// The style name behind drawStyleMask, and whether the capture is
+    /// the SUPERSET child. Restated every frame beside the mask.
+    uint8_t drawStyleName = 0;
+    bool styleFromSuperset = false;
+    /// This sub-view's style resolved as an ADDITIVE mode
+    /// (docs/CoinRetirement.md 5.11): the style name's interned id and
+    /// its DrawCall::interestBits bit, latched together at the top of
+    /// the frame and BOTH zero unless the capture's interest list
+    /// actually carries the mode. Non-zero means the style is served
+    /// by the mode's own tagged draws -- the same three rules an
+    /// override naming a mode follows -- instead of by a mask over the
+    /// superset child.
+    uint16_t drawStyleMode = 0;
+    uint16_t drawStyleModeBit = 0;
+
+    /// A per-object display mode override resolved against one draw's
+    /// object (docs/CoinRetirement.md 5.9). `has` false = the object
+    /// matched no entry (cached so the table is walked once per
+    /// objectKey, not once per draw per frame).
+    struct OvStyle {
+        uint8_t mask = Render::StyleAsIs;
+        uint8_t nameBit = 0;
+        bool pin = false;
+        bool has = false;
+        /// Non-standard mode entry (docs/CoinRetirement.md 5.9
+        /// "Non-standard modes"): the mode's interned id, and its
+        /// DrawCall::interestBits bit under the capture's interest
+        /// list (0 when the list does not carry it, in which case the
+        /// mode was never captured and the entry resolves to the
+        /// object's own mode). mask/nameBit are meaningless when
+        /// modeId is set.
+        uint16_t modeId = 0;
+        uint16_t interestBit = 0;
+    };
+    /// Lazily filled objectKey -> override cache of ONE sub-view's
+    /// table. Lazy rather than a bulk pass because updateObjectInfo()
+    /// deliberately does not bump objectInfoVersion(): a key first
+    /// seen after the bulk resolve would miss a pass-built table,
+    /// while a lazy miss resolves it on first sight. Cleared when the
+    /// table's version or the stated info version moves.
+    struct OvCache {
+        uint32_t tableVersion = 0;
+        uint32_t infoVersion = 0;
+        /// The capture-interest list's version (0 = none): the list
+        /// defines the id->bit mapping the cached interestBit values
+        /// were resolved under, so a moved list invalidates them.
+        uint32_t interestVersion = 0;
+        std::unordered_map<uint64_t, OvStyle> map;
+    };
+    /// Per sub-view id; erased with the bank in dropSubView.
+    std::map<int, OvCache> subOvCaches;
+    /// The submit in progress: the current sub-view's cache/table/info,
+    /// latched at the top of the frame beside drawStyleMask. All null
+    /// outside a frame whose view has overrides.
+    OvCache *ovCache = nullptr;
+    const Render::StyleOverrideTable *ovTable = nullptr;
+    const Render::ObjectInfoMap *ovInfo = nullptr;
+    /// The capture's additive-mode interest list (5.9 "Non-standard
+    /// modes"), latched beside the table; what maps an entry's modeId
+    /// to its DrawCall::interestBits bit.
+    const Render::CaptureInterestTable *ovInterest = nullptr;
+    /// The override for \a objectKey, or null (BGFXViewSubmit.cpp).
+    const OvStyle *lookupStyleOverride(uint64_t objectKey);
+    /// Whether this sub-view's per-object style resolution (override,
+    /// then view style where registered, then own mode -- 5.8/5.9)
+    /// admits \a draw's bucket. Asked by the per-draw submit AND by
+    /// the instanced group partition: a group merges by geometry and
+    /// material, not objectKey, so members can resolve differently.
+    bool styleAdmits(const Render::DrawCall &draw);
+
     BGFXView() { stashSubView(freshBank); }
     /// Swap sub-view \a id into the members (a no-op when it already
     /// is). An id never seen before starts from freshBank.
@@ -8682,7 +8757,35 @@ public:
         /// it is restated by every submit rather than carried across
         /// frames, so a cell whose style changed needs no bank reset.
         uint8_t style = Render::StyleAsIs;
+        /// That style's NAME bit, and whether the feed captured the
+        /// superset child; together they let the filter be resolved per
+        /// OBJECT (5.8) instead of applied flat to every draw.
+        uint8_t styleName = 0;
+        bool fromSuperset = false;
+        /// That style's mode id (SubViewFrame::drawStyleMode, 5.11),
+        /// when the capture also carries the mode additively.
+        uint16_t styleMode = 0;
+        /// The cell's per-object override table (5.9), restated per
+        /// submit like the style; the producer owns the storage.
+        const Render::StyleOverrideTable *styleOverrides = nullptr;
     } subCtx;
+
+    /// The plain (sub-view id 0) frame's style context, stated by the
+    /// host through setMainViewStyle() (docs/CoinRetirement.md 5.9).
+    /// All at rest -- StyleAsIs, no superset, no overrides -- except on
+    /// a view whose override table is non-empty, which captures the
+    /// superset and leaves the per-object resolution to the backend
+    /// exactly like a canvas cell.
+    uint8_t mainStyleMask = Render::StyleAsIs;
+    uint8_t mainStyleName = 0;
+    bool mainFromSuperset = false;
+    uint16_t mainStyleMode = 0;
+    const Render::StyleOverrideTable *mainStyleOverrides = nullptr;
+    /// The capture's additive-mode interest list, stated through
+    /// setCaptureInterest() (docs/CoinRetirement.md 5.9 "Non-standard
+    /// modes"). One per renderer -- the interest belongs to the shared
+    /// capture, not to a sub-view. The producer owns the storage.
+    const Render::CaptureInterestTable *captureInterest = nullptr;
 
     // CPU-side scene data fed through Render::Renderer's scene API. GPU
     // upload happens lazily during render(), so the feed may arrive before
@@ -8691,6 +8794,11 @@ public:
     /// Draw identity resolved by the producer (setObjectInfo); consulted
     /// by the snapshot writer for the published object entries.
     Render::ObjectInfoMap objectInfo;
+    /// Renderer::objectInfoVersion() mirrored here when the table is
+    /// stated whole -- the Private has no owner backpointer, and the
+    /// frame path needs the stamp to invalidate the per-sub-view
+    /// override caches (BGFXView::OvCache).
+    uint32_t objectInfoStamp = 0;
     /// The labels those identities carry to a viewer (setObjectMeta),
     /// pushed by the serving source when a document changes them rather
     /// than rebuilt per publish. Empty on a view nobody serves.

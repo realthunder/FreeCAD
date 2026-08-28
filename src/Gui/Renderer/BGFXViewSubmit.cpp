@@ -31,7 +31,201 @@ bool faceTexOnMeshUV(const Render::Material &mat)
     return mat.texturepalette && !mat.texturepalette->entries.empty()
         && mat.facetexscale <= 0.0f;
 }
+
+/// How well one override entry matches a draw's container chain
+/// (docs/CoinRetirement.md 5.9): -1 = no match, otherwise a score
+/// ordering DEEPEST decision point first -- an entry that names an
+/// object deeper on the chain beats one naming an ancestor, whatever
+/// their forms -- with a rooted entry beating a bare one at equal
+/// depth.
+///
+/// A rooted entry must anchor at path[0] and its remaining elements
+/// must follow IN ORDER, but not contiguously: a subname elides
+/// objects the scene chain contains (a Link's target has a chain step
+/// but no subname token), so the pattern is an ordered subsequence.
+/// A bare entry's single element may sit anywhere on the path.
+int matchStyleOverride(const Render::StyleOverride &ov,
+                       const std::vector<Render::ObjectRef> &path)
+{
+    if (ov.path.empty() || path.empty())
+        return -1;
+    if (!ov.rooted) {
+        for (int i = int(path.size()) - 1; i >= 0; --i) {
+            if (ov.path[0] == path[size_t(i)])
+                return i * 2;
+        }
+        return -1;
+    }
+    if (!(ov.path[0] == path[0]))
+        return -1;
+    size_t p = 1;
+    size_t depth = 0;
+    for (size_t i = 1; p < ov.path.size() && i < path.size(); ++i) {
+        if (ov.path[p] == path[i]) {
+            depth = i;
+            ++p;
+        }
+    }
+    if (p != ov.path.size())
+        return -1;
+    return int(depth) * 2 + 1;
+}
 } // namespace
+
+bool BGFXView::styleAdmits(const Render::DrawCall &draw)
+{
+    // This sub-view's Class-A display style, resolved PER OBJECT the
+    // way Rhino and SolidWorks resolve a display mode
+    // (docs/CoinRetirement.md 5.8, 5.9), in order:
+    //
+    // - the per-object per-view override, when an entry names this
+    //   draw's object or a container above it. It replaces the view's
+    //   style for that object; a pin ("As Is") holds the object to its
+    //   own mode, escaping the view style. Only ever present under a
+    //   superset capture.
+    // - this sub-view's style, where the object's display-mode switch
+    //   carries a child of that style's NAME -- a style is an override,
+    //   and that is what an override does. Only under a superset
+    //   capture; without one the mask is applied flat, which is only
+    //   ever asked for where every cell's style provably removes
+    //   rather than adds (ViewAreaCanvas::styleConflicts). Where the
+    //   capture carried the style's mode additively (drawStyleMode,
+    //   5.11) the mode's own tagged draws serve it instead of a mask
+    //   over the superset child.
+    // - the object's OWN mode otherwise: a sub-view showing "As Is",
+    //   and equally an object whose switch has no child of the asked
+    //   name, which today's traversal already leaves in its own mode.
+    // - nothing, when the own mode is StyleUnknown: a mode no mask can
+    //   describe must not be filtered by one.
+    //
+    // The bucket test is what the draw RENDERS as, not mat.type
+    // (Render::styleBitOf): Mesh re-styles one node into its Wireframe
+    // and Point modes. Gizmo draws are exempt -- a style selects
+    // display-mode children and the navigation gizmos sit under no
+    // such switch; skipbounds marks them.
+    //
+    // Both the per-draw submit and the instanced group partition ask
+    // this question: an instance group merges draws by geometry and
+    // material, NOT by objectKey, so its members can resolve
+    // differently and each must be admitted on its own.
+    if (draw.skipbounds)
+        return true;
+    const OvStyle *ov = lookupStyleOverride(draw.objectKey);
+    if (ov && ov->modeId) {
+        // The override names a mode (5.9 "Non-standard modes" -- and
+        // since the Mesh finding, Class-A values too): the mode is its
+        // own SUBGRAPH, captured additively and tagged, not a mask
+        // over the superset -- a mask cannot serve a mode whose
+        // buckets the superset child does not contain (Mesh's
+        // "Points": its Flat Lines child has no point rendering).
+        //
+        // - a tagged draw is the mode's own subgraph: admitted exactly
+        //   when it is THIS mode's;
+        // - an untagged draw whose switch normally traversed this very
+        //   mode already IS it -- no tagged copy exists, draw as is;
+        // - otherwise, when the switch has a child of the mode's name
+        //   (the interest bit), the tagged subgraph replaces the
+        //   normal draws: suppress them;
+        // - a Class-A entry the additive capture did not cover (an
+        //   interest list past its budget) falls back to the mask
+        //   over the superset, where the name is registered;
+        // - and an object with no child of the name keeps its own
+        //   mode, the same fallback a Class-A style takes.
+        if (draw.capturedMode)
+            return draw.capturedMode == ov->modeId;
+        if (draw.traversedMode == ov->modeId)
+            return true;
+        if (ov->interestBit && (draw.interestBits & ov->interestBit))
+            return false;
+        uint8_t effective = draw.ownStyle;
+        if (!ov->interestBit && ov->nameBit
+                && (draw.registeredStyles & ov->nameBit))
+            effective = ov->mask;
+        return effective == Render::StyleAsIs
+            || effective == Render::StyleUnknown
+            || (effective & Render::styleBitOf(draw.material)) != 0;
+    }
+    if (!ov && drawStyleMode) {
+        // No override entry names this object, and this sub-view's own
+        // style is one the capture carried ADDITIVELY (5.11): a style
+        // IS an override, so it resolves by the same three rules the
+        // clause above uses -- the mode's tagged draws are it, the
+        // normal flow already is it where the switch traversed that
+        // very child, and the untagged draws step aside where a tagged
+        // copy exists. This is what lets a cell whose style names a
+        // mode the superset child cannot produce (Mesh's "Points")
+        // stay on a shared canvas instead of being evicted from it.
+        //
+        // Falling through means the switch has no child of the name:
+        // the object keeps its own mode, the same fallback the mask
+        // path below reaches through registeredStyles.
+        if (draw.capturedMode)
+            return draw.capturedMode == drawStyleMode;
+        if (draw.traversedMode == drawStyleMode)
+            return true;
+        if (draw.interestBits & drawStyleModeBit)
+            return false;
+    }
+    if (draw.capturedMode) {
+        // An additively captured draw serves exactly one thing: an
+        // override -- or, since 5.11, a view style -- resolving to its
+        // very mode. Every other resolution must drop it, or the
+        // object double-draws.
+        return false;
+    }
+    uint8_t effective = drawStyleMask;
+    if (ov) {
+        effective = ov->pin ? draw.ownStyle
+            : (draw.registeredStyles & ov->nameBit) ? ov->mask
+                                                    : draw.ownStyle;
+    }
+    else if (styleFromSuperset) {
+        effective = (drawStyleName
+                     && (draw.registeredStyles & drawStyleName))
+                ? drawStyleMask : draw.ownStyle;
+    }
+    return effective == Render::StyleAsIs
+        || effective == Render::StyleUnknown
+        || (effective & Render::styleBitOf(draw.material)) != 0;
+}
+
+const BGFXView::OvStyle *BGFXView::lookupStyleOverride(uint64_t objectKey)
+{
+    if (!ovCache || !ovTable || !objectKey)
+        return nullptr;
+    auto it = ovCache->map.find(objectKey);
+    if (it == ovCache->map.end()) {
+        // First sight of this key under the current table: walk the
+        // entries once and cache the outcome either way, so the table
+        // costs one hash lookup per draw after this.
+        OvStyle s;
+        if (ovInfo) {
+            auto oit = ovInfo->find(objectKey);
+            if (oit != ovInfo->end() && !oit->second.path.empty()) {
+                int best = -1;
+                for (const auto &ov : ovTable->entries) {
+                    int score = matchStyleOverride(ov, oit->second.path);
+                    if (score > best) {
+                        best = score;
+                        s.mask = ov.mask;
+                        s.nameBit = ov.nameBit;
+                        s.pin = ov.pin;
+                        s.modeId = ov.modeId;
+                        // The mode's interestBits bit under the
+                        // capture's interest list; 0 when the list
+                        // does not carry the mode (never captured:
+                        // the entry falls back to the own mode).
+                        s.interestBit = (ov.modeId && ovInterest)
+                                ? ovInterest->bitOf(ov.modeId) : 0;
+                        s.has = true;
+                    }
+                }
+            }
+        }
+        it = ovCache->map.emplace(objectKey, s).first;
+    }
+    return it->second.has ? &it->second : nullptr;
+}
 
 void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,
                       bool mapped)
@@ -648,21 +842,10 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     const Render::Material &mat = draw.material;
     if (!draw.mesh || draw.mesh->numVertices == 0)
         return;
-    // This sub-view's Class-A display style, as a bucket filter over
-    // the scene every sub-view shares (docs/CoinRetirement.md 5.7):
-    // Shaded keeps the faces, Wireframe the lines and points, Points
-    // the points. StyleAsIs -- every frame outside a unified canvas --
-    // keeps everything, because there the Coin traversal applied the
-    // style before the capture.
-    //
-    // Gizmo draws are exempt. A Class-A style reaches the pixels by
-    // selecting a different child of a ViewProvider's display-mode
-    // switch, so it never touched the navigation gizmos, which sit
-    // under no such switch; skipbounds is exactly the flag that marks
-    // them. Filtering them would make the rotation-centre sphere
-    // vanish in Wireframe, which Coin never does.
-    if (drawStyleMask != Render::StyleAsIs && !draw.skipbounds
-            && !((drawStyleMask >> mat.type) & 1))
+    // The per-object per-view display style resolution
+    // (docs/CoinRetirement.md 5.8, 5.9) -- see styleAdmits, which the
+    // instanced group partition shares.
+    if (!styleAdmits(draw))
         return;
 
     GpuMesh *mesh = getMesh(*draw.mesh);
@@ -679,6 +862,21 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
             && pass == PassNormal && !ontop && !mat.ontop && !selPass) {
         submitTessellation(draw, viewMatrix,
                            externalBase ? ViewOnTop : ViewOpaque);
+        return;
+    }
+    // Points draw style: filled triangles carrying SoDrawStyleElement::
+    // POINTS -- Mesh's "Points" display mode re-styles its face set --
+    // draw as their corner points, which GL gets from glPolygonMode
+    // POINT. Unlike Tessellation this returns in EVERY other pass:
+    // dots must not occupy the depth prepass as a solid or cast a
+    // solid shadow. Not for a scene-wide drawstyle override -- that is
+    // Tessellation's discriminator and no display mode overrides to
+    // POINTS.
+    if (mat.type == Render::Material::Triangle
+            && mat.drawstyle == Render::Material::DrawPoints
+            && !mat.drawstyleoverride) {
+        if (pass == PassNormal && !ontop && !mat.ontop && !selPass)
+            submitVertexPoints(draw, viewMatrix, ViewOpaque);
         return;
     }
     // Hidden-line hideSeam: whole-cache line draws switch to the

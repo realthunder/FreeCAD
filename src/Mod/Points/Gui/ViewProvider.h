@@ -32,6 +32,7 @@
 
 
 class SoSwitch;
+class SoMaterialBinding;
 class SoPointSet;
 class SoIndexedPointSet;
 class SoLocateHighlight;
@@ -87,6 +88,9 @@ public:
 
     /// set the viewing mode
     void setDisplayMode(const char* ModeName) override;
+    /// track the vertex data lists (color/intensity/normal) so the
+    /// per-mode subgraphs stay bound eagerly
+    void updateData(const App::Property* prop) override;
     /// returns a list of all possible modes
     std::vector<std::string> getDisplayModes() const override;
     QIcon getIcon() const override;
@@ -104,14 +108,30 @@ protected:
     void setVertexColorMode(App::PropertyColorList*);
     void setVertexGreyvalueMode(Points::PropertyGreyValueList*);
     void setVertexNormalMode(Points::PropertyNormalList*);
+    /// (Re)bind the object's vertex data lists into the per-mode
+    /// subgraphs -- eagerly, on data change, NOT on mode activation
+    /// (docs/CoinRetirement.md 5.10). A list whose size does not
+    /// match the point count is left unbound: that mode's material
+    /// binding falls back to OVERALL and the child renders as plain
+    /// points, which is what the old activation-time fallback showed.
+    /// Idempotent; cheap when nothing is dirty.
+    void applyVertexData();
     virtual void cut(const std::vector<SbVec2f>& picked, Gui::View3DInventorViewer& Viewer) = 0;
 
 protected:
     Gui::SoFCSelection* pcHighlight;
     SoCoordinate3* pcPointsCoord;
     SoMaterial* pcColorMat;
+    /// The "Intensity" mode's own material. Grey values used to be
+    /// written into pcColorMat on activation, which made "Color" and
+    /// "Intensity" mutually exclusive per scene graph; a per-view
+    /// display mode override needs both alive at once.
+    SoMaterial* pcGreyMat;
+    SoMaterialBinding* pcColorBinding;
+    SoMaterialBinding* pcGreyBinding;
     SoNormal* pcPointsNormal;
     SoDrawStyle* pcPointStyle;
+    bool vertexDataDirty = true;
 
 private:
     static App::PropertyFloatConstraint::Constraints floatRange;

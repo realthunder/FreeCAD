@@ -155,6 +155,7 @@
 #include "SoFCOffscreenRenderer.h"
 #include "SoFCSelection.h"
 #include "Inventor/SoFCDisplayMode.h"
+#include "Inventor/SoFCOwnDisplayModeElement.h"
 #include "SoFCSelectionAction.h"
 #include "SoDatumLabel.h"
 #include "SoFCUnifiedSelection.h"
@@ -523,8 +524,30 @@ struct View3DInventorViewer::Private
     /// Set while a unified canvas is drawing its cells' styles as
     /// backend bucket filters: this viewer's traversal then captures
     /// every object in its OWN display mode and applies no style of
-    /// its own (setCanvasStyleFiltered).
-    bool canvasStyleFiltered = false;
+    /// its own (setCanvasStyleMode).
+    View3DInventorViewer::CanvasStyleMode canvasStyleMode =
+        View3DInventorViewer::CanvasStyleOff;
+
+    /// This view's per-object display mode overrides
+    /// (docs/CoinRetirement.md 5.9), parsed by View3DInventor from its
+    /// ObjectDisplayModes property. The backend keeps a POINTER to
+    /// this table across frames, so it lives here for the viewer's
+    /// lifetime; the serial keeps version monotonic across re-parses.
+    Render::StyleOverrideTable styleOverrides;
+    uint32_t styleOverrideSerial = 0;
+
+    /// The capture's additive-mode interest (docs/CoinRetirement.md
+    /// 5.9 "Non-standard modes"): the Coin-side list pushed to the
+    /// traversal (via the selection root) and the Render-side list
+    /// handed to the backend -- SAME content in the SAME order,
+    /// because the order is the interestBits bit assignment. Built
+    /// from this view's own non-standard override modes plus what a
+    /// unified canvas imposes (the union across its cells); the
+    /// serial keeps both versions monotonic and in lockstep.
+    SoFCDisplayModeElement::CaptureInterest captureInterest;
+    Render::CaptureInterestTable interestTable;
+    std::vector<uint16_t> imposedInterest;
+    uint32_t captureInterestSerial = 0;
 
     // Shared, not owned outright: a ViewArea unified canvas
     // (docs/SplitViews.md sec 13) hands the SAME backend instance to
@@ -2583,6 +2606,9 @@ void View3DInventorViewer::setOverrideMode(const std::string& mode)
     }
 
     overrideMode = mode;
+    // The style's own mode id is part of the capture interest under a
+    // superset capture (docs/CoinRetirement.md 5.11).
+    rebuildCaptureInterest();
     applyOverrideMode();
 
     if (!_pimpl->view)
@@ -2598,17 +2624,15 @@ void View3DInventorViewer::setOverrideMode(const std::string& mode)
 
 unsigned char View3DInventorViewer::drawStyleMaskFromName(const char *mode)
 {
-    if (!mode || !mode[0])
-        return Render::StyleAsIs;
-    if (SoFCUnifiedSelection::DisplayModeShaded == mode)
-        return Render::StyleShaded;
-    if (SoFCUnifiedSelection::DisplayModeFlatLines == mode)
-        return Render::StyleFlatLines;
-    if (SoFCUnifiedSelection::DisplayModeWireframe == mode)
-        return Render::StyleWireframe;
-    if (SoFCUnifiedSelection::DisplayModePoints == mode)
-        return Render::StylePoints;
-    return Render::StyleAsIs;
+    // One home for the mapping (Gui::drawStyleMaskFromModeName), because
+    // the traversal needs it too -- SoFCSwitch reads an object's own mode
+    // with it.
+    //
+    // It answers Unknown for a name that is not one of the four, which is
+    // a distinction this overload's callers do not have: they ask about a
+    // VIEW's override mode, which is always "As Is" or one of the four.
+    const uint8_t mask = Gui::drawStyleMaskFromModeName(mode);
+    return mask == SoFCOwnDisplayModeElement::Unknown ? Render::StyleAsIs : mask;
 }
 
 void View3DInventorViewer::applyOverrideMode()
@@ -2658,33 +2682,192 @@ void View3DInventorViewer::applyOverrideMode()
     }
 }
 
+unsigned char View3DInventorViewer::drawStyleNameBit() const
+{
+    return Gui::styleNameBitOf(overrideMode.c_str());
+}
+
+uint16_t View3DInventorViewer::drawStyleModeId() const
+{
+    // Only a Class-A name is a display mode a switch can have a child
+    // of; "As Is" and the traversal-state styles name no child.
+    if (!Gui::styleNameBitOf(overrideMode.c_str()))
+        return 0;
+    // And only where the capture is the SUPERSET child is there
+    // anything left to resolve -- the two cases captureOverrideMode()
+    // returns the superset for. Everywhere else the traversal applied
+    // this style itself, so asking the backend to resolve it again
+    // would draw it twice.
+    const bool superset = _pimpl->canvasStyleMode == CanvasStyleSuperset
+        || (_pimpl->canvasStyleMode == CanvasStyleOff
+                && _pimpl->renderer && hasObjectStyleOverrides());
+    if (!superset)
+        return 0;
+    return Render::internModeName(overrideMode.c_str());
+}
+
 const char *View3DInventorViewer::captureOverrideMode() const
 {
     // Which display mode this viewer's traversal CAPTURES with, which
     // is its own style everywhere except a canvas cell whose canvas has
-    // decided to filter styles per cell. There this one traversal feeds
-    // every cell, so baking a style into it would show one cell's style
-    // in all of them; the capture holds each object's own mode instead
-    // and each cell filters buckets (docs/SplitViews.md sec 17). The
-    // canvas only chooses that when it has established that no object's
-    // own mode makes the two disagree -- otherwise the odd cells leave
-    // the canvas and traverse for themselves.
-    if (_pimpl->canvasStyleFiltered
-            && drawStyleMaskFromName(overrideMode.c_str()) != Render::StyleAsIs)
-        return "";
+    // to serve cells in different styles. There this one traversal
+    // feeds every cell, so baking a style into it would show one cell's
+    // style in all of them.
+    switch (_pimpl->canvasStyleMode) {
+    case CanvasStyleSuperset:
+        // Capture the widest display-mode child there is, whatever this
+        // viewer's own style: a cell can then be shown a style that
+        // ADDS geometry its objects' own modes do not draw -- which a
+        // filter over an own-mode capture cannot do, because a filter
+        // only ever removes (docs/CoinRetirement.md 5.8). An object
+        // whose switch has no child of this name is left in its own
+        // mode by the traversal, which is exactly what the backend
+        // then reproduces.
+        return SoFCUnifiedSelection::DisplayModeFlatLines.getString();
+    case CanvasStyleFilter:
+        // The capture holds each object's own mode and each cell
+        // filters buckets out of it (docs/SplitViews.md sec 17). Only
+        // chosen where no object's own mode can tell a filter from the
+        // override a style really is.
+        if (drawStyleMaskFromName(overrideMode.c_str()) != Render::StyleAsIs)
+            return "";
+        break;
+    case CanvasStyleOff:
+        // A plain view whose per-object override table is non-empty
+        // captures the superset too (docs/CoinRetirement.md 5.9): an
+        // override can ADD geometry the object's own mode does not
+        // draw. The backend then applies this view's own style per
+        // object (setMainViewStyle in renderScene) exactly as a canvas
+        // cell's -- so only flip when a backend exists to do that;
+        // without one the Coin traversal would DRAW the superset.
+        if (_pimpl->renderer && hasObjectStyleOverrides())
+            return SoFCUnifiedSelection::DisplayModeFlatLines.getString();
+        break;
+    }
     return overrideMode.c_str();
 }
 
-bool View3DInventorViewer::canvasStyleFiltered() const
+void View3DInventorViewer::setObjectStyleOverrides(
+        Render::StyleOverrideTable &&table)
 {
-    return _pimpl->canvasStyleFiltered;
+    table.version = ++_pimpl->styleOverrideSerial;
+    _pimpl->styleOverrides = std::move(table);
+    rebuildCaptureInterest();
+    // Re-evaluate the capture: entering or leaving the superset flip
+    // above dirties it through the selection root's field; a content
+    // change under an unchanged capture still needs a redraw, where
+    // the bumped version makes the backend re-resolve.
+    applyOverrideMode();
+    getSoRenderManager()->scheduleRedraw();
+    // A unified canvas re-picks its style service off this signal:
+    // overrides force the superset service (ViewAreaCanvas::
+    // resolveDisplayStyles), so their coming or going is a mode change
+    // in the same sense a style change is.
+    if (_pimpl->view)
+        Application::Instance->signalViewModeChanged(_pimpl->view);
 }
 
-void View3DInventorViewer::setCanvasStyleFiltered(bool on)
+const Render::StyleOverrideTable *
+View3DInventorViewer::objectStyleOverrides() const
 {
-    if (_pimpl->canvasStyleFiltered == on)
+    if (_pimpl->styleOverrides.entries.empty())
+        return nullptr;
+    return &_pimpl->styleOverrides;
+}
+
+void View3DInventorViewer::rebuildCaptureInterest()
+{
+    // The id set: this view's own non-standard override modes, plus
+    // what a unified canvas imposed. Sorted so the same set always
+    // yields the same list whichever viewer builds it -- on a canvas
+    // every claimed viewer is imposed the same union, so the feed can
+    // migrate between them without moving the bit assignment.
+    std::vector<uint16_t> ids;
+    for (const auto &ov : _pimpl->styleOverrides.entries) {
+        if (ov.modeId)
+            ids.push_back(ov.modeId);
+    }
+    // This view's own display STYLE, where the backend has to resolve
+    // it per object over a superset capture (docs/CoinRetirement.md
+    // 5.11): a style is an override, so its mode is captured the same
+    // additive way an override's is. On a canvas the same id arrives
+    // in the imposed union as well -- this is a set.
+    if (uint16_t styleId = drawStyleModeId())
+        ids.push_back(styleId);
+    ids.insert(ids.end(), _pimpl->imposedInterest.begin(),
+               _pimpl->imposedInterest.end());
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    // interestBits is 16 bits wide; anything beyond stays inert, the
+    // same as before the mode was overridden at all.
+    if (ids.size() > Render::CaptureInterestTable::MaxModes) {
+        FC_WARN("capture interest truncated: " << ids.size()
+                << " additively captured modes, "
+                << Render::CaptureInterestTable::MaxModes << " supported");
+        ids.resize(Render::CaptureInterestTable::MaxModes);
+    }
+    if (ids == _pimpl->interestTable.ids)
         return;
-    _pimpl->canvasStyleFiltered = on;
+
+    const uint32_t version = ++_pimpl->captureInterestSerial;
+    _pimpl->interestTable.ids = std::move(ids);
+    _pimpl->interestTable.version = version;
+    _pimpl->captureInterest.modes.clear();
+    for (uint16_t id : _pimpl->interestTable.ids) {
+        if (const char *name = Render::internedModeName(id))
+            _pimpl->captureInterest.modes.emplace_back(SbName(name), id);
+    }
+    _pimpl->captureInterest.version = version;
+    if (selectionRoot)
+        selectionRoot->setCaptureInterest(&_pimpl->captureInterest);
+    // The traversal state moved (SoFCDisplayModeElement carries the
+    // set): the caches that read it re-capture on the next traversal.
+    getSoRenderManager()->scheduleRedraw();
+}
+
+void View3DInventorViewer::setImposedCaptureInterest(std::vector<uint16_t> ids)
+{
+    if (ids == _pimpl->imposedInterest)
+        return;
+    _pimpl->imposedInterest = std::move(ids);
+    rebuildCaptureInterest();
+}
+
+const Render::CaptureInterestTable *
+View3DInventorViewer::captureInterestTable() const
+{
+    if (_pimpl->interestTable.ids.empty())
+        return nullptr;
+    return &_pimpl->interestTable;
+}
+
+bool View3DInventorViewer::hasObjectStyleOverrides() const
+{
+    if (_pimpl->styleOverrides.entries.empty())
+        return false;
+    // Only a style the backend can resolve over a superset capture can
+    // host overrides: "As Is" or a Class-A name. Hidden Line, No
+    // Shading and Tessellation are traversal state -- their capture
+    // stays their own, and the overrides lie dormant.
+    return SoFCUnifiedSelection::DisplayModeAsIs == overrideMode.c_str()
+        || Gui::styleNameBitOf(overrideMode.c_str()) != 0;
+}
+
+View3DInventorViewer::CanvasStyleMode
+View3DInventorViewer::canvasStyleMode() const
+{
+    return _pimpl->canvasStyleMode;
+}
+
+void View3DInventorViewer::setCanvasStyleMode(CanvasStyleMode mode)
+{
+    if (_pimpl->canvasStyleMode == mode)
+        return;
+    _pimpl->canvasStyleMode = mode;
+    // The interest list carries this view's own style only while the
+    // capture is a superset one (drawStyleModeId), which is exactly
+    // what just moved.
+    rebuildCaptureInterest();
     // Re-applied rather than merely stored: it decides a field of the
     // selection root, and changing that field is what dirties the
     // capture so the next frame is fed the newly traversed scene.
@@ -4190,6 +4373,17 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
         SbViewportRegion capvp {short(width), short(height)};
         SbViewVolume vol = cam->getViewVolume(capvp.getViewportAspectRatio());
         vol.getMatrices(viewMat, projMat);
+        // Same style context as the on-screen frame (docs/
+        // CoinRetirement.md 5.9): a capture of a view with per-object
+        // overrides must resolve them the same way.
+        if (hasObjectStyleOverrides())
+            _pimpl->renderer->setMainViewStyle(
+                    drawStyleMask(), drawStyleNameBit(),
+                    true, objectStyleOverrides(), drawStyleModeId());
+        else
+            _pimpl->renderer->setMainViewStyle(
+                    Render::StyleAsIs, 0, false, nullptr, 0);
+        _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         externalRendered = _pimpl->renderer->renderOffscreen(
                 col, &viewMat.getValue(), &projMat.getValue(), width, height);
@@ -4457,7 +4651,7 @@ void View3DInventorViewer::adoptRenderer(
         _pimpl->canvasResidue = false;
         // Leaving the canvas puts the style back in this viewer's own
         // traversal, where it means what it means on a plain view.
-        _pimpl->canvasStyleFiltered = false;
+        _pimpl->canvasStyleMode = CanvasStyleOff;
         applyOverrideMode();
         const int mode = int(ViewParams::getRenderCache());
         setRendererType(mode == 3 ? RenderParams::getType() : std::string());
@@ -5919,6 +6113,20 @@ void View3DInventorViewer::renderScene()
         const SbViewportRegion vp = getSoRenderManager()->getViewportRegion();
         SbViewVolume vol = cam->getViewVolume(vp.getViewportAspectRatio());
         vol.getMatrices(viewMat, projMat);
+        // The plain frame's style context (docs/CoinRetirement.md
+        // 5.9): at rest unless this view carries per-object display
+        // mode overrides, in which case the traversal captured the
+        // SUPERSET child (captureOverrideMode) and the backend applies
+        // this view's own style per object, exactly as it would a
+        // canvas cell's, with the override table as the first clause.
+        if (hasObjectStyleOverrides())
+            _pimpl->renderer->setMainViewStyle(
+                    drawStyleMask(), drawStyleNameBit(),
+                    true, objectStyleOverrides(), drawStyleModeId());
+        else
+            _pimpl->renderer->setMainViewStyle(
+                    Render::StyleAsIs, 0, false, nullptr, 0);
+        _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         // render() publishes on the way past when something is listening
         // (docs/HeadlessServe.md §4), and a published object entry names

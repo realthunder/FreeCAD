@@ -1296,6 +1296,36 @@ i.e. that cell shows the faces the single view shows (24434); own mode
 ink `[24846, 24459]` dark `[391, 0]`, the styled cell now served by
 filtering; cell 1 -> `As Is` -> one style again, ink `[24846, 24846]`.
 
+### 17.1 Superseded in part, 2026-08-27: the cell no longer leaves
+
+The escape hatch above -- a cell whose style the shared capture cannot
+serve stops being claimable and renders itself -- is no longer the only
+answer, and is now the last of three. `docs/CoinRetirement.md` **5.8**
+is the design and the reason: on the user's ruling the display style is
+resolved **per object per view at draw time**, the way Rhino,
+SolidWorks and Blender all resolve it, so a superset capture plus a
+per-object resolution serves cells the flat filter could not.
+
+What changed here concretely:
+
+- The two-state `_filtered` is a three-state `_serve`
+  (`ServeOneStyle` / `ServeFilter` / `ServeSuperset`), tried in that
+  order so the cheap cases stay cheap: only `ServeSuperset` pays an
+  extra capture, and only it can serve one cell `As Is` beside another
+  overriding.
+- The verified case above INVERTS. Own mode `Wireframe`, cell 1
+  `Shaded` now keeps `canvas=True`, ink `[1079, 30464]`: the cell stays
+  on the shared canvas and still shows the faces (a plain view of the
+  same scene measures 30456 in the same run).
+- The `!` note above -- an unrecognized display mode counts as a
+  conflict -- still holds for `styleConflicts()`, but it no longer
+  costs the cell its place unless `supersetBlocked()` also fires, which
+  needs an object whose switch has no `Flat Lines` child AND does have
+  a child named by some cell's style.
+- A cell in `Hidden Line`, `No Shading` or `Tessellation` was being
+  claimed by a filtering canvas and drawn without the traversal state
+  those modes are made of; such a cell now shares a canvas only with
+  cells in the same mode.
 ## 18. The visible chrome points at the corner zones (2026-08-28)
 
 The corner action zones paint nothing until the cursor is inside them

@@ -352,6 +352,28 @@ public:
     int8_t materialbinding;
     int8_t vertexordering;
     int8_t drawstyle;
+    /// The display mode the OBJECT is in, and which Class-A style names
+    /// its display-mode switch has a child for -- captured from
+    /// SoFCOwnDisplayModeElement, which SoFCSwitch writes
+    /// (docs/CoinRetirement.md 5.8). What lets the backend resolve a
+    /// display style per object per view instead of the traversal
+    /// baking one style into the capture. Part of the material because
+    /// the material is the batching key: draws whose objects are in
+    /// different modes must not merge, since a cell filters on this.
+    uint8_t ownstyle;
+    uint8_t registeredstyles;
+    /// Additive-capture context (docs/CoinRetirement.md 5.9
+    /// "Non-standard modes"), captured from SoFCCapturedModeElement
+    /// and SoFCModeInterestElement beside the pair above: the interned
+    /// mode id tagging an ADDITIVELY traversed subgraph's draws (0 in
+    /// the normal flow), the id of the normally traversed mode child
+    /// when the interest set names it, and which interest modes the
+    /// switch has a child for. Part of the material because the
+    /// material is the batching key: a tagged draw must not merge
+    /// with the normal flow's.
+    uint16_t capturedmode;
+    uint16_t traversedmode;
+    uint16_t interestbits;
     int8_t polygonoffsetstyle;
     int8_t shadowstyle;
     int8_t depthfunc;
@@ -579,6 +601,16 @@ public:
         if (twoside > other.twoside) return false;
         if (drawstyle < other.drawstyle) return true;
         if (drawstyle > other.drawstyle) return false;
+        if (ownstyle < other.ownstyle) return true;
+        if (ownstyle > other.ownstyle) return false;
+        if (registeredstyles < other.registeredstyles) return true;
+        if (registeredstyles > other.registeredstyles) return false;
+        if (capturedmode < other.capturedmode) return true;
+        if (capturedmode > other.capturedmode) return false;
+        if (traversedmode < other.traversedmode) return true;
+        if (traversedmode > other.traversedmode) return false;
+        if (interestbits < other.interestbits) return true;
+        if (interestbits > other.interestbits) return false;
         if (polygonoffsetstyle < other.polygonoffsetstyle) return true;
         if (polygonoffsetstyle > other.polygonoffsetstyle) return false;
         if (polygonoffsetfactor < other.polygonoffsetfactor) return true;

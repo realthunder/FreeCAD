@@ -150,12 +150,65 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->selectSubView(subCtx.active ? subCtx.id : 0);
     // ...and its display style, which unlike the bank is restated
     // rather than carried: the cell owns it, the backend only filters
-    // by it (docs/CoinRetirement.md 5.7).
-    view->drawStyleMask = subCtx.active ? subCtx.style : Render::StyleAsIs;
-    // ...and the frame consumer registered under it, if any, with
-    // whether that consumer supplies the sub-view's shaded image
-    // (docs/CyclesIntegration.md sec 5.11). Resolved per submit so a
-    // path-traced cell and a rasterized one share the one frame.
+    // by it (docs/CoinRetirement.md 5.7). A plain render() takes the
+    // main-view context stated through setMainViewStyle() -- at rest
+    // (StyleAsIs, no superset) except on a view whose per-object
+    // override table is non-empty (5.9).
+    view->drawStyleMask = subCtx.active ? subCtx.style : mainStyleMask;
+    view->drawStyleName = subCtx.active ? subCtx.styleName : mainStyleName;
+    view->styleFromSuperset = subCtx.active ? subCtx.fromSuperset
+                                            : mainFromSuperset;
+    // ...and, when the capture carried this style's mode additively,
+    // the id and bit that let the style be resolved from the mode's
+    // own tagged draws (docs/CoinRetirement.md 5.11). Both stay zero
+    // when the interest list does not carry the mode -- it was never
+    // captured, so the mask over the superset child is still the only
+    // answer there is.
+    view->drawStyleMode = 0;
+    view->drawStyleModeBit = 0;
+    if (view->styleFromSuperset && captureInterest) {
+        const uint16_t sm = subCtx.active ? subCtx.styleMode : mainStyleMode;
+        if (const uint16_t bit = sm ? captureInterest->bitOf(sm) : 0) {
+            view->drawStyleMode = sm;
+            view->drawStyleModeBit = bit;
+        }
+    }
+    // The sub-view's per-object override table (5.9), and its resolved
+    // objectKey cache: cleared when the table's content version or the
+    // stated object-info version moved, filled lazily at submit
+    // (BGFXView::lookupStyleOverride) so keys added by
+    // updateObjectInfo -- which deliberately does not bump the info
+    // version -- resolve on first sight.
+    const Render::StyleOverrideTable *ovt =
+        subCtx.active ? subCtx.styleOverrides : mainStyleOverrides;
+    if (ovt && !ovt->entries.empty()) {
+        const uint32_t interestVersion =
+                captureInterest ? captureInterest->version : 0;
+        auto &c = view->subOvCaches[subCtx.active ? subCtx.id : 0];
+        if (c.tableVersion != ovt->version
+                || c.infoVersion != objectInfoStamp
+                || c.interestVersion != interestVersion) {
+            c.map.clear();
+            c.tableVersion = ovt->version;
+            c.infoVersion = objectInfoStamp;
+            c.interestVersion = interestVersion;
+        }
+        view->ovCache = &c;
+        view->ovTable = ovt;
+        view->ovInfo = &objectInfo;
+    } else {
+        view->ovCache = nullptr;
+        view->ovTable = nullptr;
+        view->ovInfo = nullptr;
+    }
+    // Latched whether or not there is an override table: since 5.11 the
+    // sub-view's own STYLE can resolve through the interest list too,
+    // and lookupStyleOverride guards on ovCache/ovTable of its own.
+    view->ovInterest = captureInterest;
+    // ...and the frame consumer registered under the sub-view, if
+    // any, with whether that consumer supplies the sub-view's shaded
+    // image (docs/CyclesIntegration.md sec 5.11). Resolved per submit
+    // so a path-traced cell and a rasterized one share the one frame.
     selectConsumer(subCtx.active ? subCtx.id : 0);
 
     // A shader pack that could not supply a core program keeps the
@@ -5085,7 +5138,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         prepassInstanced.assign(scene.size(), 0);
         casterInstanced.assign(scene.size(), 0);
         std::vector<float> instData;
-        std::vector<int> vis, visOut, hidden;
+        std::vector<int> vis, visOut, hidden, styledOut;
         auto appendInstance = [&](int i) {
             const auto &d = scene[i];
             if (d.identity) {
@@ -5112,11 +5165,24 @@ bool BGFXRenderer::Private::render(const QColor &col,
             vis.clear();
             visOut.clear();
             hidden.clear();
+            styledOut.clear();
             for (int i : group.members) {
                 if (isHidden(scene[i]))
                     hidden.push_back(i);
                 else if (culled(scene[i]))
                     visOut.push_back(i);
+                else if (!view->styleAdmits(scene[i]))
+                    // A group merges draws by geometry and material,
+                    // not by objectKey, so its members can resolve to
+                    // different display styles (docs/CoinRetirement.md
+                    // 5.8, 5.9) -- one box overridden Shaded beside an
+                    // identical one left in Wireframe. A member the
+                    // style drops must not ride the group's submit; it
+                    // falls to the per-draw loop, whose submit filters
+                    // it the same way. It still CASTS, like the
+                    // per-draw path, whose caster submit is not style
+                    // filtered.
+                    styledOut.push_back(i);
                 else
                     vis.push_back(i);
             }
@@ -5174,8 +5240,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     appendInstance(i);
                 for (int i : hidden)
                     appendInstance(i);
+                // Style-dropped members cast like the per-draw path's.
+                for (int i : styledOut)
+                    appendInstance(i);
                 uint32_t total = uint32_t(vis.size() + visOut.size()
-                                          + hidden.size());
+                                          + hidden.size()
+                                          + styledOut.size());
                 if (total >= 2
                         && view->submitShadowCasterInstanced(
                             scene[group.members[0]], instData.data(),

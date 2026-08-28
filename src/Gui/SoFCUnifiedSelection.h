@@ -40,6 +40,7 @@
 
 #include "InventorBase.h"
 #include "Inventor/SoFCDetail.h"
+#include "Inventor/SoFCDisplayModeElement.h"
 #include "Inventor/SoFCSwitch.h"
 
 #include "SoFCSelectionContext.h"
@@ -64,6 +65,7 @@ class Renderer;
 
 namespace App {
 class PropertyContainer;
+class DocumentObject;
 }
 
 namespace Gui {
@@ -108,6 +110,15 @@ public:
     SoSFBool useNewSelection;
 
     SoSFName overrideMode;
+
+    /// The capture's additive-mode interest set (docs/CoinRetirement.md
+    /// 5.9 "Non-standard modes"), pushed onto SoFCDisplayModeElement
+    /// beside overrideMode by every traversal. The caller (the viewer)
+    /// owns the storage and keeps it alive while it is set; null (the
+    /// default) means no interest. Not a field: content changes reach
+    /// the caches through the element's matches(), which compares the
+    /// set's version -- the caller schedules the redraw.
+    void setCaptureInterest(const SoFCDisplayModeElement::CaptureInterest *interest);
 
     static SbName DisplayModeTessellation;
     static SbName DisplayModeShaded;
@@ -317,6 +328,18 @@ public:
     ViewProvider *getViewProvider() const {return viewProvider;}
     void setViewProvider(ViewProvider *vp);
 
+    /// Which document object this node's subtree renders, for a node
+    /// that stands in for one whose ViewProvider it does NOT own. A
+    /// Link is the case: LinkInfo::getSnapshot copies the linked
+    /// ViewProvider root's CHILDREN under a node of the link's own, so
+    /// the linked provider's root is never traversed and the key's
+    /// origin walk sees no object below the link at all -- which left
+    /// every draw made through a link attributed to the LINK, with the
+    /// linked object missing from the container chain a per-view
+    /// display mode override matches against
+    /// (docs/CoinRetirement.md 5.9). A null object clears it.
+    void setNodeOrigin(const App::DocumentObject *obj);
+
     void GLRenderBelowPath(SoGLRenderAction * action) override;
     void GLRenderInPath(SoGLRenderAction * action) override;
 
@@ -521,6 +544,7 @@ protected:
             data.back() = 0;
             next.reset();
             origin.reset();
+            origins.clear();
         }
 
         /// The deepest chain node's document object, if any node in the
@@ -528,6 +552,23 @@ protected:
         /// hash() or operator==.
         const std::shared_ptr<const Origin> & getOrigin() const {
             return origin;
+        }
+
+        /// The chain of document objects the key's node chain passes
+        /// through, outermost first, ending at getOrigin()'s object.
+        /// Appended to \a path in walk order; consecutive nodes owned by
+        /// the same object each contribute an entry (collapse duplicates
+        /// on the consumer side if unwanted). Derived data like origin:
+        /// not part of hash() or operator==. What a per-view display
+        /// mode override matches against (docs/CoinRetirement.md 5.9):
+        /// the leaf alone cannot say which CONTAINER a draw was reached
+        /// through, and an override on a Link/group/assembly must reach
+        /// the child draws below it.
+        void getOriginPath(
+                std::vector<std::shared_ptr<const Origin>> &path) const {
+            path.insert(path.end(), origins.begin(), origins.end());
+            if (next)
+                next->getOriginPath(path);
         }
 
         std::size_t hash(std::size_t seed = 0) const {
@@ -600,6 +641,12 @@ protected:
 
         std::shared_ptr<NodeKey> next;
         std::shared_ptr<const Origin> origin;
+        /// Origins of THIS level's own pushes, in push order (outermost
+        /// first); the deeper levels' origins live on their own keys and
+        /// getOriginPath() walks the chain. Kept per level because a
+        /// child key is shared by every parent that appends it, so a
+        /// flattened path cannot be stored on the shared child.
+        std::vector<std::shared_ptr<const Origin>> origins;
 
         // data.back() (i.e. the last element) stores the data count
         std::array<uint8_t, 32> data;
@@ -666,6 +713,10 @@ protected:
     SoFCSelectionCounter selCounter;
 
     ViewProvider *viewProvider;
+
+    /// setNodeOrigin(): resolved once when the node is bound to the
+    /// object, so composing a key only copies the shared pointer.
+    std::shared_ptr<const NodeKey::Origin> nodeOrigin;
 
     int renderPathCode=0;
 

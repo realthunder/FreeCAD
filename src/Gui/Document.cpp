@@ -288,26 +288,25 @@ struct DocumentP
     Connection connectTouchedObject;
     Connection connectPurgeTouchedObject;
     Connection connectChangePropertyEditor;
-    Connection connectStartSave;
+    Connection connectOnTopObject;
     AdvancedConnection connectChangeDocument;
 
     using ConnectionBlock = fastsignals::shared_connection_block;
     ConnectionBlock connectActObjectBlocker;
     ConnectionBlock connectChangeDocumentBlocker;
 
-    App::PropertyStringList * getOnTopProperty(App::Document *doc, bool create) {
+    /// The LEGACY on-top store (docs/CoinRetirement.md 5.12): a dynamic
+    /// property on the APP document, keyed by a view id the next
+    /// session renumbers from a counter. Read-only now -- the values
+    /// live in each view's OnTopObjects property, and this is consulted
+    /// once on restore to migrate an old file.
+    App::PropertyStringList * getOnTopProperty(App::Document *doc) {
         try {
             if (!doc)
                 return nullptr;
             auto prop = doc->getPropertyByName("OnTopObjects");
-            if (!prop || !prop->isDerivedFrom(App::PropertyStringList::getClassTypeId())) {
-                if (!create)
-                    return nullptr;
-                if (prop)
-                    doc->removeDynamicProperty("OnTopObjects");
-                prop = doc->addDynamicProperty("App::PropertyStringList", "OnTopObjects", "Views");
-            }
-            return static_cast<App::PropertyStringList*>(prop);
+            if (prop && prop->isDerivedFrom(App::PropertyStringList::getClassTypeId()))
+                return static_cast<App::PropertyStringList*>(prop);
         } catch (Base::Exception &e) {
             e.ReportException();
         }
@@ -405,33 +404,11 @@ Document::Document(App::Document* pcDocument,Application * app)
         (std::bind(&Gui::Document::slotTransactionRemove, this, sp::_1, sp::_2));
     //NOLINTEND
 
-    d->connectStartSave = pcDocument->signalStartSave.connect(
-        [this](const App::Document &doc, const std::string &) {
-            try {
-                std::vector<std::string> values;
-                std::ostringstream ss;
-                foreachView<View3DInventor>([&](View3DInventor* view) {
-                    for (auto &objT : view->getViewer()->getObjectsOnTop()) {
-                        ss.str("");
-                        ss << view->getID() << ":" << objT.getSubNameNoElement(true);
-                        values.push_back(ss.str());
-                    }
-                });
-                // First try to get existing on top property
-                if (auto prop = d->getOnTopProperty(& const_cast<App::Document&>(doc), false)) {
-                    prop->setValues(std::move(values));
-                }
-                else if (values.size()) {
-                    // If cannot, then only create the property if there is on
-                    // top object
-                    if (auto prop = d->getOnTopProperty(& const_cast<App::Document&>(doc), true))
-                        prop->setValues(std::move(values));
-                }
-
-            } catch (Base::Exception &e) {
-                e.ReportException();
-            }
-        });
+    // The on-top set is stored in each view's own OnTopObjects property
+    // (docs/CoinRetirement.md 5.12), so every change to it has to reach
+    // that property -- this is the only writer.
+    d->connectOnTopObject = signalOnTopObject.connect(
+        [this](int, const App::SubObjectT &) { snapshotOnTopObjects(); });
 
     // pointer to the python class
     // NOTE: As this Python object doesn't get returned to the interpreter we
@@ -476,7 +453,7 @@ Document::~Document()
     d->connectTouchedObject.disconnect();
     d->connectPurgeTouchedObject.disconnect();
     d->connectChangePropertyEditor.disconnect();
-    d->connectStartSave.disconnect();
+    d->connectOnTopObject.disconnect();
     d->connectChangeDocument.disconnect();
 
     // e.g. if document gets closed from within a Python command
@@ -2728,18 +2705,25 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
         }
 
         size_t i=0;
-        std::map<int, std::vector<std::pair<std::string,std::string>>> onTopObjs;
-        if (auto prop = d->getOnTopProperty(getDocument(), false)) {
-            for (const auto &path : prop->getValues()) {
-                std::istringstream iss(path);
-                int id = -1;
-                std::string name, subname;
-                char c;
-                if (iss >> id >> c) {
-                    if (std::getline(iss, name, '.') && std::getline(iss, subname))
-                        onTopObjs[id].emplace_back(std::move(name), std::move(subname));
+        // The LEGACY on-top store (docs/CoinRetirement.md 5.12): "<view
+        // id>:<name>.<subname>" strings on the APP document. Split back
+        // into per-view path lists here, applied to each view below,
+        // and the property is dropped so the next save writes only the
+        // views' own OnTopObjects.
+        std::map<int, std::vector<std::string>> onTopObjs;
+        if (auto prop = d->getOnTopProperty(getDocument())) {
+            for (const auto &entry : prop->getValues()) {
+                const auto colon = entry.find(':');
+                if (colon == std::string::npos)
+                    continue;
+                try {
+                    const int id = std::stoi(entry.substr(0, colon));
+                    onTopObjs[id].push_back(entry.substr(colon + 1));
+                } catch (const std::exception &) {
+                    continue;
                 }
             }
+            getDocument()->removeDynamicProperty("OnTopObjects");
         }
 
         // Names first, before anything is restored into a view. A view
@@ -2775,15 +2759,6 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
             const char *ppReturn = 0;
             view->onMsg(info.settings.c_str(), &ppReturn);
             viewMap[info.id] = view;
-            auto it = onTopObjs.find(info.id);
-            if (it != onTopObjs.end()) {
-                const char *docName = getDocument()->getName();
-                for (auto &v : it->second) {
-                    view->getViewer()->checkGroupOnTop(SelectionChanges(
-                                SelectionChanges::AddSelection,
-                                docName, v.first.c_str(), v.second.c_str()), true);
-                }
-            }
             auto iter = d->_view3DContents.find(info.id);
             if (iter != d->_view3DContents.end()) {
                 try {
@@ -2794,6 +2769,15 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
                     e.ReportException();
                 }
             }
+            // The legacy store fills in only where the view's own
+            // property carried nothing: a file written before the move
+            // has no OnTopObjects on the view at all, and one written
+            // after has the authoritative copy. Applied after Restore
+            // for that reason -- before it, the view's own (possibly
+            // empty) value would overwrite what was just migrated.
+            auto it = onTopObjs.find(info.id);
+            if (it != onTopObjs.end() && view->OnTopObjects.getSize() == 0)
+                view->OnTopObjects.setValues(std::move(it->second));
         }
         i=0;
         for(auto v : views) {
@@ -3486,6 +3470,34 @@ void Document::writeObject(Base::Writer &writer,
 /**
  * Saves the properties of the view providers.
  */
+void Document::snapshotOnTopObjects()
+{
+    // Every mutation of a viewer's on-top group lands here through
+    // signalOnTopObject, and puts the view's OnTopObjects property back
+    // in step (docs/CoinRetirement.md 5.12). The signal does not say
+    // WHICH view changed, so all of them are compared -- each set is a
+    // handful of entries, and an unchanged list writes nothing.
+    //
+    // User1 is the direction latch shared with View3DInventor::
+    // onChanged: a view applying its property is mutating the group
+    // this would snapshot, and re-writing the list mid-apply would
+    // truncate it to whatever has been applied so far.
+    foreachView<View3DInventor>([](View3DInventor* view) {
+        auto viewer = view->getViewer();
+        if (!viewer || view->OnTopObjects.testStatus(App::Property::User1))
+            return;
+        std::vector<std::string> values;
+        values.reserve(viewer->getObjectsOnTop().size());
+        for (const auto &objT : viewer->getObjectsOnTop())
+            values.push_back(objT.getSubNameNoElement(true));
+        if (values == view->OnTopObjects.getValues())
+            return;
+        Base::ObjectStatusLocker<App::Property::Status, App::Property> guard(
+                App::Property::User1, &view->OnTopObjects);
+        view->OnTopObjects.setValues(std::move(values));
+    });
+}
+
 void Document::SaveDocFile (Base::Writer &writer) const
 {
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"

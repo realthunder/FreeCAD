@@ -1031,6 +1031,163 @@ bool StdCmdToggleShowOnTop::isActive()
 }
 
 //===========================================================================
+// Std_DisplayModeInView
+//===========================================================================
+
+/// One entry of the "Display mode in this view" group
+/// (docs/CoinRetirement.md 5.9): writes a PATH-form entry -- this
+/// occurrence and its subtree, the same selection set show-on-top acts
+/// on -- into the active 3D view's ObjectDisplayModes property. A null
+/// mode is the "clear all" entry. The four Class-A styles and "As Is"
+/// cover the common gestures; an object's non-standard modes are
+/// reachable through its DisplayModeInView property row, which lists
+/// the provider's own enum.
+class StdCmdObjDisplayModeBase : public Command
+{
+public:
+    StdCmdObjDisplayModeBase(const char *name, const char *mode,
+                             const char *title, const char *doc)
+        : Command(name), modeName(mode)
+    {
+        sGroup        = "Standard-View";
+        sMenuText     = title;
+        sToolTipText  = doc;
+        sStatusTip    = sToolTipText;
+        sWhatsThis    = getName();
+        eType         = Alter3DView;
+    }
+
+    virtual const char *className() const { return "StdCmdObjDisplayModeBase"; }
+
+protected:
+    virtual bool isActive()
+    {
+        auto gdoc = Application::Instance->activeDocument();
+        return gdoc && Base::freecad_dynamic_cast<View3DInventor>(
+                gdoc->getActiveView());
+    }
+
+    virtual void activated(int iMsg)
+    {
+        Q_UNUSED(iMsg);
+        auto gdoc = Application::Instance->activeDocument();
+        if (!gdoc)
+            return;
+        auto view = Base::freecad_dynamic_cast<View3DInventor>(
+                gdoc->getActiveView());
+        if (!view)
+            return;
+
+        if (!modeName) {
+            if (view->ObjectDisplayModes.getSize())
+                view->ObjectDisplayModes.setValues(
+                        std::map<std::string, std::string>());
+            return;
+        }
+
+        // The selection's full paths (NoResolve), preselection
+        // standing in when it points elsewhere -- the same set
+        // StdCmdToggleShowOnTop acts on.
+        std::set<App::SubObjectT> objs;
+        for (auto &sel : Selection().getSelectionT(
+                    gdoc->getDocument()->getName(), ResolveMode::NoResolve))
+            objs.insert(sel.normalized(
+                        App::SubObjectT::NormalizeOption::NoElement));
+        if (Selection().hasPreselection()) {
+            auto presel = Selection().getPreselection().Object.normalized(
+                    App::SubObjectT::NormalizeOption::NoElement);
+            if (!objs.count(presel)) {
+                objs.clear();
+                objs.insert(presel);
+            }
+        }
+        if (objs.empty())
+            return;
+
+        auto values = view->ObjectDisplayModes.getValues();
+        bool changed = false;
+        for (auto &objT : objs) {
+            std::string key = objT.getSubNameNoElement(true);
+            if (key.empty())
+                continue;
+            // Rooted path form even for a top-level object: the
+            // trailing dot tells "Box." (this occurrence and its
+            // subtree) from the bare "Box" (anywhere in the view) the
+            // property row writes.
+            if (key.find('.') == std::string::npos)
+                key += '.';
+            if (strcmp(modeName, "Use View Mode") == 0) {
+                changed = values.erase(key) > 0 || changed;
+            }
+            else {
+                auto &v = values[key];
+                changed = changed || v != modeName;
+                v = modeName;
+            }
+        }
+        if (changed)
+            view->ObjectDisplayModes.setValues(std::move(values));
+    }
+
+    const char *modeName;
+};
+
+class StdCmdDisplayModeInView : public GroupCommand
+{
+public:
+    StdCmdDisplayModeInView()
+        : GroupCommand("Std_DisplayModeInView")
+    {
+        sGroup        = "Standard-View";
+        sMenuText     = QT_TR_NOOP("Display mode in this view");
+        sToolTipText  = QT_TR_NOOP(
+                "Override the display mode of the selected objects in the\n"
+                "active 3D view only; other views keep their own look");
+        sStatusTip    = sToolTipText;
+        sWhatsThis    = "Std_DisplayModeInView";
+        eType         = Alter3DView;
+        bCanLog       = false;
+
+        addCommand(new StdCmdObjDisplayModeBase(
+                "Std_ObjDisplayModeUseView", "Use View Mode",
+                QT_TR_NOOP("Use view mode"),
+                QT_TR_NOOP("Remove the override of the selected objects in this view")));
+        addCommand(new StdCmdObjDisplayModeBase(
+                "Std_ObjDisplayModeAsIs", "As Is",
+                QT_TR_NOOP("As is"),
+                QT_TR_NOOP("Pin the selected objects to their own display mode,\n"
+                           "escaping this view's draw style")));
+        addCommand(new StdCmdObjDisplayModeBase(
+                "Std_ObjDisplayModeFlatLines", "Flat Lines",
+                QT_TR_NOOP("Flat lines"),
+                QT_TR_NOOP("Show the selected objects shaded with their edges,\n"
+                           "in this view only")));
+        addCommand(new StdCmdObjDisplayModeBase(
+                "Std_ObjDisplayModeShaded", "Shaded",
+                QT_TR_NOOP("Shaded"),
+                QT_TR_NOOP("Show the selected objects shaded without edges,\n"
+                           "in this view only")));
+        addCommand(new StdCmdObjDisplayModeBase(
+                "Std_ObjDisplayModeWireframe", "Wireframe",
+                QT_TR_NOOP("Wireframe"),
+                QT_TR_NOOP("Show the selected objects as wireframe,\n"
+                           "in this view only")));
+        addCommand(new StdCmdObjDisplayModeBase(
+                "Std_ObjDisplayModePoints", "Points",
+                QT_TR_NOOP("Points"),
+                QT_TR_NOOP("Show the selected objects as points,\n"
+                           "in this view only")));
+        addCommand(new StdCmdObjDisplayModeBase(
+                "Std_ObjDisplayModeClearAll", nullptr,
+                QT_TR_NOOP("Clear all in this view"),
+                QT_TR_NOOP("Remove every per-object display mode override\n"
+                           "of the active 3D view")));
+    }
+
+    virtual const char *className() const { return "StdCmdDisplayModeInView"; }
+};
+
+//===========================================================================
 // Std_ToggleTransparency
 //===========================================================================
 DEF_STD_CMD_A(StdCmdToggleTransparency)
@@ -5406,6 +5563,7 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdToggleVisibility());
     rcCmdMgr.addCommand(new StdCmdToggleGroupVisibility());
     rcCmdMgr.addCommand(new StdCmdToggleShowOnTop());
+    rcCmdMgr.addCommand(new StdCmdDisplayModeInView());
     rcCmdMgr.addCommand(new StdCmdToggleTransparency());
     rcCmdMgr.addCommand(new StdCmdToggleSelectability());
     rcCmdMgr.addCommand(new StdCmdShowSelection());

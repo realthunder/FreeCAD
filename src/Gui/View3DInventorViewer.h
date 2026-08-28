@@ -83,6 +83,8 @@ namespace Quarter = SIM::Coin3D::Quarter;
 
 namespace Render {
 class Renderer;
+struct StyleOverrideTable;
+struct CaptureInterestTable;
 }
 
 namespace App {
@@ -315,19 +317,77 @@ public:
     /// state, so they stay with the Coin traversal and report
     /// StyleAsIs.
     static unsigned char drawStyleMaskFromName(const char *mode);
+    /// This viewer's display style as a StyleNameBit, for the backend
+    /// to tell whether an object's display-mode switch has a child of
+    /// that style's name (docs/CoinRetirement.md 5.8).
+    unsigned char drawStyleNameBit() const;
+    /// This viewer's display style as an interned mode id
+    /// (Render::internModeName), for the backend to resolve the style
+    /// from the mode's own ADDITIVELY captured draws rather than from a
+    /// mask over the superset child (docs/CoinRetirement.md 5.11).
+    /// Zero unless the capture IS a superset capture and the style is
+    /// one of the four Class-A names -- outside those the traversal
+    /// applies the style itself and there is nothing to resolve.
+    uint16_t drawStyleModeId() const;
     /// The display mode name this viewer's traversal CAPTURES with:
-    /// its own style, or none while a canvas is filtering styles per
-    /// cell (setCanvasStyleFiltered).
+    /// its own style, none, or the superset child -- see
+    /// setCanvasStyleMode().
     const char *captureOverrideMode() const;
-    /// Tell a canvas cell that the canvas is drawing its cells' styles
-    /// as backend bucket filters (docs/SplitViews.md sec 17), so this
-    /// viewer's traversal must capture every object in its OWN display
-    /// mode instead of applying the style. Re-applies the override,
-    /// which dirties the capture. False -- the default, and what a
-    /// canvas whose cells all share a style uses -- leaves the
-    /// traversal applying the style exactly as a plain view does.
-    void setCanvasStyleFiltered(bool on);
-    bool canvasStyleFiltered() const;
+    /// What a unified canvas needs this viewer's traversal to capture,
+    /// because one canvas draws ONE resident scene through ONE
+    /// traversal and its cells may be in different display styles
+    /// (docs/CoinRetirement.md 5.7, 5.8; docs/SplitViews.md sec 17).
+    enum CanvasStyleMode : unsigned char {
+        /// Not on a canvas, or on one whose claimed cells all share a
+        /// style: capture with that style, exactly as a plain view.
+        CanvasStyleOff,
+        /// Capture every object in its OWN display mode; the cells
+        /// filter buckets out of it. Only usable where a filter and an
+        /// override cannot be told apart.
+        CanvasStyleFilter,
+        /// Capture the SUPERSET display-mode child, so a cell can be
+        /// served a style that ADDS geometry the object's own mode does
+        /// not draw. The cells resolve their style per object.
+        CanvasStyleSuperset,
+    };
+    /// Re-applies the override, which is what dirties the capture.
+    void setCanvasStyleMode(CanvasStyleMode mode);
+    CanvasStyleMode canvasStyleMode() const;
+    /// This view's per-object display mode overrides
+    /// (docs/CoinRetirement.md 5.9), parsed from View3DInventor's
+    /// ObjectDisplayModes property into backend entries. Takes
+    /// ownership, bumps the table's version, and re-applies the
+    /// override mode: a view with overrides captures the SUPERSET
+    /// child even outside a canvas, because an override can ADD
+    /// geometry the object's own mode does not draw.
+    void setObjectStyleOverrides(Render::StyleOverrideTable &&table);
+    /// The table above, or null when it is empty. The pointer stays
+    /// valid for the viewer's lifetime; a unified canvas puts it on
+    /// its SubViewFrame, the plain frame states it through
+    /// Renderer::setMainViewStyle.
+    const Render::StyleOverrideTable *objectStyleOverrides() const;
+    /// Whether overrides exist AND this viewer's style can host them:
+    /// the backend resolves them over a superset capture, which only
+    /// an "As Is" or Class-A styled view produces (Hidden Line, No
+    /// Shading and Tessellation are traversal state, not bucket
+    /// selections, and keep their plain capture).
+    bool hasObjectStyleOverrides() const;
+    /// Additive-mode interest imposed by a unified canvas
+    /// (docs/CoinRetirement.md 5.9 "Non-standard modes", 5.10): the
+    /// UNION of every cell's override modes AND of the cells' own
+    /// display STYLE names, as interned ids
+    /// (Render::internModeName). The shared capture must traverse the
+    /// union whichever cell feeds it, so the canvas imposes it on
+    /// every claimed viewer; an empty vector (the default, and what a
+    /// cell leaving the canvas is reset to) leaves the viewer's own
+    /// overrides as the only interest source.
+    void setImposedCaptureInterest(std::vector<uint16_t> ids);
+    /// The capture's interest list handed to the backend
+    /// (Renderer::setCaptureInterest), or null when empty. Built from
+    /// this view's own non-standard override modes plus the imposed
+    /// set, in the SAME order as the list pushed to the traversal --
+    /// the order is the interestBits bit assignment.
+    const Render::CaptureInterestTable *captureInterestTable() const;
     const SoFCDisplayModeElement::HiddenLineConfig &getHiddenLineConfig() const;
     //@}
 
@@ -832,6 +892,9 @@ private:
     static void deselectCB(void * viewer, SoPath * path);
     static SoPath * pickFilterCB(void * viewer, const SoPickedPoint * pp);
     void initialize();
+    /// Rebuild the additive-mode interest (own overrides + imposed),
+    /// push it to the selection root, and schedule the re-capture.
+    void rebuildCaptureInterest();
     void drawAxisCross();
     static void drawArrow();
     static void drawSingleBackground(const QColor&);

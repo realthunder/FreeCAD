@@ -421,6 +421,12 @@ private:
     /// (bare-created) 3D views and object views into cells
     void applyViewAreaLayouts(const std::list<MDIView*> &views);
 
+    /// Put every 3D view's OnTopObjects property back in step with its
+    /// viewer's on-top group (docs/CoinRetirement.md 5.12). Connected
+    /// to signalOnTopObject -- the property is the store, so it is
+    /// written whenever the group moves, not gathered at save time.
+    void snapshotOnTopObjects();
+
     /// Build and restore one captured view provider during the load itself,
     /// handing its archive file requests to the archive's reader
     void restoreCapturedViewProvider(const std::string &xml,

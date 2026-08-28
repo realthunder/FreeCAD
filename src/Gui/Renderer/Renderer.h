@@ -2365,7 +2365,38 @@ enum DrawStyleMask : uint8_t {
     StyleShaded    = StyleFaces,
     StyleWireframe = StyleLines | StylePoints,
     StyleFlatLines = StyleFaces | StyleLines | StylePoints,
+    /// Not a mask: a display mode no mask can describe. See
+    /// DrawCall::ownStyle.
+    StyleUnknown   = 0xff,
 };
+
+/// Which bucket a draw actually RENDERS as, which is not always its
+/// Material::Type.
+///
+/// The mask above reads a draw's bucket off `mat.type`, which is right
+/// only while a ViewProvider builds its display-mode children out of
+/// separate face, line and point geometry -- which is what Part does.
+/// Mesh does not: its "Wireframe" and "Point" children are the SAME
+/// mesh node re-styled by an SoDrawStyle (Mod/Mesh/Gui/ViewProvider.cpp
+/// -- pcLineStyle is LINES, pcPointStyle is POINTS), so the cache emits
+/// them as Material::Triangle carrying a drawstyle. Classifying those
+/// by type alone files a wireframe rendering under faces, and a
+/// Wireframe filter then drops the mesh entirely.
+///
+/// A scene-wide drawstyle OVERRIDE is not reclassified: that is the
+/// Tessellation display mode, whose filled faces still occupy their
+/// faces bucket (they are drawn to occlude), and `drawstyleoverride` is
+/// exactly what tells it from a plain SoDrawStyle node in the graph.
+inline uint8_t styleBitOf(const Material &mat)
+{
+    if (mat.type == Material::Triangle && !mat.drawstyleoverride) {
+        if (mat.drawstyle == Material::DrawLines)
+            return StyleLines;
+        if (mat.drawstyle == Material::DrawPoints)
+            return StylePoints;
+    }
+    return static_cast<uint8_t>(1u << mat.type);
+}
 
 /// One draw of (a part of) a mesh with a material and model transform.
 struct DrawCall {
@@ -2404,6 +2435,45 @@ struct DrawCall {
     /// sphere moves with the spin, so a scene bound that counted it
     /// would move the ground and the clip planes while the view turns.
     bool skipbounds = false;
+    /// The display mode this draw's OBJECT is in, as a DrawStyleMask,
+    /// and which Class-A style NAMES its display-mode switch has a
+    /// child for (SoFCOwnDisplayModeElement::StyleNameBit bits).
+    ///
+    /// What lets one capture serve views in different display styles
+    /// (docs/CoinRetirement.md 5.8): the feed captures the SUPERSET
+    /// child and each view resolves its own style per object, the way
+    /// Rhino and SolidWorks do. `ownStyle` serves a view showing "As
+    /// Is"; `registeredStyles` reproduces the rule that a style whose
+    /// name an object's switch does not carry does not apply to that
+    /// object at all.
+    ///
+    /// ownStyle == StyleUnknown means the object's mode is not one of
+    /// the four (Mesh's "Point", FEM's "Faces & Wireframe"): its
+    /// buckets cannot be named, so nothing may filter this draw.
+    uint8_t ownStyle = StyleUnknown;
+    uint8_t registeredStyles = 0;
+    /// Additive-capture context (docs/CoinRetirement.md 5.9
+    /// "Non-standard modes"), all interned mode ids / bits over the
+    /// capture's CaptureInterestTable, zero everywhere outside an
+    /// interest capture:
+    ///
+    /// - capturedMode: non-zero = this draw came from an ADDITIVELY
+    ///   traversed display-mode child of that name, captured beside
+    ///   the normal flow. Such a draw serves exactly one thing -- an
+    ///   override resolving to that very mode -- and is dropped by
+    ///   every other view, or it would double-draw the object.
+    /// - traversedMode: the mode name of the child the NORMAL flow
+    ///   traversed, when that name is in the interest set (else 0).
+    ///   An override naming it admits the untagged draws as they are:
+    ///   they already ARE the mode, and no tagged copy exists.
+    /// - interestBits: which interest modes the object's switch has a
+    ///   child for. What tells "the override's mode was captured
+    ///   additively, suppress the normal draws" from "the object has
+    ///   no such mode child, fall back to its own mode" -- the same
+    ///   fallback registeredStyles gives a Class-A style.
+    uint16_t capturedMode = 0;
+    uint16_t traversedMode = 0;
+    uint16_t interestBits = 0;
     /// This draw is a coarse stand-in for geometry that has not arrived:
     /// a unit box scaled onto the bounds above, the bottom rung of the
     /// fidelity ladder (docs/SceneStreaming.md §6). It occupies space —
@@ -2447,11 +2517,31 @@ typedef std::vector<DrawCall> DrawCallList;
 /// ⚠️ Every one of these strings is UTF-8 and may hold any character a
 /// Python identifier may — internal names included. Nothing here may be
 /// byte-inspected, case-folded or truncated.
+/// One step of ObjectInfo::path: a document object on the scene-graph
+/// node chain that produced a draw.
+struct ObjectRef {
+    std::string doc;    ///< document internal name
+    std::string obj;    ///< object internal name
+
+    bool operator==(const ObjectRef &o) const
+    { return obj == o.obj && doc == o.doc; }
+};
+
 struct ObjectInfo {
     std::string doc;    ///< document internal name (identity)
     std::string obj;    ///< object internal name (identity)
     std::string label;  ///< user-visible label, presentation only
     std::string type;   ///< DocumentObject type id, e.g. "Part::Box"
+    /// The chain of document objects the draw's node path passes
+    /// through, outermost first, ending at {doc, obj}; consecutive
+    /// duplicates collapsed. Identity only, like doc/obj -- what a
+    /// per-view display mode override entry matches against
+    /// (docs/CoinRetirement.md 5.9): the leaf alone cannot say which
+    /// CONTAINER the draw was reached through, and an override on a
+    /// Link/group/assembly must reach the child draws below it. Not
+    /// serialized by SceneDump: a remote viewer holds no per-view
+    /// override table to resolve against.
+    std::vector<ObjectRef> path;
 };
 
 typedef std::unordered_map<uint64_t, ObjectInfo> ObjectInfoMap;
@@ -2469,6 +2559,92 @@ struct ObjectMeta {
 /// cannot occur in a name.
 typedef std::unordered_map<std::string,
         std::unordered_map<std::string, ObjectMeta>> ObjectMetaMap;
+
+/// One per-view per-object display mode override entry
+/// (docs/CoinRetirement.md 5.9), parsed by the producer from the view's
+/// ObjectDisplayModes property into resolved {doc, obj} steps so the
+/// backend never touches a document.
+struct StyleOverride {
+    /// The objects the entry names, outermost first. Rooted: the first
+    /// element must BE ObjectInfo::path[0] and the rest must follow it
+    /// in order (an ordered subsequence, not a contiguous run, because
+    /// a subname elides objects the scene chain contains -- a Link's
+    /// target has a chain step but no subname token). Bare (one
+    /// element, rooted false): the element may sit anywhere on the
+    /// path -- the object wherever it appears in this view.
+    std::vector<ObjectRef> path;
+    bool rooted = true;
+    /// The style to draw the matched objects with, when the entry's
+    /// mode is one of the four Class-A names and the object's switch
+    /// registers that name (DrawCall::registeredStyles) -- the same
+    /// rule a view style follows. pin instead means the entry is
+    /// "As Is": the object follows its OWN mode, escaping the view
+    /// style (SolidWorks' "Default Display").
+    uint8_t mask = StyleAsIs;
+    uint8_t nameBit = 0;
+    bool pin = false;
+    /// Non-zero when the entry's mode is NOT one of the four Class-A
+    /// names (docs/CoinRetirement.md 5.9 "Non-standard modes"): the
+    /// interned id (internModeName) of the mode's name. Such a mode is
+    /// a different subgraph, not a mask over the superset capture --
+    /// the feed captures the named child ADDITIVELY, its draws tagged
+    /// with this id (DrawCall::capturedMode), and the entry admits
+    /// exactly the draws so tagged. mask/nameBit are meaningless when
+    /// this is set.
+    uint16_t modeId = 0;
+};
+
+/// A view's override table, handed to the backend by pointer: per
+/// sub-view via SubViewFrame::styleOverrides, for the plain view via
+/// setMainViewStyle(). The producer owns the storage and keeps it
+/// alive while the backend may render with it; version is bumped on
+/// every content change and is what the backend's resolved
+/// objectKey cache keys on (together with objectInfoVersion()).
+struct StyleOverrideTable {
+    std::vector<StyleOverride> entries;
+    uint32_t version = 0;
+};
+
+/// Process-lifetime intern table for display mode NAMES outside the
+/// four Class-A styles (docs/CoinRetirement.md 5.9 "Non-standard
+/// modes"). A name's id is stable for the life of the process and
+/// never reused, so a draw tagged with it (DrawCall::capturedMode) and
+/// an override entry naming it (StyleOverride::modeId) can meet at
+/// submit with an integer compare, and no Coin type crosses into
+/// Render. 0 is never returned for a real name; null/empty -> 0.
+RendererExport uint16_t internModeName(const char *name);
+/// The name behind an interned id, or null for 0/unknown. The returned
+/// pointer lives as long as the process.
+RendererExport const char *internedModeName(uint16_t id);
+
+/// The capture's additive-mode interest list (docs/CoinRetirement.md
+/// 5.9 "Non-standard modes"): the interned ids of every non-standard
+/// mode any override of any view sharing the capture wants, in a fixed
+/// order. The ORDER is the contract: bit i of DrawCall::interestBits
+/// means "this draw's display-mode switch has a child named ids[i]",
+/// so the producer that pushes this list to the traversal must hand
+/// the SAME list here. At most 16 entries (the bit budget); the
+/// producer drops and logs the excess, whose modes stay inert.
+/// version bumps on every content change; the backend's resolved
+/// override cache keys on it, because the id->bit mapping moved.
+struct CaptureInterestTable {
+    /// The bit budget: DrawCall::interestBits is 16 bits wide, so a
+    /// list longer than this cannot be expressed. The producer drops
+    /// and logs the excess.
+    static const size_t MaxModes = 16;
+
+    std::vector<uint16_t> ids;
+    uint32_t version = 0;
+
+    /// The interestBits bit of \a modeId, or 0 when not listed.
+    uint16_t bitOf(uint16_t modeId) const {
+        for (size_t i = 0; i < ids.size(); ++i) {
+            if (ids[i] == modeId)
+                return uint16_t(1u << i);
+        }
+        return 0;
+    }
+};
 
 /// Flag bits of the selection ids fed through Renderer::addSelection
 /// (mirroring SoFCRenderer::SelIdBits — the producer side of the feed).
@@ -2581,6 +2757,43 @@ public:
         /// capture, which is the whole reason the canvas could not vary
         /// it per cell.
         uint8_t drawStyle = StyleAsIs;
+        /// The style NAME above, as a StyleNameBit, and whether the
+        /// feed captured the SUPERSET child rather than each object's
+        /// own mode (docs/CoinRetirement.md 5.8).
+        ///
+        /// Under a superset capture the filter is resolved per object:
+        /// this sub-view's style where the object's display-mode switch
+        /// carries a child of that name, and the object's OWN mode
+        /// otherwise -- which is both what "As Is" means and what
+        /// already happens today to an object whose switch does not
+        /// carry the style's name (Mesh's "Point" under a "Points"
+        /// override). Without the superset flag a mask can only remove,
+        /// so it cannot serve a style that ADDS geometry the capture
+        /// does not hold.
+        uint8_t drawStyleName = 0;
+        bool styleFromSuperset = false;
+        /// The interned id (internModeName) of that style's NAME, when
+        /// the capture carries the mode ADDITIVELY as well
+        /// (docs/CoinRetirement.md 5.11): a style is an override, and
+        /// an override's mode is its own SUBGRAPH -- a mask over the
+        /// superset child reproduces it only while the superset child
+        /// happens to contain the mode's buckets, which is a
+        /// Part-shaped assumption and not a rule (Mesh's "Flat Lines"
+        /// holds no point draws). Where the id is in the capture's
+        /// interest list the sub-view draws the mode's own tagged
+        /// draws and suppresses the untagged ones, exactly as an
+        /// override naming the mode does; where it is not, the mask
+        /// over the superset stays the answer. Zero outside a superset
+        /// capture and for "As Is".
+        uint16_t drawStyleMode = 0;
+        /// This sub-view's per-object display mode overrides
+        /// (docs/CoinRetirement.md 5.9), resolved per draw as the FIRST
+        /// clause before the style above. Only meaningful under a
+        /// superset capture -- an override can ADD geometry, which a
+        /// filter over any other capture cannot serve. The producer
+        /// owns the table and keeps it alive across the frame; null
+        /// means no overrides.
+        const StyleOverrideTable *styleOverrides = nullptr;
     };
     /// Render one frame as \a count sub-views tiling the backbuffer:
     /// the same resident scene feeds every sub-view, each drawn with
@@ -2597,6 +2810,35 @@ public:
     /// (targets, view-id block). Never id 0 -- that is the implicit
     /// full-canvas sub-view every plain render() uses.
     virtual void dropSubView(int id) { (void)id; }
+    /// The plain (whole-canvas, sub-view id 0) frame's display style
+    /// context (docs/CoinRetirement.md 5.9): the view's own Class-A
+    /// style as mask + name bit, whether the feed captured the
+    /// superset child, and the view's per-object override table (the
+    /// caller owns it and keeps it alive; null = none). A plain view
+    /// normally leaves all of this at rest -- its traversal applies
+    /// its style -- but a view with overrides captures the superset
+    /// like a canvas cell and needs the backend to resolve the style
+    /// per object the same way.
+    virtual void setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
+                                  bool fromSuperset,
+                                  const StyleOverrideTable *overrides,
+                                  uint16_t styleMode = 0)
+    {
+        (void)styleMask; (void)styleNameBit;
+        (void)fromSuperset; (void)overrides; (void)styleMode;
+    }
+    /// The additive-mode interest list of the capture feeding this
+    /// backend (docs/CoinRetirement.md 5.9 "Non-standard modes") --
+    /// the SAME list, in the same order, that the producer pushed to
+    /// the traversal, because it defines what DrawCall::interestBits'
+    /// bits mean. One per renderer, not per sub-view: the interest is
+    /// a property of the shared capture. The caller owns the storage
+    /// and keeps it alive while the backend may render with it; null
+    /// (the default and the at-rest state) means no interest capture.
+    virtual void setCaptureInterest(const CaptureInterestTable *table)
+    {
+        (void)table;
+    }
     /// Prepare the backend for a renderSubViews frame: build the sized
     /// targets of every unseen sub-view id up front, each against a
     /// freshly reclaimed handle pool, and release what the layout

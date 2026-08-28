@@ -168,6 +168,10 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         ctx.w = s.width;
         ctx.h = s.height;
         ctx.style = s.drawStyle;
+        ctx.styleName = s.drawStyleName;
+        ctx.fromSuperset = s.styleFromSuperset;
+        ctx.styleMode = s.drawStyleMode;
+        ctx.styleOverrides = s.styleOverrides;
         _BGFXLib.captureWidth = uint16_t(s.width);
         _BGFXLib.captureHeight = uint16_t(s.height);
         ok = render(col, s.viewMatrix, s.projMatrix) && ok;
@@ -212,6 +216,10 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         ctx.w = s.width;
         ctx.h = s.height;
         ctx.style = s.drawStyle;
+        ctx.styleName = s.drawStyleName;
+        ctx.fromSuperset = s.styleFromSuperset;
+        ctx.styleMode = s.drawStyleMode;
+        ctx.styleOverrides = s.styleOverrides;
         _BGFXLib.standaloneSubWidth = uint16_t(s.width);
         _BGFXLib.standaloneSubHeight = uint16_t(s.height);
         const bool subOk = render(col, s.viewMatrix, s.projMatrix);
@@ -265,6 +273,24 @@ void BGFXRenderer::dropSubView(int id)
     _BGFXLib.releaseIds(view->viewId, view->viewSpan);
     view->selectSubView(0);
     view->subBanks.erase(id);
+    view->subOvCaches.erase(id);
+}
+
+void BGFXRenderer::setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
+                                    bool fromSuperset,
+                                    const StyleOverrideTable *overrides,
+                                    uint16_t styleMode)
+{
+    pimpl->mainStyleMask = styleMask;
+    pimpl->mainStyleName = styleNameBit;
+    pimpl->mainFromSuperset = fromSuperset;
+    pimpl->mainStyleOverrides = overrides;
+    pimpl->mainStyleMode = styleMode;
+}
+
+void BGFXRenderer::setCaptureInterest(const CaptureInterestTable *table)
+{
+    pimpl->captureInterest = (table && !table->ids.empty()) ? table : nullptr;
 }
 
 void BGFXRenderer::prepareSubViews(const QColor &col,
@@ -319,6 +345,10 @@ void BGFXRenderer::prepareSubViews(const QColor &col,
         ctx.w = s.width;
         ctx.h = s.height;
         ctx.style = s.drawStyle;
+        ctx.styleName = s.drawStyleName;
+        ctx.fromSuperset = s.styleFromSuperset;
+        ctx.styleMode = s.drawStyleMode;
+        ctx.styleOverrides = s.styleOverrides;
         _BGFXLib.standaloneSubWidth = uint16_t(s.width);
         _BGFXLib.standaloneSubHeight = uint16_t(s.height);
         pimpl->render(col, s.viewMatrix, s.projMatrix);
@@ -375,11 +405,22 @@ bool BGFXRenderer::setCaptureFilter(
         return false;
     // Resolve identities to objectKeys through the resident table. One
     // object owns any number of keys (one per producing node path).
+    //
+    // A named object matches anywhere on a key's CONTAINER CHAIN, not
+    // just as its leaf: a source that is a group, an assembly or a
+    // link owns no draws of its own, and the draws below it name the
+    // leaf shape. The chain ends at the leaf, so this still matches a
+    // plain object named directly.
     std::unordered_map<uint64_t, size_t> keyOwner;
     for (const auto &entry : pimpl->objectInfo) {
         for (size_t i = 0; i < objects.size(); ++i) {
-            if (entry.second.doc == objects[i].first
-                    && entry.second.obj == objects[i].second) {
+            bool hit = entry.second.doc == objects[i].first
+                    && entry.second.obj == objects[i].second;
+            for (auto it = entry.second.path.begin();
+                    !hit && it != entry.second.path.end(); ++it)
+                hit = it->doc == objects[i].first
+                    && it->obj == objects[i].second;
+            if (hit) {
                 keyOwner.emplace(entry.first, i);
                 break;
             }
@@ -724,6 +765,7 @@ void BGFXRenderer::setObjectInfo(ObjectInfoMap &&info)
 {
     pimpl->objectInfo = std::move(info);
     noteObjectInfoStated();
+    pimpl->objectInfoStamp = objectInfoVersion();
     // Identity rides the published root's object entries; a change to
     // it alone (rename) only reaches viewers with the next publish.
     pimpl->feedDirty = true;

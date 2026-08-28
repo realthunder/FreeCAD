@@ -23,6 +23,7 @@
 #include "Renderer.h"
 
 #include <chrono>
+#include <mutex>
 #include <map>
 #include <vector>
 #include <string>
@@ -57,6 +58,35 @@ int64_t nowNs()
 }
 
 } // anonymous namespace
+
+// The mode-name intern table (docs/CoinRetirement.md 5.9 "Non-standard
+// modes"). Guarded because capture runs on the GUI thread while a
+// streaming consumer may resolve ids on a worker; entries are never
+// removed, so a returned pointer needs no lock to stay valid.
+static std::mutex _modeNameMutex;
+static std::vector<std::string> _modeNames;
+static std::map<std::string, uint16_t> _modeNameIds;
+
+uint16_t Render::internModeName(const char *name)
+{
+    if (!name || !name[0])
+        return 0;
+    std::lock_guard<std::mutex> guard(_modeNameMutex);
+    auto res = _modeNameIds.emplace(name, uint16_t(_modeNames.size() + 1));
+    if (res.second)
+        _modeNames.emplace_back(name);
+    return res.first->second;
+}
+
+const char *Render::internedModeName(uint16_t id)
+{
+    if (!id)
+        return nullptr;
+    std::lock_guard<std::mutex> guard(_modeNameMutex);
+    if (id > _modeNames.size())
+        return nullptr;
+    return _modeNames[id - 1].c_str();
+}
 
 std::atomic<bool> FrameOutside::active{false};
 double FrameOutside::phaseMs[FrameOutside::PhaseCount] = {};

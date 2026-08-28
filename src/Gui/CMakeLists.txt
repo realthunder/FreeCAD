@@ -876,6 +876,7 @@ SET(View3D_CPP_SRCS
     CADNavigationStyle.cpp
     RevitNavigationStyle.cpp
     BlenderNavigationStyle.cpp
+    SolidWorksNavigationStyle.cpp
     MayaGestureNavigationStyle.cpp
     OpenCascadeNavigationStyle.cpp
     OpenSCADNavigationStyle.cpp
@@ -1064,6 +1065,7 @@ SET(Inventor_CPP_SRCS
     Inventor/SoFCDetail.cpp
     Inventor/SoFCSwitch.cpp
     Inventor/SoFCDisplayModeElement.cpp
+    Inventor/SoFCOwnDisplayModeElement.cpp
     Inventor/SoFCDisplayMode.cpp
     Inventor/SoFCShapeInfo.cpp
     Inventor/So3DAnnotation.cpp
@@ -1128,6 +1130,7 @@ SET(Inventor_SRCS
     Inventor/SoFCDetail.h
     Inventor/SoFCSwitch.h
     Inventor/SoFCDisplayModeElement.h
+    Inventor/SoFCOwnDisplayModeElement.h
     Inventor/SoFCDisplayMode.h
     Inventor/SoFCShapeInfo.h
     Inventor/So3DAnnotation.h

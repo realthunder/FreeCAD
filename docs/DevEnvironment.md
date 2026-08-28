@@ -162,46 +162,115 @@ $RUN cmake -S ~/works/sw/coin -B ~/works/sw/coin/build_conda_debug -G Ninja \
   -DCOIN_BUILD_TESTS=OFF -DCOIN_BUILD_DOCUMENTATION=OFF
 $RUN cmake --build ~/works/sw/coin/build_conda_debug && $RUN cmake --install ~/works/sw/coin/build_conda_debug
 
-# pivy — installs directly into the env's site-packages (no PYTHONPATH needed)
+# pivy (debug) -- its OWN prefix, NOT site-packages; see the warning below
 $RUN cmake -S ~/works/sw/pivy -B ~/works/sw/pivy/build_conda_debug -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_PREFIX_PATH=$HOME/works/sw/coin/install/conda-debug \
   -DCMAKE_INSTALL_RPATH=$HOME/works/sw/coin/install/conda-debug/lib \
+  -DPIVY_Python_SITEARCH=$HOME/works/sw/pivy/install/conda-debug \
   -DPython_EXECUTABLE=$HOME/works/sw/fcad/.conda/freecad/bin/python
 $RUN cmake --build ~/works/sw/pivy/build_conda_debug && $RUN cmake --install ~/works/sw/pivy/build_conda_debug
 ```
 
+*** **One pivy cannot serve both stacks, and installing to site-packages makes
+them fight.** pivy's `_coin.so` links `libCoinRT.so.80`, and the loader resolves
+that SONAME **once per process**. The release and debug Coin installs both
+provide it. Since pivy's install destination defaults to the env's single
+`site-packages`, whichever configuration was installed **last** silently wins
+for every stack -- which is why the pivy in `.conda/freecad` was found built
+against `coin/install/conda-relwithdebinfo` even though this recipe names
+`conda-debug`.
+
+`PIVY_Python_SITEARCH` (default: `Python_SITEARCH`) is the lever. Keep the
+**release** pivy in site-packages, where the standard build finds it with no
+PYTHONPATH, and give the **debug** pivy its own prefix, selected explicitly:
+
+```sh
+PYTHONPATH=$HOME/works/sw/pivy/install/conda-debug $RUN <debug FreeCAD or python>
+```
+
+*** **In a headless session pivy alone decides which Coin loads.**
+`FreeCADCmd` does not link Coin itself, so nothing else pulls the SONAME in --
+the first `from pivy import coin` settles it for the process. Demonstrated on
+the debug FreeCAD build, 2026-08-28: **with** the PYTHONPATH above it maps
+`coin/install/conda-debug` and `occt/install/conda-debug-801`, one of each;
+**without** it, the same debug binary silently ran on the RelWithDebInfo Coin
+through the site-packages pivy. It does not fail, it just is not the stack you
+think you are debugging.
+
+Verified 2026-08-28 -- each pivy loads the Coin it was built against, and a
+`FreeCADCmd` session that imports pivy maps exactly one `libCoinRT`:
+
+```sh
+python -c "from pivy import coin; print([l.split()[-1] for l in \
+  open('/proc/self/maps') if 'libCoinRT' in l])"
+# site-packages  -> .../coin/install/conda-relwithdebinfo/lib/libCoinRT.so.80.0.6
+# PYTHONPATH set -> .../coin/install/conda-debug/lib/libCoinRT.so.80.0.6
+```
+
+*** **The debug Coin install goes stale invisibly.** Nothing linked
+`coin/install/conda-debug` for two weeks while only the RelWithDebInfo stack was
+built, so it sat at 2026-08-14 and was missing `SoLazyElementEx.h`; the first
+debug FreeCAD build since then failed on `SoFCVertexCache.cpp` and
+`SoFCRenderCache.cpp`. Rebuild Coin **and** pivy debug before trusting a debug
+FreeCAD build -- a missing fork header is the signature.
+
 ### Building FreeCAD (conda stack)
 
-The user preset `conda-debug-local` (in `CMakeUserPresets.json`, gitignored) inherits
-the repo's `conda-linux-debug` preset and overrides: build dir
-`build/conda-debug-occt801`, `CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` pointing at the
-local `occt/install/conda-debug-801` (OCCT 8.0.1) and `coin/install/conda-debug`
-prefixes, `CMAKE_POLICY_VERSION_MINIMUM=3.5` (for bgfx's old cmake_minimum_required
-under cmake 4), `BUILD_BGFX=ON`, `BUILD_FEM=ON` plus the three FEM dependency paths
-(next section), and `BUILD_WEB`/`FREECAD_USE_PCL`/`FREECAD_USE_EXTERNAL_SMESH`/
-`ENABLE_DEVELOPER_TESTS` OFF (avoids netgen/WebEngine/PCL/external-smesh packages;
-enable selectively when needed -- conda-forge now has qt6-webengine).
+*** **The standard build is the RelWithDebInfo one, and so is every test run.**
+`conda-relwithdebinfo-801` -> `build/conda-relwithdebinfo-801` is the tree that
+gets built, tested and measured. The debug preset below exists for debugger
+sessions; it is not what the suites run on, and a claim about "the primary
+tree" that names a debug dir is wrong.
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
 cd ~/works/sw/fcad
-$RUN cmake --preset conda-debug-local
-$RUN cmake --build build/conda-debug-occt801   # ninja, add -j N to limit parallelism
+$RUN cmake --preset conda-relwithdebinfo-801
+$RUN cmake --build build/conda-relwithdebinfo-801   # ninja, add -j N to limit parallelism
 ```
 
-**The debug stack is OCCT 8.0.1.** `occt/install/conda-debug-801` is what
-`conda-debug-local` points at, so a debugger session runs the 8.0.1 side of
-everything version-guarded. `occt/install/conda-debug` is the frozen **7.7.2**
-prefix, reached through the `conda-debug-occt772` preset (`build/conda-debug`)
-and kept only as the compile check for the guarded paths -- 7.7.2 is frozen,
-see `docs/Backport772.md`. An earlier revision of this section said no debug
-8.0.1 stack existed; that stopped being true once `conda-debug-801` was built,
-and the two presets it claimed were gone are both live.
+It inherits the repo's `conda-linux-release` preset and points
+`CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` at `occt/install/conda-relwithdebinfo-801`
+(OCCT 8.0.1) and `coin/install/conda-relwithdebinfo`, with
+`CMAKE_POLICY_VERSION_MINIMUM=3.5` (for bgfx's old cmake_minimum_required under
+cmake 4), `BUILD_BGFX=ON` and `ENABLE_DEVELOPER_TESTS=ON`.
 
-Sources build against both OCCT versions (`OCC_VERSION_HEX` guards; features that
-need the 8.0.1 fork -- parallel healing, streamed STEP transfer -- fall back to the
-one-shot path on 7.7.2).
+The debug preset `conda-debug-local` (in `CMakeUserPresets.json`, gitignored)
+inherits `conda-linux-debug` and overrides: build dir
+`build/conda-debug-occt801`, `CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` pointing at
+the local `occt/install/conda-debug-801` (OCCT 8.0.1) and
+`coin/install/conda-debug` prefixes, plus the same policy shim and `BUILD_BGFX`.
+
+```sh
+$RUN cmake --preset conda-debug-local
+$RUN cmake --build build/conda-debug-occt801
+```
+
+Built and verified 2026-08-28: clean build, `ctest` 445/445, and a headless
+run mapping exactly one Coin (`install/conda-debug`) and one OCCT
+(`install/conda-debug-801`). Testing on it is not the routine -- that stays on
+the RelWithDebInfo tree -- but the stack is known-good rather than assumed.
+Building it needs the debug **Coin and pivy** prefixes to be current first; see
+the two warnings in the dependency section.
+
+**Both stacks are OCCT 8.0.1; there is no 7.7.2 on this box any more.** The
+frozen 7.7.2 prefixes (`occt/install/conda-debug`,
+`occt/install/conda-relwithdebinfo`) and the FreeCAD trees that linked them
+(`build/conda-debug`, `build/conda-relwithdebinfo`) were deleted on 2026-08-28,
+together with their OCCT build dirs -- about 21GB. They had stopped being a
+usable compile check well before that: `Mod/Part/App/ShapeRefSet.cpp` calls
+`BRepTools_ShapeSet::Curves2d()` and siblings that exist only on occt
+`LinkVibe-801`, unguarded, so 7.7.2 could not compile `Mod/Part` at all. 7.7.2
+is frozen -- see `docs/Backport772.md`; if the guarded paths ever need checking
+again, rebuild the prefix from the recipe above with `-DCMAKE_BUILD_TYPE` to
+taste and the `LinkVibe` branch.
+
+Sources still carry `OCC_VERSION_HEX` guards (features that need the 8.0.1 fork
+-- parallel healing, streamed STEP transfer -- fall back to a one-shot path on
+7.7.2), but nothing on this box compiles the 7.7.2 side of them any more, so a
+change to a guarded path is not compile-checked here. `Mod/Part` could not build
+on 7.7.2 even before the prefixes were deleted.
 
 ### FEM, and the external SMESH it links
 
@@ -221,7 +290,7 @@ built for, which is upstream's stack:
 | `qt6-main` / `pyside6` | 6.11.2 | what conda-forge builds vtk 9.6.2 against |
 | `libboost` | 1.90 | smesh's imported targets name `Boost::*`; 1.85 could not satisfy them |
 | `vtk-base` / `vtk-io-ffmpeg` | **9.6.2, pinned** | see below -- do not let this drift |
-| `smesh` | 9.9.0.0 `h64e8fc7_26` from **realthunder** | our fork's feedstock; conda-forge has no occt 8.x build |
+| `smesh` | 9.9.0.0 `he923b5a_27` from **realthunder** | our fork's feedstock; conda-forge has no occt 8.x build |
 
 ```sh
 mamba install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
@@ -229,6 +298,25 @@ mamba install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
   "vtk-base==9.6.2" "vtk-io-ffmpeg==9.6.2" libmed hdf5 libxml2-devel
 mamba install -p ~/works/sw/fcad/.conda/freecad --no-deps realthunder::smesh
 ```
+
+*** **Two gotchas when running this on a box that is behind.** Both cost a
+false start on 2026-08-28:
+
+- **`conda-meta/pinned` blocks its own upgrade.** If the file still pins the
+  old Qt (`qt6-main ==6.10.1`), the solve fails with "qt6-main =6.11.2 is not
+  installable because it conflicts with any installable versions previously
+  reported". Rewrite `pinned` to the four pins above *first*, then install.
+- **`mamba repoquery` served a stale conda-forge index** and reported no
+  realthunder builds even under `--override-channels -c realthunder`, which
+  reads as "the package is gone". `conda search --override-channels -c
+  realthunder smesh` showed them immediately. Trust `conda search` here.
+
+Pass `--override-channels -c conda-forge`; without it the solve pulls in
+`repo.anaconda.com`. Dry-run it (`--dry-run`) before committing: the
+transaction should **remove exactly one package**, `boost-cpp 1.85.0`,
+superseded by libboost 1.90, and must leave freetype/freeimage/libstdcxx/gcc/
+python alone -- that is what lets the existing OCCT and Coin installs survive
+the upgrade instead of needing a rebuild.
 
 *** **`smesh` must be installed with `--no-deps`.** It depends on conda-forge's
 `occt`, and letting that in puts a second OCCT in the env with the *same*
@@ -275,7 +363,7 @@ the writer stopped emitting, and an Elmer proxy assert satisfied by a leftover
 
 ```sh
 diff <(cd src/Mod/Fem && find . -name '*.py' | sort) \
-     <(cd build/conda-debug-occt801/Mod/Fem && find . -name '*.py' | grep -v __pycache__ | sort)
+     <(cd build/conda-relwithdebinfo-801/Mod/Fem && find . -name '*.py' | grep -v __pycache__ | sort)
 ```
 
 Anything present only on the build side is stale: `rm -rf <build>/Mod/Fem` and
@@ -512,9 +600,13 @@ gets detected but its headers are not on the conda sysroot's search path, so the
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
-$RUN ~/works/sw/fcad/build/conda-debug/bin/FreeCAD     # GUI (WSLg)
-$RUN ~/works/sw/fcad/build/conda-debug/bin/FreeCADCmd  # headless
-$RUN gdb --args ~/works/sw/fcad/build/conda-debug/bin/FreeCADCmd script.py
+$RUN ~/works/sw/fcad/build/conda-relwithdebinfo-801/bin/FreeCAD     # GUI (WSLg)
+$RUN ~/works/sw/fcad/build/conda-relwithdebinfo-801/bin/FreeCADCmd  # headless
+# gdb: use the debug tree, which carries unoptimized frames.
+# PYTHONPATH is REQUIRED here -- it selects the pivy built against the debug
+# Coin. Without it the debug binary pulls the release Coin through pivy.
+PYTHONPATH=$HOME/works/sw/pivy/install/conda-debug \
+  $RUN gdb --args ~/works/sw/fcad/build/conda-debug-occt801/bin/FreeCADCmd script.py
 ```
 
 - All of fcad/OCCT/Coin have full debug info; gdb breakpoints resolve with source lines
@@ -550,7 +642,7 @@ $RUN gdb --args ~/works/sw/fcad/build/conda-debug/bin/FreeCADCmd script.py
 
 ```sh
 # headless kernel sanity (expects volume 500 and "SMOKE OK" pattern)
-$RUN build/conda-debug/bin/FreeCADCmd /path/to/smoke.py
+$RUN build/conda-relwithdebinfo-801/bin/FreeCADCmd /path/to/smoke.py
 # GUI + PySide6: launch and confirm no "No module named 'PySide6'" in output,
 # Draft/Arch/Assembly/AddonManager appear in the workbench selector
 ```
@@ -617,17 +709,24 @@ not a render defect; the discriminator is a console line like
 
 ## Fallback stack: system gcc + apt Qt 6.4.2
 
-Kept intact and working, but **PySide6 is impossible here** (see above) — Python
-workbenches don't load. Useful as a second opinion against a very different
-Qt/compiler generation.
+**Not usable as it stands, 2026-08-28.** Two independent reasons: its OCCT is
+**7.7.2**, which can no longer compile `Mod/Part` at all
+(`ShapeRefSet.cpp` calls 8.0.1-only `BRepTools_ShapeSet` accessors, unguarded)
+and is frozen anyway; and **PySide6 is impossible here**, so Python workbenches
+do not load. The `debug-local` preset was dropped from `CMakeUserPresets.json`
+on 2026-08-28 -- it pointed at `occt/install/debug` and `coin/install/debug`,
+neither of which was ever built in this checkout, so it could not configure and
+was purely a trap. The notes below are kept as the recipe if the stack is ever
+wanted again, against an 8.0.1 OCCT.
 
 - apt deps: qt6-{base,base-private,svg,tools}-dev, qt6-tools-dev-tools, qt6-l10n-tools,
   libxerces-c-dev, libeigen3-dev, boost dev libs incl. libboost-python-dev,
   libyaml-cpp-dev, libfreeimage-dev, rapidjson-dev, GL/X11 dev, swig, cmake, ninja.
 - Builds: `<repo>/build_debug` → `<repo>/install/debug` (OCCT 7.7.2 here, configured with
   `-DCMAKE_INSTALL_RPATH='$ORIGIN'` — same transitivity reason as above).
-- fcad preset: `debug-local` (inherits `debug`, Makefiles, `build/debug`,
-  `FREECAD_QT_VERSION=6`, BUILD_BGFX=ON, BUILD_FEM/WEB=OFF). `sh src/make.sh -j8` works.
+- fcad preset: none any more. It was `debug-local` (inherit `debug`, Makefiles,
+  `build/debug`, `FREECAD_QT_VERSION=6`, BUILD_BGFX=ON, BUILD_FEM/WEB=OFF);
+  recreate it if the stack comes back. `sh src/make.sh -j8` was the build.
 - Runtime needs `PYTHONPATH=$HOME/works/sw/pivy/install/debug/lib/python3.12/site-packages`
   for pivy.
 
