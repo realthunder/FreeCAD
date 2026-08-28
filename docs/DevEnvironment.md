@@ -1188,6 +1188,154 @@ Note also that `BGFX_BUILD_TOOLS_SHADER=ON` drags in **tint/Dawn** from bgfx's
 to compile shaders (`ninja Renderer_assets`), but it is the single largest
 contributor to a cold Windows build.
 
+### Cycles on Windows -- where OptiX and HIP can actually be tested
+
+The recipe above under "Cycles (path-traced renderer)" is the Linux one. This
+section is the Windows counterpart, and it exists for a reason beyond
+completeness: **the WSL2 box and this one are the same laptop**, so the two
+devices `docs/CyclesIntegration.md` sec 4.1 and 4.2 record as unreachable --
+OptiX, because WSL2's `libnvoptix.so.1` is a 10KB decoy shim, and HIP, because
+WSL2 exposes no AMD userspace at all -- are reachable from the Windows side of
+it. Sec 4.2 says as much: testing AMD "needs a native Windows build (the
+Adrenalin driver carries the HIP runtime)". This is that build.
+
+`BUILD_CYCLES` defaults OFF here too and no preset sets it. The flags live in
+`D:\works\sw\tools\build-fcad-cycles.cmd`; drive it from a `.cmd` rather than
+the shell, because PowerShell mangles a dotted `-D` value.
+
+**Dependencies go into `.conda\freecad`**, same as Linux:
+
+```cmd
+conda install -p D:\works\sw\fcad\.conda\freecad -c conda-forge ^
+    openimageio embree openimagedenoise
+```
+
+Run the sec 3.1 gate first (`--dry-run`) and read the plan. It passed here: 14
+new packages, 85.6 MB, and **no** movement in `qt6-main`, `pyside6`, `boost` or
+`tbb`. Two updates, both benign -- `openssl` 3.6.3 -> 3.6.4, and `openexr`
+3.4.13 -> **3.4.15**, which converges Windows onto the openexr the Linux env was
+already running against OCCT.
+
+**nvcc, in its own prefix** -- and note the path, which is not the Linux one:
+
+```cmd
+conda create -p D:\works\sw\fcad\.conda\cuda-129 -c conda-forge ^
+    cuda-nvcc=12.9 cuda-cudart-dev=12.9
+```
+
+conda puts nvcc in **`Library\bin`**, not `bin`, so `CUDA_BIN_PATH` is
+`D:\works\sw\fcad\.conda\cuda-129\Library\bin`. Everything sec 4.1 says about
+that variable applies unchanged: get it wrong and CUDA does not fail, it just
+vanishes from the device list.
+
+**OptiX** headers to `D:\works\sw\optix-dev` (`NVIDIA/optix-dev`, 9.1.0), the
+same clone as Linux. The runtime differs and this is the good news: `nvoptix.dll`
+here is the real **62MB** library in the driver store
+(`System32\DriverStore\FileRepository\nvam.inf_amd64_*\`), not a shim. It does
+not need to be in `System32` -- `optix_stubs.h` walks the driver store through
+`optixLoadWindowsDllFromName("nvoptix.dll")`.
+
+**HIP needs AMD's HIP SDK, and PATH is the only lever that works.** Install the
+HIP SDK for Windows (6.4 here, `C:\Program Files\AMD\ROCm\6.4`). It does **not**
+need a driver upgrade: HIP 6.4's runtime enumerates a 2023-era Adrenalin driver
+fine, verified with the SDK's own `hipInfo.exe` before building anything. But
+the installer sets `HIP_PATH` and leaves the SDK's `bin` **off** `PATH`, and
+both halves of what Cycles needs go through `PATH`:
+
+- `hipew` loads the runtime by **bare name** (`hipew.c`, `WIN_DRIVER`), and the
+  default build is hipew6, so it wants `amdhip64_6.dll` -- which the SDK ships
+  and the driver does not. The driver's `System32\amdhip64.dll` is the HIP-5
+  name, and `WITH_HIP_SDK_5` is a bare `#ifdef` with no `option()` behind it, so
+  it is not a flag you can pass.
+- `hipewCompilerPath()` finds the compiler with `where hipcc`. Setting
+  `HIP_ROCCLR_HOME` instead does **not** work: it `stat()`s `<root>/bin/hipcc`,
+  and ROCm 6.4 ships only `hipcc.bat`, `hipcc.exe` and `hipcc.pl`.
+
+`D:\works\sw\tools\run-cycles.cmd` sets `CUDA_BIN_PATH` and prepends the ROCm
+bin, then calls `run.cmd`. Neither belongs in `run.cmd` itself, for the reason
+the Linux section gives for `CUDA_BIN_PATH`.
+
+Measured 2026-08-28, `cyclesRenderTest` at 640x480 / 64 samples:
+
+| Device | Hardware | Time |
+| --- | --- | --- |
+| CPU | Ryzen 9 6900HS | 1.6s |
+| CUDA | RTX 3070 Ti Laptop | 430.2s (cold nvcc kernel compile) |
+| OptiX | RTX 3070 Ti Laptop | 9.0s |
+| HIP | Radeon 680M, gfx1035 | 195.1s |
+
+**These are not performance numbers.** They are dominated by one-time kernel
+compiles that then cache; CUDA's 430s matches the ~297s sec 4.1 records for a
+cold compile, and OptiX's 9s is it reusing what CUDA had just built. Comparing
+devices needs a second run against warm caches. What the table does establish is
+that all four devices render, and that the four PNGs have four distinct
+checksums -- so the device argument is honoured rather than quietly falling back
+to CPU. Matching file sizes (158231/158231/158230/158231) are just PNG
+compressing four near-identical images of one scene, not evidence of a fallback.
+
+#### The one source fix Windows needed
+
+`BUILD_CYCLES=ON` did not link: `FreeCADRenderer.dll` died with `LNK1104` on a
+bare `tbb12.lib`. The oneTBB headers auto-link on MSVC (`_config.h`:
+`#pragma comment(lib, "tbb12.lib")`), so every object that includes them carries
+a DEFAULTLIB directive holding just the file name -- and `cycles_embed` never
+propagates TBB, because `cycles_external_libraries_append()` has no TBB entry.
+Linux never sees it; the pragma is MSVC-only. Fixed by linking `TBB::tbb` (the
+environment's own config package, which points at `tbb12.lib`) PUBLIC into
+`FreeCADRendererCycles`. Not `${TBB_LIBRARY}`: Cycles' bundled `FindTBB`
+resolves that to the legacy `tbb.lib`, which has no DLL beside it.
+
+Watch for this shape generally -- a bare library name in an MSVC link error
+usually comes out of an object's auto-link pragma, not out of CMake. `tbb12.lib`
+appears ten times in this tree's `build.ninja` and every one is a full path.
+
+#### Verifying it: `setupWithoutGUI()` cannot be used, and lies about why
+
+To call `Gui.cyclesDevices()` the Gui application has to exist -- under
+`FreeCADCmd` a bare `import FreeCADGui` gives the stub module, and
+`cyclesDevices` is not on it. The obvious move is `FreeCADGui.setupWithoutGUI()`,
+which is `Gui::Application(false)` and makes no window. **It does not work in
+this fork, and has not since 2021.** Use `FreeCAD.exe` with the script instead,
+where a real `QApplication` exists; `showMainWindow()` under `FreeCADCmd` also
+binds the methods but paints an unstyled window that never responds, because
+`FreeCADCmd` runs no event loop.
+
+Neither the diagnosis nor the breakage is Windows-specific. What happens:
+
+```
+FreeCADGui_setupWithoutGUI            [Main/FreeCADGuiPy.cpp @ 201]
+Gui::Application::Application         [Gui/Application.cpp @ 688]
+Gui::ApplicationP::ApplicationP       [Gui/Application.cpp @ 226]
+Gui::CommandManager::CommandManager   [Gui/Command.cpp @ 2155]
+CmdMacroPreselectCommands::instance   [Gui/Command.cpp @ 2134]
+CmdMacroPreselectCommands::{ctor}     [Gui/Command.cpp @ 2095]
+Qt6Widgets!QMenu::QMenu               <-- a QWidget, with no QApplication
+Qt6Core!QMessageLogger::fatal
+FreeCADGui!messageHandler             [Gui/Application.cpp @ 2308] -> abort()
+```
+
+`CmdMacroPreselectCommands` holds `QMenu _menu` **by value**, and
+`CommandManager`'s constructor creates that command unconditionally, so building
+the Gui application at all constructs a QWidget. With no `QApplication` Qt calls
+`qFatal`. The line dates to `227866ffd9` (2021-05-18).
+
+**The second half is worse than the first, and it is what you will actually
+see.** `Application.cpp`'s `segmentation_fault_handler` **throws** on `SIGABRT`
+(`THROWM(Base::AbnormalProgramTermination, ...)`). Throwing out of a signal
+handler reached through `abort()` lands the exception in a `noexcept` frame, so
+`terminate()` calls `abort()`, which raises `SIGABRT`, which re-enters the
+handler -- forever. Each turn of the loop also runs `printBacktrace` ->
+`StackWalker::LoadModules` -> dbghelp, reloading PDBs, so the process climbs
+through hundreds of MB and looks like a **hang** rather than a crash. Two runs of
+the same binary presented as "segfault" and as "hang"; they were the same fault.
+
+So: an `abort()` anywhere in this tree is disguised. When something appears to
+hang while growing in memory, attach and look for
+`segmentation_fault_handler` repeating up the stack -- and to find the *original*
+fault, breakpoint its first entry (`bu FreeCADApp!segmentation_fault_handler`)
+rather than reading the top of the stack, which is all recursion. `sxe av` will
+not catch it: the first event is not an access violation.
+
 ### Running the C++ (GoogleTest) suites
 
 `ENABLE_DEVELOPER_TESTS` is **OFF** in this build dir, as in the Linux presets, so
