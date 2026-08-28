@@ -295,6 +295,10 @@ JSON text frames. Request/response correlated by `id`. Minimal v0:
   "message":"Length must be > 0" }
 ```
 
+**Beyond v0.** `{"op":"cycles",...}` and `{"op":"cycles.camera",...}` are the
+served viewport's ops -- the backend path traces this connection's view and
+streams the frame; docs/CyclesIntegration.md sec 7.1 spells them.
+
 **Subjects.** `getProperties` takes an optional `subject`: `object` (the default, and what
 every v0 client asks for by saying nothing), `view3d` — the session's 3D view, where the
 `Render_*`/`Shadow_*`/`RenderDebug_*` knobs live — or `document`. The two extra subjects

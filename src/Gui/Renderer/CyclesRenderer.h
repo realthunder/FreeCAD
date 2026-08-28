@@ -176,6 +176,61 @@ public:
     /// staged, so the host repaints and drawFrame picks it up.
     virtual void setRedrawCallback(std::function<void()> callback) = 0;
     virtual ViewportStatus status() const = 0;
+
+    /// For a host that draws nothing itself (a server streaming the
+    /// frame to a viewer, sec 7.1): hand the staged frame to \a fn if
+    /// a newer one arrived since the last take -- premultiplied linear
+    /// half4, bottom-up, \a width as the pitch -- and do the session's
+    /// draw accounting drawFrame() would have done (the reset throttle
+    /// and a held camera move). Returns whether \a fn was called. Any
+    /// thread, serialized by the caller against setScene/setCamera.
+    virtual bool takeFrame(
+            const std::function<void(const void *half4, int width, int height)> &fn) = 0;
+};
+
+/// How a served viewport renders and how its frames travel
+/// (docs/CyclesIntegration.md sec 7.1).
+struct StreamOptions {
+    ViewportOptions viewport;
+    int quality = 85;            ///< JPEG quality, 1..100
+    int minIntervalMs = 100;     ///< least time between two frames sent
+    long maxPixels = 1920L * 1080L;  ///< the render size cap (aspect kept)
+};
+
+/// Phase 5 of the plan: a Viewport whose frames go to a remote viewer
+/// instead of a blit. Owns the Viewport, the viewer's camera, and an
+/// encoder thread that the session's updates wake: it takes the newest
+/// staged frame, composites it over the scene's background (the film
+/// is transparent where the environment is not seen, and the wire
+/// carries no alpha), encodes it, and hands the message to \a send.
+/// The scene comes from the publisher's thread (setScene), the camera
+/// from wherever the viewer's message lands (setCamera); both are
+/// serialized here. Nothing here names a Gui type (sec 7).
+class RendererExport FrameStream
+{
+public:
+    /// \a send delivers one wire message (FrameStreamWire.h) to the
+    /// viewer from the encoder thread and answers false once the
+    /// viewer is gone -- the stream then stops encoding and reports
+    /// lost(). \a notify carries unsolicited JSON events (an engine
+    /// error) the same way. Null with \a error set when the engine or
+    /// the device is absent.
+    static std::unique_ptr<FrameStream> create(
+            const StreamOptions &options,
+            std::function<bool(std::vector<uint8_t> &&)> send,
+            std::function<void(const std::string &)> notify,
+            std::string *error);
+    virtual ~FrameStream();
+
+    /// State the scene; its camera is ignored once the viewer has
+    /// stated one. Publisher's thread.
+    virtual void setScene(const SceneInput &input) = 0;
+    /// The viewer's camera and canvas size (device pixels); the render
+    /// size is this capped to StreamOptions::maxPixels. Any thread.
+    virtual void setCamera(const CameraInput &camera) = 0;
+    virtual ViewportStatus status() const = 0;
+    /// The viewer is gone (send answered false) or the session failed.
+    virtual bool lost() const = 0;
 };
 
 /// Phase 2 of the plan: render a hard-coded scene (a cube on a floor

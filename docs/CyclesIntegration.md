@@ -930,6 +930,143 @@ exists: `SceneServer` carries scene deltas to browser clients today,
 and a rendered-frame stream is the same shape.
 
 
+### 7.1 The served viewport (phase 5, built 2026-08-28)
+
+A browser viewer asks the serving process to path trace what it is
+looking at. The process runs a Cycles session for that connection, fed
+with the served document's scene and THAT viewer's camera, and pushes
+the refining frame down the same WebSocket as encoded images. The
+viewer blits each frame under its own lines and highlight through the
+very consumer route the desktop uses (sections 5.2, 5.3 and 5.8), so
+the browser draws exactly what a desktop Cycles view draws: the
+path-traced image as the base layer, the raster depth-only prepass
+over it, feature lines and selection on top. Nothing about the
+document, the pick or the property channel changes -- the frame is one
+more thing the connection receives.
+
+Rulings:
+
+- **One session per connection, not per document.** The camera is the
+  viewer's, and two viewers looking from two places are two renders.
+  The cost is a device context per viewer (a CUDA context each). No
+  cap is built in: the grant list decides who is admitted at all, and
+  a stream dies with its connection.
+- **The frame rides the existing socket** as a new binary kind, not a
+  new channel or an HTTP route: same door, same lifetime, in order
+  with the scene deltas. A scene payload starts with a 64-bit version
+  counter; a frame starts with the four bytes `FCCY`, which no version
+  reaches.
+- **Encoded as JPEG, composited on the server.** The film goes
+  transparent where the environment is not seen (section 6.2), and
+  JPEG carries no alpha, so the stream composites the frame over the
+  document's background -- the same flat colour or vertical ramp the
+  offline `renderScene` writes (section 6.1's `writePng`), the same
+  code. The 8-bit frame is sRGB-encoded exactly when the scene is
+  colour managed, and the viewer's blit decodes it back to linear
+  when its host target is linear: the shader's second gate, the mirror
+  of section 5.7's encode gate.
+- **Camera from the viewer, scene from the publish path.** The viewer
+  sends its camera as a control op whenever it moves (at most once per
+  frame it draws); the source applies it on the connection thread --
+  no document is touched, and the `Viewport` already holds a move
+  until a frame has gone out (section 5.7's throttle). The scene comes
+  from `SceneServeSource::publishNow()`, right after the traversal
+  that builds the caches, through the same translate and the same
+  generation-counter gate as the desktop feed. The two meet under the
+  stream's own mutex.
+- **Paced by an encoder thread per stream.** The driver's update wakes
+  it, it takes the newest staged frame (which counts as a draw for
+  the session's reset throttle), composites, encodes, sends. No more
+  often than `minIntervalMs` (100 by default), except that the last
+  frame of a render always goes; frames that arrive while one is being
+  encoded coalesce -- the newest wins, nothing queues.
+- **The blit is the same FrameConsumer, on both tiers.** The blit half
+  of `CyclesViewport.cpp` moved into `FrameImageConsumer` (Renderer
+  lib, engine-free), which the desktop viewport now uses for its half4
+  frame and the browser for its decoded RGBA8. That needed the draw
+  facade in the browser tier: `DrawDevice.cpp` and `BGFXDrawDevice.cpp`
+  join the wasm build, and the `FC_RENDERER_STANDALONE` stub in
+  `setFrameConsumer` is gone.
+- **Size is the viewer's canvas, capped.** The op carries the canvas
+  size in device pixels; the source scales it down to `maxPixels`
+  (aspect kept) and renders there, the blit stretches. `pixelSize`
+  (section 5.9) applies on top, as it does on the desktop.
+
+The wire (`FrameStreamWire.h` is the one place the layout is spelled):
+
+- viewer -> server, text: `{"op":"cycles","id":N,"action":"start",
+  "device":"CPU","samples":256,"timeLimit":0,"denoise":true,
+  "pixelSize":1,"quality":85,"maxPixels":2073600,"width":W,
+  "height":H,"view":[16 floats],"proj":[16 floats]}` -> `{"id":N,
+  "ok":true,"device":"CPU"}`; `"action":"stop"`; `"action":"devices"`
+  -> `{"id":N,"ok":true,"devices":[{"type":..,"description":..}]}`;
+  `"action":"status"` -> the `ViewportStatus` fields. Not refused for
+  a view-only connection: a path-traced view mutates nothing.
+  `{"op":"cycles.camera","view":[16],"proj":[16],"width":W,
+  "height":H}` -- no id, no reply.
+- server -> viewer, binary: `FCCY`, u8 version (1), u8 format (1 =
+  JPEG), u8 flags (bit 0 = the render's last frame, bit 1 = sRGB
+  encoded), u8 reserved, u32 width, u32 height, u32 sequence, f32
+  progress, u16 status length, the status text, then the image.
+- server -> viewer, text, unsolicited: `{"op":"cycles","event":
+  "error"|"stopped","message":...}` when the session failed or the
+  source went away under it.
+
+Files: `src/Gui/Renderer/CyclesStream.cpp` (`Render::Cycles::
+FrameStream`, declared in `CyclesRenderer.h`, no-engine stub beside
+`Viewport::create`'s); `FrameImageConsumer.{h,cpp}` and
+`FrameStreamWire.h` (Renderer lib); `SceneServer` grew
+`sendBinary`/`sendControl` to one connection, the connection id on a
+`SceneControlRequest`, and a per-group client-closed handler;
+`SceneServeSource` owns the streams and answers the ops; the viewer
+side is in `wasm/main.cpp` (decode with bimg's stb_image, the
+consumer, the camera op, `?cycles=<device>` to start one from the URL)
+and a "Path trace" section in the web menu.
+
+Verified 2026-08-28 (scratchpad `probe.sh`: one FreeCAD under xvfb
+building a five-body scene and serving it with `Gui.serveDocument`, a
+raw-WebSocket Python client, and headless Chrome 151 driven over CDP):
+
+- Browser-free client, CPU 16 spp at 480x320: `devices` and `start`
+  answered, 7 frames from 0.0 s to the Final flag at 1.8 s, sequence
+  monotonic, the frame sRGB-flagged and at the asked size; the final
+  frame agrees with `cyclesRender` of the same camera to a mean of
+  5.3/255 over the middle (JPEG q85 of a 16 spp noise field -- the
+  first frame arrives at the coarse divider, 160x107, and the blit
+  stretches it); a camera nudge restarts at progress 0.19 and settles
+  again (7 frames); `status` reports the session; after `stop` at most
+  one frame that was already queued arrives. CUDA 32 spp: 2 frames in
+  0.35 s.
+- Browser, CUDA 256 spp at the canvas' 1100x757: `?cycles=CUDA` starts
+  the stream once the scene is in, 27 frames, "Rendering Done, Sample
+  256/256" 29 s after page load (session start included), the web
+  menu showing "CUDA (100%)"; the screenshot is the path-traced image
+  under the raster edge lines and the NaviCube, the raster view again
+  after "Off".
+- The desktop viewport through the moved blit: settles at 16 spp in
+  6.4 s, live frame vs offline 5.7/255 with denoise off (the lines and
+  the NaviCube are in the live frame), the raster frame 34/255 from
+  the same reference.
+
+Traps this cost: the wasm viewer had not LINKED since `885653e2c3`
+(`Environment.cpp` was never added to its source list -- fixed here);
+`CUDA_BIN_PATH` must reach the serving process or the device list is
+CPU only (section 4.1); and two harness traps -- Chrome's
+`PUT /json/new?<url>` takes its argument up to the first `&`, so the
+page URL must be percent-encoded whole, and the cached Chrome wants
+`LD_LIBRARY_PATH=.conda/freecad/lib` for `libasound`.
+
+What this does NOT do yet: a Cycles cell of a split layout (the
+consumer slot is per sub-view already, the stream is per connection --
+a cell id on the op is the missing piece); a cap on sessions per
+server; the interop path (the GPU frame still crosses the CPU twice,
+once into the staging buffer and once into the encoder); the
+frame-push latency of the connection loop's 200 ms poll (a queued
+frame waits for the loop's next tick); the offline `cyclesRender` for
+a served document with no view (the stream is the only path-traced
+output a hidden document has).
+
+
 ## 8. Build order
 
 Phase 0 -- prove it builds and renders, standalone, outside the tree.
@@ -1004,7 +1141,7 @@ sub-view.
     that acceptable.
 
 Phase 5 -- beyond the desktop: headless render served to the browser
-tier over the existing stream (section 7).
+tier over the existing stream. **Built 2026-08-28**, section 7.1.
 
 
 ## 9. Traps carried forward

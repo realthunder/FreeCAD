@@ -93,6 +93,16 @@ std::unique_ptr<Viewport> Viewport::create(const ViewportOptions &, std::string 
     return nullptr;
 }
 
+std::unique_ptr<FrameStream> FrameStream::create(const StreamOptions &,
+                                                 std::function<bool(std::vector<uint8_t> &&)>,
+                                                 std::function<void(const std::string &)>,
+                                                 std::string *error)
+{
+    if (error)
+        *error = "this build carries no Cycles engine (BUILD_CYCLES is off)";
+    return nullptr;
+}
+
 #else  // HAVE_CYCLES
 
 /// The engine's data root is the renderer resource tree's cycles/
@@ -486,5 +496,7 @@ bool renderTestScene(const std::string &path,
 #endif  // HAVE_CYCLES
 
 Viewport::~Viewport() = default;
+
+FrameStream::~FrameStream() = default;
 
 }  // namespace Render::Cycles

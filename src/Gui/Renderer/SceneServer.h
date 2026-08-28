@@ -72,6 +72,11 @@ struct SceneControlRequest {
     /// on the request rather than enforced here because only the
     /// semantic layer knows which ops write.
     bool viewOnly = false;
+    /// The connection it arrived on (SceneClientInfo::id), for a
+    /// handler that keeps per-connection state -- a served viewport
+    /// (docs/CyclesIntegration.md sec 7.1) -- and answers it later
+    /// through sendControl/sendBinary.
+    uint64_t client = 0;
     std::function<void(const std::string &)> reply;
 };
 
@@ -366,6 +371,23 @@ public:
     /// worker thread — the handler must marshal itself.
     void setWorkNotifier(std::function<void()> notifier,
                          const std::string &doc = {});
+    /// Install the cue that one of this document's connections closed
+    /// (its SceneClientInfo::id), for a source holding per-connection
+    /// state (docs/CyclesIntegration.md sec 7.1). Called on the
+    /// connection's own thread as it leaves -- the handler must
+    /// marshal itself.
+    void setClientClosedHandler(std::function<void(uint64_t)> handler,
+                                const std::string &doc = {});
+    /// Queue a JSON control message to ONE connection, by id; false
+    /// when it is gone. Any thread.
+    bool sendControl(uint64_t client, const std::string &json);
+    /// Queue a binary message to ONE connection, by id -- a streamed
+    /// frame (FrameStreamWire.h); false when it is gone. Sent by the
+    /// connection's own loop after the scene bytes and the queued
+    /// texts. A message of the same kind still queued is replaced:
+    /// a frame is a state, not an event, and a slow link should see
+    /// the newest one. Any thread.
+    bool sendBinary(uint64_t client, std::vector<uint8_t> &&data);
 
     /// Declare \a doc served: give its group the display label the
     /// `docs` document listing shows, mark it joinable by name on the

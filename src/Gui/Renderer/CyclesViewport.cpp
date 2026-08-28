@@ -27,8 +27,7 @@
 
 #include "CyclesRenderer.h"
 #include "CyclesSceneP.h"
-#include "DrawDevice.h"
-#include "DrawSurface.h"
+#include "FrameImageConsumer.h"
 
 #include <cstring>
 #include <mutex>
@@ -143,18 +142,6 @@ public:
         session.reset();
         translator.reset();
         driver = nullptr;
-        if (auto *dev = DrawDevice::instance()) {
-            if (texture.valid())
-                dev->destroy(texture);
-            if (program.valid())
-                dev->destroy(program);
-            if (sampler.valid())
-                dev->destroy(sampler);
-            if (params.valid())
-                dev->destroy(params);
-            if (quad.valid())
-                dev->destroy(quad);
-        }
     }
 
     void setScene(const SceneInput &input) override
@@ -299,62 +286,27 @@ public:
     {
         if (!session || !driver)
             return;
-        auto *dev = DrawDevice::instance();
-        if (!dev || !ensureResources(dev))
-            return;
-
+        // The staged frame, if newer, into the blit's image (linear
+        // half4, premultiplied); the blit uploads and draws it.
         driver->take([&](const ccl::half4 *px, int w, int h) {
-            if (!texture.valid() || w != texWidth || h != texHeight) {
-                if (texture.valid())
-                    dev->destroy(texture);
-                // Linear: at full size the quad maps texels 1:1, and
-                // at a divided size the interpolation is what makes
-                // the coarse pass readable.
-                texture = dev->createTexture2D(w, h, DrawTextureFormat::RGBA16F,
-                                               TextureClamp);
-                texWidth = w;
-                texHeight = h;
-            }
-            if (texture.valid())
-                dev->updateTexture2D(texture, 0, 0, w, h, px,
-                                     uint32_t(w) * uint32_t(h) * sizeof(ccl::half4));
+            blit.setImage(px, w, h, FrameImageConsumer::Format::RGBA16F, true);
         });
+        blit.drawFrame(surface);
+        drawn();
+    }
 
-        if (texture.valid()) {
-            int hw = 0;
-            int hh = 0;
-            surface.hostSize(hw, hh);
-            static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0,
-                                               0, 0, 1, 0, 0, 0, 0, 1};
-            surface.setPassTarget(0, surface.hostTarget());
-            surface.setPassRect(0, 0, 0, hw, hh);
-            surface.setPassClear(0, 0, 1.0f, 0, ClearNone);
-            surface.setPassSequential(0, false);
-            surface.setPassTransform(0, identity, identity);
-            // x: encode for a display-space host target; a linear one
-            // takes the frame as it is (sec 6.1).
-            const float blit[4] = {surface.hostLinearColor() ? 0.0f : 1.0f, 0, 0, 0};
-            surface.setUniform(params, blit);
-            surface.setTexture(0, sampler, texture);
-            surface.setTransform(identity);
-            surface.setVertexBuffer(quad);
-            DrawState state;
-            state.depthWrite = false;
-            state.depthFunc = CompareFunc::Always;
-            state.blend = BlendMode::Premultiplied;
-            surface.setState(state);
-            surface.submit(0, program);
-        }
-
-        // The session's own draw accounting: it allows the next reset
-        // only once a frame was drawn after the last one, which is
-        // what keeps a camera drag from cancelling every render
-        // before a pixel shows (Blender's throttle). A camera move
-        // held back by that is applied here, now that a frame went
-        // out.
-        session->draw();
-        if (pendingCamera)
-            applyCamera();
+    bool takeFrame(
+            const std::function<void(const void *half4, int width, int height)> &fn) override
+    {
+        if (!session || !driver)
+            return false;
+        bool taken = false;
+        driver->take([&](const ccl::half4 *px, int w, int h) {
+            fn(px, w, h);
+            taken = true;
+        });
+        drawn();
+        return taken;
     }
 
 private:
@@ -391,20 +343,16 @@ private:
         pendingCamera = false;
     }
 
-    bool ensureResources(DrawDevice *dev)
+    /// The session's own draw accounting: it allows the next reset
+    /// only once a frame was drawn after the last one, which is what
+    /// keeps a camera drag from cancelling every render before a
+    /// pixel shows (Blender's throttle). A camera move held back by
+    /// that is applied here, now that a frame went out.
+    void drawn()
     {
-        if (program.valid())
-            return true;
-        program = dev->createProgram("vs_fc_comp", "fs_fc_cycles_blit");
-        sampler = dev->createUniform("s_cyclesImage", UniformType::Sampler);
-        params = dev->createUniform("u_cyclesBlit", UniformType::Vec4);
-        // The engine's own fullscreen triangle: three vertices whose
-        // clipped extent covers the target.
-        static const float tri[9] = {-1.0f, -1.0f, 0.0f, 3.0f, -1.0f, 0.0f, -1.0f, 3.0f, 0.0f};
-        VertexLayout layout;
-        layout.add(DrawAttrib::Position, 3, DrawAttribType::Float);
-        quad = dev->createVertexBuffer(tri, sizeof(tri), layout);
-        return program.valid() && sampler.valid() && params.valid() && quad.valid();
+        session->draw();
+        if (pendingCamera)
+            applyCamera();
     }
 
     ViewportOptions options;
@@ -419,13 +367,7 @@ private:
     std::mutex callbackMutex;
     std::function<void()> redrawCallback;
 
-    ProgramHandle program;
-    UniformHandle sampler;
-    UniformHandle params;
-    VertexBufferHandle quad;
-    TextureHandle texture;
-    int texWidth = 0;
-    int texHeight = 0;
+    FrameImageConsumer blit;
 };
 
 }  // namespace

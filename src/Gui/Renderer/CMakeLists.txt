@@ -81,7 +81,7 @@ endif(BUILD_DILIGENT)
 list(APPEND Renderer_HPP_SRCS CyclesRenderer.h)
 if(BUILD_CYCLES)
     add_library(FreeCADRendererCycles OBJECT
-        CyclesRenderer.cpp CyclesScene.cpp CyclesViewport.cpp
+        CyclesRenderer.cpp CyclesScene.cpp CyclesViewport.cpp CyclesStream.cpp
         CyclesRenderer.h CyclesSceneP.h)
     target_link_libraries(FreeCADRendererCycles
         PUBLIC cycles_embed

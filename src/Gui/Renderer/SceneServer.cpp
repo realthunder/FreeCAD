@@ -561,6 +561,7 @@ public:
         std::function<void(const ScenePickRequest &)> pickHandler;
         std::function<void(SceneControlRequest &&)> controlHandler;
         std::function<void()> workNotifier;
+        std::function<void(uint64_t)> clientClosedHandler;
 
         uint64_t ensureSession()
         {
@@ -1108,6 +1109,9 @@ public:
         /// and the re-home after a teardown all happen there.
         DocGroup *group = nullptr;
         std::vector<std::string> pendingText; ///< queued control JSONs
+        /// A queued binary message for this connection (a streamed
+        /// frame, sendBinary): at most one -- a newer one replaces it.
+        std::vector<uint8_t> pendingBinary;
         bool viewer = false;   ///< sent a hello — answers control requests
         std::string build;     ///< bundle build stamp from the hello
         /// Display label from the hello (docs/MultiDocServe.md §4):
@@ -1699,6 +1703,7 @@ public:
             req.viewOnly = conn.viewOnly;
         }
         const uint64_t connId = conn.id;
+        req.client = connId;
         req.reply = [this, connId](const std::string &answer) {
             replyTo(connId, answer);
         };
@@ -2362,6 +2367,18 @@ public:
             // out its full timeout.
             dumpCv.notify_all();
         }
+        // The group's source may hold state for this connection (a
+        // served viewport): told after the id has left the roster, so
+        // nothing it queues in answer can land.
+        {
+            std::function<void(uint64_t)> closed;
+            if (conn.group) {
+                std::lock_guard<std::mutex> guard(handlerMutex);
+                closed = conn.group->clientClosedHandler;
+            }
+            if (closed)
+                closed(conn.id);
+        }
         notifyClientsChanged();
     }
 
@@ -2501,8 +2518,18 @@ public:
                 if (!sendFrame(fd, 1, text.data(), text.size()))
                     return;
             }
+            // A queued frame for this viewer (sendBinary), after the
+            // scene it belongs under.
+            std::vector<uint8_t> frame;
+            {
+                std::lock_guard<std::mutex> guard(connMutex);
+                frame.swap(conn.pendingBinary);
+            }
+            if (!frame.empty()
+                    && !sendFrame(fd, 2, frame.data(), frame.size()))
+                return;
             auto now = std::chrono::steady_clock::now();
-            if (!body.empty() || !texts.empty()) {
+            if (!body.empty() || !texts.empty() || !frame.empty()) {
                 lastSend = now;
             } else if (now - lastSend >= std::chrono::seconds(30)) {
                 if (!sendFrame(fd, 9, nullptr, 0))
@@ -3277,6 +3304,45 @@ void SceneStreamServer::setWorkNotifier(std::function<void()> notifier,
     g->workNotifier = std::move(notifier);
 }
 
+void SceneStreamServer::setClientClosedHandler(
+        std::function<void(uint64_t)> handler, const std::string &doc)
+{
+    Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->group(doc);
+    }
+    std::lock_guard<std::mutex> guard(p->handlerMutex);
+    g->clientClosedHandler = std::move(handler);
+}
+
+bool SceneStreamServer::sendControl(uint64_t client, const std::string &json)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->connMutex);
+    for (Private::Conn *conn : p->conns) {
+        if (conn->id == client) {
+            conn->pendingText.push_back(json);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SceneStreamServer::sendBinary(uint64_t client, std::vector<uint8_t> &&data)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->connMutex);
+    for (Private::Conn *conn : p->conns) {
+        if (conn->id == client) {
+            conn->pendingBinary = std::move(data);
+            return true;
+        }
+    }
+    return false;
+}
+
 void SceneStreamServer::setDocumentInfo(const std::string &doc,
                                         const std::string &label)
 {
@@ -3338,6 +3404,7 @@ void SceneStreamServer::releaseGroup(const std::string &doc)
         g->pickHandler = nullptr;
         g->controlHandler = nullptr;
         g->workNotifier = nullptr;
+        g->clientClosedHandler = nullptr;
     }
     // The document left the listing; tell the menus.
     pimpl->pushDocs();

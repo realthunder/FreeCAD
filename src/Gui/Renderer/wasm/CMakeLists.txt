@@ -119,6 +119,7 @@ target_compile_definitions(fcviewer PRIVATE
 target_include_directories(fcviewer PRIVATE
     ${FC_SRC}                  # FCConfig.h
     ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${FC_SRC}/3rdParty/bgfx/bimg/3rdparty   # stb/stb_image.h, the frame decoder
 )
 
 target_link_libraries(fcviewer PRIVATE vg-renderer bgfx bimg bx)

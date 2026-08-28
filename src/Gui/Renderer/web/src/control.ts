@@ -37,8 +37,27 @@ declare global {
     /// Set by this layer to claim the HUD feed: the viewer then reports
     /// it as 'fc:hud' events instead of drawing its own overlay box.
     fcviewerHudCard?: boolean;
+    /// The served viewport (main.cpp fcviewer_set_cycles,
+    /// docs/CyclesIntegration.md sec 7.1): a device type starts the
+    /// backend path tracing this view, '' stops it. State arrives as
+    /// 'fc:cycles' events and is mirrored here for a late mount.
+    fcviewerSetCycles?: (device: string) => void;
+    fcviewerCycles?: CyclesState;
   }
 }
+
+/// What the viewer says about its served viewport ('fc:cycles').
+export interface CyclesState {
+  on: boolean;
+  device: string;
+  progress: number;
+  status: string;
+  error: string;
+  width: number;
+  height: number;
+  frames: number;
+}
+
 
 export interface ControlError {
   code: string;
