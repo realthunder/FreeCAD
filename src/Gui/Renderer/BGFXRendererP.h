@@ -6968,6 +6968,12 @@ public:
     /// new to try.
     bool targetsFailed = false;
     bool ontop = false;   // route submits to the highlight pass
+    // This frame's shaded image comes from the attached consumer
+    // (Renderer::setExternalBaseLayer): scene triangles rasterize
+    // depth-only, lines/points and non-on-top selections draw in
+    // ViewOnTop over the consumer's blit, transparent scene triangles
+    // are skipped (docs/CyclesIntegration.md sec 5.3).
+    bool externalBase = false;
     bool selPass = false; // route opaque-view submits into ViewSelection
                           // (non-on-top selection draws follow the opaque
                           // scene in submission order, GL pass parity)
@@ -8816,6 +8822,7 @@ public:
     std::unordered_set<uint64_t> hiddenKeys;
     std::unordered_set<const Render::DrawCall *> dupDraws;
     Render::HiddenLineConfig hlconfig;
+    bool externalBase = false;  ///< Renderer::setExternalBaseLayer
     Render::SectionConfig secconf;
     Render::AOConfig aoconf;
     Render::CavityConfig cavityconf;

@@ -455,11 +455,70 @@ translucent bucket composites OVER the Cycles image, so a transparent
 body reads doubly), and its edge lines sit on top as the overlay they
 are meant to be.
 
-Not done: the depth prepass and the dimmed highlight (step 12); the
-sample/time budget UI, cancel-on-move pixel size and denoise defaults
-(step 13 -- `denoise` is an option already, unexercised); a view on a
-ViewArea canvas (the cell path does not run `feedCyclesViewport`);
-picking with a session running was not probed.
+Not done at step 11 (step 12 below took the first two): the sample/time
+budget UI, cancel-on-move pixel size and denoise defaults (step 13 --
+`denoise` is an option already, unexercised); a view on a ViewArea
+canvas (the cell path does not run `feedCyclesViewport`); picking with
+a session running was not probed.
+
+### 5.8 The host's depth under the blit (phase 4 step 12, built 2026-08-28)
+
+`Renderer::setExternalBaseLayer(bool)`, set by the viewer while a
+Cycles viewport is registered, is the whole switch. It does not add a
+pass: it changes what the passes the frame already has draw.
+
+- **Scene triangles rasterize depth-only.** `BGFXView::submit()`
+  turns a plain scene triangle's `PassNormal` into the existing
+  `PassDepthOnly` (the on-top fills' prepass: colour writes off, depth
+  test and write on), still in `ViewOpaque`; an instanced opaque group
+  drops its colour writes the same way. A **transparent** scene
+  triangle is not drawn at all -- the consumer's image carries its
+  alpha, and its depth would hide what shows through it (an instanced
+  transparent group is refused so its members reach that rule). The
+  scene draws a selection HIDES (re-drawn as the selection) lay their
+  depth down too, so a selected object still occludes the lines
+  behind it.
+- **Everything else the host draws in colour moves after the blit.**
+  Lines and points, tessellation-style edges, and the non-on-top
+  selection fills are routed to `ViewOnTop` -- sequential, after the
+  consumer's scene run, before the highlight -- with their depth state
+  intact, so a feature line depth-tests against the depth-only scene
+  exactly as it did against the shaded one. On-top draws, the
+  preselection and the on-top selections already lived there.
+- **A depth-tested selection fill dims where hidden** instead of
+  vanishing (section 5.3's preferred shape, Blender's `alpha_occlu`):
+  the frame submits it once as `PassLineHidden` (depth test off,
+  blended, alpha scaled by the hidden-line alpha or 0.4 when the
+  material carries none -- the mesh program has no alpha ceiling, so
+  the dim rides the material alpha) and then as it always did, depth
+  tested, full colour over it.
+- **The screen-space shading effects stand down**: AO, cavity, bloom,
+  the ground reflection and the idle accumulation that refines them
+  have no shaded image to work on. Shadows, the volumetric light
+  shafts and the water/glass/cloud/fire passes are left alone: they
+  run after the consumer's blit by construction (section 5.2's pass
+  order) and composite over the path-traced image, which is what the
+  doc's "skipped" volumetric bodies were always meant to do.
+
+Verified 2026-08-28 (the step-11 probe plus a non-on-top selection
+leg, `ShowSelectionOnTop` off): the sphere is now Cycles' translucent
+one alone (the host's transparent bucket no longer composites over
+it); feature lines draw over the image and are hidden behind the
+bodies in front of them; the selected box's fill covers its visible
+part and tints the cylinder in front of it at reduced alpha, its
+hidden edges dimmed; the live-vs-offline mean rises from 0.9 to
+2.8/255 purely from the lines the offline PNG does not draw. CPU and
+CUDA alike; ctest 445/445.
+
+Two things to know: the probe's exit with the viewport still ON
+prints Cycles' guarded-allocator "MEMORY LEAK" report, because
+`closeDocument` defers the view's deletion and `quit()` runs first,
+so the session is never destroyed -- turning the viewport off before
+exit (or letting the event loop run) leaves the report silent, and
+the viewer's destructor does destroy the session. And section caps of
+clipped solids still draw in colour BEFORE the blit (they are covered
+by it), which is moot until clipping is translated (section 6.2's
+list).
 
 ## 6. Scene translation
 
@@ -700,7 +759,8 @@ shader translations remain.
 9. Render cache -> Mesh/Object/Camera/Background, geometry first.
 10. Materials, per-face slots, environment.
 
-Phase 4 -- the viewport. **Step 11 done 2026-08-28** (section 5.7).
+Phase 4 -- the viewport. **Steps 11 and 12 done 2026-08-28**
+(sections 5.7 and 5.8).
 
 11. `DisplayDriver` (section 5.2) -> staging buffer -> texture ->
     `FrameConsumer` blit, on-top highlight route (section 5.3).

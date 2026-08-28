@@ -2167,8 +2167,10 @@ bool View3DInventorViewer::setCyclesViewport(const Render::Cycles::ViewportOptio
         if (_pimpl->cyclesViewport) {
             // The registration dies with the consumer: a backend that
             // still names it would draw into a freed object.
-            if (_pimpl->cyclesHost && _pimpl->cyclesHost == _pimpl->renderer.get())
+            if (_pimpl->cyclesHost && _pimpl->cyclesHost == _pimpl->renderer.get()) {
+                _pimpl->cyclesHost->setExternalBaseLayer(false);
                 _pimpl->cyclesHost->setFrameConsumer(nullptr);
+            }
             _pimpl->cyclesViewport.reset();
             _pimpl->cyclesHost = nullptr;
             _pimpl->cyclesFed = false;
@@ -2227,6 +2229,9 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
     // registered, or its surface went away.
     if (cyclesHost != host || !host->frameConsumerSurface()) {
         host->setFrameConsumer(vp);
+        // The backend draws no shaded colour of its own while the
+        // path tracer supplies it (docs/CyclesIntegration.md sec 5.3).
+        host->setExternalBaseLayer(host->frameConsumerSurface() != nullptr);
         cyclesHost = host;
     }
 

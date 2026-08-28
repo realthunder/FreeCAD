@@ -124,6 +124,7 @@ public:
     virtual void setFrameConsumer(FrameConsumer *consumer) override;
     virtual DrawSurface *frameConsumerSurface() override;
     virtual void setHiddenLineConfig(const HiddenLineConfig &config) override;
+    virtual void setExternalBaseLayer(bool on) override;
     virtual void setSectionConfig(const SectionConfig &config) override;
     virtual void setAOConfig(const AOConfig &config) override;
     virtual void setCavityConfig(const CavityConfig &config) override;

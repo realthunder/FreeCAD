@@ -2824,6 +2824,17 @@ public:
     /// state each render, like the GL renderer does).
     virtual void setHiddenLineConfig(const HiddenLineConfig &config)
     { (void)config; }
+    /// The registered FrameConsumer supplies the shaded image of the
+    /// scene (a path tracer's, docs/CyclesIntegration.md sec 5.1 and
+    /// 5.3): the backend rasterizes its scene triangles depth-only, so
+    /// that everything it still draws -- feature lines and points,
+    /// selection and preselection, on-top draws, the host's own
+    /// effects -- occludes against its own depth over the consumer's
+    /// colour; transparent scene triangles are not drawn at all (the
+    /// consumer's image carries their alpha), and a non-on-top
+    /// selection fill dims where the scene depth hides it instead of
+    /// vanishing. Ignored by backends without a consumer.
+    virtual void setExternalBaseLayer(bool on) { (void)on; }
     /// Per-frame section fill (cap) configuration.
     virtual void setSectionConfig(const SectionConfig &config)
     { (void)config; }

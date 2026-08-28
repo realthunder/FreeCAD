@@ -513,8 +513,14 @@ bool BGFXView::submitInstanced(const Render::DrawCall &draw, const float *data,
     if (textured)
         bindTextureStage(mat, bumped, mapped);
 
-    uint64_t state = BGFX_STATE_MSAA
-        | BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+    // External base layer: an instanced opaque group lays down depth
+    // only, like submit()'s PassDepthOnly; a transparent group is
+    // refused so its members fall back to submit(), which skips them.
+    if (externalBase && transparent)
+        return false;
+    uint64_t state = BGFX_STATE_MSAA;
+    if (!externalBase)
+        state |= BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
     uint32_t blendRt = 0;
     if (mat.depthtest)
         state |= depthFuncState(mat.depthfunc);
@@ -671,7 +677,8 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     if (mat.type == Render::Material::Triangle
             && mat.drawstyle == Render::Material::DrawLines
             && pass == PassNormal && !ontop && !mat.ontop && !selPass) {
-        submitTessellation(draw, viewMatrix, ViewOpaque);
+        submitTessellation(draw, viewMatrix,
+                           externalBase ? ViewOnTop : ViewOpaque);
         return;
     }
     // Hidden-line hideSeam: whole-cache line draws switch to the
@@ -795,6 +802,26 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     // into the sequential post-scene view (GL: opaqueselections).
     if (selPass && passView == ViewOpaque)
         passView = ViewSelection;
+    // The shaded image is the attached consumer's (externalBase,
+    // docs/CyclesIntegration.md sec 5.3). Scene triangles lay down
+    // depth only; transparent ones not even that, since the consumer's
+    // image already carries their alpha and their depth would hide
+    // what shows through them. Everything the host still draws in
+    // colour -- lines, points, the non-on-top selections -- moves to
+    // the sequential on-top view, which runs after the consumer's
+    // blit, with its depth test intact against the depth-only scene.
+    const bool externalScene = externalBase && overlayView < 0
+        && !reflPass && !ontop && !mat.ontop
+        && (passView == ViewOpaque || passView == ViewTransparent
+            || passView == ViewSelection);
+    if (externalScene) {
+        if (mat.type != Render::Material::Triangle || selPass)
+            passView = ViewOnTop;
+        else if (transparent)
+            return;
+        else if (pass == PassNormal)
+            pass = PassDepthOnly;
+    }
     // Ground reflection pass: the same submit path renders into the
     // mirrored-scene view (the caller feeds opaque scene triangles
     // only); the mirror flips the winding, so culling flips too.
@@ -839,6 +866,11 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
         depthtest = false;
         blend = true;
         dimalpha = mat.hiddenlinealpha;
+        // A fill dimmed this way (the external base layer's selection
+        // fill) has no hidden-line alpha of its own to follow.
+        if (mat.type == Render::Material::Triangle
+                && !(dimalpha > 0.0f && dimalpha < 1.0f))
+            dimalpha = 0.4f;
         break;
     case PassLineSolid:
         depthtest = true;
@@ -964,6 +996,10 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     // ceiling used to dim depth-occluded on-top lines.
     if (mat.type == Render::Material::Triangle) {
         params[3] = polygonOffsetBias(mat);
+        // The mesh program has no alpha ceiling: a dimmed fill dims
+        // through its material alpha.
+        if (pass == PassLineHidden)
+            color[3] *= dimalpha;
     } else {
         params[3] = dimalpha;
     }

@@ -911,6 +911,14 @@ void BGFXRenderer::setHiddenLineConfig(const HiddenLineConfig &config)
     }
 }
 
+void BGFXRenderer::setExternalBaseLayer(bool on)
+{
+    if (pimpl->externalBase != on) {
+        pimpl->externalBase = on;
+        pimpl->sceneDirty = true;
+    }
+}
+
 void BGFXRenderer::setSectionConfig(const SectionConfig &config)
 {
     if (pimpl->secconf != config) {

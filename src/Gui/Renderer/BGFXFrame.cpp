@@ -1163,10 +1163,22 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // wants AO" and "the targets exist" are no longer the same statement
     // -- a pool with nothing left leaves the group unbuilt and every
     // pass that reads it simply does not run (as for the volumetric).
+    // The shaded image is the attached consumer's this frame
+    // (Renderer::setExternalBaseLayer, docs/CyclesIntegration.md sec
+    // 5.3): the scene rasterizes depth-only and the screen-space
+    // shading effects -- AO, cavity, bloom, the ground reflection,
+    // the idle accumulation that refines them -- have nothing to
+    // work on. The volumetric and water/glass passes stay: they run
+    // after the consumer's blit by design and composite over it.
+    const bool externalBase = this->externalBase && frameConsumer
+        && consumerSurface;
+    view->externalBase = externalBase;
     const bool ssaoWanted = view->m_ssao && aoconf.enabled
-        && !hlconfig.show && bgfx::isValid(view->aoPrepassFbo);
+        && !hlconfig.show && !externalBase
+        && bgfx::isValid(view->aoPrepassFbo);
     const bool cavityWanted = view->m_ssao && cavityconf.enabled
-        && !hlconfig.show && bgfx::isValid(view->aoPrepassFbo)
+        && !hlconfig.show && !externalBase
+        && bgfx::isValid(view->aoPrepassFbo)
         && (cavityconf.valley > 0.0f || cavityconf.ridge > 0.0f)
         && bgfx::isValid(view->m_progCavity);
     bool hasOpaqueTri = false;
@@ -2351,7 +2363,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     }
     // Demand-allocated, like the volumetric set: an unbuilt chain
     // leaves the passes out of the frame rather than binding nothing.
-    bool bloomActive = bloomconf.enabled
+    bool bloomActive = bloomconf.enabled && !externalBase
         && bgfx::isValid(view->bloomFbo);
     float waterWaveStrength = waterconf.waveStrength;
     float waterWaveScale = waterconf.waveScale;
@@ -2666,7 +2678,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // resetting the count, so the view resumes where it left off.
     const bool chromelessDump = dumpPending && !pendingDump.overlays;
     const bool accumActive =
-        accumSamples != 0 && staticFrame && !chromelessDump;
+        accumSamples != 0 && staticFrame && !chromelessDump
+        && !externalBase;
     if (!accumActive)
         view->accumFrames = 0;
     // What this frame is worth in the running mean. The first frame
@@ -2920,7 +2933,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     const bool groundQuadOk = bboxValid
         && lightconf.groundQuad(bboxMin, bboxMax, groundCam, groundCorners);
     bool groundReflActive = groundQuadOk && lightconf.groundReflection
-        && !hlconfig.show
+        && !hlconfig.show && !externalBase
         && bgfx::isValid(view->m_progGroundRefl)
         && bgfx::isValid(view->reflFbo);
     if (getenv("FC_BGFX_DEBUG_FEED"))
@@ -5235,6 +5248,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     view->submitPrepass(draw);
                 if (debugSceneRender && !culled(draw))
                     view->submitDebugScene(draw, debugconf.viewMode);
+                // The external base layer's depth too: a selected
+                // (hidden, re-drawn as its selection) object still
+                // occludes the lines behind it.
+                if (externalBase && !culled(draw))
+                    view->submit(draw, viewMat, BGFXView::PassDepthOnly);
             }
             continue;
         }
@@ -5674,6 +5692,13 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 continue;
             if (isDup(draw))
                 continue;
+            // Over an external base layer a depth-tested selection
+            // fill dims where the scene hides it rather than vanish:
+            // the depth-off dimmed pass first, the tested fill over
+            // it (Blender's alpha_occlu, docs/CyclesIntegration.md
+            // sec 5.3).
+            if (externalBase && sel.first <= 0 && isTriangle(draw))
+                view->submit(draw, viewMat, BGFXView::PassLineHidden);
             view->submit(draw, viewMat);
             // Hidden-line outline of a whole-object selection fill
             // (GL: renderOutline from renderOpaque/renderTransparency
@@ -5782,8 +5807,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
         view->selPass = sel.first <= 0;
         for (const auto &draw : sel.second) {
             if (isTriangle(draw) && draw.partIndex >= 0
-                    && !outlineOnly(draw))
+                    && !outlineOnly(draw)) {
+                if (externalBase && sel.first <= 0)
+                    view->submit(draw, viewMat, BGFXView::PassLineHidden);
                 view->submit(draw, viewMat);
+            }
         }
     }
     view->selPass = false;
