@@ -81,6 +81,11 @@ add_executable(fcviewer
     ../SceneLadder.cpp
     ../MeshSimplify.cpp
     ../BGFXRenderer.cpp
+    # The draw facade: the streamed frame is blitted through a
+    # FrameConsumer (docs/CyclesIntegration.md sec 7.1).
+    ../DrawDevice.cpp
+    ../BGFXDrawDevice.cpp
+    ../FrameImageConsumer.cpp
     ../BGFXFrame.cpp
     ../BGFXScene.cpp
     ../BGFXViewEffects.cpp

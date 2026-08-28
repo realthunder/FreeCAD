@@ -158,6 +158,17 @@ snapshot/publish, instance groups), and the `BGFXView*` files
 | Standalone / WASM viewer | `FC_RENDERER_STANDALONE`, `Gui/Renderer/wasm/main.cpp` | `SceneDump` snapshot, streamed over WebSocket (`SceneStreamServer`) | its own essl pack + server-compiled user-shader binaries shipped in the snapshot |
 | Headless serve | desktop build under Xvfb (`scripts/renderer-serve.sh`) | live caches | as desktop |
 
+Beside the engine: the immediate-mode draw facade (`DrawDevice.cpp`,
+`BGFXDrawDevice.cpp`, docs/CAMSimRenderPort.md sec 8) and
+`FrameImageConsumer.cpp`, a `FrameConsumer` that blits an image as a
+view's base layer. Both compile into the WASM tier as of 2026-08-28,
+because a streamed path-traced frame is blitted there through that
+route (docs/CyclesIntegration.md sec 7.1; `FrameStreamWire.h` spells
+the message). The Cycles unit (`Cycles*.cpp`, `BUILD_CYCLES`) is
+desktop-only: `CyclesViewport.cpp` is the live session behind a
+consumer, `CyclesStream.cpp` the same session encoding for a remote
+viewer.
+
 `SceneDump` serializes the draw lists, materials, configs and the
 user-shader table (sources, parameters, compiled variants); the
 snapshot version gates format changes and the viewer self-reloads on a

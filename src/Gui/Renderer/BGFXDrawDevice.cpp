@@ -725,6 +725,7 @@ public:
         backbuffer = BGFX_INVALID_HANDLE;
         color = BGFX_INVALID_HANDLE;
         depth = BGFX_INVALID_HANDLE;
+#ifndef FC_RENDERER_STANDALONE
         // The blit wrapper belongs to the widget's GL context; without
         // a current context in the share group it is leaked, which
         // only happens on teardown paths where the context is gone
@@ -734,6 +735,7 @@ public:
             QOpenGLContext::currentContext()->extraFunctions()
                 ->glDeleteFramebuffers(1, &fbo);
         }
+#endif
         blitFbo = 0;
     }
 
@@ -790,6 +792,11 @@ public:
             (void)h;
             return inFrame;
         }
+#ifdef FC_RENDERER_STANDALONE
+        // The browser tier has no widget to own a surface: only the
+        // attached flavour exists there.
+        return false;
+#else
         if (!deviceUp() || w <= 0 || h <= 0 || !idSpan)
             return false;
         auto *ctx = QOpenGLContext::currentContext();
@@ -817,6 +824,7 @@ public:
             applyPass(p);
         inFrame = true;
         return true;
+#endif
     }
 
     void endFrame() override
@@ -828,6 +836,7 @@ public:
         if (!inFrame)
             return;
         inFrame = false;
+#ifndef FC_RENDERER_STANDALONE
         // The context dance the engine frame uses: bgfx draws through
         // the library's context, the blit lands on the widget's.
         widget->doneCurrent();
@@ -857,6 +866,7 @@ public:
                         "(passes %u at %u)\n",
                         width, height, numPasses, unsigned(baseId));
         }
+#endif
     }
 
     void setPassTarget(unsigned pass, Render::TargetHandle target) override
@@ -1319,6 +1329,12 @@ public:
     std::unique_ptr<Render::DrawSurface> createSurface(
             QOpenGLWidget *widget, unsigned numPasses) override
     {
+#ifdef FC_RENDERER_STANDALONE
+        // No widgets in the browser tier (beginFrame above).
+        (void)widget;
+        (void)numPasses;
+        return nullptr;
+#else
         if (!available() || !widget || !numPasses
                 || numPasses > BGFX_CONFIG_MAX_VIEWS)
             return nullptr;
@@ -1330,6 +1346,7 @@ public:
                                  uint16_t(numPasses)))
             return nullptr;
         return surface;
+#endif
     }
 };
 

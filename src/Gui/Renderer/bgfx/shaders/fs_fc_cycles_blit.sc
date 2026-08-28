@@ -22,14 +22,28 @@ vec3 fcCyclesEncode(vec3 c)
 	return mix(lo, hi, step(vec3_splat(0.0031308), c));
 }
 
+vec3 fcCyclesDecode(vec3 c)
+{
+	vec3 lo = c / 12.92;
+	vec3 hi = pow((c + 0.055) / 1.055, vec3_splat(2.4));
+	return mix(lo, hi, step(vec3_splat(0.04045), c));
+}
+
 void main()
 {
 	vec4 c = texture2D(s_cyclesImage, v_texcoord0);
+	// Un-premultiply, transform, re-premultiply: the blend is
+	// one / one-minus-src-alpha either way.
 	if (u_cyclesBlit.x > 0.5) {
-		// Un-premultiply, encode, re-premultiply: the blend is
-		// one / one-minus-src-alpha either way.
+		// A linear image for a display-space target.
 		float a = max(c.a, 1e-5);
 		c.rgb = fcCyclesEncode(clamp(c.rgb / a, 0.0, 1.0)) * c.a;
+	}
+	else if (u_cyclesBlit.y > 0.5) {
+		// An sRGB-encoded image (the streamed frame) for a linear
+		// target.
+		float a = max(c.a, 1e-5);
+		c.rgb = fcCyclesDecode(clamp(c.rgb / a, 0.0, 1.0)) * c.a;
 	}
 	gl_FragColor = c;
 }

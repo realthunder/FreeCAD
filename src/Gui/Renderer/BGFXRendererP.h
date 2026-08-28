@@ -2301,9 +2301,8 @@ public:
     virtual unsigned passes() const = 0;
 };
 
-#ifndef FC_RENDERER_STANDALONE
 /// The bgfx implementation of the draw facade (BGFXDrawDevice.cpp,
-/// desktop build only). BGFXRendererLib::drawDevice hands it out once
+/// every tier). BGFXRendererLib::drawDevice hands it out once
 /// the device is up.
 DrawDevice *fcBGFXDrawDevice();
 
@@ -2311,12 +2310,11 @@ DrawDevice *fcBGFXDrawDevice();
 /// The split exists to validate each run against its enum block --
 /// the surface itself carries only the total, and the id mapping
 /// rides bindFrame. Null when the device is down or a run exceeds
-/// what a host frame offers. Desktop only, like the rest of the
-/// facade: the standalone build has no outside consumers to serve
-/// and does not compile BGFXDrawDevice.cpp.
+/// what a host frame offers. Built in the browser tier too: the
+/// streamed frame's blit is a consumer (docs/CyclesIntegration.md
+/// sec 7.1); only the widget-owning standalone surface is desktop.
 std::unique_ptr<BGFXHostSurface> fcBGFXCreateHostSurface(
         unsigned scenePasses, unsigned overlayPasses);
-#endif
 
 } // namespace Renderer
 

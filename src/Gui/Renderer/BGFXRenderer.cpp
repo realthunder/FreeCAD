@@ -865,12 +865,6 @@ void BGFXRenderer::setFrameConsumer(FrameConsumer *consumer, int subView)
     }
     if (!consumer)
         return;
-#ifdef FC_RENDERER_STANDALONE
-    // No draw facade in the browser tier: nothing outside the engine
-    // links against it there, and BGFXDrawDevice.cpp is not built.
-    (void)consumer;
-    (void)subView;
-#else
     const unsigned want = consumer->framePasses();
     const unsigned overlay = consumer->overlayPasses();
     // Refused, not clamped: a clamp would leave the consumer's last
@@ -893,7 +887,6 @@ void BGFXRenderer::setFrameConsumer(FrameConsumer *consumer, int subView)
     slot.passes = want;
     slot.overlayPasses = overlay;
     slot.consumer = consumer;
-#endif
 }
 
 DrawSurface *BGFXRenderer::frameConsumerSurface(int subView)
@@ -1456,19 +1449,15 @@ void BGFXRendererLib::deviceDoneCurrent()
 
 DrawDevice *BGFXRendererLib::drawDevice() const
 {
-#ifdef FC_RENDERER_STANDALONE
-    // The standalone viewer has no facade consumer, and its source
-    // list does not carry BGFXDrawDevice.cpp.
-    return nullptr;
-#else
     // Null until the device is up (prepare() ran): the facade hands
     // out resources bgfx must exist to create. The consumer treats
     // null as "not yet" and asks again -- warmup or the first 3D view
     // flips it, and the device then stays up until the app quits.
+    // The browser tier builds the facade too since the streamed
+    // frame's blit is a consumer (docs/CyclesIntegration.md sec 7.1).
     if (_BGFXLib.currentType == RendererType::Noop)
         return nullptr;
     return fcBGFXDrawDevice();
-#endif
 }
 
 std::unique_ptr<Renderer> BGFXRendererLib::create(
