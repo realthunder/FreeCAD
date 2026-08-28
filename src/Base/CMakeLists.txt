@@ -406,6 +406,12 @@ add_library(FreeCADBase SHARED ${FreeCADBase_SRCS})
 
 target_link_libraries(FreeCADBase ${FreeCADBase_LIBS})
 
+# Writer.cpp includes <Build/Version.h>, which fc_version generates. Without
+# this, a from-scratch parallel build can compile Writer.cpp before the
+# generator has run and fails on the missing header; FreeCADApp has always
+# declared the same dependency for Application.cpp.
+add_dependencies(FreeCADBase fc_version)
+
 SET_BIN_DIR(FreeCADBase FreeCADBase)
 
 if(WIN32)
