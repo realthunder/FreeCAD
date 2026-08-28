@@ -55,7 +55,7 @@ class SoTransform;
 class SoText2;
 class SoGetBoundingBoxAction;
 class SoFCRenderCacheManager;
-namespace Render::Cycles { struct RenderReport; }
+namespace Render::Cycles { struct RenderReport; struct ViewportOptions; struct ViewportStatus; }
 
 class SoSeparator;
 class SoDetail;
@@ -744,6 +744,22 @@ public:
     bool renderWithCycles(const std::string &path, int width, int height, int samples,
                           const std::string &device, std::string *error,
                           Render::Cycles::RenderReport *report = nullptr);
+
+    /** Path trace this view live with Cycles (docs/CyclesIntegration.md
+     * phase 4, the viewport).
+     *
+     * With \a options, a Cycles session on the named device follows this
+     * view: it is fed the render-cache scene whenever the backend's feed
+     * restates it (or a render setting changes), the camera whenever it
+     * moves, and its progressively refined frame is blitted over the
+     * backend's scene as the base layer of every frame. Null \a options
+     * turns it off. Requires the render-cache bridge (render cache mode
+     * 3) with a backend attached. Returns false with \a error set.
+     */
+    bool setCyclesViewport(const Render::Cycles::ViewportOptions *options,
+                           std::string *error);
+    /// What the live Cycles session is doing; false when there is none.
+    bool cyclesViewportStatus(Render::Cycles::ViewportStatus &status) const;
 
     struct Private;
     friend struct Private;

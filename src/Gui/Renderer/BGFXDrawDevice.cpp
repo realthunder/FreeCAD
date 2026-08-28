@@ -45,6 +45,8 @@ bgfx::TextureFormat::Enum toBgfxFormat(Render::DrawTextureFormat format)
         return bgfx::TextureFormat::R8;
     case Render::DrawTextureFormat::RGBA8:
         return bgfx::TextureFormat::RGBA8;
+    case Render::DrawTextureFormat::RGBA16F:
+        return bgfx::TextureFormat::RGBA16F;
     case Render::DrawTextureFormat::RGBA32F:
         return bgfx::TextureFormat::RGBA32F;
     case Render::DrawTextureFormat::D24S8:
@@ -60,6 +62,8 @@ uint32_t bytesPerTexel(Render::DrawTextureFormat format)
         return 1;
     case Render::DrawTextureFormat::RGBA8:
         return 4;
+    case Render::DrawTextureFormat::RGBA16F:
+        return 8;
     case Render::DrawTextureFormat::RGBA32F:
         return 16;
     case Render::DrawTextureFormat::D24S8:
@@ -184,6 +188,9 @@ uint64_t toBgfxState(const Render::DrawState &state)
     }
     if (state.blend == Render::BlendMode::Alpha)
         res |= BGFX_STATE_BLEND_ALPHA;
+    else if (state.blend == Render::BlendMode::Premultiplied)
+        res |= BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
+                                     BGFX_STATE_BLEND_INV_SRC_ALPHA);
     switch (state.primitive) {
     case Render::PrimitiveType::Triangles:
         break;              // the default primitive, no PT bits
@@ -1205,6 +1212,19 @@ public:
                                             toBgfxFormat(format),
                                             toBgfxSamplerFlags(flags), mem);
         return {handle.idx};
+    }
+
+    void updateTexture2D(Render::TextureHandle texture, int x, int y,
+                         int width, int height, const void *data,
+                         uint32_t bytes) override
+    {
+        if (!available() || !texture.valid() || !data || width <= 0
+                || height <= 0 || bytes < uint32_t(width) * uint32_t(height))
+            return;
+        bgfx::TextureHandle handle = {texture.idx};
+        bgfx::updateTexture2D(handle, 0, 0, uint16_t(x), uint16_t(y),
+                              uint16_t(width), uint16_t(height),
+                              bgfx::copy(data, bytes));
     }
 
     Render::TextureHandle createRenderTexture(

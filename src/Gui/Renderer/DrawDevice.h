@@ -145,6 +145,7 @@ enum class UniformType : uint8_t {
 enum class DrawTextureFormat : uint8_t {
     R8,
     RGBA8,
+    RGBA16F,   ///< four half floats, 8 bytes a texel
     RGBA32F,
     D24S8,
 };
@@ -186,7 +187,9 @@ enum class CullMode : uint8_t {
 
 enum class BlendMode : uint8_t {
     None,
-    Alpha,      ///< src-alpha / one-minus-src-alpha
+    Alpha,         ///< src-alpha / one-minus-src-alpha
+    Premultiplied, ///< one / one-minus-src-alpha: the source already
+                   ///< carries its alpha in its colour
 };
 
 enum class PrimitiveType : uint8_t {
@@ -327,6 +330,13 @@ public:
     virtual TextureHandle createRenderTexture(int width, int height,
                                               DrawTextureFormat format,
                                               uint32_t flags = 0) = 0;
+    /// Replace the \a width x \a height texels at (\a x, \a y) of a
+    /// texture made by createTexture2D with \a data, rows packed. The
+    /// data is copied before this returns; the upload itself happens
+    /// with the next frame, so it is safe from inside drawFrame.
+    virtual void updateTexture2D(TextureHandle texture, int x, int y,
+                                 int width, int height,
+                                 const void *data, uint32_t bytes) = 0;
     /// A framebuffer from previously created render textures. The
     /// target references the textures, it does not own them.
     /// \a depthStencil may be invalid for a colour-only target.

@@ -374,6 +374,93 @@ host does not have -- displacement, subdivision -- and with
 see the same mesh.
 
 
+### 5.7 What the viewport does (phase 4 step 11, built 2026-08-28)
+
+`src/Gui/Renderer/CyclesViewport.cpp` (`Render::Cycles::Viewport`,
+declared in `CyclesRenderer.h`, in the same `FreeCADRendererCycles`
+object library as the translation) is the `FrameConsumer` of section
+5.2, built as that section describes and nothing more: the on-top
+highlight route, no depth prepass, no incremental scene update.
+
+- **The session.** `Viewport::setScene(SceneInput)` builds a fresh
+  `ccl::Session` in interactive mode (`background = false`, the
+  resolution divider on, the sample and time budget from
+  `ViewportOptions`), translates the input with the phase-3
+  `SceneTranslator`, and starts it. A restated scene tears the session
+  down and builds another -- the device setup and a full translation
+  per change. Incremental updates keyed the way the mesh map already
+  is (cacheId + generation) are the later step; the key is the cache's
+  own contract, so nothing in the translation has to change for it.
+- **The handoff.** The `DisplayDriver` is a staging buffer of `half4`
+  sized to the full render, held under a mutex from `update_begin()`
+  to `update_end()` -- Cycles' copy into it is a memcpy, so the host
+  waits at most that long. The effective size (the divider applied)
+  rides with the buffer and is the pitch Cycles fills it with.
+  `update_end()` fires a redraw callback FROM the render thread; the
+  viewer marshals it to its own thread with a queued
+  `QMetaObject::invokeMethod` on the widget, which a widget on its way
+  out drops with itself.
+- **The blit.** `drawFrame()` takes the staged frame if it is newer,
+  uploads it into an RGBA16F texture at the effective size (recreated
+  when that changes, linear-filtered so the coarse pass reads
+  smoothly), and draws the engine's own fullscreen triangle with
+  `vs_fc_comp` + `fs_fc_cycles_blit` into `hostTarget()`: depth test
+  and write off, one / one-minus-src-alpha (Cycles' combined pass is
+  premultiplied). The frame is LINEAR and stays so for a
+  colour-managed host target; a display-space target (no output
+  transform) gets it encoded in the shader, gated on
+  `hostLinearColor()` -- the section 6.1 rule, applied. One pass in
+  the consumer's scene run: after the opaque geometry and the outline,
+  before the transparent bucket.
+- **The throttle.** `drawFrame()` calls `Session::draw()` (the
+  driver's `draw()` does nothing -- the frame was consumed already)
+  purely so the session counts a draw, because `ready_to_reset()` is
+  true only once a frame was drawn after the last reset: Blender's
+  rule, and what keeps a camera drag from cancelling every restart
+  before a pixel shows. `setCamera()` restates the camera under the
+  scene's mutex and resets the session when it may; otherwise the
+  move is held and applied by the next `drawFrame()`, which the
+  update that made the session ready has itself requested.
+- **The feed.** `View3DInventorViewer::setCyclesViewport()` owns one
+  `Viewport` per view; `Private::feedCyclesViewport()` runs just before
+  `renderer->render()` each frame. It registers the consumer on the
+  current backend whenever that is not the one registered (a backend
+  can be swapped under a view), compares the backend's new
+  `Renderer::sceneGeneration()` -- a counter every `setScene()` bumps,
+  added for this -- and the translated PBR/output/light/background
+  configs against what was last fed, and either re-translates the
+  render cache into a new `SceneInput` or hands over the camera alone.
+  The camera is the Coin camera's matrices, NOT `hostCamera()`: the
+  host's projection carries the idle accumulator's jitter, which would
+  read as a move every frame.
+- **Facade additions** (`DrawDevice.h`), all general:
+  `DrawTextureFormat::RGBA16F`, `updateTexture2D()`,
+  `BlendMode::Premultiplied`.
+- **Python.** `view.cyclesViewport(enable=True, device='CPU',
+  samples=256, timeLimit=0.0, denoise=False)` and
+  `view.cyclesViewportStatus()` (running, progress, the engine's
+  status text, error, the translation report).
+
+Verified 2026-08-28 (scratchpad `cycles_viewport_probe.py` under xvfb,
+the phase-3 scene, 858x384): the live frame settled at the sample
+budget agrees with `cyclesRender` of the same camera at the same size
+to a mean of 0.9/255 over the middle of the frame (CPU 16 spp, CUDA
+64 spp -- the GPU's frame arrives through the same map path); a
+camera move restarts at the coarse divider and settles again; a
+recolour restates the scene through the generation counter; turning
+the viewport off puts the backend's own frame back. Two things the
+grabs show that are step 12's, not defects of step 11: the host still
+draws its own shaded geometry under the blit (wasted, and its
+translucent bucket composites OVER the Cycles image, so a transparent
+body reads doubly), and its edge lines sit on top as the overlay they
+are meant to be.
+
+Not done: the depth prepass and the dimmed highlight (step 12); the
+sample/time budget UI, cancel-on-move pixel size and denoise defaults
+(step 13 -- `denoise` is an option already, unexercised); a view on a
+ViewArea canvas (the cell path does not run `feedCyclesViewport`);
+picking with a session running was not probed.
+
 ## 6. Scene translation
 
 The bulk of the real work, and the fork is unusually well placed for
@@ -613,7 +700,7 @@ shader translations remain.
 9. Render cache -> Mesh/Object/Camera/Background, geometry first.
 10. Materials, per-face slots, environment.
 
-Phase 4 -- the viewport.
+Phase 4 -- the viewport. **Step 11 done 2026-08-28** (section 5.7).
 
 11. `DisplayDriver` (section 5.2) -> staging buffer -> texture ->
     `FrameConsumer` blit, on-top highlight route (section 5.3).

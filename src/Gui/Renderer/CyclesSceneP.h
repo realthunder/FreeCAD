@@ -36,9 +36,24 @@ namespace ccl {
 class Scene;
 class Shader;
 class Mesh;
+class SessionParams;
 }  // namespace ccl
 
 namespace Render::Cycles {
+
+/// Process-wide engine setup, once (the data root the GPU devices
+/// compile their kernels from). Every entry point calls it first.
+void initEngine();
+
+/// The session parameters every render here starts from: the named
+/// device, denoising on the same device (a debug build asserts when
+/// that is left unset), one tile. The caller sets what differs
+/// between an offline render and the viewport. False with \a error
+/// set when the device type is unknown or absent.
+bool makeSessionParams(const std::string &deviceType,
+                       int samples,
+                       ccl::SessionParams &params,
+                       std::string &error);
 
 /// The translation of a SceneInput into a Cycles scene
 /// (docs/CyclesIntegration.md sec 6): the backend-neutral draw list
@@ -63,9 +78,11 @@ public:
     /// Translate everything: geometry, materials, world, light, camera.
     /// The scene must be fresh (no prior translation).
     void translate(const SceneInput &input, RenderReport &report);
+    /// Restate only the camera (the viewport's per-move update). The
+    /// caller holds the scene's mutex when a session is running.
+    void translateCamera(const CameraInput &camera);
 
 private:
-    void translateCamera(const CameraInput &camera);
     void translateWorld(const PBRConfig &pbr, const OutputConfig &output);
     void translateLight(const LightConfig &light, const float sceneMin[3], const float sceneMax[3]);
     bool translateDraw(const DrawCall &draw, const PBRConfig &pbr, RenderReport &report);

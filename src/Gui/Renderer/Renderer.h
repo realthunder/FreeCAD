@@ -2739,6 +2739,12 @@ public:
     //@{
     /// Replace the whole scene. An empty list clears it.
     virtual void setScene(DrawCallList &&draws) { (void)draws; }
+    /// How many times setScene() has restated the scene: a consumer
+    /// that derives something from the same feed (the Cycles viewport
+    /// re-translates the render cache, docs/CyclesIntegration.md sec
+    /// 5.2) compares this between frames instead of the draws. Every
+    /// override of setScene() owes a noteSceneStated().
+    uint64_t sceneGeneration() const { return scenegen; }
     /// Which document object each objectKey renders, resolved by the
     /// scene producer (the renderer itself has no document access — this
     /// library stays App-free). Replaced wholesale alongside setScene();
@@ -3062,6 +3068,9 @@ protected:
     /// it, because a delta leaves the producer's copy still describing
     /// what the renderer holds.
     void noteObjectInfoStated() { ++infoversion; }
+    /// Record that setScene() has just restated the scene
+    /// (sceneGeneration() above).
+    void noteSceneStated() { ++scenegen; }
 
 private:
     static uint64_t nextInstanceId()
@@ -3071,6 +3080,7 @@ private:
     }
     const uint64_t instanceid = nextInstanceId();
     uint32_t infoversion = 0;
+    uint64_t scenegen = 0;
 };
 
 class RendererLib

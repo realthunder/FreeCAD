@@ -907,6 +907,59 @@ PyObject* View3DInventorPy::cyclesRender(PyObject *args, PyObject *kwds)
     return Py::new_reference_to(dict);
 }
 
+PyObject* View3DInventorPy::cyclesViewport(PyObject *args, PyObject *kwds)
+{
+    PyObject *enableObj = Py_True;
+    const char *device = "CPU";
+    int samples = 256;
+    double timeLimit = 0.0;
+    PyObject *denoiseObj = Py_False;
+    static char *kwlist[] = {"enable", "device", "samples", "timeLimit", "denoise", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|OsidO", kwlist,
+                                     &enableObj, &device, &samples, &timeLimit, &denoiseObj))
+        return nullptr;
+
+    View3DInventorViewer *viewer = getView3DInventorPtr()->getViewer();
+    std::string error;
+    bool ok;
+    if (PyObject_IsTrue(enableObj) > 0) {
+        Render::Cycles::ViewportOptions options;
+        options.device = device;
+        options.samples = samples;
+        options.timeLimit = timeLimit;
+        options.denoise = PyObject_IsTrue(denoiseObj) > 0;
+        ok = viewer->setCyclesViewport(&options, &error);
+    }
+    else {
+        ok = viewer->setCyclesViewport(nullptr, &error);
+    }
+    if (!ok) {
+        PyErr_SetString(PyExc_RuntimeError, error.c_str());
+        return nullptr;
+    }
+    Py_Return;
+}
+
+PyObject* View3DInventorPy::cyclesViewportStatus(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    Render::Cycles::ViewportStatus status;
+    if (!getView3DInventorPtr()->getViewer()->cyclesViewportStatus(status))
+        Py_Return;
+    Py::Dict dict;
+    dict.setItem("running", Py::Boolean(status.running));
+    dict.setItem("progress", Py::Float(status.progress));
+    dict.setItem("status", Py::String(status.status));
+    dict.setItem("error", Py::String(status.error));
+    dict.setItem("meshes", Py::Long(status.report.meshes));
+    dict.setItem("objects", Py::Long(status.report.objects));
+    dict.setItem("shaders", Py::Long(status.report.shaders));
+    dict.setItem("triangles", Py::Long(status.report.triangles));
+    dict.setItem("skipped", Py::Long(status.report.skipped));
+    return Py::new_reference_to(dict);
+}
+
 PyObject* View3DInventorPy::saveRenderDump(PyObject *args, PyObject *kwds)
 {
     char *cPath;

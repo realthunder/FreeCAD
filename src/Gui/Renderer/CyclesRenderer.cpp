@@ -86,24 +86,56 @@ bool renderScene(const SceneInput &, const std::string &, int, const std::string
     return false;
 }
 
+std::unique_ptr<Viewport> Viewport::create(const ViewportOptions &, std::string *error)
+{
+    if (error)
+        *error = "this build carries no Cycles engine (BUILD_CYCLES is off)";
+    return nullptr;
+}
+
 #else  // HAVE_CYCLES
 
-namespace {
-
-/// Process-wide engine setup, once. The engine's data root is the
-/// renderer resource tree's cycles/ directory: the GPU devices compile
-/// their kernels at runtime from source/kernel under it (the build
-/// copies and installs that tree, docs/CyclesIntegration.md sec 4.1),
-/// with nvcc found through CUDA_BIN_PATH as Cycles itself does. The
-/// CPU device needs nothing from it. The kernel cache goes to the
-/// engine's default user cache directory.
-void initOnce()
+/// The engine's data root is the renderer resource tree's cycles/
+/// directory: the GPU devices compile their kernels at runtime from
+/// source/kernel under it (the build copies and installs that tree,
+/// docs/CyclesIntegration.md sec 4.1), with nvcc found through
+/// CUDA_BIN_PATH as Cycles itself does. The CPU device needs nothing
+/// from it. The kernel cache goes to the engine's default user cache
+/// directory.
+void initEngine()
 {
     static std::once_flag once;
     std::call_once(once, [] {
         ccl::path_init(Render::RendererFactory::resourcePath() + "cycles");
     });
 }
+
+bool makeSessionParams(const std::string &deviceType,
+                       int samples,
+                       ccl::SessionParams &sp,
+                       std::string &error)
+{
+    ccl::DeviceType type = ccl::Device::type_from_string(deviceType.c_str());
+    if (type == ccl::DEVICE_NONE) {
+        error = "unknown device type '" + deviceType + "'";
+        return false;
+    }
+    // DEVICE_MASK() spells its cast unqualified, for use inside ccl.
+    ccl::vector<ccl::DeviceInfo> found =
+        ccl::Device::available_devices(ccl::DeviceTypeMask(1 << type));
+    if (found.empty()) {
+        error = "no " + deviceType + " device is available";
+        return false;
+    }
+    sp.device = found.front();
+    sp.denoise_device = sp.device;
+    sp.samples = samples;
+    sp.use_auto_tile = false;
+    sp.tile_size = 0;
+    return true;
+}
+
+namespace {
 
 /// Keeps the finished frame. Cycles calls write_render_tile() from its
 /// own session thread once the whole buffer is sampled; the caller
@@ -201,7 +233,7 @@ bool available()
 
 std::vector<DeviceInfo> devices()
 {
-    initOnce();
+    initEngine();
     std::vector<DeviceInfo> out;
     for (const ccl::DeviceInfo &d : ccl::Device::available_devices())
         out.push_back({ccl::Device::string_from_type(d.type), d.description});
@@ -210,35 +242,16 @@ std::vector<DeviceInfo> devices()
 
 namespace {
 
-/// The session parameters every offline render here uses: the named
-/// device, denoising on the same device (a debug build asserts when
-/// that is left unset -- a default DeviceInfo carries the CPU id with
-/// no description, and the session compares the two), one tile,
-/// blocking.
-bool sessionParams(const std::string &deviceType,
-                   int samples,
-                   ccl::SessionParams &sp,
-                   std::string &error)
+/// An offline render: blocking, no display, done when the samples are.
+bool offlineSessionParams(const std::string &deviceType,
+                          int samples,
+                          ccl::SessionParams &sp,
+                          std::string &error)
 {
-    ccl::DeviceType type = ccl::Device::type_from_string(deviceType.c_str());
-    if (type == ccl::DEVICE_NONE) {
-        error = "unknown device type '" + deviceType + "'";
+    if (!makeSessionParams(deviceType, samples, sp, error))
         return false;
-    }
-    // DEVICE_MASK() spells its cast unqualified, for use inside ccl.
-    ccl::vector<ccl::DeviceInfo> found =
-        ccl::Device::available_devices(ccl::DeviceTypeMask(1 << type));
-    if (found.empty()) {
-        error = "no " + deviceType + " device is available";
-        return false;
-    }
-    sp.device = found.front();
-    sp.denoise_device = sp.device;
     sp.background = true;
     sp.headless = true;
-    sp.samples = samples;
-    sp.use_auto_tile = false;
-    sp.tile_size = 0;
     return true;
 }
 
@@ -313,10 +326,10 @@ bool renderScene(const SceneInput &input,
     if (width < 1 || height < 1 || samples < 1)
         return fail("width, height and samples must be positive");
 
-    initOnce();
+    initEngine();
     std::string message;
     ccl::SessionParams sp;
-    if (!sessionParams(deviceType, samples, sp, message))
+    if (!offlineSessionParams(deviceType, samples, sp, message))
         return fail(message);
     ccl::SceneParams scp;
 
@@ -374,11 +387,11 @@ bool renderTestScene(const std::string &path,
     if (width < 1 || height < 1 || samples < 1)
         return fail("width, height and samples must be positive");
 
-    initOnce();
+    initEngine();
 
     std::string message;
     ccl::SessionParams sp;
-    if (!sessionParams(deviceType, samples, sp, message))
+    if (!offlineSessionParams(deviceType, samples, sp, message))
         return fail(message);
     ccl::SceneParams scp;
 
@@ -471,5 +484,7 @@ bool renderTestScene(const std::string &path,
 }
 
 #endif  // HAVE_CYCLES
+
+Viewport::~Viewport() = default;
 
 }  // namespace Render::Cycles

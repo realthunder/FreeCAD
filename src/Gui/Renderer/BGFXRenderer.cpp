@@ -697,6 +697,7 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
     dumpFeed("scene", 0, draws);
     pimpl->scene = std::move(draws);
     ++pimpl->drawListVersion;
+    noteSceneStated();
     // The occlusion index is partitioned from this list, and a stale
     // partition would mask draws by the bounds of whatever used to
     // occupy those rows. Rebuilt on the next frame that culls, never
