@@ -36,6 +36,8 @@
 namespace ccl {
 class Scene;
 class Shader;
+class ShaderGraph;
+class ShaderOutput;
 class Mesh;
 class Object;
 class Light;
@@ -133,11 +135,28 @@ private:
                            const uint8_t *vertexColor,
                            const uint8_t *materialStream) const;
 
+    /// The draw's world-space section planes, carried into the SHADER
+    /// because Cycles has no clip-plane state: the graph itself makes
+    /// a clipped shading point transparent
+    /// (docs/CyclesIntegration.md sec 6.3).
+    struct Clip {
+        uint8_t num = 0;
+        bool concave = false;
+        float planes[Material::MaxClipPlanes][4] = {};
+        /// The part of a shader key this contributes ("" when there
+        /// are no planes, so an unclipped scene keys as it always did).
+        std::string key() const;
+    };
+
     /// The shader of a uniformly-coloured draw, keyed on everything but
     /// the base colour and alpha (those ride the object).
-    ccl::Shader *uniformShader(const Surface &surface);
-    /// The one shader of every per-vertex-attribute draw.
-    ccl::Shader *attributeShader();
+    ccl::Shader *uniformShader(const Surface &surface, const Clip &clip);
+    /// The one shader of every per-vertex-attribute draw -- one per
+    /// distinct clip, which for a scene with no section is still one.
+    ccl::Shader *attributeShader(const Clip &clip);
+    /// Connect \a closure to the graph's surface output, through the
+    /// clip test when there is one.
+    void connectSurface(ccl::ShaderGraph *graph, ccl::ShaderOutput *closure, const Clip &clip);
 
     /// A translated mesh and what it cost, keyed by the draw's mesh
     /// identity (the cache contract cacheId + generation, the index
@@ -172,7 +191,6 @@ private:
     std::unordered_map<std::string, ccl::Shader *> shaders;
     std::unordered_map<std::string, MeshEntry> meshes;
     std::vector<Instance> instances;
-    ccl::Shader *attrShader = nullptr;
 
     bool cameraStated = false;
     CameraInput lastCamera;

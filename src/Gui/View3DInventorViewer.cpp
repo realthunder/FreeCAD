@@ -2148,10 +2148,15 @@ bool View3DInventorViewer::renderWithCycles(const std::string &path, int width, 
 
     // The Gui side owns exactly this: the feed and the camera. The
     // translation (Render::Cycles::renderScene) reads nothing from here.
-    Render::Cycles::SceneInput input;
-    input.draws = RendererBridge::translate(cache->getVertexCaches(true),
-                                            RendererBridge::SectionOnTop());
     App::PropertyContainer *settings = _pimpl->renderSettings();
+    Render::Cycles::SceneInput input;
+    // The section style is the view's, exactly as SoFCRenderer reads
+    // it for the raster path: without it a concave section would be
+    // traced as a convex one.
+    RendererBridge::SectionOnTop section;
+    section.noOnTop = Gui::sectionStyle(settings, "NoOnTop", ViewParams::getNoSectionOnTop());
+    section.concave = Gui::sectionStyle(settings, "Concave", ViewParams::getSectionConcave());
+    input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
     input.pbr = RendererBridge::translatePBRConfig(settings);
     input.output = RendererBridge::translateOutputConfig(settings);
     input.light = RendererBridge::translateLightConfig(nullptr, settings);
@@ -2293,8 +2298,10 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
     if (!cache)
         return;
     Render::Cycles::SceneInput input;
-    input.draws = RendererBridge::translate(cache->getVertexCaches(true),
-                                            RendererBridge::SectionOnTop());
+    RendererBridge::SectionOnTop section;
+    section.noOnTop = Gui::sectionStyle(settings, "NoOnTop", ViewParams::getNoSectionOnTop());
+    section.concave = Gui::sectionStyle(settings, "Concave", ViewParams::getSectionConcave());
+    input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
     input.pbr = pbr;
     input.output = output;
     input.light = light;

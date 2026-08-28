@@ -907,6 +907,56 @@ Traps this step paid for:
   is then width x height x 4 floats, no `conform_pixels` needed.
 
 
+### 6.3 Section clip planes (built 2026-08-28)
+
+The first of the phase-3 leftovers listed above. A section in this
+engine is not a post-process and not a stencil: **the shader graph
+removes the clipped points**, so the section cuts for every ray --
+camera, shadow, reflection, transmission -- at once.
+
+`Material` already carries the section as up to six world-space plane
+equations plus `clipconcave` (the bridge fills them from the
+`SoClipPlane` nodes the traversal saw). The translation copies them
+into a `SceneTranslator::Clip` and appends them to the SHADER key,
+because Cycles has no clip-plane state to set: the planes are part of
+what the shader IS. `connectSurface()` then wraps the closure --
+
+- `GeometryNode`'s Position (world space, so the object transform
+  needs no undoing) dotted with each plane normal, plus the plane's
+  w: positive on the kept side;
+- the readings folded with a `MINIMUM` (survive EVERY plane) or, in
+  concave mode, a `MAXIMUM` (survive ONE) -- the GL parity the bgfx
+  backend keeps, where SectionConcave renders one plane per pass and
+  the picture is the union of half-spaces;
+- `LESS_THAN 0` on the fold as the `Fac` of a `MixClosureNode`
+  between the surface and a `TransparentBsdfNode`.
+
+A transparent closure is the right eraser: it passes every ray
+through unchanged, so the clipped part casts no shadow and shows in
+no reflection, which is what the raster path's discarded fragment
+also means. Geometry is untouched -- the report still counts one mesh
+and one object for a clipped box -- so an edit to the section costs a
+shader, not a retranslation, and the instancing is undisturbed.
+
+Both Gui feeds (`renderWithCycles` and `feedCyclesViewport`) now read
+the view's section style the way `SoFCRenderer` does --
+`Gui::sectionStyle(settings, "Concave"/"NoOnTop", ViewParams...)` --
+instead of passing a default-constructed `SectionOnTop`, which had
+made a concave section trace as a convex one.
+
+Verified 2026-08-28 (scratchpad `clip/probe.py` under xvfb, top-down
+orthographic on one 40 mm green box, 320x320): unclipped 34074 green
+pixels; one plane at x >= 20 leaves **0.500** of them and the centre
+of mass moves right (159.5 -> 205.6); a second plane at y >= 20
+leaves **0.251**; the same two in concave mode leave **0.751**. One
+mesh, one object, one shader in every leg. CUDA agrees with CPU to
+0.1% on every count.
+
+Still not translated (the rest of the 6.2 list): textures, surface
+finishes, the section CAPS -- the cut is honest but hollow, which is
+section 6.4 -- and user shaders.
+
+
 ## 7. Preparing for out of process
 
 Cycles is a better candidate for process isolation than OCCT: it is

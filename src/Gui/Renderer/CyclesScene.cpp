@@ -300,7 +300,7 @@ bool SceneTranslator::translate(const SceneInput &input, RenderReport &report)
 
     report.meshes = int(meshes.size());
     report.objects = int(instances.size());
-    report.shaders = int(shaders.size()) + (attrShader ? 1 : 0);
+    report.shaders = int(shaders.size());
     report.triangles = 0;
     for (const auto &entry : meshes)
         report.triangles += entry.second.triangles;
@@ -569,7 +569,72 @@ SceneTranslator::Surface SceneTranslator::resolveSurface(const Material &m,
     return s;
 }
 
-ccl::Shader *SceneTranslator::uniformShader(const Surface &s)
+std::string SceneTranslator::Clip::key() const
+{
+    if (num == 0)
+        return std::string();
+    std::ostringstream key;
+    key.precision(6);
+    key << (concave ? "|c" : "|x");
+    for (int i = 0; i < num; ++i)
+        key << ':' << planes[i][0] << ',' << planes[i][1] << ',' << planes[i][2] << ','
+            << planes[i][3];
+    return key.str();
+}
+
+void SceneTranslator::connectSurface(ccl::ShaderGraph *graph,
+                                     ccl::ShaderOutput *closure,
+                                     const Clip &clip)
+{
+    ccl::ShaderInput *surface = graph->output()->input("Surface");
+    if (clip.num == 0) {
+        graph->connect(closure, surface);
+        return;
+    }
+    // Cycles has no clip-plane state, so the graph decides. Each plane
+    // reads as dot(P, n) + w -- positive on the kept side -- off the
+    // Geometry node's world position, and the readings fold with a
+    // minimum (survive EVERY plane) or, in concave mode, a maximum
+    // (survive ONE), which is the parity the GL renderer and the bgfx
+    // backend keep. Where the fold is negative the surface is swapped
+    // for a transparent closure, which takes the point out of camera,
+    // shadow and every other ray at once -- the section really cuts,
+    // it is not painted over.
+    auto *geo = graph->create_node<ccl::GeometryNode>();
+    ccl::ShaderOutput *fold = nullptr;
+    for (int i = 0; i < clip.num; ++i) {
+        auto *dot = graph->create_node<ccl::VectorMathNode>();
+        dot->set_math_type(ccl::NODE_VECTOR_MATH_DOT_PRODUCT);
+        dot->set_vector2(
+            ccl::make_float3(clip.planes[i][0], clip.planes[i][1], clip.planes[i][2]));
+        graph->connect(geo->output("Position"), dot->input("Vector1"));
+        auto *add = graph->create_node<ccl::MathNode>();
+        add->set_math_type(ccl::NODE_MATH_ADD);
+        add->set_value2(clip.planes[i][3]);
+        graph->connect(dot->output("Value"), add->input("Value1"));
+        if (!fold) {
+            fold = add->output("Value");
+            continue;
+        }
+        auto *combine = graph->create_node<ccl::MathNode>();
+        combine->set_math_type(clip.concave ? ccl::NODE_MATH_MAXIMUM : ccl::NODE_MATH_MINIMUM);
+        graph->connect(fold, combine->input("Value1"));
+        graph->connect(add->output("Value"), combine->input("Value2"));
+        fold = combine->output("Value");
+    }
+    auto *test = graph->create_node<ccl::MathNode>();
+    test->set_math_type(ccl::NODE_MATH_LESS_THAN);
+    test->set_value2(0.0f);
+    graph->connect(fold, test->input("Value1"));
+    auto *clear = graph->create_node<ccl::TransparentBsdfNode>();
+    auto *mix = graph->create_node<ccl::MixClosureNode>();
+    graph->connect(test->output("Value"), mix->input("Fac"));
+    graph->connect(closure, mix->input("Closure1"));
+    graph->connect(clear->output("BSDF"), mix->input("Closure2"));
+    graph->connect(mix->output("Closure"), surface);
+}
+
+ccl::Shader *SceneTranslator::uniformShader(const Surface &s, const Clip &clip)
 {
     // The base colour and the alpha are the object's, so the key is
     // everything else; two draws that differ only in colour share
@@ -578,7 +643,8 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s)
     key.precision(4);
     key << (s.unlit ? "u" : s.glass ? "g" : "p") << ':' << s.metallic << ':' << s.roughness
         << ':' << s.emissive[0] << ',' << s.emissive[1] << ',' << s.emissive[2]
-        << ':' << s.emissiveStrength << ':' << s.ior << ':' << s.glassRoughness;
+        << ':' << s.emissiveStrength << ':' << s.ior << ':' << s.glassRoughness
+        << clip.key();
     auto it = shaders.find(key.str());
     if (it != shaders.end())
         return it->second;
@@ -591,7 +657,7 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s)
         auto *emission = graph->create_node<ccl::EmissionNode>();
         emission->set_strength(s.emissiveStrength);
         graph->connect(info->output("Color"), emission->input("Color"));
-        graph->connect(emission->output("Emission"), graph->output()->input("Surface"));
+        connectSurface(graph.get(), emission->output("Emission"), clip);
     }
     else {
         auto *bsdf = graph->create_node<ccl::PrincipledBsdfNode>();
@@ -607,7 +673,7 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s)
         graph->connect(info->output("Color"), bsdf->input("Base Color"));
         if (!s.glass)
             graph->connect(info->output("Alpha"), bsdf->input("Alpha"));
-        graph->connect(bsdf->output("BSDF"), graph->output()->input("Surface"));
+        connectSurface(graph.get(), bsdf->output("BSDF"), clip);
     }
     shader->set_graph(std::move(graph));
     shader->tag_update(scene);
@@ -615,17 +681,19 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s)
     return shader;
 }
 
-ccl::Shader *SceneTranslator::attributeShader()
+ccl::Shader *SceneTranslator::attributeShader(const Clip &clip)
 {
-    if (attrShader)
-        return attrShader;
+    const std::string key = "fc_attributes" + clip.key();
+    auto it = shaders.find(key);
+    if (it != shaders.end())
+        return it->second;
     // One graph for every per-vertex draw: the mesh carries the
     // resolved surface as attributes (fc_base, fc_pbr = metallic /
     // roughness / alpha, fc_emissive), which is what keeps a
     // thousand-colour vertex-painted mesh at one shader instead of
     // a thousand.
     ccl::Shader *shader = scene->create_node<ccl::Shader>();
-    shader->name = ccl::ustring("fc_attributes");
+    shader->name = ccl::ustring(key);
     auto graph = std::make_unique<ccl::ShaderGraph>();
     auto *base = graph->create_node<ccl::AttributeNode>();
     base->set_attribute(ccl::ustring("fc_base"));
@@ -642,10 +710,10 @@ ccl::Shader *SceneTranslator::attributeShader()
     graph->connect(split->output("Y"), bsdf->input("Roughness"));
     graph->connect(split->output("Z"), bsdf->input("Alpha"));
     graph->connect(emissive->output("Color"), bsdf->input("Emission Color"));
-    graph->connect(bsdf->output("BSDF"), graph->output()->input("Surface"));
+    connectSurface(graph.get(), bsdf->output("BSDF"), clip);
     shader->set_graph(std::move(graph));
     shader->tag_update(scene);
-    attrShader = shader;
+    shaders[key] = shader;
     return shader;
 }
 
@@ -684,7 +752,12 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
     // re-resolve per vertex below, with the scalars as the fallback
     // for what the streams do not carry.
     const Surface uniform = resolveSurface(m, pbr, nullptr, nullptr);
-    ccl::Shader *shader = perVertex ? attributeShader() : uniformShader(uniform);
+    Clip clip;
+    clip.num = std::min<uint8_t>(m.numclipplanes, Material::MaxClipPlanes);
+    clip.concave = m.clipconcave;
+    for (int i = 0; i < clip.num; ++i)
+        std::copy(m.clipplanes[i], m.clipplanes[i] + 4, clip.planes[i]);
+    ccl::Shader *shader = perVertex ? attributeShader(clip) : uniformShader(uniform, clip);
 
     // Mesh identity: the cache contract (cacheId + generation names
     // the arrays), the index range, and what the shading needs baked
