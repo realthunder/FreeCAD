@@ -178,16 +178,45 @@ bool readCamera(const QJsonObject &obj, Render::Cycles::CameraInput &cam)
 /// streams themselves are shared pointers so a camera in flight
 /// keeps its stream alive across a concurrent stop.
 struct CyclesStreams {
+    /// Connection id and the viewer's sub-view (the cell of a split
+    /// layout, 0 = its full canvas): a viewer may trace several cells,
+    /// each from its own camera, each a session of its own.
+    using Key = std::pair<uint64_t, int>;
     std::mutex mutex;
-    std::map<uint64_t, std::shared_ptr<Render::Cycles::FrameStream>> byClient;
+    std::map<Key, std::shared_ptr<Render::Cycles::FrameStream>> byClient;
 
-    std::shared_ptr<Render::Cycles::FrameStream> find(uint64_t client)
+    std::shared_ptr<Render::Cycles::FrameStream> find(uint64_t client, int cell)
     {
         std::lock_guard<std::mutex> lock(mutex);
-        auto it = byClient.find(client);
+        auto it = byClient.find(Key(client, cell));
         return it == byClient.end() ? nullptr : it->second;
     }
+
+    /// Take one stream, or with \a cell < 0 every stream of the
+    /// connection, out of the table; the caller lets them die outside
+    /// the lock.
+    std::vector<std::shared_ptr<Render::Cycles::FrameStream>> take(uint64_t client, int cell)
+    {
+        std::vector<std::shared_ptr<Render::Cycles::FrameStream>> out;
+        std::lock_guard<std::mutex> lock(mutex);
+        for (auto it = byClient.begin(); it != byClient.end();) {
+            if (it->first.first == client && (cell < 0 || it->first.second == cell)) {
+                out.push_back(std::move(it->second));
+                it = byClient.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
+        return out;
+    }
 };
+
+/// The sub-view a cycles op names (0 when it names none).
+int cellOf(const QJsonObject &obj)
+{
+    return std::clamp(obj.value(QLatin1String("cell")).toInt(0), 0, 255);
+}
 
 }  // namespace
 
@@ -405,22 +434,16 @@ public:
             reply[QLatin1String("devices")] = list;
             return reply;
         }
+        const int cell = cellOf(req);
+        reply[QLatin1String("cell")] = cell;
         if (action == QLatin1String("stop")) {
-            std::shared_ptr<Render::Cycles::FrameStream> gone;
-            {
-                std::lock_guard<std::mutex> lock(streams->mutex);
-                auto it = streams->byClient.find(client);
-                if (it != streams->byClient.end()) {
-                    gone = std::move(it->second);
-                    streams->byClient.erase(it);
-                }
-            }
-            gone.reset();
+            auto gone = streams->take(client, cell);
+            gone.clear();
             reply[QLatin1String("running")] = false;
             return reply;
         }
         if (action == QLatin1String("status")) {
-            auto stream = streams->find(client);
+            auto stream = streams->find(client, cell);
             if (!stream) {
                 reply[QLatin1String("running")] = false;
                 return reply;
@@ -450,6 +473,7 @@ public:
             return error("NoDocument", QStringLiteral("the document is not served"));
 
         Render::Cycles::StreamOptions options;
+        options.cell = cell;
         auto &vp = options.viewport;
         if (req.contains(QLatin1String("device")))
             vp.device = req.value(QLatin1String("device")).toString().toStdString();
@@ -485,7 +509,7 @@ public:
         std::shared_ptr<Render::Cycles::FrameStream> previous;
         {
             std::lock_guard<std::mutex> lock(streams->mutex);
-            auto &slot = streams->byClient[client];
+            auto &slot = streams->byClient[CyclesStreams::Key(client, cell)];
             previous = std::move(slot);
             slot = stream;
         }
@@ -666,7 +690,7 @@ void SceneServeSource::installHandlers()
             const QJsonObject obj = parsed.isObject() ? parsed.object() : QJsonObject();
             const QString op = obj.value(QLatin1String("op")).toString();
             if (op == QLatin1String("cycles.camera")) {
-                auto stream = streams->find(req.client);
+                auto stream = streams->find(req.client, cellOf(obj));
                 Render::Cycles::CameraInput camera;
                 if (stream && readCamera(obj, camera))
                     stream->setCamera(camera);
@@ -698,16 +722,8 @@ void SceneServeSource::installHandlers()
     // session is the expensive part, and nobody is looking.
     server.setClientClosedHandler([streams](uint64_t client) {
         QMetaObject::invokeMethod(qApp, [streams, client]() {
-            std::shared_ptr<Render::Cycles::FrameStream> gone;
-            {
-                std::lock_guard<std::mutex> lock(streams->mutex);
-                auto it = streams->byClient.find(client);
-                if (it != streams->byClient.end()) {
-                    gone = std::move(it->second);
-                    streams->byClient.erase(it);
-                }
-            }
-            gone.reset();
+            auto gone = streams->take(client, -1);
+            gone.clear();
         }, Qt::QueuedConnection);
     }, docName);
 

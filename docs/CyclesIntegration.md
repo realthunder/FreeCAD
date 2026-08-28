@@ -1000,13 +1000,14 @@ The wire (`FrameStreamWire.h` is the one place the layout is spelled):
   "height":H,"view":[16 floats],"proj":[16 floats]}` -> `{"id":N,
   "ok":true,"device":"CPU"}`; `"action":"stop"`; `"action":"devices"`
   -> `{"id":N,"ok":true,"devices":[{"type":..,"description":..}]}`;
-  `"action":"status"` -> the `ViewportStatus` fields. Not refused for
-  a view-only connection: a path-traced view mutates nothing.
+  `"action":"status"` -> the `ViewportStatus` fields. Every one takes
+  `"cell"` (default 0). Not refused for a view-only connection: a
+  path-traced view mutates nothing.
   `{"op":"cycles.camera","view":[16],"proj":[16],"width":W,
   "height":H}` -- no id, no reply.
 - server -> viewer, binary: `FCCY`, u8 version (1), u8 format (1 =
   JPEG), u8 flags (bit 0 = the render's last frame, bit 1 = sRGB
-  encoded), u8 reserved, u32 width, u32 height, u32 sequence, f32
+  encoded), u8 cell, u32 width, u32 height, u32 sequence, f32
   progress, u16 status length, the status text, then the image.
 - server -> viewer, text, unsolicited: `{"op":"cycles","event":
   "error"|"stopped","message":...}` when the session failed or the
@@ -1056,10 +1057,28 @@ CPU only (section 4.1); and two harness traps -- Chrome's
 page URL must be percent-encoded whole, and the cached Chrome wants
 `LD_LIBRARY_PATH=.conda/freecad/lib` for `libasound`.
 
-What this does NOT do yet: a Cycles cell of a split layout (the
-consumer slot is per sub-view already, the stream is per connection --
-a cell id on the op is the missing piece); a cap on sessions per
-server; the interop path (the GPU frame still crosses the CPU twice,
+**A cell of a split layout** (built 2026-08-28, same day): the stream
+is keyed by connection AND sub-view. Every `cycles` and `cycles.camera`
+op carries `"cell"` (0 = the full canvas, else the chrome's cell id,
+`SubViewFrame::id`), the frame header's byte 7 carries it back, the
+source keeps one stream per (connection, cell) and drops them all when
+the connection goes, and the viewer keeps one `CyclesCell` per traced
+sub-view: its consumer is registered under that sub-view id, so the
+blit lands in that cell's bank alone (section 5.11's slot), and its
+camera goes out from the layout frame that draws the cell. A layout
+push stops what it does not carry -- the full canvas when cells
+appear, a vanished cell, every cell when the layout clears -- before
+the banks go. The split chrome puts a `PT` select (off / the devices)
+on each 3D cell's chip; the viewer menu's section stays the single
+view's (the active cell follows the cursor and is never pushed to the
+chrome, so a menu could not know which cell it meant). Verified with
+the same rig: a two-cell layout pushed, cell 2 started on CUDA at its
+550x757, 19 frames to "Rendering Done" in 14 s, cell 1 never touched,
+the two halves 51/255 apart (raster left, traced right, each under
+its own lines), the cell's stream stopped by clearing the layout.
+
+What this does NOT do yet: a cap on sessions per server; the interop
+path (the GPU frame still crosses the CPU twice,
 once into the staging buffer and once into the encoder); the
 frame-push latency of the connection loop's 200 ms poll (a queued
 frame waits for the loop's next tick); the offline `cyclesRender` for

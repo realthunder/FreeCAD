@@ -192,6 +192,9 @@ public:
 /// (docs/CyclesIntegration.md sec 7.1).
 struct StreamOptions {
     ViewportOptions viewport;
+    int cell = 0;                ///< the viewer's sub-view the frames are
+                                 ///< for (0 = its full canvas); rides
+                                 ///< every frame's header
     int quality = 85;            ///< JPEG quality, 1..100
     int minIntervalMs = 100;     ///< least time between two frames sent
     long maxPixels = 1920L * 1080L;  ///< the render size cap (aspect kept)

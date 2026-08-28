@@ -41,13 +41,22 @@ declare global {
     /// docs/CyclesIntegration.md sec 7.1): a device type starts the
     /// backend path tracing this view, '' stops it. State arrives as
     /// 'fc:cycles' events and is mirrored here for a late mount.
-    fcviewerSetCycles?: (device: string) => void;
-    fcviewerCycles?: CyclesState;
+    fcviewerSetCycles?: (device: string, cell: number) => void;
+    fcviewerCycles?: Record<number, CyclesState>;
+    /// The backend's path-tracing devices, published by main.tsx once
+    /// asked (also an 'fc:cyclesdevices' event) for the split chrome's
+    /// per-cell control.
+    fcviewerCyclesDevices?: CyclesDevice[];
   }
 }
 
-/// What the viewer says about its served viewport ('fc:cycles').
+export interface CyclesDevice { type: string; description: string }
+
+/// What the viewer says about one served viewport ('fc:cycles'): the
+/// sub-view it is for (0 = the full canvas, else a split cell's id)
+/// and its state.
 export interface CyclesState {
+  cell: number;
   on: boolean;
   device: string;
   progress: number;

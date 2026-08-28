@@ -655,3 +655,16 @@
 .fc-split-chip .fc-split-close {
   color: #f0a0a0;
 }
+.fc-split-chip select.fc-split-pt {
+  font: 11px system-ui, sans-serif;
+  color: #e8e8ea;
+  background: rgba(28, 30, 34, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  padding: 1px 4px;
+  cursor: pointer;
+}
+.fc-split-chip select.fc-split-pt.on {
+  background: rgba(70, 110, 180, 0.9);
+  border-color: rgba(255, 255, 255, 0.35);
+}

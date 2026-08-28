@@ -50,6 +50,9 @@ struct StreamedFrameHeader {
     uint8_t version = 1;
     uint8_t format = JPEG;
     uint8_t flags = 0;
+    /// The viewer's sub-view this frame is for (SubViewFrame::id, the
+    /// cell of a split layout); 0 = the full canvas.
+    uint8_t cell = 0;
     uint32_t width = 0;      ///< of the encoded image
     uint32_t height = 0;
     uint32_t sequence = 0;   ///< per stream, monotonic
@@ -79,7 +82,7 @@ inline void writeStreamedFrameHeader(std::vector<uint8_t> &out,
     out.push_back(h.version);
     out.push_back(h.format);
     out.push_back(h.flags);
-    out.push_back(0);
+    out.push_back(h.cell);
     put32(h.width);
     put32(h.height);
     put32(h.sequence);
@@ -109,6 +112,7 @@ inline bool readStreamedFrameHeader(const void *data, size_t size,
     h.version = p[4];
     h.format = p[5];
     h.flags = p[6];
+    h.cell = p[7];
     h.width = get32(8);
     h.height = get32(12);
     h.sequence = get32(16);

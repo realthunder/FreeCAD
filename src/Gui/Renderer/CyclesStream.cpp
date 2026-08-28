@@ -270,7 +270,8 @@ private:
                 errorReported = true;
                 lostFlag = true;
                 if (notify) {
-                    std::string msg = "{\"op\":\"cycles\",\"event\":\"error\",\"message\":\"";
+                    std::string msg = "{\"op\":\"cycles\",\"event\":\"error\",\"cell\":"
+                        + std::to_string(options.cell) + ",\"message\":\"";
                     for (char ch : st.error) {
                         if (ch == '"' || ch == '\\')
                             msg += '\\';
@@ -296,6 +297,7 @@ private:
                 continue;
 
             StreamedFrameHeader header;
+            header.cell = uint8_t(std::clamp(options.cell, 0, 255));
             header.width = uint32_t(width);
             header.height = uint32_t(height);
             header.sequence = ++sequence;

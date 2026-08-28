@@ -11,7 +11,7 @@ import { SplitOverlay } from './splitview';
 import type { LoupeMark } from './loupe';
 import { NARROW } from './panel';
 import { sendOp } from './control';
-import type { CyclesState, SelectionItem, Subject } from './control';
+import type { CyclesDevice, CyclesState, SelectionItem, Subject } from './control';
 // Extraction only (cssCodeSplit: false emits it as web/inspector.css);
 // the injection below is what actually loads it.
 import './style.css';
@@ -159,18 +159,20 @@ const FILTER_LABELS: Record<Filter, string> = {
 };
 
 // The served viewport (docs/CyclesIntegration.md sec 7.1): the backend
-// path traces this view on a device of its own and streams the frame.
-// The devices are asked once the control lane is up (retried while it
-// is not); the state is the viewer's, pushed as 'fc:cycles'.
-const OFF: CyclesState = { on: false, device: '', progress: 0, status: '',
-                           error: '', width: 0, height: 0, frames: 0 };
+// path traces a view on a device of its own and streams the frame. The
+// devices are asked once the control lane is up (retried while it is
+// not); the state is the viewer's, pushed as 'fc:cycles' per sub-view.
+// This menu drives the single full-canvas view (cell 0); a split
+// layout's cells carry their own control in the split chrome.
+const OFF: CyclesState = { cell: 0, on: false, device: '', progress: 0,
+                           status: '', error: '', width: 0, height: 0,
+                           frames: 0 };
 const [cycles, setCycles] = createSignal<CyclesState>(
-  window.fcviewerCycles ?? OFF);
+  window.fcviewerCycles?.[0] ?? OFF);
 window.addEventListener('fc:cycles', (e: Event) => {
   const d = (e as CustomEvent).detail;
-  setCycles(d && typeof d.on === 'boolean' ? d as CyclesState : OFF);
+  if (d && d.cell === 0 && typeof d.on === 'boolean') setCycles(d as CyclesState);
 });
-interface CyclesDevice { type: string; description: string }
 const [cyclesDevices, setCyclesDevices] = createSignal<CyclesDevice[] | null>(null);
 const askCyclesDevices = () => {
   sendOp('cycles', { action: 'devices' })
@@ -180,11 +182,15 @@ const askCyclesDevices = () => {
       // One entry per device TYPE: the op names a type, and two GPUs
       // of one kind are the engine's to choose between.
       const seen = new Set<string>();
-      setCyclesDevices(list.filter((d) => {
+      const devs = list.filter((d) => {
         if (seen.has(d.type)) return false;
         seen.add(d.type);
         return true;
-      }));
+      });
+      setCyclesDevices(devs);
+      // The split chrome's per-cell control reads the same list.
+      window.fcviewerCyclesDevices = devs;
+      window.dispatchEvent(new CustomEvent('fc:cyclesdevices', { detail: devs }));
     })
     .catch((err) => {
       // Offline or an old backend without the op: no section, and
@@ -207,11 +213,11 @@ const cyclesItems = () => {
     { label: 'Path trace', header: true },
     { label: 'Off',
       checked: () => !cycles().on,
-      onSelect: () => window.fcviewerSetCycles?.('') },
+      onSelect: () => window.fcviewerSetCycles?.('', 0) },
     ...devs.map((d) => ({
       label: `${d.type}${stateLabel(d.type)}`,
       checked: () => cycles().on && cycles().device === d.type,
-      onSelect: () => window.fcviewerSetCycles?.(d.type),
+      onSelect: () => window.fcviewerSetCycles?.(d.type, 0),
     })),
   ];
 };

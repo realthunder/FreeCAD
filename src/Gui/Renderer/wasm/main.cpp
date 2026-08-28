@@ -449,13 +449,15 @@ EM_JS(void, fcviewer_install_control, (), {
     // it is the same kind of thing: a viewer state the DOM layer drives.
     window.fcviewerSetHud = function(on) { _fcviewer_set_hud(on ? 1 : 0); };
     // The served viewport (docs/CyclesIntegration.md sec 7.1): a device
-    // name starts it, '' stops it; state arrives as 'fc:cycles' events.
-    window.fcviewerSetCycles = function(device) {
+    // name starts it, '' stops it, for one sub-view (cell 0 = the full
+    // canvas, else a split cell's id); state arrives as 'fc:cycles'
+    // events carrying the cell.
+    window.fcviewerSetCycles = function(device, cell) {
         var d = device || '';
         var len = lengthBytesUTF8(d) + 1;
         var buf = _malloc(len);
         stringToUTF8(d, buf, len);
-        _fcviewer_set_cycles(d ? 1 : 0, buf);
+        _fcviewer_set_cycles(d ? 1 : 0, buf, (cell | 0));
         _free(buf);
     };
     // The selection menu (docs/ThinClientUI.md): mode 0 single / 1 multi;
@@ -2069,79 +2071,104 @@ static double s_renderMs = 0.0;  // smoothed render()-call CPU time
 // The served viewport (docs/CyclesIntegration.md sec 7.1): the backend
 // path traces this viewer's view and streams the frame; it is blitted
 // here through the same FrameConsumer route a desktop Cycles view uses,
-// with the engine drawing only depth, lines and selection over it.
+// with the engine drawing only depth, lines and selection over it. One
+// per SUB-VIEW: the full canvas is cell 0, a split layout's cells are
+// their chrome ids -- each traced from its own camera by a session of
+// its own, its consumer registered under its sub-view id so the blit
+// lands in that cell's bank alone.
 
-static std::unique_ptr<Render::FrameImageConsumer> s_cyclesBlit;
-static bool s_cyclesOn = false;        ///< asked for (until told otherwise)
-static bool s_cyclesAttached = false;  ///< consumer registered on the renderer
-static std::string s_cyclesDevice;
+static void stashSubCam(WasmSubView &c);
+static void loadSubCam(const WasmSubView &c);
+
+struct CyclesCell {
+    int cell = 0;                 ///< sub-view id; 0 = the full canvas
+    std::unique_ptr<Render::FrameImageConsumer> blit;
+    bool on = false;              ///< asked for (until told otherwise)
+    bool attached = false;        ///< consumer registered on the renderer
+    std::string device;
+    std::string status;
+    std::string error;
+    float progress = 0.0f;
+    uint32_t frames = 0;
+    int w = 0;
+    int h = 0;
+    float sentView[16];
+    float sentProj[16];
+    int sentW = -1;
+    int sentH = -1;
+    uint32_t pendingStart = 0;    ///< id of the start op awaiting its answer
+};
+static std::vector<CyclesCell> s_cyclesCells;
 static std::string s_cyclesUrlDevice;  ///< ?cycles=<device>: start once the scene is up
-static float s_cyclesProgress = 0.0f;
-static std::string s_cyclesStatus;
-static std::string s_cyclesError;
-static uint32_t s_cyclesFrames = 0;
-static int s_cyclesW = 0;
-static int s_cyclesH = 0;
-static float s_cyclesSentView[16];
-static float s_cyclesSentProj[16];
-static int s_cyclesSentW = -1;
-static int s_cyclesSentH = -1;
 /// The ids of the viewer's own ops on the control lane, above anything
 /// the DOM layer mints (control.ts counts from 1).
 static uint32_t s_cyclesOpSeq = 0;
-static uint32_t s_cyclesPendingStart = 0;
 
 EM_JS(void, fcviewer_cycles_event, (const char *json), {
     try {
         var detail = JSON.parse(UTF8ToString(json));
-        window.fcviewerCycles = detail;
+        window.fcviewerCycles = window.fcviewerCycles || {};
+        window.fcviewerCycles[detail.cell] = detail;
         window.dispatchEvent(new CustomEvent('fc:cycles', { detail: detail }));
     } catch (e) {}
 });
 
-static void cyclesEvent()
+static CyclesCell *cyclesCellFor(int cell, bool create)
 {
-    std::string json = "{\"on\":";
-    json += s_cyclesOn ? "true" : "false";
+    for (auto &c : s_cyclesCells)
+        if (c.cell == cell)
+            return &c;
+    if (!create)
+        return nullptr;
+    s_cyclesCells.emplace_back();
+    s_cyclesCells.back().cell = cell;
+    return &s_cyclesCells.back();
+}
+
+static void cyclesEvent(const CyclesCell &c)
+{
+    std::string json = "{\"cell\":" + std::to_string(c.cell) + ",\"on\":";
+    json += c.on ? "true" : "false";
     json += ",\"device\":\"";
-    jsonEscapeTo(json, s_cyclesDevice);
-    json += "\",\"progress\":" + std::to_string(s_cyclesProgress);
+    jsonEscapeTo(json, c.device);
+    json += "\",\"progress\":" + std::to_string(c.progress);
     json += ",\"status\":\"";
-    jsonEscapeTo(json, s_cyclesStatus);
+    jsonEscapeTo(json, c.status);
     json += "\",\"error\":\"";
-    jsonEscapeTo(json, s_cyclesError);
-    json += "\",\"width\":" + std::to_string(s_cyclesW)
-        + ",\"height\":" + std::to_string(s_cyclesH)
-        + ",\"frames\":" + std::to_string(s_cyclesFrames) + "}";
+    jsonEscapeTo(json, c.error);
+    json += "\",\"width\":" + std::to_string(c.w)
+        + ",\"height\":" + std::to_string(c.h)
+        + ",\"frames\":" + std::to_string(c.frames) + "}";
     fcviewer_cycles_event(json.c_str());
 }
 
-static void cyclesDetach()
+static void cyclesDetach(CyclesCell &c)
 {
-    if (s_cyclesAttached && s_renderer) {
-        s_renderer->setExternalBaseLayer(false, 0);
-        s_renderer->setFrameConsumer(nullptr, 0);
+    if (c.attached && s_renderer) {
+        s_renderer->setExternalBaseLayer(false, c.cell);
+        s_renderer->setFrameConsumer(nullptr, c.cell);
     }
-    s_cyclesAttached = false;
-    s_cyclesBlit.reset();
+    c.attached = false;
+    c.blit.reset();
     markDirty();
 }
 
-/// Register the blit as the frame's base layer. Needs the device up
-/// (the first render() brings it up), so the frame path retries.
-static void cyclesAttach()
+/// Register the cell's blit as its frame's base layer. Needs the
+/// device up (the first render() brings it up) and, for a layout cell,
+/// its bank -- so the frame path retries.
+static void cyclesAttach(CyclesCell &c)
 {
-    if (s_cyclesAttached || !s_renderer)
+    if (c.attached || !s_renderer)
         return;
-    if (!s_cyclesBlit)
-        s_cyclesBlit = std::make_unique<Render::FrameImageConsumer>();
-    s_renderer->setFrameConsumer(s_cyclesBlit.get(), 0);
-    if (!s_renderer->frameConsumerSurface(0)) {
-        s_renderer->setFrameConsumer(nullptr, 0);
+    if (!c.blit)
+        c.blit = std::make_unique<Render::FrameImageConsumer>();
+    s_renderer->setFrameConsumer(c.blit.get(), c.cell);
+    if (!s_renderer->frameConsumerSurface(c.cell)) {
+        s_renderer->setFrameConsumer(nullptr, c.cell);
         return;
     }
-    s_renderer->setExternalBaseLayer(true, 0);
-    s_cyclesAttached = true;
+    s_renderer->setExternalBaseLayer(true, c.cell);
+    c.attached = true;
     markDirty();
 }
 
@@ -2156,155 +2183,249 @@ static void appendMatrix(std::string &out, const float *m)
     out += ']';
 }
 
-static void appendCameraFields(std::string &out, const float *view,
+static void appendCameraFields(std::string &out, int cell, const float *view,
                                const float *proj, int w, int h)
 {
-    out += "\"view\":";
+    out += "\"cell\":" + std::to_string(cell) + ",\"view\":";
     appendMatrix(out, view);
     out += ",\"proj\":";
     appendMatrix(out, proj);
     out += ",\"width\":" + std::to_string(w) + ",\"height\":" + std::to_string(h);
 }
 
-static void rememberCyclesCamera(const float *view, const float *proj, int w, int h)
+static void rememberCyclesCamera(CyclesCell &c, const float *view, const float *proj,
+                                 int w, int h)
 {
-    std::memcpy(s_cyclesSentView, view, sizeof(s_cyclesSentView));
-    std::memcpy(s_cyclesSentProj, proj, sizeof(s_cyclesSentProj));
-    s_cyclesSentW = w;
-    s_cyclesSentH = h;
+    std::memcpy(c.sentView, view, sizeof(c.sentView));
+    std::memcpy(c.sentProj, proj, sizeof(c.sentProj));
+    c.sentW = w;
+    c.sentH = h;
 }
 
 /// The camera op, sent when it differs from the last one sent: at most
 /// once per frame this viewer draws, which is the throttle.
-static void sendCyclesCamera(const float *view, const float *proj, int w, int h)
+static void sendCyclesCamera(CyclesCell &c, const float *view, const float *proj,
+                             int w, int h)
 {
     if (!s_wsOpen || s_ws <= 0)
         return;
-    if (w == s_cyclesSentW && h == s_cyclesSentH
-            && std::memcmp(view, s_cyclesSentView, sizeof(s_cyclesSentView)) == 0
-            && std::memcmp(proj, s_cyclesSentProj, sizeof(s_cyclesSentProj)) == 0)
+    if (w == c.sentW && h == c.sentH
+            && std::memcmp(view, c.sentView, sizeof(c.sentView)) == 0
+            && std::memcmp(proj, c.sentProj, sizeof(c.sentProj)) == 0)
         return;
     std::string msg = "{\"op\":\"cycles.camera\",";
-    appendCameraFields(msg, view, proj, w, h);
+    appendCameraFields(msg, c.cell, view, proj, w, h);
     msg += '}';
     emscripten_websocket_send_utf8_text(s_ws, const_cast<char *>(msg.c_str()));
-    rememberCyclesCamera(view, proj, w, h);
+    rememberCyclesCamera(c, view, proj, w, h);
 }
 
-/// Per frame, from the single-view path: the camera to the backend
-/// and the consumer onto the renderer.
-static void cyclesFrame(const float *view, const float *proj)
+/// Per drawn frame of one sub-view (the single view is cell 0): the
+/// camera to the backend and the consumer onto the renderer.
+static void cyclesFrame(int cell, const float *view, const float *proj, int w, int h)
 {
-    if (!s_cyclesOn)
+    CyclesCell *c = cyclesCellFor(cell, false);
+    if (!c || !c->on)
         return;
-    sendCyclesCamera(view, proj, s_width, s_height);
-    if (!s_cyclesAttached)
-        cyclesAttach();
+    sendCyclesCamera(*c, view, proj, w, h);
+    if (!c->attached)
+        cyclesAttach(*c);
 }
 
-/// Start (device non-empty) or stop the served viewport. The DOM
-/// layer's fcviewerSetCycles and ?cycles= land here.
-extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_cycles(int on, const char *device)
+/// The camera a start op states for \a cell: the live one for the
+/// single view or the active cell, a stashed cell's loaded for the
+/// build and put back. False when the cell is not a 3D cell.
+static bool cyclesStartCamera(int cell, float *view, float *proj, int &w, int &h)
 {
-    if (!on) {
-        if (s_cyclesOn && s_wsOpen && s_ws > 0) {
-            std::string msg = "{\"op\":\"cycles\",\"id\":"
-                + std::to_string(0x40000000u + (++s_cyclesOpSeq))
-                + ",\"action\":\"stop\"}";
-            emscripten_websocket_send_utf8_text(s_ws, const_cast<char *>(msg.c_str()));
+    if (cell == 0) {
+        if (!s_subViews.empty())
+            return false;
+        buildCamera(view, proj);
+        w = s_width;
+        h = s_height;
+        return true;
+    }
+    for (size_t i = 0; i < s_subViews.size(); ++i) {
+        WasmSubView &c = s_subViews[i];
+        if (c.id != cell || c.page)
+            continue;
+        w = int(c.w * s_dpr + 0.5f);
+        h = int(c.h * s_dpr + 0.5f);
+        if (int(i) == s_activeSub) {
+            buildCamera(view, proj, w, h);
         }
-        s_cyclesOn = false;
-        s_cyclesPendingStart = 0;
-        s_cyclesError.clear();
-        s_cyclesStatus.clear();
-        s_cyclesProgress = 0.0f;
-        cyclesDetach();
-        std::printf("fcviewer: path tracing off\n");
-        cyclesEvent();
+        else {
+            stashSubCam(s_subViews[s_activeSub]);
+            loadSubCam(c);
+            buildCamera(view, proj, w, h);
+            loadSubCam(s_subViews[s_activeSub]);
+        }
+        return w > 0 && h > 0;
+    }
+    return false;
+}
+
+static void cyclesStop(CyclesCell &c, bool tell)
+{
+    if (tell && c.on && s_wsOpen && s_ws > 0) {
+        std::string msg = "{\"op\":\"cycles\",\"id\":"
+            + std::to_string(0x40000000u + (++s_cyclesOpSeq))
+            + ",\"action\":\"stop\",\"cell\":" + std::to_string(c.cell) + "}";
+        emscripten_websocket_send_utf8_text(s_ws, const_cast<char *>(msg.c_str()));
+    }
+    c.on = false;
+    c.pendingStart = 0;
+    c.error.clear();
+    c.status.clear();
+    c.progress = 0.0f;
+    cyclesDetach(c);
+}
+
+/// Start (device non-empty) or stop the served viewport of one
+/// sub-view. The DOM layer's fcviewerSetCycles and ?cycles= land here.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_cycles(int on, const char *device,
+                                                         int cell)
+{
+    if (cell < 0 || cell > 255)
+        return;
+    if (!on) {
+        CyclesCell *c = cyclesCellFor(cell, false);
+        if (!c)
+            return;
+        cyclesStop(*c, true);
+        std::printf("fcviewer: path tracing off (cell %d)\n", cell);
+        cyclesEvent(*c);
         return;
     }
+    CyclesCell &c = *cyclesCellFor(cell, true);
     if (!s_wsOpen || s_ws <= 0) {
-        s_cyclesError = "not connected";
-        cyclesEvent();
+        c.error = "not connected";
+        cyclesEvent(c);
         return;
     }
-    s_cyclesDevice = device && *device ? device : "CPU";
-    s_cyclesOn = true;
-    s_cyclesError.clear();
-    s_cyclesStatus = "starting";
-    s_cyclesProgress = 0.0f;
-    s_cyclesFrames = 0;
     float view[16], proj[16];
-    buildCamera(view, proj);
-    s_cyclesPendingStart = 0x40000000u + (++s_cyclesOpSeq);
-    std::string msg = "{\"op\":\"cycles\",\"id\":" + std::to_string(s_cyclesPendingStart)
+    int w = 0, h = 0;
+    if (!cyclesStartCamera(cell, view, proj, w, h)) {
+        c.error = "no such 3D view";
+        cyclesEvent(c);
+        return;
+    }
+    c.device = device && *device ? device : "CPU";
+    c.on = true;
+    c.error.clear();
+    c.status = "starting";
+    c.progress = 0.0f;
+    c.frames = 0;
+    c.pendingStart = 0x40000000u + (++s_cyclesOpSeq);
+    std::string msg = "{\"op\":\"cycles\",\"id\":" + std::to_string(c.pendingStart)
         + ",\"action\":\"start\",\"device\":\"";
-    jsonEscapeTo(msg, s_cyclesDevice);
+    jsonEscapeTo(msg, c.device);
     msg += "\",";
-    appendCameraFields(msg, view, proj, s_width, s_height);
+    appendCameraFields(msg, cell, view, proj, w, h);
     msg += '}';
     emscripten_websocket_send_utf8_text(s_ws, const_cast<char *>(msg.c_str()));
-    rememberCyclesCamera(view, proj, s_width, s_height);
-    std::printf("fcviewer: path tracing on (%s)\n", s_cyclesDevice.c_str());
-    cyclesEvent();
+    rememberCyclesCamera(c, view, proj, w, h);
+    std::printf("fcviewer: path tracing on (%s, cell %d)\n", c.device.c_str(), cell);
+    cyclesEvent(c);
+}
+
+/// A layout is about to replace the cells: a traced cell that is not
+/// in \a next stops (its bank goes with it), and the full canvas stops
+/// when cells appear -- it is not drawn under a layout -- as every cell
+/// does when the layout clears.
+static void cyclesLayoutChanged(const std::vector<WasmSubView> &next)
+{
+    for (auto &c : s_cyclesCells) {
+        if (!c.on)
+            continue;
+        bool kept;
+        if (c.cell == 0) {
+            kept = next.empty();
+        }
+        else {
+            kept = false;
+            for (const auto &n : next)
+                kept = kept || (!n.page && n.id == c.cell);
+        }
+        if (!kept) {
+            cyclesStop(c, true);
+            cyclesEvent(c);
+        }
+    }
+}
+
+static int cyclesJsonInt(const char *json, const char *key, int fallback)
+{
+    const char *p = std::strstr(json, key);
+    const char *colon = p ? std::strchr(p, ':') : nullptr;
+    return colon ? int(std::strtol(colon + 1, nullptr, 10)) : fallback;
 }
 
 /// A control-lane text that is the served viewport's: the answer to
-/// this viewer's own start (by id) or an unsolicited event. True when
-/// consumed here.
+/// one of this viewer's own starts (by id) or an unsolicited event.
+/// True when consumed here.
 static bool handleCyclesControl(const char *json)
 {
-    if (const char *p = std::strstr(json, "\"id\":")) {
-        const long id = std::strtol(p + 5, nullptr, 10);
-        if (s_cyclesPendingStart && uint32_t(id) == s_cyclesPendingStart) {
-            s_cyclesPendingStart = 0;
+    if (std::strstr(json, "\"id\":")) {
+        const uint32_t id = uint32_t(cyclesJsonInt(json, "\"id\"", 0));
+        if (id < 0x40000000u)
+            return false;
+        for (auto &c : s_cyclesCells) {
+            if (!c.pendingStart || c.pendingStart != id)
+                continue;
+            c.pendingStart = 0;
             if (std::strstr(json, "\"ok\":false")) {
-                s_cyclesOn = false;
-                s_cyclesError = "refused";
+                c.on = false;
+                c.error = "refused";
                 if (const char *m = std::strstr(json, "\"message\":\"")) {
                     const char *e = std::strchr(m + 11, '"');
                     if (e)
-                        s_cyclesError.assign(m + 11, size_t(e - m - 11));
+                        c.error.assign(m + 11, size_t(e - m - 11));
                 }
-                cyclesDetach();
-                std::printf("fcviewer: path tracing refused: %s\n", s_cyclesError.c_str());
-                fcviewer_status(("Path tracing: " + s_cyclesError).c_str(), 0.0, -1.0);
+                cyclesDetach(c);
+                std::printf("fcviewer: path tracing refused (cell %d): %s\n", c.cell,
+                            c.error.c_str());
+                fcviewer_status(("Path tracing: " + c.error).c_str(), 0.0, -1.0);
             }
-            cyclesEvent();
+            cyclesEvent(c);
             return true;
         }
-        if (uint32_t(id) >= 0x40000000u)
-            return true;   // one of our own (a stop's ack)
-        return false;
+        return true;   // one of our own (a stop's ack)
     }
     if (std::strstr(json, "\"op\":\"cycles\"") && std::strstr(json, "\"event\":")) {
         if (std::strstr(json, "\"event\":\"error\"")
                 || std::strstr(json, "\"event\":\"stopped\"")) {
-            s_cyclesOn = false;
-            s_cyclesError = "stopped";
-            if (const char *m = std::strstr(json, "\"message\":\"")) {
-                const char *e = std::strchr(m + 11, '"');
-                if (e)
-                    s_cyclesError.assign(m + 11, size_t(e - m - 11));
+            CyclesCell *c = cyclesCellFor(cyclesJsonInt(json, "\"cell\"", 0), false);
+            if (c) {
+                c->error = "stopped";
+                if (const char *m = std::strstr(json, "\"message\":\"")) {
+                    const char *e = std::strchr(m + 11, '"');
+                    if (e)
+                        c->error.assign(m + 11, size_t(e - m - 11));
+                }
+                std::string keep = c->error;
+                cyclesStop(*c, false);
+                c->error = keep;
+                std::printf("fcviewer: path tracing ended (cell %d): %s\n", c->cell,
+                            c->error.c_str());
+                cyclesEvent(*c);
             }
-            cyclesDetach();
-            std::printf("fcviewer: path tracing ended: %s\n", s_cyclesError.c_str());
-            cyclesEvent();
         }
         return true;
     }
     return false;
 }
 
-/// One streamed frame off the socket: decode, stage into the blit,
-/// repaint.
+/// One streamed frame off the socket: decode, stage into its cell's
+/// blit, repaint.
 static void handleStreamedFrame(const uint8_t *data, size_t size)
 {
     Render::StreamedFrameHeader header;
     size_t imageAt = 0;
     if (!Render::readStreamedFrameHeader(data, size, header, imageAt))
         return;
-    if (!s_cyclesOn)
+    CyclesCell *c = cyclesCellFor(int(header.cell), false);
+    if (!c || !c->on)
         return;   // a frame in flight after a stop
     if (header.format != Render::StreamedFrameHeader::JPEG)
         return;
@@ -2317,30 +2438,33 @@ static void handleStreamedFrame(const uint8_t *data, size_t size)
         std::printf("fcviewer: streamed frame %u undecodable\n", header.sequence);
         return;
     }
-    if (!s_cyclesBlit)
-        s_cyclesBlit = std::make_unique<Render::FrameImageConsumer>();
-    s_cyclesBlit->setImage(px, w, h, Render::FrameImageConsumer::Format::RGBA8,
-                           !(header.flags & Render::StreamedFrameHeader::Encoded));
+    if (!c->blit)
+        c->blit = std::make_unique<Render::FrameImageConsumer>();
+    c->blit->setImage(px, w, h, Render::FrameImageConsumer::Format::RGBA8,
+                      !(header.flags & Render::StreamedFrameHeader::Encoded));
     stbi_image_free(px);
-    s_cyclesW = w;
-    s_cyclesH = h;
-    s_cyclesProgress = header.progress;
-    s_cyclesStatus = header.status;
-    ++s_cyclesFrames;
+    c->w = w;
+    c->h = h;
+    c->progress = header.progress;
+    c->status = header.status;
+    ++c->frames;
     markDirty();
-    cyclesEvent();
+    cyclesEvent(*c);
 }
 
-/// The HUD's line on the served viewport.
+/// The HUD's line on the served viewport: the first traced view.
 static const char *cyclesHudLine()
 {
     static char line[96];
-    if (!s_cyclesOn)
-        std::snprintf(line, sizeof(line), "off");
-    else
-        std::snprintf(line, sizeof(line), "%s %3d%% %dx%d f%u %.24s",
-                      s_cyclesDevice.c_str(), int(s_cyclesProgress * 100.0f + 0.5f),
-                      s_cyclesW, s_cyclesH, s_cyclesFrames, s_cyclesStatus.c_str());
+    for (const auto &c : s_cyclesCells) {
+        if (!c.on)
+            continue;
+        std::snprintf(line, sizeof(line), "c%d %s %3d%% %dx%d f%u %.20s", c.cell,
+                      c.device.c_str(), int(c.progress * 100.0f + 0.5f), c.w, c.h,
+                      c.frames, c.status.c_str());
+        return line;
+    }
+    std::snprintf(line, sizeof(line), "off");
     return line;
 }
 
@@ -2780,6 +2904,8 @@ static void renderLayoutFrame()
         auto &m = mats.back();
         loadSubCam(c);
         buildCamera(m.data(), m.data() + 16, dw, dh);
+        // A traced cell follows its own camera (sec 7.1).
+        cyclesFrame(c.id, m.data(), m.data() + 16, dw, dh);
         Render::Renderer::SubViewFrame f;
         f.id = c.id;
         f.x = dx;
@@ -2945,6 +3071,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_layout(const char *spec)
             loadSubCam(*adopt);
     }
 
+    // Traced views the new layout does not carry stop first: their
+    // consumers go before the banks they were registered under.
+    cyclesLayoutChanged(next);
     // 3D cells that vanished give their renderer bank back.
     for (const auto &o : s_subViews) {
         if (o.page)
@@ -3037,7 +3166,7 @@ static void mainLoop()
             && s_subViews.empty()) {
         std::string device;
         device.swap(s_cyclesUrlDevice);
-        fcviewer_set_cycles(1, device.c_str());
+        fcviewer_set_cycles(1, device.c_str(), 0);
     }
 
     updateQuality();
@@ -3103,7 +3232,7 @@ static void mainLoop()
     float viewMtx[16], projMtx[16];
     buildCamera(viewMtx, projMtx);
     // The served viewport follows this camera (sec 7.1).
-    cyclesFrame(viewMtx, projMtx);
+    cyclesFrame(0, viewMtx, projMtx, s_width, s_height);
     // The camera-relative lights, for the same reason as the autozoom
     // scale below: both were baked against the producer's camera.
     relightForCamera(viewMtx);
