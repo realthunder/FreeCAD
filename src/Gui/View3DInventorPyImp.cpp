@@ -961,6 +961,13 @@ PyObject* View3DInventorPy::cyclesViewportStatus(PyObject *args)
     dict.setItem("shaders", Py::Long(status.report.shaders));
     dict.setItem("triangles", Py::Long(status.report.triangles));
     dict.setItem("skipped", Py::Long(status.report.skipped));
+    dict.setItem("added", Py::Long(status.report.added));
+    dict.setItem("removed", Py::Long(status.report.removed));
+    dict.setItem("restated", Py::Long(status.report.restated));
+    dict.setItem("built", Py::Long(status.report.built));
+    dict.setItem("released", Py::Long(status.report.released));
+    dict.setItem("sessions", Py::Long(status.sessions));
+    dict.setItem("updates", Py::Long(status.updates));
     return Py::new_reference_to(dict);
 }
 

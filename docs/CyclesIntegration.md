@@ -386,11 +386,11 @@ highlight route, no depth prepass, no incremental scene update.
   `ccl::Session` in interactive mode (`background = false`, the
   resolution divider on, the sample and time budget from
   `ViewportOptions`), translates the input with the phase-3
-  `SceneTranslator`, and starts it. A restated scene tears the session
-  down and builds another -- the device setup and a full translation
-  per change. Incremental updates keyed the way the mesh map already
-  is (cacheId + generation) are the later step; the key is the cache's
-  own contract, so nothing in the translation has to change for it.
+  `SceneTranslator`, and starts it. At step 11 a restated scene tore
+  the session down and built another -- the device setup and a full
+  translation per change; section 5.10 replaced that with a restate
+  in place, keyed the way the mesh map already was (cacheId +
+  generation), the cache's own contract.
 - **The handoff.** The `DisplayDriver` is a staging buffer of `half4`
   sized to the full render, held under a mutex from `update_begin()`
   to `update_end()` -- Cycles' copy into it is a memcpy, so the host
@@ -554,6 +554,75 @@ the settled frame is clean at 16 spp on the CPU, and the
 live-vs-offline mean moves from 2.8 to 3.5-5.0/255 -- the denoised
 frame against a noisy 16-64 spp reference, which is the difference
 one expects, not a defect.
+
+### 5.10 Incremental scene updates (built 2026-08-28)
+
+Every edit under a running viewport used to cost a new `ccl::Session`:
+the CUDA context again, the kernels checked again, the whole draw list
+translated again, and the render restarted from nothing. The
+translator now lives as long as the session and RESTATES its scene in
+place, the way Cycles' own hydra delegate edits a running session
+(`src/hydra/geometry.inl`): hold `scene->mutex` (the session thread
+takes it for its own update), create and delete nodes and set sockets,
+tag, release, and `Session::reset()` -- the same reset a camera move
+does, so the render restarts at the coarse divider on the scene it
+already has on the device.
+
+- **Reconciling the draws.** `SceneTranslator::translate()` is now the
+  one entry for the first translation and every restate. It keeps the
+  mesh map (key = cacheId, generation, index range, shader -- section
+  6.2) and a list of placed instances, each under an instance key =
+  its mesh key plus the draw's `objectKey` (the content hash of the
+  node path that produced it, stable across restates). A restate
+  marks every instance spare, walks the new draws, and for each takes
+  a spare object of its key if there is one (two draws under one key
+  take them in order), else creates one. The transform, colour and
+  alpha go through the node sockets, which compare before they tag
+  (`Node::set_if_different`), so a bolt that did not move costs no
+  update at all; an object whose sockets did change is
+  `tag_update()`ed. What no draw claimed is deleted -- objects first,
+  then every mesh no instance references any more, because an object
+  reads its geometry on the way out. A mesh whose content changed
+  arrives under a new key (the generation, or a new cacheId), so it
+  is built beside the old one and the old one is released the same
+  pass; shaders are never deleted (Cycles does not support it) and
+  are bounded by distinct surfaces anyway.
+- **World and light.** `translateWorld()` remembers the `PBRConfig`
+  and `OutputConfig` it baked from and returns early when they are
+  equal; `translateLight()` the same with `LightConfig` plus, for a
+  spot, the scene bounds its power was stated at. A changed light is
+  remade (its type may change), object before light node.
+- **Only a change resets.** `translate()` returns whether anything in
+  the scene changed; `Viewport::setScene()` resets the session only
+  then. `feedCyclesViewport()` runs before every frame and restates on
+  any bump of the backend's scene generation, so most restates are
+  no-ops (the counters `added`/`removed`/`restated`/`built`/`released`
+  all zero) that leave the render refining untouched. A selection
+  never reaches the translator at all -- it is a separate feed
+  (`SoFCRenderer::feedExternal` restates the scene and ADDS the
+  selections), so it costs no reset. The camera is treated alike:
+  `translateCamera()` compares against the camera last stated and
+  returns false when equal, and `applyCamera()` resets only on true.
+- **One conservative reset, by the cache's own rule.** A `ShapeColor`
+  edit is cheap: the colour rides the object, the mesh keeps its
+  cacheId, one `restated` object, one reset. A `LineColor` edit is
+  not: this fork copies the whole `SoFCVertexCache` for a line-colour
+  variant, minting a new cacheId for the TRIANGLE arrays too, so the
+  triangle mesh arrives under a new key and is rebuilt (`built 1`,
+  `released 1`) and the render resets -- even though the lines it
+  changed are the host's overlay the translation skips. Keying on the
+  cache contract (cacheId + generation) cannot see that the new arrays
+  are byte-identical to the old; a content hash could, at a cost per
+  restate the common edit does not deserve. The reset is the honest
+  answer, and rare in practice.
+- **When a session is still torn down.** The first scene; a session
+  that reported an error (the rebuild is the retry); and a flip of the
+  output transform's colour management, because the translator decodes
+  authored colours on its way in (section 6.1) and a managed and an
+  unmanaged translation are different scenes.
+- **Counters.** `ViewportStatus::sessions` (device set-ups) and
+  `updates` (restates in place), in the Python status dict, so a probe
+  can assert the session count stays at one.
 
 ## 6. Scene translation
 
@@ -795,7 +864,9 @@ shader translations remain.
 10. Materials, per-face slots, environment.
 
 Phase 4 -- the viewport. **Done 2026-08-28**: steps 11, 12 and 13
-(sections 5.7, 5.8 and 5.9).
+(sections 5.7, 5.8 and 5.9), then the incremental scene update of
+section 5.10 -- a restate under a running session edits its scene in
+place instead of starting another.
 
 11. `DisplayDriver` (section 5.2) -> staging buffer -> texture ->
     `FrameConsumer` blit, on-top highlight route (section 5.3).

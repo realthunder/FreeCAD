@@ -24,6 +24,7 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <vector>
 
@@ -229,15 +230,26 @@ SceneTranslator::SceneTranslator(ccl::Scene *scene, bool colorManaged)
     , managed(colorManaged)
 {}
 
-void SceneTranslator::translate(const SceneInput &input, RenderReport &report)
+bool SceneTranslator::translate(const SceneInput &input, RenderReport &report)
 {
-    translateCamera(input.camera);
-    translateWorld(input.pbr, input.output);
+    bool changed = translateCamera(input.camera);
+    changed |= translateWorld(input.pbr, input.output);
+
+    // Every object of the previous restate is spare until a draw of
+    // this one claims it; the draws are walked in order, so two draws
+    // under one key (two parts of one object on one mesh) take the
+    // objects two-by-two the way they were placed.
+    Spare spare;
+    for (const Instance &inst : instances)
+        spare[inst.key].push_back(inst.object);
+    instances.clear();
 
     float sceneMin[3] = {0.0f, 0.0f, 0.0f};
     float sceneMax[3] = {-1.0f, -1.0f, -1.0f};
+    report.skipped = 0;
+    report.added = report.removed = report.restated = report.built = report.released = 0;
     for (const DrawCall &draw : input.draws) {
-        if (!translateDraw(draw, input.pbr, report)) {
+        if (!translateDraw(draw, input.pbr, spare, report, changed)) {
             ++report.skipped;
             continue;
         }
@@ -253,14 +265,57 @@ void SceneTranslator::translate(const SceneInput &input, RenderReport &report)
             sceneMax[i] = std::max(sceneMax[i], draw.bboxMax[i]);
         }
     }
-    translateLight(input.light, sceneMin, sceneMax);
+
+    // What no draw claimed is gone: the objects first, then the meshes
+    // nothing references any more (an object reads its geometry on
+    // the way out, so that order is the only safe one).
+    std::set<ccl::Object *> gone;
+    for (auto &entry : spare)
+        gone.insert(entry.second.begin(), entry.second.end());
+    if (!gone.empty()) {
+        scene->delete_nodes(gone);
+        report.removed = int(gone.size());
+        changed = true;
+    }
+    std::set<ccl::Mesh *> referenced;
+    for (const Instance &inst : instances)
+        referenced.insert(inst.mesh);
+    std::set<ccl::Geometry *> unused;
+    for (auto it = meshes.begin(); it != meshes.end();) {
+        ccl::Mesh *mesh = it->second.mesh;
+        if (referenced.count(mesh)) {
+            ++it;
+            continue;
+        }
+        unused.insert(mesh);
+        it = meshes.erase(it);
+    }
+    if (!unused.empty()) {
+        scene->delete_nodes(unused);
+        report.released = int(unused.size());
+        changed = true;
+    }
+
+    changed |= translateLight(input.light, sceneMin, sceneMax);
 
     report.meshes = int(meshes.size());
+    report.objects = int(instances.size());
     report.shaders = int(shaders.size()) + (attrShader ? 1 : 0);
+    report.triangles = 0;
+    for (const auto &entry : meshes)
+        report.triangles += entry.second.triangles;
+    return changed;
 }
 
-void SceneTranslator::translateCamera(const CameraInput &camera)
+bool SceneTranslator::translateCamera(const CameraInput &camera)
 {
+    if (cameraStated && camera.width == lastCamera.width && camera.height == lastCamera.height
+        && std::memcmp(camera.view, lastCamera.view, sizeof(camera.view)) == 0
+        && std::memcmp(camera.proj, lastCamera.proj, sizeof(camera.proj)) == 0)
+        return false;
+    cameraStated = true;
+    lastCamera = camera;
+
     ccl::Camera *cam = scene->camera;
     const float *p = camera.proj;
     cam->set_full_width(camera.width);
@@ -304,10 +359,17 @@ void SceneTranslator::translateCamera(const CameraInput &camera)
     }
     cam->need_flags_update = true;
     cam->need_device_update = true;
+    return true;
 }
 
-void SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &output)
+bool SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &output)
 {
+    if (worldStated && pbr == worldPbr && output == worldOutput)
+        return false;
+    worldStated = true;
+    worldPbr = pbr;
+    worldOutput = output;
+
     // The exposure is a multiplier on the linear frame before it is
     // encoded, and only a colour-managed frame has one
     // (OutputConfig::exposure); Cycles' film applies exactly that.
@@ -344,14 +406,39 @@ void SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &o
     graph->connect(bg->output("Background"), graph->output()->input("Surface"));
     shader->set_graph(std::move(graph));
     shader->tag_update(scene);
+    return true;
 }
 
-void SceneTranslator::translateLight(const LightConfig &light,
+bool SceneTranslator::translateLight(const LightConfig &light,
                                      const float sceneMin[3],
                                      const float sceneMax[3])
 {
+    // A spot's power is stated at the distance to the scene centre, so
+    // its bounds are part of what it was made from.
+    const bool sameBounds = std::equal(sceneMin, sceneMin + 3, lightMin)
+        && std::equal(sceneMax, sceneMax + 3, lightMax);
+    if (lightStated && light == lastLight && (!light.spot || sameBounds))
+        return false;
+    lightStated = true;
+    lastLight = light;
+    std::copy(sceneMin, sceneMin + 3, lightMin);
+    std::copy(sceneMax, sceneMax + 3, lightMax);
+
+    // A light is remade, not restated: its type may change with the
+    // config. The object goes before the light it references.
+    bool changed = false;
+    if (lightObject) {
+        scene->delete_node(lightObject);
+        lightObject = nullptr;
+        changed = true;
+    }
+    if (lightNode) {
+        scene->delete_node(lightNode);
+        lightNode = nullptr;
+        changed = true;
+    }
     if (!light.valid)
-        return;
+        return changed;
     float color[4];
     unpackAuthored(light.color, color, managed);
     const float intensity = std::max(light.intensity, 0.0f);
@@ -404,6 +491,9 @@ void SceneTranslator::translateLight(const LightConfig &light,
     object->set_tfm(tfm);
     object->set_visibility(ccl::PATH_RAY_VISIBILITY_ALL & ~ccl::PATH_RAY_VISIBILITY_CAMERA);
     object->set_geometry(node);
+    lightNode = node;
+    lightObject = object;
+    return true;
 }
 
 SceneTranslator::Surface SceneTranslator::resolveSurface(const Material &m,
@@ -559,7 +649,11 @@ ccl::Shader *SceneTranslator::attributeShader()
     return shader;
 }
 
-bool SceneTranslator::translateDraw(const DrawCall &draw, const PBRConfig &pbr, RenderReport &report)
+bool SceneTranslator::translateDraw(const DrawCall &draw,
+                                    const PBRConfig &pbr,
+                                    Spare &spare,
+                                    RenderReport &report,
+                                    bool &changed)
 {
     const Material &m = draw.material;
     // A path tracer renders surfaces. Lines and points are the host's
@@ -610,7 +704,7 @@ bool SceneTranslator::translateDraw(const DrawCall &draw, const PBRConfig &pbr, 
     ccl::Mesh *cmesh = nullptr;
     auto found = meshes.find(meshKey);
     if (found != meshes.end())
-        cmesh = found->second;
+        cmesh = found->second.mesh;
     else {
         // Compact the vertex set the range touches.
         const int32_t *idx = mesh->triangleIndices + start;
@@ -689,16 +783,43 @@ bool SceneTranslator::translateDraw(const DrawCall &draw, const PBRConfig &pbr, 
         cmesh->tag_triangles_modified();
         cmesh->tag_shader_modified();
         cmesh->tag_smooth_modified();
-        meshes[meshKey] = cmesh;
-        report.triangles += long(tris.size() / 3);
+        meshes[meshKey] = MeshEntry{cmesh, long(tris.size() / 3)};
+        ++report.built;
+        changed = true;
     }
 
-    ccl::Object *object = scene->create_node<ccl::Object>();
-    object->set_geometry(cmesh);
+    // The instance: the object of the previous restate under this key
+    // if one is spare, restated through its sockets (which tag nothing
+    // when the value is the same -- a bolt that did not move costs no
+    // update), else a new one.
+    Instance inst;
+    inst.key = meshKey + '|' + std::to_string(draw.objectKey);
+    inst.mesh = cmesh;
+    ccl::Object *object = nullptr;
+    auto spareIt = spare.find(inst.key);
+    if (spareIt != spare.end() && !spareIt->second.empty()) {
+        object = spareIt->second.back();
+        spareIt->second.pop_back();
+    }
+    bool created = false;
+    if (!object) {
+        object = scene->create_node<ccl::Object>();
+        object->set_geometry(cmesh);
+        created = true;
+        ++report.added;
+        changed = true;
+    }
     object->set_tfm(draw.identity ? ccl::transform_identity() : toTransform(draw.model));
     object->set_color(ccl::make_float3(uniform.base[0], uniform.base[1], uniform.base[2]));
     object->set_alpha(uniform.alpha);
-    ++report.objects;
+    if (object->is_modified()) {
+        object->tag_update(scene);
+        if (!created)
+            ++report.restated;
+        changed = true;
+    }
+    inst.object = object;
+    instances.push_back(std::move(inst));
     return true;
 }
 

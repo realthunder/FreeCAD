@@ -88,6 +88,14 @@ struct RenderReport {
     int skipped = 0;     ///< draws the translation has no use for (lines,
                          ///< points, gizmos, effect volumes, wireframes)
     double seconds = 0;  ///< wall time of the render itself
+    /// What the translation DID to get there (docs/CyclesIntegration.md
+    /// sec 5.10): a fresh scene counts everything as added and built,
+    /// a restate counts only the difference.
+    int added = 0;       ///< objects created
+    int removed = 0;     ///< objects deleted (no draw claimed them)
+    int restated = 0;    ///< kept objects whose transform or colour changed
+    int built = 0;       ///< meshes translated
+    int released = 0;    ///< meshes deleted (no object references them)
 };
 
 /// Phase 3 of the plan: translate \a scene and path trace it to a PNG
@@ -122,7 +130,9 @@ struct ViewportStatus {
     float progress = 0.0f;   ///< 0..1 of the sample budget
     std::string status;      ///< the engine's own status text
     std::string error;       ///< non-empty when the session failed
-    RenderReport report;     ///< of the last scene translation
+    RenderReport report;     ///< of the scene as last translated
+    int sessions = 0;        ///< sessions started (device set up)
+    int updates = 0;         ///< scenes restated in place under one
 };
 
 /// Phase 4 of the plan: the viewport. A FrameConsumer that runs a
@@ -149,8 +159,11 @@ public:
                                             std::string *error);
     ~Viewport() override;
 
-    /// Restate the whole scene, camera included. Starts (or restarts)
-    /// the render. The translation runs on the calling thread.
+    /// State the whole scene, camera included. The first call starts
+    /// the session; later ones restate the running session's scene in
+    /// place and restart its sampling only if something changed
+    /// (docs/CyclesIntegration.md sec 5.10). The translation runs on
+    /// the calling thread.
     virtual void setScene(const SceneInput &input) = 0;
     /// Move the camera or resize; the scene stays. Cheap: the session
     /// restarts sampling from the coarse resolution divider. Throttled

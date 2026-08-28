@@ -231,8 +231,12 @@ backend and a build with BUILD_CYCLES.</UserDocu>
 
 What the live Cycles session of this view is doing, or None when
 cyclesViewport() is off: running, progress (0..1), status (the
-engine's text), error, and the translation report of the scene it
-was last fed (meshes, objects, shaders, triangles, skipped).</UserDocu>
+engine's text), error, the translation report of the scene as last
+stated (meshes, objects, shaders, triangles, skipped), what the last
+translation did (added, removed, restated objects; built, released
+meshes), and how the scene got there: sessions (started, each a
+device set-up) and updates (scenes restated in place under a running
+session).</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="saveRenderDump" Keyword="true">

@@ -159,17 +159,41 @@ public:
 
     void setScene(const SceneInput &input) override
     {
-        // A fresh session per scene: the translator's maps describe
-        // one ccl::Scene, and the session owns it. Incremental updates
-        // keyed on the render cache's (cacheId, generation) are the
-        // later step; this restart costs the device setup (a CUDA
-        // context) and a full translation.
+        const bool managed = input.output.transform == OutputConfig::SRGB;
+        if (session && translator && translator->colorManaged() == managed
+            && !session->progress.get_error()) {
+            // The session stays: the translator restates its scene in
+            // place under the scene's mutex (the session thread reads
+            // the scene under it in its update), and the session is
+            // reset only if that changed anything -- a restate that
+            // touched only what the translation skips (an edge set, a
+            // gizmo) leaves the render refining where it was.
+            bool changed;
+            {
+                std::lock_guard<ccl::thread_mutex> lock(session->scene->mutex);
+                RenderReport report;
+                changed = translator->translate(input, report);
+                status_.report = report;
+            }
+            camera = input.camera;
+            pendingCamera = false;
+            ++status_.updates;
+            if (changed)
+                session->reset(sessionParams, bufferParams(camera));
+            return;
+        }
+
+        // A fresh session: the first scene, a session that failed, or
+        // a colour-management flip (the translator decodes colours on
+        // its way in, so that is a different translation). Costs the
+        // device setup (a CUDA context) and a full translation.
         session.reset();
         translator.reset();
         driver = nullptr;
         status_.error.clear();
         status_.report = RenderReport();
         pendingCamera = false;
+        ++status_.sessions;
 
         ccl::SessionParams sp;
         std::string message;
@@ -202,7 +226,6 @@ public:
         };
         session->set_display_driver(std::move(staging));
 
-        const bool managed = input.output.transform == OutputConfig::SRGB;
         translator = std::make_unique<SceneTranslator>(session->scene.get(), managed);
         translator->translate(input, status_.report);
 
@@ -356,13 +379,15 @@ private:
     {
         if (!session || !translator || !session->ready_to_reset())
             return;
+        bool moved;
         {
             // The session thread reads the scene under this lock in
             // its update; the camera is restated under it too.
             std::lock_guard<ccl::thread_mutex> lock(session->scene->mutex);
-            translator->translateCamera(camera);
+            moved = translator->translateCamera(camera);
         }
-        session->reset(sessionParams, bufferParams(camera));
+        if (moved)
+            session->reset(sessionParams, bufferParams(camera));
         pendingCamera = false;
     }
 
