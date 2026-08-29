@@ -9,6 +9,10 @@ runs in a wasm sandbox, the same sandbox is (a) a real security fix on
 desktop and (b) the thing that safely ships to the viewer. This is a
 design pass -- nothing here is built.
 
+Revised later on 2026-08-29 after a code-verified re-evaluation:
+secs 7-8 added (the concrete native-module bridge plan; the carriers
+this design does not close), secs 3-6 and 9 amended in place.
+
 This is **not new direction.** RoadMap workstream 3 already names it:
 "Run untrusted embedded document Python through a Pyodide/WASM
 sandbox -- fixes a real security hole (opening a malicious `.FCStd`
@@ -154,15 +158,22 @@ CPython directly and call the sandbox interface instead:
 
 - `ImportModules::getModule` -> "ask the sandbox to import in its own
   `sys.modules`"; the host allowlist becomes the sandbox's *image
-  contents plus policy*, not a string match.
+  contents plus policy*, not a string match (concretely: sec 7.4's
+  rings -- the named modules are native, so "import" means
+  "install a generated facade").
 - `CallableExpression` executing a Python callable -> "run this call
   in the sandbox"; arguments marshal across (sec 4); the whole
   `checkCallable` name-attribution machinery is **deleted** -- there
   is nothing to attribute, the callable simply cannot reach the host
-  except through bridged proxies.
+  except through bridged proxies -- PROVIDED the bridge itself is a
+  closed, typed op set (sec 7.1); a bridge that forwards generic
+  `getattr` would rebuild the confused deputy at the boundary.
 - `ObjectIdentifier::getPyValue` on a Python-backed attribute ->
-  "resolve this attribute on host proxy H"; the host runs the real
-  read on the real object and returns data or another proxy.
+  "resolve this attribute on host proxy H"; the host answers the
+  read from the C++ property system and returns data or another
+  proxy -- never by running a generic `getattr` on a live PyObject
+  (sec 7.5). Host-side Python attribute drill-down (`obj.Proxy.foo`)
+  is DENIED under the untrusted tier (sec 7.1).
 
 This is exactly ComputeBoundaries' "Python + the module co-resident in
 the worker": the expression sandbox is **the first and smallest
@@ -193,6 +204,13 @@ Consequences to design deliberately:
   cells referencing only other cells never produce a proxy at all.
   (Architecture A, if taken, removes the interpreter from those cells
   entirely.)
+- **Results cross back too (the reverse contract).** Today
+  `pyObjectToAny` can hand the host a live PyObject as an expression
+  result, and properties will store it. Under the sandbox that
+  object lives in another interpreter. v1 rule: a result must
+  marshal by value or be a host proxy passed through unchanged;
+  anything else is an evaluation error, not a silent wrapper.
+  Details and rationale: sec 7.7.
 - **Policy is a capability, and it can be *tighter* than today.**
   `_gui` -- the entire GUI command surface -- should almost certainly
   be **denied** to sandboxed document expressions; the current
@@ -217,17 +235,20 @@ The isolation must come from **wasm/WASI memory+syscall confinement**,
 not from restricting the Python dialect.
 
 - **CPython-on-wasm (Pyodide-class image): recommended.** Preserves
-  exact Python semantics (the value layer, numpy, `freecad.fc_cadquery`
-  all keep working), RoadMap-named, browser-proven. Heavy (multi-MB +
+  exact Python semantics (the value layer and numpy keep working),
+  RoadMap-named, browser-proven. (`freecad.fc_cadquery` is NOT a
+  justification: it authors B-rep through OCCT bindings, which sec 4
+  keeps host-side -- cadquery-in-expressions is out of v1 scope
+  under ANY runtime, so it argues nothing here.) Heavy (multi-MB +
   interpreter startup), but the weight buys semantic fidelity, and the
   isolation is the wasm boundary, not a neutered interpreter -- which
   is precisely the point: stop trying to make Python safe from inside,
   deny it the host from outside.
 - **MicroPython/WAMR: rejected for v1.** Small and fast, but an
-  incomplete stdlib and non-CPython semantics would break shipped
-  whitelisted modules (cadquery) and the value-layer behaviour files
-  in the field rely on. Viable only if a reduced expression dialect
-  were acceptable -- it is not, given what already ships.
+  incomplete stdlib and non-CPython semantics would break the
+  value-layer behaviour files in the field rely on. Viable only if
+  a reduced expression dialect were acceptable -- it is not, given
+  what already ships.
 - **Subinterpreters / free-threaded CPython (PEP 684/703): not a
   security boundary.** They solve the GIL for parallelism
   (ComputeBoundaries) but share the address space -- no isolation.
@@ -245,15 +266,27 @@ not from restricting the Python dialect.
   chokepoints: `getModule`, callable execution, `getPyValue` on
   Python-backed attrs, pseudo-property wrappers). Fix the by-value vs
   by-proxy type split. Deliverable: the object-protocol slice the
-  sandbox needs -- reusable by process-per-document.
+  sandbox needs -- reusable by process-per-document. Three more
+  deliverables (added by the re-evaluation): (a) the
+  annotated-member audit -- which type/module members expressions in
+  real files actually touch, seeding the sec 7.5 tables; (b) the
+  reverse-result audit -- which expressions produce results that are
+  not by-value-marshalable (sec 7.7; expected rare); (c) THE
+  MEASUREMENT, promoted from the open questions: native value layer
+  vs CPython-wasm on a large real sheet AND a bound-property-heavy
+  assembly, before any bridge code exists -- architecture A's
+  position (Phase 1 prerequisite vs later accelerator) is an OUTPUT
+  of that number, not an opinion. Also the `ExpressionCore` seam
+  list (sec 7.2).
 - **Phase 1 -- desktop sandbox = the security fix.** Stand up the
   CPython-wasm image under a desktop wasm runtime; route the
   chokepoints through it; delete the name-matched allowlist in favour
   of the capability policy. **Acceptance test:** a `.FCStd` whose
   expression does `open('/etc/passwd')`, `import os`, or
   `App.getDocument().Objects[0].Proxy...` cannot reach the host FS,
-  network, or memory -- verified, not argued. This closes RoadMap
-  ws3.
+  network, or memory -- verified, not argued. This closes the
+  EXPRESSION carrier of ws3 -- not all of ws3; sec 8 lists the
+  restore-time carriers that remain outside this design.
 - **Phase 2 -- browser reuse.** Ship the same image in the viewer.
   Pure-data sheets (cells referencing cells) evaluate locally in the
   sandbox with no host at all; a cell that references `Box.Volume`
@@ -261,6 +294,9 @@ not from restricting the Python dialect.
   boundary as desktop. Now docs/SpreadsheetRemote.md's `sheet.set`
   lands on a sandbox that is already the security boundary, and the
   viewer can evaluate formulas locally where the data allows.
+  Authority rule: host recompute stays the source of truth; local
+  evaluation is latency-hiding preview, reconciled when the host's
+  `sheet.changed` lands -- two evaluators, one truth.
 
 The ordering the user asked for is right: the sandbox is a
 prerequisite of the sheet-in-wasm work, not a parallel track. Built
@@ -268,13 +304,231 @@ first, it turns "ship the spreadsheet to the browser" from "expose the
 current in-process Python hole to the web" into "run the already-
 sandboxed evaluator in one more host."
 
-## 7. Open questions to resolve before building
+## 7. Interfacing native modules with the sandbox (added 2026-08-29)
+
+Sec 3 says "host proxies through an object-operation protocol";
+this section is the concrete plan. The decisive observation: the
+current allowlist's named modules -- `FreeCAD`, `App`, `Gui`,
+`Part`, `Sketcher`, `Spreadsheet` -- are C++ extension modules.
+None of them can be imported inside a wasm CPython. "The sandbox
+imports Part" can only ever mean "the sandbox gets a facade whose
+every member forwards across the boundary" -- so HOW that facade is
+built is the security design, not an implementation detail.
+
+### 7.1 The invariant: a closed, typed op set -- never getattr
+
+The host side of the bridge is a fixed dispatcher over enumerated,
+typed operations. It never services a generic attribute read or a
+generic call on an arbitrary PyObject. The reason:
+`obj.Proxy.__init__.__globals__['os'].system` is a chain of proxy
+reads, each one individually "a real read on a real object,"
+ending in a call the host would execute. The wasm wall makes
+in-sandbox escape worthless, but the danger was never that Python
+runs in the sandbox -- it is which host object graph the bridge
+will walk ON THE HOST, on request. A generic forwarder rebuilds the
+confused deputy at the boundary; a closed op table cannot walk
+anywhere it was not explicitly given.
+
+Consequence, stated as scope: host-side Python attribute drill-down
+(`obj.Proxy.foo`, sec 1's attribute-access bullet) is DENIED under
+the untrusted-document tier -- answering it means executing host
+CPython over attacker-chosen names. Files in the field that rely on
+it lose that capability under the untrusted tier, BY DESIGN; the
+trusted (user-session) tier may re-enable it as an explicit policy
+grant. This is the one deliberate compatibility break in the design.
+
+### 7.2 Where the evaluator runs (settling what sec 3 left implicit)
+
+Two placements for the C++ AST walker were on the table:
+
+- **Host-walk (rejected):** the interpreter stays host-side and
+  every value-layer operation (each `calc()`, each `Py::Float`)
+  crosses into the sandbox. That is a crossing per OPERATOR -- and
+  in the browser tier those crossings would be network round trips.
+  Dead on both counts.
+- **Image-walk (chosen):** compile the expression core itself --
+  parser (`ExpressionParser.y`), AST walker (`Expression.cpp`),
+  `Base::Quantity`/units -- into the sandbox image, linked against
+  the sandboxed CPython exactly as it links the host CPython today.
+  One crossing per evaluation request, plus one per external
+  reference the bindings pack (7.3) did not pre-resolve. The same
+  image is the desktop sandbox (wasmtime) and the browser evaluator
+  -- the RoadMap's "same artifact" line made literal. And
+  semantics are preserved BY CONSTRUCTION: the same C++ calls the
+  same CPython C API, wasm builds of both, which shrinks sec 9's
+  migration risk from reimplementation drift to environment drift.
+
+The honest cost, and the main Phase 1 engineering risk:
+`Expression.cpp` is coupled to the whole of App today
+(`ObjectIdentifier` resolves live `DocumentObject`s,
+`ImportModules` observes `ParameterGrp`, console logging, unit
+preferences). Phase 0 must carve an `ExpressionCore` build target
+behind seams: identifier resolution against a `DocumentAdapter`
+interface (host build: the real `Document`; image build: bindings
+pack + bridge ops), preferences and logging injected. The seam list
+is a Phase 0 deliverable. If the carve-out proves intractable, the
+fallback is a host-walk variant with aggressive batching -- but it
+forfeits the browser-local story, so the seam work is the plan of
+record.
+
+### 7.3 The bindings pack: pre-resolve, do not call back
+
+The host can enumerate an expression's external references without
+evaluating it -- `Expression::getIdentifiers()`/`getDeps()`
+(`Expression.h:223`) exist and already drive dependency tracking.
+So an evaluation request ships `{source, context, bindings}`, where
+the bindings pack carries each identifier's current value: by value
+where the type allows, as a typed handle where it does not. Cells
+that reference cells, and `Box.Volume`-class property reads -- the
+overwhelming majority -- then evaluate with ZERO mid-eval
+crossings. Mid-eval bridge ops remain only for what cannot be
+pre-known: dynamic subscripts, drill-down past a handle, calls on
+handles. The host memoizes `(handle, member)` per recompute so a
+column of identical references costs one marshal.
+
+### 7.4 The image in three rings
+
+- **Ring 0 -- in-image native, no host access by construction.**
+  CPython(wasm); the expression core (7.2); and the `Base` math
+  bindings compiled INTO the image -- `VectorPy`, `RotationPy`,
+  `PlacementPy`, `MatrixPy`, `BoundBoxPy`, `QuantityPy`, `UnitPy`
+  (all declared in `src/Base/*Py.xml`, all pure math with no
+  Document/OCCT dependency). Placement/rotation/matrix chains --
+  the hot math of real expressions -- run entirely in-image with
+  native semantics and zero crossings. Plus the pure stdlib subset
+  (`math`, `re`, `collections`, `json`). numpy rides here if the
+  image packaging allows (Pyodide: yes; a WASI numpy wheel is the
+  riskiest packaging item -- prove it early or scope numpy to
+  Pyodide-hosted tiers first).
+- **Ring 1 -- generated facades for host-resident types.**
+  `Document`, `DocumentObject`, `TopoShape`, and the module-level
+  functions of `Part`/`Sketcher`/etc. Every member forwards a typed
+  op with a handle; membership is generated and annotated (7.5).
+  Geometry authoring stays out of v1 (sec 4), so the initial `Part`
+  facade is near-empty -- that is correct, not a gap.
+- **Ring 2 -- absent.** Everything else. `os`, `socket`, `ctypes`
+  do not exist in the image and no WASI grant supplies them.
+  Absence is enforced by image contents plus zero capability
+  grants, never by a filter.
+
+### 7.5 Facades and dispatch are GENERATED from the Py XMLs
+
+The fork already declares every native binding in machine-readable
+form: the `FooPy.xml` files feeding `generate_from_xml`
+(`cMake/FreeCadMacros.cmake:177`; generator under
+`src/Tools/generateBase`). Extend that generator with a second
+output pair per type:
+
+- `FooProxy.py` -- the in-image class: exactly the declared
+  members, each forwarding `(handle, member, args)`.
+- `FooDispatch.inc` -- the host-side dispatch table over exactly
+  the declared members; an unknown member is a protocol error,
+  never a `getattr`.
+
+Plus ONE new per-member annotation in the XML, e.g.
+`<Sandbox tier="value|handle|call"/>` -- **absent means DENY.**
+New bindings are therefore unreachable-until-annotated by default,
+and the security review of the whole bridge collapses to "diff the
+annotations." Phase 0's audit seeds the initial set, expected
+small: property reads dominate real expressions, plus a handful of
+`TopoShape`/`Placement` methods.
+
+Two hard rules inside the dispatcher:
+
+- **The read path never enters host Python.** `read_prop` is
+  answered from the C++ property system (`getPropertyByName` ->
+  typed marshal; pseudo-properties via `getPseudoProperties`,
+  policy-gated per tier -- `_gui` denied outright for documents,
+  per sec 4). Host CPython executes ONLY for members explicitly
+  annotated `call`.
+- **Arguments validate against the XML-declared signature** --
+  values or handles of the declared type only; a sandbox callable
+  is never a valid argument (no host-ward callbacks in v1).
+
+### 7.6 Wire ops, values, handles
+
+The complete v1 op set: `eval {source, ctx, bindings}`,
+`read_prop {h, name}`, `get_attr {h, name}` (facade members only),
+`call {h|module, member, args}`, `get_item {h, i}`, `len {h}`,
+`release {[h...]}`. Value encoding: tagged binary (CBOR-class) over
+null / bool / int / float / str / bytes / list / dict /
+quantity{value, unit dims} / vector / rotation / placement /
+matrix / handle{id, type}. This is the first shipped slice of
+ComputeBoundaries sec 7's object protocol, on purpose.
+
+Handles live in a per-evaluation-context host table: id -> {strong
+ref, type tag, tier}; ids random 64-bit; every op validates both id
+and expected type tag. The whole table drops when the recompute
+transaction ends -- no cross-recompute retention, hence no stale
+pointers and no cross-boundary GC protocol; in-image proxies may
+batch `release()` early, but end-of-transaction is the guarantee.
+Handles are meaningless outside the context that minted them.
+
+### 7.7 Results crossing back (the reverse contract sec 4 lacked)
+
+Today `pyObjectToAny` can hand the host a live PyObject as a
+result, and some properties will store it. Under the sandbox that
+object lives in another interpreter. v1 rule: **a result must
+marshal by value (the sec 4 by-value set; a numpy array flattens to
+list/bytes) or be a host handle passed through unchanged. Anything
+else is an evaluation error,** not a silent wrapper -- host-held
+references to sandbox objects would need cross-boundary GC and a
+save-format story, both deliberately excluded. Phase 0 deliverable
+(b) audits files in the field for expressions this rule would break
+(expected: rare).
+
+### 7.8 What the boundary gives for free
+
+Per-evaluation CPU budget (wasmtime fuel / epoch interruption): a
+runaway whitelisted callable currently hangs recompute forever;
+under the sandbox it dies at the budget and surfaces as a cell
+error. Memory cap per instance. Zero WASI grants in v1 (no fs, no
+net, no env). And a parallelism door ComputeBoundaries wants
+anyway: one sandbox per document means expression evaluation stops
+sharing one GIL -- the first concrete step toward parallel
+recompute.
+
+Consistency rule: bridge ops are answered on the host main thread
+against current document state, inside the recompute transaction
+that issued the evaluation; the dispatcher never triggers a nested
+recompute and never runs the event loop. Depth- and queue-capped.
+(Not a new hazard -- in-process reads see the same mid-recompute
+state today -- but the boundary makes the rule explicit.)
+
+## 8. What this does NOT close (added 2026-08-29)
+
+Expressions are one carrier of "opening a malicious `.FCStd` runs
+code" -- not the only one, and the others fire EARLIER:
+
+- `PropertyPythonObject::Restore`
+  (`src/App/PropertyPythonObject.cpp:379`) calls
+  `PyImport_ImportModule(<the document's "module" attribute>)` at
+  restore time -- top-level code of any importable module, chosen
+  by the file. The legacy pickle branch below it is worse:
+  `PyObject_CallObject(mod.getAttr(cls))` -- a document-chosen
+  zero-argument callable from any importable module.
+- `Base::Type::importModule` (`Type.cpp:85`) auto-imports a module
+  derived from a document object's type string.
+
+Both run at document open, before any expression evaluates, and the
+expression sandbox never sees them. Phase 1's acceptance test
+therefore proves the EXPRESSION carrier closed; RoadMap ws3 as a
+whole additionally needs a restore-time execution audit
+(`PropertyPythonObject`, type auto-import, anything else that
+imports or calls during restore). That audit is a separate line
+item, not part of this design -- but this doc must not claim the
+whole hole closed while a file can still run code without ever
+touching an expression.
+
+## 9. Open questions to resolve before building
 
 - **Proxy granularity vs recompute cost** -- is per-attribute
   round-tripping fast enough for a large sheet, or is architecture A
   (C++ value path) a Phase 1 prerequisite rather than a later
   optimization? Measure on a real geometry-referencing sheet before
-  committing.
+  committing. (Promoted to Phase 0 deliverable (c); the bindings
+  pack, sec 7.3, is the designed answer to the hop count -- the
+  measurement decides whether it suffices.)
 - **Interpreter lifecycle** -- one sandbox per document? per
   recompute? pooled? The wasm interpreter's startup cost sets this.
 - **Pseudo-property policy defaults** -- exact allow/deny for
@@ -286,4 +540,8 @@ sandboxed evaluator in one more host."
   in-process semantics; the sandbox must evaluate them identically or
   the change breaks existing documents. This is the compatibility
   constraint that makes CPython-on-wasm (not MicroPython) non-
-  negotiable.
+  negotiable. Sec 7.2's image-walk narrows the residual risk to
+  environment drift (wasm float behaviour, CPython version) -- the
+  same C++ evaluator runs against the same CPython, wasm builds of
+  both. Secs 7.1/7.7 name the two DELIBERATE breaks: `obj.Proxy`
+  drill-down under the untrusted tier, and non-marshalable results.
