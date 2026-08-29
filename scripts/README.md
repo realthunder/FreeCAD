@@ -69,6 +69,12 @@ about **payload**: what a publish costs and how a scene arrives
 | `demo-varied.py` | **Stream benchmark**: `COUNT` ellipsoids with seeded per-object radii, so every object is a distinct mesh chunk and nothing deduplicates — what exercises batched fetch and the fidelity ladder, which the box grid barely touches. |
 | `textures/` | CC0 texture assets used by the demo scenes (ambientCG Bark012 color + normal maps; see its README). |
 
+## Material icons
+
+| Script | What it does |
+|--------|--------------|
+| `material-icons.py` | In-FreeCAD script that renders the **bundled material icons** -- one per shipped appearance preset and per surface finish pattern -- into `src/Mod/Material/Gui/Resources/icons/materials/` and rewrites the matching block of `Material.qrc`. Run it on the real GPU (`renderer-desktop.sh`'s d3d12 env; the docstring has the exact command) whenever a preset, the shading model or the engine's output changes, then commit what differs. A few icons come back differing by GPU noise every run (mean difference well under one level); revert those. `FC_ICON_DIR` writes elsewhere, `FC_ICON_KEEP=1` leaves the GUI up. |
+
 ## Shader rebuilds
 
 | Script | What it does |

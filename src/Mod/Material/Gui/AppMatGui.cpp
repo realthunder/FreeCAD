@@ -77,7 +77,7 @@ public:
                            "renderMaterialIcon(uuid, path) -> bool\n\n"
                            "Render the appearance of the material with the given uuid into\n"
                            "path as a PNG. What generates the bundled preset icons; see\n"
-                           "src/Mod/Material/Gui/Resources/icons/materials/generate.py.\n"
+                           "scripts/material-icons.py.\n"
                            "False where there is nothing to render with.");
         add_varargs_method("renderFinishIcon",
                            &Module::renderFinishIcon,

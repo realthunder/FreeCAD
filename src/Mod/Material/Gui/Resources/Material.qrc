@@ -10,7 +10,7 @@
         <file>icons/table.svg</file>
         <file>images/default_image.png</file>
         <file>ui/materials-editor.ui</file>
-        <!-- rendered by icons/materials/generate.py -->
+        <!-- rendered by scripts/material-icons.py -->
         <file>icons/materials/Appearance_Aluminum.png</file>
         <file>icons/materials/Appearance_Brass.png</file>
         <file>icons/materials/Appearance_Bronze.png</file>
