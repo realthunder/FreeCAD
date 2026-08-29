@@ -443,11 +443,15 @@ void ShadingOptionsWidget::updateMatcapTintEnabled()
 
 void ShadingOptionsWidget::setModel(bool pbr, bool matcap)
 {
-    auto view = activeView();
-    if (auto prop = renderProp<App::PropertyBool>(view, "PBR"))
-        prop->setValue(pbr);
-    if (auto prop = renderProp<App::PropertyBool>(view, "Matcap"))
-        prop->setValue(matcap);
+    // The model is stated once, on the view's declared ShadingType;
+    // the hidden Render_PBR / Render_Matcap facade follows it
+    // (View3DInventor::onChanged). The preferences stay the pair.
+    if (auto view = qobject_cast<View3DInventor*>(
+                Application::Instance->activeView()))
+        view->ShadingType.setValue(
+                matcap ? View3DInventor::ShadingMatcap
+                       : pbr ? View3DInventor::ShadingRealistic
+                             : View3DInventor::ShadingClassic);
     RenderParams::setPBR(pbr);
     RenderParams::setMatcap(matcap);
     envLabel->setEnabled(pbr);

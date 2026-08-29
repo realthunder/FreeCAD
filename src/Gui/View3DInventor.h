@@ -90,6 +90,30 @@ public:
     };
     
     App::PropertyEnumeration DrawStyle;
+    /// Values of ShadingType. The enum persists as a bare INDEX (a
+    /// static-list PropertyEnumeration writes no name list), so the
+    /// value list is append-only: new models go at the end, nothing is
+    /// ever inserted before Matcap.
+    enum ShadingModel {
+        ShadingClassic = 0,
+        ShadingRealistic = 1,
+        ShadingMatcap = 2,
+    };
+    /// The shading model of this view: Classic (fixed-function
+    /// Phong), Realistic (physically based, image lit), or Matcap (a
+    /// camera-fixed studio). The same kind of choice about how the
+    /// view draws as DrawStyle, and its neighbour in the Base group.
+    ///
+    /// This is the single stated truth. The historical pair --
+    /// Render_PBR / Render_Matcap, and their twins in every container
+    /// that is not a 3D view -- lives on as a hidden, writable,
+    /// non-persistent facade meaning "what the raster pipeline
+    /// shades": onChanged folds a write to either bool back into this
+    /// enum (which is what keeps old macros and old documents
+    /// working), and pushes the enum into both bools for everything
+    /// that reads them -- the bridge, the icon renderer, the
+    /// preferences fallback (see initRenderProperties).
+    App::PropertyEnumeration ShadingType;
     App::PropertyBool ShowNaviCube;
     App::PropertyBool ThumbnailView;
     /// Per-object display mode overrides of THIS view
@@ -214,6 +238,12 @@ private:
     /// Put the viewer's on-top group where OnTopObjects says: what
     /// makes the property the storage rather than a record of it.
     void applyOnTopObjects();
+    /// Push ShadingType into the Render_PBR / Render_Matcap facade
+    /// (the bools that everything reading a shading model consumes).
+    void syncShadingModelFacade();
+    /// Fold a restored pre-ShadingType document into the enum: the
+    /// pair used to persist, the enum is what persists now.
+    void migrateShadingModel();
 
 protected:
     void closeEvent(QCloseEvent* e) override;

@@ -474,6 +474,28 @@ static ValueT _localRenderParam(App::PropertyContainer *view, const char *_name,
                                              App::Prop_NoPersist);
 }
 
+/// The shading-model pair, Render_PBR / Render_Matcap. On a 3D view the
+/// pair is a facade over View3DInventor::ShadingType -- hidden so the
+/// visible truth is stated once, Prop_NoPersist so only the enum
+/// reaches a file, but writable: View3DInventor::onChanged folds a
+/// write to either bool back into the enum, which is what keeps old
+/// macros and old code paths working. A container that is no 3D view
+/// (a material preview, a view-less publisher) has no enum, so there
+/// the pair stays the only shading-model switch, seeded from the
+/// preference as before.
+static void _shadingModelParam(App::PropertyContainer *view, const char *_name,
+                               const char *_docu, bool def)
+{
+    auto cb = [](App::PropertyBool &prop) {
+        // A pre-facade document restores the pair visible; hide such a
+        // survivor too. (Prop_NoPersist cannot be added after birth --
+        // that one migrateShadingModel handles, by re-creating.)
+        prop.setStatus(App::Property::Hidden, true);
+    };
+    _containerProperty<App::PropertyBool, bool>(view, _name, _docu, "Render",
+            def, cb, App::Prop_NoPersist | App::Prop_Hidden);
+}
+
 template<class PropT, class ValueT, class CallbackT>
 static ValueT _hiddenLineParam(View3DInventor *view, const char *_name, const char *_docu, const ValueT &def, CallbackT cb) {
     if (!view)
@@ -5140,8 +5162,13 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     }
     _renderParam<App::PropertyFloat>(view, "Exposure",
             RenderParams::docExposure(), RenderParams::getExposure());
-    _renderParam<App::PropertyBool>(view, "PBR",
-            RenderParams::docPBR(), RenderParams::getPBR());
+    // The shading model. On a 3D view the enum is the truth and seeds
+    // its facade; anywhere else the preference does, as it always did.
+    auto shadingView = Base::freecad_dynamic_cast<View3DInventor>(view);
+    _shadingModelParam(view, "PBR", RenderParams::docPBR(),
+            shadingView ? shadingView->ShadingType.getValue()
+                              == View3DInventor::ShadingRealistic
+                        : RenderParams::getPBR());
     static const App::PropertyFloatConstraint::Constraints _unit_cstr(0.0,1.0,0.1);
     auto applyUnitConstraint = [](App::PropertyFloatConstraint &prop) {
         if (!prop.getConstraints())
@@ -5206,8 +5233,10 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             RenderParams::getPBREnvBackground());
     // Matcap is the other shading model: it overrides PBR while on, so it
     // follows it here.
-    _renderParam<App::PropertyBool>(view, "Matcap",
-            RenderParams::docMatcap(), RenderParams::getMatcap());
+    _shadingModelParam(view, "Matcap", RenderParams::docMatcap(),
+            shadingView ? shadingView->ShadingType.getValue()
+                              == View3DInventor::ShadingMatcap
+                        : RenderParams::getMatcap());
     // An enumeration, like Render_AOMethod above: materialized by hand so
     // the names are installed before the value is set.
     if (!view->getPropertyByName("Render_MatcapPreset")) {
