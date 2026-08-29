@@ -23,12 +23,10 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
-# include <QButtonGroup>
 # include <QCheckBox>
 # include <QComboBox>
-# include <QDialog>
-# include <QDialogButtonBox>
 # include <QDoubleSpinBox>
+# include <QEvent>
 # include <QFileInfo>
 # include <QFormLayout>
 # include <QGridLayout>
@@ -37,9 +35,9 @@
 # include <QMenu>
 # include <QPointer>
 # include <QPushButton>
-# include <QRadioButton>
 # include <QSlider>
 # include <QSpinBox>
+# include <QStandardItemModel>
 # include <QWidgetAction>
 #endif
 
@@ -51,7 +49,6 @@
 #include "ShadingOptions.h"
 #include "Application.h"
 #include "FileDialog.h"
-#include "MainWindow.h"
 #include "RenderParams.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -113,55 +110,64 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     title->setFont(titleFont);
     layout->addWidget(title, 0, 0, 1, 2);
 
-    // The one genuinely exclusive choice here: each of the three replaces
-    // the surface's response to light, so at most one can be on.
+    // The one genuinely exclusive choice here: each of the four replaces
+    // the surface's response to light, so at most one can be on. A combo
+    // rather than a row of radios: the list has grown to where the radios
+    // read as four separate switches, and a closed combo states the one
+    // fact that matters -- which model this view is in.
     auto modelRow = new QHBoxLayout;
     modelRow->setContentsMargins(0, 0, 0, 0);
-    // Three one-word labels read as one run of text at the style default
-    // spacing -- wider than the 12 the checkbox grid below uses, because
-    // those sit in aligned columns and these do not.
-    modelRow->setSpacing(18);
+    modelCombo = new QComboBox(this);
+    // The character of each model goes on its entry, the same way the
+    // environment presets carry theirs: the tip belongs to the choice
+    // being weighed, not to the combo as a whole.
+    auto addModel = [this](const QString &name, const QString &tip) {
+        modelCombo->addItem(name);
+        modelCombo->setItemData(modelCombo->count() - 1, tip,
+                                Qt::ToolTipRole);
+    };
     // Named for what it IS, not for its position in the list. "Default"
     // described only the fact that a view starts in it, which stops being
     // true the moment that changes and never said anything about the
     // shading either way.
-    classicRadio = new QRadioButton(tr("Classic"), this);
-    classicRadio->setToolTip(
-        tr("Blinn-Phong headlight shading: the light follows the camera "
-           "and the surface has no environment around it. What a view "
-           "starts in."));
-    pbrRadio = new QRadioButton(tr("Realistic"), this);
-    pbrRadio->setToolTip(doc(RenderParams::docPBR()));
-    matcapRadio = new QRadioButton(tr("Matcap"), this);
-    matcapRadio->setToolTip(doc(RenderParams::docMatcap()));
-    externalRadio = new QRadioButton(tr("External"), this);
-    externalRadio->setToolTip(
-        tr("Hand the view to an external path tracer (Cycles): real\n"
-           "reflections, refraction and soft shadows, refining\n"
-           "progressively over the raster frame and restarting on every\n"
-           "change. Which device and how hard it refines is behind\n"
-           "Settings..."));
-    auto models = new QButtonGroup(this);
-    models->addButton(classicRadio);
-    models->addButton(pbrRadio);
-    models->addButton(matcapRadio);
-    models->addButton(externalRadio);
-    modelRow->addWidget(classicRadio);
-    modelRow->addWidget(pbrRadio);
-    modelRow->addWidget(matcapRadio);
-    modelRow->addWidget(externalRadio);
-    modelRow->addStretch();
+    addModel(tr("Classic"),
+             tr("Blinn-Phong headlight shading: the light follows the camera "
+                "and the surface has no environment around it. What a view "
+                "starts in."));
+    addModel(tr("Realistic"), doc(RenderParams::docPBR()));
+    addModel(tr("Matcap"), doc(RenderParams::docMatcap()));
+    addModel(tr("External"),
+             tr("Hand the view to an external path tracer (Cycles): real\n"
+                "reflections, refraction and soft shadows, refining\n"
+                "progressively over the raster frame and restarting on every\n"
+                "change. Which device and how hard it refines is behind\n"
+                "Settings..."));
+    modelCombo->setToolTip(
+        tr("How a surface answers light: the shading model this view is "
+           "drawn with."));
+    modelRow->addWidget(modelCombo, 1);
     layout->addWidget(new QLabel(tr("Model:"), this), 1, 0);
     layout->addLayout(modelRow, 1, 1);
 
     // External's knobs live behind a button rather than in rows here:
     // they are set once per machine (which device, what budget), not
     // reached for while modelling the way the environment or the tint
-    // is, and five rows of session tuning would swamp the section.
+    // is, and five rows of session tuning would swamp the section. The
+    // button shows only while External is selected -- for the other
+    // models it configures nothing -- and opens on hover, like the
+    // submenu item it stands in for.
     externalSettings = new QPushButton(tr("Settings..."), this);
     externalSettings->setToolTip(
         tr("The external renderer and its session options: device,\n"
            "samples, time limit, denoise, preview pixel size."));
+    // Hidden still takes its space: the section lives inside an open
+    // menu, whose widget action is not re-measured when the model
+    // choice makes the button appear -- growing the row then would
+    // push it past the menu's laid-out width.
+    QSizePolicy settingsPolicy = externalSettings->sizePolicy();
+    settingsPolicy.setRetainSizeWhenHidden(true);
+    externalSettings->setSizePolicy(settingsPolicy);
+    externalSettings->installEventFilter(this);
     modelRow->addWidget(externalSettings);
 
     // Realistic's one real choice, and the reason the mode is worth
@@ -241,13 +247,21 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     // editor. Nothing to copy for a preset, so it greys out for one.
     envEmbedCheck = new QCheckBox(tr("keep a copy"), this);
     envEmbedCheck->setToolTip(doc(RenderParams::docPBREnvEmbed()));
-    auto envRow = new QHBoxLayout;
-    envRow->setContentsMargins(0, 0, 0, 0);
-    envRow->addWidget(envCombo, 1);
-    envRow->addWidget(envBgCheck);
-    envRow->addWidget(envEmbedCheck);
+    // A chosen image puts its file name on the combo; without a cap that
+    // name is what sizes the whole menu.
+    envCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    envCombo->setMinimumContentsLength(12);
     layout->addWidget(envLabel, 2, 0);
-    layout->addLayout(envRow, 2, 1);
+    layout->addWidget(envCombo, 2, 1);
+    // The two switches under the combo rather than beside it: on one
+    // row the three of them set the width of the whole menu.
+    auto envChecks = new QHBoxLayout;
+    envChecks->setContentsMargins(0, 0, 0, 0);
+    envChecks->setSpacing(12);
+    envChecks->addWidget(envBgCheck);
+    envChecks->addWidget(envEmbedCheck);
+    envChecks->addStretch();
+    layout->addLayout(envChecks, 3, 1);
 
     matcapLabel = new QLabel(tr("Matcap:"), this);
     matcapCombo = new QComboBox(this);
@@ -256,8 +270,8 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     matcapCombo->addItem(tr("Metal"));
     matcapCombo->addItem(tr("Pearl"));
     matcapCombo->setToolTip(doc(RenderParams::docMatcapPreset()));
-    layout->addWidget(matcapLabel, 3, 0);
-    layout->addWidget(matcapCombo, 3, 1);
+    layout->addWidget(matcapLabel, 4, 0);
+    layout->addWidget(matcapCombo, 4, 1);
 
     // Matcap's other number, and the one that surprises people: at zero
     // the whole scene shades as a single material, so an assembly's
@@ -278,8 +292,8 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     tintRow->setContentsMargins(0, 0, 0, 0);
     tintRow->addWidget(matcapTintSlider, 1);
     tintRow->addWidget(matcapTintValue);
-    layout->addWidget(matcapTintLabel, 4, 0);
-    layout->addLayout(tintRow, 4, 1);
+    layout->addWidget(matcapTintLabel, 5, 0);
+    layout->addLayout(tintRow, 5, 1);
 
     // The modifiers: each composes with any shading model and with the
     // others, which is exactly why they are checkboxes and not entries in
@@ -306,7 +320,7 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     flags->addWidget(aoCheck, 0, 1);
     flags->addWidget(shadowCheck, 1, 0);
     flags->addWidget(bloomCheck, 1, 1);
-    layout->addLayout(flags, 5, 0, 1, 2);
+    layout->addLayout(flags, 6, 0, 1, 2);
 
     // Cavity is the one modifier here whose usefulness depends on a
     // number rather than on being on: the radius decides which features
@@ -329,8 +343,8 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     radiusRow->setContentsMargins(0, 0, 0, 0);
     radiusRow->addWidget(cavityRadiusSlider, 1);
     radiusRow->addWidget(cavityRadiusValue);
-    layout->addWidget(cavityRadiusLabel, 6, 0);
-    layout->addLayout(radiusRow, 6, 1);
+    layout->addWidget(cavityRadiusLabel, 7, 0);
+    layout->addLayout(radiusRow, 7, 1);
 
     // Not "pick a renderer type in the preferences" any more: the
     // render path stopped being a stored choice in ca372262f1, and
@@ -341,26 +355,17 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     hint = new QLabel(tr("Needs the render engine, which is not "
                          "running on this view."), this);
     hint->setEnabled(false);
-    layout->addWidget(hint, 7, 0, 1, 2);
+    layout->addWidget(hint, 8, 0, 1, 2);
 
-    connect(classicRadio, &QRadioButton::toggled, this, [this](bool on) {
-        if (on && !loading)
-            setModel(View3DInventor::ShadingClassic);
+    connect(modelCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [this](int index) {
+        if (index >= 0 && !loading)
+            setModel(long(index));
     });
-    connect(pbrRadio, &QRadioButton::toggled, this, [this](bool on) {
-        if (on && !loading)
-            setModel(View3DInventor::ShadingRealistic);
-    });
-    connect(matcapRadio, &QRadioButton::toggled, this, [this](bool on) {
-        if (on && !loading)
-            setModel(View3DInventor::ShadingMatcap);
-    });
-    connect(externalRadio, &QRadioButton::toggled, this, [this](bool on) {
-        if (on && !loading)
-            setModel(View3DInventor::ShadingExternal);
-    });
+    // Hover is the way in (the event filter), but a click must not be a
+    // dead end for whoever aims and presses anyway.
     connect(externalSettings, &QPushButton::clicked, this, [this]() {
-        openExternalSettings();
+        showExternalSettings();
     });
     connect(envBgCheck, &QCheckBox::toggled, this, [this](bool on) {
         setFlag("PBREnvBackground", on, &RenderParams::setPBREnvBackground);
@@ -468,22 +473,45 @@ void ShadingOptionsWidget::updateMatcapTintEnabled()
 {
     // Same reasoning as the cavity radius: a tint that shades nothing is
     // a control that does nothing.
-    const bool on = matcapRadio->isEnabled() && matcapRadio->isChecked();
+    const bool on = matcapCombo->isEnabled();
     matcapTintLabel->setEnabled(on);
     matcapTintSlider->setEnabled(on);
     matcapTintValue->setEnabled(on);
 }
 
-void ShadingOptionsWidget::updateExternalSettingsEnabled()
+void ShadingOptionsWidget::updateExternalSettings()
 {
-    // Session options with no session to configure are controls that
-    // do nothing; grey the button rather than let it read as broken.
-    externalSettings->setEnabled(externalRadio->isEnabled()
-                                 && externalRadio->isChecked());
+    // Session options for a model that is not in effect configure
+    // nothing, so for the other models the button is not there at all
+    // -- it appears with the choice that gives it meaning. Greyed (not
+    // hidden) when External is selected but the engine is missing: that
+    // state deserves to look broken, because it is.
+    const bool external =
+        modelCombo->currentIndex() == View3DInventor::ShadingExternal;
+    externalSettings->setVisible(external);
+    externalSettings->setEnabled(modelCombo->isEnabled()
+                                 && viewProp<App::PropertyEnumeration>(
+                                         activeView(), "Cycles", "Device")
+                                     != nullptr);
 }
 
-void ShadingOptionsWidget::openExternalSettings()
+bool ShadingOptionsWidget::eventFilter(QObject *watched, QEvent *event)
 {
+    // The button stands in for a submenu item, so it opens the way one
+    // does: the pointer arriving is the request.
+    if (watched == externalSettings && event->type() == QEvent::Enter
+            && externalSettings->isEnabled())
+        showExternalSettings();
+    return QWidget::eventFilter(watched, event);
+}
+
+void ShadingOptionsWidget::showExternalSettings()
+{
+    // A second hover while the popup is up raises it, not a twin of it.
+    if (externalSettingsMenu) {
+        externalSettingsMenu->raise();
+        return;
+    }
     auto mdiView = qobject_cast<View3DInventor*>(
             Application::Instance->activeView());
     if (!mdiView)
@@ -496,17 +524,13 @@ void ShadingOptionsWidget::openExternalSettings()
         refresh();
         return;
     }
-    // Same move as chooseEnvImage: the menu holds a popup grab, and a
-    // dialog raised under one closes it on the first click anyway.
-    if (auto menu = qobject_cast<QMenu*>(parentWidget()))
-        menu->close();
 
     // Every control applies as it is touched -- the session restarts
-    // behind the dialog, which IS the feedback -- so the one button is
-    // Close, not Ok/Cancel. Writes go through the view looked up by
-    // name at fire time: the properties can be dropped under a modal
-    // loop (backend deselected), and a stale pointer must not be the
-    // thing that finds out.
+    // behind the popup, which IS the feedback -- so there is no Ok or
+    // Cancel, just a menu that closes the way menus close. Writes go
+    // through the view looked up by name at fire time: the properties
+    // can be dropped while the popup is up (backend deselected), and a
+    // stale pointer must not be the thing that finds out.
     QPointer<View3DInventor> guard(mdiView);
     auto cyclesProp = [guard](const char *name) -> App::Property* {
         if (!guard)
@@ -516,11 +540,16 @@ void ShadingOptionsWidget::openExternalSettings()
         return guard->getPropertyByName(propname.c_str());
     };
 
-    QDialog dlg(getMainWindow());
-    dlg.setWindowTitle(tr("External render settings"));
-    auto form = new QFormLayout(&dlg);
+    auto menu = new QMenu(externalSettings);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    externalSettingsMenu = menu;
+    auto panel = new QWidget(menu);
+    auto form = new QFormLayout(panel);
+    // The section's own margins, so the popup reads as more of the same
+    // surface rather than a bare form floating in a frame.
+    form->setContentsMargins(12, 8, 12, 8);
 
-    auto rendererCombo = new QComboBox(&dlg);
+    auto rendererCombo = new QComboBox(panel);
     for (const auto &name : mdiView->ExternalRenderType.getEnumVector())
         rendererCombo->addItem(QString::fromUtf8(name.c_str()));
     rendererCombo->setCurrentIndex(int(mdiView->ExternalRenderType.getValue()));
@@ -528,14 +557,14 @@ void ShadingOptionsWidget::openExternalSettings()
             doc(mdiView->ExternalRenderType.getDocumentation()));
     form->addRow(tr("Renderer:"), rendererCombo);
     connect(rendererCombo, qOverload<int>(&QComboBox::currentIndexChanged),
-            &dlg, [guard](int index) {
+            panel, [guard](int index) {
         // No preference behind this one on purpose: External is never
         // a default, so neither is which engine it would pick.
         if (guard && index >= 0)
             guard->ExternalRenderType.setValue(long(index));
     });
 
-    auto deviceCombo = new QComboBox(&dlg);
+    auto deviceCombo = new QComboBox(panel);
     for (const auto &name : device->getEnumVector())
         deviceCombo->addItem(QString::fromUtf8(name.c_str()));
     if (device->isValid())
@@ -543,7 +572,7 @@ void ShadingOptionsWidget::openExternalSettings()
     deviceCombo->setToolTip(doc(RenderParams::docCyclesDevice()));
     form->addRow(tr("Device:"), deviceCombo);
     connect(deviceCombo, qOverload<int>(&QComboBox::currentIndexChanged),
-            &dlg, [cyclesProp](int index) {
+            panel, [cyclesProp](int index) {
         if (index < 0)
             return;
         if (auto prop = Base::freecad_dynamic_cast<App::PropertyEnumeration>(
@@ -556,7 +585,7 @@ void ShadingOptionsWidget::openExternalSettings()
         }
     });
 
-    auto samplesSpin = new QSpinBox(&dlg);
+    auto samplesSpin = new QSpinBox(panel);
     samplesSpin->setRange(1, 1000000);
     if (auto prop = viewProp<App::PropertyInteger>(mdiView, "Cycles",
                                                    "Samples"))
@@ -566,14 +595,14 @@ void ShadingOptionsWidget::openExternalSettings()
     samplesSpin->setToolTip(doc(RenderParams::docCyclesSamples()));
     form->addRow(tr("Samples:"), samplesSpin);
     connect(samplesSpin, qOverload<int>(&QSpinBox::valueChanged),
-            &dlg, [cyclesProp](int value) {
+            panel, [cyclesProp](int value) {
         if (auto prop = Base::freecad_dynamic_cast<App::PropertyInteger>(
                     cyclesProp("Samples")))
             prop->setValue(long(value));
         RenderParams::setCyclesSamples(long(value));
     });
 
-    auto timeLimitSpin = new QDoubleSpinBox(&dlg);
+    auto timeLimitSpin = new QDoubleSpinBox(panel);
     timeLimitSpin->setRange(0.0, 3600.0);
     timeLimitSpin->setDecimals(1);
     timeLimitSpin->setSuffix(tr(" s"));
@@ -588,28 +617,28 @@ void ShadingOptionsWidget::openExternalSettings()
     timeLimitSpin->setToolTip(doc(RenderParams::docCyclesTimeLimit()));
     form->addRow(tr("Time limit:"), timeLimitSpin);
     connect(timeLimitSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
-            &dlg, [cyclesProp](double value) {
+            panel, [cyclesProp](double value) {
         if (auto prop = Base::freecad_dynamic_cast<App::PropertyFloat>(
                     cyclesProp("TimeLimit")))
             prop->setValue(value);
         RenderParams::setCyclesTimeLimit(value);
     });
 
-    auto denoiseCheck = new QCheckBox(&dlg);
+    auto denoiseCheck = new QCheckBox(panel);
     if (auto prop = viewProp<App::PropertyBool>(mdiView, "Cycles", "Denoise"))
         denoiseCheck->setChecked(prop->getValue());
     else
         denoiseCheck->setChecked(RenderParams::getCyclesDenoise());
     denoiseCheck->setToolTip(doc(RenderParams::docCyclesDenoise()));
     form->addRow(tr("Denoise:"), denoiseCheck);
-    connect(denoiseCheck, &QCheckBox::toggled, &dlg, [cyclesProp](bool on) {
+    connect(denoiseCheck, &QCheckBox::toggled, panel, [cyclesProp](bool on) {
         if (auto prop = Base::freecad_dynamic_cast<App::PropertyBool>(
                     cyclesProp("Denoise")))
             prop->setValue(on);
         RenderParams::setCyclesDenoise(on);
     });
 
-    auto pixelSizeSpin = new QSpinBox(&dlg);
+    auto pixelSizeSpin = new QSpinBox(panel);
     pixelSizeSpin->setRange(1, 8);
     if (auto prop = viewProp<App::PropertyInteger>(mdiView, "Cycles",
                                                    "PixelSize"))
@@ -619,17 +648,27 @@ void ShadingOptionsWidget::openExternalSettings()
     pixelSizeSpin->setToolTip(doc(RenderParams::docCyclesPixelSize()));
     form->addRow(tr("Pixel size:"), pixelSizeSpin);
     connect(pixelSizeSpin, qOverload<int>(&QSpinBox::valueChanged),
-            &dlg, [cyclesProp](int value) {
+            panel, [cyclesProp](int value) {
         if (auto prop = Base::freecad_dynamic_cast<App::PropertyInteger>(
                     cyclesProp("PixelSize")))
             prop->setValue(long(value));
         RenderParams::setCyclesPixelSize(long(value));
     });
 
-    auto buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
-    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    form->addRow(buttons);
-    dlg.exec();
+    auto action = new QWidgetAction(menu);
+    action->setDefaultWidget(panel);
+    menu->addAction(action);
+
+    // The popup outlives its reason to exist otherwise: the display
+    // style menu closing takes the whole surface this hangs off.
+    if (auto parentMenu = qobject_cast<QMenu*>(parentWidget()))
+        connect(parentMenu, &QMenu::aboutToHide, menu, &QMenu::close);
+
+    // Off the button's top-right corner, where a submenu of this entry
+    // would unfold; popup() slides it back on-screen if that runs out
+    // of room.
+    menu->popup(externalSettings->mapToGlobal(
+            QPoint(externalSettings->width(), 0)));
 }
 
 void ShadingOptionsWidget::setModel(long model)
@@ -656,7 +695,7 @@ void ShadingOptionsWidget::setModel(long model)
     matcapLabel->setEnabled(matcap);
     matcapCombo->setEnabled(matcap);
     updateMatcapTintEnabled();
-    updateExternalSettingsEnabled();
+    updateExternalSettings();
 }
 
 void ShadingOptionsWidget::setFlag(const char *name, bool value,
@@ -801,10 +840,7 @@ void ShadingOptionsWidget::refresh()
         model = mdiView->ShadingType.getValue();
     const bool pbr = model == View3DInventor::ShadingRealistic;
     const bool matcap = model == View3DInventor::ShadingMatcap;
-    matcapRadio->setChecked(matcap);
-    pbrRadio->setChecked(pbr);
-    externalRadio->setChecked(model == View3DInventor::ShadingExternal);
-    classicRadio->setChecked(model == View3DInventor::ShadingClassic);
+    modelCombo->setCurrentIndex(int(model));
     // An image set on the view is what the scene is standing in, so the
     // combo names it; the entry carries the file name rather than the
     // bare "Image..." prompt, which is the only place the choice is
@@ -856,11 +892,15 @@ void ShadingOptionsWidget::refresh()
     shadowCheck->setChecked(renderFlag(view, "Light", false));
     bloomCheck->setChecked(renderFlag(view, "Bloom", false));
 
-    classicRadio->setEnabled(available);
-    pbrRadio->setEnabled(available);
-    matcapRadio->setEnabled(available);
-    externalRadio->setEnabled(available && cyclesAvailable);
-    updateExternalSettingsEnabled();
+    modelCombo->setEnabled(available);
+    // The whole combo stays live without the Cycles engine -- only its
+    // External entry has nothing behind it then, so only that entry
+    // greys out.
+    if (auto items = qobject_cast<QStandardItemModel*>(modelCombo->model())) {
+        if (auto item = items->item(View3DInventor::ShadingExternal))
+            item->setEnabled(available && cyclesAvailable);
+    }
+    updateExternalSettings();
     envLabel->setEnabled(available && pbr && !matcap);
     envCombo->setEnabled(available && pbr && !matcap);
     envBgCheck->setEnabled(available && pbr && !matcap);

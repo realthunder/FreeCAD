@@ -23,6 +23,7 @@
 #ifndef GUI_SHADINGOPTIONS_H
 #define GUI_SHADINGOPTIONS_H
 
+#include <QPointer>
 #include <QWidget>
 #include <FCGlobal.h>
 
@@ -31,7 +32,6 @@ class QComboBox;
 class QLabel;
 class QMenu;
 class QPushButton;
-class QRadioButton;
 class QSlider;
 
 namespace App { class PropertyContainer; }
@@ -87,6 +87,11 @@ public:
     /// are rebuilt with the toolbar, hence the lookup.
     static void install(QMenu *menu);
 
+protected:
+    /// Watches the Settings... button: hovering it opens the session
+    /// popup, the way hovering a submenu item opens the submenu.
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
     App::PropertyContainer *activeView() const;
     /// Select a shading model (a View3DInventor::ShadingModel value):
@@ -96,14 +101,16 @@ private:
     /// preferences alone: it cannot be a default, so they keep the
     /// raster model to fall back to.
     void setModel(long model);
-    /// The Cycles session options, in a dialog beside the radio that
-    /// needs them: renderer, device, samples, time limit, denoise,
-    /// pixel size. Every control applies immediately and writes twice
-    /// (view property + preference), like the rest of the section.
-    void openExternalSettings();
-    /// Grey the Settings... button unless the External model is on and
-    /// available.
-    void updateExternalSettingsEnabled();
+    /// The Cycles session options, in a popup menu beside the button
+    /// that needs them: renderer, device, samples, time limit, denoise,
+    /// pixel size. A widget action in a menu rather than a dialog, so
+    /// it behaves like the section it hangs off: hover opens it, every
+    /// control applies immediately and writes twice (view property +
+    /// preference), and the display style menu stays open behind it.
+    void showExternalSettings();
+    /// Show the Settings... button only while the External model is
+    /// selected; grey it when the engine is not there to configure.
+    void updateExternalSettings();
     /// Grey the radius row unless the cavity pass is on and available.
     void updateCavityRadiusEnabled();
     /// Grey the tint row unless the matcap model is on and available.
@@ -133,11 +140,11 @@ private:
     void setShadow(bool on);
 
 private:
-    QRadioButton *classicRadio;
-    QRadioButton *pbrRadio;
-    QRadioButton *matcapRadio;
-    QRadioButton *externalRadio;
+    QComboBox *modelCombo;
     QPushButton *externalSettings;
+    /// The open session popup, if any -- so a second hover raises the
+    /// one that is up instead of stacking another over it.
+    QPointer<QMenu> externalSettingsMenu;
     QLabel *envLabel;
     QComboBox *envCombo;
     QCheckBox *envBgCheck;
