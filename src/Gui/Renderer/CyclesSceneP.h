@@ -203,8 +203,8 @@ private:
     /// to a Bump node, which differentiates it against the ray
     /// differentials exactly as the raster shader differentiates its
     /// analytic gradient against the pixel. The draw's own finish and
-    /// frame -- entry 0 of the palettes -- until the per-face palettes
-    /// land.
+    /// frame, or one face's out of the palettes (sec 6.7): a palette
+    /// entry resolves to one of these per shader variant.
     struct Finish {
         uint8_t pattern = 0;  ///< App::SurfaceFinish::Pattern, 0 = none
         float pitch = 0.0f;   ///< mm of object space, feature spacing
@@ -222,10 +222,54 @@ private:
     /// a pattern this translation knows with a positive pitch and depth
     /// (the bgfx path's own gate), in the draw's frame.
     Finish resolveFinish(const Material &m) const;
+    /// The same gate over one palette entry's numbers (the angle in
+    /// degrees, as the palette and the material both state it), laid
+    /// out in \a frame.
+    static Finish resolveFinish(uint8_t pattern,
+                                float pitch,
+                                float depth,
+                                float angleDeg,
+                                const SurfaceFrame &frame);
     /// Perturb links.normal by the finish's height field: the pattern
     /// (groove profile, brushed and blasted noise) sampled from baked
     /// periodic tables, the projection frames built in-graph.
     void applyFinish(ccl::ShaderGraph *graph, const Finish &finish, SurfaceLinks &links);
+    /// A projection frame's axes the way fc_finish.sh canonicalizes
+    /// them: the axis normalized, xdir made perpendicular to it (or
+    /// replaced when degenerate), ydir their cross product.
+    static void canonicalFrame(const SurfaceFrame &frame,
+                               float axis[3],
+                               float xdir[3],
+                               float ydir[3]);
+
+    /// The face's own image (docs/CyclesIntegration.md sec 6.7): one
+    /// layer of the draw's per-face texture palette, laid out in the
+    /// face's projection frame at `scale` millimetres per tile -- a
+    /// planar face in the plane's axes, a turned one unwrapped about
+    /// its axis, an unframed one off its dominant object axis -- or
+    /// over the mesh's own coordinates when the draw states no tile
+    /// size, as fc_mesh_fs.sh has it.
+    struct FaceImage {
+        std::shared_ptr<const TextureImage> image;
+        float scale = 0.0f;   ///< Material::facetexscale; <= 0 = the mesh's UVs
+        SurfaceFrame frame;   ///< Unframed = the dominant-axis projection
+        bool meshUV = false;  ///< the mesh has coordinates to sample with
+        bool any() const
+        {
+            return image != nullptr;
+        }
+        /// The part of a shader key this contributes ("" without one).
+        std::string key() const;
+    };
+    /// The image of palette layer \a layer (0 = none; past the palette
+    /// = its last entry, the raster path's clamp) in \a frame.
+    FaceImage resolveFaceImage(const Material &m,
+                               const MeshData &mesh,
+                               int layer,
+                               const SurfaceFrame &frame) const;
+    /// Modulate links.base and links.alpha by the face's image, sampled
+    /// where its frame or the mesh's coordinates put it.
+    void applyFaceImage(ccl::ShaderGraph *graph, const FaceImage &face, SurfaceLinks &links);
     Surface resolveSurface(const Material &material,
                            const PBRConfig &pbr,
                            const uint8_t *vertexColor,
@@ -254,10 +298,16 @@ private:
     ccl::Shader *uniformShader(const Surface &surface,
                                const Clip &clip,
                                const Maps &maps,
-                               const Finish &finish);
-    /// The one shader of every per-vertex-attribute draw -- one per
-    /// distinct clip, which for a scene with no section is still one.
-    ccl::Shader *attributeShader(const Clip &clip, const Maps &maps, const Finish &finish);
+                               const Finish &finish,
+                               const FaceImage &face);
+    /// The shader of a per-vertex-attribute draw: the surface rides the
+    /// mesh, so a scene of vertex-painted meshes with no section, no
+    /// maps and no finish shares ONE of these; what does not ride a
+    /// vertex (the clip, the maps, a finish, a face image) keys it.
+    ccl::Shader *attributeShader(const Clip &clip,
+                                 const Maps &maps,
+                                 const Finish &finish,
+                                 const FaceImage &face);
     /// Connect \a closure to the graph's surface output, through the
     /// clip test when there is one.
     void connectSurface(ccl::ShaderGraph *graph, ccl::ShaderOutput *closure, const Clip &clip);

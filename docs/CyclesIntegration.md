@@ -885,8 +885,8 @@ design gap: Cycles has an image texture node, a displacement path,
 and the clipping can be done with the same mesh-cutting the section
 caps use. Clip planes and caps landed after this was written
 (sections 6.3 and 6.4), and the texture maps after that (section
-6.5); the finishes and the per-face texture palette are the rest of
-phase 6 item 15's phase A (section 8), user shaders its phase B.
+6.5), the finishes (6.6) and the per-face palettes (6.7) -- phase 6
+item 15's phase A (section 8) complete; user shaders are its phase B.
 
 Verified 2026-08-28 (scratchpad `cycles_scene_probe.py` under xvfb: a
 floor, a red box and an `App::Link` of it, a six-colour per-face box,
@@ -1105,8 +1105,8 @@ before it.
   meaning and is not read; `BumpConfig` rides `SceneInput::bump`
   from the three feeders for the strength.
 - **Not translated, on purpose.** The occlusion map: a path tracer
-  computes its own occlusion. The surface finishes are section 6.6;
-  the per-face palettes are the next step of phase A.
+  computes its own occlusion. The surface finishes are section 6.6,
+  the per-face palettes section 6.7.
 
 Verified 2026-08-29 (`maps/probe.py` under xvfb on the debug tree --
 the only one with Cycles on -- top-down orthographic on a 40 mm box,
@@ -1136,8 +1136,8 @@ finish and frame from the `Render::Material` under the bgfx path's
 gate (a known pattern, a positive pitch and depth); `applyFinish`
 builds the graph and hands its height to a `BumpNode` on the
 `SurfaceLinks` normal, after the maps, so the two compose the way they
-do in the raster shader. Entry 0 of the palettes for now -- the draw's
-own finish and frame -- until the per-face palettes land.
+do in the raster shader. The draw's own finish and frame, or one
+face's out of the palettes (section 6.7).
 
 - **Height, not gradient.** The raster shader evaluates the analytic
   GRADIENT of a height field and rotates the normal by Mikkelsen's
@@ -1220,6 +1220,94 @@ node and with it the projection frames, and the once-only
 `renderGeometryAsked` never asked for them again, so a finish restated
 in the same session shaded triplanarly in both engines (fixed:
 the flag resets with the node).
+
+
+### 6.7 Per-face palettes (phase 6 item 15, phase A, built 2026-08-29)
+
+A per-face appearance puts a finish, a projection frame and an image on
+each face of one draw. The raster path, bound to one program and one
+sampler per draw, carries them as PALETTES -- `FinishPalette`,
+`FramePalette`, `TexturePalette` on the `Render::Material` -- with one
+index per vertex in the material stream's third slot (bytes 8, 9, 10 of
+`MeshData::materials`), and selects in the fragment shader out of
+uniform arrays and a 2D array texture. A path tracer has no such
+constraint, and Cycles has a native answer to "a different material per
+face": a mesh's per-triangle SHADER SLOT (`Mesh::shader`, an index into
+its `used_shaders`), the mechanism Blender's material slots ride. So
+the translation does not port the palettes as palettes:
+
+- **A shader variant per combination present.** `translateDraw` walks
+  the draw's triangles once, reads the three indices off each
+  triangle's first corner (all three carry the face's, which is also
+  what the raster path assumes when it interpolates them), and for
+  every distinct (finish, frame, layer) triple it meets builds one
+  variant of the draw's own graph -- `uniformShader` or
+  `attributeShader` as before -- with THAT entry's constants: the
+  finish from `FinishPalette::Entry` through the same gate the scalars
+  pass (`resolveFinish`), laid out in the face's `SurfaceFrame`; the
+  image from `TexturePalette`, layer i being entry i - 1 and a layer
+  past the palette its last entry, the raster's clamp. The triangle
+  gets the variant's slot. A draw with nothing to index (no stream, or
+  no palette to read into) is the one-variant case it always was, and
+  a face whose index runs past a palette reads what the raster's
+  zero-filled uniform array holds there: no finish, no frame.
+- **Why this and not attributes.** The alternative -- per-corner
+  attributes for the frame vectors and the pitch/depth/angle, and a
+  compare-and-mix chain over the patterns present -- would have meant
+  re-deriving `applyFinish` with link inputs (four height evaluations
+  under a select chain, tripled by the bump's differentials) and could
+  not have done the images at all without a chain of image nodes, one
+  sample each per shading point. The variants reuse the verified,
+  constant-folded graphs unchanged, at the cost of one shader per
+  distinct entry combination. The shader cache (`shaders`, keyed on
+  the finish's numbers and the frame's) shares variants across draws
+  whose faces state the same frames, which instanced and coaxial parts
+  do; an assembly of many differently-framed finished parts is many
+  shaders, which Cycles compiles in parallel and Blender scenes carry
+  by the thousand.
+- **The face image** (`FaceImage`, `applyFaceImage`): a picture
+  sampled like the base map (decoded when colour managed, alpha
+  coverage) and MODULATING the base colour and alpha on top of whatever
+  the unit-0 texture did, as `fc_mesh_fs.sh` has it. Its coordinates
+  are `fcFrameTexUV` in-graph when the draw states a tile size
+  (`Material::facetexscale` millimetres per tile): a planar face in the
+  frame's axes; a turned one as (arc, z) with the arc snapped to a
+  whole number of tiles round the reference radius; an unframed one
+  off its dominant object axis, chosen outright (a coordinate cannot
+  be blended the way the finish's height is) with selectors built from
+  Math LESS_THAN nodes. Without a tile size the mesh's own UVs serve,
+  the texture matrix folded in as for the maps (`ATTR_STD_UV` is now
+  added for either need), and a mesh with none reads the corner texel.
+- **Bookkeeping.** The mesh key lists every variant (the slots follow
+  from them and the stream, which the cache generation names); a
+  variant's shader key adds `FaceImage::key` beside the finish's; the
+  caps keep the uniform surface with no image. `GraphOps` is the node
+  vocabulary `applyFinish` had as lambdas, shared with the image
+  builder, and `canonicalFrame` the frame orthonormalization both lay
+  their coordinates in.
+
+Verified 2026-08-29 (`palette/probe.py` under xvfb on the debug tree,
+`probe.sh <CPU|CUDA> <spp> <tag>`, the finish probe's method: debug
+view 2 against the analytic perturbed normal, per REGION of the
+picture). A 40 mm box with a 20 mm pocket, top view, its ring face
+turned (pitch 2, depth 0.2) and its floor straight-knurled (pitch 3,
+depth 0.45) -- two finish entries, two frames, three shaders in the
+report: ring corr 0.999 / 0.999, RMS 0.1723 vs 0.1735; floor corr
+1.000, RMS 0.2478 vs 0.2488; the ring against the floor's finish
+0.005. A cylinder r 10 with the lateral face straight-knurled in its
+radial frame and the top face turned in its planar one: front view
+corr 0.999 (RMS 0.152 vs 0.1525), top view 0.999 / 0.999. The same box
+wearing a red/white checker on the ring and a blue/white one on the
+floor at 10 mm per tile (beauty frames): each region's coloured
+channel is flat (std 0.02 / 0.03) while the others carry the cells
+(0.31 / 0.26), the cells correlate 0.97 with the analytic checker in
+the face's frame and 0.99 with the raster frame. CUDA reads the same
+numbers as the CPU. One trap paid: a PLANE's frame origin is its
+surface's own location with the normal component dropped
+(`faceProjectionFrame`), so the pocket floor -- the tool box's face at
+(10, 10, 10) -- lays its pattern out from (10, 10), a third of a
+period from the object origin the first analytic model assumed;
+Cycles was right and the model was not.
 
 
 ## 7. Preparing for out of process
@@ -1535,8 +1623,8 @@ Phase 6 -- queued, not started. Two items, in this order.
     RULED 2026-08-29, in two phases. **Phase A**, the declarative
     facts a `Render::Material` carries -- texture maps, surface
     finishes, the per-face palettes -- become node graphs: the maps
-    are section 6.5 (built), the finishes section 6.6 (built), the
-    palettes follow. **Phase
+    are section 6.5, the finishes section 6.6, the per-face palettes
+    section 6.7 (all built 2026-08-29). **Phase
     B**, user shaders: freeform bgfx `.sc` text has no node-graph
     meaning, so the bridge is a THIRD, node-based authoring dialect
     -- MaterialX, whose ShaderGen emits GLSL/ESSL for the raster
