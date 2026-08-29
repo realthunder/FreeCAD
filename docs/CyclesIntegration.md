@@ -832,7 +832,17 @@ seconds).
   exponent, then the fourth root); authored colours and the byte
   streams decoded to linear when the output transform is colour
   managed. `Render_Glass` becomes transmission at the stated IOR and
-  roughness; `Render_Light` bodies and unlit draws become emission;
+  roughness, and its tint an absorption volume on the shader's
+  Volume output: Cycles' absorption closure weighs
+  `(1 - Color) * Density`, which is the `sigma = density *
+  (1 - diffuse)` Beer-Lambert of `fs_fc_glass.sc` exactly, so the
+  object colour drives it and the density (`Render_GlassDensity`,
+  per scene unit; `<= 0` = automatic, `3 / bounds diagonal` as in
+  the bgfx glass pass) joins the shader key. The volume is not put
+  through the section clip test -- reading the position would make
+  it heterogeneous (ray marched) -- so a sectioned tinted body still
+  absorbs over its removed part; `Render_Light` bodies and unlit
+  draws become emission;
   `transparent` draws and per-vertex alpha go through the BSDF's
   alpha.
 - **Environment.** The procedural presets were `BGFXView` members;
@@ -1314,6 +1324,18 @@ Phase 6 -- queued, not started. Two items, in this order.
     (`docs/ShaderDesign.md` 3.8), Cycles through the transmission it
     already builds in section 6.2 -- so nothing new is needed on the
     Cycles side beyond what a richer glass material states.
+
+    DONE 2026-08-29. The model is the fork's own
+    `Models/Rendering/GlassRendering.yml` (inheriting
+    `BasicRendering`, because the absorption is tinted by the diffuse
+    colour) rather than upstream's density-less `Render Glass`; a
+    card states `Render_*` view properties through
+    `Materials::Material::getRenderProperties()` and
+    `Gui::applyMaterialRenderProperties()`; four presets (Clear,
+    Frosted, Tinted, Acrylic) with icons rendered as glass. The one
+    piece Cycles lacked -- it had dropped `Render_GlassDensity`, so
+    Tinted Glass path traced untinted -- is the absorption volume of
+    section 6.2.
 
 15. **Bridge the shader system to Cycles through the node API.** The
     translator emits one fixed graph per material: a Principled BSDF

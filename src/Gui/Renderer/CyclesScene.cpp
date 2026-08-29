@@ -756,9 +756,21 @@ SceneTranslator::Surface SceneTranslator::resolveSurface(const Material &m,
         s.glass = true;
         s.ior = m.glassior > 0.0f ? m.glassior : 1.5f;
         s.glassRoughness = std::clamp(m.glassroughness, 0.0f, 1.0f);
+        s.glassDensity = std::max(m.glassdensity, 0.0f);
         s.alpha = 1.0f;
     }
     return s;
+}
+
+float SceneTranslator::autoGlassDensity(const DrawCall &draw)
+{
+    const float dx = draw.bboxMax[0] - draw.bboxMin[0];
+    const float dy = draw.bboxMax[1] - draw.bboxMin[1];
+    const float dz = draw.bboxMax[2] - draw.bboxMin[2];
+    if (dx < 0.0f || dy < 0.0f || dz < 0.0f)
+        return 0.0f;
+    const float diag = std::sqrt(dx * dx + dy * dy + dz * dz);
+    return diag > 0.0f ? 3.0f / diag : 0.0f;
 }
 
 std::string SceneTranslator::Clip::key() const
@@ -835,8 +847,8 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s, const Clip &clip)
     key.precision(4);
     key << (s.unlit ? "u" : s.glass ? "g" : "p") << ':' << s.metallic << ':' << s.roughness
         << ':' << s.emissive[0] << ',' << s.emissive[1] << ',' << s.emissive[2]
-        << ':' << s.emissiveStrength << ':' << s.ior << ':' << s.glassRoughness
-        << clip.key();
+        << ':' << s.emissiveStrength << ':' << s.ior << ':' << s.glassRoughness << ':'
+        << s.glassDensity << clip.key();
     auto it = shaders.find(key.str());
     if (it != shaders.end())
         return it->second;
@@ -866,6 +878,23 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s, const Clip &clip)
         if (!s.glass)
             graph->connect(info->output("Alpha"), bsdf->input("Alpha"));
         connectSurface(graph.get(), bsdf->output("BSDF"), clip);
+        if (s.glass && s.glassDensity > 0.0f) {
+            // The tint of a glass body is absorption over the path
+            // through it, not a surface colour: the same Beer-Lambert
+            // the bgfx glass pass applies over the front/back depth
+            // interval, here as a homogeneous absorption volume the
+            // path tracer integrates along the refracted path. Cycles'
+            // absorption closure weighs (1 - Color) * Density, which is
+            // fs_fc_glass.sc's sigma exactly, so the object colour
+            // drives it unchanged. The volume is NOT put through the
+            // clip test: that would read the position and make the
+            // volume heterogeneous (ray marched), for a section of a
+            // tinted body that then absorbs over its removed part too.
+            auto *absorb = graph->create_node<ccl::AbsorptionVolumeNode>();
+            absorb->set_density(s.glassDensity);
+            graph->connect(info->output("Color"), absorb->input("Color"));
+            graph->connect(absorb->output("Volume"), graph->output()->input("Volume"));
+        }
     }
     shader->set_graph(std::move(graph));
     shader->tag_update(scene);
@@ -944,7 +973,9 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
     // The resolved surface of the draw's scalars; per-vertex draws
     // re-resolve per vertex below, with the scalars as the fallback
     // for what the streams do not carry.
-    const Surface uniform = resolveSurface(m, pbr, nullptr, nullptr);
+    Surface uniform = resolveSurface(m, pbr, nullptr, nullptr);
+    if (uniform.glass && uniform.glassDensity <= 0.0f)
+        uniform.glassDensity = autoGlassDensity(draw);
     Clip clip;
     clip.num = std::min<uint8_t>(m.numclipplanes, Material::MaxClipPlanes);
     clip.concave = m.clipconcave;

@@ -129,11 +129,23 @@ private:
         bool glass = false;
         float ior = 1.5f;
         float glassRoughness = 0.0f;
+        /// Absorption density per scene unit, the Beer-Lambert sigma
+        /// before the tint weighting (sigma = density * (1 - base),
+        /// which is what fs_fc_glass.sc and Cycles' absorption volume
+        /// both compute). 0 = no absorption; resolveSurface leaves an
+        /// automatic (<= 0) density at 0 and translateDraw resolves it
+        /// from the draw's bounds.
+        float glassDensity = 0.0f;
     };
     Surface resolveSurface(const Material &material,
                            const PBRConfig &pbr,
                            const uint8_t *vertexColor,
                            const uint8_t *materialStream) const;
+    /// The automatic glass density of a draw that states none: about
+    /// one optical depth across the body's bounds diagonal before the
+    /// tint weighting, the same rule as the bgfx glass pass
+    /// (BGFXViewEffects.cpp). 0 when the bounds are empty.
+    static float autoGlassDensity(const DrawCall &draw);
 
     /// The draw's world-space section planes, carried into the SHADER
     /// because Cycles has no clip-plane state: the graph itself makes
