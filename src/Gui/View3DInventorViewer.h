@@ -820,6 +820,21 @@ public:
                            std::string *error);
     /// What the live Cycles session is doing; false when there is none.
     bool cyclesViewportStatus(Render::Cycles::ViewportStatus &status) const;
+    /** Make the live external session agree with the view's shading
+     * choice (the External value of View3DInventor::ShadingType).
+     *
+     * Reads the choice and the Cycles_* options off the view and
+     * starts, restarts or stops the session through setCyclesViewport
+     * accordingly -- a restart only when the effective options actually
+     * changed, so the property writes a refresh loop re-issues do not
+     * throw the refining frame away. Called from every direction the
+     * inputs change: the declared properties (View3DInventor::
+     * onChanged), the Cycles_* options (onViewPropertyChanged), restore
+     * (View3DInventor::Restore) and backend selection
+     * (setRendererType). Failure lands on the console: the caller is a
+     * property change with nobody to hand an error to.
+     */
+    void syncExternalShading();
     /** Feed this viewer's live Cycles session as one cell of a unified
      * canvas (docs/CyclesIntegration.md sec 5.11).
      *

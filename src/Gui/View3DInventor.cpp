@@ -115,16 +115,27 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
             "The shading model of this view: Classic is the\n"
             "fixed-function Phong look, Realistic shades a physically\n"
             "based surface lit by an environment image, Matcap looks\n"
-            "the shading up from a camera-fixed studio.");
+            "the shading up from a camera-fixed studio, and External\n"
+            "hands the view to the path tracer ExternalRenderType\n"
+            "names, refining progressively over the raster frame.");
     // Append-only: the index is what a file carries (ShadingModel).
     static const char *_shadingTypeNames[] =
-        {"Classic", "Realistic", "Matcap", nullptr};
+        {"Classic", "Realistic", "Matcap", "External", nullptr};
     ShadingType.setEnums(_shadingTypeNames);
     // The preference pair is the default for a new view, exactly as it
     // was when it seeded the bools directly; matcap wins the tie the
     // way the shading options widget always presented it.
     ShadingType.setValue(RenderParams::getMatcap() ? ShadingMatcap
             : RenderParams::getPBR() ? ShadingRealistic : ShadingClassic);
+    // Deliberately no preference behind the value: the app should not
+    // open straight into a path tracer, so External is always a choice
+    // made on a view, never a default.
+    ADD_PROPERTY_TYPE(ExternalRenderType, (0L), nullptr, App::Prop_None,
+            "Which external renderer the External shading model hands\n"
+            "this view to.");
+    // Append-only, like ShadingType: a bare index reaches the file.
+    static const char *_externalRenderTypeNames[] = {"Cycles", nullptr};
+    ExternalRenderType.setEnums(_externalRenderTypeNames);
     ADD_PROPERTY_TYPE(ShowNaviCube, (false), nullptr, App::Prop_None,
             "Show navigation cube in this view");
     ADD_PROPERTY_TYPE(ThumbnailView, (false), nullptr, App::Prop_None,
@@ -1218,6 +1229,7 @@ void View3DInventor::customEvent(QEvent * e)
 void View3DInventor::Restore(Base::XMLReader &reader)
 {
     Base::StateLocker guard(_restoring);
+    _restoredShadingType = false;
     MDIView::Restore(reader);
     // A Light_* property exists only where the author overrode the rig, so
     // whatever the document carried has to reach the light nodes now. The
@@ -1240,6 +1252,16 @@ void View3DInventor::Restore(Base::XMLReader &reader)
     // A document from before ShadingType persisted the shading model
     // as the Render_PBR / Render_Matcap pair; fold it into the enum.
     migrateShadingModel();
+    // A restored Cycles_Device holds the ORIGINATING machine's device
+    // list with the right name selected (a custom enumeration restores
+    // its own CustomEnumList); re-map it onto this machine's devices
+    // by name before anything reads it.
+    remapCyclesDeviceProperty(this);
+    // The enum restored above with the session sync deliberately
+    // skipped (onChanged): now that the Cycles_* options are in, a
+    // view saved in External starts its session.
+    if (_viewer)
+        _viewer->syncExternalShading();
 }
 
 namespace {
@@ -1381,6 +1403,13 @@ void View3DInventor::syncShadingModelFacade()
 
 void View3DInventor::migrateShadingModel()
 {
+    // Only for a document from BEFORE the enum: one that carried
+    // ShadingType itself has already restored the truth, and the pair
+    // here is just the facade the restore pushed -- under External it
+    // reads (false, false), which the fold below cannot tell from
+    // Classic and would overwrite the restored value with.
+    if (_restoredShadingType)
+        return;
     // A pre-ShadingType document persisted the shading model as the
     // pair itself. Restore leaves the pair holding the document's
     // answer -- reusing the live facade where a backend already
@@ -1436,6 +1465,11 @@ void View3DInventor::onChanged(const App::Property *prop)
                 ViewProviderDocumentObject::syncDisplayModeInViewAll(this);
         }
         else if (prop == &ShadingType) {
+            // Restore delivering the enum means the file states the
+            // model itself; migrateShadingModel keys off this (see
+            // _restoredShadingType).
+            if (_restoring)
+                _restoredShadingType = true;
             // The facade pair follows the enum. User1 latches the
             // direction, like DrawStyle below: a facade write folding
             // back in (the branch after this one) must not re-push.
@@ -1444,6 +1478,18 @@ void View3DInventor::onChanged(const App::Property *prop)
                         App::Property::User1, &ShadingType);
                 syncShadingModelFacade();
             }
+            // The external session follows the enum too -- started on
+            // External, stopped off it. Not during restore: the
+            // Cycles_* options restore after this property, so Restore
+            // syncs once at its end instead.
+            if (!_restoring)
+                _viewer->syncExternalShading();
+        }
+        else if (prop == &ExternalRenderType) {
+            // A different engine under the same External choice: the
+            // session is the engine's, so it restarts.
+            if (!_restoring)
+                _viewer->syncExternalShading();
         }
         else if (!_restoring && !ShadingType.testStatus(App::Property::User1)
                  && prop->getName()

@@ -187,6 +187,11 @@ public:
     double SunDiscSize;
     bool GroundReflection;
     double GroundReflectionIntensity;
+    std::string CyclesDevice;
+    long CyclesSamples;
+    double CyclesTimeLimit;
+    bool CyclesDenoise;
+    long CyclesPixelSize;
     long DebugViewMode;
     bool DebugFreezeFrame;
     bool DebugLabel;
@@ -476,6 +481,16 @@ public:
         funcs["GroundReflection"] = &RenderParamsP::updateGroundReflection;
         GroundReflectionIntensity = this->handle->GetFloat("GroundReflectionIntensity", 0.4);
         funcs["GroundReflectionIntensity"] = &RenderParamsP::updateGroundReflectionIntensity;
+        CyclesDevice = this->handle->GetASCII("CyclesDevice", "CPU");
+        funcs["CyclesDevice"] = &RenderParamsP::updateCyclesDevice;
+        CyclesSamples = this->handle->GetInt("CyclesSamples", 256);
+        funcs["CyclesSamples"] = &RenderParamsP::updateCyclesSamples;
+        CyclesTimeLimit = this->handle->GetFloat("CyclesTimeLimit", 0.0);
+        funcs["CyclesTimeLimit"] = &RenderParamsP::updateCyclesTimeLimit;
+        CyclesDenoise = this->handle->GetBool("CyclesDenoise", true);
+        funcs["CyclesDenoise"] = &RenderParamsP::updateCyclesDenoise;
+        CyclesPixelSize = this->handle->GetInt("CyclesPixelSize", 1);
+        funcs["CyclesPixelSize"] = &RenderParamsP::updateCyclesPixelSize;
         DebugViewMode = this->handle->GetInt("DebugViewMode", 0);
         funcs["DebugViewMode"] = &RenderParamsP::updateDebugViewMode;
         DebugFreezeFrame = this->handle->GetBool("DebugFreezeFrame", false);
@@ -1061,6 +1076,26 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateGroundReflectionIntensity(RenderParamsP *self) {
         self->GroundReflectionIntensity = self->handle->GetFloat("GroundReflectionIntensity", 0.4);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCyclesDevice(RenderParamsP *self) {
+        self->CyclesDevice = self->handle->GetASCII("CyclesDevice", "CPU");
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCyclesSamples(RenderParamsP *self) {
+        self->CyclesSamples = self->handle->GetInt("CyclesSamples", 256);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCyclesTimeLimit(RenderParamsP *self) {
+        self->CyclesTimeLimit = self->handle->GetFloat("CyclesTimeLimit", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCyclesDenoise(RenderParamsP *self) {
+        self->CyclesDenoise = self->handle->GetBool("CyclesDenoise", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCyclesPixelSize(RenderParamsP *self) {
+        self->CyclesPixelSize = self->handle->GetInt("CyclesPixelSize", 1);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugViewMode(RenderParamsP *self) {
@@ -6070,6 +6105,161 @@ void RenderParams::setGroundReflectionIntensity(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeGroundReflectionIntensity() {
     instance()->handle->RemoveFloat("GroundReflectionIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCyclesDevice() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Compute device type the External shading model path traces\n"
+"on, as Gui.cyclesDevices() names them: 'CPU' always works, and\n"
+"'CUDA', 'OPTIX' or 'HIP' when this machine has the GPU and the\n"
+"driver for it. Seeds the per-view Cycles_Device property, which\n"
+"offers only the devices the machine actually has -- a document\n"
+"saved elsewhere falls back to the first local device when its\n"
+"choice does not exist here.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const std::string & RenderParams::getCyclesDevice() {
+    return instance()->CyclesDevice;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const std::string & RenderParams::defaultCyclesDevice() {
+    const static std::string def = "CPU";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCyclesDevice(const std::string &v) {
+    instance()->handle->SetASCII("CyclesDevice",v);
+    instance()->CyclesDevice = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCyclesDevice() {
+    instance()->handle->RemoveASCII("CyclesDevice");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCyclesSamples() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Samples per pixel the External shading model refines to\n"
+"before it rests. More is cleaner and slower to settle; the view\n"
+"stays interactive either way, restarting from one sample on\n"
+"every camera move.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getCyclesSamples() {
+    return instance()->CyclesSamples;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultCyclesSamples() {
+    const static long def = 256;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCyclesSamples(const long &v) {
+    instance()->handle->SetInt("CyclesSamples",v);
+    instance()->CyclesSamples = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCyclesSamples() {
+    instance()->handle->RemoveInt("CyclesSamples");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCyclesTimeLimit() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Seconds the External shading model may refine after each\n"
+"change before it rests, whatever the sample budget still says.\n"
+"0 means no limit: the sample count alone decides.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getCyclesTimeLimit() {
+    return instance()->CyclesTimeLimit;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultCyclesTimeLimit() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCyclesTimeLimit(const double &v) {
+    instance()->handle->SetFloat("CyclesTimeLimit",v);
+    instance()->CyclesTimeLimit = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCyclesTimeLimit() {
+    instance()->handle->RemoveFloat("CyclesTimeLimit");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCyclesDenoise() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Run OpenImageDenoise over the refining External shading\n"
+"frame, trading the raw noise of the early samples for a smooth\n"
+"image that sharpens as samples arrive.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getCyclesDenoise() {
+    return instance()->CyclesDenoise;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultCyclesDenoise() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCyclesDenoise(const bool &v) {
+    instance()->handle->SetBool("CyclesDenoise",v);
+    instance()->CyclesDenoise = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCyclesDenoise() {
+    instance()->handle->RemoveBool("CyclesDenoise");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCyclesPixelSize() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Render the External shading model at 1/n resolution and\n"
+"scale up -- Blender's preview pixel size. 2 or 4 keeps a large\n"
+"view fluid on a weak device at the cost of a blockier preview.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getCyclesPixelSize() {
+    return instance()->CyclesPixelSize;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultCyclesPixelSize() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCyclesPixelSize(const long &v) {
+    instance()->handle->SetInt("CyclesPixelSize",v);
+    instance()->CyclesPixelSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCyclesPixelSize() {
+    instance()->handle->RemoveInt("CyclesPixelSize");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

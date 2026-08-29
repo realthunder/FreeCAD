@@ -299,6 +299,19 @@ GuiExport void stripLegacyRenderProperties(App::PropertyContainer *view);
 /// only way to get it is to create the property again.)
 GuiExport void reseedLocalRenderProperties(App::PropertyContainer *view);
 
+/// Point the Cycles_Device enumeration at THIS machine: its value list
+/// becomes the device types the local engine can see, keeping the
+/// selected NAME when the list has it and falling back to the first
+/// entry -- so a document saved on a machine with an OPTIX card still
+/// renders here instead of failing on a device that does not exist.
+/// Creates the property (seeded from the CyclesDevice preference) when
+/// it is missing; called both at materialize time
+/// (initRenderProperties) and after a view restores itself, which is
+/// when the property holds the originating machine's list (a custom
+/// enumeration restores its own CustomEnumList). A no-op without the
+/// engine.
+GuiExport void remapCyclesDeviceProperty(App::PropertyContainer *view);
+
 /// The effective value of one section/clipping style key for \a view: its
 /// Section_* property if it has one, and the ViewParams preference
 /// otherwise. How a section is capped, hatched and filled is part of how a

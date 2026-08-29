@@ -175,6 +175,18 @@ private:
     Gui::PrefCheckBox *GroundReflection = nullptr;
     QLabel *labelGroundReflectionIntensity = nullptr;
     Gui::PrefDoubleSpinBox *GroundReflectionIntensity = nullptr;
+
+    // Auto generated code (Tools/params_utils.py:426)
+    QGroupBox * groupExternalshadingCycles = nullptr;
+    QLabel *labelCyclesDevice = nullptr;
+    Gui::PrefLineEdit *CyclesDevice = nullptr;
+    QLabel *labelCyclesSamples = nullptr;
+    Gui::PrefSpinBox *CyclesSamples = nullptr;
+    QLabel *labelCyclesTimeLimit = nullptr;
+    Gui::PrefDoubleSpinBox *CyclesTimeLimit = nullptr;
+    Gui::PrefCheckBox *CyclesDenoise = nullptr;
+    QLabel *labelCyclesPixelSize = nullptr;
+    Gui::PrefSpinBox *CyclesPixelSize = nullptr;
 // Auto generated code (Tools/params_utils.py:573)
 };
 } // namespace Dialog

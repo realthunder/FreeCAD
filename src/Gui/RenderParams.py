@@ -1471,6 +1471,31 @@ Params = [
         "settings (color, size, texture) from the shadow group."),
     ParamFloat('GroundReflectionIntensity',  0.4, title='Reflection intensity',
         doc="Blend factor of the mirrored model on the ground plane."),
+    ParamString('CyclesDevice', 'CPU', title='Cycles device',
+        doc="Compute device type the External shading model path traces\n"
+        "on, as Gui.cyclesDevices() names them: 'CPU' always works, and\n"
+        "'CUDA', 'OPTIX' or 'HIP' when this machine has the GPU and the\n"
+        "driver for it. Seeds the per-view Cycles_Device property, which\n"
+        "offers only the devices the machine actually has -- a document\n"
+        "saved elsewhere falls back to the first local device when its\n"
+        "choice does not exist here."),
+    ParamInt('CyclesSamples',  256, title='Cycles samples',
+        doc="Samples per pixel the External shading model refines to\n"
+        "before it rests. More is cleaner and slower to settle; the view\n"
+        "stays interactive either way, restarting from one sample on\n"
+        "every camera move."),
+    ParamFloat('CyclesTimeLimit',  0.0, title='Cycles time limit',
+        doc="Seconds the External shading model may refine after each\n"
+        "change before it rests, whatever the sample budget still says.\n"
+        "0 means no limit: the sample count alone decides."),
+    ParamBool('CyclesDenoise',  True, title='Cycles denoise',
+        doc="Run OpenImageDenoise over the refining External shading\n"
+        "frame, trading the raw noise of the early samples for a smooth\n"
+        "image that sharpens as samples arrive."),
+    ParamInt('CyclesPixelSize',  1, title='Cycles pixel size',
+        doc="Render the External shading model at 1/n resolution and\n"
+        "scale up -- Blender's preview pixel size. 2 or 4 keeps a large\n"
+        "view fluid on a weak device at the cost of a blockier preview."),
     ParamInt('DebugViewMode',  0, title='Debug view mode',
         proxy=ParamComboBox(items=['Off', 'Depth', 'Normal', 'AO', 'Shadow',
                                    'ShadowTile', 'Overdraw', 'ShadowFilter',

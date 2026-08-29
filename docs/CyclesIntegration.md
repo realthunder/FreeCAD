@@ -317,11 +317,23 @@ Build the on-top route first; it unblocks everything else.
 
 ### 5.4 Which view
 
-Both shapes are built; the UI for either is still open.
+Both shapes are built. The first one has its UI since 2026-08-29: the
+**External shading model** -- the fourth value of the view's declared
+`ShadingType` enum, with `ExternalRenderType` naming the engine and the
+per-view `Cycles_*` properties (device / samples / time limit / denoise
+/ pixel size) as the session options.
+`View3DInventorViewer::syncExternalShading()` starts, restarts and
+stops the session off those properties, and the Display style
+popover's fourth radio plus its Settings... dialog drive them
+(Gui/ShadingOptions.cpp). `Cycles_Device` is an enumeration built from
+THIS machine's devices and re-mapped by NAME after every restore
+(`Gui::remapCyclesDeviceProperty`), falling back to the first local
+entry, so a document from a machine with different GPUs still renders.
 
 - A **render mode toggled on an existing 3D view** -- fewest moving
   parts, and the camera is already the right one. This is what
-  `view.cyclesViewport(...)` does (section 5.7).
+  `view.cyclesViewport(...)` does (section 5.7), and what the External
+  shading model wraps.
 - A **Cycles cell beside the normal view**, with a linked camera, using
   the split-view/ViewArea canvas (`docs/SplitViews.md`). Model on the
   left, path-traced preview on the right. Section 5.11: the same call

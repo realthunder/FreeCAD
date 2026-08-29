@@ -2839,6 +2839,81 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter CyclesDevice
+    ///
+    /// Compute device type the External shading model path traces
+    /// on, as Gui.cyclesDevices() names them: 'CPU' always works, and
+    /// 'CUDA', 'OPTIX' or 'HIP' when this machine has the GPU and the
+    /// driver for it. Seeds the per-view Cycles_Device property, which
+    /// offers only the devices the machine actually has -- a document
+    /// saved elsewhere falls back to the first local device when its
+    /// choice does not exist here.
+    static const std::string & getCyclesDevice();
+    static const std::string & defaultCyclesDevice();
+    static void removeCyclesDevice();
+    static void setCyclesDevice(const std::string &v);
+    static const char *docCyclesDevice();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CyclesSamples
+    ///
+    /// Samples per pixel the External shading model refines to
+    /// before it rests. More is cleaner and slower to settle; the view
+    /// stays interactive either way, restarting from one sample on
+    /// every camera move.
+    static const long & getCyclesSamples();
+    static const long & defaultCyclesSamples();
+    static void removeCyclesSamples();
+    static void setCyclesSamples(const long &v);
+    static const char *docCyclesSamples();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CyclesTimeLimit
+    ///
+    /// Seconds the External shading model may refine after each
+    /// change before it rests, whatever the sample budget still says.
+    /// 0 means no limit: the sample count alone decides.
+    static const double & getCyclesTimeLimit();
+    static const double & defaultCyclesTimeLimit();
+    static void removeCyclesTimeLimit();
+    static void setCyclesTimeLimit(const double &v);
+    static const char *docCyclesTimeLimit();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CyclesDenoise
+    ///
+    /// Run OpenImageDenoise over the refining External shading
+    /// frame, trading the raw noise of the early samples for a smooth
+    /// image that sharpens as samples arrive.
+    static const bool & getCyclesDenoise();
+    static const bool & defaultCyclesDenoise();
+    static void removeCyclesDenoise();
+    static void setCyclesDenoise(const bool &v);
+    static const char *docCyclesDenoise();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CyclesPixelSize
+    ///
+    /// Render the External shading model at 1/n resolution and
+    /// scale up -- Blender's preview pixel size. 2 or 4 keeps a large
+    /// view fluid on a weak device at the cost of a blockier preview.
+    static const long & getCyclesPixelSize();
+    static const long & defaultCyclesPixelSize();
+    static void removeCyclesPixelSize();
+    static void setCyclesPixelSize(const long &v);
+    static const char *docCyclesPixelSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter DebugViewMode
     ///
     /// Render debugging buffer visualization (docs/RenderDebug.md).
