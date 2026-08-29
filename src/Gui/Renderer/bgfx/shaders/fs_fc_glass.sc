@@ -9,7 +9,10 @@ $input v_normal, v_color0, v_color1, v_color2, v_vpos, v_opos, v_onrm, v_findex
  * Beer-Lambert absorption tinted by the material diffuse over the same
  * thickness, Fresnel-blended environment reflection (f0 from the IOR,
  * roughness picks the prefiltered mip) and a sun glint from the scene
- * light.
+ * light. Roughness also frosts the transmission: the refracted sample
+ * is spread over a disc that grows with roughness and thickness, and a
+ * share of the light comes back diffusely (the whitish body of etched
+ * glass), so a frosted pane blurs and pales what is behind it.
  *
  * u_glassParams: x = index of refraction, y = absorption density
  *                (1/world units, resolved by the backend), z = 0..1
@@ -84,7 +87,38 @@ void main()
 			|| (p4.w > 0.5 && p4.z < fragZ))
 			ruv = uv;
 	}
-	vec3 refr = texture2D(s_texScene, ruv).xyz;
+	// Rough transmission. A rough interface scatters the refracted
+	// ray into a cone, so the scene shows blurred through it: the
+	// cone's footprint at the exit grows with the thickness, like the
+	// refraction offset does, and a floor of a few texels keeps a thin
+	// pane frosted too, and a cap keeps what is behind it legible as
+	// blurred shapes rather than dissolving it. Sixteen taps on a
+	// golden-angle spiral, rotated per pixel (interleaved gradient
+	// noise) so they dither rather than band; the depth reject above
+	// was decided at the centre tap and stands for the disc.
+	float rough = u_glassParams.z;
+	vec3 refr;
+	if (rough > 0.001)
+	{
+		vec2 rad = rough * thick * 0.35
+			* vec2(u_proj[0][0], u_proj[1][1]) * 0.5 * persp;
+		rad = max(rad, u_viewTexel.xy * rough * 4.0);
+		rad = min(rad, vec2_splat(0.02));
+		float ang = 6.2831853 * fract(52.9829189
+			* fract(dot(gl_FragCoord.xy,
+			            vec2(0.06711056, 0.00583715))));
+		refr = vec3_splat(0.0);
+		for (int i = 0; i < 16; ++i)
+		{
+			float fi = float(i) + 0.5;
+			float a = ang + fi * 2.39996323;
+			vec2 o = rad * sqrt(fi / 16.0) * vec2(cos(a), sin(a));
+			refr += texture2D(s_texScene, ruv + o).xyz;
+		}
+		refr *= 1.0 / 16.0;
+	}
+	else
+		refr = texture2D(s_texScene, ruv).xyz;
 
 	// Per-channel Beer-Lambert absorption of the diffuse complement
 	// over the thickness.
@@ -92,12 +126,23 @@ void main()
 		* (vec3_splat(1.0) - u_matColor.rgb);
 	refr *= exp(-sigma * thick);
 
-	// Environment reflection, roughness picks the prefiltered mip.
 	vec3 Vw = normalize(mul(u_invView, vec4(V, 0.0)).xyz);
 	vec3 nw = normalize(mul(u_invView, vec4(n, 0.0)).xyz);
+
+	// The share a frosted surface scatters back diffusely, lit by the
+	// environment's irradiance (the coarsest prefiltered mip about the
+	// normal) and tinted by the material: what makes etched glass read
+	// whitish, and what still says "frosted" once the blur is below a
+	// pixel.
+	if (rough > 0.001)
+	{
+		vec3 irr = textureCubeLod(s_texEnv, nw, 5.0).xyz;
+		refr = mix(refr, irr * u_matColor.rgb, rough * 0.6);
+	}
+
+	// Environment reflection, roughness picks the prefiltered mip.
 	vec3 rw = reflect(-Vw, nw);
-	vec3 refl = textureCubeLod(s_texEnv, rw,
-	                           u_glassParams.z * 4.0).xyz;
+	vec3 refl = textureCubeLod(s_texEnv, rw, rough * 4.0).xyz;
 
 	// Schlick Fresnel with f0 from the IOR.
 	float f0 = (ior - 1.0) / (ior + 1.0);
