@@ -337,6 +337,9 @@ private:
             // its update; the camera is restated under it too.
             std::lock_guard<ccl::thread_mutex> lock(session->scene->mutex);
             moved = translator->translateCamera(camera);
+            // A projection-kind change invalidates the background's
+            // ortho camera-ray fan; rebuild it before the reset.
+            translator->refreshWorld();
         }
         if (moved)
             session->reset(sessionParams, bufferParams(camera));

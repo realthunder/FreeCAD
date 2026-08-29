@@ -526,6 +526,13 @@ bool SceneTranslator::translateCamera(const CameraInput &camera)
     // capture) survive that way; a field of view alone would not
     // carry them.
     const bool ortho = p[15] != 0.0f;
+    // The background graph carries a camera-ray fan only for an
+    // orthographic camera (translateWorld); crossing the projection
+    // kinds invalidates it. The caller follows with refreshWorld()
+    // when it restates the camera alone.
+    if (worldStated && ortho != worldOrtho)
+        worldStated = false;
+    cameraOrtho = ortho;
     if (ortho) {
         cam->set_camera_type(ccl::CAMERA_ORTHOGRAPHIC);
         cam->set_nearclip((1.0f + p[14]) / p[10]);
@@ -554,11 +561,21 @@ bool SceneTranslator::translateCamera(const CameraInput &camera)
     return true;
 }
 
+void SceneTranslator::refreshWorld()
+{
+    if (worldStated || !worldEverStated)
+        return;
+    translateWorld(worldPbr, worldOutput);
+}
+
 bool SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &output)
 {
-    if (worldStated && pbr == worldPbr && output == worldOutput)
+    if (worldStated && pbr == worldPbr && output == worldOutput
+        && worldOrtho == cameraOrtho)
         return false;
     worldStated = true;
+    worldEverStated = true;
+    worldOrtho = cameraOrtho;
     worldPbr = pbr;
     worldOutput = output;
 
@@ -596,6 +613,45 @@ bool SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &o
     bg->set_strength(std::max(pbr.envIntensity, 0.0f));
     graph->connect(env->output("Color"), bg->input("Color"));
     graph->connect(bg->output("Background"), graph->output()->input("Surface"));
+
+    // An orthographic camera has no per-pixel ray fan: every camera
+    // ray shares the view direction, so the environment behind the
+    // frame degenerates to one texel -- a flat wash where the raster
+    // backend shows a readable sky (fs_fc_env.sc fakes a 45-degree
+    // virtual field of view around the view axis there, tan 22.5 =
+    // 0.41421356). Mirror that convention, and only for CAMERA rays:
+    // lighting and reflections keep the true directions, exactly as
+    // the raster meshes shade with real view vectors. Cycles' camera
+    // space looks down +z (the flip translateCamera bakes into the
+    // camera matrix), so the fan's axis is +1 where the GL shader has
+    // -1; Window is the screen coordinate, (0,0) bottom left.
+    if (cameraOrtho) {
+        auto *window = graph->create_node<ccl::TextureCoordinateNode>();
+        auto *fan = graph->create_node<ccl::VectorMathNode>();
+        fan->set_math_type(ccl::NODE_VECTOR_MATH_MULTIPLY_ADD);
+        const float t = 0.41421356f;
+        fan->set_vector2(ccl::make_float3(2.0f * t, 2.0f * t, 0.0f));
+        fan->set_vector3(ccl::make_float3(-t, -t, 1.0f));
+        graph->connect(window->output("Window"), fan->input("Vector1"));
+        auto *toWorld = graph->create_node<ccl::VectorTransformNode>();
+        toWorld->set_transform_type(ccl::NODE_VECTOR_TRANSFORM_TYPE_VECTOR);
+        toWorld->set_convert_from(
+            ccl::NODE_VECTOR_TRANSFORM_CONVERT_SPACE_CAMERA);
+        toWorld->set_convert_to(ccl::NODE_VECTOR_TRANSFORM_CONVERT_SPACE_WORLD);
+        graph->connect(fan->output("Vector"), toWorld->input("Vector"));
+        // The equirectangular lookup divides by the direction's length
+        // (projection.h), so the fan needs no normalize node.
+        auto *geom = graph->create_node<ccl::GeometryNode>();
+        auto *path = graph->create_node<ccl::LightPathNode>();
+        auto *mix = graph->create_node<ccl::MixVectorNode>();
+        // A = Position restates the env node's own unlinked default
+        // (LINK_POSITION; the ray direction in a background shader).
+        graph->connect(geom->output("Position"), mix->input("A"));
+        graph->connect(toWorld->output("Vector"), mix->input("B"));
+        graph->connect(path->output("Is Camera Ray"), mix->input("Factor"));
+        graph->connect(mix->output("Result"), env->input("Vector"));
+    }
+
     shader->set_graph(std::move(graph));
     shader->tag_update(scene);
     return true;
