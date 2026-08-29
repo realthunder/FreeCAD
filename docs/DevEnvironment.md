@@ -128,12 +128,11 @@ delete those files (`lib/libarea.so*`, `include/libarea`,
 Build dirs / installs are parallel to the system stack and never collide:
 `<repo>/build_conda_debug` → `<repo>/install/conda-debug`.
 
-**The debug OCCT install that exists on this box is 7.7.2**, from `LinkVibe` into
-`install/conda-debug`, and it is what the debug FreeCAD links. The recipe below is
-written for the 8.0.1 branch, which is how an `install/conda-debug-801` would be made;
-swap branch and `INSTALL_DIR` for either. Nothing currently needs a debug 801 prefix --
-the 8.0.1 stack in use is the optimized one, `install/conda-relwithdebinfo-801`, which
-is where anything version-guarded is built and measured.
+**Both OCCT installs on this box are 8.0.1**, from `LinkVibe-801`:
+`install/conda-debug-801` (what the debug FreeCAD links) and
+`install/conda-relwithdebinfo-801` (the standard stack, where anything
+version-guarded is built and measured). The recipe below makes the debug one;
+swap `CMAKE_BUILD_TYPE` and `INSTALL_DIR` for the other.
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
@@ -257,8 +256,12 @@ the two warnings in the dependency section.
 **Both stacks are OCCT 8.0.1; there is no 7.7.2 on this box any more.** The
 frozen 7.7.2 prefixes (`occt/install/conda-debug`,
 `occt/install/conda-relwithdebinfo`) and the FreeCAD trees that linked them
-(`build/conda-debug`, `build/conda-relwithdebinfo`) were deleted on 2026-08-28,
-together with their OCCT build dirs -- about 21GB. They had stopped being a
+(`build/conda-debug`, `build/conda-relwithdebinfo`) were deleted on 2026-08-28
+and 2026-08-29, together with their OCCT build dirs and the pre-conda
+`install/debug` + `build_debug` stacks in occt, coin and pivy -- about 35GB in
+all. The only trees that exist now are the ones this document names: the two
+`*-801` FreeCAD trees plus `build/wasm`, and the `conda-*` prefixes of occt,
+coin and pivy. They had stopped being a
 usable compile check well before that: `Mod/Part/App/ShapeRefSet.cpp` calls
 `BRepTools_ShapeSet::Curves2d()` and siblings that exist only on occt
 `LinkVibe-801`, unguarded, so 7.7.2 could not compile `Mod/Part` at all. 7.7.2
