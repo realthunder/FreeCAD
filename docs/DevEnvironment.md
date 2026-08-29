@@ -1299,7 +1299,7 @@ Watch for this shape generally -- a bare library name in an MSVC link error
 usually comes out of an object's auto-link pragma, not out of CMake. `tbb12.lib`
 appears ten times in this tree's `build.ninja` and every one is a full path.
 
-#### Verifying it: `setupWithoutGUI()` cannot be used, and lies about why
+#### Verifying it: not through `setupWithoutGUI()`, and the two traps under that
 
 To call `Gui.cyclesDevices()` the Gui application has to exist -- under
 `FreeCADCmd` a bare `import FreeCADGui` gives the stub module, and
