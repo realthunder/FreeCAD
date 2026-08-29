@@ -1624,14 +1624,150 @@ Phase 6 -- queued, not started. Two items, in this order.
     facts a `Render::Material` carries -- texture maps, surface
     finishes, the per-face palettes -- become node graphs: the maps
     are section 6.5, the finishes section 6.6, the per-face palettes
-    section 6.7 (all built 2026-08-29). **Phase
-    B**, user shaders: freeform bgfx `.sc` text has no node-graph
-    meaning, so the bridge is a THIRD, node-based authoring dialect
-    -- MaterialX, whose ShaderGen emits GLSL/ESSL for the raster
-    tiers and whose networks Cycles' own Hydra delegate already maps
-    to ccl nodes by name (`src/hydra/material.cpp`) -- deferred to a
-    design discussion of its own. The `post` stage needs no bridge:
-    it already runs over the traced frame.
+    section 6.7 (all built 2026-08-29). **Phase B**, user shaders:
+    freeform bgfx `.sc` text has no node-graph meaning, so the bridge
+    is a THIRD, node-based authoring dialect -- MaterialX. The
+    `post` stage needs no bridge: it already runs over the traced
+    frame.
+
+    **Phase B DESIGNED 2026-08-29** (discussion recorded here; work
+    starts in a later session). The findings that shaped it:
+
+    - A premise correction. An earlier draft of this item said
+      Cycles' Hydra delegate "already maps MaterialX networks to
+      ccl nodes". It does not: `src/hydra/material.cpp` maps
+      `UsdPreviewSurface` (a five-entry parameter table) and USD
+      nodes whose id starts with `cycles_`/`cycles:`, nothing else.
+      Blender's route (the 2026 GSoC project) is MaterialX ShaderGen
+      -> OSL -> `ccl::OSLNode`, which needs `WITH_OSL` (off in our
+      build, a heavy extra dependency) and runs on CPU and OptiX
+      only -- OptiX is a decoy on this box (section 4.1). Not our
+      route.
+    - Engines with a node vocabulary of their own INTERPRET a
+      MaterialX graph into it rather than compiling it: Unreal's
+      Interchange builds material-function nodes (Standard Surface,
+      OpenPBR, UsdPreviewSurface), three.js' `MaterialXLoader`
+      builds TSL nodes. Our translator already has that vocabulary
+      (`GraphOps` in `CyclesScene.cpp`; `applyMaps`/`applyFinish`
+      are hand-built graphs of the same kind).
+    - ShaderGen is the code-generation route for raster. MaterialX
+      1.39.5 (2026-05-22) emits GLSL, ESSL, Vulkan GLSL, MSL, WGSL,
+      OSL, MDL; hardware generation is unified in `MaterialXGenHw`
+      and designed to be subclassed for a new target (own `Syntax`,
+      overridden emit methods, registered node implementations).
+      But its raw GLSL cannot go through shaderc: bgfx uniforms are
+      `Vec4`/`Mat3`/`Mat4`/`Sampler` only, and ShaderGen declares
+      float/int/bool uniforms, uniform blocks and a `u_lightData[]`
+      struct array.
+    - The browser tier has no runtime compiler: the server compiles
+      and ships binaries (RenderDebug.md sec 6.3). Whatever is
+      generated is text through the existing hash-keyed shaderc
+      cache; the browser needs no MaterialX (JsMaterialX exists, but
+      is not needed).
+    - OpenPBR vs MaterialX: different kinds of thing. MaterialX is
+      the LANGUAGE (typed node graph, standard library, ShaderGen);
+      OpenPBR (v1.1.1, 2026-04-17, ASWF) is a SHADING MODEL -- the
+      parameters and the lobe layering -- in the same row as
+      Standard Surface, glTF PBR and UsdPreviewSurface. OpenPBR's
+      reference implementation is a MaterialX nodegraph shipped in
+      MaterialX's `libraries/`, but the spec stands alone so a
+      renderer without MaterialX implements it natively: Cycles'
+      Principled BSDF v2 is OpenPBR-aligned, Blender exports OpenPBR
+      as its MaterialX surface, Unreal Substrate imports it.
+    - Packaging: conda-forge has no `materialx` package (checked).
+      MaterialX is Apache-2.0, C++17; Core + Format + GenShader +
+      GenGlsl have no external dependencies; the `libraries/`
+      directory of `.mtlx` node definitions must ship as data, like
+      the shader sources.
+    - Prior art on the surface model: `portsmouth/OpenPBR-viewer`
+      (MIT, 2026-03, by an OpenPBR co-author) is a three.js material
+      demo -- ONE material as global uniforms, one glTF, no
+      instancing, no material textures, no denoiser -- but carries
+      two spec-tracked GLSL implementations of OpenPBR: a rasterizer
+      (`glsl/rasterization/openpbr.frag.glsl`, ~1.3k lines) and a
+      path-tracing BSDF (`glsl/pathtracing/openpbr_surface.glsl` +
+      the per-lobe files, ~1.5k lines). The app is not reusable
+      (three.js + JS); the shaders are.
+
+    **The design.** MaterialX is the material DESCRIPTION; the
+    engine keeps the lighting. A `.mtlx` document authors the
+    surface inputs -- pattern nodes feeding one surface-shader node.
+    **OpenPBR is the canonical surface model**; Standard Surface,
+    glTF PBR and UsdPreviewSurface are accepted through MaterialX's
+    own translation graphs, not mapped natively. Neither consumer
+    uses MaterialX's lighting:
+
+    - Raster: a `BgfxShaderGenerator : GlslShaderGenerator`
+      (ESSL-flavoured syntax, uniforms packed into `vec4` lanes,
+      samplers as `SAMPLER2D` slots, no light or environment code
+      emitted) that generates only a MATERIAL-INPUTS function --
+      the OpenPBR parameters -- spliced into the stock mesh shader
+      the way the volume stage splices `fcMediumField` today
+      (RenderEngine.md sec 5.3). Shadows, EVSM, SH/IBL, WBOIT,
+      picking, section clip, per-face palettes stay untouched: the
+      user program feeds the mesh program, it never replaces it. The
+      mesh shader itself moves to an OpenPBR evaluation, with
+      OpenPBR-viewer's rasterizer as the reference, replacing the
+      Phong-to-Khronos-spec-gloss fit of today.
+    - Cycles: an interpreter from the MaterialX graph to ccl nodes
+      -- a table for the stdlib pattern nodes (image, noise, mix,
+      math, separate/combine, texcoord, normalmap, ...) and the
+      surface node mapped onto `PrincipledBsdfNode`, whose v2
+      sockets are OpenPBR parameters, plus the emission/transparent/
+      absorption pieces section 6.2 already builds. OpenPBR-viewer's
+      path-tracing BSDF is the independent cross-check when raster
+      and Cycles disagree. An unsupported node reports once and the
+      material renders stock (the sandboxed-failure rule).
+    - Document model: `Dialect` gains `MATERIALX`; the `.mtlx`
+      text rides `FragmentProgram` (or an included file -- open
+      decision 2); the graph's public inputs surface as `Param_*`
+      dynamic properties in the REVERSE direction from today (the
+      interface is read from the document, not declared by hand)
+      and bind to both consumers -- vec4 lanes for raster,
+      `ValueNode`s for Cycles. Only `Stage=material` accepts the
+      dialect; `post`/`water`/`volume`/`particle` stay `.sc`.
+
+    **Phasing**, each step verifiable with the probe harness of
+    sections 6.5-6.7 (`build/conda-debug-occt801`, CPU + CUDA,
+    raster control frames):
+
+    0. Vendor MaterialX as a submodule (Core/Format/GenShader/
+       GenGlsl only), ship `libraries/` as an asset,
+       `Dialect=MATERIALX` validates at document load.
+    1. The Cycles interpreter, over MaterialX's own
+       `resources/Materials/Examples` (OpenPBR + Standard Surface
+       samples) -- first because it needs no shader-language work
+       and the phase-A traps (colour spaces, stride, socket names)
+       are fresh.
+    2. The OpenPBR mesh shader, then the bgfx ShaderGen target and
+       the splice; parity against the Cycles frames the way the
+       finish probe measures it.
+    3. Interface: public inputs -> `Param_*`, the demo preview, and
+       a material card able to carry a `.mtlx` (the appearance model
+       of MaterialStorage.md already has a file slot).
+
+    **Open decisions** (2, 4 and 5 are provisional; 1 and 3 are
+    ruled): (1) OpenPBR canonical -- RULED yes. (2) Where the
+    `.mtlx` lives: inline text (diff-able, what `.sc` does) vs an
+    included file through FileBlobs (real materials reference image
+    files relative to the `.mtlx`; the file route, or rewriting
+    `file=` references to blobs). (3) Cycles route -- RULED
+    interpreter, not OSL. (4) Phase A is NOT re-expressed in
+    MaterialX for now; the interpreter shares `GraphOps` with it.
+    (5) The raster splice covers material inputs only; no
+    displacement stage (it would reopen the undisplaced-geometry
+    problem of RenderEngine.md sec 5.3).
+
+    **Ruled out for phase B, kept for the roadmap:** a client-side
+    path tracer in the browser (OpenPBR-viewer's shape: BVH baked
+    into textures, full-screen fragment tracing, progressive
+    accumulation). It is complementary to the streamed Cycles
+    viewport of section 7.1, not a replacement -- no backend, zero
+    interaction latency, works from the static snapshot -- but it
+    is bounded by texture-baked BVHs, has no top-level BVH for our
+    instance-heavy scenes, no compute in WebGL2, no denoiser, and
+    mobile GPUs are thermally limited; WebGPU is the honest target.
+    See RoadMap.md, long term.
 
 
 ## 9. Traps carried forward
