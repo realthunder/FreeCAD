@@ -6,7 +6,9 @@
 #include "customtitlebarkit/MenuIntegration.h"
 #include "platform/PlatformTitleBarBackend.h"
 
+#include <QChildEvent>
 #include <QEvent>
+#include <QMenu>
 #include <QMenuBar>
 #include <QPointer>
 #include <QResizeEvent>
@@ -25,6 +27,7 @@ struct CustomTitleBarWindow::Impl {
     bool titleBarVisible = true;
     bool attached = false;
     bool safeAreaConnected = false;
+    bool menuGuardQueued = false;
     int cachedSpacerWidth = 0;
     QVariantAnimation *spacerAnim = nullptr;
 
@@ -80,6 +83,59 @@ struct CustomTitleBarWindow::Impl {
         spacerAnim->setStartValue(titleBar->nativeControlsSpacer()->width());
         spacerAnim->setEndValue(targetWidth);
         spacerAnim->start();
+    }
+
+    // LOCAL DIVERGENCE: put the menu spacer back when something else takes
+    // its place in QMainWindow's menu-widget slot. The usurper is plain
+    // QMainWindow::menuBar(): the kit shadows menuBar() non-virtually, so
+    // every call through a QMainWindow* -- which is all of Python, PySide
+    // binds the base class -- reaches Qt's, and Qt's lazily creates an empty
+    // QMenuBar INTO the layout when the menu widget is not already one. The
+    // empty bar has height zero, so the space the spacer was reserving
+    // collapses and the title bar overlay lands on the first toolbar row:
+    // still painted, but on top of the toolbars, taking their clicks as
+    // window-drag. One innocent Gui.getMainWindow().menuBar() from any
+    // addon breaks every toolbar on the row.
+    void guardMenuWidget(CustomTitleBarWindow *window)
+    {
+        menuGuardQueued = false;
+        if (mode != Mode::Custom || !attached) {
+            return;
+        }
+        QWidget *current = window->QMainWindow::menuWidget();
+        if (!menuSpacer || current == menuSpacer) {
+            return;
+        }
+        if (auto *bar = qobject_cast<QMenuBar *>(current)) {
+            if (bar == appMenuBar) {
+                // The application's own menu bar, in the slot on purpose --
+                // nothing in the kit or in Qt's lazy path puts it there.
+                // Evicting it through setMenuWidget() would delete it, so
+                // whoever arranged this keeps it.
+                return;
+            }
+            if (!bar->actions().isEmpty()) {
+                // The caller managed to put menus on it before the guard
+                // fired -- a script's menuBar().addMenu(...). What they
+                // wanted was the application's menu bar, so carry the
+                // entries over to it instead of deleting them.
+                QMenuBar *appBar = window->menuBar();
+                const auto actions = bar->actions();
+                for (QAction *action : actions) {
+                    if (QMenu *menu = action->menu()) {
+                        menu->setParent(appBar, menu->windowFlags());
+                    }
+                    else if (action->parent() == bar) {
+                        action->setParent(appBar);
+                    }
+                    appBar->addAction(action);
+                }
+            }
+        }
+        // Qt deletes the widget this replaces, which is the point: the
+        // imposter reserves no height and shows nothing.
+        window->setMenuWidget(menuSpacer);
+        layoutOverlay(window);
     }
 
     // LOCAL DIVERGENCE from FreeCAD/FreeCAD#26766: upstream builds all of this
@@ -404,6 +460,22 @@ void CustomTitleBarWindow::resizeEvent(QResizeEvent *event)
     QMainWindow::resizeEvent(event);
     if (d->mode == Mode::Native) return;
     d->layoutOverlay(this);
+}
+
+void CustomTitleBarWindow::childEvent(QChildEvent *event)
+{
+    QMainWindow::childEvent(event);
+    // The menu bar QMainWindow::menuBar() creates arrives here as a
+    // ChildAdded -- but mid-construction, when a cast to QMenuBar cannot
+    // succeed yet. So any added widget queues one check of the menu-widget
+    // slot instead; the check is a pointer compare, and the flag folds a
+    // construction storm into a single visit.
+    if (event->added() && event->child()->isWidgetType()
+        && d->mode == Mode::Custom && d->attached && !d->menuGuardQueued) {
+        d->menuGuardQueued = true;
+        QMetaObject::invokeMethod(this, [this]() { d->guardMenuWidget(this); },
+                                  Qt::QueuedConnection);
+    }
 }
 
 bool CustomTitleBarWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
