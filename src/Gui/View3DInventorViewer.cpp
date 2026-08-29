@@ -722,6 +722,7 @@ struct View3DInventorViewer::Private
     uint64_t cyclesSceneGen = 0;
     bool cyclesFed = false;
     Render::PBRConfig cyclesPbr;
+    Render::BumpConfig cyclesBump;
     Render::OutputConfig cyclesOutput;
     Render::LightConfig cyclesLight;
     Render::SectionConfig cyclesSection;
@@ -2183,6 +2184,7 @@ bool View3DInventorViewer::renderWithCycles(const std::string &path, int width, 
     input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
     input.section = RendererBridge::translateSectionConfig(settings);
     input.pbr = RendererBridge::translatePBRConfig(settings);
+    input.bump = RendererBridge::translateBumpConfig(settings);
     input.output = RendererBridge::translateOutputConfig(settings);
     input.light = RendererBridge::translateLightConfig(nullptr, settings);
     input.background = _pimpl->backgroundFeed(backgroundColor());
@@ -2305,6 +2307,7 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
 
     App::PropertyContainer *settings = renderSettings();
     Render::PBRConfig pbr = RendererBridge::translatePBRConfig(settings);
+    Render::BumpConfig bump = RendererBridge::translateBumpConfig(settings);
     Render::SectionConfig secconf = RendererBridge::translateSectionConfig(settings);
     Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
     Render::LightConfig light = RendererBridge::translateLightConfig(nullptr, settings);
@@ -2315,7 +2318,8 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
         && background.toColor == cyclesBackground.toColor
         && background.midColor == cyclesBackground.midColor
         && background.hasMid == cyclesBackground.hasMid;
-    if (cyclesFed && gen == cyclesSceneGen && pbr == cyclesPbr && output == cyclesOutput
+    if (cyclesFed && gen == cyclesSceneGen && pbr == cyclesPbr && bump == cyclesBump
+        && output == cyclesOutput
         && light == cyclesLight && secconf == cyclesSection && sameBackground) {
         vp->setCamera(camera);
         return;
@@ -2330,6 +2334,7 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
     input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
     input.section = secconf;
     input.pbr = pbr;
+    input.bump = bump;
     input.output = output;
     input.light = light;
     input.background = background;
@@ -2338,6 +2343,7 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
     cyclesFed = true;
     cyclesSceneGen = gen;
     cyclesPbr = pbr;
+    cyclesBump = bump;
     cyclesOutput = output;
     cyclesLight = light;
     cyclesSection = secconf;

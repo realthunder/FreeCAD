@@ -902,6 +902,7 @@ PyObject* View3DInventorPy::cyclesRender(PyObject *args, PyObject *kwds)
     dict.setItem("objects", Py::Long(report.objects));
     dict.setItem("shaders", Py::Long(report.shaders));
     dict.setItem("triangles", Py::Long(report.triangles));
+    dict.setItem("images", Py::Long(report.images));
     dict.setItem("skipped", Py::Long(report.skipped));
     dict.setItem("seconds", Py::Float(report.seconds));
     return Py::new_reference_to(dict);
@@ -960,6 +961,7 @@ PyObject* View3DInventorPy::cyclesViewportStatus(PyObject *args)
     dict.setItem("objects", Py::Long(status.report.objects));
     dict.setItem("shaders", Py::Long(status.report.shaders));
     dict.setItem("triangles", Py::Long(status.report.triangles));
+    dict.setItem("images", Py::Long(status.report.images));
     dict.setItem("skipped", Py::Long(status.report.skipped));
     dict.setItem("added", Py::Long(status.report.added));
     dict.setItem("removed", Py::Long(status.report.removed));

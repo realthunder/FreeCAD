@@ -884,8 +884,9 @@ caps, and user shaders. Each is a later step of phase 3, not a
 design gap: Cycles has an image texture node, a displacement path,
 and the clipping can be done with the same mesh-cutting the section
 caps use. Clip planes and caps landed after this was written
-(sections 6.3 and 6.4); the textures, finishes and user shaders are
-the node-graph work queued as phase 6 item 15 (section 8).
+(sections 6.3 and 6.4), and the texture maps after that (section
+6.5); the finishes and the per-face texture palette are the rest of
+phase 6 item 15's phase A (section 8), user shaders its phase B.
 
 Verified 2026-08-28 (scratchpad `cycles_scene_probe.py` under xvfb: a
 floor, a red box and an `App::Link` of it, a six-colour per-face box,
@@ -968,9 +969,11 @@ leaves **0.251**; the same two in concave mode leave **0.751**. One
 mesh, one object, one shader in every leg. CUDA agrees with CPU to
 0.1% on every count.
 
-Still not translated (the rest of the 6.2 list): textures, surface
-finishes, the section CAPS -- the cut is honest but hollow, which is
-section 6.4 -- and user shaders. The last three are phase 6 item 15.
+Still not translated when this was written (the rest of the 6.2
+list): textures, surface finishes, the section CAPS -- the cut is
+honest but hollow, which is section 6.4 -- and user shaders. The caps
+are section 6.4, the texture maps section 6.5; finishes and user
+shaders are phase 6 item 15.
 
 
 ### 6.4 Section caps (built 2026-08-28)
@@ -1044,6 +1047,83 @@ cut through its equator shows an annulus of 31896 fill pixels with
 even-odd pairing has to leave open is open, on a curved boundary.
 Object and mesh counts follow the caps exactly: 1/1 unclipped, 2/2
 with one plane, 3/3 with two.
+
+
+### 6.5 Texture maps (phase 6 item 15, phase A, built 2026-08-29)
+
+The first of the node-graph work of item 15 (section 8): the maps a
+draw's material carries now sample in the shader graph instead of
+being dropped. `SceneTranslator::Maps` (`CyclesSceneP.h`) resolves
+them from the `Render::Material` -- the unit-0 picture with its GL
+texture environment, the bump or normal map, the emissive and
+metallic-roughness maps -- under the raster path's rule that a mesh
+without texture coordinates carries none. `applyMaps` builds the
+nodes on a `SurfaceLinks` set (base, alpha, metallic, roughness,
+emission, normal), so the same code serves the uniform shader, where
+the surface's own values arrive from ObjectInfo and the BSDF's
+constants, and the attribute shader, where they arrive from the
+per-vertex attributes; a map multiplies into whatever fed the socket
+before it.
+
+- **Pixels.** `PixelImage`, a `ccl::ImageLoader` over the
+  `TextureImage` the render cache holds (the `BakedEnvironment`
+  pattern of section 6.2): channels expanded to four, rows bottom-up
+  as GL and Cycles' own loaders have them, alpha `channel_packed`
+  (coverage, never premultiplied, never decoded), one upload per
+  distinct image (`equals` by textureId and colour space). A PICTURE
+  (base, emissive) declares `srgb` when the pipeline is colour
+  managed so Cycles decodes it on upload, as `fc_mesh_fs.sh` decodes
+  it per sample; a DATA map (bump, normal, metallic-roughness)
+  declares `data` and is never decoded.
+- **Coordinates.** `ATTR_STD_UV` per corner from `MeshData::texCoords`,
+  with the GL texture matrix folded in on the CPU (a mapping node
+  cannot express a shear; the matrix keys the mesh). A transformed
+  texture is therefore a different `ccl::Mesh`, exactly as a
+  different index range is.
+- **Texture environment.** The four GL models as the fragment shader
+  applies them: Modulate multiplies colour and alpha, Decal mixes by
+  the texel alpha, Blend is `base * (1 - texel) + blendColor * texel`
+  per channel, Replace takes the texel (and its alpha only when the
+  source format has one). Alpha goes to the Principled Alpha, so the
+  raster path's `discard` below 0.004 is the same transparency.
+- **Emissive map.** Added to the emission colour AFTER the texture
+  environment (glTF semantics): the constant emission times its
+  strength folds into the addend and the strength becomes 1.
+- **Metallic-roughness map.** Green multiplies the roughness, blue
+  the metallic (glTF), through Separate Color + Math nodes.
+- **Bump.** A one- or two-channel map is a height into a Bump node;
+  Cycles differentiates the height graph itself. The raster path
+  tilts the normal by `strength * dh/dUV`, Cycles by
+  `distance * dh/dP` with P in object units, so the distance is the
+  strength times the millimetres one UV unit spans -- the root of the
+  ratio of the range's area in object space to its area in texture
+  space (`Maps::uvScale`). A three- or four-channel map is a
+  tangent-space normal map (Coin's, i.e. OpenGL's, convention); the
+  tangents come from the UVs and the vertex normals, which Cycles
+  derives on its own when the node asks, so a mesh without normals
+  shades unbumped rather than wrongly. Parallax has no path-tracer
+  meaning and is not read; `BumpConfig` rides `SceneInput::bump`
+  from the three feeders for the strength.
+- **Not translated, on purpose.** The occlusion map: a path tracer
+  computes its own occlusion. The per-face texture palette and the
+  surface finishes are the next steps of phase A.
+
+Verified 2026-08-29 (`maps/probe.py` under xvfb on the debug tree --
+the only one with Cycles on -- top-down orthographic on a 40 mm box,
+256x256, 32 spp, CPU and CUDA): a red/blue checker as
+`Render_BaseColorTexture` lands its four cells where the raster
+control frame has them (linear means 0.55/0.04/0.045 against
+0.037/0.04/0.649), a green disc as `Render_EmissiveMap` reads 1.0
+green at the centre over an unchanged checker, and a grayscale ramp
+as `Render_NormalMap` darkens the lit top uniformly (0.55 -> 0.39) as
+a constant tilt should. Two traps paid for on the way: Coin's texture
+coordinates are `(s, t, r, q)` per vertex, not two floats -- read at
+the wrong stride every corner sampled the (0, 0) texel and the box
+rendered one flat colour; and a custom `ImageLoader` must write the
+type the FINALIZED metadata asks for, since declaring `u_colorspace_srgb`
+makes Cycles promote a byte image to half floats for a conversion pass
+(bytes written into that buffer rendered the box invisible or as
+streaks). `scene_linear_srgb` is the byte-sRGB fast path.
 
 
 ## 7. Preparing for out of process
@@ -1355,6 +1435,18 @@ Phase 6 -- queued, not started. Two items, in this order.
     raster path's. Trap already on record: **ccl connects sockets by
     NAME**, so a socket renamed between Cycles versions fails at
     graph build, not at compile.
+
+    RULED 2026-08-29, in two phases. **Phase A**, the declarative
+    facts a `Render::Material` carries -- texture maps, surface
+    finishes, the per-face palettes -- become node graphs: the maps
+    are section 6.5 (built), finishes and palettes follow. **Phase
+    B**, user shaders: freeform bgfx `.sc` text has no node-graph
+    meaning, so the bridge is a THIRD, node-based authoring dialect
+    -- MaterialX, whose ShaderGen emits GLSL/ESSL for the raster
+    tiers and whose networks Cycles' own Hydra delegate already maps
+    to ccl nodes by name (`src/hydra/material.cpp`) -- deferred to a
+    design discussion of its own. The `post` stage needs no bridge:
+    it already runs over the traced frame.
 
 
 ## 9. Traps carried forward

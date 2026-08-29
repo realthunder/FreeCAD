@@ -137,6 +137,65 @@ private:
         /// from the draw's bounds.
         float glassDensity = 0.0f;
     };
+    /// The texture maps of a draw as the graph samples them
+    /// (docs/CyclesIntegration.md sec 6.5): the unit-0 picture with its
+    /// GL texture environment, the bump or normal map, the emissive
+    /// and metallic-roughness maps. Every one is sampled through the
+    /// mesh's own texture coordinates, so a mesh without them carries
+    /// none -- the raster path's rule (BGFXViewSubmit's `mapped`).
+    struct Maps {
+        std::shared_ptr<const TextureImage> base;
+        std::shared_ptr<const TextureImage> bump;
+        std::shared_ptr<const TextureImage> emissive;
+        std::shared_ptr<const TextureImage> metalrough;
+        uint8_t model = 0;         ///< TextureImage::Model of the base picture
+        bool alphaSource = false;  ///< the base format carries alpha (Replace keeps it)
+        float blendColor[3] = {0.0f, 0.0f, 0.0f};  ///< the Blend model's colour, decoded
+        /// Millimetres of object space per texture-coordinate unit over
+        /// the draw's range, which turns the raster path's per-UV bump
+        /// slope into the per-millimetre distance Cycles' bump node
+        /// wants. 0 = not measured (no grayscale bump map).
+        float uvScale = 0.0f;
+        float bumpScale = 1.0f;  ///< BumpConfig::scale
+        bool any() const
+        {
+            return base || bump || emissive || metalrough;
+        }
+        /// The part of a shader key this contributes ("" without maps).
+        std::string key() const;
+    };
+    /// The maps a draw samples: what its material carries, when its
+    /// mesh has coordinates to sample them with.
+    Maps resolveMaps(const Material &m,
+                     const MeshData &mesh,
+                     const BumpConfig &bump,
+                     int start,
+                     int count) const;
+    /// The sockets the maps rewrite on their way from the surface's own
+    /// values to the BSDF. Links, every one of them, so a map multiplies
+    /// into whatever fed the socket before it; a null one is the BSDF's
+    /// constant (or, for the normal, the geometry's) until a map needs
+    /// it, when applyMaps makes the constant a node.
+    struct SurfaceLinks {
+        ccl::ShaderOutput *base = nullptr;
+        ccl::ShaderOutput *alpha = nullptr;
+        ccl::ShaderOutput *metallic = nullptr;
+        ccl::ShaderOutput *roughness = nullptr;
+        ccl::ShaderOutput *emission = nullptr;
+        ccl::ShaderOutput *normal = nullptr;
+    };
+    /// Sample  maps into  links: the base picture through its
+    /// texture environment (the four GL models of fc_mesh_fs.sh), the
+    /// emissive map added to the emission, the metallic-roughness map's
+    /// channels multiplied into the factors, the bump or normal map
+    /// into the shading normal. The constants stand in for the links
+    /// that are null on entry.
+    void applyMaps(ccl::ShaderGraph *graph,
+                   const Maps &maps,
+                   SurfaceLinks &links,
+                   float metallic,
+                   float roughness,
+                   const float emission[3]);
     Surface resolveSurface(const Material &material,
                            const PBRConfig &pbr,
                            const uint8_t *vertexColor,
@@ -162,10 +221,10 @@ private:
 
     /// The shader of a uniformly-coloured draw, keyed on everything but
     /// the base colour and alpha (those ride the object).
-    ccl::Shader *uniformShader(const Surface &surface, const Clip &clip);
+    ccl::Shader *uniformShader(const Surface &surface, const Clip &clip, const Maps &maps);
     /// The one shader of every per-vertex-attribute draw -- one per
     /// distinct clip, which for a scene with no section is still one.
-    ccl::Shader *attributeShader(const Clip &clip);
+    ccl::Shader *attributeShader(const Clip &clip, const Maps &maps);
     /// Connect \a closure to the graph's surface output, through the
     /// clip test when there is one.
     void connectSurface(ccl::ShaderGraph *graph, ccl::ShaderOutput *closure, const Clip &clip);
@@ -194,6 +253,7 @@ private:
     ///  changed when a node was created or restated.
     bool translateDraw(const DrawCall &draw,
                        const PBRConfig &pbr,
+                       const BumpConfig &bump,
                        const SectionConfig &section,
                        Spare &spare,
                        RenderReport &report,
@@ -216,6 +276,7 @@ private:
     ccl::Scene *scene;
     bool managed;
     std::unordered_map<std::string, ccl::Shader *> shaders;
+    int imageNodes = 0;  ///< image texture nodes built into them
     std::unordered_map<std::string, MeshEntry> meshes;
     std::vector<Instance> instances;
 

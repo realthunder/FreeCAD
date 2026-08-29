@@ -257,6 +257,7 @@ public:
     std::shared_ptr<const Render::Cycles::SceneInput> cyclesInput;
     uint64_t cyclesSceneGen = 0;
     Render::PBRConfig cyclesPbr;
+    Render::BumpConfig cyclesBump;
     Render::OutputConfig cyclesOutput;
     Render::LightConfig cyclesLight;
     Render::Background cyclesBackground;
@@ -362,6 +363,7 @@ public:
             return;
         App::PropertyContainer *settings = &renderProps;
         Render::PBRConfig pbr = RendererBridge::translatePBRConfig(settings);
+        Render::BumpConfig bump = RendererBridge::translateBumpConfig(settings);
         Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
         Render::LightConfig light = RendererBridge::translateLightConfig(nullptr, settings);
         Render::Background background = backgroundFromPreferences();
@@ -372,7 +374,7 @@ public:
             && background.midColor == cyclesBackground.midColor
             && background.hasMid == cyclesBackground.hasMid;
         const bool stale = force || !cyclesInput || gen != cyclesSceneGen
-            || !(pbr == cyclesPbr) || !(output == cyclesOutput) || !(light == cyclesLight)
+            || !(pbr == cyclesPbr) || !(bump == cyclesBump) || !(output == cyclesOutput) || !(light == cyclesLight)
             || !sameBackground;
         if (stale) {
             SoFCRenderCache *cache = manager->getSceneCache();
@@ -382,6 +384,7 @@ public:
             input->draws = RendererBridge::translate(cache->getVertexCaches(true),
                                                      RendererBridge::SectionOnTop());
             input->pbr = pbr;
+            input->bump = bump;
             input->output = output;
             input->light = light;
             input->background = background;
@@ -394,6 +397,7 @@ public:
             cyclesInput = input;
             cyclesSceneGen = gen;
             cyclesPbr = pbr;
+            cyclesBump = bump;
             cyclesOutput = output;
             cyclesLight = light;
             cyclesBackground = background;
@@ -460,6 +464,7 @@ public:
             report[QLatin1String("objects")] = st.report.objects;
             report[QLatin1String("shaders")] = st.report.shaders;
             report[QLatin1String("triangles")] = double(st.report.triangles);
+            report[QLatin1String("images")] = double(st.report.images);
             report[QLatin1String("skipped")] = st.report.skipped;
             reply[QLatin1String("report")] = report;
             return reply;

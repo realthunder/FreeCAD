@@ -46,6 +46,7 @@
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
 #include "util/colorspace.h"
+#include "util/half.h"
 #include "util/image_metadata.h"
 #include "util/transform.h"
 
@@ -415,6 +416,128 @@ private:
     std::vector<float> rgba;
 };
 
+/// A TextureImage as Cycles reads it: the pixels the render cache holds,
+/// expanded to four channels (Cycles stores byte and float images as one
+/// or four channels, never two or three), kept alive by the shared
+/// pointer for as long as the image manager may ask for them. The rows
+/// are bottom-up like GL, which is the row order Cycles' own loaders
+/// hand it (a UV of 0 is the first row). A PICTURE -- the base colour,
+/// the emissive map -- is display referred and is declared
+/// `scene_linear_srgb` when the pipeline is colour managed: the bytes
+/// stay bytes and the kernel decodes them per sample, exactly as
+/// fc_mesh_fs.sh does (Blender's path for an 8-bit PNG). NOT
+/// `u_colorspace_srgb`: that one is a space to CONVERT FROM, and
+/// ImageMetaData::finalize() promotes such an image to half floats for
+/// the conversion -- so the buffer handed to load_pixels is not the
+/// type load_metadata declared, which is why load_pixels writes the
+/// type it is ASKED for. A DATA map -- bump, normal, metallic-roughness
+/// -- is declared data and is never decoded, and a float picture is
+/// linear radiance already (TextureImage::Sample). Alpha is coverage
+/// and is never touched (channel packed).
+class PixelImage : public ccl::ImageLoader
+{
+public:
+    PixelImage(std::shared_ptr<const TextureImage> image, ccl::ustring colorspace)
+        : image(std::move(image))
+        , colorspace(colorspace)
+    {}
+
+    bool load_metadata(ccl::ImageMetaData &metadata,
+                       const ccl::ImageLoaderParams & /*params*/,
+                       ccl::Progress & /*progress*/) override
+    {
+        if (image->width <= 0 || image->height <= 0 || image->numComponents < 1
+            || image->numComponents > 4)
+            return false;
+        metadata.width = image->width;
+        metadata.height = image->height;
+        metadata.channels = 4;
+        metadata.type = image->sample == TextureImage::F32 ? ccl::IMAGE_DATA_TYPE_FLOAT4
+                                                           : ccl::IMAGE_DATA_TYPE_BYTE4;
+        metadata.colorspace = colorspace;
+        metadata.is_compressible_as_srgb = false;
+        return true;
+    }
+
+    bool load_pixels(const ccl::ImageMetaData &metadata, void *pixels) override
+    {
+        const int n = image->numComponents;
+        const size_t count = size_t(image->width) * size_t(image->height);
+        const size_t bytes = image->sampleSize();
+        if (image->pixels.size() < count * size_t(n) * bytes)
+            return false;
+        // Luminance spreads to rgb, a missing alpha is opaque; written
+        // in the type the (finalized) metadata asks for, whatever
+        // load_metadata declared.
+        const uint8_t *in = image->pixels.data();
+        const bool isFloat = image->sample == TextureImage::F32;
+        auto texel = [&](size_t i, float q[4]) {
+            if (isFloat) {
+                float px[4];
+                std::memcpy(px, in + i * size_t(n) * 4u, size_t(n) * 4u);
+                q[0] = px[0];
+                q[1] = n >= 3 ? px[1] : px[0];
+                q[2] = n >= 3 ? px[2] : px[0];
+                q[3] = n == 2 ? px[1] : n == 4 ? px[3] : 1.0f;
+            }
+            else {
+                const uint8_t *p = in + i * size_t(n);
+                q[0] = p[0] / 255.0f;
+                q[1] = (n >= 3 ? p[1] : p[0]) / 255.0f;
+                q[2] = (n >= 3 ? p[2] : p[0]) / 255.0f;
+                q[3] = (n == 2 ? p[1] : n == 4 ? p[3] : 255) / 255.0f;
+            }
+        };
+        switch (metadata.type) {
+        case ccl::IMAGE_DATA_TYPE_BYTE4: {
+            auto *out = static_cast<uint8_t *>(pixels);
+            float q[4];
+            for (size_t i = 0; i < count; ++i) {
+                texel(i, q);
+                for (int c = 0; c < 4; ++c)
+                    out[i * 4 + c] = uint8_t(std::lround(std::clamp(q[c], 0.0f, 1.0f) * 255.0f));
+            }
+            return true;
+        }
+        case ccl::IMAGE_DATA_TYPE_HALF4: {
+            auto *out = static_cast<ccl::half *>(pixels);
+            float q[4];
+            for (size_t i = 0; i < count; ++i) {
+                texel(i, q);
+                for (int c = 0; c < 4; ++c)
+                    out[i * 4 + c] = ccl::float_to_half_image(q[c]);
+            }
+            return true;
+        }
+        case ccl::IMAGE_DATA_TYPE_FLOAT4: {
+            auto *out = static_cast<float *>(pixels);
+            for (size_t i = 0; i < count; ++i)
+                texel(i, out + i * 4);
+            return true;
+        }
+        default:
+            return false;
+        }
+    }
+
+    ccl::string name() const override
+    {
+        return "FreeCAD texture";
+    }
+
+    /// The image manager uploads one copy per distinct loader, and
+    /// distinct is this: the same picture declared in the same space.
+    bool equals(const ccl::ImageLoader &other) const override
+    {
+        const auto *o = dynamic_cast<const PixelImage *>(&other);
+        return o && o->image->textureId == image->textureId && o->colorspace == colorspace;
+    }
+
+private:
+    std::shared_ptr<const TextureImage> image;
+    ccl::ustring colorspace;
+};
+
 }  // namespace
 
 SceneTranslator::SceneTranslator(ccl::Scene *scene, bool colorManaged)
@@ -441,7 +564,7 @@ bool SceneTranslator::translate(const SceneInput &input, RenderReport &report)
     report.skipped = 0;
     report.added = report.removed = report.restated = report.built = report.released = 0;
     for (const DrawCall &draw : input.draws) {
-        if (!translateDraw(draw, input.pbr, input.section, spare, report, changed)) {
+        if (!translateDraw(draw, input.pbr, input.bump, input.section, spare, report, changed)) {
             ++report.skipped;
             continue;
         }
@@ -493,6 +616,7 @@ bool SceneTranslator::translate(const SceneInput &input, RenderReport &report)
     report.meshes = int(meshes.size());
     report.objects = int(instances.size());
     report.shaders = int(shaders.size());
+    report.images = imageNodes;
     report.triangles = 0;
     for (const auto &entry : meshes)
         report.triangles += entry.second.triangles;
@@ -838,7 +962,238 @@ void SceneTranslator::connectSurface(ccl::ShaderGraph *graph,
     graph->connect(mix->output("Closure"), surface);
 }
 
-ccl::Shader *SceneTranslator::uniformShader(const Surface &s, const Clip &clip)
+std::string SceneTranslator::Maps::key() const
+{
+    if (!any())
+        return std::string();
+    std::ostringstream k;
+    k.precision(4);
+    k << ":tex" << (base ? base->textureId : 0) << '/' << int(model) << '/' << alphaSource;
+    if (base && model == TextureImage::Blend)
+        k << '/' << blendColor[0] << ',' << blendColor[1] << ',' << blendColor[2];
+    k << ":bump" << (bump ? bump->textureId : 0) << '/' << bumpScale << '/' << uvScale
+      << ":em" << (emissive ? emissive->textureId : 0)
+      << ":mr" << (metalrough ? metalrough->textureId : 0);
+    return k.str();
+}
+
+SceneTranslator::Maps SceneTranslator::resolveMaps(const Material &m,
+                                                   const MeshData &mesh,
+                                                   const BumpConfig &bump,
+                                                   int start,
+                                                   int count) const
+{
+    Maps maps;
+    // Nothing to sample with: the raster path draws such a mesh
+    // untextured too (its samplers read the corner texel of a white
+    // stand-in), so the maps do not exist here either.
+    if (!mesh.texCoords)
+        return maps;
+    maps.base = m.texture;
+    maps.bump = m.bumpmap;
+    maps.emissive = m.emissivemap;
+    maps.metalrough = m.metallicroughnessmap;
+    if (maps.base) {
+        maps.model = maps.base->model;
+        maps.alphaSource = maps.base->numComponents == 2 || maps.base->numComponents == 4;
+        float c[4];
+        unpackAuthored(maps.base->blendColor, c, managed);
+        std::copy(c, c + 3, maps.blendColor);
+    }
+    maps.bumpScale = bump.scale;
+    if (maps.bump) {
+        const bool normalMap = maps.bump->numComponents >= 3;
+        // A tangent-space normal map wants the tangents Cycles derives
+        // from the UVs and the vertex normals; a mesh without normals
+        // cannot have them, and shades unbumped as the safe fallback.
+        if (normalMap && !mesh.normals) {
+            maps.bump.reset();
+        }
+        else if (!normalMap) {
+            // The raster path tilts the normal by strength * dh/dUV,
+            // Cycles by distance * dh/dP with P in object units. The
+            // two agree when distance is strength times the object
+            // millimetres one UV unit spans, taken as the root of the
+            // ratio of the range's area in the two spaces.
+            double areaP = 0.0;
+            double areaUV = 0.0;
+            const int32_t *idx = mesh.triangleIndices + start;
+            for (int i = 0; i + 2 < count; i += 3) {
+                const float *p0 = mesh.positions + size_t(idx[i]) * 3;
+                const float *p1 = mesh.positions + size_t(idx[i + 1]) * 3;
+                const float *p2 = mesh.positions + size_t(idx[i + 2]) * 3;
+                // (s, t, r, q) per vertex; the matrix and the divide are
+                // a uniform scale away at most, which the ratio absorbs.
+                const float *t0 = mesh.texCoords + size_t(idx[i]) * 4;
+                const float *t1 = mesh.texCoords + size_t(idx[i + 1]) * 4;
+                const float *t2 = mesh.texCoords + size_t(idx[i + 2]) * 4;
+                const double e1[3] = {p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]};
+                const double e2[3] = {p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]};
+                const double cx = e1[1] * e2[2] - e1[2] * e2[1];
+                const double cy = e1[2] * e2[0] - e1[0] * e2[2];
+                const double cz = e1[0] * e2[1] - e1[1] * e2[0];
+                areaP += 0.5 * std::sqrt(cx * cx + cy * cy + cz * cz);
+                areaUV += 0.5 * std::fabs(double(t1[0] - t0[0]) * double(t2[1] - t0[1])
+                                          - double(t2[0] - t0[0]) * double(t1[1] - t0[1]));
+            }
+            maps.uvScale = areaUV > 1.0e-12 ? float(std::sqrt(areaP / areaUV)) : 0.0f;
+        }
+    }
+    return maps;
+}
+
+void SceneTranslator::applyMaps(ccl::ShaderGraph *graph,
+                                const Maps &maps,
+                                SurfaceLinks &links,
+                                float metallic,
+                                float roughness,
+                                const float emission[3])
+{
+    if (!maps.any())
+        return;
+    // The mesh's own coordinates (ATTR_STD_UV, with the texture matrix
+    // already folded in when the mesh was built).
+    auto *coords = graph->create_node<ccl::TextureCoordinateNode>();
+    ccl::ShaderOutput *uv = coords->output("UV");
+    auto image = [&](const std::shared_ptr<const TextureImage> &img, bool picture) {
+        auto *node = graph->create_node<ccl::ImageTextureNode>();
+        ccl::ImageParams params;
+        params.interpolation = ccl::INTERPOLATION_LINEAR;
+        params.extension = img->wrapS == TextureImage::Clamp ? ccl::EXTENSION_EXTEND
+                                                              : ccl::EXTENSION_REPEAT;
+        params.alpha_type = ccl::IMAGE_ALPHA_CHANNEL_PACKED;
+        // A byte picture is sRGB-encoded, decoded per sample by the
+        // kernel when the pipeline is colour managed (the PixelImage
+        // note on why it is scene_linear_srgb and not srgb) and taken
+        // raw when it is not (then, as everywhere, the two errors
+        // cancel); a float picture is linear radiance already; a data
+        // map is never decoded.
+        params.colorspace = !picture ? ccl::u_colorspace_data
+            : (managed && img->sample != TextureImage::F32) ? ccl::u_colorspace_scene_linear_srgb
+                                                            : ccl::u_colorspace_scene_linear;
+        node->handle = scene->image_manager->add_image(
+            std::make_unique<PixelImage>(img, params.colorspace), params);
+        node->set_colorspace(params.colorspace);
+        node->set_extension(params.extension);
+        node->set_alpha_type(params.alpha_type);
+        node->set_interpolation(params.interpolation);
+        graph->connect(uv, node->input("Vector"));
+        ++imageNodes;
+        return node;
+    };
+    auto value = [&](float v) {
+        auto *node = graph->create_node<ccl::ValueNode>();
+        node->set_value(v);
+        return node->output("Value");
+    };
+    auto multiply = [&](ccl::ShaderOutput *a, ccl::ShaderOutput *b) {
+        auto *node = graph->create_node<ccl::MathNode>();
+        node->set_math_type(ccl::NODE_MATH_MULTIPLY);
+        graph->connect(a, node->input("Value1"));
+        graph->connect(b, node->input("Value2"));
+        return node->output("Value");
+    };
+    // a op b, with a either a link or a constant vector.
+    auto vectorMath = [&](ccl::NodeVectorMathType type,
+                          ccl::ShaderOutput *a,
+                          ccl::ShaderOutput *b,
+                          const float *constant) {
+        auto *node = graph->create_node<ccl::VectorMathNode>();
+        node->set_math_type(type);
+        if (a)
+            graph->connect(a, node->input("Vector1"));
+        else
+            node->set_vector1(ccl::make_float3(constant[0], constant[1], constant[2]));
+        graph->connect(b, node->input("Vector2"));
+        return node->output("Vector");
+    };
+
+    if (maps.base) {
+        // GL's texture environment on the lit colour, model by model as
+        // fc_mesh_fs.sh applies it; the alpha is the fragment's
+        // coverage and follows the same rules.
+        auto *tex = image(maps.base, true);
+        ccl::ShaderOutput *texel = tex->output("Color");
+        ccl::ShaderOutput *texelAlpha = tex->output("Alpha");
+        switch (maps.model) {
+        case TextureImage::Decal: {
+            auto *mix = graph->create_node<ccl::MixColorNode>();
+            mix->set_blend_type(ccl::NODE_MIX_BLEND);
+            mix->set_use_clamp(false);
+            graph->connect(texelAlpha, mix->input("Factor"));
+            graph->connect(links.base, mix->input("A"));
+            graph->connect(texel, mix->input("B"));
+            links.base = mix->output("Result");
+            break;
+        }
+        case TextureImage::Blend: {
+            // base * (1 - texel) + blendColor * texel, per channel.
+            const float one[3] = {1.0f, 1.0f, 1.0f};
+            ccl::ShaderOutput *inverse =
+                vectorMath(ccl::NODE_VECTOR_MATH_SUBTRACT, nullptr, texel, one);
+            ccl::ShaderOutput *kept =
+                vectorMath(ccl::NODE_VECTOR_MATH_MULTIPLY, links.base, inverse, nullptr);
+            ccl::ShaderOutput *blended =
+                vectorMath(ccl::NODE_VECTOR_MATH_MULTIPLY, nullptr, texel, maps.blendColor);
+            links.base = vectorMath(ccl::NODE_VECTOR_MATH_ADD, kept, blended, nullptr);
+            links.alpha = multiply(links.alpha, texelAlpha);
+            break;
+        }
+        case TextureImage::Replace:
+            links.base = texel;
+            if (maps.alphaSource)
+                links.alpha = texelAlpha;
+            break;
+        default:  // Modulate
+            links.base = vectorMath(ccl::NODE_VECTOR_MATH_MULTIPLY, links.base, texel, nullptr);
+            links.alpha = multiply(links.alpha, texelAlpha);
+            break;
+        }
+    }
+    if (maps.emissive) {
+        // Added after the texture environment, so the base picture does
+        // not modulate the glow (glTF semantics, as the raster path has
+        // it). A constant emission folds in as the addend's other side.
+        auto *tex = image(maps.emissive, true);
+        links.emission = vectorMath(ccl::NODE_VECTOR_MATH_ADD, links.emission,
+                                    tex->output("Color"), emission);
+    }
+    if (maps.metalrough) {
+        // glTF: green multiplies the roughness, blue the metallic.
+        auto *tex = image(maps.metalrough, false);
+        auto *split = graph->create_node<ccl::SeparateColorNode>();
+        graph->connect(tex->output("Color"), split->input("Color"));
+        links.roughness = multiply(links.roughness ? links.roughness : value(roughness),
+                                   split->output("Green"));
+        links.metallic = multiply(links.metallic ? links.metallic : value(metallic),
+                                  split->output("Blue"));
+    }
+    if (maps.bump) {
+        auto *tex = image(maps.bump, false);
+        if (maps.bump->numComponents >= 3) {
+            // Tangent-space normal map, Coin's (OpenGL's) convention;
+            // the tangents come from the UVs and the vertex normals,
+            // which Cycles derives itself when the node asks for them.
+            auto *normalMap = graph->create_node<ccl::NormalMapNode>();
+            normalMap->set_space(ccl::NODE_NORMAL_MAP_TANGENT);
+            normalMap->set_strength(maps.bumpScale);
+            graph->connect(tex->output("Color"), normalMap->input("Color"));
+            links.normal = normalMap->output("Normal");
+        }
+        else {
+            // Grayscale height. Cycles differentiates the height input
+            // itself; the distance is the raster path's strength scaled
+            // from per-UV to per-millimetre (resolveMaps).
+            auto *bumpNode = graph->create_node<ccl::BumpNode>();
+            bumpNode->set_strength(1.0f);
+            bumpNode->set_distance(maps.bumpScale * (maps.uvScale > 0.0f ? maps.uvScale : 1.0f));
+            graph->connect(tex->output("Color"), bumpNode->input("Height"));
+            links.normal = bumpNode->output("Normal");
+        }
+    }
+}
+
+ccl::Shader *SceneTranslator::uniformShader(const Surface &s, const Clip &clip, const Maps &maps)
 {
     // The base colour and the alpha are the object's, so the key is
     // everything else; two draws that differ only in colour share
@@ -848,7 +1203,7 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s, const Clip &clip)
     key << (s.unlit ? "u" : s.glass ? "g" : "p") << ':' << s.metallic << ':' << s.roughness
         << ':' << s.emissive[0] << ',' << s.emissive[1] << ',' << s.emissive[2]
         << ':' << s.emissiveStrength << ':' << s.ior << ':' << s.glassRoughness << ':'
-        << s.glassDensity << clip.key();
+        << s.glassDensity << clip.key() << maps.key();
     auto it = shaders.find(key.str());
     if (it != shaders.end())
         return it->second;
@@ -857,26 +1212,48 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s, const Clip &clip)
     shader->name = ccl::ustring(key.str());
     auto graph = std::make_unique<ccl::ShaderGraph>();
     auto *info = graph->create_node<ccl::ObjectInfoNode>();
+    const float roughness = s.glass ? s.glassRoughness : s.roughness;
+    const float emission[3] = {s.emissive[0] * s.emissiveStrength,
+                               s.emissive[1] * s.emissiveStrength,
+                               s.emissive[2] * s.emissiveStrength};
+    SurfaceLinks links;
+    links.base = info->output("Color");
+    links.alpha = info->output("Alpha");
+    applyMaps(graph.get(), maps, links, s.metallic, roughness, emission);
     if (s.unlit) {
-        auto *emission = graph->create_node<ccl::EmissionNode>();
-        emission->set_strength(s.emissiveStrength);
-        graph->connect(info->output("Color"), emission->input("Color"));
-        connectSurface(graph.get(), emission->output("Emission"), clip);
+        auto *emissionNode = graph->create_node<ccl::EmissionNode>();
+        emissionNode->set_strength(s.emissiveStrength);
+        graph->connect(links.base, emissionNode->input("Color"));
+        connectSurface(graph.get(), emissionNode->output("Emission"), clip);
     }
     else {
         auto *bsdf = graph->create_node<ccl::PrincipledBsdfNode>();
-        bsdf->set_metallic(s.metallic);
-        bsdf->set_roughness(s.glass ? s.glassRoughness : s.roughness);
+        if (links.metallic)
+            graph->connect(links.metallic, bsdf->input("Metallic"));
+        else
+            bsdf->set_metallic(s.metallic);
+        if (links.roughness)
+            graph->connect(links.roughness, bsdf->input("Roughness"));
+        else
+            bsdf->set_roughness(roughness);
         bsdf->set_ior(s.ior);
         if (s.glass)
             bsdf->set_transmission_weight(1.0f);
-        if (s.emissiveStrength > 0.0f) {
+        if (links.emission) {
+            // The map made the emission a colour to add at strength 1,
+            // with the constant part (colour times strength) folded in.
+            bsdf->set_emission_strength(1.0f);
+            graph->connect(links.emission, bsdf->input("Emission Color"));
+        }
+        else if (s.emissiveStrength > 0.0f) {
             bsdf->set_emission_color(ccl::make_float3(s.emissive[0], s.emissive[1], s.emissive[2]));
             bsdf->set_emission_strength(s.emissiveStrength);
         }
-        graph->connect(info->output("Color"), bsdf->input("Base Color"));
+        if (links.normal)
+            graph->connect(links.normal, bsdf->input("Normal"));
+        graph->connect(links.base, bsdf->input("Base Color"));
         if (!s.glass)
-            graph->connect(info->output("Alpha"), bsdf->input("Alpha"));
+            graph->connect(links.alpha, bsdf->input("Alpha"));
         connectSurface(graph.get(), bsdf->output("BSDF"), clip);
         if (s.glass && s.glassDensity > 0.0f) {
             // The tint of a glass body is absorption over the path
@@ -902,9 +1279,9 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s, const Clip &clip)
     return shader;
 }
 
-ccl::Shader *SceneTranslator::attributeShader(const Clip &clip)
+ccl::Shader *SceneTranslator::attributeShader(const Clip &clip, const Maps &maps)
 {
-    const std::string key = "fc_attributes" + clip.key();
+    const std::string key = "fc_attributes" + clip.key() + maps.key();
     auto it = shaders.find(key);
     if (it != shaders.end())
         return it->second;
@@ -912,7 +1289,8 @@ ccl::Shader *SceneTranslator::attributeShader(const Clip &clip)
     // resolved surface as attributes (fc_base, fc_pbr = metallic /
     // roughness / alpha, fc_emissive), which is what keeps a
     // thousand-colour vertex-painted mesh at one shader instead of
-    // a thousand.
+    // a thousand. The maps, when the draw has them, sample on top of
+    // those attributes exactly as they do on top of the scalars.
     ccl::Shader *shader = scene->create_node<ccl::Shader>();
     shader->name = ccl::ustring(key);
     auto graph = std::make_unique<ccl::ShaderGraph>();
@@ -926,11 +1304,21 @@ ccl::Shader *SceneTranslator::attributeShader(const Clip &clip)
     auto *bsdf = graph->create_node<ccl::PrincipledBsdfNode>();
     bsdf->set_emission_strength(1.0f);
     graph->connect(pbrAttr->output("Vector"), split->input("Vector"));
-    graph->connect(base->output("Color"), bsdf->input("Base Color"));
-    graph->connect(split->output("X"), bsdf->input("Metallic"));
-    graph->connect(split->output("Y"), bsdf->input("Roughness"));
-    graph->connect(split->output("Z"), bsdf->input("Alpha"));
-    graph->connect(emissive->output("Color"), bsdf->input("Emission Color"));
+    SurfaceLinks links;
+    links.base = base->output("Color");
+    links.metallic = split->output("X");
+    links.roughness = split->output("Y");
+    links.alpha = split->output("Z");
+    links.emission = emissive->output("Color");
+    const float none[3] = {0.0f, 0.0f, 0.0f};
+    applyMaps(graph.get(), maps, links, 0.0f, 0.0f, none);
+    graph->connect(links.base, bsdf->input("Base Color"));
+    graph->connect(links.metallic, bsdf->input("Metallic"));
+    graph->connect(links.roughness, bsdf->input("Roughness"));
+    graph->connect(links.alpha, bsdf->input("Alpha"));
+    graph->connect(links.emission, bsdf->input("Emission Color"));
+    if (links.normal)
+        graph->connect(links.normal, bsdf->input("Normal"));
     connectSurface(graph.get(), bsdf->output("BSDF"), clip);
     shader->set_graph(std::move(graph));
     shader->tag_update(scene);
@@ -940,6 +1328,7 @@ ccl::Shader *SceneTranslator::attributeShader(const Clip &clip)
 
 bool SceneTranslator::translateDraw(const DrawCall &draw,
                                     const PBRConfig &pbr,
+                                    const BumpConfig &bump,
                                     const SectionConfig &section,
                                     Spare &spare,
                                     RenderReport &report,
@@ -981,7 +1370,8 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
     clip.concave = m.clipconcave;
     for (int i = 0; i < clip.num; ++i)
         std::copy(m.clipplanes[i], m.clipplanes[i] + 4, clip.planes[i]);
-    ccl::Shader *shader = perVertex ? attributeShader(clip) : uniformShader(uniform, clip);
+    const Maps maps = resolveMaps(m, *mesh, bump, start, count);
+    ccl::Shader *shader = perVertex ? attributeShader(clip, maps) : uniformShader(uniform, clip, maps);
 
     // Mesh identity: the cache contract (cacheId + generation names
     // the arrays), the index range, and what the shading needs baked
@@ -995,6 +1385,13 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
         key << ':' << m.diffuse << ':' << m.specular << ':' << m.emissive << ':' << m.shininess
             << ':' << m.metallic << ':' << m.roughness << ':' << m.transparent << ':'
             << m.perfacepbr << ':' << m.lighting << ':' << m.glass << ':' << m.lightsource;
+    }
+    if (maps.any() && !m.texidentity) {
+        // The texture matrix is folded into the UV attribute, so a
+        // transformed texture is a different mesh.
+        key.precision(6);
+        for (float f : m.texmatrix)
+            key << ':' << f;
     }
     const std::string meshKey = key.str();
 
@@ -1052,6 +1449,31 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
             }
         }
         std::ranges::fill(cmesh->get_smooth(), smooth);
+
+        if (maps.any()) {
+            // The mesh's texture coordinates, per corner (ATTR_STD_UV).
+            // They are Coin's (s, t, r, q) per vertex; the GL texture
+            // matrix is applied here rather than in the graph -- a
+            // mapping node cannot express a shear, the matrix can, and
+            // folding it keeps the graph to one node -- and the
+            // homogeneous divide follows, as it does in the raster path.
+            ccl::Attribute *aUV = cmesh->attributes.add(ccl::ATTR_STD_UV);
+            ccl::float2 *UV = aUV->data_for_write<ccl::float2>();
+            for (int i = 0; i < count; ++i) {
+                const float *t = mesh->texCoords + size_t(idx[i]) * 4;
+                float x = t[0];
+                float y = t[1];
+                float w = t[3];
+                if (!m.texidentity) {
+                    const float *M = m.texmatrix;
+                    x = M[0] * t[0] + M[4] * t[1] + M[8] * t[2] + M[12] * t[3];
+                    y = M[1] * t[0] + M[5] * t[1] + M[9] * t[2] + M[13] * t[3];
+                    w = M[3] * t[0] + M[7] * t[1] + M[11] * t[2] + M[15] * t[3];
+                }
+                const float inv = std::fabs(w) > 1.0e-12f ? 1.0f / w : 1.0f;
+                UV[i] = ccl::make_float2(x * inv, y * inv);
+            }
+        }
 
         if (perVertex) {
             ccl::Attribute *aBase = cmesh->attributes.add(ccl::ustring("fc_base"), ccl::TypeColor,
@@ -1171,7 +1593,7 @@ void SceneTranslator::translateCaps(const DrawCall &draw,
                 ++other.num;
             }
         }
-        ccl::Shader *shader = uniformShader(cap, other);
+        ccl::Shader *shader = uniformShader(cap, other, Maps());
 
         // The plane pulled back into the mesh's own space, so that
         // the cap is built once for a placement and rides the draw's
