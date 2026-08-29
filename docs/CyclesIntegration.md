@@ -1105,8 +1105,8 @@ before it.
   meaning and is not read; `BumpConfig` rides `SceneInput::bump`
   from the three feeders for the strength.
 - **Not translated, on purpose.** The occlusion map: a path tracer
-  computes its own occlusion. The per-face texture palette and the
-  surface finishes are the next steps of phase A.
+  computes its own occlusion. The surface finishes are section 6.6;
+  the per-face palettes are the next step of phase A.
 
 Verified 2026-08-29 (`maps/probe.py` under xvfb on the debug tree --
 the only one with Cycles on -- top-down orthographic on a 40 mm box,
@@ -1124,6 +1124,102 @@ type the FINALIZED metadata asks for, since declaring `u_colorspace_srgb`
 makes Cycles promote a byte image to half floats for a conversion pass
 (bytes written into that buffer rendered the box invisible or as
 streaks). `scene_linear_srgb` is the byte-sRGB fast path.
+
+
+### 6.6 Surface finishes (phase 6 item 15, phase A, built 2026-08-29)
+
+The machined finishes of `fc_finish.sh` -- knurl, straight knurl,
+brushed, blasted, turned, laid out in the face's projection frame or
+triplanarly without one -- path-trace as node graphs.
+`SceneTranslator::Finish` (`CyclesSceneP.h`) resolves the draw's own
+finish and frame from the `Render::Material` under the bgfx path's
+gate (a known pattern, a positive pitch and depth); `applyFinish`
+builds the graph and hands its height to a `BumpNode` on the
+`SurfaceLinks` normal, after the maps, so the two compose the way they
+do in the raster shader. Entry 0 of the palettes for now -- the draw's
+own finish and frame -- until the per-face palettes land.
+
+- **Height, not gradient.** The raster shader evaluates the analytic
+  GRADIENT of a height field and rotates the normal by Mikkelsen's
+  surface gradient; Cycles' Bump node wants the HEIGHT and differences
+  it against the ray differentials (three evaluations of the height
+  subgraph, `ShaderGraph::refine_bump_nodes`, each `TextureCoordinate`
+  offset by `Filter Width` times the differential). With `Distance`
+  and `Strength` at 1 the node computes
+  `normalize(|det| N - sign(det) surfgrad)`, which is `fcFinishPerturb`
+  -- so a height in millimetres of object space is the raster perturb
+  exactly, and the finish is a function of `TextureCoordinate.Object`
+  (the object-space position with the bump offset carried through the
+  inverse transform, i.e. `v_opos`) so an instanced or scaled copy
+  keeps it.
+- **Tables.** What the raster computes per fragment is baked once per
+  process into data images (`TableImage`, float texels, `data`
+  colour space, cubic interpolation for a continuous slope, repeat
+  extension for periodicity): the groove profile -- `pi` times the
+  integral of `sign(sin) |sin|^0.45` over one period, 1024 texels, so
+  `depth * table(x / pitch)` has exactly the slope `fcFinishGroove`
+  states -- and two value-noise tiles baked with `fcFinishHash` on the
+  cell index, wrapped at the tile (256 cells x 32 texels, one lane per
+  channel for the brushed finish's three noises; 64 x 64 cells x 8
+  texels for the blasted craters). The lattices are statistically the
+  shader's, not bit for bit (float32 `sin` of a large argument differs
+  between libms), which is the claim the probe holds them to.
+- **Patterns.** Knurl = half-depth profiles on the two 45 degree
+  trains; straight = one train; brushed = `depth * (0.6 + nl(y/60p))
+  * (0.7 n1(x/p) + 0.3 n2(x/0.37p))`; blasted = two 2-D octaves;
+  turned = the profile over the radius. The lay rotation is applied
+  in-graph to the projected coordinate.
+- **Frames, in-graph.** Planar: two dot products against the frame's
+  axes. Radial: `atan2` about the axis, the arc snapped to a whole
+  number of periods round the reference radius (the seam argument of
+  `fc_finish.sh`; a frame stating no radius keeps the shader's
+  per-fragment snap, which the bump's finite difference would see
+  where the analytic gradient did not -- no producer emits one), and
+  turning remapped to a straight knurl a quarter turn over, as the
+  shader does. Triplanar: three projections weighted by
+  `max(|n| - 0.25, 0)^4` off `TextureCoordinate.Normal`, the
+  object-space shading normal, which the bump offsets leave alone --
+  the shader's chain rule treats the weights as constants too.
+- **Not carried.** The pixel-footprint fade and its roughness hand-off:
+  a path tracer supersamples what the raster had to filter.
+- **Debug view 2.** The verification needed a picture in which the two
+  engines can be compared exactly, and lighting is not it (Cycles'
+  environment is nearly tilt-insensitive and its BSDF applies bump
+  shadowing; the same 17 degree flank reads as a 9% luminance drop in
+  the raster and 1% in Cycles). So Cycles honours the raster path's
+  `DebugViewMode` 2 (docs/RenderDebug.md sec 2.3): `SceneInput::
+  debugView`, fed by the three feeders from the same
+  `RenderParams::getDebugViewMode()`, replaces every surface by an
+  emission of the view-space shading normal as `n * 0.5 + 0.5` (a
+  `VectorTransform` to camera space with z negated for the GL eye
+  convention), written raw over black exactly as `fs_fc_debug.sc`
+  writes it. Unfinished shapes agree between the engines to 8-bit
+  precision (mean |dn| 0.0000 on a plane, 0.0007 on a cylinder,
+  0.0008 on a sphere), which is also a check of the camera and
+  normal conventions on curved surfaces.
+
+Verified 2026-08-29 (`finish/probe.py` under xvfb on the debug tree,
+`probe.sh <CPU|CUDA> <spp> <tag>`, in a config home of its own): every
+finished leg's Cycles normal view is held against the ANALYTIC
+perturbed normal, `fc_finish.sh`'s own arithmetic in numpy at every
+pixel (`normalize(N - tangential(grad))`), as the difference from the
+unfinished view. A 40 mm `Part::Plane` (planar frame): straight knurl
+corr 0.999, RMS 0.1722 vs 0.1730, max 0.306 vs 0.300 (the designed
+sin(atan(pi * 0.2 / 2)) = 0.299); straight at a 30 degree lay 0.999
+on both axes; diamond knurl 0.999; turned 0.999; brushed and blasted
+RMS within 11% and 3% of the analytic. A `Part::Cylinder` r 10 (radial
+frame, Face1 the lateral face): straight knurl corr 1.000, RMS 0.1537
+vs 0.1539; turned 0.97 / 0.999; diamond knurl 0.999, RMS 0.1186 vs
+0.1187. A `Part::Sphere` (no analytic frame, triplanar): straight
+0.985 / 0.997, blasted within 3%. CUDA reads the same numbers as the
+CPU (0.301 / 0.533 at depth 0.2 / 0.4 on the tilt probe). Two things
+found on the way: the raster's mode 2 is the PREPASS normal, without
+the finish, so the raster frames serve as the framing check only;
+and a producer bug -- removing a finish dropped the render material
+node and with it the projection frames, and the once-only
+`renderGeometryAsked` never asked for them again, so a finish restated
+in the same session shaded triplanarly in both engines (fixed:
+the flag resets with the node).
 
 
 ## 7. Preparing for out of process
@@ -1439,7 +1535,8 @@ Phase 6 -- queued, not started. Two items, in this order.
     RULED 2026-08-29, in two phases. **Phase A**, the declarative
     facts a `Render::Material` carries -- texture maps, surface
     finishes, the per-face palettes -- become node graphs: the maps
-    are section 6.5 (built), finishes and palettes follow. **Phase
+    are section 6.5 (built), the finishes section 6.6 (built), the
+    palettes follow. **Phase
     B**, user shaders: freeform bgfx `.sc` text has no node-graph
     meaning, so the bridge is a THIRD, node-based authoring dialect
     -- MaterialX, whose ShaderGen emits GLSL/ESSL for the raster

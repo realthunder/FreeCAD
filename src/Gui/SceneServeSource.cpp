@@ -259,6 +259,7 @@ public:
     Render::PBRConfig cyclesPbr;
     Render::BumpConfig cyclesBump;
     Render::OutputConfig cyclesOutput;
+    int cyclesDebugView = 0;
     Render::LightConfig cyclesLight;
     Render::Background cyclesBackground;
 
@@ -367,6 +368,7 @@ public:
         Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
         Render::LightConfig light = RendererBridge::translateLightConfig(nullptr, settings);
         Render::Background background = backgroundFromPreferences();
+        const int debugView = int(RenderParams::getDebugViewMode());
         const uint64_t gen = renderer->sceneGeneration();
         const bool sameBackground = background.type == cyclesBackground.type
             && background.fromColor == cyclesBackground.fromColor
@@ -375,7 +377,7 @@ public:
             && background.hasMid == cyclesBackground.hasMid;
         const bool stale = force || !cyclesInput || gen != cyclesSceneGen
             || !(pbr == cyclesPbr) || !(bump == cyclesBump) || !(output == cyclesOutput) || !(light == cyclesLight)
-            || !sameBackground;
+            || debugView != cyclesDebugView || !sameBackground;
         if (stale) {
             SoFCRenderCache *cache = manager->getSceneCache();
             if (!cache)
@@ -387,6 +389,7 @@ public:
             input->bump = bump;
             input->output = output;
             input->light = light;
+            input->debugView = debugView;
             input->background = background;
             // The synthetic framing, for form's sake: a stream ignores
             // it once its viewer has stated a camera, and the start op
@@ -399,6 +402,7 @@ public:
             cyclesPbr = pbr;
             cyclesBump = bump;
             cyclesOutput = output;
+            cyclesDebugView = debugView;
             cyclesLight = light;
             cyclesBackground = background;
         }

@@ -724,6 +724,7 @@ struct View3DInventorViewer::Private
     Render::PBRConfig cyclesPbr;
     Render::BumpConfig cyclesBump;
     Render::OutputConfig cyclesOutput;
+    int cyclesDebugView = 0;
     Render::LightConfig cyclesLight;
     Render::SectionConfig cyclesSection;
     Render::Background cyclesBackground;
@@ -2188,6 +2189,7 @@ bool View3DInventorViewer::renderWithCycles(const std::string &path, int width, 
     input.output = RendererBridge::translateOutputConfig(settings);
     input.light = RendererBridge::translateLightConfig(nullptr, settings);
     input.background = _pimpl->backgroundFeed(backgroundColor());
+    input.debugView = int(RenderParams::getDebugViewMode());
 
     // Framed for the requested size, not the widget's: the camera's
     // viewport mapping adjusts the volume to the aspect asked for.
@@ -2312,6 +2314,7 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
     Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
     Render::LightConfig light = RendererBridge::translateLightConfig(nullptr, settings);
     Render::Background background = backgroundFeed(col);
+    const int debugView = int(RenderParams::getDebugViewMode());
     const uint64_t gen = host->sceneGeneration();
     const bool sameBackground = background.type == cyclesBackground.type
         && background.fromColor == cyclesBackground.fromColor
@@ -2320,6 +2323,7 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
         && background.hasMid == cyclesBackground.hasMid;
     if (cyclesFed && gen == cyclesSceneGen && pbr == cyclesPbr && bump == cyclesBump
         && output == cyclesOutput
+        && debugView == cyclesDebugView
         && light == cyclesLight && secconf == cyclesSection && sameBackground) {
         vp->setCamera(camera);
         return;
@@ -2339,12 +2343,14 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
     input.light = light;
     input.background = background;
     input.camera = camera;
+    input.debugView = debugView;
     vp->setScene(input);
     cyclesFed = true;
     cyclesSceneGen = gen;
     cyclesPbr = pbr;
     cyclesBump = bump;
     cyclesOutput = output;
+    cyclesDebugView = debugView;
     cyclesLight = light;
     cyclesSection = secconf;
     cyclesBackground = background;

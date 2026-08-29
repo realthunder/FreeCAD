@@ -196,6 +196,36 @@ private:
                    float metallic,
                    float roughness,
                    const float emission[3]);
+    /// A machined surface finish as the graph shades it
+    /// (docs/CyclesIntegration.md sec 6.6): the pattern of fc_finish.sh
+    /// as a HEIGHT field over the draw's object space, laid out in the
+    /// face's projection frame (or triplanarly without one) and handed
+    /// to a Bump node, which differentiates it against the ray
+    /// differentials exactly as the raster shader differentiates its
+    /// analytic gradient against the pixel. The draw's own finish and
+    /// frame -- entry 0 of the palettes -- until the per-face palettes
+    /// land.
+    struct Finish {
+        uint8_t pattern = 0;  ///< App::SurfaceFinish::Pattern, 0 = none
+        float pitch = 0.0f;   ///< mm of object space, feature spacing
+        float depth = 0.0f;   ///< mm of object space, peak to valley
+        float angle = 0.0f;   ///< lay direction, radians
+        SurfaceFrame frame;   ///< Unframed = triplanar
+        bool any() const
+        {
+            return pattern != 0;
+        }
+        /// The part of a shader key this contributes ("" without one).
+        std::string key() const;
+    };
+    /// The finish a draw shades: the material's scalars when they name
+    /// a pattern this translation knows with a positive pitch and depth
+    /// (the bgfx path's own gate), in the draw's frame.
+    Finish resolveFinish(const Material &m) const;
+    /// Perturb links.normal by the finish's height field: the pattern
+    /// (groove profile, brushed and blasted noise) sampled from baked
+    /// periodic tables, the projection frames built in-graph.
+    void applyFinish(ccl::ShaderGraph *graph, const Finish &finish, SurfaceLinks &links);
     Surface resolveSurface(const Material &material,
                            const PBRConfig &pbr,
                            const uint8_t *vertexColor,
@@ -221,13 +251,21 @@ private:
 
     /// The shader of a uniformly-coloured draw, keyed on everything but
     /// the base colour and alpha (those ride the object).
-    ccl::Shader *uniformShader(const Surface &surface, const Clip &clip, const Maps &maps);
+    ccl::Shader *uniformShader(const Surface &surface,
+                               const Clip &clip,
+                               const Maps &maps,
+                               const Finish &finish);
     /// The one shader of every per-vertex-attribute draw -- one per
     /// distinct clip, which for a scene with no section is still one.
-    ccl::Shader *attributeShader(const Clip &clip, const Maps &maps);
+    ccl::Shader *attributeShader(const Clip &clip, const Maps &maps, const Finish &finish);
     /// Connect \a closure to the graph's surface output, through the
     /// clip test when there is one.
     void connectSurface(ccl::ShaderGraph *graph, ccl::ShaderOutput *closure, const Clip &clip);
+    /// The surface of debug view 2 (SceneInput::debugView): the shading
+    /// normal -- \a normal, or the geometry's when null -- emitted in
+    /// GL eye space as n * 0.5 + 0.5, which is what fs_fc_debug.sc
+    /// shows for the same mode.
+    void debugSurface(ccl::ShaderGraph *graph, ccl::ShaderOutput *normal, const Clip &clip);
 
     /// A translated mesh and what it cost, keyed by the draw's mesh
     /// identity (the cache contract cacheId + generation, the index
@@ -275,6 +313,7 @@ private:
 
     ccl::Scene *scene;
     bool managed;
+    int debugView = 0;  ///< SceneInput::debugView of the last translate
     std::unordered_map<std::string, ccl::Shader *> shaders;
     int imageNodes = 0;  ///< image texture nodes built into them
     std::unordered_map<std::string, MeshEntry> meshes;

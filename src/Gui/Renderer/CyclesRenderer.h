@@ -83,6 +83,14 @@ struct SceneInput {
     /// The planes themselves ride the draws' materials; this is the
     /// frame-level style the caps are built to.
     SectionConfig section;
+    /// The raster path's buffer visualization (RenderParams
+    /// DebugViewMode, docs/RenderDebug.md sec 2.3), honoured here where
+    /// a path tracer has the same quantity to show: 2 = the view-space
+    /// shading normal as n * 0.5 + 0.5, written raw, over black -- the
+    /// one picture in which the two engines can be compared exactly,
+    /// which is what the finish and map probes assert on. Any other
+    /// value renders normally.
+    int debugView = 0;
 };
 
 /// What the translation made of a SceneInput, for the caller to

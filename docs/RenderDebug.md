@@ -148,7 +148,7 @@ is the "view mode" dropdown every production engine ships.
 |---|---|---|---|
 | 0 | Off | off (normal shading) | — |
 | 1 | Depth | linearized depth | prepass, precision, far-plane issues |
-| 2 | Normal | view-space normals | tessellation/normal-generation bugs |
+| 2 | Normal | view-space normals (the prepass normal: no finish, no bump map; the Cycles path honours this mode too, with its shading normal, docs/CyclesIntegration.md sec 6.6) | tessellation/normal-generation bugs |
 | 3 | AO | AO term only | GTAO artifacts, resolution-scaling seams |
 | 4 | Shadow | shadow term only | acne/peter-panning, EVSM bleeding |
 | 5 | ShadowTile | scene-shadow-map coverage (gray) + bulb atlas tile index as color | shadow projection reach, bulb-tile coverage/selection |
