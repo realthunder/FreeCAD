@@ -56,6 +56,7 @@
 #include <Base/Console.h>
 #include <Gui/Inventor/SoFCRenderMaterial.h>
 #include <Gui/RenderParams.h>
+#include <Gui/Renderer/Environment.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Gui/ViewParams.h>
 
@@ -362,9 +363,20 @@ public:
                 // across the body's diagonal (BGFXView::submitGlassSurface).
                 density = 3.0F / (SphereDiameter * std::sqrt(3.0F));
             }
-            const float cr = 1.0F - d.r;
-            const float cg = 1.0F - d.g;
-            const float cb = 1.0F - d.b;
+            // The engine absorbs with the LINEAR colour when it is
+            // colour managed (submitGlassSurface decodes the authored
+            // diffuse like the mesh pass, as Cycles does), so the depth
+            // this rule predicts is taken from the same number -- read
+            // off the picked value, a mid tint comes out 1.8x shallower
+            // than the ball then shows it.
+            const bool managed = Gui::RenderParams::getOutputTransform()
+                != long(Render::OutputConfig::None);
+            auto lin = [managed](float c) {
+                return managed ? Render::srgbToLinear(c) : c;
+            };
+            const float cr = 1.0F - lin(d.r);
+            const float cg = 1.0F - lin(d.g);
+            const float cb = 1.0F - lin(d.b);
             const float most = std::max({cr, cg, cb});
             const float chroma = most - std::min({cr, cg, cb});
             const float depth = density * most * SphereDiameter;

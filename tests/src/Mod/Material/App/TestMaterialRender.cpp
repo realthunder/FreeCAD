@@ -85,7 +85,7 @@ TEST_F(TestMaterialRender, TintedGlassStatesDensity)
     auto density = find(props, "Render_GlassDensity");
     ASSERT_NE(density, nullptr);
     EXPECT_FALSE(density->boolean);
-    EXPECT_NEAR(density->value, 0.08, 1e-6);
+    EXPECT_NEAR(density->value, 0.045, 1e-6);
 
     // Roughness 0.0 is "engine decides": not stated.
     EXPECT_EQ(find(props, "Render_GlassRoughness"), nullptr);

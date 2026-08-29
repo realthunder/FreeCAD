@@ -512,7 +512,9 @@ void BGFXView::submitShadowTint(const Render::DrawCall &draw)
 
     const Render::Material &mat = draw.material;
     float color[4];
-    unpackColor(mat.diffuse, color);
+    // The glass diffuse, authored: decoded like the glass pass decodes
+    // it, so the shadow carries the tint the body absorbs with.
+    unpackAuthoredColor(mat.diffuse, color, colorManaged());
     bgfx::setUniform(u_matColor, color);
     setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
     bgfx::setVertexBuffer(0, gpu->geom->vbh);

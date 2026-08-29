@@ -466,7 +466,10 @@ void BGFXView::submitBloom(float threshold, float intensity, float radius,
                 continue;
             const Render::Material &mat = draw->material;
             float color[4];
-            unpackColor(mat.diffuse, color);
+            // An authored colour, decoded like the mesh pass decodes
+            // the same diffuse: the halo must be the hue the body
+            // shades in, not its sRGB numbers scaled as light.
+            unpackAuthoredColor(mat.diffuse, color, colorManaged());
             float inten = mat.lightintensity > 0.0f
                 ? mat.lightintensity : 1.0f;
             for (int j = 0; j < 3; ++j)
@@ -551,7 +554,9 @@ void BGFXView::submitWaterSurface(const Render::DrawCall &draw,
 
     const Render::Material &mat = draw.material;
     float color[4];
-    unpackColor(mat.diffuse, color);
+    // Authored: the tint is a Beer-Lambert sigma in the shader, which
+    // is arithmetic on light and wants the linear colour.
+    unpackAuthoredColor(mat.diffuse, color, colorManaged());
     // The alpha channel flags the shader that a planar reflection is
     // rendered into s_texRefl (mirror-camera scene) — otherwise it
     // falls back to the environment cubemap.
@@ -705,7 +710,14 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
 
     const Render::Material &mat = draw.material;
     float color[4];
-    unpackColor(mat.diffuse, color);
+    // Authored, decoded when the pipeline is colour managed -- the
+    // same rule as the mesh pass, and the one Cycles applies to the
+    // same colour before its absorption volume. Handed over encoded,
+    // fs_fc_glass.sc absorbed with (1 - sRGB) where the tracer
+    // absorbed with (1 - linear), 0.30 against 0.55 for a 0.7 channel,
+    // and its frosted scatter wash multiplied linear irradiance by a
+    // display number.
+    unpackAuthoredColor(mat.diffuse, color, colorManaged());
     bgfx::setUniform(u_matColor, color);
     // Like every vs_fc_mesh pairing: u_params is a global uniform,
     // an unset value would inherit a line draw's depth bias.

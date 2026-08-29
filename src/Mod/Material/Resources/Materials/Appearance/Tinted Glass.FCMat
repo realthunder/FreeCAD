@@ -21,5 +21,5 @@ AppearanceModels:
   GlassRendering:
     UUID: '59ae40ef-3aeb-46a8-8f80-47cf609bf513'
     GlassIOR: "1.52"
-    GlassDensity: "0.08"
+    GlassDensity: "0.045"
     GlassRoughness: "0.0"

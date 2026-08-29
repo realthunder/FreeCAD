@@ -62,7 +62,7 @@ TEST_F(FeaturePartRenderTest, glassCardReachesTheFeature)
     for (const auto& prop : props) {
         if (prop.name == "Render_GlassDensity") {
             density = true;
-            EXPECT_NEAR(prop.value, 0.08, 1e-6);
+            EXPECT_NEAR(prop.value, 0.045, 1e-6);
         }
     }
     EXPECT_TRUE(density);
