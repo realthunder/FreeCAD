@@ -1534,7 +1534,7 @@ void ViewProviderGeometryObject::showBoundingBox(bool show)
 }
 
 
-bool Gui::applyMaterialRenderProperties(ViewProviderGeometryObject *vp,
+bool Gui::applyMaterialRenderProperties(App::PropertyContainer *vp,
                                         const App::MaterialRenderProperties &props)
 {
     if (!vp) {
@@ -1564,6 +1564,9 @@ bool Gui::applyMaterialRenderProperties(ViewProviderGeometryObject *vp,
             }
             continue;
         }
+        // A property that did not exist is a change even when the
+        // stated value is the type's default (Render_Glass false).
+        const bool created = !vp->getPropertyByName(name);
         if (it->boolean) {
             auto prop = ensureRenderProperty<App::PropertyBool>(
                     vp, "App::PropertyBool", name,
@@ -1582,6 +1585,9 @@ bool Gui::applyMaterialRenderProperties(ViewProviderGeometryObject *vp,
                 prop->setValue(it->value);
                 changed = true;
             }
+        }
+        if (created) {
+            changed = true;
         }
     }
 
