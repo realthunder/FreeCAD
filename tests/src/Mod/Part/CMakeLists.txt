@@ -4,6 +4,9 @@ target_include_directories(Part_tests_run PUBLIC
     ${OCC_INCLUDE_DIR}
     ${Python3_INCLUDE_DIRS}
     ${XercesC_INCLUDE_DIRS}
+    # FeaturePartRender.cpp reaches the Materials manager, whose headers
+    # are Qt.
+    ${QtCore_INCLUDE_DIRS}
 )
 
 # Part itself gets these through a directory-scoped link_directories() in

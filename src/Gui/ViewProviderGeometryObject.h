@@ -319,16 +319,21 @@ private:
  * Render Settings task panel and a material card carrying render
  * properties -- so the creation lives here and there is one creator.
  * addDynamicProperty applies a fresh property immediately.
+ *
+ * The helpers take the container, not the view provider: nothing in them
+ * is Gui, and that is what lets the mapping be tested on a document
+ * object -- a view provider cannot exist without the Gui application and
+ * its main window, which every property write of one reaches.
  */
 //@{
 template<class PropT>
-PropT *getRenderProperty(ViewProviderGeometryObject *vp, const char *name)
+PropT *getRenderProperty(App::PropertyContainer *vp, const char *name)
 {
     return Base::freecad_dynamic_cast<PropT>(vp->getPropertyByName(name));
 }
 
 template<class PropT>
-PropT *ensureRenderProperty(ViewProviderGeometryObject *vp, const char *type,
+PropT *ensureRenderProperty(App::PropertyContainer *vp, const char *type,
                             const char *name, const char *doc)
 {
     if (auto prop = getRenderProperty<PropT>(vp, name))
@@ -337,7 +342,7 @@ PropT *ensureRenderProperty(ViewProviderGeometryObject *vp, const char *type,
             vp->addDynamicProperty(type, name, "Render", doc));
 }
 
-inline void removeRenderProperty(ViewProviderGeometryObject *vp, const char *name)
+inline void removeRenderProperty(App::PropertyContainer *vp, const char *name)
 {
     if (vp->getPropertyByName(name))
         vp->removeDynamicProperty(name);
@@ -349,7 +354,7 @@ inline void removeRenderProperty(ViewProviderGeometryObject *vp, const char *nam
  * does not name, so switching from a glass card to an ordinary one leaves
  * no strays behind. Answers whether anything changed.
  */
-GuiExport bool applyMaterialRenderProperties(ViewProviderGeometryObject *vp,
+GuiExport bool applyMaterialRenderProperties(App::PropertyContainer *vp,
                                              const App::MaterialRenderProperties &props);
 //@}
 

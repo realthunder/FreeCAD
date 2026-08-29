@@ -4,6 +4,7 @@ target_sources(
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/TestMaterialCards.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TestMaterialProperties.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/TestMaterialRender.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TestMaterials.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TestMaterialValue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TestModel.cpp
