@@ -120,3 +120,55 @@ Deliberately NOT v0: windowed/partial `sheet.get` for huge sheets
 (the full used range is fine until proven otherwise), rich per-cell
 formatting beyond what `Cell` stores, and formula editing UX beyond a
 plain content string.
+
+## 4. Formula auto-completion (added 2026-08-29)
+
+The desktop cell editor is a `Gui::ExpressionLineEdit` (lead char
+`=`) driving `Gui::ExpressionCompleter`. That machinery is already
+split App/Gui in exactly the place the remote tier needs:
+
+- **`App::ExpressionTokenizer`** (`src/App/ExpressionTokenizer.h`,
+  QtCore-only, no widgets): `perform(text, pos)` extracts the
+  completion prefix range under the cursor, tracks `<<...>>` string
+  quoting (`isInsideString`/`isClosingString`), detects
+  unit-after-a-number (`isSearchingUnit`), honors the lead char. It
+  runs on the host verbatim.
+- **`Gui::ExpressionCompleterModel`** (2632 lines) is Qt-shaped -- a
+  lazy `QAbstractItemModel` with bit-packed indexes -- but every
+  candidate source it walks is App-side: the documents list, objects
+  by name AND label, properties + pseudo-properties
+  (`ObjectIdentifier::getPseudoProperties`), property sub-paths
+  (`Property::getPaths()`, which is where sheet aliases come from),
+  Python attribute drill-down (`ObjectIdentifier::getPyValue`),
+  units, `FunctionExpression::getFunctions()`. The Qt model is NOT
+  ported; a flat enumerator over the same sources is.
+- The widget glue (popup, inline insertion) becomes DOM.
+
+**Mapping: a server-side completion op -- the LSP shape.** The client
+cannot enumerate candidates (the document world lives on the host and
+churns with every recompute), and a completion query is tiny and
+latency-tolerant behind a typing debounce.
+
+- `sheet.complete { doc, obj, text, pos }` -> the host runs
+  `ExpressionTokenizer::perform`, then enumerates ONE level of the
+  same sources the desktop model walks, capped, and answers
+  `{ start, end, items: [{ replace, label, kind, hint? }] }` where
+  `kind` is `doc|obj|prop|alias|pseudo|function|unit|constant`.
+  `replace` is the exact insertion text for `[start, end)` -- the
+  host keeps the `<<...>>` quoting/closing logic, the client never
+  re-implements it.
+- **Round-trip discipline mirrors QCompleter's**: one query per
+  completion LEVEL (when a `.` / `<<` / operator changes the token
+  structure), client-side prefix filtering within the level on each
+  keystroke. No per-character round trips.
+- **Caveats**: the enumeration runs on the main thread like every
+  control op (`getPyValue` executes Python attribute access -- GIL +
+  document access), one level only and count-capped, exactly the
+  discipline that makes the desktop model lazy. Completion is
+  read-only, so `viewOnly` connections keep it. The unit case rides
+  the same op (`isSearchingUnit` flips the candidate set to units).
+
+This strengthens the sec 3 decision rather than complicating it:
+completion is query/response by nature, nothing about it is
+rendering. Under the vg tier the exact same op would still be
+needed -- plus a hand-drawn popup.
