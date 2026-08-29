@@ -1,0 +1,25 @@
+---
+General:
+  UUID: "b4e115d3-8294-4b39-ab3e-9d1864a5d380"
+  Author: "Zheng Lei (realthunder)"
+  License: "CC-BY-4.0"
+  Name: "Frosted Glass"
+  Description: "Etched or sandblasted glass; the surface scatters, the body stays clear"
+AppearanceModels:
+  BasicRendering:
+    UUID: 'f006c7e4-35b7-43d5-bbf9-c5d572309e6e'
+    AmbientColor: "(0.0930, 0.0930, 0.0930, 1.0)"
+    DiffuseColor: "(0.9600, 0.9600, 0.9600, 1.0)"
+    EmissiveColor: "(0.0000, 0.0000, 0.0000, 1.0)"
+    Shininess: "0.6000"
+    SpecularColor: "(0.7000, 0.7000, 0.7000, 1.0)"
+    # The glass look is the render engine's -- the Render_Glass
+    # properties below, which do not read this, and the icon is rendered
+    # through them too -- so this value reaches the plain Coin fallback
+    # only, where a glass part should still be see-through.
+    Transparency: "0.40"
+  GlassRendering:
+    UUID: '59ae40ef-3aeb-46a8-8f80-47cf609bf513'
+    GlassIOR: "1.52"
+    GlassDensity: "0.0"
+    GlassRoughness: "0.60"

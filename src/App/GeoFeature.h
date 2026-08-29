@@ -198,6 +198,14 @@ public:
     virtual App::Material getMaterialAppearance() const;
     /// Set the feature's material appearance from an App::Material
     virtual void setMaterialAppearance(const App::Material& material);
+    /** Render_* view properties the feature's material card states
+     *
+     * The third leg of the same bridge, for what App::Material cannot
+     * carry: the media features are dynamic properties on the view
+     * provider rather than fields of a material (see
+     * App::MaterialRenderProperty). Empty unless the card states one.
+     */
+    virtual App::MaterialRenderProperties getMaterialRenderProperties() const;
 
 protected:
     void onChanged(const Property* prop) override;

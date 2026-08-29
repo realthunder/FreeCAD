@@ -29,23 +29,62 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
                   uint16_t height,
                   uint32_t clearColor)
 {
-    // The ADDITIVELY captured copies of an overridden object's display
-    // mode (docs/CoinRetirement.md 5.10) stay home. A snapshot is what
-    // the dump and serve tiers replay, and they have neither the
-    // override table nor the per-draw resolution that picks ONE of the
-    // copies -- sending both would draw the object twice. Dropped, the
-    // object arrives in the mode the normal flow traversed, which is
-    // what a served scene has always shown of a view's overrides
-    // (5.13). Only ever a copy loop while an interest capture is
-    // running; otherwise no draw is tagged and this is the plain
-    // assignment it was.
-    auto copyFeed = [this](const Render::DrawCallList &src) {
-        if (!captureInterest)
+    // A snapshot is what the dump and serve tiers replay, and the
+    // viewer draws every draw it is handed: it has no override table,
+    // no interest list and no per-object resolution of its own. So the
+    // resolution happens HERE (docs/CoinRetirement.md 5.16), against
+    // the main view's style -- the same BGFXStyleState the frame loop
+    // latches onto a view, asked by the same styleAdmits, so there is
+    // no second copy of rules this subtle. What crosses the wire is
+    // then what this view draws: exactly ONE copy of an overridden
+    // object, in the mode its override resolves to, and none of the
+    // buckets a Class-A style removes.
+    //
+    // Until 5.16 the additively captured copies were merely dropped
+    // and a served scene showed the mode the normal flow traversed
+    // (5.13) -- an override was simply not applied remotely, and a
+    // Class-A style arrived as the superset child it was captured
+    // from. That behaviour survives exactly where it was correct: with
+    // no capture, no override table and no view style nothing is
+    // tagged and nothing filters, and this is the plain assignment it
+    // always was.
+    //
+    // A unified canvas resolves per CELL, which one snapshot cannot
+    // express; the main view's style is what a served scene has always
+    // meant, and a canvas cell's own style is not carried here.
+    BGFXStyleState mainStyle;
+    const bool resolving = captureInterest
+            || (mainStyleOverrides && !mainStyleOverrides->entries.empty())
+            || mainStyleMask != Render::StyleAsIs;
+    if (resolving) {
+        mainStyle.drawStyleMask = mainStyleMask;
+        mainStyle.drawStyleName = mainStyleName;
+        mainStyle.styleFromSuperset = mainFromSuperset;
+        // The style as an additive mode, latched exactly as
+        // BGFXFrame.cpp latches it: both zero unless the interest list
+        // actually carries the mode.
+        if (mainFromSuperset && captureInterest && mainStyleMode) {
+            if (const uint16_t bit = captureInterest->bitOf(mainStyleMode)) {
+                mainStyle.drawStyleMode = mainStyleMode;
+                mainStyle.drawStyleModeBit = bit;
+            }
+        }
+        if (mainStyleOverrides && !mainStyleOverrides->entries.empty()) {
+            // A cache of this snapshot's own: it lives and dies with
+            // the local state, so it needs no version invalidation.
+            mainStyle.ovCache = &mainStyle.subOvCaches[0];
+            mainStyle.ovTable = mainStyleOverrides;
+            mainStyle.ovInfo = &objectInfo;
+        }
+        mainStyle.ovInterest = captureInterest;
+    }
+    auto copyFeed = [&](const Render::DrawCallList &src) {
+        if (!resolving)
             return src;
         Render::DrawCallList out;
         out.reserve(src.size());
         for (const auto &d : src) {
-            if (!d.capturedMode)
+            if (mainStyle.styleAdmits(d))
                 out.push_back(d);
         }
         return out;
@@ -190,8 +229,12 @@ void BGFXRenderer::Private::maybeDumpScene(const void *viewMatrix,
         Render::SceneSnapshot snap;
         makeSnapshot(snap, viewMatrix, projMatrix, width, height,
                      clearColor);
-        fprintf(stderr, "bgfx: scene snapshot (%zu draws) -> %s: %s\n",
-                scene.size(), dumpPath,
+        // The SNAPSHOT's count, not the feed's: since 5.16 the two
+        // differ by whatever the view's style resolution removed, and
+        // the number worth reading is what actually goes on the wire.
+        fprintf(stderr,
+                "bgfx: scene snapshot (%zu of %zu draws) -> %s: %s\n",
+                snap.scene.size(), scene.size(), dumpPath,
                 Render::saveSceneSnapshot(dumpPath, snap)
                     ? "ok" : "FAILED");
     }

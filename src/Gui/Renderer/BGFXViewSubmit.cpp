@@ -72,7 +72,7 @@ int matchStyleOverride(const Render::StyleOverride &ov,
 }
 } // namespace
 
-bool BGFXView::styleAdmits(const Render::DrawCall &draw)
+bool BGFXStyleState::styleAdmits(const Render::DrawCall &draw)
 {
     // This sub-view's Class-A display style, resolved PER OBJECT the
     // way Rhino and SolidWorks resolve a display mode
@@ -189,7 +189,8 @@ bool BGFXView::styleAdmits(const Render::DrawCall &draw)
         || (effective & Render::styleBitOf(draw.material)) != 0;
 }
 
-const BGFXView::OvStyle *BGFXView::lookupStyleOverride(uint64_t objectKey)
+const BGFXStyleState::OvStyle *
+BGFXStyleState::lookupStyleOverride(uint64_t objectKey)
 {
     if (!ovCache || !ovTable || !objectKey)
         return nullptr;
@@ -1112,8 +1113,15 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
             BGFX_STATE_BLEND_FUNC_RT_1(BGFX_STATE_BLEND_ZERO,
                                        BGFX_STATE_BLEND_INV_SRC_COLOR));
     }
+    // The "over" blend with its alpha half split off: BLEND_ALPHA
+    // applies (SRC_ALPHA, INV_SRC_ALPHA) to the alpha channel as well,
+    // which leaves a * a + dst * (1 - a) as the coverage -- wrong
+    // wherever the destination is transparent, i.e. an offscreen
+    // capture with a transparent background (the material icons).
     else if (blend)
-        state |= BGFX_STATE_BLEND_ALPHA;
+        state |= BGFX_STATE_BLEND_FUNC_SEPARATE(
+            BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA,
+            BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_INV_SRC_ALPHA);
     // A particle emitter's sprites are built in the vertex stage as
     // camera-facing quads in view space, so their winding does not
     // follow the model the way a mesh triangle's does. The mirror

@@ -2495,6 +2495,123 @@ Verified on the RTX 3060 (Xvfb + `vglrun -d egl0`): `xchain`, `xpath`,
 `ovr` (with case A corrected), `ovrsave`, `d4`, `d4mode`, `sbn`,
 `seltag`, `nsm`, `pts`, `ontop`.
 
+### 5.16 The served scene resolves the overrides (2026-08-28)
+
+5.13 closed the double-draw by dropping the additively captured copies
+from every snapshot feed, and said plainly what that left: "a served
+scene then shows the object in the mode the normal flow traversed...
+carrying the resolution to the browser tier is a feature, not a hole,
+and is not attempted here." This is that feature, and it turned out
+not to need the wire format to change at all.
+
+**Where the resolution belongs.** The obvious shape -- carry
+`ownStyle`/`registeredStyles`/`capturedMode` per draw, add the
+override table and the interest list's NAMES (the interned ids are
+process-local and mean nothing across the wire), bump `kVersion` AND
+`kChunkVersion` (the group chunk's draw bytes would move, and a cached
+chunk from an older build would be misread from that field on), then
+latch all of it in the viewer -- is real work, and it buys something
+this does not: a remote user switching display style locally against
+one capture. It is not what "the served scene is wrong" asked for.
+The snapshot is built in the same process as the view it serves,
+where the override table, the interest list and `styleAdmits` already
+are. Resolving THERE sends what the view draws: exactly one copy of an
+overridden object, in the mode its override resolves to, and none of
+the buckets a Class-A style removes.
+
+**One implementation of the rules.** `BGFXView`'s style block --
+`drawStyleMask`/`drawStyleName`/`styleFromSuperset`/`drawStyleMode`,
+the `OvStyle`/`OvCache` pair, `lookupStyleOverride` and `styleAdmits`
+-- is now `BGFXStyleState`, which `BGFXView` derives from. None of it
+was ever sub-view bank state (the comment on `drawStyleMask` says so
+outright), so the move is mechanical and every `view->drawStyleMask`
+still compiles. `makeSnapshot` builds one from the main view's
+`mainStyle*` fields exactly as `BGFXFrame.cpp` latches one onto a
+view, and filters each feed -- scene, selections, highlight, overlays
+-- through the same `styleAdmits`. A second copy of rules this subtle
+would rot inside a session.
+
+**Verified (RTX 3060, Xvfb + `vglrun -d egl0`)**, rig `srv.py` over
+the `nsm.py` provider, whose modes share no geometry ("Cube" is a
+10-unit cube, "Ball" a radius-1 sphere). One dump per process, since
+the dump latches, compared with `fcscenediff`:
+
+    A  own mode Cube, no override    1 of 1 draws,  24 vertices
+    B  own mode Cube, override Ball  1 of 2 draws, 238 vertices
+    C  own mode Ball, no override    1 of 1 draws, 238 vertices
+
+    B vs C  identical      the override reaches the wire, and what
+                           arrives is what an object in that mode is
+    A vs B  DIFFER         it was not reaching it before
+    A vs C  DIFFER         (sanity: the two modes really do differ)
+
+"1 of 2 draws" is the whole point in one number: the additive capture
+produced both copies and exactly one crossed the wire.
+
+- The dump's log line reported the FEED's size, which since this
+  change is not what the snapshot carries; it now reports both.
+- **TRAP for the next rig.** The dump waits for the scene fingerprint
+  to hold still for `FC_BGFX_DUMP_SCENE_SETTLE` frames, and an idle Qt
+  app STOPS REPAINTING -- waiting alone never produces those frames
+  and no dump is ever written, silently. Drive them: `view.redraw()`
+  in a loop with the scene already in its final state.
+
+**The refactor changed nothing on the desktop.** The whole
+display-mode rig set -- `nsm`, `ovr`, `d4`, `d4mode`, `sbn`, `seltag`,
+`pts`, `ovrsave`, `ontop`, `xchain`, `xpath`, `xdoc` -- re-run against
+the new binary produces output BYTE-IDENTICAL to 5.15's, all twelve
+files. That is the check that matters for a base class extracted from
+a live one.
+
+**What did not change.** With no capture, no override table and no
+view style, nothing is tagged and nothing filters: the feeds are the
+plain assignment they always were, so an unresolved served scene is
+what it was. A unified canvas still resolves per CELL, which one
+snapshot cannot express; the main view's style is what a served scene
+has always meant.
+
+### 5.17 Rows under a non-3D active view (2026-08-28)
+
+5.14 made the row sweep walk every open document when the TABLE moves.
+It left the other trigger behind: `Application::viewActivated` still
+swept the view's own document only, so activating a 3D view did not
+refresh the row of an object shown there through a Link from another
+document. And it returned early for a non-3D activation altogether --
+a Spreadsheet sheet or a TechDraw page becoming active left every row
+displaying the last 3D view's values as though they were still in
+force, while the write path (which re-checks `activeView()`) would
+have dropped any edit made against them.
+
+Both triggers now call one `ViewProviderDocumentObject::
+syncDisplayModeInViewAll(view)`, and a non-3D activation sweeps too,
+with a null view -- which `syncDisplayModeInView` already documented
+as "no active 3D view, shows Use View Mode". The rows then say what is
+true: there is no view whose entry they could be showing.
+
+Considered and dropped: marking the row read-only in that state, so an
+edit is impossible rather than silently dropped. `Property::setStatus`
+signals `onPropertyStatusChanged` on a ReadOnly change, which reaches
+the property editor per object -- on a King-sized document that is
+tens of thousands of signals on every switch between a 3D view and a
+sheet, in exchange for a nicety. The value sync alone is what 5.9
+designed.
+
+**Verified (RTX 3060, Xvfb)**, rig `dmv.py`:
+
+    A  3D view, no entry      row "Use View Mode"
+    B  set the row            row "Shaded", and the view's stored
+                              ObjectDisplayModes carries ("Box","Shaded")
+    C  sheet view active      row "Use View Mode"   <- the fix
+    D  back to the 3D view    row "Shaded", read back from the table
+
+- **RIG TRAP, cost three runs.** `Std_ViewCreate` in this fork adds a
+  second CELL to the same `ViewArea`, not a second MDI subwindow, and
+  a sheet opened from the tree becomes another cell too. So "activate
+  the other view" is a cell FOCUS change: `setActiveSubWindow` reports
+  success, activates nothing, and the rig then measures the new empty
+  cell and reads its own confusion as a product bug. Click into the
+  cell instead.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is

@@ -177,13 +177,16 @@ SET(FluidMaterial_Files
 )
 
 SET(AppearanceLib_Files
+    Resources/Materials/Appearance/Acrylic.FCMat
     Resources/Materials/Appearance/Aluminum.FCMat
     Resources/Materials/Appearance/Brass.FCMat
     Resources/Materials/Appearance/Bronze.FCMat
     Resources/Materials/Appearance/Chrome.FCMat
+    "Resources/Materials/Appearance/Clear Glass.FCMat"
     Resources/Materials/Appearance/Copper.FCMat
     Resources/Materials/Appearance/Default.FCMat
     Resources/Materials/Appearance/Emerald.FCMat
+    "Resources/Materials/Appearance/Frosted Glass.FCMat"
     Resources/Materials/Appearance/Gold.FCMat
     Resources/Materials/Appearance/Jade.FCMat
     Resources/Materials/Appearance/Metalized.FCMat
@@ -199,6 +202,7 @@ SET(AppearanceLib_Files
     Resources/Materials/Appearance/Silver.FCMat
     Resources/Materials/Appearance/Steel.FCMat
     Resources/Materials/Appearance/Stone.FCMat
+    "Resources/Materials/Appearance/Tinted Glass.FCMat"
     Resources/Materials/Appearance/Wood.FCMat
 )
 
@@ -309,6 +313,7 @@ SET(MaterialModel_Files
     "Resources/Models/Render Workbench/RenderWB.yml"
     Resources/Models/Rendering/AdvancedRendering.yml
     Resources/Models/Rendering/BasicRendering.yml
+    Resources/Models/Rendering/GlassRendering.yml
     Resources/Models/Rendering/TextureRendering.yml
     Resources/Models/Rendering/VectorRendering.yml
     "Resources/Models/Test/Test Model.yml"

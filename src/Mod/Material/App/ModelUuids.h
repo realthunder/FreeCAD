@@ -83,6 +83,7 @@ public:
     static const QString ModelUUID_Rendering_Texture;
     static const QString ModelUUID_Rendering_Advanced;
     static const QString ModelUUID_Rendering_Vector;
+    static const QString ModelUUID_Rendering_Glass;
 
     static const QString ModelUUID_Render_Appleseed;
     static const QString ModelUUID_Render_Carpaint;

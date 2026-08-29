@@ -1425,6 +1425,11 @@ App::Material Feature::getMaterialAppearance() const
     return ShapeMaterial.getValue().getMaterialAppearance();
 }
 
+App::MaterialRenderProperties Feature::getMaterialRenderProperties() const
+{
+    return ShapeMaterial.getValue().getRenderProperties();
+}
+
 void Feature::setMaterialAppearance(const App::Material& material)
 {
     try {

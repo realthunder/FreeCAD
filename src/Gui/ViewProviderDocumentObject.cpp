@@ -627,6 +627,27 @@ void ViewProviderDocumentObject::syncDisplayModeInView(View3DInventor *view)
     }
 }
 
+void ViewProviderDocumentObject::syncDisplayModeInViewAll(View3DInventor *view)
+{
+    // EVERY open document, not just the view's own: an object shown
+    // here through a Link lives in another document, and its
+    // ViewProvider -- the one carrying the row the user reads -- is in
+    // THAT document's Gui::Document (docs/CoinRetirement.md 5.14).
+    // syncDisplayModeInView writes nothing where the row already
+    // agrees, so the sweep is a read for all but the few objects an
+    // edit actually moved.
+    for (auto appdoc : App::GetApplication().getDocuments()) {
+        auto gdoc = Application::Instance->getDocument(appdoc);
+        if (!gdoc)
+            continue;
+        for (auto obj : appdoc->getObjects()) {
+            if (auto vp = Base::freecad_dynamic_cast<
+                    ViewProviderDocumentObject>(gdoc->getViewProvider(obj)))
+                vp->syncDisplayModeInView(view);
+        }
+    }
+}
+
 void ViewProviderDocumentObject::reattach(App::DocumentObject *pcObj) {
     setStatus(Detach, false);
     callExtension(&ViewProviderExtension::extensionReattach,pcObj);

@@ -25,6 +25,8 @@
 #define GUI_VIEWPROVIDER_GEOMETRYOBJECT_H
 
 #include "ViewProviderDragger.h"
+#include <App/Material.h>
+#include <Base/Tools.h>
 #include <Inventor/lists/SoPickedPointList.h>
 #include <cstdint>
 #include <vector>
@@ -308,6 +310,48 @@ private:
     SoBaseColor      * pcBoundColor{nullptr};
     SoNodeSensor     * pcSwitchSensor{nullptr};
 };
+
+/** @name The Render_* dynamic view properties
+ *
+ * These are optional per-object properties: a feature is "overridden"
+ * exactly when its property exists on the view provider, and absent means
+ * the engine's default rather than zero. Two callers create them -- the
+ * Render Settings task panel and a material card carrying render
+ * properties -- so the creation lives here and there is one creator.
+ * addDynamicProperty applies a fresh property immediately.
+ */
+//@{
+template<class PropT>
+PropT *getRenderProperty(ViewProviderGeometryObject *vp, const char *name)
+{
+    return Base::freecad_dynamic_cast<PropT>(vp->getPropertyByName(name));
+}
+
+template<class PropT>
+PropT *ensureRenderProperty(ViewProviderGeometryObject *vp, const char *type,
+                            const char *name, const char *doc)
+{
+    if (auto prop = getRenderProperty<PropT>(vp, name))
+        return prop;
+    return Base::freecad_dynamic_cast<PropT>(
+            vp->addDynamicProperty(type, name, "Render", doc));
+}
+
+inline void removeRenderProperty(ViewProviderGeometryObject *vp, const char *name)
+{
+    if (vp->getPropertyByName(name))
+        vp->removeDynamicProperty(name);
+}
+
+/** State a material card's render properties on a view provider.
+ *
+ * Creates what @a props names and REMOVES every property of a feature it
+ * does not name, so switching from a glass card to an ordinary one leaves
+ * no strays behind. Answers whether anything changed.
+ */
+GuiExport bool applyMaterialRenderProperties(ViewProviderGeometryObject *vp,
+                                             const App::MaterialRenderProperties &props);
+//@}
 
 } // namespace Gui
 

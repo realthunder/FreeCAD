@@ -1152,6 +1152,14 @@ void DlgDisplayPropertiesImp::onMaterialSelected(
             appearance.finish = prop->getFinish(0);
             prop->setValue(appearance);
         }
+        // A card may also state render features App::Material cannot
+        // carry -- glass so far. Those are dynamic properties on the view
+        // provider, so they are applied beside the appearance, not
+        // through it. Applied unconditionally: a card that states none
+        // clears what a previous card left.
+        if (auto* vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(it)) {
+            Gui::applyMaterialRenderProperties(vp, material->getRenderProperties());
+        }
     }
 }
 

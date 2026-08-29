@@ -1,0 +1,25 @@
+---
+General:
+  UUID: "28ae5807-9bb9-40b7-9aed-1655faf52afe"
+  Author: "Zheng Lei (realthunder)"
+  License: "CC-BY-4.0"
+  Name: "Acrylic"
+  Description: "Cast acrylic (PMMA); slightly lower index than glass, and faintly blue in bulk where glass is faintly green"
+AppearanceModels:
+  BasicRendering:
+    UUID: 'f006c7e4-35b7-43d5-bbf9-c5d572309e6e'
+    AmbientColor: "(0.0900, 0.0930, 0.0950, 1.0)"
+    DiffuseColor: "(0.9400, 0.9700, 1.0000, 1.0)"
+    EmissiveColor: "(0.0000, 0.0000, 0.0000, 1.0)"
+    Shininess: "0.9000"
+    SpecularColor: "(0.8500, 0.8500, 0.8500, 1.0)"
+    # The glass look is the render engine's -- the Render_Glass
+    # properties below, which do not read this, and the icon is rendered
+    # through them too -- so this value reaches the plain Coin fallback
+    # only, where a glass part should still be see-through.
+    Transparency: "0.60"
+  GlassRendering:
+    UUID: '59ae40ef-3aeb-46a8-8f80-47cf609bf513'
+    GlassIOR: "1.49"
+    GlassDensity: "0.0"
+    GlassRoughness: "0.0"

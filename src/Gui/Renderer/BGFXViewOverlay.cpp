@@ -662,9 +662,15 @@ void BGFXView::submitComposite()
     bgfx::setTexture(0, s_texAccum, oitAccum);
     bgfx::setTexture(1, s_texReveal, oitReveal);
     bgfx::setVertexBuffer(0, &tvb);
+    // The shader's alpha is the coverage (fs_fc_comp.sc): a plain
+    // "over", split so that the alpha channel accumulates coverage
+    // rather than coverage squared. Only a capture over a transparent
+    // background can tell the difference, and it did.
     bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-        | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_INV_SRC_ALPHA,
-                                BGFX_STATE_BLEND_SRC_ALPHA));
+        | BGFX_STATE_BLEND_FUNC_SEPARATE(BGFX_STATE_BLEND_SRC_ALPHA,
+                                         BGFX_STATE_BLEND_INV_SRC_ALPHA,
+                                         BGFX_STATE_BLEND_ONE,
+                                         BGFX_STATE_BLEND_INV_SRC_ALPHA));
     bgfx::submit(vid(ViewOITComposite), m_progComp);
     ++drawcount;
 }

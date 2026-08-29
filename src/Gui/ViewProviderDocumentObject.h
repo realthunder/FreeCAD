@@ -87,6 +87,12 @@ public:
     /// View Mode"). Called when the active view changes or the view's
     /// table does; never writes back.
     void syncDisplayModeInView(View3DInventor *view);
+    /// Put the DisplayModeInView row of EVERY open document's objects
+    /// in step with \a view (null = the active view is not a 3D view).
+    /// Every open document, because an object shown in this view
+    /// through a Link has its provider -- and its row -- in another
+    /// document's Gui::Document.
+    static void syncDisplayModeInViewAll(View3DInventor *view);
     void update(const App::Property*) override;
     /// Set the active mode, i.e. the first item of the 'Display' property.
     void setActiveMode();

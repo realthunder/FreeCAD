@@ -1,0 +1,25 @@
+---
+General:
+  UUID: "49fa9744-1cdf-44ba-b3b9-29e621450198"
+  Author: "Zheng Lei (realthunder)"
+  License: "CC-BY-4.0"
+  Name: "Tinted Glass"
+  Description: "Green bottle glass; the tint deepens with the thickness it is seen through"
+AppearanceModels:
+  BasicRendering:
+    UUID: 'f006c7e4-35b7-43d5-bbf9-c5d572309e6e'
+    AmbientColor: "(0.0550, 0.0800, 0.0650, 1.0)"
+    DiffuseColor: "(0.5500, 0.8000, 0.6500, 1.0)"
+    EmissiveColor: "(0.0000, 0.0000, 0.0000, 1.0)"
+    Shininess: "0.9500"
+    SpecularColor: "(0.9000, 0.9000, 0.9000, 1.0)"
+    # The glass look is the render engine's -- the Render_Glass
+    # properties below, which do not read this, and the icon is rendered
+    # through them too -- so this value reaches the plain Coin fallback
+    # only, where a glass part should still be see-through.
+    Transparency: "0.50"
+  GlassRendering:
+    UUID: '59ae40ef-3aeb-46a8-8f80-47cf609bf513'
+    GlassIOR: "1.52"
+    GlassDensity: "0.08"
+    GlassRoughness: "0.0"
