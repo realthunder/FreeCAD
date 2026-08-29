@@ -118,6 +118,14 @@ ViewProviderGeometryObject::ViewProviderGeometryObject()
     mat.transparency = Base::fromPercent(initialTransparency);
     ADD_PROPERTY_TYPE(ShapeAppearance, (mat), osgroup, App::Prop_None, "Shape appearance");
     ADD_PROPERTY_TYPE(ShapeMaterial, (mat), osgroup, App::Prop_None, "Shape material");
+    // Seed the "what we last handed out" marker with the very appearance
+    // ShapeAppearance starts from. updateData() lets a card through only
+    // while the appearance is still ours, and it tests that against a
+    // default-constructed App::Material -- which is STEEL, per the comment
+    // above, never this DEFAULT-plus-parameter colour. Left unset, both
+    // branches of that test compare steel against 0.8 grey, so an untouched
+    // object never matches and no card is ever applied.
+    materialAppearance = mat;
     // Retired as a store; kept only so old macros and old documents still
     // land somewhere. One datum should not be two rows in the editor.
     ShapeMaterial.setStatus(App::Property::Hidden, true);
