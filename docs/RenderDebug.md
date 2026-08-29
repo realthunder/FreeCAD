@@ -170,6 +170,27 @@ into a full-res RGBA16F target — additive with the depth test off for the
 fragment count, depth-tested texcoord output for UV, the draw's own identity
 for the id mode. The enum is append-only.
 
+**The Cycles path honours mode 2** (built 2026-08-29,
+docs/CyclesIntegration.md sec 6.6) and renders normally for every other
+value, since a path tracer has no prepass, AO target or shadow map to
+route. `SceneInput::debugView` carries the value from the same
+`RenderParams::getDebugViewMode()` read the bgfx frame makes, set by all
+three feeders (the offline `cyclesRender`, the viewport cell, the served
+backend), and the translator replaces every surface shader by an emission
+of the view-space SHADING normal as `n * 0.5 + 0.5` -- the normal after
+the bump map and the surface finish, which is where it differs from the
+raster's mode 2: that one shows the geometry prepass normal, before
+either. The offline file is written raw (no output transform) over black,
+exactly as the raster composite writes the mode; the viewport blit goes
+through the host frame, whose output transform is already off in any
+debug mode. The one picture in which the two engines can be compared
+exactly: unfinished shapes agree to 8-bit precision, and the finish and
+map probes assert on it because lighting cannot serve -- the same 17
+degree flank reads as a 9% luminance change in the raster and 1% in
+Cycles (a nearly tilt-insensitive environment plus bump shadowing).
+Changing the mode under a running Cycles session re-keys every shader
+and so rebuilds the scene: a reset, not a device re-init.
+
 #### 2.3b Mode 11 in detail — the id image is a measuring instrument
 
 It is not a visualization that happens to be readable; it is ground truth,
