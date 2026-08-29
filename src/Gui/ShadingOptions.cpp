@@ -26,14 +26,20 @@
 # include <QButtonGroup>
 # include <QCheckBox>
 # include <QComboBox>
+# include <QDialog>
+# include <QDialogButtonBox>
+# include <QDoubleSpinBox>
 # include <QFileInfo>
+# include <QFormLayout>
 # include <QGridLayout>
 # include <QHBoxLayout>
 # include <QLabel>
 # include <QMenu>
 # include <QPointer>
+# include <QPushButton>
 # include <QRadioButton>
 # include <QSlider>
+# include <QSpinBox>
 # include <QWidgetAction>
 #endif
 
@@ -45,6 +51,7 @@
 #include "ShadingOptions.h"
 #include "Application.h"
 #include "FileDialog.h"
+#include "MainWindow.h"
 #include "RenderParams.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -127,16 +134,35 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     pbrRadio->setToolTip(doc(RenderParams::docPBR()));
     matcapRadio = new QRadioButton(tr("Matcap"), this);
     matcapRadio->setToolTip(doc(RenderParams::docMatcap()));
+    externalRadio = new QRadioButton(tr("External"), this);
+    externalRadio->setToolTip(
+        tr("Hand the view to an external path tracer (Cycles): real\n"
+           "reflections, refraction and soft shadows, refining\n"
+           "progressively over the raster frame and restarting on every\n"
+           "change. Which device and how hard it refines is behind\n"
+           "Settings..."));
     auto models = new QButtonGroup(this);
     models->addButton(classicRadio);
     models->addButton(pbrRadio);
     models->addButton(matcapRadio);
+    models->addButton(externalRadio);
     modelRow->addWidget(classicRadio);
     modelRow->addWidget(pbrRadio);
     modelRow->addWidget(matcapRadio);
+    modelRow->addWidget(externalRadio);
     modelRow->addStretch();
     layout->addWidget(new QLabel(tr("Model:"), this), 1, 0);
     layout->addLayout(modelRow, 1, 1);
+
+    // External's knobs live behind a button rather than in rows here:
+    // they are set once per machine (which device, what budget), not
+    // reached for while modelling the way the environment or the tint
+    // is, and five rows of session tuning would swamp the section.
+    externalSettings = new QPushButton(tr("Settings..."), this);
+    externalSettings->setToolTip(
+        tr("The external renderer and its session options: device,\n"
+           "samples, time limit, denoise, preview pixel size."));
+    modelRow->addWidget(externalSettings);
 
     // Realistic's one real choice, and the reason the mode is worth
     // switching to: what the scene is standing in. It sits under the
@@ -319,15 +345,22 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
 
     connect(classicRadio, &QRadioButton::toggled, this, [this](bool on) {
         if (on && !loading)
-            setModel(false, false);
+            setModel(View3DInventor::ShadingClassic);
     });
     connect(pbrRadio, &QRadioButton::toggled, this, [this](bool on) {
         if (on && !loading)
-            setModel(true, false);
+            setModel(View3DInventor::ShadingRealistic);
     });
     connect(matcapRadio, &QRadioButton::toggled, this, [this](bool on) {
         if (on && !loading)
-            setModel(false, true);
+            setModel(View3DInventor::ShadingMatcap);
+    });
+    connect(externalRadio, &QRadioButton::toggled, this, [this](bool on) {
+        if (on && !loading)
+            setModel(View3DInventor::ShadingExternal);
+    });
+    connect(externalSettings, &QPushButton::clicked, this, [this]() {
+        openExternalSettings();
     });
     connect(envBgCheck, &QCheckBox::toggled, this, [this](bool on) {
         setFlag("PBREnvBackground", on, &RenderParams::setPBREnvBackground);
@@ -441,19 +474,181 @@ void ShadingOptionsWidget::updateMatcapTintEnabled()
     matcapTintValue->setEnabled(on);
 }
 
-void ShadingOptionsWidget::setModel(bool pbr, bool matcap)
+void ShadingOptionsWidget::updateExternalSettingsEnabled()
+{
+    // Session options with no session to configure are controls that
+    // do nothing; grey the button rather than let it read as broken.
+    externalSettings->setEnabled(externalRadio->isEnabled()
+                                 && externalRadio->isChecked());
+}
+
+void ShadingOptionsWidget::openExternalSettings()
+{
+    auto mdiView = qobject_cast<View3DInventor*>(
+            Application::Instance->activeView());
+    if (!mdiView)
+        return;
+    // The device property doubles as the availability probe: it is
+    // materialized exactly when the engine exists (initRenderProperties).
+    auto device = viewProp<App::PropertyEnumeration>(mdiView, "Cycles",
+                                                     "Device");
+    if (!device) {
+        refresh();
+        return;
+    }
+    // Same move as chooseEnvImage: the menu holds a popup grab, and a
+    // dialog raised under one closes it on the first click anyway.
+    if (auto menu = qobject_cast<QMenu*>(parentWidget()))
+        menu->close();
+
+    // Every control applies as it is touched -- the session restarts
+    // behind the dialog, which IS the feedback -- so the one button is
+    // Close, not Ok/Cancel. Writes go through the view looked up by
+    // name at fire time: the properties can be dropped under a modal
+    // loop (backend deselected), and a stale pointer must not be the
+    // thing that finds out.
+    QPointer<View3DInventor> guard(mdiView);
+    auto cyclesProp = [guard](const char *name) -> App::Property* {
+        if (!guard)
+            return nullptr;
+        std::string propname("Cycles_");
+        propname += name;
+        return guard->getPropertyByName(propname.c_str());
+    };
+
+    QDialog dlg(getMainWindow());
+    dlg.setWindowTitle(tr("External render settings"));
+    auto form = new QFormLayout(&dlg);
+
+    auto rendererCombo = new QComboBox(&dlg);
+    for (const auto &name : mdiView->ExternalRenderType.getEnumVector())
+        rendererCombo->addItem(QString::fromUtf8(name.c_str()));
+    rendererCombo->setCurrentIndex(int(mdiView->ExternalRenderType.getValue()));
+    rendererCombo->setToolTip(
+            doc(mdiView->ExternalRenderType.getDocumentation()));
+    form->addRow(tr("Renderer:"), rendererCombo);
+    connect(rendererCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            &dlg, [guard](int index) {
+        // No preference behind this one on purpose: External is never
+        // a default, so neither is which engine it would pick.
+        if (guard && index >= 0)
+            guard->ExternalRenderType.setValue(long(index));
+    });
+
+    auto deviceCombo = new QComboBox(&dlg);
+    for (const auto &name : device->getEnumVector())
+        deviceCombo->addItem(QString::fromUtf8(name.c_str()));
+    if (device->isValid())
+        deviceCombo->setCurrentIndex(int(device->getValue()));
+    deviceCombo->setToolTip(doc(RenderParams::docCyclesDevice()));
+    form->addRow(tr("Device:"), deviceCombo);
+    connect(deviceCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            &dlg, [cyclesProp](int index) {
+        if (index < 0)
+            return;
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyEnumeration>(
+                    cyclesProp("Device"))) {
+            prop->setValue(long(index));
+            // The preference carries the NAME: an index means a
+            // different device on the next machine.
+            if (prop->isValid())
+                RenderParams::setCyclesDevice(prop->getValueAsString());
+        }
+    });
+
+    auto samplesSpin = new QSpinBox(&dlg);
+    samplesSpin->setRange(1, 1000000);
+    if (auto prop = viewProp<App::PropertyInteger>(mdiView, "Cycles",
+                                                   "Samples"))
+        samplesSpin->setValue(int(prop->getValue()));
+    else
+        samplesSpin->setValue(int(RenderParams::getCyclesSamples()));
+    samplesSpin->setToolTip(doc(RenderParams::docCyclesSamples()));
+    form->addRow(tr("Samples:"), samplesSpin);
+    connect(samplesSpin, qOverload<int>(&QSpinBox::valueChanged),
+            &dlg, [cyclesProp](int value) {
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyInteger>(
+                    cyclesProp("Samples")))
+            prop->setValue(long(value));
+        RenderParams::setCyclesSamples(long(value));
+    });
+
+    auto timeLimitSpin = new QDoubleSpinBox(&dlg);
+    timeLimitSpin->setRange(0.0, 3600.0);
+    timeLimitSpin->setDecimals(1);
+    timeLimitSpin->setSuffix(tr(" s"));
+    // Zero means "the sample budget alone decides", and a reading of
+    // "0.0 s" says stopped; name the meaning instead.
+    timeLimitSpin->setSpecialValueText(tr("No limit"));
+    if (auto prop = viewProp<App::PropertyFloat>(mdiView, "Cycles",
+                                                 "TimeLimit"))
+        timeLimitSpin->setValue(prop->getValue());
+    else
+        timeLimitSpin->setValue(RenderParams::getCyclesTimeLimit());
+    timeLimitSpin->setToolTip(doc(RenderParams::docCyclesTimeLimit()));
+    form->addRow(tr("Time limit:"), timeLimitSpin);
+    connect(timeLimitSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
+            &dlg, [cyclesProp](double value) {
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyFloat>(
+                    cyclesProp("TimeLimit")))
+            prop->setValue(value);
+        RenderParams::setCyclesTimeLimit(value);
+    });
+
+    auto denoiseCheck = new QCheckBox(&dlg);
+    if (auto prop = viewProp<App::PropertyBool>(mdiView, "Cycles", "Denoise"))
+        denoiseCheck->setChecked(prop->getValue());
+    else
+        denoiseCheck->setChecked(RenderParams::getCyclesDenoise());
+    denoiseCheck->setToolTip(doc(RenderParams::docCyclesDenoise()));
+    form->addRow(tr("Denoise:"), denoiseCheck);
+    connect(denoiseCheck, &QCheckBox::toggled, &dlg, [cyclesProp](bool on) {
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyBool>(
+                    cyclesProp("Denoise")))
+            prop->setValue(on);
+        RenderParams::setCyclesDenoise(on);
+    });
+
+    auto pixelSizeSpin = new QSpinBox(&dlg);
+    pixelSizeSpin->setRange(1, 8);
+    if (auto prop = viewProp<App::PropertyInteger>(mdiView, "Cycles",
+                                                   "PixelSize"))
+        pixelSizeSpin->setValue(int(prop->getValue()));
+    else
+        pixelSizeSpin->setValue(int(RenderParams::getCyclesPixelSize()));
+    pixelSizeSpin->setToolTip(doc(RenderParams::docCyclesPixelSize()));
+    form->addRow(tr("Pixel size:"), pixelSizeSpin);
+    connect(pixelSizeSpin, qOverload<int>(&QSpinBox::valueChanged),
+            &dlg, [cyclesProp](int value) {
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyInteger>(
+                    cyclesProp("PixelSize")))
+            prop->setValue(long(value));
+        RenderParams::setCyclesPixelSize(long(value));
+    });
+
+    auto buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addRow(buttons);
+    dlg.exec();
+}
+
+void ShadingOptionsWidget::setModel(long model)
 {
     // The model is stated once, on the view's declared ShadingType;
-    // the hidden Render_PBR / Render_Matcap facade follows it
-    // (View3DInventor::onChanged). The preferences stay the pair.
+    // the hidden Render_PBR / Render_Matcap facade and the external
+    // session follow it (View3DInventor::onChanged). The preferences
+    // stay the raster pair -- and External leaves them alone: it
+    // cannot be a default (the app should not open straight into a
+    // path tracer), so they keep the raster model to fall back to.
     if (auto view = qobject_cast<View3DInventor*>(
                 Application::Instance->activeView()))
-        view->ShadingType.setValue(
-                matcap ? View3DInventor::ShadingMatcap
-                       : pbr ? View3DInventor::ShadingRealistic
-                             : View3DInventor::ShadingClassic);
-    RenderParams::setPBR(pbr);
-    RenderParams::setMatcap(matcap);
+        view->ShadingType.setValue(model);
+    const bool pbr = model == View3DInventor::ShadingRealistic;
+    const bool matcap = model == View3DInventor::ShadingMatcap;
+    if (model != View3DInventor::ShadingExternal) {
+        RenderParams::setPBR(pbr);
+        RenderParams::setMatcap(matcap);
+    }
     envLabel->setEnabled(pbr);
     envCombo->setEnabled(pbr);
     envBgCheck->setEnabled(pbr);
@@ -461,6 +656,7 @@ void ShadingOptionsWidget::setModel(bool pbr, bool matcap)
     matcapLabel->setEnabled(matcap);
     matcapCombo->setEnabled(matcap);
     updateMatcapTintEnabled();
+    updateExternalSettingsEnabled();
 }
 
 void ShadingOptionsWidget::setFlag(const char *name, bool value,
@@ -586,16 +782,29 @@ void ShadingOptionsWidget::refresh()
     // The PBR flag stands for the whole family: they are materialized
     // together, so either all of them are there or none is.
     bool available = renderProp<App::PropertyBool>(view, "PBR") != nullptr;
+    // The external model additionally needs the Cycles engine in the
+    // build; its device property is materialized exactly when it is
+    // (initRenderProperties), so existence is the probe -- the same
+    // move the PBR flag makes for the section.
+    bool cyclesAvailable =
+        viewProp<App::PropertyEnumeration>(view, "Cycles", "Device")
+            != nullptr;
 
     Base::StateLocker guard(loading);
 
-    bool pbr = renderFlag(view, "PBR", false);
-    bool matcap = renderFlag(view, "Matcap", false);
-    // Matcap overrides physically based shading while on, so it wins the
-    // radio when a document somehow carries both.
+    // The declared enum is the single stated truth of the model
+    // (part of the view, so it exists backend or not); the facade
+    // bools cannot say External, which reads off them as Classic.
+    long model = View3DInventor::ShadingClassic;
+    if (auto mdiView = qobject_cast<View3DInventor*>(
+                Application::Instance->activeView()))
+        model = mdiView->ShadingType.getValue();
+    const bool pbr = model == View3DInventor::ShadingRealistic;
+    const bool matcap = model == View3DInventor::ShadingMatcap;
     matcapRadio->setChecked(matcap);
-    pbrRadio->setChecked(pbr && !matcap);
-    classicRadio->setChecked(!pbr && !matcap);
+    pbrRadio->setChecked(pbr);
+    externalRadio->setChecked(model == View3DInventor::ShadingExternal);
+    classicRadio->setChecked(model == View3DInventor::ShadingClassic);
     // An image set on the view is what the scene is standing in, so the
     // combo names it; the entry carries the file name rather than the
     // bare "Image..." prompt, which is the only place the choice is
@@ -650,6 +859,8 @@ void ShadingOptionsWidget::refresh()
     classicRadio->setEnabled(available);
     pbrRadio->setEnabled(available);
     matcapRadio->setEnabled(available);
+    externalRadio->setEnabled(available && cyclesAvailable);
+    updateExternalSettingsEnabled();
     envLabel->setEnabled(available && pbr && !matcap);
     envCombo->setEnabled(available && pbr && !matcap);
     envBgCheck->setEnabled(available && pbr && !matcap);

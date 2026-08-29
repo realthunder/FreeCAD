@@ -30,6 +30,7 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QMenu;
+class QPushButton;
 class QRadioButton;
 class QSlider;
 
@@ -45,7 +46,7 @@ class View3DInventorViewer;
  *
  * The draw styles above it are an exclusive list -- one override mode on
  * the viewer -- which is the wrong shape for these: only the shading
- * model (classic / physically based / matcap) is a choice, while cavity,
+ * model (classic / physically based / matcap / external) is a choice, while cavity,
  * occlusion, shadows and bloom compose freely with it and with each
  * other. So they live here instead, as a popover beside the list, the
  * split Blender's viewport shading and SolidWorks' display style +
@@ -88,7 +89,21 @@ public:
 
 private:
     App::PropertyContainer *activeView() const;
-    void setModel(bool pbr, bool matcap);
+    /// Select a shading model (a View3DInventor::ShadingModel value):
+    /// writes the view's declared ShadingType -- the facade pair and
+    /// the external session follow it -- and, for the raster models,
+    /// the preference pair behind it. External deliberately leaves the
+    /// preferences alone: it cannot be a default, so they keep the
+    /// raster model to fall back to.
+    void setModel(long model);
+    /// The Cycles session options, in a dialog beside the radio that
+    /// needs them: renderer, device, samples, time limit, denoise,
+    /// pixel size. Every control applies immediately and writes twice
+    /// (view property + preference), like the rest of the section.
+    void openExternalSettings();
+    /// Grey the Settings... button unless the External model is on and
+    /// available.
+    void updateExternalSettingsEnabled();
     /// Grey the radius row unless the cavity pass is on and available.
     void updateCavityRadiusEnabled();
     /// Grey the tint row unless the matcap model is on and available.
@@ -121,6 +136,8 @@ private:
     QRadioButton *classicRadio;
     QRadioButton *pbrRadio;
     QRadioButton *matcapRadio;
+    QRadioButton *externalRadio;
+    QPushButton *externalSettings;
     QLabel *envLabel;
     QComboBox *envCombo;
     QCheckBox *envBgCheck;
