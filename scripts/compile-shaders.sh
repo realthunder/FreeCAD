@@ -15,10 +15,10 @@
 # src/Gui/Renderer/bgfx/shaders/compile.sh instead.
 #
 # Usage:  scripts/compile-shaders.sh [build_dir]
-#   build_dir  default: build/conda-debug
+#   build_dir  default: build/conda-relwithdebinfo-801
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-BUILD=${1:-"$REPO/build/conda-debug"}
+BUILD=${1:-"$REPO/build/conda-relwithdebinfo-801"}
 
 "$REPO/.conda/run.sh" ninja -C "$BUILD" Renderer_assets
 echo "for the WASM viewer: source ~/works/sw/emsdk/emsdk_env.sh && cmake --build build/wasm"

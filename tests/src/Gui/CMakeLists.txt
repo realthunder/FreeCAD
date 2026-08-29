@@ -47,6 +47,29 @@ if(TARGET FreeCADGui)
                           gtest_main FreeCADGui FreeCADApp FreeCADBase)
     add_test(NAME RenderCacheMaterial_tests_run
              COMMAND RenderCacheMaterial_tests_run)
+
+    # A material card's Render_* view properties landing on a view
+    # provider (docs/CyclesIntegration.md phase 6 item 14). The subject
+    # is the dynamic property table, which the mapping reaches through
+    # App::PropertyContainer alone, so the test states it on a document
+    # object: a view provider cannot exist without the Gui application
+    # and its main window (every property write of one reaches
+    # updateActions). Links FreeCADGui for the function; no GL context,
+    # no window, no QApplication.
+    add_executable(RenderProperties_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/RenderProperties.cpp)
+    target_include_directories(RenderProperties_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(RenderProperties_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME RenderProperties_tests_run
+             COMMAND RenderProperties_tests_run)
 endif()
 
 if(TARGET FreeCADRenderer)
