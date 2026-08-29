@@ -11,13 +11,16 @@
         <file>images/default_image.png</file>
         <file>ui/materials-editor.ui</file>
         <!-- rendered by scripts/material-icons.py -->
+        <file>icons/materials/Appearance_Acrylic.png</file>
         <file>icons/materials/Appearance_Aluminum.png</file>
         <file>icons/materials/Appearance_Brass.png</file>
         <file>icons/materials/Appearance_Bronze.png</file>
         <file>icons/materials/Appearance_Chrome.png</file>
+        <file>icons/materials/Appearance_Clear_Glass.png</file>
         <file>icons/materials/Appearance_Copper.png</file>
         <file>icons/materials/Appearance_Default.png</file>
         <file>icons/materials/Appearance_Emerald.png</file>
+        <file>icons/materials/Appearance_Frosted_Glass.png</file>
         <file>icons/materials/Appearance_Gold.png</file>
         <file>icons/materials/Appearance_Jade.png</file>
         <file>icons/materials/Appearance_Metalized.png</file>
@@ -33,6 +36,7 @@
         <file>icons/materials/Appearance_Silver.png</file>
         <file>icons/materials/Appearance_Steel.png</file>
         <file>icons/materials/Appearance_Stone.png</file>
+        <file>icons/materials/Appearance_Tinted_Glass.png</file>
         <file>icons/materials/Appearance_Wood.png</file>
         <file>icons/materials/Finish_blasted.png</file>
         <file>icons/materials/Finish_brushed.png</file>

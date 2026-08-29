@@ -122,7 +122,8 @@ public:
      * "not ready"; connect to iconReady() and ask again.
      */
     QIcon icon(const QString& key, const App::Material& material,
-               const QString& name = {});
+               const QString& name = {},
+               const App::MaterialRenderProperties& render = {});
 
     /// The icon for a surface finish, shown on a neutral material so the
     /// pattern is what differs between them and not the colour.
@@ -167,6 +168,7 @@ public:
      */
     bool renderToFile(const App::Material& material,
                       const App::SurfaceFinish& finish, const QString& path,
+                      const App::MaterialRenderProperties& render = {},
                       IconShape shape = IconShape::Sphere);
 
     /** Where the icon for \a key came from
@@ -193,9 +195,10 @@ private:
     void drain();
     QIcon build(const QString& key, const App::Material& material,
                 const App::SurfaceFinish& finish,
+                const App::MaterialRenderProperties& render = {},
                 IconShape shape = IconShape::Sphere);
     QImage render(const App::Material& material, const App::SurfaceFinish& finish,
-                  IconShape shape);
+                  const App::MaterialRenderProperties& props, IconShape shape);
     /// A bundled or user-supplied icon, or a null icon where there is
     /// none and where the one there is has gone stale.
     QIcon fromResource(const QString& key, const QString& file,
@@ -207,13 +210,15 @@ private:
     QIcon fromImage(const QImage& image) const;
     static QString cachePath(const QString& digest);
     static QString digestOf(const App::Material& material,
-                            const App::SurfaceFinish& finish);
+                            const App::SurfaceFinish& finish,
+                            const App::MaterialRenderProperties& render = {});
 
     struct Request
     {
         QString key;
         App::Material material;
         App::SurfaceFinish finish;
+        App::MaterialRenderProperties render;
     };
 
     std::map<QString, QIcon> _cache;

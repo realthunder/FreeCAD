@@ -945,7 +945,8 @@ QIcon MaterialTreeWidget::cardIcon(const QString& uuid, const QIcon& fallback)
         }
         QIcon icon = MaterialIcons::instance().icon(uuid,
                                                     material->getMaterialAppearance(),
-                                                    material->getName());
+                                                    material->getName(),
+                                                    material->getRenderProperties());
         if (!icon.isNull()) {
             return icon;
         }
@@ -1013,7 +1014,8 @@ void MaterialTreeWidget::refreshIcon(const QString& uuid)
     auto restate = [this, &uuid](QStandardItem* item) {
         auto material = getMaterialManager().getMaterial(uuid);
         item->setIcon(MaterialIcons::instance().icon(
-            uuid, material->getMaterialAppearance(), material->getName()));
+            uuid, material->getMaterialAppearance(), material->getName(),
+            material->getRenderProperties()));
         // The tooltip names the icon by path, and there was no path
         // until this render landed.
         item->setToolTip(cardToolTip(uuid));

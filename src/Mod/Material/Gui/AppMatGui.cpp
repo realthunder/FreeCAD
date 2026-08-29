@@ -105,7 +105,8 @@ private:
                 QString::fromUtf8(uuid));
             const App::Material appearance = material->getMaterialAppearance();
             return Py::Boolean(MatGui::MaterialIcons::instance().renderToFile(
-                appearance, appearance.finish, QString::fromUtf8(path)));
+                appearance, appearance.finish, QString::fromUtf8(path),
+                material->getRenderProperties()));
         }
         catch (const Materials::MaterialNotFound&) {
             throw Py::KeyError("No material with that uuid");
@@ -133,7 +134,7 @@ private:
         }
         return Py::Boolean(MatGui::MaterialIcons::instance().renderToFile(
             MatGui::MaterialIcons::finishMaterial(value), finish,
-            QString::fromUtf8(path), MatGui::IconShape::Cylinder));
+            QString::fromUtf8(path), {}, MatGui::IconShape::Cylinder));
     }
 };
 

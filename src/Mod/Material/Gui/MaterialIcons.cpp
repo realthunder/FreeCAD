@@ -34,6 +34,8 @@
 #include <QTimer>
 
 #include <Inventor/nodes/SoComplexity.h>
+#include <Inventor/nodes/SoCoordinate3.h>
+#include <Inventor/nodes/SoIndexedFaceSet.h>
 #include <Inventor/nodes/SoCylinder.h>
 #include <Inventor/nodes/SoTransform.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
@@ -44,6 +46,7 @@
 #include <Inventor/nodes/SoSwitch.h>
 #endif
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -98,8 +101,9 @@ constexpr float FrameRadial = 2.0F;
 /** The orthographic height each shape is framed in
  *
  * Its own projected extent plus a few per cent of margin, stated
- * ABSOLUTELY rather than as a factor of what viewAll() chose. Two
- * reasons, and the second is the one that bites:
+ * ABSOLUTELY -- as is the rest of the camera now, in IconScene::place()
+ * -- rather than taken from viewAll(). Two reasons, and the second is
+ * the one that bites:
  *
  * - viewAll() frames the scene's bounding SPHERE, not its silhouette,
  *   so a shape two units across is fitted as though it were its own
@@ -118,6 +122,27 @@ constexpr float FrameRadial = 2.0F;
  */
 constexpr float SphereFrame = 2.10F;
 constexpr float CylinderFrame = 2.15F;
+// The checkerboard behind the sphere (IconScene::buildBackdrop): how
+// far behind the sphere's centre it sits along the line of sight, and
+// how many cells across the frame. It fills the frame exactly, so the
+// cells come out whole at the icon's edges.
+constexpr float BackdropDistance = 1.3F;
+// Where the camera stands from the origin, and how far either side of
+// it the clip planes reach: the shapes are within about 1.1 of the
+// origin and the checkerboard 1.3 behind it.
+constexpr float CameraDistance = 4.0F;
+constexpr float CameraReach = 2.5F;
+constexpr int BackdropCells = 6;
+// Model units per unit of the icon's sphere, for the glass absorption
+// density a card states per millimetre: the two-unit ball stands for a
+// 20 mm one, which is about what a tinted-glass swatch is.
+constexpr float IconGlassScale = 10.0F;
+// The ball's diameter (SoSphere's default radius is one), and how deep
+// the icon shows a coloured glass's tint: the optical depth its most
+// absorbed channel reaches at the ball's centre, when the card's own
+// density leaves it shallower (IconScene::apply).
+constexpr float SphereDiameter = 2.0F;
+constexpr float IconTintDepth = 0.20F;
 
 /// The gloss of a finish icon before its own relief roughens it: a
 /// polished metal, smoother than anything Phong data can express, since
@@ -259,11 +284,11 @@ public:
             // bottom of the frame.
             aim(SbVec3f(0, -0.819F, -0.574F), SbVec3f(0, 0, 1));
         }
-        viewAll();
-        frame(shape == Shape::Sphere ? SphereFrame : CylinderFrame);
+        place(shape == Shape::Sphere ? SphereFrame : CylinderFrame);
     }
 
-    void apply(const App::Material& mat, const App::SurfaceFinish& finish)
+    void apply(const App::Material& mat, const App::SurfaceFinish& finish,
+               const App::MaterialRenderProperties& props)
     {
         const Base::Color& d = mat.diffuseColor;
         const Base::Color& s = mat.specularColor;
@@ -282,6 +307,72 @@ public:
         // Every draw in the scene takes the same appearance and the same
         // finish; what differs between them is the frame each states,
         // which is geometry and was set once when it was built.
+        // A card can also state render features App::Material does not
+        // carry. Glass is the one that reaches an icon: without it a
+        // glass card renders as its Phong fallback, which for a
+        // transparency near 1 is a featureless disc -- the four shipped
+        // glass presets came out identical grey circles that way.
+        float glassIOR = 0.0F;
+        float glassDensity = 0.0F;
+        float glassRoughness = 0.0F;
+        bool glass = false;
+        for (const auto& prop : props) {
+            if (prop.name == "Render_Glass") {
+                glass = prop.value != 0.0;
+            }
+            else if (prop.name == "Render_GlassIOR") {
+                glassIOR = float(prop.value);
+            }
+            else if (prop.name == "Render_GlassDensity") {
+                glassDensity = float(prop.value);
+            }
+            else if (prop.name == "Render_GlassRoughness") {
+                glassRoughness = float(prop.value);
+            }
+        }
+
+        // Something to see THROUGH. A see-through material over the
+        // icon's transparent background is the theme colour tinted, which
+        // at 32 px is not distinguishable from a dull opaque one, and a
+        // glass one refracts the scene behind it, which was nothing: the
+        // shipped glass presets rendered as black spheres that way. The
+        // checkerboard is only shown where it can be seen through.
+        _backdrop->whichChild = (glass || mat.transparency > 0.0F)
+            ? SO_SWITCH_ALL : SO_SWITCH_NONE;
+
+        // Absorption density is per model unit -- per millimetre, in a
+        // document -- and the icon's ball is two units across, so a
+        // card's density, taken as is, tints nothing. The ball stands
+        // for a ball IconGlassScale times wider.
+        //
+        // That is still not enough for a faint colour. A card states its
+        // density for real parts, where a 10 mm sheet of acrylic is
+        // barely blue, and that is right; but on a 20 mm ball the same
+        // statement shows no colour at all, and the colour is the one
+        // thing that tells acrylic from glass at 32 px. So a COLOURED
+        // glass is shown with its density raised until its most absorbed
+        // channel reaches IconTintDepth at the ball's centre. A
+        // colourless one -- no chroma in the diffuse -- has no colour to
+        // show and keeps whatever darkness it states, and one already
+        // deeper than that, like the tinted preset, is left as stated.
+        float density = glassDensity * IconGlassScale;
+        if (glass) {
+            if (density <= 0.0F) {
+                // The engine's automatic density: about one optical depth
+                // across the body's diagonal (BGFXView::submitGlassSurface).
+                density = 3.0F / (SphereDiameter * std::sqrt(3.0F));
+            }
+            const float cr = 1.0F - d.r;
+            const float cg = 1.0F - d.g;
+            const float cb = 1.0F - d.b;
+            const float most = std::max({cr, cg, cb});
+            const float chroma = most - std::min({cr, cg, cb});
+            const float depth = density * most * SphereDiameter;
+            if (chroma > 1.0e-3F && depth > 0.0F && depth < IconTintDepth) {
+                density *= IconTintDepth / depth;
+            }
+        }
+
         for (auto* render : _render) {
             render->metallic.setValue(mat.pbr ? mat.getMetallic() : -1.0F);
             render->roughness.setValue(mat.pbr ? mat.getRoughness() : -1.0F);
@@ -289,6 +380,10 @@ public:
             render->finishPitch.setValue(finish.pitch);
             render->finishDepth.setValue(finish.depth);
             render->finishAngle.setValue(finish.angle);
+            render->glass.setValue(glass);
+            render->glassIOR.setValue(glassIOR);
+            render->glassDensity.setValue(density);
+            render->glassRoughness.setValue(glassRoughness);
         }
     }
 
@@ -387,17 +482,28 @@ private:
         }
     }
 
-    /// State outright how much the camera takes in, overriding whatever
-    /// viewAll() decided. Only meaningful for the orthographic camera
-    /// the icons use, where that is one field.
-    void frame(float height)
+    /// Put the camera where it sees the shape whole: on the line it is
+    /// already looking along, a stated distance from the origin the
+    /// shapes are built about, taking in \a height. Stated, and not
+    /// viewAll(): that fits the scene's bounding box -- the box of what
+    /// was SHOWING, one card behind -- and after a glass preset the box
+    /// still held that card's checkerboard, so the camera moved and
+    /// the next icon came out 13 px high with its top clipped off.
+    /// Only meaningful for the orthographic camera the icons use.
+    void place(float height)
     {
-        SoCamera* camera = getSoRenderManager()->getCamera();
-        if (!camera
-            || !camera->isOfType(SoOrthographicCamera::getClassTypeId())) {
+        auto* camera = dynamic_cast<SoOrthographicCamera*>(
+            getSoRenderManager()->getCamera());
+        if (!camera) {
             return;
         }
-        static_cast<SoOrthographicCamera*>(camera)->height = height;
+        SbVec3f dir;
+        camera->orientation.getValue().multVec(SbVec3f(0, 0, -1), dir);
+        camera->position = -dir * CameraDistance;
+        camera->focalDistance = CameraDistance;
+        camera->nearDistance = CameraDistance - CameraReach;
+        camera->farDistance = CameraDistance + CameraReach;
+        camera->height = height;
     }
 
     /// A shape under its own appearance node, recorded so apply() can
@@ -417,11 +523,89 @@ private:
     SoNode* buildSphere()
     {
         auto* root = new SoSeparator;
+        _backdrop = new SoSwitch;
+        _backdrop->addChild(buildBackdrop());
+        _backdrop->whichChild = SO_SWITCH_NONE;
+        root->addChild(_backdrop);
         // No frame stated: a sphere is neither a plane nor a surface of
         // revolution about one axis, so it shades triplanarly, which is
         // all a sphere can honestly do and is why finishes are not shown
         // on one.
         branch(root, new SoSphere);
+        return root;
+    }
+
+    /// A checkerboard filling the frame behind the sphere, facing the
+    /// camera. Shown only for a material it can be seen through, so an
+    /// opaque icon keeps its round outline on a transparent surround
+    /// while a glass one is a ball on a checkerboard, with the cells
+    /// behind it bent by the refraction. Cells, not lines: a line thin
+    /// enough to be a grid at 256 px is gone at 32.
+    SoNode* buildBackdrop()
+    {
+        // The direction the sphere is viewed along (setShape), which is
+        // both the board's normal and the line it sits behind the ball on.
+        SbVec3f dir(0, 1, -0.35F);
+        dir.normalize();
+        auto* root = new SoSeparator;
+        auto* transform = new SoTransform;
+        transform->translation = dir * BackdropDistance;
+        transform->rotation = SbRotation(SbVec3f(0, 0, 1), -dir);
+        root->addChild(transform);
+
+        // The orthographic camera takes in SphereFrame units across a
+        // square viewport (place()), so a board that size is the frame.
+        const float half = SphereFrame * 0.5F;
+        const float cell = SphereFrame / BackdropCells;
+        std::vector<SbVec3f> points;
+        std::vector<int32_t> light;
+        std::vector<int32_t> dark;
+        for (int i = 0; i < BackdropCells; ++i) {
+            for (int j = 0; j < BackdropCells; ++j) {
+                const float x0 = -half + float(i) * cell;
+                const float y0 = -half + float(j) * cell;
+                auto& indices = ((i + j) % 2 != 0) ? dark : light;
+                const auto first = int32_t(points.size());
+                points.emplace_back(x0, y0, 0.0F);
+                points.emplace_back(x0 + cell, y0, 0.0F);
+                points.emplace_back(x0 + cell, y0 + cell, 0.0F);
+                points.emplace_back(x0, y0 + cell, 0.0F);
+                for (int32_t k = 0; k < 4; ++k) {
+                    indices.push_back(first + k);
+                }
+                indices.push_back(SO_END_FACE_INDEX);
+            }
+        }
+        auto* coords = new SoCoordinate3;
+        coords->point.setValues(0, int(points.size()), points.data());
+        root->addChild(coords);
+
+        // Two greys, UNLIT. Its own materials, not the card's: it is the
+        // thing behind the material, not the material -- a reference
+        // pattern, whose greys are the display values they read as.
+        // Emissive is the one slot the pipeline passes through unchanged
+        // (decoded on the way in, encoded on the way out); a diffuse grey
+        // is lit by the environment first, and on a plane facing the
+        // camera that is about twice over, so 0.72 came back as 244.
+        // Specular 0 rather than merely dark: with Render_PBRFromSpecular
+        // it IS the reflectance, so 0 is no environment reflection at
+        // all, where a black rough dielectric would still add its 4%.
+        auto cells = [root](const std::vector<int32_t>& indices, float grey) {
+            auto* sep = new SoSeparator;
+            auto* material = new SoMaterial;
+            material->diffuseColor.setValue(0, 0, 0);
+            material->ambientColor.setValue(0, 0, 0);
+            material->specularColor.setValue(0, 0, 0);
+            material->emissiveColor.setValue(grey, grey, grey);
+            material->shininess = 0.0F;
+            auto* faces = new SoIndexedFaceSet;
+            faces->coordIndex.setValues(0, int(indices.size()), indices.data());
+            sep->addChild(material);
+            sep->addChild(faces);
+            root->addChild(sep);
+        };
+        cells(light, 0.72F);
+        cells(dark, 0.34F);
         return root;
     }
 
@@ -557,6 +741,9 @@ private:
     /// Every appearance node in the scene: one for the sphere, one per
     /// face of the cylinder. They differ only in the frame they state.
     std::vector<Gui::SoFCRenderMaterial*> _render;
+    /// The checkerboard behind the sphere, shown only for a material it
+    /// can be seen through.
+    SoSwitch* _backdrop {nullptr};
     SoSwitch* _shapes {nullptr};
     SoMaterial* _material {nullptr};
 };
@@ -596,7 +783,8 @@ void MaterialIcons::invalidate()
 }
 
 QString MaterialIcons::digestOf(const App::Material& material,
-                                const App::SurfaceFinish& finish)
+                                const App::SurfaceFinish& finish,
+                                const App::MaterialRenderProperties& render)
 {
     // Everything the render actually depends on, so an edited appearance
     // misses the cache and an untouched one hits it.
@@ -611,6 +799,12 @@ QString MaterialIcons::digestOf(const App::Material& material,
     out << material.shininess << material.transparency
         << static_cast<int>(material.pbr) << finish.pattern << finish.pitch
         << finish.depth << finish.angle;
+    // The render properties are part of the picture too, so that a glass
+    // card whose IOR moved is recognised as stale and a bundled icon is
+    // not served for an appearance it no longer shows.
+    for (const auto& prop : render) {
+        out << QString::fromStdString(prop.name) << prop.value;
+    }
     return QString::fromLatin1(
         QCryptographicHash::hash(raw, QCryptographicHash::Sha1).toHex());
 }
@@ -636,13 +830,14 @@ QIcon MaterialIcons::fromImage(const QImage& image) const
 }
 
 QIcon MaterialIcons::icon(const QString& key, const App::Material& material,
-                          const QString& name)
+                          const QString& name,
+                          const App::MaterialRenderProperties& render)
 {
     auto it = _cache.find(key);
     if (it != _cache.end()) {
         return it->second;
     }
-    const QString digest = digestOf(material, material.finish);
+    const QString digest = digestOf(material, material.finish, render);
     // Bundled with the module, or supplied by the user in place of what
     // is bundled. Ahead of everything else because it costs no render at
     // all, because it is the same icon on every installation, and
@@ -668,7 +863,7 @@ QIcon MaterialIcons::icon(const QString& key, const App::Material& material,
             return {};
         }
     }
-    _queue.push_back({key, material, material.finish});
+    _queue.push_back({key, material, material.finish, render});
     _timer->start();
     return {};
 }
@@ -827,7 +1022,7 @@ QIcon MaterialIcons::finishIcon(const App::SurfaceFinish& finish)
     if (_failed) {
         return {};
     }
-    return build(key, neutral, finish, IconShape::Cylinder);
+    return build(key, neutral, finish, {}, IconShape::Cylinder);
 }
 
 QString MaterialIcons::resourceName(const QString& materialName)
@@ -910,13 +1105,14 @@ QString MaterialIcons::iconPath(const QString& key) const
 
 bool MaterialIcons::renderToFile(const App::Material& material,
                                  const App::SurfaceFinish& finish, const QString& path,
+                                 const App::MaterialRenderProperties& props,
                                  IconShape shape)
 {
-    QImage image = render(material, finish, shape);
+    QImage image = render(material, finish, props, shape);
     if (image.isNull()) {
         return false;
     }
-    image.setText(QString::fromLatin1(DigestKey), digestOf(material, finish));
+    image.setText(QString::fromLatin1(DigestKey), digestOf(material, finish, props));
     return image.save(path, "PNG");
 }
 
@@ -925,7 +1121,7 @@ void MaterialIcons::drain()
     for (int i = 0; i < RenderPerTick && !_queue.empty(); ++i) {
         Request req = _queue.front();
         _queue.pop_front();
-        QIcon icon = build(req.key, req.material, req.finish);
+        QIcon icon = build(req.key, req.material, req.finish, req.render);
         if (!icon.isNull()) {
             Q_EMIT iconReady(req.key);
         }
@@ -940,7 +1136,9 @@ void MaterialIcons::drain()
 }
 
 QImage MaterialIcons::render(const App::Material& material,
-                             const App::SurfaceFinish& finish, IconShape shape)
+                             const App::SurfaceFinish& finish,
+                             const App::MaterialRenderProperties& props,
+                             IconShape shape)
 {
     if (_failed) {
         return {};
@@ -951,7 +1149,7 @@ QImage MaterialIcons::render(const App::Material& material,
         }
         _scene->setShape(shape == IconShape::Cylinder ? IconScene::Shape::Cylinder
                                                        : IconScene::Shape::Sphere);
-        _scene->apply(material, finish);
+        _scene->apply(material, finish, props);
         QImage img = _scene->grab(sizes().front());
         if (img.isNull()) {
             // No backend frame: nothing here is load bearing, so stop
@@ -971,13 +1169,15 @@ QImage MaterialIcons::render(const App::Material& material,
 }
 
 QIcon MaterialIcons::build(const QString& key, const App::Material& material,
-                           const App::SurfaceFinish& finish, IconShape shape)
+                           const App::SurfaceFinish& finish,
+                           const App::MaterialRenderProperties& props,
+                           IconShape shape)
 {
-    QImage img = render(material, finish, shape);
+    QImage img = render(material, finish, props, shape);
     if (img.isNull()) {
         return {};
     }
-    const QString path = cachePath(digestOf(material, finish));
+    const QString path = cachePath(digestOf(material, finish, props));
     img.save(path, "PNG");
     QIcon icon = fromImage(img);
     _cache[key] = icon;
