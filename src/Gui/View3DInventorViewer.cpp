@@ -2237,6 +2237,14 @@ bool View3DInventorViewer::renderWithCycles(const std::string &path, int width, 
     input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
     input.section = RendererBridge::translateSectionConfig(settings);
     input.pbr = RendererBridge::translatePBRConfig(settings);
+    // The facade Render_PBR states the raster shading, so an External
+    // view reads it false -- but a Cycles still of that view must show
+    // the same environment the live session does (which forces the
+    // flag outright, see feedCyclesViewport). Off External the facade
+    // stands: the still keeps matching what the raster view honours.
+    if (_pimpl->view
+            && _pimpl->view->ShadingType.getValue() == View3DInventor::ShadingExternal)
+        input.pbr.enabled = true;
     input.output = RendererBridge::translateOutputConfig(settings);
     input.light = RendererBridge::translateLightConfig(nullptr, settings);
     input.background = _pimpl->backgroundFeed(backgroundColor());
@@ -2418,6 +2426,15 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
 
     App::PropertyContainer *settings = renderSettings();
     Render::PBRConfig pbr = RendererBridge::translatePBRConfig(settings);
+    // A running Cycles session IS external shading, whatever started
+    // it (the External shading type or the cyclesViewport() binding),
+    // so the enabled flag it receives states that fact -- not the
+    // Render_PBR facade, which only says what the RASTER pipeline
+    // shades and reads false by design under External. Left as the
+    // facade, the env background gate in translateWorld (pbr.enabled
+    // && pbr.envBackground) could never pass and the environment went
+    // missing behind every External frame.
+    pbr.enabled = true;
     Render::SectionConfig secconf = RendererBridge::translateSectionConfig(settings);
     Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
     Render::LightConfig light = RendererBridge::translateLightConfig(nullptr, settings);
