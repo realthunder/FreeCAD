@@ -1059,6 +1059,10 @@ void ViewProviderGeometryObject::updateRenderMaterial()
                 pcRoot->removeChild(idx);
             pcRenderMaterial->unref();
             pcRenderMaterial = nullptr;
+            // The frames went with the node: the next one has to ask
+            // for them again, or a finish removed and restated shades
+            // triplanarly for the rest of the session.
+            renderGeometryAsked = false;
         }
         return;
     }
