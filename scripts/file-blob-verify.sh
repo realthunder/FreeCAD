@@ -25,7 +25,7 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 RUN="$REPO/.conda/run.sh"
 # Overridable: the build tree that is current moves (docs/DevEnvironment.md), and
 # a harness silently exercising a stale one proves nothing.
-BIN=${FC_BIN:-$REPO/build/conda-debug/bin}
+BIN=${FC_BIN:-$REPO/build/conda-relwithdebinfo-801/bin}
 
 cmd=${1:-}
 case "$cmd" in headless|desktop|all) ;; *)
