@@ -2611,3 +2611,139 @@ proposes, is still owed.
   exists to make it verifiable -- a per-face texture can now be authored
   from a script.
 - **The importer and the UI**, unchanged from 10.7's list.
+
+## 12. The base entry and the overriding faces
+
+> Designed 2026-08-30 with the follow-the-card flag of
+> `MaterialStorage.md` sec 15. Not started.
+
+### 12.1 What is wrong
+
+A per-face list is N entries and nothing else. Sec 1.1 had to rule that
+entry 0 of such a list is one face and not the object, and everything since
+has lived with the consequence: there is no entry that says what the object
+looks like where no face says otherwise.
+
+- The mirrors (`ShapeColor`, `Transparency`, the view provider's legacy
+  `ShapeMaterial`) refresh only while the diffuse field is uniform, so on a
+  per-face list they hold whatever the last uniform value was. The instanced
+  colour path already reads `ShapeColor` as the base for the faces a short
+  apply leaves unstated (`ViewProviderExt.cpp`, `applyInstancedFaceColors`).
+  The base exists in practice; it is just not in the value.
+- A whole-object edit cannot tell an override from the rest. Setting
+  `ShapeColor` on a per-face list collapses every face to it, which is the
+  right answer for a face that only ever held the body colour and the wrong
+  one for the three faces the user painted.
+- The importer writes N materials (`ImportOCAFGui::applyFaceMaterials`) with
+  no notion of which is the body colour, and nothing downstream can recover
+  it: a green board with five hundred gold pads is five hundred and one
+  colours of equal standing.
+- Picking an appearance card replaces the list (`DlgDisplayPropertiesImp::
+  onMaterialSelected` carries the finish across by hand, because `setValue`
+  would take it with the faces). Every whole-object write has to re-derive
+  what a per-face list meant, and each does it differently.
+
+### 12.2 The storage
+
+Two additions to `MaterialList::Data`, beside the dense fields, which stay
+exactly as they are:
+
+    Material base;                    // the object's look
+    std::vector<uint32_t> overrides;  // sorted face indices holding their own
+
+with one invariant:
+
+    for every i not in overrides:  entry(i) == base
+
+The dense fields remain the RESOLVED per-entry values, so every consumer
+(`applyShapeAppearance`, the exporters, the render cache, the Python
+sequence) reads what it reads today and none of them change. What changes
+is that a write can now say which of the two it means:
+
+| Write | Touches |
+| --- | --- |
+| whole-object: `ShapeColor`, the colour widget, an appearance card, the card's look while following (sec 15) | `base`, and every entry NOT in `overrides` |
+| per-face: `setMaterial(i, m)`, `setDiffuseColor(i, c)`, "Set appearance per face", the importer's per-face path | entry `i`; adds `i` to `overrides`, or REMOVES it when the value equals `base` |
+| clear overrides | drops `overrides`, rewrites every entry to `base` -- what a whole-object write does today, made an action of its own |
+
+Normalisation gains one step: an override whose entry equals `base` is
+dropped. The uniform list is the case `overrides` is empty, so the 0/1/N
+collapse of sec 3 is untouched and so is its cost table; a per-face list
+costs one more material and one index per overriding face.
+
+`base` is a full `Material`, finish and texture included: a per-face
+finish or image on a face is an override like a colour is, and the base
+finish is what a face returns to when its override is cleared.
+
+The `App::Link` precedent for this is `OverrideMaterialList`, a bool per
+element beside `MaterialList`. Faces get a sorted index vector rather than a
+bool list because the common per-face object (an import) overrides a few
+faces of thousands, and because an index list serialises at its own length
+(sec 4.3's `x` key already does).
+
+### 12.3 Serialization
+
+Schema 5 (the fork's format) gets two keys beside the field lines of
+sec 4.3: `b`, the base as one entry's tokens, and `o`, the override indices,
+each self-describing in the way the `x` and `f` keys are, so an earlier fork
+build steps over them (sec 9.4.2) and reads the dense fields exactly as it
+does now. Nothing about the existing keys changes.
+
+Schema 4 (upstream's) cannot state either. A schema-4 file restores through
+the heuristic of 12.4, which is also what every document written before
+this section gets.
+
+### 12.4 Deriving a base where none was stored
+
+The heuristic runs once, at restore of a per-face list without a `b` key
+and at import, and never again for that list: it produces the stored base,
+which from then on is the answer.
+
+1. A uniform list is its own base with no overrides (the importer already
+   collapses this case).
+2. Otherwise, the mirror first: if the view provider's `ShapeColor` (with
+   `Transparency`) names a value that occurs in the list, that is the base.
+   On a document this fork wrote, the mirrors hold the last uniform value,
+   which is what the object looked like before its faces were painted.
+   On an import the mirrors hold the constructor's grey, which occurs in no
+   imported list, so this step declines.
+3. Otherwise the material covering the largest summed face AREA is the base,
+   with entry count as the tie-break and as the fallback when no shape is at
+   hand. Area, not count: the board-and-pads case is decided the wrong way
+   by count, and a shape whose faces are all of a size is decided the same
+   way by both. The area is available where the heuristic runs -- the shape
+   is restored before its view provider finishes restoring, and the importer
+   has it in hand.
+
+The choice is recorded by being stored, so a later save at schema 5 does
+not repeat it. A user who disagrees has the whole-object controls: setting
+the object's colour writes the base, and the faces that were not overrides
+follow.
+
+### 12.5 Python
+
+On `MaterialListPy`, the live view of sec 11:
+
+- `Base` (rw, `Material`): the object's look. Writing it is the
+  whole-object write of 12.2.
+- `Overrides` (ro, tuple of int): the overriding face indices.
+- `clearOverrides()` / `clearOverride(i)`.
+- `setMaterial(i, m)` and the per-field setters keep their signatures and
+  gain the per-face meaning of 12.2.
+
+`FollowMaterial` is the third attribute, and belongs to sec 15 of
+`MaterialStorage.md`: it decides where `Base` comes from, not what an
+override is.
+
+### 12.6 Invariants
+
+- `entry(i) == base` for every `i` not in `overrides`; normalisation
+  enforces it and `checkElementMap`-style tests assert it.
+- `overrides` is sorted, unique, and every index is `< count`.
+- A list with `count <= 1` has no overrides.
+- A whole-object write never changes an overriding entry. A per-face write
+  never changes `base`.
+- Consumers read the dense fields only. Nothing in `Gui/`, the exporters or
+  the renderer branches on `overrides`; the property editor and the two
+  task panels are the only readers, and they read it to say which faces are
+  painted.
