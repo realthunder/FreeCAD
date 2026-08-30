@@ -4194,14 +4194,25 @@ void View3DInventorViewer::clearGraphicsItems()
 
 int View3DInventorViewer::getNumSamples()
 {
-    // 4x by default. The backend resolves its own offscreen target, so
-    // the cost is a wider render target and not a cloned GL context,
-    // and edge-dominated CAD geometry is the content multisampling
-    // helps most -- an unantialiased silhouette is the first thing that
-    // reads as "not a real render".
+    // Off by default. It used to be 4x, on the reasoning that
+    // edge-dominated CAD geometry is what multisampling helps most and
+    // an unantialiased silhouette is the first thing that reads as "not
+    // a real render". The first half of that is no longer true: lines
+    // and points resolve their own coverage analytically now
+    // (fs_fc_line), and measured over twelve screen angles at width 2,
+    // turning MSAA off costs them nothing -- the spread across angles is
+    // 2.9% without it against 4.9% with. Before analytic coverage the
+    // same measurement read 43.5% with MSAA off, which is what used to
+    // make it mandatory.
+    //
+    // What MSAA still buys is the TRIANGLE silhouette, which has no
+    // analytic coverage of its own. In Flat Lines and Wireframe an edge
+    // is drawn along every silhouette and hides it; in Shaded, with no
+    // edges, a curved silhouette is bare and will show stair-stepping.
+    // Users on that mode can turn it back on.
     long samples = App::GetApplication().GetParameterGroupByPath
         ("User parameter:BaseApp/Preferences/View")
-        ->GetInt("AntiAliasing", View3DInventorViewer::MSAA4x);
+        ->GetInt("AntiAliasing", View3DInventorViewer::None);
 
     // NOLINTBEGIN
     switch (samples) {
