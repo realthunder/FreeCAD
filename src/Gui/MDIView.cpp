@@ -76,6 +76,33 @@ MDIView::MDIView(Gui::Document* pcDocument,QWidget* parent, Qt::WindowFlags wfla
 
 MDIView::~MDIView()
 {
+    // Nothing may call INTO a view that is being destroyed, and Qt's own
+    // automatic disconnect is too late to promise that: it happens in
+    // ~QObject, two destructors after this one, and the damage lands in
+    // between -- in ~QWidget.
+    //
+    // The measured case: ~QWidget emits QObject::destroyed, whose
+    // handler in ViewAreaCell (ViewArea.cpp, hostView) collapses the
+    // cell that held this view. Collapsing re-enters MDI activation and
+    // maximizes a sibling sub-window, and that window-state change makes
+    // MainWindow::eventFilter re-emit windowStateChanged -- which was
+    // still connected to THIS view, whose vtable no longer carries
+    // MDIView::windowStateChanged because ~MDIView has already run. The
+    // dispatch landed on the pure-call stub and the CRT aborted:
+    // VCRUNTIME140!_purecall -> ucrtbase!abort -> __fastfail, which a
+    // debugger reports as c0000409 "stack buffer overrun", subcode 7
+    // FAST_FAIL_FATAL_APP_EXIT. The connection is made in two places
+    // (MainWindow::addWindow for a top level view, ViewAreaCell::
+    // hostView for an embedded one), so it is severed here, at the
+    // single point every MDIView passes through, rather than at either.
+    //
+    // Broad on purpose: the invariant is about the direction, not about
+    // one signal. Any future MainWindow-to-view connection would be
+    // exactly as unsafe in this window, and would have to remember to
+    // add itself here.
+    if (getMainWindow())
+        QObject::disconnect(getMainWindow(), nullptr, this, nullptr);
+
     //This view might be the focus widget of the main window. In this case we must
     //clear the focus and e.g. set the focus directly to the main window, otherwise
     //the application crashes when accessing this deleted view.
