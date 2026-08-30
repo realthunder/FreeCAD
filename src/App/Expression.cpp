@@ -57,6 +57,7 @@
 #include <Base/Unit.h>
 #include <Base/VectorPy.h>
 #include "ExpressionParser.h"
+#include "ExpressionSecurityRuntime.h"
 #include "ExpressionVisitors.h"
 #include "ExpressionPy.h"
 #include "DocumentObjectPy.h"
@@ -1419,6 +1420,10 @@ App::any Expression::getValueAsAny(int options) const {
 }
 
 Py::Object Expression::getPyValue(int options, int *jumpCode) const {
+    // C1: establish the evaluation principal (expression sandbox step 3b).
+    // No-op if an outer scope -- e.g. "session" from the expression editor
+    // -- is already active.
+    ExpressionSecurity::Runtime::Scope _secScope(owner);
     if(options & OptionCallFrame) {
         options &= ~OptionCallFrame;
         EvalFrame frame;
@@ -2245,6 +2250,10 @@ public:
     PyTypeObject *pytype = nullptr;
     const char * msg = nullptr;
     std::string info;
+    // attributed module of an allowed callable; the permission service is
+    // consulted per call against this, so the cache never holds a verdict
+    // that a grant could change
+    std::string module;
 };
 
 static std::unordered_map<PyObjectNode::Key,
@@ -2312,92 +2321,31 @@ bool PyObjectNode::isCached()
 //
 // Internal class to manager user defined import modules
 //
-class ImportModules: public ParameterGrp::ObserverType {
+class ImportModules {
 public:
-    ImportModules() {
-        defModules = {
-            "builtins",
-            "FreeCAD",
-            "FreeCADGui",
-            "App",
-            "Gui",
-            "Base",
-            "__FreeCADConsole__",
-            "Units",
-            "Selection",
-            "Part",
-            "PartDesign",
-            "Sketcher",
-            "Spreadsheet",
-            "collections",
-            "math",
-            "re",
-            "_sre", // re built-in C extension
-            "freecad.fc_cadquery",
-        };
-        for (auto mod : defModules)
-            modules[mod] = nullptr;
-
-        handle = GetApplication().GetParameterGroupByPath(
-                "User parameter:BaseApp/Preferences/Expression/PyModules");
-        handle->Attach(this);
-        for (auto &m : handle->GetBoolMap())
-            modules[m.first] = m.second ? nullptr : Py_None;
-    }
-
-    void OnChange(Base::Subject<const char*> &, const char* sReason) {
-        if(!sReason)
-            return;
-        if(!handle->GetBool(sReason,false)) {
-            // Check if there is really an entry with value false. That would
-            // indicate an intention to forbid that module and all its sub
-            // modules. And we mark it by setting the value to None.
-            //
-            // Note that a non-None entry (including null entry) indicates that
-            // the module and all its submodule (not explicitly forbidden) are
-            // allowed. A null entry just means the module hasn't been
-            // explicitly imported by expression statement 'import_py' yet. 
-            if (!handle->GetBool(sReason, true)) {
-                auto & pyobj = modules[sReason];
-                if (pyobj && pyobj != Py_None) {
-                    Py_DECREF(pyobj);
-                    imports.erase(pyobj);
-                }
-                pyobj = Py_None;
-            } else {
-                auto it = modules.find(sReason);
-                if (it != modules.end()) {
-                    if (defModules.count(sReason)) {
-                        if (it->second == Py_None)
-                            it->second = nullptr;
-                    } else {
-                        if (it->second && it->second != Py_None) {
-                            imports.erase(it->second);
-                            Py_DECREF(it->second);
-                        }
-                        modules.erase(it);
-                    }
-                }
-            }
-        } else {
-            auto & pyobj = modules[sReason];
-            if (pyobj == Py_None)
-                pyobj = nullptr;
-        }
-        PyObjectNode::clearCache();
-    }
+    // Expression sandbox phase 1 step 3b: module access is decided by the
+    // permission service (host.import:<name> grants, with FreeCAD/Gui
+    // mapped to app.query/gui and the Ring-0 set free), replacing the old
+    // PyModules parameter allowlist. 'modules' is now purely an import
+    // cache; 'imports' still answers isImported() for module attribution.
+    ImportModules() = default;
 
     Py::Object getModule(const std::string &name, const Expression *e) {
-        auto it = modules.find(name);
-        if(it == modules.end() || it->second == Py_None)
-            __EXPR_THROW(ImportError, "Python module '" << name << "' access denied.", e);
-        if(it->second)
-            return Py::Object(it->second);
-        it->second = PyImport_ImportModule(name.c_str());
-        if(!it->second) 
+        try {
+            ExpressionSecurity::checkModuleImport(name);
+        } catch (ExpressionSecurity::PermissionNeededException &) {
+            throw;
+        } catch (Base::Exception &err) {
+            __EXPR_THROW(ImportError, err.what(), e);
+        }
+        auto &entry = modules[name];
+        if(entry)
+            return Py::Object(entry);
+        entry = PyImport_ImportModule(name.c_str());
+        if(!entry)
             EXPR_PY_THROW(e);
-        imports.insert(it->second);
-        return Py::Object(it->second);
+        imports.insert(entry);
+        return Py::Object(entry);
     }
 
     bool isImported(PyObject *module) const {
@@ -2409,10 +2357,6 @@ public:
         if(!inst)
             inst = new ImportModules;
         return inst;
-    }
-
-    ParameterGrp::handle getHandle() {
-        return handle;
     }
 
     bool checkCallable(PyObjectNode & node, PyObject *pyobj)
@@ -2550,35 +2494,21 @@ public:
             if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_TRACE))
                 e.ReportException();
             node.init(pyobj, "Access denied of callable in unknown module");
+            node.module.clear();
         } else {
-            auto it = modules.lower_bound(name);
-            if (it != modules.end()
-                    && it->second != Py_None
-                    && boost::starts_with(name, it->first)
-                    && (name[it->first.size()] == 0
-                        || name[it->first.size()] == '.'))
-            {
-                node.init(pyobj, nullptr);
-            } else {
-                node.init(pyobj, "Access denied of callable in module ", name);
-            }
+            // The cache keeps only the ATTRIBUTION (which module this
+            // callable belongs to); the permission verdict is resolved per
+            // call by securityCheck() so grants apply without restart.
+            node.init(pyobj, nullptr);
+            node.module = name;
         }
         return node.msg == nullptr;
     }
 
 private:
-    std::map<std::string, PyObject*, std::greater<std::string> > modules;
-    std::unordered_set<const char *, App::CStringHasher, App::CStringHasher> defModules;
+    std::map<std::string, PyObject*> modules;
     std::set<PyObject*> imports;
-    ParameterGrp::handle handle;
     Py::Object inspect;
-};
-
-class ImportParamLock: public ParameterLock {
-public:
-    ImportParamLock()
-        :ParameterLock(ImportModules::instance()->getHandle())
-    {}
 };
 
 static int _HiddenReference;
@@ -4525,6 +4455,8 @@ void CallableExpression::securityCheck(PyObject *pyobj, const Expression *expr)
     if (_LastCache && _LastCache->pyobj == pyobj) {
         if (_LastCache->msg)
             _EXPR_THROW(_LastCache->msg << _LastCache->info, expr);
+        if (!_LastCache->module.empty())
+            ExpressionSecurity::checkCallablePermission(_LastCache->module, pyobj);
         return;
     }
 
@@ -4539,6 +4471,8 @@ void CallableExpression::securityCheck(PyObject *pyobj, const Expression *expr)
         ImportModules::instance()->checkCallable(node, pyobj);
     if (node.msg)
         _EXPR_THROW(node.msg << node.info, expr);
+    if (!node.module.empty())
+        ExpressionSecurity::checkCallablePermission(node.module, pyobj);
 }
 
 void CallableExpression::securityCheck(PyObject *pyobj, PyObject *pyattr)
@@ -4722,7 +4656,6 @@ Py::Object CallableExpression::_getPyValue(int *) const {
     }
     try {
         ExpressionBlocker blocker(this);
-        ImportParamLock lock;
         return Py::Callable(pyobj).apply(tuple,dict);
     } catch (Py::Exception&) {
         EXPR_PY_THROW(this);

@@ -33,6 +33,7 @@
 #include <App/Document.h>
 #include <App/DynamicProperty.h>
 #include <App/ExpressionParser.h>
+#include <App/ExpressionSecurityRuntime.h>
 #include <App/FeaturePythonPyImp.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
@@ -795,6 +796,11 @@ Property * Sheet::setBooleanProperty(CellAddress key, bool value)
 
 Property* Sheet::setObjectProperty(CellAddress key, Py::Object object)
 {
+    // C12: an evaluation result persisted as a live PyObject property is a
+    // write to the sheet's own document
+    App::ExpressionSecurity::Runtime::Scope secScope(this);
+    App::ExpressionSecurity::checkPermission(
+            App::ExpressionSecurity::Permission::DocWriteSelf);
     std::string name = key.toString(CellAddress::Cell::ShowRowColumn);
     Property* prop = props.getDynamicPropertyByName(name.c_str());
     PropertyPythonObject* pyProp = freecad_dynamic_cast<PropertyPythonObject>(prop);

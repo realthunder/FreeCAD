@@ -454,6 +454,7 @@ SET(Dialog_CPP_SRCS
     DlgEditFileIncludePropertyExternal.cpp
     DlgMacroRecordImp.cpp
     DlgMaterialPropertiesImp.cpp
+    DlgDocumentPermissions.cpp
     DlgParameterImp.cpp
     DlgParameterFind.cpp
     DlgPreferencePackManagementImp.cpp
@@ -495,6 +496,7 @@ SET(Dialog_HPP_SRCS
     DlgEditFileIncludePropertyExternal.h
     DlgMacroRecordImp.h
     DlgMaterialPropertiesImp.h
+    DlgDocumentPermissions.h
     DlgParameterImp.h
     DlgParameterFind.h
     DlgPreferencePackManagementImp.h

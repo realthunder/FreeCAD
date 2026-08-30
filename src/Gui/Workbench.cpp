@@ -751,6 +751,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
     auto tool = new MenuItem( menuBar );
     tool->setCommand("&Tools");
     *tool << "Std_DlgParameter"
+          << "Std_DocumentPermissions"
           << "Std_CmdPresets"
           << "Separator"
           << "Std_ShareDocument"

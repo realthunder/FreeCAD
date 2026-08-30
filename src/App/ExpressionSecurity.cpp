@@ -504,7 +504,7 @@ bool GrantStore::save(const std::string &path, std::string *errMsg) const
     return true;
 }
 
-std::optional<Decision> GrantStore::lookup(const std::string &principal,
+std::optional<Decision> GrantStore::lookupGrant(const std::string &principal,
         Permission perm, const std::string &target) const
 {
     const char *permName = permissionName(perm);
@@ -525,10 +525,33 @@ std::optional<Decision> GrantStore::lookup(const std::string &principal,
         return Decision::Deny;
     if (anyAllow)
         return Decision::Allow;
-    auto it = _defaults.find(permName);
+    return std::nullopt;
+}
+
+std::optional<Decision> GrantStore::lookup(const std::string &principal,
+        Permission perm, const std::string &target) const
+{
+    auto granted = lookupGrant(principal, perm, target);
+    if (granted)
+        return granted;
+    auto it = _defaults.find(permissionName(perm));
     if (it != _defaults.end())
         return it->second;
     return std::nullopt;
+}
+
+std::size_t GrantStore::remove(const std::string &principal,
+        Permission perm, const std::string &target)
+{
+    const char *permName = permissionName(perm);
+    std::size_t before = _grants.size();
+    _grants.erase(std::remove_if(_grants.begin(), _grants.end(),
+            [&](const Grant &g) {
+                return g.principal == principal && g.permission == permName
+                    && (target == "*" || g.target == target);
+            }),
+            _grants.end());
+    return before - _grants.size();
 }
 
 void GrantStore::add(Grant grant)

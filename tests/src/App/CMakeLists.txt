@@ -6,6 +6,7 @@ target_sources(
             ${CMAKE_CURRENT_SOURCE_DIR}/Document.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Expression.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionSecurity.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionSecurityRuntime.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/License.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Metadata.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Property.cpp

@@ -41,6 +41,7 @@
 #include "DocumentObserver.h"
 #include "Document.h"
 #include "ExpressionParser.h"
+#include "ExpressionSecurityRuntime.h"
 #include "Link.h"
 #include "Property.h"
 
@@ -635,6 +636,9 @@ Py::Object ObjectIdentifier::Component::get(const Py::Object &pyobj) const {
             FC_THROWM(Base::AttributeError, "No attribute named '" << getName() << "'");
         res = pyobj.getAttr(getName());
         CallableExpression::securityCheck(pyobj.ptr(), res.ptr());
+        // C7 gate: attribute walks into arbitrary Python instances need
+        // unsafe.getattr; a module result is an import in disguise.
+        ExpressionSecurity::checkGetattr(pyobj.ptr(), getName().c_str(), res.ptr());
     } else if(isArray()) {
         if(pyobj.isMapping())
             res = Py::Mapping(pyobj).getItem(Py::Int(begin));
@@ -667,6 +671,9 @@ void ObjectIdentifier::Component::set(Py::Object &pyobj, const Py::Object &value
             FC_THROWM(Base::RuntimeError, "Cannot modify attribute " << getName());
         if (PyModule_Check(pyobj.ptr()))
             FC_THROWM(Base::RuntimeError, "Cannot modify module attribute " << getName());
+        // same classification as the read gate: setattr on an arbitrary
+        // Python instance needs unsafe.getattr
+        ExpressionSecurity::checkGetattr(pyobj.ptr(), getName().c_str(), nullptr);
         if(PyObject_SetAttrString(*pyobj, getName().c_str(), *value) == -1)
             Base::PyException::ThrowException();
     } else if(isArray()) {
@@ -1971,6 +1978,52 @@ Py::Object ObjectIdentifier::access(const ResolveResults &result,
     Py::Object pyobj;
     int ptype = result.propertyType;
 
+    // Permission wall (expression sandbox phase 1 step 3b): the frozen
+    // pseudo-property -> permission mapping of
+    // docs/ExpressionSandboxPhase0.md sec 6.1, plus the cross-document
+    // wall. Ring-0 pseudo modules (_math/_re/_coll/_py) and the
+    // placement/matrix adapters need no permission beyond the document
+    // read below.
+    {
+        namespace Sec = ExpressionSecurity;
+        switch(ptype) {
+        case PseudoApp:
+            Sec::checkPermission(Sec::Permission::AppQuery);
+            break;
+        case PseudoGui:
+            Sec::checkPermission(Sec::Permission::Gui);
+            break;
+        case PseudoPart:
+            Sec::checkPermission(Sec::Permission::HostImport, "Part");
+            break;
+        case PseudoCadquery:
+            Sec::checkPermission(Sec::Permission::HostImport, "freecad.fc_cadquery");
+            break;
+        case PseudoShape:
+            Sec::checkPermission(Sec::Permission::GeomCall);
+            break;
+        case PseudoSelf:
+            // _self reaching anything but a plain property of the object
+            // is the sec 7.1 drill-down (unsafe.getattr); the local
+            // property shortcut (_self.MyProp) stays a document read.
+            if(result.propertyIndex+1 >= (int)components.size()
+                    || !result.resolvedDocumentObject->getPropertyByName(
+                        components[result.propertyIndex+1].getName().c_str()))
+                Sec::checkPermission(Sec::Permission::UnsafeGetattr);
+            break;
+        default:
+            break;
+        }
+        if(owner && owner->getDocument()
+                && result.resolvedDocumentObject->getDocument()
+                && result.resolvedDocumentObject->getDocument() != owner->getDocument())
+            Sec::checkPermission(Sec::Permission::DocForeign,
+                    result.resolvedDocumentObject->getDocument()->getName());
+        else
+            Sec::checkPermission(value ? Sec::Permission::DocWriteSelf
+                                       : Sec::Permission::DocReadSelf);
+    }
+
     // NOTE! We do not keep reference of the imported module, assuming once
     // imported they'll live (because of sys.modules) till the application
     // dies.
@@ -2190,6 +2243,7 @@ Py::Object ObjectIdentifier::access(const ResolveResults &result,
 
 App::any ObjectIdentifier::getValue(bool pathValue, bool *isPseudoProperty) const
 {
+    ExpressionSecurity::Runtime::Scope _secScope(owner);
     ResolveResults rs(*this);
 
     if(isPseudoProperty) {
@@ -2217,6 +2271,7 @@ App::any ObjectIdentifier::getValue(bool pathValue, bool *isPseudoProperty) cons
 
 Py::Object ObjectIdentifier::getPyValue(bool pathValue, bool *isPseudoProperty, bool *isReadOnly) const
 {
+    ExpressionSecurity::Runtime::Scope _secScope(owner);
     ResolveResults rs(*this);
 
     if(isPseudoProperty || isReadOnly) {
@@ -2268,6 +2323,7 @@ void ObjectIdentifier::setValue(const App::any &value) const
 
 void ObjectIdentifier::setPyValue(Py::Object value) const
 {
+    ExpressionSecurity::Runtime::Scope _secScope(owner);
     ResolveResults rs(*this);
     if(!rs.resolvedProperty)
         FC_THROWM(Base::RuntimeError,"Property not found " << toString());

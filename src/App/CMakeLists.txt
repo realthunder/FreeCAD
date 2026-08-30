@@ -179,6 +179,8 @@ SET(Document_CPP_SRCS
     DocumentPyImp.cpp
     ExpressionDocumentOps.cpp
     ExpressionSecurity.cpp
+    ExpressionSecurityPy.cpp
+    ExpressionSecurityRuntime.cpp
     ExpressionTokenizer.cpp
     FeaturePython.cpp
     FeatureTest.cpp
@@ -235,6 +237,7 @@ SET(Document_HPP_SRCS
     DocumentObserverPython.h
     Expression.h
     ExpressionSecurity.h
+    ExpressionSecurityRuntime.h
     ExpressionParser.h
     ExpressionTokenizer.h
     ExpressionVisitors.h

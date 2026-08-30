@@ -40,9 +40,9 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/ExpressionParser.h>
+#include <App/ExpressionSecurityRuntime.h>
 #include <App/GeoFeature.h>
 #include <App/ObjectIdentifier.h>
-#include <App/ExpressionParser.h>
 #include <App/PropertyLinks.h>
 #include <Base/Tools.h>
 #include "ExpressionCompleter.h"
@@ -1524,6 +1524,8 @@ public:
             if(isPseudoProperty(prop)) {
                 App::ObjectIdentifier path(owner, propName);
                 try {
+                    // completer evaluation is interactive: session principal
+                    App::ExpressionSecurity::Runtime::Scope secScope("session");
                     this->pyObj = Py::new_reference_to(path.getPyValue());
                     PythonData::init();
                 } catch (Base::Exception &e) {
@@ -1581,6 +1583,7 @@ public:
 
             const auto &path = paths[row].path;
             try {
+                App::ExpressionSecurity::Runtime::Scope secScope("session");
                 child.pyObj = Py::new_reference_to(path.getPyValue(true));
                 return true;
             } catch (Py::Exception &) {
@@ -1727,6 +1730,7 @@ public:
             // list/map index accessor, which cannot be completed.
             if(l.last().startsWith(QLatin1Char('.'))) {
                 Base::PyGILStateLocker lock;
+                App::ExpressionSecurity::Runtime::Scope secScope("session");
                 Py::Object value = vexpr->getPyValue();
                 if(!value.isNone()) {
                     if(!vexpr->hasComponent()) {

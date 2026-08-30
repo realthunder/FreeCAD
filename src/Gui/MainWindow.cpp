@@ -101,6 +101,7 @@
 #include "FileDialog.h"
 #include "MenuManager.h"
 #include "OverlayWidgets.h"
+#include "DlgDocumentPermissions.h"
 #include "NotificationArea.h"
 #include "OverlayManager.h"
 #include "ProgressBar.h"
@@ -558,6 +559,12 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     progressBar->setObjectName(QStringLiteral("SB_ProgressBar"));
     statusBar()->addPermanentWidget(progressBar, 0);
     statusBar()->addPermanentWidget(d->sizeLabel, 0);
+
+    // expression permission indicator (popup-blocker analog): lights up
+    // when expressions are blocked pending a grant
+    auto permissionIndicator = new Dialog::PermissionIndicator(statusBar());
+    permissionIndicator->setObjectName(QStringLiteral("SB_PermissionIndicator"));
+    statusBar()->addPermanentWidget(permissionIndicator, 0);
 
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/NotificationArea");
 

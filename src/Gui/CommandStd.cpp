@@ -41,6 +41,7 @@
 #include "BitmapFactory.h"
 #include "Command.h"
 #include "DlgCustomizeImp.h"
+#include "DlgDocumentPermissions.h"
 #include "DlgParameterImp.h"
 #include "DlgPreferencesImp.h"
 #include "DlgToolbarsImp.h"
@@ -368,6 +369,28 @@ void StdCmdDlgParameter::activated(int iMsg)
     }
     dlg->show();
     dlg->activateWindow();
+}
+
+//===========================================================================
+// Std_DocumentPermissions
+//===========================================================================
+DEF_STD_CMD(StdCmdDocumentPermissions)
+
+StdCmdDocumentPermissions::StdCmdDocumentPermissions()
+  :Command("Std_DocumentPermissions")
+{
+  sGroup        = "Tools";
+  sMenuText     = QT_TR_NOOP("Document &permissions ...");
+  sToolTipText  = QT_TR_NOOP("Review and grant expression permissions of the active document");
+  sWhatsThis    = "Std_DocumentPermissions";
+  sStatusTip    = QT_TR_NOOP("Review and grant expression permissions of the active document");
+  eType         = 0;
+}
+
+void StdCmdDocumentPermissions::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    Dialog::DlgDocumentPermissions::showDialog();
 }
 
 //===========================================================================
@@ -1328,6 +1351,7 @@ void CreateStdCommands()
     rcCmdMgr.addCommand(new StdCmdAboutQt());
 
     rcCmdMgr.addCommand(new StdCmdDlgParameter());
+    rcCmdMgr.addCommand(new StdCmdDocumentPermissions());
     rcCmdMgr.addCommand(new StdCmdDlgPreferences());
     rcCmdMgr.addCommand(new StdCmdDlgCustomize());
     rcCmdMgr.addCommand(new StdCmdCommandLine());

@@ -159,6 +159,17 @@ public:
     std::optional<Decision> lookup(const std::string &principal,
             Permission perm, const std::string &target) const;
 
+    /// lookup() without the defaults fallback: grants only. The enforcement
+    /// runtime uses this to try ancestor targets before any default applies.
+    std::optional<Decision> lookupGrant(const std::string &principal,
+            Permission perm, const std::string &target) const;
+
+    /** Remove grants matching (principal, permission, target); a "*" target
+     * removes every target of that permission. Returns the number removed.
+     */
+    std::size_t remove(const std::string &principal, Permission perm,
+            const std::string &target);
+
     /// Add a grant (stamps grantedUtc if empty).
     void add(Grant grant);
     /// Remove every grant of a principal (e.g. its hash changed). Returns count.

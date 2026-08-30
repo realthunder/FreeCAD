@@ -99,6 +99,7 @@
 #include "DocumentParams.h"
 #include "DocumentPy.h"
 #include "ExpressionParser.h"
+#include "ExpressionSecurityRuntime.h"
 #include "FeatureTest.h"
 #include "FeaturePython.h"
 #include "GeoFeature.h"
@@ -370,6 +371,9 @@ void Application::setupPythonTypes()
 
     Py_INCREF(pUnitsModule);
     PyModule_AddObject(pAppModule, "Units", pUnitsModule);
+
+    // expression permission service (grant management)
+    ExpressionSecurity::initPyModule(pAppModule);
 
     Base::ProgressIndicatorPy::init_type();
     Base::Interpreter().addType(Base::ProgressIndicatorPy::type_object(),
@@ -2564,6 +2568,8 @@ void parseProgramOptions(int ac, char ** av, const string& exe, variables_map& v
     ("python-path,P", value< vector<string> >()->composing(),"Additional python paths")
     ("single-instance", "Allow to run a single instance of the application")
     ("pass", value< vector<string> >()->multitoken(), "Ignores the following arguments and pass them through to be used by a script")
+    ("grant", value< vector<string> >()->composing(), "Grant an expression permission process-wide, as <permission>[:<target>], e.g. --grant doc.foreign or --grant host.import:numpy")
+    ("policy", value<string>(), "Expression permission policy file (grants.json schema) used instead of the user grant store")
     ;
 
 
@@ -2786,6 +2792,21 @@ void processProgramOptions(const variables_map& vm, std::map<std::string,std::st
     if (vm.count("system-cfg")) {
         mConfig["SystemParameter"] = vm["system-cfg"].as<string>();
     }
+
+    if (vm.count("grant")) {
+        // consumed by ExpressionSecurity::Runtime on first use
+        const auto &specs = vm["grant"].as< vector<string> >();
+        string joined;
+        for (const auto &spec : specs) {
+            if (!joined.empty())
+                joined += "\n";
+            joined += spec;
+        }
+        mConfig["ExpressionGrants"] = joined;
+    }
+
+    if (vm.count("policy"))
+        mConfig["ExpressionPolicyFile"] = vm["policy"].as<string>();
 
     if (vm.count("run-test")) {
         string testCase = vm["run-test"].as<string>();
