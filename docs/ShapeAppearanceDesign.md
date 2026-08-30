@@ -2645,32 +2645,49 @@ looks like where no face says otherwise.
 
 ### 12.2 The storage
 
-Two additions to `MaterialList::Data`, beside the dense fields, which stay
-exactly as they are:
+`MaterialList::Data` becomes base + overrides, and the per-field arrays
+of sec 3 shrink to the overriding faces:
 
-    Material base;                    // the object's look
+    int count;                        // logical entry count N
+    Material base;                    // the object's look, every field
     std::vector<uint32_t> overrides;  // sorted face indices holding their own
+    std::vector<Color> diffuse;       // size 0 or overrides.size()
+    ...                               // every other field the same
 
 with one invariant:
 
-    for every i not in overrides:  entry(i) == base
+    entry(i) == base                       for every i not in overrides
+    entry(i).field == base.field           when that field's array is empty
 
-The dense fields remain the RESOLVED per-entry values, so every consumer
-(`applyShapeAppearance`, the exporters, the render cache, the Python
-sequence) reads what it reads today and none of them change. What changes
-is that a write can now say which of the two it means:
+The 0/1/N convention of sec 3 becomes **0 or |o|**: once the base exists,
+"uniform" IS the base, so there is nothing for a one-element array to
+say. An override array is empty when every overriding face has the base's
+value for that field (three faces painted red keep the base's gloss, so
+only `diffuse` has three entries), and |o| long otherwise. An overriding
+face is one that differs from the base in at least one field.
+
+Nothing dense is kept. The accessors resolve: `getValues()` and
+`getDiffuseColors()` materialise N entries on read, `getMaterial(i)` and
+`getPhongMaterial(i)` look `i` up in `overrides` (a binary search, or a
+lazily built slot map). That is what every consumer already receives --
+`applyShapeAppearance`, the exporters, the render cache and the Python
+sequence all take vectors or ask by index -- so none of them change.
+`variesOnlyInDiffuse()` becomes "every non-diffuse override array is
+empty".
+
+What a write means:
 
 | Write | Touches |
 | --- | --- |
-| whole-object: `ShapeColor`, the colour widget, an appearance card, the card's look while following (sec 15) | `base`, and every entry NOT in `overrides` |
-| per-face: `setMaterial(i, m)`, `setDiffuseColor(i, c)`, "Set appearance per face", the importer's per-face path | entry `i`; adds `i` to `overrides`, or REMOVES it when the value equals `base` |
-| clear overrides | drops `overrides`, rewrites every entry to `base` -- what a whole-object write does today, made an action of its own |
+| whole-object: `ShapeColor`, the colour widget, an appearance card, the card's look while following (sec 15) | `base` only; the overriding faces keep their values |
+| per-face: `setMaterial(i, m)`, `setDiffuseColor(i, c)`, "Set appearance per face", the importer's per-face path | face `i`: added to `overrides` with its values, or REMOVED when the value equals `base` |
+| clear overrides | drops `overrides` and every override array -- what a whole-object write does today, made an action of its own |
 
-Normalisation gains one step: an override whose entry equals `base` is
-dropped. The uniform list is the case `overrides` is empty, so the 0/1/N
-collapse of sec 3 is untouched and so is its cost table. In memory a
-per-face list costs one more material and one index per overriding face;
-on disk it costs only its overrides (12.3).
+Normalisation: an override whose entry equals `base` is dropped; an
+override array whose every entry equals the base's field is emptied. The
+uniform list is the case `overrides` is empty, and costs one material
+whatever N is. Sec 3.1's table becomes: uniform, 80 B; an import with
+colour on k faces, 80 B + 20k B; full per-face materials, 80 B + 84N B.
 
 `base` is a full `Material`, finish and texture included: a per-face
 finish or image on a face is an override like a colour is, and the base
@@ -2682,37 +2699,28 @@ bool list because the common per-face object (an import) overrides a few
 faces of thousands, and because an index list serialises at its own length
 (sec 4.3's `x` key already does).
 
-### 12.3 Serialization: sparse on disk
+### 12.3 Serialization
 
-The invariant makes every non-overriding entry redundant, so at schema 5
-(the fork's format) the list is written SPARSE:
+Schema 5 (the fork's format) writes the storage as it is:
 
 - `b`: the base, as one entry's tokens;
 - `o`: the overriding face indices, self-describing in the way the `x` and
   `f` keys of sec 4.3 are;
-- the field lines of sec 4.3 at length **|overrides|** -- still collapsed
-  to 0, 1 or |o| -- holding only the overriding faces' values, in `o`
-  order.
+- the field lines of sec 4.3 at length 0 or |o|, in `o` order.
 
-Restore rebuilds the dense fields from the three. A 10,000-face import
-with three painted faces goes from about 160 KB of diffuse to about a
-hundred bytes; a list where every face differs writes the N values it
-writes today plus 4N bytes of indices. An earlier fork build steps over
-`b` and `o` (sec 9.4.2) but then reads field lines shorter than the entry
-count, so a file carrying them is not one it can open -- the same standing
-every schema-5 file already has (sec 4.3), and the reason the default cap
-is 4.
+A 10,000-face import with three painted faces goes from about 160 KB of
+diffuse to about a hundred bytes; a list where every face differs writes
+the N values it writes today plus 4N bytes of indices. An earlier fork
+build steps over `b` and `o` (sec 9.4.2) but then reads field lines
+shorter than the entry count, so a file carrying them is not one it can
+open -- the same standing every schema-5 file already has (sec 4.3), and
+the reason the default cap is 4.
 
 Schema 4 (upstream's) cannot state either key and keeps writing the dense
-N entries, byte for byte as today. A schema-4 file restores through the
-heuristic of 12.4, which is also what every document written before this
-section gets.
-
-In memory the dense resolved fields stay, for the first cut: every
-consumer and the Coin arrays materialise them anyway. A sparse in-memory
-form behind the same accessors is a later optimisation and not a format
-question; nothing here forecloses it, because no reader of the value sees
-the storage.
+N entries, byte for byte as today: it is written sequentially by index and
+resolves each entry as it goes, which is what the dense-array writer did
+without noticing. A schema-4 file restores through the heuristic of 12.4,
+which is also what every document written before this section gets.
 
 ### 12.4 Deriving a base where none was stored
 
@@ -2758,13 +2766,14 @@ override is.
 
 ### 12.6 Invariants
 
-- `entry(i) == base` for every `i` not in `overrides`; normalisation
-  enforces it and `checkElementMap`-style tests assert it.
+- `entry(i) == base` for every `i` not in `overrides`, and an empty
+  override array reads as the base's field; normalisation enforces both
+  and tests assert them.
 - `overrides` is sorted, unique, and every index is `< count`.
 - A list with `count <= 1` has no overrides.
 - A whole-object write never changes an overriding entry. A per-face write
   never changes `base`.
-- Consumers read the dense fields only. Nothing in `Gui/`, the exporters or
-  the renderer branches on `overrides`; the property editor and the two
-  task panels are the only readers, and they read it to say which faces are
-  painted.
+- Consumers read through the resolving accessors only. Nothing in `Gui/`,
+  the exporters or the renderer branches on `overrides`; the property
+  editor and the two task panels are the only readers, and they read it to
+  say which faces are painted.
