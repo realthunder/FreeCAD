@@ -1,0 +1,363 @@
+#include "ImageMarshal.h"
+
+#include <cstdint>
+
+#include <Base/BoundBoxPy.h>
+#include <Base/MatrixPy.h>
+#include <Base/PlacementPy.h>
+#include <Base/QuantityPy.h>
+#include <Base/RotationPy.h>
+#include <Base/UnitPy.h>
+#include <Base/VectorPy.h>
+
+#include "FcxWire.h"
+
+using nlohmann::json;
+
+namespace FcxImage
+{
+
+PyObject* handleType()
+{
+    // A plain Python class: instances carry _id/_ty in their __dict__.
+    static PyObject* type;
+    if (!type) {
+        PyObject* ns = PyDict_New();
+        if (!ns)
+            return nullptr;
+        PyDict_SetItemString(ns, "__builtins__", PyEval_GetBuiltins());
+        PyObject* r = PyRun_String(
+            "class HostHandle:\n"
+            "    __slots__ = ('_id', '_ty')\n"
+            "    def __repr__(self):\n"
+            "        return '<HostHandle %s #%d>' % (self._ty, self._id)\n",
+            Py_file_input, ns, ns);
+        Py_XDECREF(r);
+        type = PyDict_GetItemString(ns, "HostHandle");
+        Py_XINCREF(type);
+        Py_DECREF(ns);
+    }
+    return type;
+}
+
+static bool getDoubles(const json& arr, double* out, size_t n)
+{
+    if (!arr.is_array() || arr.size() != n)
+        return false;
+    for (size_t i = 0; i < n; ++i) {
+        if (!arr[i].is_number())
+            return false;
+        out[i] = arr[i].get<double>();
+    }
+    return true;
+}
+
+PyObject* decodeValue(const json& v)
+{
+    switch (v.type()) {
+        case json::value_t::null:
+            Py_RETURN_NONE;
+        case json::value_t::boolean:
+            return PyBool_FromLong(v.get<bool>());
+        case json::value_t::number_integer:
+            return PyLong_FromLongLong(v.get<int64_t>());
+        case json::value_t::number_unsigned:
+            return PyLong_FromUnsignedLongLong(v.get<uint64_t>());
+        case json::value_t::number_float:
+            return PyFloat_FromDouble(v.get<double>());
+        case json::value_t::string: {
+            const auto& s = v.get_ref<const std::string&>();
+            return PyUnicode_FromStringAndSize(s.data(), (Py_ssize_t)s.size());
+        }
+        case json::value_t::binary: {
+            const auto& b = v.get_binary();
+            return PyBytes_FromStringAndSize(
+                reinterpret_cast<const char*>(b.data()), (Py_ssize_t)b.size());
+        }
+        case json::value_t::array: {
+            PyObject* list = PyList_New((Py_ssize_t)v.size());
+            if (!list)
+                return nullptr;
+            Py_ssize_t i = 0;
+            for (const auto& item : v) {
+                PyObject* obj = decodeValue(item);
+                if (!obj) {
+                    Py_DECREF(list);
+                    return nullptr;
+                }
+                PyList_SET_ITEM(list, i++, obj);
+            }
+            return list;
+        }
+        case json::value_t::object:
+            break;  // fall through to the typed/map handling below
+        default:
+            PyErr_SetString(PyExc_ValueError, "unsupported wire value");
+            return nullptr;
+    }
+
+    auto tag = v.find(FcxWire::TagKey);
+    if (tag == v.end()) {
+        // plain map
+        PyObject* dict = PyDict_New();
+        if (!dict)
+            return nullptr;
+        for (auto it = v.begin(); it != v.end(); ++it) {
+            PyObject* obj = decodeValue(it.value());
+            if (!obj || PyDict_SetItemString(dict, it.key().c_str(), obj) < 0) {
+                Py_XDECREF(obj);
+                Py_DECREF(dict);
+                return nullptr;
+            }
+            Py_DECREF(obj);
+        }
+        return dict;
+    }
+
+    const std::string& t = tag->get_ref<const std::string&>();
+    if (t == FcxWire::TagVector) {
+        double d[3];
+        if (getDoubles(v.value("v", json()), d, 3))
+            return new Base::VectorPy(Base::Vector3d(d[0], d[1], d[2]));
+    }
+    else if (t == FcxWire::TagRotation) {
+        double d[4];
+        if (getDoubles(v.value("v", json()), d, 4))
+            return new Base::RotationPy(Base::Rotation(d[0], d[1], d[2], d[3]));
+    }
+    else if (t == FcxWire::TagPlacement) {
+        double p[3], r[4];
+        if (getDoubles(v.value("p", json()), p, 3)
+                && getDoubles(v.value("r", json()), r, 4))
+            return new Base::PlacementPy(Base::Placement(
+                Base::Vector3d(p[0], p[1], p[2]),
+                Base::Rotation(r[0], r[1], r[2], r[3])));
+    }
+    else if (t == FcxWire::TagMatrix) {
+        double m[16];
+        if (getDoubles(v.value("v", json()), m, 16))
+            return new Base::MatrixPy(Base::Matrix4D(
+                m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9],
+                m[10], m[11], m[12], m[13], m[14], m[15]));
+    }
+    else if (t == FcxWire::TagBoundBox) {
+        double b[6];
+        if (getDoubles(v.value("v", json()), b, 6))
+            return new Base::BoundBoxPy(new Base::BoundBox3d(
+                b[0], b[1], b[2], b[3], b[4], b[5]));
+    }
+    else if (t == FcxWire::TagQuantity) {
+        auto val = v.find("v");
+        auto unit = v.find("u");
+        if (val != v.end() && val->is_number() && unit != v.end()
+                && unit->is_array() && unit->size() == 8) {
+            int8_t e[8];
+            for (size_t i = 0; i < 8; ++i) {
+                if (!(*unit)[i].is_number_integer())
+                    goto bad;
+                e[i] = (int8_t)(*unit)[i].get<int>();
+            }
+            return new Base::QuantityPy(new Base::Quantity(
+                val->get<double>(),
+                Base::Unit(e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7])));
+        }
+    }
+    else if (t == FcxWire::TagHandle) {
+        auto id = v.find("id");
+        auto ty = v.find("ty");
+        PyObject* type = handleType();
+        if (type && id != v.end() && id->is_number_integer() && ty != v.end()
+                && ty->is_string()) {
+            PyObject* inst = PyObject_CallNoArgs(type);
+            if (!inst)
+                return nullptr;
+            PyObject* pid = PyLong_FromUnsignedLongLong(id->get<uint64_t>());
+            PyObject* pty = PyUnicode_FromString(
+                ty->get_ref<const std::string&>().c_str());
+            int rc = (pid && pty) ? PyObject_SetAttrString(inst, "_id", pid)
+                                  : -1;
+            if (rc == 0)
+                rc = PyObject_SetAttrString(inst, "_ty", pty);
+            Py_XDECREF(pid);
+            Py_XDECREF(pty);
+            if (rc != 0) {
+                Py_DECREF(inst);
+                return nullptr;
+            }
+            return inst;
+        }
+    }
+bad:
+    PyErr_SetString(PyExc_ValueError, "malformed typed wire value");
+    return nullptr;
+}
+
+static json encodeUnit(const Base::Unit& u)
+{
+    const Base::UnitSignature& s = u.getSignature();
+    return json::array({s.Length, s.Mass, s.Time, s.ElectricCurrent,
+                        s.ThermodynamicTemperature, s.AmountOfSubstance,
+                        s.LuminousIntensity, s.Angle});
+}
+
+bool encodeValue(PyObject* obj, json& out, std::string& err)
+{
+    if (obj == Py_None) {
+        out = nullptr;
+        return true;
+    }
+    if (PyBool_Check(obj)) {  // before the int check: bool stays bool
+        out = (obj == Py_True);
+        return true;
+    }
+    if (PyLong_Check(obj)) {
+        int overflow = 0;
+        long long v = PyLong_AsLongLongAndOverflow(obj, &overflow);
+        if (overflow == 0 && !PyErr_Occurred()) {
+            out = (int64_t)v;
+            return true;
+        }
+        PyErr_Clear();
+        unsigned long long u = PyLong_AsUnsignedLongLong(obj);
+        if (!PyErr_Occurred()) {
+            out = (uint64_t)u;
+            return true;
+        }
+        PyErr_Clear();
+        err = "integer result does not fit the wire (64-bit)";
+        return false;
+    }
+    if (PyFloat_Check(obj)) {
+        out = PyFloat_AS_DOUBLE(obj);
+        return true;
+    }
+    if (PyUnicode_Check(obj)) {
+        Py_ssize_t n = 0;
+        const char* s = PyUnicode_AsUTF8AndSize(obj, &n);
+        if (!s) {
+            PyErr_Clear();
+            err = "string result is not UTF-8 representable";
+            return false;
+        }
+        out = std::string(s, (size_t)n);
+        return true;
+    }
+    if (PyBytes_Check(obj)) {
+        out = json::binary(std::vector<uint8_t>(
+            (uint8_t*)PyBytes_AS_STRING(obj),
+            (uint8_t*)PyBytes_AS_STRING(obj) + PyBytes_GET_SIZE(obj)));
+        return true;
+    }
+    if (PyObject_TypeCheck(obj, &Base::VectorPy::Type)) {
+        const Base::Vector3d& v =
+            *static_cast<Base::VectorPy*>(obj)->getVectorPtr();
+        out = {{FcxWire::TagKey, FcxWire::TagVector},
+               {"v", json::array({v.x, v.y, v.z})}};
+        return true;
+    }
+    if (PyObject_TypeCheck(obj, &Base::RotationPy::Type)) {
+        double q0, q1, q2, q3;
+        static_cast<Base::RotationPy*>(obj)->getRotationPtr()->getValue(
+            q0, q1, q2, q3);
+        out = {{FcxWire::TagKey, FcxWire::TagRotation},
+               {"v", json::array({q0, q1, q2, q3})}};
+        return true;
+    }
+    if (PyObject_TypeCheck(obj, &Base::PlacementPy::Type)) {
+        const Base::Placement& p =
+            *static_cast<Base::PlacementPy*>(obj)->getPlacementPtr();
+        const Base::Vector3d& t = p.getPosition();
+        double q0, q1, q2, q3;
+        p.getRotation().getValue(q0, q1, q2, q3);
+        out = {{FcxWire::TagKey, FcxWire::TagPlacement},
+               {"p", json::array({t.x, t.y, t.z})},
+               {"r", json::array({q0, q1, q2, q3})}};
+        return true;
+    }
+    if (PyObject_TypeCheck(obj, &Base::MatrixPy::Type)) {
+        const Base::Matrix4D& m =
+            *static_cast<Base::MatrixPy*>(obj)->getMatrixPtr();
+        json arr = json::array();
+        for (int r = 0; r < 4; ++r)
+            for (int c = 0; c < 4; ++c)
+                arr.push_back(m[r][c]);
+        out = {{FcxWire::TagKey, FcxWire::TagMatrix}, {"v", std::move(arr)}};
+        return true;
+    }
+    if (PyObject_TypeCheck(obj, &Base::BoundBoxPy::Type)) {
+        const Base::BoundBox3d& b =
+            *static_cast<Base::BoundBoxPy*>(obj)->getBoundBoxPtr();
+        out = {{FcxWire::TagKey, FcxWire::TagBoundBox},
+               {"v", json::array({b.MinX, b.MinY, b.MinZ,
+                                  b.MaxX, b.MaxY, b.MaxZ})}};
+        return true;
+    }
+    if (PyObject_TypeCheck(obj, &Base::QuantityPy::Type)) {
+        const Base::Quantity& q =
+            *static_cast<Base::QuantityPy*>(obj)->getQuantityPtr();
+        out = {{FcxWire::TagKey, FcxWire::TagQuantity},
+               {"v", q.getValue()},
+               {"u", encodeUnit(q.getUnit())}};
+        return true;
+    }
+    PyObject* htype = handleType();
+    if (htype && PyObject_IsInstance(obj, htype) == 1) {
+        PyObject* pid = PyObject_GetAttrString(obj, "_id");
+        PyObject* pty = PyObject_GetAttrString(obj, "_ty");
+        bool ok = pid && pty && PyLong_Check(pid) && PyUnicode_Check(pty);
+        if (ok)
+            out = {{FcxWire::TagKey, FcxWire::TagHandle},
+                   {"id", (uint64_t)PyLong_AsUnsignedLongLong(pid)},
+                   {"ty", std::string(PyUnicode_AsUTF8(pty))}};
+        Py_XDECREF(pid);
+        Py_XDECREF(pty);
+        if (ok)
+            return true;
+        PyErr_Clear();
+        err = "malformed host handle";
+        return false;
+    }
+    if (PyList_Check(obj) || PyTuple_Check(obj)) {
+        PyObject* seq = PySequence_Fast(obj, "sequence");
+        if (!seq) {
+            PyErr_Clear();
+            err = "unreadable sequence result";
+            return false;
+        }
+        json arr = json::array();
+        Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
+        for (Py_ssize_t i = 0; i < n; ++i) {
+            json item;
+            if (!encodeValue(PySequence_Fast_GET_ITEM(seq, i), item, err)) {
+                Py_DECREF(seq);
+                return false;
+            }
+            arr.push_back(std::move(item));
+        }
+        Py_DECREF(seq);
+        out = std::move(arr);
+        return true;
+    }
+    if (PyDict_Check(obj)) {
+        json map = json::object();
+        PyObject *key = nullptr, *value = nullptr;
+        Py_ssize_t pos = 0;
+        while (PyDict_Next(obj, &pos, &key, &value)) {
+            if (!PyUnicode_Check(key)) {
+                err = "dict result with a non-string key";
+                return false;
+            }
+            json item;
+            if (!encodeValue(value, item, err))
+                return false;
+            map[PyUnicode_AsUTF8(key)] = std::move(item);
+        }
+        out = std::move(map);
+        return true;
+    }
+    err = std::string("result of type '") + Py_TYPE(obj)->tp_name
+        + "' does not marshal by value";
+    return false;
+}
+
+}  // namespace FcxImage

@@ -30,7 +30,9 @@
 #include <atomic>
 #include <chrono>
 #include <map>
+#ifndef __wasi__
 #include <mutex>
+#endif
 #include <set>
 #include <string>
 #include <sstream>
@@ -1007,7 +1009,17 @@ private:
     // so on the main thread while TechDraw logs OCCT failures from QtConcurrent
     // workers -- so every access goes through _observerMutex.
     std::set<ILogger*> _aclObservers;
+#ifdef __wasi__
+    // Single-threaded sandbox image build: wasi libc++ has no std::mutex.
+    struct NullMutex
+    {
+        void lock() {}
+        void unlock() {}
+    };
+    mutable NullMutex _observerMutex;
+#else
     mutable std::mutex _observerMutex;
+#endif
     // Observers detached while a notification was in flight, destroyed once it
     // is safe. Guarded by _observerMutex.
     std::vector<ILogger*> _retiredObservers;
