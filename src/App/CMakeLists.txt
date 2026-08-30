@@ -165,7 +165,6 @@ SET(Document_CPP_SRCS
     DocumentObserver.cpp
     DocumentObserverPython.cpp
     DocumentPyImp.cpp
-    Expression.cpp
     ExpressionDocumentOps.cpp
     ExpressionTokenizer.cpp
     FeaturePython.cpp
@@ -190,7 +189,6 @@ SET(Document_CPP_SRCS
     Placement.cpp
     ProjectFile.cpp
     OriginFeature.cpp
-    Range.cpp
     Transactions.cpp
     TransactionalObject.cpp
     VRMLObject.cpp
@@ -267,7 +265,6 @@ SOURCE_GROUP("Document" FILES ${Document_SRCS})
 # The property stuff
 SET(Properties_CPP_SRCS
     DynamicProperty.cpp
-    ObjectIdentifier.cpp
     Property.cpp
     PropertyContainer.cpp
     PropertyContainerPyImp.cpp
@@ -364,7 +361,32 @@ if(FREECAD_USE_PCH)
     ADD_MSVC_PRECOMPILED_HEADER(FreeCADApp PreCompiled.h PreCompiled.cpp FreeCADApp_CPP_SRCS)
 endif(FREECAD_USE_PCH)
 
-add_library(FreeCADApp SHARED ${FreeCADApp_SRCS})
+# The expression evaluation core, as its own object library so the sandbox
+# carve-out (docs/ExpressionSandbox.md sec 8.1, docs/ExpressionSandboxPhase0.md
+# sec 2) has a named target whose dependency discipline can ratchet: these TUs
+# are meant to eventually compile without Qt, the property/link system or
+# document persistence. Their document-maintenance and persistence-restore
+# halves live in ExpressionDocumentOps.cpp, which stays in FreeCADApp proper.
+# The generated headers are listed so their custom commands order before this
+# target's compiles.
+SET(ExpressionCore_CPP_SRCS
+    Expression.cpp
+    ObjectIdentifier.cpp
+    Range.cpp
+)
+SOURCE_GROUP("ExpressionCore" FILES ${ExpressionCore_CPP_SRCS})
+add_library(ExpressionCore OBJECT
+    ${ExpressionCore_CPP_SRCS}
+    ${CMAKE_CURRENT_BINARY_DIR}/ExpressionPy.h
+    ${CMAKE_CURRENT_BINARY_DIR}/DocumentObjectPy.h
+)
+# The objects link into the FreeCADApp shared library. Linking the same
+# libraries only propagates their usage requirements (include dirs, defines)
+# to these compiles; the object library itself produces no link artifact.
+set_target_properties(ExpressionCore PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(ExpressionCore ${FreeCADApp_LIBS})
+
+add_library(FreeCADApp SHARED ${FreeCADApp_SRCS} $<TARGET_OBJECTS:ExpressionCore>)
 target_link_libraries(FreeCADApp ${FreeCADApp_LIBS})
 
 add_dependencies(FreeCADApp fc_version)

@@ -6983,21 +6983,6 @@ Py::Object FromStatement::_getPyValue(int *) const {
 
 ////////////////////////////////////////////////////////////////////////////////////
 
-static Base::XMLReader *_Reader = nullptr;
-ExpressionParser::ExpressionImporter::ExpressionImporter(Base::XMLReader &reader) {
-    assert(!_Reader);
-    _Reader = &reader;
-}
-
-ExpressionParser::ExpressionImporter::~ExpressionImporter() {
-    assert(_Reader);
-    _Reader = nullptr;
-}
-
-Base::XMLReader *ExpressionParser::ExpressionImporter::reader() {
-    return _Reader;
-}
-
 namespace App {
 
 namespace ExpressionParser {
