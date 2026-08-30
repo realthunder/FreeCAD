@@ -12,7 +12,7 @@ as "the primary tree"; that was wrong.
 | Suite | Result |
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
-| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **445 of 445 passing**, 0 failures, 1 ctest entry disabled |
+| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **456 of 456 passing**, 0 failures, 1 ctest entry disabled |
 
 The C++ side had never been fully green before this date: four of its
 targets did not link at all. What was actually wrong with each is recorded
@@ -57,7 +57,7 @@ One binary directly, which is the fastest loop while working on a suite:
 
     ./tests/src/Mod/Part/TopoShapeEx_tests_run --gtest_filter='*makEBoolean*'
 
-## 2. Why ctest says 445 and the binaries add up to 1292
+## 2. Why ctest says 456 and the binaries add up to 1303
 
 Both numbers are right; they count different things.
 
@@ -66,20 +66,20 @@ Both numbers are right; they count different things.
 and its own process. Every other suite is registered with a plain
 `add_test(NAME X COMMAND X)`, so the whole binary is one entry.
 
-    420 expanded cases (Tests_run 324, Material 34, Part 36, Sketcher 18,
+    431 expanded cases (Tests_run 335, Material 34, Part 36, Sketcher 18,
                         Mesh 7, Points 1)
     +  1 disabled entry (Part_tests_run's DISABLED_testHistory)
     + 25 whole-binary entries
-    = 446 registered, 445 run
+    = 457 registered, 456 run
 
 Counting individual test cases instead, across all 31 binaries, gives
-**1292 passing**.
+**1303 passing**.
 
 ## 3. The C++ suites
 
 | Binary | Cases | Notes |
 |---|---|---|
-| `Tests_run` | 324 | The legacy suite: Base and App |
+| `Tests_run` | 335 | The legacy suite: Base and App (incl. the 11 ExpressionSecurity contract cases, 2026-08-30) |
 | `src/App/Toponaming_tests_run` | 256 | Element map, MappedName, IndexedName |
 | `src/App/PropertyMaterialList_tests_run` | 88 | |
 | `src/Mod/Part/TopoShapeEx_tests_run` | 86 | +3 disabled, section 4 |

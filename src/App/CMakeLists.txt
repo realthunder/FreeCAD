@@ -61,6 +61,7 @@ include_directories(
     ${CMAKE_BINARY_DIR}
     ${CMAKE_BINARY_DIR}/src
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/3rdParty/json/single_include
     ${CMAKE_CURRENT_BINARY_DIR}
     ${Boost_INCLUDE_DIRS}
     ${PYTHON_INCLUDE_DIRS}
@@ -82,6 +83,15 @@ list(APPEND FreeCADApp_LIBS
         ${QtCore_LIBRARIES}
         ${QtXml_LIBRARIES}
 )
+
+# The binding generators need only python and the .xml (their DEPENDS are
+# complete), but CMake still gives their custom commands order-only deps on
+# the WHOLE dependency closure of the target they attach to (FreeCADApp).
+# With the ExpressionCore object library in that closure, and ExpressionCore
+# TUs including these generated headers, that implicit edge is a ninja
+# dependency cycle. Scope it off for the generation commands (CMake >= 3.27;
+# older CMake ignores the variable and would re-hit the cycle).
+set(CMAKE_ADD_CUSTOM_COMMAND_DEPENDS_EXPLICIT_ONLY ON)
 
 generate_from_xml(DocumentPy)
 generate_from_xml(DocumentObjectPy)
@@ -110,6 +120,8 @@ generate_from_xml(MaterialListPy)
 
 generate_embed_from_py(FreeCADInit InitScript.h)
 generate_embed_from_py(FreeCADTest TestScript.h)
+
+set(CMAKE_ADD_CUSTOM_COMMAND_DEPENDS_EXPLICIT_ONLY OFF)
 
 SET(FreeCADApp_XML_SRCS
     ExtensionPy.xml
@@ -166,6 +178,7 @@ SET(Document_CPP_SRCS
     DocumentObserverPython.cpp
     DocumentPyImp.cpp
     ExpressionDocumentOps.cpp
+    ExpressionSecurity.cpp
     ExpressionTokenizer.cpp
     FeaturePython.cpp
     FeatureTest.cpp
@@ -221,6 +234,7 @@ SET(Document_HPP_SRCS
     DocumentObserver.h
     DocumentObserverPython.h
     Expression.h
+    ExpressionSecurity.h
     ExpressionParser.h
     ExpressionTokenizer.h
     ExpressionVisitors.h
@@ -383,7 +397,13 @@ add_library(ExpressionCore OBJECT
 # The objects link into the FreeCADApp shared library. Linking the same
 # libraries only propagates their usage requirements (include dirs, defines)
 # to these compiles; the object library itself produces no link artifact.
-set_target_properties(ExpressionCore PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# The core is meant to be Qt-free, so no moc machinery either.
+set_target_properties(ExpressionCore PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+)
 target_link_libraries(ExpressionCore ${FreeCADApp_LIBS})
 
 add_library(FreeCADApp SHARED ${FreeCADApp_SRCS} $<TARGET_OBJECTS:ExpressionCore>)
