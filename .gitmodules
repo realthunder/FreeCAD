@@ -10,3 +10,6 @@
 [submodule "src/3rdParty/cycles"]
 	path = src/3rdParty/cycles
 	url = https://github.com/realthunder/cycles.git
+[submodule "src/3rdParty/MaterialX"]
+	path = src/3rdParty/MaterialX
+	url = https://github.com/AcademySoftwareFoundation/MaterialX.git

@@ -159,6 +159,19 @@ macro(InitializeFreeCADBuildOptions)
                             "checked out (git submodule update --init "
                             "src/3rdParty/cycles).")
     endif()
+    # MaterialX: the node-graph material description language both
+    # renderer back-ends read (docs/CyclesIntegration.md sec 8 item 15
+    # phase B). ON like bgfx rather than asked for like Cycles -- Core,
+    # Format, GenShader and GenGlsl have no external dependency at all
+    # -- and degraded into rather than fatal, because the engine lives
+    # in a submodule a plain clone does not have.
+    option(BUILD_MATERIALX "Build MaterialX material-graph support" ON)
+    if(BUILD_MATERIALX AND NOT EXISTS "${CMAKE_SOURCE_DIR}/src/3rdParty/MaterialX/CMakeLists.txt")
+        message(WARNING "BUILD_MATERIALX is ON but the MaterialX submodule is "
+                        "not checked out (git submodule update --init "
+                        "src/3rdParty/MaterialX); building without it.")
+        set(BUILD_MATERIALX OFF)
+    endif()
     option(BUILD_DILIGENT_SAMPLES "Build DiligentEngine samples" OFF)
     option(ENABLE_DEVELOPER_TESTS "Build the FreeCAD unit tests suit" OFF)
 

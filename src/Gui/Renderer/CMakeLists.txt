@@ -4,9 +4,9 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 file(GLOB CMakeCache RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}/CMakeCache.txt)
 
-set(Renderer_Headers Renderer.h Environment.h Page2D.h Page2DWire.h DrawDevice.h DrawSurface.h FrameImageConsumer.h FrameStreamWire.h SceneDump.h SceneLadder.h ProxyHierarchy.h ProxyStore.h OcclusionCull.h MaskedOcclusion.h Simd4.h CullBenefit.h MeshSimplify.h OccluderMesh.h MeshSource.h SceneServer.h)
+set(Renderer_Headers Renderer.h MaterialXSupport.h Environment.h Page2D.h Page2DWire.h DrawDevice.h DrawSurface.h FrameImageConsumer.h FrameStreamWire.h SceneDump.h SceneLadder.h ProxyHierarchy.h ProxyStore.h OcclusionCull.h MaskedOcclusion.h Simd4.h CullBenefit.h MeshSimplify.h OccluderMesh.h MeshSource.h SceneServer.h)
 set(Renderer_HPP_SRCS ${Renderer_Headers})
-set(Renderer_CPP_SRCS Renderer.cpp Environment.cpp Page2D.cpp Page2DWire.cpp DrawDevice.cpp FrameImageConsumer.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp ProxyStore.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp OccluderMesh.cpp MeshSource.cpp SceneServer.cpp)
+set(Renderer_CPP_SRCS Renderer.cpp MaterialXSupport.cpp Environment.cpp Page2D.cpp Page2DWire.cpp DrawDevice.cpp FrameImageConsumer.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp ProxyStore.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp OccluderMesh.cpp MeshSource.cpp SceneServer.cpp)
 set(Renderer_LIBS FreeCADBase
                   ${QtCore_LIBRARIES}
                   ${QtWidgets_LIBRARIES}
@@ -72,6 +72,19 @@ if(BUILD_DILIGENT)
 
 endif(BUILD_DILIGENT)
 
+# MaterialX (docs/CyclesIntegration.md sec 8 item 15 phase B). Like the
+# Cycles unit below, MaterialXSupport.cpp compiles either way -- with
+# the library it is the real thing, without it the stub that reports
+# the support absent -- so only the flag and the libraries are
+# conditional. PRIVATE: MaterialXSupport.h names no MaterialX type, so
+# nothing outside this library needs its headers.
+if(BUILD_MATERIALX)
+    list(APPEND Renderer_HPP_SRCS MaterialXSupportP.h)
+    list(APPEND Renderer_PRIVATE_LIBS MaterialXCore MaterialXFormat
+                                      MaterialXGenShader MaterialXGenGlsl)
+    add_definitions(-DHAVE_MATERIALX)
+endif()
+
 # The Cycles unit (docs/CyclesIntegration.md). One source either way:
 # built with the engine it is an object library of its own, because the
 # Cycles headers come with the SSE4.2 flags and feature defines that
@@ -89,6 +102,14 @@ if(BUILD_CYCLES)
     # FreeCADRenderer_EXPORTS: the objects land in the FreeCADRenderer
     # shared library, so RendererExport has to mean export here too.
     target_compile_definitions(FreeCADRendererCycles PRIVATE HAVE_CYCLES FreeCADRenderer_EXPORTS)
+    # add_definitions(-DHAVE_MATERIALX) above reaches this target too
+    # (same directory), so it must be able to include the headers that
+    # define promises: the interpreter of a MaterialX graph into ccl
+    # nodes lives in CyclesScene.cpp.
+    if(BUILD_MATERIALX)
+        target_link_libraries(FreeCADRendererCycles PRIVATE MaterialXCore
+                                                           MaterialXFormat)
+    endif()
     set_target_properties(FreeCADRendererCycles PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
