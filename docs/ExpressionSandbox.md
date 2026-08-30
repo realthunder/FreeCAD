@@ -786,6 +786,10 @@ ships, the audit above stands.
 
 ## 10. Sequencing (this is the point of doing it first)
 
+STATUS 2026-08-30: Phase 0 is DONE -- the audits, the frozen
+contracts, the measurement, and the architecture-A verdict are in
+docs/ExpressionSandboxPhase0.md (rigs: scripts/expr-phase0/).
+
 - **Phase 0 -- boundary audit + marshalling contract.** Enumerate
   every site where the C++ interpreter enters CPython (the sec 1
   chokepoints: `getModule`, callable execution, `getPyValue` on
