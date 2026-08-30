@@ -77,11 +77,25 @@ uniform vec4 u_glassParams;
  * vertex measured 5.6 x 14.5 at r/R 0.81 (scripts/lens_point_aniso.py).
  * The mean branch now only catches a degenerate axis.
  *
- * aux.z is the decoration's view depth: a decoration in front of the
- * entry interface is not seen through it (it draws undistorted in
- * ViewGlassLine), but the writer can only make that call where its own
- * texel has glass -- this sample was taken wherever REFRACTION landed,
- * so the call is remade here against this pixel's own entry depth.
+ * aux.z answers "is this decoration behind the glass", in two forms the
+ * writer picks between and the SIGN tells apart:
+ *
+ *   > 0  the decoration's own texel had glass and the writer already
+ *        proved it is behind that entry. The value is the CLEARANCE.
+ *        Nothing to decide here.
+ *   < 0  no glass over its texel, so the writer could not decide --
+ *        this sample was taken wherever REFRACTION landed. The value
+ *        is -viewZ and the call is made here, against this pixel's own
+ *        entry depth, with a relative epsilon sized to 16F's step.
+ *
+ * The epsilon governs only the second form now, which is what it was
+ * always meant for. It used to govern both, and that erased things: it
+ * and the 16F step both scale with the CAMERA's view depth, which
+ * fitAll takes from the whole document, so a small glass part in a
+ * large assembly lost every decoration near its entry surface -- 3.7mm
+ * of it in a 3m document, the entire body in a 30m one, and zooming in
+ * did not help because an orthographic zoom does not move the camera
+ * (scripts/glass_entry_epsilon.py).
  *
  * An untouched texel decodes to the full radius and returns through
  * the support guard, which also caps what compression the method can
@@ -94,7 +108,10 @@ float fcLineSdfCoverage(float stored, vec4 aux, float entry,
 	float dc = FC_LINE_SDF_RADIUS - stored;
 	if (dc > FC_LINE_SDF_RADIUS - 1.5)
 		return 0.0;
-	if (aux.z <= entry + 1.0e-3 * max(abs(entry), 1.0))
+	// A positive aux.z is a clearance the writer already verified; only
+	// a negative one carries a raw depth this pass has to judge.
+	if (aux.z < 0.0
+	    && -aux.z <= entry + 1.0e-3 * max(abs(entry), 1.0))
 		return 0.0;
 	float alen = length(aux.xy);
 	float s;

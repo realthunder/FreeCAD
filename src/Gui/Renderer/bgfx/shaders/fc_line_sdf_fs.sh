@@ -48,6 +48,41 @@ void main()
 	if (gfront.w > 0.5 && fragZ <= gfront.z)
 		discard;
 
+	// What aux.z carries for the reader's front/behind call, in two
+	// forms distinguished by SIGN:
+	//
+	//   > 0  this texel HAS glass, and the discard above already
+	//        proved the fragment is behind its entry. The value is the
+	//        CLEARANCE, fragZ - entry.
+	//   < 0  no glass over this texel. The value is -fragZ, and the
+	//        reader has to make the call itself against its own entry.
+	//
+	// Absolute view depth used to be stored in both cases, and it
+	// cannot survive the trip: aux.z rides 16F, whose step near a view
+	// depth Z is about Z/2048, and the reader compares it to the entry
+	// with a 1e-3 relative epsilon sized for exactly that. Both scale
+	// with the CAMERA's distance, which fitAll sets from the whole
+	// document -- so a small glass part in a big assembly went blind.
+	// Measured (scripts/glass_entry_epsilon.py): a 60mm slab lost
+	// every decoration within 0.037mm of its entry surface in a 60mm
+	// document, 3.7mm in a 3m one, and at 30m the dead band swallowed
+	// the entire 20mm body. Zooming in did not help, because an
+	// orthographic zoom does not move the camera.
+	//
+	// A clearance does not have that problem: it is millimetres, so
+	// 16F resolves it to microns however far away the camera is, and
+	// the comparison it comes from was made here in full float.
+	//
+	// Sign, not a flag bit, because the aux target is filtered: a flag
+	// would blend to a meaningless in-between at every texel where two
+	// decorations meet, while a blend of two clearances is a clearance
+	// and a blend of two depths is a depth. Only the on/off-footprint
+	// boundary blends across the sign, one texel wide at a glass
+	// silhouette, and it errs toward DRAWING the decoration -- which
+	// is the benign direction, the bug being fixed here is one that
+	// erased them.
+	float auxZ = gfront.w > 0.5 ? (fragZ - gfront.z) : -fragZ;
+
 	float halfw = 0.5 * max(u_params.y, 1.0);
 #ifdef POINT_SDF
 	// A point sprite is a screen-aligned SQUARE (glPointSize's shape,
@@ -128,5 +163,5 @@ void main()
 	// behind-the-glass test, and the half width to threshold against,
 	// which no derivative can tell it.
 	gl_FragData[0] = vec4(base.rgb, FC_LINE_SDF_RADIUS - dc);
-	gl_FragData[1] = vec4(axis, fragZ, halfw);
+	gl_FragData[1] = vec4(axis, auxZ, halfw);
 }
