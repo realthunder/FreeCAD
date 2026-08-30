@@ -1058,6 +1058,28 @@ QString MaterialIcons::resourceName(const QString& materialName)
                                                                          QStringLiteral("_"));
 }
 
+QIcon MaterialIcons::patternIcon(const QString& key, const QString& materialName)
+{
+    auto it = _cache.find(key);
+    if (it != _cache.end()) {
+        return it->second;
+    }
+    // No digest: a swatch is drawn from the hatch definition, not from an
+    // App::Material, so there is nothing for the staleness guard to
+    // compare and the file is taken as it stands.
+    return fromResource(key, patternResourceName(materialName), QString());
+}
+
+QString MaterialIcons::patternResourceName(const QString& materialName)
+{
+    if (materialName.isEmpty()) {
+        return {};
+    }
+    static const QRegularExpression unsafe(QStringLiteral("[^A-Za-z0-9._-]+"));
+    return QStringLiteral("Pattern_")
+        + QString(materialName).replace(unsafe, QStringLiteral("_"));
+}
+
 QString MaterialIcons::sharedResourceName(const QString& digest)
 {
     if (digest.isEmpty()) {

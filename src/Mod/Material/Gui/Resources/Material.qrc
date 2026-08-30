@@ -78,5 +78,39 @@
         <!-- Plaster -->
         <file>icons/materials/Look_fb6921f6a97cf2794d24f20594a354785c03bc46.png</file>
         <!-- end rendered icons -->
+        <!-- drawn by scripts/pattern-icons.py -->
+        <file>icons/materials/Pattern_Diagonal4.png</file>
+        <file>icons/materials/Pattern_Diagonal5.png</file>
+        <file>icons/materials/Pattern_Diamond.png</file>
+        <file>icons/materials/Pattern_Diamond2.png</file>
+        <file>icons/materials/Pattern_Diamond4.png</file>
+        <file>icons/materials/Pattern_Horizontal5.png</file>
+        <file>icons/materials/Pattern_Square.png</file>
+        <file>icons/materials/Pattern_Vertical5.png</file>
+        <file>icons/materials/Pattern_aluminum.png</file>
+        <file>icons/materials/Pattern_brick01.png</file>
+        <file>icons/materials/Pattern_concrete.png</file>
+        <file>icons/materials/Pattern_cross.png</file>
+        <file>icons/materials/Pattern_cuprous.png</file>
+        <file>icons/materials/Pattern_diagonal1.png</file>
+        <file>icons/materials/Pattern_diagonal2.png</file>
+        <file>icons/materials/Pattern_earth.png</file>
+        <file>icons/materials/Pattern_general_steel.png</file>
+        <file>icons/materials/Pattern_glass.png</file>
+        <file>icons/materials/Pattern_hatch45L.png</file>
+        <file>icons/materials/Pattern_hatch45R.png</file>
+        <file>icons/materials/Pattern_hbone.png</file>
+        <file>icons/materials/Pattern_line.png</file>
+        <file>icons/materials/Pattern_plastic.png</file>
+        <file>icons/materials/Pattern_plus.png</file>
+        <file>icons/materials/Pattern_simple.png</file>
+        <file>icons/materials/Pattern_solid.png</file>
+        <file>icons/materials/Pattern_square.png</file>
+        <file>icons/materials/Pattern_steel.png</file>
+        <file>icons/materials/Pattern_titanium.png</file>
+        <file>icons/materials/Pattern_wood.png</file>
+        <file>icons/materials/Pattern_woodgrain.png</file>
+        <file>icons/materials/Pattern_zinc.png</file>
+        <!-- end pattern swatches -->
     </qresource>
 </RCC>

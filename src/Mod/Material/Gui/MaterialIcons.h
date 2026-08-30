@@ -172,6 +172,16 @@ public:
      */
     static QString sharedResourceName(const QString& digest);
 
+    /** The bundled swatch for a hatch pattern card, by its name
+     *
+     * A hatch is not a surface and cannot be rendered as one, so these
+     * are drawn flat and ahead of time (scripts/pattern-icons.py) and
+     * only ever looked up -- there is no render to fall back to, and a
+     * null icon means the caller should keep whatever it had.
+     */
+    QIcon patternIcon(const QString& key, const QString& materialName);
+    static QString patternResourceName(const QString& materialName);
+
     /// The digest of a material's appearance, as the bundled icons are
     /// named by. Public for the icon generator (MatGui.appearanceDigest),
     /// which has to group cards by look before it renders anything.
