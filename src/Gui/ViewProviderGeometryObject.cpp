@@ -118,10 +118,16 @@ ViewProviderGeometryObject::ViewProviderGeometryObject()
     mat.diffuseColor.set(r, g, b);
     mat.transparency = Base::fromPercent(initialTransparency);
     ADD_PROPERTY_TYPE(ShapeAppearance, (mat), osgroup, App::Prop_None, "Shape appearance");
-    ADD_PROPERTY_TYPE(ShapeMaterial, (mat), osgroup, App::Prop_None, "Shape material");
+    ADD_PROPERTY_TYPE(ShapeMaterial, (mat), osgroup, App::Prop_None,
+                      "Retired: a compatibility mirror of ShapeAppearance's base, "
+                      "and it shares its name with the material CARD on the object. "
+                      "Read ShapeAppearance instead");
     // Retired as a store; kept only so old macros and old documents still
-    // land somewhere. One datum should not be two rows in the editor.
+    // land somewhere. One datum should not be two rows in the editor -- and
+    // under "Show all", where this one does turn up, Legacy is what draws it
+    // in red italic (docs/MaterialStorage.md 15.6).
     ShapeMaterial.setStatus(App::Property::Hidden, true);
+    ShapeMaterial.setStatus(App::Property::Legacy, true);
     ADD_PROPERTY_TYPE(BoundingBox, (false), dogroup, App::Prop_None, "Display object bounding box");
 
     // Both names write through to the appearance from here on. Wired after

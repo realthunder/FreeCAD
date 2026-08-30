@@ -94,6 +94,13 @@ public:
                     // never writes it. Enforced during recompute, so consumers
                     // may read it without an ordering dependency.
                     // See docs/InputProperties.md.
+        Legacy = 19, // a compatibility name for a value that is really kept
+                     // somewhere else: it is here so that old macros and old
+                     // documents still land somewhere, and nothing new should
+                     // be built on it. Hidden as a rule, and drawn in red
+                     // italic under "Show all" so that a reader who goes
+                     // looking knows what it is.
+                     // See docs/MaterialStorage.md 15.6.
 
         // The following bits are corresponding to PropertyType set when the
         // property added. These types are meant to be static, and cannot be

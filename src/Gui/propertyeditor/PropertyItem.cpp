@@ -717,19 +717,27 @@ QVariant PropertyItem::data(int column, int role) const
         // promise the object makes, so show it. See docs/InputProperties.md.
         const bool isInput = propertyItems.size() == 1
             && propertyItems.front()->testStatus(App::Property::Input);
+        // A compatibility name for a value kept somewhere else. Hidden as a
+        // rule, so this is what a reader sees when "Show all" turns it up:
+        // red italic, meaning do not build on it (docs/MaterialStorage.md
+        // 15.6). The doc string says where the value really lives.
+        const bool isLegacy = propertyItems.size() == 1
+            && propertyItems.front()->testStatus(App::Property::Legacy);
 
         if (role == Qt::FontRole) {
-            // Both axes are set here rather than in two branches, so an item
-            // that is linked and input keeps both marks.
-            if (!linked && !isInput)
+            // Every axis is set here rather than in three branches, so an
+            // item that is linked and input keeps both marks.
+            if (!linked && !isInput && !isLegacy)
                 return {};
             QFont font;
-            font.setItalic(linked);
+            font.setItalic(linked || isLegacy);
             font.setBold(isInput);
             return font;
         }
         if (linked && role == Qt::ForegroundRole)
             return QVariant::fromValue(QColor(0x20,0xaa,0x20));
+        if (isLegacy && role == Qt::ForegroundRole)
+            return QVariant::fromValue(QColor(0xcc,0x33,0x33));
 
         if (role == Qt::BackgroundRole || role == Qt::ForegroundRole) {
             if(PropertyView::showAll()

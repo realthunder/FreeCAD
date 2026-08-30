@@ -806,6 +806,14 @@ in red italic when "Show all" is on, so a reader who finds it knows not to
 build on it. `ShapeColor` and `Transparency` are mirrors too, but they are
 the names every script uses and stay as they are.
 
+**What was built.** `App::Property::Legacy` is bit 19, set on the view
+provider's `ShapeMaterial` beside the Hidden it already carried, and its
+doc string now says what it is and what to read instead. The property
+editor draws a Legacy row in red italic, which is what a reader sees when
+"Show all" turns it up; the bit is spelled `"Legacy"` to
+`setPropertyStatus`, like every other one. `ShapeColor` and `Transparency`
+are mirrors too and stay as they are: they are the names every script uses.
+
 ### 15.7 Python
 
 `vp.ShapeAppearance.FollowMaterial`, read-write, on the same live view that

@@ -240,6 +240,7 @@ static const std::map<std::string, int> &getStatusMap() {
         statusMap["CopyOnChange"] = Property::CopyOnChange;
         statusMap["UserEdit"] = Property::UserEdit;
         statusMap["Input"] = Property::Input;
+        statusMap["Legacy"] = Property::Legacy;
     }
     return statusMap;
 }
