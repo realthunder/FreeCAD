@@ -23,11 +23,32 @@ in section 6.
 ### Python
 
     cd build/conda-relwithdebinfo-801
-    script -qec "~/works/sw/fcad/.conda/run.sh ./bin/FreeCADCmd -t 0" /dev/null > pytest.log
+    mkdir -p /tmp/fchome
+    QT_QPA_PLATFORM=offscreen PYTHONPATH=$HOME/works/sw/pyifc \
+      FREECAD_USER_HOME=/tmp/fchome \
+      script -qec "~/works/sw/fcad/.conda/run.sh ./bin/FreeCADCmd -t 0" /dev/null > pytest.log
 
-**The `script -qec ... /dev/null` wrapper is not optional.** `FreeCADCmd -t 0`
-needs a pty; without one a CAM sanity test dies on `[Errno 9] Bad file
-descriptor` and takes the rest of the run down with it.
+**Every part of that line is load-bearing** (verified 2026-08-30 by leaving
+each out):
+
+- `script -qec ... /dev/null`: `FreeCADCmd -t 0` needs a pty; without one a
+  CAM sanity test dies on `[Errno 9] Bad file descriptor` and takes the rest
+  of the run down with it.
+- `PYTHONPATH=$HOME/works/sw/pyifc`: supplies ifcopenshell (the fork's own
+  0.9 source build, staged there and RPATH-linked into
+  `~/works/sw/ifcopenshell-build-801`). `TestArch` imports it at module
+  level, so without it the whole ~280-test module collapses into one loader
+  error and the run shrinks to ~2349 tests. Do NOT fix this by
+  `conda install ifcopenshell` into `.conda/freecad`: the packaged build
+  depends on a conda `occt`, which must never enter the dev prefix (see the
+  smesh discussion in `docs/DevEnvironment.md`).
+- `FREECAD_USER_HOME=/tmp/fchome` (any scratch dir): keeps user-installed
+  addons out of the headless run. `~/.FreeCAD/Mod/FreeCAD_SketchArch` calls
+  `FreeCADGui.addCommand` at import time, which errors ~117 Arch tests
+  under `FreeCADCmd`.
+- The env also needs `pyyaml` and `ply` (CAM and FEM import them at module
+  level); they are pip-installed into `.conda/freecad` (2026-08-30) --
+  pip, not conda, so nothing else in the env is re-solved.
 
 A single module instead of everything: `FreeCADCmd -t TestPartApp`, or from
 the Python console `import Test; Test.runTestApp()`.
