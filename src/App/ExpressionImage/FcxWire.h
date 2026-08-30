@@ -28,7 +28,12 @@ namespace FcxWire
 // ops, host -> image
 inline const char* const OpEval = "eval";
 
-// ops, image -> host (mid-eval bridge; arrive with 4c/4d)
+// ops, image -> host (mid-eval bridge).  Request fields: "h" = handle
+// id (uint64), "a" = wire-encoded op argument (attr/prop name string
+// for get_attr/read_prop, args array for call, item key for get_item),
+// "k" = call kwargs map.  Transport is the two-call pattern on the
+// "fcx" import module: host_call(req,len)->reply_len, then
+// host_fetch(dst,cap) copies the pending reply (both -1 on failure).
 inline const char* const OpReadProp = "read_prop";
 inline const char* const OpGetAttr = "get_attr";
 inline const char* const OpCall = "call";

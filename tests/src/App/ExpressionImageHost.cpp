@@ -140,3 +140,170 @@ TEST_F(ExpressionImageHostTest, evalAfterErrorStillWorks)
     ASSERT_TRUE(good.ok) << good.excType << ": " << good.message;
     EXPECT_EQ(value(good).get<int64_t>(), 42);
 }
+
+// ---- image->host bridge ops (get_attr/call/get_item/len/release,
+// ---- ExpressionImageBridge.cpp): live host objects cross as handles ----
+
+#include <Python.h>
+
+#include <App/ExpressionSecurityRuntime.h>
+#include <Base/Interpreter.h>
+#include "InitApplication.h"
+
+class ExpressionImageBridgeTest: public ExpressionImageHostTest
+{
+protected:
+    void SetUp() override
+    {
+        tests::initApplication();
+        // never read or write the real user grants.json from tests
+        static bool redirected;
+        if (!redirected) {
+            redirected = true;
+            App::ExpressionSecurity::Runtime::instance().setPolicyFile(
+                std::string(std::tmpnam(nullptr)) + "-imgbridge-policy.json");
+        }
+        ExpressionImageHostTest::SetUp();  // may GTEST_SKIP
+    }
+
+    void TearDown() override
+    {
+        if (!IsSkipped())
+            ImageHost::instance().clearHandles();
+        ExpressionImageHostTest::TearDown();
+    }
+
+    /// Run python source, export ns[name] into the handle table.
+    static uint64_t exportFromSource(const char* source, const char* name)
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* ns = PyDict_New();
+        PyDict_SetItemString(ns, "__builtins__", PyEval_GetBuiltins());
+        PyObject* r = PyRun_String(source, Py_file_input, ns, ns);
+        if (!r)
+            PyErr_Print();
+        EXPECT_NE(r, nullptr) << "test object source failed";
+        Py_XDECREF(r);
+        PyObject* obj = PyDict_GetItemString(ns, name);  // borrowed
+        EXPECT_NE(obj, nullptr);
+        uint64_t id = obj ? ImageHost::instance().exportObject(obj) : 0;
+        Py_DECREF(ns);
+        return id;
+    }
+
+    static std::vector<unsigned char> handleBinding(const char* var,
+                                                    uint64_t id)
+    {
+        json b;
+        b[var] = {{"t", "h"}, {"id", id}, {"ty", "object"}};
+        auto v = json::to_cbor(b);
+        return {v.begin(), v.end()};
+    }
+};
+
+TEST_F(ExpressionImageBridgeTest, getAttrCrossesBridge)
+{
+    uint64_t id = exportFromSource("class T:\n"
+                                   "    answer = 42\n"
+                                   "o = T()\n", "o");
+    auto res = ImageHost::instance().eval("o.answer", handleBinding("o", id));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_EQ(value(res).get<int64_t>(), 42);
+}
+
+TEST_F(ExpressionImageBridgeTest, boundMethodCallWithArgs)
+{
+    uint64_t id = exportFromSource("class T:\n"
+                                   "    def add(self, a, b):\n"
+                                   "        return a + b\n"
+                                   "o = T()\n", "o");
+    auto res = ImageHost::instance().eval("o.add(2, 3)",
+                                          handleBinding("o", id));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_EQ(value(res).get<int64_t>(), 5);
+}
+
+TEST_F(ExpressionImageBridgeTest, chainedHandleResult)
+{
+    // child() returns a non-marshalable object: it must come back as a
+    // fresh handle whose attributes resolve through the bridge again
+    uint64_t id = exportFromSource("class Kid:\n"
+                                   "    name = 'kid'\n"
+                                   "class T:\n"
+                                   "    def child(self):\n"
+                                   "        return Kid()\n"
+                                   "o = T()\n", "o");
+    auto res = ImageHost::instance().eval("o.child().name",
+                                          handleBinding("o", id));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_EQ(value(res).get<std::string>(), "kid");
+}
+
+TEST_F(ExpressionImageBridgeTest, getItemAndLen)
+{
+    uint64_t id = exportFromSource("o = {'items': [1, 2, 3]}\n", "o");
+    auto res = ImageHost::instance().eval("sum(o['items']) + len(o)",
+                                          handleBinding("o", id));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_EQ(value(res).get<int64_t>(), 7);
+}
+
+TEST_F(ExpressionImageBridgeTest, proxyDropReleasesHandle)
+{
+    uint64_t id = exportFromSource("class T:\n"
+                                   "    answer = 1\n"
+                                   "o = T()\n", "o");
+    EXPECT_EQ(ImageHost::instance().handleCount(), 1u);
+    auto res = ImageHost::instance().eval("o.answer", handleBinding("o", id));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    // the eval globals died with the call; the proxy's __del__ sent a
+    // release op for the binding handle
+    EXPECT_EQ(ImageHost::instance().handleCount(), 0u);
+}
+
+TEST_F(ExpressionImageBridgeTest, staleHandleRaises)
+{
+    uint64_t id = exportFromSource("o = {'a': 1}\n", "o");
+    ImageHost::instance().clearHandles();
+    auto res = ImageHost::instance().eval("o['a']", handleBinding("o", id));
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "ReferenceError");
+}
+
+TEST_F(ExpressionImageBridgeTest, permissionGateDeniesThenGrantWorks)
+{
+    using App::ExpressionSecurity::Permission;
+    using App::ExpressionSecurity::Runtime;
+    // A document principal: the v1 catalog DENIES unsafe.getattr for
+    // documents (addons default to allow across the board, so an addon
+    // principal would not exercise the gate at all).
+    const std::string principal =
+        "document:sha256:" + std::string(64, 'b');
+
+    uint64_t id = exportFromSource("class T:\n"
+                                   "    secret = 7\n"
+                                   "o = T()\n", "o");
+    {
+        // arbitrary-instance getattr is gated (unsafe.getattr) once a
+        // principal scope is active on the evaluating thread
+        Runtime::Scope scope(principal.c_str());
+        auto res = ImageHost::instance().eval("o.secret",
+                                              handleBinding("o", id));
+        ASSERT_FALSE(res.ok);
+        EXPECT_EQ(res.excType, "PermissionError");
+    }
+    Runtime::instance().grant(principal, Permission::UnsafeGetattr, "*",
+                              true, "session");
+    uint64_t id2 = exportFromSource("class T:\n"
+                                    "    secret = 7\n"
+                                    "o = T()\n", "o");
+    {
+        Runtime::Scope scope(principal.c_str());
+        auto res = ImageHost::instance().eval("o.secret",
+                                              handleBinding("o", id2));
+        ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+        EXPECT_EQ(value(res).get<int64_t>(), 7);
+    }
+    Runtime::instance().clearPending(principal, Permission::UnsafeGetattr,
+                                     "*");
+}

@@ -30,11 +30,15 @@
  * everything here is host-only and never part of ExpressionCore.
  */
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <FCConfig.h>
+
+typedef struct _object PyObject;
 
 namespace App
 {
@@ -73,7 +77,23 @@ public:
     ImageResult eval(const std::string& source,
                      const std::vector<unsigned char>& bindingsCbor);
 
+    /** Register a live host object for the current transaction and
+     * return its wire handle id; pass it into bindings as
+     * {"t":"h","id":<id>,"ty":<type>}.  The image reaches back through
+     * the fcx.host_call bridge (get_attr/call/get_item/len ops, each
+     * permission-checked) when the evaluation touches it.  The table
+     * holds one reference until release/clearHandles.
+     */
+    uint64_t exportObject(PyObject* obj);
+
+    /// Drop every live handle (end of a recompute transaction).
+    void clearHandles();
+
+    /// Live handle count (tests: proxies release on image-side __del__).
+    std::size_t handleCount() const;
+
     /// Drop the live instance (tests; recovering from a trapped image).
+    /// Handles survive a reset: they are host-side state.
     void reset();
 
     ~ImageHost();

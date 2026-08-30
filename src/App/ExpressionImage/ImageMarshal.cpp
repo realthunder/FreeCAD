@@ -19,7 +19,11 @@ namespace FcxImage
 
 PyObject* handleType()
 {
-    // A plain Python class: instances carry _id/_ty in their __dict__.
+    // A Python proxy class carrying _id/_ty in slots; every other
+    // access round-trips to the host through _fcx.op (ImageBridge.cpp).
+    // Iteration works via the __getitem__ sequence fallback: IndexError
+    // crosses the wire and ends the loop.  __del__ releases the host
+    // table entry; by then the host may be gone, hence the bare except.
     static PyObject* type;
     if (!type) {
         PyObject* ns = PyDict_New();
@@ -27,15 +31,31 @@ PyObject* handleType()
             return nullptr;
         PyDict_SetItemString(ns, "__builtins__", PyEval_GetBuiltins());
         PyObject* r = PyRun_String(
+            "import _fcx\n"
             "class HostHandle:\n"
             "    __slots__ = ('_id', '_ty')\n"
             "    def __repr__(self):\n"
-            "        return '<HostHandle %s #%d>' % (self._ty, self._id)\n",
+            "        return '<HostHandle %s #%d>' % (self._ty, self._id)\n"
+            "    def __getattr__(self, name):\n"
+            "        return _fcx.op('get_attr', self._id, name)\n"
+            "    def __call__(self, *args, **kw):\n"
+            "        return _fcx.op('call', self._id, args, kw)\n"
+            "    def __getitem__(self, key):\n"
+            "        return _fcx.op('get_item', self._id, key)\n"
+            "    def __len__(self):\n"
+            "        return _fcx.op('len', self._id)\n"
+            "    def __del__(self):\n"
+            "        try:\n"
+            "            _fcx.op('release', self._id)\n"
+            "        except Exception:\n"
+            "            pass\n",
             Py_file_input, ns, ns);
         Py_XDECREF(r);
         type = PyDict_GetItemString(ns, "HostHandle");
         Py_XINCREF(type);
         Py_DECREF(ns);
+        if (!type)
+            PyErr_Print();
     }
     return type;
 }

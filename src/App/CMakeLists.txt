@@ -91,7 +91,7 @@ if(BUILD_EXPR_IMAGE_HOST)
         message(FATAL_ERROR "BUILD_EXPR_IMAGE_HOST needs WASMTIME_CAPI_DIR "
                             "(wasmtime C API prefix with include/ and lib/)")
     endif()
-    set(ExpressionImageHost_SRC ExpressionImageHost.cpp)
+    set(ExpressionImageHost_SRC ExpressionImageHost.cpp ExpressionImageBridge.cpp)
     include_directories(${WASMTIME_CAPI_DIR}/include)
     list(APPEND FreeCADApp_LIBS ${WASMTIME_CAPI_DIR}/lib/libwasmtime.so)
 else()
@@ -251,6 +251,7 @@ SET(Document_HPP_SRCS
     DocumentObserver.h
     DocumentObserverPython.h
     Expression.h
+    ExpressionImageBridge.h
     ExpressionImageHost.h
     ExpressionSecurity.h
     ExpressionSecurityRuntime.h

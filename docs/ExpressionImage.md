@@ -15,9 +15,11 @@ with the full Phase 0 sec 6.4 value encoding (FcxWire.h /
 ImageMarshal.cpp; verified: typed vector/quantity bindings round
 trip, bool stays bool, a lambda result refuses with MarshalError per
 sec 7.7, handles pass through, exceptions cross as {exc, msg}).
-ExpressionCore itself (Expression.cpp / ObjectIdentifier.cpp behind
-the S1 adapter) is NOT in the image yet, and the image->host bridge
-ops (read_prop etc.) wait on the host embedding.
+The image->host bridge ops are live too (see "The bridge" below):
+live host Python objects cross as per-transaction handles, and
+get_attr/call/get_item/len on them round-trip through the host with
+per-op permission checks.  ExpressionCore itself (Expression.cpp /
+ObjectIdentifier.cpp behind the S1 adapter) is NOT in the image yet.
 
 ## Toolchain (sibling dirs, exact versions matter)
 
@@ -133,25 +135,72 @@ deserialize a cached .cwasm (wasmtime_module_deserialize / the
 engine cache) keyed on the image hash; per-principal warmed
 instances remain the plan for recompute-time cost.
 
+## The bridge (image->host ops, built 2026-08-30)
+
+The mid-eval reach-back when sandboxed code touches a live host
+object.  Wire shapes in `FcxWire.h`; both directions CBOR.
+
+- **Transport**: the image imports `fcx.host_call(req,len)->reply_len`
+  and `fcx.host_fetch(dst,cap)->copied` (two-call size-then-fetch: the
+  host must never re-enter the guest to allocate the reply, so it
+  parks the bytes and the guest fetches them into its own malloc'd
+  buffer).  Both return -1 on transport failure.  Host side:
+  `ImageHost::Private::hostCallCb/hostFetchCb`, registered on the
+  wasmtime linker under module "fcx".  `tools/smokehost.c` satisfies
+  the imports with -1 stubs ("host bridge unavailable" in-image);
+  `wasmtime compile` needs no imports, so .cwasm precompile is
+  unaffected.
+- **Image side** (`ImageBridge.cpp`): the `_fcx` module wraps one op
+  as `_fcx.op(name, id[, a[, k]])`, wire-encoding the extras with the
+  existing ImageMarshal encoder.  The `HostHandle` proxy
+  (ImageMarshal.cpp) forwards `__getattr__`/`__call__`/`__getitem__`/
+  `__len__` through it, and `__del__` sends `release` -- so handles
+  free themselves when the eval globals die, and iteration works via
+  the `__getitem__`+IndexError sequence protocol.  Error replies
+  re-raise the named builtin when one exists (PermissionError,
+  AttributeError, IndexError...), else RuntimeError.
+- **Host side** (`ExpressionImageBridge.{h,cpp}`, host-only):
+  `HandleTable` (uint64 -> owned PyObject*, per transaction --
+  `ImageHost::exportObject/clearHandles/handleCount`), the host
+  marshal (mirror of the image's, except non-marshalable objects
+  become NEW handles rather than errors -- a chained
+  `o.child().name` works), and `dispatchHostOp`.  Every op resolves
+  permissions BEFORE touching the object: get_attr/read_prop through
+  `checkGetattr` (module results re-enter the import gate), call
+  through `checkCallablePermission` (bound doc-object methods ->
+  app.query, Base-bound -> geom.call).  PermissionNeededException
+  crosses as PermissionError; a stale id as ReferenceError.
+- Gtests: 7 `ExpressionImageBridgeTest` cases (same FCX_IMAGE /
+  FCX_STDLIB skip rule), including the deny -> grant -> works cycle.
+
+TRAPS hit building this:
+- **The v1 catalog defaults ADDON principals to ALLOW across the
+  board** (trusted at install time).  A permission test must use a
+  document principal (`"document:sha256:" + 64 chars`) -- an addon
+  principal exercises no gate, and unsafe.getattr for documents is
+  DENY, session PROMPT.
+- **Two nlohmann copies**: FreeCADApp compiles against the vendored
+  3.11.2 (`src/3rdParty/json/single_include`), the conda env carries
+  3.12.0 as `-isystem`.  The versioned ABI inline namespace
+  (json_abi_v3_11_2 vs ..._3_12_0) makes any exported function with
+  json in its signature (ExpressionImageBridge.h) an undefined
+  reference for a consumer that picked the other copy.  Tests_run now
+  adds the vendored dir as a plain -I (beats -isystem).  CBOR byte
+  vectors cross the boundary fine either way.
+
 ## What step 4 still owes (in order)
 
-1. The image->host bridge ops (`read_prop`/`get_attr`/`call`/
-   `get_item`/`len`/`release`/`resolve_alias`): the image imports a
-   host function and issues these mid-eval when it hits a handle.
-   The host->image `eval` op and the value encoding are DONE
-   (FcxWire.h, ImageMarshal.cpp; nlohmann::json CBOR both sides).
-2. The wasmtime host embedding in FreeCADApp (host-only TU;
-   engine/store/instance per principal; handle table per recompute
-   transaction; per-op permission checks through
-   App::ExpressionSecurity::Runtime).
-3. ExpressionCore into the image behind the S1 adapter
+1. ExpressionCore into the image behind the S1 adapter
    (ObjectIdentifier resolution against the bindings pack instead of
    live Documents) -- the biggest carve, see Phase 0 sec 2 seam list.
-4. Generated facades/dispatch from the Py XMLs with the `<Sandbox>`
+   The `resolve_alias` bridge op arrives with it (the host dispatcher
+   answers ProtocolError until then).
+2. Generated facades/dispatch from the Py XMLs with the `<Sandbox>`
    annotation (ES sec 7.5), replacing the hand-registered module in
    ImageMain.cpp.
-5. Acceptance harness: the ES sec 10 denials plus
-   grant->works->revoke->fails against the image.
+3. Acceptance harness: the ES sec 10 denials plus
+   grant->works->revoke->fails against the image (the bridge-level
+   cycle is covered by ExpressionImageBridgeTest already).
 
 ## Carve audit for step 3 above (measured 2026-08-30)
 

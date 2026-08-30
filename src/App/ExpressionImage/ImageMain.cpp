@@ -91,11 +91,14 @@ static PyObject *init_freecad_module()
     return module;
 }
 
+extern "C" PyObject *PyInit__fcx(void);  // ImageBridge.cpp
+
 extern "C" {
 
 EXPORT(fcx_init) int fcx_init(void)
 {
     PyImport_AppendInittab("FreeCAD", init_freecad_module);
+    PyImport_AppendInittab("_fcx", PyInit__fcx);
 
     PyStatus status;
     PyConfig config;

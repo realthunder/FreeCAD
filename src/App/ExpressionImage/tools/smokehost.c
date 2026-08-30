@@ -26,6 +26,21 @@ static void bail(const char *msg, wasmtime_error_t *err, wasm_trap_t *trap)
     exit(1);
 }
 
+static wasm_trap_t *stub_bridge(void *env, wasmtime_caller_t *caller,
+                                const wasmtime_val_t *args, size_t nargs,
+                                wasmtime_val_t *results, size_t nresults)
+{
+    (void)env;
+    (void)caller;
+    (void)args;
+    (void)nargs;
+    if (nresults >= 1) {
+        results[0].kind = WASMTIME_I32;
+        results[0].of.i32 = -1;
+    }
+    return NULL;
+}
+
 static wasmtime_func_t get_func(wasmtime_context_t *ctx,
                                 wasmtime_instance_t *inst, const char *name)
 {
@@ -88,6 +103,28 @@ int main(int argc, char **argv)
     err = wasmtime_linker_define_wasi(linker);
     if (err)
         bail("define_wasi", err, NULL);
+
+    /* The image imports fcx.host_call/host_fetch (ImageBridge.cpp).
+     * This smoke host has no bridge: satisfy them with stubs returning
+     * -1, which the image surfaces as "host bridge unavailable". */
+    {
+        wasm_functype_t *ft = wasm_functype_new_2_1(
+            wasm_valtype_new_i32(), wasm_valtype_new_i32(),
+            wasm_valtype_new_i32());
+        err = wasmtime_linker_define_func(linker, "fcx", 3, "host_call", 9,
+                                          ft, stub_bridge, NULL, NULL);
+        if (err)
+            bail("define host_call", err, NULL);
+        wasm_functype_delete(ft);
+        ft = wasm_functype_new_2_1(wasm_valtype_new_i32(),
+                                   wasm_valtype_new_i32(),
+                                   wasm_valtype_new_i32());
+        err = wasmtime_linker_define_func(linker, "fcx", 3, "host_fetch", 10,
+                                          ft, stub_bridge, NULL, NULL);
+        if (err)
+            bail("define host_fetch", err, NULL);
+        wasm_functype_delete(ft);
+    }
 
     wasmtime_instance_t instance;
     wasm_trap_t *trap = NULL;

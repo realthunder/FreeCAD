@@ -71,6 +71,7 @@ set(PYCXX_SRCS
 )
 
 add_executable(fcx_image
+    ImageBridge.cpp
     ImageMain.cpp
     ImageMarshal.cpp
     ImageStubs.cpp

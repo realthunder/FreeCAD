@@ -30,8 +30,10 @@
 
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
+#include <Base/Interpreter.h>
 
 #include "Application.h"
+#include "ExpressionImageBridge.h"
 #include "ExpressionImageHost.h"
 
 using json = nlohmann::json;
@@ -61,6 +63,19 @@ struct ImageHost::Private
     wasmtime_func_t funcAlloc {};
     wasmtime_func_t funcFree {};
     wasmtime_func_t funcCall {};
+
+    // image->host bridge state: live handles and the reply pending
+    // between the host_call and host_fetch halves of one bridge op
+    HandleTable handles;
+    std::vector<uint8_t> pendingReply;
+
+    static wasm_trap_t* hostCallCb(void* env, wasmtime_caller_t* caller,
+                                   const wasmtime_val_t* args, size_t nargs,
+                                   wasmtime_val_t* results, size_t nresults);
+    static wasm_trap_t* hostFetchCb(void* env, wasmtime_caller_t* caller,
+                                    const wasmtime_val_t* args, size_t nargs,
+                                    wasmtime_val_t* results, size_t nresults);
+    bool defineBridge(wasmtime_linker_t* linker);
 
     void teardown()
     {
@@ -206,6 +221,11 @@ struct ImageHost::Private
         wasmtime_linker_t* linker = wasmtime_linker_new(engine);
         err = wasmtime_linker_define_wasi(linker);
         wasm_trap_t* trap = nullptr;
+        if (!err && !defineBridge(linker)) {
+            wasmtime_linker_delete(linker);
+            teardown();
+            return false;
+        }
         if (!err)
             err = wasmtime_linker_instantiate(linker, context, module,
                                               &instance, &trap);
@@ -320,6 +340,107 @@ struct ImageHost::Private
     }
 };
 
+/// The host_call half of one bridge op: decode the request out of guest
+/// memory, dispatch it, park the reply, return only its length (never
+/// re-enter the guest; the image fetches with its own buffer).  -1
+/// signals a transport-level failure.
+wasm_trap_t* ImageHost::Private::hostCallCb(void* env,
+                                            wasmtime_caller_t* caller,
+                                            const wasmtime_val_t* args,
+                                            size_t nargs,
+                                            wasmtime_val_t* results,
+                                            size_t nresults)
+{
+    auto* d = static_cast<Private*>(env);
+    if (nresults < 1)
+        return nullptr;
+    results[0].kind = WASMTIME_I32;
+    results[0].of.i32 = -1;
+    wasmtime_extern_t ext;
+    if (nargs < 2
+            || !wasmtime_caller_export_get(caller, "memory", 6, &ext)
+            || ext.kind != WASMTIME_EXTERN_MEMORY)
+        return nullptr;
+    wasmtime_context_t* ctx = wasmtime_caller_context(caller);
+    wasmtime_memory_t mem = ext.of.memory;
+    const uint8_t* data = wasmtime_memory_data(ctx, &mem);
+    size_t memSize = wasmtime_memory_data_size(ctx, &mem);
+    uint64_t ptr = (uint32_t)args[0].of.i32;
+    uint64_t len = (uint32_t)args[1].of.i32;
+    if (ptr + len > memSize)
+        return nullptr;
+
+    json reply;
+    try {
+        json req = json::from_cbor(data + ptr, data + ptr + len);
+        reply = dispatchHostOp(d->handles, req);
+    }
+    catch (const std::exception& e) {
+        reply = {{"ok", false}, {"exc", "ProtocolError"}, {"msg", e.what()}};
+    }
+    d->pendingReply = json::to_cbor(reply);
+    results[0].of.i32 = (int32_t)d->pendingReply.size();
+    return nullptr;
+}
+
+wasm_trap_t* ImageHost::Private::hostFetchCb(void* env,
+                                             wasmtime_caller_t* caller,
+                                             const wasmtime_val_t* args,
+                                             size_t nargs,
+                                             wasmtime_val_t* results,
+                                             size_t nresults)
+{
+    auto* d = static_cast<Private*>(env);
+    if (nresults < 1)
+        return nullptr;
+    results[0].kind = WASMTIME_I32;
+    results[0].of.i32 = -1;
+    wasmtime_extern_t ext;
+    if (nargs < 2 || d->pendingReply.empty()
+            || !wasmtime_caller_export_get(caller, "memory", 6, &ext)
+            || ext.kind != WASMTIME_EXTERN_MEMORY)
+        return nullptr;
+    wasmtime_context_t* ctx = wasmtime_caller_context(caller);
+    wasmtime_memory_t mem = ext.of.memory;
+    uint8_t* data = wasmtime_memory_data(ctx, &mem);
+    size_t memSize = wasmtime_memory_data_size(ctx, &mem);
+    uint64_t ptr = (uint32_t)args[0].of.i32;
+    uint64_t cap = (uint32_t)args[1].of.i32;
+    if (ptr + cap > memSize || cap < d->pendingReply.size())
+        return nullptr;
+    std::memcpy(data + ptr, d->pendingReply.data(), d->pendingReply.size());
+    results[0].of.i32 = (int32_t)d->pendingReply.size();
+    d->pendingReply.clear();
+    return nullptr;
+}
+
+bool ImageHost::Private::defineBridge(wasmtime_linker_t* linker)
+{
+    struct
+    {
+        const char* name;
+        wasmtime_func_callback_t cb;
+    } funcs[] = {
+        {"host_call", &Private::hostCallCb},
+        {"host_fetch", &Private::hostFetchCb},
+    };
+    for (auto& fn : funcs) {
+        wasm_functype_t* ft = wasm_functype_new_2_1(wasm_valtype_new_i32(),
+                                                    wasm_valtype_new_i32(),
+                                                    wasm_valtype_new_i32());
+        wasmtime_error_t* err = wasmtime_linker_define_func(
+            linker, "fcx", 3, fn.name, std::strlen(fn.name), ft, fn.cb, this,
+            nullptr);
+        wasm_functype_delete(ft);
+        if (err) {
+            FC_ERR("cannot define fcx." << fn.name << ": "
+                   << errorText(err, nullptr));
+            return false;
+        }
+    }
+    return true;
+}
+
 ImageHost::ImageHost()
     : d(new Private)
 {}
@@ -350,6 +471,26 @@ void ImageHost::configure(const std::string& imagePath,
     d->configured = true;
     d->imagePath = imagePath;
     d->stdlibPath = stdlibPath;
+}
+
+uint64_t ImageHost::exportObject(PyObject* obj)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    Base::PyGILStateLocker lock;
+    return d->handles.add(obj);
+}
+
+void ImageHost::clearHandles()
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    Base::PyGILStateLocker lock;
+    d->handles.clear();
+}
+
+std::size_t ImageHost::handleCount() const
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    return d->handles.size();
 }
 
 void ImageHost::reset()

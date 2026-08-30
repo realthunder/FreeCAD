@@ -93,6 +93,9 @@ add_subdirectory(lib)
 add_subdirectory(src)
 
 target_include_directories(Tests_run PUBLIC
+    # the vendored nlohmann: exported App signatures (ExpressionImageBridge.h)
+    # mangle its ABI namespace, and the conda env carries a different version
+    ${CMAKE_SOURCE_DIR}/src/3rdParty/json/single_include
     ${Python3_INCLUDE_DIRS}
     ${XercesC_INCLUDE_DIRS}
 )
