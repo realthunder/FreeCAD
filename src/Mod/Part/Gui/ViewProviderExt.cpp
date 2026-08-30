@@ -2223,10 +2223,14 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         if(!ShapeColor.testStatus(App::Property::User3)) {
             Base::ObjectStatusLocker<App::Property::Status,App::Property> guard(
                     App::Property::User3, &ShapeColor);
+            // The base class writes it into the appearance's BASE, which is
+            // where an object colour belongs: the faces holding one of their
+            // own keep it (docs/ShapeAppearanceDesign.md 12.2). This used to
+            // push a single colour through DiffuseColor as well, which
+            // COLLAPSED every painted face to it -- harmless while the
+            // mirror only refreshed on a uniform list, and destructive now
+            // that it follows the base whatever the faces hold.
             ViewProviderGeometryObject::onChanged(prop);
-            App::Color c = ShapeColor.getValue();
-            c.setTransparency(Transparency.getValue()/100.0f);
-            DiffuseColor.setValue(c);
             updateColors();
         }
         return;
