@@ -4206,10 +4206,32 @@ int View3DInventorViewer::getNumSamples()
     // make it mandatory.
     //
     // What MSAA still buys is the TRIANGLE silhouette, which has no
-    // analytic coverage of its own. In Flat Lines and Wireframe an edge
-    // is drawn along every silhouette and hides it; in Shaded, with no
-    // edges, a curved silhouette is bare and will show stair-stepping.
-    // Users on that mode can turn it back on.
+    // analytic coverage of its own. Measured since
+    // (scripts/silhouette_msaa.py), on a sphere's limb, as the share of
+    // limb rows carrying real partial coverage:
+    //
+    //                       MSAA off    MSAA 4x
+    //   camera moving           0.0%      58.8%
+    //   camera parked          75.0%      98.8%
+    //
+    // Two corrections to what this comment used to say. It is NOT
+    // confined to Shaded: the claim was that Flat Lines and Wireframe
+    // draw an edge along every silhouette and hide it, which holds for a
+    // POLYHEDRON, whose silhouettes are all topological edges. A sphere
+    // or cylinder shows a LIMB, and no edge lies along it, so Flat Lines
+    // has nothing to draw there -- it measures identically to Shaded,
+    // row for row, in every column above.
+    //
+    // And a PARKED view repairs itself: idle temporal accumulation
+    // (Render_TemporalAccum) converges over ~32 jittered samples in
+    // about 2.5s and lifts a bare limb to 75% partial coverage with MSAA
+    // still off. So what this default gives up is confined to the frames
+    // drawn WHILE THE CAMERA MOVES -- and a probe that settles the view
+    // before capturing measures the accumulation instead, and reports
+    // that MSAA off costs nothing at all.
+    //
+    // Users who want the moving frames antialiased too can turn it back
+    // on.
     long samples = App::GetApplication().GetParameterGroupByPath
         ("User parameter:BaseApp/Preferences/View")
         ->GetInt("AntiAliasing", View3DInventorViewer::None);
