@@ -5427,6 +5427,25 @@ public:
     /// as an NDC depth bias (u_params.w). Positive pushes away from the
     /// viewer. The `factor * m` slope half is per-vertex and lives in
     /// fc_mesh_vs.sh, fed by setPolygonOffsetUniform().
+    /// GL's polygon-offset `factor` for this material, in pixels of
+    /// depth slope to clear. Raised to the reach of whatever decoration
+    /// is drawn over the fill -- a thick line's quad carries the edge's
+    /// depth half its width out to each side, so one pixel does not
+    /// cover it. See the definition.
+    static float polygonOffsetFactor(const Render::Material &mat,
+                                     float decorReach);
+
+    /// How far the decoration drawn over this object's fills reaches
+    /// from its own geometry, in pixels. 1 when the object has none.
+    float decorReachFor(uint64_t objectKey) const;
+
+    /// objectKey -> that reach, rebuilt every frame from the draw list
+    /// (BGFXRenderer::Private::render). A fill's own material cannot
+    /// answer this: SoDrawStyle's line width lives inside the wireframe
+    /// separator, which ViewProviderExt adds after the faces, so the
+    /// fill always sees linewidth 1.
+    std::unordered_map<uint64_t, float> decorReach;
+
     static float polygonOffsetBias(const Render::Material &mat);
 
     /// Ceiling on the depth gradient the vertex stage's slope term
@@ -5454,12 +5473,14 @@ public:
     /// The largest NDC depth bias the slope term can produce for this
     /// material at the current viewport size — what the stencil
     /// outline has to clear to stay behind the fill that owns it.
-    float polygonOffsetMaxBias(const Render::Material &mat) const;
+    float polygonOffsetMaxBias(const Render::Material &mat,
+                               uint64_t objectKey = 0) const;
 
     /// Bind u_polyOffset for one draw: the slope factor and its
     /// ceiling. Call at every site submitting a vs_fc_mesh program;
     /// pass null (or a non-triangle material) to disable the term.
-    void setPolygonOffsetUniform(const Render::Material *mat);
+    void setPolygonOffsetUniform(const Render::Material *mat,
+                                 uint64_t objectKey = 0);
     /// Set u_ambient for a draw: the ambient term Coin would give it,
     /// which is the material's own ambient colour times the
     /// traversal's global ambient. Falls back to the legacy flat floor

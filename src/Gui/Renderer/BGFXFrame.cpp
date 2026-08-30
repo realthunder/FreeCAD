@@ -5278,6 +5278,32 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // Hidden-line entries get their stencil outline right after the
     // fill and honor the face/seam/vertex hiding rules.
     view->ontop = false;
+    // How far each object's decoration reaches from its own geometry,
+    // in pixels -- what its fills' polygon offset has to clear so a
+    // thick edge is not half-eaten by the face it straddles (see
+    // BGFXView::polygonOffsetFactor). Resolved here rather than read off
+    // the fill's material because the fill cannot know it: SoDrawStyle's
+    // line width lives inside the wireframe separator, which
+    // ViewProviderExt adds AFTER the faces, so every fill reports
+    // linewidth 1 however thick its edges are.
+    //
+    // On-top and highlight draws are excluded: they do not depth-test
+    // against the fill, so they are not what the fill has to clear, and
+    // a preselection thickening would otherwise shove every fill back.
+    view->decorReach.clear();
+    for (const auto &d : scene) {
+        if (d.material.ontop || !d.objectKey)
+            continue;
+        float reach = 0.0f;
+        if (d.material.type == Render::Material::Line)
+            reach = 0.5f * std::max(1.0f, d.material.linewidth) + 0.5f;
+        else if (d.material.type == Render::Material::Point)
+            reach = 0.5f * std::max(1.0f, d.material.pointsize);
+        else
+            continue;
+        auto &slot = view->decorReach[d.objectKey];
+        slot = std::max(slot, reach);
+    }
     // Glass on screen: scene lines and points move to ViewGlassLine so
     // the refraction cannot magnify them (BGFXView::ViewGlassLine).
     // Set before the first submit and left set: submit() makes the
