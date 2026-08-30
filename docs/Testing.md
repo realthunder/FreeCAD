@@ -14,6 +14,15 @@ as "the primary tree"; that was wrong.
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
 
+**Read the python total as a checksum on the build, not just on the code.**
+A short count means a module is missing rather than a test failing, and the
+run still says OK, so nothing draws attention to it. Two seen so far:
+**2538** is a tree with `BUILD_FEM=OFF` (all of `TestFemApp`, 90 tests), and
+**1197** is a tree with a stale pre-rename `Mod/Path` shadowing `Mod/CAM`
+(`TestCAMApp`, 1343). Both were build trees whose caches predated the
+setting that was supposed to fix them -- see the preset-vs-cache trap in
+`CLAUDE.md` and the stale-module sweep in `docs/DevEnvironment.md`.
+
 The C++ side had never been fully green before this date: four of its
 targets did not link at all. What was actually wrong with each is recorded
 in section 6.
