@@ -989,6 +989,43 @@ PyObject *MaterialListPy::setTextureTransform(PyObject *args, PyObject *kwds)
     PY_CATCH
 }
 
+PyObject *MaterialListPy::clearOverrides(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+    if (!writable()) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        edit([](MaterialList &values) { values.clearOverrides(); });
+        Py_Return;
+    }
+    PY_CATCH
+}
+
+PyObject *MaterialListPy::clearOverride(PyObject *args)
+{
+    Py_ssize_t where = 0;
+    if (!PyArg_ParseTuple(args, "n", &where)) {
+        return nullptr;
+    }
+    if (!writable()) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        int idx = 0;
+        if (!indexOf(where, list().getSize(), idx)) {
+            return nullptr;
+        }
+        edit([idx](MaterialList &values) { values.clearOverride(idx); }, idx);
+        Py_Return;
+    }
+    PY_CATCH
+}
+
 Py::Tuple MaterialListPy::getTextureSlots() const
 {
     // "slots" is a Qt macro that expands to nothing, and the error it
@@ -1011,6 +1048,42 @@ Py::Int MaterialListPy::getCount() const
 Py::Boolean MaterialListPy::getIsAttached() const
 {
     return {owner != nullptr};
+}
+
+Py::Object MaterialListPy::getBase() const
+{
+    return Py::asObject(new MaterialPy(new Material(list().getBase())));
+}
+
+void MaterialListPy::setBase(Py::Object value)
+{
+    const Material *mat = materialOf(value.ptr());
+    if (!mat) {
+        throw Py::Exception();
+    }
+    const Material base = *mat;
+    edit([&](MaterialList &values) { values.setBase(base); });
+}
+
+Py::Tuple MaterialListPy::getOverrides() const
+{
+    const std::vector<uint32_t> &overrides = list().getOverrides();
+    Py::Tuple faces(static_cast<int>(overrides.size()));
+    for (std::size_t i = 0; i < overrides.size(); ++i) {
+        faces.setItem(i, Py::Long(static_cast<unsigned long>(overrides[i])));
+    }
+    return faces;
+}
+
+Py::Boolean MaterialListPy::getFollowMaterial() const
+{
+    return {list().isFollowingMaterial()};
+}
+
+void MaterialListPy::setFollowMaterial(Py::Boolean value)
+{
+    const bool enable = static_cast<bool>(value);
+    edit([&](MaterialList &values) { values.setFollowMaterial(enable); });
 }
 
 Py::Boolean MaterialListPy::getPBR() const

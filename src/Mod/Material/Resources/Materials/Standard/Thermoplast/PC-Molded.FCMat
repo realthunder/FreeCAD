@@ -6,6 +6,9 @@ General:
   Author: "Michael Schloh von Bennewitz"
   License: "CC-BY-3.0"
   Description: "Polycarbonates (PC) are a group of thermoplastic polymers containing carbonate groups in their chemical structures. Polycarbonates used in engineering are strong, tough materials, and some grades are optically transparent."
+Inherits:
+  Acrylic:
+    UUID: "28ae5807-9bb9-40b7-9aed-1655faf52afe"
 Models:
   Linear Elastic:
     UUID: "7b561d1d-fb9b-44f6-9da9-56a4f74d7536"

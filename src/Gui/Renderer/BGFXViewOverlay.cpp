@@ -480,7 +480,10 @@ void BGFXView::submitOutlineEdges(const Render::DrawCall &draw,
     // term on top of the constant — so the outline clears the ceiling on
     // that term rather than doubling a constant that no longer bounds it.
     float color[4];
-    unpackColor((spec.color & 0xffffff00) | 0xff, color);
+    // A picked outline colour into the mesh program's base slot, which
+    // is light: decoded like every authored colour the beauty frame
+    // takes, or the output transform paints it 1.5x too bright.
+    unpackAuthoredColor((spec.color & 0xffffff00) | 0xff, color, colorManaged());
     params[1] = qMax(1.0f, spec.width);
     params[2] = spec.depthWrite
         ? 2.0f * polygonOffsetBias(draw.material)
@@ -618,7 +621,10 @@ void BGFXView::submitCapQuad(const CapVertex verts[4], uint32_t color,
     v[3] = verts[0]; v[4] = verts[2]; v[5] = verts[3];
 
     float col[4];
-    unpackColor(color, col);
+    // The cap fill is the material's own (inverted or not) diffuse,
+    // written straight to the colour target: authored, so decoded, or
+    // the cap of a 0.5 grey solid encodes out as 0.73.
+    unpackAuthoredColor(color, col, colorManaged());
     bgfx::setUniform(u_matColor, col);
     if (numOther > 0) {
         float clipParams[4] = {float(numOther), 0.0f, 0.0f, 0.0f};

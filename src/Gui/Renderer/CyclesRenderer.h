@@ -72,6 +72,9 @@ struct CameraInput {
 struct SceneInput {
     DrawCallList draws;
     PBRConfig pbr;
+    /// The bump map treatment of the raster path (Render_BumpScale).
+    /// Parallax has no meaning to a path tracer and is not read.
+    BumpConfig bump;
     OutputConfig output;
     LightConfig light;
     Background background;
@@ -80,6 +83,14 @@ struct SceneInput {
     /// The planes themselves ride the draws' materials; this is the
     /// frame-level style the caps are built to.
     SectionConfig section;
+    /// The raster path's buffer visualization (RenderParams
+    /// DebugViewMode, docs/RenderDebug.md sec 2.3), honoured here where
+    /// a path tracer has the same quantity to show: 2 = the view-space
+    /// shading normal as n * 0.5 + 0.5, written raw, over black -- the
+    /// one picture in which the two engines can be compared exactly,
+    /// which is what the finish and map probes assert on. Any other
+    /// value renders normally.
+    int debugView = 0;
 };
 
 /// What the translation made of a SceneInput, for the caller to
@@ -89,6 +100,8 @@ struct RenderReport {
     int objects = 0;     ///< instances placed
     int shaders = 0;     ///< distinct surface shaders
     long triangles = 0;  ///< triangles across the distinct meshes
+    int images = 0;      ///< image texture nodes in the shaders (the maps
+                         ///< of docs/CyclesIntegration.md sec 6.5)
     int skipped = 0;     ///< draws the translation has no use for (lines,
                          ///< points, gizmos, effect volumes, wireframes)
     double seconds = 0;  ///< wall time of the render itself

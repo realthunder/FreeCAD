@@ -6,6 +6,9 @@ General:
   License: "CC-BY-SA-4.0"
   Description: "Polyoxymethylene (POM), also known as Acetal, is an engineering thermoplastic used in precision parts requiring high stiffness, low friction, and excellent dimensional stability. The values are average across the spectrum. If you need a more precise material definition use the more specialised POM-blend cards."
   SourceURL: "https://www.matweb.com/search/DataSheet.aspx?MatGUID=ae460978fb0a4d7b8c3ce6bf8f4bf52b"
+Inherits:
+  Plastic:
+    UUID: "a74622cd-0e2d-4a96-b8c4-fefcc82ac694"
 Models:
   Father:
     UUID: "9cdda8b6-b606-4778-8f13-3934d8668e67"

@@ -290,8 +290,8 @@ TEST_F(PropertyMaterialListTest, defaultEntriesCostNothing)
     EXPECT_EQ(prop.getSize(), 10000);
     EXPECT_EQ(prop.getMemSize(), 0U);
     EXPECT_TRUE(prop.getMaterial(5000) == App::Material());
-    EXPECT_TRUE(prop.getAmbientColors().empty());
-    EXPECT_TRUE(prop.getDiffuseColors().empty());
+    EXPECT_TRUE(prop.getBase() == App::Material());
+    EXPECT_FALSE(prop.hasOverrides());
 }
 
 TEST_F(PropertyMaterialListTest, outOfRangeReadsAsDefault)
@@ -302,18 +302,16 @@ TEST_F(PropertyMaterialListTest, outOfRangeReadsAsDefault)
     EXPECT_TRUE(prop.getMaterial(1) == App::Material());
 }
 
-TEST_F(PropertyMaterialListTest, uniformListCollapsesToOneOfEachField)
+TEST_F(PropertyMaterialListTest, uniformListIsOneMaterial)
 {
     App::PropertyMaterialList prop;
     prop.setValues(std::vector<App::Material>(1000, redMaterial()));
 
     EXPECT_EQ(prop.getSize(), 1000);
-    // only the field that differs from the default is stored, and only once
-    EXPECT_EQ(prop.getDiffuseColors().size(), 1U);
-    EXPECT_TRUE(prop.getAmbientColors().empty());
-    EXPECT_TRUE(prop.getSpecularColors().empty());
-    EXPECT_TRUE(prop.getEmissiveColors().empty());
-    EXPECT_TRUE(prop.getShininessValues().empty());
+    // nothing overrides, so the list IS its base -- and only the field of it
+    // that differs from the default costs anything
+    EXPECT_FALSE(prop.hasOverrides());
+    EXPECT_TRUE(prop.getBase() == redMaterial());
     EXPECT_EQ(prop.getMemSize(), sizeof(App::Color));
 
     // and every entry still reads as that material
@@ -322,7 +320,7 @@ TEST_F(PropertyMaterialListTest, uniformListCollapsesToOneOfEachField)
     }
 }
 
-TEST_F(PropertyMaterialListTest, oneOddEntryExpandsOnlyItsOwnField)
+TEST_F(PropertyMaterialListTest, oneOddEntryStatesOnlyItsOwnField)
 {
     App::PropertyMaterialList prop;
     prop.setValues(std::vector<App::Material>(10, redMaterial()));
@@ -331,15 +329,17 @@ TEST_F(PropertyMaterialListTest, oneOddEntryExpandsOnlyItsOwnField)
     odd.diffuseColor = packed(0x00ff00ff);
     prop.set1Value(3, odd);
 
-    EXPECT_EQ(prop.getDiffuseColors().size(), 10U);
-    EXPECT_TRUE(prop.getAmbientColors().empty());
+    // one overriding face, stating the one field it differs in
+    EXPECT_EQ(prop.getOverrides(), std::vector<uint32_t>({3}));
+    EXPECT_EQ(prop.getDiffuseOverrides().size(), 1U);
+    EXPECT_TRUE(prop.getAmbientOverrides().empty());
     EXPECT_TRUE(prop.getMaterial(3) == odd);
     EXPECT_TRUE(prop.getMaterial(4) == redMaterial());
 
-    // put it back and the field collapses again
+    // put it back and the override goes with it
     prop.set1Value(3, redMaterial());
     EXPECT_EQ(prop.getMemSize(), sizeof(App::Color));
-    EXPECT_EQ(prop.getDiffuseColors().size(), 1U);
+    EXPECT_FALSE(prop.hasOverrides());
     EXPECT_TRUE(prop.getMaterial(3) == redMaterial());
 }
 
@@ -354,10 +354,12 @@ TEST_F(PropertyMaterialListTest, everyFieldCanVaryOnItsOwn)
     prop.setTransparency(2, 0.5F);
 
     EXPECT_EQ(prop.getSize(), 4);
-    EXPECT_EQ(prop.getAmbientColors().size(), 4U);
-    // per-entry transparency IS per-entry diffuse alpha, so that field
-    // materialises with it
-    EXPECT_EQ(prop.getDiffuseColors().size(), 4U);
+    // four faces painted, each stating the one field it differs in
+    EXPECT_EQ(prop.getOverrides(), std::vector<uint32_t>({0, 1, 2, 3}));
+    EXPECT_EQ(prop.getAmbientOverrides().size(), 4U);
+    // per-entry transparency IS per-entry diffuse alpha, so that field is
+    // stated with it
+    EXPECT_EQ(prop.getDiffuseOverrides().size(), 4U);
     EXPECT_TRUE(prop.getAmbientColor(1) == packed(0x11111111));
     EXPECT_TRUE(prop.getAmbientColor(0) == App::Material().ambientColor);
     EXPECT_TRUE(prop.getSpecularColor(2) == packed(0x22222222));
@@ -367,20 +369,42 @@ TEST_F(PropertyMaterialListTest, everyFieldCanVaryOnItsOwn)
     EXPECT_FLOAT_EQ(prop.getTransparency(2), 0.5F);
 }
 
-TEST_F(PropertyMaterialListTest, uniformSetterStoresOneValue)
+TEST_F(PropertyMaterialListTest, theWholeObjectSetterWritesTheBase)
 {
     App::PropertyMaterialList prop;
     prop.setValues(std::vector<App::Material>(100, App::Material()));
     prop.setDiffuseColor(packed(0x0000ffff));
 
     EXPECT_EQ(prop.getSize(), 100);
-    EXPECT_EQ(prop.getDiffuseColors().size(), 1U);
+    EXPECT_FALSE(prop.hasOverrides());
+    EXPECT_TRUE(prop.getBase().diffuseColor == packed(0x0000ffff));
     EXPECT_TRUE(prop.getDiffuseColor(99) == packed(0x0000ffff));
 
     // setting it back to the default gives the storage up entirely
     prop.setDiffuseColor(App::Material().diffuseColor);
-    EXPECT_TRUE(prop.getDiffuseColors().empty());
     EXPECT_EQ(prop.getMemSize(), 0U);
+}
+
+TEST_F(PropertyMaterialListTest, aWholeObjectWriteLeavesThePaintedFacesAlone)
+{
+    // docs/ShapeAppearanceDesign.md 12.2: the whole point of the base is
+    // that assigning the object a colour does not collapse the faces that
+    // hold one of their own
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(10, redMaterial()));
+    prop.setDiffuseColor(3, packed(0x00ff00ff));
+    prop.setDiffuseColor(7, packed(0x0000ffff));
+
+    prop.setDiffuseColor(packed(0xffff00ff));
+    EXPECT_EQ(prop.getOverrides(), std::vector<uint32_t>({3, 7}));
+    EXPECT_TRUE(prop.getDiffuseColor(0) == packed(0xffff00ff));
+    EXPECT_TRUE(prop.getDiffuseColor(3) == packed(0x00ff00ff));
+    EXPECT_TRUE(prop.getDiffuseColor(7) == packed(0x0000ffff));
+
+    // and clearing the overrides is what a whole-object write used to do
+    prop.clearOverrides();
+    EXPECT_FALSE(prop.hasOverrides());
+    EXPECT_TRUE(prop.getDiffuseColor(3) == packed(0xffff00ff));
 }
 
 TEST_F(PropertyMaterialListTest, wholeFieldSetterSizesTheList)
@@ -392,10 +416,11 @@ TEST_F(PropertyMaterialListTest, wholeFieldSetterSizesTheList)
     EXPECT_EQ(prop.getDiffuseColors().size(), 3U);
     EXPECT_TRUE(prop.getMaterial(1).diffuseColor == packed(0x00ff00ff));
 
-    // a uniform vector arrives and normalises on the way in
+    // a uniform vector arrives and is the whole-object write it says it is
     prop.setDiffuseColors(std::vector<App::Color>(3, packed(0xff0000ff)));
     EXPECT_EQ(prop.getSize(), 3);
-    EXPECT_EQ(prop.getDiffuseColors().size(), 1U);
+    EXPECT_FALSE(prop.hasOverrides());
+    EXPECT_TRUE(prop.getBase().diffuseColor == packed(0xff0000ff));
 }
 
 TEST_F(PropertyMaterialListTest, resizingKeepsWhatItCanAndDefaultsTheRest)
@@ -426,7 +451,7 @@ TEST_F(PropertyMaterialListTest, growingWithAFillStaysUniform)
         prop.set1Value(-1, redMaterial());
     }
     EXPECT_EQ(prop.getSize(), 500);
-    EXPECT_EQ(prop.getDiffuseColors().size(), 1U);
+    EXPECT_FALSE(prop.hasOverrides());
     EXPECT_TRUE(prop.getMaterial(499) == redMaterial());
 }
 
@@ -570,6 +595,12 @@ TEST_F(PropertyMaterialListTest, equalListsSerialiseIdentically)
         byEntry.setDiffuseColor(i, packed(0xff0000ff));
     }
 
+    // The follow flag is part of the value too, and only byField's write is
+    // the whole-object one that ends it -- so say it once for all three
+    // rather than let three routes disagree about it
+    byWholeValues.setFollowMaterial(false);
+    byEntry.setFollowMaterial(false);
+
     EXPECT_TRUE(byWholeValues.isSame(byField));
     EXPECT_TRUE(byWholeValues.isSame(byEntry));
     EXPECT_EQ(saveToXML(byWholeValues, 5), saveToXML(byField, 5));
@@ -622,23 +653,23 @@ TEST_F(PropertyMaterialListTest, saveSizeAnswersForTheEncodingBeingWritten)
     EXPECT_EQ(prop.getSaveSize(writer), 1000U * 24U);
 }
 
-TEST_F(PropertyMaterialListTest, texturesAndCardsCollapseLikeEveryOtherField)
+TEST_F(PropertyMaterialListTest, texturesAndCardsRideTheBaseLikeEveryOtherField)
 {
     App::PropertyMaterialList prop;
     prop.setValues(std::vector<App::Material>(200, texturedMaterial()));
 
     EXPECT_EQ(prop.getSize(), 200);
-    EXPECT_EQ(prop.getImages().size(), 1U);
-    EXPECT_EQ(prop.getImagePaths().size(), 1U);
-    EXPECT_EQ(prop.getUuids().size(), 1U);
+    EXPECT_FALSE(prop.hasOverrides());
+    EXPECT_EQ(prop.getBase().uuid, texturedMaterial().uuid);
     EXPECT_EQ(prop.getUuid(199), texturedMaterial().uuid);
 
     prop.setUuid(7, "another-card");
-    EXPECT_EQ(prop.getUuids().size(), 200U);
+    EXPECT_EQ(prop.getOverrides(), std::vector<uint32_t>({7}));
+    EXPECT_EQ(prop.getUuidOverrides().size(), 1U);
     EXPECT_EQ(prop.getUuid(7), "another-card");
     EXPECT_EQ(prop.getUuid(8), texturedMaterial().uuid);
-    // the other two did not have to grow
-    EXPECT_EQ(prop.getImages().size(), 1U);
+    // and no other field had to state anything
+    EXPECT_TRUE(prop.getImageOverrides().empty());
 }
 
 TEST_F(PropertyMaterialListTest, aTexturePathSurvivesTheXMLForm)
@@ -655,7 +686,8 @@ TEST_F(PropertyMaterialListTest, aTexturePathSurvivesTheXMLForm)
     App::PropertyMaterialList restored;
     restoreFromXML(restored, xml);
     expectEntries(restored, values);
-    EXPECT_EQ(restored.getImagePath(0), texturedMaterial().imagePath);
+    EXPECT_EQ(restored.getImagePath(0), texturedMaterial().imagePath) << xml;
+    EXPECT_EQ(restored.getUuid(0), texturedMaterial().uuid) << xml;
 }
 
 TEST_F(PropertyMaterialListTest, stringsRideTheCompactDocFile)
@@ -752,8 +784,8 @@ TEST_F(PropertyMaterialListTest, readsAFileLaidOutTheWayUpstreamWritesIt)
     EXPECT_EQ(prop.getImagePath(0), "/tex/one.png");
     EXPECT_EQ(prop.getUuid(0), "card-1");
     EXPECT_TRUE(prop.getImagePath(1).empty());
-    // the ambient colour was uniform in the file and is stored once
-    EXPECT_EQ(prop.getAmbientColors().size(), 1U);
+    // the ambient colour was uniform in the file and belongs to the base
+    EXPECT_FALSE(prop.variesInAmbient());
 }
 
 /** Reading a document from after the alpha component changed meaning
@@ -855,8 +887,7 @@ TEST_F(PropertyMaterialListTest, aConvertedUniformListStillCollapses)
     restoreBinaryDocFile(prop, opacityEraDocFile(entries), "1.1R41234");
 
     ASSERT_EQ(prop.getSize(), 3);
-    EXPECT_EQ(prop.getDiffuseColors().size(), 1U);
-    EXPECT_EQ(prop.getAmbientColors().size(), 1U);
+    EXPECT_FALSE(prop.hasOverrides());
     // 0.5 either way round: the entry's transparency is 0.5 and so is the
     // stored alpha, its complement.
     EXPECT_FLOAT_EQ(prop.getTransparency(2), 0.5F);
@@ -924,8 +955,8 @@ TEST_F(PropertyMaterialListTest, aPBRListGrowsDielectric)
     prop.setSize(4);
     EXPECT_FLOAT_EQ(prop.getMetallic(3), 0.0F);
     EXPECT_FLOAT_EQ(prop.getRoughness(3), 0.5F);
-    // and none of that materialised the untouched specular field
-    EXPECT_TRUE(prop.getSpecularColors().empty());
+    // and none of that made the untouched specular field an override
+    EXPECT_FALSE(prop.variesInSpecular());
 }
 
 TEST_F(PropertyMaterialListTest, pbrRoundTripsTheFieldEncodings)
@@ -1197,19 +1228,35 @@ TEST_F(PropertyMaterialListTest, convertPBRKeepsTheLook)
 TEST_F(PropertyMaterialListTest, rgbWritesLeaveTheAlphasAlone)
 {
     // The dialog's colour edits: the diffuse alpha is the opacity and the
-    // PBR specular alpha the metallic, so a colour edit writes rgb only
+    // PBR specular alpha the metallic, so a colour edit writes rgb only.
+    //
+    // It is a whole-object write, so it moves the BASE and the faces that
+    // hold a colour of their own keep it (docs/ShapeAppearanceDesign.md
+    // 12.2). A per-entry transparency IS a per-entry diffuse alpha, so
+    // stating one makes that face hold its whole colour -- which is what
+    // makes entries 1 and 2 below keep theirs.
     App::PropertyMaterialList prop;
     prop.setPBR(true);
     prop.setSize(3);
     prop.setTransparencies({0.0F, 0.5F, 0.25F});
     prop.setMetallicValues({0.0F, 1.0F, 0.5F});
+    const App::Color wasDiffuse = prop.getDiffuseColor(1);
+    const App::Color wasSpecular = prop.getSpecularColor(1);
 
     prop.setDiffuseRGB(packed(0x00ff00ff));
     prop.setSpecularRGB(packed(0xff8000ff));
-    for (int i = 0; i < 3; ++i) {
-        EXPECT_EQ(prop.getDiffuseColor(i).getPackedValue() >> 8, 0x00ff00U) << i;
-        EXPECT_EQ(prop.getSpecularColor(i).getPackedValue() >> 8, 0xff8000U) << i;
+    // entry 0 states neither alpha, so it follows the base
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue() >> 8, 0x00ff00U);
+    EXPECT_EQ(prop.getSpecularColor(0).getPackedValue() >> 8, 0xff8000U);
+    EXPECT_EQ(prop.getBase().diffuseColor.getPackedValue() >> 8, 0x00ff00U);
+    EXPECT_EQ(prop.getBase().specularColor.getPackedValue() >> 8, 0xff8000U);
+    for (int i : {1, 2}) {
+        EXPECT_EQ(prop.getDiffuseColor(i).getPackedValue() >> 8,
+                  wasDiffuse.getPackedValue() >> 8) << i;
+        EXPECT_EQ(prop.getSpecularColor(i).getPackedValue() >> 8,
+                  wasSpecular.getPackedValue() >> 8) << i;
     }
+    // and the alphas, which is what this is really about, are untouched
     EXPECT_FLOAT_EQ(prop.getTransparency(1), 0.5F);
     EXPECT_FLOAT_EQ(prop.getTransparency(2), 0.25F);
     EXPECT_FLOAT_EQ(prop.getMetallic(0), 0.0F);
@@ -1221,7 +1268,7 @@ TEST_F(PropertyMaterialListTest, rgbWritesLeaveTheAlphasAlone)
     uniform.setSize(4);
     uniform.setTransparency(0.5F);
     uniform.setDiffuseRGB(packed(0x123456ff));
-    EXPECT_EQ(uniform.getDiffuseColors().size(), 1U);
+    EXPECT_FALSE(uniform.hasOverrides());
     EXPECT_FLOAT_EQ(uniform.getTransparency(3), 0.5F);
     EXPECT_EQ(uniform.getDiffuseColor(3).getPackedValue() >> 8, 0x123456U);
 }
@@ -1229,36 +1276,37 @@ TEST_F(PropertyMaterialListTest, rgbWritesLeaveTheAlphasAlone)
 //**************************************************************************
 // Surface finish (docs/ShapeAppearanceDesign.md section 9)
 
-TEST_F(PropertyMaterialListTest, aFinishCollapsesLikeEveryOtherField)
+TEST_F(PropertyMaterialListTest, aFinishRidesTheBaseLikeEveryOtherField)
 {
     App::PropertyMaterialList prop;
     prop.setSize(6);
     EXPECT_FALSE(prop.hasFinish());
-    EXPECT_EQ(prop.getFinishes().size(), 0U);   // unset costs nothing
+    EXPECT_FALSE(prop.variesInFinish());   // unset costs nothing
     EXPECT_EQ(prop.getFinish(3).pattern, App::SurfaceFinish::None);
 
     prop.setFinish(brushedFinish());
     EXPECT_TRUE(prop.hasFinish());
-    EXPECT_EQ(prop.getFinishes().size(), 1U);   // uniform: stored once
+    EXPECT_FALSE(prop.variesInFinish());   // the object's, stated once
     EXPECT_EQ(prop.getFinish(5).pattern, App::SurfaceFinish::Brushed);
     EXPECT_TRUE(prop.variesOnlyInDiffuse());
 
     prop.setFinish(2, knurlFinish());
-    EXPECT_EQ(prop.getFinishes().size(), 6U);
+    EXPECT_EQ(prop.getOverrides(), std::vector<uint32_t>({2}));
+    EXPECT_EQ(prop.getFinishOverrides().size(), 1U);
     EXPECT_EQ(prop.getFinish(2).pattern, App::SurfaceFinish::Knurl);
     EXPECT_EQ(prop.getFinish(1).pattern, App::SurfaceFinish::Brushed);
     // a finish that varies is something a colour list cannot say
     EXPECT_FALSE(prop.variesOnlyInDiffuse());
 
-    // and back: setting them all the same collapses again
+    // and back: giving it the base's finish drops the override
     prop.setFinish(2, brushedFinish());
-    EXPECT_EQ(prop.getFinishes().size(), 1U);
+    EXPECT_FALSE(prop.hasOverrides());
     EXPECT_TRUE(prop.variesOnlyInDiffuse());
 
     // clearing it empties the field rather than storing six Nones
     prop.setFinish(App::SurfaceFinish());
     EXPECT_FALSE(prop.hasFinish());
-    EXPECT_EQ(prop.getFinishes().size(), 0U);
+    EXPECT_FALSE(prop.variesInFinish());
 }
 
 TEST_F(PropertyMaterialListTest, aFinishIsClampedOnTheWayIn)
@@ -1400,10 +1448,11 @@ TEST_F(PropertyMaterialListTest, aTextureFieldCostsNothingUntilSomethingStatesOn
     EXPECT_EQ(prop.getTextureIndex().size(), 0U);
     EXPECT_FALSE(prop.getTexture(3).isSet());
 
-    // Uniform: one record, and still no index
+    // The object's: the base holds it, and no face states anything
     prop.setTexture(oakTexture());
     EXPECT_TRUE(prop.hasTexture());
-    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_EQ(prop.getBase().texture, oakTexture());
+    EXPECT_EQ(prop.getTexturePalette().size(), 0U);
     EXPECT_EQ(prop.getTextureIndex().size(), 0U);
     for (int i = 0; i < 5; ++i)
         EXPECT_EQ(prop.getTexture(i), oakTexture()) << i;
@@ -1427,15 +1476,19 @@ TEST_F(PropertyMaterialListTest, oneOddEntryCostsTwoBytesNotARecordPerEntry)
     odd.maps[App::SurfaceTexture::Emissive] = "odd-one-out";
     prop.setTexture(700, odd);
 
-    EXPECT_EQ(prop.getTexturePalette().size(), 2U);
-    EXPECT_EQ(prop.getTextureIndex().size(), 1000U);
+    // One overriding face, one palette slot, one index entry -- where the
+    // dense form would have written a slot for every one of the thousand
+    EXPECT_EQ(prop.getOverrides(), std::vector<uint32_t>({700}));
+    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 1U);
     EXPECT_EQ(prop.getTexture(699), oakTexture());
     EXPECT_EQ(prop.getTexture(700), odd);
     EXPECT_EQ(prop.getTexture(701), oakTexture());
 
     // ... and putting it back collapses the whole thing again
     prop.setTexture(700, oakTexture());
-    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_FALSE(prop.hasOverrides());
+    EXPECT_EQ(prop.getTexturePalette().size(), 0U);
     EXPECT_EQ(prop.getTextureIndex().size(), 0U);
     EXPECT_EQ(prop.getTexture(700), oakTexture());
 }
@@ -1451,18 +1504,23 @@ TEST_F(PropertyMaterialListTest, aTexturePaletteHoldsOnlyWhatIsDistinct)
     // Six entries, three distinct values, one of them the default
     prop.setTextures({a, b, a, App::SurfaceTexture(), b, a});
     EXPECT_EQ(prop.getSize(), 6);
-    EXPECT_EQ(prop.getTexturePalette().size(), 3U);
-    EXPECT_EQ(prop.getTextureIndex().size(), 6U);
+    // Nothing has said which of the three the object is, so every entry
+    // states its own over an unset base
+    EXPECT_EQ(prop.getOverrides(), std::vector<uint32_t>({0, 1, 2, 4, 5}));
+    EXPECT_EQ(prop.getTexturePalette().size(), 2U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 5U);
     // First-use order, which is what makes the stored form canonical
     EXPECT_EQ(prop.getTexturePalette()[0], a);
     EXPECT_EQ(prop.getTexturePalette()[1], b);
-    EXPECT_FALSE(prop.getTexturePalette()[2].isSet());
-    const std::vector<uint16_t> expected {0, 1, 0, 2, 1, 0};
+    const std::vector<uint16_t> expected {0, 1, 0, 1, 0};
     EXPECT_EQ(prop.getTextureIndex(), expected);
+    EXPECT_EQ(prop.getTexture(2), a);
+    EXPECT_FALSE(prop.getTexture(3).isSet());
 
-    // A run that is all one value is the uniform form, index and all
+    // A run that is all one value is the base saying it, index and all
     prop.setTextures({b, b, b, b, b, b});
-    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_FALSE(prop.hasOverrides());
+    EXPECT_EQ(prop.getTexturePalette().size(), 0U);
     EXPECT_EQ(prop.getTextureIndex().size(), 0U);
     EXPECT_EQ(prop.getTexture(4), b);
 }
@@ -1477,13 +1535,17 @@ TEST_F(PropertyMaterialListTest, aTextureRidesTheWholeMaterialThroughTheList)
     EXPECT_EQ(prop.getTexture(0), oakTexture());
     EXPECT_FALSE(prop.getTexture(1).isSet());
     EXPECT_EQ(prop.getMaterial(2).texture, oakTexture());
-    // Two entries share one palette slot; the default is the third
-    EXPECT_EQ(prop.getTexturePalette().size(), 2U);
+    // Two entries share one palette slot, the third states nothing
+    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 2U);
 
-    // set1Value reads back through the same storage
+    // set1Value reads back through the same storage, and once every entry
+    // agrees the texture belongs to the object
     prop.set1Value(1, textured);
     EXPECT_EQ(prop.getTexture(1), oakTexture());
-    EXPECT_EQ(prop.getTexturePalette().size(), 1U);
+    EXPECT_FALSE(prop.hasOverrides());
+    EXPECT_EQ(prop.getBase().texture, oakTexture());
+    EXPECT_EQ(prop.getTexturePalette().size(), 0U);
     EXPECT_EQ(prop.getTextureIndex().size(), 0U);
 }
 
@@ -1495,11 +1557,11 @@ TEST_F(PropertyMaterialListTest, aTexturePaletteFollowsTheEntryCount)
     App::PropertyMaterialList prop;
     prop.setSize(3);
     prop.setTexture(1, a);
-    EXPECT_EQ(prop.getTextureIndex().size(), 3U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 1U);
 
-    // Growth extends with the filler, and the index grows with it
+    // Growth adds faces that read the base, so the index does not move
     prop.setSize(6);
-    EXPECT_EQ(prop.getTextureIndex().size(), 6U);
+    EXPECT_EQ(prop.getTextureIndex().size(), 1U);
     EXPECT_EQ(prop.getTexture(1), a);
     EXPECT_FALSE(prop.getTexture(5).isSet());
 
@@ -1759,18 +1821,18 @@ TEST_F(PropertyMaterialListTest, aRunFromALaterBuildIsReadAndDropped)
     };
     put(0xffffffffUL);   // FieldStreamMarker: what follows is per field
     put(2);              // entry count
-    // FieldDiffuse | FieldFinish | two fields this build has never heard of
-    put((1U << 1) | (1U << 11) | (1U << 13) | (1U << 14));
+    // FieldDiffuse | FieldFinish | a field this build has never heard of.
+    // One rather than two: bits 13 and 14 are the base and the follow flag
+    // now, and 15 is the last free one -- an unknown RUN SHAPE, which the
+    // same byte length gets past, is what the test below this one covers.
+    put((1U << 1) | (1U << 11) | (1U << 15));
     // A doc file read with no document version behind it reads as legacy, so
     // the alpha byte means TRANSPARENCY here: 0 is opaque
     run(0, 2, "4278190080\n16711680\n");   // RunColors
     run(4, 2, num(App::SurfaceFinish::Brushed) + num(0.05F) + num(0.002F) + num(30.0F)
                   + num(App::SurfaceFinish::Blasted) + num(0.02F) + num(0.004F)
                   + num(0.0F));            // RunFinish
-    run(1, 2, num(1.5F) + num(2.5F));      // the first unknown field, as floats
-    // The second, whose payload this build never parses at all: the byte
-    // length is the only thing it needs to get past it
-    run(3, 1, "0:hello\n");
+    run(1, 2, num(1.5F) + num(2.5F));      // the unknown field, as floats
 
     App::PropertyMaterialList prop;
     ASSERT_NO_THROW(restoreDocFile(prop, file.str()));
@@ -1836,6 +1898,9 @@ TEST_F(PropertyMaterialListTest, aTextureRoundTripsBothForkEncodings)
     prop.setSize(4);
     prop.setDiffuseColors({packed(0xff0000ff), packed(0x00ff00ff),
                            packed(0x0000ffff), packed(0xffffffff)});
+    // Every entry differs in its colour, so every one is an override --
+    // including the one whose texture is the base's, which is what the
+    // third (unset) palette slot is
     prop.setTextures({oakTexture(), other, oakTexture(), App::SurfaceTexture()});
     ASSERT_EQ(prop.getTexturePalette().size(), 3U);
 
@@ -1877,8 +1942,8 @@ TEST_F(PropertyMaterialListTest, aUniformTextureCostsNoIndexOnTheWireEither)
             restoreDocFile(back, saveDocFile(prop, 5));
         }
         ASSERT_EQ(back.getSize(), 500) << asXML;
-        EXPECT_EQ(back.getTexturePalette().size(), 1U) << asXML;
-        EXPECT_EQ(back.getTextureIndex().size(), 0U) << asXML;
+        EXPECT_FALSE(back.hasOverrides()) << asXML;
+        EXPECT_EQ(back.getBase().texture, oakTexture()) << asXML;
         EXPECT_EQ(back.getTexture(499), oakTexture()) << asXML;
     }
 }
@@ -2120,7 +2185,7 @@ TEST_F(PropertyMaterialListTest, aTextureSlotFromALaterBuildIsReadAndDropped)
     App::PropertyMaterialList prop;
     ASSERT_NO_THROW(restoreDocFile(prop, file.str()));
     ASSERT_EQ(prop.getSize(), 2);
-    ASSERT_EQ(prop.getTexturePalette().size(), 1U);
+    ASSERT_TRUE(prop.hasTexture());
     for (unsigned slot = 0; slot < App::SurfaceTexture::SlotCount; ++slot) {
         EXPECT_EQ(prop.getTexture(0).maps[slot], "hash-" + std::to_string(slot)) << slot;
     }
@@ -2486,4 +2551,352 @@ TEST_F(PropertyMaterialListTest, aPythonFieldWriteNamesOneEntryOrEveryOne)
                 "mlist.setMetallic(1, 0.9)\n");
     EXPECT_TRUE(prop.isPBR());
     EXPECT_NEAR(prop.getMetallic(1), 0.9F, 0.01F);
+}
+
+//**************************************************************************
+// The base entry and the overriding faces
+// (docs/ShapeAppearanceDesign.md section 12)
+
+TEST_F(PropertyMaterialListTest, aDenseListHoldsItsBaseOpenUntilOneIsDerived)
+{
+    // Every encoding that states one entry at a time says nothing about
+    // which of them the object is, so the list stands with every entry an
+    // override over a default base -- which resolves correctly and costs
+    // exactly what the dense form cost.
+    App::Material green = redMaterial();
+    green.diffuseColor = packed(0x00ff00ff);
+
+    App::PropertyMaterialList prop;
+    std::vector<App::Material> values(10, redMaterial());
+    values[4] = green;
+    prop.setValues(values);
+
+    EXPECT_FALSE(prop.hasDerivedBase());
+    EXPECT_EQ(prop.getOverrides().size(), 10U);
+    expectEntries(prop, values);
+
+    // With nothing to go on the most common entry wins, and every face
+    // wearing it stops being an override
+    prop.deriveBase();
+    EXPECT_TRUE(prop.hasDerivedBase());
+    EXPECT_TRUE(prop.getBase() == redMaterial());
+    EXPECT_EQ(prop.getOverrides(), std::vector<uint32_t>({4}));
+    expectEntries(prop, values);
+
+    // and it runs once: a second call is not a second answer
+    prop.deriveBase();
+    EXPECT_TRUE(prop.getBase() == redMaterial());
+}
+
+TEST_F(PropertyMaterialListTest, theBaseIsTheMaterialCoveringTheLargestArea)
+{
+    // The board-and-pads case, which entry COUNT decides the wrong way: one
+    // big green face and five small gold ones
+    App::Material gold = redMaterial();
+    gold.diffuseColor = packed(0xffd700ff);
+    App::Material board = redMaterial();
+    board.diffuseColor = packed(0x008000ff);
+
+    std::vector<App::Material> values(6, gold);
+    values[0] = board;
+    const std::vector<double> areas {1000.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+
+    App::PropertyMaterialList byArea;
+    byArea.setValues(values);
+    byArea.deriveBase(nullptr, &areas);
+    EXPECT_TRUE(byArea.getBase() == board);
+    EXPECT_EQ(byArea.getOverrides(), std::vector<uint32_t>({1, 2, 3, 4, 5}));
+    expectEntries(byArea, values);
+
+    // ... and by count it is the pads, which is why the area is asked for
+    App::PropertyMaterialList byCount;
+    byCount.setValues(values);
+    byCount.deriveBase();
+    EXPECT_TRUE(byCount.getBase() == gold);
+    expectEntries(byCount, values);
+}
+
+TEST_F(PropertyMaterialListTest, theMirrorWinsWhenTheListNamesIt)
+{
+    // What a document this fork wrote before the base holds: the mirror is
+    // the last uniform value, which is what the object looked like before
+    // its faces were painted
+    App::Material body = redMaterial();
+    App::Material pad = redMaterial();
+    pad.diffuseColor = packed(0x00ff00ff);
+
+    std::vector<App::Material> values(6, pad);
+    values[0] = body;
+    values[1] = body;
+
+    App::PropertyMaterialList prop;
+    prop.setValues(values);
+    EXPECT_TRUE(prop.namesDiffuse(body.diffuseColor));
+    const App::Color hint = body.diffuseColor;
+    prop.deriveBase(&hint);
+    // the mirror outranks the count, which would have chosen the pads
+    EXPECT_TRUE(prop.getBase() == body);
+    EXPECT_EQ(prop.getOverrides(), std::vector<uint32_t>({2, 3, 4, 5}));
+    expectEntries(prop, values);
+
+    // A mirror the list does not hold declines, and the count decides
+    App::PropertyMaterialList other;
+    other.setValues(values);
+    const App::Color grey = App::Material().diffuseColor;
+    EXPECT_FALSE(other.namesDiffuse(grey));
+    other.deriveBase(&grey);
+    EXPECT_TRUE(other.getBase() == pad);
+}
+
+TEST_F(PropertyMaterialListTest, theSparseFormRoundTripsBothForkEncodings)
+{
+    App::Material painted = fullyPaintedMaterial();
+    App::PropertyMaterialList prop;
+    std::vector<App::Material> values(200, redMaterial());
+    values[3] = painted;
+    values[100].diffuseColor = packed(0x00ff00ff);
+    prop.setValues(values);
+    prop.deriveBase();
+    ASSERT_EQ(prop.getOverrides(), std::vector<uint32_t>({3, 100}));
+
+    for (bool asXML : {true, false}) {
+        App::PropertyMaterialList back;
+        if (asXML) {
+            const std::string xml = saveToXML(prop, 5);
+            EXPECT_NE(xml.find("\nb "), std::string::npos) << xml;
+            EXPECT_NE(xml.find("\no 2 3 100\n"), std::string::npos) << xml;
+            restoreFromXML(back, xml);
+        }
+        else {
+            restoreDocFile(back, saveDocFile(prop, 5));
+        }
+        ASSERT_EQ(back.getSize(), 200) << asXML;
+        // the base came back stated, so no heuristic runs on it again
+        EXPECT_TRUE(back.hasDerivedBase()) << asXML;
+        EXPECT_EQ(back.getOverrides(), std::vector<uint32_t>({3, 100})) << asXML;
+        EXPECT_TRUE(back.isSame(prop)) << asXML;
+        expectEntriesQ8(back, values);
+    }
+}
+
+TEST_F(PropertyMaterialListTest, aSparseListCostsTheFacesItPaints)
+{
+    // The claim of 12.3: a 10,000 face import with three painted faces is a
+    // base and three colours, not 10,000 colours
+    App::PropertyMaterialList prop;
+    prop.setSize(10000);
+    prop.setDiffuseColor(packed(0x008000ff));
+    for (int face : {17, 4096, 9999}) {
+        prop.setDiffuseColor(face, packed(0xffd700ff));
+    }
+    EXPECT_EQ(prop.getOverrides().size(), 3U);
+    EXPECT_LT(saveDocFile(prop, 5).size(), 400U);
+    EXPECT_LT(saveToXML(prop, 5).size(), 600U);
+}
+
+TEST_F(PropertyMaterialListTest, schemaFourStillWritesOneEntryPerFace)
+{
+    // The compatible encoding cannot state a base, so it resolves as it
+    // goes -- which is what makes an old FreeCAD able to open the file
+    App::PropertyMaterialList prop;
+    std::vector<App::Material> values(4, redMaterial());
+    values[2].diffuseColor = packed(0x00ff00ff);
+    prop.setValues(values);
+    prop.deriveBase();
+    ASSERT_EQ(prop.getOverrides().size(), 1U);
+
+    const std::string xml = saveToXML(prop, 4);
+    EXPECT_EQ(xml.find("fields="), std::string::npos) << xml;
+    EXPECT_EQ(xml.find("\nb "), std::string::npos) << xml;
+
+    App::PropertyMaterialList back;
+    restoreFromXML(back, xml);
+    expectEntriesQ8(back, values);
+    // and it comes back with no base in it, ready for the heuristic
+    EXPECT_FALSE(back.hasDerivedBase());
+}
+
+TEST_F(PropertyMaterialListTest, anOverrideListAFileStatesIsChecked)
+{
+    // Every number here came out of a file, so none of it is evidence: the
+    // storage invariants of 12.6 are the format's checks
+    const std::string head = "<MaterialList count=\"4\" fields=\"1\">\n";
+    for (const char *body : {"o 2 3 1\n",          // not sorted
+                             "o 2 1 9\n",          // names no entry
+                             "o 1 1\nd 2 ff0000ff 00ff00ff\n"}) {  // too long a field
+        App::PropertyMaterialList prop;
+        EXPECT_THROW(restoreFromXML(prop, head + body + "</MaterialList>\n"),
+                     Base::Exception)
+                << body;
+    }
+}
+
+TEST_F(PropertyMaterialListTest, anAppearanceCardKeepsThePaintedFaces)
+{
+    // 12.2, and the reason the base exists at all: assigning the object a
+    // whole material must not collapse the faces the user painted
+    App::Material painted = redMaterial();
+    painted.diffuseColor = packed(0x00ff00ff);
+    painted.shininess = 0.9F;
+
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(8, redMaterial()));
+    prop.set1Value(5, painted);
+    ASSERT_EQ(prop.getOverrides(), std::vector<uint32_t>({5}));
+
+    App::Material card;
+    card.diffuseColor = packed(0x0000ffff);
+    card.shininess = 0.2F;
+    prop.setBase(card);
+
+    EXPECT_EQ(prop.getSize(), 8);
+    EXPECT_EQ(prop.getOverrides(), std::vector<uint32_t>({5}));
+    EXPECT_TRUE(prop.getMaterial(0).diffuseColor == packed(0x0000ffff));
+    EXPECT_FLOAT_EQ(prop.getShininess(0), 0.2F);
+    EXPECT_TRUE(prop.getMaterial(5).diffuseColor == packed(0x00ff00ff));
+    EXPECT_FLOAT_EQ(prop.getShininess(5), 0.9F);
+
+    // one face back to the base, and then all of them
+    prop.clearOverride(5);
+    EXPECT_FALSE(prop.hasOverrides());
+    EXPECT_TRUE(prop.getMaterial(5).diffuseColor == packed(0x0000ffff));
+}
+
+TEST_F(PropertyMaterialListTest, aListOfOneEntryHasNoOverrides)
+{
+    // 12.6: that entry IS what the object looks like
+    App::PropertyMaterialList prop;
+    prop.setSize(1);
+    prop.setDiffuseColor(0, packed(0x00ff00ff));
+    EXPECT_FALSE(prop.hasOverrides());
+    EXPECT_TRUE(prop.getBase().diffuseColor == packed(0x00ff00ff));
+}
+
+TEST_F(PropertyMaterialListTest, aFieldEveryFaceAgreesOnBelongsToTheObject)
+{
+    // What keeps a whole field landed one entry at a time from costing one
+    // value per face: if nothing disagrees, it is the base's
+    App::PropertyMaterialList prop;
+    prop.setSize(4);
+    for (int i = 0; i < 4; ++i) {
+        prop.setShininess(i, 0.75F);
+    }
+    EXPECT_FALSE(prop.hasOverrides());
+    EXPECT_FLOAT_EQ(prop.getBase().shininess, 0.75F);
+    EXPECT_FLOAT_EQ(prop.getShininess(2), 0.75F);
+}
+
+//**************************************************************************
+// Following the object's material card (docs/MaterialStorage.md section 15)
+
+TEST_F(PropertyMaterialListTest, aWholeObjectWriteEndsTheFollow)
+{
+    App::Material card = redMaterial();
+    card.shininess = 0.7F;
+
+    App::PropertyMaterialList prop;
+    prop.setSize(6);
+    prop.followMaterial(card);
+    EXPECT_TRUE(prop.isFollowingMaterial());
+    EXPECT_TRUE(prop.getBase() == card);
+
+    // A per-face write does not touch the base, so it does not end it
+    prop.setDiffuseColor(2, packed(0x00ff00ff));
+    EXPECT_TRUE(prop.isFollowingMaterial());
+
+    // ... and the card moving on carries the base with it, over the face
+    // that holds its own
+    App::Material moved = card;
+    moved.diffuseColor = packed(0x0000ffff);
+    prop.followMaterial(moved);
+    EXPECT_TRUE(prop.isFollowingMaterial());
+    EXPECT_TRUE(prop.getDiffuseColor(0) == packed(0x0000ffff));
+    EXPECT_TRUE(prop.getDiffuseColor(2) == packed(0x00ff00ff));
+
+    // A whole-object write is a look the user chose, and it outranks the
+    // card from then on
+    prop.setDiffuseColor(packed(0xffff00ff));
+    EXPECT_FALSE(prop.isFollowingMaterial());
+
+    // A whole-LIST assignment is not one of them: an import states one look
+    // per face and says nothing about which card the object wears, and it
+    // is exactly the imported part that has to be able to take a card and
+    // keep its painted faces
+    App::PropertyMaterialList imported;
+    imported.setValues(std::vector<App::Material>(6, redMaterial()));
+    EXPECT_TRUE(imported.isFollowingMaterial());
+}
+
+TEST_F(PropertyMaterialListTest, aFreshAppearanceIsWaitingForACard)
+{
+    // The flag starts true -- "a fresh object that carries a card follows
+    // it" -- and that is the CLASS DEFAULT, so nothing about the elision of
+    // an untouched appearance changes
+    App::PropertyMaterialList fresh;
+    EXPECT_TRUE(fresh.isFollowingMaterial());
+    fresh.setSize(1);
+    EXPECT_TRUE(fresh.isFollowingMaterial());
+    fresh.setValue(redMaterial());
+    EXPECT_TRUE(fresh.isFollowingMaterial());
+    fresh.setDiffuseColor(packed(0x00ff00ff));
+    EXPECT_FALSE(fresh.isFollowingMaterial());
+}
+
+TEST_F(PropertyMaterialListTest, theFollowFlagIsPartOfTheValue)
+{
+    App::PropertyMaterialList following;
+    following.setSize(3);
+    following.followMaterial(redMaterial());
+
+    App::PropertyMaterialList custom;
+    custom.setSize(3);
+    custom.setBase(redMaterial());
+    // the same entries, and not the same value: one of them will take the
+    // next card and the other will not
+    EXPECT_TRUE(following.getBase() == custom.getBase());
+    EXPECT_FALSE(following.isSame(custom));
+
+    std::unique_ptr<App::Property> copy(following.Copy());
+    App::PropertyMaterialList pasted;
+    pasted.Paste(*copy);
+    EXPECT_TRUE(pasted.isFollowingMaterial());
+}
+
+TEST_F(PropertyMaterialListTest, theFollowFlagRidesBothForkEncodings)
+{
+    App::PropertyMaterialList prop;
+    prop.setSize(4);
+    prop.followMaterial(redMaterial());
+    prop.setDiffuseColor(1, packed(0x00ff00ff));
+    ASSERT_TRUE(prop.isFollowingMaterial());
+
+    for (bool asXML : {true, false}) {
+        App::PropertyMaterialList back;
+        if (asXML) {
+            const std::string xml = saveToXML(prop, 5);
+            EXPECT_NE(xml.find("follow=\"1\""), std::string::npos) << xml;
+            restoreFromXML(back, xml);
+        }
+        else {
+            restoreDocFile(back, saveDocFile(prop, 5));
+        }
+        EXPECT_TRUE(back.isFollowingMaterial()) << asXML;
+        EXPECT_TRUE(back.isSame(prop)) << asXML;
+    }
+
+    // A following list with nothing overriding it still states its base:
+    // the field lines cannot say that a value is the card's
+    App::PropertyMaterialList uniform;
+    uniform.setSize(4);
+    uniform.followMaterial(redMaterial());
+    App::PropertyMaterialList back;
+    restoreDocFile(back, saveDocFile(uniform, 5));
+    EXPECT_TRUE(back.isFollowingMaterial());
+    EXPECT_TRUE(back.isSame(uniform));
+
+    // Schema 4 cannot state it, and restores not following -- which is what
+    // the view provider derives again (docs/MaterialStorage.md 15.4)
+    App::PropertyMaterialList old;
+    restoreFromXML(old, saveToXML(prop, 4));
+    EXPECT_FALSE(old.isFollowingMaterial());
 }

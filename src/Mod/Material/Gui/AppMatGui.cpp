@@ -79,6 +79,13 @@ public:
                            "path as a PNG. What generates the bundled preset icons; see\n"
                            "scripts/material-icons.py.\n"
                            "False where there is nothing to render with.");
+        add_varargs_method("appearanceDigest",
+                           &Module::appearanceDigest,
+                           "appearanceDigest(uuid) -> str\n\n"
+                           "The digest of that material's appearance -- what the bundled\n"
+                           "icons are named by, and what 'two cards look the same' means.\n"
+                           "Cards sharing a digest share an icon; see\n"
+                           "scripts/material-icons.py.");
         add_varargs_method("renderFinishIcon",
                            &Module::renderFinishIcon,
                            "renderFinishIcon(pattern, path, pitch=0, depth=0) -> bool\n\n"
@@ -107,6 +114,26 @@ private:
             return Py::Boolean(MatGui::MaterialIcons::instance().renderToFile(
                 appearance, appearance.finish, QString::fromUtf8(path),
                 material->getRenderProperties()));
+        }
+        catch (const Materials::MaterialNotFound&) {
+            throw Py::KeyError("No material with that uuid");
+        }
+    }
+
+    Py::Object appearanceDigest(const Py::Tuple& args)
+    {
+        char* uuid {};
+        if (!PyArg_ParseTuple(args.ptr(), "s", &uuid)) {
+            throw Py::Exception();
+        }
+        try {
+            auto material = Materials::MaterialManager::getManager().getMaterial(
+                QString::fromUtf8(uuid));
+            const App::Material appearance = material->getMaterialAppearance();
+            return Py::String(MatGui::MaterialIcons::digestOf(
+                                  appearance, appearance.finish,
+                                  material->getRenderProperties())
+                                  .toStdString());
         }
         catch (const Materials::MaterialNotFound&) {
             throw Py::KeyError("No material with that uuid");

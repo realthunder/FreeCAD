@@ -35,6 +35,7 @@
 #include <Base/Console.h>
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/GeoFeature.h>
 #include <Gui/Application.h>
 #include <Gui/DlgMaterialPropertiesImp.h>
 #include <Gui/DockWindowManager.h>
@@ -45,7 +46,10 @@
 #include <Gui/ViewProviderGeometryObject.h>
 #include <Gui/WaitCursor.h>
 
+#include <Mod/Material/App/Exceptions.h>
+#include <Mod/Material/App/MaterialManager.h>
 #include <Mod/Material/App/ModelUuids.h>
+#include <Mod/Material/App/PropertyMaterial.h>
 
 #include "DlgDisplayPropertiesImp.h"
 #include "MaterialIcons.h"
@@ -240,14 +244,19 @@ void DlgDisplayPropertiesImp::setupFilters()
     filter->addRequiredComplete(Materials::ModelUUIDs::ModelUUID_Rendering_Texture);
     filterList->push_back(filter);
 
-    filter = std::make_shared<Materials::MaterialFilter>();
-    filter->setName(tr("All materials"));
-    filterList->push_back(filter);
-
+    // Deliberately no "All materials" tab: this is a LOOK picker, and
+    // physical cards and hatch patterns have no look to offer
+    // (docs/MaterialStorage.md 15.5).
     d->ui.widgetMaterial->setIncludeEmptyFolders(false);
     d->ui.widgetMaterial->setIncludeLegacy(false);
 
     d->ui.widgetMaterial->setFilter(filterList);
+
+    // The picker at the top is the Material panel's, filter and all: it
+    // edits the object's CARD, which is what mass, FEM and CAM read
+    Materials::MaterialFilter cards;
+    cards.requirePhysical(true);
+    d->ui.widgetCard->setFilter(cards);
 }
 
 void DlgDisplayPropertiesImp::setupConnections()
@@ -300,6 +309,14 @@ void DlgDisplayPropertiesImp::setupConnections()
             &MaterialTreeWidget::materialSelected,
             this,
             &DlgDisplayPropertiesImp::onMaterialSelected);
+    connect(d->ui.widgetCard,
+            &MaterialTreeWidget::materialSelected,
+            this,
+            &DlgDisplayPropertiesImp::onCardSelected);
+    connect(d->ui.buttonResetToMaterial,
+            &QPushButton::clicked,
+            this,
+            &DlgDisplayPropertiesImp::onResetToMaterial);
     // The other way into the same slot -- a name typed and committed --
     // is wired here; the completer does not exist yet at this point and
     // connects itself in setupFinishPresets(). editingFinished also
@@ -360,6 +377,7 @@ void DlgDisplayPropertiesImp::setPropertiesFromSelection()
     std::vector<Gui::ViewProvider*> views = getTargets();
     setDisplayModes(views);
     setColorPlot(views);
+    setMaterialCard(views);
     setShapeAppearance(views);
     setShapeFinish(views);
     setShapeColor(views);
@@ -1136,6 +1154,106 @@ std::vector<Gui::ViewProvider*> DlgDisplayPropertiesImp::getSelection() const
     return views;
 }
 
+namespace
+{
+
+/// The object's material card property, or null. The card is on the OBJECT
+/// (mass, FEM and CAM read it); the look is on the view provider.
+Materials::PropertyMaterial* cardOf(Gui::ViewProvider* view)
+{
+    auto* vp = dynamic_cast<Gui::ViewProviderDocumentObject*>(view);
+    if (!vp || !vp->getObject()) {
+        return nullptr;
+    }
+    return dynamic_cast<Materials::PropertyMaterial*>(
+            vp->getObject()->getPropertyByName("ShapeMaterial"));
+}
+
+}  // namespace
+
+void DlgDisplayPropertiesImp::setMaterialCard(const std::vector<Gui::ViewProvider*>& views)
+{
+    // The picker is there only while the selection carries a card: without
+    // one there is nothing for the look to follow, and the panel is what it
+    // always was (docs/MaterialStorage.md 15.5).
+    Materials::PropertyMaterial* card = nullptr;
+    App::PropertyMaterialList* appearance = nullptr;
+    for (auto view : views) {
+        if (!card) {
+            card = cardOf(view);
+        }
+        if (!appearance) {
+            appearance = dynamic_cast<App::PropertyMaterialList*>(
+                    view->getPropertyByName("ShapeAppearance"));
+        }
+    }
+    d->ui.groupBoxCard->setVisible(card != nullptr);
+    QString cardName;
+    if (card) {
+        try {
+            const auto& material = card->getValue();
+            cardName = material.getName();
+            d->ui.widgetCard->setMaterial(material.getUUID());
+        }
+        catch (const Materials::MaterialNotFound&) {
+        }
+    }
+
+    // "As material Steel", "Custom", "Custom, 3 faces painted"
+    QString state;
+    if (!appearance) {
+        state = tr("Custom");
+    }
+    else if (appearance->isFollowingMaterial()) {
+        state = cardName.isEmpty() ? tr("As material") : tr("As material %1").arg(cardName);
+    }
+    else {
+        const std::size_t painted = appearance->getOverrides().size();
+        state = painted ? tr("Custom, %n face(s) painted", "", int(painted)) : tr("Custom");
+    }
+    d->ui.labelAppearance->setText(state);
+    // Shown only while it applies, which is the rule the sync commands
+    // follow (docs/MaterialStorage.md 13.5)
+    d->ui.buttonResetToMaterial->setVisible(
+            card != nullptr && appearance != nullptr && !appearance->isFollowingMaterial());
+}
+
+void DlgDisplayPropertiesImp::onCardSelected(const std::shared_ptr<Materials::Material>& material)
+{
+    for (auto view : getTargets()) {
+        if (auto* card = cardOf(view)) {
+            card->setValue(*material);
+        }
+    }
+    setMaterialCard(getTargets());
+}
+
+void DlgDisplayPropertiesImp::onResetToMaterial()
+{
+    for (auto view : getTargets()) {
+        auto* prop = dynamic_cast<App::PropertyMaterialList*>(
+                view->getPropertyByName("ShapeAppearance"));
+        auto* geometry = dynamic_cast<App::GeoFeature*>(
+                dynamic_cast<Gui::ViewProviderDocumentObject*>(view)
+                        ? dynamic_cast<Gui::ViewProviderDocumentObject*>(view)->getObject()
+                        : nullptr);
+        if (!prop || !geometry) {
+            continue;
+        }
+        const App::Material card = geometry->getMaterialAppearance();
+        if (card == App::Material()) {
+            continue;   // nothing to go back to
+        }
+        // The base, and following again from now on. The faces holding a
+        // look of their own keep it: this is not "clear the overrides".
+        prop->followMaterial(card);
+        if (auto* vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(view)) {
+            Gui::applyMaterialRenderProperties(vp, geometry->getMaterialRenderProperties());
+        }
+    }
+    setMaterialCard(getTargets());
+}
+
 void DlgDisplayPropertiesImp::onMaterialSelected(
     const std::shared_ptr<Materials::Material>& material)
 {
@@ -1144,13 +1262,17 @@ void DlgDisplayPropertiesImp::onMaterialSelected(
         if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(
                 it->getPropertyByName("ShapeAppearance"))) {
             // A card states colours and gloss, never a machining, so the
-            // material it builds carries finish None -- and setValue
-            // REPLACES the list, which would take the finish set one row
-            // down with it. Carry it across, for the same reason
-            // applyWholeMaterial does.
+            // material it builds carries finish None -- and this write
+            // states every field of the base, which would take the finish
+            // set one row down with it. Carry it across, and the texture
+            // beside it, for the same reason applyWholeMaterial does.
             App::Material appearance = material->getMaterialAppearance();
-            appearance.finish = prop->getFinish(0);
-            prop->setValue(appearance);
+            appearance.finish = prop->getBase().finish;
+            appearance.texture = prop->getBase().texture;
+            // The BASE: a look chosen here outranks the object's card from
+            // now on (setBase ends the follow), and the faces holding a
+            // look of their own keep it (docs/MaterialStorage.md 15.5).
+            prop->setBase(appearance);
         }
         // A card may also state render features App::Material cannot
         // carry -- glass so far. Those are dynamic properties on the view
@@ -1161,6 +1283,7 @@ void DlgDisplayPropertiesImp::onMaterialSelected(
             Gui::applyMaterialRenderProperties(vp, material->getRenderProperties());
         }
     }
+    setMaterialCard(getTargets());
 }
 
 // ----------------------------------------------------------------------------

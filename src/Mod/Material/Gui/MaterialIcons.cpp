@@ -56,6 +56,7 @@
 #include <Base/Console.h>
 #include <Gui/Inventor/SoFCRenderMaterial.h>
 #include <Gui/RenderParams.h>
+#include <Gui/Renderer/Environment.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Gui/ViewParams.h>
 
@@ -362,9 +363,20 @@ public:
                 // across the body's diagonal (BGFXView::submitGlassSurface).
                 density = 3.0F / (SphereDiameter * std::sqrt(3.0F));
             }
-            const float cr = 1.0F - d.r;
-            const float cg = 1.0F - d.g;
-            const float cb = 1.0F - d.b;
+            // The engine absorbs with the LINEAR colour when it is
+            // colour managed (submitGlassSurface decodes the authored
+            // diffuse like the mesh pass, as Cycles does), so the depth
+            // this rule predicts is taken from the same number -- read
+            // off the picked value, a mid tint comes out 1.8x shallower
+            // than the ball then shows it.
+            const bool managed = Gui::RenderParams::getOutputTransform()
+                != long(Render::OutputConfig::None);
+            auto lin = [managed](float c) {
+                return managed ? Render::srgbToLinear(c) : c;
+            };
+            const float cr = 1.0F - lin(d.r);
+            const float cg = 1.0F - lin(d.g);
+            const float cb = 1.0F - lin(d.b);
             const float most = std::max({cr, cg, cb});
             const float chroma = most - std::min({cr, cg, cb});
             const float depth = density * most * SphereDiameter;
@@ -843,6 +855,14 @@ QIcon MaterialIcons::icon(const QString& key, const App::Material& material,
     // all, because it is the same icon on every installation, and
     // because it is the only icon there is where nothing can be drawn.
     QIcon bundled = fromResource(key, resourceName(name), digest);
+    if (bundled.isNull()) {
+        // Nothing under this card's own name, so try the one the cards
+        // that look like it share. The per-card name is tried first and
+        // stays the way a single card is overridden; this is how the
+        // other hundred get a bundled icon without shipping a hundred
+        // copies of the same picture.
+        bundled = fromResource(key, sharedResourceName(digest), digest);
+    }
     if (!bundled.isNull()) {
         return bundled;
     }
@@ -1036,6 +1056,40 @@ QString MaterialIcons::resourceName(const QString& materialName)
     static const QRegularExpression unsafe(QStringLiteral("[^A-Za-z0-9._-]+"));
     return QStringLiteral("Appearance_") + QString(materialName).replace(unsafe,
                                                                          QStringLiteral("_"));
+}
+
+QIcon MaterialIcons::patternIcon(const QString& key, const QString& materialName)
+{
+    auto it = _cache.find(key);
+    if (it != _cache.end()) {
+        return it->second;
+    }
+    // No digest: a swatch is drawn from the hatch definition, not from an
+    // App::Material, so there is nothing for the staleness guard to
+    // compare and the file is taken as it stands.
+    return fromResource(key, patternResourceName(materialName), QString());
+}
+
+QString MaterialIcons::patternResourceName(const QString& materialName)
+{
+    if (materialName.isEmpty()) {
+        return {};
+    }
+    static const QRegularExpression unsafe(QStringLiteral("[^A-Za-z0-9._-]+"));
+    return QStringLiteral("Pattern_")
+        + QString(materialName).replace(unsafe, QStringLiteral("_"));
+}
+
+QString MaterialIcons::sharedResourceName(const QString& digest)
+{
+    if (digest.isEmpty()) {
+        return {};
+    }
+    // The digest is already hex, so it is a legal file name as it
+    // stands. Distinct prefix so that the generator can recognise its
+    // own leftovers, and so that a reader can tell at a glance which
+    // icons are per-card overrides and which are shared looks.
+    return QStringLiteral("Look_") + digest;
 }
 
 QString MaterialIcons::finishResourceName(uint8_t pattern)

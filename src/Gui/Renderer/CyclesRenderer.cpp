@@ -376,8 +376,12 @@ bool renderScene(const SceneInput &input,
         return fail("Cycles: " + session->progress.get_error_message());
     if (!capture->done)
         return fail("Cycles produced no frame");
+    // A debug view is a measurement, not a picture: written raw over
+    // black, as the raster path shows it (its output transform is off
+    // whenever a view mode is on, and its background is black).
+    const bool debug = input.debugView != 0;
     if (!writePng(path, capture->width, capture->height, capture->pixels,
-                  input.background, managed, message))
+                  debug ? Background() : input.background, managed && !debug, message))
         return fail(message);
     return true;
 }

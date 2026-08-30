@@ -912,8 +912,9 @@ caps, and user shaders. Each is a later step of phase 3, not a
 design gap: Cycles has an image texture node, a displacement path,
 and the clipping can be done with the same mesh-cutting the section
 caps use. Clip planes and caps landed after this was written
-(sections 6.3 and 6.4); the textures, finishes and user shaders are
-the node-graph work queued as phase 6 item 15 (section 8).
+(sections 6.3 and 6.4), and the texture maps after that (section
+6.5), the finishes (6.6) and the per-face palettes (6.7) -- phase 6
+item 15's phase A (section 8) complete; user shaders are its phase B.
 
 Verified 2026-08-28 (scratchpad `cycles_scene_probe.py` under xvfb: a
 floor, a red box and an `App::Link` of it, a six-colour per-face box,
@@ -996,9 +997,11 @@ leaves **0.251**; the same two in concave mode leave **0.751**. One
 mesh, one object, one shader in every leg. CUDA agrees with CPU to
 0.1% on every count.
 
-Still not translated (the rest of the 6.2 list): textures, surface
-finishes, the section CAPS -- the cut is honest but hollow, which is
-section 6.4 -- and user shaders. The last three are phase 6 item 15.
+Still not translated when this was written (the rest of the 6.2
+list): textures, surface finishes, the section CAPS -- the cut is
+honest but hollow, which is section 6.4 -- and user shaders. The caps
+are section 6.4, the texture maps section 6.5; finishes and user
+shaders are phase 6 item 15.
 
 
 ### 6.4 Section caps (built 2026-08-28)
@@ -1072,6 +1075,267 @@ cut through its equator shows an annulus of 31896 fill pixels with
 even-odd pairing has to leave open is open, on a curved boundary.
 Object and mesh counts follow the caps exactly: 1/1 unclipped, 2/2
 with one plane, 3/3 with two.
+
+
+### 6.5 Texture maps (phase 6 item 15, phase A, built 2026-08-29)
+
+The first of the node-graph work of item 15 (section 8): the maps a
+draw's material carries now sample in the shader graph instead of
+being dropped. `SceneTranslator::Maps` (`CyclesSceneP.h`) resolves
+them from the `Render::Material` -- the unit-0 picture with its GL
+texture environment, the bump or normal map, the emissive and
+metallic-roughness maps -- under the raster path's rule that a mesh
+without texture coordinates carries none. `applyMaps` builds the
+nodes on a `SurfaceLinks` set (base, alpha, metallic, roughness,
+emission, normal), so the same code serves the uniform shader, where
+the surface's own values arrive from ObjectInfo and the BSDF's
+constants, and the attribute shader, where they arrive from the
+per-vertex attributes; a map multiplies into whatever fed the socket
+before it.
+
+- **Pixels.** `PixelImage`, a `ccl::ImageLoader` over the
+  `TextureImage` the render cache holds (the `BakedEnvironment`
+  pattern of section 6.2): channels expanded to four, rows bottom-up
+  as GL and Cycles' own loaders have them, alpha `channel_packed`
+  (coverage, never premultiplied, never decoded), one upload per
+  distinct image (`equals` by textureId and colour space). A PICTURE
+  (base, emissive) declares `srgb` when the pipeline is colour
+  managed so Cycles decodes it on upload, as `fc_mesh_fs.sh` decodes
+  it per sample; a DATA map (bump, normal, metallic-roughness)
+  declares `data` and is never decoded.
+- **Coordinates.** `ATTR_STD_UV` per corner from `MeshData::texCoords`,
+  with the GL texture matrix folded in on the CPU (a mapping node
+  cannot express a shear; the matrix keys the mesh). A transformed
+  texture is therefore a different `ccl::Mesh`, exactly as a
+  different index range is.
+- **Texture environment.** The four GL models as the fragment shader
+  applies them: Modulate multiplies colour and alpha, Decal mixes by
+  the texel alpha, Blend is `base * (1 - texel) + blendColor * texel`
+  per channel, Replace takes the texel (and its alpha only when the
+  source format has one). Alpha goes to the Principled Alpha, so the
+  raster path's `discard` below 0.004 is the same transparency.
+- **Emissive map.** Added to the emission colour AFTER the texture
+  environment (glTF semantics): the constant emission times its
+  strength folds into the addend and the strength becomes 1.
+- **Metallic-roughness map.** Green multiplies the roughness, blue
+  the metallic (glTF), through Separate Color + Math nodes.
+- **Bump.** A one- or two-channel map is a height into a Bump node;
+  Cycles differentiates the height graph itself. The raster path
+  tilts the normal by `strength * dh/dUV`, Cycles by
+  `distance * dh/dP` with P in object units, so the distance is the
+  strength times the millimetres one UV unit spans -- the root of the
+  ratio of the range's area in object space to its area in texture
+  space (`Maps::uvScale`). A three- or four-channel map is a
+  tangent-space normal map (Coin's, i.e. OpenGL's, convention); the
+  tangents come from the UVs and the vertex normals, which Cycles
+  derives on its own when the node asks, so a mesh without normals
+  shades unbumped rather than wrongly. Parallax has no path-tracer
+  meaning and is not read; `BumpConfig` rides `SceneInput::bump`
+  from the three feeders for the strength.
+- **Not translated, on purpose.** The occlusion map: a path tracer
+  computes its own occlusion. The surface finishes are section 6.6,
+  the per-face palettes section 6.7.
+
+Verified 2026-08-29 (`maps/probe.py` under xvfb on the debug tree --
+the only one with Cycles on -- top-down orthographic on a 40 mm box,
+256x256, 32 spp, CPU and CUDA): a red/blue checker as
+`Render_BaseColorTexture` lands its four cells where the raster
+control frame has them (linear means 0.55/0.04/0.045 against
+0.037/0.04/0.649), a green disc as `Render_EmissiveMap` reads 1.0
+green at the centre over an unchanged checker, and a grayscale ramp
+as `Render_NormalMap` darkens the lit top uniformly (0.55 -> 0.39) as
+a constant tilt should. Two traps paid for on the way: Coin's texture
+coordinates are `(s, t, r, q)` per vertex, not two floats -- read at
+the wrong stride every corner sampled the (0, 0) texel and the box
+rendered one flat colour; and a custom `ImageLoader` must write the
+type the FINALIZED metadata asks for, since declaring `u_colorspace_srgb`
+makes Cycles promote a byte image to half floats for a conversion pass
+(bytes written into that buffer rendered the box invisible or as
+streaks). `scene_linear_srgb` is the byte-sRGB fast path.
+
+
+### 6.6 Surface finishes (phase 6 item 15, phase A, built 2026-08-29)
+
+The machined finishes of `fc_finish.sh` -- knurl, straight knurl,
+brushed, blasted, turned, laid out in the face's projection frame or
+triplanarly without one -- path-trace as node graphs.
+`SceneTranslator::Finish` (`CyclesSceneP.h`) resolves the draw's own
+finish and frame from the `Render::Material` under the bgfx path's
+gate (a known pattern, a positive pitch and depth); `applyFinish`
+builds the graph and hands its height to a `BumpNode` on the
+`SurfaceLinks` normal, after the maps, so the two compose the way they
+do in the raster shader. The draw's own finish and frame, or one
+face's out of the palettes (section 6.7).
+
+- **Height, not gradient.** The raster shader evaluates the analytic
+  GRADIENT of a height field and rotates the normal by Mikkelsen's
+  surface gradient; Cycles' Bump node wants the HEIGHT and differences
+  it against the ray differentials (three evaluations of the height
+  subgraph, `ShaderGraph::refine_bump_nodes`, each `TextureCoordinate`
+  offset by `Filter Width` times the differential). With `Distance`
+  and `Strength` at 1 the node computes
+  `normalize(|det| N - sign(det) surfgrad)`, which is `fcFinishPerturb`
+  -- so a height in millimetres of object space is the raster perturb
+  exactly, and the finish is a function of `TextureCoordinate.Object`
+  (the object-space position with the bump offset carried through the
+  inverse transform, i.e. `v_opos`) so an instanced or scaled copy
+  keeps it.
+- **Tables.** What the raster computes per fragment is baked once per
+  process into data images (`TableImage`, float texels, `data`
+  colour space, cubic interpolation for a continuous slope, repeat
+  extension for periodicity): the groove profile -- `pi` times the
+  integral of `sign(sin) |sin|^0.45` over one period, 1024 texels, so
+  `depth * table(x / pitch)` has exactly the slope `fcFinishGroove`
+  states -- and two value-noise tiles baked with `fcFinishHash` on the
+  cell index, wrapped at the tile (256 cells x 32 texels, one lane per
+  channel for the brushed finish's three noises; 64 x 64 cells x 8
+  texels for the blasted craters). The lattices are statistically the
+  shader's, not bit for bit (float32 `sin` of a large argument differs
+  between libms), which is the claim the probe holds them to.
+- **Patterns.** Knurl = half-depth profiles on the two 45 degree
+  trains; straight = one train; brushed = `depth * (0.6 + nl(y/60p))
+  * (0.7 n1(x/p) + 0.3 n2(x/0.37p))`; blasted = two 2-D octaves;
+  turned = the profile over the radius. The lay rotation is applied
+  in-graph to the projected coordinate.
+- **Frames, in-graph.** Planar: two dot products against the frame's
+  axes. Radial: `atan2` about the axis, the arc snapped to a whole
+  number of periods round the reference radius (the seam argument of
+  `fc_finish.sh`; a frame stating no radius keeps the shader's
+  per-fragment snap, which the bump's finite difference would see
+  where the analytic gradient did not -- no producer emits one), and
+  turning remapped to a straight knurl a quarter turn over, as the
+  shader does. Triplanar: three projections weighted by
+  `max(|n| - 0.25, 0)^4` off `TextureCoordinate.Normal`, the
+  object-space shading normal, which the bump offsets leave alone --
+  the shader's chain rule treats the weights as constants too.
+- **Not carried.** The pixel-footprint fade and its roughness hand-off:
+  a path tracer supersamples what the raster had to filter.
+- **Debug view 2.** The verification needed a picture in which the two
+  engines can be compared exactly, and lighting is not it (Cycles'
+  environment is nearly tilt-insensitive and its BSDF applies bump
+  shadowing; the same 17 degree flank reads as a 9% luminance drop in
+  the raster and 1% in Cycles). So Cycles honours the raster path's
+  `DebugViewMode` 2 (docs/RenderDebug.md sec 2.3): `SceneInput::
+  debugView`, fed by the three feeders from the same
+  `RenderParams::getDebugViewMode()`, replaces every surface by an
+  emission of the view-space shading normal as `n * 0.5 + 0.5` (a
+  `VectorTransform` to camera space with z negated for the GL eye
+  convention), written raw over black exactly as `fs_fc_debug.sc`
+  writes it. Unfinished shapes agree between the engines to 8-bit
+  precision (mean |dn| 0.0000 on a plane, 0.0007 on a cylinder,
+  0.0008 on a sphere), which is also a check of the camera and
+  normal conventions on curved surfaces.
+
+Verified 2026-08-29 (`finish/probe.py` under xvfb on the debug tree,
+`probe.sh <CPU|CUDA> <spp> <tag>`, in a config home of its own): every
+finished leg's Cycles normal view is held against the ANALYTIC
+perturbed normal, `fc_finish.sh`'s own arithmetic in numpy at every
+pixel (`normalize(N - tangential(grad))`), as the difference from the
+unfinished view. A 40 mm `Part::Plane` (planar frame): straight knurl
+corr 0.999, RMS 0.1722 vs 0.1730, max 0.306 vs 0.300 (the designed
+sin(atan(pi * 0.2 / 2)) = 0.299); straight at a 30 degree lay 0.999
+on both axes; diamond knurl 0.999; turned 0.999; brushed and blasted
+RMS within 11% and 3% of the analytic. A `Part::Cylinder` r 10 (radial
+frame, Face1 the lateral face): straight knurl corr 1.000, RMS 0.1537
+vs 0.1539; turned 0.97 / 0.999; diamond knurl 0.999, RMS 0.1186 vs
+0.1187. A `Part::Sphere` (no analytic frame, triplanar): straight
+0.985 / 0.997, blasted within 3%. CUDA reads the same numbers as the
+CPU (0.301 / 0.533 at depth 0.2 / 0.4 on the tilt probe). Two things
+found on the way: the raster's mode 2 is the PREPASS normal, without
+the finish, so the raster frames serve as the framing check only;
+and a producer bug -- removing a finish dropped the render material
+node and with it the projection frames, and the once-only
+`renderGeometryAsked` never asked for them again, so a finish restated
+in the same session shaded triplanarly in both engines (fixed:
+the flag resets with the node).
+
+
+### 6.7 Per-face palettes (phase 6 item 15, phase A, built 2026-08-29)
+
+A per-face appearance puts a finish, a projection frame and an image on
+each face of one draw. The raster path, bound to one program and one
+sampler per draw, carries them as PALETTES -- `FinishPalette`,
+`FramePalette`, `TexturePalette` on the `Render::Material` -- with one
+index per vertex in the material stream's third slot (bytes 8, 9, 10 of
+`MeshData::materials`), and selects in the fragment shader out of
+uniform arrays and a 2D array texture. A path tracer has no such
+constraint, and Cycles has a native answer to "a different material per
+face": a mesh's per-triangle SHADER SLOT (`Mesh::shader`, an index into
+its `used_shaders`), the mechanism Blender's material slots ride. So
+the translation does not port the palettes as palettes:
+
+- **A shader variant per combination present.** `translateDraw` walks
+  the draw's triangles once, reads the three indices off each
+  triangle's first corner (all three carry the face's, which is also
+  what the raster path assumes when it interpolates them), and for
+  every distinct (finish, frame, layer) triple it meets builds one
+  variant of the draw's own graph -- `uniformShader` or
+  `attributeShader` as before -- with THAT entry's constants: the
+  finish from `FinishPalette::Entry` through the same gate the scalars
+  pass (`resolveFinish`), laid out in the face's `SurfaceFrame`; the
+  image from `TexturePalette`, layer i being entry i - 1 and a layer
+  past the palette its last entry, the raster's clamp. The triangle
+  gets the variant's slot. A draw with nothing to index (no stream, or
+  no palette to read into) is the one-variant case it always was, and
+  a face whose index runs past a palette reads what the raster's
+  zero-filled uniform array holds there: no finish, no frame.
+- **Why this and not attributes.** The alternative -- per-corner
+  attributes for the frame vectors and the pitch/depth/angle, and a
+  compare-and-mix chain over the patterns present -- would have meant
+  re-deriving `applyFinish` with link inputs (four height evaluations
+  under a select chain, tripled by the bump's differentials) and could
+  not have done the images at all without a chain of image nodes, one
+  sample each per shading point. The variants reuse the verified,
+  constant-folded graphs unchanged, at the cost of one shader per
+  distinct entry combination. The shader cache (`shaders`, keyed on
+  the finish's numbers and the frame's) shares variants across draws
+  whose faces state the same frames, which instanced and coaxial parts
+  do; an assembly of many differently-framed finished parts is many
+  shaders, which Cycles compiles in parallel and Blender scenes carry
+  by the thousand.
+- **The face image** (`FaceImage`, `applyFaceImage`): a picture
+  sampled like the base map (decoded when colour managed, alpha
+  coverage) and MODULATING the base colour and alpha on top of whatever
+  the unit-0 texture did, as `fc_mesh_fs.sh` has it. Its coordinates
+  are `fcFrameTexUV` in-graph when the draw states a tile size
+  (`Material::facetexscale` millimetres per tile): a planar face in the
+  frame's axes; a turned one as (arc, z) with the arc snapped to a
+  whole number of tiles round the reference radius; an unframed one
+  off its dominant object axis, chosen outright (a coordinate cannot
+  be blended the way the finish's height is) with selectors built from
+  Math LESS_THAN nodes. Without a tile size the mesh's own UVs serve,
+  the texture matrix folded in as for the maps (`ATTR_STD_UV` is now
+  added for either need), and a mesh with none reads the corner texel.
+- **Bookkeeping.** The mesh key lists every variant (the slots follow
+  from them and the stream, which the cache generation names); a
+  variant's shader key adds `FaceImage::key` beside the finish's; the
+  caps keep the uniform surface with no image. `GraphOps` is the node
+  vocabulary `applyFinish` had as lambdas, shared with the image
+  builder, and `canonicalFrame` the frame orthonormalization both lay
+  their coordinates in.
+
+Verified 2026-08-29 (`palette/probe.py` under xvfb on the debug tree,
+`probe.sh <CPU|CUDA> <spp> <tag>`, the finish probe's method: debug
+view 2 against the analytic perturbed normal, per REGION of the
+picture). A 40 mm box with a 20 mm pocket, top view, its ring face
+turned (pitch 2, depth 0.2) and its floor straight-knurled (pitch 3,
+depth 0.45) -- two finish entries, two frames, three shaders in the
+report: ring corr 0.999 / 0.999, RMS 0.1723 vs 0.1735; floor corr
+1.000, RMS 0.2478 vs 0.2488; the ring against the floor's finish
+0.005. A cylinder r 10 with the lateral face straight-knurled in its
+radial frame and the top face turned in its planar one: front view
+corr 0.999 (RMS 0.152 vs 0.1525), top view 0.999 / 0.999. The same box
+wearing a red/white checker on the ring and a blue/white one on the
+floor at 10 mm per tile (beauty frames): each region's coloured
+channel is flat (std 0.02 / 0.03) while the others carry the cells
+(0.31 / 0.26), the cells correlate 0.97 with the analytic checker in
+the face's frame and 0.99 with the raster frame. CUDA reads the same
+numbers as the CPU. One trap paid: a PLANE's frame origin is its
+surface's own location with the normal component dropped
+(`faceProjectionFrame`), so the pocket floor -- the tool box's face at
+(10, 10, 10) -- lays its pattern out from (10, 10), a third of a
+period from the object origin the first analytic model assumed;
+Cycles was right and the model was not.
 
 
 ## 7. Preparing for out of process
@@ -1383,6 +1647,155 @@ Phase 6 -- queued, not started. Two items, in this order.
     raster path's. Trap already on record: **ccl connects sockets by
     NAME**, so a socket renamed between Cycles versions fails at
     graph build, not at compile.
+
+    RULED 2026-08-29, in two phases. **Phase A**, the declarative
+    facts a `Render::Material` carries -- texture maps, surface
+    finishes, the per-face palettes -- become node graphs: the maps
+    are section 6.5, the finishes section 6.6, the per-face palettes
+    section 6.7 (all built 2026-08-29). **Phase B**, user shaders:
+    freeform bgfx `.sc` text has no node-graph meaning, so the bridge
+    is a THIRD, node-based authoring dialect -- MaterialX. The
+    `post` stage needs no bridge: it already runs over the traced
+    frame.
+
+    **Phase B DESIGNED 2026-08-29** (discussion recorded here; work
+    starts in a later session). The findings that shaped it:
+
+    - A premise correction. An earlier draft of this item said
+      Cycles' Hydra delegate "already maps MaterialX networks to
+      ccl nodes". It does not: `src/hydra/material.cpp` maps
+      `UsdPreviewSurface` (a five-entry parameter table) and USD
+      nodes whose id starts with `cycles_`/`cycles:`, nothing else.
+      Blender's route (the 2026 GSoC project) is MaterialX ShaderGen
+      -> OSL -> `ccl::OSLNode`, which needs `WITH_OSL` (off in our
+      build, a heavy extra dependency) and runs on CPU and OptiX
+      only -- OptiX is a decoy on this box (section 4.1). Not our
+      route.
+    - Engines with a node vocabulary of their own INTERPRET a
+      MaterialX graph into it rather than compiling it: Unreal's
+      Interchange builds material-function nodes (Standard Surface,
+      OpenPBR, UsdPreviewSurface), three.js' `MaterialXLoader`
+      builds TSL nodes. Our translator already has that vocabulary
+      (`GraphOps` in `CyclesScene.cpp`; `applyMaps`/`applyFinish`
+      are hand-built graphs of the same kind).
+    - ShaderGen is the code-generation route for raster. MaterialX
+      1.39.5 (2026-05-22) emits GLSL, ESSL, Vulkan GLSL, MSL, WGSL,
+      OSL, MDL; hardware generation is unified in `MaterialXGenHw`
+      and designed to be subclassed for a new target (own `Syntax`,
+      overridden emit methods, registered node implementations).
+      But its raw GLSL cannot go through shaderc: bgfx uniforms are
+      `Vec4`/`Mat3`/`Mat4`/`Sampler` only, and ShaderGen declares
+      float/int/bool uniforms, uniform blocks and a `u_lightData[]`
+      struct array.
+    - The browser tier has no runtime compiler: the server compiles
+      and ships binaries (RenderDebug.md sec 6.3). Whatever is
+      generated is text through the existing hash-keyed shaderc
+      cache; the browser needs no MaterialX (JsMaterialX exists, but
+      is not needed).
+    - OpenPBR vs MaterialX: different kinds of thing. MaterialX is
+      the LANGUAGE (typed node graph, standard library, ShaderGen);
+      OpenPBR (v1.1.1, 2026-04-17, ASWF) is a SHADING MODEL -- the
+      parameters and the lobe layering -- in the same row as
+      Standard Surface, glTF PBR and UsdPreviewSurface. OpenPBR's
+      reference implementation is a MaterialX nodegraph shipped in
+      MaterialX's `libraries/`, but the spec stands alone so a
+      renderer without MaterialX implements it natively: Cycles'
+      Principled BSDF v2 is OpenPBR-aligned, Blender exports OpenPBR
+      as its MaterialX surface, Unreal Substrate imports it.
+    - Packaging: conda-forge has no `materialx` package (checked).
+      MaterialX is Apache-2.0, C++17; Core + Format + GenShader +
+      GenGlsl have no external dependencies; the `libraries/`
+      directory of `.mtlx` node definitions must ship as data, like
+      the shader sources.
+    - Prior art on the surface model: `portsmouth/OpenPBR-viewer`
+      (MIT, 2026-03, by an OpenPBR co-author) is a three.js material
+      demo -- ONE material as global uniforms, one glTF, no
+      instancing, no material textures, no denoiser -- but carries
+      two spec-tracked GLSL implementations of OpenPBR: a rasterizer
+      (`glsl/rasterization/openpbr.frag.glsl`, ~1.3k lines) and a
+      path-tracing BSDF (`glsl/pathtracing/openpbr_surface.glsl` +
+      the per-lobe files, ~1.5k lines). The app is not reusable
+      (three.js + JS); the shaders are.
+
+    **The design.** MaterialX is the material DESCRIPTION; the
+    engine keeps the lighting. A `.mtlx` document authors the
+    surface inputs -- pattern nodes feeding one surface-shader node.
+    **OpenPBR is the canonical surface model**; Standard Surface,
+    glTF PBR and UsdPreviewSurface are accepted through MaterialX's
+    own translation graphs, not mapped natively. Neither consumer
+    uses MaterialX's lighting:
+
+    - Raster: a `BgfxShaderGenerator : GlslShaderGenerator`
+      (ESSL-flavoured syntax, uniforms packed into `vec4` lanes,
+      samplers as `SAMPLER2D` slots, no light or environment code
+      emitted) that generates only a MATERIAL-INPUTS function --
+      the OpenPBR parameters -- spliced into the stock mesh shader
+      the way the volume stage splices `fcMediumField` today
+      (RenderEngine.md sec 5.3). Shadows, EVSM, SH/IBL, WBOIT,
+      picking, section clip, per-face palettes stay untouched: the
+      user program feeds the mesh program, it never replaces it. The
+      mesh shader itself moves to an OpenPBR evaluation, with
+      OpenPBR-viewer's rasterizer as the reference, replacing the
+      Phong-to-Khronos-spec-gloss fit of today.
+    - Cycles: an interpreter from the MaterialX graph to ccl nodes
+      -- a table for the stdlib pattern nodes (image, noise, mix,
+      math, separate/combine, texcoord, normalmap, ...) and the
+      surface node mapped onto `PrincipledBsdfNode`, whose v2
+      sockets are OpenPBR parameters, plus the emission/transparent/
+      absorption pieces section 6.2 already builds. OpenPBR-viewer's
+      path-tracing BSDF is the independent cross-check when raster
+      and Cycles disagree. An unsupported node reports once and the
+      material renders stock (the sandboxed-failure rule).
+    - Document model: `Dialect` gains `MATERIALX`; the `.mtlx`
+      text rides `FragmentProgram` (or an included file -- open
+      decision 2); the graph's public inputs surface as `Param_*`
+      dynamic properties in the REVERSE direction from today (the
+      interface is read from the document, not declared by hand)
+      and bind to both consumers -- vec4 lanes for raster,
+      `ValueNode`s for Cycles. Only `Stage=material` accepts the
+      dialect; `post`/`water`/`volume`/`particle` stay `.sc`.
+
+    **Phasing**, each step verifiable with the probe harness of
+    sections 6.5-6.7 (`build/conda-debug-occt801`, CPU + CUDA,
+    raster control frames):
+
+    0. Vendor MaterialX as a submodule (Core/Format/GenShader/
+       GenGlsl only), ship `libraries/` as an asset,
+       `Dialect=MATERIALX` validates at document load.
+    1. The Cycles interpreter, over MaterialX's own
+       `resources/Materials/Examples` (OpenPBR + Standard Surface
+       samples) -- first because it needs no shader-language work
+       and the phase-A traps (colour spaces, stride, socket names)
+       are fresh.
+    2. The OpenPBR mesh shader, then the bgfx ShaderGen target and
+       the splice; parity against the Cycles frames the way the
+       finish probe measures it.
+    3. Interface: public inputs -> `Param_*`, the demo preview, and
+       a material card able to carry a `.mtlx` (the appearance model
+       of MaterialStorage.md already has a file slot).
+
+    **Open decisions** (2, 4 and 5 are provisional; 1 and 3 are
+    ruled): (1) OpenPBR canonical -- RULED yes. (2) Where the
+    `.mtlx` lives: inline text (diff-able, what `.sc` does) vs an
+    included file through FileBlobs (real materials reference image
+    files relative to the `.mtlx`; the file route, or rewriting
+    `file=` references to blobs). (3) Cycles route -- RULED
+    interpreter, not OSL. (4) Phase A is NOT re-expressed in
+    MaterialX for now; the interpreter shares `GraphOps` with it.
+    (5) The raster splice covers material inputs only; no
+    displacement stage (it would reopen the undisplaced-geometry
+    problem of RenderEngine.md sec 5.3).
+
+    **Ruled out for phase B, kept for the roadmap:** a client-side
+    path tracer in the browser (OpenPBR-viewer's shape: BVH baked
+    into textures, full-screen fragment tracing, progressive
+    accumulation). It is complementary to the streamed Cycles
+    viewport of section 7.1, not a replacement -- no backend, zero
+    interaction latency, works from the static snapshot -- but it
+    is bounded by texture-baked BVHs, has no top-level BVH for our
+    instance-heavy scenes, no compute in WebGL2, no denoiser, and
+    mobile GPUs are thermally limited; WebGPU is the honest target.
+    See RoadMap.md, long term.
 
 
 ## 9. Traps carried forward

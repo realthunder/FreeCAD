@@ -372,3 +372,11 @@ match. Bump the version when adding fields and keep read gated on it.
   it). Per-target builds can leave siblings ABI-stale.
 - **Effects only render in render-cache mode 3** — otherwise the backend is
   null and only Coin draws.
+- **Every picked colour a pass uploads is decoded on the CPU** --
+  `unpackAuthoredColor(..., colorManaged())`, never `unpackColor`, for any
+  authored colour that becomes a uniform (the material slots, the glass /
+  water / light-body tints, the shadow tint, the outline and cap fills);
+  the 8-bit vertex and instance streams decode on the GPU in `fc_color.sh`.
+  A raw unpack absorbs, blooms or fills with the display number, and the
+  output transform then paints it 1.5x too bright (a 0.5 grey lands at
+  0.73) -- the glass tint was 1.8x weaker than Cycles' that way.

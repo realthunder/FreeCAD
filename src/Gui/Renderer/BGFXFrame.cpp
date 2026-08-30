@@ -434,6 +434,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
             reinterpret_cast<const float *>(viewMatrix),
             reinterpret_cast<const float *>(projMatrix),
             [this]() {
+                // Fired by the planner's own timer 300 ms after the
+                // frame that observed the camera -- which can be
+                // after the LAST view's release shut bgfx down (the
+                // icon generator's exit crashed here every run:
+                // gpuBudgetBytes() -> bgfx::getStats() on a dead
+                // library). A device that is gone has no budget.
+                if (!_BGFXLib.deviceUp())
+                    return;
                 const float h = float(widget->height()
                                       * widget->devicePixelRatioF());
                 auto &reg = Render::MeshSourceRegistry::instance();

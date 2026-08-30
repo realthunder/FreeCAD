@@ -46,6 +46,7 @@
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
 #include "util/colorspace.h"
+#include "util/half.h"
 #include "util/image_metadata.h"
 #include "util/transform.h"
 
@@ -483,6 +484,390 @@ private:
     std::vector<float> rgba;
 };
 
+/// A TextureImage as Cycles reads it: the pixels the render cache holds,
+/// expanded to four channels (Cycles stores byte and float images as one
+/// or four channels, never two or three), kept alive by the shared
+/// pointer for as long as the image manager may ask for them. The rows
+/// are bottom-up like GL, which is the row order Cycles' own loaders
+/// hand it (a UV of 0 is the first row). A PICTURE -- the base colour,
+/// the emissive map -- is display referred and is declared
+/// `scene_linear_srgb` when the pipeline is colour managed: the bytes
+/// stay bytes and the kernel decodes them per sample, exactly as
+/// fc_mesh_fs.sh does (Blender's path for an 8-bit PNG). NOT
+/// `u_colorspace_srgb`: that one is a space to CONVERT FROM, and
+/// ImageMetaData::finalize() promotes such an image to half floats for
+/// the conversion -- so the buffer handed to load_pixels is not the
+/// type load_metadata declared, which is why load_pixels writes the
+/// type it is ASKED for. A DATA map -- bump, normal, metallic-roughness
+/// -- is declared data and is never decoded, and a float picture is
+/// linear radiance already (TextureImage::Sample). Alpha is coverage
+/// and is never touched (channel packed).
+class PixelImage : public ccl::ImageLoader
+{
+public:
+    PixelImage(std::shared_ptr<const TextureImage> image, ccl::ustring colorspace)
+        : image(std::move(image))
+        , colorspace(colorspace)
+    {}
+
+    bool load_metadata(ccl::ImageMetaData &metadata,
+                       const ccl::ImageLoaderParams & /*params*/,
+                       ccl::Progress & /*progress*/) override
+    {
+        if (image->width <= 0 || image->height <= 0 || image->numComponents < 1
+            || image->numComponents > 4)
+            return false;
+        metadata.width = image->width;
+        metadata.height = image->height;
+        metadata.channels = 4;
+        metadata.type = image->sample == TextureImage::F32 ? ccl::IMAGE_DATA_TYPE_FLOAT4
+                                                           : ccl::IMAGE_DATA_TYPE_BYTE4;
+        metadata.colorspace = colorspace;
+        metadata.is_compressible_as_srgb = false;
+        return true;
+    }
+
+    bool load_pixels(const ccl::ImageMetaData &metadata, void *pixels) override
+    {
+        const int n = image->numComponents;
+        const size_t count = size_t(image->width) * size_t(image->height);
+        const size_t bytes = image->sampleSize();
+        if (image->pixels.size() < count * size_t(n) * bytes)
+            return false;
+        // Luminance spreads to rgb, a missing alpha is opaque; written
+        // in the type the (finalized) metadata asks for, whatever
+        // load_metadata declared.
+        const uint8_t *in = image->pixels.data();
+        const bool isFloat = image->sample == TextureImage::F32;
+        auto texel = [&](size_t i, float q[4]) {
+            if (isFloat) {
+                float px[4];
+                std::memcpy(px, in + i * size_t(n) * 4u, size_t(n) * 4u);
+                q[0] = px[0];
+                q[1] = n >= 3 ? px[1] : px[0];
+                q[2] = n >= 3 ? px[2] : px[0];
+                q[3] = n == 2 ? px[1] : n == 4 ? px[3] : 1.0f;
+            }
+            else {
+                const uint8_t *p = in + i * size_t(n);
+                q[0] = p[0] / 255.0f;
+                q[1] = (n >= 3 ? p[1] : p[0]) / 255.0f;
+                q[2] = (n >= 3 ? p[2] : p[0]) / 255.0f;
+                q[3] = (n == 2 ? p[1] : n == 4 ? p[3] : 255) / 255.0f;
+            }
+        };
+        switch (metadata.type) {
+        case ccl::IMAGE_DATA_TYPE_BYTE4: {
+            auto *out = static_cast<uint8_t *>(pixels);
+            float q[4];
+            for (size_t i = 0; i < count; ++i) {
+                texel(i, q);
+                for (int c = 0; c < 4; ++c)
+                    out[i * 4 + c] = uint8_t(std::lround(std::clamp(q[c], 0.0f, 1.0f) * 255.0f));
+            }
+            return true;
+        }
+        case ccl::IMAGE_DATA_TYPE_HALF4: {
+            auto *out = static_cast<ccl::half *>(pixels);
+            float q[4];
+            for (size_t i = 0; i < count; ++i) {
+                texel(i, q);
+                for (int c = 0; c < 4; ++c)
+                    out[i * 4 + c] = ccl::float_to_half_image(q[c]);
+            }
+            return true;
+        }
+        case ccl::IMAGE_DATA_TYPE_FLOAT4: {
+            auto *out = static_cast<float *>(pixels);
+            for (size_t i = 0; i < count; ++i)
+                texel(i, out + i * 4);
+            return true;
+        }
+        default:
+            return false;
+        }
+    }
+
+    ccl::string name() const override
+    {
+        return "FreeCAD texture";
+    }
+
+    /// The image manager uploads one copy per distinct loader, and
+    /// distinct is this: the same picture declared in the same space.
+    bool equals(const ccl::ImageLoader &other) const override
+    {
+        const auto *o = dynamic_cast<const PixelImage *>(&other);
+        return o && o->image->textureId == image->textureId && o->colorspace == colorspace;
+    }
+
+private:
+    std::shared_ptr<const TextureImage> image;
+    ccl::ustring colorspace;
+};
+
+/// A baked table -- the finish's groove profile, its noise tiles -- as
+/// a data image the graph samples: float texels, one or four channels,
+/// never decoded, wrapped so the table is periodic by construction.
+/// The tables are process-wide statics (finishProfile and the two
+/// below), so equality is identity of the data and the image manager
+/// uploads each once.
+class TableImage : public ccl::ImageLoader
+{
+public:
+    TableImage(std::shared_ptr<const std::vector<float>> data,
+               int width,
+               int height,
+               int channels,
+               const char *label)
+        : data(std::move(data))
+        , width(width)
+        , height(height)
+        , channels(channels)
+        , label(label)
+    {}
+
+    bool load_metadata(ccl::ImageMetaData &metadata,
+                       const ccl::ImageLoaderParams & /*params*/,
+                       ccl::Progress & /*progress*/) override
+    {
+        metadata.width = width;
+        metadata.height = height;
+        metadata.channels = channels;
+        metadata.type = channels == 1 ? ccl::IMAGE_DATA_TYPE_FLOAT : ccl::IMAGE_DATA_TYPE_FLOAT4;
+        metadata.colorspace = ccl::u_colorspace_data;
+        metadata.is_compressible_as_srgb = false;
+        return true;
+    }
+
+    bool load_pixels(const ccl::ImageMetaData &metadata, void *pixels) override
+    {
+        const size_t count = size_t(width) * size_t(height) * size_t(channels);
+        if (data->size() < count || metadata.channels != channels)
+            return false;
+        std::memcpy(pixels, data->data(), count * sizeof(float));
+        return true;
+    }
+
+    ccl::string name() const override
+    {
+        return label;
+    }
+
+    bool equals(const ccl::ImageLoader &other) const override
+    {
+        const auto *o = dynamic_cast<const TableImage *>(&other);
+        return o && o->data == data;
+    }
+
+private:
+    std::shared_ptr<const std::vector<float>> data;
+    int width;
+    int height;
+    int channels;
+    const char *label;
+};
+
+/// The finish tables, baked once per process from the same arithmetic
+/// fc_finish.sh evaluates per fragment. The raster shader computes the
+/// GRADIENT of a height field analytically; Cycles' Bump node wants
+/// the HEIGHT and differentiates it, so the profile is integrated
+/// here, once, and the lattices of the value noises are laid out as
+/// periodic tiles (the same hash on the cell index, wrapped at the
+/// tile) that the image's repeat extension continues forever.
+constexpr int kProfileSamples = 1024;  ///< texels per groove period
+constexpr int kNoise1Cells = 256;      ///< lattice cells per 1-D tile
+constexpr int kNoise1Sub = 32;         ///< texels per cell
+constexpr int kNoise2Cells = 64;       ///< lattice cells per 2-D tile side
+constexpr int kNoise2Sub = 8;          ///< texels per cell
+constexpr float kTwoPi = 6.2831853f;
+
+/// fcFinishHash: the value-noise lattice, in float32 as the shader
+/// has it (statistically the same lattice; nothing depends on the
+/// two agreeing bit for bit, the GPU's sin does not either).
+float finishHash(float x, float y)
+{
+    const float s = std::sin(x * 127.1f + y * 311.7f) * 43758.5453f;
+    return s - std::floor(s);
+}
+
+/// One groove period of the height field, in units of the depth:
+/// pi times the integral of fcFinishGroove's normalized flank profile
+/// sign(sin) |sin|^0.45 over one period, so that depth * table(x /
+/// pitch) has the slope pi * depth / pitch * profile the shader
+/// states. Centred on zero (only its differences matter).
+std::shared_ptr<const std::vector<float>> finishProfile()
+{
+    static const std::shared_ptr<const std::vector<float>> table = [] {
+        auto t = std::make_shared<std::vector<float>>(kProfileSamples);
+        constexpr int sub = 64;
+        const double du = 1.0 / (double(kProfileSamples) * sub);
+        double acc = 0.0;
+        double mean = 0.0;
+        for (int i = 0; i < kProfileSamples; ++i) {
+            for (int k = 0; k < sub; ++k) {
+                const double u = (double(i) * sub + k + 0.5) * du;
+                const double sn = std::sin(u * 2.0 * kPi);
+                const double s = (sn < 0.0 ? -1.0 : 1.0) * std::pow(std::fabs(sn), 0.45);
+                acc += s * du;
+                if (k == sub / 2 - 1)
+                    (*t)[size_t(i)] = float(acc * kPi);
+            }
+            mean += (*t)[size_t(i)];
+        }
+        mean /= kProfileSamples;
+        for (float &v : *t)
+            v -= float(mean);
+        return t;
+    }();
+    return table;
+}
+
+/// The 1-D value noises of the brushed finish, one lane per channel
+/// (fcFinishNoise1's lanes 0, 11 and 3: the scratch widths at two
+/// scales, and the slow fade along the lay), smoothstep-interpolated
+/// between the lattice values and centred as the shader has them.
+std::shared_ptr<const std::vector<float>> finishNoise1()
+{
+    static const std::shared_ptr<const std::vector<float>> table = [] {
+        constexpr int width = kNoise1Cells * kNoise1Sub;
+        auto t = std::make_shared<std::vector<float>>(size_t(width) * 4);
+        const float lanes[3] = {0.0f, 11.0f, 3.0f};
+        for (int x = 0; x < width; ++x) {
+            const float xc = (x + 0.5f) / kNoise1Sub;
+            const int i = int(std::floor(xc));
+            const float f = xc - float(i);
+            const float u = f * f * (3.0f - 2.0f * f);
+            float *px = t->data() + size_t(x) * 4;
+            for (int c = 0; c < 3; ++c) {
+                const float a = finishHash(float(i % kNoise1Cells), lanes[c]);
+                const float b = finishHash(float((i + 1) % kNoise1Cells), lanes[c]);
+                px[c] = a + (b - a) * u - 0.5f;
+            }
+            px[3] = 1.0f;
+        }
+        return t;
+    }();
+    return table;
+}
+
+/// The 2-D value noise of the blasted finish (fcFinishNoise2), one
+/// periodic tile.
+std::shared_ptr<const std::vector<float>> finishNoise2()
+{
+    static const std::shared_ptr<const std::vector<float>> table = [] {
+        constexpr int side = kNoise2Cells * kNoise2Sub;
+        auto t = std::make_shared<std::vector<float>>(size_t(side) * side);
+        for (int y = 0; y < side; ++y) {
+            const float yc = (y + 0.5f) / kNoise2Sub;
+            const int j = int(std::floor(yc));
+            const float fy = yc - float(j);
+            const float uy = fy * fy * (3.0f - 2.0f * fy);
+            const float j0 = float(j % kNoise2Cells);
+            const float j1 = float((j + 1) % kNoise2Cells);
+            for (int x = 0; x < side; ++x) {
+                const float xc = (x + 0.5f) / kNoise2Sub;
+                const int i = int(std::floor(xc));
+                const float fx = xc - float(i);
+                const float ux = fx * fx * (3.0f - 2.0f * fx);
+                const float i0 = float(i % kNoise2Cells);
+                const float i1 = float((i + 1) % kNoise2Cells);
+                const float a = finishHash(i0, j0);
+                const float b = finishHash(i1, j0);
+                const float c = finishHash(i0, j1);
+                const float d = finishHash(i1, j1);
+                const float k1 = b - a;
+                const float k2 = c - a;
+                const float k3 = a - b - c + d;
+                (*t)[size_t(y) * side + x] = a + k1 * ux + k2 * uy + k3 * ux * uy - 0.5f;
+            }
+        }
+        return t;
+    }();
+    return table;
+}
+
+/// The node vocabulary the graph builders share (applyFinish,
+/// applyFaceImage): a node per arithmetic step, a null operand standing
+/// for the constant beside it. Cycles folds a constant subexpression at
+/// graph build, so stating one as a node costs nothing at render.
+struct GraphOps {
+    using Out = ccl::ShaderOutput *;
+    ccl::ShaderGraph *graph;
+
+    Out math(ccl::NodeMathType type, Out a, Out b, float ca = 0.0f, float cb = 0.0f) const
+    {
+        auto *n = graph->create_node<ccl::MathNode>();
+        n->set_math_type(type);
+        if (a)
+            graph->connect(a, n->input("Value1"));
+        else
+            n->set_value1(ca);
+        if (b)
+            graph->connect(b, n->input("Value2"));
+        else
+            n->set_value2(cb);
+        return n->output("Value");
+    }
+    Out mul(Out a, float c) const
+    {
+        return math(ccl::NODE_MATH_MULTIPLY, a, nullptr, 0.0f, c);
+    }
+    Out add(Out a, float c) const
+    {
+        return math(ccl::NODE_MATH_ADD, a, nullptr, 0.0f, c);
+    }
+    /// a * b + c, c a link.
+    Out madd(Out a, float b, Out c) const
+    {
+        auto *n = graph->create_node<ccl::MathNode>();
+        n->set_math_type(ccl::NODE_MATH_MULTIPLY_ADD);
+        graph->connect(a, n->input("Value1"));
+        n->set_value2(b);
+        graph->connect(c, n->input("Value3"));
+        return n->output("Value");
+    }
+    /// a op c, c a constant vector (null for a unary op).
+    ccl::VectorMathNode *vec(ccl::NodeVectorMathType type, Out a, const float c[3]) const
+    {
+        auto *n = graph->create_node<ccl::VectorMathNode>();
+        n->set_math_type(type);
+        graph->connect(a, n->input("Vector1"));
+        if (c)
+            n->set_vector2(ccl::make_float3(c[0], c[1], c[2]));
+        return n;
+    }
+    /// a op b, both links.
+    Out vec2(ccl::NodeVectorMathType type, Out a, Out b) const
+    {
+        auto *n = graph->create_node<ccl::VectorMathNode>();
+        n->set_math_type(type);
+        graph->connect(a, n->input("Vector1"));
+        graph->connect(b, n->input("Vector2"));
+        return n->output("Vector");
+    }
+    Out dot(Out a, const float c[3]) const
+    {
+        return vec(ccl::NODE_VECTOR_MATH_DOT_PRODUCT, a, c)->output("Value");
+    }
+    Out combine(Out x, Out y, float cy) const
+    {
+        auto *n = graph->create_node<ccl::CombineXYZNode>();
+        graph->connect(x, n->input("X"));
+        if (y)
+            graph->connect(y, n->input("Y"));
+        else
+            n->set_y(cy);
+        return n->output("Vector");
+    }
+    ccl::SeparateXYZNode *separate(Out v) const
+    {
+        auto *n = graph->create_node<ccl::SeparateXYZNode>();
+        graph->connect(v, n->input("Vector"));
+        return n;
+    }
+};
+
 }  // namespace
 
 SceneTranslator::SceneTranslator(ccl::Scene *scene, bool colorManaged)
@@ -492,6 +877,9 @@ SceneTranslator::SceneTranslator(ccl::Scene *scene, bool colorManaged)
 
 bool SceneTranslator::translate(const SceneInput &input, RenderReport &report)
 {
+    // A changed debug view keys every shader afresh (below), which
+    // re-keys every mesh, which is the rebuild it is.
+    debugView = input.debugView;
     bool changed = translateCamera(input.camera);
     changed |= translateWorld(input.pbr, input.output);
 
@@ -509,7 +897,7 @@ bool SceneTranslator::translate(const SceneInput &input, RenderReport &report)
     report.skipped = 0;
     report.added = report.removed = report.restated = report.built = report.released = 0;
     for (const DrawCall &draw : input.draws) {
-        if (!translateDraw(draw, input.pbr, input.section, spare, report, changed)) {
+        if (!translateDraw(draw, input.pbr, input.bump, input.section, spare, report, changed)) {
             ++report.skipped;
             continue;
         }
@@ -561,6 +949,7 @@ bool SceneTranslator::translate(const SceneInput &input, RenderReport &report)
     report.meshes = int(meshes.size());
     report.objects = int(instances.size());
     report.shaders = int(shaders.size());
+    report.images = imageNodes;
     report.triangles = 0;
     for (const auto &entry : meshes)
         report.triangles += entry.second.triangles;
@@ -1016,17 +1405,756 @@ void SceneTranslator::connectSurface(ccl::ShaderGraph *graph,
     graph->connect(mix->output("Closure"), surface);
 }
 
-ccl::Shader *SceneTranslator::uniformShader(const Surface &s, const Clip &clip)
+void SceneTranslator::debugSurface(ccl::ShaderGraph *graph,
+                                   ccl::ShaderOutput *normal,
+                                   const Clip &clip)
+{
+    if (!normal)
+        normal = graph->create_node<ccl::GeometryNode>()->output("Normal");
+    // Into camera space. Cycles' camera looks down its own +Z where a
+    // GL eye looks down -Z (translateCamera's flip), so z is negated
+    // on the way into the 0..1 encoding the raster path writes.
+    auto *toCamera = graph->create_node<ccl::VectorTransformNode>();
+    toCamera->set_transform_type(ccl::NODE_VECTOR_TRANSFORM_TYPE_NORMAL);
+    toCamera->set_convert_from(ccl::NODE_VECTOR_TRANSFORM_CONVERT_SPACE_WORLD);
+    toCamera->set_convert_to(ccl::NODE_VECTOR_TRANSFORM_CONVERT_SPACE_CAMERA);
+    graph->connect(normal, toCamera->input("Vector"));
+    auto *encode = graph->create_node<ccl::VectorMathNode>();
+    encode->set_math_type(ccl::NODE_VECTOR_MATH_MULTIPLY_ADD);
+    encode->set_vector2(ccl::make_float3(0.5f, 0.5f, -0.5f));
+    encode->set_vector3(ccl::make_float3(0.5f, 0.5f, 0.5f));
+    graph->connect(toCamera->output("Vector"), encode->input("Vector1"));
+    auto *emission = graph->create_node<ccl::EmissionNode>();
+    emission->set_strength(1.0f);
+    graph->connect(encode->output("Vector"), emission->input("Color"));
+    connectSurface(graph, emission->output("Emission"), clip);
+}
+
+std::string SceneTranslator::Maps::key() const
+{
+    if (!any())
+        return std::string();
+    std::ostringstream k;
+    k.precision(4);
+    k << ":tex" << (base ? base->textureId : 0) << '/' << int(model) << '/' << alphaSource;
+    if (base && model == TextureImage::Blend)
+        k << '/' << blendColor[0] << ',' << blendColor[1] << ',' << blendColor[2];
+    k << ":bump" << (bump ? bump->textureId : 0) << '/' << bumpScale << '/' << uvScale
+      << ":em" << (emissive ? emissive->textureId : 0)
+      << ":mr" << (metalrough ? metalrough->textureId : 0);
+    return k.str();
+}
+
+SceneTranslator::Maps SceneTranslator::resolveMaps(const Material &m,
+                                                   const MeshData &mesh,
+                                                   const BumpConfig &bump,
+                                                   int start,
+                                                   int count) const
+{
+    Maps maps;
+    // Nothing to sample with: the raster path draws such a mesh
+    // untextured too (its samplers read the corner texel of a white
+    // stand-in), so the maps do not exist here either.
+    if (!mesh.texCoords)
+        return maps;
+    maps.base = m.texture;
+    maps.bump = m.bumpmap;
+    maps.emissive = m.emissivemap;
+    maps.metalrough = m.metallicroughnessmap;
+    if (maps.base) {
+        maps.model = maps.base->model;
+        maps.alphaSource = maps.base->numComponents == 2 || maps.base->numComponents == 4;
+        float c[4];
+        unpackAuthored(maps.base->blendColor, c, managed);
+        std::copy(c, c + 3, maps.blendColor);
+    }
+    maps.bumpScale = bump.scale;
+    if (maps.bump) {
+        const bool normalMap = maps.bump->numComponents >= 3;
+        // A tangent-space normal map wants the tangents Cycles derives
+        // from the UVs and the vertex normals; a mesh without normals
+        // cannot have them, and shades unbumped as the safe fallback.
+        if (normalMap && !mesh.normals) {
+            maps.bump.reset();
+        }
+        else if (!normalMap) {
+            // The raster path tilts the normal by strength * dh/dUV,
+            // Cycles by distance * dh/dP with P in object units. The
+            // two agree when distance is strength times the object
+            // millimetres one UV unit spans, taken as the root of the
+            // ratio of the range's area in the two spaces.
+            double areaP = 0.0;
+            double areaUV = 0.0;
+            const int32_t *idx = mesh.triangleIndices + start;
+            for (int i = 0; i + 2 < count; i += 3) {
+                const float *p0 = mesh.positions + size_t(idx[i]) * 3;
+                const float *p1 = mesh.positions + size_t(idx[i + 1]) * 3;
+                const float *p2 = mesh.positions + size_t(idx[i + 2]) * 3;
+                // (s, t, r, q) per vertex; the matrix and the divide are
+                // a uniform scale away at most, which the ratio absorbs.
+                const float *t0 = mesh.texCoords + size_t(idx[i]) * 4;
+                const float *t1 = mesh.texCoords + size_t(idx[i + 1]) * 4;
+                const float *t2 = mesh.texCoords + size_t(idx[i + 2]) * 4;
+                const double e1[3] = {p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]};
+                const double e2[3] = {p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]};
+                const double cx = e1[1] * e2[2] - e1[2] * e2[1];
+                const double cy = e1[2] * e2[0] - e1[0] * e2[2];
+                const double cz = e1[0] * e2[1] - e1[1] * e2[0];
+                areaP += 0.5 * std::sqrt(cx * cx + cy * cy + cz * cz);
+                areaUV += 0.5 * std::fabs(double(t1[0] - t0[0]) * double(t2[1] - t0[1])
+                                          - double(t2[0] - t0[0]) * double(t1[1] - t0[1]));
+            }
+            maps.uvScale = areaUV > 1.0e-12 ? float(std::sqrt(areaP / areaUV)) : 0.0f;
+        }
+    }
+    return maps;
+}
+
+void SceneTranslator::applyMaps(ccl::ShaderGraph *graph,
+                                const Maps &maps,
+                                SurfaceLinks &links,
+                                float metallic,
+                                float roughness,
+                                const float emission[3])
+{
+    if (!maps.any())
+        return;
+    // The mesh's own coordinates (ATTR_STD_UV, with the texture matrix
+    // already folded in when the mesh was built).
+    auto *coords = graph->create_node<ccl::TextureCoordinateNode>();
+    ccl::ShaderOutput *uv = coords->output("UV");
+    auto image = [&](const std::shared_ptr<const TextureImage> &img, bool picture) {
+        auto *node = graph->create_node<ccl::ImageTextureNode>();
+        ccl::ImageParams params;
+        params.interpolation = ccl::INTERPOLATION_LINEAR;
+        params.extension = img->wrapS == TextureImage::Clamp ? ccl::EXTENSION_EXTEND
+                                                              : ccl::EXTENSION_REPEAT;
+        params.alpha_type = ccl::IMAGE_ALPHA_CHANNEL_PACKED;
+        // A byte picture is sRGB-encoded, decoded per sample by the
+        // kernel when the pipeline is colour managed (the PixelImage
+        // note on why it is scene_linear_srgb and not srgb) and taken
+        // raw when it is not (then, as everywhere, the two errors
+        // cancel); a float picture is linear radiance already; a data
+        // map is never decoded.
+        params.colorspace = !picture ? ccl::u_colorspace_data
+            : (managed && img->sample != TextureImage::F32) ? ccl::u_colorspace_scene_linear_srgb
+                                                            : ccl::u_colorspace_scene_linear;
+        node->handle = scene->image_manager->add_image(
+            std::make_unique<PixelImage>(img, params.colorspace), params);
+        node->set_colorspace(params.colorspace);
+        node->set_extension(params.extension);
+        node->set_alpha_type(params.alpha_type);
+        node->set_interpolation(params.interpolation);
+        graph->connect(uv, node->input("Vector"));
+        ++imageNodes;
+        return node;
+    };
+    auto value = [&](float v) {
+        auto *node = graph->create_node<ccl::ValueNode>();
+        node->set_value(v);
+        return node->output("Value");
+    };
+    auto multiply = [&](ccl::ShaderOutput *a, ccl::ShaderOutput *b) {
+        auto *node = graph->create_node<ccl::MathNode>();
+        node->set_math_type(ccl::NODE_MATH_MULTIPLY);
+        graph->connect(a, node->input("Value1"));
+        graph->connect(b, node->input("Value2"));
+        return node->output("Value");
+    };
+    // a op b, with a either a link or a constant vector.
+    auto vectorMath = [&](ccl::NodeVectorMathType type,
+                          ccl::ShaderOutput *a,
+                          ccl::ShaderOutput *b,
+                          const float *constant) {
+        auto *node = graph->create_node<ccl::VectorMathNode>();
+        node->set_math_type(type);
+        if (a)
+            graph->connect(a, node->input("Vector1"));
+        else
+            node->set_vector1(ccl::make_float3(constant[0], constant[1], constant[2]));
+        graph->connect(b, node->input("Vector2"));
+        return node->output("Vector");
+    };
+
+    if (maps.base) {
+        // GL's texture environment on the lit colour, model by model as
+        // fc_mesh_fs.sh applies it; the alpha is the fragment's
+        // coverage and follows the same rules.
+        auto *tex = image(maps.base, true);
+        ccl::ShaderOutput *texel = tex->output("Color");
+        ccl::ShaderOutput *texelAlpha = tex->output("Alpha");
+        switch (maps.model) {
+        case TextureImage::Decal: {
+            auto *mix = graph->create_node<ccl::MixColorNode>();
+            mix->set_blend_type(ccl::NODE_MIX_BLEND);
+            mix->set_use_clamp(false);
+            graph->connect(texelAlpha, mix->input("Factor"));
+            graph->connect(links.base, mix->input("A"));
+            graph->connect(texel, mix->input("B"));
+            links.base = mix->output("Result");
+            break;
+        }
+        case TextureImage::Blend: {
+            // base * (1 - texel) + blendColor * texel, per channel.
+            const float one[3] = {1.0f, 1.0f, 1.0f};
+            ccl::ShaderOutput *inverse =
+                vectorMath(ccl::NODE_VECTOR_MATH_SUBTRACT, nullptr, texel, one);
+            ccl::ShaderOutput *kept =
+                vectorMath(ccl::NODE_VECTOR_MATH_MULTIPLY, links.base, inverse, nullptr);
+            ccl::ShaderOutput *blended =
+                vectorMath(ccl::NODE_VECTOR_MATH_MULTIPLY, nullptr, texel, maps.blendColor);
+            links.base = vectorMath(ccl::NODE_VECTOR_MATH_ADD, kept, blended, nullptr);
+            links.alpha = multiply(links.alpha, texelAlpha);
+            break;
+        }
+        case TextureImage::Replace:
+            links.base = texel;
+            if (maps.alphaSource)
+                links.alpha = texelAlpha;
+            break;
+        default:  // Modulate
+            links.base = vectorMath(ccl::NODE_VECTOR_MATH_MULTIPLY, links.base, texel, nullptr);
+            links.alpha = multiply(links.alpha, texelAlpha);
+            break;
+        }
+    }
+    if (maps.emissive) {
+        // Added after the texture environment, so the base picture does
+        // not modulate the glow (glTF semantics, as the raster path has
+        // it). A constant emission folds in as the addend's other side.
+        auto *tex = image(maps.emissive, true);
+        links.emission = vectorMath(ccl::NODE_VECTOR_MATH_ADD, links.emission,
+                                    tex->output("Color"), emission);
+    }
+    if (maps.metalrough) {
+        // glTF: green multiplies the roughness, blue the metallic.
+        auto *tex = image(maps.metalrough, false);
+        auto *split = graph->create_node<ccl::SeparateColorNode>();
+        graph->connect(tex->output("Color"), split->input("Color"));
+        links.roughness = multiply(links.roughness ? links.roughness : value(roughness),
+                                   split->output("Green"));
+        links.metallic = multiply(links.metallic ? links.metallic : value(metallic),
+                                  split->output("Blue"));
+    }
+    if (maps.bump) {
+        auto *tex = image(maps.bump, false);
+        if (maps.bump->numComponents >= 3) {
+            // Tangent-space normal map, Coin's (OpenGL's) convention;
+            // the tangents come from the UVs and the vertex normals,
+            // which Cycles derives itself when the node asks for them.
+            auto *normalMap = graph->create_node<ccl::NormalMapNode>();
+            normalMap->set_space(ccl::NODE_NORMAL_MAP_TANGENT);
+            normalMap->set_strength(maps.bumpScale);
+            graph->connect(tex->output("Color"), normalMap->input("Color"));
+            links.normal = normalMap->output("Normal");
+        }
+        else {
+            // Grayscale height. Cycles differentiates the height input
+            // itself; the distance is the raster path's strength scaled
+            // from per-UV to per-millimetre (resolveMaps).
+            auto *bumpNode = graph->create_node<ccl::BumpNode>();
+            bumpNode->set_strength(1.0f);
+            bumpNode->set_distance(maps.bumpScale * (maps.uvScale > 0.0f ? maps.uvScale : 1.0f));
+            graph->connect(tex->output("Color"), bumpNode->input("Height"));
+            links.normal = bumpNode->output("Normal");
+        }
+    }
+}
+
+std::string SceneTranslator::Finish::key() const
+{
+    if (!any())
+        return std::string();
+    std::ostringstream k;
+    k.precision(6);
+    k << ":fin" << int(pattern) << '/' << pitch << '/' << depth << '/' << angle << '/'
+      << int(frame.kind);
+    if (frame.kind != SurfaceFrame::Unframed) {
+        for (int i = 0; i < 3; ++i)
+            k << '/' << frame.origin[i] << ',' << frame.axis[i] << ',' << frame.xdir[i];
+        k << '/' << frame.radius;
+    }
+    return k.str();
+}
+
+SceneTranslator::Finish SceneTranslator::resolveFinish(const Material &m) const
+{
+    return resolveFinish(m.finish, m.finishpitch, m.finishdepth, m.finishangle, m.frame);
+}
+
+SceneTranslator::Finish SceneTranslator::resolveFinish(uint8_t pattern,
+                                                       float pitch,
+                                                       float depth,
+                                                       float angleDeg,
+                                                       const SurfaceFrame &frame)
+{
+    Finish f;
+    // The bgfx path's gate (BGFXViewSubmit's setFinish): a pattern this
+    // build knows, with a positive pitch and depth. A pattern a later
+    // build wrote shades as none here as it does there.
+    if (pattern == 0 || pattern > 5 || pitch <= 0.0f || depth <= 0.0f)
+        return f;
+    f.pattern = pattern;
+    f.pitch = pitch;
+    f.depth = depth;
+    f.angle = angleDeg * kPi / 180.0f;
+    f.frame = frame;
+    return f;
+}
+
+void SceneTranslator::canonicalFrame(const SurfaceFrame &frame,
+                                     float axis[3],
+                                     float xdir[3],
+                                     float ydir[3])
+{
+    // fcFinishFramed: the frame's own axes, the way the shader
+    // canonicalizes them.
+    axis[0] = frame.axis[0];
+    axis[1] = frame.axis[1];
+    axis[2] = frame.axis[2];
+    float alen = std::sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+    if (alen < 1.0e-12f) {
+        axis[0] = axis[1] = 0.0f;
+        axis[2] = 1.0f;
+        alen = 1.0f;
+    }
+    for (int i = 0; i < 3; ++i)
+        axis[i] /= alen;
+    const float ax = frame.xdir[0] * axis[0] + frame.xdir[1] * axis[1] + frame.xdir[2] * axis[2];
+    xdir[0] = frame.xdir[0] - axis[0] * ax;
+    xdir[1] = frame.xdir[1] - axis[1] * ax;
+    xdir[2] = frame.xdir[2] - axis[2] * ax;
+    float xlen = std::sqrt(xdir[0] * xdir[0] + xdir[1] * xdir[1] + xdir[2] * xdir[2]);
+    if (xlen < 1.0e-12f) {
+        // A degenerate x: any perpendicular will do, as the shader's
+        // normalize of a zero vector would not.
+        const float helper[3] = {std::fabs(axis[0]) < 0.9f ? 1.0f : 0.0f,
+                                 std::fabs(axis[0]) < 0.9f ? 0.0f : 1.0f, 0.0f};
+        xdir[0] = helper[1] * axis[2] - helper[2] * axis[1];
+        xdir[1] = helper[2] * axis[0] - helper[0] * axis[2];
+        xdir[2] = helper[0] * axis[1] - helper[1] * axis[0];
+        xlen = std::sqrt(xdir[0] * xdir[0] + xdir[1] * xdir[1] + xdir[2] * xdir[2]);
+    }
+    for (int i = 0; i < 3; ++i)
+        xdir[i] /= xlen;
+    ydir[0] = axis[1] * xdir[2] - axis[2] * xdir[1];
+    ydir[1] = axis[2] * xdir[0] - axis[0] * xdir[2];
+    ydir[2] = axis[0] * xdir[1] - axis[1] * xdir[0];
+}
+
+void SceneTranslator::applyFinish(ccl::ShaderGraph *graph, const Finish &fin, SurfaceLinks &links)
+{
+    if (!fin.any())
+        return;
+    using Out = ccl::ShaderOutput *;
+    enum Pattern : uint8_t { Knurl = 1, KnurlStraight = 2, Brushed = 3, Blasted = 4, Turned = 5 };
+
+    const GraphOps ops{graph};
+    // A table sampled at a coordinate: float texels, cubic so the
+    // slope the bump takes off it is continuous, repeating so the
+    // table is a period.
+    auto table = [&](const std::shared_ptr<const std::vector<float>> &data,
+                     int width,
+                     int height,
+                     int channels,
+                     const char *label,
+                     Out coord) {
+        auto *node = graph->create_node<ccl::ImageTextureNode>();
+        ccl::ImageParams params;
+        params.interpolation = ccl::INTERPOLATION_CUBIC;
+        params.extension = ccl::EXTENSION_REPEAT;
+        params.alpha_type = ccl::IMAGE_ALPHA_CHANNEL_PACKED;
+        params.colorspace = ccl::u_colorspace_data;
+        node->handle = scene->image_manager->add_image(
+            std::make_unique<TableImage>(data, width, height, channels, label), params);
+        node->set_colorspace(params.colorspace);
+        node->set_extension(params.extension);
+        node->set_alpha_type(params.alpha_type);
+        node->set_interpolation(params.interpolation);
+        graph->connect(coord, node->input("Vector"));
+        auto *split = graph->create_node<ccl::SeparateColorNode>();
+        graph->connect(node->output("Color"), split->input("Color"));
+        return split;
+    };
+    const float pitch = fin.pitch;
+    const float depth = fin.depth;
+    // The groove height at x millimetres across the lay: depth times
+    // the unit profile over x / pitch.
+    auto groove = [&](Out x) {
+        Out coord = ops.combine(ops.mul(x, 1.0f / pitch), nullptr, 0.5f);
+        return table(finishProfile(), kProfileSamples, 1, 1, "FreeCAD finish profile", coord)
+            ->output("Red");
+    };
+    // The 1-D noise of lane `channel` at x / scale lattice units.
+    auto noise1 = [&](Out x, float scale, const char *channel) {
+        Out coord = ops.combine(ops.mul(x, 1.0f / (scale * kNoise1Cells)), nullptr, 0.5f);
+        return table(finishNoise1(), kNoise1Cells * kNoise1Sub, 1, 4, "FreeCAD finish noise", coord)
+            ->output(channel);
+    };
+    // The 2-D noise at q / scale lattice units, offset by (ox, oy) cells.
+    auto noise2 = [&](Out qx, Out qy, float scale, float ox, float oy) {
+        const float inv = 1.0f / (scale * kNoise2Cells);
+        Out u = ops.add(ops.mul(qx, inv), ox / kNoise2Cells);
+        Out v = ops.add(ops.mul(qy, inv), oy / kNoise2Cells);
+        const int side = kNoise2Cells * kNoise2Sub;
+        return table(finishNoise2(), side, side, 1, "FreeCAD finish craters",
+                     ops.combine(u, v, 0.0f))
+            ->output("Red");
+    };
+
+    // fcFinishPattern as a height: the same patterns over the same lay
+    // coordinate q (millimetres), integrated.
+    auto height = [&](Out qx, Out qy, uint8_t pattern) -> Out {
+        switch (pattern) {
+        case Knurl: {
+            // Two trains crossing at a right angle, each half as deep.
+            const float k = 0.70710678f;
+            Out a = ops.madd(qx, k, ops.mul(qy, k));
+            Out b = ops.madd(qx, k, ops.mul(qy, -k));
+            return ops.mul(ops.math(ccl::NODE_MATH_ADD, groove(a), groove(b)), 0.5f * depth);
+        }
+        case Brushed: {
+            // Scratches along the lay at two widths, fading in and out
+            // along it: depth * (0.6 + nl(y)) * (0.7 n1(x) + 0.3 n2(x)).
+            Out n1 = noise1(qx, pitch, "Red");
+            Out n2 = noise1(qx, pitch * 0.37f, "Green");
+            Out nl = noise1(qy, pitch * 60.0f, "Blue");
+            Out h = ops.madd(n1, 0.7f, ops.mul(n2, 0.3f));
+            return ops.mul(ops.math(ccl::NODE_MATH_MULTIPLY, ops.add(nl, 0.6f), h), depth);
+        }
+        case Blasted: {
+            // Isotropic craters, two octaves; the lay cancels.
+            Out n1 = noise2(qx, qy, pitch, 0.0f, 0.0f);
+            Out n2 = noise2(qx, qy, pitch * 0.41f, 17.0f, 5.0f);
+            return ops.mul(ops.madd(n1, 0.75f, ops.mul(n2, 0.25f)), depth);
+        }
+        case Turned: {
+            // Concentric about the lay frame's origin: the train in
+            // the radius.
+            Out r2 = ops.math(ccl::NODE_MATH_ADD, ops.math(ccl::NODE_MATH_MULTIPLY, qx, qx),
+                              ops.math(ccl::NODE_MATH_MULTIPLY, qy, qy));
+            return ops.mul(groove(ops.math(ccl::NODE_MATH_SQRT, r2, nullptr)), depth);
+        }
+        default:
+            // Straight knurl: one train, grooves along the lay.
+            return ops.mul(groove(qx), depth);
+        }
+    };
+    // Into the lay frame: q = R' p for the lay angle whose cosine and
+    // sine are ca, sa.
+    auto lay = [&](Out px, Out py, float ca, float sa, Out &qx, Out &qy) {
+        qx = ops.madd(px, ca, ops.mul(py, sa));
+        qy = ops.madd(px, -sa, ops.mul(py, ca));
+    };
+
+    // The object-space position: what the pattern is a function of, so
+    // that an instanced or scaled copy carries the same finish. The
+    // Bump node's two extra evaluations offset it by the ray
+    // differentials, which is what makes the height a slope.
+    auto *coords = graph->create_node<ccl::TextureCoordinateNode>();
+    Out P = coords->output("Object");
+    const float ca = std::cos(fin.angle);
+    const float sa = std::sin(fin.angle);
+    const SurfaceFrame &frame = fin.frame;
+    Out H = nullptr;
+
+    if (frame.kind == SurfaceFrame::Planar || frame.kind == SurfaceFrame::Radial) {
+        float axis[3];
+        float xdir[3];
+        float ydir[3];
+        canonicalFrame(frame, axis, xdir, ydir);
+        Out d = ops.vec(ccl::NODE_VECTOR_MATH_SUBTRACT, P, frame.origin)->output("Vector");
+        Out px = ops.dot(d, xdir);
+        Out py = ops.dot(d, ydir);
+        Out qx = nullptr;
+        Out qy = nullptr;
+        if (frame.kind == SurfaceFrame::Planar) {
+            lay(px, py, ca, sa, qx, qy);
+            H = height(qx, qy, fin.pattern);
+        }
+        else {
+            // Radial: (arc length about the axis, distance along it),
+            // the arc snapped to a whole number of pattern periods
+            // round the reference radius so the atan2 seam closes (the
+            // argument is in fc_finish.sh).
+            Out z = ops.dot(d, axis);
+            Out theta = ops.math(ccl::NODE_MATH_ARCTAN2, py, px);
+            const float period = fin.pattern == Knurl ? pitch * 1.41421356f : pitch;
+            Out arc = nullptr;
+            if (frame.radius > 1.0e-6f) {
+                const float cycles =
+                    std::max(1.0f, std::floor(kTwoPi * frame.radius / period + 0.5f));
+                arc = ops.mul(theta, cycles * period / kTwoPi);
+            }
+            else {
+                // No reference radius: the fragment's own, as the
+                // shader does. The snap then steps with the radius,
+                // and the bump's finite difference sees the step where
+                // the shader's analytic gradient did not -- no producer
+                // states a radial frame without a radius, so this is
+                // the shader's arithmetic kept rather than a case met.
+                Out r = ops.math(ccl::NODE_MATH_SQRT,
+                             ops.math(ccl::NODE_MATH_ADD, ops.math(ccl::NODE_MATH_MULTIPLY, px, px),
+                                  ops.math(ccl::NODE_MATH_MULTIPLY, py, py)),
+                             nullptr);
+                Out cycles = ops.math(ccl::NODE_MATH_MAXIMUM,
+                                      ops.math(ccl::NODE_MATH_FLOOR,
+                                               ops.add(ops.mul(r, kTwoPi / period), 0.5f),
+                                               nullptr),
+                                      nullptr, 0.0f, 1.0f);
+                arc = ops.math(ccl::NODE_MATH_MULTIPLY, theta, ops.mul(cycles, period / kTwoPi));
+            }
+            // Turning is fixed to the axis whatever the lay says: feed
+            // marks run ROUND the work, which is the straight knurl
+            // with the lay a quarter turn over.
+            uint8_t pattern = fin.pattern;
+            float pca = ca;
+            float psa = sa;
+            if (pattern == Turned) {
+                pattern = KnurlStraight;
+                pca = -sa;
+                psa = ca;
+            }
+            lay(arc, z, pca, psa, qx, qy);
+            H = height(qx, qy, pattern);
+        }
+    }
+    else {
+        // Triplanar: three axis-aligned projections weighted off the
+        // object-space shading normal, the weights as the shader
+        // shapes them (max(|n| - 0.25, 0)^4, normalized). The Bump
+        // node's offsets leave the normal alone, so the weights are
+        // constant across its three samples as the shader's chain
+        // rule takes them to be.
+        auto *n = ops.vec(ccl::NODE_VECTOR_MATH_ABSOLUTE, coords->output("Normal"), nullptr);
+        auto *w = ops.separate(n->output("Vector"));
+        Out t[3];
+        const char *axes[3] = {"X", "Y", "Z"};
+        for (int i = 0; i < 3; ++i) {
+            Out c = ops.math(ccl::NODE_MATH_MAXIMUM, ops.add(w->output(axes[i]), -0.25f),
+                             nullptr, 0.0f, 0.0f);
+            Out c2 = ops.math(ccl::NODE_MATH_MULTIPLY, c, c);
+            t[i] = ops.math(ccl::NODE_MATH_MULTIPLY, c2, c2);
+        }
+        Out sum = ops.math(ccl::NODE_MATH_ADD, ops.math(ccl::NODE_MATH_ADD, t[0], t[1]), t[2]);
+        auto *p = ops.separate(P);
+        // Each plane's two axes in the shader's order: yz, zx, xy.
+        const char *first[3] = {"Y", "Z", "X"};
+        const char *second[3] = {"Z", "X", "Y"};
+        for (int i = 0; i < 3; ++i) {
+            Out qx = nullptr;
+            Out qy = nullptr;
+            lay(p->output(first[i]), p->output(second[i]), ca, sa, qx, qy);
+            Out hi = height(qx, qy, fin.pattern);
+            Out wi = ops.math(ccl::NODE_MATH_DIVIDE, t[i], sum);
+            Out term = ops.math(ccl::NODE_MATH_MULTIPLY, wi, hi);
+            H = H ? ops.math(ccl::NODE_MATH_ADD, H, term) : term;
+        }
+    }
+
+    // The height in millimetres of object space, differenced against
+    // the ray differentials: with the distance and strength at one the
+    // node computes normalize(|det| N - sign(det) surfgrad), which is
+    // fcFinishPerturb. No footprint fade and no roughness hand-off:
+    // a path tracer supersamples what the raster shader had to filter.
+    auto *bump = graph->create_node<ccl::BumpNode>();
+    bump->set_strength(1.0f);
+    bump->set_distance(1.0f);
+    graph->connect(H, bump->input("Height"));
+    if (links.normal)
+        graph->connect(links.normal, bump->input("Normal"));
+    links.normal = bump->output("Normal");
+}
+
+std::string SceneTranslator::FaceImage::key() const
+{
+    if (!any())
+        return std::string();
+    std::ostringstream k;
+    k.precision(6);
+    k << ":face" << image->textureId << '/' << scale;
+    if (scale > 0.0f) {
+        k << '/' << int(frame.kind);
+        if (frame.kind != SurfaceFrame::Unframed) {
+            for (int i = 0; i < 3; ++i)
+                k << '/' << frame.origin[i] << ',' << frame.axis[i] << ',' << frame.xdir[i];
+            k << '/' << frame.radius;
+        }
+    }
+    else {
+        k << '/' << (meshUV ? "uv" : "0");
+    }
+    return k.str();
+}
+
+SceneTranslator::FaceImage SceneTranslator::resolveFaceImage(const Material &m,
+                                                             const MeshData &mesh,
+                                                             int layer,
+                                                             const SurfaceFrame &frame) const
+{
+    FaceImage face;
+    if (layer <= 0 || !m.texturepalette || m.texturepalette->entries.empty())
+        return face;
+    // Layer i is entry i - 1; a layer past the palette reads its last
+    // entry, which is the raster path's clamp (fc_mesh_fs.sh).
+    const auto &entries = m.texturepalette->entries;
+    const size_t num = std::min(entries.size(), size_t(MaxFaceTexturePalette));
+    face.image = entries[std::min(size_t(layer), num) - 1];
+    if (!face.image)
+        return face;
+    face.scale = m.facetexscale;
+    face.frame = frame;
+    face.meshUV = mesh.texCoords != nullptr;
+    return face;
+}
+
+void SceneTranslator::applyFaceImage(ccl::ShaderGraph *graph,
+                                     const FaceImage &face,
+                                     SurfaceLinks &links)
+{
+    if (!face.any())
+        return;
+    using Out = ccl::ShaderOutput *;
+    const GraphOps ops{graph};
+
+    // Where the image is sampled: fcFrameTexUV when the draw states a
+    // tile size -- coordinates, not a gradient, so the sampler filters
+    // them -- else the mesh's own coordinates (ATTR_STD_UV, the
+    // texture matrix folded in as for the maps), else the corner
+    // texel, which is what a mesh without coordinates reads there.
+    Out coord = nullptr;
+    if (face.scale > 0.0f) {
+        const float inv = 1.0f / std::max(face.scale, 1.0e-6f);
+        auto *coords = graph->create_node<ccl::TextureCoordinateNode>();
+        Out P = coords->output("Object");
+        const SurfaceFrame &frame = face.frame;
+        if (frame.kind == SurfaceFrame::Planar || frame.kind == SurfaceFrame::Radial) {
+            float axis[3];
+            float xdir[3];
+            float ydir[3];
+            canonicalFrame(frame, axis, xdir, ydir);
+            Out d = ops.vec(ccl::NODE_VECTOR_MATH_SUBTRACT, P, frame.origin)->output("Vector");
+            Out px = ops.dot(d, xdir);
+            Out py = ops.dot(d, ydir);
+            if (frame.kind == SurfaceFrame::Planar) {
+                coord = ops.combine(ops.mul(px, inv), ops.mul(py, inv), 0.0f);
+            }
+            else {
+                // Arc length about the axis and distance along it, the
+                // arc snapped to a whole number of tiles round the
+                // reference radius (the fragment's own without one) so
+                // the atan2 seam does not cut the image mid-tile.
+                Out z = ops.dot(d, axis);
+                Out theta = ops.math(ccl::NODE_MATH_ARCTAN2, py, px);
+                Out u = nullptr;
+                if (frame.radius > 1.0e-6f) {
+                    const float tiles =
+                        std::max(1.0f, std::floor(kTwoPi * frame.radius * inv + 0.5f));
+                    u = ops.mul(theta, tiles / kTwoPi);
+                }
+                else {
+                    Out r = ops.math(ccl::NODE_MATH_SQRT,
+                                     ops.math(ccl::NODE_MATH_ADD,
+                                              ops.math(ccl::NODE_MATH_MULTIPLY, px, px),
+                                              ops.math(ccl::NODE_MATH_MULTIPLY, py, py)),
+                                     nullptr);
+                    Out tiles = ops.math(
+                        ccl::NODE_MATH_MAXIMUM,
+                        ops.math(ccl::NODE_MATH_FLOOR,
+                                 ops.add(ops.mul(r, kTwoPi * inv), 0.5f), nullptr),
+                        nullptr, 0.0f, 1.0f);
+                    u = ops.math(ccl::NODE_MATH_MULTIPLY, theta, ops.mul(tiles, 1.0f / kTwoPi));
+                }
+                coord = ops.combine(u, ops.mul(z, inv), 0.0f);
+            }
+        }
+        else {
+            // Unframed: the dominant object axis wins outright (a
+            // coordinate cannot be blended the way the finish's height
+            // is -- two projections averaged read as a ghost of the
+            // image over itself), off the object-space shading normal.
+            // Selectors of 0 or 1 built from strict comparisons:
+            // sx = (wx >= wy) (wx >= wz), sy = (1 - sx) (wy >= wz),
+            // sz the rest -- fcFrameTexUV's if-chain.
+            auto *n = ops.vec(ccl::NODE_VECTOR_MATH_ABSOLUTE, coords->output("Normal"), nullptr);
+            auto *w = ops.separate(n->output("Vector"));
+            auto ge = [&](Out a, Out b) {
+                return ops.math(ccl::NODE_MATH_SUBTRACT, nullptr,
+                                ops.math(ccl::NODE_MATH_LESS_THAN, a, b), 1.0f, 0.0f);
+            };
+            Out sx = ops.math(ccl::NODE_MATH_MULTIPLY, ge(w->output("X"), w->output("Y")),
+                              ge(w->output("X"), w->output("Z")));
+            Out sy = ops.math(ccl::NODE_MATH_MULTIPLY,
+                              ops.math(ccl::NODE_MATH_SUBTRACT, nullptr, sx, 1.0f, 0.0f),
+                              ge(w->output("Y"), w->output("Z")));
+            Out sz = ops.math(ccl::NODE_MATH_SUBTRACT,
+                              ops.math(ccl::NODE_MATH_SUBTRACT, nullptr, sx, 1.0f, 0.0f), sy);
+            auto *p = ops.separate(P);
+            // (y, z) under sx, (z, x) under sy, (x, y) under sz.
+            auto pick = [&](const char *a, const char *b, const char *c) {
+                Out t = ops.math(ccl::NODE_MATH_MULTIPLY, sx, p->output(a));
+                t = ops.math(ccl::NODE_MATH_ADD, t,
+                             ops.math(ccl::NODE_MATH_MULTIPLY, sy, p->output(b)));
+                t = ops.math(ccl::NODE_MATH_ADD, t,
+                             ops.math(ccl::NODE_MATH_MULTIPLY, sz, p->output(c)));
+                return ops.mul(t, inv);
+            };
+            coord = ops.combine(pick("Y", "Z", "X"), pick("Z", "X", "Y"), 0.0f);
+        }
+    }
+    else if (face.meshUV) {
+        auto *coords = graph->create_node<ccl::TextureCoordinateNode>();
+        coord = coords->output("UV");
+    }
+
+    // A picture, like the base colour texture (applyMaps): decoded on
+    // the way in when the pipeline is colour managed, its alpha
+    // coverage and left alone.
+    auto *node = graph->create_node<ccl::ImageTextureNode>();
+    ccl::ImageParams params;
+    params.interpolation = ccl::INTERPOLATION_LINEAR;
+    params.extension = face.image->wrapS == TextureImage::Clamp ? ccl::EXTENSION_EXTEND
+                                                                  : ccl::EXTENSION_REPEAT;
+    params.alpha_type = ccl::IMAGE_ALPHA_CHANNEL_PACKED;
+    params.colorspace = (managed && face.image->sample != TextureImage::F32)
+        ? ccl::u_colorspace_scene_linear_srgb
+        : ccl::u_colorspace_scene_linear;
+    node->handle = scene->image_manager->add_image(
+        std::make_unique<PixelImage>(face.image, params.colorspace), params);
+    node->set_colorspace(params.colorspace);
+    node->set_extension(params.extension);
+    node->set_alpha_type(params.alpha_type);
+    node->set_interpolation(params.interpolation);
+    if (coord)
+        graph->connect(coord, node->input("Vector"));
+    else
+        node->set_vector(ccl::make_float3(0.0f, 0.0f, 0.0f));
+    ++imageNodes;
+
+    // On top of whatever the unit-0 texture did, and modulating like
+    // the default texture environment: a marking on a red part comes
+    // out red-tinted, as it does through the ordinary texture path.
+    links.base = ops.vec2(ccl::NODE_VECTOR_MATH_MULTIPLY, links.base, node->output("Color"));
+    links.alpha = ops.math(ccl::NODE_MATH_MULTIPLY, links.alpha, node->output("Alpha"));
+}
+
+ccl::Shader *SceneTranslator::uniformShader(const Surface &s,
+                                            const Clip &clip,
+                                            const Maps &maps,
+                                            const Finish &finish,
+                                            const FaceImage &face)
 {
     // The base colour and the alpha are the object's, so the key is
     // everything else; two draws that differ only in colour share
     // the shader as they share the mesh.
     std::ostringstream key;
     key.precision(4);
+    if (debugView)
+        key << "dbg" << debugView << ':';
     key << (s.unlit ? "u" : s.glass ? "g" : "p") << ':' << s.metallic << ':' << s.roughness
         << ':' << s.emissive[0] << ',' << s.emissive[1] << ',' << s.emissive[2]
         << ':' << s.emissiveStrength << ':' << s.ior << ':' << s.glassRoughness << ':'
-        << s.glassDensity << clip.key();
+        << s.glassDensity << clip.key() << maps.key() << face.key() << finish.key();
     auto it = shaders.find(key.str());
     if (it != shaders.end())
         return it->second;
@@ -1035,26 +2163,57 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s, const Clip &clip)
     shader->name = ccl::ustring(key.str());
     auto graph = std::make_unique<ccl::ShaderGraph>();
     auto *info = graph->create_node<ccl::ObjectInfoNode>();
-    if (s.unlit) {
-        auto *emission = graph->create_node<ccl::EmissionNode>();
-        emission->set_strength(s.emissiveStrength);
-        graph->connect(info->output("Color"), emission->input("Color"));
-        connectSurface(graph.get(), emission->output("Emission"), clip);
+    const float roughness = s.glass ? s.glassRoughness : s.roughness;
+    const float emission[3] = {s.emissive[0] * s.emissiveStrength,
+                               s.emissive[1] * s.emissiveStrength,
+                               s.emissive[2] * s.emissiveStrength};
+    SurfaceLinks links;
+    links.base = info->output("Color");
+    links.alpha = info->output("Alpha");
+    applyMaps(graph.get(), maps, links, s.metallic, roughness, emission);
+    // The face's image is a colour, drawn on an unlit draw too; a
+    // finish is a statement about how the surface shades, so an unlit
+    // draw leaves it off, as the raster path does.
+    applyFaceImage(graph.get(), face, links);
+    if (!s.unlit)
+        applyFinish(graph.get(), finish, links);
+    if (debugView == 2) {
+        debugSurface(graph.get(), links.normal, clip);
+    }
+    else if (s.unlit) {
+        auto *emissionNode = graph->create_node<ccl::EmissionNode>();
+        emissionNode->set_strength(s.emissiveStrength);
+        graph->connect(links.base, emissionNode->input("Color"));
+        connectSurface(graph.get(), emissionNode->output("Emission"), clip);
     }
     else {
         auto *bsdf = graph->create_node<ccl::PrincipledBsdfNode>();
-        bsdf->set_metallic(s.metallic);
-        bsdf->set_roughness(s.glass ? s.glassRoughness : s.roughness);
+        if (links.metallic)
+            graph->connect(links.metallic, bsdf->input("Metallic"));
+        else
+            bsdf->set_metallic(s.metallic);
+        if (links.roughness)
+            graph->connect(links.roughness, bsdf->input("Roughness"));
+        else
+            bsdf->set_roughness(roughness);
         bsdf->set_ior(s.ior);
         if (s.glass)
             bsdf->set_transmission_weight(1.0f);
-        if (s.emissiveStrength > 0.0f) {
+        if (links.emission) {
+            // The map made the emission a colour to add at strength 1,
+            // with the constant part (colour times strength) folded in.
+            bsdf->set_emission_strength(1.0f);
+            graph->connect(links.emission, bsdf->input("Emission Color"));
+        }
+        else if (s.emissiveStrength > 0.0f) {
             bsdf->set_emission_color(ccl::make_float3(s.emissive[0], s.emissive[1], s.emissive[2]));
             bsdf->set_emission_strength(s.emissiveStrength);
         }
-        graph->connect(info->output("Color"), bsdf->input("Base Color"));
+        if (links.normal)
+            graph->connect(links.normal, bsdf->input("Normal"));
+        graph->connect(links.base, bsdf->input("Base Color"));
         if (!s.glass)
-            graph->connect(info->output("Alpha"), bsdf->input("Alpha"));
+            graph->connect(links.alpha, bsdf->input("Alpha"));
         connectSurface(graph.get(), bsdf->output("BSDF"), clip);
         if (s.glass && s.glassDensity > 0.0f) {
             // The tint of a glass body is absorption over the path
@@ -1080,9 +2239,13 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s, const Clip &clip)
     return shader;
 }
 
-ccl::Shader *SceneTranslator::attributeShader(const Clip &clip)
+ccl::Shader *SceneTranslator::attributeShader(const Clip &clip,
+                                              const Maps &maps,
+                                              const Finish &finish,
+                                              const FaceImage &face)
 {
-    const std::string key = "fc_attributes" + clip.key();
+    const std::string key = (debugView ? "dbg" + std::to_string(debugView) + ':' : std::string())
+        + "fc_attributes" + clip.key() + maps.key() + face.key() + finish.key();
     auto it = shaders.find(key);
     if (it != shaders.end())
         return it->second;
@@ -1090,7 +2253,8 @@ ccl::Shader *SceneTranslator::attributeShader(const Clip &clip)
     // resolved surface as attributes (fc_base, fc_pbr = metallic /
     // roughness / alpha, fc_emissive), which is what keeps a
     // thousand-colour vertex-painted mesh at one shader instead of
-    // a thousand.
+    // a thousand. The maps, when the draw has them, sample on top of
+    // those attributes exactly as they do on top of the scalars.
     ccl::Shader *shader = scene->create_node<ccl::Shader>();
     shader->name = ccl::ustring(key);
     auto graph = std::make_unique<ccl::ShaderGraph>();
@@ -1101,15 +2265,32 @@ ccl::Shader *SceneTranslator::attributeShader(const Clip &clip)
     auto *emissive = graph->create_node<ccl::AttributeNode>();
     emissive->set_attribute(ccl::ustring("fc_emissive"));
     auto *split = graph->create_node<ccl::SeparateXYZNode>();
-    auto *bsdf = graph->create_node<ccl::PrincipledBsdfNode>();
-    bsdf->set_emission_strength(1.0f);
     graph->connect(pbrAttr->output("Vector"), split->input("Vector"));
-    graph->connect(base->output("Color"), bsdf->input("Base Color"));
-    graph->connect(split->output("X"), bsdf->input("Metallic"));
-    graph->connect(split->output("Y"), bsdf->input("Roughness"));
-    graph->connect(split->output("Z"), bsdf->input("Alpha"));
-    graph->connect(emissive->output("Color"), bsdf->input("Emission Color"));
-    connectSurface(graph.get(), bsdf->output("BSDF"), clip);
+    SurfaceLinks links;
+    links.base = base->output("Color");
+    links.metallic = split->output("X");
+    links.roughness = split->output("Y");
+    links.alpha = split->output("Z");
+    links.emission = emissive->output("Color");
+    const float none[3] = {0.0f, 0.0f, 0.0f};
+    applyMaps(graph.get(), maps, links, 0.0f, 0.0f, none);
+    applyFaceImage(graph.get(), face, links);
+    applyFinish(graph.get(), finish, links);
+    if (debugView == 2) {
+        debugSurface(graph.get(), links.normal, clip);
+    }
+    else {
+        auto *bsdf = graph->create_node<ccl::PrincipledBsdfNode>();
+        bsdf->set_emission_strength(1.0f);
+        graph->connect(links.base, bsdf->input("Base Color"));
+        graph->connect(links.metallic, bsdf->input("Metallic"));
+        graph->connect(links.roughness, bsdf->input("Roughness"));
+        graph->connect(links.alpha, bsdf->input("Alpha"));
+        graph->connect(links.emission, bsdf->input("Emission Color"));
+        if (links.normal)
+            graph->connect(links.normal, bsdf->input("Normal"));
+        connectSurface(graph.get(), bsdf->output("BSDF"), clip);
+    }
     shader->set_graph(std::move(graph));
     shader->tag_update(scene);
     shaders[key] = shader;
@@ -1118,6 +2299,7 @@ ccl::Shader *SceneTranslator::attributeShader(const Clip &clip)
 
 bool SceneTranslator::translateDraw(const DrawCall &draw,
                                     const PBRConfig &pbr,
+                                    const BumpConfig &bump,
                                     const SectionConfig &section,
                                     Spare &spare,
                                     RenderReport &report,
@@ -1159,20 +2341,118 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
     clip.concave = m.clipconcave;
     for (int i = 0; i < clip.num; ++i)
         std::copy(m.clipplanes[i], m.clipplanes[i] + 4, clip.planes[i]);
-    ccl::Shader *shader = perVertex ? attributeShader(clip) : uniformShader(uniform, clip);
+    const Maps maps = resolveMaps(m, *mesh, bump, start, count);
+    const Finish finish = resolveFinish(m);
+    const int32_t *idx = mesh->triangleIndices + start;
+
+    // The per-face palettes (docs/CyclesIntegration.md sec 6.7). A
+    // face names its finish, its projection frame and its image by
+    // index out of the material stream's third slot; here every
+    // combination the draw's triangles actually name becomes a shader
+    // VARIANT of the draw's own graph with that entry's constants,
+    // and the triangle carries the variant's slot -- Cycles' own
+    // per-triangle shader index, the mechanism its material slots
+    // ride, so the verified constant-folded graphs serve unchanged
+    // and no select chain runs per sample. A draw with nothing to
+    // index (no stream, or no palette to read into) has one variant.
+    const bool hasFaceTex = m.texturepalette && !m.texturepalette->entries.empty();
+    const bool faceFinish = stream && m.finishpalette;
+    const bool faceFrame = stream && m.framepalette;
+    const bool faceLayer = stream && hasFaceTex && m.facetexlayer < 0;
+    auto variantShader = [&](const Finish &fin, const FaceImage &face) {
+        return perVertex ? attributeShader(clip, maps, fin, face)
+                         : uniformShader(uniform, clip, maps, fin, face);
+    };
+    std::vector<ccl::Shader *> variants;
+    std::vector<int> triShader;  // per triangle; empty = every one slot 0
+    if (!faceFinish && !faceFrame && !faceLayer) {
+        // The draw's own layer when the producer resolved one (a
+        // uniformly imaged shape, a single-face draw); an unresolved
+        // layer with no stream to read is layer 0, the untextured face.
+        const int layer = hasFaceTex ? std::max<int>(m.facetexlayer, 0) : 0;
+        variants.push_back(variantShader(finish, resolveFaceImage(m, *mesh, layer, m.frame)));
+    }
+    else {
+        std::unordered_map<uint32_t, int> slots;
+        uint32_t lastPacked = 0xffffffffu;
+        int lastSlot = 0;
+        triShader.resize(size_t(count / 3));
+        for (int t = 0; t < count / 3; ++t) {
+            // The face's indices, read off the triangle's first corner
+            // (all three carry the face's, as the raster path assumes
+            // when it interpolates them).
+            const int32_t v = idx[3 * t];
+            if (v < 0 || v >= mesh->numVertices)
+                return false;
+            const uint8_t *ms = stream + size_t(v) * size_t(MeshData::MaterialStride);
+            const uint32_t fi = faceFinish ? ms[8] : 0;
+            const uint32_t fr = faceFrame ? ms[9] : 0;
+            const uint32_t tl = faceLayer ? ms[10]
+                : hasFaceTex          ? uint32_t(std::max<int>(m.facetexlayer, 0))
+                                      : 0;
+            const uint32_t packed = fi | (fr << 8) | (tl << 16);
+            if (packed != lastPacked) {
+                auto found = slots.find(packed);
+                if (found != slots.end()) {
+                    lastSlot = found->second;
+                }
+                else {
+                    // The frame first: it lays out the finish and the
+                    // image both. An index past a palette reads what
+                    // the raster's zero-filled uniform array holds
+                    // there -- no finish, no frame (triplanar).
+                    SurfaceFrame frame = m.frame;
+                    if (faceFrame) {
+                        const auto &entries = m.framepalette->entries;
+                        frame = fr < entries.size() ? entries[fr] : SurfaceFrame();
+                    }
+                    Finish fin = finish;
+                    if (faceFinish) {
+                        const auto &entries = m.finishpalette->entries;
+                        fin = fi < entries.size()
+                            ? resolveFinish(entries[fi].pattern, entries[fi].pitch,
+                                            entries[fi].depth, entries[fi].angle, frame)
+                            : Finish();
+                    }
+                    else {
+                        fin.frame = frame;
+                    }
+                    lastSlot = int(variants.size());
+                    variants.push_back(
+                        variantShader(fin, resolveFaceImage(m, *mesh, int(tl), frame)));
+                    slots.emplace(packed, lastSlot);
+                }
+                lastPacked = packed;
+            }
+            triShader[size_t(t)] = lastSlot;
+        }
+    }
+    // The mesh's UVs are wanted by the maps and by a face image the
+    // draw lays out over them.
+    const bool wantUV = maps.any() || (hasFaceTex && m.facetexscale <= 0.0f && mesh->texCoords);
 
     // Mesh identity: the cache contract (cacheId + generation names
     // the arrays), the index range, and what the shading needs baked
-    // into the mesh -- the shader, and for per-vertex draws every
-    // scalar the attributes were resolved from.
+    // into the mesh -- the shader variants (the per-triangle slots
+    // follow from them and the stream, which the generation names),
+    // and for per-vertex draws every scalar the attributes were
+    // resolved from.
     std::ostringstream key;
-    key << mesh->cacheId << ':' << mesh->generation << ':' << start << ':' << count << ':'
-        << static_cast<const void *>(shader);
+    key << mesh->cacheId << ':' << mesh->generation << ':' << start << ':' << count;
+    for (ccl::Shader *shader : variants)
+        key << ':' << static_cast<const void *>(shader);
     if (perVertex) {
         key.precision(4);
         key << ':' << m.diffuse << ':' << m.specular << ':' << m.emissive << ':' << m.shininess
             << ':' << m.metallic << ':' << m.roughness << ':' << m.transparent << ':'
             << m.perfacepbr << ':' << m.lighting << ':' << m.glass << ':' << m.lightsource;
+    }
+    if (maps.any() && !m.texidentity) {
+        // The texture matrix is folded into the UV attribute, so a
+        // transformed texture is a different mesh.
+        key.precision(6);
+        for (float f : m.texmatrix)
+            key << ':' << f;
     }
     const std::string meshKey = key.str();
 
@@ -1182,7 +2462,6 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
         cmesh = found->second.mesh;
     else {
         // Compact the vertex set the range touches.
-        const int32_t *idx = mesh->triangleIndices + start;
         std::vector<int> remap(size_t(mesh->numVertices), -1);
         std::vector<int> verts;
         std::vector<int> tris;
@@ -1201,7 +2480,8 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
         cmesh = scene->create_node<ccl::Mesh>();
         cmesh->name = ccl::ustring(meshKey);
         ccl::array<ccl::Node *> used;
-        used.push_back_slow(shader);
+        for (ccl::Shader *shader : variants)
+            used.push_back_slow(shader);
         cmesh->set_used_shaders(used);
         cmesh->resize_mesh(int(verts.size()), int(tris.size() / 3));
 
@@ -1211,7 +2491,10 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
             P[i] = ccl::packed_float3(ccl::make_float3(p[0], p[1], p[2]));
         }
         std::copy(tris.begin(), tris.end(), cmesh->get_triangles().data());
-        std::ranges::fill(cmesh->get_shader(), 0);
+        if (triShader.empty())
+            std::ranges::fill(cmesh->get_shader(), 0);
+        else
+            std::copy(triShader.begin(), triShader.end(), cmesh->get_shader().data());
 
         // The cache's vertex normals carry the smooth shading (hard
         // edges are already split vertices); without them the faces
@@ -1230,6 +2513,31 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
             }
         }
         std::ranges::fill(cmesh->get_smooth(), smooth);
+
+        if (wantUV) {
+            // The mesh's texture coordinates, per corner (ATTR_STD_UV).
+            // They are Coin's (s, t, r, q) per vertex; the GL texture
+            // matrix is applied here rather than in the graph -- a
+            // mapping node cannot express a shear, the matrix can, and
+            // folding it keeps the graph to one node -- and the
+            // homogeneous divide follows, as it does in the raster path.
+            ccl::Attribute *aUV = cmesh->attributes.add(ccl::ATTR_STD_UV);
+            ccl::float2 *UV = aUV->data_for_write<ccl::float2>();
+            for (int i = 0; i < count; ++i) {
+                const float *t = mesh->texCoords + size_t(idx[i]) * 4;
+                float x = t[0];
+                float y = t[1];
+                float w = t[3];
+                if (!m.texidentity) {
+                    const float *M = m.texmatrix;
+                    x = M[0] * t[0] + M[4] * t[1] + M[8] * t[2] + M[12] * t[3];
+                    y = M[1] * t[0] + M[5] * t[1] + M[9] * t[2] + M[13] * t[3];
+                    w = M[3] * t[0] + M[7] * t[1] + M[11] * t[2] + M[15] * t[3];
+                }
+                const float inv = std::fabs(w) > 1.0e-12f ? 1.0f / w : 1.0f;
+                UV[i] = ccl::make_float2(x * inv, y * inv);
+            }
+        }
 
         if (perVertex) {
             ccl::Attribute *aBase = cmesh->attributes.add(ccl::ustring("fc_base"), ccl::TypeColor,
@@ -1349,7 +2657,7 @@ void SceneTranslator::translateCaps(const DrawCall &draw,
                 ++other.num;
             }
         }
-        ccl::Shader *shader = uniformShader(cap, other);
+        ccl::Shader *shader = uniformShader(cap, other, Maps(), Finish(), FaceImage());
 
         // The plane pulled back into the mesh's own space, so that
         // the cap is built once for a placement and rides the draw's

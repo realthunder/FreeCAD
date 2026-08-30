@@ -6,6 +6,9 @@ General:
   License: "CC-BY-3.0"
   Name: "Glass-S2"
   Description: "Glass Fibre"
+Inherits:
+  Clear Glass:
+    UUID: "89327390-cd6c-46d1-ab16-a946248e65e3"
 Models:
   Father:
     UUID: '9cdda8b6-b606-4778-8f13-3934d8668e67'

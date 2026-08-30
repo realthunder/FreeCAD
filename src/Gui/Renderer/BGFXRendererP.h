@@ -1755,6 +1755,16 @@ public:
     void removeView(QOpenGLWidget *widget);
 
     void shutdown();
+    /// Whether bgfx is initialised right now. Every bgfx call after
+    /// shutdown() is undefined (bgfx::getStats() locks a mutex that no
+    /// longer exists), and the last view's release shuts the library
+    /// down while renderer objects -- and their pending timers -- live
+    /// on: anything that reaches bgfx from OFF the render path asks
+    /// this first.
+    bool deviceUp() const
+    {
+        return currentType != RendererType::Noop;
+    }
 
 #ifdef FC_RENDERER_STANDALONE
     /// Standalone (no Qt): bgfx owns the native window/canvas handed in
@@ -9703,7 +9713,7 @@ public:
     /// reports one, else the upload accounting.
     static size_t gpuUsedBytes()
     {
-        const bgfx::Stats *stats = bgfx::getStats();
+        const bgfx::Stats *stats = _BGFXLib.deviceUp() ? bgfx::getStats() : nullptr;
         if (stats && stats->gpuMemoryUsed > 0)
             return size_t(stats->gpuMemoryUsed);
         return s_gpuGeometryBytes.load();
@@ -9715,7 +9725,7 @@ public:
     {
         if (gpuBudget)
             return gpuBudget;
-        const bgfx::Stats *stats = bgfx::getStats();
+        const bgfx::Stats *stats = _BGFXLib.deviceUp() ? bgfx::getStats() : nullptr;
         if (stats && stats->gpuMemoryMax > 0)
             return size_t(stats->gpuMemoryMax);
         return 0;
