@@ -559,6 +559,26 @@ static void reportFrameStats(FrameStatsAccum &acc)
     acc = FrameStatsAccum();
 }
 
+/// The bgfx reset flags every init/resize path uses.
+///
+/// MAXANISOTROPY is required for BGFX_SAMPLER_*_ANISOTROPIC to have any
+/// effect: bgfx only raises its internal m_maxAnisotropy (and thus
+/// honors the per-sampler anisotropic flags) when this reset bit is set,
+/// otherwise the flags are silently ignored.
+///
+/// VSYNC is on unless FC_BGFX_NO_VSYNC says otherwise. That escape
+/// hatch exists because vsync makes the renderer unmeasurable: on a
+/// 75Hz panel every leg of a timing run returns 13.34ms to three
+/// decimals whatever the scene costs, so a wall-clock A/B of any render
+/// change reads as exactly zero. Read once -- bgfx::init happens once
+/// per process and the resize path has to agree with it.
+inline uint32_t bgfxResetFlags()
+{
+    static const bool noVsync = (getenv("FC_BGFX_NO_VSYNC") != nullptr);
+    return (noVsync ? 0u : uint32_t(BGFX_RESET_VSYNC))
+        | uint32_t(BGFX_RESET_MAXANISOTROPY);
+}
+
 /// Whether the once-a-second frame-cost line is due. Unlike the
 /// far-field readouts below, what it reports is accumulated on every
 /// frame and only *printed* on a tick, so this gates the printing.
@@ -1751,11 +1771,7 @@ public:
             init.resolution.height = standaloneHeight;
             resetWidth = standaloneWidth;
             resetHeight = standaloneHeight;
-            // MAXANISOTROPY is required for BGFX_SAMPLER_*_ANISOTROPIC to have
-            // any effect: bgfx only raises its internal m_maxAnisotropy (and
-            // thus honors the per-sampler anisotropic flags) when this reset
-            // bit is set — otherwise the flags are silently ignored.
-            init.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY;
+            init.resolution.reset = bgfxResetFlags();
             // 0 leaves bgfx at its build ceiling; a smaller number
             // shortens the per-frame walk over the view table and the
             // per-view pools sized from that ceiling.
@@ -1906,11 +1922,7 @@ public:
             }
             init.resolution.width = widget->width();
             init.resolution.height = widget->height();
-            // MAXANISOTROPY is required for BGFX_SAMPLER_*_ANISOTROPIC to have
-            // any effect: bgfx only raises its internal m_maxAnisotropy (and
-            // thus honors the per-sampler anisotropic flags) when this reset
-            // bit is set — otherwise the flags are silently ignored.
-            init.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY;
+            init.resolution.reset = bgfxResetFlags();
             // See the standalone path above: a startup option, because
             // bgfx::init happens once per process.
             init.limits.maxViews = uint32_t(
@@ -4255,6 +4267,31 @@ public:
                             // glass front/back interval, Fresnel
                             // environment reflection; replaces their
                             // ordinary rendering
+        ViewGlassLine,      // scene lines and points, moved out of
+                            // ViewOpaque while a glass body is on
+                            // screen. A screen-space refraction resamples
+                            // the scene copy through a per-pixel UV
+                            // displacement, and wherever that field
+                            // converges -- which is what a curved glass
+                            // body IS -- it magnifies whatever it
+                            // samples. A CAD edge went in one pixel wide
+                            // and came out two or three, smeared further
+                            // by the bilinear fetch and, on rough glass,
+                            // by the 16-tap disc. There is no fixing that
+                            // in the glass shader: the line was already
+                            // rasterized before the lens saw it. So the
+                            // lines are simply not in the copy -- they
+                            // land here instead, after the refraction, at
+                            // the exact pixel width they asked for.
+                            // Lines the glass hides are re-submitted
+                            // dimmed (PassLineGlassDim) rather than
+                            // dropped, so a part stays readable through
+                            // its enclosure. Only while glassActive: with
+                            // no glass body the lines stay in ViewOpaque
+                            // and nothing about their ordering changes.
+                            // The cost of being here is that these lines
+                            // miss ViewVolApply, so they are not fogged
+                            // by a volumetric the way the fills are.
         ViewParticles,      // blended user particle draws (a "particle"
                             // stage program whose Blend is not Default).
                             // Their own view because the bucket they
@@ -5400,6 +5437,20 @@ public:
     /// a polygon covering no pixels.
     static constexpr float kPolyOffsetMaxSlope = 4.0f;
 
+    /// Stencil ref the glass surface pass stamps where it takes a pixel,
+    /// read back by PassLineGlassDim to tell "the glass is in front of
+    /// this line" from "an opaque part is". ViewGlassSurface clears the
+    /// stencil first, so the outline passes' leftover marks cannot be
+    /// mistaken for it.
+    static constexpr uint8_t kGlassStencil = 1;
+
+    /// Alpha the lines behind glass keep. The material's own
+    /// hiddenlinealpha is about a DIFFERENT question (an on-top line
+    /// occluded by the scene) and is 1 for ordinary scene edges, which
+    /// would make this pass a no-op; glass wants its own answer, and
+    /// this is the value GL's hidden-line style dims to.
+    static constexpr float kGlassLineAlpha = 0.4f;
+
     /// The largest NDC depth bias the slope term can produce for this
     /// material at the current viewport size — what the stencil
     /// outline has to clear to stay behind the fill that owns it.
@@ -5709,6 +5760,10 @@ public:
     /// vertex programs, so the coverage IS the coverage — with
     /// fs_fc_flat's constant-colour path carrying the id (u_params.x = 0
     /// selects u_matColor; a zero emissive leaves it untouched).
+    /// The one deliberate divergence is the line feather: a negated
+    /// width turns off fs_fc_line's coverage ramp, because this image
+    /// is decoded as exact integers and alpha < 0.5 means "unowned".
+    /// See the u_params assignment below.
     ///
     /// ⚠️ The coverage and depth decisions below are copied from
     /// submit(); they are the ones that decide which pixels a draw
@@ -5742,7 +5797,6 @@ public:
         bool patterned = mat.type == Render::Material::Line
             && (linepattern & 0xffff) != 0xffff;
         bool thickline = mat.type == Render::Material::Line
-            && (mat.linewidth > 1.001f || patterned)
             && m_instancing
             && bgfx::isValid(noseam ? mesh->lineNoSeamInst
                                     : mesh->lineInst);
@@ -5810,10 +5864,22 @@ public:
             // pixels, z = the NDC pull of highlighted lines, w = 1 = no
             // alpha ceiling (the dimming of occluded on-top lines must
             // not touch an id).
+            //
+            // The line width goes in NEGATED, which is how fs_fc_line
+            // is told to skip its analytic coverage (fc_line_vs.sh).
+            // The beauty pass feathers the quad and ramps alpha across
+            // the outer half-pixel; an id image cannot carry that.
+            // reportCullAudit reads alpha < 0.5 as "no draw owns this
+            // pixel", so a ramp would orphan every edge fragment and
+            // report culling damage the frame never had. The
+            // expansion below the ramp is identical, so the pixels
+            // this pass claims are still the pixels the beauty pass
+            // covers -- it loses only the half-pixel of feather, where
+            // the beauty pass is under 50% coverage anyway.
             float params[4] = {
                 0.0f,
                 mat.type == Render::Material::Line
-                    ? qMax(1.0f, std::floor(mat.linewidth + 0.5f))
+                    ? -qMax(1.0f, mat.linewidth)
                     : qMax(1.0f, std::floor(mat.pointsize + 0.5f)),
                 (mat.highlightline && depthtest)
                     ? -2.0f * (2.0f * 16.0f / 16777216.0f) : 0.0f,
@@ -6046,6 +6112,25 @@ public:
         PassDepthOnly,   // depth-write-only prepass of on-top fills
         PassLineHidden,  // on-top lines/points, no depth test, dimmed
         PassLineSolid,   // on-top lines/points, depth LEQUAL, full color
+        PassLineGlassDim, // scene lines/points behind glass, in
+                          // ViewGlassLine: depth GREATER (only where the
+                          // ordinary pass was occluded) and stencil ==
+                          // kGlassStencil (only where the glass surface
+                          // is what took the pixel; it stamps that ref
+                          // as it writes depth). Depth alone cannot
+                          // separate "hidden by glass" from "hidden by
+                          // an opaque part", and the second has to stay
+                          // hidden.
+                          //
+                          // Known limit: an opaque part BEHIND the glass
+                          // is not in the depth buffer any more -- the
+                          // glass overwrote it -- so a line behind that
+                          // part still reads as glass-occluded and
+                          // ghosts through it. Separating those would
+                          // need the pre-glass depth, which only exists
+                          // when the SSAO/volumetric prepass is running.
+                          // A glass enclosure over a dense assembly is
+                          // where it shows.
     };
 
     /// Per-frame PBR/shadow uniform + sampler state shared by every
@@ -6290,6 +6375,7 @@ public:
             case ViewIdReadback: return "idreadback";
             case ViewWaterSurface: return "watersurface";
             case ViewGlassSurface: return "glasssurface";
+            case ViewGlassLine: return "glassline";
             case ViewParticles: return "particles";
             case ViewGroundRefl: return "groundrefl";
             case ViewVolGen: return "volgen";
@@ -7104,6 +7190,10 @@ public:
     bool selPass = false; // route opaque-view submits into ViewSelection
                           // (non-on-top selection draws follow the opaque
                           // scene in submission order, GL pass parity)
+    bool glassLines = false; // a glass body is rendering this frame:
+                             // scene lines/points leave ViewOpaque for
+                             // ViewGlassLine so the refraction cannot
+                             // magnify them (see the enum comment)
     int overlayView = -1; // >= 0: route submits into this overlay view
     // Anchor + rect pixel height of the overlay currently being submitted (set
     // alongside overlayView); billboard text sizes itself against the overlay's

@@ -943,8 +943,9 @@ void BGFXView::init(bool keepShared)
         ensureProgram(m_progMeshInstTex, "vs_fc_mesh_tex_inst",
                       "fs_fc_mesh_tex");
         ensureUniform(u_instParams, "u_instParams", bgfx::UniformType::Vec4);
-        ensureProgram(m_progLine, "vs_fc_line", "fs_fc_flat");
-        ensureProgram(m_progLineClip, "vs_fc_line_clip", "fs_fc_flat_clip");
+        ensureProgram(m_progLine, "vs_fc_line", "fs_fc_line");
+        ensureProgram(m_progLineClip, "vs_fc_line_clip",
+                      "fs_fc_line_clip");
         ensureProgram(m_progLinePat, "vs_fc_line_pat", "fs_fc_line_pat");
         ensureProgram(m_progLinePatClip, "vs_fc_line_pat_clip",
                       "fs_fc_line_pat_clip");

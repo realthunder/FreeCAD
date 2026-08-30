@@ -285,8 +285,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (_BGFXLib.standaloneWidth != _BGFXLib.resetWidth
             || _BGFXLib.standaloneHeight != _BGFXLib.resetHeight) {
         bgfx::reset(_BGFXLib.standaloneWidth,
-                    _BGFXLib.standaloneHeight,
-                    BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY);
+                    _BGFXLib.standaloneHeight, bgfxResetFlags());
         _BGFXLib.resetWidth = _BGFXLib.standaloneWidth;
         _BGFXLib.resetHeight = _BGFXLib.standaloneHeight;
     }
@@ -3239,7 +3238,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 ? uint16_t(BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH
                            |BGFX_CLEAR_STENCIL)
             : (i == V::ViewSectionCap
-               || i == V::ViewSectionCapTransp)
+               || i == V::ViewSectionCapTransp
+               // The glass pass stamps kGlassStencil where it takes a
+               // pixel; the outline views ran earlier and left their own
+               // marks, which would otherwise read as glass in
+               // ViewGlassLine's dim pass.
+               || i == V::ViewGlassSurface)
                 ? uint16_t(BGFX_CLEAR_STENCIL)
                 : uint16_t(BGFX_CLEAR_NONE),
             clearColor, 1.0f, 0);
@@ -3922,6 +3926,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
              configWaterCopy);
     declPass(V::ViewWaterSurface, waterSurfActive, configScene);
     declPass(V::ViewGlassSurface, glassActive, configScene);
+    declPass(V::ViewGlassLine, glassActive, configScene);
     declPass(V::ViewParticles, true, configScene);
     declPass(V::ViewTransparent, true, configTransparent);
     declPass(V::ViewOITComposite, oitActive, configScene);
@@ -5273,6 +5278,20 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // Hidden-line entries get their stencil outline right after the
     // fill and honor the face/seam/vertex hiding rules.
     view->ontop = false;
+    // Glass on screen: scene lines and points move to ViewGlassLine so
+    // the refraction cannot magnify them (BGFXView::ViewGlassLine).
+    // Set before the first submit and left set: submit() makes the
+    // routing decision last, by which point the overlay, reflection and
+    // on-top draws have already claimed views of their own, so this
+    // never has to be turned back off for them.
+    view->glassLines = glassActive;
+    // Whether a line/point draw of the scene wants the extra dimmed
+    // pass behind the glass. Only worth submitting when there is glass
+    // to be behind; the pass is stencil-gated to the glass surface, so
+    // without one it would draw nothing at full cost.
+    auto glassDim = [&](const Render::DrawCall &d) {
+        return glassActive && !isTriangle(d) && !d.material.ontop;
+    };
     // The per-draw C++ the plan calls "submit": this walks every row
     // of the draw list, culled or not, and decides per row what to
     // submit. Braced so the scope covers the loop and nothing after.
@@ -5377,9 +5396,17 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     && fireObjects.count(draw.objectKey)));
         if (!cullDraw && !instancedThisFrame(drawIdx) && !surfWater
                 && !surfWaterLine && !surfGlass && !cloudPart
-                && !firePart)
+                && !firePart) {
             view->submit(draw, viewMat, BGFXView::PassNormal,
                          sceneNoSeam(draw));
+            // ...and its ghost where the glass hides it. Submitted
+            // beside the solid pass rather than in a loop of its own:
+            // both land in ViewGlassLine, which bgfx orders by view id,
+            // so the order they are handed over in does not matter.
+            if (glassDim(draw))
+                view->submit(draw, viewMat, BGFXView::PassLineGlassDim,
+                             sceneNoSeam(draw));
+        }
         if (cloudFill && !cullDraw && mediumRender) {
             int slot = slotOf(cloudSlots, draw.objectKey);
             view->submitWaterDepth(draw, false, 2, slot);
@@ -5776,6 +5803,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
             if (externalBase && sel.first <= 0 && isTriangle(draw))
                 view->submit(draw, viewMat, BGFXView::PassLineHidden);
             view->submit(draw, viewMat);
+            // A non-on-top selection's lines follow the scene's into
+            // ViewGlassLine, so they need the same dimmed pass or a
+            // selected edge behind glass would vanish where it used to
+            // show through it.
+            if (sel.first <= 0 && glassDim(draw))
+                view->submit(draw, viewMat, BGFXView::PassLineGlassDim);
             // Hidden-line outline of a whole-object selection fill
             // (GL: renderOutline from renderOpaque/renderTransparency
             // over slentries). On-top selections outline in the

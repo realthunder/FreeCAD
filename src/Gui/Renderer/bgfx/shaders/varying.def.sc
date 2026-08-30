@@ -9,6 +9,7 @@ vec3 v_vpos    : TEXCOORD3;
 vec3 v_opos    : TEXCOORD4;
 vec3 v_onrm    : TEXCOORD5;
 vec3 v_findex : TEXCOORD6;
+vec2 v_line    : TEXCOORD7;
 
 vec3 a_position : POSITION;
 vec3 a_normal   : NORMAL;

@@ -758,6 +758,18 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
     if (mat.culling && !mat.twoside)
         state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
     bgfx::setState(state);
+    // Stamp every pixel the glass takes, so PassLineGlassDim can tell a
+    // line hidden by glass from one hidden by an opaque part. Written on
+    // depth pass only -- a glass fragment that lost the depth test is
+    // not what the viewer is seeing there. The view clears the stencil
+    // first (configScene), or the outline passes' marks would read as
+    // glass.
+    bgfx::setStencil(BGFX_STENCIL_TEST_ALWAYS
+                     | BGFX_STENCIL_FUNC_REF(kGlassStencil)
+                     | BGFX_STENCIL_FUNC_RMASK(0xff)
+                     | BGFX_STENCIL_OP_FAIL_S_KEEP
+                     | BGFX_STENCIL_OP_FAIL_Z_KEEP
+                     | BGFX_STENCIL_OP_PASS_Z_REPLACE);
     bgfx::submit(vid(ViewGlassSurface), m_progGlass);
     ++drawcount;
 }

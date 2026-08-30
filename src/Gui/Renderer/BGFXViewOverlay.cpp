@@ -186,9 +186,7 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
     float color[4];
     unpackColor(mat.linecolor ? mat.linecolor : mat.diffuse, color);
     color[3] = 1.0f;
-    float lineParams[4] = {0.0f,
-                           qMax(1.0f, std::floor(mat.linewidth + 0.5f)),
-                           0.0f, 1.0f};
+    float lineParams[4] = {0.0f, qMax(1.0f, mat.linewidth), 0.0f, 1.0f};
     bgfx::setUniform(u_matColor, color);
     bgfx::setUniform(u_matEmissive, zero);
     bgfx::setUniform(u_matSpecular, zero);
@@ -211,7 +209,12 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
     bgfx::setInstanceDataBuffer(edgeInst, start, count);
     bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                    | BGFX_STATE_WRITE_Z | BGFX_STATE_MSAA
-                   | BGFX_STATE_DEPTH_TEST_LEQUAL);
+                   | BGFX_STATE_DEPTH_TEST_LEQUAL
+                   | BGFX_STATE_BLEND_FUNC_SEPARATE(
+                       BGFX_STATE_BLEND_SRC_ALPHA,
+                       BGFX_STATE_BLEND_INV_SRC_ALPHA,
+                       BGFX_STATE_BLEND_ONE,
+                       BGFX_STATE_BLEND_INV_SRC_ALPHA));
     bgfx::submit(vid(viewId),
                  patterned ? (clipped ? m_progLinePatClip : m_progLinePat)
                            : (clipped ? m_progLineClip : m_progLine));
@@ -422,13 +425,16 @@ void BGFXView::submitOutlineEdges(const Render::DrawCall &draw,
     // that term rather than doubling a constant that no longer bounds it.
     float color[4];
     unpackColor((spec.color & 0xffffff00) | 0xff, color);
-    params[1] = qMax(1.0f, std::floor(spec.width + 0.5f));
+    params[1] = qMax(1.0f, spec.width);
     params[2] = spec.depthWrite
         ? 2.0f * polygonOffsetBias(draw.material)
             + polygonOffsetMaxBias(draw.material)
         : 0.0f;
     const uint64_t outlinestate = BGFX_STATE_WRITE_RGB
-        | BGFX_STATE_WRITE_A | BGFX_STATE_MSAA | depthstate;
+        | BGFX_STATE_WRITE_A | BGFX_STATE_MSAA | depthstate
+        | BGFX_STATE_BLEND_FUNC_SEPARATE(
+            BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA,
+            BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_INV_SRC_ALPHA);
     const uint32_t outlinestencil = BGFX_STENCIL_TEST_NOTEQUAL
         | BGFX_STENCIL_FUNC_REF(ref) | BGFX_STENCIL_FUNC_RMASK(0xff)
         | BGFX_STENCIL_OP_FAIL_S_KEEP

@@ -949,13 +949,18 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     bool patterned = mat.type == Render::Material::Line
         && (linepattern & 0xffff) != 0xffff;
 
-    // Lines wider than 1px — and patterned lines of any width, the
-    // stipple lives in the quad fragment shader — render as instanced
-    // screen-space quads (vs_fc_line*); plain line primitives have no
-    // width or pattern in modern APIs. Without instancing support
-    // patterned lines fall back to solid 1px primitives.
+    // Every line renders as instanced screen-space quads (vs_fc_line*):
+    // plain line primitives have no width, no pattern and no coverage
+    // control in modern APIs. 1px lines used to take the hardware path,
+    // which rasterizes by a different rule than the quad expansion --
+    // so an edge changed character, not just size, whenever anything
+    // pushed it across 1px (a highlight, outlineThicken), and the two
+    // could not be made to agree at any angle. One path, one rule.
+    // The instance buffer this needs is built for every mesh with lines
+    // at upload time regardless (GpuGeom::upload), so routing the 1px
+    // case through it costs no memory and no upload.
+    // Without instancing support lines fall back to 1px primitives.
     bool thickline = mat.type == Render::Material::Line
-        && (mat.linewidth > 1.001f || patterned)
         && m_instancing
         && bgfx::isValid(noseam ? mesh->lineNoSeamInst
                                 : mesh->lineInst);
@@ -1031,6 +1036,19 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     if (overlayView >= 0)
         passView = uint16_t(overlayView);
 
+    // Glass on screen: scene lines and points render after the
+    // refraction instead of into the copy it samples, so a screen-space
+    // lens cannot magnify them (see ViewGlassLine). Last of the routing
+    // decisions on purpose -- the checks above have already moved every
+    // draw that is not in the refraction source (overlays, the ground
+    // reflection, the external base layer's on-top run) out of the two
+    // views this claims from, so testing those two is the whole test.
+    const bool glassLinePass = glassLines && !ontop && !mat.ontop
+        && mat.type != Render::Material::Triangle
+        && (passView == ViewOpaque || passView == ViewSelection);
+    if (glassLinePass)
+        passView = ViewGlassLine;
+
     // GL parity (SoFCRenderer::applyMaterial ~520): on-top draws ignore
     // the depth test, only non-on-top transparent draws drop the depth
     // write. Disabling the depth test also disables depth writes (in GL
@@ -1077,9 +1095,33 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
         depthwrite = false;
         blend = true;
         break;
+    case PassLineGlassDim:
+        // The complement of the ordinary ViewGlassLine draw: GREATER
+        // takes exactly the fragments that pass lost to the depth
+        // buffer, and the stencil test added below narrows those to the
+        // ones the glass surface itself took. No depth write -- this is
+        // a ghost of a line that is really behind something.
+        depthtest = true;
+        depthfunc = Render::Material::Greater;
+        depthwrite = false;
+        blend = true;
+        dimalpha = kGlassLineAlpha;
+        break;
     default:
         break;
     }
+
+    // Analytic line coverage is an alpha ramp, so the AA quad path has
+    // to blend: unblended, the feather writes its ramp value as an
+    // opaque colour and the line lands a pixel wider and harder-edged
+    // than it asked for -- the exact artifact the coverage exists to
+    // remove. The 1px primitive fallback has no ramp and keeps its
+    // opaque state. This costs the line draws their early-Z, which is
+    // affordable because line fragments are a flat colour and a clamp;
+    // the feather is bounded at half a pixel per side, so the fragment
+    // count grows by at most 2/width.
+    if (thickline)
+        blend = true;
 
     // GL disables depth writes together with the depth test; bgfx does
     // not — WRITE_Z with no depth-test bits renders as func ALWAYS with
@@ -1161,10 +1203,13 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     params[0] = mat.pervertexcolor ? 1.0f : 0.0f;
     // u_params.y: mesh program = lighting flag; line program = line
     // width in pixels; point program = point size in pixels (unused
-    // by the flat program). Widths/sizes round to the nearest integer
-    // like GL's non-antialiased line/point rasterization does (a
-    // 1.5px quad would otherwise cover its second pixel row only
-    // partially and drop it without MSAA).
+    // by the flat program). Line widths pass through unrounded now
+    // that fs_fc_line resolves coverage analytically -- a fractional
+    // width is a real weight there, and rounding is what used to make
+    // outlineThicken and the highlight widths quantize. Point sizes
+    // still round: the sprite has no coverage ramp, so a 1.5px quad
+    // would cover its second pixel row only partially and drop it
+    // without MSAA.
     // While the scene light is on, unlit receivers (the Shadow draw
     // style's BASE_COLOR ground) light up too — Coin's SoShadowGroup
     // shades and shadows the ground with its own shaders regardless
@@ -1179,7 +1224,7 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     if (mat.lightsource)
         shaded = false;
     params[1] = mat.type == Render::Material::Line
-        ? qMax(1.0f, std::floor(mat.linewidth + 0.5f))
+        ? qMax(1.0f, mat.linewidth)
         : mat.type == Render::Material::Point
             ? qMax(1.0f, std::floor(mat.pointsize + 0.5f))
             : shaded ? 1.0f : 0.0f;
@@ -1386,6 +1431,17 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
                            passView == ViewGroundRefl);
         }
     }
+
+    // Only where the glass surface itself claimed the pixel. Without
+    // this the GREATER depth test would also let a line show through
+    // every opaque part standing in front of it.
+    if (pass == PassLineGlassDim)
+        bgfx::setStencil(BGFX_STENCIL_TEST_EQUAL
+                         | BGFX_STENCIL_FUNC_REF(kGlassStencil)
+                         | BGFX_STENCIL_FUNC_RMASK(0xff)
+                         | BGFX_STENCIL_OP_FAIL_S_KEEP
+                         | BGFX_STENCIL_OP_FAIL_Z_KEEP
+                         | BGFX_STENCIL_OP_PASS_Z_KEEP);
 
     bgfx::submit(vid(passView), prog, depth);
     ++drawcount;
