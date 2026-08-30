@@ -642,9 +642,10 @@ hour.
 ## 15. Following the card: one flag, and the two panels stop looking alike
 
 > Designed 2026-08-30 with the base-and-overrides storage of
-> `ShapeAppearanceDesign.md` sec 12. **The flag (15.3, 15.4, 15.7) and the
-> storage under it are built**; the panels (15.5) and the legacy mirror's
-> status bit (15.6) are not.
+> `ShapeAppearanceDesign.md` sec 12. **The flag (15.3, 15.4, 15.7), the
+> storage under it and the Appearance panel (15.5) are built**; the legacy
+> mirror's status bit (15.6) is not, and neither is the context-menu form
+> of Reset to material.
 
 ### 15.1 What is wrong
 
@@ -778,6 +779,21 @@ tab, and the list reads Appearance rather than Materials.
 **Material** (`Std_SetMaterial`) stays the lean panel, with a preview of
 the card's look and one line stating what assigning will do: apply the
 look, or keep the custom one (with the same Reset).
+
+**What was built.** The Appearance panel's own list is a LOOK picker: the
+"All materials" tab is gone, so physical cards and hatch patterns never
+appear in it, and the group reads Appearance rather than Material.
+Selecting one of its cards writes the BASE -- so the painted faces survive
+it -- and ends the follow, because a look chosen here outranks the card's.
+Under it sits the status line and **Reset to material**, shown only while
+it applies. The card picker is a group of its own above, the Material
+panel's widget and filter, and it is HIDDEN unless the selection carries a
+`Materials::PropertyMaterial`: an object without a card sees the panel it
+always saw, one row shorter.
+
+Still ahead: the "As material" entry as the appearance list's first row
+(the Reset button is the same action in a different place), the
+context-menu form of the command, and the Material panel's preview line.
 
 ### 15.6 The legacy mirror
 

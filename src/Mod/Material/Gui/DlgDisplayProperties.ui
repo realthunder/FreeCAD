@@ -100,7 +100,7 @@
      </layout>
     </widget>
    </item>
-   <item row="2" column="0">
+   <item row="3" column="0">
     <widget class="QGroupBox" name="groupBox2">
      <property name="title">
       <string>Display</string>
@@ -339,9 +339,26 @@
     </widget>
    </item>
    <item row="1" column="0">
-    <widget class="QGroupBox" name="groupBox3">
+    <widget class="QGroupBox" name="groupBoxCard">
      <property name="title">
       <string>Material</string>
+     </property>
+     <property name="toolTip">
+      <string>The object's material card: what its mass, FEM and CAM read.
+Assigning one moves the appearance below with it, unless the
+appearance has been given a look of its own.</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutCard">
+      <item>
+       <widget class="MatGui::MaterialTreeWidget" name="widgetCard" native="true"/>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item row="2" column="0">
+    <widget class="QGroupBox" name="groupBox3">
+     <property name="title">
+      <string>Appearance</string>
      </property>
      <layout class="QGridLayout" name="gridLayout_2">
       <item row="1" column="0">
@@ -529,10 +546,48 @@ direction, so it wraps at 180 degrees</string>
       <item row="0" column="0">
        <widget class="MatGui::MaterialTreeWidget" name="widgetMaterial" native="true"/>
       </item>
+      <item row="3" column="0">
+       <layout class="QHBoxLayout" name="layoutFollow">
+        <item>
+         <widget class="QLabel" name="labelAppearance">
+          <property name="text">
+           <string>Custom</string>
+          </property>
+          <property name="toolTip">
+           <string>Whether this look is the material card's or one set here.</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacerFollow">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QPushButton" name="buttonResetToMaterial">
+          <property name="text">
+           <string>Reset to material</string>
+          </property>
+          <property name="toolTip">
+           <string>Take the material card's look again, and follow it from now on.
+The faces holding a look of their own keep it.</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
      </layout>
     </widget>
    </item>
-   <item row="3" column="0">
+   <item row="4" column="0">
     <widget class="Gui::PrefCheckBox" name="checkBoxColorRecompute">
      <property name="text">
       <string>Touch object for recompute on color change</string>
@@ -545,7 +600,7 @@ direction, so it wraps at 180 degrees</string>
      </property>
     </widget>
    </item>
-   <item row="4" column="0">
+   <item row="5" column="0">
     <widget class="QGroupBox" name="groupBox">
      <property name="toolTip">
       <string>Specifies how to map color from child objects to parent</string>

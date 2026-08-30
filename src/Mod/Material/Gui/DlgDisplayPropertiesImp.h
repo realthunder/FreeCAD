@@ -85,6 +85,10 @@ private Q_SLOTS:
     void onButtonCustomAppearanceClicked();
     void onButtonColorPlotClicked();
     void onMaterialSelected(const std::shared_ptr<Materials::Material>& material);
+    /// The picker at the top: the object's material CARD, not its look
+    void onCardSelected(const std::shared_ptr<Materials::Material>& material);
+    /// Take the card's look again, and follow it from now on
+    void onResetToMaterial();
     void onFinishPresetActivated(const QString&);
     void onFinishSizeChanged(double);
     void onMapFaceColorChanged(bool);
@@ -104,6 +108,14 @@ private:
     void setDisplayModes(const std::vector<Gui::ViewProvider*>&);
     void setColorPlot(const std::vector<Gui::ViewProvider*>&);
     void setShapeAppearance(const std::vector<Gui::ViewProvider*>&);
+    /** The card picker, and the line that says where this look came from
+     *
+     * docs/MaterialStorage.md 15.5. The picker is there only while the
+     * selection carries a material card, because without one there is
+     * nothing for the look to follow; the line reads "As material Steel",
+     * "Custom" or "Custom, 3 faces painted".
+     */
+    void setMaterialCard(const std::vector<Gui::ViewProvider*>&);
     /// Fill the finish combo with one row per pattern, on the icons the
     /// Material module renders for them
     void setupFinishPresets();
