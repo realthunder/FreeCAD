@@ -9,9 +9,15 @@ runs in a wasm sandbox, the same sandbox is (a) a real security fix on
 desktop and (b) the thing that safely ships to the viewer. This is a
 design pass -- nothing here is built.
 
-Revised later on 2026-08-29 after a code-verified re-evaluation:
-secs 7-8 added (the concrete native-module bridge plan; the carriers
-this design does not close), secs 3-6 and 9 amended in place.
+Revised 2026-08-29 after a code-verified re-evaluation: the concrete
+native-module bridge plan, and the carriers this design does not
+close. Revised again 2026-08-30 (user order): the SECURITY MODEL is
+now defined FIRST and is fully user-controllable -- sec 3,
+principals / permissions / grants on the browser model, replacing
+the earlier two-tier wording throughout -- and sec 8 evaluates
+minimizing, ultimately abandoning, native CPython. Renumbered: the
+bridge keeps sec 7; boundary/marshalling/runtime are now 4/5/6;
+carriers/sequencing/open questions are 9/10/11.
 
 This is **not new direction.** RoadMap workstream 3 already names it:
 "Run untrusted embedded document Python through a Pyodide/WASM
@@ -113,7 +119,123 @@ arbitrary code.** Expressions are stored in the file; recompute runs
 them; the allowlist is the only thing between a malicious document and
 the host.
 
-## 3. The boundary that actually closes it
+## 3. The security model: principals, permissions, grants
+
+Added 2026-08-30 (user order): define the boundary BEFORE the
+mechanism, and make it fully user-controllable -- grant as
+first-class as deny, on the browser security model. The 2026-08-29
+text had only a binary trust split ("untrusted document vs trusted
+session"); this section replaces it. The browser analogy is used
+precisely, not decoratively: wasm guest = sandboxed renderer, host
+bridge dispatcher = browser kernel, principal = origin, grant flow
+= permission prompt, per-document permission panel = site settings.
+
+### 3.1 Principals (who is asking)
+
+Every bridge op executes on behalf of exactly one principal:
+
+- **`document:<hash>`** -- code carried by a document: expressions,
+  and (sec 8, rung 2) embedded payloads and scripted-object code.
+  Identity is CONTENT-ADDRESSED: a hash over the document's
+  code-bearing payload (all expression strings plus embedded
+  scripts, canonicalized -- sec 11), not the file path and not the
+  document `Uid`. The hash is the credential: grants bind to it, so
+  tampering with a trusted file voids its grants and re-prompts,
+  and copying a trusted document's `Uid` into a hostile file gains
+  nothing. `Uid` and path are display metadata only.
+- **`session`** -- what the user runs by hand: console input,
+  macros invoked by explicit action. Wider DEFAULTS (the user is
+  the operator), but the same enumerated permissions, the same
+  revocability, and eventually the same sandbox (sec 8, rung 3).
+- **`addon:<name>`** -- installed workbenches and extensions,
+  trusted the way a browser trusts an extension: explicitly, per
+  addon, and less than the kernel. Addons run native today (sec 8)
+  but are principals from day one, so their grants are visible and
+  revocable in the same panel as everything else.
+- The C++ core is not a principal; it is the kernel that enforces
+  the model.
+
+### 3.2 Permissions (what can be asked)
+
+Named, coarse, human-explainable -- the browser lesson: users
+reason about "camera" and "location", not about syscalls. The
+catalog gates CATEGORIES; the sec 7.5 annotation tables enumerate
+the exact members inside each category. v1 catalog, with defaults
+per principal class:
+
+  permission       document   session   addon
+  ---------------  --------   -------   -----
+  doc.read.self    ALLOW      ALLOW     ALLOW
+  doc.write.self   ALLOW (a)  ALLOW     ALLOW
+  doc.foreign      PROMPT     ALLOW     ALLOW
+  geom.call        ALLOW (b)  ALLOW     ALLOW
+  app.query        PROMPT     ALLOW     ALLOW
+  gui              DENY (c)   ALLOW     ALLOW
+  host.import:<m>  PROMPT     PROMPT    ALLOW
+  unsafe.getattr   DENY       PROMPT    ALLOW
+  fs / net         not offered in v1 (no op exists to gate)
+
+  (a) expressions write only their declared result through the
+      engine; `doc.write.self` exists for rung-2 Proxy execute().
+  (b) compute over the document's own shapes carries no ambient
+      authority; its cost is bounded by fuel (7.8), not permission.
+  (c) not even promptable for documents -- there is no legitimate
+      "a file drives the GUI" flow. Session and addons keep it.
+
+`doc.read.self` is the same-origin rule: a document touching its
+own objects is a page touching its own DOM -- always allowed, zero
+prompt noise. `doc.foreign` is the cross-origin wall (today's
+`_app.getDocument(other)`). `host.import:<m>` is PER MODULE and
+replaces the old user-configured allowlist entries with grants the
+user actually sees, scopes, and can revoke.
+
+### 3.3 Grant lifecycle (what the allowlist could never express)
+
+Each (principal, permission) resolves to ALLOW, DENY, or PROMPT.
+A PROMPT answer is recorded at one of three scopes, exactly the
+browser's: **once** (this evaluation), **session**, or **always**
+(persisted in user preferences, keyed by the principal identity --
+for documents, the content hash).
+
+Prompt mechanics follow the popup blocker, not the modal dialog:
+
+- An op pending a grant FAILS FAST with a structured
+  `PermissionNeeded{principal, permission, target}`; the evaluation
+  surfaces it as a cell/object error carrying that payload.
+  Recompute NEVER blocks on a prompt (a modal mid-recompute is
+  also a known harness killer on this box).
+- The UI shows a passive indicator -- this model's blocked-popup
+  icon -- on the affected cell/object and in the per-document
+  permission panel: what asked, for what, when. Granting re-runs
+  the evaluation.
+- Document code cannot spam prompts: grant REQUESTS surface only
+  through the panel/indicator, and the grant dialog itself opens
+  on user gesture.
+- Headless/CLI mirrors browser flags: a policy file plus
+  `--grant doc.foreign` style switches; the default is DENY plus a
+  structured audit line, never a hang.
+
+The user-facing surface: a "Document permissions" panel (site
+settings analog) listing every grant of the open document, each
+revocable; a global settings page for per-permission defaults
+("always ask" / "block all"); an audit log of every ALLOW/DENY
+decision. Grant, deny, inspect, revoke -- all four verbs exist,
+and all four are the user's.
+
+### 3.4 Enforcement point (the kernel rule)
+
+All checks run HOST-SIDE in the bridge dispatcher, never in the
+guest -- Chromium's split exactly: a fully compromised renderer
+still cannot skip the kernel's IPC checks. Two layers in order,
+both in the dispatcher: the sec 7.5 schema check (does this op
+exist for this type at all -- generated, absent-means-deny), then
+the permission check (may THIS principal use it NOW -- the grant
+store). Every op carries its principal; there is no ambient
+principal. Quotas (fuel, memory, op depth -- 7.8) are accounted
+per principal -- the tab-throttling analog -- and are limits, not
+permissions: they bound cost, never capability.
+
+## 4. The boundary that actually closes it
 
 **Replace "name-filtering inside the interpreter" with "memory and
 syscall isolation by construction."** Run the Python that expressions
@@ -162,7 +284,7 @@ CPython directly and call the sandbox interface instead:
   rings -- the named modules are native, so "import" means
   "install a generated facade").
 - `CallableExpression` executing a Python callable -> "run this call
-  in the sandbox"; arguments marshal across (sec 4); the whole
+  in the sandbox"; arguments marshal across (sec 5); the whole
   `checkCallable` name-attribution machinery is **deleted** -- there
   is nothing to attribute, the callable simply cannot reach the host
   except through bridged proxies -- PROVIDED the bridge itself is a
@@ -173,7 +295,7 @@ CPython directly and call the sandbox interface instead:
   read from the C++ property system and returns data or another
   proxy -- never by running a generic `getattr` on a live PyObject
   (sec 7.5). Host-side Python attribute drill-down (`obj.Proxy.foo`)
-  is DENIED under the untrusted tier (sec 7.1).
+  is denied to the document principal by default (secs 3.2, 7.1).
 
 This is exactly ComputeBoundaries' "Python + the module co-resident in
 the worker": the expression sandbox is **the first and smallest
@@ -183,7 +305,7 @@ same "semantic, schema'd, transactional object-operation protocol"
 the process-per-document goal converges on (ComputeBoundaries sec 7),
 so this is plumbing the roadmap wants anyway, not a detour.
 
-## 4. The marshalling contract (the core design work)
+## 5. The marshalling contract (the core design work)
 
 What crosses the boundary during one evaluation splits in two:
 
@@ -216,12 +338,15 @@ Consequences to design deliberately:
   be **denied** to sandboxed document expressions; the current
   allowlist cannot express that. Same for `_app.getDocument(other)`
   reaching sibling documents. The sandbox lets the surface *shrink*,
-  not just relocate.
-- **Trust tiers become expressible.** A downloaded `.FCStd`'s embedded
+  not just relocate. Sec 3.2 formalizes both: `gui` is DENY (not
+  even promptable) for document principals; `doc.foreign` is
+  PROMPT.
+- **Principals become expressible.** A downloaded `.FCStd`'s embedded
   expressions and the user's own live-session macros are not equally
-  trusted. A capability policy can run untrusted-document expressions
-  locked down while granting the user's own session more -- a
-  dimension the binary allowlist has no way to state.
+  trusted; sec 3.1 gives each its own principal with its own default
+  grants and its own revocable grant record -- a dimension the
+  binary allowlist has no way to state, and one the earlier "two
+  tiers" wording under-specified.
 - **Geometry authoring stays in the host (v1 scope line).** If a
   sandboxed callable wants to *build* a shape (cadquery), it would
   need OCCT inside the sandbox -- which pulls in the entire kernel and
@@ -229,7 +354,7 @@ Consequences to design deliberately:
   host-side methods through proxies; it does not author B-rep. This is
   what keeps the sandbox image small and OCCT in one place.
 
-## 5. Runtime choice
+## 6. Runtime choice
 
 The isolation must come from **wasm/WASI memory+syscall confinement**,
 not from restricting the Python dialect.
@@ -237,7 +362,7 @@ not from restricting the Python dialect.
 - **CPython-on-wasm (Pyodide-class image): recommended.** Preserves
   exact Python semantics (the value layer and numpy keep working),
   RoadMap-named, browser-proven. (`freecad.fc_cadquery` is NOT a
-  justification: it authors B-rep through OCCT bindings, which sec 4
+  justification: it authors B-rep through OCCT bindings, which sec 5
   keeps host-side -- cadquery-in-expressions is out of v1 scope
   under ANY runtime, so it argues nothing here.) Heavy (multi-MB +
   interpreter startup), but the weight buys semantic fidelity, and the
@@ -259,54 +384,9 @@ not from restricting the Python dialect.
   security fix and the viewer's evaluator are literally the same
   artifact.
 
-## 6. Sequencing (this is the point of doing it first)
-
-- **Phase 0 -- boundary audit + marshalling contract.** Enumerate
-  every site where the C++ interpreter enters CPython (the sec 1
-  chokepoints: `getModule`, callable execution, `getPyValue` on
-  Python-backed attrs, pseudo-property wrappers). Fix the by-value vs
-  by-proxy type split. Deliverable: the object-protocol slice the
-  sandbox needs -- reusable by process-per-document. Three more
-  deliverables (added by the re-evaluation): (a) the
-  annotated-member audit -- which type/module members expressions in
-  real files actually touch, seeding the sec 7.5 tables; (b) the
-  reverse-result audit -- which expressions produce results that are
-  not by-value-marshalable (sec 7.7; expected rare); (c) THE
-  MEASUREMENT, promoted from the open questions: native value layer
-  vs CPython-wasm on a large real sheet AND a bound-property-heavy
-  assembly, before any bridge code exists -- architecture A's
-  position (Phase 1 prerequisite vs later accelerator) is an OUTPUT
-  of that number, not an opinion. Also the `ExpressionCore` seam
-  list (sec 7.2).
-- **Phase 1 -- desktop sandbox = the security fix.** Stand up the
-  CPython-wasm image under a desktop wasm runtime; route the
-  chokepoints through it; delete the name-matched allowlist in favour
-  of the capability policy. **Acceptance test:** a `.FCStd` whose
-  expression does `open('/etc/passwd')`, `import os`, or
-  `App.getDocument().Objects[0].Proxy...` cannot reach the host FS,
-  network, or memory -- verified, not argued. This closes the
-  EXPRESSION carrier of ws3 -- not all of ws3; sec 8 lists the
-  restore-time carriers that remain outside this design.
-- **Phase 2 -- browser reuse.** Ship the same image in the viewer.
-  Pure-data sheets (cells referencing cells) evaluate locally in the
-  sandbox with no host at all; a cell that references `Box.Volume`
-  proxies to the host over the existing control channel -- the same
-  boundary as desktop. Now docs/SpreadsheetRemote.md's `sheet.set`
-  lands on a sandbox that is already the security boundary, and the
-  viewer can evaluate formulas locally where the data allows.
-  Authority rule: host recompute stays the source of truth; local
-  evaluation is latency-hiding preview, reconciled when the host's
-  `sheet.changed` lands -- two evaluators, one truth.
-
-The ordering the user asked for is right: the sandbox is a
-prerequisite of the sheet-in-wasm work, not a parallel track. Built
-first, it turns "ship the spreadsheet to the browser" from "expose the
-current in-process Python hole to the web" into "run the already-
-sandboxed evaluator in one more host."
-
 ## 7. Interfacing native modules with the sandbox (added 2026-08-29)
 
-Sec 3 says "host proxies through an object-operation protocol";
+Sec 4 says "host proxies through an object-operation protocol";
 this section is the concrete plan. The decisive observation: the
 current allowlist's named modules -- `FreeCAD`, `App`, `Gui`,
 `Part`, `Sketcher`, `Spreadsheet` -- are C++ extension modules.
@@ -330,14 +410,15 @@ confused deputy at the boundary; a closed op table cannot walk
 anywhere it was not explicitly given.
 
 Consequence, stated as scope: host-side Python attribute drill-down
-(`obj.Proxy.foo`, sec 1's attribute-access bullet) is DENIED under
-the untrusted-document tier -- answering it means executing host
-CPython over attacker-chosen names. Files in the field that rely on
-it lose that capability under the untrusted tier, BY DESIGN; the
-trusted (user-session) tier may re-enable it as an explicit policy
-grant. This is the one deliberate compatibility break in the design.
+(`obj.Proxy.foo`, sec 1's attribute-access bullet) is the
+`unsafe.getattr` permission (sec 3.2): DENY for document principals
+-- answering it means executing host CPython over attacker-chosen
+names. Files in the field that rely on it lose that capability BY
+DESIGN; the session principal may hold it as an explicit, revocable
+grant (sec 3.3). This is the one deliberate compatibility break in
+the design.
 
-### 7.2 Where the evaluator runs (settling what sec 3 left implicit)
+### 7.2 Where the evaluator runs (settling what sec 4 left implicit)
 
 Two placements for the C++ AST walker were on the table:
 
@@ -355,7 +436,7 @@ Two placements for the C++ AST walker were on the table:
   image is the desktop sandbox (wasmtime) and the browser evaluator
   -- the RoadMap's "same artifact" line made literal. And
   semantics are preserved BY CONSTRUCTION: the same C++ calls the
-  same CPython C API, wasm builds of both, which shrinks sec 9's
+  same CPython C API, wasm builds of both, which shrinks sec 11's
   migration risk from reimplementation drift to environment drift.
 
 The honest cost, and the main Phase 1 engineering risk:
@@ -404,7 +485,7 @@ column of identical references costs one marshal.
   `Document`, `DocumentObject`, `TopoShape`, and the module-level
   functions of `Part`/`Sketcher`/etc. Every member forwards a typed
   op with a handle; membership is generated and annotated (7.5).
-  Geometry authoring stays out of v1 (sec 4), so the initial `Part`
+  Geometry authoring stays out of v1 (sec 5), so the initial `Part`
   facade is near-empty -- that is correct, not a gap.
 - **Ring 2 -- absent.** Everything else. `os`, `socket`, `ctypes`
   do not exist in the image and no WASI grant supplies them.
@@ -438,12 +519,16 @@ Two hard rules inside the dispatcher:
 - **The read path never enters host Python.** `read_prop` is
   answered from the C++ property system (`getPropertyByName` ->
   typed marshal; pseudo-properties via `getPseudoProperties`,
-  policy-gated per tier -- `_gui` denied outright for documents,
-  per sec 4). Host CPython executes ONLY for members explicitly
-  annotated `call`.
+  permission-gated per principal -- `_gui` is DENY for document
+  principals, sec 3.2). Host CPython executes ONLY for members
+  explicitly annotated `call`.
 - **Arguments validate against the XML-declared signature** --
   values or handles of the declared type only; a sandbox callable
   is never a valid argument (no host-ward callbacks in v1).
+- **Every op carries its principal and passes the sec 3 permission
+  check** after the schema check -- the annotation tables say what
+  CAN be asked at all; the grant store says what THIS principal may
+  ask NOW. Both checks are host-side (sec 3.4).
 
 ### 7.6 Wire ops, values, handles
 
@@ -464,12 +549,12 @@ pointers and no cross-boundary GC protocol; in-image proxies may
 batch `release()` early, but end-of-transaction is the guarantee.
 Handles are meaningless outside the context that minted them.
 
-### 7.7 Results crossing back (the reverse contract sec 4 lacked)
+### 7.7 Results crossing back (the reverse contract sec 5 lacked)
 
 Today `pyObjectToAny` can hand the host a live PyObject as a
 result, and some properties will store it. Under the sandbox that
 object lives in another interpreter. v1 rule: **a result must
-marshal by value (the sec 4 by-value set; a numpy array flattens to
+marshal by value (the sec 5 by-value set; a numpy array flattens to
 list/bytes) or be a host handle passed through unchanged. Anything
 else is an evaluation error,** not a silent wrapper -- host-held
 references to sandbox objects would need cross-boundary GC and a
@@ -495,7 +580,106 @@ recompute and never runs the event loop. Depth- and queue-capped.
 (Not a new hazard -- in-process reads see the same mid-recompute
 state today -- but the boundary makes the rule explicit.)
 
-## 8. What this does NOT close (added 2026-08-29)
+## 8. Minimizing native CPython: the retreat ladder
+
+Added 2026-08-30 (user order): evaluate shrinking the native
+in-process CPython to a minimum -- and abandoning it entirely if
+possible. The honest frame first: the SECURITY line and the
+MINIMIZATION line are different. Security requires that no
+document-derived code ever executes on a native interpreter --
+delivered at rung 2 below. Everything past rung 2 buys uniformity
+(one Python, one story), browser-tier parity, GIL-free
+parallelism, and a smaller trusted computing base: worth having,
+but engineering, not threat model.
+
+What the native CPython actually serves today (this tree, counted
+2026-08-30):
+
+- The expression value layer (sec 1) -- already moving into the
+  image (7.2).
+- Document-embedded Python: `PropertyPythonObject` payloads and
+  scripted objects -- `FeaturePython` carries its script as a
+  `PropertyPythonObject Proxy` member (`FeaturePython.h:389`)
+  whose execute()/onChanged() dispatch into Proxy attributes.
+- Session scripting: the Python console, macros.
+- Workbench init and logic: 32 `Init.py` + 31 `InitGui.py` under
+  `src/Mod`, plus the pure-Python workbenches (Draft, Arch/BIM).
+- The binding surface itself: 213 `*Py.xml` types with 257
+  hand-written `*PyImp.cpp` bodies against the CPython C API.
+- GUI toolkit bindings: PySide6 and pivy are native extension
+  modules over LIVE Qt/Coin objects -- 533 `.py` files under
+  `src/Mod` reference PySide, 70 reference pivy.
+
+The ladder -- each rung independently shippable, each strictly
+reducing what native CPython does:
+
+- **Rung 0 (this design):** expressions evaluate in the image.
+  Native CPython still runs annotated `call` members and
+  everything below.
+- **Rung 1 -- native dispatch for `call` members.** Retarget the
+  annotated method set from "invoke the host binding via the
+  Python C API" to direct C++ dispatch generated from the same
+  XML. After this NO bridge op executes host Python at all --
+  document principals never touch native CPython even indirectly.
+  The cost is honest but bounded: the `*PyImp.cpp` bodies are
+  hand-written against `Py::Object`, so each ANNOTATED member
+  needs a native retarget -- member by member, and only the small
+  annotated set, never the whole 257-file surface.
+- **Rung 2 -- document-embedded Python moves in.** Scripted-object
+  Proxy code and `PropertyPythonObject` payloads run and LIVE in
+  the document's sandbox instance; the host keeps only the opaque
+  serialized form. `FeaturePython::execute()` becomes a bridge
+  call INTO the guest -- ComputeBoundaries' co-resident worker,
+  now for real features. This is the rung that closes sec 9's
+  `PropertyPythonObject` restore carrier: restore stops
+  instantiating host Python objects entirely. Chattiness is
+  bounded the same way as expressions: bindings-pack
+  pre-resolution plus per-recompute memoization. Class code from
+  an installed addon runs as `addon:<name>`; class code carried
+  by the file runs as `document:<hash>` -- sec 3 already tells
+  them apart.
+- **Rung 3 -- session scripting moves in.** Console and macros
+  run in a session-principal sandbox with wide grants. Pure
+  FreeCAD-API macros port silently; macros that import
+  PySide/pivy declare themselves gui-native and stay on the host
+  interpreter at addon-grade trust -- a legacy set that shrinks.
+- **Rung 4 -- Python workbenches.** App-side logic (Draft
+  geometry and friends) is rung-3-shaped work. The hard residue
+  is Gui-side Python: PySide6/pivy bind live Qt/Coin objects, and
+  proxying a widget toolkit through a capability bridge is NOT
+  viable -- per-event chattiness, callbacks into the guest,
+  event-loop ownership, object identity. Two honest paths, both
+  compatible with this fork's direction: (a) a native-CPython GUI
+  ISLAND that runs only installed addon code, never document code
+  -- Python stays as a GUI implementation detail with
+  addon-principal accounting; (b) eliminate Python GUI glue over
+  time -- the browser tier already has: its chrome is TSX/DOM,
+  and it ships neither PySide nor pivy.
+
+**Verdict on abandoning native CPython entirely: possible, and
+the browser tier proves the end-state exists -- it already runs
+with zero native CPython, its only Python being the sandboxed
+image.** On desktop the end-state arrives exactly when the GUI
+island empties -- when no shipped addon still needs PySide/pivy
+-- a long-horizon deprecation this arc must NOT gate on. What the
+arc should do is make severance checkable early: a
+`FREECAD_NO_NATIVE_PYTHON` configuration of the App layer (kernel
++ bridge + image, no libpython link) is the headless-server build
+ComputeBoundaries wants anyway, and it turns "did we really cut
+it" into a link error instead of an argument. It would also
+retire the pivy/site-packages class of environment traps on that
+path.
+
+Practicalities that make the ladder affordable:
+
+- Instance-per-principal needs fast spawn: pre-initialized wasm
+  memory snapshots (wizer / Pyodide snapshot) are the zygote
+  analog -- interpreter startup is paid once, at image build
+  time.
+- Per-principal fuel/memory quotas (7.8, 3.4) already bound cost,
+  so more resident interpreters never mean unbounded footprint.
+
+## 9. What this does NOT close (added 2026-08-29)
 
 Expressions are one carrier of "opening a malicious `.FCStd` runs
 code" -- not the only one, and the others fire EARLIER:
@@ -520,7 +704,67 @@ item, not part of this design -- but this doc must not claim the
 whole hole closed while a file can still run code without ever
 touching an expression.
 
-## 9. Open questions to resolve before building
+Sec 8's rung 2 is the designed closure for the first carrier: once
+document-embedded payloads live in the document's sandbox, restore
+stops instantiating host Python objects at all. Until that rung
+ships, the audit above stands.
+
+## 10. Sequencing (this is the point of doing it first)
+
+- **Phase 0 -- boundary audit + marshalling contract.** Enumerate
+  every site where the C++ interpreter enters CPython (the sec 1
+  chokepoints: `getModule`, callable execution, `getPyValue` on
+  Python-backed attrs, pseudo-property wrappers). Fix the by-value vs
+  by-proxy type split. Deliverable: the object-protocol slice the
+  sandbox needs -- reusable by process-per-document. Three more
+  deliverables (added by the re-evaluation): (a) the
+  annotated-member audit -- which type/module members expressions in
+  real files actually touch, seeding the sec 7.5 tables; (b) the
+  reverse-result audit -- which expressions produce results that are
+  not by-value-marshalable (sec 7.7; expected rare); (c) THE
+  MEASUREMENT, promoted from the open questions: native value layer
+  vs CPython-wasm on a large real sheet AND a bound-property-heavy
+  assembly, before any bridge code exists -- architecture A's
+  position (Phase 1 prerequisite vs later accelerator) is an OUTPUT
+  of that number, not an opinion. Also the `ExpressionCore` seam
+  list (sec 7.2). And (d): freeze the v1 permission catalog, the
+  grant-store schema, and the document-hash canonicalization
+  (sec 3).
+- **Phase 1 -- desktop sandbox = the security fix.** Stand up the
+  CPython-wasm image under a desktop wasm runtime; route the
+  chokepoints through it; delete the name-matched allowlist in favour
+  of the sec 3 permission service (grant store, non-modal prompt
+  surface, headless policy flags). **Acceptance test:** a `.FCStd` whose
+  expression does `open('/etc/passwd')`, `import os`, or
+  `App.getDocument().Objects[0].Proxy...` cannot reach the host FS,
+  network, or memory; AND the grant side works: a `doc.foreign`
+  expression fails with `PermissionNeeded`, succeeds after the
+  grant, fails again after revoke -- verified in the harness, not
+  argued. This closes the EXPRESSION carrier of ws3 -- not all of
+  ws3; sec 9 lists the restore-time carriers that remain outside
+  this design.
+- **Phase 2 -- browser reuse.** Ship the same image in the viewer.
+  Pure-data sheets (cells referencing cells) evaluate locally in the
+  sandbox with no host at all; a cell that references `Box.Volume`
+  proxies to the host over the existing control channel -- the same
+  boundary as desktop. Now docs/SpreadsheetRemote.md's `sheet.set`
+  lands on a sandbox that is already the security boundary, and the
+  viewer can evaluate formulas locally where the data allows.
+  Authority rule: host recompute stays the source of truth; local
+  evaluation is latency-hiding preview, reconciled when the host's
+  `sheet.changed` lands -- two evaluators, one truth.
+- **Beyond -- sec 8's ladder, rung by rung.** Rung 1 (native
+  dispatch for `call` members) and rung 2 (document Proxy code into
+  the sandbox) are the next security payloads; rung 2 also retires
+  sec 9's first restore-time carrier.
+
+The ordering the user asked for is right: the sandbox is a
+prerequisite of the sheet-in-wasm work, not a parallel track. Built
+first, it turns "ship the spreadsheet to the browser" from "expose the
+current in-process Python hole to the web" into "run the already-
+sandboxed evaluator in one more host."
+
+## 11. Open questions to resolve before building
 
 - **Proxy granularity vs recompute cost** -- is per-attribute
   round-tripping fast enough for a large sheet, or is architecture A
@@ -530,9 +774,14 @@ touching an expression.
   pack, sec 7.3, is the designed answer to the hop count -- the
   measurement decides whether it suffices.)
 - **Interpreter lifecycle** -- one sandbox per document? per
-  recompute? pooled? The wasm interpreter's startup cost sets this.
-- **Pseudo-property policy defaults** -- exact allow/deny for
-  `_self`/`_app`/`_gui` under the untrusted-document tier.
+  recompute? pooled? The wasm interpreter's startup cost sets
+  this. Direction after sec 8: one instance per principal, from a
+  pre-initialized wasm memory snapshot (the zygote analog); open
+  remainder: the snapshot tooling.
+- **Pseudo-property policy defaults** -- sec 3.2 fixes the category
+  defaults (`gui` DENY, `app.query` PROMPT for document principals);
+  remaining: the per-member annotations for `_self`/`_shape`/
+  `_pla`/`_matrix`.
 - **`dbind`/`href`/`getvar`** and the other engine builtins (the wiki
   lists them; `getvar` is already disabled for security,
   `Expression.cpp:3309`) -- audit each against the proxy model.
@@ -544,4 +793,13 @@ touching an expression.
   environment drift (wasm float behaviour, CPython version) -- the
   same C++ evaluator runs against the same CPython, wasm builds of
   both. Secs 7.1/7.7 name the two DELIBERATE breaks: `obj.Proxy`
-  drill-down under the untrusted tier, and non-marshalable results.
+  drill-down for document principals, and non-marshalable results.
+- **Document-hash canonicalization** -- exactly which bytes feed the
+  principal hash (expression strings, embedded payloads) and how it
+  stays stable across a no-op resave. A wrong answer means grants
+  that randomly expire, or that survive tampering.
+- **Prompt UX** -- the blocked-cell affordance, the per-document
+  permission panel, the user-gesture rule for grant requests; a
+  prompt must never modal-block a recompute.
+- **Addon principal granularity** -- per addon, per Python module,
+  or per workbench? Sets how rung-3/4 grants are keyed (sec 8).
