@@ -539,7 +539,7 @@ installed with no `occt` either. The two boxes answer it differently:
 | Windows | conda-forge `ifcopenshell`, installed without `occt` | no |
 
 On Linux it is the fork (`realthunder/IfcOpenShell`, branch `LinkVibe`),
-rebuilt into the conda prefix so it links `libarea.so.1` -- see the ledger in
+rebuilt into the conda prefix so it links `libarea.so.2` -- see the ledger in
 `docs/CAMPort.md`, which is also where the one open question about that path
 lives.
 
@@ -734,8 +734,38 @@ PYTHONPATH=$HOME/works/sw/pivy/install/conda-debug \
 # headless kernel sanity (expects volume 500 and "SMOKE OK" pattern)
 $RUN build/conda-relwithdebinfo-801/bin/FreeCADCmd /path/to/smoke.py
 # GUI + PySide6: launch and confirm no "No module named 'PySide6'" in output,
-# Draft/Arch/Assembly/AddonManager appear in the workbench selector
+# Draft/BIM/Assembly/AddonManager appear in the workbench selector
 ```
+
+#### A renamed module leaves its old self behind in the build tree
+
+`Mod/Path` became `Mod/CAM` and `Mod/Arch` became `Mod/BIM`, but cmake only
+ever writes into a build tree -- it never removes what an earlier configure
+put there. So a tree that predates a rename keeps a complete copy of the old
+module, and that copy is still on `sys.path`: it registers a phantom
+`PathWorkbench`/`ArchWorkbench` in the workbench selector, and it **shadows
+the new module** -- `import Path` resolved to the dead `Mod/Path/Path` rather
+than `Mod/CAM/Path`, and failed on an `undefined symbol` from a `.so` built
+months ago. The obsolete `Mod/Path` also carried `area.so` and
+`libarea-native.so` from when libarea was vendored, which is a second copy of
+Clipper in the process -- the thing the libarea package exists to prevent.
+
+Nothing warns about it. Check for it directly:
+
+```sh
+b=build/conda-relwithdebinfo-801
+for sub in Mod src/Mod share/Mod; do
+    for d in $b/$sub/*/; do
+        n=$(basename "$d")
+        [ "$n" = CMakeFiles ] || [ -d "src/Mod/$n" ] || echo "STALE $b/$sub/$n"
+    done
+done
+```
+
+Delete what it names, in all three of `Mod/`, `src/Mod/` and `share/Mod/`.
+The cache keeps the matching dead option too (`BUILD_PATH`, `BUILD_ARCH` --
+no `CMakeLists.txt` defines either any more); drop those two lines and their
+comment from `CMakeCache.txt` and reconfigure.
 
 ## MCP debug console (AI agent access)
 
