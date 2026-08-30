@@ -345,40 +345,108 @@ std::vector<float> buildCapTriangles(const MeshData &mesh,
     return out;
 }
 
-/// The environment baked to an equirectangular float picture the
-/// engine's image manager serves to the world shader. Baked, rather
-/// than described, because the procedural presets are C++ functions
-/// of direction (Environment.h) with no Cycles node equivalent, and
-/// baking a user picture through the same sampler keeps both the
-/// sphere-map convention and the sRGB decode in one place.
+/// Bake the environment to an equirectangular float picture. Baked,
+/// rather than described, because the procedural presets are C++
+/// functions of direction (Environment.h) with no Cycles node
+/// equivalent, and baking a user picture through the same sampler
+/// keeps both the sphere-map convention and the sRGB decode in one
+/// place.
 ///
 /// Layout follows the kernel's direction_to_equirectangular: column u
 /// = 0.5 - atan2(y, x) / 2pi, row v = 1 - acos(z) / pi, row 0 at the
 /// nadir.
+std::vector<float> bakeEnvironment(const PBRConfig &pbr, bool managed,
+                                   int width, int height)
+{
+    std::vector<float> rgba(size_t(width) * size_t(height) * 4);
+    for (int y = 0; y < height; ++y) {
+        const float v = (y + 0.5f) / height;
+        const float theta = (1.0f - v) * kPi;
+        const float st = std::sin(theta);
+        const float ct = std::cos(theta);
+        for (int x = 0; x < width; ++x) {
+            const float u = (x + 0.5f) / width;
+            const float phi = (0.5f - u) * 2.0f * kPi;
+            const float d[3] = {st * std::cos(phi), st * std::sin(phi), ct};
+            float *px = rgba.data() + (size_t(y) * width + x) * 4;
+            px[0] = px[1] = px[2] = 0.0f;
+            envRadiance(pbr, d, px, managed);
+            px[3] = 1.0f;
+        }
+    }
+    return rgba;
+}
+
+/// Area-average a baked equirect down to \a outWidth x \a outHeight,
+/// which is how the background blur is made: a smaller picture read
+/// back through the engine's linear interpolation IS the defocused
+/// one, the same way the raster background reads a level of its
+/// cubemap. Each output texel averages the block of input texels it
+/// covers, so nothing is dropped -- a point source stays as bright as
+/// its share of the block, which is what keeps a blurred sky from
+/// losing its sun.
+std::vector<float> downsampleEquirect(const std::vector<float> &rgba,
+                                      int width, int height,
+                                      int outWidth, int outHeight)
+{
+    std::vector<float> out(size_t(outWidth) * size_t(outHeight) * 4);
+    for (int y = 0; y < outHeight; ++y) {
+        const int y0 = y * height / outHeight;
+        const int y1 = std::max((y + 1) * height / outHeight, y0 + 1);
+        for (int x = 0; x < outWidth; ++x) {
+            const int x0 = x * width / outWidth;
+            const int x1 = std::max((x + 1) * width / outWidth, x0 + 1);
+            float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            for (int sy = y0; sy < y1; ++sy) {
+                for (int sx = x0; sx < x1; ++sx) {
+                    const float *px =
+                        rgba.data() + (size_t(sy) * width + sx) * 4;
+                    for (int c = 0; c < 4; ++c)
+                        acc[c] += px[c];
+                }
+            }
+            const float n = float((y1 - y0) * (x1 - x0));
+            float *px = out.data() + (size_t(y) * outWidth + x) * 4;
+            for (int c = 0; c < 4; ++c)
+                px[c] = acc[c] / n;
+        }
+    }
+    return out;
+}
+
+/// The width the camera-ray copy of the environment is baked down to
+/// for \a blur, or 0 for "no blurred copy" -- which is what zero asks
+/// for, and what keeps a sharp world the graph it has always had.
+///
+/// Eight halvings end to end, the same span the raster background
+/// slides along its cubemap's mip chain, so the slider reads as one
+/// softness in both. It is measured from the picture this engine bakes
+/// rather than from a fixed reference, so zero stays "as sharp as this
+/// engine gets": for the procedural presets the two bakes are the same
+/// angular resolution and the two backdrops match outright, and for a
+/// user picture large enough to be baked sharper than the raster
+/// cubemap, Cycles keeps that sharpness instead of being blurred down
+/// to meet it.
+int envBlurWidth(float blur, int width)
+{
+    blur = std::clamp(blur, 0.0f, 1.0f);
+    if (blur <= 0.0f)
+        return 0;
+    const int out = int(std::lround(double(width)
+                                    * std::pow(2.0, -8.0 * double(blur))));
+    return std::clamp(out, 4, width - 1);
+}
+
+/// A baked equirect the engine's image manager serves to the world
+/// shader.
 class BakedEnvironment : public ccl::ImageLoader
 {
 public:
-    BakedEnvironment(const PBRConfig &pbr, bool managed, int width, int height)
+    BakedEnvironment(std::vector<float> pixels, int width, int height)
         : width(width)
         , height(height)
-    {
-        rgba.resize(size_t(width) * size_t(height) * 4);
-        for (int y = 0; y < height; ++y) {
-            const float v = (y + 0.5f) / height;
-            const float theta = (1.0f - v) * kPi;
-            const float st = std::sin(theta);
-            const float ct = std::cos(theta);
-            for (int x = 0; x < width; ++x) {
-                const float u = (x + 0.5f) / width;
-                const float phi = (0.5f - u) * 2.0f * kPi;
-                const float d[3] = {st * std::cos(phi), st * std::sin(phi), ct};
-                float *px = rgba.data() + (size_t(y) * width + x) * 4;
-                px[0] = px[1] = px[2] = 0.0f;
-                envRadiance(pbr, d, px, managed);
-                px[3] = 1.0f;
-            }
-        }
-    }
+        , rgba(std::move(pixels))
+    {}
 
     bool load_metadata(ccl::ImageMetaData &metadata,
                        const ccl::ImageLoaderParams & /*params*/,
@@ -597,7 +665,7 @@ bool SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &o
     const int width = pbr.envImage && pbr.envImage->width > 0
         ? std::clamp(pbr.envImage->width, 256, 4096) : 1024;
     const int height = std::max(width / 2, 128);
-    auto loader = std::make_unique<BakedEnvironment>(pbr, managed, width, height);
+    std::vector<float> pixels = bakeEnvironment(pbr, managed, width, height);
     ccl::ImageParams params;
     params.interpolation = ccl::INTERPOLATION_LINEAR;
     params.extension = ccl::EXTENSION_REPEAT;
@@ -605,13 +673,67 @@ bool SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &o
 
     ccl::Shader *shader = scene->default_background;
     auto graph = std::make_unique<ccl::ShaderGraph>();
-    auto *env = graph->create_node<ccl::EnvironmentTextureNode>();
-    env->handle = scene->image_manager->add_image(std::move(loader), params);
-    env->set_projection(ccl::NODE_ENVIRONMENT_EQUIRECTANGULAR);
-    env->set_colorspace(ccl::u_colorspace_scene_linear);
+    // Every environment node in this graph, so the orthographic fan
+    // below reaches all of them: with a blurred copy there are two,
+    // and a camera-ray direction stated to one of them only would show
+    // the two halves of the same sky in different places.
+    std::vector<ccl::EnvironmentTextureNode*> envNodes;
+    auto addEnv = [&](std::vector<float> px, int w, int h) {
+        auto *node = graph->create_node<ccl::EnvironmentTextureNode>();
+        node->handle = scene->image_manager->add_image(
+            std::make_unique<BakedEnvironment>(std::move(px), w, h), params);
+        node->set_projection(ccl::NODE_ENVIRONMENT_EQUIRECTANGULAR);
+        node->set_colorspace(ccl::u_colorspace_scene_linear);
+        envNodes.push_back(node);
+        return node;
+    };
+    // One Is Camera Ray for the two things that ask it (the blur here
+    // and the orthographic fan below), created only if something does.
+    ccl::LightPathNode *path = nullptr;
+    auto cameraRay = [&]() {
+        if (!path)
+            path = graph->create_node<ccl::LightPathNode>();
+        return path->output("Is Camera Ray");
+    };
+
+    // The background blur (Render_PBREnvBlur), which the raster backend
+    // does by reading a level of its cubemap. A path tracer cannot: the
+    // world it samples IS the light, so softening it would relight the
+    // scene, and an environment texture has no lod to read anyway. So
+    // the softening is put where it belongs instead -- a second,
+    // smaller bake of the same environment, mixed in on CAMERA rays
+    // alone. Lighting, reflections and refractions keep the sharp
+    // world; only what is seen behind the model changes. That is the
+    // node graph Blender users build by hand for this (Blender ships no
+    // control for it: its viewport Blur slider is the raster preview's
+    // only), and it costs one small picture and three nodes.
+    //
+    // Is Camera Ray is 1 through a Transparent BSDF as well, so a
+    // see-through pass-through shows the soft backdrop too. Same there.
+    const int blurWidth = envBlurWidth(pbr.envBlur, width);
+    ccl::ShaderOutput *envColor = nullptr;
+    if (blurWidth > 0) {
+        const int blurHeight = std::max(blurWidth / 2, 1);
+        auto *soft = addEnv(downsampleEquirect(pixels, width, height,
+                                               blurWidth, blurHeight),
+                            blurWidth, blurHeight);
+        auto *sharp = addEnv(std::move(pixels), width, height);
+        auto *mix = graph->create_node<ccl::MixColorNode>();
+        // Factor 0 is A, so A is the world every ray but the camera's
+        // sees. Only the FACTOR is clamped by default (use_clamp);
+        // use_clamp_result stays off, which is what lets a sky stay
+        // brighter than one.
+        graph->connect(sharp->output("Color"), mix->input("A"));
+        graph->connect(soft->output("Color"), mix->input("B"));
+        graph->connect(cameraRay(), mix->input("Factor"));
+        envColor = mix->output("Result");
+    }
+    else {
+        envColor = addEnv(std::move(pixels), width, height)->output("Color");
+    }
     auto *bg = graph->create_node<ccl::BackgroundNode>();
     bg->set_strength(std::max(pbr.envIntensity, 0.0f));
-    graph->connect(env->output("Color"), bg->input("Color"));
+    graph->connect(envColor, bg->input("Color"));
     graph->connect(bg->output("Background"), graph->output()->input("Surface"));
 
     // An orthographic camera has no per-pixel ray fan: every camera
@@ -642,14 +764,14 @@ bool SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &o
         // The equirectangular lookup divides by the direction's length
         // (projection.h), so the fan needs no normalize node.
         auto *geom = graph->create_node<ccl::GeometryNode>();
-        auto *path = graph->create_node<ccl::LightPathNode>();
         auto *mix = graph->create_node<ccl::MixVectorNode>();
         // A = Position restates the env node's own unlinked default
         // (LINK_POSITION; the ray direction in a background shader).
         graph->connect(geom->output("Position"), mix->input("A"));
         graph->connect(toWorld->output("Vector"), mix->input("B"));
-        graph->connect(path->output("Is Camera Ray"), mix->input("Factor"));
-        graph->connect(mix->output("Result"), env->input("Vector"));
+        graph->connect(cameraRay(), mix->input("Factor"));
+        for (auto *node : envNodes)
+            graph->connect(mix->output("Result"), node->input("Vector"));
     }
 
     shader->set_graph(std::move(graph));

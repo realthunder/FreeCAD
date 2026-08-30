@@ -4815,12 +4815,16 @@ const char *RenderParams::docPBREnvBlur() {
 "carries the same control for the same reasons, and defaults it\n"
 "higher than this does.\n"
 "\n"
-"At zero the background is as sharp as the external path tracer\n"
-"draws it: both bake the environment at the same angular\n"
-"resolution, so the two shading models then show the same\n"
-"backdrop. Above zero only the raster background softens -- a\n"
-"path traced frame's background IS its light, and blurring it\n"
-"would relight the scene.");
+"Both shading models honour it, and at zero the two show the\n"
+"same backdrop: they bake the environment at the same angular\n"
+"resolution. The external path tracer gets there differently,\n"
+"since the world it samples IS the light and softening it\n"
+"would relight the scene -- so a second, smaller bake of the\n"
+"same environment is mixed in on CAMERA rays alone, and the\n"
+"lighting, reflections and refractions keep the sharp world.\n"
+"One consequence of that rule: a camera ray stays a camera ray\n"
+"through a transparent surface, so a see-through pass-through\n"
+"shows the soft backdrop as well.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)

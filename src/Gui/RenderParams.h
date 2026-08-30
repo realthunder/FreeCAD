@@ -2249,12 +2249,16 @@ public:
     /// carries the same control for the same reasons, and defaults it
     /// higher than this does.
     /// 
-    /// At zero the background is as sharp as the external path tracer
-    /// draws it: both bake the environment at the same angular
-    /// resolution, so the two shading models then show the same
-    /// backdrop. Above zero only the raster background softens -- a
-    /// path traced frame's background IS its light, and blurring it
-    /// would relight the scene.
+    /// Both shading models honour it, and at zero the two show the
+    /// same backdrop: they bake the environment at the same angular
+    /// resolution. The external path tracer gets there differently,
+    /// since the world it samples IS the light and softening it
+    /// would relight the scene -- so a second, smaller bake of the
+    /// same environment is mixed in on CAMERA rays alone, and the
+    /// lighting, reflections and refractions keep the sharp world.
+    /// One consequence of that rule: a camera ray stays a camera ray
+    /// through a transparent surface, so a see-through pass-through
+    /// shows the soft backdrop as well.
     static const double & getPBREnvBlur();
     static const double & defaultPBREnvBlur();
     static void removePBREnvBlur();

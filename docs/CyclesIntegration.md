@@ -609,6 +609,22 @@ already has on the device.
   equal; `translateLight()` the same with `LightConfig` plus, for a
   spot, the scene bounds its power was stated at. A changed light is
   remade (its type may change), object before light node.
+- **The background blur is a camera-ray branch.** `Render_PBREnvBlur`
+  asks for the environment to be drawn out of focus, which a path
+  tracer cannot do by softening its world: that world is the light,
+  and an environment texture has no lod to read. So above zero
+  `translateWorld()` bakes the environment twice -- once at full size,
+  once area-averaged down to `envBlurWidth()` -- and mixes the small
+  one in on `Is Camera Ray`. Lighting, reflections and refractions
+  read the sharp bake; only what is seen behind the model is soft,
+  which is the same split the raster backend gets by reading a level
+  of its background cubemap. Blender ships no control for this (its
+  viewport Blur slider is the raster preview's only) and its users
+  build the same graph by hand. Two caveats worth knowing: a camera
+  ray stays one through a Transparent BSDF, so a see-through
+  pass-through shows the soft backdrop; and the orthographic fan has
+  to reach BOTH environment nodes, or the two halves of one sky land
+  in different places.
 - **Only a change resets.** `translate()` returns whether anything in
   the scene changed; `Viewport::setScene()` resets the session only
   then. `feedCyclesViewport()` runs before every frame and restates on

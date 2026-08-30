@@ -1707,6 +1707,14 @@ struct PBRConfig {
     /// as a pasted photo when it is sharp -- but only the BACKGROUND is
     /// affected: the lighting and the reflections keep the whole
     /// environment either way, here as there.
+    ///
+    /// Every backend honours it, by whatever means it has. The raster
+    /// one reads a level of its background cubemap. A path tracer has
+    /// no lod to read and could not soften the world anyway -- that
+    /// world IS its light -- so it mixes a second, smaller bake of the
+    /// same environment in on CAMERA rays alone
+    /// (SceneTranslator::translateWorld), which is the node graph
+    /// Blender users build by hand for this.
     float envBlur = 0.25f;
     /// Read an ordinary Phong appearance's SPECULAR COLOUR as material
     /// data where nothing states a metalness. The metallic/roughness
