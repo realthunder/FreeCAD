@@ -689,6 +689,79 @@ void BGFXView::submitWaterSurface(const Render::DrawCall &draw,
     ++drawcount;
 }
 
+void BGFXView::submitLineSdf(const Render::DrawCall &draw,
+                             const float *viewMatrix, bool noseam)
+{
+    if (!m_instancing || !draw.mesh)
+        return;
+    const Render::Material &mat = draw.material;
+    const bool isPoint = mat.type == Render::Material::Point;
+    if (!isPoint && mat.type != Render::Material::Line)
+        return;
+    GpuMesh *mesh = getMesh(*draw.mesh);
+    if (!bgfx::isValid(mesh->geom->vbh))
+        return;
+    if (noseam && !isPoint)
+        mesh->ensureNoSeam(*draw.mesh);
+    noseam = noseam && !isPoint && bgfx::isValid(mesh->geom->lineNoSeam);
+    bgfx::VertexBufferHandle inst = isPoint
+        ? mesh->pointInst
+        : (noseam ? mesh->lineNoSeamInst : mesh->lineInst);
+    if (!bgfx::isValid(inst))
+        return;
+
+    const bool clipped = clipActiveFor(mat);
+    bgfx::ProgramHandle prog = isPoint
+        ? (clipped ? m_progPointSdfClip : m_progPointSdf)
+        : (clipped ? m_progLineSdfClip : m_progLineSdf);
+    if (!bgfx::isValid(prog))
+        return;
+
+    float color[4];
+    unpackAuthoredColor(mat.diffuse, color, colorManaged());
+    // u_params.y is the width the field is thresholded against, so it
+    // carries exactly what the beauty pass would draw at: an unrounded
+    // line width, a rounded point size.
+    float params[4] = {mat.pervertexcolor ? 1.0f : 0.0f,
+                       isPoint
+                           ? qMax(1.0f, std::floor(mat.pointsize + 0.5f))
+                           : qMax(1.0f, mat.linewidth),
+                       0.0f, 1.0f};
+    bgfx::setUniform(u_matColor, color);
+    bgfx::setUniform(u_params, params);
+    bgfx::setTexture(3, s_texGlassFront, glassFrontTex);
+    if (clipped)
+        setClipUniforms(mat);
+    setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
+                     (float)height);
+
+    uint32_t start = 0;
+    uint32_t count = isPoint
+        ? uint32_t(draw.mesh->numPointIndices)
+        : uint32_t(noseam ? draw.mesh->numNoSeamLineIndices
+                          : draw.mesh->numLineIndices) / 2;
+    if (draw.indexCount > 0) {
+        start = isPoint ? uint32_t(draw.indexStart)
+                        : uint32_t(draw.indexStart) / 2;
+        count = isPoint ? uint32_t(draw.indexCount)
+                        : uint32_t(draw.indexCount) / 2;
+    }
+    if (count == 0)
+        return;
+    LineQuadVertex::init();
+    bgfx::setVertexBuffer(0, m_lineQuadVb);
+    bgfx::setIndexBuffer(m_lineQuadIb);
+    bgfx::setInstanceDataBuffer(inst, start, count);
+    // The nearest decoration wins each texel: the fragment stage puts
+    // the distance to its edge on gl_FragDepth and this LESS test
+    // resolves the min. No colour blending -- the winner's colour is
+    // the answer, not a mixture of everyone who overlapped.
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                   | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+    bgfx::submit(vid(ViewGlassLineSdf), prog);
+    ++drawcount;
+}
+
 void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject)
 {
     if (!draw.mesh || !draw.mesh->triangleIndices)
@@ -744,6 +817,8 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
                      depthReject ? aoNormalZ : sceneCopyTex);
     bgfx::setTexture(3, s_texGlassFront, glassFrontTex);
     bgfx::setTexture(4, s_texGlassBack, glassBackTex);
+    bgfx::setTexture(5, s_texLineSdf, lineSdfTex);
+    bgfx::setTexture(6, s_texLineSdfAux, lineSdfAuxTex);
 
     setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
     setMeshVertexBuffers(gpu, *draw.mesh);
@@ -758,18 +833,6 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
     if (mat.culling && !mat.twoside)
         state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
     bgfx::setState(state);
-    // Stamp every pixel the glass takes, so PassLineGlassDim can tell a
-    // line hidden by glass from one hidden by an opaque part. Written on
-    // depth pass only -- a glass fragment that lost the depth test is
-    // not what the viewer is seeing there. The view clears the stencil
-    // first (configScene), or the outline passes' marks would read as
-    // glass.
-    bgfx::setStencil(BGFX_STENCIL_TEST_ALWAYS
-                     | BGFX_STENCIL_FUNC_REF(kGlassStencil)
-                     | BGFX_STENCIL_FUNC_RMASK(0xff)
-                     | BGFX_STENCIL_OP_FAIL_S_KEEP
-                     | BGFX_STENCIL_OP_FAIL_Z_KEEP
-                     | BGFX_STENCIL_OP_PASS_Z_REPLACE);
     bgfx::submit(vid(ViewGlassSurface), m_progGlass);
     ++drawcount;
 }

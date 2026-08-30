@@ -23,17 +23,85 @@ $input v_normal, v_color0, v_color1, v_color2, v_vpos, v_opos, v_onrm, v_findex
  */
 
 #include <bgfx_shader.sh>
+#include "fc_line_sdf.sh"
 
 SAMPLER2D(s_texScene, 0);
 SAMPLERCUBE(s_texEnv, 1);
 SAMPLER2D(s_texNormalZ, 2);
 SAMPLER2D(s_texGlassFront, 3);
 SAMPLER2D(s_texGlassBack, 4);
+SAMPLER2D(s_texLineSdf, 5);
+SAMPLER2D(s_texLineSdfAux, 6);
 
 uniform vec4 u_matColor;
 uniform vec4 u_lightDir;
 uniform vec4 u_lightColor;
 uniform vec4 u_glassParams;
+
+/*
+ * Rebuild a decoration's coverage from the resampled distance field.
+ *
+ * `stored` is RT0's alpha at this pixel; the distance from the line or
+ * point CENTRE comes back as radius - stored, in the pixels the field
+ * was rasterized at. To hold the drawn thickness while the position
+ * follows the warp, that distance has to be converted into POST-lens
+ * pixels and thresholded against the decoration's own half width
+ * (aux.w).
+ *
+ * An earlier version stored the distance to the EDGE and skipped the
+ * half width, on the reasoning that SDF text stays crisp this way. It
+ * does -- but only its ANTIALIASING does. The core still stretches with
+ * the field, so lines behind the lens came out magnified exactly as
+ * before, just with clean edges. The width has to be thresholded in
+ * post-lens pixels, which means it has to be known here.
+ *
+ * The next version did the conversion with fwidth(stored): the field's
+ * own screen gradient says how many screen pixels one field pixel is
+ * worth after the lens. TRUE EVERYWHERE BUT THE CORE: the field is an
+ * absolute value, folded at the centreline, and finite differences
+ * across the fold cancel -- two pixels straddling the centre store the
+ * same value and derive a gradient of zero. So the reconstruction died
+ * on an alignment lottery exactly at the pixels that matter, and lines
+ * came through as broken ~1px shells. Hence jx/jy: the Jacobian of the
+ * refraction MAPPING (smooth where the field folds), projected onto
+ * the line's own perpendicular axis carried in aux.xy -- how many
+ * field pixels one screen step spans in the direction the field falls.
+ * A point stores a zero axis and scales by the mean of both axes: its
+ * box distance has no single fall direction, and a sprite is small
+ * enough that the residual anisotropy error is a corner, not a size.
+ *
+ * aux.z is the decoration's view depth: a decoration in front of the
+ * entry interface is not seen through it (it draws undistorted in
+ * ViewGlassLine), but the writer can only make that call where its own
+ * texel has glass -- this sample was taken wherever REFRACTION landed,
+ * so the call is remade here against this pixel's own entry depth.
+ *
+ * An untouched texel decodes to the full radius and returns through
+ * the support guard, which also caps what compression the method can
+ * follow: past the support there is no data, however the Jacobian
+ * scales.
+ */
+float fcLineSdfCoverage(float stored, vec4 aux, float entry,
+                        vec2 jx, vec2 jy)
+{
+	float dc = FC_LINE_SDF_RADIUS - stored;
+	if (dc > FC_LINE_SDF_RADIUS - 1.5)
+		return 0.0;
+	if (aux.z <= entry + 1.0e-3 * max(abs(entry), 1.0))
+		return 0.0;
+	float alen = length(aux.xy);
+	float s;
+	if (alen > 0.5)
+	{
+		vec2 p = aux.xy / alen;
+		s = length(vec2(dot(p, jx), dot(p, jy)));
+	}
+	else
+		s = 0.5 * (length(vec2(jx.x, jy.x))
+		           + length(vec2(jx.y, jy.y)));
+	float dpost = dc / max(s, 1.0e-3);
+	return clamp(aux.w + 0.5 - dpost, 0.0, 1.0);
+}
 
 void main()
 {
@@ -68,6 +136,18 @@ void main()
 	vec2 ruv = uv + disp * vec2(u_proj[0][0], u_proj[1][1]) * 0.5
 		* persp;
 
+	// The Jacobian of the refraction mapping in field pixels per
+	// screen pixel, for the line-field coverage rebuild below. Taken
+	// HERE, on the smooth pre-reject mapping and in uniform control
+	// flow (derivatives are undefined after divergence); the reject
+	// branch resets it to the identity along with the uv, since an
+	// unwarped sample is one field pixel per screen pixel by
+	// definition -- finite differences across that per-pixel switch
+	// would say anything at all.
+	vec2 sdfRes = vec2(1.0, 1.0) / u_viewTexel.xy;
+	vec2 sdfJx = dFdx(ruv) * sdfRes;
+	vec2 sdfJy = dFdy(ruv) * sdfRes;
+
 	// Reject offset samples landing on geometry in front of the glass
 	// (the water-surface depth reject, 5-tap cross dilated ~2 px so
 	// the CAD edge lines straddling the background cannot smear).
@@ -85,7 +165,11 @@ void main()
 			|| (p2.w > 0.5 && p2.z < fragZ)
 			|| (p3.w > 0.5 && p3.z < fragZ)
 			|| (p4.w > 0.5 && p4.z < fragZ))
+		{
 			ruv = uv;
+			sdfJx = vec2(1.0, 0.0);
+			sdfJy = vec2(0.0, 1.0);
+		}
 	}
 	// Rough transmission. A rough interface scatters the refracted
 	// ray into a cone, so the scene shows blurred through it: the
@@ -160,6 +244,21 @@ void main()
 		color += u_lightColor.rgb
 			* (pow(max(dot(n, h), 0.0), e) * 2.0);
 	}
+
+	// The scene's edges and vertices, seen through the body. They are not in the
+	// colour copy above -- resampling a rasterized line magnifies it,
+	// and no amount of care in this shader can undo that, because the
+	// line was already pixels before the lens saw it. They arrive as a
+	// distance field instead, sampled at the SAME refracted uv as the
+	// face, so an edge lands exactly where the lens puts the surface it
+	// lies on. The coverage is then rebuilt against the refraction
+	// mapping's own Jacobian, which is what holds the drawn thickness
+	// at the width that was asked for however far the sample has been
+	// stretched.
+	vec4 ln = texture2D(s_texLineSdf, ruv);
+	vec4 laux = texture2D(s_texLineSdfAux, ruv);
+	float lcov = fcLineSdfCoverage(ln.a, laux, entry, sdfJx, sdfJy);
+	color = mix(color, ln.rgb, lcov * FC_GLASS_LINE_ALPHA);
 
 	gl_FragColor = vec4(color, 1.0);
 }

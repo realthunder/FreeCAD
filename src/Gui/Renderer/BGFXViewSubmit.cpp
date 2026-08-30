@@ -1095,18 +1095,6 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
         depthwrite = false;
         blend = true;
         break;
-    case PassLineGlassDim:
-        // The complement of the ordinary ViewGlassLine draw: GREATER
-        // takes exactly the fragments that pass lost to the depth
-        // buffer, and the stencil test added below narrows those to the
-        // ones the glass surface itself took. No depth write -- this is
-        // a ghost of a line that is really behind something.
-        depthtest = true;
-        depthfunc = Render::Material::Greater;
-        depthwrite = false;
-        blend = true;
-        dimalpha = kGlassLineAlpha;
-        break;
     default:
         break;
     }
@@ -1431,17 +1419,6 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
                            passView == ViewGroundRefl);
         }
     }
-
-    // Only where the glass surface itself claimed the pixel. Without
-    // this the GREATER depth test would also let a line show through
-    // every opaque part standing in front of it.
-    if (pass == PassLineGlassDim)
-        bgfx::setStencil(BGFX_STENCIL_TEST_EQUAL
-                         | BGFX_STENCIL_FUNC_REF(kGlassStencil)
-                         | BGFX_STENCIL_FUNC_RMASK(0xff)
-                         | BGFX_STENCIL_OP_FAIL_S_KEEP
-                         | BGFX_STENCIL_OP_FAIL_Z_KEEP
-                         | BGFX_STENCIL_OP_PASS_Z_KEEP);
 
     bgfx::submit(vid(passView), prog, depth);
     ++drawcount;

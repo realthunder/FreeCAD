@@ -510,6 +510,30 @@ bool BGFXView::allocEffect(EffectGroup g)
                 || !bgfx::isValid(glassFrontDepth)
                 || !bgfx::isValid(glassBackDepth))
             return false;
+        // The line distance field the glass surface resamples. LINEAR,
+        // unlike every other target here: the whole method rests on the
+        // field interpolating smoothly between texels, and a point
+        // sample would give it stair-stepped values to reconstruct
+        // coverage from. The aux target rides along with the line's
+        // perpendicular axis, view depth and half width
+        // (fc_line_sdf_fs.sh has the layout).
+        const uint64_t sdfFlags = BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        lineSdfTex = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::RGBA16F, sdfFlags);
+        lineSdfAuxTex = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::RGBA16F, sdfFlags);
+        lineSdfDepth = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::D24S8,
+            sdfFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+        if (!bgfx::isValid(lineSdfTex) || !bgfx::isValid(lineSdfAuxTex)
+                || !bgfx::isValid(lineSdfDepth))
+            return false;
+        bgfx::TextureHandle sdfatt[3] = {lineSdfTex, lineSdfAuxTex,
+                                         lineSdfDepth};
+        lineSdfFbo = bgfx::createFrameBuffer(3, sdfatt, false);
+        if (!bgfx::isValid(lineSdfFbo))
+            return false;
         bgfx::TextureHandle gfatt[2] = {glassFrontTex, glassFrontDepth};
         glassFrontFbo = bgfx::createFrameBuffer(2, gfatt, false);
         bgfx::TextureHandle gbatt[2] = {glassBackTex, glassBackDepth};
@@ -949,6 +973,13 @@ void BGFXView::init(bool keepShared)
         ensureProgram(m_progLinePat, "vs_fc_line_pat", "fs_fc_line_pat");
         ensureProgram(m_progLinePatClip, "vs_fc_line_pat_clip",
                       "fs_fc_line_pat_clip");
+        ensureProgram(m_progLineSdf, "vs_fc_line_sdf", "fs_fc_line_sdf");
+        ensureProgram(m_progLineSdfClip, "vs_fc_line_sdf_clip",
+                      "fs_fc_line_sdf_clip");
+        ensureProgram(m_progPointSdf, "vs_fc_point_sdf",
+                      "fs_fc_point_sdf");
+        ensureProgram(m_progPointSdfClip, "vs_fc_point_sdf_clip",
+                      "fs_fc_point_sdf_clip");
         ensureProgram(m_progPoint, "vs_fc_point", "fs_fc_flat");
         ensureProgram(m_progPointClip, "vs_fc_point_clip", "fs_fc_flat_clip");
         LineQuadVertex::init();
@@ -1372,6 +1403,10 @@ void BGFXView::init(bool keepShared)
     ensureUniform(s_texGlassBack, "s_texGlassBack",
                   bgfx::UniformType::Sampler);
     ensureUniform(u_glassParams, "u_glassParams", bgfx::UniformType::Vec4);
+    ensureUniform(s_texLineSdf, "s_texLineSdf",
+                  bgfx::UniformType::Sampler);
+    ensureUniform(s_texLineSdfAux, "s_texLineSdfAux",
+                  bgfx::UniformType::Sampler);
 
     // Ground/planar reflection. The mirrored-camera re-render target is
     // demand-allocated by ensureEffect(EffectReflection); the programs

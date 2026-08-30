@@ -4261,6 +4261,10 @@ public:
                             // in-front-of-the-water inscatter itself —
                             // else a fountain plume / fire over the
                             // pool reads as behind the surface
+        ViewGlassLineSdf,   // scene lines and points behind a glass body,
+                            // rasterized as a signed-distance field for
+                            // ViewGlassSurface to resample. Runs before
+                            // it, and only while glassActive.
         ViewGlassSurface,   // glass body draws re-rendered as glass:
                             // screen-space refraction (IOR + normal),
                             // per-channel thickness absorption from the
@@ -4283,10 +4287,12 @@ public:
                             // lines are simply not in the copy -- they
                             // land here instead, after the refraction, at
                             // the exact pixel width they asked for.
-                            // Lines the glass hides are re-submitted
-                            // dimmed (PassLineGlassDim) rather than
-                            // dropped, so a part stays readable through
-                            // its enclosure. Only while glassActive: with
+                            // Lines the glass hides are not dropped:
+                            // they go into ViewGlassLineSdf as a
+                            // distance field the glass pass resamples,
+                            // so they warp with the face they lie on and
+                            // still keep their stated pixel width. Only
+                            // while glassActive: with
                             // no glass body the lines stay in ViewOpaque
                             // and nothing about their ordering changes.
                             // The cost of being here is that these lines
@@ -4584,6 +4590,7 @@ public:
         fn(waterBackFbo, LifeSized);
         fn(glassFrontFbo, LifeSized);
         fn(glassBackFbo, LifeSized);
+        fn(lineSdfFbo, LifeSized);
         fn(cloudFrontFbo, LifeSized);
         fn(cloudBackFbo, LifeSized);
         fn(fireFrontFbo, LifeSized);
@@ -4641,6 +4648,8 @@ public:
         fn(u_groundFadeV, LifeProgram);
         fn(s_texGlassFront, LifeProgram);
         fn(s_texGlassBack, LifeProgram);
+        fn(s_texLineSdf, LifeProgram);
+        fn(s_texLineSdfAux, LifeProgram);
         fn(u_glassParams, LifeProgram);
         fn(s_texCloudFront, LifeProgram);
         fn(s_texCloudBack, LifeProgram);
@@ -5456,12 +5465,14 @@ public:
     /// a polygon covering no pixels.
     static constexpr float kPolyOffsetMaxSlope = 4.0f;
 
-    /// Stencil ref the glass surface pass stamps where it takes a pixel,
-    /// read back by PassLineGlassDim to tell "the glass is in front of
-    /// this line" from "an opaque part is". ViewGlassSurface clears the
-    /// stencil first, so the outline passes' leftover marks cannot be
-    /// mistaken for it.
-    static constexpr uint8_t kGlassStencil = 1;
+    /// Support radius of the line distance field, in pixels, and the
+    /// offset its alpha channel is stored against (alpha = radius - sd,
+    /// so an untouched texel reads as "sd = radius", i.e. no line). Must
+    /// match FC_LINE_SDF_RADIUS in the shaders. 32 is comfortably past
+    /// what any sane line width needs after a lens has stretched it; the
+    /// quads themselves are expanded only as far as their own width
+    /// requires, so this costs no fill.
+    static constexpr float kLineSdfRadius = 32.0f;
 
     /// Alpha the lines behind glass keep. The material's own
     /// hiddenlinealpha is about a DIFFERENT question (an on-top line
@@ -6108,6 +6119,13 @@ public:
     /// the water surface.
     void submitGlassSurface(const Render::DrawCall &draw, bool depthReject);
 
+    /// Rasterize one line or point draw into the decoration
+    /// distance field.
+    /// Fragments in front of the glass are discarded there, so only what
+    /// is actually seen through the body ends up in the field.
+    void submitLineSdf(const Render::DrawCall &draw, const float *viewMatrix,
+                       bool noseam);
+
     /// Composite the fountain/fire media into the mirrored-scene
     /// reflection texture (premultiplied over): the analytic cylinder
     /// raymarch runs with the mirror-view transforms bound.
@@ -6133,25 +6151,6 @@ public:
         PassDepthOnly,   // depth-write-only prepass of on-top fills
         PassLineHidden,  // on-top lines/points, no depth test, dimmed
         PassLineSolid,   // on-top lines/points, depth LEQUAL, full color
-        PassLineGlassDim, // scene lines/points behind glass, in
-                          // ViewGlassLine: depth GREATER (only where the
-                          // ordinary pass was occluded) and stencil ==
-                          // kGlassStencil (only where the glass surface
-                          // is what took the pixel; it stamps that ref
-                          // as it writes depth). Depth alone cannot
-                          // separate "hidden by glass" from "hidden by
-                          // an opaque part", and the second has to stay
-                          // hidden.
-                          //
-                          // Known limit: an opaque part BEHIND the glass
-                          // is not in the depth buffer any more -- the
-                          // glass overwrote it -- so a line behind that
-                          // part still reads as glass-occluded and
-                          // ghosts through it. Separating those would
-                          // need the pre-glass depth, which only exists
-                          // when the SSAO/volumetric prepass is running.
-                          // A glass enclosure over a dense assembly is
-                          // where it shows.
     };
 
     /// Per-frame PBR/shadow uniform + sampler state shared by every
@@ -6395,6 +6394,7 @@ public:
             case ViewDebugScene: return "debugscene";
             case ViewIdReadback: return "idreadback";
             case ViewWaterSurface: return "watersurface";
+            case ViewGlassLineSdf: return "glasslinesdf";
             case ViewGlassSurface: return "glasssurface";
             case ViewGlassLine: return "glassline";
             case ViewParticles: return "particles";
@@ -6998,6 +6998,27 @@ public:
     bgfx::UniformHandle s_texGlassFront = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texGlassBack = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_glassParams = BGFX_INVALID_HANDLE;
+    // Line signed-distance field, sampled by the glass surface pass so
+    // an edge seen through glass warps exactly like the face it lies on
+    // (docs/RenderEngine.md, "Lines"). RGB is the line colour; alpha is
+    // kLineSdfRadius minus the signed distance to the line's EDGE in
+    // pixels, so the target clears to zero = "no line within reach".
+    // LINEAR filtering, unlike the point-sampled interval targets: the
+    // whole method rests on the field interpolating smoothly.
+    bgfx::TextureHandle lineSdfTex = BGFX_INVALID_HANDLE;
+    /// Sidecar of whichever decoration won each texel: its
+    /// perpendicular axis, view depth and half width, everything the
+    /// glass pass needs to turn the field's distance into post-lens
+    /// coverage (fc_line_sdf_fs.sh has the layout and the why).
+    bgfx::TextureHandle lineSdfAuxTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle lineSdfDepth = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle lineSdfFbo = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progLineSdf = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progLineSdfClip = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progPointSdf = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progPointSdfClip = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texLineSdf = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texLineSdfAux = BGFX_INVALID_HANDLE;
     // Cloud body: front/back depth targets bounding the FBM medium
     // interval of the volumetric raymarch.
     bgfx::TextureHandle cloudFrontTex = BGFX_INVALID_HANDLE;
@@ -7305,7 +7326,7 @@ public:
     X(waterFrontFbo) X(waterBackFbo) X(glassFrontFbo) X(glassBackFbo) \
     X(cloudFrontFbo) X(cloudBackFbo) X(fireFrontFbo) X(fireBackFbo) \
     X(waterFrontTex) X(waterBackTex) X(waterFrontDepth) X(waterBackDepth) \
-    X(glassFrontTex) X(glassBackTex) X(glassFrontDepth) X(glassBackDepth) \
+    X(glassFrontTex) X(glassBackTex) X(glassFrontDepth) X(glassBackDepth)     X(lineSdfFbo) X(lineSdfTex) X(lineSdfAuxTex) X(lineSdfDepth) \
     X(cloudFrontTex) X(cloudBackTex) X(cloudFrontDepth) X(cloudBackDepth) \
     X(fireFrontTex) X(fireBackTex) X(fireFrontDepth) X(fireBackDepth) \
     X(sceneCopyTex) X(sceneCopyFbo) X(presentTex) X(presentFbo) \

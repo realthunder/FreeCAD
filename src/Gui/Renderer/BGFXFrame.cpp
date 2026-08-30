@@ -3238,12 +3238,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 ? uint16_t(BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH
                            |BGFX_CLEAR_STENCIL)
             : (i == V::ViewSectionCap
-               || i == V::ViewSectionCapTransp
-               // The glass pass stamps kGlassStencil where it takes a
-               // pixel; the outline views ran earlier and left their own
-               // marks, which would otherwise read as glass in
-               // ViewGlassLine's dim pass.
-               || i == V::ViewGlassSurface)
+               || i == V::ViewSectionCapTransp)
                 ? uint16_t(BGFX_CLEAR_STENCIL)
                 : uint16_t(BGFX_CLEAR_NONE),
             clearColor, 1.0f, 0);
@@ -3347,6 +3342,17 @@ bool BGFXRenderer::Private::render(const QColor &col,
                                view->bulbShadowProjMtx[t]);
         bgfx::setViewMode(id, bgfx::ViewMode::Default);
         bgfx::touch(id);
+    };
+    auto configLineSdf = [&](int i, uint16_t id) {
+        // Cleared to zero on purpose: the field stores
+        // kLineSdfRadius - signedDistance, so an untouched texel decodes
+        // as a line one whole radius away, which is no line at all.
+        // Depth clears to 1 so the nearest-line min starts empty.
+        bgfx::setViewFrameBuffer(id, view->lineSdfFbo);
+        bgfx::setViewClear(id,
+            uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+            0x00000000u, 1.0f, 0);
+        configTail(i, id);
     };
     auto configAOPrepass = [&](int i, uint16_t id) {
         // Prepass target clears to 0 (.w = 0 marks background
@@ -3925,6 +3931,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     declPass(V::ViewWaterCopy, waterSurfActive || glassActive,
              configWaterCopy);
     declPass(V::ViewWaterSurface, waterSurfActive, configScene);
+    declPass(V::ViewGlassLineSdf, glassActive, configLineSdf);
     declPass(V::ViewGlassSurface, glassActive, configScene);
     declPass(V::ViewGlassLine, glassActive, configScene);
     declPass(V::ViewParticles, true, configScene);
@@ -5425,13 +5432,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 && !firePart) {
             view->submit(draw, viewMat, BGFXView::PassNormal,
                          sceneNoSeam(draw));
-            // ...and its ghost where the glass hides it. Submitted
-            // beside the solid pass rather than in a loop of its own:
-            // both land in ViewGlassLine, which bgfx orders by view id,
-            // so the order they are handed over in does not matter.
+            // ...and, where the glass hides it, into the distance
+            // field the glass pass resamples. That is what makes an
+            // edge behind the body warp with the face it lies on
+            // instead of sitting undistorted over it; the undistorted
+            // pass this replaces was correct in width and wrong in
+            // place, which read worse than the magnification it fixed.
             if (glassDim(draw))
-                view->submit(draw, viewMat, BGFXView::PassLineGlassDim,
-                             sceneNoSeam(draw));
+                view->submitLineSdf(draw, viewMat, sceneNoSeam(draw));
         }
         if (cloudFill && !cullDraw && mediumRender) {
             int slot = slotOf(cloudSlots, draw.objectKey);
@@ -5830,11 +5838,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 view->submit(draw, viewMat, BGFXView::PassLineHidden);
             view->submit(draw, viewMat);
             // A non-on-top selection's lines follow the scene's into
-            // ViewGlassLine, so they need the same dimmed pass or a
-            // selected edge behind glass would vanish where it used to
-            // show through it.
+            // ViewGlassLine, so they need the field too or a selected
+            // edge behind glass would vanish where it used to show
+            // through it.
             if (sel.first <= 0 && glassDim(draw))
-                view->submit(draw, viewMat, BGFXView::PassLineGlassDim);
+                view->submitLineSdf(draw, viewMat, false);
             // Hidden-line outline of a whole-object selection fill
             // (GL: renderOutline from renderOpaque/renderTransparency
             // over slentries). On-top selections outline in the

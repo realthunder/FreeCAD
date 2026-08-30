@@ -43,6 +43,9 @@
  */
 
 #include "fc_color.sh"
+#ifdef LINE_SDF
+#include "fc_line_sdf.sh"
+#endif
 
 uniform vec4 u_params;
 
@@ -61,6 +64,9 @@ void main()
 		gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
 		v_color0 = vec4_splat(0.0);
 		v_line = vec2(0.0, 1.0);
+#ifdef LINE_SDF
+		v_vpos = vec3_splat(0.0);
+#endif
 #ifdef CLIP_PLANES
 		v_wpos = vec3_splat(0.0);
 #endif
@@ -91,7 +97,25 @@ void main()
 		// above that it is free to be fractional, the coverage
 		// carries the remainder.
 		float halfw = 0.5 * max(abs(u_params.y), 1.0);
+#ifdef LINE_SDF
+		// The distance-field pass needs support AROUND the line, and
+		// the amount is set by how far the lens COMPRESSES, not by the
+		// line's own width. Where a body squeezes the scene by a factor
+		// k, reconstructing a half-width h of coverage reads the field
+		// out to h*k -- so a sphere that packs a 34px comb spacing down
+		// to 3px, measured, needs distance data 11 half-widths out. The
+		// first attempt used 3 half-widths and the lines came out thin
+		// and broken exactly where the compression was strongest,
+		// because the field simply ran out and decoded as "no line".
+		//
+		// So carry the whole radius. It is the honest bound on the
+		// compression this method can follow, and it is what the
+		// alpha encoding is written against anyway. The cost is fill in
+		// a pass that only exists while a glass body is on screen.
+		float edge = FC_LINE_SDF_RADIUS;
+#else
 		float edge = halfw + (u_params.y < 0.0 ? 0.0 : 0.5);
+#endif
 		vec2 offset = vec2(-dir.y, dir.x) * edge * side;
 
 		vec4 pos = mix(clipA, clipB, t);
@@ -100,6 +124,13 @@ void main()
 		gl_Position = pos;
 		v_line = vec2(edge * side * pos.w, pos.w);
 		v_color0 = fcAuthoredColor4(mix(i_data2, i_data3, t));
+#ifdef LINE_SDF
+		// View-space position, so the fragment stage can compare this
+		// line against the glass entry depth and keep only what is
+		// actually seen through the body.
+		v_vpos = mul(u_modelView,
+		             vec4(mix(i_data0.xyz, i_data1.xyz, t), 1.0)).xyz;
+#endif
 #ifdef CLIP_PLANES
 		v_wpos = mix(mul(u_model[0], vec4(i_data0.xyz, 1.0)).xyz,
 		             mul(u_model[0], vec4(i_data1.xyz, 1.0)).xyz, t);
