@@ -32,14 +32,12 @@
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 #include <Base/GeometryPyCXX.h>
-#include <Base/Tools.h>
 #include <Base/QuantityPy.h>
 #include <Base/Reader.h>
 #include <CXX/Objects.hxx>
 
 #include "ObjectIdentifier.h"
 #include "Application.h"
-#include "ComplexGeoData.h"
 #include "DocumentObserver.h"
 #include "Document.h"
 #include "ExpressionParser.h"
@@ -580,7 +578,18 @@ bool ObjectIdentifier::replaceObject(ObjectIdentifier &res, const App::DocumentO
 
 std::string ObjectIdentifier::toEscapedString() const
 {
-    return Base::Tools::escapeEncodeString(toString());
+    // Local copy of Base::Tools::escapeEncodeString(std::string), kept here
+    // so the core expression TUs do not pull in Base/Tools.h (it drags in
+    // QString, which the sandbox core build cannot have).
+    const std::string s(toString());
+    std::string result;
+    result.reserve(s.size());
+    for (char c : s) {
+        if (c == '\\' || c == '\"' || c == '\'')
+            result += '\\';
+        result += c;
+    }
+    return result;
 }
 
 bool ObjectIdentifier::updateLabelReference(
@@ -1319,6 +1328,44 @@ void ObjectIdentifier::getDep(
     }
 }
 
+static void _addPropertyDep(ObjectIdentifier::Dependencies &deps,
+        DocumentObject *obj, Property *prop, const char *propName);
+
+void ObjectIdentifier::getDepStructural(
+        Dependencies &deps, std::vector<std::string> *labels) const
+{
+    ResolveResults result(*this);
+    if(labels)
+        getDepLabels(result,*labels);
+
+    if(!result.resolvedDocumentObject)
+        return;
+
+    if(!result.resolvedProperty) {
+        if(!result.propertyName.empty())
+            deps[result.resolvedDocumentObject].insert(result.propertyName);
+        return;
+    }
+
+    // Mirror exactly what access() records before it starts evaluating.
+    App::DocumentObject *lastObj = result.resolvedDocumentObject;
+    if(result.resolvedSubObject) {
+        _addPropertyDep(deps,lastObj,nullptr,nullptr);
+        lastObj = result.resolvedSubObject;
+    }
+    if(result.propertyType == PseudoNone)
+        _addPropertyDep(deps,lastObj,result.resolvedProperty,
+                result.resolvedProperty->getName());
+    else
+        _addPropertyDep(deps,lastObj,nullptr,nullptr);
+
+    // Components past the resolved property may reach further objects, but
+    // those are only discoverable by evaluating the chain. Over-approximate
+    // with an all-property dependency on the last resolved object.
+    if(result.propertyIndex+1 < (int)components.size())
+        _addPropertyDep(deps,lastObj,nullptr,nullptr);
+}
+
 /**
  * @brief Get components as a string list.
  * @return List of strings.
@@ -1593,59 +1640,42 @@ Property *ObjectIdentifier::getProperty(int *ptype) const
     return result.resolvedProperty;
 }
 
-const std::vector<std::pair<const char *, App::Property*> > &ObjectIdentifier::getPseudoProperties()
-{
-    static PropertyContainer dummy;
-    static std::vector<std::pair<const char *, App::Property*> > pseudoProps;
-    if(pseudoProps.empty()) {
-        auto addProp = [](PropertyContainer &pc, std::vector<std::pair<const char *, App::Property *> > &props,
-                          const char *name, const char *doc, int type)
-        {
-            auto prop = static_cast<PropertyInteger*>(pc.addDynamicProperty("App::PropertyInteger", name, 0, doc));
-            prop->setValue(type);
-            props.emplace_back(name, prop);
-        };
-        addProp(dummy, pseudoProps,
-                "_shape",  "Return a geometry shape of the (sub)object using Part.getShape()", PseudoShape); 
-        addProp(dummy, pseudoProps,
-                "_pla",    "Return the accumulated placement of the (sub)object", PseudoPlacement);
-        addProp(dummy, pseudoProps,
-                "_matrix", "Return the accumulated transformation matrix of the (sub)object", PseudoMatrix);
-        addProp(dummy, pseudoProps,
-                "__pla",   "Return the accumulated placement of the (sub)object including any App::Link", PseudoLinkPlacement);
-        addProp(dummy, pseudoProps,
-                "__matrix","Return the accumulated transformation matrix of the (sub)object including any App::Link", PseudoLinkMatrix);
-        addProp(dummy, pseudoProps,
-                "_self",   "Return the object itself in order to access its Python attributes", PseudoSelf);
-        addProp(dummy, pseudoProps,
-                "_ref",   "Return a (sub)object reference that is suitable for assigning to a link type property", PseudoRef);
-        addProp(dummy, pseudoProps,
-                "_app",    "Return the FreeCAD Python module", PseudoApp);
-        addProp(dummy, pseudoProps,
-                "_part",   "Return the Part Python module", PseudoPart);
-        addProp(dummy, pseudoProps,
-                "_re",     "Return the Python regex module", PseudoRegex);
-        addProp(dummy, pseudoProps,
-                "_py",     "Return the Python builtin module", PseudoBuiltins);
-        addProp(dummy, pseudoProps,
-                "_math",   "Return the Python math module", PseudoMath);
-        addProp(dummy, pseudoProps,
-                "_coll",   "Return the Python collections module", PseudoCollections);
-        addProp(dummy, pseudoProps,
-                "_gui",    "Return the FreeCADGui Python module", PseudoGui);
-        addProp(dummy, pseudoProps,
-               "_cq",     "Return the CadQuery Python module", PseudoCadquery);
-    };
-    return pseudoProps;
-}
+static constexpr ObjectIdentifier::PseudoPropertyInfo _pseudoPropertyInfos[] = {
+    {"_shape",  PseudoShape,
+        "Return a geometry shape of the (sub)object using Part.getShape()"},
+    {"_pla",    PseudoPlacement,
+        "Return the accumulated placement of the (sub)object"},
+    {"_matrix", PseudoMatrix,
+        "Return the accumulated transformation matrix of the (sub)object"},
+    {"__pla",   PseudoLinkPlacement,
+        "Return the accumulated placement of the (sub)object including any App::Link"},
+    {"__matrix",PseudoLinkMatrix,
+        "Return the accumulated transformation matrix of the (sub)object including any App::Link"},
+    {"_self",   PseudoSelf,
+        "Return the object itself in order to access its Python attributes"},
+    {"_ref",    PseudoRef,
+        "Return a (sub)object reference that is suitable for assigning to a link type property"},
+    {"_app",    PseudoApp,
+        "Return the FreeCAD Python module"},
+    {"_part",   PseudoPart,
+        "Return the Part Python module"},
+    {"_re",     PseudoRegex,
+        "Return the Python regex module"},
+    {"_py",     PseudoBuiltins,
+        "Return the Python builtin module"},
+    {"_math",   PseudoMath,
+        "Return the Python math module"},
+    {"_coll",   PseudoCollections,
+        "Return the Python collections module"},
+    {"_gui",    PseudoGui,
+        "Return the FreeCADGui Python module"},
+    {"_cq",     PseudoCadquery,
+        "Return the CadQuery Python module"},
+};
 
-bool ObjectIdentifier::isPseudoProperty(const App::Property *prop) {
-    static std::unordered_set<const App::Property*> propSet;
-    if(propSet.empty()) {
-        for(auto &v : getPseudoProperties())
-            propSet.insert(v.second);
-    }
-    return propSet.count(prop)!=0;
+std::span<const ObjectIdentifier::PseudoPropertyInfo> ObjectIdentifier::getPseudoPropertyInfos()
+{
+    return _pseudoPropertyInfos;
 }
 
 Property *ObjectIdentifier::resolveProperty(const App::DocumentObject *obj, 
@@ -1662,8 +1692,8 @@ Property *ObjectIdentifier::resolveProperty(const App::DocumentObject *obj,
 
     static std::unordered_map<const char*,int, CStringHasher, CStringHasher> _props;
     if(_props.empty()) {
-        for(auto &info : getPseudoProperties())
-            _props[info.first] = static_cast<PropertyInteger*>(info.second)->getValue();
+        for(auto &info : getPseudoPropertyInfos())
+            _props[info.name] = info.type;
     }
 
     auto getSubObject = [](const DocumentObject *obj, const char *s) -> DocumentObject* {
@@ -2049,6 +2079,39 @@ public:
 };
 }
 
+// Record a dependency on (obj, propName) the way expression evaluation
+// discovers them. Shared by access() and getDepStructural(); pure C++, no
+// Python involved.
+static void _addPropertyDep(ObjectIdentifier::Dependencies &deps,
+        DocumentObject *obj, Property *prop, const char *propName)
+{
+    if(!obj)
+        return;
+    if(prop && prop->getContainer()!=obj) {
+        auto linkTouched = Base::freecad_dynamic_cast<PropertyBool>(
+                obj->getPropertyByName("_LinkTouched"));
+        if(linkTouched)
+            propName = linkTouched->getName();
+        else {
+            auto propOwner = Base::freecad_dynamic_cast<DocumentObject>(prop->getContainer());
+            if(propOwner)
+                obj = propOwner;
+            else
+                propName = 0;
+        }
+    }
+    auto &propset = deps[obj];
+    // inserting a blank name in the propset indicates the dependency is
+    // on all properties of the corresponding object.
+    if(propset.size()!=1 || !propset.begin()->empty()) {
+        if(!propName) {
+            propset.clear();
+            propName = "";
+        }
+        propset.insert(propName);
+    }
+}
+
 Py::Object ObjectIdentifier::access(const ResolveResults &result,
         Py::Object *value, Dependencies *deps) const
 {
@@ -2214,32 +2277,8 @@ Py::Object ObjectIdentifier::access(const ResolveResults &result,
     }
 
     auto setPropDep = [deps](DocumentObject *obj, Property *prop, const char *propName) {
-        if(!deps || !obj)
-            return;
-        if(prop && prop->getContainer()!=obj) {
-            auto linkTouched = Base::freecad_dynamic_cast<PropertyBool>(
-                    obj->getPropertyByName("_LinkTouched"));
-            if(linkTouched) 
-                propName = linkTouched->getName();
-            else {
-                auto propOwner = Base::freecad_dynamic_cast<DocumentObject>(prop->getContainer());
-                if(propOwner) 
-                    obj = propOwner;
-                else 
-                    propName = 0;
-            }
-        }
-        auto &propset = (*deps)[obj];
-        // inserting a blank name in the propset indicates the dependency is
-        // on all properties of the corresponding object.
-        if(propset.size()!=1 || !propset.begin()->empty()) {
-            if(!propName) {
-                propset.clear();
-                propName = "";
-            }
-            propset.insert(propName);
-        }
-        return;
+        if(deps)
+            _addPropertyDep(*deps,obj,prop,propName);
     };
 
     App::DocumentObject *lastObj = result.resolvedDocumentObject;

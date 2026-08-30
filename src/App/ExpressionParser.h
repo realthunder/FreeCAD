@@ -593,8 +593,6 @@ public:
         TAN,
         TANH,
 
-        GET_VAR,
-        HAS_VAR,
         IMPORT_PY,
         PRAGMA,
 

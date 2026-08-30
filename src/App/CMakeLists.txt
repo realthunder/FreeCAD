@@ -166,6 +166,7 @@ SET(Document_CPP_SRCS
     DocumentObserverPython.cpp
     DocumentPyImp.cpp
     Expression.cpp
+    ExpressionDocumentOps.cpp
     ExpressionTokenizer.cpp
     FeaturePython.cpp
     FeatureTest.cpp

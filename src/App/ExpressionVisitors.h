@@ -26,8 +26,43 @@
 #include <functional>
 #include "Document.h"
 #include "Expression.h"
+#include "PropertyLinks.h"
 
 namespace App {
+
+/** Base class of visitors that modify an expression while it is owned by a
+ * property, taking care of the property change signalling. Lives here, on
+ * the host-only side of the expression code, because it ties expressions to
+ * the property/link system; the expression core (Expression.h) must not
+ * depend on App/PropertyLinks.h.
+ */
+template<class P> class ExpressionModifier : public ExpressionVisitor {
+public:
+    explicit ExpressionModifier(P & _prop)
+        : prop(_prop)
+        , propLink(Base::freecad_dynamic_cast<App::PropertyLinkBase>(&prop))
+        , signaller(_prop,false)
+    {}
+
+    ~ExpressionModifier() override = default;
+
+    void aboutToChange() override{
+        ++_changed;
+        signaller.aboutToChange();
+    }
+
+    int changed() const override { return _changed; }
+
+    void reset() override {_changed = 0;}
+
+    App::PropertyLinkBase* getPropertyLink() override {return propLink;}
+
+protected:
+    P & prop;
+    App::PropertyLinkBase *propLink;
+    typename AtomicPropertyChangeInterface<P>::AtomicPropertyChange signaller;
+    int _changed{0};
+};
 
 /**
  * @brief The RenameObjectIdentifierExpressionVisitor class is a functor used to visit each node of an expression, and

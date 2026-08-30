@@ -24,6 +24,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <unordered_set>
 # include <boost/algorithm/string/predicate.hpp>
 # include <QAbstractItemView>
 # include <QApplication>
@@ -59,6 +60,35 @@ using namespace App;
 using namespace Gui;
 
 static PropertyBool _FakeProp;
+
+// The completer's item model wants each pseudo property (_shape, _pla, ...)
+// as a fake App::Property so it can slot into the same rows as real
+// properties. The core table (ObjectIdentifier::getPseudoPropertyInfos())
+// is plain constant data, so the fakes are built here, presentation-side.
+static const std::vector<std::pair<const char *, App::Property*> > &getPseudoProperties()
+{
+    static PropertyContainer dummy;
+    static std::vector<std::pair<const char *, App::Property*> > pseudoProps;
+    if(pseudoProps.empty()) {
+        for(const auto &info : ObjectIdentifier::getPseudoPropertyInfos()) {
+            auto prop = static_cast<PropertyInteger*>(
+                    dummy.addDynamicProperty("App::PropertyInteger", info.name, 0, info.doc));
+            prop->setValue(info.type);
+            pseudoProps.emplace_back(info.name, prop);
+        }
+    }
+    return pseudoProps;
+}
+
+static bool isPseudoProperty(const App::Property *prop)
+{
+    static std::unordered_set<const App::Property*> propSet;
+    if(propSet.empty()) {
+        for(auto &v : getPseudoProperties())
+            propSet.insert(v.second);
+    }
+    return propSet.count(prop)!=0;
+}
 
 class ExpressionCompleterModel: public QAbstractItemModel {
 public:
@@ -372,7 +402,7 @@ public:
                 --row;
             }
 
-            const auto &pseudoProps = ObjectIdentifier::getPseudoProperties();
+            const auto &pseudoProps = getPseudoProperties();
             int pseudoSize = (int)pseudoProps.size();
             if(row < pseudoSize) {
                 res = pseudoProps[row];
@@ -394,7 +424,7 @@ public:
                 return nullptr;
 
             int offset = (int)outList.size()*2 + (int)propList.size()
-                + ObjectIdentifier::getPseudoProperties().size();
+                + getPseudoProperties().size();
             if(row < offset)
                 return nullptr;
 
@@ -421,7 +451,7 @@ public:
             return (int)outList.size()*2
                 + (int)propList.size()
                 + (root ? 1 : 0)
-                + ObjectIdentifier::getPseudoProperties().size()
+                + getPseudoProperties().size()
                 + (root?0:elementCount);
         }
     };
@@ -1491,7 +1521,7 @@ public:
 
             const char *propName = propInfo.first;
             Base::PyGILStateLocker lock;
-            if(ObjectIdentifier::isPseudoProperty(prop)) {
+            if(isPseudoProperty(prop)) {
                 App::ObjectIdentifier path(owner, propName);
                 try {
                     this->pyObj = Py::new_reference_to(path.getPyValue());

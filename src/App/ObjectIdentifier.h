@@ -47,6 +47,7 @@ inline T &any_cast(boost::any &value) {
 
 #include <map>
 #include <set>
+#include <span>
 #include <string>
 #include <vector>
 #include <FCConfig.h>
@@ -67,6 +68,19 @@ class Document;
 class PropertyContainer;
 class DocumentObject;
 class ExpressionVisitor;
+
+/** Seam typedefs for the ExpressionCore carve-out (expression sandbox,
+ * docs/ExpressionSandboxPhase0.md sec 2).
+ *
+ * The host build binds these to the real document types. The sandboxed
+ * image build will bind opaque handles instead, so everything inside the
+ * expression core that keys on a document, object or property -- the owner
+ * members, ExpressionDeps, ObjectIdentifier::Dependencies -- must spell
+ * the type through these names, never through the App classes directly.
+ */
+using ExpressionDocumentT = App::Document;
+using ExpressionObjectT = App::DocumentObject;
+using ExpressionPropertyT = App::Property;
 
 AppExport std::string quote(const std::string &input, bool toPython=false);
 
@@ -311,7 +325,7 @@ public:
 
     virtual ~ObjectIdentifier() = default;
 
-    App::DocumentObject *getOwner() const { return owner; }
+    ExpressionObjectT *getOwner() const { return owner; }
 
     // Components
     void addComponent(const Component &c);
@@ -324,8 +338,19 @@ public:
 
     const std::string & getPropertyName() const;
 
-    static const std::vector<std::pair<const char *, App::Property*> > &getPseudoProperties();
-    static bool isPseudoProperty(const App::Property *prop);
+    /** Static description of one pseudo property (_shape, _pla, ...).
+     *
+     * The table behind this is plain constant data; the 'type' field holds
+     * the internal PseudoPropertyType enum value as an int. Presentation
+     * helpers that need fake App::Property instances (e.g. the expression
+     * completer) build their own on top of this.
+     */
+    struct PseudoPropertyInfo {
+        const char *name;
+        int type;
+        const char *doc;
+    };
+    static std::span<const PseudoPropertyInfo> getPseudoPropertyInfos();
 
     const Component & getPropertyComponent(int i, int *idx=nullptr) const;
 
@@ -391,7 +416,7 @@ public:
      * the property may not exist at the time this ObjectIdentifier is
      * constructed.
      */
-    using Dependencies = std::map<App::DocumentObject *, std::set<std::string> >;
+    using Dependencies = std::map<ExpressionObjectT *, std::set<std::string> >;
 
     /** Get dependencies of this object identifier
      *
@@ -417,6 +442,22 @@ public:
      * dependencies will be returned.
      */
     void getDep(Dependencies &deps, bool needProps, std::vector<std::string> *labels=nullptr) const;
+
+    /** Get dependencies of this object identifier without evaluating it.
+     *
+     * @param deps: returns the dependencies.
+     * @param labels: optional return of any label references.
+     *
+     * Resolve-only counterpart of getDep(): it records the statically
+     * resolvable dependencies (the resolved document object, sub-object and
+     * property) and never enters Python. Where getDep() would evaluate the
+     * trailing component chain (e.g. 'Part.Group[0].Width' reaching further
+     * objects through link properties), this over-approximates instead by
+     * marking the resolved object as an all-property dependency. Meant for
+     * hosts that must enumerate what an expression MAY touch (e.g. the
+     * sandbox bindings pack) without running it.
+     */
+    void getDepStructural(Dependencies &deps, std::vector<std::string> *labels=nullptr) const;
 
     /// Returns all label references
     void getDepLabels(std::vector<std::string> &labels) const;
@@ -512,7 +553,7 @@ protected:
 
     void getDepLabels(const ResolveResults &result, std::vector<std::string> &labels) const;
 
-    App::DocumentObject * owner;
+    ExpressionObjectT * owner;
     String  documentName;
     String  documentObjectName;
     String  subObjectName;
