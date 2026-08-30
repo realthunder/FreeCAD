@@ -637,7 +637,8 @@ reducing what native CPython does:
   pre-resolution plus per-recompute memoization. Class code from
   an installed addon runs as `addon:<name>`; class code carried
   by the file runs as `document:<hash>` -- sec 3 already tells
-  them apart.
+  them apart. (Refined in 8.2: rung 2 splits by principal --
+  addon-class execution may stay native until rung 4.)
 - **Rung 3 -- session scripting moves in.** Console and macros
   run in a session-principal sandbox with wide grants. Pure
   FreeCAD-API macros port silently; macros that import
@@ -662,7 +663,7 @@ with zero native CPython, its only Python being the sandboxed
 image.** On desktop the end-state arrives exactly when the GUI
 island empties -- when no shipped addon still needs PySide/pivy
 -- a long-horizon deprecation this arc must NOT gate on. What the
-arc should do is make severance checkable early: a
+arc should do FIRST is the App-core severance (8.1): a
 `FREECAD_NO_NATIVE_PYTHON` configuration of the App layer (kernel
 + bridge + image, no libpython link) is the headless-server build
 ComputeBoundaries wants anyway, and it turns "did we really cut
@@ -678,6 +679,80 @@ Practicalities that make the ladder affordable:
   time.
 - Per-principal fuel/memory quotas (7.8, 3.4) already bound cost,
   so more resident interpreters never mean unbounded footprint.
+
+### 8.1 The App build first? Yes -- the severance IS the audit
+
+Question 2026-08-30: should no-native-Python-in-App be the first
+aim? Yes, under a precise definition. The target is NOT "no native
+Python in the process"; it is: **the App core (`src/Base` +
+`src/App`) links without libpython, and every Python C API use in
+the App tier moves into a separate bindings library**
+(`FreeCADAppPy`: the generated `*Py` types, the `*PyImp` bodies
+UNCHANGED, `PropertyPythonObject` payload handling, `FeaturePython`
+dispatch, `DocumentObserverPython`). The core keeps a narrow
+provider interface -- `getPyObject()` and friends return through a
+registry the bindings lib fills when loaded -- so the desktop
+build behaves exactly as today with one more shared lib, and the
+worker/headless build simply never loads it.
+
+Why first, not last:
+
+- **Chasing the severed build's link errors is the Phase 0
+  chokepoint audit performed by the compiler.** Every site sec 1
+  enumerates by hand becomes a hard error that must route through
+  a seam -- nothing gets missed by being unglamorous.
+- **It is the ratchet.** Once CI builds the severed configuration,
+  rungs 1-2 cannot silently regress; a new naked CPython call in
+  App is a build break, not a review catch.
+- **It is an artifact the roadmap wants anyway**: the OCCT worker
+  process (ComputeBoundaries) should never carry an interpreter.
+
+Scope honesty: the invasive edge is the `getPyObject()` surface --
+virtuals returning `PyObject*` across the tree get type-erased
+behind the provider registry. The `src/Mod` App halves (Part's
+`TopoShapePy` and friends) are a second wave with the same
+mechanics. In the severed build the expression evaluator has no
+native fallback -- it requires the image; the desktop build keeps
+both until Phase 1 lands. And until rung 3, `FreeCADCmd`'s
+script/test runner still loads the bindings lib: the severed build
+is the WORKER artifact, not the CLI.
+
+### 8.2 Coexistence with the GUI island: clean, one honest seam
+
+Can sandboxed App Python and native GUI Python coexist? Yes --
+because 8.1 is BUILD layering, not process separation. In the
+desktop build the native interpreter moves its home: it is owned
+by the GUI island and the bindings lib, both of which link the App
+core and call the same C++ they call today. `InitGui.py`, PySide
+task panels, pivy scene code run unchanged; `import FreeCAD`
+resolves to the bindings lib. Three consequences to state now, not
+discover later:
+
+- **Enforcement asymmetry.** Island Python calls C++ directly and
+  BYPASSES the bridge dispatcher -- sec 3's checks cannot be
+  enforced on it, only attributed. The island is trusted at
+  install time, like today; the model's hard guarantees apply to
+  sandboxed principals. This is sound because the threat model is
+  document-derived code, which never runs on the island.
+- **Two interpreters, meeting only at the bridge.** The island's
+  CPython and the wasm instances share no objects. Once rung 2
+  puts a Proxy into a sandbox, island code that reads `obj.Proxy`
+  (Draft does, pervasively) gets a REVERSE proxy: a native stub
+  whose attribute reads and calls cross into the guest through
+  the same dispatcher, same op set, same accounting. That reverse
+  stub is the ONE new mechanism coexistence requires. (The island
+  releases its GIL around bridge calls into a guest.)
+- **Rung 2 splits by principal (refinement).** In a normal
+  scripted object the Proxy CLASS is installed addon code; the
+  document contributes only serialized STATE. So rung 2's security
+  payload is precisely: (a) restore-time class lookup and
+  instantiation constrained to REGISTERED addon classes -- this
+  alone retires sec 9's arbitrary-import carrier -- and (b)
+  genuinely document-carried code running in the document sandbox.
+  Addon Proxy EXECUTION may stay on the island until rung 4,
+  which keeps today's `obj.Proxy`/`vobj.Proxy` pairs (one addon
+  module, App and Gui halves sharing state) in ONE interpreter
+  instead of splitting an addon across two worlds prematurely.
 
 ## 9. What this does NOT close (added 2026-08-29)
 
@@ -756,7 +831,9 @@ ships, the audit above stands.
 - **Beyond -- sec 8's ladder, rung by rung.** Rung 1 (native
   dispatch for `call` members) and rung 2 (document Proxy code into
   the sandbox) are the next security payloads; rung 2 also retires
-  sec 9's first restore-time carrier.
+  sec 9's first restore-time carrier. The App-core severance (8.1)
+  starts alongside Phase 1; once its build is in CI it keeps rungs
+  1-2 from regressing.
 
 The ordering the user asked for is right: the sandbox is a
 prerequisite of the sheet-in-wasm work, not a parallel track. Built
