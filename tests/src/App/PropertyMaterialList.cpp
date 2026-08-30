@@ -2779,3 +2779,99 @@ TEST_F(PropertyMaterialListTest, aFieldEveryFaceAgreesOnBelongsToTheObject)
     EXPECT_FLOAT_EQ(prop.getBase().shininess, 0.75F);
     EXPECT_FLOAT_EQ(prop.getShininess(2), 0.75F);
 }
+
+//**************************************************************************
+// Following the object's material card (docs/MaterialStorage.md section 15)
+
+TEST_F(PropertyMaterialListTest, aWholeObjectWriteEndsTheFollow)
+{
+    App::Material card = redMaterial();
+    card.shininess = 0.7F;
+
+    App::PropertyMaterialList prop;
+    prop.setSize(6);
+    prop.followMaterial(card);
+    EXPECT_TRUE(prop.isFollowingMaterial());
+    EXPECT_TRUE(prop.getBase() == card);
+
+    // A per-face write does not touch the base, so it does not end it
+    prop.setDiffuseColor(2, packed(0x00ff00ff));
+    EXPECT_TRUE(prop.isFollowingMaterial());
+
+    // ... and the card moving on carries the base with it, over the face
+    // that holds its own
+    App::Material moved = card;
+    moved.diffuseColor = packed(0x0000ffff);
+    prop.followMaterial(moved);
+    EXPECT_TRUE(prop.isFollowingMaterial());
+    EXPECT_TRUE(prop.getDiffuseColor(0) == packed(0x0000ffff));
+    EXPECT_TRUE(prop.getDiffuseColor(2) == packed(0x00ff00ff));
+
+    // A whole-object write is a look the user chose, and it outranks the
+    // card from then on
+    prop.setDiffuseColor(packed(0xffff00ff));
+    EXPECT_FALSE(prop.isFollowingMaterial());
+    prop.followMaterial(moved);
+    EXPECT_TRUE(prop.isFollowingMaterial());
+    prop.setValues(std::vector<App::Material>(6, redMaterial()));
+    EXPECT_FALSE(prop.isFollowingMaterial());
+}
+
+TEST_F(PropertyMaterialListTest, theFollowFlagIsPartOfTheValue)
+{
+    App::PropertyMaterialList following;
+    following.setSize(3);
+    following.followMaterial(redMaterial());
+
+    App::PropertyMaterialList custom;
+    custom.setSize(3);
+    custom.setBase(redMaterial());
+    // the same entries, and not the same value: one of them will take the
+    // next card and the other will not
+    EXPECT_TRUE(following.getBase() == custom.getBase());
+    EXPECT_FALSE(following.isSame(custom));
+
+    std::unique_ptr<App::Property> copy(following.Copy());
+    App::PropertyMaterialList pasted;
+    pasted.Paste(*copy);
+    EXPECT_TRUE(pasted.isFollowingMaterial());
+}
+
+TEST_F(PropertyMaterialListTest, theFollowFlagRidesBothForkEncodings)
+{
+    App::PropertyMaterialList prop;
+    prop.setSize(4);
+    prop.followMaterial(redMaterial());
+    prop.setDiffuseColor(1, packed(0x00ff00ff));
+    ASSERT_TRUE(prop.isFollowingMaterial());
+
+    for (bool asXML : {true, false}) {
+        App::PropertyMaterialList back;
+        if (asXML) {
+            const std::string xml = saveToXML(prop, 5);
+            EXPECT_NE(xml.find("follow=\"1\""), std::string::npos) << xml;
+            restoreFromXML(back, xml);
+        }
+        else {
+            restoreDocFile(back, saveDocFile(prop, 5));
+        }
+        EXPECT_TRUE(back.isFollowingMaterial()) << asXML;
+        EXPECT_TRUE(back.isSame(prop)) << asXML;
+    }
+
+    // A following list with nothing overriding it still states its base:
+    // the field lines cannot say that a value is the card's
+    App::PropertyMaterialList uniform;
+    uniform.setSize(4);
+    uniform.followMaterial(redMaterial());
+    App::PropertyMaterialList back;
+    restoreDocFile(back, saveDocFile(uniform, 5));
+    EXPECT_TRUE(back.isFollowingMaterial());
+    EXPECT_TRUE(back.isSame(uniform));
+
+    // Schema 4 cannot state it, and restores not following -- which is what
+    // the view provider derives again (docs/MaterialStorage.md 15.4)
+    App::PropertyMaterialList old;
+    restoreFromXML(old, saveToXML(prop, 4));
+    EXPECT_FALSE(old.isFollowingMaterial());
+}

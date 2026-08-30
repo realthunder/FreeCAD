@@ -212,6 +212,25 @@ public:
      */
     virtual bool getFaceWeights(std::vector<double> &weights) const;
 
+    /** Take the object's material card as the appearance's base
+     *
+     * A no-op unless the appearance is FOLLOWING the card
+     * (docs/MaterialStorage.md 15.3) -- or has never been touched, which is
+     * how a fresh object with a card starts following one. The overriding
+     * faces are left alone, so a following object keeps its painted faces.
+     */
+    void applyMaterialAppearance();
+
+    /** Decide, once, whether a restored appearance follows its card
+     *
+     * A document written before the flag existed cannot state it, and
+     * neither can one saved at schema 4. The answer is the one the old
+     * runtime heuristic gave: a base that is the card's look, or an
+     * untouched one while the card has a look, is following
+     * (docs/MaterialStorage.md 15.4).
+     */
+    void deriveFollowMaterial();
+
     /**
      * Returns a list of picked points from the geometry under \a getRoot().
      * If \a pickAll is false (the default) only the intersection point closest to the camera will be picked, otherwise
@@ -323,9 +342,6 @@ protected:
     SoShadowStyle    * pcRenderShadowStyle{nullptr};
 
 private:
-    /// Last appearance adopted from the object's material card. Lets us tell
-    /// an appearance the material supplied from one the user set by hand.
-    App::Material materialAppearance;
     SoFCBoundingBox  * pcBoundingBox{nullptr};
     SoSwitch         * pcBoundSwitch{nullptr};
     SoBaseColor      * pcBoundColor{nullptr};

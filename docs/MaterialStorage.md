@@ -642,7 +642,9 @@ hour.
 ## 15. Following the card: one flag, and the two panels stop looking alike
 
 > Designed 2026-08-30 with the base-and-overrides storage of
-> `ShapeAppearanceDesign.md` sec 12. Not started.
+> `ShapeAppearanceDesign.md` sec 12. **The flag (15.3, 15.4, 15.7) and the
+> storage under it are built**; the panels (15.5) and the legacy mirror's
+> status bit (15.6) are not.
 
 ### 15.1 What is wrong
 
@@ -718,6 +720,29 @@ Schema 4 cannot state the flag, so a schema-4 save followed by a reopen
 runs the same derivation; that is lossless in every case but a look the
 user set to exactly the card's, which reads as following, and is the
 answer the old heuristic gave too.
+
+### 15.4a What the code does with the base while following
+
+One deviation from 15.3, and it is a deliberate one: the base **is** stored
+while following, not left empty and re-derived from nothing. It is re-taken
+from the card at attach, at `finishRestoring`, and on every card change --
+which is the whole of what following means -- but a document whose card
+library is not installed, or whose card has been deleted, then still opens
+looking like itself instead of default grey. Storing it costs nothing: the
+base is the storage.
+
+`App::MaterialList::followMaterial()` is the one base write that does not
+end the follow; every other one calls `endFollow()`. The flag rides an XML
+attribute beside `pbr`, and in the stream form a flags byte inside the base
+run rather than a bit of the sixteen-bit field mask -- the run is present
+for anything the flag could be about, and the mask has no bits to spare.
+
+The view provider is where the card is read: `applyMaterialAppearance()`
+takes it (when following, or when the base has never been touched, which is
+how a fresh object with a card starts following one), and
+`deriveFollowMaterial()` runs the 15.4 derivation once at
+`finishRestoring`. The old runtime member
+`ViewProviderGeometryObject::materialAppearance` is gone.
 
 ### 15.5 The panels
 

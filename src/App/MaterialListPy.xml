@@ -297,6 +297,17 @@ they hold, so an imported part with three painted faces keeps them.</UserDocu>
             </Documentation>
             <Parameter Name="TextureSlots" Type="Tuple"/>
         </Attribute>
+        <Attribute Name="FollowMaterial" ReadOnly="false">
+            <Documentation>
+                <UserDocu>Whether the base is the object's material card's look, and follows it.
+
+While it is set, assigning the object a card moves the base and the
+faces holding a look of their own keep it. Any whole-object write --
+a colour, an appearance card, this list being assigned -- clears it.
+Setting it True takes the card's look at once.</UserDocu>
+            </Documentation>
+            <Parameter Name="FollowMaterial" Type="Boolean"/>
+        </Attribute>
         <Attribute Name="PBR" ReadOnly="false">
             <Documentation>
                 <UserDocu>Whether the stored values are read as PBR quantities.

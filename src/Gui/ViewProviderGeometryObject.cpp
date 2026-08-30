@@ -51,6 +51,7 @@
 #include <Base/Reader.h>
 #include <Base/Tools.h>
 
+#include <App/Document.h>
 #include <App/PropertyFile.h>
 
 #include <App/GeoFeature.h>
@@ -277,6 +278,12 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
         // back into the appearance it was mirroring.
         ShapeColor.mirrorValue(ShapeAppearance.getBase().diffuseColor);
         ShapeMaterial.mirrorValue(ShapeAppearance.getBase());
+        // A flag just set -- from Python, or from the panel's "As material"
+        // -- takes the card's look at once (docs/MaterialStorage.md 15.7).
+        // Not during a restore: the document's own answer is landing, and
+        // finishRestoring re-derives it there without marking it modified.
+        if (!App::Document::isAnyRestoring())
+            applyMaterialAppearance();
         // A PBR-mode appearance rides the render material node (its
         // metallic/roughness), so it has to follow appearance changes too
         updateRenderMaterial();
@@ -1273,6 +1280,58 @@ void ViewProviderGeometryObject::updateRenderShadowStyle()
 void ViewProviderGeometryObject::attach(App::DocumentObject *pcObj)
 {
     ViewProviderDragger::attach(pcObj);
+    // The card's look, for an object that carries one: nothing announces it
+    // here the way a later card change does, and a fresh object that has
+    // never been given an appearance of its own follows its card
+    // (docs/MaterialStorage.md 15.3).
+    applyMaterialAppearance();
+}
+
+void ViewProviderGeometryObject::applyMaterialAppearance()
+{
+    auto geometry = dynamic_cast<App::GeoFeature*>(getObject());
+    if (!geometry) {
+        return;
+    }
+    const App::Material card = geometry->getMaterialAppearance();
+    const App::Material none;
+    if (card == none) {
+        return;   // no card, or a card with nothing to say about the look
+    }
+    // Following, or never given a look of its own -- which is what makes a
+    // fresh object with a card start following it. An appearance the user
+    // set outranks the card, which is what ending the follow means.
+    if (!ShapeAppearance.isFollowingMaterial() && !(ShapeAppearance.getBase() == none)) {
+        return;
+    }
+    // The BASE only: the faces holding a look of their own keep it, where
+    // the old whole-value write had to refuse a per-face appearance outright
+    ShapeAppearance.followMaterial(card);
+    // Only where the card is in control of the look: the same guard that
+    // stops us overwriting a hand-picked appearance has to stop us clearing
+    // a hand-set Render_Glass. A card stating none clears the previous
+    // card's, which is the point of applying it even when empty.
+    applyMaterialRenderProperties(this, geometry->getMaterialRenderProperties());
+}
+
+void ViewProviderGeometryObject::deriveFollowMaterial()
+{
+    if (ShapeAppearance.isFollowingMaterial()) {
+        return;   // the file stated it
+    }
+    auto geometry = dynamic_cast<App::GeoFeature*>(getObject());
+    if (!geometry) {
+        return;
+    }
+    const App::Material card = geometry->getMaterialAppearance();
+    const App::Material none;
+    if (card == none) {
+        return;   // a document without a card restores not following
+    }
+    const App::Material &base = ShapeAppearance.getBase();
+    if (base == card || base == none) {
+        ShapeAppearance.setFollowMaterial(true);
+    }
 }
 
 void ViewProviderGeometryObject::updateData(const App::Property* prop)
@@ -1280,28 +1339,11 @@ void ViewProviderGeometryObject::updateData(const App::Property* prop)
     if(prop->isDerivedFrom(App::PropertyComplexGeoData::getClassTypeId()))
         updateBoundingBox();
     else if (strcmp(prop->getName(), "ShapeMaterial") == 0) {
-        // The object carries a material card. Take its appearance, but only
-        // while the appearance is still the one the material gave us (or the
-        // untouched default) -- an appearance the user chose outranks it.
-        // A per-face appearance (size != 1) is never overwritten.
-        if (auto geometry = dynamic_cast<App::GeoFeature*>(getObject())) {
-            App::Material defaultMaterial;
-            App::Material material = geometry->getMaterialAppearance();
-            if (ShapeAppearance.getSize() == 1
-                    && (ShapeAppearance[0] == defaultMaterial
-                        || ShapeAppearance[0] == materialAppearance)
-                    && material != defaultMaterial) {
-                ShapeAppearance.setValue(material);
-                materialAppearance = material;
-                // Only where the card is in control of the look: the same
-                // guard that stops us overwriting a hand-picked appearance
-                // has to stop us clearing a hand-set Render_Glass. A card
-                // stating none clears the previous card's, which is the
-                // point of applying it even when empty.
-                applyMaterialRenderProperties(
-                        this, geometry->getMaterialRenderProperties());
-            }
-        }
+        // The object's material card changed. Whether that reaches the look
+        // is the appearance's own flag now, where it used to be a runtime
+        // member this view provider kept and never saved -- so the follow
+        // survives a reopen (docs/MaterialStorage.md 15.1).
+        applyMaterialAppearance();
     }
 
     ViewProviderDragger::updateData(prop);
@@ -1395,6 +1437,15 @@ void ViewProviderGeometryObject::deriveAppearanceBase()
 void ViewProviderGeometryObject::finishRestoring()
 {
     deriveAppearanceBase();
+    deriveFollowMaterial();
+    {
+        // The card's look, re-taken now that both it and the appearance are
+        // in hand (docs/MaterialStorage.md 15.3). NoModify, or a document
+        // whose card has moved on opens already modified.
+        Base::ObjectStatusLocker<App::Property::Status, App::Property>
+                guard(App::Property::NoModify, &ShapeAppearance);
+        applyMaterialAppearance();
+    }
     refreshAppearanceMirrors();
     updateBoundingBox();
     // Restored Render_* dynamic properties (per-object render engine

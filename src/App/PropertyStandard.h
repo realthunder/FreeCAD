@@ -1291,6 +1291,24 @@ public:
     bool namesDiffuse(const Color &color) const { return _list.namesDiffuse(color); }
     //@}
 
+    /** @name Following the object's material card
+     *
+     * One flag for the whole list (docs/MaterialStorage.md 15.3). While it
+     * is set, the BASE is the card's look and is re-taken whenever the card
+     * changes; the overriding faces are re-applied over it, so a following
+     * object keeps its painted faces. Any whole-object write ends the
+     * follow, which is what makes a look the user chose outrank the card's.
+     *
+     * This property knows nothing about material cards: the view provider
+     * reads the card and calls followMaterial().
+     */
+    //@{
+    bool isFollowingMaterial() const { return _list.isFollowingMaterial(); }
+    void setFollowMaterial(bool enable);
+    /// The card's look as the base, without ending the follow
+    void followMaterial(const Material &card);
+    //@}
+
     /** @name Per field access, as it is stored
      *
      * The overriding faces' values, in overrides order, at length 0 or

@@ -536,6 +536,11 @@ bool MaterialList::isPBR() const
     return rd().pbr;
 }
 
+bool MaterialList::isFollowingMaterial() const
+{
+    return rd().follow;
+}
+
 const std::vector<Color> &MaterialList::getAmbientOverrides() const
 {
     ensureNormalized();
@@ -1008,6 +1013,32 @@ void MaterialList::clearOverrides()
     pruneTextureBlobs();
 }
 
+void MaterialList::setFollowMaterial(bool enable)
+{
+    if (rd().follow == enable)
+        return;
+    wd().follow = enable;
+}
+
+void MaterialList::followMaterial(const Material &card)
+{
+    setBase(card);
+    // After the write, because setBase is a whole-object write and every
+    // one of those ends the follow -- this is the one that does not.
+    // Guarded, because wd() DETACHES: an unguarded write would leave new
+    // storage behind every time, the property would call that a change, and
+    // the view provider re-applying the card on that notification would
+    // never stop.
+    if (!rd().follow)
+        wd().follow = true;
+}
+
+void MaterialList::endFollow()
+{
+    if (rd().follow)
+        wd().follow = false;
+}
+
 void MaterialList::setBase(const Material &value)
 {
     const Material mat = inMode(value);
@@ -1028,6 +1059,7 @@ void MaterialList::setBase(const Material &value)
         return;
     }
     touchFields();
+    endFollow();
     Data &w = wd();
     setMaterialType(w.base, static_cast<int8_t>(mat.getType()));
     w.base.ambientColor = mat.ambientColor;
@@ -1802,6 +1834,9 @@ void MaterialList::setValues(const std::vector<Material> &values)
     if (!values.empty())
         setPBR(values.front().pbr);
     touchFields();
+    // A whole-list assignment states the object's look as much as any other
+    // whole-object write does
+    endFollow();
     Data &d = wd();
     d.count = static_cast<int>(values.size());
     std::vector<uint32_t>().swap(d.overrides);
@@ -1990,6 +2025,7 @@ void MaterialList::setField(T Material::*base, std::vector<T> Data::*member,
         // for every one of them
         if (!(rd().base.*base == value) || !((rd().*member).empty())) {
             touchFields();
+            endFollow();
             wd().base.*base = value;
             std::vector<T>().swap(wd().*member);
         }
@@ -2235,6 +2271,7 @@ void MaterialList::setBaseField(T Material::*base, const T &value, const T &def)
     if (rd().base.*base == value)
         return;
     touchFields();
+    endFollow();
     wd().base.*base = value;
 }
 
@@ -2380,7 +2417,8 @@ bool MaterialList::isSame(const MaterialList &other) const
     if (&other == this || _data.isSameData(other._data)) {
         return true;
     }
-    if (other.rd().count != rd().count || other.rd().pbr != rd().pbr) {
+    if (other.rd().count != rd().count || other.rd().pbr != rd().pbr
+        || other.rd().follow != rd().follow) {
         return false;
     }
     ensureNormalized();

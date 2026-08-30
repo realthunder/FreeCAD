@@ -3170,6 +3170,16 @@ void PropertyMaterialList::setBase(const Material &mat)
     change([&] { _list.setBase(mat); });
 }
 
+void PropertyMaterialList::setFollowMaterial(bool enable)
+{
+    change([&] { _list.setFollowMaterial(enable); });
+}
+
+void PropertyMaterialList::followMaterial(const Material &card)
+{
+    change([&] { _list.followMaterial(card); });
+}
+
 void PropertyMaterialList::clearOverrides()
 {
     change([&] { _list.clearOverrides(); });
@@ -3753,6 +3763,10 @@ void PropertyMaterialList::restoreXML(Base::XMLReader &reader)
     // Absent everywhere but a field-encoded PBR list, so this also resets
     // the mode when an old-era element is restored over a PBR property
     _list.wd().pbr = reader.getAttributeAsInteger("pbr", "0") != 0;
+    // The same for the follow flag. A file that cannot state it restores
+    // false, and the view provider derives it once (MaterialStorage.md
+    // 15.4) with both the card and the appearance in hand.
+    _list.wd().follow = reader.getAttributeAsInteger("follow", "0") != 0;
     if (reader.hasAttribute("fields")) {
         restoreFieldXML(reader, uCt);
         return;
@@ -3836,6 +3850,7 @@ void PropertyMaterialList::restoreStream(Base::InputStream &str, unsigned uCt)
     // overrides RestoreDocFile); a bare stream states no version, and no
     // conversion is the reading that leaves its bytes meaning what they say.
     _list.wd().pbr = false;
+    _list.wd().follow = false;
     _list.restoreValues(parseMaterialStream(str, uCt), false);
 }
 
@@ -3943,6 +3958,7 @@ void PropertyMaterialList::Restore(Base::XMLReader &reader)
     }
     else {
         _list.wd().pbr = false;
+        _list.wd().follow = false;
         if (getSize())
             setSize(0);
     }
@@ -4070,8 +4086,9 @@ void PropertyMaterialList::RestoreDocFile(Base::Reader &reader)
         restoreFieldStream(str, uCt, legacy);
     }
     else {
-        // The compatible stream cannot state a mode: its values are Phong
+        // The compatible stream can state neither a mode nor a follow flag
         _list.wd().pbr = false;
+        _list.wd().follow = false;
         _list.restoreValues(parseMaterialStream(str, uCt), legacy);
         // Version 3 is the colours we have always read, followed by three
         // strings per entry. Written by upstream, and by this fork when it
@@ -4190,9 +4207,21 @@ enum FieldRunType : uint8_t {
     RunStrings = 3,
     RunFinish = 4,
     RunTexture = 5,
-    /// The overriding faces' indices, then every field of the ONE entry
-    /// they override
+    /// A flags byte, the overriding faces' indices, then every field of
+    /// the ONE entry they override
     RunBase = 6,
+};
+
+/** What the base run's flags byte can say
+ *
+ * The mask has sixteen bits in all, and this run is present for anything
+ * the flags could be about, so a flag about the base rides its payload
+ * rather than spending one of them.
+ */
+enum BaseFlag : uint8_t {
+    /// The base is the object's material card's look, and follows it
+    /// (docs/MaterialStorage.md 15.3)
+    BaseFollows = 1 << 0,
 };
 
 /// The records of one finish run. Shared by the material list's per field
@@ -4501,7 +4530,8 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     // A list nothing overrides writes what it always wrote: one value per
     // field that differs from what an unstated one reads as. Only a list
     // with overriding faces states a base and an override list at all.
-    const bool sparse = !d.overrides.empty();
+    // A following list states its base even with nothing overriding it
+    const bool sparse = !d.overrides.empty() || d.follow;
     std::vector<Color> uAmbient, uDiffuse, uSpecular, uEmissive;
     std::vector<float> uShininess;
     std::vector<int8_t> uType;
@@ -4642,9 +4672,14 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     if (!sparse)
         return;
     // The head count is the number of overriding faces, and the payload is
-    // their indices followed by the base -- which is one entry, so it holds
-    // one of everything, in the order the field runs above go out
+    // a flags byte, their indices, and the base -- which is one entry, so
+    // it holds one of everything, in the order the field runs above go out.
+    //
+    // The flags ride the PAYLOAD rather than a bit of the mask because the
+    // mask has sixteen bits in all and this run already has to be present
+    // for anything the flags could say about the base.
     writeRun(RunBase, d.overrides.size(), [&d, convert](Base::OutputStream &run) {
+        run << static_cast<uint8_t>(d.follow ? BaseFollows : 0);
         for (uint32_t idx : d.overrides)
             run << idx;
         run << packedForSave(d.base.ambientColor, convert);
@@ -4695,6 +4730,7 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
 
     Material base;
     int8_t baseType = static_cast<int8_t>(MaterialList::defaultMaterial().getType());
+    bool follow = false;
     const bool sparse = (mask & FieldBase) != 0;
 
     // Ascending bit order, which is the order they were written in, each run
@@ -4770,6 +4806,9 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
             readTextureRun(str, palette, index, static_cast<int>(count));
             break;
         case RunBase: {
+            uint8_t flags = 0;
+            str >> flags;
+            follow = (flags & BaseFollows) != 0;
             indices.resize(count);
             for (auto &value : indices)
                 str >> value;
@@ -4838,9 +4877,11 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
                 convertAlpha(*color);
             }
         }
+        _list.wd().follow = follow;
         installBase(base, baseType);
     }
     else {
+        _list.wd().follow = false;
         _list.applyRestoredTransparency(transparency, legacy);
         _list.adoptDense();
     }
@@ -4854,6 +4895,11 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
     // unknown field key
     if (_list.rd().pbr)
         writer.Stream() << " pbr=\"1\"";
+    // The follow flag rides an attribute for the same reason the mode does:
+    // an old fork build ignores an attribute it does not query but throws
+    // on an unknown field key
+    if (_list.rd().follow)
+        writer.Stream() << " follow=\"1\"";
     writer.Stream() << " fields=\"1\">\n";
 
     // As in saveFieldStream: this encoding states the base, so one is
@@ -4931,7 +4977,9 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
     };
 
     const auto &d = _list.rd();
-    if (d.overrides.empty()) {
+    // A following list states its base even with nothing overriding it: the
+    // base is the card's look, and the field lines cannot say that it is
+    if (d.overrides.empty() && !d.follow) {
         // Nothing varies, so there is nothing for a base key to say that
         // the fields do not: this writes the uniform value of each field
         // that differs from what an unstated one reads as, which is byte

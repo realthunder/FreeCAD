@@ -181,6 +181,28 @@ public:
                     const std::vector<double> *weights = nullptr) const;
     /// The heuristic with nothing to go on, run only if nobody else did
     void ensureBase() const;
+
+    /** @name Following the object's material card
+     *
+     * One flag for the whole list (docs/MaterialStorage.md 15.3): while it
+     * is set, the BASE is the card's look, re-taken whenever the card
+     * changes -- and the overriding faces are re-applied over it, so an
+     * imported part with three painted faces can be assigned Aluminium and
+     * keep its three faces. Any whole-object write ends the follow; a
+     * per-face write does not, because it does not touch the base.
+     *
+     * The list itself knows nothing about material cards. The view provider
+     * reads the card and calls followMaterial(); everything here is the
+     * flag and the rule that a base written by anyone else clears it.
+     */
+    //@{
+    bool isFollowingMaterial() const;
+    /// Say whether the base is the card's, without changing it
+    void setFollowMaterial(bool enable);
+    /// Take the card's look as the base AND keep following it -- the one
+    /// base write that does not end the follow
+    void followMaterial(const Material &card);
+    //@}
     /** Whether any entry wears exactly this diffuse colour
      *
      * The question deriveBase's mirror rule asks, asked separately so that
@@ -480,6 +502,9 @@ private:
         int count {0};
         /// The PBR reading of the fields
         bool pbr {false};
+        /// Whether the base is the object's material card's look, and
+        /// follows it (docs/MaterialStorage.md 15.3)
+        bool follow {false};
         /** The object's look, in full
          *
          * Stored the way the fields are: the diffuse alpha carries the
@@ -600,6 +625,9 @@ private:
     float shininessDefault() const;
     /// Throw unless the list is in PBR mode
     void requirePBR() const;
+    /// What every whole-object write does to the follow flag: a base
+    /// somebody else chose is not the card's any more
+    void endFollow();
     /// One material as this list reads it, converting what disagrees with
     /// the list's mode
     Material inMode(const Material &mat) const;

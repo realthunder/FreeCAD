@@ -1075,6 +1075,17 @@ Py::Tuple MaterialListPy::getOverrides() const
     return faces;
 }
 
+Py::Boolean MaterialListPy::getFollowMaterial() const
+{
+    return {list().isFollowingMaterial()};
+}
+
+void MaterialListPy::setFollowMaterial(Py::Boolean value)
+{
+    const bool enable = static_cast<bool>(value);
+    edit([&](MaterialList &values) { values.setFollowMaterial(enable); });
+}
+
 Py::Boolean MaterialListPy::getPBR() const
 {
     return {list().isPBR()};
