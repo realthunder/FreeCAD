@@ -19,6 +19,26 @@
  * and the target can clear to plain zero. Must match
  * BGFXView::kLineSdfRadius.
  *
+ * 32 is the honest cap, and it was measured before it was kept. The
+ * reconstruction needs `radius / halfwidth` of compression, so a 2px
+ * line survives 32x and a 32px one only 2x, and past that a line at a
+ * lens rim has no stored field left to rebuild from.
+ * scripts/lens_rim_fade.py differences a comb against the same frame
+ * with the comb hidden -- which cancels the sphere's own limb
+ * darkening, specular and shading -- and bins the remaining ink by
+ * radius. Through an ior-1.6 ball lens the rim's ink relative to the
+ * band inside it falls 4.04, 3.52, 3.24, 2.60, 1.68 over widths 2, 4,
+ * 8, 16, 32: the predicted signature, and small where it matters
+ * (13% from 2px to 4px). The rim never empties -- it stays the
+ * DARKEST part of the disc at every width, because a ball lens
+ * squeezes the whole scene into it. A gentle ior-1.15 lens, whose
+ * compression never approaches the limit, still falls 34% across the
+ * same sweep, so much of the thick-line loss is a thick line running
+ * its half width off the edge of the glass rather than the support
+ * radius. Doubling the radius would buy a 4px line about 15% more rim
+ * ink and double the quad every line rasterizes into the field; not
+ * worth it for the widths CAD uses.
+ *
  * FC_GLASS_LINE_ALPHA is what a line behind glass dims to. Must match
  * BGFXView::kGlassLineAlpha.
  *
