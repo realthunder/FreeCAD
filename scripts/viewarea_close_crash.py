@@ -38,6 +38,20 @@ WHY IT LOOKED INTERMITTENT.  It needs a ViewArea holding MORE THAN ONE
 cell: with a single cell childViewGone takes the deleteSelf branch and
 never reaches collapseCell.  A plain unsplit view never hits it.  Split
 first and it reproduces on the first close.
+
+! THIS NO LONGER FIRES, AND HAS NOT BEEN RE-ARMED.  Checked 2026-08-30
+by building with BOTH fixes reverted -- the ~MDIView disconnect commented
+out AND the deferred collapse removed -- and running this script: it
+reported ALL ROUNDS SURVIVED, and cdb wrote no dump.  So a pass here is
+currently evidence of nothing.  Something about the window state this
+script sets up no longer matches the session the crash was caught in;
+the header above lists the ingredients it was believed to need, and one
+of them is not actually being reproduced (the maximized sibling
+sub-window is the first suspect, since it is the maximize that produces
+the WindowStateChange).  Treat this as a smoke test -- it still exercises
+the path and still catches a hard crash on it -- but do not use it to
+argue that a change to that path is safe, and re-arm it against a
+double-reverted build before trusting a negative.
 """
 import time
 
