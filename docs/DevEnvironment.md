@@ -1149,7 +1149,8 @@ inherits `conda-windows-release` and overrides:
 | `CMAKE_PREFIX_PATH`, `OCC_INCLUDE_DIR` | point at the local OCCT/Coin installs instead of conda packages |
 | `OCCT_CMAKE_FALLBACK=OFF` | **required** — see below |
 | `BUILD_BGFX=ON` | the renderer |
-| `BUILD_FEM/BUILD_WEB/FREECAD_USE_PCL/FREECAD_USE_EXTERNAL_SMESH/ENABLE_DEVELOPER_TESTS=OFF` | same trims as the Linux local preset |
+| `BUILD_WEB/FREECAD_USE_PCL=OFF` | same trims as the Linux local preset |
+| `BUILD_FEM/FREECAD_USE_EXTERNAL_SMESH/ENABLE_DEVELOPER_TESTS=OFF` | Windows only -- all three are **ON** on Linux now |
 
 **`OCCT_CMAKE_FALLBACK` must be OFF.** The repo's `conda` preset turns it ON, which
 skips `find_package(OpenCASCADE CONFIG)` in favour of a hand-rolled search. That
@@ -1241,8 +1242,9 @@ contributor to a cold Windows build.
 
 ### Running the C++ (GoogleTest) suites
 
-`ENABLE_DEVELOPER_TESTS` is **OFF** in this build dir, as in the Linux presets, so
-`tests/` is not configured at all and `ninja Tests_run` answers *unknown target*.
+`ENABLE_DEVELOPER_TESTS` is **OFF** in this build dir -- unlike the Linux
+presets, which turn it on -- so `tests/` is not configured at all and
+`ninja Tests_run` answers *unknown target*.
 Turning it on costs one configure and no rebuild of what is already there:
 
 ```cmd
