@@ -8,6 +8,9 @@ General:
   Description: "Typical material properties for pure graphite"
   ReferenceSource: "Properties and characteristics of graphite"
   SourceURL: "https://www.entegris.com/content/dam/web/resources/manuals-and-guides/manual-properties-and-characteristics-of-graphite-109441.pdf"
+Inherits:
+  Obsidian:
+    UUID: "a004c270-7d2c-4898-bec6-b1120edacea9"
 Models:
   Father:
     UUID: '9cdda8b6-b606-4778-8f13-3934d8668e67'

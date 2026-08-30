@@ -7,6 +7,9 @@ General:
   Name: "Acrylic Glass"
   Description: "Poly(methyl methacrylate) (PMMA, acrylic, acrylic glass, trade names Plexiglas, Acrylite, Lucite, Perspex) a transparent thermoplastic often used in sheet form as a lightweight or shatter-resistant alternative to glass."
   SourceURL: "http://www.matweb.com/search/DataSheet.aspx?MatGUID=632572aeef2a4224b5ac8fbd4f1b6f77"
+Inherits:
+  Acrylic:
+    UUID: "28ae5807-9bb9-40b7-9aed-1655faf52afe"
 Models:
   Father:
     UUID: '9cdda8b6-b606-4778-8f13-3934d8668e67'
