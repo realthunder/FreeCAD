@@ -123,6 +123,24 @@ no matching `conda-meta/libarea-*.json`, that is the old arrangement:
 delete those files (`lib/libarea.so*`, `include/libarea`,
 `lib/cmake/libarea`) before installing the package over them.
 
+To confirm the env is in the state this section describes -- one libarea,
+owned by conda, and every consumer on it:
+
+```sh
+P=~/works/sw/fcad/.conda/freecad
+ls $P/conda-meta/libarea-*.json          # must exist: the package is the owner
+ls $P/lib/libarea.so*                    # only the sonames that .json lists
+# every consumer resolves to that one file, and to the same soname
+for f in build/conda-relwithdebinfo-801/Mod/Area/*.so \
+         $P/lib/libifcopenshell.geometry.writer.so; do
+    echo "$f"; ldd "$f" | grep libarea
+done
+```
+
+Two different sonames in that last output is the two-Clippers hazard, and a
+consumer built against the older one needs a **reconfigure**, not just a
+rebuild -- the imported target's path is read at configure time.
+
 ### Building the dependencies (conda stack)
 
 Build dirs / installs are parallel to the system stack and never collide:
