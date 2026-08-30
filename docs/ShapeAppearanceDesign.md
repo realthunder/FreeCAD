@@ -2668,8 +2668,9 @@ is that a write can now say which of the two it means:
 
 Normalisation gains one step: an override whose entry equals `base` is
 dropped. The uniform list is the case `overrides` is empty, so the 0/1/N
-collapse of sec 3 is untouched and so is its cost table; a per-face list
-costs one more material and one index per overriding face.
+collapse of sec 3 is untouched and so is its cost table. In memory a
+per-face list costs one more material and one index per overriding face;
+on disk it costs only its overrides (12.3).
 
 `base` is a full `Material`, finish and texture included: a per-face
 finish or image on a face is an override like a colour is, and the base
@@ -2681,17 +2682,37 @@ bool list because the common per-face object (an import) overrides a few
 faces of thousands, and because an index list serialises at its own length
 (sec 4.3's `x` key already does).
 
-### 12.3 Serialization
+### 12.3 Serialization: sparse on disk
 
-Schema 5 (the fork's format) gets two keys beside the field lines of
-sec 4.3: `b`, the base as one entry's tokens, and `o`, the override indices,
-each self-describing in the way the `x` and `f` keys are, so an earlier fork
-build steps over them (sec 9.4.2) and reads the dense fields exactly as it
-does now. Nothing about the existing keys changes.
+The invariant makes every non-overriding entry redundant, so at schema 5
+(the fork's format) the list is written SPARSE:
 
-Schema 4 (upstream's) cannot state either. A schema-4 file restores through
-the heuristic of 12.4, which is also what every document written before
-this section gets.
+- `b`: the base, as one entry's tokens;
+- `o`: the overriding face indices, self-describing in the way the `x` and
+  `f` keys of sec 4.3 are;
+- the field lines of sec 4.3 at length **|overrides|** -- still collapsed
+  to 0, 1 or |o| -- holding only the overriding faces' values, in `o`
+  order.
+
+Restore rebuilds the dense fields from the three. A 10,000-face import
+with three painted faces goes from about 160 KB of diffuse to about a
+hundred bytes; a list where every face differs writes the N values it
+writes today plus 4N bytes of indices. An earlier fork build steps over
+`b` and `o` (sec 9.4.2) but then reads field lines shorter than the entry
+count, so a file carrying them is not one it can open -- the same standing
+every schema-5 file already has (sec 4.3), and the reason the default cap
+is 4.
+
+Schema 4 (upstream's) cannot state either key and keeps writing the dense
+N entries, byte for byte as today. A schema-4 file restores through the
+heuristic of 12.4, which is also what every document written before this
+section gets.
+
+In memory the dense resolved fields stay, for the first cut: every
+consumer and the Coin arrays materialise them anyway. A sparse in-memory
+form behind the same accessors is a later optimisation and not a format
+question; nothing here forecloses it, because no reader of the value sees
+the storage.
 
 ### 12.4 Deriving a base where none was stored
 
