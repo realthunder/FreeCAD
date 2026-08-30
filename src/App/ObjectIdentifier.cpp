@@ -28,22 +28,29 @@
 
 #include <boost/algorithm/string.hpp>
 
+#ifndef FC_EXPR_IMAGE
 #include <App/DocumentObjectPy.h>
+#endif
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 #include <Base/GeometryPyCXX.h>
 #include <Base/QuantityPy.h>
-#include <Base/Reader.h>
 #include <CXX/Objects.hxx>
 
 #include "ObjectIdentifier.h"
+#ifdef FC_EXPR_IMAGE
+// The sandbox image build resolves against the S1 adapter world
+// (bindings pack + bridge ops); see docs/ExpressionImage.md.
+#include <App/ExpressionImage/FcxDocument.h>
+#else
 #include "Application.h"
 #include "DocumentObserver.h"
 #include "Document.h"
-#include "ExpressionParser.h"
-#include "ExpressionSecurityRuntime.h"
 #include "Link.h"
 #include "Property.h"
+#endif
+#include "ExpressionParser.h"
+#include "ExpressionSecurityRuntime.h"
 
 
 FC_LOG_LEVEL_INIT("Expression",true,true)
@@ -221,6 +228,10 @@ ObjectIdentifier::ObjectIdentifier(const Property &prop, int index)
     DocumentObject * docObj = freecad_dynamic_cast<DocumentObject>(prop.getContainer());
     if (docObj)
         addComponent(SimpleComponent(prop.getName()));
+#ifndef FC_EXPR_IMAGE
+    // Recovering the object from a nested/extension property needs the
+    // DocumentObserver machinery; image properties are always directly
+    // owned by their object.
     else {
         App::DocumentObjectT objT(&prop);
         docObj = objT.getObject();
@@ -244,6 +255,7 @@ ObjectIdentifier::ObjectIdentifier(const Property &prop, int index)
             }
         }
     }
+#endif  // FC_EXPR_IMAGE
 
     if (!docObj)
         FC_THROWM(Base::TypeError, "Property must be owned by a document object.");
@@ -1917,6 +1929,11 @@ public:
 
     void attach(PyObject *pyObj)
     {
+#ifdef FC_EXPR_IMAGE
+        // Container-change notification is a host concern; no
+        // PropertyContainerPy exists in the image.
+        (void)pyObj;
+#else
         if(pyObj && pyObj != pyBase && PyObject_TypeCheck(pyObj, &PropertyContainerPy::Type)) {
             detach();
             pyBase = static_cast<PyObjectBase*>(pyObj);
@@ -1924,6 +1941,7 @@ public:
             shouldNotify = pyBase->shouldNotify();
             pyBase->setShouldNotify(true);
         }
+#endif
     }
 
 public:
@@ -2200,8 +2218,12 @@ Py::Object ObjectIdentifier::access(const ResolveResults &result,
     ContainerNotifierEnabler notificationEnabler(pyobj.ptr());
 
     for(;idx<count;++idx)  {
+#ifndef FC_EXPR_IMAGE
+        // In-image no live DocumentObjectPy exists (host objects are
+        // handle proxies) and dependency tracking is host work.
         if(PyObject_TypeCheck(*pyobj, &DocumentObjectPy::Type))
             lastObj = static_cast<DocumentObjectPy*>(*pyobj)->getDocumentObjectPtr();
+#endif
 
         if(lastObj) {
             const char *attr = components[idx].getName().c_str();
@@ -2244,6 +2266,20 @@ Py::Object ObjectIdentifier::access(const ResolveResults &result,
 App::any ObjectIdentifier::getValue(bool pathValue, bool *isPseudoProperty) const
 {
     ExpressionSecurity::Runtime::Scope _secScope(owner);
+
+#ifdef FC_EXPR_IMAGE
+    // Bindings pack first; see getPyValue.
+    if (auto tx = Fcx::EvalTransaction::current()) {
+        Py::Object packed;
+        if (tx->lookup(toString(), packed)) {
+            if (isPseudoProperty)
+                *isPseudoProperty = false;
+            Base::PyGILStateLocker lock;
+            return pyObjectToAny(packed);
+        }
+    }
+#endif
+
     ResolveResults rs(*this);
 
     if(isPseudoProperty) {
@@ -2272,6 +2308,23 @@ App::any ObjectIdentifier::getValue(bool pathValue, bool *isPseudoProperty) cons
 Py::Object ObjectIdentifier::getPyValue(bool pathValue, bool *isPseudoProperty, bool *isReadOnly) const
 {
     ExpressionSecurity::Runtime::Scope _secScope(owner);
+
+#ifdef FC_EXPR_IMAGE
+    // The bindings pack first (docs/ExpressionSandbox.md 7.3): the host
+    // pre-resolved this identifier's value with its own permission
+    // checks; a hit costs zero crossings and zero resolution work.
+    if (auto tx = Fcx::EvalTransaction::current()) {
+        Py::Object packed;
+        if (tx->lookup(toString(), packed)) {
+            if (isPseudoProperty)
+                *isPseudoProperty = false;
+            if (isReadOnly)
+                *isReadOnly = true;
+            return packed;
+        }
+    }
+#endif
+
     ResolveResults rs(*this);
 
     if(isPseudoProperty || isReadOnly) {

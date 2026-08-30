@@ -24,11 +24,18 @@
 #define RENAMEOBJECTIDENTIFIEREXPRESSIONVISITOR_H
 
 #include <functional>
-#include "Document.h"
 #include "Expression.h"
+#ifndef FC_EXPR_IMAGE
+// The modifier visitors below tie expressions to the property/link and
+// document systems; only GenericExpressionVisitor (at the bottom) is part
+// of the core surface the sandbox image compiles.
+#include "Document.h"
 #include "PropertyLinks.h"
+#endif
 
 namespace App {
+
+#ifndef FC_EXPR_IMAGE
 
 /** Base class of visitors that modify an expression while it is owned by a
  * property, taking care of the property change signalling. Lives here, on
@@ -179,6 +186,8 @@ private:
     CellAddress src;
     CellAddress dst;
 };
+
+#endif  // FC_EXPR_IMAGE
 
 class GenericExpressionVisitor : public ExpressionVisitor {
 public:

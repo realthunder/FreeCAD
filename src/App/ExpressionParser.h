@@ -315,15 +315,19 @@ protected:
     void _toString(std::ostream &ss, bool persistent, int indent) const override;
     ExpressionPtr _copy() const override;
     void _getIdentifiers(std::map<App::ObjectIdentifier,bool> &) const override;
+#ifndef FC_EXPR_IMAGE
+    // Document-maintenance overrides; defined in the host-only ops TU
+    // (ExpressionDocumentOps.cpp), absent from the sandbox image where
+    // the base no-ops apply.
     bool _adjustLinks(const std::set<App::DocumentObject*> &, ExpressionVisitor &) override;
     void _importSubNames(const ObjectIdentifier::SubNameMap &) override;
     void _updateLabelReference(App::DocumentObject *, const std::string &, const char *) override;
     bool _updateElementReference(App::DocumentObject *,bool,ExpressionVisitor &) override;
     bool _relabeledDocument(const std::string &, const std::string &, ExpressionVisitor &) override;
-    bool _renameObjectIdentifier(const std::map<ObjectIdentifier,ObjectIdentifier> &, 
+    bool _renameObjectIdentifier(const std::map<ObjectIdentifier,ObjectIdentifier> &,
                                          const ObjectIdentifier &, ExpressionVisitor &) override;
-    void _collectReplacement(std::map<ObjectIdentifier,ObjectIdentifier> &, 
-                    const App::DocumentObject *parent, App::DocumentObject *oldObj, 
+    void _collectReplacement(std::map<ObjectIdentifier,ObjectIdentifier> &,
+                    const App::DocumentObject *parent, App::DocumentObject *oldObj,
                     App::DocumentObject *newObj) const override;
     void _moveCells(const CellAddress &, int, int, ExpressionVisitor &) override;
     void _offsetCells(int, int, ExpressionVisitor &) override;
@@ -331,6 +335,7 @@ protected:
                          const CellAddress &,
                          const CellAddress &,
                          ExpressionVisitor &) override;
+#endif
     Py::Object _getPyValue(int *jumpCode=nullptr) const override;
 
 protected:
@@ -762,7 +767,9 @@ protected:
     void _toString(std::ostream &, bool, int) const override;
     ExpressionPtr _copy() const override;
     void _getIdentifiers(std::map<App::ObjectIdentifier,bool> &) const override;
-    bool _renameObjectIdentifier(const std::map<ObjectIdentifier,ObjectIdentifier> &, 
+#ifndef FC_EXPR_IMAGE
+    // Host-only maintenance overrides, as on VariableExpression above.
+    bool _renameObjectIdentifier(const std::map<ObjectIdentifier,ObjectIdentifier> &,
                                          const ObjectIdentifier &, ExpressionVisitor &) override;
     void _moveCells(const CellAddress &, int, int, ExpressionVisitor &) override;
     void _offsetCells(int, int, ExpressionVisitor &) override;
@@ -770,6 +777,7 @@ protected:
                          const CellAddress &,
                          const CellAddress &,
                          ExpressionVisitor &) override;
+#endif
     Py::Object _getPyValue(int *jumpCode=nullptr) const override;
 
 protected:

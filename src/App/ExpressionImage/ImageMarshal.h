@@ -23,6 +23,13 @@ PyObject* decodeValue(const nlohmann::json& v);
 /// result outside the by-value set (docs/ExpressionSandbox.md 7.7).
 bool encodeValue(PyObject* obj, nlohmann::json& out, std::string& err);
 
+/** One image->host bridge round trip from C++ (the Python side rides
+ * _fcx.op).  Returns false with a Python error set on transport
+ * failure; a delivered reply may still be {"ok":false,...}.
+ * Implemented in ImageBridge.cpp.
+ */
+bool hostOp(const nlohmann::json& req, nlohmann::json& reply);
+
 }  // namespace FcxImage
 
 #endif  // APP_FCX_IMAGE_MARSHAL_H

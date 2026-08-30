@@ -307,3 +307,173 @@ TEST_F(ExpressionImageBridgeTest, permissionGateDeniesThenGrantWorks)
     Runtime::instance().clearPending(principal, Permission::UnsafeGetattr,
                                      "*");
 }
+
+// ---- the ExpressionCore carve (docs/ExpressionImage.md): the real
+// ---- parser + AST walker run IN the image; identifiers resolve from
+// ---- the bindings pack evalExpression() pre-packs host-side ----
+
+#include <App/Document.h>
+#include <App/DocumentObject.h>
+#include <App/ExpressionImageBridge.h>
+#include <App/PropertyStandard.h>
+
+class ExpressionImageEvalTest: public ExpressionImageBridgeTest
+{
+protected:
+    void SetUp() override
+    {
+        ExpressionImageBridgeTest::SetUp();
+        if (IsSkipped())
+            return;
+        doc = App::GetApplication().newDocument("FcxEvalTest", "testUser");
+        obj = doc->addObject("App::FeaturePython", "Obj");
+        auto width = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            obj->addDynamicProperty("App::PropertyFloat", "Width"));
+        ASSERT_NE(width, nullptr);
+        width->setValue(21.0);
+    }
+
+    void TearDown() override
+    {
+        if (doc)
+            App::GetApplication().closeDocument(doc->getName());
+        doc = nullptr;
+        obj = nullptr;
+        ExpressionImageBridgeTest::TearDown();
+    }
+
+    App::Document* doc = nullptr;
+    App::DocumentObject* obj = nullptr;
+};
+
+TEST_F(ExpressionImageEvalTest, arithmeticInImage)
+{
+    auto res = ImageHost::instance().evalExpression(obj, "2 ^ 10 + 0.5");
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_DOUBLE_EQ(value(res).get<double>(), 1024.5);
+}
+
+TEST_F(ExpressionImageEvalTest, unitArithmeticInImage)
+{
+    auto res = ImageHost::instance().evalExpression(obj, "10mm + 1cm");
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    json v = value(res);
+    EXPECT_EQ(v.value("t", ""), "quantity");
+    EXPECT_DOUBLE_EQ(v["v"].get<double>(), 20.0);
+    EXPECT_EQ(v["u"][0].get<int>(), 1);
+}
+
+TEST_F(ExpressionImageEvalTest, identifierResolvesFromPack)
+{
+    auto res = ImageHost::instance().evalExpression(obj, "Width * 2");
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_DOUBLE_EQ(value(res).get<double>(), 42.0);
+}
+
+TEST_F(ExpressionImageEvalTest, unresolvedIdentifierFailsInImage)
+{
+    auto res = ImageHost::instance().evalExpression(obj, "Nope.Nothing");
+    ASSERT_FALSE(res.ok);
+    EXPECT_NE(res.message.find("Nope"), std::string::npos) << res.message;
+}
+
+TEST_F(ExpressionImageEvalTest, parseErrorIsNativeParserError)
+{
+    auto res = ImageHost::instance().evalExpression(obj, "1 +");
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "ParserError");
+    EXPECT_NE(res.message.find("syntax error"), std::string::npos)
+        << res.message;
+}
+
+TEST_F(ExpressionImageEvalTest, pseudoModuleRunsInImage)
+{
+    auto res = ImageHost::instance().evalExpression(
+        obj, "_math.degrees(3.141592653589793)");
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_DOUBLE_EQ(value(res).get<double>(), 180.0);
+}
+
+TEST_F(ExpressionImageEvalTest, conditionalAndComparison)
+{
+    auto res = ImageHost::instance().evalExpression(
+        obj, "Width > 10 ? <<big>> : <<small>>");
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_EQ(value(res).get<std::string>(), "big");
+}
+
+TEST_F(ExpressionImageEvalTest, foreignDocGrantCycleAtPackTime)
+{
+    using App::ExpressionSecurity::Permission;
+    using App::ExpressionSecurity::Runtime;
+
+    // the bindings pack is resolved under the owner's document
+    // principal: a foreign-document identifier PROMPTs at pack time,
+    // a grant lets the packed evaluation through, a deny blocks again
+    auto doc2 = App::GetApplication().newDocument("FcxEvalOther", "testUser");
+    auto obj2 = doc2->addObject("App::FeaturePython", "Remote");
+    auto depth = Base::freecad_dynamic_cast<App::PropertyFloat>(
+        obj2->addDynamicProperty("App::PropertyFloat", "Depth"));
+    ASSERT_NE(depth, nullptr);
+    depth->setValue(15.0);
+
+    const std::string src = "FcxEvalOther#Remote.Depth * 2";
+    auto denied = ImageHost::instance().evalExpression(obj, src);
+    ASSERT_FALSE(denied.ok);
+    EXPECT_EQ(denied.excType, "PermissionError");
+
+    std::string principal = Runtime::instance().documentPrincipal(doc);
+    Runtime::instance().grant(principal, Permission::DocForeign,
+                              "FcxEvalOther", true, "session");
+    auto granted = ImageHost::instance().evalExpression(obj, src);
+    ASSERT_TRUE(granted.ok) << granted.excType << ": " << granted.message;
+    EXPECT_DOUBLE_EQ(value(granted).get<double>(), 30.0);
+
+    Runtime::instance().grant(principal, Permission::DocForeign,
+                              "FcxEvalOther", false, "session");
+    auto revoked = ImageHost::instance().evalExpression(obj, src);
+    ASSERT_FALSE(revoked.ok);
+    EXPECT_EQ(revoked.excType, "PermissionError");
+
+    Runtime::instance().clearPending(principal, Permission::DocForeign,
+                                     "FcxEvalOther");
+    App::GetApplication().closeDocument(doc2->getName());
+}
+
+TEST_F(ExpressionImageEvalTest, resolveAliasOpAnswers)
+{
+    // the dedicated resolve_alias bridge op (RangeExpression's mid-eval
+    // reach-back), exercised directly against a sheet-like stub with a
+    // local handle table
+    App::ExpressionSandbox::HandleTable table;
+    uint64_t id = 0;
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* ns = PyDict_New();
+        PyDict_SetItemString(ns, "__builtins__", PyEval_GetBuiltins());
+        PyObject* r = PyRun_String(
+            "class S:\n"
+            "    def getCellFromAlias(self, a):\n"
+            "        return 'B2' if a == 'foo' else ''\n"
+            "o = S()\n",
+            Py_file_input, ns, ns);
+        ASSERT_NE(r, nullptr);
+        Py_DECREF(r);
+        PyObject* o = PyDict_GetItemString(ns, "o");  // borrowed
+        ASSERT_NE(o, nullptr);
+        id = table.add(o);
+        Py_DECREF(ns);
+    }
+    json req;
+    req["op"] = "resolve_alias";
+    req["h"] = id;
+    req["a"] = "foo";
+    json reply = App::ExpressionSandbox::dispatchHostOp(table, req);
+    ASSERT_TRUE(reply.value("ok", false))
+        << reply.value("exc", "") << ": " << reply.value("msg", "");
+    EXPECT_EQ(reply["val"].get<std::string>(), "B2");
+    {
+        Base::PyGILStateLocker lock;
+        table.clear();
+    }
+}

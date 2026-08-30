@@ -40,6 +40,16 @@ get_filename_component(FC_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOLUTE)
 
 # The Base math slice: pure math TUs plus their Python bindings.  The
 # binding TU is the *PyImp.cpp, which #includes the generated *Py.cpp.
+# The ExpressionCore carve (docs/ExpressionImage.md): the real parser +
+# AST walker + identifier code compiled against the S1 adapter world
+# (FcxDocument.*), selected by FC_EXPR_IMAGE.
+set(CORE_SLICE
+    ${FC_SRC}/App/Expression.cpp
+    ${FC_SRC}/App/ObjectIdentifier.cpp
+    ${FC_SRC}/App/Range.cpp
+    FcxDocument.cpp
+)
+
 set(BASE_SLICE
     ${FC_SRC}/Base/Type.cpp
     ${FC_SRC}/Base/BaseClass.cpp
@@ -53,6 +63,7 @@ set(BASE_SLICE
     ${FC_SRC}/Base/Exception.cpp
     ${FC_SRC}/Base/PyObjectBase.cpp
     ${FC_SRC}/Base/GeometryPyCXX.cpp
+    ${FC_SRC}/Base/BaseClassPyImp.cpp
     ${FC_SRC}/Base/VectorPyImp.cpp
     ${FC_SRC}/Base/RotationPyImp.cpp
     ${FC_SRC}/Base/PlacementPyImp.cpp
@@ -75,6 +86,7 @@ add_executable(fcx_image
     ImageMain.cpp
     ImageMarshal.cpp
     ImageStubs.cpp
+    ${CORE_SLICE}
     ${BASE_SLICE}
     ${PYCXX_SRCS}
 )
@@ -92,6 +104,7 @@ target_include_directories(fcx_image PRIVATE
 )
 
 target_compile_definitions(fcx_image PRIVATE
+    FC_EXPR_IMAGE
     FC_NO_QT
     BOOST_DISABLE_THREADS
     BOOST_SYSTEM_DISABLE_THREADS

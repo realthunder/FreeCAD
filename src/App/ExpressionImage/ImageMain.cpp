@@ -19,6 +19,8 @@
 #include <nlohmann/json.hpp>
 
 #include <Base/BoundBoxPy.h>
+#include <Base/Interpreter.h>
+#include <Base/PyObjectBase.h>
 #include <Base/MatrixPy.h>
 #include <Base/PlacementPy.h>
 #include <Base/QuantityPy.h>
@@ -26,6 +28,9 @@
 #include <Base/UnitPy.h>
 #include <Base/VectorPy.h>
 
+#include <App/Expression.h>
+
+#include "FcxDocument.h"
 #include "FcxWire.h"
 #include "ImageMarshal.h"
 
@@ -69,11 +74,60 @@ static PyModuleDef UnitsModuleDef = {
     nullptr, nullptr, nullptr, nullptr, nullptr,
 };
 
+/// The FreeCAD exception type set of App/Application.cpp
+/// initApplication -- Base::Exception::setPyException routes through
+/// these, so the image must create them too or every C++ error
+/// degenerates to raising a null object.
+static void init_exception_types(PyObject *module)
+{
+    struct
+    {
+        PyObject **slot;
+        const char *name;
+        PyObject *base;
+    } entries[] = {
+        {&Base::PyExc_FC_GeneralError, "Base.FreeCADError", PyExc_RuntimeError},
+        {&Base::PyExc_FC_FreeCADAbort, "Base.FreeCADAbort", PyExc_BaseException},
+        {&Base::PyExc_FC_XMLBaseException, "Base.XMLBaseException", PyExc_Exception},
+        {&Base::PyExc_FC_UnknownProgramOption, "Base.UnknownProgramOption", PyExc_BaseException},
+        {&Base::PyExc_FC_PropertyError, "Base.PropertyError", PyExc_AttributeError},
+    };
+    for (auto &e : entries) {
+        *e.slot = PyErr_NewException(e.name, e.base, nullptr);
+        if (*e.slot) {
+            Py_INCREF(*e.slot);
+            PyModule_AddObject(module, strchr(e.name, '.') + 1, *e.slot);
+        }
+    }
+    struct
+    {
+        PyObject **slot;
+        const char *name;
+        PyObject **base;
+    } derived[] = {
+        {&Base::PyExc_FC_XMLParseException, "Base.XMLParseException", &Base::PyExc_FC_XMLBaseException},
+        {&Base::PyExc_FC_XMLAttributeError, "Base.XMLAttributeError", &Base::PyExc_FC_XMLBaseException},
+        {&Base::PyExc_FC_BadFormatError, "Base.BadFormatError", &Base::PyExc_FC_GeneralError},
+        {&Base::PyExc_FC_BadGraphError, "Base.BadGraphError", &Base::PyExc_FC_GeneralError},
+        {&Base::PyExc_FC_ExpressionError, "Base.ExpressionError", &Base::PyExc_FC_GeneralError},
+        {&Base::PyExc_FC_ParserError, "Base.ParserError", &Base::PyExc_FC_GeneralError},
+        {&Base::PyExc_FC_CADKernelError, "Base.CADKernelError", &Base::PyExc_FC_GeneralError},
+    };
+    for (auto &e : derived) {
+        *e.slot = PyErr_NewException(e.name, *e.base, nullptr);
+        if (*e.slot) {
+            Py_INCREF(*e.slot);
+            PyModule_AddObject(module, strchr(e.name, '.') + 1, *e.slot);
+        }
+    }
+}
+
 static PyObject *init_freecad_module()
 {
     PyObject *module = PyModule_Create(&FreeCADModuleDef);
     if (!module)
         return nullptr;
+    init_exception_types(module);
     add_type(module, "Vector", &Base::VectorPy::Type);
     add_type(module, "Rotation", &Base::RotationPy::Type);
     add_type(module, "Placement", &Base::PlacementPy::Type);
@@ -97,6 +151,7 @@ extern "C" {
 
 EXPORT(fcx_init) int fcx_init(void)
 {
+    Fcx::initCoreTypes();
     PyImport_AppendInittab("FreeCAD", init_freecad_module);
     PyImport_AppendInittab("_fcx", PyInit__fcx);
 
@@ -192,11 +247,86 @@ static json protocolError(const char *what)
     return r;
 }
 
+/** The core-carve eval path (docs/ExpressionImage.md): parse src with
+ * the real ExpressionParser and evaluate the AST walker against the S1
+ * adapter world -- identifiers resolve from the shipped bindings pack,
+ * the owner's Python face is the exported host handle's proxy, and
+ * anything neither covers fails in-image.
+ * Request: {op:"eval", lang:"expr", src, ctx:{doc,obj}, owner_h?,
+ *           bindings:{identifier-string: wire value}}.
+ */
+static json dispatchEvalExpr(const json &req, const std::string &src)
+{
+    std::string docName;
+    std::string objName;
+    auto ctx = req.find("ctx");
+    if (ctx != req.end() && ctx->is_object()) {
+        docName = ctx->value("doc", "");
+        objName = ctx->value("obj", "");
+    }
+    uint64_t ownerHandle = 0;
+    auto oh = req.find("owner_h");
+    if (oh != req.end() && oh->is_number_unsigned())
+        ownerHandle = oh->get<uint64_t>();
+
+    Fcx::EvalTransaction tx(docName, objName, ownerHandle);
+
+    auto bindings = req.find("bindings");
+    if (bindings != req.end() && bindings->is_object()) {
+        for (auto it = bindings->begin(); it != bindings->end(); ++it) {
+            PyObject *obj = FcxImage::decodeValue(it.value());
+            if (!obj)
+                return errorReply();
+            tx.addBinding(it.key(), obj);
+            Py_DECREF(obj);
+        }
+    }
+
+    try {
+        auto expr = App::Expression::parse(tx.owner(), src.c_str(), src.size());
+        if (!expr)
+            return protocolError("expression parse produced nothing");
+        Py::Object result = expr->getPyValue();
+
+        json reply;
+        json value;
+        std::string err;
+        if (!FcxImage::encodeValue(result.ptr(), value, err)) {
+            reply["ok"] = false;
+            reply["exc"] = "MarshalError";
+            reply["msg"] = err;
+            return reply;
+        }
+        reply["ok"] = true;
+        reply["val"] = std::move(value);
+        return reply;
+    }
+    catch (Py::Exception &) {
+        return errorReply();
+    }
+    catch (Base::Exception &e) {
+        // Route through the exception's own Python face so the wire
+        // carries the same type name the host evaluator would raise.
+        e.setPyException();
+        return errorReply();
+    }
+    catch (std::exception &e) {
+        json r;
+        r["ok"] = false;
+        r["exc"] = "RuntimeError";
+        r["msg"] = e.what();
+        return r;
+    }
+}
+
 static json dispatchEval(const json &req)
 {
     auto src = req.find("src");
     if (src == req.end() || !src->is_string())
         return protocolError("eval without src");
+
+    if (req.value("lang", "py") == "expr")
+        return dispatchEvalExpr(req, src->get_ref<const std::string &>());
 
     PyObject *globals = PyDict_Copy(eval_globals);
     if (!globals)

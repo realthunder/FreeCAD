@@ -37,6 +37,70 @@
 // bridge dispatcher and the dispatcher calls this runtime; the runtime
 // itself never moves.
 
+#ifdef FC_EXPR_IMAGE
+// The sandbox image build of the core TUs. Enforcement is host-side at the
+// bridge dispatcher (docs/ExpressionSandbox.md sec 3.4): everything the
+// image can reach outside itself crosses a permission-checked bridge op,
+// and what is in-image is Ring 0 by construction. The chokepoints
+// therefore compile to no-ops here; the types they name must still exist
+// because the core catches and scopes them.
+
+#include <string>
+
+#include <Base/Exception.h>
+
+#include "ExpressionSecurity.h"
+
+typedef struct _object PyObject;
+
+namespace App {
+
+class DocumentObject;
+
+namespace ExpressionSecurity {
+
+class PermissionNeededException : public Base::Exception {
+public:
+    PermissionNeededException(std::string principal, Permission perm,
+            std::string target, bool promptable)
+        : principal(std::move(principal)), permission(perm),
+          target(std::move(target)), promptable(promptable)
+    {}
+
+    const std::string &getPrincipal() const { return principal; }
+    Permission getPermission() const { return permission; }
+    const std::string &getTarget() const { return target; }
+    bool isPromptable() const { return promptable; }
+
+private:
+    std::string principal;
+    Permission permission;
+    std::string target;
+    bool promptable;
+};
+
+class Runtime {
+public:
+    class Scope {
+    public:
+        explicit Scope(const App::DocumentObject *) {}
+        explicit Scope(const char *) {}
+        Scope(const Scope &) = delete;
+        Scope &operator=(const Scope &) = delete;
+    };
+    static bool scopeActive() { return false; }
+};
+
+inline void checkPermission(Permission, const std::string & = "*") {}
+inline void checkGetattr(PyObject *, const char *, PyObject *) {}
+inline void checkModuleImport(const std::string &) {}
+inline void checkCallablePermission(const std::string &, PyObject *) {}
+
+}  // namespace ExpressionSecurity
+}  // namespace App
+
+#else  // FC_EXPR_IMAGE
+
 #include <functional>
 #include <mutex>
 #include <string>
@@ -267,5 +331,7 @@ AppExport void checkCallablePermission(const std::string &name, PyObject *callab
 
 }  // namespace ExpressionSecurity
 }  // namespace App
+
+#endif  // FC_EXPR_IMAGE
 
 #endif  // APP_EXPRESSION_SECURITY_RUNTIME_H

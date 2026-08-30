@@ -42,6 +42,9 @@ typedef struct _object PyObject;
 
 namespace App
 {
+
+class DocumentObject;
+
 namespace ExpressionSandbox
 {
 
@@ -76,6 +79,20 @@ public:
     /// single-threaded, callers serialize through an internal lock.
     ImageResult eval(const std::string& source,
                      const std::vector<unsigned char>& bindingsCbor);
+
+    /** Evaluate one EXPRESSION-language source in the image on behalf
+     * of `owner` (docs/ExpressionSandbox.md 7.3): parses host-side,
+     * pre-resolves every identifier into the bindings pack under the
+     * owner's principal (a permission the pack step needs but the
+     * principal lacks fails the evaluation as PermissionError, exactly
+     * like the native path), exports the owner as the transaction
+     * handle, and ships {lang:"expr", src, ctx, owner_h, bindings}.
+     * A host-side parse failure ships anyway -- the image raises the
+     * identical ParserError.  Handles minted for the pack live until
+     * clearHandles().
+     */
+    ImageResult evalExpression(const App::DocumentObject* owner,
+                               const std::string& source);
 
     /** Register a live host object for the current transaction and
      * return its wire handle id; pass it into bindings as

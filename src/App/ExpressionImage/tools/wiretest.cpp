@@ -49,19 +49,42 @@ static wasmtime_func_t getFunc(wasmtime_context_t* ctx,
     return ext.of.func;
 }
 
+// The image imports fcx.host_call/host_fetch (ImageBridge.cpp); this
+// test host has no bridge, so satisfy them with -1 stubs ("host bridge
+// unavailable" in-image), as smokehost.c does.
+static wasm_trap_t* stubBridge(void*, wasmtime_caller_t*,
+                               const wasmtime_val_t*, size_t,
+                               wasmtime_val_t* results, size_t nresults)
+{
+    if (nresults >= 1) {
+        results[0].kind = WASMTIME_I32;
+        results[0].of.i32 = -1;
+    }
+    return nullptr;
+}
+
 int main(int argc, char** argv)
 {
-    if (argc < 4 || argc > 5) {
+    if (argc < 4 || argc > 8) {
         fprintf(stderr,
-                "usage: wiretest <image.wasm> <stdlib-dir> <expr> [bindings-json]\n");
+                "usage: wiretest <image.wasm> <stdlib-dir> <expr> "
+                "[bindings-json [lang [doc obj]]]\n");
         return 2;
     }
 
     json req;
     req["op"] = "eval";
     req["src"] = argv[3];
-    if (argc == 5)
+    if (argc >= 5 && argv[4][0])
         req["bindings"] = json::parse(argv[4]);
+    if (argc >= 6 && argv[5][0])
+        req["lang"] = argv[5];
+    if (argc >= 8) {
+        json ctx;
+        ctx["doc"] = argv[6];
+        ctx["obj"] = argv[7];
+        req["ctx"] = ctx;
+    }
     std::vector<uint8_t> reqBytes = json::to_cbor(req);
 
     wasm_config_t* cfg = wasm_config_new();
@@ -95,6 +118,20 @@ int main(int argc, char** argv)
         bail("module_new", err, nullptr);
 
     wasmtime_linker_t* linker = wasmtime_linker_new(engine);
+    {
+        wasm_functype_t* ft = wasm_functype_new_2_1(
+            wasm_valtype_new_i32(), wasm_valtype_new_i32(),
+            wasm_valtype_new_i32());
+        wasmtime_linker_define_func(linker, "fcx", 3, "host_call", 9, ft,
+                                    stubBridge, nullptr, nullptr);
+        wasm_functype_delete(ft);
+        ft = wasm_functype_new_2_1(wasm_valtype_new_i32(),
+                                   wasm_valtype_new_i32(),
+                                   wasm_valtype_new_i32());
+        wasmtime_linker_define_func(linker, "fcx", 3, "host_fetch", 10, ft,
+                                    stubBridge, nullptr, nullptr);
+        wasm_functype_delete(ft);
+    }
     err = wasmtime_linker_define_wasi(linker);
     if (err)
         bail("define_wasi", err, nullptr);

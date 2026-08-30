@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include <Base/Console.h>
+#include <Base/Interpreter.h>
 #include <Base/Quantity.h>
 #include <Base/UnitsApi.h>
 
@@ -144,6 +145,78 @@ std::string UnitsApi::schemaTranslate(const Base::Quantity& quant,
     if (!unitString.empty())
         str << " " << unitString;
     return str.str();
+}
+
+// --- Interpreter.cpp exception slice ---------------------------------
+// The core TUs convert Python errors to C++ via Base::PyException.  The
+// host implementation runs through PyTools/ExceptionFactory to rebuild
+// registered FreeCAD exception types; in-image errors only need to reach
+// the fcx_call boundary as {exc, msg}, so this is a lean equivalent
+// with the same fetch-and-clear contract.
+
+PyException::PyException(const Py::Object& obj)
+{
+    _sErrMsg = obj.as_string();
+    // Type objects are immortal for our purposes; keep no reference,
+    // matching the host implementation's book-keeping choice.
+    _exceptionType = reinterpret_cast<PyObject*>(obj.ptr()->ob_type);
+    _errorType = obj.ptr()->ob_type->tp_name;
+}
+
+PyException::PyException()
+    : _exceptionType(nullptr)
+{
+    PyObject* type = nullptr;
+    PyObject* value = nullptr;
+    PyObject* trace = nullptr;
+    PyErr_Fetch(&type, &value, &trace);
+    PyErr_NormalizeException(&type, &value, &trace);
+    if (type) {
+        _exceptionType = type;
+        _errorType = reinterpret_cast<PyTypeObject*>(type)->tp_name;
+    }
+    if (value) {
+        PyObject* msg = PyObject_Str(value);
+        if (msg) {
+            const char* text = PyUnicode_AsUTF8(msg);
+            if (text)
+                _sErrMsg = text;
+            Py_DECREF(msg);
+        }
+    }
+    Py_XDECREF(type);
+    Py_XDECREF(value);
+    Py_XDECREF(trace);
+    PyErr_Clear();
+}
+
+PyException::~PyException() noexcept = default;
+
+void PyException::ThrowException()
+{
+    PyException myexcp;
+    myexcp.raiseException();
+}
+
+void PyException::raiseException()
+{
+    throw *this;
+}
+
+void PyException::ReportException() const
+{
+    fprintf(stderr, "%s%s: %s\n", _stackTrace.c_str(), _errorType.c_str(),
+            what());
+}
+
+void PyException::setPyException() const
+{
+    std::stringstream str;
+    str << getStackTrace() << getErrorType() << ": " << what();
+    PyObject* type = _exceptionType;
+    if (!type || !PyExceptionClass_Check(type))
+        type = PyExc_RuntimeError;
+    PyErr_SetString(type, str.str().c_str());
 }
 
 }  // namespace Base

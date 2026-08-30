@@ -51,6 +51,11 @@ static bool hostRoundTrip(const json &req, json &reply)
     return true;
 }
 
+bool FcxImage::hostOp(const json &req, json &reply)
+{
+    return hostRoundTrip(req, reply);
+}
+
 /// {"ok":false,"exc":...,"msg":...} -> raise the builtin of that name
 /// when one exists (PermissionError, AttributeError, IndexError, ...),
 /// else RuntimeError carrying both fields.

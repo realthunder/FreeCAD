@@ -493,9 +493,34 @@ json dispatchHostOp(HandleTable& table, const json& req)
             return okReply(json((int64_t)n));
         }
 
-        if (op == FcxWire::OpResolveAlias)
-            return errReply("ProtocolError",
-                            "resolve_alias arrives with the core carve");
+        if (op == FcxWire::OpResolveAlias) {
+            // RangeExpression::getRange's reach-back: alias -> cell
+            // address on the evaluation owner (a sheet).  This is
+            // identifier resolution, part of the document read the
+            // evaluation already holds -- not an app.query call.
+            ExpressionSecurity::checkPermission(
+                ExpressionSecurity::Permission::DocReadSelf);
+            auto a = req.find("a");
+            if (a == req.end() || !a->is_string())
+                return errReply("ProtocolError",
+                                "resolve_alias without an alias");
+            PyObject* func = PyObject_GetAttrString(base, "getCellFromAlias");
+            if (!func)
+                return pyErrorReply();
+            PyObject* result = PyObject_CallFunction(
+                func, "s", a->get_ref<const std::string&>().c_str());
+            Py_DECREF(func);
+            if (!result)
+                return pyErrorReply();
+            PyObject* str = PyObject_Str(result);
+            Py_DECREF(result);
+            if (!str)
+                return pyErrorReply();
+            const char* text = PyUnicode_AsUTF8(str);
+            json val = std::string(text ? text : "");
+            Py_DECREF(str);
+            return okReply(std::move(val));
+        }
         return errReply("ProtocolError", "unknown bridge op");
     }
     catch (const ExpressionSecurity::PermissionNeededException& e) {

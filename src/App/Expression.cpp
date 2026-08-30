@@ -40,12 +40,24 @@
 #include <sstream>
 #include <stack>
 #include <string>
+#include <unordered_set>
 #include <cctype>
 
+#ifdef FC_EXPR_IMAGE
+// The sandbox image build: the document world is the S1 adapter
+// (bindings pack + bridge ops), and the host-only Python bindings of
+// Expression/DocumentObject are absent (helpers below stub their type
+// checks).  See docs/ExpressionImage.md.
+#include <App/ExpressionImage/FcxDocument.h>
+#include <Base/BaseClassPy.h>
+#else
 #include <App/Application.h>
 #include <App/DocumentObject.h>
+#endif
 #include <App/ObjectIdentifier.h>
+#ifndef FC_EXPR_IMAGE
 #include <App/PropertyUnits.h>
+#endif
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Interpreter.h>
@@ -53,14 +65,18 @@
 #include <Base/PlacementPy.h>
 #include <Base/QuantityPy.h>
 #include <Base/RotationPy.h>
+#ifndef FC_EXPR_IMAGE
 #include <Base/Sequencer.h>
+#endif
 #include <Base/Unit.h>
 #include <Base/VectorPy.h>
 #include "ExpressionParser.h"
 #include "ExpressionSecurityRuntime.h"
 #include "ExpressionVisitors.h"
+#ifndef FC_EXPR_IMAGE
 #include "ExpressionPy.h"
 #include "DocumentObjectPy.h"
+#endif
 
 /** \defgroup Expression Expressions framework
     \ingroup APP
@@ -72,6 +88,24 @@ using namespace App;
 namespace bi = boost::intrusive;
 
 FC_LOG_LEVEL_INIT("Expression", true, true)
+
+// Host Python bindings of the document world are absent in the sandbox
+// image; there, no Python object ever IS one of these types.
+#ifdef FC_EXPR_IMAGE
+static inline bool _isDocumentObjectPy(PyObject *) {
+    return false;
+}
+static inline bool _isExpressionPy(PyObject *) {
+    return false;
+}
+#else
+static inline bool _isDocumentObjectPy(PyObject *o) {
+    return PyObject_TypeCheck(o, &DocumentObjectPy::Type);
+}
+static inline bool _isExpressionPy(PyObject *o) {
+    return PyObject_TypeCheck(o, &ExpressionPy::Type);
+}
+#endif
 
 #ifndef M_PI
 #define M_PI       3.14159265358979323846
@@ -1091,7 +1125,7 @@ struct EvalFrame {
     }
 
     bool isDocumentObjectVar(Py::Object &obj) {
-        return PyObject_TypeCheck(obj.ptr(),&DocumentObjectPy::Type);
+        return _isDocumentObjectPy(obj.ptr());
     }
 
     void push() {
@@ -1261,8 +1295,8 @@ struct EvalFrame {
                         << "expression: " << expr->toStr());
             break;
         case F_Warn2:
-            if(_EvalCallFrame->funcOwner 
-                    && pyobj && PyObject_TypeCheck(pyobj,&DocumentObjectPy::Type)
+            if(_EvalCallFrame->funcOwner
+                    && pyobj && _isDocumentObjectPy(pyobj)
                     && _EvalCallFrame->canWarn(code))
             {
                 FC_WARN("Object property assignment may break dependency tracking"
@@ -4460,7 +4494,7 @@ void CallableExpression::securityCheck(PyObject *pyobj, const Expression *expr)
         return;
     }
 
-    if (!pyobj || PyObject_TypeCheck(pyobj, &ExpressionPy::Type))
+    if (!pyobj || _isExpressionPy(pyobj))
         return;
 
     if (ExpressionFunctionCallDisabler::isFunctionCallDisabled())
@@ -4567,7 +4601,14 @@ Py::Object CallableExpression::_getPyValue(int *) const {
                     res->args.push_back(PyObjectExpression::create(owner,*v.second->obj));
                 }
             }
+#ifdef FC_EXPR_IMAGE
+            // Function objects escape the evaluation as ExpressionPy
+            // wrappers -- a host binding.  Nothing in the corpus stores
+            // one as a final value (Phase 0 sec 3.2 reverse audit).
+            EXPR_THROW("function objects are not supported in the sandbox image");
+#else
             return Py::Object(new ExpressionPy(_res.release()));
+#endif
 
         } case IMPORT_PY: {
             Py::Object value(args[0]->getPyValue());
@@ -5193,6 +5234,21 @@ Range RangeExpression::getRange() const
     if(c1.isValid() && c2.isValid())
         return Range(c1,c2);
 
+#ifdef FC_EXPR_IMAGE
+    // Alias resolution is the one identifier-resolution step the
+    // bindings pack cannot pre-know for a dynamic range; it rides the
+    // dedicated resolve_alias bridge op instead of a generic
+    // permission-gated call on the owner proxy.
+    try {
+        if(!c1.isValid())
+            c1 = CellAddress(Fcx::resolveAlias(begin));
+        if(!c2.isValid())
+            c2 = CellAddress(Fcx::resolveAlias(end));
+    } catch(Base::Exception &e) {
+        _EXPR_RETHROW(e,"Invalid cell range '" << begin << ':' << end << "': ",this);
+    }
+    return Range(c1,c2);
+#else
     Base::PyGILStateLocker lock;
     static const std::string attr("getCellFromAlias");
     Py::Object pyobj(owner->getPyObject(),true);
@@ -5226,6 +5282,7 @@ Range RangeExpression::getRange() const
         }
     }
     return Range(c1,c2);
+#endif  // FC_EXPR_IMAGE
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -6064,7 +6121,11 @@ Py::Object WhileStatement::_getPyValue(int *jumpCode) const {
             case JUMP_NONE:
                 res = Py::Object();
                 if(limit>0 && (++count % limit)==0)
+#ifndef FC_EXPR_IMAGE
+                    // In-image the runaway-loop backstop is wasmtime
+                    // fuel/epochs, strictly stronger (seam S10).
                     Base::Sequencer().checkAbort();
+#endif
                 continue;
             default:
                 assert(0);
@@ -6458,12 +6519,18 @@ static Py::Object makeFunc(const Expression *owner,
                                           FunctionExpression::FUNC_PARSED,
                                           std::string(name?name:""),
                                           false);
+#ifdef FC_EXPR_IMAGE
+    // Same host-binding gap as the FUNC/FUNC_D value path above.
+    (void)res;
+    _EXPR_THROW("function objects are not supported in the sandbox image", owner);
+#else
     Py::Object pyobj(new ExpressionPy(res.release()),false);
     if(name && _EvalStack.size()) {
         auto var = _EvalStack.back()->getVar(owner,name,BindLocalOnly);
         *var = pyobj;
     }
     return pyobj;
+#endif
 }
 
 Py::Object LambdaExpression::_getPyValue(int *) const {

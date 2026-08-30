@@ -18,8 +18,14 @@ sec 7.7, handles pass through, exceptions cross as {exc, msg}).
 The image->host bridge ops are live too (see "The bridge" below):
 live host Python objects cross as per-transaction handles, and
 get_attr/call/get_item/len on them round-trip through the host with
-per-op permission checks.  ExpressionCore itself (Expression.cpp /
-ObjectIdentifier.cpp behind the S1 adapter) is NOT in the image yet.
+per-op permission checks.  ExpressionCore is IN the image as of
+2026-08-30 (see "The core carve" below): the real ExpressionParser +
+AST walker + ObjectIdentifier compile into the image behind the S1
+adapter, evaluate `{lang:"expr"}` requests against the bindings pack,
+and produce byte-identical results and error messages to the native
+engine (verified: quantities, pack identifiers, range aggregates,
+_math, ParserError texts, even the min(1,2)==1.2 comma-decimal
+quirk).
 
 ## Toolchain (sibling dirs, exact versions matter)
 
@@ -188,19 +194,87 @@ TRAPS hit building this:
   adds the vendored dir as a plain -I (beats -isystem).  CBOR byte
   vectors cross the boundary fine either way.
 
+## The core carve (built 2026-08-30)
+
+ExpressionCore -- Expression.cpp, ObjectIdentifier.cpp, Range.cpp plus
+the in-tree generated parser -- now compiles into the image, selected
+by `-DFC_EXPR_IMAGE` (set only by this project's CMakeLists).  The
+mechanics:
+
+- **The S1 adapter** (`FcxDocument.{h,cpp}`): image-only classes NAMED
+  `App::Document` / `App::DocumentObject` / `App::Property` (+String/
+  Bool/Float/Integer/Quantity, PropertyContainer, a GetApplication
+  shim, a PropertyLinkBase string-helper stub), carrying exactly the
+  ~15-method surface the core dereferences.  Because the names match,
+  the ObjectIdentifier.h seam typedefs are untouched and the 43-file
+  include blast radius stays zero.  The classes are real
+  Base::BaseClass types (freecad_dynamic_cast works; `Fcx::
+  initCoreTypes()` is the image's Application::initTypes, run from
+  fcx_init, which also registers the `Base.*` Python exception types
+  -- without those, Base::Exception::setPyException raises a null and
+  every C++ error degenerated to "'' object is not callable").
+- **The bindings pack rules resolution** (`Fcx::EvalTransaction`):
+  `dispatchEval` with `{lang:"expr", src, ctx:{doc,obj}, owner_h?,
+  bindings:{identifier-string: wire value}}` installs a transaction;
+  ObjectIdentifier::getPyValue/getValue consult the pack FIRST (key =
+  toString(), which both sides compute from identically-parsed
+  components), so pre-resolved identifiers cost zero crossings.  On a
+  miss the real resolve()/access() run against the adapter world:
+  in-image pseudo-modules (_math/_re/_coll/_py, _app -> the in-image
+  FreeCAD module) work, `Fcx::DocumentObject::getPropertyByName` is
+  pack-backed (keyed via ObjectIdentifier(this,name).toString(), with
+  a reentry guard -- toString resolves, resolve calls
+  getPropertyByName), which is what makes `sum(A1:A3)`-style range
+  aggregates work, and anything else fails with the native error
+  message.  The owner's getPyObject() is the HostHandle proxy for
+  `owner_h`, so `_self`-style drill-down rides the permission-checked
+  bridge ops.
+- **Host-only code behind the seam**: security chokepoints compile to
+  inline no-ops via ExpressionSecurityRuntime.h's FC_EXPR_IMAGE branch
+  (enforcement is host-side at the bridge per ES sec 3.4);
+  DocumentObjectPy/ExpressionPy type checks stub false; the
+  maintenance overrides of VariableExpression/RangeExpression are
+  compiled out of ExpressionParser.h (base no-ops apply; definitions
+  live in the host ops TU); function-object values (dbind/lambda
+  wrappers = ExpressionPy) throw "not supported in the sandbox image";
+  Sequencer().checkAbort is out (wasm fuel is the backstop).
+  ImageStubs.cpp gained a lean Base::PyException (fetch-and-clear,
+  no PyTools/ExceptionFactory).
+- **resolve_alias**: RangeExpression::getRange's alias branch is
+  seamed to `Fcx::resolveAlias` -> the dedicated bridge op on the
+  owner handle (`FcxImage::hostOp` exposes the C++ transport); the
+  host dispatcher answers it by calling getCellFromAlias under
+  doc.read.self, NOT as a permission-gated app.query call.
+- **Host producer**: `ImageHost::evalExpression(owner, src)` parses
+  host-side, enumerates identifiers via getIdentifiers(), resolves
+  each with getPyValue(true) under the owner's principal scope
+  (PermissionNeededException at pack time fails the evaluation as
+  PermissionError -- the foreign-doc grant cycle gtest covers
+  deny -> grant -> works -> deny), marshals values-or-handles with
+  encodeHostValue, exports the owner handle, ships the request.  A
+  host-side parse failure ships anyway: the image raises the
+  identical ParserError.
+- Smoke tooling: `tools/wiretest.cpp` grew `[lang [doc obj]]` args
+  and the -1 bridge stubs.
+
+Traps hit: the core TUs relied on transitive host includes for
+std::unordered_set / boost::hash / CStringHasher / FC_STATIC (now in
+FcxDocument.h for the image); the parser statics compile fine
+single-threaded; PropertyContainerPy's notifier attach is guarded out.
+
 ## What step 4 still owes (in order)
 
-1. ExpressionCore into the image behind the S1 adapter
-   (ObjectIdentifier resolution against the bindings pack instead of
-   live Documents) -- the biggest carve, see Phase 0 sec 2 seam list.
-   The `resolve_alias` bridge op arrives with it (the host dispatcher
-   answers ProtocolError until then).
-2. Generated facades/dispatch from the Py XMLs with the `<Sandbox>`
+1. Generated facades/dispatch from the Py XMLs with the `<Sandbox>`
    annotation (ES sec 7.5), replacing the hand-registered module in
    ImageMain.cpp.
-3. Acceptance harness: the ES sec 10 denials plus
+2. Acceptance harness: the ES sec 10 denials plus
    grant->works->revoke->fails against the image (the bridge-level
-   cycle is covered by ExpressionImageBridgeTest already).
+   cycle is covered by ExpressionImageBridgeTest, the pack-time cycle
+   by ExpressionImageEvalTest.foreignDocGrantCycleAtPackTime).
+3. Writing/setPath, LinkPlacement/LinkMatrix accumulation and
+   getSubObject walks are absent in-image by design (host pre-resolves
+   or the evaluation fails cleanly); revisit when the evaluation
+   switch-over lands.
 
 ## Carve audit for step 3 above (measured 2026-08-30)
 

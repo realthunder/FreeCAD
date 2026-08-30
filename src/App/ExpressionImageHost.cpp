@@ -33,8 +33,12 @@
 #include <Base/Interpreter.h>
 
 #include "Application.h"
+#include "Document.h"
+#include "DocumentObject.h"
+#include "Expression.h"
 #include "ExpressionImageBridge.h"
 #include "ExpressionImageHost.h"
+#include "ExpressionSecurityRuntime.h"
 
 using json = nlohmann::json;
 
@@ -530,6 +534,102 @@ ImageResult ImageHost::eval(const std::string& source,
     if (!d->roundTrip(json::to_cbor(req), reply)) {
         // a failed round trip may mean a trapped instance; drop it so
         // the next evaluation reinstantiates cleanly
+        reset();
+        res.excType = "ImageTrapped";
+        res.message = "image call failed, instance dropped";
+        return res;
+    }
+
+    res.ok = reply.value("ok", false);
+    if (res.ok) {
+        auto val = reply.find("val");
+        res.value = json::to_cbor(val != reply.end() ? *val : json());
+    }
+    else {
+        res.excType = reply.value("exc", "Exception");
+        res.message = reply.value("msg", "");
+    }
+    return res;
+}
+
+ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
+                                      const std::string& source)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    ImageResult res;
+    if (!d->initialize()) {
+        res.excType = "ImageUnavailable";
+        res.message = "expression sandbox image is not available";
+        return res;
+    }
+
+    json req;
+    req["op"] = "eval";
+    req["lang"] = "expr";
+    req["src"] = source;
+    if (owner) {
+        json ctx;
+        ctx["doc"] = owner->getDocument() ? owner->getDocument()->getName() : "";
+        ctx["obj"] = owner->getNameInDocument() ? owner->getNameInDocument() : "";
+        req["ctx"] = std::move(ctx);
+    }
+
+    // The bindings pack: enumerate the expression's identifiers without
+    // evaluating it, resolve each under the owner's principal, marshal
+    // by value or as a handle.  Identifiers that fail to resolve are
+    // left out -- the image reports the identical resolution error.
+    try {
+        ExpressionSecurity::Runtime::Scope secScope(owner);
+        Base::PyGILStateLocker lock;
+
+        auto expr = App::Expression::parse(owner, source.c_str(), source.size());
+        if (expr && owner) {
+            req["owner_h"] =
+                d->handles.add(const_cast<App::DocumentObject*>(owner)->getPyObject());
+
+            json bindings = json::object();
+            std::map<App::ObjectIdentifier, bool> ids;
+            expr->getIdentifiers(ids);
+            for (auto& v : ids) {
+                const auto& id = v.first;
+                try {
+                    Py::Object value = id.getPyValue(true);
+                    bindings[id.toString()] =
+                        encodeHostValue(d->handles, value.ptr());
+                }
+                catch (const ExpressionSecurity::PermissionNeededException&) {
+                    throw;
+                }
+                catch (Base::Exception&) {
+                    // unresolvable here -> unresolvable in the image,
+                    // with the image's own (native) error message
+                }
+                catch (Py::Exception&) {
+                    if (PyErr_Occurred())
+                        PyErr_Clear();
+                }
+            }
+            if (!bindings.empty())
+                req["bindings"] = std::move(bindings);
+        }
+    }
+    catch (const ExpressionSecurity::PermissionNeededException& e) {
+        {
+            Base::PyGILStateLocker lock;
+            if (PyErr_Occurred())
+                PyErr_Clear();
+        }
+        res.excType = "PermissionError";
+        res.message = e.what();
+        return res;
+    }
+    catch (Base::Exception&) {
+        // host-side parse failure: ship as-is, the image parses the
+        // same source with the same parser and raises the same error
+    }
+
+    json reply;
+    if (!d->roundTrip(json::to_cbor(req), reply)) {
         reset();
         res.excType = "ImageTrapped";
         res.message = "image call failed, instance dropped";
