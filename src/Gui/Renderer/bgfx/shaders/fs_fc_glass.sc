@@ -66,9 +66,16 @@ uniform vec4 u_glassParams;
  * refraction MAPPING (smooth where the field folds), projected onto
  * the line's own perpendicular axis carried in aux.xy -- how many
  * field pixels one screen step spans in the direction the field falls.
- * A point stores a zero axis and scales by the mean of both axes: its
- * box distance has no single fall direction, and a sprite is small
- * enough that the residual anisotropy error is a corner, not a size.
+ * A POINT takes the same branch. Its box distance falls along whichever
+ * axis dominates -- max() ignores the other -- so the writer sends that
+ * axis and a sprite is scaled per-axis like a line. It used to send a
+ * zero axis and land in the mean branch below, which made the drawn
+ * half extents `s * halfw / |grad u|` and `s * halfw / |grad v|`: a
+ * sprite that should be square on screen came out with an aspect equal
+ * to the entire local warp anisotropy. That is not the "corner, not a
+ * size" the old note claimed -- through an ior-1.6 ball lens a 9px
+ * vertex measured 5.6 x 14.5 at r/R 0.81 (scripts/lens_point_aniso.py).
+ * The mean branch now only catches a degenerate axis.
  *
  * aux.z is the decoration's view depth: a decoration in front of the
  * entry interface is not seen through it (it draws undistorted in

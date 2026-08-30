@@ -58,10 +58,33 @@ void main()
 	float pw = max(v_line.y, 1.0e-6);
 	vec2 off = vec2(v_line.x, v_dist.x) / pw;
 	float dc = max(abs(off.x), abs(off.y));
-	// No single axis: the zero vector tells the glass pass to scale
-	// the distance isotropically. Cannot collide with a line's axis,
-	// which is unit length.
-	vec2 axis = vec2_splat(0.0);
+	// A box distance DOES have a fall direction almost everywhere: it
+	// is whichever axis dominates, since max() ignores the other one.
+	// Writing that axis lets the glass pass scale a sprite along the
+	// direction it actually falls in, the same path a line takes.
+	//
+	// It used to write the zero vector, which sent the reader to its
+	// mean-of-both-axes branch, and the note that shipped with it
+	// called the residual "a corner, not a size". It was a size: with
+	// s the MEAN, the drawn half extents come out `s * halfw / |grad
+	// u|` and `s * halfw / |grad v|`, so a sprite that should be
+	// square on screen renders with an aspect equal to the whole local
+	// warp anisotropy. Measured through an ior-1.6 ball lens
+	// (scripts/lens_point_aniso.py), a 9px vertex reached 5.6 x 14.5
+	// at r/R 0.81 -- 38% short one way and 61% long the other, against
+	// 6.3 x 15.8 predicted by that arithmetic. Per-axis scaling makes
+	// it square again.
+	//
+	// The axis is piecewise constant and flips across the sprite's
+	// diagonals, where a box distance genuinely has no gradient; a
+	// filtered fetch there blends the two into a 45-degree axis. That
+	// is the error this leaves, and it IS a corner this time.
+	//
+	// Screen-aligned, so the sprite's local axes are the fragCoord
+	// axes and no y-flip correction is needed on the top-down APIs --
+	// an AXIS is sign-free, and the reader takes |J^T p|.
+	vec2 axis = abs(off.x) >= abs(off.y) ? vec2(1.0, 0.0)
+	                                     : vec2(0.0, 1.0);
 #else
 	// The SIGNED perpendicular offset is linear across the quad --
 	// unlike its absolute value, whose finite differences cancel at
