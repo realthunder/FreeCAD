@@ -2615,7 +2615,8 @@ proposes, is still owed.
 ## 12. The base entry and the overriding faces
 
 > Designed 2026-08-30 with the follow-the-card flag of
-> `MaterialStorage.md` sec 15. Not started.
+> `MaterialStorage.md` sec 15. **Built 2026-08-30**; the flag itself is
+> still ahead of it.
 
 ### 12.1 What is wrong
 
@@ -2777,3 +2778,35 @@ override is.
   the exporters or the renderer branches on `overrides`; the property
   editor and the two task panels are the only readers, and they read it to
   say which faces are painted.
+
+### 12.7 What the code calls it
+
+`App::MaterialList` holds `base`, `overrides` and one array per field at 0
+or `|overrides|`, and the accessors come in two kinds where there was one:
+
+- `getDiffuseOverrides()` and its nine siblings hand back the STORAGE -- 0
+  or `|overrides|` values, in overrides order. `variesInDiffuse()` and its
+  siblings are the same question asked cheaply, and are what the old
+  `getDiffuseColors().size() <= 1` sites became.
+- `getDiffuseColors()` and its siblings RESOLVE, by value, one value per
+  entry. That is what the compatible encodings are written from, what the
+  companion elements state, and what `PropertyDiffuseColor` -- the
+  compatibility name -- hands out of a member it refills on every read.
+
+The heuristic of 12.4 runs from three places, in the order a document meets
+them: `ViewProviderGeometryObject::finishRestoring`, which offers the mirror
+and, only when the mirror declines, the face areas from the new virtual
+`getFaceWeights` (a per-face `BRepGProp` sweep is not free, and a document
+this fork wrote answers from the mirror alone); `ImportOCAFGui::
+applyFaceMaterials`, which has the shape in hand and always measures; and
+`ensureBase()` from the two schema-5 writers, because that encoding STATES
+the base and writing a default one would record an answer nobody gave.
+Deriving is const and does not detach: it changes what is stored and not
+what an entry resolves to.
+
+The mirrors changed with it. `ShapeColor`, `Transparency` and the view
+provider's legacy `ShapeMaterial` now follow the BASE unconditionally, where
+before they refreshed only while the list was uniform and otherwise held
+whatever the last uniform value had been (12.1). Every read that meant "the
+object's look" and spelled it `getMaterial(0)` or `getTransparency(0)` reads
+`getBase()` now.

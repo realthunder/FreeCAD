@@ -4178,8 +4178,9 @@ QVariant PropertyMaterialListItem::toolTip(const App::Property* prop) const
     if (!materials->getSize())
         return {};
 
-    // one entry answers the tooltip, so compose only that one
-    App::Material value = materials->getMaterial(0);
+    // the object's look answers the tooltip, which is the base and not
+    // whatever face 0 happens to hold
+    App::Material value = materials->getBase();
     auto dc = value.diffuseColor.asValue<QColor>();
     auto ac = value.ambientColor.asValue<QColor>();
     auto sc = value.specularColor.asValue<QColor>();

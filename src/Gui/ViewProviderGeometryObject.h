@@ -191,6 +191,27 @@ public:
      */
     void refreshAppearanceMirrors();
 
+    /** Choose the appearance's base, for a document written without one
+     *
+     * Every document written before docs/ShapeAppearanceDesign.md 12 -- and
+     * every one saved at schema 4, which cannot state a base -- holds one
+     * material per face and nothing saying which of them the object is.
+     * This runs the heuristic of 12.4 once, here, where the mirror is in
+     * hand: the mirror first, then the face areas if it declines.
+     */
+    void deriveAppearanceBase();
+
+    /** One weight per face for that heuristic, if this view provider has
+     * a shape to measure
+     *
+     * Area, not count: a green board with five hundred gold pads is decided
+     * the wrong way by count. False when there is nothing to measure, and
+     * then the count decides -- which is what 12.4 calls the fallback with
+     * no shape at hand. Asked only when the mirror has already declined,
+     * because measuring every face of an import is not free.
+     */
+    virtual bool getFaceWeights(std::vector<double> &weights) const;
+
     /**
      * Returns a list of picked points from the geometry under \a getRoot().
      * If \a pickAll is false (the default) only the intersection point closest to the camera will be picked, otherwise

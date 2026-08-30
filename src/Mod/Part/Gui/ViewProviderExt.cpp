@@ -39,6 +39,8 @@
 # include <BRepMesh_IncrementalMesh.hxx>
 # include <BRepMesh_ShapeTool.hxx>
 # include <BRepAdaptor_Surface.hxx>
+# include <BRepGProp.hxx>
+# include <GProp_GProps.hxx>
 # include <Geom_Line.hxx>
 # include <Geom_Plane.hxx>
 # include <Geom_TrimmedCurve.hxx>
@@ -1536,14 +1538,22 @@ void PropertyDiffuseColor::setAppearance(App::PropertyMaterialList *appearance,
 
 const std::vector<Base::Color> &PropertyDiffuseColor::getValues() const
 {
-    if (_appearance)
-        return _appearance->getDiffuseColors();
+    if (_appearance) {
+        // Resolved out of the base and the overriding faces, into the member
+        // this property keeps for it -- see the note on _resolved
+        _resolved = _appearance->getDiffuseColors();
+        return _resolved;
+    }
     return App::PropertyColorList::getValues();
 }
 
 int PropertyDiffuseColor::getSize() const
 {
-    return static_cast<int>(getValues().size());
+    // Not through getValues(): the size is the appearance's entry count and
+    // asking for it must not resolve a colour per face
+    if (_appearance)
+        return _appearance->getSize();
+    return static_cast<int>(App::PropertyColorList::getValues().size());
 }
 
 void PropertyDiffuseColor::setValues(std::vector<Base::Color> &&colors)
@@ -2222,7 +2232,7 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         return;
     }
     else if (prop == &Transparency) {
-        long value = (long)(100*ShapeAppearance.getTransparency(0));
+        long value = (long)(100*ShapeAppearance.getBase().transparency);
         if (value != Transparency.getValue()) {
             float trans = Transparency.getValue()/100.0f;
             // One write: a transparency IS the diffuse alphas now, so this
@@ -2916,7 +2926,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
     // reaches the node -- and so that any per-face arrays a previous
     // whole-material apply left there collapse back to scalars.
     {
-        const App::Material m = ShapeAppearance.getPhongMaterial(0);
+        const App::Material m = ShapeAppearance.getPhongBase();
         const SbColor ambient(m.ambientColor.r, m.ambientColor.g, m.ambientColor.b);
         const SbColor specular(m.specularColor.r, m.specularColor.g, m.specularColor.b);
         const SbColor emissive(m.emissiveColor.r, m.emissiveColor.g, m.emissiveColor.b);
@@ -2950,7 +2960,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
             t[i] = colors[i].transparency();
         }
         const auto &color = ShapeColor.getValue();
-        float trans = ShapeAppearance.getTransparency(0);
+        float trans = ShapeAppearance.getBase().transparency;
         for (; i < numfaces; i++) { 
             ca[i].setValue(color.r, color.g, color.b);
             t[i] = trans;
@@ -2964,7 +2974,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
     pcFaceBind->value = SoMaterialBinding::OVERALL;
     pcShapeMaterial->diffuseColor.setValue(color.r, color.g, color.b);
     //pcShapeMaterial->transparency = colors[0].a; do not get transparency from DiffuseColor in this case
-    pcShapeMaterial->transparency.setValue(ShapeAppearance.getTransparency(0));
+    pcShapeMaterial->transparency.setValue(ShapeAppearance.getBase().transparency);
 
 }
 
@@ -2991,7 +3001,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
     if (instanced) {
         // The uniform-valued non-diffuse components ride the object
         // material; diffuse+transparency partition the instances.
-        const App::Material m0 = colors.empty() ? ShapeAppearance.getPhongMaterial(0) : colors[0];
+        const App::Material m0 = colors.empty() ? ShapeAppearance.getPhongBase() : colors[0];
         pcShapeMaterial->ambientColor.setValue(
             m0.ambientColor.r, m0.ambientColor.g, m0.ambientColor.b);
         pcShapeMaterial->specularColor.setValue(
@@ -3052,7 +3062,9 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
             tr[i] = colors[i].transparency;
         }
 
-        const App::Material material = ShapeAppearance.getMaterial(0);
+        // The BASE: the faces this short apply leaves unstated wear what
+        // the object wears, which is exactly what the base is
+        const App::Material material = ShapeAppearance.getBase();
         for (; i < numfaces; ++i) {
             dc[i].setValue(material.diffuseColor.r, material.diffuseColor.g, material.diffuseColor.b);
             ac[i].setValue(material.ambientColor.r, material.ambientColor.g, material.ambientColor.b);
@@ -3071,7 +3083,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
         return;
     }
 
-    const App::Material material = colors.size()==1?colors[0]:ShapeAppearance.getMaterial(0);
+    const App::Material material = colors.size()==1?colors[0]:ShapeAppearance.getBase();
     pcFaceBind->value = SoMaterialBinding::OVERALL;
     pcShapeMaterial->diffuseColor.setValue(material.diffuseColor.r, material.diffuseColor.g, material.diffuseColor.b);
     pcShapeMaterial->ambientColor.setValue(material.ambientColor.r, material.ambientColor.g, material.ambientColor.b);
@@ -3493,8 +3505,8 @@ static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&o
         auto link = obj->getExtensionByType<App::LinkBaseExtension>(true);
         if(vp && vp->OverrideMaterial.getValue()) {
             colorFound = true;
-            color = vp->ShapeAppearance.getDiffuseColor(0);
-            color.setTransparency(vp->ShapeAppearance.getTransparency(0));
+            color = vp->ShapeAppearance.getBase().diffuseColor;
+            color.setTransparency(vp->ShapeAppearance.getBase().transparency);
             if(!link || !link->getElementCountValue())
                 return true;
         }
@@ -4318,7 +4330,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
         clearInstanceColors();
         const App::Color &c = colors.size() == 1 ? colors[0] : ShapeColor.getValue();
         // do not get transparency from DiffuseColor in this case
-        setOverall(c, ShapeAppearance.getTransparency(0));
+        setOverall(c, ShapeAppearance.getBase().transparency);
         return;
     }
 
@@ -4329,7 +4341,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     for (const auto &inst : instanced->instances)
         total += inst.geom->faceCount;
     App::Color base = ShapeColor.getValue();
-    base.setTransparency(ShapeAppearance.getTransparency(0));
+    base.setTransparency(ShapeAppearance.getBase().transparency);
     std::vector<App::Color> resolved(size_t(total), base);
     for (size_t i = 0; i < colors.size() && i < resolved.size(); ++i)
         resolved[i] = colors[i];
@@ -4353,7 +4365,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     // the shared base subgraph (cross-instance sharable whatever its
     // value, the Link mechanism), a divergent slice a baked, refcounted
     // color variant shared by every instance applying that exact vector.
-    setOverall(ShapeColor.getValue(), ShapeAppearance.getTransparency(0));
+    setOverall(ShapeColor.getValue(), ShapeAppearance.getBase().transparency);
     bool structureChanged = false;
     int faceBase = 0;
     for (auto &inst : instanced->instances) {
@@ -7523,6 +7535,31 @@ void ViewProviderPartExt::reattach(App::DocumentObject *obj)
         updateVisual();
 }
 
+bool ViewProviderPartExt::getFaceWeights(std::vector<double> &weights) const
+{
+    const Part::TopoShape shape = getShape();
+    if (shape.isNull())
+        return false;
+    // In the order the appearance's entries are in, which is the order the
+    // faces are explored in everywhere else here
+    weights.clear();
+    weights.reserve(static_cast<std::size_t>(ShapeAppearance.getSize()));
+    try {
+        for (TopExp_Explorer it(shape.getShape(), TopAbs_FACE); it.More(); it.Next()) {
+            GProp_GProps props;
+            BRepGProp::SurfaceProperties(it.Current(), props);
+            weights.push_back(props.Mass());
+        }
+    }
+    catch (const Standard_Failure &) {
+        // A face OCCT cannot measure is not a reason to lose the whole
+        // heuristic; the entry count decides instead
+        weights.clear();
+        return false;
+    }
+    return !weights.empty();
+}
+
 void ViewProviderPartExt::finishRestoring()
 {
     inherited::finishRestoring();
@@ -7537,7 +7574,7 @@ void ViewProviderPartExt::finishRestoring()
     };
     syncMaterial(LineMaterial.getValue(), pcLineMaterial);
     syncMaterial(PointMaterial.getValue(), pcPointMaterial);
-    syncMaterial(ShapeAppearance.getMaterial(0), pcShapeMaterial);
+    syncMaterial(ShapeAppearance.getBase(), pcShapeMaterial);
 
     if(VisualTouched && (isUpdateForced() || Visibility.getValue()))
         updateVisual();

@@ -250,6 +250,35 @@ Scale and Offset are pairs, Rotation is in degrees. What is not named is
 left as it is.</UserDocu>
             </Documentation>
         </Methode>
+        <Methode Name="clearOverrides">
+            <Documentation>
+                <UserDocu>clearOverrides() -> None: every face back to the base.
+
+The whole-object write of the base is what a per-face list used to get
+from any uniform assignment; this is that collapse, made an action of
+its own.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="clearOverride">
+            <Documentation>
+                <UserDocu>clearOverride(index) -> None: one face back to the base.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Attribute Name="Base" ReadOnly="false">
+            <Documentation>
+                <UserDocu>The object's look, which every face that states nothing of its own wears.
+
+Writing it is the whole-object write: the overriding faces keep what
+they hold, so an imported part with three painted faces keeps them.</UserDocu>
+            </Documentation>
+            <Parameter Name="Base" Type="Object"/>
+        </Attribute>
+        <Attribute Name="Overrides" ReadOnly="true">
+            <Documentation>
+                <UserDocu>The indices of the faces holding a look of their own, in order.</UserDocu>
+            </Documentation>
+            <Parameter Name="Overrides" Type="Tuple"/>
+        </Attribute>
         <Attribute Name="Count" ReadOnly="true">
             <Documentation>
                 <UserDocu>How many entries the list has; the same as len().</UserDocu>

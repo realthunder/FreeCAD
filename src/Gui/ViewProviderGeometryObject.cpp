@@ -189,27 +189,17 @@ void applyWholeMaterial(App::PropertyMaterialList &appearance, const App::Materi
     mat.pbr = appearance.isPBR();
     // A surface finish is the same case one field further on: ShapeMaterial's
     // serialised form has no room for one either, so the value arriving here
-    // always states None -- and the single-entry path below REPLACES the list,
+    // always states None -- and this write states every field of the base,
     // which would wipe a finish the appearance had just restored (this name
-    // sorts after ShapeAppearance). Take the appearance's own.
-    mat.finish = appearance.getFinish(0);
-    // The whole-value path replaces the list, so it is only safe while the
-    // finish is uniform too; a per-face finish takes the field-by-field path
-    // below, which does not touch it at all.
-    if (appearance.getDiffuseColors().size() <= 1 && appearance.getFinishes().size() <= 1) {
-        appearance.setValue(mat);
-        return;
-    }
-    App::PropertyMaterialList::atomic_change guard(appearance);
-    appearance.setAmbientColor(mat.ambientColor);
-    appearance.setSpecularColor(mat.specularColor);
-    appearance.setEmissiveColor(mat.emissiveColor);
-    appearance.setShininess(mat.shininess);
-    appearance.setTransparency(mat.transparency);
-    appearance.setImage(mat.image);
-    appearance.setImagePath(mat.imagePath);
-    appearance.setUuid(mat.uuid);
-    guard.tryInvoke();
+    // sorts after ShapeAppearance). Take the appearance's own, and the
+    // texture beside it for the same reason.
+    mat.finish = appearance.getBase().finish;
+    mat.texture = appearance.getBase().texture;
+    // The BASE, which is exactly what this compatibility name has always
+    // meant: the object's look. The overriding faces keep what they hold
+    // (docs/ShapeAppearanceDesign.md 12.2), where the old whole-value write
+    // had to choose between collapsing them and skipping half the fields.
+    appearance.setBase(mat);
 }
 
 }  // namespace
@@ -233,7 +223,7 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
         // old second store used to absorb exactly that.
         Base::Color c = ShapeColor.getValue();
         pcShapeMaterial->diffuseColor.setValue(c.r, c.g, c.b);
-        const Base::Color entry = ShapeAppearance.getDiffuseColor(0);
+        const Base::Color entry = ShapeAppearance.getBase().diffuseColor;
         c.a = entry.a;
         if (c != entry)
             ShapeAppearance.setDiffuseColor(c);
@@ -243,13 +233,13 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
         // Only a single appearance can be pushed into the one Coin material
         // node, as below: a per-face one is carried by the shape's own
         // material arrays and pushing a single colour would wipe them.
-        if (ShapeAppearance.getDiffuseColors().size() <= 1)
+        if (!ShapeAppearance.variesInDiffuse())
             setCoinAppearance(mat);
-        if (!(mat == ShapeAppearance.getMaterial(0)))
+        if (!(mat == ShapeAppearance.getBase()))
             applyWholeMaterial(ShapeAppearance, mat);
     }
     else if (prop == &Transparency) {
-        long value = Base::toPercent(ShapeAppearance.getTransparency(0));
+        long value = Base::toPercent(ShapeAppearance.getBase().transparency);
         if (value != Transparency.getValue()) {
             float trans = Base::fromPercent(Transparency.getValue());
             pcShapeMaterial->transparency = trans;
@@ -259,7 +249,7 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
     else if (prop == &ShapeAppearance) {
         if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange))
             getObject()->touch(true);
-        long value = Base::toPercent(ShapeAppearance.getTransparency(0));
+        long value = Base::toPercent(ShapeAppearance.getBase().transparency);
         if (value != Transparency.getValue())
             Transparency.setValue(value);
         // Only a single appearance can be pushed into the one Coin material
@@ -269,26 +259,24 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
         // raw, because it writes back into the appearance and a derived
         // mirror would quietly convert the stored values.
         if (ShapeAppearance.getSize() == 1)
-            setCoinAppearance(ShapeAppearance.getPhongMaterial(0));
+            setCoinAppearance(ShapeAppearance.getPhongBase());
         // Refresh the two compatibility names off the appearance. mirrorValue,
         // not setValue: these read from the store they would otherwise write
         // straight back into.
         //
-        // Only while the appearance holds one diffuse colour, though: entry 0
-        // of a per-face appearance is one face, not the object, and taking it
-        // for the object would be worse than stale. ViewProviderPartExt
-        // answers a ShapeColor change by collapsing the face colours to it --
-        // so a per-face import that mirrored would throw away the very
-        // colours it had just applied.
-        if (ShapeAppearance.getDiffuseColors().size() <= 1) {
-            // Alpha included: the appearance's diffuse alpha IS the entry's
-            // opacity, and a mirror carrying any other alpha stops being
-            // equal to it -- so the equality check in mirrorValue fires, the
-            // write announces, and the onChanged web pushes the stale alpha
-            // straight back into the appearance it was mirroring.
-            ShapeColor.mirrorValue(ShapeAppearance.getDiffuseColor(0));
-            ShapeMaterial.mirrorValue(ShapeAppearance.getMaterial(0));
-        }
+        // The BASE, whatever the faces hold: it is the object's look, which
+        // is what these two names mean, and it exists whether or not any
+        // face overrides it (docs/ShapeAppearanceDesign.md 12.1 -- before
+        // the base they could only mirror a uniform list, and on a per-face
+        // one held whatever the last uniform value had been).
+        //
+        // Alpha included: the appearance's diffuse alpha IS the entry's
+        // opacity, and a mirror carrying any other alpha stops being equal
+        // to it -- so the equality check in mirrorValue fires, the write
+        // announces, and the onChanged web pushes the stale alpha straight
+        // back into the appearance it was mirroring.
+        ShapeColor.mirrorValue(ShapeAppearance.getBase().diffuseColor);
+        ShapeMaterial.mirrorValue(ShapeAppearance.getBase());
         // A PBR-mode appearance rides the render material node (its
         // metallic/roughness), so it has to follow appearance changes too
         updateRenderMaterial();
@@ -360,13 +348,15 @@ void PropertyShapeColor::setValue(uint32_t rgba)
 
 void PropertyShapeColor::applyToAppearance()
 {
-    // A per-face appearance is the more specific value and already restored:
-    // leave it alone rather than collapse or overwrite its first entry. The
-    // rgb only, as every ShapeColor push: an old document's transparency
+    // Not onto a per-face appearance: on a document written before there
+    // was a base, this value IS the hint the base is derived from
+    // (docs/ShapeAppearanceDesign.md 12.4), and writing it into a default
+    // base first would answer the question before the heuristic asks it.
+    // The rgb only, as every ShapeColor push: an old document's transparency
     // arrives through ShapeMaterial and Transparency, which restore later.
-    if (_appearance && _appearance->getDiffuseColors().size() <= 1) {
+    if (_appearance && !_appearance->hasOverrides()) {
         Base::Color c = getValue();
-        c.a = _appearance->getDiffuseColor(0).a;
+        c.a = _appearance->getBase().diffuseColor.a;
         _appearance->setDiffuseColor(c);
     }
 }
@@ -590,8 +580,7 @@ void ViewProviderGeometryObject::updateRenderTexture()
     // and every fragment reads the image's corner texel. The frame
     // projection does not -- it makes its own coordinates out of the
     // object-space position.
-    const bool faceImages = !ShapeAppearance.getImages().empty()
-        || !ShapeAppearance.getImagePaths().empty();
+    const bool faceImages = ShapeAppearance.hasImage();
     const bool faceImagesOnMeshUV = faceImages && faceTextureScale() <= 0.0f;
     bool wantTexture = (color && color[0]) || (bump && bump[0])
         || (emissive && emissive[0]) || (occlusion && occlusion[0])
@@ -729,12 +718,10 @@ void ViewProviderGeometryObject::updateFaceTextures(
     // the appearance carries inline. Faces naming the same one share a
     // palette layer, so a part with two markings costs two layers
     // however many faces wear them.
-    const std::vector<std::string> &paths = ShapeAppearance.getImagePaths();
-    const std::vector<std::string> &images = ShapeAppearance.getImages();
     const int count = ShapeAppearance.getSize();
     std::vector<std::pair<std::string, std::string>> palette;  // path, data
     bool any = false;
-    if (count > 0 && (!paths.empty() || !images.empty())) {
+    if (count > 0 && ShapeAppearance.hasImage()) {
         indices.assign(std::size_t(count), 0);
         for (int i = 0; i < count; ++i) {
             const std::string &path = ShapeAppearance.getImagePath(i);
@@ -860,7 +847,7 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     // how an appearance that carries none gets one. Entry 0 -- exact for
     // a uniform appearance, the first face's for a per-face one until
     // the per-face finish stream lands.
-    App::SurfaceFinish finish = ShapeAppearance.getFinish(0);
+    App::SurfaceFinish finish = ShapeAppearance.getBase().finish;
     // An appearance that states a finish ANYWHERE is the authority for
     // every face, not only for the faces it finished: a face left
     // unfinished in a per-face appearance is a statement too, and letting
@@ -914,11 +901,11 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     // consumer that ignores the palette keeps the per-object look.
     std::vector<SbVec4f> palette;
     std::vector<int32_t> finishIndices;
-    const std::vector<App::SurfaceFinish> &finishes = ShapeAppearance.getFinishes();
-    bool finishVaries = false;
-    for (std::size_t i = 1; i < finishes.size() && !finishVaries; ++i)
-        finishVaries = finishes[i] != finishes[0];
-    if (finishVaries) {
+    // Asked of the storage before the whole field is built: resolving it
+    // materialises one record per face, and a list where no face states a
+    // finish of its own has nothing here to do
+    if (ShapeAppearance.variesInFinish()) {
+        const std::vector<App::SurfaceFinish> finishes = ShapeAppearance.getFinishes();
         finishIndices.reserve(finishes.size());
         for (const App::SurfaceFinish &entry : finishes) {
             App::SurfaceFinish face = entry;
@@ -1351,15 +1338,13 @@ void ViewProviderGeometryObject::updateBoundingBox() {
  * appearance's diffuse alpha, which is where this fork keeps an entry's
  * transparency, and it has to be able to read the right one.
  *
- * Only while the appearance holds one diffuse colour, for the reason
- * onChanged has: entry 0 of a per-face appearance is one face, not the object.
+ * From the BASE, for the reason onChanged's mirror block gives: the base is
+ * the object's look whether or not a face overrides it, where entry 0 of a
+ * per-face appearance is one face and not the object.
  */
 void ViewProviderGeometryObject::refreshAppearanceMirrors()
 {
-    if (ShapeAppearance.getDiffuseColors().size() > 1)
-        return;
-
-    long transparency = Base::toPercent(ShapeAppearance.getTransparency(0));
+    long transparency = Base::toPercent(ShapeAppearance.getBase().transparency);
     if (transparency != Transparency.getValue()) {
         // NoModify, or a document nobody has touched opens already modified.
         Base::ObjectStatusLocker<App::Property::Status, App::Property>
@@ -1370,13 +1355,13 @@ void ViewProviderGeometryObject::refreshAppearanceMirrors()
     // Alpha included, for the reason onChanged's mirror block gives: any
     // other alpha makes the mirror unequal to what it mirrors, and the
     // announcement pushes that difference back into the appearance.
-    Base::Color color = ShapeAppearance.getDiffuseColor(0);
+    Base::Color color = ShapeAppearance.getBase().diffuseColor;
     if (color != ShapeColor.getValue()) {
         Base::ObjectStatusLocker<App::Property::Status, App::Property>
                 guard(App::Property::NoModify, &ShapeColor);
         ShapeColor.mirrorValue(color);
     }
-    App::Material material = ShapeAppearance.getMaterial(0);
+    App::Material material = ShapeAppearance.getBase();
     if (!(material == ShapeMaterial.getValue())) {
         Base::ObjectStatusLocker<App::Property::Status, App::Property>
                 guard(App::Property::NoModify, &ShapeMaterial);
@@ -1384,8 +1369,32 @@ void ViewProviderGeometryObject::refreshAppearanceMirrors()
     }
 }
 
+bool ViewProviderGeometryObject::getFaceWeights(std::vector<double> & /*weights*/) const
+{
+    return false;
+}
+
+void ViewProviderGeometryObject::deriveAppearanceBase()
+{
+    if (ShapeAppearance.hasDerivedBase())
+        return;
+    // The mirror, alpha included: on a document this fork wrote it holds
+    // what the object looked like before its faces were painted, and on an
+    // import it holds the constructor's grey, which occurs in no imported
+    // list -- so it answers the fork's own documents and declines the
+    // others (docs/ShapeAppearanceDesign.md 12.4).
+    Base::Color hint = ShapeColor.getValue();
+    hint.setTransparency(Base::fromPercent(Transparency.getValue()));
+    std::vector<double> weights;
+    if (!ShapeAppearance.namesDiffuse(hint)) {
+        getFaceWeights(weights);
+    }
+    ShapeAppearance.deriveBase(&hint, weights.empty() ? nullptr : &weights);
+}
+
 void ViewProviderGeometryObject::finishRestoring()
 {
+    deriveAppearanceBase();
     refreshAppearanceMirrors();
     updateBoundingBox();
     // Restored Render_* dynamic properties (per-object render engine

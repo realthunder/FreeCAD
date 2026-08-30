@@ -3667,7 +3667,7 @@ PyObject *ViewProviderLink::getPyLinkView() {
 std::map<std::string, App::Color> ViewProviderLink::getElementColors(const char *subname) const {
     auto ext = getLinkExtension();
     if(ext && ext->getColoredElementsProperty()) {
-        const auto mat = ShapeAppearance.getMaterial(0);
+        const auto mat = ShapeAppearance.getBase();
         auto colors =  getElementColorsFrom(*this,subname,*ext->getColoredElementsProperty(),
                 OverrideColorList, OverrideMaterial.getValue(), &mat, ext->getElementCountValue());
         if (!colors.empty())
@@ -3769,8 +3769,8 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
             if(!next)
                 break;
             if(!overridden && wildcard!=ViewProvider::hiddenMarker() && next->OverrideMaterial.getValue()) {
-                auto color = next->ShapeAppearance.getDiffuseColor(0);
-                color.setTransparency(next->ShapeAppearance.getTransparency(0));
+                auto color = next->ShapeAppearance.getBase().diffuseColor;
+                color.setTransparency(next->ShapeAppearance.getBase().transparency);
                 colors.emplace(wildcard,color);
                 overridden = true;
             }

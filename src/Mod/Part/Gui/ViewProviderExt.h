@@ -168,6 +168,16 @@ protected:
 private:
     App::PropertyMaterialList *_appearance {nullptr};
     const App::PropertyColor *_shapeColor {nullptr};
+    /** Where getValues() resolves the appearance into
+     *
+     * The appearance stores a base and the faces that override it, so there
+     * is no colour-per-face array in it to hand a reference into. This is
+     * that array, rebuilt on every read -- which is what returning it by
+     * value would cost anyway, and this way the reference stays good until
+     * the next read, which is what every caller of a list property's
+     * getValues() has always been able to assume.
+     */
+    mutable std::vector<Base::Color> _resolved;
 };
 
 class PartGuiExport ViewProviderPartExt : public Gui::ViewProviderGeometryObject
@@ -322,6 +332,9 @@ public:
     virtual void reattach(App::DocumentObject *) override;
     virtual void beforeDelete() override;
     virtual void finishRestoring() override;
+    /// The area of every face of the shape, for the appearance base
+    /// heuristic. @see Gui::ViewProviderGeometryObject::getFaceWeights
+    bool getFaceWeights(std::vector<double> &weights) const override;
 
 protected:
     bool setEdit(int ModNum) override;

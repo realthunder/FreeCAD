@@ -84,6 +84,20 @@ void ImportOCAFGui::applyFaceMaterials(Part::Feature* part,
     }
     else {
         vp->ShapeAppearance.setValues(mats);
+        // Which of those materials the object IS, decided here where the
+        // shape is in hand: an imported list states one per face and
+        // nothing about the body colour, and the mirror holds the
+        // constructor's grey, which occurs in no imported list
+        // (docs/ShapeAppearanceDesign.md 12.4). Area, not count: a green
+        // board with five hundred gold pads is decided the wrong way by
+        // count.
+        std::vector<double> areas;
+        if (vp->getFaceWeights(areas)) {
+            vp->ShapeAppearance.deriveBase(nullptr, &areas);
+        }
+        else {
+            vp->ShapeAppearance.deriveBase();
+        }
     }
 
     // Per-face images arrive UV mapped -- a glTF mesh carries its own
@@ -204,7 +218,7 @@ void ImportOCAFGui::applyRenderMaterial(Part::Feature* part,
     // The base colour image, unless the faces carry their own: those
     // are the more specific statement and the object-wide one would
     // modulate on top of them.
-    if (vp->ShapeAppearance.getImages().empty()) {
+    if (!vp->ShapeAppearance.hasImage()) {
         setFile("Render_BaseColorTexture", mat.baseColorTexture,
                 "Base color texture image of the object");
     }

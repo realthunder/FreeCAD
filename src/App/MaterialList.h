@@ -25,6 +25,7 @@
 
 #include <map>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <Base/COWData.h>
@@ -53,33 +54,53 @@ AppExport std::size_t texturesMemSize(const std::vector<SurfaceTexture> &palette
  * property itself can all name the same arrays until one of them changes
  * something.
  *
- * @section materiallist_layout The layout, and why it is per field
+ * @section materiallist_layout The layout: a base and the faces that
+ * override it
  *
  * Not a vector<Material>. A material is ~140 bytes and an appearance is
- * overwhelmingly uniform or nearly so, so the fields are stored separately
- * and each one is kept at one of exactly three lengths:
+ * overwhelmingly uniform or nearly so, so the list is
+ * (docs/ShapeAppearanceDesign.md 12):
  *
- *  - 0 -- every entry reads the field's default, and it costs nothing
- *  - 1 -- one value shared by every entry
- *  - N -- genuinely per entry
+ *  - a BASE material -- what the object looks like where no face says
+ *    otherwise -- stored in full;
+ *  - a sorted vector of OVERRIDING face indices;
+ *  - one array per field, at length 0 or |overrides|, in overrides order.
  *
- * A ten thousand face box with one colour is one colour. Reading a single
- * entry composes a Material out of the fields; there is deliberately no
- * getValues() (see PropertyMaterialList's note on it).
+ * with the invariant that entry(i) is the base for every i outside
+ * overrides, and that an EMPTY field array reads as the base's value for
+ * that field. Three faces painted red keep the base's gloss, so only the
+ * diffuse array has three entries and every other one is empty.
+ *
+ * A ten thousand face box with one colour is one material. Reading a single
+ * entry composes a Material out of the base and whatever the face overrides;
+ * there is deliberately no getValues() (see PropertyMaterialList's note on
+ * it), and the per field getters below come in two kinds -- the sparse
+ * storage, and a dense resolution built on read.
  *
  * The texture field is the exception: its values are large and their
- * cardinality is low, so it is a PALETTE of distinct records plus a
- * uint16_t index per entry (docs/ShapeAppearanceDesign.md 10.4).
+ * cardinality is low, so the overriding faces share a PALETTE of distinct
+ * records plus a uint16_t index each (docs/ShapeAppearanceDesign.md 10.4).
+ *
+ * @section materiallist_base Where the base comes from
+ *
+ * A list landed dense -- an old document, upstream's encoding, an import --
+ * has no base in it, so one is DERIVED once and then stored: the mirror if
+ * it names a value the list holds, else the material covering the largest
+ * summed face area, else the most common one (12.4). deriveBase() runs it
+ * with what the caller knows; ensureBase() is the fallback the save takes
+ * when nobody did. Until then the list is honest but unshared: every entry
+ * is an override, which costs exactly what the dense form did.
  *
  * @section materiallist_normal Normalisation
  *
- * Collapsing the fields back to those three lengths is deferred: a loop
- * writing entry by entry would otherwise rescan the list on every step.
+ * Dropping an override that no longer differs from the base, and emptying a
+ * field array whose every entry is the base's, is deferred: a loop writing
+ * entry by entry would otherwise rescan the list on every step.
  * ensureNormalized() runs it on the next read, and it is const AND does not
  * detach -- it changes what is stored, never what the list means, so
  * sharing the work with every other holder is a benefit rather than a
  * hazard. The one consequence to know: a reference handed out by
- * getDiffuseColors() does not survive a later normalize.
+ * getDiffuseOverrides() does not survive a later normalize.
  */
 class AppExport MaterialList
 {
@@ -121,6 +142,54 @@ public:
     bool isSameData(const MaterialList &other) const { return _data.isSameData(other._data); }
     //@}
 
+    /** @name The base and the overriding faces
+     *
+     * The base is the object's look; an override is one face holding its
+     * own. A whole-object write moves the base and leaves the overriding
+     * faces where they are; a per-face write makes a face an override, or
+     * drops it back when its value returns to the base's.
+     */
+    //@{
+    const Material &getBase() const;
+    /// The whole-object write: every face that is not an override follows
+    void setBase(const Material &mat);
+    /// Sorted, unique, every index below getSize()
+    const std::vector<uint32_t> &getOverrides() const;
+    bool hasOverrides() const;
+    bool isOverride(int idx) const;
+    /// Every face back to the base, which is what a whole-object write used
+    /// to do to a per-face list before it was an action of its own
+    void clearOverrides();
+    void clearOverride(int idx);
+    /** Whether a base has been chosen for this list
+     *
+     * False for a list that arrived dense and has not been through the
+     * heuristic yet -- see @ref materiallist_base.
+     */
+    bool hasDerivedBase() const;
+    /** Choose the base, once, for a list that arrived without one
+     *
+     * \a hint is the view provider's mirror, which wins if it names a
+     * diffuse colour the list holds; \a weights is the per entry face area,
+     * whose largest sum wins next. Both may be null, and then the most
+     * common entry wins. Does nothing to a list that already has a base.
+     *
+     * const, and it does not detach, for the reason normalisation does not:
+     * it changes what is stored and not what any entry resolves to.
+     */
+    void deriveBase(const Color *hint = nullptr,
+                    const std::vector<double> *weights = nullptr) const;
+    /// The heuristic with nothing to go on, run only if nobody else did
+    void ensureBase() const;
+    /** Whether any entry wears exactly this diffuse colour
+     *
+     * The question deriveBase's mirror rule asks, asked separately so that
+     * a caller knows whether an answer it would have to WORK for -- the
+     * face areas -- is going to be needed at all.
+     */
+    bool namesDiffuse(const Color &color) const;
+    //@}
+
     /** @name Whole material access */
     //@{
     int getSize() const;
@@ -134,31 +203,76 @@ public:
     void set1Value(int idx, const Material &mat);
     //@}
 
-    /** @name Per field access
+    /** @name Per field access, as it is stored
      *
-     * The getters hand back the raw field, whose size is 0, 1 or getSize()
-     * -- resolve a single entry with the indexed getter instead of assuming
-     * the array is as long as the list. The setters normalise, so a uniform
-     * vector handed to setDiffuseColors() collapses to one element.
+     * The overriding faces' values, in overrides order, at length 0 or
+     * |overrides| -- an empty array says every override takes the base's
+     * value for that field. Normalised first, so an array that is there
+     * but says nothing reads as empty.
+     *
+     * Resolve a single entry with the indexed getter, or the whole list
+     * with the dense getters below; do NOT index one of these by a face
+     * number.
      */
     //@{
-    const std::vector<Color> &getAmbientColors() const;
-    const std::vector<Color> &getDiffuseColors() const;
-    const std::vector<Color> &getSpecularColors() const;
-    const std::vector<Color> &getEmissiveColors() const;
-    const std::vector<float> &getShininessValues() const;
-    const std::vector<std::string> &getImages() const;
-    const std::vector<std::string> &getImagePaths() const;
-    const std::vector<std::string> &getUuids() const;
-    const std::vector<int8_t> &getTypes() const;
-    /// Normalised first, so the "0, 1 or getSize()" rule holds for a caller
-    /// that only ever reads
-    const std::vector<SurfaceFinish> &getFinishes() const;
+    const std::vector<Color> &getAmbientOverrides() const;
+    const std::vector<Color> &getDiffuseOverrides() const;
+    const std::vector<Color> &getSpecularOverrides() const;
+    const std::vector<Color> &getEmissiveOverrides() const;
+    const std::vector<float> &getShininessOverrides() const;
+    const std::vector<std::string> &getImageOverrides() const;
+    const std::vector<std::string> &getImagePathOverrides() const;
+    const std::vector<std::string> &getUuidOverrides() const;
+    const std::vector<int8_t> &getTypeOverrides() const;
+    const std::vector<SurfaceFinish> &getFinishOverrides() const;
     /// @see materiallist_layout: distinct values plus an index, handed out
-    /// as the pair because that is what the render side wants
+    /// as the pair because that is what the render side wants. The index is
+    /// 0 or |overrides| long and the palette holds what the OVERRIDES name;
+    /// the base's texture is in the base.
     //@{
     const std::vector<SurfaceTexture> &getTexturePalette() const;
     const std::vector<uint16_t> &getTextureIndex() const;
+    //@}
+
+    /// Whether a field is stated by any overriding face at all, which is
+    /// the cheap question "does this vary per face"
+    //@{
+    bool variesInAmbient() const { return !getAmbientOverrides().empty(); }
+    bool variesInDiffuse() const { return !getDiffuseOverrides().empty(); }
+    bool variesInSpecular() const { return !getSpecularOverrides().empty(); }
+    bool variesInEmissive() const { return !getEmissiveOverrides().empty(); }
+    bool variesInShininess() const { return !getShininessOverrides().empty(); }
+    bool variesInImage() const
+    { return !getImageOverrides().empty() || !getImagePathOverrides().empty(); }
+    bool variesInUuid() const { return !getUuidOverrides().empty(); }
+    bool variesInType() const { return !getTypeOverrides().empty(); }
+    bool variesInFinish() const { return !getFinishOverrides().empty(); }
+    bool variesInTexture() const { return !getTextureIndex().empty(); }
+    //@}
+    //@}
+
+    /** @name Per field access, resolved
+     *
+     * getSize() entries, BUILT ON READ out of the base and the overrides.
+     * What every consumer of a whole field wanted anyway, and the only
+     * form the compatible encodings can write -- but it is a fresh vector
+     * every time, so ask for it once and never in a loop.
+     */
+    //@{
+    std::vector<Color> getAmbientColors() const;
+    std::vector<Color> getDiffuseColors() const;
+    std::vector<Color> getSpecularColors() const;
+    std::vector<Color> getEmissiveColors() const;
+    std::vector<float> getShininessValues() const;
+    std::vector<std::string> getImages() const;
+    std::vector<std::string> getImagePaths() const;
+    std::vector<std::string> getUuids() const;
+    std::vector<int8_t> getTypes() const;
+    std::vector<SurfaceFinish> getFinishes() const;
+    /// The palette and one index per ENTRY, which is the form the
+    /// compatible encodings and the companion element state
+    void getTextures(std::vector<SurfaceTexture> &palette,
+                     std::vector<uint16_t> &index) const;
     //@}
 
     Color getAmbientColor(int idx) const;
@@ -177,7 +291,13 @@ public:
     Material::MaterialType getType(int idx) const;
     //@}
 
-    /** @name Whole field writes */
+    /** @name Whole field writes, one value per entry
+     *
+     * Collapsed on the way in, so a vector that says the same thing for
+     * every entry is the whole-object write it says it is: it moves the
+     * base and empties that field's override array. A vector that varies
+     * makes an override of every entry that differs from the base.
+     */
     //@{
     void setAmbientColors(const std::vector<Color> &colors);
     void setDiffuseColors(const std::vector<Color> &colors);
@@ -194,7 +314,11 @@ public:
     void setTextures(const std::vector<SurfaceTexture> &values);
     //@}
 
-    /** @name One entry of one field, expanding that field alone if it has to */
+    /** @name One entry of one field, which is a per-face write
+     *
+     * The face becomes an override of that field alone, or -- when the
+     * value it is given is the base's -- stops being one.
+     */
     //@{
     void setAmbientColor(int idx, const Color &col);
     void setDiffuseColor(int idx, const Color &col);
@@ -209,7 +333,13 @@ public:
     void setTexture(int idx, const SurfaceTexture &value);
     //@}
 
-    /** @name One field for every entry, leaving the others alone */
+    /** @name The whole-object write of one field, leaving the others alone
+     *
+     * The BASE's field. Every face that is not an override follows it; a
+     * face holding its own for that field keeps what it holds, which is
+     * what makes a painted face survive an appearance card being assigned
+     * (docs/ShapeAppearanceDesign.md 12.2).
+     */
     //@{
     void setAmbientColor(const Color &col);
     void setDiffuseColor(const Color &col);
@@ -234,6 +364,8 @@ public:
 
     /// Whether any entry names a texture or a material card
     bool hasTextureOrCard() const;
+    /// Whether any entry names an image, inline or by path
+    bool hasImage() const;
     /// Whether any entry states a surface finish; the cheap gate for a
     /// consumer that has nothing to do when none does
     bool hasFinish() const;
@@ -303,12 +435,16 @@ public:
     void setRoughness(float value);
     /// One entry as a Phong material, whatever mode the list is in
     Material getPhongMaterial(int idx) const;
+    /// The base as a Phong material, which is what a consumer with one
+    /// material node to fill wants: the object's look, not face 0's
+    Material getPhongBase() const;
     //@}
 
     /// Whether the diffuse colour is the only field that varies per entry
     bool variesOnlyInDiffuse() const;
 
-    /// Content only, as every list property reports it
+    /// Content only, as every list property reports it: the base's STATED
+    /// fields, the override list and the override arrays
     unsigned int getMemSize() const;
 
     /** Whether two lists say the same thing
@@ -344,6 +480,17 @@ private:
         int count {0};
         /// The PBR reading of the fields
         bool pbr {false};
+        /** The object's look, in full
+         *
+         * Stored the way the fields are: the diffuse alpha carries the
+         * transparency, the finish and the texture are clamped. Its type
+         * is the base's type, so it is written through setMaterialType()
+         * -- Material::setType() rewrites every colour with the preset's.
+         */
+        Material base;
+        /// The faces holding their own, sorted and unique. Every array
+        /// below is 0 or this long, and in this order.
+        std::vector<uint32_t> overrides;
         std::vector<Color> ambient;
         /** Diffuse colour AND transparency: the alpha is the entry's
          * opacity, so there is no transparency array beside it
@@ -364,6 +511,13 @@ private:
         std::map<std::string, FileBlobHandle> textureBlobs;
         /// Whether the fields are collapsed. Not part of the value.
         bool normalized {true};
+        /** Whether the base was chosen rather than merely defaulted
+         *
+         * False on a list that arrived dense -- every entry an override
+         * over a default base, which resolves correctly and costs what the
+         * dense form cost. @see materiallist_base
+         */
+        bool baseDerived {true};
     };
 
     /// Read. Never detaches, and answers with an empty list when nothing
@@ -388,11 +542,52 @@ private:
      */
     Data &bd() { return _data.isNull() ? _data.edit() : nd(); }
 
-    /// Collapse every field to 0, 1 or count. Idempotent, and lazy.
+    /// Drop the overrides that no longer differ and empty the arrays that
+    /// no longer say anything. Idempotent, and lazy.
     void ensureNormalized() const;
     void normalize() const;
     /// Mark the fields as possibly denormal after a write
     void touchFields();
+
+    /** @name Base and override mechanics */
+    //@{
+    /// Where face \a idx sits among the overrides, or -1
+    int overridePos(int idx) const;
+    /// Make face \a idx an override -- every array that has anything gains
+    /// the base's value at that position -- and answer where it landed
+    int makeOverride(int idx);
+    /** Take fields written at the old 0/1/count lengths as base + overrides
+     *
+     * What a restore of any encoding that states one entry at a time lands,
+     * and what every document written before ShapeAppearanceDesign 12 holds.
+     * A field that is uniform IS the base's; a field that varies leaves
+     * every entry an override until a base is derived.
+     */
+    void adoptDense();
+    /// The base's type, written without Material::setType() taking the
+    /// preset's colours with it
+    static void setMaterialType(Material &mat, int8_t type);
+    /** Everything one overriding position states, as a key that orders
+     *
+     * What makes two painted faces the same material, for the vote in
+     * deriveBase -- an ordered key rather than a pairwise comparison,
+     * because an import can override thousands of faces.
+     */
+    //@{
+    using OverrideKey = std::tuple<uint32_t, uint32_t, uint32_t, uint32_t, float, int8_t,
+                                   std::string, std::string, std::string,
+                                   uint8_t, float, float, float, uint16_t>;
+    OverrideKey overrideKey(int pos) const;
+    //@}
+    /// Every field of one entry, which is what a per-face write and a
+    /// growth with a filler both are
+    void applyEntry(int idx, const Material &mat);
+    /// The type field, which has no Material member to name it by
+    void setTypeValue(int idx, int8_t value);
+    /// Put a different base under the same entries, restating which faces
+    /// override and which follow
+    void rebase(const Material &newBase) const;
+    //@}
 
     /** What an empty specular / shininess field reads as, per mode
      *
@@ -416,16 +611,26 @@ private:
      * these all have a "nothing changed" path that must leave the storage
      * exactly as it found it, because that is how PropertyMaterialList
      * decides whether there is a change to record at all.
+     *
+     * Each takes both members of a field: where the base keeps it and where
+     * the overrides do.
      */
     //@{
+    /// A whole field, one value per entry -- collapsed first, so a uniform
+    /// vector is the base write it says it is
     template<class T>
-    void setField(std::vector<T> Data::*member, const std::vector<T> &values, const T &def);
+    void setField(T Material::*base, std::vector<T> Data::*member,
+                  const std::vector<T> &values);
+    /// One entry, which makes it an override or drops it back
     template<class T>
-    void setFieldValue(std::vector<T> Data::*member, int idx, const T &value, const T &def);
+    void setFieldValue(T Material::*base, std::vector<T> Data::*member, int idx,
+                       const T &value);
+    /// The whole-object write: the base alone, the overriding faces left
+    /// exactly where they are
     template<class T>
-    void setUniformField(std::vector<T> Data::*member, const T &value, const T &def);
+    void setBaseField(T Material::*base, const T &value, const T &def);
     /// The rgb-only write behind setDiffuseRGB / setSpecularRGB
-    void setFieldRGB(std::vector<Color> Data::*member, const Color &col, const Color &def);
+    void setFieldRGB(Color Material::*base, const Color &col, const Color &def);
     //@}
 
     Base::COWValue<Data> _data;

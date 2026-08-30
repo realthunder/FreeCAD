@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #include <algorithm>
+#include <map>
 #include <set>
 
 #include <Base/Exception.h>
@@ -72,6 +73,118 @@ std::size_t App::texturesMemSize(const std::vector<SurfaceTexture> &palette)
 
 namespace {
 
+//--------------------------------------------------------------------------
+// The sparse fields
+//
+// An array is 0 or |overrides| long and sits in overrides order, so nothing
+// here is indexed by a FACE number: a face is first turned into a position
+// with overridePos(), which answers -1 for a face that takes the base.
+//--------------------------------------------------------------------------
+
+/// Resolve one entry of a sparse field. \a pos is a position among the
+/// overrides, not a face.
+template<class T>
+inline const T &sparseAt(const std::vector<T> &values, int pos, const T &base)
+{
+    if (pos < 0 || values.empty())
+        return base;
+    return values[static_cast<std::size_t>(pos)];
+}
+
+/// Every entry of a sparse field, resolved against the base
+template<class T>
+std::vector<T> expandSparse(int count, const std::vector<uint32_t> &overrides,
+                            const std::vector<T> &values, const T &base)
+{
+    std::vector<T> dense(static_cast<std::size_t>(count < 0 ? 0 : count), base);
+    if (values.empty())
+        return dense;
+    for (std::size_t pos = 0; pos < overrides.size() && pos < values.size(); ++pos) {
+        if (overrides[pos] < dense.size())
+            dense[overrides[pos]] = values[pos];
+    }
+    return dense;
+}
+
+/// Materialise a sparse field so that one override can differ from the rest
+template<class T>
+void statedSparse(std::vector<T> &values, std::size_t n, const T &base)
+{
+    if (values.size() != n)
+        values.assign(n, base);
+}
+
+/// Follow an override arriving at \a pos, in the arrays that state anything
+template<class T>
+void insertSparse(std::vector<T> &values, int pos, const T &base)
+{
+    if (!values.empty())
+        values.insert(values.begin() + pos, base);
+}
+
+/// ... and one leaving
+template<class T>
+void eraseSparse(std::vector<T> &values, int pos)
+{
+    if (!values.empty())
+        values.erase(values.begin() + pos);
+}
+
+/// Whether every override states the base's value, which is an array that
+/// says nothing at all
+template<class T>
+bool saysNothing(const std::vector<T> &values, const T &base)
+{
+    for (const auto &value : values) {
+        if (!(value == base))
+            return false;
+    }
+    return true;
+}
+
+/** Keep the positions \a keep marks, in place
+ *
+ * The out != i guard is not an optimisation. Nothing is dropped until the
+ * first false, so up to that point out IS i, and `s = std::move(s)` on a
+ * std::string is a self-move: valid, unspecified, and in libstdc++ it
+ * leaves the string EMPTY. Every field survived normalisation except the
+ * three string ones, which silently lost their first entries.
+ */
+template<class T>
+void compactSparse(std::vector<T> &values, const std::vector<bool> &keep)
+{
+    if (values.empty())
+        return;
+    std::size_t out = 0;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (!keep[i])
+            continue;
+        if (out != i)
+            values[out] = std::move(values[i]);
+        ++out;
+    }
+    values.resize(out);
+}
+
+/// Write one entry of a sparse field, stating the array only if the value
+/// is new. \a pos is a position, and the override is already there.
+template<class T>
+bool setSparseAt(std::vector<T> &values, int pos, std::size_t n, const T &value, const T &base)
+{
+    if (sparseAt(values, pos, base) == value)
+        return false;
+    statedSparse(values, n, base);
+    values[static_cast<std::size_t>(pos)] = value;
+    return true;
+}
+
+//--------------------------------------------------------------------------
+// The dense form
+//
+// What every encoding that states one entry at a time lands, and what the
+// compatible ones are written from. Fields are 0, 1 or count long here.
+//--------------------------------------------------------------------------
+
 /// Resolve one entry of a field that may be 0, 1 or count long
 template<class T>
 inline const T &fieldAt(const std::vector<T> &values, int idx, const T &def)
@@ -81,7 +194,7 @@ inline const T &fieldAt(const std::vector<T> &values, int idx, const T &def)
     return values.size() == 1 ? values.front() : values[idx];
 }
 
-/// Collapse a field to the smallest of 0, 1 and its current length
+/// Collapse a dense field to the smallest of 0, 1 and its current length
 template<class T>
 void collapseField(std::vector<T> &values, const T &def)
 {
@@ -103,79 +216,15 @@ void collapseField(std::vector<T> &values, const T &def)
     }
 }
 
-/// Grow a field so that one entry can differ from the others
-template<class T>
-void expandField(std::vector<T> &values, int count, const T &def)
-{
-    if (static_cast<int>(values.size()) == count)
-        return;
-    // by value: assign() frees the old buffer before it copies, so handing
-    // it a reference into that buffer is a use after free
-    const T current = values.empty() ? def : values.front();
-    values.assign(count, current);
-}
-
-/** Follow a change of entry count, without materialising a uniform field
- *
- * A field only has to be written out entry by entry when the value arriving
- * disagrees with the one already there -- which is what keeps a growing
- * import of identically coloured faces linear.
- */
-template<class T>
-void resizeField(std::vector<T> &values, int oldCount, int newCount,
-                 const T &fill, const T &def)
-{
-    if (newCount < oldCount) {
-        if (newCount == 0)
-            std::vector<T>().swap(values);
-        else if (static_cast<int>(values.size()) > newCount && values.size() > 1)
-            values.resize(newCount);
-        return;
-    }
-    if (newCount == oldCount)
-        return;
-    const T current = values.empty() ? def : values.front();
-    if (values.size() <= 1 && current == fill)
-        return;
-    if (values.size() <= 1)
-        values.assign(oldCount, current);
-    values.resize(newCount, fill);
-}
-
-/// Write one entry of a field, expanding it only if the value is new
-template<class T>
-bool setFieldAt(std::vector<T> &values, int idx, int count, const T &value, const T &def)
-{
-    if (fieldAt(values, idx, def) == value)
-        return false;
-    expandField(values, count, def);
-    values[idx] = value;
-    return true;
-}
-
 //--------------------------------------------------------------------------
 // The palette+index field
 //
-// The same five operations the dense helpers above provide, over a pair of
+// The same operations the sparse helpers above provide, over a pair of
 // vectors instead of one. The invariant every one of them restores: an
-// empty index means the palette holds 0 or 1 entries, and a non-empty one
-// is exactly count long with every value addressing the palette.
+// empty index says every override takes the BASE's texture (and then the
+// palette is empty too), and a stated one is exactly |overrides| long with
+// every value addressing the palette.
 //--------------------------------------------------------------------------
-
-/// Resolve one entry of a palette+index field
-const SurfaceTexture &paletteAt(const std::vector<SurfaceTexture> &palette,
-                                const std::vector<uint16_t> &index,
-                                int idx, const SurfaceTexture &def)
-{
-    if (palette.empty())
-        return def;
-    if (index.empty())
-        return palette.front();
-    if (idx < 0 || idx >= static_cast<int>(index.size()))
-        return def;
-    const std::size_t slot = index[idx];
-    return slot < palette.size() ? palette[slot] : def;
-}
 
 /// The slot holding \a value, appending it if the palette does not have it
 uint16_t paletteSlot(std::vector<SurfaceTexture> &palette, const SurfaceTexture &value)
@@ -190,101 +239,111 @@ uint16_t paletteSlot(std::vector<SurfaceTexture> &palette, const SurfaceTexture 
     return static_cast<uint16_t>(palette.size() - 1);
 }
 
-/// Materialise the index so one entry can differ from the others
-void expandPalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
-                   int count, const SurfaceTexture &def)
+/// Resolve one override's texture; \a pos is a position, not a face
+const SurfaceTexture &sparseTextureAt(const std::vector<SurfaceTexture> &palette,
+                                      const std::vector<uint16_t> &index,
+                                      int pos, const SurfaceTexture &base)
 {
-    if (static_cast<int>(index.size()) == count && !palette.empty())
-        return;
-    // by value: the current uniform value can be palette.front(), and the
-    // assign below reallocates the buffer it lives in
-    const SurfaceTexture current = palette.empty() ? def : palette.front();
-    std::vector<SurfaceTexture>(1, current).swap(palette);
-    index.assign(count, 0);
+    if (pos < 0 || index.empty())
+        return base;
+    if (pos >= static_cast<int>(index.size()))
+        return base;
+    const std::size_t slot = index[static_cast<std::size_t>(pos)];
+    return slot < palette.size() ? palette[slot] : base;
 }
 
-/// Rebuild a palette+index field into the smallest of its three forms
-void collapsePalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
-                     int count, const SurfaceTexture &def)
+/// State the index so that one override can differ from the rest
+void statedTexture(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
+                   std::size_t n, const SurfaceTexture &base)
 {
-    if (palette.empty() || count == 0) {
+    if (index.size() == n)
+        return;
+    // by value into the palette first: the slot is appended, and the assign
+    // below must not read a reference into a buffer it reallocates
+    const uint16_t slot = paletteSlot(palette, base);
+    index.assign(n, slot);
+}
+
+/// Rebuild the pair into its normal form: first-use order, and gone
+/// entirely when every override takes the base's texture
+void collapseTexture(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
+                     std::size_t n, const SurfaceTexture &base)
+{
+    if (index.empty() || n == 0) {
         // swap rather than clear: a palette read from a large document
         // should give the memory back, not merely stop counting it
         std::vector<SurfaceTexture>().swap(palette);
         std::vector<uint16_t>().swap(index);
         return;
     }
-    if (!index.empty()) {
-        // Renumber into first-use order, which drops both the slots
-        // nothing points at any more and any duplicate a caller wrote
-        std::vector<SurfaceTexture> used;
-        std::vector<uint16_t> renumbered;
-        renumbered.reserve(index.size());
-        for (uint16_t slot : index) {
-            renumbered.push_back(paletteSlot(
-                used, slot < palette.size() ? palette[slot] : def));
-        }
-        used.swap(palette);
-        renumbered.swap(index);
-        if (palette.size() > 1)
-            return;   // genuinely varies: the index earns its two bytes
-        std::vector<uint16_t>().swap(index);
+    // Renumber into first-use order, which drops both the slots nothing
+    // points at any more and any duplicate a caller wrote
+    std::vector<SurfaceTexture> used;
+    std::vector<uint16_t> renumbered;
+    renumbered.reserve(index.size());
+    bool saysSomething = false;
+    for (uint16_t slot : index) {
+        const SurfaceTexture &value = slot < palette.size() ? palette[slot] : base;
+        if (!(value == base))
+            saysSomething = true;
+        renumbered.push_back(paletteSlot(used, value));
     }
-    // Uniform, so the index is gone and one record says it all -- unless
-    // that record is the default, which an empty palette already says
-    if (palette.front() == def)
+    if (!saysSomething) {
         std::vector<SurfaceTexture>().swap(palette);
-    else if (palette.size() > 1)
-        std::vector<SurfaceTexture>(1, palette.front()).swap(palette);
-}
-
-/// Follow a change of entry count, without materialising a uniform field
-void resizePalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
-                   int oldCount, int newCount, const SurfaceTexture &fill,
-                   const SurfaceTexture &def)
-{
-    if (newCount < oldCount) {
-        if (newCount == 0) {
-            std::vector<SurfaceTexture>().swap(palette);
-            std::vector<uint16_t>().swap(index);
-        }
-        else if (static_cast<int>(index.size()) > newCount) {
-            index.resize(newCount);   // collapse prunes the palette after
-        }
+        std::vector<uint16_t>().swap(index);
         return;
     }
-    if (newCount == oldCount)
-        return;
-    const SurfaceTexture current = palette.empty() ? def : palette.front();
-    if (index.empty() && current == fill)
-        return;
-    if (index.empty())
-        expandPalette(palette, index, oldCount, def);
-    index.resize(newCount, paletteSlot(palette, fill));
+    used.swap(palette);
+    renumbered.swap(index);
 }
 
-/// Write one entry, materialising the index only if the value is new
-bool setPaletteAt(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
-                  int idx, int count, const SurfaceTexture &value,
-                  const SurfaceTexture &def)
+/// Follow an override arriving at \a pos, in an index that states anything
+void insertTexture(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
+                   int pos, const SurfaceTexture &base)
 {
-    if (paletteAt(palette, index, idx, def) == value)
-        return false;
-    expandPalette(palette, index, count, def);
-    index[idx] = paletteSlot(palette, value);
-    return true;
+    if (index.empty())
+        return;
+    const uint16_t slot = paletteSlot(palette, base);
+    index.insert(index.begin() + pos, slot);
 }
 
 /// Lay a whole run in, building the palette from what is distinct in it
 void assignPalette(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
-                   const std::vector<SurfaceTexture> &values, const SurfaceTexture &def)
+                   const std::vector<SurfaceTexture> &values)
 {
     std::vector<SurfaceTexture>().swap(palette);
     std::vector<uint16_t>().swap(index);
     index.reserve(values.size());
     for (const auto &value : values)
         index.push_back(paletteSlot(palette, value));
-    collapsePalette(palette, index, static_cast<int>(values.size()), def);
+}
+
+/// The DENSE pair collapsed to the 0/1/count form the compatible encodings
+/// and every document written before the base state it in
+void collapseDenseTexture(std::vector<SurfaceTexture> &palette, std::vector<uint16_t> &index,
+                          int count, const SurfaceTexture &def)
+{
+    if (palette.empty() || count == 0) {
+        std::vector<SurfaceTexture>().swap(palette);
+        std::vector<uint16_t>().swap(index);
+        return;
+    }
+    if (!index.empty()) {
+        std::vector<SurfaceTexture> used;
+        std::vector<uint16_t> renumbered;
+        renumbered.reserve(index.size());
+        for (uint16_t slot : index)
+            renumbered.push_back(paletteSlot(used, slot < palette.size() ? palette[slot] : def));
+        used.swap(palette);
+        renumbered.swap(index);
+        if (palette.size() > 1)
+            return;   // genuinely varies: the index earns its two bytes
+        std::vector<uint16_t>().swap(index);
+    }
+    if (palette.front() == def)
+        std::vector<SurfaceTexture>().swap(palette);
+    else if (palette.size() > 1)
+        std::vector<SurfaceTexture>(1, palette.front()).swap(palette);
 }
 
 } // namespace
@@ -349,7 +408,12 @@ void MaterialList::noteTextureBlobs(FileBlobManager &manager,
                                             const BlobReferrer &referrer) const
 {
     ensureNormalized();
-    for (const auto &value : rd().texturePalette) {
+    // The base's record and the overriding faces': a uniform texture lives
+    // in the base and in no palette slot at all, so a save that walked only
+    // the palette would leave its files behind
+    std::vector<SurfaceTexture> named = rd().texturePalette;
+    named.push_back(rd().base.texture);
+    for (const auto &value : named) {
         for (uint8_t slot = 0; slot < SurfaceTexture::SlotCount; ++slot) {
             const auto it = rd().textureBlobs.find(value.maps[slot]);
             if (value.maps[slot].empty() || it == rd().textureBlobs.end()) {
@@ -392,7 +456,9 @@ void MaterialList::assignRestoredBlob(const FileBlobHandle &blob)
 /// tells a restore it has nothing left queued
 bool MaterialList::holdsEveryNamedBlob() const
 {
-    for (const auto &value : rd().texturePalette) {
+    std::vector<SurfaceTexture> named = rd().texturePalette;
+    named.push_back(rd().base.texture);
+    for (const auto &value : named) {
         for (const auto &hash : value.maps) {
             if (!hash.empty() && rd().textureBlobs.find(hash) == rd().textureBlobs.end()) {
                 return false;
@@ -435,7 +501,10 @@ void MaterialList::pruneTextureBlobs()
         return;
     }
     std::set<std::string> named;
-    for (const auto &value : rd().texturePalette) {
+    std::vector<SurfaceTexture> records = rd().texturePalette;
+    // The base's record names content exactly as an override's does
+    records.push_back(rd().base.texture);
+    for (const auto &value : records) {
         for (const auto &hash : value.maps) {
             if (!hash.empty()) {
                 named.insert(hash);
@@ -467,52 +536,61 @@ bool MaterialList::isPBR() const
     return rd().pbr;
 }
 
-const std::vector<Color> &MaterialList::getAmbientColors() const
+const std::vector<Color> &MaterialList::getAmbientOverrides() const
 {
+    ensureNormalized();
     return rd().ambient;
 }
 
-const std::vector<Color> &MaterialList::getDiffuseColors() const
+const std::vector<Color> &MaterialList::getDiffuseOverrides() const
 {
+    ensureNormalized();
     return rd().diffuse;
 }
 
-const std::vector<Color> &MaterialList::getSpecularColors() const
+const std::vector<Color> &MaterialList::getSpecularOverrides() const
 {
+    ensureNormalized();
     return rd().specular;
 }
 
-const std::vector<Color> &MaterialList::getEmissiveColors() const
+const std::vector<Color> &MaterialList::getEmissiveOverrides() const
 {
+    ensureNormalized();
     return rd().emissive;
 }
 
-const std::vector<float> &MaterialList::getShininessValues() const
+const std::vector<float> &MaterialList::getShininessOverrides() const
 {
+    ensureNormalized();
     return rd().shininess;
 }
 
-const std::vector<std::string> &MaterialList::getImages() const
+const std::vector<std::string> &MaterialList::getImageOverrides() const
 {
+    ensureNormalized();
     return rd().image;
 }
 
-const std::vector<std::string> &MaterialList::getImagePaths() const
+const std::vector<std::string> &MaterialList::getImagePathOverrides() const
 {
+    ensureNormalized();
     return rd().imagePath;
 }
 
-const std::vector<std::string> &MaterialList::getUuids() const
+const std::vector<std::string> &MaterialList::getUuidOverrides() const
 {
+    ensureNormalized();
     return rd().uuid;
 }
 
-const std::vector<int8_t> &MaterialList::getTypes() const
+const std::vector<int8_t> &MaterialList::getTypeOverrides() const
 {
+    ensureNormalized();
     return rd().type;
 }
 
-const std::vector<SurfaceFinish> &MaterialList::getFinishes() const
+const std::vector<SurfaceFinish> &MaterialList::getFinishOverrides() const
 {
     ensureNormalized();
     return rd().finish;
@@ -530,9 +608,114 @@ const std::vector<uint16_t> &MaterialList::getTextureIndex() const
     return rd().textureIndex;
 }
 
+// ==================== the fields, resolved ====================
+//
+// A fresh vector every time, so these are what a consumer of a whole field
+// asks for ONCE. Everything that reads a single entry goes to the indexed
+// getters, which touch no memory that is not already there.
+
+std::vector<Color> MaterialList::getAmbientColors() const
+{
+    ensureNormalized();
+    return expandSparse(rd().count, rd().overrides, rd().ambient, rd().base.ambientColor);
+}
+
+std::vector<Color> MaterialList::getDiffuseColors() const
+{
+    ensureNormalized();
+    return expandSparse(rd().count, rd().overrides, rd().diffuse, rd().base.diffuseColor);
+}
+
+std::vector<Color> MaterialList::getSpecularColors() const
+{
+    ensureNormalized();
+    return expandSparse(rd().count, rd().overrides, rd().specular, rd().base.specularColor);
+}
+
+std::vector<Color> MaterialList::getEmissiveColors() const
+{
+    ensureNormalized();
+    return expandSparse(rd().count, rd().overrides, rd().emissive, rd().base.emissiveColor);
+}
+
+std::vector<float> MaterialList::getShininessValues() const
+{
+    ensureNormalized();
+    return expandSparse(rd().count, rd().overrides, rd().shininess, rd().base.shininess);
+}
+
+std::vector<std::string> MaterialList::getImages() const
+{
+    ensureNormalized();
+    return expandSparse(rd().count, rd().overrides, rd().image, rd().base.image);
+}
+
+std::vector<std::string> MaterialList::getImagePaths() const
+{
+    ensureNormalized();
+    return expandSparse(rd().count, rd().overrides, rd().imagePath, rd().base.imagePath);
+}
+
+std::vector<std::string> MaterialList::getUuids() const
+{
+    ensureNormalized();
+    return expandSparse(rd().count, rd().overrides, rd().uuid, rd().base.uuid);
+}
+
+std::vector<int8_t> MaterialList::getTypes() const
+{
+    ensureNormalized();
+    return expandSparse(rd().count, rd().overrides, rd().type,
+                        static_cast<int8_t>(rd().base.getType()));
+}
+
+std::vector<SurfaceFinish> MaterialList::getFinishes() const
+{
+    ensureNormalized();
+    return expandSparse(rd().count, rd().overrides, rd().finish, rd().base.finish);
+}
+
+void MaterialList::getTextures(std::vector<SurfaceTexture> &palette,
+                               std::vector<uint16_t> &index) const
+{
+    ensureNormalized();
+    std::vector<SurfaceTexture>().swap(palette);
+    std::vector<uint16_t>().swap(index);
+    if (rd().count == 0)
+        return;
+    if (rd().textureIndex.empty()) {
+        // Uniform: the base's record, in the 0-or-1 palette shape the
+        // compatible encodings and the companion element expect
+        if (!(rd().base.texture == defaultMaterial().texture))
+            palette.push_back(rd().base.texture);
+        return;
+    }
+    // One slot per ENTRY, built by walking the overrides in step with the
+    // faces they name
+    const uint16_t baseSlot = paletteSlot(palette, rd().base.texture);
+    index.assign(static_cast<std::size_t>(rd().count), baseSlot);
+    for (std::size_t pos = 0; pos < rd().overrides.size(); ++pos) {
+        const std::size_t face = rd().overrides[pos];
+        if (face < index.size()) {
+            index[face] = paletteSlot(
+                    palette, sparseTextureAt(rd().texturePalette, rd().textureIndex,
+                                             static_cast<int>(pos), rd().base.texture));
+        }
+    }
+    collapseDenseTexture(palette, index, rd().count, defaultMaterial().texture);
+}
+
 bool MaterialList::hasTextureOrCard() const
 {
-    return !rd().image.empty() || !rd().imagePath.empty() || !rd().uuid.empty();
+    ensureNormalized();
+    return hasImage() || !rd().base.uuid.empty() || !rd().uuid.empty();
+}
+
+bool MaterialList::hasImage() const
+{
+    ensureNormalized();
+    return !rd().base.image.empty() || !rd().image.empty()
+        || !rd().base.imagePath.empty() || !rd().imagePath.empty();
 }
 
 bool MaterialList::hasFinish() const
@@ -540,15 +723,15 @@ bool MaterialList::hasFinish() const
     // Normalised, so a finish written and then cleared answers false rather
     // than "there is still an array there"
     ensureNormalized();
-    return !rd().finish.empty();
+    return !(rd().base.finish == defaultMaterial().finish) || !rd().finish.empty();
 }
 
 bool MaterialList::hasTexture() const
 {
-    // A palette entry survives collapse only while some entry resolves to
-    // it, so an empty palette is the whole answer
+    // A palette entry survives collapse only while some override resolves
+    // to it, so the base and an empty palette are the whole answer
     ensureNormalized();
-    return !rd().texturePalette.empty();
+    return !(rd().base.texture == defaultMaterial().texture) || !rd().texturePalette.empty();
 }
 
 // ==================== storage ====================
@@ -565,8 +748,12 @@ void MaterialList::normalize() const
         return;
     }
     Data &d = nd();
-    const Material &def = defaultMaterial();
     if (d.count == 0) {
+        d.base = defaultMaterial();
+        d.base.pbr = d.pbr;
+        d.base.specularColor = specularDefault();
+        d.base.shininess = shininessDefault();
+        std::vector<uint32_t>().swap(d.overrides);
         std::vector<Color>().swap(d.ambient);
         std::vector<Color>().swap(d.diffuse);
         std::vector<Color>().swap(d.specular);
@@ -579,20 +766,120 @@ void MaterialList::normalize() const
         std::vector<SurfaceFinish>().swap(d.finish);
         std::vector<SurfaceTexture>().swap(d.texturePalette);
         std::vector<uint16_t>().swap(d.textureIndex);
+        d.normalized = true;
+        return;
     }
-    else {
-        collapseField(d.ambient, def.ambientColor);
-        collapseField(d.diffuse, storedDiffuse(def));
-        collapseField(d.specular, specularDefault());
-        collapseField(d.emissive, def.emissiveColor);
-        collapseField(d.shininess, shininessDefault());
-        collapseField(d.image, def.image);
-        collapseField(d.imagePath, def.imagePath);
-        collapseField(d.uuid, def.uuid);
-        collapseField(d.type, static_cast<int8_t>(def.getType()));
-        collapseField(d.finish, def.finish);
-        collapsePalette(d.texturePalette, d.textureIndex, d.count, def.texture);
+
+    // Every entry an override AND every one of them agreeing is the base
+    // saying it: a field nothing disagrees about belongs to the object
+    // rather than to each of its faces, and that is what keeps a whole
+    // field landed dense from costing one value per face.
+    //
+    // Before the compaction below, not after: folding a field into the base
+    // is exactly what can leave an override with nothing left to say.
+    const bool everyFace = d.overrides.size() == static_cast<std::size_t>(d.count);
+    auto fold = [everyFace](auto &field, auto &baseValue) {
+        if (!everyFace || field.empty())
+            return;
+        for (std::size_t i = 1; i < field.size(); ++i) {
+            if (!(field[i] == field.front()))
+                return;
+        }
+        baseValue = field.front();
+        field.clear();
+    };
+    fold(d.ambient, d.base.ambientColor);
+    fold(d.diffuse, d.base.diffuseColor);
+    fold(d.specular, d.base.specularColor);
+    fold(d.emissive, d.base.emissiveColor);
+    fold(d.shininess, d.base.shininess);
+    fold(d.image, d.base.image);
+    fold(d.imagePath, d.base.imagePath);
+    fold(d.uuid, d.base.uuid);
+    if (everyFace && !d.type.empty()) {
+        bool uniform = true;
+        for (std::size_t i = 1; i < d.type.size() && uniform; ++i)
+            uniform = d.type[i] == d.type.front();
+        if (uniform) {
+            setMaterialType(d.base, d.type.front());
+            d.type.clear();
+        }
     }
+    fold(d.finish, d.base.finish);
+    if (everyFace && !d.textureIndex.empty()) {
+        bool uniform = true;
+        for (std::size_t i = 1; i < d.textureIndex.size() && uniform; ++i)
+            uniform = d.textureIndex[i] == d.textureIndex.front();
+        if (uniform) {
+            d.base.texture = sparseTextureAt(d.texturePalette, d.textureIndex, 0, d.base.texture);
+            std::vector<SurfaceTexture>().swap(d.texturePalette);
+            std::vector<uint16_t>().swap(d.textureIndex);
+        }
+    }
+
+    // An array whose every entry is the base's says nothing at all
+    auto drop = [](auto &field, const auto &baseValue) {
+        if (!field.empty() && saysNothing(field, baseValue))
+            field.clear();
+    };
+    drop(d.ambient, d.base.ambientColor);
+    drop(d.diffuse, d.base.diffuseColor);
+    drop(d.specular, d.base.specularColor);
+    drop(d.emissive, d.base.emissiveColor);
+    drop(d.shininess, d.base.shininess);
+    drop(d.image, d.base.image);
+    drop(d.imagePath, d.base.imagePath);
+    drop(d.uuid, d.base.uuid);
+    drop(d.type, static_cast<int8_t>(d.base.getType()));
+    drop(d.finish, d.base.finish);
+    collapseTexture(d.texturePalette, d.textureIndex, d.overrides.size(), d.base.texture);
+
+    // An override that no longer differs from the base in ANY field is not
+    // an override -- and a list of one entry cannot have one at all, since
+    // that entry IS what the object looks like (12.6).
+    const std::size_t n = d.overrides.size();
+    std::vector<bool> keep(n, d.count > 1);
+    for (std::size_t pos = 0; pos < n; ++pos) {
+        if (!keep[pos])
+            continue;
+        keep[pos] = !(sparseAt(d.ambient, int(pos), d.base.ambientColor) == d.base.ambientColor)
+            || !(sparseAt(d.diffuse, int(pos), d.base.diffuseColor) == d.base.diffuseColor)
+            || !(sparseAt(d.specular, int(pos), d.base.specularColor) == d.base.specularColor)
+            || !(sparseAt(d.emissive, int(pos), d.base.emissiveColor) == d.base.emissiveColor)
+            || sparseAt(d.shininess, int(pos), d.base.shininess) != d.base.shininess
+            || sparseAt(d.image, int(pos), d.base.image) != d.base.image
+            || sparseAt(d.imagePath, int(pos), d.base.imagePath) != d.base.imagePath
+            || sparseAt(d.uuid, int(pos), d.base.uuid) != d.base.uuid
+            || sparseAt(d.type, int(pos), static_cast<int8_t>(d.base.getType()))
+                    != static_cast<int8_t>(d.base.getType())
+            || !(sparseAt(d.finish, int(pos), d.base.finish) == d.base.finish)
+            || !(sparseTextureAt(d.texturePalette, d.textureIndex, int(pos), d.base.texture)
+                    == d.base.texture);
+    }
+    std::size_t kept = 0;
+    for (std::size_t pos = 0; pos < n; ++pos)
+        kept += keep[pos] ? 1 : 0;
+    if (kept != n) {
+        compactSparse(d.overrides, keep);
+        compactSparse(d.ambient, keep);
+        compactSparse(d.diffuse, keep);
+        compactSparse(d.specular, keep);
+        compactSparse(d.emissive, keep);
+        compactSparse(d.shininess, keep);
+        compactSparse(d.image, keep);
+        compactSparse(d.imagePath, keep);
+        compactSparse(d.uuid, keep);
+        compactSparse(d.type, keep);
+        compactSparse(d.finish, keep);
+        compactSparse(d.textureIndex, keep);
+        // The palette may now hold slots nothing points at
+        collapseTexture(d.texturePalette, d.textureIndex, d.overrides.size(), d.base.texture);
+    }
+
+    // The diffuse alpha IS the entry's transparency, so the base's second
+    // slot is never allowed to drift from it
+    d.base.transparency = d.base.diffuseColor.transparency();
+    d.base.pbr = d.pbr;
     d.normalized = true;
 }
 
@@ -608,20 +895,486 @@ void MaterialList::ensureNormalized() const
     }
 }
 
+// ==================== the base ====================
+
+const Material &MaterialList::getBase() const
+{
+    ensureNormalized();
+    return rd().base;
+}
+
+bool MaterialList::hasDerivedBase() const
+{
+    return rd().baseDerived;
+}
+
+const std::vector<uint32_t> &MaterialList::getOverrides() const
+{
+    ensureNormalized();
+    return rd().overrides;
+}
+
+bool MaterialList::hasOverrides() const
+{
+    ensureNormalized();
+    return !rd().overrides.empty();
+}
+
+bool MaterialList::isOverride(int idx) const
+{
+    ensureNormalized();
+    return overridePos(idx) >= 0;
+}
+
+int MaterialList::overridePos(int idx) const
+{
+    if (idx < 0 || rd().overrides.empty())
+        return -1;
+    const auto value = static_cast<uint32_t>(idx);
+    const auto it = std::lower_bound(rd().overrides.begin(), rd().overrides.end(), value);
+    if (it == rd().overrides.end() || *it != value)
+        return -1;
+    return static_cast<int>(it - rd().overrides.begin());
+}
+
+int MaterialList::makeOverride(int idx)
+{
+    const int found = overridePos(idx);
+    if (found >= 0)
+        return found;
+    Data &d = wd();
+    const auto value = static_cast<uint32_t>(idx);
+    const auto it = std::lower_bound(d.overrides.begin(), d.overrides.end(), value);
+    const int pos = static_cast<int>(it - d.overrides.begin());
+    d.overrides.insert(it, value);
+    // Every array that states anything gains the base's value there, which
+    // is what the new override reads until something writes to it. An
+    // import painting faces in order appends, which is where a sorted
+    // vector costs nothing.
+    insertSparse(d.ambient, pos, d.base.ambientColor);
+    insertSparse(d.diffuse, pos, d.base.diffuseColor);
+    insertSparse(d.specular, pos, d.base.specularColor);
+    insertSparse(d.emissive, pos, d.base.emissiveColor);
+    insertSparse(d.shininess, pos, d.base.shininess);
+    insertSparse(d.image, pos, d.base.image);
+    insertSparse(d.imagePath, pos, d.base.imagePath);
+    insertSparse(d.uuid, pos, d.base.uuid);
+    insertSparse(d.type, pos, static_cast<int8_t>(d.base.getType()));
+    insertSparse(d.finish, pos, d.base.finish);
+    insertTexture(d.texturePalette, d.textureIndex, pos, d.base.texture);
+    return pos;
+}
+
+void MaterialList::clearOverride(int idx)
+{
+    const int pos = overridePos(idx);
+    if (pos < 0)
+        return;
+    touchFields();
+    Data &d = wd();
+    d.overrides.erase(d.overrides.begin() + pos);
+    eraseSparse(d.ambient, pos);
+    eraseSparse(d.diffuse, pos);
+    eraseSparse(d.specular, pos);
+    eraseSparse(d.emissive, pos);
+    eraseSparse(d.shininess, pos);
+    eraseSparse(d.image, pos);
+    eraseSparse(d.imagePath, pos);
+    eraseSparse(d.uuid, pos);
+    eraseSparse(d.type, pos);
+    eraseSparse(d.finish, pos);
+    eraseSparse(d.textureIndex, pos);
+}
+
+void MaterialList::clearOverrides()
+{
+    if (rd().overrides.empty())
+        return;
+    touchFields();
+    Data &d = wd();
+    std::vector<uint32_t>().swap(d.overrides);
+    std::vector<Color>().swap(d.ambient);
+    std::vector<Color>().swap(d.diffuse);
+    std::vector<Color>().swap(d.specular);
+    std::vector<Color>().swap(d.emissive);
+    std::vector<float>().swap(d.shininess);
+    std::vector<std::string>().swap(d.image);
+    std::vector<std::string>().swap(d.imagePath);
+    std::vector<std::string>().swap(d.uuid);
+    std::vector<int8_t>().swap(d.type);
+    std::vector<SurfaceFinish>().swap(d.finish);
+    std::vector<SurfaceTexture>().swap(d.texturePalette);
+    std::vector<uint16_t>().swap(d.textureIndex);
+    pruneTextureBlobs();
+}
+
+void MaterialList::setBase(const Material &value)
+{
+    const Material mat = inMode(value);
+    ensureNormalized();
+    if (rd().count == 0) {
+        // A base with nothing to wear it is not a list; the same rule the
+        // per field whole-object writes follow
+        setSize(1, mat);
+        return;
+    }
+    const Data &d = rd();
+    if (d.base.ambientColor == mat.ambientColor && d.base.diffuseColor == storedDiffuse(mat)
+        && d.base.specularColor == mat.specularColor && d.base.emissiveColor == mat.emissiveColor
+        && d.base.shininess == mat.shininess && d.base.image == mat.image
+        && d.base.imagePath == mat.imagePath && d.base.uuid == mat.uuid
+        && d.base.getType() == mat.getType() && d.base.finish == storedFinish(mat.finish)
+        && d.base.texture == storedTexture(mat.texture)) {
+        return;
+    }
+    touchFields();
+    Data &w = wd();
+    setMaterialType(w.base, static_cast<int8_t>(mat.getType()));
+    w.base.ambientColor = mat.ambientColor;
+    w.base.diffuseColor = storedDiffuse(mat);
+    w.base.specularColor = mat.specularColor;
+    w.base.emissiveColor = mat.emissiveColor;
+    w.base.shininess = mat.shininess;
+    w.base.image = mat.image;
+    w.base.imagePath = mat.imagePath;
+    w.base.uuid = mat.uuid;
+    w.base.finish = storedFinish(mat.finish);
+    w.base.texture = storedTexture(mat.texture);
+}
+
+/// The base's type, without Material::setType() taking the preset's colours
+/// with it -- the trap getMaterial() documents, from the other side
+void MaterialList::setMaterialType(Material &mat, int8_t type)
+{
+    if (static_cast<int8_t>(mat.getType()) == type)
+        return;
+    const Material saved = mat;
+    mat.setType(static_cast<Material::MaterialType>(type));
+    mat.ambientColor = saved.ambientColor;
+    mat.diffuseColor = saved.diffuseColor;
+    mat.specularColor = saved.specularColor;
+    mat.emissiveColor = saved.emissiveColor;
+    mat.shininess = saved.shininess;
+    mat.transparency = saved.transparency;
+    mat.image = saved.image;
+    mat.imagePath = saved.imagePath;
+    mat.uuid = saved.uuid;
+    mat.finish = saved.finish;
+    mat.texture = saved.texture;
+    mat.pbr = saved.pbr;
+}
+
+void MaterialList::adoptDense()
+{
+    if (_data.isNull())
+        return;
+    Data &d = nd();
+    // The dense form has no overrides in it by construction
+    std::vector<uint32_t>().swap(d.overrides);
+    if (d.count == 0) {
+        d.normalized = false;
+        d.baseDerived = true;
+        normalize();
+        return;
+    }
+
+    const Material &def = defaultMaterial();
+    collapseField(d.ambient, def.ambientColor);
+    collapseField(d.diffuse, storedDiffuse(def));
+    collapseField(d.specular, specularDefault());
+    collapseField(d.emissive, def.emissiveColor);
+    collapseField(d.shininess, shininessDefault());
+    collapseField(d.image, def.image);
+    collapseField(d.imagePath, def.imagePath);
+    collapseField(d.uuid, def.uuid);
+    collapseField(d.type, static_cast<int8_t>(def.getType()));
+    collapseField(d.finish, def.finish);
+    collapseDenseTexture(d.texturePalette, d.textureIndex, d.count, def.texture);
+
+    // A field the whole list agrees about IS the base's; one that varies
+    // leaves the base at the default and every entry an override, until a
+    // base is derived (@ref materiallist_base). The base starts from the
+    // mode's own defaults, which is what an absent field always read as.
+    d.base = def;
+    d.base.pbr = d.pbr;
+    d.base.specularColor = specularDefault();
+    d.base.shininess = shininessDefault();
+    bool varies = false;
+    auto take = [&varies](auto &field, auto &baseValue) {
+        if (field.size() == 1) {
+            baseValue = field.front();
+            field.clear();
+        }
+        else if (!field.empty()) {
+            varies = true;
+        }
+    };
+    take(d.ambient, d.base.ambientColor);
+    take(d.diffuse, d.base.diffuseColor);
+    take(d.specular, d.base.specularColor);
+    take(d.emissive, d.base.emissiveColor);
+    take(d.shininess, d.base.shininess);
+    take(d.image, d.base.image);
+    take(d.imagePath, d.base.imagePath);
+    take(d.uuid, d.base.uuid);
+    take(d.finish, d.base.finish);
+    if (d.type.size() == 1) {
+        setMaterialType(d.base, d.type.front());
+        d.type.clear();
+    }
+    else if (!d.type.empty()) {
+        varies = true;
+    }
+    if (d.textureIndex.empty()) {
+        d.base.texture = d.texturePalette.empty() ? def.texture : d.texturePalette.front();
+        std::vector<SurfaceTexture>().swap(d.texturePalette);
+    }
+    else {
+        varies = true;
+    }
+    d.base.transparency = d.base.diffuseColor.transparency();
+
+    if (varies) {
+        // Every face holds its own until the heuristic says which of them
+        // the object is. This costs exactly what the dense form cost.
+        d.overrides.resize(static_cast<std::size_t>(d.count));
+        for (int i = 0; i < d.count; ++i)
+            d.overrides[static_cast<std::size_t>(i)] = static_cast<uint32_t>(i);
+        d.baseDerived = false;
+    }
+    else {
+        d.baseDerived = true;
+    }
+    d.normalized = false;
+    normalize();
+}
+
+void MaterialList::ensureBase() const
+{
+    if (!rd().baseDerived)
+        deriveBase();
+}
+
+/** Everything one overriding POSITION states, as a key that orders
+ *
+ * What makes two painted faces the same material, for the vote in
+ * deriveBase. The texture is its palette SLOT, which is exact because the
+ * normal form numbers the palette in first-use order and holds no
+ * duplicate.
+ */
+MaterialList::OverrideKey MaterialList::overrideKey(int pos) const
+{
+    const Data &d = rd();
+    const SurfaceFinish finish = sparseAt(d.finish, pos, d.base.finish);
+    return OverrideKey {
+        sparseAt(d.ambient, pos, d.base.ambientColor).getPackedValue(),
+        sparseAt(d.diffuse, pos, d.base.diffuseColor).getPackedValue(),
+        sparseAt(d.specular, pos, d.base.specularColor).getPackedValue(),
+        sparseAt(d.emissive, pos, d.base.emissiveColor).getPackedValue(),
+        sparseAt(d.shininess, pos, d.base.shininess),
+        sparseAt(d.type, pos, static_cast<int8_t>(d.base.getType())),
+        sparseAt(d.image, pos, d.base.image),
+        sparseAt(d.imagePath, pos, d.base.imagePath),
+        sparseAt(d.uuid, pos, d.base.uuid),
+        finish.pattern, finish.pitch, finish.depth, finish.angle,
+        d.textureIndex.empty() ? 0 : d.textureIndex[static_cast<std::size_t>(pos)]
+    };
+}
+
+/** Put a different base under the same entries
+ *
+ * Every face keeps what it resolves to now: the ones that wore the old base
+ * become overrides, the ones that match the new base stop being them. Runs
+ * through the dense form of each field, which is the only way to ask the
+ * question once per face rather than once per face per field.
+ */
+void MaterialList::rebase(const Material &newBase) const
+{
+    Data &d = nd();
+    const std::size_t n = static_cast<std::size_t>(d.count);
+    std::vector<Color> ambient = expandSparse(d.count, d.overrides, d.ambient, d.base.ambientColor);
+    std::vector<Color> diffuse = expandSparse(d.count, d.overrides, d.diffuse, d.base.diffuseColor);
+    std::vector<Color> specular =
+            expandSparse(d.count, d.overrides, d.specular, d.base.specularColor);
+    std::vector<Color> emissive =
+            expandSparse(d.count, d.overrides, d.emissive, d.base.emissiveColor);
+    std::vector<float> shininess =
+            expandSparse(d.count, d.overrides, d.shininess, d.base.shininess);
+    std::vector<std::string> image = expandSparse(d.count, d.overrides, d.image, d.base.image);
+    std::vector<std::string> imagePath =
+            expandSparse(d.count, d.overrides, d.imagePath, d.base.imagePath);
+    std::vector<std::string> uuid = expandSparse(d.count, d.overrides, d.uuid, d.base.uuid);
+    std::vector<int8_t> type = expandSparse(d.count, d.overrides, d.type,
+                                            static_cast<int8_t>(d.base.getType()));
+    std::vector<SurfaceFinish> finish =
+            expandSparse(d.count, d.overrides, d.finish, d.base.finish);
+    std::vector<SurfaceTexture> texture(n, d.base.texture);
+    if (!d.textureIndex.empty()) {
+        for (std::size_t pos = 0; pos < d.overrides.size(); ++pos) {
+            if (d.overrides[pos] < n) {
+                texture[d.overrides[pos]] = sparseTextureAt(d.texturePalette, d.textureIndex,
+                                                            static_cast<int>(pos), d.base.texture);
+            }
+        }
+    }
+
+    d.base = newBase;
+    d.base.transparency = d.base.diffuseColor.transparency();
+    d.base.pbr = d.pbr;
+    const int8_t baseType = static_cast<int8_t>(d.base.getType());
+    std::vector<uint32_t>().swap(d.overrides);
+    std::vector<Color>().swap(d.ambient);
+    std::vector<Color>().swap(d.diffuse);
+    std::vector<Color>().swap(d.specular);
+    std::vector<Color>().swap(d.emissive);
+    std::vector<float>().swap(d.shininess);
+    std::vector<std::string>().swap(d.image);
+    std::vector<std::string>().swap(d.imagePath);
+    std::vector<std::string>().swap(d.uuid);
+    std::vector<int8_t>().swap(d.type);
+    std::vector<SurfaceFinish>().swap(d.finish);
+    std::vector<SurfaceTexture>().swap(d.texturePalette);
+    std::vector<uint16_t>().swap(d.textureIndex);
+    for (std::size_t i = 0; i < n; ++i) {
+        if (ambient[i] == d.base.ambientColor && diffuse[i] == d.base.diffuseColor
+            && specular[i] == d.base.specularColor && emissive[i] == d.base.emissiveColor
+            && shininess[i] == d.base.shininess && image[i] == d.base.image
+            && imagePath[i] == d.base.imagePath && uuid[i] == d.base.uuid
+            && type[i] == baseType && finish[i] == d.base.finish
+            && texture[i] == d.base.texture) {
+            continue;
+        }
+        d.overrides.push_back(static_cast<uint32_t>(i));
+    }
+    const std::size_t k = d.overrides.size();
+    if (k) {
+        std::vector<SurfaceTexture> records;
+        records.reserve(k);
+        for (std::size_t pos = 0; pos < k; ++pos) {
+            const std::size_t i = d.overrides[pos];
+            d.ambient.push_back(ambient[i]);
+            d.diffuse.push_back(diffuse[i]);
+            d.specular.push_back(specular[i]);
+            d.emissive.push_back(emissive[i]);
+            d.shininess.push_back(shininess[i]);
+            d.image.push_back(std::move(image[i]));
+            d.imagePath.push_back(std::move(imagePath[i]));
+            d.uuid.push_back(std::move(uuid[i]));
+            d.type.push_back(type[i]);
+            d.finish.push_back(finish[i]);
+            records.push_back(texture[i]);
+        }
+        assignPalette(d.texturePalette, d.textureIndex, records);
+    }
+    d.normalized = false;
+    normalize();
+}
+
+bool MaterialList::namesDiffuse(const Color &color) const
+{
+    ensureNormalized();
+    const Data &d = rd();
+    if (d.count == 0)
+        return false;
+    // The base counts only while some face still wears it
+    if (d.overrides.size() < static_cast<std::size_t>(d.count) && d.base.diffuseColor == color)
+        return true;
+    for (const auto &value : d.diffuse) {
+        if (value == color)
+            return true;
+    }
+    return false;
+}
+
+void MaterialList::deriveBase(const Color *hint, const std::vector<double> *weights) const
+{
+    if (_data.isNull() || rd().baseDerived)
+        return;
+    ensureNormalized();
+    nd().baseDerived = true;
+    const Data &d = rd();
+    if (d.count <= 1 || d.overrides.empty()) {
+        return;   // the base is already the only thing the list says
+    }
+
+    auto weightOf = [weights](std::size_t face) {
+        if (!weights || face >= weights->size())
+            return 1.0;
+        const double value = (*weights)[face];
+        return value > 0.0 ? value : 0.0;
+    };
+    // The faces that are not overrides already wear the base, and they vote
+    // for it as one block
+    double baseScore = 0.0;
+    for (int i = 0; i < d.count; ++i)
+        baseScore += weightOf(static_cast<std::size_t>(i));
+    for (uint32_t face : d.overrides)
+        baseScore -= weightOf(face);
+
+    // 12.4, in order. The mirror first: on a document this fork wrote it
+    // holds the last uniform value, which is what the object looked like
+    // before its faces were painted. On an import it holds the
+    // constructor's grey, which occurs in no imported list, so it declines.
+    int winner = -1;
+    if (hint) {
+        if (baseScore > 0.0 && d.base.diffuseColor == *hint)
+            return;   // the base already is what the mirror names
+        for (std::size_t pos = 0; pos < d.overrides.size() && winner < 0; ++pos) {
+            if (sparseAt(d.diffuse, static_cast<int>(pos), d.base.diffuseColor) == *hint)
+                winner = static_cast<int>(pos);
+        }
+    }
+    if (winner < 0) {
+        // Area, not count: a green board with five hundred gold pads is
+        // decided the wrong way by count, and by both the same way when the
+        // faces are all of a size. Overrides that say the same thing sum,
+        // which is what makes this "the material covering the largest area"
+        // and not "the largest face" -- grouped through an ordered key
+        // rather than pairwise, because an import can override thousands of
+        // faces and a pairwise scan over those is quadratic.
+        std::map<OverrideKey, std::size_t> groups;
+        std::vector<double> score(d.overrides.size(), 0.0);
+        for (std::size_t pos = 0; pos < d.overrides.size(); ++pos) {
+            const auto found = groups.emplace(overrideKey(static_cast<int>(pos)), pos);
+            score[found.first->second] += weightOf(d.overrides[pos]);
+        }
+        double best = baseScore;
+        for (std::size_t pos = 0; pos < score.size(); ++pos) {
+            if (score[pos] > best) {
+                best = score[pos];
+                winner = static_cast<int>(pos);
+            }
+        }
+    }
+    if (winner < 0)
+        return;   // the faces already outside the overrides win
+
+    Material chosen = d.base;
+    setMaterialType(chosen, sparseAt(d.type, winner, static_cast<int8_t>(d.base.getType())));
+    chosen.ambientColor = sparseAt(d.ambient, winner, d.base.ambientColor);
+    chosen.diffuseColor = sparseAt(d.diffuse, winner, d.base.diffuseColor);
+    chosen.specularColor = sparseAt(d.specular, winner, d.base.specularColor);
+    chosen.emissiveColor = sparseAt(d.emissive, winner, d.base.emissiveColor);
+    chosen.shininess = sparseAt(d.shininess, winner, d.base.shininess);
+    chosen.image = sparseAt(d.image, winner, d.base.image);
+    chosen.imagePath = sparseAt(d.imagePath, winner, d.base.imagePath);
+    chosen.uuid = sparseAt(d.uuid, winner, d.base.uuid);
+    chosen.finish = sparseAt(d.finish, winner, d.base.finish);
+    chosen.texture = sparseTextureAt(d.texturePalette, d.textureIndex, winner, d.base.texture);
+    rebase(chosen);
+}
+
 bool MaterialList::variesOnlyInDiffuse() const
 {
     ensureNormalized();
-    // Normalised, so a field is 0, 1 or rd().count: anything above one is a field
-    // that genuinely differs from entry to entry. Per-entry transparency is
-    // the diffuse alpha, so it is variance a colour list CAN express and is
-    // deliberately not tested here.
-    return rd().ambient.size() <= 1 && rd().specular.size() <= 1 && rd().emissive.size() <= 1
-        && rd().shininess.size() <= 1 && rd().type.size() <= 1
-        && rd().image.size() <= 1 && rd().imagePath.size() <= 1 && rd().uuid.size() <= 1
-        && rd().finish.size() <= 1
-        // Normalised, so an index exists only while the palette genuinely
-        // varies -- the uniform and all-default forms have none
-        && rd().textureIndex.empty();
+    // Every non-diffuse override array empty: nothing but the colour is
+    // stated per face. Per-entry transparency is the diffuse alpha, so it
+    // is variance a colour list CAN express and is deliberately not tested
+    // here.
+    return rd().ambient.empty() && rd().specular.empty() && rd().emissive.empty()
+        && rd().shininess.empty() && rd().type.empty()
+        && rd().image.empty() && rd().imagePath.empty() && rd().uuid.empty()
+        && rd().finish.empty() && rd().textureIndex.empty();
 }
 
 //**************************************************************************
@@ -659,9 +1412,21 @@ void MaterialList::setPBR(bool enable)
 {
     if (rd().pbr == enable)
         return;
-    // The collapse baselines follow the mode
+    // Two of the base's fields mean something different in each mode when
+    // nobody has stated them: the Phong specular's alpha of one would read
+    // as full metal, and the shininess baseline is not the roughness one.
+    // A base still holding the old mode's default is a field nobody stated,
+    // so it moves to the new mode's -- which is exactly what an empty field
+    // used to do when the baseline it read was chosen by the mode.
+    const Color oldSpecular = specularDefault();
+    const float oldShininess = shininessDefault();
     touchFields();
     wd().pbr = enable;
+    if (wd().base.specularColor == oldSpecular)
+        wd().base.specularColor = specularDefault();
+    if (wd().base.shininess == oldShininess)
+        wd().base.shininess = shininessDefault();
+    wd().base.pbr = enable;
 }
 
 void MaterialList::convertPBR(bool enable)
@@ -688,12 +1453,12 @@ float MaterialList::getMetallic(int idx) const
 {
     if (!rd().pbr)
         return 0.0f;  // the Phong model has no metals
-    return fieldAt(rd().specular, idx, specularDefault()).a;
+    return getSpecularColor(idx).a;
 }
 
 float MaterialList::getRoughness(int idx) const
 {
-    const float value = fieldAt(rd().shininess, idx, shininessDefault());
+    const float value = getShininess(idx);
     return rd().pbr ? value : Material::shininessToRoughness(value);
 }
 
@@ -703,73 +1468,58 @@ void MaterialList::setMetallicValues(const std::vector<float> &values)
     // the diffuse alphas: empty is back-to-default, 1 uniform, N per entry,
     // and every entry's tint rgb stays what it was.
     requirePBR();
-    const Color def = specularDefault();
     const int newCount = static_cast<int>(values.size());
-    std::vector<Color> colors = rd().specular;
+    std::vector<Color> colors = getSpecularColors();
     if (newCount == 0 || newCount == 1) {
-        const float alpha = newCount ? values[0] : def.a;
+        const float alpha = newCount ? values[0] : specularDefault().a;
         if (colors.empty())
-            colors.push_back(def);
+            colors.push_back(specularDefault());
         for (auto &color : colors)
             color.a = alpha;
     }
     else {
-        colors.resize(newCount, fieldAt(rd().specular, 0, def));
+        colors.resize(newCount, getSpecularColor(0));
         for (int i = 0; i < newCount; ++i)
             colors[i].a = values[i];
     }
-    setField(&Data::specular, colors, def);
+    setField(&Material::specularColor, &Data::specular, colors);
 }
 
 void MaterialList::setRoughnessValues(const std::vector<float> &values)
 {
     requirePBR();
-    setField(&Data::shininess, values, shininessDefault());
+    setField(&Material::shininess, &Data::shininess, values);
 }
 
 void MaterialList::setMetallic(int idx, float value)
 {
     requirePBR();
-    Color color = getSpecularColor(idx < 0 || idx >= wd().count ? 0 : idx);
+    Color color = getSpecularColor(idx < 0 || idx >= rd().count ? 0 : idx);
     color.a = value;
-    setFieldValue(&Data::specular, idx, color, specularDefault());
+    setFieldValue(&Material::specularColor, &Data::specular, idx, color);
 }
 
 void MaterialList::setRoughness(int idx, float value)
 {
     requirePBR();
-    setFieldValue(&Data::shininess, idx, value, shininessDefault());
+    setFieldValue(&Material::shininess, &Data::shininess, idx, value);
 }
 
 void MaterialList::setMetallic(float value)
 {
+    // The base's tint alpha, as every whole-object write moves the base:
+    // an overriding face holds its own metallic exactly as it holds its own
+    // colour (docs/ShapeAppearanceDesign.md 12.2).
     requirePBR();
-    if (wd().specular.size() <= 1) {
-        Color color = fieldAt(wd().specular, 0, specularDefault());
-        color.a = value;
-        setUniformField(&Data::specular, color, specularDefault());
-        return;
-    }
-    // Per-entry tints: only the alphas move
-    bool changed = false;
-    for (const auto &color : wd().specular) {
-        if (color.a != value) {
-            changed = true;
-            break;
-        }
-    }
-    if (!changed)
-        return;
-    touchFields();
-    for (auto &color : wd().specular)
-        color.a = value;
-    normalize();
+    Color color = getBase().specularColor;
+    color.a = value;
+    setBaseField(&Material::specularColor, color, specularDefault());
 }
 
 void MaterialList::setRoughness(float value)
 {
     requirePBR();
-    setUniformField(&Data::shininess, value, shininessDefault());
+    setBaseField(&Material::shininess, value, shininessDefault());
 }
 
 Material MaterialList::getPhongMaterial(int idx) const
@@ -781,68 +1531,79 @@ Material MaterialList::getPhongMaterial(int idx) const
     return Material::pbrToPhong(mat);
 }
 
+Material MaterialList::getPhongBase() const
+{
+    const Material &mat = getBase();
+    return rd().pbr ? Material::pbrToPhong(mat) : mat;
+}
+
 // ==================== restore ====================
 void MaterialList::restoreValues(std::vector<Material> &&values, bool legacy)
 {
     touchFields();
-    wd().count = static_cast<int>(values.size());
+    Data &d = wd();
+    d.count = static_cast<int>(values.size());
     std::vector<float> transparency;
-    std::vector<Color>().swap(wd().ambient);
-    std::vector<Color>().swap(wd().diffuse);
-    std::vector<Color>().swap(wd().specular);
-    std::vector<Color>().swap(wd().emissive);
-    std::vector<float>().swap(wd().shininess);
-    std::vector<std::string>().swap(wd().image);
-    std::vector<std::string>().swap(wd().imagePath);
-    std::vector<std::string>().swap(wd().uuid);
-    std::vector<int8_t>().swap(wd().type);
-    // No wd().finish or texture here: none of the encodings that come through
+    std::vector<uint32_t>().swap(d.overrides);
+    std::vector<Color>().swap(d.ambient);
+    std::vector<Color>().swap(d.diffuse);
+    std::vector<Color>().swap(d.specular);
+    std::vector<Color>().swap(d.emissive);
+    std::vector<float>().swap(d.shininess);
+    std::vector<std::string>().swap(d.image);
+    std::vector<std::string>().swap(d.imagePath);
+    std::vector<std::string>().swap(d.uuid);
+    std::vector<int8_t>().swap(d.type);
+    // No finish or texture here: none of the encodings that come through
     // this function can carry either, so every entry reads as unfinished
     // and untextured -- which the empty fields already say, at no cost.
-    std::vector<SurfaceFinish>().swap(wd().finish);
-    std::vector<SurfaceTexture>().swap(wd().texturePalette);
-    std::vector<uint16_t>().swap(wd().textureIndex);
-    if (wd().count) {
-        wd().ambient.reserve(wd().count);
-        wd().diffuse.reserve(wd().count);
-        wd().specular.reserve(wd().count);
-        wd().emissive.reserve(wd().count);
-        wd().shininess.reserve(wd().count);
-        transparency.reserve(wd().count);
-        wd().image.reserve(wd().count);
-        wd().imagePath.reserve(wd().count);
-        wd().uuid.reserve(wd().count);
-        wd().type.reserve(wd().count);
+    std::vector<SurfaceFinish>().swap(d.finish);
+    std::vector<SurfaceTexture>().swap(d.texturePalette);
+    std::vector<uint16_t>().swap(d.textureIndex);
+    if (d.count) {
+        d.ambient.reserve(d.count);
+        d.diffuse.reserve(d.count);
+        d.specular.reserve(d.count);
+        d.emissive.reserve(d.count);
+        d.shininess.reserve(d.count);
+        transparency.reserve(d.count);
+        d.image.reserve(d.count);
+        d.imagePath.reserve(d.count);
+        d.uuid.reserve(d.count);
+        d.type.reserve(d.count);
         for (auto &mat : values) {
             // The diffuse alpha exactly as the file states it; which of the
             // two slots is the entry's transparency is decided below, once
             // the legacy conversion has made them comparable.
-            wd().ambient.push_back(mat.ambientColor);
-            wd().diffuse.push_back(mat.diffuseColor);
-            wd().specular.push_back(mat.specularColor);
-            wd().emissive.push_back(mat.emissiveColor);
-            wd().shininess.push_back(mat.shininess);
+            d.ambient.push_back(mat.ambientColor);
+            d.diffuse.push_back(mat.diffuseColor);
+            d.specular.push_back(mat.specularColor);
+            d.emissive.push_back(mat.emissiveColor);
+            d.shininess.push_back(mat.shininess);
             transparency.push_back(mat.transparency);
-            wd().image.push_back(std::move(mat.image));
-            wd().imagePath.push_back(std::move(mat.imagePath));
-            wd().uuid.push_back(std::move(mat.uuid));
-            wd().type.push_back(static_cast<int8_t>(mat.getType()));
+            d.image.push_back(std::move(mat.image));
+            d.imagePath.push_back(std::move(mat.imagePath));
+            d.uuid.push_back(std::move(mat.uuid));
+            d.type.push_back(static_cast<int8_t>(mat.getType()));
         }
         if (legacy) {
             // Every colour's alpha meant transparency: invert, as upstream's
             // convertAlphaInMaterial does. For the diffuse this makes the
             // alpha an opacity, so that the merge below can compare it with
             // the field.
-            for (auto *field : {&wd().ambient, &wd().diffuse, &wd().specular, &wd().emissive}) {
+            for (auto *field : {&d.ambient, &d.diffuse, &d.specular, &d.emissive}) {
                 for (auto &color : *field)
                     convertAlpha(color);
             }
         }
         applyRestoredTransparency(transparency, legacy);
-        normalize();
+        // The file states one entry at a time and says nothing about which
+        // of them the object is; adoptDense holds that open until a base is
+        // derived (@ref materiallist_base).
+        adoptDense();
     }
     else {
-        wd().normalized = true;
+        normalize();
     }
 }
 
@@ -851,12 +1612,18 @@ void MaterialList::applyRestoredTransparency(const std::vector<float> &transpare
 {
     if (transparency.empty() || wd().count == 0)
         return;
-    // Sizes are 1 or wd().count, validated by every reader that fills the vector.
+    // Called between a dense landing and adoptDense, so the diffuse field
+    // here is dense too: 0, 1 or count long, as the file wrote it.
     const std::size_t n = transparency.size();
-    expandField(wd().diffuse, wd().count, storedDiffuse(defaultMaterial()));
-    for (int i = 0; i < wd().count; ++i) {
+    Data &d = wd();
+    if (static_cast<int>(d.diffuse.size()) != d.count) {
+        const Color current = d.diffuse.empty() ? storedDiffuse(defaultMaterial())
+                                                : d.diffuse.front();
+        d.diffuse.assign(d.count, current);
+    }
+    for (int i = 0; i < d.count; ++i) {
         const float field = transparency[n == 1 ? 0 : i];
-        float &alpha = wd().diffuse[i].a;
+        float &alpha = d.diffuse[i].a;
         // See restoreValues: for a legacy file both slots were transparency
         // and the larger of the two is the one that was actually written (the
         // alpha arrives here already inverted, so it is min() of opacities);
@@ -871,9 +1638,15 @@ void MaterialList::applyRestoredTransparency(const std::vector<float> &transpare
 // ==================== access ====================
 void MaterialList::setSize(int newSize)
 {
-    // Grow with what an unset entry reads as, which follows the mode --
-    // and say so, because these slots are already in this list's reading:
-    // converting them again would state the mode's own default twice over
+    // Grow with what an unset entry reads as, which is the BASE: adding a
+    // face to an object makes it look like the object.
+    if (newSize == rd().count)
+        return;
+    if (newSize > rd().count && rd().count > 0) {
+        touchFields();
+        wd().count = newSize;
+        return;
+    }
     Material def = defaultMaterial();
     def.specularColor = specularDefault();
     def.shininess = shininessDefault();
@@ -888,25 +1661,97 @@ void MaterialList::setSize(int newSize, const Material &fill)
     if (newSize < 0)
         throw Base::ValueError("negative list size");
 
+    touchFields();
+    if (newSize < rd().count) {
+        // The faces that are gone take their overrides with them
+        Data &d = wd();
+        std::size_t kept = 0;
+        while (kept < d.overrides.size()
+               && d.overrides[kept] < static_cast<uint32_t>(newSize)) {
+            ++kept;
+        }
+        if (kept != d.overrides.size()) {
+            std::vector<bool> keep(d.overrides.size(), false);
+            for (std::size_t pos = 0; pos < kept; ++pos)
+                keep[pos] = true;
+            compactSparse(d.overrides, keep);
+            compactSparse(d.ambient, keep);
+            compactSparse(d.diffuse, keep);
+            compactSparse(d.specular, keep);
+            compactSparse(d.emissive, keep);
+            compactSparse(d.shininess, keep);
+            compactSparse(d.image, keep);
+            compactSparse(d.imagePath, keep);
+            compactSparse(d.uuid, keep);
+            compactSparse(d.type, keep);
+            compactSparse(d.finish, keep);
+            compactSparse(d.textureIndex, keep);
+        }
+        d.count = newSize;
+        return;
+    }
+
     // Growth fills entries of this list, so the filler reads as this list
     // does; only a whole-list assignment restates the mode
-    const Material def = inMode(fill);
-    touchFields();
-    const Material &zero = defaultMaterial();
-    resizeField(wd().ambient, wd().count, newSize, def.ambientColor, zero.ambientColor);
-    resizeField(wd().diffuse, wd().count, newSize, storedDiffuse(def), storedDiffuse(zero));
-    resizeField(wd().specular, wd().count, newSize, def.specularColor, specularDefault());
-    resizeField(wd().emissive, wd().count, newSize, def.emissiveColor, zero.emissiveColor);
-    resizeField(wd().shininess, wd().count, newSize, def.shininess, shininessDefault());
-    resizeField(wd().image, wd().count, newSize, def.image, zero.image);
-    resizeField(wd().imagePath, wd().count, newSize, def.imagePath, zero.imagePath);
-    resizeField(wd().uuid, wd().count, newSize, def.uuid, zero.uuid);
-    resizeField(wd().type, wd().count, newSize, static_cast<int8_t>(def.getType()),
-                static_cast<int8_t>(zero.getType()));
-    resizeField(wd().finish, wd().count, newSize, storedFinish(def.finish), zero.finish);
-    resizePalette(wd().texturePalette, wd().textureIndex, wd().count, newSize,
-                  storedTexture(def.texture), zero.texture);
+    const Material mat = inMode(fill);
+    const int oldCount = rd().count;
+    if (oldCount == 0) {
+        // Nothing to be the base yet, so the filler IS it
+        Data &d = wd();
+        d.count = newSize;
+        d.base = defaultMaterial();
+        d.base.pbr = d.pbr;
+        d.baseDerived = true;
+        setMaterialType(d.base, static_cast<int8_t>(mat.getType()));
+        d.base.ambientColor = mat.ambientColor;
+        d.base.diffuseColor = storedDiffuse(mat);
+        d.base.specularColor = mat.specularColor;
+        d.base.emissiveColor = mat.emissiveColor;
+        d.base.shininess = mat.shininess;
+        d.base.image = mat.image;
+        d.base.imagePath = mat.imagePath;
+        d.base.uuid = mat.uuid;
+        d.base.finish = storedFinish(mat.finish);
+        d.base.texture = storedTexture(mat.texture);
+        return;
+    }
     wd().count = newSize;
+    // A filler that says what the base says is what the new faces read
+    // anyway, which is what keeps a growing import of identically coloured
+    // faces linear
+    for (int i = oldCount; i < newSize; ++i)
+        applyEntry(i, mat);
+}
+
+/// Every field of one entry, which is the per-face write set1Value and a
+/// growth with a filler both are
+void MaterialList::applyEntry(int idx, const Material &mat)
+{
+    setFieldValue(&Material::ambientColor, &Data::ambient, idx, mat.ambientColor);
+    setFieldValue(&Material::diffuseColor, &Data::diffuse, idx, storedDiffuse(mat));
+    setFieldValue(&Material::specularColor, &Data::specular, idx, mat.specularColor);
+    setFieldValue(&Material::emissiveColor, &Data::emissive, idx, mat.emissiveColor);
+    setFieldValue(&Material::shininess, &Data::shininess, idx, mat.shininess);
+    setFieldValue(&Material::image, &Data::image, idx, mat.image);
+    setFieldValue(&Material::imagePath, &Data::imagePath, idx, mat.imagePath);
+    setFieldValue(&Material::uuid, &Data::uuid, idx, mat.uuid);
+    setTypeValue(idx, static_cast<int8_t>(mat.getType()));
+    setFieldValue(&Material::finish, &Data::finish, idx, storedFinish(mat.finish));
+    setTexture(idx, mat.texture);
+}
+
+/// The type field, which has no Material member to name it by: the base
+/// keeps it inside the material, where setType() would rewrite the colours
+void MaterialList::setTypeValue(int idx, int8_t value)
+{
+    if (idx < 0 || idx >= rd().count)
+        throw Base::RuntimeError("index out of bound");
+    const int8_t base = static_cast<int8_t>(rd().base.getType());
+    if (sparseAt(rd().type, overridePos(idx), base) == value)
+        return;
+    touchFields();
+    const int pos = makeOverride(idx);
+    setSparseAt(wd().type, pos, wd().overrides.size(), value, base);
 }
 
 Material MaterialList::getMaterial(int idx) const
@@ -914,30 +1759,32 @@ Material MaterialList::getMaterial(int idx) const
     Material mat;
     if (idx < 0 || idx >= rd().count)
         return mat;
+    ensureNormalized();
+    const Data &d = rd();
+    const int pos = overridePos(idx);
     // The type goes on FIRST. Material::setType() rewrites every colour and
     // both floats with that type's preset, so a setType() after the fields
     // are laid in throws all of them away and the list hands back the
     // preset instead of what it stores -- silently, because the per field
     // getters below are unaffected and keep telling the truth.
-    const Material &def = defaultMaterial();
     mat.setType(static_cast<Material::MaterialType>(
-                fieldAt(rd().type, idx, static_cast<int8_t>(def.getType()))));
-    mat.ambientColor = fieldAt(rd().ambient, idx, def.ambientColor);
-    mat.diffuseColor = fieldAt(rd().diffuse, idx, storedDiffuse(def));
-    mat.specularColor = fieldAt(rd().specular, idx, specularDefault());
-    mat.emissiveColor = fieldAt(rd().emissive, idx, def.emissiveColor);
-    mat.shininess = fieldAt(rd().shininess, idx, shininessDefault());
+                sparseAt(d.type, pos, static_cast<int8_t>(d.base.getType()))));
+    mat.ambientColor = sparseAt(d.ambient, pos, d.base.ambientColor);
+    mat.diffuseColor = sparseAt(d.diffuse, pos, d.base.diffuseColor);
+    mat.specularColor = sparseAt(d.specular, pos, d.base.specularColor);
+    mat.emissiveColor = sparseAt(d.emissive, pos, d.base.emissiveColor);
+    mat.shininess = sparseAt(d.shininess, pos, d.base.shininess);
     // One quantity, two slots: the material handed out is always consistent,
     // whatever inconsistent pair was once handed in.
     mat.transparency = mat.diffuseColor.transparency();
-    mat.image = fieldAt(rd().image, idx, def.image);
-    mat.imagePath = fieldAt(rd().imagePath, idx, def.imagePath);
-    mat.uuid = fieldAt(rd().uuid, idx, def.uuid);
-    mat.finish = fieldAt(rd().finish, idx, def.finish);
-    mat.texture = paletteAt(rd().texturePalette, rd().textureIndex, idx, def.texture);
+    mat.image = sparseAt(d.image, pos, d.base.image);
+    mat.imagePath = sparseAt(d.imagePath, pos, d.base.imagePath);
+    mat.uuid = sparseAt(d.uuid, pos, d.base.uuid);
+    mat.finish = sparseAt(d.finish, pos, d.base.finish);
+    mat.texture = sparseTextureAt(d.texturePalette, d.textureIndex, pos, d.base.texture);
     // Stamp the list's mode on the value, so whoever holds it still knows
     // which reading its slots are in
-    mat.pbr = rd().pbr;
+    mat.pbr = d.pbr;
     return mat;
 }
 
@@ -955,55 +1802,57 @@ void MaterialList::setValues(const std::vector<Material> &values)
     if (!values.empty())
         setPBR(values.front().pbr);
     touchFields();
-    wd().count = static_cast<int>(values.size());
-    std::vector<Color>().swap(wd().ambient);
-    std::vector<Color>().swap(wd().diffuse);
-    std::vector<Color>().swap(wd().specular);
-    std::vector<Color>().swap(wd().emissive);
-    std::vector<float>().swap(wd().shininess);
-    std::vector<std::string>().swap(wd().image);
-    std::vector<std::string>().swap(wd().imagePath);
-    std::vector<std::string>().swap(wd().uuid);
-    std::vector<int8_t>().swap(wd().type);
-    std::vector<SurfaceFinish>().swap(wd().finish);
+    Data &d = wd();
+    d.count = static_cast<int>(values.size());
+    std::vector<uint32_t>().swap(d.overrides);
+    std::vector<Color>().swap(d.ambient);
+    std::vector<Color>().swap(d.diffuse);
+    std::vector<Color>().swap(d.specular);
+    std::vector<Color>().swap(d.emissive);
+    std::vector<float>().swap(d.shininess);
+    std::vector<std::string>().swap(d.image);
+    std::vector<std::string>().swap(d.imagePath);
+    std::vector<std::string>().swap(d.uuid);
+    std::vector<int8_t>().swap(d.type);
+    std::vector<SurfaceFinish>().swap(d.finish);
     std::vector<SurfaceTexture> textures;
-    std::vector<SurfaceTexture>().swap(wd().texturePalette);
-    std::vector<uint16_t>().swap(wd().textureIndex);
-    if (wd().count) {
-        wd().ambient.reserve(wd().count);
-        wd().diffuse.reserve(wd().count);
-        wd().specular.reserve(wd().count);
-        wd().emissive.reserve(wd().count);
-        wd().shininess.reserve(wd().count);
-        wd().image.reserve(wd().count);
-        wd().imagePath.reserve(wd().count);
-        wd().uuid.reserve(wd().count);
-        wd().type.reserve(wd().count);
-        wd().finish.reserve(wd().count);
-        textures.reserve(wd().count);
+    std::vector<SurfaceTexture>().swap(d.texturePalette);
+    std::vector<uint16_t>().swap(d.textureIndex);
+    if (d.count) {
+        d.ambient.reserve(d.count);
+        d.diffuse.reserve(d.count);
+        d.specular.reserve(d.count);
+        d.emissive.reserve(d.count);
+        d.shininess.reserve(d.count);
+        d.image.reserve(d.count);
+        d.imagePath.reserve(d.count);
+        d.uuid.reserve(d.count);
+        d.type.reserve(d.count);
+        d.finish.reserve(d.count);
+        textures.reserve(d.count);
         for (const auto &value : values) {
             const Material mat = inMode(value);
-            wd().ambient.push_back(mat.ambientColor);
-            wd().diffuse.push_back(storedDiffuse(mat));
-            wd().specular.push_back(mat.specularColor);
-            wd().emissive.push_back(mat.emissiveColor);
-            wd().shininess.push_back(mat.shininess);
-            wd().image.push_back(mat.image);
-            wd().imagePath.push_back(mat.imagePath);
-            wd().uuid.push_back(mat.uuid);
-            wd().type.push_back(static_cast<int8_t>(mat.getType()));
-            wd().finish.push_back(storedFinish(mat.finish));
+            d.ambient.push_back(mat.ambientColor);
+            d.diffuse.push_back(storedDiffuse(mat));
+            d.specular.push_back(mat.specularColor);
+            d.emissive.push_back(mat.emissiveColor);
+            d.shininess.push_back(mat.shininess);
+            d.image.push_back(mat.image);
+            d.imagePath.push_back(mat.imagePath);
+            d.uuid.push_back(mat.uuid);
+            d.type.push_back(static_cast<int8_t>(mat.getType()));
+            d.finish.push_back(storedFinish(mat.finish));
             textures.push_back(storedTexture(mat.texture));
         }
-        // Dense in, palette out: assignPalette collapses too, so the
-        // normalize() below finds this field already in its normal form
-        assignPalette(wd().texturePalette, wd().textureIndex, textures,
-                      defaultMaterial().texture);
-        normalize();
+        // Dense in, palette out; adoptDense below collapses both
+        assignPalette(d.texturePalette, d.textureIndex, textures);
+        // One value per entry and nothing saying which of them the object
+        // is -- the same standing a restore lands in
+        adoptDense();
         pruneTextureBlobs();
     }
     else {
-        wd().normalized = true;
+        normalize();
     }
 }
 
@@ -1023,20 +1872,7 @@ void MaterialList::set1Value(int idx, const Material &value)
         if (getMaterial(idx) == mat)
             return;
         touchFields();
-        const Material &def = defaultMaterial();
-        setFieldAt(wd().ambient, idx, wd().count, mat.ambientColor, def.ambientColor);
-        setFieldAt(wd().diffuse, idx, wd().count, storedDiffuse(mat), storedDiffuse(def));
-        setFieldAt(wd().specular, idx, wd().count, mat.specularColor, specularDefault());
-        setFieldAt(wd().emissive, idx, wd().count, mat.emissiveColor, def.emissiveColor);
-        setFieldAt(wd().shininess, idx, wd().count, mat.shininess, shininessDefault());
-        setFieldAt(wd().image, idx, wd().count, mat.image, def.image);
-        setFieldAt(wd().imagePath, idx, wd().count, mat.imagePath, def.imagePath);
-        setFieldAt(wd().uuid, idx, wd().count, mat.uuid, def.uuid);
-        setFieldAt(wd().type, idx, wd().count, static_cast<int8_t>(mat.getType()),
-                   static_cast<int8_t>(def.getType()));
-        setFieldAt(wd().finish, idx, wd().count, storedFinish(mat.finish), def.finish);
-        setPaletteAt(wd().texturePalette, wd().textureIndex, idx, wd().count,
-                     storedTexture(mat.texture), def.texture);
+        applyEntry(idx, mat);
     }
 }
 
@@ -1045,27 +1881,32 @@ void MaterialList::set1Value(int idx, const Material &value)
 
 Color MaterialList::getAmbientColor(int idx) const
 {
-    return fieldAt(rd().ambient, idx, defaultMaterial().ambientColor);
+    ensureNormalized();
+    return sparseAt(rd().ambient, overridePos(idx), rd().base.ambientColor);
 }
 
 Color MaterialList::getDiffuseColor(int idx) const
 {
-    return fieldAt(rd().diffuse, idx, storedDiffuse(defaultMaterial()));
+    ensureNormalized();
+    return sparseAt(rd().diffuse, overridePos(idx), rd().base.diffuseColor);
 }
 
 Color MaterialList::getSpecularColor(int idx) const
 {
-    return fieldAt(rd().specular, idx, specularDefault());
+    ensureNormalized();
+    return sparseAt(rd().specular, overridePos(idx), rd().base.specularColor);
 }
 
 Color MaterialList::getEmissiveColor(int idx) const
 {
-    return fieldAt(rd().emissive, idx, defaultMaterial().emissiveColor);
+    ensureNormalized();
+    return sparseAt(rd().emissive, overridePos(idx), rd().base.emissiveColor);
 }
 
 float MaterialList::getShininess(int idx) const
 {
-    return fieldAt(rd().shininess, idx, shininessDefault());
+    ensureNormalized();
+    return sparseAt(rd().shininess, overridePos(idx), rd().base.shininess);
 }
 
 float MaterialList::getTransparency(int idx) const
@@ -1076,92 +1917,112 @@ float MaterialList::getTransparency(int idx) const
 
 const std::string &MaterialList::getImage(int idx) const
 {
-    return fieldAt(rd().image, idx, defaultMaterial().image);
+    ensureNormalized();
+    return sparseAt(rd().image, overridePos(idx), rd().base.image);
 }
 
 const std::string &MaterialList::getImagePath(int idx) const
 {
-    return fieldAt(rd().imagePath, idx, defaultMaterial().imagePath);
+    ensureNormalized();
+    return sparseAt(rd().imagePath, overridePos(idx), rd().base.imagePath);
 }
 
 const std::string &MaterialList::getUuid(int idx) const
 {
-    return fieldAt(rd().uuid, idx, defaultMaterial().uuid);
+    ensureNormalized();
+    return sparseAt(rd().uuid, overridePos(idx), rd().base.uuid);
 }
 
 SurfaceFinish MaterialList::getFinish(int idx) const
 {
-    return fieldAt(rd().finish, idx, defaultMaterial().finish);
+    ensureNormalized();
+    return sparseAt(rd().finish, overridePos(idx), rd().base.finish);
 }
 
 SurfaceTexture MaterialList::getTexture(int idx) const
 {
-    return paletteAt(rd().texturePalette, rd().textureIndex, idx, defaultMaterial().texture);
+    ensureNormalized();
+    return sparseTextureAt(rd().texturePalette, rd().textureIndex, overridePos(idx),
+                           rd().base.texture);
 }
 
 Material::MaterialType MaterialList::getType(int idx) const
 {
+    ensureNormalized();
     return static_cast<Material::MaterialType>(
-            fieldAt(rd().type, idx, static_cast<int8_t>(defaultMaterial().getType())));
+            sparseAt(rd().type, overridePos(idx), static_cast<int8_t>(rd().base.getType())));
 }
 
-/** Take a whole field
+/** Take a whole field, one value per entry
  *
- * A field of one is uniform and a field as long as the list is per entry.
- * A vector that is neither is a statement about how long the list should
- * be, the way assigning a colour list of a different length is; an empty
- * one returns the field to its default without disturbing the count. The
- * values normalise on the way in.
+ * Collapsed first, so a vector that says the same thing for every entry is
+ * the whole-object write it says it is: it moves the base and the override
+ * array goes. A vector that varies makes an override of every entry that
+ * differs from the base. A vector that is neither empty, uniform nor as
+ * long as the list is a statement about how long the list should be, the
+ * way assigning a colour list of a different length is; an empty one
+ * returns the field to the DEFAULT, which is what it has always meant.
  */
 template<class T>
-void MaterialList::setField(std::vector<T> Data::*member, const std::vector<T> &values,
-                            const T &def)
+void MaterialList::setField(T Material::*base, std::vector<T> Data::*member,
+                            const std::vector<T> &values)
 {
-    if (rd().*member == values)
-        return;
+    std::vector<T> incoming = values;
+    // The default a caller means by an empty vector is the material's own,
+    // not the base's: this is the write that puts a field back
+    const Material &def = defaultMaterial();
+    collapseField(incoming, def.*base);
     const int newCount = static_cast<int>(values.size());
     if (newCount != rd().count && (newCount > 1 || rd().count == 0)) {
         // Growth extends the LAST entry's material, not the default: the
         // caller is stating one field for N entries and saying nothing about
-        // the others, so the others must not change meaning -- and for a
-        // uniform field, extending its own value keeps it stored as one
-        // element where a default fill would materialise N of them and make
-        // the appearance "vary" in fields nobody set. An empty list grows
-        // with what its entries read as, which follows the mode.
+        // the others, so the others must not change meaning. An empty list
+        // grows with what its entries read as, which follows the mode.
         if (rd().count)
             setSize(newCount, getMaterial(rd().count - 1));
         else
             setSize(newCount);
     }
+    if (incoming.size() <= 1) {
+        const T value = incoming.empty() ? def.*base : incoming.front();
+        // Uniform means uniform: the overriding faces are stating this
+        // field too, and a vector as long as the list has just restated it
+        // for every one of them
+        if (!(rd().base.*base == value) || !((rd().*member).empty())) {
+            touchFields();
+            wd().base.*base = value;
+            std::vector<T>().swap(wd().*member);
+        }
+        return;
+    }
     touchFields();
-    std::vector<T> &field = wd().*member;
-    field = values;
-    collapseField(field, def);
+    for (int i = 0; i < rd().count && i < static_cast<int>(incoming.size()); ++i)
+        setFieldValue(base, member, i, incoming[static_cast<std::size_t>(i)]);
 }
 
 void MaterialList::setAmbientColors(const std::vector<Color> &colors)
 {
-    setField(&Data::ambient, colors, defaultMaterial().ambientColor);
+    setField(&Material::ambientColor, &Data::ambient, colors);
 }
 
 void MaterialList::setDiffuseColors(const std::vector<Color> &colors)
 {
-    setField(&Data::diffuse, colors, storedDiffuse(defaultMaterial()));
+    setField(&Material::diffuseColor, &Data::diffuse, colors);
 }
 
 void MaterialList::setSpecularColors(const std::vector<Color> &colors)
 {
-    setField(&Data::specular, colors, specularDefault());
+    setField(&Material::specularColor, &Data::specular, colors);
 }
 
 void MaterialList::setEmissiveColors(const std::vector<Color> &colors)
 {
-    setField(&Data::emissive, colors, defaultMaterial().emissiveColor);
+    setField(&Material::emissiveColor, &Data::emissive, colors);
 }
 
 void MaterialList::setShininessValues(const std::vector<float> &values)
 {
-    setField(&Data::shininess, values, shininessDefault());
+    setField(&Material::shininess, &Data::shininess, values);
 }
 
 void MaterialList::setTransparencies(const std::vector<float> &values)
@@ -1172,7 +2033,7 @@ void MaterialList::setTransparencies(const std::vector<float> &values)
     // every entry stays what it was; only the alphas move.
     const Color def = storedDiffuse(defaultMaterial());
     const int newCount = static_cast<int>(values.size());
-    std::vector<Color> colors = rd().diffuse;
+    std::vector<Color> colors = getDiffuseColors();
     if (newCount == 0 || newCount == 1) {
         const float alpha = newCount ? 1.0F - values[0] : def.a;
         if (colors.empty())
@@ -1182,26 +2043,26 @@ void MaterialList::setTransparencies(const std::vector<float> &values)
     }
     else {
         // Per entry: the rgb comes along, from wherever the field has it.
-        colors.resize(newCount, fieldAt(rd().diffuse, 0, def));
+        colors.resize(newCount, getDiffuseColor(0));
         for (int i = 0; i < newCount; ++i)
             colors[i].setTransparency(values[i]);
     }
-    setField(&Data::diffuse, colors, def);
+    setField(&Material::diffuseColor, &Data::diffuse, colors);
 }
 
 void MaterialList::setImages(const std::vector<std::string> &values)
 {
-    setField(&Data::image, values, defaultMaterial().image);
+    setField(&Material::image, &Data::image, values);
 }
 
 void MaterialList::setImagePaths(const std::vector<std::string> &values)
 {
-    setField(&Data::imagePath, values, defaultMaterial().imagePath);
+    setField(&Material::imagePath, &Data::imagePath, values);
 }
 
 void MaterialList::setUuids(const std::vector<std::string> &values)
 {
-    setField(&Data::uuid, values, defaultMaterial().uuid);
+    setField(&Material::uuid, &Data::uuid, values);
 }
 
 void MaterialList::setFinishes(const std::vector<SurfaceFinish> &values)
@@ -1210,27 +2071,16 @@ void MaterialList::setFinishes(const std::vector<SurfaceFinish> &values)
     clamped.reserve(values.size());
     for (const auto &value : values)
         clamped.push_back(storedFinish(value));
-    setField(&Data::finish, clamped, defaultMaterial().finish);
+    setField(&Material::finish, &Data::finish, clamped);
 }
 
 void MaterialList::setTextures(const std::vector<SurfaceTexture> &values)
 {
-    const SurfaceTexture &def = defaultMaterial().texture;
     std::vector<SurfaceTexture> clamped;
     clamped.reserve(values.size());
     for (const auto &value : values)
         clamped.push_back(storedTexture(value));
-
-    std::vector<SurfaceTexture> palette;
-    std::vector<uint16_t> index;
-    assignPalette(palette, index, clamped, def);
-    // assignPalette produces the canonical form -- first-use order, and
-    // the smallest of the three shapes -- so comparing the pair is
-    // comparing what the field means, not how it happens to be stored
-    ensureNormalized();
-    if (static_cast<int>(clamped.size()) == rd().count
-        && palette == rd().texturePalette && index == rd().textureIndex)
-        return;
+    collapseField(clamped, defaultMaterial().texture);
 
     const int newCount = static_cast<int>(values.size());
     if (newCount != rd().count && (newCount > 1 || rd().count == 0)) {
@@ -1242,55 +2092,76 @@ void MaterialList::setTextures(const std::vector<SurfaceTexture> &values)
         else
             setSize(newCount);
     }
+    if (clamped.size() <= 1) {
+        // Uniform means uniform, as it does in setField: the base states it
+        // and the override arrays that contradicted it go
+        setTexture(clamped.empty() ? defaultMaterial().texture : clamped.front());
+        if (!rd().texturePalette.empty() || !rd().textureIndex.empty()) {
+            touchFields();
+            std::vector<SurfaceTexture>().swap(wd().texturePalette);
+            std::vector<uint16_t>().swap(wd().textureIndex);
+        }
+        pruneTextureBlobs();
+        return;
+    }
     touchFields();
-    palette.swap(wd().texturePalette);
-    index.swap(wd().textureIndex);
+    for (int i = 0; i < rd().count && i < static_cast<int>(clamped.size()); ++i)
+        setTexture(i, clamped[static_cast<std::size_t>(i)]);
     pruneTextureBlobs();
 }
 
-/// Write one entry of one field, growing the list if it names a new entry
+/** Write one entry of one field, growing the list if it names a new entry
+ *
+ * The per-face write: the face becomes an override of this field alone, or
+ * -- when the value it is given is the base's -- normalisation drops it
+ * back on the next read.
+ */
 template<class T>
-void MaterialList::setFieldValue(std::vector<T> Data::*member, int idx, const T &value,
-                                 const T &def)
+void MaterialList::setFieldValue(T Material::*base, std::vector<T> Data::*member, int idx,
+                                 const T &value)
 {
     if (idx < 0 || idx > rd().count)
         throw Base::RuntimeError("index out of bound");
     if (idx == rd().count) {
         setSize(rd().count + 1);
     }
-    else if (fieldAt(rd().*member, idx, def) == value) {
+    // By value: the base lives in the storage wd() may detach, and every
+    // write below is against what it said when the write was decided
+    const T baseValue = rd().base.*base;
+    if (idx < rd().count && sparseAt(rd().*member, overridePos(idx), baseValue) == value) {
         // Unchanged, and nothing has been written: the storage is still
         // whatever it was, which is what tells the property there is no
         // change to record
         return;
     }
     touchFields();
-    setFieldAt(wd().*member, idx, rd().count, value, def);
+    const int pos = makeOverride(idx);
+    setSparseAt(wd().*member, pos, wd().overrides.size(), value, baseValue);
 }
 
 void MaterialList::setAmbientColor(int idx, const Color &col)
 {
-    setFieldValue(&Data::ambient, idx, col, defaultMaterial().ambientColor);
+    setFieldValue(&Material::ambientColor, &Data::ambient, idx, col);
 }
 
 void MaterialList::setDiffuseColor(int idx, const Color &col)
 {
-    setFieldValue(&Data::diffuse, idx, col, storedDiffuse(defaultMaterial()));
+    setFieldValue(&Material::diffuseColor, &Data::diffuse, idx, col);
 }
 
 void MaterialList::setSpecularColor(int idx, const Color &col)
 {
-    setFieldValue(&Data::specular, idx, col, specularDefault());
+    setFieldValue(&Material::specularColor, &Data::specular, idx, col);
 }
 
 void MaterialList::setEmissiveColor(int idx, const Color &col)
 {
-    setFieldValue(&Data::emissive, idx, col, defaultMaterial().emissiveColor);
+    setFieldValue(&Material::emissiveColor, &Data::emissive, idx, col);
 }
 
 void MaterialList::setShininess(int idx, float value)
 {
-    setFieldValue(&Data::shininess, idx, value, shininessDefault());
+    setFieldValue(&Material::shininess, &Data::shininess, idx, value);
 }
 
 void MaterialList::setTransparency(int idx, float value)
@@ -1298,29 +2169,29 @@ void MaterialList::setTransparency(int idx, float value)
     // One entry's alpha: the same write as setDiffuseColor of that entry
     // with only the alpha changed, and it shares that setter's growth and
     // early-out behaviour.
-    Color color = getDiffuseColor(idx < 0 || idx >= wd().count ? 0 : idx);
+    Color color = getDiffuseColor(idx < 0 || idx >= rd().count ? 0 : idx);
     color.setTransparency(value);
-    setFieldValue(&Data::diffuse, idx, color, storedDiffuse(defaultMaterial()));
+    setFieldValue(&Material::diffuseColor, &Data::diffuse, idx, color);
 }
 
 void MaterialList::setImage(int idx, const std::string &value)
 {
-    setFieldValue(&Data::image, idx, value, defaultMaterial().image);
+    setFieldValue(&Material::image, &Data::image, idx, value);
 }
 
 void MaterialList::setImagePath(int idx, const std::string &value)
 {
-    setFieldValue(&Data::imagePath, idx, value, defaultMaterial().imagePath);
+    setFieldValue(&Material::imagePath, &Data::imagePath, idx, value);
 }
 
 void MaterialList::setUuid(int idx, const std::string &value)
 {
-    setFieldValue(&Data::uuid, idx, value, defaultMaterial().uuid);
+    setFieldValue(&Material::uuid, &Data::uuid, idx, value);
 }
 
 void MaterialList::setFinish(int idx, const SurfaceFinish &value)
 {
-    setFieldValue(&Data::finish, idx, storedFinish(value), defaultMaterial().finish);
+    setFieldValue(&Material::finish, &Data::finish, idx, storedFinish(value));
 }
 
 void MaterialList::setTexture(int idx, const SurfaceTexture &value)
@@ -1330,129 +2201,97 @@ void MaterialList::setTexture(int idx, const SurfaceTexture &value)
     if (idx < 0 || idx > rd().count)
         throw Base::RuntimeError("index out of bound");
     const SurfaceTexture stored = storedTexture(value);
-    const SurfaceTexture &def = defaultMaterial().texture;
     if (idx == rd().count) {
         setSize(rd().count + 1);
     }
-    else if (paletteAt(rd().texturePalette, rd().textureIndex, idx, def) == stored) {
+    const SurfaceTexture baseValue = rd().base.texture;
+    if (idx < rd().count
+        && sparseTextureAt(rd().texturePalette, rd().textureIndex, overridePos(idx), baseValue)
+                == stored) {
         return;
     }
     touchFields();
+    const int pos = makeOverride(idx);
     Data &d = wd();
-    setPaletteAt(d.texturePalette, d.textureIndex, idx, d.count, stored, def);
+    statedTexture(d.texturePalette, d.textureIndex, d.overrides.size(), baseValue);
+    d.textureIndex[static_cast<std::size_t>(pos)] = paletteSlot(d.texturePalette, stored);
 }
 
-/// Give every entry the same value for one field, and none of it to storage
+/** The whole-object write of one field: the base, and nothing else
+ *
+ * An overriding face keeps what it holds -- that is what makes a painted
+ * face survive an appearance card being assigned (12.2). A list with no
+ * entries has nowhere to put a base, so it grows one first, which is what
+ * the old uniform writes did too.
+ */
 template<class T>
-void MaterialList::setUniformField(std::vector<T> Data::*member, const T &value, const T &def)
+void MaterialList::setBaseField(T Material::*base, const T &value, const T &def)
 {
-    if ((rd().*member).empty() && value == def)
-        return;  // already the default everywhere, including on an empty list
-    if (rd().count && (rd().*member).size() <= 1 && fieldAt(rd().*member, 0, def) == value)
+    if (rd().count == 0) {
+        if (value == def)
+            return;   // already the default everywhere, including here
+        setSize(1);
+    }
+    if (rd().base.*base == value)
         return;
     touchFields();
-    if (rd().count == 0)
-        setSize(1);
-    std::vector<T> &field = wd().*member;
-    if (value == def)
-        std::vector<T>().swap(field);
-    else
-        std::vector<T>(1, value).swap(field);
+    wd().base.*base = value;
 }
 
 void MaterialList::setAmbientColor(const Color &col)
 {
-    setUniformField(&Data::ambient, col, defaultMaterial().ambientColor);
+    setBaseField(&Material::ambientColor, col, defaultMaterial().ambientColor);
 }
 
 void MaterialList::setDiffuseColor(const Color &col)
 {
-    setUniformField(&Data::diffuse, col, storedDiffuse(defaultMaterial()));
+    setBaseField(&Material::diffuseColor, col, storedDiffuse(defaultMaterial()));
 }
 
 void MaterialList::setSpecularColor(const Color &col)
 {
-    setUniformField(&Data::specular, col, specularDefault());
+    setBaseField(&Material::specularColor, col, specularDefault());
 }
 
 void MaterialList::setEmissiveColor(const Color &col)
 {
-    setUniformField(&Data::emissive, col, defaultMaterial().emissiveColor);
+    setBaseField(&Material::emissiveColor, col, defaultMaterial().emissiveColor);
 }
 
 void MaterialList::setShininess(float value)
 {
-    setUniformField(&Data::shininess, value, shininessDefault());
+    setBaseField(&Material::shininess, value, shininessDefault());
 }
 
 void MaterialList::setTransparency(float value)
 {
-    // Every entry's alpha, leaving every entry's rgb alone -- which on a per
-    // face field is NOT a uniform write of one colour.
-    if (wd().diffuse.size() <= 1) {
-        Color color = fieldAt(wd().diffuse, 0, storedDiffuse(defaultMaterial()));
-        color.setTransparency(value);
-        setUniformField(&Data::diffuse, color, storedDiffuse(defaultMaterial()));
-        return;
-    }
-    const float alpha = 1.0F - value;
-    bool changed = false;
-    for (const auto &color : wd().diffuse) {
-        if (color.a != alpha) {
-            changed = true;
-            break;
-        }
-    }
-    if (!changed)
-        return;
-    touchFields();
-    for (auto &color : wd().diffuse)
-        color.a = alpha;
-    normalize();
+    // The base's alpha, leaving its rgb alone -- and leaving the overriding
+    // faces alone, which is what every whole-object write does
+    Color color = getBase().diffuseColor;
+    color.setTransparency(value);
+    setBaseField(&Material::diffuseColor, color, storedDiffuse(defaultMaterial()));
 }
 
 void MaterialList::setDiffuseRGB(const Color &col)
 {
-    setFieldRGB(&Data::diffuse, col, storedDiffuse(defaultMaterial()));
+    setFieldRGB(&Material::diffuseColor, col, storedDiffuse(defaultMaterial()));
 }
 
 void MaterialList::setSpecularRGB(const Color &col)
 {
-    setFieldRGB(&Data::specular, col, specularDefault());
+    setFieldRGB(&Material::specularColor, col, specularDefault());
 }
 
-void MaterialList::setFieldRGB(std::vector<Color> Data::*member, const Color &col,
-                               const Color &def)
+void MaterialList::setFieldRGB(Color Material::*base, const Color &col, const Color &def)
 {
-    const std::vector<Color> &current = rd().*member;
-    // setTransparency's mirror image: every entry's rgb, leaving every
-    // entry's alpha alone -- the diffuse alpha is the opacity and the PBR
-    // specular alpha is the metallic, so on a per entry field this is NOT
-    // a uniform write of one colour.
-    if (current.size() <= 1) {
-        Color color = fieldAt(current, 0, def);
-        color.r = col.r;
-        color.g = col.g;
-        color.b = col.b;
-        setUniformField(member, color, def);
-        return;
-    }
-    bool changed = false;
-    for (const auto &color : current) {
-        if (color.r != col.r || color.g != col.g || color.b != col.b) {
-            changed = true;
-            break;
-        }
-    }
-    if (!changed)
-        return;
-    touchFields();
-    for (auto &color : wd().*member) {
-        color.r = col.r;
-        color.g = col.g;
-        color.b = col.b;
-    }
-    normalize();
+    // setTransparency's mirror image: the base's rgb, leaving its alpha
+    // alone -- the diffuse alpha is the opacity and the PBR specular alpha
+    // is the metallic factor, so a whole-colour write would restate them.
+    Color color = getBase().*base;
+    color.r = col.r;
+    color.g = col.g;
+    color.b = col.b;
+    setBaseField(base, color, def);
 }
 
 //**************************************************************************
@@ -1460,59 +2299,78 @@ void MaterialList::setFieldRGB(std::vector<Color> Data::*member, const Color &co
 
 void MaterialList::setImage(const std::string &value)
 {
-    setUniformField(&Data::image, value, defaultMaterial().image);
+    setBaseField(&Material::image, value, defaultMaterial().image);
 }
 
 void MaterialList::setImagePath(const std::string &value)
 {
-    setUniformField(&Data::imagePath, value, defaultMaterial().imagePath);
+    setBaseField(&Material::imagePath, value, defaultMaterial().imagePath);
 }
 
 void MaterialList::setUuid(const std::string &value)
 {
-    setUniformField(&Data::uuid, value, defaultMaterial().uuid);
+    setBaseField(&Material::uuid, value, defaultMaterial().uuid);
 }
 
 void MaterialList::setFinish(const SurfaceFinish &value)
 {
-    setUniformField(&Data::finish, storedFinish(value), defaultMaterial().finish);
+    setBaseField(&Material::finish, storedFinish(value), defaultMaterial().finish);
 }
 
 void MaterialList::setTexture(const SurfaceTexture &value)
 {
-    // setUniformField's body, over the pair. Uniform is the form with no
-    // index at all, so this drops one wherever it found one.
-    const SurfaceTexture stored = storedTexture(value);
-    const SurfaceTexture &def = defaultMaterial().texture;
-    if (wd().texturePalette.empty() && stored == def)
-        return;  // already the default everywhere, including on an empty list
-    if (wd().count && wd().textureIndex.empty() && wd().texturePalette.size() == 1
-        && wd().texturePalette.front() == stored)
-        return;
-    touchFields();
-    if (wd().count == 0)
-        setSize(1);
-    std::vector<uint16_t>().swap(wd().textureIndex);
-    if (stored == def)
-        std::vector<SurfaceTexture>().swap(wd().texturePalette);
-    else
-        std::vector<SurfaceTexture>(1, stored).swap(wd().texturePalette);
+    setBaseField(&Material::texture, storedTexture(value), defaultMaterial().texture);
 }
 
 // ==================== memsize ====================
+/** What this list holds, which is not what a Material weighs
+ *
+ * The base is a whole material in the struct and only its stated fields in
+ * the value: a uniform grey list weighs one material in memory and nothing
+ * here, exactly as an all-empty set of fields weighed nothing before there
+ * was a base. That matters beyond reporting -- the inline-versus-archive
+ * rule of PropertyLists::Save reads this number as the cost of writing the
+ * property, and counting the whole struct would send every appearance in
+ * the document to an archive entry of its own.
+ */
 unsigned int MaterialList::getMemSize() const
 {
     ensureNormalized();
-    return static_cast<unsigned int>(
-            (rd().ambient.size() + rd().diffuse.size() + rd().specular.size() + rd().emissive.size())
-                * sizeof(Color)
-            + rd().shininess.size() * sizeof(float)
-            + rd().type.size() * sizeof(int8_t)
-            + rd().finish.size() * sizeof(SurfaceFinish)
-            + texturesMemSize(rd().texturePalette)
-            + rd().textureIndex.size() * sizeof(uint16_t)
-            + stringsMemSize(rd().image) + stringsMemSize(rd().imagePath)
-            + stringsMemSize(rd().uuid));
+    const Data &d = rd();
+    if (d.count == 0)
+        return 0;
+    const Material &def = defaultMaterial();
+    std::size_t size = 0;
+    if (!(d.base.ambientColor == def.ambientColor))
+        size += sizeof(Color);
+    if (!(d.base.diffuseColor == storedDiffuse(def)))
+        size += sizeof(Color);
+    if (!(d.base.specularColor == specularDefault()))
+        size += sizeof(Color);
+    if (!(d.base.emissiveColor == def.emissiveColor))
+        size += sizeof(Color);
+    if (d.base.shininess != shininessDefault())
+        size += sizeof(float);
+    if (d.base.getType() != def.getType())
+        size += sizeof(int8_t);
+    size += d.base.image.size() + d.base.imagePath.size() + d.base.uuid.size();
+    if (!(d.base.finish == def.finish))
+        size += sizeof(SurfaceFinish);
+    if (!(d.base.texture == def.texture)) {
+        size += sizeof(SurfaceTexture);
+        for (const auto &hash : d.base.texture.maps)
+            size += hash.size();
+    }
+    size += d.overrides.size() * sizeof(uint32_t)
+        + (d.ambient.size() + d.diffuse.size() + d.specular.size() + d.emissive.size())
+              * sizeof(Color)
+        + d.shininess.size() * sizeof(float)
+        + d.type.size() * sizeof(int8_t)
+        + d.finish.size() * sizeof(SurfaceFinish)
+        + texturesMemSize(d.texturePalette)
+        + d.textureIndex.size() * sizeof(uint16_t)
+        + stringsMemSize(d.image) + stringsMemSize(d.imagePath) + stringsMemSize(d.uuid);
+    return static_cast<unsigned int>(size);
 }
 
 
@@ -1527,18 +2385,35 @@ bool MaterialList::isSame(const MaterialList &other) const
     }
     ensureNormalized();
     other.ensureNormalized();
-    return rd().ambient == other.rd().ambient
-        && rd().diffuse == other.rd().diffuse
-        && rd().specular == other.rd().specular
-        && rd().emissive == other.rd().emissive
-        && rd().shininess == other.rd().shininess
-        && rd().image == other.rd().image
-        && rd().imagePath == other.rd().imagePath
-        && rd().uuid == other.rd().uuid
-        && rd().type == other.rd().type
-        && rd().finish == other.rd().finish
+    // The base is part of the value: it is what a whole-object write moves
+    // and what a face returns to, so two lists resolving alike over
+    // different bases are not the same list (12.4).
+    const Data &a = rd();
+    const Data &b = other.rd();
+    return a.base.ambientColor == b.base.ambientColor
+        && a.base.diffuseColor == b.base.diffuseColor
+        && a.base.specularColor == b.base.specularColor
+        && a.base.emissiveColor == b.base.emissiveColor
+        && a.base.shininess == b.base.shininess
+        && a.base.image == b.base.image
+        && a.base.imagePath == b.base.imagePath
+        && a.base.uuid == b.base.uuid
+        && a.base.getType() == b.base.getType()
+        && a.base.finish == b.base.finish
+        && a.base.texture == b.base.texture
+        && a.overrides == b.overrides
+        && a.ambient == b.ambient
+        && a.diffuse == b.diffuse
+        && a.specular == b.specular
+        && a.emissive == b.emissive
+        && a.shininess == b.shininess
+        && a.image == b.image
+        && a.imagePath == b.imagePath
+        && a.uuid == b.uuid
+        && a.type == b.type
+        && a.finish == b.finish
         // Normalised on both sides, and the normal form is canonical
         // (first-use order), so the pair compares as the values do
-        && rd().texturePalette == other.rd().texturePalette
-        && rd().textureIndex == other.rd().textureIndex;
+        && a.texturePalette == b.texturePalette
+        && a.textureIndex == b.textureIndex;
 }

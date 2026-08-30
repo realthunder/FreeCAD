@@ -3165,6 +3165,21 @@ void PropertyMaterialList::setValue(const Material &mat)
     change([&] { _list.setValue(mat); });
 }
 
+void PropertyMaterialList::setBase(const Material &mat)
+{
+    change([&] { _list.setBase(mat); });
+}
+
+void PropertyMaterialList::clearOverrides()
+{
+    change([&] { _list.clearOverrides(); });
+}
+
+void PropertyMaterialList::clearOverride(int idx)
+{
+    change([&] { _list.clearOverride(idx); }, idx);
+}
+
 void PropertyMaterialList::setValues(const std::vector<Material> &values)
 {
     change([&] { _list.setValues(values); });
@@ -3846,9 +3861,11 @@ void PropertyMaterialList::Save(Base::Writer &writer) const
     // the same file is theirs to open and ours to open back with nothing
     // lost. At schema 5 and above the per field encoding carries the finish
     // itself and nothing extra is written at all.
-    if (writer.getSchemaVersion() < 5 && !_list.rd().finish.empty()) {
+    if (writer.getSchemaVersion() < 5 && hasFinish()) {
+        // Dense: the companion element states one finish per ENTRY, which
+        // is what a reader with no notion of a base can use
         PropertySurfaceFinishList carrier;
-        carrier.setValue(_list.rd().finish);
+        carrier.setValue(_list.getFinishes());
         carrier.Save(writer);
     }
     // The texture goes out the same way and for the same reason: below
@@ -3857,9 +3874,12 @@ void PropertyMaterialList::Save(Base::Writer &writer) const
     // written in upstream's format, which is every document that came from
     // one (Document::Restore keeps a file's own schema) and every one a user
     // caps at 4 to keep readable.
-    if (writer.getSchemaVersion() < 5 && !_list.rd().texturePalette.empty()) {
+    if (writer.getSchemaVersion() < 5 && hasTexture()) {
         PropertySurfaceTextureList carrier;
-        carrier.setValue(_list.rd().texturePalette, _list.rd().textureIndex);
+        std::vector<SurfaceTexture> palette;
+        std::vector<uint16_t> index;
+        _list.getTextures(palette, index);
+        carrier.setValue(palette, index);
         carrier.Save(writer);
     }
     if (writer.getSchemaVersion() < 5 && hasTextureOrCard() && !writer.isForceXML()
@@ -3930,6 +3950,54 @@ void PropertyMaterialList::Restore(Base::XMLReader &reader)
     applyPendingTexture();
 }
 
+/** Land a base and the override list a file states
+ *
+ * The checks are the ones the storage's invariants (12.6) turn into a file
+ * format: sorted, unique, in range, and a field line exactly as long as the
+ * override list or not there at all. Every one of these numbers came out of
+ * a file, so none of them is evidence.
+ */
+void PropertyMaterialList::installBase(const Material &base, int8_t type)
+{
+    MaterialList::Data &d = _list.wd();
+    bool first = true;
+    uint32_t last = 0;
+    for (uint32_t idx : d.overrides) {
+        if (idx >= static_cast<uint32_t>(d.count) || (!first && idx <= last))
+            throw Base::FileException("overriding faces are not sorted, or name no entry");
+        last = idx;
+        first = false;
+    }
+    const std::size_t n = d.overrides.size();
+    auto check = [n](const auto &field) {
+        if (!field.empty() && field.size() != n)
+            throw Base::FileException("material field length does not match the override list");
+    };
+    check(d.ambient);
+    check(d.diffuse);
+    check(d.specular);
+    check(d.emissive);
+    check(d.shininess);
+    check(d.image);
+    check(d.imagePath);
+    check(d.uuid);
+    check(d.type);
+    check(d.finish);
+    check(d.textureIndex);
+    for (uint16_t slot : d.textureIndex) {
+        if (slot >= d.texturePalette.size())
+            throw Base::FileException("texture index names no palette entry");
+    }
+    d.base = base;
+    MaterialList::setMaterialType(d.base, type);
+    d.base.transparency = d.base.diffuseColor.transparency();
+    d.base.pbr = d.pbr;
+    // Stated by the file, so nothing is left for the heuristic to choose
+    d.baseDerived = true;
+    d.normalized = false;
+    _list.normalize();
+}
+
 void PropertyMaterialList::applyPendingFinish()
 {
     if (_pendingFinish.empty() || _list.wd().count == 0) {
@@ -3947,17 +4015,22 @@ void PropertyMaterialList::applyPendingTexture()
     std::vector<uint16_t> index;
     palette.swap(_pendingTexturePalette);
     index.swap(_pendingTextureIndex);
-    if (!palette.empty() && _list.wd().count != 0) {
+    if (!palette.empty() && _list.getSize() != 0) {
         // The check the companion element could not make: it is restored
         // before the list it belongs to has a length
-        if (!index.empty() && static_cast<int>(index.size()) != _list.wd().count)
+        const int count = _list.getSize();
+        if (!index.empty() && static_cast<int>(index.size()) != count)
             throw Base::FileException("texture index length does not match the list");
+        // The companion states one record per ENTRY; which of them the
+        // object is, is the base's question and setTextures asks it
+        std::vector<SurfaceTexture> values;
+        values.reserve(static_cast<std::size_t>(count));
+        for (int i = 0; i < count; ++i) {
+            const std::size_t slot = index.empty() ? 0 : index[static_cast<std::size_t>(i)];
+            values.push_back(slot < palette.size() ? palette[slot] : SurfaceTexture());
+        }
         atomic_change guard(*this);
-        _list.touchFields();
-        _list.wd().texturePalette.swap(palette);
-        _list.wd().textureIndex.swap(index);
-        _list.normalize();
-        _list.pruneTextureBlobs();
+        _list.setTextures(values);
         guard.tryInvoke();
     }
     // Unconditional, because the palette may equally have come from the
@@ -4026,7 +4099,6 @@ void PropertyMaterialList::saveStringStream(Base::OutputStream &str) const
 void PropertyMaterialList::restoreStringStream(Base::InputStream &str, unsigned uCt)
 {
     atomic_change guard(*this);
-    _list.touchFields();
     std::vector<std::string> image(uCt);
     std::vector<std::string> imagePath(uCt);
     std::vector<std::string> uuid(uCt);
@@ -4035,10 +4107,11 @@ void PropertyMaterialList::restoreStringStream(Base::InputStream &str, unsigned 
         str >> imagePath[i];
         str >> uuid[i];
     }
-    _list.wd().image.swap(image);
-    _list.wd().imagePath.swap(imagePath);
-    _list.wd().uuid.swap(uuid);
-    _list.normalize();
+    // Through the field writes rather than into the storage: these arrive
+    // one per entry, over a list the colour pass has already given a base
+    _list.setImages(image);
+    _list.setImagePaths(imagePath);
+    _list.setUuids(uuid);
     guard.tryInvoke();
 }
 
@@ -4062,6 +4135,16 @@ enum FieldBit {
     FieldPBR = 1 << 10,
     FieldFinish = 1 << 11,
     FieldTexture = 1 << 12,
+    /** The base and the faces that override it
+     *
+     * ONE bit for both (docs/ShapeAppearanceDesign.md 12.3), because they
+     * are never present separately and the mask has sixteen bits in all:
+     * the run's head count is the number of overriding faces and its
+     * payload is their indices followed by the base. Without this bit every
+     * field run is one value per ENTRY, which is what every file written
+     * before the base holds.
+     */
+    FieldBase = 1 << 13,
 };
 
 /** Bits this build knows about
@@ -4072,7 +4155,7 @@ enum FieldBit {
 constexpr uint16_t KnownFields = FieldAmbient | FieldDiffuse | FieldSpecular
     | FieldEmissive | FieldShininess | FieldTransparency | FieldType
     | FieldImage | FieldImagePath | FieldUuid | FieldPBR | FieldFinish
-    | FieldTexture;
+    | FieldTexture | FieldBase;
 
 /** Bits that are flags rather than fields, and so have no run to read
  *
@@ -4107,6 +4190,9 @@ enum FieldRunType : uint8_t {
     RunStrings = 3,
     RunFinish = 4,
     RunTexture = 5,
+    /// The overriding faces' indices, then every field of the ONE entry
+    /// they override
+    RunBase = 6,
 };
 
 /// The records of one finish run. Shared by the material list's per field
@@ -4228,6 +4314,49 @@ std::string hexToken(const std::string &token)
     return value;
 }
 
+/// How many whitespace tokens writeBaseTokens writes
+std::size_t baseTokenCount(const Material &base)
+{
+    std::vector<SurfaceTexture> palette;
+    if (!(base.texture == SurfaceTexture()))
+        palette.push_back(base.texture);
+    // four colours, shininess, type, three strings, four finish numbers
+    return 13 + textureTokenCount(palette, std::vector<uint16_t>());
+}
+
+/** The base entry as one line's tokens
+ *
+ * The 'b' key of docs/ShapeAppearanceDesign.md 12.3. Every other key is one
+ * field of every override; this is every field of ONE entry, so it states
+ * them in the order the keys themselves go out, and the count ahead of it
+ * is what lets a reader that does not know the key step over it (9.4.2).
+ */
+void writeBaseTokens(std::ostream &out, const Material &base, bool convert)
+{
+    out << std::hex;
+    out << ' ' << packedForSave(base.ambientColor, convert)
+        << ' ' << packedForSave(base.diffuseColor, convert)
+        << ' ' << packedForSave(base.specularColor, convert)
+        << ' ' << packedForSave(base.emissiveColor, convert);
+    out << std::dec;
+    // max_digits10, so a value read back is the float that was written
+    const auto precision = out.precision(9);
+    out << ' ' << base.shininess;
+    out << ' ' << static_cast<int>(base.getType());
+    writeHexToken(out, base.image);
+    writeHexToken(out, base.imagePath);
+    writeHexToken(out, base.uuid);
+    out << ' ' << static_cast<unsigned>(base.finish.pattern)
+        << ' ' << base.finish.pitch
+        << ' ' << base.finish.depth
+        << ' ' << base.finish.angle;
+    std::vector<SurfaceTexture> palette;
+    if (!(base.texture == SurfaceTexture()))
+        palette.push_back(base.texture);
+    writeTextureTokens(out, palette, std::vector<uint16_t>());
+    out.precision(precision);
+}
+
 /// A palette length a file states but the index cannot address. Checked
 /// before the allocation, not after: the number came out of a file.
 void checkPaletteSize(std::size_t size)
@@ -4317,27 +4446,117 @@ void readTextureKey(std::istream &s, std::vector<SurfaceTexture> &palette,
         index.push_back(static_cast<uint16_t>(slot));
 }
 
+/// The 'b' key back out of the XML form, whose tokens are text. The type
+/// comes back separately: Material::setType() would rewrite every colour
+/// this has just read.
+void readBaseTokens(std::istream &s, Material &base, int8_t &type)
+{
+    uint32_t packed = 0;
+    s >> std::hex;
+    s >> packed;
+    base.ambientColor.setPackedValue(packed);
+    s >> packed;
+    base.diffuseColor.setPackedValue(packed);
+    s >> packed;
+    base.specularColor.setPackedValue(packed);
+    s >> packed;
+    base.emissiveColor.setPackedValue(packed);
+    s >> std::dec;
+    s >> base.shininess;
+    int value = 0;
+    s >> value;
+    type = static_cast<int8_t>(value);
+    std::string token;
+    if (s >> token)
+        base.image = hexToken(token);
+    if (s >> token)
+        base.imagePath = hexToken(token);
+    if (s >> token)
+        base.uuid = hexToken(token);
+    unsigned pattern = 0;
+    s >> pattern >> base.finish.pitch >> base.finish.depth >> base.finish.angle;
+    base.finish.pattern = static_cast<uint8_t>(pattern);
+    base.finish.normalize();
+    // A palette of one and no index at all, which is the only shape a
+    // single entry's texture can be in
+    std::vector<SurfaceTexture> palette;
+    std::vector<uint16_t> index;
+    readTextureKey(s, palette, index, 0);
+    if (!palette.empty())
+        base.texture = palette.front();
+}
+
 } // namespace
 
 void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
 {
+    // A list that arrived dense and never had a base chosen gets one here:
+    // this encoding STATES the base, so writing a default one would record
+    // the answer nobody gave and the heuristic would never run again
+    // (docs/ShapeAppearanceDesign.md 12.4). It changes what is stored, not
+    // what any entry resolves to.
+    _list.ensureBase();
+    const MaterialList::Data &d = _list.rd();
+    const Material &def = MaterialList::defaultMaterial();
+    // A list nothing overrides writes what it always wrote: one value per
+    // field that differs from what an unstated one reads as. Only a list
+    // with overriding faces states a base and an override list at all.
+    const bool sparse = !d.overrides.empty();
+    std::vector<Color> uAmbient, uDiffuse, uSpecular, uEmissive;
+    std::vector<float> uShininess;
+    std::vector<int8_t> uType;
+    std::vector<std::string> uImage, uImagePath, uUuid;
+    std::vector<SurfaceFinish> uFinish;
+    std::vector<SurfaceTexture> uPalette;
+    if (!sparse) {
+        auto one = [](const auto &value, const auto &fallback, auto &field) {
+            if (!(value == fallback))
+                field.push_back(value);
+        };
+        one(d.base.ambientColor, def.ambientColor, uAmbient);
+        one(d.base.diffuseColor, MaterialList::storedDiffuse(def), uDiffuse);
+        one(d.base.specularColor, _list.specularDefault(), uSpecular);
+        one(d.base.emissiveColor, def.emissiveColor, uEmissive);
+        one(d.base.shininess, _list.shininessDefault(), uShininess);
+        one(static_cast<int8_t>(d.base.getType()), static_cast<int8_t>(def.getType()), uType);
+        one(d.base.image, def.image, uImage);
+        one(d.base.imagePath, def.imagePath, uImagePath);
+        one(d.base.uuid, def.uuid, uUuid);
+        one(d.base.finish, def.finish, uFinish);
+        one(d.base.texture, def.texture, uPalette);
+    }
+    const std::vector<Color> &ambient = sparse ? d.ambient : uAmbient;
+    const std::vector<Color> &diffuse = sparse ? d.diffuse : uDiffuse;
+    const std::vector<Color> &specular = sparse ? d.specular : uSpecular;
+    const std::vector<Color> &emissive = sparse ? d.emissive : uEmissive;
+    const std::vector<float> &shininess = sparse ? d.shininess : uShininess;
+    const std::vector<int8_t> &type = sparse ? d.type : uType;
+    const std::vector<std::string> &image = sparse ? d.image : uImage;
+    const std::vector<std::string> &imagePath = sparse ? d.imagePath : uImagePath;
+    const std::vector<std::string> &uuid = sparse ? d.uuid : uUuid;
+    const std::vector<SurfaceFinish> &finish = sparse ? d.finish : uFinish;
+    const std::vector<SurfaceTexture> &palette = sparse ? d.texturePalette : uPalette;
+    static const std::vector<uint16_t> noIndex;
+    const std::vector<uint16_t> &index = sparse ? d.textureIndex : noIndex;
+
     // No FieldTransparency: the quantity rides the diffuse alpha (which the
     // conversion below writes to disk AS a transparency). The bit is still
     // understood on the way in, for the files written while it was a field
     // of its own.
     uint16_t mask = 0;
-    if (!_list.rd().ambient.empty())      mask |= FieldAmbient;
-    if (!_list.rd().diffuse.empty())      mask |= FieldDiffuse;
-    if (!_list.rd().specular.empty())     mask |= FieldSpecular;
-    if (!_list.rd().emissive.empty())     mask |= FieldEmissive;
-    if (!_list.rd().shininess.empty())    mask |= FieldShininess;
-    if (!_list.rd().type.empty())         mask |= FieldType;
-    if (!_list.rd().image.empty())        mask |= FieldImage;
-    if (!_list.rd().imagePath.empty())    mask |= FieldImagePath;
-    if (!_list.rd().uuid.empty())         mask |= FieldUuid;
-    if (!_list.rd().finish.empty())       mask |= FieldFinish;
-    if (!_list.rd().texturePalette.empty()) mask |= FieldTexture;
-    if (_list.rd().pbr)                   mask |= FieldPBR;
+    if (!ambient.empty())   mask |= FieldAmbient;
+    if (!diffuse.empty())   mask |= FieldDiffuse;
+    if (!specular.empty())  mask |= FieldSpecular;
+    if (!emissive.empty())  mask |= FieldEmissive;
+    if (!shininess.empty()) mask |= FieldShininess;
+    if (!type.empty())      mask |= FieldType;
+    if (!image.empty())     mask |= FieldImage;
+    if (!imagePath.empty()) mask |= FieldImagePath;
+    if (!uuid.empty())      mask |= FieldUuid;
+    if (!finish.empty())    mask |= FieldFinish;
+    if (!palette.empty())   mask |= FieldTexture;
+    if (d.pbr)              mask |= FieldPBR;
+    if (sparse)             mask |= FieldBase;
     str << mask;
 
     // Runs go out in ascending bit order, each behind a head of its shape,
@@ -4381,14 +4600,14 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
         });
     };
 
-    writeColors(_list.rd().ambient);
-    writeColors(_list.rd().diffuse);
-    writeColors(_list.rd().specular);
-    writeColors(_list.rd().emissive);
-    writeFloats(_list.rd().shininess);
-    if (!_list.rd().type.empty()) {
-        writeRun(RunInt8, _list.rd().type.size(), [this](Base::OutputStream &run) {
-            for (int8_t value : _list.rd().type)
+    writeColors(ambient);
+    writeColors(diffuse);
+    writeColors(specular);
+    writeColors(emissive);
+    writeFloats(shininess);
+    if (!type.empty()) {
+        writeRun(RunInt8, type.size(), [&type](Base::OutputStream &run) {
+            for (int8_t value : type)
                 run << value;
         });
     }
@@ -4402,24 +4621,45 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
                 run << value;
         });
     };
-    writeStrings(_list.rd().image);
-    writeStrings(_list.rd().imagePath);
-    writeStrings(_list.rd().uuid);
-    if (!_list.rd().finish.empty()) {
-        writeRun(RunFinish, _list.rd().finish.size(), [this](Base::OutputStream &run) {
-            writeFinishRecords(run, _list.rd().finish);
+    writeStrings(image);
+    writeStrings(imagePath);
+    writeStrings(uuid);
+    if (!finish.empty()) {
+        writeRun(RunFinish, finish.size(), [&finish](Base::OutputStream &run) {
+            writeFinishRecords(run, finish);
         });
     }
-    if (!_list.rd().texturePalette.empty()) {
+    if (!palette.empty()) {
         // The entry count the head states follows the same rule every other
-        // field's does -- uniform is 1, varying is the whole list -- while
-        // the palette and the index state their own lengths inside, because
-        // neither is the entry count.
-        writeRun(RunTexture, _list.rd().textureIndex.empty() ? 1 : _list.rd().textureIndex.size(),
-                 [this](Base::OutputStream &run) {
-                     writeTextureRun(run, _list.rd().texturePalette, _list.rd().textureIndex);
+        // field's does -- one for a list nothing overrides, |overrides| for
+        // one with faces of its own -- while the palette and the index
+        // state their own lengths inside, because neither is that count.
+        writeRun(RunTexture, index.empty() ? 1 : index.size(),
+                 [&palette, &index](Base::OutputStream &run) {
+                     writeTextureRun(run, palette, index);
                  });
     }
+    if (!sparse)
+        return;
+    // The head count is the number of overriding faces, and the payload is
+    // their indices followed by the base -- which is one entry, so it holds
+    // one of everything, in the order the field runs above go out
+    writeRun(RunBase, d.overrides.size(), [&d, convert](Base::OutputStream &run) {
+        for (uint32_t idx : d.overrides)
+            run << idx;
+        run << packedForSave(d.base.ambientColor, convert);
+        run << packedForSave(d.base.diffuseColor, convert);
+        run << packedForSave(d.base.specularColor, convert);
+        run << packedForSave(d.base.emissiveColor, convert);
+        run << d.base.shininess;
+        run << static_cast<int8_t>(d.base.getType());
+        run << d.base.image;
+        run << d.base.imagePath;
+        run << d.base.uuid;
+        writeFinishRecords(run, std::vector<SurfaceFinish>(1, d.base.finish));
+        std::vector<SurfaceTexture> one(1, d.base.texture);
+        writeTextureRun(run, one, std::vector<uint16_t>());
+    });
 }
 
 void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned uCt, bool legacy)
@@ -4436,9 +4676,10 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
     uint16_t mask = 0;
     str >> mask;
     // Before the fields land: the mode decides what an absent field reads
-    // as when _list.normalize() runs below
+    // as when the base is derived below
     _list.wd().pbr = (mask & FieldPBR) != 0;
 
+    std::vector<uint32_t>().swap(_list.wd().overrides);
     std::vector<Color>().swap(_list.wd().ambient);
     std::vector<Color>().swap(_list.wd().diffuse);
     std::vector<Color>().swap(_list.wd().specular);
@@ -4451,6 +4692,10 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
     std::vector<SurfaceFinish>().swap(_list.wd().finish);
     std::vector<SurfaceTexture>().swap(_list.wd().texturePalette);
     std::vector<uint16_t>().swap(_list.wd().textureIndex);
+
+    Material base;
+    int8_t baseType = static_cast<int8_t>(MaterialList::defaultMaterial().getType());
+    const bool sparse = (mask & FieldBase) != 0;
 
     // Ascending bit order, which is the order they were written in, each run
     // behind a head of its shape, its byte length and its entry count. A bit
@@ -4479,7 +4724,10 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
             skipRun();   // a field added by a later build
             continue;
         }
-        if (count != 1 && count != uCt)
+        // The exact length is checked once the whole element is in, by
+        // installBase or by the dense adoption; this only keeps a number out
+        // of a file from sizing an allocation
+        if (bit != FieldBase && count != 1 && count > uCt)
             throw Base::FileException("material field length does not match the list");
 
         std::vector<Color> colors;
@@ -4489,6 +4737,7 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
         std::vector<SurfaceFinish> finishes;
         std::vector<SurfaceTexture> palette;
         std::vector<uint16_t> index;
+        std::vector<uint32_t> indices;
         switch (type) {
         case RunColors: {
             colors.resize(count);
@@ -4520,6 +4769,34 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
         case RunTexture:
             readTextureRun(str, palette, index, static_cast<int>(count));
             break;
+        case RunBase: {
+            indices.resize(count);
+            for (auto &value : indices)
+                str >> value;
+            uint32_t packed = 0;
+            str >> packed;
+            base.ambientColor.setPackedValue(packed);
+            str >> packed;
+            base.diffuseColor.setPackedValue(packed);
+            str >> packed;
+            base.specularColor.setPackedValue(packed);
+            str >> packed;
+            base.emissiveColor.setPackedValue(packed);
+            str >> base.shininess;
+            str >> baseType;
+            str >> base.image;
+            str >> base.imagePath;
+            str >> base.uuid;
+            readFinishRecords(str, finishes, 1);
+            if (!finishes.empty())
+                base.finish = finishes.front();
+            readTextureRun(str, palette, index, 0);
+            if (!palette.empty())
+                base.texture = palette.front();
+            std::vector<SurfaceTexture>().swap(palette);
+            std::vector<SurfaceFinish>().swap(finishes);
+            break;
+        }
         default:
             // A record shape added by a later build. The byte length is
             // exactly what makes this survivable: the field is dropped and
@@ -4544,6 +4821,7 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
             _list.wd().texturePalette.swap(palette);
             _list.wd().textureIndex.swap(index);
             break;
+        case FieldBase: _list.wd().overrides.swap(indices); break;   // and base above
         default: break;   // unreachable: an unknown bit was skipped above
         }
     }
@@ -4553,9 +4831,19 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
                 convertAlpha(color);
         }
     }
-    _list.applyRestoredTransparency(transparency, legacy);
-    _list.touchFields();
-    _list.normalize();
+    if (sparse) {
+        if (legacy) {
+            for (auto *color : {&base.ambientColor, &base.diffuseColor, &base.specularColor,
+                                &base.emissiveColor}) {
+                convertAlpha(*color);
+            }
+        }
+        installBase(base, baseType);
+    }
+    else {
+        _list.applyRestoredTransparency(transparency, legacy);
+        _list.adoptDense();
+    }
     guard.tryInvoke();
 }
 
@@ -4567,6 +4855,10 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
     if (_list.rd().pbr)
         writer.Stream() << " pbr=\"1\"";
     writer.Stream() << " fields=\"1\">\n";
+
+    // As in saveFieldStream: this encoding states the base, so one is
+    // chosen here if nobody chose it earlier
+    _list.ensureBase();
 
     const bool convert = saveConverts();
     auto writeColors = [&writer, convert](char key, const std::vector<Color> &field) {
@@ -4590,18 +4882,6 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
         writer.Stream() << '\n';
         writer.Stream().precision(precision);
     };
-
-    writeColors('a', _list.rd().ambient);
-    writeColors('d', _list.rd().diffuse);
-    writeColors('s', _list.rd().specular);
-    writeColors('e', _list.rd().emissive);
-    writeFloats('h', _list.rd().shininess);
-    if (!_list.rd().type.empty()) {
-        writer.Stream() << "y " << _list.rd().type.size();
-        for (int8_t value : _list.rd().type)
-            writer.Stream() << ' ' << static_cast<int>(value);
-        writer.Stream() << '\n';
-    }
     auto writeStrings = [&writer](char key, const std::vector<std::string> &field) {
         if (field.empty())
             return;
@@ -4610,27 +4890,25 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
             writeHexToken(writer.Stream(), value);
         writer.Stream() << '\n';
     };
-    writeStrings('i', _list.rd().image);
-    writeStrings('p', _list.rd().imagePath);
-    writeStrings('u', _list.rd().uuid);
-    // Self-describing, unlike every other key: the palette and the index
-    // state their own lengths, because neither of them is the entry count.
-    // The leading number is still the honest token count, which is all a
-    // reader that does not know the key needs to step over it (9.4.2).
-    if (!_list.rd().texturePalette.empty()) {
-        writer.Stream() << "x " << textureTokenCount(_list.rd().texturePalette, _list.rd().textureIndex);
-        writeTextureTokens(writer.Stream(), _list.rd().texturePalette, _list.rd().textureIndex);
+    auto writeTypes = [&writer](const std::vector<int8_t> &field) {
+        if (field.empty())
+            return;
+        writer.Stream() << "y " << field.size();
+        for (int8_t value : field)
+            writer.Stream() << ' ' << static_cast<int>(value);
         writer.Stream() << '\n';
-    }
+    };
     // Four tokens per entry, which is why the number after a key counts
     // TOKENS and not entries: it is the only thing that lets a reader step
     // over a key it does not know (9.4.2). Every other field writes one
     // token per entry, so for them the two counts are the same number and
     // nothing about their lines changed.
-    if (!_list.rd().finish.empty()) {
+    auto writeFinishes = [&writer](const std::vector<SurfaceFinish> &field) {
+        if (field.empty())
+            return;
         const auto precision = writer.Stream().precision(9);
-        writer.Stream() << "f " << _list.rd().finish.size() * 4;
-        for (const auto &value : _list.rd().finish) {
+        writer.Stream() << "f " << field.size() * 4;
+        for (const auto &value : field) {
             writer.Stream() << ' ' << static_cast<unsigned>(value.pattern)
                             << ' ' << value.pitch
                             << ' ' << value.depth
@@ -4638,7 +4916,68 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
         }
         writer.Stream() << '\n';
         writer.Stream().precision(precision);
+    };
+    // Self-describing, unlike every other key: the palette and the index
+    // state their own lengths, because neither of them is the entry count.
+    // The leading number is still the honest token count, which is all a
+    // reader that does not know the key needs to step over it (9.4.2).
+    auto writeTexture = [&writer](const std::vector<SurfaceTexture> &palette,
+                                  const std::vector<uint16_t> &index) {
+        if (palette.empty())
+            return;
+        writer.Stream() << "x " << textureTokenCount(palette, index);
+        writeTextureTokens(writer.Stream(), palette, index);
+        writer.Stream() << '\n';
+    };
+
+    const auto &d = _list.rd();
+    if (d.overrides.empty()) {
+        // Nothing varies, so there is nothing for a base key to say that
+        // the fields do not: this writes the uniform value of each field
+        // that differs from what an unstated one reads as, which is byte
+        // for byte what this encoding wrote before there was a base at all.
+        const Material &def = MaterialList::defaultMaterial();
+        auto one = [](const auto &value, const auto &def) {
+            using T = typename std::decay<decltype(value)>::type;
+            return value == def ? std::vector<T>() : std::vector<T>(1, value);
+        };
+        writeColors('a', one(d.base.ambientColor, def.ambientColor));
+        writeColors('d', one(d.base.diffuseColor, MaterialList::storedDiffuse(def)));
+        writeColors('s', one(d.base.specularColor, _list.specularDefault()));
+        writeColors('e', one(d.base.emissiveColor, def.emissiveColor));
+        writeFloats('h', one(d.base.shininess, _list.shininessDefault()));
+        writeTypes(one(static_cast<int8_t>(d.base.getType()),
+                       static_cast<int8_t>(def.getType())));
+        writeStrings('i', one(d.base.image, def.image));
+        writeStrings('p', one(d.base.imagePath, def.imagePath));
+        writeStrings('u', one(d.base.uuid, def.uuid));
+        writeTexture(one(d.base.texture, def.texture), std::vector<uint16_t>());
+        writeFinishes(one(d.base.finish, def.finish));
+        return false;
     }
+
+    // The base in full, then the faces that override it and what they hold
+    // (docs/ShapeAppearanceDesign.md 12.3). The base goes first, and the
+    // override list before the fields, so that a reader knows how long a
+    // field line has to be before it reads one.
+    writer.Stream() << "b " << baseTokenCount(d.base);
+    writeBaseTokens(writer.Stream(), d.base, convert);
+    writer.Stream() << '\n';
+    writer.Stream() << "o " << d.overrides.size();
+    for (uint32_t idx : d.overrides)
+        writer.Stream() << ' ' << idx;
+    writer.Stream() << '\n';
+    writeColors('a', d.ambient);
+    writeColors('d', d.diffuse);
+    writeColors('s', d.specular);
+    writeColors('e', d.emissive);
+    writeFloats('h', d.shininess);
+    writeTypes(d.type);
+    writeStrings('i', d.image);
+    writeStrings('p', d.imagePath);
+    writeStrings('u', d.uuid);
+    writeTexture(d.texturePalette, d.textureIndex);
+    writeFinishes(d.finish);
     return false;
 }
 
@@ -4651,6 +4990,7 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
     _list.wd().count = static_cast<int>(uCt);
     // As in restoreFieldStream: read but no longer written.
     std::vector<float> transparency;
+    std::vector<uint32_t>().swap(_list.wd().overrides);
     std::vector<Color>().swap(_list.wd().ambient);
     std::vector<Color>().swap(_list.wd().diffuse);
     std::vector<Color>().swap(_list.wd().specular);
@@ -4663,6 +5003,14 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
     std::vector<SurfaceFinish>().swap(_list.wd().finish);
     std::vector<SurfaceTexture>().swap(_list.wd().texturePalette);
     std::vector<uint16_t>().swap(_list.wd().textureIndex);
+
+    // The base and the override list, which say whether this file is in the
+    // sparse shape at all: without an 'o' key every field line is one value
+    // per entry, which is what every document written before
+    // ShapeAppearanceDesign 12 holds (12.3).
+    Material base;
+    int8_t baseType = static_cast<int8_t>(MaterialList::defaultMaterial().getType());
+    bool sparse = false;
 
     auto &s = reader.beginCharStream();
     std::string key;
@@ -4682,12 +5030,13 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
         unsigned stride = 0;
         switch (key[0]) {
         case 'a': case 'd': case 's': case 'e': case 'h': case 't':
-        case 'y': case 'i': case 'p': case 'u':
+        case 'y': case 'i': case 'p': case 'u': case 'o':
             stride = 1;
             break;
         case 'f':
             stride = 4;
             break;
+        case 'b':
         case 'x':
             // Self-describing: the count rules below do not apply, and the
             // stride is only here to say the key IS known
@@ -4704,16 +5053,39 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
             }
             continue;
         }
+        if (key[0] == 'b') {
+            readBaseTokens(s, base, baseType);
+            continue;
+        }
+        if (key[0] == 'o') {
+            // One index per overriding face, which is what every field line
+            // after this one is as long as
+            if (tokens > uCt)
+                throw Base::FileException("more overriding faces than the list has");
+            sparse = true;
+            auto &overrides = _list.wd().overrides;
+            overrides.reserve(tokens);
+            uint32_t idx = 0;
+            for (unsigned i = 0; i < tokens && (s >> idx); ++i)
+                overrides.push_back(idx);
+            continue;
+        }
         if (key[0] == 'x') {
             // The palette states its own length; the index does not get to,
-            // because it is one slot per entry of this list
-            readTextureKey(s, _list.wd().texturePalette, _list.wd().textureIndex, static_cast<int>(uCt));
+            // because it is one slot per overriding face -- or, in a file
+            // with no base in it, per entry
+            readTextureKey(s, _list.wd().texturePalette, _list.wd().textureIndex,
+                           sparse ? static_cast<int>(_list.wd().overrides.size())
+                                  : static_cast<int>(uCt));
             continue;
         }
         if (tokens % stride != 0)
             throw Base::FileException("material field length is not a whole number of entries");
         const unsigned count = tokens / stride;
-        if (count != 1 && count != uCt)
+        // The exact length is checked below, once the whole element has been
+        // read and it is known whether there was an override list at all;
+        // this only keeps a number out of a file from sizing an allocation
+        if (count != 1 && count > uCt)
             throw Base::FileException("material field length does not match the list");
 
         auto readColors = [&s, count](std::vector<Color> &field) {
@@ -4782,9 +5154,21 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
                 convertAlpha(color);
         }
     }
-    _list.applyRestoredTransparency(transparency, legacy);
-    _list.touchFields();
-    _list.normalize();
+    if (sparse) {
+        if (legacy) {
+            for (auto *color : {&base.ambientColor, &base.diffuseColor, &base.specularColor,
+                                &base.emissiveColor}) {
+                convertAlpha(*color);
+            }
+        }
+        installBase(base, baseType);
+    }
+    else {
+        // A transparency field of its own belongs to an era that had no
+        // base, so it is only ever merged into a dense diffuse
+        _list.applyRestoredTransparency(transparency, legacy);
+        _list.adoptDense();
+    }
     guard.tryInvoke();
 }
 
