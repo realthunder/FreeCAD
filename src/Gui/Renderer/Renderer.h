@@ -1699,6 +1699,15 @@ struct PBRConfig {
     /// Draw the environment itself as the visible background (replaces
     /// the background gradient while PBR is active).
     bool envBackground = false;
+    /// How far out of focus that background is, 0..1: 0 draws the
+    /// environment at the resolution it was baked at, 1 flattens it to
+    /// its average colour. Blender's viewport shading carries the same
+    /// control (View3DShading.studiolight_background_blur) and for the
+    /// same reason -- a backdrop reads as a place when it is soft and
+    /// as a pasted photo when it is sharp -- but only the BACKGROUND is
+    /// affected: the lighting and the reflections keep the whole
+    /// environment either way, here as there.
+    float envBlur = 0.25f;
     /// Read an ordinary Phong appearance's SPECULAR COLOUR as material
     /// data where nothing states a metalness. The metallic/roughness
     /// BRDF has no specular slot -- its reflectance is f0, built from the
@@ -1749,7 +1758,8 @@ struct PBRConfig {
     bool operator==(const PBRConfig &o) const {
         return enabled == o.enabled && metallic == o.metallic
             && roughness == o.roughness && envIntensity == o.envIntensity
-            && envBackground == o.envBackground && envImage == o.envImage
+            && envBackground == o.envBackground && envBlur == o.envBlur
+            && envImage == o.envImage
             && envPreset == o.envPreset
             && fromSpecular == o.fromSpecular
             && shininessMapping == o.shininessMapping;

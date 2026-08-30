@@ -5344,6 +5344,8 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _renderParam<App::PropertyBool>(view, "PBREnvBackground",
             RenderParams::docPBREnvBackground(),
             RenderParams::getPBREnvBackground());
+    _renderParam<App::PropertyFloat>(view, "PBREnvBlur",
+            RenderParams::docPBREnvBlur(), RenderParams::getPBREnvBlur());
     // Matcap is the other shading model: it overrides PBR while on, so it
     // follows it here.
     _shadingModelParam(view, "Matcap", RenderParams::docMatcap(),

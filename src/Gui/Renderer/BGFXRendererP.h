@@ -4694,6 +4694,7 @@ public:
         fn(u_bulbShadowRot, LifeProgram);
         // PBR environment resources.
         fn(m_envTex, LifeProgram);
+        fn(m_envBgTex, LifeProgram);
         fn(m_dummyEnvTex, LifeProgram);
         fn(s_texNormalZ, LifeProgram);
         fn(s_texAONoise, LifeProgram);
@@ -4913,6 +4914,14 @@ public:
     // form, basis and 1/pi constants folded so the shader evaluates
     // plain dot products. CPU cost is a one-off ~2M radiance samples.
     void ensureEnvironment();
+
+    // Build the background cubemap (m_envBgTex) the same environment
+    // is drawn FROM: the base level at kEnvBgSize, then plain box
+    // downsamples all the way to 1x1, which is what the blur factor
+    // slides along. Kept apart from the lighting cube because the two
+    // want different things -- see kEnvBgSize -- and called from
+    // ensureEnvironment, so both are rebuilt by the same invalidation.
+    void buildEnvBackground();
 
     /// Give \a geom its buffers if it has none, and account for the
     /// refusal when the handle pool has none left to give. The draw
@@ -5368,8 +5377,11 @@ public:
     /// quad. The background view keeps the scene view/proj for this
     /// (the fullscreen vertex shader ignores them; the fragment shader
     /// reconstructs each pixel's world direction from the predefined
-    /// u_proj/u_invView). A soft cubemap lod keeps the studio lobes
-    /// from reading as hard clipped discs.
+    /// u_proj/u_invView).
+    ///
+    /// How far out of focus it is drawn is Render_PBREnvBlur, a lod
+    /// along m_envBgTex's box mip chain: zero is the map as baked,
+    /// which is the same backdrop the path tracer shows.
     void submitEnvBackground();
 
     void submitBackground(const Render::Background &bg);
@@ -6484,7 +6496,23 @@ public:
     // megabyte of RGBA16F per view and a one-off prefilter, both paid
     // once when the environment changes rather than per frame.
     static constexpr uint16_t kEnvSize = 128;
+    /// The background map is a second cube, and a sharper one: what
+    /// the lighting map is good at (a prefiltered lobe per roughness)
+    /// is not what a backdrop needs, and its base level is only as big
+    /// as the reflections asked for. 256 a face is the same angular
+    /// resolution the path tracer bakes its world at
+    /// (SceneTranslator::translateWorld, 1024x512 equirect), so at
+    /// blur 0 the two shading models show the SAME backdrop -- which
+    /// is the whole point of the control. Its mips are plain box
+    /// downsamples rather than GGX lobes: a defocused backdrop is what
+    /// they stand for, not a reflection, and box levels cost nothing
+    /// against the 64-sample prefilter the lighting cube pays.
+    static constexpr uint16_t kEnvBgSize = 256;
     bgfx::TextureHandle m_envTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_envBgTex = BGFX_INVALID_HANDLE;
+    /// Number of mip levels in m_envBgTex, so the blur factor has a
+    /// range to land on.
+    int m_envBgMips = 1;
     bgfx::TextureHandle m_dummyEnvTex = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texEnv = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_pbrParams = BGFX_INVALID_HANDLE;
@@ -6564,6 +6592,10 @@ public:
     }
     float pbrRoughness = 0.0f; // <= 0: derive from the material shininess
     float pbrEnvIntensity = 1.0f;
+    /// How far out of focus the environment background is, 0..1
+    /// (PBRConfig::envBlur); 1 is the top of m_envBgTex's mip chain,
+    /// a single averaged colour.
+    float pbrEnvBlur = 0.25f;
     bgfx::UniformHandle s_texBump = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_bumpParams = BGFX_INVALID_HANDLE;
     /// Machined surface finish of the draw being submitted

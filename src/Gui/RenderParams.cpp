@@ -143,6 +143,7 @@ public:
     std::string PBREnvImage;
     bool PBREnvEmbed;
     bool PBREnvBackground;
+    double PBREnvBlur;
     double BumpScale;
     bool Parallax;
     bool Volumetric;
@@ -393,6 +394,8 @@ public:
         funcs["PBREnvEmbed"] = &RenderParamsP::updatePBREnvEmbed;
         PBREnvBackground = this->handle->GetBool("PBREnvBackground", true);
         funcs["PBREnvBackground"] = &RenderParamsP::updatePBREnvBackground;
+        PBREnvBlur = this->handle->GetFloat("PBREnvBlur", 0.25);
+        funcs["PBREnvBlur"] = &RenderParamsP::updatePBREnvBlur;
         BumpScale = this->handle->GetFloat("BumpScale", 1.0);
         funcs["BumpScale"] = &RenderParamsP::updateBumpScale;
         Parallax = this->handle->GetBool("Parallax", true);
@@ -900,6 +903,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvBackground(RenderParamsP *self) {
         self->PBREnvBackground = self->handle->GetBool("PBREnvBackground", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updatePBREnvBlur(RenderParamsP *self) {
+        self->PBREnvBlur = self->handle->GetFloat("PBREnvBlur", 0.25);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateBumpScale(RenderParamsP *self) {
@@ -4683,11 +4690,12 @@ const char *RenderParams::docPBREnvImage() {
 "   costs memory without showing more.\n"
 " - Free CC0 panoramas: polyhaven.com/hdris.\n"
 "\n"
-"Drawn as the background it is deliberately soft -- the\n"
-"background pass reads a blurred level of that cubemap, the\n"
-"way a real backdrop is out of focus -- so expect a wash of\n"
-"the photo's colours there rather than the photo. The\n"
-"lighting and the reflections use the sharp levels.\n"
+"How sharp it is DRAWN behind the model is a separate\n"
+"question, and the answer is Render_PBREnvBlur: the background\n"
+"pass reads a level of that cubemap the way a real backdrop is\n"
+"out of focus, and at zero it reads the level it was baked at.\n"
+"The lighting and the reflections use the sharp levels\n"
+"whatever the blur says.\n"
 "\n"
 "Empty falls back to that dialog's current image, then to the\n"
 "procedural environment.");
@@ -4787,6 +4795,54 @@ void RenderParams::setPBREnvBackground(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removePBREnvBackground() {
     instance()->handle->RemoveBool("PBREnvBackground");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docPBREnvBlur() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How far out of focus the environment background is, 0 to 1.\n"
+"Zero draws it at the resolution it was baked at; one flattens\n"
+"it to a single average colour. Only the BACKGROUND is\n"
+"affected -- the lighting and the reflections read the whole\n"
+"environment whatever this says.\n"
+"\n"
+"A backdrop wants some of this. A real one is out of focus, and\n"
+"softening also lets a small bright source bleed into a wide\n"
+"gentle falloff instead of sitting in the frame as a hard\n"
+"rectangle. Too much of it and there is nothing left for a\n"
+"reflection to be reconciled against, which is the whole reason\n"
+"the background is drawn at all. Blender's viewport shading\n"
+"carries the same control for the same reasons, and defaults it\n"
+"higher than this does.\n"
+"\n"
+"At zero the background is as sharp as the external path tracer\n"
+"draws it: both bake the environment at the same angular\n"
+"resolution, so the two shading models then show the same\n"
+"backdrop. Above zero only the raster background softens -- a\n"
+"path traced frame's background IS its light, and blurring it\n"
+"would relight the scene.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getPBREnvBlur() {
+    return instance()->PBREnvBlur;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultPBREnvBlur() {
+    const static double def = 0.25;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setPBREnvBlur(const double &v) {
+    instance()->handle->SetFloat("PBREnvBlur",v);
+    instance()->PBREnvBlur = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removePBREnvBlur() {
+    instance()->handle->RemoveFloat("PBREnvBlur");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

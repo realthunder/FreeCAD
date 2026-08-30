@@ -49,6 +49,7 @@
 #include "ShadingOptions.h"
 #include "Application.h"
 #include "FileDialog.h"
+#include "MainWindow.h"
 #include "RenderParams.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -263,6 +264,30 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     envChecks->addStretch();
     layout->addLayout(envChecks, 3, 1);
 
+    // How much of the environment is left to see. It belongs beside
+    // the switch that draws it and not in a preference page, because
+    // it is the answer to a question asked with the 3D view in sight:
+    // the same view under the external path tracer shows the backdrop
+    // sharp, and until this existed there was no way to say which of
+    // the two was wanted. Blender puts the same slider in the same
+    // place, next to the environment its viewport shading is standing
+    // in.
+    envBlurLabel = new QLabel(tr("Env blur:"), this);
+    envBlurSlider = new QSlider(Qt::Horizontal, this);
+    envBlurSlider->setRange(0, 100);
+    envBlurSlider->setPageStep(10);
+    envBlurSlider->setToolTip(doc(RenderParams::docPBREnvBlur()));
+    envBlurLabel->setToolTip(envBlurSlider->toolTip());
+    envBlurValue = new QLabel(this);
+    envBlurValue->setMinimumWidth(
+        envBlurValue->fontMetrics().horizontalAdvance(tr("000 %")));
+    auto blurRow = new QHBoxLayout;
+    blurRow->setContentsMargins(0, 0, 0, 0);
+    blurRow->addWidget(envBlurSlider, 1);
+    blurRow->addWidget(envBlurValue);
+    layout->addWidget(envBlurLabel, 4, 0);
+    layout->addLayout(blurRow, 4, 1);
+
     matcapLabel = new QLabel(tr("Matcap:"), this);
     matcapCombo = new QComboBox(this);
     matcapCombo->addItem(tr("Studio"));
@@ -270,8 +295,8 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     matcapCombo->addItem(tr("Metal"));
     matcapCombo->addItem(tr("Pearl"));
     matcapCombo->setToolTip(doc(RenderParams::docMatcapPreset()));
-    layout->addWidget(matcapLabel, 4, 0);
-    layout->addWidget(matcapCombo, 4, 1);
+    layout->addWidget(matcapLabel, 5, 0);
+    layout->addWidget(matcapCombo, 5, 1);
 
     // Matcap's other number, and the one that surprises people: at zero
     // the whole scene shades as a single material, so an assembly's
@@ -292,8 +317,8 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     tintRow->setContentsMargins(0, 0, 0, 0);
     tintRow->addWidget(matcapTintSlider, 1);
     tintRow->addWidget(matcapTintValue);
-    layout->addWidget(matcapTintLabel, 5, 0);
-    layout->addLayout(tintRow, 5, 1);
+    layout->addWidget(matcapTintLabel, 6, 0);
+    layout->addLayout(tintRow, 6, 1);
 
     // The modifiers: each composes with any shading model and with the
     // others, which is exactly why they are checkboxes and not entries in
@@ -320,7 +345,7 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     flags->addWidget(aoCheck, 0, 1);
     flags->addWidget(shadowCheck, 1, 0);
     flags->addWidget(bloomCheck, 1, 1);
-    layout->addLayout(flags, 6, 0, 1, 2);
+    layout->addLayout(flags, 7, 0, 1, 2);
 
     // Cavity is the one modifier here whose usefulness depends on a
     // number rather than on being on: the radius decides which features
@@ -343,8 +368,8 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     radiusRow->setContentsMargins(0, 0, 0, 0);
     radiusRow->addWidget(cavityRadiusSlider, 1);
     radiusRow->addWidget(cavityRadiusValue);
-    layout->addWidget(cavityRadiusLabel, 7, 0);
-    layout->addLayout(radiusRow, 7, 1);
+    layout->addWidget(cavityRadiusLabel, 8, 0);
+    layout->addLayout(radiusRow, 8, 1);
 
     // Not "pick a renderer type in the preferences" any more: the
     // render path stopped being a stored choice in ca372262f1, and
@@ -355,7 +380,7 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     hint = new QLabel(tr("Needs the render engine, which is not "
                          "running on this view."), this);
     hint->setEnabled(false);
-    layout->addWidget(hint, 8, 0, 1, 2);
+    layout->addWidget(hint, 9, 0, 1, 2);
 
     connect(modelCombo, qOverload<int>(&QComboBox::currentIndexChanged),
             this, [this](int index) {
@@ -369,13 +394,29 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     });
     connect(envBgCheck, &QCheckBox::toggled, this, [this](bool on) {
         setFlag("PBREnvBackground", on, &RenderParams::setPBREnvBackground);
+        updateEnvBlurEnabled();
+    });
+    connect(envBlurSlider, &QSlider::valueChanged, this, [this](int value) {
+        envBlurValue->setText(tr("%1 %").arg(value));
+        if (loading)
+            return;
+        if (auto prop = renderProp<App::PropertyFloat>(activeView(),
+                                                       "PBREnvBlur"))
+            prop->setValue(double(value) / 100.0);
+        RenderParams::setPBREnvBlur(double(value) / 100.0);
     });
     connect(envEmbedCheck, &QCheckBox::toggled, this, [this](bool on) {
         setFlag("PBREnvEmbed", on, &RenderParams::setPBREnvEmbed);
     });
-    connect(envCombo, qOverload<int>(&QComboBox::currentIndexChanged),
-            this, [this](int index) {
-        if (loading)
+    // activated, not currentIndexChanged, and for two reasons. Picking
+    // the entry that is ALREADY current is still a request: with a file
+    // loaded the combo sits on the image entry, and currentIndexChanged
+    // is silent there, so "choose a different image" had no way in. And
+    // activated is emitted only for a pick the user made, which is what
+    // these writes are for -- refresh's own setCurrentIndex is silent
+    // by construction rather than by the loading guard.
+    connect(envCombo, &QComboBox::activated, this, [this](int index) {
+        if (loading || index < 0)
             return;
         if (index == envImageIndex) {
             chooseEnvImage();
@@ -688,9 +729,16 @@ void ShadingOptionsWidget::setModel(long model)
         RenderParams::setPBR(pbr);
         RenderParams::setMatcap(matcap);
     }
-    envLabel->setEnabled(pbr);
-    envCombo->setEnabled(pbr);
-    envBgCheck->setEnabled(pbr);
+    // External stands in the same environment: the path tracer bakes
+    // its world from these very properties, and its session forces the
+    // PBR flag on so Render_PBREnvBackground is honoured there too
+    // (View3DInventorViewer::feedCyclesViewport). Greyed, the row said
+    // the opposite of what the frame showed.
+    const bool env = envUsed(model);
+    envLabel->setEnabled(env);
+    envCombo->setEnabled(env);
+    envBgCheck->setEnabled(env);
+    updateEnvBlurEnabled();
     updateEnvEmbedEnabled();
     matcapLabel->setEnabled(matcap);
     matcapCombo->setEnabled(matcap);
@@ -720,13 +768,31 @@ QString ShadingOptionsWidget::envImageToolTip(const QString &current) const
         "\n"
         "Wants a 2:1 lat-long Radiance .hdr at 1K or 2K. An .exr will not\n"
         "load, and an 8-bit photo has too little range to light with.\n"
-        "Free ones: polyhaven.com/hdris. Shown as the background it is\n"
-        "deliberately soft.");
+        "Free ones: polyhaven.com/hdris. How sharp it is drawn behind the\n"
+        "model is Env blur, below.");
     if (current.isEmpty())
         return tip;
     // The file first: once one is loaded, which one is the question this
     // entry raises, and the instructions are behind it.
     return current + QLatin1String("\n\n") + tip;
+}
+
+bool ShadingOptionsWidget::envUsed(long model)
+{
+    // Both models stand the scene in this environment. Only the raster
+    // ones that do not -- Classic and Matcap -- leave the row dead.
+    return model == View3DInventor::ShadingRealistic
+        || model == View3DInventor::ShadingExternal;
+}
+
+void ShadingOptionsWidget::updateEnvBlurEnabled()
+{
+    // The blur softens the background pass and nothing else, so with
+    // the background off it is a control that does nothing.
+    envBlurLabel->setEnabled(envBgCheck->isEnabled()
+                             && envBgCheck->isChecked());
+    envBlurSlider->setEnabled(envBlurLabel->isEnabled());
+    envBlurValue->setEnabled(envBlurLabel->isEnabled());
 }
 
 void ShadingOptionsWidget::updateEnvEmbedEnabled()
@@ -764,9 +830,7 @@ QString ShadingOptionsWidget::envImageName() const
 
 void ShadingOptionsWidget::chooseEnvImage()
 {
-    auto view = activeView();
-    auto prop = renderProp<App::PropertyFile>(view, "PBREnvImage");
-    if (!prop) {
+    if (!renderProp<App::PropertyFile>(activeView(), "PBREnvImage")) {
         refresh();
         return;
     }
@@ -775,12 +839,38 @@ void ShadingOptionsWidget::chooseEnvImage()
     // sequence the same every time instead of style dependent.
     if (auto menu = qobject_cast<QMenu*>(parentWidget()))
         menu->close();
-    // The menu owns this widget, so it outlives the dialog -- but only
-    // as long as the toolbar does not rebuild the menu underneath it,
-    // which is exactly the kind of thing a modal loop lets happen.
+    // ...and the dialog opens from the event loop rather than from
+    // inside the combo's own activation, because closing the menu is
+    // not the end of the grabs. The combo's popup still holds the
+    // mouse and keyboard while the handler that emitted this runs --
+    // it hides on the way out of it -- and a modal dialog raised under
+    // that grab gets no input at all: on Windows nothing appeared and
+    // the entry read as a dead control. Queued, every popup is down by
+    // the time the dialog is asked for.
+    QPointer<ShadingOptionsWidget> self(this);
+    QMetaObject::invokeMethod(this, [self]() {
+        if (self)
+            self->openEnvImage();
+    }, Qt::QueuedConnection);
+}
+
+void ShadingOptionsWidget::openEnvImage()
+{
+    auto prop = renderProp<App::PropertyFile>(activeView(), "PBREnvImage");
+    if (!prop) {
+        refresh();
+        return;
+    }
+    // Parented to the main window, NOT to this widget. A dialog takes
+    // its transient parent from its parent's WINDOW, and this widget's
+    // window is the menu -- the one just closed above. Windows then
+    // owns a modal dialog to a hidden popup: it is created, it is
+    // never raised or activated, and the entry reads as a control that
+    // does nothing. The main window is the surface this belongs to
+    // once the menu is gone anyway.
     QPointer<ShadingOptionsWidget> self(this);
     QString path = FileDialog::getOpenFileName(
-            this, tr("Environment image"),
+            getMainWindow(), tr("Environment image"),
             QString::fromUtf8(prop->getValue()),
             tr("Environment images (*.hdr *.pic *.png *.jpg *.jpeg *.bmp "
                "*.tif *.tiff);;All files (*)"));
@@ -838,7 +928,6 @@ void ShadingOptionsWidget::refresh()
     if (auto mdiView = qobject_cast<View3DInventor*>(
                 Application::Instance->activeView()))
         model = mdiView->ShadingType.getValue();
-    const bool pbr = model == View3DInventor::ShadingRealistic;
     const bool matcap = model == View3DInventor::ShadingMatcap;
     modelCombo->setCurrentIndex(int(model));
     // An image set on the view is what the scene is standing in, so the
@@ -867,6 +956,14 @@ void ShadingOptionsWidget::refresh()
     // parameter rather than a literal.
     envEmbedCheck->setChecked(renderFlag(view, "PBREnvEmbed",
                                          RenderParams::getPBREnvEmbed()));
+    if (auto prop = renderProp<App::PropertyFloat>(view, "PBREnvBlur"))
+        envBlurSlider->setValue(int(prop->getValue() * 100.0 + 0.5));
+    else
+        envBlurSlider->setValue(int(RenderParams::getPBREnvBlur() * 100.0
+                                    + 0.5));
+    // valueChanged is silent when the value has not moved, so the
+    // readout is written here rather than left to the signal.
+    envBlurValue->setText(tr("%1 %").arg(envBlurSlider->value()));
     if (auto prop = renderProp<App::PropertyEnumeration>(view, "MatcapPreset"))
         matcapCombo->setCurrentIndex(int(prop->getValue()));
     if (auto prop = renderProp<App::PropertyFloat>(view, "MatcapTint"))
@@ -901,9 +998,11 @@ void ShadingOptionsWidget::refresh()
             item->setEnabled(available && cyclesAvailable);
     }
     updateExternalSettings();
-    envLabel->setEnabled(available && pbr && !matcap);
-    envCombo->setEnabled(available && pbr && !matcap);
-    envBgCheck->setEnabled(available && pbr && !matcap);
+    const bool env = available && envUsed(model);
+    envLabel->setEnabled(env);
+    envCombo->setEnabled(env);
+    envBgCheck->setEnabled(env);
+    updateEnvBlurEnabled();
     updateEnvEmbedEnabled();
     matcapLabel->setEnabled(available && matcap);
     matcapCombo->setEnabled(available && matcap);

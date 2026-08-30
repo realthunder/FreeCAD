@@ -2172,11 +2172,12 @@ public:
     ///    costs memory without showing more.
     ///  - Free CC0 panoramas: polyhaven.com/hdris.
     /// 
-    /// Drawn as the background it is deliberately soft -- the
-    /// background pass reads a blurred level of that cubemap, the
-    /// way a real backdrop is out of focus -- so expect a wash of
-    /// the photo's colours there rather than the photo. The
-    /// lighting and the reflections use the sharp levels.
+    /// How sharp it is DRAWN behind the model is a separate
+    /// question, and the answer is Render_PBREnvBlur: the background
+    /// pass reads a level of that cubemap the way a real backdrop is
+    /// out of focus, and at zero it reads the level it was baked at.
+    /// The lighting and the reflections use the sharp levels
+    /// whatever the blur says.
     /// 
     /// Empty falls back to that dialog's current image, then to the
     /// procedural environment.
@@ -2227,6 +2228,38 @@ public:
     static void removePBREnvBackground();
     static void setPBREnvBackground(const bool &v);
     static const char *docPBREnvBackground();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PBREnvBlur
+    ///
+    /// How far out of focus the environment background is, 0 to 1.
+    /// Zero draws it at the resolution it was baked at; one flattens
+    /// it to a single average colour. Only the BACKGROUND is
+    /// affected -- the lighting and the reflections read the whole
+    /// environment whatever this says.
+    /// 
+    /// A backdrop wants some of this. A real one is out of focus, and
+    /// softening also lets a small bright source bleed into a wide
+    /// gentle falloff instead of sitting in the frame as a hard
+    /// rectangle. Too much of it and there is nothing left for a
+    /// reflection to be reconciled against, which is the whole reason
+    /// the background is drawn at all. Blender's viewport shading
+    /// carries the same control for the same reasons, and defaults it
+    /// higher than this does.
+    /// 
+    /// At zero the background is as sharp as the external path tracer
+    /// draws it: both bake the environment at the same angular
+    /// resolution, so the two shading models then show the same
+    /// backdrop. Above zero only the raster background softens -- a
+    /// path traced frame's background IS its light, and blurring it
+    /// would relight the scene.
+    static const double & getPBREnvBlur();
+    static const double & defaultPBREnvBlur();
+    static void removePBREnvBlur();
+    static void setPBREnvBlur(const double &v);
+    static const char *docPBREnvBlur();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

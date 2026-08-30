@@ -117,6 +117,14 @@ private:
     void updateMatcapTintEnabled();
     /// Grey the copy-the-image box unless there is an image to copy.
     void updateEnvEmbedEnabled();
+    /// Grey the blur row unless the environment is being drawn: the
+    /// blur softens that background pass and nothing else.
+    void updateEnvBlurEnabled();
+    /// Does this shading model stand the scene in the environment?
+    /// Realistic and External both do -- the path tracer bakes its
+    /// world from the same properties -- so the environment row is
+    /// live for either.
+    static bool envUsed(long model);
     /// Set a Render_<name> bool on the active view and, when \a pref is
     /// given, the preference behind it -- see the class comment.
     void setFlag(const char *name, bool value,
@@ -125,8 +133,12 @@ private:
     /// that works, with \a current named above it when there is one.
     QString envImageToolTip(const QString &current = QString()) const;
     /// Ask for an environment image and hand it to Render_PBREnvImage.
-    /// Cancelling leaves the preset that is in effect selected.
+    /// Cancelling leaves the preset that is in effect selected. Closes
+    /// the menu and queues openEnvImage(): a modal dialog raised while
+    /// the combo popup still holds the grab never gets the input.
     void chooseEnvImage();
+    /// The file dialog itself, run once the popups are down.
+    void openEnvImage();
     /// Drop both the path and any embedded copy, so a preset chosen in
     /// the same combo is what actually lights the scene.
     void clearEnvImage();
@@ -149,6 +161,9 @@ private:
     QComboBox *envCombo;
     QCheckBox *envBgCheck;
     QCheckBox *envEmbedCheck;
+    QLabel *envBlurLabel;
+    QSlider *envBlurSlider;
+    QLabel *envBlurValue;
     /// Index of the combo's trailing "Image..." entry -- the presets are
     /// the enumeration's own values and sit at 0..n-1 before it.
     int envImageIndex = -1;
