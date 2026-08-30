@@ -855,6 +855,14 @@ QIcon MaterialIcons::icon(const QString& key, const App::Material& material,
     // all, because it is the same icon on every installation, and
     // because it is the only icon there is where nothing can be drawn.
     QIcon bundled = fromResource(key, resourceName(name), digest);
+    if (bundled.isNull()) {
+        // Nothing under this card's own name, so try the one the cards
+        // that look like it share. The per-card name is tried first and
+        // stays the way a single card is overridden; this is how the
+        // other hundred get a bundled icon without shipping a hundred
+        // copies of the same picture.
+        bundled = fromResource(key, sharedResourceName(digest), digest);
+    }
     if (!bundled.isNull()) {
         return bundled;
     }
@@ -1048,6 +1056,18 @@ QString MaterialIcons::resourceName(const QString& materialName)
     static const QRegularExpression unsafe(QStringLiteral("[^A-Za-z0-9._-]+"));
     return QStringLiteral("Appearance_") + QString(materialName).replace(unsafe,
                                                                          QStringLiteral("_"));
+}
+
+QString MaterialIcons::sharedResourceName(const QString& digest)
+{
+    if (digest.isEmpty()) {
+        return {};
+    }
+    // The digest is already hex, so it is a legal file name as it
+    // stands. Distinct prefix so that the generator can recognise its
+    // own leftovers, and so that a reader can tell at a glance which
+    // icons are per-card overrides and which are shared looks.
+    return QStringLiteral("Look_") + digest;
 }
 
 QString MaterialIcons::finishResourceName(uint8_t pattern)
