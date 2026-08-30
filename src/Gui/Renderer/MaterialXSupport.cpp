@@ -29,6 +29,7 @@
 #ifdef HAVE_MATERIALX
 
 #include <mutex>
+#include <set>
 
 #include <MaterialXCore/Material.h>
 #include <MaterialXFormat/Util.h>
@@ -61,7 +62,7 @@ bool available()
 
 #ifndef HAVE_MATERIALX
 
-DocumentInfo inspect(const std::string &)
+DocumentInfo inspect(const std::string &, const std::string &)
 {
     DocumentInfo info;
     info.error = "MaterialX support is not built (BUILD_MATERIALX)";
@@ -103,7 +104,9 @@ mx::ConstDocumentPtr dataLibrary()
     return library;
 }
 
-mx::DocumentPtr loadDocument(const std::string &xml, std::string &error)
+mx::DocumentPtr loadDocument(const std::string &xml,
+                             const std::string &sourcePath,
+                             std::string &error)
 {
     error.clear();
     mx::ConstDocumentPtr library = dataLibrary();
@@ -132,12 +135,53 @@ mx::DocumentPtr loadDocument(const std::string &xml, std::string &error)
         error = std::string("data library import failed: ") + e.what();
         return {};
     }
+    // The source URI is what MaterialX resolves a relative file
+    // reference against, and readFromXmlString cannot know it.
+    if (!sourcePath.empty())
+        doc->setSourceUri(sourcePath);
+    // Every filename in the document becomes one absolute path here:
+    // flattenFilenames applies the fileprefix attributes -- which are
+    // INHERITED, so a document states its images relative to a prefix
+    // set on an ancestor and no single element's value is the answer
+    // -- and then resolves what is left against the search path. Both
+    // consumers and the missing-image check then read a plain path.
+    try {
+        mx::flattenFilenames(doc, searchPath(doc));
+    }
+    catch (const std::exception &e) {
+        error = std::string("filename resolution failed: ") + e.what();
+        return {};
+    }
     std::string message;
     if (!doc->validate(&message)) {
         error = message;
         return {};
     }
     return doc;
+}
+
+mx::FileSearchPath searchPath(const mx::DocumentPtr &doc)
+{
+    mx::FileSearchPath path;
+    if (doc && doc->hasSourceUri())
+        path.append(mx::FilePath(doc->getSourceUri()).getParentPath());
+    mx::FilePath libs(dataLibraryPath());
+    path.append(libs);
+    path.append(libs.getParentPath());
+    return path;
+}
+
+std::string resolveFile(const mx::DocumentPtr &doc, const std::string &name)
+{
+    if (name.empty())
+        return {};
+    mx::FilePath file(name);
+    if (file.isAbsolute())
+        return file.exists() ? file.asString() : std::string();
+    mx::FilePath found = searchPath(doc).find(file);
+    // find() hands back what it was given when nothing matched, so
+    // existence is the only answer to whether it resolved.
+    return found.exists() ? found.asString() : std::string();
 }
 
 std::vector<mx::NodePtr> surfaceShaders(const mx::DocumentPtr &doc)
@@ -158,11 +202,11 @@ std::vector<mx::NodePtr> surfaceShaders(const mx::DocumentPtr &doc)
     return shaders;
 }
 
-DocumentInfo inspect(const std::string &xml)
+DocumentInfo inspect(const std::string &xml, const std::string &sourcePath)
 {
     DocumentInfo info;
     std::string error;
-    mx::DocumentPtr doc = loadDocument(xml, error);
+    mx::DocumentPtr doc = loadDocument(xml, sourcePath, error);
     if (!doc) {
         info.error = error;
         return info;
@@ -176,6 +220,24 @@ DocumentInfo inspect(const std::string &xml)
     for (const auto &shader : shaders)
         info.materials.push_back(shader->getNamePath());
     info.surface = shaders.front()->getCategory();
+    // An image the document names but that is not there renders as the
+    // node's default, which is a silently wrong material -- worth
+    // saying out loud, but not worth refusing the document over.
+    // The whole tree, not the top-level nodes: an image node almost
+    // always sits inside a nodegraph.
+    std::set<std::string> seen;
+    for (mx::ElementPtr elem : doc->traverseTree()) {
+        auto input = elem->asA<mx::Input>();
+        if (!input || input->getType() != mx::FILENAME_TYPE_STRING)
+            continue;
+        const std::string value = input->getValueString();
+        if (value.empty() || !resolveFile(doc, value).empty())
+            continue;
+        if (seen.insert(value).second)
+            info.missingImages.push_back(value);
+    }
+    for (const auto &missing : info.missingImages)
+        info.warnings.push_back("image not found: " + missing);
     info.valid = true;
     return info;
 }

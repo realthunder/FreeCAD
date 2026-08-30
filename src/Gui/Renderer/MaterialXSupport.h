@@ -64,11 +64,19 @@ struct DocumentInfo {
     /// The surface-shader node category of the first material
     /// ("open_pbr_surface", "standard_surface", "gltf_pbr", ...).
     std::string surface;
+    /// Image files the document names that are not on disk where it
+    /// says they are. Reported as warnings: the material still
+    /// renders, with those maps missing.
+    std::vector<std::string> missingImages;
 };
 
-/// Parse and validate a MaterialX document. Never throws: a document
-/// that will not parse comes back invalid with the parser's message.
-RendererExport DocumentInfo inspect(const std::string &xml);
+/// Parse and validate a MaterialX document. `sourcePath` is the file
+/// the text came from, when it came from one: a material states its
+/// images relative to its own document, so that is what they resolve
+/// against. Never throws: a document that will not parse comes back
+/// invalid with the parser's message.
+RendererExport DocumentInfo inspect(const std::string &xml,
+                                    const std::string &sourcePath = {});
 
 /// Absolute path of the standard data library shipped beside the
 /// binary, the directory holding stdlib/, pbrlib/, bxdf/ and the rest.

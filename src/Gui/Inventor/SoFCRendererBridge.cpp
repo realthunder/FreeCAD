@@ -1937,9 +1937,11 @@ static std::vector<float> shaderParamValues(const SoNode * node)
 // BGFX_SC and MATERIALX, read from disk for FILENAME with a .sc or .mtlx
 // suffix. Empty = not consumable.
 static std::string shaderObjectSource(const SoShaderObject * obj,
-                                      Render::UserShader::Dialect & dialect)
+                                      Render::UserShader::Dialect & dialect,
+                                      std::string & sourcePath)
 {
     dialect = Render::UserShader::Dialect::ShaderText;
+    sourcePath.clear();
     SbString src = obj->sourceProgram.getValue();
     if (src.getLength() == 0)
         return {};
@@ -1964,6 +1966,11 @@ static std::string shaderObjectSource(const SoShaderObject * obj,
         }
         std::stringstream ss;
         ss << file.rdbuf();
+        // A MaterialX document states its images relative to itself,
+        // so the consumer needs the file it was read from, not just
+        // its text.
+        if (dialect == Render::UserShader::Dialect::MaterialX)
+            sourcePath = src.getString();
         return ss.str();
     }
     return {};
@@ -1983,14 +1990,17 @@ RendererBridge::translateShaderProgram(const SoNode * node,
         if (!obj || !obj->isActive.getValue())
             continue;
         Render::UserShader::Dialect dialect;
-        std::string src = shaderObjectSource(obj, dialect);
+        std::string sourcePath;
+        std::string src = shaderObjectSource(obj, dialect, sourcePath);
         if (src.empty())
             continue;
         // A MaterialX document describes the whole surface, so it can
         // only be the program's fragment source; a vertex object
         // carrying one is meaningless and dropped.
-        if (dialect != Render::UserShader::Dialect::ShaderText)
+        if (dialect != Render::UserShader::Dialect::ShaderText) {
             out.dialect = dialect;
+            out.sourcePath = std::move(sourcePath);
+        }
         if (obj->isOfType(SoVertexShader::getClassTypeId())) {
             if (dialect != Render::UserShader::Dialect::ShaderText)
                 continue;

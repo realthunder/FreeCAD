@@ -33,6 +33,7 @@
 #include <vector>
 
 #include <MaterialXCore/Document.h>
+#include <MaterialXFormat/File.h>
 
 #include "MaterialXSupport.h"
 
@@ -49,8 +50,21 @@ namespace Render::MaterialX {
 mx::ConstDocumentPtr dataLibrary();
 
 /// Parse a document and resolve its node references against the data
-/// library. Null on failure, with why in `error`. Never throws.
-mx::DocumentPtr loadDocument(const std::string &xml, std::string &error);
+/// library. `sourcePath` is the file the text came from, when it came
+/// from one, and becomes the document's source URI so that its
+/// relative file references resolve. Null on failure, with why in
+/// `error`. Never throws.
+mx::DocumentPtr loadDocument(const std::string &xml,
+                             const std::string &sourcePath,
+                             std::string &error);
+
+/// The search path a document's file references resolve against: its
+/// own directory when it has one, then the data library.
+mx::FileSearchPath searchPath(const mx::DocumentPtr &doc);
+
+/// Resolve one `filename`-typed input value to an absolute path.
+/// Empty when the file is not on the search path.
+std::string resolveFile(const mx::DocumentPtr &doc, const std::string &name);
 
 /// The surface-shader nodes a document renders, in document order: the
 /// shader nodes of its material nodes, plus any standalone surface

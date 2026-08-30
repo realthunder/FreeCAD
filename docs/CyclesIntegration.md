@@ -1359,11 +1359,29 @@ chain gained one value at each link, none of them a new mechanism:
   feature tag; no layout change, so the fork ABI version stands).
   Coin's own GL pipeline skips it exactly as it skips `BGFX_SC`, and a
   `.mtlx` FILENAME resolves to it.
-- `Render::UserShader` gains `dialect`, so a back-end can tell a
-  document from shader text. It rides the snapshot at v70, and the
-  shader chunk's own revision moves with it (13) -- the bytes moved,
-  so a cached chunk from an older build would read the stage string
-  out of the dialect byte.
+- `Render::UserShader` gains `dialect` and `sourcePath`, so a back-end
+  can tell a document from shader text and knows where the document
+  came from. They ride the snapshot at v70, and the shader chunk's own
+  revision moves with it (13) -- the bytes moved, so a cached chunk
+  from an older build would read the stage string out of the dialect
+  byte.
+
+A document may be stated as a PATH instead of inline, and that is not
+a convenience: a real material names its images RELATIVE to its own
+document (MaterialX's own examples reach `../../../Images/` through an
+inherited `fileprefix`), so only the file route gives the consumer
+something to resolve them against. `FragmentProgram` therefore reads
+as a path when its first non-blank character is not `<` -- a document,
+being XML, never looks like a path -- and the view provider sends it
+down Coin's FILENAME route, whose `.mtlx` suffix resolves back to
+MATERIALX. `loadDocument` then flattens every filename in one pass:
+`fileprefix` is inherited, so no single element's value is the answer,
+and the search path (the document's own directory, then the data
+library) turns what is left into absolute paths. An image the document
+names that is not there is a warning, not a refusal -- that map is
+missing, the material still renders. This is open decision 2 answered
+for now in the file direction; a self-contained inline document would
+have to carry its images some other way (FileBlobs).
 
 **Validation at load.** `Render::MaterialX::inspect()`
 (`MaterialXSupport.cpp`) parses a document, imports the data library

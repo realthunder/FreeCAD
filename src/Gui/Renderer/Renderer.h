@@ -813,6 +813,13 @@ struct UserShader {
         MaterialX = 1,
     };
     Dialect dialect = Dialect::ShaderText;
+    /// Where a MaterialX document came from, when it came from a file
+    /// (empty for one authored inline). A real material states its
+    /// images as paths RELATIVE to its own document, so this is what
+    /// they resolve against; it is also what a self-contained document
+    /// would have to replace, which is the open question of
+    /// docs/CyclesIntegration.md sec 8 item 15 decision 2.
+    std::string sourcePath;
     /// Pipeline stage name from SoShaderProgram::stage. Backends map
     /// known names and warn-and-skip unknown ones.
     std::string stage;
@@ -868,8 +875,8 @@ struct UserShader {
     std::vector<Compiled> compiled;
 
     bool operator==(const UserShader &o) const {
-        return dialect == o.dialect && stage == o.stage
-            && vertexSource == o.vertexSource
+        return dialect == o.dialect && sourcePath == o.sourcePath
+            && stage == o.stage && vertexSource == o.vertexSource
             && fragmentSource == o.fragmentSource
             && simulateSource == o.simulateSource && params == o.params
             && compiled == o.compiled;

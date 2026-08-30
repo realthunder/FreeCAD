@@ -268,7 +268,9 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     it reads as off and lays its ground out the way it was measured.
 // 70: a user shader says what DIALECT its sources are
 //     (UserShader::dialect): shading-language text, or a MaterialX
-//     document in fragmentSource. A snapshot older than this reads as
+//     document in fragmentSource, and where that document came from
+//     (UserShader::sourcePath), which is what its image references
+//     resolve against. A snapshot older than this reads as
 //     shader text, which is all those builds could write.
 const uint32_t kVersion = 70;
 
@@ -302,9 +304,10 @@ const uint32_t kVersion = 70;
 /// 12: a group chunk's draws carry skipbounds (v67). The bytes moved,
 ///     so an older cached chunk would be MISREAD from that flag on --
 ///     the bump retires it.
-/// 13: a shader chunk carries the source dialect (v70), ahead of the
-///     stage. Same story: the bytes moved, so an older cached chunk
-///     would read the stage string out of the dialect byte.)
+/// 13: a shader chunk carries the source dialect and source path
+///     (v70), ahead of the stage. Same story: the bytes moved, so an
+///     older cached chunk would read the stage string out of the
+///     dialect byte.)
 const uint32_t kChunkVersion = 13;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
@@ -1257,6 +1260,7 @@ void writeUserShader(
                              std::vector<UserShader::Compiled> &)> &bins)
 {
     w.u8(uint8_t(s.dialect));
+    w.str(s.sourcePath);
     w.str(s.stage);
     w.str(s.vertexSource);
     w.str(s.fragmentSource);
@@ -1291,6 +1295,7 @@ std::shared_ptr<const UserShader> readUserShader(Reader &r, uint32_t version)
         // report the compile failure it would report anyway.
         if (d <= uint8_t(UserShader::Dialect::MaterialX))
             s->dialect = UserShader::Dialect(d);
+        r.str(s->sourcePath, 0x1000u);
     }
     r.str(s->stage, 0x100u);
     r.str(s->vertexSource);

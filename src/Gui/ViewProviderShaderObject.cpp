@@ -25,7 +25,9 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <cctype>
 # include <set>
+# include <sstream>
 # include <QTimer>
 # include <random>
 
@@ -54,6 +56,8 @@
 #include <App/DocumentObserver.h>
 #include <App/ShaderObject.h>
 #include <Base/Console.h>
+#include <Base/FileInfo.h>
+#include <Base/Stream.h>
 #include <Base/Tools.h>
 
 #include "ViewProviderShaderObject.h"
@@ -347,6 +351,18 @@ void ViewProviderShaderProgram::updateData(const App::Property *prop)
     ViewProviderDocumentObject::updateData(prop);
 }
 
+// Whether a MATERIALX-dialect program's text is a PATH to a document
+// rather than the document itself. A MaterialX document is XML, so its
+// first non-blank character is always '<'.
+static bool isDocumentPath(const char *text)
+{
+    if (!text)
+        return false;
+    while (*text && std::isspace(static_cast<unsigned char>(*text)))
+        ++text;
+    return *text && *text != '<';
+}
+
 // Materialize an App::ShaderProgram plus resolved parameter values onto a
 // Coin shader-node triple. Shared between the program view provider's own
 // (library) node and the per-binding clones an Appearance builds to bake
@@ -373,6 +389,17 @@ static void syncShaderNodes(App::ShaderProgram *obj,
     }
     const char *vs = obj->VertexProgram.getValue();
     const char *fs = obj->FragmentProgram.getValue();
+    // A MaterialX document may be stated as a PATH instead of inline
+    // (docs/CyclesIntegration.md sec 8 item 15): a real material names
+    // its images relative to its own document, and only the file route
+    // gives the consumer something to resolve them against. Coin's
+    // FILENAME source type resolves a .mtlx suffix back to MATERIALX,
+    // so this needs no second field -- and a document, being XML,
+    // never looks like a path.
+    if (sourcetype == SoShaderObject::MATERIALX && isDocumentPath(fs)) {
+        sourcetype = SoShaderObject::FILENAME;
+        vs = "";
+    }
     // The state step of a stateful emitter rides as the program's
     // second fragment object (docs/RenderEngine.md §5.8); it is only
     // meaningful with a beauty fragment stage ahead of it, which is
@@ -515,6 +542,23 @@ void ViewProviderShaderProgram::validateDocument()
     validatedSource = xml;
     if (xml.empty())
         return;
+    // Stated as a path, the document is read from disk and its images
+    // resolve against it; stated inline, there is nothing to resolve
+    // against.
+    std::string sourcePath;
+    if (isDocumentPath(xml.c_str())) {
+        sourcePath = xml;
+        Base::FileInfo fi(sourcePath);
+        Base::ifstream file(fi);
+        if (!file) {
+            Base::Console().Error("%s: MaterialX document not found: %s\n",
+                                  obj->Label.getValue(), sourcePath.c_str());
+            return;
+        }
+        std::stringstream ss;
+        ss << file.rdbuf();
+        xml = ss.str();
+    }
 
     std::string label = obj->Label.getValue();
     if (!Render::MaterialX::available()) {
@@ -532,7 +576,7 @@ void ViewProviderShaderProgram::validateDocument()
                 "%s: the MATERIALX dialect applies to the 'material' stage; "
                 "stage '%s' will ignore it\n", label.c_str(), stage);
     }
-    auto info = Render::MaterialX::inspect(xml);
+    auto info = Render::MaterialX::inspect(xml, sourcePath);
     for (const auto &w : info.warnings)
         Base::Console().Warning("%s: %s\n", label.c_str(), w.c_str());
     if (!info.valid) {
