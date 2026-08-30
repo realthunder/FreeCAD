@@ -5459,10 +5459,18 @@ public:
 
     /// Ceiling on the depth gradient the vertex stage's slope term
     /// tracks, in NDC depth per NDC screen unit: 1 would be a surface
-    /// crossing the entire depth range within one screen width, so this
-    /// only ever engages on a face within a few degrees of edge-on,
-    /// where the true gradient runs to infinity and GL is saved by such
-    /// a polygon covering no pixels.
+    /// crossing the entire depth range within one screen width, and the
+    /// true gradient runs to infinity as a face turns edge-on.
+    ///
+    /// It is NOT the case that this only engages on slivers. Measured
+    /// (scripts/fill_pullback_slope.py, tilting a plate under a fixed
+    /// camera): the offset saturates 17 degrees off edge-on, on a face
+    /// still covering 29% of its face-on area and 96 pixels of screen.
+    /// How far off depends on the camera's own ry/rz, so there is no
+    /// angle that is safe in general -- what the ceiling buys is a
+    /// BOUND, `factor * 4 * 2 / height` NDC, not a promise that nothing
+    /// visible reaches it. See BGFXView::polygonOffsetFactor for what
+    /// that bound costs a fill's neighbours.
     static constexpr float kPolyOffsetMaxSlope = 4.0f;
 
     /// Support radius of the line distance field, in pixels, and the

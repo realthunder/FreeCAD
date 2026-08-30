@@ -61,6 +61,20 @@ float BGFXView::polygonOffsetFactor(const Render::Material &mat,
     // own material always reports linewidth 1 no matter how thick its
     // edges are. The frame resolves it per object from the draw list
     // instead (BGFXView::decorReachFor).
+    //
+    // WHAT IT COSTS, measured (scripts/fill_pullback_slope.py, which
+    // bisects the depth at which a neighbour starts winning): the fill
+    // moves back by `(reach - 1) * gradient * 2 / height` NDC against a
+    // neighbour whose edges are thin, tracking that arithmetic at ratio
+    // 1.00 over gradients 0.5 to 19, and saturating at the ceiling
+    // exactly where kPolyOffsetMaxSlope says it should. On a 621px
+    // viewport that ceiling is 0.071 NDC for a 12px line -- 3.5% of the
+    // depth range -- and 0.006 NDC, 0.3%, for the default width 2. So
+    // where two solids touch and one carries thick edges, the neighbour
+    // wins any surface lying within that slice behind it. That is the
+    // risk 34461d03b7 left untested: confirmed, bounded, and kept,
+    // because the defect it replaces -- every thick line losing its
+    // face-side half -- is both larger and always on screen.
     if (!mat.polygonoffset)
         return 0.0f;
     return std::max(mat.polygonoffsetfactor, decorReach);
