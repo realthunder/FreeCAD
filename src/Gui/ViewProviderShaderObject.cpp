@@ -58,6 +58,7 @@
 
 #include "ViewProviderShaderObject.h"
 #include "Application.h"
+#include "Renderer/MaterialXSupport.h"
 #include "Document.h"
 #include "SoFCUnifiedSelection.h"
 #include "Inventor/SoFCRenderCache.h"
@@ -363,8 +364,13 @@ static void syncShaderNodes(App::ShaderProgram *obj,
     if (program->stage.getValue() != stage)
         program->stage = stage;
 
-    int32_t sourcetype = obj->Dialect.getValue() == 0 ? SoShaderObject::BGFX_SC
-                                                      : SoShaderObject::GLSL_PROGRAM;
+    // App::ShaderProgram::DialectEnums order
+    int32_t sourcetype = SoShaderObject::GLSL_PROGRAM;
+    switch (obj->Dialect.getValue()) {
+    case 0: sourcetype = SoShaderObject::BGFX_SC; break;
+    case 2: sourcetype = SoShaderObject::MATERIALX; break;
+    default: break;
+    }
     const char *vs = obj->VertexProgram.getValue();
     const char *fs = obj->FragmentProgram.getValue();
     // The state step of a stateful emitter rides as the program's
@@ -492,6 +498,50 @@ void ViewProviderShaderProgram::updateShaderNode()
         return;
     syncShaderNodes(obj, pcShaderProgram, pcVertexShader, pcFragmentShader,
                     pcSimulateShader, collectParamProps(obj), paramNodes);
+    validateDocument();
+}
+
+void ViewProviderShaderProgram::validateDocument()
+{
+    auto obj = dynamic_cast<App::ShaderProgram*>(getObject());
+    // App::ShaderProgram::DialectEnums: 2 = MATERIALX
+    if (!obj || obj->Dialect.getValue() != 2) {
+        validatedSource.clear();
+        return;
+    }
+    std::string xml = obj->FragmentProgram.getValue();
+    if (xml == validatedSource)
+        return;
+    validatedSource = xml;
+    if (xml.empty())
+        return;
+
+    std::string label = obj->Label.getValue();
+    if (!Render::MaterialX::available()) {
+        Base::Console().Warning(
+                "%s: the MATERIALX dialect needs a build with MaterialX "
+                "(BUILD_MATERIALX); the program is inert\n", label.c_str());
+        return;
+    }
+    // A MaterialX document is not a stage of the material stage's
+    // choosing: it describes the whole surface, which is the only
+    // thing any backend can do with it.
+    const char *stage = obj->Stage.getValue();
+    if (stage && stage[0] && strcmp(stage, "material") != 0) {
+        Base::Console().Warning(
+                "%s: the MATERIALX dialect applies to the 'material' stage; "
+                "stage '%s' will ignore it\n", label.c_str(), stage);
+    }
+    auto info = Render::MaterialX::inspect(xml);
+    for (const auto &w : info.warnings)
+        Base::Console().Warning("%s: %s\n", label.c_str(), w.c_str());
+    if (!info.valid) {
+        Base::Console().Error("%s: not a usable MaterialX document: %s\n",
+                              label.c_str(), info.error.c_str());
+        return;
+    }
+    FC_LOG(label << ": MaterialX document, " << info.materials.size()
+                 << " material(s), surface " << info.surface);
 }
 
 void ViewProviderShaderProgram::syncParameters()

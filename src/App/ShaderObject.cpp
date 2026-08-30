@@ -32,7 +32,8 @@ using namespace App;
 
 PROPERTY_SOURCE(App::ShaderProgram, App::DocumentObject)
 
-const char* ShaderProgram::DialectEnums[] = {"BGFX_SC", "GLSL", nullptr};
+const char* ShaderProgram::DialectEnums[] = {"BGFX_SC", "GLSL", "MATERIALX",
+                                             nullptr};
 const char* ShaderProgram::BlendEnums[] = {"Default", "Alpha", "Additive",
                                            nullptr};
 
@@ -48,7 +49,12 @@ ShaderProgram::ShaderProgram()
             "'post' (full screen pass)");
     Dialect.setEnums(DialectEnums);
     ADD_PROPERTY_TYPE(Dialect, ((long)0), "Shader", Prop_None,
-            "Source dialect of the program text");
+            "Source dialect of the program text: BGFX_SC and GLSL are\n"
+            "shading-language text the backend compiles, while\n"
+            "MATERIALX makes FragmentProgram a MaterialX document -- a\n"
+            "node graph describing the surface, which each backend\n"
+            "interprets in its own vocabulary. Only the 'material'\n"
+            "stage accepts MATERIALX");
     ADD_PROPERTY_TYPE(VertexProgram, (""), "Shader", Prop_None,
             "Vertex stage source; leave empty to use the renderer's\n"
             "stock vertex stage of the target pipeline stage");

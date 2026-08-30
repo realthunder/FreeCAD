@@ -1310,6 +1310,81 @@ period from the object origin the first analytic model assumed;
 Cycles was right and the model was not.
 
 
+### 6.8 MaterialX documents (phase B step 0, built 2026-08-31)
+
+Phase B's first step is the plumbing: the language vendored, its data
+library shipped, and a document able to arrive on a shader object and
+be told it is wrong. Nothing interprets a document yet -- that is step
+1 for Cycles and step 2 for the raster path.
+
+**Vendored** at `src/3rdParty/MaterialX`, upstream
+`AcademySoftwareFoundation/MaterialX` pinned at v1.39.5, behind
+`BUILD_MATERIALX` (ON, degraded into like `BUILD_BGFX` when the
+submodule is absent, rather than asked for like `BUILD_CYCLES`: Core,
+Format, GenShader, GenHw and GenGlsl have no external dependency and
+build in ninety objects). Everything else is off -- Render and with it
+the 134MB `resources/` install, the viewer, the graph editor, the
+OSL/MDL/MSL/Slang back-ends, the Python and JavaScript bindings, the
+tests. Three things the tree does to its enclosing project have to be
+held off, and each would have been found the hard way:
+
+- Its install rules name the EXPORT set and the package config file
+  after `CMAKE_PROJECT_NAME`, which under `add_subdirectory` is
+  FreeCAD -- it would have written a `FreeCADConfig.cmake` over ours.
+  Every one of those rules is guarded by `NOT SKBUILD`, so declaring
+  `SKBUILD` around the `add_subdirectory` suppresses the lot; its only
+  other effects are on the Python bindings (off) and on RPATH
+  (meaningless for a static archive).
+- It FORCEs `CMAKE_INSTALL_PREFIX` to `<bindir>/installed` whenever
+  the prefix was left at its default. Our presets pass one, so this
+  would have gone unnoticed here and moved the whole install of a
+  build that did not.
+- FreeCAD turns `AUTOMOC` on globally, which otherwise runs moc over
+  every MaterialX translation unit.
+
+The `libraries/` tree -- 2.5MB of `.mtlx` node definitions, which both
+consumers read at run time to resolve a document's node references --
+ships as data at `<resource>/Renderer/materialx/libraries`, staged
+into the build tree as well, the same arrangement as the Cycles kernel
+source of section 4.1.
+
+**A document reaches the renderer** the way a `.sc` program does. The
+chain gained one value at each link, none of them a new mechanism:
+
+- `App::ShaderProgram::Dialect` gains `MATERIALX`, making
+  `FragmentProgram` the document XML. Only the `material` stage means
+  anything with it.
+- `SoShaderObject::SourceType` gains `MATERIALX` in the Coin fork
+  (appended, registered by name, advertised as the `shader-materialx`
+  feature tag; no layout change, so the fork ABI version stands).
+  Coin's own GL pipeline skips it exactly as it skips `BGFX_SC`, and a
+  `.mtlx` FILENAME resolves to it.
+- `Render::UserShader` gains `dialect`, so a back-end can tell a
+  document from shader text. It rides the snapshot at v70, and the
+  shader chunk's own revision moves with it (13) -- the bytes moved,
+  so a cached chunk from an older build would read the stage string
+  out of the dialect byte.
+
+**Validation at load.** `Render::MaterialX::inspect()`
+(`MaterialXSupport.cpp`) parses a document, imports the data library
+so its node references resolve, runs MaterialX's own `validate()` and
+then asks the one question a syntactically valid document can still
+fail: does it describe a surface at all -- a material node, or a bare
+surface shader. The view provider calls it wherever a program is
+materialized, which for a stored document is document load, and
+reports once per distinct text. `MaterialXSupport.h` names no
+MaterialX type, so the rest of the tree sees the same header with or
+without the library and a build without it says so; the typed API the
+consumers will share is `MaterialXSupportP.h`.
+
+Verified on MaterialX's own example materials through the GUI: the
+OpenPBR, Standard Surface and glTF PBR samples each load and report
+their surface node (`open_pbr_surface`, `standard_surface`,
+`gltf_pbr`), and four negative legs each report the right thing --
+malformed XML with the character offset, a document with no surface, a
+dangling node reference, and a document on the `post` stage.
+
+
 ## 7. Preparing for out of process
 
 Cycles is a better candidate for process isolation than OCCT: it is
@@ -1734,6 +1809,7 @@ Phase 6 -- queued, not started. Two items, in this order.
     0. Vendor MaterialX as a submodule (Core/Format/GenShader/
        GenGlsl only), ship `libraries/` as an asset,
        `Dialect=MATERIALX` validates at document load.
+       **DONE 2026-08-31, section 6.8.**
     1. The Cycles interpreter, over MaterialX's own
        `resources/Materials/Examples` (OpenPBR + Standard Surface
        samples) -- first because it needs no shader-language work

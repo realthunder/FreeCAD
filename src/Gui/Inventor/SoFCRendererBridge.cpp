@@ -1933,19 +1933,28 @@ static std::vector<float> shaderParamValues(const SoNode * node)
     return res;
 }
 
-// Fetch a shader object's bgfx .sc source: inline for BGFX_SC, read from
-// disk for FILENAME with a .sc suffix. Empty = not consumable.
-static std::string shaderObjectSource(const SoShaderObject * obj)
+// Fetch a shader object's source and say what dialect it is: inline for
+// BGFX_SC and MATERIALX, read from disk for FILENAME with a .sc or .mtlx
+// suffix. Empty = not consumable.
+static std::string shaderObjectSource(const SoShaderObject * obj,
+                                      Render::UserShader::Dialect & dialect)
 {
+    dialect = Render::UserShader::Dialect::ShaderText;
     SbString src = obj->sourceProgram.getValue();
     if (src.getLength() == 0)
         return {};
     int type = obj->sourceType.getValue();
     if (type == SoShaderObject::BGFX_SC)
         return src.getString();
+    if (type == SoShaderObject::MATERIALX) {
+        dialect = Render::UserShader::Dialect::MaterialX;
+        return src.getString();
+    }
     if (type == SoShaderObject::FILENAME) {
         int len = src.getLength();
-        if (len <= 3 || src.getSubString(len - 3) != ".sc")
+        if (len > 5 && src.getSubString(len - 5) == ".mtlx")
+            dialect = Render::UserShader::Dialect::MaterialX;
+        else if (len <= 3 || src.getSubString(len - 3) != ".sc")
             return {};
         Base::FileInfo fi(src.getString());
         Base::ifstream file(fi);
@@ -1973,11 +1982,20 @@ RendererBridge::translateShaderProgram(const SoNode * node,
         auto obj = dynamic_cast<SoShaderObject*>(child);
         if (!obj || !obj->isActive.getValue())
             continue;
-        std::string src = shaderObjectSource(obj);
+        Render::UserShader::Dialect dialect;
+        std::string src = shaderObjectSource(obj, dialect);
         if (src.empty())
             continue;
-        if (obj->isOfType(SoVertexShader::getClassTypeId()))
+        // A MaterialX document describes the whole surface, so it can
+        // only be the program's fragment source; a vertex object
+        // carrying one is meaningless and dropped.
+        if (dialect != Render::UserShader::Dialect::ShaderText)
+            out.dialect = dialect;
+        if (obj->isOfType(SoVertexShader::getClassTypeId())) {
+            if (dialect != Render::UserShader::Dialect::ShaderText)
+                continue;
             out.vertexSource = std::move(src);
+        }
         else if (obj->isOfType(SoFragmentShader::getClassTypeId())) {
             // The second fragment object of a program is the particle
             // state step, not a replacement beauty stage

@@ -800,6 +800,19 @@ struct RenderDebugConfig {
 /// shared_ptr to a "material"-stage program inside its per-draw
 /// Material without pulling in the whole config).
 struct UserShader {
+    /// What the source strings below ARE (docs/CyclesIntegration.md
+    /// sec 8 item 15 phase B). Shading-language text the backend
+    /// compiles, or a MaterialX document -- a node graph describing
+    /// the surface, which each backend interprets in its own
+    /// vocabulary rather than compiling: the path tracer walks it into
+    /// its own shader nodes, the raster path generates a
+    /// material-inputs function from it. Only a "material"-stage
+    /// program is ever anything but ShaderText.
+    enum class Dialect : uint8_t {
+        ShaderText = 0,
+        MaterialX = 1,
+    };
+    Dialect dialect = Dialect::ShaderText;
     /// Pipeline stage name from SoShaderProgram::stage. Backends map
     /// known names and warn-and-skip unknown ones.
     std::string stage;
@@ -809,6 +822,8 @@ struct UserShader {
     /// (for "post": the full-screen triangle, input v_texcoord0; for
     /// "material": the stock mesh vertex stage, outputs v_normal,
     /// v_color0, v_vpos).
+    /// When dialect is MaterialX, fragmentSource is the MaterialX
+    /// document instead and the other two are empty.
     std::string vertexSource;
     std::string fragmentSource;
     /// Particle state step of a stateful emitter (docs/RenderEngine.md
@@ -853,7 +868,8 @@ struct UserShader {
     std::vector<Compiled> compiled;
 
     bool operator==(const UserShader &o) const {
-        return stage == o.stage && vertexSource == o.vertexSource
+        return dialect == o.dialect && stage == o.stage
+            && vertexSource == o.vertexSource
             && fragmentSource == o.fragmentSource
             && simulateSource == o.simulateSource && params == o.params
             && compiled == o.compiled;

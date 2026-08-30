@@ -49,7 +49,10 @@ public:
 
     /// Renderer pipeline stage the program attaches to ("material", "post", ...)
     PropertyString Stage;
-    /// Source dialect of the program text
+    /// Source dialect of the program text: shading-language text
+    /// (BGFX_SC, GLSL) or, for a "material"-stage program, a MaterialX
+    /// document in FragmentProgram (MATERIALX -- see
+    /// docs/CyclesIntegration.md sec 8 item 15)
     PropertyEnumeration Dialect;
     /// Vertex stage source; empty uses the renderer's stock vertex stage
     PropertyString VertexProgram;

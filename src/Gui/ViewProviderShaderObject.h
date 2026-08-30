@@ -72,6 +72,12 @@ public:
 
 private:
     void updateShaderNode();
+    /// Report what is wrong with a MATERIALX-dialect program's
+    /// document, once per distinct text (docs/CyclesIntegration.md
+    /// sec 8 item 15). A document is authored somewhere else and
+    /// arrives here whole, so the earliest place it can be checked is
+    /// where it is first materialized -- which is document load.
+    void validateDocument();
 
     CoinPtr<SoShaderProgram> pcShaderProgram;
     CoinPtr<SoVertexShader> pcVertexShader;
@@ -82,6 +88,10 @@ private:
     // uniform name -> parameter node, updated in place so a value edit
     // notifies without relisting the parameter field
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> paramNodes;
+    // What validateDocument() last had to say about, so that a resync
+    // over unchanged text is silent. Every property write on the
+    // object re-materializes the whole node triple.
+    std::string validatedSource;
 };
 
 using ViewProviderShaderProgramPython = ViewProviderPythonFeatureT<ViewProviderShaderProgram>;

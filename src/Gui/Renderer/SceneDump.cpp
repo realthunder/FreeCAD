@@ -266,7 +266,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     (LightConfig::groundFollowCamera). A snapshot older than this
 //     was written by a build that only had the scene-bounds sizing, so
 //     it reads as off and lays its ground out the way it was measured.
-const uint32_t kVersion = 69;
+// 70: a user shader says what DIALECT its sources are
+//     (UserShader::dialect): shading-language text, or a MaterialX
+//     document in fragmentSource. A snapshot older than this reads as
+//     shader text, which is all those builds could write.
+const uint32_t kVersion = 70;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -297,8 +301,11 @@ const uint32_t kVersion = 69;
 ///     keep filling the wireframe.
 /// 12: a group chunk's draws carry skipbounds (v67). The bytes moved,
 ///     so an older cached chunk would be MISREAD from that flag on --
-///     the bump retires it.)
-const uint32_t kChunkVersion = 12;
+///     the bump retires it.
+/// 13: a shader chunk carries the source dialect (v70), ahead of the
+///     stage. Same story: the bytes moved, so an older cached chunk
+///     would read the stage string out of the dialect byte.)
+const uint32_t kChunkVersion = 13;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -1249,6 +1256,7 @@ void writeUserShader(
     const std::function<void(const UserShader &,
                              std::vector<UserShader::Compiled> &)> &bins)
 {
+    w.u8(uint8_t(s.dialect));
     w.str(s.stage);
     w.str(s.vertexSource);
     w.str(s.fragmentSource);
@@ -1276,6 +1284,14 @@ void writeUserShader(
 std::shared_ptr<const UserShader> readUserShader(Reader &r, uint32_t version)
 {
     auto s = std::make_shared<UserShader>();
+    if (version >= 70) {
+        uint8_t d = r.u8();
+        // An unknown dialect from a newer writer is not a shader this
+        // build can consume; leave it as text and let the backend
+        // report the compile failure it would report anyway.
+        if (d <= uint8_t(UserShader::Dialect::MaterialX))
+            s->dialect = UserShader::Dialect(d);
+    }
     r.str(s->stage, 0x100u);
     r.str(s->vertexSource);
     r.str(s->fragmentSource);
