@@ -595,6 +595,12 @@ TEST_F(PropertyMaterialListTest, equalListsSerialiseIdentically)
         byEntry.setDiffuseColor(i, packed(0xff0000ff));
     }
 
+    // The follow flag is part of the value too, and only byField's write is
+    // the whole-object one that ends it -- so say it once for all three
+    // rather than let three routes disagree about it
+    byWholeValues.setFollowMaterial(false);
+    byEntry.setFollowMaterial(false);
+
     EXPECT_TRUE(byWholeValues.isSame(byField));
     EXPECT_TRUE(byWholeValues.isSame(byEntry));
     EXPECT_EQ(saveToXML(byWholeValues, 5), saveToXML(byField, 5));
@@ -1815,18 +1821,18 @@ TEST_F(PropertyMaterialListTest, aRunFromALaterBuildIsReadAndDropped)
     };
     put(0xffffffffUL);   // FieldStreamMarker: what follows is per field
     put(2);              // entry count
-    // FieldDiffuse | FieldFinish | two fields this build has never heard of
-    put((1U << 1) | (1U << 11) | (1U << 14) | (1U << 15));
+    // FieldDiffuse | FieldFinish | a field this build has never heard of.
+    // One rather than two: bits 13 and 14 are the base and the follow flag
+    // now, and 15 is the last free one -- an unknown RUN SHAPE, which the
+    // same byte length gets past, is what the test below this one covers.
+    put((1U << 1) | (1U << 11) | (1U << 15));
     // A doc file read with no document version behind it reads as legacy, so
     // the alpha byte means TRANSPARENCY here: 0 is opaque
     run(0, 2, "4278190080\n16711680\n");   // RunColors
     run(4, 2, num(App::SurfaceFinish::Brushed) + num(0.05F) + num(0.002F) + num(30.0F)
                   + num(App::SurfaceFinish::Blasted) + num(0.02F) + num(0.004F)
                   + num(0.0F));            // RunFinish
-    run(1, 2, num(1.5F) + num(2.5F));      // the first unknown field, as floats
-    // The second, whose payload this build never parses at all: the byte
-    // length is the only thing it needs to get past it
-    run(3, 1, "0:hello\n");
+    run(1, 2, num(1.5F) + num(2.5F));      // the unknown field, as floats
 
     App::PropertyMaterialList prop;
     ASSERT_NO_THROW(restoreDocFile(prop, file.str()));
@@ -2811,10 +2817,29 @@ TEST_F(PropertyMaterialListTest, aWholeObjectWriteEndsTheFollow)
     // card from then on
     prop.setDiffuseColor(packed(0xffff00ff));
     EXPECT_FALSE(prop.isFollowingMaterial());
-    prop.followMaterial(moved);
-    EXPECT_TRUE(prop.isFollowingMaterial());
-    prop.setValues(std::vector<App::Material>(6, redMaterial()));
-    EXPECT_FALSE(prop.isFollowingMaterial());
+
+    // A whole-LIST assignment is not one of them: an import states one look
+    // per face and says nothing about which card the object wears, and it
+    // is exactly the imported part that has to be able to take a card and
+    // keep its painted faces
+    App::PropertyMaterialList imported;
+    imported.setValues(std::vector<App::Material>(6, redMaterial()));
+    EXPECT_TRUE(imported.isFollowingMaterial());
+}
+
+TEST_F(PropertyMaterialListTest, aFreshAppearanceIsWaitingForACard)
+{
+    // The flag starts true -- "a fresh object that carries a card follows
+    // it" -- and that is the CLASS DEFAULT, so nothing about the elision of
+    // an untouched appearance changes
+    App::PropertyMaterialList fresh;
+    EXPECT_TRUE(fresh.isFollowingMaterial());
+    fresh.setSize(1);
+    EXPECT_TRUE(fresh.isFollowingMaterial());
+    fresh.setValue(redMaterial());
+    EXPECT_TRUE(fresh.isFollowingMaterial());
+    fresh.setDiffuseColor(packed(0x00ff00ff));
+    EXPECT_FALSE(fresh.isFollowingMaterial());
 }
 
 TEST_F(PropertyMaterialListTest, theFollowFlagIsPartOfTheValue)

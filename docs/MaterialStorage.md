@@ -731,6 +731,15 @@ library is not installed, or whose card has been deleted, then still opens
 looking like itself instead of default grey. Storing it costs nothing: the
 base is the storage.
 
+The flag DEFAULTS TO TRUE, which is what "a fresh object that carries a
+card follows it" means: nobody has chosen this look yet, so the card may.
+Defaulting it in the storage rather than raising it in the view provider's
+constructor is what keeps the class default -- and with it the elision of
+an untouched appearance -- intact. A whole-LIST assignment does not end the
+follow either: an import states one look per face and says nothing about
+which card the object wears, and it is exactly the imported part with three
+painted faces that has to be able to take Aluminium and keep them.
+
 `App::MaterialList::followMaterial()` is the one base write that does not
 end the follow; every other one calls `endFollow()`. The flag rides an XML
 attribute beside `pbr`, and in the stream form a flags byte inside the base

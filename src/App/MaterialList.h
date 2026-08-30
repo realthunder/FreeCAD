@@ -502,9 +502,22 @@ private:
         int count {0};
         /// The PBR reading of the fields
         bool pbr {false};
-        /// Whether the base is the object's material card's look, and
-        /// follows it (docs/MaterialStorage.md 15.3)
-        bool follow {false};
+        /** Whether the base is the object's material card's look
+         *
+         * TRUE by default, which is what "a fresh object that carries a
+         * card follows it" means (docs/MaterialStorage.md 15.3): nobody
+         * has chosen this look yet, so the card may. It is the CLASS
+         * DEFAULT too, so the shared-default elision is undisturbed --
+         * which it would not be if the view provider raised the flag after
+         * its ADD_PROPERTY.
+         *
+         * Only a whole-object write ends it. A whole-LIST assignment does
+         * not: an import states one look per face and says nothing about
+         * which card the object wears, and it is exactly the imported part
+         * with three painted faces that has to be able to take Aluminium
+         * and keep them.
+         */
+        bool follow {true};
         /** The object's look, in full
          *
          * Stored the way the fields are: the diffuse alpha carries the

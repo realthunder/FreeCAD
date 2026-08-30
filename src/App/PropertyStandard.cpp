@@ -4162,6 +4162,15 @@ enum FieldBit {
      * before the base holds.
      */
     FieldBase = 1 << 13,
+    /** The base is the object's material card's look, and follows it
+     *
+     * A flag, not a field -- but unlike FieldPBR, which shipped with this
+     * format and is grandfathered into FieldFlags, it writes a run of ZERO
+     * bytes. That is what lets a build which predates the bit step over it:
+     * it reads a run head it does not understand and skips the length the
+     * head states, which is nothing (docs/ShapeAppearanceDesign.md 9.4.2).
+     */
+    FieldFollow = 1 << 14,
 };
 
 /** Bits this build knows about
@@ -4172,7 +4181,7 @@ enum FieldBit {
 constexpr uint16_t KnownFields = FieldAmbient | FieldDiffuse | FieldSpecular
     | FieldEmissive | FieldShininess | FieldTransparency | FieldType
     | FieldImage | FieldImagePath | FieldUuid | FieldPBR | FieldFinish
-    | FieldTexture | FieldBase;
+    | FieldTexture | FieldBase | FieldFollow;
 
 /** Bits that are flags rather than fields, and so have no run to read
  *
@@ -4207,21 +4216,13 @@ enum FieldRunType : uint8_t {
     RunStrings = 3,
     RunFinish = 4,
     RunTexture = 5,
-    /// A flags byte, the overriding faces' indices, then every field of
-    /// the ONE entry they override
+    /// The overriding faces' indices, then every field of the ONE entry
+    /// they override
     RunBase = 6,
-};
-
-/** What the base run's flags byte can say
- *
- * The mask has sixteen bits in all, and this run is present for anything
- * the flags could be about, so a flag about the base rides its payload
- * rather than spending one of them.
- */
-enum BaseFlag : uint8_t {
-    /// The base is the object's material card's look, and follows it
-    /// (docs/MaterialStorage.md 15.3)
-    BaseFollows = 1 << 0,
+    /// Nothing at all: the bit that names the run is the whole value, and
+    /// the run is there so that a reader which does not know the bit can
+    /// step over it
+    RunFlag = 7,
 };
 
 /// The records of one finish run. Shared by the material list's per field
@@ -4530,8 +4531,7 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     // A list nothing overrides writes what it always wrote: one value per
     // field that differs from what an unstated one reads as. Only a list
     // with overriding faces states a base and an override list at all.
-    // A following list states its base even with nothing overriding it
-    const bool sparse = !d.overrides.empty() || d.follow;
+    const bool sparse = !d.overrides.empty();
     std::vector<Color> uAmbient, uDiffuse, uSpecular, uEmissive;
     std::vector<float> uShininess;
     std::vector<int8_t> uType;
@@ -4587,6 +4587,7 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     if (!palette.empty())   mask |= FieldTexture;
     if (d.pbr)              mask |= FieldPBR;
     if (sparse)             mask |= FieldBase;
+    if (d.follow)           mask |= FieldFollow;
     str << mask;
 
     // Runs go out in ascending bit order, each behind a head of its shape,
@@ -4669,8 +4670,16 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
                      writeTextureRun(run, palette, index);
                  });
     }
-    if (!sparse)
+    // Ascending bit order: the base run (13) and then the follow flag (14),
+    // whose run is empty because the bit is the whole value
+    auto writeFollow = [&writeRun, &d]() {
+        if (d.follow)
+            writeRun(RunFlag, 0, [](Base::OutputStream &) {});
+    };
+    if (!sparse) {
+        writeFollow();
         return;
+    }
     // The head count is the number of overriding faces, and the payload is
     // a flags byte, their indices, and the base -- which is one entry, so
     // it holds one of everything, in the order the field runs above go out.
@@ -4679,7 +4688,6 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     // mask has sixteen bits in all and this run already has to be present
     // for anything the flags could say about the base.
     writeRun(RunBase, d.overrides.size(), [&d, convert](Base::OutputStream &run) {
-        run << static_cast<uint8_t>(d.follow ? BaseFollows : 0);
         for (uint32_t idx : d.overrides)
             run << idx;
         run << packedForSave(d.base.ambientColor, convert);
@@ -4695,6 +4703,7 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
         std::vector<SurfaceTexture> one(1, d.base.texture);
         writeTextureRun(run, one, std::vector<uint16_t>());
     });
+    writeFollow();
 }
 
 void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned uCt, bool legacy)
@@ -4805,10 +4814,9 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
         case RunTexture:
             readTextureRun(str, palette, index, static_cast<int>(count));
             break;
+        case RunFlag:
+            break;   // nothing to read: the bit that named it is the value
         case RunBase: {
-            uint8_t flags = 0;
-            str >> flags;
-            follow = (flags & BaseFollows) != 0;
             indices.resize(count);
             for (auto &value : indices)
                 str >> value;
@@ -4861,6 +4869,7 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
             _list.wd().textureIndex.swap(index);
             break;
         case FieldBase: _list.wd().overrides.swap(indices); break;   // and base above
+        case FieldFollow: follow = true; break;   // the bit IS the value
         default: break;   // unreachable: an unknown bit was skipped above
         }
     }
@@ -4870,6 +4879,7 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
                 convertAlpha(color);
         }
     }
+    _list.wd().follow = follow;
     if (sparse) {
         if (legacy) {
             for (auto *color : {&base.ambientColor, &base.diffuseColor, &base.specularColor,
@@ -4877,11 +4887,9 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
                 convertAlpha(*color);
             }
         }
-        _list.wd().follow = follow;
         installBase(base, baseType);
     }
     else {
-        _list.wd().follow = false;
         _list.applyRestoredTransparency(transparency, legacy);
         _list.adoptDense();
     }
@@ -4977,9 +4985,7 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
     };
 
     const auto &d = _list.rd();
-    // A following list states its base even with nothing overriding it: the
-    // base is the card's look, and the field lines cannot say that it is
-    if (d.overrides.empty() && !d.follow) {
+    if (d.overrides.empty()) {
         // Nothing varies, so there is nothing for a base key to say that
         // the fields do not: this writes the uniform value of each field
         // that differs from what an unstated one reads as, which is byte

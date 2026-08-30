@@ -1298,10 +1298,10 @@ void ViewProviderGeometryObject::applyMaterialAppearance()
     if (card == none) {
         return;   // no card, or a card with nothing to say about the look
     }
-    // Following, or never given a look of its own -- which is what makes a
-    // fresh object with a card start following it. An appearance the user
-    // set outranks the card, which is what ending the follow means.
-    if (!ShapeAppearance.isFollowingMaterial() && !(ShapeAppearance.getBase() == none)) {
+    // The flag is the whole answer, and it starts TRUE -- which is what
+    // makes a fresh object with a card follow it. An appearance the user
+    // set outranks the card, and setting one is what ends the follow.
+    if (!ShapeAppearance.isFollowingMaterial()) {
         return;
     }
     // The BASE only: the faces holding a look of their own keep it, where

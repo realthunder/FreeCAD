@@ -1834,9 +1834,6 @@ void MaterialList::setValues(const std::vector<Material> &values)
     if (!values.empty())
         setPBR(values.front().pbr);
     touchFields();
-    // A whole-list assignment states the object's look as much as any other
-    // whole-object write does
-    endFollow();
     Data &d = wd();
     d.count = static_cast<int>(values.size());
     std::vector<uint32_t>().swap(d.overrides);
