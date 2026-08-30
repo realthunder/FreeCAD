@@ -29,6 +29,7 @@
 #include <wasmtime.h>
 
 #include <Base/Console.h>
+#include <Base/FileInfo.h>
 
 #include "Application.h"
 #include "ExpressionImageHost.h"
@@ -140,14 +141,6 @@ struct ImageHost::Private
             return false;
         }
 
-        std::ifstream f(imagePath, std::ios::binary);
-        std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)),
-                                   std::istreambuf_iterator<char>());
-        if (bytes.empty()) {
-            FC_ERR("cannot read image " << imagePath);
-            return false;
-        }
-
         wasm_config_t* cfg = wasm_config_new();
         wasmtime_config_wasm_exceptions_set(cfg, true);
         engine = wasm_engine_new_with_config(cfg);
@@ -168,11 +161,46 @@ struct ImageHost::Private
             return false;
         }
 
-        err = wasmtime_module_new(engine, bytes.data(), bytes.size(), &module);
-        if (err) {
-            FC_ERR("image does not compile: " << errorText(err, nullptr));
-            teardown();
-            return false;
+        // JIT-compiling the ~32 MB image costs ~600 ms; a serialized
+        // .cwasm loads in ~20 ms.  The cache sits next to the image and
+        // is refreshed whenever it is older than the image or fails to
+        // deserialize (wasmtime version change).
+        std::string cachePath = imagePath + ".cwasm";
+        Base::FileInfo imageInfo(imagePath);
+        Base::FileInfo cacheInfo(cachePath);
+        if (cacheInfo.exists()
+                && cacheInfo.lastModified() >= imageInfo.lastModified()) {
+            err = wasmtime_module_deserialize_file(engine, cachePath.c_str(),
+                                                   &module);
+            if (err) {
+                FC_LOG("stale image cache " << cachePath << ": "
+                       << errorText(err, nullptr));
+                module = nullptr;
+            }
+        }
+        if (!module) {
+            std::ifstream f(imagePath, std::ios::binary);
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)),
+                                       std::istreambuf_iterator<char>());
+            if (bytes.empty()) {
+                FC_ERR("cannot read image " << imagePath);
+                teardown();
+                return false;
+            }
+            err = wasmtime_module_new(engine, bytes.data(), bytes.size(),
+                                      &module);
+            if (err) {
+                FC_ERR("image does not compile: " << errorText(err, nullptr));
+                teardown();
+                return false;
+            }
+            wasm_byte_vec_t blob;
+            if (!wasmtime_module_serialize(module, &blob)) {
+                std::ofstream out(cachePath, std::ios::binary);
+                if (out)
+                    out.write(blob.data, (std::streamsize)blob.size);
+                wasm_byte_vec_delete(&blob);
+            }
         }
 
         wasmtime_linker_t* linker = wasmtime_linker_new(engine);
