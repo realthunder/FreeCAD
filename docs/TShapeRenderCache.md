@@ -334,7 +334,8 @@ pointers); `FC_NO_VCACHE_PROTO=1` disables the seeding for A/B runs.
 
 `buildInstanceGroups()` groups draws at scene-set time by
 (geometry **content hash**, index range, part index,
-material-minus-diffuse); a frame submits each group of ≥ 2 visible
+material-minus-diffuse, **resolved polygon-offset factor**); a frame
+submits each group of >= 2 visible
 members as **one instanced draw**: transient instance buffer of
 `{model 4×vec4, diffuse vec4}` per instance, `vs_fc_mesh_inst` /
 `vs_fc_mesh_tex_inst` selecting per-vertex color or the per-instance
@@ -348,6 +349,21 @@ diffuse by uniform.
   like shared-cache draws: the geometry table already gave them one
   set of GPU buffers, and equal color hashes make the prototype's
   color stream valid for every member.
+- **The polygon-offset factor is keyed on, not just the material's
+  half of it.** A fill's offset has to clear the DECORATION drawn over
+  it, and that reach is not a material field -- `SoDrawStyle`'s line
+  width lives in the wireframe separator `ViewProviderExt` adds after
+  the faces, so every fill reports linewidth 1. `Private::decorReach`
+  resolves it per object from the draw list. One instanced submit binds
+  one `u_polyOffset`, its prototype's, so without this in the key two
+  boxes of identical size whose edges differ in width shared an offset:
+  the thick one lost the pull-back that keeps its edge from being
+  half-eaten by its own face. Measured on two 20x20x2 plates, one at
+  line width 12: the sink read 0.0005 model units against 0.33 for a
+  26x26x2 neighbour, and a control built from identical shapes silently
+  measured zero. Keying splits only the mismatched member -- four
+  identical boxes at one width still batch as four, three when one is
+  thickened (`scripts/fill_pullback_slope.py`, `FP_RED_SIDE`).
 - **Textured draws batch**: the texture identity joins the group key
   (all five map ids — color/bump/emissive/occlusion/metallic-roughness
   — plus model/wrap/blend color and the texture matrix); the instanced

@@ -9031,6 +9031,21 @@ public:
     /// the picture.)
     static bool instancableDraw(const Render::DrawCall &d);
 
+    /// How far each object's decoration reaches from its own geometry,
+    /// in pixels -- what its fills' polygon offset has to clear so a
+    /// thick edge is not half-eaten by the face it straddles (see
+    /// BGFXView::polygonOffsetFactor). objectKey -> reach; absent means
+    /// the coincident-surface default of 1.
+    ///
+    /// A pure function of the published scene, so it is resolved once
+    /// per setScene rather than per frame -- and it MUST be, because
+    /// buildInstanceGroups keys on it: the reach is not a material
+    /// field, and an instanced submit binds one polygon offset for the
+    /// whole batch.
+    std::unordered_map<uint64_t, float> decorReach;
+
+    void buildDecorReach();
+
     void buildInstanceGroups();
 
     Render::Background background;

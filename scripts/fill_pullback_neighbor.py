@@ -42,10 +42,14 @@ scripts/fill_pullback_slope.py, which separates the two solids ALONG
 the view axis instead, keeps the face fully resolved, and reproduces
 the shader's own arithmetic at ratio 1.00.
 
-! And do not build the control out of two identical shapes: something
-downstream merges the draws of identical shapes, a merged pair shares
-one fill offset, and the measurement comes back 0.0005 where a
-20x20x3 neighbour gives 0.25.  The plate and the box here differ.
+A control built out of two identical shapes used to measure 0.0005
+model units where a 20x20x3 neighbour gave 0.25 -- the effect vanished.
+Identical geometry hashes together, so the bgfx backend batched the two
+fills into one instanced submit, and an instanced submit binds ONE
+polygon offset: its prototype's.  buildInstanceGroups now keys on the
+resolved offset factor, so the two land in different batches.  The
+plate and the box here still differ in shape; the identical-shape case
+is exercised deliberately by fill_pullback_slope.py's FP_RED_SIDE=20.
 """
 import os
 import time

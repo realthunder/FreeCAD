@@ -21,12 +21,19 @@ than the red one (width 1, reach 1 -- the pre-fix behaviour).  Red
 showing through green means green's fill sank more than gap; bisecting
 the gap measures that differential.
 
-! THE TWO PLATES MUST NOT BE THE SAME SHAPE.  Two identical shapes
-measure 0.0005 model units where a 20x20x3 neighbour measures 0.25 --
-the effect disappears entirely.  Something downstream merges draws of
-identical shapes (the draw count drops by two), and a merged pair shares
-one fill offset, so an identical-shape control silently measures zero
-and reads as "no bug here".  The red plate is deliberately wider.
+THE IDENTICAL-SHAPE CASE (FP_RED_SIDE=20) is the regression test for
+that merge.  Two plates of the same size hash to one geometry, so the
+bgfx backend batched them into a single instanced submit -- and an
+instanced submit binds ONE polygon offset, its prototype's.  The thick
+green plate then inherited red's reach of 1 and stopped sinking:
+0.0005 model units where a 26x26x2 neighbour measured 0.33.  An
+identical-shape control silently measured zero and read as "no bug
+here".  buildInstanceGroups now keys on the resolved offset factor, so
+the two plates land in different batches and green sinks the same
+whatever red's size is.  Run both sides:
+
+    FP_RED_SIDE=26   the differing-shape control (the original)
+    FP_RED_SIDE=20   identical shapes; must now match, not read zero
 """
 import os
 import time
@@ -39,7 +46,10 @@ import FreeCADGui
 
 OUT = os.environ.get("FP_OUT", os.path.join(os.path.expanduser("~"),
                                             "fp-probe"))
-RESULT = os.path.join(OUT, "slope.txt")
+# Named for the neighbour so the differing-shape and identical-shape
+# runs do not overwrite each other's answer.
+RESULT = os.path.join(OUT, "slope_red%s.txt"
+                      % os.environ.get("FP_RED_SIDE", "26.0"))
 LOG = []
 
 WIDTH = 12.0              # reach 6.5, against the red plate's 1
@@ -49,7 +59,9 @@ WIDTH = 12.0              # reach 6.5, against the red plate's 1
 TILTS = (45.0, 65.0, 80.0, 95.0, 105.0, 111.0, 118.0, 125.0, 131.0)
 BISECT = 11
 SIDE, THICK = 20.0, 2.0
-RED_SIDE = 26.0           # different shape on purpose -- see the header
+# 26 differs from the green plate on purpose; 20 makes the two shapes
+# identical, which is the instanced-batch regression test (see header).
+RED_SIDE = float(os.environ.get("FP_RED_SIDE", "26.0"))
 GAP_MAX = 4.0
 ELEV = 1.0                # camera looks along (0, 1, -ELEV)
 REACH = 0.5 * WIDTH + 0.5
