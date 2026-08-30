@@ -84,6 +84,20 @@ list(APPEND FreeCADApp_LIBS
         ${QtXml_LIBRARIES}
 )
 
+# The wasmtime host embedding for the expression sandbox image
+# (docs/ExpressionImage.md).  Host-only, never part of ExpressionCore.
+if(BUILD_EXPR_IMAGE_HOST)
+    if(NOT WASMTIME_CAPI_DIR)
+        message(FATAL_ERROR "BUILD_EXPR_IMAGE_HOST needs WASMTIME_CAPI_DIR "
+                            "(wasmtime C API prefix with include/ and lib/)")
+    endif()
+    set(ExpressionImageHost_SRC ExpressionImageHost.cpp)
+    include_directories(${WASMTIME_CAPI_DIR}/include)
+    list(APPEND FreeCADApp_LIBS ${WASMTIME_CAPI_DIR}/lib/libwasmtime.so)
+else()
+    set(ExpressionImageHost_SRC)
+endif()
+
 # The binding generators need only python and the .xml (their DEPENDS are
 # complete), but CMake still gives their custom commands order-only deps on
 # the WHOLE dependency closure of the target they attach to (FreeCADApp).
@@ -182,6 +196,7 @@ SET(Document_CPP_SRCS
     ExpressionSecurityPy.cpp
     ExpressionSecurityRuntime.cpp
     ExpressionTokenizer.cpp
+    ${ExpressionImageHost_SRC}
     FeaturePython.cpp
     FeatureTest.cpp
     GeoFeature.cpp
@@ -236,6 +251,7 @@ SET(Document_HPP_SRCS
     DocumentObserver.h
     DocumentObserverPython.h
     Expression.h
+    ExpressionImageHost.h
     ExpressionSecurity.h
     ExpressionSecurityRuntime.h
     ExpressionParser.h

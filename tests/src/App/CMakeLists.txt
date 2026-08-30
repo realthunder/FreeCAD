@@ -1,3 +1,10 @@
+if(BUILD_EXPR_IMAGE_HOST)
+    set(ExpressionImageHost_TEST_SRC
+        ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionImageHost.cpp)
+else()
+    set(ExpressionImageHost_TEST_SRC)
+endif()
+
 target_sources(
     Tests_run
         PRIVATE
@@ -7,6 +14,7 @@ target_sources(
             ${CMAKE_CURRENT_SOURCE_DIR}/Expression.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionSecurity.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionSecurityRuntime.cpp
+            ${ExpressionImageHost_TEST_SRC}
             ${CMAKE_CURRENT_SOURCE_DIR}/License.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Metadata.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Property.cpp

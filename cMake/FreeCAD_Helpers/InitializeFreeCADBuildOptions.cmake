@@ -149,6 +149,8 @@ macro(InitializeFreeCADBuildOptions)
         set(BUILD_BGFX OFF)
     endif()
     option(BUILD_DILIGENT "Build DiligentEngine renderer module" OFF)
+    option(BUILD_EXPR_IMAGE_HOST "Build the wasmtime host embedding for the expression sandbox image (needs WASMTIME_CAPI_DIR; see docs/ExpressionImage.md)" OFF)
+    set(WASMTIME_CAPI_DIR "" CACHE PATH "wasmtime C API prefix (include/ + lib/libwasmtime.so) for BUILD_EXPR_IMAGE_HOST")
     # Blender's Cycles path tracer as a vendored renderer
     # (docs/CyclesIntegration.md). OFF: it is a heavy build with
     # environment dependencies (OpenImageIO, Embree, OpenImageDenoise),
