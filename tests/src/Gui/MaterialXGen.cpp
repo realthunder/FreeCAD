@@ -214,3 +214,177 @@ TEST_F(MaterialXGenerator, unparsableTextIsReportedNotThrown)
     EXPECT_FALSE(out.valid);
     EXPECT_FALSE(out.error.empty());
 }
+
+// ----------------------------------------------------------------------------
+// The document's declared interface (docs/CyclesIntegration.md sec 6.11):
+// what a node graph DECLARES is a parameter, and everything else the
+// document states stays a constant in the generated code.
+
+namespace
+{
+
+// A document whose surface is fed by a graph declaring its own inputs
+// -- MaterialX's way of saying "these are the knobs".
+std::string declaringDoc(const std::string &declarations,
+                         const std::string &nodes,
+                         const std::string &surface = "open_pbr_surface")
+{
+    return "<?xml version=\"1.0\"?>\n"
+           "<materialx version=\"1.39\">\n"
+           "  <nodegraph name=\"NG\">\n"
+           + declarations + nodes
+           + "    <output name=\"out\" type=\"color3\" nodename=\"mul\" />\n"
+             "  </nodegraph>\n"
+             "  <"
+           + surface
+           + " name=\"S\" type=\"surfaceshader\">\n"
+             "    <input name=\"base_color\" type=\"color3\" nodegraph=\"NG\" "
+             "output=\"out\" />\n"
+             "  </"
+           + surface
+           + ">\n"
+             "  <surfacematerial name=\"M\" type=\"material\">\n"
+             "    <input name=\"surfaceshader\" type=\"surfaceshader\" "
+             "nodename=\"S\" />\n"
+             "  </surfacematerial>\n"
+             "</materialx>\n";
+}
+
+// tint * gain, both taken from the graph's interface.
+const char *TINT_TIMES_GAIN =
+    "    <multiply name=\"mul\" type=\"color3\">\n"
+    "      <input name=\"in1\" type=\"color3\" interfacename=\"tint\" />\n"
+    "      <input name=\"in2\" type=\"float\" interfacename=\"gain\" />\n"
+    "    </multiply>\n";
+
+const char *TINT_AND_GAIN =
+    "    <input name=\"tint\" type=\"color3\" value=\"0.2, 0.4, 0.6\" "
+    "uiname=\"Tint\" uifolder=\"Look\" />\n"
+    "    <input name=\"gain\" type=\"float\" value=\"0.5\" />\n";
+
+}  // namespace
+
+TEST_F(MaterialXGenerator, aDeclaredInputIsTheDocumentsInterface)
+{
+    auto info = Render::MaterialX::inspect(
+        declaringDoc(TINT_AND_GAIN, TINT_TIMES_GAIN));
+    ASSERT_TRUE(info.valid) << info.error;
+    ASSERT_EQ(info.inputs.size(), 2u);
+    // In document order, named as the document names them, and
+    // carrying what the document says about presenting them.
+    EXPECT_EQ(info.inputs[0].name, "tint");
+    EXPECT_EQ(info.inputs[0].type, "color3");
+    EXPECT_EQ(info.inputs[0].path, "NG/tint");
+    EXPECT_EQ(info.inputs[0].label, "Tint");
+    EXPECT_EQ(info.inputs[0].folder, "Look");
+    ASSERT_EQ(info.inputs[0].value.size(), 3u);
+    EXPECT_FLOAT_EQ(info.inputs[0].value[1], 0.4f);
+    EXPECT_EQ(info.inputs[1].name, "gain");
+    ASSERT_EQ(info.inputs[1].value.size(), 1u);
+    EXPECT_FLOAT_EQ(info.inputs[1].value[0], 0.5f);
+}
+
+TEST_F(MaterialXGenerator, aDeclaredInputBecomesAUniform)
+{
+    auto out = Render::MaterialX::generate(
+        declaringDoc(TINT_AND_GAIN, TINT_TIMES_GAIN));
+    ASSERT_TRUE(out.valid) << out.error;
+    // One vec4 lane group per parameter, read as its own type -- the
+    // packing every other user-shader parameter already travels in.
+    EXPECT_NE(out.source.find("uniform vec4 u_tint"), std::string::npos)
+        << out.source;
+    EXPECT_NE(out.source.find("uniform vec4 u_gain"), std::string::npos);
+    EXPECT_NE(out.source.find("= u_tint.xyz"), std::string::npos) << out.source;
+    EXPECT_NE(out.source.find("= u_gain.x"), std::string::npos);
+    // And the declared value is not ALSO folded in as a literal.
+    EXPECT_EQ(out.source.find("0.200000, 0.400000, 0.600000"), std::string::npos);
+}
+
+TEST_F(MaterialXGenerator, aValueStatedOnTheSurfaceIsNoInterface)
+{
+    // The step-2 contract, restated from the other side: a value the
+    // document states on the surface node is its statement, not a knob,
+    // and stays the literal it was.
+    auto info = Render::MaterialX::inspect(openPbrDoc(
+        "    <input name=\"specular_roughness\" type=\"float\" value=\"0.4\" />\n"));
+    ASSERT_TRUE(info.valid) << info.error;
+    EXPECT_TRUE(info.inputs.empty());
+    auto out = Render::MaterialX::generate(openPbrDoc(
+        "    <input name=\"specular_roughness\" type=\"float\" value=\"0.4\" />\n"));
+    ASSERT_TRUE(out.valid) << out.error;
+    EXPECT_EQ(out.source.find("uniform "), std::string::npos) << out.source;
+    EXPECT_NE(out.source.find("m.specularRoughness = 0.400000"), std::string::npos);
+}
+
+TEST_F(MaterialXGenerator, aDeclaredInputNothingUsesIsNoParameter)
+{
+    // Declared and connected to nothing: a knob wired to nothing is
+    // worse than no knob.
+    auto info = Render::MaterialX::inspect(declaringDoc(
+        std::string(TINT_AND_GAIN)
+            + "    <input name=\"spare\" type=\"float\" value=\"7\" />\n",
+        TINT_TIMES_GAIN));
+    ASSERT_TRUE(info.valid) << info.error;
+    ASSERT_EQ(info.inputs.size(), 2u);
+    EXPECT_EQ(info.inputs[0].name, "tint");
+    EXPECT_EQ(info.inputs[1].name, "gain");
+}
+
+TEST_F(MaterialXGenerator, oneDeclaredInputReadTwiceIsOneUniform)
+{
+    auto out = Render::MaterialX::generate(declaringDoc(
+        "    <input name=\"gain\" type=\"float\" value=\"0.5\" />\n",
+        "    <multiply name=\"first\" type=\"color3\">\n"
+        "      <input name=\"in1\" type=\"color3\" value=\"1, 0, 0\" />\n"
+        "      <input name=\"in2\" type=\"float\" interfacename=\"gain\" />\n"
+        "    </multiply>\n"
+        "    <multiply name=\"mul\" type=\"color3\">\n"
+        "      <input name=\"in1\" type=\"color3\" nodename=\"first\" />\n"
+        "      <input name=\"in2\" type=\"float\" interfacename=\"gain\" />\n"
+        "    </multiply>\n"));
+    ASSERT_TRUE(out.valid) << out.error;
+    // MaterialX publishes a value per node input; a parameter is one
+    // uniform however many places read it.
+    EXPECT_EQ(out.source.find("uniform vec4 u_gain"),
+              out.source.rfind("uniform vec4 u_gain"))
+        << out.source;
+    EXPECT_NE(out.source.find("first_in2 = u_gain.x"), std::string::npos)
+        << out.source;
+    EXPECT_NE(out.source.find("mul_in2 = u_gain.x"), std::string::npos);
+}
+
+TEST_F(MaterialXGenerator, theInterfaceSurvivesTheTranslation)
+{
+    // The interface is read from the document as AUTHORED, and a graph
+    // interface is untouched by the OpenPBR translation -- so the same
+    // parameters answer for a document stating another shading model.
+    const std::string doc =
+        declaringDoc(TINT_AND_GAIN, TINT_TIMES_GAIN, "standard_surface");
+    auto info = Render::MaterialX::inspect(doc);
+    ASSERT_TRUE(info.valid) << info.error;
+    ASSERT_EQ(info.inputs.size(), 2u);
+    EXPECT_EQ(info.inputs[0].path, "NG/tint");
+    auto out = Render::MaterialX::generate(doc);
+    ASSERT_TRUE(out.valid) << out.error;
+    EXPECT_NE(out.source.find("uniform vec4 u_tint"), std::string::npos)
+        << out.source;
+}
+
+TEST_F(MaterialXGenerator, aDeclaredInputReadsItsLaneAsItsOwnType)
+{
+    auto out = Render::MaterialX::generate(declaringDoc(
+        "    <input name=\"octaves\" type=\"integer\" value=\"3\" />\n"
+        "    <input name=\"tint\" type=\"color3\" value=\"1, 0, 0\" />\n",
+        "    <fractal3d name=\"noise\" type=\"float\">\n"
+        "      <input name=\"octaves\" type=\"integer\" "
+        "interfacename=\"octaves\" />\n"
+        "    </fractal3d>\n"
+        "    <multiply name=\"mul\" type=\"color3\">\n"
+        "      <input name=\"in1\" type=\"color3\" interfacename=\"tint\" />\n"
+        "      <input name=\"in2\" type=\"float\" nodename=\"noise\" />\n"
+        "    </multiply>\n"));
+    ASSERT_TRUE(out.valid) << out.error;
+    // A lane is a float; an integer input reads it as one.
+    EXPECT_NE(out.source.find("int(u_octaves.x)"), std::string::npos)
+        << out.source;
+}

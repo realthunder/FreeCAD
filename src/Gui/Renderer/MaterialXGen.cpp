@@ -74,6 +74,10 @@ GeneratedMaterial generate(const std::string &, const std::string &)
 
 #include "MaterialXSupportP.h"
 
+#include <map>
+#include <set>
+#include <vector>
+
 #include <MaterialXCore/Material.h>
 #include <MaterialXGenGlsl/EsslShaderGenerator.h>
 #include <MaterialXGenHw/HwConstants.h>
@@ -142,9 +146,11 @@ public:
                 // The graph's own interface socket with nothing
                 // upstream of it: the document states a constant here,
                 // so it is emitted as a literal rather than as a
-                // uniform that nothing would ever write. What a
-                // document leaves connectable becomes a Param_* in a
-                // later step; until then a value change regenerates.
+                // uniform that nothing would ever write. A value
+                // stated on the surface node is the document's
+                // statement, not a declared interface -- what a graph
+                // DECLARES is what becomes a parameter (sec 6.11) --
+                // so a change to one regenerates the shader.
                 value = conn->getValue()
                     ? syntax.getValue(conn->getType(), *conn->getValue())
                     : syntax.getDefaultValue(conn->getType());
@@ -178,6 +184,25 @@ public:
     /// cannot answer; the value reads as zero and the caller reports it.
     mutable std::vector<std::string> unmapped;
 
+    /// The document's public interface (docs/CyclesIntegration.md sec
+    /// 6.11), keyed by the namepath of the declaring input -- which is
+    /// what MaterialX puts on the published uniform it generates for
+    /// it, whether the value reaches the graph once or a dozen times.
+    /// Everything else the graph publishes is a value the document
+    /// stated and nothing will write, so it is emitted as a constant.
+    std::map<std::string, const MaterialInput *> declaredInputs;
+    /// Which of them the generated code actually bound, so the caller
+    /// can say what the document declares but the raster path folded.
+    mutable std::set<std::string> bound;
+
+    /// Namepaths of the surface shader node and of its nodedef. Every
+    /// value published under either of those is an input of the
+    /// surface itself, which OpenPbrInputs emits as a literal and no
+    /// generated line ever names -- so declaring them would be a few
+    /// dozen dead globals per material, in the same names the mesh
+    /// shader uses.
+    std::string surfacePath, surfaceDefPath;
+
 protected:
     void emitPixelStage(const mx::ShaderGraph &graph, mx::GenContext &ctx,
                         mx::ShaderStage &stage) const override
@@ -196,6 +221,7 @@ protected:
         _tokenSubstitutions[mx::ShaderGenerator::T_FILE_TRANSFORM_UV] =
             ctx.getOptions().fileTextureVerticalFlip ? "mx_transform_uv_vflip.glsl"
                                                      : "mx_transform_uv.glsl";
+        emitUniformDeclarations(stage);
         emitLibraryInclude("stdlib/genglsl/lib/mx_math.glsl", ctx, stage);
         emitLineBreak(stage);
         emitFunctionDefinitions(graph, ctx, stage);
@@ -205,6 +231,7 @@ protected:
                  stage, false);
         emitFunctionBodyBegin(graph, ctx, stage);
         emitGeometryPreamble(stage);
+        emitInterfacePreamble(stage);
         emitFunctionCalls(graph, ctx, stage, mx::ShaderNode::Classification::TEXTURE);
         for (mx::ShaderGraphOutputSocket *socket : graph.getOutputSockets()) {
             if (!socket->getConnection())
@@ -217,6 +244,115 @@ protected:
     }
 
 private:
+    /// The declarations of everything the graph publishes. MaterialX
+    /// would emit a uniform for each; here a value the document stated
+    /// and nothing will write becomes a file-scope constant, and only
+    /// what the document DECLARES as its interface becomes a uniform --
+    /// one `vec4` lane group per parameter, which is the packing every
+    /// other user-shader parameter already travels in
+    /// (docs/RenderDebug.md sec 6.4).
+    void emitUniformDeclarations(mx::ShaderStage &stage) const
+    {
+        const mx::VariableBlock &block =
+            stage.getUniformBlock(mx::HW::PUBLIC_UNIFORMS);
+        std::set<std::string> declared;
+        bool any = false;
+        for (size_t i = 0; i < block.size(); ++i) {
+            const mx::ShaderPort *port = block[i];
+            // An image is refused whole by the caller; declaring a
+            // sampler for it here would only change which error the
+            // build reports.
+            if (port->getType() == mx::Type::FILENAME || ownedBySurface(port))
+                continue;
+            const MaterialInput *param = lookup(port);
+            if (!param) {
+                const std::string value =
+                    port->getValue()
+                        ? getSyntax().getValue(port->getType(), *port->getValue())
+                        : getSyntax().getDefaultValue(port->getType());
+                emitLine("const " + getSyntax().getTypeName(port->getType()) + " "
+                             + port->getVariable() + " = " + value,
+                         stage);
+                any = true;
+                continue;
+            }
+            // Two node inputs may name the same declared input, and
+            // each gets a published uniform of its own; they are one
+            // parameter and read one lane group.
+            if (declared.insert(param->name).second) {
+                emitLine("uniform vec4 u_" + param->name, stage);
+                any = true;
+            }
+        }
+        if (any)
+            emitLineBreak(stage);
+    }
+
+    /// The declared inputs, read out of their lanes at the top of the
+    /// function. Inside the body rather than at file scope because a
+    /// uniform is not a constant expression, and because the SPIR-V
+    /// path cannot read one outside a function at all -- the same
+    /// restriction the geometry preamble is written around.
+    void emitInterfacePreamble(mx::ShaderStage &stage) const
+    {
+        const mx::VariableBlock &block =
+            stage.getUniformBlock(mx::HW::PUBLIC_UNIFORMS);
+        bool any = false;
+        for (size_t i = 0; i < block.size(); ++i) {
+            const mx::ShaderPort *port = block[i];
+            const MaterialInput *param = lookup(port);
+            if (!param)
+                continue;
+            bound.insert(param->name);
+            emitLine(getSyntax().getTypeName(port->getType()) + " "
+                         + port->getVariable() + " = "
+                         + lane("u_" + param->name, param->type),
+                     stage);
+            any = true;
+        }
+        if (any)
+            emitLineBreak(stage);
+    }
+
+    /// Whether a published value is an input of the surface node
+    /// itself (stated on it, or its nodedef's default).
+    bool ownedBySurface(const mx::ShaderPort *port) const
+    {
+        const std::string &path = port->getPath();
+        auto under = [&path](const std::string &owner) {
+            return !owner.empty() && path.size() > owner.size()
+                && path.compare(0, owner.size(), owner) == 0
+                && path[owner.size()] == '/';
+        };
+        return under(surfacePath) || under(surfaceDefPath);
+    }
+
+    /// The declared input a published uniform stands for, or null when
+    /// it stands for a stated value.
+    const MaterialInput *lookup(const mx::ShaderPort *port) const
+    {
+        if (port->getPath().empty())
+            return nullptr;
+        auto it = declaredInputs.find(port->getPath());
+        return it == declaredInputs.end() ? nullptr : it->second;
+    }
+
+    /// One parameter read out of its vec4 lanes, as its own type.
+    static std::string lane(const std::string &uniform, const std::string &type)
+    {
+        if (type == "integer")
+            return "int(" + uniform + ".x)";
+        if (type == "boolean")
+            return uniform + ".x != 0.0";
+        if (type == "vector2")
+            return uniform + ".xy";
+        if (type == "vector3" || type == "color3")
+            return uniform + ".xyz";
+        if (type == "vector4" || type == "color4")
+            return uniform;
+        return uniform + ".x";
+    }
+
     /// Whatever the graph asks of the geometry, answered from the mesh
     /// shader's own varyings. Driven by MaterialX's vertex-data block
     /// rather than by a guessed list, so a node reaching for something
@@ -299,18 +435,40 @@ GeneratedMaterial generate(const std::string &xml, const std::string &sourcePath
         mx::DocumentPtr doc = loadDocument(xml, sourcePath, out.error);
         if (!doc)
             return out;
+        // Read before the translation, because the translation rewrites
+        // the surface: this is the node the document itself states, and
+        // the one inspect() and the path tracer read their interface
+        // from.
+        std::vector<mx::NodePtr> authored = surfaceShaders(doc);
         mx::NodePtr surface = openPbrSurface(doc, out.error, out.warnings);
         if (!surface)
             return out;
 
         auto gen = std::make_shared<BgfxShaderGenerator>(mx::TypeSystem::create());
+        // What the document DECLARES becomes a uniform; everything
+        // else it states is emitted as a constant, which is what the
+        // interface map decides port by port (sec 6.11). The interface
+        // is read from the surface the document was AUTHORED with --
+        // the same one the property editor and the path tracer read --
+        // and a graph interface survives the OpenPBR translation
+        // untouched, so the two enumerations name the same inputs.
+        std::vector<MaterialInput> inputs =
+            authored.empty() ? std::vector<MaterialInput>()
+                             : publicInputs(doc, authored.front());
+        for (const auto &input : inputs)
+            gen->declaredInputs[input.path] = &input;
+        gen->surfacePath = surface->getNamePath();
+        if (mx::NodeDefPtr def = surface->getNodeDef())
+            gen->surfaceDefPath = def->getNamePath();
         mx::GenContext ctx(gen);
         // The data library holds the node implementations' source.
         ctx.registerSourceCodeSearchPath(
             mx::FilePath(dataLibraryPath()).getParentPath());
-        // REDUCED publishes only what a document really left open, so
-        // every stated constant folds into the code as a literal.
-        ctx.getOptions().shaderInterfaceType = mx::SHADER_INTERFACE_REDUCED;
+        // COMPLETE publishes every value the graph did not connect,
+        // which is the only way a DECLARED input reaches the generated
+        // code as a name rather than folded into it as a number. The
+        // rest is folded here instead, by emitUniformDeclarations.
+        ctx.getOptions().shaderInterfaceType = mx::SHADER_INTERFACE_COMPLETE;
         auto cms = mx::DefaultColorManagementSystem::create(gen->getTarget());
         cms->loadLibrary(doc);
         gen->setColorManagementSystem(cms);
@@ -334,6 +492,16 @@ GeneratedMaterial generate(const std::string &xml, const std::string &sourcePath
             out.warnings.push_back(
                 "the mesh shader cannot answer '" + u
                 + "'; the document reads it as zero");
+        }
+        // A declared input the generated code never read is one the
+        // graph folded away -- the path tracer still answers to it, so
+        // the parameter is not withdrawn, but on this side it is inert
+        // and saying so beats a knob that silently does nothing.
+        for (const auto &input : inputs) {
+            if (!gen->bound.count(input.name))
+                out.warnings.push_back(
+                    "the raster path folded the declared input '" + input.name
+                    + "' into the shader; it takes no parameter here");
         }
         out.source = shader->getSourceCode(mx::Stage::PIXEL);
         out.valid = !out.source.empty();
