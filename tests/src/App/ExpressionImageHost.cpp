@@ -277,9 +277,34 @@ TEST_F(ExpressionImageBridgeTest, proxyDropReleasesHandle)
     EXPECT_EQ(ImageHost::instance().handleCount(), 1u);
     auto res = ImageHost::instance().eval("o['a']", handleBinding("o", id));
     ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
-    // the eval globals died with the call; the proxy's __del__ sent a
-    // release op for the binding handle
+    // the eval globals died with the call and the proxy's __del__ sent
+    // a release op -- but releases are DEFERRED for the length of the
+    // transaction, so the reply stays decodable.  The next transaction
+    // applies them.
+    EXPECT_EQ(ImageHost::instance().handleCount(), 1u);
+    auto res2 = ImageHost::instance().eval("1", {});
+    ASSERT_TRUE(res2.ok);
     EXPECT_EQ(ImageHost::instance().handleCount(), 0u);
+}
+
+TEST_F(ExpressionImageBridgeTest, resultHoldingAHostObjectDecodes)
+{
+    // The spreadsheet binding idiom `tuple(.cells, <<B4>>, <<ZZ4>>)`
+    // returns a tuple whose first element IS a host object.  The image
+    // destroys its proxy as the evaluation unwinds, before the host
+    // decodes the reply, so without deferred releases this came back as
+    // a stale handle and the evaluation failed -- found by the corpus
+    // gate, in real files.
+    Base::PyGILStateLocker lock;
+    uint64_t id = exportFromSource("o = {'a': 1}\n", "o");
+    auto res = ImageHost::instance().eval("(o, 'B4')", handleBinding("o", id));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    PyObject* v = ImageHost::instance().decodeResult(res);
+    ASSERT_NE(v, nullptr) << "stale handle: the reply outlived its entry";
+    ASSERT_TRUE(PyTuple_Check(v));
+    ASSERT_EQ(PyTuple_GET_SIZE(v), 2);
+    EXPECT_TRUE(PyDict_Check(PyTuple_GET_ITEM(v, 0)));
+    Py_DECREF(v);
 }
 
 TEST_F(ExpressionImageBridgeTest, staleHandleRaises)

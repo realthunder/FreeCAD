@@ -554,6 +554,18 @@ ImageResult ImageHost::eval(const std::string& source,
         return res;
     }
 
+    // one transaction: apply the previous call's queued releases, then
+    // hold this call's so the reply stays decodable (see
+    // HandleTable::setDeferReleases).  The flush DECREFs, so it needs
+    // the GIL -- FreeCAD releases it at init and a bare Py_DECREF here
+    // segfaults.
+    if (Py_IsInitialized()) {
+        // ... and only when there is an interpreter to lock: this entry
+        // point is reachable from a test binary that never started one.
+        Base::PyGILStateLocker lock;
+        d->handles.flushDeferred();
+    }
+    d->handles.setDeferReleases(true);
     ++d->evals;
     json req;
     req["op"] = "eval";
@@ -604,6 +616,18 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
         return res;
     }
 
+    // one transaction: apply the previous call's queued releases, then
+    // hold this call's so the reply stays decodable (see
+    // HandleTable::setDeferReleases).  The flush DECREFs, so it needs
+    // the GIL -- FreeCAD releases it at init and a bare Py_DECREF here
+    // segfaults.
+    if (Py_IsInitialized()) {
+        // ... and only when there is an interpreter to lock: this entry
+        // point is reachable from a test binary that never started one.
+        Base::PyGILStateLocker lock;
+        d->handles.flushDeferred();
+    }
+    d->handles.setDeferReleases(true);
     ++d->evals;
     json req;
     req["op"] = "eval";

@@ -43,8 +43,11 @@ def parse_args(argv):
     ap.add_argument("--max-mb", type=float, default=8.0,
                     help="skip .FCStd files larger than this")
     ap.add_argument("--max-files", type=int, default=0, help="0 = no limit")
-    ap.add_argument("--only", default="",
-                    help="only files whose path contains this substring")
+    ap.add_argument("--only", default=os.environ.get("FCX_GATE_ONLY", ""),
+                    help="only files whose path contains this substring; "
+                         "defaults to $FCX_GATE_ONLY, which is how the "
+                         "driver passes paths that contain quotes or "
+                         "backslashes (real corpus paths do)")
     ap.add_argument("--start", type=int, default=0,
                     help="index into the size-sorted file list to start at")
     ap.add_argument("--list-only", action="store_true",

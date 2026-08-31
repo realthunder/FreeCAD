@@ -149,6 +149,10 @@ PyObject* HandleTable::get(uint64_t id) const
 
 void HandleTable::release(uint64_t id)
 {
+    if (defer) {
+        deferred.push_back(id);
+        return;
+    }
     auto it = objects.find(id);
     if (it != objects.end()) {
         Py_DECREF(it->second);
@@ -156,8 +160,21 @@ void HandleTable::release(uint64_t id)
     }
 }
 
+void HandleTable::flushDeferred()
+{
+    bool wasDeferring = defer;
+    defer = false;
+    auto ids = std::move(deferred);
+    deferred.clear();
+    for (uint64_t id : ids)
+        release(id);
+    defer = wasDeferring;
+}
+
 void HandleTable::clear()
 {
+    deferred.clear();
+    defer = false;
     for (auto& entry : objects)
         Py_DECREF(entry.second);
     objects.clear();

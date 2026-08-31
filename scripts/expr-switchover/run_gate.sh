@@ -34,12 +34,20 @@ i=0
 while read -r idx size path; do
     i=$((i + 1))
     printf "[%d/%d] %s\n" "$i" "$total" "$(basename "$path")"
-    timeout "$TMO" "$REPO/.conda/limited.sh" "$REPO/.conda/run.sh" "$FCCMD" -c \
-        "import sys; sys.argv=['gate','--max-mb','$MAXMB','--only','$path','--out','$OUT/one.jsonl']; exec(open('$RIG').read())" \
+    # the path goes through the ENVIRONMENT, never into the -c string:
+    # real corpus paths contain quotes and backslashes
+    # (.../FREE|\'CAD_CNC/...), which would end the Python literal.
+    rm -f "$OUT/one.jsonl" "$OUT/one.jsonl.summary"
+    FCX_GATE_ONLY="$path" timeout "$TMO" "$REPO/.conda/limited.sh" \
+        "$REPO/.conda/run.sh" "$FCCMD" -c \
+        "import sys; sys.argv=['gate','--max-mb','$MAXMB','--out','$OUT/one.jsonl']; exec(open('$RIG').read())" \
         > "$OUT/one.log" 2>&1
     rc=$?
-    if [ $rc -ne 0 ]; then
+    # FreeCADCmd exits 0 even when the script raised, so a missing
+    # summary is the real failure signal, not the exit code
+    if [ $rc -ne 0 ] || [ ! -f "$OUT/one.jsonl.summary" ]; then
         echo "$path rc=$rc" >> "$OUT/timeouts.txt"
+        cp "$OUT/one.log" "$OUT/fail-$(basename "$path").log" 2>/dev/null
         continue
     fi
     [ -f "$OUT/one.jsonl" ] && cat "$OUT/one.jsonl" >> "$OUT/all.jsonl"

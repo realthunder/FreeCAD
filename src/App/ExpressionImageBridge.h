@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -96,8 +97,26 @@ public:
     uint64_t add(PyObject* obj);
     /// Borrowed reference, nullptr when stale/released.
     PyObject* get(uint64_t id) const;
-    /// Drop one entry (image-proxy __del__).
+    /// Drop one entry (image-proxy __del__).  While releases are
+    /// deferred the id is only QUEUED -- see setDeferReleases.
     void release(uint64_t id);
+    /** Hold releases until flushDeferred().
+     *
+     * The image destroys its proxies as the evaluation unwinds, which
+     * happens BEFORE the host decodes the reply.  A result that is (or
+     * contains) a host object -- `tuple(.cells, <<B4>>, <<ZZ4>>)`, the
+     * spreadsheet binding idiom, is a real one -- would therefore
+     * arrive as a handle whose entry had just been erased, and decode
+     * as a stale-handle error.  Deferring for the length of one
+     * transaction keeps the reply decodable; clear() still frees
+     * everything.
+     */
+    void setDeferReleases(bool on)
+    {
+        defer = on;
+    }
+    /// Apply the queued releases (start of the next transaction).
+    void flushDeferred();
     /// Drop everything (end of transaction).
     void clear();
     std::size_t size() const
@@ -107,6 +126,8 @@ public:
 
 private:
     std::unordered_map<uint64_t, PyObject*> objects;
+    std::vector<uint64_t> deferred;
+    bool defer = false;
     uint64_t nextId = 1;
 };
 
