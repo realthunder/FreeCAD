@@ -252,12 +252,21 @@ def resource_name(name):
 def rewrite_qrc(names):
     with open(QRC, encoding="utf-8", newline="") as handle:
         text = handle.read()
-    block = BEGIN + "".join(
-        "        <file>%s%s</file>\n" % (QRC_PREFIX, name) for name in sorted(names)
-    ) + END
-    start = text.find(BEGIN)
+    # Material.qrc is `text` in .gitattributes, so it is stored with LF
+    # and checked out with the platform ending -- CRLF on Windows. The
+    # markers have to be found either way: matching a bare \n found
+    # nothing there, and the else branch below then APPENDED a second
+    # block on every run instead of replacing the first, leaving the
+    # stale names in place beside the new ones.
+    eol = "\r\n" if "\r\n" in text else "\n"
+    begin = BEGIN.replace("\n", eol)
+    end = END.replace("\n", eol)
+    block = begin + "".join(
+        "        <file>%s%s</file>%s" % (QRC_PREFIX, name, eol) for name in sorted(names)
+    ) + end
+    start = text.find(begin)
     if start >= 0:
-        stop = text.find(END, start) + len(END)
+        stop = text.find(end, start) + len(end)
         text = text[:start] + block + text[stop:]
     else:
         marker = "    </qresource>"
