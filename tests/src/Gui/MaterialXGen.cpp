@@ -388,3 +388,29 @@ TEST_F(MaterialXGenerator, aDeclaredInputReadsItsLaneAsItsOwnType)
     EXPECT_NE(out.source.find("int(u_octaves.x)"), std::string::npos)
         << out.source;
 }
+
+TEST_F(MaterialXGenerator, aDeclaredInputNamedAsASurfaceInputStillBinds)
+{
+    // MaterialX resolves a graph's interface names in the ENCLOSING
+    // graph's socket namespace, and the surface's nodedef put every one
+    // of its own inputs in there first -- so a graph input named
+    // "base_color" is FUSED with the surface's own base_color socket
+    // and never appears under its own namepath. That is the obvious
+    // document to write, not an exotic one, and before this was handled
+    // the generated code read a name nothing declared.
+    auto out = Render::MaterialX::generate(declaringDoc(
+        "    <input name=\"base_color\" type=\"color3\" value=\"0.2, 0.4, 0.6\" />\n"
+        "    <input name=\"gain\" type=\"float\" value=\"0.5\" />\n",
+        "    <multiply name=\"mul\" type=\"color3\">\n"
+        "      <input name=\"in1\" type=\"color3\" interfacename=\"base_color\" />\n"
+        "      <input name=\"in2\" type=\"float\" interfacename=\"gain\" />\n"
+        "    </multiply>\n"));
+    ASSERT_TRUE(out.valid) << out.error;
+    EXPECT_NE(out.source.find("uniform vec4 u_base_color"), std::string::npos)
+        << out.source;
+    EXPECT_NE(out.source.find("base_color = u_base_color.xyz"), std::string::npos)
+        << out.source;
+    // And it is bound, so nothing reports it as folded away.
+    for (const auto &w : out.warnings)
+        EXPECT_EQ(w.find("base_color"), std::string::npos) << w;
+}

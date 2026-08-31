@@ -1783,6 +1783,17 @@ down:
   add a few dozen dead globals per material -- in names like
   `base_color` and `specular_color`, at file scope, next to the mesh
   shader's own.
+- **A graph input named as a surface input is FUSED with it.**
+  MaterialX resolves a graph's interface names in the enclosing graph's
+  socket namespace, and the surface's nodedef put every one of its own
+  inputs in there first, so a graph declaring `base_color` never gets a
+  socket of its own: the reads inside it go through the surface's
+  socket. That is the obvious document to write, not an exotic one, and
+  with the rule above it generated a name nothing declared. A published
+  value is therefore matched to a declared input by namepath first and
+  by NAME second -- safe precisely because the fusion is itself by
+  name, so after it exactly one socket carries that name and every read
+  of the declared input goes through it.
 
 A declared input is named by the document, and its uniform is
 `u_<name>` like every other shader parameter -- so a document declaring
@@ -1801,10 +1812,11 @@ space, which is what the document itself states and what the generated
 code (whose colour transforms sit downstream of the uniform) expects --
 the property holds exactly the numbers the `.mtlx` text would.
 
-**Verification.** Seventeen unit tests now (`tests/src/Gui/MaterialXGen.cpp`),
-seven of them this step's: what the interface is, what it is not, that
+**Verification.** Eighteen unit tests now (`tests/src/Gui/MaterialXGen.cpp`),
+eight of them this step's: what the interface is, what it is not, that
 one input read twice is one uniform, that it survives the translation,
-and that each type reads its lane as itself. Over MaterialX's own
+that each type reads its lane as itself, and that an input named as
+a surface input still binds. Over MaterialX's own
 example materials, the same 24 of 50 generate as before and all of them
 still compile through the in-tree shaderc on glsl, spirv and essl --
 `standard_surface_marble_solid` now with six uniforms in it. Both

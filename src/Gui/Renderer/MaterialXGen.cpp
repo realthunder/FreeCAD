@@ -191,6 +191,15 @@ public:
     /// Everything else the graph publishes is a value the document
     /// stated and nothing will write, so it is emitted as a constant.
     std::map<std::string, const MaterialInput *> declaredInputs;
+    /// The same inputs by NAME, for the one case where MaterialX does
+    /// not leave the namepath behind: a graph interface input named
+    /// exactly as an input of the surface shader is FUSED with the
+    /// surface's own socket -- interface names resolve in the enclosing
+    /// graph's socket namespace, and the surface's nodedef put every
+    /// one of its inputs in there first. `base_color` on a graph
+    /// feeding `base_color` on the surface is not an exotic document,
+    /// it is the obvious one to write.
+    std::map<std::string, const MaterialInput *> declaredByName;
     /// Which of them the generated code actually bound, so the caller
     /// can say what the document declares but the raster path folded.
     mutable std::set<std::string> bound;
@@ -262,10 +271,12 @@ private:
             // An image is refused whole by the caller; declaring a
             // sampler for it here would only change which error the
             // build reports.
-            if (port->getType() == mx::Type::FILENAME || ownedBySurface(port))
+            if (port->getType() == mx::Type::FILENAME)
                 continue;
             const MaterialInput *param = lookup(port);
             if (!param) {
+                if (ownedBySurface(port))
+                    continue;
                 const std::string value =
                     port->getValue()
                         ? getSyntax().getValue(port->getType(), *port->getValue())
@@ -331,10 +342,15 @@ private:
     /// it stands for a stated value.
     const MaterialInput *lookup(const mx::ShaderPort *port) const
     {
-        if (port->getPath().empty())
-            return nullptr;
         auto it = declaredInputs.find(port->getPath());
-        return it == declaredInputs.end() ? nullptr : it->second;
+        if (it != declaredInputs.end())
+            return it->second;
+        // The fused case above. Matching by name is safe because the
+        // fusion is itself by name: after it there is exactly one
+        // socket carrying that name, and every read of the declared
+        // input goes through it.
+        auto byName = declaredByName.find(port->getName());
+        return byName == declaredByName.end() ? nullptr : byName->second;
     }
 
     /// One parameter read out of its vec4 lanes, as its own type.
@@ -455,8 +471,10 @@ GeneratedMaterial generate(const std::string &xml, const std::string &sourcePath
         std::vector<MaterialInput> inputs =
             authored.empty() ? std::vector<MaterialInput>()
                              : publicInputs(doc, authored.front());
-        for (const auto &input : inputs)
+        for (const auto &input : inputs) {
             gen->declaredInputs[input.path] = &input;
+            gen->declaredByName[input.name] = &input;
+        }
         gen->surfacePath = surface->getNamePath();
         if (mx::NodeDefPtr def = surface->getNodeDef())
             gen->surfaceDefPath = def->getNamePath();
