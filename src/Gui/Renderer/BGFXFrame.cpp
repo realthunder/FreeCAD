@@ -285,8 +285,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (_BGFXLib.standaloneWidth != _BGFXLib.resetWidth
             || _BGFXLib.standaloneHeight != _BGFXLib.resetHeight) {
         bgfx::reset(_BGFXLib.standaloneWidth,
-                    _BGFXLib.standaloneHeight,
-                    BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY);
+                    _BGFXLib.standaloneHeight, bgfxResetFlags());
         _BGFXLib.resetWidth = _BGFXLib.standaloneWidth;
         _BGFXLib.resetHeight = _BGFXLib.standaloneHeight;
     }
@@ -1306,6 +1305,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->pbrShininessMapping = pbrconf.shininessMapping;
     view->pbrRoughness = pbrconf.roughness;
     view->pbrEnvIntensity = pbrconf.envIntensity;
+    view->pbrEnvBlur = pbrconf.envBlur;
     // Matcap replaces the lit shading outright, so it does not care
     // whether the environment could be built the way PBR does.
     view->matcapFrame = matcapconf.enabled && !hlconfig.show;
@@ -3351,6 +3351,17 @@ bool BGFXRenderer::Private::render(const QColor &col,
         bgfx::setViewMode(id, bgfx::ViewMode::Default);
         bgfx::touch(id);
     };
+    auto configLineSdf = [&](int i, uint16_t id) {
+        // Cleared to zero on purpose: the field stores
+        // kLineSdfRadius - signedDistance, so an untouched texel decodes
+        // as a line one whole radius away, which is no line at all.
+        // Depth clears to 1 so the nearest-line min starts empty.
+        bgfx::setViewFrameBuffer(id, view->lineSdfFbo);
+        bgfx::setViewClear(id,
+            uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+            0x00000000u, 1.0f, 0);
+        configTail(i, id);
+    };
     auto configAOPrepass = [&](int i, uint16_t id) {
         // Prepass target clears to 0 (.w = 0 marks background
         // in the AO pass), with its own depth buffer.
@@ -3928,7 +3939,9 @@ bool BGFXRenderer::Private::render(const QColor &col,
     declPass(V::ViewWaterCopy, waterSurfActive || glassActive,
              configWaterCopy);
     declPass(V::ViewWaterSurface, waterSurfActive, configScene);
+    declPass(V::ViewGlassLineSdf, glassActive, configLineSdf);
     declPass(V::ViewGlassSurface, glassActive, configScene);
+    declPass(V::ViewGlassLine, glassActive, configScene);
     declPass(V::ViewParticles, true, configScene);
     declPass(V::ViewTransparent, true, configTransparent);
     declPass(V::ViewOITComposite, oitActive, configScene);
@@ -5280,6 +5293,26 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // Hidden-line entries get their stencil outline right after the
     // fill and honor the face/seam/vertex hiding rules.
     view->ontop = false;
+    // How far each object's decoration reaches from its own geometry
+    // (Private::buildDecorReach, resolved once per setScene). The view
+    // gets a copy rather than deriving its own: buildInstanceGroups
+    // keys on these values, and a batch whose members disagreed with
+    // the reach its prototype binds is exactly the bug the key closes.
+    view->decorReach = decorReach;
+    // Glass on screen: scene lines and points move to ViewGlassLine so
+    // the refraction cannot magnify them (BGFXView::ViewGlassLine).
+    // Set before the first submit and left set: submit() makes the
+    // routing decision last, by which point the overlay, reflection and
+    // on-top draws have already claimed views of their own, so this
+    // never has to be turned back off for them.
+    view->glassLines = glassActive;
+    // Whether a line/point draw of the scene wants the extra dimmed
+    // pass behind the glass. Only worth submitting when there is glass
+    // to be behind; the pass is stencil-gated to the glass surface, so
+    // without one it would draw nothing at full cost.
+    auto glassDim = [&](const Render::DrawCall &d) {
+        return glassActive && !isTriangle(d) && !d.material.ontop;
+    };
     // The per-draw C++ the plan calls "submit": this walks every row
     // of the draw list, culled or not, and decides per row what to
     // submit. Braced so the scope covers the loop and nothing after.
@@ -5384,9 +5417,18 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     && fireObjects.count(draw.objectKey)));
         if (!cullDraw && !instancedThisFrame(drawIdx) && !surfWater
                 && !surfWaterLine && !surfGlass && !cloudPart
-                && !firePart)
+                && !firePart) {
             view->submit(draw, viewMat, BGFXView::PassNormal,
                          sceneNoSeam(draw));
+            // ...and, where the glass hides it, into the distance
+            // field the glass pass resamples. That is what makes an
+            // edge behind the body warp with the face it lies on
+            // instead of sitting undistorted over it; the undistorted
+            // pass this replaces was correct in width and wrong in
+            // place, which read worse than the magnification it fixed.
+            if (glassDim(draw))
+                view->submitLineSdf(draw, viewMat, sceneNoSeam(draw));
+        }
         if (cloudFill && !cullDraw && mediumRender) {
             int slot = slotOf(cloudSlots, draw.objectKey);
             view->submitWaterDepth(draw, false, 2, slot);
@@ -5783,6 +5825,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
             if (externalBase && sel.first <= 0 && isTriangle(draw))
                 view->submit(draw, viewMat, BGFXView::PassLineHidden);
             view->submit(draw, viewMat);
+            // A non-on-top selection's lines follow the scene's into
+            // ViewGlassLine, so they need the field too or a selected
+            // edge behind glass would vanish where it used to show
+            // through it.
+            if (sel.first <= 0 && glassDim(draw))
+                view->submitLineSdf(draw, viewMat, false);
             // Hidden-line outline of a whole-object selection fill
             // (GL: renderOutline from renderOpaque/renderTransparency
             // over slentries). On-top selections outline in the

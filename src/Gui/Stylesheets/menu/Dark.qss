@@ -5,7 +5,7 @@
 }
 
 QMenu {
-  background-color: rgba(100,100,100,180);
+  background-color: rgba(100,100,100,204);
   menu-scrollable:0;
 }
 

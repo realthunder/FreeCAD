@@ -152,18 +152,25 @@ def rewrite_qrc(files):
     """
     with open(QRC, encoding="utf-8", newline="") as handle:
         text = handle.read()
+    # Material.qrc is `text` in .gitattributes: stored with LF, checked out
+    # with the platform ending, so CRLF on Windows. Match the markers either
+    # way -- a bare \n finds nothing there and the else branch below then
+    # APPENDS a duplicate block instead of replacing the first.
+    eol = "\r\n" if "\r\n" in text else "\n"
     lines = []
     for name in sorted(files):
         shared = files[name] if isinstance(files, dict) else None
         if shared:
             # Named so that a reader of the qrc can tell what a digest is
             # the look of without rendering anything.
-            lines.append("        <!-- %s -->\n" % shared)
-        lines.append("        <file>%s%s</file>\n" % (QRC_PREFIX, name))
-    block = BEGIN + "".join(lines) + END
-    start = text.find(BEGIN)
+            lines.append("        <!-- %s -->%s" % (shared, eol))
+        lines.append("        <file>%s%s</file>%s" % (QRC_PREFIX, name, eol))
+    begin = BEGIN.replace("\n", eol)
+    end = END.replace("\n", eol)
+    block = begin + "".join(lines) + end
+    start = text.find(begin)
     if start >= 0:
-        stop = text.find(END, start) + len(END)
+        stop = text.find(end, start) + len(end)
         text = text[:start] + block + text[stop:]
     else:
         # First run: put the block just before the qresource closes.

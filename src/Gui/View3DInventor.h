@@ -90,6 +90,44 @@ public:
     };
     
     App::PropertyEnumeration DrawStyle;
+    /// Values of ShadingType. The enum persists as a bare INDEX (a
+    /// static-list PropertyEnumeration writes no name list), so the
+    /// value list is append-only: new models go at the end, nothing is
+    /// ever inserted before Matcap.
+    enum ShadingModel {
+        ShadingClassic = 0,
+        ShadingRealistic = 1,
+        ShadingMatcap = 2,
+        ShadingExternal = 3,
+    };
+    /// The shading model of this view: Classic (fixed-function
+    /// Phong), Realistic (physically based, image lit), or Matcap (a
+    /// camera-fixed studio). The same kind of choice about how the
+    /// view draws as DrawStyle, and its neighbour in the Base group.
+    ///
+    /// This is the single stated truth. The historical pair --
+    /// Render_PBR / Render_Matcap, and their twins in every container
+    /// that is not a 3D view -- lives on as a hidden, writable,
+    /// non-persistent facade meaning "what the raster pipeline
+    /// shades": onChanged folds a write to either bool back into this
+    /// enum (which is what keeps old macros and old documents
+    /// working), and pushes the enum into both bools for everything
+    /// that reads them -- the bridge, the icon renderer, the
+    /// preferences fallback (see initRenderProperties).
+    ///
+    /// External hands the view to an external path tracer instead of
+    /// the raster pipeline: both facade bools read false (which is
+    /// exactly what every raster reader should see), and the viewer
+    /// runs a live session of the engine ExternalRenderType names
+    /// (View3DInventorViewer::syncExternalShading).
+    App::PropertyEnumeration ShadingType;
+    /// Which external renderer the External shading model hands the
+    /// view to. Only Cycles exists today; the property exists so the
+    /// choice has a place to live when a second one does. Beside
+    /// ShadingType in the Base group -- it qualifies the shading
+    /// choice, not the raster engine's settings. Append-only value
+    /// list, like ShadingType: a bare index reaches the file.
+    App::PropertyEnumeration ExternalRenderType;
     App::PropertyBool ShowNaviCube;
     App::PropertyBool ThumbnailView;
     /// Per-object display mode overrides of THIS view
@@ -214,6 +252,12 @@ private:
     /// Put the viewer's on-top group where OnTopObjects says: what
     /// makes the property the storage rather than a record of it.
     void applyOnTopObjects();
+    /// Push ShadingType into the Render_PBR / Render_Matcap facade
+    /// (the bools that everything reading a shading model consumes).
+    void syncShadingModelFacade();
+    /// Fold a restored pre-ShadingType document into the enum: the
+    /// pair used to persist, the enum is what persists now.
+    void migrateShadingModel();
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -247,6 +291,13 @@ private:
     View3DInventorViewer * _viewer;
     View3DInventorPy *_viewerPy;
     bool _restoring = false;
+    /// Whether the document being restored carried ShadingType itself.
+    /// Set by onChanged while _restoring; a file that states the enum
+    /// is post-facade, so migrateShadingModel must not run -- under
+    /// External the facade pair reads (false, false), which the
+    /// migration cannot tell from Classic and would stomp the restored
+    /// value with.
+    bool _restoredShadingType = false;
     QTimer * stopSpinTimer;
     QStackedWidget* stack;
     std::unique_ptr<View3DSettings> viewSettings;

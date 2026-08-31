@@ -2105,6 +2105,10 @@ public:
 
     virtual const char* className() const {return "CmdMacroPreselectCommands";}
 
+    ~CmdMacroPreselectCommands() override {
+        delete _menu;
+    }
+
     void add(Command *cmd) {
         if (!boost::starts_with(cmd->getName(), "Std_Macro_Presel"))
             return;
@@ -2112,18 +2116,19 @@ public:
         if (cmdpresel && cmdpresel->isPreselectionMacro()
                       && cmdset.insert(cmd).second)
         {
-            cmd->addTo(&_menu);
+            cmd->addTo(menu());
         }
     }
 
     void remove(Command *cmd) {
-        if (cmdset.erase(cmd))
-            _menu.removeAction(cmd->getAction()->action());
+        // No menu means nothing was ever added to it, so nothing to remove.
+        if (cmdset.erase(cmd) && _menu)
+            _menu->removeAction(cmd->getAction()->action());
     }
 
     Action * createAction(void) {
         Action * action = Command::createAction();
-        action->action()->setMenu(&_menu);
+        action->action()->setMenu(menu());
         return action;
     }
 
@@ -2138,12 +2143,25 @@ public:
     virtual void activated(int iMsg)
     {
         (void)iMsg;
-        PieMenu::exec(&_menu, QCursor::pos(), getName());
+        PieMenu::exec(menu(), QCursor::pos(), getName());
     }
 
 private:
+    // Created on demand, never held by value. CommandManager's constructor
+    // builds this command for every Gui::Application -- including the
+    // windowless Gui::Application(false) behind FreeCADGui.setupWithoutGUI(),
+    // where there is no QApplication and constructing a QWidget is a Qt
+    // qFatal(), i.e. abort(). Every caller below runs only once a GUI is up:
+    // add() returns early unless the command is a Std_Macro_Presel macro, and
+    // createAction()/activated() are reached through the action or the menu.
+    QMenu *menu() {
+        if (!_menu)
+            _menu = new QMenu;
+        return _menu;
+    }
+
     std::set<Command *> cmdset;
-    QMenu _menu;
+    QMenu *_menu = nullptr;
 };
 
 //===========================================================================

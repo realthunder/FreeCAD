@@ -74,6 +74,13 @@ Q_SIGNALS:
 protected:
     void showEvent(QShowEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    /// LOCAL DIVERGENCE: stands guard over the menu-widget slot. In Custom
+    /// mode the slot holds the kit's height spacer, and plain
+    /// QMainWindow::menuBar() -- every QMainWindow*-typed caller, and all of
+    /// Python -- lazily creates an empty QMenuBar into it, collapsing the
+    /// space the title bar overlays and leaving it drawn over the first
+    /// toolbar row, eating its clicks.
+    void childEvent(QChildEvent *event) override;
     bool eventFilter(QObject *obj, QEvent *event) override;
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 

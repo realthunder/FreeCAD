@@ -949,9 +949,14 @@ and keeps the Linux-style in-repo layout.
   before the first commit — a fresh box has neither, and the failure only surfaces at
   `git commit`.
 - **`git submodule update --init --recursive` right after cloning.** A plain clone has
-  empty `src/3rdParty/bgfx` and `src/3rdParty/OndselSolver`, and configure fails on both
-  ("does not contain a CMakeLists.txt file"). bgfx pulls three nested submodules of its
-  own (bgfx, bimg, bx).
+  empty `src/3rdParty/bgfx`, `src/3rdParty/OndselSolver` and `src/3rdParty/vg-renderer`,
+  and configure fails on all three ("does not contain a CMakeLists.txt file"). bgfx
+  pulls three nested submodules of its own (bgfx, bimg, bx). **`vg-renderer` is easy to
+  miss** because it arrived after the others: it is unconditional inside the
+  `BUILD_BGFX` block of `src/3rdParty/CMakeLists.txt`, so a working tree that predates
+  it configures fine until the next pull and then stops. `src/3rdParty/cycles` is the
+  one submodule to leave alone unless you want the path tracer -- `BUILD_CYCLES`
+  defaults OFF and the tree does not need it.
 - **If an older Miniconda is also installed**, it exports `CONDA_EXE` into the ambient
   environment, and `conda.bat activate` honours a pre-set `CONDA_EXE`: the *old* conda
   then generates the activation script in its old format, the new `_conda_activate.bat`
@@ -981,8 +986,16 @@ conda create -y -p D:\Zheng.Lei\sw\fcad\.conda\freecad ^
   cmake ninja swig pkg-config ^
   libboost-devel=1.90 eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype expat ^
   fmt pybind11 numpy matplotlib-base ^
-  tbb-devel "vtk-base==9.6.2" "vtk-io-ffmpeg==9.6.2" libmed hdf5 libxml2-devel lazy_loader
+  tbb-devel "vtk-base==9.6.2" "vtk-io-ffmpeg==9.6.2" libmed hdf5 libxml2-devel lazy_loader ^
+  lark
 ```
+
+**`lark` is there for the build, not the runtime**, which is why it is easy to leave
+out of an env that otherwise looks complete. `src/Mod/BIM` generates its Arch SQL
+parser as a build step -- `Resources/ArchSqlParserGenerator.py` over `ArchSql.lark`
+-- and without the module that target stops the build with *"Error: The 'lark'
+Python package is required to generate the parser"*. It fails late, thousands of
+objects in, and nothing earlier hints at it.
 
 The Qt/boost/vtk trio is the one the Linux stack pins, and for the same reason:
 it is the stack conda-forge builds smesh against. See the Linux
@@ -1088,6 +1101,60 @@ into it now fails to solve.
 Also part of the standard env, and it carries the same do-not-bring-an-occt
 rule. The recipe and what the version skew costs are in
 [IfcOpenShell, for Arch/BIM](#ifcopenshell-for-archbim) with the rest of it.
+
+### libarea, and fetching a realthunder package when anaconda.org is blocked
+
+**A clean Windows configure now fails without `libarea`.** `src/Mod/Area` stopped
+vendoring it (`9278814534`) and asks for the package outright --
+`find_package(libarea 0.3.0 CONFIG REQUIRED)`, the version being where both Clippers
+grew a Z member and changed the layout of a point. `BUILD_AREA` defaults **ON**, and
+`CheckInterModuleDependencies.cmake` makes `BUILD_CAM` and `BUILD_BIM` require it, so
+this is not a module you quietly skip. The failure is a plain CMake error at
+`src/Mod/Area/CMakeLists.txt:7`, before a single object compiles.
+
+It is **not** in the `conda create` line above because it does not come from
+conda-forge: like `smesh`, it lives only on the **realthunder** channel.
+
+*** **On a network that cannot reach anaconda.org, that channel is unreachable and
+`conda` has no way to it.** Both A records for `conda.anaconda.org` (Cloudflare)
+refuse TCP 443 here, while DNS resolves fine -- so it presents as a hang and then a
+connect error, not as a name error. `prefix.dev` mirrors conda-forge only; it does
+not carry this fork's packages.
+
+The route that works is to fetch the file somewhere with reachability and install it
+locally. Any host will do; this one uses the Linode in `~/.ssh/config`. Note that
+the `.ssh` directory in the Windows profile is a **symlink into WSL**, so Git Bash
+cannot read it -- go through `wsl.exe -e sh -c '...'`:
+
+```sh
+# list what the channel has, and pick the newest build
+ssh linode "curl -sSk https://conda.anaconda.org/realthunder/win-64/repodata.json -o /tmp/rt.json"
+# fetch it, and read its sha256 out of that repodata to check against
+ssh linode "cd /tmp && curl -sSk -O https://conda.anaconda.org/realthunder/win-64/<pkg>.conda && sha256sum <pkg>.conda"
+scp linode:/tmp/<pkg>.conda /mnt/d/Zheng.Lei/sw/dl/
+```
+
+`-k` is needed only because that host is an old Ubuntu with a stale CA bundle.
+**A `curl: (60)` there is certificate verification, not a block** -- do not read it
+as the channel being unreachable from the proxy as well.
+
+Then install it **without a solve**, for the reason the SMESH section gives: any
+plain `conda install` into this env consults the dead channel. An `@EXPLICIT` file
+accepts local paths and still writes a proper `conda-meta` record, so the package
+ends up owned by conda rather than being the untracked hand-install the Linux
+[libarea section](#packages-from-the-realthunder-channel) warns to clean up:
+
+```bat
+:: libarea_explicit.txt
+::   @EXPLICIT
+::   file:///D:/Zheng.Lei/sw/dl/libarea-0.3.1-h50a38c3_0.conda#<sha256>
+conda install -p <env> -y --file libarea_explicit.txt
+```
+
+Confirm afterwards that the env has `Library/lib/cmake/libarea/libareaConfig.cmake`
+-- that is what `find_package` resolves -- alongside `Library/bin/area.dll` and
+`Library/lib/area.lib`. The Windows package depends only on `vc`/`vc14_runtime`/
+`ucrt`, so unlike `smesh` it brings no `occt` question with it.
 
 ### The dev shell: `.conda\run.cmd`
 
@@ -1247,10 +1314,269 @@ not by core count. A machine with more memory can and should go wider; that limi
 not inherent to the tree. `FREECAD_USE_PCH=OFF` (inherited from the `conda` preset)
 makes this worse and is worth revisiting.
 
+On **this** box -- 16 threads, 64 GB -- memory is not the limit and interactivity
+is: ninja's default (cores + 2, so 18 concurrent `cl.exe`) makes the machine
+unusable while a build runs. 6 is the cap here, and it is a budget for the whole
+box rather than per build -- when two builds could overlap, run them one after the
+other rather than six each.
+
+It is the **default** now, set in two places because they cover different ways of
+starting a build:
+
+- `.conda\run.cmd` sets `CMAKE_BUILD_PARALLEL_LEVEL=6`, which is what
+  `cmake --build` uses when given no `-j`. It does nothing for a bare `ninja`,
+  which never reads that variable.
+- The user preset sets `CMAKE_JOB_POOLS=compile=6;link=6` together with
+  `CMAKE_JOB_POOL_COMPILE`/`CMAKE_JOB_POOL_LINK`, which CMake writes into
+  `CMakeFiles/rules.ninja` as `pool compile` / `depth = 6`. That binds the build
+  edges themselves, so it holds however ninja is started.
+
+An explicit `-j N` still wins over the first; nothing but reconfiguring changes the
+pool. Measured on a bare `ninja`, whose own default here is 18, sampling running
+`cl.exe` every 200 ms through an 86-edge build: 6 concurrent, never more.
+
 Note also that `BGFX_BUILD_TOOLS_SHADER=ON` drags in **tint/Dawn** from bgfx's
 3rdparty tree — hundreds of heavy C++ TUs that dwarf FreeCAD's own code. It is needed
 to compile shaders (`ninja Renderer_assets`), but it is the single largest
 contributor to a cold Windows build.
+
+### The wrapper scripts in `D:\works\sw\tools`
+
+Everything above is the underlying command. Day to day these wrap it, and they carry
+the flags that are easy to forget; `build-fcad-cycles.cmd` is the Cycles variant
+covered in the next section.
+
+| Script | What it does |
+|---|---|
+| `build-fcad.cmd [jobs]` | configure from the user preset, then build. **Jobs default to 6.** |
+| `run_cdb.ps1` | launch FreeCAD under `cdb` in one reused console |
+| `mcp_run.py <script.py>` | run Python inside the *running* FreeCAD over MCP |
+| `run-cycles.cmd` | `run.cmd` plus the two variables Cycles' GPU devices need |
+
+**`build-fcad.cmd`** exists because `run.cmd` alone hid cmake failures -- it
+propagates the exit code, printing `BUILD-FCAD: CONFIGURE FAILED` or
+`BUILD-FCAD: BUILD FAILED` and ending with `BUILD-FCAD: OK`, which is the string
+worth grepping a log for. It also stages `area.dll` beside `FreeCAD.exe` after every
+build: the libarea package's DLL is only ever imported by `.pyd` modules, and Python
+3.8+ does not search `PATH` for those -- only the app directory, `system32` and
+`os.add_dll_directory()` entries.
+
+**`run_cdb.ps1`** owns ONE console for the whole session, so do not hand-roll a
+`Start-Process` line. Plain invocation launches or relaunches, `-Status` prints the
+console/cdb/FreeCAD pids, `-Stop` closes it. It refuses with `BUSY` while FreeCAD is
+up, so quit the app first. Inside the console you get a real prompt: `fcad`
+relaunches, Up recalls it. The cdb flags it carries are `-server tcp:port=9310`
+(first, so `cdb -remote tcp:server=localhost,port=9310` can attach later), `-G` so
+the exit-time break cannot freeze the box, `-lines`, `-cf cdb_arm.cmd` to arm the
+crash dumps, and `-logo dbg\cdb_freecad.log`.
+
+Two traps. **A reused console runs the launch command it was born with** --
+`Start-FreeCAD` and its argument array are defined when the console starts, so after
+editing `run_cdb.ps1`, or passing `-UserHome`/`-StartupScript`, which change those
+arguments, a plain relaunch prints `REUSED` and silently launches the *old* command
+line. `-Stop` first. And a process created by a debugger gets the NT debug heap
+unless `_NO_DEBUG_HEAP=1` is set, which makes OCCT crawl in `free()`; the script sets
+it, which is half of why it exists.
+
+**`mcp_run.py`** talks to the MCP console that the running FreeCAD brings up itself,
+from `DocumentParams MCPServerAutoStart`. Two things about the port: this build
+listens on **8791**, not the 8765 default, because on this mirrored-networking box
+the WSL2 FreeCAD answers 8765 *and* 8766 on the Windows `127.0.0.1` -- and
+`mcp_run.py`'s own default is 8766, so **`FCAD_MCP_URL` has to be set**. A probe
+against the wrong port hangs in retries rather than erroring, which reads exactly
+like the app having failed to start. If the port was already taken FreeCAD takes the
+next free one and says so, as a console warning and in the Tools -> MCP server
+tooltip, so read the port there rather than assuming it.
+
+```bat
+set FCAD_MCP_URL=http://127.0.0.1:8791/mcp
+.conda\run.cmd python D:\works\sw\tools\mcp_run.py probe.py
+```
+
+Pass a **script file**, not `-c "code"`: nested through `cmd /c ".conda\run.cmd ..."`
+the quoting is stripped and the console gets a `SyntaxError` on an unterminated
+string. Confirm identity before believing any session -- `App.getHomePath()` must
+start with `D:/` for the Windows build, or you are driving the WSL one.
+
+### Cycles on Windows -- where OptiX and HIP can actually be tested
+
+The recipe above under "Cycles (path-traced renderer)" is the Linux one. This
+section is the Windows counterpart, and it exists for a reason beyond
+completeness: **the WSL2 box and this one are the same laptop**, so the two
+devices `docs/CyclesIntegration.md` sec 4.1 and 4.2 record as unreachable --
+OptiX, because WSL2's `libnvoptix.so.1` is a 10KB decoy shim, and HIP, because
+WSL2 exposes no AMD userspace at all -- are reachable from the Windows side of
+it. Sec 4.2 says as much: testing AMD "needs a native Windows build (the
+Adrenalin driver carries the HIP runtime)". This is that build.
+
+`BUILD_CYCLES` defaults OFF here too and no preset sets it. The flags live in
+`D:\works\sw\tools\build-fcad-cycles.cmd`; drive it from a `.cmd` rather than
+the shell, because PowerShell mangles a dotted `-D` value.
+
+**Dependencies go into `.conda\freecad`**, same as Linux:
+
+```cmd
+conda install -p D:\works\sw\fcad\.conda\freecad -c conda-forge ^
+    openimageio embree openimagedenoise
+```
+
+Run the sec 3.1 gate first (`--dry-run`) and read the plan. It passed here: 14
+new packages, 85.6 MB, and **no** movement in `qt6-main`, `pyside6`, `boost` or
+`tbb`. Two updates, both benign -- `openssl` 3.6.3 -> 3.6.4, and `openexr`
+3.4.13 -> **3.4.15**, which converges Windows onto the openexr the Linux env was
+already running against OCCT.
+
+**nvcc, in its own prefix** -- and note the path, which is not the Linux one:
+
+```cmd
+conda create -p D:\works\sw\fcad\.conda\cuda-129 -c conda-forge ^
+    cuda-nvcc=12.9 cuda-cudart-dev=12.9
+```
+
+conda puts nvcc in **`Library\bin`**, not `bin`, so `CUDA_BIN_PATH` is
+`D:\works\sw\fcad\.conda\cuda-129\Library\bin`. Everything sec 4.1 says about
+that variable applies unchanged: get it wrong and CUDA does not fail, it just
+vanishes from the device list.
+
+**OptiX** headers to `D:\works\sw\optix-dev` (`NVIDIA/optix-dev`, 9.1.0), the
+same clone as Linux. The runtime differs and this is the good news: `nvoptix.dll`
+here is the real **62MB** library in the driver store
+(`System32\DriverStore\FileRepository\nvam.inf_amd64_*\`), not a shim. It does
+not need to be in `System32` -- `optix_stubs.h` walks the driver store through
+`optixLoadWindowsDllFromName("nvoptix.dll")`.
+
+**HIP needs AMD's HIP SDK, and PATH is the only lever that works.** Install the
+HIP SDK for Windows (6.4 here, `C:\Program Files\AMD\ROCm\6.4`). It does **not**
+need a driver upgrade: HIP 6.4's runtime enumerates a 2023-era Adrenalin driver
+fine, verified with the SDK's own `hipInfo.exe` before building anything. But
+the installer sets `HIP_PATH` and leaves the SDK's `bin` **off** `PATH`, and
+both halves of what Cycles needs go through `PATH`:
+
+- `hipew` loads the runtime by **bare name** (`hipew.c`, `WIN_DRIVER`), and the
+  default build is hipew6, so it wants `amdhip64_6.dll` -- which the SDK ships
+  and the driver does not. The driver's `System32\amdhip64.dll` is the HIP-5
+  name, and `WITH_HIP_SDK_5` is a bare `#ifdef` with no `option()` behind it, so
+  it is not a flag you can pass.
+- `hipewCompilerPath()` finds the compiler with `where hipcc`. Setting
+  `HIP_ROCCLR_HOME` instead does **not** work: it `stat()`s `<root>/bin/hipcc`,
+  and ROCm 6.4 ships only `hipcc.bat`, `hipcc.exe` and `hipcc.pl`.
+
+`D:\works\sw\tools\run-cycles.cmd` sets `CUDA_BIN_PATH` and prepends the ROCm
+bin, then calls `run.cmd`. Neither belongs in `run.cmd` itself, for the reason
+the Linux section gives for `CUDA_BIN_PATH`.
+
+Measured 2026-08-28, `cyclesRenderTest` at 640x480 / 64 samples:
+
+| Device | Hardware | Cold | Warm |
+| --- | --- | --- | --- |
+| CPU | Ryzen 9 6900HS | 1.6s | 1.4s |
+| CUDA | RTX 3070 Ti Laptop | 430.2s | 0.5s |
+| OptiX | RTX 3070 Ti Laptop | 9.0s | 0.7s |
+| HIP | Radeon 680M, gfx1035 | 195.1s | 2.0s |
+
+**Only the warm column is a performance number.** The cold one is dominated by
+one-time kernel compiles that then cache under `.cache/cycles/kernels`: CUDA's
+430s matches the ~297s sec 4.1 records for a cold compile, and OptiX's 9s is it
+reusing what CUDA had just built, not a faster compile.
+
+Warm, the ordering is the one sec 4.2 predicts. CUDA and OptiX come in around
+3x the CPU, and **HIP loses to the CPU** -- a 680M on shared system memory
+against eight Zen3+ cores with Embree. That is the expected result, not a broken
+HIP port; the AMD path is here for coverage of discrete Radeons. At this scene
+size all four are fast enough that the numbers are rough.
+
+All four devices render, and the four PNGs have four distinct checksums -- so
+the device argument is honoured rather than quietly falling back to CPU. The
+matching file sizes (158231/158231/158230/158231) are just PNG compressing four
+near-identical images of one scene, not evidence of a fallback.
+
+#### The one source fix Windows needed
+
+`BUILD_CYCLES=ON` did not link: `FreeCADRenderer.dll` died with `LNK1104` on a
+bare `tbb12.lib`. The oneTBB headers auto-link on MSVC (`_config.h`:
+`#pragma comment(lib, "tbb12.lib")`), so every object that includes them carries
+a DEFAULTLIB directive holding just the file name -- and `cycles_embed` never
+propagates TBB, because `cycles_external_libraries_append()` has no TBB entry.
+Linux never sees it; the pragma is MSVC-only. Fixed by linking `TBB::tbb` (the
+environment's own config package, which points at `tbb12.lib`) PUBLIC into
+`FreeCADRendererCycles`. Not `${TBB_LIBRARY}`: Cycles' bundled `FindTBB`
+resolves that to the legacy `tbb.lib`, which has no DLL beside it.
+
+That link sits behind `if(TARGET TBB::tbb)`, and **the target has to be made to
+exist**, which is the second half of the fix (`0f27186b52`). The only
+`find_package(TBB)` in the tree is Cycles' own `external_libs.cmake`, and it resolves
+through the bundled `FindTBB` in MODULE mode -- which sets `TBB_LIBRARY` and
+`TBB_INCLUDE_DIR` and defines no imported target at all. So on a tree where nothing
+else happens to have loaded TBB's config package the guard is simply false, the link
+never happens, and the `LNK1104` above comes back with nothing to explain it: a false
+`if()` reports nothing, so it reads as a missing library rather than a skipped line.
+`src/Gui/Renderer/CMakeLists.txt` therefore calls `find_package(TBB CONFIG QUIET)`
+ahead of the guard; `TBB_DIR` pointing at the env's `Library/lib/cmake/TBB` in
+`CMakeCache.txt` is how you tell it took. This also means **`tbb-devel` is required
+for a Cycles build**, not just `tbb` -- the config package and `tbb12.lib` ship in
+it, and Cycles' own `find_package(TBB REQUIRED)` fails the configure without it.
+
+Watch for this shape generally -- a bare library name in an MSVC link error
+usually comes out of an object's auto-link pragma, not out of CMake. `tbb12.lib`
+appears ten times in this tree's `build.ninja` and every one is a full path.
+
+#### Verifying it: not through `setupWithoutGUI()`, and the two traps under that
+
+To call `Gui.cyclesDevices()` the Gui application has to exist -- under
+`FreeCADCmd` a bare `import FreeCADGui` gives the stub module, and
+`cyclesDevices` is not on it. The obvious move is `FreeCADGui.setupWithoutGUI()`,
+which is `Gui::Application(false)` and makes no window. **Until it was fixed it
+aborted, and had done since 2021.** It no longer aborts, but it still does not
+bind the Application methods -- `Gui::Application(false)` does not add them to
+the module -- so it is not the route to `cyclesDevices()` either. Run the script
+under `FreeCAD.exe`, where a real `QApplication` exists. (`showMainWindow()`
+under `FreeCADCmd` does bind them, but paints an unstyled window that never
+responds, because `FreeCADCmd` runs no event loop. Do not use it.)
+
+Both bugs below are fixed now. They are written down because the *shape* of the
+second one will disguise the next abort in this tree just as well, and because
+neither is Windows-specific. What used to happen:
+
+```
+FreeCADGui_setupWithoutGUI            [Main/FreeCADGuiPy.cpp @ 201]
+Gui::Application::Application         [Gui/Application.cpp @ 688]
+Gui::ApplicationP::ApplicationP       [Gui/Application.cpp @ 226]
+Gui::CommandManager::CommandManager   [Gui/Command.cpp @ 2155]
+CmdMacroPreselectCommands::instance   [Gui/Command.cpp @ 2134]
+CmdMacroPreselectCommands::{ctor}     [Gui/Command.cpp @ 2095]
+Qt6Widgets!QMenu::QMenu               <-- a QWidget, with no QApplication
+Qt6Core!QMessageLogger::fatal
+FreeCADGui!messageHandler             [Gui/Application.cpp @ 2308] -> abort()
+```
+
+`CmdMacroPreselectCommands` held `QMenu _menu` **by value**, and
+`CommandManager`'s constructor creates that command unconditionally, so building
+the Gui application at all constructed a QWidget. With no `QApplication` Qt calls
+`qFatal`. The line dates to `227866ffd9` (2021-05-18). Fixed by creating the
+menu on demand; every caller of it runs only once a GUI is up.
+
+**The second half was worse than the first, and it is what you actually
+saw.** `Application.cpp`'s `segmentation_fault_handler` **throws** on `SIGABRT`
+(`THROWM(Base::AbnormalProgramTermination, ...)`). Throwing out of a signal
+handler reached through `abort()` lands the exception in a `noexcept` frame, so
+`terminate()` calls `abort()`, which raises `SIGABRT`, which re-enters the
+handler -- forever. Each turn of the loop also runs `printBacktrace` ->
+`StackWalker::LoadModules` -> dbghelp, reloading PDBs, so the process climbs
+through hundreds of MB and looks like a **hang** rather than a crash. Two runs of
+the same binary presented as "segfault" and as "hang"; they were the same fault.
+
+Fixed by leaving the disposition at `SIG_DFL` for `SIGABRT` -- the arm that
+throws -- so the second `SIGABRT` ends the process the default way, after one
+backtrace. `SIGSEGV` keeps its re-arm, which a separate fix added on 2026-08-12
+so that a second fault in a session is still reported.
+
+The technique is worth keeping even so, because any *other* abort loop would
+look the same. When something appears to hang while growing in memory, attach
+and look for `segmentation_fault_handler` repeating up the stack -- and to find
+the *original* fault, breakpoint its first entry
+(`bu FreeCADApp!segmentation_fault_handler`) rather than reading the top of the
+stack, which is all recursion. `sxe av` will not catch it: the first event is
+not an access violation.
 
 ### Running the C++ (GoogleTest) suites
 
@@ -1658,6 +1984,60 @@ RelWithDebInfo. Neither has been tried here yet.
 `AutoSaveEnabled`, with FreeCAD closed). A session that is killed or closed with an
 open document leaves recovery data behind, and the *next* launch puts a modal Document
 Recovery dialog over the window — which is exactly what you were trying to look at.
+
+## Regenerating the bundled material icons
+
+Two scripts draw the icons that ship in `MatGui`. Both write into
+`src/Mod/Material/Gui/Resources/icons/materials`, and both rewrite their own block of
+`Material.qrc` between a pair of marker comments. The workflow is to run one and
+commit whatever changed.
+
+| Script | Draws | Needs |
+|---|---|---|
+| `scripts/material-icons.py` | `Look_<digest>.png`, one per distinct appearance | FreeCAD and a renderer (`MatGui.renderMaterialIcon`) |
+| `scripts/pattern-icons.py` | `Pattern_<name>.png`, one per hatch card | only PySide -- it reads the cards and draws with QPainter |
+
+```bat
+.conda\run.cmd python scripts\pattern-icons.py
+```
+
+The file name is not decoration, it is how the icon is found again. Each generator's
+naming function has a C++ counterpart in `MaterialIcons` -- `resource_name()` against
+`patternResourceName()`, `shared_name()` against `sharedResourceName()` -- and the
+two must agree exactly, because the C++ side resolves one name at a time and never
+sees the whole set. Change one and you have to change the other.
+
+**A generated name has to be unique case-INSENSITIVELY.** Pattern names come from the
+cards, and the bundle legitimately holds two that differ only in case: the PAT
+`Square`, a line definition `DrawGeomHatch` turns into real geometry, and the SVG
+`square`, a tile `DrawHatch` fills with. They coexist upstream because they sit in
+different libraries. Flattened into one icons directory with the case preserved they
+became `Pattern_Square.png` and `Pattern_square.png` -- two tracked paths differing
+only in case, which is fine on Linux and is ONE file on Windows and on a default
+macOS checkout. Two things follow, and neither announces itself:
+
+- git materialises whichever it writes last, so the other path reports permanently
+  modified and the tree can never be clean;
+- Windows keeps a file's existing casing when it overwrites, so drawing `square`
+  wrote into the `Pattern_Square.png` already sitting there, and the stale sweep --
+  which lists the directory and drops whatever no card claims -- then deleted it as
+  an unclaimed name. That run shipped 31 swatches for 32 cards, and reported 32.
+
+A name carrying any uppercase therefore takes a six-hex sha1 of itself
+(`Pattern_Square-82810c.png`), which case folding cannot collapse. Keep that property
+for any new generated icon set. To check the whole tree for the general fault:
+
+```bash
+git ls-files | awk '{l=tolower($0); if (l in s) print s[l], "<->", $0; s[l]=$0}'
+```
+
+**`Material.qrc` is `text` in `.gitattributes`**, so git stores it with LF and checks
+it out with the platform's ending -- CRLF on Windows. Both generators match their
+block markers with the file's own ending for that reason. Matching a bare newline
+finds nothing there, and the "first run has no block yet" branch then appends a
+second block instead of replacing the first, leaving the stale names in the qrc
+beside the new ones. The scripts still report the count they drew, which is right --
+it is the qrc that ends up with twice as many entries as there are icons.
 
 ## Porting state / caveats
 

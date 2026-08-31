@@ -391,11 +391,34 @@ void ViewAreaCell::hostView(MDIView *view)
                      view, &MDIView::windowStateChanged);
     // Qt-level destruction of the child (e.g. the document is closing
     // and deleteSelf ran) collapses the cell.
+    //
+    // In two steps, because this signal arrives from inside the dying
+    // view's own destructor. The collapse runs childViewGone ->
+    // collapseCell -> setActiveCell -> MainWindow::setActiveWindow, so
+    // doing it here would re-enter MDI activation while a view is
+    // half-destroyed -- which is what `89808fae97` had to sever
+    // MainWindow's connections in ~MDIView to survive. Severing the
+    // connections closed the crash; deferring the collapse removes the
+    // re-entrancy that made it possible.
+    //
+    // The back-pointer is still cleared SYNCHRONOUSLY: between now and
+    // the queued call the cell must not hold a pointer to a view that
+    // is being deleted, or anything reading childView() in that window
+    // reads freed memory.
     QPointer<ViewAreaCell> self(this);
     ViewArea *area = _area;
     QObject::connect(view, &QObject::destroyed, area, [area, self]() {
-        if (self)
-            area->childViewGone(self);
+        if (!self)
+            return;
+        self->_child = nullptr;
+        QMetaObject::invokeMethod(area, [area, self]() {
+            // childViewGone re-checks everything that can have changed
+            // in the meantime: _closing, the cell still being in the
+            // splitter tree, and the cell count. A cell detached by
+            // closeCell or collapseCell in the gap needs nothing.
+            if (self)
+                area->childViewGone(self);
+        }, Qt::QueuedConnection);
     });
     _highlight->raise();
     _zoneTopRight->raise();

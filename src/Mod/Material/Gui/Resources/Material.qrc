@@ -79,14 +79,14 @@
         <file>icons/materials/Look_fb6921f6a97cf2794d24f20594a354785c03bc46.png</file>
         <!-- end rendered icons -->
         <!-- drawn by scripts/pattern-icons.py -->
-        <file>icons/materials/Pattern_Diagonal4.png</file>
-        <file>icons/materials/Pattern_Diagonal5.png</file>
-        <file>icons/materials/Pattern_Diamond.png</file>
-        <file>icons/materials/Pattern_Diamond2.png</file>
-        <file>icons/materials/Pattern_Diamond4.png</file>
-        <file>icons/materials/Pattern_Horizontal5.png</file>
-        <file>icons/materials/Pattern_Square.png</file>
-        <file>icons/materials/Pattern_Vertical5.png</file>
+        <file>icons/materials/Pattern_Diagonal4-ae4226.png</file>
+        <file>icons/materials/Pattern_Diagonal5-d23154.png</file>
+        <file>icons/materials/Pattern_Diamond-b3850e.png</file>
+        <file>icons/materials/Pattern_Diamond2-6fd892.png</file>
+        <file>icons/materials/Pattern_Diamond4-c82e9e.png</file>
+        <file>icons/materials/Pattern_Horizontal5-25ff92.png</file>
+        <file>icons/materials/Pattern_Square-82810c.png</file>
+        <file>icons/materials/Pattern_Vertical5-bd67ee.png</file>
         <file>icons/materials/Pattern_aluminum.png</file>
         <file>icons/materials/Pattern_brick01.png</file>
         <file>icons/materials/Pattern_concrete.png</file>
@@ -97,8 +97,8 @@
         <file>icons/materials/Pattern_earth.png</file>
         <file>icons/materials/Pattern_general_steel.png</file>
         <file>icons/materials/Pattern_glass.png</file>
-        <file>icons/materials/Pattern_hatch45L.png</file>
-        <file>icons/materials/Pattern_hatch45R.png</file>
+        <file>icons/materials/Pattern_hatch45L-5f4d4f.png</file>
+        <file>icons/materials/Pattern_hatch45R-4c3e8e.png</file>
         <file>icons/materials/Pattern_hbone.png</file>
         <file>icons/materials/Pattern_line.png</file>
         <file>icons/materials/Pattern_plastic.png</file>

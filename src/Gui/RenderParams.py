@@ -1265,11 +1265,12 @@ Params = [
         "   costs memory without showing more.\n"
         " - Free CC0 panoramas: polyhaven.com/hdris.\n"
         "\n"
-        "Drawn as the background it is deliberately soft -- the\n"
-        "background pass reads a blurred level of that cubemap, the\n"
-        "way a real backdrop is out of focus -- so expect a wash of\n"
-        "the photo's colours there rather than the photo. The\n"
-        "lighting and the reflections use the sharp levels.\n"
+        "How sharp it is DRAWN behind the model is a separate\n"
+        "question, and the answer is Render_PBREnvBlur: the background\n"
+        "pass reads a level of that cubemap the way a real backdrop is\n"
+        "out of focus, and at zero it reads the level it was baked at.\n"
+        "The lighting and the reflections use the sharp levels\n"
+        "whatever the blur says.\n"
         "\n"
         "Empty falls back to that dialog's current image, then to the\n"
         "procedural environment."),
@@ -1295,6 +1296,32 @@ Params = [
         "is nothing in the frame for the eye to reconcile it against.\n"
         "Affects nothing outside physically based shading -- the\n"
         "Classic and Matcap models keep the background gradient."),
+    ParamFloat('PBREnvBlur',  0.25, title='Environment background blur',
+        doc="How far out of focus the environment background is, 0 to 1.\n"
+        "Zero draws it at the resolution it was baked at; one flattens\n"
+        "it to a single average colour. Only the BACKGROUND is\n"
+        "affected -- the lighting and the reflections read the whole\n"
+        "environment whatever this says.\n"
+        "\n"
+        "A backdrop wants some of this. A real one is out of focus, and\n"
+        "softening also lets a small bright source bleed into a wide\n"
+        "gentle falloff instead of sitting in the frame as a hard\n"
+        "rectangle. Too much of it and there is nothing left for a\n"
+        "reflection to be reconciled against, which is the whole reason\n"
+        "the background is drawn at all. Blender's viewport shading\n"
+        "carries the same control for the same reasons, and defaults it\n"
+        "higher than this does.\n"
+        "\n"
+        "Both shading models honour it, and at zero the two show the\n"
+        "same backdrop: they bake the environment at the same angular\n"
+        "resolution. The external path tracer gets there differently,\n"
+        "since the world it samples IS the light and softening it\n"
+        "would relight the scene -- so a second, smaller bake of the\n"
+        "same environment is mixed in on CAMERA rays alone, and the\n"
+        "lighting, reflections and refractions keep the sharp world.\n"
+        "One consequence of that rule: a camera ray stays a camera ray\n"
+        "through a transparent surface, so a see-through pass-through\n"
+        "shows the soft backdrop as well."),
     ParamFloat('BumpScale',  1.0, title='Bump strength',
         doc="Strength of bump/normal mapped surfaces (SoBumpMap) of the\n"
         "experimental render engine: scales the slope of normal maps and\n"
@@ -1471,6 +1498,31 @@ Params = [
         "settings (color, size, texture) from the shadow group."),
     ParamFloat('GroundReflectionIntensity',  0.4, title='Reflection intensity',
         doc="Blend factor of the mirrored model on the ground plane."),
+    ParamString('CyclesDevice', 'CPU', title='Cycles device',
+        doc="Compute device type the External shading model path traces\n"
+        "on, as Gui.cyclesDevices() names them: 'CPU' always works, and\n"
+        "'CUDA', 'OPTIX' or 'HIP' when this machine has the GPU and the\n"
+        "driver for it. Seeds the per-view Cycles_Device property, which\n"
+        "offers only the devices the machine actually has -- a document\n"
+        "saved elsewhere falls back to the first local device when its\n"
+        "choice does not exist here."),
+    ParamInt('CyclesSamples',  256, title='Cycles samples',
+        doc="Samples per pixel the External shading model refines to\n"
+        "before it rests. More is cleaner and slower to settle; the view\n"
+        "stays interactive either way, restarting from one sample on\n"
+        "every camera move."),
+    ParamFloat('CyclesTimeLimit',  0.0, title='Cycles time limit',
+        doc="Seconds the External shading model may refine after each\n"
+        "change before it rests, whatever the sample budget still says.\n"
+        "0 means no limit: the sample count alone decides."),
+    ParamBool('CyclesDenoise',  True, title='Cycles denoise',
+        doc="Run OpenImageDenoise over the refining External shading\n"
+        "frame, trading the raw noise of the early samples for a smooth\n"
+        "image that sharpens as samples arrive."),
+    ParamInt('CyclesPixelSize',  1, title='Cycles pixel size',
+        doc="Render the External shading model at 1/n resolution and\n"
+        "scale up -- Blender's preview pixel size. 2 or 4 keeps a large\n"
+        "view fluid on a weak device at the cost of a blockier preview."),
     ParamInt('DebugViewMode',  0, title='Debug view mode',
         proxy=ParamComboBox(items=['Off', 'Depth', 'Normal', 'AO', 'Shadow',
                                    'ShadowTile', 'Overdraw', 'ShadowFilter',

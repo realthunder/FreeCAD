@@ -1076,8 +1076,23 @@ QString MaterialIcons::patternResourceName(const QString& materialName)
         return {};
     }
     static const QRegularExpression unsafe(QStringLiteral("[^A-Za-z0-9._-]+"));
-    return QStringLiteral("Pattern_")
-        + QString(materialName).replace(unsafe, QStringLiteral("_"));
+    QString safe = QString(materialName).replace(unsafe, QStringLiteral("_"));
+    // The bundle holds two cards whose names differ only in case -- the PAT
+    // "Square" and the SVG "square" -- and the icon directory is checked out
+    // on filesystems that do not tell those apart. There the plain name is
+    // ONE file, so whichever swatch git wrote last is the one both cards
+    // show, and the other icon is silently wrong. A name carrying any
+    // uppercase takes a digest of itself, which case folding cannot
+    // collapse. Must agree with resource_name() in
+    // scripts/pattern-icons.py, which draws the files this looks up.
+    if (materialName != materialName.toLower()) {
+        safe += QStringLiteral("-")
+            + QString::fromLatin1(
+                QCryptographicHash::hash(materialName.toUtf8(), QCryptographicHash::Sha1)
+                    .toHex()
+                    .left(6));
+    }
+    return QStringLiteral("Pattern_") + safe;
 }
 
 QString MaterialIcons::sharedResourceName(const QString& digest)

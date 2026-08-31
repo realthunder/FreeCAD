@@ -186,6 +186,67 @@ void BGFXView::cubeDir(int face, float u, float v, float d[3])
     d[0] /= len; d[1] /= len; d[2] /= len;
 }
 
+void BGFXView::buildEnvBackground()
+{
+    m_envBgMips = 1;
+    while (kEnvBgSize >> m_envBgMips)
+        ++m_envBgMips;
+    m_envBgTex = bgfx::createTextureCube(kEnvBgSize, true, 1,
+        bgfx::TextureFormat::RGBA16F, 0, nullptr);
+    if (!bgfx::isValid(m_envBgTex))
+        return;
+
+    const uint16_t halfOne = bx::halfFromFloat(1.0f);
+    // One face at a time, base level first and then halved in place:
+    // the mips are box downsamples of the level above, so a face never
+    // needs another face's texels and the whole chain costs one pass
+    // over the base plus a third of it again.
+    std::vector<float> level(size_t(kEnvBgSize) * kEnvBgSize * 3);
+    std::vector<float> next;
+    std::vector<uint16_t> texels;
+    for (int face = 0; face < 6; ++face) {
+        for (int y = 0; y < kEnvBgSize; ++y) {
+            for (int x = 0; x < kEnvBgSize; ++x) {
+                float u = 2.0f * (x + 0.5f) / kEnvBgSize - 1.0f;
+                float v = 2.0f * (y + 0.5f) / kEnvBgSize - 1.0f;
+                float d[3];
+                cubeDir(face, u, v, d);
+                envRadiance(d, &level[(size_t(y)*kEnvBgSize + x) * 3]);
+            }
+        }
+        int size = kEnvBgSize;
+        for (int mip = 0; mip < m_envBgMips; ++mip) {
+            texels.assign(size_t(size) * size * 4, halfOne);
+            for (int i = 0; i < size * size; ++i) {
+                for (int c = 0; c < 3; ++c)
+                    texels[size_t(i)*4 + c] =
+                        bx::halfFromFloat(level[size_t(i)*3 + c]);
+            }
+            bgfx::updateTextureCube(m_envBgTex, 0, uint8_t(face),
+                uint8_t(mip), 0, 0, uint16_t(size), uint16_t(size),
+                bgfx::copy(texels.data(),
+                    uint32_t(texels.size() * sizeof(uint16_t))));
+            if (size == 1)
+                break;
+            const int half = size / 2;
+            next.assign(size_t(half) * half * 3, 0.0f);
+            for (int y = 0; y < half; ++y) {
+                for (int x = 0; x < half; ++x) {
+                    for (int c = 0; c < 3; ++c) {
+                        next[(size_t(y)*half + x) * 3 + c] = 0.25f * (
+                            level[(size_t(2*y)*size + 2*x) * 3 + c]
+                            + level[(size_t(2*y)*size + 2*x + 1) * 3 + c]
+                            + level[(size_t(2*y + 1)*size + 2*x) * 3 + c]
+                            + level[(size_t(2*y + 1)*size + 2*x + 1) * 3 + c]);
+                    }
+                }
+            }
+            level.swap(next);
+            size = half;
+        }
+    }
+}
+
 void BGFXView::ensureEnvironment()
 {
     if (m_envBuilt)
@@ -195,10 +256,15 @@ void BGFXView::ensureEnvironment()
         bgfx::destroy(m_envTex);
         m_envTex = BGFX_INVALID_HANDLE;
     }
+    if (bgfx::isValid(m_envBgTex)) {
+        bgfx::destroy(m_envBgTex);
+        m_envBgTex = BGFX_INVALID_HANDLE;
+    }
     const auto *caps = bgfx::getCaps();
     if (!(caps->formats[bgfx::TextureFormat::RGBA16F]
             & BGFX_CAPS_FORMAT_TEXTURE_CUBE))
         return;
+    buildEnvBackground();
     m_envTex = bgfx::createTextureCube(kEnvSize, true, 1,
         bgfx::TextureFormat::RGBA16F, 0, nullptr);
     if (!bgfx::isValid(m_envTex))
@@ -416,18 +482,32 @@ void BGFXView::submitSunDisc(float sizeDeg)
 
 void BGFXView::submitEnvBackground()
 {
-    if (!bgfx::isValid(m_progEnvBg) || !bgfx::isValid(m_envTex))
+    // The lighting cube stands in if the background one could not be
+    // made (a second allocation is a second thing that can fail): a
+    // background at the wrong softness beats no background at all,
+    // which would drop the frame back to a gradient that reflects
+    // nothing the surfaces show.
+    const bool ownMap = bgfx::isValid(m_envBgTex);
+    const bgfx::TextureHandle tex = ownMap ? m_envBgTex : m_envTex;
+    if (!bgfx::isValid(m_progEnvBg) || !bgfx::isValid(tex))
         return;
-    // A backdrop wants to be soft: a real one is out of focus, and the
-    // blur is also what lets a small bright source bleed into a wide
-    // gentle falloff instead of sitting there as a hard rectangle. LOD
-    // 2 is 32x32 per face on a 128 cube -- the same softness this
-    // always had, at four times the resolution it had it at, which is
-    // what stops it blocking up now the presets have edges in them.
-    float params[4] = {0.0f, 2.0f, 0.0f,
+    // How soft is the user's call (Render_PBREnvBlur), because both
+    // answers are wanted. A backdrop out of focus reads as a place,
+    // and softening also lets a small bright source bleed into a wide
+    // gentle falloff instead of sitting in the frame as a hard
+    // rectangle -- but the same blur is why a Realistic view did not
+    // look like the External one standing beside it, and there was no
+    // way to ask for the sharp one. Zero is m_envBgTex as baked, which
+    // is the resolution the path tracer bakes its world at; one is the
+    // top of the chain, a single averaged colour.
+    const float lod = ownMap
+        ? std::clamp(pbrEnvBlur, 0.0f, 1.0f)
+            * float(std::max(m_envBgMips - 1, 0))
+        : 2.0f;
+    float params[4] = {0.0f, lod, 0.0f,
                        std::max(pbrEnvIntensity, 0.0f)};
     bgfx::setUniform(u_pbrParams, params);
-    bgfx::setTexture(1, s_texEnv, m_envTex);
+    bgfx::setTexture(1, s_texEnv, tex);
     fullscreen(ViewBackground, m_progEnvBg,
                BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                | BGFX_STATE_MSAA);

@@ -2910,6 +2910,8 @@ RendererBridge::translatePBRConfig(App::PropertyContainer * view)
     res.envBackground = viewParamOverride<App::PropertyBool>(
             view, "Render", "PBREnvBackground",
             RenderParams::getPBREnvBackground());
+    res.envBlur = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "PBREnvBlur", RenderParams::getPBREnvBlur()));
     res.fromSpecular = viewParamOverride<App::PropertyBool>(
             view, "Render", "PBRFromSpecular",
             RenderParams::getPBRFromSpecular());

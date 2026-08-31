@@ -266,13 +266,21 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     (LightConfig::groundFollowCamera). A snapshot older than this
 //     was written by a build that only had the scene-bounds sizing, so
 //     it reads as off and lays its ground out the way it was measured.
-// 70: a user shader says what DIALECT its sources are
+// 70: how far out of focus the environment background is
+//     (PBRConfig::envBlur). A snapshot older than this was written by
+//     a build whose background was fixed two cubemap levels down, so
+//     it reads as the blur that stands for the same softness rather
+//     than as the sharper default.
+// 71: a user shader says what DIALECT its sources are
 //     (UserShader::dialect): shading-language text, or a MaterialX
 //     document in fragmentSource, and where that document came from
 //     (UserShader::sourcePath), which is what its image references
 //     resolve against. A snapshot older than this reads as
 //     shader text, which is all those builds could write.
-const uint32_t kVersion = 70;
+//     (This was 70 on the branch it was written on, and 70 was taken
+//     by envBlur meanwhile; a dump from one of those unpublished
+//     builds reads its shader table as text.)
+const uint32_t kVersion = 71;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -354,7 +362,7 @@ static_assert(sizeof(BumpConfig) == 8, "BumpConfig changed: stream the new field
 static_assert(sizeof(VolumetricConfig) == 28, "VolumetricConfig changed: stream the new field, then update this");
 static_assert(sizeof(WaterConfig) == 48, "WaterConfig changed: stream the new field, then update this");
 static_assert(sizeof(BloomConfig) == 16, "BloomConfig changed: stream the new field, then update this");
-static_assert(offsetof(PBRConfig, envBackground) == 16, "PBRConfig changed: stream the new field, then update this");
+static_assert(offsetof(PBRConfig, envPreset) == 32, "PBRConfig changed: stream the new field, then update this");
 static_assert(offsetof(LightConfig, groundColor) == 172,"LightConfig changed: stream the new field, then update this");
 static_assert(offsetof(RenderDebugConfig, coverage) == 7, "RenderDebugConfig changed: stream the new field, then update this");
 
@@ -1288,7 +1296,7 @@ void writeUserShader(
 std::shared_ptr<const UserShader> readUserShader(Reader &r, uint32_t version)
 {
     auto s = std::make_shared<UserShader>();
-    if (version >= 70) {
+    if (version >= 71) {
         uint8_t d = r.u8();
         // An unknown dialect from a newer writer is not a shader this
         // build can consume; leave it as text and let the backend
@@ -3177,6 +3185,8 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.i32(snap.pbrconf.envPreset);
     w.f(snap.pbrconf.envIntensity);
     w.b(snap.pbrconf.envBackground);
+    // v70: how far out of focus that background is.
+    w.f(snap.pbrconf.envBlur);
     refs.tex(w, snap.pbrconf.envImage);
     w.b(snap.pbrconf.fromSpecular);
     // v61: how a Phong shininess becomes a roughness.
@@ -3605,6 +3615,11 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.pbrconf.envPreset = version >= 64 ? r.i32() : 1;
     snap.pbrconf.envIntensity = r.f();
     snap.pbrconf.envBackground = version >= 25 ? r.b() : false;
+    // 0.375, not the current default: an older snapshot was written by
+    // a build that drew the background two levels down a 128 cubemap,
+    // and that is the blur which stands for the same softness on the
+    // sharper background map this reads it onto.
+    snap.pbrconf.envBlur = version >= 70 ? r.f() : 0.375f;
     if (version >= 25)
         refs.tex(r, snap.pbrconf.envImage);
     snap.pbrconf.fromSpecular = version >= 59 ? r.b() : false;

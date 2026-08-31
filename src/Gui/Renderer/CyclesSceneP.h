@@ -103,6 +103,11 @@ public:
     /// when it differed from the camera last stated. The caller holds
     /// the scene's mutex when a session is running.
     bool translateCamera(const CameraInput &camera);
+    /// Re-run the world statement after translateCamera invalidated it
+    /// (the background graph carries an orthographic-only camera-ray
+    /// fan, so a projection change rebuilds it). A no-op unless the
+    /// world was stated before. Same locking rule as translateCamera.
+    void refreshWorld();
 
     bool colorManaged() const
     {
@@ -389,7 +394,16 @@ private:
 
     bool cameraStated = false;
     CameraInput lastCamera;
+    /// Whether the camera last stated was orthographic: the world's
+    /// background graph shapes its camera-ray fan by it.
+    bool cameraOrtho = false;
     bool worldStated = false;
+    /// True once translateWorld ever ran (worldStated goes false again
+    /// when a projection change invalidates the graph -- refreshWorld
+    /// only rebuilds a world that existed).
+    bool worldEverStated = false;
+    /// The projection kind the stated background graph was built for.
+    bool worldOrtho = false;
     PBRConfig worldPbr;
     OutputConfig worldOutput;
     bool lightStated = false;

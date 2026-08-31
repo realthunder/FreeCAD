@@ -300,7 +300,10 @@ order:
    section caps, cavity multiply, hidden-line outlines, caustics splat,
    volumetric upsample-apply.
 8. **Water/glass surfaces** — scene-color copy, then the surface draws
-   re-rendered with refraction/absorption/planar reflection.
+   re-rendered with refraction/absorption/planar reflection. While a
+   glass body is on screen the scene's lines and points move out of
+   `ViewOpaque` into `ViewGlassLine`, which runs after the refraction
+   (see "Lines" below).
 9. **Transparency** — WBOIT accumulation + fullscreen resolve (or
    depth-sorted draws in `ViewTransparent` when OIT is off).
 10. **Bloom** — bright pass, light-source emit, separable blur,
@@ -1105,6 +1108,59 @@ somebody authored.
   the base draw by key. The user-shader Appearance bindings reuse this
   channel (negative ids = normal-pass rendering with base
   suppression).
+
+### Lines
+
+Every line draw is expanded to a screen-space quad per segment
+(`vs_fc_line*`, one instance per segment out of the buffer `GpuGeom`
+builds at mesh upload), never a hardware line primitive -- modern APIs
+give those no width, no stipple and no control over coverage. The 1px
+case used to take the hardware path and was moved onto the quad, because
+two rasterizers meant an edge changed character rather than size
+whenever something pushed it over 1px, and no width could be made to
+agree with any other.
+
+`fs_fc_line` resolves the coverage analytically: the vertex stage
+widens the quad by half a pixel per side and hands the fragment stage
+the signed perpendicular distance in pixels, and the fragment stage
+takes `clamp(halfWidth + 0.5 - |d|, 0, 1)` as alpha. This is Blender's
+`gpu_shader_3D_polyline` model. The point of it is that a quad of the
+right geometric width still lands on a different subpixel phase at every
+orientation, so an edge visibly breathes between crisp and soft as the
+model turns -- MSAA hides some of that and none of it with MSAA off. The
+box filter integrates to exactly the requested width at any angle, which
+also makes fractional widths meaningful: line widths are no longer
+rounded to integers, so `outlineThicken` and the highlight widths stop
+quantizing.
+
+Two consequences. Line draws blend, since coverage is an alpha ramp, so
+they no longer contribute to early-Z; the fragments are a flat colour
+and a clamp, and the feather is bounded at half a pixel per side, so the
+cost is small but it is not nothing on a full wireframe. And the
+cull-audit id pass (`submitId`) passes its width NEGATED, which turns
+the coverage off: that image is decoded as exact integers with alpha <
+0.5 meaning "no draw owns this pixel", so a ramp would orphan every edge
+fragment.
+
+Points keep `fs_fc_flat` and integer sizes. A sprite is a square whose
+apparent weight does not turn with the model, so it has nothing to gain.
+
+**Through glass.** A glass body refracts by resampling the scene-color
+copy through a per-pixel UV displacement, and wherever that field
+converges -- which is what a curved body IS -- it magnifies whatever it
+samples. A CAD edge went in one pixel wide and came out two or three,
+smeared further by the bilinear fetch and, on rough glass, by the 16-tap
+disc. Nothing in the glass shader can fix that; the line was rasterized
+before the lens saw it. So while `glassActive`, lines and points are
+simply not in the copy: they render in `ViewGlassLine` after the
+refraction, at their exact pixel width. Lines the glass hides are
+re-submitted dimmed (`PassLineGlassDim`, depth GREATER + stencil ==
+`kGlassStencil`, which the glass pass stamps where it takes a pixel) so
+a part stays readable through its enclosure. The cost of the move is
+that these lines miss `ViewVolApply` and are not fogged by a volumetric
+the way the fills are; the known artifact is that an opaque part behind
+the glass is no longer in the depth buffer, so lines behind THAT part
+ghost through it.
 
 ### Surface finish (procedural machining relief)
 

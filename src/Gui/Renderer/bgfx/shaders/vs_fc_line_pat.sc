@@ -1,5 +1,5 @@
 $input a_position, i_data0, i_data1, i_data2, i_data3
-$output v_color0, v_dist
+$output v_color0, v_dist, v_line
 
 /*
  * Patterned (stipple) variant of the thick-line vertex shader: adds the

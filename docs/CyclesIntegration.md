@@ -317,11 +317,23 @@ Build the on-top route first; it unblocks everything else.
 
 ### 5.4 Which view
 
-Both shapes are built; the UI for either is still open.
+Both shapes are built. The first one has its UI since 2026-08-29: the
+**External shading model** -- the fourth value of the view's declared
+`ShadingType` enum, with `ExternalRenderType` naming the engine and the
+per-view `Cycles_*` properties (device / samples / time limit / denoise
+/ pixel size) as the session options.
+`View3DInventorViewer::syncExternalShading()` starts, restarts and
+stops the session off those properties, and the Display style
+popover's fourth radio plus its Settings... dialog drive them
+(Gui/ShadingOptions.cpp). `Cycles_Device` is an enumeration built from
+THIS machine's devices and re-mapped by NAME after every restore
+(`Gui::remapCyclesDeviceProperty`), falling back to the first local
+entry, so a document from a machine with different GPUs still renders.
 
 - A **render mode toggled on an existing 3D view** -- fewest moving
   parts, and the camera is already the right one. This is what
-  `view.cyclesViewport(...)` does (section 5.7).
+  `view.cyclesViewport(...)` does (section 5.7), and what the External
+  shading model wraps.
 - A **Cycles cell beside the normal view**, with a linked camera, using
   the split-view/ViewArea canvas (`docs/SplitViews.md`). Model on the
   left, path-traced preview on the right. Section 5.11: the same call
@@ -597,6 +609,22 @@ already has on the device.
   equal; `translateLight()` the same with `LightConfig` plus, for a
   spot, the scene bounds its power was stated at. A changed light is
   remade (its type may change), object before light node.
+- **The background blur is a camera-ray branch.** `Render_PBREnvBlur`
+  asks for the environment to be drawn out of focus, which a path
+  tracer cannot do by softening its world: that world is the light,
+  and an environment texture has no lod to read. So above zero
+  `translateWorld()` bakes the environment twice -- once at full size,
+  once area-averaged down to `envBlurWidth()` -- and mixes the small
+  one in on `Is Camera Ray`. Lighting, reflections and refractions
+  read the sharp bake; only what is seen behind the model is soft,
+  which is the same split the raster backend gets by reading a level
+  of its background cubemap. Blender ships no control for this (its
+  viewport Blur slider is the raster preview's only) and its users
+  build the same graph by hand. Two caveats worth knowing: a camera
+  ray stays one through a Transparent BSDF, so a see-through
+  pass-through shows the soft backdrop; and the orthographic fan has
+  to reach BOTH environment nodes, or the two halves of one sky land
+  in different places.
 - **Only a change resets.** `translate()` returns whether anything in
   the scene changed; `Viewport::setScene()` resets the session only
   then. `feedCyclesViewport()` runs before every frame and restates on

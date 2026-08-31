@@ -487,8 +487,36 @@ bool BGFXRenderer::Private::instancableDraw(const Render::DrawCall &d)
         && !m.perfacematerial;
 }
 
+void BGFXRenderer::Private::buildDecorReach()
+{
+    // Resolved from the draw list rather than read off each fill's
+    // material because the fill cannot know it: SoDrawStyle's line width
+    // lives inside the wireframe separator, which ViewProviderExt adds
+    // AFTER the faces, so every fill reports linewidth 1 however thick
+    // its edges are.
+    //
+    // On-top and highlight draws are excluded: they do not depth-test
+    // against the fill, so they are not what the fill has to clear, and
+    // a preselection thickening would otherwise shove every fill back.
+    decorReach.clear();
+    for (const auto &d : scene) {
+        if (d.material.ontop || !d.objectKey)
+            continue;
+        float reach = 0.0f;
+        if (d.material.type == Render::Material::Line)
+            reach = 0.5f * std::max(1.0f, d.material.linewidth) + 0.5f;
+        else if (d.material.type == Render::Material::Point)
+            reach = 0.5f * std::max(1.0f, d.material.pointsize);
+        else
+            continue;
+        auto &slot = decorReach[d.objectKey];
+        slot = std::max(slot, reach);
+    }
+}
+
 void BGFXRenderer::Private::buildInstanceGroups()
 {
+    buildDecorReach();
     instGroups.clear();
     instGroupOf.assign(scene.size(), -1);
     ++meshContentStamp;
@@ -509,6 +537,17 @@ void BGFXRenderer::Private::buildInstanceGroups()
         float texmatrix[16];
         int numVertices, numTri;
         int start, count, part;
+        /// The decoration reach of the OBJECT the draw belongs to.
+        /// Not a material field and not shared by identical geometry:
+        /// two boxes of one size whose edges differ in width resolve
+        /// different reaches, and one instanced submit can only bind one
+        /// polygon offset (the prototype's). Left out of the key, the
+        /// thin-edged member's fill would be shoved back with the thick
+        /// one -- or, prototype the other way round, the thick-edged
+        /// member would lose the pull-back that keeps its edge from
+        /// being half-eaten by its own face, which is the whole defect
+        /// 34461d03b7 fixed. Keying on it splits the batch instead.
+        float reach;
         float shininess, pofactor, pounits, metallic, roughness;
         float finishpitch, finishdepth, finishangle;
         uint32_t emissive, specular, ambient, texBlend;
@@ -568,6 +607,15 @@ void BGFXRenderer::Private::buildInstanceGroups()
         k.shininess = m.shininess;
         k.pofactor = m.polygonoffsetfactor;
         k.pounits = m.polygonoffsetunits;
+        // Keyed on the RESOLVED factor, not the raw reach: the two are
+        // max()'d, so reaches that both sit under the material's own
+        // factor -- and every reach at all on a fill without polygon
+        // offset -- come out equal and must not split a batch.
+        {
+            auto it = decorReach.find(d.objectKey);
+            k.reach = BGFXView::polygonOffsetFactor(
+                m, it == decorReach.end() ? 1.0f : it->second);
+        }
         k.metallic = m.metallic;
         k.roughness = m.roughness;
         // The finish rides a uniform, so instances sharing a batch have

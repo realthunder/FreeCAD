@@ -474,6 +474,45 @@ static ValueT _localRenderParam(App::PropertyContainer *view, const char *_name,
                                              App::Prop_NoPersist);
 }
 
+/// The shading-model pair, Render_PBR / Render_Matcap. On a 3D view the
+/// pair is a facade over View3DInventor::ShadingType -- hidden so the
+/// visible truth is stated once, Prop_NoPersist so only the enum
+/// reaches a file, but writable: View3DInventor::onChanged folds a
+/// write to either bool back into the enum, which is what keeps old
+/// macros and old code paths working. A container that is no 3D view
+/// (a material preview, a view-less publisher) has no enum, so there
+/// the pair stays the only shading-model switch, seeded from the
+/// preference as before.
+static void _shadingModelParam(App::PropertyContainer *view, const char *_name,
+                               const char *_docu, bool def)
+{
+    auto cb = [](App::PropertyBool &prop) {
+        // A pre-facade document restores the pair visible; hide such a
+        // survivor too. (Prop_NoPersist cannot be added after birth --
+        // that one migrateShadingModel handles, by re-creating.)
+        prop.setStatus(App::Property::Hidden, true);
+    };
+    _containerProperty<App::PropertyBool, bool>(view, _name, _docu, "Render",
+            def, cb, App::Prop_NoPersist | App::Prop_Hidden);
+}
+
+/// A per-view option of the External shading model's Cycles session
+/// (group "Cycles", so the property editor shows it as <Name> under a
+/// "Cycles" heading, the way "Render Shadow" works). Persisted: how
+/// hard a view refines is part of how it is meant to be seen. The
+/// device is the exception -- saved by name but re-mapped onto each
+/// machine's own list (remapCyclesDeviceProperty), which is why it is
+/// not created through this helper.
+template<class PropT, class ValueT>
+static ValueT _cyclesParam(App::PropertyContainer *view, const char *_name,
+                           const char *_docu, const ValueT &def) {
+    if (!view)
+        return def;
+    auto cb = [](PropT &){};
+    return _containerProperty<PropT, ValueT>(view, _name, _docu, "Cycles",
+                                             def, cb);
+}
+
 template<class PropT, class ValueT, class CallbackT>
 static ValueT _hiddenLineParam(View3DInventor *view, const char *_name, const char *_docu, const ValueT &def, CallbackT cb) {
     if (!view)
@@ -715,6 +754,10 @@ struct View3DInventorViewer::Private
     /// so a frame can tell a restated scene or setting from a camera
     /// move. Fed from renderScene() just before the backend's frame.
     std::unique_ptr<Render::Cycles::Viewport> cyclesViewport;
+    /// What the running session was created with, so syncExternalShading
+    /// can tell an option that moved from a write that restated the same
+    /// value and only restart the session for the former.
+    Render::Cycles::ViewportOptions cyclesOptions;
     Render::Renderer *cyclesHost = nullptr;
     /// The sub-view the consumer is registered under on cyclesHost: 0
     /// on a view of its own, the claim id while it is a canvas cell.
@@ -1920,6 +1963,17 @@ void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
             // re-reads them, so a redraw is enough.
             getSoRenderManager()->scheduleRedraw();
         }
+        else if (boost::starts_with(prop.getName(),"Cycles_")) {
+            // NOT the per-frame config feed: these describe a live
+            // session that is started and stopped, so a change has to
+            // reach setCyclesViewport -- which restarting the sync does,
+            // and only when the effective options actually moved. Not
+            // during restore: each option arriving one property at a
+            // time would restart the session as many times, so Restore
+            // syncs once at its end instead.
+            if (!_pimpl->view || !_pimpl->view->isRestoring())
+                syncExternalShading();
+        }
     }
 }
 
@@ -2185,6 +2239,14 @@ bool View3DInventorViewer::renderWithCycles(const std::string &path, int width, 
     input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
     input.section = RendererBridge::translateSectionConfig(settings);
     input.pbr = RendererBridge::translatePBRConfig(settings);
+    // The facade Render_PBR states the raster shading, so an External
+    // view reads it false -- but a Cycles still of that view must show
+    // the same environment the live session does (which forces the
+    // flag outright, see feedCyclesViewport). Off External the facade
+    // stands: the still keeps matching what the raster view honours.
+    if (_pimpl->view
+            && _pimpl->view->ShadingType.getValue() == View3DInventor::ShadingExternal)
+        input.pbr.enabled = true;
     input.bump = RendererBridge::translateBumpConfig(settings);
     input.output = RendererBridge::translateOutputConfig(settings);
     input.light = RendererBridge::translateLightConfig(nullptr, settings);
@@ -2259,6 +2321,65 @@ bool View3DInventorViewer::cyclesViewportStatus(Render::Cycles::ViewportStatus &
     return true;
 }
 
+void View3DInventorViewer::syncExternalShading()
+{
+    View3DInventor *view = _pimpl->view;
+    if (!view
+            || view->ShadingType.getValue() != View3DInventor::ShadingExternal) {
+        // Off External (or a viewer with no MDI view, which cannot state
+        // the choice): whatever session ran, stop it. A cheap no-op when
+        // none does.
+        setCyclesViewport(nullptr, nullptr);
+        return;
+    }
+    // Only Cycles exists; ExternalRenderType is consulted the day a
+    // second engine registers. The options are the view's Cycles_*
+    // properties where materialized, the preferences underneath where
+    // not -- the same effective-value rule every Render_* setting
+    // follows.
+    App::PropertyContainer *settings = _pimpl->renderSettings();
+    Render::Cycles::ViewportOptions options;
+    options.device = RenderParams::getCyclesDevice();
+    options.samples = int(RenderParams::getCyclesSamples());
+    options.timeLimit = RenderParams::getCyclesTimeLimit();
+    options.denoise = RenderParams::getCyclesDenoise();
+    options.pixelSize = int(RenderParams::getCyclesPixelSize());
+    if (settings) {
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyEnumeration>(
+                    settings->getPropertyByName("Cycles_Device"))) {
+            if (prop->isValid())
+                options.device = prop->getValueAsString();
+        }
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyInteger>(
+                    settings->getPropertyByName("Cycles_Samples")))
+            options.samples = int(prop->getValue());
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyFloat>(
+                    settings->getPropertyByName("Cycles_TimeLimit")))
+            options.timeLimit = prop->getValue();
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyBool>(
+                    settings->getPropertyByName("Cycles_Denoise")))
+            options.denoise = prop->getValue();
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyInteger>(
+                    settings->getPropertyByName("Cycles_PixelSize")))
+            options.pixelSize = int(prop->getValue());
+    }
+    // A write that restated the running value -- the shading options
+    // refresh loop, a document touch -- must not throw the refining
+    // frame away.
+    if (_pimpl->cyclesViewport
+            && options.device == _pimpl->cyclesOptions.device
+            && options.samples == _pimpl->cyclesOptions.samples
+            && options.timeLimit == _pimpl->cyclesOptions.timeLimit
+            && options.denoise == _pimpl->cyclesOptions.denoise
+            && options.pixelSize == _pimpl->cyclesOptions.pixelSize)
+        return;
+    std::string error;
+    if (setCyclesViewport(&options, &error))
+        _pimpl->cyclesOptions = options;
+    else
+        Base::Console().Warning("External shading: %s\n", error.c_str());
+}
+
 void View3DInventorViewer::Private::detachCyclesConsumer()
 {
     if (cyclesHost && cyclesHost == renderer.get()) {
@@ -2309,6 +2430,15 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
 
     App::PropertyContainer *settings = renderSettings();
     Render::PBRConfig pbr = RendererBridge::translatePBRConfig(settings);
+    // A running Cycles session IS external shading, whatever started
+    // it (the External shading type or the cyclesViewport() binding),
+    // so the enabled flag it receives states that fact -- not the
+    // Render_PBR facade, which only says what the RASTER pipeline
+    // shades and reads false by design under External. Left as the
+    // facade, the env background gate in translateWorld (pbr.enabled
+    // && pbr.envBackground) could never pass and the environment went
+    // missing behind every External frame.
+    pbr.enabled = true;
     Render::BumpConfig bump = RendererBridge::translateBumpConfig(settings);
     Render::SectionConfig secconf = RendererBridge::translateSectionConfig(settings);
     Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
@@ -4076,14 +4206,47 @@ void View3DInventorViewer::clearGraphicsItems()
 
 int View3DInventorViewer::getNumSamples()
 {
-    // 4x by default. The backend resolves its own offscreen target, so
-    // the cost is a wider render target and not a cloned GL context,
-    // and edge-dominated CAD geometry is the content multisampling
-    // helps most -- an unantialiased silhouette is the first thing that
-    // reads as "not a real render".
+    // Off by default. It used to be 4x, on the reasoning that
+    // edge-dominated CAD geometry is what multisampling helps most and
+    // an unantialiased silhouette is the first thing that reads as "not
+    // a real render". The first half of that is no longer true: lines
+    // and points resolve their own coverage analytically now
+    // (fs_fc_line), and measured over twelve screen angles at width 2,
+    // turning MSAA off costs them nothing -- the spread across angles is
+    // 2.9% without it against 4.9% with. Before analytic coverage the
+    // same measurement read 43.5% with MSAA off, which is what used to
+    // make it mandatory.
+    //
+    // What MSAA still buys is the TRIANGLE silhouette, which has no
+    // analytic coverage of its own. Measured since
+    // (scripts/silhouette_msaa.py), on a sphere's limb, as the share of
+    // limb rows carrying real partial coverage:
+    //
+    //                       MSAA off    MSAA 4x
+    //   camera moving           0.0%      58.8%
+    //   camera parked          75.0%      98.8%
+    //
+    // Two corrections to what this comment used to say. It is NOT
+    // confined to Shaded: the claim was that Flat Lines and Wireframe
+    // draw an edge along every silhouette and hide it, which holds for a
+    // POLYHEDRON, whose silhouettes are all topological edges. A sphere
+    // or cylinder shows a LIMB, and no edge lies along it, so Flat Lines
+    // has nothing to draw there -- it measures identically to Shaded,
+    // row for row, in every column above.
+    //
+    // And a PARKED view repairs itself: idle temporal accumulation
+    // (Render_TemporalAccum) converges over ~32 jittered samples in
+    // about 2.5s and lifts a bare limb to 75% partial coverage with MSAA
+    // still off. So what this default gives up is confined to the frames
+    // drawn WHILE THE CAMERA MOVES -- and a probe that settles the view
+    // before capturing measures the accumulation instead, and reports
+    // that MSAA off costs nothing at all.
+    //
+    // Users who want the moving frames antialiased too can turn it back
+    // on.
     long samples = App::GetApplication().GetParameterGroupByPath
         ("User parameter:BaseApp/Preferences/View")
-        ->GetInt("AntiAliasing", View3DInventorViewer::MSAA4x);
+        ->GetInt("AntiAliasing", View3DInventorViewer::None);
 
     // NOLINTBEGIN
     switch (samples) {
@@ -4894,6 +5057,11 @@ void View3DInventorViewer::setRendererType(const std::string &type)
                 _pimpl->renderer ? SoRenderManager::AS_IS
                                  : SoRenderManager::HIDDEN_LINE);
     }
+    // The external session's prerequisites moved with the backend --
+    // gone, a running session must stop (detachCyclesConsumer above
+    // only unhooks the frame); arrived, a view already set External can
+    // finally start.
+    syncExternalShading();
 }
 
 int View3DInventorViewer::backgroundReleaseDelay() const
@@ -5152,8 +5320,13 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     }
     _renderParam<App::PropertyFloat>(view, "Exposure",
             RenderParams::docExposure(), RenderParams::getExposure());
-    _renderParam<App::PropertyBool>(view, "PBR",
-            RenderParams::docPBR(), RenderParams::getPBR());
+    // The shading model. On a 3D view the enum is the truth and seeds
+    // its facade; anywhere else the preference does, as it always did.
+    auto shadingView = Base::freecad_dynamic_cast<View3DInventor>(view);
+    _shadingModelParam(view, "PBR", RenderParams::docPBR(),
+            shadingView ? shadingView->ShadingType.getValue()
+                              == View3DInventor::ShadingRealistic
+                        : RenderParams::getPBR());
     static const App::PropertyFloatConstraint::Constraints _unit_cstr(0.0,1.0,0.1);
     auto applyUnitConstraint = [](App::PropertyFloatConstraint &prop) {
         if (!prop.getConstraints())
@@ -5216,10 +5389,14 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _renderParam<App::PropertyBool>(view, "PBREnvBackground",
             RenderParams::docPBREnvBackground(),
             RenderParams::getPBREnvBackground());
+    _renderParam<App::PropertyFloat>(view, "PBREnvBlur",
+            RenderParams::docPBREnvBlur(), RenderParams::getPBREnvBlur());
     // Matcap is the other shading model: it overrides PBR while on, so it
     // follows it here.
-    _renderParam<App::PropertyBool>(view, "Matcap",
-            RenderParams::docMatcap(), RenderParams::getMatcap());
+    _shadingModelParam(view, "Matcap", RenderParams::docMatcap(),
+            shadingView ? shadingView->ShadingType.getValue()
+                              == View3DInventor::ShadingMatcap
+                        : RenderParams::getMatcap());
     // An enumeration, like Render_AOMethod above: materialized by hand so
     // the names are installed before the value is set.
     if (!view->getPropertyByName("Render_MatcapPreset")) {
@@ -5372,6 +5549,27 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             RenderParams::docGroundReflectionIntensity(),
             RenderParams::getGroundReflectionIntensity());
 
+    // The External shading model's Cycles session options
+    // (docs/CyclesIntegration.md phase 4), materialized only where the
+    // engine exists to read them: a build without it has no session to
+    // configure, and the shading options section probes the device
+    // property for exactly that.
+    if (Render::Cycles::available()) {
+        remapCyclesDeviceProperty(view);
+        _cyclesParam<App::PropertyInteger>(view, "Samples",
+                RenderParams::docCyclesSamples(),
+                RenderParams::getCyclesSamples());
+        _cyclesParam<App::PropertyFloat>(view, "TimeLimit",
+                RenderParams::docCyclesTimeLimit(),
+                RenderParams::getCyclesTimeLimit());
+        _cyclesParam<App::PropertyBool>(view, "Denoise",
+                RenderParams::docCyclesDenoise(),
+                RenderParams::getCyclesDenoise());
+        _cyclesParam<App::PropertyInteger>(view, "PixelSize",
+                RenderParams::docCyclesPixelSize(),
+                RenderParams::getCyclesPixelSize());
+    }
+
     // No occlusion-culling and no RenderDebug_* switch properties: those
     // are performance mechanisms and measurement state, global
     // RenderParams only. They used to be materialized here (hidden), and
@@ -5380,6 +5578,56 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     // shader parameters (docs/RenderDebug.md sec 2.5) remain per-view: they
     // are dynamically named, created by the user or a script, and no
     // global parameter could stand in for them.
+}
+
+void Gui::remapCyclesDeviceProperty(App::PropertyContainer *view)
+{
+    if (!view || !Render::Cycles::available())
+        return;
+    // The TYPES this machine can compute on, in devices() order:
+    // ViewportOptions.device names a type, so two cards of one type are
+    // still one entry here.
+    std::vector<std::string> types;
+    for (const auto &device : Render::Cycles::devices()) {
+        bool seen = false;
+        for (const auto &type : types)
+            seen = seen || type == device.type;
+        if (!seen)
+            types.push_back(device.type);
+    }
+    if (types.empty())
+        return;
+    auto prop = Base::freecad_dynamic_cast<App::PropertyEnumeration>(
+            view->getPropertyByName("Cycles_Device"));
+    // The value is read as a NAME, never an index: an index is the
+    // originating machine's answer -- index 1 is OPTIX here and
+    // something else elsewhere.
+    std::string wanted = RenderParams::getCyclesDevice();
+    if (prop) {
+        if (prop->isValid())
+            wanted = prop->getValueAsString();
+    }
+    else {
+        prop = static_cast<App::PropertyEnumeration*>(view->addDynamicProperty(
+                "App::PropertyEnumeration", "Cycles_Device", "Cycles",
+                RenderParams::docCyclesDevice()));
+    }
+    // Match by name, else the first entry, so the view still renders on
+    // a machine that lacks the saved device instead of failing on it.
+    long index = 0;
+    for (size_t i = 0; i < types.size(); ++i) {
+        if (types[i] == wanted) {
+            index = long(i);
+            break;
+        }
+    }
+    // The list is replaced even when the value looks right: left alone,
+    // a restored property keeps offering the other machine's devices in
+    // its combo.
+    if (prop->getEnumVector() != types)
+        prop->setEnums(types);
+    if (!prop->isValid() || prop->getValue() != index)
+        prop->setValue(index);
 }
 
 const char * const *Gui::shadowRenderPropertyNames()

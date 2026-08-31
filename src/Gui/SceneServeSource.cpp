@@ -364,6 +364,12 @@ public:
             return;
         App::PropertyContainer *settings = &renderProps;
         Render::PBRConfig pbr = RendererBridge::translatePBRConfig(settings);
+        // A Cycles stream IS external shading: the client asked for the
+        // path tracer, so the enabled flag states that choice, not the
+        // Render_PBR facade (which only says what a raster pipeline
+        // would shade) -- same rule as the viewport session, and what
+        // lets Render_PBREnvBackground be seen in the streamed frame.
+        pbr.enabled = true;
         Render::BumpConfig bump = RendererBridge::translateBumpConfig(settings);
         Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
         Render::LightConfig light = RendererBridge::translateLightConfig(nullptr, settings);
