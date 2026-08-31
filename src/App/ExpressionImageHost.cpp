@@ -504,6 +504,23 @@ void ImageHost::reset()
     d->triedInit = false;
 }
 
+bool ImageHost::rawCall(const std::vector<unsigned char>& requestCbor,
+                        std::vector<unsigned char>& replyCbor)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    if (!d->initialize())
+        return false;
+    json reply;
+    std::vector<uint8_t> req(requestCbor.begin(), requestCbor.end());
+    if (!d->roundTrip(req, reply)) {
+        reset();
+        return false;
+    }
+    auto cbor = json::to_cbor(reply);
+    replyCbor.assign(cbor.begin(), cbor.end());
+    return true;
+}
+
 ImageResult ImageHost::eval(const std::string& source,
                             const std::vector<unsigned char>& bindingsCbor)
 {

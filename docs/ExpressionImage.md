@@ -76,6 +76,11 @@ header.  On this box:
       src/App/ExpressionImage
     .conda/run.sh env CFLAGS= CXXFLAGS= LDFLAGS= ninja -C build/wasi-image
 
+The project defaults `CMAKE_BUILD_TYPE` to Release; do not configure it
+away.  With an empty build type every TU we compile lands at -O0 while
+CPython stays -O3, and the round trip measured 3-6x slower (see "The
+evaluation switch-over" below).
+
 The `CFLAGS= CXXFLAGS= LDFLAGS=` scrub matters: the conda env exports
 x86 flags (`-march=nocona ...`) that break the cross compile.
 `FREECAD_GENERATED_DIR` reuses the host build's generated `*Py.h/cpp`
@@ -352,6 +357,9 @@ recorded here.
 **It runs.**  Measured in Firefox 136 on this box, against the packed
 bundle: fetch 128 ms, compile+instantiate 268 ms, `fcx_init` 31 ms, and
 140 us per expression round trip (parse + evaluate + CBOR both ways).
+Those are -O0 IMAGE numbers (see "The evaluation switch-over" below):
+the same measurement on the Release image has not been re-taken, and the
+desktop equivalent fell 3-6x when it was.
 The full Ring 0 set evaluates -- arithmetic, quantities, engine
 functions, `_math`/`_py`/`_coll`/`_re` -- and every confinement negative
 behaves as it does under wasmtime.
@@ -430,3 +438,97 @@ report is also left on `window.fcxReport`.  To run it:
     cd src/Gui/Renderer/web && npm run build     # sandboxtest.js + the page
     scripts/fcx-web-stage.sh                     # bundle -> build/wasm/web/fcx
     python3 -m http.server -d build/wasm/web     # then open sandbox-test.html
+
+## The evaluation switch-over: what one round trip costs (measured 2026-08-31)
+
+Phase 0 deferred architecture A (the C++ value path, ExpressionSandbox.md
+sec 4A) with the caveat that the switch-over is where the verdict could
+flip: if a desktop round trip cost anything like the browser's measured
+140 us, a whole-sheet recompute through the image would be 10-60x slower
+and A would become a prerequisite.  So the switch-over starts with the
+number, not a design.
+
+Rig: `ExpressionImageBenchTest` in `tests/src/App/ExpressionImageHost.cpp`
+-- DISABLED_ benchmarks that time the native engine and the image path in
+ONE binary on ONE box, so the comparison carries no cross-rig error.  Run:
+
+    ninja -C build/conda-relwithdebinfo-801
+    FCX_IMAGE=$PWD/build/wasi-image/fcx_image.wasm \
+    FCX_STDLIB=$HOME/works/sw/cpython-wasi/Python-3.12.13/Lib \
+      build/conda-relwithdebinfo-801/tests/Tests_run \
+      --gtest_also_run_disabled_tests --gtest_filter='*Bench*'
+
+### THE IMAGE WAS BUILT -O0
+
+The first run said 79 us for an arithmetic expression and 114 us for one
+property read -- squarely in the "architecture A becomes a prerequisite"
+band.  It was a build defect, not a boundary cost: the standalone image
+project never set `CMAKE_BUILD_TYPE`, so **every TU we compile into the
+image was -O0**.  CPython comes from its own `-O3` build, so the
+unoptimized half was exactly the glue on the hot path -- nlohmann CBOR,
+the marshaller, the expression walker, the bindings.  The CMakeLists now
+defaults to Release; rebuilding cut every image number 3-6x and the
+payload 39.4 -> 34.3 MB.
+
+  case                             -O0      Release
+  transport floor (rejected op)   18.0 us    2.68 us
+  transport + 1 kB of payload     43.6 us   10.41 us
+  expr literal, no owner          40.8 us    6.00 us
+  evalExpression arithmetic       78.8 us   13.36 us
+  evalExpression one property    114.2 us   20.92 us
+  evalExpression five properties 221.3 us   36.44 us
+  one mid-eval bridge hop        +95   us  +31.6  us
+
+Anything measured against the older image (including the browser tier's
+140 us round trip) is an -O0 number and should be re-taken.
+
+### The numbers that decide the design
+
+Native engine, in-process, same binary and box:
+
+  parse + eval `1+2*3-4/5`            2.03 us
+  eval only, AST already parsed       0.32 us
+  parse only                          1.40 us
+  parse + eval `Width * 2`            2.96 us
+
+Image, warm instance, Release:
+
+  transport floor (op the image rejects)          2.68 us
+  transport, +1 kB request payload               10.41 us  (~7.7 ns/byte)
+  expr literal, no owner (no host parse/pack)     6.00 us
+  expr literal with owner                         9.21 us
+  evalExpression `1+2*3-4/5`                     13.36 us
+  evalExpression `Width * 2`                     20.92 us
+  evalExpression 5 properties                    36.44 us
+    of which the host-side pack alone            12.08 us
+  python-lang literal (CPython compile+eval)     11.91 us
+  one mid-eval bridge hop (read_prop)            +31.6  us
+  instantiate + first eval from the .cwasm       15-16 ms
+
+**Verdict: architecture A is NOT a prerequisite for the switch-over.**
+An arithmetic evaluation costs 6.6x native (13.4 vs 2.0 us) and a
+property-referencing one 7.1x (20.9 vs 3.0 us) -- an absolute delta of
+11-18 us per evaluation.  Against the 13.2 us/cell a 10k-cell sheet
+recompute costs today, routing every cell through the image projects to
+~24-31 us/cell, i.e. **0.13 s -> ~0.25-0.31 s for the whole sheet**, not
+the 1.3-8 s the -O0 numbers implied.  Anything touching `.Shape` (175+
+us/cell today) is unaffected in relative terms.  A is still worth having
+as an optimization; it is not the gate.
+
+Where the remaining 11-18 us sits, and what would cut it:
+
+- **2.7 us is the irreducible-ish transport** (fcx_alloc + fcx_call +
+  two fcx_free wasmtime calls, two memcpys, CBOR both ways).
+- **~3.3 us is host-side per-eval work that repeats** -- `Expression::
+  parse` (1.4 us, the AST is thrown away every call) plus minting and
+  releasing the owner handle.  Both are per-transaction, not per-eval:
+  a prepared-expression cache and a transaction-scoped owner handle
+  remove them.
+- **~3.3 us is the in-image parse** of the same source, likewise once
+  per distinct source if the image caches prepared ASTs by key.
+- **~2.4 us per binding on the host** (resolve + marshal), which the
+  native path pays too, and ~7.7 ns/byte of CBOR either way -- the
+  argument for keeping packs small rather than for batching them.
+- **A mid-eval bridge hop is 31.6 us**, 12x the transport floor, which
+  is the quantitative case for pack-first: reach-back is the expensive
+  shape, exactly as sec 7.3 assumed.

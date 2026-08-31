@@ -762,3 +762,225 @@ TEST_F(ExpressionImageAcceptanceTest, foreignDocGrantRevokeCycle)
     App::GetApplication().closeDocument(other->getName());
     std::remove(path2.c_str());
 }
+
+// ---- the switch-over measurement (docs/ExpressionImage.md "The
+// ---- evaluation switch-over"): what one desktop round trip through
+// ---- the image costs against the in-process engine, in ONE binary on
+// ---- ONE box.  DISABLED_ so the suite never pays for it; run with
+// ---- --gtest_also_run_disabled_tests --gtest_filter='*Bench*'.
+
+#include <chrono>
+#include <iostream>
+
+class ExpressionImageBenchTest: public ExpressionImageEvalTest
+{
+protected:
+    /// Mean wall time of `fn` over `iters` runs, reported in us.
+    template<class F>
+    static double benchUs(const char* name, int iters, F&& fn)
+    {
+        fn();  // warm: first call pays instantiation / cache fills
+        auto t0 = std::chrono::steady_clock::now();
+        for (int i = 0; i < iters; ++i)
+            fn();
+        auto t1 = std::chrono::steady_clock::now();
+        double us =
+            std::chrono::duration<double, std::micro>(t1 - t0).count() / iters;
+        std::cout << "BENCH " << name << " " << us << " us  (n=" << iters
+                  << ")" << std::endl;
+        return us;
+    }
+};
+
+TEST_F(ExpressionImageBenchTest, DISABLED_BenchNativeEngine)
+{
+    Base::PyGILStateLocker lock;
+    const std::string arith = "1 + 2 * 3 - 4 / 5";
+    const std::string prop = "Width * 2";
+
+    benchUs("native.parse+eval.arith", 20000, [&] {
+        auto e = App::Expression::parse(obj, arith.c_str(), arith.size());
+        auto v = e->getValueAsAny();
+        (void)v;
+    });
+    auto cached = App::Expression::parse(obj, arith.c_str(), arith.size());
+    benchUs("native.eval.arith.cachedAST", 20000, [&] {
+        auto v = cached->getValueAsAny();
+        (void)v;
+    });
+    benchUs("native.parse+eval.prop", 20000, [&] {
+        auto e = App::Expression::parse(obj, prop.c_str(), prop.size());
+        auto v = e->getValueAsAny();
+        (void)v;
+    });
+    benchUs("native.parse.only.arith", 20000, [&] {
+        auto e = App::Expression::parse(obj, arith.c_str(), arith.size());
+        (void)e;
+    });
+}
+
+TEST_F(ExpressionImageBenchTest, DISABLED_BenchImageRoundTrip)
+{
+    // (a) the wire floor: smallest possible request, no pack, no
+    //     in-image expression parse
+    auto floorRes = ImageHost::instance().eval("1", {});
+    ASSERT_TRUE(floorRes.ok) << floorRes.excType << ": " << floorRes.message;
+    benchUs("image.wire.floor", 2000, [&] {
+        auto r = ImageHost::instance().eval("1", {});
+        (void)r;
+    });
+
+    // (b) the full desktop path for arithmetic: host parse + pack +
+    //     owner export + CBOR + wasm call + in-image parse + walk
+    auto a = ImageHost::instance().evalExpression(obj, "1 + 2 * 3 - 4 / 5");
+    ASSERT_TRUE(a.ok) << a.excType << ": " << a.message;
+    benchUs("image.evalExpression.arith", 2000, [&] {
+        auto r = ImageHost::instance().evalExpression(obj, "1 + 2 * 3 - 4 / 5");
+        (void)r;
+    });
+
+    // (c) the same with one identifier: adds a host-side property
+    //     resolve + marshal into the bindings pack
+    auto p = ImageHost::instance().evalExpression(obj, "Width * 2");
+    ASSERT_TRUE(p.ok) << p.excType << ": " << p.message;
+    benchUs("image.evalExpression.prop", 2000, [&] {
+        auto r = ImageHost::instance().evalExpression(obj, "Width * 2");
+        (void)r;
+    });
+
+    ImageHost::instance().clearHandles();
+}
+
+TEST_F(ExpressionImageBenchTest, DISABLED_BenchImageBridgeHop)
+{
+    // One mid-eval reach-back (read_prop) on top of a python-lang eval:
+    // the cost pack-first evaluation exists to avoid.
+    auto bind = objectBinding("o", obj);
+    auto res = ImageHost::instance().eval("o.Width", bind);
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    benchUs("image.eval.oneBridgeHop", 2000, [&] {
+        auto r = ImageHost::instance().eval("o.Width", bind);
+        (void)r;
+    });
+    benchUs("image.eval.noBridgeHop", 2000, [&] {
+        auto r = ImageHost::instance().eval("42.0", {});
+        (void)r;
+    });
+    ImageHost::instance().clearHandles();
+}
+
+TEST_F(ExpressionImageBenchTest, DISABLED_BenchImageInstantiation)
+{
+    // Warm instantiation from the .cwasm: the per-principal zygote cost
+    // that pooling has to amortize.
+    for (int i = 0; i < 3; ++i) {
+        ImageHost::instance().reset();
+        auto t0 = std::chrono::steady_clock::now();
+        auto r = ImageHost::instance().eval("1", {});
+        auto t1 = std::chrono::steady_clock::now();
+        ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+        std::cout << "BENCH image.instantiate+firstEval "
+                  << std::chrono::duration<double, std::milli>(t1 - t0).count()
+                  << " ms" << std::endl;
+    }
+}
+
+TEST_F(ExpressionImageBenchTest, DISABLED_BenchImageBreakdown)
+{
+    // Split the round trip into host-side pack, crossing, and in-image
+    // evaluation, using only ops that exist today (no image rebuild).
+
+    // no owner: no parse, no pack, no owner handle -- crossing plus the
+    // in-image expression parse of a single literal
+    benchUs("image.expr.noOwner.literal", 2000, [&] {
+        auto r = ImageHost::instance().evalExpression(nullptr, "1");
+        (void)r;
+    });
+    // same source WITH an owner: adds host parse + owner export + the
+    // security scope, and nothing else (a literal has no identifiers)
+    benchUs("image.expr.owner.literal", 2000, [&] {
+        auto r = ImageHost::instance().evalExpression(obj, "1");
+        (void)r;
+    });
+    // CPython compile+eval of the same literal, same crossing
+    benchUs("image.python.literal", 2000, [&] {
+        auto r = ImageHost::instance().eval("1", {});
+        (void)r;
+    });
+    benchUs("image.python.arith", 2000, [&] {
+        auto r = ImageHost::instance().eval("1 + 2 * 3 - 4 / 5", {});
+        (void)r;
+    });
+
+    // per-binding marginal cost: five dynamic properties in one
+    // expression against one
+    for (int i = 0; i < 5; ++i) {
+        std::string name = "W" + std::to_string(i);
+        auto p = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            obj->addDynamicProperty("App::PropertyFloat", name.c_str()));
+        ASSERT_NE(p, nullptr);
+        p->setValue(double(i + 1));
+    }
+    benchUs("image.expr.oneBinding", 2000, [&] {
+        auto r = ImageHost::instance().evalExpression(obj, "W0 + 1");
+        (void)r;
+    });
+    benchUs("image.expr.fiveBindings", 2000, [&] {
+        auto r = ImageHost::instance().evalExpression(
+            obj, "W0 + W1 + W2 + W3 + W4");
+        (void)r;
+    });
+
+    // the host half of the five-binding pack, measured alone (parse +
+    // identifier enumeration + resolve + marshal), no crossing
+    {
+        Base::PyGILStateLocker lock;
+        const std::string src = "W0 + W1 + W2 + W3 + W4";
+        benchUs("host.pack.fiveBindings", 5000, [&] {
+            auto e = App::Expression::parse(obj, src.c_str(), src.size());
+            std::map<App::ObjectIdentifier, bool> ids;
+            e->getIdentifiers(ids);
+            App::ExpressionSandbox::HandleTable table;
+            json bindings = json::object();
+            for (auto& v : ids) {
+                Py::Object value = v.first.getPyValue(true);
+                bindings[v.first.toString()] =
+                    App::ExpressionSandbox::encodeHostValue(table, value.ptr());
+            }
+            auto cbor = json::to_cbor(bindings);
+            (void)cbor;
+            table.clear();
+        });
+    }
+
+    ImageHost::instance().clearHandles();
+}
+
+TEST_F(ExpressionImageBenchTest, DISABLED_BenchTransportFloor)
+{
+    // An op the image rejects before touching CPython or the parser:
+    // this is the pure transport cost (fcx_alloc + fcx_call + two
+    // fcx_free wasmtime calls, two memcpys, CBOR both ways).
+    json ping;
+    ping["op"] = "ping";
+    auto req = json::to_cbor(ping);
+    std::vector<unsigned char> reqBytes(req.begin(), req.end());
+    std::vector<unsigned char> replyBytes;
+    ASSERT_TRUE(ImageHost::instance().rawCall(reqBytes, replyBytes));
+    json reply = json::from_cbor(replyBytes.begin(), replyBytes.end());
+    EXPECT_FALSE(reply.value("ok", true));
+    benchUs("image.transport.floor", 5000, [&] {
+        std::vector<unsigned char> out;
+        ImageHost::instance().rawCall(reqBytes, out);
+    });
+
+    // the same request with a kilobyte of payload: the slope of the
+    // transport in request size
+    ping["pad"] = std::string(1024, 'x');
+    auto big = json::to_cbor(ping);
+    std::vector<unsigned char> bigBytes(big.begin(), big.end());
+    benchUs("image.transport.1kB", 5000, [&] {
+        std::vector<unsigned char> out;
+        ImageHost::instance().rawCall(bigBytes, out);
+    });
+}

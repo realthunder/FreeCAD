@@ -23,6 +23,15 @@ project(FCExpressionImage C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Default to an optimized image.  Without this the project configures
+# with an EMPTY build type, i.e. -O0 for every TU we compile -- CPython
+# itself is -O3 from its own build, so the unoptimized half is exactly
+# the glue on the hot path (CBOR, the marshaller, the expression walker),
+# and it measured 3-5x slower per round trip.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 set(CPYTHON_WASI_SRC "" CACHE PATH
     "CPython source tree with a builddir/wasi cross build in it")
 set(FREECAD_GENERATED_DIR "" CACHE PATH

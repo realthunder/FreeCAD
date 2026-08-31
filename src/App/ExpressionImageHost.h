@@ -109,6 +109,15 @@ public:
     /// Live handle count (tests: proxies release on image-side __del__).
     std::size_t handleCount() const;
 
+    /** Raw protocol call: a CBOR request in, the CBOR reply out, with
+     * no host-side parsing, packing or result re-encoding.  Diagnostics
+     * and measurement (the transport floor) plus any future op the
+     * typed entry points above do not cover; returns false when the
+     * image is unavailable or the round trip failed.
+     */
+    bool rawCall(const std::vector<unsigned char>& requestCbor,
+                 std::vector<unsigned char>& replyCbor);
+
     /// Drop the live instance (tests; recovering from a trapped image).
     /// Handles survive a reset: they are host-side state.
     void reset();
