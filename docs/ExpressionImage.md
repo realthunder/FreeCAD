@@ -864,25 +864,40 @@ directory and NOT beside the image.
 **What a release still needs, and it is not expression work.**  Checked
 2026-08-31: **conda-forge has no wasmtime at all**, and Anaconda's
 `main` channel has 11.0.1 and 29.0.0 -- both far below the
-exception-handling floor, and the CLI rather than the C API.  So the
-feedstocks need one of:
+exception-handling floor, and the CLI rather than the C API.
 
-- a `wasmtime` package in the `realthunder` channel carrying
-  `include/` + `lib/libwasmtime.so` (repackaging the upstream release
-  tarball, as is done for other channel packages), plus the ~10.5 MB
-  image as a data package or as an artifact the recipe fetches; or
-- a static link (`libwasmtime.a` ships in the same tarball), which
-  removes the runtime dependency entirely -- then only the image has to
-  be packaged.  MEASURED 2026-08-31 by relinking this build with
-  `-DWasmtime_LIBRARY=.../libwasmtime.a`: `libFreeCADApp.so` goes from
-  148.2 MB to 184.2 MB on disk and its text from **8.3 MB to 33.3 MB**,
-  i.e. +25.0 MB of code folded in, with no wasmtime `DT_NEEDED` left
-  and all 49 image and routing tests passing.  Nothing else is needed
-  to try it: the find module supplies the Rust staticlib's own system
-  dependencies (`dl`, `pthread`, `m`) when the library it found is an
-  archive -- without them the link fails as a wall of undefined
-  `dlsym`, which reads like a broken toolchain rather than a missing
-  `-ldl`.
+**DECIDED 2026-09-01 (user): the link stays SHARED, and wasmtime becomes
+a package.**  `~/works/sw/wasmtime-capi-feedstock` builds
+`wasmtime-capi` for the `realthunder` channel from the upstream release
+artifact; once it is published the feedstock adds it to `host` and
+`run`, the library lands inside the prefix, and `FREECAD_BUNDLE_WASMTIME`
+defaults itself off.
+
+Size did not decide it -- the two forms carry the same code.  Measured
+2026-08-31 by relinking this build with
+`-DWasmtime_LIBRARY=.../libwasmtime.a`: text goes from **8.3 MB to
+33.3 MB**, +25.0 MB folded in, against **23.8 MB** of text in
+`libwasmtime.so` standing alone (24.2 MB stripped on disk, versus a
+stripped `libFreeCADApp.so` of 8.2 MB).  Within a megabyte of each
+other.  What decided it is where this is going:
+
+- The compute direction (`docs/ComputeBoundaries.md`, and the
+  out-of-process OCCT goal) means SEVERAL FreeCAD processes at once,
+  each recomputing documents and therefore evaluating expressions.
+  Shared text is one physical copy the page cache hands to all of them;
+  statically linked it is a private copy per process.
+- `docs/ExpressionSandbox.md` sec 8 moves progressively more Python
+  into the image -- rung 2 scripted-object `Proxy` code, rung 3 the
+  console and macros, rung 4 Python workbenches -- and contemplates a
+  second instance at addon-grade trust.  More of the process will want
+  this runtime, not less, and folding it into `libFreeCADApp.so` makes
+  a second consumer link its own copy of the Rust runtime.
+
+The static path still works and is one flag (`-DWasmtime_LIBRARY=` an
+archive): the find module supplies the Rust staticlib's own system
+dependencies (`dl`, `pthread`, `m`), without which the link fails as a
+wall of undefined `dlsym` that reads like a broken toolchain rather
+than a missing `-ldl`.
 
 Either way the image itself has to arrive as a prebuilt artifact: a
 feedstock box cannot cross-build it without wasi-sdk 33 and a
