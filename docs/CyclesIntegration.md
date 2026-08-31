@@ -1542,6 +1542,157 @@ to them), so they report and render stock. The render report's
 own texture uploads, and Cycles loads these from file itself.
 
 
+### 6.10 The raster half: OpenPBR and the generator (phase B step 2, built 2026-08-31)
+
+Cycles reads a MaterialX document by interpreting it (section 6.9).
+The rasterizer cannot: it has no node vocabulary, it has a shading
+language. So the raster half is two pieces -- a surface model both
+engines can describe, and a generator that turns a document into shader
+text for it.
+
+**The mesh shader shades an OpenPBR surface.** The PBR branch evaluated
+a single metallic/roughness GGX lobe, which has no expression for a
+coat or a fuzz and no relation to what the Cycles translator builds
+beyond the two sockets they happen to share. It now evaluates OpenPBR
+(ASWF v1.1), the model Cycles' Principled BSDF v2 is aligned to, so the
+two engines describe ONE surface. `fc_openpbr.sh` carries it: the
+diffuse (EON), dielectric specular, metal (F82-tint conductor), coat
+and fuzz lobes, the slab weights that layer them, and the environment
+terms. OpenPBR-viewer's rasterizer is the reference, with four
+departures the file states in full:
+
+- The lobe DIRECTIONAL ALBEDOS -- which the slab layering needs at
+  every fragment and the environment terms reuse -- are the analytic
+  split-sum fit the IBL path already used, not the reference's
+  16-sample Monte Carlo. Sixteen GGX samples per lobe per fragment is
+  not a viewport budget.
+- No transmission and no subsurface lobe. A rasterizer cannot refract
+  through geometry: transmission is the glass pass's business
+  (docs/ShaderDesign.md 3.8) and subsurface has no raster route at all,
+  so it degrades to diffuse.
+- No anisotropy (no tangent frame on the untextured path, and an
+  isotropic environment probe) and no thin film (rasterizable, but ~180
+  lines of complex arithmetic on every mesh draw).
+- None of the OpenPBR 1.2 extras -- specular haze, retroreflectivity,
+  dispersion. These have no socket in Cycles' Principled either, so
+  implementing them would move raster AWAY from parity.
+
+The first two are RASTER limits, not Cycles ones: Cycles renders
+transmission, subsurface, anisotropy and thin film properly, so a
+document using them is a known divergence between the two engines
+rather than a parity failure. Only the last group is absent from both.
+
+**The inputs did not change.** A draw still arrives as a base colour, a
+metalness and a roughness; the Khronos spec-gloss solve still stands in
+where nothing authored a metalness; and the rest of OpenPBR's
+parameters keep their spec defaults, which is exactly the stock CAD
+surface. One change at a time: the shading model moved, the appearance
+data did not, so the tuned presets still read as themselves. Measured
+by A/B against the previous shaders on demo-pbr, same tree and frozen
+frames: mean radiance ratio 0.9991, with the differences confined to
+the spheres and strongest on the smooth non-metal highlight rims --
+where the exact dielectric Fresnel replaces Schlick at f0 = 0.04 and
+the diffuse gives up the energy the specular layer takes. The 1.2
+direct-light gain the branch has carried since PBR arrived is kept for
+the same reason, and is now named and explained rather than sitting
+bare in the arithmetic.
+
+**The generator** (`MaterialXGen.cpp`) emits a MATERIAL-INPUTS
+function, not a program:
+
+    void fcUserMaterialInputs(inout FcOpenPbr m, FcMtlxGeom g)
+
+MaterialX's own hardware generator emits a complete lit shader -- its
+lighting, its environment, its uniform blocks -- and none of that is
+wanted, because the engine already owns shadows, IBL, the section clip
+and the per-face palettes, and a document that replaced them would lose
+every one. The document describes the SURFACE; the engine keeps the
+lighting.
+
+That shape falls out of one fact about the library: OpenPBR's reference
+implementation IS a MaterialX nodegraph, so the stock generator emits a
+call to it carrying every OpenPBR parameter and then 2100 lines of
+closure. Registering an implementation of our own for that nodegraph --
+`GenContext::addNodeImplementation`, which wins over expanding it --
+leaves the pattern graph above generating exactly as MaterialX would,
+with the whole standard library behind it, and never expands the
+closure below. The default OpenPBR material comes out at 79 lines
+instead of 2176. A stated constant folds to a literal rather than a
+uniform nothing would write (`SHADER_INTERFACE_REDUCED`), so a value
+change regenerates -- what a document leaves genuinely open becomes a
+`Param_*` in step 3.
+
+Three things the stock pixel stage does had to be redone rather than
+inherited, and each was a failure before it was a decision:
+
+- A vertex-data port is named by its SUBSTITUTION TOKEN
+  (`$normalWorld`), not by the text the emitted code carries. The
+  preamble is therefore driven off MaterialX's own vertex-data block
+  and answers each name from the mesh shader's varyings; anything it
+  cannot answer is reported and reads as zero.
+- The geometry arrives as a struct PARAMETER. Read at file scope the
+  varyings compile on GLSL and ESSL and fail on SPIR-V -- the same
+  restriction the existing code records for `gl_FragCoord`.
+- bgfx defines `M_PI` too, and not with identical text, which the
+  preprocessor stops on; and the uv-transform token substitution the
+  image nodes include by name is set by the stage this replaces.
+
+**The splice** follows the volume stage's shape (docs/RenderEngine.md
+sec 5.3): the stock header prototypes the function under
+`FC_USER_MATERIAL`, the assembled variant defines it and appends the
+generated source after the include, and without the define the whole
+thing compiles to nothing. The variant is the stock TEXTURED mesh
+fragment stage -- the one whose vertex stage carries a texture
+coordinate -- without `TEXTURE` defined, so no texture environment is
+applied over what the document states. It is generated and compiled
+once per document identity, not per draw.
+
+A generated material also FORCES the OpenPBR branch. A document is an
+OpenPBR surface by construction, so it cannot shade through a matcap or
+a Phong evaluation -- neither has anywhere to put what the document
+states -- and a frame with PBR mode off carries no environment
+intensity either, so a forced draw takes the environment at full
+strength rather than rendering unlit.
+
+**What the raster path cannot do it reports**, and the draw keeps its
+stock appearance -- the sandboxed-failure rule of section 6.9. Two
+cases: a shading model with no translation to OpenPBR
+(`UsdPreviewSurface` and the hair models translate to nothing), and an
+image node, because nothing binds a texture to a user shader yet.
+Cycles renders both properly, loading image files itself.
+
+**Verification** is in three layers, because the chain is long:
+
+- Ten unit tests (`tests/src/Gui/MaterialXGen.cpp`) pin the generator's
+  contract. They earned their keep: the image guard first read
+  MaterialX's own environment sampler, which is filename-typed too, and
+  so refused every document ever written.
+- Over MaterialX's own example materials, outside the tree, every
+  document that generates was compiled through the in-tree shaderc on
+  all three profiles (glsl, spirv, essl): 24 of the 50 examples, the
+  other 26 being the reported cases above.
+- `build/probes/mtlxraster/probe.sh` runs the whole chain from dialect
+  to drawn pixel. Seven legs, all passing: a document overrides the
+  object's own colour (0.115 against the green the box is painted);
+  `multiply(red, 0.5)` renders BIT-IDENTICALLY to a literal half-red
+  and measurably apart from full red; metalness changes the surface
+  (0.066); a coat (0.022) and a fuzz (0.031) change it, and nothing but
+  an OpenPBR evaluation could be drawing those; and a
+  `UsdPreviewSurface` document falls back to the stock appearance
+  EXACTLY (0.0).
+
+Two traps that probe records. A user program compiles ASYNCHRONOUSLY
+and the stock program stands in until it lands -- which draws exactly
+the control frame, so a short settle measures "nothing changed" for
+every leg and reads as a dead splice. And the config the probes copy
+has MATCAP on, which is how the forced branch above came to be needed:
+a document attached to an object rendered as though it were not there.
+
+Not yet: images (a texture bound to a user shader is new engine work),
+`geometry_opacity` (a material cannot move a draw into the transparent
+pass mid-frame), and the `Param_*` interface, which is step 3.
+
+
 ## 7. Preparing for out of process
 
 Cycles is a better candidate for process isolation than OCCT: it is
@@ -1974,7 +2125,7 @@ Phase 6 -- queued, not started. Two items, in this order.
        are fresh. **DONE 2026-08-31, section 6.9.**
     2. The OpenPBR mesh shader, then the bgfx ShaderGen target and
        the splice; parity against the Cycles frames the way the
-       finish probe measures it.
+       finish probe measures it. **DONE 2026-08-31, section 6.10.**
     3. Interface: public inputs -> `Param_*`, the demo preview, and
        a material card able to carry a `.mtlx` (the appearance model
        of MaterialStorage.md already has a file slot).
