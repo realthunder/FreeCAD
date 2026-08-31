@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <cmath>
 #include <map>
 #include <memory>
 #include <sstream>
@@ -308,6 +309,40 @@ QJsonObject sheetGet(const QJsonObject& req, const std::string& boundDoc)
     return reply;
 }
 
+/// Which sheets a document has.  Without this a remote viewer has no way
+/// to find one: a sheet has no geometry, so it never appears in a scene
+/// and can never be picked.
+QJsonObject sheetList(const QJsonObject& req, const std::string& boundDoc)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    App::Document* doc = nullptr;
+    if (!docName.isEmpty())
+        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
+    else if (!boundDoc.empty())
+        doc = App::GetApplication().getDocument(boundDoc.c_str());
+    else
+        doc = App::GetApplication().getActiveDocument();
+    if (!doc)
+        return Gui::sceneControlError(id, "UnknownDocument", docName);
+
+    QJsonArray sheets;
+    for (auto* obj : doc->getObjectsOfType(Sheet::getClassTypeId())) {
+        QJsonObject entry;
+        entry[QLatin1String("obj")] =
+            QString::fromUtf8(obj->getNameInDocument());
+        entry[QLatin1String("label")] =
+            QString::fromUtf8(obj->Label.getValue());
+        sheets.push_back(entry);
+    }
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("doc")] = QString::fromUtf8(doc->getName());
+    reply[QLatin1String("sheets")] = sheets;
+    return reply;
+}
+
 QJsonObject sheetSet(const QJsonObject& req, const std::string& boundDoc)
 {
     QJsonObject error;
@@ -322,7 +357,35 @@ QJsonObject sheetSet(const QJsonObject& req, const std::string& boundDoc)
         return Gui::sceneControlError(id, "BadRequest",
                                       QStringLiteral("bad cell address '%1'")
                                           .arg(cellName));
-    const QString content = req.value(QLatin1String("content")).toString();
+    // A cell's content is TEXT ("=B6 * B7", "42", "2.5kg").  But JSON has
+    // numbers, and QJsonValue::toString() answers an empty string for
+    // anything that is not a string -- so a client sending {"content": 42}
+    // would silently WIPE the cell instead of setting it.  Convert what has
+    // an obvious text form, and refuse the rest loudly.  An absent key is a
+    // malformed request, not an instruction to clear: clearing is an
+    // explicit empty string.
+    const QJsonValue contentValue = req.value(QLatin1String("content"));
+    QString content;
+    if (contentValue.isString()) {
+        content = contentValue.toString();
+    }
+    else if (contentValue.isBool()) {
+        content = contentValue.toBool() ? QStringLiteral("1")
+                                        : QStringLiteral("0");
+    }
+    else if (contentValue.isDouble()) {
+        const double d = contentValue.toDouble();
+        // 17 significant digits round-trips a double; trailing zeros are
+        // trimmed so a whole number arrives as "42", not "42.0000000".
+        content = (d == std::floor(d) && std::abs(d) < 1e15)
+            ? QString::number(qint64(d))
+            : QString::number(d, 'g', 17);
+    }
+    else {
+        return Gui::sceneControlError(
+            id, "BadRequest",
+            QStringLiteral("cell content must be a string, number or bool"));
+    }
 
     // The desktop's edit recipe (SheetModel::setData): one transaction
     // named after the cell, then a recompute.  The document recomputed
@@ -358,6 +421,7 @@ QJsonObject sheetSet(const QJsonObject& req, const std::string& boundDoc)
 
 void SpreadsheetGui::installSheetControlOps()
 {
+    Gui::registerSceneControlOp(QLatin1String("sheet.list"), false, sheetList);
     Gui::registerSceneControlOp(QLatin1String("sheet.get"), false, sheetGet);
     Gui::registerSceneControlOp(QLatin1String("sheet.set"), true, sheetSet);
 

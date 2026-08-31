@@ -6,8 +6,9 @@ tier draws 3D scenes (SceneDump replayed by the wasm bgfx backend) and
 TechDraw pages (Vg2D/Page2D, docs/TechDrawPortAndSection.md sec 24);
 a sheet is neither -- on the desktop it is a Qt widget view
 (`SpreadsheetGui::SheetView`), not a scene graph. Two candidate tiers
-were costed, plus a hybrid. **The deliverable of this pass is the
-decision, not code; nothing below is built.**
+were costed, plus a hybrid. The deliverable of that pass was the
+decision, not code. **BUILT 2026-08-31 -- see sec 5 for what shipped and
+where it departs from the sketch below.**
 
 ## 1. Ground truth
 
@@ -172,3 +173,76 @@ This strengthens the sec 3 decision rather than complicating it:
 completion is query/response by nature, nothing about it is
 rendering. Under the vg tier the exact same op would still be
 needed -- plus a hand-drawn popup.
+
+## 5. Built (2026-08-31)
+
+v0 is in, and it works end to end: a sheet edited in a browser lands in
+the document, and a sheet edited anywhere else appears in the browser.
+
+**Host** (`src/Mod/Spreadsheet/Gui/SheetControl.cpp`): `sheet.list`,
+`sheet.get`, `sheet.set`, and a debounced `sheet.changed` push.
+
+- Core Gui must not link a workbench, so the control channel grew an op
+  REGISTRY: `Gui::registerSceneControlOp(name, mutating, handler)`,
+  called from SpreadsheetGui's init. Declaring `mutating` at
+  registration is what lets the dispatcher refuse an op on a view-only
+  connection before the handler runs.
+- **The serializer formats through `SheetModel`** -- a change from sec 1,
+  which expected the feed to read `Cell` directly with SheetModel as
+  "only the role-mapping reference". Reading it directly would have
+  meant reimplementing several hundred lines of display logic (locale
+  separators, display units, the units schema, error text, alias and
+  negative-number colours) that would drift from the desktop the first
+  time either side changed. SheetModel is a QAbstractTableModel, not a
+  widget: there is nothing to host, and the result is byte-identical to
+  what the desktop shows.
+- `sheet.list` was not in the sec 3 sketch and turns out to be
+  load-bearing: a sheet has no geometry, so it never appears in a scene
+  and can never be picked. Without it a viewer has no way to name one.
+- `sheet.set` follows SheetModel::setData's recipe but recomputes the
+  SHEET's document rather than `App.ActiveDocument` -- a served document
+  need not be the one a window is showing, and a headless backend has no
+  active document at all.
+
+**Client** (`web/src/sheet.tsx`, ~330 lines TSX): a virtualized DOM grid
+with sticky headers, a formula bar, keyboard navigation, and in-cell
+editing. **The grid keeps a light surface** although the surrounding
+chrome is dark: the host sends the desktop's own colours, and black
+text, a yellow alias background and a red error only mean what they mean
+on paper white. The first build painted them onto a dark panel and made
+default-coloured text invisible.
+
+**Placement differs from sec 3.** The sheet is a floating panel (opened
+from the launcher, or `?sheet` in the URL), NOT a split-view content
+kind. Every other card in this chrome is a panel; a panel needed no
+protocol change, no `main.cpp` layout work and no `3d|page|sheet` token,
+and it is the same surface on a phone. The split-cell placement from
+sec 3 remains a reasonable later refinement -- it is a placement
+question, not a capability one.
+
+**Harnesses**, because none existed for this lane:
+`scripts/control-client.py` drives the control channel from a shell (a
+minimal RFC 6455 client inline; the conda env has no websocket library),
+`scripts/demo-sheet.py` is a servable document covering text, numbers,
+quantities, cell-to-cell formulas, a formula reaching into the model, an
+alias, styling and a broken cell, and `web/public/sheet-test.html` runs
+the panel with NO wasm viewer behind it -- the DOM chrome needs only
+`window.fcviewerControlSend` and `fc:control` events, both of which a
+page can provide itself. That harness self-checks by reading the
+panel's own rendered DOM and POSTing a report, which is how the tier is
+verified headlessly.
+
+Two traps worth keeping:
+
+- The server sniffs the LITERAL `"cmd":"hello"` out of a frame to
+  register a connection as a viewer, and only a registered viewer is
+  sent broadcasts. A client using json.dumps' default `", "` spacing
+  gets its replies and silently never receives a single push.
+- `QJsonValue::toString()` answers an EMPTY STRING for a non-string, so
+  `{"content": 42}` on `sheet.set` used to WIPE the cell rather than set
+  it. sheet.set now converts numbers and bools and refuses the rest
+  loudly; an absent `content` is a malformed request, not "clear".
+
+Not built, deliberately: `sheet.complete` (sec 4), windowed
+`sheet.get` for huge sheets, formatting beyond what `Cell` stores,
+column/row resize from the client, and multi-cell selection.

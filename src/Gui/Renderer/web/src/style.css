@@ -668,3 +668,142 @@
   background: rgba(70, 110, 180, 0.9);
   border-color: rgba(255, 255, 255, 0.35);
 }
+
+/* The spreadsheet panel (sheet.tsx, docs/SpreadsheetRemote.md sec 3).
+   A floating card like the inspector: same chrome, same drag, but its
+   body is a real table so the browser's own text selection, clipboard
+   and IME work on it without help. */
+.fc-sheet {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(70vh, 620px);
+  font: 12px system-ui, sans-serif;
+  color: #e8e8ea;
+  background: rgba(24, 26, 30, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.fc-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: move;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.fc-sheet-spacer { flex: 1; }
+.fc-sheet-pick,
+.fc-sheet-input {
+  font: 12px system-ui, sans-serif;
+  color: #e8e8ea;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.fc-sheet-ro {
+  font-size: 11px;
+  color: #f0c070;
+  border: 1px solid rgba(240, 192, 112, 0.4);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.fc-sheet-close {
+  font-size: 16px;
+  line-height: 1;
+  color: #e8e8ea;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.fc-sheet-formula {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.fc-sheet-addr {
+  min-width: 44px;
+  font-weight: 600;
+  color: #a8b4c4;
+}
+.fc-sheet-formula .fc-sheet-input { flex: 1; }
+.fc-sheet-error {
+  padding: 4px 8px;
+  color: #ffb0b0;
+  background: rgba(120, 30, 30, 0.35);
+}
+/* The grid is DOCUMENT content, not chrome, so it keeps a document's light
+   surface even though the panel around it is dark. The host sends the
+   desktop's own colours -- black text, the yellow alias background, a green
+   total, a red error -- and those only mean what they mean on paper white.
+   Painting them onto a dark panel made default-coloured text invisible. */
+.fc-sheet-grid {
+  overflow: auto;
+  outline: none;
+  background: #fdfdfc;
+  color: #1a1a1a;
+}
+.fc-sheet-grid table {
+  border-collapse: separate;
+  border-spacing: 0;
+  /* The host sends the desktop's column widths; honour them exactly. */
+  table-layout: fixed;
+}
+.fc-sheet-grid th,
+.fc-sheet-grid td {
+  border-right: 1px solid #dcdcd8;
+  border-bottom: 1px solid #dcdcd8;
+  padding: 1px 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Sticky headers -- the thing Page2D's single page transform could not
+   do without engine changes, and the reason this tier is DOM. */
+.fc-sheet-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #ececea;
+  font-weight: 500;
+  color: #4a4a48;
+}
+.fc-sheet-rowhead {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 38px;
+  text-align: right;
+  background: #ececea;
+  font-weight: 500;
+  color: #4a4a48;
+}
+.fc-sheet-corner {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: #e2e2df;
+}
+.fc-sheet-grid td { cursor: cell; }
+.fc-sheet-sel { outline: 2px solid #5a8fd6; outline-offset: -2px; }
+.fc-sheet-err { color: #c00000; }
+.fc-sheet-cellinput {
+  width: 100%;
+  font: 12px system-ui, sans-serif;
+  color: #101010;
+  background: #ffffff;
+  border: none;
+  outline: none;
+  padding: 0;
+}

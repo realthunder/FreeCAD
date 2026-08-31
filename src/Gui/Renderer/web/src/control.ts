@@ -79,9 +79,31 @@ const pending = new Map<
   { resolve: (v: any) => void; reject: (e: ControlError) => void; timer: number }
 >();
 
+/// Subscribers to unsolicited pushes, by op name. The control lane
+/// carries both answers (correlated by id) and pushes (no id) — a push
+/// is the backend saying something changed, never a reply.
+const pushHandlers = new Map<string, Set<(msg: any) => void>>();
+
+/// Listen for a pushed op. Returns the unsubscribe.
+export function onPush(op: string, fn: (msg: any) => void): () => void {
+  let set = pushHandlers.get(op);
+  if (!set) { set = new Set(); pushHandlers.set(op, set); }
+  set.add(fn);
+  return () => { set!.delete(fn); };
+}
+
 window.addEventListener('fc:control', (e: Event) => {
   const d = (e as CustomEvent).detail;
-  if (!d || typeof d.id !== 'number') return;
+  if (!d) return;
+  if (typeof d.id !== 'number') {
+    // No id: a push. Delivered to whoever asked for that op.
+    if (typeof d.op === 'string') {
+      for (const fn of pushHandlers.get(d.op) ?? []) {
+        try { fn(d); } catch (err) { console.error('push handler failed', err); }
+      }
+    }
+    return;
+  }
   const p = pending.get(d.id);
   if (!p) return;
   pending.delete(d.id);
@@ -208,4 +230,69 @@ export function setProperty(
   value: unknown,
 ): Promise<any> {
   return sendOp('setProperty', { doc, obj, target, name, value });
+}
+
+// ---------------------------------------------------------------------------
+// The spreadsheet tier (docs/SpreadsheetRemote.md sec 3).
+
+/// One cell as the host serializes it. Keys are short because the used
+/// range travels whole: `t` is what the desktop displays, `f` what an
+/// editor opens with, and they differ for anything computed.
+export interface SheetCell {
+  a: string;                 // address, "B4"
+  r: number;
+  c: number;
+  t?: string;                // display text
+  f?: string;                // content / formula
+  ha?: 'left' | 'center' | 'right';
+  va?: 'top' | 'middle' | 'bottom';
+  fg?: string;
+  bg?: string;
+  st?: string[];             // bold / italic / underline
+  sr?: number;               // span rows
+  sc?: number;               // span columns
+  alias?: string;
+  err?: string;
+}
+
+export interface SheetData {
+  doc: string;
+  obj: string;
+  label: string;
+  version: number;
+  rows: number;
+  cols: number;
+  cells: SheetCell[];
+  colW: Record<string, number>;
+  rowH: Record<string, number>;
+}
+
+export interface SheetEntry { obj: string; label: string }
+
+export function sheetList(doc?: string): Promise<{ doc: string; sheets: SheetEntry[] }> {
+  return sendOp('sheet.list', doc ? { doc } : {});
+}
+
+export function sheetGet(obj: string, doc?: string): Promise<SheetData> {
+  return sendOp('sheet.get', doc ? { doc, obj } : { obj });
+}
+
+/// Commit one cell. The reply is the ack; the refreshed values arrive
+/// through the sheet.changed push that follows, exactly as setProperty's
+/// scene update does — never treat the ack as the new state.
+export function sheetSet(
+  obj: string,
+  cell: string,
+  content: string,
+  doc?: string,
+): Promise<{ version: number }> {
+  return sendOp('sheet.set', doc ? { doc, obj, cell, content } : { obj, cell, content });
+}
+
+/// The backend's "this sheet moved on" cue: identity and version only,
+/// so a viewer showing another sheet ignores it without a round trip.
+export function onSheetChanged(
+  fn: (msg: { doc: string; obj: string; version: number }) => void,
+): () => void {
+  return onPush('sheet.changed', fn);
 }

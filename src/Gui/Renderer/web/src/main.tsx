@@ -4,6 +4,7 @@
 import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 import { Inspector } from './inspector';
+import { SheetPanel } from './sheet';
 import { HudCard } from './hud';
 import { LauncherMenu } from './menu';
 import { LoupeOverlay } from './loupe';
@@ -136,6 +137,14 @@ const openCard = (subject: Subject) =>
 // the narrow layout; anywhere else both are on screen at once.
 const [cardOpen, setCardOpen] = createSignal(false);
 
+// The spreadsheet panel (docs/SpreadsheetRemote.md sec 3). Opened from the
+// launcher: a sheet has no geometry, so unlike every other card in this
+// chrome it can never be reached by picking something in the view. `?sheet`
+// opens it on load, so a link can point straight at the numbers -- and so a
+// headless run can screenshot the panel, which no click can reach.
+const [sheetOpen, setSheetOpen] = createSignal(
+  new URLSearchParams(location.search).has('sheet'));
+
 // The selection menu: mode (single/multi) and pick filter, pushed to
 // the viewer as it changes (docs/ThinClientUI.md). Session-local on
 // purpose — a filter someone forgot yesterday reads as broken picking
@@ -231,6 +240,8 @@ render(() => (
     <SplitOverlay />
     <Inspector selection={selection} request={request}
                onCardOpen={setCardOpen} viewOnly={viewOnly} />
+    <SheetPanel open={sheetOpen} onClose={() => setSheetOpen(false)}
+                viewOnly={viewOnly} doc={() => docs().current} />
     <LoupeOverlay mark={loupe} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
     <LauncherMenu
@@ -241,6 +252,9 @@ render(() => (
           onSelect: () => openCard('viewdoc') },
         { label: clientName() ? `Name: ${clientName()}` : 'Set name…',
           onSelect: askName },
+        { label: 'Spreadsheet',
+          checked: () => sheetOpen(),
+          onSelect: () => setSheetOpen(!sheetOpen()) },
         { label: 'HUD',
           checked: () => hud() !== null,
           onSelect: () => window.fcviewerSetHud?.(hud() === null) },
