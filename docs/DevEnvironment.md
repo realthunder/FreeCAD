@@ -1235,10 +1235,75 @@ not by core count. A machine with more memory can and should go wider; that limi
 not inherent to the tree. `FREECAD_USE_PCH=OFF` (inherited from the `conda` preset)
 makes this worse and is worth revisiting.
 
+On **this** box -- 16 threads, 64 GB -- memory is not the limit and interactivity
+is: ninja's default (cores + 2, so 18 concurrent `cl.exe`) makes the machine
+unusable while a build runs. The standing cap here is therefore **`-j 6`**, and it
+is a budget for the whole box rather than per build -- when two builds could
+overlap, run them one after the other rather than six each. `build-fcad.cmd`
+below defaults to it.
+
 Note also that `BGFX_BUILD_TOOLS_SHADER=ON` drags in **tint/Dawn** from bgfx's
 3rdparty tree — hundreds of heavy C++ TUs that dwarf FreeCAD's own code. It is needed
 to compile shaders (`ninja Renderer_assets`), but it is the single largest
 contributor to a cold Windows build.
+
+### The wrapper scripts in `D:\works\sw\tools`
+
+Everything above is the underlying command. Day to day these wrap it, and they carry
+the flags that are easy to forget; `build-fcad-cycles.cmd` is the Cycles variant
+covered in the next section.
+
+| Script | What it does |
+|---|---|
+| `build-fcad.cmd [jobs]` | configure from the user preset, then build. **Jobs default to 6.** |
+| `run_cdb.ps1` | launch FreeCAD under `cdb` in one reused console |
+| `mcp_run.py <script.py>` | run Python inside the *running* FreeCAD over MCP |
+| `run-cycles.cmd` | `run.cmd` plus the two variables Cycles' GPU devices need |
+
+**`build-fcad.cmd`** exists because `run.cmd` alone hid cmake failures -- it
+propagates the exit code, printing `BUILD-FCAD: CONFIGURE FAILED` or
+`BUILD-FCAD: BUILD FAILED` and ending with `BUILD-FCAD: OK`, which is the string
+worth grepping a log for. It also stages `area.dll` beside `FreeCAD.exe` after every
+build: the libarea package's DLL is only ever imported by `.pyd` modules, and Python
+3.8+ does not search `PATH` for those -- only the app directory, `system32` and
+`os.add_dll_directory()` entries.
+
+**`run_cdb.ps1`** owns ONE console for the whole session, so do not hand-roll a
+`Start-Process` line. Plain invocation launches or relaunches, `-Status` prints the
+console/cdb/FreeCAD pids, `-Stop` closes it. It refuses with `BUSY` while FreeCAD is
+up, so quit the app first. Inside the console you get a real prompt: `fcad`
+relaunches, Up recalls it. The cdb flags it carries are `-server tcp:port=9310`
+(first, so `cdb -remote tcp:server=localhost,port=9310` can attach later), `-G` so
+the exit-time break cannot freeze the box, `-lines`, `-cf cdb_arm.cmd` to arm the
+crash dumps, and `-logo dbg\cdb_freecad.log`.
+
+Two traps. **A reused console runs the launch command it was born with** --
+`Start-FreeCAD` and its argument array are defined when the console starts, so after
+editing `run_cdb.ps1`, or passing `-UserHome`/`-StartupScript`, which change those
+arguments, a plain relaunch prints `REUSED` and silently launches the *old* command
+line. `-Stop` first. And a process created by a debugger gets the NT debug heap
+unless `_NO_DEBUG_HEAP=1` is set, which makes OCCT crawl in `free()`; the script sets
+it, which is half of why it exists.
+
+**`mcp_run.py`** talks to the MCP console that the running FreeCAD brings up itself,
+from `DocumentParams MCPServerAutoStart`. Two things about the port: this build
+listens on **8791**, not the 8765 default, because on this mirrored-networking box
+the WSL2 FreeCAD answers 8765 *and* 8766 on the Windows `127.0.0.1` -- and
+`mcp_run.py`'s own default is 8766, so **`FCAD_MCP_URL` has to be set**. A probe
+against the wrong port hangs in retries rather than erroring, which reads exactly
+like the app having failed to start. If the port was already taken FreeCAD takes the
+next free one and says so, as a console warning and in the Tools -> MCP server
+tooltip, so read the port there rather than assuming it.
+
+```bat
+set FCAD_MCP_URL=http://127.0.0.1:8791/mcp
+.conda\run.cmd python D:\works\sw\tools\mcp_run.py probe.py
+```
+
+Pass a **script file**, not `-c "code"`: nested through `cmd /c ".conda\run.cmd ..."`
+the quoting is stripped and the console gets a `SyntaxError` on an unterminated
+string. Confirm identity before believing any session -- `App.getHomePath()` must
+start with `D:/` for the Windows build, or you are driving the WSL one.
 
 ### Cycles on Windows -- where OptiX and HIP can actually be tested
 
@@ -1812,6 +1877,60 @@ RelWithDebInfo. Neither has been tried here yet.
 `AutoSaveEnabled`, with FreeCAD closed). A session that is killed or closed with an
 open document leaves recovery data behind, and the *next* launch puts a modal Document
 Recovery dialog over the window — which is exactly what you were trying to look at.
+
+## Regenerating the bundled material icons
+
+Two scripts draw the icons that ship in `MatGui`. Both write into
+`src/Mod/Material/Gui/Resources/icons/materials`, and both rewrite their own block of
+`Material.qrc` between a pair of marker comments. The workflow is to run one and
+commit whatever changed.
+
+| Script | Draws | Needs |
+|---|---|---|
+| `scripts/material-icons.py` | `Look_<digest>.png`, one per distinct appearance | FreeCAD and a renderer (`MatGui.renderMaterialIcon`) |
+| `scripts/pattern-icons.py` | `Pattern_<name>.png`, one per hatch card | only PySide -- it reads the cards and draws with QPainter |
+
+```bat
+.conda\run.cmd python scripts\pattern-icons.py
+```
+
+The file name is not decoration, it is how the icon is found again. Each generator's
+naming function has a C++ counterpart in `MaterialIcons` -- `resource_name()` against
+`patternResourceName()`, `shared_name()` against `sharedResourceName()` -- and the
+two must agree exactly, because the C++ side resolves one name at a time and never
+sees the whole set. Change one and you have to change the other.
+
+**A generated name has to be unique case-INSENSITIVELY.** Pattern names come from the
+cards, and the bundle legitimately holds two that differ only in case: the PAT
+`Square`, a line definition `DrawGeomHatch` turns into real geometry, and the SVG
+`square`, a tile `DrawHatch` fills with. They coexist upstream because they sit in
+different libraries. Flattened into one icons directory with the case preserved they
+became `Pattern_Square.png` and `Pattern_square.png` -- two tracked paths differing
+only in case, which is fine on Linux and is ONE file on Windows and on a default
+macOS checkout. Two things follow, and neither announces itself:
+
+- git materialises whichever it writes last, so the other path reports permanently
+  modified and the tree can never be clean;
+- Windows keeps a file's existing casing when it overwrites, so drawing `square`
+  wrote into the `Pattern_Square.png` already sitting there, and the stale sweep --
+  which lists the directory and drops whatever no card claims -- then deleted it as
+  an unclaimed name. That run shipped 31 swatches for 32 cards, and reported 32.
+
+A name carrying any uppercase therefore takes a six-hex sha1 of itself
+(`Pattern_Square-82810c.png`), which case folding cannot collapse. Keep that property
+for any new generated icon set. To check the whole tree for the general fault:
+
+```bash
+git ls-files | awk '{l=tolower($0); if (l in s) print s[l], "<->", $0; s[l]=$0}'
+```
+
+**`Material.qrc` is `text` in `.gitattributes`**, so git stores it with LF and checks
+it out with the platform's ending -- CRLF on Windows. Both generators match their
+block markers with the file's own ending for that reason. Matching a bare newline
+finds nothing there, and the "first run has no block yet" branch then appends a
+second block instead of replacing the first, leaving the stale names in the qrc
+beside the new ones. The scripts still report the count they drew, which is right --
+it is the qrc that ends up with twice as many entries as there are icons.
 
 ## Porting state / caveats
 
