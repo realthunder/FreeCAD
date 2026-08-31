@@ -20,10 +20,22 @@ a `Param_*` property on its ShaderProgram (sec 6.11). Select
 property editor, and the ball follows -- no shader is regenerated, the
 value is a uniform. The script prints which balls carry parameters.
 
+`MTLX_CYCLES=1` renders the same frame with the Cycles path tracer as
+well. It goes through the VIEWPORT rather than a standalone render, so
+the capture is the ordinary 3D view with the path-traced image blitted
+into it -- the same frame, the same chrome, the labels included -- and
+the two shots can be held side by side. It needs a build with
+BUILD_CYCLES; without one it says so and the raster shot still stands.
+
 Usage: FreeCAD scripts/demo-materialx.py       (GUI or xvfb)
-Env:   MTLX_DOC   save path (default data/examples/render/materialx-showcase.FCStd)
-       MTLX_SHOT  screenshot path (optional, saveRenderDump)
-       MTLX_EXIT  "1" = exit after save/shot (for scripted runs)
+Env:   MTLX_DOC     save path (default data/examples/render/materialx-showcase.FCStd)
+       MTLX_SHOT    screenshot path (optional, saveRenderDump)
+       MTLX_CYCLES  "1" = also render the frame with Cycles
+       MTLX_CYCLES_SHOT  where that goes (default: MTLX_SHOT with a
+                         "-cycles" suffix, else beside the document)
+       MTLX_CYCLES_DEV   "CPU" (default) or "CUDA"
+       MTLX_CYCLES_SPP   samples, default 128
+       MTLX_EXIT    "1" = exit after save/shot (for scripted runs)
 """
 import os, time, traceback
 import FreeCAD, FreeCADGui
@@ -41,6 +53,12 @@ ASSETS = os.path.join(REPO, "scripts", "materialx")
 DOC = os.environ.get("MTLX_DOC", os.path.join(
     REPO, "data", "examples", "render", "materialx-showcase.FCStd"))
 SHOT = os.environ.get("MTLX_SHOT", "")
+CYCLES = os.environ.get("MTLX_CYCLES", "") == "1"
+CYCLES_DEV = os.environ.get("MTLX_CYCLES_DEV", "CPU")
+CYCLES_SPP = int(os.environ.get("MTLX_CYCLES_SPP", "128"))
+CYCLES_SHOT = os.environ.get("MTLX_CYCLES_SHOT", "") or (
+    os.path.splitext(SHOT)[0] + "-cycles.png" if SHOT
+    else os.path.splitext(DOC)[0] + "-cycles.png")
 EXIT = os.environ.get("MTLX_EXIT", "") == "1"
 
 COLS = 6
@@ -110,6 +128,46 @@ def materials():
         with open(path, "r") as handle:
             out.append((name, label, handle.read()))
     return out
+
+
+def cycles_shot(view, width, height):
+    """The same frame, path traced, captured from the view itself.
+
+    cyclesRender() would write the path-traced image alone; the
+    viewport blits it into the ordinary 3D view instead, so saving the
+    view gives the frame WITH the annotation labels and the rest of the
+    chrome, which is what makes it comparable to the raster shot.
+    """
+    try:
+        view.cyclesViewport(True, device=CYCLES_DEV, samples=CYCLES_SPP,
+                            denoise=True)
+    except Exception as exc:
+        say("materialx demo: no Cycles in this build (%s)" % (exc,))
+        return
+    # It renders progressively into the view, so the capture waits for
+    # the sample budget rather than for a call to return.
+    deadline = time.time() + 900
+    progress = None
+    while time.time() < deadline:
+        pump(3)
+        time.sleep(0.2)
+        status = view.cyclesViewportStatus()
+        if not status:
+            continue
+        if status["error"]:
+            say("materialx demo: cycles viewport error: %s" % status["error"])
+            return
+        if status["progress"] != progress:
+            progress = status["progress"]
+            say("materialx demo: cycles %.0f%% (%s)"
+                % (100.0 * progress, status["status"]))
+        if progress is not None and progress >= 0.999:
+            break
+    pump(6)
+    view.saveImage(CYCLES_SHOT, width, height, "Current")
+    status = view.cyclesViewportStatus() or {}
+    say("materialx showcase cycles shot: %s (%s, %d spp, %s shaders)"
+        % (CYCLES_SHOT, CYCLES_DEV, CYCLES_SPP, status.get("shaders")))
 
 
 def label(doc, name, text, x, z, size=12):
@@ -217,6 +275,9 @@ def build():
         if SHOT:
             view.saveRenderDump(SHOT)
             say("materialx showcase shot: %s" % SHOT)
+        if CYCLES:
+            width, height = view.getSize()
+            cycles_shot(view, width, height)
     except Exception:
         traceback.print_exc()
         FreeCAD.Console.PrintError("materialx showcase FAILED\n")
