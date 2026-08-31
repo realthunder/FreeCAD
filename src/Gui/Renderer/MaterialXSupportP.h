@@ -72,6 +72,27 @@ std::string resolveFile(const mx::DocumentPtr &doc, const std::string &name);
 /// one thing a syntactically valid document can still get wrong.
 std::vector<mx::NodePtr> surfaceShaders(const mx::DocumentPtr &doc);
 
+/// The public interface of a document (docs/CyclesIntegration.md sec
+/// 6.11): the inputs DECLARED by the node graphs that feed \a surface,
+/// in document order. Reachability is what keeps the standard library
+/// out of it -- importing the library puts hundreds of its own graphs
+/// in the document, and only the ones the rendered surface actually
+/// reaches are the document's interface. An input no node inside its
+/// graph names is left out: it is declared but drives nothing.
+std::vector<MaterialInput> publicInputs(const mx::DocumentPtr &doc,
+                                        const mx::NodePtr &surface);
+
+/// Override the document's public inputs with `u_<name>` parameter
+/// values (the vec4-lane packing of RenderDebugConfig::UserParam), in
+/// place. This is how the path tracer takes a parameter: it has no
+/// uniforms, so a value becomes part of the document it interprets and
+/// then a ValueNode in the shader graph, where the raster path binds a
+/// uniform lane instead. A parameter naming no public input is ignored
+/// -- the same list feeds both consumers and carries the reserved
+/// entries (fc_state, ...) that neither reads here.
+void applyInputs(const mx::DocumentPtr &doc,
+                 const std::vector<RenderDebugConfig::UserParam> &params);
+
 /// The one surface a document renders, as an OpenPBR node. OpenPBR is
 /// the canonical surface model, so a document stating any other one is
 /// put through MaterialX's OWN translation graphs rather than a second

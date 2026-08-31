@@ -28,10 +28,12 @@
 
 #ifdef HAVE_MATERIALX
 
+#include <cctype>
 #include <mutex>
 #include <set>
 
 #include <MaterialXCore/Material.h>
+#include <MaterialXCore/Value.h>
 #include <MaterialXFormat/Util.h>
 #include <MaterialXFormat/XmlIo.h>
 #include <MaterialXGenShader/ShaderTranslator.h>
@@ -246,6 +248,173 @@ mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc, std::string &error,
     return shaders.front();
 }
 
+namespace
+{
+
+/// The characters a FreeCAD property name and a GLSL uniform name can
+/// both carry. A MaterialX input name is already almost always one of
+/// those, so this changes nothing in practice and refuses nothing.
+std::string identifier(const std::string &raw)
+{
+    std::string out;
+    for (char c : raw) {
+        out += (std::isalnum(static_cast<unsigned char>(c)) || c == '_') ? c : '_';
+    }
+    if (out.empty() || std::isdigit(static_cast<unsigned char>(out[0])))
+        out.insert(out.begin(), '_');
+    return out;
+}
+
+/// A MaterialX value as floats, one per component. False for the types
+/// a parameter cannot carry -- a string, a matrix, and a filename,
+/// which is an image and has no binding on either consumer yet.
+bool valueFloats(const mx::ValuePtr &value, std::vector<float> &out)
+{
+    if (!value)
+        return false;
+    if (value->isA<float>())
+        out = { value->asA<float>() };
+    else if (value->isA<int>())
+        out = { float(value->asA<int>()) };
+    else if (value->isA<bool>())
+        out = { value->asA<bool>() ? 1.0f : 0.0f };
+    else if (value->isA<mx::Vector2>()) {
+        auto v = value->asA<mx::Vector2>();
+        out = { v[0], v[1] };
+    }
+    else if (value->isA<mx::Vector3>()) {
+        auto v = value->asA<mx::Vector3>();
+        out = { v[0], v[1], v[2] };
+    }
+    else if (value->isA<mx::Color3>()) {
+        auto v = value->asA<mx::Color3>();
+        out = { v[0], v[1], v[2] };
+    }
+    else if (value->isA<mx::Vector4>()) {
+        auto v = value->asA<mx::Vector4>();
+        out = { v[0], v[1], v[2], v[3] };
+    }
+    else if (value->isA<mx::Color4>()) {
+        auto v = value->asA<mx::Color4>();
+        out = { v[0], v[1], v[2], v[3] };
+    }
+    else
+        return false;
+    return true;
+}
+
+/// Write floats back onto an input as the value of its own type.
+void setInputValue(const mx::InputPtr &input, const std::string &type,
+                   const std::vector<float> &v)
+{
+    auto at = [&v](size_t i) { return i < v.size() ? v[i] : 0.0f; };
+    if (type == "float")
+        input->setValue(at(0));
+    else if (type == "integer")
+        input->setValue(int(at(0)));
+    else if (type == "boolean")
+        input->setValue(at(0) != 0.0f);
+    else if (type == "vector2")
+        input->setValue(mx::Vector2(at(0), at(1)));
+    else if (type == "vector3")
+        input->setValue(mx::Vector3(at(0), at(1), at(2)));
+    else if (type == "color3")
+        input->setValue(mx::Color3(at(0), at(1), at(2)));
+    else if (type == "vector4")
+        input->setValue(mx::Vector4(at(0), at(1), at(2), at(3)));
+    else if (type == "color4")
+        input->setValue(mx::Color4(at(0), at(1), at(2), at(3)));
+}
+
+}  // namespace
+
+std::vector<MaterialInput> publicInputs(const mx::DocumentPtr &doc,
+                                        const mx::NodePtr &surface)
+{
+    std::vector<MaterialInput> res;
+    if (!doc || !surface)
+        return res;
+    // The graphs the rendered surface reaches, first sighting first.
+    // Reachability is not a nicety: importLibrary puts every one of the
+    // standard library's own node graphs in the document, so
+    // getNodeGraphs() answers with hundreds of graphs that are nobody's
+    // interface.
+    std::vector<mx::NodeGraphPtr> graphs;
+    std::set<std::string> seen;
+    try {
+        for (mx::Edge edge : surface->traverseGraph()) {
+            mx::ElementPtr up = edge.getUpstreamElement();
+            mx::ElementPtr parent = up ? up->getParent() : nullptr;
+            mx::NodeGraphPtr graph = parent ? parent->asA<mx::NodeGraph>()
+                                            : mx::NodeGraphPtr();
+            if (graph && seen.insert(graph->getNamePath()).second)
+                graphs.push_back(graph);
+        }
+    }
+    catch (const std::exception &) {
+        // A cycle stops the traversal; what it found before that still
+        // stands, and the document is reported elsewhere.
+    }
+    std::set<std::string> names;
+    for (const auto &graph : graphs) {
+        // Which of the declared inputs the graph's own nodes name. One
+        // it does not name is declared and drives nothing, and a
+        // property for it would be a knob wired to nothing.
+        std::set<std::string> used;
+        for (mx::ElementPtr elem : graph->traverseTree()) {
+            mx::InputPtr in = elem->asA<mx::Input>();
+            if (in && in->hasInterfaceName())
+                used.insert(in->getInterfaceName());
+        }
+        for (const mx::InputPtr &in : graph->getInputs()) {
+            if (!used.count(in->getName()))
+                continue;
+            MaterialInput input;
+            if (!valueFloats(in->getValue(), input.value))
+                continue;
+            input.type = in->getType();
+            input.path = in->getNamePath();
+            input.label = in->getAttribute("uiname");
+            input.folder = in->getAttribute("uifolder");
+            input.help = in->getAttribute("doc");
+            // Two graphs may each declare a "scale". The plain name is
+            // what a document means, so it stays the name of the first
+            // one and the second is qualified by its graph.
+            std::string name = identifier(in->getName());
+            if (!names.insert(name).second) {
+                name = identifier(graph->getName() + "_" + in->getName());
+                if (!names.insert(name).second)
+                    continue;
+            }
+            input.name = std::move(name);
+            res.push_back(std::move(input));
+        }
+    }
+    return res;
+}
+
+void applyInputs(const mx::DocumentPtr &doc,
+                 const std::vector<RenderDebugConfig::UserParam> &params)
+{
+    if (params.empty() || !doc)
+        return;
+    std::vector<mx::NodePtr> shaders = surfaceShaders(doc);
+    if (shaders.empty())
+        return;
+    std::vector<MaterialInput> inputs = publicInputs(doc, shaders.front());
+    for (const auto &input : inputs) {
+        const std::string uniform = "u_" + input.name;
+        for (const auto &param : params) {
+            if (param.name != uniform)
+                continue;
+            mx::ElementPtr elem = doc->getDescendant(input.path);
+            if (mx::InputPtr target = elem ? elem->asA<mx::Input>() : mx::InputPtr())
+                setInputValue(target, input.type, param.values);
+            break;
+        }
+    }
+}
+
 DocumentInfo inspect(const std::string &xml, const std::string &sourcePath)
 {
     DocumentInfo info;
@@ -282,6 +451,11 @@ DocumentInfo inspect(const std::string &xml, const std::string &sourcePath)
     }
     for (const auto &missing : info.missingImages)
         info.warnings.push_back("image not found: " + missing);
+    // The interface is read from the document AS AUTHORED, not from
+    // the OpenPBR translation of it: a graph interface survives the
+    // translation untouched, so one enumeration answers for the
+    // property editor, the path tracer and the generator alike.
+    info.inputs = publicInputs(doc, shaders.front());
     info.valid = true;
     return info;
 }

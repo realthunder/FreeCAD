@@ -45,6 +45,35 @@ namespace Render::MaterialX {
 /// Whether this build carries the MaterialX library.
 RendererExport bool available();
 
+/// One public input of a document (docs/CyclesIntegration.md sec 6.11):
+/// an input the document's own node graph DECLARES, which is
+/// MaterialX's way of saying "this is a knob". A value stated on the
+/// surface shader node is the document's statement, not an interface,
+/// and stays a literal; what is declared here becomes a `Param_*`
+/// dynamic property bound to both consumers.
+struct MaterialInput {
+    /// The parameter's name: the declaring input's own name, made
+    /// unique across the document (prefixed with its graph's name when
+    /// two graphs declare the same one) and reduced to characters a
+    /// property name and a uniform name can both carry.
+    std::string name;
+    /// MaterialX type of the input ("float", "color3", ...).
+    std::string type;
+    /// Namepath of the declaring input element. This is the identity
+    /// the generated shader's published uniforms are matched against,
+    /// and what the path tracer overrides in the document.
+    std::string path;
+    /// What the document says about presenting it: `uiname`,
+    /// `uifolder` and `doc`. Empty where the document says nothing.
+    std::string label;
+    std::string folder;
+    std::string help;
+    /// The document's own value, one float per component (1, 2, 3 or
+    /// 4 of them). This is the default a consumer uses until something
+    /// overrides it, never a padded lane count.
+    std::vector<float> value;
+};
+
 /// What a document turned out to be: enough for a caller to report the
 /// problem, or to say which surface it will render.
 struct DocumentInfo {
@@ -68,6 +97,11 @@ struct DocumentInfo {
     /// says they are. Reported as warnings: the material still
     /// renders, with those maps missing.
     std::vector<std::string> missingImages;
+    /// The document's public interface, in document order: what the
+    /// graph feeding the first material declares as its inputs. Empty
+    /// when the document declares none, which is what a bare surface
+    /// node with stated values does.
+    std::vector<MaterialInput> inputs;
 };
 
 /// Parse and validate a MaterialX document. `sourcePath` is the file
