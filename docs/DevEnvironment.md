@@ -67,6 +67,18 @@ Debug builds; only the prebuilt deps (Qt, Python, boost, …) are release.
   ~/works/sw/fcad/.conda/run.sh <command...>
   ```
 
+  **`run.sh` does not put conda's compiler on `PATH` as `g++`.** Plain
+  `g++` and `gcc` still resolve to the system Ubuntu toolchain (13.3);
+  the tree is built with `$PREFIX/bin/x86_64-conda-linux-gnu-c++` (15.2),
+  which is what `CMAKE_CXX_COMPILER` names. That only matters for
+  hand-built scratch binaries that LINK the tree's own static libraries:
+  compiled with the system `g++` they build and link without a
+  complaint, then segfault deep inside library code with the
+  instruction pointer somewhere in BSS -- which reads exactly like a
+  defect in the library rather than in the harness. Use
+  `$(grep CMAKE_CXX_COMPILER: <build>/CMakeCache.txt)` for such a
+  binary, or build it through CMake.
+
 ### Recreating the env
 
 ```sh
