@@ -1120,7 +1120,12 @@ runtime GLSL compiler. Coin's nodes carry *source*. Reconciliation:
   shader source declares. The backend zeroes every dynamically bound
   uniform that is not in the consuming draw's parameter list — uniform
   values persist backend-side between frames, so a removed parameter
-  would otherwise keep feeding its stale value.
+  would otherwise keep feeding its stale value. One dialect declares
+  its parameters the other way round: a MATERIALX program's `Param_*`
+  properties are materialized FROM the document, which declares its own
+  interface, and are withdrawn with it
+  (docs/CyclesIntegration.md sec 6.11). Everything downstream of the
+  property is the same chain.
 - **Predefined stages, not arbitrary hooks.** Users pick named attachment
   points: `post` (full-screen pass over composited color — simplest, first),
   `material` (replace surface shading for an object), later possibly

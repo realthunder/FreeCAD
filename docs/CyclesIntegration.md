@@ -1688,9 +1688,143 @@ every leg and reads as a dead splice. And the config the probes copy
 has MATCAP on, which is how the forced branch above came to be needed:
 a document attached to an object rendered as though it were not there.
 
-Not yet: images (a texture bound to a user shader is new engine work),
-`geometry_opacity` (a material cannot move a draw into the transparent
-pass mid-frame), and the `Param_*` interface, which is step 3.
+Not yet: images (a texture bound to a user shader is new engine work)
+and `geometry_opacity` (a material cannot move a draw into the
+transparent pass mid-frame). The `Param_*` interface is step 3, and is
+section 6.11.
+
+
+### 6.11 The declared interface (phase B step 3, built 2026-08-31)
+
+A material is not finished when it renders. Someone has to be able to
+change it -- and a MaterialX document is XML, so without an interface
+the only way to move a number in one is to edit text and recompile a
+shader. Step 3 is that interface: the document's own declared inputs
+become `Param_*` dynamic properties on the `App::ShaderProgram`, bound
+to both consumers.
+
+**What counts as a parameter is what the document DECLARES.** MaterialX
+has one construct for this and the documents in its own library all use
+it: a node graph's `<input>` elements, which carry the value, the type,
+and `uiname`/`uifolder` metadata for presenting it. Those are the
+knobs. A value written on the surface shader node is a different thing
+-- the document's statement about the surface, no more open to change
+than the graph it is wired into -- and it stays the literal section
+6.10 folds it into. So `standard_surface_marble_solid.mtlx` publishes
+six parameters (Color 1, Color 2, Scale 1, Scale 2, Power, Octaves) and
+`open_pbr_carpaint.mtlx`, which declares nothing, publishes none. An
+input a graph declares but no node inside it names is left out too: a
+knob wired to nothing is worse than no knob.
+
+**The direction is reversed** from everything else in the user-shader
+system (docs/RenderDebug.md sec 6.4), where the author declares a
+`Param_*` property and writes a shader that reads the matching uniform.
+Here the document is the authority: the properties are materialized
+from it, one that is no longer declared is withdrawn, and an existing
+property keeps its value, so re-reading a document is not a reset. Only
+a MATERIALX-dialect program's parameters are managed this way -- a
+hand-written `.sc` program's `Param_*` are its author's own and nothing
+takes them away. A document that will not parse withdraws nothing
+either: a document is edited in place, so it spends time unparsable on
+the way from one valid state to the next, and taking the properties
+away over that would take the user's values with them.
+
+**The two consumers take a parameter in their own vocabulary**, which
+is the same split as the document itself:
+
+- Raster: one `uniform vec4 u_<name>` per parameter, read as its own
+  type at the top of the generated function (`u_gain.x`,
+  `u_tint.xyz`, `int(u_octaves.x)`). That is the vec4-lane packing
+  every other user-shader parameter already travels in, so the value
+  reaches the draw through the existing chain --
+  property -> `SoShaderParameter` -> captured `UserShader::params` ->
+  `pushUserParams` at the consuming submit -- and an `App::Appearance`
+  can override it per binding for free. The generated source is cached
+  by the DOCUMENT's identity, so a parameter edit compiles nothing: it
+  is a uniform write, live.
+- Cycles: the value is written into the document before it is
+  interpreted, and comes out the other side as a `ValueNode` in the
+  shader graph. A path tracer has no uniforms; a parameter is part of
+  the shader, so two parameter sets are two shaders and the shader
+  cache keys on the values. The document's own identity stays separate
+  from them, because a document that will not interpret will not
+  interpret at any value.
+
+**Publishing the interface on the raster side took the generator the
+other way round.** MaterialX's `SHADER_INTERFACE_REDUCED`, which step 2
+used, folds a graph's declared inputs into the code as numbers -- which
+is exactly right for a constant and exactly wrong for a knob. The
+interface type is now COMPLETE, which publishes every value the graph
+did not connect, and the generator emits the declarations itself: a
+published value that is one of the document's declared inputs becomes
+the uniform, and everything else becomes a file-scope `const` with the
+value MaterialX would have folded in. The generated code is therefore
+unchanged for a document that declares nothing, which is what the seven
+frozen probe legs of section 6.10 re-measure to the digit.
+
+Three things fell out of the library that are worth keeping written
+down:
+
+- **A published uniform already names the declared input**, not the
+  node input that reads it: MaterialX sets the port's path to the
+  interface input when there is one. So the enumeration and the
+  generator agree by namepath with no name matching anywhere, and a
+  declared input read by a dozen nodes is one parameter reading one
+  lane group -- where MaterialX's own viewer, which dedupes the other
+  way round, would drive only the first of them.
+- **The interface is read from the document as AUTHORED**, before the
+  OpenPBR translation. A graph interface survives that translation
+  untouched, so one enumeration answers for the property editor, the
+  path tracer (which interprets the document as written) and the
+  generator (which works on the translation) alike.
+- **The surface node's own values are not declared at all.** They are
+  published like everything else, but OpenPbrInputs emits them as
+  literals and no generated line names them, so declaring them would
+  add a few dozen dead globals per material -- in names like
+  `base_color` and `specular_color`, at file scope, next to the mesh
+  shader's own.
+
+A declared input is named by the document, and its uniform is
+`u_<name>` like every other shader parameter -- so a document declaring
+an input named after one of the engine's own uniforms (`fcTime`, say)
+generates a redeclaration, the compile fails, and the draw keeps its
+stock appearance with the compiler's message reported. That is the
+sandboxed-failure rule doing its job rather than a name check nobody
+could keep current.
+
+**The property carries the type the document states**: float, integer
+and boolean; `color3`/`color4` as an `App::PropertyColor`;
+`vector2`/`vector3` as an `App::PropertyVector`; `vector4` as a float
+list. The document's `uiname`, `uifolder` and `doc` become the
+property's tooltip. A colour is carried in the document's own colour
+space, which is what the document itself states and what the generated
+code (whose colour transforms sit downstream of the uniform) expects --
+the property holds exactly the numbers the `.mtlx` text would.
+
+**Verification.** Seventeen unit tests now (`tests/src/Gui/MaterialXGen.cpp`),
+seven of them this step's: what the interface is, what it is not, that
+one input read twice is one uniform, that it survives the translation,
+and that each type reads its lane as itself. Over MaterialX's own
+example materials, the same 24 of 50 generate as before and all of them
+still compile through the in-tree shaderc on glsl, spirv and essl --
+`standard_surface_marble_solid` now with six uniforms in it. Both
+probes carry the chain end to end: `build/probes/mtlxraster/probe.sh`
+grows five legs (the declared interface becomes exactly one property
+carrying the document's value; a parameter edit reaches the draw with
+no regeneration; a parameter value renders where the same value stated
+in a document renders; a withdrawn declaration withdraws its property;
+and the effect's demo preview shades with the document rather than with
+its own DemoColor), and `build/probes/mtlx/probe.sh` grows a leg
+holding the path-traced frames against two frames earlier legs already
+rendered from documents stating the same colours: the declared default
+lands on leg 1's red and the override on leg 3's literal half-red, both
+to a mean absolute difference of 0.0, and the override moves the frame
+by 0.0465. Twelve raster legs and sixteen path-traced ones, both PASS;
+the seven raster legs that predate this step re-measure to the digit,
+and ctest is 454/454.
+
+Not yet, and the remaining piece of step 3: a material card able to
+carry a `.mtlx`.
 
 
 ## 7. Preparing for out of process
@@ -2129,6 +2263,8 @@ Phase 6 -- queued, not started. Two items, in this order.
     3. Interface: public inputs -> `Param_*`, the demo preview, and
        a material card able to carry a `.mtlx` (the appearance model
        of MaterialStorage.md already has a file slot).
+       **The interface and the preview are DONE 2026-08-31, section
+       6.11**; the material card is not started.
 
     **Open decisions** (2, 4 and 5 are provisional; 1 and 3 are
     ruled): (1) OpenPBR canonical -- RULED yes. (2) Where the
