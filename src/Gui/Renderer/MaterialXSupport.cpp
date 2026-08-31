@@ -34,6 +34,7 @@
 #include <MaterialXCore/Material.h>
 #include <MaterialXFormat/Util.h>
 #include <MaterialXFormat/XmlIo.h>
+#include <MaterialXGenShader/ShaderTranslator.h>
 
 #include <Base/Console.h>
 
@@ -200,6 +201,49 @@ std::vector<mx::NodePtr> surfaceShaders(const mx::DocumentPtr &doc)
     if (shaders.empty())
         shaders = doc->getNodesOfType(mx::SURFACE_SHADER_TYPE_STRING);
     return shaders;
+}
+
+mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc, std::string &error,
+                           std::vector<std::string> &warnings)
+{
+    error.clear();
+    if (!doc) {
+        error = "no document";
+        return mx::NodePtr();
+    }
+    std::vector<mx::NodePtr> shaders = surfaceShaders(doc);
+    if (shaders.empty()) {
+        error = "the document describes no surface";
+        return mx::NodePtr();
+    }
+    mx::NodePtr surface = shaders.front();
+    if (surface->getCategory() == "open_pbr_surface")
+        return surface;
+
+    // Every other shading model arrives through MaterialX's own
+    // translation graphs. The library carries them one way only --
+    // standard_surface translates TO the others, and UsdPreviewSurface
+    // and the hair models translate to nothing -- so a document stating
+    // one of those is reported rather than rendered wrong.
+    const std::string original = surface->getCategory();
+    try {
+        mx::ShaderTranslatorPtr translator = mx::ShaderTranslator::create();
+        translator->translateAllMaterials(doc, "open_pbr_surface");
+    }
+    catch (const std::exception &e) {
+        error = "surface model '" + original + "' does not translate to OpenPBR: "
+            + e.what();
+        return mx::NodePtr();
+    }
+    shaders = surfaceShaders(doc);
+    if (shaders.empty() || shaders.front()->getCategory() != "open_pbr_surface") {
+        error = "surface model '" + original + "' did not translate to OpenPBR";
+        return mx::NodePtr();
+    }
+    warnings.push_back("surface model '" + original
+                       + "' translated to OpenPBR by MaterialX; a translation is "
+                         "an approximation, not an identity");
+    return shaders.front();
 }
 
 DocumentInfo inspect(const std::string &xml, const std::string &sourcePath)

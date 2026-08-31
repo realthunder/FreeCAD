@@ -72,6 +72,18 @@ std::string resolveFile(const mx::DocumentPtr &doc, const std::string &name);
 /// one thing a syntactically valid document can still get wrong.
 std::vector<mx::NodePtr> surfaceShaders(const mx::DocumentPtr &doc);
 
+/// The one surface a document renders, as an OpenPBR node. OpenPBR is
+/// the canonical surface model, so a document stating any other one is
+/// put through MaterialX's OWN translation graphs rather than a second
+/// native mapping -- there is one shading model to be right about and
+/// the rest is the library's business. Null when the document states no
+/// surface, or states one the library cannot translate (UsdPreviewSurface
+/// and the hair models have no translation TO OpenPBR), with the reason
+/// in `error`. A translation is an approximation and says so in
+/// `warnings`.
+mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc, std::string &error,
+                           std::vector<std::string> &warnings);
+
 }  // namespace Render::MaterialX
 
 #endif  // RENDER_MATERIALX_SUPPORT_P_H

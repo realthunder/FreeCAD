@@ -6,7 +6,7 @@ file(GLOB CMakeCache RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}/CM
 
 set(Renderer_Headers Renderer.h MaterialXSupport.h Environment.h Page2D.h Page2DWire.h DrawDevice.h DrawSurface.h FrameImageConsumer.h FrameStreamWire.h SceneDump.h SceneLadder.h ProxyHierarchy.h ProxyStore.h OcclusionCull.h MaskedOcclusion.h Simd4.h CullBenefit.h MeshSimplify.h OccluderMesh.h MeshSource.h SceneServer.h)
 set(Renderer_HPP_SRCS ${Renderer_Headers})
-set(Renderer_CPP_SRCS Renderer.cpp MaterialXSupport.cpp Environment.cpp Page2D.cpp Page2DWire.cpp DrawDevice.cpp FrameImageConsumer.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp ProxyStore.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp OccluderMesh.cpp MeshSource.cpp SceneServer.cpp)
+set(Renderer_CPP_SRCS Renderer.cpp MaterialXSupport.cpp MaterialXGen.cpp Environment.cpp Page2D.cpp Page2DWire.cpp DrawDevice.cpp FrameImageConsumer.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp ProxyStore.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp OccluderMesh.cpp MeshSource.cpp SceneServer.cpp)
 set(Renderer_LIBS FreeCADBase
                   ${QtCore_LIBRARIES}
                   ${QtWidgets_LIBRARIES}
@@ -73,7 +73,7 @@ if(BUILD_DILIGENT)
 endif(BUILD_DILIGENT)
 
 # MaterialX (docs/CyclesIntegration.md sec 8 item 15 phase B). Like the
-# Cycles unit below, MaterialXSupport.cpp compiles either way -- with
+# Cycles unit below, MaterialXSupport.cpp and MaterialXGen.cpp compile either way -- with
 # the library it is the real thing, without it the stub that reports
 # the support absent -- so only the flag and the libraries are
 # conditional. PRIVATE: MaterialXSupport.h names no MaterialX type, so

@@ -78,6 +78,39 @@ struct DocumentInfo {
 RendererExport DocumentInfo inspect(const std::string &xml,
                                     const std::string &sourcePath = {});
 
+/// The raster shader generated from a document: a material-inputs
+/// function, not a whole program. The engine splices `source` into the
+/// stock mesh fragment shader, which calls
+///
+///     void fcUserMaterialInputs(inout FcOpenPbr m, FcMtlxGeom g)
+///
+/// once per fragment to let the document state the OpenPBR parameters
+/// (fc_openpbr.sh) before the engine's own lighting runs. The document
+/// therefore describes the SURFACE and the engine keeps the lighting,
+/// which is what lets shadows, IBL, the section clip and the rest apply
+/// to a MaterialX material unchanged.
+struct GeneratedMaterial {
+    /// The generation succeeded and `source` is worth compiling.
+    bool valid = false;
+    /// Why not, when it is not valid; empty otherwise. A material that
+    /// cannot be generated renders as its stock appearance -- the
+    /// document is reported, never half-applied.
+    std::string error;
+    /// Legal but consequential things about the document: a shading
+    /// model that had to be translated, a node the raster path cannot
+    /// express. Reported whether or not generation succeeded.
+    std::vector<std::string> warnings;
+    /// The generated shader text.
+    std::string source;
+};
+
+/// Generate the raster material-inputs function for a document.
+/// `sourcePath` resolves its relative file references, as in inspect().
+/// Never throws: a document that will not generate comes back invalid
+/// with the reason.
+RendererExport GeneratedMaterial generate(const std::string &xml,
+                                          const std::string &sourcePath = {});
+
 /// Absolute path of the standard data library shipped beside the
 /// binary, the directory holding stdlib/, pbrlib/, bxdf/ and the rest.
 /// Empty when the library is not built.

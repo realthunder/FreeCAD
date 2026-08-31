@@ -77,6 +77,16 @@ if(TARGET FreeCADRenderer)
     target_link_libraries(SceneDump_tests_run gtest_main FreeCADRenderer)
     add_test(NAME SceneDump_tests_run COMMAND SceneDump_tests_run)
 
+    # The raster MaterialX generator. It reads the shipped data
+    # library, and a bare test binary has no one to seed the renderer's
+    # resource path, so the build states where it is.
+    add_executable(MaterialXGen_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/MaterialXGen.cpp)
+    target_link_libraries(MaterialXGen_tests_run gtest_main FreeCADRenderer)
+    target_compile_definitions(MaterialXGen_tests_run PRIVATE
+        FC_TEST_RENDERER_RESOURCES="${CMAKE_BINARY_DIR}/share/Renderer/")
+    add_test(NAME MaterialXGen_tests_run COMMAND MaterialXGen_tests_run)
+
     add_executable(MeshSimplify_tests_run
                    ${CMAKE_CURRENT_SOURCE_DIR}/MeshSimplify.cpp)
     target_link_libraries(MeshSimplify_tests_run gtest_main FreeCADRenderer)
