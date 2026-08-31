@@ -24,6 +24,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDataStream>
 #include <QDir>
@@ -772,6 +773,21 @@ MaterialIcons::MaterialIcons()
     _timer->setSingleShot(true);
     _timer->setInterval(0);
     connect(_timer, &QTimer::timeout, this, &MaterialIcons::drain);
+    // instance() is a function-local static, so this object is destroyed
+    // by the exit handlers -- after main() has returned and with it
+    // QApplication, the platform integration and the display connection.
+    // _scene is a View3DInventorViewer, a QWidget owning a GL context,
+    // and destroying one THEN takes QOpenGLContext::destroy() into a
+    // GLX/Mesa stack that has already been torn down: a segfault at
+    // every exit. Qt's rule is that no widget may outlive QApplication,
+    // so the viewer goes now, while there is still an application to
+    // release it against.
+    if (auto* app = QCoreApplication::instance()) {
+        connect(app, &QCoreApplication::aboutToQuit, this, [this] {
+            _quitting = true;
+            _scene.reset();
+        });
+    }
 }
 
 MaterialIcons::~MaterialIcons() = default;
@@ -1209,7 +1225,7 @@ QImage MaterialIcons::render(const App::Material& material,
                              const App::MaterialRenderProperties& props,
                              IconShape shape)
 {
-    if (_failed) {
+    if (_failed || _quitting) {
         return {};
     }
     try {

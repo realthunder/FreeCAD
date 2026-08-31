@@ -255,6 +255,11 @@ private:
     std::unique_ptr<IconScene> _scene;
     QTimer* _timer {nullptr};
     bool _failed {false};
+    /// Set once the application has begun to quit. The scene is a
+    /// QWidget owning a GL context, and Qt requires every widget to be
+    /// gone before QApplication is -- so it is dropped at aboutToQuit
+    /// and never built again after that.
+    bool _quitting {false};
 };
 
 }  // namespace MatGui
