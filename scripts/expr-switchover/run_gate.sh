@@ -22,8 +22,8 @@ export FREECAD_USER_HOME=${FREECAD_USER_HOME:-$OUT/fchome}
 mkdir -p "$FREECAD_USER_HOME"
 
 "$REPO/.conda/limited.sh" "$REPO/.conda/run.sh" "$FCCMD" -c \
-    "import sys; sys.argv=['gate','--max-mb','$MAXMB','--list-only']; exec(open('$RIG').read())" \
-    2>/dev/null | grep -E "^ *[0-9]+ +[0-9]+ +/" > "$OUT/files.txt"
+    "import sys; sys.argv=['gate','--max-mb','$MAXMB','--list-only','$OUT/files.txt']; exec(open('$RIG').read())" \
+    > "$OUT/list.log" 2>&1
 total=$(wc -l < "$OUT/files.txt")
 echo "gate: $total files, ${TMO}s each"
 
@@ -31,7 +31,7 @@ echo "gate: $total files, ${TMO}s each"
 : > "$OUT/timeouts.txt"
 : > "$OUT/summaries.txt"
 i=0
-while read -r idx size path; do
+while IFS=$'\t' read -r idx size path; do
     i=$((i + 1))
     printf "[%d/%d] %s\n" "$i" "$total" "$(basename "$path")"
     # the path goes through the ENVIRONMENT, never into the -c string:
@@ -43,9 +43,11 @@ while read -r idx size path; do
         "import sys; sys.argv=['gate','--max-mb','$MAXMB','--out','$OUT/one.jsonl']; exec(open('$RIG').read())" \
         > "$OUT/one.log" 2>&1
     rc=$?
-    # FreeCADCmd exits 0 even when the script raised, so a missing
-    # summary is the real failure signal, not the exit code
-    if [ $rc -ne 0 ] || [ ! -f "$OUT/one.jsonl.summary" ]; then
+    # The exit code says nothing either way: FreeCADCmd exits 0 when the
+    # script raised, and exits 1 when a document's addon module is
+    # missing even though every expression was compared (scanner.FCStd
+    # does exactly that).  The summary FILE is the signal.
+    if [ ! -f "$OUT/one.jsonl.summary" ]; then
         echo "$path rc=$rc" >> "$OUT/timeouts.txt"
         cp "$OUT/one.log" "$OUT/fail-$(basename "$path").log" 2>/dev/null
         continue

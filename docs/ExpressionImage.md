@@ -595,3 +595,76 @@ Tests: `ExpressionRoutingTest` (5 cases) -- routed value equals native,
 routing off keeps the native path, a bound property recompute really
 crosses, an image error does not fall back, python-mode is refused.
 C++ ctest 507/507, Python 2628 OK with the preference off (the default).
+
+### The compatibility gate (built 2026-08-31)
+
+ES sec 11's migration constraint -- old files must evaluate identically
+-- is checked by a rig, not by judgement.  `scripts/expr-switchover/`:
+
+- `corpus_regression.py` opens real `.FCStd` files and, for every stored
+  expression in them (engine bindings and sheet formulas), evaluates the
+  SAME source twice: `evaluateNative` and `evaluate` with routing on.
+  Each pair is classified same / differ / both_error / image_only_error /
+  native_only_error, and the image-only failures are grouped by message.
+  That group IS the gap list, ranked by field frequency.
+- `run_gate.sh` runs one FreeCADCmd PER FILE with a hard timeout.  This
+  is not fastidiousness: a `.FCStd` saved by OCCT 7.7.2 gets a forced
+  geometry recompute when 8.0.1 opens it, and on a big assembly that
+  runs for tens of minutes with nothing to interrupt it -- a
+  single-process sweep simply stops, 355 files in, and the whole run is
+  lost.  Per-file subprocesses turn that into one row in `timeouts.txt`.
+- `summarize_gate.py` merges the per-file summaries into the totals and
+  the gap list.
+- Permission enforcement is OFF by default in the rig (`--enforce` turns
+  it on): the gate measures EVALUATION parity, and mixing in policy
+  denials would only re-test what the runtime tests already cover.
+
+Two traps the rig itself had to absorb, both cheap to re-learn the hard
+way: passing a script PATH to FreeCADCmd runs nothing AND says nothing
+(use `-c "exec(open(...).read())"`), and FreeCADCmd's restore progress
+bars drown stdout, so the summary is written to `<out>.summary` as well
+as printed.
+
+**First finding, fixed: a tuple crossed back as a list.**  Both
+marshallers encoded any sequence as a JSON array and decoded it as a
+list, so `cells[<<A17:|>>]` bound to an Enum property returned
+`['M3','M4','M5','M6']` where the native engine returns a tuple -- the
+same type-identity loss Phase 0 recorded for bool and told us not to
+reproduce.  Tuples now carry an explicit wire tag (`{"t":"tup","v":
+[...]}`) on both sides; a plain array still means list.  Covered by
+`tupleCrossesBackAsTuple` and `tupleCrossesIntoTheImageAsTuple`.
+
+**First full run, 2026-08-31** (this box, ~/works, files up to 41 MB,
+one FreeCADCmd per file, 240 s each):
+
+    files                371
+    expressions          262   + 73 from scanner.FCStd (run separately)
+    same                 260   + 73
+    differ                 0
+    both_error             2
+    image_only_error       0
+    native_only_error      0
+    timed out              3
+
+`scanner.FCStd` is the one Phase 0 named as the compatibility gate --
+the Assembly3 dbind-heavy assembly, 73 stored expressions -- and **all
+73 evaluate identically through the image**.  It failed the sweep only
+because the document's addon module is missing on this box, which makes
+FreeCADCmd exit 1 AFTER every expression has been compared; the driver
+now trusts the summary file rather than the exit code.
+
+Honest coverage note: an XML count over the same roots finds 513 stored
+expressions (369 engine bindings + 144 sheet formulas) in 33 files, so
+this run covers 335 of them.  The rest sit in two documents whose
+7.7.2 -> 8.0.1 forced geometry recompute takes more than ten minutes to
+OPEN (`issue474_fillet_edit_crash.FCStd`, 65; `cartridge.FCStd`) --
+an environment cost with nothing to do with expressions, but they are
+uncovered and should not be counted as passing.
+
+The 2 `both_error` rows are the same expression in two Russian-language
+documents referencing a property that no longer exists; both engines
+refuse it, with DIFFERENT text -- native says "Property 'Configuration'
+not found in ...", the image says "Document 'X' not found in ...",
+because the pack could not resolve the foreign document at all.  Parity
+of error TEXT for unresolvable foreign references is therefore still
+open; parity of behaviour (both fail) holds.

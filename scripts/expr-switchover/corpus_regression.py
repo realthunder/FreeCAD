@@ -50,8 +50,11 @@ def parse_args(argv):
                          "backslashes (real corpus paths do)")
     ap.add_argument("--start", type=int, default=0,
                     help="index into the size-sorted file list to start at")
-    ap.add_argument("--list-only", action="store_true",
-                    help="print the file list (index, size, path) and stop")
+    ap.add_argument("--list-only", default="",
+                    help="write the file list (index, size, path) to this "
+                         "FILE and stop.  A file, not stdout: FreeCAD's "
+                         "startup and restore chatter shares stdout and "
+                         "silently truncated the list.")
     ap.add_argument("--max-exprs-per-file", type=int, default=2000)
     ap.add_argument("--enforce", action="store_true",
                     help="leave permission enforcement ON (default off: this "
@@ -190,8 +193,10 @@ def main(argv):
     print("corpus: %d files (%d skipped over %.1f MB)"
           % (len(files), skipped_big, args.max_mb), flush=True)
     if args.list_only:
-        for i, (size, path) in enumerate(files):
-            print("%4d %10d %s" % (i + args.start, size, path))
+        with open(args.list_only, "w") as f:
+            for i, (size, path) in enumerate(files):
+                f.write("%d\t%d\t%s\n" % (i + args.start, size, path))
+        print("wrote %d entries to %s" % (len(files), args.list_only))
         return 0
 
     counts = {"same": 0, "differ": 0, "both_error": 0, "image_only_error": 0,
