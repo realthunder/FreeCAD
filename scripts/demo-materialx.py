@@ -38,6 +38,7 @@ Env:   MTLX_DOC     save path (default data/examples/render/materialx-showcase.F
        MTLX_EXIT    "1" = exit after save/shot (for scripted runs)
 """
 import os, time, traceback
+import xml.etree.ElementTree as ET
 import FreeCAD, FreeCADGui
 from PySide.QtCore import QTimer
 
@@ -130,6 +131,67 @@ def materials():
     return out
 
 
+def glass_from_document(text):
+    """What a document says about being SEE-THROUGH, in the terms the
+    rasterizer's glass pass takes.
+
+    A MaterialX document states transmission on its surface, and the
+    raster half cannot render that from the material: refraction is the
+    glass pass's business (docs/CyclesIntegration.md sec 6.10), and the
+    pass is driven by Render_Glass* view properties on the object. So
+    the document is read once here and the properties are set from it --
+    the bridge the engine does not make on its own.
+
+    None when the document is opaque. Only values stated directly on
+    the surface node are read: a transmission driven by a pattern graph
+    has no single number to hand a pass that takes one.
+    """
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return None
+    surface = None
+    for node in root:
+        if node.get("type") == "surfaceshader":
+            surface = node
+            break
+    if surface is None:
+        return None
+    stated = {}
+    for child in surface:
+        if child.tag == "input" and child.get("value") is not None:
+            stated[child.get("name")] = child.get("value")
+
+    def number(name, fallback):
+        try:
+            return float(stated[name])
+        except (KeyError, ValueError):
+            return fallback
+
+    def colour(name):
+        try:
+            parts = [float(v) for v in stated[name].split(",")]
+        except (KeyError, ValueError):
+            return None
+        return tuple(parts[:3]) if len(parts) >= 3 else None
+
+    if number("transmission_weight", 0.0) <= 0.0:
+        return None
+    # OpenPBR states the tint as a colour reached at a DEPTH; the pass
+    # states it as a Beer-Lambert density over the object colour, the
+    # same sigma = (1 - colour) * density the path tracer integrates.
+    # One over the depth is the honest reading of "reached at", and it
+    # is an approximation either way -- the two engines agree on the
+    # colour, not on the falloff.
+    depth = number("transmission_depth", 0.0)
+    return {
+        "ior": number("specular_ior", 1.5),
+        "roughness": number("specular_roughness", 0.0),
+        "density": (1.0 / depth) if depth > 0.0 else 0.0,
+        "tint": colour("transmission_color") if depth > 0.0 else None,
+    }
+
+
 def cycles_shot(view, width, height):
     """The same frame, path traced, captured from the view itself.
 
@@ -207,6 +269,26 @@ def ball(doc, stem, text, x, z):
     look = doc.addObject("App::Appearance", "Look_" + stem)
     look.Scope = "Object"
     look.ElementList = [shader, sphere]
+
+    glass = glass_from_document(text)
+    if glass:
+        vo = sphere.ViewObject
+        for kind, name, value in (
+                ("App::PropertyBool", "Render_Glass", True),
+                ("App::PropertyFloat", "Render_GlassIOR", glass["ior"]),
+                ("App::PropertyFloat", "Render_GlassRoughness",
+                 glass["roughness"]),
+                ("App::PropertyFloat", "Render_GlassDensity",
+                 glass["density"])):
+            if not hasattr(vo, name):
+                vo.addProperty(kind, name, "Render")
+            setattr(vo, name, value)
+        # The pass takes its absorption tint from the object colour,
+        # which is where the document's transmission colour lands.
+        if glass["tint"]:
+            vo.ShapeColor = glass["tint"]
+        say("materialx demo: %-22s glass ior=%.3f density=%.2f"
+            % (stem, glass["ior"], glass["density"]))
     return sphere, prog
 
 
