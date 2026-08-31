@@ -23,12 +23,22 @@
 #ifndef GUI_DLG_DOCUMENT_PERMISSIONS_H
 #define GUI_DLG_DOCUMENT_PERMISSIONS_H
 
-// The Document Permissions panel and its status-bar indicator: the user
-// surface of the expression permission service (expression sandbox phase 1
-// step 3b, docs/ExpressionSandbox.md sec 3.3). Prompt mechanics follow the
-// popup blocker: a blocked expression fails fast as a cell/object error, a
-// passive indicator lights up, and grants happen here -- on user gesture,
-// never from a modal raised mid-recompute.
+// The user surface of expression security: the Document Permissions panel
+// and the two status-bar indicators.
+//
+// PermissionIndicator covers the permission service (expression sandbox
+// phase 1 step 3b, docs/ExpressionSandbox.md sec 3.3). Prompt mechanics
+// follow the popup blocker: a blocked expression fails fast as a
+// cell/object error, a passive indicator lights up, and grants happen
+// here -- on user gesture, never from a modal raised mid-recompute.
+//
+// SandboxIndicator covers the stronger control next to it: whether
+// expression Python runs in THIS process or inside the WebAssembly
+// sandbox (docs/ExpressionImage.md). It is a permanent status light with
+// a click that flips the setting, because that setting is live -- nothing
+// restarts, and the user can put it back the moment it costs them.
+
+#include <memory>
 
 #include <QDialog>
 #include <QToolButton>
@@ -80,6 +90,30 @@ private:
     fastsignals::connection connPending;
     fastsignals::connection connActiveDoc;
     fastsignals::connection connDeleteDoc;
+};
+
+/// Status-bar indicator: whether expression Python is confined to the
+/// sandbox image or runs in this process.  Always visible -- an unconfined
+/// evaluator is a thing to be told about, not a thing to discover -- and a
+/// click flips it.
+class GuiExport SandboxIndicator: public QToolButton
+{
+    // Q_OBJECT here and not on the indicator above: every string this
+    // widget shows is user-facing prose that a translator needs the
+    // class context for.
+    Q_OBJECT
+
+public:
+    explicit SandboxIndicator(QWidget *parent = nullptr);
+    ~SandboxIndicator() override;
+
+    void updateState();
+
+private:
+    void toggleRouting();
+
+    class ParamObserver;
+    std::unique_ptr<ParamObserver> observer;
 };
 
 }  // namespace Dialog

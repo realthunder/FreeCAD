@@ -37,6 +37,8 @@
  * accessors.
  */
 
+#include <string>
+
 #include <FCConfig.h>
 
 #include "ObjectIdentifier.h"
@@ -55,6 +57,43 @@ namespace ExpressionSandbox
  * the gate to changing that default.
  */
 AppExport bool evaluationRouted();
+
+/** What the user surface needs to say about confinement, without
+ * paying for it.  `evaluationRouted()` asks the host whether an image
+ * LOADS, which instantiates one (~20 ms warm, ~600 ms the first time a
+ * compiled-module cache has to be made) -- far too much for drawing a
+ * status bar.  These fields are all cheap: a preference read and two
+ * stat() calls.
+ *
+ * `enabled` is the preference alone, so `enabled && !imagePresent` is a
+ * real and reportable state: the user asked for confinement and is not
+ * getting it.
+ */
+struct SandboxStatus
+{
+    /// This build embeds the wasm runtime (BUILD_EXPR_IMAGE_HOST).
+    bool hostBuilt = false;
+    /// An image and its stdlib slice exist where the host will look.
+    bool imagePresent = false;
+    /// The Evaluate preference, whatever the image situation is.
+    bool enabled = false;
+    /// Where the image was looked for (empty without a host).
+    std::string image;
+    /// Where the stdlib slice was looked for (empty without a host).
+    std::string stdlib;
+
+    /// Expressions actually run confined.
+    bool confined() const
+    {
+        return hostBuilt && imagePresent && enabled;
+    }
+};
+
+AppExport SandboxStatus sandboxStatus();
+
+/// Set the Evaluate preference.  Takes effect on the next evaluation --
+/// there is nothing to restart.
+AppExport void setEvaluationRouted(bool on);
 
 /** Evaluate a top-level expression: through the sandbox image when
  * routing is on and this expression qualifies, in-process otherwise.

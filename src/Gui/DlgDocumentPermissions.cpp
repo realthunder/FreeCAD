@@ -22,10 +22,15 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <cstring>
+
+# include <QApplication>
 # include <QDialogButtonBox>
 # include <QHBoxLayout>
 # include <QHeaderView>
+# include <QIcon>
 # include <QLabel>
+# include <QMessageBox>
 # include <QPointer>
 # include <QPushButton>
 # include <QStyle>
@@ -37,6 +42,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/ExpressionEvaluator.h>
 #include <App/ExpressionSecurityRuntime.h>
 
 #include "DlgDocumentPermissions.h"
@@ -340,3 +346,149 @@ void PermissionIndicator::updateState()
     setText(QString::number(count));
     setVisible(!reqs.empty());
 }
+
+// ---- SandboxIndicator ------------------------------------------------
+//
+// The permission indicator above is an alarm: it appears when something
+// was blocked.  This one is a status light, always lit, because the state
+// it reports is the one nobody would think to go looking for -- that a
+// spreadsheet cell's Python runs with the whole process's reach.
+
+/// Re-read the setting when something else changes it: the Python API
+/// (FreeCAD.ExpressionSandbox.setRouting) and the parameter editor both
+/// write it, and an indicator that lies is worse than none.
+class SandboxIndicator::ParamObserver: public ParameterGrp::ObserverType
+{
+public:
+    explicit ParamObserver(SandboxIndicator *owner)
+        : indicator(owner)
+    {
+        hGrp = App::GetApplication().GetParameterGroupByPath(
+                "User parameter:BaseApp/Preferences/Expression/Sandbox");
+        hGrp->Attach(this);
+    }
+
+    ~ParamObserver() override
+    {
+        hGrp->Detach(this);
+    }
+
+    void OnChange(Base::Subject<const char *> &, const char *reason) override
+    {
+        if (reason && std::strcmp(reason, "Evaluate") == 0)
+            indicator->updateState();
+    }
+
+private:
+    SandboxIndicator *indicator;
+    ParameterGrp::handle hGrp;
+};
+
+SandboxIndicator::SandboxIndicator(QWidget *parent)
+    : QToolButton(parent)
+{
+    setAutoRaise(true);
+    connect(this, &QToolButton::clicked, this, &SandboxIndicator::toggleRouting);
+    observer = std::make_unique<ParamObserver>(this);
+    updateState();
+}
+
+SandboxIndicator::~SandboxIndicator() = default;
+
+void SandboxIndicator::updateState()
+{
+    auto status = App::ExpressionSandbox::sandboxStatus();
+    bool confined = status.confined();
+
+    // One object in two states -- a padlock that is open or shut -- so
+    // the button reads as a switch.  A generic tick and warning triangle
+    // said "ok" and "problem", which is not the same statement.
+    setIcon(QIcon(confined
+                          ? QStringLiteral(":/icons/expression-sandbox-on.svg")
+                          : QStringLiteral(":/icons/expression-sandbox-off.svg")));
+
+    // The tooltip is the whole explanation, so it says what is true now,
+    // what a click does, and what each side costs.  Users meet this
+    // setting here and nowhere else.
+    QString state;
+    if (confined) {
+        state = tr("<b>Expression Python is sandboxed.</b><br/>"
+                   "Formulas and spreadsheet cells are evaluated inside a "
+                   "WebAssembly image with no file system, no network and no "
+                   "reach into FreeCAD's process.");
+    }
+    else if (!status.hostBuilt) {
+        state = tr("<b>Expression Python runs in this process.</b><br/>"
+                   "This build has no sandbox, so there is nothing to switch "
+                   "to. Permission checks still apply.");
+    }
+    else if (!status.imagePresent) {
+        state = tr("<b>Expression Python runs in this process.</b><br/>"
+                   "The sandbox image is missing, so it cannot be used:<br/>"
+                   "%1").arg(QString::fromStdString(status.image).toHtmlEscaped());
+    }
+    else {
+        state = tr("<b>Expression Python runs in this process.</b><br/>"
+                   "A formula can reach anything FreeCAD can -- your files "
+                   "included. Permission checks apply, but they are a policy, "
+                   "not a wall.");
+    }
+
+    QString trade = tr("Sandboxed evaluation is slower per formula (a few "
+                       "microseconds each); model recompute is dominated by "
+                       "geometry, not by expressions.");
+    QString action;
+    if (!status.hostBuilt)
+        action = tr("Click for details.");
+    else if (confined)
+        action = tr("Click to switch back to in-process evaluation.");
+    else
+        action = tr("Click to evaluate in the sandbox instead. The change "
+                    "takes effect immediately -- nothing restarts.");
+
+    setToolTip(QStringLiteral("%1<br/><br/>%2<br/><br/>%3")
+                       .arg(state, trade, action));
+}
+
+void SandboxIndicator::toggleRouting()
+{
+    auto status = App::ExpressionSandbox::sandboxStatus();
+    if (!status.hostBuilt || !status.imagePresent) {
+        QMessageBox::information(
+                getMainWindow(), tr("Expression sandbox"),
+                status.hostBuilt
+                        ? tr("This installation has no sandbox image, so "
+                             "expressions cannot be confined.\n\nLooked for:\n"
+                             "%1\n%2")
+                                  .arg(QString::fromStdString(status.image),
+                                       QString::fromStdString(status.stdlib))
+                        : tr("This build of FreeCAD was made without the "
+                             "expression sandbox, so expressions cannot be "
+                             "confined."));
+        return;
+    }
+
+    if (status.enabled) {
+        App::ExpressionSandbox::setEvaluationRouted(false);
+        updateState();
+        return;
+    }
+
+    // Switching ON is where the image is first loaded, and loading can
+    // still fail (a stale or unreadable image).  Do it here, at a user
+    // gesture that can be answered, rather than leaving a green light
+    // over an evaluator that quietly never engaged.
+    App::ExpressionSandbox::setEvaluationRouted(true);
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    bool live = App::ExpressionSandbox::evaluationRouted();
+    QApplication::restoreOverrideCursor();
+    if (!live) {
+        App::ExpressionSandbox::setEvaluationRouted(false);
+        QMessageBox::warning(getMainWindow(), tr("Expression sandbox"),
+                             tr("The sandbox image is present but could not be "
+                                "loaded, so evaluation stays in this process. "
+                                "The report view has the reason."));
+    }
+    updateState();
+}
+

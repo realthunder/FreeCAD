@@ -872,13 +872,59 @@ feedstocks need one of:
   tarball, as is done for other channel packages), plus the ~10.5 MB
   image as a data package or as an artifact the recipe fetches; or
 - a static link (`libwasmtime.a` ships in the same tarball), which
-  removes the runtime dependency entirely at the cost of the archive's
-  code landing inside `libFreeCADApp.so` -- then only the image has to
-  be packaged.
+  removes the runtime dependency entirely -- then only the image has to
+  be packaged.  MEASURED 2026-08-31 by relinking this build with
+  `-DWasmtime_LIBRARY=.../libwasmtime.a`: `libFreeCADApp.so` goes from
+  148.2 MB to 184.2 MB on disk and its text from **8.3 MB to 33.3 MB**,
+  i.e. +25.0 MB of code folded in, with no wasmtime `DT_NEEDED` left
+  and all 49 image and routing tests passing.  Nothing else is needed
+  to try it: the find module supplies the Rust staticlib's own system
+  dependencies (`dl`, `pthread`, `m`) when the library it found is an
+  archive -- without them the link fails as a wall of undefined
+  `dlsym`, which reads like a broken toolchain rather than a missing
+  `-ldl`.
 
 Either way the image itself has to arrive as a prebuilt artifact: a
 feedstock box cannot cross-build it without wasi-sdk 33 and a
 wasm32-wasi CPython.
+
+### The status-bar switch (built 2026-08-31)
+
+Routing was already a LIVE setting -- `evaluationRouted()` re-reads the
+preference on every evaluation, so flipping it takes effect on the next
+formula and nothing restarts -- but the only ways to flip it were
+`FreeCAD.ExpressionSandbox.setRouting()` and the parameter editor.  A
+setting nobody can find is a setting nobody has.
+
+`Gui::Dialog::SandboxIndicator` (in DlgDocumentPermissions.cpp, beside
+the permission indicator it is a sibling of) is a permanent status-bar
+light: an open amber padlock while expression Python runs in FreeCAD's
+own process, a closed green one while it is confined, and a click that
+flips between them.  One object in two states, so the button reads as a
+switch rather than as a badge.
+
+- **It warns on `enabled && !imagePresent` too.**  That is the state
+  that would otherwise look secure and not be: the preference is on,
+  the image is missing, and every formula is running in process.
+  `SandboxStatus::confined()` is the whole rule.
+- **Switching ON loads the image at the click**, behind a wait cursor,
+  and puts the preference back if it fails.  A green light over an
+  evaluator that never engaged would be worse than the amber one.
+- **`App::ExpressionSandbox::sandboxStatus()` is deliberately cheap** --
+  a preference read and two stat() calls.  `evaluationRouted()` asks
+  whether an image LOADS, which instantiates one (~20 ms warm, ~600 ms
+  when the compiled-module cache has to be made): fine at a click, far
+  too much for drawing a status bar.  The Gui also cannot test
+  `FC_EXPR_IMAGE_HOST`, which is defined only in `src/App`'s scope, so
+  `hostBuilt` has to be reported rather than compiled against.
+- A `ParameterGrp` observer keeps the icon honest when something else
+  writes the preference.
+
+TRAP, and it cost a rebuild: **`--` is illegal inside an XML comment.**
+The ASCII rule replaces em dashes with `--` everywhere, and doing that
+in a new .svg header made Qt refuse the file, so the confined icon drew
+as NOTHING while its amber twin was fine.  `QSvgRenderer::isValid()`
+says so in one line; the status bar does not.
 
 ### Where the time goes (re-measured 2026-08-31, after slices B and C)
 

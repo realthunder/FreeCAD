@@ -57,7 +57,13 @@ if(Wasmtime_FOUND AND NOT TARGET Wasmtime::Wasmtime)
     if(Wasmtime_LIBRARY MATCHES "${CMAKE_SHARED_LIBRARY_SUFFIX}$")
         add_library(Wasmtime::Wasmtime SHARED IMPORTED)
     else()
+        # The static archive is a Rust staticlib: its own std needs the
+        # system libraries that the shared build already links for it,
+        # and they have to come AFTER the archive on the link line --
+        # without them the failure is a wall of undefined `dlsym`.
         add_library(Wasmtime::Wasmtime UNKNOWN IMPORTED)
+        set_property(TARGET Wasmtime::Wasmtime PROPERTY
+            INTERFACE_LINK_LIBRARIES ${CMAKE_DL_LIBS} pthread m)
     endif()
     set_target_properties(Wasmtime::Wasmtime PROPERTIES
         IMPORTED_LOCATION "${Wasmtime_LIBRARY}"

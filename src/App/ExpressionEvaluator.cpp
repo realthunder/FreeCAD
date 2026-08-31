@@ -27,6 +27,7 @@
 
 #include <Base/Console.h>
 #include <Base/Exception.h>
+#include <Base/FileInfo.h>
 #include <Base/Interpreter.h>
 #include <Base/Parameter.h>
 
@@ -111,14 +112,42 @@ PyObject* evaluateInImage(const Expression* expr, int options)
 
 }  // namespace
 
-bool ExpressionSandbox::evaluationRouted()
+namespace
 {
-#ifdef FC_EXPR_IMAGE_HOST
+ParameterGrp::handle sandboxParams()
+{
     static ParameterGrp::handle handle;
     if (!handle)
         handle = GetApplication().GetParameterGroupByPath(
                 "User parameter:BaseApp/Preferences/Expression/Sandbox");
-    if (!handle->GetBool("Evaluate", false))
+    return handle;
+}
+}  // namespace
+
+ExpressionSandbox::SandboxStatus ExpressionSandbox::sandboxStatus()
+{
+    SandboxStatus status;
+    status.enabled = sandboxParams()->GetBool("Evaluate", false);
+#ifdef FC_EXPR_IMAGE_HOST
+    status.hostBuilt = true;
+    auto where = ImageHost::instance().location();
+    status.image = where.image;
+    status.stdlib = where.stdlib;
+    status.imagePresent = Base::FileInfo(status.image).isFile()
+            && Base::FileInfo(status.stdlib).isDir();
+#endif
+    return status;
+}
+
+void ExpressionSandbox::setEvaluationRouted(bool on)
+{
+    sandboxParams()->SetBool("Evaluate", on);
+}
+
+bool ExpressionSandbox::evaluationRouted()
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    if (!sandboxParams()->GetBool("Evaluate", false))
         return false;
     return ImageHost::instance().available();
 #else

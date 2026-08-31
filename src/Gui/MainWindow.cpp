@@ -566,6 +566,12 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     permissionIndicator->setObjectName(QStringLiteral("SB_PermissionIndicator"));
     statusBar()->addPermanentWidget(permissionIndicator, 0);
 
+    // expression sandbox indicator: permanently lit, warning while
+    // expression Python runs in this process, and a click flips it
+    auto sandboxIndicator = new Dialog::SandboxIndicator(statusBar());
+    sandboxIndicator->setObjectName(QStringLiteral("SB_SandboxIndicator"));
+    statusBar()->addPermanentWidget(sandboxIndicator, 0);
+
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/NotificationArea");
 
     auto notificationAreaEnabled = hGrp->GetBool("NotificationAreaEnabled", true);
