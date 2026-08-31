@@ -183,6 +183,26 @@ PyObject* decodeValue(const json& v)
     }
 
     const std::string& t = tag->get_ref<const std::string&>();
+    if (t == FcxWire::TagTuple) {
+        auto items = v.find("v");
+        if (items == v.end() || !items->is_array()) {
+            PyErr_SetString(PyExc_ValueError, "malformed tuple value");
+            return nullptr;
+        }
+        PyObject* tuple = PyTuple_New((Py_ssize_t)items->size());
+        if (!tuple)
+            return nullptr;
+        Py_ssize_t i = 0;
+        for (const auto& item : *items) {
+            PyObject* obj = decodeValue(item);
+            if (!obj) {
+                Py_DECREF(tuple);
+                return nullptr;
+            }
+            PyTuple_SET_ITEM(tuple, i++, obj);
+        }
+        return tuple;
+    }
     if (t == FcxWire::TagVector) {
         double d[3];
         if (getDoubles(v.value("v", json()), d, 3))
@@ -415,8 +435,13 @@ bool encodeValue(PyObject* obj, json& out, std::string& err)
             }
             arr.push_back(std::move(item));
         }
+        bool isTuple = PyTuple_Check(obj);
         Py_DECREF(seq);
-        out = std::move(arr);
+        if (isTuple)
+            out = json {{FcxWire::TagKey, FcxWire::TagTuple},
+                        {"v", std::move(arr)}};
+        else
+            out = std::move(arr);
         return true;
     }
     if (PyDict_Check(obj)) {

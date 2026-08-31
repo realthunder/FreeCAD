@@ -68,6 +68,15 @@ AppExport bool evaluationRouted();
  */
 AppExport App::any evaluate(const Expression* expr, int options = 0);
 
+/** The Python-valued twin of evaluate(), for callers that keep the
+ * value as a PyObject (the spreadsheet, the Python API).  Returns a NEW
+ * reference; throws on failure exactly as evaluate() does.
+ */
+AppExport PyObject* evaluatePy(const Expression* expr, int options = 0);
+
+/// Install the FreeCAD.ExpressionSandbox Python module.
+void initPyModule(PyObject* appModule);
+
 }  // namespace ExpressionSandbox
 }  // namespace App
 

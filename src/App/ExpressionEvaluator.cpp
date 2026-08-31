@@ -83,10 +83,10 @@ struct ReentryGuard
     throw Base::RuntimeError(msg);
 }
 
-App::any evaluateInImage(const Expression* expr, int options)
+/// Returns a NEW reference, or throws.
+PyObject* evaluateInImage(const Expression* expr, int options)
 {
     (void)options;
-    Base::PyGILStateLocker lock;
     ReentryGuard guard;
 
     auto& host = ExpressionSandbox::ImageHost::instance();
@@ -105,8 +105,7 @@ App::any evaluateInImage(const Expression* expr, int options)
     if (!value)
         throw Base::RuntimeError("sandboxed evaluation returned a value the "
                                  "host cannot decode");
-    Py::Object held(value, true);
-    return pyObjectToAny(held);
+    return value;
 }
 
 #endif  // FC_EXPR_IMAGE_HOST
@@ -128,21 +127,56 @@ bool ExpressionSandbox::evaluationRouted()
 #endif
 }
 
+namespace
+{
+/// True when this evaluation should cross; throws for the shapes that
+/// must refuse rather than quietly run in the host.
+bool routeThis(const App::Expression* expr, int options)
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    if (inImageEvaluation || !expr->getOwner() || !ExpressionSandbox::evaluationRouted())
+        return false;
+    // Python-mode sheets evaluate a different language in a different
+    // frame; routing them is a separate step, and quietly running them
+    // in the host would be the silent fallback this design refuses.
+    if (options & Expression::OptionPythonMode)
+        throw Base::RuntimeError("sandboxed evaluation does not cover "
+                                 "python-mode expressions yet");
+    return true;
+#else
+    (void)expr;
+    (void)options;
+    return false;
+#endif
+}
+}  // namespace
+
 App::any ExpressionSandbox::evaluate(const Expression* expr, int options)
 {
     if (!expr)
         return App::any();
 #ifdef FC_EXPR_IMAGE_HOST
-    if (!inImageEvaluation && expr->getOwner() && evaluationRouted()) {
-        // Python-mode sheets evaluate a different language in a
-        // different frame; routing them is a separate step, and
-        // quietly running them in the host would be the silent
-        // fallback this design refuses.
-        if (options & Expression::OptionPythonMode)
-            throw Base::RuntimeError("sandboxed evaluation does not cover "
-                                     "python-mode expressions yet");
+    if (routeThis(expr, options)) {
+        Base::PyGILStateLocker lock;
+        Py::Object held(evaluateInImage(expr, options), true);
+        return pyObjectToAny(held);
+    }
+#else
+    (void)routeThis;
+#endif
+    return expr->getValueAsAny(options);
+}
+
+PyObject* ExpressionSandbox::evaluatePy(const Expression* expr, int options)
+{
+    if (!expr)
+        Py_RETURN_NONE;
+#ifdef FC_EXPR_IMAGE_HOST
+    if (routeThis(expr, options)) {
+        Base::PyGILStateLocker lock;
         return evaluateInImage(expr, options);
     }
 #endif
-    return expr->getValueAsAny(options);
+    Base::PyGILStateLocker lock;
+    return Py::new_reference_to(expr->getPyValue(options));
 }

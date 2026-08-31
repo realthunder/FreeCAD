@@ -1113,3 +1113,45 @@ TEST_F(ExpressionRoutingTest, pythonModeIsRefusedNotSilentlyNative)
                      expr.get(), App::Expression::OptionPythonMode),
                  Base::RuntimeError);
 }
+
+// ---- wire type identity: a tuple is not a list (the corpus gate found
+// ---- this -- an Enum property fed from a cell range came back as a
+// ---- list, changing the stored value's type) ----
+
+TEST_F(ExpressionImageEvalTest, tupleCrossesBackAsTuple)
+{
+    Base::PyGILStateLocker lock;
+    auto res = ImageHost::instance().eval("(1, 2, 3)", {});
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    PyObject* v = ImageHost::instance().decodeResult(res);
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(PyTuple_Check(v));
+    EXPECT_EQ(PyTuple_GET_SIZE(v), 3);
+    Py_DECREF(v);
+
+    // and a list is still a list
+    auto res2 = ImageHost::instance().eval("[1, 2, 3]", {});
+    ASSERT_TRUE(res2.ok) << res2.excType << ": " << res2.message;
+    PyObject* v2 = ImageHost::instance().decodeResult(res2);
+    ASSERT_NE(v2, nullptr);
+    EXPECT_TRUE(PyList_Check(v2));
+    Py_DECREF(v2);
+}
+
+TEST_F(ExpressionImageEvalTest, tupleCrossesIntoTheImageAsTuple)
+{
+    Base::PyGILStateLocker lock;
+    App::ExpressionSandbox::HandleTable table;
+    PyObject* t = Py_BuildValue("(iii)", 1, 2, 3);
+    ASSERT_NE(t, nullptr);
+    json b;
+    b["t"] = App::ExpressionSandbox::encodeHostValue(table, t);
+    Py_DECREF(t);
+    auto cbor = json::to_cbor(b);
+    auto res = ImageHost::instance().eval(
+        "t.__class__.__name__", {cbor.begin(), cbor.end()});
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_EQ(json::from_cbor(res.value.begin(), res.value.end())
+                  .get<std::string>(), "tuple");
+    table.clear();
+}

@@ -221,6 +221,7 @@ SET(Document_CPP_SRCS
     DocumentPyImp.cpp
     ExpressionDocumentOps.cpp
     ExpressionEvaluator.cpp
+    ExpressionSandboxPy.cpp
     ExpressionSecurity.cpp
     ExpressionSecurityPy.cpp
     ExpressionSecurityRuntime.cpp

@@ -99,6 +99,7 @@
 #include "DocumentParams.h"
 #include "DocumentPy.h"
 #include "ExpressionParser.h"
+#include "ExpressionEvaluator.h"
 #include "ExpressionSecurityRuntime.h"
 #include "FeatureTest.h"
 #include "FeaturePython.h"
@@ -374,6 +375,7 @@ void Application::setupPythonTypes()
 
     // expression permission service (grant management)
     ExpressionSecurity::initPyModule(pAppModule);
+    ExpressionSandbox::initPyModule(pAppModule);
 
     Base::ProgressIndicatorPy::init_type();
     Base::Interpreter().addType(Base::ProgressIndicatorPy::type_object(),

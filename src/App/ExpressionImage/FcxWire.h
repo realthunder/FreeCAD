@@ -51,6 +51,11 @@ inline const char* const TagPlacement = "pla";
 inline const char* const TagMatrix = "mat";
 inline const char* const TagBoundBox = "bb";
 inline const char* const TagHandle = "h";
+// A tuple is NOT a list: the expression engine hands tuples to Enum
+// properties and to tuple(), and collapsing them to lists on the wire
+// loses type identity the same way bool-as-long would (Phase 0 sec
+// 6.4).  Plain JSON arrays stay lists; a tuple carries this tag.
+inline const char* const TagTuple = "tup";
 
 }  // namespace FcxWire
 
