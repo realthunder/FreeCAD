@@ -382,4 +382,9 @@ if __name__ == "__main__":
     argv = sys.argv[1:]
     if "--" in argv:
         argv = argv[argv.index("--") + 1:]
-    sys.exit(main(argv))
+    # Flush first: SystemExit out of a FreeCADCmd `-c` skips the
+    # shutdown that flushes a block-buffered stdout, and a piped run
+    # then prints nothing at all while still exiting 0.
+    _code = main(argv)
+    sys.stdout.flush()
+    sys.exit(_code)

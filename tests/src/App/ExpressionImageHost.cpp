@@ -1,9 +1,10 @@
 // Tests for the sandbox image host embedding (App::ExpressionSandbox::
 // ImageHost).  The image is a cross-built artifact that may not exist
 // on every box: tests locate it via the FCX_IMAGE and FCX_STDLIB
-// environment variables (falling back to the dev-tree default paths)
-// and SKIP when unavailable, so the suite stays green without the
-// wasm toolchain.
+// environment variables, or -- with neither set -- through the host's
+// own search, which ends at the <datadir>/Fcx bundle an install
+// provides and a build tree mirrors.  They SKIP when it is nowhere, so
+// the suite stays green without the wasm toolchain.
 
 #include <gtest/gtest.h>
 
@@ -14,6 +15,8 @@
 
 #include <App/ExpressionImageHost.h>
 #include <Base/FileInfo.h>
+
+#include "InitApplication.h"
 
 using json = nlohmann::json;
 using App::ExpressionSandbox::ImageHost;
@@ -30,16 +33,29 @@ class ExpressionImageHostTest: public ::testing::Test
 protected:
     void SetUp() override
     {
+        // The host's own search reads preferences and the resource
+        // directory, so it needs an Application -- the fixture used to
+        // need none, because the environment answered everything.
+        tests::initApplication();
+        // In order of how much the caller said: FCX_IMAGE / FCX_STDLIB
+        // (or FCX_REPO) name an image explicitly; with none of them set
+        // the host resolves its own -- the preference, then the
+        // <datadir>/Fcx bundle an install provides and the build tree
+        // mirrors.  Letting the default answer means a plain ctest run
+        // covers the PACKAGED lookup, not only the developer one.
         std::string repo = envOr("FCX_REPO", std::string());
         std::string image = envOr("FCX_IMAGE",
             repo.empty() ? std::string() : repo + "/build/wasi-image/fcx_image.wasm");
         std::string stdlib = envOr("FCX_STDLIB", std::string());
-        if (image.empty() || stdlib.empty() || !Base::FileInfo(image).exists()
-                || !Base::FileInfo(stdlib).exists()) {
-            GTEST_SKIP() << "sandbox image not available "
-                            "(set FCX_IMAGE and FCX_STDLIB)";
+        if (!image.empty() && !stdlib.empty())
+            ImageHost::instance().configure(image, stdlib);
+        auto where = ImageHost::instance().location();
+        if (!Base::FileInfo(where.image).isFile()
+                || !Base::FileInfo(where.stdlib).isDir()) {
+            GTEST_SKIP() << "sandbox image not available at " << where.image
+                         << " (set FCX_IMAGE and FCX_STDLIB, or build with "
+                            "FREECAD_EXPR_IMAGE_DIR)";
         }
-        ImageHost::instance().configure(image, stdlib);
     }
 
     void TearDown() override
@@ -149,7 +165,6 @@ TEST_F(ExpressionImageHostTest, evalAfterErrorStillWorks)
 #include <App/ExpressionImageBridge.h>
 #include <App/ExpressionSecurityRuntime.h>
 #include <Base/Interpreter.h>
-#include "InitApplication.h"
 
 class ExpressionImageBridgeTest: public ExpressionImageHostTest
 {

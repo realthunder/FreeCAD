@@ -140,6 +140,26 @@ PyObject* availableFunc(PyObject*, PyObject*)
 #endif
 }
 
+PyObject* imageInfoFunc(PyObject*, PyObject*)
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    auto loc = ExpressionSandbox::ImageHost::instance().location();
+    Py::Dict info;
+    info.setItem("image", Py::String(loc.image));
+    info.setItem("stdlib", Py::String(loc.stdlib));
+    info.setItem("cache", Py::String(loc.cache));
+    info.setItem("host", Py::Boolean(true));
+    return Py::new_reference_to(info);
+#else
+    Py::Dict info;
+    info.setItem("image", Py::String(""));
+    info.setItem("stdlib", Py::String(""));
+    info.setItem("cache", Py::String(""));
+    info.setItem("host", Py::Boolean(false));
+    return Py::new_reference_to(info);
+#endif
+}
+
 PyMethodDef Methods[] = {
     {"routed", routedFunc, METH_NOARGS,
      "routed() -> bool -- whether evaluation is currently routed through"
@@ -149,6 +169,10 @@ PyMethodDef Methods[] = {
      "Evaluate.  Default OFF."},
     {"available", availableFunc, METH_NOARGS,
      "available() -> bool -- whether a sandbox image could be loaded."},
+    {"imageInfo", imageInfoFunc, METH_NOARGS,
+     "imageInfo() -> dict -- where the image, its stdlib slice and its"
+     " compiled-module cache resolve to, and whether this build has a"
+     " wasmtime host at all.  What to look at when available() is False."},
     {"evaluate", evaluateFunc, METH_VARARGS,
      "evaluate(owner, source, options=0) -> value -- evaluate one"
      " expression the way the desktop would right now (routed or not,"

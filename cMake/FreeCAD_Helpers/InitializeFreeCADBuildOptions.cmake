@@ -149,8 +149,17 @@ macro(InitializeFreeCADBuildOptions)
         set(BUILD_BGFX OFF)
     endif()
     option(BUILD_DILIGENT "Build DiligentEngine renderer module" OFF)
-    option(BUILD_EXPR_IMAGE_HOST "Build the wasmtime host embedding for the expression sandbox image (needs WASMTIME_CAPI_DIR; see docs/ExpressionImage.md)" OFF)
+    # The wasmtime host embedding for the expression sandbox image
+    # (docs/ExpressionImage.md).  DETECTED rather than asked for: a box
+    # that has the runtime gets the sandbox, a box that does not still
+    # builds, because the routing preference degrades to in-process
+    # evaluation when no host is compiled in.  -DBUILD_EXPR_IMAGE_HOST=OFF
+    # opts out; ON without a runtime is an error rather than a silent
+    # nothing, because it was asked for explicitly.
     set(WASMTIME_CAPI_DIR "" CACHE PATH "wasmtime C API prefix (include/ + lib/libwasmtime.so) for BUILD_EXPR_IMAGE_HOST")
+    find_package(Wasmtime QUIET)
+    option(BUILD_EXPR_IMAGE_HOST "Build the wasmtime host embedding for the expression sandbox image (see docs/ExpressionImage.md)" ${Wasmtime_FOUND})
+    set(FREECAD_EXPR_IMAGE_DIR "" CACHE PATH "Directory holding a built expression sandbox image (fcx_image.wasm + Lib/) to install under the data dir as Fcx/; see docs/ExpressionImage.md")
     # Blender's Cycles path tracer as a vendored renderer
     # (docs/CyclesIntegration.md). OFF: it is a heavy build with
     # environment dependencies (OpenImageIO, Embree, OpenImageDenoise),

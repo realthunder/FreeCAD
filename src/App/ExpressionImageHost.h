@@ -71,8 +71,21 @@ public:
 
     /// Explicit configuration (tests, headless flags).  Defaults come
     /// from the parameter group BaseApp/Preferences/Expression/Sandbox
-    /// (ImagePath, StdlibPath) resolved lazily on first use.
+    /// (ImagePath, StdlibPath), then FCX_IMAGE / FCX_STDLIB, then the
+    /// bundle a packaged FreeCAD installs as <datadir>/Fcx -- resolved
+    /// lazily on first use.
     void configure(const std::string& imagePath, const std::string& stdlibPath);
+
+    /// Where the image, its stdlib slice and its compiled-module cache
+    /// resolve to.  The answer to "why is there no sandbox on this box":
+    /// available() only says no.
+    struct Location
+    {
+        std::string image;
+        std::string stdlib;
+        std::string cache;
+    };
+    Location location();
 
     /// Evaluate one expression source with pre-resolved bindings.
     /// `bindingsCbor` is a CBOR-encoded map of name -> wire value

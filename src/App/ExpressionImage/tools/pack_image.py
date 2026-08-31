@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Pack the sandbox image for the browser tier (docs/ExpressionImage.md).
+"""Pack the sandbox image for shipping (docs/ExpressionImage.md).
 
-The desktop host hands wasmtime the image as built and preopens the whole
-CPython Lib directory.  A browser cannot do either cheaply: the image carries
-~28 MB of DWARF that no browser reads, and a 51 MB stdlib is not a download.
-This tool produces the browser bundle instead:
+A DEVELOPMENT box hands wasmtime the image as built and preopens the whole
+CPython Lib directory.  Neither is shippable: the image carries ~24 MB of
+DWARF that only a native debugger attached to wasmtime reads, and the stdlib
+directory is 51 MB of which the image opens sixteen files.  This tool
+produces the two bundles that ARE shipped, from one measured slice:
 
-  fcx_image.min.wasm   the image with .debug_* and the name section dropped
-  lib/...              the CPython files the image actually opens
-  fcx.json             the manifest the browser host fetches first
+  --out          the browser bundle, fetched over HTTP
+                   fcx_image.min.wasm   stripped image
+                   lib/...              the CPython files the image opens
+                   fcx.json             the manifest the browser host reads
+  --desktop-out  the desktop bundle, installed as <datadir>/Fcx
+                   fcx_image.wasm       the same stripped image
+                   Lib/...              the same files, under the name the
+                                        host preopens them as
 
 Stripping is done here rather than with llvm-objcopy/wasm-opt so the packer
 has no toolchain dependency beyond python3, and because the operation is
@@ -92,45 +98,63 @@ def strip(wasm):
     return bytes(out), dropped
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--image", required=True, help="fcx_image.wasm as built")
-    ap.add_argument("--stdlib", required=True, help="CPython Lib directory")
-    ap.add_argument("--out", required=True, help="bundle directory to write")
-    args = ap.parse_args()
-
-    os.makedirs(args.out, exist_ok=True)
-    lib_out = os.path.join(args.out, "lib")
+def copy_slice(stdlib, lib_out):
+    """Copy the measured stdlib slice into `lib_out`; return its byte size."""
     if os.path.isdir(lib_out):
         shutil.rmtree(lib_out)
-
-    with open(args.image, "rb") as f:
-        wasm = f.read()
-    stripped, dropped = strip(wasm)
-    image_name = "fcx_image.min.wasm"
-    with open(os.path.join(args.out, image_name), "wb") as f:
-        f.write(stripped)
-
     lib_bytes = 0
     for rel in STDLIB_SLICE:
-        src = os.path.join(args.stdlib, rel)
+        src = os.path.join(stdlib, rel)
         if not os.path.isfile(src):
             raise SystemExit("stdlib slice is stale: %s not in %s"
-                             % (rel, args.stdlib))
+                             % (rel, stdlib))
         dst = os.path.join(lib_out, rel)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
         lib_bytes += os.path.getsize(dst)
+    return lib_bytes
 
-    manifest = {
-        "image": image_name,
-        "libDir": "lib",
-        "lib": STDLIB_SLICE,
-        "imageBytes": len(stripped),
-        "libBytes": lib_bytes,
-    }
-    with open(os.path.join(args.out, "fcx.json"), "w") as f:
-        json.dump(manifest, f, indent=1)
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--image", required=True, help="fcx_image.wasm as built")
+    ap.add_argument("--stdlib", required=True, help="CPython Lib directory")
+    ap.add_argument("--out", help="browser bundle directory to write")
+    ap.add_argument("--desktop-out", help="desktop bundle directory to write")
+    args = ap.parse_args()
+    if not args.out and not args.desktop_out:
+        raise SystemExit("nothing to do: pass --out and/or --desktop-out")
+
+    with open(args.image, "rb") as f:
+        wasm = f.read()
+    stripped, dropped = strip(wasm)
+
+    lib_bytes = 0
+    if args.out:
+        os.makedirs(args.out, exist_ok=True)
+        image_name = "fcx_image.min.wasm"
+        with open(os.path.join(args.out, image_name), "wb") as f:
+            f.write(stripped)
+        lib_bytes = copy_slice(args.stdlib, os.path.join(args.out, "lib"))
+        manifest = {
+            "image": image_name,
+            "libDir": "lib",
+            "lib": STDLIB_SLICE,
+            "imageBytes": len(stripped),
+            "libBytes": lib_bytes,
+        }
+        with open(os.path.join(args.out, "fcx.json"), "w") as f:
+            json.dump(manifest, f, indent=1)
+
+    if args.desktop_out:
+        # The host preopens this directory as /Lib and reads the image by
+        # the name it was built under, so the desktop bundle keeps both
+        # names -- an installed tree is then a drop-in for a build tree.
+        os.makedirs(args.desktop_out, exist_ok=True)
+        with open(os.path.join(args.desktop_out, "fcx_image.wasm"), "wb") as f:
+            f.write(stripped)
+        lib_bytes = copy_slice(args.stdlib,
+                               os.path.join(args.desktop_out, "Lib"))
 
     print("image %.1f MB -> %.1f MB (dropped %s), stdlib %d files %.0f KB"
           % (len(wasm) / 1e6, len(stripped) / 1e6,

@@ -76,6 +76,12 @@ header.  On this box:
       src/App/ExpressionImage
     .conda/run.sh env CFLAGS= CXXFLAGS= LDFLAGS= ninja -C build/wasi-image
 
+Then point the host build at the result so it installs the image and
+mirrors it into the build tree (see "The packaging slice"):
+
+    cmake -B build/conda-relwithdebinfo-801 \
+      -DFREECAD_EXPR_IMAGE_DIR=$PWD/build/wasi-image/desktop
+
 The project defaults `CMAKE_BUILD_TYPE` to Release; do not configure it
 away.  With an empty build type every TU we compile lands at -O0 while
 CPython stays -O3, and the round trip measured 3-6x slower (see "The
@@ -369,7 +375,7 @@ behaves as it does under wasmtime.
 plus the name section; a browser reads none of it.  Stripped it is
 10.9 MB (3.1 MB gzipped).  The stdlib is the surprise: the image opens
 **16 CPython files**, 320 KB, because almost the whole stdlib is frozen
-into the interpreter.  `tools/webpack_image.py` produces both -- it
+into the interpreter.  `tools/pack_image.py` produces both -- it
 strips the custom sections itself (the operation is four lines of the
 binary format, so the packer needs no toolchain) and copies the measured
 file list -- and runs as a POST_BUILD step of the image, into
@@ -765,6 +771,115 @@ empty, and take wasmtime as a real runtime dependency (a conda-forge
 package for the feedstocks, ~30 MB of image on top).  None of that is
 expression work, and none of it is blocked by the gate.
 
+### The packaging slice (built 2026-08-31)
+
+The four items above are closed.  What a release still needs from
+someone else is at the end of this section.
+
+**The payload is the STRIPPED image and sixteen files.**  A development
+box hands wasmtime the image as built (34.4 MB, of which 24 MB is DWARF
+that only a native debugger reads) and preopens the whole CPython Lib
+directory (51 MB).  Neither ships.  `tools/pack_image.py` already
+produced the stripped image and the measured stdlib slice for the
+browser; it now emits the desktop layout as well
+(`--desktop-out`: `fcx_image.wasm` + `Lib/`, the names the host reads
+and preopens), so both tiers come out of ONE slice list and cannot drift
+apart.  **10.2 MB + 320 KB**, and the whole image gtest suite -- 44
+cases including the acceptance set -- passes against it, so the
+stripping and the sixteen files are verified rather than assumed.
+
+**wasmtime is detected, not demanded.**  `cMake/FindWasmtime.cmake`
+looks at `WASMTIME_CAPI_DIR` (cache or environment) and then the system
+prefixes, and `BUILD_EXPR_IMAGE_HOST` now DEFAULTS to whether it found
+one.  A box without wasmtime still builds -- `evaluationRouted()`
+returns false through the `#else` and evaluation stays in process --
+and `-DBUILD_EXPR_IMAGE_HOST=ON` without a runtime is still a
+configure error, because that one was asked for.
+
+What the find module checks is the CAPABILITY, not a version: the image
+needs the WebAssembly exception-handling proposal, which wasmtime gates
+behind `wasmtime_config_wasm_exceptions_set`, so the module greps
+`wasmtime/config.h` for the `WASMTIME_CONFIG_PROP(void, wasm_exceptions`
+declaration.  "wasmtime without the exception knob" is a sentence a
+build log can act on; "wasmtime < 46" is not.
+
+**TRAP: the release tarball's `libwasmtime.so` has NO SONAME**, and
+that decides how it must be linked.  `FREECAD_BUNDLE_WASMTIME` (default
+ON when the library is outside the install prefix and outside the
+system directories) installs a copy beside FreeCAD's own libraries,
+which is exactly the RPATH `SET_BIN_DIR` already gives every module.  A
+wasmtime that came from a package manager is inside the prefix, so
+bundling defaults off there and it stays a package dependency.
+
+The copy is only found if `DT_NEEDED` names the library rather than a
+path, and an imported target linked by its `IMPORTED_LOCATION` records
+the **absolute path** when the library has no SONAME -- the first cut of
+this work shipped a `libFreeCADApp.so` that asked the loader for
+`/home/.../wasmtime-v48.0.1-.../lib/libwasmtime.so` by name, which
+bundling cannot help.  `IMPORTED_NO_SONAME TRUE` on the imported target
+is the documented cure: CMake then links `-L<dir> -lwasmtime`, so
+`DT_NEEDED` is the SONAME where there is one and the bare file name
+where there is not.  It is honoured only on a target CMake knows is
+SHARED, though -- setting it on an `UNKNOWN IMPORTED` library changes
+nothing at all and the absolute path comes back, which is the second
+half of the same trap.  Worth checking after any change here --
+`objdump -p libFreeCADApp.so | grep wasmtime` answers it in one line.
+
+**The image installs as data.**  It is cross-built by a separate
+project, so a host build can only install one that already exists:
+point `FREECAD_EXPR_IMAGE_DIR` at `build/wasi-image/desktop` (or at
+`cmake --install build/wasi-image`, which stages the same layout) and
+the host build installs it as `<datadir>/Fcx/{fcx_image.wasm,Lib/}` AND
+mirrors it into the build tree, the way `fc_copy_sources` mirrors
+module resources.  The mirror is not a convenience: it means a
+development build resolves the image through the SAME code path an
+installed one uses, so the packaged behaviour is what gets tested.
+
+**Resolution order, with nothing configured**: an explicit
+`ImageHost::configure()` (tests, headless flags) wins, then the
+`ImagePath` / `StdlibPath` preferences, then `FCX_IMAGE` / `FCX_STDLIB`
+(a developer pointing at a build tree), then `<datadir>/Fcx`.  Nothing
+found is not an error -- the sandbox is unavailable and evaluation
+stays in process, which is what a build without a host does anyway.
+`FreeCAD.ExpressionSandbox.imageInfo()` reports all three resolved
+paths, because `available() -> False` on a user's box otherwise gives
+nobody anything to look at.
+
+**TRAP: the compiled-module cache moved out of the image directory.**  It
+used to be `<image>.cwasm`.  An installed image sits in a directory the
+running user cannot write, so that cache would silently never be
+written and every start would pay ~600 ms of JIT instead of ~20 ms.  It
+now lives in `<user cache>/ExpressionSandbox/`, and the file name
+carries an FNV-1a hash of the image's full path: a box commonly has two
+images with the same base name (a build tree and an install), and the
+staleness check is a timestamp comparison, so a name collision there
+would deserialize the WRONG module.
+
+Verification rig: `scripts/expr-switchover/packaging_check.py` strips
+every hint (environment popped, preferences asserted unset) and checks
+that the image resolves to the data-dir bundle, loads, evaluates
+through the router, and writes its cache under the user cache
+directory and NOT beside the image.
+
+**What a release still needs, and it is not expression work.**  Checked
+2026-08-31: **conda-forge has no wasmtime at all**, and Anaconda's
+`main` channel has 11.0.1 and 29.0.0 -- both far below the
+exception-handling floor, and the CLI rather than the C API.  So the
+feedstocks need one of:
+
+- a `wasmtime` package in the `realthunder` channel carrying
+  `include/` + `lib/libwasmtime.so` (repackaging the upstream release
+  tarball, as is done for other channel packages), plus the ~10.5 MB
+  image as a data package or as an artifact the recipe fetches; or
+- a static link (`libwasmtime.a` ships in the same tarball), which
+  removes the runtime dependency entirely at the cost of the archive's
+  code landing inside `libFreeCADApp.so` -- then only the image has to
+  be packaged.
+
+Either way the image itself has to arrive as a prebuilt artifact: a
+feedstock box cannot cross-build it without wasi-sdk 33 and a
+wasm32-wasi CPython.
+
 ### Where the time goes (re-measured 2026-08-31, after slices B and C)
 
     native.parse+eval.arith          2.02 us
@@ -829,12 +944,20 @@ ES sec 11's migration constraint -- old files must evaluate identically
   it on): the gate measures EVALUATION parity, and mixing in policy
   denials would only re-test what the runtime tests already cover.
 
-Three traps the rig itself had to absorb, all cheap to re-learn the
+- `packaging_check.py` (2026-08-31) answers a different question: with
+  no preference, no environment and no configure call, does the host
+  find the image the way a packaged FreeCAD has to?  See "The packaging
+  slice".
+
+Four traps the rigs themselves had to absorb, all cheap to re-learn the
 hard way: passing a script PATH to FreeCADCmd runs nothing AND says
-nothing (use `-c "exec(open(...).read())"`); FreeCADCmd's restore
-progress bars drown stdout, so the summary is written to
-`<out>.summary` as well as printed; and the rig changes GLOBAL
-preferences, so it now restores every one of them (`PrefGuard`).
+nothing (use `-c "exec(open(...).read())"`); `sys.exit()` out of that
+`-c` skips the shutdown that flushes a block-buffered stdout, so a
+redirected or piped run prints NOTHING and still exits 0 (flush before
+exiting -- this one cost a "why is my new rig silent" detour);
+FreeCADCmd's restore progress bars drown stdout, so the summary is
+written to `<out>.summary` as well as printed; and the rigs change
+GLOBAL preferences, so they restore every one of them (`PrefGuard`).
 
 That last one is not hypothetical.  **`FREECAD_USER_HOME` pointing at a
 directory that does not exist is silently ignored** --

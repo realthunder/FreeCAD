@@ -73,7 +73,7 @@ export class SandboxImage {
   private get mem() { return new Uint8Array(this.exports.memory.buffer); }
 
   /// Fetch, instantiate and initialize.  `baseUrl` is the directory holding
-  /// fcx.json, as produced by tools/webpack_image.py.
+  /// fcx.json, as produced by tools/pack_image.py.
   static async load(baseUrl: string, opts: WasiOptions = {}): Promise<SandboxImage> {
     const img = new SandboxImage();
     const base = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';

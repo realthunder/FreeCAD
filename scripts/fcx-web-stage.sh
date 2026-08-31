@@ -3,7 +3,7 @@
 # UI, so the viewer (and the acceptance page) can fetch it.
 #
 # The bundle is produced by the image build's POST_BUILD step
-# (src/App/ExpressionImage/tools/webpack_image.py) into
+# (src/App/ExpressionImage/tools/pack_image.py) into
 # build/wasi-image/web: the stripped image, the CPython files it actually
 # opens, and fcx.json.  This copies that tree to build/wasm/fcx -- beside
 # fcviewer.html, which is what scripts/wasm-viewer.sh serves, so the page's

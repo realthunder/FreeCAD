@@ -87,16 +87,70 @@ list(APPEND FreeCADApp_LIBS
 # The wasmtime host embedding for the expression sandbox image
 # (docs/ExpressionImage.md).  Host-only, never part of ExpressionCore.
 if(BUILD_EXPR_IMAGE_HOST)
-    if(NOT WASMTIME_CAPI_DIR)
-        message(FATAL_ERROR "BUILD_EXPR_IMAGE_HOST needs WASMTIME_CAPI_DIR "
-                            "(wasmtime C API prefix with include/ and lib/)")
+    find_package(Wasmtime)
+    if(NOT Wasmtime_FOUND)
+        message(FATAL_ERROR "BUILD_EXPR_IMAGE_HOST is ON but the wasmtime C "
+                            "API was not found (set WASMTIME_CAPI_DIR; see "
+                            "docs/ExpressionImage.md)")
     endif()
     set(ExpressionImageHost_SRC ExpressionImageHost.cpp ExpressionImageBridge.cpp)
-    include_directories(${WASMTIME_CAPI_DIR}/include)
+    include_directories(${Wasmtime_INCLUDE_DIR})
     # Lets ExpressionEvaluator.cpp route evaluation into the image; every
     # other TU ignores it, and no header depends on it (no ABI edge).
     add_definitions(-DFC_EXPR_IMAGE_HOST)
-    list(APPEND FreeCADApp_LIBS ${WASMTIME_CAPI_DIR}/lib/libwasmtime.so)
+    list(APPEND FreeCADApp_LIBS Wasmtime::Wasmtime)
+
+    # The release tarball's libwasmtime.so carries NO SONAME, so the link
+    # records the bare file name and an installed FreeCAD finds it only if
+    # a copy sits on its RPATH -- which is exactly the install libdir that
+    # SET_BIN_DIR puts there.  A wasmtime that came from a package manager
+    # is already inside the prefix (or in a system directory) and is a
+    # dependency of the package instead, so bundling defaults off there.
+    get_filename_component(_wasmtime_libdir "${Wasmtime_LIBRARY}" DIRECTORY)
+    set(_wasmtime_bundle ON)
+    foreach(_dir "${CMAKE_INSTALL_PREFIX}" /usr /lib /lib64)
+        string(FIND "${_wasmtime_libdir}/" "${_dir}/" _at)
+        if(_at EQUAL 0)
+            set(_wasmtime_bundle OFF)
+        endif()
+    endforeach()
+    option(FREECAD_BUNDLE_WASMTIME
+           "Install a copy of libwasmtime beside FreeCAD's own libraries"
+           ${_wasmtime_bundle})
+    if(FREECAD_BUNDLE_WASMTIME)
+        install(FILES ${Wasmtime_LIBRARY} DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    endif()
+
+    # The image itself is cross-built by a SEPARATE project
+    # (src/App/ExpressionImage, wasi-sdk + a wasm CPython), so a host build
+    # can only install one that already exists.  Point
+    # FREECAD_EXPR_IMAGE_DIR at that project's install/stage tree; with it
+    # unset the build is fine and the sandbox is simply unavailable at run
+    # time, which ExpressionImageHost.cpp reports and degrades from.
+    if(FREECAD_EXPR_IMAGE_DIR)
+        if(NOT EXISTS "${FREECAD_EXPR_IMAGE_DIR}/fcx_image.wasm")
+            message(FATAL_ERROR "FREECAD_EXPR_IMAGE_DIR has no fcx_image.wasm: "
+                                "${FREECAD_EXPR_IMAGE_DIR}")
+        endif()
+        install(FILES ${FREECAD_EXPR_IMAGE_DIR}/fcx_image.wasm
+                DESTINATION ${CMAKE_INSTALL_DATADIR}/Fcx)
+        install(DIRECTORY ${FREECAD_EXPR_IMAGE_DIR}/Lib
+                DESTINATION ${CMAKE_INSTALL_DATADIR}/Fcx)
+        # ... and mirrored into the build tree beside the other data, the
+        # way fc_copy_sources does it for module resources, so a build
+        # directory resolves the image through the SAME code path an
+        # installed FreeCAD uses instead of needing a preference set.
+        set(_fcx_data ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Fcx)
+        if(CMAKE_VERSION VERSION_LESS 3.26)
+            set(_fcx_copy copy_directory)
+        else()
+            set(_fcx_copy copy_directory_if_different)
+        endif()
+        add_custom_target(fcx_image_data ALL
+            COMMAND ${CMAKE_COMMAND} -E ${_fcx_copy}
+                    ${FREECAD_EXPR_IMAGE_DIR} ${_fcx_data}
+            COMMENT "Staging the expression sandbox image into the build tree")
+    endif()
 
     # The closed bridge member table, generated from the <Sandbox tier=.../>
     # annotations in the binding XMLs (docs/ExpressionSandbox.md sec 7.5).

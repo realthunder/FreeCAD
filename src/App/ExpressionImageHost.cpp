@@ -20,9 +20,11 @@
 
 #include "PreCompiled.h"
 
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <mutex>
+#include <sstream>
 
 #include <nlohmann/json.hpp>
 #include <wasm.h>
@@ -48,6 +50,67 @@ namespace App
 {
 namespace ExpressionSandbox
 {
+
+namespace
+{
+
+std::string envPath(const char* name)
+{
+    const char* value = std::getenv(name);
+    return value && *value ? std::string(value) : std::string();
+}
+
+/** Where the image and its stdlib slice are, when nothing said otherwise.
+ *
+ * Precedence: an explicit configure() (tests and headless flags) wins, then
+ * the preference, then the FCX_IMAGE / FCX_STDLIB environment (a developer
+ * pointing at a build tree), then the bundle a packaged FreeCAD installs as
+ * <datadir>/Fcx.  A path that resolves to nothing is not an error: the
+ * sandbox is then unavailable and evaluation stays in process, which is
+ * exactly what a build without the image has to do anyway.
+ */
+void resolvePaths(std::string& imagePath, std::string& stdlibPath)
+{
+    auto hGrp = GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Expression/Sandbox");
+    imagePath = hGrp->GetASCII("ImagePath", "");
+    stdlibPath = hGrp->GetASCII("StdlibPath", "");
+    if (imagePath.empty())
+        imagePath = envPath("FCX_IMAGE");
+    if (stdlibPath.empty())
+        stdlibPath = envPath("FCX_STDLIB");
+    std::string bundle = App::Application::getResourceDir() + "Fcx/";
+    if (imagePath.empty())
+        imagePath = bundle + "fcx_image.wasm";
+    if (stdlibPath.empty())
+        stdlibPath = bundle + "Lib";
+}
+
+/** Where the compiled form of `imagePath` is cached.
+ *
+ * NOT beside the image: an installed data directory is read-only for the
+ * user who runs FreeCAD, and the compiled form is specific to the wasmtime
+ * build and the host CPU, so it can never be shipped either -- it has to be
+ * made once per user.  The file name carries a hash of the image's full
+ * path because a box can have several (a build tree and an install) whose
+ * base names are identical, and the staleness check is a timestamp: a
+ * collision there would deserialize the wrong module.
+ */
+std::string cachePathFor(const std::string& imagePath)
+{
+    uint64_t hash = 1469598103934665603ULL;  // FNV-1a, 64 bit
+    for (unsigned char c : imagePath) {
+        hash ^= c;
+        hash *= 1099511628211ULL;
+    }
+    std::ostringstream name;
+    name << Base::FileInfo(imagePath).fileNamePure() << '-' << std::hex << hash
+         << ".cwasm";
+    return App::Application::getUserCachePath() + "ExpressionSandbox/"
+            + name.str();
+}
+
+}  // namespace
 
 struct ImageHost::Private
 {
@@ -150,14 +213,12 @@ struct ImageHost::Private
             return live;
         triedInit = true;
 
-        if (!configured) {
-            auto hGrp = GetApplication().GetParameterGroupByPath(
-                "User parameter:BaseApp/Preferences/Expression/Sandbox");
-            imagePath = hGrp->GetASCII("ImagePath", "");
-            stdlibPath = hGrp->GetASCII("StdlibPath", "");
-        }
-        if (imagePath.empty() || stdlibPath.empty()) {
-            FC_LOG("no image/stdlib configured, sandbox image unavailable");
+        if (!configured)
+            resolvePaths(imagePath, stdlibPath);
+        if (!Base::FileInfo(imagePath).isFile()
+                || !Base::FileInfo(stdlibPath).isDir()) {
+            FC_LOG("no image at " << imagePath << " with a stdlib at "
+                   << stdlibPath << ", sandbox image unavailable");
             return false;
         }
 
@@ -181,11 +242,11 @@ struct ImageHost::Private
             return false;
         }
 
-        // JIT-compiling the ~32 MB image costs ~600 ms; a serialized
-        // .cwasm loads in ~20 ms.  The cache sits next to the image and
-        // is refreshed whenever it is older than the image or fails to
-        // deserialize (wasmtime version change).
-        std::string cachePath = imagePath + ".cwasm";
+        // JIT-compiling the image costs ~600 ms; a serialized .cwasm
+        // loads in ~20 ms.  The cache lives in the user cache directory
+        // (see cachePathFor) and is refreshed whenever it is older than
+        // the image or fails to deserialize (wasmtime version change).
+        std::string cachePath = cachePathFor(imagePath);
         Base::FileInfo imageInfo(imagePath);
         Base::FileInfo cacheInfo(cachePath);
         if (cacheInfo.exists()
@@ -215,7 +276,10 @@ struct ImageHost::Private
                 return false;
             }
             wasm_byte_vec_t blob;
-            if (!wasmtime_module_serialize(module, &blob)) {
+            Base::FileInfo cacheDir(App::Application::getUserCachePath()
+                                    + "ExpressionSandbox");
+            if ((cacheDir.isDir() || cacheDir.createDirectory())
+                    && !wasmtime_module_serialize(module, &blob)) {
                 std::ofstream out(cachePath, std::ios::binary);
                 if (out)
                     out.write(blob.data, (std::streamsize)blob.size);
@@ -465,6 +529,16 @@ bool ImageHost::available()
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
     return d->initialize();
+}
+
+ImageHost::Location ImageHost::location()
+{
+    std::lock_guard<std::recursive_mutex> lock(d->mutex);
+    Location loc {d->imagePath, d->stdlibPath, std::string()};
+    if (!d->configured && !d->triedInit)
+        resolvePaths(loc.image, loc.stdlib);
+    loc.cache = cachePathFor(loc.image);
+    return loc;
 }
 
 void ImageHost::configure(const std::string& imagePath,
