@@ -98,6 +98,15 @@ if(BUILD_CYCLES)
     # the env's own config package (lib/cmake/TBB), and it points at
     # tbb12.lib; Cycles' bundled FindTBB picks the legacy tbb.lib, which
     # has no DLL beside it and does not answer the directive.
+    # Nothing else in this tree loads TBB's config package, so ask for
+    # it here. Cycles' external_libs.cmake finds TBB in MODULE mode
+    # through its own bundled FindTBB, which sets TBB_LIBRARY and
+    # TBB_INCLUDE_DIR but defines no imported target -- so TBB::tbb does
+    # not exist, the guard below silently does nothing, and the LNK1104
+    # described above is exactly what the link produces. QUIET, and the
+    # guard is kept, because a platform without the config package does
+    # not emit the auto-link pragma either and has nothing to answer.
+    find_package(TBB CONFIG QUIET)
     if(TARGET TBB::tbb)
         target_link_libraries(FreeCADRendererCycles PUBLIC TBB::tbb)
     endif()
