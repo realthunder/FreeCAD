@@ -737,6 +737,75 @@ negative entry for it would break it.  Only foreign-document references
 qualify, because only those are ones the image structurally cannot
 answer.  `unresolvableLocalNameIsNotShippedAsAnError` guards this.
 
+### What flipping the default actually needs (measured 2026-08-31)
+
+The user's rollout decision was "preference-gated, OFF by default; the
+corpus regression is the gate to changing the default".  The gate is
+green.  Flipping the default would nonetheless be a **no-op on every
+box but this one**, and the reason is packaging, not parity:
+
+- `BUILD_EXPR_IMAGE_HOST` is **OFF by default**
+  (`InitializeFreeCADBuildOptions.cmake:152`), so a released build has
+  no `ImageHost` at all and `evaluationRouted()` returns false through
+  the `#else`.
+- There is **no default image path**: `ImagePath` /`StdlibPath` default
+  to the empty string, and empty means unavailable
+  (`ExpressionImageHost.cpp:156`).
+- `src/App/ExpressionImage/CMakeLists.txt` has **no install rule** --
+  `fcx_image.wasm` and the 16-file stdlib are build artifacts of a
+  separate cross project that nothing packages.
+- `libFreeCADApp.so` links `libwasmtime.so` **by absolute path** into a
+  sibling dev directory (`${WASMTIME_CAPI_DIR}/lib/libwasmtime.so`), so
+  the current build is not even relocatable.
+
+So the flip is one decision plus a packaging slice: build the host on
+by default (or detect), install the image + stdlib as data, resolve
+`ImagePath` relative to the install prefix when the preference is
+empty, and take wasmtime as a real runtime dependency (a conda-forge
+package for the feedstocks, ~30 MB of image on top).  None of that is
+expression work, and none of it is blocked by the gate.
+
+### Where the time goes (re-measured 2026-08-31, after slices B and C)
+
+    native.parse+eval.arith          2.02 us
+    native.eval.arith.cachedAST      0.33 us    <- parse is 1.4 us of it
+    native.parse+eval.prop           3.14 us
+
+    image.transport.floor            2.63 us    <- ping, no CPython
+    image.expr.noOwner.literal       7.75 us    <- + expr dispatch/walk
+    image.expr.owner.literal         9.48 us    <- + owner handle (1.7)
+    image.evalExpression.arith      14.90 us
+    image.expr.oneBinding           21.65 us    <- one binding = ~12 us
+    image.evalExpression.prop       21.75 us
+    image.expr.fiveBindings         36.81 us    <- ~5.5 us each after
+    host.pack.fiveBindings          12.06 us    <- 2.4 us each, host side
+    image.eval.oneBridgeHop         41.81 us
+    image.instantiate+firstEval     16-28 ms
+
+Slices B and C cost ~1.5 us per eval (13.4 -> 14.9 arith), which is the
+`opts` and `binderrs` fields on the wire.
+
+The ranked levers, and what each is worth:
+
+1. **The bindings pack, ~12 us for the first binding and ~5.5 us for
+   each after.**  This is the biggest item by a distance and it is NOT
+   on the slice E list, which named the AST cache, the owner handle and
+   instance pooling.  Only 2.4 us of it is the host-side resolve; the
+   rest is encode + CBOR + in-image decode + the in-image identifier
+   lookup.  Worth an anatomy pass before optimising anything else.
+2. **In-image AST re-parse.**  Real -- natively parse is 1.4 us of a
+   2.0 us eval, and the image re-parses the same source every call
+   during a recompute.  TRAP: `Expression::parse(tx.owner(), ...)`
+   stores the transaction's owner pointer in every node, and the
+   transaction is destroyed at the end of the eval.  A cached AST
+   therefore points at a dead owner unless the in-image owner becomes a
+   stable object that the transaction re-binds.  That is a real design
+   change, not a cache.
+3. **Transaction-scoped owner handle, 1.7 us (11%).**  TRAP: it has to
+   survive `clearHandles()`, which is exactly the invariant the
+   deferred-release fix depends on -- see "a result may hold a host
+   object".  Small win, sharp edges.
+
 ### The compatibility gate (built 2026-08-31)
 
 ES sec 11's migration constraint -- old files must evaluate identically
