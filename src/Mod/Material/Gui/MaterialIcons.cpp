@@ -73,6 +73,15 @@ namespace
 constexpr int RenderPerTick = 4;
 /// Multisampling of the rendered frame. The downsample to the smaller
 /// sizes does most of the anti-aliasing work; this cleans up the largest.
+///
+/// Stated here and pinned on the viewer (setNumSamples), NOT left to the
+/// AntiAliasing preference, for the same reason as every other setting in
+/// settings(): these pictures ship. The preference's default went from 4x
+/// to off (View3DInventorViewer::getNumSamples), and the icons rendered
+/// after that came out with a BINARY alpha -- 0 or 255, no coverage
+/// ladder at all -- against the 0/64/128/191/255 of the ones already in
+/// the binary. A sphere in Realistic shading is exactly the case that
+/// default gives up: a bare limb with no edge drawn along it.
 constexpr int IconSamples = 4;
 
 /** The PNG text key a bundled icon states its appearance digest under
@@ -206,6 +215,9 @@ public:
         setAttribute(Qt::WA_DontShowOnScreen);
         const int size = MaterialIcons::sizes().front();
         resize(size, size);
+        // Before the backend is created below: attaching the feed is what
+        // hands it a sample count (applyRendererAntiAliasing).
+        setNumSamples(IconSamples);
         show();
 
         _material = new SoMaterial;

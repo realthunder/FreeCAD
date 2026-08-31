@@ -4264,6 +4264,16 @@ int View3DInventorViewer::getNumSamples()
     // NOLINTEND
 }
 
+int View3DInventorViewer::numSamples() const
+{
+    return _numSamples >= 0 ? _numSamples : getNumSamples();
+}
+
+void View3DInventorViewer::setNumSamples(int samples)
+{
+    _numSamples = samples;
+}
+
 GLenum View3DInventorViewer::getInternalTextureFormat()
 {
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
@@ -4331,7 +4341,7 @@ void View3DInventorViewer::setRenderType(RenderType type)
             auto gl = static_cast<QtGLWidget*>(this->viewport());  // NOLINT
             gl->makeCurrent();
             QOpenGLFramebufferObjectFormat fboFormat;
-            fboFormat.setSamples(getNumSamples());
+            fboFormat.setSamples(numSamples());
             fboFormat.setAttachment(QtGLFramebufferObject::CombinedDepthStencil);
             auto fbo = new QtGLFramebufferObject(width, height, fboFormat);
             if (fbo->format().samples() > 0) {
@@ -4371,7 +4381,7 @@ QImage View3DInventorViewer::grabFramebuffer()
     int width = size[0];
     int height = size[1];
 
-    int samples = getNumSamples();
+    int samples = numSamples();
     if (samples == 0) {
         // if anti-aliasing is off we can directly use glReadPixels
         QImage img(QSize(width, height), QImage::Format_RGB32);
@@ -4380,7 +4390,7 @@ QImage View3DInventorViewer::grabFramebuffer()
     }
     else {
         QOpenGLFramebufferObjectFormat fboFormat;
-        fboFormat.setSamples(getNumSamples());
+        fboFormat.setSamples(numSamples());
         fboFormat.setAttachment(QOpenGLFramebufferObject::Depth);
         fboFormat.setTextureTarget(GL_TEXTURE_2D);
         fboFormat.setInternalTextureFormat(getInternalTextureFormat());
@@ -4949,7 +4959,7 @@ bool View3DInventorViewer::applyRendererAntiAliasing()
     // compositing, so the sample count is applied directly — no need to clone
     // the view to obtain a multisampled GL context (which would tear down and
     // recreate the backend). The change takes effect on the next frame.
-    _pimpl->renderer->setMSAASamples(getNumSamples());
+    _pimpl->renderer->setMSAASamples(numSamples());
     if (auto rm = getSoRenderManager())
         rm->scheduleRedraw();
     return true;

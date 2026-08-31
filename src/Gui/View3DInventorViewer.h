@@ -237,6 +237,17 @@ public:
 
     /// Get the preferred samples from the user settings
     static int getNumSamples();
+    /// The multisampling THIS viewer draws with: the user preference,
+    /// unless the viewer has been given a count of its own.
+    int numSamples() const;
+    /// Fix this viewer's multisampling, whatever the preference says.
+    ///
+    /// For a viewer whose picture is an artifact rather than a view of
+    /// the user's model: the material icons are rendered by one and ship
+    /// in the binary, so what it draws must not move when the
+    /// AntiAliasing default does. A negative value gives the preference
+    /// back.
+    void setNumSamples(int samples);
     void setRenderType(RenderType type);
     RenderType getRenderType() const;
     void renderToFramebuffer(QtGLFramebufferObject*);
@@ -918,6 +929,8 @@ private:
     void createStandardCursors(double);
 
 private:
+    /// Multisampling of this viewer alone; < 0 defers to the preference.
+    int _numSamples {-1};
     NaviCube* naviCube;
     std::set<ViewProvider*> _ViewProviderSet;
     std::list<GLGraphicsItem*> graphicsItems;
