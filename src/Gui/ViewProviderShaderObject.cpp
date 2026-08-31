@@ -580,12 +580,106 @@ void ViewProviderShaderProgram::validateDocument()
     for (const auto &w : info.warnings)
         Base::Console().Warning("%s: %s\n", label.c_str(), w.c_str());
     if (!info.valid) {
+        // The parameters are NOT withdrawn here. A document is edited
+        // in place, so it spends time unparsable on the way from one
+        // valid state to the next, and taking the properties away over
+        // that would take the user's values with them.
         Base::Console().Error("%s: not a usable MaterialX document: %s\n",
                               label.c_str(), info.error.c_str());
         return;
     }
     FC_LOG(label << ": MaterialX document, " << info.materials.size()
                  << " material(s), surface " << info.surface);
+    syncDocumentInterface(info.inputs);
+}
+
+// The App::Property a MaterialX type is carried by, and the value
+// written into it. Nothing else in the tree maps this way round --
+// everywhere else a property exists and a shader reads it -- which is
+// the whole point of the reverse direction (docs/CyclesIntegration.md
+// sec 6.11): the document declares the interface and the properties
+// follow. A type with no property here (a string, a matrix, an image
+// file) never reaches this point: the enumeration leaves it out.
+static const char *propertyTypeFor(const std::string &type)
+{
+    if (type == "float")
+        return "App::PropertyFloat";
+    if (type == "integer")
+        return "App::PropertyInteger";
+    if (type == "boolean")
+        return "App::PropertyBool";
+    if (type == "color3" || type == "color4")
+        return "App::PropertyColor";
+    if (type == "vector2" || type == "vector3")
+        return "App::PropertyVector";
+    if (type == "vector4")
+        return "App::PropertyFloatList";
+    return nullptr;
+}
+
+static void writeDefault(App::Property *prop, const std::vector<float> &v)
+{
+    auto at = [&v](size_t i) { return i < v.size() ? v[i] : 0.0f; };
+    if (auto p = dynamic_cast<App::PropertyFloat*>(prop))
+        p->setValue(at(0));
+    else if (auto p = dynamic_cast<App::PropertyInteger*>(prop))
+        p->setValue(long(at(0)));
+    else if (auto p = dynamic_cast<App::PropertyBool*>(prop))
+        p->setValue(at(0) != 0.0f);
+    else if (auto p = dynamic_cast<App::PropertyColor*>(prop))
+        p->setValue(App::Color(at(0), at(1), at(2),
+                               v.size() > 3 ? at(3) : 1.0f));
+    else if (auto p = dynamic_cast<App::PropertyVector*>(prop))
+        p->setValue(Base::Vector3d(at(0), at(1), at(2)));
+    else if (auto p = dynamic_cast<App::PropertyFloatList*>(prop)) {
+        std::vector<double> values;
+        for (size_t i = 0; i < 4; ++i)
+            values.push_back(at(i));
+        p->setValues(values);
+    }
+}
+
+void ViewProviderShaderProgram::syncDocumentInterface(
+        const std::vector<Render::MaterialX::MaterialInput> &inputs)
+{
+    auto obj = dynamic_cast<App::ShaderProgram*>(getObject());
+    if (!obj)
+        return;
+    static const std::string prefix = "Param_";
+    std::set<std::string> wanted;
+    for (const auto &input : inputs) {
+        const char *type = propertyTypeFor(input.type);
+        if (!type)
+            continue;
+        const std::string name = prefix + input.name;
+        wanted.insert(name);
+        App::Property *prop = obj->getDynamicPropertyByName(name.c_str());
+        if (prop && strcmp(prop->getTypeId().getName(), type) != 0) {
+            // The document changed what the input IS. The value cannot
+            // survive that, and keeping a property of the wrong type
+            // would feed the shader lanes it does not mean.
+            obj->removeDynamicProperty(name.c_str());
+            prop = nullptr;
+        }
+        if (prop)
+            continue;   // an existing value is the user's, not ours
+        std::string doc = input.label.empty() ? input.name : input.label;
+        if (!input.folder.empty())
+            doc += " (" + input.folder + ")";
+        if (!input.help.empty())
+            doc += ": " + input.help;
+        prop = obj->addDynamicProperty(type, name.c_str(), "Param", doc.c_str());
+        if (prop)
+            writeDefault(prop, input.value);
+    }
+    // What the document no longer declares stops being a parameter.
+    // Only for a MATERIALX program: everywhere else Param_* properties
+    // are the author's own and nothing may take them away.
+    for (const auto &name : obj->getDynamicPropertyNames()) {
+        if (name.compare(0, prefix.size(), prefix) == 0
+                && name.size() > prefix.size() && !wanted.count(name))
+            obj->removeDynamicProperty(name.c_str());
+    }
 }
 
 void ViewProviderShaderProgram::syncParameters()

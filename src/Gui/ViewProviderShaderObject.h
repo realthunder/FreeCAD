@@ -24,6 +24,7 @@
 #define GUI_ViewProviderShaderObject_H
 
 #include <map>
+#include <vector>
 
 #include <QPointer>
 
@@ -38,6 +39,14 @@ class SoVertexShader;
 class SoFragmentShader;
 class SoSeparator;
 class SoGroup;
+
+/// Declared rather than included: MaterialXSupport.h is the renderer
+/// library's header, and one member function's parameter is no reason
+/// for every consumer of this one to see it.
+namespace Render::MaterialX
+{
+struct MaterialInput;
+}
 
 namespace Gui {
 
@@ -78,6 +87,14 @@ private:
     /// arrives here whole, so the earliest place it can be checked is
     /// where it is first materialized -- which is document load.
     void validateDocument();
+    /// Materialize the document's declared interface as the object's
+    /// `Param_*` dynamic properties, the REVERSE of the hand-declared
+    /// direction everything else here takes: the document says what
+    /// the knobs are, and one that is gone takes its property with it.
+    /// An existing property keeps its value -- it is what the user set
+    /// -- so re-reading a document is not a reset.
+    void syncDocumentInterface(
+            const std::vector<Render::MaterialX::MaterialInput> &inputs);
 
     CoinPtr<SoShaderProgram> pcShaderProgram;
     CoinPtr<SoVertexShader> pcVertexShader;
