@@ -263,8 +263,26 @@ void main()
 			rough = frough;
 	}
 
+	// What a generated material may ask of the geometry. Filled here
+	// because this is where the varyings are readable -- the SPIR-V
+	// path resolves one only inside main().
+	FcMtlxGeom mtlxGeom;
+	mtlxGeom.normalWorld = normalize(mul(u_invView, vec4(n, 0.0)).xyz);
+	mtlxGeom.tangentWorld = normalize(mul(u_invView,
+	                                      vec4(1.0, 0.0, 0.0, 0.0)).xyz);
+	mtlxGeom.positionWorld = mul(u_invView, vec4(v_vpos, 1.0)).xyz;
+	mtlxGeom.normalObject = normalize(v_onrm);
+	mtlxGeom.positionObject = v_opos;
+#if defined(TEXTURE) || defined(FC_USER_MATERIAL)
+	mtlxGeom.texcoord0 = v_texcoord0;
+#else
+	mtlxGeom.texcoord0 = vec2(0.0, 0.0);
+#endif
+	mtlxGeom.color0 = v_color0.rgb;
+
 	vec4 lit = fcShadeFragment(base, n, geoN, v_vpos, gl_FragCoord.xy,
-	                           occ, metal, rough, matEmissive, matSpec);
+	                           occ, metal, rough, matEmissive, matSpec,
+	                           mtlxGeom);
 	vec3 color = lit.rgb;
 	float alpha = lit.a;
 

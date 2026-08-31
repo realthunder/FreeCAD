@@ -2084,6 +2084,20 @@ public:
         bool failed = false;
     };
     std::map<std::string, UserProgram> userPrograms;
+    /// The mesh-shader variant a MaterialX document compiles to, keyed
+    /// on the document's identity (its file, or its text). Generating
+    /// one costs tens of milliseconds -- a whole MaterialX document
+    /// load and shader generation -- and every draw sharing a material
+    /// asks for it every frame, so it is generated once. An entry that
+    /// is empty is a document that could not be generated; the reason
+    /// was reported when it was first tried, and the draw shades as its
+    /// stock appearance from then on without asking again.
+    std::map<std::string, std::string> materialXVariants;
+    /// The assembled fragment source for a MaterialX shader: the stock
+    /// mesh fragment stage with the document's generated material-inputs
+    /// function spliced in. Empty when the document cannot be rendered
+    /// by the raster path.
+    const std::string &materialXVariant(const Render::UserShader &shader);
     /// Resolve a user program: user fragment stage + either a user
     /// vertex stage or the named stock vertex stage ("vs_fc_comp" for
     /// the post stage's full-screen triangle, "vs_fc_mesh" for the

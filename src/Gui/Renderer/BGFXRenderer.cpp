@@ -22,6 +22,7 @@
 
 
 #include "BGFXRendererP.h"
+#include "MaterialXSupport.h"
 #include "Vg2D.h"
 
 extern "C" int _main_(int, char**) {
@@ -1950,6 +1951,52 @@ BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
     return 1;
 }
 
+const std::string &
+BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
+{
+    static const std::string kNone;
+    // A document is identified by the file it came from, or by its text
+    // when it has no file. Two draws sharing a material share one
+    // generation and one compile.
+    const std::string key = shader.sourcePath.empty() ? shader.fragmentSource
+                                                      : shader.sourcePath;
+    auto it = materialXVariants.find(key);
+    if (it != materialXVariants.end())
+        return it->second;
+
+    auto gen = Render::MaterialX::generate(shader.fragmentSource,
+                                           shader.sourcePath);
+    const std::string what = shader.sourcePath.empty() ? std::string("document")
+                                                       : shader.sourcePath;
+    for (const auto &w : gen.warnings)
+        Base::Console().Warning("MaterialX %s: %s\n", what.c_str(), w.c_str());
+    if (!gen.valid) {
+        // Reported once, here, and the draw keeps its stock appearance.
+        // The path tracer reads the same document on its own terms and
+        // may well render it (docs/CyclesIntegration.md sec 6.9).
+        Base::Console().Warning("MaterialX %s: not rendered by the raster "
+                                "path: %s\n", what.c_str(),
+                                gen.error.c_str());
+        return materialXVariants.emplace(key, std::string()).first->second;
+    }
+
+    // The stock TEXTURED mesh fragment stage, spliced. Textured because
+    // that is the variant whose vertex stage carries a texture
+    // coordinate, which is what a pattern graph asks for most often;
+    // TEXTURE itself is deliberately NOT defined, so no texture
+    // environment is applied on top of what the document states. The
+    // varying list has to match vs_fc_mesh_tex exactly -- bgfx links a
+    // program only on an exact varying match.
+    std::string src =
+        "$input v_normal, v_color0, v_color1, v_color2, v_texcoord0, "
+        "v_vpos, v_opos, v_onrm, v_findex\n"
+        "#include <bgfx_shader.sh>\n"
+        "#define FC_USER_MATERIAL 1\n"
+        "#include \"fc_mesh_fs.sh\"\n"
+        + gen.source;
+    return materialXVariants.emplace(key, std::move(src)).first->second;
+}
+
 void
 BGFXRendererLibP::viewerShaderBins(
     const Render::UserShader &shader,
@@ -1957,11 +2004,22 @@ BGFXRendererLibP::viewerShaderBins(
 {
     if (shader.fragmentSource.empty())
         return;
-    // A MaterialX document is a material description, not shader text
-    // (docs/CyclesIntegration.md sec 8 item 15): there is nothing for
-    // shaderc to compile and nothing for the viewer tier to load.
-    if (shader.dialect != Render::UserShader::Dialect::ShaderText)
+    // A MaterialX document is a material description, not shader text:
+    // what the viewer tier loads is the mesh-shader variant generated
+    // from it (docs/CyclesIntegration.md sec 6.10). The viewer has no
+    // compiler of its own, so this server-side compile is the only one
+    // it will ever get.
+    std::string generated;
+    if (shader.dialect == Render::UserShader::Dialect::MaterialX) {
+        generated = materialXVariant(shader);
+        if (generated.empty())
+            return;
+    }
+    else if (shader.dialect != Render::UserShader::Dialect::ShaderText) {
         return;
+    }
+    const std::string &fsSource =
+        generated.empty() ? shader.fragmentSource : generated;
     // A raw volume-stage source is a medium FUNCTION, not a whole
     // program — it can never compile standalone on any tier. Its
     // compiled form ships as the assembled splice variants instead
@@ -1988,7 +2046,7 @@ BGFXRendererLibP::viewerShaderBins(
         Render::UserShader::Compiled c;
         c.profile = t.profile;
         QString fsBin, vsBin, simBin;
-        if (ensureUserShaderBin(shader.fragmentSource, true, fsBin,
+        if (ensureUserShaderBin(fsSource, true, fsBin,
                                 t.platform, t.profile) != 0)
             continue;
         if (!shader.vertexSource.empty()
@@ -2019,20 +2077,31 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
                                  const char *stockVs, bool simulate)
 {
     static const std::string kNoVertexStage;
-    // A MaterialX document is a material description, not shader
-    // text: handing it to shaderc would report a compile error per
-    // material and draw nothing new. The raster path reads a document
-    // through a generator instead, which is phase B step 2 of
-    // docs/CyclesIntegration.md sec 8 item 15; until then such a draw
-    // shades as its stock material does. Guarded here, at the one
-    // door every stage's compile goes through -- including the
-    // server-side compile for the viewer tier.
-    if (shader.dialect != Render::UserShader::Dialect::ShaderText)
+    // A MaterialX document is a material description, not shader text:
+    // handing one to shaderc would report a compile error per material
+    // and draw nothing new. What is compiled is the mesh-shader variant
+    // generated from it (docs/CyclesIntegration.md sec 6.10) -- the
+    // stock fragment stage with the document's material-inputs function
+    // spliced in, so the engine keeps its own lighting. It pairs with
+    // the TEXTURED stock vertex stage, whatever the caller asked for,
+    // because that is the one carrying a texture coordinate.
+    std::string generated;
+    if (shader.dialect == Render::UserShader::Dialect::MaterialX) {
+        if (simulate)
+            return BGFX_INVALID_HANDLE;
+        generated = materialXVariant(shader);
+        if (generated.empty())
+            return BGFX_INVALID_HANDLE;
+        stockVs = "vs_fc_mesh_tex";
+    }
+    else if (shader.dialect != Render::UserShader::Dialect::ShaderText) {
         return BGFX_INVALID_HANDLE;
+    }
     const std::string &vsSource =
-        simulate ? kNoVertexStage : shader.vertexSource;
+        (simulate || !generated.empty()) ? kNoVertexStage : shader.vertexSource;
     const std::string &fsSource =
-        simulate ? shader.simulateSource : shader.fragmentSource;
+        simulate ? shader.simulateSource
+                 : (generated.empty() ? shader.fragmentSource : generated);
     if (fsSource.empty())
         return BGFX_INVALID_HANDLE;
     QByteArray keyed(fsSource.c_str(), int(fsSource.size()));

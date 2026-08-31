@@ -246,6 +246,23 @@ vec3 fcBaseFromSpecular(vec3 diffuse, vec3 spec, out float metal)
 	             vec3_splat(0.0), vec3_splat(1.0));
 }
 
+/* The user material-stage splice. A MaterialX document generates a
+ * function that states the OpenPBR parameters (Renderer/MaterialXGen.cpp);
+ * the assembled variant defines FC_USER_MATERIAL and appends that
+ * function after this file, so the prototype here is what lets the
+ * shading branch below call it. Without the define this compiles to
+ * nothing and the branch shades the draw's own appearance -- the same
+ * arrangement the volume stage uses for its medium functions
+ * (fc_volume.sh).
+ *
+ * The document IS the surface: it runs after the defaults and before
+ * anything is evaluated, so what it does not state keeps OpenPBR's own
+ * default rather than the draw's.
+ */
+#ifdef FC_USER_MATERIAL
+void fcUserMaterialInputs(inout FcOpenPbr m, FcMtlxGeom g);
+#endif
+
 /* One light's contribution to the OpenPBR branch. The light vector `l`
  * points from the surface toward the light in view space; the BSDF is
  * evaluated in the surface's own local frame, so it is transformed
@@ -454,7 +471,7 @@ float fcSceneShadow(vec3 vpos, vec2 fragCoord, out vec3 tint)
  */
 vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
                      vec2 fragCoord, float occ, float metal, float rough,
-                     vec3 matEmissive, vec4 matSpec)
+                     vec3 matEmissive, vec4 matSpec, FcMtlxGeom mtlxGeom)
 {
 	vec3 color = base.rgb;
 
@@ -475,9 +492,30 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 	if (u_lightPos.w > -0.5)
 		sceneL = normalize(vpos - u_lightPos.xyz);
 
+	// Which shading model this draw runs. A GENERATED material (a
+	// MaterialX document) is an OpenPBR surface by construction, so it
+	// takes that branch whatever the frame's shading mode says: a
+	// matcap or a Phong evaluation has nowhere to put what the document
+	// states, and the draw would silently render as though no document
+	// were attached -- which is exactly how this arrived, with every
+	// leg of the splice probe reading byte-identical to its control.
+#ifdef FC_USER_MATERIAL
+	bool matcapBranch = false;
+	bool openPbrBranch = true;
+	// The frame carries no PBR configuration when its PBR mode is off,
+	// and its environment intensity is then zero. A document asks for a
+	// physically shaded surface, so it gets the environment at full
+	// strength rather than an unlit one.
+	float envIntensity = u_pbrParams.x > 0.5 ? u_pbrParams.w : 1.0;
+#else
+	bool matcapBranch = u_matcapParams.x > 0.5;
+	bool openPbrBranch = u_pbrParams.x > 0.5;
+	float envIntensity = u_pbrParams.w;
+#endif
+
 	if (u_params.y > 0.5)
 	{
-		if (u_matcapParams.x > 0.5)
+		if (matcapBranch)
 		{
 			// Matcap: the whole shading is a camera-fixed studio looked
 			// up by the view normal. No lights, no shadow tap -- that is
@@ -491,7 +529,7 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			color = mix(mc, mc * base.rgb, u_matcapParams.z)
 				* (occ * ao);
 		}
-		else if (u_pbrParams.x > 0.5)
+		else if (openPbrBranch)
 		{
 			// OpenPBR (fc_openpbr.sh): the layered surface that this
 			// rasterizer and the Cycles path tracer both describe, under
@@ -525,6 +563,13 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			m.baseColor = pbrBase;
 			m.baseMetalness = pbrMetal;
 			m.specularRoughness = rough;
+#ifdef FC_USER_MATERIAL
+			// A generated material replaces the whole surface:
+			// the document states it, so the draw's own colour,
+			// metalness and roughness above are only what it
+			// leaves unstated.
+			fcUserMaterialInputs(m, mtlxGeom);
+#endif
 			fcOpenPbrClamp(m);
 
 			// The local shading frame, and the view vector in it.
@@ -601,7 +646,7 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 
 			color = fcOpenPbrEnv(m, w, ndv, max(irr, vec3_splat(0.0)),
 			                     prefSpec, prefCoat)
-					* (u_pbrParams.w * occ * ao)
+					* (envIntensity * occ * ao)
 				+ fcOpenPbrEnv(m, w, ndv, ambRad, ambRad, ambRad)
 					* (occ * ao)
 				+ direct;
@@ -862,6 +907,31 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 
 	color += matEmissive;
 	return vec4(color, base.a);
+}
+
+// The geometry a caller that has none can pass. A generated material
+// asking for a coordinate the draw does not carry reads zero, which is
+// what the generator warned about when it emitted the reference.
+FcMtlxGeom fcMtlxGeomNone()
+{
+	FcMtlxGeom g;
+	g.normalWorld = vec3(0.0, 0.0, 1.0);
+	g.tangentWorld = vec3(1.0, 0.0, 0.0);
+	g.positionWorld = vec3_splat(0.0);
+	g.normalObject = vec3(0.0, 0.0, 1.0);
+	g.positionObject = vec3_splat(0.0);
+	g.texcoord0 = vec2(0.0, 0.0);
+	g.color0 = vec3_splat(1.0);
+	return g;
+}
+
+// Geometry-less overload, for the callers that predate the splice.
+vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
+                     vec2 fragCoord, float occ, float metal, float rough,
+                     vec3 matEmissive, vec4 matSpec)
+{
+	return fcShadeFragment(base, n, geoN, vpos, fragCoord, occ, metal,
+	                       rough, matEmissive, matSpec, fcMtlxGeomNone());
 }
 
 // Scalar-material overload: the signature user material-stage shaders

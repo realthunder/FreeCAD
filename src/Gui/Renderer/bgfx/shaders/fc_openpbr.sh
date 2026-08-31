@@ -328,6 +328,23 @@ struct FcOpenPbr
 	float geometryOpacity;
 };
 
+/* What a generated material (a MaterialX document, docs/CyclesIntegration.md
+ * sec 6.10) may ask of the geometry. It is passed BY VALUE rather than
+ * read from the varyings where it is used: the SPIR-V path resolves a
+ * varying only inside main(), the same restriction gl_FragCoord carries,
+ * so a generated function at file scope cannot touch one.
+ */
+struct FcMtlxGeom
+{
+	vec3 normalWorld;
+	vec3 tangentWorld;
+	vec3 positionWorld;
+	vec3 normalObject;
+	vec3 positionObject;
+	vec2 texcoord0;
+	vec3 color0;
+};
+
 // The spec's own defaults, so a caller states only what it knows.
 void fcOpenPbrDefaults(out FcOpenPbr m)
 {
