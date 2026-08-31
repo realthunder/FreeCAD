@@ -1,0 +1,86 @@
+<?xml version="1.0"?>
+<!--
+  A procedural striped enamel, written for scripts/demo-materialx.py to
+  have something with a real INTERFACE in it: the five <input> elements
+  declared on the node graph below are what MaterialX calls the graph's
+  public inputs, and FreeCAD materializes each of them as a Param_*
+  property on the App::ShaderProgram carrying this document
+  (docs/CyclesIntegration.md sec 6.11). Move one in the property editor
+  and the material follows, with no shader regenerated.
+
+  No image node anywhere on purpose: the stripes are a function of
+  object-space position, so this renders in the rasterizer as well as in
+  the path tracer.
+-->
+<materialx version="1.39" colorspace="lin_rec709">
+  <nodegraph name="NG_fc_stripes">
+    <input name="base_color" type="color3" value="0.06, 0.24, 0.45"
+           uiname="Base color" uifolder="Stripes" />
+    <input name="stripe_color" type="color3" value="0.85, 0.80, 0.68"
+           uiname="Stripe color" uifolder="Stripes" />
+    <input name="stripe_scale" type="float" value="1.2"
+           uisoftmin="0.1" uisoftmax="6.0"
+           uiname="Stripe scale" uifolder="Stripes" />
+    <input name="stripe_sharpness" type="float" value="3.0"
+           uisoftmin="1.0" uisoftmax="12.0"
+           uiname="Stripe sharpness" uifolder="Stripes" />
+    <input name="roughness" type="float" value="0.30"
+           uimin="0.0" uimax="1.0"
+           uiname="Roughness" uifolder="Surface" />
+
+    <position name="obj_pos" type="vector3" space="object" />
+    <dotproduct name="axis" type="float">
+      <input name="in1" type="vector3" nodename="obj_pos" />
+      <input name="in2" type="vector3" value="0, 0, 1" />
+    </dotproduct>
+    <multiply name="scaled" type="float">
+      <input name="in1" type="float" nodename="axis" />
+      <input name="in2" type="float" interfacename="stripe_scale" />
+    </multiply>
+    <sin name="wave" type="float">
+      <input name="in" type="float" nodename="scaled" />
+    </sin>
+    <multiply name="half" type="float">
+      <input name="in1" type="float" nodename="wave" />
+      <input name="in2" type="float" value="0.5" />
+    </multiply>
+    <add name="unit" type="float">
+      <input name="in1" type="float" nodename="half" />
+      <input name="in2" type="float" value="0.5" />
+    </add>
+    <power name="sharp" type="float">
+      <input name="in1" type="float" nodename="unit" />
+      <input name="in2" type="float" interfacename="stripe_sharpness" />
+    </power>
+
+    <mix name="tint" type="color3">
+      <input name="bg" type="color3" interfacename="base_color" />
+      <input name="fg" type="color3" interfacename="stripe_color" />
+      <input name="mix" type="float" nodename="sharp" />
+    </mix>
+    <!-- The stripes are the polished part, so they take the roughness
+         down rather than leaving it flat across the ball. -->
+    <mix name="rough_mix" type="float">
+      <input name="bg" type="float" interfacename="roughness" />
+      <input name="fg" type="float" value="0.05" />
+      <input name="mix" type="float" nodename="sharp" />
+    </mix>
+
+    <output name="color" type="color3" nodename="tint" />
+    <output name="rough" type="float" nodename="rough_mix" />
+  </nodegraph>
+
+  <open_pbr_surface name="SR_fc_stripes" type="surfaceshader">
+    <input name="base_color" type="color3"
+           nodegraph="NG_fc_stripes" output="color" />
+    <input name="specular_roughness" type="float"
+           nodegraph="NG_fc_stripes" output="rough" />
+    <input name="coat_weight" type="float" value="0.4" />
+    <input name="coat_roughness" type="float" value="0.05" />
+  </open_pbr_surface>
+
+  <surfacematerial name="Striped_Enamel" type="material">
+    <input name="surfaceshader" type="surfaceshader"
+           nodename="SR_fc_stripes" />
+  </surfacematerial>
+</materialx>

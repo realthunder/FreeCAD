@@ -1835,6 +1835,14 @@ by 0.0465. Twelve raster legs and sixteen path-traced ones, both PASS;
 the seven raster legs that predate this step re-measure to the digit,
 and ctest is 454/454.
 
+`scripts/demo-materialx.py` is what this looks like from the outside:
+seventeen documents from `scripts/materialx/`, each EMBEDDED in an
+`App::ShaderProgram` and hung on its own ball, so the saved `.FCStd`
+carries every material in it and opens the same anywhere. Two of the
+seventeen declare an interface, and their balls come up with the knobs
+in the property editor. Writing that demo is also what found the fused
+name above.
+
 Not yet, and the remaining piece of step 3: a material card able to
 carry a `.mtlx`.
 
