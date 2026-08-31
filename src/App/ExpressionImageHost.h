@@ -44,6 +44,7 @@ namespace App
 {
 
 class DocumentObject;
+class Expression;
 
 namespace ExpressionSandbox
 {
@@ -92,7 +93,15 @@ public:
      * clearHandles().
      */
     ImageResult evalExpression(const App::DocumentObject* owner,
-                               const std::string& source);
+                               const std::string& source,
+                               const App::Expression* parsed = nullptr);
+
+    /** Decode the value of a successful result into a new host PyObject
+     * reference (nullptr on failure).  Handles in the reply resolve
+     * against the live table, so call this BEFORE clearHandles().  The
+     * caller holds the GIL.
+     */
+    PyObject* decodeResult(const ImageResult& result);
 
     /** Register a live host object for the current transaction and
      * return its wire handle id; pass it into bindings as
@@ -108,6 +117,11 @@ public:
 
     /// Live handle count (tests: proxies release on image-side __del__).
     std::size_t handleCount() const;
+
+    /// Evaluations that have crossed into the image since startup.
+    /// Diagnostics, and how a test proves an evaluation really was
+    /// routed rather than answered in-process.
+    std::size_t evalCount() const;
 
     /** Raw protocol call: a CBOR request in, the CBOR reply out, with
      * no host-side parsing, packing or result re-encoding.  Diagnostics

@@ -984,3 +984,132 @@ TEST_F(ExpressionImageBenchTest, DISABLED_BenchTransportFloor)
         ImageHost::instance().rawCall(bigBytes, out);
     });
 }
+
+// ---- the evaluation switch-over (docs/ExpressionImage.md): with the
+// ---- preference on, a stored expression evaluates IN the image, and an
+// ---- image failure fails the evaluation rather than falling back ----
+
+#include <App/ExpressionEvaluator.h>
+#include <App/PropertyExpressionEngine.h>
+
+class ExpressionRoutingTest: public ExpressionImageEvalTest
+{
+protected:
+    void SetUp() override
+    {
+        ExpressionImageEvalTest::SetUp();
+        if (IsSkipped())
+            return;
+        param = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Expression/Sandbox");
+        param->SetBool("Evaluate", true);
+    }
+
+    void TearDown() override
+    {
+        if (param)
+            param->RemoveBool("Evaluate");
+        param = ParameterGrp::handle();
+        ExpressionImageEvalTest::TearDown();
+    }
+
+    ParameterGrp::handle param;
+};
+
+TEST_F(ExpressionRoutingTest, routedEvaluationMatchesNative)
+{
+    ASSERT_TRUE(App::ExpressionSandbox::evaluationRouted());
+    auto expr = App::Expression::parse(obj, "Width * 2");
+    ASSERT_NE(expr, nullptr);
+
+    auto routed = App::ExpressionSandbox::evaluate(expr.get());
+    EXPECT_DOUBLE_EQ(App::any_cast<double>(routed), 42.0);
+
+    // the same expression evaluated in-process: same type, same value
+    auto native = expr->getValueAsAny();
+    EXPECT_DOUBLE_EQ(App::any_cast<double>(native),
+                     App::any_cast<double>(routed));
+}
+
+TEST_F(ExpressionRoutingTest, routingOffKeepsTheNativePath)
+{
+    param->SetBool("Evaluate", false);
+    EXPECT_FALSE(App::ExpressionSandbox::evaluationRouted());
+    auto expr = App::Expression::parse(obj, "Width * 2");
+    EXPECT_DOUBLE_EQ(
+        App::any_cast<double>(App::ExpressionSandbox::evaluate(expr.get())),
+        42.0);
+}
+
+TEST_F(ExpressionRoutingTest, boundPropertyRecomputesThroughTheImage)
+{
+    // the real desktop path: PropertyExpressionEngine evaluating a
+    // stored binding, with the router in front of it
+    auto out = Base::freecad_dynamic_cast<App::PropertyFloat>(
+        obj->addDynamicProperty("App::PropertyFloat", "Out"));
+    ASSERT_NE(out, nullptr);
+    App::ObjectIdentifier path(*obj->getPropertyByName("Out"));
+    obj->ExpressionEngine.setValue(
+        path,
+        std::shared_ptr<App::Expression>(
+            App::Expression::parse(obj, "Width * 2 + 1").release()));
+
+    std::size_t before = ImageHost::instance().evalCount();
+    auto ret = obj->ExpressionEngine.execute();
+    ASSERT_EQ(ret, App::DocumentObject::StdReturn) << (ret ? ret->Why : "");
+    EXPECT_DOUBLE_EQ(out->getValue(), 43.0);
+    // and it really crossed: the value alone cannot tell the paths apart
+    EXPECT_GT(ImageHost::instance().evalCount(), before);
+}
+
+TEST_F(ExpressionRoutingTest, imageErrorDoesNotFallBackToTheHost)
+{
+    using App::ExpressionSecurity::PermissionNeededException;
+
+    // A foreign-document reference is denied to the document principal.
+    // Routed, the denial happens at pack time INSIDE evalExpression and
+    // comes back as an image error, so the router raises a plain
+    // Base::Exception -- NOT the native path's
+    // PermissionNeededException.  That difference is the proof that the
+    // evaluation really crossed and that the failure was not quietly
+    // retried in the host.
+    auto doc2 = App::GetApplication().newDocument("FcxRouteOther", "testUser");
+    auto obj2 = doc2->addObject("App::FeaturePython", "Remote");
+    auto depth = Base::freecad_dynamic_cast<App::PropertyFloat>(
+        obj2->addDynamicProperty("App::PropertyFloat", "Depth"));
+    ASSERT_NE(depth, nullptr);
+    depth->setValue(15.0);
+
+    const std::string src = std::string(doc2->getName()) + "#Remote.Depth * 2";
+    auto expr = App::Expression::parse(obj, src.c_str(), src.size());
+    ASSERT_NE(expr, nullptr);
+
+    EXPECT_THROW(App::ExpressionSandbox::evaluate(expr.get()),
+                 Base::RuntimeError);
+    EXPECT_THROW(expr->getValueAsAny(), PermissionNeededException);
+
+    // and once granted, the routed evaluation produces the value
+    using App::ExpressionSecurity::Permission;
+    using App::ExpressionSecurity::Runtime;
+    std::string principal = Runtime::instance().documentPrincipal(doc);
+    Runtime::instance().grant(principal, Permission::DocForeign,
+                              doc2->getName(), true, "session");
+    EXPECT_DOUBLE_EQ(
+        App::any_cast<double>(App::ExpressionSandbox::evaluate(expr.get())),
+        30.0);
+    Runtime::instance().revoke(principal, Permission::DocForeign,
+                               doc2->getName());
+    Runtime::instance().clearPending(principal, Permission::DocForeign,
+                                     doc2->getName());
+    App::GetApplication().closeDocument(doc2->getName());
+}
+
+TEST_F(ExpressionRoutingTest, pythonModeIsRefusedNotSilentlyNative)
+{
+    // python-mode sheets are a separate step; while routing is on they
+    // must refuse rather than run in the host behind the boundary
+    auto expr = App::Expression::parse(obj, "Width * 2");
+    EXPECT_THROW(App::ExpressionSandbox::evaluate(
+                     expr.get(), App::Expression::OptionPythonMode),
+                 Base::RuntimeError);
+}

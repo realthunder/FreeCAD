@@ -93,6 +93,9 @@ if(BUILD_EXPR_IMAGE_HOST)
     endif()
     set(ExpressionImageHost_SRC ExpressionImageHost.cpp ExpressionImageBridge.cpp)
     include_directories(${WASMTIME_CAPI_DIR}/include)
+    # Lets ExpressionEvaluator.cpp route evaluation into the image; every
+    # other TU ignores it, and no header depends on it (no ABI edge).
+    add_definitions(-DFC_EXPR_IMAGE_HOST)
     list(APPEND FreeCADApp_LIBS ${WASMTIME_CAPI_DIR}/lib/libwasmtime.so)
 
     # The closed bridge member table, generated from the <Sandbox tier=.../>
@@ -217,6 +220,7 @@ SET(Document_CPP_SRCS
     DocumentObserverPython.cpp
     DocumentPyImp.cpp
     ExpressionDocumentOps.cpp
+    ExpressionEvaluator.cpp
     ExpressionSecurity.cpp
     ExpressionSecurityPy.cpp
     ExpressionSecurityRuntime.cpp
@@ -276,6 +280,7 @@ SET(Document_HPP_SRCS
     DocumentObserver.h
     DocumentObserverPython.h
     Expression.h
+    ExpressionEvaluator.h
     ExpressionImageBridge.h
     ExpressionImageHost.h
     ExpressionSecurity.h

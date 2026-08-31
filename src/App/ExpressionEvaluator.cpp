@@ -1,0 +1,148 @@
+/***************************************************************************
+ *   Copyright (c) 2026 FreeCAD Project Association                        *
+ *                                                                         *
+ *   This file is part of the FreeCAD CAx development system.              *
+ *                                                                         *
+ *   This library is free software; you can redistribute it and/or         *
+ *   modify it under the terms of the GNU Library General Public           *
+ *   License as published by the Free Software Foundation; either          *
+ *   version 2 of the License, or (at your option) any later version.      *
+ *                                                                         *
+ *   This library  is distributed in the hope that it will be useful,      *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU Library General Public License for more details.                  *
+ *                                                                         *
+ *   You should have received a copy of the GNU Library General Public     *
+ *   License along with this library; see the file COPYING.LIB. If not,    *
+ *   write to the Free Software Foundation, Inc., 59 Temple Place,         *
+ *   Suite 330, Boston, MA  02111-1307, USA                                *
+ *                                                                         *
+ ***************************************************************************/
+
+#include "PreCompiled.h"
+
+#include <Python.h>
+#include <sstream>
+
+#include <Base/Console.h>
+#include <Base/Exception.h>
+#include <Base/Interpreter.h>
+#include <Base/Parameter.h>
+
+#include "Application.h"
+#include "Expression.h"
+#include "ExpressionEvaluator.h"
+#include "ObjectIdentifier.h"
+
+#ifdef FC_EXPR_IMAGE_HOST
+#include "ExpressionImageHost.h"
+#endif
+
+FC_LOG_LEVEL_INIT("Expression", true, true)
+
+using namespace App;
+
+namespace
+{
+
+#ifdef FC_EXPR_IMAGE_HOST
+
+/// One image evaluation is in flight on this thread: anything the
+/// bindings pack resolves while it runs is the HOST half of that same
+/// evaluation and must not try to re-enter the image.
+thread_local bool inImageEvaluation = false;
+
+struct ReentryGuard
+{
+    ReentryGuard()
+    {
+        inImageEvaluation = true;
+    }
+    ~ReentryGuard()
+    {
+        inImageEvaluation = false;
+    }
+};
+
+/// The image reports a Python exception type name; raise the host
+/// exception that carries the same meaning.  The MESSAGE is passed
+/// through unchanged -- parity with the native engine's text (down to
+/// the ParserError wording) is verified, and rewriting it here would
+/// break it.
+[[noreturn]] void raiseImageError(const std::string& excType,
+                                  const std::string& message)
+{
+    std::string msg = message.empty() ? excType : message;
+    if (excType == "ParserError")
+        throw Base::ParserError(msg);
+    if (excType == "TypeError")
+        throw Base::TypeError(msg);
+    if (excType == "ValueError")
+        throw Base::ValueError(msg);
+    throw Base::RuntimeError(msg);
+}
+
+App::any evaluateInImage(const Expression* expr, int options)
+{
+    (void)options;
+    Base::PyGILStateLocker lock;
+    ReentryGuard guard;
+
+    auto& host = ExpressionSandbox::ImageHost::instance();
+    const std::string source = expr->toString();
+    auto result = host.evalExpression(expr->getOwner(), source, expr);
+    // decode BEFORE dropping the transaction's handles: a result that
+    // is itself a host object resolves against the live table
+    PyObject* value = host.decodeResult(result);
+    host.clearHandles();
+
+    if (!result.ok) {
+        if (value)
+            Py_DECREF(value);
+        raiseImageError(result.excType, result.message);
+    }
+    if (!value)
+        throw Base::RuntimeError("sandboxed evaluation returned a value the "
+                                 "host cannot decode");
+    Py::Object held(value, true);
+    return pyObjectToAny(held);
+}
+
+#endif  // FC_EXPR_IMAGE_HOST
+
+}  // namespace
+
+bool ExpressionSandbox::evaluationRouted()
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    static ParameterGrp::handle handle;
+    if (!handle)
+        handle = GetApplication().GetParameterGroupByPath(
+                "User parameter:BaseApp/Preferences/Expression/Sandbox");
+    if (!handle->GetBool("Evaluate", false))
+        return false;
+    return ImageHost::instance().available();
+#else
+    return false;
+#endif
+}
+
+App::any ExpressionSandbox::evaluate(const Expression* expr, int options)
+{
+    if (!expr)
+        return App::any();
+#ifdef FC_EXPR_IMAGE_HOST
+    if (!inImageEvaluation && expr->getOwner() && evaluationRouted()) {
+        // Python-mode sheets evaluate a different language in a
+        // different frame; routing them is a separate step, and
+        // quietly running them in the host would be the silent
+        // fallback this design refuses.
+        if (options & Expression::OptionPythonMode)
+            throw Base::RuntimeError("sandboxed evaluation does not cover "
+                                     "python-mode expressions yet");
+        return evaluateInImage(expr, options);
+    }
+#endif
+    return expr->getValueAsAny(options);
+}

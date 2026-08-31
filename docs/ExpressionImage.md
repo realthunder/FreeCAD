@@ -532,3 +532,66 @@ Where the remaining 11-18 us sits, and what would cut it:
 - **A mid-eval bridge hop is 31.6 us**, 12x the transport floor, which
   is the quantitative case for pack-first: reach-back is the expensive
   shape, exactly as sec 7.3 assumed.
+
+### The router (built 2026-08-31)
+
+Two policy decisions, taken by the user on 2026-08-31, shape it:
+
+- **Pre-resolve host-side, then fail closed.**  What the image cannot do
+  (`setPath` writes, LinkPlacement/LinkMatrix accumulation, getSubObject
+  walks, in-image dbind/lambda function values) gets resolved on the
+  host into the bindings pack where that is possible; whatever still
+  cannot cross **fails the evaluation**.  There is no silent retry in
+  the host -- that would leave the boundary saying one thing and doing
+  another.
+- **Preference-gated, OFF by default.**
+  `BaseApp/Preferences/Expression/Sandbox:Evaluate`.  The corpus
+  regression (456 .FCStd, 7628 expressions) is the gate to changing the
+  default, not a judgement call.
+
+`src/App/ExpressionEvaluator.{h,cpp}` is the single place a top-level
+stored expression is evaluated: `ExpressionSandbox::evaluate(expr,
+options)` routes into the image when routing is on and the expression
+qualifies, and calls `Expression::getValueAsAny` otherwise.  It is
+host-only and deliberately NOT in ExpressionCore -- the core compiles
+into the image and must never learn that a sandbox exists, which is
+also why the seam sits at the CALLERS rather than inside
+`getPyValue` (C1): `getPyValue` is re-entered by nested nodes and by
+the spreadsheet, so routing there would cross the boundary per value,
+the shape the measurement says costs 12x more.
+
+Wired so far: `PropertyExpressionEngine`, both evaluation sites (the
+recompute of a stored binding, and the hidden-reference update).  The
+spreadsheet is the next slice, and it is the one that has to decide
+what python-mode sheets do -- for now `evaluate()` REFUSES an
+`OptionPythonMode` request while routing is on rather than quietly
+running it in the host.
+
+Mechanics worth knowing:
+
+- **Re-entrancy is the one native path that survives.**  An evaluation
+  triggered while an image evaluation is in flight -- a bindings-pack
+  resolve that recomputes something -- runs natively, because it IS the
+  host-side half of the outer sandboxed evaluation.  A thread-local
+  guard detects it.
+- **The AST is not re-parsed.**  `evalExpression` takes the caller's
+  parsed `Expression*` and enumerates identifiers from it; only the
+  source text ships.  (1.4 us/eval, measured.)
+- **Handles are transaction-scoped**: the router decodes the result
+  BEFORE `clearHandles()`, so a result that is itself a host object
+  still resolves.
+- **Errors keep the image's message** (parity is verified byte-identical
+  down to the ParserError wording) and map the Python exception type to
+  the matching `Base::` exception.  A denial arrives as a plain
+  `Base::RuntimeError`, NOT the native path's
+  `PermissionNeededException` -- the pending request was already
+  recorded at pack time, so the popup-blocker UX still fires, and the
+  type difference is what the tests use to prove an evaluation really
+  crossed.
+- `ImageHost::evalCount()` counts crossings, so a test can tell the two
+  paths apart when the value cannot (both produce 43.0).
+
+Tests: `ExpressionRoutingTest` (5 cases) -- routed value equals native,
+routing off keeps the native path, a bound property recompute really
+crosses, an image error does not fall back, python-mode is refused.
+C++ ctest 507/507, Python 2628 OK with the preference off (the default).

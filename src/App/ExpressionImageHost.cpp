@@ -72,6 +72,7 @@ struct ImageHost::Private
     // between the host_call and host_fetch halves of one bridge op
     HandleTable handles;
     std::vector<uint8_t> pendingReply;
+    std::size_t evals = 0;
 
     static wasm_trap_t* hostCallCb(void* env, wasmtime_caller_t* caller,
                                    const wasmtime_val_t* args, size_t nargs,
@@ -491,6 +492,12 @@ void ImageHost::clearHandles()
     d->handles.clear();
 }
 
+std::size_t ImageHost::evalCount() const
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    return d->evals;
+}
+
 std::size_t ImageHost::handleCount() const
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
@@ -502,6 +509,21 @@ void ImageHost::reset()
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
     d->teardown();
     d->triedInit = false;
+}
+
+PyObject* ImageHost::decodeResult(const ImageResult& result)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    if (!result.ok)
+        return nullptr;
+    try {
+        json v = json::from_cbor(result.value.begin(), result.value.end());
+        return decodeHostValue(d->handles, v);
+    }
+    catch (const json::exception& e) {
+        FC_ERR("undecodable image result: " << e.what());
+        return nullptr;
+    }
 }
 
 bool ImageHost::rawCall(const std::vector<unsigned char>& requestCbor,
@@ -532,6 +554,7 @@ ImageResult ImageHost::eval(const std::string& source,
         return res;
     }
 
+    ++d->evals;
     json req;
     req["op"] = "eval";
     req["src"] = source;
@@ -570,7 +593,8 @@ ImageResult ImageHost::eval(const std::string& source,
 }
 
 ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
-                                      const std::string& source)
+                                      const std::string& source,
+                                      const App::Expression* parsed)
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
     ImageResult res;
@@ -580,6 +604,7 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
         return res;
     }
 
+    ++d->evals;
     json req;
     req["op"] = "eval";
     req["lang"] = "expr";
@@ -599,7 +624,15 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
         ExpressionSecurity::Runtime::Scope secScope(owner);
         Base::PyGILStateLocker lock;
 
-        auto expr = App::Expression::parse(owner, source.c_str(), source.size());
+        // An already-parsed expression is the switch-over's hot path:
+        // the caller holds the AST, so do not re-parse it here (1.4 us
+        // per evaluation, measured).
+        App::ExpressionPtr owned;
+        const App::Expression* expr = parsed;
+        if (!expr) {
+            owned = App::Expression::parse(owner, source.c_str(), source.size());
+            expr = owned.get();
+        }
         if (expr && owner) {
             PyObject* ownerPy =
                 const_cast<App::DocumentObject*>(owner)->getPyObject();
