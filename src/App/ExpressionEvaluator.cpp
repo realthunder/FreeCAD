@@ -86,12 +86,11 @@ struct ReentryGuard
 /// Returns a NEW reference, or throws.
 PyObject* evaluateInImage(const Expression* expr, int options)
 {
-    (void)options;
     ReentryGuard guard;
 
     auto& host = ExpressionSandbox::ImageHost::instance();
     const std::string source = expr->toString();
-    auto result = host.evalExpression(expr->getOwner(), source, expr);
+    auto result = host.evalExpression(expr->getOwner(), source, expr, options);
     // decode BEFORE dropping the transaction's handles: a result that
     // is itself a host object resolves against the live table
     PyObject* value = host.decodeResult(result);
@@ -129,23 +128,22 @@ bool ExpressionSandbox::evaluationRouted()
 
 namespace
 {
-/// True when this evaluation should cross; throws for the shapes that
-/// must refuse rather than quietly run in the host.
-bool routeThis(const App::Expression* expr, int options)
+/// True when this evaluation should cross into the image.
+///
+/// No eval option refuses any more.  Python mode used to: it looked
+/// like "a different language", but it is a lexer start state plus a
+/// name-binding rule, both of which live in the core -- and the core is
+/// what runs in the image.  It rides across in the options mask, and
+/// its builtins are then the IMAGE's builtins under WASI, which is the
+/// point: python-mode cells are exactly the ones in-process evaluation
+/// could never confine.
+bool routeThis(const App::Expression* expr)
 {
 #ifdef FC_EXPR_IMAGE_HOST
-    if (inImageEvaluation || !expr->getOwner() || !ExpressionSandbox::evaluationRouted())
-        return false;
-    // Python-mode sheets evaluate a different language in a different
-    // frame; routing them is a separate step, and quietly running them
-    // in the host would be the silent fallback this design refuses.
-    if (options & Expression::OptionPythonMode)
-        throw Base::RuntimeError("sandboxed evaluation does not cover "
-                                 "python-mode expressions yet");
-    return true;
+    return !inImageEvaluation && expr->getOwner()
+            && ExpressionSandbox::evaluationRouted();
 #else
     (void)expr;
-    (void)options;
     return false;
 #endif
 }
@@ -156,7 +154,7 @@ App::any ExpressionSandbox::evaluate(const Expression* expr, int options)
     if (!expr)
         return App::any();
 #ifdef FC_EXPR_IMAGE_HOST
-    if (routeThis(expr, options)) {
+    if (routeThis(expr)) {
         Base::PyGILStateLocker lock;
         Py::Object held(evaluateInImage(expr, options), true);
         return pyObjectToAny(held);
@@ -172,7 +170,7 @@ PyObject* ExpressionSandbox::evaluatePy(const Expression* expr, int options)
     if (!expr)
         Py_RETURN_NONE;
 #ifdef FC_EXPR_IMAGE_HOST
-    if (routeThis(expr, options)) {
+    if (routeThis(expr)) {
         Base::PyGILStateLocker lock;
         return evaluateInImage(expr, options);
     }

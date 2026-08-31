@@ -253,7 +253,13 @@ static json protocolError(const char *what)
  * the owner's Python face is the exported host handle's proxy, and
  * anything neither covers fails in-image.
  * Request: {op:"eval", lang:"expr", src, ctx:{doc,obj}, owner_h?,
- *           bindings:{identifier-string: wire value}}.
+ *           opts?, bindings:{identifier-string: wire value}}.
+ *
+ * `opts` is the host's App::Expression::EvalOption mask.  It is not
+ * decoration: OptionCallFrame is what makes a statement legal (without
+ * a frame the walker throws "can only be used inside 'eval' or 'func'")
+ * and OptionPythonMode changes BOTH the lexer start state and the
+ * name-binding rule, so it has to reach the parse as well as the walk.
  */
 static json dispatchEvalExpr(const json &req, const std::string &src)
 {
@@ -264,6 +270,11 @@ static json dispatchEvalExpr(const json &req, const std::string &src)
         docName = ctx->value("doc", "");
         objName = ctx->value("obj", "");
     }
+    int options = 0;
+    auto op = req.find("opts");
+    if (op != req.end() && op->is_number_integer())
+        options = op->get<int>();
+
     uint64_t ownerHandle = 0;
     auto oh = req.find("owner_h");
     if (oh != req.end() && oh->is_number_unsigned())
@@ -287,10 +298,12 @@ static json dispatchEvalExpr(const json &req, const std::string &src)
     }
 
     try {
-        auto expr = App::Expression::parse(tx.owner(), src.c_str(), src.size());
+        auto expr = App::Expression::parse(
+                tx.owner(), src.c_str(), src.size(), false,
+                (options & App::Expression::OptionPythonMode) != 0);
         if (!expr)
             return protocolError("expression parse produced nothing");
-        Py::Object result = expr->getPyValue();
+        Py::Object result = expr->getPyValue(options);
 
         json reply;
         json value;

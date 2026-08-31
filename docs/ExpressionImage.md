@@ -560,12 +560,9 @@ also why the seam sits at the CALLERS rather than inside
 the spreadsheet, so routing there would cross the boundary per value,
 the shape the measurement says costs 12x more.
 
-Wired so far: `PropertyExpressionEngine`, both evaluation sites (the
-recompute of a stored binding, and the hidden-reference update).  The
-spreadsheet is the next slice, and it is the one that has to decide
-what python-mode sheets do -- for now `evaluate()` REFUSES an
-`OptionPythonMode` request while routing is on rather than quietly
-running it in the host.
+Wired: `PropertyExpressionEngine`, both evaluation sites (the recompute
+of a stored binding, and the hidden-reference update), and the
+spreadsheet -- see "The spreadsheet through the router" below.
 
 Mechanics worth knowing:
 
@@ -591,10 +588,86 @@ Mechanics worth knowing:
 - `ImageHost::evalCount()` counts crossings, so a test can tell the two
   paths apart when the value cannot (both produce 43.0).
 
-Tests: `ExpressionRoutingTest` (5 cases) -- routed value equals native,
-routing off keeps the native path, a bound property recompute really
-crosses, an image error does not fall back, python-mode is refused.
-C++ ctest 507/507, Python 2628 OK with the preference off (the default).
+Tests: `ExpressionRoutingTest` -- routed value equals native, routing
+off keeps the native path, a bound property recompute really crosses,
+an image error does not fall back, and (slice B) python mode crosses in
+both the walk and the parse.
+
+### The spreadsheet through the router (slice B, built 2026-08-31)
+
+**The seam is `PropertySheet::eval`.**  It is the sheet's equivalent of
+the engine's binding recompute: `Sheet::updateProperty` calls
+`cells.eval(expr)` for every dirty cell, and everything else in the
+spreadsheet that evaluates a stored cell expression funnels through
+`Cell::evalWhole`, which calls it.  So one function decides for the
+whole workbench.  It gained a Python-valued twin, `evalPy`, because
+several callers want the value and not an AST, and the round trip
+through `expressionFromPy` and back was pure loss.
+
+**The python-mode decision: python mode CROSSES, it is not refused.**
+The previous slice refused an `OptionPythonMode` request rather than
+run it in the host, on the grounds that it was "a different language".
+Reading the core says otherwise: python mode is (a) a lexer start
+state, and (b) a name-binding rule that makes CPython's builtins
+visible on the eval frame.  Both live in `Expression.cpp`, and
+`Expression.cpp` is compiled INTO the image.  Nothing had to be built
+for it except carrying the option across.
+
+That makes python-mode sheets the strongest case FOR routing rather
+than an exception to it.  A python-mode cell can name any builtin --
+`open`, `__import__`, `eval`.  In-process that is the host's `open` on
+the host's filesystem.  In the image it is the image's builtins under
+WASI with one read-only preopen for the stdlib, which is precisely the
+confinement the sandbox exists to provide.
+
+**The options now cross with the request.**  `evalExpression` takes an
+`App::Expression::EvalOption` mask and ships it as `opts`; the image
+parses with `pythonMode = opts & OptionPythonMode` and walks with
+`getPyValue(opts)`.  Dropping them had been a latent parity hole even
+before the spreadsheet: `PropertyExpressionEngine` passes
+`OptionCallFrame`, and without a call frame the walker refuses every
+statement outright ("`X` can only be used inside 'eval' or 'func'").
+No corpus file had hit it, which is luck, not coverage.
+
+**The gate compares each site with its own options too.**  Before this
+slice `corpus_regression.py` evaluated a cell's source with the default
+mask, so it compared something no sheet ever does -- and would have
+compared a python-mode sheet in non-python mode on BOTH sides, matching
+happily while testing nothing.  `collect_expressions` now returns the
+mask per site, and `FreeCAD.ExpressionSandbox.evaluate` /
+`evaluateNative` take an optional `options` argument (with
+`OptionCallFrame` / `OptionPythonMode` exported as module constants).
+
+The discriminator to use when checking this by hand is `hex(255)`: it
+is not an expression function, so it evaluates to `'0xff'` only when a
+python-mode call frame exists, and `sorted([3, 1, 2])` only PARSES in
+python mode.  Both are covered by `ExpressionRoutingTest`, and an
+end-to-end sheet recompute (7 plain cells, 4 python-mode cells, native
+vs routed) shows 11 evaluations crossing with zero divergence.
+
+Also routed, for the same no-silent-fallback reason: paste-as-value
+(`Cell::setExpression` with `PasteValue`), `setContent(value, eval)`,
+the `EditQuantity` edit-mode display and validation, `Cell::getPyValue`
+in `EditNormal`, and `DlgSheetConf`'s range validation.  These are
+edit-time rather than recompute-time, but they evaluate stored cell
+code, and leaving them native would both breach the boundary and let an
+editor show a value the recompute never produced.  They previously ran
+with NO options at all, so they now also gain the sheet's call frame
+and python mode -- a behaviour change on the native path, and the
+consistent one.
+
+No raw `Expression::eval()` call is left in the spreadsheet.  The only
+one inside `evalWhole` is its ownerless fallback, which cannot occur
+for a cell that belongs to a sheet.
+
+NOT routed, and worth naming rather than leaving implicit: the GUI
+expression editors (`Gui/DlgExpressionInput`, `SpinBox`, `InputField`,
+`propertyeditor/PropertyItem`) evaluate what the user is typing, live,
+in-process.  Step 3b already pushes a "session" principal there, so
+they are policy-gated -- but policy-gated is not confined, and a live
+preview has its own questions (a 15 ms instantiate on every keystroke,
+errors shown inline) that the recompute path does not.  That is a slice
+of its own, not an oversight in this one.
 
 ### The compatibility gate (built 2026-08-31)
 
@@ -668,3 +741,23 @@ not found in ...", the image says "Document 'X' not found in ...",
 because the pack could not resolve the foreign document at all.  Parity
 of error TEXT for unresolvable foreign references is therefore still
 open; parity of behaviour (both fail) holds.
+
+**Second full run, 2026-08-31, after slice B** -- same corpus, but now
+each site is compared under its OWN option mask (cells with the sheet's
+call frame and python mode, not the default 0):
+
+    files                372
+    files_failed           0
+    expressions          335
+    same                 333
+    differ                 0
+    both_error             2
+    image_only_error       0
+    native_only_error      0
+    timed out              2
+
+Unchanged totals, and this time `scanner.FCStd` came through the sweep
+itself rather than needing a separate run.  The 2 `both_error` rows are
+the same two described above; the 2 timeouts are the same two documents
+whose 7.7.2 -> 8.0.1 forced recompute exceeds the per-file budget
+(`issue474_fillet_edit_crash.FCStd`, `cartridge.FCStd`).

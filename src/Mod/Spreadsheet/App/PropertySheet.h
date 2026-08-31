@@ -49,6 +49,9 @@ public:
     ~PropertySheet() override;
 
     App::ExpressionPtr eval(const App::Expression* expr) const;
+    /// eval()'s Python-valued twin -- same options, same routing, one
+    /// less conversion for callers that want the value not an AST.
+    Py::Object evalPy(const App::Expression* expr) const;
     App::ExpressionPtr parse(const char *txt, std::size_t len=0, bool verbose=false) const;
 
     bool isTouched() const override;

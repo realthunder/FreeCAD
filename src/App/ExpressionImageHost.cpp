@@ -606,7 +606,8 @@ ImageResult ImageHost::eval(const std::string& source,
 
 ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
                                       const std::string& source,
-                                      const App::Expression* parsed)
+                                      const App::Expression* parsed,
+                                      int options)
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
     ImageResult res;
@@ -633,6 +634,11 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
     req["op"] = "eval";
     req["lang"] = "expr";
     req["src"] = source;
+    // The eval options cross with the request: the image must parse and
+    // walk under the same ones, or a python-mode sheet cell and a
+    // statement-bearing binding both mean something else in there.
+    if (options)
+        req["opts"] = options;
     if (owner) {
         json ctx;
         ctx["doc"] = owner->getDocument() ? owner->getDocument()->getName() : "";
@@ -654,7 +660,9 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
         App::ExpressionPtr owned;
         const App::Expression* expr = parsed;
         if (!expr) {
-            owned = App::Expression::parse(owner, source.c_str(), source.size());
+            owned = App::Expression::parse(
+                    owner, source.c_str(), source.size(), false,
+                    (options & App::Expression::OptionPythonMode) != 0);
             expr = owned.get();
         }
         if (expr && owner) {

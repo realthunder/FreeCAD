@@ -242,7 +242,10 @@ void DlgSheetConf::accept()
         do {
             auto cell = sheet->getCell(*r);
             if (cell && cell->getExpression()) {
-                ExpressionPtr expr(cell->getExpression()->eval());
+                // through the sheet, so this validation evaluates the
+                // cell the same way a recompute does -- same options,
+                // and through the sandbox router when it is on
+                ExpressionPtr expr(sheet->getCells()->eval(cell->getExpression()));
                 if (expr->isDerivedFrom(StringExpression::getClassTypeId())) {
                     continue;
                 }

@@ -172,6 +172,14 @@ Cell& Cell::operator=(const Cell& rhs)
 
 Cell::~Cell() = default;
 
+App::ExpressionPtr Cell::evalWhole(const App::Expression *expr) const {
+    if(!expr)
+        return App::ExpressionPtr();
+    if(!owner)
+        return expr->eval();
+    return owner->eval(expr);
+}
+
 /**
   * Set the expression tree to \a expr.
   *
@@ -216,7 +224,7 @@ void Cell::setExpression(App::ExpressionPtr &&expr, int type)
         return;
 
     if(type & PasteValue)
-        expr = expr->eval();
+        expr = evalWhole(expr.get());
 
     auto simple = Base::freecad_dynamic_cast<SimpleStatement>(expr.get());
     if(simple)
@@ -349,7 +357,7 @@ void Cell::setContent(const char * value, bool eval)
 
     try {
         if(eval && newExpr)
-            newExpr = newExpr->eval();
+            newExpr = evalWhole(newExpr.get());
         setExpression(std::move(newExpr));
         applyAutoAlias();
         signaller.tryInvoke();
@@ -1430,7 +1438,8 @@ bool Cell::setEditData(const QVariant &d) {
         if(expr && expr->getSize()>=2) {
             auto parent = Base::freecad_dynamic_cast<App::DocumentObject>(owner->getContainer());
             auto vexpr = VariableExpression::isDoubleBinding(expr->getItems()[1].get());
-            bool isString = expr->getItems()[1]->eval()->isDerivedFrom(StringExpression::getClassTypeId());
+            bool isString = evalWhole(expr->getItems()[1].get())
+                ->isDerivedFrom(StringExpression::getClassTypeId());
             if (isString) {
                 if(vexpr) {
                     Base::PyGILStateLocker lock;
@@ -1740,7 +1749,7 @@ QVariant Cell::getEditData(bool silent) const {
             return QVariant();
         auto listExpr = SimpleStatement::cast<ListExpression>(expression.get());
         if(!listExpr) {
-            auto expr = expression->eval();
+            auto expr = evalWhole(expression.get());
             if(expr->isDerivedFrom(NumberExpression::getClassTypeId())) {
                 auto q = static_cast<NumberExpression*>(expr.get())->getQuantity();
                 if(!isUsed(DISPLAY_UNIT_SET))
@@ -1953,7 +1962,8 @@ Py::Object Cell::getPyValue() const {
         return Py::Boolean(getEditData(true).toBool());
     case EditNormal:
         if(expression)
-            return expression->getPyValue();
+            return owner ? owner->evalPy(expression.get())
+                         : expression->getPyValue();
         break;
     default:
         break;
@@ -2039,9 +2049,11 @@ bool Cell::setEditMode(EditMode mode, bool silent) {
                 auto expr = SimpleStatement::cast<ListExpression>(expression.get());
                 if(expr) {
                     if(expr->getSize()>=1)
-                        valid = expr->getItems()[0]->eval()->isDerivedFrom(NumberExpression::getClassTypeId());
+                        valid = evalWhole(expr->getItems()[0].get())
+                            ->isDerivedFrom(NumberExpression::getClassTypeId());
                 } else if (expression) {
-                    valid = expression->eval()->isDerivedFrom(NumberExpression::getClassTypeId());
+                    valid = evalWhole(expression.get())
+                        ->isDerivedFrom(NumberExpression::getClassTypeId());
                 } else
                     valid = true;
                 if(!valid)

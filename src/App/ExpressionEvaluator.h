@@ -32,8 +32,9 @@
  * This is host-only and deliberately NOT part of ExpressionCore -- the
  * core compiles into the image itself and must never know that a
  * sandbox exists.  Callers are the places that evaluate a stored
- * expression as a whole (PropertyExpressionEngine, and later the
- * spreadsheet); nested nodes keep using Expression's own accessors.
+ * expression as a whole (PropertyExpressionEngine and the spreadsheet's
+ * PropertySheet::eval); nested nodes keep using Expression's own
+ * accessors.
  */
 
 #include <FCConfig.h>
@@ -65,6 +66,11 @@ AppExport bool evaluationRouted();
  * bindings-pack resolve that recomputes something) runs natively,
  * because it is the host-side half of the outer sandboxed evaluation
  * by construction.
+ *
+ * `options` is an App::Expression::EvalOption mask and crosses the
+ * boundary with the source, so the image parses and walks under the
+ * same options -- including OptionPythonMode, which a spreadsheet in
+ * python mode passes for every cell.
  */
 AppExport App::any evaluate(const Expression* expr, int options = 0);
 

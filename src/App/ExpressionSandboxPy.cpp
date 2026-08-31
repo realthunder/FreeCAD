@@ -86,7 +86,8 @@ PyObject* evalCommon(PyObject* args, bool forceNative)
 {
     PyObject* pyOwner = nullptr;
     const char* src = nullptr;
-    if (!PyArg_ParseTuple(args, "Os", &pyOwner, &src))
+    int options = 0;
+    if (!PyArg_ParseTuple(args, "Os|i", &pyOwner, &src, &options))
         return nullptr;
     if (pyOwner != Py_None && !PyObject_TypeCheck(pyOwner, &DocumentObjectPy::Type)) {
         PyErr_SetString(PyExc_TypeError, "expected a document object or None");
@@ -95,12 +96,17 @@ PyObject* evalCommon(PyObject* args, bool forceNative)
     App::DocumentObject* owner = ownerArg(pyOwner);
     PY_TRY
     {
-        auto expr = Expression::parse(owner, src);
+        // Python mode is a lexer start state as well as an eval option,
+        // so it has to reach the parse -- the same rule the router
+        // applies when it re-parses in the image.
+        auto expr = Expression::parse(
+                owner, src, 0, false,
+                (options & Expression::OptionPythonMode) != 0);
         if (!expr)
             Py_Return;
         if (forceNative)
-            return Py::new_reference_to(expr->getPyValue());
-        return ExpressionSandbox::evaluatePy(expr.get());
+            return Py::new_reference_to(expr->getPyValue(options));
+        return ExpressionSandbox::evaluatePy(expr.get(), options);
     }
     PY_CATCH
 }
@@ -144,12 +150,15 @@ PyMethodDef Methods[] = {
     {"available", availableFunc, METH_NOARGS,
      "available() -> bool -- whether a sandbox image could be loaded."},
     {"evaluate", evaluateFunc, METH_VARARGS,
-     "evaluate(owner, source) -> value -- evaluate one expression the way"
-     " the desktop would right now (routed or not, per the preference)."},
+     "evaluate(owner, source, options=0) -> value -- evaluate one"
+     " expression the way the desktop would right now (routed or not,"
+     " per the preference).  `options` is an EvalOption mask; pass"
+     " OptionCallFrame|OptionPythonMode to evaluate it the way a"
+     " spreadsheet cell in python mode is evaluated."},
     {"evaluateNative", evaluateNativeFunc, METH_VARARGS,
-     "evaluateNative(owner, source) -> value -- evaluate in-process,"
-     " whatever the preference says.  The comparison half of the"
-     " compatibility gate."},
+     "evaluateNative(owner, source, options=0) -> value -- evaluate"
+     " in-process, whatever the preference says.  The comparison half"
+     " of the compatibility gate."},
     {"evalCount", evalCountFunc, METH_NOARGS,
      "evalCount() -> int -- evaluations that have crossed into the image."},
     {nullptr, nullptr, 0, nullptr},
@@ -171,6 +180,12 @@ void initPyModule(PyObject* appModule)
         nullptr, nullptr, nullptr, nullptr
     };
     PyObject* module = PyModule_Create(&moduleDef);
+    // The eval-option mask, so a caller can reproduce exactly how a
+    // given site evaluates (the spreadsheet uses both of these).
+    PyModule_AddIntConstant(module, "OptionCallFrame",
+                            Expression::OptionCallFrame);
+    PyModule_AddIntConstant(module, "OptionPythonMode",
+                            Expression::OptionPythonMode);
     Py_INCREF(module);
     PyModule_AddObject(appModule, "ExpressionSandbox", module);
 }

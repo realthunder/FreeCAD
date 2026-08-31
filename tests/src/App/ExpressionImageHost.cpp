@@ -1129,14 +1129,62 @@ TEST_F(ExpressionRoutingTest, imageErrorDoesNotFallBackToTheHost)
     App::GetApplication().closeDocument(doc2->getName());
 }
 
-TEST_F(ExpressionRoutingTest, pythonModeIsRefusedNotSilentlyNative)
+// ---- the eval options cross with the request (switch-over slice B):
+// ---- the spreadsheet evaluates every cell with OptionCallFrame, and
+// ---- with OptionPythonMode too when the sheet is in python mode ----
+
+TEST_F(ExpressionRoutingTest, pythonModeCrossesIntoTheImage)
 {
-    // python-mode sheets are a separate step; while routing is on they
-    // must refuse rather than run in the host behind the boundary
-    auto expr = App::Expression::parse(obj, "Width * 2");
+    // `hex` is not an expression function: it resolves only because a
+    // python-mode call frame makes CPython's builtins visible.  So the
+    // value is proof that BOTH options reached the image -- python mode
+    // is a flag ON the call frame, and without OptionCallFrame there is
+    // no frame to set it on.
+    const int opts = App::Expression::OptionCallFrame
+            | App::Expression::OptionPythonMode;
+    auto expr = App::Expression::parse(obj, "hex(255)", 0, false, true);
+    ASSERT_NE(expr, nullptr);
+
+    std::size_t before = ImageHost::instance().evalCount();
+    auto routed = App::ExpressionSandbox::evaluate(expr.get(), opts);
+    EXPECT_GT(ImageHost::instance().evalCount(), before);
+    EXPECT_EQ(App::any_cast<std::string>(routed), std::string("0xff"));
+
+    // and the native engine agrees, which is the parity claim
+    EXPECT_EQ(App::any_cast<std::string>(expr->getValueAsAny(opts)),
+              std::string("0xff"));
+}
+
+TEST_F(ExpressionRoutingTest, pythonModeReachesTheImagesParserToo)
+{
+    // A comma-separated list is python-mode SYNTAX -- the lexer starts
+    // in a different state.  The image re-parses the source it is sent,
+    // so the mode has to reach the parse and not just the walk.
+    const int opts = App::Expression::OptionCallFrame
+            | App::Expression::OptionPythonMode;
+    auto expr = App::Expression::parse(obj, "sorted([3, 1, 2])", 0, false, true);
+    ASSERT_NE(expr, nullptr);
+
+    Base::PyGILStateLocker lock;
+    Py::Object routed(App::ExpressionSandbox::evaluatePy(expr.get(), opts), true);
+    ASSERT_TRUE(PyList_Check(routed.ptr()));
+    ASSERT_EQ(PyList_GET_SIZE(routed.ptr()), 3);
+    EXPECT_EQ(PyLong_AsLong(PyList_GET_ITEM(routed.ptr(), 0)), 1);
+    EXPECT_EQ(PyLong_AsLong(PyList_GET_ITEM(routed.ptr(), 2)), 3);
+}
+
+TEST_F(ExpressionRoutingTest, withoutPythonModeTheImageRefusesTheSameWay)
+{
+    // The negative half: the identical source WITHOUT the mode fails in
+    // the image exactly as it fails natively, rather than succeeding
+    // because the image happened to be more permissive.
+    auto expr = App::Expression::parse(obj, "hex(255)");
+    ASSERT_NE(expr, nullptr);
     EXPECT_THROW(App::ExpressionSandbox::evaluate(
-                     expr.get(), App::Expression::OptionPythonMode),
-                 Base::RuntimeError);
+                     expr.get(), App::Expression::OptionCallFrame),
+                 Base::Exception);
+    EXPECT_THROW(expr->getValueAsAny(App::Expression::OptionCallFrame),
+                 Base::Exception);
 }
 
 // ---- wire type identity: a tuple is not a list (the corpus gate found

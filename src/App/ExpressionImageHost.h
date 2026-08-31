@@ -91,10 +91,18 @@ public:
      * A host-side parse failure ships anyway -- the image raises the
      * identical ParserError.  Handles minted for the pack live until
      * clearHandles().
+     *
+     * `options` is an App::Expression::EvalOption mask and crosses with
+     * the request: the image parses and evaluates under the SAME
+     * options the native engine would have used.  Dropping them was a
+     * parity hole -- OptionCallFrame is what makes statements legal at
+     * all, and OptionPythonMode selects a different lexer start state
+     * AND a different name-binding rule.
      */
     ImageResult evalExpression(const App::DocumentObject* owner,
                                const std::string& source,
-                               const App::Expression* parsed = nullptr);
+                               const App::Expression* parsed = nullptr,
+                               int options = 0);
 
     /** Decode the value of a successful result into a new host PyObject
      * reference (nullptr on failure).  Handles in the reply resolve

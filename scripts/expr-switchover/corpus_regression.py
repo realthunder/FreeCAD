@@ -92,8 +92,17 @@ def find_files(roots, max_bytes, limit):
     return kept, skipped
 
 
-def collect_expressions(doc):
-    """[(owner, source, where)] for every stored expression in doc."""
+def collect_expressions(doc, sandbox):
+    """[(owner, source, where, options)] for every stored expression.
+
+    The options matter: each site evaluates with its own EvalOption
+    mask, and comparing a cell without them compares something the
+    sheet never does.  PropertyExpressionEngine uses OptionCallFrame;
+    a spreadsheet adds OptionPythonMode when the sheet is in python
+    mode, which changes the LEXER as well as name binding.
+    """
+    call_frame = getattr(sandbox, "OptionCallFrame", 1)
+    python_mode = getattr(sandbox, "OptionPythonMode", 2)
     out = []
     for obj in doc.Objects:
         try:
@@ -102,8 +111,14 @@ def collect_expressions(doc):
             engine = None
         if engine:
             for path, expr in engine:
-                out.append((obj, expr, "engine:" + str(path)))
+                out.append((obj, expr, "engine:" + str(path), call_frame))
         if obj.isDerivedFrom("Spreadsheet::Sheet"):
+            opts = call_frame
+            try:
+                if obj.PythonMode:
+                    opts |= python_mode
+            except Exception:
+                pass
             try:
                 cells = obj.cells.getUsedCells()
             except Exception:
@@ -114,7 +129,7 @@ def collect_expressions(doc):
                 except Exception:
                     continue
                 if content and content.startswith("="):
-                    out.append((obj, content[1:], "cell:" + addr))
+                    out.append((obj, content[1:], "cell:" + addr, opts))
     return out
 
 
@@ -215,18 +230,19 @@ def main(argv):
                 continue
             counts["files"] += 1
             try:
-                exprs = collect_expressions(doc)[:args.max_exprs_per_file]
-                for owner, source, where in exprs:
+                exprs = collect_expressions(doc, sandbox)[:args.max_exprs_per_file]
+                for owner, source, where, opts in exprs:
                     counts["expressions"] += 1
                     rec = {"file": os.path.basename(path), "where": where,
-                           "expr": source}
+                           "expr": source, "opts": opts}
                     try:
-                        nat = describe(sandbox.evaluateNative(owner, source))
+                        nat = describe(
+                            sandbox.evaluateNative(owner, source, opts))
                         nat_err = None
                     except Exception as exc:
                         nat, nat_err = None, "%s: %s" % (type(exc).__name__, exc)
                     try:
-                        img = describe(sandbox.evaluate(owner, source))
+                        img = describe(sandbox.evaluate(owner, source, opts))
                         img_err = None
                     except Exception as exc:
                         img, img_err = None, "%s: %s" % (type(exc).__name__, exc)
