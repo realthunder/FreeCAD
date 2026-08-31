@@ -96,6 +96,10 @@ if(BUILD_CYCLES)
     add_library(FreeCADRendererCycles OBJECT
         CyclesRenderer.cpp CyclesScene.cpp CyclesViewport.cpp CyclesStream.cpp
         CyclesRenderer.h CyclesSceneP.h)
+    if(BUILD_MATERIALX)
+        target_sources(FreeCADRendererCycles PRIVATE
+            CyclesMaterialX.cpp CyclesMaterialXP.h)
+    endif()
     target_link_libraries(FreeCADRendererCycles
         PUBLIC cycles_embed
         PRIVATE FreeCADBase ${QtCore_LIBRARIES} ${QtWidgets_LIBRARIES})
@@ -108,7 +112,8 @@ if(BUILD_CYCLES)
     # nodes lives in CyclesScene.cpp.
     if(BUILD_MATERIALX)
         target_link_libraries(FreeCADRendererCycles PRIVATE MaterialXCore
-                                                           MaterialXFormat)
+                                                           MaterialXFormat
+                                                           MaterialXGenShader)
     endif()
     set_target_properties(FreeCADRendererCycles PROPERTIES
         CXX_STANDARD 20

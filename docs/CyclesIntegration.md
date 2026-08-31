@@ -1403,6 +1403,145 @@ malformed XML with the character offset, a document with no surface, a
 dangling node reference, and a document on the `post` stage.
 
 
+### 6.9 The MaterialX interpreter (phase B step 1, built 2026-08-31)
+
+Cycles has a shader node vocabulary of its own, so a MaterialX document
+is INTERPRETED into it rather than compiled -- the route every engine
+with such a vocabulary takes (Unreal's Interchange builds
+material-function nodes, three.js' MaterialXLoader builds TSL nodes),
+and it needs neither OSL nor any shading-language work.
+`CyclesMaterialX.cpp`.
+
+**Where it plugs in.** A `material`-stage user shader whose dialect is
+MaterialX replaces the whole surface: `translateDraw` builds
+`materialXShader` instead of the uniform or attribute shader, and the
+draw's own colour, maps, finish and per-face palettes are not
+consulted, because the document IS the material. The section clip
+still applies -- that is a property of the scene, not of the material
+-- so the closure still goes out through `connectSurface`. Shaders are
+keyed on the document's identity (its file, or its text), so a
+thousand draws sharing a material share one interpretation.
+
+A document this build cannot interpret does not take the frame with
+it: the draw renders its stock material and the reason is reported
+once. The raster path stands down the same way for now, by the
+opposite route -- `getUserProgram` and `viewerShaderBins` refuse a
+non-text dialect at the one door every stage's compile goes through,
+so a document is never handed to shaderc, which would report a compile
+error per material and draw nothing new. The raster splice is step 2.
+
+**The value model.** Everything becomes a node, constants included:
+Cycles folds a constant subexpression at graph build, so stating one
+as a `ValueNode` costs nothing at render and saves the interpreter a
+second, constant-only evaluation path. A value carries its MaterialX
+type's component count, because Cycles has only float and float3
+sockets and a `color4`'s fourth component has to ride beside the
+triple.
+
+**The node table** covers the stdlib pattern vocabulary: images
+(`image`, `tiledimage`), geometry (`texcoord`, `position`, `normal`,
+`tangent`, `bitangent`, `geomcolor`), the arithmetic and transcendental
+nodes componentwise over scalars and triples, `clamp`/`remap`/
+`smoothstep`, `mix` and the `if*` comparisons, `separate*`/`combine*`/
+`extract`/`convert`, `normalmap`, the noises and the ramps. It is a
+FLOOR, not the vocabulary: a node whose nodedef is implemented as a
+MaterialX nodegraph -- which most compound library nodes and every one
+of the shading-model translations are -- is interpreted by descending
+into that graph with the node bound as its interface. `place2d`,
+`hextiledimage` and the glTF image nodes come for free that way, and
+the four example materials below needed no table entry beyond it.
+
+**OpenPBR is the canonical surface.** `open_pbr_surface` maps onto
+`PrincipledBsdfNode`, whose v2 sockets are OpenPBR parameters; every
+other shading model arrives through MaterialX's OWN translation graphs
+(`translateAllMaterials`), so there is one shading model to be right
+about and the rest is the library's business. Three places in the
+mapping are a decision rather than a rename:
+
+- Cycles' Specular IOR Level scales F0 by two (`f0 *= 2.0f *
+  specular_ior_level`, `svm/closure.h`), so its neutral value is 0.5
+  where OpenPBR's `specular_weight` neutral is 1: the mapping is
+  `weight * 0.5`, not the identity a socket-name match suggests.
+- `base_weight` scales the diffuse albedo and Cycles has no socket for
+  it, so it folds into the base colour, which is what a weight of that
+  kind means.
+- `transmission_depth` becomes an absorption volume at density
+  `1 / depth`, the Beer-Lambert closure the fork's glass materials
+  already use (section 6.2).
+
+Two traps the table exists to avoid, both of which yield a
+plausible-looking wrong material rather than an error:
+
+- **A missing input is not a zero.** MaterialX states an unconnected
+  texture coordinate, normal or position as `defaultgeomprop` on the
+  NODEDEF, not as a value. Reading it as the type's zero samples every
+  texel at (0, 0) and renders one flat colour -- the same shape as the
+  stride trap of section 6.5.
+- **An image's colour space is not the document's.** A document's
+  working space (`lin_rec709` on the root) is inherited by every
+  element, so asking an input for its ACTIVE colour space answers
+  "linear" for a normal or roughness map that states nothing. The
+  file's own stated space is the answer where there is one, and the
+  node's TYPE decides otherwise: a `color3`/`color4` image is colour,
+  anything else is data.
+
+**A shader cannot be taken back.** The first version of
+`materialXShader` created the `ccl::Shader` and then deleted it when
+the document failed to interpret. `Scene::delete_node(Shader *)` does
+not do that -- "don't delete unused shaders, not supported", it only
+clears the reference count -- so the graph-less shader stayed in
+`scene->shaders` and the next device update dereferenced its null
+graph (`ShaderManager::device_update_pre` -> `graph->output()`), an
+abort inside the render thread. The graph is therefore built first and
+the scene node created only once there is something to put in it. A
+document that failed is also remembered, so the next restate does not
+import the data library again to fail the same way.
+
+**Verification** is DIFFERENTIAL, because a path-traced PBR pixel has
+no closed form worth writing down: the same material is stated twice,
+once as a document and once through the fork's own appearance
+properties -- whose translation into the very same Principled sockets
+phases 3 to 6 already verified -- and the two frames are held against
+each other. `build/probes/mtlx/probe.sh <CPU|CUDA> <spp> <tag>`, on
+the debug tree under xvfb, prints MTLX_RESULT. Thirteen legs, all
+passing on CPU and CUDA:
+
+- The base colour matches the control, and WHICH control it matches is
+  the colour-space finding: 0.003 against a control stated as the sRGB
+  ENCODING of the document's value, 0.053 against one stated raw. A
+  MaterialX document states linear colour; the fork's own properties
+  state an encoded colour the colour-managed pipeline decodes on the
+  way in (section 6.1's trap, from the other side).
+- The document overrides the object's own colour (0.153 against the
+  green the box is actually painted), so leg 1 was the document's
+  doing and not the object's.
+- `multiply(red, 0.5)` renders bit-identically to a literal half-red
+  (the arithmetic is exact and Cycles is deterministic at a fixed
+  sample count), and measurably apart from full red (0.047).
+- Metalness changes the surface (0.042); emission adds blue (+0.285).
+- A `standard_surface` document renders bit-identically to the OpenPBR
+  one -- MaterialX's own translation graph lands exactly on the native
+  mapping.
+- An image graph paints the checker it names (21% reddish, 79% bluish
+  against a blue-ish environment).
+- A `disney_principled` document, which has no translation to OpenPBR,
+  falls back to the stock material EXACTLY (0.0) rather than aborting
+  or rendering black.
+- MaterialX's own `open_pbr_default`, `open_pbr_carpaint`,
+  `standard_surface_brass_tiled` and `standard_surface_wood_tiled`,
+  stated as paths so their images resolve, each build a shader and
+  render distinctly (0.12 to 0.17 from the stock material). Between
+  them they exercise `tiledimage`, `normalmap`, `place2d` and the
+  nodegraph expansion, and none of them reported an uninterpreted
+  node.
+
+Not yet covered: `gltf_pbr` and `UsdPreviewSurface` have no
+translation TO OpenPBR in the library (only from `standard_surface`
+to them), so they report and render stock. The render report's
+`images` count reads 0 for a MaterialX image -- it counts the fork's
+own texture uploads, and Cycles loads these from file itself.
+
+
 ## 7. Preparing for out of process
 
 Cycles is a better candidate for process isolation than OCCT: it is
@@ -1832,7 +1971,7 @@ Phase 6 -- queued, not started. Two items, in this order.
        `resources/Materials/Examples` (OpenPBR + Standard Surface
        samples) -- first because it needs no shader-language work
        and the phase-A traps (colour spaces, stride, socket names)
-       are fresh.
+       are fresh. **DONE 2026-08-31, section 6.9.**
     2. The OpenPBR mesh shader, then the bgfx ShaderGen target and
        the splice; parity against the Cycles frames the way the
        finish probe measures it.

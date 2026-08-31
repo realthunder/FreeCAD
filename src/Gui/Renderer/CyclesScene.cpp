@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <set>
 #include <sstream>
@@ -30,6 +31,11 @@
 
 #include "CyclesSceneP.h"
 #include "Environment.h"
+#ifdef HAVE_MATERIALX
+#include "CyclesMaterialXP.h"
+#endif
+
+#include <Base/Console.h>
 
 #include "kernel/types.h"
 #include "scene/attribute.h"
@@ -2061,6 +2067,72 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s,
     return shader;
 }
 
+ccl::Shader *SceneTranslator::materialXShader(const UserShader &user, const Clip &clip)
+{
+#ifndef HAVE_MATERIALX
+    (void)user;
+    (void)clip;
+    return nullptr;
+#else
+    // A document is its own identity: the file it came from when it
+    // came from one, otherwise its text. Two draws sharing a material
+    // share the shader, which is what keeps a document off the
+    // per-draw path -- interpreting one costs a library import.
+    const std::string identity =
+        user.sourcePath.empty() ? user.fragmentSource : user.sourcePath;
+    const std::string key = (debugView ? "dbg" + std::to_string(debugView) + ':'
+                                       : std::string())
+        + "mtlx:" + std::to_string(std::hash<std::string> {}(identity)) + clip.key();
+    auto it = shaders.find(key);
+    if (it != shaders.end())
+        return it->second;
+
+    // A document that failed once fails the same way every restate,
+    // and finding that out costs a data-library import each time.
+    if (materialXFailed.count(identity))
+        return nullptr;
+
+    auto fail = [&](const std::string &why) -> ccl::Shader * {
+        materialXFailed.insert(identity);
+        if (materialXReported.insert(identity).second)
+            Base::Console().Error("MaterialX material not rendered: %s\n", why.c_str());
+        return nullptr;
+    };
+
+    std::string error;
+    mx::DocumentPtr doc =
+        Render::MaterialX::loadDocument(user.fragmentSource, user.sourcePath, error);
+    if (!doc)
+        return fail(error);
+
+    // The graph is built BEFORE the scene node, because a Cycles
+    // shader cannot be taken back: delete_node(Shader *) only clears
+    // the reference count -- "don't delete unused shaders, not
+    // supported", scene.cpp -- so a shader created for a document
+    // that then fails to interpret stays in scene->shaders with a
+    // null graph, and the next device update dereferences it
+    // (ShaderManager::device_update_pre -> graph->output()). Creating
+    // it only once there is something to put in it is the whole fix.
+    auto graph = std::make_unique<ccl::ShaderGraph>();
+    MaterialXResult built = buildMaterialXSurface(graph.get(), doc);
+    if (!built.surface)
+        return fail(built.error);
+    ccl::Shader *shader = scene->create_node<ccl::Shader>();
+    shader->name = ccl::ustring(key);
+    if (materialXReported.insert(identity).second) {
+        for (const auto &w : built.warnings)
+            Base::Console().Warning("MaterialX: %s\n", w.c_str());
+    }
+    connectSurface(graph.get(), built.surface, clip);
+    if (built.volume)
+        graph->connect(built.volume, graph->output()->input("Volume"));
+    shader->set_graph(std::move(graph));
+    shader->tag_update(scene);
+    shaders[key] = shader;
+    return shader;
+#endif
+}
+
 ccl::Shader *SceneTranslator::attributeShader(const Clip &clip,
                                               const Maps &maps,
                                               const Finish &finish,
@@ -2181,7 +2253,20 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
     const bool faceFinish = stream && m.finishpalette;
     const bool faceFrame = stream && m.framepalette;
     const bool faceLayer = stream && hasFaceTex && m.facetexlayer < 0;
-    auto variantShader = [&](const Finish &fin, const FaceImage &face) {
+    // A "material"-stage MaterialX program replaces the whole surface:
+    // the document states the material, so the draw's own colour,
+    // maps, finish and face palettes are not consulted. A document
+    // this build cannot interpret falls back to the stock material
+    // rather than dropping the draw (the sandboxed-failure rule).
+    const UserShader *mtlx = nullptr;
+    if (m.usershader && m.usershader->dialect == UserShader::Dialect::MaterialX
+        && m.usershader->stage == "material")
+        mtlx = m.usershader.get();
+    auto variantShader = [&](const Finish &fin, const FaceImage &face) -> ccl::Shader * {
+        if (mtlx) {
+            if (ccl::Shader *s = materialXShader(*mtlx, clip))
+                return s;
+        }
         return perVertex ? attributeShader(clip, maps, fin, face)
                          : uniformShader(uniform, clip, maps, fin, face);
     };

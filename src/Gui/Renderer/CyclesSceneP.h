@@ -28,6 +28,7 @@
 // it compiles on cycles_embed's terms.
 
 #include <string>
+#include <set>
 #include <unordered_map>
 #include <vector>
 
@@ -300,6 +301,23 @@ private:
                                const Maps &maps,
                                const Finish &finish,
                                const FaceImage &face);
+    /// The shader of a draw whose material is a MaterialX document
+    /// (docs/CyclesIntegration.md sec 8 item 15 phase B): the document
+    /// IS the material, so none of the draw's own surface, maps,
+    /// finish or face palette applies -- only the section clip, which
+    /// is a property of the scene and not of the material. Null when
+    /// the document cannot be interpreted, and the caller then renders
+    /// the draw's stock material.
+    ccl::Shader *materialXShader(const UserShader &shader, const Clip &clip);
+    /// Documents this translator has already had its say about, so a
+    /// scene of a thousand draws sharing one material reports its
+    /// warnings -- or its refusal -- once and not once per draw.
+    std::set<std::string> materialXReported;
+    /// And of those, the ones that failed: the negative cache that
+    /// stops the next restate importing the data library all over
+    /// again only to fail the same way.
+    std::set<std::string> materialXFailed;
+
     /// The shader of a per-vertex-attribute draw: the surface rides the
     /// mesh, so a scene of vertex-painted meshes with no section, no
     /// maps and no finish shares ONE of these; what does not ride a

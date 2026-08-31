@@ -1957,6 +1957,11 @@ BGFXRendererLibP::viewerShaderBins(
 {
     if (shader.fragmentSource.empty())
         return;
+    // A MaterialX document is a material description, not shader text
+    // (docs/CyclesIntegration.md sec 8 item 15): there is nothing for
+    // shaderc to compile and nothing for the viewer tier to load.
+    if (shader.dialect != Render::UserShader::Dialect::ShaderText)
+        return;
     // A raw volume-stage source is a medium FUNCTION, not a whole
     // program — it can never compile standalone on any tier. Its
     // compiled form ships as the assembled splice variants instead
@@ -2014,6 +2019,16 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
                                  const char *stockVs, bool simulate)
 {
     static const std::string kNoVertexStage;
+    // A MaterialX document is a material description, not shader
+    // text: handing it to shaderc would report a compile error per
+    // material and draw nothing new. The raster path reads a document
+    // through a generator instead, which is phase B step 2 of
+    // docs/CyclesIntegration.md sec 8 item 15; until then such a draw
+    // shades as its stock material does. Guarded here, at the one
+    // door every stage's compile goes through -- including the
+    // server-side compile for the viewer tier.
+    if (shader.dialect != Render::UserShader::Dialect::ShaderText)
+        return BGFX_INVALID_HANDLE;
     const std::string &vsSource =
         simulate ? kNoVertexStage : shader.vertexSource;
     const std::string &fsSource =
