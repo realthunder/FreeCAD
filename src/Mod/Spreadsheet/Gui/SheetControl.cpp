@@ -38,8 +38,11 @@
 #include <App/Application.h>
 #include <App/AutoTransaction.h>
 #include <App/Document.h>
+#include <App/PropertyStandard.h>
+#include <App/PropertyUnits.h>
 #include <App/Range.h>
 #include <Base/Exception.h>
+#include <Base/Unit.h>
 #include <Base/Tools.h>
 
 #include <Gui/SceneControl.h>
@@ -240,6 +243,42 @@ QJsonObject describeCell(const Feed& feed, CellAddress address)
     const QVariant bg = feed.model->data(index, Qt::BackgroundRole);
     if (bg.isValid())
         c[QLatin1String("bg")] = colorToHex(bg.value<QColor>());
+
+    // The MACHINE value beside the display string, in the sandbox wire's
+    // encoding (docs/ExpressionSandboxPhase0.md sec 6.4).  "10.00 cm^2"
+    // is for a human; a browser-side evaluator needs the number and its
+    // unit.  Only the by-value set travels: anything else has no preview.
+    const App::Property* prop =
+        feed.sheet->getPropertyByName(address.toString().c_str());
+    if (prop) {
+        const auto tid = prop->getTypeId();
+        if (tid.isDerivedFrom(App::PropertyQuantity::getClassTypeId())) {
+            const auto* q = static_cast<const App::PropertyQuantity*>(prop);
+            const Base::UnitSignature& s = q->getUnit().getSignature();
+            QJsonObject wire;
+            wire[QLatin1String("t")] = QLatin1String("quantity");
+            wire[QLatin1String("v")] = q->getValue();
+            QJsonArray unit;
+            for (int e : {s.Length, s.Mass, s.Time, s.ElectricCurrent,
+                          s.ThermodynamicTemperature, s.AmountOfSubstance,
+                          s.LuminousIntensity, s.Angle})
+                unit.push_back(e);
+            wire[QLatin1String("u")] = unit;
+            c[QLatin1String("wv")] = wire;
+        }
+        else if (tid.isDerivedFrom(App::PropertyFloat::getClassTypeId())) {
+            c[QLatin1String("wv")] =
+                static_cast<const App::PropertyFloat*>(prop)->getValue();
+        }
+        else if (tid.isDerivedFrom(App::PropertyInteger::getClassTypeId())) {
+            c[QLatin1String("wv")] = double(
+                static_cast<const App::PropertyInteger*>(prop)->getValue());
+        }
+        else if (tid.isDerivedFrom(App::PropertyString::getClassTypeId())) {
+            c[QLatin1String("wv")] = QString::fromUtf8(
+                static_cast<const App::PropertyString*>(prop)->getValue());
+        }
+    }
 
     if (cell) {
         std::set<std::string> style;

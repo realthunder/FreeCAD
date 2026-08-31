@@ -246,3 +246,50 @@ Two traps worth keeping:
 Not built, deliberately: `sheet.complete` (sec 4), windowed
 `sheet.get` for huge sheets, formatting beyond what `Cell` stores,
 column/row resize from the client, and multi-cell selection.
+
+## 6. Local preview evaluation (2026-08-31)
+
+The sandbox's payoff for this tier (docs/ExpressionSandbox.md sec 10,
+Phase 2): a formula being typed is evaluated IN THE BROWSER, in the same
+expression engine the host runs, and the answer appears without a round
+trip. The host's recompute remains the truth -- the preview is cleared
+the moment a `sheet.changed` re-get lands, whether it agreed or not.
+
+- `sheet.get` now carries a machine value per cell (`wv`) beside the
+  display string, in the sandbox wire encoding: a number, a string, or
+  `{t:'quantity',v,u}`. "10.00 cm^2" is for a human; an evaluator needs
+  the number and its unit signature. Only the by-value set travels, and
+  a cell without `wv` simply cannot take part in a preview.
+- The panel loads the packed image lazily in the background when it
+  opens, and previews are **pack-first**: every identifier the formula
+  mentions is pre-resolved from the cells the host already sent, so the
+  image never reaches back. That is exactly why it can run in a browser
+  where the bridge is unattached (docs/ExpressionImage.md "The browser
+  tier"). A formula referring to something outside the sheet has no
+  binding and simply gets no preview.
+- The preview shows as a chip in the formula bar, and in the cell in
+  italic, both marked provisional. It is deliberately NOT the host's
+  formatting: the host owns the unit schema, and the browser guessing
+  one it cannot know would be worse than an obviously provisional
+  number.
+- **The error path is the underrated half.** `=B6 * / B7` answers
+  "syntax error, unexpected '/'" instantly, in red, with no server
+  involved -- the same parser, so the same message the host would give.
+
+Measured in Firefox: 1042 ms from page load to a displayed preview (most
+of it fetching the 10.9 MB image and the first `sheet.get`); the
+evaluation itself is the 140 us round trip from the sandbox acceptance
+run.
+
+Traps, both found by testing:
+
+- **Do not stage the image inside `build/wasm/web`.** That is vite's
+  `outDir` and it is built with `emptyOutDir`, so every `npm run build`
+  deletes it -- and because a missing image is a legitimate deployment
+  (previews are an accelerator, never a dependency), it fails SILENTLY.
+  `scripts/fcx-web-stage.sh` now stages to `build/wasm/fcx`, beside
+  fcviewer.html, and the panel logs a console warning when a load it
+  attempted fails.
+- The formula bar must not pull focus into the in-cell editor. It did,
+  which dropped keystrokes and -- via the blur that followed -- committed
+  edits the user had not finished.

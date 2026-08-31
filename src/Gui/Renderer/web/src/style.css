@@ -807,3 +807,28 @@
   outline: none;
   padding: 0;
 }
+
+/* A locally computed preview of the cell being edited: the sandbox's
+   answer, shown while the host's own recompute is still in flight
+   (docs/ExpressionSandbox.md sec 10). Marked as provisional on purpose --
+   it is the same evaluator but not the host's unit-schema formatting, and
+   the host is the authority. */
+.fc-sheet-preview {
+  font-style: italic;
+  opacity: 0.8;
+  white-space: nowrap;
+  border-bottom: 1px dotted #7a8ba0;
+}
+/* In the formula bar it is a chip beside the input, not underlined text. */
+.fc-sheet-formula .fc-sheet-preview {
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #b8d0a8;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fc-sheet-formula .fc-sheet-preview-err { color: #ffb0b0; }
+.fc-sheet-preview-err { color: #c00000; }

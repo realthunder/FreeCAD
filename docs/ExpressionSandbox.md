@@ -787,11 +787,15 @@ ships, the audit above stands.
 ## 10. Sequencing (this is the point of doing it first)
 
 STATUS 2026-08-31: Phase 1 is DONE (the desktop sandbox, its
-acceptance test included) and Phase 2 has started -- the same image
-now loads and evaluates in a real browser, with its own WASI
-implementation and its own acceptance page; see docs/ExpressionImage.md
-"The browser tier" for what that cost and what it does not yet do (the
-mid-eval bridge is deliberately unattached there).
+acceptance test included) and Phase 2 is DONE for its first consumer.
+The same image loads and evaluates in a real browser, with its own WASI
+implementation and its own acceptance page (docs/ExpressionImage.md
+"The browser tier"), and the browser spreadsheet uses it to evaluate a
+formula locally while the host's recompute is still in flight
+(docs/SpreadsheetRemote.md sec 6) -- pure-data cells with no host at
+all, exactly as this section describes. The mid-eval bridge stays
+deliberately unattached in the browser; the pack-first design is what
+makes that sufficient.
 
 STATUS 2026-08-30: Phase 0 is DONE -- the audits, the frozen
 contracts, the measurement, and the architecture-A verdict are in

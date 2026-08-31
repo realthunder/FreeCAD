@@ -72,6 +72,9 @@ render(
     onClose: () => { /* the harness has nothing to close to */ },
     viewOnly: () => false,
     doc: () => params.get('doc') ?? '',
+    // The harness is served from under /web, one level below where the
+    // image is staged (scripts/fcx-web-stage.sh).
+    fcxBase: () => params.get('fcx') ?? '../fcx',
   }),
   host,
 );
@@ -119,16 +122,46 @@ if (reportTo) {
     return rows;
   };
 
+  // ?preview=<formula> types a formula into the formula bar (for the
+  // selected cell) once the grid has filled, so a headless run can see the
+  // sandbox's local answer appear before any host round trip.  Driving the
+  // real input rather than calling the component is the point: what is
+  // being checked is that typing produces a preview.
+  const formula = params.get('preview');
+  let typed = false;
+  const typeFormula = () => {
+    const input = document.querySelector<HTMLInputElement>(
+      '.fc-sheet-formula .fc-sheet-input');
+    if (!input || !formula) return;
+    input.focus();
+    input.value = formula;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    typed = true;
+  };
+
   const tick = () => {
     const rows = collect();
+    if (formula && !typed && rows.length) typeFormula();
+    // Re-type until the sandbox image has finished loading: the first
+    // keystrokes land before it is ready, and previews are silent then.
+    if (formula && typed && !document.querySelector('.fc-sheet-preview')
+        && Date.now() - started < limit) {
+      typeFormula();
+    }
     const banner = document.querySelector('.fc-sheet-error')?.textContent ?? '';
     const sheets = [...document.querySelectorAll('.fc-sheet-pick option')]
       .map((o) => o.textContent ?? '');
     const elapsed = Date.now() - started;
-    const done = delay > 0 ? elapsed >= delay : (rows.length > 0 || elapsed > limit);
+    const previewText = document.querySelector('.fc-sheet-preview')?.textContent ?? '';
+    const waitingForPreview = !!formula && !previewText && elapsed < limit;
+    const done = delay > 0
+      ? elapsed >= delay
+      : ((rows.length > 0 && !waitingForPreview) || elapsed > limit);
     if (!done) { setTimeout(tick, 250); return; }
     const report = {
-      ok: rows.length > 0 && !banner,
+      ok: rows.length > 0 && !banner && (!formula || !!previewText),
+      preview: previewText,
+      previewIsError: !!document.querySelector('.fc-sheet-preview-err'),
       elapsedMs: Date.now() - started,
       banner,
       sheets,

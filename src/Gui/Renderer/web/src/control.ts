@@ -253,6 +253,10 @@ export interface SheetCell {
   sc?: number;               // span columns
   alias?: string;
   err?: string;
+  /// The MACHINE value, in the sandbox wire encoding (a number, a string,
+  /// or {t:'quantity',v,u}). Present only for the by-value set; it is what
+  /// makes a local preview possible, and its absence means no preview.
+  wv?: any;
 }
 
 export interface SheetData {

@@ -5,11 +5,18 @@
 # The bundle is produced by the image build's POST_BUILD step
 # (src/App/ExpressionImage/tools/webpack_image.py) into
 # build/wasi-image/web: the stripped image, the CPython files it actually
-# opens, and fcx.json.  This copies that tree to build/wasm/web/fcx, which is
-# what scripts/wasm-viewer.sh serves.
+# opens, and fcx.json.  This copies that tree to build/wasm/fcx -- beside
+# fcviewer.html, which is what scripts/wasm-viewer.sh serves, so the page's
+# own './fcx' finds it.
 #
-# Usage:  scripts/fcx-web-stage.sh [image-build-dir] [web-dir]
-#   defaults: build/wasi-image  build/wasm/web
+# NOT into build/wasm/web: that is vite's outDir and it is built with
+# emptyOutDir, so every `npm run build` would delete the staged image and
+# previews would silently stop working.  (They fail silently by design --
+# the sheet works without them.)  A harness page served from under /web
+# therefore needs ?fcx=../fcx.
+#
+# Usage:  scripts/fcx-web-stage.sh [image-build-dir] [viewer-dir]
+#   defaults: build/wasi-image  build/wasm
 #
 # Rebuild the image first after any change to the sandbox or to
 # ExpressionCore:
@@ -18,7 +25,7 @@ set -eu
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 SRC=${1:-$REPO/build/wasi-image/web}
-DST=${2:-$REPO/build/wasm/web}/fcx
+DST=${2:-$REPO/build/wasm}/fcx
 
 [ -f "$SRC/fcx.json" ] || {
   echo "no bundle at $SRC -- build the image first (see the header)" >&2
