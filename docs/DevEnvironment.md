@@ -937,9 +937,14 @@ and keeps the Linux-style in-repo layout.
   before the first commit — a fresh box has neither, and the failure only surfaces at
   `git commit`.
 - **`git submodule update --init --recursive` right after cloning.** A plain clone has
-  empty `src/3rdParty/bgfx` and `src/3rdParty/OndselSolver`, and configure fails on both
-  ("does not contain a CMakeLists.txt file"). bgfx pulls three nested submodules of its
-  own (bgfx, bimg, bx).
+  empty `src/3rdParty/bgfx`, `src/3rdParty/OndselSolver` and `src/3rdParty/vg-renderer`,
+  and configure fails on all three ("does not contain a CMakeLists.txt file"). bgfx
+  pulls three nested submodules of its own (bgfx, bimg, bx). **`vg-renderer` is easy to
+  miss** because it arrived after the others: it is unconditional inside the
+  `BUILD_BGFX` block of `src/3rdParty/CMakeLists.txt`, so a working tree that predates
+  it configures fine until the next pull and then stops. `src/3rdParty/cycles` is the
+  one submodule to leave alone unless you want the path tracer -- `BUILD_CYCLES`
+  defaults OFF and the tree does not need it.
 - **If an older Miniconda is also installed**, it exports `CONDA_EXE` into the ambient
   environment, and `conda.bat activate` honours a pre-set `CONDA_EXE`: the *old* conda
   then generates the activation script in its old format, the new `_conda_activate.bat`
@@ -969,8 +974,16 @@ conda create -y -p D:\Zheng.Lei\sw\fcad\.conda\freecad ^
   cmake ninja swig pkg-config ^
   libboost-devel=1.90 eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype expat ^
   fmt pybind11 numpy matplotlib-base ^
-  tbb-devel "vtk-base==9.6.2" "vtk-io-ffmpeg==9.6.2" libmed hdf5 libxml2-devel lazy_loader
+  tbb-devel "vtk-base==9.6.2" "vtk-io-ffmpeg==9.6.2" libmed hdf5 libxml2-devel lazy_loader ^
+  lark
 ```
+
+**`lark` is there for the build, not the runtime**, which is why it is easy to leave
+out of an env that otherwise looks complete. `src/Mod/BIM` generates its Arch SQL
+parser as a build step -- `Resources/ArchSqlParserGenerator.py` over `ArchSql.lark`
+-- and without the module that target stops the build with *"Error: The 'lark'
+Python package is required to generate the parser"*. It fails late, thousands of
+objects in, and nothing earlier hints at it.
 
 The Qt/boost/vtk trio is the one the Linux stack pins, and for the same reason:
 it is the stack conda-forge builds smesh against. See the Linux
@@ -1076,6 +1089,60 @@ into it now fails to solve.
 Also part of the standard env, and it carries the same do-not-bring-an-occt
 rule. The recipe and what the version skew costs are in
 [IfcOpenShell, for Arch/BIM](#ifcopenshell-for-archbim) with the rest of it.
+
+### libarea, and fetching a realthunder package when anaconda.org is blocked
+
+**A clean Windows configure now fails without `libarea`.** `src/Mod/Area` stopped
+vendoring it (`9278814534`) and asks for the package outright --
+`find_package(libarea 0.3.0 CONFIG REQUIRED)`, the version being where both Clippers
+grew a Z member and changed the layout of a point. `BUILD_AREA` defaults **ON**, and
+`CheckInterModuleDependencies.cmake` makes `BUILD_CAM` and `BUILD_BIM` require it, so
+this is not a module you quietly skip. The failure is a plain CMake error at
+`src/Mod/Area/CMakeLists.txt:7`, before a single object compiles.
+
+It is **not** in the `conda create` line above because it does not come from
+conda-forge: like `smesh`, it lives only on the **realthunder** channel.
+
+*** **On a network that cannot reach anaconda.org, that channel is unreachable and
+`conda` has no way to it.** Both A records for `conda.anaconda.org` (Cloudflare)
+refuse TCP 443 here, while DNS resolves fine -- so it presents as a hang and then a
+connect error, not as a name error. `prefix.dev` mirrors conda-forge only; it does
+not carry this fork's packages.
+
+The route that works is to fetch the file somewhere with reachability and install it
+locally. Any host will do; this one uses the Linode in `~/.ssh/config`. Note that
+the `.ssh` directory in the Windows profile is a **symlink into WSL**, so Git Bash
+cannot read it -- go through `wsl.exe -e sh -c '...'`:
+
+```sh
+# list what the channel has, and pick the newest build
+ssh linode "curl -sSk https://conda.anaconda.org/realthunder/win-64/repodata.json -o /tmp/rt.json"
+# fetch it, and read its sha256 out of that repodata to check against
+ssh linode "cd /tmp && curl -sSk -O https://conda.anaconda.org/realthunder/win-64/<pkg>.conda && sha256sum <pkg>.conda"
+scp linode:/tmp/<pkg>.conda /mnt/d/Zheng.Lei/sw/dl/
+```
+
+`-k` is needed only because that host is an old Ubuntu with a stale CA bundle.
+**A `curl: (60)` there is certificate verification, not a block** -- do not read it
+as the channel being unreachable from the proxy as well.
+
+Then install it **without a solve**, for the reason the SMESH section gives: any
+plain `conda install` into this env consults the dead channel. An `@EXPLICIT` file
+accepts local paths and still writes a proper `conda-meta` record, so the package
+ends up owned by conda rather than being the untracked hand-install the Linux
+[libarea section](#packages-from-the-realthunder-channel) warns to clean up:
+
+```bat
+:: libarea_explicit.txt
+::   @EXPLICIT
+::   file:///D:/Zheng.Lei/sw/dl/libarea-0.3.1-h50a38c3_0.conda#<sha256>
+conda install -p <env> -y --file libarea_explicit.txt
+```
+
+Confirm afterwards that the env has `Library/lib/cmake/libarea/libareaConfig.cmake`
+-- that is what `find_package` resolves -- alongside `Library/bin/area.dll` and
+`Library/lib/area.lib`. The Windows package depends only on `vc`/`vc14_runtime`/
+`ucrt`, so unlike `smesh` it brings no `occt` question with it.
 
 ### The dev shell: `.conda\run.cmd`
 
@@ -1422,6 +1489,20 @@ Linux never sees it; the pragma is MSVC-only. Fixed by linking `TBB::tbb` (the
 environment's own config package, which points at `tbb12.lib`) PUBLIC into
 `FreeCADRendererCycles`. Not `${TBB_LIBRARY}`: Cycles' bundled `FindTBB`
 resolves that to the legacy `tbb.lib`, which has no DLL beside it.
+
+That link sits behind `if(TARGET TBB::tbb)`, and **the target has to be made to
+exist**, which is the second half of the fix (`0f27186b52`). The only
+`find_package(TBB)` in the tree is Cycles' own `external_libs.cmake`, and it resolves
+through the bundled `FindTBB` in MODULE mode -- which sets `TBB_LIBRARY` and
+`TBB_INCLUDE_DIR` and defines no imported target at all. So on a tree where nothing
+else happens to have loaded TBB's config package the guard is simply false, the link
+never happens, and the `LNK1104` above comes back with nothing to explain it: a false
+`if()` reports nothing, so it reads as a missing library rather than a skipped line.
+`src/Gui/Renderer/CMakeLists.txt` therefore calls `find_package(TBB CONFIG QUIET)`
+ahead of the guard; `TBB_DIR` pointing at the env's `Library/lib/cmake/TBB` in
+`CMakeCache.txt` is how you tell it took. This also means **`tbb-devel` is required
+for a Cycles build**, not just `tbb` -- the config package and `tbb12.lib` ship in
+it, and Cycles' own `find_package(TBB REQUIRED)` fails the configure without it.
 
 Watch for this shape generally -- a bare library name in an MSVC link error
 usually comes out of an object's auto-link pragma, not out of CMake. `tbb12.lib`
