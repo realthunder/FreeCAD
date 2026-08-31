@@ -1286,10 +1286,11 @@ void ViewProviderGeometryObject::updateRenderShadowStyle()
 void ViewProviderGeometryObject::attach(App::DocumentObject *pcObj)
 {
     ViewProviderDragger::attach(pcObj);
-    // The card's look, for an object that carries one: nothing announces it
-    // here the way a later card change does, and a fresh object that has
-    // never been given an appearance of its own follows its card
-    // (docs/MaterialStorage.md 15.3).
+    // The card's look, for a FRESH object that carries one: nothing
+    // announces it here the way a later card change does, and an object
+    // that has never been given an appearance of its own follows its card
+    // (docs/MaterialStorage.md 15.3). A restored one is not fresh, and the
+    // guard inside stands this down for it.
     applyMaterialAppearance();
 }
 
@@ -1297,6 +1298,15 @@ void ViewProviderGeometryObject::applyMaterialAppearance()
 {
     auto geometry = dynamic_cast<App::GeoFeature*>(getObject());
     if (!geometry) {
+        return;
+    }
+    // The follow gates the moment a card is SET, and nothing else. A
+    // restore is the file's own record landing: the appearance it states,
+    // the Render_* properties it states, are what this object looks like,
+    // and re-taking the card over them would overwrite a look the user
+    // chose and saved (docs/MaterialStorage.md 15.3). The base is stored
+    // while following, so there is nothing to re-derive here either.
+    if (App::Document::isAnyRestoring()) {
         return;
     }
     const App::Material card = geometry->getMaterialAppearance();
@@ -1443,15 +1453,10 @@ void ViewProviderGeometryObject::deriveAppearanceBase()
 void ViewProviderGeometryObject::finishRestoring()
 {
     deriveAppearanceBase();
+    // Only the flag, never the card's look: the flag decides what the NEXT
+    // card set does, while what this object looks like now is what the file
+    // said it looks like (docs/MaterialStorage.md 15.3).
     deriveFollowMaterial();
-    {
-        // The card's look, re-taken now that both it and the appearance are
-        // in hand (docs/MaterialStorage.md 15.3). NoModify, or a document
-        // whose card has moved on opens already modified.
-        Base::ObjectStatusLocker<App::Property::Status, App::Property>
-                guard(App::Property::NoModify, &ShapeAppearance);
-        applyMaterialAppearance();
-    }
     refreshAppearanceMirrors();
     updateBoundingBox();
     // Restored Render_* dynamic properties (per-object render engine

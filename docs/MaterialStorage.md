@@ -691,15 +691,22 @@ the card editor, never from the Appearance panel.
 `App::PropertyMaterialList` gains `FollowMaterial`, a bool in the list's
 data block beside `pbr`:
 
-- **true**: the BASE (`ShapeAppearanceDesign.md` sec 12.2) is the card's
-  look, read through `GeoFeature::getMaterialAppearance()`. Nothing is
-  stored for the base. It is re-derived at restore, at attach, and whenever
-  the card changes -- and the overriding faces, which are stored, are
-  re-applied over the new base each time. Per-face overrides and following
-  are therefore compatible: an imported part with three painted faces can
-  be assigned Aluminium and keep its three faces.
-- **false**: the base is stored and the card's look is ignored. Assigning
-  a new card changes nothing visible.
+- **true**: SETTING the object's card writes the card's look, read through
+  `GeoFeature::getMaterialAppearance()`, into the BASE
+  (`ShapeAppearanceDesign.md` sec 12.2) -- and the overriding faces, which
+  are stored, are re-applied over the new base. Per-face overrides and
+  following are therefore compatible: an imported part with three painted
+  faces can be assigned Aluminium and keep its three faces.
+- **false**: setting a new card changes nothing visible.
+
+**The flag gates the moment a card is SET, and nothing else.** Not restore:
+a restore is the file's own record landing, and what the file says this
+object looks like -- its appearance, and the `Render_*` properties beside
+it -- is what it gets. So a user may change any appearance, save, and have
+it come back as it was. `applyMaterialAppearance()` stands itself down
+while `App::Document::isAnyRestoring()`, which covers all three of its
+doors (`attach`, the card's `updateData`, and the panel actions replayed by
+a load), and `finishRestoring` no longer re-takes the card at all.
 
 Default: true for a fresh object that carries a card, false for one that
 does not (there is nothing to follow). Any whole-object write from the
@@ -717,6 +724,9 @@ A restored list without the flag gets it derived once, in
 `finishRestoring`, when both the card and the appearance are in hand: base
 equal to the card's look (or to the default while the card has a look) ->
 true; anything else -> false. A document without a card restores false.
+The derivation decides what a later card set does; it never touches the
+restored look, so guessing it wrong costs nothing until the user assigns a
+card, at which point they have said which look they want.
 Schema 4 cannot state the flag, so a schema-4 save followed by a reopen
 runs the same derivation; that is lossless in every case but a look the
 user set to exactly the card's, which reads as following, and is the
@@ -725,12 +735,16 @@ answer the old heuristic gave too.
 ### 15.4a What the code does with the base while following
 
 One deviation from 15.3, and it is a deliberate one: the base **is** stored
-while following, not left empty and re-derived from nothing. It is re-taken
-from the card at attach, at `finishRestoring`, and on every card change --
-which is the whole of what following means -- but a document whose card
-library is not installed, or whose card has been deleted, then still opens
-looking like itself instead of default grey. Storing it costs nothing: the
-base is the storage.
+while following, not left empty and re-derived from nothing. Storing it is
+what lets a restore be authoritative: a document whose card library is not
+installed, or whose card has been deleted, opens looking like itself
+instead of default grey, and nothing has to re-derive a look at load time.
+It costs nothing -- the base is the storage.
+
+A card edited on disk between sessions therefore reaches a following object
+at the next card set rather than at the next open. That is the price of the
+rule above, and it is the right way round: a look the user saved outranks a
+card that moved while the document was closed.
 
 The flag DEFAULTS TO TRUE, which is what "a fresh object that carries a
 card follows it" means: nobody has chosen this look yet, so the card may.
@@ -751,7 +765,8 @@ The view provider is where the card is read: `applyMaterialAppearance()`
 takes it (when following, or when the base has never been touched, which is
 how a fresh object with a card starts following one), and
 `deriveFollowMaterial()` runs the 15.4 derivation once at
-`finishRestoring`. The old runtime member
+`finishRestoring` -- the flag only, deciding what the NEXT card set does,
+never the look. The old runtime member
 `ViewProviderGeometryObject::materialAppearance` is gone.
 
 ### 15.5 The panels
