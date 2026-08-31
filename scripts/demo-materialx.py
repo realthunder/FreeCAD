@@ -256,6 +256,14 @@ def build():
         view.Render_PBR = True
         view.addProperty("App::PropertyBool", "Render_PBREnvBackground")
         view.Render_PBREnvBackground = True
+        # Studio -- four soft boxes on a dark surround, the product-shot
+        # rig. The default Gradient is the flattest of the six on
+        # purpose (it stays out of the way of a model being worked on),
+        # and flat is the one thing a material ball cannot afford: a
+        # surround with no bright sources and no edges puts the same
+        # grey on every roughness, which is what made physically based
+        # shading look like painted plastic in the first place.
+        view.Render_PBREnvPreset = "Studio"
         view.setCameraType("Perspective")
         view.viewFront()
         view.fitAll()
