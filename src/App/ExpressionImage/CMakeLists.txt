@@ -81,18 +81,41 @@ set(PYCXX_SRCS
     ${FC_SRC}/CXX/IndirectPythonInterface.cxx
 )
 
+# The in-image facade classes, generated from the <Sandbox tier=.../>
+# annotations in the binding XMLs (docs/ExpressionSandbox.md sec 7.5).
+# The host build runs the same script for its dispatch table, so both
+# sides of the boundary always agree.
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+set(FCX_FACADES_INC ${CMAKE_CURRENT_BINARY_DIR}/FcxFacades.inc)
+set(FCX_SANDBOX_GEN ${FC_SRC}/Tools/bindings/generateSandboxFacades.py)
+add_custom_command(
+    OUTPUT ${FCX_FACADES_INC}
+    COMMAND Python3::Interpreter ${FCX_SANDBOX_GEN} --image-out ${FCX_FACADES_INC}
+    DEPENDS ${FCX_SANDBOX_GEN}
+            ${FC_SRC}/App/ComplexGeoDataPy.xml
+            ${FC_SRC}/App/DocumentObjectPy.xml
+            ${FC_SRC}/App/DocumentPy.xml
+            ${FC_SRC}/Mod/Part/App/TopoShapePy.xml
+            ${FC_SRC}/Mod/Spreadsheet/App/SheetPy.xml
+    COMMENT "Generating the expression sandbox facades (FcxFacades.inc)"
+)
+
 add_executable(fcx_image
     ImageBridge.cpp
     ImageMain.cpp
     ImageMarshal.cpp
     ImageStubs.cpp
+    ${FCX_FACADES_INC}
     ${CORE_SLICE}
     ${BASE_SLICE}
     ${PYCXX_SRCS}
 )
+set_source_files_properties(${FCX_FACADES_INC} PROPERTIES
+    GENERATED TRUE HEADER_FILE_ONLY TRUE)
 set_target_properties(fcx_image PROPERTIES SUFFIX ".wasm")
 
 target_include_directories(fcx_image PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${FC_SRC}
     ${FREECAD_GENERATED_DIR}
     ${FREECAD_GENERATED_DIR}/Base

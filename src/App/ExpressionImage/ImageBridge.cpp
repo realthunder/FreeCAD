@@ -10,6 +10,7 @@
  */
 #include <Python.h>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -73,21 +74,38 @@ static void raiseFromReply(const json &reply)
 }
 
 /// _fcx.op(op, handle_id[, a[, k]]): request {"op","h","a"?,"k"?}, both
-/// extras wire-encoded ("a" = attr name / args tuple / item key, "k" =
-/// call kwargs).  Returns the decoded reply value or raises.
+/// extras wire-encoded ("a" = attr/prop name / item key, "k" = call
+/// kwargs).  The call op is member-addressed (docs/ExpressionSandbox.md
+/// sec 7.5): _fcx.op('call', id, member, args, kwargs) -> {"m","a","k"}.
+/// Returns the decoded reply value or raises.
 static PyObject *fcx_op(PyObject *, PyObject *args)
 {
     const char *op = nullptr;
     unsigned long long id = 0;
     PyObject *a1 = nullptr;
     PyObject *a2 = nullptr;
-    if (!PyArg_ParseTuple(args, "sK|OO", &op, &id, &a1, &a2))
+    PyObject *a3 = nullptr;
+    if (!PyArg_ParseTuple(args, "sK|OOO", &op, &id, &a1, &a2, &a3))
         return nullptr;
 
     json req;
     req["op"] = op;
     req["h"] = (uint64_t)id;
     std::string err;
+    bool isCall = strcmp(op, "call") == 0;
+    if (isCall) {
+        if (!a1 || !PyUnicode_Check(a1)) {
+            PyErr_SetString(PyExc_TypeError, "call op needs a member name");
+            return nullptr;
+        }
+        req["m"] = PyUnicode_AsUTF8(a1);
+        a1 = a2;   // args tuple
+        a2 = a3;   // kwargs
+    }
+    else if (a3) {
+        PyErr_SetString(PyExc_TypeError, "too many op arguments");
+        return nullptr;
+    }
     if (a1) {
         json v;
         if (!FcxImage::encodeValue(a1, v, err)) {

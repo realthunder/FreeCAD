@@ -413,18 +413,21 @@ return A List holding all parents (or requested parent if given) and correspondi
             <UserDocu>Return the document name and internal name of this object</UserDocu>
         </Documentation>
         <Parameter Name="FullName" Type="String"/>
+        <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="Name" ReadOnly="true">
             <Documentation>
                 <UserDocu>Return the internal name of this object</UserDocu>
             </Documentation>
             <Parameter Name="Name" Type="String"/>
+            <Sandbox tier="value"/>
         </Attribute>
                 <Attribute Name="Document" ReadOnly="true">
                         <Documentation>
                                 <UserDocu>Return the document this object is part of</UserDocu>
                         </Documentation>
                         <Parameter Name="Document" Type="Object"/>
+                        <Sandbox tier="handle"/>
                 </Attribute>
                 <Attribute Name="State" ReadOnly="true">
             <Documentation>

@@ -94,6 +94,31 @@ if(BUILD_EXPR_IMAGE_HOST)
     set(ExpressionImageHost_SRC ExpressionImageHost.cpp ExpressionImageBridge.cpp)
     include_directories(${WASMTIME_CAPI_DIR}/include)
     list(APPEND FreeCADApp_LIBS ${WASMTIME_CAPI_DIR}/lib/libwasmtime.so)
+
+    # The closed bridge member table, generated from the <Sandbox tier=.../>
+    # annotations in the binding XMLs (docs/ExpressionSandbox.md sec 7.5).
+    # The image build runs the same script for its facade classes, so both
+    # sides of the boundary always agree.
+    set(FCX_DISPATCH_INC ${CMAKE_CURRENT_BINARY_DIR}/FcxDispatch.inc)
+    set(FCX_SANDBOX_GEN ${CMAKE_SOURCE_DIR}/src/Tools/bindings/generateSandboxFacades.py)
+    # Same order-only-dep scoping as the binding generators below: the
+    # command needs only python and its listed inputs.
+    set(CMAKE_ADD_CUSTOM_COMMAND_DEPENDS_EXPLICIT_ONLY ON)
+    add_custom_command(
+        OUTPUT ${FCX_DISPATCH_INC}
+        COMMAND ${PYTHON_EXECUTABLE} ${FCX_SANDBOX_GEN} --host-out ${FCX_DISPATCH_INC}
+        DEPENDS ${FCX_SANDBOX_GEN}
+                ${CMAKE_SOURCE_DIR}/src/App/ComplexGeoDataPy.xml
+                ${CMAKE_SOURCE_DIR}/src/App/DocumentObjectPy.xml
+                ${CMAKE_SOURCE_DIR}/src/App/DocumentPy.xml
+                ${CMAKE_SOURCE_DIR}/src/Mod/Part/App/TopoShapePy.xml
+                ${CMAKE_SOURCE_DIR}/src/Mod/Spreadsheet/App/SheetPy.xml
+        COMMENT "Generating the expression sandbox dispatch table (FcxDispatch.inc)"
+    )
+    list(APPEND ExpressionImageHost_SRC ${FCX_DISPATCH_INC})
+    set_source_files_properties(${FCX_DISPATCH_INC} PROPERTIES
+        GENERATED TRUE HEADER_FILE_ONLY TRUE)
+    set(CMAKE_ADD_CUSTOM_COMMAND_DEPENDS_EXPLICIT_ONLY OFF)
 else()
     set(ExpressionImageHost_SRC)
 endif()

@@ -146,6 +146,7 @@ TEST_F(ExpressionImageHostTest, evalAfterErrorStillWorks)
 
 #include <Python.h>
 
+#include <App/ExpressionImageBridge.h>
 #include <App/ExpressionSecurityRuntime.h>
 #include <Base/Interpreter.h>
 #include "InitApplication.h"
@@ -201,17 +202,21 @@ protected:
     }
 };
 
-TEST_F(ExpressionImageBridgeTest, getAttrCrossesBridge)
+TEST_F(ExpressionImageBridgeTest, undeclaredAttrDoesNotGetattr)
 {
+    // The closed facade table (docs/ExpressionSandbox.md sec 7.5): an
+    // arbitrary object's attribute is NOT reachable.  The in-image
+    // proxy falls through to read_prop, which the host answers from
+    // the C++ property system only -- a plain Python object has none.
     uint64_t id = exportFromSource("class T:\n"
                                    "    answer = 42\n"
                                    "o = T()\n", "o");
     auto res = ImageHost::instance().eval("o.answer", handleBinding("o", id));
-    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
-    EXPECT_EQ(value(res).get<int64_t>(), 42);
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "AttributeError");
 }
 
-TEST_F(ExpressionImageBridgeTest, boundMethodCallWithArgs)
+TEST_F(ExpressionImageBridgeTest, undeclaredMethodNotCallable)
 {
     uint64_t id = exportFromSource("class T:\n"
                                    "    def add(self, a, b):\n"
@@ -219,24 +224,42 @@ TEST_F(ExpressionImageBridgeTest, boundMethodCallWithArgs)
                                    "o = T()\n", "o");
     auto res = ImageHost::instance().eval("o.add(2, 3)",
                                           handleBinding("o", id));
-    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
-    EXPECT_EQ(value(res).get<int64_t>(), 5);
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "AttributeError");
 }
 
-TEST_F(ExpressionImageBridgeTest, chainedHandleResult)
+TEST_F(ExpressionImageBridgeTest, forgedGetAttrIsProtocolError)
 {
-    // child() returns a non-marshalable object: it must come back as a
-    // fresh handle whose attributes resolve through the bridge again
-    uint64_t id = exportFromSource("class Kid:\n"
-                                   "    name = 'kid'\n"
-                                   "class T:\n"
-                                   "    def child(self):\n"
-                                   "        return Kid()\n"
-                                   "o = T()\n", "o");
-    auto res = ImageHost::instance().eval("o.child().name",
-                                          handleBinding("o", id));
-    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
-    EXPECT_EQ(value(res).get<std::string>(), "kid");
+    // Even a hand-rolled op (a compromised image) cannot reach an
+    // undeclared member: the host answers ProtocolError, never getattr.
+    App::ExpressionSandbox::HandleTable table;
+    uint64_t id = 0;
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* d = PyDict_New();
+        id = table.add(d);
+        Py_DECREF(d);
+    }
+    json req;
+    req["op"] = "get_attr";
+    req["h"] = id;
+    req["a"] = "keys";
+    json reply = App::ExpressionSandbox::dispatchHostOp(table, req);
+    EXPECT_FALSE(reply.value("ok", false));
+    EXPECT_EQ(reply.value("exc", ""), "ProtocolError");
+
+    // the pre-facade call form (callable handle, no member) is gone
+    json callReq;
+    callReq["op"] = "call";
+    callReq["h"] = id;
+    callReq["a"] = json::array();
+    json callReply = App::ExpressionSandbox::dispatchHostOp(table, callReq);
+    EXPECT_FALSE(callReply.value("ok", false));
+    EXPECT_EQ(callReply.value("exc", ""), "ProtocolError");
+    {
+        Base::PyGILStateLocker lock;
+        table.clear();
+    }
 }
 
 TEST_F(ExpressionImageBridgeTest, getItemAndLen)
@@ -250,11 +273,9 @@ TEST_F(ExpressionImageBridgeTest, getItemAndLen)
 
 TEST_F(ExpressionImageBridgeTest, proxyDropReleasesHandle)
 {
-    uint64_t id = exportFromSource("class T:\n"
-                                   "    answer = 1\n"
-                                   "o = T()\n", "o");
+    uint64_t id = exportFromSource("o = {'a': 1}\n", "o");
     EXPECT_EQ(ImageHost::instance().handleCount(), 1u);
-    auto res = ImageHost::instance().eval("o.answer", handleBinding("o", id));
+    auto res = ImageHost::instance().eval("o['a']", handleBinding("o", id));
     ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
     // the eval globals died with the call; the proxy's __del__ sent a
     // release op for the binding handle
@@ -276,18 +297,20 @@ TEST_F(ExpressionImageBridgeTest, permissionGateDeniesThenGrantWorks)
     using App::ExpressionSecurity::Runtime;
     // A document principal: the v1 catalog DENIES unsafe.getattr for
     // documents (addons default to allow across the board, so an addon
-    // principal would not exercise the gate at all).
+    // principal would not exercise the gate at all).  With the closed
+    // facade table, the remaining unsafe-gated bridge surface is
+    // get_item/len on a non-builtin container: __getitem__ there is
+    // arbitrary host code.
     const std::string principal =
         "document:sha256:" + std::string(64, 'b');
 
     uint64_t id = exportFromSource("class T:\n"
-                                   "    secret = 7\n"
+                                   "    def __getitem__(self, k):\n"
+                                   "        return 7\n"
                                    "o = T()\n", "o");
     {
-        // arbitrary-instance getattr is gated (unsafe.getattr) once a
-        // principal scope is active on the evaluating thread
         Runtime::Scope scope(principal.c_str());
-        auto res = ImageHost::instance().eval("o.secret",
+        auto res = ImageHost::instance().eval("o[0]",
                                               handleBinding("o", id));
         ASSERT_FALSE(res.ok);
         EXPECT_EQ(res.excType, "PermissionError");
@@ -295,11 +318,12 @@ TEST_F(ExpressionImageBridgeTest, permissionGateDeniesThenGrantWorks)
     Runtime::instance().grant(principal, Permission::UnsafeGetattr, "*",
                               true, "session");
     uint64_t id2 = exportFromSource("class T:\n"
-                                    "    secret = 7\n"
+                                    "    def __getitem__(self, k):\n"
+                                    "        return 7\n"
                                     "o = T()\n", "o");
     {
         Runtime::Scope scope(principal.c_str());
-        auto res = ImageHost::instance().eval("o.secret",
+        auto res = ImageHost::instance().eval("o[0]",
                                               handleBinding("o", id2));
         ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
         EXPECT_EQ(value(res).get<int64_t>(), 7);
@@ -314,7 +338,8 @@ TEST_F(ExpressionImageBridgeTest, permissionGateDeniesThenGrantWorks)
 
 #include <App/Document.h>
 #include <App/DocumentObject.h>
-#include <App/ExpressionImageBridge.h>
+#include <App/Expression.h>
+#include <App/ObjectIdentifier.h>
 #include <App/PropertyStandard.h>
 
 class ExpressionImageEvalTest: public ExpressionImageBridgeTest
@@ -344,6 +369,28 @@ protected:
 
     App::Document* doc = nullptr;
     App::DocumentObject* obj = nullptr;
+
+    /// Export a live object into the image host's handle table and
+    /// build a {"var": handle} binding the way encodeHostValue would
+    /// (type tag + facade key), for driving the raw eval path.
+    static std::vector<unsigned char> objectBinding(const char* var,
+                                                    App::PropertyContainer* o,
+                                                    const char* boundMember = nullptr)
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* py = o->getPyObject();
+        uint64_t id = ImageHost::instance().exportObject(py);
+        json h = {{"t", "h"}, {"id", id}, {"ty", Py_TYPE(py)->tp_name}};
+        if (const char* fc = App::ExpressionSandbox::facadeKeyFor(Py_TYPE(py)))
+            h["fc"] = fc;
+        if (boundMember)
+            h["m"] = boundMember;
+        Py_DECREF(py);
+        json b;
+        b[var] = std::move(h);
+        auto v = json::to_cbor(b);
+        return {v.begin(), v.end()};
+    }
 };
 
 TEST_F(ExpressionImageEvalTest, arithmeticInImage)
@@ -476,4 +523,242 @@ TEST_F(ExpressionImageEvalTest, resolveAliasOpAnswers)
         Base::PyGILStateLocker lock;
         table.clear();
     }
+}
+
+// ---- the generated facades (docs/ExpressionSandbox.md sec 7.5):
+// ---- declared members forward, dynamic properties ride read_prop,
+// ---- everything else is unreachable ----
+
+TEST_F(ExpressionImageEvalTest, facadeDeclaredAttrCrosses)
+{
+    auto res = ImageHost::instance().eval("o.Name", objectBinding("o", obj));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_EQ(value(res).get<std::string>(), "Obj");
+}
+
+TEST_F(ExpressionImageEvalTest, dynamicPropertyAnsweredByReadProp)
+{
+    // Width is a dynamic property, not an XML member: the facade has no
+    // such attribute, so the proxy falls through to read_prop and the
+    // host answers from getPropertyByName -- never host getattr.
+    auto res = ImageHost::instance().eval("o.Width * 2",
+                                          objectBinding("o", obj));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_DOUBLE_EQ(value(res).get<double>(), 42.0);
+}
+
+TEST_F(ExpressionImageEvalTest, facadeChainDocumentGetObject)
+{
+    // handle-tier attr -> declared call -> read_prop, all on facades
+    auto res = ImageHost::instance().eval("o.Document.getObject('Obj').Width",
+                                          objectBinding("o", obj));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_DOUBLE_EQ(value(res).get<double>(), 21.0);
+}
+
+TEST_F(ExpressionImageEvalTest, undeclaredXmlMemberUnreachable)
+{
+    // removeProperty IS an XML member of DocumentObjectPy -- but it
+    // carries no <Sandbox/> annotation, so the facade does not have it
+    // and read_prop finds no such property: DENY by default.
+    auto res = ImageHost::instance().eval("o.removeProperty",
+                                          objectBinding("o", obj));
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "AttributeError");
+
+    // and a forged get_attr against the host is a protocol error
+    Base::PyGILStateLocker lock;
+    App::ExpressionSandbox::HandleTable table;
+    PyObject* py = obj->getPyObject();
+    uint64_t id = table.add(py);
+    Py_DECREF(py);
+    json req;
+    req["op"] = "get_attr";
+    req["h"] = id;
+    req["a"] = "removeProperty";
+    json reply = App::ExpressionSandbox::dispatchHostOp(table, req);
+    EXPECT_FALSE(reply.value("ok", false));
+    EXPECT_EQ(reply.value("exc", ""), "ProtocolError");
+    table.clear();
+}
+
+TEST_F(ExpressionImageEvalTest, boundMemberWireFormCallable)
+{
+    // A bound method of a declared call-tier member crosses as its
+    // base handle plus "m" and stays callable in-image; this is what
+    // keeps pack-resolved method identifiers working.
+    auto res = ImageHost::instance().eval("f('Obj').Name",
+                                          objectBinding("f", doc, "getObject"));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_EQ(value(res).get<std::string>(), "Obj");
+}
+
+TEST_F(ExpressionImageEvalTest, declaredCallPassesPermissionClassification)
+{
+    using App::ExpressionSecurity::Runtime;
+    // Declared members still route through the sec 3 permission check
+    // per principal.  A method bound to a Document/DocumentObject is a
+    // document read (checkCallablePermission -> DocReadSelf), ALLOWED
+    // for the owner's own document even under a document principal --
+    // so the facade call chain works while an undeclared member does
+    // not, and the gate is still consulted (not bypassed).
+    const std::string principal =
+        "document:sha256:" + std::string(64, 'c');
+    Runtime::Scope scope(principal.c_str());
+    auto res = ImageHost::instance().eval("o.Document.getObject('Obj').Width",
+                                          objectBinding("o", obj));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_DOUBLE_EQ(value(res).get<double>(), 21.0);
+}
+
+// ---- ES sec 10 acceptance (docs/ExpressionSandbox.md): hostile
+// ---- expressions from a real, saved-and-reloaded .FCStd cannot reach
+// ---- the host FS / modules / object graph through the image, and the
+// ---- grant lifecycle works end to end ----
+
+#include <cstdio>
+
+class ExpressionImageAcceptanceTest: public ExpressionImageBridgeTest
+{
+protected:
+    void SetUp() override
+    {
+        ExpressionImageBridgeTest::SetUp();
+        if (IsSkipped())
+            return;
+        path = std::string(std::tmpnam(nullptr)) + "-fcxaccept.FCStd";
+        auto tmp = App::GetApplication().newDocument("FcxAccept", "testUser");
+        auto o = tmp->addObject("App::FeaturePython", "Obj");
+        auto width = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            o->addDynamicProperty("App::PropertyFloat", "Width"));
+        ASSERT_NE(width, nullptr);
+        width->setValue(21.0);
+        // a stored (engine-bound) expression, so the reloaded document
+        // carries real expression code and gets a real document-hash
+        // principal
+        o->addDynamicProperty("App::PropertyFloat", "Out");
+        o->setExpression(App::ObjectIdentifier(o, "Out"),
+                         App::Expression::parse(o, "Width * 2"));
+        ASSERT_TRUE(tmp->saveAs(path.c_str()));
+        App::GetApplication().closeDocument(tmp->getName());
+
+        doc = App::GetApplication().openDocument(path.c_str());
+        ASSERT_NE(doc, nullptr);
+        obj = doc->getObject("Obj");
+        ASSERT_NE(obj, nullptr);
+    }
+
+    void TearDown() override
+    {
+        if (doc)
+            App::GetApplication().closeDocument(doc->getName());
+        doc = nullptr;
+        obj = nullptr;
+        if (!path.empty())
+            std::remove(path.c_str());
+        ExpressionImageBridgeTest::TearDown();
+    }
+
+    App::Document* doc = nullptr;
+    App::DocumentObject* obj = nullptr;
+    std::string path;
+};
+
+TEST_F(ExpressionImageAcceptanceTest, storedExpressionStillEvaluates)
+{
+    auto res = ImageHost::instance().evalExpression(obj, "Width * 2");
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_DOUBLE_EQ(json::from_cbor(res.value.begin(), res.value.end())
+                         .get<double>(), 42.0);
+}
+
+TEST_F(ExpressionImageAcceptanceTest, hostFsUnreachableFromExpression)
+{
+    // _py resolves to the IMAGE's builtins (never packed host-side), and
+    // the image's own expression engine blocks open()/__import__ before
+    // WASI even gets a chance (CallableExpression::securityCheck).  Either
+    // way /etc/passwd never crosses -- no host FS reach.
+    auto res = ImageHost::instance().evalExpression(
+        obj, "_py.open(<</etc/passwd>>).read()");
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.message.find("root:"), std::string::npos) << res.message;
+}
+
+TEST_F(ExpressionImageAcceptanceTest, importedOsCannotSpawnFromExpression)
+{
+    auto res = ImageHost::instance().evalExpression(
+        obj, "_py.__import__(<<subprocess>>).run(<<ls>>)");
+    ASSERT_FALSE(res.ok);
+    EXPECT_NE(res.excType, "") << res.message;
+}
+
+TEST_F(ExpressionImageAcceptanceTest, appModuleHasNoDocumentGraph)
+{
+    // the in-image FreeCAD module is the Ring 0 math slice: the host's
+    // App.getDocument()...Proxy drill-down simply does not exist there
+    auto res = ImageHost::instance().evalExpression(
+        obj, "_app.getDocument(<<FcxAccept>>)");
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "AttributeError")
+        << res.excType << ": " << res.message;
+}
+
+TEST_F(ExpressionImageAcceptanceTest, selfDrilldownDenied)
+{
+    // _self maps to unsafe.getattr (the frozen v1 catalog), DENY for a
+    // document principal, whenever it reaches past a plain property of
+    // the object.  (_self.Proxy stays a document read -- Proxy IS a
+    // property; recompute is a method, so it is the drill-down.)  The
+    // reopened .FCStd yields a real document:sha256 principal.
+    auto res = ImageHost::instance().evalExpression(obj, "_self.recompute");
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "PermissionError")
+        << res.excType << ": " << res.message;
+}
+
+TEST_F(ExpressionImageAcceptanceTest, foreignDocGrantRevokeCycle)
+{
+    using App::ExpressionSecurity::Permission;
+    using App::ExpressionSecurity::Runtime;
+
+    std::string path2 = std::string(std::tmpnam(nullptr)) + "-fcxother.FCStd";
+    auto other = App::GetApplication().newDocument("FcxOther", "testUser");
+    auto remote = other->addObject("App::FeaturePython", "Remote");
+    auto depth = Base::freecad_dynamic_cast<App::PropertyFloat>(
+        remote->addDynamicProperty("App::PropertyFloat", "Depth"));
+    ASSERT_NE(depth, nullptr);
+    depth->setValue(15.0);
+    ASSERT_TRUE(other->saveAs(path2.c_str()));
+    App::GetApplication().closeDocument(other->getName());
+    other = App::GetApplication().openDocument(path2.c_str());
+    ASSERT_NE(other, nullptr);
+    ASSERT_NE(other->getObject("Remote"), nullptr);
+
+    // Reference the reopened doc by its actual internal name (openDocument
+    // can suffix on collision).
+    const std::string otherName = other->getName();
+    const std::string src = otherName + "#Remote.Depth * 2";
+    auto denied = ImageHost::instance().evalExpression(obj, src);
+    ASSERT_FALSE(denied.ok);
+    EXPECT_EQ(denied.excType, "PermissionError")
+        << denied.excType << ": " << denied.message;
+
+    std::string principal = Runtime::instance().documentPrincipal(doc);
+    Runtime::instance().grant(principal, Permission::DocForeign,
+                              otherName, true, "session");
+    auto granted = ImageHost::instance().evalExpression(obj, src);
+    ASSERT_TRUE(granted.ok) << granted.excType << ": " << granted.message;
+    EXPECT_DOUBLE_EQ(json::from_cbor(granted.value.begin(),
+                                     granted.value.end()).get<double>(), 30.0);
+
+    Runtime::instance().grant(principal, Permission::DocForeign,
+                              otherName, false, "session");
+    auto revoked = ImageHost::instance().evalExpression(obj, src);
+    ASSERT_FALSE(revoked.ok);
+    EXPECT_EQ(revoked.excType, "PermissionError");
+
+    Runtime::instance().clearPending(principal, Permission::DocForeign,
+                                     otherName);
+    App::GetApplication().closeDocument(other->getName());
+    std::remove(path2.c_str());
 }

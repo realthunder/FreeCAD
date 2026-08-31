@@ -268,8 +268,12 @@ static json dispatchEvalExpr(const json &req, const std::string &src)
     auto oh = req.find("owner_h");
     if (oh != req.end() && oh->is_number_unsigned())
         ownerHandle = oh->get<uint64_t>();
+    std::string ownerFacade;
+    auto ofc = req.find("owner_fc");
+    if (ofc != req.end() && ofc->is_string())
+        ownerFacade = ofc->get_ref<const std::string &>();
 
-    Fcx::EvalTransaction tx(docName, objName, ownerHandle);
+    Fcx::EvalTransaction tx(docName, objName, ownerHandle, ownerFacade);
 
     auto bindings = req.find("bindings");
     if (bindings != req.end() && bindings->is_object()) {

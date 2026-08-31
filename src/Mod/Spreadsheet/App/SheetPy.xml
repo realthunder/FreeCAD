@@ -118,6 +118,7 @@
       <Documentation>
         <UserDocu>Get cell address given an alias</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getDisplayUnit">
       <Documentation>

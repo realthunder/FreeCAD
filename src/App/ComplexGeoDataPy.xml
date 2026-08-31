@@ -114,6 +114,7 @@ Returns True if something was erased.
         <UserDocu>Get the BoundBox of the object</UserDocu>
       </Documentation>
       <Parameter Name="BoundBox" Type="Object" />
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="Rotation" ReadOnly="true">
         <Documentation>
@@ -131,12 +132,14 @@ Returns True if something was erased.
         <UserDocu>Get the center of gravity</UserDocu>
       </Documentation>
       <Parameter Name="CenterOfGravity" Type="Object" />
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="Placement" ReadOnly="false">
       <Documentation>
         <UserDocu>Get the current transformation of the object as placement</UserDocu>
       </Documentation>
       <Parameter Name="Placement" Type="Object" />
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="Tag">
       <Documentation>

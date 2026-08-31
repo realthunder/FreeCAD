@@ -168,6 +168,8 @@ PyObject *DocumentObject::getPyObject()
     h[FcxWire::TagKey] = FcxWire::TagHandle;
     h["id"] = tx->ownerHandle();
     h["ty"] = "obj";
+    if (!tx->ownerFacade().empty())
+        h["fc"] = tx->ownerFacade();
     PyObject *proxy = FcxImage::decodeValue(h);
     if (!proxy)
         throw Base::PyException();
@@ -249,8 +251,10 @@ static EvalTransaction *_current;
 
 EvalTransaction::EvalTransaction(const std::string &docName,
                                  const std::string &objName,
-                                 uint64_t ownerHandle)
+                                 uint64_t ownerHandle,
+                                 const std::string &ownerFacade)
     : ownerHandle_(ownerHandle)
+    , ownerFacade_(ownerFacade)
 {
     doc_.name_ = docName.empty() ? "sandbox" : docName;
     doc_.Label.str_ = doc_.name_;

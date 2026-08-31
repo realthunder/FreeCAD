@@ -262,19 +262,72 @@ std::unordered_set / boost::hash / CStringHasher / FC_STATIC (now in
 FcxDocument.h for the image); the parser statics compile fine
 single-threaded; PropertyContainerPy's notifier attach is guarded out.
 
+## The generated facades (built 2026-08-31)
+
+The closed member set is now GENERATED from the binding XMLs
+(docs/ExpressionSandbox.md sec 7.5), replacing the hand-written getattr
+path.  One generator, two outputs, so host and image cannot drift:
+
+- `src/Tools/bindings/generateSandboxFacades.py` reads the
+  `<Sandbox tier="value|handle|call"/>` annotation on `<Attribute>` /
+  `<Methode>` elements in a fixed list of binding XMLs (ANNOTATED_XMLS:
+  ComplexGeoDataPy, DocumentObjectPy, DocumentPy, TopoShapePy, SheetPy).
+  A member with no annotation does not exist across the boundary -- DENY
+  by default.  Seeded from Phase 0 sec 3.3: 14 members (Name/FullName/
+  Document/BoundBox/CenterOfGravity/Placement/ShapeType/Length/Area/
+  Volume reads, Document.getObject / TopoShape.isNull /
+  Sheet.getCellFromAlias calls).
+- Host: `--host-out FcxDispatch.inc` -> a `FacadeMember` table
+  `#include`d in ExpressionImageBridge.cpp.  `facadeMemberLookup` walks
+  the object's tp_mro; `get_attr` for an unlisted member is a
+  ProtocolError, never a getattr.  `read_prop` is answered from the C++
+  property system (`getPropertyByName`), never host Python -- this is
+  how dynamic properties (not XML members) stay reachable while
+  arbitrary attributes do not.  `call` is member-addressed
+  (`{"m": <member>}`) and only a declared call-tier member is invocable.
+  Every op still passes the sec 3 permission check
+  (checkGetattr/checkCallablePermission) after the table check.
+  Generated in src/App/CMakeLists.txt under BUILD_EXPR_IMAGE_HOST.
+- Image: `--image-out FcxFacades.inc` -> a Python source literal
+  `#include`d in ImageMarshal.cpp, exec'd over a hand-written prelude
+  (HostHandle + `_attr`/`_method` helpers).  A handle wire value carries
+  a `"fc"` facade key; decodeValue instantiates the matching proxy
+  class.  Declared attrs forward `get_attr`; `__getattr__` falls through
+  to `read_prop`; there is NO `__call__` (an undeclared callable that
+  crossed as a handle is inert).  A bound declared method crosses as its
+  base handle plus `"m"`, resolved to the facade's bound method in-image
+  so pack-resolved method identifiers stay callable.  Generated in
+  src/App/ExpressionImage/CMakeLists.txt.
+
+Security review of the whole bridge is now "diff the annotations":
+`git log -p` on the five XML files.
+
+## The acceptance harness (built 2026-08-31)
+
+ES sec 10, in ExpressionImageAcceptanceTest (tests/src/App/
+ExpressionImageHost.cpp): a real `.FCStd` is saved with a stored
+engine expression, closed, reopened (so it carries a real
+document:sha256 principal), and hostile expressions are run against the
+image.  `_py.open('/etc/passwd')` is blocked by the image's OWN engine
+(CallableExpression::securityCheck) before WASI is even reached;
+`_py.__import__('subprocess')` likewise; `_app.getDocument(...)` finds
+no document graph in the Ring 0 module; `_self.recompute` (a
+drill-down past a plain property) is unsafe.getattr DENY for the
+document principal; and a foreign-document reference runs the full
+grant -> works -> revoke -> fails cycle end to end.
+
 ## What step 4 still owes (in order)
 
-1. Generated facades/dispatch from the Py XMLs with the `<Sandbox>`
-   annotation (ES sec 7.5), replacing the hand-registered module in
-   ImageMain.cpp.
-2. Acceptance harness: the ES sec 10 denials plus
-   grant->works->revoke->fails against the image (the bridge-level
-   cycle is covered by ExpressionImageBridgeTest, the pack-time cycle
-   by ExpressionImageEvalTest.foreignDocGrantCycleAtPackTime).
-3. Writing/setPath, LinkPlacement/LinkMatrix accumulation and
+1. Writing/setPath, LinkPlacement/LinkMatrix accumulation and
    getSubObject walks are absent in-image by design (host pre-resolves
    or the evaluation fails cleanly); revisit when the evaluation
    switch-over lands.
+2. Ring 0 pseudo-modules (`_math`/`_re`/`_coll`/`_py`/`_app`) are now
+   skipped from the host bindings pack (ExpressionImageHost.cpp) so they
+   resolve IN the image -- `_py.open` must mean the image's builtins,
+   not ours.  The seam list to widen the facade set is the XML
+   annotations; no code change is needed to add a member, only an
+   annotation + rebuild.
 
 ## Carve audit for step 3 above (measured 2026-08-30)
 

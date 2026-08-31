@@ -17,47 +17,95 @@ using nlohmann::json;
 namespace FcxImage
 {
 
-PyObject* handleType()
+// The generated facade classes (exactly the <Sandbox/>-declared
+// members, docs/ExpressionSandbox.md sec 7.5), produced by
+// src/Tools/bindings/generateSandboxFacades.py at build time.
+#include "FcxFacades.inc"
+
+/* The hand-written proxy prelude the generated classes build on.
+ * HostHandle carries _id/_ty in slots; declared members forward
+ * member-addressed ops, everything else falls through __getattr__ =
+ * read_prop, which the host answers from the C++ property system only.
+ * There is deliberately NO __call__: an undeclared callable that
+ * crossed as a handle is inert in-image.  Iteration works via the
+ * __getitem__ sequence fallback: IndexError crosses the wire and ends
+ * the loop.  __del__ releases the host table entry; by then the host
+ * may be gone, hence the bare except.
+ */
+static const char ProxyPrelude[] =
+    "import _fcx\n"
+    "class HostHandle:\n"
+    "    __slots__ = ('_id', '_ty')\n"
+    "    def __repr__(self):\n"
+    "        return '<HostHandle %s #%d>' % (self._ty, self._id)\n"
+    "    def __getattr__(self, name):\n"
+    "        if name.startswith('_'):\n"
+    "            raise AttributeError(name)\n"
+    "        return _fcx.op('read_prop', self._id, name)\n"
+    "    def __getitem__(self, key):\n"
+    "        return _fcx.op('get_item', self._id, key)\n"
+    "    def __len__(self):\n"
+    "        return _fcx.op('len', self._id)\n"
+    "    def __del__(self):\n"
+    "        try:\n"
+    "            _fcx.op('release', self._id)\n"
+    "        except Exception:\n"
+    "            pass\n"
+    "def _attr(name):\n"
+    "    def get(self):\n"
+    "        return _fcx.op('get_attr', self._id, name)\n"
+    "    return property(get)\n"
+    "def _method(name):\n"
+    "    def call(self, *args, **kw):\n"
+    "        return _fcx.op('call', self._id, name, args, kw)\n"
+    "    call.__name__ = name\n"
+    "    return call\n";
+
+/// Namespace dict holding HostHandle + the generated FACADES map.
+static PyObject* proxyNamespace()
 {
-    // A Python proxy class carrying _id/_ty in slots; every other
-    // access round-trips to the host through _fcx.op (ImageBridge.cpp).
-    // Iteration works via the __getitem__ sequence fallback: IndexError
-    // crosses the wire and ends the loop.  __del__ releases the host
-    // table entry; by then the host may be gone, hence the bare except.
-    static PyObject* type;
-    if (!type) {
-        PyObject* ns = PyDict_New();
+    static PyObject* ns;
+    if (!ns) {
+        ns = PyDict_New();
         if (!ns)
             return nullptr;
         PyDict_SetItemString(ns, "__builtins__", PyEval_GetBuiltins());
-        PyObject* r = PyRun_String(
-            "import _fcx\n"
-            "class HostHandle:\n"
-            "    __slots__ = ('_id', '_ty')\n"
-            "    def __repr__(self):\n"
-            "        return '<HostHandle %s #%d>' % (self._ty, self._id)\n"
-            "    def __getattr__(self, name):\n"
-            "        return _fcx.op('get_attr', self._id, name)\n"
-            "    def __call__(self, *args, **kw):\n"
-            "        return _fcx.op('call', self._id, args, kw)\n"
-            "    def __getitem__(self, key):\n"
-            "        return _fcx.op('get_item', self._id, key)\n"
-            "    def __len__(self):\n"
-            "        return _fcx.op('len', self._id)\n"
-            "    def __del__(self):\n"
-            "        try:\n"
-            "            _fcx.op('release', self._id)\n"
-            "        except Exception:\n"
-            "            pass\n",
-            Py_file_input, ns, ns);
-        Py_XDECREF(r);
-        type = PyDict_GetItemString(ns, "HostHandle");
-        Py_XINCREF(type);
-        Py_DECREF(ns);
-        if (!type)
+        PyObject* r = PyRun_String(ProxyPrelude, Py_file_input, ns, ns);
+        if (r) {
+            Py_DECREF(r);
+            r = PyRun_String(FcxFacadesSource, Py_file_input, ns, ns);
+        }
+        if (!r) {
             PyErr_Print();
+            Py_CLEAR(ns);
+            return nullptr;
+        }
+        Py_DECREF(r);
     }
-    return type;
+    return ns;
+}
+
+PyObject* handleType()
+{
+    PyObject* ns = proxyNamespace();
+    return ns ? PyDict_GetItemString(ns, "HostHandle") : nullptr;  // borrowed
+}
+
+/// Facade class for a wire facade key, HostHandle when unmapped.
+static PyObject* facadeClass(const char* key)
+{
+    PyObject* ns = proxyNamespace();
+    if (!ns)
+        return nullptr;
+    if (key) {
+        PyObject* facades = PyDict_GetItemString(ns, "FACADES");
+        if (facades) {
+            PyObject* cls = PyDict_GetItemString(facades, key);  // borrowed
+            if (cls)
+                return cls;
+        }
+    }
+    return PyDict_GetItemString(ns, "HostHandle");  // borrowed
 }
 
 static bool getDoubles(const json& arr, double* out, size_t n)
@@ -185,7 +233,10 @@ PyObject* decodeValue(const json& v)
     else if (t == FcxWire::TagHandle) {
         auto id = v.find("id");
         auto ty = v.find("ty");
-        PyObject* type = handleType();
+        auto fc = v.find("fc");
+        PyObject* type = facadeClass(
+            fc != v.end() && fc->is_string() ? fc->get_ref<const std::string&>().c_str()
+                                             : nullptr);
         if (type && id != v.end() && id->is_number_integer() && ty != v.end()
                 && ty->is_string()) {
             PyObject* inst = PyObject_CallNoArgs(type);
@@ -203,6 +254,16 @@ PyObject* decodeValue(const json& v)
             if (rc != 0) {
                 Py_DECREF(inst);
                 return nullptr;
+            }
+            // A bound declared method crosses as its base handle plus
+            // "m": hand back the facade's bound method, which keeps the
+            // proxy (and so the host table entry) alive until dropped.
+            auto m = v.find("m");
+            if (m != v.end() && m->is_string()) {
+                PyObject* method = PyObject_GetAttrString(
+                    inst, m->get_ref<const std::string&>().c_str());
+                Py_DECREF(inst);
+                return method;
             }
             return inst;
         }

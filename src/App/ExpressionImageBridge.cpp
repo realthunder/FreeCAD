@@ -36,6 +36,7 @@
 #include "ExpressionImage/FcxWire.h"
 #include "ExpressionImageBridge.h"
 #include "ExpressionSecurityRuntime.h"
+#include "PropertyContainerPy.h"
 
 using json = nlohmann::json;
 
@@ -43,6 +44,94 @@ namespace App
 {
 namespace ExpressionSandbox
 {
+
+// ---- the closed member table (generated from the <Sandbox/> XML
+// ---- annotations; docs/ExpressionSandbox.md sec 7.5) ----
+
+#include "FcxDispatch.inc"
+
+using MemberIndex =
+    std::unordered_map<std::string, std::unordered_map<std::string, const FacadeMember*>>;
+
+static const MemberIndex& facadeIndex()
+{
+    static const MemberIndex index = [] {
+        MemberIndex idx;
+        for (const auto& m : FacadeTable)
+            idx[m.type][m.member] = &m;
+        return idx;
+    }();
+    return index;
+}
+
+const char* facadeKeyFor(PyTypeObject* type)
+{
+    const auto& idx = facadeIndex();
+    PyObject* mro = type->tp_mro;
+    if (!mro || !PyTuple_Check(mro)) {
+        auto it = idx.find(type->tp_name);
+        return it == idx.end() ? nullptr : it->second.begin()->second->type;
+    }
+    for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(mro); ++i) {
+        auto* t = reinterpret_cast<PyTypeObject*>(PyTuple_GET_ITEM(mro, i));
+        auto it = idx.find(t->tp_name);
+        if (it != idx.end())
+            return it->second.begin()->second->type;
+    }
+    return nullptr;
+}
+
+const FacadeMember* facadeMemberLookup(PyTypeObject* type, const char* member)
+{
+    const auto& idx = facadeIndex();
+    auto lookup = [&](const char* typeName) -> const FacadeMember* {
+        auto it = idx.find(typeName);
+        if (it == idx.end())
+            return nullptr;
+        auto mit = it->second.find(member);
+        return mit == it->second.end() ? nullptr : mit->second;
+    };
+    PyObject* mro = type->tp_mro;
+    if (!mro || !PyTuple_Check(mro))
+        return lookup(type->tp_name);
+    for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(mro); ++i) {
+        auto* t = reinterpret_cast<PyTypeObject*>(PyTuple_GET_ITEM(mro, i));
+        if (const FacadeMember* m = lookup(t->tp_name))
+            return m;
+    }
+    return nullptr;
+}
+
+/** Bound method of an annotated call-tier member?  Then it crosses as
+ * a bound-member handle on its base object ({"t":"h","id":<base>,
+ * "fc":...,"m":<member>}): the image resolves the facade method on the
+ * base proxy, so `Obj.Shape.isNull` packed at pack time stays callable
+ * in-image while an UNDECLARED method crosses as an inert handle.
+ */
+static bool boundDeclaredMethod(PyObject* obj, PyObject** self, std::string& name)
+{
+    name.clear();
+    if (PyMethod_Check(obj)) {
+        *self = PyMethod_GET_SELF(obj);
+        PyObject* fn = PyMethod_GET_FUNCTION(obj);
+        PyObject* n = fn ? PyObject_GetAttrString(fn, "__name__") : nullptr;
+        if (n && PyUnicode_Check(n))
+            name = PyUnicode_AsUTF8(n);
+        Py_XDECREF(n);
+        PyErr_Clear();
+    }
+    else if (PyCFunction_Check(obj)) {
+        *self = PyCFunction_GET_SELF(obj);
+        if (const char* mlName = reinterpret_cast<PyCFunctionObject*>(obj)->m_ml->ml_name)
+            name = mlName;
+    }
+    else
+        return false;
+    if (!*self || name.empty() || PyModule_Check(*self))
+        return false;
+    const FacadeMember* m = facadeMemberLookup(Py_TYPE(*self), name.c_str());
+    return m && m->kind == FacadeKind::Method;
+}
 
 uint64_t HandleTable::add(PyObject* obj)
 {
@@ -190,10 +279,26 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
         if (allStringKeys)
             return map;
     }
+    {
+        PyObject* self = nullptr;
+        std::string member;
+        if (boundDeclaredMethod(obj, &self, member)) {
+            json h = {{FcxWire::TagKey, FcxWire::TagHandle},
+                      {"id", table.add(self)},
+                      {"ty", Py_TYPE(self)->tp_name},
+                      {"m", member}};
+            if (const char* fc = facadeKeyFor(Py_TYPE(self)))
+                h["fc"] = fc;
+            return h;
+        }
+    }
     uint64_t id = table.add(obj);
-    return {{FcxWire::TagKey, FcxWire::TagHandle},
-            {"id", id},
-            {"ty", Py_TYPE(obj)->tp_name}};
+    json h = {{FcxWire::TagKey, FcxWire::TagHandle},
+              {"id", id},
+              {"ty", Py_TYPE(obj)->tp_name}};
+    if (const char* fc = facadeKeyFor(Py_TYPE(obj)))
+        h["fc"] = fc;
+    return h;
 }
 
 static bool getDoubles(const json& arr, double* out, size_t n)
@@ -421,12 +526,63 @@ json dispatchHostOp(HandleTable& table, const json& req)
         if (!base)
             return errReply("ReferenceError", "stale host handle");
 
-        if (op == FcxWire::OpGetAttr || op == FcxWire::OpReadProp) {
+        if (op == FcxWire::OpGetAttr) {
             auto a = req.find("a");
             if (a == req.end() || !a->is_string())
                 return errReply("ProtocolError", "get_attr without a name");
             const std::string& name = a->get_ref<const std::string&>();
+            // The closed table is the whole reachable surface: an
+            // undeclared member is a protocol error, never a getattr
+            // (docs/ExpressionSandbox.md sec 7.5).
+            const FacadeMember* fm = facadeMemberLookup(Py_TYPE(base), name.c_str());
+            if (!fm || fm->kind != FacadeKind::Attribute)
+                return errReply("ProtocolError",
+                                "member '" + name + "' of '"
+                                    + Py_TYPE(base)->tp_name
+                                    + "' is not declared for sandbox access");
             PyObject* result = PyObject_GetAttrString(base, name.c_str());
+            if (!result)
+                return pyErrorReply();
+            try {
+                ExpressionSecurity::checkGetattr(base, name.c_str(), result);
+            }
+            catch (...) {
+                Py_DECREF(result);
+                throw;
+            }
+            json reply = encodeResult(table, result);
+            if (fm->tier == FacadeTier::Value && reply.value("ok", false)) {
+                const json& val = reply["val"];
+                if (val.is_object() && val.value(FcxWire::TagKey, "") == FcxWire::TagHandle)
+                    return errReply("ProtocolError",
+                                    "by-value member '" + name
+                                        + "' produced a non-marshalable result");
+            }
+            return reply;
+        }
+
+        if (op == FcxWire::OpReadProp) {
+            // Answered from the C++ property system, never host Python
+            // (sec 7.5): dynamic properties are not XML members, but
+            // getPropertyByName is typed, side-effect free, and still
+            // permission-classified per principal.
+            auto a = req.find("a");
+            if (a == req.end() || !a->is_string())
+                return errReply("ProtocolError", "read_prop without a name");
+            const std::string& name = a->get_ref<const std::string&>();
+            if (!PyObject_TypeCheck(base, &App::PropertyContainerPy::Type))
+                return errReply("AttributeError",
+                                "'" + std::string(Py_TYPE(base)->tp_name)
+                                    + "' has no property '" + name + "'");
+            auto* container = static_cast<App::PropertyContainerPy*>(base)
+                                  ->getPropertyContainerPtr();
+            App::Property* prop =
+                container ? container->getPropertyByName(name.c_str()) : nullptr;
+            if (!prop)
+                return errReply("AttributeError",
+                                "'" + std::string(Py_TYPE(base)->tp_name)
+                                    + "' has no property '" + name + "'");
+            PyObject* result = prop->getPyObject();
             if (!result)
                 return pyErrorReply();
             try {
@@ -440,31 +596,59 @@ json dispatchHostOp(HandleTable& table, const json& req)
         }
 
         if (op == FcxWire::OpCall) {
-            ExpressionSecurity::checkCallablePermission(callableName(base),
-                                                        base);
+            // Member-addressed and table-gated: only a declared
+            // call-tier member of the handle's type is invocable.
+            auto m = req.find("m");
+            if (m == req.end() || !m->is_string())
+                return errReply("ProtocolError", "call without a member");
+            const std::string& member = m->get_ref<const std::string&>();
+            const FacadeMember* fm =
+                facadeMemberLookup(Py_TYPE(base), member.c_str());
+            if (!fm || fm->kind != FacadeKind::Method)
+                return errReply("ProtocolError",
+                                "method '" + member + "' of '"
+                                    + Py_TYPE(base)->tp_name
+                                    + "' is not declared for sandbox access");
+            PyObject* callable = PyObject_GetAttrString(base, member.c_str());
+            if (!callable)
+                return pyErrorReply();
+            try {
+                ExpressionSecurity::checkCallablePermission(
+                    callableName(callable), callable);
+            }
+            catch (...) {
+                Py_DECREF(callable);
+                throw;
+            }
             PyObject* argTuple = nullptr;
             auto a = req.find("a");
             if (a == req.end())
                 argTuple = PyTuple_New(0);
             else {
                 PyObject* list = decodeHostValue(table, *a);
-                if (!list)
+                if (!list) {
+                    Py_DECREF(callable);
                     return pyErrorReply();
+                }
                 argTuple = PySequence_Tuple(list);
                 Py_DECREF(list);
             }
-            if (!argTuple)
+            if (!argTuple) {
+                Py_DECREF(callable);
                 return pyErrorReply();
+            }
             PyObject* kwargs = nullptr;
             auto k = req.find("k");
             if (k != req.end() && k->is_object() && !k->empty()) {
                 kwargs = decodeHostValue(table, *k);
                 if (!kwargs) {
+                    Py_DECREF(callable);
                     Py_DECREF(argTuple);
                     return pyErrorReply();
                 }
             }
-            PyObject* result = PyObject_Call(base, argTuple, kwargs);
+            PyObject* result = PyObject_Call(callable, argTuple, kwargs);
+            Py_DECREF(callable);
             Py_DECREF(argTuple);
             Py_XDECREF(kwargs);
             if (!result)
@@ -476,6 +660,14 @@ json dispatchHostOp(HandleTable& table, const json& req)
             auto a = req.find("a");
             if (a == req.end())
                 return errReply("ProtocolError", "get_item without a key");
+            // Builtin containers carry only already-crossed data; on
+            // anything else __getitem__ is arbitrary host code, so it
+            // rides the unsafe gate.
+            if (!PyDict_Check(base) && !PyList_Check(base)
+                    && !PyTuple_Check(base) && !PyUnicode_Check(base)
+                    && !PyBytes_Check(base))
+                ExpressionSecurity::checkPermission(
+                    ExpressionSecurity::Permission::UnsafeGetattr);
             PyObject* key = decodeHostValue(table, *a);
             if (!key)
                 return pyErrorReply();
@@ -487,6 +679,11 @@ json dispatchHostOp(HandleTable& table, const json& req)
         }
 
         if (op == FcxWire::OpLen) {
+            if (!PyDict_Check(base) && !PyList_Check(base)
+                    && !PyTuple_Check(base) && !PyUnicode_Check(base)
+                    && !PyBytes_Check(base))
+                ExpressionSecurity::checkPermission(
+                    ExpressionSecurity::Permission::UnsafeGetattr);
             Py_ssize_t n = PyObject_Size(base);
             if (n < 0)
                 return pyErrorReply();

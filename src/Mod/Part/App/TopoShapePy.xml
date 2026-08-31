@@ -609,6 +609,7 @@ isEqual(shape) -> bool
         <UserDocu>Checks if the shape is null.
 isNull() -> bool</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="isValid" Const="true">
       <Documentation>
@@ -1041,6 +1042,7 @@ avoidtype: optional shape type to skip when exploring
         <UserDocu>Returns the type of the shape.</UserDocu>
       </Documentation>
       <Parameter Name="ShapeType" Type="String"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="Orientation" ReadOnly="false">
       <Documentation>
@@ -1108,18 +1110,21 @@ builds a face only when one is asked for.</UserDocu>
         <UserDocu>Total length of the edges of the shape.</UserDocu>
       </Documentation>
       <Parameter Name="Length" Type="Float"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="Area" ReadOnly="true">
       <Documentation>
         <UserDocu>Total area of the faces of the shape.</UserDocu>
       </Documentation>
       <Parameter Name="Area" Type="Float"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="Volume" ReadOnly="true">
       <Documentation>
         <UserDocu>Total volume of the solids of the shape.</UserDocu>
       </Documentation>
       <Parameter Name="Volume" Type="Float"/>
+      <Sandbox tier="value"/>
     </Attribute>
   </PythonExport>
 </GenerateModel>

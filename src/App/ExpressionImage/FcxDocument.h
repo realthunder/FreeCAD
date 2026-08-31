@@ -367,7 +367,8 @@ class EvalTransaction
 public:
     EvalTransaction(const std::string &docName,
                     const std::string &objName,
-                    uint64_t ownerHandle);
+                    uint64_t ownerHandle,
+                    const std::string &ownerFacade = std::string());
     ~EvalTransaction();
 
     App::DocumentObject *owner()
@@ -385,12 +386,19 @@ public:
         return ownerHandle_;
     }
 
+    /// Facade key of the owner handle ("fc" wire field), may be empty.
+    const std::string &ownerFacade() const
+    {
+        return ownerFacade_;
+    }
+
     static EvalTransaction *current();
 
 private:
     App::Document doc_;
     App::DocumentObject owner_;
     uint64_t ownerHandle_ = 0;
+    std::string ownerFacade_;
     std::map<std::string, Py::Object> bindings_;
 };
 

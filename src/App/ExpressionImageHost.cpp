@@ -584,14 +584,29 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
 
         auto expr = App::Expression::parse(owner, source.c_str(), source.size());
         if (expr && owner) {
-            req["owner_h"] =
-                d->handles.add(const_cast<App::DocumentObject*>(owner)->getPyObject());
+            PyObject* ownerPy =
+                const_cast<App::DocumentObject*>(owner)->getPyObject();
+            req["owner_h"] = d->handles.add(ownerPy);
+            if (const char* fc = facadeKeyFor(Py_TYPE(ownerPy)))
+                req["owner_fc"] = fc;
+            Py_DECREF(ownerPy);  // the table holds its own reference
 
             json bindings = json::object();
             std::map<App::ObjectIdentifier, bool> ids;
             expr->getIdentifiers(ids);
             for (auto& v : ids) {
                 const auto& id = v.first;
+                // Ring 0 pseudo-modules live IN the image (docs/
+                // ExpressionSandbox.md sec 7.4): never resolve them on
+                // the host -- not even to a handle.  `_py.open` must
+                // mean the image's builtins under WASI, not ours.
+                const auto& comps = id.getComponents();
+                if (!comps.empty() && comps[0].isSimple()) {
+                    const std::string& root = comps[0].getName();
+                    if (root == "_math" || root == "_re" || root == "_coll"
+                            || root == "_py" || root == "_app")
+                        continue;
+                }
                 try {
                     Py::Object value = id.getPyValue(true);
                     bindings[id.toString()] =

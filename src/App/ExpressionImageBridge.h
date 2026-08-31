@@ -40,11 +40,49 @@
 #include <FCConfig.h>
 
 typedef struct _object PyObject;
+typedef struct _typeobject PyTypeObject;
 
 namespace App
 {
 namespace ExpressionSandbox
 {
+
+/** The closed member set the dispatcher serves, generated from the
+ * <Sandbox tier=.../> annotations in the binding XMLs into
+ * FcxDispatch.inc (docs/ExpressionSandbox.md sec 7.5).  An op naming
+ * any other member is a protocol error -- never a getattr.
+ */
+enum class FacadeKind
+{
+    Attribute,
+    Method,
+};
+
+enum class FacadeTier
+{
+    Value,   ///< attribute; the result must marshal by value
+    Handle,  ///< attribute; the result may cross as a handle
+    Call,    ///< method; invocable via the call op, member-addressed
+};
+
+struct FacadeMember
+{
+    const char* type;    ///< tp_name of the declaring binding type
+    const char* member;
+    FacadeKind kind;
+    FacadeTier tier;
+};
+
+/** The nearest annotated type in `type`'s mro, or nullptr.  Shipped as
+ * the "fc" field on handle values so the image picks the right facade
+ * class.  Caller holds the GIL (tp_mro access).
+ */
+AppExport const char* facadeKeyFor(PyTypeObject* type);
+
+/** Declared-member lookup along `type`'s mro; nullptr when the member
+ * is not annotated anywhere in the chain.  Caller holds the GIL.
+ */
+AppExport const FacadeMember* facadeMemberLookup(PyTypeObject* type, const char* member);
 
 /** Live host Python objects handed to the image as {"t":"h"} wire
  * handles.  One table per image instance, cleared per recompute

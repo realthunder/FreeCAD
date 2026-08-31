@@ -241,6 +241,7 @@ object of this document.
     <Documentation>
       <UserDocu>Return the object with the given name</UserDocu>
     </Documentation>
+    <Sandbox tier="call"/>
   </Methode>
   <Methode Name="getObjectsByLabel">
     <Documentation>
@@ -367,6 +368,7 @@ Reorder object(s) in the tree view before a given object
         <UserDocu>The internal name of the document</UserDocu>
       </Documentation>
       <Parameter Name="Name" Type="String"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="RecomputesFrozen">
       <Documentation>
