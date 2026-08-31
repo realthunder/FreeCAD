@@ -1237,10 +1237,24 @@ makes this worse and is worth revisiting.
 
 On **this** box -- 16 threads, 64 GB -- memory is not the limit and interactivity
 is: ninja's default (cores + 2, so 18 concurrent `cl.exe`) makes the machine
-unusable while a build runs. The standing cap here is therefore **`-j 6`**, and it
-is a budget for the whole box rather than per build -- when two builds could
-overlap, run them one after the other rather than six each. `build-fcad.cmd`
-below defaults to it.
+unusable while a build runs. 6 is the cap here, and it is a budget for the whole
+box rather than per build -- when two builds could overlap, run them one after the
+other rather than six each.
+
+It is the **default** now, set in two places because they cover different ways of
+starting a build:
+
+- `.conda\run.cmd` sets `CMAKE_BUILD_PARALLEL_LEVEL=6`, which is what
+  `cmake --build` uses when given no `-j`. It does nothing for a bare `ninja`,
+  which never reads that variable.
+- The user preset sets `CMAKE_JOB_POOLS=compile=6;link=6` together with
+  `CMAKE_JOB_POOL_COMPILE`/`CMAKE_JOB_POOL_LINK`, which CMake writes into
+  `CMakeFiles/rules.ninja` as `pool compile` / `depth = 6`. That binds the build
+  edges themselves, so it holds however ninja is started.
+
+An explicit `-j N` still wins over the first; nothing but reconfiguring changes the
+pool. Measured on a bare `ninja`, whose own default here is 18, sampling running
+`cl.exe` every 200 ms through an 86-edge build: 6 concurrent, never more.
 
 Note also that `BGFX_BUILD_TOOLS_SHADER=ON` drags in **tint/Dawn** from bgfx's
 3rdparty tree — hundreds of heavy C++ TUs that dwarf FreeCAD's own code. It is needed
