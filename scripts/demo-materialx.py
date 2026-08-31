@@ -128,6 +128,10 @@ def ball(doc, stem, text, x, z):
     sphere = doc.addObject("Part::Sphere", "Ball_" + stem)
     sphere.Radius = RADIUS
     sphere.Placement.Base = FreeCAD.Vector(x, 0, z)
+    # Shaded, not the default Flat Lines: a material ball is the
+    # surface, and the sphere's seam and pole edges drawn over it are
+    # nothing the material has to say.
+    sphere.ViewObject.DisplayMode = "Shaded"
 
     prog = doc.addObject("App::ShaderProgram", "Prog_" + stem)
     prog.Stage = "material"
