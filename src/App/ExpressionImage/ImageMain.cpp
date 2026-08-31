@@ -296,6 +296,19 @@ static json dispatchEvalExpr(const json &req, const std::string &src)
             Py_DECREF(obj);
         }
     }
+    // Identifiers the host could not resolve INTO A FOREIGN DOCUMENT.
+    // We have no foreign documents, so our own answer would name the
+    // document as missing when the host knows the real reason.
+    auto bindErrs = req.find("binderrs");
+    if (bindErrs != req.end() && bindErrs->is_object()) {
+        for (auto it = bindErrs->begin(); it != bindErrs->end(); ++it) {
+            if (!it.value().is_object())
+                continue;
+            tx.addBindingError(it.key(),
+                               it.value().value("exc", "RuntimeError"),
+                               it.value().value("msg", ""));
+        }
+    }
 
     try {
         auto expr = App::Expression::parse(

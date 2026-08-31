@@ -36,7 +36,8 @@ for line in open(os.path.join(out, "all.jsonl"), errors="replace"):
 
 print("=== corpus gate totals (from per-file summaries) ===")
 for key in ("files", "files_failed", "expressions", "same", "differ",
-            "both_error", "image_only_error", "native_only_error"):
+            "both_error", "both_error_text_differs", "image_only_error",
+            "native_only_error"):
     print("  %-18s %d" % (key, counts[key]))
 timeouts = os.path.join(out, "timeouts.txt")
 if os.path.exists(timeouts):

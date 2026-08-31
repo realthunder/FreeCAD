@@ -37,6 +37,49 @@ import traceback
 import FreeCAD as App
 
 
+class PrefGuard:
+    """Set preferences for the run and put them back afterwards.
+
+    This rig changes GLOBAL preferences -- enforcement, routing, the
+    image path.  That is fine while it runs and poisons the box
+    afterwards: a left-behind `Enforce=0` silently disarms the
+    permission tests, which then pass for the wrong reason.  It cost a
+    debugging detour once already.
+
+    WARNING: FREECAD_USER_HOME is NOT a safety net.
+    Application::getCustomPaths CLEARS it when the directory does not
+    exist, without a word, and the run writes to the user's real config.
+    run_gate.sh `mkdir -p`s it; restore anyway, for the callers that do
+    not.
+    """
+
+    def __init__(self):
+        self._undo = []
+
+    def set_bool(self, group, key, value):
+        params = App.ParamGet(group)
+        had = key in params.GetBools()
+        prior = params.GetBool(key, False) if had else None
+        self._undo.append((group, key, "bool", had, prior))
+        params.SetBool(key, value)
+
+    def set_string(self, group, key, value):
+        params = App.ParamGet(group)
+        had = key in params.GetStrings()
+        prior = params.GetString(key, "") if had else None
+        self._undo.append((group, key, "string", had, prior))
+        params.SetString(key, value)
+
+    def restore(self):
+        for group, key, kind, had, prior in reversed(self._undo):
+            params = App.ParamGet(group)
+            if kind == "bool":
+                params.SetBool(key, prior) if had else params.RemBool(key)
+            else:
+                params.SetString(key, prior) if had else params.RemString(key)
+        self._undo = []
+
+
 def parse_args(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("--roots", nargs="*", default=[os.path.expanduser("~/works")])
@@ -154,6 +197,23 @@ def describe(value):
     return "%s:%s" % (type(value).__name__, repr(value)[:120])
 
 
+def error_text(exc):
+    """An exception's MESSAGE, without the C++ source location.
+
+    A FreeCAD exception's str() is a dict repr carrying sfile / iline /
+    sfunction -- the throwing binary's own source path.  The image is a
+    different binary and can never reproduce those, and they are not
+    evaluation behaviour; comparing them would report a permanent false
+    difference.  sErrMsg is the parity question.
+    """
+    args = getattr(exc, "args", None)
+    if args and isinstance(args[0], dict):
+        msg = args[0].get("sErrMsg")
+        if msg:
+            return "%s: %s" % (type(exc).__name__, msg)
+    return "%s: %s" % (type(exc).__name__, exc)
+
+
 def same(a, b):
     if a == b:
         return True
@@ -179,24 +239,34 @@ def main(argv):
     # The host resolves the image from preferences; FCX_IMAGE/FCX_STDLIB
     # are the dev-box convention the C++ tests use, so honour them here
     # too rather than making every caller edit a parameter file.
-    params = App.ParamGet("User parameter:BaseApp/Preferences/Expression/Sandbox")
+    prefs = PrefGuard()
+    sandboxGroup = "User parameter:BaseApp/Preferences/Expression/Sandbox"
     if os.environ.get("FCX_IMAGE"):
-        params.SetString("ImagePath", os.environ["FCX_IMAGE"])
+        prefs.set_string(sandboxGroup, "ImagePath", os.environ["FCX_IMAGE"])
     if os.environ.get("FCX_STDLIB"):
-        params.SetString("StdlibPath", os.environ["FCX_STDLIB"])
+        prefs.set_string(sandboxGroup, "StdlibPath", os.environ["FCX_STDLIB"])
     if not sandbox.available():
+        prefs.restore()
         print("FATAL: no sandbox image (set FCX_IMAGE / FCX_STDLIB, or the "
               "ImagePath/StdlibPath preferences)")
         return 2
 
-    App.ParamGet("User parameter:BaseApp/Preferences/Document").SetBool(
-        "AutoSaveEnabled", False)
-    App.ParamGet("User parameter:BaseApp/Preferences/Expression/Security").SetBool(
-        "Enforce", bool(args.enforce))
-    sandbox.setRouting(True)
+    prefs.set_bool("User parameter:BaseApp/Preferences/Document",
+                   "AutoSaveEnabled", False)
+    prefs.set_bool("User parameter:BaseApp/Preferences/Expression/Security",
+                   "Enforce", bool(args.enforce))
+    prefs.set_bool(sandboxGroup, "Evaluate", True)
     if not sandbox.routed():
+        prefs.restore()
         print("FATAL: routing did not switch on")
         return 2
+    try:
+        return sweep(args, sandbox)
+    finally:
+        prefs.restore()
+
+
+def sweep(args, sandbox):
 
     files, skipped_big = find_files(
         args.roots, args.max_mb * 1024 * 1024, 0)
@@ -214,7 +284,8 @@ def main(argv):
         print("wrote %d entries to %s" % (len(files), args.list_only))
         return 0
 
-    counts = {"same": 0, "differ": 0, "both_error": 0, "image_only_error": 0,
+    counts = {"same": 0, "differ": 0, "both_error": 0,
+              "both_error_text_differs": 0, "image_only_error": 0,
               "native_only_error": 0, "expressions": 0, "files": 0,
               "files_failed": 0}
     gaps = {}
@@ -240,15 +311,26 @@ def main(argv):
                             sandbox.evaluateNative(owner, source, opts))
                         nat_err = None
                     except Exception as exc:
-                        nat, nat_err = None, "%s: %s" % (type(exc).__name__, exc)
+                        nat, nat_err = None, error_text(exc)
                     try:
                         img = describe(sandbox.evaluate(owner, source, opts))
                         img_err = None
                     except Exception as exc:
-                        img, img_err = None, "%s: %s" % (type(exc).__name__, exc)
+                        img, img_err = None, error_text(exc)
 
                     if nat_err and img_err:
+                        # Both refusing is parity of BEHAVIOUR.  Parity
+                        # of the reason is a separate question, and it
+                        # is a real one: the image cannot see foreign
+                        # documents, so it used to answer "Document not
+                        # found" where the host knew a property was
+                        # missing.  Count the mismatches instead of
+                        # leaving them to be noticed by eye.
                         verdict = "both_error"
+                        if nat_err != img_err:
+                            counts["both_error_text_differs"] += 1
+                            gaps["TEXT " + img_err.split("\n")[0][:150]] = \
+                                gaps.get("TEXT " + img_err.split("\n")[0][:150], 0) + 1
                     elif img_err:
                         verdict = "image_only_error"
                         key = img_err.split("\n")[0][:160]
@@ -275,7 +357,8 @@ def main(argv):
     elapsed = time.time() - started
     lines = ["=== switch-over compatibility gate ==="]
     for key in ("files", "files_failed", "expressions", "same", "differ",
-                "both_error", "image_only_error", "native_only_error"):
+                "both_error", "both_error_text_differs", "image_only_error",
+                "native_only_error"):
         lines.append("  %-18s %d" % (key, counts[key]))
     lines.append("  %-18s %.1f s" % ("elapsed", elapsed))
     if gaps:

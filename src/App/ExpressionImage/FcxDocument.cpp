@@ -280,8 +280,40 @@ void EvalTransaction::addBinding(const std::string &key, PyObject *value)
     bindings_[key] = Py::Object(value);
 }
 
+void EvalTransaction::addBindingError(const std::string &key,
+                                      const std::string &excType,
+                                      const std::string &message)
+{
+    bindErrors_[key] = std::make_pair(excType, message);
+}
+
+namespace
+{
+/// Re-raise the host's failure as the same KIND of exception, not just
+/// the same text: dispatchEvalExpr converts whatever escapes back into
+/// the wire's {exc,msg}, so the type survives the round trip too.
+[[noreturn]] void raiseBindingError(const std::string &excType,
+                                    const std::string &message)
+{
+    if (excType == "TypeError")
+        throw Base::TypeError(message);
+    if (excType == "ValueError")
+        throw Base::ValueError(message);
+    if (excType == "NameError")
+        throw Base::NameError(message);
+    if (excType == "AttributeError")
+        throw Base::AttributeError(message);
+    if (excType == "IndexError")
+        throw Base::IndexError(message);
+    throw Base::RuntimeError(message);
+}
+}  // namespace
+
 bool EvalTransaction::lookup(const std::string &key, Py::Object &out) const
 {
+    auto err = bindErrors_.find(key);
+    if (err != bindErrors_.end())
+        raiseBindingError(err->second.first, err->second.second);
     auto it = bindings_.find(key);
     if (it == bindings_.end())
         return false;

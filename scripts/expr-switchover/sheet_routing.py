@@ -32,6 +32,47 @@ import sys
 
 import FreeCAD as App
 
+class PrefGuard:
+    """Set preferences for the run and put them back afterwards.
+
+    These rigs change GLOBAL preferences (enforcement, routing, the
+    image path).  That is fine while they run and poison the box
+    afterwards -- a left-behind `Enforce=0` silently disarms the
+    permission tests, which then pass for the wrong reason.
+
+    WARNING: FREECAD_USER_HOME is NOT a safety net: Application::getCustomPaths
+    CLEARS it when the directory does not exist, without a word, and
+    the run writes to the user's real config.  `mkdir -p` it, and
+    /// restore anyway.
+    """
+
+    def __init__(self):
+        self._undo = []
+
+    def set_bool(self, group, key, value):
+        params = App.ParamGet(group)
+        had = key in params.GetBools()
+        prior = params.GetBool(key, False) if had else None
+        self._undo.append((group, key, "bool", had, prior))
+        params.SetBool(key, value)
+
+    def set_string(self, group, key, value):
+        params = App.ParamGet(group)
+        had = key in params.GetStrings()
+        prior = params.GetString(key, "") if had else None
+        self._undo.append((group, key, "string", had, prior))
+        params.SetString(key, value)
+
+    def restore(self):
+        for group, key, kind, had, prior in reversed(self._undo):
+            params = App.ParamGet(group)
+            if kind == "bool":
+                params.SetBool(key, prior) if had else params.RemBool(key)
+            else:
+                params.SetString(key, prior) if had else params.RemString(key)
+        self._undo = []
+
+
 PLAIN = [
     ("A1", "=1+2"),
     ("A2", "=A1 * 3"),
@@ -74,16 +115,26 @@ def main():
     if sandbox is None:
         print("FATAL: this build has no FreeCAD.ExpressionSandbox module")
         return 2
-    params = App.ParamGet("User parameter:BaseApp/Preferences/Expression/Sandbox")
+    prefs = PrefGuard()
+    sandboxGroup = "User parameter:BaseApp/Preferences/Expression/Sandbox"
     if os.environ.get("FCX_IMAGE"):
-        params.SetString("ImagePath", os.environ["FCX_IMAGE"])
+        prefs.set_string(sandboxGroup, "ImagePath", os.environ["FCX_IMAGE"])
     if os.environ.get("FCX_STDLIB"):
-        params.SetString("StdlibPath", os.environ["FCX_STDLIB"])
+        prefs.set_string(sandboxGroup, "StdlibPath", os.environ["FCX_STDLIB"])
+    prefs.set_bool(sandboxGroup, "Evaluate", False)
     if not sandbox.available():
+        prefs.restore()
         print("FATAL: no sandbox image (set FCX_IMAGE / FCX_STDLIB, or the "
               "ImagePath/StdlibPath preferences)")
         return 2
 
+    try:
+        return run(sandbox)
+    finally:
+        prefs.restore()
+
+
+def run(sandbox):
     failures = 0
     crossed_total = 0
     report = []

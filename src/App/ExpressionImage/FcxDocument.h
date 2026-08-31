@@ -379,6 +379,18 @@ public:
     /// key -> CBOR-decoded wire value (see ImageMarshal); assumes
     /// ownership questions away by caching the decoded object.
     void addBinding(const std::string &key, PyObject *value);
+
+    /** Record that the HOST failed to resolve this identifier, and how.
+     * Only sent for references into a foreign document -- the image has
+     * none, so its own answer would always be "Document 'X' not found"
+     * even when X exists on the host and the real reason was a missing
+     * property.  lookup() raises this instead of returning a value, at
+     * the same point the native engine would have thrown.
+     */
+    void addBindingError(const std::string &key, const std::string &excType,
+                         const std::string &message);
+
+    /// Throws when the key names a binding error (see addBindingError).
     bool lookup(const std::string &key, Py::Object &out) const;
 
     uint64_t ownerHandle() const
@@ -400,6 +412,7 @@ private:
     uint64_t ownerHandle_ = 0;
     std::string ownerFacade_;
     std::map<std::string, Py::Object> bindings_;
+    std::map<std::string, std::pair<std::string, std::string>> bindErrors_;
 };
 
 /// One-time Base::Type registrations for the classes above plus the

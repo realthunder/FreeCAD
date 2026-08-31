@@ -1187,6 +1187,86 @@ TEST_F(ExpressionRoutingTest, withoutPythonModeTheImageRefusesTheSameWay)
                  Base::Exception);
 }
 
+// ---- error-TEXT parity for a reference into a foreign document.  The
+// ---- image has no foreign documents at all, so left to itself it
+// ---- always answers "Document 'X' not found" -- the wrong reason
+// ---- whenever X exists on the host and the property inside it did
+// ---- not.  The corpus gate's only two non-`same` rows were this. ----
+
+TEST_F(ExpressionRoutingTest, foreignDocErrorTextMatchesNative)
+{
+    using App::ExpressionSecurity::Permission;
+    using App::ExpressionSecurity::Runtime;
+
+    auto doc2 = App::GetApplication().newDocument("FcxErrOther", "testUser");
+    auto obj2 = doc2->addObject("App::FeaturePython", "Pad");
+    auto depth = Base::freecad_dynamic_cast<App::PropertyFloat>(
+        obj2->addDynamicProperty("App::PropertyFloat", "Depth"));
+    ASSERT_NE(depth, nullptr);
+    depth->setValue(3.0);
+
+    // the foreign reference itself has to be permitted, or the wall the
+    // test hits is the policy one and it proves nothing about text
+    std::string principal = Runtime::instance().documentPrincipal(doc);
+    Runtime::instance().grant(principal, Permission::DocForeign,
+                              doc2->getName(), true, "session");
+
+    const std::string base = std::string(doc2->getName()) + "#";
+    struct Case { const char* what; std::string src; };
+    const Case cases[] = {
+        {"missing property", base + "Pad.Configuration + 1"},
+        {"missing object", base + "Nope.Depth + 1"},
+        // a document that does not exist HERE either: both engines
+        // already agreed, and must keep agreeing
+        {"missing document", std::string("FcxNoSuchDoc#Pad.Depth + 1")},
+    };
+
+    for (const auto& c : cases) {
+        auto expr = App::Expression::parse(obj, c.src.c_str(), c.src.size());
+        ASSERT_NE(expr, nullptr) << c.what;
+
+        std::string nativeMsg;
+        try {
+            expr->getValueAsAny(App::Expression::OptionCallFrame);
+            FAIL() << c.what << ": native evaluation unexpectedly succeeded";
+        }
+        catch (Base::Exception& e) {
+            nativeMsg = e.what();
+        }
+
+        std::string routedMsg;
+        try {
+            App::ExpressionSandbox::evaluate(expr.get(),
+                                             App::Expression::OptionCallFrame);
+            FAIL() << c.what << ": routed evaluation unexpectedly succeeded";
+        }
+        catch (Base::Exception& e) {
+            routedMsg = e.what();
+        }
+        EXPECT_EQ(nativeMsg, routedMsg) << c.what;
+    }
+
+    Runtime::instance().revoke(principal, Permission::DocForeign,
+                               doc2->getName());
+    Runtime::instance().clearPending(principal, Permission::DocForeign,
+                                     doc2->getName());
+    App::GetApplication().closeDocument(doc2->getName());
+}
+
+TEST_F(ExpressionRoutingTest, unresolvableLocalNameIsNotShippedAsAnError)
+{
+    // The narrow scope of the fix above matters: a name the host cannot
+    // resolve may be a variable BOUND DURING the evaluation.  Ship a
+    // negative pack entry for `a` and this stops working.
+    const char* src = "a = Width + 1; a * 2";
+    auto expr = App::Expression::parse(obj, src);
+    ASSERT_NE(expr, nullptr);
+    EXPECT_DOUBLE_EQ(
+        App::any_cast<double>(App::ExpressionSandbox::evaluate(
+            expr.get(), App::Expression::OptionCallFrame)),
+        44.0);
+}
+
 // ---- wire type identity: a tuple is not a list (the corpus gate found
 // ---- this -- an Enum property fed from a cell range came back as a
 // ---- list, changing the stored value's type) ----

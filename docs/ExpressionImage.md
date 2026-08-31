@@ -323,10 +323,11 @@ grant -> works -> revoke -> fails cycle end to end.
 
 ## What step 4 still owes (in order)
 
-1. Writing/setPath, LinkPlacement/LinkMatrix accumulation and
-   getSubObject walks are absent in-image by design (host pre-resolves
-   or the evaluation fails cleanly); revisit when the evaluation
-   switch-over lands.
+1. RESOLVED 2026-08-31 by measurement at the switch-over, not by
+   building anything -- see "The residue, measured" below.  Writing/
+   setPath, LinkPlacement/LinkMatrix accumulation and getSubObject
+   walks all evaluate identically through the router today, because
+   pack-first pre-resolves them on the host.
 2. Ring 0 pseudo-modules (`_math`/`_re`/`_coll`/`_py`/`_app`) are now
    skipped from the host bindings pack (ExpressionImageHost.cpp) so they
    resolve IN the image -- `_py.open` must mean the image's builtins,
@@ -669,6 +670,73 @@ preview has its own questions (a 15 ms instantiate on every keystroke,
 errors shown inline) that the recompute path does not.  That is a slice
 of its own, not an oversight in this one.
 
+### The residue, measured (2026-08-31)
+
+The "absent in-image by design" list above was written from the carve,
+before anything routed.  The switch-over is where it had to be checked,
+and checking it retired most of it.  Every one of these evaluates
+IDENTICALLY native vs routed, on a document built to contain them
+(App::Link over an App::Part over a Part::Box):
+
+    Box._pla / __pla / _matrix / __matrix      LinkPlacement, LinkMatrix
+    Link._pla / __pla / __matrix               through a Link
+    Part._pla                                  through a container
+    Link.Part.Box.Length                       a getSubObject walk
+    Box._shape.Volume, Link._shape.Volume      _shape
+    Box._self.Name, Part.Group[0].Length       _self, an indexed group
+
+The reason is pack-first: `getIdentifiers` enumerates the WHOLE
+identifier, `_pla` and all, and the host resolves it to a value under
+its own permission checks.  The image never has to accumulate a
+placement or walk a sub-object -- it is handed the answer.
+
+**Writes were never the router's problem either.**  `Host.V = 9`
+returns 9 and does NOT change the property -- in BOTH engines.  An
+expression's assignment is not what writes a bound property;
+`PropertyExpressionEngine::execute` calls `setPath` on the HOST after
+the value comes back.  The write is on the host side of the seam by
+construction.
+
+**C12 (a cell persisting a live PyObject) holds.**  Object-valued cells
+survive the round trip and stay usable: `=Box._self`, `=Box.Shape`,
+`=Box.Placement` and dependent cells reading `.Length`, `.Volume`,
+`.Base.x`, `.BoundBox.XMax` off them all match native.  The deferred
+handle release is what makes this work -- see "a result may hold a host
+object".
+
+What genuinely remained was ONE thing, and it is now fixed: error-text
+parity for a reference into a foreign document (below).
+
+### Foreign-document errors carry the host's reason (2026-08-31)
+
+The image has no foreign documents at all -- its Application shim only
+ever knows the transaction's own document -- so left to itself it
+answers any reference into one with "Document 'X' not found".  That is
+the wrong REASON whenever X exists on the host and it was the property
+or the object inside it that was missing, which is exactly what the
+corpus gate's only two non-`same` rows were.
+
+    Other#Pad.Configuration + 1
+      native  Property 'Configuration' not found in 'Other#Pad.Configuration'
+      image   Document 'Other' not found in 'Other#Pad.Configuration'
+
+So the pack now carries FAILURES as well as values.  When host-side
+resolution of an identifier throws and that identifier names a document
+other than the owner's, `evalExpression` ships `{exc, msg}` under a new
+`binderrs` request field; `EvalTransaction::lookup` raises it, as the
+same KIND of exception, at the point the native engine would have
+thrown.  Behaviour and text now match for a missing property, a missing
+object, and a document missing on both sides.
+
+**The narrow scope is the whole design.**  A blanket "ship every
+resolution failure" would be wrong and was the first thing tried on
+paper: an identifier that does not resolve on the host may be a
+variable BOUND DURING the evaluation.  `a = Width + 1; a * 2` works
+precisely because `a` is DROPPED from the pack and binds in-image; a
+negative entry for it would break it.  Only foreign-document references
+qualify, because only those are ones the image structurally cannot
+answer.  `unresolvableLocalNameIsNotShippedAsAnError` guards this.
+
 ### The compatibility gate (built 2026-08-31)
 
 ES sec 11's migration constraint -- old files must evaluate identically
@@ -692,11 +760,23 @@ ES sec 11's migration constraint -- old files must evaluate identically
   it on): the gate measures EVALUATION parity, and mixing in policy
   denials would only re-test what the runtime tests already cover.
 
-Two traps the rig itself had to absorb, both cheap to re-learn the hard
-way: passing a script PATH to FreeCADCmd runs nothing AND says nothing
-(use `-c "exec(open(...).read())"`), and FreeCADCmd's restore progress
-bars drown stdout, so the summary is written to `<out>.summary` as well
-as printed.
+Three traps the rig itself had to absorb, all cheap to re-learn the
+hard way: passing a script PATH to FreeCADCmd runs nothing AND says
+nothing (use `-c "exec(open(...).read())"`); FreeCADCmd's restore
+progress bars drown stdout, so the summary is written to
+`<out>.summary` as well as printed; and the rig changes GLOBAL
+preferences, so it now restores every one of them (`PrefGuard`).
+
+That last one is not hypothetical.  **`FREECAD_USER_HOME` pointing at a
+directory that does not exist is silently ignored** --
+`Application::getCustomPaths` clears the variable when the path does
+not resolve, without a word -- and the run then writes to the user's
+real config.  An ad-hoc probe run that way left `Enforce=0` behind, and
+the next `ExpressionRoutingTest` run failed with "it throws nothing"
+because the permission wall the test relies on had been disarmed
+box-wide.  `run_gate.sh` `mkdir -p`s the directory, which is why the
+gate itself never hit it; the scripts restore preferences anyway, for
+the callers that do not.
 
 **First finding, fixed: a tuple crossed back as a list.**  Both
 marshallers encoded any sequence as a JSON array and decoded it as a
@@ -761,3 +841,19 @@ itself rather than needing a separate run.  The 2 `both_error` rows are
 the same two described above; the 2 timeouts are the same two documents
 whose 7.7.2 -> 8.0.1 forced recompute exceeds the per-file budget
 (`issue474_fillet_edit_crash.FCStd`, `cartridge.FCStd`).
+
+**Third full run, after the foreign-document error fix**: identical
+totals -- 372 files, 335 expressions, 0 differ, 0 image-only, 2
+`both_error`, 2 timed out -- and the two `both_error` rows now carry
+the SAME message on both sides.  `both_error` stays at 2 because both
+engines correctly refuse the same expression; that is parity, not a
+gap.
+
+The gate measures that now rather than leaving it to be noticed by eye:
+a new `both_error_text_differs` counter compares the two messages, and
+`error_text()` strips the `sfile`/`iline`/`sfunction` fields out of a
+FreeCAD exception's dict repr first.  Those name the THROWING BINARY's
+own source path -- the image is a different binary and can never
+reproduce them, and they are not evaluation behaviour, so comparing
+them would report a permanent false difference.  On the two rows in
+question the counter reads **0**.

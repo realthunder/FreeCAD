@@ -604,6 +604,51 @@ ImageResult ImageHost::eval(const std::string& source,
     return res;
 }
 
+namespace
+{
+
+/** True when this identifier reaches into a document OTHER than the
+ * owner's.  It matters because the image has no foreign documents at
+ * all -- its Application shim only ever knows the transaction's own
+ * document -- so for these the HOST's resolution is authoritative
+ * whether it succeeds or fails.  Left to itself the image answers any
+ * such reference with "Document 'X' not found", which is the wrong
+ * reason whenever X exists here and it was the property or the object
+ * inside it that was missing.
+ */
+bool referencesForeignDocument(const App::ObjectIdentifier& id,
+                               const App::DocumentObject* owner)
+{
+    const std::string& docName = id.getDocumentName().getString();
+    if (docName.empty())
+        return false;
+    const App::Document* doc = owner ? owner->getDocument() : nullptr;
+    if (!doc)
+        return true;
+    if (doc->getName() && docName == doc->getName())
+        return false;
+    // a document may be named by Label as well as by Name
+    return docName != doc->Label.getValue();
+}
+
+/// The Python exception type name a Base::Exception raises as, so the
+/// image can re-raise the same kind and not just the same text.
+/// Requires the GIL.
+std::string pyExceptionName(const Base::Exception& e)
+{
+    PyObject* type = e.getPyExceptionType();
+    if (type && PyType_Check(type)) {
+        const char* name = reinterpret_cast<PyTypeObject*>(type)->tp_name;
+        if (name && *name) {
+            const char* dot = std::strrchr(name, '.');
+            return dot ? dot + 1 : name;
+        }
+    }
+    return "RuntimeError";
+}
+
+}  // namespace
+
 ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
                                       const std::string& source,
                                       const App::Expression* parsed,
@@ -674,6 +719,7 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
             Py_DECREF(ownerPy);  // the table holds its own reference
 
             json bindings = json::object();
+            json bindErrors = json::object();
             std::map<App::ObjectIdentifier, bool> ids;
             expr->getIdentifiers(ids);
             for (auto& v : ids) {
@@ -697,9 +743,23 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
                 catch (const ExpressionSecurity::PermissionNeededException&) {
                     throw;
                 }
-                catch (Base::Exception&) {
-                    // unresolvable here -> unresolvable in the image,
-                    // with the image's own (native) error message
+                catch (Base::Exception& e) {
+                    // Unresolvable here usually means unresolvable in
+                    // the image too, and the image raises the identical
+                    // error -- EXCEPT for a foreign document, which it
+                    // cannot see at all.  Ship those failures so it can
+                    // raise the host's reason verbatim.
+                    //
+                    // Only those.  An identifier that fails to resolve
+                    // here may be a variable BOUND DURING the
+                    // evaluation ("a = V + 1; a * 2"), and a negative
+                    // entry for `a` would break it.
+                    if (referencesForeignDocument(id, owner)) {
+                        json err;
+                        err["exc"] = pyExceptionName(e);
+                        err["msg"] = e.what();
+                        bindErrors[id.toString()] = std::move(err);
+                    }
                 }
                 catch (Py::Exception&) {
                     if (PyErr_Occurred())
@@ -708,6 +768,8 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
             }
             if (!bindings.empty())
                 req["bindings"] = std::move(bindings);
+            if (!bindErrors.empty())
+                req["binderrs"] = std::move(bindErrors);
         }
     }
     catch (const ExpressionSecurity::PermissionNeededException& e) {
