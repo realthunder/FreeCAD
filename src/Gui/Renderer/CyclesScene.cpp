@@ -2080,9 +2080,21 @@ ccl::Shader *SceneTranslator::materialXShader(const UserShader &user, const Clip
     // per-draw path -- interpreting one costs a library import.
     const std::string identity =
         user.sourcePath.empty() ? user.fragmentSource : user.sourcePath;
+    // A parameter is part of the shader here, not a uniform on it: the
+    // path tracer has no uniforms, so a value becomes a ValueNode in
+    // the graph (docs/CyclesIntegration.md sec 6.11) and two parameter
+    // sets are two shaders. The document's own identity stays separate
+    // from them, because a document that will not interpret will not
+    // interpret at any value.
+    std::string variant = identity;
+    for (const auto &param : user.params) {
+        variant += '|' + param.name;
+        for (float v : param.values)
+            variant += ' ' + std::to_string(v);
+    }
     const std::string key = (debugView ? "dbg" + std::to_string(debugView) + ':'
                                        : std::string())
-        + "mtlx:" + std::to_string(std::hash<std::string> {}(identity)) + clip.key();
+        + "mtlx:" + std::to_string(std::hash<std::string> {}(variant)) + clip.key();
     auto it = shaders.find(key);
     if (it != shaders.end())
         return it->second;
@@ -2104,6 +2116,9 @@ ccl::Shader *SceneTranslator::materialXShader(const UserShader &user, const Clip
         Render::MaterialX::loadDocument(user.fragmentSource, user.sourcePath, error);
     if (!doc)
         return fail(error);
+    // The document's declared inputs, overridden by the material's
+    // Param_* values before anything reads it (sec 6.11).
+    Render::MaterialX::applyInputs(doc, user.params);
 
     // The graph is built BEFORE the scene node, because a Cycles
     // shader cannot be taken back: delete_node(Shader *) only clears
