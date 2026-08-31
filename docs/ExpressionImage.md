@@ -341,3 +341,92 @@ Expression.cpp adds only five owner-> / getPropertyByName /
 GetApplication sites of its own.  An image-side adapter of ~15
 methods (ExpressionDocumentT/ObjectT/PropertyT rebound to Fcx*
 classes over the bindings pack + bridge ops) covers the whole carve.
+
+## The browser tier (built 2026-08-31)
+
+Phase 2 of docs/ExpressionSandbox.md sec 10 -- the same image, running in
+the browser.  The desktop and browser hosts differ in exactly two places
+(the WASI implementation and the bridge), and both differences are
+recorded here.
+
+**It runs.**  Measured in Firefox 136 on this box, against the packed
+bundle: fetch 128 ms, compile+instantiate 268 ms, `fcx_init` 31 ms, and
+140 us per expression round trip (parse + evaluate + CBOR both ways).
+The full Ring 0 set evaluates -- arithmetic, quantities, engine
+functions, `_math`/`_py`/`_coll`/`_re` -- and every confinement negative
+behaves as it does under wasmtime.
+
+**The payload.**  The image as built is 39.4 MB, of which 28 MB is DWARF
+plus the name section; a browser reads none of it.  Stripped it is
+10.9 MB (3.1 MB gzipped).  The stdlib is the surprise: the image opens
+**16 CPython files**, 320 KB, because almost the whole stdlib is frozen
+into the interpreter.  `tools/webpack_image.py` produces both -- it
+strips the custom sections itself (the operation is four lines of the
+binary format, so the packer needs no toolchain) and copies the measured
+file list -- and runs as a POST_BUILD step of the image, into
+`build/wasi-image/web`.  `scripts/fcx-web-stage.sh` copies that next to
+the viewer.  The file list is explicit rather than discovered, so it can
+go stale; the acceptance page is what catches that, by evaluating through
+every pseudo-module.
+
+**The 16 files exist because of one commit.**  `ImportModules::
+checkCallable` used to import `inspect` eagerly and fail the check if the
+import failed -- pulling in dis/opcode/ast/tokenize/linecache and their
+closure, megabytes, to answer a question `__module__` had usually already
+answered.  It is now imported on first use of the two fallback paths that
+need it (1a521bf0d4).  Absence degrades to "no module name", which is the
+existing "unknown module" DENIAL, so the change is fail-closed.
+
+**WASI is reimplemented, not reused.**  `web/src/sandbox/wasi.ts` is the
+browser's confinement boundary the way wasmtime's WASI is the desktop's.
+It serves one read-only preopen (`/Lib`) out of an in-memory tree and
+implements nothing else: no network, no spawning, no writable file, no
+host filesystem.  The refusals are absences, not policy checks.  `..` in
+a path is refused outright rather than normalized -- a resolver that
+never ascends cannot be tricked into ascending.  Because it is a second
+implementation of the boundary, the confinement negatives are re-run
+against it in a real browser (below) rather than argued from the desktop
+result.
+
+**The bridge is NOT attached in the browser, on purpose.**  `fcx.host_call`
+is a SYNCHRONOUS import, called from inside the C++ evaluator mid-
+expression.  On the desktop the host answers in the same thread.  In the
+browser the thing worth reaching is the FreeCAD host at the far end of a
+WebSocket -- asynchronous -- and a synchronous wasm import cannot await a
+promise on the main thread.  So the browser host leaves the import
+returning -1 and the image raises "host bridge unavailable" for anything
+needing a live host object.  This is the pack-first design working as
+intended (sec 7.3): the host pre-resolves every identifier into the
+bindings pack before evaluation starts, so an expression over resolved
+values never reaches back.  True reach-back needs the image on a worker
+with `Atomics.wait` over a SharedArrayBuffer (hence COOP/COEP cross-origin
+isolation) or JSPI; neither is built, because nothing needs it yet.
+! Do not "fix" this by making the bridge fake a synchronous answer from a
+cache -- a stale answer mid-evaluation is a correctness bug that the
+error is protecting against.
+
+**Browser requirement: the exnref exception-handling proposal.**  The
+image is built with `-fwasm-exceptions -mllvm -wasm-use-legacy-eh=false`,
+i.e. the standardized exnref EH, which is also the only flavour wasmtime
+implements.  Firefox 131+ and Chrome 137+ ship it.  Measured on this box:
+Firefox 136 compiles the image in 277 ms; Chrome 123 REJECTS it
+("invalid value type 'exnref'") and needs
+`--js-flags=--experimental-wasm-exnref`, after which it compiles in 27 ms
+(lazily).  If a wider floor is ever needed, the fallback is a second image
+built with legacy EH for browsers only -- but that is two binaries to
+verify, and the wasi-sdk 33 `eh/` sysroot would have to be checked for
+legacy support first.  Not done, not needed yet.
+
+**The acceptance page.**  `web/public/sandbox-test.html` +
+`web/src/sandbox/{acceptance,testmain}.ts` -- the browser twin of
+ExpressionImageAcceptanceTest.  It evaluates the positives, runs the
+confinement negatives (including a read-only-filesystem write, which
+comes back EROFS from the shim), checks that the unattached bridge fails
+cleanly, and times a round trip.  `?post=<url>` POSTs the report as JSON
+so a headless run can collect a verdict instead of scraping text; the
+report is also left on `window.fcxReport`.  To run it:
+
+    ninja -C build/wasi-image                    # image + packed bundle
+    cd src/Gui/Renderer/web && npm run build     # sandboxtest.js + the page
+    scripts/fcx-web-stage.sh                     # bundle -> build/wasm/web/fcx
+    python3 -m http.server -d build/wasm/web     # then open sandbox-test.html

@@ -162,3 +162,20 @@ target_link_libraries(fcx_image PRIVATE
     wasi-emulated-process-clocks
     m
 )
+
+# The browser bundle (docs/ExpressionImage.md "The browser tier"): the
+# stripped image plus the CPython files the image actually opens, with a
+# manifest.  Built alongside the image so the two can never be out of step;
+# scripts/fcx-web-stage.sh copies the result next to the viewer.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_custom_command(TARGET fcx_image POST_BUILD
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/webpack_image.py
+                --image $<TARGET_FILE:fcx_image>
+                --stdlib ${CPYTHON_WASI_SRC}/Lib
+                --out ${CMAKE_CURRENT_BINARY_DIR}/web
+        COMMENT "Packing the sandbox image for the browser tier")
+else()
+    message(WARNING "python3 not found: the browser bundle will not be packed")
+endif()

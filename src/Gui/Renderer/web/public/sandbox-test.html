@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>expression sandbox -- browser acceptance</title>
+<style>
+  body { margin: 0; background: #14161a; color: #d6dae0 }
+  pre  { margin: 0 }
+</style>
+</head>
+<body>
+<!--
+  The expression sandbox image, running in this browser
+  (docs/ExpressionImage.md "The browser tier").
+
+  Serve the built web bundle and point ?fcx= at the packed image directory:
+      scripts/fcx-web-stage.sh                 # stage the bundle
+      python3 -m http.server -d build/wasm/web
+      http://127.0.0.1:8000/sandbox-test.html
+  Add &post=/result to POST the report to a collecting harness.
+
+  Needs a browser with the wasm exception-handling (exnref) proposal:
+  Firefox 131+, Chrome 137+.  Older Chrome can be started with
+  --js-flags=--experimental-wasm-exnref.
+-->
+<script type="module" src="./sandboxtest.js"></script>
+</body>
+</html>

@@ -13,10 +13,18 @@ export default defineConfig({
     cssCodeSplit: false,
     sourcemap: true,
     rollupOptions: {
-      input: resolve(__dirname, 'src/main.tsx'),
+      // Two entries: the viewer chrome, and the sandbox acceptance page
+      // (public/sandbox-test.html, docs/ExpressionImage.md "The browser
+      // tier").  The chrome keeps its historical inspector.js name because
+      // shell.html loads it by that name.
+      input: {
+        inspector: resolve(__dirname, 'src/main.tsx'),
+        sandboxtest: resolve(__dirname, 'src/sandbox/testmain.ts'),
+      },
       output: {
         format: 'es',
-        entryFileNames: 'inspector.js',
+        entryFileNames: '[name].js',
+        chunkFileNames: '[name].js',
         assetFileNames: 'inspector[extname]',
       },
     },

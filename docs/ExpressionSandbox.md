@@ -786,6 +786,13 @@ ships, the audit above stands.
 
 ## 10. Sequencing (this is the point of doing it first)
 
+STATUS 2026-08-31: Phase 1 is DONE (the desktop sandbox, its
+acceptance test included) and Phase 2 has started -- the same image
+now loads and evaluates in a real browser, with its own WASI
+implementation and its own acceptance page; see docs/ExpressionImage.md
+"The browser tier" for what that cost and what it does not yet do (the
+mid-eval bridge is deliberately unattached there).
+
 STATUS 2026-08-30: Phase 0 is DONE -- the audits, the frozen
 contracts, the measurement, and the architecture-A verdict are in
 docs/ExpressionSandboxPhase0.md (rigs: scripts/expr-phase0/).
