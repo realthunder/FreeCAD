@@ -74,6 +74,8 @@ SET(SpreadsheetGui_SRCS
     SheetTableViewAccessibleInterface.cpp
     SheetModel.h
     SheetModel.cpp
+    SheetControl.h
+    SheetControl.cpp
     PreCompiled.cpp
     PreCompiled.h
     Workbench.cpp

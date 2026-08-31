@@ -40,6 +40,7 @@
 #include "SheetTableViewAccessibleInterface.h"
 #include "SpreadsheetView.h"
 #include "ViewProviderSpreadsheet.h"
+#include "SheetControl.h"
 #include "Workbench.h"
 
 // use a different name to CreateCommand()
@@ -120,6 +121,7 @@ PyMOD_INIT_FUNC(SpreadsheetGui)
     SpreadsheetGui::ViewProviderSheetPython::init();
     SpreadsheetGui::Workbench::init();
     SpreadsheetGui::SheetView::init();
+    SpreadsheetGui::installSheetControlOps();
     SpreadsheetGui::SheetViewPy::init_type();
 
     // register preference page

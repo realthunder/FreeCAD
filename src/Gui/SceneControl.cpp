@@ -21,6 +21,8 @@
 
 #include "PreCompiled.h"
 
+#include <map>
+
 #include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -80,6 +82,20 @@ App::PropertyContainer *sceneView(const std::string &boundDoc = {})
         }
     }
     return SceneServeSource::renderProperties();
+}
+
+/// Ops registered by workbenches (registerSceneControlOp). A plain
+/// static map: registration happens once per module at Gui init and
+/// dispatch is GUI-thread only, so there is nothing to race with.
+struct RegisteredOp {
+    bool mutating;
+    SceneControlOpHandler handler;
+};
+
+std::map<QString, RegisteredOp> &registeredOps()
+{
+    static std::map<QString, RegisteredOp> ops;
+    return ops;
 }
 
 QJsonObject errorReply(const QJsonValue &id, const char *code,
@@ -566,6 +582,18 @@ QJsonObject setProperty(const QJsonObject &req,
 
 } // namespace
 
+void Gui::registerSceneControlOp(const QString &op, bool mutating,
+                                 SceneControlOpHandler handler)
+{
+    registeredOps()[op] = RegisteredOp{mutating, std::move(handler)};
+}
+
+QJsonObject Gui::sceneControlError(const QJsonValue &id, const char *code,
+                                   const QString &message)
+{
+    return errorReply(id, code, message);
+}
+
 std::string Gui::handleSceneControlRequest(const std::string &json,
                                            const std::string &boundDoc,
                                            bool viewOnly)
@@ -584,7 +612,9 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
         // the mode rides the request rather than being enforced by the
         // transport (docs/MultiDocServe.md §8). Reads stay answered —
         // a view-only client's property inspector keeps working.
-        const bool mutating = op == QLatin1String("setProperty");
+        auto registered = registeredOps().find(op);
+        const bool mutating = op == QLatin1String("setProperty")
+            || (registered != registeredOps().end() && registered->second.mutating);
         if (viewOnly && mutating)
             reply = errorReply(req.value(QLatin1String("id")), "ViewOnly",
                                QStringLiteral("this connection may not edit"));
@@ -592,6 +622,8 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             reply = getProperties(req, boundDoc);
         else if (op == QLatin1String("setProperty"))
             reply = setProperty(req, boundDoc);
+        else if (registered != registeredOps().end())
+            reply = registered->second.handler(req, boundDoc);
         else
             reply = errorReply(req.value(QLatin1String("id")), "UnknownOp", op);
     }

@@ -22,7 +22,14 @@
 #ifndef GUI_SCENECONTROL_H
 #define GUI_SCENECONTROL_H
 
+#include <functional>
 #include <string>
+
+#include <QJsonObject>
+#include <QJsonValue>
+#include <QString>
+
+#include <FCGlobal.h>
 
 namespace Gui {
 
@@ -42,6 +49,30 @@ namespace Gui {
 std::string handleSceneControlRequest(const std::string &json,
                                       const std::string &boundDoc = {},
                                       bool viewOnly = false);
+
+/// One control op implemented outside core Gui. \a req is the parsed
+/// request (its "id" must be echoed in the reply, which
+/// sceneControlError does for a refusal); \a boundDoc is the served
+/// document the connection is joined to, empty when unbound.
+using SceneControlOpHandler =
+    std::function<QJsonObject(const QJsonObject &req,
+                              const std::string &boundDoc)>;
+
+/// Register a handler for one op. This is how a workbench adds control
+/// ops that core Gui must not link against to implement -- Spreadsheet's
+/// sheet.get/sheet.set are the first (docs/SpreadsheetRemote.md sec 3).
+/// Call it from the module's Gui init; a second registration of the
+/// same name replaces the first. \a mutating ops are refused on a
+/// view-only connection before the handler runs, so a handler never
+/// has to check (docs/MultiDocServe.md sec 8).
+GuiExport void registerSceneControlOp(const QString &op, bool mutating,
+                                      SceneControlOpHandler handler);
+
+/// The error reply shape the built-in ops use, for handlers to match:
+/// {"id": <echoed>, "ok": false, "code": ..., "message": ...}.
+GuiExport QJsonObject sceneControlError(const QJsonValue &id,
+                                        const char *code,
+                                        const QString &message);
 
 /// Route the scene stream server's control requests ("op" JSON text
 /// frames) through handleSceneControlRequest on the GUI thread.
