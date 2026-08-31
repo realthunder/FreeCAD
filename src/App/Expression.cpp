@@ -2393,26 +2393,36 @@ public:
         return inst;
     }
 
-    bool checkCallable(PyObjectNode & node, PyObject *pyobj)
+    /// inspect.getmodule, imported on FIRST USE rather than on every
+    /// callable check.  Only the two fallback paths below need it; the
+    /// common cases (a module, a BaseClassPy, a __module__ attribute, a
+    /// dotted tp_name) answer without it.  Deferring the import keeps the
+    /// sandbox image free of a large stdlib subtree, and an interpreter
+    /// that cannot import it at all still fails CLOSED -- attribution
+    /// simply yields no name, which is the "unknown module" denial below.
+    PyObject *inspectGetModule()
     {
         if (inspect.isNone()) {
-            Py::Object module;
+            if (inspectTried)
+                return nullptr;
+            inspectTried = true;
             PyObject *pymod = PyImport_ImportModule("inspect");
             PyObject *pyfunc = nullptr;
             if (pymod) {
-                module = Py::asObject(pymod);
+                Py::Object module = Py::asObject(pymod);
                 pyfunc = PyObject_GetAttrString(pymod, "getmodule");
             }
             if (!pyfunc) {
-                Base::PyException e;
-                if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_TRACE))
-                    e.ReportException();
-                node.init(pyobj, "Failed to inspect module of callable");
-                return false;
+                PyErr_Clear();
+                return nullptr;
             }
             this->inspect = Py::asObject(pyfunc);
         }
+        return this->inspect.ptr();
+    }
 
+    bool checkCallable(PyObjectNode & node, PyObject *pyobj)
+    {
         const char *name = nullptr;
         std::string _name;
 
@@ -2446,7 +2456,9 @@ public:
             }
 
             if (!name || !name[0]) {
-                PyObject * module = PyObject_CallFunction(this->inspect.ptr(), "O", pyobj);
+                PyObject *getmodule = inspectGetModule();
+                PyObject * module = getmodule
+                    ? PyObject_CallFunction(getmodule, "O", pyobj) : nullptr;
                 if (module) {
                     if (PyModule_Check(module)) {
                         name = PyModule_GetName(module);
@@ -2498,8 +2510,10 @@ public:
                             name = nullptr;
                     }
                     if (!name || !name[0]) {
-                        PyObject *module = PyObject_CallFunction(
-                                this->inspect.ptr(), "O", self->ob_type);
+                        PyObject *getmodule = inspectGetModule();
+                        PyObject *module = getmodule
+                            ? PyObject_CallFunction(getmodule, "O", self->ob_type)
+                            : nullptr;
                         if (module) {
                             if (PyModule_Check(module)) {
                                 name = PyModule_GetName(module);
@@ -2543,6 +2557,7 @@ private:
     std::map<std::string, PyObject*> modules;
     std::set<PyObject*> imports;
     Py::Object inspect;
+    bool inspectTried = false;
 };
 
 static int _HiddenReference;
