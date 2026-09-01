@@ -734,6 +734,13 @@ private:
         set("Render_PBREnvBackground", false);
         set("Render_Matcap", false);
         set("Render_AO", false);
+        // Inert at today's default (off), and pinned for the same reason
+        // the sample count is: it is a preference, and what it does to a
+        // picture is refine it over ~32 jittered frames while the view sits
+        // idle. An icon is grabbed on the second frame of two, so a user
+        // who has it on would be handed whichever partial accumulation that
+        // frame happened to hold.
+        set("Render_TemporalAccum", false);
 
         // Which environment and how much of it, stated here rather
         // than inherited. These pictures ship, so they have to be
