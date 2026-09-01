@@ -220,12 +220,12 @@ public:
     // Points
     App::PropertyFloatConstraint PointSize;
     App::PropertyColor PointColor;
-    App::PropertyMaterial PointMaterial;
+    App::PropertyAppearance PointMaterial;
     App::PropertyColorList PointColorArray;
     // Lines
     App::PropertyFloatConstraint LineWidth;
     App::PropertyColor LineColor;
-    App::PropertyMaterial LineMaterial;
+    App::PropertyAppearance LineMaterial;
     App::PropertyColorList LineColorArray;
     // Faces (Gui::ViewProviderGeometryObject::ShapeColor and Gui::ViewProviderGeometryObject::ShapeAppearance apply)
     /// A name over ShapeAppearance's diffuse field, not a second store

@@ -1773,7 +1773,7 @@ TEST_F(PropertyMaterialListTest, aPlainMaterialPropertyCarriesTheFinishToo)
     // whoever first stores a finish there.
     App::Material mat = redMaterial();
     mat.finish = knurlFinish();
-    App::PropertyMaterial prop;
+    App::PropertyAppearance prop;
     prop.setValue(mat);
 
     Base::StringWriter writer;
@@ -1782,7 +1782,7 @@ TEST_F(PropertyMaterialListTest, aPlainMaterialPropertyCarriesTheFinishToo)
     const std::string xml = writer.getString();
     EXPECT_NE(xml.find("finish="), std::string::npos);
 
-    App::PropertyMaterial back;
+    App::PropertyAppearance back;
     std::string doc = R"(<?xml version="1.0" encoding="UTF-8"?><document>)" + xml + "</document>";
     std::istringstream stream(doc);
     Base::XMLReader reader("material.xml", stream);
@@ -1790,7 +1790,7 @@ TEST_F(PropertyMaterialListTest, aPlainMaterialPropertyCarriesTheFinishToo)
     EXPECT_EQ(back.getValue().finish, knurlFinish());
 
     // and an unfinished material writes exactly the bytes it always did
-    App::PropertyMaterial plain;
+    App::PropertyAppearance plain;
     plain.setValue(redMaterial());
     Base::StringWriter plainWriter;
     plainWriter.setForceXML(1);

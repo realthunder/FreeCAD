@@ -1076,10 +1076,18 @@ protected:
     void saveStream(Base::OutputStream &) const override;
 };
 
-/** Material properties
- * This is the father of all properties handling colors.
+/** One appearance: the look of a thing, not the material it is made of
+ *
+ * Holds an App::MaterialAppearance -- ambient, diffuse, specular and
+ * emissive colour, shininess, transparency. Was App::PropertyMaterial,
+ * which collided with Materials::PropertyMaterial (the material CARD)
+ * and with Mesh::PropertyMaterial, three unrelated things under one
+ * name. The former type name is still resolved, so documents and macros
+ * that say App::PropertyMaterial keep working; see
+ * Application::initTypes. The saved XML element is still
+ * <PropertyMaterial> -- that is the file format and does not move.
  */
-class AppExport PropertyMaterial : public Property
+class AppExport PropertyAppearance : public Property
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
@@ -1090,13 +1098,13 @@ public:
      * A constructor.
      * A more elaborate description of the constructor.
      */
-    PropertyMaterial();
+    PropertyAppearance();
 
     /**
      * A destructor.
      * A more elaborate description of the destructor.
      */
-    ~PropertyMaterial() override;
+    ~PropertyAppearance() override;
 
     /** Sets the property
      */

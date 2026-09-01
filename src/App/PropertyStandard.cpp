@@ -2889,79 +2889,79 @@ void PropertyColorList::interpolateValue(int index, const Color &from, const Col
 
 //**************************************************************************
 //**************************************************************************
-// PropertyMaterial
+// PropertyAppearance
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-TYPESYSTEM_SOURCE(App::PropertyMaterial , App::Property)
+TYPESYSTEM_SOURCE(App::PropertyAppearance , App::Property)
 
-PropertyMaterial::PropertyMaterial()
+PropertyAppearance::PropertyAppearance()
 {
     if (DocumentParams::getEnableMaterialEdit())
         setStatus(MaterialEdit, true);
 }
 
-PropertyMaterial::~PropertyMaterial() = default;
+PropertyAppearance::~PropertyAppearance() = default;
 
-void PropertyMaterial::setValue(const Material &mat)
+void PropertyAppearance::setValue(const Material &mat)
 {
     aboutToSetValue();
     _cMat=mat;
     hasSetValue();
 }
 
-const Material& PropertyMaterial::getValue() const
+const Material& PropertyAppearance::getValue() const
 {
     return _cMat;
 }
 
-void PropertyMaterial::setAmbientColor(const Color& col)
+void PropertyAppearance::setAmbientColor(const Color& col)
 {
     aboutToSetValue();
     _cMat.ambientColor = col;
     hasSetValue();
 }
 
-void PropertyMaterial::setDiffuseColor(const Color& col)
+void PropertyAppearance::setDiffuseColor(const Color& col)
 {
     aboutToSetValue();
     _cMat.diffuseColor = col;
     hasSetValue();
 }
 
-void PropertyMaterial::setSpecularColor(const Color& col)
+void PropertyAppearance::setSpecularColor(const Color& col)
 {
     aboutToSetValue();
     _cMat.specularColor = col;
     hasSetValue();
 }
 
-void PropertyMaterial::setEmissiveColor(const Color& col)
+void PropertyAppearance::setEmissiveColor(const Color& col)
 {
     aboutToSetValue();
     _cMat.emissiveColor = col;
     hasSetValue();
 }
 
-void PropertyMaterial::setShininess(float val)
+void PropertyAppearance::setShininess(float val)
 {
     aboutToSetValue();
     _cMat.shininess = val;
     hasSetValue();
 }
 
-void PropertyMaterial::setTransparency(float val)
+void PropertyAppearance::setTransparency(float val)
 {
     aboutToSetValue();
     _cMat.transparency = val;
     hasSetValue();
 }
 
-PyObject *PropertyMaterial::getPyObject()
+PyObject *PropertyAppearance::getPyObject()
 {
     return new MaterialPy(new Material(_cMat));
 }
 
-void PropertyMaterial::setPyObject(PyObject *value)
+void PropertyAppearance::setPyObject(PyObject *value)
 {
     if (PyObject_TypeCheck(value, &(MaterialPy::Type))) {
         setValue(*static_cast<MaterialPy*>(value)->getMaterialPtr());
@@ -2973,13 +2973,16 @@ void PropertyMaterial::setPyObject(PyObject *value)
     }
 }
 
-void PropertyMaterial::Save (Base::Writer &writer) const
+void PropertyAppearance::Save (Base::Writer &writer) const
 {
     const bool convert = saveConverts();
     auto packed = [convert](const Color &color) {
         unsigned long value = color.getPackedValue();
         return convert ? convertPackedAlpha(value) : value;
     };
+    // The element name stays PropertyMaterial. It is the file format, not
+    // the type name: every document ever written says it, and
+    // BIM/OfflineRenderingUtils.py parses and generates exactly that tag.
     writer.Stream() << writer.ind() << "<PropertyMaterial ambientColor=\""
         <<  packed(_cMat.ambientColor)
         << "\" diffuseColor=\""  <<  packed(_cMat.diffuseColor)
@@ -3002,9 +3005,10 @@ void PropertyMaterial::Save (Base::Writer &writer) const
     writer.Stream() << "/>\n";
 }
 
-void PropertyMaterial::Restore(Base::XMLReader &reader)
+void PropertyAppearance::Restore(Base::XMLReader &reader)
 {
-    // read my Element
+    // read my Element -- named for what this property used to be called,
+    // and frozen there; see Save.
     reader.readElement("PropertyMaterial");
     // get the value of my Attribute
     aboutToSetValue();
@@ -3031,33 +3035,33 @@ void PropertyMaterial::Restore(Base::XMLReader &reader)
     hasSetValue();
 }
 
-const char* PropertyMaterial::getEditorName() const
+const char* PropertyAppearance::getEditorName() const
 {
     if(testStatus(MaterialEdit))
         return "Gui::PropertyEditor::PropertyAppearanceItem";
     return "";
 }
 
-Property *PropertyMaterial::Copy() const
+Property *PropertyAppearance::Copy() const
 {
-    PropertyMaterial *p= new PropertyMaterial();
+    PropertyAppearance *p= new PropertyAppearance();
     p->_cMat = _cMat;
     return p;
 }
 
-void PropertyMaterial::Paste(const Property &from)
+void PropertyAppearance::Paste(const Property &from)
 {
     aboutToSetValue();
-    _cMat = dynamic_cast<const PropertyMaterial&>(from)._cMat;
+    _cMat = dynamic_cast<const PropertyAppearance&>(from)._cMat;
     hasSetValue();
 }
 
-bool PropertyMaterial::isSame(const Property &other) const
+bool PropertyAppearance::isSame(const Property &other) const
 {
     if (&other == this)
         return true;
-    return other.isDerivedFrom(PropertyMaterial::getClassTypeId())
-        && this->getValue() == static_cast<const PropertyMaterial&>(other).getValue();
+    return other.isDerivedFrom(PropertyAppearance::getClassTypeId())
+        && this->getValue() == static_cast<const PropertyAppearance&>(other).getValue();
 }
 
 

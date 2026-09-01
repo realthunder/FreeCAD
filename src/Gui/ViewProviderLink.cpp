@@ -2547,8 +2547,8 @@ void ViewProviderLink::handleChangedPropertyName(Base::XMLReader &reader,
                                                  const char *PropName)
 {
     if (strcmp(PropName, "ShapeMaterial") == 0
-            && strcmp(TypeName, App::PropertyMaterial::getClassTypeId().getName()) == 0) {
-        App::PropertyMaterial prop;
+            && strcmp(TypeName, App::PropertyAppearance::getClassTypeId().getName()) == 0) {
+        App::PropertyAppearance prop;
         prop.Restore(reader);
         ShapeAppearance.setValue(prop.getValue());
         return;

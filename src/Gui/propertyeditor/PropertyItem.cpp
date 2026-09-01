@@ -3785,9 +3785,9 @@ QVariant PropertyAppearanceItem::toString(const QVariant& prop) const
 
 QVariant PropertyAppearanceItem::toolTip(const App::Property* prop) const
 {
-    assert(prop && prop->isDerivedFrom<App::PropertyMaterial>());
+    assert(prop && prop->isDerivedFrom<App::PropertyAppearance>());
 
-    const App::Material& value = static_cast<const App::PropertyMaterial*>(prop)->getValue();
+    const App::Material& value = static_cast<const App::PropertyAppearance*>(prop)->getValue();
     auto dc = value.diffuseColor.asValue<QColor>();
     auto ac = value.ambientColor.asValue<QColor>();
     auto sc = value.specularColor.asValue<QColor>();
@@ -3814,9 +3814,9 @@ QVariant PropertyAppearanceItem::toolTip(const App::Property* prop) const
 
 QVariant PropertyAppearanceItem::value(const App::Property* prop) const
 {
-    assert(prop && prop->isDerivedFrom<App::PropertyMaterial>());
+    assert(prop && prop->isDerivedFrom<App::PropertyAppearance>());
 
-    const App::Material& value = static_cast<const App::PropertyMaterial*>(prop)->getValue();
+    const App::Material& value = static_cast<const App::PropertyAppearance*>(prop)->getValue();
     Material mat;
 
     mat.diffuseColor = value.diffuseColor.asValue<QColor>();

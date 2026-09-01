@@ -109,9 +109,9 @@ App::PropertyMaterialList* DlgMaterialPropertiesImp::listProperty(Gui::ViewProvi
     return dynamic_cast<App::PropertyMaterialList*>(vp->getPropertyByName(material.c_str()));
 }
 
-App::PropertyMaterial* DlgMaterialPropertiesImp::singleProperty(Gui::ViewProvider* vp) const
+App::PropertyAppearance* DlgMaterialPropertiesImp::singleProperty(Gui::ViewProvider* vp) const
 {
-    return dynamic_cast<App::PropertyMaterial*>(vp->getPropertyByName(material.c_str()));
+    return dynamic_cast<App::PropertyAppearance*>(vp->getPropertyByName(material.c_str()));
 }
 
 void DlgMaterialPropertiesImp::updateModeView(bool pbr)
@@ -347,7 +347,7 @@ void DlgMaterialPropertiesImp::setViewProviders(const std::vector<Gui::ViewProvi
     for (auto vp : Objects) {
         App::Property* prop = vp->getPropertyByName(material.c_str());
         if (prop && (prop->isDerivedFrom<App::PropertyMaterialList>()
-                     || prop->isDerivedFrom<App::PropertyMaterial>())) {
+                     || prop->isDerivedFrom<App::PropertyAppearance>())) {
             snapshots.emplace_back(vp, std::unique_ptr<App::Property>(prop->Copy()));
             haveList = haveList || prop->isDerivedFrom<App::PropertyMaterialList>();
         }

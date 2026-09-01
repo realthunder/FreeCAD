@@ -195,7 +195,7 @@ void ViewProviderFemConstraint::handleChangedPropertyName(
     }
     else if (
         strcmp(propName, "ShapeMaterial") == 0
-        && Base::Type::fromName(typeName) == App::PropertyMaterial::getClassTypeId()
+        && Base::Type::fromName(typeName) == App::PropertyAppearance::getClassTypeId()
     ) {
         // nothing
     }

@@ -2325,7 +2325,7 @@ void Application::initTypes()
     App::PropertyComplexGeoData     ::init();
     App::PropertyColor              ::init();
     App::PropertyColorList          ::init();
-    App::PropertyMaterial           ::init();
+    App::PropertyAppearance         ::init();
     App::PropertyMaterialList       ::init();
     App::PropertySurfaceFinishList  ::init();
     App::PropertySurfaceTextureList ::init();
@@ -2540,6 +2540,14 @@ void Application::initTypes()
     new Base::ExceptionProducer<Base::UnitsMismatchError>;
     new Base::ExceptionProducer<Base::CADKernelError>;
     new Base::ExceptionProducer<Base::RestoreError>;
+
+    // Former names, still resolved so documents and macros written before
+    // the rename keep working (Base::Type::addLegacyName). Registered
+    // here rather than in each init() because TYPESYSTEM_SOURCE writes
+    // that function, and because one list is easier to read than a
+    // sentence buried in each class.
+    Base::Type::addLegacyName(App::PropertyAppearance::getClassTypeId(),
+                              "App::PropertyMaterial");
 }
 
 namespace {

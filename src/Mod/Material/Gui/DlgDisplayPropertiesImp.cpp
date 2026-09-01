@@ -109,7 +109,7 @@ public:
         bool hasElementColor = false;
         for (const auto& view : views) {
             if (auto* prop =
-                    dynamic_cast<App::PropertyMaterial*>(view->getPropertyByName(property))) {
+                    dynamic_cast<App::PropertyAppearance*>(view->getPropertyByName(property))) {
                 // This fork's PropertyMaterial has no per-field getters.
                 Base::Color color = prop->getValue().diffuseColor;
                 QSignalBlocker block(buttonColor);
@@ -749,7 +749,7 @@ void DlgDisplayPropertiesImp::setColorPlot(const std::vector<Gui::ViewProvider*>
     bool material = false;
     for (auto view : views) {
         auto* prop =
-            dynamic_cast<App::PropertyMaterial*>(view->getPropertyByName("TextureMaterial"));
+            dynamic_cast<App::PropertyAppearance*>(view->getPropertyByName("TextureMaterial"));
         if (prop) {
             material = true;
             break;

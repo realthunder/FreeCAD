@@ -75,7 +75,7 @@ public:
         ReadOnly = 2, // for property editor
         Hidden = 3, // for property editor
         Transient = 4, // for property container save
-        MaterialEdit = 5, // to turn ON PropertyMaterial edit
+        MaterialEdit = 5, // to turn ON PropertyAppearance edit
         NoMaterialListEdit = 6, // to turn OFF PropertyMaterialList edit
         Output = 7, // same effect as Prop_Output
         LockDynamic = 8, // prevent being removed from dynamic property

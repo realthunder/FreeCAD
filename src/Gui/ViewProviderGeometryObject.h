@@ -108,7 +108,7 @@ private:
  * somewhere, and hidden from the property editor so one datum does not
  * appear as two rows.
  */
-class GuiExport PropertyShapeAppearance : public App::PropertyMaterial
+class GuiExport PropertyShapeAppearance : public App::PropertyAppearance
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
@@ -119,7 +119,7 @@ public:
     void setValue(const App::Material &mat);
     /// See PropertyShapeColor::mirrorValue; same no-op rule
     void mirrorValue(const App::Material &mat)
-    { if (!(mat == getValue())) App::PropertyMaterial::setValue(mat); }
+    { if (!(mat == getValue())) App::PropertyAppearance::setValue(mat); }
 
     void Restore(Base::XMLReader &reader) override;
     /// See PropertyShapeColor::applyToAppearance; same ordering rule

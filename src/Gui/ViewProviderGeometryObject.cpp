@@ -333,7 +333,7 @@ TYPESYSTEM_SOURCE_P(Gui::PropertyShapeAppearance)
 void Gui::PropertyShapeAppearance::init()
 {
     initSubclass(Gui::PropertyShapeAppearance::classTypeId, "Gui::_PropertyShapeAppearance",
-                 "App::PropertyMaterial", &Gui::PropertyShapeAppearance::create);
+                 "App::PropertyAppearance", &Gui::PropertyShapeAppearance::create);
     // Was Gui::_PropertyShapeMaterial, and every GuiDocument.xml written so
     // far says so -- the render examples under data/examples/render alone
     // carry eighteen of them. The alias is what keeps those readable; without
@@ -389,7 +389,7 @@ void PropertyShapeColor::Restore(Base::XMLReader &reader)
 
 void PropertyShapeAppearance::setValue(const App::Material &mat)
 {
-    App::PropertyMaterial::setValue(mat);
+    App::PropertyAppearance::setValue(mat);
     if (_appearance)
         applyWholeMaterial(*_appearance, mat);
 }
@@ -405,7 +405,7 @@ void PropertyShapeAppearance::applyToAppearance()
 
 void PropertyShapeAppearance::Restore(Base::XMLReader &reader)
 {
-    App::PropertyMaterial::Restore(reader);
+    App::PropertyAppearance::Restore(reader);
     applyToAppearance();
 }
 
@@ -437,8 +437,8 @@ void ViewProviderGeometryObject::handleChangedPropertyType(Base::XMLReader &read
         return;
     }
     if (prop == &ShapeMaterial
-            && strcmp(TypeName, App::PropertyMaterial::getClassTypeId().getName()) == 0) {
-        App::PropertyMaterial old;
+            && strcmp(TypeName, App::PropertyAppearance::getClassTypeId().getName()) == 0) {
+        App::PropertyAppearance old;
         old.Restore(reader);
         ShapeMaterial.mirrorValue(old.getValue());
         ShapeMaterial.applyToAppearance();

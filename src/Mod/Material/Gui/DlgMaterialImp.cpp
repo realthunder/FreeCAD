@@ -183,8 +183,8 @@ void DlgMaterialImp::slotChangedObject(const Gui::ViewProvider& obj, const App::
             return;
         }
         std::string prop_name = name;
-        if (prop.isDerivedFrom<App::PropertyMaterial>()) {
-            //auto& value = static_cast<const App::PropertyMaterial&>(prop).getValue();
+        if (prop.isDerivedFrom<App::PropertyAppearance>()) {
+            //auto& value = static_cast<const App::PropertyAppearance&>(prop).getValue();
             if (prop_name == "ShapeMaterial") {
                 // bool blocked = d->ui.buttonColor->blockSignals(true);
                 // auto color = value.diffuseColor;
