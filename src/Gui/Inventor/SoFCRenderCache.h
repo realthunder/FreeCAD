@@ -55,6 +55,10 @@ struct FramePalette;
 GuiExport std::uint64_t cacheSerialOf(const FinishPalette *palette);
 GuiExport std::uint64_t cacheSerialOf(const FramePalette *palette);
 GuiExport std::uint64_t cacheSerialOf(const UserShader *shader);
+
+/// The stable serial of a captured NODE (Render::CacheSerial::forNode),
+/// which is what the texture and node infos below are ordered by.
+GuiExport std::uint64_t cacheSerialOfNode(const void *node);
 }
 
 class SoFCVertexCache;
@@ -113,23 +117,29 @@ public:
     SbMatrix matrix;
     bool identity = true;
     bool transparent = false;
+    /// Memoized by setTexture(); see the note in compare().
+    std::uint64_t serial = 0;
+
+    void setTexture(SoNode * node) {
+      this->texture = node;
+      this->serial = Render::cacheSerialOfNode(node);
+    }
 
     int compare(const TextureInfo & other) const {
-    // ORDERED BY THE POINTER, and a Coin node id will not do instead.
+    // ORDERED BY A STABLE SERIAL, not by the address and not by a Coin
+    // node id.
     //
-    // The address is not the same in two runs, so this is the one part of
-    // a material's ordering that is still run-dependent (Render::CacheSerial
-    // covers the rest). A node id was tried and reverted: Coin hands a node
-    // a FRESH id on every notify(), so the id says "this node as of a
-    // moment" where the pointer says "this node". The incremental flatten
-    // (buildFromPrevious) merges the PREVIOUS publish's map with entries
-    // built now, keyed by material -- so a node notified between the two
-    // would arrive under two different ids and one light would become two
-    // buckets that draw identically, accumulating another on every notify.
-    // Ordering nodes deterministically needs an id that never moves, which
-    // would have to come from the Coin fork.
-      if (this->texture < other.texture) return -1;
-      if (this->texture > other.texture) return 1;
+    // The address is different in every run, and a draw order that
+    // follows it renders differently from run to run wherever two draws
+    // contend for a pixel at equal depth. A node id is deterministic but
+    // MOVES: Coin reassigns it on every notify(), so a material captured
+    // before one and a material captured after it disagree about the same
+    // node, and buildFromPrevious -- which merges a previous publish's
+    // map with entries built now -- turns one light into two buckets that
+    // draw identically. CacheSerial::forNode is both: fixed for the
+    // node's whole life, and free of addresses.
+      if (this->serial < other.serial) return -1;
+      if (this->serial > other.serial) return 1;
       if (this->transparent < other.transparent) return -1;
       if (this->transparent > other.transparent) return 1;
       if (this->identity < other.identity) return -1;
@@ -167,23 +177,29 @@ public:
     SbMatrix matrix;
     bool identity = true;
     bool resetmatrix = false;;
+    /// Memoized by setNode(); see the note in compare().
+    std::uint64_t serial = 0;
+
+    void setNode(SoNode * n) {
+      this->node = n;
+      this->serial = Render::cacheSerialOfNode(n);
+    }
 
     int compare(const NodeInfo & other) const {
-    // ORDERED BY THE POINTER, and a Coin node id will not do instead.
+    // ORDERED BY A STABLE SERIAL, not by the address and not by a Coin
+    // node id.
     //
-    // The address is not the same in two runs, so this is the one part of
-    // a material's ordering that is still run-dependent (Render::CacheSerial
-    // covers the rest). A node id was tried and reverted: Coin hands a node
-    // a FRESH id on every notify(), so the id says "this node as of a
-    // moment" where the pointer says "this node". The incremental flatten
-    // (buildFromPrevious) merges the PREVIOUS publish's map with entries
-    // built now, keyed by material -- so a node notified between the two
-    // would arrive under two different ids and one light would become two
-    // buckets that draw identically, accumulating another on every notify.
-    // Ordering nodes deterministically needs an id that never moves, which
-    // would have to come from the Coin fork.
-      if (this->node < other.node) return -1;
-      if (this->node > other.node) return 1;
+    // The address is different in every run, and a draw order that
+    // follows it renders differently from run to run wherever two draws
+    // contend for a pixel at equal depth. A node id is deterministic but
+    // MOVES: Coin reassigns it on every notify(), so a material captured
+    // before one and a material captured after it disagree about the same
+    // node, and buildFromPrevious -- which merges a previous publish's
+    // map with entries built now -- turns one light into two buckets that
+    // draw identically. CacheSerial::forNode is both: fixed for the
+    // node's whole life, and free of addresses.
+      if (this->serial < other.serial) return -1;
+      if (this->serial > other.serial) return 1;
       if (this->identity < other.identity) return -1;
       if (this->identity > other.identity) return 1;
       if (!this->identity) {

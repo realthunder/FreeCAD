@@ -29,18 +29,36 @@
 // than the node map at n=8192, and that walk happens every frame while
 // a build happens only when the cache is republished.
 //
-// So the shape of the answer: flat_map is right up to a few hundred
-// materials (a build under a quarter of a millisecond at n=128) and
-// wrong in the thousands (half a second at n=8192 is a visible hitch).
-// What the table also shows is that the choice is not flat-vs-node at
-// all: vec+sort is 52x faster to build than flat_map at n=8192 AND
-// walks identically, because it IS the same array. What stops it being
-// a drop-in is that SoFCRenderCacheP looks buckets up WHILE it builds
-// (vcachemap.find(), vcachemap[material]), which a sort-at-the-end
-// cannot answer. Sorting once at the end of a publish would mean
-// staging those lookups some other way -- worth doing only if a profile
-// on a scene with thousands of distinct materials says the rebuild
-// hurts. Re-run this before deciding.
+// But that table is the WORST CASE: it gives every child a material of
+// its own, so n children means n buckets. A real scene shares: many
+// shapes, far fewer distinct materials. DISABLED_BuildStrategy varies
+// that ratio, and the answer turns over inside it (2026-09-01):
+//
+//   children  distinct   as-you-go   no fixup   append+sort
+//       2000        64     1.018ms    0.958ms       2.187ms
+//       2000       512     3.156ms    2.619ms       2.373ms
+//       8000       512     7.083ms    6.450ms      10.534ms
+//       8000      4000   100.810ms   86.090ms      11.930ms
+//
+// Sorted-as-you-go WINS by 2x when materials are few, and loses by 8.5x
+// only when nearly every child brings its own. The reason is that the
+// flat_map holds one record per DISTINCT material and the carried hint
+// makes a repeat of the previous material free, while append-then-sort
+// must sort one record per CHILD. So the lookups during a build are
+// already minimal -- the hint is the minimization -- and what costs is a
+// NEW bucket, which memmoves. The "no fixup" column also settles where
+// that cost sits: removing the slice-index repair (a new bucket shifts
+// every index already recorded) saves only about 15%, so it is the
+// container's memmove that dominates, not the bookkeeping.
+//
+// Conclusion: KEEP the flat_map. It is the right structure for scenes
+// that share materials, which is the ordinary case; the regime where it
+// loses is thousands of distinct materials, which is a problem for the
+// draw list generally and not just for its container. A swap would also
+// have to replace the index addressing the surrounding code needs
+// (nth(bucket), it - begin(), slices naming buckets by index), and
+// append-then-sort cannot answer the find()/operator[] the build makes
+// while it builds. Re-run both legs before revisiting.
 //
 // DISABLED by default: it is a measurement, not an assertion, and the
 // large-n legs are slow on purpose. Run it with
@@ -62,6 +80,7 @@
 #include <FCGlobal.h>
 
 #include <Gui/Inventor/SoFCVertexCache.h>
+#include <Gui/Renderer/Renderer.h>
 #include <Gui/Inventor/SoFCRenderCache.h>
 
 namespace
@@ -168,6 +187,125 @@ TEST(RenderCacheMapBench, DISABLED_Containers)
                     n, flatms, nodems, vecms, walkflat, walknode);
         EXPECT_EQ(flat.size(), node.size());
         EXPECT_GT(sink, 0u);
+    }
+    std::printf("\n");
+}
+
+
+// What a stable node serial costs: one memoized lookup behind a mutex,
+// paid per CAPTURED NODE per traversal (a light, a clip plane, a
+// texture) -- not per shape, and never in a comparison, which reads the
+// value straight out of the info.
+TEST(RenderCacheMapBench, DISABLED_NodeSerial)
+{
+    std::vector<int> nodes(4096);
+    std::iota(nodes.begin(), nodes.end(), 1);
+
+    // Cold: every address is new, so every call inserts.
+    const double coldms = msOf([&] {
+        for (int &n : nodes)
+            (void)Render::CacheSerial::forNode(&n);
+    });
+
+    // Warm: what the steady state actually pays.
+    const int reps = 250;
+    size_t sink = 0;
+    const double warmms = msOf([&] {
+        for (int r = 0; r < reps; ++r)
+            for (int &n : nodes)
+                sink += Render::CacheSerial::forNode(&n);
+    });
+
+    std::printf("\nnode serial: cold %.1f ns/call, warm %.1f ns/call\n",
+                coldms * 1e6 / double(nodes.size()),
+                warmms * 1e6 / double(nodes.size() * size_t(reps)));
+    EXPECT_GT(sink, 0u);
+}
+
+// Building the draw list: sorted-as-you-go against append-then-sort.
+//
+// The real build (SoFCRenderCacheP::mergeChildCache) walks children,
+// finds or creates each child's bucket, and appends the child's entries
+// to it. Two costs ride on keeping the vector sorted THROUGHOUT: the
+// insert memmoves every bucket after it, and a new bucket shifts every
+// bucket index already recorded in the child slices, which the real code
+// repairs by walking them all. Both vanish if the order is imposed once
+// at the end.
+TEST(RenderCacheMapBench, DISABLED_BuildStrategy)
+{
+    std::printf("\n%8s %8s  %12s  %12s  %12s\n",
+                "children", "distinct", "as-you-go", "no fixup", "append+sort");
+
+    for (auto shape : {std::make_pair(2000, 64), std::make_pair(2000, 512),
+                       std::make_pair(8000, 512), std::make_pair(8000, 4000)}) {
+        const int children = shape.first;
+        const int distinct = shape.second;
+        const std::vector<Material> mats = materials(distinct, 999u);
+        std::vector<int> pick(size_t(children), 0);
+        std::mt19937 rng(7u);
+        for (int &p : pick)
+            p = int(rng() % unsigned(distinct));
+
+        // (a) what the code does today
+        FlatMap flat;
+        std::vector<int> slices;
+        const double sortedms = msOf([&] {
+            auto it = flat.end();
+            for (int i = 0; i < children; ++i) {
+                const size_t before = flat.size();
+                it = flat.insert(it, FlatMap::value_type(mats[size_t(pick[size_t(i)])], {}));
+                if (flat.size() != before) {
+                    // A new bucket shifts every index already recorded.
+                    const int at = int(it - flat.begin());
+                    for (int &sl : slices)
+                        if (sl >= at)
+                            ++sl;
+                }
+                slices.push_back(int(it - flat.begin()));
+            }
+        });
+
+        // (a2) the same inserts with the slice repair removed, to
+        // separate the container's cost from the bookkeeping's.
+        FlatMap flat2;
+        const double nofixms = msOf([&] {
+            auto it = flat2.end();
+            for (int i = 0; i < children; ++i)
+                it = flat2.insert(it, FlatMap::value_type(mats[size_t(pick[size_t(i)])], {}));
+        });
+
+        // (b) append, then impose the order once
+        std::vector<std::pair<Material, VertexCacheArray>> vec;
+        std::vector<int> vslices;
+        const double appendms = msOf([&] {
+            vec.reserve(size_t(children));
+            for (int i = 0; i < children; ++i) {
+                vec.emplace_back(mats[size_t(pick[size_t(i)])], VertexCacheArray());
+                vslices.push_back(int(vec.size()) - 1);
+            }
+            std::vector<int> order(vec.size());
+            std::iota(order.begin(), order.end(), 0);
+            std::sort(order.begin(), order.end(), [&](int a, int b) {
+                return vec[size_t(a)].first < vec[size_t(b)].first;
+            });
+            // Equal keys become one bucket; every recorded index is
+            // rewritten once, in place of the running repair above.
+            std::vector<int> bucketof(vec.size(), 0);
+            int buckets = 0;
+            for (size_t k = 0; k < order.size(); ++k) {
+                if (k && (vec[size_t(order[k - 1])].first < vec[size_t(order[k])].first))
+                    ++buckets;
+                bucketof[size_t(order[k])] = buckets;
+            }
+            for (int &sl : vslices)
+                sl = bucketof[size_t(sl)];
+        });
+
+        std::printf("%8d %8d  %10.3fms  %10.3fms  %10.3fms\n",
+                    children, distinct, sortedms, nofixms, appendms);
+        EXPECT_EQ(flat2.size(), flat.size());
+        EXPECT_GT(slices.size(), 0u);
+        EXPECT_EQ(vslices.size(), slices.size());
     }
     std::printf("\n");
 }

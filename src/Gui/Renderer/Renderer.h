@@ -822,6 +822,29 @@ struct RendererExport CacheSerial {
     /// Never 0: 0 is what a null shared_ptr orders as.
     static std::uint64_t next();
 
+    /// A serial for a NODE, memoized by ADDRESS: the same node gets the
+    /// same one for as long as it lives, and the sequence is the same in
+    /// every run.
+    ///
+    /// This is what a Coin node id could not be. An id moves on every
+    /// notify(), so a material captured before one and a material
+    /// captured after it disagreed about the same node, and the
+    /// incremental flatten -- which merges a previous publish's map with
+    /// entries built now -- turned one light into two buckets. A serial
+    /// never moves, so those two materials still meet in one bucket, and
+    /// the ordering is still free of addresses.
+    ///
+    /// Keying the memo on the address is safe precisely because everything
+    /// that holds one of these -- SoFCRenderCache's NodeInfo and
+    /// TextureInfo -- keeps a STRONG reference (CoinPtr is an
+    /// intrusive_ptr). No address can be reused while anything able to
+    /// compare its serial is still alive, so two LIVE nodes can never
+    /// share one. A dead node's entry may later be inherited by a new
+    /// node at that address, which is harmless: they are never live at
+    /// once, and the new node wants a serial of its own only in the sense
+    /// that it must not collide with a live one.
+    static std::uint64_t forNode(const void *node);
+
     std::uint64_t value;
 };
 
