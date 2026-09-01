@@ -975,10 +975,17 @@ protected:
 };
 
 /**
-* Change a material property.
+* Change an appearance property.
 * \author Werner Mayer
+*
+* Was PropertyMaterialItem until App::Material became
+* App::MaterialAppearance: what it edits is a look -- ambient,
+* diffuse, specular, emissive, shininess, transparency -- and not the
+* material card that Materials::Material is. An editor item is named
+* only by the getEditorName() literal compiled into the property, never
+* by anything in a document, so the old name needs no alias.
 */
-class GuiExport PropertyMaterialItem : public PropertyItem
+class GuiExport PropertyAppearanceItem : public PropertyItem
 {
     Q_OBJECT
     Q_PROPERTY(QColor AmbientColor READ getAmbientColor WRITE setAmbientColor DESIGNABLE true USER true) // clazy:exclude=qproperty-without-notify
@@ -1009,8 +1016,8 @@ class GuiExport PropertyMaterialItem : public PropertyItem
     void setTransparency(float);
 
 protected:
-    PropertyMaterialItem();
-    ~PropertyMaterialItem() override;
+    PropertyAppearanceItem();
+    ~PropertyAppearanceItem() override;
 
     QVariant decoration(const QVariant&) const override;
     QVariant toolTip(const App::Property*) const override;
@@ -1027,7 +1034,12 @@ private:
     PropertyFloatItem* transparency;
 };
 
-class GuiExport PropertyMaterialListItem : public PropertyItem
+/** The same, over a whole App::PropertyAppearanceList
+ *
+ * Was PropertyMaterialListItem. See PropertyAppearanceItem for why
+ * the former name is not aliased.
+ */
+class GuiExport PropertyAppearanceListItem : public PropertyItem
 {
     Q_OBJECT
     Q_PROPERTY(QColor AmbientColor READ getAmbientColor WRITE setAmbientColor DESIGNABLE true USER true) // clazy:exclude=qproperty-without-notify
@@ -1058,8 +1070,8 @@ class GuiExport PropertyMaterialListItem : public PropertyItem
     void setTransparency(float);
 
 protected:
-    PropertyMaterialListItem();
-    ~PropertyMaterialListItem() override;
+    PropertyAppearanceListItem();
+    ~PropertyAppearanceListItem() override;
 
     QVariant decoration(const QVariant&) const override;
     QVariant toolTip(const App::Property*) const override;

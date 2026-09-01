@@ -97,12 +97,18 @@ private:
 
 /** ShapeMaterial, kept as a name over the appearance
  *
+ * The class was PropertyShapeMaterial; the PROPERTY is still called
+ * ShapeMaterial and stays that way -- that name is in every saved
+ * document and every macro, and renaming it is a separate decision from
+ * renaming the type. Its registered type name keeps an alias to the old
+ * spelling (see Gui::PropertyShapeAppearance::init).
+ *
  * Retired as a store: the appearance holds the material. Kept as a property
  * so old macros and old documents that say ShapeMaterial still land
  * somewhere, and hidden from the property editor so one datum does not
  * appear as two rows.
  */
-class GuiExport PropertyShapeMaterial : public App::PropertyMaterial
+class GuiExport PropertyShapeAppearance : public App::PropertyMaterial
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
@@ -157,7 +163,7 @@ public:
      */
     App::PropertyMaterialList ShapeAppearance;
     /// Retired store, kept as a name over the appearance (hidden in the editor)
-    PropertyShapeMaterial ShapeMaterial;
+    PropertyShapeAppearance ShapeMaterial;
     App::PropertyBool BoundingBox;
 
     /**

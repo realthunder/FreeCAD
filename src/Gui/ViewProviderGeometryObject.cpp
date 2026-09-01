@@ -50,6 +50,7 @@
 
 #include <Base/Reader.h>
 #include <Base/Tools.h>
+#include <Base/Type.h>
 
 #include <App/Document.h>
 #include <App/PropertyFile.h>
@@ -328,11 +329,17 @@ void Gui::PropertyShapeColor::init()
                  "App::PropertyColor", &Gui::PropertyShapeColor::create);
 }
 
-TYPESYSTEM_SOURCE_P(Gui::PropertyShapeMaterial)
-void Gui::PropertyShapeMaterial::init()
+TYPESYSTEM_SOURCE_P(Gui::PropertyShapeAppearance)
+void Gui::PropertyShapeAppearance::init()
 {
-    initSubclass(Gui::PropertyShapeMaterial::classTypeId, "Gui::_PropertyShapeMaterial",
-                 "App::PropertyMaterial", &Gui::PropertyShapeMaterial::create);
+    initSubclass(Gui::PropertyShapeAppearance::classTypeId, "Gui::_PropertyShapeAppearance",
+                 "App::PropertyMaterial", &Gui::PropertyShapeAppearance::create);
+    // Was Gui::_PropertyShapeMaterial, and every GuiDocument.xml written so
+    // far says so -- the render examples under data/examples/render alone
+    // carry eighteen of them. The alias is what keeps those readable; without
+    // it the restore takes the "type changed" branch and drops the value.
+    Base::Type::addLegacyName(Gui::PropertyShapeAppearance::classTypeId,
+                              "Gui::_PropertyShapeMaterial");
 }
 
 void PropertyShapeColor::setValue(const Base::Color &col)
@@ -380,14 +387,14 @@ void PropertyShapeColor::Restore(Base::XMLReader &reader)
     applyToAppearance();
 }
 
-void PropertyShapeMaterial::setValue(const App::Material &mat)
+void PropertyShapeAppearance::setValue(const App::Material &mat)
 {
     App::PropertyMaterial::setValue(mat);
     if (_appearance)
         applyWholeMaterial(*_appearance, mat);
 }
 
-void PropertyShapeMaterial::applyToAppearance()
+void PropertyShapeAppearance::applyToAppearance()
 {
     // Also the entry point for an old document's ShapeMaterial, which arrives
     // after its per-face colours: those are the more specific value and the
@@ -396,7 +403,7 @@ void PropertyShapeMaterial::applyToAppearance()
         applyWholeMaterial(*_appearance, getValue());
 }
 
-void PropertyShapeMaterial::Restore(Base::XMLReader &reader)
+void PropertyShapeAppearance::Restore(Base::XMLReader &reader)
 {
     App::PropertyMaterial::Restore(reader);
     applyToAppearance();

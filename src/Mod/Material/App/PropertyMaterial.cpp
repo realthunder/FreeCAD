@@ -541,7 +541,7 @@ bool PropertyMaterial::saveToLibrary()
 const char* PropertyMaterial::getEditorName() const
 {
     if (testStatus(MaterialEdit)) {
-        return "";  //"Gui::PropertyEditor::PropertyMaterialItem";
+        return "";  //"Gui::PropertyEditor::PropertyAppearanceItem";
     }
     return "";
 }

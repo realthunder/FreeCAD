@@ -3034,7 +3034,7 @@ void PropertyMaterial::Restore(Base::XMLReader &reader)
 const char* PropertyMaterial::getEditorName() const
 {
     if(testStatus(MaterialEdit))
-        return "Gui::PropertyEditor::PropertyMaterialItem";
+        return "Gui::PropertyEditor::PropertyAppearanceItem";
     return "";
 }
 
@@ -5230,7 +5230,7 @@ const char* PropertyMaterialList::getEditorName() const
 {
     if(testStatus(NoMaterialListEdit))
         return "";
-    return "Gui::PropertyEditor::PropertyMaterialListItem";
+    return "Gui::PropertyEditor::PropertyAppearanceListItem";
 }
 
 

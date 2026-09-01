@@ -2396,7 +2396,7 @@ void Application::initTypes()
     // View Provider
     // Properties whose storage redirects into ShapeAppearance
     Gui::PropertyShapeColor                     ::init();
-    Gui::PropertyShapeMaterial                  ::init();
+    Gui::PropertyShapeAppearance                  ::init();
 
     Gui::ViewProvider                           ::init();
     Gui::ViewProviderExtension                  ::init();
