@@ -877,3 +877,129 @@ from the card at once; setting it false stores the current base.
 - No merged panel. The assignment panels stay two, as everywhere else; the
   card EDITOR is where the two halves share a window, and it already does.
 - No change to what makes a card `Diverged` (sec 13.1).
+
+## 16. A set of files: the multi-file referrer (2026-09-02)
+
+The question that opened this section was asked of the MaterialX card
+(`CyclesIntegration.md` sec 6.13): a document names its image maps by
+filename, so what makes a `.FCStd` holding one self-contained? Answering
+it turned out to answer a larger one about cards themselves, and the two
+share a mechanism.
+
+### 16.1 What "shared data" is, in three layers
+
+They were being conflated, which is what made the earlier bundle proposal
+feel heavy:
+
+1. **The bytes** -- the images, and the document itself. Content-addressed,
+   immutable, shared by whoever refers to them. `App::FileBlobManager`
+   already owns this layer; it needs nothing.
+2. **The reference** -- which blobs a thing needs, and under what NAME the
+   referring content asks for one. Only a property can hold this, because
+   a property is what makes `collectBlobs()` run and the bytes get an
+   archive entry. This is the layer that was missing.
+3. **The derived artifact** -- the parsed document, the generated shader,
+   the shared Coin node. Runtime dedup, already placed in
+   `ViewProviderAppearance` (sec 6.13 decision 1a). Not storage, and it
+   must not be given any.
+
+The blob manager already states the rule layer 2 needs: "Names belong to
+the referring property, which persists its own file name and original
+path, so any number of properties can share one blob while each keeps the
+name the user gave it" (`FileBlobManager.h`).
+
+### 16.2 `App::PropertyFileIncludedList` (built)
+
+A named set of files. `PropertyFileIncluded` holds one; this holds any
+number, each under the name its referring content uses to ask for one. An
+entry is `{name, original, hash, blob}`:
+
+- **name** is the key -- what the document calls the file. Unique within
+  the property, and the thing a consumer joins on.
+- **original** is provenance ONLY. Nothing resolves against it: an
+  absolute path that resolves on the authoring machine points at nothing
+  on the next one, which is the defect the type exists to close.
+- **hash** is known from the moment the entry exists, including for an
+  entry restored from a document whose bytes have not arrived yet.
+- **blob** is the content, null while a restore is pending.
+
+`filePath(name)` is the resolver, and it answers a REAL path in the
+transient directory -- so every consumer downstream goes on opening
+files, and neither the raster path nor the path tracer has to learn what
+a blob is. A name that is absent and a name whose content did not arrive
+both answer empty, because a consumer must treat them alike.
+
+Three things worth not re-deriving:
+
+- **The restore leg needed no extension.** `_pending` is a
+  `vector<pair<hash, referrer*>>`, so one property may queue several
+  hashes, and `assignRestoredBlob()` tells them apart by `FileBlob::hash()`
+  on the handle it is given. Every entry naming that hash takes it: one
+  file may be known under two names.
+- **The referrer is per entry**, not per property, or every map of a
+  material would land under one name. The archive shows
+  `blobs/obj.Files.brass_color.png` -- object, property, entry,
+  extension -- which is what an unpacked project should say.
+- **There is no pre-store spelling**, so `blobContentNeedsStore()` answers
+  true whenever there is anything to write and the save is offered the
+  schema its content needs rather than dropping it silently.
+
+`setValue()` exists only because the `ADD_PROPERTY` macros initialize by
+calling it; the default value of a set of files is the empty set.
+
+### 16.3 Why a card is one flattened file, and what else it could be
+
+The card is stored as a single blob holding `getCanonicalForm()`, and
+that came from four places, none of which requires it:
+
+1. The stored unit mirrors the LIBRARY unit -- a `.FCMat` is one file, so
+   a stored card is byte-for-byte a library card.
+2. Identity is a SHA1 over one byte string, and the whole sync machinery
+   of sec 13 is a comparison of that one hash.
+3. Blob creation is path-based (`insertFile`/`adoptFile`), so "write one
+   file, adopt it" needed no new manager API.
+4. The flattening of sec 4.1 is deliberate -- but it is about the
+   INHERITANCE chain, never about attachments.
+
+The alternative is a **tree**: the canonical form names its files by
+content hash instead of embedding them, and the card hashes over that
+manifest. Identity stays one hash and still covers the content
+transitively -- change an image, its hash changes, the manifest changes,
+the card hash changes. Git's tree object, USD, OCI images and glTF with
+external buffers all resolve it this way, and MaterialX shipping a
+document beside an `Images/` folder is the same shape one level down.
+
+What the tree buys: dedup of a shared map across cards and across routes;
+raw bytes instead of the base64 an `Image` value writes into the YAML
+(`MaterialValue.cpp`), which costs a third extra and can never share; and
+an edit to one map rewriting one blob instead of the whole card.
+
+It also dissolves the strongest concrete argument against putting a
+MaterialX bundle in `App::Material` -- that a card-assigned object would
+store the document twice, once inside the card's blob and once as the
+bundle's, the two byte strings differing so the hashes differ. Under a
+tree the document is a child blob named by its own hash and the two
+routes land on one entry. The remaining arguments against the bundle are
+judgment, not arithmetic: the copy weight on a value copied per face, and
+a node graph not being a look.
+
+### 16.4 The flattened form stays first class (the user's ruling, 2026-09-02)
+
+Not a legacy or export-only path. A self-contained `.FCMat` is wanted for
+**copy and paste of a material between objects**, which is a planned
+feature and for which one flattened byte string is exactly the right
+clipboard payload. So the two forms both stand: the tree is the
+in-document form, the flattened card is the interchange form, and there
+is a flatten on the way out and a split on the way in. That second
+serialization path is the real cost of the tree, and it is paid for by
+something other than export.
+
+### 16.5 Order of work (the user's ruling, 2026-09-02)
+
+The multi-file referrer is built FIRST, in App, so the card and the
+shader program share one mechanism rather than the shader program getting
+a private one and the card discovering it needs the twin later. Then
+`App::ShaderProgram` gains one: its look IS its document, so it wants no
+colour slots and no `App::Material` -- its knobs are already the `Param_*`
+dynamic properties and its sources already blob-backed strings, and a set
+of files is the only thing it lacks.

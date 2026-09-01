@@ -39,6 +39,21 @@ target_include_directories(PropertyMaterialList_tests_run PRIVATE
 target_link_libraries(PropertyMaterialList_tests_run gtest_main FreeCADApp FreeCADBase)
 add_test(NAME PropertyMaterialList_tests_run COMMAND PropertyMaterialList_tests_run)
 
+# The multi-file blob referrer (docs/MaterialStorage.md sec 16): a named set
+# of files a document travels with. Needs a real document for its blob store
+# and its save/reopen, and nothing else -- an executable of its own like the
+# focused suites above.
+add_executable(PropertyFileIncludedList_tests_run
+               ${CMAKE_CURRENT_SOURCE_DIR}/PropertyFileIncludedList.cpp)
+target_include_directories(PropertyFileIncludedList_tests_run PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/src
+    ${Python3_INCLUDE_DIRS}
+    ${XercesC_INCLUDE_DIRS})
+target_link_libraries(PropertyFileIncludedList_tests_run gtest_main FreeCADApp FreeCADBase)
+add_test(NAME PropertyFileIncludedList_tests_run COMMAND PropertyFileIncludedList_tests_run)
+
 # The restore-drain scope (docs/DocumentLoad.md §13) is App's own machinery
 # too -- a status bit and the two touch paths that honor it -- and needs no
 # more than a document with an object in it. Its own executable for the same

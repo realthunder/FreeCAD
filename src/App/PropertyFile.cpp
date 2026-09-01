@@ -813,3 +813,379 @@ unsigned int PropertyStringIncluded::getMemSize () const
     }
     return mem;
 }
+
+//**************************************************************************
+// PropertyFileIncludedList
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+TYPESYSTEM_SOURCE(App::PropertyFileIncludedList , App::Property)
+
+PropertyFileIncludedList::PropertyFileIncludedList() = default;
+
+PropertyFileIncludedList::~PropertyFileIncludedList()
+{
+    cancelPending();
+}
+
+FileBlobManager &PropertyFileIncludedList::blobManager() const
+{
+    if (auto container = getContainer()) {
+        if (auto doc = container->getOwnerDocument()) {
+            return doc->getFileBlobManager();
+        }
+    }
+    return FileBlobManager::defaultManager();
+}
+
+void PropertyFileIncludedList::cancelPending()
+{
+    if (_pendingManager) {
+        // Withdraws every entry this property queued: the queue is keyed on
+        // the referrer, not on the hash, so one call clears them all.
+        _pendingManager->removePendingReferrer(this);
+        _pendingManager = nullptr;
+    }
+}
+
+void PropertyFileIncludedList::awaitBlob(const std::string &hash)
+{
+    if (hash.empty()) {
+        return;
+    }
+    auto &manager = blobManager();
+    _pendingManager = &manager;
+    manager.addPendingReferrer(hash, this);
+}
+
+PropertyFileIncludedList::Entry *PropertyFileIncludedList::entry(const char *name)
+{
+    if (!name || !name[0]) {
+        return nullptr;
+    }
+    for (auto &file : _files) {
+        if (file.name == name) {
+            return &file;
+        }
+    }
+    return nullptr;
+}
+
+const PropertyFileIncludedList::Entry *PropertyFileIncludedList::find(const char *name) const
+{
+    return const_cast<PropertyFileIncludedList*>(this)->entry(name);
+}
+
+std::string PropertyFileIncludedList::filePath(const char *name) const
+{
+    const Entry *file = find(name);
+    // A pending entry has a name and a hash and no content yet, which reads
+    // here the same as no entry at all: neither can be opened.
+    return (file && file->blob) ? file->blob->path() : std::string();
+}
+
+void PropertyFileIncludedList::setFile(const char *name, const char *path, const char *original)
+{
+    if (!name || !name[0]) {
+        throw Base::ValueError("An included file needs a name");
+    }
+    FileBlobHandle blob;
+    if (path && path[0]) {
+        // insertFile() hashes the bytes and keeps whichever copy the store
+        // already holds, so adding the same map under two names -- or in two
+        // properties -- costs one file.
+        blob = blobManager().insertFile(path, Base::FileInfo(name).extension().c_str());
+    }
+    setBlob(name, blob, original ? original : path);
+}
+
+void PropertyFileIncludedList::setBlob(const char *name, const FileBlobHandle &handle,
+                                       const char *original)
+{
+    if (!name || !name[0]) {
+        throw Base::ValueError("An included file needs a name");
+    }
+    FileBlobHandle blob = handle;
+    if (blob && blob->owner() != &blobManager()) {
+        // Blobs never migrate between stores; taking one from another
+        // document imports the content into this document's own.
+        blob = blobManager().insertFile(blob->path().c_str());
+    }
+
+    aboutToSetValue();
+    Entry *file = entry(name);
+    if (!file) {
+        _files.emplace_back();
+        file = &_files.back();
+        file->name = name;
+    }
+    file->blob = blob;
+    file->hash = blob ? blob->hash() : std::string();
+    if (original) {
+        file->original = original;
+    }
+    hasSetValue();
+}
+
+void PropertyFileIncludedList::removeFile(const char *name)
+{
+    if (!find(name)) {
+        return;
+    }
+    aboutToSetValue();
+    _files.erase(std::remove_if(_files.begin(), _files.end(),
+                                [name](const Entry &file) { return file.name == name; }),
+                 _files.end());
+    hasSetValue();
+}
+
+void PropertyFileIncludedList::setValues(std::vector<Entry> files)
+{
+    auto &manager = blobManager();
+    for (auto &file : files) {
+        if (file.blob && file.blob->owner() != &manager) {
+            file.blob = manager.insertFile(file.blob->path().c_str());
+        }
+        if (file.blob) {
+            file.hash = file.blob->hash();
+        }
+    }
+    aboutToSetValue();
+    cancelPending();
+    _files = std::move(files);
+    hasSetValue();
+}
+
+void PropertyFileIncludedList::clear()
+{
+    if (_files.empty()) {
+        return;
+    }
+    aboutToSetValue();
+    cancelPending();
+    _files.clear();
+    hasSetValue();
+}
+
+void PropertyFileIncludedList::assignRestoredBlob(const FileBlobHandle &blob)
+{
+    // No aboutToSetValue()/hasSetValue(): this completes the restore of a
+    // value the document already had, and touching the document here would
+    // mark it modified just by being opened.
+    if (!blob) {
+        return;
+    }
+    for (auto &file : _files) {
+        // By hash, not by position: the manager hands content over as the
+        // archive yields it, in no order this property chose, and one file
+        // may be known under two names.
+        if (file.hash == blob->hash()) {
+            file.blob = blob;
+        }
+    }
+    for (const auto &file : _files) {
+        if (!file.hash.empty() && !file.blob) {
+            return;     // still waiting for another entry
+        }
+    }
+    _pendingManager = nullptr;
+}
+
+void PropertyFileIncludedList::collectBlobs(FileBlobManager &manager,
+                                            const DocumentObject *object) const
+{
+    BlobReferrer base = FileBlobManager::referrerOf(this, object);
+    for (const auto &file : _files) {
+        if (!file.blob) {
+            continue;
+        }
+        // One referrer per entry, named after it: the property's own name
+        // would put every map of a material under one name, and what an
+        // unpacked project shows should say which map it is holding.
+        BlobReferrer referrer = base;
+        Base::FileInfo fi(file.name);
+        const std::string stem = fi.fileNamePure();
+        if (!stem.empty()) {
+            referrer.name = referrer.name.empty() ? stem : referrer.name + "." + stem;
+        }
+        const std::string ext = fi.extension();
+        referrer.ext = ext.empty() ? std::string() : "." + ext;
+        manager.noteReferenced(file.blob, referrer);
+    }
+}
+
+void PropertyFileIncludedList::Save(Base::Writer &writer) const
+{
+    writer.Stream() << writer.ind() << "<FileIncludedList count=\"" << _files.size();
+    if (writer.getSchemaVersion() < 5) {
+        // Below schema 5 there is no store to write to and no per-property
+        // spelling to fall back on. blobContentNeedsStore() is what stops a
+        // document holding these from being offered that schema; if one is
+        // written anyway the names are kept, so what was lost can be said.
+        writer.Stream() << "\">\n";
+        writer.incInd();
+        for (const auto &file : _files) {
+            writer.Stream() << writer.ind() << "<File name=\""
+                            << encodeAttribute(file.name) << "\"/>\n";
+        }
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</FileIncludedList>\n";
+        return;
+    }
+
+    writer.Stream() << "\">\n";
+    writer.incInd();
+    for (const auto &file : _files) {
+        // Noted again here for the reason the other two referrers do it: it
+        // costs nothing, and it keeps a property written through a path the
+        // collect pass does not walk from losing its content.
+        if (file.blob) {
+            BlobReferrer referrer = FileBlobManager::referrerOf(this);
+            Base::FileInfo fi(file.name);
+            const std::string stem = fi.fileNamePure();
+            if (!stem.empty()) {
+                referrer.name = referrer.name.empty() ? stem : referrer.name + "." + stem;
+            }
+            const std::string ext = fi.extension();
+            referrer.ext = ext.empty() ? std::string() : "." + ext;
+            blobManager().noteReferenced(file.blob, referrer);
+        }
+        writer.Stream() << writer.ind() << "<File name=\"" << encodeAttribute(file.name)
+                        << "\" hash=\"" << encodeAttribute(file.hash) << "\"";
+        if (!file.original.empty()) {
+            writer.Stream() << " original=\"" << encodeAttribute(file.original) << "\"";
+        }
+        writer.Stream() << "/>\n";
+    }
+    writer.decInd();
+    writer.Stream() << writer.ind() << "</FileIncludedList>\n";
+}
+
+void PropertyFileIncludedList::Restore(Base::XMLReader &reader)
+{
+    reader.readElement("FileIncludedList");
+    const int count = reader.getAttributeAsInteger("count");
+
+    std::vector<Entry> files;
+    files.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        reader.readElement("File");
+        Entry file;
+        file.name = reader.getAttribute("name");
+        file.hash = reader.hasAttribute("hash") ? reader.getAttribute("hash") : "";
+        file.original = reader.hasAttribute("original") ? reader.getAttribute("original") : "";
+        files.push_back(std::move(file));
+    }
+    reader.readEndElement("FileIncludedList");
+
+    cancelPending();
+    _files = std::move(files);
+    // The manager owns the content and hands it over once the archive
+    // entries have been drained, so this property never goes looking.
+    for (const auto &file : _files) {
+        awaitBlob(file.hash);
+    }
+}
+
+Property *PropertyFileIncludedList::Copy() const
+{
+    auto p = new PropertyFileIncludedList();
+    // Sharing the blobs is the whole point: an undo snapshot of a material's
+    // maps costs a reference each, not their bytes. A copy of a value still
+    // waiting for its content copies the wait as a hash with no handle, which
+    // is what it is.
+    p->_files = _files;
+    return p;
+}
+
+void PropertyFileIncludedList::Paste(const Property &from)
+{
+    const auto &other = dynamic_cast<const PropertyFileIncludedList&>(from);
+    setValues(other._files);
+}
+
+unsigned int PropertyFileIncludedList::getMemSize() const
+{
+    unsigned int mem = Property::getMemSize();
+    for (const auto &file : _files) {
+        mem += static_cast<unsigned int>(file.name.size() + file.original.size()
+                                         + file.hash.size());
+    }
+    return mem;
+}
+
+bool PropertyFileIncludedList::isSame(const Property &other) const
+{
+    if (&other == this) {
+        return true;
+    }
+    if (getTypeId() != other.getTypeId()) {
+        return false;
+    }
+    const auto &prop = static_cast<const PropertyFileIncludedList&>(other);
+    if (_files.size() != prop._files.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < _files.size(); ++i) {
+        // The name and the content, not the provenance: two properties
+        // holding the same bytes under the same names are the same value
+        // however differently the files were once reached.
+        if (_files[i].name != prop._files[i].name || _files[i].hash != prop._files[i].hash) {
+            return false;
+        }
+    }
+    return true;
+}
+
+PyObject *PropertyFileIncludedList::getPyObject()
+{
+    // A dict of name -> path, which is what a consumer asks this property
+    // for. An entry whose content has not arrived maps to an empty string
+    // rather than being left out: the document says it is there.
+    Py::Dict dict;
+    for (const auto &file : _files) {
+        dict.setItem(file.name, Py::String(file.blob ? file.blob->path() : std::string()));
+    }
+    return Py::new_reference_to(dict);
+}
+
+void PropertyFileIncludedList::setPyObject(PyObject *value)
+{
+    if (!PyDict_Check(value)) {
+        std::string error = "type must be a dict of name to file path, not ";
+        error += value->ob_type->tp_name;
+        THROWM(Base::TypeError, error)
+    }
+
+    std::vector<Entry> files;
+    PyObject *key = nullptr;
+    PyObject *item = nullptr;
+    Py_ssize_t pos = 0;
+    // PyDict_Next borrows both, and yields insertion order, which is the
+    // order the entries are then stored and written in.
+    while (PyDict_Next(value, &pos, &key, &item)) {
+        if (!PyUnicode_Check(key)) {
+            std::string error = "the name of an included file must be a string, not ";
+            error += key->ob_type->tp_name;
+            THROWM(Base::TypeError, error)
+        }
+        if (!PyUnicode_Check(item)) {
+            std::string error = "the path of an included file must be a string, not ";
+            error += item->ob_type->tp_name;
+            THROWM(Base::TypeError, error)
+        }
+        Entry file;
+        file.name = PyUnicode_AsUTF8(key);
+        if (file.name.empty()) {
+            THROWM(Base::ValueError, "An included file needs a name")
+        }
+        const std::string path = PyUnicode_AsUTF8(item);
+        file.original = path;
+        if (!path.empty()) {
+            file.blob = blobManager().insertFile(
+                    path.c_str(), Base::FileInfo(file.name).extension().c_str());
+            file.hash = file.blob ? file.blob->hash() : std::string();
+        }
+        files.push_back(std::move(file));
+    }
+    setValues(std::move(files));
+}
