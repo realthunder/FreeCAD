@@ -301,6 +301,29 @@ void ViewProviderShaderProgram::attach(App::DocumentObject *obj)
     }
 }
 
+// The program sources are stored as shared files (App::PropertyStringIncluded),
+// and blob content is handed to its properties only once the archive entries
+// have been drained -- which happens AFTER the view document has been read and
+// this view provider attached. The node attach() built is therefore built from
+// text that had not arrived yet, so it is built again here, and everything that
+// consumes it is told.
+void ViewProviderShaderProgram::finishRestoring()
+{
+    ViewProviderDocumentObject::finishRestoring();
+    updateShaderNode();
+    auto obj = getObject();
+    if (!obj)
+        return;
+    for (auto parent : obj->getInList()) {
+        if (!parent->isDerivedFrom(App::Shader::getClassTypeId()))
+            continue;
+        if (auto vp = dynamic_cast<ViewProviderShader*>(
+                    Application::Instance->getViewProvider(parent)))
+            vp->updateDemo();
+        pokeAppearancesOfShader(parent);
+    }
+}
+
 void ViewProviderShaderProgram::updateData(const App::Property *prop)
 {
     auto obj = dynamic_cast<App::ShaderProgram*>(getObject());

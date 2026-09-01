@@ -70,6 +70,9 @@ public:
 
     void attach(App::DocumentObject *obj) override;
     void updateData(const App::Property *prop) override;
+    /// Rebuild the node once the document has finished restoring: the
+    /// sources are blob-backed and their content arrives after attach()
+    void finishRestoring() override;
     bool isShow() const override {return true;}
 
     /// The shared shader program node consumers insert into their graphs

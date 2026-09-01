@@ -23,6 +23,10 @@
 
 #include "PreCompiled.h"
 
+#include <cstring>
+
+#include <Base/Reader.h>
+
 #include "ShaderObject.h"
 
 
@@ -122,6 +126,49 @@ ShaderProgram::ShaderProgram()
             "frozen frame is drawn (the DebugFreezeFrame render\n"
             "parameter). Gives a deterministic capture settled motion\n"
             "instead of particles at their spawn points");
+    updateSourceExtensions();
+}
+
+// The sources are stored as shared files (App::PropertyStringIncluded), and
+// the extension is what an unpacked project shows them under. Only the name
+// depends on the dialect -- the content is the same text either way -- so
+// this is presentation, not behaviour.
+void ShaderProgram::updateSourceExtensions()
+{
+    const char *ext = ".txt";
+    switch (Dialect.getValue()) {
+    case 0: ext = ".sc"; break;      // BGFX_SC
+    case 1: ext = ".glsl"; break;    // GLSL
+    case 2: ext = ".mtlx"; break;    // MATERIALX
+    default: break;
+    }
+    VertexProgram.setBlobExtension(ext);
+    FragmentProgram.setBlobExtension(ext);
+    SimulateProgram.setBlobExtension(ext);
+}
+
+void ShaderProgram::onChanged(const Property *prop)
+{
+    if (prop == &Dialect) {
+        updateSourceExtensions();
+    }
+    DocumentObject::onChanged(prop);
+}
+
+void ShaderProgram::handleChangedPropertyType(Base::XMLReader &reader,
+                                              const char *TypeName,
+                                              Property *prop)
+{
+    // A document written before the sources were blob-backed states them as
+    // App::PropertyString. The two types write the same element, so the value
+    // reads back as it is; only the type name moved.
+    if (TypeName && strcmp(TypeName, "App::PropertyString") == 0
+            && (prop == &VertexProgram || prop == &FragmentProgram
+                || prop == &SimulateProgram)) {
+        prop->Restore(reader);
+        return;
+    }
+    DocumentObject::handleChangedPropertyType(reader, TypeName, prop);
 }
 
 // ----------------------------------------------------------------------------

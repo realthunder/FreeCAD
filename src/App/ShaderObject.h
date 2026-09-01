@@ -26,6 +26,7 @@
 #include "DocumentObject.h"
 #include "FeaturePython.h"
 #include "Link.h"
+#include "PropertyFile.h"
 #include "PropertyGeo.h"
 #include "PropertyLinks.h"
 #include "PropertyStandard.h"
@@ -55,13 +56,13 @@ public:
     /// docs/CyclesIntegration.md sec 8 item 15)
     PropertyEnumeration Dialect;
     /// Vertex stage source; empty uses the renderer's stock vertex stage
-    PropertyString VertexProgram;
+    PropertyStringIncluded VertexProgram;
     /// Fragment stage source
-    PropertyString FragmentProgram;
+    PropertyStringIncluded FragmentProgram;
     /// Particle state step of a stateful emitter: a fragment program
     /// advancing the state textures by one fixed step. Empty = the
     /// emitter is stateless (docs/RenderEngine.md §5.8)
-    PropertyString SimulateProgram;
+    PropertyStringIncluded SimulateProgram;
     /// Blend override of the material-stage beauty draw
     /// (Default keeps the draw's stock state)
     PropertyEnumeration Blend;
@@ -106,7 +107,24 @@ public:
         return "Gui::ViewProviderShaderProgram";
     }
 
+    /** Restore a document written while the sources were plain strings.
+     *
+     * PropertyStringIncluded writes the same <String> element, so the value
+     * itself needs no conversion -- only the type-changed door has to be
+     * opened, or the container drops it without a word.
+     */
+    void handleChangedPropertyType(Base::XMLReader &reader,
+                                   const char *TypeName,
+                                   Property *prop) override;
+
+protected:
+    void onChanged(const Property *prop) override;
+
 private:
+    /// Name the stored sources after what they hold, which is what an
+    /// unpacked project shows: the dialect decides the extension.
+    void updateSourceExtensions();
+
     static const char* DialectEnums[];
     static const char* BlendEnums[];
 };
