@@ -49,10 +49,10 @@
  * What the raster path cannot do it REPORTS, and the draw keeps its
  * stock appearance (the sandboxed-failure rule the Cycles interpreter
  * follows). One such case today: a shading model with no translation to
- * OpenPBR. Image nodes DO generate -- each becomes a SAMPLER2D the
- * engine binds a loaded texture to (sec 6.12) -- but only up to the
- * handful of texture units the mesh shader leaves free, and a document
- * wanting more than that is reported rather than drawn wrong.
+ * OpenPBR. Image nodes DO generate -- the document's images are stacked
+ * as the layers of one array texture the engine binds (sec 6.12), so
+ * what a material may name is bounded by that array and no longer by
+ * the two or three texture units the mesh shader leaves free.
  */
 
 #include "PreCompiled.h"
@@ -88,6 +88,7 @@ GeneratedMaterial generate(const std::string &, const std::string &)
 #include <MaterialXGenShader/Shader.h>
 #include <MaterialXGenShader/ShaderNodeImpl.h>
 #include <MaterialXGenShader/ShaderStage.h>
+#include <MaterialXGenShader/Syntax.h>
 
 #include <Base/Console.h>
 
@@ -174,7 +175,19 @@ class BgfxShaderGenerator : public mx::EsslShaderGenerator
 public:
     explicit BgfxShaderGenerator(mx::TypeSystemPtr ts)
         : mx::EsslShaderGenerator(ts)
-    {}
+    {
+        // A `filename` is a LAYER of the shared image array here, not a
+        // sampler of its own (sec 6.12). The signature token below
+        // covers the library's hand-written functions; this covers the
+        // GENERATED ones -- a nodegraph implementation like
+        // NG_tiledimage_color3 declares its file parameter through the
+        // type syntax instead, and the two spellings have to agree or
+        // the generated call has no matching overload.
+        _syntax->registerTypeSyntax(
+            mx::Type::FILENAME,
+            std::make_shared<mx::ScalarTypeSyntax>(
+                _syntax.get(), "int", mx::EMPTY_STRING, mx::EMPTY_STRING));
+    }
 
     static mx::ShaderGeneratorPtr create(mx::TypeSystemPtr ts = nullptr)
     {
@@ -190,13 +203,18 @@ public:
     /// filename against the document's own search path -- which is
     /// where a material states its images (sec 6.12).
     mx::DocumentPtr document;
-    /// The samplers emitted for the document's image nodes, in
-    /// declaration order, with the unit each one claimed.
+    /// The layers stacked for the document's image nodes, in layer
+    /// order: one per DISTINCT file, since two nodes naming one file
+    /// read one layer.
     mutable std::vector<GeneratedMaterial::Image> images;
-    /// Set when the document needs more image units than there are.
+    /// Set when the document names more images than one array holds.
     /// The caller refuses the whole document rather than drawing it
     /// with some of its maps silently missing.
     mutable std::string imageOverflow;
+    /// Images the document names that are not where it says. Collected
+    /// here rather than read back off `images`, which now holds only
+    /// the files there IS a layer for.
+    mutable std::vector<std::string> imageWarnings;
 
     /// The document's public interface (docs/CyclesIntegration.md sec
     /// 6.11), keyed by the namepath of the declaring input -- which is
@@ -238,23 +256,6 @@ protected:
         emitLine("#ifdef M_PI", stage, false);
         emitLine("#undef M_PI", stage, false);
         emitLine("#endif", stage, false);
-        // MaterialX writes the GLSL builtins texture() and textureGrad();
-        // bgfx spells the portable forms texture2D() and texture2DGrad(),
-        // and defines them ONLY on the backends where the builtin is
-        // missing. So the shim goes the other way and only on those
-        // backends -- the same condition bgfx_shader.sh switches on --
-        // leaving the GLSL and ESSL builds reading their own builtin.
-        // (The preprocessor's own re-entry rule is what stops
-        // texture -> texture2D -> texture from looping.)
-        emitLine("#if BGFX_SHADER_LANGUAGE_HLSL || BGFX_SHADER_LANGUAGE_PSSL "
-                 "|| BGFX_SHADER_LANGUAGE_SPIRV || BGFX_SHADER_LANGUAGE_METAL "
-                 "|| BGFX_SHADER_LANGUAGE_WGSL",
-                 stage, false);
-        emitLine("#define texture(_s, _c) texture2D(_s, _c)", stage, false);
-        emitLine("#define textureGrad(_s, _c, _dx, _dy) "
-                 "texture2DGrad(_s, _c, _dx, _dy)",
-                 stage, false);
-        emitLine("#endif", stage, false);
         // The uv transform the image nodes include by token. The stock
         // pixel stage sets this substitution, and this one replaces
         // that stage, so it has to be set here or the include fails.
@@ -262,6 +263,10 @@ protected:
             ctx.getOptions().fileTextureVerticalFlip ? "mx_transform_uv_vflip.glsl"
                                                      : "mx_transform_uv.glsl";
         emitUniformDeclarations(stage);
+        // AFTER the declarations, because only they can say whether the
+        // document names an image at all -- and that is what decides
+        // both halves of how a texture fetch is spelled below.
+        emitImageAccess(stage);
         emitLibraryInclude("stdlib/genglsl/lib/mx_math.glsl", ctx, stage);
         emitLineBreak(stage);
         emitFunctionDefinitions(graph, ctx, stage);
@@ -284,41 +289,155 @@ protected:
     }
 
 private:
-    /// Declare one image node's sampler, and record what has to be
-    /// bound to it.
+    /// Give one image node its LAYER of the shared array, and record
+    /// what the engine has to stack there.
     ///
-    /// The unit is claimed from kImageUnitBase upward: the mesh
-    /// fragment stage this function is spliced into holds 0..10 and a
-    /// stateful particle emitter binds 11 and 12, so what is left is
-    /// small and a document wanting more is refused whole rather than
-    /// drawn with some of its maps reading another pass's texture. A
-    /// 2D array over one unit is what lifts the limit when it starts
-    /// to bite (sec 6.12).
-    void emitImageSampler(const mx::ShaderPort *port,
-                          mx::ShaderStage &stage) const
+    /// One unit, one array, one layer per distinct file (sec 6.12): the
+    /// mesh fragment stage this function is spliced into holds samplers
+    /// 0..10 and a stateful particle emitter binds 11 and 12, so a
+    /// sampler per image left room for three, which is fewer maps than
+    /// an ordinary PBR material has. Two nodes naming one file share a
+    /// layer, so a document costs a layer per IMAGE and not per node.
+    void emitImageLayer(const mx::ShaderPort *port,
+                        mx::ShaderStage &stage) const
     {
-        GeneratedMaterial::Image image;
-        image.name = port->getVariable();
-        image.unit = kImageUnitBase + int(images.size());
+        const std::string name = port->getVariable();
+        std::string path;
         if (port->getValue())
-            image.path = resolveFile(document, port->getValue()->getValueString());
-        image.colorSpace = port->getColorSpace();
-        if (image.unit > kImageUnitLast) {
-            if (imageOverflow.empty())
-                imageOverflow = "the document needs more image units than the "
-                                "raster path has free (" + std::to_string(
-                                    kImageUnitLast - kImageUnitBase + 1) + ")";
+            path = resolveFile(document, port->getValue()->getValueString());
+        // A negative layer is the one thing the array cannot hold: a
+        // file that is not there. The fetch answers black for it, which
+        // is what an unbound sampler used to read by accident and is
+        // now what the generated code says on purpose.
+        int layer = -1;
+        if (path.empty()) {
+            imageWarnings.push_back(
+                "the image for '" + name
+                + "' is not where the document says; it draws as black");
+        }
+        else {
+            for (const auto &have : images) {
+                if (have.path == path) {
+                    layer = have.layer;
+                    break;
+                }
+            }
+            if (layer < 0) {
+                if (int(images.size()) >= kMaxImageLayers) {
+                    if (imageOverflow.empty())
+                        imageOverflow =
+                            "the document names more images than the raster "
+                            "path stacks into one array ("
+                            + std::to_string(kMaxImageLayers) + ")";
+                    return;
+                }
+                GeneratedMaterial::Image image;
+                image.layer = int(images.size());
+                image.path = path;
+                image.colorSpace = port->getColorSpace();
+                image.name = name;
+                layer = image.layer;
+                images.push_back(std::move(image));
+            }
+        }
+        // A literal, not a uniform: the generation is keyed on the
+        // document, so a document naming other files is another
+        // generation and there is nothing here for a draw to vary.
+        emitLine("CONST(int) " + name + " = " + std::to_string(layer), stage);
+    }
+
+    /// The backends where bgfx has no GLSL builtin to shadow, and
+    /// spells the portable form itself. The same condition
+    /// bgfx_shader.sh switches its own sampler vocabulary on.
+    static const char *notGlsl()
+    {
+        return "#if BGFX_SHADER_LANGUAGE_HLSL || BGFX_SHADER_LANGUAGE_PSSL "
+               "|| BGFX_SHADER_LANGUAGE_SPIRV || BGFX_SHADER_LANGUAGE_METAL "
+               "|| BGFX_SHADER_LANGUAGE_WGSL";
+    }
+
+    /// How the generated code reaches a texture.
+    ///
+    /// MaterialX writes GLSL's texture(), textureGrad() and textureLod()
+    /// and passes the image as a `sampler2D`. Both halves are redirected
+    /// when the document names images: the sampler PARAMETER becomes an
+    /// integer layer (the signature token below), and the three builtins
+    /// become fetches from the one array texture those layers live in.
+    /// A document naming no image keeps the plain spelling shim, so
+    /// nothing but an image-carrying material claims the unit or
+    /// changes at all.
+    void emitImageAccess(mx::ShaderStage &stage) const
+    {
+        if (images.empty()) {
+            // bgfx defines texture2D()/texture2DGrad() only where the
+            // GLSL builtin is missing, so the shim goes the other way
+            // and only there, leaving the GLSL and ESSL builds reading
+            // their own builtin. (The preprocessor's own re-entry rule
+            // is what stops texture -> texture2D -> texture looping.)
+            emitLine(notGlsl(), stage, false);
+            emitLine("#define texture(_s, _c) texture2D(_s, _c)", stage, false);
+            emitLine("#define textureGrad(_s, _c, _dx, _dy) "
+                     "texture2DGrad(_s, _c, _dx, _dy)",
+                     stage, false);
+            emitLine("#endif", stage, false);
             return;
         }
-        // SAMPLER2D is bgfx's own declaration macro, and on the
-        // backends that split texture from sampler it also defines
-        // `sampler2D` as the struct pair -- which is why MaterialX's
-        // stock signature token, "sampler2D tex_sampler", passes one
-        // of these to mx_image_* unchanged.
-        emitLine("SAMPLER2D(" + image.name + ", " + std::to_string(image.unit)
-                     + ")",
+        // MaterialX hands the image to mx_image_* as `sampler2D
+        // tex_sampler`, and writes that parameter through a token of
+        // its own -- so making it a layer index is one substitution,
+        // and every library function taking an image follows.
+        _tokenSubstitutions[mx::HW::T_TEX_SAMPLER_SIGNATURE] = "int tex_sampler";
+        const std::string sampler = kImageSampler;
+        const std::string coord = "vec3(_uv, float(_layer))";
+        const std::string missing = "vec4(0.0, 0.0, 0.0, 1.0)";
+        emitLine("SAMPLER2DARRAY(" + sampler + ", "
+                     + std::to_string(kImageUnit) + ")",
                  stage);
-        images.push_back(std::move(image));
+        emitLineBreak(stage);
+        // The three fetches, as functions rather than as macros, so the
+        // layer test is written once and the bgfx spellings below are
+        // expanded HERE -- before the macros at the end of this block
+        // redirect the names they are written in.
+        emitLine("vec4 fcMtlxImage(int _layer, vec2 _uv)", stage, false);
+        emitLine("{", stage, false);
+        emitLine("\tif (_layer < 0) return " + missing + ";", stage, false);
+        emitLine("\treturn texture2DArray(" + sampler + ", " + coord + ");",
+                 stage, false);
+        emitLine("}", stage, false);
+        emitLine("vec4 fcMtlxImageLod(int _layer, vec2 _uv, float _lod)",
+                 stage, false);
+        emitLine("{", stage, false);
+        emitLine("\tif (_layer < 0) return " + missing + ";", stage, false);
+        emitLine("\treturn texture2DArrayLod(" + sampler + ", " + coord
+                     + ", _lod);",
+                 stage, false);
+        emitLine("}", stage, false);
+        // bgfx has no texture2DArrayGrad of its own, so the two
+        // vocabularies are written out: the GLSL builtin takes an array
+        // sampler directly, and the split-sampler backends reach the
+        // pair the way bgfx's own wrappers do.
+        emitLine("vec4 fcMtlxImageGrad(int _layer, vec2 _uv, vec2 _dx, "
+                 "vec2 _dy)",
+                 stage, false);
+        emitLine("{", stage, false);
+        emitLine("\tif (_layer < 0) return " + missing + ";", stage, false);
+        emitLine(notGlsl(), stage, false);
+        emitLine("\treturn " + sampler + ".m_texture.SampleGrad("
+                     + sampler + ".m_sampler, " + coord + ", _dx, _dy);",
+                 stage, false);
+        emitLine("#else", stage, false);
+        emitLine("\treturn textureGrad(" + sampler + ", " + coord
+                     + ", _dx, _dy);",
+                 stage, false);
+        emitLine("#endif", stage, false);
+        emitLine("}", stage, false);
+        emitLine("#define texture(_s, _c) fcMtlxImage(_s, _c)", stage, false);
+        emitLine("#define textureLod(_s, _c, _l) fcMtlxImageLod(_s, _c, _l)",
+                 stage, false);
+        emitLine("#define textureGrad(_s, _c, _dx, _dy) "
+                 "fcMtlxImageGrad(_s, _c, _dx, _dy)",
+                 stage, false);
+        emitLineBreak(stage);
     }
 
     /// The declarations of everything the graph publishes. MaterialX
@@ -338,12 +457,13 @@ private:
             const mx::ShaderPort *port = block[i];
             // An image node reaches the generated code as a sampler
             // passed to mx_image_*, and MaterialX writes that parameter
-            // through its own token, so the declaration is all this
-            // side owes it (sec 6.12). The file itself is not opened
-            // here: the path is reported and the engine binds a texture
-            // loaded elsewhere.
+            // through its own token -- which emitImageAccess redirects
+            // to a layer of the shared array, so what this side owes
+            // the node is that layer's number (sec 6.12). The file
+            // itself is not opened here: the path is reported and the
+            // engine stacks a texture loaded elsewhere.
             if (port->getType() == mx::Type::FILENAME) {
-                emitImageSampler(port, stage);
+                emitImageLayer(port, stage);
                 any = true;
                 continue;
             }
@@ -563,12 +683,12 @@ GeneratedMaterial generate(const std::string &xml, const std::string &sourcePath
             return out;
         }
         out.images = std::move(gen->images);
-        for (const auto &image : out.images) {
-            if (image.path.empty())
-                out.warnings.push_back(
-                    "the image for '" + image.name
-                    + "' is not where the document says; it draws as black");
+        if (!out.images.empty()) {
+            out.imageSampler = kImageSampler;
+            out.imageUnit = kImageUnit;
         }
+        for (const std::string &w : gen->imageWarnings)
+            out.warnings.push_back(w);
         for (const std::string &u : gen->unmapped) {
             out.warnings.push_back(
                 "the mesh shader cannot answer '" + u

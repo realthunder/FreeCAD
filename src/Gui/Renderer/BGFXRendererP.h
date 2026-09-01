@@ -2112,11 +2112,15 @@ public:
         /// spliced in. Empty when the document cannot be rendered by
         /// the raster path.
         std::string source;
-        /// The samplers `source` declares and the file each one wants
+        /// The layers `source` samples and the file each one wants
         /// (docs/CyclesIntegration.md sec 6.12). Only the generator
-        /// knows these names, and only the capture has the pixels, so
-        /// the draw joins the two lists on the image's path.
+        /// knows the layer order, and only the capture has the pixels,
+        /// so the draw joins the two lists on the image's path.
         std::vector<Render::MaterialX::GeneratedMaterial::Image> images;
+        /// The array sampler `source` declares for those layers and the
+        /// unit it claims. Empty and 0 when the document names no image.
+        std::string imageSampler;
+        int imageUnit = 0;
     };
     std::map<std::string, MaterialXVariant> materialXVariants;
     /// Generate a MaterialX document's mesh-shader variant, once per
@@ -3399,8 +3403,23 @@ struct GpuTextureArray
     bool placeholder = false;
 
     /// Longest side any layer is resampled to. A per-face image is a
-    /// marking on one face of one part, not an environment.
+    /// marking on one face of one part, not an environment; a generated
+    /// material's maps are a surface someone authored and are allowed
+    /// the larger ceiling below.
     static constexpr int MaxSide = 1024;
+    static constexpr int MaterialSide = 2048;
+    /// What the whole array may cost, whatever its caller asked for.
+    /// The layers of an array are all one size, so "more layers" and
+    /// "bigger layers" multiply -- sixteen 2k layers would be a quarter
+    /// of a gigabyte before mips. Past this the layers are halved until
+    /// they fit, which is a softer answer than refusing the material.
+    static constexpr std::size_t MaxBytes = std::size_t(64) << 20;
+    /// How many times an incomplete array is rebuilt while it waits for
+    /// its pixels. A decode in flight lands inside a few frames; a file
+    /// that will never decode would otherwise re-upload every layer on
+    /// every frame for as long as the document is on screen.
+    static constexpr int MaxPlaceholderTries = 120;
+    int placeholderTries = 0;
 
     void destroy()
     {
@@ -3464,12 +3483,14 @@ struct GpuTextureArray
         }
     }
 
-    void upload(const Render::TexturePalette &palette)
+    void upload(const Render::TexturePalette &palette,
+                int maxLayers = Render::MaxFaceTexturePalette,
+                int maxSide = MaxSide)
     {
         placeholder = false;
         const uint16_t numLayers =
             uint16_t(std::min(palette.entries.size(),
-                              std::size_t(Render::MaxFaceTexturePalette)));
+                              std::size_t(std::max(maxLayers, 0))));
         if (!numLayers)
             return;
         // bgfx makes a plain 2D texture out of a one-layer request --
@@ -3497,8 +3518,13 @@ struct GpuTextureArray
             w = std::max(w, int(e->width));
             h = std::max(h, int(e->height));
         }
-        w = std::min(w, MaxSide);
-        h = std::min(h, MaxSide);
+        w = std::min(w, maxSide);
+        h = std::min(h, maxSide);
+        while ((w > 1 || h > 1)
+               && std::size_t(w) * std::size_t(h) * 4u * numSlices > MaxBytes) {
+            w = std::max(1, w >> 1);
+            h = std::max(1, h >> 1);
+        }
         const uint64_t flags = BGFX_SAMPLER_MIN_ANISOTROPIC
             | BGFX_SAMPLER_MAG_ANISOTROPIC;
         // WITH a mip chain, and it is not optional here: a face image
@@ -5110,35 +5136,47 @@ public:
     /// The array texture of a per-face palette, uploaded on demand.
     /// Null when this backend cannot do array textures at all, which
     /// leaves the draw untextured per face rather than mis-sampled.
-    GpuTextureArray *getTextureArray(const Render::TexturePalette &palette)
+    GpuTextureArray *getTextureArray(
+        const Render::TexturePalette &palette,
+        int maxLayers = Render::MaxFaceTexturePalette,
+        int maxSide = GpuTextureArray::MaxSide)
     {
         if (palette.entries.empty()
                 || !(bgfx::getCaps()->supported
                      & BGFX_CAPS_TEXTURE_2D_ARRAY))
             return nullptr;
-        // Content key: the ids of the layers in order. Two draws off one
-        // appearance share the palette pointer, but two appearances
-        // naming the same images should still share the upload.
+        // Content key: the ids of the layers in order, and the shape
+        // asked for -- a per-face palette and a material stacking the
+        // same images want arrays of different sizes, and one key for
+        // both would hand the second caller the first one's upload.
         uint64_t key = 1469598103934665603ull;
-        for (const auto &e : palette.entries) {
-            const uint64_t id = e ? e->textureId : 0;
-            key = (key ^ id) * 1099511628211ull;
-        }
+        auto mix = [&key](uint64_t v) { key = (key ^ v) * 1099511628211ull; };
+        for (const auto &e : palette.entries)
+            mix(e ? e->textureId : 0);
+        mix(uint64_t(maxLayers));
+        mix(uint64_t(maxSide));
         GpuTextureArray &tex = textureArrays[key];
         tex.lastUsed = frame;
-        // A placeholder is re-examined every frame: the pixels it
-        // stands in for are in flight and will arrive under these ids.
-        if (tex.placeholder)
+        // A placeholder is re-examined: the pixels it stands in for are
+        // in flight and will arrive under these ids. Bounded, because a
+        // file that exists but never decodes leaves an entry null for
+        // good, and rebuilding every layer of a 2k array once a frame
+        // forever is a worse answer than one map staying white.
+        if (tex.placeholder
+                && tex.placeholderTries < GpuTextureArray::MaxPlaceholderTries)
             tex.destroy();
-        if (!bgfx::isValid(tex.handle))
-            tex.upload(palette);
+        if (!bgfx::isValid(tex.handle)) {
+            tex.upload(palette, maxLayers, maxSide);
+            if (tex.placeholder)
+                ++tex.placeholderTries;
+        }
         return bgfx::isValid(tex.handle) ? &tex : nullptr;
     }
 
-    /// Bind the textures a MaterialX material's samplers want, for the
-    /// draw about to be submitted (docs/CyclesIntegration.md sec 6.12).
-    /// A sampler whose image did not load is left unbound and reads as
-    /// the backend's default: the document is still drawn, with that
+    /// Stack the images a MaterialX material names into one array
+    /// texture and bind it, for the draw about to be submitted
+    /// (docs/CyclesIntegration.md sec 6.12). A layer whose image did
+    /// not load uploads white: the document is still drawn, with that
     /// one map missing, which is what the generator already warned
     /// about.
     void pushUserImages(const Render::UserShader &shader);

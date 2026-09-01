@@ -1996,6 +1996,8 @@ BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
     MaterialXVariant variant;
     variant.source = std::move(src);
     variant.images = std::move(gen.images);
+    variant.imageSampler = std::move(gen.imageSampler);
+    variant.imageUnit = gen.imageUnit;
     return materialXVariants.emplace(key, std::move(variant)).first->second;
 }
 

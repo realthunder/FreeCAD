@@ -234,26 +234,44 @@ BGFXView::pushUserImages(const Render::UserShader &shader)
     if (shader.dialect != Render::UserShader::Dialect::MaterialX)
         return;
     const auto &variant = _BGFXLib.materialXVariant(shader);
+    if (variant.images.empty() || variant.imageSampler.empty())
+        return;
+    const bgfx::UniformHandle sampler =
+        _BGFXLib.userSampler(variant.imageSampler);
+    if (!bgfx::isValid(sampler))
+        return;
+    // The document's images stacked as the layers of ONE array, in the
+    // order the generated code names them -- which is what lets a
+    // material carry more maps than the mesh shader has units free
+    // (docs/CyclesIntegration.md sec 6.12).
+    //
+    // Joined on the PATH, because the two halves are produced by sides
+    // that cannot see each other's naming: the generator resolved the
+    // file, the capture decoded it. A layer whose pixels never arrived
+    // is left null and uploads white, which is the map missing and
+    // nothing else -- never another draw's texture.
+    Render::TexturePalette layers;
+    layers.entries.resize(variant.images.size());
     for (const auto &want : variant.images) {
-        // Joined on the PATH, because the two halves are produced by
-        // sides that cannot see each other's naming: the generator
-        // named the sampler, the capture decoded the file.
-        const Render::TextureImage *pixels = nullptr;
+        if (want.layer < 0 || want.layer >= int(layers.entries.size()))
+            continue;
         for (const auto &have : shader.images) {
             if (have.path == want.path && have.image) {
-                pixels = have.image.get();
+                layers.entries[want.layer] = have.image;
                 break;
             }
         }
-        if (!pixels)
-            continue;   // reported at generation; the map draws as default
-        GpuTexture *tex = getTexture(*pixels);
-        if (!tex || !bgfx::isValid(tex->handle))
-            continue;
-        const bgfx::UniformHandle sampler = _BGFXLib.userSampler(want.name);
-        if (bgfx::isValid(sampler))
-            bgfx::setTexture(uint8_t(want.unit), sampler, tex->handle);
     }
+    // The white 1x1 stand-in when the array cannot be built at all (no
+    // array-texture support, or the upload was refused): a sampler2DArray
+    // left unbound is undefined rather than merely blank.
+    bgfx::TextureHandle tex = m_whiteTexArray;
+    if (GpuTextureArray *array =
+            getTextureArray(layers, int(layers.entries.size()),
+                            GpuTextureArray::MaterialSide))
+        tex = array->handle;
+    if (bgfx::isValid(tex))
+        bgfx::setTexture(uint8_t(variant.imageUnit), sampler, tex);
 }
 
 void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,

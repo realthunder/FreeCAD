@@ -66,19 +66,33 @@ mx::FileSearchPath searchPath(const mx::DocumentPtr &doc);
 /// Empty when the file is not on the search path.
 std::string resolveFile(const mx::DocumentPtr &doc, const std::string &name);
 
-/// The texture units a generated material may claim for its image
-/// nodes (docs/CyclesIntegration.md sec 6.12).
+/// The one texture unit a generated material claims for its image
+/// nodes, and how many images it may put on it
+/// (docs/CyclesIntegration.md sec 6.12).
 ///
 /// The generated function is spliced into the stock mesh fragment
 /// stage, which declares samplers 0..10 of its own, and a stateful
-/// particle emitter binds 11 and 12 for its state textures. What is
-/// left is the range below, and bgfx guarantees 16 units on every
-/// backend the project compiles for. A document wanting more is
-/// refused whole rather than drawn with some of its maps reading
-/// another pass's texture; a 2D array over ONE unit, the way the
-/// per-face palette already works, is what lifts the limit.
-constexpr int kImageUnitBase = 13;
-constexpr int kImageUnitLast = 15;
+/// particle emitter binds 11 and 12 for its state textures. A sampler
+/// per image therefore left room for three -- fewer maps than an
+/// ordinary PBR material has, which made a library card renderable by
+/// the path tracer and refused by the rasterizer. So the images become
+/// the LAYERS of one array texture on the single unit below, the way
+/// the per-face palette already works at unit 10, and the unit count
+/// stops being what bounds a material.
+///
+/// What bounds it now is the array: its layers are all one size, so
+/// every map is resampled onto the largest of them and a document
+/// naming a great many is paying for that on each. The cap below is
+/// where that stops being worth it; beyond it the document is refused
+/// whole rather than drawn with some of its maps missing.
+constexpr int kImageUnit = 13;
+constexpr int kMaxImageLayers = 16;
+
+/// The name the generated code gives that sampler. It reaches the
+/// engine on GeneratedMaterial::imageSampler as well -- the draw side
+/// has no MaterialX headers -- and is here because the generator is
+/// what writes it.
+constexpr const char *kImageSampler = "s_fcMtlxImages";
 
 /// The surface-shader nodes a document renders, in document order: the
 /// shader nodes of its material nodes, plus any standalone surface

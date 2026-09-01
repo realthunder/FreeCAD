@@ -11,7 +11,11 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
+#include <set>
 #include <string>
+#include <system_error>
 
 #include "Gui/Renderer/MaterialXSupport.h"
 #include "Gui/Renderer/Renderer.h"
@@ -37,6 +41,40 @@ std::string openPbrDoc(const std::string &surfaceInputs,
              "  </surfacematerial>\n"
              "</materialx>\n";
 }
+
+// A directory of files standing in for image maps, and the document
+// path they resolve against. The generator only asks whether the file
+// is THERE -- decoding it is the capture side's business -- so an empty
+// file is a whole image as far as this side is concerned, and a
+// document path is what a relative name resolves against.
+class ScratchImages
+{
+public:
+    explicit ScratchImages(const std::string &name)
+        : dir(std::filesystem::temp_directory_path() / ("fc-mtlxgen-" + name))
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+    }
+    ~ScratchImages()
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    }
+    ScratchImages(const ScratchImages &) = delete;
+    ScratchImages &operator=(const ScratchImages &) = delete;
+
+    /// Make one, and answer the name to state in the document.
+    std::string file(const std::string &name) const
+    {
+        std::ofstream(dir / name, std::ios::binary).put('\0');
+        return name;
+    }
+    std::string document() const { return (dir / "doc.mtlx").string(); }
+
+private:
+    std::filesystem::path dir;
+};
 
 class MaterialXGenerator : public ::testing::Test
 {
@@ -177,30 +215,40 @@ TEST_F(MaterialXGenerator, aModelThatDoesNotTranslateIsReportedWhole)
     EXPECT_NE(out.error.find("UsdPreviewSurface"), std::string::npos) << out.error;
 }
 
-TEST_F(MaterialXGenerator, anImageBecomesADeclaredSampler)
+TEST_F(MaterialXGenerator, anImageBecomesALayerOfOneArray)
 {
-    // An image node is a sampler the engine binds a texture to
-    // (docs/CyclesIntegration.md sec 6.12), so the document generates
-    // and says which sampler wants which file.
+    // An image node is a LAYER of the one array texture the engine
+    // binds (docs/CyclesIntegration.md sec 6.12), so the document
+    // generates and says which layer wants which file.
+    ScratchImages scratch("one-layer");
     auto out = Render::MaterialX::generate(
         openPbrDoc("    <input name=\"base_color\" type=\"color3\" "
                    "nodename=\"img\" />\n",
                    "  <image name=\"img\" type=\"color3\">\n"
                    "    <input name=\"file\" type=\"filename\" "
-                   "value=\"nowhere.png\" />\n"
-                   "  </image>\n"));
+                   "value=\"" + scratch.file("one.png") + "\" />\n"
+                   "  </image>\n"),
+        scratch.document());
     ASSERT_TRUE(out.valid) << out.error;
     ASSERT_EQ(out.images.size(), 1u);
-    // Declared, so the generated code compiles against a name that is
-    // there -- which is the whole reason this used to be refused.
-    EXPECT_NE(out.source.find("SAMPLER2D(" + out.images[0].name),
+    EXPECT_EQ(out.images[0].layer, 0);
+    EXPECT_FALSE(out.imageSampler.empty());
+    // One sampler, declared, so the generated code compiles against a
+    // name that is there -- which is the whole reason an image used to
+    // be refused outright.
+    EXPECT_NE(out.source.find("SAMPLER2DARRAY(" + out.imageSampler),
+              std::string::npos)
+        << out.source;
+    // ...and the node reads it by layer number rather than through a
+    // sampler of its own, which is what makes the units stop counting.
+    EXPECT_NE(out.source.find("CONST(int) " + out.images[0].name + " = 0"),
               std::string::npos)
         << out.source;
 }
 
 TEST_F(MaterialXGenerator, anImageThatIsNotThereIsSaidSoRatherThanRefused)
 {
-    // The path is the join key the engine binds on, and there is no
+    // The path is the join key the engine stacks on, and there is no
     // file behind this one. The material still draws -- with that map
     // missing, which is worth a word.
     auto out = Render::MaterialX::generate(
@@ -211,60 +259,164 @@ TEST_F(MaterialXGenerator, anImageThatIsNotThereIsSaidSoRatherThanRefused)
                    "value=\"nowhere.png\" />\n"
                    "  </image>\n"));
     ASSERT_TRUE(out.valid) << out.error;
-    ASSERT_EQ(out.images.size(), 1u);
-    EXPECT_TRUE(out.images[0].path.empty());
+    // No file, so no layer: there is nothing for the engine to stack.
+    EXPECT_TRUE(out.images.empty());
     bool warned = false;
     for (const auto &w : out.warnings)
         warned = warned || w.find("not where the document says")
                                != std::string::npos;
     EXPECT_TRUE(warned);
+    // And the generated code says black for it, rather than sampling a
+    // unit whose texture is whatever the previous draw left there.
+    EXPECT_NE(out.source.find("= -1"), std::string::npos) << out.source;
 }
 
-TEST_F(MaterialXGenerator, everyImageClaimsAUnitOfItsOwn)
+TEST_F(MaterialXGenerator, everyImageIsALayerOfItsOwn)
 {
-    // Two images must not land on one texture unit, or the second
-    // draws the first's pixels.
+    // Two images must not land on one layer, or the second draws the
+    // first's pixels. FOUR of them, because three samplers is exactly
+    // what the mesh shader had units free for -- a material with a
+    // base colour, a roughness, a coat and an emission is ordinary,
+    // and it is the case this array is for.
+    ScratchImages scratch("four-layers");
+    const char *const inputs[] = {"base_color", "specular_roughness",
+                                  "coat_weight", "emission_color"};
+    const char *const types[] = {"color3", "float", "float", "color3"};
+    const char *const nodes[] = {"a", "b", "c", "d"};
+    std::string surface, patterns;
+    for (int i = 0; i < 4; ++i) {
+        surface += std::string("    <input name=\"") + inputs[i]
+            + "\" type=\"" + types[i] + "\" nodename=\"" + nodes[i] + "\" />\n";
+        patterns += std::string("  <image name=\"") + nodes[i] + "\" type=\""
+            + types[i] + "\">\n"
+              "    <input name=\"file\" type=\"filename\" value=\""
+            + scratch.file(std::string(nodes[i]) + ".png") + "\" />\n"
+              "  </image>\n";
+    }
+    auto out = Render::MaterialX::generate(openPbrDoc(surface, patterns),
+                                           scratch.document());
+    ASSERT_TRUE(out.valid) << out.error;
+    ASSERT_EQ(out.images.size(), 4u);
+    std::set<int> layers;
+    for (const auto &image : out.images) {
+        EXPECT_GE(image.layer, 0);
+        EXPECT_LT(image.layer, 4);
+        layers.insert(image.layer);
+    }
+    EXPECT_EQ(layers.size(), 4u);
+    // One unit for all four, which is the whole point.
+    EXPECT_EQ(out.imageUnit, 13);
+}
+
+TEST_F(MaterialXGenerator, twoNodesNamingOneFileShareALayer)
+{
+    // A layer is per FILE, not per node: a material reading one map as
+    // both its base colour and its coat colour costs one layer, and
+    // the cap counts what the engine actually has to upload.
+    ScratchImages scratch("shared-layer");
+    const std::string file = scratch.file("shared.png");
     auto out = Render::MaterialX::generate(
         openPbrDoc("    <input name=\"base_color\" type=\"color3\" "
                    "nodename=\"a\" />\n"
-                   "    <input name=\"specular_roughness\" type=\"float\" "
+                   "    <input name=\"coat_color\" type=\"color3\" "
                    "nodename=\"b\" />\n",
                    "  <image name=\"a\" type=\"color3\">\n"
-                   "    <input name=\"file\" type=\"filename\" "
-                   "value=\"one.png\" />\n"
+                   "    <input name=\"file\" type=\"filename\" value=\""
+                   + file + "\" />\n"
                    "  </image>\n"
-                   "  <image name=\"b\" type=\"float\">\n"
-                   "    <input name=\"file\" type=\"filename\" "
-                   "value=\"two.png\" />\n"
-                   "  </image>\n"));
+                   "  <image name=\"b\" type=\"color3\">\n"
+                   "    <input name=\"file\" type=\"filename\" value=\""
+                   + file + "\" />\n"
+                   "  </image>\n"),
+        scratch.document());
     ASSERT_TRUE(out.valid) << out.error;
-    ASSERT_EQ(out.images.size(), 2u);
-    EXPECT_NE(out.images[0].unit, out.images[1].unit);
-    for (const auto &image : out.images) {
-        EXPECT_GE(image.unit, 13);
-        EXPECT_LE(image.unit, 15);
-    }
+    ASSERT_EQ(out.images.size(), 1u);
+    EXPECT_EQ(out.images[0].layer, 0);
+}
+
+TEST_F(MaterialXGenerator, moreImagesThanOneArrayHoldsIsRefusedWhole)
+{
+    // The cap moved from the texture units to the array, but it is
+    // still a cap, and it still refuses the document rather than
+    // drawing it with some of its maps missing. Seventeen distinct
+    // files against a sixteen-layer array.
+    ScratchImages scratch("overflow");
+    std::string patterns, mixInputs;
+    std::string mix = "  <add name=\"sum0\" type=\"color3\">\n"
+                      "    <input name=\"in1\" type=\"color3\" "
+                      "nodename=\"i0\" />\n"
+                      "    <input name=\"in2\" type=\"color3\" "
+                      "nodename=\"i1\" />\n"
+                      "  </add>\n";
+    for (int i = 0; i < 17; ++i)
+        patterns += "  <image name=\"i" + std::to_string(i)
+            + "\" type=\"color3\">\n"
+              "    <input name=\"file\" type=\"filename\" value=\""
+            + scratch.file("m" + std::to_string(i) + ".png") + "\" />\n"
+              "  </image>\n";
+    for (int i = 2; i < 17; ++i)
+        mix += "  <add name=\"sum" + std::to_string(i - 1) + "\" type=\"color3\">\n"
+               "    <input name=\"in1\" type=\"color3\" nodename=\"sum"
+            + std::to_string(i - 2) + "\" />\n"
+              "    <input name=\"in2\" type=\"color3\" nodename=\"i"
+            + std::to_string(i) + "\" />\n"
+              "  </add>\n";
+    auto out = Render::MaterialX::generate(
+        openPbrDoc("    <input name=\"base_color\" type=\"color3\" "
+                   "nodename=\"sum15\" />\n",
+                   patterns + mix),
+        scratch.document());
+    EXPECT_FALSE(out.valid);
+    EXPECT_NE(out.error.find("more images"), std::string::npos) << out.error;
 }
 
 TEST_F(MaterialXGenerator, theBuiltinTextureCallIsSpelledPortably)
 {
     // MaterialX writes GLSL's texture(); bgfx only has it on the
-    // backends that are GLSL. The shim has to be there or the document
-    // compiles on two profiles of three -- which is exactly how this
-    // was first found.
+    // backends that are GLSL. The spelling has to be answered or the
+    // document compiles on two profiles of three -- which is exactly
+    // how this was first found.
+    //
+    // With images the answer is the array fetch, on every backend: the
+    // sampler parameter is a layer index by then, so the builtin could
+    // not be called on it even where it exists.
+    ScratchImages scratch("portable");
     auto out = Render::MaterialX::generate(
         openPbrDoc("    <input name=\"base_color\" type=\"color3\" "
                    "nodename=\"img\" />\n",
                    "  <image name=\"img\" type=\"color3\">\n"
                    "    <input name=\"file\" type=\"filename\" "
-                   "value=\"nowhere.png\" />\n"
-                   "  </image>\n"));
+                   "value=\"" + scratch.file("one.png") + "\" />\n"
+                   "  </image>\n"),
+        scratch.document());
     ASSERT_TRUE(out.valid) << out.error;
+    EXPECT_NE(out.source.find("#define texture(_s, _c) fcMtlxImage(_s, _c)"),
+              std::string::npos)
+        << out.source;
+    // The gradient fetch has no bgfx spelling of its own, so both
+    // vocabularies are written out and the backend picks.
+    EXPECT_NE(out.source.find("SampleGrad"), std::string::npos) << out.source;
+    EXPECT_NE(out.source.find("BGFX_SHADER_LANGUAGE_SPIRV"),
+              std::string::npos);
+}
+
+TEST_F(MaterialXGenerator, anImagelessDocumentClaimsNoUnitAtAll)
+{
+    // The array is the image path's cost, and a document that names no
+    // image must not pay it: no sampler, no unit, and the plain
+    // spelling shim it had before any of this.
+    auto out = Render::MaterialX::generate(
+        openPbrDoc("    <input name=\"base_color\" type=\"color3\" "
+                   "value=\"0.2, 0.4, 0.8\" />\n"));
+    ASSERT_TRUE(out.valid) << out.error;
+    EXPECT_TRUE(out.images.empty());
+    EXPECT_TRUE(out.imageSampler.empty());
+    EXPECT_EQ(out.imageUnit, 0);
+    EXPECT_EQ(out.source.find("SAMPLER2DARRAY"), std::string::npos)
+        << out.source;
     EXPECT_NE(out.source.find("#define texture(_s, _c) texture2D(_s, _c)"),
               std::string::npos)
         << out.source;
-    EXPECT_NE(out.source.find("BGFX_SHADER_LANGUAGE_SPIRV"),
-              std::string::npos);
 }
 
 TEST_F(MaterialXGenerator, aDocumentWithNoSurfaceIsReported)

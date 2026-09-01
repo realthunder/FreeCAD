@@ -145,15 +145,19 @@ struct GeneratedMaterial {
     /// The generated shader text.
     std::string source;
 
-    /// One image node's sampler in the generated code.
+    /// One layer of the image array the generated code samples.
+    ///
+    /// Every image the document names is a layer of ONE array texture
+    /// rather than a sampler of its own (docs/CyclesIntegration.md sec
+    /// 6.12): the mesh shader leaves too few units free for a material
+    /// with an ordinary set of maps. Two nodes naming the same file
+    /// share a layer, so this is a list of the DISTINCT images, in the
+    /// order the engine must stack them.
     struct Image {
-        /// The sampler's name in `source`, declared there as
-        /// SAMPLER2D(name, unit). The engine binds a texture to it.
-        std::string name;
-        /// Which texture unit the declaration claims. Allocated here
-        /// because only the generator knows how many there are, from a
-        /// base the mesh shader's own samplers leave free.
-        int unit = 0;
+        /// Which layer of the array. Layer order is what the engine
+        /// builds to; the generated code names these numbers, so the
+        /// two sides agree without matching anything.
+        int layer = 0;
         /// Absolute path of the file the document names for it. The
         /// pixels are not loaded here: this is the join key against
         /// the images the capture side loaded (DocumentInfo::images).
@@ -162,10 +166,18 @@ struct GeneratedMaterial {
         /// "lin_rec709", or empty where it states none). What the shader
         /// does about it is already in `source`; this is for reporting.
         std::string colorSpace;
+        /// The generated variable of the first image node that named
+        /// the file. For reporting only -- the binding is by layer.
+        std::string name;
     };
-    /// The samplers `source` declares, in declaration order. Empty for
-    /// a document that names no image.
+    /// The layers `source` samples, in layer order. Empty for a
+    /// document that names no image.
     std::vector<Image> images;
+    /// The sampler2DArray `source` declares for those layers, and the
+    /// texture unit it claims. Empty and 0 when there are no images,
+    /// so an imageless document leaves the unit free.
+    std::string imageSampler;
+    int imageUnit = 0;
 };
 
 /// Generate the raster material-inputs function for a document.

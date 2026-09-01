@@ -1937,6 +1937,11 @@ document names but that is not on disk is not a refusal: that sampler is
 left unbound and the map draws as the backend default, which the
 generator warns about.
 
+> Superseded the same week by **6.14**: the cap did start to bite, the
+> images are the layers of one array now, and the two paragraphs above
+> describe how it worked for one day. What is still true of them is the
+> join (on the path) and how the pixels travel.
+
 **The streaming tier does not get this yet.** `UserShader::images`
 carries the pixels in memory, but `SceneDump` does not write them, so a
 viewer with no filesystem would load a program whose samplers nothing
@@ -2095,6 +2100,114 @@ Whether materializing is reversible. And what the three-image cap of
 the raster path but rendered by Cycles, which is a confusing thing for a
 LIBRARY to do and is the strongest argument yet for the 2D-array
 generalisation.
+
+> That last one is **answered**: 6.14 built the array, and a card may
+> name sixteen images before the question arises again.
+
+### 6.14 Many images on one unit (phase B, built 2026-09-01)
+
+6.12 gave a document its images and, in the same breath, a cap of three
+of them -- the mesh fragment stage this material function is spliced
+into declares samplers 0..10 and a stateful particle emitter binds 11
+and 12, so a sampler per image left exactly 13, 14 and 15. Three is a
+base colour, a roughness and a metallic. It is not a base colour, a
+roughness, a metallic, a normal and an occlusion, which is the ordinary
+set; MaterialX's own `standard_surface_brick_procedural` names five and
+was refused whole. A card carrying such a document (6.13) would have
+been refused by the rasterizer and rendered by the path tracer, and a
+library that behaves differently in the two engines is a library nobody
+can trust.
+
+**The images are the LAYERS of one array texture.** The mechanism is not
+new: the per-face palette (6.7) already puts many images on unit 10 and
+picks between them per triangle, and `GpuTextureArray` -- content-keyed,
+resampled to the largest layer, mipped on the CPU -- is the same class
+here with two arguments added (how many layers, and how large). The unit
+count stops being what bounds a material; what bounds it now is the
+array itself, at sixteen layers, and a document past that is still
+refused whole rather than drawn with maps missing.
+
+**A layer is per FILE, not per node.** A material reading one map as its
+base colour and again as its coat colour costs one layer. That is worth
+saying because it is what makes sixteen generous: the deduplication is
+on the resolved absolute path, which is the same key the join already
+used.
+
+**Both spellings of a sampler had to move, and only one was obvious.**
+MaterialX passes an image into its library functions as a `sampler2D`,
+and it writes that parameter in two different places:
+
+- the hand-written library functions (`mx_image_color3`,
+  `mx_hextiledimage`, ...) take it through a token,
+  `$texSamplerSignature`, which one substitution turns into
+  `int tex_sampler`;
+- the GENERATED nodegraph implementations (`NG_tiledimage_color3` and
+  its kin) declare it through the TYPE SYNTAX for `filename` instead,
+  which is still `sampler2D`.
+
+Change one and not the other and the generated call has no matching
+overload -- `mx_image_float(sampler2D, ...)` against a definition taking
+`int`. Both are answered: the token substitution in `emitImageAccess`,
+and a `ScalarTypeSyntax` for `Type::FILENAME` registered in the
+generator's constructor. **The harness caught this immediately and a
+desktop run never would have**, because it is a compile error in three
+of the fifty examples and those three are exactly the tiled ones.
+
+**The three builtins are answered as functions, not as macros.**
+`texture()`, `textureLod()` and `textureGrad()` become `fcMtlxImage`,
+`fcMtlxImageLod` and `fcMtlxImageGrad`, emitted just above the macros
+that redirect the names -- so the bgfx spellings inside them expand
+before the redirection reaches them. `textureGrad` is the one bgfx has
+no array form of, so both vocabularies are written out under the same
+condition `bgfx_shader.sh` switches on: the GLSL builtin takes an array
+sampler directly, and the split-sampler backends reach the pair the way
+bgfx's own wrappers do. A document naming NO image keeps the plain
+`texture2D` shim of 6.12 and declares no sampler at all, so it claims no
+unit and nothing about it changed.
+
+**A missing map is now defined rather than incidental.** A file the
+document names that is not on disk gets no layer; the generated code
+carries -1 for it and the fetch answers black. Before, that sampler was
+simply left unbound and read whatever the backend defaulted to -- or,
+on a unit another draw had touched, that draw's texture.
+
+**Two costs, both deliberate.** The layers of an array are all one size,
+so every map is resampled onto the largest of them: a 2k albedo beside a
+512 roughness makes the roughness a 2k layer. The ceiling is 2048 for a
+material (the per-face palette keeps its 1024 -- a marking on a face is
+not a surface), and a total byte budget halves the layers when a
+document would otherwise ask for a quarter of a gigabyte. And an
+incomplete array is rebuilt while it waits for its pixels, which is
+right for a decode in flight and wrong forever for a file that will
+never decode, so the rebuild is bounded at 120 tries.
+
+**Verification.** Twenty-four unit tests
+(`tests/src/Gui/MaterialXGen.cpp`), three new and four rewritten: an
+image becomes a layer of one array, four images are four layers on one
+unit, two nodes naming one file share a layer, more images than the
+array holds is refused whole, and an imageless document claims no unit
+at all. `ctest` 455/455. The standalone generator harness of 6.12 is rebuilt as
+`build/probes/mtlxgen/harness.cpp` -- it generates every example in
+MaterialX's own corpus, splices it exactly as `materialXVariant()` does
+and runs the in-tree `shaderc` on glsl, spirv and essl. Generation now
+succeeds for **30 of 50 where it was 29** (the new one is the
+five-image brick), and **all 90 compiles pass**; the twenty refusals are
+the models with no translation to OpenPBR, which is 6.10's case.
+`build/probes/mtlxraster/probe.sh` grows three legs (18 now) to a drawn
+pixel: a four-image document draws at all (0.046 against the literal
+before it), swapping one of its four files moves the frame in that
+file's direction (0.038, and the red frame IS redder while the blue one
+is bluer, so the layers are not crossed), and one file read by two
+nodes draws as that file -- to 0.0000.
+
+Leg 15 was written twice, and the first cut is worth recording: it held
+the four-image document against a four-image document differing only in
+its COAT map and measured 0.0159, under the threshold. Nothing was
+wrong; a coat at half weight is simply a small thing next to a base
+colour. **A control frame has to differ in the thing being measured**,
+which here is whether the document draws at all -- so the second cut
+holds it against the red literal of leg 14 with the blue file as its
+base.
 
 ## 7. Preparing for out of process
 
