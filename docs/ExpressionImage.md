@@ -1110,3 +1110,253 @@ own source path -- the image is a different binary and can never
 reproduce them, and they are not evaluation behaviour, so comparing
 them would report a permanent false difference.  On the two rows in
 question the counter reads **0**.
+
+## Pyodide-on-node, benchmarked and probed (2026-09-01)
+
+The WASI image is the shipping runtime, but the question was reopened:
+run **pyodide** (CPython on wasm32-emscripten) on both the desktop and
+the browser tier, so the whole prebuilt scientific stack (numpy, scipy,
+pandas, ...) comes for free, and so a future browser-side Python
+workbench has a runtime.  Two earlier objections turned out to be
+partly wrong, so the question was settled with measurement rather than
+memory.  Rig and raw numbers are in this session's scratchpad
+(`bench_a.mjs`, `embed_bench.cc`, `probe_escape*.mjs`, `RESULTS.txt`);
+box was 6-core, node 26.6.0 (V8 14.6.202.34-node.26), pyodide 314.0.6
+(CPython 3.14).
+
+### Correction 1: conda DOES ship an embeddable JS engine
+
+The earlier claim "no conda package for embedding a JS engine, so
+pyodide reopens the packaging problem" was FALSE.  conda-forge
+`nodejs 26.6.0` ships `lib/libnode.so.147` (71 MB, bundles V8) plus the
+full `include/node/` tree including 53 V8 headers, built `--shared`, on
+every platform we target (linux-64/aarch64, osx-64/arm64, win-64/arm64).
+deno, bun, and quickjs are there too.  So an in-process, synchronous JS
+host is a package install, not a build.  QtWebEngine (which we do ship)
+cannot host this: wrong layer (Gui, needs QApplication; the host lives
+in App and must work in FreeCADCmd), and `runJavaScript()` is async
+across a Chromium IPC to a separate process, which cannot be called
+synchronously from inside recompute.  `QJSEngine` (Qt QML V4) has no
+WebAssembly at all.
+
+### Correction 2: the boundary is FAST, and A is not a prerequisite either
+
+  case                             pyodide/node   WASI image (Release)
+  transport floor (py callable)      0.34 us          2.68 us
+  eval precompiled code object       0.94 us            --
+  compile+eval '1+2*3-4/5'          15.6  us         13.36 us
+  eval + 1 host hop                  3.02 us         +31.6  us  (bridge hop)
+  eval + 5 host hops                11.3  us            --
+  cold start                      ~1420  ms         15-16 ms
+
+Two things stand out.  The pyodide **host hop is ~10x cheaper** (3.0 vs
+31.6 us): a py->host->py crossing is a direct V8 call into a JS callback,
+not a CBOR round trip through a wasmtime linker.  For property-heavy
+expressions (the common sheet case) that is the dominant term, so
+pyodide would likely be *faster* per cell than the image once bridges
+are involved.  Plain arithmetic is a wash (15.6 vs 13.4 us).  The one
+regression is **cold start: ~1.4 s vs 15 ms** -- pyodide boots a whole
+CPython+emscripten runtime; the image instantiates a `.cwasm`.  A
+desktop that boots pyodide once per session eats this at startup; a
+per-invocation model cannot.  (Also: use pyodide's `runPython(code)`
+sparingly -- the string->module compile path measured 206 us; hold a
+compiled code object and `eval` it, 0.94 us.)
+
+The C++ side adds almost nothing: a `libnode` embedder calling a JS
+function via `v8::Function::Call` measured **45 ns** per hop
+(`embed_bench.cc`, real CommonEnvironmentSetup embed).  The embedding
+overhead is not where the cost is; CPython is.
+
+numpy: `loadPackage('numpy')` pulls a 2.9 MB prebuilt cp314 wasm32
+wheel (264 ms first time, then cached), imports, and runs
+(`np.arange(1000).sum()` in 3.1 us).  This is the entire point --
+scipy/pandas/lxml/Pillow/matplotlib are all prebuilt the same way,
+versus weeks-to-blocked each against wasi-sdk.
+
+### The real cost is the SECURITY MODEL, and it is a different class
+
+Under DEFAULT pyodide-on-node config the sandbox is **fully escaped**.
+Guest Python reaches `js.process`, and through it
+`process.binding('fs')`, `process.binding('spawn_sync')`,
+`process.dlopen`, `process.env`, `process.exit`.  Even with `js.process`
+hidden, `obj.constructor.constructor` (the Function constructor) runs
+its body in global scope where `process` still lives.  Verified reading
+`/etc/hostname` is only blocked because pyodide's `require` is not a
+global; the file-read primitive itself is reachable.
+
+**`del globalThis.process` is NOT sufficient** -- an earlier draft here
+said it was, and a deeper audit (2026-09-01) disproved it.  Deleting
+`process` does close the `js.process` and `constructor.constructor ->
+process` routes, and pyodide/numpy keep working (pyodide captured its own
+`require`/`fs` refs at init).  But it leaves a full escape open:
+
+- `js.Function('return import("node:fs")')()` -- dynamic `import()`
+  through the Function constructor -- **still resolves to a working
+  module**.  Verified: after `del globalThis.process`, the guest read
+  `/etc/hostname` (`readFileSync`) AND wrote `/tmp/pwned` (`writeFileSync`).
+  `import("node:child_process")` and `import("node:net")` are reachable
+  too.  Dynamic `import()` is a realm intrinsic wired to node's module
+  loader (`HostImportModuleDynamically`); it needs no `process` and
+  cannot be removed by deleting globals.
+- `fetch` survives on the global -- node's real `fetch`, i.e. network
+  egress, which the WASI image (no sockets) does not have.  `Buffer`,
+  timers, `crypto`, `WebAssembly` survive too.
+
+Node's **Permission Model** (`--permission`, C++-enforced, the only
+non-JS-bypassable lockdown) is the principled fix, and it does NOT work
+with pyodide as shipped: with no grants pyodide cannot read its own
+files; grant `--allow-fs-read=<pyodide dir>` and it still dies with
+`ERR_ACCESS_DENIED: process.binding` -- pyodide's node loader uses
+`process.binding`, which the model blocks.  The model is also
+per-PROCESS, so a grant that lets the host load pyodide also lets the
+guest use it; there is no host-vs-guest split in one process.
+
+The remaining JS-land option is to run pyodide inside a `node:vm`
+context with a scrubbed global (`Object.create(null)`, no `fetch`/
+`process`) and a denying `importModuleDynamically` hook.  That IS tested
+to work at the mechanism level -- in such a context `import("node:fs")`
+rejects ("import denied") and `fetch`/`process` are `undefined` -- but it
+needs `--experimental-vm-modules`, requires feeding pyodide controlled
+host functions to load its files through the scrubbed global, and is a
+DENYLIST that must be re-audited on every node and pyodide bump (each can
+add a newly reachable primitive).
+
+This is the crux of the decision.  The **WASI image denies all of this
+BY CONSTRUCTION** -- one preopen, no module loader, no sockets, no
+subprocess, plus wasmtime fuel metering and epoch interruption.  A
+node-hosted pyodide cannot be brought to that guarantee by SUBTRACTION
+(delete globals / permission flags); it takes either the `node:vm`
+denylist above, or embedding a V8/node build where `fs`/`child_process`/
+`net`/the dynamic-import loader are NEVER registered (option B below --
+confinement by construction, the same property WASI gives for free).
+
+### Two loaders, do not conflate them (killing one keeps the other)
+
+A natural worry: "if a V8-only embed removes the module loader, does
+pyodide lose the ability to load numpy, i.e. must we bundle everything
+statically?"  No -- there are TWO independent dynamic-loading mechanisms:
+
+- **Node's JS module loader** -- `import()` / `require`, which resolve to
+  node builtins (`fs`, `net`, `child_process`).  This is the ESCAPE
+  surface.  A V8-only embed never wires it; killing it removes access to
+  node builtins and nothing else.
+- **Emscripten's wasm dynamic linking** -- `WebAssembly.instantiate` of
+  side modules, which is how pyodide links a wheel's C extensions at
+  runtime.  `WebAssembly` is a core V8 API, always present; it needs no
+  node loader, no `fs`, no `import()`.
+
+Measured: `loadPackage('numpy')` fired **13 `WebAssembly.instantiate`
+calls** (numpy's C extensions linking in) and worked fine AFTER
+`del globalThis.process` -- proving numpy loading does not ride the node
+`import()`/`fs` route the escape uses.  The only thing the host must
+supply is the wheel BYTES; in node mode pyodide reads them via `fs`, but
+in a V8-only/browser mode you provide a controlled reader scoped to the
+wheel directory -- a WASI-style read-only preopen -- and pyodide links
+the bytes with core `WebAssembly`.
+
+So the "must statically link every extension, no wheel installable ever,
+`libdl` is a stub" limit is the **WASI image's alone** (wasmtime +
+wasi-sdk, where `dlopen` really is a stub).  It is NOT a property of wasm
+in general and NOT inherited by pyodide: pyodide (emscripten) keeps
+dynamic wheel loading whether hosted on node or on bare V8.  The
+confinement target (kill node's JS loader) and the ecosystem win
+(dynamically load Python wheels) use different machinery and do not
+collide.
+
+### Building V8 ourselves: adapting the node feedstock (corrected 2026-09-01)
+
+An earlier draft of this section said building V8 means `depot_tools` +
+`gclient sync` (~8-12 GB, bundled clang) + GN.  **That is the standalone
+Chromium V8 path, and node deliberately avoids it** -- so the estimate
+was wrong for the recipe we would actually adapt.  What the
+`conda-forge/nodejs` feedstock (rattler-build `recipe.yaml`, same shape
+as our wasmtime-capi-feedstock) really does:
+
+- Source is the plain `node-v26.6.0.tar.gz` from nodejs.org, which
+  **vendors V8 in `deps/v8`**.  No depot_tools, no gclient, no GN, no
+  downloaded clang.
+- Build is `./configure --ninja --shared ... --with-intl=system-icu`
+  then `ninja -C out/Release`, driving **node's own GYP files**
+  (`tools/v8_gypfiles/`; the recipe's `abseil.gyp` shim patches one of
+  them) with the ordinary conda toolchain (`compiler('c'/'cxx')`, ninja,
+  python 3.13, pkg-config, system-icu, system-abseil).  Eight small
+  patches, mostly SIMD-guard/RISC-V.
+
+So building V8 from node's tree is cheap and toolchain-free.  Measured,
+V8 is ~61% of libnode's code (22.3 MB of 36.6 MB of symbol bytes), so a
+V8-only artifact would be ~40-45 MB vs libnode's 71 MB.  Three tiers of
+"adapt the recipe":
+
+- **(A) Adapt nothing -- depend on `nodejs`.**  libnode.so is published
+  on all six platforms, and the node team backports V8 security fixes
+  into their release line, so tracking `nodejs` conda updates gives
+  patched V8 for FREE rather than chasing V8's ~4-week cadence.  This is
+  the strongest argument and it favours libnode.
+- **(B) Fork the feedstock for a slim V8-only lib.**  Same tarball; add a
+  `v8_monolith`-style GYP target that bundles node's `v8_*` static libs
+  into one shared `libv8`, install it + V8 headers, drop the node runtime
+  and npm.  Bounded work, but real: node has no `--shared-v8`, V8 is
+  folded statically into libnode by default, so this is a GYP target you
+  write, not a flag you set.  Payoff ~40 MB and a bare V8 you fully
+  control.
+- **(C) What neither A nor B removes:** pyodide's emscripten glue needs a
+  host environment -- `TextDecoder`/`TextEncoder`, `URL`, `fetch` or
+  `require(node:fs/crypto/url/path)`, `performance.now`, `process.*`
+  (grepped from `pyodide.asm.mjs`).  libnode supplies all of it; a
+  stripped V8-only lib supplies none, so option B means reimplementing
+  that environment.  That cost is independent of how cheaply V8 builds.
+
+So the honest correction: the *build* cost of a self-built V8 is small
+(adapt the recipe), not the large bill claimed before.  The reasons to
+still ride libnode-as-is are (1) it already provides the emscripten
+environment (option C), and (2) it inherits node's V8 security backports.
+The one reason to do option B anyway is **security by construction**: a
+hand-rolled V8 embedding need never register `fs`/`child_process`/`net`
+or a dynamic-import loader at all, so the escape demonstrated above
+(dynamic `import()` via the Function constructor, which no global deletion
+closes) cannot exist -- WASI-grade confinement.  Given that the audit
+showed a node-hosted pyodide CANNOT be confined by subtraction, this is
+not merely "nicer": for desktop pyodide it is either option B or the
+`node:vm` denylist, and option B is the only one that is confinement by
+construction.  Its cost is the environment layer, not the engine.
+
+### Verdict
+
+Nothing here is a blocker; the earlier "keep pyodide rejected for the
+desktop" was too strong and rested on the false no-JS-engine premise.
+The honest trade is:
+
+- **Runtime speed**: pyodide is competitive to better (host hops 10x
+  cheaper), except cold start (1.4 s vs 15 ms) -- fine for a
+  boot-once-per-session desktop, bad for per-invocation.
+- **Ecosystem**: pyodide wins outright (prebuilt numpy/scipy/pandas/...);
+  the WASI image cannot install a wheel ever (`libdl` is a stub).  If the
+  goal grows to **Python workbenches in the browser** (Draft/BIM are
+  Python), this dominates.  NOTE the two loaders are orthogonal (see
+  below): the "no wheels" limit is the WASI image's alone; pyodide keeps
+  dynamic wheel loading on bare V8 too.
+- **Security**: the WASI image wins outright.  A node-hosted pyodide
+  CANNOT be confined by subtraction (`del process` leaves a full FS
+  read+write escape via dynamic `import()`; node's permission model
+  won't load pyodide); confinement takes either a `node:vm` denylist
+  (re-audited every bump) or option B.  For a padlocked expression
+  sandbox this is the property that matters most.
+- **Cost**: plain pyodide-on-libnode is mostly integration (embed the
+  host in App, drive it synchronously, re-cross-build our C++ slice for
+  emscripten), no toolchain to own -- BUT it is not truly confined.  A
+  confined desktop pyodide costs either the `node:vm` sandbox
+  (`--experimental-vm-modules`, controlled global, ongoing re-audit) or
+  option B (fork the node recipe for a V8/node build without the modules,
+  plus reimplement the emscripten environment).  Both are real bills the
+  WASI image simply does not have.
+
+Recommendation unchanged in shape but softened: **keep the WASI image as
+the expression sandbox** (its confinement is the whole point), and adopt
+**pyodide as a SEPARATE runtime for the browser Python-workbench goal**,
+where its ecosystem is decisive and the security model is the browser's
+own.  Do not build V8 by hand: libnode already paid those costs, and if
+the security surface ever forces a hand-rolled embedding, that is a
+scoped future project, not a prerequisite.  The `ImageHost` seam,
+FcxWire, and the 456-file corpus gate are runtime-agnostic, so a pyodide
+backend slots behind the same interface without discarding the
+switch-over work.
