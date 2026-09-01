@@ -113,20 +113,23 @@ public:
     SbMatrix matrix;
     bool identity = true;
     bool transparent = false;
-    /// The texture node's Coin id, CAPTURED by setTexture() rather than
-    /// read live: Coin hands a node a new id on every notify(), and a
-    /// key that moves under a sorted container is a broken ordering.
-    /// See NodeInfo::nodeid for why this is an id and not the pointer.
-    SbUniqueId textureid = 0;
-
-    void setTexture(SoNode * node) {
-      this->texture = node;
-      this->textureid = node ? node->getNodeId() : 0;
-    }
 
     int compare(const TextureInfo & other) const {
-      if (this->textureid < other.textureid) return -1;
-      if (this->textureid > other.textureid) return 1;
+    // ORDERED BY THE POINTER, and a Coin node id will not do instead.
+    //
+    // The address is not the same in two runs, so this is the one part of
+    // a material's ordering that is still run-dependent (Render::CacheSerial
+    // covers the rest). A node id was tried and reverted: Coin hands a node
+    // a FRESH id on every notify(), so the id says "this node as of a
+    // moment" where the pointer says "this node". The incremental flatten
+    // (buildFromPrevious) merges the PREVIOUS publish's map with entries
+    // built now, keyed by material -- so a node notified between the two
+    // would arrive under two different ids and one light would become two
+    // buckets that draw identically, accumulating another on every notify.
+    // Ordering nodes deterministically needs an id that never moves, which
+    // would have to come from the Coin fork.
+      if (this->texture < other.texture) return -1;
+      if (this->texture > other.texture) return 1;
       if (this->transparent < other.transparent) return -1;
       if (this->transparent > other.transparent) return 1;
       if (this->identity < other.identity) return -1;
@@ -164,29 +167,23 @@ public:
     SbMatrix matrix;
     bool identity = true;
     bool resetmatrix = false;;
-    /// The node's Coin id, and what this is ORDERED by.
-    ///
-    /// Ordering by the node's ADDRESS made the draw list's order depend
-    /// on where the allocator put the node, so it differed between two
-    /// runs of the same binary -- and where two draws contend for one
-    /// pixel at equal depth the picture differed with it. A node id is
-    /// a counter, so it is the same in every run.
-    ///
-    /// CAPTURED here, not read live in compare(): Coin gives a node a
-    /// fresh id on every notify(), and a sort key that moves underneath
-    /// a sorted container is a broken ordering. Capturing also means a
-    /// node whose id has moved is a different material, which is what
-    /// it is -- the id moves precisely when the node changed.
-    SbUniqueId nodeid = 0;
-
-    void setNode(SoNode * n) {
-      this->node = n;
-      this->nodeid = n ? n->getNodeId() : 0;
-    }
 
     int compare(const NodeInfo & other) const {
-      if (this->nodeid < other.nodeid) return -1;
-      if (this->nodeid > other.nodeid) return 1;
+    // ORDERED BY THE POINTER, and a Coin node id will not do instead.
+    //
+    // The address is not the same in two runs, so this is the one part of
+    // a material's ordering that is still run-dependent (Render::CacheSerial
+    // covers the rest). A node id was tried and reverted: Coin hands a node
+    // a FRESH id on every notify(), so the id says "this node as of a
+    // moment" where the pointer says "this node". The incremental flatten
+    // (buildFromPrevious) merges the PREVIOUS publish's map with entries
+    // built now, keyed by material -- so a node notified between the two
+    // would arrive under two different ids and one light would become two
+    // buckets that draw identically, accumulating another on every notify.
+    // Ordering nodes deterministically needs an id that never moves, which
+    // would have to come from the Coin fork.
+      if (this->node < other.node) return -1;
+      if (this->node > other.node) return 1;
       if (this->identity < other.identity) return -1;
       if (this->identity > other.identity) return 1;
       if (!this->identity) {
