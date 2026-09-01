@@ -1872,7 +1872,8 @@ in the property editor. Writing that demo is also what found the fused
 name above.
 
 Not yet, and the remaining piece of step 3: a material card able to
-carry a `.mtlx`.
+carry a `.mtlx`. Designed 2026-09-01 and recorded in section 6.13; not
+built.
 
 
 ### 6.12 Images in the raster path (phase B, built 2026-09-01)
@@ -1976,6 +1977,124 @@ to 0.0001 while both "failed". An absolute colour assertion over that
 mask reads the environment. Assert one frame against another, where the
 environment cancels.
 
+
+
+### 6.13 A material card that carries a document (designed 2026-09-01, NOT built)
+
+The last piece of phase B step 3, and the first one whose shape was
+decided in discussion rather than found in the code. **Everything below
+is a design record: none of it is built.**
+
+**What it is for.** A MaterialX document renders today only if someone
+builds an `App::ShaderProgram` for it by hand and binds it through an
+`App::Appearance` -- which is what `scripts/demo-materialx.py` does
+seventeen times. That is the author's route, not the user's. The user's
+route is the material library: pick "Brushed Aluminium" out of a list
+and have the object look like it. A card that carries a `.mtlx` is what
+joins the two.
+
+**Prior art.** Every system with a node-graph material separates the
+GRAPH from the per-use values. Unreal states it most plainly: a Material
+is the graph, compiled once, and a Material Instance is a thin set of
+parameter overrides on top of it. Blender shares one node datablock
+between all users and a per-object difference means a copy. USD binds a
+material prim and overrides by referencing it and restating inputs. The
+fork already has this split and did not have to invent it:
+`ViewProviderShaderProgram` owns the library node built from the
+program, and `ViewProviderAppearance::ownProgramNode()` builds a
+per-binding CLONE with that binding's parameter overrides baked in. A
+card-carried document slots into that; it does not get a scheme of its
+own.
+
+**Decision 1 (the user's, 2026-09-01): assignment creates nothing, and
+an explicit command materializes.** Assigning the card stays what
+assigning a card has always been -- a write to `ShapeMaterial` -- and
+the view provider renders it, exactly as a glass card already grows
+`Render_Glass*` dynamic properties without adding an object to the tree.
+A separate command turns that into real `ShaderProgram` / `Shader` /
+`Appearance` objects when someone wants to edit the graph or its knobs.
+The common case leaves the tree clean; the power case stays open.
+
+**Decision 1a (the user's): the node construction lives in
+`ViewProviderAppearance`, for dedup, and the node struct is SHARED with
+copy-on-write.** This is the part that keeps the two routes from
+becoming two implementations:
+
+- One Coin node structure per distinct card, not per object. Fifty
+  objects carrying "Brushed Aluminium" share one `SoShaderProgram`
+  triple, so there is one document parse, one generation and one
+  compile -- and `materialXVariants` already keys its generation on
+  document identity, so it agrees with this for free.
+- It is built where the binding machinery already is.
+  `ViewProviderAppearance` owns `applyDirectBindings()`, which inserts a
+  program node at each target view provider's root, and `rebuildAllBindings()`,
+  a per-document static coordinator. A registry of card-built nodes is a
+  sibling of those, and `syncShaderNodes()` -- already shared between
+  the program view provider and the per-binding clone -- is the one
+  construction function all three routes call.
+- **COW on edit.** The shared struct is immutable while it is shared. The
+  materialize command copies it into the real document objects, seeded
+  with what the card stated, and that object's binding switches from the
+  shared node to its own. An edit therefore never reaches the other
+  forty-nine objects, and nothing has to be copied until an edit happens.
+
+**Decision 2 (the user's): the card carries the document EMBEDDED.**
+Open decision 2 was answered in the file direction for the
+`ShaderProgram` (6.8); for the CARD it is answered the other way. A
+card is a library asset that gets copied into documents and passed
+between machines, and a card that names a path is a card that breaks
+when it travels.
+
+Two things follow, and the first is cheaper than it first looked:
+
+- **The card's own path is the resolution anchor.** A relative image
+  name resolves against `dirname(the document's source URI)`, then the
+  data library (`searchPath()`), and MaterialX's own examples are
+  written that way -- `standard_surface_brass_tiled.mtlx` reaches its
+  maps through `../../../Images/`. Inline text has no source URI, so
+  that entry would vanish and every relative map would resolve to
+  nothing. But a card IS a file: the `.FCMat` it was read from stands in
+  as the source URI, and `loadDocument` already flattens every relative
+  filename to an absolute path in one pass at load. Embedding does not
+  lose the anchor, it moves it.
+- **Travel needs the image bytes, not just resolvable paths.** An
+  absolute path that resolves here points at nothing on another machine,
+  so an embedded document is a self-contained material DESCRIPTION and
+  not a self-contained material. The images have to ride along, and the
+  machinery for that exists: `App::FileBlobManager` and
+  `Document::collectFileBlobs()`. This is wiring, not new work -- and
+  it is only needed for image-carrying cards. The seventeen documents
+  the demo already embeds are imageless, which is why that reopen test
+  passed without any of this.
+
+**The card side.** A new appearance model beside `GlassRendering.yml`,
+which is the precedent for a fork-authored model whose fields drive
+rendering rather than colour. One field holding the document text; the
+card format already carries `File` and `Image` typed fields
+(`TextureRendering.yml` uses both), so a text field is not a new kind of
+thing. A card carrying it must also reach the Appearance panel's look
+list, which means one more filter beside "Basic appearance" and
+"Texture appearance" in `DlgDisplayPropertiesImp::setupFilters()`.
+
+**Where the parameters live** is the one question that needs no new
+answer. The document's declared inputs become `Param_*` properties
+(6.11); the card's copy states the defaults, and a per-object difference
+is a per-binding override -- the layer `ownProgramNode()` already bakes.
+Under decision 1 an unmaterialized object has no binding object to hang
+an override on, so until it is materialized it wears the card's values;
+wanting to change one is exactly the moment the materialize command is
+for.
+
+**What to settle before building.** How the follow-the-card rule of
+`MaterialStorage.md` sec 15 extends to this -- a document is not an
+`App::Material`, so `FollowMaterial` as written does not decide it. What
+the materialize command is called and where it appears (the sync
+commands' shown-only-while-it-applies rule, 13.5, is the precedent).
+Whether materializing is reversible. And what the three-image cap of
+6.12 means for a card: a library card wanting five maps is refused by
+the raster path but rendered by Cycles, which is a confusing thing for a
+LIBRARY to do and is the strongest argument yet for the 2D-array
+generalisation.
 
 ## 7. Preparing for out of process
 
