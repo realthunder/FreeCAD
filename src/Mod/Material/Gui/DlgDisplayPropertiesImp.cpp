@@ -228,6 +228,18 @@ DlgDisplayPropertiesImp::~DlgDisplayPropertiesImp()
     Gui::Selection().Detach(this);
 }
 
+namespace
+{
+/// What the synthetic top row of the look list carries where a card
+/// carries its UUID. Not a UUID and never written to a document -- it
+/// only has to be a string no card can answer to.
+const QString& asMaterialId()
+{
+    static const QString id = QStringLiteral("as-material");
+    return id;
+}
+}  // namespace
+
 void DlgDisplayPropertiesImp::setupFilters()
 {
     // Create a filter to only include current format materials
@@ -251,6 +263,13 @@ void DlgDisplayPropertiesImp::setupFilters()
     d->ui.widgetMaterial->setIncludeLegacy(false);
 
     d->ui.widgetMaterial->setFilter(filterList);
+    // The first entry is the way back to the object's card, so the list
+    // says what the status line under it says (docs/MaterialStorage.md
+    // 15.5). It is the same action as the Reset to material button.
+    d->ui.widgetMaterial->setLeadingEntry(asMaterialId(),
+                                          tr("As material"),
+                                          tr("Take the look from the object's material card, "
+                                             "and keep taking it when the card changes"));
 
     // The picker at the top is the Material panel's, filter and all: it
     // edits the object's CARD, which is what mass, FEM and CAM read
@@ -315,6 +334,11 @@ void DlgDisplayPropertiesImp::setupConnections()
             &DlgDisplayPropertiesImp::onCardSelected);
     connect(d->ui.buttonResetToMaterial,
             &QPushButton::clicked,
+            this,
+            &DlgDisplayPropertiesImp::onResetToMaterial);
+    // The list's own way to the same place
+    connect(d->ui.widgetMaterial,
+            &MaterialTreeWidget::leadingEntrySelected,
             this,
             &DlgDisplayPropertiesImp::onResetToMaterial);
     // The other way into the same slot -- a name typed and committed --
@@ -451,13 +475,10 @@ void DlgDisplayPropertiesImp::slotChangedObject(const Gui::ViewProvider& obj,
         }
         else if (prop.isDerivedFrom<App::PropertyMaterialList>()) {
             if (prop_name == "ShapeAppearance") {
-                // No getValues() on this fork's PropertyMaterialList by design
-                // -- read the one entry, which returns by value.
-                const auto& matList = static_cast<const App::PropertyMaterialList&>(prop);
-                if (matList.getSize() > 0) {
-                    App::Material material = matList.getMaterial(0);
-                    d->ui.widgetMaterial->setMaterial(QString::fromStdString(material.uuid));
-                }
+                // The look, the list's selection, the status line and the
+                // Reset button all move together, and setMaterialCard is
+                // what moves them.
+                setMaterialCard(getTargets());
             }
         }
         else if (prop.isDerivedFrom<App::PropertyInteger>()) {
@@ -740,8 +761,9 @@ void DlgDisplayPropertiesImp::setColorPlot(const std::vector<Gui::ViewProvider*>
 
 void DlgDisplayPropertiesImp::setShapeAppearance(const std::vector<Gui::ViewProvider*>& views)
 {
+    // Which look it is, and whether the list shows it, is setMaterialCard's
+    // to say; this decides only whether there is one to edit at all.
     bool material = false;
-    App::Material mat = App::Material(App::Material::DEFAULT);
     for (auto view : views) {
         if (auto* prop =
                 dynamic_cast<App::PropertyMaterialList*>(view->getPropertyByName("ShapeAppearance"))) {
@@ -749,8 +771,6 @@ void DlgDisplayPropertiesImp::setShapeAppearance(const std::vector<Gui::ViewProv
                 continue;
             }
             material = true;
-            mat = prop->getMaterial(0);
-            d->ui.widgetMaterial->setMaterial(QString::fromStdString(mat.uuid));
             break;
         }
     }
@@ -1212,6 +1232,17 @@ void DlgDisplayPropertiesImp::setMaterialCard(const std::vector<Gui::ViewProvide
         state = painted ? tr("Custom, %n face(s) painted", "", int(painted)) : tr("Custom");
     }
     d->ui.labelAppearance->setText(state);
+    // The list's selection says what the status line says: the top row
+    // while the look is the card's, the look's own card once it is not.
+    if (!appearance) {
+        d->ui.widgetMaterial->setMaterial(QString());
+    }
+    else if (appearance->isFollowingMaterial()) {
+        d->ui.widgetMaterial->setMaterial(asMaterialId());
+    }
+    else {
+        d->ui.widgetMaterial->setMaterial(QString::fromStdString(appearance->getBase().uuid));
+    }
     // Shown only while it applies, which is the rule the sync commands
     // follow (docs/MaterialStorage.md 13.5)
     d->ui.buttonResetToMaterial->setVisible(

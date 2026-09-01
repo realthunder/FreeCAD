@@ -806,9 +806,33 @@ panel's widget and filter, and it is HIDDEN unless the selection carries a
 `Materials::PropertyMaterial`: an object without a card sees the panel it
 always saw, one row shorter.
 
-Still ahead: the "As material" entry as the appearance list's first row
-(the Reset button is the same action in a different place), the
-context-menu form of the command, and the Material panel's preview line.
+**What was built next (2026-09-01), once the panel was looked at.**
+
+- **"As material" is the look list's first row**, above the libraries and
+  above Favorites and Recent both. It is not a card: it carries the
+  sentinel `as-material` where a card carries its UUID, and choosing it
+  emits `leadingEntrySelected()` rather than `materialSelected()`. The
+  mechanism is `MaterialTreeWidget::setLeadingEntry()`, so any list that
+  needs a default answer of its own can have one.
+- **The list's selection now says what the status line says.** It was set
+  from the look's `uuid`, and since `App::Material::operator==` treats a
+  shared uuid as identity (the card is the identity, the colours are a
+  rendering of it), a look that followed its card and one that had been
+  hand-edited both named the same card: the picker read "Steel" over a
+  status line reading "Custom". While the look follows, the selection is
+  the top row instead.
+- **The status line moves on its own.** It was refreshed only when the
+  panel was opened, so a colour set while it was on screen left "As
+  material Steel" standing over a look that no longer followed anything. A
+  `ShapeAppearance` change now refreshes the whole group.
+- **A programmatic selection is no longer reported as a person's choice.**
+  `MaterialTreeWidget::setMaterial()` blocks the selection model while it
+  selects. Showing what the object currently looks like could otherwise be
+  answered by that look being written straight back at it -- which is a
+  loop, and the refresh above would have closed it.
+
+Still ahead: the context-menu form of Reset to material, and the Material
+panel's preview and line.
 
 ### 15.6 The legacy mirror
 

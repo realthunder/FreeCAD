@@ -25,6 +25,7 @@
 #include <QCoreApplication>
 #include <QKeyEvent>
 #include <QMenu>
+#include <QSignalBlocker>
 
 
 #include <cstring>
@@ -561,6 +562,14 @@ void MaterialTreeWidget::updateMaterial(const QString& uuid)
 
     m_uuid = uuid;
 
+    if (uuid == m_leadingId) {
+        // Not a card: it has a label of its own and the manager has never
+        // heard of it.
+        m_materialDisplay = m_leadingText;
+        m_material->setText(m_materialDisplay);
+        return;
+    }
+
     // Fetch the material from the manager
     auto material = std::make_shared<Materials::Material>();
     try {
@@ -615,13 +624,46 @@ QModelIndex MaterialTreeWidget::findInTree(const QString& uuid)
     return {};
 }
 
+void MaterialTreeWidget::setLeadingEntry(const QString& id,
+                                         const QString& text,
+                                         const QString& toolTip)
+{
+    if (m_leadingId == id && m_leadingText == text && m_leadingToolTip == toolTip) {
+        return;
+    }
+    m_leadingId = id;
+    m_leadingText = text;
+    m_leadingToolTip = toolTip;
+    // The row is built by fillMaterialTree(), so the list has to be built
+    // again -- but only once the tree exists, which it does not yet while
+    // a constructor is still running.
+    if (m_materialTree && m_materialTree->model()) {
+        updateMaterialTree();
+        // A selection sitting on the row that just went away, or waiting
+        // for one that has just arrived, has to be put back.
+        if (!m_uuid.isEmpty()) {
+            const QString held = m_uuid;
+            m_uuid.clear();
+            setMaterial(held);
+        }
+    }
+}
+
 void MaterialTreeWidget::setMaterial(const QString& uuid)
 {
+    QItemSelectionModel* selectionModel = m_materialTree->selectionModel();
+    // Saying what the selection IS is not the same as a person choosing
+    // it: onSelectMaterial applies what it is told about, so letting this
+    // reach it would let a caller that shows the current look be answered
+    // by having that look written back at it.
+    const QSignalBlocker blocker(selectionModel);
+
     if (uuid.isEmpty()) {
         // Nothing is selected
-        QItemSelectionModel* selectionModel = m_materialTree->selectionModel();
         selectionModel->clear();
         m_material->clear();
+        m_uuid.clear();
+        m_materialDisplay.clear();
 
         return;
     }
@@ -631,7 +673,6 @@ void MaterialTreeWidget::setMaterial(const QString& uuid)
     // Now select the material in the tree
     auto index = findInTree(uuid);
     if (index.isValid()) {
-        QItemSelectionModel* selectionModel = m_materialTree->selectionModel();
         selectionModel->select(index, QItemSelectionModel::SelectCurrent);
         m_materialTree->scrollTo(index);
     }
@@ -824,6 +865,18 @@ void MaterialTreeWidget::fillMaterialTree()
         "User parameter:BaseApp/Preferences/Mod/Material/TreeWidget/MaterialTree");
 
     auto model = qobject_cast<QStandardItemModel*>(m_materialTree->model());
+
+    if (!m_leadingId.isEmpty()) {
+        // Above Favorites and Recent both: it is the list's default answer,
+        // not one more card to scroll past (docs/MaterialStorage.md 15.5).
+        auto row = new QStandardItem(m_leadingText);
+        row->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+        row->setData(m_leadingId, Qt::UserRole);
+        if (!m_leadingToolTip.isEmpty()) {
+            row->setToolTip(m_leadingToolTip);
+        }
+        model->appendRow(row);
+    }
 
     if (_filterOptions.includeFavorites()) {
         auto lib = new QStandardItem(tr("Favorites"));
@@ -1110,10 +1163,15 @@ void MaterialTreeWidget::onSelectMaterial(const QItemSelection& selected,
     updateMaterial(uuid);
     std::string _uuid = uuid.toStdString();
 
-    if (!uuid.isEmpty()) {
-        Q_EMIT materialSelected(getMaterialManager().getMaterial(uuid));
-        Q_EMIT onMaterial(uuid);
+    if (uuid.isEmpty()) {
+        return;
     }
+    if (uuid == m_leadingId) {
+        Q_EMIT leadingEntrySelected();
+        return;
+    }
+    Q_EMIT materialSelected(getMaterialManager().getMaterial(uuid));
+    Q_EMIT onMaterial(uuid);
 }
 
 void MaterialTreeWidget::onDoubleClick(const QModelIndex& index)
