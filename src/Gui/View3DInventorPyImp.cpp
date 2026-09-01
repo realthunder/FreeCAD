@@ -840,6 +840,14 @@ static void writeRenderDumpSidecar(View3DInventor *view,
     // light rig and its ambient, the background, the chrome drawn over
     // the scene, and the pipeline switches.
     static const std::set<std::string> viewKeys = {
+        // AntiAliasing decides whether a silhouette has coverage at all,
+        // so a golden restaged without it compares a multisampled capture
+        // against an aliased one and diverges along every edge in every
+        // stage. It was missing while the default moved from 4x to off
+        // (12ad499101), which is exactly when a golden set would have
+        // needed it. The `msaa` field above records the resolved count
+        // but nothing restages from it.
+        "AntiAliasing",
         "RenderCache", "Orthographic", "UseVBO",
         "TransparentObjectRenderType",
         "EnableHeadlight", "HeadlightColor", "HeadlightDirection",

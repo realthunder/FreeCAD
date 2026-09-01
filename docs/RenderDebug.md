@@ -902,6 +902,31 @@ passes on a build the user can see is broken is worse than no harness.
   wrong: neither the place nor the cause was what the text suggested,
   and both were real bugs that had been called cosmetic
   (`docs/CoinRetirement.md` stage 1a).
+- WARNING: **a probe that sets a `RenderDebug_*` parameter writes the
+  USER'S config, and every later run inherits it.** These are global
+  `RenderParams` (`User parameter:BaseApp/Preferences/View/Render`), not
+  view properties -- setting one on a view is inert (2.3), so a probe has
+  to set the parameter, and a probe that exits without clearing it leaves
+  it set for the desktop session too. What makes this worse than a wrong
+  picture is the shape of the failure. A probe that left
+  `DebugViewMode` at 11 turned every subsequent capture into the id
+  image, which is opaque and centre-sampled; the next question asked of
+  those captures -- "does this render the same twice?" -- came back a
+  clean 33/33, because an id image has no partial coverage and so cannot
+  show a coverage defect at all. **A false PASS, from a stale
+  preference.** Run such a probe under an isolated `XDG_CONFIG_HOME`, or
+  clear the key afterwards, and check `preferences` in a sidecar before
+  trusting a capture set.
+- IMPORTANT: **the sidecar's preferences are an ALLOWLIST, and a key that
+  is not on it does not restage.** `viewKeys` in `View3DInventorPyImp.cpp`
+  names what goes out; anything else is invisible to a golden.
+  `AntiAliasing` was missing from it until 2026-09-01, which meant a
+  golden captured multisampled compared against whatever the running
+  profile happened to say -- diverging along every silhouette in every
+  stage, for a reason no sidecar reported. The `msaa` field records the
+  resolved sample count, but nothing ever restaged from it. When adding a
+  preference that changes what a frame looks like, add it to `viewKeys`
+  in the same commit.
 
 This closes the "no reliable way to verify rendering" gap: the SwiftShader
 blindspot is covered by the desktop leg being a *real-GPU readback* of the
