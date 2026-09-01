@@ -831,8 +831,14 @@ always saw, one row shorter.
   answered by that look being written straight back at it -- which is a
   loop, and the refresh above would have closed it.
 
-Still ahead: the context-menu form of Reset to material, and the Material
-panel's preview and line.
+- **Reset to material has three doors now**: the button, that row, and
+  `Material_ResetAppearance` in the Tree and View context menus, offered
+  only while it applies -- the sync commands' rule of 13.5. The act itself
+  moved to one place,
+  `ViewProviderGeometryObject::resetAppearanceToMaterial()`, with
+  `canResetAppearanceToMaterial()` as the question all three ask.
+
+Still ahead: the Material panel's preview and line.
 
 ### 15.6 The legacy mirror
 

@@ -1330,6 +1330,35 @@ void ViewProviderGeometryObject::applyMaterialAppearance()
     applyMaterialRenderProperties(this, geometry->getMaterialRenderProperties());
 }
 
+bool ViewProviderGeometryObject::canResetAppearanceToMaterial() const
+{
+    auto geometry = dynamic_cast<const App::GeoFeature*>(getObject());
+    if (!geometry || ShapeAppearance.isFollowingMaterial()) {
+        return false;
+    }
+    return geometry->getMaterialAppearance() != App::Material();
+}
+
+bool ViewProviderGeometryObject::resetAppearanceToMaterial()
+{
+    auto geometry = dynamic_cast<App::GeoFeature*>(getObject());
+    if (!geometry) {
+        return false;
+    }
+    const App::Material card = geometry->getMaterialAppearance();
+    if (card == App::Material()) {
+        return false;   // nothing to go back to
+    }
+    // The BASE, and following again from now on. The faces holding a look
+    // of their own keep it (docs/MaterialStorage.md 15.5).
+    ShapeAppearance.followMaterial(card);
+    // The card's render features come back with its colours: a Render_Glass
+    // the abandoned look left behind is the card's to state again, or to
+    // clear by stating none.
+    applyMaterialRenderProperties(this, geometry->getMaterialRenderProperties());
+    return true;
+}
+
 void ViewProviderGeometryObject::deriveFollowMaterial()
 {
     if (ShapeAppearance.isFollowingMaterial()) {

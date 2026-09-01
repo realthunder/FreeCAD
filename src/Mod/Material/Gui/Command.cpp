@@ -34,6 +34,7 @@
 #include <Gui/Control.h>
 #include <Gui/MainWindow.h>
 #include <Gui/Selection/Selection.h>
+#include <Gui/ViewProviderGeometryObject.h>
 
 #include "DlgDisplayPropertiesImp.h"
 #include "DlgInspectAppearance.h"
@@ -369,6 +370,71 @@ bool CmdMaterialSaveToLibrary::isActive()
     return false;
 }
 
+//===========================================================================
+// Material_ResetAppearance
+//===========================================================================
+
+namespace
+{
+
+/// Every selected view provider that could take its card's look again.
+std::vector<Gui::ViewProviderGeometryObject*> resettableSelection()
+{
+    std::vector<Gui::ViewProviderGeometryObject*> found;
+    for (auto object : Gui::Selection().getObjectsOfType<App::DocumentObject>()) {
+        auto* vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(
+            Gui::Application::Instance->getViewProvider(object));
+        if (vp && vp->canResetAppearanceToMaterial()) {
+            found.push_back(vp);
+        }
+    }
+    return found;
+}
+
+}  // namespace
+
+DEF_STD_CMD_A(CmdMaterialResetAppearance)
+
+CmdMaterialResetAppearance::CmdMaterialResetAppearance()
+    : Command("Material_ResetAppearance")
+{
+    sAppModule = "Material";
+    sGroup = QT_TR_NOOP("Material");
+    sMenuText = QT_TR_NOOP("Reset Appearance To Material");
+    sToolTipText =
+        QT_TR_NOOP("Takes the look from the object's material card again, and keeps taking it");
+    sWhatsThis = "Material_ResetAppearance";
+    sStatusTip = sToolTipText;
+    eType = Alter3DView;
+}
+
+void CmdMaterialResetAppearance::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+
+    openCommand(QT_TRANSLATE_NOOP("Command", "Reset appearance to material"));
+    int reset = 0;
+    for (auto vp : resettableSelection()) {
+        if (vp->resetAppearanceToMaterial()) {
+            ++reset;
+        }
+    }
+    if (reset == 0) {
+        abortCommand();
+        return;
+    }
+    commitCommand();
+    updateActive();
+}
+
+bool CmdMaterialResetAppearance::isActive()
+{
+    // Offered only while it applies -- the rule the sync commands follow
+    // (docs/MaterialStorage.md 13.5, 15.5). An object still following its
+    // card has nowhere to go back to.
+    return !resettableSelection().empty();
+}
+
 //---------------------------------------------------------------
 
 void CreateMaterialCommands()
@@ -382,6 +448,7 @@ void CreateMaterialCommands()
     rcCmdMgr.addCommand(new CmdInspectMaterial());
     rcCmdMgr.addCommand(new CmdMaterialUpdateFromLibrary());
     rcCmdMgr.addCommand(new CmdMaterialSaveToLibrary());
+    rcCmdMgr.addCommand(new CmdMaterialResetAppearance());
 #if defined(BUILD_MATERIAL_EXTERNAL)
     rcCmdMgr.addCommand(new CmdMigrateToExternal());
 #endif

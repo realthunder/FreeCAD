@@ -84,6 +84,14 @@ void WorkbenchManipulator::addCommands(Gui::MenuItem* menuBar,
         if (!sync) {
             return;
         }
+        // The way back from a look the user chose, beside the command that
+        // chose it, and only while there is a card to go back to
+        // (docs/MaterialStorage.md 15.5).
+        if (applies("Material_ResetAppearance")) {
+            auto reset = new Gui::MenuItem();
+            reset->setCommand("Material_ResetAppearance");
+            par->insertItem(item, reset);
+        }
         // The two sync commands (docs/MaterialStorage.md sec 13) go next to
         // the command that assigned the material in the first place, but only
         // when they have something to act on: a divergence to take, or a card

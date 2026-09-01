@@ -1261,25 +1261,11 @@ void DlgDisplayPropertiesImp::onCardSelected(const std::shared_ptr<Materials::Ma
 
 void DlgDisplayPropertiesImp::onResetToMaterial()
 {
+    // One answer in one place: the context-menu command reaches the same
+    // primitive (docs/MaterialStorage.md 15.5).
     for (auto view : getTargets()) {
-        auto* prop = dynamic_cast<App::PropertyMaterialList*>(
-                view->getPropertyByName("ShapeAppearance"));
-        auto* geometry = dynamic_cast<App::GeoFeature*>(
-                dynamic_cast<Gui::ViewProviderDocumentObject*>(view)
-                        ? dynamic_cast<Gui::ViewProviderDocumentObject*>(view)->getObject()
-                        : nullptr);
-        if (!prop || !geometry) {
-            continue;
-        }
-        const App::Material card = geometry->getMaterialAppearance();
-        if (card == App::Material()) {
-            continue;   // nothing to go back to
-        }
-        // The base, and following again from now on. The faces holding a
-        // look of their own keep it: this is not "clear the overrides".
-        prop->followMaterial(card);
         if (auto* vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(view)) {
-            Gui::applyMaterialRenderProperties(vp, geometry->getMaterialRenderProperties());
+            vp->resetAppearanceToMaterial();
         }
     }
     setMaterialCard(getTargets());

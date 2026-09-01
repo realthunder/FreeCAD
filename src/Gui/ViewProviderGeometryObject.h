@@ -221,6 +221,24 @@ public:
      */
     void applyMaterialAppearance();
 
+    /** Whether going back to the card's look would change anything
+     *
+     * There has to be a card with a look to go back TO, and the object has
+     * to have stopped following it. What the panel's Reset to material
+     * button and the context-menu command both ask before offering
+     * themselves (docs/MaterialStorage.md 15.5).
+     */
+    bool canResetAppearanceToMaterial() const;
+
+    /** Take the card's look again, and follow it from now on
+     *
+     * The deliberate way back, so no follow guard: this is what ENDS a
+     * look the user chose. The faces holding a look of their own keep it
+     * -- this is not "clear the overrides". Answers whether it did
+     * anything.
+     */
+    bool resetAppearanceToMaterial();
+
     /** Decide, once, whether a restored appearance follows its card
      *
      * A document written before the flag existed cannot state it, and
