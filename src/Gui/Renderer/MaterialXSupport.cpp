@@ -439,13 +439,24 @@ DocumentInfo inspect(const std::string &xml, const std::string &sourcePath)
     // The whole tree, not the top-level nodes: an image node almost
     // always sits inside a nodegraph.
     std::set<std::string> seen;
+    std::set<std::string> seenResolved;
     for (mx::ElementPtr elem : doc->traverseTree()) {
         auto input = elem->asA<mx::Input>();
         if (!input || input->getType() != mx::FILENAME_TYPE_STRING)
             continue;
         const std::string value = input->getValueString();
-        if (value.empty() || !resolveFile(doc, value).empty())
+        if (value.empty())
             continue;
+        const std::string resolved = resolveFile(doc, value);
+        if (!resolved.empty()) {
+            // What a consumer that cannot open files itself has to be
+            // handed. Deduplicated on the RESOLVED path: two nodes
+            // naming one file through different relative spellings are
+            // one image to load.
+            if (seenResolved.insert(resolved).second)
+                info.images.push_back(resolved);
+            continue;
+        }
         if (seen.insert(value).second)
             info.missingImages.push_back(value);
     }

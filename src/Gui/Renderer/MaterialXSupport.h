@@ -97,6 +97,14 @@ struct DocumentInfo {
     /// says they are. Reported as warnings: the material still
     /// renders, with those maps missing.
     std::vector<std::string> missingImages;
+    /// Absolute paths of the image files the document names AND that
+    /// are there, deduplicated, in document order. This is what a
+    /// consumer has to have in hand before it can draw the material:
+    /// the raster path loads these and binds them to the samplers
+    /// generate() reports, joining the two lists on the path itself
+    /// (docs/CyclesIntegration.md sec 6.12). The path tracer needs
+    /// none of it -- it opens the files itself.
+    std::vector<std::string> images;
     /// The document's public interface, in document order: what the
     /// graph feeding the first material declares as its inputs. Empty
     /// when the document declares none, which is what a bare surface
@@ -136,6 +144,28 @@ struct GeneratedMaterial {
     std::vector<std::string> warnings;
     /// The generated shader text.
     std::string source;
+
+    /// One image node's sampler in the generated code.
+    struct Image {
+        /// The sampler's name in `source`, declared there as
+        /// SAMPLER2D(name, unit). The engine binds a texture to it.
+        std::string name;
+        /// Which texture unit the declaration claims. Allocated here
+        /// because only the generator knows how many there are, from a
+        /// base the mesh shader's own samplers leave free.
+        int unit = 0;
+        /// Absolute path of the file the document names for it. The
+        /// pixels are not loaded here: this is the join key against
+        /// the images the capture side loaded (DocumentInfo::images).
+        std::string path;
+        /// The colour space the document states for the file ("srgb_texture",
+        /// "lin_rec709", or empty where it states none). What the shader
+        /// does about it is already in `source`; this is for reporting.
+        std::string colorSpace;
+    };
+    /// The samplers `source` declares, in declaration order. Empty for
+    /// a document that names no image.
+    std::vector<Image> images;
 };
 
 /// Generate the raster material-inputs function for a document.

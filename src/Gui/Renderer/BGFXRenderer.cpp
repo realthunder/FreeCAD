@@ -1951,10 +1951,9 @@ BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
     return 1;
 }
 
-const std::string &
+const BGFXRendererLibP::MaterialXVariant &
 BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
 {
-    static const std::string kNone;
     // A document is identified by the file it came from, or by its text
     // when it has no file. Two draws sharing a material share one
     // generation and one compile.
@@ -1977,7 +1976,7 @@ BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
         Base::Console().Warning("MaterialX %s: not rendered by the raster "
                                 "path: %s\n", what.c_str(),
                                 gen.error.c_str());
-        return materialXVariants.emplace(key, std::string()).first->second;
+        return materialXVariants.emplace(key, MaterialXVariant()).first->second;
     }
 
     // The stock TEXTURED mesh fragment stage, spliced. Textured because
@@ -1994,7 +1993,23 @@ BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
         "#define FC_USER_MATERIAL 1\n"
         "#include \"fc_mesh_fs.sh\"\n"
         + gen.source;
-    return materialXVariants.emplace(key, std::move(src)).first->second;
+    MaterialXVariant variant;
+    variant.source = std::move(src);
+    variant.images = std::move(gen.images);
+    return materialXVariants.emplace(key, std::move(variant)).first->second;
+}
+
+bgfx::UniformHandle
+BGFXRendererLibP::userSampler(const std::string &name)
+{
+    auto it = userSamplers.find(name);
+    if (it == userSamplers.end())
+        it = userSamplers
+                 .emplace(name,
+                          bgfx::createUniform(name.c_str(),
+                                              bgfx::UniformType::Sampler))
+                 .first;
+    return it->second;
 }
 
 void
@@ -2011,8 +2026,19 @@ BGFXRendererLibP::viewerShaderBins(
     // it will ever get.
     std::string generated;
     if (shader.dialect == Render::UserShader::Dialect::MaterialX) {
-        generated = materialXVariant(shader);
+        const MaterialXVariant &variant = materialXVariant(shader);
+        generated = variant.source;
         if (generated.empty())
+            return;
+        // A document naming images is not shipped to a viewer tier yet:
+        // its pixels do not travel in the snapshot, so the tier would
+        // load a program whose samplers nothing binds and draw the maps
+        // as the backend default. Shipping nothing instead leaves the
+        // stock program standing in, which is the fallback every other
+        // unrenderable document already gets (docs/CyclesIntegration.md
+        // sec 6.12). Carrying UserShader::images through SceneDump is
+        // what lifts this.
+        if (!variant.images.empty())
             return;
     }
     else if (shader.dialect != Render::UserShader::Dialect::ShaderText) {
@@ -2089,7 +2115,7 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
     if (shader.dialect == Render::UserShader::Dialect::MaterialX) {
         if (simulate)
             return BGFX_INVALID_HANDLE;
-        generated = materialXVariant(shader);
+        generated = materialXVariant(shader).source;
         if (generated.empty())
             return BGFX_INVALID_HANDLE;
         stockVs = "vs_fc_mesh_tex";

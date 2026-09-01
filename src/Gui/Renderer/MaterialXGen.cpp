@@ -48,9 +48,11 @@
  *
  * What the raster path cannot do it REPORTS, and the draw keeps its
  * stock appearance (the sandboxed-failure rule the Cycles interpreter
- * follows). Two such cases today: a shading model with no translation
- * to OpenPBR, and an image node -- the generated code declares no
- * samplers because nothing binds textures to a user shader yet.
+ * follows). One such case today: a shading model with no translation to
+ * OpenPBR. Image nodes DO generate -- each becomes a SAMPLER2D the
+ * engine binds a loaded texture to (sec 6.12) -- but only up to the
+ * handful of texture units the mesh shader leaves free, and a document
+ * wanting more than that is reported rather than drawn wrong.
  */
 
 #include "PreCompiled.h"
@@ -184,6 +186,18 @@ public:
     /// cannot answer; the value reads as zero and the caller reports it.
     mutable std::vector<std::string> unmapped;
 
+    /// The document being generated, for resolving an image node's
+    /// filename against the document's own search path -- which is
+    /// where a material states its images (sec 6.12).
+    mx::DocumentPtr document;
+    /// The samplers emitted for the document's image nodes, in
+    /// declaration order, with the unit each one claimed.
+    mutable std::vector<GeneratedMaterial::Image> images;
+    /// Set when the document needs more image units than there are.
+    /// The caller refuses the whole document rather than drawing it
+    /// with some of its maps silently missing.
+    mutable std::string imageOverflow;
+
     /// The document's public interface (docs/CyclesIntegration.md sec
     /// 6.11), keyed by the namepath of the declaring input -- which is
     /// what MaterialX puts on the published uniform it generates for
@@ -224,6 +238,23 @@ protected:
         emitLine("#ifdef M_PI", stage, false);
         emitLine("#undef M_PI", stage, false);
         emitLine("#endif", stage, false);
+        // MaterialX writes the GLSL builtins texture() and textureGrad();
+        // bgfx spells the portable forms texture2D() and texture2DGrad(),
+        // and defines them ONLY on the backends where the builtin is
+        // missing. So the shim goes the other way and only on those
+        // backends -- the same condition bgfx_shader.sh switches on --
+        // leaving the GLSL and ESSL builds reading their own builtin.
+        // (The preprocessor's own re-entry rule is what stops
+        // texture -> texture2D -> texture from looping.)
+        emitLine("#if BGFX_SHADER_LANGUAGE_HLSL || BGFX_SHADER_LANGUAGE_PSSL "
+                 "|| BGFX_SHADER_LANGUAGE_SPIRV || BGFX_SHADER_LANGUAGE_METAL "
+                 "|| BGFX_SHADER_LANGUAGE_WGSL",
+                 stage, false);
+        emitLine("#define texture(_s, _c) texture2D(_s, _c)", stage, false);
+        emitLine("#define textureGrad(_s, _c, _dx, _dy) "
+                 "texture2DGrad(_s, _c, _dx, _dy)",
+                 stage, false);
+        emitLine("#endif", stage, false);
         // The uv transform the image nodes include by token. The stock
         // pixel stage sets this substitution, and this one replaces
         // that stage, so it has to be set here or the include fails.
@@ -253,6 +284,43 @@ protected:
     }
 
 private:
+    /// Declare one image node's sampler, and record what has to be
+    /// bound to it.
+    ///
+    /// The unit is claimed from kImageUnitBase upward: the mesh
+    /// fragment stage this function is spliced into holds 0..10 and a
+    /// stateful particle emitter binds 11 and 12, so what is left is
+    /// small and a document wanting more is refused whole rather than
+    /// drawn with some of its maps reading another pass's texture. A
+    /// 2D array over one unit is what lifts the limit when it starts
+    /// to bite (sec 6.12).
+    void emitImageSampler(const mx::ShaderPort *port,
+                          mx::ShaderStage &stage) const
+    {
+        GeneratedMaterial::Image image;
+        image.name = port->getVariable();
+        image.unit = kImageUnitBase + int(images.size());
+        if (port->getValue())
+            image.path = resolveFile(document, port->getValue()->getValueString());
+        image.colorSpace = port->getColorSpace();
+        if (image.unit > kImageUnitLast) {
+            if (imageOverflow.empty())
+                imageOverflow = "the document needs more image units than the "
+                                "raster path has free (" + std::to_string(
+                                    kImageUnitLast - kImageUnitBase + 1) + ")";
+            return;
+        }
+        // SAMPLER2D is bgfx's own declaration macro, and on the
+        // backends that split texture from sampler it also defines
+        // `sampler2D` as the struct pair -- which is why MaterialX's
+        // stock signature token, "sampler2D tex_sampler", passes one
+        // of these to mx_image_* unchanged.
+        emitLine("SAMPLER2D(" + image.name + ", " + std::to_string(image.unit)
+                     + ")",
+                 stage);
+        images.push_back(std::move(image));
+    }
+
     /// The declarations of everything the graph publishes. MaterialX
     /// would emit a uniform for each; here a value the document stated
     /// and nothing will write becomes a file-scope constant, and only
@@ -268,11 +336,17 @@ private:
         bool any = false;
         for (size_t i = 0; i < block.size(); ++i) {
             const mx::ShaderPort *port = block[i];
-            // An image is refused whole by the caller; declaring a
-            // sampler for it here would only change which error the
-            // build reports.
-            if (port->getType() == mx::Type::FILENAME)
+            // An image node reaches the generated code as a sampler
+            // passed to mx_image_*, and MaterialX writes that parameter
+            // through its own token, so the declaration is all this
+            // side owes it (sec 6.12). The file itself is not opened
+            // here: the path is reported and the engine binds a texture
+            // loaded elsewhere.
+            if (port->getType() == mx::Type::FILENAME) {
+                emitImageSampler(port, stage);
+                any = true;
                 continue;
+            }
             const MaterialInput *param = lookup(port);
             if (!param) {
                 if (ownedBySurface(port))
@@ -416,28 +490,6 @@ private:
     }
 };
 
-/// Image nodes reach the generated code as sampler uniforms, which
-/// nothing declares or binds on the raster side yet. Reported so the
-/// draw falls back whole rather than compiling against an undeclared
-/// name -- Cycles renders such a document properly, loading the files
-/// itself (section 6.9).
-bool usesImages(const mx::ShaderPtr &shader, std::string &which)
-{
-    const mx::ShaderStage &ps = shader->getStage(mx::Stage::PIXEL);
-    // The PUBLIC block only: MaterialX declares samplers of its own in
-    // the private block (its environment radiance and irradiance maps),
-    // and those are not the document's doing -- reading them as image
-    // nodes would refuse every document ever written.
-    const mx::VariableBlock &block = ps.getUniformBlock(mx::HW::PUBLIC_UNIFORMS);
-    for (size_t i = 0; i < block.size(); ++i) {
-        if (block[i]->getType() == mx::Type::FILENAME) {
-            which = block[i]->getName();
-            return true;
-        }
-    }
-    return false;
-}
-
 }  // namespace
 
 GeneratedMaterial generate(const std::string &xml, const std::string &sourcePath)
@@ -475,6 +527,7 @@ GeneratedMaterial generate(const std::string &xml, const std::string &sourcePath
             gen->declaredInputs[input.path] = &input;
             gen->declaredByName[input.name] = &input;
         }
+        gen->document = doc;
         gen->surfacePath = surface->getNamePath();
         if (mx::NodeDefPtr def = surface->getNodeDef())
             gen->surfaceDefPath = def->getNamePath();
@@ -500,11 +553,21 @@ GeneratedMaterial generate(const std::string &xml, const std::string &sourcePath
             out.error = "the document generated no shader";
             return out;
         }
-        std::string image;
-        if (usesImages(shader, image)) {
-            out.error = "image nodes are not bound in the raster path yet ('"
-                + image + "'); the path tracer renders this document";
+        // Only the PUBLIC uniform block is read for images: MaterialX
+        // declares samplers of its own in the private block (its
+        // environment radiance and irradiance maps), and those are not
+        // the document's doing.
+        if (!gen->imageOverflow.empty()) {
+            out.error = gen->imageOverflow
+                + "; the path tracer renders this document";
             return out;
+        }
+        out.images = std::move(gen->images);
+        for (const auto &image : out.images) {
+            if (image.path.empty())
+                out.warnings.push_back(
+                    "the image for '" + image.name
+                    + "' is not where the document says; it draws as black");
         }
         for (const std::string &u : gen->unmapped) {
             out.warnings.push_back(

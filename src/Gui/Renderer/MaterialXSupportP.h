@@ -66,6 +66,20 @@ mx::FileSearchPath searchPath(const mx::DocumentPtr &doc);
 /// Empty when the file is not on the search path.
 std::string resolveFile(const mx::DocumentPtr &doc, const std::string &name);
 
+/// The texture units a generated material may claim for its image
+/// nodes (docs/CyclesIntegration.md sec 6.12).
+///
+/// The generated function is spliced into the stock mesh fragment
+/// stage, which declares samplers 0..10 of its own, and a stateful
+/// particle emitter binds 11 and 12 for its state textures. What is
+/// left is the range below, and bgfx guarantees 16 units on every
+/// backend the project compiles for. A document wanting more is
+/// refused whole rather than drawn with some of its maps reading
+/// another pass's texture; a 2D array over ONE unit, the way the
+/// per-face palette already works, is what lifts the limit.
+constexpr int kImageUnitBase = 13;
+constexpr int kImageUnitLast = 15;
+
 /// The surface-shader nodes a document renders, in document order: the
 /// shader nodes of its material nodes, plus any standalone surface
 /// shader. Empty means the document describes no surface, which is the

@@ -929,12 +929,39 @@ struct UserShader {
     /// config whose sources it already has once the bins arrive.
     std::vector<Compiled> compiled;
 
+    /// One image a MaterialX document names, decoded
+    /// (docs/CyclesIntegration.md sec 6.12).
+    ///
+    /// The document states its maps as file PATHS, and the raster path
+    /// cannot open a file: not in a viewer tier that has no filesystem,
+    /// and not on the render thread even where it could. So the capture
+    /// decodes them and they travel with the shader like its pixels.
+    /// The generator, which alone knows the sampler names it emitted,
+    /// reports which sampler each path belongs to -- so the two lists
+    /// are joined on `path`, and neither side has to predict the
+    /// other's naming.
+    struct Image {
+        /// Absolute path the document resolved to. The join key.
+        std::string path;
+        std::shared_ptr<const TextureImage> image;
+
+        bool operator==(const Image &o) const {
+            const uint64_t a = image ? image->textureId : 0;
+            const uint64_t b = o.image ? o.image->textureId : 0;
+            return path == o.path && a == b;
+        }
+        bool operator!=(const Image &o) const { return !(*this == o); }
+    };
+    /// The document's images, in document order. Empty for every shader
+    /// that is not a MaterialX document naming a file.
+    std::vector<Image> images;
+
     bool operator==(const UserShader &o) const {
         return dialect == o.dialect && sourcePath == o.sourcePath
             && stage == o.stage && vertexSource == o.vertexSource
             && fragmentSource == o.fragmentSource
             && simulateSource == o.simulateSource && params == o.params
-            && compiled == o.compiled;
+            && compiled == o.compiled && images == o.images;
     }
     bool operator!=(const UserShader &o) const { return !(*this == o); }
 };

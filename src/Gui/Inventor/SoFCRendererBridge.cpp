@@ -88,6 +88,7 @@
 #include "../ViewParams.h"
 #include "../RenderParams.h"
 #include "../View3DInventor.h"
+#include "../Renderer/MaterialXSupport.h"
 
 FC_LOG_LEVEL_INIT("Renderer", true, true)
 
@@ -1976,6 +1977,43 @@ static std::string shaderObjectSource(const SoShaderObject * obj,
     return {};
 }
 
+static std::shared_ptr<const Render::TextureImage>
+loadParamImage(const std::string &path, bool keepGray);
+
+/// Decode the images a MaterialX document names.
+///
+/// Parsing a document means loading the standard data library behind
+/// it, which is far too much to do per capture -- and a capture happens
+/// on every scene change. So the answer is cached on the document's own
+/// identity, its file where it has one and its text where it does not,
+/// exactly as the generator caches the shader it makes from it. The
+/// pixels underneath are cached again by loadParamImage(), which is
+/// what notices a map edited in another program.
+static void loadMaterialXImages(const std::string & xml,
+                                const std::string & sourcePath,
+                                std::vector<Render::UserShader::Image> & out)
+{
+    out.clear();
+    if (!Render::MaterialX::available())
+        return;
+    static std::map<std::string, std::vector<std::string>> cache;
+    const std::string & key = sourcePath.empty() ? xml : sourcePath;
+    auto it = cache.find(key);
+    if (it == cache.end()) {
+        Render::MaterialX::DocumentInfo info =
+            Render::MaterialX::inspect(xml, sourcePath);
+        it = cache.emplace(key, std::move(info.images)).first;
+    }
+    for (const std::string & path : it->second) {
+        Render::UserShader::Image image;
+        image.path = path;
+        // Never as grey: a map the document reads one channel of is
+        // still an RGB file, and the generated code samples .rgb.
+        image.image = loadParamImage(path, false);
+        out.push_back(std::move(image));
+    }
+}
+
 bool
 RendererBridge::translateShaderProgram(const SoNode * node,
                                        Render::UserShader & out)
@@ -1999,7 +2037,13 @@ RendererBridge::translateShaderProgram(const SoNode * node,
         // carrying one is meaningless and dropped.
         if (dialect != Render::UserShader::Dialect::ShaderText) {
             out.dialect = dialect;
-            out.sourcePath = std::move(sourcePath);
+            out.sourcePath = sourcePath;
+            // A document names its maps as paths, and the consumer of
+            // this shader may have no filesystem to open them with
+            // (docs/CyclesIntegration.md sec 6.12). Decoded here, once
+            // per document, and carried with it.
+            loadMaterialXImages(src, sourcePath, out.images);
+            sourcePath.clear();
         }
         if (obj->isOfType(SoVertexShader::getClassTypeId())) {
             if (dialect != Render::UserShader::Dialect::ShaderText)

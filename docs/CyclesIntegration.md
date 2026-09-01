@@ -1683,10 +1683,10 @@ intensity either, so a forced draw takes the environment at full
 strength rather than rendering unlit.
 
 **What the raster path cannot do it reports**, and the draw keeps its
-stock appearance -- the sandboxed-failure rule of section 6.9. Two
-cases: a shading model with no translation to OpenPBR
-(`UsdPreviewSurface` and the hair models translate to nothing), and an
-image node, because nothing binds a texture to a user shader yet.
+stock appearance -- the sandboxed-failure rule of section 6.9. One case
+as this section was written: a shading model with no translation to
+OpenPBR (`UsdPreviewSurface` and the hair models translate to nothing).
+An image node was the second, and is one no longer -- see section 6.12.
 Cycles renders both properly, loading image files itself.
 
 **Verification** is in three layers, because the chain is long:
@@ -1716,10 +1716,10 @@ every leg and reads as a dead splice. And the config the probes copy
 has MATCAP on, which is how the forced branch above came to be needed:
 a document attached to an object rendered as though it were not there.
 
-Not yet: images (a texture bound to a user shader is new engine work)
-and `geometry_opacity` (a material cannot move a draw into the
+Not yet: `geometry_opacity` (a material cannot move a draw into the
 transparent pass mid-frame). The `Param_*` interface is step 3, and is
-section 6.11.
+section 6.11; images were the other gap here and are section 6.12,
+which is also what moved the image case out of the reported list above.
 
 
 ### 6.11 The declared interface (phase B step 3, built 2026-08-31)
@@ -1873,6 +1873,108 @@ name above.
 
 Not yet, and the remaining piece of step 3: a material card able to
 carry a `.mtlx`.
+
+
+### 6.12 Images in the raster path (phase B, built 2026-09-01)
+
+Twenty-six of MaterialX's fifty example materials name an image file,
+and until now every one of them was refused by the raster path and left
+to the path tracer. The refusal was honest -- an image node reaches the
+generated code as a sampler, and nothing declared or bound one -- but it
+is what a real material looks like: a photograph of a surface is the
+usual way to state one.
+
+**The join is the file path.** Two sides have to agree, and neither can
+see the other. The GENERATOR alone knows the sampler names, because
+MaterialX derives them from the node graph; the CAPTURE alone can decode
+a file, because the render thread must not open one and a viewer tier
+may have no filesystem at all. So the generator reports
+`{sampler, unit, path}` per image and the capture reports
+`{path, pixels}`, and `BGFXView::pushUserImages` joins the two lists on
+the path before the draw. Neither side has to predict the other's
+naming, and the path is what both of them already have.
+
+**The pixels travel with the shader.** `UserShader::images` carries
+decoded `TextureImage`s, which is the vehicle the whole engine already
+uses: content-keyed, blob-stored, deferrable. `RendererBridge` decodes
+them through the same `loadParamImage()` cache the environment and the
+ground texture use -- so a map edited in another program is picked up,
+and the document is only re-inspected when its text or its file changes
+(parsing one means loading the standard data library behind it, which is
+far too much to do per capture).
+
+**Two things bgfx needed that MaterialX does not write.** Both were
+found by compiling every generated example on all three profiles, and
+neither shows up on a desktop GL run:
+
+- The SIGNATURE was already right by luck. MaterialX 1.39 writes the
+  sampler parameter through a token (`$texSamplerSignature`, default
+  `sampler2D tex_sampler`), and bgfx `#define`s `sampler2D` to its
+  `BgfxSampler2D` struct pair on the backends that split texture from
+  sampler. So the stock token passes one of those by value, unchanged.
+- The CALL was not. MaterialX writes the GLSL builtins `texture()` and
+  `textureGrad()`; bgfx spells the portable forms `texture2D()` and
+  `texture2DGrad()` and only defines them where the builtin is missing.
+  The generated preamble therefore shims the other way, under exactly
+  the condition `bgfx_shader.sh` switches on -- so a GLSL or ESSL build
+  reads its own builtin and only the HLSL-family backends are rewritten.
+  Without it the five image materials compiled on glsl and essl and
+  failed on spirv alone, which no desktop probe would ever have shown.
+
+**The unit budget is the real limit.** The generated function is spliced
+into the stock mesh fragment stage, which declares samplers 0..10, and a
+stateful particle emitter binds 11 and 12. That leaves 13, 14 and 15 of
+the sixteen bgfx guarantees, so a document may claim three images and
+one wanting more is refused whole -- reported, and drawn as its stock
+appearance -- rather than drawn with some of its maps reading another
+pass's texture. Three is enough for base colour, roughness and metallic,
+which is what the library's tiled materials use; the chess set uses
+exactly three. **A 2D array over one unit is what lifts this**, the way
+the per-face palette (6.7) already holds many images on unit 10, and it
+is the obvious next step if the cap starts to bite. An image the
+document names but that is not on disk is not a refusal: that sampler is
+left unbound and the map draws as the backend default, which the
+generator warns about.
+
+**The streaming tier does not get this yet.** `UserShader::images`
+carries the pixels in memory, but `SceneDump` does not write them, so a
+viewer with no filesystem would load a program whose samplers nothing
+binds and draw every map as the backend default. So the server-side
+compile (`viewerShaderBins`) declines a document that names images, and
+that tier keeps the stock-appearance fallback it had before this
+section. Carrying the images through the snapshot is the next step, and
+the vehicle is already there: a `TextureImage` is content-keyed and
+blob-stored, and the snapshot's texture table already deduplicates and
+defers exactly these.
+
+**Verification.** Twenty-one unit tests
+(`tests/src/Gui/MaterialXGen.cpp`), four of them new: an image becomes a
+declared sampler, a missing file is said rather than refused, two images
+never share a unit, and the portable-call shim is present. Over
+MaterialX's own examples, outside the tree, generation now succeeds for
+**29 of 50 where it was 24**, and all 29 compile through the in-tree
+shaderc on glsl, spirv and essl -- 87 compiles, no failures. The
+remaining 21 are the models that do not translate to OpenPBR
+(`UsdPreviewSurface` and the hair shaders), which is 6.10's case and not
+this one. `build/probes/mtlxraster/probe.sh` grows three legs that run
+the whole chain to a drawn pixel: a document naming a file changes the
+picture at all; swapping that file for one of another colour moves it
+again, and the red file's frame is redder than the blue file's while the
+blue file's is bluer, which is what proves the sampler reads THAT file
+and not merely something; and the same colour stated as a literal draws
+the same as stated as a file, to a mean absolute difference of 0.0001.
+That last number also says what the colour management does, which is
+nothing: the document states no colour space for the file, so its bytes
+are read as authored and 230/255 is the 0.902 a literal would have been.
+
+Writing those legs re-taught a trap this file already records. The first
+cut asserted that a red image "draws reddest" -- a channel ORDERING over
+the body mask -- and it failed. It was right to: the studio environment
+is blue-ish, and at this roughness a LITERAL red draws with more blue
+than red in the mean too, which is why the literal and the image agreed
+to 0.0001 while both "failed". An absolute colour assertion over that
+mask reads the environment. Assert one frame against another, where the
+environment cancels.
 
 
 ## 7. Preparing for out of process

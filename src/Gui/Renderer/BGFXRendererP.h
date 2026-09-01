@@ -28,6 +28,7 @@
 /// per-feature files). Not an API -- nothing outside
 /// src/Gui/Renderer may include it.
 #include "FCConfig.h"
+#include "MaterialXSupport.h"
 #include "BGFXRenderer.h"
 #include "SceneDump.h"
 #include "MeshSource.h"
@@ -2104,12 +2105,31 @@ public:
     /// is empty is a document that could not be generated; the reason
     /// was reported when it was first tried, and the draw shades as its
     /// stock appearance from then on without asking again.
-    std::map<std::string, std::string> materialXVariants;
-    /// The assembled fragment source for a MaterialX shader: the stock
-    /// mesh fragment stage with the document's generated material-inputs
-    /// function spliced in. Empty when the document cannot be rendered
-    /// by the raster path.
-    const std::string &materialXVariant(const Render::UserShader &shader);
+    /// What generating one MaterialX document produced.
+    struct MaterialXVariant {
+        /// The assembled fragment source: the stock mesh fragment stage
+        /// with the document's generated material-inputs function
+        /// spliced in. Empty when the document cannot be rendered by
+        /// the raster path.
+        std::string source;
+        /// The samplers `source` declares and the file each one wants
+        /// (docs/CyclesIntegration.md sec 6.12). Only the generator
+        /// knows these names, and only the capture has the pixels, so
+        /// the draw joins the two lists on the image's path.
+        std::vector<Render::MaterialX::GeneratedMaterial::Image> images;
+    };
+    std::map<std::string, MaterialXVariant> materialXVariants;
+    /// Generate a MaterialX document's mesh-shader variant, once per
+    /// document, and remember it.
+    const MaterialXVariant &materialXVariant(const Render::UserShader &shader);
+    /// Sampler uniform handles by name, created on demand: the names
+    /// come from the generated shader, so they are not known until a
+    /// document has been generated. On the lib rather than the view
+    /// because a uniform handle is global to the backend, while the
+    /// TEXTURE it is given is the view's (BGFXView::pushUserImages).
+    std::map<std::string, bgfx::UniformHandle> userSamplers;
+    /// The handle for one generated sampler name, made on first use.
+    bgfx::UniformHandle userSampler(const std::string &name);
     /// Resolve a user program: user fragment stage + either a user
     /// vertex stage or the named stock vertex stage ("vs_fc_comp" for
     /// the post stage's full-screen triangle, "vs_fc_mesh" for the
@@ -5114,6 +5134,14 @@ public:
             tex.upload(palette);
         return bgfx::isValid(tex.handle) ? &tex : nullptr;
     }
+
+    /// Bind the textures a MaterialX material's samplers want, for the
+    /// draw about to be submitted (docs/CyclesIntegration.md sec 6.12).
+    /// A sampler whose image did not load is left unbound and reads as
+    /// the backend's default: the document is still drawn, with that
+    /// one map missing, which is what the generator already warned
+    /// about.
+    void pushUserImages(const Render::UserShader &shader);
 
     GpuTexture *getTexture(const Render::TextureImage &data)
     {

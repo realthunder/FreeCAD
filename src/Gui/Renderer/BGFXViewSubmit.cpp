@@ -228,6 +228,34 @@ BGFXStyleState::lookupStyleOverride(uint64_t objectKey)
     return it->second.has ? &it->second : nullptr;
 }
 
+void
+BGFXView::pushUserImages(const Render::UserShader &shader)
+{
+    if (shader.dialect != Render::UserShader::Dialect::MaterialX)
+        return;
+    const auto &variant = _BGFXLib.materialXVariant(shader);
+    for (const auto &want : variant.images) {
+        // Joined on the PATH, because the two halves are produced by
+        // sides that cannot see each other's naming: the generator
+        // named the sampler, the capture decoded the file.
+        const Render::TextureImage *pixels = nullptr;
+        for (const auto &have : shader.images) {
+            if (have.path == want.path && have.image) {
+                pixels = have.image.get();
+                break;
+            }
+        }
+        if (!pixels)
+            continue;   // reported at generation; the map draws as default
+        GpuTexture *tex = getTexture(*pixels);
+        if (!tex || !bgfx::isValid(tex->handle))
+            continue;
+        const bgfx::UniformHandle sampler = _BGFXLib.userSampler(want.name);
+        if (bgfx::isValid(sampler))
+            bgfx::setTexture(uint8_t(want.unit), sampler, tex->handle);
+    }
+}
+
 void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,
                       bool mapped)
 {
@@ -1393,6 +1421,11 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
             *mat.usershader, "vs_fc_mesh");
         if (bgfx::isValid(uprog)) {
             _BGFXLib.pushUserParams(*mat.usershader);
+            // A MaterialX document's maps, bound to the samplers its
+            // generated code declared (docs/CyclesIntegration.md sec
+            // 6.12). Units 13 and up, which is why the state textures
+            // below can still claim 10 and 11.
+            pushUserImages(*mat.usershader);
             // A stateful emitter's vertex stage reads this frame's
             // particle state by vertex texture fetch — the same
             // texels the step passes wrote a few views ago

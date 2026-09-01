@@ -177,11 +177,11 @@ TEST_F(MaterialXGenerator, aModelThatDoesNotTranslateIsReportedWhole)
     EXPECT_NE(out.error.find("UsdPreviewSurface"), std::string::npos) << out.error;
 }
 
-TEST_F(MaterialXGenerator, anImageIsReportedRatherThanLeftUndeclared)
+TEST_F(MaterialXGenerator, anImageBecomesADeclaredSampler)
 {
-    // Nothing binds a texture to a user shader yet, so an image node
-    // would generate a sampler name no one declares. Reported whole --
-    // the path tracer renders such a document properly.
+    // An image node is a sampler the engine binds a texture to
+    // (docs/CyclesIntegration.md sec 6.12), so the document generates
+    // and says which sampler wants which file.
     auto out = Render::MaterialX::generate(
         openPbrDoc("    <input name=\"base_color\" type=\"color3\" "
                    "nodename=\"img\" />\n",
@@ -189,9 +189,82 @@ TEST_F(MaterialXGenerator, anImageIsReportedRatherThanLeftUndeclared)
                    "    <input name=\"file\" type=\"filename\" "
                    "value=\"nowhere.png\" />\n"
                    "  </image>\n"));
-    EXPECT_FALSE(out.valid);
-    EXPECT_TRUE(out.source.empty());
-    EXPECT_NE(out.error.find("image"), std::string::npos) << out.error;
+    ASSERT_TRUE(out.valid) << out.error;
+    ASSERT_EQ(out.images.size(), 1u);
+    // Declared, so the generated code compiles against a name that is
+    // there -- which is the whole reason this used to be refused.
+    EXPECT_NE(out.source.find("SAMPLER2D(" + out.images[0].name),
+              std::string::npos)
+        << out.source;
+}
+
+TEST_F(MaterialXGenerator, anImageThatIsNotThereIsSaidSoRatherThanRefused)
+{
+    // The path is the join key the engine binds on, and there is no
+    // file behind this one. The material still draws -- with that map
+    // missing, which is worth a word.
+    auto out = Render::MaterialX::generate(
+        openPbrDoc("    <input name=\"base_color\" type=\"color3\" "
+                   "nodename=\"img\" />\n",
+                   "  <image name=\"img\" type=\"color3\">\n"
+                   "    <input name=\"file\" type=\"filename\" "
+                   "value=\"nowhere.png\" />\n"
+                   "  </image>\n"));
+    ASSERT_TRUE(out.valid) << out.error;
+    ASSERT_EQ(out.images.size(), 1u);
+    EXPECT_TRUE(out.images[0].path.empty());
+    bool warned = false;
+    for (const auto &w : out.warnings)
+        warned = warned || w.find("not where the document says")
+                               != std::string::npos;
+    EXPECT_TRUE(warned);
+}
+
+TEST_F(MaterialXGenerator, everyImageClaimsAUnitOfItsOwn)
+{
+    // Two images must not land on one texture unit, or the second
+    // draws the first's pixels.
+    auto out = Render::MaterialX::generate(
+        openPbrDoc("    <input name=\"base_color\" type=\"color3\" "
+                   "nodename=\"a\" />\n"
+                   "    <input name=\"specular_roughness\" type=\"float\" "
+                   "nodename=\"b\" />\n",
+                   "  <image name=\"a\" type=\"color3\">\n"
+                   "    <input name=\"file\" type=\"filename\" "
+                   "value=\"one.png\" />\n"
+                   "  </image>\n"
+                   "  <image name=\"b\" type=\"float\">\n"
+                   "    <input name=\"file\" type=\"filename\" "
+                   "value=\"two.png\" />\n"
+                   "  </image>\n"));
+    ASSERT_TRUE(out.valid) << out.error;
+    ASSERT_EQ(out.images.size(), 2u);
+    EXPECT_NE(out.images[0].unit, out.images[1].unit);
+    for (const auto &image : out.images) {
+        EXPECT_GE(image.unit, 13);
+        EXPECT_LE(image.unit, 15);
+    }
+}
+
+TEST_F(MaterialXGenerator, theBuiltinTextureCallIsSpelledPortably)
+{
+    // MaterialX writes GLSL's texture(); bgfx only has it on the
+    // backends that are GLSL. The shim has to be there or the document
+    // compiles on two profiles of three -- which is exactly how this
+    // was first found.
+    auto out = Render::MaterialX::generate(
+        openPbrDoc("    <input name=\"base_color\" type=\"color3\" "
+                   "nodename=\"img\" />\n",
+                   "  <image name=\"img\" type=\"color3\">\n"
+                   "    <input name=\"file\" type=\"filename\" "
+                   "value=\"nowhere.png\" />\n"
+                   "  </image>\n"));
+    ASSERT_TRUE(out.valid) << out.error;
+    EXPECT_NE(out.source.find("#define texture(_s, _c) texture2D(_s, _c)"),
+              std::string::npos)
+        << out.source;
+    EXPECT_NE(out.source.find("BGFX_SHADER_LANGUAGE_SPIRV"),
+              std::string::npos);
 }
 
 TEST_F(MaterialXGenerator, aDocumentWithNoSurfaceIsReported)
