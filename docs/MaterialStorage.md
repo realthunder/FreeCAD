@@ -643,9 +643,9 @@ hour.
 
 > Designed 2026-08-30 with the base-and-overrides storage of
 > `ShapeAppearanceDesign.md` sec 12. **The flag (15.3, 15.4, 15.7), the
-> storage under it and the Appearance panel (15.5) are built**; the legacy
-> mirror's status bit (15.6) is not, and neither is the context-menu form
-> of Reset to material.
+> storage under it and both panels (15.5) are built**, the context-menu
+> form of Reset to material with them; the legacy mirror's status bit
+> (15.6) is not.
 
 ### 15.1 What is wrong
 
@@ -806,7 +806,9 @@ panel's widget and filter, and it is HIDDEN unless the selection carries a
 `Materials::PropertyMaterial`: an object without a card sees the panel it
 always saw, one row shorter.
 
-**What was built next (2026-09-01), once the panel was looked at.**
+**What was built next (2026-09-01), once the panel was looked at.** The
+three leftovers are in, and looking at the panel found a fourth thing
+worth fixing.
 
 - **"As material" is the look list's first row**, above the libraries and
   above Favorites and Recent both. It is not a card: it carries the
@@ -830,15 +832,17 @@ always saw, one row shorter.
   selects. Showing what the object currently looks like could otherwise be
   answered by that look being written straight back at it -- which is a
   loop, and the refresh above would have closed it.
-
 - **Reset to material has three doors now**: the button, that row, and
   `Material_ResetAppearance` in the Tree and View context menus, offered
   only while it applies -- the sync commands' rule of 13.5. The act itself
   moved to one place,
   `ViewProviderGeometryObject::resetAppearanceToMaterial()`, with
   `canResetAppearanceToMaterial()` as the question all three ask.
-
-Still ahead: the Material panel's preview and line.
+- **The Material panel states what assigning will do**: the card's
+  rendered icon, and one line -- "Assigning also applies this card's
+  appearance." while the object follows its card, "The appearance was set
+  by hand and is kept as it is." once it does not -- with the same Reset
+  beside it, on the same shown-only-while-it-applies rule.
 
 ### 15.6 The legacy mirror
 

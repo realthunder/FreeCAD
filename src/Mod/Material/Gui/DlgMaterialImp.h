@@ -69,6 +69,8 @@ public:
 
 private Q_SLOTS:
     void onMaterialSelected(const std::shared_ptr<Materials::Material>& material);
+    /// Take the card's look again on everything selected, and follow it
+    void onResetToMaterial();
 
 protected:
     void changeEvent(QEvent* e) override;
@@ -77,6 +79,14 @@ private:
     void setupConnections();
     void slotChangedObject(const Gui::ViewProvider&, const App::Property& Prop);
     void setMaterial(const std::vector<App::DocumentObject*>&);
+    /** Show the card's look, and say what assigning one would do to it
+     *
+     * The panel picks the physical card, but assigning one may also change
+     * how the object looks -- or deliberately not, once someone has chosen
+     * a look of their own. Saying which is the point of the line
+     * (docs/MaterialStorage.md 15.5).
+     */
+    void setAssignNote(const std::vector<App::DocumentObject*>&);
     std::vector<Gui::ViewProvider*> getSelection() const;
     std::vector<App::DocumentObject*> getSelectionObjects() const;
 
