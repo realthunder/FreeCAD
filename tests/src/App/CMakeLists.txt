@@ -8,6 +8,7 @@ target_sources(
             ${CMAKE_CURRENT_SOURCE_DIR}/License.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Metadata.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Property.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/TypeRename.cpp
 )
 
 # The deferred archive-entry restore (docs/DocumentLoad.md §14) is App's own

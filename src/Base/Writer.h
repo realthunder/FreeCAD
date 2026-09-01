@@ -41,6 +41,7 @@
 #include <zipios++/meta-iostreams.h>
 
 #include "FileInfo.h"
+#include "Type.h"
 
 
 namespace Base
@@ -88,6 +89,22 @@ public:
      */
     void setSchemaVersion(int);
     int getSchemaVersion() const;
+
+    /** The name to write for a type, which the schema decides
+     *
+     * A type name goes into the file as the type= attribute, so renaming a
+     * registered class changes the wire format. Schema 4 is upstream's
+     * format and predates every rename this fork has made, so it gets the
+     * name the type used to have (Type::getLegacyName); schema 5 and later
+     * get the current one. A type that was never renamed answers the same
+     * either way.
+     *
+     * Reading needs none of this -- Type::addLegacyName makes the old
+     * spelling resolve at any schema -- so this exists only so a document
+     * deliberately saved back to schema 4 stays readable by what reads
+     * schema 4.
+     */
+    const char* typeName(const Base::Type& type) const;
 
     /// put the next entry with a give name
     virtual void putNextEntry(const char *filename, const char *objName=nullptr);

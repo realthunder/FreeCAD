@@ -1872,7 +1872,7 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
             d->saveSeq->next();
         }
         writer.Stream() << writer.ind() << "<Object "
-        << "type=\"" << (*it)->getTypeId().getName()     << "\" "
+        << "type=\"" << writer.typeName((*it)->getTypeId()) << "\" "
         << "name=\"" << (*it)->getExportName()       << "\" "
         << "id=\"" << (*it)->getID()       << "\" "
         << "revision=\"" << (*it)->getRevision() << "\" ";
