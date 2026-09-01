@@ -251,11 +251,14 @@ BlobReferrer FileBlobManager::referrerOf(const Property* prop, const DocumentObj
         return referrer;
     }
 
-    if (auto file = Base::freecad_dynamic_cast<PropertyFileIncluded>(prop)) {
-        // The name the property stores its file under is the user's; only its
-        // extension is taken, so the derived name says what the file is
-        // without inheriting a name that can change under it.
-        const std::string ext = Base::FileInfo(file->getBaseFileName()).extension();
+    // Asked of the interface, not of one concrete class: a property that
+    // stores a file knows what it holds, and a list of concrete types here is
+    // a list of what gets a useful name -- everything left off it silently
+    // gets none. PropertyFileIncluded answers with the extension of the name
+    // the user gave the file, so the derived name says what the file is
+    // without inheriting a name that can change under it.
+    if (auto referrerProp = dynamic_cast<const BlobReferrerProperty*>(prop)) {
+        const std::string ext = referrerProp->blobExtension();
         if (isPlainExtension(ext)) {
             referrer.ext = "." + ext;
         }

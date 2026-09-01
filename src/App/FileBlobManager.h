@@ -192,6 +192,14 @@ public:
      * must write back what the file said rather than what the stand-in is.
      */
     virtual bool blobUnavailable() { return false; }
+
+    /** Extension the content should be stored under, without the dot.
+     *
+     * Only names things -- the archive entry, and the file inside an unpacked
+     * project -- so that what version control sees says what it holds. Empty
+     * leaves the derived name without one.
+     */
+    virtual std::string blobExtension() const { return {}; }
 };
 
 /** Per-document store of the files referenced by PropertyFileIncluded.

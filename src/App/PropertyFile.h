@@ -139,6 +139,9 @@ public:
     /// Note this property's file for the save in progress, named after it.
     void collectBlobs(FileBlobManager &manager, const DocumentObject *object) const override;
 
+    /// The extension of the name this property stores its file under.
+    std::string blobExtension() const override;
+
     void setFilter(std::string filter);
     std::string getFilter() const;
 
@@ -172,6 +175,102 @@ protected:
 
 private:
     std::string m_filter;
+};
+
+/** A string whose stored form is a shared, content-addressed file.
+ *
+ * The value behaves exactly like PropertyString -- same accessors, same
+ * Python type, same property editor -- and only the way it is SAVED
+ * differs: text at or above inlineLimit() goes to App::FileBlobManager as
+ * one archive entry named by its content hash, and Document.xml carries
+ * the hash instead of the text. Two properties holding the same text
+ * therefore cost one entry, wherever in the document they are.
+ *
+ * Shader sources are what this is for. A MaterialX document is kilobytes
+ * of XML; the seventeen of the MaterialX demo went into Document.xml
+ * inline, and the same document assigned to two objects went in twice,
+ * because PropertyString has no route into the blob store that the
+ * material cards and included files already share.
+ *
+ * Short text stays inline, in the same <String value="..."/> element it
+ * always used: an archive entry per one-line source costs more than it
+ * saves. Sharing the element spelling is also what lets this type restore
+ * a document written while these properties were plain PropertyStrings --
+ * the container reports the type change, and the value reads back
+ * unchanged (App::ShaderProgram::handleChangedPropertyType).
+ *
+ * The content arrives asynchronously on restore, once the archive entries
+ * have been drained, which is AFTER the view document has been read. A
+ * consumer that builds something from the text at restore time has to
+ * rebuild it when the document finishes restoring rather than when its
+ * view provider attaches.
+ */
+class AppExport PropertyStringIncluded : public PropertyString,
+                                         public BlobReferrerProperty
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    PropertyStringIncluded();
+    ~PropertyStringIncluded() override;
+
+    /// Any value change drops the stored form: the blob is the file the
+    /// PREVIOUS text was written to, and the next save makes a new one.
+    void setValue(const char* sString) override;
+    using PropertyString::setValue;
+
+    /** Size at which the text stops being written inline.
+     *
+     * A blob costs an archive entry, an index line and a hash attribute --
+     * a few hundred bytes between them -- so text shorter than this is
+     * cheaper where it already was.
+     */
+    static std::string::size_type inlineLimit() { return 512; }
+
+    /** Extension the content is stored under, with or without the dot.
+     *
+     * Only names the archive entry (`Object.Property.mtlx`), which is what
+     * an unpacked project shows and what version control follows. The
+     * owner sets it when it knows what the text is.
+     */
+    void setBlobExtension(const char* ext);
+    /// What the owner set, without the dot.
+    std::string blobExtension() const override { return _ext; }
+
+    /// The blob holding this property's text, or null while it is inline.
+    const FileBlobHandle &getBlob() const { return _blob; }
+
+    void Save (Base::Writer &writer) const override;
+    void Restore(Base::XMLReader &reader) override;
+
+    Property *Copy() const override;
+    void Paste(const Property &from) override;
+    unsigned int getMemSize () const override;
+
+    /// Take the text the manager restored on this property's behalf.
+    void assignRestoredBlob(const FileBlobHandle &blob) override;
+    /// Note this property's text for the save in progress, named after it.
+    void collectBlobs(FileBlobManager &manager, const DocumentObject *object) const override;
+
+protected:
+    /// Store owning the content: the document's when there is one.
+    FileBlobManager &blobManager() const;
+    /** The blob for the current text, made if there is not one yet.
+     *
+     * Null for text below inlineLimit(), which is never given a file, and
+     * for a write that failed -- the caller falls back to inline, so a
+     * failure here costs sharing and never content.
+     */
+    const FileBlobHandle &ensureBlob() const;
+
+protected:
+    /// The file the current text is stored in, once something has asked for
+    /// one. Null means the text has no stored form yet, not that it is empty.
+    mutable FileBlobHandle _blob;
+    /// Manager this property is queued with, waiting for its content.
+    FileBlobManager *_pendingManager {nullptr};
+    /// Stored without the dot, the form the store and the referrer both want.
+    std::string _ext {"txt"};
 };
 
 

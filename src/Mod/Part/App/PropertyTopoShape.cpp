@@ -423,7 +423,7 @@ bool PropertyPartShape::usesBlob(Base::Writer& writer) const
 }
 
 /// Extension a save under this writer stores the geometry under, no leading dot.
-static const char* blobExtension(Base::Writer& writer)
+static const char* shapeBlobExtension(Base::Writer& writer)
 {
     return writer.getMode("BinaryBrep") ? "bin" : "brp";
 }
@@ -431,7 +431,7 @@ static const char* blobExtension(Base::Writer& writer)
 void PropertyPartShape::makeBlob(Base::Writer& writer) const
 {
     auto& manager = blobManager();
-    const char* ext = blobExtension(writer);
+    const char* ext = shapeBlobExtension(writer);
     if (_blob) {
         // Still the right content only if it was written for this document
         // and in this format. A copied object carries a handle on another
@@ -557,7 +557,7 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
 void PropertyPartShape::storeBlob(Base::Writer& writer, ShapeRefSet* refs) const
 {
     auto& manager = blobManager();
-    const char* ext = blobExtension(writer);
+    const char* ext = shapeBlobExtension(writer);
     const std::string path = manager.uniquePath(std::string("shape.") + ext);
     try {
         {
@@ -595,7 +595,7 @@ void PropertyPartShape::noteBlob(Base::Writer& writer) const
     auto referrer = App::FileBlobManager::referrerOf(this);
     // The extension is the property's to give: nothing about the content says
     // whether it was written as ASCII BRep or as binary.
-    referrer.ext = std::string(".") + blobExtension(writer);
+    referrer.ext = std::string(".") + shapeBlobExtension(writer);
     blobManager().noteReferenced(_blob, referrer);
 }
 

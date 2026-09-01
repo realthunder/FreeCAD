@@ -2332,6 +2332,7 @@ void Application::initTypes()
     App::PropertyPath               ::init();
     App::PropertyFile               ::init();
     App::PropertyFileIncluded       ::init();
+    App::PropertyStringIncluded     ::init();
     App::PropertyPythonObject       ::init();
     App::PropertyExpressionContainer::init();
     App::PropertyExpressionEngine   ::init();
