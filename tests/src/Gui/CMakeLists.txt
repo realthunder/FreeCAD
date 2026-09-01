@@ -48,6 +48,24 @@ if(TARGET FreeCADGui)
     add_test(NAME RenderCacheMaterial_tests_run
              COMMAND RenderCacheMaterial_tests_run)
 
+    # Whether flat_map is the right container for the draw list. A
+    # measurement rather than an assertion, so its body is DISABLED and
+    # ctest only pays for a process that reports zero tests run.
+    add_executable(RenderCacheMapBench_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/RenderCacheMapBench.cpp)
+    target_include_directories(RenderCacheMapBench_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(RenderCacheMapBench_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME RenderCacheMapBench_tests_run
+             COMMAND RenderCacheMapBench_tests_run)
+
     # A material card's Render_* view properties landing on a view
     # provider (docs/CyclesIntegration.md phase 6 item 14). The subject
     # is the dynamic property table, which the mapping reaches through
