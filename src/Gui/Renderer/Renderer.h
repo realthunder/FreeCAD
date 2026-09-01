@@ -796,10 +796,42 @@ struct RenderDebugConfig {
 /// passes. Compilation is the backend's job (bgfx: runtime shaderc
 /// compile cache); a shader that fails to compile is skipped with an
 /// error report, never a black screen.
+/// A creation serial for the immutable, pointer-shared cache objects
+///
+/// Pointer identity is what says two draws share a palette or a shader:
+/// they are immutable once published and one node makes one. But the
+/// render cache's material map ORDERS by these too, and ordering by the
+/// ADDRESS made the draw list's order depend on where the allocator
+/// happened to put them -- which is different in every run of the same
+/// binary. Where two draws then contend for one pixel at equal depth --
+/// the rim circle a cylinder's wall and its top face share -- the
+/// picture changed from run to run with it. A serial orders them by
+/// creation instead, which is the same in every run.
+///
+/// Every construction takes a FRESH serial, copies and moves included,
+/// so two live objects can never share one. They must not: a tie in the
+/// ordering is what makes the map treat two palettes as one.
+struct RendererExport CacheSerial {
+    CacheSerial(): value(next()) {}
+    CacheSerial(const CacheSerial &): value(next()) {}
+    CacheSerial(CacheSerial &&) noexcept: value(next()) {}
+    CacheSerial &operator=(const CacheSerial &) { value = next(); return *this; }
+    CacheSerial &operator=(CacheSerial &&) noexcept { value = next(); return *this; }
+    ~CacheSerial() = default;
+
+    /// Never 0: 0 is what a null shared_ptr orders as.
+    static std::uint64_t next();
+
+    std::uint64_t value;
+};
+
 /// One user shader program (standalone so the render cache can hold a
 /// shared_ptr to a "material"-stage program inside its per-draw
 /// Material without pulling in the whole config).
 struct UserShader {
+    /// Orders this shader in the render cache's material map. Not part
+    /// of what the shader IS, so it takes no part in operator==.
+    CacheSerial serial;
     /// What the source strings below ARE (docs/CyclesIntegration.md
     /// sec 8 item 15 phase B). Shading-language text the backend
     /// compiles, or a MaterialX document -- a node graph describing
@@ -1863,6 +1895,10 @@ static constexpr int MaxFinishPalette = 8;
 /// once published: draws share one by pointer, which is also how the
 /// backend batches them.
 struct FinishPalette {
+    /// Orders this palette in the render cache's material map. Not
+    /// part of what the palette IS, so it takes no part in operator==.
+    CacheSerial serial;
+
     struct Entry {
         uint8_t pattern = 0;    ///< App::SurfaceFinish::Pattern, 0 = none
         float pitch = 0.0f;     ///< mm of object space, feature spacing
@@ -1958,6 +1994,10 @@ struct SurfaceFrame {
 /// FinishPalette,
 /// and shared by pointer for the same batching reason.
 struct FramePalette {
+    /// Orders this palette in the render cache's material map. Not
+    /// part of what the palette IS, so it takes no part in operator==.
+    CacheSerial serial;
+
     /// At most MaxFramePalette entries. Entry 0 is the first face's
     /// frame, which is what a draw with no stream -- an unbound index
     /// attribute, or a mesh whose stream collapsed because every face

@@ -67,6 +67,15 @@ static std::mutex _modeNameMutex;
 static std::vector<std::string> _modeNames;
 static std::map<std::string, uint16_t> _modeNameIds;
 
+std::uint64_t Render::CacheSerial::next()
+{
+    // Relaxed: the only thing asked of these is that two live objects
+    // never share one and that the sequence is the same in every run of
+    // the same work. Nothing orders memory by them.
+    static std::atomic<std::uint64_t> counter{1};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
 uint16_t Render::internModeName(const char *name)
 {
     if (!name || !name[0])

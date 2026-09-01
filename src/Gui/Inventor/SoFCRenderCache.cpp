@@ -65,6 +65,21 @@
 #include "../SoFCUnifiedSelection.h"
 #include "SoFCRenderCache.h"
 #include "Renderer/Renderer.h"
+
+std::uint64_t Render::cacheSerialOf(const Render::FinishPalette *palette)
+{
+  return palette ? palette->serial.value : 0;
+}
+
+std::uint64_t Render::cacheSerialOf(const Render::FramePalette *palette)
+{
+  return palette ? palette->serial.value : 0;
+}
+
+std::uint64_t Render::cacheSerialOf(const Render::UserShader *shader)
+{
+  return shader ? shader->serial.value : 0;
+}
 #include "SoFCRenderMaterial.h"
 #include "SoFCVertexCache.h"
 #include "SoFCDetail.h"
@@ -1474,7 +1489,7 @@ SoFCRenderCache::addTexture(SoState * state, const SoNode * texture)
   int unit = SoTextureUnitElement::get(state);
 
   TextureInfo info;
-  info.texture = const_cast<SoNode*>(texture);
+  info.setTexture(const_cast<SoNode*>(texture));
 
   auto elem = constElement<MyMultiTextureImageElement>(state);
   info.transparent = elem->hasTransparency(unit);
@@ -1508,7 +1523,7 @@ SoFCRenderCache::addBumpMap(SoState * state, const SoNode * bumpmap)
   int unit = SoTextureUnitElement::get(state);
 
   TextureInfo info;
-  info.texture = const_cast<SoNode*>(bumpmap);
+  info.setTexture(const_cast<SoNode*>(bumpmap));
   info.transparent = false;
   info.identity = true;
 
@@ -1702,7 +1717,7 @@ SoFCRenderCache::addRenderTexture(SoState * state, const SoNode * node)
   auto texture = static_cast<const Gui::SoFCRenderTexture *>(node);
 
   TextureInfo info;
-  info.texture = const_cast<SoNode *>(node);
+  info.setTexture(const_cast<SoNode *>(node));
   info.transparent = false;
   info.identity = true;
 
@@ -1760,7 +1775,7 @@ SoFCRenderCache::addLight(SoState * state, const SoNode * light)
   (void)state;
 
   NodeInfo info;
-  info.node = const_cast<SoNode*>(light);
+  info.setNode(const_cast<SoNode*>(light));
   info.resetmatrix = PRIVATE(this)->resetmatrix;
 
   auto elem = constElement<SoModelMatrixElement>(state);
@@ -1783,7 +1798,7 @@ SoFCRenderCache::addClipPlane(SoState * state, const SoClipPlane * node)
   if (!node->on.getValue() || node->on.isIgnored()) return;
 
   NodeInfo info;
-  info.node = const_cast<SoClipPlane*>(node);
+  info.setNode(const_cast<SoClipPlane*>(node));
   info.resetmatrix = PRIVATE(this)->resetmatrix;
 
   auto elem = constElement<SoModelMatrixElement>(state);
@@ -1805,7 +1820,7 @@ SoFCRenderCache::addAutoZoom(SoState * state, const SoAutoZoomTranslation * node
   (void)state;
 
   NodeInfo info;
-  info.node = const_cast<SoAutoZoomTranslation*>(node);
+  info.setNode(const_cast<SoAutoZoomTranslation*>(node));
   info.resetmatrix = PRIVATE(this)->resetmatrix;
 
   auto elem = constElement<SoModelMatrixElement>(state);
