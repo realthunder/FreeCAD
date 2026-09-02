@@ -273,9 +273,14 @@ private:
                     std::string msg = "{\"op\":\"cycles\",\"event\":\"error\",\"cell\":"
                         + std::to_string(options.cell) + ",\"message\":\"";
                     for (char ch : st.error) {
-                        if (ch == '"' || ch == '\\')
+                        // Any control character breaks the JSON string
+                        // (a newline is just the one an engine message
+                        // actually carries); a space keeps it readable.
+                        if (ch == '"' || ch == '\\') {
                             msg += '\\';
-                        if (ch == '\n')
+                            msg += ch;
+                        }
+                        else if (static_cast<unsigned char>(ch) < 0x20)
                             msg += ' ';
                         else
                             msg += ch;
