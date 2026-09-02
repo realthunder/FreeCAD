@@ -63,7 +63,7 @@
 
 namespace Render::MaterialX {
 
-GeneratedMaterial generate(const std::string &, const std::string &)
+GeneratedMaterial generate(const std::string &, const std::string &, const std::string &)
 {
     GeneratedMaterial out;
     out.error = "MaterialX support is not built (BUILD_MATERIALX)";
@@ -612,7 +612,8 @@ private:
 
 }  // namespace
 
-GeneratedMaterial generate(const std::string &xml, const std::string &sourcePath)
+GeneratedMaterial generate(const std::string &xml, const std::string &sourcePath,
+                           const std::string &surfaceName)
 {
     GeneratedMaterial out;
     if (!available()) {
@@ -628,7 +629,9 @@ GeneratedMaterial generate(const std::string &xml, const std::string &sourcePath
         // the one inspect() and the path tracer read their interface
         // from.
         std::vector<mx::NodePtr> authored = surfaceShaders(doc);
-        mx::NodePtr surface = openPbrSurface(doc, out.error, out.warnings);
+        const int authoredIndex = surfaceIndex(doc, surfaceName);
+        mx::NodePtr surface =
+            openPbrSurface(doc, surfaceName, out.error, out.warnings);
         if (!surface)
             return out;
 
@@ -641,8 +644,9 @@ GeneratedMaterial generate(const std::string &xml, const std::string &sourcePath
         // and a graph interface survives the OpenPBR translation
         // untouched, so the two enumerations name the same inputs.
         std::vector<MaterialInput> inputs =
-            authored.empty() ? std::vector<MaterialInput>()
-                             : publicInputs(doc, authored.front());
+            authoredIndex < 0 || std::size_t(authoredIndex) >= authored.size()
+                ? std::vector<MaterialInput>()
+                : publicInputs(doc, authored[std::size_t(authoredIndex)]);
         for (const auto &input : inputs) {
             gen->declaredInputs[input.path] = &input;
             gen->declaredByName[input.name] = &input;

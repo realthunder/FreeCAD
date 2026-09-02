@@ -58,11 +58,15 @@ class FileSet;
  *
  *     FreeCAD MaterialX 1
  *     document <stated name of the document entry>
+ *     surface <name of the surface the document is shaded by>
  *     file <hash> <stated name>
  *     file <hash> <stated name>
  *
  * The hash comes first because a name may contain spaces; a name may not
- * contain a line break. The document is one of the files.
+ * contain a line break. The document is one of the files. The surface
+ * line is written only when a surface is named, and a reader that does
+ * not know it steps over it and renders the document's first surface,
+ * which is what every build before it did.
  */
 class AppExport MaterialXDocument
 {
@@ -78,6 +82,17 @@ public:
 
     /// Stated name of the entry that IS the document. Empty = no document.
     std::string document;
+    /// Which surface of the document is worn: the name of one of its
+    /// `surfacematerial` nodes, or of a bare surface shader node where
+    /// it states no material (docs/MaterialStorage.md sec 17.13). Empty
+    /// means the first surface the document states.
+    ///
+    /// Part of the manifest, so part of its hash and of the card's
+    /// identity after it: an asset's whole material set is usually ONE
+    /// document, and the fifteen materials of MaterialX's chess set are
+    /// fifteen cards over one shared set of files, told apart by this
+    /// and nothing else.
+    std::string surface;
     /// Every file, the document among them, in the order they were stated.
     std::vector<File> files;
 
@@ -108,8 +123,11 @@ public:
      */
     FileBlobHandle store(FileBlobManager &manager) const;
 
-    /// Over a set of stored files, naming \a document as the document.
-    static MaterialXDocument fromFileSet(const FileSet &files, const std::string &document);
+    /// Over a set of stored files, naming \a document as the document
+    /// and \a surface as the surface it is shaded by (empty = the first).
+    static MaterialXDocument fromFileSet(const FileSet &files,
+                                         const std::string &document,
+                                         const std::string &surface = {});
 
     bool operator==(const MaterialXDocument &other) const;
     bool operator!=(const MaterialXDocument &other) const { return !operator==(other); }

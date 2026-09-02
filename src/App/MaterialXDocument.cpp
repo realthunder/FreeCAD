@@ -79,6 +79,12 @@ std::string MaterialXDocument::write() const
     std::ostringstream out;
     out << manifestHeader << '\n';
     out << "document " << document << '\n';
+    // Only when one is named: a manifest that wears the document's first
+    // surface writes exactly the bytes it wrote before this line existed,
+    // so no stored card's identity moved when it was added.
+    if (!surface.empty()) {
+        out << "surface " << surface << '\n';
+    }
     for (const auto &file : files) {
         out << "file " << file.hash << ' ' << file.name << '\n';
     }
@@ -99,6 +105,9 @@ bool MaterialXDocument::read(const std::string &text, MaterialXDocument &out)
         }
         if (line.compare(0, 9, "document ") == 0) {
             out.document = line.substr(9);
+        }
+        else if (line.compare(0, 8, "surface ") == 0) {
+            out.surface = line.substr(8);
         }
         else if (line.compare(0, 5, "file ") == 0) {
             const std::size_t space = line.find(' ', 5);
@@ -165,10 +174,13 @@ FileBlobHandle MaterialXDocument::store(FileBlobManager &manager) const
     }
 }
 
-MaterialXDocument MaterialXDocument::fromFileSet(const FileSet &files, const std::string &document)
+MaterialXDocument MaterialXDocument::fromFileSet(const FileSet &files,
+                                                 const std::string &document,
+                                                 const std::string &surface)
 {
     MaterialXDocument out;
     out.document = document;
+    out.surface = surface;
     for (const auto &entry : files.entries()) {
         out.files.push_back({entry.name, entry.hash});
     }
@@ -177,7 +189,8 @@ MaterialXDocument MaterialXDocument::fromFileSet(const FileSet &files, const std
 
 bool MaterialXDocument::operator==(const MaterialXDocument &other) const
 {
-    if (document != other.document || files.size() != other.files.size()) {
+    if (document != other.document || surface != other.surface
+        || files.size() != other.files.size()) {
         return false;
     }
     for (std::size_t i = 0; i < files.size(); ++i) {

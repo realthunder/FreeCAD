@@ -63,6 +63,14 @@ public:
     /// advancing the state textures by one fixed step. Empty = the
     /// emitter is stateless (docs/RenderEngine.md §5.8)
     PropertyStringIncluded SimulateProgram;
+    /// Which surface of a MATERIALX document this program is shaded
+    /// by: the name of one of the document's surfacematerial nodes, or
+    /// of a bare surface shader node where it states no material.
+    /// Empty renders the first surface the document states, which is
+    /// what a single-material document has. An asset's whole material
+    /// set is usually ONE document, and this is what picks one out of
+    /// it (docs/MaterialStorage.md sec 17.13).
+    PropertyString Surface;
     /// Files a MATERIALX document refers to, each under the name the
     /// document calls it by. What makes a document with image maps
     /// self-contained: the bytes ride in the .FCStd, and the text handed

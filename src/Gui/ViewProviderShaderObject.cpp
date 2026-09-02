@@ -344,6 +344,7 @@ void ViewProviderShaderProgram::updateData(const App::Property *prop)
                 || prop == &obj->Dialect
                 || prop == &obj->VertexProgram
                 || prop == &obj->FragmentProgram
+                || prop == &obj->Surface
                 || prop == &obj->SimulateProgram
                 || prop == &obj->Blend
                 || prop == &obj->DepthWrite
@@ -517,6 +518,12 @@ static void syncShaderNodes(App::ShaderProgram *obj,
         fshader->sourceType = sourcetype;
     if (fshader->sourceProgram.getValue() != fs)
         fshader->sourceProgram = fs;
+    // Which surface of the document the program wears (sec 17.13). On
+    // the fragment object alone: that is where the document is, and the
+    // vertex object of a MATERIALX program carries nothing.
+    const char *surface = obj->Surface.getValue();
+    if (fshader->sourceSurface.getValue() != surface)
+        fshader->sourceSurface = surface;
     if (simshader->sourceType.getValue() != sourcetype)
         simshader->sourceType = sourcetype;
     if (simshader->sourceProgram.getValue() != ss)
@@ -638,9 +645,13 @@ void ViewProviderShaderProgram::validateDocument()
         return;
     }
     std::string xml = obj->FragmentProgram.getValue();
-    if (xml == validatedSource)
+    // Which surface is worn is part of what was validated: the same
+    // document says different things about a different surface, and its
+    // interface is a different set of properties.
+    std::string validated = xml + '\0' + obj->Surface.getValue();
+    if (validated == validatedSource)
         return;
-    validatedSource = xml;
+    validatedSource = std::move(validated);
     if (xml.empty())
         return;
     // Stated as a path, the document is read from disk and its images
@@ -685,7 +696,7 @@ void ViewProviderShaderProgram::validateDocument()
     syncDocumentImages(xml, sourcePath);
     xml = documentWithStoredImages(obj, xml.c_str());
 
-    auto info = Render::MaterialX::inspect(xml, sourcePath);
+    auto info = Render::MaterialX::inspect(xml, sourcePath, obj->Surface.getValue());
     for (const auto &w : info.warnings)
         Base::Console().Warning("%s: %s\n", label.c_str(), w.c_str());
     if (!info.valid) {
@@ -698,7 +709,22 @@ void ViewProviderShaderProgram::validateDocument()
         return;
     }
     FC_LOG(label << ": MaterialX document, " << info.materials.size()
-                 << " material(s), surface " << info.surface);
+                 << " surface(s), wearing '" << info.material << "', model "
+                 << info.surface);
+    // A document with more than one surface renders exactly one, and
+    // which one is the Surface property's to say. Saying so once, on
+    // the change that made it so, is what keeps "it draws the wrong
+    // piece" from being a mystery (sec 17.13).
+    if (info.materials.size() > 1 && !obj->Surface.getValue()[0]) {
+        std::string known;
+        for (const auto &name : info.materials)
+            known += (known.empty() ? "" : ", ") + name;
+        Base::Console().Warning(
+                "%s: the shader graph states %d surfaces and this program "
+                "wears the first, '%s'; set Surface to one of: %s\n",
+                label.c_str(), int(info.materials.size()),
+                info.material.c_str(), known.c_str());
+    }
     syncDocumentInterface(info.inputs);
 }
 
@@ -1133,6 +1159,10 @@ SoShaderProgram *ViewProviderShaderBinding::acquireMaterialXNode(
     node.fragment = new SoFragmentShader;
     node.fragment->sourceType = SoShaderObject::MATERIALX;
     node.fragment->sourceProgram = text.c_str();
+    // Which of the graph's surfaces the card wears. Part of the manifest,
+    // so two cards over one shared file set are two nodes here, keyed
+    // apart by the manifest hash already (sec 17.13).
+    node.fragment->sourceSurface = manifest.surface.c_str();
     node.program->stage = SbName(StageMaterial);
     node.program->shaderObject.setNum(1);
     node.program->shaderObject.set1Value(0, node.fragment);

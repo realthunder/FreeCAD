@@ -280,7 +280,13 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     (This was 70 on the branch it was written on, and 70 was taken
 //     by envBlur meanwhile; a dump from one of those unpublished
 //     builds reads its shader table as text.)
-const uint32_t kVersion = 71;
+// 72: a MaterialX user shader says WHICH of the document's surfaces it
+//     wears (UserShader::surface, docs/MaterialStorage.md sec 17.13).
+//     One document usually carries a whole asset's material set, and a
+//     snapshot older than this names none, which reads as the first
+//     surface -- what those builds rendered. The out-of-band shader
+//     chunk carries the same field, so kChunkVersion moves with it.
+const uint32_t kVersion = 72;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -316,7 +322,7 @@ const uint32_t kVersion = 71;
 ///     (v70), ahead of the stage. Same story: the bytes moved, so an
 ///     older cached chunk would read the stage string out of the
 ///     dialect byte.)
-const uint32_t kChunkVersion = 13;
+const uint32_t kChunkVersion = 14;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -1269,6 +1275,7 @@ void writeUserShader(
 {
     w.u8(uint8_t(s.dialect));
     w.str(s.sourcePath);
+    w.str(s.surface);
     w.str(s.stage);
     w.str(s.vertexSource);
     w.str(s.fragmentSource);
@@ -1305,6 +1312,8 @@ std::shared_ptr<const UserShader> readUserShader(Reader &r, uint32_t version)
             s->dialect = UserShader::Dialect(d);
         r.str(s->sourcePath, 0x1000u);
     }
+    if (version >= 72)
+        r.str(s->surface, 0x1000u);
     r.str(s->stage, 0x100u);
     r.str(s->vertexSource);
     r.str(s->fragmentSource);

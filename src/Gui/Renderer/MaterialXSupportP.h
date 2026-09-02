@@ -100,6 +100,24 @@ constexpr const char *kImageSampler = "s_fcMtlxImages";
 /// one thing a syntactically valid document can still get wrong.
 std::vector<mx::NodePtr> surfaceShaders(const mx::DocumentPtr &doc);
 
+/// What each of those surfaces is CALLED, one per entry of
+/// surfaceShaders() and in the same order: the namepath of the material
+/// node the shader belongs to, or the shader's own namepath where the
+/// document states a bare shader and no material. These are the names a
+/// card, an App::ShaderProgram and a MaterialX <look> all use to say
+/// which surface is worn (docs/MaterialStorage.md sec 17.13).
+std::vector<std::string> surfaceNames(const mx::DocumentPtr &doc);
+
+/// Which surface \a name picks out, as an index into surfaceShaders(),
+/// or -1 when the document has none by that name. An empty name is the
+/// first surface, which is what a single-material document has.
+///
+/// A name matches a surface by the material node's namepath or its bare
+/// name, or by the shader node's -- one string is written down, and
+/// whether it was copied out of a <look>, out of the property editor or
+/// typed by hand should not decide whether it resolves.
+int surfaceIndex(const mx::DocumentPtr &doc, const std::string &name);
+
 /// The public interface of a document (docs/CyclesIntegration.md sec
 /// 6.11): the inputs DECLARED by the node graphs that feed \a surface,
 /// in document order. Reachability is what keeps the standard library
@@ -118,8 +136,11 @@ std::vector<MaterialInput> publicInputs(const mx::DocumentPtr &doc,
 /// uniform lane instead. A parameter naming no public input is ignored
 /// -- the same list feeds both consumers and carries the reserved
 /// entries (fc_state, ...) that neither reads here.
+/// \a surface names which of the document's surfaces the interface is
+/// read from, empty meaning its first.
 void applyInputs(const mx::DocumentPtr &doc,
-                 const std::vector<RenderDebugConfig::UserParam> &params);
+                 const std::vector<RenderDebugConfig::UserParam> &params,
+                 const std::string &surface = {});
 
 /// The one surface a document renders, as an OpenPBR node. OpenPBR is
 /// the canonical surface model, so a document stating any other one is
@@ -130,7 +151,9 @@ void applyInputs(const mx::DocumentPtr &doc,
 /// and the hair models have no translation TO OpenPBR), with the reason
 /// in `error`. A translation is an approximation and says so in
 /// `warnings`.
-mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc, std::string &error,
+/// \a surface names which one, empty meaning the document's first.
+mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc,
+                           const std::string &surface, std::string &error,
                            std::vector<std::string> &warnings);
 
 }  // namespace Render::MaterialX

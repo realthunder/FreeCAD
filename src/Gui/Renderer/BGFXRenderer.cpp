@@ -1955,18 +1955,24 @@ const BGFXRendererLibP::MaterialXVariant &
 BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
 {
     // A document is identified by the file it came from, or by its text
-    // when it has no file. Two draws sharing a material share one
-    // generation and one compile.
-    const std::string key = shader.sourcePath.empty() ? shader.fragmentSource
-                                                      : shader.sourcePath;
+    // when it has no file, AND by which of its surfaces is worn: one
+    // document usually carries a whole asset's material set, and two
+    // surfaces of it are two shaders (docs/MaterialStorage.md sec
+    // 17.13). Two draws sharing a material share one generation and one
+    // compile.
+    const std::string key =
+        (shader.sourcePath.empty() ? shader.fragmentSource : shader.sourcePath)
+        + '\0' + shader.surface;
     auto it = materialXVariants.find(key);
     if (it != materialXVariants.end())
         return it->second;
 
     auto gen = Render::MaterialX::generate(shader.fragmentSource,
-                                           shader.sourcePath);
-    const std::string what = shader.sourcePath.empty() ? std::string("document")
-                                                       : shader.sourcePath;
+                                           shader.sourcePath, shader.surface);
+    std::string what = shader.sourcePath.empty() ? std::string("document")
+                                                : shader.sourcePath;
+    if (!shader.surface.empty())
+        what += " surface '" + shader.surface + "'";
     for (const auto &w : gen.warnings)
         Base::Console().Warning("MaterialX %s: %s\n", what.c_str(), w.c_str());
     if (!gen.valid) {

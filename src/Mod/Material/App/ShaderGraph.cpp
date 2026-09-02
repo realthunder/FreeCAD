@@ -156,6 +156,9 @@ App::ShaderBinding* ShaderGraph::materialize(App::DocumentObject* owner, Propert
     program->Label.setValue(label + " shader graph");
     program->Stage.setValue("material");
     program->Dialect.setValue("MATERIALX");
+    // Which surface of the graph the card wears; empty is its first,
+    // which is what a graph with a single material has (sec 17.13)
+    program->Surface.setValue(manifest.surface);
     // Stored first, set second (17.11): the sync on the text change finds
     // every name the graph refers to already carried and leaves it alone
     for (const auto& [name, blob] : images) {
@@ -198,6 +201,11 @@ bool ShaderGraph::edited(const App::DocumentObject* owner)
     if (!blob || !App::MaterialXDocument::readFile(blob->path(), manifest)) {
         // Made from something this store no longer holds: whatever the
         // text is now, nothing can say it is unedited
+        return true;
+    }
+    // Which surface is worn is part of what the card said, so changing
+    // it alone is an edit: same bytes, different material (sec 17.13)
+    if (manifest.surface != program->Surface.getValue()) {
         return true;
     }
     const std::string original = graphText(manager, manifest);
@@ -268,6 +276,8 @@ std::shared_ptr<Material> ShaderGraph::cardFromEdit(const App::DocumentObject* o
         paths.push_back(path);
     }
     edited->setAppearanceValue(QStringLiteral("MaterialXShaderGraph"), graph);
+    edited->setAppearanceValue(QStringLiteral("MaterialXSurface"),
+                               QString::fromUtf8(program->Surface.getValue()));
     edited->setAppearanceValue(QStringLiteral("MaterialXNames"), names);
     edited->setAppearanceValue(QStringLiteral("MaterialXFiles"), files);
     edited->setMaterialXHashes(hashes);

@@ -116,6 +116,8 @@ protected:
      * by, and where each one is. False when nothing was picked.
      */
     bool pickShaderGraph();
+    bool pickShaderSurface();
+    bool chooseSurface(const QString& graph, const QStringList& choices, QString& surface);
 
 private:
     std::unique_ptr<Ui_MaterialsEditor> ui;

@@ -71,6 +71,12 @@ ShaderProgram::ShaderProgram()
             "s_pstate0/s_pstate1 and writing the next. Leave empty for\n"
             "a stateless emitter, whose vertex stage computes position\n"
             "from the seed and the clock alone");
+    ADD_PROPERTY_TYPE(Surface, (""), "Shader", Prop_None,
+            "Which surface of a MATERIALX document this program is\n"
+            "shaded by, named as the document names it. Leave empty\n"
+            "for the first surface the document states, which is what\n"
+            "a document describing a single material has; a document\n"
+            "carrying a whole asset's material set states many");
     ADD_PROPERTY_TYPE(Images, (), "Shader", Prop_None,
             "Image files a MATERIALX document refers to, stored in the\n"
             "document so it travels: each is held under the name the\n"

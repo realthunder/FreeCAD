@@ -34,6 +34,8 @@
 #include <MaterialXCore/Node.h>
 #include <MaterialXGenShader/ShaderTranslator.h>
 
+#include "MaterialXSupportP.h"
+
 #include "scene/shader_graph.h"
 #include "util/colorspace.h"
 #include "scene/shader_nodes.h"
@@ -96,9 +98,11 @@ int typeDim(const std::string &type)
 class Interpreter
 {
 public:
-    Interpreter(ccl::ShaderGraph *graph, const mx::DocumentPtr &doc)
+    Interpreter(ccl::ShaderGraph *graph, const mx::DocumentPtr &doc,
+                const std::string &surfaceName)
         : graph(graph)
         , doc(doc)
+        , surfaceName(surfaceName)
     {}
 
     MaterialXResult run();
@@ -106,6 +110,9 @@ public:
 private:
     ccl::ShaderGraph *graph;
     mx::DocumentPtr doc;
+    /// Which surface of the document is interpreted, empty for its
+    /// first (docs/MaterialStorage.md sec 17.13)
+    std::string surfaceName;
     std::vector<Frame> frames;
     std::map<std::string, Val> cache;
     std::set<std::string> reported;
@@ -1008,54 +1015,24 @@ Out Interpreter::buildOpenPbr(const mx::NodePtr &node)
 
 MaterialXResult Interpreter::run()
 {
-    std::vector<mx::NodePtr> shaders;
-    for (const auto &material : doc->getMaterialNodes()) {
-        for (const auto &shader : mx::getShaderNodes(material))
-            shaders.push_back(shader);
-    }
-    if (shaders.empty())
-        shaders = doc->getNodesOfType(mx::SURFACE_SHADER_TYPE_STRING);
-    if (shaders.empty()) {
-        result.error = "the document describes no surface";
+    // Which surface, the OpenPBR translation and the reason a document
+    // states none are the raster path's answers too, so both consumers
+    // read one implementation (Render::MaterialX::openPbrSurface): a
+    // second copy is a second place for "the first material" to be
+    // wrong.
+    mx::NodePtr surface = Render::MaterialX::openPbrSurface(doc, surfaceName,
+                                                            result.error,
+                                                            result.warnings);
+    if (!surface)
         return result;
-    }
-    mx::NodePtr surface = shaders.front();
-    if (surface->getCategory() != "open_pbr_surface") {
-        // OpenPBR is the canonical surface model here; every other one
-        // comes in through MaterialX's OWN translation graphs rather
-        // than a second native mapping, so there is one shading model
-        // to be right about and the rest is the library's business.
-        const std::string original = surface->getCategory();
-        try {
-            mx::ShaderTranslatorPtr translator = mx::ShaderTranslator::create();
-            translator->translateAllMaterials(doc, "open_pbr_surface");
-        }
-        catch (const std::exception &e) {
-            result.error = "surface model '" + original
-                + "' does not translate to OpenPBR: " + e.what();
-            return result;
-        }
-        shaders.clear();
-        for (const auto &material : doc->getMaterialNodes()) {
-            for (const auto &shader : mx::getShaderNodes(material))
-                shaders.push_back(shader);
-        }
-        if (shaders.empty() || shaders.front()->getCategory() != "open_pbr_surface") {
-            result.error = "surface model '" + original + "' did not translate to OpenPBR";
-            return result;
-        }
-        surface = shaders.front();
-        report("translated", "surface model '" + original
-                   + "' translated to OpenPBR by MaterialX; a translation is an "
-                     "approximation, not an identity");
-    }
     result.surface = buildOpenPbr(surface);
     return result;
 }
 
 }  // namespace
 
-MaterialXResult buildMaterialXSurface(ccl::ShaderGraph *graph, const mx::DocumentPtr &doc)
+MaterialXResult buildMaterialXSurface(ccl::ShaderGraph *graph, const mx::DocumentPtr &doc,
+                                      const std::string &surface)
 {
     MaterialXResult result;
     if (!graph || !doc) {
@@ -1063,7 +1040,7 @@ MaterialXResult buildMaterialXSurface(ccl::ShaderGraph *graph, const mx::Documen
         return result;
     }
     try {
-        Interpreter interpreter(graph, doc);
+        Interpreter interpreter(graph, doc, surface);
         result = interpreter.run();
     }
     catch (const std::exception &e) {

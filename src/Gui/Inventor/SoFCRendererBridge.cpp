@@ -2038,6 +2038,11 @@ RendererBridge::translateShaderProgram(const SoNode * node,
         if (dialect != Render::UserShader::Dialect::ShaderText) {
             out.dialect = dialect;
             out.sourcePath = sourcePath;
+            // Which surface of the document is worn (sec 17.13). Read
+            // off the object that carries the document, so a program
+            // whose fragment object states one gets it and every other
+            // shape of program leaves it empty.
+            out.surface = obj->sourceSurface.getValue().getString();
             // A document names its maps as paths, and the consumer of
             // this shader may have no filesystem to open them with
             // (docs/CyclesIntegration.md sec 6.12). Decoded here, once

@@ -2253,11 +2253,14 @@ ccl::Shader *SceneTranslator::materialXShader(const UserShader &user, const Clip
     return nullptr;
 #else
     // A document is its own identity: the file it came from when it
-    // came from one, otherwise its text. Two draws sharing a material
+    // came from one, otherwise its text, AND which of its surfaces is
+    // worn -- one document usually carries a whole asset's material set
+    // (docs/MaterialStorage.md sec 17.13). Two draws sharing a material
     // share the shader, which is what keeps a document off the
     // per-draw path -- interpreting one costs a library import.
     const std::string identity =
-        user.sourcePath.empty() ? user.fragmentSource : user.sourcePath;
+        (user.sourcePath.empty() ? user.fragmentSource : user.sourcePath)
+        + '\0' + user.surface;
     // A parameter is part of the shader here, not a uniform on it: the
     // path tracer has no uniforms, so a value becomes a ValueNode in
     // the graph (docs/CyclesIntegration.md sec 6.11) and two parameter
@@ -2296,7 +2299,7 @@ ccl::Shader *SceneTranslator::materialXShader(const UserShader &user, const Clip
         return fail(error);
     // The document's declared inputs, overridden by the material's
     // Param_* values before anything reads it (sec 6.11).
-    Render::MaterialX::applyInputs(doc, user.params);
+    Render::MaterialX::applyInputs(doc, user.params, user.surface);
 
     // The graph is built BEFORE the scene node, because a Cycles
     // shader cannot be taken back: delete_node(Shader *) only clears
@@ -2307,7 +2310,7 @@ ccl::Shader *SceneTranslator::materialXShader(const UserShader &user, const Clip
     // (ShaderManager::device_update_pre -> graph->output()). Creating
     // it only once there is something to put in it is the whole fix.
     auto graph = std::make_unique<ccl::ShaderGraph>();
-    MaterialXResult built = buildMaterialXSurface(graph.get(), doc);
+    MaterialXResult built = buildMaterialXSurface(graph.get(), doc, user.surface);
     if (!built.surface)
         return fail(built.error);
     ccl::Shader *shader = scene->create_node<ccl::Shader>();

@@ -226,6 +226,12 @@ bool MaterialDelegate::editorEvent(QEvent* event,
                 Q_EMIT const_cast<MaterialDelegate*>(this)->shaderGraphRequested();
                 return true;
             }
+            if (propertyName == QStringLiteral("MaterialXSurface")) {
+                // The surfaces are the graph's to state, so they are
+                // offered rather than typed (17.13)
+                Q_EMIT const_cast<MaterialDelegate*>(this)->shaderSurfaceRequested();
+                return true;
+            }
 
             auto type = getType(index);
             if (type == Materials::MaterialValue::Color) {

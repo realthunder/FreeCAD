@@ -66,7 +66,7 @@ bool available()
 
 #ifndef HAVE_MATERIALX
 
-DocumentInfo inspect(const std::string &, const std::string &)
+DocumentInfo inspect(const std::string &, const std::string &, const std::string &)
 {
     DocumentInfo info;
     info.error = "MaterialX support is not built (BUILD_MATERIALX)";
@@ -219,7 +219,58 @@ std::vector<mx::NodePtr> surfaceShaders(const mx::DocumentPtr &doc)
     return shaders;
 }
 
-mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc, std::string &error,
+std::vector<std::string> surfaceNames(const mx::DocumentPtr &doc)
+{
+    std::vector<std::string> names;
+    if (!doc)
+        return names;
+    // In step with surfaceShaders(): one name per shader it lists, and
+    // the two walk the document the same way. A material node with more
+    // than one surface shader repeats its name, so the two lists stay
+    // index for index.
+    for (const auto &material : doc->getMaterialNodes()) {
+        const std::size_t count = mx::getShaderNodes(material).size();
+        for (std::size_t i = 0; i < count; ++i)
+            names.push_back(material->getNamePath());
+    }
+    if (names.empty()) {
+        for (const auto &shader : doc->getNodesOfType(mx::SURFACE_SHADER_TYPE_STRING))
+            names.push_back(shader->getNamePath());
+    }
+    return names;
+}
+
+int surfaceIndex(const mx::DocumentPtr &doc, const std::string &name)
+{
+    std::vector<mx::NodePtr> shaders = surfaceShaders(doc);
+    if (shaders.empty())
+        return -1;
+    if (name.empty())
+        return 0;
+    const std::vector<std::string> names = surfaceNames(doc);
+    // The material node's namepath first: that is what surfaceNames()
+    // reports and what a <look> assigns by.
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        if (names[i] == name)
+            return int(i);
+    }
+    // Then the bare name of the same, and the shader node's own two
+    // spellings. One string is written down and it should resolve
+    // whichever of them it was copied from.
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        const std::size_t slash = names[i].rfind('/');
+        if (slash != std::string::npos && names[i].substr(slash + 1) == name)
+            return int(i);
+    }
+    for (std::size_t i = 0; i < shaders.size(); ++i) {
+        if (shaders[i]->getNamePath() == name || shaders[i]->getName() == name)
+            return int(i);
+    }
+    return -1;
+}
+
+mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc,
+                           const std::string &surfaceName, std::string &error,
                            std::vector<std::string> &warnings)
 {
     error.clear();
@@ -232,7 +283,19 @@ mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc, std::string &error,
         error = "the document describes no surface";
         return mx::NodePtr();
     }
-    mx::NodePtr surface = shaders.front();
+    // Which one is worn (sec 17.13). Kept as an INDEX, not as the node:
+    // the OpenPBR translation below replaces every shader node, and the
+    // position in document order is what survives it.
+    const int index = surfaceIndex(doc, surfaceName);
+    if (index < 0) {
+        std::string known;
+        for (const auto &name : surfaceNames(doc))
+            known += (known.empty() ? "" : ", ") + name;
+        error = "the document states no surface '" + surfaceName + "'; it has "
+            + known;
+        return mx::NodePtr();
+    }
+    mx::NodePtr surface = shaders[std::size_t(index)];
     if (surface->getCategory() == "open_pbr_surface")
         return surface;
 
@@ -252,14 +315,15 @@ mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc, std::string &error,
         return mx::NodePtr();
     }
     shaders = surfaceShaders(doc);
-    if (shaders.empty() || shaders.front()->getCategory() != "open_pbr_surface") {
+    if (std::size_t(index) >= shaders.size()
+        || shaders[std::size_t(index)]->getCategory() != "open_pbr_surface") {
         error = "surface model '" + original + "' did not translate to OpenPBR";
         return mx::NodePtr();
     }
     warnings.push_back("surface model '" + original
                        + "' translated to OpenPBR by MaterialX; a translation is "
                          "an approximation, not an identity");
-    return shaders.front();
+    return shaders[std::size_t(index)];
 }
 
 namespace
@@ -408,14 +472,17 @@ std::vector<MaterialInput> publicInputs(const mx::DocumentPtr &doc,
 }
 
 void applyInputs(const mx::DocumentPtr &doc,
-                 const std::vector<RenderDebugConfig::UserParam> &params)
+                 const std::vector<RenderDebugConfig::UserParam> &params,
+                 const std::string &surfaceName)
 {
     if (params.empty() || !doc)
         return;
     std::vector<mx::NodePtr> shaders = surfaceShaders(doc);
-    if (shaders.empty())
+    const int index = surfaceIndex(doc, surfaceName);
+    if (index < 0)
         return;
-    std::vector<MaterialInput> inputs = publicInputs(doc, shaders.front());
+    std::vector<MaterialInput> inputs =
+        publicInputs(doc, shaders[std::size_t(index)]);
     for (const auto &input : inputs) {
         const std::string uniform = "u_" + input.name;
         for (const auto &param : params) {
@@ -429,7 +496,8 @@ void applyInputs(const mx::DocumentPtr &doc,
     }
 }
 
-DocumentInfo inspect(const std::string &xml, const std::string &sourcePath)
+DocumentInfo inspect(const std::string &xml, const std::string &sourcePath,
+                     const std::string &surfaceName)
 {
     DocumentInfo info;
     std::string error;
@@ -444,9 +512,18 @@ DocumentInfo inspect(const std::string &xml, const std::string &sourcePath)
                      "material node nor a surface shader node";
         return info;
     }
-    for (const auto &shader : shaders)
-        info.materials.push_back(shader->getNamePath());
-    info.surface = shaders.front()->getCategory();
+    info.materials = surfaceNames(doc);
+    const int index = surfaceIndex(doc, surfaceName);
+    if (index < 0) {
+        std::string known;
+        for (const auto &name : info.materials)
+            known += (known.empty() ? "" : ", ") + name;
+        info.error = "the document states no surface '" + surfaceName
+            + "'; it has " + known;
+        return info;
+    }
+    info.material = info.materials[std::size_t(index)];
+    info.surface = shaders[std::size_t(index)]->getCategory();
     // An image the document names but that is not there renders as the
     // node's default, which is a silently wrong material -- worth
     // saying out loud, but not worth refusing the document over.
@@ -480,7 +557,7 @@ DocumentInfo inspect(const std::string &xml, const std::string &sourcePath)
     // the OpenPBR translation of it: a graph interface survives the
     // translation untouched, so one enumeration answers for the
     // property editor, the path tracer and the generator alike.
-    info.inputs = publicInputs(doc, shaders.front());
+    info.inputs = publicInputs(doc, shaders[std::size_t(index)]);
     info.valid = true;
     return info;
 }

@@ -52,6 +52,12 @@ AppearanceModel:
     Units: ''
     URL: ''
     Description: "The MaterialX shader graph (.mtlx) this card is shaded by: the stated name of the entry that is the graph, one of the Shader Graph Names"
+  MaterialXSurface:
+    DisplayName: "Surface"
+    Type: 'String'
+    Units: ''
+    URL: ''
+    Description: "Which surface of the shader graph this card is shaded by: the name of one of its surfacematerial nodes. Empty is the first one the graph states, which is what a graph with a single material has"
   MaterialXNames:
     DisplayName: "Shader Graph Names"
     Type: 'List'

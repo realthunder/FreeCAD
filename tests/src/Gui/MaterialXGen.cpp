@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <set>
+#include <sstream>
 #include <string>
 #include <system_error>
 
@@ -41,6 +42,30 @@ std::string openPbrDoc(const std::string &surfaceInputs,
              "nodename=\"S\" />\n"
              "  </surfacematerial>\n"
              "</materialx>\n";
+}
+
+// Two materials in one document, the way an asset's whole material set
+// arrives: one file, a surfacematerial per piece
+// (docs/MaterialStorage.md sec 17.13).
+std::string twoSurfaceDoc()
+{
+    return "<?xml version=\"1.0\"?>\n"
+           "<materialx version=\"1.39\">\n"
+           "  <open_pbr_surface name=\"Bishop\" type=\"surfaceshader\">\n"
+           "    <input name=\"base_color\" type=\"color3\" value=\"0.1, 0.2, 0.3\" />\n"
+           "  </open_pbr_surface>\n"
+           "  <surfacematerial name=\"M_Bishop\" type=\"material\">\n"
+           "    <input name=\"surfaceshader\" type=\"surfaceshader\" "
+           "nodename=\"Bishop\" />\n"
+           "  </surfacematerial>\n"
+           "  <open_pbr_surface name=\"King\" type=\"surfaceshader\">\n"
+           "    <input name=\"base_color\" type=\"color3\" value=\"0.7, 0.8, 0.9\" />\n"
+           "  </open_pbr_surface>\n"
+           "  <surfacematerial name=\"M_King\" type=\"material\">\n"
+           "    <input name=\"surfaceshader\" type=\"surfaceshader\" "
+           "nodename=\"King\" />\n"
+           "  </surfacematerial>\n"
+           "</materialx>\n";
 }
 
 // A directory of files standing in for image maps, and the document
@@ -418,6 +443,129 @@ TEST_F(MaterialXGenerator, anImagelessDocumentClaimsNoUnitAtAll)
     EXPECT_NE(out.source.find("#define texture(_s, _c) texture2D(_s, _c)"),
               std::string::npos)
         << out.source;
+}
+
+TEST_F(MaterialXGenerator, whichSurfaceIsGeneratedIsTheCallersToSay)
+{
+    // One document, a whole asset's material set: naming one surface
+    // generates THAT one, and naming none generates the first, which is
+    // what every build before the name existed did (sec 17.13).
+    const std::string doc = twoSurfaceDoc();
+    auto bishop = Render::MaterialX::generate(doc, {}, "M_Bishop");
+    ASSERT_TRUE(bishop.valid) << bishop.error;
+    EXPECT_NE(bishop.source.find("m.baseColor = vec3(0.100000, 0.200000, 0.300000)"),
+              std::string::npos)
+        << bishop.source;
+
+    auto king = Render::MaterialX::generate(doc, {}, "M_King");
+    ASSERT_TRUE(king.valid) << king.error;
+    EXPECT_NE(king.source.find("m.baseColor = vec3(0.700000, 0.800000, 0.900000)"),
+              std::string::npos)
+        << king.source;
+
+    auto first = Render::MaterialX::generate(doc);
+    ASSERT_TRUE(first.valid) << first.error;
+    EXPECT_EQ(first.source, bishop.source);
+}
+
+TEST_F(MaterialXGenerator, aSurfaceResolvesByTheShaderNodeToo)
+{
+    // One string is written down; whether it was copied out of a <look>,
+    // out of the picker or typed should not decide whether it resolves.
+    auto byMaterial = Render::MaterialX::generate(twoSurfaceDoc(), {}, "M_King");
+    auto byShader = Render::MaterialX::generate(twoSurfaceDoc(), {}, "King");
+    ASSERT_TRUE(byMaterial.valid) << byMaterial.error;
+    ASSERT_TRUE(byShader.valid) << byShader.error;
+    EXPECT_EQ(byShader.source, byMaterial.source);
+}
+
+TEST_F(MaterialXGenerator, aSurfaceTheDocumentDoesNotStateIsRefusedWithTheOnesItDoes)
+{
+    auto out = Render::MaterialX::generate(twoSurfaceDoc(), {}, "M_Queen");
+    EXPECT_FALSE(out.valid);
+    EXPECT_NE(out.error.find("M_Queen"), std::string::npos) << out.error;
+    // Named, so the mistake is visible rather than rendered as the first
+    EXPECT_NE(out.error.find("M_Bishop"), std::string::npos) << out.error;
+    EXPECT_NE(out.error.find("M_King"), std::string::npos) << out.error;
+}
+
+TEST_F(MaterialXGenerator, aDocumentSaysWhichSurfacesItStatesAndWhichIsWorn)
+{
+    auto info = Render::MaterialX::inspect(twoSurfaceDoc(), {}, "M_King");
+    ASSERT_TRUE(info.valid) << info.error;
+    ASSERT_EQ(info.materials.size(), 2u);
+    EXPECT_EQ(info.materials[0], "M_Bishop");
+    EXPECT_EQ(info.materials[1], "M_King");
+    EXPECT_EQ(info.material, "M_King");
+    EXPECT_EQ(info.surface, "open_pbr_surface");
+    // The surfaces are named for the MATERIAL nodes: that is what a
+    // <look>'s materialassign says, and what the picker offers
+    EXPECT_EQ(Render::MaterialX::inspect(twoSurfaceDoc()).material, "M_Bishop");
+}
+
+TEST_F(MaterialXGenerator, theSurfaceSurvivesTheOpenPbrTranslation)
+{
+    // translateAllMaterials replaces every shader node, so the selection
+    // is carried as a position in document order, not as a node.
+    const std::string doc =
+        "<?xml version=\"1.0\"?>\n"
+        "<materialx version=\"1.39\">\n"
+        "  <standard_surface name=\"A\" type=\"surfaceshader\">\n"
+        "    <input name=\"base_color\" type=\"color3\" value=\"0.1, 0.1, 0.1\" />\n"
+        "  </standard_surface>\n"
+        "  <surfacematerial name=\"M_A\" type=\"material\">\n"
+        "    <input name=\"surfaceshader\" type=\"surfaceshader\" nodename=\"A\" />\n"
+        "  </surfacematerial>\n"
+        "  <standard_surface name=\"B\" type=\"surfaceshader\">\n"
+        "    <input name=\"base_color\" type=\"color3\" value=\"0.9, 0.9, 0.9\" />\n"
+        "  </standard_surface>\n"
+        "  <surfacematerial name=\"M_B\" type=\"material\">\n"
+        "    <input name=\"surfaceshader\" type=\"surfaceshader\" nodename=\"B\" />\n"
+        "  </surfacematerial>\n"
+        "</materialx>\n";
+    auto a = Render::MaterialX::generate(doc, {}, "M_A");
+    auto b = Render::MaterialX::generate(doc, {}, "M_B");
+    ASSERT_TRUE(a.valid) << a.error;
+    ASSERT_TRUE(b.valid) << b.error;
+    EXPECT_NE(a.source, b.source);
+    EXPECT_NE(a.source.find("0.100000"), std::string::npos) << a.source;
+    EXPECT_NE(b.source.find("0.900000"), std::string::npos) << b.source;
+}
+
+TEST_F(MaterialXGenerator, theChessSetIsFifteenMaterialsInOneDocument)
+{
+    // The case the whole thing exists for. MaterialX's chess set is one
+    // document with fifteen surfacematerials and forty-three images,
+    // and before the surface name every object wearing it was the same
+    // black bishop. The images were never the problem: the layer cap
+    // counts the CHOSEN shader's graph, which is four per piece.
+    const std::string path = std::string(FC_TEST_MATERIALX_RESOURCES)
+        + "Materials/Examples/StandardSurface/standard_surface_chess_set.mtlx";
+    std::ifstream in(path, std::ios::binary);
+    if (!in)
+        GTEST_SKIP() << "no MaterialX example resources at " << path;
+    std::ostringstream buf;
+    buf << in.rdbuf();
+    const std::string xml = buf.str();
+
+    auto info = Render::MaterialX::inspect(xml, path);
+    ASSERT_TRUE(info.valid) << info.error;
+    EXPECT_EQ(info.materials.size(), 15u);
+    EXPECT_EQ(info.material, info.materials.front());
+
+    // Every one of the fifteen generates, and each is its own surface
+    std::set<std::string> distinct;
+    for (const auto &name : info.materials) {
+        auto out = Render::MaterialX::generate(xml, path, name);
+        ASSERT_TRUE(out.valid) << name << ": " << out.error;
+        EXPECT_LE(out.images.size(), 5u) << name << " samples "
+                                         << out.images.size() << " layers";
+        distinct.insert(out.source);
+    }
+    // Fifteen materials, not one drawn fifteen times. (Two pieces of the
+    // set share a shader graph, so distinct sources are fewer than 15;
+    // what matters is that it is not 1.)
+    EXPECT_GT(distinct.size(), 5u);
 }
 
 TEST_F(MaterialXGenerator, aDocumentWithNoSurfaceIsReported)

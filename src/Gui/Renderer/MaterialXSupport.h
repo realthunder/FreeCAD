@@ -87,10 +87,18 @@ struct DocumentInfo {
     /// render as written (an unsupported node, say). Reported whether
     /// or not the document is valid.
     std::vector<std::string> warnings;
-    /// Names of the renderable surface materials, in document order.
-    /// The first is the one a consumer renders.
+    /// Names of the renderable surfaces, in document order: the
+    /// namepath of each `surfacematerial` node, or of the bare surface
+    /// shader node where the document states no material. These are the
+    /// names a consumer says which surface it wears by, and what a
+    /// MaterialX <look> assigns by (docs/MaterialStorage.md sec 17.13).
+    /// One entry for a document describing a single material; a
+    /// document carrying a whole asset's set states many.
     std::vector<std::string> materials;
-    /// The surface-shader node category of the first material
+    /// The one of those this inspection was about: the surface asked
+    /// for, or the first when none was. Empty when nothing was valid.
+    std::string material;
+    /// The surface-shader node category of that material
     /// ("open_pbr_surface", "standard_surface", "gltf_pbr", ...).
     std::string surface;
     /// Image files the document names that are not on disk where it
@@ -115,10 +123,14 @@ struct DocumentInfo {
 /// Parse and validate a MaterialX document. `sourcePath` is the file
 /// the text came from, when it came from one: a material states its
 /// images relative to its own document, so that is what they resolve
-/// against. Never throws: a document that will not parse comes back
-/// invalid with the parser's message.
+/// against. `surface` names which of the document's surfaces the answer
+/// is about, empty meaning its first; a name the document does not
+/// state comes back invalid, listing the names it does state. Never
+/// throws: a document that will not parse comes back invalid with the
+/// parser's message.
 RendererExport DocumentInfo inspect(const std::string &xml,
-                                    const std::string &sourcePath = {});
+                                    const std::string &sourcePath = {},
+                                    const std::string &surface = {});
 
 /// The raster shader generated from a document: a material-inputs
 /// function, not a whole program. The engine splices `source` into the
@@ -181,11 +193,13 @@ struct GeneratedMaterial {
 };
 
 /// Generate the raster material-inputs function for a document.
-/// `sourcePath` resolves its relative file references, as in inspect().
-/// Never throws: a document that will not generate comes back invalid
-/// with the reason.
+/// `sourcePath` resolves its relative file references and `surface`
+/// names which surface is generated, both as in inspect(). Never
+/// throws: a document that will not generate comes back invalid with
+/// the reason.
 RendererExport GeneratedMaterial generate(const std::string &xml,
-                                          const std::string &sourcePath = {});
+                                          const std::string &sourcePath = {},
+                                          const std::string &surface = {});
 
 /// One image file a document refers to.
 ///

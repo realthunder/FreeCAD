@@ -22,7 +22,7 @@
 
 """
 Test module for a card's shader graph: making a shader card, and editing
-its graph on an object (docs/MaterialStorage.md 17.11 and 17.12).
+its graph on an object (docs/MaterialStorage.md 17.11, 17.12 and 17.13).
 
 A library save places the graph's files under the library's materialx/
 directory and relinks the card to them, wherever the author picked them.
@@ -105,19 +105,21 @@ class ShaderGraphTestCases(unittest.TestCase):
             f.write(PIXELS)
         return mtlx, png
 
-    def libraryCard(self):
+    def libraryCard(self, name="Checker", surface="", path=CARD):
         """A shader card saved into the User library from picked files, read
         back off the library so it is hashed and resolved as any card is"""
         mtlx, png = self.pickedFiles()
         card = Materials.Material()
-        card.Name = "Checker"
+        card.Name = name
         card.addAppearanceModel(SHADER_GRAPH_RENDERING)
         card.setAppearanceValue("MaterialXShaderGraph", "checker.mtlx")
+        if surface:
+            card.setAppearanceValue("MaterialXSurface", surface)
         card.setAppearanceValue("MaterialXNames", ["checker.mtlx", "checker.png"])
         card.setAppearanceValue("MaterialXFiles", [mtlx, png])
-        self.MaterialManager.save("User", card, CARD, overwrite=True)
+        self.MaterialManager.save("User", card, path, overwrite=True)
         self.MaterialManager.refresh()
-        return self.MaterialManager.getMaterialByPath(CARD, "User")
+        return self.MaterialManager.getMaterialByPath(path, "User")
 
     def boxWith(self, card, name="ShaderGraphDoc"):
         doc = FreeCAD.newDocument(name)
@@ -234,6 +236,48 @@ class ShaderGraphTestCases(unittest.TestCase):
         again = Materials.materializeShaderGraph(obj, "ShapeMaterial")
         self.assertEqual(again.ElementList[0].Programs[0].FragmentProgram, edited)
         self.assertFalse(Materials.shaderGraphEdited(obj))
+
+    # -- one graph, many surfaces (17.13) -----------------------------------
+
+    def testTwoCardsShareOneGraphAndAreToldApartByTheSurface(self):
+        """An asset's whole material set is one graph file. Two cards over
+        the same files, naming different surfaces, are two materials: the
+        surface rides in the manifest, so it is part of each card's
+        identity, and it reaches the program that renders it."""
+        bishop = self.libraryCard("Bishop", "M_Bishop_B", FOLDER + "/Bishop.FCMat")
+        king = self.libraryCard("King", "M_King_B", FOLDER + "/King.FCMat")
+        self.assertEqual(bishop.getAppearanceValue("MaterialXSurface"), "M_Bishop_B")
+        self.assertEqual(king.getAppearanceValue("MaterialXSurface"), "M_King_B")
+        # Same bytes, different material: the graph the two name is the
+        # same file and their identities are not
+        self.assertEqual(
+            bishop.getAppearanceValue("MaterialXShaderGraph"),
+            king.getAppearanceValue("MaterialXShaderGraph"),
+        )
+        self.assertNotEqual(bishop.ContentHash, king.ContentHash)
+
+        doc, obj = self.boxWith(bishop)
+        program = Materials.materializeShaderGraph(obj, "ShapeMaterial").ElementList[0].Programs[0]
+        self.assertEqual(program.Surface, "M_Bishop_B")
+        self.assertFalse(Materials.shaderGraphEdited(obj))
+
+        # Wearing a different surface of the same bytes is an edit, and
+        # the card it saves as says the new one
+        program.Surface = "M_King_B"
+        self.assertTrue(Materials.shaderGraphEdited(obj))
+        card = Materials.shaderGraphCard(obj, "ShapeMaterial")
+        self.assertEqual(card.getAppearanceValue("MaterialXSurface"), "M_King_B")
+        self.assertEqual(card.Parent, bishop.UUID)
+
+    def testACardWearingTheFirstSurfaceIsWrittenAsItAlwaysWas(self):
+        """The key is written only when one is named, so no card stored
+        before the surface existed changed identity when it was added."""
+        plain = self.libraryCard()
+        # Never set, so the property is null rather than an empty string
+        self.assertFalse(plain.getAppearanceValue("MaterialXSurface"))
+        doc, obj = self.boxWith(plain)
+        program = Materials.materializeShaderGraph(obj, "ShapeMaterial").ElementList[0].Programs[0]
+        self.assertEqual(program.Surface, "")
 
     def testACardWithoutAGraphMaterializesNothing(self):
         steel = self.MaterialManager.getMaterial("92589471-a6cb-4bbc-b748-d425a17dea7d")

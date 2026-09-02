@@ -79,6 +79,10 @@ Q_SIGNALS:
      * -- the editor owns the file dialog and everything the file says
      */
     void shaderGraphRequested();
+    /** The surface value was activated. Which surfaces there are is the
+     * graph's to say, so they are offered rather than typed (17.13)
+     */
+    void shaderSurfaceRequested();
 
 private:
     QWidget* createWidget(QWidget* parent, const QVariant& item, const QModelIndex& index) const;

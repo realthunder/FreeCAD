@@ -377,6 +377,11 @@ void MaterialYamlEntry::addToTree(
             finalModel->setAppearanceValue(QStringLiteral("MaterialXShaderGraph"),
                                            QString::fromStdString(graph.as<std::string>()));
         }
+        if (node["Surface"]) {
+            const auto surface = node["Surface"].as<std::string>();
+            finalModel->setAppearanceValue(QStringLiteral("MaterialXSurface"),
+                                           QString::fromStdString(surface));
+        }
         if (node["Names"]) {
             finalModel->setAppearanceValue(QStringLiteral("MaterialXNames"),
                                            readList(node["Names"]));

@@ -263,6 +263,9 @@ public:
     //@{
     bool hasMaterialX() const;
     QString getMaterialXShaderGraph() const;
+    /// Which surface of the graph the card wears, empty for its first
+    /// (docs/MaterialStorage.md sec 17.13)
+    QString getMaterialXSurface() const;
     QStringList getMaterialXNames() const;
     QStringList getMaterialXFiles() const;
     /// One per name, in name order; empty where a file could not be hashed

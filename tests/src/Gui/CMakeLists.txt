@@ -101,8 +101,13 @@ if(TARGET FreeCADRenderer)
     add_executable(MaterialXGen_tests_run
                    ${CMAKE_CURRENT_SOURCE_DIR}/MaterialXGen.cpp)
     target_link_libraries(MaterialXGen_tests_run gtest_main FreeCADRenderer)
+    # And where the vendored example materials are, for the one case
+    # the whole surface-name feature exists for: a real asset whose
+    # whole material set is one document (docs/MaterialStorage.md 17.13).
+    # Skipped at run time when the submodule is not checked out.
     target_compile_definitions(MaterialXGen_tests_run PRIVATE
-        FC_TEST_RENDERER_RESOURCES="${CMAKE_BINARY_DIR}/share/Renderer/")
+        FC_TEST_RENDERER_RESOURCES="${CMAKE_BINARY_DIR}/share/Renderer/"
+        FC_TEST_MATERIALX_RESOURCES="${CMAKE_SOURCE_DIR}/src/3rdParty/MaterialX/resources/")
     add_test(NAME MaterialXGen_tests_run COMMAND MaterialXGen_tests_run)
 
     add_executable(MeshSimplify_tests_run

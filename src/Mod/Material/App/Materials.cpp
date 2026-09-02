@@ -1738,6 +1738,13 @@ void Material::saveCanonicalMaterialX(QTextStream& stream) const
     const QStringList names = getMaterialXNames();
     stream << "MaterialX:\n";
     stream << "  ShaderGraph: \"" << MaterialValue::escapeString(getMaterialXShaderGraph()) << "\"\n";
+    // Written only when one is named, so a card that wears the graph's
+    // first surface keeps the canonical form -- and the content hash --
+    // it had before the key existed (sec 17.13)
+    const QString surface = getMaterialXSurface();
+    if (!surface.isEmpty()) {
+        stream << "  Surface: \"" << MaterialValue::escapeString(surface) << "\"\n";
+    }
     stream << "  Names:\n";
     for (const auto& name : names) {
         stream << "    - \"" << MaterialValue::escapeString(name) << "\"\n";
@@ -1764,6 +1771,15 @@ QString Material::getMaterialXShaderGraph() const
         return {};
     }
     return getAppearanceProperty(QStringLiteral("MaterialXShaderGraph"))->getString();
+}
+
+QString Material::getMaterialXSurface() const
+{
+    if (!hasAppearanceProperty(QStringLiteral("MaterialXSurface"))) {
+        return {};
+    }
+    auto property = getAppearanceProperty(QStringLiteral("MaterialXSurface"));
+    return property->isNull() ? QString() : property->getString();
 }
 
 static QStringList listProperty(const Material& card, const char* name)
@@ -1916,6 +1932,7 @@ App::MaterialXDocument Material::getMaterialXManifest() const
         return App::MaterialXDocument();   // the document must be one of its own files
     }
     manifest.document = document;
+    manifest.surface = getMaterialXSurface().toStdString();
     return manifest;
 }
 

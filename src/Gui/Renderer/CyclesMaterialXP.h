@@ -64,13 +64,15 @@ struct MaterialXResult
     std::vector<std::string> warnings;
 };
 
-/// Interpret the first renderable surface of \a doc onto \a graph.
-/// Never throws. A document this build cannot interpret comes back
-/// with an error and the caller renders the draw's stock material --
-/// the sandboxed-failure rule: a material that will not translate must
-/// not take the frame with it.
+/// Interpret one renderable surface of \a doc onto \a graph: the one
+/// \a surface names, or its first when that is empty
+/// (docs/MaterialStorage.md sec 17.13). Never throws. A document this
+/// build cannot interpret comes back with an error and the caller
+/// renders the draw's stock material -- the sandboxed-failure rule: a
+/// material that will not translate must not take the frame with it.
 MaterialXResult buildMaterialXSurface(ccl::ShaderGraph *graph,
-                                      const mx::DocumentPtr &doc);
+                                      const mx::DocumentPtr &doc,
+                                      const std::string &surface = {});
 
 }  // namespace Render::Cycles
 

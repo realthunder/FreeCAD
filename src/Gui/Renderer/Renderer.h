@@ -875,6 +875,14 @@ struct UserShader {
     /// would have to replace, which is the open question of
     /// docs/CyclesIntegration.md sec 8 item 15 decision 2.
     std::string sourcePath;
+    /// Which surface of a MaterialX document is shaded: the name of one
+    /// of its surfacematerial nodes (SoShaderObject::sourceSurface).
+    /// Empty renders the first surface the document states, which is
+    /// what a single-material document has -- an asset's whole material
+    /// set is usually one document, and this picks one out of it
+    /// (docs/MaterialStorage.md sec 17.13). Part of the shader's
+    /// identity: two surfaces of one document are two shaders.
+    std::string surface;
     /// Pipeline stage name from SoShaderProgram::stage. Backends map
     /// known names and warn-and-skip unknown ones.
     std::string stage;
@@ -958,6 +966,7 @@ struct UserShader {
 
     bool operator==(const UserShader &o) const {
         return dialect == o.dialect && sourcePath == o.sourcePath
+            && surface == o.surface
             && stage == o.stage && vertexSource == o.vertexSource
             && fragmentSource == o.fragmentSource
             && simulateSource == o.simulateSource && params == o.params

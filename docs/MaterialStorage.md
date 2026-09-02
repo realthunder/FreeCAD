@@ -1685,18 +1685,62 @@ of the CHOSEN shader's graph (four per piece), and Cycles has no cap.
 
 Two workstreams, ruled in this order:
 
-1. **A surface name on the graph** (next session). `MaterialXSurface`
-   beside `MaterialXShaderGraph` on the card, shown as "Surface" -- the
-   `surfacematerial` node the card is shaded by, the first when empty --
-   and the same field on a MATERIALX `App::ShaderProgram`, threaded into
-   `inspect()`, `generate()` and the Cycles interpreter as "this material
-   node, not the first". The chess set is then fifteen cards over one
-   shared file set, which the library form already allows. The picker
-   offers the document's surfaces when there is more than one. The word
-   is deliberately not "material": that is the card.
+1. **A surface name on the graph** -- BUILT, below.
 2. **A look-reading importer, in the Import module** (a later session),
    beside `ReaderGltf.cpp` in `src/Mod/Import/App` with its Gui half in
    `ImportGui`. A glb (or other mesh bundle) imported beside a `.mtlx`
    that carries a `<look>` gets a card per `materialassign`, and each
    object made from a named mesh wears the card the look assigns to that
    name.
+
+#### The surface name, as built
+
+One string, carried the whole way down and named the same at every
+layer. The word is deliberately not "material": that is the card.
+
+| Layer | Where it rides |
+| --- | --- |
+| Card | `MaterialXSurface`, shown as "Surface" (MaterialXRendering.yml) |
+| Canonical form | `MaterialX: Surface:`, written only when named |
+| Manifest | a `surface <name>` line (`App::MaterialXDocument::surface`) |
+| Object | `App::ShaderProgram::Surface` |
+| Scene graph | `SoShaderObject::sourceSurface` (Coin fork) |
+| Capture | `Render::UserShader::surface`, snapshot v72 |
+| Consumers | the third argument of `inspect()`, `generate()`, `buildMaterialXSurface()` |
+
+**Empty means the first surface the graph states**, which is what a
+single-material graph has, and both the manifest line and the canonical
+key are written only when a name is there. So every card, document and
+snapshot written before this existed hashes to what it hashed before and
+renders what it rendered before. Nothing migrated.
+
+**Identity is where the fifteen cards come from.** The surface is part
+of the manifest, so it is part of the manifest hash, so it is part of
+the card's content hash. The chess set is fifteen cards over ONE shared
+set of files -- the graph and its forty-three images are stored once and
+the cards differ in this one string. The renderers key on it too: the
+raster variant cache and the path tracer's shader map both fold it into
+the document's identity, so two surfaces of one document are two
+programs and not one program drawn twice.
+
+**A name resolves however it was written down.** `surfaceIndex()` tries
+the `surfacematerial` node's namepath first -- what a `<look>`'s
+`material=` attribute says, and what the picker offers -- then its bare
+name, then the shader node's own two spellings. A name the document does
+not state is refused with the list of the ones it does, rather than
+silently rendering the first.
+
+**The selection survives the OpenPBR translation** because it is kept as
+an INDEX into `surfaceShaders()`, not as a node: `translateAllMaterials`
+replaces every shader node in the document, and document order is what
+comes through it. Both consumers now read one implementation of "which
+surface, translated" (`Render::MaterialX::openPbrSurface`); the path
+tracer's own copy of it is gone.
+
+**What still costs the whole document**: the capture decodes every image
+the document names, not just the chosen surface's
+(`DocumentInfo::images` walks the whole tree). The generated shader
+samples only the chosen graph's layers -- the two lists are joined on the
+resolved path -- so the picture and the sixteen-layer cap are right; the
+decode is a superset, cached per path, and paid once per document rather
+than once per card.
