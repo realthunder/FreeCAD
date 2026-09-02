@@ -249,12 +249,12 @@ public:
     }
 
     App::MaterialAppearance getMaterialAppearance() const;
-    /** @name The MaterialX document set this card carries
+    /** @name The shader graph set this card carries
      *
-     * Stated by the MaterialX Rendering appearance model
+     * Stated by the Shader Graph Rendering appearance model
      * (MaterialXRendering.yml, docs/MaterialStorage.md sec 17): the name of
-     * the document entry, what the document calls each file, and -- in the
-     * LIBRARY form -- where each file is under the library's materialx/
+     * the entry that is the MaterialX graph, what the graph calls each
+     * file, and -- in the LIBRARY form -- where each file is under the library's materialx/
      * directory. The card's identity is computed over the files' CONTENT
      * hashes, which the library loader computes off the files and a card
      * restored from a document reads back from its canonical form; the
@@ -262,7 +262,7 @@ public:
      */
     //@{
     bool hasMaterialX() const;
-    QString getMaterialXDocument() const;
+    QString getMaterialXShaderGraph() const;
     QStringList getMaterialXNames() const;
     QStringList getMaterialXFiles() const;
     /// One per name, in name order; empty where a file could not be hashed

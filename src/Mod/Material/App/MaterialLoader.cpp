@@ -360,7 +360,7 @@ void MaterialYamlEntry::addToTree(
         }
     }
 
-    // The MaterialX document set. A card stored in a document carries it as
+    // The shader graph set. A card stored in a document carries it as
     // a block of its own, by content (Material::saveCanonicalMaterialX); a
     // library card states it through the model's properties, and its files
     // are hashed off the library's materialx/ directory here, so identity
@@ -370,10 +370,12 @@ void MaterialYamlEntry::addToTree(
         if (!finalModel->hasAppearanceModel(ModelUUIDs::ModelUUID_Rendering_MaterialX)) {
             finalModel->addAppearance(ModelUUIDs::ModelUUID_Rendering_MaterialX);
         }
-        if (node["Document"]) {
-            finalModel->setAppearanceValue(
-                QStringLiteral("MaterialXDocument"),
-                QString::fromStdString(node["Document"].as<std::string>()));
+        // "Document" is the key the block was first written with; files
+        // saved before the term became "shader graph" still name it
+        auto graph = node["ShaderGraph"] ? node["ShaderGraph"] : node["Document"];
+        if (graph) {
+            finalModel->setAppearanceValue(QStringLiteral("MaterialXShaderGraph"),
+                                           QString::fromStdString(graph.as<std::string>()));
         }
         if (node["Names"]) {
             finalModel->setAppearanceValue(QStringLiteral("MaterialXNames"),

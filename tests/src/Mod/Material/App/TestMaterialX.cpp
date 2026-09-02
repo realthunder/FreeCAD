@@ -75,7 +75,7 @@ protected:
         auto steel = Materials::MaterialManager::getManager().getMaterial(QString::fromLatin1(Steel));
         auto card = std::make_shared<Materials::Material>(*steel);
         card->addAppearance(Materials::ModelUUIDs::ModelUUID_Rendering_MaterialX);
-        card->setAppearanceValue(QStringLiteral("MaterialXDocument"), QStringLiteral("brass.mtlx"));
+        card->setAppearanceValue(QStringLiteral("MaterialXShaderGraph"), QStringLiteral("brass.mtlx"));
         auto names = std::make_shared<QList<QVariant>>();
         names->append(QStringLiteral("brass.mtlx"));
         names->append(QStringLiteral("../Images/brass color.jpg"));
@@ -149,7 +149,7 @@ TEST_F(TestMaterialX, aCardStoredInADocumentReadsItsHashesBack)
     auto stored = Materials::MaterialLoader::getMaterialFromFile(path);
     ASSERT_TRUE(stored);
     ASSERT_TRUE(stored->hasMaterialX());
-    EXPECT_EQ(stored->getMaterialXDocument(), QStringLiteral("brass.mtlx"));
+    EXPECT_EQ(stored->getMaterialXShaderGraph(), QStringLiteral("brass.mtlx"));
     EXPECT_EQ(stored->getMaterialXNames(), card->getMaterialXNames());
     EXPECT_EQ(stored->getMaterialXHashes(), card->getMaterialXHashes());
     // No paths: the bytes are the document's, not this machine's

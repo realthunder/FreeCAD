@@ -1726,7 +1726,7 @@ void Material::saveCanonical(QTextStream& stream) const
 
 void Material::saveCanonicalMaterialX(QTextStream& stream) const
 {
-    // The document set by CONTENT: the names the document uses and the hash
+    // The shader graph set by CONTENT: the names the graph uses and the hash
     // of each file, never where a library keeps them (docs/MaterialStorage.md
     // 17.6). A card stored in a document reads this back and nothing else.
     if (!hasMaterialX()) {
@@ -1734,7 +1734,7 @@ void Material::saveCanonicalMaterialX(QTextStream& stream) const
     }
     const QStringList names = getMaterialXNames();
     stream << "MaterialX:\n";
-    stream << "  Document: \"" << MaterialValue::escapeString(getMaterialXDocument()) << "\"\n";
+    stream << "  ShaderGraph: \"" << MaterialValue::escapeString(getMaterialXShaderGraph()) << "\"\n";
     stream << "  Names:\n";
     for (const auto& name : names) {
         stream << "    - \"" << MaterialValue::escapeString(name) << "\"\n";
@@ -1750,17 +1750,17 @@ void Material::saveCanonicalMaterialX(QTextStream& stream) const
 bool Material::hasMaterialX() const
 {
     return hasAppearanceModel(ModelUUIDs::ModelUUID_Rendering_MaterialX)
-        && hasAppearanceProperty(QStringLiteral("MaterialXDocument"))
-        && !getAppearanceProperty(QStringLiteral("MaterialXDocument"))->isNull()
-        && !getAppearanceProperty(QStringLiteral("MaterialXDocument"))->getString().isEmpty();
+        && hasAppearanceProperty(QStringLiteral("MaterialXShaderGraph"))
+        && !getAppearanceProperty(QStringLiteral("MaterialXShaderGraph"))->isNull()
+        && !getAppearanceProperty(QStringLiteral("MaterialXShaderGraph"))->getString().isEmpty();
 }
 
-QString Material::getMaterialXDocument() const
+QString Material::getMaterialXShaderGraph() const
 {
-    if (!hasAppearanceProperty(QStringLiteral("MaterialXDocument"))) {
+    if (!hasAppearanceProperty(QStringLiteral("MaterialXShaderGraph"))) {
         return {};
     }
-    return getAppearanceProperty(QStringLiteral("MaterialXDocument"))->getString();
+    return getAppearanceProperty(QStringLiteral("MaterialXShaderGraph"))->getString();
 }
 
 static QStringList listProperty(const Material& card, const char* name)
@@ -1837,7 +1837,7 @@ App::MaterialXDocument Material::getMaterialXManifest() const
         }
         manifest.files.push_back({names[i].toStdString(), hash});
     }
-    const std::string document = getMaterialXDocument().toStdString();
+    const std::string document = getMaterialXShaderGraph().toStdString();
     if (!manifest.find(document.c_str())) {
         return App::MaterialXDocument();   // the document must be one of its own files
     }

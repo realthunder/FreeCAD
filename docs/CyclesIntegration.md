@@ -1338,7 +1338,7 @@ period from the object origin the first analytic model assumed;
 Cycles was right and the model was not.
 
 
-### 6.8 MaterialX documents (phase B step 0, built 2026-08-31)
+### 6.8 MaterialX shader graphs (phase B step 0, built 2026-08-31)
 
 Phase B's first step is the plumbing: the language vendored, its data
 library shipped, and a document able to arrive on a shader object and
@@ -1433,7 +1433,7 @@ dangling node reference, and a document on the `post` stage.
 
 ### 6.9 The MaterialX interpreter (phase B step 1, built 2026-08-31)
 
-Cycles has a shader node vocabulary of its own, so a MaterialX document
+Cycles has a shader node vocabulary of its own, so a MaterialX shader graph
 is INTERPRETED into it rather than compiled -- the route every engine
 with such a vocabulary takes (Unreal's Interchange builds
 material-function nodes, three.js' MaterialXLoader builds TSL nodes),
@@ -1537,7 +1537,7 @@ passing on CPU and CUDA:
 - The base colour matches the control, and WHICH control it matches is
   the colour-space finding: 0.003 against a control stated as the sRGB
   ENCODING of the document's value, 0.053 against one stated raw. A
-  MaterialX document states linear colour; the fork's own properties
+  MaterialX shader graph states linear colour; the fork's own properties
   state an encoded colour the colour-managed pipeline decodes on the
   way in (section 6.1's trap, from the other side).
 - The document overrides the object's own colour (0.153 against the
@@ -1572,7 +1572,7 @@ own texture uploads, and Cycles loads these from file itself.
 
 ### 6.10 The raster half: OpenPBR and the generator (phase B step 2, built 2026-08-31)
 
-Cycles reads a MaterialX document by interpreting it (section 6.9).
+Cycles reads a MaterialX shader graph by interpreting it (section 6.9).
 The rasterizer cannot: it has no node vocabulary, it has a shading
 language. So the raster half is two pieces -- a surface model both
 engines can describe, and a generator that turns a document into shader
@@ -1725,7 +1725,7 @@ which is also what moved the image case out of the reported list above.
 ### 6.11 The declared interface (phase B step 3, built 2026-08-31)
 
 A material is not finished when it renders. Someone has to be able to
-change it -- and a MaterialX document is XML, so without an interface
+change it -- and a MaterialX shader graph is XML, so without an interface
 the only way to move a number in one is to edit text and recompile a
 shader. Step 3 is that interface: the document's own declared inputs
 become `Param_*` dynamic properties on the `App::ShaderProgram`, bound
@@ -1990,7 +1990,7 @@ The last piece of phase B step 3, and the first one whose shape was
 decided in discussion rather than found in the code. **Everything below
 is a design record: none of it is built.**
 
-**What it is for.** A MaterialX document renders today only if someone
+**What it is for.** A MaterialX shader graph renders today only if someone
 builds an `App::ShaderProgram` for it by hand and binds it through an
 `App::ShaderBinding` -- which is what `scripts/demo-materialx.py` does
 seventeen times. That is the author's route, not the user's. The user's

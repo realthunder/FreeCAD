@@ -23,14 +23,14 @@
 # *                                                                         *
 # ***************************************************************************
 
-# A card carrying this model is shaded by a MaterialX document -- a node
-# graph, with the image maps it refers to -- instead of by the colour slots
-# alone (docs/MaterialStorage.md sec 17, docs/CyclesIntegration.md sec
+# A card carrying this model is shaded by a shader graph -- a MaterialX
+# document, a node graph with the image maps it refers to -- instead of by
+# the colour slots alone (docs/MaterialStorage.md sec 17, docs/CyclesIntegration.md sec
 # 6.13). It inherits Basic Rendering so the card still has a look where no
 # renderer can run the document.
 #
-# The files are named twice. MaterialXNames are what the document CALLS
-# them, one per file, the document itself among them; that is the key the
+# The files are named twice. MaterialXNames are what the graph CALLS
+# them, one per file, the graph itself among them; that is the key the
 # renderers join on, and it is the same string on every machine.
 # MaterialXFiles is the LIBRARY form beside it: where each file is, relative
 # to the materialx/ directory at the library's root. The paths are not part
@@ -38,28 +38,28 @@
 # a card stored in a document names hashes and no paths at all.
 
 AppearanceModel:
-  Name: "MaterialX Rendering"
+  Name: "Shader Graph Rendering"
   UUID: '1b396dbe-b345-41e2-a42d-5b2934f50880'
   URL: ''
-  Description: "Shaded by a MaterialX document and its image maps"
+  Description: "Shaded by a MaterialX shader graph and its image maps"
   DOI: ""
   Inherits:
     - BasicRendering:
       UUID: 'f006c7e4-35b7-43d5-bbf9-c5d572309e6e'
-  MaterialXDocument:
-    DisplayName: "MaterialX Document"
+  MaterialXShaderGraph:
+    DisplayName: "Shader Graph"
     Type: 'String'
     Units: ''
     URL: ''
-    Description: "The stated name of the entry that is the document, one of MaterialX Names"
+    Description: "The MaterialX shader graph (.mtlx) this card is shaded by: the stated name of the entry that is the graph, one of the Shader Graph Names"
   MaterialXNames:
-    DisplayName: "MaterialX Names"
+    DisplayName: "Shader Graph Names"
     Type: 'List'
     Units: ''
     URL: ''
-    Description: "What the document calls each file, one per entry of MaterialX Files, the document itself included"
+    Description: "What the MaterialX shader graph calls each file, one per entry of Shader Graph Files, the graph itself included"
   MaterialXFiles:
-    DisplayName: "MaterialX Files"
+    DisplayName: "Shader Graph Files"
     Type: 'FileList'
     Units: ''
     URL: ''

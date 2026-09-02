@@ -1058,6 +1058,17 @@ shader" button, not here.
 
 ## 17. The MaterialX card: what was settled (2026-09-02)
 
+**Terminology (ruled 2026-09-02).** The thing a card carries is a **shader
+graph** -- everywhere a user can see it, in the model's field names and in
+this document. "MaterialX" names the format and appears in tooltips and
+descriptions, the way "Blender" and "Unity" say "shader graph" and reserve
+the format's name for the fine print. "Document" is the FreeCAD document
+from here on; the MaterialX API's own `mx::Document`, and the
+`App::MaterialXDocument` manifest type that wraps its identity, keep their
+names because that is what they wrap. The model field is
+`MaterialXShaderGraph` and the canonical block's key is `ShaderGraph:`; the
+loader still reads the `Document:` key those files were first written with.
+
 The card itself is designed in `CyclesIntegration.md` sec 6.13. This
 section records what a later discussion settled around it: the STORAGE
 shape, the rename set that has to go ahead of it, the audit that priced
@@ -1085,7 +1096,7 @@ follows it to its children for noting, pruning and restore, the stream
 form spends bit 15 on the escape (17.9) with a self-contained run that
 carries the base value ahead of the column, and the XML form has a
 self-describing `m` key. Identity is over the hashes because the manifest
-is (17.6). The card side is the "MaterialX Rendering" appearance model
+is (17.6). The card side is the "Shader Graph Rendering" appearance model
 (`MaterialXRendering.yml`): `MaterialXDocument`, `MaterialXNames` and the
 library-form `MaterialXFiles` under `materialx/` at the library root; the
 canonical form writes a `MaterialX:` block of names and hashes and skips
@@ -1108,7 +1119,7 @@ boxes wearing one card share one node (same node id), a third box wears
 none, switching a box to Steel takes its node out and leaves the other's,
 save and reopen brings it back, and the raster path translated the
 probe's `standard_surface` with an `image` node to OpenPBR and drew it.
-Step 9 (per-face column, Edit shader) is not started.
+Step 9 (per-face column, Edit Shader Graph) is not started.
 
 The precedence step 8 left open is RULED and BUILT: when an object wears
 a card AND is the target of a Scope=Object binding, the EXPLICIT BINDING
@@ -1131,7 +1142,7 @@ it asks the target for `getMaterialXNode()` (a new public accessor on
 inserts behind it instead of at 0.
 
 Verified by a probe that classifies every `SoShaderProgram` child of the
-root by its fragment source -- the card's is the MaterialX document, the
+root by its fragment source -- the card's is the MaterialX shader graph, the
 binding's a marked GLSL fragment -- and asserts the binding sits at the
 higher index. Ten assertions across both assignment orders and a save +
 reopen, all passing; with the insert index put back to 0 the same probe
@@ -1294,7 +1305,7 @@ has -- what is written for humans is not what identity is computed over.
 ### 17.7 Everything is carried into the document
 
 Already decided and already implemented for cards, and the reasoning
-transfers to a MaterialX document and its maps unchanged.
+transfers to a MaterialX shader graph and its maps unchanged.
 
 `411da2d10d` ("Material: carry the stock cards too, because the library
 moves"): stock cards used to be left out, since the hash said which card
@@ -1313,7 +1324,7 @@ omission: `ensureBlob()` looks the content hash up in the store first, so
 those 13642 objects add one 670-byte entry between them, and re-importing
 King grew the file from 102.3MB to 102.4MB.
 
-So: **a MaterialX document and its maps are carried into the document on
+So: **a MaterialX shader graph and its maps are carried into the document on
 assignment, always, deduped by content.** A look that silently disappears
 when someone retunes a shipped card is the failure this argument was
 written from.
@@ -1419,7 +1430,7 @@ value buys.
 8. **Gui**: the shared node registry with copy-on-write, beside
    `applyDirectBindings()` and `rebuildAllBindings()` (sec 6.13
    decision 1a).
-9. **Per-face column**, and the "Edit shader" button with the Gui-side
+9. **Per-face column**, and the "Edit Shader Graph" button with the Gui-side
    read-flatten-store import that bakes the entry names and closes the
    relative-inline case of sec 16.6.
 
@@ -1436,7 +1447,7 @@ reopen both. Grep the string literals as well as the symbols: `.py`,
 `.csv`, `.ui` and `.xml` name these types as text, and those failures are
 silent.
 
-### 17.11 Step 9: the per-face column and the Edit shader button
+### 17.11 Step 9: the per-face column and the Edit Shader Graph button
 
 Step 9 is the last of 17.10 and the only one still open. Researched
 2026-09-02; the terrain below is measured from the code, the rulings it
@@ -1470,7 +1481,7 @@ the most instructive: it sidesteps the problem by making the variation a
 sampler LAYER in a 2D array rather than a program, and it samples
 outside the divergent branch because a texture read in divergent control
 flow has no defined derivatives. None of that generalises to a document,
-because a MaterialX document is not data the mesh shader can index. It
+because a MaterialX shader graph is not data the mesh shader can index. It
 IS the shader.
 
 **The raster path binds one program per draw.** A material-stage user
@@ -1521,7 +1532,7 @@ cache's material beside the single `usershader` pointer; and the draw
 split in the backend. On the Cycles side, feeding the per-face documents
 into the variant loop instead of short-circuiting ahead of it.
 
-**The Edit shader button is the smaller half and is nearly specified.**
+**The Edit Shader Graph button is the smaller half and is nearly specified.**
 The bundled render-effects module is the precedent for the whole shape:
 it instantiates `App::ShaderProgram` objects plus an `App::Shader` and
 binds them with an `App::ShaderBinding`, and it has a deactivate that
@@ -1549,27 +1560,28 @@ written with. Store first, set second: the other order stores nothing.
   round-trips, the consumer gap warns instead of dropping, and nothing
   outside App reads the column: that is a stable, honest state. The
   draw split across five layers plus the Cycles variant loop waits for
-  a real per-face document to ask for it. Option 3 is rejected: it
+  a real per-face shader graph to ask for it. Option 3 is rejected: it
   throws away finished storage to save a warning.
-- **The command is "Edit Shader...", in the appearance panel beside the
+- **The command is "Edit Shader Graph...", in the appearance panel beside the
   look list**, shown only while the selected object wears a card that
-  carries a MaterialX document (the 13.5 rule). "Materialize" stays an
+  carries a MaterialX shader graph (the 13.5 rule). "Materialize" stays an
   internal word. No tree context-menu entry in the first cut.
 - **Reversible, and un-materializing needs no card logic.** The object
   never stops wearing the card while materialized (the binding merely
   wins), so removing the three objects makes the card's look reappear
   by construction. Leaving the object bare would mean also clearing the
   card, which is a separate action that already exists. Un-materialize
-  confirms first when the program text differs from the card's document,
+  confirms first when the program text differs from the card's shader graph,
   because it discards edits; writing edits back to the card is a later
   feature, not part of step 9.
-- **The document is one more field of the card's appearance value and
+- **The shader graph is one more field of the card's appearance value and
   the follow rule applies unchanged.** A card SET on a following object
-  brings whatever the card carries, document included; a library edit to
-  the card's document pushes nothing, exactly as a library edit to its
+  brings whatever the card carries, shader graph included; a library edit
+  to the card's shader graph pushes nothing, exactly as a library edit to its
   colour pushes nothing. One card, one follow rule. Re-setting the card
   on a materialized object changes nothing visible, because the binding
   still wins.
 
-So step 9 as built is the Edit Shader button alone, with the
+So step 9 as built is the Edit Shader Graph button alone, with the
 store-first/set-second import ordering that closes 16.6.
+
