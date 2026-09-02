@@ -1110,18 +1110,32 @@ save and reopen brings it back, and the raster path translated the
 probe's `standard_surface` with an `image` node to OpenPBR and drew it.
 Step 9 (per-face column, Edit shader) is not started.
 
-One thing step 8 leaves open, RULED 2026-09-02 and to be built ahead of
-step 9 -- the explicit binding wins: precedence when an object
-wears a card AND is the target of a Scope=Object binding. Both put their
-program node at index 0 of the same root, and the cache's
-`setUserShader` keeps the LAST program traversed, so whichever node was
-inserted EARLIER (now at index 1) wins -- assign the card after the
-binding and the binding shows, create the binding after the card and the
-card shows, and a restore lands wherever its order lands. The consistent
-answer is that the explicit binding wins (the "outer shader wins" rule the
-cache already applies across link levels); it needs one of the two
-inserters to place its node relative to the other's, and neither knows
-the other today.
+The precedence step 8 left open is RULED and BUILT: when an object wears
+a card AND is the target of a Scope=Object binding, the EXPLICIT BINDING
+WINS -- the same "outer shader wins" rule the cache already applies
+across link levels. Both nodes go at the head of the same view provider
+root and the cache's `setUserShader` keeps the LAST material-stage
+program traversed, so the winner is simply the one at the higher child
+index. That made the answer depend on assignment order: the card
+assigned after the binding showed the binding, the binding created after
+the card showed the card, and a restore landed wherever its order landed
+(measured: the restore order is binding-then-card, so the card won).
+
+One inserter now knows the other, and only one had to. The card node
+keeps going in at index 0 (`ViewProviderGeometryObject::
+updateMaterialXNode`), which puts it IN FRONT of a binding node already
+there -- the losing end, on purpose.
+`ViewProviderShaderBinding::applyDirectBindings` is the side that moved:
+it asks the target for `getMaterialXNode()` (a new public accessor on
+`ViewProviderGeometryObject`) and, when it finds that node in the root,
+inserts behind it instead of at 0.
+
+Verified by a probe that classifies every `SoShaderProgram` child of the
+root by its fragment source -- the card's is the MaterialX document, the
+binding's a marked GLSL fragment -- and asserts the binding sits at the
+higher index. Ten assertions across both assignment orders and a save +
+reopen, all passing; with the insert index put back to 0 the same probe
+fails card-first and reopen, which is what says it measures the thing.
 
 Two more restore doors turned up while doing step 4, both now closed in
 `6dad71e400` and worth knowing about for any future rename of an OBJECT

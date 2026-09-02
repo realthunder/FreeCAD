@@ -275,6 +275,16 @@ public:
     virtual void showBoundingBox(bool);
     //@}
 
+    /** The shared card program node this object wears, or null
+     *
+     * For the one other inserter at the root's head: a Scope=Object
+     * ShaderBinding must place its own program AFTER this one,
+     * because the render cache keeps the LAST material-stage
+     * program traversed and an explicit binding beats the card the
+     * object wears.
+     */
+    SoShaderProgram *getMaterialXNode() const { return pcMaterialXNode; }
+
 protected:
     /// get called by the container whenever a property has been changed
     void onChanged(const App::Property* prop) override;

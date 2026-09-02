@@ -847,6 +847,13 @@ void ViewProviderGeometryObject::updateMaterialXNode()
     // At the head of the root, where a Scope=Object binding puts its node:
     // the capture callback routes a material-stage program found there
     // into this object's own render cache.
+    //
+    // Index 0 is also the losing end on purpose. The cache's
+    // setUserShader keeps the LAST material-stage program traversed, and
+    // an explicit binding beats the card an object wears, so the card
+    // goes IN FRONT of a binding node already there. The other direction
+    // is the binding's to keep: applyDirectBindings() inserts behind
+    // this node when it finds one.
     pcRoot->insertChild(node, 0);
 }
 

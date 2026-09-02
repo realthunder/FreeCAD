@@ -64,6 +64,7 @@
 
 #include "ViewProviderShaderObject.h"
 #include "Application.h"
+#include "ViewProviderGeometryObject.h"
 #include "Renderer/MaterialXSupport.h"
 #include "Document.h"
 #include "SoFCUnifiedSelection.h"
@@ -1798,8 +1799,21 @@ void ViewProviderShaderBinding::applyDirectBindings(
             // Child 0: captured into the target's own render cache ahead
             // of everything, then merged down through all child caches and
             // every instance (the shared-snapshot + mergeMaterial path).
-            FC_LOG("AP attach " << t->getFullName());
-            root->insertChild(node, 0);
+            //
+            // Except when the target also WEARS a MaterialX card: that
+            // node sits at the head too, and the cache's setUserShader
+            // keeps the LAST material-stage program traversed. An
+            // explicit binding beats the worn card, so go in behind it.
+            int at = 0;
+            if (auto vpg = dynamic_cast<ViewProviderGeometryObject*>(vpd)) {
+                if (auto card = vpg->getMaterialXNode()) {
+                    int idx = root->findChild(card);
+                    if (idx >= 0)
+                        at = idx + 1;
+                }
+            }
+            FC_LOG("AP attach " << t->getFullName() << " at " << at);
+            root->insertChild(node, at);
             attached.emplace_back(root, node);
         }
         if (emitters.empty())
