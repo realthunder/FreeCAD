@@ -117,8 +117,16 @@ struct RefineJob {
     uint64_t gen = 0;
 };
 
-std::mutex s_refineMutex;
-std::condition_variable s_refineCv;
+/// The pool's threads are detached and sleep in wait() for the life of
+/// the process, and glibc's pthread_cond_destroy blocks while a waiter
+/// is on the variable: as plain statics, this and the reaper's below
+/// hung exit() inside __run_exit_handlers (2026-09-02, a probe that had
+/// opened a Part document never returned from QCoreApplication::quit).
+/// Bound to heap objects that are never freed, they have no destructor
+/// to wait; the deques and maps beside them are still statics, which is
+/// safe because a sleeping waiter never touches them again.
+std::mutex &s_refineMutex = *new std::mutex;
+std::condition_variable &s_refineCv = *new std::condition_variable;
 std::deque<RefineJob> s_refineQueue;
 /// tag -> the one live token; absent = nothing wanted (canceled).
 std::map<const void *, uint64_t> s_refineTokens;
@@ -219,8 +227,8 @@ std::deque<LandingItem> s_landingQueue;
 /// closures own is safe to destroy off-thread: OCCT handles carry
 /// atomic refcounts, Coin nodes appear only as raw unowned pointers,
 /// and the detached fill arrays are plain memory.
-std::mutex s_reaperMutex;
-std::condition_variable s_reaperCv;
+std::mutex &s_reaperMutex = *new std::mutex;             // never freed, see s_refineCv
+std::condition_variable &s_reaperCv = *new std::condition_variable;
 std::deque<std::function<void()>> s_reaperQueue;
 bool s_reaperStarted = false;
 
