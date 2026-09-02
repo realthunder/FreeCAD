@@ -719,7 +719,7 @@ private:
         // put the PBR factors. Entry 0 -- the whole-object reading, and the
         // first face's for a per-face appearance, since one glTF material
         // per object is all this carries.
-        if (auto* appearance = Base::freecad_dynamic_cast<App::PropertyMaterialList>(
+        if (auto* appearance = Base::freecad_dynamic_cast<App::PropertyAppearanceList>(
                 vp->getPropertyByName("ShapeAppearance"))) {
             if (appearance->isPBR() && appearance->getSize() > 0) {
                 mat.metallic = appearance->getMetallic(0);

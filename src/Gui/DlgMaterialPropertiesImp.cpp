@@ -104,9 +104,9 @@ QColor DlgMaterialPropertiesImp::diffuseColor() const
     return ui->diffuseColor->color();
 }
 
-App::PropertyMaterialList* DlgMaterialPropertiesImp::listProperty(Gui::ViewProvider* vp) const
+App::PropertyAppearanceList* DlgMaterialPropertiesImp::listProperty(Gui::ViewProvider* vp) const
 {
-    return dynamic_cast<App::PropertyMaterialList*>(vp->getPropertyByName(material.c_str()));
+    return dynamic_cast<App::PropertyAppearanceList*>(vp->getPropertyByName(material.c_str()));
 }
 
 App::PropertyAppearance* DlgMaterialPropertiesImp::singleProperty(Gui::ViewProvider* vp) const
@@ -175,7 +175,7 @@ void DlgMaterialPropertiesImp::syncFromProperty()
 
 /**
  * Toggles between the Phong and the PBR reading, converting the stored
- * values so the look survives the switch (see PropertyMaterialList::convertPBR).
+ * values so the look survives the switch (see PropertyAppearanceList::convertPBR).
  */
 void DlgMaterialPropertiesImp::onShadingModelActivated(int index)
 {
@@ -346,10 +346,10 @@ void DlgMaterialPropertiesImp::setViewProviders(const std::vector<Gui::ViewProvi
     bool haveList = false;
     for (auto vp : Objects) {
         App::Property* prop = vp->getPropertyByName(material.c_str());
-        if (prop && (prop->isDerivedFrom<App::PropertyMaterialList>()
+        if (prop && (prop->isDerivedFrom<App::PropertyAppearanceList>()
                      || prop->isDerivedFrom<App::PropertyAppearance>())) {
             snapshots.emplace_back(vp, std::unique_ptr<App::Property>(prop->Copy()));
-            haveList = haveList || prop->isDerivedFrom<App::PropertyMaterialList>();
+            haveList = haveList || prop->isDerivedFrom<App::PropertyAppearanceList>();
         }
     }
     ui->shadingModelLabel->setVisible(haveList);

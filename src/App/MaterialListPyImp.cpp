@@ -97,7 +97,7 @@ bool indexOf(Py_ssize_t given, int count, int &idx, bool allowEnd = false)
 // attached write into the property's own change signalling so it records an
 // undo step and redraws.
 
-void MaterialListPy::attach(PropertyMaterialList *prop)
+void MaterialListPy::attach(PropertyAppearanceList *prop)
 {
     if (owner == prop) {
         return;
@@ -119,7 +119,7 @@ void MaterialListPy::detachFromOwner()
     // list is about to outlive its say in that
     ownvalue = new AppearanceList(owner->getList());
     ownvalue->setBlobManager(nullptr);
-    PropertyMaterialList *prop = owner;
+    PropertyAppearanceList *prop = owner;
     owner = nullptr;
     setTwinPointer(ownvalue);
     prop->unregisterView(this);

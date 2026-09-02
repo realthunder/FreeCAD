@@ -322,7 +322,7 @@ public:
 
     /** Switch the reading, converting the values so the look survives
      *
-     * The value-level counterpart of PropertyMaterialList::convertPBR:
+     * The value-level counterpart of PropertyAppearanceList::convertPBR:
      * pbrToPhong one way, phongToPbr the other, and nothing at all when
      * the mode already matches. This is what setting the mode means
      * everywhere a material value is edited -- assign the flag directly
@@ -374,7 +374,7 @@ public:
     //@}
     /** Which reading the slot values carry
      *
-     * A value-level tag, not storage: PropertyMaterialList keeps the mode
+     * A value-level tag, not storage: PropertyAppearanceList keeps the mode
      * once for the whole list and stamps it on every material it hands
      * out, so a script can see which reading the values it holds are in.
      * Assigning materials back to a list adopts their tag; the dict

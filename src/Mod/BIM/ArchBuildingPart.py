@@ -746,13 +746,13 @@ class ViewProviderBuildingPart:
             vobj.ChildrenLineColor = params.get_param_view("DefaultShapeLineColor") | 0x000000FF
         if not "ChildrenShapeAppearance" in pl:
             vobj.addProperty(
-                "App::PropertyMaterialList",
+                "App::PropertyAppearanceList",
                 "ChildrenShapeAppearance",
                 "Children",
                 QT_TRANSLATE_NOOP("App::Property", "The shape appearance of child objects"),
                 locked=True,
             )
-            # The default App::PropertyMaterialList does not match the preferences, we have to do:
+            # The default App::PropertyAppearanceList does not match the preferences, we have to do:
             vobj.ChildrenShapeAppearance = (utils.get_view_material(),)
         if not "ChildrenTransparency" in pl:
             vobj.addProperty(

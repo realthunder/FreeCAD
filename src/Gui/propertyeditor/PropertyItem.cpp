@@ -4180,9 +4180,9 @@ QVariant PropertyAppearanceListItem::toString(const QVariant& prop) const
 
 QVariant PropertyAppearanceListItem::toolTip(const App::Property* prop) const
 {
-    assert(prop && prop->isDerivedFrom<App::PropertyMaterialList>());
+    assert(prop && prop->isDerivedFrom<App::PropertyAppearanceList>());
 
-    const auto* materials = static_cast<const App::PropertyMaterialList*>(prop);
+    const auto* materials = static_cast<const App::PropertyAppearanceList*>(prop);
     if (!materials->getSize())
         return {};
 
@@ -4215,9 +4215,9 @@ QVariant PropertyAppearanceListItem::toolTip(const App::Property* prop) const
 
 QVariant PropertyAppearanceListItem::value(const App::Property* prop) const
 {
-    assert(prop && prop->isDerivedFrom<App::PropertyMaterialList>());
+    assert(prop && prop->isDerivedFrom<App::PropertyAppearanceList>());
 
-    const auto* materials = static_cast<const App::PropertyMaterialList*>(prop);
+    const auto* materials = static_cast<const App::PropertyAppearanceList*>(prop);
     QVariantList variantList;
 
     // read field by field: the property stores each one once when it is

@@ -64,7 +64,7 @@ class GuiExport PropertyShapeColor : public App::PropertyColor
 
 public:
     /// The appearance this colour lives in. Null until the owner wires it.
-    void setAppearance(App::PropertyMaterialList *appearance)
+    void setAppearance(App::PropertyAppearanceList *appearance)
     { _appearance = appearance; }
 
     void setValue(const Base::Color &col);
@@ -92,7 +92,7 @@ public:
     void applyToAppearance();
 
 private:
-    App::PropertyMaterialList *_appearance {nullptr};
+    App::PropertyAppearanceList *_appearance {nullptr};
 };
 
 /** ShapeMaterial, kept as a name over the appearance
@@ -113,7 +113,7 @@ class GuiExport PropertyShapeAppearance : public App::PropertyAppearance
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    void setAppearance(App::PropertyMaterialList *appearance)
+    void setAppearance(App::PropertyAppearanceList *appearance)
     { _appearance = appearance; }
 
     void setValue(const App::MaterialAppearance &mat);
@@ -126,7 +126,7 @@ public:
     void applyToAppearance();
 
 private:
-    App::PropertyMaterialList *_appearance {nullptr};
+    App::PropertyAppearanceList *_appearance {nullptr};
 };
 
 class SoFCSelection;
@@ -161,7 +161,7 @@ public:
      * case of one appearance for the whole object costs one entry per field
      * rather than one whole material (docs/ShapeAppearanceDesign.md).
      */
-    App::PropertyMaterialList ShapeAppearance;
+    App::PropertyAppearanceList ShapeAppearance;
     /// Retired store, kept as a name over the appearance (hidden in the editor)
     PropertyShapeAppearance ShapeMaterial;
     App::PropertyBool BoundingBox;

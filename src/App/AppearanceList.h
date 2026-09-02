@@ -40,7 +40,7 @@ namespace App
 /// declarations naming it into the generated binding header, which includes
 /// this one and nothing else that would declare it -- a friend declaration
 /// inside AppearanceList is not enough to name the type at namespace scope.
-class PropertyMaterialList;
+class PropertyAppearanceList;
 
 /// A texture palette's own bytes plus the hashes its records hold. Shared
 /// with PropertySurfaceTextureList, which stores the same pair.
@@ -48,7 +48,7 @@ AppExport std::size_t texturesMemSize(const std::vector<SurfaceTexture> &palette
 
 /** A list of materials, stored per field and shared by whoever holds it
  *
- * This is what PropertyMaterialList holds and what Python is handed. It is
+ * This is what PropertyAppearanceList holds and what Python is handed. It is
  * a VALUE: copying one costs a pointer, and the first write through either
  * copy pays for the storage. So an undo snapshot, a Python variable and the
  * property itself can all name the same arrays until one of them changes
@@ -73,7 +73,7 @@ AppExport std::size_t texturesMemSize(const std::vector<SurfaceTexture> &palette
  *
  * A ten thousand face box with one colour is one material. Reading a single
  * entry composes a MaterialAppearance out of the base and whatever the face overrides;
- * there is deliberately no getValues() (see PropertyMaterialList's note on
+ * there is deliberately no getValues() (see PropertyAppearanceList's note on
  * it), and the per field getters below come in two kinds -- the sparse
  * storage, and a dense resolution built on read.
  *
@@ -490,7 +490,7 @@ public:
     //@}
 
 private:
-    friend class PropertyMaterialList;
+    friend class PropertyAppearanceList;
 
     /** The storage every holder of this list shares until one writes
      *
@@ -650,7 +650,7 @@ private:
      *
      * A reference would have to come out of wd(), which detaches -- and
      * these all have a "nothing changed" path that must leave the storage
-     * exactly as it found it, because that is how PropertyMaterialList
+     * exactly as it found it, because that is how PropertyAppearanceList
      * decides whether there is a change to record at all.
      *
      * Each takes both members of a field: where the base keeps it and where

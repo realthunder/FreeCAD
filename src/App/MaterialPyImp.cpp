@@ -354,7 +354,7 @@ void MaterialPy::setFinish(Py::String arg)
 // The three size attributes deliberately do NOT clamp: normalize() zeroes
 // everything while the pattern is None, so clamping here would wipe a pitch
 // written before the pattern it belongs to. The clamp happens where the
-// value is stored (PropertyMaterialList) and when a pattern is set.
+// value is stored (PropertyAppearanceList) and when a pattern is set.
 Py::Float MaterialPy::getFinishPitch() const
 {
     return Py::Float(getMaterialAppearancePtr()->finish.pitch);

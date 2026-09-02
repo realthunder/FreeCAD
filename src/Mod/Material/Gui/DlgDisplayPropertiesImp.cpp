@@ -473,7 +473,7 @@ void DlgDisplayPropertiesImp::slotChangedObject(const Gui::ViewProvider& obj,
                 d->ui.buttonPointColor->blockSignals(blocked);
             }
         }
-        else if (prop.isDerivedFrom<App::PropertyMaterialList>()) {
+        else if (prop.isDerivedFrom<App::PropertyAppearanceList>()) {
             if (prop_name == "ShapeAppearance") {
                 // The look, the list's selection, the status line and the
                 // Reset button all move together, and setMaterialCard is
@@ -766,7 +766,7 @@ void DlgDisplayPropertiesImp::setShapeAppearance(const std::vector<Gui::ViewProv
     bool material = false;
     for (auto view : views) {
         if (auto* prop =
-                dynamic_cast<App::PropertyMaterialList*>(view->getPropertyByName("ShapeAppearance"))) {
+                dynamic_cast<App::PropertyAppearanceList*>(view->getPropertyByName("ShapeAppearance"))) {
             if (prop->getSize() == 0) {
                 continue;
             }
@@ -911,7 +911,7 @@ void DlgDisplayPropertiesImp::setShapeFinish(const std::vector<Gui::ViewProvider
     bool hasAppearance = false;
     App::SurfaceFinish finish;
     for (auto view : views) {
-        if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(
+        if (auto* prop = dynamic_cast<App::PropertyAppearanceList*>(
                 view->getPropertyByName("ShapeAppearance"))) {
             if (prop->getSize() == 0) {
                 continue;
@@ -965,7 +965,7 @@ void DlgDisplayPropertiesImp::applyFinish()
     }
 
     for (auto view : getTargets()) {
-        if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(
+        if (auto* prop = dynamic_cast<App::PropertyAppearanceList*>(
                 view->getPropertyByName("ShapeAppearance"))) {
             // The uniform setter: every entry gets this finish, and an
             // unset one clears the field entirely rather than storing a
@@ -1197,13 +1197,13 @@ void DlgDisplayPropertiesImp::setMaterialCard(const std::vector<Gui::ViewProvide
     // one there is nothing for the look to follow, and the panel is what it
     // always was (docs/MaterialStorage.md 15.5).
     Materials::PropertyMaterial* card = nullptr;
-    App::PropertyMaterialList* appearance = nullptr;
+    App::PropertyAppearanceList* appearance = nullptr;
     for (auto view : views) {
         if (!card) {
             card = cardOf(view);
         }
         if (!appearance) {
-            appearance = dynamic_cast<App::PropertyMaterialList*>(
+            appearance = dynamic_cast<App::PropertyAppearanceList*>(
                     view->getPropertyByName("ShapeAppearance"));
         }
     }
@@ -1276,7 +1276,7 @@ void DlgDisplayPropertiesImp::onMaterialSelected(
 {
     std::vector<Gui::ViewProvider*> Provider = getTargets();
     for (auto it : Provider) {
-        if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(
+        if (auto* prop = dynamic_cast<App::PropertyAppearanceList*>(
                 it->getPropertyByName("ShapeAppearance"))) {
             // A card states colours and gloss, never a machining, so the
             // material it builds carries finish None -- and this write

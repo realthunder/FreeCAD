@@ -34,7 +34,7 @@
 namespace App {
 class Property;
 class PropertyAppearance;
-class PropertyMaterialList;
+class PropertyAppearanceList;
 }
 
 namespace Gui {
@@ -76,7 +76,7 @@ private:
     void onMetallicValueChanged(int);
     void onRoughnessValueChanged(int);
 
-    App::PropertyMaterialList* listProperty(Gui::ViewProvider*) const;
+    App::PropertyAppearanceList* listProperty(Gui::ViewProvider*) const;
     App::PropertyAppearance* singleProperty(Gui::ViewProvider*) const;
     /// Relabel and show/hide the rows for the shading model
     void updateModeView(bool pbr);

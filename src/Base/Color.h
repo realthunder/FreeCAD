@@ -123,7 +123,7 @@ private:
  *     writes the pre-ShapeAppearance name with its values, so an older
  *     FreeCAD opens the document with its face colours -- but only while the
  *     appearance varies nothing but the diffuse colour, since a colour list
- *     cannot carry the rest (PropertyMaterialList::variesOnlyInDiffuse).
+ *     cannot carry the rest (PropertyAppearanceList::variesOnlyInDiffuse).
  *     Its alpha is a transparency, like the rest of the document.
  *
  * Preferences are NOT one of them. user.cfg moved to opacity with the release

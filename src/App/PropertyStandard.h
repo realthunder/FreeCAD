@@ -1177,14 +1177,14 @@ private:
  */
 class MaterialListPy;
 
-class AppExport PropertyMaterialList : public PropertyLists,
+class AppExport PropertyAppearanceList : public PropertyLists,
                                        public BlobReferrerProperty,
-                                       public AtomicPropertyChangeInterface<PropertyMaterialList>
+                                       public AtomicPropertyChangeInterface<PropertyAppearanceList>
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    using atomic_change = AtomicPropertyChangeInterface<PropertyMaterialList>::AtomicPropertyChange;
+    using atomic_change = AtomicPropertyChangeInterface<PropertyAppearanceList>::AtomicPropertyChange;
     friend atomic_change;
     /// Reads the value in place; every write it makes goes through
     /// editList(), so nothing bypasses the change signalling
@@ -1192,8 +1192,19 @@ public:
 
     bool canShareDefault() const override { return true; }
 
-    PropertyMaterialList();
-    ~PropertyMaterialList() override;
+    /** The saved XML element, frozen at what the type used to be called
+     *
+     * PropertyLists derives the element from the live type name, so the
+     * rename to PropertyAppearanceList would have written <AppearanceList>
+     * and then searched every existing document for it -- and found
+     * <MaterialList>, restoring the appearance EMPTY with one console line
+     * to show for it. The element is the file format, not the type name;
+     * the same decision froze <PropertyMaterial> on PropertyAppearance.
+     */
+    const char *xmlName() const override { return "MaterialList"; }
+
+    PropertyAppearanceList();
+    ~PropertyAppearanceList() override;
 
     /// The material every entry of an empty field reads as
     static const MaterialAppearance &defaultMaterial();
@@ -1773,12 +1784,12 @@ private:
  * both, and both readings are honest.
  *
  * ⭐ What that buys is a save that is lossless BOTH ways at once, which no
- * amount of cleverness inside PropertyMaterialList's own encodings could
+ * amount of cleverness inside PropertyAppearanceList's own encodings could
  * give: upstream reads the material element byte for byte as it always has
  * and simply walks past this one (readElement skips elements whose name it
  * did not ask for), while we read both and lose nothing.
  *
- * ⚠️ It is never a member of anything. PropertyMaterialList::Save builds one
+ * ⚠️ It is never a member of anything. PropertyAppearanceList::Save builds one
  * on the stack, hands it the finishes, writes it, and drops it; Restore does
  * the mirror. That is deliberate: as a container property it would join the
  * undo stack and snapshot bytes that ShapeAppearance's own Copy() already

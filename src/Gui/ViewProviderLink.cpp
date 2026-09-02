@@ -3892,7 +3892,7 @@ void ViewProviderLink::setElementColorsTo(
         App::PropertyLinkSub &coloredElements,
         App::PropertyColorList &colorList,
         App::PropertyBool *overrideMaterial,
-        App::PropertyMaterialList *shapeMaterial,
+        App::PropertyAppearanceList *shapeMaterial,
         int element_count)
 {
     if(!vp.getObject())

@@ -2329,7 +2329,7 @@ void Application::initTypes()
     App::PropertyColor              ::init();
     App::PropertyColorList          ::init();
     App::PropertyAppearance         ::init();
-    App::PropertyMaterialList       ::init();
+    App::PropertyAppearanceList       ::init();
     App::PropertySurfaceFinishList  ::init();
     App::PropertySurfaceTextureList ::init();
     App::PropertyPath               ::init();
@@ -2552,6 +2552,8 @@ void Application::initTypes()
     // sentence buried in each class.
     Base::Type::addLegacyName(App::PropertyAppearance::getClassTypeId(),
                               "App::PropertyMaterial");
+    Base::Type::addLegacyName(App::PropertyAppearanceList::getClassTypeId(),
+                              "App::PropertyMaterialList");
 }
 
 namespace {

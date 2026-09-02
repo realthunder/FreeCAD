@@ -104,7 +104,7 @@ public:
      * instead. Both null until the owner wires them, and the property is a
      * plain colour list until then.
      */
-    void setAppearance(App::PropertyMaterialList *appearance,
+    void setAppearance(App::PropertyAppearanceList *appearance,
                        const App::PropertyColor *shapeColor);
 
     /** @name Reads, overriding or hiding the base ones
@@ -166,7 +166,7 @@ protected:
     void saveStream(Base::OutputStream &str) const override;
 
 private:
-    App::PropertyMaterialList *_appearance {nullptr};
+    App::PropertyAppearanceList *_appearance {nullptr};
     const App::PropertyColor *_shapeColor {nullptr};
     /** Where getValues() resolves the appearance into
      *

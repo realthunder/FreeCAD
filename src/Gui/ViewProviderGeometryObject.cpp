@@ -186,7 +186,7 @@ namespace {
  * per-face colours -- which is every document written before ShapeAppearance,
  * since ShapeMaterial sorts after DiffuseColor -- throws those colours away.
  */
-void applyWholeMaterial(App::PropertyMaterialList &appearance, const App::MaterialAppearance &value)
+void applyWholeMaterial(App::PropertyAppearanceList &appearance, const App::MaterialAppearance &value)
 {
     // ShapeMaterial cannot state a shading model -- it is a plain material
     // and its serialised form has no room for one -- so it must never

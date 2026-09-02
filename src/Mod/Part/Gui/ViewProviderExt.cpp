@@ -1525,7 +1525,7 @@ void PartGui::PropertyDiffuseColor::init()
                  &PartGui::PropertyDiffuseColor::create);
 }
 
-void PropertyDiffuseColor::setAppearance(App::PropertyMaterialList *appearance,
+void PropertyDiffuseColor::setAppearance(App::PropertyAppearanceList *appearance,
                                          const App::PropertyColor *shapeColor)
 {
     _appearance = appearance;

@@ -3066,23 +3066,23 @@ bool PropertyAppearance::isSame(const Property &other) const
 
 
 //**************************************************************************
-// PropertyMaterialList
+// PropertyAppearanceList
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-TYPESYSTEM_SOURCE(App::PropertyMaterialList, App::PropertyLists)
+TYPESYSTEM_SOURCE(App::PropertyAppearanceList, App::PropertyLists)
 
 
 //**************************************************************************
 // Construction/Destruction
 
-PropertyMaterialList::PropertyMaterialList() = default;
+PropertyAppearanceList::PropertyAppearanceList() = default;
 
 // Releasing the handles is all the content needs -- an undo snapshot or
 // another property may still hold the same blob, and the file goes when the
 // last handle does. What does need saying is a death mid-restore: a property
 // still queued for content it will now never take has to withdraw, or the
 // manager dispatches into a dangling referrer.
-PropertyMaterialList::~PropertyMaterialList()
+PropertyAppearanceList::~PropertyAppearanceList()
 {
     if (_pendingBlobManager) {
         _pendingBlobManager->removePendingReferrer(this);
@@ -3106,7 +3106,7 @@ PropertyMaterialList::~PropertyMaterialList()
 // field rule; this class holds the undo record, the touch list and the
 // document notification.
 
-const MaterialAppearance &PropertyMaterialList::defaultMaterial()
+const MaterialAppearance &PropertyAppearanceList::defaultMaterial()
 {
     return AppearanceList::defaultMaterial();
 }
@@ -3125,7 +3125,7 @@ const MaterialAppearance &PropertyMaterialList::defaultMaterial()
  * keep in step with the setter beside it.
  */
 template<class Op>
-void PropertyMaterialList::change(Op &&op, int touched)
+void PropertyAppearanceList::change(Op &&op, int touched)
 {
     const AppearanceList before = _list;
     op();
@@ -3145,7 +3145,7 @@ void PropertyMaterialList::change(Op &&op, int touched)
     guard.tryInvoke();
 }
 
-void PropertyMaterialList::setList(const AppearanceList &list)
+void PropertyAppearanceList::setList(const AppearanceList &list)
 {
     change([&] {
         _list = list;
@@ -3154,373 +3154,373 @@ void PropertyMaterialList::setList(const AppearanceList &list)
 }
 
 
-void PropertyMaterialList::setSize(int newSize)
+void PropertyAppearanceList::setSize(int newSize)
 {
     change([&] { _list.setSize(newSize); });
 }
 
-void PropertyMaterialList::setSize(int newSize, const MaterialAppearance &def)
+void PropertyAppearanceList::setSize(int newSize, const MaterialAppearance &def)
 {
     change([&] { _list.setSize(newSize, def); });
 }
 
-void PropertyMaterialList::setValue(const MaterialAppearance &mat)
+void PropertyAppearanceList::setValue(const MaterialAppearance &mat)
 {
     change([&] { _list.setValue(mat); });
 }
 
-void PropertyMaterialList::setBase(const MaterialAppearance &mat)
+void PropertyAppearanceList::setBase(const MaterialAppearance &mat)
 {
     change([&] { _list.setBase(mat); });
 }
 
-void PropertyMaterialList::setFollowMaterial(bool enable)
+void PropertyAppearanceList::setFollowMaterial(bool enable)
 {
     change([&] { _list.setFollowMaterial(enable); });
 }
 
-void PropertyMaterialList::followMaterial(const MaterialAppearance &card)
+void PropertyAppearanceList::followMaterial(const MaterialAppearance &card)
 {
     change([&] { _list.followMaterial(card); });
 }
 
-void PropertyMaterialList::clearOverrides()
+void PropertyAppearanceList::clearOverrides()
 {
     change([&] { _list.clearOverrides(); });
 }
 
-void PropertyMaterialList::clearOverride(int idx)
+void PropertyAppearanceList::clearOverride(int idx)
 {
     change([&] { _list.clearOverride(idx); }, idx);
 }
 
-void PropertyMaterialList::setValues(const std::vector<MaterialAppearance> &values)
+void PropertyAppearanceList::setValues(const std::vector<MaterialAppearance> &values)
 {
     change([&] { _list.setValues(values); });
 }
 
-void PropertyMaterialList::setAmbientColors(const std::vector<Color> &colors)
+void PropertyAppearanceList::setAmbientColors(const std::vector<Color> &colors)
 {
     change([&] { _list.setAmbientColors(colors); });
 }
 
-void PropertyMaterialList::setDiffuseColors(const std::vector<Color> &colors)
+void PropertyAppearanceList::setDiffuseColors(const std::vector<Color> &colors)
 {
     change([&] { _list.setDiffuseColors(colors); });
 }
 
-void PropertyMaterialList::setSpecularColors(const std::vector<Color> &colors)
+void PropertyAppearanceList::setSpecularColors(const std::vector<Color> &colors)
 {
     change([&] { _list.setSpecularColors(colors); });
 }
 
-void PropertyMaterialList::setEmissiveColors(const std::vector<Color> &colors)
+void PropertyAppearanceList::setEmissiveColors(const std::vector<Color> &colors)
 {
     change([&] { _list.setEmissiveColors(colors); });
 }
 
-void PropertyMaterialList::setShininessValues(const std::vector<float> &values)
+void PropertyAppearanceList::setShininessValues(const std::vector<float> &values)
 {
     change([&] { _list.setShininessValues(values); });
 }
 
-void PropertyMaterialList::setTransparencies(const std::vector<float> &values)
+void PropertyAppearanceList::setTransparencies(const std::vector<float> &values)
 {
     change([&] { _list.setTransparencies(values); });
 }
 
-void PropertyMaterialList::setImages(const std::vector<std::string> &values)
+void PropertyAppearanceList::setImages(const std::vector<std::string> &values)
 {
     change([&] { _list.setImages(values); });
 }
 
-void PropertyMaterialList::setImagePaths(const std::vector<std::string> &values)
+void PropertyAppearanceList::setImagePaths(const std::vector<std::string> &values)
 {
     change([&] { _list.setImagePaths(values); });
 }
 
-void PropertyMaterialList::setUuids(const std::vector<std::string> &values)
+void PropertyAppearanceList::setUuids(const std::vector<std::string> &values)
 {
     change([&] { _list.setUuids(values); });
 }
 
-void PropertyMaterialList::setFinishes(const std::vector<SurfaceFinish> &values)
+void PropertyAppearanceList::setFinishes(const std::vector<SurfaceFinish> &values)
 {
     change([&] { _list.setFinishes(values); });
 }
 
-void PropertyMaterialList::setTextures(const std::vector<SurfaceTexture> &values)
+void PropertyAppearanceList::setTextures(const std::vector<SurfaceTexture> &values)
 {
     change([&] { _list.setTextures(values); });
 }
 
-void PropertyMaterialList::setAmbientColor(const Color &col)
+void PropertyAppearanceList::setAmbientColor(const Color &col)
 {
     change([&] { _list.setAmbientColor(col); });
 }
 
-void PropertyMaterialList::setDiffuseColor(const Color &col)
+void PropertyAppearanceList::setDiffuseColor(const Color &col)
 {
     change([&] { _list.setDiffuseColor(col); });
 }
 
-void PropertyMaterialList::setSpecularColor(const Color &col)
+void PropertyAppearanceList::setSpecularColor(const Color &col)
 {
     change([&] { _list.setSpecularColor(col); });
 }
 
-void PropertyMaterialList::setEmissiveColor(const Color &col)
+void PropertyAppearanceList::setEmissiveColor(const Color &col)
 {
     change([&] { _list.setEmissiveColor(col); });
 }
 
-void PropertyMaterialList::setDiffuseRGB(const Color &col)
+void PropertyAppearanceList::setDiffuseRGB(const Color &col)
 {
     change([&] { _list.setDiffuseRGB(col); });
 }
 
-void PropertyMaterialList::setSpecularRGB(const Color &col)
+void PropertyAppearanceList::setSpecularRGB(const Color &col)
 {
     change([&] { _list.setSpecularRGB(col); });
 }
 
-void PropertyMaterialList::setShininess(float value)
+void PropertyAppearanceList::setShininess(float value)
 {
     change([&] { _list.setShininess(value); });
 }
 
-void PropertyMaterialList::setTransparency(float value)
+void PropertyAppearanceList::setTransparency(float value)
 {
     change([&] { _list.setTransparency(value); });
 }
 
-void PropertyMaterialList::setImage(const std::string &value)
+void PropertyAppearanceList::setImage(const std::string &value)
 {
     change([&] { _list.setImage(value); });
 }
 
-void PropertyMaterialList::setImagePath(const std::string &value)
+void PropertyAppearanceList::setImagePath(const std::string &value)
 {
     change([&] { _list.setImagePath(value); });
 }
 
-void PropertyMaterialList::setUuid(const std::string &value)
+void PropertyAppearanceList::setUuid(const std::string &value)
 {
     change([&] { _list.setUuid(value); });
 }
 
-void PropertyMaterialList::setFinish(const SurfaceFinish &value)
+void PropertyAppearanceList::setFinish(const SurfaceFinish &value)
 {
     change([&] { _list.setFinish(value); });
 }
 
-void PropertyMaterialList::setTexture(const SurfaceTexture &value)
+void PropertyAppearanceList::setTexture(const SurfaceTexture &value)
 {
     change([&] { _list.setTexture(value); });
 }
 
-void PropertyMaterialList::setPBR(bool enable)
+void PropertyAppearanceList::setPBR(bool enable)
 {
     change([&] { _list.setPBR(enable); });
 }
 
-void PropertyMaterialList::convertPBR(bool enable)
+void PropertyAppearanceList::convertPBR(bool enable)
 {
     change([&] { _list.convertPBR(enable); });
 }
 
-void PropertyMaterialList::setMetallicValues(const std::vector<float> &values)
+void PropertyAppearanceList::setMetallicValues(const std::vector<float> &values)
 {
     change([&] { _list.setMetallicValues(values); });
 }
 
-void PropertyMaterialList::setRoughnessValues(const std::vector<float> &values)
+void PropertyAppearanceList::setRoughnessValues(const std::vector<float> &values)
 {
     change([&] { _list.setRoughnessValues(values); });
 }
 
-void PropertyMaterialList::setMetallic(float value)
+void PropertyAppearanceList::setMetallic(float value)
 {
     change([&] { _list.setMetallic(value); });
 }
 
-void PropertyMaterialList::setRoughness(float value)
+void PropertyAppearanceList::setRoughness(float value)
 {
     change([&] { _list.setRoughness(value); });
 }
 
-void PropertyMaterialList::set1Value(int idx, const MaterialAppearance &mat)
+void PropertyAppearanceList::set1Value(int idx, const MaterialAppearance &mat)
 {
     change([&] { _list.set1Value(idx, mat); }, idx);
 }
 
-void PropertyMaterialList::setAmbientColor(int idx, const Color &col)
+void PropertyAppearanceList::setAmbientColor(int idx, const Color &col)
 {
     change([&] { _list.setAmbientColor(idx, col); }, idx);
 }
 
-void PropertyMaterialList::setDiffuseColor(int idx, const Color &col)
+void PropertyAppearanceList::setDiffuseColor(int idx, const Color &col)
 {
     change([&] { _list.setDiffuseColor(idx, col); }, idx);
 }
 
-void PropertyMaterialList::setSpecularColor(int idx, const Color &col)
+void PropertyAppearanceList::setSpecularColor(int idx, const Color &col)
 {
     change([&] { _list.setSpecularColor(idx, col); }, idx);
 }
 
-void PropertyMaterialList::setEmissiveColor(int idx, const Color &col)
+void PropertyAppearanceList::setEmissiveColor(int idx, const Color &col)
 {
     change([&] { _list.setEmissiveColor(idx, col); }, idx);
 }
 
-void PropertyMaterialList::setShininess(int idx, float value)
+void PropertyAppearanceList::setShininess(int idx, float value)
 {
     change([&] { _list.setShininess(idx, value); }, idx);
 }
 
-void PropertyMaterialList::setTransparency(int idx, float value)
+void PropertyAppearanceList::setTransparency(int idx, float value)
 {
     change([&] { _list.setTransparency(idx, value); }, idx);
 }
 
-void PropertyMaterialList::setImage(int idx, const std::string &value)
+void PropertyAppearanceList::setImage(int idx, const std::string &value)
 {
     change([&] { _list.setImage(idx, value); }, idx);
 }
 
-void PropertyMaterialList::setImagePath(int idx, const std::string &value)
+void PropertyAppearanceList::setImagePath(int idx, const std::string &value)
 {
     change([&] { _list.setImagePath(idx, value); }, idx);
 }
 
-void PropertyMaterialList::setUuid(int idx, const std::string &value)
+void PropertyAppearanceList::setUuid(int idx, const std::string &value)
 {
     change([&] { _list.setUuid(idx, value); }, idx);
 }
 
-void PropertyMaterialList::setFinish(int idx, const SurfaceFinish &value)
+void PropertyAppearanceList::setFinish(int idx, const SurfaceFinish &value)
 {
     change([&] { _list.setFinish(idx, value); }, idx);
 }
 
-void PropertyMaterialList::setTexture(int idx, const SurfaceTexture &value)
+void PropertyAppearanceList::setTexture(int idx, const SurfaceTexture &value)
 {
     change([&] { _list.setTexture(idx, value); }, idx);
 }
 
-void PropertyMaterialList::setMetallic(int idx, float value)
+void PropertyAppearanceList::setMetallic(int idx, float value)
 {
     change([&] { _list.setMetallic(idx, value); }, idx);
 }
 
-void PropertyMaterialList::setRoughness(int idx, float value)
+void PropertyAppearanceList::setRoughness(int idx, float value)
 {
     change([&] { _list.setRoughness(idx, value); }, idx);
 }
 
-MaterialAppearance PropertyMaterialList::getMaterial(int idx) const
+MaterialAppearance PropertyAppearanceList::getMaterial(int idx) const
 {
     return _list.getMaterial(idx);
 }
 
-Color PropertyMaterialList::getAmbientColor(int idx) const
+Color PropertyAppearanceList::getAmbientColor(int idx) const
 {
     return _list.getAmbientColor(idx);
 }
 
-Color PropertyMaterialList::getDiffuseColor(int idx) const
+Color PropertyAppearanceList::getDiffuseColor(int idx) const
 {
     return _list.getDiffuseColor(idx);
 }
 
-Color PropertyMaterialList::getSpecularColor(int idx) const
+Color PropertyAppearanceList::getSpecularColor(int idx) const
 {
     return _list.getSpecularColor(idx);
 }
 
-Color PropertyMaterialList::getEmissiveColor(int idx) const
+Color PropertyAppearanceList::getEmissiveColor(int idx) const
 {
     return _list.getEmissiveColor(idx);
 }
 
-float PropertyMaterialList::getShininess(int idx) const
+float PropertyAppearanceList::getShininess(int idx) const
 {
     return _list.getShininess(idx);
 }
 
-float PropertyMaterialList::getTransparency(int idx) const
+float PropertyAppearanceList::getTransparency(int idx) const
 {
     return _list.getTransparency(idx);
 }
 
-const std::string &PropertyMaterialList::getImage(int idx) const
+const std::string &PropertyAppearanceList::getImage(int idx) const
 {
     return _list.getImage(idx);
 }
 
-const std::string &PropertyMaterialList::getImagePath(int idx) const
+const std::string &PropertyAppearanceList::getImagePath(int idx) const
 {
     return _list.getImagePath(idx);
 }
 
-const std::string &PropertyMaterialList::getUuid(int idx) const
+const std::string &PropertyAppearanceList::getUuid(int idx) const
 {
     return _list.getUuid(idx);
 }
 
-SurfaceFinish PropertyMaterialList::getFinish(int idx) const
+SurfaceFinish PropertyAppearanceList::getFinish(int idx) const
 {
     return _list.getFinish(idx);
 }
 
-SurfaceTexture PropertyMaterialList::getTexture(int idx) const
+SurfaceTexture PropertyAppearanceList::getTexture(int idx) const
 {
     return _list.getTexture(idx);
 }
 
-MaterialAppearance::MaterialType PropertyMaterialList::getType(int idx) const
+MaterialAppearance::MaterialType PropertyAppearanceList::getType(int idx) const
 {
     return _list.getType(idx);
 }
 
-float PropertyMaterialList::getMetallic(int idx) const
+float PropertyAppearanceList::getMetallic(int idx) const
 {
     return _list.getMetallic(idx);
 }
 
-float PropertyMaterialList::getRoughness(int idx) const
+float PropertyAppearanceList::getRoughness(int idx) const
 {
     return _list.getRoughness(idx);
 }
 
-MaterialAppearance PropertyMaterialList::getPhongMaterial(int idx) const
+MaterialAppearance PropertyAppearanceList::getPhongMaterial(int idx) const
 {
     return _list.getPhongMaterial(idx);
 }
 
-bool PropertyMaterialList::variesOnlyInDiffuse() const
+bool PropertyAppearanceList::variesOnlyInDiffuse() const
 {
     return _list.variesOnlyInDiffuse();
 }
 
 
-void PropertyMaterialList::setValues(std::vector<MaterialAppearance> &&values)
+void PropertyAppearanceList::setValues(std::vector<MaterialAppearance> &&values)
 {
     setValues(static_cast<const std::vector<MaterialAppearance> &>(values));
 }
 
-unsigned int PropertyMaterialList::getMemSize() const
+unsigned int PropertyAppearanceList::getMemSize() const
 {
     return _list.getMemSize();
 }
 
-bool PropertyMaterialList::isSame(const Property &other) const
+bool PropertyAppearanceList::isSame(const Property &other) const
 {
     if (&other == this) {
         return true;
     }
-    auto list = Base::freecad_dynamic_cast<const PropertyMaterialList>(&other);
+    auto list = Base::freecad_dynamic_cast<const PropertyAppearanceList>(&other);
     return list && _list.isSame(list->_list);
 }
 
@@ -3531,24 +3531,24 @@ bool PropertyMaterialList::isSame(const Property &other) const
 // the document the content goes into and the restore queue, neither of
 // which a value can know about.
 
-std::string PropertyMaterialList::insertTextureFile(const char *path, const char *extension)
+std::string PropertyAppearanceList::insertTextureFile(const char *path, const char *extension)
 {
     _list.setBlobManager(&blobManager());
     return _list.insertTextureFile(path, extension);
 }
 
-std::string PropertyMaterialList::getTextureFile(const std::string &hash) const
+std::string PropertyAppearanceList::getTextureFile(const std::string &hash) const
 {
     return _list.getTextureFile(hash);
 }
 
-void PropertyMaterialList::collectBlobs(FileBlobManager &manager,
+void PropertyAppearanceList::collectBlobs(FileBlobManager &manager,
                                         const DocumentObject *object) const
 {
     _list.noteTextureBlobs(manager, FileBlobManager::referrerOf(this, object));
 }
 
-void PropertyMaterialList::assignRestoredBlob(const FileBlobHandle &blob)
+void PropertyAppearanceList::assignRestoredBlob(const FileBlobHandle &blob)
 {
     // No value change: this completes the restore of a value the document
     // already had, and touching it here would mark a document modified just
@@ -3562,7 +3562,7 @@ void PropertyMaterialList::assignRestoredBlob(const FileBlobHandle &blob)
     }
 }
 
-FileBlobManager &PropertyMaterialList::blobManager() const
+FileBlobManager &PropertyAppearanceList::blobManager() const
 {
     if (auto container = getContainer()) {
         // A view provider answers with the document of the object it
@@ -3575,7 +3575,7 @@ FileBlobManager &PropertyMaterialList::blobManager() const
 }
 
 
-void PropertyMaterialList::requestTextureBlobs()
+void PropertyAppearanceList::requestTextureBlobs()
 {
     if (_list.wd().texturePalette.empty()) {
         return;
@@ -3609,22 +3609,22 @@ void PropertyMaterialList::requestTextureBlobs()
 
 
 
-void PropertyMaterialList::registerView(MaterialListPy *view)
+void PropertyAppearanceList::registerView(MaterialListPy *view)
 {
     _views.push_back(view);
 }
 
-void PropertyMaterialList::unregisterView(MaterialListPy *view)
+void PropertyAppearanceList::unregisterView(MaterialListPy *view)
 {
     _views.erase(std::remove(_views.begin(), _views.end(), view), _views.end());
 }
 
-void PropertyMaterialList::editList(const std::function<void(AppearanceList &)> &op, int touched)
+void PropertyAppearanceList::editList(const std::function<void(AppearanceList &)> &op, int touched)
 {
     change([&] { op(_list); }, touched);
 }
 
-PyObject *PropertyMaterialList::getPyObject()
+PyObject *PropertyAppearanceList::getPyObject()
 {
     // A live view, not a copy of the list: it reads this value and writes
     // through editList(). Fresh each time, because the value it is a view
@@ -3639,7 +3639,7 @@ PyObject *PropertyMaterialList::getPyObject()
     return view;
 }
 
-void PropertyMaterialList::setPyObject(PyObject *value)
+void PropertyAppearanceList::setPyObject(PyObject *value)
 {
     if (PyObject_TypeCheck(value, &(MaterialListPy::Type))) {
         auto *view = static_cast<MaterialListPy *>(value);
@@ -3663,7 +3663,7 @@ void PropertyMaterialList::setPyObject(PyObject *value)
     PropertyLists::setPyObject(value);
 }
 
-MaterialAppearance PropertyMaterialList::getPyValue(PyObject *value) const {
+MaterialAppearance PropertyAppearanceList::getPyValue(PyObject *value) const {
     if (PyObject_TypeCheck(value, &(MaterialPy::Type)))
         return *static_cast<MaterialPy*>(value)->getMaterialAppearancePtr();
     else {
@@ -3673,7 +3673,7 @@ MaterialAppearance PropertyMaterialList::getPyValue(PyObject *value) const {
     }
 }
 
-void PropertyMaterialList::setPyValues(const std::vector<PyObject*> &vals,
+void PropertyAppearanceList::setPyValues(const std::vector<PyObject*> &vals,
                                        const std::vector<int> &indices)
 {
     // Values first: getPyValue throws on anything that is not a material,
@@ -3695,7 +3695,7 @@ void PropertyMaterialList::setPyValues(const std::vector<PyObject*> &vals,
     guard.tryInvoke();
 }
 
-unsigned int PropertyMaterialList::getSaveSize(Base::Writer &writer) const
+unsigned int PropertyAppearanceList::getSaveSize(Base::Writer &writer) const
 {
     if (writer.getSchemaVersion() >= 5)
         return getMemSize();
@@ -3713,7 +3713,7 @@ unsigned int PropertyMaterialList::getSaveSize(Base::Writer &writer) const
 // the per field one, written only at a schema that already excludes other
 // readers, writes each field once at whatever length it actually has.
 
-bool PropertyMaterialList::saveXML(Base::Writer &writer) const
+bool PropertyAppearanceList::saveXML(Base::Writer &writer) const
 {
     _list.ensureNormalized();
     // The per field form also when a string has to survive: the inline form
@@ -3760,7 +3760,7 @@ bool PropertyMaterialList::saveXML(Base::Writer &writer) const
     return false;
 }
 
-void PropertyMaterialList::restoreXML(Base::XMLReader &reader)
+void PropertyAppearanceList::restoreXML(Base::XMLReader &reader)
 {
     unsigned uCt = reader.getAttributeAsUnsigned("count");
     const bool convert = restoreConverts(reader);
@@ -3791,7 +3791,7 @@ void PropertyMaterialList::restoreXML(Base::XMLReader &reader)
     _list.restoreValues(std::move(values), convert);
 }
 
-void PropertyMaterialList::saveStream(Base::OutputStream &str) const
+void PropertyAppearanceList::saveStream(Base::OutputStream &str) const
 {
     _list.ensureNormalized();
     const bool convert = saveConverts();
@@ -3848,7 +3848,7 @@ std::vector<MaterialAppearance> parseMaterialStream(Base::InputStream &str, unsi
 
 } // namespace
 
-void PropertyMaterialList::restoreStream(Base::InputStream &str, unsigned uCt)
+void PropertyAppearanceList::restoreStream(Base::InputStream &str, unsigned uCt)
 {
     // The generic hook, which no caller with a document reaches (this class
     // overrides RestoreDocFile); a bare stream states no version, and no
@@ -3867,7 +3867,7 @@ void PropertyMaterialList::restoreStream(Base::InputStream &str, unsigned uCt)
  * shape, and let their reader have it too. With the strings empty, which is
  * every document today, this writes exactly what it always did.
  */
-void PropertyMaterialList::Save(Base::Writer &writer) const
+void PropertyAppearanceList::Save(Base::Writer &writer) const
 {
     _list.ensureNormalized();
     // ⭐ The finish goes out ahead of the material element, as an element of
@@ -3915,7 +3915,7 @@ void PropertyMaterialList::Save(Base::Writer &writer) const
     PropertyLists::Save(writer);
 }
 
-void PropertyMaterialList::Restore(Base::XMLReader &reader)
+void PropertyAppearanceList::Restore(Base::XMLReader &reader)
 {
     _pendingFinish.clear();
     _pendingTexturePalette.clear();
@@ -3977,7 +3977,7 @@ void PropertyMaterialList::Restore(Base::XMLReader &reader)
  * override list or not there at all. Every one of these numbers came out of
  * a file, so none of them is evidence.
  */
-void PropertyMaterialList::installBase(const MaterialAppearance &base, int8_t type)
+void PropertyAppearanceList::installBase(const MaterialAppearance &base, int8_t type)
 {
     AppearanceList::Data &d = _list.wd();
     bool first = true;
@@ -4018,7 +4018,7 @@ void PropertyMaterialList::installBase(const MaterialAppearance &base, int8_t ty
     _list.normalize();
 }
 
-void PropertyMaterialList::applyPendingFinish()
+void PropertyAppearanceList::applyPendingFinish()
 {
     if (_pendingFinish.empty() || _list.wd().count == 0) {
         _pendingFinish.clear();
@@ -4029,7 +4029,7 @@ void PropertyMaterialList::applyPendingFinish()
     setFinishes(finish);
 }
 
-void PropertyMaterialList::applyPendingTexture()
+void PropertyAppearanceList::applyPendingTexture()
 {
     std::vector<SurfaceTexture> palette;
     std::vector<uint16_t> index;
@@ -4059,7 +4059,7 @@ void PropertyMaterialList::applyPendingTexture()
     requestTextureBlobs();
 }
 
-void PropertyMaterialList::SaveDocFile(Base::Writer &writer) const
+void PropertyAppearanceList::SaveDocFile(Base::Writer &writer) const
 {
     if (writer.getSchemaVersion() < 5) {
         Base::OutputStream str(writer.Stream(), writer.isPreferBinary());
@@ -4077,7 +4077,7 @@ void PropertyMaterialList::SaveDocFile(Base::Writer &writer) const
     saveFieldStream(str);
 }
 
-void PropertyMaterialList::RestoreDocFile(Base::Reader &reader)
+void PropertyAppearanceList::RestoreDocFile(Base::Reader &reader)
 {
     // Asked of the reader that registered this entry: the entry itself is
     // read after the XML pass and knows no document version.
@@ -4108,7 +4108,7 @@ void PropertyMaterialList::RestoreDocFile(Base::Reader &reader)
 }
 
 /// Upstream's second pass: image, imagePath and uuid, entry by entry
-void PropertyMaterialList::saveStringStream(Base::OutputStream &str) const
+void PropertyAppearanceList::saveStringStream(Base::OutputStream &str) const
 {
     for (int i = 0; i < _list.rd().count; ++i) {
         str << getImage(i);
@@ -4117,7 +4117,7 @@ void PropertyMaterialList::saveStringStream(Base::OutputStream &str) const
     }
 }
 
-void PropertyMaterialList::restoreStringStream(Base::InputStream &str, unsigned uCt)
+void PropertyAppearanceList::restoreStringStream(Base::InputStream &str, unsigned uCt)
 {
     atomic_change guard(*this);
     std::vector<std::string> image(uCt);
@@ -4522,7 +4522,7 @@ void readBaseTokens(std::istream &s, MaterialAppearance &base, int8_t &type)
 
 } // namespace
 
-void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
+void PropertyAppearanceList::saveFieldStream(Base::OutputStream &str) const
 {
     // A list that arrived dense and never had a base chosen gets one here:
     // this encoding STATES the base, so writing a default one would record
@@ -4710,7 +4710,7 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     writeFollow();
 }
 
-void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned uCt, bool legacy)
+void PropertyAppearanceList::restoreFieldStream(Base::InputStream &str, unsigned uCt, bool legacy)
 {
     atomic_change guard(*this);
     _list.touchFields();
@@ -4900,7 +4900,7 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
     guard.tryInvoke();
 }
 
-bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
+bool PropertyAppearanceList::saveFieldXML(Base::Writer &writer) const
 {
     // The mode is an attribute, not a key line in the char stream: an old
     // fork build ignores an attribute it does not query but throws on an
@@ -5039,7 +5039,7 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
     return false;
 }
 
-void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt)
+void PropertyAppearanceList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt)
 {
     const bool legacy = restoreConverts(reader);
     atomic_change guard(*this);
@@ -5230,7 +5230,7 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
     guard.tryInvoke();
 }
 
-const char* PropertyMaterialList::getEditorName() const
+const char* PropertyAppearanceList::getEditorName() const
 {
     if(testStatus(NoMaterialListEdit))
         return "";
@@ -5238,19 +5238,19 @@ const char* PropertyMaterialList::getEditorName() const
 }
 
 
-Property *PropertyMaterialList::Copy() const
+Property *PropertyAppearanceList::Copy() const
 {
     // A pointer, not fourteen vectors. The copy shares this property's
     // storage until either of them writes, which is what makes an undo
     // snapshot of a ten thousand face appearance free.
-    auto *p = new PropertyMaterialList();
+    auto *p = new PropertyAppearanceList();
     p->_list = _list;
     return p;
 }
 
-void PropertyMaterialList::Paste(const Property &from)
+void PropertyAppearanceList::Paste(const Property &from)
 {
-    const auto &other = dynamic_cast<const PropertyMaterialList &>(from);
+    const auto &other = dynamic_cast<const PropertyAppearanceList &>(from);
     change([&] { _list = other._list; });
 }
 

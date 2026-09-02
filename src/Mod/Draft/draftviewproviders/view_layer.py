@@ -119,7 +119,7 @@ class ViewProviderLayer:
                 "The shape appearance of the objects " "contained within this layer",
             )
             vobj.addProperty(
-                "App::PropertyMaterialList", "ShapeAppearance", "Layer", _tip, locked=True
+                "App::PropertyAppearanceList", "ShapeAppearance", "Layer", _tip, locked=True
             )
             material = App.Material()
             material.DiffuseColor = params.get_param_view("DefaultShapeColor") | 0x000000FF

@@ -194,7 +194,7 @@ void DlgMaterialImp::slotChangedObject(const Gui::ViewProvider& obj, const App::
                 // d->ui.buttonColor->blockSignals(blocked);
             }
         }
-        else if (prop.isDerivedFrom<App::PropertyMaterialList>()
+        else if (prop.isDerivedFrom<App::PropertyAppearanceList>()
                  && prop_name == "ShapeAppearance") {
             // What assigning would do depends on whether the look still
             // follows the card, and that answer changes the moment someone

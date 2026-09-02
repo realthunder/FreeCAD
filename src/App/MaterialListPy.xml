@@ -331,13 +331,13 @@ converts nothing (App.Material.PBR does convert).</UserDocu>
         </Sequence>
         <ClassDeclarations>public:
     /// Become a live view of \a prop, which registers this object with it
-    void attach(PropertyMaterialList *prop);
+    void attach(PropertyAppearanceList *prop);
     /// Stop being one, keeping the value as it stands (a shared snapshot).
     /// Called by the property when it dies, and by any assignment that
     /// hands this list to a new owner.
     void detachFromOwner();
     /// The property this is a view of, or null once detached
-    PropertyMaterialList *getOwner() const { return owner; }
+    PropertyAppearanceList *getOwner() const { return owner; }
     /// The value, wherever it lives: the owner's while attached, this
     /// object's own once detached
     const AppearanceList &amp;list() const;
@@ -378,7 +378,7 @@ private:
     void editTexture(int idx, const std::function&lt;void(SurfaceTexture &amp;)&gt; &amp;op);
     //@}
 
-    PropertyMaterialList *owner = nullptr;
+    PropertyAppearanceList *owner = nullptr;
     AppearanceList *ownvalue = nullptr;
         </ClassDeclarations>
     </PythonExport>
