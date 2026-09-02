@@ -1727,6 +1727,12 @@ void NumberExpression::negate()
     setQuantity(-getQuantity());
 }
 
+int& App::expressionNumberPrecision()
+{
+    static thread_local int digits = std::numeric_limits<double>::digits10;
+    return digits;
+}
+
 void NumberExpression::_toString(std::ostream &ss, bool,int) const
 {
     // Restore the old implementation because using digits10 + 2 causes
@@ -1737,7 +1743,7 @@ void NumberExpression::_toString(std::ostream &ss, bool,int) const
     // https://en.cppreference.com/w/cpp/types/numeric_limits/max_digits10
     // https://www.boost.org/doc/libs/1_63_0/libs/multiprecision/doc/html/boost_multiprecision/tut/limits/constants.html
     boost::io::ios_flags_saver ifs(ss);
-    ss << std::setprecision(std::numeric_limits<double>::digits10) << getValue();
+    ss << std::setprecision(expressionNumberPrecision()) << getValue();
     if (!getQuantity().getUnit().isEmpty()) {
         ss << ' ';
         UnitExpression::_toString(ss, false, 0);

@@ -124,6 +124,16 @@ _ExpressionAllocDefine(_ExpressionAllocator,boost::pool_allocator);
   *
   */
 
+/** Significant digits NumberExpression::toString prints (per thread).
+ * Default digits10 (15), the long-standing display and persistence form.
+ * The sandbox router raises it to max_digits10 (17) around the
+ * serialization it SHIPS to the guest, so an in-memory literal reaches
+ * the sandbox with every bit the native evaluator sees -- at 15 digits
+ * `1.000000000000001` arrives as `1`, and `1 >= 1.000000000000001 ? 0 : 1`
+ * flips.  Persistence is untouched: saved documents keep 15.
+ */
+AppExport int& expressionNumberPrecision();
+
 class AppExport Expression : public Base::BaseClass {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 

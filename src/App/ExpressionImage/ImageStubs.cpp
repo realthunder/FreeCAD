@@ -211,12 +211,17 @@ void PyException::ReportException() const
 
 void PyException::setPyException() const
 {
-    std::stringstream str;
-    str << getStackTrace() << getErrorType() << ": " << what();
+    // The message is what() alone.  The host's implementation prefixes
+    // the type name because there the result is shown to a person; here
+    // it becomes the "msg" field of the wire reply, and the host raises
+    // it as its own exception whose text must match what the native
+    // evaluator's C++ what() says -- the spreadsheet shows
+    // "ERR: Cannot invert singular matrix", not "ERR: RuntimeError: ...".
+    // The type crosses separately, in "exc".
     PyObject* type = _exceptionType;
     if (!type || !PyExceptionClass_Check(type))
         type = PyExc_RuntimeError;
-    PyErr_SetString(type, str.str().c_str());
+    PyErr_SetString(type, what());
 }
 
 }  // namespace Base

@@ -243,6 +243,34 @@ zero-copy with `getBuffer()`.
 
 ## 9. Phase 1, step 3: the host runtime (built 2026-09-02)
 
+### Found along the way: two parity gaps the corpus gate could not see
+
+Running the full Python suite with sandbox routing ON (by accident: a
+scratch user home that still carried `Evaluate=1`) failed three
+`TestSpreadsheet` cases identically on BOTH runtimes -- so in the shared
+host/guest code, not in either transport:
+
+- **Literals lost bits on the wire.**  The router shipped
+  `expr->toString()`, and `NumberExpression::_toString` prints 15
+  significant digits (`digits10`, an upstream display decision), so an
+  in-memory literal like `1.000000000000001` reached the guest as `1`
+  and `1 >= 1.000000000000001 ? 0 : 1` flipped.  Computed values were
+  exact -- `1 + 1e-15` crossed with every bit -- which is what separated
+  the wire from the serialisation.  Saved documents already carry the
+  15-digit form, which is why 334 stored expressions could never show
+  it.  Fix: `App::expressionNumberPrecision()`, a thread-local the
+  router raises to `max_digits10` (17) around the serialisation it
+  ships; display and persistence keep 15.
+- **Error text carried the type name.**  The image's `PyException`
+  stub composed `RuntimeError: Cannot invert singular matrix` where the
+  native evaluator's `what()` is the bare message, so a cell showed
+  `ERR: RuntimeError: ...`.  The type already crosses in the reply's
+  `exc` field; the stub now sets `what()` alone.
+
+Rule that came out of it: never run the Python suite under a
+`FREECAD_USER_HOME` where `setRouting(True)` was called, and
+`TestSpreadsheet` with routing ON is a parity check the gate is not.
+
 `ImageHost` now speaks to its guest through `ImageRuntime`
 (`src/App/ExpressionImageRuntime.h`: name / resolve / initialize /
 roundTrip / teardown, plus the bridge callback the guest's mid-eval ops

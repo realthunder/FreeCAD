@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <limits>
+
 #include <Python.h>
 #include <sstream>
 
@@ -90,7 +92,28 @@ PyObject* evaluateInImage(const Expression* expr, int options)
     ReentryGuard guard;
 
     auto& host = ExpressionSandbox::ImageHost::instance();
-    const std::string source = expr->toString();
+    // Ship every bit of an in-memory literal: toString() prints 15
+    // significant digits for display and persistence, and a 16- or
+    // 17-digit literal would reach the guest rounded while the native
+    // evaluator keeps the full double.  Found by TestSpreadsheet with
+    // routing on (1.000000000000001 -> 1).
+    struct WirePrecision
+    {
+        int saved = expressionNumberPrecision();
+        WirePrecision()
+        {
+            expressionNumberPrecision() = std::numeric_limits<double>::max_digits10;
+        }
+        ~WirePrecision()
+        {
+            expressionNumberPrecision() = saved;
+        }
+    };
+    std::string source;
+    {
+        WirePrecision wire;
+        source = expr->toString();
+    }
     auto result = host.evalExpression(expr->getOwner(), source, expr, options);
     // decode BEFORE dropping the transaction's handles: a result that
     // is itself a host object resolves against the live table
