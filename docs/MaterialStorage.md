@@ -1074,7 +1074,25 @@ at schema 5 and 4. Step 5, `App::FileSet` (17.3), is built too
 (same commit as this note): `PropertyFileIncludedList` delegates to it, its test file
 passes unmodified, and a pasted entry still waiting for content now
 re-queues for it instead of staying a hash a save would write without
-the bytes. Steps 6 to 9 are not started.
+the bytes. Steps 6 and 7 are built as well, with one deviation from 17.4
+worth knowing: the appearance value does NOT hold a `FileSet` or a pointer
+to one. It holds ONE string, `MaterialAppearance::materialx`, the content
+hash of a MANIFEST -- `App::MaterialXDocument`, a small text naming the
+document entry and every file by its stated name and content hash, stored
+as a blob itself. That is the tree object of 16.3, and it makes the field
+a string column exactly like `uuid`: the list holds the manifest blob and
+follows it to its children for noting, pruning and restore, the stream
+form spends bit 15 on the escape (17.9) with a self-contained run that
+carries the base value ahead of the column, and the XML form has a
+self-describing `m` key. Identity is over the hashes because the manifest
+is (17.6). The card side is the "MaterialX Rendering" appearance model
+(`MaterialXRendering.yml`): `MaterialXDocument`, `MaterialXNames` and the
+library-form `MaterialXFiles` under `materialx/` at the library root; the
+canonical form writes a `MaterialX:` block of names and hashes and skips
+the paths, the loader hashes a library card's files at load and reads the
+block back for a stored card, and `Materials::PropertyMaterial` puts the
+files and the manifest into the store on assignment and re-requests them
+on restore. Steps 8 and 9 are not started; nothing draws a manifest yet.
 
 Two more restore doors turned up while doing step 4, both now closed in
 `6dad71e400` and worth knowing about for any future rename of an OBJECT

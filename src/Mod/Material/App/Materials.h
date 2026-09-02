@@ -33,6 +33,7 @@
 #include <App/Application.h>
 #include <Base/Color.h>
 #include <App/MaterialAppearance.h>
+#include <App/MaterialXDocument.h>
 #include <Base/BaseClass.h>
 
 #include <Mod/Material/MaterialGlobal.h>
@@ -248,6 +249,48 @@ public:
     }
 
     App::MaterialAppearance getMaterialAppearance() const;
+    /** @name The MaterialX document set this card carries
+     *
+     * Stated by the MaterialX Rendering appearance model
+     * (MaterialXRendering.yml, docs/MaterialStorage.md sec 17): the name of
+     * the document entry, what the document calls each file, and -- in the
+     * LIBRARY form -- where each file is under the library's materialx/
+     * directory. The card's identity is computed over the files' CONTENT
+     * hashes, which the library loader computes off the files and a card
+     * restored from a document reads back from its canonical form; the
+     * paths are never part of it (17.6).
+     */
+    //@{
+    bool hasMaterialX() const;
+    QString getMaterialXDocument() const;
+    QStringList getMaterialXNames() const;
+    QStringList getMaterialXFiles() const;
+    /// One per name, in name order; empty where a file could not be hashed
+    const std::vector<std::string>& getMaterialXHashes() const
+    {
+        return _materialXHashes;
+    }
+    void setMaterialXHashes(const std::vector<std::string>& hashes)
+    {
+        _materialXHashes = hashes;
+    }
+    /// One per name: the absolute path each hash was computed from, empty
+    /// for a card whose files live in a document's store rather than on disk
+    const std::vector<std::string>& getMaterialXPaths() const
+    {
+        return _materialXPaths;
+    }
+    /** Resolve the library-form paths against \a libraryRoot/materialx and
+     * hash each file. A file that is not there leaves its hash empty and
+     * says so once.
+     */
+    void resolveMaterialXFiles(const QString& libraryRoot);
+    /** The manifest naming every file by content (App::MaterialXDocument),
+     * whose hash is what an appearance carries. Unset while any file is
+     * still unhashed: half a manifest would be a different identity.
+     */
+    App::MaterialXDocument getMaterialXManifest() const;
+    //@}
     /* Render_* view properties this card states, empty for almost every
      * card. Separate from getMaterialAppearance() because App::MaterialAppearance
      * deliberately does not carry the media features; see the type's
@@ -439,6 +482,7 @@ public:
      * bytes on every installation.
      */
     void saveCanonical(QTextStream& stream) const;
+    void saveCanonicalMaterialX(QTextStream& stream) const;
     QString getCanonicalForm() const;
     /*
      * SHA-1 of the canonical form, hex, matching what App::FileBlobManager
@@ -511,6 +555,8 @@ private:
     std::map<QString, std::shared_ptr<MaterialProperty>> _physical;
     std::map<QString, std::shared_ptr<MaterialProperty>> _appearance;
     std::map<QString, QString> _legacy;
+    std::vector<std::string> _materialXHashes;
+    std::vector<std::string> _materialXPaths;
     bool _dereferenced;
     bool _oldFormat;
     ModelEdit _editState;

@@ -245,6 +245,7 @@ public:
     const std::vector<std::string> &getImageOverrides() const;
     const std::vector<std::string> &getImagePathOverrides() const;
     const std::vector<std::string> &getUuidOverrides() const;
+    const std::vector<std::string> &getMaterialXOverrides() const;
     const std::vector<int8_t> &getTypeOverrides() const;
     const std::vector<SurfaceFinish> &getFinishOverrides() const;
     /// @see materiallist_layout: distinct values plus an index, handed out
@@ -267,6 +268,7 @@ public:
     bool variesInImage() const
     { return !getImageOverrides().empty() || !getImagePathOverrides().empty(); }
     bool variesInUuid() const { return !getUuidOverrides().empty(); }
+    bool variesInMaterialX() const { return !getMaterialXOverrides().empty(); }
     bool variesInType() const { return !getTypeOverrides().empty(); }
     bool variesInFinish() const { return !getFinishOverrides().empty(); }
     bool variesInTexture() const { return !getTextureIndex().empty(); }
@@ -289,6 +291,7 @@ public:
     std::vector<std::string> getImages() const;
     std::vector<std::string> getImagePaths() const;
     std::vector<std::string> getUuids() const;
+    std::vector<std::string> getMaterialXs() const;
     std::vector<int8_t> getTypes() const;
     std::vector<SurfaceFinish> getFinishes() const;
     /// The palette and one index per ENTRY, which is the form the
@@ -306,6 +309,7 @@ public:
     const std::string &getImage(int idx) const;
     const std::string &getImagePath(int idx) const;
     const std::string &getUuid(int idx) const;
+    const std::string &getMaterialX(int idx) const;
     SurfaceFinish getFinish(int idx) const;
     /// By value, because the storage holds distinct records rather than one
     /// per entry: there is no array element to hand a reference into
@@ -330,6 +334,7 @@ public:
     void setImages(const std::vector<std::string> &values);
     void setImagePaths(const std::vector<std::string> &values);
     void setUuids(const std::vector<std::string> &values);
+    void setMaterialXs(const std::vector<std::string> &values);
     void setFinishes(const std::vector<SurfaceFinish> &values);
     /// One record per entry going in; the palette is built from what is
     /// distinct among them
@@ -351,6 +356,7 @@ public:
     void setImage(int idx, const std::string &value);
     void setImagePath(int idx, const std::string &value);
     void setUuid(int idx, const std::string &value);
+    void setMaterialX(int idx, const std::string &value);
     void setFinish(int idx, const SurfaceFinish &value);
     void setTexture(int idx, const SurfaceTexture &value);
     //@}
@@ -380,6 +386,7 @@ public:
     void setImage(const std::string &value);
     void setImagePath(const std::string &value);
     void setUuid(const std::string &value);
+    void setMaterialX(const std::string &value);
     void setFinish(const SurfaceFinish &value);
     void setTexture(const SurfaceTexture &value);
     //@}
@@ -393,6 +400,8 @@ public:
     bool hasFinish() const;
     /// Whether any entry names a texture map
     bool hasTexture() const;
+    /// Whether any entry names a MaterialX document set
+    bool hasMaterialX() const;
 
     /** @name The texture maps as stored content
      *
@@ -418,6 +427,19 @@ public:
     /// Take content in under the hash it is named by, which is how a list
     /// moving between blob managers keeps its claim
     void holdTextureBlob(const FileBlobHandle &blob);
+    /** @name The MaterialX document sets, as stored content
+     *
+     * A manifest hash (MaterialAppearance::materialx) is held in the same
+     * map a map's hash is, and so is every file the manifest names. The
+     * children are only known through the manifest, so a restore asks for
+     * the manifest first and for its children once it has arrived.
+     */
+    //@{
+    /// Every manifest hash the base or an override names, once each.
+    std::vector<std::string> materialXHashes() const;
+    /// The content hashes a HELD manifest names; empty while it is not held.
+    std::vector<std::string> materialXChildren(const std::string &manifestHash) const;
+    //@}
     /// Tell a save which content this list refers to. One referrer name per
     /// SLOT, so the files land under readable names, and once per DISTINCT
     /// hash, because shared content is one file with several referrers.
@@ -540,6 +562,9 @@ private:
         std::vector<std::string> image;
         std::vector<std::string> imagePath;
         std::vector<std::string> uuid;
+        /// Manifest hashes (MaterialAppearance::materialx), a string column
+        /// like uuid
+        std::vector<std::string> materialx;
         std::vector<int8_t> type;
         std::vector<SurfaceFinish> finish;
         std::vector<SurfaceTexture> texturePalette;
@@ -613,7 +638,7 @@ private:
      */
     //@{
     using OverrideKey = std::tuple<uint32_t, uint32_t, uint32_t, uint32_t, float, int8_t,
-                                   std::string, std::string, std::string,
+                                   std::string, std::string, std::string, std::string,
                                    uint8_t, float, float, float, uint16_t>;
     OverrideKey overrideKey(int pos) const;
     //@}

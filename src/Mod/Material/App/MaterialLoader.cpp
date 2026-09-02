@@ -41,6 +41,7 @@
 #include "MaterialLoader.h"
 #include "Model.h"
 #include "ModelManager.h"
+#include "ModelUuids.h"
 
 
 using namespace Materials;
@@ -359,6 +360,36 @@ void MaterialYamlEntry::addToTree(
         }
     }
 
+    // The MaterialX document set. A card stored in a document carries it as
+    // a block of its own, by content (Material::saveCanonicalMaterialX); a
+    // library card states it through the model's properties, and its files
+    // are hashed off the library's materialx/ directory here, so identity
+    // is over content on both routes (docs/MaterialStorage.md 17.6).
+    if (yamlModel["MaterialX"]) {
+        auto node = yamlModel["MaterialX"];
+        if (!finalModel->hasAppearanceModel(ModelUUIDs::ModelUUID_Rendering_MaterialX)) {
+            finalModel->addAppearance(ModelUUIDs::ModelUUID_Rendering_MaterialX);
+        }
+        if (node["Document"]) {
+            finalModel->setAppearanceValue(
+                QStringLiteral("MaterialXDocument"),
+                QString::fromStdString(node["Document"].as<std::string>()));
+        }
+        if (node["Names"]) {
+            finalModel->setAppearanceValue(QStringLiteral("MaterialXNames"),
+                                           readList(node["Names"]));
+        }
+        std::vector<std::string> hashes;
+        if (node["Hashes"]) {
+            for (const auto& hash : *readList(node["Hashes"])) {
+                hashes.push_back(hash.toString().toStdString());
+            }
+        }
+        finalModel->setMaterialXHashes(hashes);
+    }
+    else if (finalModel->hasAppearanceModel(ModelUUIDs::ModelUUID_Rendering_MaterialX)) {
+        finalModel->resolveMaterialXFiles(library->getDirectoryPath());
+    }
     QString path = QDir(directory).absolutePath();
     (*materialMap)[uuid] = library->addMaterial(finalModel, path);
 }

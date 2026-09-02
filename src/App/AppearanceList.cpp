@@ -27,8 +27,10 @@
 #include <set>
 
 #include <Base/Exception.h>
+#include <Base/FileInfo.h>
 
 #include "AppearanceList.h"
+#include "MaterialXDocument.h"
 
 using namespace App;
 using namespace Base;
@@ -431,6 +433,71 @@ void AppearanceList::noteTextureBlobs(FileBlobManager &manager,
             manager.noteReferenced(it->second, named);
         }
     }
+    // The MaterialX manifests and every file they name. A manifest is held
+    // like a map is, and its children are only known through it, so an
+    // entry whose manifest has not arrived has nothing more to note -- and
+    // nothing more to lose, since it cannot have been saved from here.
+    for (const auto &hash : materialXHashes()) {
+        const auto it = rd().textureBlobs.find(hash);
+        if (it == rd().textureBlobs.end()) {
+            continue;
+        }
+        BlobReferrer named = referrer;
+        if (!named.name.empty()) {
+            named.name += ".materialx";
+        }
+        named.ext = ".manifest";
+        manager.noteReferenced(it->second, named);
+        MaterialXDocument manifest;
+        if (!MaterialXDocument::readFile(it->second->path(), manifest)) {
+            continue;
+        }
+        for (const auto &file : manifest.files) {
+            const auto child = rd().textureBlobs.find(file.hash);
+            if (file.hash.empty() || child == rd().textureBlobs.end()) {
+                continue;
+            }
+            // Named after what the document calls the file, so an unpacked
+            // project shows brass_color.jpg and not a hash
+            BlobReferrer entry = referrer;
+            Base::FileInfo fi(file.name);
+            const std::string stem = fi.fileNamePure();
+            if (!entry.name.empty() && !stem.empty()) {
+                entry.name += "." + stem;
+            }
+            const std::string ext = fi.extension();
+            entry.ext = ext.empty() ? std::string() : "." + ext;
+            manager.noteReferenced(child->second, entry);
+        }
+    }
+}
+
+std::vector<std::string> AppearanceList::materialXHashes() const
+{
+    std::vector<std::string> hashes;
+    auto add = [&hashes](const std::string &hash) {
+        if (!hash.empty() && std::find(hashes.begin(), hashes.end(), hash) == hashes.end()) {
+            hashes.push_back(hash);
+        }
+    };
+    add(rd().base.materialx);
+    for (const auto &hash : rd().materialx) {
+        add(hash);
+    }
+    return hashes;
+}
+
+std::vector<std::string> AppearanceList::materialXChildren(const std::string &manifestHash) const
+{
+    const auto it = rd().textureBlobs.find(manifestHash);
+    if (it == rd().textureBlobs.end()) {
+        return {};
+    }
+    MaterialXDocument manifest;
+    if (!MaterialXDocument::readFile(it->second->path(), manifest)) {
+        return {};
+    }
+    return manifest.hashes();
 }
 
 void AppearanceList::assignRestoredBlob(const FileBlobHandle &blob)
@@ -461,6 +528,17 @@ bool AppearanceList::holdsEveryNamedBlob() const
     for (const auto &value : named) {
         for (const auto &hash : value.maps) {
             if (!hash.empty() && rd().textureBlobs.find(hash) == rd().textureBlobs.end()) {
+                return false;
+            }
+        }
+    }
+    for (const auto &hash : materialXHashes()) {
+        if (rd().textureBlobs.find(hash) == rd().textureBlobs.end()) {
+            return false;
+        }
+        // The manifest is here, so its children are known; they count too
+        for (const auto &child : materialXChildren(hash)) {
+            if (rd().textureBlobs.find(child) == rd().textureBlobs.end()) {
                 return false;
             }
         }
@@ -509,6 +587,12 @@ void AppearanceList::pruneTextureBlobs()
             if (!hash.empty()) {
                 named.insert(hash);
             }
+        }
+    }
+    for (const auto &hash : materialXHashes()) {
+        named.insert(hash);
+        for (const auto &child : materialXChildren(hash)) {
+            named.insert(child);
         }
     }
     Data &d = bd();
@@ -589,6 +673,12 @@ const std::vector<std::string> &AppearanceList::getUuidOverrides() const
     return rd().uuid;
 }
 
+const std::vector<std::string> &AppearanceList::getMaterialXOverrides() const
+{
+    ensureNormalized();
+    return rd().materialx;
+}
+
 const std::vector<int8_t> &AppearanceList::getTypeOverrides() const
 {
     ensureNormalized();
@@ -667,6 +757,12 @@ std::vector<std::string> AppearanceList::getUuids() const
     return expandSparse(rd().count, rd().overrides, rd().uuid, rd().base.uuid);
 }
 
+std::vector<std::string> AppearanceList::getMaterialXs() const
+{
+    ensureNormalized();
+    return expandSparse(rd().count, rd().overrides, rd().materialx, rd().base.materialx);
+}
+
 std::vector<int8_t> AppearanceList::getTypes() const
 {
     ensureNormalized();
@@ -739,6 +835,12 @@ bool AppearanceList::hasTexture() const
     return !(rd().base.texture == defaultMaterial().texture) || !rd().texturePalette.empty();
 }
 
+bool AppearanceList::hasMaterialX() const
+{
+    ensureNormalized();
+    return !rd().base.materialx.empty() || !rd().materialx.empty();
+}
+
 // ==================== storage ====================
 void AppearanceList::touchFields()
 {
@@ -767,6 +869,7 @@ void AppearanceList::normalize() const
         std::vector<std::string>().swap(d.image);
         std::vector<std::string>().swap(d.imagePath);
         std::vector<std::string>().swap(d.uuid);
+        std::vector<std::string>().swap(d.materialx);
         std::vector<int8_t>().swap(d.type);
         std::vector<SurfaceFinish>().swap(d.finish);
         std::vector<SurfaceTexture>().swap(d.texturePalette);
@@ -801,6 +904,7 @@ void AppearanceList::normalize() const
     fold(d.image, d.base.image);
     fold(d.imagePath, d.base.imagePath);
     fold(d.uuid, d.base.uuid);
+    fold(d.materialx, d.base.materialx);
     if (everyFace && !d.type.empty()) {
         bool uniform = true;
         for (std::size_t i = 1; i < d.type.size() && uniform; ++i)
@@ -835,6 +939,7 @@ void AppearanceList::normalize() const
     drop(d.image, d.base.image);
     drop(d.imagePath, d.base.imagePath);
     drop(d.uuid, d.base.uuid);
+    drop(d.materialx, d.base.materialx);
     drop(d.type, static_cast<int8_t>(d.base.getType()));
     drop(d.finish, d.base.finish);
     collapseTexture(d.texturePalette, d.textureIndex, d.overrides.size(), d.base.texture);
@@ -855,6 +960,7 @@ void AppearanceList::normalize() const
             || sparseAt(d.image, int(pos), d.base.image) != d.base.image
             || sparseAt(d.imagePath, int(pos), d.base.imagePath) != d.base.imagePath
             || sparseAt(d.uuid, int(pos), d.base.uuid) != d.base.uuid
+            || sparseAt(d.materialx, int(pos), d.base.materialx) != d.base.materialx
             || sparseAt(d.type, int(pos), static_cast<int8_t>(d.base.getType()))
                     != static_cast<int8_t>(d.base.getType())
             || !(sparseAt(d.finish, int(pos), d.base.finish) == d.base.finish)
@@ -874,6 +980,7 @@ void AppearanceList::normalize() const
         compactSparse(d.image, keep);
         compactSparse(d.imagePath, keep);
         compactSparse(d.uuid, keep);
+        compactSparse(d.materialx, keep);
         compactSparse(d.type, keep);
         compactSparse(d.finish, keep);
         compactSparse(d.textureIndex, keep);
@@ -964,6 +1071,7 @@ int AppearanceList::makeOverride(int idx)
     insertSparse(d.image, pos, d.base.image);
     insertSparse(d.imagePath, pos, d.base.imagePath);
     insertSparse(d.uuid, pos, d.base.uuid);
+    insertSparse(d.materialx, pos, d.base.materialx);
     insertSparse(d.type, pos, static_cast<int8_t>(d.base.getType()));
     insertSparse(d.finish, pos, d.base.finish);
     insertTexture(d.texturePalette, d.textureIndex, pos, d.base.texture);
@@ -986,6 +1094,7 @@ void AppearanceList::clearOverride(int idx)
     eraseSparse(d.image, pos);
     eraseSparse(d.imagePath, pos);
     eraseSparse(d.uuid, pos);
+    eraseSparse(d.materialx, pos);
     eraseSparse(d.type, pos);
     eraseSparse(d.finish, pos);
     eraseSparse(d.textureIndex, pos);
@@ -1006,6 +1115,7 @@ void AppearanceList::clearOverrides()
     std::vector<std::string>().swap(d.image);
     std::vector<std::string>().swap(d.imagePath);
     std::vector<std::string>().swap(d.uuid);
+    std::vector<std::string>().swap(d.materialx);
     std::vector<int8_t>().swap(d.type);
     std::vector<SurfaceFinish>().swap(d.finish);
     std::vector<SurfaceTexture>().swap(d.texturePalette);
@@ -1054,6 +1164,7 @@ void AppearanceList::setBase(const MaterialAppearance &value)
         && d.base.specularColor == mat.specularColor && d.base.emissiveColor == mat.emissiveColor
         && d.base.shininess == mat.shininess && d.base.image == mat.image
         && d.base.imagePath == mat.imagePath && d.base.uuid == mat.uuid
+        && d.base.materialx == mat.materialx
         && d.base.getType() == mat.getType() && d.base.finish == storedFinish(mat.finish)
         && d.base.texture == storedTexture(mat.texture)) {
         return;
@@ -1070,6 +1181,7 @@ void AppearanceList::setBase(const MaterialAppearance &value)
     w.base.image = mat.image;
     w.base.imagePath = mat.imagePath;
     w.base.uuid = mat.uuid;
+    w.base.materialx = mat.materialx;
     w.base.finish = storedFinish(mat.finish);
     w.base.texture = storedTexture(mat.texture);
 }
@@ -1091,6 +1203,7 @@ void AppearanceList::setMaterialType(MaterialAppearance &mat, int8_t type)
     mat.image = saved.image;
     mat.imagePath = saved.imagePath;
     mat.uuid = saved.uuid;
+    mat.materialx = saved.materialx;
     mat.finish = saved.finish;
     mat.texture = saved.texture;
     mat.pbr = saved.pbr;
@@ -1119,6 +1232,7 @@ void AppearanceList::adoptDense()
     collapseField(d.image, def.image);
     collapseField(d.imagePath, def.imagePath);
     collapseField(d.uuid, def.uuid);
+    collapseField(d.materialx, def.materialx);
     collapseField(d.type, static_cast<int8_t>(def.getType()));
     collapseField(d.finish, def.finish);
     collapseDenseTexture(d.texturePalette, d.textureIndex, d.count, def.texture);
@@ -1149,6 +1263,7 @@ void AppearanceList::adoptDense()
     take(d.image, d.base.image);
     take(d.imagePath, d.base.imagePath);
     take(d.uuid, d.base.uuid);
+    take(d.materialx, d.base.materialx);
     take(d.finish, d.base.finish);
     if (d.type.size() == 1) {
         setMaterialType(d.base, d.type.front());
@@ -1208,6 +1323,7 @@ AppearanceList::OverrideKey AppearanceList::overrideKey(int pos) const
         sparseAt(d.image, pos, d.base.image),
         sparseAt(d.imagePath, pos, d.base.imagePath),
         sparseAt(d.uuid, pos, d.base.uuid),
+        sparseAt(d.materialx, pos, d.base.materialx),
         finish.pattern, finish.pitch, finish.depth, finish.angle,
         d.textureIndex.empty() ? 0 : d.textureIndex[static_cast<std::size_t>(pos)]
     };
@@ -1236,6 +1352,8 @@ void AppearanceList::rebase(const MaterialAppearance &newBase) const
     std::vector<std::string> imagePath =
             expandSparse(d.count, d.overrides, d.imagePath, d.base.imagePath);
     std::vector<std::string> uuid = expandSparse(d.count, d.overrides, d.uuid, d.base.uuid);
+    std::vector<std::string> materialx =
+            expandSparse(d.count, d.overrides, d.materialx, d.base.materialx);
     std::vector<int8_t> type = expandSparse(d.count, d.overrides, d.type,
                                             static_cast<int8_t>(d.base.getType()));
     std::vector<SurfaceFinish> finish =
@@ -1263,6 +1381,7 @@ void AppearanceList::rebase(const MaterialAppearance &newBase) const
     std::vector<std::string>().swap(d.image);
     std::vector<std::string>().swap(d.imagePath);
     std::vector<std::string>().swap(d.uuid);
+    std::vector<std::string>().swap(d.materialx);
     std::vector<int8_t>().swap(d.type);
     std::vector<SurfaceFinish>().swap(d.finish);
     std::vector<SurfaceTexture>().swap(d.texturePalette);
@@ -1272,6 +1391,7 @@ void AppearanceList::rebase(const MaterialAppearance &newBase) const
             && specular[i] == d.base.specularColor && emissive[i] == d.base.emissiveColor
             && shininess[i] == d.base.shininess && image[i] == d.base.image
             && imagePath[i] == d.base.imagePath && uuid[i] == d.base.uuid
+            && materialx[i] == d.base.materialx
             && type[i] == baseType && finish[i] == d.base.finish
             && texture[i] == d.base.texture) {
             continue;
@@ -1292,6 +1412,7 @@ void AppearanceList::rebase(const MaterialAppearance &newBase) const
             d.image.push_back(std::move(image[i]));
             d.imagePath.push_back(std::move(imagePath[i]));
             d.uuid.push_back(std::move(uuid[i]));
+            d.materialx.push_back(std::move(materialx[i]));
             d.type.push_back(type[i]);
             d.finish.push_back(finish[i]);
             records.push_back(texture[i]);
@@ -1391,6 +1512,7 @@ void AppearanceList::deriveBase(const Color *hint, const std::vector<double> *we
     chosen.image = sparseAt(d.image, winner, d.base.image);
     chosen.imagePath = sparseAt(d.imagePath, winner, d.base.imagePath);
     chosen.uuid = sparseAt(d.uuid, winner, d.base.uuid);
+    chosen.materialx = sparseAt(d.materialx, winner, d.base.materialx);
     chosen.finish = sparseAt(d.finish, winner, d.base.finish);
     chosen.texture = sparseTextureAt(d.texturePalette, d.textureIndex, winner, d.base.texture);
     rebase(chosen);
@@ -1406,6 +1528,7 @@ bool AppearanceList::variesOnlyInDiffuse() const
     return rd().ambient.empty() && rd().specular.empty() && rd().emissive.empty()
         && rd().shininess.empty() && rd().type.empty()
         && rd().image.empty() && rd().imagePath.empty() && rd().uuid.empty()
+        && rd().materialx.empty()
         && rd().finish.empty() && rd().textureIndex.empty();
 }
 
@@ -1585,6 +1708,7 @@ void AppearanceList::restoreValues(std::vector<MaterialAppearance> &&values, boo
     std::vector<std::string>().swap(d.image);
     std::vector<std::string>().swap(d.imagePath);
     std::vector<std::string>().swap(d.uuid);
+    std::vector<std::string>().swap(d.materialx);
     std::vector<int8_t>().swap(d.type);
     // No finish or texture here: none of the encodings that come through
     // this function can carry either, so every entry reads as unfinished
@@ -1602,6 +1726,7 @@ void AppearanceList::restoreValues(std::vector<MaterialAppearance> &&values, boo
         d.image.reserve(d.count);
         d.imagePath.reserve(d.count);
         d.uuid.reserve(d.count);
+        d.materialx.reserve(d.count);
         d.type.reserve(d.count);
         for (auto &mat : values) {
             // The diffuse alpha exactly as the file states it; which of the
@@ -1616,6 +1741,7 @@ void AppearanceList::restoreValues(std::vector<MaterialAppearance> &&values, boo
             d.image.push_back(std::move(mat.image));
             d.imagePath.push_back(std::move(mat.imagePath));
             d.uuid.push_back(std::move(mat.uuid));
+            d.materialx.push_back(std::move(mat.materialx));
             d.type.push_back(static_cast<int8_t>(mat.getType()));
         }
         if (legacy) {
@@ -1715,6 +1841,7 @@ void AppearanceList::setSize(int newSize, const MaterialAppearance &fill)
             compactSparse(d.image, keep);
             compactSparse(d.imagePath, keep);
             compactSparse(d.uuid, keep);
+            compactSparse(d.materialx, keep);
             compactSparse(d.type, keep);
             compactSparse(d.finish, keep);
             compactSparse(d.textureIndex, keep);
@@ -1743,6 +1870,7 @@ void AppearanceList::setSize(int newSize, const MaterialAppearance &fill)
         d.base.image = mat.image;
         d.base.imagePath = mat.imagePath;
         d.base.uuid = mat.uuid;
+        d.base.materialx = mat.materialx;
         d.base.finish = storedFinish(mat.finish);
         d.base.texture = storedTexture(mat.texture);
         return;
@@ -1767,6 +1895,7 @@ void AppearanceList::applyEntry(int idx, const MaterialAppearance &mat)
     setFieldValue(&MaterialAppearance::image, &Data::image, idx, mat.image);
     setFieldValue(&MaterialAppearance::imagePath, &Data::imagePath, idx, mat.imagePath);
     setFieldValue(&MaterialAppearance::uuid, &Data::uuid, idx, mat.uuid);
+    setFieldValue(&MaterialAppearance::materialx, &Data::materialx, idx, mat.materialx);
     setTypeValue(idx, static_cast<int8_t>(mat.getType()));
     setFieldValue(&MaterialAppearance::finish, &Data::finish, idx, storedFinish(mat.finish));
     setTexture(idx, mat.texture);
@@ -1812,6 +1941,7 @@ MaterialAppearance AppearanceList::getMaterial(int idx) const
     mat.image = sparseAt(d.image, pos, d.base.image);
     mat.imagePath = sparseAt(d.imagePath, pos, d.base.imagePath);
     mat.uuid = sparseAt(d.uuid, pos, d.base.uuid);
+    mat.materialx = sparseAt(d.materialx, pos, d.base.materialx);
     mat.finish = sparseAt(d.finish, pos, d.base.finish);
     mat.texture = sparseTextureAt(d.texturePalette, d.textureIndex, pos, d.base.texture);
     // Stamp the list's mode on the value, so whoever holds it still knows
@@ -1845,6 +1975,7 @@ void AppearanceList::setValues(const std::vector<MaterialAppearance> &values)
     std::vector<std::string>().swap(d.image);
     std::vector<std::string>().swap(d.imagePath);
     std::vector<std::string>().swap(d.uuid);
+    std::vector<std::string>().swap(d.materialx);
     std::vector<int8_t>().swap(d.type);
     std::vector<SurfaceFinish>().swap(d.finish);
     std::vector<SurfaceTexture> textures;
@@ -1859,6 +1990,7 @@ void AppearanceList::setValues(const std::vector<MaterialAppearance> &values)
         d.image.reserve(d.count);
         d.imagePath.reserve(d.count);
         d.uuid.reserve(d.count);
+        d.materialx.reserve(d.count);
         d.type.reserve(d.count);
         d.finish.reserve(d.count);
         textures.reserve(d.count);
@@ -1872,6 +2004,7 @@ void AppearanceList::setValues(const std::vector<MaterialAppearance> &values)
             d.image.push_back(mat.image);
             d.imagePath.push_back(mat.imagePath);
             d.uuid.push_back(mat.uuid);
+            d.materialx.push_back(mat.materialx);
             d.type.push_back(static_cast<int8_t>(mat.getType()));
             d.finish.push_back(storedFinish(mat.finish));
             textures.push_back(storedTexture(mat.texture));
@@ -1963,6 +2096,12 @@ const std::string &AppearanceList::getUuid(int idx) const
 {
     ensureNormalized();
     return sparseAt(rd().uuid, overridePos(idx), rd().base.uuid);
+}
+
+const std::string &AppearanceList::getMaterialX(int idx) const
+{
+    ensureNormalized();
+    return sparseAt(rd().materialx, overridePos(idx), rd().base.materialx);
 }
 
 SurfaceFinish AppearanceList::getFinish(int idx) const
@@ -2098,6 +2237,11 @@ void AppearanceList::setUuids(const std::vector<std::string> &values)
     setField(&MaterialAppearance::uuid, &Data::uuid, values);
 }
 
+void AppearanceList::setMaterialXs(const std::vector<std::string> &values)
+{
+    setField(&MaterialAppearance::materialx, &Data::materialx, values);
+}
+
 void AppearanceList::setFinishes(const std::vector<SurfaceFinish> &values)
 {
     std::vector<SurfaceFinish> clamped;
@@ -2220,6 +2364,11 @@ void AppearanceList::setImagePath(int idx, const std::string &value)
 void AppearanceList::setUuid(int idx, const std::string &value)
 {
     setFieldValue(&MaterialAppearance::uuid, &Data::uuid, idx, value);
+}
+
+void AppearanceList::setMaterialX(int idx, const std::string &value)
+{
+    setFieldValue(&MaterialAppearance::materialx, &Data::materialx, idx, value);
 }
 
 void AppearanceList::setFinish(int idx, const SurfaceFinish &value)
@@ -2346,6 +2495,11 @@ void AppearanceList::setUuid(const std::string &value)
     setBaseField(&MaterialAppearance::uuid, value, defaultMaterial().uuid);
 }
 
+void AppearanceList::setMaterialX(const std::string &value)
+{
+    setBaseField(&MaterialAppearance::materialx, value, defaultMaterial().materialx);
+}
+
 void AppearanceList::setFinish(const SurfaceFinish &value)
 {
     setBaseField(&MaterialAppearance::finish, storedFinish(value), defaultMaterial().finish);
@@ -2388,6 +2542,7 @@ unsigned int AppearanceList::getMemSize() const
     if (d.base.getType() != def.getType())
         size += sizeof(int8_t);
     size += d.base.image.size() + d.base.imagePath.size() + d.base.uuid.size();
+    size += d.base.materialx.size();
     if (!(d.base.finish == def.finish))
         size += sizeof(SurfaceFinish);
     if (!(d.base.texture == def.texture)) {
@@ -2403,7 +2558,8 @@ unsigned int AppearanceList::getMemSize() const
         + d.finish.size() * sizeof(SurfaceFinish)
         + texturesMemSize(d.texturePalette)
         + d.textureIndex.size() * sizeof(uint16_t)
-        + stringsMemSize(d.image) + stringsMemSize(d.imagePath) + stringsMemSize(d.uuid);
+        + stringsMemSize(d.image) + stringsMemSize(d.imagePath) + stringsMemSize(d.uuid)
+        + stringsMemSize(d.materialx);
     return static_cast<unsigned int>(size);
 }
 
@@ -2433,6 +2589,7 @@ bool AppearanceList::isSame(const AppearanceList &other) const
         && a.base.image == b.base.image
         && a.base.imagePath == b.base.imagePath
         && a.base.uuid == b.base.uuid
+        && a.base.materialx == b.base.materialx
         && a.base.getType() == b.base.getType()
         && a.base.finish == b.base.finish
         && a.base.texture == b.base.texture
@@ -2445,6 +2602,7 @@ bool AppearanceList::isSame(const AppearanceList &other) const
         && a.image == b.image
         && a.imagePath == b.imagePath
         && a.uuid == b.uuid
+        && a.materialx == b.materialx
         && a.type == b.type
         && a.finish == b.finish
         // Normalised on both sides, and the normal form is canonical

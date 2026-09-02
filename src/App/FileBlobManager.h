@@ -260,6 +260,9 @@ public:
 
     /// Content hash of a file, or an empty string if it cannot be read.
     static std::string hashFile(const char* path);
+    /// Content hash of bytes held in memory, spelled as hashFile() spells it,
+    /// so a value computed here matches the blob the same bytes become.
+    static std::string hashBytes(const std::string& bytes);
 
     /** Store for properties that have no owning document.
      *

@@ -234,6 +234,13 @@ std::string FileBlobManager::hashFile(const char* path)
     return hash.result().toHex().constData();
 }
 
+std::string FileBlobManager::hashBytes(const std::string& bytes)
+{
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    hash.addData(QByteArrayView(bytes.data(), static_cast<qsizetype>(bytes.size())));
+    return hash.result().toHex().constData();
+}
+
 const char* FileBlobManager::archivePrefix()
 {
     return "blobs/";

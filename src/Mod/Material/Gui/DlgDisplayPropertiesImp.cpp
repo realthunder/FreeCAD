@@ -255,6 +255,11 @@ void DlgDisplayPropertiesImp::setupFilters()
     filter->setName(tr("Texture appearance"));
     filter->addRequiredComplete(Materials::ModelUUIDs::ModelUUID_Rendering_Texture);
     filterList->push_back(filter);
+    // Cards shaded by a MaterialX document (docs/MaterialStorage.md sec 17)
+    filter = std::make_shared<Materials::MaterialFilter>();
+    filter->setName(tr("MaterialX appearance"));
+    filter->addRequiredComplete(Materials::ModelUUIDs::ModelUUID_Rendering_MaterialX);
+    filterList->push_back(filter);
 
     // Deliberately no "All materials" tab: this is a LOOK picker, and
     // physical cards and hatch patterns have no look to offer

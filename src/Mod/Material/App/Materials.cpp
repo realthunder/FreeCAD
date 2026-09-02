@@ -23,12 +23,14 @@
 
 #include <QCryptographicHash>
 #include <QDir>
+#include <QFileInfo>
 #include <QMetaType>
 #include <QUuid>
 
 
 
 #include <App/Application.h>
+#include <App/FileBlobManager.h>
 #include <Gui/MetaTypes.h>
 
 #include "Materials.h"
@@ -534,6 +536,8 @@ Material::Material(const Material& other)
     , _oldFormat(other._oldFormat)
     , _editState(other._editState)
 {
+    _materialXHashes = other._materialXHashes;
+    _materialXPaths = other._materialXPaths;
     for (auto& it : other._tags) {
         _tags.insert(it);
     }
@@ -1666,6 +1670,11 @@ void Material::saveCanonicalModels(
     // so an empty model survives the round trip.
     std::map<QString, std::vector<std::shared_ptr<MaterialProperty>>> byModel;
     for (const auto& uuid : sortedStrings(modelUuids)) {
+        // The MaterialX model is written as its own block, by content and
+        // not by the library paths its properties hold (saveCanonicalMaterialX)
+        if (uuid == ModelUUIDs::ModelUUID_Rendering_MaterialX) {
+            continue;
+        }
         byModel[uuid];
     }
     for (const auto& it : properties) {
@@ -1674,6 +1683,9 @@ void Material::saveCanonicalModels(
             continue;
         }
         auto modelUuid = property->getModelUUID();
+        if (modelUuid == ModelUUIDs::ModelUUID_Rendering_MaterialX) {
+            continue;
+        }
         if (modelUuid.isEmpty()) {
             Base::Console().log("Material::saveCanonicalModels property '%s' names no model. "
                                 "Not written\n",
@@ -1709,6 +1721,128 @@ void Material::saveCanonical(QTextStream& stream) const
     saveCanonicalInherits(stream);
     saveCanonicalModels(stream, _physicalUuids, _physical, QStringLiteral("Models"));
     saveCanonicalModels(stream, _appearanceUuids, _appearance, QStringLiteral("AppearanceModels"));
+    saveCanonicalMaterialX(stream);
+}
+
+void Material::saveCanonicalMaterialX(QTextStream& stream) const
+{
+    // The document set by CONTENT: the names the document uses and the hash
+    // of each file, never where a library keeps them (docs/MaterialStorage.md
+    // 17.6). A card stored in a document reads this back and nothing else.
+    if (!hasMaterialX()) {
+        return;
+    }
+    const QStringList names = getMaterialXNames();
+    stream << "MaterialX:\n";
+    stream << "  Document: \"" << MaterialValue::escapeString(getMaterialXDocument()) << "\"\n";
+    stream << "  Names:\n";
+    for (const auto& name : names) {
+        stream << "    - \"" << MaterialValue::escapeString(name) << "\"\n";
+    }
+    stream << "  Hashes:\n";
+    for (int i = 0; i < names.size(); ++i) {
+        const std::string hash =
+            i < static_cast<int>(_materialXHashes.size()) ? _materialXHashes[i] : std::string();
+        stream << "    - \"" << QString::fromStdString(hash) << "\"\n";
+    }
+}
+
+bool Material::hasMaterialX() const
+{
+    return hasAppearanceModel(ModelUUIDs::ModelUUID_Rendering_MaterialX)
+        && hasAppearanceProperty(QStringLiteral("MaterialXDocument"))
+        && !getAppearanceProperty(QStringLiteral("MaterialXDocument"))->isNull()
+        && !getAppearanceProperty(QStringLiteral("MaterialXDocument"))->getString().isEmpty();
+}
+
+QString Material::getMaterialXDocument() const
+{
+    if (!hasAppearanceProperty(QStringLiteral("MaterialXDocument"))) {
+        return {};
+    }
+    return getAppearanceProperty(QStringLiteral("MaterialXDocument"))->getString();
+}
+
+static QStringList listProperty(const Material& card, const char* name)
+{
+    QStringList out;
+    if (!card.hasAppearanceProperty(QString::fromLatin1(name))) {
+        return out;
+    }
+    auto property = card.getAppearanceProperty(QString::fromLatin1(name));
+    if (property->isNull()) {
+        return out;
+    }
+    for (const auto& value : property->getList()) {
+        out.push_back(value.toString());
+    }
+    return out;
+}
+
+QStringList Material::getMaterialXNames() const
+{
+    return listProperty(*this, "MaterialXNames");
+}
+
+QStringList Material::getMaterialXFiles() const
+{
+    return listProperty(*this, "MaterialXFiles");
+}
+
+void Material::resolveMaterialXFiles(const QString& libraryRoot)
+{
+    const QStringList names = getMaterialXNames();
+    const QStringList files = getMaterialXFiles();
+    _materialXHashes.assign(static_cast<std::size_t>(names.size()), std::string());
+    _materialXPaths.assign(static_cast<std::size_t>(names.size()), std::string());
+    if (names.isEmpty()) {
+        return;
+    }
+    if (files.size() != names.size()) {
+        Base::Console().warning("Material '%s': MaterialX names %d files but lists %d paths\n",
+                                _name.toUtf8().constData(),
+                                static_cast<int>(names.size()),
+                                static_cast<int>(files.size()));
+    }
+    const QDir root(QDir(libraryRoot).filePath(QStringLiteral("materialx")));
+    for (int i = 0; i < names.size() && i < files.size(); ++i) {
+        const QString path = QFileInfo(files[i]).isAbsolute() ? files[i] : root.filePath(files[i]);
+        const std::string hash = App::FileBlobManager::hashFile(path.toUtf8().constData());
+        if (hash.empty()) {
+            Base::Console().warning("Material '%s': MaterialX file '%s' is not at '%s'\n",
+                                    _name.toUtf8().constData(),
+                                    names[i].toUtf8().constData(),
+                                    path.toUtf8().constData());
+            continue;
+        }
+        _materialXHashes[static_cast<std::size_t>(i)] = hash;
+        _materialXPaths[static_cast<std::size_t>(i)] = path.toUtf8().constData();
+    }
+}
+
+App::MaterialXDocument Material::getMaterialXManifest() const
+{
+    App::MaterialXDocument manifest;
+    if (!hasMaterialX()) {
+        return manifest;
+    }
+    const QStringList names = getMaterialXNames();
+    if (names.isEmpty() || static_cast<int>(_materialXHashes.size()) != names.size()) {
+        return manifest;
+    }
+    for (int i = 0; i < names.size(); ++i) {
+        const std::string& hash = _materialXHashes[static_cast<std::size_t>(i)];
+        if (hash.empty()) {
+            return App::MaterialXDocument();   // half a manifest is another identity
+        }
+        manifest.files.push_back({names[i].toStdString(), hash});
+    }
+    const std::string document = getMaterialXDocument().toStdString();
+    if (!manifest.find(document.c_str())) {
+        return App::MaterialXDocument();   // the document must be one of its own files
+    }
+    manifest.document = document;
+    return manifest;
 }
 
 QString Material::getCanonicalForm() const
@@ -1747,6 +1881,8 @@ Material& Material::operator=(const Material& other)
     _dereferenced = other._dereferenced;
     _oldFormat = other._oldFormat;
     _editState = other._editState;
+    _materialXHashes = other._materialXHashes;
+    _materialXPaths = other._materialXPaths;
 
     _tags.clear();
     for (auto& it : other._tags) {
@@ -1937,6 +2073,16 @@ App::MaterialAppearance Material::getMaterialAppearance() const
         custom = true;
     }
 
+    if (hasMaterialX()) {
+        // The document set rides the look as ONE hash, the manifest's
+        // (docs/MaterialStorage.md 17.8). Unset while a file is missing:
+        // a card that cannot be shaded as stated keeps its colour slots.
+        const App::MaterialXDocument manifest = getMaterialXManifest();
+        if (manifest.isSet()) {
+            material.materialx = manifest.manifestHash();
+            custom = true;
+        }
+    }
     if (custom) {
         material.setType(App::MaterialAppearance::USER_DEFINED);
         material.uuid = getUUID().toStdString();

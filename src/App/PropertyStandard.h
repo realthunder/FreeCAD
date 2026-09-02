@@ -1354,6 +1354,8 @@ public:
     { return _list.getImagePathOverrides(); }
     const std::vector<std::string> &getUuidOverrides() const
     { return _list.getUuidOverrides(); }
+    const std::vector<std::string> &getMaterialXOverrides() const
+    { return _list.getMaterialXOverrides(); }
     const std::vector<SurfaceFinish> &getFinishOverrides() const
     { return _list.getFinishOverrides(); }
 
@@ -1364,6 +1366,7 @@ public:
     bool variesInShininess() const { return _list.variesInShininess(); }
     bool variesInImage() const { return _list.variesInImage(); }
     bool variesInUuid() const { return _list.variesInUuid(); }
+    bool variesInMaterialX() const { return _list.variesInMaterialX(); }
     bool variesInFinish() const { return _list.variesInFinish(); }
     bool variesInTexture() const { return _list.variesInTexture(); }
     //@}
@@ -1384,6 +1387,7 @@ public:
     std::vector<std::string> getImages() const { return _list.getImages(); }
     std::vector<std::string> getImagePaths() const { return _list.getImagePaths(); }
     std::vector<std::string> getUuids() const { return _list.getUuids(); }
+    std::vector<std::string> getMaterialXs() const { return _list.getMaterialXs(); }
     std::vector<SurfaceFinish> getFinishes() const { return _list.getFinishes(); }
     //@}
 
@@ -1417,6 +1421,7 @@ public:
     const std::string &getImage(int idx) const;
     const std::string &getImagePath(int idx) const;
     const std::string &getUuid(int idx) const;
+    const std::string &getMaterialX(int idx) const;
     SurfaceFinish getFinish(int idx) const;
     /// By value, because the storage holds distinct records rather than
     /// one per entry: there is no array element to hand a reference into
@@ -1448,6 +1453,7 @@ public:
     void setImages(const std::vector<std::string> &values);
     void setImagePaths(const std::vector<std::string> &values);
     void setUuids(const std::vector<std::string> &values);
+    void setMaterialXs(const std::vector<std::string> &values);
     /// The records clamp on the way in (SurfaceFinish::normalize), so what
     /// is stored is always something a consumer can draw
     void setFinishes(const std::vector<SurfaceFinish> &values);
@@ -1465,6 +1471,7 @@ public:
     void setImage(int idx, const std::string &value);
     void setImagePath(int idx, const std::string &value);
     void setUuid(int idx, const std::string &value);
+    void setMaterialX(int idx, const std::string &value);
     void setFinish(int idx, const SurfaceFinish &value);
     void setTexture(int idx, const SurfaceTexture &value);
 
@@ -1488,6 +1495,7 @@ public:
     void setImage(const std::string &value);
     void setImagePath(const std::string &value);
     void setUuid(const std::string &value);
+    void setMaterialX(const std::string &value);
     void setFinish(const SurfaceFinish &value);
     void setTexture(const SurfaceTexture &value);
     //@}
@@ -1576,13 +1584,24 @@ public:
     /// file with several referrers -- which is why the appearance names its
     /// own referrers here instead of handing the collect pass one handle.
     void collectBlobs(FileBlobManager &manager, const DocumentObject *object) const override;
+    /** Take hold of the stored content the value names
+     *
+     * A card applied to the base (followMaterial) brings a MaterialX
+     * manifest hash whose bytes the card's own property has already put in
+     * the store; this claims them for the list, which is what keeps them
+     * alive and lets a save note them from here. Content not in the store
+     * is queued with the manager as a restore would queue it.
+     */
+    void holdStoredBlobs() { requestTextureBlobs(); }
     /// Take a restored blob into whichever slots name its hash
     void assignRestoredBlob(const FileBlobHandle &blob) override;
     /// The texture content has no schema 4 spelling: the maps themselves ride
     /// a companion element, the bytes behind them live in the store and
     /// nowhere else. A save with no store keeps the hashes and drops the
     /// files, which is what makes this the one referrer answering true.
-    bool blobContentNeedsStore() const override { return hasTexture(); }
+    /// A MaterialX manifest hash has no spelling at all without the store,
+    /// so it forces the offer the same way a texture does
+    bool blobContentNeedsStore() const override { return hasTexture() || _list.hasMaterialX(); }
     //@}
 
     /** @name PBR mode
@@ -1725,6 +1744,9 @@ private:
     /// not already hold. Called once the palette has landed, from both
     /// restore paths.
     void requestTextureBlobs();
+    /// Ask for the files a HELD manifest names; a restore calls it once the
+    /// manifest itself has arrived, since only the manifest knows them.
+    void requestMaterialXChildren(const std::string &manifestHash);
 
     /** Run a write against the value and signal it only if it changed
      *

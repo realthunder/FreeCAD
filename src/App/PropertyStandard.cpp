@@ -3244,6 +3244,11 @@ void PropertyAppearanceList::setUuids(const std::vector<std::string> &values)
     change([&] { _list.setUuids(values); });
 }
 
+void PropertyAppearanceList::setMaterialXs(const std::vector<std::string> &values)
+{
+    change([&] { _list.setMaterialXs(values); });
+}
+
 void PropertyAppearanceList::setFinishes(const std::vector<SurfaceFinish> &values)
 {
     change([&] { _list.setFinishes(values); });
@@ -3307,6 +3312,11 @@ void PropertyAppearanceList::setImagePath(const std::string &value)
 void PropertyAppearanceList::setUuid(const std::string &value)
 {
     change([&] { _list.setUuid(value); });
+}
+
+void PropertyAppearanceList::setMaterialX(const std::string &value)
+{
+    change([&] { _list.setMaterialX(value); });
 }
 
 void PropertyAppearanceList::setFinish(const SurfaceFinish &value)
@@ -3399,6 +3409,11 @@ void PropertyAppearanceList::setUuid(int idx, const std::string &value)
     change([&] { _list.setUuid(idx, value); }, idx);
 }
 
+void PropertyAppearanceList::setMaterialX(int idx, const std::string &value)
+{
+    change([&] { _list.setMaterialX(idx, value); }, idx);
+}
+
 void PropertyAppearanceList::setFinish(int idx, const SurfaceFinish &value)
 {
     change([&] { _list.setFinish(idx, value); }, idx);
@@ -3467,6 +3482,11 @@ const std::string &PropertyAppearanceList::getImagePath(int idx) const
 const std::string &PropertyAppearanceList::getUuid(int idx) const
 {
     return _list.getUuid(idx);
+}
+
+const std::string &PropertyAppearanceList::getMaterialX(int idx) const
+{
+    return _list.getMaterialX(idx);
 }
 
 SurfaceFinish PropertyAppearanceList::getFinish(int idx) const
@@ -3555,6 +3575,14 @@ void PropertyAppearanceList::assignRestoredBlob(const FileBlobHandle &blob)
     // by being opened. So it goes straight to the value rather than through
     // change().
     _list.assignRestoredBlob(blob);
+    if (blob) {
+        // A manifest arriving is the first this list hears of the files it
+        // names, so they are asked for now, from the store or the queue.
+        const auto manifests = _list.materialXHashes();
+        if (std::find(manifests.begin(), manifests.end(), blob->hash()) != manifests.end()) {
+            requestMaterialXChildren(blob->hash());
+        }
+    }
     if (_list.holdsEveryNamedBlob()) {
         // Nothing is still queued, so nothing has to be withdrawn on the
         // way out
@@ -3575,8 +3603,45 @@ FileBlobManager &PropertyAppearanceList::blobManager() const
 }
 
 
+void PropertyAppearanceList::requestMaterialXChildren(const std::string &manifestHash)
+{
+    FileBlobManager *manager = nullptr;
+    for (const auto &hash : _list.materialXChildren(manifestHash)) {
+        if (hash.empty() || _list.wd().textureBlobs.find(hash) != _list.wd().textureBlobs.end()) {
+            continue;
+        }
+        if (!manager) {
+            manager = &blobManager();
+        }
+        if (auto blob = manager->find(hash)) {
+            _list.wd().textureBlobs[hash] = std::move(blob);
+            continue;
+        }
+        _pendingBlobManager = manager;
+        manager->addPendingReferrer(hash, this);
+    }
+}
+
 void PropertyAppearanceList::requestTextureBlobs()
 {
+    // The manifests first: one that the store already holds hands over its
+    // children at once, one that does not is queued and asks for them when
+    // it arrives (assignRestoredBlob).
+    for (const auto &hash : _list.materialXHashes()) {
+        auto &d = _list.wd();
+        if (d.textureBlobs.find(hash) == d.textureBlobs.end()) {
+            auto &manager = blobManager();
+            if (auto blob = manager.find(hash)) {
+                d.textureBlobs[hash] = std::move(blob);
+            }
+            else {
+                _pendingBlobManager = &manager;
+                manager.addPendingReferrer(hash, this);
+                continue;
+            }
+        }
+        requestMaterialXChildren(hash);
+    }
     if (_list.wd().texturePalette.empty()) {
         return;
     }
@@ -4001,6 +4066,7 @@ void PropertyAppearanceList::installBase(const MaterialAppearance &base, int8_t 
     check(d.image);
     check(d.imagePath);
     check(d.uuid);
+    check(d.materialx);
     check(d.type);
     check(d.finish);
     check(d.textureIndex);
@@ -4175,6 +4241,31 @@ enum FieldBit {
      * head states, which is nothing (docs/ShapeAppearanceDesign.md 9.4.2).
      */
     FieldFollow = 1 << 14,
+    /** The ESCAPE: an extension mask lives in this bit's run
+     *
+     * The last bit of the sixteen. Rather than spend it on one more field,
+     * its run carries a 32-bit mask of EXTENDED fields, and their runs
+     * follow flat after every run this mask names, each behind the same
+     * head. A build that predates the bit skips its run by length like any
+     * unknown field, stops at the end of the sixteen and never reads the
+     * extended runs -- harmless, because RestoreDocFile gives this property
+     * an archive file of its own, so the trailing bytes go unread rather
+     * than being read as something else (docs/MaterialStorage.md 17.9).
+     */
+    FieldExtension = 1 << 15,
+};
+
+/// Bits of the extension mask (FieldExtension), ascending like the main ones
+enum ExtendedField : uint32_t {
+    /** The MaterialX manifest hash (MaterialAppearance::materialx)
+     *
+     * A string field, but not a RunStrings: RunBase is read positionally and
+     * cannot grow a member, so this field's run carries the BASE value first
+     * and then the overrides' -- self-contained, which also serves the
+     * uniform case, where the base value is written as a column of one and
+     * the base slot as empty.
+     */
+    ExtMaterialX = 1u << 0,
 };
 
 /** Bits this build knows about
@@ -4185,7 +4276,7 @@ enum FieldBit {
 constexpr uint16_t KnownFields = FieldAmbient | FieldDiffuse | FieldSpecular
     | FieldEmissive | FieldShininess | FieldTransparency | FieldType
     | FieldImage | FieldImagePath | FieldUuid | FieldPBR | FieldFinish
-    | FieldTexture | FieldBase | FieldFollow;
+    | FieldTexture | FieldBase | FieldFollow | FieldExtension;
 
 /** Bits that are flags rather than fields, and so have no run to read
  *
@@ -4227,6 +4318,12 @@ enum FieldRunType : uint8_t {
     /// the run is there so that a reader which does not know the bit can
     /// step over it
     RunFlag = 7,
+    /// The extension mask (FieldExtension): one uint32, whose bits name the
+    /// runs that follow every run of the main mask
+    RunExtension = 8,
+    /// A string field that carries its base value ahead of the column, for
+    /// a field RunBase cannot hold (see ExtMaterialX)
+    RunStringsBase = 9,
 };
 
 /// The records of one finish run. Shared by the material list's per field
@@ -4539,7 +4636,7 @@ void PropertyAppearanceList::saveFieldStream(Base::OutputStream &str) const
     std::vector<Color> uAmbient, uDiffuse, uSpecular, uEmissive;
     std::vector<float> uShininess;
     std::vector<int8_t> uType;
-    std::vector<std::string> uImage, uImagePath, uUuid;
+    std::vector<std::string> uImage, uImagePath, uUuid, uMaterialX;
     std::vector<SurfaceFinish> uFinish;
     std::vector<SurfaceTexture> uPalette;
     if (!sparse) {
@@ -4556,6 +4653,7 @@ void PropertyAppearanceList::saveFieldStream(Base::OutputStream &str) const
         one(d.base.image, def.image, uImage);
         one(d.base.imagePath, def.imagePath, uImagePath);
         one(d.base.uuid, def.uuid, uUuid);
+        one(d.base.materialx, def.materialx, uMaterialX);
         one(d.base.finish, def.finish, uFinish);
         one(d.base.texture, def.texture, uPalette);
     }
@@ -4568,6 +4666,7 @@ void PropertyAppearanceList::saveFieldStream(Base::OutputStream &str) const
     const std::vector<std::string> &image = sparse ? d.image : uImage;
     const std::vector<std::string> &imagePath = sparse ? d.imagePath : uImagePath;
     const std::vector<std::string> &uuid = sparse ? d.uuid : uUuid;
+    const std::vector<std::string> &materialx = sparse ? d.materialx : uMaterialX;
     const std::vector<SurfaceFinish> &finish = sparse ? d.finish : uFinish;
     const std::vector<SurfaceTexture> &palette = sparse ? d.texturePalette : uPalette;
     static const std::vector<uint16_t> noIndex;
@@ -4592,6 +4691,13 @@ void PropertyAppearanceList::saveFieldStream(Base::OutputStream &str) const
     if (d.pbr)              mask |= FieldPBR;
     if (sparse)             mask |= FieldBase;
     if (d.follow)           mask |= FieldFollow;
+    // The extended fields, behind the escape bit. In the sparse shape the
+    // base value rides the field's own run, so the base alone is reason
+    // enough for the run to exist.
+    uint32_t ext = 0;
+    if (!materialx.empty() || (sparse && !d.base.materialx.empty()))
+        ext |= ExtMaterialX;
+    if (ext)                mask |= FieldExtension;
     str << mask;
 
     // Runs go out in ascending bit order, each behind a head of its shape,
@@ -4680,8 +4786,24 @@ void PropertyAppearanceList::saveFieldStream(Base::OutputStream &str) const
         if (d.follow)
             writeRun(RunFlag, 0, [](Base::OutputStream &) {});
     };
+    // Bit 15 last: the extension mask in its own run, then the extended
+    // runs in ascending order of THEIR bits, each behind the same head
+    auto writeExtension = [&writeRun, &d, &materialx, ext, sparse]() {
+        if (!ext)
+            return;
+        writeRun(RunExtension, 0, [ext](Base::OutputStream &run) { run << ext; });
+        if (ext & ExtMaterialX) {
+            writeRun(RunStringsBase, materialx.size(),
+                     [&d, &materialx, sparse](Base::OutputStream &run) {
+                         run << (sparse ? d.base.materialx : std::string());
+                         for (const auto &value : materialx)
+                             run << value;
+                     });
+        }
+    };
     if (!sparse) {
         writeFollow();
+        writeExtension();
         return;
     }
     // The head count is the number of overriding faces, and the payload is
@@ -4708,6 +4830,7 @@ void PropertyAppearanceList::saveFieldStream(Base::OutputStream &str) const
         writeTextureRun(run, one, std::vector<uint16_t>());
     });
     writeFollow();
+    writeExtension();
 }
 
 void PropertyAppearanceList::restoreFieldStream(Base::InputStream &str, unsigned uCt, bool legacy)
@@ -4736,6 +4859,7 @@ void PropertyAppearanceList::restoreFieldStream(Base::InputStream &str, unsigned
     std::vector<std::string>().swap(_list.wd().image);
     std::vector<std::string>().swap(_list.wd().imagePath);
     std::vector<std::string>().swap(_list.wd().uuid);
+    std::vector<std::string>().swap(_list.wd().materialx);
     std::vector<int8_t>().swap(_list.wd().type);
     std::vector<SurfaceFinish>().swap(_list.wd().finish);
     std::vector<SurfaceTexture>().swap(_list.wd().texturePalette);
@@ -4744,6 +4868,7 @@ void PropertyAppearanceList::restoreFieldStream(Base::InputStream &str, unsigned
     MaterialAppearance base;
     int8_t baseType = static_cast<int8_t>(AppearanceList::defaultMaterial().getType());
     bool follow = false;
+    uint32_t ext = 0;
     const bool sparse = (mask & FieldBase) != 0;
 
     // Ascending bit order, which is the order they were written in, each run
@@ -4820,6 +4945,9 @@ void PropertyAppearanceList::restoreFieldStream(Base::InputStream &str, unsigned
             break;
         case RunFlag:
             break;   // nothing to read: the bit that named it is the value
+        case RunExtension:
+            str >> ext;   // which extended runs follow the sixteen
+            break;
         case RunBase: {
             indices.resize(count);
             for (auto &value : indices)
@@ -4874,8 +5002,42 @@ void PropertyAppearanceList::restoreFieldStream(Base::InputStream &str, unsigned
             break;
         case FieldBase: _list.wd().overrides.swap(indices); break;   // and base above
         case FieldFollow: follow = true; break;   // the bit IS the value
+        case FieldExtension: break;   // the mask was read above; its runs come next
         default: break;   // unreachable: an unknown bit was skipped above
         }
+    }
+    // The extended runs, in ascending order of their bits in the extension
+    // mask, each behind the same head as the sixteen above -- and stepped
+    // over by the same length when this build knows neither the bit nor the
+    // shape.
+    for (uint32_t bit = 1; ext && bit != 0; bit <<= 1) {
+        if ((ext & bit) == 0)
+            continue;
+        uint8_t type = 0;
+        str >> type;
+        uint32_t bytes = 0;
+        str >> bytes;
+        uint32_t count = 0;
+        str >> count;
+        auto skipRun = [&str, bytes]() {
+            char byte = 0;
+            for (uint32_t i = 0; i < bytes; ++i)
+                str >> byte;
+        };
+        if (bit != ExtMaterialX || type != RunStringsBase) {
+            skipRun();   // a field or a shape added by a later build
+            continue;
+        }
+        if (count != 1 && count > uCt)
+            throw Base::FileException("material field length does not match the list");
+        std::string baseValue;
+        str >> baseValue;
+        std::vector<std::string> strings(count);
+        for (auto &value : strings)
+            str >> value;
+        if (sparse)
+            base.materialx = baseValue;
+        _list.wd().materialx.swap(strings);
     }
     if (legacy) {
         for (auto *field : {&_list.wd().ambient, &_list.wd().diffuse, &_list.wd().specular, &_list.wd().emissive}) {
@@ -4948,6 +5110,20 @@ bool PropertyAppearanceList::saveFieldXML(Base::Writer &writer) const
             writeHexToken(writer.Stream(), value);
         writer.Stream() << '\n';
     };
+    // The base value first, then the column, under one key: the 'b' line is
+    // positional and cannot grow a token, so this field carries its own
+    // base. The count is still the honest token count, which is what lets a
+    // reader that does not know the key step over it (9.4.2).
+    auto writeMaterialX = [&writer](const std::string &base,
+                                    const std::vector<std::string> &field) {
+        if (base.empty() && field.empty())
+            return;
+        writer.Stream() << "m " << (1 + field.size());
+        writeHexToken(writer.Stream(), base);
+        for (const auto &value : field)
+            writeHexToken(writer.Stream(), value);
+        writer.Stream() << '\n';
+    };
     auto writeTypes = [&writer](const std::vector<int8_t> &field) {
         if (field.empty())
             return;
@@ -5011,6 +5187,8 @@ bool PropertyAppearanceList::saveFieldXML(Base::Writer &writer) const
         writeStrings('u', one(d.base.uuid, def.uuid));
         writeTexture(one(d.base.texture, def.texture), std::vector<uint16_t>());
         writeFinishes(one(d.base.finish, def.finish));
+        // Uniform: the value is the column of one, and the base slot is empty
+        writeMaterialX(std::string(), one(d.base.materialx, def.materialx));
         return false;
     }
 
@@ -5036,6 +5214,7 @@ bool PropertyAppearanceList::saveFieldXML(Base::Writer &writer) const
     writeStrings('u', d.uuid);
     writeTexture(d.texturePalette, d.textureIndex);
     writeFinishes(d.finish);
+    writeMaterialX(d.base.materialx, d.materialx);
     return false;
 }
 
@@ -5057,6 +5236,7 @@ void PropertyAppearanceList::restoreFieldXML(Base::XMLReader &reader, unsigned u
     std::vector<std::string>().swap(_list.wd().image);
     std::vector<std::string>().swap(_list.wd().imagePath);
     std::vector<std::string>().swap(_list.wd().uuid);
+    std::vector<std::string>().swap(_list.wd().materialx);
     std::vector<int8_t>().swap(_list.wd().type);
     std::vector<SurfaceFinish>().swap(_list.wd().finish);
     std::vector<SurfaceTexture>().swap(_list.wd().texturePalette);
@@ -5096,6 +5276,7 @@ void PropertyAppearanceList::restoreFieldXML(Base::XMLReader &reader, unsigned u
             break;
         case 'b':
         case 'x':
+        case 'm':
             // Self-describing: the count rules below do not apply, and the
             // stride is only here to say the key IS known
             stride = 1;
@@ -5126,6 +5307,27 @@ void PropertyAppearanceList::restoreFieldXML(Base::XMLReader &reader, unsigned u
             uint32_t idx = 0;
             for (unsigned i = 0; i < tokens && (s >> idx); ++i)
                 overrides.push_back(idx);
+            continue;
+        }
+        if (key[0] == 'm') {
+            // The base value first, then the column (see saveFieldXML)
+            if (tokens < 1)
+                throw Base::FileException("MaterialX field states no base");
+            std::string token;
+            if (!(s >> token))
+                break;
+            if (sparse)
+                base.materialx = hexToken(token);
+            const unsigned count = tokens - 1;
+            if (count != 1 && count > uCt)
+                throw Base::FileException("material field length does not match the list");
+            auto &field = _list.wd().materialx;
+            field.resize(count);
+            for (auto &value : field) {
+                if (!(s >> token))
+                    break;
+                value = hexToken(token);
+            }
             continue;
         }
         if (key[0] == 'x') {

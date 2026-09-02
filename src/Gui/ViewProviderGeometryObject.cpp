@@ -1330,6 +1330,10 @@ void ViewProviderGeometryObject::applyMaterialAppearance()
     // The BASE only: the faces holding a look of their own keep it, where
     // the old whole-value write had to refuse a per-face appearance outright
     ShapeAppearance.followMaterial(card);
+    // The card's MaterialX document set, if it has one, is in the store by
+    // now (Materials::PropertyMaterial::setValue); the appearance takes its
+    // own hold on it so the look outlives the card property's
+    ShapeAppearance.holdStoredBlobs();
     // Only where the card is in control of the look: the same guard that
     // stops us overwriting a hand-picked appearance has to stop us clearing
     // a hand-set Render_Glass. A card stating none clears the previous
@@ -1359,6 +1363,10 @@ bool ViewProviderGeometryObject::resetAppearanceToMaterial()
     // The BASE, and following again from now on. The faces holding a look
     // of their own keep it (docs/MaterialStorage.md 15.5).
     ShapeAppearance.followMaterial(card);
+    // The card's MaterialX document set, if it has one, is in the store by
+    // now (Materials::PropertyMaterial::setValue); the appearance takes its
+    // own hold on it so the look outlives the card property's
+    ShapeAppearance.holdStoredBlobs();
     // The card's render features come back with its colours: a Render_Glass
     // the abandoned look left behind is the card's to state again, or to
     // clear by stating none.

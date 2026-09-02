@@ -59,21 +59,22 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
     PyObject* image = nullptr;
     PyObject* imagePath = nullptr;
     PyObject* uuid = nullptr;
-    static const std::array<const char *, 21> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
+    PyObject* materialx = nullptr;
+    static const std::array<const char *, 22> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
                                                           "EmissiveColor", "Shininess", "Transparency",
                                                           "PBR", "Metallic", "Roughness",
                                                           "Finish", "FinishPitch", "FinishDepth",
                                                           "FinishAngle", "Texture", "TextureScale",
                                                           "TextureOffset", "TextureRotation",
                                                           "Image", "ImagePath",
-                                                          "Uuid", nullptr};
+                                                          "Uuid", "MaterialX", nullptr};
 
-    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOOOOOOOOOOOOOOOO", kwds_colors,
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOOOOOOOOOOOOOOOOO", kwds_colors,
         &diffuse, &ambient, &specular, &emissive, &shininess, &transparency,
         &pbr, &metallic, &roughness,
         &finish, &finishPitch, &finishDepth, &finishAngle,
         &texture, &textureScale, &textureOffset, &textureRotation,
-        &image, &imagePath, &uuid)) {
+        &image, &imagePath, &uuid, &materialx)) {
         return -1;
     }
 
@@ -171,6 +172,10 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
 
         if (uuid) {
             setUuid(Py::String(uuid));
+        }
+
+        if (materialx) {
+            setMaterialX(Py::String(materialx));
         }
     }
     catch (Base::Exception& e) {
@@ -497,6 +502,16 @@ void MaterialPy::setImagePath(Py::String arg)
 Py::String MaterialPy::getUuid() const
 {
     return Py::String(getMaterialAppearancePtr()->uuid);
+}
+
+Py::String MaterialPy::getMaterialX() const
+{
+    return Py::String(getMaterialAppearancePtr()->materialx);
+}
+
+void MaterialPy::setMaterialX(Py::String arg)
+{
+    getMaterialAppearancePtr()->materialx = static_cast<std::string>(arg);
 }
 
 void MaterialPy::setUuid(Py::String arg)

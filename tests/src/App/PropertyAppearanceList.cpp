@@ -690,6 +690,66 @@ TEST_F(PropertyAppearanceListTest, aTexturePathSurvivesTheXMLForm)
     EXPECT_EQ(restored.getUuid(0), texturedMaterial().uuid) << xml;
 }
 
+TEST_F(PropertyAppearanceListTest, aManifestHashRoundTripsBothFieldEncodings)
+{
+    // The MaterialX field rides the ESCAPE bit in the stream form and its
+    // own self-describing key in the XML form, and both carry the base's
+    // value ahead of the column because RunBase cannot grow a member
+    // (docs/MaterialStorage.md 17.9). Uniform first: one value, no base.
+    App::PropertyAppearanceList prop;
+    std::vector<App::MaterialAppearance> values(4, redMaterial());
+    for (auto& value : values)
+        value.materialx = "0123456789abcdef0123456789abcdef01234567";
+    prop.setValues(values);
+    EXPECT_TRUE(prop.blobContentNeedsStore());
+
+    App::PropertyAppearanceList fromXml;
+    const std::string xml = saveToXML(prop, 5);
+    EXPECT_NE(xml.find("\nm 2 "), std::string::npos) << xml;
+    restoreFromXML(fromXml, xml);
+    expectEntries(fromXml, values);
+    EXPECT_EQ(fromXml.getMaterialX(3), values[3].materialx);
+    EXPECT_FALSE(fromXml.variesInMaterialX());
+
+    App::PropertyAppearanceList fromStream;
+    restoreDocFile(fromStream, saveDocFile(prop, 5));
+    expectEntries(fromStream, values);
+    EXPECT_EQ(fromStream.getMaterialX(0), values[0].materialx);
+}
+
+TEST_F(PropertyAppearanceListTest, aPerFaceManifestHashRidesTheBaseAndTheColumn)
+{
+    // Sparse: the base wears one document set and one face another, so the
+    // field's run states the base value and then the override's
+    App::PropertyAppearanceList prop;
+    std::vector<App::MaterialAppearance> values(6, redMaterial());
+    for (auto& value : values)
+        value.materialx = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    values[2].materialx = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    prop.setValues(values);
+    EXPECT_TRUE(prop.variesInMaterialX());
+
+    App::PropertyAppearanceList fromXml;
+    restoreFromXML(fromXml, saveToXML(prop, 5));
+    expectEntries(fromXml, values);
+    EXPECT_EQ(fromXml.getMaterialX(2), values[2].materialx);
+    EXPECT_EQ(fromXml.getMaterialX(5), values[5].materialx);
+
+    App::PropertyAppearanceList fromStream;
+    restoreDocFile(fromStream, saveDocFile(prop, 5));
+    expectEntries(fromStream, values);
+    EXPECT_EQ(fromStream.getMaterialX(2), values[2].materialx);
+    EXPECT_EQ(fromStream.getMaterialX(5), values[5].materialx);
+
+    // A face that stops naming one folds back into the base, and a list
+    // that never named one has no such column and no store to ask for
+    fromStream.setMaterialX(2, values[5].materialx);
+    EXPECT_FALSE(fromStream.variesInMaterialX());
+    App::PropertyAppearanceList plain;
+    plain.setValues(std::vector<App::MaterialAppearance>(3, redMaterial()));
+    EXPECT_FALSE(plain.blobContentNeedsStore());
+}
+
 TEST_F(PropertyAppearanceListTest, stringsRideTheCompactDocFile)
 {
     App::PropertyAppearanceList prop;

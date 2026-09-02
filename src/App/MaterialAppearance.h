@@ -372,6 +372,20 @@ public:
     std::string imagePath;
     std::string uuid;
     //@}
+    /** The MaterialX document set this look is shaded by, as a manifest hash
+     *
+     * The content hash of an App::MaterialXDocument manifest -- the tree
+     * object naming the document and its image maps by content -- or empty
+     * when the look is the Phong/PBR slots alone. ONE string, held the way
+     * a texture slot holds a map's hash: the property storing this is the
+     * blob referrer and keeps the manifest and every file it names alive,
+     * and App::FileBlobManager owns the bytes. A card carrying a MaterialX
+     * document puts its manifest hash here (docs/MaterialStorage.md sec
+     * 17.8), so it rides the follow rule and the per-face palette like the
+     * colours do, and is carried through every Phong/PBR conversion
+     * untouched.
+     */
+    std::string materialx;
     /** Which reading the slot values carry
      *
      * A value-level tag, not storage: PropertyAppearanceList keeps the mode
@@ -397,7 +411,7 @@ public:
             diffuseColor==m.diffuseColor && specularColor==m.specularColor &&
             emissiveColor==m.emissiveColor && finish==m.finish &&
             texture==m.texture &&
-            image==m.image && imagePath==m.imagePath;
+            image==m.image && imagePath==m.imagePath && materialx==m.materialx;
     }
     bool operator!=(const MaterialAppearance& m) const
     {

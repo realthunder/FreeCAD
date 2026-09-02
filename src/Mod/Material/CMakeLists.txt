@@ -314,6 +314,7 @@ SET(MaterialModel_Files
     Resources/Models/Rendering/AdvancedRendering.yml
     Resources/Models/Rendering/BasicRendering.yml
     Resources/Models/Rendering/GlassRendering.yml
+    Resources/Models/Rendering/MaterialXRendering.yml
     Resources/Models/Rendering/TextureRendering.yml
     Resources/Models/Rendering/VectorRendering.yml
     "Resources/Models/Test/Test Model.yml"

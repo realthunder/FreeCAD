@@ -251,8 +251,24 @@ private:
      */
     void assignUnresolved(const std::string& hash);
 
+    /** Keep the card's MaterialX files in this document's store.
+     *
+     * The manifest and every file it names, taken from the store when it
+     * has them, inserted from the library paths when it does not, and --
+     * when \a queueMissing -- asked of the restore for what neither has.
+     * Held here so a card that is not being followed still keeps its
+     * document set for the day it is applied again.
+     */
+    void holdMaterialXBlobs(bool queueMissing) const;
+    /// Note the held MaterialX blobs for the save, named after their files.
+    void noteMaterialXBlobs(App::FileBlobManager& manager,
+                            const App::DocumentObject* object) const;
     std::shared_ptr<const Material> _card;
     mutable App::FileBlobHandle _blob;
+    /// The card's MaterialX manifest and files, see holdMaterialXBlobs()
+    mutable std::vector<App::FileBlobHandle> _materialXBlobs;
+    /// The card blob a restore is waiting for, to tell it from the files
+    std::string _pendingCardHash;
     mutable std::string _hash;
     QString _uuid;
     QString _name;
