@@ -1753,3 +1753,45 @@ samples only the chosen graph's layers -- the two lists are joined on the
 resolved path -- so the picture and the sixteen-layer cap are right; the
 decode is a superset, cached per path, and paid once per document rather
 than once per card.
+
+### 17.14 The library keeps a file once per CARD, and that is now wrong (open, 2026-09-03)
+
+Item 1 made fifteen cards over one shared set of files the normal shape
+of an asset. The LIBRARY does not store them that way, and the gap is
+measured, not suspected.
+
+`MaterialLibraryLocal::saveMaterial` derives `cardDir` from the card's
+own path with `.FCMat` stripped, and `Material::placeMaterialXFiles`
+COPIES every one of the card's files into
+`<library>/materialx/<cardDir>/`. One directory per card, a full copy in
+each. The chess set's images are 16 MB; fifteen cards of it put **240 MB
+in the library for one asset**, and editing one image means replacing it
+fifteen times or having the cards disagree.
+
+Nothing about the card format forces this. Identity is already computed
+over the files' CONTENT hashes and the paths are explicitly not part of
+it (sec 17.6), and a card carried INTO a document already shares
+perfectly -- the blob store is content-addressed, so the fifteen cards
+there hold one copy of each image and fifteen small manifests. The
+library is the one tier that still stores by name and by owner.
+
+**What next session has to decide** (the user's ask, 2026-09-03): the
+library storage layout that lets one shader graph file be shared by many
+cards. The obvious shape is to make the library's `materialx/` directory
+content-addressed the way the document's blob store is, but that is a
+guess and the alternatives are real -- a per-ASSET directory that several
+cards name, a shared pool with reference counting, or leaving the file
+layout alone and only teaching the save side not to re-copy bytes it
+already placed. Whatever is picked has to answer:
+
+- What happens to the libraries that already have per-card directories.
+  Cards state their files relative to `materialx/`, so old cards must go
+  on resolving.
+- What deletes a file when the last card naming it goes away, and what
+  happens when nothing does.
+- Whether a human browsing the library still sees `bishop_black_base_color.jpg`
+  or a hash. The current layout was chosen partly so an unpacked library
+  reads like files, which is the same argument the blob store's
+  `BlobReferrer` naming answers on the document side.
+- Whether the answer is the same for the shipped libraries and the user's
+  writable one.
