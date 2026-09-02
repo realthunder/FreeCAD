@@ -35,7 +35,7 @@
 #include <Base/Uuid.h>
 
 #include "Property.h"
-#include "MaterialList.h"
+#include "AppearanceList.h"
 #include "Enumeration.h"
 #include "FileBlobManager.h"
 #include "MaterialAppearance.h"
@@ -1211,7 +1211,7 @@ public:
     void unregisterView(MaterialListPy *view);
     /// Run a write against the value, recording and signalling it if it
     /// changed.  touched is the entry a per entry write names.
-    void editList(const std::function<void(MaterialList &)> &op, int touched = -1);
+    void editList(const std::function<void(AppearanceList &)> &op, int touched = -1);
     //@}
 
     /** @name The value this property holds
@@ -1221,8 +1221,8 @@ public:
      * first write through any holder pays for the storage.
      */
     //@{
-    const MaterialList &getList() const { return _list; }
-    void setList(const MaterialList &list);
+    const AppearanceList &getList() const { return _list; }
+    void setList(const AppearanceList &list);
     //@}
 
     /** @name Whole material access
@@ -1720,7 +1720,7 @@ private:
      * Every mutator goes through this. It works because the value is
      * copy-on-write: taking a snapshot costs a pointer, so the write can
      * simply be made and the result compared by STORAGE IDENTITY -- if the
-     * value is unchanged, MaterialList's own setters return without
+     * value is unchanged, AppearanceList's own setters return without
      * detaching and the pointer is still the one the snapshot holds.
      *
      * The old value then goes back for exactly as long as it takes to open
@@ -1735,9 +1735,9 @@ private:
     /** The value, which several holders may share
      *
      * A Python variable, an undo snapshot and this property can all name
-     * the same storage until one of them writes; see App::MaterialList.
+     * the same storage until one of them writes; see App::AppearanceList.
      */
-    MaterialList _list;
+    AppearanceList _list;
     /// The Python views handed out and not yet dropped. Raw pointers: a
     /// view unregisters itself when Python drops it, and this property
     /// detaches every one of them on the way out.

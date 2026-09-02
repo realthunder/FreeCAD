@@ -447,7 +447,7 @@ protected:
 /** One shared value, copied on write
  *
  * The single-value flavour of the containers below, for a struct that is
- * one logical value rather than a sequence -- App::MaterialList's field
+ * one logical value rather than a sequence -- App::AppearanceList's field
  * arrays, say, which are one appearance however many arrays it takes.
  *
  * A null holder reads as a default-constructed value, so "nothing stated"

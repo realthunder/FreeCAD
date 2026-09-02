@@ -2221,7 +2221,7 @@ TEST_F(PropertyMaterialListTest, aKeyFromALaterBuildIsSteppedOver)
 //--------------------------------------------------------------------------
 // The value is shared and copied on write (docs/PythonValueBindings.md)
 //
-// The storage lives in App::MaterialList now, and copying one costs a
+// The storage lives in App::AppearanceList now, and copying one costs a
 // pointer. What these hold to account is the two halves of that bargain:
 // nobody sees another holder's write, and a write that changes nothing
 // leaves the storage exactly as it found it -- which is how the property
@@ -2233,7 +2233,7 @@ TEST_F(PropertyMaterialListTest, aCopyOfTheValueSharesUntilOneOfThemWrites)
     App::PropertyMaterialList prop;
     prop.setValues(std::vector<App::MaterialAppearance>(1000, redMaterial()));
 
-    App::MaterialList copy = prop.getList();
+    App::AppearanceList copy = prop.getList();
     EXPECT_TRUE(prop.getList().isShared());
     EXPECT_TRUE(copy.isSameData(prop.getList()));
     EXPECT_EQ(copy.getSize(), 1000);
@@ -2287,7 +2287,7 @@ TEST_F(PropertyMaterialListTest, aWriteThatChangesNothingLeavesTheStorageAlone)
     App::PropertyMaterialList prop;
     prop.setValues(std::vector<App::MaterialAppearance>(4, redMaterial()));
 
-    const App::MaterialList before = prop.getList();
+    const App::AppearanceList before = prop.getList();
     prop.setDiffuseColor(2, redMaterial().diffuseColor);
     EXPECT_TRUE(prop.getList().isSameData(before));
     prop.setDiffuseColor(redMaterial().diffuseColor);
@@ -2311,7 +2311,7 @@ TEST_F(PropertyMaterialListTest, aWriteThatChangesNothingLeavesTheStorageAlone)
     EXPECT_FALSE(prop.getList().isSameData(before));
 
     // and a real entry write detaches too
-    const App::MaterialList reassigned = prop.getList();
+    const App::AppearanceList reassigned = prop.getList();
     prop.setDiffuseColor(2, packed(0x00ff00ff));
     EXPECT_FALSE(prop.getList().isSameData(reassigned));
 }
@@ -2346,7 +2346,7 @@ TEST_F(PropertyMaterialListTest, contentTheListHoldsTravelsWithACopyOfIt)
 
     // A copy names the same content, which is the point of a shared store:
     // the file lives while any handle to it does
-    App::MaterialList copy = prop.getList();
+    App::AppearanceList copy = prop.getList();
     EXPECT_FALSE(copy.getTextureFile(hash).empty());
     EXPECT_EQ(copy.getTexture(1).maps[App::SurfaceTexture::BaseColor], hash);
 
@@ -2420,7 +2420,7 @@ TEST_F(PropertyMaterialListTest, aPythonListReadsWithoutCopyingTheStorage)
 
     // A view, not a tuple of a thousand materials: reading it neither
     // copies the storage nor detaches it
-    const App::MaterialList before = prop.getList();
+    const App::AppearanceList before = prop.getList();
     runOn(prop,
           "assert len(mlist) == 1000\n"
           "assert mlist.Count == 1000\n"

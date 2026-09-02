@@ -27,7 +27,7 @@
 
 #include <Base/Interpreter.h>
 
-#include "MaterialList.h"
+#include "AppearanceList.h"
 #include "MaterialPy.h"
 #include "PropertyStandard.h"
 
@@ -117,7 +117,7 @@ void MaterialListPy::detachFromOwner()
     // The value as it stands, which costs a pointer -- and a manager of its
     // own, because the document's store belongs to the document and this
     // list is about to outlive its say in that
-    ownvalue = new MaterialList(owner->getList());
+    ownvalue = new AppearanceList(owner->getList());
     ownvalue->setBlobManager(nullptr);
     PropertyMaterialList *prop = owner;
     owner = nullptr;
@@ -125,18 +125,18 @@ void MaterialListPy::detachFromOwner()
     prop->unregisterView(this);
 }
 
-const MaterialList &MaterialListPy::list() const
+const AppearanceList &MaterialListPy::list() const
 {
-    return owner ? owner->getList() : *getMaterialListPtr();
+    return owner ? owner->getList() : *getAppearanceListPtr();
 }
 
-void MaterialListPy::edit(const std::function<void(MaterialList &)> &op, int touched)
+void MaterialListPy::edit(const std::function<void(AppearanceList &)> &op, int touched)
 {
     if (owner) {
         owner->editList(op, touched);
     }
     else {
-        op(*getMaterialListPtr());
+        op(*getAppearanceListPtr());
     }
 }
 
@@ -175,7 +175,7 @@ int MaterialListPy::finalization()
 
 PyObject *MaterialListPy::PyMake(PyTypeObject * /*type*/, PyObject * /*args*/, PyObject * /*kwds*/)
 {
-    auto *value = new MaterialList;
+    auto *value = new AppearanceList;
     auto *self = new MaterialListPy(value);
     self->ownvalue = value;
     return self;
@@ -194,7 +194,7 @@ int MaterialListPy::PyInit(PyObject *args, PyObject * /*kwds*/)
     {
         if (PyObject_TypeCheck(source, &(MaterialListPy::Type))) {
             // Shares the storage; the first write to either side pays
-            *getMaterialListPtr() = static_cast<MaterialListPy *>(source)->list();
+            *getAppearanceListPtr() = static_cast<MaterialListPy *>(source)->list();
             return 0;
         }
         if (PyLong_Check(source)) {
@@ -203,14 +203,14 @@ int MaterialListPy::PyInit(PyObject *args, PyObject * /*kwds*/)
                 PyErr_SetString(PyExc_ValueError, "negative list size");
                 return -1;
             }
-            getMaterialListPtr()->setSize(static_cast<int>(count));
+            getAppearanceListPtr()->setSize(static_cast<int>(count));
             return 0;
         }
         std::vector<MaterialAppearance> values;
         if (!materialsOf(source, values)) {
             return -1;
         }
-        getMaterialListPtr()->setValues(values);
+        getAppearanceListPtr()->setValues(values);
         return 0;
     }
     _PY_CATCH(return -1)
@@ -240,7 +240,7 @@ PyObject *MaterialListPy::append(PyObject *args)
     PY_TRY
     {
         const MaterialAppearance added = *mat;
-        edit([&](MaterialList &values) { values.set1Value(values.getSize(), added); });
+        edit([&](AppearanceList &values) { values.set1Value(values.getSize(), added); });
         Py_Return;
     }
     PY_CATCH
@@ -261,7 +261,7 @@ PyObject *MaterialListPy::extend(PyObject *args)
         if (!materialsOf(value, added)) {
             return nullptr;
         }
-        edit([&](MaterialList &values) {
+        edit([&](AppearanceList &values) {
             for (const auto &mat : added) {
                 values.set1Value(values.getSize(), mat);
             }
@@ -290,7 +290,7 @@ PyObject *MaterialListPy::insert(PyObject *args)
             return nullptr;
         }
         const MaterialAppearance added = *mat;
-        edit([&](MaterialList &values) {
+        edit([&](AppearanceList &values) {
             // Shift by one from the back, which is the only spelling the
             // per field storage has for an insertion
             values.set1Value(values.getSize(), values.getMaterial(values.getSize() - 1));
@@ -311,7 +311,7 @@ PyObject *MaterialListPy::copy(PyObject *args)
     }
     PY_TRY
     {
-        auto *value = new MaterialList(list());
+        auto *value = new AppearanceList(list());
         auto *result = new MaterialListPy(value);
         result->ownvalue = value;
         return result;
@@ -349,7 +349,7 @@ PyObject *MaterialListPy::setSize(PyObject *args)
     PY_TRY
     {
         if (!fill) {
-            edit([&](MaterialList &values) { values.setSize(static_cast<int>(count)); });
+            edit([&](AppearanceList &values) { values.setSize(static_cast<int>(count)); });
             Py_Return;
         }
         const MaterialAppearance *mat = materialOf(fill);
@@ -357,7 +357,7 @@ PyObject *MaterialListPy::setSize(PyObject *args)
             return nullptr;
         }
         const MaterialAppearance def = *mat;
-        edit([&](MaterialList &values) { values.setSize(static_cast<int>(count), def); });
+        edit([&](AppearanceList &values) { values.setSize(static_cast<int>(count), def); });
         Py_Return;
     }
     PY_CATCH
@@ -398,14 +398,14 @@ PyObject *MaterialListPy::setMaterial(PyObject *args)
             // Every entry, which is what -1 means to every setter here --
             // not "the last one", which would make the per field API read
             // differently from the indexing beside it
-            edit([&](MaterialList &values) { values.setValue(written); });
+            edit([&](AppearanceList &values) { values.setValue(written); });
             Py_Return;
         }
         int idx = 0;
         if (!indexOf(where, list().getSize(), idx, true)) {
             return nullptr;
         }
-        edit([&](MaterialList &values) { values.set1Value(idx, written); }, idx);
+        edit([&](AppearanceList &values) { values.set1Value(idx, written); }, idx);
         Py_Return;
     }
     PY_CATCH
@@ -505,7 +505,7 @@ PyObject *MaterialListPy::colorSet(PyObject *args, ColorSetter setter,
             if (!indexOf(where, list().getSize(), idx, true)) {
                 return nullptr;
             }
-            edit([&](MaterialList &values) { (values.*setter)(idx, color); }, idx);
+            edit([&](AppearanceList &values) { (values.*setter)(idx, color); }, idx);
             Py_Return;
         }
         PY_CATCH
@@ -519,7 +519,7 @@ PyObject *MaterialListPy::colorSet(PyObject *args, ColorSetter setter,
     }
     PY_TRY
     {
-        edit([&](MaterialList &values) { (values.*allsetter)(color); });
+        edit([&](AppearanceList &values) { (values.*allsetter)(color); });
         Py_Return;
     }
     PY_CATCH
@@ -557,7 +557,7 @@ PyObject *MaterialListPy::floatSet(PyObject *args, FloatSetter setter,
             if (!indexOf(where, list().getSize(), idx, true)) {
                 return nullptr;
             }
-            edit([&](MaterialList &values) { (values.*setter)(idx, static_cast<float>(value)); },
+            edit([&](AppearanceList &values) { (values.*setter)(idx, static_cast<float>(value)); },
                  idx);
             Py_Return;
         }
@@ -572,7 +572,7 @@ PyObject *MaterialListPy::floatSet(PyObject *args, FloatSetter setter,
     }
     PY_TRY
     {
-        edit([&](MaterialList &values) { (values.*allsetter)(static_cast<float>(value)); });
+        edit([&](AppearanceList &values) { (values.*allsetter)(static_cast<float>(value)); });
         Py_Return;
     }
     PY_CATCH
@@ -580,98 +580,98 @@ PyObject *MaterialListPy::floatSet(PyObject *args, FloatSetter setter,
 
 PyObject *MaterialListPy::getDiffuseColor(PyObject *args)
 {
-    return colorGet(args, &MaterialList::getDiffuseColor);
+    return colorGet(args, &AppearanceList::getDiffuseColor);
 }
 
 PyObject *MaterialListPy::setDiffuseColor(PyObject *args)
 {
     return colorSet(args,
-                    static_cast<ColorSetter>(&MaterialList::setDiffuseColor),
-                    static_cast<ColorAllSetter>(&MaterialList::setDiffuseColor));
+                    static_cast<ColorSetter>(&AppearanceList::setDiffuseColor),
+                    static_cast<ColorAllSetter>(&AppearanceList::setDiffuseColor));
 }
 
 PyObject *MaterialListPy::getAmbientColor(PyObject *args)
 {
-    return colorGet(args, &MaterialList::getAmbientColor);
+    return colorGet(args, &AppearanceList::getAmbientColor);
 }
 
 PyObject *MaterialListPy::setAmbientColor(PyObject *args)
 {
     return colorSet(args,
-                    static_cast<ColorSetter>(&MaterialList::setAmbientColor),
-                    static_cast<ColorAllSetter>(&MaterialList::setAmbientColor));
+                    static_cast<ColorSetter>(&AppearanceList::setAmbientColor),
+                    static_cast<ColorAllSetter>(&AppearanceList::setAmbientColor));
 }
 
 PyObject *MaterialListPy::getSpecularColor(PyObject *args)
 {
-    return colorGet(args, &MaterialList::getSpecularColor);
+    return colorGet(args, &AppearanceList::getSpecularColor);
 }
 
 PyObject *MaterialListPy::setSpecularColor(PyObject *args)
 {
     return colorSet(args,
-                    static_cast<ColorSetter>(&MaterialList::setSpecularColor),
-                    static_cast<ColorAllSetter>(&MaterialList::setSpecularColor));
+                    static_cast<ColorSetter>(&AppearanceList::setSpecularColor),
+                    static_cast<ColorAllSetter>(&AppearanceList::setSpecularColor));
 }
 
 PyObject *MaterialListPy::getEmissiveColor(PyObject *args)
 {
-    return colorGet(args, &MaterialList::getEmissiveColor);
+    return colorGet(args, &AppearanceList::getEmissiveColor);
 }
 
 PyObject *MaterialListPy::setEmissiveColor(PyObject *args)
 {
     return colorSet(args,
-                    static_cast<ColorSetter>(&MaterialList::setEmissiveColor),
-                    static_cast<ColorAllSetter>(&MaterialList::setEmissiveColor));
+                    static_cast<ColorSetter>(&AppearanceList::setEmissiveColor),
+                    static_cast<ColorAllSetter>(&AppearanceList::setEmissiveColor));
 }
 
 PyObject *MaterialListPy::getShininess(PyObject *args)
 {
-    return floatGet(args, &MaterialList::getShininess);
+    return floatGet(args, &AppearanceList::getShininess);
 }
 
 PyObject *MaterialListPy::setShininess(PyObject *args)
 {
     return floatSet(args,
-                    static_cast<FloatSetter>(&MaterialList::setShininess),
-                    static_cast<FloatAllSetter>(&MaterialList::setShininess));
+                    static_cast<FloatSetter>(&AppearanceList::setShininess),
+                    static_cast<FloatAllSetter>(&AppearanceList::setShininess));
 }
 
 PyObject *MaterialListPy::getTransparency(PyObject *args)
 {
-    return floatGet(args, &MaterialList::getTransparency);
+    return floatGet(args, &AppearanceList::getTransparency);
 }
 
 PyObject *MaterialListPy::setTransparency(PyObject *args)
 {
     return floatSet(args,
-                    static_cast<FloatSetter>(&MaterialList::setTransparency),
-                    static_cast<FloatAllSetter>(&MaterialList::setTransparency));
+                    static_cast<FloatSetter>(&AppearanceList::setTransparency),
+                    static_cast<FloatAllSetter>(&AppearanceList::setTransparency));
 }
 
 PyObject *MaterialListPy::getMetallic(PyObject *args)
 {
-    return floatGet(args, &MaterialList::getMetallic);
+    return floatGet(args, &AppearanceList::getMetallic);
 }
 
 PyObject *MaterialListPy::setMetallic(PyObject *args)
 {
     return floatSet(args,
-                    static_cast<FloatSetter>(&MaterialList::setMetallic),
-                    static_cast<FloatAllSetter>(&MaterialList::setMetallic));
+                    static_cast<FloatSetter>(&AppearanceList::setMetallic),
+                    static_cast<FloatAllSetter>(&AppearanceList::setMetallic));
 }
 
 PyObject *MaterialListPy::getRoughness(PyObject *args)
 {
-    return floatGet(args, &MaterialList::getRoughness);
+    return floatGet(args, &AppearanceList::getRoughness);
 }
 
 PyObject *MaterialListPy::setRoughness(PyObject *args)
 {
     return floatSet(args,
-                    static_cast<FloatSetter>(&MaterialList::setRoughness),
-                    static_cast<FloatAllSetter>(&MaterialList::setRoughness));
+                    static_cast<FloatSetter>(&AppearanceList::setRoughness),
+                    static_cast<FloatAllSetter>(&AppearanceList::setRoughness));
 }
 
 // ---------------------------------------------------------------------
@@ -700,7 +700,7 @@ PyObject *MaterialListPy::insertTextureFile(PyObject *args)
             hash = getOwner()->insertTextureFile(path, extension);
         }
         else {
-            hash = getMaterialListPtr()->insertTextureFile(path, extension);
+            hash = getAppearanceListPtr()->insertTextureFile(path, extension);
         }
         if (hash.empty()) {
             PyErr_Format(PyExc_IOError, "cannot read '%s'", path);
@@ -776,7 +776,7 @@ bool MaterialListPy::textureArgs(PyObject *args, const char *format, int &idx, u
 void MaterialListPy::editTexture(int idx, const std::function<void(SurfaceTexture &)> &op)
 {
     edit(
-        [&](MaterialList &values) {
+        [&](AppearanceList &values) {
             if (idx >= 0) {
                 SurfaceTexture texture = values.getTexture(idx);
                 op(texture);
@@ -833,7 +833,7 @@ PyObject *MaterialListPy::setTextureFile(PyObject *args)
             hash = getOwner()->insertTextureFile(path);
         }
         else {
-            hash = getMaterialListPtr()->insertTextureFile(path);
+            hash = getAppearanceListPtr()->insertTextureFile(path);
         }
         if (hash.empty()) {
             PyErr_Format(PyExc_IOError, "cannot read '%s'", path);
@@ -999,7 +999,7 @@ PyObject *MaterialListPy::clearOverrides(PyObject *args)
     }
     PY_TRY
     {
-        edit([](MaterialList &values) { values.clearOverrides(); });
+        edit([](AppearanceList &values) { values.clearOverrides(); });
         Py_Return;
     }
     PY_CATCH
@@ -1020,7 +1020,7 @@ PyObject *MaterialListPy::clearOverride(PyObject *args)
         if (!indexOf(where, list().getSize(), idx)) {
             return nullptr;
         }
-        edit([idx](MaterialList &values) { values.clearOverride(idx); }, idx);
+        edit([idx](AppearanceList &values) { values.clearOverride(idx); }, idx);
         Py_Return;
     }
     PY_CATCH
@@ -1062,7 +1062,7 @@ void MaterialListPy::setBase(Py::Object value)
         throw Py::Exception();
     }
     const MaterialAppearance base = *mat;
-    edit([&](MaterialList &values) { values.setBase(base); });
+    edit([&](AppearanceList &values) { values.setBase(base); });
 }
 
 Py::Tuple MaterialListPy::getOverrides() const
@@ -1083,7 +1083,7 @@ Py::Boolean MaterialListPy::getFollowMaterial() const
 void MaterialListPy::setFollowMaterial(Py::Boolean value)
 {
     const bool enable = static_cast<bool>(value);
-    edit([&](MaterialList &values) { values.setFollowMaterial(enable); });
+    edit([&](AppearanceList &values) { values.setFollowMaterial(enable); });
 }
 
 Py::Boolean MaterialListPy::getPBR() const
@@ -1094,7 +1094,7 @@ Py::Boolean MaterialListPy::getPBR() const
 void MaterialListPy::setPBR(Py::Boolean value)
 {
     const bool enable = static_cast<bool>(value);
-    edit([&](MaterialList &values) { values.setPBR(enable); });
+    edit([&](AppearanceList &values) { values.setPBR(enable); });
 }
 
 PyObject *MaterialListPy::getCustomAttributes(const char * /*attr*/) const
@@ -1163,7 +1163,7 @@ int MaterialListPy::sequence_ass_item(PyObject *self, Py_ssize_t index, PyObject
     PY_TRY
     {
         const MaterialAppearance written = *mat;
-        list->edit([&](MaterialList &values) { values.set1Value(idx, written); }, idx);
+        list->edit([&](AppearanceList &values) { values.set1Value(idx, written); }, idx);
         return 0;
     }
     _PY_CATCH(return -1)
@@ -1197,7 +1197,7 @@ PyObject *MaterialListPy::mapping_subscript(PyObject *self, PyObject *item)
             for (Py_ssize_t i = 0, at = start; i < count; ++i, at += step) {
                 values.push_back(list->list().getMaterial(static_cast<int>(at)));
             }
-            auto *sliced = new MaterialList;
+            auto *sliced = new AppearanceList;
             sliced->setValues(values);
             auto *result = new MaterialListPy(sliced);
             result->ownvalue = sliced;
@@ -1252,7 +1252,7 @@ int MaterialListPy::mapping_ass_subscript(PyObject *self, PyObject *item, PyObje
                             "a material list slice takes exactly as many entries as it holds");
             return -1;
         }
-        list->edit([&](MaterialList &values) {
+        list->edit([&](AppearanceList &values) {
             for (Py_ssize_t i = 0, at = start; i < count; ++i, at += step) {
                 values.set1Value(static_cast<int>(at), written[i]);
             }
@@ -1295,7 +1295,7 @@ PyObject *MaterialListPy::sequence_concat(PyObject *self, PyObject *other)
         if (!materialsOf(other, values)) {
             return nullptr;
         }
-        auto *joined = new MaterialList;
+        auto *joined = new AppearanceList;
         joined->setValues(values);
         auto *result = new MaterialListPy(joined);
         result->ownvalue = joined;
@@ -1316,7 +1316,7 @@ PyObject *MaterialListPy::sequence_repeat(PyObject *self, Py_ssize_t times)
                 values.push_back(list->list().getMaterial(i));
             }
         }
-        auto *repeated = new MaterialList;
+        auto *repeated = new AppearanceList;
         repeated->setValues(values);
         auto *result = new MaterialListPy(repeated);
         result->ownvalue = repeated;
@@ -1337,7 +1337,7 @@ PyObject *MaterialListPy::sequence_inplace_concat(PyObject *self, PyObject *othe
         if (!materialsOf(other, added)) {
             return nullptr;
         }
-        list->edit([&](MaterialList &values) {
+        list->edit([&](AppearanceList &values) {
             for (const auto &mat : added) {
                 values.set1Value(values.getSize(), mat);
             }
@@ -1360,7 +1360,7 @@ PyObject *MaterialListPy::richCompare(PyObject *v, PyObject *w, int op)
     if (!PyObject_TypeCheck(v, &(MaterialListPy::Type))) {
         Py_RETURN_NOTIMPLEMENTED;
     }
-    const MaterialList &left = static_cast<MaterialListPy *>(v)->list();
+    const AppearanceList &left = static_cast<MaterialListPy *>(v)->list();
     bool equal = false;
     if (PyObject_TypeCheck(w, &(MaterialListPy::Type))) {
         equal = left.isSame(static_cast<MaterialListPy *>(w)->list());

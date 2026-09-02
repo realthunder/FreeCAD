@@ -39,7 +39,7 @@ namespace App
 /// The property this list can be a live view of. MaterialListPy.xml injects
 /// declarations naming it into the generated binding header, which includes
 /// this one and nothing else that would declare it -- a friend declaration
-/// inside MaterialList is not enough to name the type at namespace scope.
+/// inside AppearanceList is not enough to name the type at namespace scope.
 class PropertyMaterialList;
 
 /// A texture palette's own bytes plus the hashes its records hold. Shared
@@ -102,10 +102,10 @@ AppExport std::size_t texturesMemSize(const std::vector<SurfaceTexture> &palette
  * hazard. The one consequence to know: a reference handed out by
  * getDiffuseOverrides() does not survive a later normalize.
  */
-class AppExport MaterialList
+class AppExport AppearanceList
 {
 public:
-    MaterialList() = default;
+    AppearanceList() = default;
 
     /** More distinct textures than the index can address
      *
@@ -139,7 +139,7 @@ public:
      */
     //@{
     bool isShared() const { return _data.isShared(); }
-    bool isSameData(const MaterialList &other) const { return _data.isSameData(other._data); }
+    bool isSameData(const AppearanceList &other) const { return _data.isSameData(other._data); }
     //@}
 
     /** @name The base and the overriding faces
@@ -476,7 +476,7 @@ public:
      * must not serialise differently (the shared-default scheme elides a
      * property whose bytes match its class default).
      */
-    bool isSame(const MaterialList &other) const;
+    bool isSame(const AppearanceList &other) const;
 
     /** @name What a restore lands
      *

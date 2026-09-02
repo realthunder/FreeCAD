@@ -323,6 +323,9 @@ void Application::setupPythonTypes()
 
     Base::Interpreter().addType(&App::MaterialPy::Type, pAppModule, "Material");
     Base::Interpreter().addType(&App::MaterialListPy::Type, pAppModule, "MaterialList");
+    // The class is App::AppearanceList now; the Python type keeps the name
+    // fork macros use, and answers to the new one as well.
+    Base::Interpreter().addType(&App::MaterialListPy::Type, pAppModule, "AppearanceList");
     Base::Interpreter().addType(&App::MetadataPy::Type, pAppModule, "Metadata");
 
     Base::Interpreter().addType(&App::StringHasherPy::Type, pAppModule, "StringHasher");

@@ -3102,13 +3102,13 @@ PropertyMaterialList::~PropertyMaterialList()
 // The value, and the change signalling around it
 //
 // Everything below is one line of delegation plus the signalling the value
-// itself knows nothing about. App::MaterialList holds the storage and every
+// itself knows nothing about. App::AppearanceList holds the storage and every
 // field rule; this class holds the undo record, the touch list and the
 // document notification.
 
 const MaterialAppearance &PropertyMaterialList::defaultMaterial()
 {
-    return MaterialList::defaultMaterial();
+    return AppearanceList::defaultMaterial();
 }
 
 /** Run a write against the value and signal it only if it changed
@@ -3127,12 +3127,12 @@ const MaterialAppearance &PropertyMaterialList::defaultMaterial()
 template<class Op>
 void PropertyMaterialList::change(Op &&op, int touched)
 {
-    const MaterialList before = _list;
+    const AppearanceList before = _list;
     op();
     if (_list.isSameData(before)) {
         return;
     }
-    const MaterialList after = _list;
+    const AppearanceList after = _list;
     _list = before;
     atomic_change guard(*this);
     _list = after;
@@ -3145,7 +3145,7 @@ void PropertyMaterialList::change(Op &&op, int touched)
     guard.tryInvoke();
 }
 
-void PropertyMaterialList::setList(const MaterialList &list)
+void PropertyMaterialList::setList(const AppearanceList &list)
 {
     change([&] {
         _list = list;
@@ -3619,7 +3619,7 @@ void PropertyMaterialList::unregisterView(MaterialListPy *view)
     _views.erase(std::remove(_views.begin(), _views.end(), view), _views.end());
 }
 
-void PropertyMaterialList::editList(const std::function<void(MaterialList &)> &op, int touched)
+void PropertyMaterialList::editList(const std::function<void(AppearanceList &)> &op, int touched)
 {
     change([&] { op(_list); }, touched);
 }
@@ -3979,7 +3979,7 @@ void PropertyMaterialList::Restore(Base::XMLReader &reader)
  */
 void PropertyMaterialList::installBase(const MaterialAppearance &base, int8_t type)
 {
-    MaterialList::Data &d = _list.wd();
+    AppearanceList::Data &d = _list.wd();
     bool first = true;
     uint32_t last = 0;
     for (uint32_t idx : d.overrides) {
@@ -4009,7 +4009,7 @@ void PropertyMaterialList::installBase(const MaterialAppearance &base, int8_t ty
             throw Base::FileException("texture index names no palette entry");
     }
     d.base = base;
-    MaterialList::setMaterialType(d.base, type);
+    AppearanceList::setMaterialType(d.base, type);
     d.base.transparency = d.base.diffuseColor.transparency();
     d.base.pbr = d.pbr;
     // Stated by the file, so nothing is left for the heuristic to choose
@@ -4395,7 +4395,7 @@ void writeBaseTokens(std::ostream &out, const MaterialAppearance &base, bool con
 /// before the allocation, not after: the number came out of a file.
 void checkPaletteSize(std::size_t size)
 {
-    if (size > MaterialList::MaxPaletteSize)
+    if (size > AppearanceList::MaxPaletteSize)
         throw Base::FileException("texture palette is longer than the index can address");
 }
 
@@ -4530,8 +4530,8 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     // (docs/ShapeAppearanceDesign.md 12.4). It changes what is stored, not
     // what any entry resolves to.
     _list.ensureBase();
-    const MaterialList::Data &d = _list.rd();
-    const MaterialAppearance &def = MaterialList::defaultMaterial();
+    const AppearanceList::Data &d = _list.rd();
+    const MaterialAppearance &def = AppearanceList::defaultMaterial();
     // A list nothing overrides writes what it always wrote: one value per
     // field that differs from what an unstated one reads as. Only a list
     // with overriding faces states a base and an override list at all.
@@ -4548,7 +4548,7 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
                 field.push_back(value);
         };
         one(d.base.ambientColor, def.ambientColor, uAmbient);
-        one(d.base.diffuseColor, MaterialList::storedDiffuse(def), uDiffuse);
+        one(d.base.diffuseColor, AppearanceList::storedDiffuse(def), uDiffuse);
         one(d.base.specularColor, _list.specularDefault(), uSpecular);
         one(d.base.emissiveColor, def.emissiveColor, uEmissive);
         one(d.base.shininess, _list.shininessDefault(), uShininess);
@@ -4742,7 +4742,7 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
     std::vector<uint16_t>().swap(_list.wd().textureIndex);
 
     MaterialAppearance base;
-    int8_t baseType = static_cast<int8_t>(MaterialList::defaultMaterial().getType());
+    int8_t baseType = static_cast<int8_t>(AppearanceList::defaultMaterial().getType());
     bool follow = false;
     const bool sparse = (mask & FieldBase) != 0;
 
@@ -4994,13 +4994,13 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
         // the fields do not: this writes the uniform value of each field
         // that differs from what an unstated one reads as, which is byte
         // for byte what this encoding wrote before there was a base at all.
-        const MaterialAppearance &def = MaterialList::defaultMaterial();
+        const MaterialAppearance &def = AppearanceList::defaultMaterial();
         auto one = [](const auto &value, const auto &def) {
             using T = typename std::decay<decltype(value)>::type;
             return value == def ? std::vector<T>() : std::vector<T>(1, value);
         };
         writeColors('a', one(d.base.ambientColor, def.ambientColor));
-        writeColors('d', one(d.base.diffuseColor, MaterialList::storedDiffuse(def)));
+        writeColors('d', one(d.base.diffuseColor, AppearanceList::storedDiffuse(def)));
         writeColors('s', one(d.base.specularColor, _list.specularDefault()));
         writeColors('e', one(d.base.emissiveColor, def.emissiveColor));
         writeFloats('h', one(d.base.shininess, _list.shininessDefault()));
@@ -5067,7 +5067,7 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
     // per entry, which is what every document written before
     // ShapeAppearanceDesign 12 holds (12.3).
     MaterialAppearance base;
-    int8_t baseType = static_cast<int8_t>(MaterialList::defaultMaterial().getType());
+    int8_t baseType = static_cast<int8_t>(AppearanceList::defaultMaterial().getType());
     bool sparse = false;
 
     auto &s = reader.beginCharStream();
