@@ -650,6 +650,12 @@ void MaterialLoader::loadLibrary(const std::shared_ptr<MaterialLibraryLocal>& li
 void MaterialLoader::loadLibraries(
     const std::shared_ptr<std::list<std::shared_ptr<MaterialLibrary>>>& libraryList)
 {
+    // A full pass starts from nothing. The entry map is static so that a
+    // card can inherit from one in a library loaded BEFORE it, and it was
+    // never reset: every refresh re-added every card ever seen, so a card
+    // deleted from a library came back to the tree until restart, and a
+    // deleted shader card warned about its missing files on every refresh
+    _materialEntryMap = std::make_unique<std::map<QString, std::shared_ptr<MaterialEntry>>>();
     if (libraryList) {
         for (auto& it : *libraryList) {
             if (it->isLocal()) {
