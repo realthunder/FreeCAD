@@ -28,11 +28,16 @@
 #include <Standard_Version.hxx>
 #if OCC_VERSION_HEX >= 0x070500
 #include <BRep_Builder.hxx>
+#include <BRep_Tool.hxx>
 #include <Message_ProgressRange.hxx>
+#include <Poly_Triangulation.hxx>
 #include <Quantity_ColorRGBA.hxx>
 #include <RWGltf_CafReader.hxx>
 #include <TDF_Label.hxx>
 #include <TDF_TagSource.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopLoc_Location.hxx>
+#include <TopoDS.hxx>
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_ColorTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
@@ -43,7 +48,9 @@
 
 #include "ReaderGltf.h"
 #include "Tools.h"
+#include <App/Application.h>
 #include <Base/Exception.h>
+#include <Base/Parameter.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/App/Tools.h>
 
@@ -52,7 +59,11 @@ using namespace Import;
 // NOLINTNEXTLINE
 ReaderGltf::ReaderGltf(const Base::FileInfo& file)
     : file {file}
-{}
+{
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Import");
+    keep = hGrp->GetBool("GltfKeepMesh", true);
+}
 
 // NOLINTNEXTLINE
 void ReaderGltf::read(Handle(TDocStd_Document) hDoc)
@@ -104,6 +115,31 @@ static bool hasTexturedMaterial(const Handle(XCAFDoc_VisMaterialTool)& aVisTool,
     }
     return false;
 }
+
+// Whether the shape's triangulation carries texture coordinates.
+//
+// A UV set is the file's own data and there is no way back to it: the
+// B-Rep rebuild below goes through points and facets, so what comes out
+// has no UVs and every image the mesh was authored for is lost. That is
+// why a textured material already keeps its triangulation, and the same
+// holds when the images are named by something else -- a MaterialX look
+// beside the file shades these meshes through exactly these coordinates
+// (docs/MaterialStorage.md sec 17.13).
+static bool hasTextureCoordinates(const TopoDS_Shape& shape)
+{
+    if (shape.IsNull()) {
+        return false;
+    }
+    for (TopExp_Explorer it(shape, TopAbs_FACE); it.More(); it.Next()) {
+        TopLoc_Location loc;
+        const Handle(Poly_Triangulation) tri =
+            BRep_Tool::Triangulation(TopoDS::Face(it.Current()), loc);
+        if (!tri.IsNull() && tri->HasUVNodes()) {
+            return true;
+        }
+    }
+    return false;
+}
 #endif
 
 // NOLINTNEXTLINE
@@ -126,7 +162,7 @@ void ReaderGltf::processDocument(Handle(TDocStd_Document) hDoc)
                 aShapeTool->SetShape(topLevelshape, compound);
             }
             else {
-                if (!hasTexturedMaterial(aVisTool, topLevelshape)) {
+                if (!hasTexturedMaterial(aVisTool, topLevelshape) && !keepsMesh(shape)) {
                     aShapeTool->SetShape(topLevelshape, fixShape(shape));
                 }
                 // like processSubShapes: ImportOCAF2 reads color labels,
@@ -179,7 +215,7 @@ TopoDS_Shape ReaderGltf::processSubShapes(Handle(TDocStd_Document) hDoc,
         }
 
         TopoDS_Shape face = aShapeTool->GetShape(faceLabel);
-        if (!hasTexturedMaterial(aVisTool, faceLabel)) {
+        if (!hasTexturedMaterial(aVisTool, faceLabel) && !keepsMesh(face)) {
             TopoDS_Shape fixed = fixShape(face);
             aShapeTool->SetShape(faceLabel, fixed);
             face = fixed;
@@ -198,6 +234,16 @@ TopoDS_Shape ReaderGltf::processSubShapes(Handle(TDocStd_Document) hDoc,
     return {std::move(compound)};
 }
 
+bool ReaderGltf::keepsMesh(const TopoDS_Shape& shape) const
+{
+#if OCC_VERSION_HEX >= 0x070500
+    return keep && hasTextureCoordinates(shape);
+#else
+    boost::ignore_unused(shape);
+    return false;
+#endif
+}
+
 bool ReaderGltf::cleanup() const
 {
     return clean;
@@ -206,6 +252,16 @@ bool ReaderGltf::cleanup() const
 void ReaderGltf::setCleanup(bool value)
 {
     clean = value;
+}
+
+bool ReaderGltf::keepMesh() const
+{
+    return keep;
+}
+
+void ReaderGltf::setKeepMesh(bool value)
+{
+    keep = value;
 }
 
 TopoDS_Shape ReaderGltf::fixShape(TopoDS_Shape shape)  // NOLINT

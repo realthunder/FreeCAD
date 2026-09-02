@@ -41,8 +41,20 @@ public:
     void read(Handle(TDocStd_Document) hDoc);
     bool cleanup() const;
     void setCleanup(bool);
+    /** Whether a mesh that states texture coordinates keeps its
+     * triangulation instead of being rebuilt as B-Rep geometry.
+     *
+     * The rebuild goes through points and facets and drops the UVs with
+     * everything else the file said about the surface, so a mesh authored
+     * for images cannot be shaded after it. On by default, and the
+     * `GltfKeepMesh` preference under Mod/Import turns it off for a file
+     * wanted as geometry rather than as an asset.
+     */
+    bool keepMesh() const;
+    void setKeepMesh(bool);
 
 private:
+    bool keepsMesh(const TopoDS_Shape&) const;
     TopoDS_Shape fixShape(TopoDS_Shape);
     void processDocument(Handle(TDocStd_Document) hDoc);
     TopoDS_Shape processSubShapes(Handle(TDocStd_Document) hDoc,
@@ -51,6 +63,7 @@ private:
 private:
     Base::FileInfo file;
     bool clean = true;
+    bool keep = true;
 };
 
 }  // namespace Import
