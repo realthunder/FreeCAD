@@ -1488,6 +1488,13 @@ SceneTranslator::Maps SceneTranslator::resolveMaps(const Material &m,
             double areaUV = 0.0;
             const int32_t *idx = mesh.triangleIndices + start;
             for (int i = 0; i + 2 < count; i += 3) {
+                // The range is validated where the mesh is built
+                // (translateDraw); this runs first, so it guards its
+                // own reads.
+                if (idx[i] < 0 || idx[i] >= mesh.numVertices || idx[i + 1] < 0
+                    || idx[i + 1] >= mesh.numVertices || idx[i + 2] < 0
+                    || idx[i + 2] >= mesh.numVertices)
+                    continue;
                 const float *p0 = mesh.positions + size_t(idx[i]) * 3;
                 const float *p1 = mesh.positions + size_t(idx[i + 1]) * 3;
                 const float *p2 = mesh.positions + size_t(idx[i + 2]) * 3;
