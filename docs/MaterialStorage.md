@@ -1737,6 +1737,15 @@ comes through it. Both consumers now read one implementation of "which
 surface, translated" (`Render::MaterialX::openPbrSurface`); the path
 tracer's own copy of it is gone.
 
+**How it was verified.** `MaterialXGen_tests_run` generates all fifteen
+chess-set materials off the vendored `.mtlx`, each with at most five
+image layers and more than five distinct shader sources -- fifteen
+materials, not one drawn fifteen times. `TestShaderGraph` covers the
+card, the manifest identity and the materialized program. The hop no
+unit test can see -- the field added to the Coin fork -- is
+`fcad-probes/surface_run.sh`: two cards over one graph become two
+`sourceSurface` values in the live scene graph.
+
 **What still costs the whole document**: the capture decodes every image
 the document names, not just the chosen surface's
 (`DocumentInfo::images` walks the whole tree). The generated shader
