@@ -1888,3 +1888,42 @@ already placed. Whatever is picked has to answer:
   `BlobReferrer` naming answers on the document side.
 - Whether the answer is the same for the shipped libraries and the user's
   writable one.
+
+#### The recommendation (2026-09-03, offered -- not ruled)
+
+Three shapes are possible: a content-addressed pool mirroring the
+document's blob store; a per-ASSET directory that several cards name; or
+leaving the layout alone and only teaching the save side not to re-copy
+bytes it already placed.
+
+**The per-asset directory.** The unit that is actually shared is a
+document and its images -- an asset -- and that unit already has a name
+every card over it states: the `.mtlx` file's own base name, in
+`MaterialXShaderGraph`. So `cardDir` becomes an asset directory, and
+`placeMaterialXFiles` skips a file the destination already holds with the
+same content hash. Fifteen chess cards then cost one copy, and the
+fifteenth card is free rather than 16 MB.
+
+The four questions of 17.14 answer themselves under it:
+
+- **Old libraries** need no migration at all. A card states its files
+  relative to `materialx/` and nothing rewrites a card that is not being
+  saved, so a per-card directory written last week goes on resolving.
+- **Deletion** never happens on card delete -- another card may name the
+  same file. An explicit sweep over the library, which already loads every
+  card, removes what nothing names. Explicit, not automatic.
+- **Browsing** still shows `bishop_black_base_color.jpg`, under a
+  directory named for the asset. That is the argument the current layout
+  was chosen on, and it is exactly what a content-addressed pool would
+  spend.
+- **Shipped versus writable**: shipped libraries are read only and resolve
+  by stated path, so the rule is only about the writable one.
+
+The one thing it must get right is that two different assets can be called
+`standard_surface_chess_set.mtlx`. Identity is over content hashes (17.6),
+so placement compares: a destination file that exists with a DIFFERENT
+hash is a different asset and the directory takes a suffix.
+
+A pool is exact and needs no collision rule, but the extra sharing it buys
+over this -- two unrelated assets holding the same image file -- is rare,
+and it costs the legibility the library is for.
