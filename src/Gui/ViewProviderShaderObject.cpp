@@ -278,7 +278,13 @@ ViewProviderShaderProgram::ViewProviderShaderProgram()
     pcSimulateShader = new SoFragmentShader;
 }
 
-ViewProviderShaderProgram::~ViewProviderShaderProgram() = default;
+static void forgetCarriedDocument(const App::ShaderProgram *obj);
+
+ViewProviderShaderProgram::~ViewProviderShaderProgram()
+{
+    if (auto obj = dynamic_cast<App::ShaderProgram*>(getObject()))
+        forgetCarriedDocument(obj);
+}
 
 SoShaderProgram *ViewProviderShaderProgram::getShaderNode() const
 {
@@ -392,8 +398,25 @@ static bool isDocumentPath(const char *text)
 //
 // Memoized, because this parses the document and a binding rebuild syncs
 // every clone of it, while the answer changes only when the text or the
-// stored files do -- which is exactly what the key is made of. The same
-// arrangement the generator's own variant cache uses.
+// stored files do -- which is exactly what the key is made of. ONE slot
+// per program: the answer for a program's previous text is never asked
+// for again, and a cache keyed by the text alone kept every version of
+// every document edited in a session. The slot goes with the view
+// provider (forgetCarriedDocument).
+namespace {
+struct CarriedDocument
+{
+    std::string key;
+    std::string text;
+};
+std::map<const App::ShaderProgram*, CarriedDocument> _carriedDocuments;
+}  // namespace
+
+static void forgetCarriedDocument(const App::ShaderProgram *obj)
+{
+    _carriedDocuments.erase(obj);
+}
+
 static std::string documentWithStoredImages(App::ShaderProgram *obj, const char *xml)
 {
     if (!xml || !xml[0])
@@ -414,11 +437,12 @@ static std::string documentWithStoredImages(App::ShaderProgram *obj, const char 
     if (files.empty())
         return xml;
 
-    static std::map<std::string, std::string> cache;
-    auto it = cache.find(key);
-    if (it == cache.end())
-        it = cache.emplace(key, Render::MaterialX::substituteImages(xml, files)).first;
-    return it->second;
+    CarriedDocument &slot = _carriedDocuments[obj];
+    if (slot.key != key) {
+        slot.text = Render::MaterialX::substituteImages(xml, files);
+        slot.key = std::move(key);
+    }
+    return slot.text;
 }
 
 // Materialize an App::ShaderProgram plus resolved parameter values onto a
