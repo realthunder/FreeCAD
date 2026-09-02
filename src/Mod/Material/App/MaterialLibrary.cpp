@@ -316,6 +316,15 @@ MaterialLibraryLocal::saveMaterial(const std::shared_ptr<Material>& material,
         material->setName(info.fileName().remove(QStringLiteral(".FCMat"), Qt::CaseInsensitive));
         material->setLibrary(getptr());
         material->setDirectory(getRelativePath(path));
+        // The shader graph's files go under materialx/ beside the card's own
+        // place in the tree, so two cards of one name in different folders
+        // never share a directory; the YAML then lists them relative to it
+        QString cardDir = getRelativePath(path);
+        cardDir.remove(QStringLiteral(".FCMat"), Qt::CaseInsensitive);
+        while (cardDir.startsWith(QStringLiteral("/"))) {
+            cardDir.remove(0, 1);
+        }
+        material->placeMaterialXFiles(getDirectoryPath(), cardDir);
         material->save(stream, overwrite, saveAsCopy, saveInherited);
     }
 

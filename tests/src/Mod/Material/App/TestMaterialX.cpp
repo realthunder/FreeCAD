@@ -24,6 +24,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QString>
 #include <QStringList>
 
@@ -33,6 +34,7 @@
 #include <src/App/InitApplication.h>
 #include <src/TempDirectory.h>
 
+#include <Mod/Material/App/MaterialLibrary.h>
 #include <Mod/Material/App/MaterialLoader.h>
 #include <Mod/Material/App/MaterialManager.h>
 #include <Mod/Material/App/Materials.h>
@@ -89,6 +91,72 @@ protected:
     tests::TempDirectory _tempDir {"TestMaterialX"};
     QString _root;
 };
+
+TEST_F(TestMaterialX, savingToALibraryCopiesTheFilesUnderMaterialxAndRelinksThem)
+{
+    // The author picked the files where they were, which is nowhere near a
+    // library: two directories apart, one name with a space in it
+    QDir(_root).mkpath(QStringLiteral("picked/Images"));
+    const QString mtlx = QDir(_root).filePath(QStringLiteral("picked/brass.mtlx"));
+    const QString image = QDir(_root).filePath(QStringLiteral("picked/Images/brass color.jpg"));
+    for (const auto& [path, content] : {std::pair {mtlx, "<materialx version=\"1.39\"/>"},
+                                        std::pair {image, "PIXELS"}}) {
+        QFile file(path);
+        ASSERT_TRUE(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        file.write(content);
+    }
+    auto card = libraryCard();
+    auto files = std::make_shared<QList<QVariant>>();
+    files->append(mtlx);
+    files->append(image);
+    card->setAppearanceValue(QStringLiteral("MaterialXFiles"), files);
+    card->resolveMaterialXFiles(QString());
+    const auto hashes = card->getMaterialXHashes();
+    ASSERT_EQ(hashes.size(), 2u);
+    ASSERT_FALSE(hashes[1].empty());
+
+    const QString libraryRoot = QDir(_root).filePath(QStringLiteral("library"));
+    QDir(libraryRoot).mkpath(QStringLiteral("."));
+    auto library = std::make_shared<Materials::MaterialLibraryLocal>(
+        QStringLiteral("Testing"), libraryRoot, QStringLiteral(":/icons/preferences-general.svg"), false);
+    auto saved = library->saveMaterial(card, QStringLiteral("Metals/Brass.FCMat"), true, false, false);
+    ASSERT_TRUE(saved);
+
+    // The files sit beside the card's own place in the tree, under the
+    // stated names' own file names, and the list now says so relative to
+    // materialx/. The names and the hashes did not move.
+    const QDir placed(QDir(libraryRoot).filePath(QStringLiteral("materialx/Metals/Brass")));
+    EXPECT_TRUE(QFileInfo::exists(placed.filePath(QStringLiteral("brass.mtlx"))));
+    EXPECT_TRUE(QFileInfo::exists(placed.filePath(QStringLiteral("brass color.jpg"))));
+    EXPECT_EQ(card->getMaterialXFiles(),
+              (QStringList {QStringLiteral("Metals/Brass/brass.mtlx"),
+                            QStringLiteral("Metals/Brass/brass color.jpg")}));
+    EXPECT_EQ(card->getMaterialXNames(),
+              (QStringList {QStringLiteral("brass.mtlx"), QStringLiteral("../Images/brass color.jpg")}));
+    EXPECT_EQ(card->getMaterialXHashes(), hashes);
+    EXPECT_EQ(card->getMaterialXPaths()[1], placed.filePath(QStringLiteral("brass color.jpg")).toStdString());
+
+    // What was written is the relative form, and reading the card back off
+    // the library hashes to the same identity
+    QFile written(QDir(libraryRoot).filePath(QStringLiteral("Metals/Brass.FCMat")));
+    ASSERT_TRUE(written.open(QIODevice::ReadOnly));
+    const QString yaml = QString::fromUtf8(written.readAll());
+    EXPECT_TRUE(yaml.contains(QStringLiteral("Metals/Brass/brass color.jpg"))) << yaml.toStdString();
+    EXPECT_FALSE(yaml.contains(QStringLiteral("picked/"))) << yaml.toStdString();
+    auto again = libraryCard();
+    again->setAppearanceValue(QStringLiteral("MaterialXFiles"),
+                              std::make_shared<QList<QVariant>>(QList<QVariant> {
+                                  QStringLiteral("Metals/Brass/brass.mtlx"),
+                                  QStringLiteral("Metals/Brass/brass color.jpg")}));
+    again->resolveMaterialXFiles(libraryRoot);
+    EXPECT_EQ(again->getMaterialXHashes(), hashes);
+
+    // Saving again in place copies nothing and changes nothing
+    auto twice = library->saveMaterial(card, QStringLiteral("Metals/Brass.FCMat"), true, false, false);
+    ASSERT_TRUE(twice);
+    EXPECT_EQ(card->getMaterialXFiles().size(), 2);
+    EXPECT_EQ(card->getMaterialXHashes(), hashes);
+}
 
 TEST_F(TestMaterialX, aLibraryCardIsHashedOffItsFilesAndIdentifiedByContent)
 {

@@ -343,7 +343,7 @@ void CmdMaterialSaveToLibrary::activated(int iMsg)
 
         // No card to write over, or a read only library. Where it goes is the
         // user's answer, and this is the dialog that already asks.
-        auto card = std::make_shared<Materials::Material>(properties.front()->getValue());
+        auto card = std::make_shared<Materials::Material>(properties.front()->cardForLibrary());
         MatGui::MaterialSave dialog(card, Gui::getMainWindow());
         if (dialog.exec() != QDialog::Accepted) {
             continue;

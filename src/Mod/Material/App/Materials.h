@@ -280,6 +280,25 @@ public:
     {
         return _materialXPaths;
     }
+    /// One per hash, in hash order: where the bytes of each file can be
+    /// read from on this machine. How a card that came out of a document's
+    /// blob store says where its files are before it is written to a library
+    void setMaterialXPaths(const std::vector<std::string>& paths)
+    {
+        _materialXPaths = paths;
+    }
+    /** Put the files where the library form keeps them.
+     *
+     * A card being saved may hold its files anywhere -- where the author
+     * picked them, another library, a document's blob store -- while the
+     * library form lists them relative to `materialx/` at the library's root
+     * (17.1). Copies each file to `<libraryRoot>/materialx/<cardDir>/` and
+     * rewrites the file list to match; the names, which are the graph's own
+     * and the key the renderers join on, do not move, and neither do the
+     * hashes. False when a file could not be read or copied; the list keeps
+     * that file's old entry so it still lines up with the names.
+     */
+    bool placeMaterialXFiles(const QString& libraryRoot, const QString& cardDir);
     /** Resolve the library-form paths against \a libraryRoot/materialx and
      * hash each file. A file that is not there leaves its hash empty and
      * says so once.

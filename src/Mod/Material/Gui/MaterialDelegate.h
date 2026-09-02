@@ -75,6 +75,10 @@ protected:
 Q_SIGNALS:
     /** Emits this signal when a property has changed */
     void propertyChange(const QString& property, const QVariant& value);
+    /** The shader graph value was activated. It is not typed, it is picked
+     * -- the editor owns the file dialog and everything the file says
+     */
+    void shaderGraphRequested();
 
 private:
     QWidget* createWidget(QWidget* parent, const QVariant& item, const QModelIndex& index) const;

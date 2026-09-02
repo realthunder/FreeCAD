@@ -21,8 +21,11 @@
  *                                                                         *
  **************************************************************************/
 
+#include <set>
+
 #include <QCryptographicHash>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QMetaType>
 #include <QUuid>
@@ -1818,6 +1821,77 @@ void Material::resolveMaterialXFiles(const QString& libraryRoot)
         _materialXHashes[static_cast<std::size_t>(i)] = hash;
         _materialXPaths[static_cast<std::size_t>(i)] = path.toUtf8().constData();
     }
+}
+
+bool Material::placeMaterialXFiles(const QString& libraryRoot, const QString& cardDir)
+{
+    if (!hasMaterialX()) {
+        return true;
+    }
+    const QStringList names = getMaterialXNames();
+    const auto count = static_cast<std::size_t>(names.size());
+    if (_materialXPaths.size() != count || _materialXHashes.size() != count) {
+        // Never resolved: a card the editor built from picked files, or
+        // one whose list was edited by hand
+        resolveMaterialXFiles(libraryRoot);
+    }
+    const QStringList files = getMaterialXFiles();
+    const QDir root(QDir(libraryRoot).filePath(QStringLiteral("materialx")));
+    const QDir dest(root.filePath(cardDir));
+    auto placed = std::make_shared<QList<QVariant>>();
+    std::set<QString> taken;
+    bool complete = true;
+    for (int i = 0; i < names.size(); ++i) {
+        const auto slot = static_cast<std::size_t>(i);
+        const QString old = i < files.size() ? files[i] : QString();
+        const QString src = QString::fromStdString(_materialXPaths[slot]);
+        if (src.isEmpty() || !QFileInfo::exists(src)) {
+            Base::Console().warning("Material '%s': shader graph file '%s' has no bytes to save\n",
+                                    _name.toUtf8().constData(),
+                                    names[i].toUtf8().constData());
+            placed->append(old);
+            complete = false;
+            continue;
+        }
+        // The stated name's own file name; two files the graph calls the
+        // same in different directories get told apart by a suffix
+        QString base = QFileInfo(names[i]).fileName();
+        if (base.isEmpty()) {
+            base = QFileInfo(src).fileName();
+        }
+        QString name = base;
+        for (int n = 1; taken.count(name); ++n) {
+            const QFileInfo info(base);
+            name = info.completeBaseName() + QStringLiteral("-") + QString::number(n);
+            if (!info.suffix().isEmpty()) {
+                name += QStringLiteral(".") + info.suffix();
+            }
+        }
+        taken.insert(name);
+        const QString dst = dest.filePath(name);
+        if (QFileInfo(dst).canonicalFilePath() != QFileInfo(src).canonicalFilePath()) {
+            if (!dest.mkpath(QStringLiteral("."))
+                || (QFileInfo::exists(dst) && !QFile::remove(dst))
+                || !QFile::copy(src, dst)) {
+                Base::Console().error("Material '%s': cannot copy '%s' to '%s'\n",
+                                      _name.toUtf8().constData(),
+                                      src.toUtf8().constData(),
+                                      dst.toUtf8().constData());
+                placed->append(old);
+                complete = false;
+                continue;
+            }
+            // A blob store keeps its files read-only; the library's copy is
+            // the author's to replace
+            QFile::setPermissions(dst,
+                                  QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                      | QFileDevice::ReadGroup | QFileDevice::ReadOther);
+        }
+        _materialXPaths[slot] = dst.toStdString();
+        placed->append(cardDir + QStringLiteral("/") + name);
+    }
+    setAppearanceValue(QStringLiteral("MaterialXFiles"), placed);
+    return complete;
 }
 
 App::MaterialXDocument Material::getMaterialXManifest() const

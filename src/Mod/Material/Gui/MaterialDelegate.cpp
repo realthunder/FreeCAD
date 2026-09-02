@@ -220,6 +220,13 @@ bool MaterialDelegate::editorEvent(QEvent* event,
             // QString propertyName = group->child(row, 0)->text();
             QString propertyName = group->child(row, 0)->data().toString();
 
+            if (propertyName == QStringLiteral("MaterialXShaderGraph")) {
+                // The graph, its names and its files are one pick, never
+                // three typed fields (docs/MaterialStorage.md 17.12)
+                Q_EMIT const_cast<MaterialDelegate*>(this)->shaderGraphRequested();
+                return true;
+            }
+
             auto type = getType(index);
             if (type == Materials::MaterialValue::Color) {
                 showColorModal(propertyName, item);

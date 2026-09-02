@@ -23,6 +23,9 @@
 
 #include <QColorDialog>
 #include <QDesktopServices>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QIODevice>
 #include <QItemSelectionModel>
 #include <QMenu>
@@ -40,10 +43,12 @@
 #include <Base/Quantity.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
+#include <Gui/FileDialog.h>
 #include <Gui/InputField.h>
 #include <Gui/PrefWidgets.h>
 #include <Gui/SpinBox.h>
 #include <Gui/WaitCursor.h>
+#include <Gui/Renderer/MaterialXSupport.h>
 
 #include <Mod/Material/App/Exceptions.h>
 #include <Mod/Material/App/MaterialLibrary.h>
@@ -435,6 +440,14 @@ void MaterialsEditor::onAppearanceAdd(bool checked)
             // Add default appearance properties
             *_material = *(getMaterialManager().defaultAppearance());
         }
+        if (selected == Materials::ModelUUIDs::ModelUUID_Rendering_MaterialX
+            || model->inherits(Materials::ModelUUIDs::ModelUUID_Rendering_MaterialX)) {
+            // A shader graph model without a graph is three fields nobody
+            // can fill by hand; not picking one is not adding the model
+            if (!pickShaderGraph()) {
+                _material->removeAppearance(selected);
+            }
+        }
 
         updateMaterial();
     }
@@ -798,6 +811,60 @@ void MaterialsEditor::createAppearanceTree()
     tree->setItemDelegateForColumn(1, delegate);
 
     connect(delegate, &MaterialDelegate::propertyChange, this, &MaterialsEditor::propertyChange);
+    connect(delegate, &MaterialDelegate::shaderGraphRequested, this, [this]() {
+        pickShaderGraph();
+    });
+}
+
+bool MaterialsEditor::pickShaderGraph()
+{
+    const QString path = Gui::FileDialog::getOpenFileName(this,
+                                                          tr("Shader Graph"),
+                                                          QString(),
+                                                          tr("MaterialX shader graph (*.mtlx)"));
+    if (path.isEmpty()) {
+        return false;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this,
+                             tr("Shader Graph"),
+                             tr("Cannot read '%1'").arg(QDir::toNativeSeparators(path)));
+        return false;
+    }
+    const std::string xml = file.readAll().toStdString();
+
+    // What the graph SAYS its images are called is the key everything
+    // downstream joins on, so the names come from the file and nowhere
+    // else; the paths are where those names resolve beside it today, and
+    // the library save moves them (docs/MaterialStorage.md 17.12)
+    const auto references = Render::MaterialX::imageReferences(xml, path.toStdString());
+    const QString graph = QFileInfo(path).fileName();
+    auto names = std::make_shared<QList<QVariant>>();
+    auto files = std::make_shared<QList<QVariant>>();
+    names->append(graph);
+    files->append(path);
+    QStringList missing;
+    for (const auto& reference : references) {
+        names->append(QString::fromStdString(reference.name));
+        files->append(QString::fromStdString(reference.path));
+        if (reference.path.empty()) {
+            missing.append(QString::fromStdString(reference.name));
+        }
+    }
+    _material->setAppearanceValue(QStringLiteral("MaterialXShaderGraph"), graph);
+    _material->setAppearanceValue(QStringLiteral("MaterialXNames"), names);
+    _material->setAppearanceValue(QStringLiteral("MaterialXFiles"), files);
+    _material->resolveMaterialXFiles(QString());
+    _material->setEditStateAlter();
+    if (!missing.isEmpty()) {
+        QMessageBox::warning(this,
+                             tr("Shader Graph"),
+                             tr("%1 refers to images that are not beside it:\n%2")
+                                 .arg(graph, missing.join(QStringLiteral("\n"))));
+    }
+    updateMaterial();
+    return true;
 }
 
 QIcon MaterialsEditor::getIcon(const std::shared_ptr<Materials::Library>& library)

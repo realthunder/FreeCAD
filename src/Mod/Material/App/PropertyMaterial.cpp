@@ -232,6 +232,31 @@ void PropertyMaterial::collectBlobs(App::FileBlobManager& manager,
     manager.noteReferenced(ensureBlob(), referrer(object));
 }
 
+Material PropertyMaterial::cardForLibrary() const
+{
+    Material card(*_card);
+    if (!card.hasMaterialX()) {
+        return card;
+    }
+    holdMaterialXBlobs(false);
+    const auto& hashes = card.getMaterialXHashes();
+    auto paths = card.getMaterialXPaths();
+    paths.resize(hashes.size());
+    for (std::size_t i = 0; i < hashes.size(); ++i) {
+        if (!paths[i].empty() || hashes[i].empty()) {
+            continue;
+        }
+        for (const auto& blob : _materialXBlobs) {
+            if (blob && blob->hash() == hashes[i] && !blob->path().empty()) {
+                paths[i] = blob->path();
+                break;
+            }
+        }
+    }
+    card.setMaterialXPaths(paths);
+    return card;
+}
+
 void PropertyMaterial::holdMaterialXBlobs(bool queueMissing) const
 {
     if (!_card || _unresolved || !_card->hasMaterialX()) {
@@ -657,7 +682,7 @@ bool PropertyMaterial::saveToLibrary()
     // The writer stamps the placement onto the card it is given, and the
     // shared card must not be reachable from that -- everyone else holding it
     // is entitled to the card they were handed.
-    auto card = std::make_shared<Material>(*_card);
+    auto card = std::make_shared<Material>(cardForLibrary());
     try {
         MaterialManager::getManager().saveMaterial(library, card, path, true, false, false);
     }

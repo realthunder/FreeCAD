@@ -111,6 +111,11 @@ public:
 protected:
     int confirmSave(QWidget* parent);
     void saveMaterial();
+    /** Ask for a MaterialX file and fill the Shader Graph Rendering model
+     * from what it says: the graph's name, the names it calls its images
+     * by, and where each one is. False when nothing was picked.
+     */
+    bool pickShaderGraph();
 
 private:
     std::unique_ptr<Ui_MaterialsEditor> ui;

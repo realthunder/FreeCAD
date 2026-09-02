@@ -1585,3 +1585,71 @@ written with. Store first, set second: the other order stores nothing.
 So step 9 as built is the Edit Shader Graph button alone, with the
 store-first/set-second import ordering that closes 16.6.
 
+### 17.12 Making a shader card, and moving one between objects (ruled 2026-09-02)
+
+Three rulings, then the terrain, then what gets built.
+
+**Ruled:** (a) the library carries **MaterialX shader graphs only**. The
+storage is shader-agnostic (a FileSet on the appearance value would carry a
+second model with a language field just as well), but a raw GLSL/bgfx program
+is one backend's, and MaterialX is the one form both the raster path and
+Cycles compile. Raw programs keep the home they have, `App::ShaderProgram`
+plus an `App::ShaderBinding` in the document. (b) Copy and paste of a
+material rides the **system clipboard under a mime type of its own**, not an
+in-process static: paste across documents and across FreeCAD instances then
+comes for free, and a target that lacks the blobs stores them the way an
+import does. (c) **Bindings are left out of the first copy/paste cut.** A
+binding is a document object with a target list; copying one means adding a
+target in the same document and cloning it across documents, and that wants
+a ruling of its own.
+
+**What exists.** Making a card is already there: the Materials editor has
+New, Inherit (a child card that remembers its parent's UUID and, on save,
+writes only the models and properties that differ from it --
+`Material::saveModels`, `saveInherited`) and Save into a user library through
+`MaterialSave`. On the object side `Material_SaveToLibrary` (13.5) takes the
+card an object wears into a library. So "clone a card and change it" is a
+supported flow today.
+
+**What is missing, measured.** A shader card is a card with the Shader Graph
+Rendering model and three fields the editor presents raw: a string that must
+equal one of the names, a list that must match what the graph SAYS its files
+are called, and a file list of paths under the library's `materialx/`. Three
+invariants a user would have to know by heart. And the library save does not
+keep its side of the bargain: `MaterialLibraryLocal::saveMaterial` writes the
+YAML and nothing else, while `resolveMaterialXFiles` accepts an absolute path
+where a library-relative one belongs. A hand-authored shader card therefore
+works on the box it was made on and dangles everywhere else.
+
+**What gets built, in order, each its own commit:**
+
+1. **The card-side picker.** Adding the Shader Graph Rendering model in the
+   editor (or pressing "Use shader graph..." beside its fields) asks for a
+   `.mtlx`. The editor reads it (`App::MaterialXDocument::readFile`,
+   `imageReferences()` resolved against the file's path), fills the graph
+   name and the names list from what the file says, and records where each
+   file is. The user types nothing. The library save then does what it
+   never did: copies the set into `<library>/materialx/<card>/` and writes
+   the file list relative to it, on the App side
+   (`MaterialLibraryLocal::saveMaterial`) so the Python route gets it too.
+   Names stay the graph's own; only the paths move.
+2. **The Edit Shader Graph button** (17.11), which materializes the card's
+   graph on the object for editing.
+3. **Save to Library from a materialized object.** `Material_SaveToLibrary`
+   already exists; when the object's winning binding carries a program that
+   differs from the card's graph, the save writes the edited text back as a
+   new inherited card (the card it wore is the parent). This is the return
+   leg that makes "assign a shader" an in-model workflow rather than a
+   library chore: Inherit, pick a graph, Edit, Save.
+4. **Copy Material / Paste Material.** Two commands in the Tree and View
+   context menus under the 13.5 rule: Copy shown only while the selection
+   carries a card or a look, Paste only while the clipboard holds one. What
+   an object HAS is three layers -- the card (`ShapeMaterial`: uuid, content,
+   file set), the look (`ShapeAppearance`: base, per-face overrides, the
+   follow flag) and its bindings -- and the payload carries the first two:
+   the card's canonical YAML plus its blobs, and the appearance list as the
+   document serializes it. Paste sets the card (under `FollowMaterial` that
+   pulls the look by itself), then, if the source was Custom, applies the
+   custom base and the per-face overrides. A multi-selection pastes onto
+   every object; a FACE sub-selection pastes as a per-face override, which
+   the palette already carries.

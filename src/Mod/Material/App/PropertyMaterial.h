@@ -162,6 +162,14 @@ public:
      * \return whether the library was written.
      */
     bool saveToLibrary();
+    /** The card as a library writer needs it.
+     *
+     * A copy of the value whose shader graph files all say where their
+     * bytes are: a card that came out of a document's store has hashes and
+     * blobs but no paths, and Material::placeMaterialXFiles copies from
+     * paths. Every library write of a stored card goes through this.
+     */
+    Material cardForLibrary() const;
 
     void Save(Base::Writer& writer) const override;
     void Restore(Base::XMLReader& reader) override;
