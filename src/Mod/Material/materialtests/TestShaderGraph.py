@@ -197,6 +197,44 @@ class ShaderGraphTestCases(unittest.TestCase):
         self.assertEqual(obj.ShapeMaterial.Name, "Checker")
         self.assertIsNotNone(doc.getObject(obj.Name))
 
+    def testAnEditSavesAsACardInheritingFromTheWornOne(self):
+        """The return leg: Inherit, pick a graph, Edit, Save. The card the
+        edit amounts to inherits from the worn one, carries the text as it
+        is now and the program's images, and a library save places them
+        like any other shader card's."""
+        worn = self.libraryCard()
+        doc, obj = self.boxWith(worn)
+        self.assertIsNone(Materials.shaderGraphCard(obj, "ShapeMaterial"))
+        binding = Materials.materializeShaderGraph(obj, "ShapeMaterial")
+        program = binding.ElementList[0].Programs[0]
+        edited = GRAPH + "<!-- tuned -->\n"
+        program.FragmentProgram = edited
+
+        card = Materials.shaderGraphCard(obj, "ShapeMaterial")
+        self.assertIsNotNone(card)
+        self.assertNotEqual(card.UUID, worn.UUID)
+        self.assertEqual(card.Parent, worn.UUID)
+        self.assertEqual(card.getAppearanceValue("MaterialXShaderGraph"), "checker.mtlx")
+
+        saved = FOLDER + "/Tuned.FCMat"
+        self.MaterialManager.save("User", card, saved, overwrite=True)
+        self.MaterialManager.refresh()
+        root = self.userLibraryRoot()
+        placed = os.path.join(root, "materialx", FOLDER, "Tuned")
+        with open(os.path.join(placed, "checker.mtlx"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), edited)
+        with open(os.path.join(placed, "checker.png"), "rb") as f:
+            self.assertEqual(f.read(), PIXELS)
+
+        # wearing the saved card and taking the binding off draws the edit:
+        # materializing again yields the edited text
+        tuned = self.MaterialManager.getMaterialByPath(saved, "User")
+        obj.ShapeMaterial = tuned
+        self.assertTrue(Materials.revertShaderGraph(obj))
+        again = Materials.materializeShaderGraph(obj, "ShapeMaterial")
+        self.assertEqual(again.ElementList[0].Programs[0].FragmentProgram, edited)
+        self.assertFalse(Materials.shaderGraphEdited(obj))
+
     def testACardWithoutAGraphMaterializesNothing(self):
         steel = self.MaterialManager.getMaterial("92589471-a6cb-4bbc-b748-d425a17dea7d")
         doc, obj = self.boxWith(steel)

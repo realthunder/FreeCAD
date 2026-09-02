@@ -24,6 +24,8 @@
 #ifndef MATERIAL_SHADERGRAPH_H
 #define MATERIAL_SHADERGRAPH_H
 
+#include <memory>
+
 #include <Mod/Material/MaterialGlobal.h>
 
 namespace App
@@ -35,6 +37,7 @@ class ShaderProgram;
 
 namespace Materials
 {
+class Material;
 class PropertyMaterial;
 
 /** Materializing a card's shader graph on the object that wears it.
@@ -77,6 +80,16 @@ MaterialsExport bool edited(const App::DocumentObject* owner);
  * only \a owner leaves it.
  */
 MaterialsExport bool revert(App::DocumentObject* owner);
+/** The card the edit amounts to: a copy of \a card inheriting from it,
+ * whose graph is the materialized program's text as it is now and whose
+ * images are the ones the program carries.
+ *
+ * The return leg of 17.12: Inherit, pick a graph, Edit, Save. The text is
+ * written into the document's blob store so the library save has a file
+ * to place. Null when nothing is materialized on \a owner.
+ */
+MaterialsExport std::shared_ptr<Material> cardFromEdit(const App::DocumentObject* owner,
+                                                       const PropertyMaterial& card);
 }  // namespace ShaderGraph
 
 }  // namespace Materials

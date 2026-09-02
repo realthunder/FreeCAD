@@ -37,7 +37,12 @@
 #include <Base/FileInfo.h>
 #include <Base/Stream.h>
 
+#include <QList>
+#include <QString>
+#include <QVariant>
+
 #include "Materials.h"
+#include "ModelUuids.h"
 #include "PropertyMaterial.h"
 #include "ShaderGraph.h"
 
@@ -197,6 +202,77 @@ bool ShaderGraph::edited(const App::DocumentObject* owner)
     }
     const std::string original = graphText(manager, manifest);
     return original.empty() || original != program->FragmentProgram.getValue();
+}
+
+std::shared_ptr<Material> ShaderGraph::cardFromEdit(const App::DocumentObject* owner,
+                                                    const PropertyMaterial& card)
+{
+    auto* program = programOf(materialized(owner));
+    if (!program || !program->getDocument()) {
+        return nullptr;
+    }
+    const std::string text = program->FragmentProgram.getValue();
+    if (text.empty()) {
+        return nullptr;
+    }
+    const Material& worn = card.getValue();
+    auto edited = std::make_shared<Material>(worn);
+    edited->newUuid();
+    edited->setParentUUID(worn.getUUID());
+    if (!edited->hasAppearanceModel(ModelUUIDs::ModelUUID_Rendering_MaterialX)) {
+        edited->addAppearance(ModelUUIDs::ModelUUID_Rendering_MaterialX);
+    }
+    QString graph = worn.getMaterialXShaderGraph();
+    if (graph.isEmpty()) {
+        graph = worn.getName() + QStringLiteral(".mtlx");
+    }
+
+    // The text as a file the library save can copy from. Not through the
+    // store: the program's own text is already a blob there (the property
+    // is a PropertyStringIncluded), and find() would hand that one back --
+    // a blob the document holds in memory, with no file behind its path
+    // until the document is saved. The transient directory is the right
+    // place for a file that lives as long as the document does.
+    auto& manager = program->getDocument()->getFileBlobManager();
+    const std::string path = manager.uniquePath(graph.toStdString());
+    {
+        Base::ofstream to(Base::FileInfo(path), std::ios::out | std::ios::binary | std::ios::trunc);
+        if (!to) {
+            Base::Console().error("%s: cannot write the shader graph to '%s'\n",
+                                  owner->getFullName().c_str(),
+                                  path.c_str());
+            return nullptr;
+        }
+        to.write(text.data(), std::streamsize(text.size()));
+    }
+
+    auto names = std::make_shared<QList<QVariant>>();
+    auto files = std::make_shared<QList<QVariant>>();
+    std::vector<std::string> hashes;
+    std::vector<std::string> paths;
+    names->append(graph);
+    files->append(QString::fromStdString(path));
+    hashes.push_back(App::FileBlobManager::hashBytes(text));
+    paths.push_back(path);
+    for (const auto& image : program->Images.getValues()) {
+        const std::string path = program->Images.filePath(image.name.c_str());
+        if (path.empty()) {
+            Base::Console().warning("%s: shader graph image '%s' has no bytes yet\n",
+                                    owner->getFullName().c_str(),
+                                    image.name.c_str());
+            return nullptr;
+        }
+        names->append(QString::fromStdString(image.name));
+        files->append(QString::fromStdString(path));
+        hashes.push_back(image.hash);
+        paths.push_back(path);
+    }
+    edited->setAppearanceValue(QStringLiteral("MaterialXShaderGraph"), graph);
+    edited->setAppearanceValue(QStringLiteral("MaterialXNames"), names);
+    edited->setAppearanceValue(QStringLiteral("MaterialXFiles"), files);
+    edited->setMaterialXHashes(hashes);
+    edited->setMaterialXPaths(paths);
+    return edited;
 }
 
 bool ShaderGraph::revert(App::DocumentObject* owner)

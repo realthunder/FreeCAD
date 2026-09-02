@@ -24,11 +24,13 @@
 #include <QPointer>
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
 #include <App/DocumentObject.h>
 #include <Mod/Material/App/PropertyMaterial.h>
+#include <Mod/Material/App/ShaderGraph.h>
 
 #include <Gui/Command.h>
 #include <Gui/Control.h>
@@ -323,10 +325,38 @@ void CmdMaterialSaveToLibrary::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
+    // An object whose materialized shader graph was edited saves the EDIT:
+    // a new card inheriting from the one it wears, carrying the text as it
+    // is now (docs/MaterialStorage.md 17.12). The object then wears that
+    // card and the binding comes off, since the card draws the same.
+    std::set<Materials::PropertyMaterial*> edited;
+    for (auto property : selectedMaterials()) {
+        auto owner = dynamic_cast<App::DocumentObject*>(property->getContainer());
+        if (!Materials::ShaderGraph::edited(owner)) {
+            continue;
+        }
+        edited.insert(property);
+        auto card = Materials::ShaderGraph::cardFromEdit(owner, *property);
+        if (!card) {
+            continue;
+        }
+        MatGui::MaterialSave dialog(card, Gui::getMainWindow());
+        if (dialog.exec() != QDialog::Accepted) {
+            continue;
+        }
+        openCommand(QT_TRANSLATE_NOOP("Command", "Save shader graph to library"));
+        property->setValue(*card);
+        Materials::ShaderGraph::revert(owner);
+        commitCommand();
+    }
+
     // By content: the same card assigned to twenty objects is one thing to
     // write, and one question to ask if it needs a home.
     std::map<std::string, std::vector<Materials::PropertyMaterial*>> byContent;
     for (auto property : selectedMaterials()) {
+        if (edited.count(property)) {
+            continue;
+        }
         if (property->libraryStatus() != Materials::PropertyMaterial::LibraryStatus::NoCard
             && !property->isUnresolved()) {
             byContent[property->getContentHash()].push_back(property);
@@ -364,6 +394,10 @@ bool CmdMaterialSaveToLibrary::isActive()
     for (auto property : selectedMaterials()) {
         if (property->libraryStatus() != Materials::PropertyMaterial::LibraryStatus::NoCard
             && !property->isUnresolved()) {
+            return true;
+        }
+        if (Materials::ShaderGraph::edited(
+                dynamic_cast<App::DocumentObject*>(property->getContainer()))) {
             return true;
         }
     }

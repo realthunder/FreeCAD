@@ -1653,3 +1653,13 @@ works on the box it was made on and dangles everywhere else.
    custom base and the per-face overrides. A multi-selection pastes onto
    every object; a FACE sub-selection pastes as a per-face override, which
    the palette already carries.
+
+**Built 2026-09-02:** items 1 to 3 (`7d53670386`, `17b2921449` and the
+save-back commit after it), with `TestShaderGraph.py` driving the
+primitives headless. The primitive behind item 3 is
+`ShaderGraph::cardFromEdit`, exposed as `Materials.shaderGraphCard`; one
+trap it met: the program's text is already a blob in the store (the
+property is a `PropertyStringIncluded`), held in memory with no file
+behind its path until the document is saved, so the text is written to
+the document's transient directory instead and placed from there. Item 4
+is open.

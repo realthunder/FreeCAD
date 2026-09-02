@@ -107,6 +107,14 @@ public:
                            "revertShaderGraph(object) -> bool\n\n"
                            "Remove what materializeShaderGraph made for the object. The card's\n"
                            "own look is drawn again. False when nothing was materialized.");
+        add_varargs_method("shaderGraphCard",
+                           &Module::shaderGraphCard,
+                           "shaderGraphCard(object, property) -> Material or None\n\n"
+                           "The card an edited shader graph amounts to: a copy of the card in\n"
+                           "the material property, inheriting from it, whose graph is the\n"
+                           "materialized program's text as it is now and whose images are the\n"
+                           "ones the program carries. Save it to a library to keep the edit.\n"
+                           "None when nothing is materialized on the object.");
         add_varargs_method("saveToLibrary",
                            &Module::saveToLibrary,
                            "saveToLibrary(object, property) -> bool\n\n"
@@ -196,6 +204,17 @@ private:
     Py::Object revertShaderGraph(const Py::Tuple& args)
     {
         return Py::Boolean(ShaderGraph::revert(documentObject(args)));
+    }
+
+    Py::Object shaderGraphCard(const Py::Tuple& args)
+    {
+        auto& property = materialProperty(args);
+        auto owner = dynamic_cast<App::DocumentObject*>(property.getContainer());
+        auto card = ShaderGraph::cardFromEdit(owner, property);
+        if (!card) {
+            return Py::None();
+        }
+        return Py::asObject(new MaterialPy(new Material(*card)));
     }
 
     Py::Object cardCacheSize(const Py::Tuple& args)
