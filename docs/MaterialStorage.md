@@ -1435,3 +1435,125 @@ schema 4, since `Writer::typeName` writes the former name at 4, and
 reopen both. Grep the string literals as well as the symbols: `.py`,
 `.csv`, `.ui` and `.xml` name these types as text, and those failures are
 silent.
+
+### 17.11 Step 9: the per-face column and the Edit shader button
+
+Step 9 is the last of 17.10 and the only one still open. Researched
+2026-09-02; the terrain below is measured from the code, the rulings it
+asks for are NOT made.
+
+**The storage is already finished, which changes the shape of the
+work.** A document set per face is not a thing to be added: it is
+stored, saved and restored today. `AppearanceList` carries `materialx`
+as a sparse override column beside `uuid`, with the full accessor set
+(`getMaterialXs`, `getMaterialX(idx)`, `setMaterialX(idx, ...)`,
+`variesInMaterialX`, `hasMaterialX`), `PropertyAppearanceList` forwards
+all of it, `materialXHashes()` walks the base AND the overrides so a
+save notes every manifest a face names, and two tests cover the round
+trip in both the XML and the stream encoding. What is missing is
+entirely on the CONSUMER side: nothing outside `App` calls
+`getMaterialXs()` at all. `ViewProviderGeometryObject::
+updateMaterialXNode()` reads `getBase().materialx` and builds ONE shared
+program node for the whole object.
+
+Until step 9 lands that gap now says so. A per-face column that no
+renderer draws is a stored value the picture disagrees with, so
+`updateMaterialXNode()` warns once, on the edit that starts the
+variation, instead of dropping it in silence.
+
+**Why the three existing palettes do not answer this.** Finish, frame
+and face texture are all done the same way: a palette on the
+`SoFCRenderMaterial` node, a per-face index array beside it, the index
+packed into the material vertex stream, and one shader that reads the
+index and branches on DATA. The face texture is the closest relative and
+the most instructive: it sidesteps the problem by making the variation a
+sampler LAYER in a 2D array rather than a program, and it samples
+outside the divergent branch because a texture read in divergent control
+flow has no defined derivatives. None of that generalises to a document,
+because a MaterialX document is not data the mesh shader can index. It
+IS the shader.
+
+**The raster path binds one program per draw.** A material-stage user
+shader is stamped on a render cache, merged down into child caches with
+the outer one winning, carried as a single pointer on the draw's
+material, and swapped in once per submit. Program identity is also part
+of the batch key. There is nothing per-triangle anywhere on this path.
+
+**Cycles already does the per-triangle part, and would still need
+work.** Its draw translation builds a shader VARIANT for every finish,
+frame and layer combination the draw's triangles actually name, memoizes
+the packing to a slot, and writes a per-triangle slot array that is
+exactly Cycles' own material-slot mechanism. But a MaterialX user shader
+SHORT-CIRCUITS that: one document replaces the whole surface for the
+draw, before the variant loop runs. So even the backend that has slots
+is handed one document per draw today.
+
+**Three ways to close it, and the recommendation.**
+
+1. **Split the draw by slot.** Group the triangles of a shape by the
+   document their face names and submit one draw per group, each with
+   its own program. This is the direct analogue of what Cycles does, and
+   it needs no shader change and no new vertex attribute: the slot is
+   known on the CPU from the part index. The cost is draw count, bounded
+   by the number of DISTINCT documents on the object, which is small for
+   the same reason the other palettes are capped. The batch key already
+   treats a different program as a different batch, so this works with
+   the grain of the renderer rather than against it.
+2. **One merged program that branches.** Generate a fragment program
+   holding every document's material function and switch on the slot.
+   This keeps one draw, and it is the option the derivative constraint
+   argues hardest against: every document's image reads would sit in
+   divergent control flow. It also multiplies compile time and register
+   pressure by the palette size for a case that is rare.
+3. **Refuse it.** Keep one document per object, and make a varying
+   column an error rather than a warning.
+
+Option 1 is the recommendation. It matches the engine's existing
+batching, it reuses the packing Cycles already proved, and it leaves the
+mesh shader alone.
+
+**What it touches**, in order: a palette of documents built beside the
+face texture palette in the view provider; a per-face index published on
+`SoFCRenderMaterial` the way `faceTextureIndices` is; the reserved
+fourth byte of the material vertex stream, which exists for exactly this
+kind of use and is written as zero today; a shader palette on the render
+cache's material beside the single `usershader` pointer; and the draw
+split in the backend. On the Cycles side, feeding the per-face documents
+into the variant loop instead of short-circuiting ahead of it.
+
+**The Edit shader button is the smaller half and is nearly specified.**
+The bundled render-effects module is the precedent for the whole shape:
+it instantiates `App::ShaderProgram` objects plus an `App::Shader` and
+binds them with an `App::ShaderBinding`, and it has a deactivate that
+takes the binding and removes the objects it made. Materializing a card
+is the same three objects seeded from the card's document instead of
+from an effect package, and un-materializing is that deactivate. The
+precedence rule built earlier today is what makes the result behave:
+the materialized binding beats the card the object still wears, so the
+object does not have to stop wearing it for the edit to show.
+
+**The relative-inline case closes for free, in one ordering.** Section
+16.6 leaves open a document authored inline with relative image names,
+which has no source URI to resolve them against. The import does not
+need to rewrite the text: the stored set is keyed by what the document
+SAYS, and `imageReferences()` already resolves relative names when it is
+given the file's path. So the import reads the file, stores each image
+under its stated name with the FILE as the anchor, and only THEN sets
+the text inline. The sync that runs on that source change finds every
+name already carried and leaves it alone, which is the rule it was
+written with. Store first, set second: the other order stores nothing.
+
+**Open, and wanting a ruling before this is built:**
+
+- Which of the three options above, if not the recommendation.
+- What the materialize command is called and where it appears. The
+  sync commands' shown-only-while-it-applies rule (13.5) is the
+  precedent for the second half.
+- Whether materializing is reversible, and whether un-materializing
+  restores the card or leaves the object bare. The effects module's
+  deactivate says reversible is cheap; it does not say what the card
+  should do.
+- How the follow-the-card rule of section 15 extends to a carried
+  document. Follow gates a card SET and never a restore, and a document
+  is not an `App::Material`, so `FollowMaterial` as written does not
+  decide it.

@@ -48,6 +48,7 @@
 #include <QImage>
 #include <QMenu>
 
+#include <Base/Console.h>
 #include <Base/Reader.h>
 #include <Base/Tools.h>
 #include <Base/Type.h>
@@ -821,6 +822,22 @@ void ViewProviderGeometryObject::updateMaterialXNode()
 {
     // Uniform for now: the BASE's document set. A per-face palette of
     // documents is the per-triangle shader slot work of step 9.
+    //
+    // The column itself is real -- the appearance stores, saves and
+    // restores a document set per face -- so an object CAN hold one that
+    // nothing draws. Say so once, on the edit that starts it, rather
+    // than let the picture disagree with the data in silence.
+    bool varies = ShapeAppearance.variesInMaterialX();
+    if (varies != materialXVaries) {
+        materialXVaries = varies;
+        if (varies && getObject()) {
+            Base::Console().Warning(
+                "%s: a per-face MaterialX document set is stored but not "
+                "drawn; every face shows the base's document "
+                "(docs/MaterialStorage.md sec 17.11)\n",
+                getObject()->getFullName().c_str());
+        }
+    }
     std::string hash = ShapeAppearance.getSize() ? ShapeAppearance.getBase().materialx
                                                  : std::string();
     App::Document *doc = getObject() ? getObject()->getDocument() : nullptr;

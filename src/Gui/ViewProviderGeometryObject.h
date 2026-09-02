@@ -374,6 +374,10 @@ protected:
     /// was acquired for (see updateMaterialXNode)
     SoShaderProgram  * pcMaterialXNode{nullptr};
     std::string materialXHash;
+    /// Whether the appearance's MaterialX column VARIED at the last
+    /// sync. Only the base is drawn, so this is what keeps the
+    /// warning about that to the edit that starts it.
+    bool materialXVaries{false};
     SoTexture2       * pcRenderTexture{nullptr};
     SoTexture2Transform * pcRenderTexTransform{nullptr};
     SoBumpMap        * pcRenderBumpMap{nullptr};
