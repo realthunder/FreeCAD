@@ -1360,3 +1360,17 @@ scoped future project, not a prerequisite.  The `ImageHost` seam,
 FcxWire, and the 456-file corpus gate are runtime-agnostic, so a pyodide
 backend slots behind the same interface without discarding the
 switch-over work.
+
+### Overtaken (2026-09-02)
+
+The user decided the other way on the last point, and the "scoped
+future project" was done the same day: **V8 IS built by hand** --
+`realthunder/v8-embed`, a bare engine out of node 26.6.0's tree
+(small-icu, shared library, no node modules, all five conda platforms,
+Windows from source with clang-cl) -- and **pyodide runs on the desktop
+as the second runtime behind `ImageHost`**, selected by the preference
+`Expression/Sandbox:Runtime`.  The "not truly confined" cost above was
+the node host's; on a bare engine the confinement is by construction
+(section 5 of `docs/PyodideHost.md` says exactly what is and is not
+proven).  The WASI image stays the shipping default.  Everything from
+here on is in `docs/PyodideHost.md`.

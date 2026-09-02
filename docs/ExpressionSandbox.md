@@ -384,6 +384,26 @@ not from restricting the Python dialect.
   security fix and the viewer's evaluator are literally the same
   artifact.
 
+**Where this landed (2026-09-02).**  The WASI image under wasmtime is
+built and is the shipping default, as above.  But the desktop now has a
+SECOND runtime behind the same `ImageHost` seam: **pyodide (CPython on
+emscripten) inside a bare V8** that FreeCAD embeds itself, from the
+`v8-embed` conda package built for this purpose on all five platforms.
+The user's decision of 2026-09-02 was to build it rather than keep
+pyodide "for the browser only": the image slice is the same source
+compiled as a pyodide extension wheel, the 69 seam gtests and the
+456-file corpus gate pass on both runtimes, and the confinement comes
+from what a bare engine lacks (no `process`, `require`, filesystem,
+network or module loader exist to name) rather than from a denylist.
+The preference `Expression/Sandbox:Runtime` selects `wasi` or
+`pyodide`.  What pyodide buys is the ecosystem (prebuilt numpy and the
+rest, loaded through the same scoped reader) and a path to Python
+workbenches in the browser; what it costs is a 1.5 s cold start and
+~3x the per-expression time.  Design record and build log:
+`docs/PyodideHost.md`; the measurements that changed the earlier
+"do not build V8 by hand" verdict: `docs/ExpressionImage.md`,
+"Pyodide-on-node, benchmarked and probed".
+
 ## 7. Interfacing native modules with the sandbox (added 2026-08-29)
 
 Sec 4 says "host proxies through an object-operation protocol";
