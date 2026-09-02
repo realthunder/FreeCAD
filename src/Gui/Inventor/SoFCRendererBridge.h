@@ -112,7 +112,7 @@ GuiExport Render::OcclusionCullConfig translateOcclusionCullConfig(App::Property
 /// Extract a property value as floats zero-padded to vec4 lanes — the
 /// dynamic-property shader parameter protocol (docs/RenderDebug.md §2.5,
 /// §6.4) shared by the RenderDebug_* view properties, App::ShaderProgram
-/// parameter properties and App::Appearance per-binding overrides.
+/// parameter properties and App::ShaderBinding per-binding overrides.
 /// Returns false (values untouched) for unsupported property types.
 GuiExport bool translateShaderParamValues(const App::Property * prop,
                                           std::vector<float> & values);

@@ -2466,8 +2466,8 @@ void Application::initTypes()
     App::ShaderProgramPython       ::init();
     App::Shader                    ::init();
     App::ShaderPython              ::init();
-    App::Appearance                ::init();
-    App::AppearancePython          ::init();
+    App::ShaderBinding                ::init();
+    App::ShaderBindingPython          ::init();
     App::SavedView                 ::init();
 
     // Expression classes
@@ -2554,6 +2554,9 @@ void Application::initTypes()
                               "App::PropertyMaterial");
     Base::Type::addLegacyName(App::PropertyAppearanceList::getClassTypeId(),
                               "App::PropertyMaterialList");
+    Base::Type::addLegacyName(App::ShaderBinding::getClassTypeId(), "App::Appearance");
+    Base::Type::addLegacyName(App::ShaderBindingPython::getClassTypeId(),
+                              "App::AppearancePython");
 }
 
 namespace {

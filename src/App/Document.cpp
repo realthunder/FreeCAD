@@ -1689,6 +1689,13 @@ void Document::restoreDefaults(Base::XMLReader &reader, int count)
         int guard;
         reader.readElement(FC_ELEM_DEFAULT, &guard);
         std::string type = reader.getAttribute("type");
+        // Keyed by the type's CURRENT name, because applyDefaults() looks the
+        // block up by getTypeId().getName(). A file written before a rename
+        // states the former name (Base::Type::addLegacyName), and under that
+        // key the block would never be found -- every elided default of
+        // those objects silently not pasted.
+        if (Base::Type resolved = Base::Type::fromName(type.c_str()); !resolved.isBad())
+            type = resolved.getName();
         auto proto = makeDefaultObject(type.c_str());
         // What the record says against what this build produces. Only the
         // difference has to be pasted onto anything, and on the build that

@@ -2454,13 +2454,19 @@ void Application::initTypes()
     Gui::LinkView                               ::init();
     Gui::ViewProviderLink                       ::init();
     Gui::ViewProviderLinkPython                 ::init();
-    // ViewProviderAppearance derives ViewProviderLink — init after it
+    // ViewProviderShaderBinding derives ViewProviderLink -- init after it
     Gui::ViewProviderShaderProgram              ::init();
     Gui::ViewProviderShaderProgramPython        ::init();
     Gui::ViewProviderShader                     ::init();
     Gui::ViewProviderShaderPython               ::init();
-    Gui::ViewProviderAppearance                 ::init();
-    Gui::ViewProviderAppearancePython           ::init();
+    Gui::ViewProviderShaderBinding                 ::init();
+    Gui::ViewProviderShaderBindingPython           ::init();
+    // Former names, still resolved so a GuiDocument.xml written before the
+    // rename restores its view providers (Base::Type::addLegacyName).
+    Base::Type::addLegacyName(Gui::ViewProviderShaderBinding::getClassTypeId(),
+                              "Gui::ViewProviderAppearance");
+    Base::Type::addLegacyName(Gui::ViewProviderShaderBindingPython::getClassTypeId(),
+                              "Gui::ViewProviderAppearancePython");
     Gui::AxisOrigin                             ::init();
     Gui::ViewProviderSavedView                  ::init();
     Gui::ViewProviderDatum                      ::init();

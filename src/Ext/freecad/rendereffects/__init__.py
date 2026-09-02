@@ -8,7 +8,7 @@ Effects ship as package directories — a folder holding an
 
 Activating an effect COPIES it into the target document as
 ``App::ShaderProgram`` / ``App::Shader`` objects plus a binding
-``App::Appearance`` — documents stay self-contained and portable, and
+``App::ShaderBinding`` -- documents stay self-contained and portable, and
 picking up a newer bundled version is an explicit re-activation, never
 an implicit central upgrade.
 
@@ -226,7 +226,7 @@ def instantiate(name, doc=None, view_props=True):
 def activate(name, targets=None, doc=None, scope="Object"):
     """Instantiate effect `name` into `doc` and bind it to `targets`.
 
-    Returns the created App::Appearance. `targets` empty/None with a
+    Returns the created App::ShaderBinding. `targets` empty/None with a
     post-stage effect gives the scene-level activation. The effect
     objects are copies — self-contained in the document.
     """
@@ -236,7 +236,7 @@ def activate(name, targets=None, doc=None, scope="Object"):
     shader = instantiate(name, doc=doc)
     doc = shader.Document
 
-    look = doc.addObject("App::Appearance", name + "_Look")
+    look = doc.addObject("App::ShaderBinding", name + "_Look")
     look.Scope = scope
     look.ElementList = [shader] + targets
     doc.recompute()
@@ -244,7 +244,7 @@ def activate(name, targets=None, doc=None, scope="Object"):
 
 
 def deactivate(look):
-    """Remove an activated effect — accepts the App::Appearance from
+    """Remove an activated effect -- accepts the App::ShaderBinding from
     activate() or the bare App::Shader from instantiate(); removes it
     with the Shader's programs (targets are left alone)."""
     doc = look.Document

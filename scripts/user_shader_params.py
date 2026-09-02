@@ -4,7 +4,7 @@ In-FreeCAD driver run by user-shader-verify.sh (desktop leg) under xvfb;
 creates its own document. Covers: an App::ShaderProgram Param_* dynamic
 property drives the like-named uniform on the consuming draw; live edit;
 byte-exact restore; a dynamic property outside the Param group does NOT
-bind; App::Appearance per-binding override of a like-named property;
+bind; App::ShaderBinding per-binding override of a like-named property;
 override-only (appended) uniform; dynamic property removal restoring the
 program value; two Appearances of one shader with distinct overrides on
 distinct instances (per-binding proof).
@@ -105,7 +105,7 @@ def run():
         sh = doc.addObject("App::Shader", "Fx")
         sh.Programs = [prog]
         sh.Demo = "None"
-        ap = doc.addObject("App::Appearance", "Look")
+        ap = doc.addObject("App::ShaderBinding", "Look")
         ap.ElementList = [sh, box]  # child 0 = effect, rest = targets
         doc.recompute()
         wait_compile()
@@ -169,7 +169,7 @@ def run():
         log("ASSERT removal-restore: %s" % ("PASS" if ok else "FAIL"))
 
         # 6. per-binding: second Appearance, same shader, own override
-        ap2 = doc.addObject("App::Appearance", "Look2")
+        ap2 = doc.addObject("App::ShaderBinding", "Look2")
         ap2.ElementList = [sh, ball]
         ap2.addProperty("App::PropertyColor", "Param_Tint")
         ap2.Param_Tint = (1.0, 1.0, 0.0)

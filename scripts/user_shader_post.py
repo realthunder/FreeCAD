@@ -1,7 +1,7 @@
 """Scene-level (post) Appearance activation suite (docs/RenderDebug.md §6.5).
 
 In-FreeCAD driver run by user-shader-verify.sh (desktop leg) under xvfb;
-creates its own document. Covers: an empty-target App::Appearance
+creates its own document. Covers: an empty-target App::ShaderBinding
 activates the Shader's post-stage programs view-wide; Param_* on the
 program drives the uniform; the Appearance override wins per binding;
 Visibility deactivates; a targeted Appearance does NOT apply post
@@ -116,7 +116,7 @@ def run():
         sh = doc.addObject("App::Shader", "Fx")
         sh.Programs = [prog]
         sh.Demo = "None"
-        ap = doc.addObject("App::Appearance", "Look")
+        ap = doc.addObject("App::ShaderBinding", "Look")
         ap.ElementList = [sh]  # shader-only group = scene-level post
         doc.recompute()
         wait_compile()
@@ -175,7 +175,7 @@ def run():
         sh2 = doc.addObject("App::Shader", "Fx2")
         sh2.Programs = [prog2]
         sh2.Demo = "None"
-        ap2 = doc.addObject("App::Appearance", "Look2")
+        ap2 = doc.addObject("App::ShaderBinding", "Look2")
         ap2.ElementList = [sh2]
         doc.recompute()
         wait_compile()

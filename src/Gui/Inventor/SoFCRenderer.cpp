@@ -496,7 +496,7 @@ public:
   // last cache rebuild (docs/RenderDebug.md §6); pushed to the external
   // backend with the other per-frame configs.
   Render::UserShaderConfig usershaders;
-  // Scene-level shaders from empty-target App::Appearance bindings
+  // Scene-level shaders from empty-target App::ShaderBinding bindings
   // (§6.5), independent of scene recapture.
   std::vector<Render::UserShader> appearanceshaders;
   // What the backend gets: captured node shaders first, appearance

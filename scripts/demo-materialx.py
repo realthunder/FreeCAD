@@ -3,7 +3,7 @@
 A grid of spheres, each one shaded by a MaterialX document EMBEDDED in
 the saved file: the `.mtlx` text rides an `App::ShaderProgram` with
 `Dialect = MATERIALX`, an `App::Shader` groups it, and an
-`App::Appearance` with Object scope binds it to one ball. Nothing points
+`App::ShaderBinding` with Object scope binds it to one ball. Nothing points
 at a file on disk, so the `.FCStd` carries every material in it and
 opens the same anywhere.
 
@@ -266,7 +266,7 @@ def ball(doc, stem, text, x, z):
     shader.Demo = "None"
     shader.Programs = [prog]
 
-    look = doc.addObject("App::Appearance", "Look_" + stem)
+    look = doc.addObject("App::ShaderBinding", "Look_" + stem)
     look.Scope = "Object"
     look.ElementList = [shader, sphere]
 

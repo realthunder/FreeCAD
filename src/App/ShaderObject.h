@@ -219,12 +219,12 @@ using ShaderPython = App::FeaturePythonT<Shader>;
  * Like-named dynamic properties override shader parameters per binding.
  * Overlaps: longest chain wins, then TreeRank, then name.
  */
-class AppExport Appearance : public LinkGroup
+class AppExport ShaderBinding : public LinkGroup
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(App::Appearance);
+    PROPERTY_HEADER_WITH_OVERRIDE(App::ShaderBinding);
 
 public:
-    Appearance();
+    ShaderBinding();
 
     /// Target scope: whole object (direct attachment), matched
     /// occurrences (per-instance chain override), or a single face
@@ -248,14 +248,14 @@ public:
 
     const char* getViewProviderName() const override
     {
-        return "Gui::ViewProviderAppearance";
+        return "Gui::ViewProviderShaderBinding";
     }
 
 private:
     static const char* ScopeEnums[];
 };
 
-using AppearancePython = App::FeaturePythonT<Appearance>;
+using ShaderBindingPython = App::FeaturePythonT<ShaderBinding>;
 
 }  // namespace App
 

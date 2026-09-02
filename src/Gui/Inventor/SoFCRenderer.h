@@ -115,7 +115,7 @@ public:
   /// the external backend each render (docs/RenderDebug.md §6).
   void setUserShaders(Render::UserShaderConfig && config);
 
-  /// Scene-level user shaders activated by App::Appearance objects with
+  /// Scene-level user shaders activated by App::ShaderBinding objects with
   /// an empty target list (docs/RenderDebug.md §6.5): appended after the
   /// node-captured shaders in the config fed to the backend, so a
   /// document-object activation wins over a raw scene node ("the last

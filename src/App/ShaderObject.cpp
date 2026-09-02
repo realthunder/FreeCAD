@@ -211,11 +211,11 @@ Shader::Shader()
 
 // ----------------------------------------------------------------------------
 
-PROPERTY_SOURCE(App::Appearance, App::LinkGroup)
+PROPERTY_SOURCE(App::ShaderBinding, App::LinkGroup)
 
-const char* Appearance::ScopeEnums[] = {"Object", "Instance", "Element", nullptr};
+const char* ShaderBinding::ScopeEnums[] = {"Object", "Instance", "Element", nullptr};
 
-Appearance::Appearance()
+ShaderBinding::ShaderBinding()
 {
     Scope.setEnums(ScopeEnums);
     ADD_PROPERTY_TYPE(Scope, ((long)0), "Appearance", Prop_None,
@@ -228,7 +228,7 @@ Appearance::Appearance()
             "  face element (e.g. Face3) shades only that face");
 }
 
-Shader *Appearance::resolveShader(DocumentObject **shaderChild) const
+Shader *ShaderBinding::resolveShader(DocumentObject **shaderChild) const
 {
     if (shaderChild)
         *shaderChild = nullptr;
@@ -245,7 +245,7 @@ Shader *Appearance::resolveShader(DocumentObject **shaderChild) const
     return nullptr;
 }
 
-std::vector<DocumentObject *> Appearance::getTargets() const
+std::vector<DocumentObject *> ShaderBinding::getTargets() const
 {
     DocumentObject *shaderChild = nullptr;
     resolveShader(&shaderChild);
@@ -271,14 +271,14 @@ template<> const char* App::ShaderPython::getViewProviderName() const {
     return "Gui::ViewProviderShaderPython";
 }
 
-PROPERTY_SOURCE_TEMPLATE(App::AppearancePython, App::Appearance)
-template<> const char* App::AppearancePython::getViewProviderName() const {
-    return "Gui::ViewProviderAppearancePython";
+PROPERTY_SOURCE_TEMPLATE(App::ShaderBindingPython, App::ShaderBinding)
+template<> const char* App::ShaderBindingPython::getViewProviderName() const {
+    return "Gui::ViewProviderShaderBindingPython";
 }
 /// @endcond
 
 // explicit template instantiation
 template class AppExport FeaturePythonT<App::ShaderProgram>;
 template class AppExport FeaturePythonT<App::Shader>;
-template class AppExport FeaturePythonT<App::Appearance>;
+template class AppExport FeaturePythonT<App::ShaderBinding>;
 }

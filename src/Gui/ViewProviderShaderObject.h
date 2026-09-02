@@ -56,7 +56,7 @@ class View3DInventorViewer;
  *
  * Owns the Coin SoShaderProgram node built from the object's properties.
  * The node instance is shared by every consumer (App::Shader demo preview,
- * Appearance bindings), so a property edit updates the node fields and Coin
+ * ShaderBinding objects), so a property edit updates the node fields and Coin
  * notification invalidates all enclosing render caches — no cross-view
  * notification needed. Displays nothing itself.
  */
@@ -130,7 +130,7 @@ using ViewProviderShaderProgramPython = ViewProviderPythonFeatureT<ViewProviderS
  * Displays the effect on a built-in Coin primitive (Demo property) with the
  * linked programs' shared SoShaderProgram nodes inserted ahead of the shape
  * (the SoFCRenderMaterial placement rules). Scene-level ("post") programs
- * are not applied by the demo — activating those is the Appearance object's
+ * are not applied by the demo -- activating those is the ShaderBinding object's
  * job.
  */
 class GuiExport ViewProviderShader : public ViewProviderDocumentObject
@@ -157,9 +157,9 @@ private:
 using ViewProviderShaderPython = ViewProviderPythonFeatureT<ViewProviderShader>;
 
 
-/** View provider of App::Appearance: activates the bound shader.
+/** View provider of App::ShaderBinding: activates the bound shader.
  *
- * The Appearance is a link group (docs/RenderDebug.md §6.5): the shader is
+ * The ShaderBinding is a link group (docs/RenderDebug.md sec 6.5): the shader is
  * the first child resolving to an App::Shader, every other child a target.
  * The children render like any link group's, so a target link child also
  * shows an instance carrying the effect.
@@ -188,13 +188,13 @@ using ViewProviderShaderPython = ViewProviderPythonFeatureT<ViewProviderShader>;
  * and draw over it. Shader-only Appearances activate the effect's
  * post-stage programs scene-wide.
  */
-class GuiExport ViewProviderAppearance : public ViewProviderLink
+class GuiExport ViewProviderShaderBinding : public ViewProviderLink
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProviderAppearance);
+    PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProviderShaderBinding);
 
 public:
-    ViewProviderAppearance();
-    ~ViewProviderAppearance() override;
+    ViewProviderShaderBinding();
+    ~ViewProviderShaderBinding() override;
 
     void attach(App::DocumentObject *obj) override;
     void finishRestoring() override;
@@ -202,7 +202,7 @@ public:
     void updateData(const App::Property *prop) override;
     void onChanged(const App::Property *prop) override;
 
-    /// Re-evaluate every Appearance binding of a document (chain-length +
+    /// Re-evaluate every ShaderBinding of a document (chain-length +
     /// TreeRank precedence)
     static void rebuildAllBindings(App::Document *doc);
 
@@ -239,7 +239,7 @@ private:
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> ownParamNodes;
 };
 
-using ViewProviderAppearancePython = ViewProviderPythonFeatureT<ViewProviderAppearance>;
+using ViewProviderShaderBindingPython = ViewProviderPythonFeatureT<ViewProviderShaderBinding>;
 
 } // namespace Gui
 

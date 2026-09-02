@@ -966,7 +966,11 @@ void Document::slotNewObject(const App::DocumentObject& Obj)
                 FC_ERR("Invalid view provider type '" << cName << "' for " << Obj.getFullName());
                 return;
             }
-            else if (cName!=Obj.getViewProviderName() && !pcProvider->allowOverride(Obj)) {
+            // Compared as types, not as spellings: a file written before a
+            // view provider was renamed states its former name
+            // (Base::Type::addLegacyName), which is the same type.
+            else if (type != Base::Type::fromName(Obj.getViewProviderName())
+                     && !pcProvider->allowOverride(Obj)) {
                 FC_WARN("View provider type '" << cName << "' does not support " << Obj.getFullName());
                 delete pcProvider;
                 pcProvider = nullptr;
@@ -2274,6 +2278,11 @@ void Document::restoreDefaults(Base::XMLReader &xmlReader, int count, int schema
         int guard;
         xmlReader.readElement(FC_ELEM_DEFAULT, &guard);
         std::string type = xmlReader.getAttribute("type");
+        // The type's current name, for the same reason the App reader
+        // resolves it: the block is looked up by the live type name, and a
+        // file written before a rename states the former one.
+        if (Base::Type resolved = Base::Type::fromName(type.c_str()); !resolved.isBad())
+            type = resolved.getName();
         auto proto = makeDefaultViewProvider(type.c_str());
         // ⚠️ Two stand-ins, not one stand-in and a pile of Property::Copy().
         // A detached copy has no container, so enumerations compare by a
@@ -3973,7 +3982,7 @@ View3DInventor *Document::createView3D()
         }
 
         setModified(false);
-        ViewProviderAppearance::onViewCreated(getDocument());
+        ViewProviderShaderBinding::onViewCreated(getDocument());
         return view3D;
     }
 }
@@ -4038,7 +4047,7 @@ Gui::MDIView* Document::cloneView(Gui::MDIView* oldview, bool transferEdit)
             view3D->getViewer()->setEditingViewProvider(d->_editViewProvider, d->_editMode);
         }
 
-        ViewProviderAppearance::onViewCreated(getDocument());
+        ViewProviderShaderBinding::onViewCreated(getDocument());
         return view3D;
     }
 
