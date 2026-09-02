@@ -1694,7 +1694,9 @@ Two workstreams, ruled in this order:
    shared file set, which the library form already allows. The picker
    offers the document's surfaces when there is more than one. The word
    is deliberately not "material": that is the card.
-2. **A look-reading importer, in the Gui module** (a later session). A
-   glb (or other mesh bundle) imported beside a `.mtlx` that carries a
-   `<look>` gets a card per `materialassign`, and each object made from a
-   named mesh wears the card the look assigns to that name.
+2. **A look-reading importer, in the Import module** (a later session),
+   beside `ReaderGltf.cpp` in `src/Mod/Import/App` with its Gui half in
+   `ImportGui`. A glb (or other mesh bundle) imported beside a `.mtlx`
+   that carries a `<look>` gets a card per `materialassign`, and each
+   object made from a named mesh wears the card the look assigns to that
+   name.
