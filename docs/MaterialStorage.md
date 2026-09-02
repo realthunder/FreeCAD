@@ -1061,8 +1061,28 @@ shader" button, not here.
 The card itself is designed in `CyclesIntegration.md` sec 6.13. This
 section records what a later discussion settled around it: the STORAGE
 shape, the rename set that has to go ahead of it, the audit that priced
-both, and the order to build them in. **Nothing in this section is
-built.** Section 16 is what is built, and this continues from it.
+both, and the order to build them in. Section 16 is what was built
+before it, and this continues from it.
+
+**Status (2026-09-02, later the same day): steps 1 to 4 of 17.10 are
+built** -- `8b704052c7` (`App::MaterialAppearance`), `84b9b1d258`
+(`App::AppearanceList`), `1477c97f57` (`App::PropertyAppearanceList`,
+with the frozen `<MaterialList>` element) and `6dad71e400`
+(`App::ShaderBinding` / `Gui::ViewProviderShaderBinding`). Each was
+verified the way 17.10 asks: ctest 463/463 and the showcase round trip
+at schema 5 and 4. Steps 5 to 9 are not started.
+
+Two more restore doors turned up while doing step 4, both now closed in
+`6dad71e400` and worth knowing about for any future rename of an OBJECT
+or view provider type: the shared-defaults block was keyed by the type
+name the file states and looked up by the live name, so after a rename
+its elided defaults were silently not pasted; and `Gui::Document`
+compared the saved view provider name against the object's default as
+strings, warning and recreating once per object. Renaming an object type
+also means FOUR aliases, not two: the `...Python` variants are
+registered types that appear in documents. A pre-existing crash on
+every document close (a QPointer member released twice) was found by the
+round-trip probe and fixed separately in `bae44f6134`.
 
 ### 17.1 The names
 

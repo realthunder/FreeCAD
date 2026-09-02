@@ -1139,7 +1139,7 @@ runtime GLSL compiler. Coin's nodes carry *source*. Reconciliation:
   (demo preview, Appearance bindings, the direct scene-graph route, the
   browser tier via the snapshot's shader table) sees it, because the
   parameters ride the captured `UserShader` and are recorded with the
-  consuming draws. Like-named dynamic properties on an `App::Appearance`
+  consuming draws. Like-named dynamic properties on a `App::ShaderBinding`
   override the program's values for that binding only; a parameter the
   program does not carry is added, so a binding can drive any uniform the
   shader source declares. The backend zeroes every dynamically bound
@@ -1203,7 +1203,7 @@ need XLink machinery owned by a document object.
   handles `generatePrimitives`-tessellated shapes; else fall back to a tiny
   `SoIndexedFaceSet` tessellation). Complex-shape previews use a normal
   Appearance binding instead.
-- **App::Appearance** — the binder that activates shading, an
+- **App::ShaderBinding** (was App::Appearance) -- the binder that activates shading, an
   `App::LinkGroup` whose children carry both the effect and its scope. The
   shader is the first child that resolves (through any chain of links) to
   an `App::Shader` — use an `App::Link` child to pull the effect from a

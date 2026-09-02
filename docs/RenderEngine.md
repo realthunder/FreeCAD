@@ -1496,7 +1496,7 @@ section is the *authoring reference*.
   shape (`Demo` = None/Box/Sphere/Cylinder/Cone/**Emitter**, §5.8) —
   the preview renders the effect applied to the shape; inert
   otherwise.
-- **`App::Appearance`** — the binder (a LinkGroup): child 0 resolves
+- **`App::ShaderBinding`** -- the binder (a LinkGroup): child 0 resolves
   to the Shader (possibly an `App::Link` into a shader-library
   document), remaining children are targets. `Scope` selects
   application: **Object** (attach at the target's view-provider root —
@@ -1715,7 +1715,7 @@ Color → rgba; Vector → xyz; FloatList/IntegerList → vec4 lanes
 `Param` group binds — other dynamic properties stay ordinary
 properties.
 
-An `App::Appearance` overrides parameters *per binding* with
+An `App::ShaderBinding` overrides parameters *per binding* with
 like-named `Param_*` properties of its own; an override the program
 does not declare is appended (a binding can drive any uniform the
 source declares).
@@ -1993,7 +1993,7 @@ future generalization to user-declared passes (a render graph) may
 come later; stage names and helper contracts are chosen so existing
 effects would survive it as pre-wired slots.
 
-**Activation = binding.** An `App::Appearance` binding a Shader with a
+**Activation = binding.** An `App::ShaderBinding` binding a Shader with a
 water-stage program *makes the target a water body*; no separate
 switch. The legacy per-object `Render_Water`/`Render_Fire`/
 `Render_Fountain` view properties remain as a parallel path; effect

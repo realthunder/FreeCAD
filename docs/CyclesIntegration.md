@@ -1766,7 +1766,7 @@ is the same split as the document itself:
   every other user-shader parameter already travels in, so the value
   reaches the draw through the existing chain --
   property -> `SoShaderParameter` -> captured `UserShader::params` ->
-  `pushUserParams` at the consuming submit -- and an `App::Appearance`
+  `pushUserParams` at the consuming submit -- and a `App::ShaderBinding`
   can override it per binding for free. The generated source is cached
   by the DOCUMENT's identity, so a parameter edit compiles nothing: it
   is a uniform write, live.
@@ -1992,7 +1992,7 @@ is a design record: none of it is built.**
 
 **What it is for.** A MaterialX document renders today only if someone
 builds an `App::ShaderProgram` for it by hand and binds it through an
-`App::Appearance` -- which is what `scripts/demo-materialx.py` does
+`App::ShaderBinding` -- which is what `scripts/demo-materialx.py` does
 seventeen times. That is the author's route, not the user's. The user's
 route is the material library: pick "Brushed Aluminium" out of a list
 and have the object look like it. A card that carries a `.mtlx` is what
