@@ -28,11 +28,13 @@
 #include <App/CleanupProcess.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectPy.h>
+#include <App/ShaderObject.h>
 
 #include "MaterialLoader.h"
 #include "MaterialManagerLocal.h"
 #include "ModelManagerLocal.h"
 #include "PropertyMaterial.h"
+#include "ShaderGraph.h"
 #if defined(BUILD_MATERIAL_EXTERNAL)
 #include "ModelManagerExternal.h"
 #include "MaterialManagerExternal.h"
@@ -81,6 +83,30 @@ public:
                            "deliberate pull that a library edit never does on its own.\n"
                            "Returns False, changing nothing, unless the library holds other\n"
                            "content under this card's uuid.");
+        add_varargs_method("materializeShaderGraph",
+                           &Module::materializeShaderGraph,
+                           "materializeShaderGraph(object, property) -> App::ShaderBinding or None\n\n"
+                           "Put the shader graph of the card in the material property onto the\n"
+                           "object as editable shader objects -- an App::ShaderProgram of the\n"
+                           "MATERIALX dialect with the graph's images, an App::Shader grouping\n"
+                           "it, and a Scope=Object App::ShaderBinding to the object. The object\n"
+                           "keeps wearing the card; the binding is what is drawn. Returns the\n"
+                           "binding already there if there is one, None when the card carries\n"
+                           "no graph or its bytes have not all arrived.");
+        add_varargs_method("shaderGraphBinding",
+                           &Module::shaderGraphBinding,
+                           "shaderGraphBinding(object) -> App::ShaderBinding or None\n\n"
+                           "The binding materializeShaderGraph made for the object, if any.");
+        add_varargs_method("shaderGraphEdited",
+                           &Module::shaderGraphEdited,
+                           "shaderGraphEdited(object) -> bool\n\n"
+                           "Whether the materialized program's text differs from the graph it\n"
+                           "was made from -- what revertShaderGraph would discard.");
+        add_varargs_method("revertShaderGraph",
+                           &Module::revertShaderGraph,
+                           "revertShaderGraph(object) -> bool\n\n"
+                           "Remove what materializeShaderGraph made for the object. The card's\n"
+                           "own look is drawn again. False when nothing was materialized.");
         add_varargs_method("saveToLibrary",
                            &Module::saveToLibrary,
                            "saveToLibrary(object, property) -> bool\n\n"
@@ -131,6 +157,45 @@ private:
     Py::Object saveToLibrary(const Py::Tuple& args)
     {
         return Py::Boolean(materialProperty(args).saveToLibrary());
+    }
+
+    static App::DocumentObject* documentObject(const Py::Tuple& args)
+    {
+        PyObject* object {};
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &App::DocumentObjectPy::Type, &object)) {
+            throw Py::Exception();
+        }
+        return static_cast<App::DocumentObjectPy*>(object)->getDocumentObjectPtr();
+    }
+
+    static Py::Object bindingOrNone(App::DocumentObject* binding)
+    {
+        if (!binding) {
+            return Py::None();
+        }
+        return Py::Object(binding->getPyObject(), true);
+    }
+
+    Py::Object materializeShaderGraph(const Py::Tuple& args)
+    {
+        auto& property = materialProperty(args);
+        auto owner = dynamic_cast<App::DocumentObject*>(property.getContainer());
+        return bindingOrNone(ShaderGraph::materialize(owner, property));
+    }
+
+    Py::Object shaderGraphBinding(const Py::Tuple& args)
+    {
+        return bindingOrNone(ShaderGraph::materialized(documentObject(args)));
+    }
+
+    Py::Object shaderGraphEdited(const Py::Tuple& args)
+    {
+        return Py::Boolean(ShaderGraph::edited(documentObject(args)));
+    }
+
+    Py::Object revertShaderGraph(const Py::Tuple& args)
+    {
+        return Py::Boolean(ShaderGraph::revert(documentObject(args)));
     }
 
     Py::Object cardCacheSize(const Py::Tuple& args)

@@ -26,6 +26,7 @@
 #include <QCompleter>
 #include <QEvent>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPixmap>
 #include <QSignalBlocker>
 #include <QStandardItemModel>
@@ -36,7 +37,9 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/GeoFeature.h>
+#include <App/ShaderObject.h>
 #include <Gui/Application.h>
+#include <Gui/Command.h>
 #include <Gui/DlgMaterialPropertiesImp.h>
 #include <Gui/DockWindowManager.h>
 #include <Gui/PrefWidgets.h>
@@ -50,6 +53,7 @@
 #include <Mod/Material/App/MaterialManager.h>
 #include <Mod/Material/App/ModelUuids.h>
 #include <Mod/Material/App/PropertyMaterial.h>
+#include <Mod/Material/App/ShaderGraph.h>
 
 #include "DlgDisplayPropertiesImp.h"
 #include "MaterialIcons.h"
@@ -341,6 +345,10 @@ void DlgDisplayPropertiesImp::setupConnections()
             &QPushButton::clicked,
             this,
             &DlgDisplayPropertiesImp::onResetToMaterial);
+    connect(d->ui.buttonEditShaderGraph,
+            &QPushButton::clicked,
+            this,
+            &DlgDisplayPropertiesImp::onEditShaderGraph);
     // The list's own way to the same place
     connect(d->ui.widgetMaterial,
             &MaterialTreeWidget::leadingEntrySelected,
@@ -1252,6 +1260,77 @@ void DlgDisplayPropertiesImp::setMaterialCard(const std::vector<Gui::ViewProvide
     // follow (docs/MaterialStorage.md 13.5)
     d->ui.buttonResetToMaterial->setVisible(
             card != nullptr && appearance != nullptr && !appearance->isFollowingMaterial());
+
+    // The same rule for the shader graph: the button is there while the
+    // card carries a graph to put on the object, and reads Revert while
+    // one is on it (17.11)
+    bool hasGraph = false;
+    App::ShaderBinding* materialized = nullptr;
+    for (auto view : views) {
+        if (auto* vp = dynamic_cast<Gui::ViewProviderDocumentObject*>(view)) {
+            if (!materialized) {
+                materialized = Materials::ShaderGraph::materialized(vp->getObject());
+            }
+        }
+        if (auto* worn = cardOf(view)) {
+            try {
+                hasGraph = hasGraph || worn->getValue().hasMaterialX();
+            }
+            catch (const Materials::MaterialNotFound&) {
+            }
+        }
+    }
+    d->ui.buttonEditShaderGraph->setVisible(hasGraph || materialized);
+    d->ui.buttonEditShaderGraph->setText(materialized ? tr("Revert Shader Graph")
+                                                      : tr("Edit Shader Graph..."));
+}
+
+void DlgDisplayPropertiesImp::onEditShaderGraph()
+{
+    // Through Python, as the sync commands go: one primitive, undoable,
+    // and on the macro record
+    for (auto view : getTargets()) {
+        auto* vp = dynamic_cast<Gui::ViewProviderDocumentObject*>(view);
+        auto* obj = vp ? vp->getObject() : nullptr;
+        if (!obj || !obj->getDocument()) {
+            continue;
+        }
+        const char* doc = obj->getDocument()->getName();
+        const char* name = obj->getNameInDocument();
+        if (Materials::ShaderGraph::materialized(obj)) {
+            if (Materials::ShaderGraph::edited(obj)) {
+                auto answer = QMessageBox::question(
+                    this,
+                    tr("Revert Shader Graph"),
+                    tr("The shader graph of %1 has been edited. Reverting discards the edits "
+                       "and draws the card's graph again.")
+                        .arg(QString::fromUtf8(obj->Label.getValue())),
+                    QMessageBox::Discard | QMessageBox::Cancel,
+                    QMessageBox::Cancel);
+                if (answer != QMessageBox::Discard) {
+                    continue;
+                }
+            }
+            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Revert shader graph"));
+            Gui::Command::doCommand(Gui::Command::Doc,
+                                    "import Materials\n"
+                                    "Materials.revertShaderGraph(App.getDocument('%s').getObject('%s'))",
+                                    doc,
+                                    name);
+            Gui::Command::commitCommand();
+        }
+        else if (cardOf(view)) {
+            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Edit shader graph"));
+            Gui::Command::doCommand(Gui::Command::Doc,
+                                    "import Materials\n"
+                                    "Materials.materializeShaderGraph("
+                                    "App.getDocument('%s').getObject('%s'), 'ShapeMaterial')",
+                                    doc,
+                                    name);
+            Gui::Command::commitCommand();
+        }
+    }
+    setMaterialCard(getTargets());
 }
 
 void DlgDisplayPropertiesImp::onCardSelected(const std::shared_ptr<Materials::Material>& material)

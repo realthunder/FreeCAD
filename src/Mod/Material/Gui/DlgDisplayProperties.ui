@@ -352,6 +352,19 @@ appearance has been given a look of its own.</string>
       <item>
        <widget class="MatGui::MaterialTreeWidget" name="widgetCard" native="true"/>
       </item>
+      <item>
+       <widget class="QPushButton" name="buttonEditShaderGraph">
+        <property name="toolTip">
+         <string>Put the card's MaterialX shader graph on this object as shader
+objects you can edit. The object keeps wearing the card; the
+edited graph is what is drawn. Shown again as Revert once
+there is one to take off.</string>
+        </property>
+        <property name="text">
+         <string>Edit Shader Graph...</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

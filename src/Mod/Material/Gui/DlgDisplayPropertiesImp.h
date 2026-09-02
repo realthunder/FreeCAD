@@ -89,6 +89,7 @@ private Q_SLOTS:
     void onCardSelected(const std::shared_ptr<Materials::Material>& material);
     /// Take the card's look again, and follow it from now on
     void onResetToMaterial();
+    void onEditShaderGraph();
     void onFinishPresetActivated(const QString&);
     void onFinishSizeChanged(double);
     void onMapFaceColorChanged(bool);

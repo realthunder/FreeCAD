@@ -331,6 +331,7 @@ set(MaterialTest_Files
     materialtests/TestMaterialCanonical.py
     materialtests/TestMaterialBlobs.py
     materialtests/TestMaterialSync.py
+    materialtests/TestShaderGraph.py
 )
 
 ADD_CUSTOM_TARGET(MaterialTest ALL
