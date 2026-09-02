@@ -353,7 +353,19 @@ ViewAreaCell::ViewAreaCell(ViewArea *area)
     _highlight = new ViewAreaHighlight(this);
 }
 
-ViewAreaCell::~ViewAreaCell() = default;
+ViewAreaCell::~ViewAreaCell()
+{
+    // The hosted view goes first, while this cell's members still exist.
+    // Left to ~QWidget it is deleted as a Qt child AFTER the members have
+    // been destroyed, and its destroyed() handler (hostView) then assigns
+    // to the _child QPointer that no longer exists. That assignment
+    // releases the view's refcount block a second time, the block is
+    // freed under the view, and the view's own ~QObject reads and frees
+    // it again: "QObject: shared QObject was deleted directly" followed
+    // by a malloc abort, on every document close.
+    if (_child)
+        delete _child.data();
+}
 
 void ViewAreaCell::updateHighlight()
 {
