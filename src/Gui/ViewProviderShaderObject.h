@@ -98,6 +98,14 @@ private:
     /// -- so re-reading a document is not a reset.
     void syncDocumentInterface(
             const std::vector<Render::MaterialX::MaterialInput> &inputs);
+    /// Keep the object's Images property in step with what the document
+    /// refers to, so a document with maps travels in the .FCStd
+    /// (docs/MaterialStorage.md sec 16). Same rule as the interface
+    /// above: a name the document no longer refers to is dropped, and a
+    /// name already held is left alone -- its bytes are the stored ones,
+    /// which is the whole point, and re-reading them off this machine's
+    /// disk would undo the travelling on the machine that has them.
+    void syncDocumentImages(const std::string &xml, const std::string &sourcePath);
 
     CoinPtr<SoShaderProgram> pcShaderProgram;
     CoinPtr<SoVertexShader> pcVertexShader;

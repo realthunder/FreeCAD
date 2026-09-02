@@ -1003,3 +1003,55 @@ a private one and the card discovering it needs the twin later. Then
 colour slots and no `App::Material` -- its knobs are already the `Param_*`
 dynamic properties and its sources already blob-backed strings, and a set
 of files is the only thing it lacks.
+
+### 16.6 What `App::ShaderProgram` does with it (built 2026-09-02)
+
+`Images` -- one `PropertyFileIncludedList` -- and two hooks in the view
+provider, which is the side that can read a document.
+
+**Keeping it in step.** `syncDocumentImages()` runs where
+`syncDocumentInterface()` already does, on a source change, and follows
+the same rule: a name the document refers to is stored, a name it no
+longer refers to is dropped, and a name already held is LEFT ALONE. That
+last one is the whole point -- its bytes are the stored ones, and
+re-reading them off this machine's disk would undo the travelling on the
+machine that has them. It does not run while a document is being read:
+what the property holds then is what the archive gave it, and importing
+over that would touch the document just for being opened.
+
+**The key is what the document SAYS.** `Render::MaterialX::imageReferences()`
+answers with the value plus its inherited `fileprefix` chain and nothing
+else -- no search path, so it is a function of the text and the same
+string on every machine. That is what makes it usable as the key of a
+stored set of files; a resolved absolute path is not, being an answer
+about one machine's disk. MaterialX's own examples are written in exactly
+the shape that needs this: `standard_surface_brass_tiled.mtlx` states
+`fileprefix="../../../Images/"` on the document and `brass_color.jpg` on
+the input, and neither half alone is what it means by the file.
+
+**Handing it over.** `Render::MaterialX::substituteImages()` gives back
+the document with each carried reference replaced by the path its stored
+file is at, and `syncShaderNodes()` pushes THAT into the Coin node. The
+`fileprefix` attributes are dropped with the names they qualified, or
+whoever resolves the result next prepends the prefix to an absolute path.
+Nothing below the node changes: the capture, the generator and the path
+tracer go on opening files, and none of them learns what a blob is. The
+substitution is memoized on the text plus the stored files, because a
+binding rebuild syncs every clone of a program and only those two inputs
+change the answer.
+
+**Read the carried document, not the raw one.** `validateDocument()`
+stores first, then substitutes, then inspects. Inspecting the raw text
+instead makes a document opened on a machine that never had the
+originals report every travelled image as missing -- which it did, until
+this order was fixed.
+
+**What this does NOT close.** A document authored inline with RELATIVE
+image names has no source URI to resolve them against, so there is
+nothing to store and nothing travels. The spelling that works is a
+document whose names resolve when it is set: absolute names inline, or
+the file route, which resolves them against the file. Closing the
+relative-inline case is the import step sec 6.13 of
+`CyclesIntegration.md` already calls for -- read the file, flatten its
+filenames, store the result inline -- and that belongs with the "Edit
+shader" button, not here.

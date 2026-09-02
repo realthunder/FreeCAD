@@ -26,6 +26,7 @@
 #ifndef _PreComp_
 # include <algorithm>
 # include <cctype>
+# include <map>
 # include <set>
 # include <sstream>
 # include <QTimer>
@@ -386,6 +387,40 @@ static bool isDocumentPath(const char *text)
     return *text && *text != '<';
 }
 
+// The document with every image reference it carries replaced by the
+// path the stored file is at.
+//
+// Memoized, because this parses the document and a binding rebuild syncs
+// every clone of it, while the answer changes only when the text or the
+// stored files do -- which is exactly what the key is made of. The same
+// arrangement the generator's own variant cache uses.
+static std::string documentWithStoredImages(App::ShaderProgram *obj, const char *xml)
+{
+    if (!xml || !xml[0])
+        return {};
+    std::string key(xml);
+    std::vector<Render::MaterialX::ImageReference> files;
+    for (const auto &file : obj->Images.getValues()) {
+        std::string path = obj->Images.filePath(file.name.c_str());
+        if (path.empty()) {
+            continue;   // content not arrived; the document keeps its own name
+        }
+        key += '\0';
+        key += file.name;
+        key += '\0';
+        key += path;
+        files.push_back({file.name, std::move(path)});
+    }
+    if (files.empty())
+        return xml;
+
+    static std::map<std::string, std::string> cache;
+    auto it = cache.find(key);
+    if (it == cache.end())
+        it = cache.emplace(key, Render::MaterialX::substituteImages(xml, files)).first;
+    return it->second;
+}
+
 // Materialize an App::ShaderProgram plus resolved parameter values onto a
 // Coin shader-node triple. Shared between the program view provider's own
 // (library) node and the per-binding clones an Appearance builds to bake
@@ -422,6 +457,23 @@ static void syncShaderNodes(App::ShaderProgram *obj,
     if (sourcetype == SoShaderObject::MATERIALX && isDocumentPath(fs)) {
         sourcetype = SoShaderObject::FILENAME;
         vs = "";
+    }
+
+    // A document that carries its images is handed over naming them
+    // where they are on THIS machine: the stored files live in the
+    // transient directory, so what goes into the node is the document
+    // with each reference replaced by that path
+    // (docs/MaterialStorage.md sec 16). Everything downstream -- the
+    // capture, the generator, the path tracer -- goes on opening files
+    // and none of them has to learn what a blob is.
+    //
+    // Only for the inline route: a document stated as a PATH is read
+    // by the consumer from a file that is there, and resolves its own
+    // images against it.
+    std::string carried;
+    if (sourcetype == SoShaderObject::MATERIALX && !obj->Images.isEmpty()) {
+        carried = documentWithStoredImages(obj, fs);
+        fs = carried.c_str();
     }
     // The state step of a stateful emitter rides as the program's
     // second fragment object (docs/RenderEngine.md §5.8); it is only
@@ -599,6 +651,14 @@ void ViewProviderShaderProgram::validateDocument()
                 "%s: the MATERIALX dialect applies to the 'material' stage; "
                 "stage '%s' will ignore it\n", label.c_str(), stage);
     }
+    // Store what the document refers to before reading it, while the
+    // files can still be reached; then read the document AS THE
+    // CONSUMERS WILL GET IT, naming its carried files where they are.
+    // Read raw instead and a document opened on a machine that never had
+    // the originals reports every travelled image as missing.
+    syncDocumentImages(xml, sourcePath);
+    xml = documentWithStoredImages(obj, xml.c_str());
+
     auto info = Render::MaterialX::inspect(xml, sourcePath);
     for (const auto &w : info.warnings)
         Base::Console().Warning("%s: %s\n", label.c_str(), w.c_str());
@@ -614,6 +674,55 @@ void ViewProviderShaderProgram::validateDocument()
     FC_LOG(label << ": MaterialX document, " << info.materials.size()
                  << " material(s), surface " << info.surface);
     syncDocumentInterface(info.inputs);
+}
+
+void ViewProviderShaderProgram::syncDocumentImages(const std::string &xml,
+                                                   const std::string &sourcePath)
+{
+    auto obj = dynamic_cast<App::ShaderProgram*>(getObject());
+    if (!obj)
+        return;
+    // Never while the document is being read. What the property holds
+    // then is what the archive gave it, which is the answer; importing
+    // over that would touch the document just for being opened, and on
+    // a machine that happens to hold the same paths it would quietly
+    // replace the travelled bytes with local ones.
+    if (auto doc = obj->getDocument()) {
+        if (doc->testStatus(App::Document::Restoring)
+                || doc->testStatus(App::Document::Importing)) {
+            return;
+        }
+    }
+
+    auto refs = Render::MaterialX::imageReferences(xml, sourcePath);
+    std::set<std::string> wanted;
+    for (const auto &ref : refs) {
+        wanted.insert(ref.name);
+        if (obj->Images.find(ref.name.c_str())) {
+            continue;   // already carried; its bytes are the stored ones
+        }
+        if (ref.path.empty()) {
+            // The document names a file this machine does not have and
+            // the property does not carry. inspect() has already warned
+            // about it as a missing image; there is nothing to store.
+            continue;
+        }
+        obj->Images.setFile(ref.name.c_str(), ref.path.c_str());
+        FC_LOG(obj->Label.getValue() << ": stored image " << ref.name
+                                     << " from " << ref.path);
+    }
+    // What the document no longer refers to stops being carried, the
+    // same rule the declared interface follows above. Named first and
+    // removed after: removeFile edits the vector getValues() hands out.
+    std::vector<std::string> stale;
+    for (const auto &file : obj->Images.getValues()) {
+        if (!wanted.count(file.name)) {
+            stale.push_back(file.name);
+        }
+    }
+    for (const auto &name : stale) {
+        obj->Images.removeFile(name.c_str());
+    }
 }
 
 // The App::Property a MaterialX type is carried by, and the value

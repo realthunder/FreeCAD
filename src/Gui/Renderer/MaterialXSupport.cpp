@@ -29,6 +29,7 @@
 #ifdef HAVE_MATERIALX
 
 #include <cctype>
+#include <map>
 #include <mutex>
 #include <set>
 
@@ -70,6 +71,19 @@ DocumentInfo inspect(const std::string &, const std::string &)
     DocumentInfo info;
     info.error = "MaterialX support is not built (BUILD_MATERIALX)";
     return info;
+}
+
+std::vector<ImageReference> imageReferences(const std::string &, const std::string &)
+{
+    return {};
+}
+
+std::string substituteImages(const std::string &xml, const std::vector<ImageReference> &)
+{
+    // Without the library there is no way to find the references, and a
+    // document handed back half-rewritten would be worse than one left
+    // alone. Nothing consumes it in this build either way.
+    return xml;
 }
 
 #else  // HAVE_MATERIALX
@@ -469,6 +483,117 @@ DocumentInfo inspect(const std::string &xml, const std::string &sourcePath)
     info.inputs = publicInputs(doc, shaders.front());
     info.valid = true;
     return info;
+}
+
+namespace {
+
+/// The name a document means by one filename-valued input: the value
+/// with the inherited fileprefix chain applied and nothing else. A
+/// function of the text alone, which is what makes it the same on every
+/// machine -- unlike a search-path resolution, which is an answer about
+/// one disk.
+std::string statedName(const mx::ElementPtr &elem, const mx::ValueElementPtr &value)
+{
+    try {
+        // createStringResolver() carries the fileprefix inherited down
+        // to this element; resolving with it applies that and leaves
+        // the rest of the string alone.
+        return value->getResolvedValueString(elem->createStringResolver());
+    }
+    catch (const std::exception &) {
+        return value->getValueString();
+    }
+}
+
+/// Parse without importing the data library and without validating.
+/// Both questions below are about what the text SAYS, and the library
+/// is 2.5MB of definitions that say nothing about that.
+mx::DocumentPtr readOnly(const std::string &xml, const std::string &sourcePath)
+{
+    mx::DocumentPtr doc = mx::createDocument();
+    try {
+        mx::readFromXmlString(doc, xml);
+    }
+    catch (const std::exception &) {
+        return {};
+    }
+    if (!sourcePath.empty())
+        doc->setSourceUri(sourcePath);
+    return doc;
+}
+
+}  // namespace
+
+std::vector<ImageReference> imageReferences(const std::string &xml,
+                                            const std::string &sourcePath)
+{
+    std::vector<ImageReference> refs;
+    mx::DocumentPtr doc = readOnly(xml, sourcePath);
+    if (!doc)
+        return refs;
+    std::set<std::string> seen;
+    for (mx::ElementPtr elem : doc->traverseTree()) {
+        auto input = elem->asA<mx::ValueElement>();
+        if (!input || input->getType() != mx::FILENAME_TYPE_STRING)
+            continue;
+        if (input->getValueString().empty())
+            continue;
+        ImageReference ref;
+        ref.name = statedName(elem, input);
+        if (ref.name.empty() || !seen.insert(ref.name).second)
+            continue;
+        // Deduplicated by NAME. Two spellings of one file are two
+        // references here and one image later: the deduplication that
+        // matters for loading is on the resolved path, and that belongs
+        // to inspect(), which is the question about this machine.
+        ref.path = resolveFile(doc, ref.name);
+        refs.push_back(std::move(ref));
+    }
+    return refs;
+}
+
+std::string substituteImages(const std::string &xml,
+                             const std::vector<ImageReference> &files)
+{
+    if (files.empty())
+        return xml;
+    mx::DocumentPtr doc = readOnly(xml, {});
+    if (!doc)
+        return xml;
+
+    std::map<std::string, std::string> byName;
+    for (const auto &file : files) {
+        if (!file.name.empty() && !file.path.empty())
+            byName[file.name] = file.path;
+    }
+    bool changed = false;
+    for (mx::ElementPtr elem : doc->traverseTree()) {
+        auto input = elem->asA<mx::ValueElement>();
+        if (!input || input->getType() != mx::FILENAME_TYPE_STRING)
+            continue;
+        if (input->getValueString().empty())
+            continue;
+        auto it = byName.find(statedName(elem, input));
+        if (it == byName.end())
+            continue;
+        input->setValueString(it->second);
+        changed = true;
+    }
+    if (!changed)
+        return xml;
+    // The prefixes go with the names they qualified: what is left is
+    // absolute, and whoever resolves the result -- flattenFilenames,
+    // downstream -- would otherwise prepend the prefix to it again.
+    for (mx::ElementPtr elem : doc->traverseTree()) {
+        if (elem->hasAttribute(mx::Element::FILE_PREFIX_ATTRIBUTE))
+            elem->removeAttribute(mx::Element::FILE_PREFIX_ATTRIBUTE);
+    }
+    try {
+        return mx::writeToXmlString(doc);
+    }
+    catch (const std::exception &) {
+        return xml;
+    }
 }
 
 #endif  // HAVE_MATERIALX

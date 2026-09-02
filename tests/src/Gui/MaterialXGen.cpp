@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -638,4 +639,104 @@ TEST_F(MaterialXGenerator, aDeclaredInputNamedAsASurfaceInputStillBinds)
     // And it is bound, so nothing reports it as folded away.
     for (const auto &w : out.warnings)
         EXPECT_EQ(w.find("base_color"), std::string::npos) << w;
+}
+
+// ---------------------------------------------------------------------------
+// Image references: the two halves of making a document travel with its
+// maps (docs/MaterialStorage.md sec 16). One says what the document
+// refers to under a key that is a function of the TEXT and so the same
+// everywhere; the other hands back the document naming those files
+// where they are on this machine.
+
+TEST_F(MaterialXGenerator, aDocumentSaysWhatFilesItRefersTo)
+{
+    ScratchImages images("refs");
+    const std::string name = images.file("color.png");
+    const std::string xml = openPbrDoc(
+        "    <input name=\"base_color\" type=\"color3\" nodename=\"tex\" />\n",
+        "  <image name=\"tex\" type=\"color3\">\n"
+        "    <input name=\"file\" type=\"filename\" value=\"" + name + "\" />\n"
+        "  </image>\n");
+
+    auto refs = Render::MaterialX::imageReferences(xml, images.document());
+    ASSERT_EQ(refs.size(), 1u);
+    // The key is what the document SAYS, not where it landed.
+    EXPECT_EQ(refs[0].name, name);
+    EXPECT_FALSE(refs[0].path.empty());
+}
+
+TEST_F(MaterialXGenerator, theKeyCarriesTheFileprefixAndNothingElse)
+{
+    ScratchImages images("prefix");
+    images.file("color.png");
+    // The shape MaterialX's own examples are written in: an inherited
+    // fileprefix on the document, a bare name on the input. Neither
+    // half alone is what the document means by the file.
+    std::string xml = openPbrDoc(
+        "    <input name=\"base_color\" type=\"color3\" nodename=\"tex\" />\n",
+        "  <image name=\"tex\" type=\"color3\">\n"
+        "    <input name=\"file\" type=\"filename\" value=\"color.png\" />\n"
+        "  </image>\n");
+    const std::string prefix = std::string("fileprefix=\"")
+        + images.document().substr(0, images.document().rfind("doc.mtlx")) + "\"";
+    xml.replace(xml.find("<materialx version=\"1.39\""),
+                std::strlen("<materialx version=\"1.39\""),
+                "<materialx version=\"1.39\" " + prefix);
+
+    auto refs = Render::MaterialX::imageReferences(xml);
+    ASSERT_EQ(refs.size(), 1u);
+    // Prefix applied, search path not consulted: the key is a function
+    // of the text, which is what makes it the same on every machine.
+    EXPECT_NE(refs[0].name.find("color.png"), std::string::npos);
+    EXPECT_NE(refs[0].name, std::string("color.png"));
+    EXPECT_FALSE(refs[0].path.empty());
+}
+
+TEST_F(MaterialXGenerator, aCarriedDocumentNamesItsFilesWhereTheyAre)
+{
+    ScratchImages images("carried");
+    images.file("color.png");
+    std::string xml = openPbrDoc(
+        "    <input name=\"base_color\" type=\"color3\" nodename=\"tex\" />\n",
+        "  <image name=\"tex\" type=\"color3\">\n"
+        "    <input name=\"file\" type=\"filename\" value=\"color.png\" />\n"
+        "  </image>\n");
+    const std::string dir = images.document().substr(
+            0, images.document().rfind("doc.mtlx"));
+    xml.replace(xml.find("<materialx version=\"1.39\""),
+                std::strlen("<materialx version=\"1.39\""),
+                "<materialx version=\"1.39\" fileprefix=\"" + dir + "\"");
+
+    auto refs = Render::MaterialX::imageReferences(xml);
+    ASSERT_EQ(refs.size(), 1u);
+    // Stand in for the stored blob: somewhere else entirely, which is
+    // what a transient directory is to the machine that authored this.
+    const std::string stored = images.file("stored.png");
+    std::vector<Render::MaterialX::ImageReference> files;
+    files.push_back({refs[0].name, dir + stored});
+
+    const std::string carried = Render::MaterialX::substituteImages(xml, files);
+    EXPECT_NE(carried.find("stored.png"), std::string::npos) << carried;
+    // The prefix went with the name it qualified: left in place it
+    // would be prepended to the absolute path by whoever resolves the
+    // result next.
+    EXPECT_EQ(carried.find("fileprefix"), std::string::npos) << carried;
+    // And the result is still a document that reads and resolves.
+    auto after = Render::MaterialX::imageReferences(carried);
+    ASSERT_EQ(after.size(), 1u);
+    EXPECT_EQ(after[0].name, dir + stored);
+    EXPECT_FALSE(after[0].path.empty());
+}
+
+TEST_F(MaterialXGenerator, aDocumentWithoutTheNamedFileIsLeftAlone)
+{
+    const std::string xml = openPbrDoc(
+        "    <input name=\"base_color\" type=\"color3\" "
+        "value=\"0.25, 0.5, 0.75\" />\n");
+    // Nothing to substitute: an imageless document comes back as it
+    // went in, rather than round-tripped through the writer.
+    std::vector<Render::MaterialX::ImageReference> files;
+    files.push_back({"absent.png", "/tmp/somewhere.png"});
+    EXPECT_EQ(Render::MaterialX::substituteImages(xml, files), xml);
+    EXPECT_TRUE(Render::MaterialX::imageReferences(xml).empty());
 }

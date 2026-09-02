@@ -187,6 +187,51 @@ struct GeneratedMaterial {
 RendererExport GeneratedMaterial generate(const std::string &xml,
                                           const std::string &sourcePath = {});
 
+/// One image file a document refers to.
+///
+/// `name` is what the DOCUMENT calls the file, with the inherited
+/// `fileprefix` chain applied and nothing else: it is a function of the
+/// document text alone, so it is the same string on every machine that
+/// reads that text. That is what makes it usable as the key of a stored
+/// set of files (App::PropertyFileIncludedList) -- the resolved path
+/// below is not, being an answer about one machine's disk.
+struct ImageReference {
+    /// What the document calls the file. The stable key.
+    std::string name;
+    /// Where that resolves on this machine, empty when it resolves
+    /// nowhere. A document carrying its images has every name in the
+    /// stored set and needs none of these.
+    std::string path;
+};
+
+/// The image files a document refers to, in document order,
+/// deduplicated by name.
+///
+/// Parses the text and nothing else -- no data library, no validation --
+/// because this answers a question about what the document SAYS, and is
+/// asked on every source change. `sourcePath` resolves relative names as
+/// it does in inspect(); pass none and only absolute names and data
+/// library names resolve. Never throws: a document that will not parse
+/// refers to nothing.
+RendererExport std::vector<ImageReference> imageReferences(const std::string &xml,
+                                                           const std::string &sourcePath = {});
+
+/// The document with each image reference named in \a files replaced by
+/// the path given for it.
+///
+/// This is how a document travels: its images are stored as blobs and
+/// the text handed to the consumers names them where they actually are,
+/// so every consumer downstream goes on opening files and none of them
+/// has to learn what a blob is. The `fileprefix` attributes are dropped
+/// along with the names they qualified -- an absolute path must not be
+/// prefixed again by whoever resolves the result.
+///
+/// A name the document does not refer to is ignored, and a reference the
+/// map does not name is left as the document wrote it. Never throws: a
+/// document that will not parse comes back unchanged.
+RendererExport std::string substituteImages(const std::string &xml,
+                                            const std::vector<ImageReference> &files);
+
 /// Absolute path of the standard data library shipped beside the
 /// binary, the directory holding stdlib/, pbrlib/, bxdf/ and the rest.
 /// Empty when the library is not built.

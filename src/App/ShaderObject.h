@@ -63,6 +63,14 @@ public:
     /// advancing the state textures by one fixed step. Empty = the
     /// emitter is stateless (docs/RenderEngine.md §5.8)
     PropertyStringIncluded SimulateProgram;
+    /// Files a MATERIALX document refers to, each under the name the
+    /// document calls it by. What makes a document with image maps
+    /// self-contained: the bytes ride in the .FCStd, and the text handed
+    /// to the renderers names them where they actually are on the
+    /// machine that opened it (docs/MaterialStorage.md sec 16). Kept in
+    /// step with the document by the view provider, which is the side
+    /// that can read one.
+    PropertyFileIncludedList Images;
     /// Blend override of the material-stage beauty draw
     /// (Default keeps the draw's stock state)
     PropertyEnumeration Blend;

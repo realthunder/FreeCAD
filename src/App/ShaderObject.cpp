@@ -71,6 +71,12 @@ ShaderProgram::ShaderProgram()
             "s_pstate0/s_pstate1 and writing the next. Leave empty for\n"
             "a stateless emitter, whose vertex stage computes position\n"
             "from the seed and the clock alone");
+    ADD_PROPERTY_TYPE(Images, (), "Shader", Prop_None,
+            "Image files a MATERIALX document refers to, stored in the\n"
+            "document so it travels: each is held under the name the\n"
+            "document calls it by, and the renderers are handed a\n"
+            "document naming them where they are on this machine.\n"
+            "Kept in step with FragmentProgram automatically");
     Blend.setEnums(BlendEnums);
     ADD_PROPERTY_TYPE(Blend, ((long)0), "Shader", Prop_None,
             "Blend override of the material-stage beauty draw:\n"
