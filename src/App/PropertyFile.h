@@ -27,6 +27,7 @@
 #include <string>
 
 #include "FileBlobManager.h"
+#include "FileSet.h"
 #include "PropertyStandard.h"
 
 
@@ -274,38 +275,19 @@ protected:
 };
 
 
-/** A named set of files, each stored as a shared, content-addressed blob.
+/** A property holding an App::FileSet: a named set of shared files.
  *
  * PropertyFileIncluded holds one file; this holds any number of them,
- * each under a NAME that the content referring to them uses to ask for
- * one. That name is the whole point of the type: a MaterialX document
- * states its maps as filenames, so a document travels with its images
- * only if something can answer "the file this document calls
- * brass_color.jpg is here". filePath() is that answer, and it is a real
- * path in the transient directory -- so every consumer downstream, the
- * raster path and the path tracer alike, goes on opening files and none
- * of them has to learn what a blob is.
- *
- * Names belong to the property and content belongs to the store, which
- * is the rule the blob manager already states (FileBlobManager.h): two
- * entries naming the same bytes -- here, in another property, or in
- * another document opened alongside -- share one file and one archive
- * entry, whatever each calls it.
- *
- * Entries keep the path they were read from as provenance only. Nothing
- * resolves against it: an absolute path that resolves on the machine
- * that authored the document points at nothing on the next one, which
- * is the defect this type exists to close.
+ * each under the NAME the content referring to them uses to ask for one
+ * -- see App::FileSet for why that name is the point of the type, and
+ * for everything about the entries themselves. What this adds is what
+ * only a property can: the store (the owner document's), the queue for
+ * content that arrives after the document has been read, the change
+ * signalling, and the Python form (a dict of name to path).
  *
  * There is no pre-store spelling of a set of files, so
  * blobContentNeedsStore() answers true whenever there is one to write
  * and the save offers the schema the content needs.
- *
- * The content arrives asynchronously on restore, after the document has
- * been read, exactly as it does for the two types above: an entry has
- * its hash and its name from the moment Restore() runs and its bytes
- * only once the archive is drained. A consumer that builds something
- * out of the files rebuilds it when the document finishes restoring.
  */
 class AppExport PropertyFileIncludedList : public Property,
                                            public BlobReferrerProperty
@@ -313,72 +295,41 @@ class AppExport PropertyFileIncludedList : public Property,
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    /** One file of the set.
-     *
-     *  hash is kept beside the handle rather than read off it because an
-     * entry restored from a document has a hash before it has content --
-     * that is what it is waiting for, and what identifies it when the
-     * content arrives.
-     */
-    struct Entry
-    {
-        /// What the referring content calls this file. The key; unique
-        /// within the property, and never empty.
-        std::string name;
-        /// Where the bytes came from, provenance only. Never resolved
-        /// against.
-        std::string original;
-        /// Content hash, known from the moment the entry exists.
-        std::string hash;
-        /// The content. Null while a restore is still pending, and for an
-        /// entry whose content the archive did not hold.
-        FileBlobHandle blob;
-    };
+    using Entry = FileSet::Entry;
 
     PropertyFileIncludedList();
     ~PropertyFileIncludedList() override;
 
+    /// The set itself, for whoever wants more than one entry at a time.
+    const FileSet &getValue() const { return _files; }
     /// The files, in the order they were added.
-    const std::vector<Entry> &getValues() const { return _files; }
-    int getSize() const { return static_cast<int>(_files.size()); }
+    const std::vector<Entry> &getValues() const { return _files.entries(); }
+    int getSize() const { return _files.size(); }
     bool isEmpty() const { return _files.empty(); }
 
-    /** Add the file at  path under  name, replacing any file of that
-     * name.
-     *
-     * The bytes are copied into the store, which hashes them and keeps
-     * whichever copy is already there.  original defaults to  path:
-     * the caller states it only when the file being read is not the one
-     * the name refers to, e.g. a map already resolved to an absolute
-     * path on the authoring machine.
-     */
+    /// Add the file at \a path under \a name, replacing any file of that
+    /// name. See FileSet::setFile.
     void setFile(const char *name, const char *path, const char *original = nullptr);
-    /** Add  blob under  name, replacing any file of that name.
-     *
-     * The sharing spelling: content already in a store is referenced
-     * rather than copied. A blob from another document's store is
-     * imported into this one, because blobs do not migrate.
-     */
+    /// Add \a blob under \a name, replacing any file of that name. See
+    /// FileSet::setBlob.
     void setBlob(const char *name, const FileBlobHandle &blob, const char *original = nullptr);
-    /// Drop the file called  name. Nothing happens if there is none.
+    /// Drop the file called \a name. Nothing happens if there is none.
     void removeFile(const char *name);
     /// Replace the whole set.
     void setValues(std::vector<Entry> files);
+    /// Replace the whole set with another set's entries.
+    void setValue(const FileSet &files);
     void clear();
     /// The default value, which is the empty set. Only here because the
     /// ADD_PROPERTY macros initialize a property by calling setValue,
     /// and a set of files has no other value to be given one of.
     void setValue() { clear(); }
 
-    /// The entry called  name, or null.
-    const Entry *find(const char *name) const;
-    /** Absolute path of the file called  name.
-     *
-     * Empty when there is no such file and when its content has not
-     * arrived, which a consumer must treat alike: both mean it cannot be
-     * opened.
-     */
-    std::string filePath(const char *name) const;
+    /// The entry called \a name, or null.
+    const Entry *find(const char *name) const { return _files.find(name); }
+    /// Absolute path of the file called \a name, empty when it cannot be
+    /// opened. See FileSet::filePath.
+    std::string filePath(const char *name) const { return _files.filePath(name); }
 
     PyObject *getPyObject() override;
     void setPyObject(PyObject *) override;
@@ -394,9 +345,7 @@ public:
     /// blob handles a snapshot would hold are the point of the type.
     Property *copyBeforeChange() const override { return nullptr; }
 
-    /// Take the content the manager restored for one of the entries. The
-    /// blob says which by its hash, and every entry naming that hash takes
-    /// it -- one file may be known under two names.
+    /// Take the content the manager restored for one of the entries.
     void assignRestoredBlob(const FileBlobHandle &blob) override;
     /// Note every file of the set, each named after the entry that holds
     /// it so an unpacked project shows what it is.
@@ -408,16 +357,15 @@ public:
 protected:
     /// Store owning the content: the document's when there is one.
     FileBlobManager &blobManager() const;
-    /// Queue  hash for the entry that is waiting for it.
-    void awaitBlob(const std::string &hash);
+    /// Queue every entry whose content has not arrived with the manager
+    /// that will serve it.
+    void awaitPending();
     /// Withdraw every queued request, e.g. because the value is being
     /// replaced or the property is going away.
     void cancelPending();
-    /// The entry called  name, or null. Non-const half of find().
-    Entry *entry(const char *name);
 
 protected:
-    std::vector<Entry> _files;
+    FileSet _files;
     /// Manager this property is queued with, waiting for content. Held so
     /// the queue entries can be withdrawn without asking the container,
     /// which may already be halfway through its own destruction.

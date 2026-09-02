@@ -252,4 +252,21 @@ TEST_F(PropertyFileIncludedListTest, aCopySharesTheFilesRatherThanTheBytes)
     EXPECT_EQ(copied->find("map.png")->blob, _obj->Files.find("map.png")->blob);
 }
 
+TEST_F(PropertyFileIncludedListTest, aPastedEntryStillWaitingForContentGetsItFromTheStore)
+{
+    _obj->Files.setFile("map.png", writeScratch("BYTES", ".png").c_str());
+    const std::string hash = _obj->Files.find("map.png")->hash;
+    // What an undo snapshot taken while a restore was still pending looks
+    // like: the name and the hash, and no handle behind them. Pasting it
+    // back must not leave the entry that way -- a save would write the
+    // hash without ever writing the content.
+    std::vector<App::PropertyFileIncludedList::Entry> pending(1);
+    pending[0].name = "map.png";
+    pending[0].hash = hash;
+    _obj->Files.setValues(pending);
+    ASSERT_NE(_obj->Files.find("map.png"), nullptr);
+    EXPECT_TRUE(_obj->Files.find("map.png")->blob != nullptr);
+    EXPECT_EQ(readWhole(_obj->Files.filePath("map.png")), "BYTES");
+}
+
 }  // namespace

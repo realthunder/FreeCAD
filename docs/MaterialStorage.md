@@ -1070,7 +1070,11 @@ built** -- `8b704052c7` (`App::MaterialAppearance`), `84b9b1d258`
 with the frozen `<MaterialList>` element) and `6dad71e400`
 (`App::ShaderBinding` / `Gui::ViewProviderShaderBinding`). Each was
 verified the way 17.10 asks: ctest 463/463 and the showcase round trip
-at schema 5 and 4. Steps 5 to 9 are not started.
+at schema 5 and 4. Step 5, `App::FileSet` (17.3), is built too
+(same commit as this note): `PropertyFileIncludedList` delegates to it, its test file
+passes unmodified, and a pasted entry still waiting for content now
+re-queues for it instead of staying a hash a save would write without
+the bytes. Steps 6 to 9 are not started.
 
 Two more restore doors turned up while doing step 4, both now closed in
 `6dad71e400` and worth knowing about for any future rename of an OBJECT
