@@ -30,6 +30,12 @@ bool encodeValue(PyObject* obj, nlohmann::json& out, std::string& err);
  */
 bool hostOp(const nlohmann::json& req, nlohmann::json& reply);
 
+#ifdef FC_EXPR_PYODIDE
+/// The pyodide guest's transport: the Python callable that carries a
+/// CBOR request to the host and returns the CBOR reply (ImageBridge.cpp).
+void setHostCallable(PyObject* callable);
+#endif
+
 }  // namespace FcxImage
 
 #endif  // APP_FCX_IMAGE_MARSHAL_H

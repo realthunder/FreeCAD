@@ -21,6 +21,62 @@
 
 using nlohmann::json;
 
+#ifdef FC_EXPR_PYODIDE
+// The pyodide guest has no wasm imports of its own: a side module only
+// sees what the main module exports.  Its transport is a Python callable
+// the host installs at load (_fcx_image.set_host), which takes the CBOR
+// request as bytes and returns the CBOR reply as a bytes-like object --
+// on the other side of it is a V8 native function in the host process.
+static PyObject *g_hostCallable = nullptr;
+
+void FcxImage::setHostCallable(PyObject *callable)
+{
+    Py_XINCREF(callable);
+    Py_XDECREF(g_hostCallable);
+    g_hostCallable = callable;
+}
+
+/// The one round trip: bytes out, bytes-like back.  A JsProxy of a
+/// Uint8Array supports the buffer protocol; anything else that does is
+/// accepted too.
+static bool hostTransport(const std::vector<uint8_t> &request,
+                          std::vector<uint8_t> &replyBytes)
+{
+    if (!g_hostCallable) {
+        PyErr_SetString(PyExc_RuntimeError, "host bridge unavailable");
+        return false;
+    }
+    PyObject *arg = PyBytes_FromStringAndSize(
+            reinterpret_cast<const char *>(request.data()),
+            (Py_ssize_t)request.size());
+    if (!arg)
+        return false;
+    PyObject *res = PyObject_CallOneArg(g_hostCallable, arg);
+    Py_DECREF(arg);
+    if (!res)
+        return false;
+    Py_buffer view;
+    if (PyObject_GetBuffer(res, &view, PyBUF_SIMPLE) != 0) {
+        // A JsProxy of a Uint8Array does not expose the buffer protocol
+        // directly; its to_bytes() copies the array into a bytes object.
+        PyErr_Clear();
+        PyObject *copy = PyObject_CallMethod(res, "to_bytes", nullptr);
+        Py_DECREF(res);
+        if (!copy)
+            return false;
+        res = copy;
+        if (PyObject_GetBuffer(res, &view, PyBUF_SIMPLE) != 0) {
+            Py_DECREF(res);
+            return false;
+        }
+    }
+    replyBytes.assign(static_cast<const uint8_t *>(view.buf),
+                      static_cast<const uint8_t *>(view.buf) + view.len);
+    PyBuffer_Release(&view);
+    Py_DECREF(res);
+    return true;
+}
+#else
 extern "C" {
 __attribute__((import_module("fcx"), import_name("host_call")))
 int32_t fcx_host_call(const uint8_t *req, uint32_t len);
@@ -28,19 +84,30 @@ __attribute__((import_module("fcx"), import_name("host_fetch")))
 int32_t fcx_host_fetch(uint8_t *dst, uint32_t cap);
 }
 
-static bool hostRoundTrip(const json &req, json &reply)
+/// The one round trip over the two wasm imports: size, then fetch into
+/// a buffer this side allocated.
+static bool hostTransport(const std::vector<uint8_t> &request,
+                          std::vector<uint8_t> &replyBytes)
 {
-    std::vector<uint8_t> bytes = json::to_cbor(req);
-    int32_t n = fcx_host_call(bytes.data(), (uint32_t)bytes.size());
+    int32_t n = fcx_host_call(request.data(), (uint32_t)request.size());
     if (n < 0) {
         PyErr_SetString(PyExc_RuntimeError, "host bridge unavailable");
         return false;
     }
-    std::vector<uint8_t> buf((size_t)n);
-    if (fcx_host_fetch(buf.data(), (uint32_t)n) != n) {
+    replyBytes.resize((size_t)n);
+    if (fcx_host_fetch(replyBytes.data(), (uint32_t)n) != n) {
         PyErr_SetString(PyExc_RuntimeError, "host bridge fetch mismatch");
         return false;
     }
+    return true;
+}
+#endif
+
+static bool hostRoundTrip(const json &req, json &reply)
+{
+    std::vector<uint8_t> buf;
+    if (!hostTransport(json::to_cbor(req), buf))
+        return false;
     try {
         reply = json::from_cbor(buf.begin(), buf.end());
     }

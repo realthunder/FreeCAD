@@ -52,99 +52,30 @@ endforeach()
 set(CPYTHON_WASI_BUILD ${CPYTHON_WASI_SRC}/builddir/wasi)
 get_filename_component(FC_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOLUTE)
 
-# The Base math slice: pure math TUs plus their Python bindings.  The
-# binding TU is the *PyImp.cpp, which #includes the generated *Py.cpp.
-# The ExpressionCore carve (docs/ExpressionImage.md): the real parser +
-# AST walker + identifier code compiled against the S1 adapter world
-# (FcxDocument.*), selected by FC_EXPR_IMAGE.
-set(CORE_SLICE
-    ${FC_SRC}/App/Expression.cpp
-    ${FC_SRC}/App/ObjectIdentifier.cpp
-    ${FC_SRC}/App/Range.cpp
-    FcxDocument.cpp
-)
-
-set(BASE_SLICE
-    ${FC_SRC}/Base/Type.cpp
-    ${FC_SRC}/Base/BaseClass.cpp
-    ${FC_SRC}/Base/Vector3D.cpp
-    ${FC_SRC}/Base/Rotation.cpp
-    ${FC_SRC}/Base/Matrix.cpp
-    ${FC_SRC}/Base/Placement.cpp
-    ${FC_SRC}/Base/DualQuaternion.cpp
-    ${FC_SRC}/Base/Quantity.cpp
-    ${FC_SRC}/Base/Unit.cpp
-    ${FC_SRC}/Base/Exception.cpp
-    ${FC_SRC}/Base/PyObjectBase.cpp
-    ${FC_SRC}/Base/GeometryPyCXX.cpp
-    ${FC_SRC}/Base/BaseClassPyImp.cpp
-    ${FC_SRC}/Base/VectorPyImp.cpp
-    ${FC_SRC}/Base/RotationPyImp.cpp
-    ${FC_SRC}/Base/PlacementPyImp.cpp
-    ${FC_SRC}/Base/MatrixPyImp.cpp
-    ${FC_SRC}/Base/BoundBoxPyImp.cpp
-    ${FC_SRC}/Base/QuantityPyImp.cpp
-    ${FC_SRC}/Base/UnitPyImp.cpp
-)
-
-set(PYCXX_SRCS
-    ${FC_SRC}/CXX/cxx_extensions.cxx
-    ${FC_SRC}/CXX/cxx_exceptions.cxx
-    ${FC_SRC}/CXX/cxxsupport.cxx
-    ${FC_SRC}/CXX/cxxextensions.c
-    ${FC_SRC}/CXX/IndirectPythonInterface.cxx
-)
-
-# The in-image facade classes, generated from the <Sandbox tier=.../>
-# annotations in the binding XMLs (docs/ExpressionSandbox.md sec 7.5).
-# The host build runs the same script for its dispatch table, so both
-# sides of the boundary always agree.
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
-set(FCX_FACADES_INC ${CMAKE_CURRENT_BINARY_DIR}/FcxFacades.inc)
-set(FCX_SANDBOX_GEN ${FC_SRC}/Tools/bindings/generateSandboxFacades.py)
-add_custom_command(
-    OUTPUT ${FCX_FACADES_INC}
-    COMMAND Python3::Interpreter ${FCX_SANDBOX_GEN} --image-out ${FCX_FACADES_INC}
-    DEPENDS ${FCX_SANDBOX_GEN}
-            ${FC_SRC}/App/ComplexGeoDataPy.xml
-            ${FC_SRC}/App/DocumentObjectPy.xml
-            ${FC_SRC}/App/DocumentPy.xml
-            ${FC_SRC}/Mod/Part/App/TopoShapePy.xml
-            ${FC_SRC}/Mod/Spreadsheet/App/SheetPy.xml
-    COMMENT "Generating the expression sandbox facades (FcxFacades.inc)"
-)
+# The source slice, shared with the pyodide guest
+# (src/App/PyodideHost/guest): see ImageSources.cmake.
+include(${CMAKE_CURRENT_SOURCE_DIR}/ImageSources.cmake)
+fcx_add_facades_command()
 
 add_executable(fcx_image
-    ImageBridge.cpp
     ImageMain.cpp
-    ImageMarshal.cpp
-    ImageStubs.cpp
     ${FCX_FACADES_INC}
-    ${CORE_SLICE}
-    ${BASE_SLICE}
-    ${PYCXX_SRCS}
+    ${FCX_IMAGE_COMMON}
+    ${FCX_CORE_SLICE}
+    ${FCX_BASE_SLICE}
+    ${FCX_PYCXX_SRCS}
 )
-set_source_files_properties(${FCX_FACADES_INC} PROPERTIES
-    GENERATED TRUE HEADER_FILE_ONLY TRUE)
 set_target_properties(fcx_image PROPERTIES SUFFIX ".wasm")
 
 target_include_directories(fcx_image PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
-    ${FC_SRC}
-    ${FREECAD_GENERATED_DIR}
-    ${FREECAD_GENERATED_DIR}/Base
+    ${FCX_IMAGE_INCLUDES}
     ${CPYTHON_WASI_SRC}/Include
     ${CPYTHON_WASI_BUILD}
-    ${BOOST_INCLUDE_DIR}
-    ${FC_SRC}/3rdParty/FastSignals/libfastsignals/include
-    ${FC_SRC}/3rdParty/json/single_include
 )
 
 target_compile_definitions(fcx_image PRIVATE
-    FC_EXPR_IMAGE
-    FC_NO_QT
-    BOOST_DISABLE_THREADS
-    BOOST_SYSTEM_DISABLE_THREADS
+    ${FCX_IMAGE_DEFINES}
     _WASI_EMULATED_SIGNAL
     _WASI_EMULATED_GETPID
     _WASI_EMULATED_PROCESS_CLOCKS

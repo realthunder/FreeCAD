@@ -573,6 +573,29 @@ int main(int argc, char** argv)
                   "String(py.runPython('import numpy as np; int(np.arange(1000).sum())'))", "499500");
         CheckEval(host, "numpy version", "py.runPython('import numpy; numpy.__version__')", "2.4.6");
 
+        // 4b. An extra wheel, when asked: FCX_PROBE_WHEEL=<path under the
+        //     pyodide dir> FCX_PROBE_PY=<python expr> FCX_PROBE_EXPECT=<str>.
+        //     This is how the toolchain for the guest extension is proven,
+        //     and later how a freshly built fcx_image wheel is smoke-tested.
+        if (const char* wheel = std::getenv("FCX_PROBE_WHEEL")) {
+            const char* code = std::getenv("FCX_PROBE_PY");
+            const char* want = std::getenv("FCX_PROBE_EXPECT");
+            std::string load = std::string("py.loadPackage('") + wheel
+                + "', { messageCallback: () => {} }).then(() => 'loaded')";
+            CheckEval(host, "loadPackage(FCX_PROBE_WHEEL)", load, "loaded");
+            // FCX_PROBE_JS runs first: a place to install a fake host bridge
+            // (globalThis.fcxHost) or anything else the Python side names.
+            if (const char* js = std::getenv("FCX_PROBE_JS")) {
+                v8::HandleScope s(isolate);
+                if (!Run(host, js, "FCX_PROBE_JS"))
+                    ++host.failures;
+            }
+            if (code && want) {
+                std::string run = std::string("String(py.runPython(") + "`" + code + "`))";
+                CheckEval(host, "FCX_PROBE_PY", run, want);
+            }
+        }
+
         // 5. It is confined.  The same claims the v8-embed consumer test makes,
         //    now with the shim installed and pyodide running on top of it.
         for (const char* name : {"process", "require", "module", "fs", "fetch", "XMLHttpRequest",

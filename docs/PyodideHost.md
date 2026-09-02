@@ -177,13 +177,80 @@ installed by the 2026-09-01 bench (`npm install pyodide@314.0.6`),
 kept beside `pybench-rig-20260901/`, the node-side rig it is compared
 against.  The probe exits non-zero on any failed check.
 
-## 7. What comes next (phase 1, not started)
+## 7. Phase 1, step 1: the guest toolchain (built 2026-09-02)
 
-1. Turn the probe into `App::PyodideHost`: isolate + context owned for
-   the session (the 1.5 s boot happens once), the shim installed from a
-   resource, a `PyodideRuntime` behind the same seam the WASI image
-   uses (`ImageHost::eval` / FcxWire), so the corpus gate runs against
-   it unchanged.
+Pyodide 314.0.6 is CPython 3.14.2 built with **emscripten 5.0.3**, ABI
+`2026_0`.  An extension module for it must be built with that emscripten
+against pyodide's own Python headers, and shipped as a wheel:
+
+- `~/works/sw/emsdk-5.0.3` -- a second emsdk clone pinned to 5.0.3, so
+  the wasm viewer's emsdk (6.0.6) is never touched.  Both emsdk and
+  emcc want Python >= 3.10 and the system python3 is 3.8; and
+  `emsdk_env.sh` CLEARS `EMSDK_PYTHON` while it runs.
+  `src/App/PyodideHost/guest/emsdk-env.sh` handles both.
+- `~/works/sw/pyodide/venv-build` -- `pyodide-build 0.39.0` under a
+  Python **3.14** (conda env `py314`): the tool refuses an xbuildenv
+  whose Python differs from the host's.  Its cross-build environment
+  for 314.0.6 sits at `~/works/sw/pyodide/xbuildenv/` (headers at
+  `.../cpython/installs/python-3.14.2/include/python3.14`).
+- The flags are pyodide's own (`Makefile.envs`, pyodide-build's
+  `pywasmcross`): compile `-fPIC -fwasm-exceptions -sSUPPORT_LONGJMP=wasm
+  -DPY_CALL_TRAMPOLINE`, link `-sSIDE_MODULE=2 -sWASM_BIGINT` with the
+  `PyInit` exported; extension suffix `.cpython-314-wasm32-emscripten.so`.
+- `guest/make_wheel.py` wraps .so files into a wheel with the tag
+  pyodide checks (`cp314-cp314-pyodide_2026_0_wasm32`) and a RECORD.
+  `py.loadPackage(<path>)` reads it through the scoped reader.
+
+Proven with `guest/hello_ext.c`: built, wrapped, loaded in the probe
+(`FCX_PROBE_WHEEL` / `FCX_PROBE_PY` / `FCX_PROBE_EXPECT`), answered.
+
+## 8. Phase 1, step 2: the guest wheel `fcx_image` (built 2026-09-02)
+
+The WASI image is not just CPython: it carries FreeCAD's expression
+parser and walker (the core carve), the Base math types, the generated
+facades, the marshaller and the bridge, compiled into the guest.  The
+pyodide guest carries the SAME slice:
+
+- `src/App/ExpressionImage/ImageSources.cmake` -- the source lists,
+  includes and defines, shared by both guests so they cannot drift.
+- `ImageDispatch.{h,cpp}` -- the dispatcher and module setup moved out
+  of `ImageMain.cpp` unchanged; both entry files call it.
+  `ImageMain.cpp` keeps only the WASI exports, the interpreter start and
+  the reply buffers.  The rebuilt WASI image passes its 49 gtests.
+- `ImageBridge.cpp` -- a second transport under `FC_EXPR_PYODIDE`: a
+  side module has no wasm imports of its own, so the bridge calls a
+  Python callable the host installs (`_fcx_image.set_host`) with the
+  CBOR request as `bytes` and takes the reply back through the buffer
+  protocol, or `to_bytes()` for a JsProxy of a Uint8Array.
+- `ImageModule.cpp` -- `PyInit__fcx_image`: no interpreter to start;
+  registers the in-image `FreeCAD`/`App` module and `_fcx` in
+  sys.modules, builds the eval globals, exposes `call(bytes) -> bytes`
+  and `set_host(callable)`.
+- `src/App/PyodideHost/guest/CMakeLists.txt` -- the emscripten cross
+  project.  An `add_executable` with a `.so` suffix, NOT
+  `add_library(MODULE)`: CMake's Emscripten platform archives a MODULE
+  with emar, and an archive is not a side module.  Output:
+  `dist/fcx_image-0.1-cp314-cp314-pyodide_2026_0_wasm32.whl` (1.9 MB
+  .so; the whole slice compiled against Python 3.14 headers with zero
+  errors).
+
+Smoke-tested in the probe, through the wheel: `{"op":"eval","src":"1+2"}`
+-> `{"ok":true,"val":3}`; `{"lang":"expr","src":"2 mm + 3 mm"}` ->
+a `quantity` of 5.0 with the length unit; `"1 +"` -> `ParserError`;
+`_fcx.op("len", 7)` reaches a JS host function and decodes its reply.
+The host receives the request as a PyProxy of `bytes` and reads it
+zero-copy with `getBuffer()`.
+
+## 9. Phase 1, step 3: the host runtime (not started)
+
+1. Pull wasmtime behind a `Runtime` interface inside `ImageHost`
+   (initialize / roundTrip / teardown / location; the bridge dispatch
+   is shared) and add the V8+pyodide runtime from the probe: isolate and
+   context owned for the session (the 1.5 s boot happens once), the
+   shim compiled in as a string (it is the security policy, so it must
+   not be swappable on disk), `fcx_image` loaded from the wheel,
+   selected by the preference `Expression/Sandbox:Runtime`.  The corpus
+   gate and the ExpressionImage gtests then run against it unchanged.
 2. Marshalling: FcxWire is CBOR over a byte buffer; on this runtime the
    cheaper path is direct V8 values (the 45 ns C++ -> V8 hop measured
    2026-09-01), with the bindings pack handed over as a JS object.
