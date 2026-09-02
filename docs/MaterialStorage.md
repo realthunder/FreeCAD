@@ -1543,17 +1543,33 @@ the text inline. The sync that runs on that source change finds every
 name already carried and leaves it alone, which is the rule it was
 written with. Store first, set second: the other order stores nothing.
 
-**Open, and wanting a ruling before this is built:**
+**Ruled 2026-09-02**, all four, and the build order that follows:
 
-- Which of the three options above, if not the recommendation.
-- What the materialize command is called and where it appears. The
-  sync commands' shown-only-while-it-applies rule (13.5) is the
-  precedent for the second half.
-- Whether materializing is reversible, and whether un-materializing
-  restores the card or leaves the object bare. The effects module's
-  deactivate says reversible is cheap; it does not say what the card
-  should do.
-- How the follow-the-card rule of section 15 extends to a carried
-  document. Follow gates a card SET and never a restore, and a document
-  is not an `App::Material`, so `FollowMaterial` as written does not
-  decide it.
+- **Option 1 is the design, and it is NOT built yet.** The storage
+  round-trips, the consumer gap warns instead of dropping, and nothing
+  outside App reads the column: that is a stable, honest state. The
+  draw split across five layers plus the Cycles variant loop waits for
+  a real per-face document to ask for it. Option 3 is rejected: it
+  throws away finished storage to save a warning.
+- **The command is "Edit Shader...", in the appearance panel beside the
+  look list**, shown only while the selected object wears a card that
+  carries a MaterialX document (the 13.5 rule). "Materialize" stays an
+  internal word. No tree context-menu entry in the first cut.
+- **Reversible, and un-materializing needs no card logic.** The object
+  never stops wearing the card while materialized (the binding merely
+  wins), so removing the three objects makes the card's look reappear
+  by construction. Leaving the object bare would mean also clearing the
+  card, which is a separate action that already exists. Un-materialize
+  confirms first when the program text differs from the card's document,
+  because it discards edits; writing edits back to the card is a later
+  feature, not part of step 9.
+- **The document is one more field of the card's appearance value and
+  the follow rule applies unchanged.** A card SET on a following object
+  brings whatever the card carries, document included; a library edit to
+  the card's document pushes nothing, exactly as a library edit to its
+  colour pushes nothing. One card, one follow rule. Re-setting the card
+  on a materialized object changes nothing visible, because the binding
+  still wins.
+
+So step 9 as built is the Edit Shader button alone, with the
+store-first/set-second import ordering that closes 16.6.
