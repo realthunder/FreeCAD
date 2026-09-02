@@ -1055,3 +1055,298 @@ relative-inline case is the import step sec 6.13 of
 `CyclesIntegration.md` already calls for -- read the file, flatten its
 filenames, store the result inline -- and that belongs with the "Edit
 shader" button, not here.
+
+## 17. The MaterialX card: what was settled (2026-09-02)
+
+The card itself is designed in `CyclesIntegration.md` sec 6.13. This
+section records what a later discussion settled around it: the STORAGE
+shape, the rename set that has to go ahead of it, the audit that priced
+both, and the order to build them in. **Nothing in this section is
+built.** Section 16 is what is built, and this continues from it.
+
+### 17.1 The names
+
+The user ruled this set. It closes the confusion recorded in
+`material-name-collisions`: three classes called Material meaning three
+different things, and a property family that had already been renamed
+around the value it holds.
+
+| Now | Becomes | Why |
+| --- | --- | --- |
+| `App::Material` | `App::MaterialAppearance` | It is a look, and every accessor already calls it that: `GeoFeature::getMaterialAppearance()`, `Materials::Material::getMaterialAppearance()`, `ViewProviderGeometryObject::applyMaterialAppearance()`. |
+| `App::MaterialList` | `App::AppearanceList` | Follows the value. |
+| `App::PropertyMaterialList` | `App::PropertyAppearanceList` | Pairs with `App::PropertyAppearance` and with the already-renamed `PropertyAppearanceListItem`. |
+| `App::Appearance` | `App::ShaderBinding` | It is a `LinkGroup` that binds shader programs to targets, not a look. Joins `App::Shader` and `App::ShaderProgram` by name. |
+| `Gui::ViewProviderAppearance` | `Gui::ViewProviderShaderBinding` | Follows its object. |
+
+For the record, because it was asked and the answer was not obvious:
+`App::Appearance` had NOT been renamed to anything before this.
+`git log --all -S"AppearanceBinder"` finds nothing and the string appears
+nowhere in the tree. The rename pass of 2026-09-02 was three commits and
+touched only the property side: `4ae36071e6` (the legacy-name mechanism),
+`adcbc3d3c4` (`App::PropertyMaterial` -> `App::PropertyAppearance`) and
+`cb39c7c61d` (`Gui::PropertyShapeMaterial` -> `PropertyShapeAppearance`
+plus the two editor items).
+
+Scale, measured: `App::Material` 275 hits in 41 files, `MaterialList`
+292 in 16, `PropertyMaterialList` 436 in 28, `App::Appearance` 32 in 10,
+`ViewProviderAppearance` 40 in 6.
+
+### 17.2 Three format couplings, not one
+
+A renamed type reaches the file format by three separate doors, and only
+the first was closed in 2026-09-02.
+
+**The `type=` attribute.** `Base::Type::addLegacyName` (`4ae36071e6`).
+Needed by `PropertyMaterialList`, `App::Appearance` and
+`Gui::ViewProviderAppearance`, all three of which appear as type names in
+`data/examples/render/materialx-showcase.FCStd`. Not needed by
+`App::Material` or `App::MaterialList`: they are plain value classes with
+no type registration at all.
+
+**The XML ELEMENT name.** `PropertyLists::xmlName()` (`App/Property.cpp:527`)
+derives the element from the LIVE type name: it takes
+`getTypeId().getName()`, strips the namespace and a leading `Property`.
+`Save` writes that element and `Restore` searches for it. So renaming
+`App::PropertyMaterialList` would write `<AppearanceList>` and then look
+for `<AppearanceList>` in every file that says `<MaterialList>` -- and
+the property would restore EMPTY, with one console line to show for it.
+Verified against a real document: `materialx-showcase.FCStd` holds
+`<MaterialList count="1" follow="1" fields="1">` under
+`type="App::PropertyMaterialList"`. **The rename must override
+`xmlName()` to return the frozen `"MaterialList"`**, which is the same
+decision `adcbc3d3c4` made when it froze the `<PropertyMaterial>` element.
+`addLegacyName` does not help here: it resolves type names, not elements.
+
+**The Python-visible name.** `App.Material` is public API and in use --
+Draft (`view_layer`, `utils`, `gui_setstyle`, `layer`), BIM
+(`ArchReference`, `ArchWindow`, `ArchBuildingPart`, `ifc_tools`,
+`importDAE`, `importSH3DHelper`), the Material tests and fork scripts --
+so `MaterialPy.xml` moves its `Twin`/`TwinPointer` to the new class and
+PINS `PythonName` to `App.Material`. The C++ class renames; the Python
+type does not. `App.MaterialList` is fork-only; keep the name and expose
+`App.AppearanceList` as an alias rather than break fork macros.
+
+### 17.3 `App::FileSet`, the value behind a named set of files
+
+`App::PropertyFileIncludedList` (sec 16.2) holds its `Entry` list and all
+of the blob logic inside the property. Three carriers now want that same
+value -- `App::ShaderProgram::Images`, a material card, and an
+appearance -- and only one of them is a property, so the value comes out
+into `src/App/FileSet.{h,cpp}`:
+
+- `Entry {name, original, hash, blob}`, `find`, `filePath`, `hashes`.
+- Mutators that take a `FileBlobManager&` EXPLICITLY. A value has no
+  container to find the owning document from, and defaulting to the
+  process-wide store would silently strand content outside the document
+  that is about to save it.
+- `save` / `restore` with a caller-chosen element name, `referrerFor`,
+  `collectBlobs`, `assignRestoredBlob`, `holdsEveryNamedBlob`,
+  `getMemSize`, `operator==` on name and hash (never provenance).
+
+The property keeps what only a property can do: `blobManager()`, the
+`_pendingManager` queue, `awaitBlob`/`cancelPending`, the
+`aboutToSetValue`/`hasSetValue` pair, and the Python dict conversion. A
+`using Entry = FileSet::Entry;` keeps the eight call sites in
+`ViewProviderShaderObject.cpp` compiling untouched.
+
+It also removes a real duplication: the referrer stem/extension naming is
+written twice today, once in `collectBlobs` and again in `Save`.
+
+The element name stays `"FileIncludedList"`, so the output is
+byte-identical, and **the acceptance criterion is that
+`tests/src/App/PropertyFileIncludedList.cpp` passes unmodified**.
+
+### 17.4 The payload IS a set of files
+
+The first cut of this design had the MaterialX payload as document TEXT
+plus images, which raised a question about what to do with a card's
+base64 image entries at assignment time. The user's correction removes
+the question: **the card carries the same `FileSet`, and the document is
+one of its entries.**
+
+So `App::MaterialXDocument` is a thin thing over `App::FileSet` -- the
+set, which entry is the document, and the memoized parse/generation that
+sec 6.13's node registry keys on. Assignment copies HANDLES, not bytes;
+both the card property and the appearance are blob referrers naming the
+same hashes; `FileBlobManager` holds one copy per document however many
+objects wear the card. Nothing is base64 anywhere along that path, and
+nothing is decoded at assignment or at draw.
+
+### 17.5 The three forms
+
+- **In a library, on disk:** a `materialx/` sub-directory at the LIBRARY
+  root (not per card directory, so cards under `Appearance/` and
+  `Standard/` share one copy of a map), holding the document and its maps
+  under DESCRIPTIVE names. No hashes on disk: this is what a card author
+  edits, diffs and version-controls. This would be the shipped library's
+  first sidecar convention -- no card names a relative file today.
+- **In a document:** the card names its files by CONTENT HASH and the
+  bytes are blobs in the document's store, shared with the appearance's
+  `FileSet`. Nothing inlined, nothing stored twice.
+- **On the clipboard, and for export:** the flattened `.FCMat` with
+  everything base64 inside it, generated by inlining from those blobs at
+  copy time and split back into blobs on paste. This form stays first
+  class (sec 16.4): it is the only one that can cross a document or an
+  application boundary, and copy/paste of a material between objects is
+  a planned feature.
+
+### 17.6 Identity is computed over the hashes
+
+The canonical form -- what a card's content hash is computed over -- must
+be the hash-naming form, not the library spelling. Compute it over the
+library spelling and editing `brushed_aluminium.mtlx` in place leaves the
+card's hash unchanged, so "Update from library" and the
+diverged/current comparison of sec 13 both go blind to a look that
+actually changed. Over the hashes, a changed map produces a changed card
+hash transitively.
+
+The consequence is deliberate: **the on-disk library file is not
+canonical.** Loading resolves the descriptive names and hashes the bytes.
+That is the same shape MaterialX's own `fileprefix` flattening already
+has -- what is written for humans is not what identity is computed over.
+
+### 17.7 Everything is carried into the document
+
+Already decided and already implemented for cards, and the reasoning
+transfers to a MaterialX document and its maps unchanged.
+
+`411da2d10d` ("Material: carry the stock cards too, because the library
+moves"): stock cards used to be left out, since the hash said which card
+it was and any installation with the same library could produce the
+content again. That holds only while a shipped library is a fixed point,
+and it is not one -- `7f5a3b7d49` retuned the default appearance, which
+changed the Default card's content and so its hash, and every document
+written before it named a hash no installed card answered to. A hash miss
+does not fall back to the uuid, so the material was lost outright: the
+King building lost it on 13642 objects and said so 13642 times.
+
+`DocumentParams::SaveMaterialCards` defaults true and
+`PropertyMaterial::storesContent()` returns true for every resolved card.
+What makes that affordable is the per-document dedup rather than the
+omission: `ensureBlob()` looks the content hash up in the store first, so
+those 13642 objects add one 670-byte entry between them, and re-importing
+King grew the file from 102.3MB to 102.4MB.
+
+So: **a MaterialX document and its maps are carried into the document on
+assignment, always, deduped by content.** A look that silently disappears
+when someone retunes a shipped card is the failure this argument was
+written from.
+
+### 17.8 Where it rides, and why
+
+On the appearance value (`App::MaterialAppearance`), not in a property of
+its own. The deciding fact is that the bridge already exists and is
+BY VALUE: `GeoFeature::getMaterialAppearance()` returns one
+(`GeoFeature.h:198`), and `ViewProviderGeometryObject::applyMaterialAppearance()`
+writes it with `ShapeAppearance.followMaterial(card)`
+(`ViewProviderGeometryObject.cpp:1319-1332`). A card's document reaches
+the view provider through plumbing that is already there, per-face
+MaterialX falls out of the palette column the texture field already uses,
+and the follow rule of sec 15 needs no new rule.
+
+A dedicated property instead would need a FOURTH `GeoFeature` virtual
+plus mirrors of `applyMaterialAppearance`, `canResetAppearanceToMaterial`,
+`resetAppearanceToMaterial` and `deriveFollowMaterial` -- four code paths
+that would have to stay in step with the follow rule forever.
+
+Two costs that were checked and are not costs:
+
+- The render side reads `ShapeAppearance` PER FIELD -- `getMetallic(i)`,
+  `getRoughness(i)`, `getImagePath(i)`, `getFinishes()` -- and never
+  composes a whole material per face. A shared value on the appearance
+  costs a pointer per STORED material and a refcount per value copy, not
+  one per face read. There are no `sizeof` or `memcpy` layout assumptions
+  on the class anywhere in App or Gui.
+- The shape is not novel: `Materials::PropertyMaterial` already holds
+  `std::shared_ptr<const Material>` (`Mod/Material/App/PropertyMaterial.h:254`).
+
+`App::ShaderProgram` keeps the dedicated property it was given in
+`581001f441` -- its look IS its document, so it wants no colour slots --
+and it carries the same type, so there is one serialization
+implementation either way. That is what putting `save`/`restore` on the
+value buys.
+
+### 17.9 What the audit found, before anything is written
+
+- **`operator==` gates the whole card path.** `applyMaterialAppearance()`
+  returns early on `card == App::Material()`. A card stating ONLY a
+  document and no colours would compare equal to the default and be
+  silently ignored. The field must be in `operator==`.
+- **`MaterialList::setBase` compares and copies field by field in THREE
+  places** -- the early-out compare, the write, and `setMaterialType`'s
+  save/restore (`MaterialList.cpp:1049-1094`). Miss one and the write is
+  silently elided or the value is dropped on a type change. This is the
+  fork's known elided-no-op-write failure mode.
+- **The per-field stream form has one bit left.** `FieldFollow = 1<<14`
+  is the last used bit of a `uint16_t` mask. Better to spend bit 15 on an
+  ESCAPE -- an extension mask in its own run, extended runs flat after
+  it -- than on this one field. It is safe because `RestoreDocFile` gives
+  the property its own archive file, so trailing bytes an older build
+  never reads are harmless.
+- **`RunBase` cannot be extended.** Its payload is read positionally with
+  no length bound (`PropertyStandard.cpp:4822-4845`); the run head's byte
+  length is used only by `skipRun` for runs the reader does not know. A
+  new build reading an old file would read past the end of that run. The
+  new field therefore needs a SELF-CONTAINED run carrying the base value,
+  the palette and the index -- which also serves the uniform case, where
+  the base is written as a one-entry palette exactly as the texture field
+  already does.
+- **`App::PropertyAppearance`, the single-value property, saves only
+  colours and the finish** -- not the texture, and so not this either.
+  The list property is the storage of record; leaving the single one
+  consistent with `texture` is the smaller surprise.
+- **A layering constraint decides where the import step lives.**
+  `Render::MaterialX::imageReferences()` and `substituteImages()` are in
+  `libFreeCADRenderer` (`Gui/Renderer/MaterialXSupport.h:216,232`), which
+  the Materials module cannot call. So the card READ path must be
+  parse-free: the entry names are baked by the authoring/import step,
+  which is Gui-side, and `App::MaterialXDocument` holds files and never
+  parses anything.
+
+### 17.10 Build order
+
+1. **`App::Material` -> `App::MaterialAppearance`.** No type registration
+   to alias; `MaterialPy.xml` moves its twin and pins `PythonName`;
+   `Material.{h,cpp}` become `MaterialAppearance.{h,cpp}` and 41 files
+   follow the include.
+2. **`App::MaterialList` -> `App::AppearanceList`**, Python name kept
+   with an alias for the new one.
+3. **`App::PropertyMaterialList` -> `App::PropertyAppearanceList`**, with
+   `addLegacyName` AND the frozen `xmlName()` of 17.2. The test file
+   renames with it.
+4. **`App::Appearance` -> `App::ShaderBinding`** and
+   `Gui::ViewProviderAppearance` -> `Gui::ViewProviderShaderBinding`,
+   both with `addLegacyName`. The type-init ORDER must not move: the
+   shader family registers after `Link`/`LinkGroup` in
+   `App/Application.cpp` and after `ViewProviderLink` in
+   `Gui/Application.cpp`, or startup asserts on `badType`. Update the
+   bundled `src/Ext/freecad/rendereffects/__init__.py`, which names the
+   type as a string, and the two scripts that do.
+5. **`App::FileSet`** extracted, `PropertyFileIncludedList` delegating.
+6. **`App::MaterialXDocument`** over the set, plus the stream-form escape
+   of 17.9.
+7. **The field on the appearance value** -- `operator==`, all three
+   `setBase` lists, the XML key, `getMemSize`, the Python dict -- then
+   the card side: the `materialx/` directory convention, the read in
+   `Materials::Material::getMaterialAppearance()`, and one more filter in
+   `DlgDisplayPropertiesImp::setupFilters()`.
+8. **Gui**: the shared node registry with copy-on-write, beside
+   `applyDirectBindings()` and `rebuildAllBindings()` (sec 6.13
+   decision 1a).
+9. **Per-face column**, and the "Edit shader" button with the Gui-side
+   read-flatten-store import that bakes the entry names and closes the
+   relative-inline case of sec 16.6.
+
+Steps 1 to 4 are mechanical and independent of the rest; step 5 is
+independent of all of them and is load-bearing for three carriers, so it
+may be pulled forward.
+
+**What to verify after each of 1 to 4**: `ctest` (463/463 today) and the
+Python suite; then the round trip that matters -- open
+`data/examples/render/materialx-showcase.FCStd` (18 shader bindings, 18
+appearance lists), confirm the looks survive, re-save at schema 5 AND at
+schema 4, since `Writer::typeName` writes the former name at 4, and
+reopen both. Grep the string literals as well as the symbols: `.py`,
+`.csv`, `.ui` and `.xml` name these types as text, and those failures are
+silent.

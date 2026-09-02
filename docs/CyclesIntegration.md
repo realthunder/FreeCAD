@@ -2104,6 +2104,17 @@ generalisation.
 > That last one is **answered**: 6.14 built the array, and a card may
 > name sixteen images before the question arises again.
 
+> **Storage settled 2026-09-02, in `MaterialStorage.md` sec 17.** The
+> payload is one `App::FileSet` holding the document and its maps as
+> content-addressed blobs, carried on the appearance value; a library
+> keeps its files under descriptive names in a `materialx/`
+> sub-directory and identity is computed over the hashes. That
+> supersedes the "embedded" reading of decision 2 here -- the content
+> still travels with the document, as blobs rather than as text inside
+> the card -- and the flattened base64 form remains the clipboard and
+> export spelling. Sec 17 also carries the rename set and the build
+> order this lands in.
+
 ### 6.14 Many images on one unit (phase B, built 2026-09-01)
 
 6.12 gave a document its images and, in the same breath, a cap of three
