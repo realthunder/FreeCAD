@@ -1686,8 +1686,8 @@ of the CHOSEN shader's graph (four per piece), and Cycles has no cap.
 Two workstreams, ruled in this order:
 
 1. **A surface name on the graph** -- BUILT, below.
-2. **A look-reading importer, in the Import module** (a later session),
-   beside `ReaderGltf.cpp` in `src/Mod/Import/App` with its Gui half in
+2. **A look-reading importer, in the Import module** -- BUILT, below.
+   Beside `ReaderGltf.cpp` in `src/Mod/Import/App` with its Gui half in
    `ImportGui`. A glb (or other mesh bundle) imported beside a `.mtlx`
    that carries a `<look>` gets a card per `materialassign`, and each
    object made from a named mesh wears the card the look assigns to that
@@ -1753,6 +1753,99 @@ samples only the chosen graph's layers -- the two lists are joined on the
 resolved path -- so the picture and the sixteen-layer cap are right; the
 decode is a superset, cached per path, and paid once per document rather
 than once per card.
+
+#### The look, as built (2026-09-03)
+
+Importing `chess_set.glb` and then `standard_surface_chess_set.mtlx` onto
+it gives fifteen objects, each wearing its own surface of ONE shader
+graph. Three pieces, split by what each is allowed to know:
+
+| Piece | Where | What it answers |
+| --- | --- | --- |
+| `Render::MaterialX::looks()` | the renderer, beside `imageReferences()` | what the document SAYS: its looks, and each assignment's material and geometry |
+| `Import::ReaderLook` | `src/Mod/Import/App`, beside `ReaderGltf.cpp` | the FreeCAD half: which object answers to a name, what card it comes to wear |
+| `ImportGui::readLook()` | `src/Mod/Import/Gui` | the glue: read the file, ask the renderer, hand it over as plain data |
+
+**A `.mtlx` is an importable file type** (`Import/Init.py`) that makes no
+objects. It dresses the ones the document already has, and importing it
+into an empty document is refused rather than answered with a new one --
+which is what a look IS: a statement about geometry that is elsewhere.
+The other route is a sidecar: importing `asset.glb` reads `asset.mtlx`
+beside it, if there is one, onto exactly the objects that import made.
+Exactly that name; a directory's other documents are not this file's
+materials.
+
+**The App half takes data, not a library.** MaterialX is carried by the
+renderer and the App tier does not link it (sec 17.9), which is why the
+Gui half exists at all: it is fifty lines that read the file and call
+`looks()` and `imageReferences()`. `Import::ReaderLook` names no MaterialX
+type, so the matching and the card building are testable without it -- and
+a console `Import.insert()` of a `.mtlx` says the format is not supported
+rather than half-doing it.
+
+**Matching is by name, and the name is the object's Label.** A geometry
+string is a list of MaterialX geometry paths, so each is tried whole and
+then by its last element (`/root/Bishop_B` answers to `Bishop_B`), with
+`*` and `?` matching as a glob and the whole string having to match --
+`Pawn_*` is the pieces whose names begin that way, not the ones that
+contain it. The internal name is tried after the label, for a document
+whose labels were since edited. The first assignment that answers wins,
+which is the order the look states them in, and assignments that matched
+nothing are reported with a count rather than passed over.
+
+**Fifteen cards, one file set.** Each assignment becomes one card whose
+`MaterialXSurface` is what the look's `material=` says -- copied straight
+through, because `surfaceIndex()` resolves a `surfacematerial` namepath
+first (item 1). The names and files are the same list for all of them, so
+the document's blob store keeps ONE copy of the graph and one of each of
+the forty-three images, and the cards differ in one string. That is the
+shape item 1 was built for, arriving from a real asset rather than from a
+test.
+
+**Two things had to be fixed under it before there was a picture.**
+
+1. **A mesh that states texture coordinates keeps its triangulation.**
+   `ReaderGltf` rebuilt B-Rep geometry from the facets of every mesh whose
+   glTF material was untextured -- which the chess set's is, since its
+   images are named by the MaterialX document and not by the glb. The
+   rebuild goes through points and facets, so the UVs the look shades
+   through are destroyed by it, and on 1.5M triangles the sew did not
+   finish in **fifteen minutes** (measured; killed at the timeout). The
+   textured case already kept its triangulation for exactly this reason,
+   so the gate now also asks the shape: any face whose triangulation has
+   UV nodes keeps it. The same import then takes **0.2 seconds**.
+   `GltfKeepMesh` (Mod/Import) turns it off for a file wanted as geometry.
+2. **A MaterialX graph needs the unit-0 stand-in.** The shapes generate
+   texture coordinates -- and the render cache captures them -- only while
+   a texture UNIT IS ENABLED, which is why a bump-only or per-face-imaged
+   object already plants a 1x1 white `SoTexture2`. A document's image
+   nodes read `texcoord`, which is the mesh's own coordinates in both
+   backends (the generated raster code samples `v_texcoord0`, the path
+   tracer emits a texture coordinate node over `ATTR_STD_UV`), and with
+   no unit enabled there were none: every map came out as its corner
+   texel, which is the whole chess set as flat grey paint. An appearance
+   stating a MaterialX document now asks for the stand-in like the other
+   two (`ViewProviderGeometryObject::updateRenderTexture`).
+
+**How it was verified.** `fcad-probes/look_run.sh` is the deliverable and
+the check: it imports the real `chess_set.glb`, imports the real
+`standard_surface_chess_set.mtlx` onto it, asserts that fifteen objects
+wear fifteen different surfaces of one shader graph, and takes a picture
+with each backend. `Import_tests_run` (new suite) covers what a geometry
+string means -- the list, the path tail, the globs, and that a name never
+answers to a name it merely contains. ctest 473/473, `FreeCADCmd -t 0`
+2659 OK.
+
+**One difference between the pictures, measured and left open.** The
+raster picture is the asset as authored: dark board, black pieces, green
+felt. The path tracer draws the same materials -- the same maps, the same
+felt, the same checker -- about five times brighter and with much less
+contrast. Not the look, and not MaterialX: a PLAIN 0.18 grey box is
+already 1.8x brighter in the path tracer than in the raster path on this
+scene, so the two engines' lighting does not agree to begin with and this
+asset, which is mostly dark, shows it at its worst. Whether they should
+agree, and which is right, is a question for the engines and not for the
+importer.
 
 ### 17.14 The library keeps a file once per CARD, and that is now wrong (open, 2026-09-03)
 

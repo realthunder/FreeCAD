@@ -76,6 +76,7 @@ endfunction()
 
 set(TestExecutables
     Tests_run
+    Import_tests_run
     Material_tests_run
     Mesh_tests_run
     Part_tests_run

@@ -78,6 +78,11 @@ std::vector<ImageReference> imageReferences(const std::string &, const std::stri
     return {};
 }
 
+std::vector<Look> looks(const std::string &, const std::string &)
+{
+    return {};
+}
+
 std::string substituteImages(const std::string &xml, const std::vector<ImageReference> &)
 {
     // Without the library there is no way to find the references, and a
@@ -627,6 +632,40 @@ std::vector<ImageReference> imageReferences(const std::string &xml,
         refs.push_back(std::move(ref));
     }
     return refs;
+}
+
+std::vector<Look> looks(const std::string &xml, const std::string &sourcePath)
+{
+    std::vector<Look> found;
+    mx::DocumentPtr doc = readOnly(xml, sourcePath);
+    if (!doc)
+        return found;
+    for (const mx::LookPtr &look : doc->getLooks()) {
+        if (!look)
+            continue;
+        Look out;
+        out.name = look->getName();
+        for (const mx::MaterialAssignPtr &assign : look->getMaterialAssigns()) {
+            if (!assign || assign->getMaterial().empty())
+                continue;
+            LookAssignment entry;
+            entry.material = assign->getMaterial();
+            entry.geom = assign->getActiveGeom();
+            if (entry.geom.empty() && assign->hasCollectionString()) {
+                // A collection is a named piece of geometry the document
+                // states once and several assignments point at. Its
+                // include geometry is the same kind of string the geom
+                // attribute holds, so the consumer sees one shape either
+                // way and knows which it was by the name kept here.
+                entry.collection = assign->getCollectionString();
+                if (mx::CollectionPtr collection = assign->getCollection())
+                    entry.geom = collection->getActiveIncludeGeom();
+            }
+            out.assignments.push_back(std::move(entry));
+        }
+        found.push_back(std::move(out));
+    }
+    return found;
 }
 
 std::string substituteImages(const std::string &xml,

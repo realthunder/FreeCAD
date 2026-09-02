@@ -15,6 +15,7 @@ set(ImportGui_LIBS
     FreeCADGui
     PartGui
     Import
+    FreeCADRenderer
     ${OCC_OCAF_LIBRARIES}
     ${OCC_OCAF_DEBUG_LIBRARIES}
 )
@@ -31,6 +32,8 @@ SET(ImportGui_SRCS
     ImportOCAFGui.h
     OCAFBrowser.cpp
     OCAFBrowser.h
+    ReaderLookGui.cpp
+    ReaderLookGui.h
     PreCompiled.cpp
     PreCompiled.h
     Workbench.cpp

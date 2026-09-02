@@ -32,6 +32,7 @@
 FreeCAD.addImportType("PLMXML files (*.plmxml *.PLMXML)", "PlmXmlParser")
 FreeCAD.addImportType("STEPZ Zip File Type (*.stpZ *.stpz *.STPZ)", "stepZ")
 FreeCAD.addImportType("glTF (*.gltf *.GLTF *.glb *.GLB)", "ImportGui")
+FreeCAD.addImportType("MaterialX look (*.mtlx *.MTLX)", "ImportGui")
 FreeCAD.addExportType("STEPZ zip File Type (*.stpZ *.stpz)", "stepZ")
 FreeCAD.addExportType("glTF (*.gltf *.glb)", "ImportGui")
 

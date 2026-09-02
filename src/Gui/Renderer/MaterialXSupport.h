@@ -246,6 +246,51 @@ RendererExport std::vector<ImageReference> imageReferences(const std::string &xm
 RendererExport std::string substituteImages(const std::string &xml,
                                             const std::vector<ImageReference> &files);
 
+/// One material assignment of a <look>: a surface of the document, and
+/// the geometry that wears it.
+struct LookAssignment {
+    /// Namepath of the assigned `surfacematerial` node, exactly as the
+    /// look writes it. This is what a card names as its surface
+    /// (docs/MaterialStorage.md sec 17.13), so it goes straight through.
+    std::string material;
+    /// The geometry the look assigns it to: a space-separated list of
+    /// MaterialX geometry name paths, wildcards and all, as written.
+    /// A consumer decides what its own objects are called.
+    std::string geom;
+    /// Where that came from: the assignment's own `geom`, or the name of
+    /// the `collection` it names, whose include geometry `geom` above
+    /// then holds. For reporting.
+    std::string collection;
+};
+
+/// A `<look>`: the document's statement of which of its materials each
+/// piece of an asset wears.
+///
+/// A material document says how a surface looks; a look says WHO looks
+/// that way, which is the other half an importer needs and the only
+/// place the two are connected. MaterialX's chess set is one document
+/// with fifteen surfaces and one look assigning each to a mesh of
+/// chess_set.glb by name.
+struct Look {
+    /// The look's own name, as the document writes it.
+    std::string name;
+    /// Its assignments, in document order.
+    std::vector<LookAssignment> assignments;
+};
+
+/// The looks a document states, in document order.
+///
+/// Parses the text and nothing else -- no data library, no validation --
+/// like imageReferences(): a look is structure, not shading, and this is
+/// asked before anything is rendered. `sourcePath` is the file the text
+/// came from, when it came from one. A collection an assignment names is
+/// resolved to its include geometry; anything it excludes is left to the
+/// caller, since MaterialX's exclusion is by geometry path and a
+/// consumer's names are its own. Never throws: a document that will not
+/// parse states no look.
+RendererExport std::vector<Look> looks(const std::string &xml,
+                                       const std::string &sourcePath = {});
+
 /// Absolute path of the standard data library shipped beside the
 /// binary, the directory holding stdlib/, pbrlib/, bxdf/ and the rest.
 /// Empty when the library is not built.
