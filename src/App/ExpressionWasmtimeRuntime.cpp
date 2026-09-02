@@ -20,6 +20,7 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -140,9 +141,22 @@ public:
 
         wasm_config_t* cfg = wasm_config_new();
         wasmtime_config_wasm_exceptions_set(cfg, true);
+        // The hard stage of the time budget (ExpressionImageRuntime.h,
+        // Outcome): the guest checks the engine's epoch at loop and call
+        // boundaries and traps once it passes the store's deadline; the
+        // watchdog thread advances the epoch.  The checks are compiled
+        // into the guest and cost ~5 us on a 13 us expression, so an
+        // instance started with no budget does without them (a budget
+        // set later takes effect at the next reset).  With the option on
+        // every store traps at once until it is given a deadline, hence
+        // the unbounded one below.
+        epochChecks = budgetMs > 0;
+        wasmtime_config_epoch_interruption_set(cfg, epochChecks);
         engine = wasm_engine_new_with_config(cfg);
         store = wasmtime_store_new(engine, nullptr, nullptr);
         context = wasmtime_store_context(store);
+        if (epochChecks)
+            wasmtime_context_set_epoch_deadline(context, kUnboundedTicks);
 
         wasi_config_t* wasi = wasi_config_new();
         wasi_config_inherit_stderr(wasi);
@@ -163,6 +177,9 @@ public:
         // (see cachePathFor) and is refreshed whenever it is older than
         // the image or fails to deserialize (wasmtime version change).
         std::string cachePath = paths.cache.empty() ? cachePathFor(imagePath) : paths.cache;
+        // the two compilations differ, and one must not evict the other
+        if (epochChecks)
+            cachePath.insert(cachePath.size() - std::strlen(".cwasm"), "-budget");
         Base::FileInfo imageInfo(imagePath);
         Base::FileInfo cacheInfo(cachePath);
         if (cacheInfo.exists()
@@ -267,24 +284,33 @@ public:
         return true;
     }
 
-    /// One fcx_call round trip: request CBOR in, reply CBOR out.
-    bool roundTrip(const std::vector<uint8_t>& request,
-                   std::vector<uint8_t>& reply) override
+    void setBudget(int budget, int grace) override
+    {
+        budgetMs = budget;
+        graceMs = grace;
+    }
+
+    /// One fcx_call round trip: request CBOR in, reply CBOR out.  This
+    /// runtime has no soft stage (the wasi CPython has no interrupt
+    /// buffer to poll), so the budget is one hard deadline at
+    /// budget + grace, and a trip that hits it ends the instance.
+    Outcome roundTrip(const std::vector<uint8_t>& request,
+                      std::vector<uint8_t>& reply) override
     {
         if (!live)
-            return false;
+            return Outcome::Failed;
         // write the request into guest memory
         wasmtime_val_t args[2], result;
         args[0].kind = WASMTIME_I32;
         args[0].of.i32 = (int32_t)request.size();
         if (!callSimple(funcAlloc, args, 1, &result, 1, "fcx_alloc"))
-            return false;
+            return Outcome::Failed;
         uint32_t guestPtr = (uint32_t)result.of.i32;
         uint8_t* mem = wasmtime_memory_data(context, &memory);
         size_t memSize = wasmtime_memory_data_size(context, &memory);
         if (!guestPtr || guestPtr + request.size() > memSize) {
             FC_ERR("guest allocation out of range");
-            return false;
+            return Outcome::Failed;
         }
         std::memcpy(mem + guestPtr, request.data(), request.size());
 
@@ -292,32 +318,48 @@ public:
         args[0].of.i32 = (int32_t)guestPtr;
         args[1].kind = WASMTIME_I32;
         args[1].of.i32 = (int32_t)request.size();
+        const int hardMs = epochChecks && budgetMs > 0 ? budgetMs + std::max(graceMs, 0) : 0;
+        if (hardMs > 0) {
+            // trap on the first epoch tick; only the watchdog ticks
+            wasmtime_context_set_epoch_deadline(context, 1);
+            watchdog.arm(0, hardMs);
+        }
         bool ok = callSimple(funcCall, args, 2, &result, 1, "fcx_call");
+        const int fired = hardMs > 0 ? watchdog.disarm() : -1;
+        // A tick that landed as the call was returning must not trap the
+        // bookkeeping calls below.
+        if (hardMs > 0)
+            wasmtime_context_set_epoch_deadline(context, kUnboundedTicks);
+        if (!ok && fired >= 0) {
+            FC_WARN("sandbox image terminated after " << hardMs
+                    << " ms; the instance is dropped");
+            return Outcome::Terminated;
+        }
         // free the request buffer regardless
         wasmtime_val_t freeArg;
         freeArg.kind = WASMTIME_I32;
         freeArg.of.i32 = (int32_t)guestPtr;
         callSimple(funcFree, &freeArg, 1, nullptr, 0, "fcx_free");
         if (!ok)
-            return false;
+            return Outcome::Failed;
 
         uint32_t replyPtr = (uint32_t)result.of.i32;
         mem = wasmtime_memory_data(context, &memory);  // may have moved
         memSize = wasmtime_memory_data_size(context, &memory);
         if (!replyPtr || replyPtr + 4 > memSize) {
             FC_ERR("bad reply pointer");
-            return false;
+            return Outcome::Failed;
         }
         uint32_t replyLen = 0;
         std::memcpy(&replyLen, mem + replyPtr, 4);
         if (replyPtr + 4 + replyLen > memSize) {
             FC_ERR("bad reply length");
-            return false;
+            return Outcome::Failed;
         }
         reply.assign(mem + replyPtr + 4, mem + replyPtr + 4 + replyLen);
         freeArg.of.i32 = (int32_t)replyPtr;
         callSimple(funcFree, &freeArg, 1, nullptr, 0, "fcx_free");
-        return true;
+        return Outcome::Ok;
     }
 
     void teardown() override
@@ -339,8 +381,19 @@ public:
     }
 
 private:
+    /// An epoch deadline no watchdog reaches (the epoch only ever moves
+    /// by one per fired call).
+    static constexpr uint64_t kUnboundedTicks = uint64_t(1) << 40;
+
     bool live = false;
     BridgeFn bridge;
+    int budgetMs = 0;
+    int graceMs = 0;
+    bool epochChecks = false;  ///< compiled in at initialize() when budgetMs > 0
+    Watchdog watchdog {[this](int) {
+        if (engine)
+            wasmtime_engine_increment_epoch(engine);
+    }};
 
     wasm_engine_t* engine = nullptr;
     wasmtime_store_t* store = nullptr;

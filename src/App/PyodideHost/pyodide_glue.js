@@ -6,6 +6,7 @@
 //
 //   __fcx_boot(root, wheel) -> Promise<string>   "booted" or throws
 //   __fcx_call(Uint8Array)  -> Uint8Array        one CBOR round trip
+//   __fcx_setInterrupt(Int32Array)               the interpreter's interrupt buffer
 //
 // The host installs `__fcx_bridge(Uint8Array) -> Uint8Array` before boot;
 // it is the only way out of the guest, and it goes straight to
@@ -90,6 +91,15 @@
     var n = putRequest(request);
     var len = callLen(n);
     return new Uint8Array(repData().subarray(0, len));
+  };
+
+  // The soft stage of the host's time budget: pyodide polls buf[0] from
+  // the eval loop and raises the signal it finds there (2 = SIGINT ->
+  // KeyboardInterrupt).  The host owns the storage and writes it from
+  // its watchdog thread.  null turns the polling off.
+  globalThis.__fcx_setInterrupt = function (buf) {
+    if (!py) throw new Error("pyodide is not booted");
+    py.setInterruptBuffer(buf || undefined);
   };
 
   globalThis.__fcx_teardown = function () {

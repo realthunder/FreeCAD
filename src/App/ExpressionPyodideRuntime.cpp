@@ -21,6 +21,7 @@
 #include "PreCompiled.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -274,17 +275,49 @@ public:
             return false;
         }
         callFn.Reset(isolate, fn.As<v8::Function>());
+
+        // 4. the soft stage of the budget: pyodide's interrupt buffer,
+        // an Int32Array the interpreter polls from its eval loop
+        // (CPython's Py_EMSCRIPTEN_SIGNAL_HANDLING; a non-zero value is
+        // taken as a signal number and raised at the next bytecode
+        // check).  Its storage is THIS object's `signal` word, wrapped as
+        // a SharedArrayBuffer so the watchdog thread writes it with no
+        // engine involvement -- exactly how a browser worker is
+        // interrupted from the main thread.  Installed by roundTrip only
+        // while there is a budget: the polling costs ~5 us per
+        // expression.
+        {
+            std::unique_ptr<v8::BackingStore> store = v8::SharedArrayBuffer::NewBackingStore(
+                    &signal, sizeof(signal), [](void*, size_t, void*) {}, nullptr);
+            v8::Local<v8::SharedArrayBuffer> sab =
+                v8::SharedArrayBuffer::New(isolate, std::shared_ptr<v8::BackingStore>(std::move(store)));
+            interruptArray.Reset(isolate, v8::Int32Array::New(sab, 0, 1));
+            v8::Local<v8::Value> setter;
+            if (!ctx->Global()->Get(ctx, str(isolate, "__fcx_setInterrupt")).ToLocal(&setter)
+                    || !setter->IsFunction()) {
+                FC_ERR("pyodide glue left no __fcx_setInterrupt");
+                teardown();
+                return false;
+            }
+            interruptSetter.Reset(isolate, setter.As<v8::Function>());
+        }
         live = true;
         FC_LOG("sandbox runtime live: pyodide at " << root.string() << " with "
                << wheel.filename().string() << " (" << (int)(nowMs() - t0) << " ms)");
         return true;
     }
 
-    bool roundTrip(const std::vector<uint8_t>& request,
-                   std::vector<uint8_t>& reply) override
+    void setBudget(int budget, int grace) override
+    {
+        budgetMs = budget;
+        graceMs = grace;
+    }
+
+    Outcome roundTrip(const std::vector<uint8_t>& request,
+                      std::vector<uint8_t>& reply) override
     {
         if (!live)
-            return false;
+            return Outcome::Failed;
         v8::Locker locker(isolate);
         v8::Isolate::Scope isolateScope(isolate);
         v8::HandleScope handleScope(isolate);
@@ -297,13 +330,37 @@ public:
             std::memcpy(ab->Data(), request.data(), request.size());
         v8::Local<v8::Value> arg = v8::Uint8Array::New(ab, 0, request.size());
         v8::Local<v8::Value> result;
-        if (!callFn.Get(isolate)->Call(ctx, ctx->Global(), 1, &arg).ToLocal(&result)) {
+        if ((budgetMs > 0) != interruptOn) {
+            // toggle the interpreter's polling with the budget
+            v8::Local<v8::Value> arg = budgetMs > 0 ? interruptArray.Get(isolate).As<v8::Value>()
+                                                    : v8::Null(isolate).As<v8::Value>();
+            if (interruptSetter.Get(isolate)->Call(ctx, ctx->Global(), 1, &arg).IsEmpty()) {
+                report(tc, "interrupt buffer");
+                return Outcome::Failed;
+            }
+            interruptOn = budgetMs > 0;
+        }
+        signal.store(0);
+        if (budgetMs > 0)
+            watchdog.arm(budgetMs, budgetMs + std::max(graceMs, 0));
+        const bool called = callFn.Get(isolate)->Call(ctx, ctx->Global(), 1, &arg).ToLocal(&result);
+        const int fired = watchdog.disarm();
+        // A soft signal the guest did not get to consume must not greet
+        // the next call (the guest zeroes it when it does consume it).
+        signal.store(0);
+        if (!called) {
+            if (tc.HasTerminated()) {
+                isolate->CancelTerminateExecution();
+                FC_WARN("pyodide guest terminated after " << (budgetMs + std::max(graceMs, 0))
+                        << " ms; the runtime is dropped");
+                return Outcome::Terminated;
+            }
             report(tc, "fcx call");
-            return false;
+            return Outcome::Failed;
         }
         if (!result->IsUint8Array()) {
             FC_ERR("pyodide guest returned " << toStd(isolate, result) << " instead of bytes");
-            return false;
+            return Outcome::Failed;
         }
         v8::Local<v8::Uint8Array> out = result.As<v8::Uint8Array>();
         reply.resize(out->ByteLength());
@@ -312,7 +369,7 @@ public:
         // Let the guest's own housekeeping (proxy finalizers, deferred
         // work) run now rather than pile up.
         isolate->PerformMicrotaskCheckpoint();
-        return true;
+        return fired >= 0 ? Outcome::Interrupted : Outcome::Ok;
     }
 
     void teardown() override
@@ -333,6 +390,9 @@ public:
                     }
                 }
                 callFn.Reset();
+                interruptSetter.Reset();
+                interruptArray.Reset();
+                interruptOn = false;
                 context.Reset();
                 modules.clear();
                 modulePaths.clear();
@@ -350,10 +410,24 @@ private:
     bool live = false;
     BridgeFn bridge;
     fs::path root;
+    int budgetMs = 0;
+    int graceMs = 0;
+    /// The interrupt buffer's one word (ExpressionImageRuntime.h,
+    /// Outcome): 2 = SIGINT, which the guest raises as KeyboardInterrupt.
+    std::atomic<int32_t> signal {0};
+    Watchdog watchdog {[this](int stage) {
+        if (stage == 0)
+            signal.store(2);
+        else if (isolate)
+            isolate->TerminateExecution();
+    }};
     v8::Isolate* isolate = nullptr;
     v8::ArrayBuffer::Allocator* allocator = nullptr;
     v8::Global<v8::Context> context;
     v8::Global<v8::Function> callFn;
+    v8::Global<v8::Function> interruptSetter;
+    v8::Global<v8::Value> interruptArray;
+    bool interruptOn = false;
     std::mt19937_64 rng {std::random_device {}()};
     std::map<std::string, v8::Global<v8::Module>> modules;
     std::map<int, std::string> modulePaths;

@@ -39,17 +39,149 @@
  * Internal to the App library: not installed, not part of the API.
  */
 
+#include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace App
 {
 namespace ExpressionSandbox
 {
+
+/** How one round trip ended, as the runtime saw it.
+ *
+ * The budget (setBudget) has two stages.  The SOFT stage asks the guest
+ * to stop on its own terms -- a signal the interpreter turns into a
+ * KeyboardInterrupt at its next bytecode check, so the exception travels
+ * the ordinary path and the guest is left exactly as consistent as after
+ * any other error.  The HARD stage, a grace period later, stops the
+ * engine from outside (V8's TerminateExecution, wasmtime's epoch trap):
+ * that unwinds the guest through frames CPython never got to clean up,
+ * so a Terminated runtime is not trusted afterwards; ImageHost drops it
+ * and the next evaluation starts a fresh one.
+ */
+enum class Outcome
+{
+    Ok,           ///< reply valid, nothing fired
+    Interrupted,  ///< reply valid, the soft stage fired during the trip
+    Terminated,   ///< no reply: the hard stage stopped the guest
+    Failed        ///< no reply: a transport failure unrelated to the budget
+};
+
+/** A deadline thread shared by the runtimes.  arm() before a call,
+ * disarm() after; `fire(stage)` runs on the watchdog thread at the soft
+ * deadline (stage 0, only when softMs > 0) and again at the hard
+ * deadline (stage 1), and the whole of fire() runs under the same lock
+ * disarm() takes, so a stale deadline can never reach the NEXT call: it
+ * either fired before disarm() (which then reports it) or finds itself
+ * disarmed.  fire() must therefore be quick and must not call back into
+ * the watchdog.
+ */
+class Watchdog
+{
+public:
+    explicit Watchdog(std::function<void(int stage)> fire)
+        : fire(std::move(fire))
+    {}
+
+    ~Watchdog()
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            quit = true;
+            armed = false;
+        }
+        cv.notify_all();
+        if (thread.joinable())
+            thread.join();
+    }
+
+    /// Start the clock.  hardMs <= 0 leaves the call unbounded.
+    void arm(int softMs, int hardMs)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        fired = -1;
+        if (hardMs <= 0) {
+            armed = false;
+            return;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        soft = softMs > 0 && softMs < hardMs ? now + std::chrono::milliseconds(softMs)
+                                              : now + std::chrono::milliseconds(hardMs);
+        hard = now + std::chrono::milliseconds(hardMs);
+        softStage = softMs > 0 && softMs < hardMs;
+        armed = true;
+        ++generation;
+        if (!thread.joinable())
+            thread = std::thread([this] { run(); });
+        // A wake-up costs ~2 us of futex traffic per call, so the thread
+        // is only nudged when its pending timed wait ends AFTER the new
+        // first deadline; a thread already due earlier finds the new
+        // generation when it wakes and re-waits (once per budget period,
+        // not once per call).
+        if (waitingUntil > soft)
+            cv.notify_all();
+    }
+
+    /// Stop the clock; the highest stage that fired, or -1.
+    int disarm()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        armed = false;
+        return fired;
+    }
+
+private:
+    using Clock = std::chrono::steady_clock;
+    std::function<void(int)> fire;
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::thread thread;
+    bool quit = false;
+    bool armed = false;
+    bool softStage = false;
+    int fired = -1;
+    uint64_t generation = 0;
+    Clock::time_point soft;
+    Clock::time_point hard;
+    /// When the thread's current wait ends on its own (max = never).
+    Clock::time_point waitingUntil = Clock::time_point::max();
+
+    void run()
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        while (!quit) {
+            if (!armed) {
+                waitingUntil = Clock::time_point::max();
+                cv.wait(lock, [this] { return quit || armed; });
+                continue;
+            }
+            const uint64_t gen = generation;
+            const bool waitingSoft = softStage && fired < 0;
+            const Clock::time_point deadline = waitingSoft ? soft : hard;
+            waitingUntil = deadline;
+            if (cv.wait_until(lock, deadline) == std::cv_status::no_timeout)
+                continue;  // re-armed, disarmed or quitting: re-evaluate
+            if (!armed || gen != generation)
+                continue;
+            if (waitingSoft) {
+                fired = 0;
+                fire(0);
+                continue;
+            }
+            fired = 1;
+            armed = false;  // the hard stage ends the call
+            fire(1);
+        }
+    }
+};
 
 class ImageRuntime
 {
@@ -80,10 +212,17 @@ public:
     /// files are missing or the guest fails to start.
     virtual bool initialize(const Paths& paths, BridgeFn bridge) = 0;
 
-    /// One request/reply round trip.  False on a transport failure,
-    /// after which ImageHost drops the runtime.
-    virtual bool roundTrip(const std::vector<uint8_t>& request,
-                           std::vector<uint8_t>& reply) = 0;
+    /// The time budget of the NEXT round trips: the soft stage at
+    /// `budgetMs`, the hard stage `graceMs` later (see Outcome).  A
+    /// runtime without a soft mechanism fires the hard stage at
+    /// budgetMs + graceMs.  budgetMs <= 0 leaves calls unbounded.
+    virtual void setBudget(int budgetMs, int graceMs) = 0;
+
+    /// One request/reply round trip.  `reply` is valid for Ok and
+    /// Interrupted only.  After Failed (and Terminated) ImageHost drops
+    /// the runtime.
+    virtual Outcome roundTrip(const std::vector<uint8_t>& request,
+                              std::vector<uint8_t>& reply) = 0;
 
     virtual void teardown() = 0;
 };

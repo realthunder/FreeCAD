@@ -153,6 +153,10 @@ What is NOT yet done and belongs to phase 1, not to this probe:
   half: pyodide's heap is wasm linear memory, which V8's heap limits do
   not govern -- its ceiling is emscripten's `MAXIMUM_MEMORY`, to be read
   off the module and, if needed, bounded by the host's own allocator.
+  *Time: DONE, section 10 -- and the caveat was taken seriously: the
+  common case is a cooperative interrupt the interpreter raises itself,
+  and a hard termination drops the instance rather than trusting it.
+  Memory: still open.*
 - **The RNG shim is a string match** on emscripten's command line.  It
   is correct for this pyodide; a pyodide bump that changes the command
   breaks startup loudly (throws), never silently.  Prefer making the
@@ -358,9 +362,83 @@ correctness, and 40 us per expression is far from user-visible.
    cheaper path is direct V8 values (the 45 ns C++ -> V8 hop measured
    2026-09-01), with the bindings pack handed over as a JS object.
    Measure before choosing.
-3. Watchdog on a real timer budget (the mechanism is proven), and the
-   wasm memory ceiling (section 5).
+3. DONE (section 10): the time budget.  Still open from section 5: the
+   wasm memory ceiling.
 4. Packaging: `v8-embed` is on the channel for linux-64/aarch64,
    win-64 and (pending) both macOS; the pyodide files are one noarch
    package (`pyodide-dist`, ~17 MB with numpy) to be recipe'd like the
    image was going to be.
+
+## 10. The time budget (built 2026-09-02)
+
+A guest that never returns -- `while True` in a python-mode cell, a
+pathological comprehension, `10 ** 10 ** 8` -- used to hang FreeCAD
+exactly as the native evaluator does.  The sandbox now bounds it, on
+both runtimes, through `ImageRuntime` (`src/App/ExpressionImageRuntime.h`,
+`Outcome`), in two stages:
+
+- **Soft**: at `BudgetMs` the host asks the guest to stop ITSELF.  On
+  pyodide this is the interrupt buffer CPython's emscripten port polls
+  from its eval loop (`Py_EMSCRIPTEN_SIGNAL_HANDLING`; pyodide exposes
+  it as `setInterruptBuffer`): an `Int32Array` whose single word is a
+  `std::atomic<int32_t>` inside the runtime object, wrapped as a
+  `SharedArrayBuffer`, so the watchdog thread writes SIGINT (2) into it
+  with no engine involvement -- the same way a browser's main thread
+  interrupts a worker.  The interpreter raises `KeyboardInterrupt` at
+  its next bytecode check, the exception travels the ordinary path
+  through the dispatcher's `PyErr_Fetch`, and the guest is exactly as
+  consistent afterwards as after any other error.  `ImageHost` sees the
+  reply's `KeyboardInterrupt` together with the runtime's `Interrupted`
+  outcome and rewrites it to `TimeoutError` (a `KeyboardInterrupt` the
+  guest raised on its own is left alone).  If the signal was raised but
+  the guest finished first, a pending interrupt could surface in the
+  NEXT evaluation, so the host absorbs it in a throwaway `eval "0"`.
+- **Hard**: `GraceMs` later, if the guest is still running -- it is in
+  native code (`sum(iter(int, 1))` never executes a bytecode), or it
+  caught the interrupt -- the engine is stopped from outside:
+  `Isolate::TerminateExecution` on V8, an epoch tick on wasmtime
+  (`epoch_interruption`, deadline 1 tick before each call, the watchdog
+  thread increments).  That unwinds the guest through frames CPython
+  never cleaned up, so the probe's "runPython still works afterwards"
+  is not trusted: `ImageHost` drops the instance, answers
+  `TimeoutError`, and the next evaluation starts a fresh one (14 ms on
+  wasi, 1.7 s on pyodide).
+
+The wasi runtime has no soft stage -- the WASI CPython has no
+interrupt buffer to poll -- so there every runaway takes the hard path,
+which costs little since its instance is cheap.  Preferences, under
+`BaseApp/Preferences/Expression/Sandbox`: `BudgetMs` (default 5000, 0
+= unbounded) and `GraceMs` (default 1000).  `ImageHost` caches them
+through a parameter observer (a DOM lookup per trip measured 2.5 us)
+and hands them to the runtime before every trip, so a change applies
+at once -- with one exception: wasmtime compiles the epoch checks into
+the guest, so an instance started with `BudgetMs = 0` has none (the
+two compilations keep separate `.cwasm` cache files); a budget set
+later takes effect at the next reset.  Pyodide's polling is toggled with the
+budget on the fly.
+
+The watchdog is one thread per runtime (`Watchdog` in the same header),
+armed before and disarmed after each call.  Two details that cost
+measurements to get right: fire() runs under the same lock disarm()
+takes, so a stale deadline can never reach the next call; and the
+thread is only woken when its pending timed wait ends AFTER the new
+deadline -- a `notify` per call was 2 us of futex traffic.
+
+Tests: `ExpressionImageBudgetTest` (4 cases, both runtimes): a
+bytecode loop is stopped and, on pyodide, the instance survives (a
+marker set in `sys` before is still there after); a native loop is
+terminated and the instance dropped on both; the survivor is a whole
+interpreter (quantities, an error, a value); `BudgetMs = 0` evaluates
+unbounded.  73/73 sandbox gtests on both runtimes.
+
+What the budget costs per expression (ExpressionImageBenchTest, this
+box, 2026-09-02, budget 5000 vs 0, two runs each):
+
+    bench                        wasi 0    wasi 5000    pyodide 0    pyodide 5000
+    transport floor               2.6 us     3.1 us      8.7-11.5     8.4-10.1
+    wire floor (eval "1")        13.0       16.0         38.3-38.6    39.1-43.8
+    expression 1+2*3-4/5         13.5       15.0         36.6-36.9    37.5-47.6
+    one property                 22.2       24.5         51.9-52.0    51.0-51.9
+
+On wasi about 1.5 us (11%): ~1 us of epoch checks in the guest, the
+rest arming.  On pyodide the polling is inside the run-to-run noise.

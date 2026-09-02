@@ -95,8 +95,36 @@ std::unique_ptr<ImageRuntime> makeRuntime(const std::string& name)
 
 }  // namespace
 
-struct ImageHost::Private
+struct ImageHost::Private: public ParameterGrp::ObserverType
 {
+    Private()
+    {
+        prefs = GetApplication().GetParameterGroupByPath(
+                "User parameter:BaseApp/Preferences/Expression/Sandbox");
+        prefs->Attach(this);
+        readBudget();
+    }
+
+    ~Private() override
+    {
+        prefs->Detach(this);
+    }
+
+    /// The budget preferences are cached and re-read on change: a DOM
+    /// lookup per round trip measured 2.5 us on a 13 us trip.
+    void OnChange(ParameterGrp::SubjectType&, ParameterGrp::MessageType reason) override
+    {
+        if (!reason || std::strcmp(reason, "BudgetMs") == 0 || std::strcmp(reason, "GraceMs") == 0)
+            readBudget();
+    }
+
+    void readBudget()
+    {
+        budgetMs = static_cast<int>(prefs->GetInt("BudgetMs", 5000));
+        graceMs = static_cast<int>(prefs->GetInt("GraceMs", 1000));
+    }
+
+    ParameterGrp::handle prefs;
     std::recursive_mutex mutex;
     std::string imagePath;
     std::string stdlibPath;
@@ -159,6 +187,9 @@ struct ImageHost::Private
         if (!rt)
             return false;
         ImageRuntime::Paths where = paths();
+        // before initialize(): a runtime may compile its guest with or
+        // without the budget's checks depending on whether there is one
+        rt->setBudget(budgetMs, graceMs);
         live = rt->initialize(where, [this](const uint8_t* d, std::size_t n) {
             return bridge(d, n);
         });
@@ -167,14 +198,53 @@ struct ImageHost::Private
         return live;
     }
 
-    /// One round trip: request CBOR in, decoded reply out.
+    /** The time budget of one round trip (Outcome in
+     * ExpressionImageRuntime.h), from the preferences (cached, see
+     * OnChange) and handed to the runtime per trip so a change applies
+     * at once: BudgetMs (default 5000, 0 = unbounded) is the soft
+     * deadline, GraceMs (default 1000) the extra time the guest gets to
+     * act on it before the engine is stopped.
+     */
+    int budgetMs = 5000;
+    int graceMs = 1000;
+    void applyBudget()
+    {
+        rt->setBudget(budgetMs, graceMs);
+    }
+
+    json budgetError(const char* how) const
+    {
+        return {{"ok", false},
+                {"exc", "TimeoutError"},
+                {"msg", "expression sandbox: evaluation exceeded its "
+                            + std::to_string(budgetMs) + " ms budget (" + how + ")"}};
+    }
+
+    /// Terminated guests are not trusted: drop this one, and the next
+    /// evaluation starts a fresh one.
+    void dropTerminated()
+    {
+        teardown();
+        triedInit = false;
+    }
+
+    /// One round trip: request CBOR in, decoded reply out.  A budget
+    /// that fires becomes an ordinary error reply (TimeoutError), never a
+    /// transport failure.
     bool roundTrip(const std::vector<uint8_t>& request, json& reply)
     {
         if (!live || !rt)
             return false;
+        applyBudget();
         std::vector<uint8_t> bytes;
-        if (!rt->roundTrip(request, bytes))
+        const Outcome outcome = rt->roundTrip(request, bytes);
+        if (outcome == Outcome::Failed)
             return false;
+        if (outcome == Outcome::Terminated) {
+            dropTerminated();
+            reply = budgetError("terminated");
+            return true;
+        }
         try {
             reply = json::from_cbor(bytes.begin(), bytes.end());
         }
@@ -182,7 +252,24 @@ struct ImageHost::Private
             FC_ERR("undecodable reply: " << e.what());
             reply = json();
         }
-        return !reply.is_null();
+        if (reply.is_null())
+            return false;
+        if (outcome == Outcome::Interrupted) {
+            if (!reply.value("ok", false) && reply.value("exc", "") == "KeyboardInterrupt") {
+                reply = budgetError("interrupted");
+            }
+            else {
+                // The signal was raised but the guest finished before
+                // acting on it.  An interrupt still pending inside the
+                // interpreter would surface in the NEXT evaluation, so
+                // absorb it in a throwaway one now.
+                std::vector<uint8_t> drain;
+                json ping = {{"op", "eval"}, {"src", "0"}};
+                if (rt->roundTrip(json::to_cbor(ping), drain) == Outcome::Terminated)
+                    dropTerminated();
+            }
+        }
+        return true;
     }
 };
 

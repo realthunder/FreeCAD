@@ -157,6 +157,137 @@ TEST_F(ExpressionImageHostTest, evalAfterErrorStillWorks)
     EXPECT_EQ(value(good).get<int64_t>(), 42);
 }
 
+// ---- the time budget (Outcome in App/ExpressionImageRuntime.h): a
+// ---- runaway guest is stopped, the host answers TimeoutError, and the
+// ---- next evaluation works ----
+
+#include <App/Application.h>
+#include <Base/Parameter.h>
+
+class ExpressionImageBudgetTest: public ExpressionImageHostTest
+{
+protected:
+    static ParameterGrp::handle prefs()
+    {
+        return App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Expression/Sandbox");
+    }
+
+    void SetUp() override
+    {
+        ExpressionImageHostTest::SetUp();  // may GTEST_SKIP
+        hadBudget = prefs()->GetInt("BudgetMs", -1);
+        hadGrace = prefs()->GetInt("GraceMs", -1);
+        prefs()->SetInt("BudgetMs", 300);
+        prefs()->SetInt("GraceMs", 700);
+    }
+
+    void TearDown() override
+    {
+        if (hadBudget < 0)
+            prefs()->RemoveInt("BudgetMs");
+        else
+            prefs()->SetInt("BudgetMs", hadBudget);
+        if (hadGrace < 0)
+            prefs()->RemoveInt("GraceMs");
+        else
+            prefs()->SetInt("GraceMs", hadGrace);
+        ExpressionImageHostTest::TearDown();
+    }
+
+    /// Leave a mark in the guest interpreter, so a later test can tell
+    /// the SAME instance from a fresh one.
+    static void mark()
+    {
+        auto res = ImageHost::instance().eval(
+            "setattr(__import__('sys'), 'fcx_budget_mark', 42)", {});
+        ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    }
+    static ImageResult readMark()
+    {
+        return ImageHost::instance().eval("__import__('sys').fcx_budget_mark", {});
+    }
+
+    long hadBudget = -1;
+    long hadGrace = -1;
+};
+
+// A loop in BYTECODE: the soft stage reaches it through the interpreter's
+// own signal check, so pyodide keeps its instance (the interrupt is an
+// ordinary exception there); the wasi runtime has no soft stage and
+// takes the hard one, which drops the instance.
+TEST_F(ExpressionImageBudgetTest, runawayBytecodeLoopIsStopped)
+{
+    mark();
+    auto res = ImageHost::instance().eval("next(x for x in iter(int, 1) if x)", {});
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "TimeoutError") << res.message;
+    EXPECT_NE(res.message.find("300 ms"), std::string::npos) << res.message;
+
+    auto good = ImageHost::instance().eval("40 + 2", {});
+    ASSERT_TRUE(good.ok) << good.excType << ": " << good.message;
+    EXPECT_EQ(value(good).get<int64_t>(), 42);
+
+    auto after = readMark();
+    if (ImageHost::instance().runtime() == "pyodide") {
+        ASSERT_TRUE(after.ok) << "pyodide dropped its instance on a soft interrupt: "
+                              << after.excType << ": " << after.message;
+        EXPECT_EQ(value(after).get<int64_t>(), 42);
+    }
+    else {
+        EXPECT_FALSE(after.ok) << "a terminated instance was kept";
+    }
+}
+
+// A loop in NATIVE code never reaches a bytecode check: only the hard
+// stage can stop it, on both runtimes, and the instance is dropped.
+TEST_F(ExpressionImageBudgetTest, runawayNativeLoopIsTerminated)
+{
+    mark();
+    auto res = ImageHost::instance().eval("sum(iter(int, 1))", {});
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "TimeoutError") << res.message;
+    EXPECT_NE(res.message.find("terminated"), std::string::npos) << res.message;
+
+    auto good = ImageHost::instance().eval("40 + 2", {});
+    ASSERT_TRUE(good.ok) << good.excType << ": " << good.message;
+    EXPECT_EQ(value(good).get<int64_t>(), 42);
+    EXPECT_FALSE(readMark().ok) << "a terminated instance was kept";
+}
+
+// After a soft interrupt the surviving instance must still be a whole
+// interpreter: typed values, an error, and a value again.
+TEST_F(ExpressionImageBudgetTest, instanceIsWholeAfterInterrupt)
+{
+    auto res = ImageHost::instance().eval("next(x for x in iter(int, 1) if x)", {});
+    ASSERT_FALSE(res.ok);
+    ASSERT_EQ(res.excType, "TimeoutError") << res.message;
+
+    json bindings;
+    bindings["q"] = {{"t", "quantity"}, {"v", 10.0}, {"u", {1, 0, 0, 0, 0, 0, 0, 0}}};
+    auto cbor = json::to_cbor(bindings);
+    auto q = ImageHost::instance().eval("q * 2 + Units.Quantity('5 mm')",
+                                        {cbor.begin(), cbor.end()});
+    ASSERT_TRUE(q.ok) << q.excType << ": " << q.message;
+    EXPECT_DOUBLE_EQ(value(q)["v"].get<double>(), 25.0);
+    auto bad = ImageHost::instance().eval("1 / 0", {});
+    ASSERT_FALSE(bad.ok);
+    EXPECT_EQ(bad.excType, "ZeroDivisionError");
+    auto good = ImageHost::instance().eval("sum(range(10))", {});
+    ASSERT_TRUE(good.ok) << good.excType << ": " << good.message;
+    EXPECT_EQ(value(good).get<int64_t>(), 45);
+}
+
+// BudgetMs = 0 is "unbounded": nothing arms, and (on wasi) the epoch
+// deadline must not trap a plain evaluation.
+TEST_F(ExpressionImageBudgetTest, zeroBudgetIsUnbounded)
+{
+    prefs()->SetInt("BudgetMs", 0);
+    auto res = ImageHost::instance().eval("sum(range(100000))", {});
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_EQ(value(res).get<int64_t>(), 4999950000);
+}
+
 // ---- image->host bridge ops (get_attr/call/get_item/len/release,
 // ---- ExpressionImageBridge.cpp): live host objects cross as handles ----
 
