@@ -37,7 +37,7 @@
 #include <Base/Reader.h>
 #include <App/Application.h>
 #include <App/ExpressionParser.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>
 #include <Base/Quantity.h>

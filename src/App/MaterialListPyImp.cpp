@@ -41,10 +41,10 @@ namespace
 {
 
 /// One material out of a Python object, or null with the error set
-const Material *materialOf(PyObject *value)
+const MaterialAppearance *materialOf(PyObject *value)
 {
     if (value && PyObject_TypeCheck(value, &(MaterialPy::Type))) {
-        return static_cast<MaterialPy *>(value)->getMaterialPtr();
+        return static_cast<MaterialPy *>(value)->getMaterialAppearancePtr();
     }
     PyErr_Format(PyExc_TypeError,
                  "expected a Material, not %s",
@@ -54,7 +54,7 @@ const Material *materialOf(PyObject *value)
 
 /// Every material of a Python sequence, in order. Answers false with the
 /// error set when anything in it is not a material.
-bool materialsOf(PyObject *sequence, std::vector<Material> &values)
+bool materialsOf(PyObject *sequence, std::vector<MaterialAppearance> &values)
 {
     Py::Object obj(sequence);
     if (!obj.isSequence() && !PyIter_Check(sequence)) {
@@ -64,7 +64,7 @@ bool materialsOf(PyObject *sequence, std::vector<Material> &values)
     Py::Sequence seq(obj);
     values.reserve(values.size() + seq.size());
     for (Py_ssize_t i = 0; i < static_cast<Py_ssize_t>(seq.size()); ++i) {
-        const Material *mat = materialOf(seq[i].ptr());
+        const MaterialAppearance *mat = materialOf(seq[i].ptr());
         if (!mat) {
             return false;
         }
@@ -206,7 +206,7 @@ int MaterialListPy::PyInit(PyObject *args, PyObject * /*kwds*/)
             getMaterialListPtr()->setSize(static_cast<int>(count));
             return 0;
         }
-        std::vector<Material> values;
+        std::vector<MaterialAppearance> values;
         if (!materialsOf(source, values)) {
             return -1;
         }
@@ -233,13 +233,13 @@ PyObject *MaterialListPy::append(PyObject *args)
     if (!PyArg_ParseTuple(args, "O", &value)) {
         return nullptr;
     }
-    const Material *mat = materialOf(value);
+    const MaterialAppearance *mat = materialOf(value);
     if (!mat || !writable()) {
         return nullptr;
     }
     PY_TRY
     {
-        const Material added = *mat;
+        const MaterialAppearance added = *mat;
         edit([&](MaterialList &values) { values.set1Value(values.getSize(), added); });
         Py_Return;
     }
@@ -257,7 +257,7 @@ PyObject *MaterialListPy::extend(PyObject *args)
     }
     PY_TRY
     {
-        std::vector<Material> added;
+        std::vector<MaterialAppearance> added;
         if (!materialsOf(value, added)) {
             return nullptr;
         }
@@ -278,7 +278,7 @@ PyObject *MaterialListPy::insert(PyObject *args)
     if (!PyArg_ParseTuple(args, "nO", &where, &value)) {
         return nullptr;
     }
-    const Material *mat = materialOf(value);
+    const MaterialAppearance *mat = materialOf(value);
     if (!mat || !writable()) {
         return nullptr;
     }
@@ -289,7 +289,7 @@ PyObject *MaterialListPy::insert(PyObject *args)
         if (!indexOf(where, count, idx, true)) {
             return nullptr;
         }
-        const Material added = *mat;
+        const MaterialAppearance added = *mat;
         edit([&](MaterialList &values) {
             // Shift by one from the back, which is the only spelling the
             // per field storage has for an insertion
@@ -352,11 +352,11 @@ PyObject *MaterialListPy::setSize(PyObject *args)
             edit([&](MaterialList &values) { values.setSize(static_cast<int>(count)); });
             Py_Return;
         }
-        const Material *mat = materialOf(fill);
+        const MaterialAppearance *mat = materialOf(fill);
         if (!mat) {
             return nullptr;
         }
-        const Material def = *mat;
+        const MaterialAppearance def = *mat;
         edit([&](MaterialList &values) { values.setSize(static_cast<int>(count), def); });
         Py_Return;
     }
@@ -375,7 +375,7 @@ PyObject *MaterialListPy::getMaterial(PyObject *args)
         if (!indexOf(where, list().getSize(), idx)) {
             return nullptr;
         }
-        return new MaterialPy(new Material(list().getMaterial(idx)));
+        return new MaterialPy(new MaterialAppearance(list().getMaterial(idx)));
     }
     PY_CATCH
 }
@@ -387,13 +387,13 @@ PyObject *MaterialListPy::setMaterial(PyObject *args)
     if (!PyArg_ParseTuple(args, "nO", &where, &value)) {
         return nullptr;
     }
-    const Material *mat = materialOf(value);
+    const MaterialAppearance *mat = materialOf(value);
     if (!mat || !writable()) {
         return nullptr;
     }
     PY_TRY
     {
-        const Material written = *mat;
+        const MaterialAppearance written = *mat;
         if (where == -1) {
             // Every entry, which is what -1 means to every setter here --
             // not "the last one", which would make the per field API read
@@ -1052,16 +1052,16 @@ Py::Boolean MaterialListPy::getIsAttached() const
 
 Py::Object MaterialListPy::getBase() const
 {
-    return Py::asObject(new MaterialPy(new Material(list().getBase())));
+    return Py::asObject(new MaterialPy(new MaterialAppearance(list().getBase())));
 }
 
 void MaterialListPy::setBase(Py::Object value)
 {
-    const Material *mat = materialOf(value.ptr());
+    const MaterialAppearance *mat = materialOf(value.ptr());
     if (!mat) {
         throw Py::Exception();
     }
-    const Material base = *mat;
+    const MaterialAppearance base = *mat;
     edit([&](MaterialList &values) { values.setBase(base); });
 }
 
@@ -1132,7 +1132,7 @@ PyObject *MaterialListPy::sequence_item(PyObject *self, Py_ssize_t index)
     }
     PY_TRY
     {
-        auto *item = new MaterialPy(new Material(list->list().getMaterial(idx)));
+        auto *item = new MaterialPy(new MaterialAppearance(list->list().getMaterial(idx)));
         // A copy with a link back: writing a field on it writes the whole
         // entry to this index, which is what makes
         // vp.ShapeAppearance[0].DiffuseColor = c reach the object
@@ -1152,7 +1152,7 @@ int MaterialListPy::sequence_ass_item(PyObject *self, Py_ssize_t index, PyObject
         PyErr_SetString(PyExc_TypeError, "cannot delete an entry of a material list");
         return -1;
     }
-    const Material *mat = materialOf(value);
+    const MaterialAppearance *mat = materialOf(value);
     if (!mat) {
         return -1;
     }
@@ -1162,7 +1162,7 @@ int MaterialListPy::sequence_ass_item(PyObject *self, Py_ssize_t index, PyObject
     }
     PY_TRY
     {
-        const Material written = *mat;
+        const MaterialAppearance written = *mat;
         list->edit([&](MaterialList &values) { values.set1Value(idx, written); }, idx);
         return 0;
     }
@@ -1192,7 +1192,7 @@ PyObject *MaterialListPy::mapping_subscript(PyObject *self, PyObject *item)
             }
             // A slice of a list is a LIST, detached: it is a new value and
             // writing to it must not reach whatever this one is a view of
-            std::vector<Material> values;
+            std::vector<MaterialAppearance> values;
             values.reserve(count);
             for (Py_ssize_t i = 0, at = start; i < count; ++i, at += step) {
                 values.push_back(list->list().getMaterial(static_cast<int>(at)));
@@ -1243,7 +1243,7 @@ int MaterialListPy::mapping_ass_subscript(PyObject *self, PyObject *item, PyObje
         if (PySlice_GetIndicesEx(item, list->list().getSize(), &start, &stop, &step, &count) < 0) {
             return -1;
         }
-        std::vector<Material> written;
+        std::vector<MaterialAppearance> written;
         if (!materialsOf(value, written)) {
             return -1;
         }
@@ -1270,7 +1270,7 @@ int MaterialListPy::sequence_contains(PyObject *self, PyObject *value)
     }
     PY_TRY
     {
-        const Material &mat = *static_cast<MaterialPy *>(value)->getMaterialPtr();
+        const MaterialAppearance &mat = *static_cast<MaterialPy *>(value)->getMaterialAppearancePtr();
         const int count = list->list().getSize();
         for (int i = 0; i < count; ++i) {
             if (list->list().getMaterial(i) == mat) {
@@ -1286,7 +1286,7 @@ PyObject *MaterialListPy::sequence_concat(PyObject *self, PyObject *other)
 {
     PY_TRY
     {
-        std::vector<Material> values;
+        std::vector<MaterialAppearance> values;
         auto *list = static_cast<MaterialListPy *>(self);
         const int count = list->list().getSize();
         for (int i = 0; i < count; ++i) {
@@ -1310,7 +1310,7 @@ PyObject *MaterialListPy::sequence_repeat(PyObject *self, Py_ssize_t times)
     {
         auto *list = static_cast<MaterialListPy *>(self);
         const int count = list->list().getSize();
-        std::vector<Material> values;
+        std::vector<MaterialAppearance> values;
         for (Py_ssize_t n = 0; n < times; ++n) {
             for (int i = 0; i < count; ++i) {
                 values.push_back(list->list().getMaterial(i));
@@ -1333,7 +1333,7 @@ PyObject *MaterialListPy::sequence_inplace_concat(PyObject *self, PyObject *othe
     }
     PY_TRY
     {
-        std::vector<Material> added;
+        std::vector<MaterialAppearance> added;
         if (!materialsOf(other, added)) {
             return nullptr;
         }
@@ -1368,7 +1368,7 @@ PyObject *MaterialListPy::richCompare(PyObject *v, PyObject *w, int op)
     else if (PySequence_Check(w)) {
         // Against a plain sequence of materials, so a script that used to
         // compare with the tuple this property handed out still can
-        std::vector<Material> other;
+        std::vector<MaterialAppearance> other;
         if (!materialsOf(w, other)) {
             PyErr_Clear();
             Py_RETURN_NOTIMPLEMENTED;

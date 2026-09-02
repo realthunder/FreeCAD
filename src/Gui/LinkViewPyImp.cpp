@@ -76,13 +76,13 @@ PyObject* LinkViewPy::setMaterial(PyObject *args) {
             Py_Return;
         }
         if(PyObject_TypeCheck(pyObj,&App::MaterialPy::Type)) {
-            lv->setMaterial(-1,static_cast<App::MaterialPy*>(pyObj)->getMaterialPtr());
+            lv->setMaterial(-1,static_cast<App::MaterialPy*>(pyObj)->getMaterialAppearancePtr());
             Py_Return;
         }
         if(PyDict_Check(pyObj)) {
             PyObject *key, *value;
             Py_ssize_t pos = 0;
-            std::map<int,App::Material*> materials;
+            std::map<int,App::MaterialAppearance*> materials;
             while(PyDict_Next(pyObj, &pos, &key, &value)) {
                 Py::Int idx(key);
                 if(value == Py_None)
@@ -91,7 +91,7 @@ PyObject* LinkViewPy::setMaterial(PyObject *args) {
                     PyErr_SetString(PyExc_TypeError, "exepcting a type of material");
                     return nullptr;
                 }else
-                    materials[(int)idx] = static_cast<App::MaterialPy*>(value)->getMaterialPtr();
+                    materials[(int)idx] = static_cast<App::MaterialPy*>(value)->getMaterialAppearancePtr();
             }
             for(auto &v : materials)
                 lv->setMaterial(v.first,v.second);
@@ -99,7 +99,7 @@ PyObject* LinkViewPy::setMaterial(PyObject *args) {
         }
         if(PySequence_Check(pyObj)) {
             Py::Sequence seq(pyObj);
-            std::vector<App::Material*> materials;
+            std::vector<App::MaterialAppearance*> materials;
             materials.resize(seq.size(),nullptr);
             for(Py_ssize_t i=0;i<seq.size();++i) {
                 PyObject* item = seq[i].ptr();
@@ -108,7 +108,7 @@ PyObject* LinkViewPy::setMaterial(PyObject *args) {
                     PyErr_SetString(PyExc_TypeError, "exepcting a type of material");
                     return nullptr;
                 }
-                materials[i] = static_cast<App::MaterialPy*>(item)->getMaterialPtr();
+                materials[i] = static_cast<App::MaterialPy*>(item)->getMaterialAppearancePtr();
             }
             for(size_t i=0;i<materials.size();++i)
                 lv->setMaterial(i,materials[i]);

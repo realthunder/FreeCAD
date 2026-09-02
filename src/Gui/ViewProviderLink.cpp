@@ -1174,7 +1174,7 @@ void LinkView::renderDoubleSide(bool enable) {
         pcShapeHints->setOverride(false);
 }
 
-void LinkView::setMaterial(int index, const App::Material *material) {
+void LinkView::setMaterial(int index, const App::MaterialAppearance *material) {
     if(index < 0) {
         if(!material) {
             pcLinkRoot->removeColorOverride();
@@ -1959,7 +1959,7 @@ ViewProviderLink::ViewProviderLink()
 
     ADD_PROPERTY_TYPE(OverrideMaterial, (false), " Link", App::Prop_None, "Override linked object's material");
 
-    App::Material mat(App::Material::DEFAULT);
+    App::MaterialAppearance mat(App::MaterialAppearance::DEFAULT);
     mat.diffuseColor.setPackedValue(ViewParams::getDefaultLinkColor());
     ADD_PROPERTY_TYPE(ShapeAppearance, (mat), " Link", App::Prop_None, 0);
     ShapeAppearance.setStatus(App::Property::MaterialEdit, true);
@@ -2390,7 +2390,7 @@ void ViewProviderLink::updateDataPrivate(App::LinkBaseExtension *ext, const App:
             const auto &elements = ext->_getElementListValue();
             // elements is about to be collapsed, preserve the materials
             if(!elements.empty()) {
-                std::vector<App::Material> materials;
+                std::vector<App::MaterialAppearance> materials;
                 boost::dynamic_bitset<> overrideMaterials;
                 overrideMaterials.resize(elements.size(),false);
                 bool overrideMaterial = false;
@@ -2560,7 +2560,7 @@ void ViewProviderLink::applyMaterial() {
     if(OverrideMaterial.getValue()) {
         // The appearance stores fields, not whole materials, so compose the
         // one setMaterial() wants instead of pointing into storage.
-        App::Material mat = ShapeAppearance[0];
+        App::MaterialAppearance mat = ShapeAppearance[0];
         linkView->setMaterial(-1,&mat);
     }
     else {
@@ -2568,7 +2568,7 @@ void ViewProviderLink::applyMaterial() {
             if(MaterialList.getSize()>i &&
                OverrideMaterialList.getSize()>i && OverrideMaterialList[i]) {
                 // composed on the spot: the list stores fields, not materials
-                App::Material mat = MaterialList[i];
+                App::MaterialAppearance mat = MaterialList[i];
                 linkView->setMaterial(i,&mat);
             }
             else
@@ -3684,7 +3684,7 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
             const App::PropertyLinkSub &coloredElements,
             const App::PropertyColorList &colorList,
             bool overrideMaterial,
-            const App::Material *shapeMaterial,
+            const App::MaterialAppearance *shapeMaterial,
             int element_count)
 {
     bool isPrefix = true;

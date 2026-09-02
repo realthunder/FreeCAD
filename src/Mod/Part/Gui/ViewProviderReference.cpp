@@ -49,7 +49,7 @@ PROPERTY_SOURCE(PartGui::ViewProviderPartReference, Gui::ViewProviderGeometryObj
 
 ViewProviderPartReference::ViewProviderPartReference()
 {
-    App::Material mat;
+    App::MaterialAppearance mat;
     mat.ambientColor.set(0.2f,0.2f,0.2f);
     mat.diffuseColor.set(0.1f,0.1f,0.1f);
     mat.specularColor.set(0.0f,0.0f,0.0f);
@@ -134,7 +134,7 @@ void ViewProviderPartReference::onChanged(const App::Property* /*prop*/)
     //    PointMaterial.setDiffuseColor(c);
     //}
     //else if (prop == &LineMaterial) {
-    //    const App::Material& Mat = LineMaterial.getValue();
+    //    const App::MaterialAppearance& Mat = LineMaterial.getValue();
     //    if (LineColor.getValue() != Mat.diffuseColor)
     //    LineColor.setValue(Mat.diffuseColor);
     //    pcLineMaterial->ambientColor.setValue(Mat.ambientColor.r,Mat.ambientColor.g,Mat.ambientColor.b);
@@ -145,7 +145,7 @@ void ViewProviderPartReference::onChanged(const App::Property* /*prop*/)
     //    pcLineMaterial->transparency.setValue(Mat.transparency);
     //}
     //else if (prop == &PointMaterial) {
-    //    const App::Material& Mat = PointMaterial.getValue();
+    //    const App::MaterialAppearance& Mat = PointMaterial.getValue();
     //    if (PointColor.getValue() != Mat.diffuseColor)
     //    PointColor.setValue(Mat.diffuseColor);
     //    pcPointMaterial->ambientColor.setValue(Mat.ambientColor.r,Mat.ambientColor.g,Mat.ambientColor.b);

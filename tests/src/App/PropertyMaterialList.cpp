@@ -28,7 +28,7 @@
 #include <vector>
 
 #include <App/FileBlobManager.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <App/PropertyStandard.h>
 #include <Base/FileInfo.h>
 #include <Base/Interpreter.h>
@@ -49,16 +49,16 @@ App::Color packed(uint32_t rgba)
     return color;
 }
 
-App::Material redMaterial()
+App::MaterialAppearance redMaterial()
 {
-    App::Material mat;
+    App::MaterialAppearance mat;
     mat.diffuseColor = packed(0xff0000ff);
     return mat;
 }
 
-App::Material texturedMaterial()
+App::MaterialAppearance texturedMaterial()
 {
-    App::Material mat;
+    App::MaterialAppearance mat;
     mat.diffuseColor = packed(0x0000ffff);
     mat.image = std::string("PNG\x01\x02", 5);  // bytes, not text
     mat.imagePath = "/home/someone/textures/oak <old>.png";
@@ -102,9 +102,9 @@ App::SurfaceTexture oakTexture()
     return texture;
 }
 
-App::Material fullyPaintedMaterial()
+App::MaterialAppearance fullyPaintedMaterial()
 {
-    App::Material mat;
+    App::MaterialAppearance mat;
     mat.ambientColor = packed(0x11223344);
     mat.diffuseColor = packed(0x55667788);
     // Consistent, as the property enforces: the diffuse alpha is the
@@ -225,7 +225,7 @@ std::string opacityEraElement(const std::vector<std::pair<uint32_t, float>>& ent
 
 /// Every entry read back whole, which is what a caller of the old API saw
 void expectEntries(const App::PropertyMaterialList& prop,
-                   const std::vector<App::Material>& expected)
+                   const std::vector<App::MaterialAppearance>& expected)
 {
     ASSERT_EQ(prop.getSize(), static_cast<int>(expected.size()));
     for (int i = 0; i < prop.getSize(); ++i) {
@@ -246,12 +246,12 @@ constexpr float ALPHA_STEP = 1.0F / 255.0F;
  * precision.
  */
 void expectEntriesQ8(const App::PropertyMaterialList& prop,
-                     const std::vector<App::Material>& expected)
+                     const std::vector<App::MaterialAppearance>& expected)
 {
     ASSERT_EQ(prop.getSize(), static_cast<int>(expected.size()));
     for (int i = 0; i < prop.getSize(); ++i) {
-        const App::Material got = prop.getMaterial(i);
-        const App::Material& want = expected[i];
+        const App::MaterialAppearance got = prop.getMaterial(i);
+        const App::MaterialAppearance& want = expected[i];
         auto sameColor = [](const App::Color& g, const App::Color& w) {
             return (g.getPackedValue() >> 8) == (w.getPackedValue() >> 8)
                 && std::abs(g.a - w.a) <= ALPHA_STEP;
@@ -289,8 +289,8 @@ TEST_F(PropertyMaterialListTest, defaultEntriesCostNothing)
     prop.setSize(10000);
     EXPECT_EQ(prop.getSize(), 10000);
     EXPECT_EQ(prop.getMemSize(), 0U);
-    EXPECT_TRUE(prop.getMaterial(5000) == App::Material());
-    EXPECT_TRUE(prop.getBase() == App::Material());
+    EXPECT_TRUE(prop.getMaterial(5000) == App::MaterialAppearance());
+    EXPECT_TRUE(prop.getBase() == App::MaterialAppearance());
     EXPECT_FALSE(prop.hasOverrides());
 }
 
@@ -298,14 +298,14 @@ TEST_F(PropertyMaterialListTest, outOfRangeReadsAsDefault)
 {
     App::PropertyMaterialList prop;
     prop.setValue(redMaterial());
-    EXPECT_TRUE(prop.getMaterial(-1) == App::Material());
-    EXPECT_TRUE(prop.getMaterial(1) == App::Material());
+    EXPECT_TRUE(prop.getMaterial(-1) == App::MaterialAppearance());
+    EXPECT_TRUE(prop.getMaterial(1) == App::MaterialAppearance());
 }
 
 TEST_F(PropertyMaterialListTest, uniformListIsOneMaterial)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(1000, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(1000, redMaterial()));
 
     EXPECT_EQ(prop.getSize(), 1000);
     // nothing overrides, so the list IS its base -- and only the field of it
@@ -323,9 +323,9 @@ TEST_F(PropertyMaterialListTest, uniformListIsOneMaterial)
 TEST_F(PropertyMaterialListTest, oneOddEntryStatesOnlyItsOwnField)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(10, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(10, redMaterial()));
 
-    App::Material odd = redMaterial();
+    App::MaterialAppearance odd = redMaterial();
     odd.diffuseColor = packed(0x00ff00ff);
     prop.set1Value(3, odd);
 
@@ -361,18 +361,18 @@ TEST_F(PropertyMaterialListTest, everyFieldCanVaryOnItsOwn)
     // stated with it
     EXPECT_EQ(prop.getDiffuseOverrides().size(), 4U);
     EXPECT_TRUE(prop.getAmbientColor(1) == packed(0x11111111));
-    EXPECT_TRUE(prop.getAmbientColor(0) == App::Material().ambientColor);
+    EXPECT_TRUE(prop.getAmbientColor(0) == App::MaterialAppearance().ambientColor);
     EXPECT_TRUE(prop.getSpecularColor(2) == packed(0x22222222));
     EXPECT_TRUE(prop.getEmissiveColor(3) == packed(0x33333333));
     EXPECT_FLOAT_EQ(prop.getShininess(0), 0.5F);
-    EXPECT_FLOAT_EQ(prop.getShininess(1), App::Material().shininess);
+    EXPECT_FLOAT_EQ(prop.getShininess(1), App::MaterialAppearance().shininess);
     EXPECT_FLOAT_EQ(prop.getTransparency(2), 0.5F);
 }
 
 TEST_F(PropertyMaterialListTest, theWholeObjectSetterWritesTheBase)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(100, App::Material()));
+    prop.setValues(std::vector<App::MaterialAppearance>(100, App::MaterialAppearance()));
     prop.setDiffuseColor(packed(0x0000ffff));
 
     EXPECT_EQ(prop.getSize(), 100);
@@ -381,7 +381,7 @@ TEST_F(PropertyMaterialListTest, theWholeObjectSetterWritesTheBase)
     EXPECT_TRUE(prop.getDiffuseColor(99) == packed(0x0000ffff));
 
     // setting it back to the default gives the storage up entirely
-    prop.setDiffuseColor(App::Material().diffuseColor);
+    prop.setDiffuseColor(App::MaterialAppearance().diffuseColor);
     EXPECT_EQ(prop.getMemSize(), 0U);
 }
 
@@ -391,7 +391,7 @@ TEST_F(PropertyMaterialListTest, aWholeObjectWriteLeavesThePaintedFacesAlone)
     // that assigning the object a colour does not collapse the faces that
     // hold one of their own
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(10, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(10, redMaterial()));
     prop.setDiffuseColor(3, packed(0x00ff00ff));
     prop.setDiffuseColor(7, packed(0x0000ffff));
 
@@ -426,7 +426,7 @@ TEST_F(PropertyMaterialListTest, wholeFieldSetterSizesTheList)
 TEST_F(PropertyMaterialListTest, resizingKeepsWhatItCanAndDefaultsTheRest)
 {
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values {redMaterial(), fullyPaintedMaterial()};
+    std::vector<App::MaterialAppearance> values {redMaterial(), fullyPaintedMaterial()};
     prop.setValues(values);
 
     prop.setSize(4);
@@ -458,7 +458,7 @@ TEST_F(PropertyMaterialListTest, growingWithAFillStaysUniform)
 TEST_F(PropertyMaterialListTest, legacyXMLRoundTrip)
 {
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values {redMaterial(), fullyPaintedMaterial(), App::Material()};
+    std::vector<App::MaterialAppearance> values {redMaterial(), fullyPaintedMaterial(), App::MaterialAppearance()};
     prop.setValues(values);
 
     const std::string xml = saveToXML(prop, 4);
@@ -472,7 +472,7 @@ TEST_F(PropertyMaterialListTest, legacyXMLRoundTrip)
 TEST_F(PropertyMaterialListTest, fieldXMLRoundTrip)
 {
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values {redMaterial(), fullyPaintedMaterial(), App::Material()};
+    std::vector<App::MaterialAppearance> values {redMaterial(), fullyPaintedMaterial(), App::MaterialAppearance()};
     prop.setValues(values);
 
     const std::string xml = saveToXML(prop, 5);
@@ -488,7 +488,7 @@ TEST_F(PropertyMaterialListTest, fieldXMLRoundTrip)
 TEST_F(PropertyMaterialListTest, fieldXMLIsSmallForAUniformList)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(2000, fullyPaintedMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(2000, fullyPaintedMaterial()));
 
     const std::string compact = saveToXML(prop, 5);
     const std::string legacy = saveToXML(prop, 4);
@@ -497,13 +497,13 @@ TEST_F(PropertyMaterialListTest, fieldXMLIsSmallForAUniformList)
     App::PropertyMaterialList restored;
     restoreFromXML(restored, compact);
     EXPECT_EQ(restored.getSize(), 2000);
-    expectEntriesQ8(restored, std::vector<App::Material>(2000, fullyPaintedMaterial()));
+    expectEntriesQ8(restored, std::vector<App::MaterialAppearance>(2000, fullyPaintedMaterial()));
 }
 
 TEST_F(PropertyMaterialListTest, legacyDocFileRoundTrip)
 {
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values {redMaterial(), fullyPaintedMaterial()};
+    std::vector<App::MaterialAppearance> values {redMaterial(), fullyPaintedMaterial()};
     prop.setValues(values);
 
     App::PropertyMaterialList restored;
@@ -516,7 +516,7 @@ TEST_F(PropertyMaterialListTest, fieldDocFileRoundTrip)
     // the shape a STEP import produces: diffuse varies per face and nothing
     // else does, so five of the seven fields are not written at all
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values(300, redMaterial());
+    std::vector<App::MaterialAppearance> values(300, redMaterial());
     values[7].diffuseColor = packed(0x00ff00ff);
     prop.setValues(values);
 
@@ -536,7 +536,7 @@ TEST_F(PropertyMaterialListTest, fieldDocFileCostsLittleWhenNothingCollapses)
     // genuinely varies there is nothing to save, and the per field encoding
     // must not cost meaningfully more than the one it replaces
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values(300, redMaterial());
+    std::vector<App::MaterialAppearance> values(300, redMaterial());
     values[7] = fullyPaintedMaterial();
     prop.setValues(values);
 
@@ -583,7 +583,7 @@ TEST_F(PropertyMaterialListTest, equalListsSerialiseIdentically)
     // mean the same thing must produce the same bytes, however they got
     // there, or elision silently stops happening
     App::PropertyMaterialList byWholeValues;
-    byWholeValues.setValues(std::vector<App::Material>(50, redMaterial()));
+    byWholeValues.setValues(std::vector<App::MaterialAppearance>(50, redMaterial()));
 
     App::PropertyMaterialList byField;
     byField.setSize(50);
@@ -611,10 +611,10 @@ TEST_F(PropertyMaterialListTest, equalListsSerialiseIdentically)
 TEST_F(PropertyMaterialListTest, isSameSeesThroughCardinality)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(4, redMaterial()));
 
     App::PropertyMaterialList other;
-    other.setValues(std::vector<App::Material>(5, redMaterial()));
+    other.setValues(std::vector<App::MaterialAppearance>(5, redMaterial()));
     EXPECT_FALSE(prop.isSame(other));
 
     other.setSize(4);
@@ -627,7 +627,7 @@ TEST_F(PropertyMaterialListTest, isSameSeesThroughCardinality)
 TEST_F(PropertyMaterialListTest, copyAndPasteCarryEveryField)
 {
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values {fullyPaintedMaterial(), redMaterial()};
+    std::vector<App::MaterialAppearance> values {fullyPaintedMaterial(), redMaterial()};
     prop.setValues(values);
 
     std::unique_ptr<App::Property> copy(prop.Copy());
@@ -641,7 +641,7 @@ TEST_F(PropertyMaterialListTest, copyAndPasteCarryEveryField)
 TEST_F(PropertyMaterialListTest, saveSizeAnswersForTheEncodingBeingWritten)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(1000, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(1000, redMaterial()));
 
     Base::StringWriter writer;
     writer.setSchemaVersion(5);
@@ -656,7 +656,7 @@ TEST_F(PropertyMaterialListTest, saveSizeAnswersForTheEncodingBeingWritten)
 TEST_F(PropertyMaterialListTest, texturesAndCardsRideTheBaseLikeEveryOtherField)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(200, texturedMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(200, texturedMaterial()));
 
     EXPECT_EQ(prop.getSize(), 200);
     EXPECT_FALSE(prop.hasOverrides());
@@ -677,7 +677,7 @@ TEST_F(PropertyMaterialListTest, aTexturePathSurvivesTheXMLForm)
     // spaces and angle brackets in a path, and bytes that are not text in an
     // embedded image: the inline form has to carry them intact
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values {texturedMaterial(), App::Material()};
+    std::vector<App::MaterialAppearance> values {texturedMaterial(), App::MaterialAppearance()};
     prop.setValues(values);
 
     const std::string xml = saveToXML(prop, 4);
@@ -693,7 +693,7 @@ TEST_F(PropertyMaterialListTest, aTexturePathSurvivesTheXMLForm)
 TEST_F(PropertyMaterialListTest, stringsRideTheCompactDocFile)
 {
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values(50, texturedMaterial());
+    std::vector<App::MaterialAppearance> values(50, texturedMaterial());
     values[3].uuid = "odd-one-out";
     prop.setValues(values);
 
@@ -705,7 +705,7 @@ TEST_F(PropertyMaterialListTest, stringsRideTheCompactDocFile)
 TEST_F(PropertyMaterialListTest, aFileWithStringsIsWrittenAsUpstreamsVersionThree)
 {
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values {texturedMaterial(), redMaterial()};
+    std::vector<App::MaterialAppearance> values {texturedMaterial(), redMaterial()};
     prop.setValues(values);
 
     // the element has to say version="3", because that is the only way
@@ -901,11 +901,11 @@ TEST_F(PropertyMaterialListTest, aConvertedUniformListStillCollapses)
 TEST_F(PropertyMaterialListTest, pbrReadsTheSameSlotsItsOwnWay)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(3, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(3, redMaterial()));
     // Phong mode: no metals, roughness derived from the shininess
     EXPECT_FLOAT_EQ(prop.getMetallic(1), 0.0F);
     EXPECT_FLOAT_EQ(prop.getRoughness(1),
-                    App::Material::shininessToRoughness(prop.getShininess(1)));
+                    App::MaterialAppearance::shininessToRoughness(prop.getShininess(1)));
 
     prop.setPBR(true);
     ASSERT_TRUE(prop.isPBR());
@@ -1022,7 +1022,7 @@ TEST_F(PropertyMaterialListTest, anOldSchemaSaveWritesThePhongDerivation)
                   App::Color(0.04F, 0.04F, 0.04F).getPackedValue() >> 8);
         // and the shininess slots hold the converted roughness
         EXPECT_NEAR(restored.getShininess(0),
-                    App::Material::roughnessToShininess(0.5F), 1e-6);
+                    App::MaterialAppearance::roughnessToShininess(0.5F), 1e-6);
     }
 }
 
@@ -1031,9 +1031,9 @@ TEST_F(PropertyMaterialListTest, theModeIsPartOfTheSerialisedIdentity)
     // Two lists whose fields match byte for byte must not elide into one
     // another across modes under the shared-default scheme
     App::PropertyMaterialList phong;
-    phong.setValues(std::vector<App::Material>(10, redMaterial()));
+    phong.setValues(std::vector<App::MaterialAppearance>(10, redMaterial()));
     App::PropertyMaterialList pbr;
-    pbr.setValues(std::vector<App::Material>(10, redMaterial()));
+    pbr.setValues(std::vector<App::MaterialAppearance>(10, redMaterial()));
     pbr.setPBR(true);
 
     EXPECT_FALSE(phong.isSame(pbr));
@@ -1068,7 +1068,7 @@ TEST_F(PropertyMaterialListTest, aPhongEraRestoreResetsTheMode)
 
     prop.setPBR(true);
     App::PropertyMaterialList phong;
-    phong.setValues(std::vector<App::Material>(2, redMaterial()));
+    phong.setValues(std::vector<App::MaterialAppearance>(2, redMaterial()));
     restoreDocFile(prop, saveDocFile(phong, 5));
     EXPECT_FALSE(prop.isPBR());
 }
@@ -1080,13 +1080,13 @@ TEST_F(PropertyMaterialListTest, materialValuesCarryTheMode)
     // tag is part of material equality, so a Phong value never quietly
     // stands in for a PBR one
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(2, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(2, redMaterial()));
     EXPECT_FALSE(prop.getMaterial(0).pbr);
 
     prop.setPBR(true);
     prop.setMetallic(1.0F);
     prop.setRoughness(0.25F);
-    App::Material raw = prop.getMaterial(0);
+    App::MaterialAppearance raw = prop.getMaterial(0);
     EXPECT_TRUE(raw.pbr);
     // the value-level readings agree with the list's
     EXPECT_FLOAT_EQ(raw.getMetallic(), 1.0F);
@@ -1095,23 +1095,23 @@ TEST_F(PropertyMaterialListTest, materialValuesCarryTheMode)
     EXPECT_FALSE(prop.getPhongMaterial(0).pbr);
 
     // the tag alone tells the values apart
-    App::Material retagged = raw;
+    App::MaterialAppearance retagged = raw;
     retagged.pbr = false;
     EXPECT_NE(raw, retagged);
 
-    App::Material phong = redMaterial();
+    App::MaterialAppearance phong = redMaterial();
     EXPECT_NE(raw, phong);
     // a Phong value has no metals, and its roughness is the derivation
     EXPECT_FLOAT_EQ(phong.getMetallic(), 0.0F);
     EXPECT_FLOAT_EQ(phong.getRoughness(),
-                    App::Material::shininessToRoughness(phong.shininess));
+                    App::MaterialAppearance::shininessToRoughness(phong.shininess));
 }
 
 TEST_F(PropertyMaterialListTest, aValueConvertsWhenItsModeIsSet)
 {
     // The mode is an attribute of the value like any other, and setting it
     // converts: the surface keeps looking like itself in the other model
-    App::Material mat = redMaterial();
+    App::MaterialAppearance mat = redMaterial();
     mat.shininess = 0.9F;
     const App::Color base = mat.diffuseColor;
 
@@ -1119,7 +1119,7 @@ TEST_F(PropertyMaterialListTest, aValueConvertsWhenItsModeIsSet)
     EXPECT_TRUE(mat.pbr);
     EXPECT_EQ(mat.diffuseColor.getPackedValue(), base.getPackedValue());
     EXPECT_FLOAT_EQ(mat.getMetallic(), 0.0F);
-    EXPECT_FLOAT_EQ(mat.getRoughness(), App::Material::shininessToRoughness(0.9F));
+    EXPECT_FLOAT_EQ(mat.getRoughness(), App::MaterialAppearance::shininessToRoughness(0.9F));
     EXPECT_EQ(mat.specularColor.getPackedValue() >> 8, 0xffffffU);
 
     mat.setPBR(false);
@@ -1129,11 +1129,11 @@ TEST_F(PropertyMaterialListTest, aValueConvertsWhenItsModeIsSet)
 
     // and stating a PBR quantity decides the mode rather than landing a
     // number in a slot that means something else
-    App::Material metal = redMaterial();
+    App::MaterialAppearance metal = redMaterial();
     metal.setMetallic(1.0F);
     EXPECT_TRUE(metal.pbr);
     EXPECT_FLOAT_EQ(metal.getMetallic(), 1.0F);
-    App::Material rough = redMaterial();
+    App::MaterialAppearance rough = redMaterial();
     rough.setRoughness(0.25F);
     EXPECT_TRUE(rough.pbr);
     EXPECT_FLOAT_EQ(rough.getRoughness(), 0.25F);
@@ -1144,11 +1144,11 @@ TEST_F(PropertyMaterialListTest, theListTakesItsModeFromTheFirstMaterialAssigned
     // A list holds ONE mode. A whole-list assignment states it through the
     // material it starts with, and every further entry is converted to
     // that reading rather than stored under the wrong one.
-    App::Material pbrMat = redMaterial();
+    App::MaterialAppearance pbrMat = redMaterial();
     pbrMat.setPBR(true);
     pbrMat.setMetallic(1.0F);
     pbrMat.setRoughness(0.25F);
-    App::Material phongMat = redMaterial();
+    App::MaterialAppearance phongMat = redMaterial();
     phongMat.shininess = 0.9F;
 
     App::PropertyMaterialList prop;
@@ -1157,7 +1157,7 @@ TEST_F(PropertyMaterialListTest, theListTakesItsModeFromTheFirstMaterialAssigned
     EXPECT_FLOAT_EQ(prop.getMetallic(0), 1.0F);
     // the Phong straggler converted: dielectric at the fitted roughness
     EXPECT_FLOAT_EQ(prop.getMetallic(1), 0.0F);
-    EXPECT_FLOAT_EQ(prop.getRoughness(1), App::Material::shininessToRoughness(0.9F));
+    EXPECT_FLOAT_EQ(prop.getRoughness(1), App::MaterialAppearance::shininessToRoughness(0.9F));
     EXPECT_TRUE(prop.getMaterial(1).pbr);
 
     // the other way round, and a single value states the mode too
@@ -1170,7 +1170,7 @@ TEST_F(PropertyMaterialListTest, theListTakesItsModeFromTheFirstMaterialAssigned
     prop.set1Value(1, pbrMat);
     EXPECT_FALSE(prop.isPBR());
     EXPECT_NEAR(prop.getShininess(1),
-                App::Material::roughnessToShininess(0.25F), 1e-6);
+                App::MaterialAppearance::roughnessToShininess(0.25F), 1e-6);
     // the metal's colour lands in the specular, as the Phong derivation says
     EXPECT_EQ(prop.getSpecularColor(1).getPackedValue() >> 8,
               prop.getDiffuseColor(1).getPackedValue() >> 8);
@@ -1181,7 +1181,7 @@ TEST_F(PropertyMaterialListTest, theListTakesItsModeFromTheFirstMaterialAssigned
     ASSERT_TRUE(grown.isPBR());
     grown.setSize(3, phongMat);
     EXPECT_TRUE(grown.isPBR());
-    EXPECT_FLOAT_EQ(grown.getRoughness(2), App::Material::shininessToRoughness(0.9F));
+    EXPECT_FLOAT_EQ(grown.getRoughness(2), App::MaterialAppearance::shininessToRoughness(0.9F));
 
     // an empty assignment states nothing: the mode it finds stands
     grown.setValues({});
@@ -1193,7 +1193,7 @@ TEST_F(PropertyMaterialListTest, convertPBRKeepsTheLook)
     // The editor's toggle: unlike setPBR it converts the stored values, so
     // the surface keeps looking like itself in the other model
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(3, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(3, redMaterial()));
     prop.setShininess(0.9F);
     prop.setDiffuseColor(1, packed(0x00ff00ff));
     const App::Color diffuse0 = prop.getDiffuseColor(0);
@@ -1206,7 +1206,7 @@ TEST_F(PropertyMaterialListTest, convertPBRKeepsTheLook)
     EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue(), diffuse1.getPackedValue());
     // a Phong surface converts dielectric, at the fitted roughness
     EXPECT_FLOAT_EQ(prop.getMetallic(0), 0.0F);
-    EXPECT_FLOAT_EQ(prop.getRoughness(0), App::Material::shininessToRoughness(0.9F));
+    EXPECT_FLOAT_EQ(prop.getRoughness(0), App::MaterialAppearance::shininessToRoughness(0.9F));
     EXPECT_EQ(prop.getSpecularColor(0).getPackedValue() >> 8, 0xffffffU);
 
     prop.convertPBR(false);
@@ -1338,7 +1338,7 @@ TEST_F(PropertyMaterialListTest, aFinishIsClampedOnTheWayIn)
 
 TEST_F(PropertyMaterialListTest, aFinishRidesAWholeMaterialBothWays)
 {
-    App::Material mat = redMaterial();
+    App::MaterialAppearance mat = redMaterial();
     mat.finish = knurlFinish();
 
     App::PropertyMaterialList prop;
@@ -1349,12 +1349,12 @@ TEST_F(PropertyMaterialListTest, aFinishRidesAWholeMaterialBothWays)
     EXPECT_EQ(prop.getMaterial(0), mat);   // equality includes the finish
 
     // a preset states the whole material, and none of them states a finish
-    App::Material preset = mat;
-    preset.setType(App::Material::STEEL);
+    App::MaterialAppearance preset = mat;
+    preset.setType(App::MaterialAppearance::STEEL);
     EXPECT_EQ(preset.finish.pattern, App::SurfaceFinish::None);
     // ... but USER_DEFINED states nothing, here as for the colours
-    App::Material kept = mat;
-    kept.setType(App::Material::USER_DEFINED);
+    App::MaterialAppearance kept = mat;
+    kept.setType(App::MaterialAppearance::USER_DEFINED);
     EXPECT_EQ(kept.finish, knurlFinish());
 }
 
@@ -1418,24 +1418,24 @@ TEST_F(PropertyMaterialListTest, everyTextureSlotRoundTripsThroughItsName)
 
 TEST_F(PropertyMaterialListTest, aTextureRidesAWholeMaterialBothWays)
 {
-    App::Material mat = redMaterial();
+    App::MaterialAppearance mat = redMaterial();
     mat.texture = oakTexture();
 
-    App::Material plain = redMaterial();
+    App::MaterialAppearance plain = redMaterial();
     EXPECT_NE(mat, plain);   // equality includes the texture
 
     // Two slots naming the same content are the same statement
-    App::Material same = redMaterial();
+    App::MaterialAppearance same = redMaterial();
     same.texture = oakTexture();
     EXPECT_EQ(mat, same);
 
     // a preset states the whole material, and none of them states a texture
-    App::Material preset = mat;
-    preset.setType(App::Material::STEEL);
+    App::MaterialAppearance preset = mat;
+    preset.setType(App::MaterialAppearance::STEEL);
     EXPECT_FALSE(preset.texture.isSet());
     // ... but USER_DEFINED states nothing, here as for the finish
-    App::Material kept = mat;
-    kept.setType(App::Material::USER_DEFINED);
+    App::MaterialAppearance kept = mat;
+    kept.setType(App::MaterialAppearance::USER_DEFINED);
     EXPECT_EQ(kept.texture, oakTexture());
 }
 
@@ -1527,7 +1527,7 @@ TEST_F(PropertyMaterialListTest, aTexturePaletteHoldsOnlyWhatIsDistinct)
 
 TEST_F(PropertyMaterialListTest, aTextureRidesTheWholeMaterialThroughTheList)
 {
-    App::Material textured = redMaterial();
+    App::MaterialAppearance textured = redMaterial();
     textured.texture = oakTexture();
 
     App::PropertyMaterialList prop;
@@ -1607,14 +1607,14 @@ TEST_F(PropertyMaterialListTest, aTextureSurvivesTheModeConversions)
 {
     // Which image is pasted on a surface is not a reading of the shading
     // slots, so nothing about the mode may touch it
-    App::Material mat = redMaterial();
+    App::MaterialAppearance mat = redMaterial();
     mat.texture = oakTexture();
 
-    EXPECT_EQ(App::Material::phongToPbr(mat).texture, oakTexture());
-    EXPECT_EQ(App::Material::pbrToPhong(App::Material::phongToPbr(mat)).texture,
+    EXPECT_EQ(App::MaterialAppearance::phongToPbr(mat).texture, oakTexture());
+    EXPECT_EQ(App::MaterialAppearance::pbrToPhong(App::MaterialAppearance::phongToPbr(mat)).texture,
               oakTexture());
 
-    App::Material converted = mat;
+    App::MaterialAppearance converted = mat;
     converted.setPBR(true);
     EXPECT_EQ(converted.texture, oakTexture());
     converted.setPBR(false);
@@ -1636,12 +1636,12 @@ TEST_F(PropertyMaterialListTest, aFinishSurvivesTheModeConversions)
     prop.convertPBR(false);
     EXPECT_EQ(prop.getFinish(0), knurlFinish());
 
-    App::Material mat = redMaterial();
+    App::MaterialAppearance mat = redMaterial();
     mat.finish = brushedFinish();
     mat.setPBR(true);
     EXPECT_EQ(mat.finish, brushedFinish());
-    EXPECT_EQ(App::Material::pbrToPhong(mat).finish, brushedFinish());
-    EXPECT_EQ(App::Material::phongToPbr(redMaterial()).finish.pattern,
+    EXPECT_EQ(App::MaterialAppearance::pbrToPhong(mat).finish, brushedFinish());
+    EXPECT_EQ(App::MaterialAppearance::phongToPbr(redMaterial()).finish.pattern,
               App::SurfaceFinish::None);
 }
 
@@ -1724,7 +1724,7 @@ TEST_F(PropertyMaterialListTest, anArchivedFinishWaitsForItsMaterials)
     // the finish restored from the companion element has to wait for the
     // materials rather than land when it was read.
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values {texturedMaterial(), redMaterial()};
+    std::vector<App::MaterialAppearance> values {texturedMaterial(), redMaterial()};
     values[1].finish = knurlFinish();   // the finish is part of the material
     prop.setValues(values);
 
@@ -1771,7 +1771,7 @@ TEST_F(PropertyMaterialListTest, aPlainMaterialPropertyCarriesTheFinishToo)
     // The single-value property is the other place a whole material is
     // stored, and a field it silently dropped would be a trap waiting for
     // whoever first stores a finish there.
-    App::Material mat = redMaterial();
+    App::MaterialAppearance mat = redMaterial();
     mat.finish = knurlFinish();
     App::PropertyAppearance prop;
     prop.setValue(mat);
@@ -1881,7 +1881,7 @@ TEST_F(PropertyMaterialListTest, aRunShapeFromALaterBuildIsSteppedOver)
     ASSERT_EQ(prop.getSize(), 2);
     EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
     // The unknown shape was dropped, and the field behind it still landed
-    EXPECT_EQ(prop.getType(0), App::Material::USER_DEFINED);
+    EXPECT_EQ(prop.getType(0), App::MaterialAppearance::USER_DEFINED);
     EXPECT_EQ(prop.getFinish(0).pattern, App::SurfaceFinish::Brushed);
     EXPECT_EQ(prop.getFinish(1).pattern, App::SurfaceFinish::Blasted);
 }
@@ -2231,7 +2231,7 @@ TEST_F(PropertyMaterialListTest, aKeyFromALaterBuildIsSteppedOver)
 TEST_F(PropertyMaterialListTest, aCopyOfTheValueSharesUntilOneOfThemWrites)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(1000, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(1000, redMaterial()));
 
     App::MaterialList copy = prop.getList();
     EXPECT_TRUE(prop.getList().isShared());
@@ -2244,7 +2244,7 @@ TEST_F(PropertyMaterialListTest, aCopyOfTheValueSharesUntilOneOfThemWrites)
     }
     EXPECT_TRUE(prop.getList().isShared());
 
-    App::Material blue;
+    App::MaterialAppearance blue;
     blue.diffuseColor = packed(0x0000ffff);
     prop.setDiffuseColor(500, blue.diffuseColor);
 
@@ -2258,7 +2258,7 @@ TEST_F(PropertyMaterialListTest, aCopyOfTheValueSharesUntilOneOfThemWrites)
 TEST_F(PropertyMaterialListTest, anUndoSnapshotIsAPointerRatherThanTheWholeList)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(1000, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(1000, redMaterial()));
     EXPECT_FALSE(prop.getList().isShared());
 
     // Copy() is what the transaction machinery calls before every change
@@ -2285,7 +2285,7 @@ TEST_F(PropertyMaterialListTest, aWriteThatChangesNothingLeavesTheStorageAlone)
     // a setter that decides nothing changed must not detach -- otherwise
     // every no-op write would record an undo step and touch the document.
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(4, redMaterial()));
 
     const App::MaterialList before = prop.getList();
     prop.setDiffuseColor(2, redMaterial().diffuseColor);
@@ -2307,7 +2307,7 @@ TEST_F(PropertyMaterialListTest, aWriteThatChangesNothingLeavesTheStorageAlone)
     // every field rather than comparing first, so it records a change even
     // when the values match. Nothing here changes that -- it is the same
     // signal the property sent before the value moved out of it.
-    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(4, redMaterial()));
     EXPECT_FALSE(prop.getList().isSameData(before));
 
     // and a real entry write detaches too
@@ -2319,7 +2319,7 @@ TEST_F(PropertyMaterialListTest, aWriteThatChangesNothingLeavesTheStorageAlone)
 TEST_F(PropertyMaterialListTest, anIndexedWriteRecordsThatIndexAndAWholeOneClearsThem)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(4, redMaterial()));
     EXPECT_TRUE(prop.getTouchList().empty());
 
     prop.setDiffuseColor(2, packed(0x00ff00ff));
@@ -2327,7 +2327,7 @@ TEST_F(PropertyMaterialListTest, anIndexedWriteRecordsThatIndexAndAWholeOneClear
     prop.setShininess(1, 0.5F);
     EXPECT_EQ(prop.getTouchList(), std::set<int>({1, 2}));
 
-    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(4, redMaterial()));
     EXPECT_TRUE(prop.getTouchList().empty());
 }
 
@@ -2336,11 +2336,11 @@ TEST_F(PropertyMaterialListTest, contentTheListHoldsTravelsWithACopyOfIt)
     const std::string oakPath = writeTempFile("this is an oak plank");
 
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(2, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(2, redMaterial()));
     const std::string hash = prop.insertTextureFile(oakPath.c_str());
     ASSERT_FALSE(hash.empty());
 
-    App::Material textured = redMaterial();
+    App::MaterialAppearance textured = redMaterial();
     textured.texture.maps[App::SurfaceTexture::BaseColor] = hash;
     prop.set1Value(1, textured);
 
@@ -2396,7 +2396,7 @@ void run(const char* code)
 TEST_F(PropertyMaterialListTest, aPythonWriteToOneEntryReachesTheProperty)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(4, redMaterial()));
 
     // The whole point: a field written on the entry Python was handed goes
     // back into the property, at that index and nowhere else
@@ -2416,7 +2416,7 @@ TEST_F(PropertyMaterialListTest, aPythonWriteToOneEntryReachesTheProperty)
 TEST_F(PropertyMaterialListTest, aPythonListReadsWithoutCopyingTheStorage)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(1000, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(1000, redMaterial()));
 
     // A view, not a tuple of a thousand materials: reading it neither
     // copies the storage nor detaches it
@@ -2432,7 +2432,7 @@ TEST_F(PropertyMaterialListTest, aPythonListReadsWithoutCopyingTheStorage)
 TEST_F(PropertyMaterialListTest, aDetachedListIsAValueAndWritesNowhere)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(2, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(2, redMaterial()));
 
     runOn(prop, "import FreeCAD\n"
                 "copy = mlist.copy()\n"
@@ -2458,7 +2458,7 @@ TEST_F(PropertyMaterialListTest, aViewOfADeadPropertyIsStillReadable)
 {
     {
         App::PropertyMaterialList prop;
-        prop.setValues(std::vector<App::Material>(3, redMaterial()));
+        prop.setValues(std::vector<App::MaterialAppearance>(3, redMaterial()));
         runOn(prop, "kept = mlist");
     }
     // The property took its views down with it, each keeping the value it
@@ -2474,7 +2474,7 @@ TEST_F(PropertyMaterialListTest, aViewOfADeadPropertyIsStillReadable)
 TEST_F(PropertyMaterialListTest, aReadOnlyPropertyHandsOutSomethingNothingWritesThrough)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(2, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(2, redMaterial()));
     prop.setStatus(App::Property::ReadOnly, true);
 
     runOn(prop, "import FreeCAD\n"
@@ -2491,7 +2491,7 @@ TEST_F(PropertyMaterialListTest, aTextureIsStatedFromPythonByFile)
     const std::string oakPath = writeTempFile("this is an oak plank");
 
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(3, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(3, redMaterial()));
 
     // Two steps or one: content into the store, then a slot naming it --
     // and setTextureFile() is both, which is what a script wants
@@ -2525,7 +2525,7 @@ TEST_F(PropertyMaterialListTest, aTextureIsStatedFromPythonByFile)
 TEST_F(PropertyMaterialListTest, aPythonFieldWriteNamesOneEntryOrEveryOne)
 {
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(4, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(4, redMaterial()));
 
     // With an index it is one entry; without one it is every entry, which
     // is why "every entry" is not spelled as an index at all
@@ -2563,11 +2563,11 @@ TEST_F(PropertyMaterialListTest, aDenseListHoldsItsBaseOpenUntilOneIsDerived)
     // which of them the object is, so the list stands with every entry an
     // override over a default base -- which resolves correctly and costs
     // exactly what the dense form cost.
-    App::Material green = redMaterial();
+    App::MaterialAppearance green = redMaterial();
     green.diffuseColor = packed(0x00ff00ff);
 
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values(10, redMaterial());
+    std::vector<App::MaterialAppearance> values(10, redMaterial());
     values[4] = green;
     prop.setValues(values);
 
@@ -2592,12 +2592,12 @@ TEST_F(PropertyMaterialListTest, theBaseIsTheMaterialCoveringTheLargestArea)
 {
     // The board-and-pads case, which entry COUNT decides the wrong way: one
     // big green face and five small gold ones
-    App::Material gold = redMaterial();
+    App::MaterialAppearance gold = redMaterial();
     gold.diffuseColor = packed(0xffd700ff);
-    App::Material board = redMaterial();
+    App::MaterialAppearance board = redMaterial();
     board.diffuseColor = packed(0x008000ff);
 
-    std::vector<App::Material> values(6, gold);
+    std::vector<App::MaterialAppearance> values(6, gold);
     values[0] = board;
     const std::vector<double> areas {1000.0, 1.0, 1.0, 1.0, 1.0, 1.0};
 
@@ -2621,11 +2621,11 @@ TEST_F(PropertyMaterialListTest, theMirrorWinsWhenTheListNamesIt)
     // What a document this fork wrote before the base holds: the mirror is
     // the last uniform value, which is what the object looked like before
     // its faces were painted
-    App::Material body = redMaterial();
-    App::Material pad = redMaterial();
+    App::MaterialAppearance body = redMaterial();
+    App::MaterialAppearance pad = redMaterial();
     pad.diffuseColor = packed(0x00ff00ff);
 
-    std::vector<App::Material> values(6, pad);
+    std::vector<App::MaterialAppearance> values(6, pad);
     values[0] = body;
     values[1] = body;
 
@@ -2642,7 +2642,7 @@ TEST_F(PropertyMaterialListTest, theMirrorWinsWhenTheListNamesIt)
     // A mirror the list does not hold declines, and the count decides
     App::PropertyMaterialList other;
     other.setValues(values);
-    const App::Color grey = App::Material().diffuseColor;
+    const App::Color grey = App::MaterialAppearance().diffuseColor;
     EXPECT_FALSE(other.namesDiffuse(grey));
     other.deriveBase(&grey);
     EXPECT_TRUE(other.getBase() == pad);
@@ -2650,9 +2650,9 @@ TEST_F(PropertyMaterialListTest, theMirrorWinsWhenTheListNamesIt)
 
 TEST_F(PropertyMaterialListTest, theSparseFormRoundTripsBothForkEncodings)
 {
-    App::Material painted = fullyPaintedMaterial();
+    App::MaterialAppearance painted = fullyPaintedMaterial();
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values(200, redMaterial());
+    std::vector<App::MaterialAppearance> values(200, redMaterial());
     values[3] = painted;
     values[100].diffuseColor = packed(0x00ff00ff);
     prop.setValues(values);
@@ -2699,7 +2699,7 @@ TEST_F(PropertyMaterialListTest, schemaFourStillWritesOneEntryPerFace)
     // The compatible encoding cannot state a base, so it resolves as it
     // goes -- which is what makes an old FreeCAD able to open the file
     App::PropertyMaterialList prop;
-    std::vector<App::Material> values(4, redMaterial());
+    std::vector<App::MaterialAppearance> values(4, redMaterial());
     values[2].diffuseColor = packed(0x00ff00ff);
     prop.setValues(values);
     prop.deriveBase();
@@ -2735,16 +2735,16 @@ TEST_F(PropertyMaterialListTest, anAppearanceCardKeepsThePaintedFaces)
 {
     // 12.2, and the reason the base exists at all: assigning the object a
     // whole material must not collapse the faces the user painted
-    App::Material painted = redMaterial();
+    App::MaterialAppearance painted = redMaterial();
     painted.diffuseColor = packed(0x00ff00ff);
     painted.shininess = 0.9F;
 
     App::PropertyMaterialList prop;
-    prop.setValues(std::vector<App::Material>(8, redMaterial()));
+    prop.setValues(std::vector<App::MaterialAppearance>(8, redMaterial()));
     prop.set1Value(5, painted);
     ASSERT_EQ(prop.getOverrides(), std::vector<uint32_t>({5}));
 
-    App::Material card;
+    App::MaterialAppearance card;
     card.diffuseColor = packed(0x0000ffff);
     card.shininess = 0.2F;
     prop.setBase(card);
@@ -2791,7 +2791,7 @@ TEST_F(PropertyMaterialListTest, aFieldEveryFaceAgreesOnBelongsToTheObject)
 
 TEST_F(PropertyMaterialListTest, aWholeObjectWriteEndsTheFollow)
 {
-    App::Material card = redMaterial();
+    App::MaterialAppearance card = redMaterial();
     card.shininess = 0.7F;
 
     App::PropertyMaterialList prop;
@@ -2806,7 +2806,7 @@ TEST_F(PropertyMaterialListTest, aWholeObjectWriteEndsTheFollow)
 
     // ... and the card moving on carries the base with it, over the face
     // that holds its own
-    App::Material moved = card;
+    App::MaterialAppearance moved = card;
     moved.diffuseColor = packed(0x0000ffff);
     prop.followMaterial(moved);
     EXPECT_TRUE(prop.isFollowingMaterial());
@@ -2823,7 +2823,7 @@ TEST_F(PropertyMaterialListTest, aWholeObjectWriteEndsTheFollow)
     // is exactly the imported part that has to be able to take a card and
     // keep its painted faces
     App::PropertyMaterialList imported;
-    imported.setValues(std::vector<App::Material>(6, redMaterial()));
+    imported.setValues(std::vector<App::MaterialAppearance>(6, redMaterial()));
     EXPECT_TRUE(imported.isFollowingMaterial());
 }
 

@@ -28,7 +28,7 @@
 #include <QMutexLocker>
 
 #include <App/Application.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 
 #include "Exceptions.h"
 #include "MaterialConfigLoader.h"

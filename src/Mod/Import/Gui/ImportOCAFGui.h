@@ -38,7 +38,7 @@ public:
 private:
     void applyFaceColors(Part::Feature* part, const std::vector<App::Color>& colors) override;
     void applyFaceMaterials(Part::Feature* part,
-                            const std::vector<App::Material>& mats, bool pbr) override;
+                            const std::vector<App::MaterialAppearance>& mats, bool pbr) override;
     void applyEdgeColors(Part::Feature* part, const std::vector<App::Color>& colors) override;
     void applyLinkColor(App::DocumentObject* obj, int index, App::Color color) override;
     void applyElementColors(App::DocumentObject* obj,

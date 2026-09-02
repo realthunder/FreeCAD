@@ -25,7 +25,7 @@
 #define GUI_VIEWPROVIDER_GEOMETRYOBJECT_H
 
 #include "ViewProviderDragger.h"
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Base/Tools.h>
 #include <Inventor/lists/SoPickedPointList.h>
 #include <cstdint>
@@ -116,9 +116,9 @@ public:
     void setAppearance(App::PropertyMaterialList *appearance)
     { _appearance = appearance; }
 
-    void setValue(const App::Material &mat);
+    void setValue(const App::MaterialAppearance &mat);
     /// See PropertyShapeColor::mirrorValue; same no-op rule
-    void mirrorValue(const App::Material &mat)
+    void mirrorValue(const App::MaterialAppearance &mat)
     { if (!(mat == getValue())) App::PropertyAppearance::setValue(mat); }
 
     void Restore(Base::XMLReader &reader) override;
@@ -284,7 +284,7 @@ protected:
                                    App::Property *prop) override;
 
     /// Push one whole material into the Coin material node
-    void setCoinAppearance(const App::Material &mat);
+    void setCoinAppearance(const App::MaterialAppearance &mat);
 
     virtual unsigned long getBoundColor() const;
     void updateBoundingBox();

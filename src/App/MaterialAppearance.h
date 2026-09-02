@@ -178,9 +178,9 @@ struct AppExport SurfaceTexture
     bool operator!=(const SurfaceTexture& t) const { return !operator==(t); }
 };
 
-/** Material class
+/** MaterialAppearance class
  */
-class AppExport Material
+class AppExport MaterialAppearance
 {
 public:
     enum MaterialType {
@@ -214,13 +214,13 @@ public:
      */
     //@{
     /** Sets the USER_DEFINED material type. The user must set the colors afterwards. */
-    Material();
+    MaterialAppearance();
     /** Defines the colors and shininess for the material \a MatName. If \a MatName isn't defined then USER_DEFINED is
      * set and the user must define the colors itself.
      */
-    explicit Material(const char* MatName);
+    explicit MaterialAppearance(const char* MatName);
     /** Does basically the same as the constructor above unless that it accepts a MaterialType as argument. */
-    explicit Material(const MaterialType MatType);
+    explicit MaterialAppearance(const MaterialType MatType);
     //@}
 
     /** Set a material by name
@@ -290,7 +290,7 @@ public:
      * there, a dielectric 0.04 scaled by the tint. The result is tagged
      * Phong.
      */
-    static Material pbrToPhong(const Material& raw);
+    static MaterialAppearance pbrToPhong(const MaterialAppearance& raw);
 
     /** The PBR material a Phong material most nearly means
      *
@@ -303,7 +303,7 @@ public:
      * keeps the look but forgets the specular colour, which Phong alone
      * can state.
      */
-    static Material phongToPbr(const Material& classic);
+    static MaterialAppearance phongToPbr(const MaterialAppearance& classic);
 
     /** @name PBR readings of one material value
      *
@@ -383,7 +383,7 @@ public:
     bool pbr = false;
     //@}
 
-    bool operator==(const Material& m) const
+    bool operator==(const MaterialAppearance& m) const
     {
         // Two appearances naming the same material card are the same
         // appearance whatever their colours currently say, which is how
@@ -399,7 +399,7 @@ public:
             texture==m.texture &&
             image==m.image && imagePath==m.imagePath;
     }
-    bool operator!=(const Material& m) const
+    bool operator!=(const MaterialAppearance& m) const
     {
         return !operator==(m);
     }
@@ -411,11 +411,11 @@ private:
 /** One dynamic Render_* view property stated by a material card.
  *
  * The renderer's media features -- glass and its kin -- are per-object
- * dynamic properties on the VIEW provider, not fields of Material: they
+ * dynamic properties on the VIEW provider, not fields of MaterialAppearance: they
  * turn a closed shape into a volume, and a volume has no faces to attach
  * a per-face appearance to (docs/ShapeAppearanceDesign.md sec 8). A card
  * that wants to state one therefore hands over a list of these rather
- * than anything Material could carry, and the Gui side creates the
+ * than anything MaterialAppearance could carry, and the Gui side creates the
  * properties. The type lives here, in App, because it has to cross from
  * the Materials module to Gui, which cannot see Materials directly.
  */

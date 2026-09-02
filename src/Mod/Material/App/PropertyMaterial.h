@@ -75,7 +75,7 @@ public:
 
     /** Sets the appearance properties
      */
-    void setValue(const App::Material& mat);
+    void setValue(const App::MaterialAppearance& mat);
 
     /** This method returns a string representation of the property
      */

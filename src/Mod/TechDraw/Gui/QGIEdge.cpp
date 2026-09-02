@@ -29,7 +29,7 @@
 #endif
 
 #include <App/Application.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>
 #include <Gui/Control.h>

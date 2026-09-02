@@ -29,7 +29,7 @@
 #include <QPixmap>
 #include <QSvgRenderer>
 
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 
 #include <Mod/TechDraw/App/HatchLine.h>
 

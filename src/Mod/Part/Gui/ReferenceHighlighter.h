@@ -28,7 +28,7 @@
 #include <TopoDS_Shape.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Mod/Part/PartGlobal.h>
 
 

@@ -351,7 +351,7 @@ void collapseDenseTexture(std::vector<SurfaceTexture> &palette, std::vector<uint
 /// The diffuse colour a whole material stores: its transparency field is the
 /// truth and the alpha holds its complement (see the storage note in the
 /// header).
-Color MaterialList::storedDiffuse(const Material &mat)
+Color MaterialList::storedDiffuse(const MaterialAppearance &mat)
 {
     Color color = mat.diffuseColor;
     color.setTransparency(mat.transparency);
@@ -518,9 +518,9 @@ void MaterialList::pruneTextureBlobs()
 }
 
 // ==================== default ====================
-const Material &MaterialList::defaultMaterial()
+const MaterialAppearance &MaterialList::defaultMaterial()
 {
-    static const Material def;
+    static const MaterialAppearance def;
     return def;
 }
 
@@ -902,7 +902,7 @@ void MaterialList::ensureNormalized() const
 
 // ==================== the base ====================
 
-const Material &MaterialList::getBase() const
+const MaterialAppearance &MaterialList::getBase() const
 {
     ensureNormalized();
     return rd().base;
@@ -1020,7 +1020,7 @@ void MaterialList::setFollowMaterial(bool enable)
     wd().follow = enable;
 }
 
-void MaterialList::followMaterial(const Material &card)
+void MaterialList::followMaterial(const MaterialAppearance &card)
 {
     setBase(card);
     // After the write, because setBase is a whole-object write and every
@@ -1039,9 +1039,9 @@ void MaterialList::endFollow()
         wd().follow = false;
 }
 
-void MaterialList::setBase(const Material &value)
+void MaterialList::setBase(const MaterialAppearance &value)
 {
-    const Material mat = inMode(value);
+    const MaterialAppearance mat = inMode(value);
     ensureNormalized();
     if (rd().count == 0) {
         // A base with nothing to wear it is not a list; the same rule the
@@ -1074,14 +1074,14 @@ void MaterialList::setBase(const Material &value)
     w.base.texture = storedTexture(mat.texture);
 }
 
-/// The base's type, without Material::setType() taking the preset's colours
+/// The base's type, without MaterialAppearance::setType() taking the preset's colours
 /// with it -- the trap getMaterial() documents, from the other side
-void MaterialList::setMaterialType(Material &mat, int8_t type)
+void MaterialList::setMaterialType(MaterialAppearance &mat, int8_t type)
 {
     if (static_cast<int8_t>(mat.getType()) == type)
         return;
-    const Material saved = mat;
-    mat.setType(static_cast<Material::MaterialType>(type));
+    const MaterialAppearance saved = mat;
+    mat.setType(static_cast<MaterialAppearance::MaterialType>(type));
     mat.ambientColor = saved.ambientColor;
     mat.diffuseColor = saved.diffuseColor;
     mat.specularColor = saved.specularColor;
@@ -1110,7 +1110,7 @@ void MaterialList::adoptDense()
         return;
     }
 
-    const Material &def = defaultMaterial();
+    const MaterialAppearance &def = defaultMaterial();
     collapseField(d.ambient, def.ambientColor);
     collapseField(d.diffuse, storedDiffuse(def));
     collapseField(d.specular, specularDefault());
@@ -1220,7 +1220,7 @@ MaterialList::OverrideKey MaterialList::overrideKey(int pos) const
  * through the dense form of each field, which is the only way to ask the
  * question once per face rather than once per face per field.
  */
-void MaterialList::rebase(const Material &newBase) const
+void MaterialList::rebase(const MaterialAppearance &newBase) const
 {
     Data &d = nd();
     const std::size_t n = static_cast<std::size_t>(d.count);
@@ -1381,7 +1381,7 @@ void MaterialList::deriveBase(const Color *hint, const std::vector<double> *weig
     if (winner < 0)
         return;   // the faces already outside the overrides win
 
-    Material chosen = d.base;
+    MaterialAppearance chosen = d.base;
     setMaterialType(chosen, sparseAt(d.type, winner, static_cast<int8_t>(d.base.getType())));
     chosen.ambientColor = sparseAt(d.ambient, winner, d.base.ambientColor);
     chosen.diffuseColor = sparseAt(d.diffuse, winner, d.base.diffuseColor);
@@ -1431,11 +1431,11 @@ void MaterialList::requirePBR() const
         throw Base::RuntimeError("material list is not in PBR mode");
 }
 
-Material MaterialList::inMode(const Material &mat) const
+MaterialAppearance MaterialList::inMode(const MaterialAppearance &mat) const
 {
     if (mat.pbr == rd().pbr)
         return mat;
-    Material converted = mat;
+    MaterialAppearance converted = mat;
     converted.setPBR(rd().pbr);
     return converted;
 }
@@ -1468,12 +1468,12 @@ void MaterialList::convertPBR(bool enable)
     // Convert while the old mode still governs the readings, then flip.
     // Per entry, so per-face variation converts entry by entry; normalize
     // collapses whatever stays uniform afterwards.
-    std::vector<Material> values;
+    std::vector<MaterialAppearance> values;
     values.reserve(wd().count);
     for (int i = 0; i < wd().count; ++i) {
         // Tagged with the mode they are in, so the conversion is the
         // value's own; setValues below then reads the new mode off them
-        Material mat = getMaterial(i);
+        MaterialAppearance mat = getMaterial(i);
         mat.setPBR(enable);
         values.push_back(mat);
     }
@@ -1491,7 +1491,7 @@ float MaterialList::getMetallic(int idx) const
 float MaterialList::getRoughness(int idx) const
 {
     const float value = getShininess(idx);
-    return rd().pbr ? value : Material::shininessToRoughness(value);
+    return rd().pbr ? value : MaterialAppearance::shininessToRoughness(value);
 }
 
 void MaterialList::setMetallicValues(const std::vector<float> &values)
@@ -1514,13 +1514,13 @@ void MaterialList::setMetallicValues(const std::vector<float> &values)
         for (int i = 0; i < newCount; ++i)
             colors[i].a = values[i];
     }
-    setField(&Material::specularColor, &Data::specular, colors);
+    setField(&MaterialAppearance::specularColor, &Data::specular, colors);
 }
 
 void MaterialList::setRoughnessValues(const std::vector<float> &values)
 {
     requirePBR();
-    setField(&Material::shininess, &Data::shininess, values);
+    setField(&MaterialAppearance::shininess, &Data::shininess, values);
 }
 
 void MaterialList::setMetallic(int idx, float value)
@@ -1528,13 +1528,13 @@ void MaterialList::setMetallic(int idx, float value)
     requirePBR();
     Color color = getSpecularColor(idx < 0 || idx >= rd().count ? 0 : idx);
     color.a = value;
-    setFieldValue(&Material::specularColor, &Data::specular, idx, color);
+    setFieldValue(&MaterialAppearance::specularColor, &Data::specular, idx, color);
 }
 
 void MaterialList::setRoughness(int idx, float value)
 {
     requirePBR();
-    setFieldValue(&Material::shininess, &Data::shininess, idx, value);
+    setFieldValue(&MaterialAppearance::shininess, &Data::shininess, idx, value);
 }
 
 void MaterialList::setMetallic(float value)
@@ -1545,32 +1545,32 @@ void MaterialList::setMetallic(float value)
     requirePBR();
     Color color = getBase().specularColor;
     color.a = value;
-    setBaseField(&Material::specularColor, color, specularDefault());
+    setBaseField(&MaterialAppearance::specularColor, color, specularDefault());
 }
 
 void MaterialList::setRoughness(float value)
 {
     requirePBR();
-    setBaseField(&Material::shininess, value, shininessDefault());
+    setBaseField(&MaterialAppearance::shininess, value, shininessDefault());
 }
 
-Material MaterialList::getPhongMaterial(int idx) const
+MaterialAppearance MaterialList::getPhongMaterial(int idx) const
 {
-    Material mat = getMaterial(idx);
+    MaterialAppearance mat = getMaterial(idx);
     if (!rd().pbr)
         return mat;
-    // Why the diffuse stays the base colour: see Material::pbrToPhong
-    return Material::pbrToPhong(mat);
+    // Why the diffuse stays the base colour: see MaterialAppearance::pbrToPhong
+    return MaterialAppearance::pbrToPhong(mat);
 }
 
-Material MaterialList::getPhongBase() const
+MaterialAppearance MaterialList::getPhongBase() const
 {
-    const Material &mat = getBase();
-    return rd().pbr ? Material::pbrToPhong(mat) : mat;
+    const MaterialAppearance &mat = getBase();
+    return rd().pbr ? MaterialAppearance::pbrToPhong(mat) : mat;
 }
 
 // ==================== restore ====================
-void MaterialList::restoreValues(std::vector<Material> &&values, bool legacy)
+void MaterialList::restoreValues(std::vector<MaterialAppearance> &&values, bool legacy)
 {
     touchFields();
     Data &d = wd();
@@ -1679,14 +1679,14 @@ void MaterialList::setSize(int newSize)
         wd().count = newSize;
         return;
     }
-    Material def = defaultMaterial();
+    MaterialAppearance def = defaultMaterial();
     def.specularColor = specularDefault();
     def.shininess = shininessDefault();
     def.pbr = rd().pbr;
     setSize(newSize, def);
 }
 
-void MaterialList::setSize(int newSize, const Material &fill)
+void MaterialList::setSize(int newSize, const MaterialAppearance &fill)
 {
     if (newSize == rd().count)
         return;
@@ -1725,7 +1725,7 @@ void MaterialList::setSize(int newSize, const Material &fill)
 
     // Growth fills entries of this list, so the filler reads as this list
     // does; only a whole-list assignment restates the mode
-    const Material mat = inMode(fill);
+    const MaterialAppearance mat = inMode(fill);
     const int oldCount = rd().count;
     if (oldCount == 0) {
         // Nothing to be the base yet, so the filler IS it
@@ -1757,22 +1757,22 @@ void MaterialList::setSize(int newSize, const Material &fill)
 
 /// Every field of one entry, which is the per-face write set1Value and a
 /// growth with a filler both are
-void MaterialList::applyEntry(int idx, const Material &mat)
+void MaterialList::applyEntry(int idx, const MaterialAppearance &mat)
 {
-    setFieldValue(&Material::ambientColor, &Data::ambient, idx, mat.ambientColor);
-    setFieldValue(&Material::diffuseColor, &Data::diffuse, idx, storedDiffuse(mat));
-    setFieldValue(&Material::specularColor, &Data::specular, idx, mat.specularColor);
-    setFieldValue(&Material::emissiveColor, &Data::emissive, idx, mat.emissiveColor);
-    setFieldValue(&Material::shininess, &Data::shininess, idx, mat.shininess);
-    setFieldValue(&Material::image, &Data::image, idx, mat.image);
-    setFieldValue(&Material::imagePath, &Data::imagePath, idx, mat.imagePath);
-    setFieldValue(&Material::uuid, &Data::uuid, idx, mat.uuid);
+    setFieldValue(&MaterialAppearance::ambientColor, &Data::ambient, idx, mat.ambientColor);
+    setFieldValue(&MaterialAppearance::diffuseColor, &Data::diffuse, idx, storedDiffuse(mat));
+    setFieldValue(&MaterialAppearance::specularColor, &Data::specular, idx, mat.specularColor);
+    setFieldValue(&MaterialAppearance::emissiveColor, &Data::emissive, idx, mat.emissiveColor);
+    setFieldValue(&MaterialAppearance::shininess, &Data::shininess, idx, mat.shininess);
+    setFieldValue(&MaterialAppearance::image, &Data::image, idx, mat.image);
+    setFieldValue(&MaterialAppearance::imagePath, &Data::imagePath, idx, mat.imagePath);
+    setFieldValue(&MaterialAppearance::uuid, &Data::uuid, idx, mat.uuid);
     setTypeValue(idx, static_cast<int8_t>(mat.getType()));
-    setFieldValue(&Material::finish, &Data::finish, idx, storedFinish(mat.finish));
+    setFieldValue(&MaterialAppearance::finish, &Data::finish, idx, storedFinish(mat.finish));
     setTexture(idx, mat.texture);
 }
 
-/// The type field, which has no Material member to name it by: the base
+/// The type field, which has no MaterialAppearance member to name it by: the base
 /// keeps it inside the material, where setType() would rewrite the colours
 void MaterialList::setTypeValue(int idx, int8_t value)
 {
@@ -1786,20 +1786,20 @@ void MaterialList::setTypeValue(int idx, int8_t value)
     setSparseAt(wd().type, pos, wd().overrides.size(), value, base);
 }
 
-Material MaterialList::getMaterial(int idx) const
+MaterialAppearance MaterialList::getMaterial(int idx) const
 {
-    Material mat;
+    MaterialAppearance mat;
     if (idx < 0 || idx >= rd().count)
         return mat;
     ensureNormalized();
     const Data &d = rd();
     const int pos = overridePos(idx);
-    // The type goes on FIRST. Material::setType() rewrites every colour and
+    // The type goes on FIRST. MaterialAppearance::setType() rewrites every colour and
     // both floats with that type's preset, so a setType() after the fields
     // are laid in throws all of them away and the list hands back the
     // preset instead of what it stores -- silently, because the per field
     // getters below are unaffected and keep telling the truth.
-    mat.setType(static_cast<Material::MaterialType>(
+    mat.setType(static_cast<MaterialAppearance::MaterialType>(
                 sparseAt(d.type, pos, static_cast<int8_t>(d.base.getType()))));
     mat.ambientColor = sparseAt(d.ambient, pos, d.base.ambientColor);
     mat.diffuseColor = sparseAt(d.diffuse, pos, d.base.diffuseColor);
@@ -1820,12 +1820,12 @@ Material MaterialList::getMaterial(int idx) const
     return mat;
 }
 
-void MaterialList::setValue(const Material &mat)
+void MaterialList::setValue(const MaterialAppearance &mat)
 {
-    setValues(std::vector<Material>(1, mat));
+    setValues(std::vector<MaterialAppearance>(1, mat));
 }
 
-void MaterialList::setValues(const std::vector<Material> &values)
+void MaterialList::setValues(const std::vector<MaterialAppearance> &values)
 {
     // The list holds ONE mode, and an assignment states it through the
     // material it starts with; the rest are converted to that reading
@@ -1863,7 +1863,7 @@ void MaterialList::setValues(const std::vector<Material> &values)
         d.finish.reserve(d.count);
         textures.reserve(d.count);
         for (const auto &value : values) {
-            const Material mat = inMode(value);
+            const MaterialAppearance mat = inMode(value);
             d.ambient.push_back(mat.ambientColor);
             d.diffuse.push_back(storedDiffuse(mat));
             d.specular.push_back(mat.specularColor);
@@ -1888,14 +1888,14 @@ void MaterialList::setValues(const std::vector<Material> &values)
     }
 }
 
-void MaterialList::set1Value(int idx, const Material &value)
+void MaterialList::set1Value(int idx, const MaterialAppearance &value)
 {
     if (idx < -1 || idx > rd().count)
         throw Base::RuntimeError("index out of bound");
 
     // One entry cannot restate the whole list's mode, so it is converted
     // to it instead
-    const Material mat = inMode(value);
+    const MaterialAppearance mat = inMode(value);
     if (idx == -1 || idx == rd().count) {
         idx = rd().count;
         setSize(rd().count + 1, mat);
@@ -1978,10 +1978,10 @@ SurfaceTexture MaterialList::getTexture(int idx) const
                            rd().base.texture);
 }
 
-Material::MaterialType MaterialList::getType(int idx) const
+MaterialAppearance::MaterialType MaterialList::getType(int idx) const
 {
     ensureNormalized();
-    return static_cast<Material::MaterialType>(
+    return static_cast<MaterialAppearance::MaterialType>(
             sparseAt(rd().type, overridePos(idx), static_cast<int8_t>(rd().base.getType())));
 }
 
@@ -1996,13 +1996,13 @@ Material::MaterialType MaterialList::getType(int idx) const
  * returns the field to the DEFAULT, which is what it has always meant.
  */
 template<class T>
-void MaterialList::setField(T Material::*base, std::vector<T> Data::*member,
+void MaterialList::setField(T MaterialAppearance::*base, std::vector<T> Data::*member,
                             const std::vector<T> &values)
 {
     std::vector<T> incoming = values;
     // The default a caller means by an empty vector is the material's own,
     // not the base's: this is the write that puts a field back
-    const Material &def = defaultMaterial();
+    const MaterialAppearance &def = defaultMaterial();
     collapseField(incoming, def.*base);
     const int newCount = static_cast<int>(values.size());
     if (newCount != rd().count && (newCount > 1 || rd().count == 0)) {
@@ -2035,27 +2035,27 @@ void MaterialList::setField(T Material::*base, std::vector<T> Data::*member,
 
 void MaterialList::setAmbientColors(const std::vector<Color> &colors)
 {
-    setField(&Material::ambientColor, &Data::ambient, colors);
+    setField(&MaterialAppearance::ambientColor, &Data::ambient, colors);
 }
 
 void MaterialList::setDiffuseColors(const std::vector<Color> &colors)
 {
-    setField(&Material::diffuseColor, &Data::diffuse, colors);
+    setField(&MaterialAppearance::diffuseColor, &Data::diffuse, colors);
 }
 
 void MaterialList::setSpecularColors(const std::vector<Color> &colors)
 {
-    setField(&Material::specularColor, &Data::specular, colors);
+    setField(&MaterialAppearance::specularColor, &Data::specular, colors);
 }
 
 void MaterialList::setEmissiveColors(const std::vector<Color> &colors)
 {
-    setField(&Material::emissiveColor, &Data::emissive, colors);
+    setField(&MaterialAppearance::emissiveColor, &Data::emissive, colors);
 }
 
 void MaterialList::setShininessValues(const std::vector<float> &values)
 {
-    setField(&Material::shininess, &Data::shininess, values);
+    setField(&MaterialAppearance::shininess, &Data::shininess, values);
 }
 
 void MaterialList::setTransparencies(const std::vector<float> &values)
@@ -2080,22 +2080,22 @@ void MaterialList::setTransparencies(const std::vector<float> &values)
         for (int i = 0; i < newCount; ++i)
             colors[i].setTransparency(values[i]);
     }
-    setField(&Material::diffuseColor, &Data::diffuse, colors);
+    setField(&MaterialAppearance::diffuseColor, &Data::diffuse, colors);
 }
 
 void MaterialList::setImages(const std::vector<std::string> &values)
 {
-    setField(&Material::image, &Data::image, values);
+    setField(&MaterialAppearance::image, &Data::image, values);
 }
 
 void MaterialList::setImagePaths(const std::vector<std::string> &values)
 {
-    setField(&Material::imagePath, &Data::imagePath, values);
+    setField(&MaterialAppearance::imagePath, &Data::imagePath, values);
 }
 
 void MaterialList::setUuids(const std::vector<std::string> &values)
 {
-    setField(&Material::uuid, &Data::uuid, values);
+    setField(&MaterialAppearance::uuid, &Data::uuid, values);
 }
 
 void MaterialList::setFinishes(const std::vector<SurfaceFinish> &values)
@@ -2104,7 +2104,7 @@ void MaterialList::setFinishes(const std::vector<SurfaceFinish> &values)
     clamped.reserve(values.size());
     for (const auto &value : values)
         clamped.push_back(storedFinish(value));
-    setField(&Material::finish, &Data::finish, clamped);
+    setField(&MaterialAppearance::finish, &Data::finish, clamped);
 }
 
 void MaterialList::setTextures(const std::vector<SurfaceTexture> &values)
@@ -2150,7 +2150,7 @@ void MaterialList::setTextures(const std::vector<SurfaceTexture> &values)
  * back on the next read.
  */
 template<class T>
-void MaterialList::setFieldValue(T Material::*base, std::vector<T> Data::*member, int idx,
+void MaterialList::setFieldValue(T MaterialAppearance::*base, std::vector<T> Data::*member, int idx,
                                  const T &value)
 {
     if (idx < 0 || idx > rd().count)
@@ -2174,27 +2174,27 @@ void MaterialList::setFieldValue(T Material::*base, std::vector<T> Data::*member
 
 void MaterialList::setAmbientColor(int idx, const Color &col)
 {
-    setFieldValue(&Material::ambientColor, &Data::ambient, idx, col);
+    setFieldValue(&MaterialAppearance::ambientColor, &Data::ambient, idx, col);
 }
 
 void MaterialList::setDiffuseColor(int idx, const Color &col)
 {
-    setFieldValue(&Material::diffuseColor, &Data::diffuse, idx, col);
+    setFieldValue(&MaterialAppearance::diffuseColor, &Data::diffuse, idx, col);
 }
 
 void MaterialList::setSpecularColor(int idx, const Color &col)
 {
-    setFieldValue(&Material::specularColor, &Data::specular, idx, col);
+    setFieldValue(&MaterialAppearance::specularColor, &Data::specular, idx, col);
 }
 
 void MaterialList::setEmissiveColor(int idx, const Color &col)
 {
-    setFieldValue(&Material::emissiveColor, &Data::emissive, idx, col);
+    setFieldValue(&MaterialAppearance::emissiveColor, &Data::emissive, idx, col);
 }
 
 void MaterialList::setShininess(int idx, float value)
 {
-    setFieldValue(&Material::shininess, &Data::shininess, idx, value);
+    setFieldValue(&MaterialAppearance::shininess, &Data::shininess, idx, value);
 }
 
 void MaterialList::setTransparency(int idx, float value)
@@ -2204,27 +2204,27 @@ void MaterialList::setTransparency(int idx, float value)
     // early-out behaviour.
     Color color = getDiffuseColor(idx < 0 || idx >= rd().count ? 0 : idx);
     color.setTransparency(value);
-    setFieldValue(&Material::diffuseColor, &Data::diffuse, idx, color);
+    setFieldValue(&MaterialAppearance::diffuseColor, &Data::diffuse, idx, color);
 }
 
 void MaterialList::setImage(int idx, const std::string &value)
 {
-    setFieldValue(&Material::image, &Data::image, idx, value);
+    setFieldValue(&MaterialAppearance::image, &Data::image, idx, value);
 }
 
 void MaterialList::setImagePath(int idx, const std::string &value)
 {
-    setFieldValue(&Material::imagePath, &Data::imagePath, idx, value);
+    setFieldValue(&MaterialAppearance::imagePath, &Data::imagePath, idx, value);
 }
 
 void MaterialList::setUuid(int idx, const std::string &value)
 {
-    setFieldValue(&Material::uuid, &Data::uuid, idx, value);
+    setFieldValue(&MaterialAppearance::uuid, &Data::uuid, idx, value);
 }
 
 void MaterialList::setFinish(int idx, const SurfaceFinish &value)
 {
-    setFieldValue(&Material::finish, &Data::finish, idx, storedFinish(value));
+    setFieldValue(&MaterialAppearance::finish, &Data::finish, idx, storedFinish(value));
 }
 
 void MaterialList::setTexture(int idx, const SurfaceTexture &value)
@@ -2258,7 +2258,7 @@ void MaterialList::setTexture(int idx, const SurfaceTexture &value)
  * the old uniform writes did too.
  */
 template<class T>
-void MaterialList::setBaseField(T Material::*base, const T &value, const T &def)
+void MaterialList::setBaseField(T MaterialAppearance::*base, const T &value, const T &def)
 {
     if (rd().count == 0) {
         if (value == def)
@@ -2274,27 +2274,27 @@ void MaterialList::setBaseField(T Material::*base, const T &value, const T &def)
 
 void MaterialList::setAmbientColor(const Color &col)
 {
-    setBaseField(&Material::ambientColor, col, defaultMaterial().ambientColor);
+    setBaseField(&MaterialAppearance::ambientColor, col, defaultMaterial().ambientColor);
 }
 
 void MaterialList::setDiffuseColor(const Color &col)
 {
-    setBaseField(&Material::diffuseColor, col, storedDiffuse(defaultMaterial()));
+    setBaseField(&MaterialAppearance::diffuseColor, col, storedDiffuse(defaultMaterial()));
 }
 
 void MaterialList::setSpecularColor(const Color &col)
 {
-    setBaseField(&Material::specularColor, col, specularDefault());
+    setBaseField(&MaterialAppearance::specularColor, col, specularDefault());
 }
 
 void MaterialList::setEmissiveColor(const Color &col)
 {
-    setBaseField(&Material::emissiveColor, col, defaultMaterial().emissiveColor);
+    setBaseField(&MaterialAppearance::emissiveColor, col, defaultMaterial().emissiveColor);
 }
 
 void MaterialList::setShininess(float value)
 {
-    setBaseField(&Material::shininess, value, shininessDefault());
+    setBaseField(&MaterialAppearance::shininess, value, shininessDefault());
 }
 
 void MaterialList::setTransparency(float value)
@@ -2303,20 +2303,20 @@ void MaterialList::setTransparency(float value)
     // faces alone, which is what every whole-object write does
     Color color = getBase().diffuseColor;
     color.setTransparency(value);
-    setBaseField(&Material::diffuseColor, color, storedDiffuse(defaultMaterial()));
+    setBaseField(&MaterialAppearance::diffuseColor, color, storedDiffuse(defaultMaterial()));
 }
 
 void MaterialList::setDiffuseRGB(const Color &col)
 {
-    setFieldRGB(&Material::diffuseColor, col, storedDiffuse(defaultMaterial()));
+    setFieldRGB(&MaterialAppearance::diffuseColor, col, storedDiffuse(defaultMaterial()));
 }
 
 void MaterialList::setSpecularRGB(const Color &col)
 {
-    setFieldRGB(&Material::specularColor, col, specularDefault());
+    setFieldRGB(&MaterialAppearance::specularColor, col, specularDefault());
 }
 
-void MaterialList::setFieldRGB(Color Material::*base, const Color &col, const Color &def)
+void MaterialList::setFieldRGB(Color MaterialAppearance::*base, const Color &col, const Color &def)
 {
     // setTransparency's mirror image: the base's rgb, leaving its alpha
     // alone -- the diffuse alpha is the opacity and the PBR specular alpha
@@ -2333,31 +2333,31 @@ void MaterialList::setFieldRGB(Color Material::*base, const Color &col, const Co
 
 void MaterialList::setImage(const std::string &value)
 {
-    setBaseField(&Material::image, value, defaultMaterial().image);
+    setBaseField(&MaterialAppearance::image, value, defaultMaterial().image);
 }
 
 void MaterialList::setImagePath(const std::string &value)
 {
-    setBaseField(&Material::imagePath, value, defaultMaterial().imagePath);
+    setBaseField(&MaterialAppearance::imagePath, value, defaultMaterial().imagePath);
 }
 
 void MaterialList::setUuid(const std::string &value)
 {
-    setBaseField(&Material::uuid, value, defaultMaterial().uuid);
+    setBaseField(&MaterialAppearance::uuid, value, defaultMaterial().uuid);
 }
 
 void MaterialList::setFinish(const SurfaceFinish &value)
 {
-    setBaseField(&Material::finish, storedFinish(value), defaultMaterial().finish);
+    setBaseField(&MaterialAppearance::finish, storedFinish(value), defaultMaterial().finish);
 }
 
 void MaterialList::setTexture(const SurfaceTexture &value)
 {
-    setBaseField(&Material::texture, storedTexture(value), defaultMaterial().texture);
+    setBaseField(&MaterialAppearance::texture, storedTexture(value), defaultMaterial().texture);
 }
 
 // ==================== memsize ====================
-/** What this list holds, which is not what a Material weighs
+/** What this list holds, which is not what a MaterialAppearance weighs
  *
  * The base is a whole material in the struct and only its stated fields in
  * the value: a uniform grey list weighs one material in memory and nothing
@@ -2373,7 +2373,7 @@ unsigned int MaterialList::getMemSize() const
     const Data &d = rd();
     if (d.count == 0)
         return 0;
-    const Material &def = defaultMaterial();
+    const MaterialAppearance &def = defaultMaterial();
     std::size_t size = 0;
     if (!(d.base.ambientColor == def.ambientColor))
         size += sizeof(Color);

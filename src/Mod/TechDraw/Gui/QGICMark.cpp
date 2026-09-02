@@ -29,7 +29,7 @@
 # include <QStyleOptionGraphicsItem>
 #endif
 
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Base/Parameter.h>
 #include <Mod/TechDraw/App/Preferences.h>
 

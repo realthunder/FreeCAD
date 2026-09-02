@@ -14,7 +14,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <App/PropertyStandard.h>
 #include <Gui/ViewProviderGeometryObject.h>
 

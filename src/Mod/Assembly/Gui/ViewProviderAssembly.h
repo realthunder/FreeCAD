@@ -276,7 +276,7 @@ private:
         bool selectable;
         // For Links
         bool overrideMaterial;
-        App::Material shapeMaterial;
+        App::MaterialAppearance shapeMaterial;
     };
 
     std::unordered_map<App::DocumentObject*, ComponentState> stateBackup;

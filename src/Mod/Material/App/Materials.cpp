@@ -1784,7 +1784,7 @@ Material& Material::operator=(const Material& other)
     return *this;
 }
 
-Material& Material::operator=(const App::Material& other)
+Material& Material::operator=(const App::MaterialAppearance& other)
 {
     if (!hasAppearanceModel(ModelUUIDs::ModelUUID_Rendering_Basic)) {
         addAppearance(ModelUUIDs::ModelUUID_Rendering_Basic);
@@ -1886,12 +1886,12 @@ void Material::inheritedPropertyDiff([[maybe_unused]] const QString& parent)
 {}
 
 /*
- * Return an App::Material object describing the materials appearance, or DEFAULT if
+ * Return an App::MaterialAppearance object describing the materials appearance, or DEFAULT if
  * undefined.
  */
-App::Material Material::getMaterialAppearance() const
+App::MaterialAppearance Material::getMaterialAppearance() const
 {
-    App::Material material(App::Material::DEFAULT);
+    App::MaterialAppearance material(App::MaterialAppearance::DEFAULT);
 
     bool custom = false;
     if (hasAppearanceProperty(QStringLiteral("AmbientColor"))) {
@@ -1938,7 +1938,7 @@ App::Material Material::getMaterialAppearance() const
     }
 
     if (custom) {
-        material.setType(App::Material::USER_DEFINED);
+        material.setType(App::MaterialAppearance::USER_DEFINED);
         material.uuid = getUUID().toStdString();
     }
 

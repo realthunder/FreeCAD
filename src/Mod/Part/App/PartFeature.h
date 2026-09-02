@@ -81,9 +81,9 @@ public:
     const App::PropertyComplexGeoData* getPropertyOfGeometry() const override;
 
     /// Appearance taken from the assigned material card
-    App::Material getMaterialAppearance() const override;
+    App::MaterialAppearance getMaterialAppearance() const override;
     /// Assign the appearance half of the material card
-    void setMaterialAppearance(const App::Material& material) override;
+    void setMaterialAppearance(const App::MaterialAppearance& material) override;
     App::MaterialRenderProperties getMaterialRenderProperties() const override;
 
     PyObject* getPyObject() override;

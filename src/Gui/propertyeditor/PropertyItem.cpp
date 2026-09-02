@@ -3499,7 +3499,7 @@ namespace Gui { namespace PropertyEditor {
         /// above states and the generated call applies after the
         /// colour.)
         float specularAlpha = 1.0F;
-        /// Which reading the values above carry (App::Material::pbr)
+        /// Which reading the values above carry (App::MaterialAppearance::pbr)
         bool pbr = false;
         /// The surface finish, carried whole
         App::SurfaceFinish finish;
@@ -3787,7 +3787,7 @@ QVariant PropertyAppearanceItem::toolTip(const App::Property* prop) const
 {
     assert(prop && prop->isDerivedFrom<App::PropertyAppearance>());
 
-    const App::Material& value = static_cast<const App::PropertyAppearance*>(prop)->getValue();
+    const App::MaterialAppearance& value = static_cast<const App::PropertyAppearance*>(prop)->getValue();
     auto dc = value.diffuseColor.asValue<QColor>();
     auto ac = value.ambientColor.asValue<QColor>();
     auto sc = value.specularColor.asValue<QColor>();
@@ -3816,7 +3816,7 @@ QVariant PropertyAppearanceItem::value(const App::Property* prop) const
 {
     assert(prop && prop->isDerivedFrom<App::PropertyAppearance>());
 
-    const App::Material& value = static_cast<const App::PropertyAppearance*>(prop)->getValue();
+    const App::MaterialAppearance& value = static_cast<const App::PropertyAppearance*>(prop)->getValue();
     Material mat;
 
     mat.diffuseColor = value.diffuseColor.asValue<QColor>();
@@ -4188,7 +4188,7 @@ QVariant PropertyAppearanceListItem::toolTip(const App::Property* prop) const
 
     // the object's look answers the tooltip, which is the base and not
     // whatever face 0 happens to hold
-    App::Material value = materials->getBase();
+    App::MaterialAppearance value = materials->getBase();
     auto dc = value.diffuseColor.asValue<QColor>();
     auto ac = value.ambientColor.asValue<QColor>();
     auto sc = value.specularColor.asValue<QColor>();

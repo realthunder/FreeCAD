@@ -193,7 +193,7 @@ void DlgInspectAppearance::update(std::vector<Gui::ViewProvider*>& views)
     }
 }
 
-QWidget* DlgInspectAppearance::makeAppearanceTab(const App::Material& material)
+QWidget* DlgInspectAppearance::makeAppearanceTab(const App::MaterialAppearance& material)
 {
     QWidget* tab = new QWidget(this);
 

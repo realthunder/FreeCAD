@@ -24,7 +24,7 @@
 #ifndef APP_COLORMODEL_H
 #define APP_COLORMODEL_H
 
-#include "Material.h"
+#include "MaterialAppearance.h"
 #include <Base/Bitmask.h>
 
 #include <algorithm>

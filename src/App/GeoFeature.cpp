@@ -301,12 +301,12 @@ GeoFeature::getHigherElements(const char *element, bool silent) const
     return prop->getComplexData()->getHigherElements(element, silent);
 }
 
-App::Material GeoFeature::getMaterialAppearance() const
+App::MaterialAppearance GeoFeature::getMaterialAppearance() const
 {
-    return App::Material(App::Material::DEFAULT);
+    return App::MaterialAppearance(App::MaterialAppearance::DEFAULT);
 }
 
-void GeoFeature::setMaterialAppearance(const App::Material& material)
+void GeoFeature::setMaterialAppearance(const App::MaterialAppearance& material)
 {
     (void)material;
 }

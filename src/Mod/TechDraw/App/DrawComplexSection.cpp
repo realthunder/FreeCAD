@@ -108,7 +108,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Base/BoundBox.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>

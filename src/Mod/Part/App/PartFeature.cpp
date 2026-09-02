@@ -1420,7 +1420,7 @@ const App::PropertyComplexGeoData* Feature::getPropertyOfGeometry() const
     return &Shape;
 }
 
-App::Material Feature::getMaterialAppearance() const
+App::MaterialAppearance Feature::getMaterialAppearance() const
 {
     return ShapeMaterial.getValue().getMaterialAppearance();
 }
@@ -1430,7 +1430,7 @@ App::MaterialRenderProperties Feature::getMaterialRenderProperties() const
     return ShapeMaterial.getValue().getRenderProperties();
 }
 
-void Feature::setMaterialAppearance(const App::Material& material)
+void Feature::setMaterialAppearance(const App::MaterialAppearance& material)
 {
     try {
         ShapeMaterial.setValue(material);

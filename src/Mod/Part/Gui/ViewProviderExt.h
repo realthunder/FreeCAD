@@ -273,7 +273,7 @@ public:
     */
     //@{
     void setHighlightedFaces(const std::vector<App::Color>& colors);
-    void setHighlightedFaces(const std::vector<App::Material>& colors);
+    void setHighlightedFaces(const std::vector<App::MaterialAppearance>& colors);
     void unsetHighlightedFaces();
     /// Reapply the document appearance to the face material node: the
     /// per-face colour path while diffuse is the only field that varies,

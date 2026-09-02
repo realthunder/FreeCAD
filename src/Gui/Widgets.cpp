@@ -56,7 +56,7 @@
 #include <Base/Interpreter.h>
 #include <Base/Console.h>
 #include <App/ExpressionParser.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 
 #include "Widgets.h"
 #include "Action.h"

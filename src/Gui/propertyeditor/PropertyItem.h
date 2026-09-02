@@ -978,10 +978,9 @@ protected:
 * Change an appearance property.
 * \author Werner Mayer
 *
-* Was PropertyMaterialItem until App::Material became
-* App::MaterialAppearance: what it edits is a look -- ambient,
-* diffuse, specular, emissive, shininess, transparency -- and not the
-* material card that Materials::Material is. An editor item is named
+* Was PropertyMaterialItem. What it edits is an App::MaterialAppearance --
+* a look: ambient, diffuse, specular, emissive, shininess, transparency --
+* and not the material card that Materials::Material is. An editor item is named
 * only by the getEditorName() literal compiled into the property, never
 * by anything in a document, so the old name needs no alias.
 */

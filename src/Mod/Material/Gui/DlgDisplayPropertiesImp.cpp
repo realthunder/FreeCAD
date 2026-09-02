@@ -1283,7 +1283,7 @@ void DlgDisplayPropertiesImp::onMaterialSelected(
             // states every field of the base, which would take the finish
             // set one row down with it. Carry it across, and the texture
             // beside it, for the same reason applyWholeMaterial does.
-            App::Material appearance = material->getMaterialAppearance();
+            App::MaterialAppearance appearance = material->getMaterialAppearance();
             appearance.finish = prop->getBase().finish;
             appearance.texture = prop->getBase().texture;
             // The BASE: a look chosen here outranks the object's card from
@@ -1291,7 +1291,7 @@ void DlgDisplayPropertiesImp::onMaterialSelected(
             // look of their own keep it (docs/MaterialStorage.md 15.5).
             prop->setBase(appearance);
         }
-        // A card may also state render features App::Material cannot
+        // A card may also state render features App::MaterialAppearance cannot
         // carry -- glass so far. Those are dynamic properties on the view
         // provider, so they are applied beside the appearance, not
         // through it. Applied unconditionally: a card that states none

@@ -110,7 +110,7 @@ public:
 
     std::vector<ViewProviderDocumentObject*> getChildren() const;
 
-    void setMaterial(int index, const App::Material *material);
+    void setMaterial(int index, const App::MaterialAppearance *material);
     void setDrawStyle(int linePattern, double lineWidth=0, double pointSize=0);
     void setTransform(int index, const Base::Matrix4D &mat);
     void renderDoubleSide(bool);
@@ -295,7 +295,7 @@ public:
             const App::PropertyLinkSub &coloredElements,
             const App::PropertyColorList &colorList,
             bool overrideMaterial,
-            const App::Material *shapeMaterial,
+            const App::MaterialAppearance *shapeMaterial,
             int elementCount = 0);
 
     static void setElementColorsTo(

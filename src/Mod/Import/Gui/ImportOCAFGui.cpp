@@ -64,7 +64,7 @@ void ImportOCAFGui::applyFaceColors(Part::Feature* part, const std::vector<App::
 }
 
 void ImportOCAFGui::applyFaceMaterials(Part::Feature* part,
-                                       const std::vector<App::Material>& mats, bool pbr)
+                                       const std::vector<App::MaterialAppearance>& mats, bool pbr)
 {
     auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
         Gui::Application::Instance->getViewProvider(part));
@@ -77,7 +77,7 @@ void ImportOCAFGui::applyFaceMaterials(Part::Feature* part,
     vp->ShapeAppearance.setPBR(pbr);
     // Collapse a uniform list to one entry: a single-entry appearance is
     // the whole-object form, whose scalar path every consumer handles.
-    if (std::all_of(mats.begin() + 1, mats.end(), [&](const App::Material& m) {
+    if (std::all_of(mats.begin() + 1, mats.end(), [&](const App::MaterialAppearance& m) {
             return m == mats[0];
         })) {
         vp->ShapeAppearance.setValue(mats[0]);
@@ -105,7 +105,7 @@ void ImportOCAFGui::applyFaceMaterials(Part::Feature* part,
     // lays a face image out in millimetres of object space by default
     // (a printed decal, on CAD geometry that has no UVs), so say so:
     // Render_FaceTextureScale zero means the mesh's own coordinates.
-    if (std::any_of(mats.begin(), mats.end(), [](const App::Material& m) {
+    if (std::any_of(mats.begin(), mats.end(), [](const App::MaterialAppearance& m) {
             return !m.image.empty() || !m.imagePath.empty();
         })) {
         auto prop = Base::freecad_dynamic_cast<App::PropertyFloat>(
@@ -153,7 +153,7 @@ void ImportOCAFGui::applyLinkColor(App::DocumentObject* obj, int index, App::Col
         vp->OverrideMaterialList.setSize(index + 1);
     }
     vp->OverrideMaterialList.set1Value(index, true);
-    App::Material mat(App::Material::DEFAULT);
+    App::MaterialAppearance mat(App::MaterialAppearance::DEFAULT);
     if (vp->MaterialList.getSize() <= index) {
         vp->MaterialList.setSize(index + 1, mat);
     }

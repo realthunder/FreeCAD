@@ -38,7 +38,7 @@
 #include "MaterialList.h"
 #include "Enumeration.h"
 #include "FileBlobManager.h"
-#include "Material.h"
+#include "MaterialAppearance.h"
 
 
 namespace Base {
@@ -1108,7 +1108,7 @@ public:
 
     /** Sets the property
      */
-    void setValue(const Material &mat);
+    void setValue(const MaterialAppearance &mat);
     void setAmbientColor(const Color& col);
     void setDiffuseColor(const Color& col);
     void setSpecularColor(const Color& col);
@@ -1118,7 +1118,7 @@ public:
 
     /** This method returns a string representation of the property
      */
-    const Material &getValue() const;
+    const MaterialAppearance &getValue() const;
 
     PyObject *getPyObject() override;
     void setPyObject(PyObject *) override;
@@ -1137,7 +1137,7 @@ public:
     unsigned int getMemSize () const override{return sizeof(_cMat);}
 
 private:
-    Material _cMat;
+    MaterialAppearance _cMat;
 };
 
 /** A list of materials: a base, and the faces that override it
@@ -1146,7 +1146,7 @@ private:
  * at all it usually varies over a few faces of many. An imported solid is a
  * body colour with some pads on it; an object with a uniform appearance is
  * one material. Storing whole materials makes every entry pay for that: an
- * App::Material is 80 bytes against a colour's 16, so a 10,000 face import
+ * App::MaterialAppearance is 80 bytes against a colour's 16, so a 10,000 face import
  * spends 800 KB saying what a base and twenty overrides would have said.
  *
  * So the storage is (docs/ShapeAppearanceDesign.md 12):
@@ -1196,7 +1196,7 @@ public:
     ~PropertyMaterialList() override;
 
     /// The material every entry of an empty field reads as
-    static const Material &defaultMaterial();
+    static const MaterialAppearance &defaultMaterial();
 
     /** @name The Python view of this property
      *
@@ -1233,14 +1233,14 @@ public:
     //@{
     int getSize() const override { return _list.getSize(); }
     void setSize(int newSize) override;
-    void setSize(int newSize, const Material &def);
+    void setSize(int newSize, const MaterialAppearance &def);
 
-    void setValue(const Material &mat);
-    void setValue(const std::vector<Material> &values = std::vector<Material>()) {
+    void setValue(const MaterialAppearance &mat);
+    void setValue(const std::vector<MaterialAppearance> &values = std::vector<MaterialAppearance>()) {
         setValues(values);
     }
-    void setValues(const std::vector<Material> &values);
-    void setValues(std::vector<Material> &&values);
+    void setValues(const std::vector<MaterialAppearance> &values);
+    void setValues(std::vector<MaterialAppearance> &&values);
 
     /** There is deliberately no getValues()
      *
@@ -1259,11 +1259,11 @@ public:
      * wanted through the per field accessors below, which touch no memory
      * that is not already there.
      */
-    Material operator[](int idx) const { return getMaterial(idx); }
-    Material getMaterial(int idx) const;
-    void set1Value(int idx, const Material &mat);
+    MaterialAppearance operator[](int idx) const { return getMaterial(idx); }
+    MaterialAppearance getMaterial(int idx) const;
+    void set1Value(int idx, const MaterialAppearance &mat);
     /// upstream's spelling of set1Value, so their call sites port unchanged
-    void setValue(int idx, const Material &mat) { set1Value(idx, mat); }
+    void setValue(int idx, const MaterialAppearance &mat) { set1Value(idx, mat); }
     //@}
 
     /** @name The base entry and the overriding faces
@@ -1274,8 +1274,8 @@ public:
      * face an override or drops it back.
      */
     //@{
-    const Material &getBase() const { return _list.getBase(); }
-    void setBase(const Material &mat);
+    const MaterialAppearance &getBase() const { return _list.getBase(); }
+    void setBase(const MaterialAppearance &mat);
     const std::vector<uint32_t> &getOverrides() const { return _list.getOverrides(); }
     bool hasOverrides() const { return _list.hasOverrides(); }
     bool isOverride(int idx) const { return _list.isOverride(idx); }
@@ -1314,7 +1314,7 @@ public:
     bool isFollowingMaterial() const { return _list.isFollowingMaterial(); }
     void setFollowMaterial(bool enable);
     /// The card's look as the base, without ending the follow
-    void followMaterial(const Material &card);
+    void followMaterial(const MaterialAppearance &card);
     //@}
 
     /** @name Per field access, as it is stored
@@ -1410,7 +1410,7 @@ public:
     /// By value, because the storage holds distinct records rather than
     /// one per entry: there is no array element to hand a reference into
     SurfaceTexture getTexture(int idx) const;
-    Material::MaterialType getType(int idx) const;
+    MaterialAppearance::MaterialType getType(int idx) const;
 
     /** The first entry's field, which is upstream's no-argument spelling
      *
@@ -1597,7 +1597,7 @@ public:
     /** Flip the mode AND convert the stored values so the look survives
      *
      * The editor's toggle. Toward Phong every entry goes through
-     * getPhongMaterial(); toward PBR through Material::phongToPbr (base
+     * getPhongMaterial(); toward PBR through MaterialAppearance::phongToPbr (base
      * colour kept, roughness from the shininess fit, dielectric). A
      * Phong-PBR-Phong round trip keeps the look but forgets the specular
      * colour, which only Phong can state. One atomic change; a no-op
@@ -1628,10 +1628,10 @@ public:
      * encodings, the Coin GL display leg, and exporters to formats with
      * no PBR terms.
      */
-    Material getPhongMaterial(int idx) const;
+    MaterialAppearance getPhongMaterial(int idx) const;
     /// The Phong reading of the BASE, which is what a consumer with one
     /// material node to fill wants: the object's look, not face 0's
-    Material getPhongBase() const { return _list.getPhongBase(); }
+    MaterialAppearance getPhongBase() const { return _list.getPhongBase(); }
     //@}
 
     /** Whether the diffuse colour is the only field that varies per entry
@@ -1671,7 +1671,7 @@ public:
     void RestoreDocFile(Base::Reader &reader) override;
 
 protected:
-    Material getPyValue(PyObject *) const;
+    MaterialAppearance getPyValue(PyObject *) const;
     void setPyValues(const std::vector<PyObject*> &vals, const std::vector<int> &indices) override;
 
     void restoreXML(Base::XMLReader &) override;
@@ -1706,7 +1706,7 @@ private:
     void applyPendingTexture();
     /// Land the base and the override list a schema 5 file states, with the
     /// checks the storage's invariants turn into a file format
-    void installBase(const Material &base, int8_t type);
+    void installBase(const MaterialAppearance &base, int8_t type);
     /// The document's blob store, or the process-wide one for a property
     /// with no document -- the same resolution PropertyFileIncluded makes
     FileBlobManager &blobManager() const;

@@ -147,7 +147,7 @@ void DlgMaterialPropertiesImp::syncFromProperty()
             }
             // The raw entry-0 slots: in PBR mode the diffuse IS the base
             // colour and the specular rgb the tint
-            App::Material mat = list->getMaterial(0);
+            App::MaterialAppearance mat = list->getMaterial(0);
             setButton(ui->ambientColor, mat.ambientColor);
             setButton(ui->diffuseColor, mat.diffuseColor);
             setButton(ui->emissiveColor, mat.emissiveColor);
@@ -161,7 +161,7 @@ void DlgMaterialPropertiesImp::syncFromProperty()
             return;
         }
         if (auto* single = singleProperty(vp)) {
-            const App::Material& mat = single->getValue();
+            const App::MaterialAppearance& mat = single->getValue();
             setButton(ui->ambientColor, mat.ambientColor);
             setButton(ui->diffuseColor, mat.diffuseColor);
             setButton(ui->emissiveColor, mat.emissiveColor);

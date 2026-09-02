@@ -92,7 +92,7 @@ ViewProviderMeshCurvature::ViewProviderMeshCurvature()
     pcLinkRoot->ref();
     // NOLINTEND
 
-    App::Material mat;
+    App::MaterialAppearance mat;
     const SbColor* cols {};
     if (pcColorMat->ambientColor.getNum() == 1) {
         cols = pcColorMat->ambientColor.getValues(0);
@@ -135,7 +135,7 @@ ViewProviderMeshCurvature::~ViewProviderMeshCurvature()
 void ViewProviderMeshCurvature::onChanged(const App::Property* prop)
 {
     if (prop == &TextureMaterial) {
-        const App::Material& Mat = TextureMaterial.getValue();
+        const App::MaterialAppearance& Mat = TextureMaterial.getValue();
         pcColorMat->ambientColor.setValue(Mat.ambientColor.r,
                                           Mat.ambientColor.g,
                                           Mat.ambientColor.b);

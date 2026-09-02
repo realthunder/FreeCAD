@@ -302,18 +302,18 @@ void ExportOCAF2::setupObject(TDF_Label label,
     // glTF expresses per-face materials. Only when a field beyond diffuse
     // varies -- per-face colours alone keep riding the colour labels.
     if (getShapeAppearance) {
-        std::vector<App::Material> faceMats;
+        std::vector<App::MaterialAppearance> faceMats;
         bool pbrMats = false;
         if (getShapeAppearance(obj, faceMats, pbrMats) && !faceMats.empty()) {
             Handle(XCAFDoc_VisMaterialTool) aMatTool =
                 XCAFDoc_DocumentTool::VisMaterialTool(pDoc->Main());
 
-            auto makeVisMat = [&](const App::Material& m) -> Handle(XCAFDoc_VisMaterial) {
+            auto makeVisMat = [&](const App::MaterialAppearance& m) -> Handle(XCAFDoc_VisMaterial) {
                 Handle(XCAFDoc_VisMaterial) visMat = new XCAFDoc_VisMaterial;
                 // A PBR-mode appearance carries raw PBR slots; the common
                 // (Phong) representation -- what STEP's reflectance model
                 // and Common-only readers get -- is its derivation.
-                const App::Material cm = pbrMats ? App::Material::pbrToPhong(m) : m;
+                const App::MaterialAppearance cm = pbrMats ? App::MaterialAppearance::pbrToPhong(m) : m;
                 XCAFDoc_VisMaterialCommon common;
                 common.IsDefined = Standard_True;
                 common.AmbientColor = Tools::convertColor(cm.ambientColor).GetRGB();
@@ -387,11 +387,11 @@ void ExportOCAF2::setupObject(TDF_Label label,
                     }
                 }
 
-                std::vector<std::pair<App::Material, TDF_Label>> matLabels;
+                std::vector<std::pair<App::MaterialAppearance, TDF_Label>> matLabels;
                 int numFaces = (int)shape.countSubShapes(TopAbs_FACE);
                 int count = std::min(numFaces, (int)faceMats.size());
                 for (int i = 0; i < count; ++i) {
-                    const App::Material& m = faceMats[i];
+                    const App::MaterialAppearance& m = faceMats[i];
                     TDF_Label matLabel;
                     for (auto& v : matLabels) {
                         if (v.first == m) {

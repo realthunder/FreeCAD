@@ -32,7 +32,7 @@
 
 #include <App/Application.h>
 #include <Base/Color.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Base/BaseClass.h>
 
 #include <Mod/Material/MaterialGlobal.h>
@@ -247,11 +247,11 @@ public:
         return &_appearanceUuids;
     }
 
-    App::Material getMaterialAppearance() const;
+    App::MaterialAppearance getMaterialAppearance() const;
     /* Render_* view properties this card states, empty for almost every
-     * card. Separate from getMaterialAppearance() because App::Material
+     * card. Separate from getMaterialAppearance() because App::MaterialAppearance
      * deliberately does not carry the media features; see the type's
-     * comment in App/Material.h.
+     * comment in App/MaterialAppearance.h.
      */
     App::MaterialRenderProperties getRenderProperties() const;
 
@@ -454,7 +454,7 @@ public:
     /*
      * Set the appearance properties
      */
-    Material& operator=(const App::Material& other);
+    Material& operator=(const App::MaterialAppearance& other);
 
     bool operator==(const Material& other) const
     {

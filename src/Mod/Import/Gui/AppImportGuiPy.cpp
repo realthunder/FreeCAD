@@ -661,7 +661,7 @@ private:
         return {};
     }
 
-    static bool getShapeAppearance(App::DocumentObject* obj, std::vector<App::Material>& mats,
+    static bool getShapeAppearance(App::DocumentObject* obj, std::vector<App::MaterialAppearance>& mats,
                                    bool& pbr)
     {
         // Whole materials, only when the appearance says something the

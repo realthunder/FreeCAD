@@ -1489,7 +1489,7 @@ void ViewProviderAssembly::applyIsolationRecursively(
 
     if (!isolate) {
         float trans = mode == IsolateMode::Transparent ? 0.8 : 1.0;
-        // Upstream reads this from App::Material::getDefaultAppearance(), which this
+        // Upstream reads this from App::MaterialAppearance::getDefaultAppearance(), which this
         // fork does not have; the same preference is reachable through ViewParams.
         App::Color transparentColor;
         transparentColor.setPackedValue(Gui::ViewParams::getDefaultShapeColor());

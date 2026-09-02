@@ -86,7 +86,7 @@ void PropertyMaterial::setValue(const Material& mat)
     hasSetValue();
 }
 
-void PropertyMaterial::setValue(const App::Material& mat)
+void PropertyMaterial::setValue(const App::MaterialAppearance& mat)
 {
     aboutToSetValue();
     // Copy on write: the card is shared and const, so setting the appearance

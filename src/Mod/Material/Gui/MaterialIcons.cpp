@@ -301,7 +301,7 @@ public:
         place(shape == Shape::Sphere ? SphereFrame : CylinderFrame);
     }
 
-    void apply(const App::Material& mat, const App::SurfaceFinish& finish,
+    void apply(const App::MaterialAppearance& mat, const App::SurfaceFinish& finish,
                const App::MaterialRenderProperties& props)
     {
         const Base::Color& d = mat.diffuseColor;
@@ -321,7 +321,7 @@ public:
         // Every draw in the scene takes the same appearance and the same
         // finish; what differs between them is the frame each states,
         // which is geometry and was set once when it was built.
-        // A card can also state render features App::Material does not
+        // A card can also state render features App::MaterialAppearance does not
         // carry. Glass is the one that reaches an icon: without it a
         // glass card renders as its Phong fallback, which for a
         // transparency near 1 is a featureless disc -- the four shipped
@@ -829,7 +829,7 @@ void MaterialIcons::invalidate()
     _paths.clear();
 }
 
-QString MaterialIcons::digestOf(const App::Material& material,
+QString MaterialIcons::digestOf(const App::MaterialAppearance& material,
                                 const App::SurfaceFinish& finish,
                                 const App::MaterialRenderProperties& render)
 {
@@ -876,7 +876,7 @@ QIcon MaterialIcons::fromImage(const QImage& image) const
     return icon;
 }
 
-QIcon MaterialIcons::icon(const QString& key, const App::Material& material,
+QIcon MaterialIcons::icon(const QString& key, const App::MaterialAppearance& material,
                           const QString& name,
                           const App::MaterialRenderProperties& render)
 {
@@ -923,7 +923,7 @@ QIcon MaterialIcons::icon(const QString& key, const App::Material& material,
     return {};
 }
 
-App::Material MaterialIcons::finishMaterial(uint8_t pattern)
+App::MaterialAppearance MaterialIcons::finishMaterial(uint8_t pattern)
 {
     // One material for every pattern except in its GLOSS, so that what
     // differs between the icons is the finish and nothing else. A
@@ -942,7 +942,7 @@ App::Material MaterialIcons::finishMaterial(uint8_t pattern)
     // Aluminium's measured reflectance for the base colour, LINEAR (see
     // docs/RenderEngine.md -- the BRDF is linear and nothing applies an
     // sRGB transform).
-    App::Material metal;
+    App::MaterialAppearance metal;
     metal.setPBR(true);
     metal.diffuseColor.set(0.9130F, 0.9220F, 0.9240F);
     metal.ambientColor.set(0.0913F, 0.0922F, 0.0924F);
@@ -1059,7 +1059,7 @@ App::SurfaceFinish MaterialIcons::defaultFinish(uint8_t pattern)
 
 QIcon MaterialIcons::finishIcon(const App::SurfaceFinish& finish)
 {
-    const App::Material neutral = finishMaterial(finish.pattern);
+    const App::MaterialAppearance neutral = finishMaterial(finish.pattern);
     const QString digest = digestOf(neutral, finish);
     const QString key = QStringLiteral("finish:%1").arg(digest);
     auto it = _cache.find(key);
@@ -1100,7 +1100,7 @@ QIcon MaterialIcons::patternIcon(const QString& key, const QString& materialName
         return it->second;
     }
     // No digest: a swatch is drawn from the hatch definition, not from an
-    // App::Material, so there is nothing for the staleness guard to
+    // App::MaterialAppearance, so there is nothing for the staleness guard to
     // compare and the file is taken as it stands.
     return fromResource(key, patternResourceName(materialName), QString());
 }
@@ -1207,7 +1207,7 @@ QString MaterialIcons::iconPath(const QString& key) const
     return it == _paths.end() ? QString() : it->second;
 }
 
-bool MaterialIcons::renderToFile(const App::Material& material,
+bool MaterialIcons::renderToFile(const App::MaterialAppearance& material,
                                  const App::SurfaceFinish& finish, const QString& path,
                                  const App::MaterialRenderProperties& props,
                                  IconShape shape)
@@ -1239,7 +1239,7 @@ void MaterialIcons::drain()
     }
 }
 
-QImage MaterialIcons::render(const App::Material& material,
+QImage MaterialIcons::render(const App::MaterialAppearance& material,
                              const App::SurfaceFinish& finish,
                              const App::MaterialRenderProperties& props,
                              IconShape shape)
@@ -1272,7 +1272,7 @@ QImage MaterialIcons::render(const App::Material& material,
     }
 }
 
-QIcon MaterialIcons::build(const QString& key, const App::Material& material,
+QIcon MaterialIcons::build(const QString& key, const App::MaterialAppearance& material,
                            const App::SurfaceFinish& finish,
                            const App::MaterialRenderProperties& props,
                            IconShape shape)

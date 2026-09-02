@@ -34,7 +34,7 @@
 #include <CXX/Objects.hxx>
 
 #include "FeatureTest.h"
-#include "Material.h"
+#include "MaterialAppearance.h"
 #include "Range.h"
 
 #ifdef _MSC_VER
@@ -70,7 +70,7 @@ FeatureTest::FeatureTest()
   ConstraintFloat.setConstraints(&floatPercent);
 
   App::Color c;
-  App::Material mat(App::Material::GOLD);
+  App::MaterialAppearance mat(App::MaterialAppearance::GOLD);
   ADD_PROPERTY(Colour      ,(c) );
   ADD_PROPERTY(ColourList  ,(c) );
   ADD_PROPERTY(Material    ,(mat));

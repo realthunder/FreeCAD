@@ -33,7 +33,7 @@
 #include <TDF_LabelSequence.hxx>
 #include <TDocStd_Document.hxx>
 
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Mod/Import/ImportGlobal.h>
 #include "RenderMaterial.h"
 #include "Tools.h"
@@ -76,7 +76,7 @@ public:
     /// the specular alpha, and the appearance always exports as materials
     /// (metallic and roughness have no colour-label channel).
     using GetShapeAppearanceFunc =
-        std::function<bool(App::DocumentObject*, std::vector<App::Material>&, bool& pbr)>;
+        std::function<bool(App::DocumentObject*, std::vector<App::MaterialAppearance>&, bool& pbr)>;
     explicit ExportOCAF2(Handle(TDocStd_Document) hDoc,
                          GetShapeColorsFunc func = GetShapeColorsFunc());
 

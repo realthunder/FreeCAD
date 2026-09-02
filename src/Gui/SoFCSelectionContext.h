@@ -30,7 +30,7 @@
 #include <vector>
 #include <Inventor/SbColor.h>
 
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 
 class SoState;
 

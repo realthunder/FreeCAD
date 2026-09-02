@@ -28,7 +28,7 @@
 #include <string>
 
 #include <App/Expression.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <App/Range.h>
 
 #include "DisplayUnit.h"

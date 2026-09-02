@@ -33,7 +33,7 @@
 #include <QPixmap>
 #include <fastsignals/signal.h>
 
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <App/TransactionalObject.h>
 #include <Base/BoundBox.h>
 #include <Base/Vector3D.h>
