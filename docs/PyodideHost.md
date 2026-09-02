@@ -357,6 +357,29 @@ dispatcher's hot path with `-O3` and fewer indirections, or have the
 host skip CBOR for the common scalar shapes.  Neither is needed for
 correctness, and 40 us per expression is far from user-visible.
 
+**The indirections, removed (same day).**  `-fPIC` makes every call to
+a non-hidden symbol interposable, so it goes through the table even
+when the callee sits in the same module; `-fvisibility=hidden` on the
+guest (only `PyInit__fcx_image` keeps default visibility, through
+`PyMODINIT_FUNC`) lets the compiler call directly, and `-flto` lets it
+inline across the slice's translation units.  Two flags in
+`guest/CMakeLists.txt`, the wheel shrank from 427 to 368 KB, 73/73
+gtests, TestSpreadsheet with routing on, and the corpus gate unchanged.
+Measured (two runs each, budget on):
+
+    bench                        before        after
+    transport floor              10.6 us        5.4 us
+    transport 1 kB               34-46         14.1-14.4
+    wire floor (eval "1")        38.6-41.3     30.6-37.6
+    expression 1+2*3-4/5         36.7-41.7     25.6-33.2
+    one property                 51.7-56.7     36.1-37.2
+    one bridge hop              109.9-116.1    78.2-80.3
+
+About 2x the WASI image now, and the biggest single lever was the
+cheapest.  What is left is mostly pyodide's own JS<->Python crossing
+(the 5 us floor is `callLen(n)` through a PyProxy plus two typed-array
+copies) and V8 tiering variance, which the spread between runs shows.
+
 1. DONE (section 9), corpus gate and buffered transport included.
 2. Marshalling: FcxWire is CBOR over a byte buffer; on this runtime the
    cheaper path is direct V8 values (the 45 ns C++ -> V8 hop measured

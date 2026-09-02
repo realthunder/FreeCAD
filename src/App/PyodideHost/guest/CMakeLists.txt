@@ -79,9 +79,11 @@ target_compile_definitions(_fcx_image PRIVATE
 )
 target_compile_options(_fcx_image PRIVATE
     -fPIC -fwasm-exceptions -sSUPPORT_LONGJMP=wasm
+    -fvisibility=hidden -flto
 )
 target_link_options(_fcx_image PRIVATE
     -fwasm-exceptions -sSUPPORT_LONGJMP=wasm
+    -flto
     -sSIDE_MODULE=2 -sWASM_BIGINT
     "-sEXPORTED_FUNCTIONS=[_PyInit__fcx_image]"
 )
