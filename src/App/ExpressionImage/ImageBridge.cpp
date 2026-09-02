@@ -28,12 +28,76 @@ using nlohmann::json;
 // request as bytes and returns the CBOR reply as a bytes-like object --
 // on the other side of it is a V8 native function in the host process.
 static PyObject *g_hostCallable = nullptr;
+static bool g_hostBuffered = false;
+static PyObject *g_requestBuffer = nullptr;
+static PyObject *g_replyBuffer = nullptr;
 
-void FcxImage::setHostCallable(PyObject *callable)
+void FcxImage::setHostCallable(PyObject *callable, bool buffered)
 {
     Py_XINCREF(callable);
     Py_XDECREF(g_hostCallable);
     g_hostCallable = callable;
+    g_hostBuffered = buffered;
+}
+
+static PyObject *buffer(PyObject *&slot)
+{
+    if (!slot)
+        slot = PyByteArray_FromStringAndSize(nullptr, 65536);
+    return slot;
+}
+
+PyObject *FcxImage::requestBuffer()
+{
+    return buffer(g_requestBuffer);
+}
+
+PyObject *FcxImage::replyBuffer()
+{
+    return buffer(g_replyBuffer);
+}
+
+bool FcxImage::ensureCapacity(PyObject *ba, size_t n)
+{
+    if ((size_t)PyByteArray_GET_SIZE(ba) >= n)
+        return true;
+    size_t grown = (size_t)PyByteArray_GET_SIZE(ba);
+    while (grown < n)
+        grown *= 2;
+    return PyByteArray_Resize(ba, (Py_ssize_t)grown) == 0;
+}
+
+/// The buffered shape: request into replyBuffer(), an int across, the
+/// reply out of requestBuffer().
+static bool hostTransportBuffered(const std::vector<uint8_t> &request,
+                                  std::vector<uint8_t> &replyBytes)
+{
+    PyObject *rep = FcxImage::replyBuffer();
+    PyObject *req = FcxImage::requestBuffer();
+    if (!rep || !req || !FcxImage::ensureCapacity(rep, request.size()))
+        return false;
+    memcpy(PyByteArray_AS_STRING(rep), request.data(), request.size());
+    PyObject *arg = PyLong_FromSize_t(request.size());
+    if (!arg)
+        return false;
+    PyObject *res = PyObject_CallOneArg(g_hostCallable, arg);
+    Py_DECREF(arg);
+    if (!res)
+        return false;
+    long n = PyLong_AsLong(res);
+    Py_DECREF(res);
+    if (n < 0) {
+        if (!PyErr_Occurred())
+            PyErr_SetString(PyExc_RuntimeError, "host bridge returned no reply");
+        return false;
+    }
+    if ((size_t)n > (size_t)PyByteArray_GET_SIZE(req)) {
+        PyErr_SetString(PyExc_RuntimeError, "host bridge reply exceeds the request buffer");
+        return false;
+    }
+    const uint8_t *data = reinterpret_cast<const uint8_t *>(PyByteArray_AS_STRING(req));
+    replyBytes.assign(data, data + n);
+    return true;
 }
 
 /// The one round trip: bytes out, bytes-like back.  A JsProxy of a
@@ -46,6 +110,8 @@ static bool hostTransport(const std::vector<uint8_t> &request,
         PyErr_SetString(PyExc_RuntimeError, "host bridge unavailable");
         return false;
     }
+    if (g_hostBuffered)
+        return hostTransportBuffered(request, replyBytes);
     PyObject *arg = PyBytes_FromStringAndSize(
             reinterpret_cast<const char *>(request.data()),
             (Py_ssize_t)request.size());

@@ -276,8 +276,16 @@ the parity of parser errors, and the routing tests through the real
 expression engine.  The one bug on the way: `mod.call` is a BORROWED
 attribute proxy in pyodide and died with `mod.destroy()`; `copy()` it.
 
+**The corpus gate on the pyodide runtime** (`FCX_RUNTIME=pyodide
+scripts/expr-switchover/run_gate.sh`, 2026-09-02) reads exactly as on
+the WASI image: 350 files, 334 expressions compared, 332 same, 0
+differ, 2 both_error (the same two, same text), 0 image-only errors, 1
+timed-out file (the same slow-opening issue474 document).  Every stored
+expression in the field corpus evaluates identically through pyodide.
+
 What one round trip costs on each runtime (ExpressionImageBenchTest,
-this box, 2026-09-02):
+this box, 2026-09-02, with the FIRST transport -- see below for the
+buffered one):
 
     bench                        pyodide      wasi
     transport floor               40.5 us     2.7 us
@@ -288,19 +296,36 @@ this box, 2026-09-02):
     instantiate + first eval    1700   ms    14   ms
 
 The engine is not the cost: the probe measured a Python call at 0.53 us
-on the same V8.  The cost is the BYTE TRANSPORT as written -- a JsProxy
-minted per request (`to_bytes()`), a PyProxy plus `getBuffer()` plus a
-copy per reply, and the same again for every bridge hop.  A shared
-buffer in wasm linear memory (write the request into `HEAPU8` at a
-pointer the guest exports, read the reply from another) would remove
-every proxy from the hot path; that is the first optimisation to make,
-and it is a transport change only.  Until it is made the pyodide
-runtime is about 7x slower per expression than the WASI image, and
-100 us per expression is still far from the user-visible range.
+on the same V8.  The cost was the BYTE TRANSPORT as first written -- a
+JsProxy minted per request (`to_bytes()`), a PyProxy plus `getBuffer()`
+plus a copy per reply, and the same again for every bridge hop.
 
-1. DONE (section 9).  Still owed: the corpus gate on the pyodide
-   runtime (`FCX_RUNTIME=pyodide scripts/expr-switchover/run_gate.sh`),
-   and the shared-buffer transport.
+**The buffered transport** (same day) removes the proxies: the guest
+owns two `bytearray`s (`_fcx_image.buffers()`), the glue holds
+`getBuffer()` views of them -- typed arrays straight into wasm memory,
+re-acquired when a view detaches because memory grew or a buffer was
+resized -- writes the request into one, calls `call_len(n)`, and reads
+the reply out of the other; the bridge goes the other way through the
+same pair (`set_host_buffered`).  Only integers cross the language
+boundary.  Measured:
+
+    bench                        first     buffered     wasi
+    transport floor               40.5 us    8.4 us     2.6 us
+    wire floor (eval "1")         89.0 us   39.0 us    13.2 us
+    expression 1+2*3-4/5          86.9 us   36.9 us    14.0 us
+    one property                 106.6 us   51.5 us    23.0 us
+    one bridge hop              +136.8 us  +72.1 us   +28.8 us
+
+Roughly 3x the WASI image now.  The remaining gap is not in the
+crossing (8 us floor) but inside the guest: the same C++ dispatcher
+runs ~25 us slower as an emscripten SIDE MODULE than as a wasi reactor,
+which is what `-fPIC` dynamic linking costs (every call and global goes
+through the table and GOT).  Options, in order of return: build the
+dispatcher's hot path with `-O3` and fewer indirections, or have the
+host skip CBOR for the common scalar shapes.  Neither is needed for
+correctness, and 40 us per expression is far from user-visible.
+
+1. DONE (section 9), corpus gate and buffered transport included.
 2. Marshalling: FcxWire is CBOR over a byte buffer; on this runtime the
    cheaper path is direct V8 values (the 45 ns C++ -> V8 hop measured
    2026-09-01), with the bindings pack handed over as a JS object.
