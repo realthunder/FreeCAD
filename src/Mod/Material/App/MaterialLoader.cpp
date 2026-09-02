@@ -381,7 +381,14 @@ void MaterialYamlEntry::addToTree(
         }
         std::vector<std::string> hashes;
         if (node["Hashes"]) {
-            for (const auto& hash : *readList(node["Hashes"])) {
+            // Named, not dereferenced inline. Through C++20 a range-for
+            // extends only the temporary its reference BINDS to, and
+            // that is the pointee here -- the shared_ptr itself dies at
+            // the end of the range initializer and takes the list with
+            // it, so the loop walks freed memory. It corrupted the heap
+            // about half the runs of the test that reads a stored card.
+            auto list = readList(node["Hashes"]);
+            for (const auto& hash : *list) {
                 hashes.push_back(hash.toString().toStdString());
             }
         }
