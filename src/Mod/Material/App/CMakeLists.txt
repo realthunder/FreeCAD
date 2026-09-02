@@ -123,6 +123,8 @@ SET(Materials_SRCS
     PropertyMaterial.h
     PyVariants.cpp
     PyVariants.h
+    MaterialClipboard.cpp
+    MaterialClipboard.h
     ShaderGraph.cpp
     ShaderGraph.h
     trim.h

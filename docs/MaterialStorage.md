@@ -1662,4 +1662,13 @@ trap it met: the program's text is already a blob in the store (the
 property is a `PropertyStringIncluded`), held in memory with no file
 behind its path until the document is saved, so the text is written to
 the document's transient directory instead and placed from there. Item 4
-is open.
+followed the same day: `Materials::Clipboard::{pack, apply}` under the
+mime type `application/x-freecad-material`, a line-oriented container of
+the card's canonical YAML, the look's XML (written with force-XML at the
+current schema, read back through a property lent the target's
+container) and the bytes of every file either names by hash;
+`Material_Copy` / `Material_Paste` in the context menus under the 13.5
+rule, and `Materials.packMaterial` / `applyMaterial` for scripts and
+`TestMaterialClipboard.py`. Its trap: a store keeps a blob only while a
+handle holds it, so the handles of the files a paste inserts must live
+until the card and the look have taken hold of theirs.

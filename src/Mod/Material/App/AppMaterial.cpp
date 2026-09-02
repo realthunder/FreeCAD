@@ -28,12 +28,14 @@
 #include <App/CleanupProcess.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectPy.h>
+#include <App/PropertyStandard.h>
 #include <App/ShaderObject.h>
 
 #include "MaterialLoader.h"
 #include "MaterialManagerLocal.h"
 #include "ModelManagerLocal.h"
 #include "PropertyMaterial.h"
+#include "MaterialClipboard.h"
 #include "ShaderGraph.h"
 #if defined(BUILD_MATERIAL_EXTERNAL)
 #include "ModelManagerExternal.h"
@@ -115,6 +117,23 @@ public:
                            "materialized program's text as it is now and whose images are the\n"
                            "ones the program carries. Save it to a library to keep the edit.\n"
                            "None when nothing is materialized on the object.");
+        add_varargs_method("materialClipboardMimeType",
+                           &Module::materialClipboardMimeType,
+                           "materialClipboardMimeType() -> str\n\n"
+                           "The mime type a copied material travels under.");
+        add_varargs_method("packMaterial",
+                           &Module::packMaterial,
+                           "packMaterial(object, cardProperty='ShapeMaterial', lookProperty='') -> bytes\n\n"
+                           "What Copy Material puts on the clipboard: the card in cardProperty\n"
+                           "and the look in lookProperty (an App::PropertyAppearanceList on the\n"
+                           "object), self-contained with every file either refers to. Empty\n"
+                           "bytes when there is nothing to carry.");
+        add_varargs_method("applyMaterial",
+                           &Module::applyMaterial,
+                           "applyMaterial(object, data, cardProperty='ShapeMaterial', lookProperty='', faces=[]) -> bool\n\n"
+                           "What Paste Material does with it: sets the card, then the look when\n"
+                           "the source's was custom; with faces, the source's base lands as an\n"
+                           "override on those faces and nothing else changes.");
         add_varargs_method("saveToLibrary",
                            &Module::saveToLibrary,
                            "saveToLibrary(object, property) -> bool\n\n"
@@ -204,6 +223,92 @@ private:
     Py::Object revertShaderGraph(const Py::Tuple& args)
     {
         return Py::Boolean(ShaderGraph::revert(documentObject(args)));
+    }
+
+    Py::Object materialClipboardMimeType(const Py::Tuple& args)
+    {
+        if (!PyArg_ParseTuple(args.ptr(), "")) {
+            throw Py::Exception();
+        }
+        return Py::String(Clipboard::mimeType());
+    }
+
+    static App::PropertyAppearanceList* lookProperty(App::DocumentObject* owner, const char* name)
+    {
+        if (!name || !name[0]) {
+            return nullptr;
+        }
+        auto property = owner->getPropertyByName(name);
+        if (!property) {
+            throw Py::AttributeError(std::string("no property named '") + name + "'");
+        }
+        if (!property->isDerivedFrom<App::PropertyAppearanceList>()) {
+            throw Py::TypeError(std::string("'") + name + "' is not an appearance list");
+        }
+        return static_cast<App::PropertyAppearanceList*>(property);
+    }
+
+    static PropertyMaterial* cardProperty(App::DocumentObject* owner, const char* name)
+    {
+        if (!name || !name[0]) {
+            return nullptr;
+        }
+        auto property = owner->getPropertyByName(name);
+        if (!property) {
+            throw Py::AttributeError(std::string("no property named '") + name + "'");
+        }
+        if (!property->isDerivedFrom<PropertyMaterial>()) {
+            throw Py::TypeError(std::string("'") + name + "' is not a material property");
+        }
+        return static_cast<PropertyMaterial*>(property);
+    }
+
+    Py::Object packMaterial(const Py::Tuple& args)
+    {
+        PyObject* object {};
+        const char* cardName = "ShapeMaterial";
+        const char* lookName = "";
+        if (!PyArg_ParseTuple(args.ptr(), "O!|ss", &App::DocumentObjectPy::Type, &object, &cardName, &lookName)) {
+            throw Py::Exception();
+        }
+        auto owner = static_cast<App::DocumentObjectPy*>(object)->getDocumentObjectPtr();
+        if (!owner->getDocument()) {
+            throw Py::RuntimeError("object belongs to no document");
+        }
+        const std::string data = Clipboard::pack(cardProperty(owner, cardName),
+                                                 lookProperty(owner, lookName),
+                                                 *owner->getDocument());
+        return Py::Bytes(data);
+    }
+
+    Py::Object applyMaterial(const Py::Tuple& args)
+    {
+        PyObject* object {};
+        PyObject* data {};
+        const char* cardName = "ShapeMaterial";
+        const char* lookName = "";
+        PyObject* faces = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!O!|ssO", &App::DocumentObjectPy::Type, &object,
+                              &PyBytes_Type, &data, &cardName, &lookName, &faces)) {
+            throw Py::Exception();
+        }
+        auto owner = static_cast<App::DocumentObjectPy*>(object)->getDocumentObjectPtr();
+        if (!owner->getDocument()) {
+            throw Py::RuntimeError("object belongs to no document");
+        }
+        std::vector<int> indices;
+        if (faces && faces != Py_None) {
+            Py::Sequence sequence(faces);
+            for (const auto& item : sequence) {
+                indices.push_back(static_cast<int>(Py::Long(item)));
+            }
+        }
+        const std::string payload(PyBytes_AsString(data), static_cast<std::size_t>(PyBytes_Size(data)));
+        return Py::Boolean(Clipboard::apply(payload,
+                                            cardProperty(owner, cardName),
+                                            lookProperty(owner, lookName),
+                                            indices,
+                                            *owner->getDocument()));
     }
 
     Py::Object shaderGraphCard(const Py::Tuple& args)

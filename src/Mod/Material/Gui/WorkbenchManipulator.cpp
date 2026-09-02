@@ -97,7 +97,13 @@ void WorkbenchManipulator::addCommands(Gui::MenuItem* menuBar,
         // when they have something to act on: a divergence to take, or a card
         // to write back. An entry greyed out nine times in ten is clutter in a
         // menu that is long already.
-        for (const char* command : {"Material_UpdateFromLibrary", "Material_SaveToLibrary"}) {
+        // Copy Material and Paste Material (docs/MaterialStorage.md 17.12)
+        // under the same rule: Copy while the selection carries a card or a
+        // look, Paste while the clipboard holds one
+        for (const char* command : {"Material_UpdateFromLibrary",
+                                    "Material_SaveToLibrary",
+                                    "Material_Copy",
+                                    "Material_Paste"}) {
             if (applies(command)) {
                 auto sync = new Gui::MenuItem();
                 sync->setCommand(command);

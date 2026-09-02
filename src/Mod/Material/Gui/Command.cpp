@@ -21,6 +21,9 @@
  *                                                                         *
  **************************************************************************/
 
+#include <QApplication>
+#include <QClipboard>
+#include <QMimeData>
 #include <QPointer>
 
 #include <map>
@@ -29,10 +32,14 @@
 #include <vector>
 
 #include <App/DocumentObject.h>
+#include <App/PropertyStandard.h>
 #include <Mod/Material/App/PropertyMaterial.h>
+#include <Mod/Material/App/MaterialClipboard.h>
 #include <Mod/Material/App/ShaderGraph.h>
 
+#include <Gui/Application.h>
 #include <Gui/Command.h>
+#include <Gui/ViewProvider.h>
 #include <Gui/Control.h>
 #include <Gui/MainWindow.h>
 #include <Gui/Selection/Selection.h>
@@ -405,6 +412,157 @@ bool CmdMaterialSaveToLibrary::isActive()
 }
 
 //===========================================================================
+// Material_Copy / Material_Paste
+//===========================================================================
+
+namespace
+{
+// The look an object draws with lives on its view provider
+App::PropertyAppearanceList* lookOf(App::DocumentObject* object)
+{
+    auto vp = Gui::Application::Instance->getViewProvider(object);
+    return vp ? dynamic_cast<App::PropertyAppearanceList*>(vp->getPropertyByName("ShapeAppearance"))
+              : nullptr;
+}
+
+Materials::PropertyMaterial* cardOf(App::DocumentObject* object)
+{
+    return dynamic_cast<Materials::PropertyMaterial*>(object->getPropertyByName("ShapeMaterial"));
+}
+
+// "Face7" of a sub-name that may be a path ("Group.Link.Face7") -> 6
+int faceIndexOf(const std::string& subname)
+{
+    const auto dot = subname.rfind('.');
+    const std::string element = dot == std::string::npos ? subname : subname.substr(dot + 1);
+    if (element.compare(0, 4, "Face") != 0) {
+        return -1;
+    }
+    try {
+        return std::stoi(element.substr(4)) - 1;
+    }
+    catch (const std::exception&) {
+        return -1;
+    }
+}
+}  // namespace
+
+DEF_STD_CMD_A(CmdMaterialCopy)
+
+CmdMaterialCopy::CmdMaterialCopy()
+    : Command("Material_Copy")
+{
+    sAppModule = "Material";
+    sGroup = QT_TR_NOOP("Material");
+    sMenuText = QT_TR_NOOP("Copy Material");
+    sToolTipText = QT_TR_NOOP("Copies the object's material card and look, with every file they "
+                              "refer to, so they can be pasted onto other objects, in other "
+                              "documents too");
+    sWhatsThis = "Material_Copy";
+    sStatusTip = sToolTipText;
+}
+
+void CmdMaterialCopy::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    // The first object with something to carry: one material goes on the
+    // clipboard, however many objects are selected
+    for (auto object : Gui::Selection().getObjectsOfType<App::DocumentObject>()) {
+        const std::string data =
+            Materials::Clipboard::pack(cardOf(object), lookOf(object), *object->getDocument());
+        if (data.empty()) {
+            continue;
+        }
+        auto mime = new QMimeData();
+        mime->setData(QString::fromLatin1(Materials::Clipboard::mimeType()),
+                      QByteArray(data.data(), static_cast<int>(data.size())));
+        QApplication::clipboard()->setMimeData(mime);
+        return;
+    }
+}
+
+bool CmdMaterialCopy::isActive()
+{
+    for (auto object : Gui::Selection().getObjectsOfType<App::DocumentObject>()) {
+        if (auto card = cardOf(object)) {
+            if (!card->isUnresolved()
+                && card->libraryStatus() != Materials::PropertyMaterial::LibraryStatus::NoCard) {
+                return true;
+            }
+        }
+        if (auto look = lookOf(object)) {
+            if (look->getSize()) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+DEF_STD_CMD_A(CmdMaterialPaste)
+
+CmdMaterialPaste::CmdMaterialPaste()
+    : Command("Material_Paste")
+{
+    sAppModule = "Material";
+    sGroup = QT_TR_NOOP("Material");
+    sMenuText = QT_TR_NOOP("Paste Material");
+    sToolTipText = QT_TR_NOOP("Gives the selected objects the copied material card and look; "
+                              "selected faces take the look as a per-face override");
+    sWhatsThis = "Material_Paste";
+    sStatusTip = sToolTipText;
+}
+
+void CmdMaterialPaste::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    const QMimeData* mime = QApplication::clipboard()->mimeData();
+    const QString type = QString::fromLatin1(Materials::Clipboard::mimeType());
+    if (!mime || !mime->hasFormat(type)) {
+        return;
+    }
+    const QByteArray bytes = mime->data(type);
+    const std::string data(bytes.constData(), static_cast<std::size_t>(bytes.size()));
+
+    openCommand(QT_TRANSLATE_NOOP("Command", "Paste material"));
+    bool applied = false;
+    for (const auto& selection : Gui::Selection().getSelectionEx(nullptr, App::DocumentObject::getClassTypeId(), Gui::ResolveMode::NoResolve)) {
+        // The selection hands out const objects; a paste is a write
+        auto object = const_cast<App::DocumentObject*>(selection.getObject());
+        if (!object || !object->getDocument()) {
+            continue;
+        }
+        std::vector<int> faces;
+        for (const auto& subname : selection.getSubNames()) {
+            const int face = faceIndexOf(subname);
+            if (face >= 0) {
+                faces.push_back(face);
+            }
+        }
+        // A face selection pastes the look onto those faces only; the
+        // card is the object's and is not touched by a face paste
+        auto card = faces.empty() ? cardOf(object) : nullptr;
+        applied = Materials::Clipboard::apply(data, card, lookOf(object), faces, *object->getDocument())
+            || applied;
+    }
+    if (applied) {
+        commitCommand();
+    }
+    else {
+        abortCommand();
+    }
+}
+
+bool CmdMaterialPaste::isActive()
+{
+    const QMimeData* mime = QApplication::clipboard()->mimeData();
+    if (!mime || !mime->hasFormat(QString::fromLatin1(Materials::Clipboard::mimeType()))) {
+        return false;
+    }
+    return !Gui::Selection().getObjectsOfType<App::DocumentObject>().empty();
+}
+
+//===========================================================================
 // Material_ResetAppearance
 //===========================================================================
 
@@ -483,6 +641,8 @@ void CreateMaterialCommands()
     rcCmdMgr.addCommand(new CmdMaterialUpdateFromLibrary());
     rcCmdMgr.addCommand(new CmdMaterialSaveToLibrary());
     rcCmdMgr.addCommand(new CmdMaterialResetAppearance());
+    rcCmdMgr.addCommand(new CmdMaterialCopy());
+    rcCmdMgr.addCommand(new CmdMaterialPaste());
 #if defined(BUILD_MATERIAL_EXTERNAL)
     rcCmdMgr.addCommand(new CmdMigrateToExternal());
 #endif
