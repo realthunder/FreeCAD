@@ -1,6 +1,6 @@
 # Test suites and their status
 
-Status as of **2026-08-28**, measured on `build/conda-relwithdebinfo-801`
+Status as of **2026-09-02**, measured on `build/conda-relwithdebinfo-801`
 (OCCT 8.0.1). Both suites are green.
 
 *** **The suites run on the RelWithDebInfo tree.** `conda-relwithdebinfo-801`
@@ -12,7 +12,7 @@ as "the primary tree"; that was wrong.
 | Suite | Result |
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
-| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **464 of 464 passing**, 0 failures, 1 ctest entry disabled |
+| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **522 of 522 passing**, 0 failures, 7 ctest entries disabled |
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the
@@ -87,7 +87,7 @@ One binary directly, which is the fastest loop while working on a suite:
 
     ./tests/src/Mod/Part/TopoShapeEx_tests_run --gtest_filter='*makEBoolean*'
 
-## 2. Why ctest says 464 and the binaries add up to 1316
+## 2. Why ctest says 522 and the binaries add up to 1389
 
 Both numbers are right; they count different things.
 
@@ -96,22 +96,24 @@ Both numbers are right; they count different things.
 and its own process. Every other suite is registered with a plain
 `add_test(NAME X COMMAND X)`, so the whole binary is one entry.
 
-    438 expanded cases (Tests_run 335, Material 39, Part 38, Sketcher 18,
+    496 expanded cases (Tests_run 393, Material 39, Part 38, Sketcher 18,
                         Mesh 7, Points 1)
-    +  1 disabled entry (Part_tests_run's DISABLED_testHistory)
+    +  7 disabled entries (Tests_run's six ExpressionImageBenchTest benches,
+                           Part_tests_run's DISABLED_testHistory)
     + 26 whole-binary entries
-    = 465 registered, 464 run
+    = 529 registered, 522 run
 
 Counting individual test cases instead, across all 32 binaries, gives
-**1316 passing**.
+**1389 passing** (1336 gtest cases plus the 53 QtTest cases of
+`InventorBuilder_Tests_run` and `QuantitySpinBox_Tests_run`).
 
 ## 3. The C++ suites
 
 | Binary | Cases | Notes |
 |---|---|---|
-| `Tests_run` | 335 | The legacy suite: Base and App (incl. the 11 ExpressionSecurity contract cases, 2026-08-30) |
+| `Tests_run` | 393 | The legacy suite: Base and App (incl. the ExpressionSecurity contract cases and the ExpressionImageHost suite; +6 disabled benches, section 4) |
 | `src/App/Toponaming_tests_run` | 256 | Element map, MappedName, IndexedName |
-| `src/App/PropertyMaterialList_tests_run` | 88 | |
+| `src/App/PropertyMaterialList_tests_run` | 103 | |
 | `src/Mod/Part/TopoShapeEx_tests_run` | 86 | +3 disabled, section 4 |
 | `src/Gui/SceneLadder_tests_run` | 64 | |
 | `src/Base/InventorBuilder_Tests_run` | 48 | QtTest |
@@ -148,8 +150,16 @@ Seven cases. **None of them is a known defect**; each is a place where this
 fork decided something different from upstream, or a case whose subject the
 fork has retired.
 
-### Four disabled
+### Ten disabled
 
+- `Tests_run` carries six `ExpressionImageBenchTest.DISABLED_Bench*` cases
+  (`tests/src/App/ExpressionImageHost.cpp`). They are timing benches for the
+  expression sandbox -- native engine, image round trip, bridge hop,
+  instantiation, breakdown, transport floor -- not correctness tests; they
+  print microseconds and assert nothing a pass/fail run cares about. Run
+  them on purpose with `--gtest_also_run_disabled_tests
+  --gtest_filter='ExpressionImageBenchTest.*'`; the numbers they produced
+  are recorded in `docs/ExpressionImage.md`.
 - `TopoShapeEx_tests_run` carries three, each ruled an accepted difference
   by phase 4 of the topological-naming harvest rather than a bug. The reason
   is written above each case; in short:
