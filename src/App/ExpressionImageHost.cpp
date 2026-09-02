@@ -27,8 +27,6 @@
 #include <sstream>
 
 #include <nlohmann/json.hpp>
-#include <wasm.h>
-#include <wasmtime.h>
 
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
@@ -40,6 +38,7 @@
 #include "Expression.h"
 #include "ExpressionImageBridge.h"
 #include "ExpressionImageHost.h"
+#include "ExpressionImageRuntime.h"
 #include "ExpressionSecurityRuntime.h"
 
 using json = nlohmann::json;
@@ -60,54 +59,38 @@ std::string envPath(const char* name)
     return value && *value ? std::string(value) : std::string();
 }
 
-/** Where the image and its stdlib slice are, when nothing said otherwise.
- *
- * Precedence: an explicit configure() (tests and headless flags) wins, then
- * the preference, then the FCX_IMAGE / FCX_STDLIB environment (a developer
- * pointing at a build tree), then the bundle a packaged FreeCAD installs as
- * <datadir>/Fcx.  A path that resolves to nothing is not an error: the
- * sandbox is then unavailable and evaluation stays in process, which is
- * exactly what a build without the image has to do anyway.
+/** Which runtime carries the sandbox: the preference
+ * BaseApp/Preferences/Expression/Sandbox:Runtime when set, else the
+ * FCX_RUNTIME environment (tests and the corpus gate select a runtime
+ * per process this way), else "wasi", the shipping default.
  */
-void resolvePaths(std::string& imagePath, std::string& stdlibPath)
+std::string runtimeChoice()
 {
     auto hGrp = GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Expression/Sandbox");
-    imagePath = hGrp->GetASCII("ImagePath", "");
-    stdlibPath = hGrp->GetASCII("StdlibPath", "");
-    if (imagePath.empty())
-        imagePath = envPath("FCX_IMAGE");
-    if (stdlibPath.empty())
-        stdlibPath = envPath("FCX_STDLIB");
-    std::string bundle = App::Application::getResourceDir() + "Fcx/";
-    if (imagePath.empty())
-        imagePath = bundle + "fcx_image.wasm";
-    if (stdlibPath.empty())
-        stdlibPath = bundle + "Lib";
+    std::string name = hGrp->GetASCII("Runtime", "");
+    if (name.empty())
+        name = envPath("FCX_RUNTIME");
+    return name.empty() ? std::string("wasi") : name;
 }
 
-/** Where the compiled form of `imagePath` is cached.
- *
- * NOT beside the image: an installed data directory is read-only for the
- * user who runs FreeCAD, and the compiled form is specific to the wasmtime
- * build and the host CPU, so it can never be shipped either -- it has to be
- * made once per user.  The file name carries a hash of the image's full
- * path because a box can have several (a build tree and an install) whose
- * base names are identical, and the staleness check is a timestamp: a
- * collision there would deserialize the wrong module.
- */
-std::string cachePathFor(const std::string& imagePath)
+/// A runtime by name; nullptr (and a log line) for one this build does
+/// not have.
+std::unique_ptr<ImageRuntime> makeRuntime(const std::string& name)
 {
-    uint64_t hash = 1469598103934665603ULL;  // FNV-1a, 64 bit
-    for (unsigned char c : imagePath) {
-        hash ^= c;
-        hash *= 1099511628211ULL;
-    }
-    std::ostringstream name;
-    name << Base::FileInfo(imagePath).fileNamePure() << '-' << std::hex << hash
-         << ".cwasm";
-    return App::Application::getUserCachePath() + "ExpressionSandbox/"
-            + name.str();
+    if (name == "wasi")
+        return makeWasmtimeRuntime();
+#ifdef FC_EXPR_PYODIDE_HOST
+    if (name == "pyodide")
+        return makePyodideRuntime();
+#endif
+    FC_ERR("unknown expression sandbox runtime '" << name
+           << "' (this build has: wasi"
+#ifdef FC_EXPR_PYODIDE_HOST
+           << ", pyodide"
+#endif
+           << ")");
+    return nullptr;
 }
 
 }  // namespace
@@ -121,90 +104,50 @@ struct ImageHost::Private
     bool triedInit = false;
     bool live = false;
 
-    wasm_engine_t* engine = nullptr;
-    wasmtime_store_t* store = nullptr;
-    wasmtime_context_t* context = nullptr;
-    wasmtime_module_t* module = nullptr;
-    wasmtime_instance_t instance {};
-    wasmtime_memory_t memory {};
-    wasmtime_func_t funcAlloc {};
-    wasmtime_func_t funcFree {};
-    wasmtime_func_t funcCall {};
+    /// The transport and its guest (ExpressionImageRuntime.h); chosen at
+    /// initialize() and dropped by teardown(), so a runtime preference
+    /// change takes effect at the next evaluation after a reset().
+    std::unique_ptr<ImageRuntime> rt;
 
-    // image->host bridge state: live handles and the reply pending
-    // between the host_call and host_fetch halves of one bridge op
+    // image->host bridge state: the live handles of the transaction
     HandleTable handles;
-    std::vector<uint8_t> pendingReply;
     std::size_t evals = 0;
-
-    static wasm_trap_t* hostCallCb(void* env, wasmtime_caller_t* caller,
-                                   const wasmtime_val_t* args, size_t nargs,
-                                   wasmtime_val_t* results, size_t nresults);
-    static wasm_trap_t* hostFetchCb(void* env, wasmtime_caller_t* caller,
-                                    const wasmtime_val_t* args, size_t nargs,
-                                    wasmtime_val_t* results, size_t nresults);
-    bool defineBridge(wasmtime_linker_t* linker);
 
     void teardown()
     {
-        if (module) {
-            wasmtime_module_delete(module);
-            module = nullptr;
-        }
-        if (store) {
-            wasmtime_store_delete(store);
-            store = nullptr;
-            context = nullptr;
-        }
-        if (engine) {
-            wasm_engine_delete(engine);
-            engine = nullptr;
-        }
+        if (rt)
+            rt->teardown();
+        rt.reset();
         live = false;
     }
 
-    static std::string errorText(wasmtime_error_t* err, wasm_trap_t* trap)
+    /// The guest's paths as the selected runtime resolves them.
+    ImageRuntime::Paths paths()
     {
-        wasm_byte_vec_t text;
-        text.data = nullptr;
-        text.size = 0;
-        if (err) {
-            wasmtime_error_message(err, &text);
-            wasmtime_error_delete(err);
+        std::unique_ptr<ImageRuntime> probe;
+        ImageRuntime* r = rt.get();
+        if (!r) {
+            probe = makeRuntime(runtimeChoice());
+            r = probe.get();
         }
-        else if (trap) {
-            wasm_trap_message(trap, &text);
-            wasm_trap_delete(trap);
-        }
-        std::string s(text.data ? text.data : "", text.size);
-        if (text.data)
-            wasm_byte_vec_delete(&text);
-        return s;
+        if (!r)
+            return ImageRuntime::Paths {};
+        return r->resolve(configured ? imagePath : std::string(),
+                          configured ? stdlibPath : std::string());
     }
 
-    bool getExport(const char* name, wasmtime_extern_kind_t kind,
-                   wasmtime_extern_t& ext)
+    /// One guest->host bridge op, CBOR both ways (ExpressionImageBridge).
+    std::vector<uint8_t> bridge(const uint8_t* data, std::size_t len)
     {
-        if (!wasmtime_instance_export_get(context, &instance, name,
-                                          std::strlen(name), &ext)
-                || ext.kind != kind) {
-            FC_ERR("image is missing export '" << name << "'");
-            return false;
+        json reply;
+        try {
+            json req = json::from_cbor(data, data + len);
+            reply = dispatchHostOp(handles, req);
         }
-        return true;
-    }
-
-    bool callSimple(wasmtime_func_t& func, wasmtime_val_t* args, size_t nargs,
-                    wasmtime_val_t* results, size_t nresults, const char* what)
-    {
-        wasm_trap_t* trap = nullptr;
-        wasmtime_error_t* err = wasmtime_func_call(context, &func, args, nargs,
-                                                   results, nresults, &trap);
-        if (err || trap) {
-            FC_ERR(what << " failed: " << errorText(err, trap));
-            return false;
+        catch (const std::exception& e) {
+            reply = {{"ok", false}, {"exc", "ProtocolError"}, {"msg", e.what()}};
         }
-        return true;
+        return json::to_cbor(reply);
     }
 
     bool initialize()
@@ -212,303 +155,36 @@ struct ImageHost::Private
         if (triedInit)
             return live;
         triedInit = true;
-
-        if (!configured)
-            resolvePaths(imagePath, stdlibPath);
-        if (!Base::FileInfo(imagePath).isFile()
-                || !Base::FileInfo(stdlibPath).isDir()) {
-            FC_LOG("no image at " << imagePath << " with a stdlib at "
-                   << stdlibPath << ", sandbox image unavailable");
+        rt = makeRuntime(runtimeChoice());
+        if (!rt)
             return false;
-        }
-
-        wasm_config_t* cfg = wasm_config_new();
-        wasmtime_config_wasm_exceptions_set(cfg, true);
-        engine = wasm_engine_new_with_config(cfg);
-        store = wasmtime_store_new(engine, nullptr, nullptr);
-        context = wasmtime_store_context(store);
-
-        wasi_config_t* wasi = wasi_config_new();
-        wasi_config_inherit_stderr(wasi);
-        if (!wasi_config_preopen_dir(wasi, stdlibPath.c_str(), "/Lib", false)) {
-            FC_ERR("cannot preopen stdlib " << stdlibPath);
+        ImageRuntime::Paths where = paths();
+        live = rt->initialize(where, [this](const uint8_t* d, std::size_t n) {
+            return bridge(d, n);
+        });
+        if (!live)
             teardown();
-            return false;
-        }
-        wasmtime_error_t* err = wasmtime_context_set_wasi(context, wasi);
-        if (err) {
-            FC_ERR("wasi setup failed: " << errorText(err, nullptr));
-            teardown();
-            return false;
-        }
-
-        // JIT-compiling the image costs ~600 ms; a serialized .cwasm
-        // loads in ~20 ms.  The cache lives in the user cache directory
-        // (see cachePathFor) and is refreshed whenever it is older than
-        // the image or fails to deserialize (wasmtime version change).
-        std::string cachePath = cachePathFor(imagePath);
-        Base::FileInfo imageInfo(imagePath);
-        Base::FileInfo cacheInfo(cachePath);
-        if (cacheInfo.exists()
-                && cacheInfo.lastModified() >= imageInfo.lastModified()) {
-            err = wasmtime_module_deserialize_file(engine, cachePath.c_str(),
-                                                   &module);
-            if (err) {
-                FC_LOG("stale image cache " << cachePath << ": "
-                       << errorText(err, nullptr));
-                module = nullptr;
-            }
-        }
-        if (!module) {
-            std::ifstream f(imagePath, std::ios::binary);
-            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)),
-                                       std::istreambuf_iterator<char>());
-            if (bytes.empty()) {
-                FC_ERR("cannot read image " << imagePath);
-                teardown();
-                return false;
-            }
-            err = wasmtime_module_new(engine, bytes.data(), bytes.size(),
-                                      &module);
-            if (err) {
-                FC_ERR("image does not compile: " << errorText(err, nullptr));
-                teardown();
-                return false;
-            }
-            wasm_byte_vec_t blob;
-            Base::FileInfo cacheDir(App::Application::getUserCachePath()
-                                    + "ExpressionSandbox");
-            if ((cacheDir.isDir() || cacheDir.createDirectory())
-                    && !wasmtime_module_serialize(module, &blob)) {
-                std::ofstream out(cachePath, std::ios::binary);
-                if (out)
-                    out.write(blob.data, (std::streamsize)blob.size);
-                wasm_byte_vec_delete(&blob);
-            }
-        }
-
-        wasmtime_linker_t* linker = wasmtime_linker_new(engine);
-        err = wasmtime_linker_define_wasi(linker);
-        wasm_trap_t* trap = nullptr;
-        if (!err && !defineBridge(linker)) {
-            wasmtime_linker_delete(linker);
-            teardown();
-            return false;
-        }
-        if (!err)
-            err = wasmtime_linker_instantiate(linker, context, module,
-                                              &instance, &trap);
-        wasmtime_linker_delete(linker);
-        if (err || trap) {
-            FC_ERR("image instantiation failed: " << errorText(err, trap));
-            teardown();
-            return false;
-        }
-
-        wasmtime_extern_t ext;
-        if (!getExport("memory", WASMTIME_EXTERN_MEMORY, ext)) {
-            teardown();
-            return false;
-        }
-        memory = ext.of.memory;
-
-        wasmtime_func_t funcInitialize {};
-        wasmtime_func_t funcInit {};
-        struct
-        {
-            const char* name;
-            wasmtime_func_t* slot;
-        } funcs[] = {
-            {"_initialize", &funcInitialize},
-            {"fcx_init", &funcInit},
-            {"fcx_alloc", &funcAlloc},
-            {"fcx_free", &funcFree},
-            {"fcx_call", &funcCall},
-        };
-        for (auto& fn : funcs) {
-            if (!getExport(fn.name, WASMTIME_EXTERN_FUNC, ext)) {
-                teardown();
-                return false;
-            }
-            *fn.slot = ext.of.func;
-        }
-
-        if (!callSimple(funcInitialize, nullptr, 0, nullptr, 0, "_initialize")) {
-            teardown();
-            return false;
-        }
-        wasmtime_val_t result;
-        if (!callSimple(funcInit, nullptr, 0, &result, 1, "fcx_init")
-                || result.of.i32 != 0) {
-            FC_ERR("fcx_init failed (rc "
-                   << (result.kind == WASMTIME_I32 ? result.of.i32 : -1) << ")");
-            teardown();
-            return false;
-        }
-
-        live = true;
-        FC_LOG("sandbox image live: " << imagePath);
-        return true;
+        return live;
     }
 
-    /// One fcx_call round trip: request CBOR in, reply CBOR out.
+    /// One round trip: request CBOR in, decoded reply out.
     bool roundTrip(const std::vector<uint8_t>& request, json& reply)
     {
-        // write the request into guest memory
-        wasmtime_val_t args[2], result;
-        args[0].kind = WASMTIME_I32;
-        args[0].of.i32 = (int32_t)request.size();
-        if (!callSimple(funcAlloc, args, 1, &result, 1, "fcx_alloc"))
+        if (!live || !rt)
             return false;
-        uint32_t guestPtr = (uint32_t)result.of.i32;
-        uint8_t* mem = wasmtime_memory_data(context, &memory);
-        size_t memSize = wasmtime_memory_data_size(context, &memory);
-        if (!guestPtr || guestPtr + request.size() > memSize) {
-            FC_ERR("guest allocation out of range");
+        std::vector<uint8_t> bytes;
+        if (!rt->roundTrip(request, bytes))
             return false;
-        }
-        std::memcpy(mem + guestPtr, request.data(), request.size());
-
-        args[0].kind = WASMTIME_I32;
-        args[0].of.i32 = (int32_t)guestPtr;
-        args[1].kind = WASMTIME_I32;
-        args[1].of.i32 = (int32_t)request.size();
-        bool ok = callSimple(funcCall, args, 2, &result, 1, "fcx_call");
-        // free the request buffer regardless
-        wasmtime_val_t freeArg;
-        freeArg.kind = WASMTIME_I32;
-        freeArg.of.i32 = (int32_t)guestPtr;
-        callSimple(funcFree, &freeArg, 1, nullptr, 0, "fcx_free");
-        if (!ok)
-            return false;
-
-        uint32_t replyPtr = (uint32_t)result.of.i32;
-        mem = wasmtime_memory_data(context, &memory);  // may have moved
-        memSize = wasmtime_memory_data_size(context, &memory);
-        if (!replyPtr || replyPtr + 4 > memSize) {
-            FC_ERR("bad reply pointer");
-            return false;
-        }
-        uint32_t replyLen = 0;
-        std::memcpy(&replyLen, mem + replyPtr, 4);
-        if (replyPtr + 4 + replyLen > memSize) {
-            FC_ERR("bad reply length");
-            return false;
-        }
         try {
-            reply = json::from_cbor(mem + replyPtr + 4,
-                                    mem + replyPtr + 4 + replyLen);
+            reply = json::from_cbor(bytes.begin(), bytes.end());
         }
         catch (const json::exception& e) {
             FC_ERR("undecodable reply: " << e.what());
             reply = json();
         }
-        freeArg.of.i32 = (int32_t)replyPtr;
-        callSimple(funcFree, &freeArg, 1, nullptr, 0, "fcx_free");
         return !reply.is_null();
     }
 };
-
-/// The host_call half of one bridge op: decode the request out of guest
-/// memory, dispatch it, park the reply, return only its length (never
-/// re-enter the guest; the image fetches with its own buffer).  -1
-/// signals a transport-level failure.
-wasm_trap_t* ImageHost::Private::hostCallCb(void* env,
-                                            wasmtime_caller_t* caller,
-                                            const wasmtime_val_t* args,
-                                            size_t nargs,
-                                            wasmtime_val_t* results,
-                                            size_t nresults)
-{
-    auto* d = static_cast<Private*>(env);
-    if (nresults < 1)
-        return nullptr;
-    results[0].kind = WASMTIME_I32;
-    results[0].of.i32 = -1;
-    wasmtime_extern_t ext;
-    if (nargs < 2
-            || !wasmtime_caller_export_get(caller, "memory", 6, &ext)
-            || ext.kind != WASMTIME_EXTERN_MEMORY)
-        return nullptr;
-    wasmtime_context_t* ctx = wasmtime_caller_context(caller);
-    wasmtime_memory_t mem = ext.of.memory;
-    const uint8_t* data = wasmtime_memory_data(ctx, &mem);
-    size_t memSize = wasmtime_memory_data_size(ctx, &mem);
-    uint64_t ptr = (uint32_t)args[0].of.i32;
-    uint64_t len = (uint32_t)args[1].of.i32;
-    if (ptr + len > memSize)
-        return nullptr;
-
-    json reply;
-    try {
-        json req = json::from_cbor(data + ptr, data + ptr + len);
-        reply = dispatchHostOp(d->handles, req);
-    }
-    catch (const std::exception& e) {
-        reply = {{"ok", false}, {"exc", "ProtocolError"}, {"msg", e.what()}};
-    }
-    d->pendingReply = json::to_cbor(reply);
-    results[0].of.i32 = (int32_t)d->pendingReply.size();
-    return nullptr;
-}
-
-wasm_trap_t* ImageHost::Private::hostFetchCb(void* env,
-                                             wasmtime_caller_t* caller,
-                                             const wasmtime_val_t* args,
-                                             size_t nargs,
-                                             wasmtime_val_t* results,
-                                             size_t nresults)
-{
-    auto* d = static_cast<Private*>(env);
-    if (nresults < 1)
-        return nullptr;
-    results[0].kind = WASMTIME_I32;
-    results[0].of.i32 = -1;
-    wasmtime_extern_t ext;
-    if (nargs < 2 || d->pendingReply.empty()
-            || !wasmtime_caller_export_get(caller, "memory", 6, &ext)
-            || ext.kind != WASMTIME_EXTERN_MEMORY)
-        return nullptr;
-    wasmtime_context_t* ctx = wasmtime_caller_context(caller);
-    wasmtime_memory_t mem = ext.of.memory;
-    uint8_t* data = wasmtime_memory_data(ctx, &mem);
-    size_t memSize = wasmtime_memory_data_size(ctx, &mem);
-    uint64_t ptr = (uint32_t)args[0].of.i32;
-    uint64_t cap = (uint32_t)args[1].of.i32;
-    if (ptr + cap > memSize || cap < d->pendingReply.size())
-        return nullptr;
-    std::memcpy(data + ptr, d->pendingReply.data(), d->pendingReply.size());
-    results[0].of.i32 = (int32_t)d->pendingReply.size();
-    d->pendingReply.clear();
-    return nullptr;
-}
-
-bool ImageHost::Private::defineBridge(wasmtime_linker_t* linker)
-{
-    struct
-    {
-        const char* name;
-        wasmtime_func_callback_t cb;
-    } funcs[] = {
-        {"host_call", &Private::hostCallCb},
-        {"host_fetch", &Private::hostFetchCb},
-    };
-    for (auto& fn : funcs) {
-        wasm_functype_t* ft = wasm_functype_new_2_1(wasm_valtype_new_i32(),
-                                                    wasm_valtype_new_i32(),
-                                                    wasm_valtype_new_i32());
-        wasmtime_error_t* err = wasmtime_linker_define_func(
-            linker, "fcx", 3, fn.name, std::strlen(fn.name), ft, fn.cb, this,
-            nullptr);
-        wasm_functype_delete(ft);
-        if (err) {
-            FC_ERR("cannot define fcx." << fn.name << ": "
-                   << errorText(err, nullptr));
-            return false;
-        }
-    }
-    return true;
-}
 
 ImageHost::ImageHost()
     : d(new Private)
@@ -534,11 +210,14 @@ bool ImageHost::available()
 ImageHost::Location ImageHost::location()
 {
     std::lock_guard<std::recursive_mutex> lock(d->mutex);
-    Location loc {d->imagePath, d->stdlibPath, std::string()};
-    if (!d->configured && !d->triedInit)
-        resolvePaths(loc.image, loc.stdlib);
-    loc.cache = cachePathFor(loc.image);
-    return loc;
+    ImageRuntime::Paths where = d->paths();
+    return Location {where.image, where.stdlib, where.cache};
+}
+
+std::string ImageHost::runtime()
+{
+    std::lock_guard<std::recursive_mutex> lock(d->mutex);
+    return d->rt ? std::string(d->rt->name()) : runtimeChoice();
 }
 
 void ImageHost::configure(const std::string& imagePath,

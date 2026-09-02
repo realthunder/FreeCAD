@@ -160,6 +160,13 @@ macro(InitializeFreeCADBuildOptions)
     find_package(Wasmtime QUIET)
     option(BUILD_EXPR_IMAGE_HOST "Build the wasmtime host embedding for the expression sandbox image (see docs/ExpressionImage.md)" ${Wasmtime_FOUND})
     set(FREECAD_EXPR_IMAGE_DIR "" CACHE PATH "Directory holding a built expression sandbox image (fcx_image.wasm + Lib/) to install under the data dir as Fcx/; see docs/ExpressionImage.md")
+    # The second sandbox runtime: pyodide on the bare V8 of the v8-embed
+    # package (docs/PyodideHost.md).  Detected the same way: a box with
+    # v8-embed gets it, one without still builds.  Needs the wasmtime host
+    # too, because the runtime sits behind the same ImageHost seam.
+    find_package(v8-embed CONFIG QUIET)
+    option(BUILD_EXPR_PYODIDE_HOST "Build the V8 + pyodide runtime for the expression sandbox (needs v8-embed; see docs/PyodideHost.md)" ${v8-embed_FOUND})
+    set(FREECAD_PYODIDE_DIR "" CACHE PATH "Directory holding a pyodide distribution plus the fcx_image wheel, to install under the data dir as Pyodide/; see docs/PyodideHost.md")
     # Blender's Cycles path tracer as a vendored renderer
     # (docs/CyclesIntegration.md). OFF: it is a heavy build with
     # environment dependencies (OpenImageIO, Embree, OpenImageDenoise),

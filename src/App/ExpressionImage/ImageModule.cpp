@@ -30,11 +30,21 @@ namespace
 PyObject *fcx_call(PyObject *, PyObject *arg)
 {
     Py_buffer view;
-    if (PyObject_GetBuffer(arg, &view, PyBUF_SIMPLE) != 0)
-        return nullptr;
+    PyObject *owned = nullptr;
+    if (PyObject_GetBuffer(arg, &view, PyBUF_SIMPLE) != 0) {
+        // The host hands a Uint8Array, which arrives as a JsProxy without
+        // the buffer protocol; its to_bytes() is the copy in.
+        PyErr_Clear();
+        owned = PyObject_CallMethod(arg, "to_bytes", nullptr);
+        if (!owned || PyObject_GetBuffer(owned, &view, PyBUF_SIMPLE) != 0) {
+            Py_XDECREF(owned);
+            return nullptr;
+        }
+    }
     std::vector<uint8_t> reply = FcxImage::dispatchCbor(
             static_cast<const uint8_t *>(view.buf), (size_t)view.len);
     PyBuffer_Release(&view);
+    Py_XDECREF(owned);
     return PyBytes_FromStringAndSize(
             reinterpret_cast<const char *>(reply.data()),
             (Py_ssize_t)reply.size());

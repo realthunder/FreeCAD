@@ -241,16 +241,66 @@ a `quantity` of 5.0 with the length unit; `"1 +"` -> `ParserError`;
 The host receives the request as a PyProxy of `bytes` and reads it
 zero-copy with `getBuffer()`.
 
-## 9. Phase 1, step 3: the host runtime (not started)
+## 9. Phase 1, step 3: the host runtime (built 2026-09-02)
 
-1. Pull wasmtime behind a `Runtime` interface inside `ImageHost`
-   (initialize / roundTrip / teardown / location; the bridge dispatch
-   is shared) and add the V8+pyodide runtime from the probe: isolate and
-   context owned for the session (the 1.5 s boot happens once), the
-   shim compiled in as a string (it is the security policy, so it must
-   not be swappable on disk), `fcx_image` loaded from the wheel,
-   selected by the preference `Expression/Sandbox:Runtime`.  The corpus
-   gate and the ExpressionImage gtests then run against it unchanged.
+`ImageHost` now speaks to its guest through `ImageRuntime`
+(`src/App/ExpressionImageRuntime.h`: name / resolve / initialize /
+roundTrip / teardown, plus the bridge callback the guest's mid-eval ops
+travel back through).  Everything above it -- the handle table, the
+bindings pack, `dispatchHostOp`, result decoding -- is untouched and
+shared.  Two runtimes:
+
+- `ExpressionWasmtimeRuntime.cpp` -- the wasmtime code moved out of
+  ImageHost unchanged.  Name `wasi`, the default.
+- `ExpressionPyodideRuntime.cpp` -- the probe, grown up: V8 initialised
+  once per process, an isolate and context owned for the session, the
+  shim and the glue (`src/App/PyodideHost/pyodide_glue.js`) compiled in
+  through `embed_js.py`, pyodide booted from the scoped directory, the
+  `fcx_image` wheel loaded, the guest's bridge callable wired to a native
+  `__fcx_bridge`.  Name `pyodide`.
+
+Selection: the preference `Expression/Sandbox:Runtime`, else the
+`FCX_RUNTIME` environment (how tests and the corpus gate pick a runtime
+per process), else `wasi`.  Paths for pyodide: `PyodideDir` /
+`PyodideWheel` preferences, else `FCX_PYODIDE` / `FCX_PYODIDE_WHEEL`,
+else `<datadir>/Pyodide`; the wheel defaults to the first
+`fcx_image-*.whl` in the directory.  Build: `BUILD_EXPR_PYODIDE_HOST`
+defaults to whether `v8-embed` is found (it is installed in the dev
+env), `FREECAD_PYODIDE_DIR` installs and mirrors a distribution.
+
+**Result: the 69 ExpressionImage / ExpressionRouting /
+ExpressionSecurity gtests pass on BOTH runtimes**, so the pyodide guest
+honours the same seam contract -- typed values, quantities, bool
+identity, tuples, handles and their release, facades, permission gates,
+the parity of parser errors, and the routing tests through the real
+expression engine.  The one bug on the way: `mod.call` is a BORROWED
+attribute proxy in pyodide and died with `mod.destroy()`; `copy()` it.
+
+What one round trip costs on each runtime (ExpressionImageBenchTest,
+this box, 2026-09-02):
+
+    bench                        pyodide      wasi
+    transport floor               40.5 us     2.7 us
+    wire floor (eval "1")         89.0 us    12.8 us
+    expression 1+2*3-4/5          86.9 us    12.8 us
+    one property                 106.6 us    22.2 us
+    one bridge hop              +136.8 us   +28.9 us
+    instantiate + first eval    1700   ms    14   ms
+
+The engine is not the cost: the probe measured a Python call at 0.53 us
+on the same V8.  The cost is the BYTE TRANSPORT as written -- a JsProxy
+minted per request (`to_bytes()`), a PyProxy plus `getBuffer()` plus a
+copy per reply, and the same again for every bridge hop.  A shared
+buffer in wasm linear memory (write the request into `HEAPU8` at a
+pointer the guest exports, read the reply from another) would remove
+every proxy from the hot path; that is the first optimisation to make,
+and it is a transport change only.  Until it is made the pyodide
+runtime is about 7x slower per expression than the WASI image, and
+100 us per expression is still far from the user-visible range.
+
+1. DONE (section 9).  Still owed: the corpus gate on the pyodide
+   runtime (`FCX_RUNTIME=pyodide scripts/expr-switchover/run_gate.sh`),
+   and the shared-buffer transport.
 2. Marshalling: FcxWire is CBOR over a byte buffer; on this runtime the
    cheaper path is direct V8 values (the 45 ns C++ -> V8 hop measured
    2026-09-01), with the bindings pack handed over as a JS object.

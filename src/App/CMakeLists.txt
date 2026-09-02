@@ -93,7 +93,8 @@ if(BUILD_EXPR_IMAGE_HOST)
                             "API was not found (set WASMTIME_CAPI_DIR; see "
                             "docs/ExpressionImage.md)")
     endif()
-    set(ExpressionImageHost_SRC ExpressionImageHost.cpp ExpressionImageBridge.cpp)
+    set(ExpressionImageHost_SRC ExpressionImageHost.cpp ExpressionImageBridge.cpp
+                                ExpressionImageRuntime.h ExpressionWasmtimeRuntime.cpp)
     include_directories(${Wasmtime_INCLUDE_DIR})
     # Lets ExpressionEvaluator.cpp route evaluation into the image; every
     # other TU ignores it, and no header depends on it (no ABI edge).
@@ -175,6 +176,56 @@ if(BUILD_EXPR_IMAGE_HOST)
     list(APPEND ExpressionImageHost_SRC ${FCX_DISPATCH_INC})
     set_source_files_properties(${FCX_DISPATCH_INC} PROPERTIES
         GENERATED TRUE HEADER_FILE_ONLY TRUE)
+
+    # The pyodide runtime (docs/PyodideHost.md): pyodide on the bare V8 of
+    # v8-embed, behind the same seam.  Its two JavaScript files -- the
+    # Web-environment shim and the boot/call glue -- are compiled INTO the
+    # library: the shim is the security policy, and a policy that can be
+    # edited beside the program is not one.
+    if(BUILD_EXPR_PYODIDE_HOST)
+        find_package(v8-embed CONFIG REQUIRED)
+        find_package(Threads REQUIRED)
+        set(FCX_PYODIDE_DIR ${CMAKE_SOURCE_DIR}/src/App/PyodideHost)
+        foreach(_js host_shim:PyodideShim pyodide_glue:PyodideGlue)
+            string(REPLACE ":" ";" _pair ${_js})
+            list(GET _pair 0 _file)
+            list(GET _pair 1 _ident)
+            add_custom_command(
+                OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${_ident}.inc
+                COMMAND ${PYTHON_EXECUTABLE} ${FCX_PYODIDE_DIR}/embed_js.py
+                        ${FCX_PYODIDE_DIR}/${_file}.js
+                        ${CMAKE_CURRENT_BINARY_DIR}/${_ident}.inc k${_ident}
+                DEPENDS ${FCX_PYODIDE_DIR}/${_file}.js ${FCX_PYODIDE_DIR}/embed_js.py
+                COMMENT "Embedding ${_file}.js into the pyodide runtime")
+            list(APPEND ExpressionImageHost_SRC ${CMAKE_CURRENT_BINARY_DIR}/${_ident}.inc)
+            set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/${_ident}.inc PROPERTIES
+                GENERATED TRUE HEADER_FILE_ONLY TRUE)
+        endforeach()
+        list(APPEND ExpressionImageHost_SRC ExpressionPyodideRuntime.cpp)
+        add_definitions(-DFC_EXPR_PYODIDE_HOST)
+        list(APPEND FreeCADApp_LIBS v8-embed::v8 Threads::Threads)
+
+        # The pyodide files (pyodide.js, pyodide.asm.*, python_stdlib.zip,
+        # pyodide-lock.json, wheels) plus the fcx_image wheel: shipped as
+        # <datadir>/Pyodide, like the wasi image as <datadir>/Fcx, and
+        # mirrored into the build tree so a dev build resolves them the
+        # way an install does.
+        if(FREECAD_PYODIDE_DIR)
+            if(NOT EXISTS "${FREECAD_PYODIDE_DIR}/pyodide.js")
+                message(FATAL_ERROR "FREECAD_PYODIDE_DIR has no pyodide.js: ${FREECAD_PYODIDE_DIR}")
+            endif()
+            install(DIRECTORY ${FREECAD_PYODIDE_DIR}/
+                    DESTINATION ${CMAKE_INSTALL_DATADIR}/Pyodide)
+            set(_pyodide_data ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide)
+            add_custom_command(
+                OUTPUT ${_pyodide_data}/pyodide.js
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                        ${FREECAD_PYODIDE_DIR} ${_pyodide_data}
+                DEPENDS ${FREECAD_PYODIDE_DIR}/pyodide.js
+                COMMENT "Mirroring the pyodide distribution into the build tree")
+            add_custom_target(PyodideData ALL DEPENDS ${_pyodide_data}/pyodide.js)
+        endif()
+    endif()
     set(CMAKE_ADD_CUSTOM_COMMAND_DEPENDS_EXPLICIT_ONLY OFF)
 else()
     set(ExpressionImageHost_SRC)

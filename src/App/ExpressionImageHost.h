@@ -23,8 +23,10 @@
 
 /* The desktop host side of the expression sandbox image
  * (docs/ExpressionSandbox.md secs 6/7, docs/ExpressionImage.md):
- * embeds wasmtime, owns one instantiated image per principal, and
- * speaks the FcxWire CBOR protocol to src/App/ExpressionImage/.
+ * owns one instantiated image and speaks the FcxWire CBOR protocol to
+ * src/App/ExpressionImage/ through a runtime (ExpressionImageRuntime.h):
+ * wasmtime for the wasm32-wasi image, or V8 + pyodide for the same image
+ * as a pyodide extension wheel (docs/PyodideHost.md).
  *
  * Compiled only when FREECAD_EXPR_IMAGE is ON (needs libwasmtime);
  * everything here is host-only and never part of ExpressionCore.
@@ -86,6 +88,10 @@ public:
         std::string cache;
     };
     Location location();
+
+    /// The runtime carrying the sandbox ("wasi" or "pyodide"): the live
+    /// one, else the one the preference / FCX_RUNTIME would select.
+    std::string runtime();
 
     /// Evaluate one expression source with pre-resolved bindings.
     /// `bindingsCbor` is a CBOR-encoded map of name -> wire value
