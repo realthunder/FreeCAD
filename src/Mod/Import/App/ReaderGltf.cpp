@@ -62,7 +62,19 @@ ReaderGltf::ReaderGltf(const Base::FileInfo& file)
 {
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Import");
-    keep = hGrp->GetBool("GltfKeepMesh", true);
+    const long stated = hGrp->GetInt("GltfRebuildBRep",
+                                     static_cast<long>(RebuildBRep::None));
+    switch (stated) {
+        case static_cast<long>(RebuildBRep::Auto):
+            rebuild = RebuildBRep::Auto;
+            break;
+        case static_cast<long>(RebuildBRep::All):
+            rebuild = RebuildBRep::All;
+            break;
+        default:
+            rebuild = RebuildBRep::None;
+            break;
+    }
 }
 
 // NOLINTNEXTLINE
@@ -162,7 +174,7 @@ void ReaderGltf::processDocument(Handle(TDocStd_Document) hDoc)
                 aShapeTool->SetShape(topLevelshape, compound);
             }
             else {
-                if (!hasTexturedMaterial(aVisTool, topLevelshape) && !keepsMesh(shape)) {
+                if (rebuilds(shape, hasTexturedMaterial(aVisTool, topLevelshape))) {
                     aShapeTool->SetShape(topLevelshape, fixShape(shape));
                 }
                 // like processSubShapes: ImportOCAF2 reads color labels,
@@ -215,7 +227,7 @@ TopoDS_Shape ReaderGltf::processSubShapes(Handle(TDocStd_Document) hDoc,
         }
 
         TopoDS_Shape face = aShapeTool->GetShape(faceLabel);
-        if (!hasTexturedMaterial(aVisTool, faceLabel) && !keepsMesh(face)) {
+        if (rebuilds(face, hasTexturedMaterial(aVisTool, faceLabel))) {
             TopoDS_Shape fixed = fixShape(face);
             aShapeTool->SetShape(faceLabel, fixed);
             face = fixed;
@@ -234,12 +246,25 @@ TopoDS_Shape ReaderGltf::processSubShapes(Handle(TDocStd_Document) hDoc,
     return {std::move(compound)};
 }
 
-bool ReaderGltf::keepsMesh(const TopoDS_Shape& shape) const
+bool ReaderGltf::rebuilds(const TopoDS_Shape& shape, bool textured) const
 {
 #if OCC_VERSION_HEX >= 0x070500
-    return keep && hasTextureCoordinates(shape);
+    switch (rebuild) {
+        case RebuildBRep::All:
+            return true;
+        case RebuildBRep::Auto:
+            // What the rebuild would drop, asked of the material and then
+            // of the mesh itself: a file whose images are named from
+            // outside it -- a MaterialX look beside it, say -- has an
+            // untextured material and UV nodes all the same
+            return !textured && !hasTextureCoordinates(shape);
+        case RebuildBRep::None:
+            break;
+    }
+    return false;
 #else
     boost::ignore_unused(shape);
+    boost::ignore_unused(textured);
     return false;
 #endif
 }
@@ -254,14 +279,14 @@ void ReaderGltf::setCleanup(bool value)
     clean = value;
 }
 
-bool ReaderGltf::keepMesh() const
+ReaderGltf::RebuildBRep ReaderGltf::rebuildBRep() const
 {
-    return keep;
+    return rebuild;
 }
 
-void ReaderGltf::setKeepMesh(bool value)
+void ReaderGltf::setRebuildBRep(RebuildBRep value)
 {
-    keep = value;
+    rebuild = value;
 }
 
 TopoDS_Shape ReaderGltf::fixShape(TopoDS_Shape shape)  // NOLINT

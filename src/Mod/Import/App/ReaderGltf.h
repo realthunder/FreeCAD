@@ -41,20 +41,43 @@ public:
     void read(Handle(TDocStd_Document) hDoc);
     bool cleanup() const;
     void setCleanup(bool);
-    /** Whether a mesh that states texture coordinates keeps its
-     * triangulation instead of being rebuilt as B-Rep geometry.
+
+    /** What a glTF mesh becomes: the triangulation the file states, or
+     * B-Rep geometry sewn from its facets.
      *
-     * The rebuild goes through points and facets and drops the UVs with
-     * everything else the file said about the surface, so a mesh authored
-     * for images cannot be shaded after it. On by default, and the
-     * `GltfKeepMesh` preference under Mod/Import turns it off for a file
-     * wanted as geometry rather than as an asset.
+     * glTF is a mesh format, and the rebuild is a translation with a
+     * price: it goes through points and facets, so it drops the UVs and
+     * the authored normals with everything else the file said about the
+     * surface -- a mesh authored for images cannot be shaded after it --
+     * and on a large mesh it dominates the import (chess_set.glb, 1.5M
+     * triangles: fifteen minutes and unfinished, against 0.2 seconds
+     * without). What it buys is a shape with edges and vertices, which
+     * is what CAD work selects, snaps and dimensions.
+     *
+     * The `GltfRebuildBRep` preference under Mod/Import states which,
+     * and defaults to None.
      */
-    bool keepMesh() const;
-    void setKeepMesh(bool);
+    enum class RebuildBRep
+    {
+        /// Never. Each mesh arrives as the face (or faces) the reader
+        /// built, carrying its triangulation, its UVs and its normals.
+        None = 0,
+        /// Only where nothing needs what the rebuild would drop: a mesh
+        /// whose material names a texture, or whose triangulation states
+        /// texture coordinates, is left alone.
+        Auto = 1,
+        /// Always, whatever the mesh states. Upstream FreeCAD's
+        /// behaviour, and the escape hatch for a file wanted purely as
+        /// geometry.
+        All = 2,
+    };
+    RebuildBRep rebuildBRep() const;
+    void setRebuildBRep(RebuildBRep);
 
 private:
-    bool keepsMesh(const TopoDS_Shape&) const;
+    /// Whether \a shape is rebuilt. \a textured says the mesh's own
+    /// visualization material names a texture map.
+    bool rebuilds(const TopoDS_Shape& shape, bool textured) const;
     TopoDS_Shape fixShape(TopoDS_Shape);
     void processDocument(Handle(TDocStd_Document) hDoc);
     TopoDS_Shape processSubShapes(Handle(TDocStd_Document) hDoc,
@@ -63,7 +86,7 @@ private:
 private:
     Base::FileInfo file;
     bool clean = true;
-    bool keep = true;
+    RebuildBRep rebuild = RebuildBRep::None;
 };
 
 }  // namespace Import

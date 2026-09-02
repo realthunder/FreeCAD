@@ -1804,17 +1804,30 @@ test.
 
 **Two things had to be fixed under it before there was a picture.**
 
-1. **A mesh that states texture coordinates keeps its triangulation.**
-   `ReaderGltf` rebuilt B-Rep geometry from the facets of every mesh whose
-   glTF material was untextured -- which the chess set's is, since its
-   images are named by the MaterialX document and not by the glb. The
-   rebuild goes through points and facets, so the UVs the look shades
-   through are destroyed by it, and on 1.5M triangles the sew did not
-   finish in **fifteen minutes** (measured; killed at the timeout). The
-   textured case already kept its triangulation for exactly this reason,
-   so the gate now also asks the shape: any face whose triangulation has
-   UV nodes keeps it. The same import then takes **0.2 seconds**.
-   `GltfKeepMesh` (Mod/Import) turns it off for a file wanted as geometry.
+1. **Rebuilding a glTF mesh as B-Rep is now a parameter, and off.**
+   `ReaderGltf` rebuilt B-Rep geometry from the facets of every mesh --
+   unconditionally upstream, and here for every mesh whose glTF material
+   was untextured, which the chess set's is, since its images are named
+   by the MaterialX document and not by the glb. The rebuild goes through
+   points and facets, so the UVs the look shades through are destroyed by
+   it, and on 1.5M triangles the sew did not finish in **fifteen
+   minutes** (measured; killed at the timeout). Without it the same
+   import takes **0.2 seconds**. It is not the chess set's size that does
+   it either: `shaderball.glb`, 88 thousand triangles, imports in **0.18
+   seconds** as read and did not finish rebuilding in fifteen minutes
+   either -- and that is upstream's path with upstream's settings, the
+   same facets-to-B-Rep pass followed by `sewShape()` and
+   `removeSplitter()`.
+
+   glTF is a mesh format, so the rebuild is a translation with a price on
+   both sides: it drops the UVs and the authored normals, and it buys a
+   shape with edges and vertices, which is what CAD work selects and
+   dimensions. That is a choice, not a default, so `GltfRebuildBRep`
+   (Mod/Import) states it: **None (0), the default** -- every mesh
+   arrives as read; **Auto (1)** -- rebuilt only where nothing needs what
+   the rebuild would drop, which asks the material for a texture and then
+   the triangulation for UV nodes; **All (2)** -- always, which is
+   upstream FreeCAD's behaviour.
 2. **A MaterialX graph needs the unit-0 stand-in.** The shapes generate
    texture coordinates -- and the render cache captures them -- only while
    a texture UNIT IS ENABLED, which is why a bump-only or per-face-imaged
