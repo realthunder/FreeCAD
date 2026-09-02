@@ -610,10 +610,20 @@ void ViewProviderGeometryObject::updateRenderTexture()
     // object-space position.
     const bool faceImages = ShapeAppearance.hasImage();
     const bool faceImagesOnMeshUV = faceImages && faceTextureScale() <= 0.0f;
+    // A MaterialX shader graph is the third case, and the plainest one:
+    // its image nodes read `texcoord`, which is the mesh's OWN
+    // coordinates in both backends -- the generated raster code samples
+    // v_texcoord0 and the path tracer's interpreter emits a texture
+    // coordinate node reading ATTR_STD_UV. Without an enabled unit there
+    // are none of either, and every one of the document's maps comes out
+    // as its corner texel: MaterialX's chess set rendered as flat grey
+    // paint (docs/MaterialStorage.md sec 17.13).
+    const bool materialXGraph =
+        ShapeAppearance.getSize() && !ShapeAppearance.getBase().materialx.empty();
     bool wantTexture = (color && color[0]) || (bump && bump[0])
         || (emissive && emissive[0]) || (occlusion && occlusion[0])
         || (metallicroughness && metallicroughness[0])
-        || faceImagesOnMeshUV;
+        || faceImagesOnMeshUV || materialXGraph;
     if (!wantTexture) {
         if (pcRenderTexture) {
             int idx = pcRoot->findChild(pcRenderTexture);
