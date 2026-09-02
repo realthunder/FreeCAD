@@ -6,6 +6,9 @@ General:
   License: "CC-BY-3.0"
   Name: "PTFE"
   SourceURL: "http://www.matweb.com/search/datasheet.aspx?MatGUID=4d14eac958e5401a8fd152e1261b6843"
+Inherits:
+  Plastic:
+    UUID: "a74622cd-0e2d-4a96-b8c4-fefcc82ac694"
 Models:
   LinearElastic:
     UUID: '7b561d1d-fb9b-44f6-9da9-56a4f74d7536'

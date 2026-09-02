@@ -315,6 +315,16 @@ team-years of work; the near-term list is deliberately small.
 - WebGPU renderer backend as it matures.
   <span style="color:#9a6a12">**Still long term (2026-07).** bgfx's WebGPU backend is
   native-Dawn-only; browser = WebGL2 for the foreseeable future. Re-evaluate ~2027.</span>
+- A client-side path tracer in the browser viewer, complementary to the streamed Cycles
+  viewport: no backend, zero interaction latency, renders from the static snapshot a
+  shared link already carries. <span style="color:#9a6a12">**Deferred (2026-08).**
+  Prior art is `portsmouth/OpenPBR-viewer` (BVH baked into textures, full-screen fragment
+  tracing, progressive accumulation) -- a one-material demo whose limits are ours too:
+  texture-baked BVHs, no top-level BVH for instance-heavy scenes, no compute in WebGL2, no
+  denoiser, mobile thermals. Contingent on the WebGPU backend above; until then the
+  streamed Cycles viewport is the path-traced route (docs/CyclesIntegration.md sec 7.1,
+  and item 15 phase B for what is taken from OpenPBR-viewer now: its two OpenPBR GLSL
+  implementations as references).</span>
 
 ## Open questions
 - ~~Which backend wins long-term (bgfx vs Diligent/WebGPU) — decide as WebGPU stabilizes.~~

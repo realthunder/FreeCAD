@@ -25,6 +25,8 @@
 #define GUI_VIEWPROVIDER_GEOMETRYOBJECT_H
 
 #include "ViewProviderDragger.h"
+#include <App/Material.h>
+#include <Base/Tools.h>
 #include <Inventor/lists/SoPickedPointList.h>
 #include <cstdint>
 #include <vector>
@@ -189,6 +191,46 @@ public:
      */
     void refreshAppearanceMirrors();
 
+    /** Choose the appearance's base, for a document written without one
+     *
+     * Every document written before docs/ShapeAppearanceDesign.md 12 -- and
+     * every one saved at schema 4, which cannot state a base -- holds one
+     * material per face and nothing saying which of them the object is.
+     * This runs the heuristic of 12.4 once, here, where the mirror is in
+     * hand: the mirror first, then the face areas if it declines.
+     */
+    void deriveAppearanceBase();
+
+    /** One weight per face for that heuristic, if this view provider has
+     * a shape to measure
+     *
+     * Area, not count: a green board with five hundred gold pads is decided
+     * the wrong way by count. False when there is nothing to measure, and
+     * then the count decides -- which is what 12.4 calls the fallback with
+     * no shape at hand. Asked only when the mirror has already declined,
+     * because measuring every face of an import is not free.
+     */
+    virtual bool getFaceWeights(std::vector<double> &weights) const;
+
+    /** Take the object's material card as the appearance's base
+     *
+     * A no-op unless the appearance is FOLLOWING the card
+     * (docs/MaterialStorage.md 15.3) -- or has never been touched, which is
+     * how a fresh object with a card starts following one. The overriding
+     * faces are left alone, so a following object keeps its painted faces.
+     */
+    void applyMaterialAppearance();
+
+    /** Decide, once, whether a restored appearance follows its card
+     *
+     * A document written before the flag existed cannot state it, and
+     * neither can one saved at schema 4. The answer is the one the old
+     * runtime heuristic gave: a base that is the card's look, or an
+     * untouched one while the card has a look, is following
+     * (docs/MaterialStorage.md 15.4).
+     */
+    void deriveFollowMaterial();
+
     /**
      * Returns a list of picked points from the geometry under \a getRoot().
      * If \a pickAll is false (the default) only the intersection point closest to the camera will be picked, otherwise
@@ -300,14 +342,58 @@ protected:
     SoShadowStyle    * pcRenderShadowStyle{nullptr};
 
 private:
-    /// Last appearance adopted from the object's material card. Lets us tell
-    /// an appearance the material supplied from one the user set by hand.
-    App::Material materialAppearance;
     SoFCBoundingBox  * pcBoundingBox{nullptr};
     SoSwitch         * pcBoundSwitch{nullptr};
     SoBaseColor      * pcBoundColor{nullptr};
     SoNodeSensor     * pcSwitchSensor{nullptr};
 };
+
+/** @name The Render_* dynamic view properties
+ *
+ * These are optional per-object properties: a feature is "overridden"
+ * exactly when its property exists on the view provider, and absent means
+ * the engine's default rather than zero. Two callers create them -- the
+ * Render Settings task panel and a material card carrying render
+ * properties -- so the creation lives here and there is one creator.
+ * addDynamicProperty applies a fresh property immediately.
+ *
+ * The helpers take the container, not the view provider: nothing in them
+ * is Gui, and that is what lets the mapping be tested on a document
+ * object -- a view provider cannot exist without the Gui application and
+ * its main window, which every property write of one reaches.
+ */
+//@{
+template<class PropT>
+PropT *getRenderProperty(App::PropertyContainer *vp, const char *name)
+{
+    return Base::freecad_dynamic_cast<PropT>(vp->getPropertyByName(name));
+}
+
+template<class PropT>
+PropT *ensureRenderProperty(App::PropertyContainer *vp, const char *type,
+                            const char *name, const char *doc)
+{
+    if (auto prop = getRenderProperty<PropT>(vp, name))
+        return prop;
+    return Base::freecad_dynamic_cast<PropT>(
+            vp->addDynamicProperty(type, name, "Render", doc));
+}
+
+inline void removeRenderProperty(App::PropertyContainer *vp, const char *name)
+{
+    if (vp->getPropertyByName(name))
+        vp->removeDynamicProperty(name);
+}
+
+/** State a material card's render properties on a view provider.
+ *
+ * Creates what @a props names and REMOVES every property of a feature it
+ * does not name, so switching from a glass card to an ordinary one leaves
+ * no strays behind. Answers whether anything changed.
+ */
+GuiExport bool applyMaterialRenderProperties(App::PropertyContainer *vp,
+                                             const App::MaterialRenderProperties &props);
+//@}
 
 } // namespace Gui
 

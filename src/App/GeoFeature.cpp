@@ -310,3 +310,8 @@ void GeoFeature::setMaterialAppearance(const App::Material& material)
 {
     (void)material;
 }
+
+App::MaterialRenderProperties GeoFeature::getMaterialRenderProperties() const
+{
+    return {};
+}

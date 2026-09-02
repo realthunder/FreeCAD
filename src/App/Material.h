@@ -26,6 +26,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <App/Color.h>
 
@@ -406,6 +407,29 @@ public:
 private:
     MaterialType _matType;
 };
+
+/** One dynamic Render_* view property stated by a material card.
+ *
+ * The renderer's media features -- glass and its kin -- are per-object
+ * dynamic properties on the VIEW provider, not fields of Material: they
+ * turn a closed shape into a volume, and a volume has no faces to attach
+ * a per-face appearance to (docs/ShapeAppearanceDesign.md sec 8). A card
+ * that wants to state one therefore hands over a list of these rather
+ * than anything Material could carry, and the Gui side creates the
+ * properties. The type lives here, in App, because it has to cross from
+ * the Materials module to Gui, which cannot see Materials directly.
+ */
+struct AppExport MaterialRenderProperty
+{
+    /// The view property name, e.g. "Render_GlassIOR".
+    std::string name;
+    /// true selects App::PropertyBool, false App::PropertyFloat.
+    bool boolean {false};
+    /// For a bool property, non-zero is true.
+    double value {0.0};
+};
+
+using MaterialRenderProperties = std::vector<MaterialRenderProperty>;
 
 } //namespace App
 

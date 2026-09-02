@@ -248,6 +248,12 @@ public:
     }
 
     App::Material getMaterialAppearance() const;
+    /* Render_* view properties this card states, empty for almost every
+     * card. Separate from getMaterialAppearance() because App::Material
+     * deliberately does not carry the media features; see the type's
+     * comment in App/Material.h.
+     */
+    App::MaterialRenderProperties getRenderProperties() const;
 
     void setLibrary(const std::shared_ptr<MaterialLibrary>& library)
     {

@@ -943,9 +943,21 @@ QIcon MaterialTreeWidget::cardIcon(const QString& uuid, const QIcon& fallback)
         if (!material || !material->hasAppearanceProperties()) {
             return fallback;
         }
+        // A hatch pattern states a 2D fill and no surface, so there is
+        // nothing to render it as: all 32 of the bundled ones carry the
+        // same default appearance and would come back the same grey
+        // sphere. Its swatch is drawn flat and bundled instead.
+        if (!material->hasAppearanceModel(Materials::ModelUUIDs::ModelUUID_Rendering_Basic)
+            && (material->hasAppearanceModel(Materials::ModelUUIDs::ModelUUID_Patterns_PAT)
+                || material->hasAppearanceModel(
+                    Materials::ModelUUIDs::ModelUUID_Patterns_PatternFile))) {
+            QIcon swatch = MaterialIcons::instance().patternIcon(uuid, material->getName());
+            return swatch.isNull() ? fallback : swatch;
+        }
         QIcon icon = MaterialIcons::instance().icon(uuid,
                                                     material->getMaterialAppearance(),
-                                                    material->getName());
+                                                    material->getName(),
+                                                    material->getRenderProperties());
         if (!icon.isNull()) {
             return icon;
         }
@@ -1013,7 +1025,8 @@ void MaterialTreeWidget::refreshIcon(const QString& uuid)
     auto restate = [this, &uuid](QStandardItem* item) {
         auto material = getMaterialManager().getMaterial(uuid);
         item->setIcon(MaterialIcons::instance().icon(
-            uuid, material->getMaterialAppearance(), material->getName()));
+            uuid, material->getMaterialAppearance(), material->getName(),
+            material->getRenderProperties()));
         // The tooltip names the icon by path, and there was no path
         // until this render landed.
         item->setToolTip(cardToolTip(uuid));

@@ -559,6 +559,26 @@ static void reportFrameStats(FrameStatsAccum &acc)
     acc = FrameStatsAccum();
 }
 
+/// The bgfx reset flags every init/resize path uses.
+///
+/// MAXANISOTROPY is required for BGFX_SAMPLER_*_ANISOTROPIC to have any
+/// effect: bgfx only raises its internal m_maxAnisotropy (and thus
+/// honors the per-sampler anisotropic flags) when this reset bit is set,
+/// otherwise the flags are silently ignored.
+///
+/// VSYNC is on unless FC_BGFX_NO_VSYNC says otherwise. That escape
+/// hatch exists because vsync makes the renderer unmeasurable: on a
+/// 75Hz panel every leg of a timing run returns 13.34ms to three
+/// decimals whatever the scene costs, so a wall-clock A/B of any render
+/// change reads as exactly zero. Read once -- bgfx::init happens once
+/// per process and the resize path has to agree with it.
+inline uint32_t bgfxResetFlags()
+{
+    static const bool noVsync = (getenv("FC_BGFX_NO_VSYNC") != nullptr);
+    return (noVsync ? 0u : uint32_t(BGFX_RESET_VSYNC))
+        | uint32_t(BGFX_RESET_MAXANISOTROPY);
+}
+
 /// Whether the once-a-second frame-cost line is due. Unlike the
 /// far-field readouts below, what it reports is accumulated on every
 /// frame and only *printed* on a tick, so this gates the printing.
@@ -1735,6 +1755,16 @@ public:
     void removeView(QOpenGLWidget *widget);
 
     void shutdown();
+    /// Whether bgfx is initialised right now. Every bgfx call after
+    /// shutdown() is undefined (bgfx::getStats() locks a mutex that no
+    /// longer exists), and the last view's release shuts the library
+    /// down while renderer objects -- and their pending timers -- live
+    /// on: anything that reaches bgfx from OFF the render path asks
+    /// this first.
+    bool deviceUp() const
+    {
+        return currentType != RendererType::Noop;
+    }
 
 #ifdef FC_RENDERER_STANDALONE
     /// Standalone (no Qt): bgfx owns the native window/canvas handed in
@@ -1751,11 +1781,7 @@ public:
             init.resolution.height = standaloneHeight;
             resetWidth = standaloneWidth;
             resetHeight = standaloneHeight;
-            // MAXANISOTROPY is required for BGFX_SAMPLER_*_ANISOTROPIC to have
-            // any effect: bgfx only raises its internal m_maxAnisotropy (and
-            // thus honors the per-sampler anisotropic flags) when this reset
-            // bit is set — otherwise the flags are silently ignored.
-            init.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY;
+            init.resolution.reset = bgfxResetFlags();
             // 0 leaves bgfx at its build ceiling; a smaller number
             // shortens the per-frame walk over the view table and the
             // per-view pools sized from that ceiling.
@@ -1906,11 +1932,7 @@ public:
             }
             init.resolution.width = widget->width();
             init.resolution.height = widget->height();
-            // MAXANISOTROPY is required for BGFX_SAMPLER_*_ANISOTROPIC to have
-            // any effect: bgfx only raises its internal m_maxAnisotropy (and
-            // thus honors the per-sampler anisotropic flags) when this reset
-            // bit is set — otherwise the flags are silently ignored.
-            init.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY;
+            init.resolution.reset = bgfxResetFlags();
             // See the standalone path above: a startup option, because
             // bgfx::init happens once per process.
             init.limits.maxViews = uint32_t(
@@ -4249,12 +4271,43 @@ public:
                             // in-front-of-the-water inscatter itself —
                             // else a fountain plume / fire over the
                             // pool reads as behind the surface
+        ViewGlassLineSdf,   // scene lines and points behind a glass body,
+                            // rasterized as a signed-distance field for
+                            // ViewGlassSurface to resample. Runs before
+                            // it, and only while glassActive.
         ViewGlassSurface,   // glass body draws re-rendered as glass:
                             // screen-space refraction (IOR + normal),
                             // per-channel thickness absorption from the
                             // glass front/back interval, Fresnel
                             // environment reflection; replaces their
                             // ordinary rendering
+        ViewGlassLine,      // scene lines and points, moved out of
+                            // ViewOpaque while a glass body is on
+                            // screen. A screen-space refraction resamples
+                            // the scene copy through a per-pixel UV
+                            // displacement, and wherever that field
+                            // converges -- which is what a curved glass
+                            // body IS -- it magnifies whatever it
+                            // samples. A CAD edge went in one pixel wide
+                            // and came out two or three, smeared further
+                            // by the bilinear fetch and, on rough glass,
+                            // by the 16-tap disc. There is no fixing that
+                            // in the glass shader: the line was already
+                            // rasterized before the lens saw it. So the
+                            // lines are simply not in the copy -- they
+                            // land here instead, after the refraction, at
+                            // the exact pixel width they asked for.
+                            // Lines the glass hides are not dropped:
+                            // they go into ViewGlassLineSdf as a
+                            // distance field the glass pass resamples,
+                            // so they warp with the face they lie on and
+                            // still keep their stated pixel width. Only
+                            // while glassActive: with
+                            // no glass body the lines stay in ViewOpaque
+                            // and nothing about their ordering changes.
+                            // The cost of being here is that these lines
+                            // miss ViewVolApply, so they are not fogged
+                            // by a volumetric the way the fills are.
         ViewParticles,      // blended user particle draws (a "particle"
                             // stage program whose Blend is not Default).
                             // Their own view because the bucket they
@@ -4547,6 +4600,7 @@ public:
         fn(waterBackFbo, LifeSized);
         fn(glassFrontFbo, LifeSized);
         fn(glassBackFbo, LifeSized);
+        fn(lineSdfFbo, LifeSized);
         fn(cloudFrontFbo, LifeSized);
         fn(cloudBackFbo, LifeSized);
         fn(fireFrontFbo, LifeSized);
@@ -4604,6 +4658,8 @@ public:
         fn(u_groundFadeV, LifeProgram);
         fn(s_texGlassFront, LifeProgram);
         fn(s_texGlassBack, LifeProgram);
+        fn(s_texLineSdf, LifeProgram);
+        fn(s_texLineSdfAux, LifeProgram);
         fn(u_glassParams, LifeProgram);
         fn(s_texCloudFront, LifeProgram);
         fn(s_texCloudBack, LifeProgram);
@@ -4694,6 +4750,7 @@ public:
         fn(u_bulbShadowRot, LifeProgram);
         // PBR environment resources.
         fn(m_envTex, LifeProgram);
+        fn(m_envBgTex, LifeProgram);
         fn(m_dummyEnvTex, LifeProgram);
         fn(s_texNormalZ, LifeProgram);
         fn(s_texAONoise, LifeProgram);
@@ -4913,6 +4970,14 @@ public:
     // form, basis and 1/pi constants folded so the shader evaluates
     // plain dot products. CPU cost is a one-off ~2M radiance samples.
     void ensureEnvironment();
+
+    // Build the background cubemap (m_envBgTex) the same environment
+    // is drawn FROM: the base level at kEnvBgSize, then plain box
+    // downsamples all the way to 1x1, which is what the blur factor
+    // slides along. Kept apart from the lighting cube because the two
+    // want different things -- see kEnvBgSize -- and called from
+    // ensureEnvironment, so both are rebuilt by the same invalidation.
+    void buildEnvBackground();
 
     /// Give \a geom its buffers if it has none, and account for the
     /// refusal when the handle pool has none left to give. The draw
@@ -5368,8 +5433,11 @@ public:
     /// quad. The background view keeps the scene view/proj for this
     /// (the fullscreen vertex shader ignores them; the fragment shader
     /// reconstructs each pixel's world direction from the predefined
-    /// u_proj/u_invView). A soft cubemap lod keeps the studio lobes
-    /// from reading as hard clipped discs.
+    /// u_proj/u_invView).
+    ///
+    /// How far out of focus it is drawn is Render_PBREnvBlur, a lod
+    /// along m_envBgTex's box mip chain: zero is the map as baked,
+    /// which is the same backdrop the path tracer shows.
     void submitEnvBackground();
 
     void submitBackground(const Render::Background &bg);
@@ -5378,25 +5446,70 @@ public:
     /// as an NDC depth bias (u_params.w). Positive pushes away from the
     /// viewer. The `factor * m` slope half is per-vertex and lives in
     /// fc_mesh_vs.sh, fed by setPolygonOffsetUniform().
+    /// GL's polygon-offset `factor` for this material, in pixels of
+    /// depth slope to clear. Raised to the reach of whatever decoration
+    /// is drawn over the fill -- a thick line's quad carries the edge's
+    /// depth half its width out to each side, so one pixel does not
+    /// cover it. See the definition.
+    static float polygonOffsetFactor(const Render::Material &mat,
+                                     float decorReach);
+
+    /// How far the decoration drawn over this object's fills reaches
+    /// from its own geometry, in pixels. 1 when the object has none.
+    float decorReachFor(uint64_t objectKey) const;
+
+    /// objectKey -> that reach, rebuilt every frame from the draw list
+    /// (BGFXRenderer::Private::render). A fill's own material cannot
+    /// answer this: SoDrawStyle's line width lives inside the wireframe
+    /// separator, which ViewProviderExt adds after the faces, so the
+    /// fill always sees linewidth 1.
+    std::unordered_map<uint64_t, float> decorReach;
+
     static float polygonOffsetBias(const Render::Material &mat);
 
     /// Ceiling on the depth gradient the vertex stage's slope term
     /// tracks, in NDC depth per NDC screen unit: 1 would be a surface
-    /// crossing the entire depth range within one screen width, so this
-    /// only ever engages on a face within a few degrees of edge-on,
-    /// where the true gradient runs to infinity and GL is saved by such
-    /// a polygon covering no pixels.
+    /// crossing the entire depth range within one screen width, and the
+    /// true gradient runs to infinity as a face turns edge-on.
+    ///
+    /// It is NOT the case that this only engages on slivers. Measured
+    /// (scripts/fill_pullback_slope.py, tilting a plate under a fixed
+    /// camera): the offset saturates 17 degrees off edge-on, on a face
+    /// still covering 29% of its face-on area and 96 pixels of screen.
+    /// How far off depends on the camera's own ry/rz, so there is no
+    /// angle that is safe in general -- what the ceiling buys is a
+    /// BOUND, `factor * 4 * 2 / height` NDC, not a promise that nothing
+    /// visible reaches it. See BGFXView::polygonOffsetFactor for what
+    /// that bound costs a fill's neighbours.
     static constexpr float kPolyOffsetMaxSlope = 4.0f;
+
+    /// Support radius of the line distance field, in pixels, and the
+    /// offset its alpha channel is stored against (alpha = radius - sd,
+    /// so an untouched texel reads as "sd = radius", i.e. no line). Must
+    /// match FC_LINE_SDF_RADIUS in the shaders. 32 is comfortably past
+    /// what any sane line width needs after a lens has stretched it; the
+    /// quads themselves are expanded only as far as their own width
+    /// requires, so this costs no fill.
+    static constexpr float kLineSdfRadius = 32.0f;
+
+    /// Alpha the lines behind glass keep. The material's own
+    /// hiddenlinealpha is about a DIFFERENT question (an on-top line
+    /// occluded by the scene) and is 1 for ordinary scene edges, which
+    /// would make this pass a no-op; glass wants its own answer, and
+    /// this is the value GL's hidden-line style dims to.
+    static constexpr float kGlassLineAlpha = 0.4f;
 
     /// The largest NDC depth bias the slope term can produce for this
     /// material at the current viewport size — what the stencil
     /// outline has to clear to stay behind the fill that owns it.
-    float polygonOffsetMaxBias(const Render::Material &mat) const;
+    float polygonOffsetMaxBias(const Render::Material &mat,
+                               uint64_t objectKey = 0) const;
 
     /// Bind u_polyOffset for one draw: the slope factor and its
     /// ceiling. Call at every site submitting a vs_fc_mesh program;
     /// pass null (or a non-triangle material) to disable the term.
-    void setPolygonOffsetUniform(const Render::Material *mat);
+    void setPolygonOffsetUniform(const Render::Material *mat,
+                                 uint64_t objectKey = 0);
     /// Set u_ambient for a draw: the ambient term Coin would give it,
     /// which is the material's own ambient colour times the
     /// traversal's global ambient. Falls back to the legacy flat floor
@@ -5697,6 +5810,10 @@ public:
     /// vertex programs, so the coverage IS the coverage — with
     /// fs_fc_flat's constant-colour path carrying the id (u_params.x = 0
     /// selects u_matColor; a zero emissive leaves it untouched).
+    /// The one deliberate divergence is the line feather: a negated
+    /// width turns off fs_fc_line's coverage ramp, because this image
+    /// is decoded as exact integers and alpha < 0.5 means "unowned".
+    /// See the u_params assignment below.
     ///
     /// ⚠️ The coverage and depth decisions below are copied from
     /// submit(); they are the ones that decide which pixels a draw
@@ -5730,7 +5847,6 @@ public:
         bool patterned = mat.type == Render::Material::Line
             && (linepattern & 0xffff) != 0xffff;
         bool thickline = mat.type == Render::Material::Line
-            && (mat.linewidth > 1.001f || patterned)
             && m_instancing
             && bgfx::isValid(noseam ? mesh->lineNoSeamInst
                                     : mesh->lineInst);
@@ -5798,10 +5914,22 @@ public:
             // pixels, z = the NDC pull of highlighted lines, w = 1 = no
             // alpha ceiling (the dimming of occluded on-top lines must
             // not touch an id).
+            //
+            // The line width goes in NEGATED, which is how fs_fc_line
+            // is told to skip its analytic coverage (fc_line_vs.sh).
+            // The beauty pass feathers the quad and ramps alpha across
+            // the outer half-pixel; an id image cannot carry that.
+            // reportCullAudit reads alpha < 0.5 as "no draw owns this
+            // pixel", so a ramp would orphan every edge fragment and
+            // report culling damage the frame never had. The
+            // expansion below the ramp is identical, so the pixels
+            // this pass claims are still the pixels the beauty pass
+            // covers -- it loses only the half-pixel of feather, where
+            // the beauty pass is under 50% coverage anyway.
             float params[4] = {
                 0.0f,
                 mat.type == Render::Material::Line
-                    ? qMax(1.0f, std::floor(mat.linewidth + 0.5f))
+                    ? -qMax(1.0f, mat.linewidth)
                     : qMax(1.0f, std::floor(mat.pointsize + 0.5f)),
                 (mat.highlightline && depthtest)
                     ? -2.0f * (2.0f * 16.0f / 16777216.0f) : 0.0f,
@@ -6008,6 +6136,13 @@ public:
     /// reflection (fs_fc_glass). Draws opaquely with depth write like
     /// the water surface.
     void submitGlassSurface(const Render::DrawCall &draw, bool depthReject);
+
+    /// Rasterize one line or point draw into the decoration
+    /// distance field.
+    /// Fragments in front of the glass are discarded there, so only what
+    /// is actually seen through the body ends up in the field.
+    void submitLineSdf(const Render::DrawCall &draw, const float *viewMatrix,
+                       bool noseam);
 
     /// Composite the fountain/fire media into the mirrored-scene
     /// reflection texture (premultiplied over): the analytic cylinder
@@ -6277,7 +6412,9 @@ public:
             case ViewDebugScene: return "debugscene";
             case ViewIdReadback: return "idreadback";
             case ViewWaterSurface: return "watersurface";
+            case ViewGlassLineSdf: return "glasslinesdf";
             case ViewGlassSurface: return "glasssurface";
+            case ViewGlassLine: return "glassline";
             case ViewParticles: return "particles";
             case ViewGroundRefl: return "groundrefl";
             case ViewVolGen: return "volgen";
@@ -6484,7 +6621,23 @@ public:
     // megabyte of RGBA16F per view and a one-off prefilter, both paid
     // once when the environment changes rather than per frame.
     static constexpr uint16_t kEnvSize = 128;
+    /// The background map is a second cube, and a sharper one: what
+    /// the lighting map is good at (a prefiltered lobe per roughness)
+    /// is not what a backdrop needs, and its base level is only as big
+    /// as the reflections asked for. 256 a face is the same angular
+    /// resolution the path tracer bakes its world at
+    /// (SceneTranslator::translateWorld, 1024x512 equirect), so at
+    /// blur 0 the two shading models show the SAME backdrop -- which
+    /// is the whole point of the control. Its mips are plain box
+    /// downsamples rather than GGX lobes: a defocused backdrop is what
+    /// they stand for, not a reflection, and box levels cost nothing
+    /// against the 64-sample prefilter the lighting cube pays.
+    static constexpr uint16_t kEnvBgSize = 256;
     bgfx::TextureHandle m_envTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_envBgTex = BGFX_INVALID_HANDLE;
+    /// Number of mip levels in m_envBgTex, so the blur factor has a
+    /// range to land on.
+    int m_envBgMips = 1;
     bgfx::TextureHandle m_dummyEnvTex = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texEnv = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_pbrParams = BGFX_INVALID_HANDLE;
@@ -6564,6 +6717,10 @@ public:
     }
     float pbrRoughness = 0.0f; // <= 0: derive from the material shininess
     float pbrEnvIntensity = 1.0f;
+    /// How far out of focus the environment background is, 0..1
+    /// (PBRConfig::envBlur); 1 is the top of m_envBgTex's mip chain,
+    /// a single averaged colour.
+    float pbrEnvBlur = 0.25f;
     bgfx::UniformHandle s_texBump = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_bumpParams = BGFX_INVALID_HANDLE;
     /// Machined surface finish of the draw being submitted
@@ -6859,6 +7016,27 @@ public:
     bgfx::UniformHandle s_texGlassFront = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texGlassBack = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_glassParams = BGFX_INVALID_HANDLE;
+    // Line signed-distance field, sampled by the glass surface pass so
+    // an edge seen through glass warps exactly like the face it lies on
+    // (docs/RenderEngine.md, "Lines"). RGB is the line colour; alpha is
+    // kLineSdfRadius minus the signed distance to the line's EDGE in
+    // pixels, so the target clears to zero = "no line within reach".
+    // LINEAR filtering, unlike the point-sampled interval targets: the
+    // whole method rests on the field interpolating smoothly.
+    bgfx::TextureHandle lineSdfTex = BGFX_INVALID_HANDLE;
+    /// Sidecar of whichever decoration won each texel: its
+    /// perpendicular axis, view depth and half width, everything the
+    /// glass pass needs to turn the field's distance into post-lens
+    /// coverage (fc_line_sdf_fs.sh has the layout and the why).
+    bgfx::TextureHandle lineSdfAuxTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle lineSdfDepth = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle lineSdfFbo = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progLineSdf = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progLineSdfClip = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progPointSdf = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progPointSdfClip = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texLineSdf = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texLineSdfAux = BGFX_INVALID_HANDLE;
     // Cloud body: front/back depth targets bounding the FBM medium
     // interval of the volumetric raymarch.
     bgfx::TextureHandle cloudFrontTex = BGFX_INVALID_HANDLE;
@@ -7072,6 +7250,10 @@ public:
     bool selPass = false; // route opaque-view submits into ViewSelection
                           // (non-on-top selection draws follow the opaque
                           // scene in submission order, GL pass parity)
+    bool glassLines = false; // a glass body is rendering this frame:
+                             // scene lines/points leave ViewOpaque for
+                             // ViewGlassLine so the refraction cannot
+                             // magnify them (see the enum comment)
     int overlayView = -1; // >= 0: route submits into this overlay view
     // Anchor + rect pixel height of the overlay currently being submitted (set
     // alongside overlayView); billboard text sizes itself against the overlay's
@@ -7162,7 +7344,7 @@ public:
     X(waterFrontFbo) X(waterBackFbo) X(glassFrontFbo) X(glassBackFbo) \
     X(cloudFrontFbo) X(cloudBackFbo) X(fireFrontFbo) X(fireBackFbo) \
     X(waterFrontTex) X(waterBackTex) X(waterFrontDepth) X(waterBackDepth) \
-    X(glassFrontTex) X(glassBackTex) X(glassFrontDepth) X(glassBackDepth) \
+    X(glassFrontTex) X(glassBackTex) X(glassFrontDepth) X(glassBackDepth)     X(lineSdfFbo) X(lineSdfTex) X(lineSdfAuxTex) X(lineSdfDepth) \
     X(cloudFrontTex) X(cloudBackTex) X(cloudFrontDepth) X(cloudBackDepth) \
     X(fireFrontTex) X(fireBackTex) X(fireFrontDepth) X(fireBackDepth) \
     X(sceneCopyTex) X(sceneCopyFbo) X(presentTex) X(presentFbo) \
@@ -8859,6 +9041,21 @@ public:
     /// the picture.)
     static bool instancableDraw(const Render::DrawCall &d);
 
+    /// How far each object's decoration reaches from its own geometry,
+    /// in pixels -- what its fills' polygon offset has to clear so a
+    /// thick edge is not half-eaten by the face it straddles (see
+    /// BGFXView::polygonOffsetFactor). objectKey -> reach; absent means
+    /// the coincident-surface default of 1.
+    ///
+    /// A pure function of the published scene, so it is resolved once
+    /// per setScene rather than per frame -- and it MUST be, because
+    /// buildInstanceGroups keys on it: the reach is not a material
+    /// field, and an instanced submit binds one polygon offset for the
+    /// whole batch.
+    std::unordered_map<uint64_t, float> decorReach;
+
+    void buildDecorReach();
+
     void buildInstanceGroups();
 
     Render::Background background;
@@ -9516,7 +9713,7 @@ public:
     /// reports one, else the upload accounting.
     static size_t gpuUsedBytes()
     {
-        const bgfx::Stats *stats = bgfx::getStats();
+        const bgfx::Stats *stats = _BGFXLib.deviceUp() ? bgfx::getStats() : nullptr;
         if (stats && stats->gpuMemoryUsed > 0)
             return size_t(stats->gpuMemoryUsed);
         return s_gpuGeometryBytes.load();
@@ -9528,7 +9725,7 @@ public:
     {
         if (gpuBudget)
             return gpuBudget;
-        const bgfx::Stats *stats = bgfx::getStats();
+        const bgfx::Stats *stats = _BGFXLib.deviceUp() ? bgfx::getStats() : nullptr;
         if (stats && stats->gpuMemoryMax > 0)
             return size_t(stats->gpuMemoryMax);
         return 0;

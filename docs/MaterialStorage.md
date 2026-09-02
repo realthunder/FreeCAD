@@ -638,3 +638,193 @@ delegate to the base -- but it is worth knowing that a primitive can restore
 by different code than every other object, because a test written around
 `Part::Box` measures that code and not the common one. This one did, for an
 hour.
+
+## 15. Following the card: one flag, and the two panels stop looking alike
+
+> Designed 2026-08-30 with the base-and-overrides storage of
+> `ShapeAppearanceDesign.md` sec 12. **The flag (15.3, 15.4, 15.7), the
+> storage under it and the Appearance panel (15.5) are built**; the legacy
+> mirror's status bit (15.6) is not, and neither is the context-menu form
+> of Reset to material.
+
+### 15.1 What is wrong
+
+The Material and Appearance context-menu entries both open a panel whose
+centre is `MaterialTreeWidget` over the same library, filtered differently
+and labelled "Materials" both times. Nothing says that one picks the card
+(density, strength: what mass, FEM and CAM read) and the other a look.
+
+Underneath, the card-to-look coupling is Inventor's rule -- assigning a
+card seeds the look, a look the user set outranks it, a later card change
+does not overwrite it -- but its state is a runtime member,
+`ViewProviderGeometryObject::materialAppearance`, never saved. A reopened
+document compares against a default-constructed value, so the look stops
+following its card after the first save. There is no way to see whether a
+look is the card's, and no way back to it.
+
+### 15.2 Prior art
+
+Every mechanical CAD that has both concepts ships two entries, and the ones
+that get it right make the STATE visible:
+
+| System | Physical | Look | Follow state | Way back |
+| --- | --- | --- | --- | --- |
+| Inventor | Material | Appearance | drop-down, default "As Material" | Clear Overrides |
+| Fusion | Physical Material | Appearance | override listed "In This Design" | Remove Appearance Override |
+| SolidWorks | Material | Appearance (stacked: face > feature > body > part > material's) | position in the stack | Remove Appearance |
+| Creo | Material | Appearance Gallery | copied into the part | Master Appearance |
+| Onshape, NX | Material (density only) | colour command | none: not linked | -- |
+
+Inventor split the two properties in 2013 because users changed Material
+to get a colour and corrupted mass properties; "As Material" is its answer
+and is the one adopted here. Onshape and NX, which do not link them, carry
+standing requests for a material-linked default colour.
+
+No surveyed system treats an object's colour as an edit of its material.
+All of Inventor, Fusion, Revit and SolidWorks do treat editing the card's
+own appearance asset as a material edit, and so does sec 4 here: a changed
+`AppearanceModels` section changes the content hash. That fires only from
+the card editor, never from the Appearance panel.
+
+### 15.3 The flag
+
+`App::PropertyMaterialList` gains `FollowMaterial`, a bool in the list's
+data block beside `pbr`:
+
+- **true**: the BASE (`ShapeAppearanceDesign.md` sec 12.2) is the card's
+  look, read through `GeoFeature::getMaterialAppearance()`. Nothing is
+  stored for the base. It is re-derived at restore, at attach, and whenever
+  the card changes -- and the overriding faces, which are stored, are
+  re-applied over the new base each time. Per-face overrides and following
+  are therefore compatible: an imported part with three painted faces can
+  be assigned Aluminium and keep its three faces.
+- **false**: the base is stored and the card's look is ignored. Assigning
+  a new card changes nothing visible.
+
+Default: true for a fresh object that carries a card, false for one that
+does not (there is nothing to follow). Any whole-object write from the
+Appearance panel, the property editor or Python sets it false; choosing
+"As material" sets it true and re-derives. A per-face write leaves it
+alone, because a per-face write does not touch the base.
+
+`materialAppearance` and the equality heuristic around it go. The card's
+`Render_*` properties (glass) follow the same flag: applied while
+following, kept while not.
+
+### 15.4 Migration
+
+A restored list without the flag gets it derived once, in
+`finishRestoring`, when both the card and the appearance are in hand: base
+equal to the card's look (or to the default while the card has a look) ->
+true; anything else -> false. A document without a card restores false.
+Schema 4 cannot state the flag, so a schema-4 save followed by a reopen
+runs the same derivation; that is lossless in every case but a look the
+user set to exactly the card's, which reads as following, and is the
+answer the old heuristic gave too.
+
+### 15.4a What the code does with the base while following
+
+One deviation from 15.3, and it is a deliberate one: the base **is** stored
+while following, not left empty and re-derived from nothing. It is re-taken
+from the card at attach, at `finishRestoring`, and on every card change --
+which is the whole of what following means -- but a document whose card
+library is not installed, or whose card has been deleted, then still opens
+looking like itself instead of default grey. Storing it costs nothing: the
+base is the storage.
+
+The flag DEFAULTS TO TRUE, which is what "a fresh object that carries a
+card follows it" means: nobody has chosen this look yet, so the card may.
+Defaulting it in the storage rather than raising it in the view provider's
+constructor is what keeps the class default -- and with it the elision of
+an untouched appearance -- intact. A whole-LIST assignment does not end the
+follow either: an import states one look per face and says nothing about
+which card the object wears, and it is exactly the imported part with three
+painted faces that has to be able to take Aluminium and keep them.
+
+`App::MaterialList::followMaterial()` is the one base write that does not
+end the follow; every other one calls `endFollow()`. The flag rides an XML
+attribute beside `pbr`, and in the stream form a flags byte inside the base
+run rather than a bit of the sixteen-bit field mask -- the run is present
+for anything the flag could be about, and the mask has no bits to spare.
+
+The view provider is where the card is read: `applyMaterialAppearance()`
+takes it (when following, or when the base has never been touched, which is
+how a fresh object with a card starts following one), and
+`deriveFollowMaterial()` runs the 15.4 derivation once at
+`finishRestoring`. The old runtime member
+`ViewProviderGeometryObject::materialAppearance` is gone.
+
+### 15.5 The panels
+
+**Appearance** (`Std_SetAppearance`), when the selection carries a
+`Materials::PropertyMaterial`:
+
+1. A material picker at the top, the same widget and filter as the
+   Material panel, editing that property.
+2. Below it a list labelled Appearance whose first entry is **As
+   material**, followed by the appearance cards (`requireAppearance`; no
+   "All materials" tab, so physical cards and hatch patterns never appear
+   in a look picker). Selecting a card writes the base and clears the flag;
+   As material sets it.
+3. The colour, transparency, finish and per-face controls as today. Any of
+   them clears the flag. The per-face control writes overrides.
+4. A status line -- "Appearance: as material Steel", "Custom", "Custom, 3
+   faces painted" -- and **Reset to material** beside it, which is also a
+   context-menu command shown only while it applies (the sync commands'
+   rule, sec 13.5).
+
+Without a card, the panel is what it is today minus the "All materials"
+tab, and the list reads Appearance rather than Materials.
+
+**Material** (`Std_SetMaterial`) stays the lean panel, with a preview of
+the card's look and one line stating what assigning will do: apply the
+look, or keep the custom one (with the same Reset).
+
+**What was built.** The Appearance panel's own list is a LOOK picker: the
+"All materials" tab is gone, so physical cards and hatch patterns never
+appear in it, and the group reads Appearance rather than Material.
+Selecting one of its cards writes the BASE -- so the painted faces survive
+it -- and ends the follow, because a look chosen here outranks the card's.
+Under it sits the status line and **Reset to material**, shown only while
+it applies. The card picker is a group of its own above, the Material
+panel's widget and filter, and it is HIDDEN unless the selection carries a
+`Materials::PropertyMaterial`: an object without a card sees the panel it
+always saw, one row shorter.
+
+Still ahead: the "As material" entry as the appearance list's first row
+(the Reset button is the same action in a different place), the
+context-menu form of the command, and the Material panel's preview line.
+
+### 15.6 The legacy mirror
+
+The view provider's `App::PropertyMaterial ShapeMaterial` is a
+compatibility mirror of `ShapeAppearance[0]` that shares its name with the
+card property on the object. It gets a new status bit,
+`App::Property::Legacy` (bit 19), stays Hidden, and its doc string says
+what it is and what to read instead. The property editor draws a Legacy row
+in red italic when "Show all" is on, so a reader who finds it knows not to
+build on it. `ShapeColor` and `Transparency` are mirrors too, but they are
+the names every script uses and stay as they are.
+
+**What was built.** `App::Property::Legacy` is bit 19, set on the view
+provider's `ShapeMaterial` beside the Hidden it already carried, and its
+doc string now says what it is and what to read instead. The property
+editor draws a Legacy row in red italic, which is what a reader sees when
+"Show all" turns it up; the bit is spelled `"Legacy"` to
+`setPropertyStatus`, like every other one. `ShapeColor` and `Transparency`
+are mirrors too and stay as they are: they are the names every script uses.
+
+### 15.7 Python
+
+`vp.ShapeAppearance.FollowMaterial`, read-write, on the same live view that
+carries `PBR`, `Base` and `Overrides`. Setting it true re-derives the base
+from the card at once; setting it false stores the current base.
+
+### 15.8 What this deliberately does not do
+
+- No per-field overrides (colour followed, gloss custom). An override is
+  the whole base, as in every surveyed system; a face is the unit below
+  that.
+- No merged panel. The assignment panels stay two, as everywhere else; the
+  card EDITOR is where the two halves share a window, and it already does.
+- No change to what makes a card `Diverged` (sec 13.1).

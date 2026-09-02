@@ -23,6 +23,7 @@
 #ifndef GUI_SHADINGOPTIONS_H
 #define GUI_SHADINGOPTIONS_H
 
+#include <QPointer>
 #include <QWidget>
 #include <FCGlobal.h>
 
@@ -30,7 +31,7 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QMenu;
-class QRadioButton;
+class QPushButton;
 class QSlider;
 
 namespace App { class PropertyContainer; }
@@ -45,7 +46,7 @@ class View3DInventorViewer;
  *
  * The draw styles above it are an exclusive list -- one override mode on
  * the viewer -- which is the wrong shape for these: only the shading
- * model (classic / physically based / matcap) is a choice, while cavity,
+ * model (classic / physically based / matcap / external) is a choice, while cavity,
  * occlusion, shadows and bloom compose freely with it and with each
  * other. So they live here instead, as a popover beside the list, the
  * split Blender's viewport shading and SolidWorks' display style +
@@ -86,15 +87,44 @@ public:
     /// are rebuilt with the toolbar, hence the lookup.
     static void install(QMenu *menu);
 
+protected:
+    /// Watches the Settings... button: hovering it opens the session
+    /// popup, the way hovering a submenu item opens the submenu.
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
     App::PropertyContainer *activeView() const;
-    void setModel(bool pbr, bool matcap);
+    /// Select a shading model (a View3DInventor::ShadingModel value):
+    /// writes the view's declared ShadingType -- the facade pair and
+    /// the external session follow it -- and, for the raster models,
+    /// the preference pair behind it. External deliberately leaves the
+    /// preferences alone: it cannot be a default, so they keep the
+    /// raster model to fall back to.
+    void setModel(long model);
+    /// The Cycles session options, in a popup menu beside the button
+    /// that needs them: renderer, device, samples, time limit, denoise,
+    /// pixel size. A widget action in a menu rather than a dialog, so
+    /// it behaves like the section it hangs off: hover opens it, every
+    /// control applies immediately and writes twice (view property +
+    /// preference), and the display style menu stays open behind it.
+    void showExternalSettings();
+    /// Show the Settings... button only while the External model is
+    /// selected; grey it when the engine is not there to configure.
+    void updateExternalSettings();
     /// Grey the radius row unless the cavity pass is on and available.
     void updateCavityRadiusEnabled();
     /// Grey the tint row unless the matcap model is on and available.
     void updateMatcapTintEnabled();
     /// Grey the copy-the-image box unless there is an image to copy.
     void updateEnvEmbedEnabled();
+    /// Grey the blur row unless the environment is being drawn: the
+    /// blur softens that background pass and nothing else.
+    void updateEnvBlurEnabled();
+    /// Does this shading model stand the scene in the environment?
+    /// Realistic and External both do -- the path tracer bakes its
+    /// world from the same properties -- so the environment row is
+    /// live for either.
+    static bool envUsed(long model);
     /// Set a Render_<name> bool on the active view and, when \a pref is
     /// given, the preference behind it -- see the class comment.
     void setFlag(const char *name, bool value,
@@ -103,8 +133,12 @@ private:
     /// that works, with \a current named above it when there is one.
     QString envImageToolTip(const QString &current = QString()) const;
     /// Ask for an environment image and hand it to Render_PBREnvImage.
-    /// Cancelling leaves the preset that is in effect selected.
+    /// Cancelling leaves the preset that is in effect selected. Closes
+    /// the menu and queues openEnvImage(): a modal dialog raised while
+    /// the combo popup still holds the grab never gets the input.
     void chooseEnvImage();
+    /// The file dialog itself, run once the popups are down.
+    void openEnvImage();
     /// Drop both the path and any embedded copy, so a preset chosen in
     /// the same combo is what actually lights the scene.
     void clearEnvImage();
@@ -118,13 +152,18 @@ private:
     void setShadow(bool on);
 
 private:
-    QRadioButton *classicRadio;
-    QRadioButton *pbrRadio;
-    QRadioButton *matcapRadio;
+    QComboBox *modelCombo;
+    QPushButton *externalSettings;
+    /// The open session popup, if any -- so a second hover raises the
+    /// one that is up instead of stacking another over it.
+    QPointer<QMenu> externalSettingsMenu;
     QLabel *envLabel;
     QComboBox *envCombo;
     QCheckBox *envBgCheck;
     QCheckBox *envEmbedCheck;
+    QLabel *envBlurLabel;
+    QSlider *envBlurSlider;
+    QLabel *envBlurValue;
     /// Index of the combo's trailing "Image..." entry -- the presets are
     /// the enumeration's own values and sit at 0..n-1 before it.
     int envImageIndex = -1;

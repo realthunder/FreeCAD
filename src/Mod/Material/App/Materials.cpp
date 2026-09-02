@@ -1945,6 +1945,44 @@ App::Material Material::getMaterialAppearance() const
     return material;
 }
 
+/*
+ * Return the Render_* view properties this card states. Almost every card
+ * states none: the glass model is the only one that reaches here today.
+ */
+App::MaterialRenderProperties Material::getRenderProperties() const
+{
+    App::MaterialRenderProperties props;
+
+    // A card carrying the glass model IS glass -- there is no separate
+    // on/off field, presence is the switch, which is what lets a card be
+    // read without knowing the model's schema. The three values keep the
+    // Render_* family's sentinel: a value <= 0 means "engine decides", so
+    // it is left unstated rather than written as a zero the engine would
+    // have to tell apart from a deliberate one.
+    if (hasAppearanceProperty(QStringLiteral("GlassIOR"))
+            || hasAppearanceProperty(QStringLiteral("GlassDensity"))
+            || hasAppearanceProperty(QStringLiteral("GlassRoughness"))) {
+        props.push_back({"Render_Glass", true, 1.0});
+
+        static const std::pair<const char*, const char*> glassFloats[] = {
+            {"GlassIOR", "Render_GlassIOR"},
+            {"GlassDensity", "Render_GlassDensity"},
+            {"GlassRoughness", "Render_GlassRoughness"},
+        };
+        for (const auto& [field, property] : glassFloats) {
+            if (!hasAppearanceProperty(QString::fromLatin1(field))) {
+                continue;
+            }
+            double value = getAppearanceProperty(QString::fromLatin1(field))->getFloat();
+            if (value > 0.0) {
+                props.push_back({property, false, value});
+            }
+        }
+    }
+
+    return props;
+}
+
 void Material::validate(Material& other) const
 {
 

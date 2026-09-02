@@ -33,6 +33,59 @@ static float depthLsbNdc()
     return (caps && caps->homogeneousDepth ? 2.0f : 1.0f) / 16777216.0f;
 }
 
+float BGFXView::polygonOffsetFactor(const Render::Material &mat,
+                                    float decorReach)
+{
+    // GL's `factor` multiplies the polygon's depth slope in units of one
+    // PIXEL, so it reads directly as "how many pixels of slope this fill
+    // has to clear". 1 is the right answer for what polygon offset was
+    // designed for -- an edge lying ON the surface, coincident with it,
+    // where all that is needed is to break a tie.
+    //
+    // A thick line is not coincident. It is a screen-space quad centred
+    // on the edge that carries the EDGE's depth across its whole width
+    // (fc_line_vs.sh offsets xy only), so where the surface rises toward
+    // the viewer it beats the line everywhere past the pixel this factor
+    // cleared. Measured on a 10mm box, an edge whose face climbs toward
+    // the camera: the drawn width came up exactly `width/2 - 1` short at
+    // every width from 4 to 12 -- the -1 being that one pixel. Coin's GL
+    // renderer loses the same half for the same reason, so this is not a
+    // backend artifact but the thing polygon offset was never scaled
+    // for. It is invisible at widths 1-2, which is why it went unnoticed.
+    //
+    //  decorReach is how far the decoration drawn over this fill
+    // reaches from its own geometry, in pixels -- half a line width plus
+    // the analytic feather, or half a point size. It cannot come from
+    // the material: SoDrawStyle's line width lives INSIDE the wireframe
+    // separator, which ViewProviderExt adds AFTER the faces, so a fill's
+    // own material always reports linewidth 1 no matter how thick its
+    // edges are. The frame resolves it per object from the draw list
+    // instead (BGFXView::decorReachFor).
+    //
+    // WHAT IT COSTS, measured (scripts/fill_pullback_slope.py, which
+    // bisects the depth at which a neighbour starts winning): the fill
+    // moves back by `(reach - 1) * gradient * 2 / height` NDC against a
+    // neighbour whose edges are thin, tracking that arithmetic at ratio
+    // 1.00 over gradients 0.5 to 19, and saturating at the ceiling
+    // exactly where kPolyOffsetMaxSlope says it should. On a 621px
+    // viewport that ceiling is 0.071 NDC for a 12px line -- 3.5% of the
+    // depth range -- and 0.006 NDC, 0.3%, for the default width 2. So
+    // where two solids touch and one carries thick edges, the neighbour
+    // wins any surface lying within that slice behind it. That is the
+    // risk 34461d03b7 left untested: confirmed, bounded, and kept,
+    // because the defect it replaces -- every thick line losing its
+    // face-side half -- is both larger and always on screen.
+    if (!mat.polygonoffset)
+        return 0.0f;
+    return std::max(mat.polygonoffsetfactor, decorReach);
+}
+
+float BGFXView::decorReachFor(uint64_t objectKey) const
+{
+    auto it = decorReach.find(objectKey);
+    return it == decorReach.end() ? 1.0f : it->second;
+}
+
 float BGFXView::polygonOffsetBias(const Render::Material &mat)
 {
     // The constant half of GL's `factor * m + units * r` — the slope
@@ -52,7 +105,8 @@ float BGFXView::polygonOffsetBias(const Render::Material &mat)
         : 0.0f;
 }
 
-float BGFXView::polygonOffsetMaxBias(const Render::Material &mat) const
+float BGFXView::polygonOffsetMaxBias(const Render::Material &mat,
+                                     uint64_t objectKey) const
 {
     // What the vertex stage's slope term can reach for this material:
     // the gradient ceiling, converted to NDC depth by the size of a
@@ -62,10 +116,12 @@ float BGFXView::polygonOffsetMaxBias(const Render::Material &mat) const
         return 0.0f;
     const float px = 2.0f
         / float(std::max<int>(1, std::min<int>(width, height)));
-    return mat.polygonoffsetfactor * kPolyOffsetMaxSlope * px;
+    return polygonOffsetFactor(mat, decorReachFor(objectKey))
+        * kPolyOffsetMaxSlope * px;
 }
 
-void BGFXView::setPolygonOffsetUniform(const Render::Material *mat)
+void BGFXView::setPolygonOffsetUniform(const Render::Material *mat,
+                                       uint64_t objectKey)
 {
     // Bound at every site that submits a program built on vs_fc_mesh:
     // a bgfx uniform keeps its last value across draws, so a site that
@@ -73,7 +129,7 @@ void BGFXView::setPolygonOffsetUniform(const Render::Material *mat)
     float po[4] = {0.0f, kPolyOffsetMaxSlope, 0.0f, 0.0f};
     if (mat && mat->polygonoffset
             && mat->type == Render::Material::Triangle)
-        po[0] = mat->polygonoffsetfactor;
+        po[0] = polygonOffsetFactor(*mat, decorReachFor(objectKey));
     bgfx::setUniform(u_polyOffset, po);
 }
 
@@ -125,7 +181,7 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
         bgfx::setUniform(u_matEmissive, zero);
         bgfx::setUniform(u_matSpecular, zero);
         bgfx::setUniform(u_params, fillParams);
-        setPolygonOffsetUniform(&mat);
+        setPolygonOffsetUniform(&mat, draw.objectKey);
         setTriangleFrameState(mat, PassNormal, false, false);
         if (clipped)
             setClipUniforms(mat);
@@ -186,9 +242,7 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
     float color[4];
     unpackColor(mat.linecolor ? mat.linecolor : mat.diffuse, color);
     color[3] = 1.0f;
-    float lineParams[4] = {0.0f,
-                           qMax(1.0f, std::floor(mat.linewidth + 0.5f)),
-                           0.0f, 1.0f};
+    float lineParams[4] = {0.0f, qMax(1.0f, mat.linewidth), 0.0f, 1.0f};
     bgfx::setUniform(u_matColor, color);
     bgfx::setUniform(u_matEmissive, zero);
     bgfx::setUniform(u_matSpecular, zero);
@@ -211,7 +265,12 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
     bgfx::setInstanceDataBuffer(edgeInst, start, count);
     bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                    | BGFX_STATE_WRITE_Z | BGFX_STATE_MSAA
-                   | BGFX_STATE_DEPTH_TEST_LEQUAL);
+                   | BGFX_STATE_DEPTH_TEST_LEQUAL
+                   | BGFX_STATE_BLEND_FUNC_SEPARATE(
+                       BGFX_STATE_BLEND_SRC_ALPHA,
+                       BGFX_STATE_BLEND_INV_SRC_ALPHA,
+                       BGFX_STATE_BLEND_ONE,
+                       BGFX_STATE_BLEND_INV_SRC_ALPHA));
     bgfx::submit(vid(viewId),
                  patterned ? (clipped ? m_progLinePatClip : m_progLinePat)
                            : (clipped ? m_progLineClip : m_progLine));
@@ -421,14 +480,20 @@ void BGFXView::submitOutlineEdges(const Render::DrawCall &draw,
     // term on top of the constant — so the outline clears the ceiling on
     // that term rather than doubling a constant that no longer bounds it.
     float color[4];
-    unpackColor((spec.color & 0xffffff00) | 0xff, color);
-    params[1] = qMax(1.0f, std::floor(spec.width + 0.5f));
+    // A picked outline colour into the mesh program's base slot, which
+    // is light: decoded like every authored colour the beauty frame
+    // takes, or the output transform paints it 1.5x too bright.
+    unpackAuthoredColor((spec.color & 0xffffff00) | 0xff, color, colorManaged());
+    params[1] = qMax(1.0f, spec.width);
     params[2] = spec.depthWrite
         ? 2.0f * polygonOffsetBias(draw.material)
-            + polygonOffsetMaxBias(draw.material)
+            + polygonOffsetMaxBias(draw.material, draw.objectKey)
         : 0.0f;
     const uint64_t outlinestate = BGFX_STATE_WRITE_RGB
-        | BGFX_STATE_WRITE_A | BGFX_STATE_MSAA | depthstate;
+        | BGFX_STATE_WRITE_A | BGFX_STATE_MSAA | depthstate
+        | BGFX_STATE_BLEND_FUNC_SEPARATE(
+            BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA,
+            BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_INV_SRC_ALPHA);
     const uint32_t outlinestencil = BGFX_STENCIL_TEST_NOTEQUAL
         | BGFX_STENCIL_FUNC_REF(ref) | BGFX_STENCIL_FUNC_RMASK(0xff)
         | BGFX_STENCIL_OP_FAIL_S_KEEP
@@ -556,7 +621,10 @@ void BGFXView::submitCapQuad(const CapVertex verts[4], uint32_t color,
     v[3] = verts[0]; v[4] = verts[2]; v[5] = verts[3];
 
     float col[4];
-    unpackColor(color, col);
+    // The cap fill is the material's own (inverted or not) diffuse,
+    // written straight to the colour target: authored, so decoded, or
+    // the cap of a 0.5 grey solid encodes out as 0.73.
+    unpackAuthoredColor(color, col, colorManaged());
     bgfx::setUniform(u_matColor, col);
     if (numOther > 0) {
         float clipParams[4] = {float(numOther), 0.0f, 0.0f, 0.0f};
@@ -662,9 +730,15 @@ void BGFXView::submitComposite()
     bgfx::setTexture(0, s_texAccum, oitAccum);
     bgfx::setTexture(1, s_texReveal, oitReveal);
     bgfx::setVertexBuffer(0, &tvb);
+    // The shader's alpha is the coverage (fs_fc_comp.sc): a plain
+    // "over", split so that the alpha channel accumulates coverage
+    // rather than coverage squared. Only a capture over a transparent
+    // background can tell the difference, and it did.
     bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-        | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_INV_SRC_ALPHA,
-                                BGFX_STATE_BLEND_SRC_ALPHA));
+        | BGFX_STATE_BLEND_FUNC_SEPARATE(BGFX_STATE_BLEND_SRC_ALPHA,
+                                         BGFX_STATE_BLEND_INV_SRC_ALPHA,
+                                         BGFX_STATE_BLEND_ONE,
+                                         BGFX_STATE_BLEND_INV_SRC_ALPHA));
     bgfx::submit(vid(ViewOITComposite), m_progComp);
     ++drawcount;
 }

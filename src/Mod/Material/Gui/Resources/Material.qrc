@@ -10,35 +10,107 @@
         <file>icons/table.svg</file>
         <file>images/default_image.png</file>
         <file>ui/materials-editor.ui</file>
-        <!-- rendered by icons/materials/generate.py -->
-        <file>icons/materials/Appearance_Aluminum.png</file>
-        <file>icons/materials/Appearance_Brass.png</file>
-        <file>icons/materials/Appearance_Bronze.png</file>
-        <file>icons/materials/Appearance_Chrome.png</file>
-        <file>icons/materials/Appearance_Copper.png</file>
-        <file>icons/materials/Appearance_Default.png</file>
-        <file>icons/materials/Appearance_Emerald.png</file>
-        <file>icons/materials/Appearance_Gold.png</file>
-        <file>icons/materials/Appearance_Jade.png</file>
-        <file>icons/materials/Appearance_Metalized.png</file>
-        <file>icons/materials/Appearance_Neon_GNC.png</file>
-        <file>icons/materials/Appearance_Neon_PHC.png</file>
-        <file>icons/materials/Appearance_Obsidian.png</file>
-        <file>icons/materials/Appearance_Pewter.png</file>
-        <file>icons/materials/Appearance_Plaster.png</file>
-        <file>icons/materials/Appearance_Plastic.png</file>
-        <file>icons/materials/Appearance_Ruby.png</file>
-        <file>icons/materials/Appearance_Satin.png</file>
-        <file>icons/materials/Appearance_Shiny_Plastic.png</file>
-        <file>icons/materials/Appearance_Silver.png</file>
-        <file>icons/materials/Appearance_Steel.png</file>
-        <file>icons/materials/Appearance_Stone.png</file>
-        <file>icons/materials/Appearance_Wood.png</file>
+        <!-- rendered by scripts/material-icons.py -->
+        <!-- surface finish: blasted -->
         <file>icons/materials/Finish_blasted.png</file>
+        <!-- surface finish: brushed -->
         <file>icons/materials/Finish_brushed.png</file>
+        <!-- surface finish: knurl-straight -->
         <file>icons/materials/Finish_knurl-straight.png</file>
+        <!-- surface finish: knurl -->
         <file>icons/materials/Finish_knurl.png</file>
+        <!-- surface finish: turned -->
         <file>icons/materials/Finish_turned.png</file>
+        <!-- AusteniticStainlessSteel, and 102 more: CalculiX-Steel, GrayCastIron, Invar-Generic, Iron-Generic, LowAlloySteel, MalleableCastIron, MildSteel, ... -->
+        <file>icons/materials/Look_017ed679336f323a9c6bc75faea481cb222c03bb.png</file>
+        <!-- Concrete-EN-C35_45, and 2 more: Concrete-Generic, Stone -->
+        <file>icons/materials/Look_10eb82fac57a2de2eef7d14d3574b9b6bd0dfe29.png</file>
+        <!-- Jade -->
+        <file>icons/materials/Look_139d8ce381209ea276758e48c0c0b809ed4df954.png</file>
+        <!-- BalsaWood, and 6 more: HardWood, MDF, ParticleBoard, SoftWood, Wood, Wood-Generic -->
+        <file>icons/materials/Look_1bb96bfd55f9b30f63d1112e92ce2eb1e28e9137.png</file>
+        <!-- Chrome -->
+        <file>icons/materials/Look_4aab6d4c861cdd88339378701fd3e20ded9c6f9b.png</file>
+        <!-- Copper-464, and 1 more: Gold -->
+        <file>icons/materials/Look_4e615c28ffe0f8369708fffb21cca9c28aac0314.png</file>
+        <!-- Copper, and 5 more: Copper-102, Copper-122a, Copper-122b, Copper-150, Copper-Generic -->
+        <file>icons/materials/Look_58458c9751d60d35a95c5ad82bd5c53319fbbdfe.png</file>
+        <!-- Graphite, and 1 more: Obsidian -->
+        <file>icons/materials/Look_5d18ed8b1f83dc70010a1218ccfa647e9b0bfd44.png</file>
+        <!-- Pewter, and 1 more: Ti-6Al-4V -->
+        <file>icons/materials/Look_6195b32e4da9937bf4f177ecbc3719e49c83370b.png</file>
+        <!-- Bronze, and 4 more: Copper-230, Copper-510, Copper-647, Copper-655 -->
+        <file>icons/materials/Look_6b8cf27bb7144aeca24a9c9d314e1214f83d9354.png</file>
+        <!-- Copper-706, and 2 more: Copper-715, Silver -->
+        <file>icons/materials/Look_766594255577fd972c939e8b691f1d5e0f5e66de.png</file>
+        <!-- Metalized -->
+        <file>icons/materials/Look_7a37085dfd6684cf5c894726220c6a511704604e.png</file>
+        <!-- Emerald -->
+        <file>icons/materials/Look_883d5e16ec700fb5d9cc7b457884f35bdaedc37a.png</file>
+        <!-- Neon GNC -->
+        <file>icons/materials/Look_8efe89a5b091687c56669c1070fc1bfaa0dcec8e.png</file>
+        <!-- Clear Glass, and 3 more: Glass-E-GlassFibre, Glass-Generic, Glass-S2-GlassFibre -->
+        <file>icons/materials/Look_951e3ec924e47b6465ded9ef9c2737d31fdb37f0.png</file>
+        <!-- Shiny Plastic -->
+        <file>icons/materials/Look_a0a4a31f78e9d19ce29cf77f304c6a82d9fef180.png</file>
+        <!-- Default, and 1 more: Default -->
+        <file>icons/materials/Look_a7fe1fdc3c56ae2e532b8221fd635c0aacb6ae75.png</file>
+        <!-- PEEK-Generic -->
+        <file>icons/materials/Look_ab315d1d782f17f1488db500ad51239d12391c50.png</file>
+        <!-- ABS-Generic, and 8 more: PA6-Generic, PLA-Generic, POM-Copolymer-Generic, POM-Homopolymer-Generic, PP-Generic, PTFE-Generic, PVC-Generic -->
+        <file>icons/materials/Look_affd7dd3bdf333a9810c24341fa2c8d124654f10.png</file>
+        <!-- Frosted Glass -->
+        <file>icons/materials/Look_b27931594551c3acf1722d177a8b054d42d70235.png</file>
+        <!-- Acrylic, and 4 more: Acrylic-Glass-Generic, PC-Molded, PET-Generic, PMMA-Generic -->
+        <file>icons/materials/Look_bc0389a536657ee169e611d15863513d1136484e.png</file>
+        <!-- Tinted Glass -->
+        <file>icons/materials/Look_bf43ef10a1d8afe54f0f9779ed1df48a0fcf87a0.png</file>
+        <!-- AlMg3F24, and 8 more: AlMgSi1F31, AlZn4-5Mg1F35, Aluminum, Aluminum-6061-T6, Aluminum-7075-T6, Aluminum-Generic, AluminumCastAlloy -->
+        <file>icons/materials/Look_d87b5d4ef571cdadc2e97d73a0c2df5e83350b10.png</file>
+        <!-- Satin -->
+        <file>icons/materials/Look_db685c03b76d8c946f54befd3e9168fb8cadd071.png</file>
+        <!-- Neon PHC -->
+        <file>icons/materials/Look_ddaef85273e827cc013113f97834a969f1aaac2e.png</file>
+        <!-- Brass, and 4 more: Copper-220, Copper-443, Copper-614, Copper-955 -->
+        <file>icons/materials/Look_e71801fbcf948649987163993ed3ac2314aa0bf5.png</file>
+        <!-- Ruby -->
+        <file>icons/materials/Look_f32afaef4284949fe471cd80bfa8f4ef8cc2fffa.png</file>
+        <!-- Plaster -->
+        <file>icons/materials/Look_fb6921f6a97cf2794d24f20594a354785c03bc46.png</file>
         <!-- end rendered icons -->
+        <!-- drawn by scripts/pattern-icons.py -->
+        <file>icons/materials/Pattern_Diagonal4-ae4226.png</file>
+        <file>icons/materials/Pattern_Diagonal5-d23154.png</file>
+        <file>icons/materials/Pattern_Diamond-b3850e.png</file>
+        <file>icons/materials/Pattern_Diamond2-6fd892.png</file>
+        <file>icons/materials/Pattern_Diamond4-c82e9e.png</file>
+        <file>icons/materials/Pattern_Horizontal5-25ff92.png</file>
+        <file>icons/materials/Pattern_Square-82810c.png</file>
+        <file>icons/materials/Pattern_Vertical5-bd67ee.png</file>
+        <file>icons/materials/Pattern_aluminum.png</file>
+        <file>icons/materials/Pattern_brick01.png</file>
+        <file>icons/materials/Pattern_concrete.png</file>
+        <file>icons/materials/Pattern_cross.png</file>
+        <file>icons/materials/Pattern_cuprous.png</file>
+        <file>icons/materials/Pattern_diagonal1.png</file>
+        <file>icons/materials/Pattern_diagonal2.png</file>
+        <file>icons/materials/Pattern_earth.png</file>
+        <file>icons/materials/Pattern_general_steel.png</file>
+        <file>icons/materials/Pattern_glass.png</file>
+        <file>icons/materials/Pattern_hatch45L-5f4d4f.png</file>
+        <file>icons/materials/Pattern_hatch45R-4c3e8e.png</file>
+        <file>icons/materials/Pattern_hbone.png</file>
+        <file>icons/materials/Pattern_line.png</file>
+        <file>icons/materials/Pattern_plastic.png</file>
+        <file>icons/materials/Pattern_plus.png</file>
+        <file>icons/materials/Pattern_simple.png</file>
+        <file>icons/materials/Pattern_solid.png</file>
+        <file>icons/materials/Pattern_square.png</file>
+        <file>icons/materials/Pattern_steel.png</file>
+        <file>icons/materials/Pattern_titanium.png</file>
+        <file>icons/materials/Pattern_wood.png</file>
+        <file>icons/materials/Pattern_woodgrain.png</file>
+        <file>icons/materials/Pattern_zinc.png</file>
+        <!-- end pattern swatches -->
     </qresource>
 </RCC>

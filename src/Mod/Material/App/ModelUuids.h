@@ -83,6 +83,16 @@ public:
     static const QString ModelUUID_Rendering_Texture;
     static const QString ModelUUID_Rendering_Advanced;
     static const QString ModelUUID_Rendering_Vector;
+    static const QString ModelUUID_Rendering_Glass;
+
+    /// The two hatch models. A card carrying one of these and no Basic
+    /// rendering states a 2D fill for a TechDraw section and not a
+    /// surface -- there is nothing in it to shade, and every such card
+    /// hashes to the same default appearance, so they cannot be told
+    /// apart by a render. They get flat swatches instead; see
+    /// scripts/pattern-icons.py.
+    static const QString ModelUUID_Patterns_PAT;
+    static const QString ModelUUID_Patterns_PatternFile;
 
     static const QString ModelUUID_Render_Appleseed;
     static const QString ModelUUID_Render_Carpaint;

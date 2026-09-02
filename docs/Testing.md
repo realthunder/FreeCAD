@@ -12,7 +12,16 @@ as "the primary tree"; that was wrong.
 | Suite | Result |
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
-| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **456 of 456 passing**, 0 failures, 1 ctest entry disabled |
+| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **464 of 464 passing**, 0 failures, 1 ctest entry disabled |
+
+**Read the python total as a checksum on the build, not just on the code.**
+A short count means a module is missing rather than a test failing, and the
+run still says OK, so nothing draws attention to it. Two seen so far:
+**2538** is a tree with `BUILD_FEM=OFF` (all of `TestFemApp`, 90 tests), and
+**1197** is a tree with a stale pre-rename `Mod/Path` shadowing `Mod/CAM`
+(`TestCAMApp`, 1343). Both were build trees whose caches predated the
+setting that was supposed to fix them -- see the preset-vs-cache trap in
+`CLAUDE.md` and the stale-module sweep in `docs/DevEnvironment.md`.
 
 The C++ side had never been fully green before this date: four of its
 targets did not link at all. What was actually wrong with each is recorded
@@ -70,7 +79,7 @@ builds. It costs build time and nothing else.
 **Set `QT_QPA_PLATFORM=offscreen` for a headless run.** One suite,
 `QuantitySpinBox_Tests_run`, is a QtTest that constructs widgets, so with no
 `DISPLAY` it aborts on "could not connect to display" and ctest reports
-444/445. `offscreen` is enough -- it needs a platform plugin, not a GPU:
+452/453. `offscreen` is enough -- it needs a platform plugin, not a GPU:
 
     QT_QPA_PLATFORM=offscreen ~/works/sw/fcad/.conda/run.sh ctest -j6
 
@@ -78,7 +87,7 @@ One binary directly, which is the fastest loop while working on a suite:
 
     ./tests/src/Mod/Part/TopoShapeEx_tests_run --gtest_filter='*makEBoolean*'
 
-## 2. Why ctest says 456 and the binaries add up to 1303
+## 2. Why ctest says 464 and the binaries add up to 1316
 
 Both numbers are right; they count different things.
 
@@ -87,14 +96,14 @@ Both numbers are right; they count different things.
 and its own process. Every other suite is registered with a plain
 `add_test(NAME X COMMAND X)`, so the whole binary is one entry.
 
-    431 expanded cases (Tests_run 335, Material 34, Part 36, Sketcher 18,
+    438 expanded cases (Tests_run 335, Material 39, Part 38, Sketcher 18,
                         Mesh 7, Points 1)
     +  1 disabled entry (Part_tests_run's DISABLED_testHistory)
-    + 25 whole-binary entries
-    = 457 registered, 456 run
+    + 26 whole-binary entries
+    = 465 registered, 464 run
 
-Counting individual test cases instead, across all 31 binaries, gives
-**1303 passing**.
+Counting individual test cases instead, across all 32 binaries, gives
+**1316 passing**.
 
 ## 3. The C++ suites
 
@@ -108,8 +117,8 @@ Counting individual test cases instead, across all 31 binaries, gives
 | `src/Base/InventorBuilder_Tests_run` | 48 | QtTest |
 | `src/Gui/MaskedOcclusion_tests_run` | 41 | |
 | `src/Gui/SceneDump_tests_run` | 39 | |
-| `Part_tests_run` | 36 | +1 disabled, section 4 |
-| `Material_tests_run` | 34 | |
+| `Part_tests_run` | 38 | +1 disabled, section 4 |
+| `Material_tests_run` | 39 | |
 | `src/Gui/MeshSimplify_tests_run` | 33 | |
 | `src/Gui/ProxyHierarchy_tests_run` | 26 | |
 | `src/Base/COWData_tests_run` | 22 | |
@@ -127,6 +136,7 @@ Counting individual test cases instead, across all 31 binaries, gives
 | `Mesh_tests_run` | 7 | |
 | `src/App/RestoreDrain_tests_run` | 7 | |
 | `src/Base/Stream_tests_run` | 6 | |
+| `src/Gui/RenderProperties_tests_run` | 6 | A card's Render_* properties, stated on a document object: a view provider needs the whole GUI |
 | `src/Base/PyObjectTracking_tests_run` | 5 | |
 | `src/Gui/PublishOnly_tests_run` | 5 | |
 | `src/Gui/QuantitySpinBox_Tests_run` | 5 | QtTest, +3 skipped, section 4 |

@@ -691,6 +691,78 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     GroundReflectionIntensity->setValue(Gui::RenderParams::defaultGroundReflectionIntensity());
     GroundReflectionIntensity->setEntryName("GroundReflectionIntensity");
     GroundReflectionIntensity->setParamGrpPath("View/Render");
+
+
+    // Auto generated code (Tools/params_utils.py:448)
+    groupExternalshadingCycles = new QGroupBox(this);
+    layout->addWidget(groupExternalshadingCycles);
+    auto layoutHorizExternalshadingCycles = new QHBoxLayout(groupExternalshadingCycles);
+    auto layoutExternalshadingCycles = new QVBoxLayout();
+    layoutHorizExternalshadingCycles->addLayout(layoutExternalshadingCycles);
+    layoutHorizExternalshadingCycles->addStretch();
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutExternalshadingCycles->addLayout(layoutRow);
+    labelCyclesDevice = new QLabel(this);
+    layoutRow->addWidget(labelCyclesDevice);
+    CyclesDevice = new Gui::PrefLineEdit(this);
+    layoutRow->addWidget(CyclesDevice);
+    CyclesDevice->setText(QString::fromUtf8(Gui::RenderParams::defaultCyclesDevice().c_str()));
+    CyclesDevice->setEntryName("CyclesDevice");
+    CyclesDevice->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutExternalshadingCycles->addLayout(layoutRow);
+    labelCyclesSamples = new QLabel(this);
+    layoutRow->addWidget(labelCyclesSamples);
+    CyclesSamples = new Gui::PrefSpinBox(this);
+    layoutRow->addWidget(CyclesSamples);
+    CyclesSamples->setValue(Gui::RenderParams::defaultCyclesSamples());
+    CyclesSamples->setEntryName("CyclesSamples");
+    CyclesSamples->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutExternalshadingCycles->addLayout(layoutRow);
+    labelCyclesTimeLimit = new QLabel(this);
+    layoutRow->addWidget(labelCyclesTimeLimit);
+    CyclesTimeLimit = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(CyclesTimeLimit);
+    CyclesTimeLimit->setValue(Gui::RenderParams::defaultCyclesTimeLimit());
+    CyclesTimeLimit->setEntryName("CyclesTimeLimit");
+    CyclesTimeLimit->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutExternalshadingCycles->addLayout(layoutRow);
+    CyclesDenoise = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(CyclesDenoise);
+    CyclesDenoise->setChecked(Gui::RenderParams::defaultCyclesDenoise());
+    CyclesDenoise->setEntryName("CyclesDenoise");
+    CyclesDenoise->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutExternalshadingCycles->addLayout(layoutRow);
+    labelCyclesPixelSize = new QLabel(this);
+    layoutRow->addWidget(labelCyclesPixelSize);
+    CyclesPixelSize = new Gui::PrefSpinBox(this);
+    layoutRow->addWidget(CyclesPixelSize);
+    CyclesPixelSize->setValue(Gui::RenderParams::defaultCyclesPixelSize());
+    CyclesPixelSize->setEntryName("CyclesPixelSize");
+    CyclesPixelSize->setParamGrpPath("View/Render");
     layout->addItem(new QSpacerItem(40, 20, QSizePolicy::Fixed, QSizePolicy::Expanding));
     retranslateUi();
     // Auto generated code (Tools/params_utils.py:645)
@@ -750,6 +822,11 @@ void DlgSettingsRender::saveSettings()
     SunDiscSize->onSave();
     GroundReflection->onSave();
     GroundReflectionIntensity->onSave();
+    CyclesDevice->onSave();
+    CyclesSamples->onSave();
+    CyclesTimeLimit->onSave();
+    CyclesDenoise->onSave();
+    CyclesPixelSize->onSave();
 }
 
 // Auto generated code (Tools/params_utils.py:670)
@@ -799,6 +876,11 @@ void DlgSettingsRender::loadSettings()
     SunDiscSize->onRestore();
     GroundReflection->onRestore();
     GroundReflectionIntensity->onRestore();
+    CyclesDevice->onRestore();
+    CyclesSamples->onRestore();
+    CyclesTimeLimit->onRestore();
+    CyclesDenoise->onRestore();
+    CyclesPixelSize->onRestore();
 }
 
 // Auto generated code (Tools/params_utils.py:679)
@@ -943,6 +1025,21 @@ void DlgSettingsRender::retranslateUi()
     GroundReflectionIntensity->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docGroundReflectionIntensity()));
     labelGroundReflectionIntensity->setText(QObject::tr("Reflection intensity"));
     labelGroundReflectionIntensity->setToolTip(GroundReflectionIntensity->toolTip());
+    groupExternalshadingCycles->setTitle(QObject::tr("External shading (Cycles)"));
+    CyclesDevice->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCyclesDevice()));
+    labelCyclesDevice->setText(QObject::tr("Cycles device"));
+    labelCyclesDevice->setToolTip(CyclesDevice->toolTip());
+    CyclesSamples->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCyclesSamples()));
+    labelCyclesSamples->setText(QObject::tr("Cycles samples"));
+    labelCyclesSamples->setToolTip(CyclesSamples->toolTip());
+    CyclesTimeLimit->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCyclesTimeLimit()));
+    labelCyclesTimeLimit->setText(QObject::tr("Cycles time limit"));
+    labelCyclesTimeLimit->setToolTip(CyclesTimeLimit->toolTip());
+    CyclesDenoise->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCyclesDenoise()));
+    CyclesDenoise->setText(QObject::tr("Cycles denoise"));
+    CyclesPixelSize->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCyclesPixelSize()));
+    labelCyclesPixelSize->setText(QObject::tr("Cycles pixel size"));
+    labelCyclesPixelSize->setToolTip(CyclesPixelSize->toolTip());
 }
 
 // Auto generated code (Tools/params_utils.py:697)

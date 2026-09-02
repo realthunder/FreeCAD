@@ -2136,6 +2136,19 @@ void segmentation_fault_handler(int sig)
 #endif
             break;
         case SIGABRT:
+            // Undo the re-arm above for this signal only. This arm throws, and
+            // a throw that reaches a noexcept frame calls terminate(), which
+            // calls abort(), which raises SIGABRT -- straight back into here.
+            // Re-armed, that is an unbounded loop, and since every turn runs
+            // printBacktrace() through dbghelp's PDB loading the process grows
+            // by hundreds of MB and reads as a HANG rather than a crash. At
+            // SIG_DFL the second SIGABRT ends the process the default way,
+            // after this one backtrace has been printed. The FC_OS_LINUX
+            // branch at the top of this function defaults the disposition for
+            // the same reason. SIGSEGV keeps the re-arm: it is thrown as
+            // Base::AccessViolation and can be caught and survived, and a
+            // later fault in the same session must still be reported.
+            std::signal(sig, SIG_DFL);
             printBacktrace(2, "Abnormal program termination...");
 #if !defined(_DEBUG)
             THROWM(Base::AbnormalProgramTermination, "Break signal occurred")

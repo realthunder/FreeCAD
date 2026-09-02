@@ -102,6 +102,11 @@ public:
     /// when it differed from the camera last stated. The caller holds
     /// the scene's mutex when a session is running.
     bool translateCamera(const CameraInput &camera);
+    /// Re-run the world statement after translateCamera invalidated it
+    /// (the background graph carries an orthographic-only camera-ray
+    /// fan, so a projection change rebuilds it). A no-op unless the
+    /// world was stated before. Same locking rule as translateCamera.
+    void refreshWorld();
 
     bool colorManaged() const
     {
@@ -129,11 +134,156 @@ private:
         bool glass = false;
         float ior = 1.5f;
         float glassRoughness = 0.0f;
+        /// Absorption density per scene unit, the Beer-Lambert sigma
+        /// before the tint weighting (sigma = density * (1 - base),
+        /// which is what fs_fc_glass.sc and Cycles' absorption volume
+        /// both compute). 0 = no absorption; resolveSurface leaves an
+        /// automatic (<= 0) density at 0 and translateDraw resolves it
+        /// from the draw's bounds.
+        float glassDensity = 0.0f;
     };
+    /// The texture maps of a draw as the graph samples them
+    /// (docs/CyclesIntegration.md sec 6.5): the unit-0 picture with its
+    /// GL texture environment, the bump or normal map, the emissive
+    /// and metallic-roughness maps. Every one is sampled through the
+    /// mesh's own texture coordinates, so a mesh without them carries
+    /// none -- the raster path's rule (BGFXViewSubmit's `mapped`).
+    struct Maps {
+        std::shared_ptr<const TextureImage> base;
+        std::shared_ptr<const TextureImage> bump;
+        std::shared_ptr<const TextureImage> emissive;
+        std::shared_ptr<const TextureImage> metalrough;
+        uint8_t model = 0;         ///< TextureImage::Model of the base picture
+        bool alphaSource = false;  ///< the base format carries alpha (Replace keeps it)
+        float blendColor[3] = {0.0f, 0.0f, 0.0f};  ///< the Blend model's colour, decoded
+        /// Millimetres of object space per texture-coordinate unit over
+        /// the draw's range, which turns the raster path's per-UV bump
+        /// slope into the per-millimetre distance Cycles' bump node
+        /// wants. 0 = not measured (no grayscale bump map).
+        float uvScale = 0.0f;
+        float bumpScale = 1.0f;  ///< BumpConfig::scale
+        bool any() const
+        {
+            return base || bump || emissive || metalrough;
+        }
+        /// The part of a shader key this contributes ("" without maps).
+        std::string key() const;
+    };
+    /// The maps a draw samples: what its material carries, when its
+    /// mesh has coordinates to sample them with.
+    Maps resolveMaps(const Material &m,
+                     const MeshData &mesh,
+                     const BumpConfig &bump,
+                     int start,
+                     int count) const;
+    /// The sockets the maps rewrite on their way from the surface's own
+    /// values to the BSDF. Links, every one of them, so a map multiplies
+    /// into whatever fed the socket before it; a null one is the BSDF's
+    /// constant (or, for the normal, the geometry's) until a map needs
+    /// it, when applyMaps makes the constant a node.
+    struct SurfaceLinks {
+        ccl::ShaderOutput *base = nullptr;
+        ccl::ShaderOutput *alpha = nullptr;
+        ccl::ShaderOutput *metallic = nullptr;
+        ccl::ShaderOutput *roughness = nullptr;
+        ccl::ShaderOutput *emission = nullptr;
+        ccl::ShaderOutput *normal = nullptr;
+    };
+    /// Sample  maps into  links: the base picture through its
+    /// texture environment (the four GL models of fc_mesh_fs.sh), the
+    /// emissive map added to the emission, the metallic-roughness map's
+    /// channels multiplied into the factors, the bump or normal map
+    /// into the shading normal. The constants stand in for the links
+    /// that are null on entry.
+    void applyMaps(ccl::ShaderGraph *graph,
+                   const Maps &maps,
+                   SurfaceLinks &links,
+                   float metallic,
+                   float roughness,
+                   const float emission[3]);
+    /// A machined surface finish as the graph shades it
+    /// (docs/CyclesIntegration.md sec 6.6): the pattern of fc_finish.sh
+    /// as a HEIGHT field over the draw's object space, laid out in the
+    /// face's projection frame (or triplanarly without one) and handed
+    /// to a Bump node, which differentiates it against the ray
+    /// differentials exactly as the raster shader differentiates its
+    /// analytic gradient against the pixel. The draw's own finish and
+    /// frame, or one face's out of the palettes (sec 6.7): a palette
+    /// entry resolves to one of these per shader variant.
+    struct Finish {
+        uint8_t pattern = 0;  ///< App::SurfaceFinish::Pattern, 0 = none
+        float pitch = 0.0f;   ///< mm of object space, feature spacing
+        float depth = 0.0f;   ///< mm of object space, peak to valley
+        float angle = 0.0f;   ///< lay direction, radians
+        SurfaceFrame frame;   ///< Unframed = triplanar
+        bool any() const
+        {
+            return pattern != 0;
+        }
+        /// The part of a shader key this contributes ("" without one).
+        std::string key() const;
+    };
+    /// The finish a draw shades: the material's scalars when they name
+    /// a pattern this translation knows with a positive pitch and depth
+    /// (the bgfx path's own gate), in the draw's frame.
+    Finish resolveFinish(const Material &m) const;
+    /// The same gate over one palette entry's numbers (the angle in
+    /// degrees, as the palette and the material both state it), laid
+    /// out in \a frame.
+    static Finish resolveFinish(uint8_t pattern,
+                                float pitch,
+                                float depth,
+                                float angleDeg,
+                                const SurfaceFrame &frame);
+    /// Perturb links.normal by the finish's height field: the pattern
+    /// (groove profile, brushed and blasted noise) sampled from baked
+    /// periodic tables, the projection frames built in-graph.
+    void applyFinish(ccl::ShaderGraph *graph, const Finish &finish, SurfaceLinks &links);
+    /// A projection frame's axes the way fc_finish.sh canonicalizes
+    /// them: the axis normalized, xdir made perpendicular to it (or
+    /// replaced when degenerate), ydir their cross product.
+    static void canonicalFrame(const SurfaceFrame &frame,
+                               float axis[3],
+                               float xdir[3],
+                               float ydir[3]);
+
+    /// The face's own image (docs/CyclesIntegration.md sec 6.7): one
+    /// layer of the draw's per-face texture palette, laid out in the
+    /// face's projection frame at `scale` millimetres per tile -- a
+    /// planar face in the plane's axes, a turned one unwrapped about
+    /// its axis, an unframed one off its dominant object axis -- or
+    /// over the mesh's own coordinates when the draw states no tile
+    /// size, as fc_mesh_fs.sh has it.
+    struct FaceImage {
+        std::shared_ptr<const TextureImage> image;
+        float scale = 0.0f;   ///< Material::facetexscale; <= 0 = the mesh's UVs
+        SurfaceFrame frame;   ///< Unframed = the dominant-axis projection
+        bool meshUV = false;  ///< the mesh has coordinates to sample with
+        bool any() const
+        {
+            return image != nullptr;
+        }
+        /// The part of a shader key this contributes ("" without one).
+        std::string key() const;
+    };
+    /// The image of palette layer \a layer (0 = none; past the palette
+    /// = its last entry, the raster path's clamp) in \a frame.
+    FaceImage resolveFaceImage(const Material &m,
+                               const MeshData &mesh,
+                               int layer,
+                               const SurfaceFrame &frame) const;
+    /// Modulate links.base and links.alpha by the face's image, sampled
+    /// where its frame or the mesh's coordinates put it.
+    void applyFaceImage(ccl::ShaderGraph *graph, const FaceImage &face, SurfaceLinks &links);
     Surface resolveSurface(const Material &material,
                            const PBRConfig &pbr,
                            const uint8_t *vertexColor,
                            const uint8_t *materialStream) const;
+    /// The automatic glass density of a draw that states none: about
+    /// one optical depth across the body's bounds diagonal before the
+    /// tint weighting, the same rule as the bgfx glass pass
+    /// (BGFXViewEffects.cpp). 0 when the bounds are empty.
+    static float autoGlassDensity(const DrawCall &draw);
 
     /// The draw's world-space section planes, carried into the SHADER
     /// because Cycles has no clip-plane state: the graph itself makes
@@ -150,13 +300,27 @@ private:
 
     /// The shader of a uniformly-coloured draw, keyed on everything but
     /// the base colour and alpha (those ride the object).
-    ccl::Shader *uniformShader(const Surface &surface, const Clip &clip);
-    /// The one shader of every per-vertex-attribute draw -- one per
-    /// distinct clip, which for a scene with no section is still one.
-    ccl::Shader *attributeShader(const Clip &clip);
+    ccl::Shader *uniformShader(const Surface &surface,
+                               const Clip &clip,
+                               const Maps &maps,
+                               const Finish &finish,
+                               const FaceImage &face);
+    /// The shader of a per-vertex-attribute draw: the surface rides the
+    /// mesh, so a scene of vertex-painted meshes with no section, no
+    /// maps and no finish shares ONE of these; what does not ride a
+    /// vertex (the clip, the maps, a finish, a face image) keys it.
+    ccl::Shader *attributeShader(const Clip &clip,
+                                 const Maps &maps,
+                                 const Finish &finish,
+                                 const FaceImage &face);
     /// Connect \a closure to the graph's surface output, through the
     /// clip test when there is one.
     void connectSurface(ccl::ShaderGraph *graph, ccl::ShaderOutput *closure, const Clip &clip);
+    /// The surface of debug view 2 (SceneInput::debugView): the shading
+    /// normal -- \a normal, or the geometry's when null -- emitted in
+    /// GL eye space as n * 0.5 + 0.5, which is what fs_fc_debug.sc
+    /// shows for the same mode.
+    void debugSurface(ccl::ShaderGraph *graph, ccl::ShaderOutput *normal, const Clip &clip);
 
     /// A translated mesh and what it cost, keyed by the draw's mesh
     /// identity (the cache contract cacheId + generation, the index
@@ -182,6 +346,7 @@ private:
     ///  changed when a node was created or restated.
     bool translateDraw(const DrawCall &draw,
                        const PBRConfig &pbr,
+                       const BumpConfig &bump,
                        const SectionConfig &section,
                        Spare &spare,
                        RenderReport &report,
@@ -203,13 +368,24 @@ private:
 
     ccl::Scene *scene;
     bool managed;
+    int debugView = 0;  ///< SceneInput::debugView of the last translate
     std::unordered_map<std::string, ccl::Shader *> shaders;
+    int imageNodes = 0;  ///< image texture nodes built into them
     std::unordered_map<std::string, MeshEntry> meshes;
     std::vector<Instance> instances;
 
     bool cameraStated = false;
     CameraInput lastCamera;
+    /// Whether the camera last stated was orthographic: the world's
+    /// background graph shapes its camera-ray fan by it.
+    bool cameraOrtho = false;
     bool worldStated = false;
+    /// True once translateWorld ever ran (worldStated goes false again
+    /// when a projection change invalidates the graph -- refreshWorld
+    /// only rebuilds a world that existed).
+    bool worldEverStated = false;
+    /// The projection kind the stated background graph was built for.
+    bool worldOrtho = false;
     PBRConfig worldPbr;
     OutputConfig worldOutput;
     bool lightStated = false;

@@ -122,7 +122,8 @@ public:
      * "not ready"; connect to iconReady() and ask again.
      */
     QIcon icon(const QString& key, const App::Material& material,
-               const QString& name = {});
+               const QString& name = {},
+               const App::MaterialRenderProperties& render = {});
 
     /// The icon for a surface finish, shown on a neutral material so the
     /// pattern is what differs between them and not the colour.
@@ -159,6 +160,35 @@ public:
     static QString resourceName(const QString& materialName);
     static QString finishResourceName(uint8_t pattern);
 
+    /** The name a look is bundled under when several cards share it
+     *
+     * Named by the appearance digest rather than by any one card,
+     * because that IS what the cards have in common: 219 bundled
+     * materials resolve to 28 distinct looks, 102 of them to the one
+     * steel. Bundling per card would ship the same picture a hundred
+     * times over, so a card falls back to this name when nothing is
+     * bundled under its own -- which is also what keeps the per-card
+     * name working as the override it is meant to be.
+     */
+    static QString sharedResourceName(const QString& digest);
+
+    /** The bundled swatch for a hatch pattern card, by its name
+     *
+     * A hatch is not a surface and cannot be rendered as one, so these
+     * are drawn flat and ahead of time (scripts/pattern-icons.py) and
+     * only ever looked up -- there is no render to fall back to, and a
+     * null icon means the caller should keep whatever it had.
+     */
+    QIcon patternIcon(const QString& key, const QString& materialName);
+    static QString patternResourceName(const QString& materialName);
+
+    /// The digest of a material's appearance, as the bundled icons are
+    /// named by. Public for the icon generator (MatGui.appearanceDigest),
+    /// which has to group cards by look before it renders anything.
+    static QString digestOf(const App::Material& material,
+                            const App::SurfaceFinish& finish,
+                            const App::MaterialRenderProperties& render = {});
+
     /** Render an appearance straight to a PNG file, digest and all
      *
      * What the icon generator calls (see MatGui.renderMaterialIcon); the
@@ -167,6 +197,7 @@ public:
      */
     bool renderToFile(const App::Material& material,
                       const App::SurfaceFinish& finish, const QString& path,
+                      const App::MaterialRenderProperties& render = {},
                       IconShape shape = IconShape::Sphere);
 
     /** Where the icon for \a key came from
@@ -193,9 +224,10 @@ private:
     void drain();
     QIcon build(const QString& key, const App::Material& material,
                 const App::SurfaceFinish& finish,
+                const App::MaterialRenderProperties& render = {},
                 IconShape shape = IconShape::Sphere);
     QImage render(const App::Material& material, const App::SurfaceFinish& finish,
-                  IconShape shape);
+                  const App::MaterialRenderProperties& props, IconShape shape);
     /// A bundled or user-supplied icon, or a null icon where there is
     /// none and where the one there is has gone stale.
     QIcon fromResource(const QString& key, const QString& file,
@@ -206,14 +238,13 @@ private:
     static QString resourcePath(const QString& file);
     QIcon fromImage(const QImage& image) const;
     static QString cachePath(const QString& digest);
-    static QString digestOf(const App::Material& material,
-                            const App::SurfaceFinish& finish);
 
     struct Request
     {
         QString key;
         App::Material material;
         App::SurfaceFinish finish;
+        App::MaterialRenderProperties render;
     };
 
     std::map<QString, QIcon> _cache;

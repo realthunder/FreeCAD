@@ -1,5 +1,5 @@
 $input a_position, i_data0, i_data1, i_data2, i_data3
-$output v_color0, v_wpos, v_dist
+$output v_color0, v_wpos, v_dist, v_line
 
 /*
  * Patterned (stipple) + clip-plane variant of the thick-line vertex

@@ -8,7 +8,7 @@ General:
   License: "LGPL-2.1-or-later"
   Description: "This material is for testing purposes only. It does not describe any real material."
 Inherits:
-  DefaultAppearance:
+  Default:
     UUID: "5dbb7be6-8b63-479b-ab4c-87be02ead973"
 Models:
   Test Model:

@@ -30,7 +30,7 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 SCENE=${1:-"$REPO/scripts/demo-water.py"}
 PORT=${2:-}
 LOG=${FC_LOG:-/tmp/fc-renderer-desktop.log}
-FCBUILD="${FC_BUILD:-$REPO/build/conda-debug}"
+FCBUILD="${FC_BUILD:-$REPO/build/conda-relwithdebinfo-801}"
 FCBIN="$FCBUILD/bin/FreeCAD"
 [ -x "$FCBIN" ] || { echo "no FreeCAD binary at $FCBIN (set FC_BUILD)"; exit 2; }
 

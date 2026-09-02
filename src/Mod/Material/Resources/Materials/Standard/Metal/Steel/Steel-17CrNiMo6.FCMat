@@ -6,7 +6,7 @@ General:
   License: "LGPL-2.0-or-later"
   Name: "17CrNiMo6"
 Inherits:
-   Steel:
+  Steel:
     UUID: "4b849c55-6b3a-4f75-a055-40c0d0324596"
 Models:
   Father:

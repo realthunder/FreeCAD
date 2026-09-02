@@ -33,9 +33,9 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 SCENE=${1:-"$REPO/scripts/demo-water.py"}
 PORT=${2:-8077}
 LOG=${FC_LOG:-/tmp/fc-serve-$PORT.log}
-# FC_BUILD selects the build tree to serve from; the default is
-# unchanged so an existing rig keeps launching what it always did.
-FCBIN="${FC_BUILD:-$REPO/build/conda-debug}/bin/FreeCAD"
+# FC_BUILD selects the build tree to serve from; the default is the
+# standard tree (docs/DevEnvironment.md).
+FCBIN="${FC_BUILD:-$REPO/build/conda-relwithdebinfo-801}/bin/FreeCAD"
 [ -x "$FCBIN" ] || { echo "no FreeCAD binary at $FCBIN (set FC_BUILD)"; exit 2; }
 MCP_PORT=${FC_MCP_PORT:-8765}
 EXTRA=()

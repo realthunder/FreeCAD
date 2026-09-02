@@ -2172,11 +2172,12 @@ public:
     ///    costs memory without showing more.
     ///  - Free CC0 panoramas: polyhaven.com/hdris.
     /// 
-    /// Drawn as the background it is deliberately soft -- the
-    /// background pass reads a blurred level of that cubemap, the
-    /// way a real backdrop is out of focus -- so expect a wash of
-    /// the photo's colours there rather than the photo. The
-    /// lighting and the reflections use the sharp levels.
+    /// How sharp it is DRAWN behind the model is a separate
+    /// question, and the answer is Render_PBREnvBlur: the background
+    /// pass reads a level of that cubemap the way a real backdrop is
+    /// out of focus, and at zero it reads the level it was baked at.
+    /// The lighting and the reflections use the sharp levels
+    /// whatever the blur says.
     /// 
     /// Empty falls back to that dialog's current image, then to the
     /// procedural environment.
@@ -2227,6 +2228,42 @@ public:
     static void removePBREnvBackground();
     static void setPBREnvBackground(const bool &v);
     static const char *docPBREnvBackground();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PBREnvBlur
+    ///
+    /// How far out of focus the environment background is, 0 to 1.
+    /// Zero draws it at the resolution it was baked at; one flattens
+    /// it to a single average colour. Only the BACKGROUND is
+    /// affected -- the lighting and the reflections read the whole
+    /// environment whatever this says.
+    /// 
+    /// A backdrop wants some of this. A real one is out of focus, and
+    /// softening also lets a small bright source bleed into a wide
+    /// gentle falloff instead of sitting in the frame as a hard
+    /// rectangle. Too much of it and there is nothing left for a
+    /// reflection to be reconciled against, which is the whole reason
+    /// the background is drawn at all. Blender's viewport shading
+    /// carries the same control for the same reasons, and defaults it
+    /// higher than this does.
+    /// 
+    /// Both shading models honour it, and at zero the two show the
+    /// same backdrop: they bake the environment at the same angular
+    /// resolution. The external path tracer gets there differently,
+    /// since the world it samples IS the light and softening it
+    /// would relight the scene -- so a second, smaller bake of the
+    /// same environment is mixed in on CAMERA rays alone, and the
+    /// lighting, reflections and refractions keep the sharp world.
+    /// One consequence of that rule: a camera ray stays a camera ray
+    /// through a transparent surface, so a see-through pass-through
+    /// shows the soft backdrop as well.
+    static const double & getPBREnvBlur();
+    static const double & defaultPBREnvBlur();
+    static void removePBREnvBlur();
+    static void setPBREnvBlur(const double &v);
+    static const char *docPBREnvBlur();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -2835,6 +2872,81 @@ public:
     static void removeGroundReflectionIntensity();
     static void setGroundReflectionIntensity(const double &v);
     static const char *docGroundReflectionIntensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CyclesDevice
+    ///
+    /// Compute device type the External shading model path traces
+    /// on, as Gui.cyclesDevices() names them: 'CPU' always works, and
+    /// 'CUDA', 'OPTIX' or 'HIP' when this machine has the GPU and the
+    /// driver for it. Seeds the per-view Cycles_Device property, which
+    /// offers only the devices the machine actually has -- a document
+    /// saved elsewhere falls back to the first local device when its
+    /// choice does not exist here.
+    static const std::string & getCyclesDevice();
+    static const std::string & defaultCyclesDevice();
+    static void removeCyclesDevice();
+    static void setCyclesDevice(const std::string &v);
+    static const char *docCyclesDevice();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CyclesSamples
+    ///
+    /// Samples per pixel the External shading model refines to
+    /// before it rests. More is cleaner and slower to settle; the view
+    /// stays interactive either way, restarting from one sample on
+    /// every camera move.
+    static const long & getCyclesSamples();
+    static const long & defaultCyclesSamples();
+    static void removeCyclesSamples();
+    static void setCyclesSamples(const long &v);
+    static const char *docCyclesSamples();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CyclesTimeLimit
+    ///
+    /// Seconds the External shading model may refine after each
+    /// change before it rests, whatever the sample budget still says.
+    /// 0 means no limit: the sample count alone decides.
+    static const double & getCyclesTimeLimit();
+    static const double & defaultCyclesTimeLimit();
+    static void removeCyclesTimeLimit();
+    static void setCyclesTimeLimit(const double &v);
+    static const char *docCyclesTimeLimit();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CyclesDenoise
+    ///
+    /// Run OpenImageDenoise over the refining External shading
+    /// frame, trading the raw noise of the early samples for a smooth
+    /// image that sharpens as samples arrive.
+    static const bool & getCyclesDenoise();
+    static const bool & defaultCyclesDenoise();
+    static void removeCyclesDenoise();
+    static void setCyclesDenoise(const bool &v);
+    static const char *docCyclesDenoise();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CyclesPixelSize
+    ///
+    /// Render the External shading model at 1/n resolution and
+    /// scale up -- Blender's preview pixel size. 2 or 4 keeps a large
+    /// view fluid on a weak device at the cost of a blockier preview.
+    static const long & getCyclesPixelSize();
+    static const long & defaultCyclesPixelSize();
+    static void removeCyclesPixelSize();
+    static void setCyclesPixelSize(const long &v);
+    static const char *docCyclesPixelSize();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

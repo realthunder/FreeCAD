@@ -6,6 +6,9 @@ General:
   License: "CC-BY-3.0"
   Name: "PET"
   SourceURL: "http://www.matweb.com/search/DataSheet.aspx?MatGUID=a696bdcdff6f41dd98f8eec3599eaa20"
+Inherits:
+  Acrylic:
+    UUID: "28ae5807-9bb9-40b7-9aed-1655faf52afe"
 Models:
   LinearElastic:
     UUID: '7b561d1d-fb9b-44f6-9da9-56a4f74d7536'

@@ -99,6 +99,13 @@ const QString ModelUUIDs::ModelUUID_Rendering_Advanced =
     QStringLiteral("c880f092-cdae-43d6-a24b-55e884aacbbf");
 const QString ModelUUIDs::ModelUUID_Rendering_Vector =
     QStringLiteral("fdf5a80e-de50-4157-b2e5-b6e5f88b680e");
+const QString ModelUUIDs::ModelUUID_Rendering_Glass =
+    QStringLiteral("59ae40ef-3aeb-46a8-8f80-47cf609bf513");
+
+const QString ModelUUIDs::ModelUUID_Patterns_PAT =
+    QStringLiteral("0326c759-4e3d-46ca-bb7d-146ebebea65e");
+const QString ModelUUIDs::ModelUUID_Patterns_PatternFile =
+    QStringLiteral("c6596294-e97d-4812-87db-28e1d66521a3");
 
 const QString ModelUUIDs::ModelUUID_Render_Appleseed =
     QStringLiteral("b0a10f70-13bf-4598-ab63-bcfbbcd813e3");

@@ -116,6 +116,14 @@ ParamGroup = (
         'GroundReflection',
         'GroundReflectionIntensity',
     )]),
+
+    ('External shading (Cycles)', [_RenderParams[name] for name in (
+        'CyclesDevice',
+        'CyclesSamples',
+        'CyclesTimeLimit',
+        'CyclesDenoise',
+        'CyclesPixelSize',
+    )]),
 )
 
 def declare():

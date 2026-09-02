@@ -620,7 +620,7 @@ bool BGFXRenderer::getRenderStats(RenderStats &stats) const
     // here they describe the pools as of the frame the caller just
     // pumped, which is what a caller asking "how much headroom is
     // left" means.
-    if (const bgfx::Stats *s = bgfx::getStats()) {
+    if (const bgfx::Stats *s = _BGFXLib.deviceUp() ? bgfx::getStats() : nullptr) {
         stats.numFrameBuffers = s->numFrameBuffers;
         stats.numTextures = s->numTextures;
         stats.numViews = s->numViews;

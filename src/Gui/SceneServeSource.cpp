@@ -257,7 +257,9 @@ public:
     std::shared_ptr<const Render::Cycles::SceneInput> cyclesInput;
     uint64_t cyclesSceneGen = 0;
     Render::PBRConfig cyclesPbr;
+    Render::BumpConfig cyclesBump;
     Render::OutputConfig cyclesOutput;
+    int cyclesDebugView = 0;
     Render::LightConfig cyclesLight;
     Render::Background cyclesBackground;
 
@@ -362,9 +364,17 @@ public:
             return;
         App::PropertyContainer *settings = &renderProps;
         Render::PBRConfig pbr = RendererBridge::translatePBRConfig(settings);
+        // A Cycles stream IS external shading: the client asked for the
+        // path tracer, so the enabled flag states that choice, not the
+        // Render_PBR facade (which only says what a raster pipeline
+        // would shade) -- same rule as the viewport session, and what
+        // lets Render_PBREnvBackground be seen in the streamed frame.
+        pbr.enabled = true;
+        Render::BumpConfig bump = RendererBridge::translateBumpConfig(settings);
         Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
         Render::LightConfig light = RendererBridge::translateLightConfig(nullptr, settings);
         Render::Background background = backgroundFromPreferences();
+        const int debugView = int(RenderParams::getDebugViewMode());
         const uint64_t gen = renderer->sceneGeneration();
         const bool sameBackground = background.type == cyclesBackground.type
             && background.fromColor == cyclesBackground.fromColor
@@ -372,8 +382,8 @@ public:
             && background.midColor == cyclesBackground.midColor
             && background.hasMid == cyclesBackground.hasMid;
         const bool stale = force || !cyclesInput || gen != cyclesSceneGen
-            || !(pbr == cyclesPbr) || !(output == cyclesOutput) || !(light == cyclesLight)
-            || !sameBackground;
+            || !(pbr == cyclesPbr) || !(bump == cyclesBump) || !(output == cyclesOutput) || !(light == cyclesLight)
+            || debugView != cyclesDebugView || !sameBackground;
         if (stale) {
             SoFCRenderCache *cache = manager->getSceneCache();
             if (!cache)
@@ -382,8 +392,10 @@ public:
             input->draws = RendererBridge::translate(cache->getVertexCaches(true),
                                                      RendererBridge::SectionOnTop());
             input->pbr = pbr;
+            input->bump = bump;
             input->output = output;
             input->light = light;
+            input->debugView = debugView;
             input->background = background;
             // The synthetic framing, for form's sake: a stream ignores
             // it once its viewer has stated a camera, and the start op
@@ -394,7 +406,9 @@ public:
             cyclesInput = input;
             cyclesSceneGen = gen;
             cyclesPbr = pbr;
+            cyclesBump = bump;
             cyclesOutput = output;
+            cyclesDebugView = debugView;
             cyclesLight = light;
             cyclesBackground = background;
         }
@@ -460,6 +474,7 @@ public:
             report[QLatin1String("objects")] = st.report.objects;
             report[QLatin1String("shaders")] = st.report.shaders;
             report[QLatin1String("triangles")] = double(st.report.triangles);
+            report[QLatin1String("images")] = double(st.report.images);
             report[QLatin1String("skipped")] = st.report.skipped;
             reply[QLatin1String("report")] = report;
             return reply;

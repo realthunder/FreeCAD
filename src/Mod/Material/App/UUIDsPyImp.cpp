@@ -208,6 +208,11 @@ Py::String UUIDsPy::getVectorRendering() const
     return Py::String(ModelUUIDs::ModelUUID_Rendering_Vector.toStdString());
 }
 
+Py::String UUIDsPy::getGlassRendering() const
+{
+    return Py::String(ModelUUIDs::ModelUUID_Rendering_Glass.toStdString());
+}
+
 Py::String UUIDsPy::getRenderAppleseed() const
 {
     return Py::String(ModelUUIDs::ModelUUID_Render_Appleseed.toStdString());

@@ -466,7 +466,10 @@ void BGFXView::submitBloom(float threshold, float intensity, float radius,
                 continue;
             const Render::Material &mat = draw->material;
             float color[4];
-            unpackColor(mat.diffuse, color);
+            // An authored colour, decoded like the mesh pass decodes
+            // the same diffuse: the halo must be the hue the body
+            // shades in, not its sRGB numbers scaled as light.
+            unpackAuthoredColor(mat.diffuse, color, colorManaged());
             float inten = mat.lightintensity > 0.0f
                 ? mat.lightintensity : 1.0f;
             for (int j = 0; j < 3; ++j)
@@ -551,7 +554,9 @@ void BGFXView::submitWaterSurface(const Render::DrawCall &draw,
 
     const Render::Material &mat = draw.material;
     float color[4];
-    unpackColor(mat.diffuse, color);
+    // Authored: the tint is a Beer-Lambert sigma in the shader, which
+    // is arithmetic on light and wants the linear colour.
+    unpackAuthoredColor(mat.diffuse, color, colorManaged());
     // The alpha channel flags the shader that a planar reflection is
     // rendered into s_texRefl (mirror-camera scene) — otherwise it
     // falls back to the environment cubemap.
@@ -689,6 +694,79 @@ void BGFXView::submitWaterSurface(const Render::DrawCall &draw,
     ++drawcount;
 }
 
+void BGFXView::submitLineSdf(const Render::DrawCall &draw,
+                             const float *viewMatrix, bool noseam)
+{
+    if (!m_instancing || !draw.mesh)
+        return;
+    const Render::Material &mat = draw.material;
+    const bool isPoint = mat.type == Render::Material::Point;
+    if (!isPoint && mat.type != Render::Material::Line)
+        return;
+    GpuMesh *mesh = getMesh(*draw.mesh);
+    if (!bgfx::isValid(mesh->geom->vbh))
+        return;
+    if (noseam && !isPoint)
+        mesh->ensureNoSeam(*draw.mesh);
+    noseam = noseam && !isPoint && bgfx::isValid(mesh->geom->lineNoSeam);
+    bgfx::VertexBufferHandle inst = isPoint
+        ? mesh->pointInst
+        : (noseam ? mesh->lineNoSeamInst : mesh->lineInst);
+    if (!bgfx::isValid(inst))
+        return;
+
+    const bool clipped = clipActiveFor(mat);
+    bgfx::ProgramHandle prog = isPoint
+        ? (clipped ? m_progPointSdfClip : m_progPointSdf)
+        : (clipped ? m_progLineSdfClip : m_progLineSdf);
+    if (!bgfx::isValid(prog))
+        return;
+
+    float color[4];
+    unpackAuthoredColor(mat.diffuse, color, colorManaged());
+    // u_params.y is the width the field is thresholded against, so it
+    // carries exactly what the beauty pass would draw at: an unrounded
+    // line width, a rounded point size.
+    float params[4] = {mat.pervertexcolor ? 1.0f : 0.0f,
+                       isPoint
+                           ? qMax(1.0f, std::floor(mat.pointsize + 0.5f))
+                           : qMax(1.0f, mat.linewidth),
+                       0.0f, 1.0f};
+    bgfx::setUniform(u_matColor, color);
+    bgfx::setUniform(u_params, params);
+    bgfx::setTexture(3, s_texGlassFront, glassFrontTex);
+    if (clipped)
+        setClipUniforms(mat);
+    setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
+                     (float)height);
+
+    uint32_t start = 0;
+    uint32_t count = isPoint
+        ? uint32_t(draw.mesh->numPointIndices)
+        : uint32_t(noseam ? draw.mesh->numNoSeamLineIndices
+                          : draw.mesh->numLineIndices) / 2;
+    if (draw.indexCount > 0) {
+        start = isPoint ? uint32_t(draw.indexStart)
+                        : uint32_t(draw.indexStart) / 2;
+        count = isPoint ? uint32_t(draw.indexCount)
+                        : uint32_t(draw.indexCount) / 2;
+    }
+    if (count == 0)
+        return;
+    LineQuadVertex::init();
+    bgfx::setVertexBuffer(0, m_lineQuadVb);
+    bgfx::setIndexBuffer(m_lineQuadIb);
+    bgfx::setInstanceDataBuffer(inst, start, count);
+    // The nearest decoration wins each texel: the fragment stage puts
+    // the distance to its edge on gl_FragDepth and this LESS test
+    // resolves the min. No colour blending -- the winner's colour is
+    // the answer, not a mixture of everyone who overlapped.
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                   | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+    bgfx::submit(vid(ViewGlassLineSdf), prog);
+    ++drawcount;
+}
+
 void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject)
 {
     if (!draw.mesh || !draw.mesh->triangleIndices)
@@ -705,7 +783,14 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
 
     const Render::Material &mat = draw.material;
     float color[4];
-    unpackColor(mat.diffuse, color);
+    // Authored, decoded when the pipeline is colour managed -- the
+    // same rule as the mesh pass, and the one Cycles applies to the
+    // same colour before its absorption volume. Handed over encoded,
+    // fs_fc_glass.sc absorbed with (1 - sRGB) where the tracer
+    // absorbed with (1 - linear), 0.30 against 0.55 for a 0.7 channel,
+    // and its frosted scatter wash multiplied linear irradiance by a
+    // display number.
+    unpackAuthoredColor(mat.diffuse, color, colorManaged());
     bgfx::setUniform(u_matColor, color);
     // Like every vs_fc_mesh pairing: u_params is a global uniform,
     // an unset value would inherit a line draw's depth bias.
@@ -744,6 +829,8 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
                      depthReject ? aoNormalZ : sceneCopyTex);
     bgfx::setTexture(3, s_texGlassFront, glassFrontTex);
     bgfx::setTexture(4, s_texGlassBack, glassBackTex);
+    bgfx::setTexture(5, s_texLineSdf, lineSdfTex);
+    bgfx::setTexture(6, s_texLineSdfAux, lineSdfAuxTex);
 
     setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
     setMeshVertexBuffers(gpu, *draw.mesh);

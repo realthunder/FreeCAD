@@ -266,7 +266,12 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     (LightConfig::groundFollowCamera). A snapshot older than this
 //     was written by a build that only had the scene-bounds sizing, so
 //     it reads as off and lays its ground out the way it was measured.
-const uint32_t kVersion = 69;
+// 70: how far out of focus the environment background is
+//     (PBRConfig::envBlur). A snapshot older than this was written by
+//     a build whose background was fixed two cubemap levels down, so
+//     it reads as the blur that stands for the same softness rather
+//     than as the sharper default.
+const uint32_t kVersion = 70;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -344,7 +349,7 @@ static_assert(sizeof(BumpConfig) == 8, "BumpConfig changed: stream the new field
 static_assert(sizeof(VolumetricConfig) == 28, "VolumetricConfig changed: stream the new field, then update this");
 static_assert(sizeof(WaterConfig) == 48, "WaterConfig changed: stream the new field, then update this");
 static_assert(sizeof(BloomConfig) == 16, "BloomConfig changed: stream the new field, then update this");
-static_assert(offsetof(PBRConfig, envBackground) == 16, "PBRConfig changed: stream the new field, then update this");
+static_assert(offsetof(PBRConfig, envPreset) == 32, "PBRConfig changed: stream the new field, then update this");
 static_assert(offsetof(LightConfig, groundColor) == 172,"LightConfig changed: stream the new field, then update this");
 static_assert(offsetof(RenderDebugConfig, coverage) == 7, "RenderDebugConfig changed: stream the new field, then update this");
 
@@ -3156,6 +3161,8 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.i32(snap.pbrconf.envPreset);
     w.f(snap.pbrconf.envIntensity);
     w.b(snap.pbrconf.envBackground);
+    // v70: how far out of focus that background is.
+    w.f(snap.pbrconf.envBlur);
     refs.tex(w, snap.pbrconf.envImage);
     w.b(snap.pbrconf.fromSpecular);
     // v61: how a Phong shininess becomes a roughness.
@@ -3584,6 +3591,11 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.pbrconf.envPreset = version >= 64 ? r.i32() : 1;
     snap.pbrconf.envIntensity = r.f();
     snap.pbrconf.envBackground = version >= 25 ? r.b() : false;
+    // 0.375, not the current default: an older snapshot was written by
+    // a build that drew the background two levels down a 128 cubemap,
+    // and that is the blur which stands for the same softness on the
+    // sharper background map this reads it onto.
+    snap.pbrconf.envBlur = version >= 70 ? r.f() : 0.375f;
     if (version >= 25)
         refs.tex(r, snap.pbrconf.envImage);
     snap.pbrconf.fromSpecular = version >= 59 ? r.b() : false;
