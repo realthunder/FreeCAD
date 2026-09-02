@@ -728,6 +728,47 @@ TEST_F(MaterialXGenerator, aCarriedDocumentNamesItsFilesWhereTheyAre)
     EXPECT_FALSE(after[0].path.empty());
 }
 
+TEST_F(MaterialXGenerator, aReferenceNotCarriedKeepsWhatItsPrefixMeant)
+{
+    ScratchImages images("partial");
+    images.file("color.png");
+    images.file("other.png");
+    std::string xml = openPbrDoc(
+        "    <input name=\"base_color\" type=\"color3\" nodename=\"tex\" />\n"
+        "    <input name=\"specular_color\" type=\"color3\" nodename=\"tex2\" />\n",
+        "  <image name=\"tex\" type=\"color3\">\n"
+        "    <input name=\"file\" type=\"filename\" value=\"color.png\" />\n"
+        "  </image>\n"
+        "  <image name=\"tex2\" type=\"color3\">\n"
+        "    <input name=\"file\" type=\"filename\" value=\"other.png\" />\n"
+        "  </image>\n");
+    const std::string dir = images.document().substr(
+            0, images.document().rfind("doc.mtlx"));
+    xml.replace(xml.find("<materialx version=\"1.39\""),
+                std::strlen("<materialx version=\"1.39\""),
+                "<materialx version=\"1.39\" fileprefix=\"" + dir + "\"");
+
+    auto refs = Render::MaterialX::imageReferences(xml);
+    ASSERT_EQ(refs.size(), 2u);
+    // Only the first is carried -- the second's content has not arrived,
+    // or this machine never had it. Either way it is not ours to rewrite.
+    const std::string stored = images.file("stored.png");
+    std::vector<Render::MaterialX::ImageReference> files;
+    files.push_back({dir + "color.png", dir + stored});
+
+    const std::string carried = Render::MaterialX::substituteImages(xml, files);
+    EXPECT_EQ(carried.find("fileprefix"), std::string::npos) << carried;
+    // The prefix is gone for the carried one's sake, so the other has to
+    // have taken what the prefix meant: it still names the same file and
+    // still resolves. Left as a bare name it would have resolved before
+    // this call and not after it.
+    auto after = Render::MaterialX::imageReferences(carried);
+    ASSERT_EQ(after.size(), 2u);
+    EXPECT_EQ(after[0].name, dir + stored);
+    EXPECT_EQ(after[1].name, dir + "other.png");
+    EXPECT_FALSE(after[1].path.empty()) << after[1].name;
+}
+
 TEST_F(MaterialXGenerator, aDocumentWithoutTheNamedFileIsLeftAlone)
 {
     const std::string xml = openPbrDoc(

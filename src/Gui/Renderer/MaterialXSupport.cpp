@@ -573,17 +573,30 @@ std::string substituteImages(const std::string &xml,
             continue;
         if (input->getValueString().empty())
             continue;
-        auto it = byName.find(statedName(elem, input));
-        if (it == byName.end())
+        const std::string stated = statedName(elem, input);
+        auto it = byName.find(stated);
+        if (it == byName.end()) {
+            // Not carried -- its content has not arrived, or this machine
+            // never had the file. The prefixes are about to go for the
+            // sake of the ones that ARE carried, so this one keeps what its
+            // prefix meant by taking the stated name outright; otherwise a
+            // reference that resolved before this call stops resolving
+            // after it.
+            if (stated != input->getValueString()) {
+                input->setValueString(stated);
+                changed = true;
+            }
             continue;
+        }
         input->setValueString(it->second);
         changed = true;
     }
     if (!changed)
         return xml;
     // The prefixes go with the names they qualified: what is left is
-    // absolute, and whoever resolves the result -- flattenFilenames,
-    // downstream -- would otherwise prepend the prefix to it again.
+    // absolute, or the stated name with its prefix already applied, and
+    // whoever resolves the result -- flattenFilenames, downstream --
+    // would otherwise prepend the prefix to it again.
     for (mx::ElementPtr elem : doc->traverseTree()) {
         if (elem->hasAttribute(mx::Element::FILE_PREFIX_ATTRIBUTE))
             elem->removeAttribute(mx::Element::FILE_PREFIX_ATTRIBUTE);
