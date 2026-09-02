@@ -366,11 +366,28 @@ private:
                        RenderReport &report,
                        bool &changed);
 
+    /// A shader node cannot be deleted (Cycles does not support it), so
+    /// a key nothing shades under any more -- a dragged section plane
+    /// keys every shader it clips by its coefficients, so a drag mints
+    /// keys without bound -- is RECYCLED instead: releaseUnusedShaders
+    /// drops the orphan's graph (freeing its image handles) and parks
+    /// the node as a spare, and the next new key re-graphs a spare
+    /// before it creates a node.
+    struct ShaderEntry {
+        ccl::Shader *shader = nullptr;
+        int images = 0;  ///< image texture nodes its graph carries
+    };
+    /// A spare shader node re-graphed, or a fresh one.
+    ccl::Shader *acquireShader();
+    /// Park every shader no live mesh references; true when one was.
+    bool releaseUnusedShaders();
+
     ccl::Scene *scene;
     bool managed;
     int debugView = 0;  ///< SceneInput::debugView of the last translate
-    std::unordered_map<std::string, ccl::Shader *> shaders;
-    int imageNodes = 0;  ///< image texture nodes built into them
+    std::unordered_map<std::string, ShaderEntry> shaders;
+    std::vector<ccl::Shader *> spareShaders;
+    int imageNodes = 0;  ///< image texture nodes in the live shaders
     std::unordered_map<std::string, MeshEntry> meshes;
     std::vector<Instance> instances;
 

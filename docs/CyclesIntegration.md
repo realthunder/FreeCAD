@@ -602,8 +602,13 @@ already has on the device.
   reads its geometry on the way out. A mesh whose content changed
   arrives under a new key (the generation, or a new cacheId), so it
   is built beside the old one and the old one is released the same
-  pass; shaders are never deleted (Cycles does not support it) and
-  are bounded by distinct surfaces anyway.
+  pass. A shader cannot be deleted (Cycles does not support it), and
+  "bounded by distinct surfaces" is not a bound when a section plane
+  drags -- its coefficients key every shader they clip, so a drag
+  mints keys without end. So a shader no live mesh references is
+  RECYCLED after the pass instead: its graph is dropped (freeing its
+  image handles) and the node is parked, and the next new key
+  re-graphs a parked node before it creates one.
 - **World and light.** `translateWorld()` remembers the `PBRConfig`
   and `OutputConfig` it baked from and returns early when they are
   equal; `translateLight()` the same with `LightConfig` plus, for a
