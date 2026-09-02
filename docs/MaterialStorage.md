@@ -1092,7 +1092,35 @@ canonical form writes a `MaterialX:` block of names and hashes and skips
 the paths, the loader hashes a library card's files at load and reads the
 block back for a stored card, and `Materials::PropertyMaterial` puts the
 files and the manifest into the store on assignment and re-requests them
-on restore. Steps 8 and 9 are not started; nothing draws a manifest yet.
+on restore. Step 8 is built (2026-09-02, the commit after this note): a
+manifest hash on the base appearance becomes ONE shared `SoShaderProgram`
+per document and hash, kept in a registry beside the binding machinery
+(`ViewProviderShaderBinding::acquireMaterialXNode` / `releaseMaterialXNode`,
+refcounted), built from the stored blobs -- the document text with its
+image names rewritten to the blobs' paths on this machine (16.6) -- and
+inserted at the head of the wearing object's root where a Scope=Object
+binding puts its node, so the capture callback routes it into that
+object's cache. `ViewProviderGeometryObject::updateMaterialXNode()` runs
+first in `updateRenderMaterial()`, which both an appearance edit and the
+post-restore pass reach; the node is null while any blob is still on its
+way, and the post-restore pass asks again. Verified with a GUI probe: two
+boxes wearing one card share one node (same node id), a third box wears
+none, switching a box to Steel takes its node out and leaves the other's,
+save and reopen brings it back, and the raster path translated the
+probe's `standard_surface` with an `image` node to OpenPBR and drew it.
+Step 9 (per-face column, Edit shader) is not started.
+
+One thing step 8 leaves OPEN, for a ruling: precedence when an object
+wears a card AND is the target of a Scope=Object binding. Both put their
+program node at index 0 of the same root, and the cache's
+`setUserShader` keeps the LAST program traversed, so whichever node was
+inserted EARLIER (now at index 1) wins -- assign the card after the
+binding and the binding shows, create the binding after the card and the
+card shows, and a restore lands wherever its order lands. The consistent
+answer is that the explicit binding wins (the "outer shader wins" rule the
+cache already applies across link levels); it needs one of the two
+inserters to place its node relative to the other's, and neither knows
+the other today.
 
 Two more restore doors turned up while doing step 4, both now closed in
 `6dad71e400` and worth knowing about for any future rename of an OBJECT

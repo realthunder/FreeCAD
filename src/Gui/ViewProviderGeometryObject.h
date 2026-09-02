@@ -42,6 +42,8 @@ class SoTexture2Transform;
 class SoBumpMap;
 class SoShadowStyle;
 
+class SoShaderProgram;
+
 namespace Gui {
 
 /** ShapeColor, whose storage is the object's ShapeAppearance
@@ -292,6 +294,18 @@ protected:
     /// Sync the optional SoFCRenderMaterial node (render engine per-object
     /// PBR parameters) with the Render_* dynamic properties.
     void updateRenderMaterial();
+    /** Sync the shared MaterialX program node with the appearance
+     *
+     * The base's MaterialAppearance::materialx names a card-carried
+     * document set by its manifest hash; the shared node built from it
+     * (ViewProviderShaderBinding::acquireMaterialXNode) goes in at the
+     * root's head like a binding's does, and is given back when the hash
+     * changes or goes. Called from updateRenderMaterial(), so both an
+     * appearance edit and the post-restore pass reach it -- the second
+     * matters because the node needs blobs a restore drains only after
+     * the view document has been read.
+     */
+    void updateMaterialXNode();
     /// Sync the optional SoTexture2/SoTexture2Transform/SoBumpMap/
     /// SoFCRenderTexture nodes with the Render_BaseColorTexture /
     /// Render_Texture* / Render_NormalMap / Render_EmissiveMap /
@@ -346,6 +360,10 @@ protected:
 protected:
     SoMaterial       * pcShapeMaterial{nullptr};
     SoFCRenderMaterial * pcRenderMaterial{nullptr};
+    /// The shared card node this object wears, and the manifest hash it
+    /// was acquired for (see updateMaterialXNode)
+    SoShaderProgram  * pcMaterialXNode{nullptr};
+    std::string materialXHash;
     SoTexture2       * pcRenderTexture{nullptr};
     SoTexture2Transform * pcRenderTexTransform{nullptr};
     SoBumpMap        * pcRenderBumpMap{nullptr};

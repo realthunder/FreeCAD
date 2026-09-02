@@ -212,6 +212,32 @@ public:
     /// coalesced rebuild; no-op for documents without Appearances.
     static void onViewCreated(App::Document *doc);
 
+    /** @name The shared node of a card-carried MaterialX document
+     *
+     * A material card that carries a MaterialX document puts its manifest
+     * hash on the appearance (App::MaterialAppearance::materialx,
+     * docs/MaterialStorage.md sec 17). Fifty objects wearing the card
+     * share ONE SoShaderProgram built from that manifest -- one document
+     * read, one generation, one compile (docs/CyclesIntegration.md 6.13
+     * decision 1a) -- kept here, beside the binding machinery that already
+     * inserts program nodes at target roots, in a per-document registry
+     * keyed by the manifest hash. The node is immutable while shared: an
+     * edit means materializing real shader objects, never touching this.
+     */
+    //@{
+    /** The shared node for \a manifestHash in \a doc, built on first use
+     *
+     * The manifest and every file it names must already be in the
+     * document's blob store; null while any is not (a restore still
+     * draining, a card whose files were never found), and the caller asks
+     * again later. Counted: every acquire is owed a release.
+     */
+    static SoShaderProgram *acquireMaterialXNode(App::Document *doc,
+                                                 const std::string &manifestHash);
+    /// Give back one hold on the shared node; the last release drops it.
+    static void releaseMaterialXNode(App::Document *doc, const std::string &manifestHash);
+    //@}
+
 private:
     void clearBindings();
     /// Scope=Instance/Element: register per-path overrides with every

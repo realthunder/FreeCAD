@@ -71,7 +71,9 @@
 #include "SoFCSelection.h"
 #include "SoFCUnifiedSelection.h"
 #include "Inventor/SoFCRenderMaterial.h"
+#include <Inventor/nodes/SoShaderProgram.h>
 #include "Renderer/Renderer.h"
+#include "ViewProviderShaderObject.h"
 #include "View3DInventorViewer.h"
 
 
@@ -147,6 +149,11 @@ ViewProviderGeometryObject::ViewProviderGeometryObject()
 ViewProviderGeometryObject::~ViewProviderGeometryObject()
 {
     pcShapeMaterial->unref();
+    if (pcMaterialXNode) {
+        pcMaterialXNode->unref();
+        ViewProviderShaderBinding::releaseMaterialXNode(
+                getObject() ? getObject()->getDocument() : nullptr, materialXHash);
+    }
     if (pcRenderMaterial)
         pcRenderMaterial->unref();
     if (pcRenderTexture)
@@ -810,8 +817,42 @@ void ViewProviderGeometryObject::updateFaceTextures(
     faceTextureSources = std::move(palette);
 }
 
+void ViewProviderGeometryObject::updateMaterialXNode()
+{
+    // Uniform for now: the BASE's document set. A per-face palette of
+    // documents is the per-triangle shader slot work of step 9.
+    std::string hash = ShapeAppearance.getSize() ? ShapeAppearance.getBase().materialx
+                                                 : std::string();
+    App::Document *doc = getObject() ? getObject()->getDocument() : nullptr;
+    if (hash == materialXHash && (hash.empty() || pcMaterialXNode))
+        return;
+    if (pcMaterialXNode) {
+        int idx = pcRoot->findChild(pcMaterialXNode);
+        if (idx >= 0)
+            pcRoot->removeChild(idx);
+        pcMaterialXNode->unref();
+        pcMaterialXNode = nullptr;
+        ViewProviderShaderBinding::releaseMaterialXNode(doc, materialXHash);
+    }
+    materialXHash = hash;
+    if (hash.empty() || !doc)
+        return;
+    // Null while the blobs have not all arrived: finishRestoring() comes
+    // back through updateRenderMaterial() once the archive is drained.
+    SoShaderProgram *node = ViewProviderShaderBinding::acquireMaterialXNode(doc, hash);
+    if (!node)
+        return;
+    node->ref();
+    pcMaterialXNode = node;
+    // At the head of the root, where a Scope=Object binding puts its node:
+    // the capture callback routes a material-stage program found there
+    // into this object's own render cache.
+    pcRoot->insertChild(node, 0);
+}
+
 void ViewProviderGeometryObject::updateRenderMaterial()
 {
+    updateMaterialXNode();
     // The Render_* dynamic properties are optional per-object render
     // engine settings; a SoFCRenderMaterial node at the head of the view
     // provider root carries them into the mode-3 render cache (the node

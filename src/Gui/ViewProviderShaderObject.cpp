@@ -55,6 +55,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObserver.h>
+#include <App/MaterialXDocument.h>
 #include <App/ShaderObject.h>
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
@@ -1059,8 +1060,100 @@ void ViewProviderShader::updateDemo()
 }
 
 // ----------------------------------------------------------------------------
-
 PROPERTY_SOURCE(Gui::ViewProviderShaderBinding, Gui::ViewProviderLink)
+
+namespace {
+/// One card-carried document set, built once per document and shared by
+/// every object wearing the card (docs/CyclesIntegration.md 6.13, 1a)
+struct MaterialXNode {
+    CoinPtr<SoShaderProgram> program;
+    CoinPtr<SoFragmentShader> fragment;
+    int users = 0;
+};
+std::map<App::Document*, std::map<std::string, MaterialXNode>> _MaterialXNodes;
+}  // namespace
+
+SoShaderProgram *ViewProviderShaderBinding::acquireMaterialXNode(
+        App::Document *doc, const std::string &manifestHash)
+{
+    if (!doc || manifestHash.empty())
+        return nullptr;
+    auto &nodes = _MaterialXNodes[doc];
+    auto it = nodes.find(manifestHash);
+    if (it != nodes.end()) {
+        ++it->second.users;
+        return it->second.program;
+    }
+    // Everything the node is built from has to be IN the store. A
+    // restore hands the blobs over as the archive yields them, so a miss
+    // here is "not yet", and the caller comes back (finishRestoring).
+    auto &manager = doc->getFileBlobManager();
+    auto blob = manager.find(manifestHash);
+    if (!blob)
+        return nullptr;
+    App::MaterialXDocument manifest;
+    if (!App::MaterialXDocument::readFile(blob->path(), manifest) || !manifest.isSet()) {
+        FC_WARN("MaterialX manifest " << manifestHash << " in "
+                << doc->getName() << " cannot be read");
+        return nullptr;
+    }
+    std::string text;
+    std::vector<Render::MaterialX::ImageReference> files;
+    for (const auto &file : manifest.files) {
+        auto child = manager.find(file.hash);
+        if (!child)
+            return nullptr;   // still on its way
+        if (file.name == manifest.document) {
+            Base::ifstream in(Base::FileInfo(child->path()), std::ios::in | std::ios::binary);
+            if (!in) {
+                FC_WARN("MaterialX document " << file.name << " of " << manifestHash
+                        << " cannot be read from " << child->path());
+                return nullptr;
+            }
+            std::ostringstream buf;
+            buf << in.rdbuf();
+            text = buf.str();
+        }
+        else {
+            files.push_back({file.name, child->path()});
+        }
+    }
+    if (text.empty())
+        return nullptr;
+    // The document names its maps by the names the manifest keeps them
+    // under; what goes into the node names them where the stored files
+    // are on THIS machine, so the generator and the path tracer go on
+    // opening files (docs/MaterialStorage.md sec 16.6).
+    if (!files.empty())
+        text = Render::MaterialX::substituteImages(text, files);
+
+    MaterialXNode &node = nodes[manifestHash];
+    node.program = new SoShaderProgram;
+    node.fragment = new SoFragmentShader;
+    node.fragment->sourceType = SoShaderObject::MATERIALX;
+    node.fragment->sourceProgram = text.c_str();
+    node.program->stage = SbName(StageMaterial);
+    node.program->shaderObject.setNum(1);
+    node.program->shaderObject.set1Value(0, node.fragment);
+    node.users = 1;
+    FC_LOG("MaterialX card node built for " << manifestHash << " in " << doc->getName());
+    return node.program;
+}
+
+void ViewProviderShaderBinding::releaseMaterialXNode(App::Document *doc,
+                                                     const std::string &manifestHash)
+{
+    auto docIt = _MaterialXNodes.find(doc);
+    if (docIt == _MaterialXNodes.end())
+        return;
+    auto it = docIt->second.find(manifestHash);
+    if (it == docIt->second.end())
+        return;
+    if (--it->second.users <= 0)
+        docIt->second.erase(it);
+    if (docIt->second.empty())
+        _MaterialXNodes.erase(docIt);
+}
 
 namespace {
 // Active ShaderBinding view providers per document, for precedence
