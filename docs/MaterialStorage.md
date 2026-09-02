@@ -1110,7 +1110,8 @@ save and reopen brings it back, and the raster path translated the
 probe's `standard_surface` with an `image` node to OpenPBR and drew it.
 Step 9 (per-face column, Edit shader) is not started.
 
-One thing step 8 leaves OPEN, for a ruling: precedence when an object
+One thing step 8 leaves open, RULED 2026-09-02 and to be built ahead of
+step 9 -- the explicit binding wins: precedence when an object
 wears a card AND is the target of a Scope=Object binding. Both put their
 program node at index 0 of the same root, and the cache's
 `setUserShader` keeps the LAST program traversed, so whichever node was
