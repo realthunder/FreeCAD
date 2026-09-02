@@ -1672,3 +1672,29 @@ rule, and `Materials.packMaterial` / `applyMaterial` for scripts and
 `TestMaterialClipboard.py`. Its trap: a store keeps a blob only while a
 handle holds it, so the handles of the files a paste inserts must live
 until the card and the look have taken hold of theirs.
+
+### 17.13 Next: a graph with many surfaces, and the look that assigns them (ruled 2026-09-02)
+
+MaterialX's chess set is one document with fifteen `surfacematerial`s,
+forty-three images and a `<look>` assigning each material to a mesh of
+`chess_set.glb` by name. Today both engines take the FIRST surface shader
+of the FIRST material node (`openPbrSurface()`, `Interpreter::run()`) and
+nothing reads a look, so every object wearing that card is a black
+bishop. The images are not the problem: the raster cap counts the layers
+of the CHOSEN shader's graph (four per piece), and Cycles has no cap.
+
+Two workstreams, ruled in this order:
+
+1. **A surface name on the graph** (next session). `MaterialXSurface`
+   beside `MaterialXShaderGraph` on the card, shown as "Surface" -- the
+   `surfacematerial` node the card is shaded by, the first when empty --
+   and the same field on a MATERIALX `App::ShaderProgram`, threaded into
+   `inspect()`, `generate()` and the Cycles interpreter as "this material
+   node, not the first". The chess set is then fifteen cards over one
+   shared file set, which the library form already allows. The picker
+   offers the document's surfaces when there is more than one. The word
+   is deliberately not "material": that is the card.
+2. **A look-reading importer, in the Gui module** (a later session). A
+   glb (or other mesh bundle) imported beside a `.mtlx` that carries a
+   `<look>` gets a card per `materialassign`, and each object made from a
+   named mesh wears the card the look assigns to that name.
