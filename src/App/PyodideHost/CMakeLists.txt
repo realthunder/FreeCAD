@@ -23,7 +23,8 @@ endif()
 find_package(v8-embed CONFIG REQUIRED)
 message(STATUS "v8-embed ${V8_EMBED_VERSION}: ${V8_EMBED_LIBRARY}")
 
+find_package(Threads REQUIRED)
 add_executable(pyodide_probe PyodideProbe.cc)
-target_link_libraries(pyodide_probe PRIVATE v8-embed::v8)
+target_link_libraries(pyodide_probe PRIVATE v8-embed::v8 Threads::Threads)
 target_compile_definitions(pyodide_probe PRIVATE
     FCX_SHIM_JS="${CMAKE_CURRENT_SOURCE_DIR}/host_shim.js")

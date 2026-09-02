@@ -114,6 +114,8 @@ Not provided, and checked absent by the probe: `process`, `require`,
     python open('/etc/hostname')                   OSError
     python js.process                              None
     python socket connect                          OSError
+    while True: pass + TerminateExecution          terminated after 300 ms
+    runPython / numpy / host hop after termination all still work
     precompiled call / call + host hop             0.53 us / 2.90 us
 
 Beside the node numbers from 2026-09-01 (0.94 us / 3.02 us, cold start
@@ -139,10 +141,18 @@ because emscripten's libc has nothing underneath but its in-memory FS.
 
 What is NOT yet done and belongs to phase 1, not to this probe:
 
-- **Resource limits.**  wasmtime gave the WASI image fuel metering and
-  epoch interruption for free.  V8 has `Isolate::TerminateExecution`
-  from another thread and heap limits in `ResourceConstraints`; an
-  expression that loops forever needs the former wired to a watchdog.
+- **Resource limits, half done.**  wasmtime gave the WASI image fuel
+  metering and epoch interruption for free.  V8's equivalent is
+  `Isolate::TerminateExecution` from a watchdog thread, and the probe
+  shows it works on this guest: `while True: pass` stops at the
+  watchdog's 300 ms, and afterwards `runPython`, numpy and a host hop
+  all still work -- **recovery is not a reboot** (the earlier fear).
+  Caveat: three checks say the interpreter is usable, not that every
+  CPython invariant survived an unwind through its frames; phase 1
+  should run the corpus gate after a termination.  Memory is the other
+  half: pyodide's heap is wasm linear memory, which V8's heap limits do
+  not govern -- its ceiling is emscripten's `MAXIMUM_MEMORY`, to be read
+  off the module and, if needed, bounded by the host's own allocator.
 - **The RNG shim is a string match** on emscripten's command line.  It
   is correct for this pyodide; a pyodide bump that changes the command
   breaks startup loudly (throws), never silently.  Prefer making the
@@ -178,7 +188,8 @@ against.  The probe exits non-zero on any failed check.
    cheaper path is direct V8 values (the 45 ns C++ -> V8 hop measured
    2026-09-01), with the bindings pack handed over as a JS object.
    Measure before choosing.
-3. Watchdog + heap limit (section 5).
+3. Watchdog on a real timer budget (the mechanism is proven), and the
+   wasm memory ceiling (section 5).
 4. Packaging: `v8-embed` is on the channel for linux-64/aarch64,
    win-64 and (pending) both macOS; the pyodide files are one noarch
    package (`pyodide-dist`, ~17 MB with numpy) to be recipe'd like the

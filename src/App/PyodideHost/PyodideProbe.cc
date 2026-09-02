@@ -609,7 +609,42 @@ int main(int argc, char** argv)
                   "py.runPython(\"import socket\\ntry:\\n s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', 22)); r='CONNECTED'\\nexcept OSError as e: r='OSError'\\nr\")",
                   "OSError");
 
-        // 6. What one crossing costs, for the record beside the earlier numbers.
+        // 6. A runaway guest.  wasmtime gave the WASI image fuel and epochs;
+        //    here the watchdog is TerminateExecution() from another thread.
+        //    Two questions: does it stop `while True: pass`, and is the
+        //    interpreter still usable afterwards, or is recovery a reboot?
+        {
+            v8::HandleScope s(isolate);
+            std::thread watchdog([isolate] {
+                std::this_thread::sleep_for(std::chrono::milliseconds(300));
+                isolate->TerminateExecution();
+            });
+            const double t0 = NowMs();
+            v8::TryCatch tc(isolate);
+            v8::ScriptOrigin origin(Str(isolate, "runaway"));
+            v8::ScriptCompiler::Source src(
+                Str(isolate, "py.runPython('while True: pass'); 'RETURNED'"), origin);
+            v8::Local<v8::Script> script = v8::ScriptCompiler::Compile(context, &src).ToLocalChecked();
+            v8::Local<v8::Value> r;
+            const bool ran = script->Run(context).ToLocal(&r);
+            const bool terminated = !ran && tc.HasTerminated();
+            watchdog.join();
+            isolate->CancelTerminateExecution();
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), "%s after %.0f ms",
+                          terminated ? "terminated" : (ran ? "RETURNED" : "threw"), NowMs() - t0);
+            Check(host, "while True: pass + TerminateExecution", terminated ? "terminated" : buf,
+                  "terminated");
+            std::printf("%-46s %s\n", "  (timing)", buf);
+            // Is the interpreter still alive?
+            CheckEval(host, "runPython after termination", "String(py.runPython('1+1'))", "2");
+            CheckEval(host, "numpy after termination",
+                      "String(py.runPython('import numpy as np; int(np.arange(10).sum())'))", "45");
+            CheckEval(host, "host hop after termination",
+                      "String(py.runPython('import js; js.hostReadProp() + 1'))", "43");
+        }
+
+        // 7. What one crossing costs, for the record beside the earlier numbers.
         {
             v8::HandleScope s(isolate);
             v8::Local<v8::Value> r;
