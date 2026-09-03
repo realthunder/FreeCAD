@@ -333,6 +333,13 @@ mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc,
     // closed form says 128), which is the 20 per cent the path tracer
     // sat under Blender by (sec 17.18). An unstated input means the
     // source's own default, so that is stated here before translating.
+    //
+    // And it REMOVES every input of the source, forwarded or not, so an
+    // input the translation nodedef has no socket for is lost -- and
+    // it has none for normal, tangent or coat_normal. That is every
+    // normal map of every standard_surface document. OpenPBR has the
+    // same three (geometry_normal, geometry_tangent,
+    // geometry_coat_normal), so they are carried across by hand.
     mx::NodeDefPtr sourceDef = surface->getNodeDef();
     std::vector<mx::NodeDefPtr> translationDefs =
         doc->getMatchingNodeDefs(original + "_to_open_pbr_surface");
@@ -347,6 +354,21 @@ mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc,
             surface->addInput(name, in->getType())
                 ->setValueString(in->getValueString());
         }
+    }
+    static const struct { const char *from, *to; } kGeometry[] = {
+        {"normal", "geometry_normal"},
+        {"tangent", "geometry_tangent"},
+        {"coat_normal", "geometry_coat_normal"},
+    };
+    std::vector<std::pair<std::string, std::map<std::string, std::string>>> carried;
+    for (const auto &g : kGeometry) {
+        mx::InputPtr in = surface->getInput(g.from);
+        if (!in || (translationDef && translationDef->getActiveInput(g.from)))
+            continue;
+        std::map<std::string, std::string> attrs;
+        for (const std::string &attr : in->getAttributeNames())
+            attrs[attr] = in->getAttribute(attr);
+        carried.emplace_back(g.to, std::move(attrs));
     }
 
     try {
@@ -364,10 +386,20 @@ mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc,
         error = "surface model '" + original + "' did not translate to OpenPBR";
         return mx::NodePtr();
     }
+    surface = shaders[std::size_t(index)];
+    for (const auto &c : carried) {
+        if (surface->getInput(c.first))
+            continue;
+        auto type = c.second.find(mx::TypedElement::TYPE_ATTRIBUTE);
+        mx::InputPtr in = surface->addInput(
+            c.first, type == c.second.end() ? std::string("vector3") : type->second);
+        for (const auto &[attr, value] : c.second)
+            in->setAttribute(attr, value);
+    }
     warnings.push_back("surface model '" + original
                        + "' translated to OpenPBR by MaterialX; a translation is "
                          "an approximation, not an identity");
-    return shaders[std::size_t(index)];
+    return surface;
 }
 
 namespace

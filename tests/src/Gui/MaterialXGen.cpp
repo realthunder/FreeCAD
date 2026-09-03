@@ -602,6 +602,32 @@ TEST_F(MaterialXGenerator, aDocumentMayStateOneModelBesideAnother)
     EXPECT_NE(b.source.find("0.900000"), std::string::npos) << b.source;
 }
 
+TEST_F(MaterialXGenerator, aNormalMapSurvivesTheTranslation)
+{
+    // The translation nodedef has no socket for normal, tangent or
+    // coat_normal, and the translator removes every input of the
+    // source -- so every standard_surface normal map was dropped on the
+    // floor. Carried across to OpenPBR's geometry_normal, the normalmap
+    // node is reachable from the surface again and is generated.
+    ScratchImages images("normalmap");
+    const std::string patterns =
+        "  <image name=\"N\" type=\"vector3\">\n"
+        "    <input name=\"file\" type=\"filename\" value=\"" + images.file("n.png") + "\" />\n"
+        "  </image>\n"
+        "  <normalmap name=\"NM\" type=\"vector3\">\n"
+        "    <input name=\"in\" type=\"vector3\" nodename=\"N\" />\n"
+        "  </normalmap>\n";
+    auto out = Render::MaterialX::generate(
+        standardSurfaceDoc(
+            "    <input name=\"base_color\" type=\"color3\" value=\"0.5, 0.5, 0.5\" />\n"
+            "    <input name=\"normal\" type=\"vector3\" nodename=\"NM\" />\n",
+            patterns),
+        images.document());
+    ASSERT_TRUE(out.valid) << out.error;
+    EXPECT_NE(out.source.find("normalmap"), std::string::npos) << out.source;
+    EXPECT_EQ(out.images.size(), 1u);
+}
+
 TEST_F(MaterialXGenerator, theChessSetIsFifteenMaterialsInOneDocument)
 {
     // The case the whole thing exists for. MaterialX's chess set is one
