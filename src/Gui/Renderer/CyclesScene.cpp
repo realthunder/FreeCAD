@@ -2323,6 +2323,7 @@ ccl::Shader *SceneTranslator::materialXShader(const UserShader &user, const Clip
     MaterialXResult built = buildMaterialXSurface(graph.get(), doc, user.surface);
     if (!built.surface)
         return fail(built.error);
+    imageNodes += built.images;
     ccl::Shader *shader = scene->create_node<ccl::Shader>();
     shader->name = ccl::ustring(key);
     if (materialXReported.insert(identity).second) {

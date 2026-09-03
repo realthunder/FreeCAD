@@ -508,6 +508,7 @@ Val Interpreter::buildNode(const mx::NodePtr &node,
         mx::InputPtr file = node->getInput("file");
         const std::string path = file ? file->getValueString() : std::string();
         auto *tex = graph->create_node<ccl::ImageTextureNode>();
+        ++result.images;
         tex->set_filename(ccl::ustring(path));
         // What space the FILE is in. An input that states one is the
         // answer; otherwise the node's own type decides, because a

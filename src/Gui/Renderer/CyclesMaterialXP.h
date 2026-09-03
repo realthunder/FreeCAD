@@ -62,6 +62,13 @@ struct MaterialXResult
     /// per distinct node category, so a material with fifty
     /// unsupported nodes says one thing about each kind.
     std::vector<std::string> warnings;
+    /// Image texture nodes this document built, for the translation
+    /// report's `images`. Counted here because the document's maps are
+    /// built in this file and nowhere else: without it a scene whose
+    /// every map comes from MaterialX reports `images: 0`, which reads
+    /// as "the maps did not load" -- the chess set says 43 images and
+    /// reported none of them.
+    int images = 0;
 };
 
 /// Interpret one renderable surface of \a doc onto \a graph: the one
