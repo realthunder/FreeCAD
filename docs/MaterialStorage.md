@@ -1860,6 +1860,42 @@ asset, which is mostly dark, shows it at its worst. Whether they should
 agree, and which is right, is a question for the engines and not for the
 importer.
 
+**Next: settle it against a renderer that is not ours** (ruled
+2026-09-03). The chess set is a published MaterialX sample, so there are
+reference pictures of what it is supposed to look like, and the way to
+use them is a third render of the same document:
+
+- **Blender's Cycles** is the strongest test available, because it is
+  the SAME engine we embed. Same maps, same path tracer, a scene we did
+  not build: a difference there is our translation or our scene setup,
+  and an agreement puts it in the lighting. Blender is not installed on
+  this box; the `bpy` wheel (Blender as a Python module, headless) is the
+  cheap way in, and a script can import the glb and wire the four maps of
+  each piece onto a Principled BSDF without a GUI.
+- **MaterialX's own viewer** (`MaterialXView`, vendored under
+  `src/3rdParty/MaterialX/source/`) is the authority on what the DOCUMENT
+  says, though not an independent one: it generates GLSL the same way our
+  raster path does. It is switched off in our build
+  (`MATERIALX_BUILD_VIEWER`, with the rest of the render and test
+  targets) and would have to be built out of tree, with NanoGUI.
+
+What the three pictures separate, in order:
+
+1. **Exposure and environment** -- the plain-box 1.8x says the two
+   engines disagree before any document is involved. Same environment
+   preset, same intensity, same output transform, one grey box: they
+   should match, and that is the first thing to make true.
+2. **The raster path's ambient occlusion against path-traced GI** --
+   GTAO darkens contact regions the path tracer fills in, and a chess set
+   is nothing but contact regions.
+3. **The `standard_surface` to OpenPBR translation** both consumers run
+   before rendering. A weight coming through wrong -- specular, coat,
+   subsurface -- washes an image exactly this way; an OpenPBR-native
+   document rendered alongside tells that apart from the two above.
+4. **The image colour spaces**, which our path tracer sets per the
+   document (`srgb_texture` / scene-linear / data) and the raster path
+   folds into the generated code. A reference render pins which is right.
+
 ### 17.14 The library keeps a file once per CARD, and that is now wrong (open, 2026-09-03)
 
 Item 1 made fifteen cards over one shared set of files the normal shape
