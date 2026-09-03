@@ -1482,7 +1482,9 @@ the four example materials below needed no table entry beyond it.
 **OpenPBR is the canonical surface.** `open_pbr_surface` maps onto
 `PrincipledBsdfNode`, whose v2 sockets are OpenPBR parameters; every
 other shading model arrives through MaterialX's OWN translation graphs
-(`translateAllMaterials`), so there is one shading model to be right
+(`translateShader` on the chosen surface, with the source's unstated
+defaults stated and its normal carried across -- MaterialStorage.md
+17.19), so there is one shading model to be right
 about and the rest is the library's business. Three places in the
 mapping are a decision rather than a rename:
 

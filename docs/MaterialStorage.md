@@ -1731,7 +1731,7 @@ not state is refused with the list of the ones it does, rather than
 silently rendering the first.
 
 **The selection survives the OpenPBR translation** because it is kept as
-an INDEX into `surfaceShaders()`, not as a node: `translateAllMaterials`
+an INDEX into `surfaceShaders()`, not as a node: the translation
 replaces every shader node in the document, and document order is what
 comes through it. Both consumers now read one implementation of "which
 surface, translated" (`Render::MaterialX::openPbrSurface`); the path
@@ -2393,7 +2393,7 @@ axis cross. So a MaterialX draw can sample a texture layer that has not
 finished uploading, and it shows under load. Not chased further; recorded
 here because it will be hard to recognise the second time.
 
-### 17.18 Next: our path tracer is the odd one out on the model (open, 2026-09-03)
+### 17.18 Next: our path tracer is the odd one out on the model (resolved in 17.19, 2026-09-03)
 
 Ruled by the user, 2026-09-03: "our cycles renders a lot different than
 blender's, in fact our raster gives a closer look (at least in colour
@@ -2438,3 +2438,160 @@ model slightly SMALLER than either path tracer at the same reported
 camera, although the aspect ratios match -- so its perspective
 projection and the `heightAngle` it reports are not quite the same
 thing. And the texture-upload race in 17.17.
+
+### 17.19 Why the path tracer was the outlier: three translation defects and a missing light (fixed, 2026-09-03)
+
+Session 11 started with an audit of the whole MaterialX-to-Cycles path
+-- `CyclesMaterialX.cpp`, the shared `openPbrSurface` in
+`MaterialXSupport.cpp` that BOTH consumers run, and the world shader in
+`CyclesScene.cpp` -- and then measured each suspicion with a closed-form
+probe. None of the four defects was in the tracer or in the node
+interpreter. Three were in how the OpenPBR translation is driven, and
+those hit the raster too; the fourth was a light the scene never had.
+
+**The numbers, board region, mean byte per channel** (same rectangle as
+17.16, `fcad-probes/chess3_board.py`):
+
+| | R | G | B | mean abs. diff vs Blender | R/B |
+| --- | --- | --- | --- | --- | --- |
+| Blender Cycles | 72.9 | 73.5 | 65.5 | -- | 1.113 |
+| raster, before | 70.3 | 69.3 | 60.5 | 3.90 | 1.163 |
+| raster, after | 75.2 | 75.1 | 66.0 | 1.52 | 1.141 |
+| our Cycles, before | 48.1 | 48.4 | 47.3 | **22.68** | 1.018 |
+| our Cycles, after the translation fixes | 51.8 | 52.8 | 51.9 | 18.44 | 0.999 |
+| our Cycles, after the background light | 69.3 | 69.7 | 61.7 | **3.69** | 1.124 |
+
+The whole-frame 4x4 grid of `chess3_sheet.py` now reads 93.1 / 46.2 /
+144.4 for ours against Blender's 93.6 / 46.2 / 144.4, and the fireflies
+are gone. What is left on the model is the Blender LEG's approximation,
+below, not ours.
+
+#### 1. `translateAllMaterials` threw on a document stating two models
+
+MaterialX's `translateAllMaterials` walks every material in the
+document and throws "category is already open_pbr_surface" on the first
+one that is already OpenPBR. A document carrying one OpenPBR surface
+beside a standard_surface therefore rendered NEITHER, in both
+consumers -- the failure is reported per document, and the report was
+the raster's "does not translate to OpenPBR" with the OTHER shader's
+name in it. Found because the first probe of this session put its
+control (an OpenPBR flat) and its subject (a standard_surface) in one
+document, and both legs came out black at byte 34.
+
+Fixed: `openPbrSurface` translates the CHOSEN shader alone
+(`translateShader`). One document, many surfaces is the chess set's
+shape (17.13), and nothing says they all state the same model.
+
+#### 2. An unstated input took the TRANSLATION nodedef's default
+
+`ShaderTranslator::connectTranslationInputs` forwards only the inputs
+the shader STATES onto its translation node; anything unstated is read
+by the consumer off the translation nodedef's own defaults, and those
+are not the source model's. The two disagree on exactly two inputs:
+
+| input | `ND_standard_surface_surfaceshader` | `ND_standard_surface_to_open_pbr_surface` |
+| --- | --- | --- |
+| `base` | 1.0 | **0.8** (Arnold's old default) |
+| `base_color` | 0.8 grey | white |
+
+The chess set states no `base`, so every piece rendered at 0.8 of its
+albedo in BOTH engines -- `fcad-probes/mtlxbase_run.sh`: a
+standard_surface at the closed-form colour read byte 115 where 128 was
+due, and stating `base="1.0"` gave 128. That is the 20 per cent of
+17.18. It also answers 17.18's third question: the raster was "right"
+against Blender because 0.8 x (no occlusion, no bounce) happened to
+land near Blender's tone -- one error cancelling another, exactly the
+suspicion.
+
+Fixed: before translating, every unstated input of the source nodedef
+that the translation nodedef accepts is stated at the source's own
+default. That is what an unstated input MEANS, so nothing else moves:
+`anUnstatedInputKeepsItsOwnModelsDefaultThroughTranslation` pins it as
+"base unstated generates the same code as base 1.0, and not as 0.8".
+
+#### 3. The translation dropped every normal map
+
+The translation nodedef has no socket for `normal`, `tangent` or
+`coat_normal` (nor for the rotations and `coat_affect_color`, which
+OpenPBR genuinely lacks), and the translator then REMOVES every input of
+the source, forwarded or not. Every standard_surface normal map -- one
+per chess piece -- was lost on the floor in both consumers, while the
+Blender leg applied it. OpenPBR has the same three sockets
+(`geometry_normal`, `geometry_tangent`, `geometry_coat_normal`), so
+they are carried across by attribute copy after the translation.
+
+The path tracer needs nothing more: Cycles derives the UV tangents a
+tangent-space normal map wants by itself (`Mesh::update_tangents`, run
+for every mesh, with mikktspace falling back to the face normal on a
+flat face -- the assert there is compiled out of the RelWithDebInfo
+tree, which carries `-DNDEBUG` in its CMake flags). The chess set now
+reports 58 images instead of 43. **The raster does not consume
+`geometry_normal` at all** (`OpenPbrInputs::FIELDS` has no entry), so
+a MaterialX normal map still does nothing there -- an open raster gap,
+recorded and not built.
+
+#### 4. The scene had no background LIGHT
+
+`translateWorld` built the world shader -- the baked equirect through a
+`BackgroundNode` -- and nothing else. Cycles samples the world as a
+light only when the scene holds a `BackgroundLight` with `use_mis`
+(`LightManager::device_update_background`: "no background light found,
+signal renderer to skip sampling"); Blender creates one for every world
+by default. Without it the environment is reached only when a BSDF
+sample happens to point at it, which for a diffuse surface under
+`san_giuseppe_bridge.hdr` means almost never: that picture holds **43
+per cent of its irradiance in texels above radiance 64**, peaking at
+35,000, and a cosine sample finds the disc about once in a hundred
+thousand. Unbiased in float, and useless in a frame -- the hit lands in
+ONE pixel that clips at white (the fireflies), and the model renders
+without its sun: darker, and BLUER, because the sun is the warm half of
+that sky (R/B 1.02 against Blender's 1.11). The backdrop is a camera
+ray and never sampled, which is why it agreed all along -- 17.18's
+"same picture, two paths, only one agrees", with the answer being that
+one path was never sampled at all.
+
+Fixed: one `ccl::BackgroundLight` in its own object, made once, MIS on,
+`map_resolution` 0 so the importance map is sized from the baked
+equirect; it follows the world shader through `Shader::tag_update`.
+The kernel's clamp was never the mechanism, for the record: a
+one-bounce background hit is clamped as DIRECT (`bounce - 1`,
+`film/light_passes.h`), and direct clamping is off.
+
+#### What the remaining difference is, and whose it is
+
+The kings and queens carry `subsurface` from a scattering map (mean
+218/255), and the white pawn HEADS are glass (`transmission` 1,
+`transmission_color` 1, 1, 0.828). `blender_chess.py` reads a base
+colour, a metalness, a roughness and a normal and nothing else, so its
+kings are opaque and its pawn heads are white balls, while ours scatter
+and refract as the document says. That is the Blender leg's
+approximation, stated in its own docstring, and it accounts for the
+pieces that still look different in the crop. One fidelity note on our
+side: OpenPBR's `subsurface_radius` is a length in scene units, and
+this scene is in millimetres, so the document's 0.003 is a radius a
+thousand times smaller than the metre-scale author meant -- harmless
+here, worth a unit scale later.
+
+#### The method, again
+
+Every finding was measured with the 17.15 method -- a scene whose
+answer is known in closed form, with its own control in the same
+engine: `mtlxbase_probe.py` (base stated / unstated), `mtlxdata_probe.py`
+(metalness from L-mode JPEG and PNG, a flat normal map: all exactly
+128, so the data maps were never the problem), and a small RGBE reader
+for the HDR's irradiance distribution. The one reference render was the
+Blender leg, rerun unmirrored (`... 0 0`) now that the engine reads the
+HDR the right way round (17.16); its camera came out identical to
+session 10's to six decimals.
+
+Two traps for the record. A probe document that mixes models measured
+defect 1, not the engine (both legs black) -- a probe's control and
+subject must be legal together. And "the two engines agree" proved
+nothing here either: they agreed on 0.8 because they run the same
+translation, which is why the audit had to read the translator and not
+just the two consumers of it.
+
+**Still open** from 17.18's list: the raster's constant 1.07x on a flat
+OpenPBR surface (every probe leg reads 132-133 for 128), its smaller
+framing at the same reported camera, its `geometry_normal` gap above,
+the texture-upload race of 17.17, and the AO radius question.
