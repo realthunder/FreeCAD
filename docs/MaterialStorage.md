@@ -3183,3 +3183,198 @@ tracer at the raster dump's aspect for exactly this reason, and the
 two engines at all: the raster body is flat, so its share is coverage,
 while the path tracer's is the share of pixels at the mode byte under
 64 spp of noise. Struck off; nothing on 17.19's list remains.
+
+### 17.25 The shader graph editor: port MaterialX's, host it on bgfx (researched 2026-09-03, rulings NOT made)
+
+**Why now.** "Edit Shader Graph..." (17.11) does the model half of
+editing and none of the view half. Pressing it materializes the card's
+document as an `App::ShaderProgram` (MATERIALX dialect) plus an
+`App::Shader` and a Scope=Object `App::ShaderBinding`, and the button
+turns into "Revert". Then the user is on their own: `FragmentProgram` is
+a `PropertyStringIncluded`, whose property-editor item is
+`PropertyStringItem` -- a one-line `ExpLineEdit` -- holding a whole XML
+document. The knobs are fine (the declared inputs are `Param_*`
+properties, 6.11), but changing the GRAPH means Python or an outside
+editor pasted back into a line edit. The button's name promises an
+editor the fork does not have.
+
+#### What MaterialX ships
+
+`src/3rdParty/MaterialX/source/MaterialXGraphEditor/` (1.39.5,
+`MATERIALX_BUILD_GRAPH_EDITOR`, off in our build), 8.1k lines:
+
+| File | Lines | What it is |
+|---|---|---|
+| `Graph.cpp/.h` | 5.1k | The editor proper: node UI from nodedefs, pins and links, add/delete/copy/paste, descent into compound nodegraphs, a property panel (22 widget kinds), node search popup, read-only for library graphs, save/load, node positions as `xpos`/`ypos` attributes |
+| `RenderView.cpp/.h` | 1.4k | A complete GL viewer on `MaterialXRenderGlsl`: shader ball, HDR environment, shadow map, its own image handler |
+| `Layout.cpp/.h`, `UiNode.cpp/.h` | 1.1k | Auto layout; the UI node/pin/edge model |
+| `FileDialog*`, `Main.cpp` | 0.6k | An ImGui file browser (+ a Darwin `.mm`); the GLFW window loop |
+
+Dependencies: Dear ImGui (submodule `9aae45eb`), `imgui-node-editor`
+(submodule `2f99b2d6`, plus two files from its blueprints example),
+GLFW (vendored minimal), Glad via `MaterialXRenderGlsl`, and the
+`MaterialXRender` + `MaterialXRenderGlsl` libraries, which we build with
+`MATERIALX_BUILD_RENDER=OFF`. Neither ImGui submodule is checked out
+here. The JavaScript tier (`javascript/MaterialXView`) is a viewer only;
+there is no MaterialX web editor to borrow.
+
+**The coupling is narrow, which is what makes the port cheap.**
+`_renderer` is named 47 times in `Graph.cpp`, but through a small
+surface: `setDocument`/`updateMaterials`/`setMaterialCompilation` (the
+preview follows the document), `getGenContext()` (only
+`checkCanAddLink` uses it, to refuse a node with no implementation),
+`getImageHandler()` (the property panel's image thumbnails and the
+supported-extension list), the preview's size/`_textureID`/mouse/key/
+scroll plumbing (`handleRenderViewInputs`), `loadMesh`,
+`getXincludeFiles`, and `getMaterials()[0]->modifyUniform` (a value drag
+without recompiling). Direct GL is two calls, the sRGB framebuffer
+toggle in draw-list callbacks, plus the `glad.h` include. Everything
+else is ImGui and `mx::Document`.
+
+**Its document contract fits ours exactly.** The editor mutates one
+`mx::DocumentPtr` in place, loads through `readFromXmlFile` with an
+XInclude callback and saves through `writeToXmlFile` (optionally
+stripping positions). Ours is text in a property. So the integration is
+`readFromXmlString(FragmentProgram)` on open, edit, `writeToXmlString`
+on every committed gesture back into `FragmentProgram`, and the sync
+that already runs on that change (`ViewProviderShaderProgram::
+updateData`: regenerate, resync `Param_*`, carry the images the text
+names) updates the viewport. The editor becomes a view over a property,
+and undo is the property's. Positions ride along as `xpos`/`ypos`, which
+are MaterialX's own attributes; our generator ignores them and a card
+made by `cardFromEdit` keeps them, which is what the library's own
+example files do.
+
+#### Where to host it: five ways, one recommendation
+
+**A. ImGui drawn by bgfx, inside a `QOpenGLWidget` through the draw
+facade.** The bgfx tree already carries Dear ImGui 1.92.8 WIP
+(`bgfx/3rdparty/dear-imgui`, bx allocators, obsolete API off) and a
+651-line ImGui renderer for it (`bgfx/examples/common/imgui`) with
+embedded prebuilt shaders for EVERY backend -- neither compiled by us
+today. The standalone flavour of `Render::DrawSurface` is the exact
+host: it owns a `QOpenGLWidget`, holds an id block and a backbuffer,
+and its `paintGL` runs the backend frame and blits into the widget --
+the TechDraw page (`QGVPage`, `Page2D`) and the CAM simulator already
+live this way. What is new is the Qt-to-ImGui input translation (the
+example's `entry::` key map, ~200 lines) and a `FrameConsumer`-style
+tick. This runs wherever bgfx runs, so it keeps the browser viewer open
+(phase 4), and it is the only option that honours "let bgfx choose the
+backend". **Recommended.**
+
+**B. ImGui through `imgui_impl_opengl3` in a plain `QOpenGLWidget`.**
+The smallest bridge, and a desktop-GL assumption in a new subsystem.
+Rejected on the CLAUDE.md rule.
+
+**C. Rewrite in Qt widgets / `QGraphicsView`.** The prior art is
+QuiltiX (PySide + NodeGraphQt + PyMaterialX). It throws away the 5k
+lines of MaterialX-specific editing logic to get a native look, needs
+`MATERIALX_BUILD_PYTHON` (off) and NodeGraphQt (not in the env), and
+has no browser path. Worth mining for UX (its material-preview and
+node-search behaviour), not for code. Rejected as the first cut.
+
+**D. A node editor on our own vector facade (`Vg2D`/`Page2D`).** From
+scratch; nothing of the MaterialX editor survives except the
+`mx::Document` handling. Rejected for now; it is the road if ImGui's
+look ever becomes the complaint.
+
+**E. Launch the stock `MaterialXGraphEditor` executable on a temp
+`.mtlx` and watch the file.** The literal "simply use the editor":
+~200 lines, and a second window with GLFW, a preview that disagrees
+with the viewport by design (17.19 documented why their viewer and our
+raster differ), images only by path, no undo integration, and it needs
+`MATERIALX_BUILD_RENDER` and a GL desktop. Usable as a stopgap; not a
+destination.
+
+**The preview comes from our engine, not theirs.** Drop `RenderView`
+and with it `MaterialXRender`, `MaterialXRenderGlsl`, Glad and GLFW.
+The material icons already render a card on a sphere through
+`Renderer::renderOffscreen` with a `setCaptureScene` transient scene
+(`material-icon-rendering`), lit by the engine, through the same
+`BgfxShaderGenerator` the viewport uses; a preview drawn that way shows
+what the object will show. Image thumbnails are bgfx textures from our
+own loader, and bgfx's ImGui renderer already packs a
+`bgfx::TextureHandle` into an `ImTextureID` (`ImGui::Image` overloads in
+its `imgui.h`). `getGenContext()` becomes a `Render::MaterialX` query
+("has this nodedef an implementation for our target"), and
+`modifyUniform` becomes a `Param_*` property write, which is live
+already. The `RenderView` calls collapse into one `GraphHost` interface
+of about ten methods, implemented once for the desktop and once, later,
+for the viewer.
+
+#### What the re-evaluation of "Edit Shader Graph..." concludes
+
+- **Keep the model.** Materialize stays exactly what 17.11 ruled; it is
+  the right unit of editing (one object's own program, the card
+  untouched underneath, revert by removing three objects).
+- **Make the button open the editor.** Press it on an unmaterialized
+  object: materialize, then open the graph view on the program. Press
+  it on a materialized one: open the view (it is already there).
+  "Revert Shader Graph" becomes its own button beside it rather than
+  the same button's second face; the confirm-on-edited rule stays.
+- **The editor is a view of an `App::ShaderProgram`, not of a card.**
+  Double-clicking a MATERIALX-dialect program in the tree opens it too
+  (`ViewProviderShaderProgram::doubleClicked`, absent today), so the
+  effect library's documents get the same editor and the Material
+  panel is one door among two.
+- **Host it as an MDI tab** (`Gui::MDIView` subclass, the
+  `TextDocumentEditorView` precedent), not a dock: a graph wants width,
+  and a tab per program keeps "which document, which object" answered
+  by the tab the way a spreadsheet's is. A dock can come later if the
+  tab is what people complain about.
+
+#### Build order, each its own commit
+
+0. **Spike, before any port.** Fetch `imgui-node-editor` as OUR
+   submodule under `src/3rdParty/` (not MaterialX's nested one -- the
+   nested checkout brings ImGui `9aae45eb`, and we will build against
+   bgfx's 1.92.8 copy, which is patched with bx allocators and has the
+   obsolete API off). Compile bgfx's ImGui renderer plus the node editor
+   into `FreeCADRenderer` behind `BUILD_MATERIALX`, put an empty node
+   canvas in a `DrawSurface`-hosted `QOpenGLWidget` inside a throwaway
+   MDI view, translate Qt mouse/wheel/key/text events. This answers the
+   two real risks (below) in a day and is thrown away if either bites.
+1. **Port `Graph`/`UiNode`/`Layout` into
+   `src/Gui/Renderer/GraphEditor/`** as a copy (the CAM port's model;
+   the submodule stays pristine), `RenderView` replaced by `GraphHost`,
+   `FileDialog` and `Main` gone. Open = document from `FragmentProgram`;
+   every committed gesture writes it back inside one transaction, value
+   drags coalescing on release. `Gui::ShaderGraphView` opens from the
+   button and from the tree. No preview, no thumbnails yet. This is the
+   commit that turns the button honest.
+2. **Preview and thumbnails on the engine.** The icon path's transient
+   sphere (a billet for finishes, as the icons do), redrawn on the
+   async-compile completion the viewport already waits for
+   (`BGFXViewEffects.cpp`, stock media standing in); image thumbnails
+   from the program's `Images`. `Param_*` two-way: a property-editor
+   edit shows in the panel and a panel drag writes the property.
+3. **Polish that the first users will ask for.** Read-only library
+   nodegraphs (`readOnly()` already there), node search, auto layout on
+   a freshly materialized card (the library files carry no positions),
+   font scale under HiDPI (`setFontScale` exists), the many-surfaces
+   document of 17.13 (a surface picker in the view maps to `Surface`),
+   a "path-traced" preview toggle through the Cycles consumer.
+4. **Later, and what option A keeps open: the browser viewer.**
+   MaterialX Core/Format/GenGlsl to wasm (`JsMaterialX` proves the
+   emscripten build), the same `GraphEditor/` sources in the viewer, and
+   the edited text sent back over the SceneServer control channel as
+   one more op beside `cycles`. Today the viewer receives PRECOMPILED
+   shader binaries and no MaterialX at all (17.23), so this is a real
+   piece of work, and none of phases 0-3 has to be redone for it.
+
+**Two risks, both settled by the spike.** (1) ImGui version skew:
+`imgui-node-editor` uses `imgui_internal.h` and tracks upstream
+closely, MaterialX's editor code calls at least one API that 1.92 has
+retired (`ImGui::IsKeyPressedMap`), and bgfx's copy is patched. The
+spike picks a node-editor commit that builds against 1.92.8 and lists
+the touch-ups the port needs. (2) A bgfx-drawn widget beside the 3D
+views: bgfx is single-threaded and main-thread here, every 3D view
+already holds an id block out of the same pool (RenderEngine.md 3.1),
+and the desktop interop is GL-only today (`BGFXRendererLibP`'s
+compositor check) -- the spike proves the second consumer of the
+standalone surface behaves as the page does, and that keyboard focus
+(ImGui text fields) survives Qt's focus rules.
+
+**Size.** About 6k lines ported and touched lightly, and roughly 1.3k
+new: the Qt/ImGui bridge (~300), `GraphHost` on the engine (~400), the
+MDI view and the two commands (~300), the preview (~300), CMake.
