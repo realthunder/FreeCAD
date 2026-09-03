@@ -2289,16 +2289,36 @@ offset. Mirroring Blender's environment gave **4.4 at rotation 0**,
 against 45.9 unmirrored. So the difference was a flip, and the flip was
 ours.
 
-**After the fix**, with no mirror asked of Blender, our Cycles and
-Blender's Cycles agree on the chess set at **MAE 3.83 bytes** over the
-whole frame -- most of which is path-tracer noise at 128 samples. The
-three-way picture:
+**After the fix** the environment is oriented the same way in all
+three, which is what this section is about and all it establishes.
 
-| | mean | darkest | brightest |
-| --- | --- | --- | --- |
-| raster (bgfx) | 93.5 | 46.5 | 144.6 |
-| our Cycles | 89.9 | 46.2 | 144.4 |
-| Blender Cycles | 93.6 | 46.2 | 144.4 |
+It does NOT establish that the three agree. A whole-frame mean absolute
+error of 3.83 bytes was reported here first and it was a bad number:
+the background is the same HDR drawn as a backdrop in every leg, it
+fills most of the frame, and once it matches it swamps everything the
+model does. Measured on the BOARD REGION instead -- per channel, mean
+byte:
+
+| | R | G | B | mean abs. diff vs Blender |
+| --- | --- | --- | --- | --- |
+| raster (bgfx) | 85.7 | 77.1 | 64.8 | **1.76** |
+| our Cycles | 68.7 | 62.2 | 55.5 | **15.50** |
+| Blender Cycles | 85.9 | 79.3 | 67.7 | -- |
+
+**Our path tracer is the outlier, not the raster.** It draws the model
+about 20 per cent darker than either of the other two, and relatively
+bluer (R/B 1.238 against Blender's 1.269 and the raster's 1.323). The
+raster and Blender are within two bytes a channel.
+
+The sharp part of that: our Cycles matches Blender on the BACKGROUND --
+a direct view of the environment -- while being far darker on the model,
+which is the environment used as LIGHT. Same picture, two paths, only
+one of them agrees. That is where 17.18 starts.
+
+This is also the second time in one session that a mean over the wrong
+region gave a confident wrong answer; the first is in 17.15. A frame
+statistic is only an answer when the thing being measured is what fills
+the frame.
 
 `fcad-probes/chess3_run.sh` reports the camera and bounding box;
 `blender_chess.py` reproduces the framing from them and takes a rotation
@@ -2372,3 +2392,49 @@ the same probe draws 12 red pixels instead of 632, and those are the
 axis cross. So a MaterialX draw can sample a texture layer that has not
 finished uploading, and it shows under load. Not chased further; recorded
 here because it will be hard to recognise the second time.
+
+### 17.18 Next: our path tracer is the odd one out on the model (open, 2026-09-03)
+
+Ruled by the user, 2026-09-03: "our cycles renders a lot different than
+blender's, in fact our raster gives a closer look (at least in colour
+tone) to blender than our cycles. Chase all the problems in next
+session."
+
+The measurement is in 17.16: on the board region our Cycles is about 20
+per cent darker than both the raster and Blender's Cycles, which agree
+with each other to under two bytes a channel.
+
+**The lead, and it is a sharp one.** The BACKGROUND agrees between our
+Cycles and Blender -- that is the environment viewed directly. The MODEL
+does not -- that is the same environment used as light. So the
+suspicion is that the environment reaches the shading path at a
+different strength (or through a different decode) than it reaches the
+background path, inside our translation. `bakeEnvironment` and the world
+shader it feeds are where to look.
+
+**What to rule out first, in this order:**
+
+1. **The environment as light versus as backdrop.** Compare a single
+   diffuse patch under the HDR in our Cycles and in Blender, with the
+   background suppressed in both, so nothing but the irradiance is being
+   compared. The constant-environment probes already agree
+   (`envsweep_probe.py`), so whatever this is, it is about an IMAGE
+   environment and not about the tracer.
+2. **The material model.** `blender_chess.py` builds a Principled BSDF
+   directly from the document's base colour, metalness, roughness and
+   normal. Our engine translates standard_surface -> OpenPBR -> ccl
+   nodes. Those are NOT the same surface, so part of the gap may be the
+   translation rather than the lighting -- and that is item 3 of 17.13's
+   list, still open. The Blender leg is an approximation and must not be
+   treated as ground truth for material response until this is separated
+   out.
+3. **Whether the raster is right for the wrong reason.** The raster has
+   no occlusion of the environment and no bounce (17.17), which makes it
+   brighter; if it lands on Blender's tone anyway, one of those errors
+   may be cancelling another.
+
+**Also open, from the same three-way picture:** the raster frames the
+model slightly SMALLER than either path tracer at the same reported
+camera, although the aspect ratios match -- so its perspective
+projection and the `heightAngle` it reports are not quite the same
+thing. And the texture-upload race in 17.17.
