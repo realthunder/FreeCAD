@@ -382,7 +382,8 @@ Tests: a policy table test (pattern grammar, deny-wins, built-in
 ranges, resolved-address check with a stubbed resolver), a redirect
 test against a local server (allowed hop, denied hop, hop count), and
 the parity habit of `PyodideHost.md` sec 9 -- the corpus gate stays
-deterministic because expressions never get the names (sec 8).
+deterministic because it runs with no grants (sec 8), so every
+network op it meets is the same structured denial.
 
 ## 7. Synchronous, asynchronous, and the budget
 
@@ -400,14 +401,55 @@ deterministic because expressions never get the names (sec 8).
 - Cancellation: soft interrupt aborts the in-flight request (the
   client's cancel), then delivers `KeyboardInterrupt` as usual.
 
-## 8. Expressions never get the network
+## 8. Expressions are document code, nothing less
 
-The expression sandbox (rung 0) is explicitly excluded: its runtime is
-created with no network names.  Three reasons, each sufficient: the
-corpus gate and the parity habit rely on determinism; an expression's
-whole budget is milliseconds; and a spreadsheet cell fetching the web
-on every recompute is not a feature anyone asked for.  Document-level
-Python (rung 2 onward) is where network grants apply.
+The first draft of this document excluded expressions from the network
+and from packages.  The user struck that (2026-09-03): the expression
+extension exists precisely so that users can embed code in a document,
+and with the sandbox in place there is no reason to restrict that code
+more than any other user Python.  The security model agrees -- its
+axis is the PRINCIPAL, not the carrier.  An expression, a scripted
+object's Proxy, an embedded script: all of them run as
+`document:<hash>`, and what they may do is decided by that principal's
+grants (sec 4.6) and nothing else.  A second policy keyed on "how the
+code got into the file" would be exactly the inconsistency sec 3 was
+written to remove.
+
+So: an expression that imports a package gets the sec 9 offer; an
+expression that reaches the network gets the sec 4 verdict; both
+surface the way sec 3.3 already says document code surfaces anything
+-- fail fast with `PermissionNeeded` / `PackageNeeded`, a cell error
+carrying the payload, the panel entry, re-evaluation on grant.
+Recompute never blocks on a prompt, and the pre-run scan of sec 9.2
+runs over expression source as it does over any other.
+
+What the earlier exclusion was protecting, restated as what it
+actually is:
+
+- **The corpus gate stays deterministic by construction**, not by
+  restriction: it runs with no grants and no installed set, so every
+  network op is a structured denial and every foreign import a
+  structured `PackageNeeded`, both of them stable outputs the gate
+  compares like any other error.  No expression in the corpus can
+  reach the network under the gate's principal, whatever it says.
+- **The budget is the same budget.**  A request's timeout is bounded
+  by the remaining soft budget (sec 7); the default 5 s fits a fetch,
+  and the user who wants a longer one raises `BudgetMs` for the
+  document.  An expression that spends its budget on the network
+  produces the ordinary interrupt, not a hang.
+- **Re-evaluation cost is the user's choice**, as it is for any
+  expensive expression.  An expression re-runs on every recompute of
+  what it depends on; one that fetches does so each time.  The
+  per-recompute memoization the ladder already plans for rung 2
+  (`ExpressionSandbox.md` sec 8) applies to expressions in the same
+  way when it lands, and until then the audit log (sec 6) makes the
+  cost visible.  A document whose value depends on a server is a
+  document the user chose to write; the model's job is to make sure
+  they chose it, not to forbid it.
+
+Rung 0 is therefore ON under the switch with the same grants as the
+rest of the document's code, which is the only reading of "one
+principal, one policy" that holds up.
 
 ## 9. Missing packages: intercept the import, offer the install
 
@@ -660,7 +702,8 @@ becomes legal there too, but it buys nothing the retry does not.
 
 **What does not change.**  Document code never installs by itself;
 the offer/click/install separation of sec 9.4 holds.  Expressions
-stay package-free the way they stay network-free (sec 8).  And the
+are document code like any other, with the same offers under the same
+principal (sec 8).  And the
 sandbox network capability of sec 3 is a separate matter from the
 package download: in the browser the download is the PAGE's fetch
 under the browser's CORS, exactly as the desktop's is the HOST's
@@ -735,7 +778,8 @@ The rungs, and what each needs beyond what exists:
 
 - **Rung 0, expressions** -- built.  Both spreadsheet modes route,
   the corpus gate passes, the budget works.  Under the switch this
-  rung is simply ON.  No network (sec 8).
+  rung is simply ON, with the document principal's grants applying to
+  expression code exactly as to the rest (sec 8).
 - **Rung 1, native dispatch for `call` members** -- the annotated
   method set retargeted from Python C API calls to generated C++
   dispatch.  Not network-related; it is what makes document
