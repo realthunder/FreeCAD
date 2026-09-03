@@ -517,14 +517,11 @@ only). `QWidget::grab` of the main window shows the GL widget's text
 doubled; `grabFramebuffer()` of the widget is crisp, so that is the
 grab path, not the frame -- an on-screen check is still owed.
 
-**The submodule needs a home.** `.gitmodules` points at
-`thedmd/imgui-node-editor`, but the recorded commit (`b683192`, the
-8.1 guard) exists only in this checkout, on a local `LinkVibe`
-branch. The fork's pattern is a `realthunder/` fork for every
-vendored engine (bgfx.cmake, vg-renderer, cycles); creating
-`realthunder/imgui-node-editor`, pushing that branch, and switching
-the URL is the outstanding step, and a push -- so it waits for the
-ask. Until then a fresh clone cannot resolve the gitlink.
+**The submodule's home** is `realthunder/imgui-node-editor`, the
+fork's pattern for every vendored engine (bgfx.cmake, vg-renderer,
+cycles): branch `LinkVibe` carries the 8.1 guard (`b683192`) on top
+of upstream master, `.gitmodules` names both, and the local checkout
+keeps upstream as the `upstream` remote for later rebases.
 
 Phase 1 starts from here: `GraphEditorWidget::drawUi` is the body
 the ported `Graph` replaces, `ImGuiSurface` and `ImGuiBgfx` are

@@ -15,4 +15,5 @@
 	url = https://github.com/AcademySoftwareFoundation/MaterialX.git
 [submodule "src/3rdParty/imgui-node-editor"]
 	path = src/3rdParty/imgui-node-editor
-	url = https://github.com/thedmd/imgui-node-editor
+	url = https://github.com/realthunder/imgui-node-editor.git
+	branch = LinkVibe
