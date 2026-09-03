@@ -28,13 +28,16 @@
  * result decoding -- is runtime-agnostic and lives in ImageHost; a
  * runtime is only the pipe and the guest it is attached to.
  *
- * Two runtimes exist (docs/ExpressionImage.md, docs/PyodideHost.md):
+ * Two runtimes exist (docs/PyodideHost.md, docs/ExpressionImage.md):
+ *   - V8 + pyodide, running the image slice as a pyodide extension wheel
+ *     (fcx_image-*.whl) beside a pyodide distribution: THE runtime, the
+ *     shipping default, and the only one that grows;
  *   - wasmtime, running the wasm32-wasi image (fcx_image.wasm + a stdlib
- *     slice), the shipping default;
- *   - V8 + pyodide, running the same image slice as a pyodide extension
- *     wheel (fcx_image-*.whl) beside a pyodide distribution.
+ *     slice): the REFERENCE implementation since 2026-09-03
+ *     (docs/SandboxNetwork.md sec 0), built only with
+ *     BUILD_EXPR_WASI_RUNTIME.
  * Which one ImageHost instantiates is the preference
- * BaseApp/Preferences/Expression/Sandbox:Runtime ("wasi" or "pyodide").
+ * BaseApp/Preferences/Expression/Sandbox:Runtime ("pyodide" or "wasi").
  *
  * Internal to the App library: not installed, not part of the API.
  */
@@ -227,8 +230,11 @@ public:
     virtual void teardown() = 0;
 };
 
-/// The wasm32-wasi image under wasmtime (ExpressionWasmtimeRuntime.cpp).
+#ifdef FC_EXPR_WASI_RUNTIME
+/// The wasm32-wasi reference image under wasmtime
+/// (ExpressionWasmtimeRuntime.cpp).
 std::unique_ptr<ImageRuntime> makeWasmtimeRuntime();
+#endif
 
 #ifdef FC_EXPR_PYODIDE_HOST
 /// pyodide on the bare V8 of v8-embed (ExpressionPyodideRuntime.cpp).

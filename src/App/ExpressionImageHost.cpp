@@ -62,7 +62,9 @@ std::string envPath(const char* name)
 /** Which runtime carries the sandbox: the preference
  * BaseApp/Preferences/Expression/Sandbox:Runtime when set, else the
  * FCX_RUNTIME environment (tests and the corpus gate select a runtime
- * per process this way), else "wasi", the shipping default.
+ * per process this way), else "pyodide", the shipping default -- or
+ * "wasi", the reference implementation, in a build that has only that
+ * (docs/SandboxNetwork.md sec 0).
  */
 std::string runtimeChoice()
 {
@@ -71,23 +73,34 @@ std::string runtimeChoice()
     std::string name = hGrp->GetASCII("Runtime", "");
     if (name.empty())
         name = envPath("FCX_RUNTIME");
-    return name.empty() ? std::string("wasi") : name;
+    if (!name.empty())
+        return name;
+#ifdef FC_EXPR_PYODIDE_HOST
+    return "pyodide";
+#else
+    return "wasi";
+#endif
 }
 
 /// A runtime by name; nullptr (and a log line) for one this build does
 /// not have.
 std::unique_ptr<ImageRuntime> makeRuntime(const std::string& name)
 {
-    if (name == "wasi")
-        return makeWasmtimeRuntime();
 #ifdef FC_EXPR_PYODIDE_HOST
     if (name == "pyodide")
         return makePyodideRuntime();
 #endif
+#ifdef FC_EXPR_WASI_RUNTIME
+    if (name == "wasi")
+        return makeWasmtimeRuntime();
+#endif
     FC_ERR("unknown expression sandbox runtime '" << name
-           << "' (this build has: wasi"
+           << "' (this build has:"
 #ifdef FC_EXPR_PYODIDE_HOST
-           << ", pyodide"
+           << " pyodide"
+#endif
+#ifdef FC_EXPR_WASI_RUNTIME
+           << " wasi"
 #endif
            << ")");
     return nullptr;

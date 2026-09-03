@@ -149,24 +149,31 @@ macro(InitializeFreeCADBuildOptions)
         set(BUILD_BGFX OFF)
     endif()
     option(BUILD_DILIGENT "Build DiligentEngine renderer module" OFF)
-    # The wasmtime host embedding for the expression sandbox image
-    # (docs/ExpressionImage.md).  DETECTED rather than asked for: a box
-    # that has the runtime gets the sandbox, a box that does not still
-    # builds, because the routing preference degrades to in-process
-    # evaluation when no host is compiled in.  -DBUILD_EXPR_IMAGE_HOST=OFF
-    # opts out; ON without a runtime is an error rather than a silent
-    # nothing, because it was asked for explicitly.
-    set(WASMTIME_CAPI_DIR "" CACHE PATH "wasmtime C API prefix (include/ + lib/libwasmtime.so) for BUILD_EXPR_IMAGE_HOST")
-    find_package(Wasmtime QUIET)
-    option(BUILD_EXPR_IMAGE_HOST "Build the wasmtime host embedding for the expression sandbox image (see docs/ExpressionImage.md)" ${Wasmtime_FOUND})
-    set(FREECAD_EXPR_IMAGE_DIR "" CACHE PATH "Directory holding a built expression sandbox image (fcx_image.wasm + Lib/) to install under the data dir as Fcx/; see docs/ExpressionImage.md")
-    # The second sandbox runtime: pyodide on the bare V8 of the v8-embed
-    # package (docs/PyodideHost.md).  Detected the same way: a box with
-    # v8-embed gets it, one without still builds.  Needs the wasmtime host
-    # too, because the runtime sits behind the same ImageHost seam.
+    # The Python sandbox (docs/ExpressionSandbox.md): ImageHost is the
+    # runtime-agnostic seam, and a runtime carries the guest behind it.
+    # THE runtime is pyodide on the bare V8 of the v8-embed package
+    # (docs/PyodideHost.md), DETECTED rather than asked for: a box that
+    # has v8-embed gets the sandbox, a box that does not still builds,
+    # because the routing preference degrades to in-process evaluation
+    # when no host is compiled in.  The wasm32-wasi image under wasmtime
+    # (docs/ExpressionImage.md) is the REFERENCE implementation since
+    # 2026-09-03 (docs/SandboxNetwork.md): kept building, gets no new
+    # features, and is asked for explicitly -- it never turns itself on.
     find_package(v8-embed CONFIG QUIET)
-    option(BUILD_EXPR_PYODIDE_HOST "Build the V8 + pyodide runtime for the expression sandbox (needs v8-embed; see docs/PyodideHost.md)" ${v8-embed_FOUND})
+    option(BUILD_EXPR_PYODIDE_HOST "Build the V8 + pyodide runtime for the Python sandbox (needs v8-embed; see docs/PyodideHost.md)" ${v8-embed_FOUND})
     set(FREECAD_PYODIDE_DIR "" CACHE PATH "Directory holding a pyodide distribution plus the fcx_image wheel, to install under the data dir as Pyodide/; see docs/PyodideHost.md")
+    set(WASMTIME_CAPI_DIR "" CACHE PATH "wasmtime C API prefix (include/ + lib/libwasmtime.so) for BUILD_EXPR_WASI_RUNTIME")
+    option(BUILD_EXPR_WASI_RUNTIME "Build the wasmtime runtime for the wasm32-wasi reference image of the Python sandbox (needs the wasmtime C API; see docs/ExpressionImage.md)" OFF)
+    set(FREECAD_EXPR_IMAGE_DIR "" CACHE PATH "Directory holding a built reference sandbox image (fcx_image.wasm + Lib/) to install under the data dir as Fcx/; see docs/ExpressionImage.md")
+    # The seam itself follows the runtimes: on when at least one is, and
+    # ON without any runtime is an error rather than a silent nothing,
+    # because it was asked for explicitly.
+    if(BUILD_EXPR_PYODIDE_HOST OR BUILD_EXPR_WASI_RUNTIME)
+        set(_expr_host_default ON)
+    else()
+        set(_expr_host_default OFF)
+    endif()
+    option(BUILD_EXPR_IMAGE_HOST "Build the Python sandbox host seam (ImageHost); needs at least one runtime, BUILD_EXPR_PYODIDE_HOST or BUILD_EXPR_WASI_RUNTIME" ${_expr_host_default})
     # Blender's Cycles path tracer as a vendored renderer
     # (docs/CyclesIntegration.md). OFF: it is a heavy build with
     # environment dependencies (OpenImageIO, Embree, OpenImageDenoise),

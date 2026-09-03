@@ -89,8 +89,9 @@ public:
     };
     Location location();
 
-    /// The runtime carrying the sandbox ("wasi" or "pyodide"): the live
-    /// one, else the one the preference / FCX_RUNTIME would select.
+    /// The runtime carrying the sandbox ("pyodide", or "wasi" for the
+    /// reference build): the live one, else the one the preference /
+    /// FCX_RUNTIME would select.
     std::string runtime();
 
     /// Evaluate one expression source with pre-resolved bindings.

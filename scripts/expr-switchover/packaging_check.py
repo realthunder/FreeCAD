@@ -88,8 +88,17 @@ def main():
     report = []
     info = sandbox.imageInfo()
     if not info["host"]:
-        print("FATAL: built without the wasmtime host "
-              "(BUILD_EXPR_IMAGE_HOST was off, or wasmtime was not found)")
+        print("FATAL: built without the sandbox host (BUILD_EXPR_IMAGE_HOST "
+              "was off, or no runtime was found)")
+        return 2
+    # This rig checks the REFERENCE runtime's packaged lookup (<datadir>/Fcx);
+    # the pyodide runtime resolves its own files (docs/PyodideHost.md) and
+    # is the default since 2026-09-03, so select wasi explicitly:
+    # FCX_RUNTIME=wasi, in a build with BUILD_EXPR_WASI_RUNTIME.
+    if info.get("runtime") != "wasi":
+        print("FATAL: the selected runtime is %r; this rig checks the wasi "
+              "reference packaging -- run with FCX_RUNTIME=wasi"
+              % info.get("runtime"))
         return 2
 
     resources = App.getResourceDir()

@@ -52,9 +52,12 @@ protected:
         auto where = ImageHost::instance().location();
         if (!Base::FileInfo(where.image).isFile()
                 || !Base::FileInfo(where.stdlib).isDir()) {
-            GTEST_SKIP() << "sandbox image not available at " << where.image
-                         << " (set FCX_IMAGE and FCX_STDLIB, or build with "
-                            "FREECAD_EXPR_IMAGE_DIR)";
+            GTEST_SKIP() << "sandbox guest for runtime '"
+                         << ImageHost::instance().runtime()
+                         << "' not available at " << where.image
+                         << " (pyodide: set FCX_PYODIDE or build with "
+                            "FREECAD_PYODIDE_DIR; wasi: set FCX_IMAGE and "
+                            "FCX_STDLIB, or build with FREECAD_EXPR_IMAGE_DIR)";
         }
     }
 

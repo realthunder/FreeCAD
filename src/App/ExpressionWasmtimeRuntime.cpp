@@ -39,6 +39,12 @@
  * built by wasi-sdk) instantiated in-process with one preopened
  * directory, its stdlib slice.  Moved here unchanged from ImageHost when
  * the pyodide runtime arrived; docs/ExpressionImage.md describes it.
+ *
+ * REFERENCE IMPLEMENTATION since 2026-09-03 (docs/SandboxNetwork.md
+ * sec 0): pyodide is the runtime FreeCAD ships and develops; this one
+ * is kept as the smallest confinement the seam can carry, built only
+ * with BUILD_EXPR_WASI_RUNTIME, and gets no new features (no network,
+ * no package loading).  Fix it when it breaks; do not extend it.
  */
 
 FC_LOG_LEVEL_INIT("ExpressionImage", true, true)

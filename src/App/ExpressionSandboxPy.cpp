@@ -148,6 +148,7 @@ PyObject* imageInfoFunc(PyObject*, PyObject*)
     info.setItem("image", Py::String(loc.image));
     info.setItem("stdlib", Py::String(loc.stdlib));
     info.setItem("cache", Py::String(loc.cache));
+    info.setItem("runtime", Py::String(ExpressionSandbox::ImageHost::instance().runtime()));
     info.setItem("host", Py::Boolean(true));
     return Py::new_reference_to(info);
 #else
@@ -155,6 +156,7 @@ PyObject* imageInfoFunc(PyObject*, PyObject*)
     info.setItem("image", Py::String(""));
     info.setItem("stdlib", Py::String(""));
     info.setItem("cache", Py::String(""));
+    info.setItem("runtime", Py::String(""));
     info.setItem("host", Py::Boolean(false));
     return Py::new_reference_to(info);
 #endif
@@ -170,9 +172,11 @@ PyMethodDef Methods[] = {
     {"available", availableFunc, METH_NOARGS,
      "available() -> bool -- whether a sandbox image could be loaded."},
     {"imageInfo", imageInfoFunc, METH_NOARGS,
-     "imageInfo() -> dict -- where the image, its stdlib slice and its"
-     " compiled-module cache resolve to, and whether this build has a"
-     " wasmtime host at all.  What to look at when available() is False."},
+     "imageInfo() -> dict -- where the guest (the fcx_image wheel, or the"
+     " reference image), its stdlib and its compiled-module cache resolve"
+     " to, which runtime ('pyodide' or 'wasi') is selected, and whether"
+     " this build has a sandbox host at all.  What to look at when"
+     " available() is False."},
     {"evaluate", evaluateFunc, METH_VARARGS,
      "evaluate(owner, source, options=0) -> value -- evaluate one"
      " expression the way the desktop would right now (routed or not,"
