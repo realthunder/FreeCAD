@@ -2371,7 +2371,7 @@ ccl::Shader *SceneTranslator::materialXShader(const UserShader &user, const Clip
         + "mtlx:" + std::to_string(std::hash<std::string> {}(variant)) + clip.key();
     auto it = shaders.find(key);
     if (it != shaders.end())
-        return it->second;
+        return it->second.shader;
 
     // A document that failed once fails the same way every restate,
     // and finding that out costs a data-library import each time.
@@ -2407,7 +2407,7 @@ ccl::Shader *SceneTranslator::materialXShader(const UserShader &user, const Clip
     if (!built.surface)
         return fail(built.error);
     imageNodes += built.images;
-    ccl::Shader *shader = scene->create_node<ccl::Shader>();
+    ccl::Shader *shader = acquireShader();
     shader->name = ccl::ustring(key);
     if (materialXReported.insert(identity).second) {
         for (const auto &w : built.warnings)
@@ -2418,7 +2418,7 @@ ccl::Shader *SceneTranslator::materialXShader(const UserShader &user, const Clip
         graph->connect(built.volume, graph->output()->input("Volume"));
     shader->set_graph(std::move(graph));
     shader->tag_update(scene);
-    shaders[key] = shader;
+    shaders[key] = ShaderEntry{shader, built.images};
     return shader;
 #endif
 }
