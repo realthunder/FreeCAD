@@ -1984,33 +1984,101 @@ chess set was pictured in, and on an asset that is mostly black -- where
 the environment is nearly all of the light there is -- it is the whole of
 the five times.
 
-#### What is left to rule (open)
+#### Ruled, and built (2026-09-03)
 
-The three findings are stated; none of them is fixed, because each is a
-question about what the two engines are FOR rather than a defect with an
-obvious repair:
+**A path tracer is reached for because it is physical.** Honouring a
+raster shading facade would defeat the point of asking for it, so the
+path tracer does not take orders from `Render_PBR` and never did -- what
+was wrong was that this had never been stated, and one comment in
+`View3DInventorViewer.cpp` claimed the opposite ("the still keeps
+matching what the raster view honours"). That comment now states the
+policy instead.
 
-1. Should the path tracer honour `Render_PBR`? Refusing to trace a scene
-   the raster is drawing in Blinn-Phong is defensible -- there is no
-   physical reading of a headlight-lit Phong surface -- and so is what it
-   does now, which is to answer "what this model looks like lit
-   properly". What is not defensible is the two disagreeing silently.
-2. Should the headlight and the other view lights be translated? They are
-   ordinary directional lights and Cycles has the node; the argument
-   against is that a headlight is a viewport affordance, not a light in
-   the room.
-3. Should the scene ambient be translated? The raster already takes it
-   "for what it physically is here: a uniform-radiance environment", and
-   that reading translates directly -- a constant added to the world on
-   non-camera rays, which is the node graph the background blur already
-   uses.
+The policy, which the code already implemented for everything except the
+three things below:
+
+> The path tracer is given what the scene IS -- the environment,
+> exposure and output transform, the scene light, document lights,
+> bump, section planes, background. It is given nothing that describes
+> how the RASTER pipeline fakes something: GTAO, cavity, matcap, bloom,
+> volumetrics are absent from `Cycles::SceneInput` and stay absent.
+
+Blender draws the same line: Solid mode's studio lights are
+camera-attached and never appear in a render.
+
+**And `Realistic` joins the path tracer's tier.** The raster's three
+shading models are not one thing with settings, they are two tiers:
+
+| model | lit by | may it ever show an unlit model? |
+| --- | --- | --- |
+| Classic | the headlight, the scene ambient, document lights | **never** -- that is what it is for |
+| Matcap | its camera-fixed studio | **never** -- the studio IS the shading |
+| Realistic | the environment, the scene light, document lights | yes, if the scene is dark |
+| External (Cycles) | the same, traced | yes, if the scene is dark |
+
+So the three findings resolve as:
+
+1. **`Render_PBR`: not honoured, and now said so.** No code change
+   beyond the comment.
+2. **The headlight, backlight and fill light: not translated, and now
+   not added to Realistic either.** They are camera-attached viewing
+   aids -- `ViewLight::eyeSpace`, which the bridge already computes and
+   already documents as "exactly what makes it a headlight". A
+   document's own lights are the scene and are kept, in both tiers.
+3. **The scene ambient: the same.** Coin's `LIGHT_MODEL_AMBIENT` is a
+   Phong-era global fudge that belongs to Classic.
+
+The change is `BGFXFrame.cpp`, at the point the view lights and the
+ambient are transferred to the view: gated on `pbrActive` -- the same
+flag the shader branches on, so a frame that asked for Realistic and
+fell back because the environment could not be built keeps the lights it
+is about to shade with -- eye-space lights are skipped and the ambient
+is not fed.
+
+**Measured, before and after,** on the radiance ladder (linear):
+
+| | slope | intercept |
+| --- | --- | --- |
+| raster, before | 0.2296 | **+0.0574** |
+| raster, after | 0.2273 | **-0.0000** |
+| our Cycles | 0.2346 | -0.0002 |
+| Blender (Principled, r=1) | 0.2307 | -- |
+
+The floor is gone: with a black environment, no sun and no lights the
+raster now draws byte **0** where it drew 68, and it tracks the path
+tracer within one or two bytes at every radiance on the ladder.
+`fcad-probes/shadingfloor_probe.py` is the assertion that the other two
+models did NOT lose theirs -- Classic 99.7 and Matcap 108.4 on the same
+black scene, Realistic 3.0 (the edges; the surface is 0).
+
+**`Render_Shadow` is no longer read by the path tracer.** By its own
+documentation it is "the shadow MAP cast by the Shadow display style's
+scene light ... a convenience switch to drop shadows without leaving the
+Shadow display style" -- a cost and technique knob, the same class as
+GTAO. A path tracer has no shadow map; its shadow is what happens when a
+shadow ray meets the model, so switching it off does not simplify the
+picture, it makes the light pass through solid matter.
+`SceneTranslator::translateLight` now always casts.
+
+#### Not changed, and why
+
+- **GTAO stays in Realistic.** It is not a fake to be removed but the
+  raster's approximation of what the path tracer integrates exactly;
+  dropping it would make Realistic less like Cycles, not more.
+- **Cavity and bloom stay.** Stylistic, off by default, and a deliberate
+  act to enable.
+- **A "match my viewport" still**, if it is ever wanted, needs a knob of
+  its own rather than being smuggled through `Render_PBR`. Named here,
+  not built.
 
 Items 2 to 4 of the earlier list (GTAO against path-traced GI, the
 `standard_surface` to OpenPBR translation, the image colour spaces) are
 NOT ruled out by any of this: the measurements above were made on a plain
 appearance, so they say nothing about a MaterialX document. They are
 simply no longer the first suspects -- the scene disagreed before any
-document was involved, exactly as the plain-box 1.8x said it would.
+document was involved, exactly as the plain-box 1.8x said it would. What
+they should now be measured against is a Realistic view, which is the
+tier that is supposed to agree.
 
 ### 17.14 The library keeps a file once per CARD, and that is now wrong (open, 2026-09-03)
 

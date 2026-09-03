@@ -1246,7 +1246,17 @@ bool SceneTranslator::translateLight(const LightConfig &light,
         tfm = frameAlongZ(light.direction, origin);
         node = sun;
     }
-    node->set_cast_shadow(light.shadow);
+    // LightConfig::shadow is NOT read, deliberately. It is Render_Shadow,
+    // which is the raster backend's shadow MAP -- "a convenience switch
+    // to drop shadows without leaving the Shadow display style", by its
+    // own documentation, and a cost/technique knob rather than a
+    // statement about the scene. A path tracer has no shadow map: its
+    // shadow is what happens when a shadow ray meets the model, so
+    // switching it off does not simplify a picture, it makes the light
+    // pass through solid matter -- a picture of nothing. The same
+    // reasoning keeps GTAO, cavity, matcap and bloom out of
+    // Cycles::SceneInput (docs/MaterialStorage.md sec 17.13).
+    node->set_cast_shadow(true);
     node->set_use_mis(true);
     ccl::array<ccl::Node *> used;
     used.push_back_slow(scene->default_light);

@@ -2239,11 +2239,24 @@ bool View3DInventorViewer::renderWithCycles(const std::string &path, int width, 
     input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
     input.section = RendererBridge::translateSectionConfig(settings);
     input.pbr = RendererBridge::translatePBRConfig(settings);
-    // The facade Render_PBR states the raster shading, so an External
-    // view reads it false -- but a Cycles still of that view must show
-    // the same environment the live session does (which forces the
-    // flag outright, see feedCyclesViewport). Off External the facade
-    // stands: the still keeps matching what the raster view honours.
+    // The facade Render_PBR states which branch the RASTER pipeline
+    // shades with, and the path tracer does not take orders from it: it
+    // is physically based by definition, which is the whole reason to
+    // reach for it, so it lights every scene with the environment and
+    // builds a physical BSDF whatever the viewport is drawing. The flag
+    // survives here for ONE thing -- pbr.enabled && pbr.envBackground
+    // decides whether the environment is SEEN as the backdrop, not
+    // whether it LIGHTS (SceneTranslator::translateWorld) -- and an
+    // External view reads the facade false, which would leave a still of
+    // it with a plain background where the live session shows the room.
+    // Hence the force (and see feedCyclesViewport).
+    //
+    // A Classic view's still therefore does NOT match its viewport, on
+    // purpose: Classic is lit by a headlight, which is a viewing aid and
+    // not a light in the room. A Realistic view's does match, because
+    // that mode and this engine are now the same tier -- both lit by the
+    // scene and neither by the viewport's aids (docs/MaterialStorage.md
+    // sec 17.13, ruled 2026-09-03).
     if (_pimpl->view
             && _pimpl->view->ShadingType.getValue() == View3DInventor::ShadingExternal)
         input.pbr.enabled = true;

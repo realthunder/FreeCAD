@@ -1415,12 +1415,39 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     d[j] /= len;
             }
         };
-        view->viewAmbientFed = viewlightconf.fed;
+        // The Realistic branch is lit by the SCENE -- the environment,
+        // the scene light, and any light a DOCUMENT adds -- and not by
+        // the viewport's own aids. Two of those aids are dropped here.
+        //
+        // The headlight, backlight and fill light are camera-attached
+        // (`eyeSpace`, which is what the bridge computes them to be),
+        // and Coin's LIGHT_MODEL_AMBIENT is a Phong-era global fudge.
+        // Both exist so that Classic can never show an unlit model,
+        // which is what that mode is FOR and stays true of it (Matcap
+        // needs neither: its studio is the shading). Adding them on top
+        // of image-based lighting instead puts a FLOOR under the
+        // picture that no environment setting can remove: with a black
+        // environment, no sun and no lights, a 0.5 grey box still drew
+        // at byte 68 where the path tracer -- the same shading model,
+        // traced -- draws black. Measured, and the floor split exactly
+        // into these two: headlight 0.0503, ambient 0.0075 of linear
+        // light (docs/MaterialStorage.md sec 17.13).
+        //
+        // Gated on pbrActive rather than on the config, so a frame that
+        // asked for Realistic and fell back to Classic because the
+        // environment could not be built keeps the lights it is about
+        // to shade with. It is the same flag the shader branches on.
+        const bool sceneLitOnly = pbrActive;
+        view->viewAmbientFed = viewlightconf.fed && !sceneLitOnly;
         view->viewAmbient = viewlightconf.ambient;
         int n = 0;
         if (viewlightconf.fed) {
             for (int i = 0; i < viewlightconf.count; ++i) {
                 const Render::ViewLight &l = viewlightconf.lights[i];
+                // A document's own lights are the scene and stay; the
+                // viewer's camera-attached ones do not.
+                if (sceneLitOnly && l.eyeSpace)
+                    continue;
                 // A spot light spends TWO slots: its position, colour
                 // and attenuation fill a light's twelve floats already,
                 // and the cone axis is three more, so it goes in the
