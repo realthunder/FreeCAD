@@ -318,6 +318,37 @@ mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc,
     // surfaces is the chess set's shape (sec 17.13), and nothing says
     // they all state the same model.
     const std::string original = surface->getCategory();
+
+    // What the translator does with the shader's inputs, and the two
+    // things it gets wrong for a document that leaves inputs unstated
+    // -- which is every authored one:
+    //
+    // It forwards the inputs the shader STATES onto its translation
+    // node and reads the rest off the TRANSLATION nodedef's defaults,
+    // which are not the source model's. standard_surface says base
+    // 1.0 and base_color 0.8 grey; standard_surface_to_open_pbr_surface
+    // says base 0.8 and base_color white. The chess set states no
+    // base, so every piece rendered at 0.8 of its albedo in both
+    // consumers (fcad-probes/mtlxbase_run.sh: byte 115 where the
+    // closed form says 128), which is the 20 per cent the path tracer
+    // sat under Blender by (sec 17.18). An unstated input means the
+    // source's own default, so that is stated here before translating.
+    mx::NodeDefPtr sourceDef = surface->getNodeDef();
+    std::vector<mx::NodeDefPtr> translationDefs =
+        doc->getMatchingNodeDefs(original + "_to_open_pbr_surface");
+    mx::NodeDefPtr translationDef =
+        translationDefs.empty() ? mx::NodeDefPtr() : translationDefs.front();
+    if (sourceDef && translationDef) {
+        for (const mx::InputPtr &in : sourceDef->getActiveInputs()) {
+            const std::string &name = in->getName();
+            if (surface->getInput(name) || !in->hasValueString()
+                || !translationDef->getActiveInput(name))
+                continue;
+            surface->addInput(name, in->getType())
+                ->setValueString(in->getValueString());
+        }
+    }
+
     try {
         mx::ShaderTranslatorPtr translator = mx::ShaderTranslator::create();
         translator->translateShader(surface, "open_pbr_surface");

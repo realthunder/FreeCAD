@@ -533,6 +533,46 @@ TEST_F(MaterialXGenerator, theSurfaceSurvivesTheOpenPbrTranslation)
     EXPECT_NE(b.source.find("0.900000"), std::string::npos) << b.source;
 }
 
+namespace
+{
+
+std::string standardSurfaceDoc(const std::string &inputs, const std::string &patterns = {})
+{
+    return "<?xml version=\"1.0\"?>\n"
+           "<materialx version=\"1.39\">\n"
+           + patterns
+           + "  <standard_surface name=\"S\" type=\"surfaceshader\">\n"
+           + inputs
+           + "  </standard_surface>\n"
+             "  <surfacematerial name=\"M\" type=\"material\">\n"
+             "    <input name=\"surfaceshader\" type=\"surfaceshader\" nodename=\"S\" />\n"
+             "  </surfacematerial>\n"
+             "</materialx>\n";
+}
+
+}  // namespace
+
+TEST_F(MaterialXGenerator, anUnstatedInputKeepsItsOwnModelsDefaultThroughTranslation)
+{
+    // MaterialX's translator forwards the inputs the shader states and
+    // reads the rest off the TRANSLATION nodedef, whose defaults are
+    // not the source model's: standard_surface says base 1.0, the
+    // translation to OpenPBR says 0.8. An authored document states no
+    // base, and rendered at 0.8 of its albedo in both engines for it.
+    const std::string colour =
+        "    <input name=\"base_color\" type=\"color3\" value=\"0.25, 0.25, 0.25\" />\n";
+    auto unstated = Render::MaterialX::generate(standardSurfaceDoc(colour));
+    auto one = Render::MaterialX::generate(standardSurfaceDoc(
+        colour + "    <input name=\"base\" type=\"float\" value=\"1.0\" />\n"));
+    auto arnold = Render::MaterialX::generate(standardSurfaceDoc(
+        colour + "    <input name=\"base\" type=\"float\" value=\"0.8\" />\n"));
+    ASSERT_TRUE(unstated.valid) << unstated.error;
+    ASSERT_TRUE(one.valid) << one.error;
+    ASSERT_TRUE(arnold.valid) << arnold.error;
+    EXPECT_EQ(unstated.source, one.source);
+    EXPECT_NE(unstated.source, arnold.source);
+}
+
 TEST_F(MaterialXGenerator, aDocumentMayStateOneModelBesideAnother)
 {
     // translateAllMaterials threw on the first material already in
