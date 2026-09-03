@@ -2276,8 +2276,31 @@ the shadow is what happens when a shadow ray meets the model -- so
 honouring the flag would not buy a cheaper approximation, it would draw
 light passing through solid matter. `translateLight` always casts.
 
-Matcap builds the shadow map when a scene light asks for one and then
-never taps it; the map is wasted work in that mode.
+Matcap tapped no shadow and paid for one anyway: the map set is
+demanded by configuration -- a scene light is fed and `Shadow` is on --
+and the matcap branch has no shadow term to sample it with, so the mode
+held **117MB at `ShadowPrecision` 1.0** it could never read. The demand
+predicate now asks the mode, and **91.9MB** comes back (measured,
+`fcad-probes/matcapshadow_probe.py`, on the `renderTargetMemory` the
+render stats report).
+
+The per-frame RENDER was already free, and that is worth stating so the
+saving is not mistaken for a frame-rate one: the map is cached on a hash
+of the light matrices and the caster set, so on a static scene it
+re-renders only when a caster or the light moves. What the gate saves is
+the memory, and that re-render.
+
+Two things still tap the map in a matcap frame and keep it:
+
+- **the volumetric shafts**, which REQUIRE it (`volActive` is gated on
+  `shadowActive`) -- a frame effect rather than a surface one, so the
+  shading mode does not exempt them;
+- **a draw carrying a generated material**, which takes the OpenPBR
+  branch whatever the frame's mode says (`FC_USER_MATERIAL`) and so
+  keeps a shadow term the matcap branch does not have.
+
+The ground receiver is NOT one of them: `submitShadowGround` draws the
+quad unshadowed when there is no map.
 
 ### 7.9 Engine settings, streaming and diagnostics
 

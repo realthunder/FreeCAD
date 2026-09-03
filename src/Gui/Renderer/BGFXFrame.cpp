@@ -1135,6 +1135,37 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // The ground receiver and the bulb tiles read as shadow settings
     // but pay for neither: the ground quad draws unshadowed without a
     // map (submitShadowGround), and the bulb atlas is its own group.
+    //
+    // A MATCAP frame does not tap the map either: its whole shading is
+    // a camera-fixed studio looked up by the view normal, with no light
+    // and no shadow term, which is the point of the mode -- form reads
+    // the same wherever the light sits. So a matcap view of a document
+    // whose Shadow setting happens to be on was holding 117MB it could
+    // never sample, and re-rendering the map whenever a caster moved.
+    //
+    // Two things still tap it in a matcap frame and are asked before
+    // the set is dropped:
+    //   - the volumetric shafts, which REQUIRE shadowActive (volActive
+    //     below is gated on it) and are a frame effect rather than a
+    //     surface one, so the mode does not exempt them;
+    //   - a draw carrying a GENERATED material, which takes the OpenPBR
+    //     branch whatever the frame's shading mode says
+    //     (FC_USER_MATERIAL in fc_mesh_lighting.sh) and so keeps a
+    //     shadow term the matcap branch does not have.
+    bool matcapTapsShadow = false;
+    const bool matcapFrame = matcapconf.enabled && !hlconfig.show;
+    if (matcapFrame) {
+        matcapTapsShadow = volconf.enabled;
+        for (const auto &d : scene) {
+            const auto &sh = d.material.usershader;
+            if (sh && sh->dialect == Render::UserShader::Dialect::MaterialX) {
+                matcapTapsShadow = true;
+                break;
+            }
+        }
+    }
+    const bool shadowWanted = view->m_shadow && lightconf.valid
+        && lightconf.shadow && (!matcapFrame || matcapTapsShadow);
     {
         // Coin's sizing: the next power of two of precision * the cap.
         float prec = bx::clamp(lightconf.precision, 0.01f, 1.0f);
@@ -1144,9 +1175,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
             desired = uint16_t(desired << 1);
         view->shadowSizeWanted = desired;
     }
-    view->updateEffect(BGFXView::EffectShadow,
-                       view->m_shadow && lightconf.valid
-                           && lightconf.shadow);
+    view->updateEffect(BGFXView::EffectShadow, shadowWanted);
     // One shared mirror target, wanted by either consumer.
     view->updateEffect(BGFXView::EffectReflection,
                        lightconf.groundReflection
@@ -1308,7 +1337,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->pbrEnvBlur = pbrconf.envBlur;
     // Matcap replaces the lit shading outright, so it does not care
     // whether the environment could be built the way PBR does.
-    view->matcapFrame = matcapconf.enabled && !hlconfig.show;
+    view->matcapFrame = matcapFrame;
     // What the Tessellation draw style fills its faces with, so they
     // occlude without being seen (Coin gets this from the render
     // manager's hidden-line pass, not from the draw style).
@@ -1524,8 +1553,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // (a known first-cut deviation).
     bool shadowActive = false;
     float lightViewMtx[16], lightProjMtx[16];
-    if (view->m_shadow && bboxValid && lightconf.valid
-            && lightconf.shadow) {
+    if (shadowWanted && bboxValid) {
         const Render::LightConfig &light = lightconf;
         shadowActive = true;
         {
