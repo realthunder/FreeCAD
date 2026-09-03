@@ -1444,6 +1444,17 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
             // 6.12). Units 13 and up, which is why the state textures
             // below can still claim 10 and 11.
             pushUserImages(*mat.usershader);
+            // A generated material pairs with the TEXTURED vertex
+            // stage whatever the draw's own texturing says, so the
+            // mesh's texture coordinates have to be on stream 2 for
+            // it -- an unbound stream reads a constant and every map
+            // samples one texel. A draw the texture path already set
+            // up has them there (with its own texture matrix); the
+            // rest get them here, under the identity.
+            if (!textured
+                    && mat.usershader->dialect
+                        == Render::UserShader::Dialect::MaterialX)
+                bindMeshTexCoord(mesh, *draw.mesh);
             // A stateful emitter's vertex stage reads this frame's
             // particle state by vertex texture fetch — the same
             // texels the step passes wrote a few views ago

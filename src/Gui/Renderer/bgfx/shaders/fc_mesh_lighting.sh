@@ -569,6 +569,12 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			// metalness and roughness above are only what it
 			// leaves unstated.
 			fcUserMaterialInputs(m, mtlxGeom);
+			// The normal it states (a normal map, carried to
+			// geometry_normal) replaces the mesh's, on the mesh's
+			// side of the surface; everything below -- the frame,
+			// the lights, the environment lookups -- reads it.
+			n = fcOpenPbrShadingNormal(m, n);
+			ndv = max(n.z, 1.0e-4);
 #endif
 			fcOpenPbrClamp(m);
 

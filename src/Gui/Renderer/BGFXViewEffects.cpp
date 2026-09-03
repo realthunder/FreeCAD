@@ -858,6 +858,32 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
 
     setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
     setMeshVertexBuffers(gpu, *draw.mesh);
+
+    // A MaterialX glass (docs/MaterialStorage.md sec 17.22): the body
+    // stage spliced with the document's generated material function,
+    // which reads the colour, roughness, IOR, depth, weight and normal
+    // per fragment where the uniforms above carry one of each. The
+    // flat program stands in while the compile is pending or failed,
+    // and on the viewer tier, so the body is glass either way. Paired
+    // with vs_fc_mesh_tex like the mesh splice, so the mesh's texture
+    // coordinates ride stream 2 under the identity texture matrix --
+    // the document's own uv transforms are in its graph.
+    bgfx::ProgramHandle prog = m_progGlass;
+    if (mat.glassmtlx && mat.usershader
+            && mat.usershader->dialect == Render::UserShader::Dialect::MaterialX
+            && mat.usershader->stage == "material"
+            && !mat.usershader->fragmentSource.empty()) {
+        bgfx::ProgramHandle uprog = _BGFXLib.getUserProgram(
+            *mat.usershader, "vs_fc_mesh", false,
+            BGFXRendererLibP::GlassSplice);
+        if (bgfx::isValid(uprog)) {
+            _BGFXLib.pushUserParams(*mat.usershader);
+            pushUserImages(*mat.usershader);
+            bindMeshTexCoord(gpu, *draw.mesh);
+            prog = uprog;
+        }
+    }
+
     if (draw.indexCount > 0)
         bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
                              uint32_t(draw.indexCount));
@@ -869,7 +895,7 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
     if (mat.culling && !mat.twoside)
         state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
     bgfx::setState(state);
-    bgfx::submit(vid(ViewGlassSurface), m_progGlass);
+    bgfx::submit(vid(ViewGlassSurface), prog);
     ++drawcount;
 }
 

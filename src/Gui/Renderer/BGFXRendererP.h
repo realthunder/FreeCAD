@@ -2112,6 +2112,11 @@ public:
         /// spliced in. Empty when the document cannot be rendered by
         /// the raster path.
         std::string source;
+        /// The same function spliced into the glass body stage
+        /// (fc_glass_fs.sh), for a surface the capture claimed as a
+        /// glass body (Material::glassmtlx): one generation, two
+        /// assemblies. Empty exactly when `source` is.
+        std::string glassSource;
         /// The layers `source` samples and the file each one wants
         /// (docs/CyclesIntegration.md sec 6.12). Only the generator
         /// knows the layer order, and only the capture has the pixels,
@@ -2144,9 +2149,18 @@ public:
     /// (UserShader::simulateSource) instead of its beauty fragment
     /// stage, always paired with the stock full-screen vertex shader.
     /// Same cache, same async compile, same viewer-tier binary lookup.
+    /// splice = which stock fragment stage a MaterialX document's
+    /// generated material function is spliced into: the mesh stage
+    /// (the beauty passes) or the glass body stage (ViewGlassSurface,
+    /// docs/MaterialStorage.md sec 17.22). Ignored for shader text,
+    /// which is a whole fragment stage of its own. The standalone tier
+    /// ships no glass splice yet and answers invalid for it, so the
+    /// viewer draws a MaterialX glass with the flat pass.
+    enum UserSplice { MeshSplice, GlassSplice };
     bgfx::ProgramHandle getUserProgram(const Render::UserShader &shader,
                                        const char *stockVs,
-                                       bool simulate = false);
+                                       bool simulate = false,
+                                       UserSplice splice = MeshSplice);
 #ifndef FC_RENDERER_STANDALONE
     /// Per-shader compile bookkeeping, keyed by SHA1(source×target×type).
     std::set<std::string> userShaderInflight;
@@ -5133,6 +5147,10 @@ public:
     /// programs whose vertex stage reads a_color0 (mesh/flat families);
     /// depth-only programs bind gpu->geom->vbh alone.
     void setMeshVertexBuffers(GpuMesh *gpu, const Render::MeshData &mesh);
+    /// Stream 2 (the mesh's texture coordinates) under the identity
+    /// texture matrix, for a program paired with vs_fc_mesh_tex outside
+    /// the texture path: a generated material's mesh or glass splice.
+    void bindMeshTexCoord(GpuMesh *gpu, const Render::MeshData &mesh);
 
     /// The array texture of a per-face palette, uploaded on demand.
     /// Null when this backend cannot do array textures at all, which

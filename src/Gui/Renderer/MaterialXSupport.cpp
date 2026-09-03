@@ -731,9 +731,14 @@ void readTransmission(const mx::DocumentPtr &doc, const mx::NodePtr &surface,
         return;
     }
     FlatInput color = surfaceInput(doc, surface, "transmission_color", {1.0f, 1.0f, 1.0f});
+    // The flat reading feeds the FLAT consumers: the glass pass while
+    // its per-fragment splice compiles, the viewer tier, the shadow
+    // tint. The desktop glass stage reads the document's own graph per
+    // fragment (docs/MaterialStorage.md sec 17.22), map and all.
     if (color.kind != FlatInput::Constant && color.kind != FlatInput::Unstated)
         info.warnings.push_back(
-            "transmission_color is not a constant: the raster glass body takes white");
+            "transmission_color is not a constant: the flat glass body (a pending "
+            "compile, the viewer tier, the shadow tint) takes white");
     for (int c = 0; c < 3; ++c)
         t.color[c] = c < int(color.value.size()) ? color.value[c] : 1.0f;
     FlatInput depth = surfaceInput(doc, surface, "transmission_depth", {0.0f});

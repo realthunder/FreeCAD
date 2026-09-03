@@ -1608,8 +1608,10 @@ departures the file states in full:
   through geometry: transmission is the glass pass's business
   (docs/ShaderDesign.md 3.8), and a constant `transmission_weight` of
   one half or more is routed there as a glass body
-  (docs/MaterialStorage.md sec 17.21); a mapped one, and subsurface,
-  which has no raster route at all, degrade to diffuse.
+  (docs/MaterialStorage.md sec 17.21), where the same generated
+  material function runs per fragment (sec 17.22); a mapped weight,
+  and subsurface, which has no raster route at all, degrade to
+  diffuse.
 - No anisotropy (no tangent frame on the untextured path, and an
   isotropic environment probe) and no thin film (rasterizable, but ~180
   lines of complex arithmetic on every mesh draw).

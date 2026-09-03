@@ -24,10 +24,13 @@
  *    transmission_weight of one half or more IS routed there -- the
  *    capture resolves the document's transmission flat and the draw
  *    becomes a glass body (docs/MaterialStorage.md sec 17.21), so this
- *    function never sees it. A mapped weight stays here and degrades
- *    to diffuse, as does subsurface, which has no raster route at all.
- *    Cycles renders both properly, so those are a known
- *    raster/path-tracer divergence, not a parity failure.
+ *    function never sees it. The struct still CARRIES the transmission
+ *    inputs: the glass pass splices the same generated material
+ *    function (fc_glass_fs.sh, sec 17.22) and reads them per fragment.
+ *    A mapped weight stays here and degrades to diffuse, as does
+ *    subsurface, which has no raster route at all. Cycles renders both
+ *    properly, so those are a known raster/path-tracer divergence, not
+ *    a parity failure.
  *  - No anisotropy and no thin film. Anisotropy needs a tangent frame
  *    the untextured mesh path does not carry and an anisotropic
  *    environment probe we do not build; thin film is rasterizable but
@@ -304,10 +307,19 @@ vec3 fcPbrDiffuseAlbedo(vec3 rho, float r, float ndv)
 // The surface
 
 /* The OpenPBR parameters this rasterizer expresses. The excluded groups
- * (transmission, subsurface, anisotropy, thin film) are stated in the
- * file header; the Cycles interpreter carries them, so leaving them out
- * of the struct is what keeps the divergence visible rather than
- * silently rendering them as zero.
+ * (subsurface, anisotropy, thin film) are stated in the file header; the
+ * Cycles interpreter carries them, so leaving them out of the struct is
+ * what keeps the divergence visible rather than silently rendering them
+ * as zero. Transmission IS carried, for the glass pass's splice of the
+ * generated material function (fc_glass_fs.sh): the mesh lighting
+ * ignores it, as the header says.
+ *
+ * geometryNormal is the world-space shading normal the document states
+ * (a normal map, typically), or ZERO when it states none: a consumer
+ * keeps the mesh's own normal for a zero-length one. Zero rather than
+ * the mesh normal because the struct is filled before the geometry is
+ * in hand, and because "unstated" has to stay distinguishable from
+ * "stated as the mesh normal" for the two-sided flip that follows.
  */
 struct FcOpenPbr
 {
@@ -330,6 +342,10 @@ struct FcOpenPbr
 	vec3  emissionColor;
 	float emissionLuminance;
 	float geometryOpacity;
+	float transmissionWeight;
+	vec3  transmissionColor;
+	float transmissionDepth;
+	vec3  geometryNormal;
 };
 
 /* What a generated material (a MaterialX document, docs/CyclesIntegration.md
@@ -342,12 +358,61 @@ struct FcMtlxGeom
 {
 	vec3 normalWorld;
 	vec3 tangentWorld;
+	vec3 bitangentWorld;
 	vec3 positionWorld;
 	vec3 normalObject;
 	vec3 positionObject;
 	vec2 texcoord0;
 	vec3 color0;
 };
+
+/* Fill one from what a fragment stage has in hand: the view-space
+ * normal, position, the object-space pair, the texture coordinate and
+ * the vertex colour. Shared by the mesh stage and the glass stage, so a
+ * generated function sees the same geometry from either.
+ *
+ * The tangent frame is the cotangent-frame trick the bump path uses
+ * (screen-space derivatives of position against those of the uv): no
+ * vertex tangents, any uv source. It is what a normalmap node needs to
+ * mean anything -- the frame this stood in for before was the view's
+ * own x axis, which put every normal map in camera space. With no uv
+ * (a constant one derives to zero) the frame falls back to that axis,
+ * orthogonalized, so an untextured draw still hands the graph a basis.
+ * The bitangent is the derived one, not cross(n, t): a mirrored uv
+ * flips it, and a normal map painted for that uv expects the flip.
+ */
+FcMtlxGeom fcMtlxGeomFill(vec3 n, vec3 vpos, vec3 onrm, vec3 opos,
+                          vec2 uv, vec3 color0)
+{
+	FcMtlxGeom g;
+	vec3 dp1 = dFdx(vpos);
+	vec3 dp2 = dFdy(vpos);
+	vec2 duv1 = dFdx(uv);
+	vec2 duv2 = dFdy(uv);
+	vec3 dp2perp = cross(dp2, n);
+	vec3 dp1perp = cross(n, dp1);
+	vec3 t = dp2perp * duv1.x + dp1perp * duv2.x;
+	vec3 b = dp2perp * duv1.y + dp1perp * duv2.y;
+	if (dot(t, t) < 1.0e-20 || dot(b, b) < 1.0e-20)
+	{
+		t = vec3(1.0, 0.0, 0.0);
+		t = t - n * dot(t, n);
+		if (dot(t, t) < 1.0e-6)
+			t = vec3(0.0, 1.0, 0.0) - n * dot(vec3(0.0, 1.0, 0.0), n);
+		b = cross(n, t);
+	}
+	t = normalize(t - n * dot(t, n));
+	b = normalize(b - n * dot(b, n));
+	g.normalWorld = normalize(mul(u_invView, vec4(n, 0.0)).xyz);
+	g.tangentWorld = normalize(mul(u_invView, vec4(t, 0.0)).xyz);
+	g.bitangentWorld = normalize(mul(u_invView, vec4(b, 0.0)).xyz);
+	g.positionWorld = mul(u_invView, vec4(vpos, 1.0)).xyz;
+	g.normalObject = normalize(onrm);
+	g.positionObject = opos;
+	g.texcoord0 = uv;
+	g.color0 = color0;
+	return g;
+}
 
 // The spec's own defaults, so a caller states only what it knows.
 void fcOpenPbrDefaults(out FcOpenPbr m)
@@ -371,6 +436,10 @@ void fcOpenPbrDefaults(out FcOpenPbr m)
 	m.emissionColor = vec3_splat(1.0);
 	m.emissionLuminance = 0.0;
 	m.geometryOpacity = 1.0;
+	m.transmissionWeight = 0.0;
+	m.transmissionColor = vec3_splat(1.0);
+	m.transmissionDepth = 0.0;
+	m.geometryNormal = vec3_splat(0.0);
 }
 
 /* OpenPBR clamps its inputs (v1.2 PR #277), and the specular roughness
@@ -394,6 +463,28 @@ void fcOpenPbrClamp(inout FcOpenPbr m)
 	m.fuzzWeight = clamp(m.fuzzWeight, 0.0, 1.0);
 	m.fuzzRoughness = clamp(m.fuzzRoughness, 0.0, 1.0);
 	m.geometryOpacity = clamp(m.geometryOpacity, 0.0, 1.0);
+	m.transmissionWeight = clamp(m.transmissionWeight, 0.0, 1.0);
+	m.transmissionColor = clamp(m.transmissionColor, vec3_splat(0.0),
+	                            vec3_splat(1.0));
+	m.transmissionDepth = max(m.transmissionDepth, 0.0);
+}
+
+/* The shading normal a generated material stated, in VIEW space, or the
+ * mesh's own when it stated none (fcOpenPbrDefaults leaves it zero).
+ * Oriented like the mesh normal it replaces: a two-sided draw has
+ * already flipped `n` toward the viewer, and a normal map perturbs the
+ * face it is painted on, so a stated normal pointing away from `n`'s
+ * hemisphere is reflected into it rather than trusted -- the map was
+ * authored on the front, and this is the back of the same face.
+ */
+vec3 fcOpenPbrShadingNormal(FcOpenPbr m, vec3 n)
+{
+	if (dot(m.geometryNormal, m.geometryNormal) < 0.25)
+		return n;
+	vec3 sn = normalize(mul(u_view, vec4(m.geometryNormal, 0.0)).xyz);
+	if (dot(sn, n) < 0.0)
+		sn = normalize(sn - 2.0 * dot(sn, n) * n);
+	return sn;
 }
 
 /* The IOR ratio the specular lobe sees. A coat refracts what reaches

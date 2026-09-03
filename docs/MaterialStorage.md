@@ -2727,7 +2727,7 @@ generated material function: `fs_fc_glass.sc` spliced with
 the normal and new transmission fields of `FcOpenPbr` per fragment.
 That needs a texture-coordinate varying the glass pairing does not
 carry, the image array unit beside the pass's seven samplers, and a
-second entry in the user-program cache. Not built; recorded.
+second entry in the user-program cache. Built: 17.22.
 
 #### Two things the route exposed in the path tracer
 
@@ -2776,3 +2776,134 @@ pawn body. The first walker stopped at the translation NODE, whose
 `dot` nodes live in the nodedef's implementation graph and not in the
 document, and read every translated document as unstated -- three of
 the seven failed on it, which is what they are for.
+
+### 17.22 A textured MaterialX glass (2026-09-03)
+
+17.21 drew a MaterialX glass FLAT: one colour, one roughness, the
+mesh's own normal, a weight that was either opaque or all glass. The
+chess set's pawn heads state their roughness as a MAP (mean 0.235),
+and a glass with a mapped tint or a normal map had no way to show it.
+The second increment recorded there is now built: the glass body
+stage is spliced with the document's generated material function the
+way the mesh stage is, and reads the surface per fragment.
+
+#### The splice
+
+`fs_fc_glass.sc` is now a varying list around `fc_glass_fs.sh`, the
+body, exactly as `fs_fc_mesh.sc` is around `fc_mesh_fs.sh`. The
+backend's per-document variant (`materialXVariant`) assembles TWO
+sources from ONE generation: the mesh splice it always made, and the
+same prologue over `fc_glass_fs.sh` (`MaterialXVariant::glassSource`).
+Both define `FC_USER_MATERIAL`, both pair with `vs_fc_mesh_tex`, both
+carry the same varying list, so a document generates once and compiles
+twice. `getUserProgram` takes which splice is wanted (`UserSplice`);
+the program cache keys on the assembled source, so the two are two
+entries. `submitGlassSurface` asks for the glass splice when the draw
+is a MaterialX glass (`Material::glassmtlx` with its `usershader`),
+pushes the document's parameters and its image array like the mesh
+submit does, binds the mesh's texture coordinates on stream 2 under the
+identity texture matrix, and draws with it -- and with the flat
+program otherwise: while the compile is pending, when it failed, and
+on the viewer tier, whose snapshot ships the mesh splice only and
+whose `getUserProgram` answers invalid for the glass one rather than
+hand the glass pass a program that lights an opaque body. The body is
+glass either way; what changes is whether it is the document's glass
+or the flat reading of it.
+
+Inside the body, under `FC_USER_MATERIAL`: the geometry is filled, the
+defaults stated, `fcUserMaterialInputs` run, and then the pass's five
+inputs come from the struct instead of the uniforms -- IOR from
+`specularIor`, roughness from `specularRoughness` (read BEFORE the
+clamp: its 0.05 floor is for a microfacet lobe under a delta light,
+and a polished pane is not frosted), and the colour by the same rule
+17.21 gave the flat route: a positive `transmissionDepth` makes it the
+absorption colour at density `1 / depth`, a zero one makes it the
+surface tint. New, because a flat pass could not express it: a
+`transmissionWeight` below one mixes a diffuse share of the base colour
+(the environment's coarse irradiance under `baseColor`, the lookup the
+frosted scatter already uses) into the transmitted light before the
+Fresnel reflection covers both; and the document's `geometryNormal`,
+when it states one, replaces the mesh normal for the refraction
+direction and the reflection alike. `u_glassParams.w`, the frame's
+depth-reject flag, is the one uniform still read.
+
+#### What the struct gained, and what it fixed on the mesh stage
+
+`FcOpenPbr` carries `transmissionWeight`, `transmissionColor`,
+`transmissionDepth` and `geometryNormal` now, with the spec defaults
+(0, white, 0) and ZERO for the normal, meaning unstated; the generator's
+field table emits the four inputs. The mesh lighting ignores the
+transmission -- the header of `fc_openpbr.sh` still says why -- so a
+partial weight below the claim threshold shades as it did. The normal
+it does consume: `fcOpenPbrShadingNormal` turns a stated world normal
+into view space on the mesh's side of the surface (a two-sided draw has
+flipped its normal toward the viewer already, and a map painted for the
+front is reflected into that hemisphere on the back rather than
+trusted), and the OpenPBR branch takes it right after the document has
+spoken, before the frame, the lights and the environment lookups. That
+closes 17.19's "the raster does not consume `geometry_normal` at all":
+a MaterialX normal map, carried across the translation since 17.19,
+finally moves a mesh-stage surface too.
+
+For the map to mean anything the graph needs a tangent frame, and the
+one `FcMtlxGeom` handed over was the VIEW's x axis in world space --
+every normal map read in camera space. `fcMtlxGeomFill`, shared by
+both stages now, builds the frame the bump path always did (the
+cotangent-frame trick on screen-space derivatives of position against
+the uv), orthogonalized, and hands over the derived bitangent as its
+own field (`bitangentWorld`, which the generator used to synthesize as
+`cross(n, t)` -- a mirrored uv flips it, and a map painted for that uv
+expects the flip). With no uv the frame falls back to the view axis,
+orthogonalized, so an untextured draw still has a basis.
+
+Which exposed the stream. A generated material pairs with the textured
+vertex stage whatever the draw's own texturing says, and the mesh
+submit bound stream 2 only for a draw the TEXTURE path had set up (a
+Coin texture, a bump or data map, a per-face palette on the mesh's
+uv). A plain UV-mapped shape wearing a MaterialX image material had the
+attribute unbound: it read its constant, and every map sampled one
+texel. Not seen on the chess set, whose glTF pieces carry per-face
+images and so took the textured path; `bindMeshTexCoord` now binds the
+mesh's coordinates under the identity matrix for both splices whenever
+the texture path did not.
+
+#### Measured
+
+The 17.21 frames re-run for the raster and our Cycles with the splice
+in (`/tmp/chess3-tex`, Blender's frame unchanged, `CHESS_SETTLE=90` so
+the asynchronous compiles land before the capture), `chess3_board.py`:
+
+    leg            R      G      B     MAD    R/B      (17.21)
+    raster       70.1   70.3   61.1    1.06  1.147     (1.38)
+    our Cycles   68.3   69.1   61.0    0.07  1.119     (0.07)
+    Blender      68.3   69.0   60.9    0.00  1.122
+
+The raster's board region came down from 1.38 to **1.06 bytes** off the
+reference. A small step, and a small step is exactly what has to be
+scrutinized ([[frame-statistic-wrong-region]]): three things say it is
+the splice and not the fallback. The compile cache holds TWO glass
+splices with binaries (the white and the black pawn heads); the frame
+diff against 17.21 is exactly the sixteen pawn heads and nothing else
+on the board; and the pieces' own change is where the normal maps are
+-- up to 90 bytes on back-row pixels, small because the chess set's
+maps are subtle (a standard deviation of ten levels, a few degrees of
+tilt) and the pieces are a few dozen pixels across at the dump's size.
+What is left in the raster's 1.06 is 17.19's list -- the constant
+1.07x, the smaller framing -- with `geometry_normal` now struck off it.
+
+One trap on the way. The runtime user-shader compile includes from a
+COPY of the shader directory that CMake globs at configure time, and a
+brand-new include file is not in a standing build tree's copy: the
+first run's glass splices failed with "Cannot open include file
+fc_glass_fs.sh", the flat program stood in exactly as designed, and the
+probe reported PROBE OK over a measurement of the fallback. A
+fallback that draws something plausible hides its own absence; the
+compile cache (a `.sc` with no `.bin` beside it) and the run log's
+"user shader compile failed" are what say which program drew. A new
+shader include needs a reconfigure, like a new `.sc` does.
+
+Three tests in `MaterialXGen_tests_run`: the transmission inputs reach
+the generated function as literals; a mapped transmission colour is an
+image fetch there, not a literal; a stated normal is emitted, not a
+literal, and the frame it is expressed in names the geometry's tangent
+and bitangent.

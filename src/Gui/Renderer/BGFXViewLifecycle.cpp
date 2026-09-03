@@ -1514,6 +1514,21 @@ bgfx::VertexBufferHandle BGFXView::whiteColors(int numVertices)
     return whiteColorVb;
 }
 
+/// Stream 2 (a_texcoord0) for a draw paired with a textured vertex
+/// stage outside the texture path: the mesh's own coordinates when it
+/// has any, under the identity texture matrix. A mesh with none leaves
+/// the stream unbound and the attribute reads its constant, which is
+/// the (0, 0) a generated material saw before too.
+void BGFXView::bindMeshTexCoord(GpuMesh *gpu, const Render::MeshData &mesh)
+{
+    gpu->geom->ensureTexCoord(mesh);
+    if (bgfx::isValid(gpu->geom->texcoord))
+        bgfx::setVertexBuffer(2, gpu->geom->texcoord);
+    float texmat[16];
+    bx::mtxIdentity(texmat);
+    bgfx::setUniform(u_texMatrix, texmat);
+}
+
 void BGFXView::setMeshVertexBuffers(GpuMesh *gpu, const Render::MeshData &mesh)
 {
     bgfx::setVertexBuffer(0, gpu->geom->vbh);

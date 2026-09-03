@@ -152,13 +152,15 @@ TEST_F(MaterialXGenerator, aStatedConstantBecomesALiteral)
 
 TEST_F(MaterialXGenerator, anInputTheRasterSurfaceLacksIsLeftAtItsDefault)
 {
-    // transmission has no raster lobe, so it must not appear -- and its
+    // subsurface has no raster lobe, so it must not appear -- and its
     // presence in the document must not stop the rest generating.
+    // (Transmission used to be the example; the glass stage reads it
+    // now, docs/MaterialStorage.md sec 17.22.)
     auto out = Render::MaterialX::generate(openPbrDoc(
-        "    <input name=\"transmission_weight\" type=\"float\" value=\"1.0\" />\n"
+        "    <input name=\"subsurface_weight\" type=\"float\" value=\"1.0\" />\n"
         "    <input name=\"base_color\" type=\"color3\" value=\"1, 0, 0\" />\n"));
     ASSERT_TRUE(out.valid) << out.error;
-    EXPECT_EQ(out.source.find("transmission"), std::string::npos);
+    EXPECT_EQ(out.source.find("subsurface"), std::string::npos);
     EXPECT_NE(out.source.find("m.baseColor"), std::string::npos);
 }
 
@@ -804,6 +806,81 @@ TEST_F(MaterialXGenerator, aMappedRoughnessNamesItsImage)
     ASSERT_FALSE(info.transmission.roughnessImage.empty());
     EXPECT_NE(info.transmission.roughnessImage.find("rough.png"), std::string::npos)
         << info.transmission.roughnessImage;
+}
+
+TEST_F(MaterialXGenerator, theTransmissionReachesTheGeneratedFunction)
+{
+    // The flat reading above is for the consumers that sample nothing;
+    // the glass stage splices this same function and reads the
+    // transmission per fragment (docs/MaterialStorage.md sec 17.22),
+    // so the generated code has to state it like any other input.
+    auto out = Render::MaterialX::generate(openPbrDoc(
+        "    <input name=\"transmission_weight\" type=\"float\" value=\"1\" />\n"
+        "    <input name=\"transmission_color\" type=\"color3\" "
+        "value=\"0.2, 0.5, 0.4\" />\n"
+        "    <input name=\"transmission_depth\" type=\"float\" value=\"2.5\" />\n"));
+    ASSERT_TRUE(out.valid) << out.error;
+    EXPECT_NE(out.source.find("m.transmissionWeight = 1.000000"),
+              std::string::npos) << out.source;
+    EXPECT_NE(out.source.find("m.transmissionColor = vec3(0.200000, 0.500000, 0.400000)"),
+              std::string::npos) << out.source;
+    EXPECT_NE(out.source.find("m.transmissionDepth = 2.500000"),
+              std::string::npos) << out.source;
+}
+
+TEST_F(MaterialXGenerator, aMappedTransmissionColourIsSampledByTheGeneratedFunction)
+{
+    // What the flat reading turns white, the generated function reads
+    // off the map: the colour input is an image fetch, not a literal.
+    ScratchImages images("mappedtint");
+    const std::string tint = images.file("tint.png");
+    auto out = Render::MaterialX::generate(openPbrDoc(
+        "    <input name=\"transmission_weight\" type=\"float\" value=\"1\" />\n"
+        "    <input name=\"transmission_color\" type=\"color3\" "
+        "nodegraph=\"NG\" output=\"c\" />\n",
+        "  <nodegraph name=\"NG\">\n"
+        "    <image name=\"img\" type=\"color3\">\n"
+        "      <input name=\"file\" type=\"filename\" value=\"" + tint + "\" />\n"
+        "    </image>\n"
+        "    <output name=\"c\" type=\"color3\" nodename=\"img\" />\n"
+        "  </nodegraph>\n"), images.document());
+    ASSERT_TRUE(out.valid) << out.error;
+    ASSERT_EQ(out.images.size(), 1u);
+    const size_t at = out.source.find("m.transmissionColor = ");
+    ASSERT_NE(at, std::string::npos) << out.source;
+    // Not a literal: the value is a variable the image fetch wrote.
+    EXPECT_EQ(out.source.find("m.transmissionColor = vec3(", at), std::string::npos)
+        << out.source;
+    EXPECT_NE(out.source.find("fcMtlxImage"), std::string::npos) << out.source;
+}
+
+TEST_F(MaterialXGenerator, aStatedNormalReachesTheGeneratedFunction)
+{
+    // A normal map survives the translation (above); it is only worth
+    // anything once the surface's geometry_normal is stated to the
+    // consumer, which reads it in place of the mesh's own.
+    ScratchImages images("statednormal");
+    const std::string patterns =
+        "  <image name=\"N\" type=\"vector3\">\n"
+        "    <input name=\"file\" type=\"filename\" value=\"" + images.file("n.png") + "\" />\n"
+        "  </image>\n"
+        "  <normalmap name=\"NM\" type=\"vector3\">\n"
+        "    <input name=\"in\" type=\"vector3\" nodename=\"N\" />\n"
+        "  </normalmap>\n";
+    auto out = Render::MaterialX::generate(
+        standardSurfaceDoc(
+            "    <input name=\"normal\" type=\"vector3\" nodename=\"NM\" />\n",
+            patterns),
+        images.document());
+    ASSERT_TRUE(out.valid) << out.error;
+    const size_t at = out.source.find("m.geometryNormal = ");
+    ASSERT_NE(at, std::string::npos) << out.source;
+    EXPECT_EQ(out.source.find("m.geometryNormal = vec3(", at), std::string::npos)
+        << out.source;
+    // The frame the map is expressed in comes from the geometry the
+    // stage hands over, bitangent included (fcMtlxGeomFill).
+    EXPECT_NE(out.source.find("g.tangentWorld"), std::string::npos) << out.source;
+    EXPECT_NE(out.source.find("g.bitangentWorld"), std::string::npos) << out.source;
 }
 
 TEST_F(MaterialXGenerator, theChessSetsPawnHeadsAreGlassBodies)

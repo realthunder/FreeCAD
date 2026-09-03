@@ -97,10 +97,15 @@ namespace Render::MaterialX {
 namespace {
 
 /// The OpenPBR inputs the rasterizer expresses, and the FcOpenPbr field
-/// each lands in. Deliberately a subset: transmission, subsurface,
-/// anisotropy and thin film have no raster lobe (fc_openpbr.sh states
-/// why), and an input left out here simply keeps the spec default the
-/// shader starts from -- which is what makes leaving it out safe.
+/// each lands in. Deliberately a subset: subsurface, anisotropy and
+/// thin film have no raster lobe (fc_openpbr.sh states why), and an
+/// input left out here simply keeps the spec default the shader starts
+/// from -- which is what makes leaving it out safe. Transmission IS
+/// stated, for the glass pass's splice of this same function
+/// (fc_glass_fs.sh, docs/MaterialStorage.md sec 17.22); the mesh stage
+/// leaves it unread. geometry_normal is the shading normal a normal
+/// map states, in world space; unstated it reads the mesh's own (the
+/// nodedef's default geomprop), which the consumer treats as none.
 const struct { const char *input, *field; } FIELDS[] = {
     { "base_color", "baseColor" },
     { "base_weight", "baseWeight" },
@@ -121,6 +126,10 @@ const struct { const char *input, *field; } FIELDS[] = {
     { "emission_color", "emissionColor" },
     { "emission_luminance", "emissionLuminance" },
     { "geometry_opacity", "geometryOpacity" },
+    { "transmission_weight", "transmissionWeight" },
+    { "transmission_color", "transmissionColor" },
+    { "transmission_depth", "transmissionDepth" },
+    { "geometry_normal", "geometryNormal" },
 };
 
 /// The surface node, emitted as assignments into the caller's FcOpenPbr
@@ -600,8 +609,7 @@ private:
         if (name == "positionWorld")   return "g.positionWorld";
         if (name == "normalWorld")     return "g.normalWorld";
         if (name == "tangentWorld")    return "g.tangentWorld";
-        if (name == "bitangentWorld")
-            return "cross(g.normalWorld, g.tangentWorld)";
+        if (name == "bitangentWorld")  return "g.bitangentWorld";
         if (name == "positionObject")  return "g.positionObject";
         if (name == "normalObject")    return "g.normalObject";
         if (name == "tangentObject")   return "vec3(1.0, 0.0, 0.0)";

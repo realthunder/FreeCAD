@@ -1992,15 +1992,20 @@ BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
     // environment is applied on top of what the document states. The
     // varying list has to match vs_fc_mesh_tex exactly -- bgfx links a
     // program only on an exact varying match.
-    std::string src =
+    const std::string prologue =
         "$input v_normal, v_color0, v_color1, v_color2, v_texcoord0, "
         "v_vpos, v_opos, v_onrm, v_findex\n"
         "#include <bgfx_shader.sh>\n"
-        "#define FC_USER_MATERIAL 1\n"
-        "#include \"fc_mesh_fs.sh\"\n"
-        + gen.source;
+        "#define FC_USER_MATERIAL 1\n";
     MaterialXVariant variant;
-    variant.source = std::move(src);
+    variant.source = prologue + "#include \"fc_mesh_fs.sh\"\n" + gen.source;
+    // And the glass body stage, for a surface claimed as a glass body
+    // (docs/MaterialStorage.md sec 17.22): the same function read by
+    // the pass that refracts, so a mapped colour or roughness and a
+    // normal map reach the glass per fragment. Same varying list --
+    // the glass pairing is vs_fc_mesh_tex too.
+    variant.glassSource =
+        prologue + "#include \"fc_glass_fs.sh\"\n" + gen.source;
     variant.images = std::move(gen.images);
     variant.imageSampler = std::move(gen.imageSampler);
     variant.imageUnit = gen.imageUnit;
@@ -2108,7 +2113,8 @@ BGFXRendererLibP::viewerShaderBins(
 
 bgfx::ProgramHandle
 BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
-                                 const char *stockVs, bool simulate)
+                                 const char *stockVs, bool simulate,
+                                 UserSplice splice)
 {
     static const std::string kNoVertexStage;
     // A MaterialX document is a material description, not shader text:
@@ -2123,7 +2129,9 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
     if (shader.dialect == Render::UserShader::Dialect::MaterialX) {
         if (simulate)
             return BGFX_INVALID_HANDLE;
-        generated = materialXVariant(shader).source;
+        const MaterialXVariant &variant = materialXVariant(shader);
+        generated = splice == GlassSplice ? variant.glassSource
+                                          : variant.source;
         if (generated.empty())
             return BGFX_INVALID_HANDLE;
         stockVs = "vs_fc_mesh_tex";
@@ -2210,13 +2218,22 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
 
 bgfx::ProgramHandle
 BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
-                                 const char *stockVs, bool simulate)
+                                 const char *stockVs, bool simulate,
+                                 UserSplice splice)
 {
     // No compiler in this tier: resolve from the precompiled variants
     // the snapshot ships (server-side compile, docs/RenderDebug.md
     // §6.3). Until the backend's compile finishes and a republished
     // snapshot carries the matching variant, there is nothing to load
     // and the stock program stands in.
+    //
+    // The shipped variant of a MaterialX document is its MESH splice
+    // (viewerShaderBins); no glass splice travels yet, and answering
+    // the mesh program to the glass pass would draw the body opaque
+    // and lit in a pass that expects to refract. The flat glass pass
+    // stands in on this tier.
+    if (splice == GlassSplice)
+        return BGFX_INVALID_HANDLE;
     std::string platform, profile, apiDir;
     if (!shadercTarget(platform, profile, apiDir))
         return BGFX_INVALID_HANDLE;
