@@ -153,17 +153,65 @@ complete the set urllib3's backend touches.  The shim inventory of
 
 An HTTP client behind one interface (`NetClient`: request in, reply
 out, cancellable, with a deadline), so the choice can change without
-touching the policy or the shim.  Two candidates exist in the
-environment, and the choice is an open question (sec 12):
+touching the policy or the shim.  What the policy of sec 4 demands of
+the client, in the order it matters:
 
-- **Qt Network** (`QNetworkAccessManager`).  Shipped on every platform
-  FreeCAD ships on, system TLS backends, system proxy discovery, and
-  what the Addon Manager already uses.  Cost: the App library links
-  QtCore only; QtNetwork would be a new link for App, or the client
-  lives in a small library of its own.
-- **libcurl**.  Present in the conda environment (7 platforms), a
-  synchronous API that fits the XHR path directly, and no event loop to
-  own.  Cost: certificate-store configuration per platform is on us.
+    R1  synchronous perform with a deadline, cancellable from the
+        watchdog thread (the XHR path; sec 7)
+    R2  connect to the ADDRESS the policy checked while still
+        validating TLS and sending SNI/Host for the NAME (the
+        rebinding defence of sec 4.3 is void without this)
+    R3  redirects left to us, one hop at a time (sec 4.3)
+    R4  protocols restricted to http/https at the client, not only
+        by our scheme check
+    R5  response streamed through a size cap (sec 4.7)
+    R6  no cookie engine, no stored credentials (sec 4.4)
+    R7  no event loop and no QCoreApplication requirement: the
+        client runs inside a bridge op in the App layer, and in
+        FreeCADCmd and the headless server there is no Qt event loop
+    R8  system certificate store on Linux, Windows and macOS
+    R9  system proxy settings
+    R10 packaging cost
+
+Three things exist in the environment; one is rejected outright:
+
+- **The host's own CPython** (`urllib`, `requests`): rejected.  It is
+  the interpreter this whole arc retires (sec 11), it needs the GIL
+  inside a bridge op, and rung 3 removes it from the process.
+- **Qt Network** (`QNetworkAccessManager`).  R3 (`ManualRedirectPolicy`),
+  R5, R6 (a null cookie jar), R8 and R9 are native.  R1 needs a
+  worker thread running a `QEventLoop`, and that needs a
+  `QCoreApplication` -- R7 fails in the App layer as it stands (Base
+  and App use QtCore for strings and translation only; nothing in
+  FreeCADCmd creates an application object).  R2 is murky: Qt 6 has
+  `QNetworkRequest::setPeerVerifyName`, so connecting to the checked
+  IP and verifying the certificate against the name is possible, but
+  whether SNI follows that name through the manager is not documented,
+  and getting it wrong silently breaks every virtual-hosted site.  R10
+  is nil, but App would link QtNetwork for the first time.
+- **libcurl**.  R1 (`curl_easy_perform` + `CURLOPT_TIMEOUT_MS` + a
+  progress callback for cancel), R2 (`CURLOPT_RESOLVE` pins
+  `host:port:address` and curl still speaks SNI and validates for the
+  name -- the exact primitive), R3 (`FOLLOWLOCATION` off, read
+  `Location`), R4 (`CURLOPT_PROTOCOLS_STR`), R5 (`MAXFILESIZE` plus
+  the write callback), R6 (no cookie engine unless enabled), R7 (a
+  handle per call, no loop) are all direct.  R8: the conda libcurl
+  (8.21 in `.conda/freecad`, OpenSSL backend, already present as a
+  dependency of hdf5 for the FEM build) trusts the `ca-certificates`
+  bundle conda ships; whether the Windows and macOS conda builds use
+  Schannel / SecureTransport or the same bundle is to be verified on
+  the feedstock before N1.  R9: curl honours the proxy environment
+  variables but does not read the OS proxy settings; the Gui layer
+  can read them through Qt and hand the string down.  R10: an
+  explicit `libcurl` dependency in the feedstock.  Bonus for N4: this
+  libcurl lists `WS`/`WSS` among its protocols, so the WebSocket
+  capability would ride the same client.
+
+**Leaning libcurl**, on R2 and R7: the address pin is the one thing
+the design cannot do without, and a client that needs an event loop
+inside a bridge op is the wrong shape for the App layer.  The
+interface keeps Qt Network as the fallback if the certificate-store
+check on Windows or macOS goes badly.
 
 Either way the guest gets none of the client's knobs: no custom TLS,
 no certificates, no proxy selection, no source address.  urllib3's own
@@ -448,11 +496,63 @@ is the one piece that needs a probe before it is promised:
   complete inside a synchronous host op.  But emscripten's C-level
   `dlopen`, which CPython's import machinery calls for an extension
   module found on disk, compiles synchronously (`new WebAssembly.Module`
-  -- the glue has four such sites).  The probe: unpack numpy into
-  site-packages, `import numpy` with no `loadPackage`, and see whether
-  the side modules resolve.  If they do, in-place install covers
-  everything; if not, wheels with extension modules take the deferred
-  path below and pure wheels still install in place.
+  -- the glue has four such sites, and its `_dlopen_js` runs
+  `loadDynamicLibrary` with `loadAsync:false`).  The probe: unpack
+  numpy into site-packages, `import numpy` with no `loadPackage`, and
+  see whether the side modules resolve.  If they do, in-place install
+  covers everything; if not, wheels with extension modules take the
+  deferred path below and pure wheels still install in place.
+
+What the in-place path has to get right besides the loader (the list
+the probe and P2 work through):
+
+- **Unpacking is already synchronous Python**:
+  `pyodide._package_loader.unpack_buffer(buffer, filename, format,
+  target, calculate_dynlibs=True)` is what `loadPackage` itself calls
+  from JavaScript; it lays the wheel out into site-packages, puts
+  shared libraries into `DSO_DIR` (two levels above site-packages, on
+  the default `LD_LIBRARY_PATH` the glue sets), and returns the list
+  of `.so` files.  The finder reuses it; nothing is reimplemented.
+- **Dependency shared libraries and load order.**  Lock packages
+  marked `shared_library` (openblas for scipy, libhdf5, ...) must be
+  on disk before the wheel that needs them and loaded with global
+  symbol visibility.  Emscripten's synchronous `dlopen` resolves a
+  side module's `dylink.0` `needed` list recursively from
+  `LD_LIBRARY_PATH`, so placing them in `DSO_DIR` first should be
+  enough; the probe uses scipy, not only numpy, to see it.
+- **Pyodide's bookkeeping.**  `pyodide.loadedPackages` (JavaScript)
+  and micropip's view of `dist-info/INSTALLER` must learn about the
+  package, or a later `loadPackage("scipy")` re-fetches numpy and
+  `micropip.list()` lies.  The runtime's glue gets a hook to register
+  what the finder installed.
+- **`importlib.invalidate_caches()`** after writing into
+  site-packages, or the path finder keeps its stale directory listing
+  and the retry fails the same way.
+- **Getting the bytes in without copying them through CBOR.**  The
+  host writes the verified wheel under the pyodide root; the finder
+  reads it with the scoped `readbuffer(path)` the guest already has
+  (the loader uses it), straight into an `ArrayBuffer` for
+  `unpack_buffer`.  A 3 MB wheel never crosses the bridge as a value.
+- **The budget.**  Unpacking plus compiling numpy's thirteen side
+  modules took ~250 ms under the asynchronous loader; synchronous
+  compile is comparable and is not interruptible.  The host knows an
+  install is in progress and extends the current call's budget by the
+  install's own limit rather than letting the watchdog fire on it.
+- **Memory growth.**  Instantiating side modules can grow linear
+  memory, which detaches the transport's typed-array views; the
+  buffered transport already re-acquires them per call
+  (`PyodideHost.md` sec 9), and the install happens inside the guest
+  after the host op returned, so no view is live across it.
+- **ABI tags.**  The resolver selects wheels by the installed
+  pyodide's ABI (`info.abi_version` in the lock, `2026_0` today:
+  `pyodide_2026_0_wasm32` for index packages, `pyemscripten_2026_0`
+  for PEP 783 PyPI uploads) and refuses anything else, so a wheel
+  never reaches `dlopen` with the wrong `dylink` expectations.
+- **Where the browser tier differs.**  Synchronous `WebAssembly.Module`
+  compile is refused on a browser main thread above a small size,
+  which is why pyodide preloads in the first place; in a Web Worker it
+  is allowed, and the browser-tier guest already runs in one.  On the
+  bare V8 host there is no such limit.
 
 ### 9.4 Deferred install and the manifest
 
@@ -600,15 +700,16 @@ code and state, never a runtime choice or a grant (sec 5).
 ## 12. Open questions (to settle before P1 and N1)
 
 - The sec 9.3 probe: does a wheel with compiled extension modules,
-  unpacked into site-packages, import synchronously without
-  `loadPackage`?  Decides whether P2 covers such wheels or only
-  pure-Python ones.
+  unpacked into site-packages by `unpack_buffer`, import synchronously
+  without `loadPackage`, including one with a `shared_library`
+  dependency (scipy over openblas)?  Decides whether P2 covers such
+  wheels or only pure-Python ones.  The list under sec 9.3 is what the
+  probe checks beyond the bare import.
 - Resolver for PyPI packages: host-side against PyPI's JSON API, or
   micropip's resolver run in the guest with a host-fed index.
-
-- Host client: Qt Network or libcurl (sec 3.3).  Leaning libcurl for
-  App-layer independence and the synchronous fit; the certificate
-  store question decides it.
+- Host client: libcurl unless the certificate-store check on the
+  Windows and macOS conda builds fails (sec 3.3, R8); then Qt Network
+  behind the same interface, with R2 and R7 solved some other way.
 - Whether a document grant should ever be persistable "always", or
   only "session" -- a content-hashed identity makes "always" safe
   against tampering, but a long-lived grant to a document is still a
