@@ -412,6 +412,11 @@ private:
     float lightMax[3] = {-1.0f, -1.0f, -1.0f};
     ccl::Object *lightObject = nullptr;
     ccl::Light *lightNode = nullptr;
+    /// The environment as a sampled light (translateWorld), made once
+    /// and never restated: it carries no state of its own, the world
+    /// shader it samples is the scene's default_background.
+    ccl::Light *envLight = nullptr;
+    ccl::Object *envLightObject = nullptr;
 };
 
 }  // namespace Render::Cycles

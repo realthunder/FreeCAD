@@ -1057,6 +1057,37 @@ bool SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &o
     // draws its gradient, the Cycles image blits over it).
     scene->background->set_transparent(!(pbr.enabled && pbr.envBackground));
 
+    // The environment as a LIGHT that is sampled, not only a backdrop
+    // that is hit. Without a background light in the scene Cycles
+    // never importance-samples the world (device_update_background:
+    // "no background light found, signal renderer to skip sampling"),
+    // so a sun in the picture is reached only when a BSDF sample
+    // happens to point at it. That is unbiased in float and useless in
+    // a frame: san_giuseppe_bridge.hdr holds 43 per cent of its
+    // irradiance in texels above radiance 64 with a peak of 35,000, a
+    // diffuse sample finds that disc about once in a hundred thousand,
+    // and the hit lands in ONE pixel that clips at white. So the model
+    // rendered without its sun -- darker and bluer than Blender's
+    // Cycles, which creates this light for every world by default,
+    // while the backdrop, a camera ray, agreed exactly
+    // (docs/MaterialStorage.md 17.18). Made once; the importance map
+    // follows the background shader through Shader::tag_update.
+    if (!envLight) {
+        auto *light = scene->create_node<ccl::BackgroundLight>();
+        light->set_use_mis(true);
+        light->set_map_resolution(0);
+        light->set_is_enabled(true);
+        ccl::array<ccl::Node *> used;
+        used.push_back_slow(scene->default_background);
+        light->set_used_shaders(used);
+        auto *object = scene->create_node<ccl::Object>();
+        object->set_tfm(ccl::transform_identity());
+        object->set_visibility(ccl::PATH_RAY_VISIBILITY_ALL & ~ccl::PATH_RAY_VISIBILITY_CAMERA);
+        object->set_geometry(light);
+        envLight = light;
+        envLightObject = object;
+    }
+
     const int width = pbr.envImage && pbr.envImage->width > 0
         ? std::clamp(pbr.envImage->width, 256, 4096) : 1024;
     const int height = std::max(width / 2, 128);
