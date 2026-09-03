@@ -1860,41 +1860,157 @@ asset, which is mostly dark, shows it at its worst. Whether they should
 agree, and which is right, is a question for the engines and not for the
 importer.
 
-**Next: settle it against a renderer that is not ours** (ruled
-2026-09-03). The chess set is a published MaterialX sample, so there are
-reference pictures of what it is supposed to look like, and the way to
-use them is a third render of the same document:
+**Settled against a renderer that is not ours (2026-09-03).** Blender
+5.0.1 is installed at `~/works/sw/blender` and carries the Cycles we
+embed (our tree is `v5.0.0-461-gfdd7227b8`), so it is the SAME path
+tracer on a scene we did not build: a disagreement is our translation or
+our scene setup, and an agreement puts the fault in the other backend.
+`fcad-probes/blender_ref.py` renders it headless, `blender -b -P`, with
+its own Python -- there is no cp312 `bpy` wheel and our conda Python is
+3.12, so the wheel route named above was not the cheap one after all.
 
-- **Blender's Cycles** is the strongest test available, because it is
-  the SAME engine we embed. Same maps, same path tracer, a scene we did
-  not build: a difference there is our translation or our scene setup,
-  and an agreement puts it in the lighting. Blender is not installed on
-  this box; the `bpy` wheel (Blender as a Python module, headless) is the
-  cheap way in, and a script can import the glb and wire the four maps of
-  each piece onto a Principled BSDF without a GUI.
-- **MaterialX's own viewer** (`MaterialXView`, vendored under
-  `src/3rdParty/MaterialX/source/`) is the authority on what the DOCUMENT
-  says, though not an independent one: it generates GLSL the same way our
-  raster path does. It is switched off in our build
-  (`MATERIALX_BUILD_VIEWER`, with the rest of the render and test
-  targets) and would have to be built out of tree, with NanoGUI.
+#### The scene whose answer is known
 
-What the three pictures separate, in order:
+The measurement is not made on the chess set. It is made on the one
+scene that needs no reference at all, and the reference is then used to
+confirm it: a convex body of known albedo under a CONSTANT environment.
 
-1. **Exposure and environment** -- the plain-box 1.8x says the two
-   engines disagree before any document is involved. Same environment
-   preset, same intensity, same output transform, one grey box: they
-   should match, and that is the first thing to make true.
-2. **The raster path's ambient occlusion against path-traced GI** --
-   GTAO darkens contact regions the path tracer fills in, and a chess set
-   is nothing but contact regions.
-3. **The `standard_surface` to OpenPBR translation** both consumers run
-   before rendering. A weight coming through wrong -- specular, coat,
-   subsurface -- washes an image exactly this way; an OpenPBR-native
-   document rendered alongside tells that apart from the two above.
-4. **The image colour spaces**, which our path tracer sets per the
-   document (`srgb_texture` / scene-linear / data) and the raster path
-   folds into the generated code. A reference render pins which is right.
+Under an environment of one radiance L in every direction, every point of
+a convex body sees the hemisphere over its own normal, the irradiance is
+`pi*L` whichever way that normal points, and a Lambertian surface leaves
+`albedo*L` -- **with no shading at all, and no camera, orientation or
+geometry in the answer**. With L = 1 and an authored grey of 0.5, whose
+linear albedo is `srgbToLinear(0.5) = 0.2140`, the body must come out at
+0.2140 linear, which encodes back to exactly 0.5: byte **128**. A picture
+that is not flat, or not 128, is an engine's error, readable off the byte.
+
+The environment is a Radiance `.hdr` of one value written by the probe
+(`loadRadianceImage` reads a flat scanline; `PBREnvImage` takes the
+path), so all three engines are lit by THE SAME FILE and nothing is
+described twice.
+
+Blender confirms the closed form outright: **128.0** flat for a Diffuse
+BSDF, **133** for a Principled dielectric at roughness 1 -- that extra
+being the dielectric specular a plain appearance also has.
+
+#### What the three engines answer
+
+A ladder in the environment's radiance, one grey box, no sun, no ambient
+occlusion (`fcad-probes/envsweep_probe.py`, all values linear):
+
+| L | raster | our Cycles |
+| --- | --- | --- |
+| 1.0 | 0.2874 | 0.2346 |
+| 0.5 | 0.1714 | 0.1170 |
+| 0.25 | 0.1144 | 0.0578 |
+| 0.125 | 0.0865 | 0.0296 |
+| 0.0 | **0.0578** | **0.0000** |
+
+Both are straight lines in L, which is what a correct engine has to be.
+Fitted:
+
+| engine | slope | intercept |
+| --- | --- | --- |
+| raster | 0.2296 | **+0.0574** |
+| our Cycles | 0.2346 | -0.0002 |
+| Blender (Principled, r=1) | 0.2307 | -- |
+
+**The environment response of both engines is right**: three slopes
+within one per cent of each other, and our path tracer matches Blender to
+within a byte in every cell of a roughness sweep as well (r = 1, 0.5,
+0.1). What is wrong is the raster's INTERCEPT. With a black environment,
+no sun and no lights, the raster still draws the box at byte 68 and the
+path tracer draws black.
+
+#### Two things the path tracer is never told
+
+Taking the candidates away one at a time at radiance zero
+(`fcad-probes/envzero_probe.py`) splits that intercept in two:
+
+| what is left on | linear |
+| --- | --- |
+| headlight + scene ambient | 0.0578 |
+| scene ambient only | 0.0075 |
+| headlight only | 0.0503 |
+| neither | 0.0000 |
+
+1. **The viewer's headlight, 0.0503.** The raster shades with the view
+   lights -- headlight, backlight, fill light, up to `MaxViewLights` of
+   them (`fcViewLight` in `fc_mesh_lighting.sh`). `Cycles::SceneInput`
+   carries one `LightConfig`, the single configurable scene light, and
+   has no `ViewLightConfig` member at all: the headlight has no
+   representation in the path tracer's scene and cannot be translated.
+   (The flatness of the term is not evidence of an ambient, which is what
+   it looked like at first: in an isometric view all three visible faces
+   of a cube make the same angle with the view axis, so a headlight IS
+   flat there.)
+2. **The scene ambient, 0.0075.** Coin's `LIGHT_MODEL_AMBIENT`, 20 per
+   cent grey by default, which the raster adds as a uniform-radiance
+   environment beside the real one and deliberately outside
+   `envIntensity` (`fc_mesh_lighting.sh`). The size is exactly right for
+   what it is -- `decodeSRGB(0.2) * 0.2296 = 0.0076` measured 0.0075, so
+   the decode is not the bug -- and the path tracer simply does not have
+   it. `ambient` does not appear in `CyclesScene.cpp`.
+
+#### And the one that reverses the sign
+
+Neither of those explains the chess set, where the path tracer is the
+BRIGHTER one. Walking the same grey box from the closed-form scene to a
+stock viewport (`fcad-probes/envscene_probe.py`) finds the step that
+does:
+
+| leg | raster | our Cycles | ratio |
+| --- | --- | --- | --- |
+| constant environment | 0.2874 | 0.2346 | 0.82x |
+| the built-in preset | 0.2346 | 0.1651 | 0.70x |
+| ... and GTAO | 0.2346 | 0.1651 | 0.70x |
+| ... and the sun with its shadow | 0.2789 | 0.1651 | 0.59x |
+| **`Render_PBR` off (the default)** | **0.1274** | **0.1651** | **1.30x** |
+
+**`Render_PBR` defaults to false, and the path tracer does not read it.**
+The raster has two shading branches and only one of them is lit by the
+environment: with the flag off it draws Blinn-Phong, lit by the headlight
+and the ambient and nothing else. The Cycles translation consults
+`pbr.enabled` in exactly ONE place in the whole of `CyclesScene.cpp` --
+`background->set_transparent(!(pbr.enabled && pbr.envBackground))`, which
+decides whether the environment is SEEN, not whether it LIGHTS. So
+`translateWorld` builds the world from the environment either way and
+`resolveSurface` builds a physical BSDF either way.
+
+In a stock viewport the two engines are therefore not drawing the same
+scene at all: **the raster is lit by a headlight and the path tracer by a
+room.** That is the sign reversal, it is exactly the configuration the
+chess set was pictured in, and on an asset that is mostly black -- where
+the environment is nearly all of the light there is -- it is the whole of
+the five times.
+
+#### What is left to rule (open)
+
+The three findings are stated; none of them is fixed, because each is a
+question about what the two engines are FOR rather than a defect with an
+obvious repair:
+
+1. Should the path tracer honour `Render_PBR`? Refusing to trace a scene
+   the raster is drawing in Blinn-Phong is defensible -- there is no
+   physical reading of a headlight-lit Phong surface -- and so is what it
+   does now, which is to answer "what this model looks like lit
+   properly". What is not defensible is the two disagreeing silently.
+2. Should the headlight and the other view lights be translated? They are
+   ordinary directional lights and Cycles has the node; the argument
+   against is that a headlight is a viewport affordance, not a light in
+   the room.
+3. Should the scene ambient be translated? The raster already takes it
+   "for what it physically is here: a uniform-radiance environment", and
+   that reading translates directly -- a constant added to the world on
+   non-camera rays, which is the node graph the background blur already
+   uses.
+
+Items 2 to 4 of the earlier list (GTAO against path-traced GI, the
+`standard_surface` to OpenPBR translation, the image colour spaces) are
+NOT ruled out by any of this: the measurements above were made on a plain
+appearance, so they say nothing about a MaterialX document. They are
+simply no longer the first suspects -- the scene disagreed before any
+document was involved, exactly as the plain-box 1.8x said it would.
 
 ### 17.14 The library keeps a file once per CARD, and that is now wrong (open, 2026-09-03)
 
