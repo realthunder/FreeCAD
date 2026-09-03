@@ -2595,3 +2595,48 @@ just the two consumers of it.
 OpenPBR surface (every probe leg reads 132-133 for 128), its smaller
 framing at the same reported camera, its `geometry_normal` gap above,
 the texture-upload race of 17.17, and the AO radius question.
+
+### 17.20 The reference stops flattering the opaque reading (2026-09-03)
+
+17.19 ended on "the remaining difference is the Blender leg's": its
+`blender_chess.py` built each Principled BSDF from base colour,
+metalness, roughness and normal only, so its white pawn heads were
+white balls and its kings and queens were opaque, while the document
+states `transmission` 1 on the heads and a `subsurface` map on the
+royals. The leg now wires what the document states:
+
+- `transmission` -> Transmission Weight, `specular_IOR` -> IOR (1.5,
+  standard_surface's default, stated so the leg does not drift).
+  Principled has no transmission colour socket. With
+  `transmission_depth` 0 -- the default, and what the chess set has --
+  standard_surface tints the transmitted light AT THE SURFACE, which
+  is exactly what Principled's Base Color does to its refraction, so
+  the tint is folded into Base Color (a stated depth becomes a
+  `Volume Absorption` node instead, sigma = -ln(colour)/depth per
+  channel, and Base Color is left alone).
+- `subsurface` -> Subsurface Weight, `subsurface_radius` -> Subsurface
+  Radius, `subsurface_scale` -> Subsurface Scale. Blender folded the
+  subsurface colour into Base Color in 4.0; this document states
+  `subsurface_color` = the base colour map, so nothing is lost. The
+  scale is a scene-unit length and Blender's scene is the glTF's
+  metres, so the document's 0.003 is the 3 mm its author meant there
+  (ours is in millimetres -- the unit-scale note of 17.19 stands).
+
+One re-render, same camera (`... 0 0`), against the 17.19 frames of
+the other two legs (`/tmp/chess3-lobes`), `chess3_board.py`:
+
+    leg            R      G      B     MAD    R/B
+    raster       75.2   75.1   66.0    6.04  1.141
+    our Cycles   69.3   69.7   61.7    0.83  1.124
+    Blender      68.3   69.0   60.9    0.00  1.122
+
+Blender's board region came down 4.6 bytes once its pawn heads refract
+and its royals scatter, and the two path tracers now sit **0.83 bytes**
+apart (17.19: 3.69), R/B 1.124 against 1.122; the whole-frame grid was
+already byte-identical. The crop agrees by eye: the heads refract the
+board through themselves in both, the royals have the same soft edge.
+The raster is now the leg that is 6 bytes light, and the biggest single
+reason is visible in its frame: its pawn heads are still white balls,
+because `fc_openpbr.sh` has no transmission lobe (ShaderDesign.md 3.8,
+"transmission is the glass pass's business") and nothing yet hands a
+MaterialX surface to that pass. That is the next section.
