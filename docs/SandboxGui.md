@@ -180,8 +180,30 @@ Draft/BIM's standing (`addon:Draft`).
 - **U4 Selection, view, document GUI state.**  `Selection.get/add/
   remove/clear/has` plus observers as events; `ActiveView` camera
   get/set, `getPoint`/pick queries, `setEdit`/`resetEdit`;
-  `runCommand(name)`; `doCommand(src)` becomes "run in the session
-  guest, and record for the macro recorder", which is what it was for.
+  `runCommand(name)` (a registered command by name, under the `gui`
+  permission like every other UI action).  `doCommand(src)` is
+  different in kind and gets its own permission (user decision,
+  2026-09-03): it is an eval primitive whose source string is
+  routinely assembled from user data -- object names, file paths --
+  and it was the way Draft commands reached the interpreter so the
+  macro recorder would see them.  Two rules:
+    - **It never escalates.**  The source runs under the CALLER's
+      principal with the caller's grants, in the caller's guest.  A
+      document calling `doCommand` gets document grants, an addon
+      gets addon grants; there is no path from any principal to
+      "run this as the session".  The recording into the macro
+      stream is a separate effect, and the stream marks the
+      principal of every recorded line.
+    - **It is gated by `gui.doCommand`**, added to the sec 3.2
+      catalog of `ExpressionSandbox.md`: DENY for documents (not
+      promptable -- a file has no legitimate reason to eval strings
+      through the GUI), ALLOW for the session, PROMPT for addons with
+      the "always" scope persisted per addon, the `host.import:<m>`
+      shape.  Every call is one audit line carrying the principal
+      and a hash of the source.
+  Draft's 26 uses are addon-principal calls that pass the gate once
+  per addon and then run at Draft's own grants, which is what they do
+  today minus the ambient authority.
 - **U5 View providers and the annotation scene.**  The proxy hook set
   stays exactly as it is -- host calls guest entry points (`attach`,
   `updateData`, `onChanged`, `getIcon`, `claimChildren`, `setEdit`,
@@ -281,23 +303,27 @@ routing-ON parity habit).
 G1 and G2 have no dependency on each other; G3 and G4 depend on G2;
 G5 depends on G4 (trackers are primitives); G6 on all.
 
-## 7. Decisions to take before G0 (the discussion)
+## 7. Decisions (taken by the user, 2026-09-03)
 
-1. **`.ui` as the form language**, rather than a new schema.  Argues
-   for: 68 files exist, Designer exists, the DOM renderer only needs
-   the subset of widget classes the survey found.  Against: `.ui` is
-   Qt-shaped in places (layouts, size policies) the DOM renderer will
-   approximate.  Recommendation: `.ui`, subset-defined.
+1. **`.ui` as the form language**, subset-defined, rather than a new
+   schema.  Argues for: 68 files exist, Designer exists, the DOM
+   renderer only needs the subset of widget classes the survey found.
+   Against: `.ui` is Qt-shaped in places (layouts, size policies) the
+   DOM renderer will approximate.  DECIDED: `.ui`.
 2. **The snapper goes to C++** (host and viewer), rather than staying
-   Python with a coalesced event stream.  Recommendation: C++; sec 3
-   is the reason, and the web tier gets it.
-3. **Annotation view providers: primitives vs C++ ports**, per class.
-   Recommendation: primitives by default, C++ for the dimension.
-4. **`doCommand` semantics** under the switch: "run in the session
-   guest and record".  Any addon relying on it to reach native Python
-   is by definition on the island.
-5. **Order of G1 vs G2**: G1 first (no GUI, largest value, exercises
-   the facade generator at scale), G2 in parallel if hands allow.
+   Python with a coalesced event stream; sec 3 is the reason, and the
+   web tier gets it.  DECIDED: C++.
+3. **Annotation view providers: primitives by default, C++ for the
+   dimension**, the rest per class as G4 finds them.  DECIDED.
+4. **`doCommand` is permission-controlled**, not merely re-targeted:
+   runs under the caller's principal, never escalates, gated by
+   `gui.doCommand` (DENY document / ALLOW session / PROMPT addon),
+   audited -- U4 above.  DECIDED, on the user's amendment of the
+   draft's "run in the session guest and record".  Any addon relying
+   on it to reach native Python is by definition on the island.
+5. **G1 before G2**, G2 in parallel if hands allow.  DECIDED.
+
+Next: G0, the linter.
 
 ## References
 
