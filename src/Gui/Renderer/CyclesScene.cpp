@@ -949,6 +949,7 @@ bool SceneTranslator::translate(const SceneInput &input, RenderReport &report)
         report.released = int(unused.size());
         changed = true;
     }
+    changed |= releaseUnusedShaders();
 
     changed |= translateLight(input.light, sceneMin, sceneMax);
 
@@ -1534,6 +1535,13 @@ SceneTranslator::Maps SceneTranslator::resolveMaps(const Material &m,
             double areaUV = 0.0;
             const int32_t *idx = mesh.triangleIndices + start;
             for (int i = 0; i + 2 < count; i += 3) {
+                // The range is validated where the mesh is built
+                // (translateDraw); this runs first, so it guards its
+                // own reads.
+                if (idx[i] < 0 || idx[i] >= mesh.numVertices || idx[i + 1] < 0
+                    || idx[i + 1] >= mesh.numVertices || idx[i + 2] < 0
+                    || idx[i + 2] >= mesh.numVertices)
+                    continue;
                 const float *p0 = mesh.positions + size_t(idx[i]) * 3;
                 const float *p1 = mesh.positions + size_t(idx[i + 1]) * 3;
                 const float *p2 = mesh.positions + size_t(idx[i + 2]) * 3;
@@ -2185,6 +2193,49 @@ void SceneTranslator::applyFaceImage(ccl::ShaderGraph *graph,
     links.alpha = ops.math(ccl::NODE_MATH_MULTIPLY, links.alpha, node->output("Alpha"));
 }
 
+ccl::Shader *SceneTranslator::acquireShader()
+{
+    if (!spareShaders.empty()) {
+        ccl::Shader *shader = spareShaders.back();
+        spareShaders.pop_back();
+        return shader;
+    }
+    return scene->create_node<ccl::Shader>();
+}
+
+bool SceneTranslator::releaseUnusedShaders()
+{
+    if (shaders.empty())
+        return false;
+    // Live is what a live mesh references; everything else in the map
+    // is a key nothing shades under any more (the doc's example is a
+    // dragged section plane, whose coefficients key every shader they
+    // clip). The node cannot be deleted, so it is re-graphed empty --
+    // dropping its image handles -- and parked for acquireShader.
+    std::set<const ccl::Node *> live;
+    for (const auto &entry : meshes) {
+        const ccl::array<ccl::Node *> &used = entry.second.mesh->get_used_shaders();
+        for (size_t i = 0; i < used.size(); ++i)
+            live.insert(used[i]);
+    }
+    bool released = false;
+    for (auto it = shaders.begin(); it != shaders.end();) {
+        if (live.count(it->second.shader)) {
+            ++it;
+            continue;
+        }
+        ccl::Shader *shader = it->second.shader;
+        shader->name = ccl::ustring("fc_spare");
+        shader->set_graph(std::make_unique<ccl::ShaderGraph>());
+        shader->tag_update(scene);
+        imageNodes -= it->second.images;
+        spareShaders.push_back(shader);
+        it = shaders.erase(it);
+        released = true;
+    }
+    return released;
+}
+
 ccl::Shader *SceneTranslator::uniformShader(const Surface &s,
                                             const Clip &clip,
                                             const Maps &maps,
@@ -2204,9 +2255,10 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s,
         << s.glassDensity << clip.key() << maps.key() << face.key() << finish.key();
     auto it = shaders.find(key.str());
     if (it != shaders.end())
-        return it->second;
+        return it->second.shader;
 
-    ccl::Shader *shader = scene->create_node<ccl::Shader>();
+    const int imagesBefore = imageNodes;
+    ccl::Shader *shader = acquireShader();
     shader->name = ccl::ustring(key.str());
     auto graph = std::make_unique<ccl::ShaderGraph>();
     auto *info = graph->create_node<ccl::ObjectInfoNode>();
@@ -2282,7 +2334,7 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s,
     }
     shader->set_graph(std::move(graph));
     shader->tag_update(scene);
-    shaders[key.str()] = shader;
+    shaders[key.str()] = ShaderEntry{shader, imageNodes - imagesBefore};
     return shader;
 }
 
@@ -2380,14 +2432,15 @@ ccl::Shader *SceneTranslator::attributeShader(const Clip &clip,
         + "fc_attributes" + clip.key() + maps.key() + face.key() + finish.key();
     auto it = shaders.find(key);
     if (it != shaders.end())
-        return it->second;
+        return it->second.shader;
     // One graph for every per-vertex draw: the mesh carries the
     // resolved surface as attributes (fc_base, fc_pbr = metallic /
     // roughness / alpha, fc_emissive), which is what keeps a
     // thousand-colour vertex-painted mesh at one shader instead of
     // a thousand. The maps, when the draw has them, sample on top of
     // those attributes exactly as they do on top of the scalars.
-    ccl::Shader *shader = scene->create_node<ccl::Shader>();
+    const int imagesBefore = imageNodes;
+    ccl::Shader *shader = acquireShader();
     shader->name = ccl::ustring(key);
     auto graph = std::make_unique<ccl::ShaderGraph>();
     auto *base = graph->create_node<ccl::AttributeNode>();
@@ -2425,7 +2478,7 @@ ccl::Shader *SceneTranslator::attributeShader(const Clip &clip,
     }
     shader->set_graph(std::move(graph));
     shader->tag_update(scene);
-    shaders[key] = shader;
+    shaders[key] = ShaderEntry{shader, imageNodes - imagesBefore};
     return shader;
 }
 

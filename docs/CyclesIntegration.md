@@ -3,8 +3,10 @@
 Bringing Blender's Cycles path tracer into the fork as a vendored
 renderer, feeding a 3D view that draws nothing of its own but the
 selection highlight. Written 2026-08-27 as the plan and the rulings;
-phases 0-3 are built (section 8 carries the record per phase, section
-6.2 the translation as it stands). Phase 4, the viewport, is next.
+phases 0-5 and phase 6's item 14 and phase A are built (section 8
+carries the record per phase, section 6.2 the translation as it
+stands). What remains of the plan is phase B of item 15 -- the
+MaterialX bridge, designed in section 8, not started.
 
 Related: `docs/RenderEngine.md` (the bgfx engine that hosts the blit),
 `docs/CAMSimRenderPort.md` (sections 8 and 10 -- the borrowed-frame
@@ -602,8 +604,13 @@ already has on the device.
   reads its geometry on the way out. A mesh whose content changed
   arrives under a new key (the generation, or a new cacheId), so it
   is built beside the old one and the old one is released the same
-  pass; shaders are never deleted (Cycles does not support it) and
-  are bounded by distinct surfaces anyway.
+  pass. A shader cannot be deleted (Cycles does not support it), and
+  "bounded by distinct surfaces" is not a bound when a section plane
+  drags -- its coefficients key every shader they clip, so a drag
+  mints keys without end. So a shader no live mesh references is
+  RECYCLED after the pass instead: its graph is dropped (freeing its
+  image handles) and the node is parked, and the next new key
+  re-graphs a parked node before it creates one.
 - **World and light.** `translateWorld()` remembers the `PBRConfig`
   and `OutputConfig` it baked from and returns early when they are
   equal; `translateLight()` the same with `LightConfig` plus, for a
