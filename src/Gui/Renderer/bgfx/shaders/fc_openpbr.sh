@@ -499,6 +499,28 @@ float fcOpenPbrSpecEta(FcOpenPbr m)
 	return mix(m.specularIor, etaSc, m.coatWeight);
 }
 
+/* The dielectric specular lobe's directional albedo against the
+ * environment. The split-sum fit is f0 * A + fEdge * B, with fEdge the
+ * reflectance the grazing half carries -- one for a full-strength
+ * dielectric, Schlick's F90. OpenPBR's specular_weight lowers the IOR
+ * toward air, and at air the lobe is gone at EVERY angle, the edge
+ * included; left at one, a surface stating specular_weight 0 still took
+ * the fit's whole edge term from the environment and drew 1.07x the
+ * closed form (docs/MaterialStorage.md sec 17.24). The edge is scaled
+ * by the same weight as f0, the convention KHR_materials_specular
+ * states for the same knob; the punctual path had it exactly all along
+ * (fcPbrFresnelDielectricMod).
+ */
+vec3 fcOpenPbrSpecEnvAlbedo(FcOpenPbr m, float ndv)
+{
+	float specF0 = clamp(m.specularWeight
+	                     * fcPbrFresnelDielectricNormal(fcOpenPbrSpecEta(m)),
+	                     0.0, 1.0);
+	float edge = min(m.specularWeight, 1.0);
+	return fcPbrGgxAlbedo(ndv, m.specularRoughness,
+	                      vec3_splat(specF0), vec3_splat(edge));
+}
+
 /* The slab weights: how much of the light arriving at the surface each
  * lobe is allowed to claim, after the layers above it have taken their
  * share. This is the whole of OpenPBR's layering -- the lobes
@@ -520,11 +542,7 @@ void fcOpenPbrWeights(FcOpenPbr m, float ndv, out FcPbrWeights w)
 	vec3 diffAlbedo = m.baseWeight * m.baseColor;
 	vec3 metalAlbedo = fcPbrGgxAlbedo(ndv, m.specularRoughness,
 	                                  diffAlbedo, m.specularColor);
-	float specF0 = clamp(m.specularWeight
-	                     * fcPbrFresnelDielectricNormal(fcOpenPbrSpecEta(m)),
-	                     0.0, 1.0);
-	vec3 specAlbedo = fcPbrGgxAlbedo(ndv, m.specularRoughness,
-	                                 vec3_splat(specF0), vec3_splat(1.0));
+	vec3 specAlbedo = fcOpenPbrSpecEnvAlbedo(m, ndv);
 	float fuzzAlbedo = m.fuzzWeight > 0.0
 		? fcPbrSheenAlbedo(ndv, clamp(m.fuzzRoughness, 0.01, 1.0))
 		: 0.0;
@@ -659,14 +677,7 @@ vec3 fcOpenPbrEnv(FcOpenPbr m, FcPbrWeights w, float ndv,
 			* fcPbrGgxAlbedo(ndv, m.specularRoughness,
 			                 m.baseWeight * m.baseColor, m.specularColor);
 	if (m.baseMetalness < 1.0)
-	{
-		float specF0 = clamp(m.specularWeight
-		                     * fcPbrFresnelDielectricNormal(fcOpenPbrSpecEta(m)),
-		                     0.0, 1.0);
-		c += prefSpec * w.spec
-			* fcPbrGgxAlbedo(ndv, m.specularRoughness,
-			                 vec3_splat(specF0), vec3_splat(1.0));
-	}
+		c += prefSpec * w.spec * fcOpenPbrSpecEnvAlbedo(m, ndv);
 	if (m.coatWeight > 0.0)
 		c += prefCoat * w.coat
 			* fcPbrGgxAlbedo(ndv, m.coatRoughness,
