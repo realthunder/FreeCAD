@@ -118,6 +118,43 @@ struct DocumentInfo {
     /// when the document declares none, which is what a bare surface
     /// node with stated values does.
     std::vector<MaterialInput> inputs;
+
+    /// What the surface states for its transmission, read FLAT -- as a
+    /// consumer that samples nothing per fragment has to read it. The
+    /// raster path has no transmission lobe (fc_openpbr.sh): a
+    /// transmissive surface is drawn as a glass BODY by the engine's
+    /// glass pass, which takes one colour, one IOR, one density and one
+    /// roughness per draw, and this is where those come from
+    /// (docs/MaterialStorage.md sec 17.21). Read off the OpenPBR
+    /// surface AFTER translation, so a standard_surface `transmission`
+    /// and an OpenPBR `transmission_weight` answer alike.
+    struct Transmission {
+        /// The surface is a glass body: `transmission_weight` is stated
+        /// as a constant of one half or more. A mapped weight cannot be
+        /// read flat and leaves this false (reported as a warning): the
+        /// surface then draws opaque, as it did before there was a route.
+        bool glass = false;
+        float weight = 0.0f;
+        /// `transmission_color`, linear as the document states it. A
+        /// mapped colour reads white (a warning says so).
+        float color[3] = {1.0f, 1.0f, 1.0f};
+        /// `transmission_depth` in scene units. OpenPBR gives the colour
+        /// two meanings by it: over a positive depth it is what survives
+        /// that path length (absorption at density 1 / depth), and at
+        /// zero it tints the transmitted light ONCE at the surface.
+        float depth = 0.0f;
+        /// `specular_ior`; 1.5 unstated.
+        float ior = 1.5f;
+        /// `specular_roughness` when it is a constant; the model's
+        /// default when it is not.
+        float roughness = 0.3f;
+        /// The image that feeds `specular_roughness` directly, resolved,
+        /// when a map does rather than a constant (empty otherwise). A
+        /// flat consumer may stand the map's mean in for the constant it
+        /// cannot have -- closer to the document than the default is.
+        std::string roughnessImage;
+    };
+    Transmission transmission;
 };
 
 /// Parse and validate a MaterialX document. `sourcePath` is the file

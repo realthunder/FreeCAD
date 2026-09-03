@@ -2640,3 +2640,139 @@ reason is visible in its frame: its pawn heads are still white balls,
 because `fc_openpbr.sh` has no transmission lobe (ShaderDesign.md 3.8,
 "transmission is the glass pass's business") and nothing yet hands a
 MaterialX surface to that pass. That is the next section.
+
+### 17.21 A MaterialX glass reaches the raster glass pass (2026-09-03)
+
+The raster had no route for a transmissive MaterialX surface. Its
+OpenPBR shader has no transmission lobe by design ("a rasterizer
+cannot refract through geometry: transmission is the glass pass's
+business", `fc_openpbr.sh`, ShaderDesign.md 3.8), `OpenPbrInputs::FIELDS`
+never queried `transmission_*`, and nothing handed such a surface to
+the glass pass -- so the chess set's pawn heads, `transmission` 1 in the
+document and glass in both path tracers (17.20), were opaque white
+balls in the raster. The glass pass itself, meanwhile, already did
+everything wanted: screen-space refraction, Fresnel reflection,
+per-channel Beer-Lambert over the body's front/back interval, a
+tinted shadow. It just took its inputs from `Render_Glass`.
+
+#### Where the decision is made, and why there
+
+Everything downstream of `Render::Material::glass` is generic: the pass
+activation (`hasGlassBody`), the per-draw claim (`surfGlass`) that takes
+the draw OUT of the opaque mesh pass, the medium exemptions, the shadow
+tint route, the instancing exclusion and the snapshot all key on that
+one flag and never on how it became true; `submitGlassSurface` reads
+only the material's colour, IOR, density and roughness. So the route
+is a PRODUCER-side question, and it is answered where `Render_Glass`
+is already answered -- the render-cache bridge's material conversion
+(`SoFCRendererBridge.cpp`): a draw wearing a "material"-stage MaterialX
+shader whose surface states transmission gets `glass` set and the four
+fields filled from the document, and every consumer, the streamed
+viewer included, sees an ordinary glass draw. Cycles is untouched by
+it: its MaterialX path builds the shader from the document's own graph
+(`materialXShader`) and never consults the flag. `Render_Glass` on the
+same shape wins over the document -- it is the user's own word on this
+shape, the document is its material's.
+
+What the document states is resolved ONCE per document and surface, in
+the shared inspection (`Render::MaterialX::inspect`,
+`DocumentInfo::transmission`), off the OpenPBR surface AFTER the
+translation both engines render, so a standard_surface `transmission`
+and an OpenPBR `transmission_weight` answer alike. The reading is
+FLAT -- what a pass that samples nothing per fragment can make of an
+input -- by a walk that follows the same connection kinds the
+interpreter evaluates (interface socket, nodegraph output, node)
+through the `dot` nodes and graph outputs the translation leaves
+between the surface and what the document wrote, and stops at a
+constant, at one image feeding the input directly, or at anything else.
+The rules that fall out:
+
+- `transmission_weight` a constant of one half or more: a glass body.
+  A MAPPED weight cannot be read flat: the surface stays opaque, as it
+  did before there was a route, and a warning says so.
+- `transmission_color`, linear as the document states it, is the body
+  colour. Never decoded: `Material::glasscolor` beside the authored
+  `diffuse`, with `glassmtlx` saying which the pass reads. Mapped:
+  white, with a warning.
+- `transmission_depth` decides what the colour MEANS (OpenPBR). Over a
+  positive depth it is what survives that path length: density
+  `1 / depth` into the pass's existing `sigma = density * (1 - colour)`,
+  which is the very closure the tracer's absorption volume applies to
+  the same numbers. At ZERO it is a tint applied once at the surface,
+  whatever the thickness: a new `u_glassTint` multiplied into the
+  transmitted light after the absorption, with the body absorbing
+  nothing. A zero density is therefore NOT "automatic" for a MaterialX
+  glass, where `Render_Glass` with no density means `3 / diagonal`.
+- `specular_ior` is the IOR, `specular_roughness` the roughness. The
+  pawn heads' roughness is a MAP; the pass has one roughness per draw.
+  The capture holds the decoded pixels already (the map is one of the
+  document's images), so the map's MEAN stands in -- 0.235 for the
+  pawns -- which follows the document where the model's default (0.3)
+  would ignore it. The inspection names the file; the bridge averages.
+- The shadow tint reads the same two colours (absorb x tint), so a
+  tinted glass casts its tint whichever meaning the depth gave it.
+
+The snapshot carries the two new fields (v73, chunk 15); an older
+snapshot has only `Render_Glass` bodies, which is what those builds drew.
+
+#### What it does not do, and the next increment
+
+The pass draws the body FLAT: one colour, one roughness, the mesh's own
+normal. A MaterialX glass with a mapped colour, a normal map, or a
+partial weight is not expressed -- a weight below one half is opaque,
+one above is fully glass; there is no diffuse share in the glass shader
+to mix against. The real second increment is a glass variant of the
+generated material function: `fs_fc_glass.sc` spliced with
+`FC_USER_MATERIAL` like the mesh stage is, reading `m.specularRoughness`,
+the normal and new transmission fields of `FcOpenPbr` per fragment.
+That needs a texture-coordinate varying the glass pairing does not
+carry, the image array unit beside the pass's seven samplers, and a
+second entry in the user-program cache. Not built; recorded.
+
+#### Two things the route exposed in the path tracer
+
+Reading the document flat for the raster read it for Cycles too, and
+the tracer had two gaps on the same inputs, fixed in the same change:
+
+1. With no depth it DROPPED `transmission_color` -- it connected the
+   weight and added an absorption volume only for a stated depth. The
+   pawn heads' `1, 1, 0.828` never reached it. Principled tints its
+   refraction by Base Color and has no socket for a surface tint, so
+   it folds in there: `base * mix(1, colour, weight)` -- exact for a
+   fully transmissive body, tinting the diffuse share too for a partial
+   one, which is what Blender's own importers accept and what 17.20's
+   Blender leg does.
+2. It read the depth as a LITERAL on the surface node. A translated
+   standard_surface carries every input as a connection through the
+   translation graph, so every depth a standard_surface document stated
+   read as 0. Now read through `flatConstant`, the same walk.
+
+#### Measured
+
+The 17.20 frames, re-run for the raster and our Cycles with the route in
+(`/tmp/chess3-glass`, Blender's frame unchanged), `chess3_board.py`:
+
+    leg            R      G      B     MAD    R/B      (17.20)
+    raster       70.4   70.6   61.4    1.38  1.146     (6.04)
+    our Cycles   68.3   69.1   61.0    0.07  1.119     (0.83)
+    Blender      68.3   69.0   60.9    0.00  1.122
+
+The raster's board region came down from 6.0 to **1.4 bytes** off the
+reference, and the crop shows why: its pawn heads refract the board
+through themselves now, where before they were white balls. The two
+path tracers sit **0.07 bytes** apart -- the last 0.8 was the tracer
+dropping the heads' depth-0 tint (gap 1 above); with it applied the
+whole-frame grid stays byte-identical (93.1 / 46.2 / 144.4) and the
+board region agrees to a tenth of a byte. What is left in the raster's
+1.4 is its own list from 17.19 -- the constant 1.07x, the smaller
+framing, no `geometry_normal` -- none of it glass.
+
+Seven tests in `MaterialXGen_tests_run` (45/45) pin the flat reading: a
+stated OpenPBR transmission, the opaque default, a standard_surface
+transmission through the translation, a stated depth through it (the
+literal read's 0), a mapped weight refused with its warning, a mapped
+roughness naming its image, and the chess set's pawn head against its
+pawn body. The first walker stopped at the translation NODE, whose
+`dot` nodes live in the nodedef's implementation graph and not in the
+document, and read every translated document as unstated -- three of
+the seven failed on it, which is what they are for.

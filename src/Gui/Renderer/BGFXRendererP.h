@@ -4721,6 +4721,7 @@ public:
         fn(s_texLineSdf, LifeProgram);
         fn(s_texLineSdfAux, LifeProgram);
         fn(u_glassParams, LifeProgram);
+        fn(u_glassTint, LifeProgram);
         fn(s_texCloudFront, LifeProgram);
         fn(s_texCloudBack, LifeProgram);
         fn(u_cloudParams, LifeProgram);
@@ -6216,6 +6217,17 @@ public:
     /// reflection (fs_fc_glass). Draws opaquely with depth write like
     /// the water surface.
     void submitGlassSurface(const Render::DrawCall &draw, bool depthReject);
+    /// The two colours of a glass body, linear: what it ABSORBS with
+    /// over its thickness (the complement is the Beer-Lambert sigma)
+    /// and what it TINTS the transmitted light with once at the
+    /// surface. A Render_Glass body absorbs with its authored diffuse,
+    /// decoded, and tints with nothing; a MaterialX glass (glassmtlx,
+    /// docs/MaterialStorage.md sec 17.21) states a linear colour whose
+    /// meaning its depth decides -- absorption when there is one, a
+    /// surface tint when there is none. Both passes that colour a
+    /// glass body (the surface and its shadow tint) read them here.
+    void glassBodyColors(const Render::Material &mat, float absorb[4],
+                         float tint[4]) const;
 
     /// Rasterize one line or point draw into the decoration
     /// distance field.
@@ -7096,6 +7108,7 @@ public:
     bgfx::UniformHandle s_texGlassFront = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texGlassBack = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_glassParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_glassTint = BGFX_INVALID_HANDLE;
     // Line signed-distance field, sampled by the glass surface pass so
     // an edge seen through glass warps exactly like the face it lies on
     // (docs/RenderEngine.md, "Lines"). RGB is the line colour; alpha is

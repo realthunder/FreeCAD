@@ -20,10 +20,14 @@
  *    per lobe per fragment is not a viewport budget.
  *  - No transmission and no subsurface lobe. A rasterizer cannot refract
  *    through geometry: transmission is the glass pass's business
- *    (docs/ShaderDesign.md 3.8) and subsurface has no raster route at
- *    all, so it degrades to diffuse. Cycles renders both properly, so a
- *    document using them is a known raster/path-tracer divergence, not a
- *    parity failure.
+ *    (docs/ShaderDesign.md 3.8), and a surface stating a constant
+ *    transmission_weight of one half or more IS routed there -- the
+ *    capture resolves the document's transmission flat and the draw
+ *    becomes a glass body (docs/MaterialStorage.md sec 17.21), so this
+ *    function never sees it. A mapped weight stays here and degrades
+ *    to diffuse, as does subsurface, which has no raster route at all.
+ *    Cycles renders both properly, so those are a known
+ *    raster/path-tracer divergence, not a parity failure.
  *  - No anisotropy and no thin film. Anisotropy needs a tangent frame
  *    the untextured mesh path does not carry and an anisotropic
  *    environment probe we do not build; thin film is rasterizable but

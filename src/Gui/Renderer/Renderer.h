@@ -964,6 +964,26 @@ struct UserShader {
     /// that is not a MaterialX document naming a file.
     std::vector<Image> images;
 
+    /// What the MaterialX surface's transmission resolves to for a
+    /// consumer that draws it as a glass BODY -- the engine's glass pass,
+    /// which has one colour, IOR, density and roughness per draw
+    /// (docs/MaterialStorage.md sec 17.21). Resolved by the capture once
+    /// per document and surface from DocumentInfo::transmission, and
+    /// folded into the draw's Material (glass, glassmtlx, glasscolor,
+    /// ...) where the shader is worn. Derived from fragmentSource and
+    /// surface, so it takes no part in operator== and does not travel:
+    /// a viewer tier receives the Material it was folded into.
+    struct Glass {
+        bool claimed = false;
+        float ior = 1.5f;
+        /// 1 / transmission_depth; 0 = the colour tints at the surface.
+        float density = 0.0f;
+        float roughness = 0.0f;
+        /// Linear.
+        float color[3] = {1.0f, 1.0f, 1.0f};
+    };
+    Glass glass;
+
     bool operator==(const UserShader &o) const {
         return dialect == o.dialect && sourcePath == o.sourcePath
             && surface == o.surface
@@ -2334,6 +2354,17 @@ struct Material {
     float glassior = 0.0f;
     float glassdensity = 0.0f;
     float glassroughness = 0.0f;
+    /// The glass claim came from the draw's MaterialX surface, not from
+    /// Render_Glass: the producer resolved the document's transmission
+    /// into the four fields above (docs/MaterialStorage.md sec 17.21).
+    /// Two readings change with it. The body colour is glasscolor --
+    /// LINEAR, as the document states it, never the authored diffuse
+    /// and never decoded -- and a glassdensity of 0 is not "automatic"
+    /// but NONE: OpenPBR's transmission_depth 0 means the colour tints
+    /// the transmitted light once at the surface instead of absorbing
+    /// over the body.
+    bool glassmtlx = false;
+    float glasscolor[3] = {1.0f, 1.0f, 1.0f};
 
     /// Cloud body flag of a triangle draw (SoFCRenderMaterial, typically
     /// fed from a ViewProvider Render_Cloud property): while the

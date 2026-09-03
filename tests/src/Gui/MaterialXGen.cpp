@@ -664,6 +664,177 @@ TEST_F(MaterialXGenerator, theChessSetIsFifteenMaterialsInOneDocument)
     EXPECT_GT(distinct.size(), 5u);
 }
 
+// -- transmission, read flat for the glass pass (sec 17.21) -------------
+
+TEST_F(MaterialXGenerator, aTransmissiveSurfaceIsReportedAsAGlassBody)
+{
+    // The raster path has no transmission lobe: a transmissive surface
+    // is drawn as a glass BODY by the engine's glass pass, which takes
+    // one colour, IOR, density and roughness per draw. The inspection
+    // reads them off the surface so the capture can claim the pass.
+    auto info = Render::MaterialX::inspect(openPbrDoc(
+        "    <input name=\"transmission_weight\" type=\"float\" value=\"1\" />\n"
+        "    <input name=\"transmission_color\" type=\"color3\" "
+        "value=\"0.2, 0.5, 0.4\" />\n"
+        "    <input name=\"transmission_depth\" type=\"float\" value=\"2.5\" />\n"
+        "    <input name=\"specular_ior\" type=\"float\" value=\"1.4\" />\n"
+        "    <input name=\"specular_roughness\" type=\"float\" value=\"0.1\" />\n"));
+    ASSERT_TRUE(info.valid) << info.error;
+    const auto &t = info.transmission;
+    EXPECT_TRUE(t.glass);
+    EXPECT_FLOAT_EQ(t.weight, 1.0f);
+    EXPECT_FLOAT_EQ(t.color[0], 0.2f);
+    EXPECT_FLOAT_EQ(t.color[1], 0.5f);
+    EXPECT_FLOAT_EQ(t.color[2], 0.4f);
+    EXPECT_FLOAT_EQ(t.depth, 2.5f);
+    EXPECT_FLOAT_EQ(t.ior, 1.4f);
+    EXPECT_FLOAT_EQ(t.roughness, 0.1f);
+    EXPECT_TRUE(t.roughnessImage.empty());
+}
+
+TEST_F(MaterialXGenerator, anOpaqueSurfaceClaimsNoGlassBody)
+{
+    // The default is what every document that says nothing means.
+    auto info = Render::MaterialX::inspect(openPbrDoc(
+        "    <input name=\"base_color\" type=\"color3\" value=\"1, 0, 0\" />\n"));
+    ASSERT_TRUE(info.valid) << info.error;
+    EXPECT_FALSE(info.transmission.glass);
+    EXPECT_FLOAT_EQ(info.transmission.weight, 0.0f);
+    // The unstated inputs read the model's own defaults, not zeros.
+    EXPECT_FLOAT_EQ(info.transmission.ior, 1.5f);
+    EXPECT_FLOAT_EQ(info.transmission.roughness, 0.3f);
+    EXPECT_FLOAT_EQ(info.transmission.color[0], 1.0f);
+}
+
+TEST_F(MaterialXGenerator, aStandardSurfaceTransmissionArrivesByTranslation)
+{
+    // standard_surface says `transmission`; the translation says
+    // `transmission_weight`. Read after the translation, one vocabulary
+    // answers for both -- and the unstated depth is the source model's
+    // 0 (a surface tint), the unstated IOR its 1.5, the unstated
+    // roughness its 0.2, not the translation nodedef's numbers.
+    const std::string doc =
+        "<?xml version=\"1.0\"?>\n"
+        "<materialx version=\"1.39\">\n"
+        "  <standard_surface name=\"S\" type=\"surfaceshader\">\n"
+        "    <input name=\"transmission\" type=\"float\" value=\"1\" />\n"
+        "    <input name=\"transmission_color\" type=\"color3\" "
+        "value=\"1, 1, 0.828\" />\n"
+        "  </standard_surface>\n"
+        "  <surfacematerial name=\"M\" type=\"material\">\n"
+        "    <input name=\"surfaceshader\" type=\"surfaceshader\" nodename=\"S\" />\n"
+        "  </surfacematerial>\n"
+        "</materialx>\n";
+    auto info = Render::MaterialX::inspect(doc);
+    ASSERT_TRUE(info.valid) << info.error;
+    const auto &t = info.transmission;
+    EXPECT_TRUE(t.glass);
+    EXPECT_FLOAT_EQ(t.color[2], 0.828f);
+    EXPECT_FLOAT_EQ(t.depth, 0.0f);
+    EXPECT_FLOAT_EQ(t.ior, 1.5f);
+    EXPECT_FLOAT_EQ(t.roughness, 0.2f);
+}
+
+TEST_F(MaterialXGenerator, aStatedDepthSurvivesTheTranslationFlat)
+{
+    // A translated surface carries every input as a CONNECTION through
+    // the translation graph, so a literal read of the node says 0 for
+    // every depth a standard_surface document states -- which is what
+    // the path tracer did before flatConstant.
+    const std::string doc =
+        "<?xml version=\"1.0\"?>\n"
+        "<materialx version=\"1.39\">\n"
+        "  <standard_surface name=\"S\" type=\"surfaceshader\">\n"
+        "    <input name=\"transmission\" type=\"float\" value=\"1\" />\n"
+        "    <input name=\"transmission_depth\" type=\"float\" value=\"0.01\" />\n"
+        "  </standard_surface>\n"
+        "  <surfacematerial name=\"M\" type=\"material\">\n"
+        "    <input name=\"surfaceshader\" type=\"surfaceshader\" nodename=\"S\" />\n"
+        "  </surfacematerial>\n"
+        "</materialx>\n";
+    auto info = Render::MaterialX::inspect(doc);
+    ASSERT_TRUE(info.valid) << info.error;
+    EXPECT_FLOAT_EQ(info.transmission.depth, 0.01f);
+}
+
+TEST_F(MaterialXGenerator, aMappedTransmissionWeightIsNoFlatGlassBody)
+{
+    // A pass that draws the body with one weight cannot read a map:
+    // the surface stays opaque there, and the document is told why.
+    ScratchImages images("mappedweight");
+    const std::string mask = images.file("mask.png");
+    auto info = Render::MaterialX::inspect(openPbrDoc(
+        "    <input name=\"transmission_weight\" type=\"float\" "
+        "nodegraph=\"NG\" output=\"w\" />\n",
+        "  <nodegraph name=\"NG\">\n"
+        "    <image name=\"img\" type=\"float\">\n"
+        "      <input name=\"file\" type=\"filename\" value=\"" + mask + "\" />\n"
+        "    </image>\n"
+        "    <output name=\"w\" type=\"float\" nodename=\"img\" />\n"
+        "  </nodegraph>\n"), images.document());
+    ASSERT_TRUE(info.valid) << info.error;
+    EXPECT_FALSE(info.transmission.glass);
+    bool said = false;
+    for (const auto &w : info.warnings)
+        said = said || w.find("transmission_weight") != std::string::npos;
+    EXPECT_TRUE(said);
+}
+
+TEST_F(MaterialXGenerator, aMappedRoughnessNamesItsImage)
+{
+    // The one map the flat reading can still make something of: the
+    // capture, which holds the decoded pixels, stands the map's mean
+    // in for the constant the pass cannot have. So the inspection
+    // names the file, resolved, and the model's default meanwhile.
+    ScratchImages images("mappedrough");
+    const std::string rough = images.file("rough.png");
+    auto info = Render::MaterialX::inspect(openPbrDoc(
+        "    <input name=\"transmission_weight\" type=\"float\" value=\"1\" />\n"
+        "    <input name=\"specular_roughness\" type=\"float\" "
+        "nodegraph=\"NG\" output=\"r\" />\n",
+        "  <nodegraph name=\"NG\">\n"
+        "    <image name=\"img\" type=\"float\">\n"
+        "      <input name=\"file\" type=\"filename\" value=\"" + rough + "\" />\n"
+        "    </image>\n"
+        "    <output name=\"r\" type=\"float\" nodename=\"img\" />\n"
+        "  </nodegraph>\n"), images.document());
+    ASSERT_TRUE(info.valid) << info.error;
+    EXPECT_TRUE(info.transmission.glass);
+    EXPECT_FLOAT_EQ(info.transmission.roughness, 0.3f);
+    ASSERT_FALSE(info.transmission.roughnessImage.empty());
+    EXPECT_NE(info.transmission.roughnessImage.find("rough.png"), std::string::npos)
+        << info.transmission.roughnessImage;
+}
+
+TEST_F(MaterialXGenerator, theChessSetsPawnHeadsAreGlassBodies)
+{
+    // The case that raised it: the white pawn HEADS state transmission
+    // 1 with a tinted colour and no depth, and a mapped roughness; the
+    // body of the same pawn states none. Our path tracer drew them as
+    // glass and the raster as white balls.
+    const std::string path = std::string(FC_TEST_MATERIALX_RESOURCES)
+        + "Materials/Examples/StandardSurface/standard_surface_chess_set.mtlx";
+    std::ifstream in(path, std::ios::binary);
+    if (!in)
+        GTEST_SKIP() << "no MaterialX example resources at " << path;
+    std::ostringstream buf;
+    buf << in.rdbuf();
+    const std::string xml = buf.str();
+
+    auto head = Render::MaterialX::inspect(xml, path, "M_Pawn_Top_W");
+    ASSERT_TRUE(head.valid) << head.error;
+    EXPECT_TRUE(head.transmission.glass);
+    EXPECT_FLOAT_EQ(head.transmission.color[2], 0.828f);
+    EXPECT_FLOAT_EQ(head.transmission.depth, 0.0f);
+    EXPECT_FLOAT_EQ(head.transmission.ior, 1.5f);
+    EXPECT_NE(head.transmission.roughnessImage.find("pawn_shared_roughness"),
+              std::string::npos) << head.transmission.roughnessImage;
+
+    auto body = Render::MaterialX::inspect(xml, path, "M_Pawn_Body_W");
+    ASSERT_TRUE(body.valid) << body.error;
+    EXPECT_FALSE(body.transmission.glass);
+}
+
 TEST_F(MaterialXGenerator, aDocumentWithNoSurfaceIsReported)
 {
     std::string doc = "<?xml version=\"1.0\"?>\n"

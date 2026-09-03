@@ -1051,6 +1051,24 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         res.glassior = m.glassior;
         res.glassdensity = m.glassdensity;
         res.glassroughness = m.glassroughness;
+        // A MaterialX surface stating transmission is a glass body too
+        // (docs/MaterialStorage.md sec 17.21): the document's
+        // transmission colour, depth, IOR and roughness stand where
+        // Render_Glass would put the card's, and every consumer of the
+        // glass flag -- pass activation, the medium exemptions, the
+        // shadow tint, instancing, the snapshot -- sees an ordinary
+        // glass draw. Render_Glass wins when both are stated: it is the
+        // user's own word on this shape, the document is its material's.
+        if (!res.glass && m.usershader && m.usershader->glass.claimed
+                && m.usershader->stage == "material") {
+            const Render::UserShader::Glass & g = m.usershader->glass;
+            res.glass = true;
+            res.glassmtlx = true;
+            res.glassior = g.ior;
+            res.glassdensity = g.density;
+            res.glassroughness = g.roughness;
+            std::copy(g.color, g.color + 3, res.glasscolor);
+        }
         res.cloud = m.cloud;
         res.clouddensity = m.clouddensity;
         res.clouddetail = m.clouddetail;
@@ -1989,28 +2007,80 @@ loadParamImage(const std::string &path, bool keepGray);
 /// exactly as the generator caches the shader it makes from it. The
 /// pixels underneath are cached again by loadParamImage(), which is
 /// what notices a map edited in another program.
+///
+/// The same inspection says what the worn surface's TRANSMISSION
+/// resolves to flat (DocumentInfo::transmission), which is what lets
+/// the engine's glass pass claim a transmissive MaterialX surface
+/// (docs/MaterialStorage.md sec 17.21) -- so the cache is per document
+/// AND surface, and the answer rides the shader as UserShader::glass.
 static void loadMaterialXImages(const std::string & xml,
                                 const std::string & sourcePath,
-                                std::vector<Render::UserShader::Image> & out)
+                                const std::string & surface,
+                                std::vector<Render::UserShader::Image> & out,
+                                Render::UserShader::Glass & glass)
 {
     out.clear();
+    glass = Render::UserShader::Glass();
     if (!Render::MaterialX::available())
         return;
-    static std::map<std::string, std::vector<std::string>> cache;
-    const std::string & key = sourcePath.empty() ? xml : sourcePath;
+    struct Entry {
+        std::vector<std::string> images;
+        Render::MaterialX::DocumentInfo::Transmission transmission;
+    };
+    static std::map<std::string, Entry> cache;
+    const std::string key =
+        (sourcePath.empty() ? xml : sourcePath) + '\0' + surface;
     auto it = cache.find(key);
     if (it == cache.end()) {
         Render::MaterialX::DocumentInfo info =
-            Render::MaterialX::inspect(xml, sourcePath);
-        it = cache.emplace(key, std::move(info.images)).first;
+            Render::MaterialX::inspect(xml, sourcePath, surface);
+        Entry entry;
+        entry.images = std::move(info.images);
+        entry.transmission = info.transmission;
+        it = cache.emplace(key, std::move(entry)).first;
     }
-    for (const std::string & path : it->second) {
+    for (const std::string & path : it->second.images) {
         Render::UserShader::Image image;
         image.path = path;
         // Never as grey: a map the document reads one channel of is
         // still an RGB file, and the generated code samples .rgb.
         image.image = loadParamImage(path, false);
         out.push_back(std::move(image));
+    }
+    const auto & t = it->second.transmission;
+    if (!t.glass)
+        return;
+    glass.claimed = true;
+    glass.ior = t.ior > 0.0f ? t.ior : 1.5f;
+    // OpenPBR: the colour is what survives the stated depth, so the
+    // Beer-Lambert density is its reciprocal -- the same reading the
+    // path tracer's absorption volume takes of it (CyclesMaterialX.cpp).
+    // No depth is not "automatic" but none: the colour is then a tint
+    // applied once at the surface, and glasscolor carries it either way.
+    glass.density = t.depth > 0.0f ? 1.0f / t.depth : 0.0f;
+    glass.roughness = std::min(std::max(t.roughness, 0.0f), 1.0f);
+    std::copy(t.color, t.color + 3, glass.color);
+    // A mapped roughness cannot be sampled by a pass that draws the
+    // body with one roughness; the map's MEAN stands in, which follows
+    // the document where the model's default would ignore it. The
+    // decoded pixels are in hand already -- the map is one of the
+    // document's images, loaded above.
+    if (!t.roughnessImage.empty()) {
+        for (const auto & image : out) {
+            if (image.path != t.roughnessImage || !image.image)
+                continue;
+            const Render::TextureImage & img = *image.image;
+            const size_t n = size_t(std::max(img.width, 0))
+                * size_t(std::max(img.height, 0));
+            const size_t stride = size_t(std::max(img.numComponents, 1));
+            if (n == 0 || img.pixels.size() < n * stride * img.sampleSize())
+                break;
+            double sum = 0.0;
+            for (size_t i = 0; i < n; ++i)
+                sum += img.component(i * stride);
+            glass.roughness = std::min(std::max(float(sum / double(n)), 0.0f), 1.0f);
+            break;
+        }
     }
 }
 
@@ -2047,7 +2117,8 @@ RendererBridge::translateShaderProgram(const SoNode * node,
             // this shader may have no filesystem to open them with
             // (docs/CyclesIntegration.md sec 6.12). Decoded here, once
             // per document, and carried with it.
-            loadMaterialXImages(src, sourcePath, out.images);
+            loadMaterialXImages(src, sourcePath, out.surface, out.images,
+                                out.glass);
             sourcePath.clear();
         }
         if (obj->isOfType(SoVertexShader::getClassTypeId())) {

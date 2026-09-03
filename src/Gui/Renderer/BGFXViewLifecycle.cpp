@@ -1403,6 +1403,7 @@ void BGFXView::init(bool keepShared)
     ensureUniform(s_texGlassBack, "s_texGlassBack",
                   bgfx::UniformType::Sampler);
     ensureUniform(u_glassParams, "u_glassParams", bgfx::UniformType::Vec4);
+    ensureUniform(u_glassTint, "u_glassTint", bgfx::UniformType::Vec4);
     ensureUniform(s_texLineSdf, "s_texLineSdf",
                   bgfx::UniformType::Sampler);
     ensureUniform(s_texLineSdfAux, "s_texLineSdfAux",

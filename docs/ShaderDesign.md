@@ -261,6 +261,14 @@ config struct the bridge fills. "Property" = per-view dynamic
   Beer-Lambert absorption over body thickness; casts a soft tinted shadow.
 - **Controls**: per-object `Render_Glass`, `Render_GlassIOR`,
   `Render_GlassDensity`, `Render_GlassRoughness`.
+- **MaterialX**: a surface stating a constant `transmission_weight` of
+  one half or more is a glass body too, claimed by the capture
+  (`Material::glassmtlx`, docs/MaterialStorage.md sec 17.21): the
+  document's `transmission_color` is the body colour, LINEAR and never
+  decoded, its `transmission_depth` the density (`1 / depth`; none =
+  a tint applied once at the surface, `u_glassTint`), `specular_ior`
+  the IOR and `specular_roughness` the roughness (a mapped one by its
+  mean). `Render_Glass` on the same shape wins.
 
 ### 3.9 Ground reflection
 - **Passes**: `ViewGroundRefl` (mirrored-camera opaque re-render) →

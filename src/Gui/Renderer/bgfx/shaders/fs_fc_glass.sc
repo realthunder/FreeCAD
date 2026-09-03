@@ -18,7 +18,12 @@ $input v_normal, v_color0, v_color1, v_color2, v_vpos, v_opos, v_onrm, v_findex
  *                (1/world units, resolved by the backend), z = 0..1
  *                roughness, w > 0.5 = the prepass viewZ is bound for
  *                the refraction depth reject
- * u_matColor   : glass diffuse — absorption of the complement
+ * u_matColor   : glass body colour -- absorption of the complement
+ * u_glassTint  : rgb multiplied into the transmitted light ONCE at the
+ *                surface, whatever the thickness: a MaterialX
+ *                transmission_color with no depth (OpenPBR's surface
+ *                tint, docs/MaterialStorage.md sec 17.21). White for
+ *                every Render_Glass body.
  * u_lightDir   : scene light (w > 0.5 = present), view space
  */
 
@@ -37,6 +42,7 @@ uniform vec4 u_matColor;
 uniform vec4 u_lightDir;
 uniform vec4 u_lightColor;
 uniform vec4 u_glassParams;
+uniform vec4 u_glassTint;
 
 /*
  * Rebuild a decoration's coverage from the resampled distance field.
@@ -232,7 +238,7 @@ void main()
 	// over the thickness.
 	vec3 sigma = u_glassParams.y
 		* (vec3_splat(1.0) - u_matColor.rgb);
-	refr *= exp(-sigma * thick);
+	refr *= exp(-sigma * thick) * u_glassTint.rgb;
 
 	vec3 Vw = normalize(mul(u_invView, vec4(V, 0.0)).xyz);
 	vec3 nw = normalize(mul(u_invView, vec4(n, 0.0)).xyz);
@@ -245,7 +251,8 @@ void main()
 	if (rough > 0.001)
 	{
 		vec3 irr = textureCubeLod(s_texEnv, nw, 5.0).xyz;
-		refr = mix(refr, irr * u_matColor.rgb, rough * 0.6);
+		refr = mix(refr, irr * u_matColor.rgb * u_glassTint.rgb,
+		           rough * 0.6);
 	}
 
 	// Environment reflection, roughness picks the prefiltered mip.

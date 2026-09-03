@@ -28,7 +28,9 @@
 
 #ifdef HAVE_MATERIALX
 
+#include <algorithm>
 #include <cctype>
+#include <initializer_list>
 #include <map>
 #include <mutex>
 #include <set>
@@ -572,6 +574,192 @@ void applyInputs(const mx::DocumentPtr &doc,
     }
 }
 
+namespace
+{
+
+/// One input of the surface, read FLAT: what a consumer that samples
+/// nothing per fragment can make of it. The walk follows the connection
+/// kinds the interpreter evaluates -- an interface socket, a nodegraph
+/// output, a node -- through the `dot` nodes and graph outputs the
+/// OpenPBR translation leaves between the surface and what the document
+/// wrote, and stops at a constant, at one image feeding the input
+/// directly, or at anything else (a pattern graph), which it cannot read.
+struct FlatInput {
+    enum Kind { Unstated, Constant, Image, Other } kind = Unstated;
+    std::vector<float> value;
+    /// For Image: the file, resolved as inspect() resolves every image.
+    std::string imagePath;
+};
+
+FlatInput flattenInput(const mx::DocumentPtr &doc, mx::InputPtr input)
+{
+    FlatInput out;
+    // The implementation graphs entered on the way, innermost last: a
+    // nodedef implemented as a nodegraph -- every shading-model
+    // translation, most of the pattern library -- is walked by
+    // descending into that graph with the calling node bound as its
+    // interface, exactly as the path tracer's interpreter evaluates it
+    // (CyclesMaterialX.cpp evalImplementation). An interface name met
+    // inside resolves against the caller's input of that name.
+    std::vector<mx::NodePtr> callers;
+    for (int hops = 0; input && hops < 64; ++hops) {
+        if (input->hasInterfaceName()) {
+            const std::string name = input->getInterfaceName();
+            if (!callers.empty()) {
+                mx::NodePtr caller = callers.back();
+                callers.pop_back();
+                if (mx::InputPtr bound = caller->getInput(name)) {
+                    input = bound;
+                    continue;
+                }
+                // Unstated on the caller: its own nodedef's default.
+                mx::NodeDefPtr def = caller->getNodeDef();
+                mx::InputPtr defInput = def ? def->getActiveInput(name) : mx::InputPtr();
+                if (defInput && valueFloats(defInput->getValue(), out.value))
+                    out.kind = FlatInput::Constant;
+                else
+                    out.kind = FlatInput::Other;
+                return out;
+            }
+            input = input->getInterfaceInput();
+            continue;
+        }
+        mx::NodePtr node;
+        std::string outputName;
+        if (input->hasNodeGraphString()) {
+            mx::OutputPtr output = input->getConnectedOutput();
+            if (!output)
+                break;
+            node = output->getConnectedNode();
+            outputName = output->getOutputString();
+        }
+        else if (input->hasNodeName()) {
+            node = input->getConnectedNode();
+            outputName = input->getOutputString();
+        }
+        else if (input->hasOutputString()) {
+            break;
+        }
+        else {
+            if (!input->hasValueString())
+                return out;
+            out.kind = valueFloats(input->getValue(), out.value)
+                ? FlatInput::Constant : FlatInput::Other;
+            return out;
+        }
+        // From the node reached to the next INPUT to follow: through a
+        // pass-through node directly, through an implemented one by
+        // entering its graph at the output that was named.
+        input = mx::InputPtr();
+        for (int inner = 0; node && inner < 64 && !input; ++inner) {
+            const std::string &category = node->getCategory();
+            if (category == "dot") {
+                input = node->getInput("in");
+                break;
+            }
+            if (category == "constant") {
+                input = node->getInput("value");
+                break;
+            }
+            if (category == "image" || category == "tiledimage") {
+                mx::InputPtr file = node->getInput("file");
+                if (file && file->hasValueString())
+                    out.imagePath = resolveFile(doc, file->getValueString());
+                out.kind = FlatInput::Image;
+                return out;
+            }
+            mx::NodeDefPtr def = node->getNodeDef();
+            mx::InterfaceElementPtr impl = def ? def->getImplementation()
+                                              : mx::InterfaceElementPtr();
+            mx::NodeGraphPtr graph = impl ? impl->asA<mx::NodeGraph>() : mx::NodeGraphPtr();
+            if (!graph || callers.size() > 32)
+                break;
+            std::vector<mx::OutputPtr> outputs = graph->getOutputs();
+            if (outputs.empty())
+                break;
+            mx::OutputPtr target = outputName.empty() ? outputs.front()
+                                                      : graph->getOutput(outputName);
+            if (!target)
+                target = outputs.front();
+            callers.push_back(node);
+            if (target->hasInterfaceName()) {
+                // The graph hands an interface socket straight through:
+                // the caller's input of that name, without entering.
+                mx::NodePtr caller = callers.back();
+                callers.pop_back();
+                input = caller->getInput(target->getInterfaceName());
+                break;
+            }
+            outputName = target->getOutputString();
+            node = target->getConnectedNode();
+        }
+        if (!input)
+            break;
+    }
+    out.kind = FlatInput::Other;
+    return out;
+}
+
+/// One input of the surface as floats: the constant it states, else the
+/// nodedef's default, else `fallback`. Says whether it was a constant.
+FlatInput surfaceInput(const mx::DocumentPtr &doc, const mx::NodePtr &surface,
+                       const char *name, std::initializer_list<float> fallback)
+{
+    FlatInput flat = flattenInput(doc, surface->getInput(name));
+    if (flat.kind == FlatInput::Constant)
+        return flat;
+    std::vector<float> value;
+    mx::NodeDefPtr def = surface->getNodeDef();
+    mx::InputPtr defInput = def ? def->getActiveInput(name) : mx::InputPtr();
+    if (!defInput || !valueFloats(defInput->getValue(), value))
+        value.assign(fallback);
+    flat.value = std::move(value);
+    return flat;
+}
+
+/// Fill DocumentInfo::transmission from the (translated) OpenPBR surface.
+void readTransmission(const mx::DocumentPtr &doc, const mx::NodePtr &surface,
+                      DocumentInfo &info)
+{
+    DocumentInfo::Transmission &t = info.transmission;
+    FlatInput weight = surfaceInput(doc, surface, "transmission_weight", {0.0f});
+    t.weight = weight.value.empty() ? 0.0f : weight.value[0];
+    if (weight.kind != FlatInput::Constant && weight.kind != FlatInput::Unstated) {
+        info.warnings.push_back(
+            "transmission_weight is not a constant: the raster path cannot read "
+            "a mapped weight flat, so the surface draws opaque there");
+        return;
+    }
+    FlatInput color = surfaceInput(doc, surface, "transmission_color", {1.0f, 1.0f, 1.0f});
+    if (color.kind != FlatInput::Constant && color.kind != FlatInput::Unstated)
+        info.warnings.push_back(
+            "transmission_color is not a constant: the raster glass body takes white");
+    for (int c = 0; c < 3; ++c)
+        t.color[c] = c < int(color.value.size()) ? color.value[c] : 1.0f;
+    FlatInput depth = surfaceInput(doc, surface, "transmission_depth", {0.0f});
+    t.depth = depth.value.empty() ? 0.0f : std::max(depth.value[0], 0.0f);
+    FlatInput ior = surfaceInput(doc, surface, "specular_ior", {1.5f});
+    t.ior = ior.value.empty() ? 1.5f : ior.value[0];
+    FlatInput rough = surfaceInput(doc, surface, "specular_roughness", {0.3f});
+    t.roughness = rough.value.empty() ? 0.3f : rough.value[0];
+    if (rough.kind == FlatInput::Image)
+        t.roughnessImage = rough.imagePath;
+    t.glass = t.weight >= 0.5f;
+}
+
+}  // namespace
+
+bool flatConstant(const mx::NodePtr &node, const char *name, std::vector<float> &out)
+{
+    if (!node)
+        return false;
+    FlatInput flat = flattenInput(node->getDocument(), node->getInput(name));
+    if (flat.kind != FlatInput::Constant)
+        return false;
+    out = std::move(flat.value);
+    return true;
+}
+
 DocumentInfo inspect(const std::string &xml, const std::string &sourcePath,
                      const std::string &surfaceName)
 {
@@ -635,6 +823,16 @@ DocumentInfo inspect(const std::string &xml, const std::string &sourcePath,
     // property editor, the path tracer and the generator alike.
     info.inputs = publicInputs(doc, shaders[std::size_t(index)]);
     info.valid = true;
+    // The transmission is read off the OpenPBR surface AFTER the
+    // translation, so every model answers in one vocabulary. Last,
+    // because the translation rewrites the document. Its own
+    // warnings are the generator's to report, not this inspection's.
+    {
+        std::string error;
+        std::vector<std::string> warnings;
+        if (mx::NodePtr surface = openPbrSurface(doc, surfaceName, error, warnings))
+            readTransmission(doc, surface, info);
+    }
     return info;
 }
 

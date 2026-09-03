@@ -142,6 +142,17 @@ void applyInputs(const mx::DocumentPtr &doc,
                  const std::vector<RenderDebugConfig::UserParam> &params,
                  const std::string &surface = {});
 
+/// One input of a node read FLAT, through the `dot` nodes, graph outputs
+/// and interface sockets the OpenPBR translation leaves between a
+/// surface and what the document wrote: true with the constant it
+/// resolves to, false for an input that is unstated, mapped, or fed by
+/// a pattern graph. For the inputs whose VALUE decides a consumer's
+/// shape -- a transmission depth that is or is not there -- which a
+/// literal read of the (translated) surface node cannot answer, its
+/// inputs being connections.
+bool flatConstant(const mx::NodePtr &node, const char *name,
+                  std::vector<float> &out);
+
 /// The one surface a document renders, as an OpenPBR node. OpenPBR is
 /// the canonical surface model, so a document stating any other one is
 /// put through MaterialX's OWN translation graphs rather than a second

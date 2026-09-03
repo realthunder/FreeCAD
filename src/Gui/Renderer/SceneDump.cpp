@@ -286,7 +286,13 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     snapshot older than this names none, which reads as the first
 //     surface -- what those builds rendered. The out-of-band shader
 //     chunk carries the same field, so kChunkVersion moves with it.
-const uint32_t kVersion = 72;
+// 73: a material carries glassmtlx and glasscolor -- a glass body
+//     claimed by its MaterialX surface's transmission, with the
+//     document's linear colour (docs/MaterialStorage.md sec 17.21). An
+//     older snapshot has neither: its glass bodies are all Render_Glass
+//     ones, which is what those builds drew. The material chunk carries
+//     the same fields, so kChunkVersion moves with it.
+const uint32_t kVersion = 73;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -321,8 +327,11 @@ const uint32_t kVersion = 72;
 /// 13: a shader chunk carries the source dialect and source path
 ///     (v70), ahead of the stage. Same story: the bytes moved, so an
 ///     older cached chunk would read the stage string out of the
-///     dialect byte.)
-const uint32_t kChunkVersion = 14;
+///     dialect byte.
+/// 15: a material chunk carries glassmtlx and glasscolor (v73) after
+///     glassroughness. The bytes moved, so an older cached chunk would
+///     read its cloud flag out of the new field.)
+const uint32_t kChunkVersion = 15;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -1488,6 +1497,9 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
     w.f(m.glassior);
     w.f(m.glassdensity);
     w.f(m.glassroughness);
+    w.b(m.glassmtlx);
+    for (int c = 0; c < 3; ++c)
+        w.f(m.glasscolor[c]);
     w.b(m.cloud);
     w.f(m.clouddensity);
     w.f(m.clouddetail);
@@ -1665,6 +1677,11 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
     m.glassior = r.f();
     m.glassdensity = r.f();
     m.glassroughness = r.f();
+    if (version >= 73) {
+        m.glassmtlx = r.b();
+        for (int c = 0; c < 3; ++c)
+            m.glasscolor[c] = r.f();
+    }
     m.cloud = r.b();
     m.clouddensity = r.f();
     m.clouddetail = r.f();
