@@ -21,11 +21,13 @@
  ****************************************************************************/
 
 #include "GraphEditorWidget.h"
+#include "Graph.h"
+#include "GraphHost.h"
+
+#include <QTimer>
 
 #include <imgui.h>
 #include <imgui_node_editor.h>
-
-#include <vector>
 
 namespace ed = ax::NodeEditor;
 
@@ -33,17 +35,13 @@ namespace Render {
 
 struct GraphEditorWidget::Private {
     ed::EditorContext *editor = nullptr;
+    GraphEditor::NullGraphHost host;
+    std::unique_ptr<GraphEditor::Graph> graph;
     std::string title;
-    char nameBuf[64] = "surface1";
-    bool firstFrame = true;
-
-    struct Link {
-        ed::LinkId id;
-        ed::PinId from;
-        ed::PinId to;
-    };
-    std::vector<Link> links;
-    int nextLinkId = 100;
+    std::string pendingXml;
+    bool hasPending = false;
+    std::string error;
+    std::function<void(const std::string &)> commit;
 };
 
 GraphEditorWidget::GraphEditorWidget(QWidget *parent)
@@ -54,10 +52,14 @@ GraphEditorWidget::GraphEditorWidget(QWidget *parent)
 
 GraphEditorWidget::~GraphEditorWidget()
 {
-    // The editor context lives in ImGui's allocator; free it while the
-    // ImGui context still exists (the base destructor drops that).
+    // The graph and the editor context live in ImGui's allocator; free
+    // them while the ImGui context still exists (the base destructor
+    // drops that).
     if (d->editor) {
         makeImGuiCurrent();
+        ed::SetCurrentEditor(d->editor);
+        d->graph.reset();
+        ed::SetCurrentEditor(nullptr);
         ed::DestroyEditor(d->editor);
         d->editor = nullptr;
     }
@@ -69,6 +71,23 @@ void GraphEditorWidget::setTitle(const std::string &title)
     requestFrame();
 }
 
+void GraphEditorWidget::setDocument(const std::string &xml)
+{
+    d->pendingXml = xml;
+    d->hasPending = true;
+    requestFrame();
+}
+
+const std::string &GraphEditorWidget::loadError() const
+{
+    return d->error;
+}
+
+void GraphEditorWidget::setCommitHandler(std::function<void(const std::string &)> handler)
+{
+    d->commit = std::move(handler);
+}
+
 void GraphEditorWidget::contextCreated()
 {
     ed::Config config;
@@ -76,110 +95,34 @@ void GraphEditorWidget::contextCreated()
     // (docs/ShaderGraphEditor.md sec 4.1).
     config.SettingsFile = nullptr;
     d->editor = ed::CreateEditor(&config);
-    d->links.push_back({ed::LinkId(d->nextLinkId++), ed::PinId(3), ed::PinId(12)});
+    ed::SetCurrentEditor(d->editor);
+    d->graph = std::make_unique<GraphEditor::Graph>(&d->host);
+    ed::SetCurrentEditor(nullptr);
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 }
 
 void GraphEditorWidget::drawUi()
 {
-    const ImGuiViewport *viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->WorkPos);
-    ImGui::SetNextWindowSize(viewport->WorkSize);
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration
-        | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize
-        | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus
-        | ImGuiWindowFlags_MenuBar;
-    if (!ImGui::Begin("ShaderGraph", nullptr, flags)) {
-        ImGui::End();
-        return;
-    }
-
-    if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu("Graph")) {
-            if (ImGui::MenuItem("Auto Layout"))
-                ed::NavigateToContent(0.0f);
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("Help")) {
-            ImGui::MenuItem("Phase 0 spike", nullptr, false, false);
-            ImGui::EndMenu();
-        }
-        ImGui::EndMenuBar();
-    }
-
-    ImGui::Text("%s", d->title.empty() ? "(no program)" : d->title.c_str());
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(160.0f);
-    ImGui::InputText("Surface", d->nameBuf, sizeof(d->nameBuf));
-    ImGui::Separator();
-
     ed::SetCurrentEditor(d->editor);
-    ed::Begin("Canvas", ImVec2(0.0f, 0.0f));
-
-    // Node ids and pin ids are one flat space in the editor.
-    ed::BeginNode(1);
-    ImGui::Text("Noise");
-    ed::BeginPin(2, ed::PinKind::Input);
-    ImGui::Text("-> scale");
-    ed::EndPin();
-    ImGui::SameLine();
-    ed::BeginPin(3, ed::PinKind::Output);
-    ImGui::Text("out ->");
-    ed::EndPin();
-    ed::EndNode();
-
-    ed::BeginNode(10);
-    ImGui::Text("Surface");
-    ed::BeginPin(12, ed::PinKind::Input);
-    ImGui::Text("-> base_color");
-    ed::EndPin();
-    ed::BeginPin(13, ed::PinKind::Input);
-    ImGui::Text("-> roughness");
-    ed::EndPin();
-    ImGui::SameLine();
-    ed::BeginPin(14, ed::PinKind::Output);
-    ImGui::Text("out ->");
-    ed::EndPin();
-    ed::EndNode();
-
-    for (const auto &link : d->links)
-        ed::Link(link.id, link.from, link.to);
-
-    if (ed::BeginCreate()) {
-        ed::PinId from, to;
-        if (ed::QueryNewLink(&from, &to)) {
-            if (from && to && from != to && ed::AcceptNewItem()) {
-                d->links.push_back({ed::LinkId(d->nextLinkId++), from, to});
-                ed::Link(d->links.back().id, from, to);
-            }
-        }
+    if (d->hasPending) {
+        d->hasPending = false;
+        d->graph->setDocument(d->pendingXml, d->error);
+        d->pendingXml.clear();
     }
-    ed::EndCreate();
-
-    if (ed::BeginDelete()) {
-        ed::LinkId deleted;
-        while (ed::QueryDeletedLink(&deleted)) {
-            if (ed::AcceptDeletedItem()) {
-                for (auto it = d->links.begin(); it != d->links.end(); ++it) {
-                    if (it->id == deleted) {
-                        d->links.erase(it);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    ed::EndDelete();
-
-    if (d->firstFrame) {
-        ed::SetNodePosition(1, ImVec2(40.0f, 60.0f));
-        ed::SetNodePosition(10, ImVec2(300.0f, 60.0f));
-        ed::NavigateToContent(0.0f);
-        d->firstFrame = false;
-    }
-
-    ed::End();
+    d->graph->setName(d->title);
+    d->graph->drawGraph(ImGui::GetMousePos());
+    std::string text;
+    const bool changed = d->graph->takeChange(text);
     ed::SetCurrentEditor(nullptr);
-    ImGui::End();
+
+    // The write goes through the document and everything that watches
+    // it; not from inside a paint.
+    if (changed && d->commit) {
+        QTimer::singleShot(0, this, [this, text = std::move(text)]() {
+            if (d->commit)
+                d->commit(text);
+        });
+    }
 }
 
 } // namespace Render

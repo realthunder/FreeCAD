@@ -104,22 +104,39 @@ if(BUILD_BGFX AND BUILD_MATERIALX)
     list(APPEND Renderer_CPP_SRCS
         GraphEditor/ImGuiBgfx.cpp
         GraphEditor/ImGuiStb.cpp
+        GraphEditor/ImGuiStdlib.cpp
         GraphEditor/ImGuiSurface.cpp
         GraphEditor/GraphEditorWidget.cpp
+        GraphEditor/Graph.cpp
+        GraphEditor/UiNode.cpp
+        GraphEditor/Layout.cpp
+        GraphEditor/UiProperties.cpp
+        GraphEditor/NodeEditorDrawing.cpp
+        GraphEditor/NodeEditorWidgets.cpp
         ${_node_editor}/imgui_node_editor.cpp
         ${_node_editor}/imgui_node_editor_api.cpp
         ${_node_editor}/imgui_canvas.cpp
         ${_node_editor}/crude_json.cpp)
     list(APPEND Renderer_HPP_SRCS
         GraphEditor/ImGuiBgfx.h
+        GraphEditor/ImGuiStdlib.h
         GraphEditor/ImGuiSurface.h
-        GraphEditor/GraphEditorWidget.h)
+        GraphEditor/GraphEditorWidget.h
+        GraphEditor/GraphHost.h
+        GraphEditor/Graph.h
+        GraphEditor/UiNode.h
+        GraphEditor/Layout.h
+        GraphEditor/UiProperties.h
+        GraphEditor/NodeEditorDrawing.h
+        GraphEditor/NodeEditorWidgets.h)
     # The node editor includes <imgui.h> and <imgui_internal.h> bare;
     # our own sources take <dear-imgui/...> through example-common's
     # public include path. Same files either way.
     include_directories(${_node_editor}
                         ${CMAKE_SOURCE_DIR}/src/3rdParty/bgfx/bgfx/3rdparty/dear-imgui)
-    add_definitions(-DFC_SHADER_GRAPH_EDITOR)
+    # The node editor and the ported editor use ImVec2 arithmetic, which
+    # ImGui only defines on request, and before its own header.
+    add_definitions(-DFC_SHADER_GRAPH_EDITOR -DIMGUI_DEFINE_MATH_OPERATORS)
     unset(_node_editor)
 endif()
 

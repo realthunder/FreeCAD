@@ -59,8 +59,19 @@ public:
     void labelChanged();
 
 private:
+    /// The document's text after a completed gesture in the editor:
+    /// one undoable property write (docs/ShaderGraphEditor.md sec 4.1).
+    void commitText(const std::string &xml);
+    /// An object of the document changed: the program's text from
+    /// outside (undo, Python) reloads the editor.
+    void slotChangedObject(const App::DocumentObject &obj, const App::Property &prop);
+
     App::ShaderProgram *const program;
     Render::GraphEditorWidget *editor = nullptr;
+    fastsignals::connection changedConnection;
+    /// Set around this view's own property write, which must not
+    /// reload the editor that made it.
+    bool writing = false;
 };
 
 } // namespace Gui

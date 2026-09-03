@@ -305,11 +305,13 @@ src/Gui/Renderer/GraphEditor/
     ImGuiStb.cpp                           the stb_truetype/stb_rect_pack implementation (sec 10)
     ImGuiSurface.{h,cpp}                   QOpenGLWidget + DrawSurface + Qt input bridge
     GraphEditorWidget.{h,cpp}              the editor's widget: an ImGuiSurface drawing the canvas
-    GraphHost.h                            the interface of 4.2
-    NullGraphHost.{h,cpp}                  phase 1
+    GraphHost.h                            the interface of 4.2, with NullGraphHost inline (phase 1)
     EngineGraphHost.{h,cpp}                phase 2: preview + thumbnails on the engine
     Graph.{h,cpp}, UiNode.{h,cpp},
-    Layout.{h,cpp}                         ported copies (RenderView/FileDialog/Main gone)
+    Layout.{h,cpp}                         ported copies (RenderView/FileDialog/Main gone), in
+                                           namespace Render::GraphEditor
+    UiProperties.{h,cpp}                   UIProperties/getUIProperties copied from MaterialXRender
+    ImGuiStdlib.{h,cpp}                    InputText over std::string (bgfx's ImGui has no misc/cpp)
     NodeEditorDrawing.{h,cpp},
     NodeEditorWidgets.{h,cpp}              the two blueprints-example utilities, copied
 src/Gui/ShaderGraphView.{h,cpp}            the view (an MDIView; placed by ViewPlacement)
@@ -372,7 +374,7 @@ of it until phase 4.
    into an ImGui text field, survives being split, maximized, closed
    from the cell menu and reopened, survives a second instance for a
    second program, and the 3D cell keeps rendering next to it. This is one day; it answers section 8.
-1. **The port.** `Graph`/`UiNode`/`Layout` copied in, `RenderView`
+1. **The port -- DONE 2026-09-04, section 11.** `Graph`/`UiNode`/`Layout` copied in, `RenderView`
    replaced by `GraphHost` (with `NullGraphHost`), `FileDialog`/`Main`
    gone, the document round trip of 4.1, the view and the two commands
    of 4.4. Exit criteria: materialize a bundled MaterialX card, open,
@@ -526,3 +528,71 @@ keeps upstream as the `upstream` remote for later rebases.
 Phase 1 starts from here: `GraphEditorWidget::drawUi` is the body
 the ported `Graph` replaces, `ImGuiSurface` and `ImGuiBgfx` are
 final, the view and the provider hooks are final in shape.
+
+## 11. Phase 1 result (2026-09-04)
+
+The port is in: `Graph`/`UiNode`/`Layout` copied from MaterialX 1.39.5
+into `GraphEditor/` (namespace `Render::GraphEditor`, so the global
+`Graph`/`Link`/`Layout` names stay inside the library), `RenderView`,
+the file dialogs and `Main` gone, `GraphHost` in their place with the
+inline `NullGraphHost`, the blueprints `drawing`/`widgets` utilities
+beside them, and two small units the plan did not foresee:
+`ImGuiStdlib` (bgfx's ImGui copy has no `misc/cpp`) and `UiProperties`
+(`getUIProperties` is MaterialXRender's, which the renderer does not
+build; `getNodeDefInput` it needs is GenShader's). Every exit
+criterion of section 7 held under Xvfb, one process, no crash,
+probe `~/works/sw/fcad-probes/shader_graph_phase1.{py,sh}`:
+
+- Open: the view draws the menu bar, the property pane and the
+  canvas with the document's two nodes laid out; opening writes
+  nothing (text unchanged, no undo step).
+- Edit: a rubber band over the canvas plus Delete empties the
+  document (one undo step, the provider's sync reports "no surface"
+  in the report view, which is the text reaching the viewport path);
+  Tab, a typed filter, Down, Return adds a `constant` node (one undo
+  step); a node drag writes `xpos`/`ypos`.
+- Undo/Redo from the application walk the text back and forth and
+  the editor reloads each time; a Python write of the property
+  reloads it too; the 3D cell keeps rendering; close works.
+
+What the run found and fixed, none of it visible by reading:
+
+- **A data library is not a separate document to the accessors.**
+  With `setDataLibrary` attached, `Document::getNodeGraphs()`,
+  `getNodes()`, `getActiveInputs()` and `getOutputs()` answer the
+  LIBRARY's children too (that is how nodedefs resolve), so the first
+  graph showed 267 nodes: every library nodegraph in one column, and
+  Delete on them removed nothing from our document. The MaterialX
+  editor filtered these by source URI against its xinclude set; the
+  port filters by owning document (`elem->getDocument() == _graphDoc`).
+- **`IsWindowFocused(ImGuiFocusedFlags_RootWindow)` is an identity
+  test** of ImGui's nav window against the root, and a click on the
+  canvas focuses the node editor's CHILD window, so every keyboard
+  action on the canvas (Delete, Tab, arrows) was dead in this hosting.
+  `canvasHasKeyboard()` asks for the root's own hierarchy without
+  popups, and no active item (so Backspace in a name field does not
+  delete nodes).
+- **Change detection is generic, not per site.** The first draft
+  flagged edits where the MaterialX code flagged a preview recompile,
+  and selecting a node recompiles the preview -- so a rubber band
+  committed. Now a gesture end (a mouse or key release, or a settled
+  topology update, with nothing held and no text field active) writes
+  positions, serializes, and commits only if the text differs from the
+  last committed text. The opening auto-layout re-baselines so the
+  first click costs nothing; the user's Auto Layout is an edit.
+  Comparing texts also absorbs the node editor handing positions back
+  a fraction off the value set.
+- `strToPython` escapes quotes and backslashes but not newlines: a
+  multi-line document made an unterminated Python literal. The view
+  builds the literal itself.
+- ImGui 1.92 retired `SetWindowFontScale` (obsolete API is off in
+  bgfx's copy); the port carries its four-line body. `IsKeyPressedMap`
+  became `IsKeyPressed`; the node editor's math needs
+  `IMGUI_DEFINE_MATH_OPERATORS` before ImGui's header, set for the
+  directory in CMake.
+
+Not done, by design of phase 1: no preview, no thumbnails (the
+`NullGraphHost`), the filename input is typed rather than browsed
+(the program's `Images` is what it should pick from, phase 2), the
+`Surface` picker, HiDPI (font scale is 1). Phase 2 starts at
+`EngineGraphHost`.

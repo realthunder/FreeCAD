@@ -24,15 +24,16 @@
 #define RENDERER_GRAPHEDITOR_GRAPHEDITORWIDGET_H
 
 /// \file GraphEditorWidget.h
-/// The shader graph editor's widget: an ImGuiSurface drawing the node
-/// editor canvas (docs/ShaderGraphEditor.md sec 4). PHASE 0 SPIKE:
-/// the canvas shows two placeholder nodes and a link, plus a text
-/// field, to prove the hosting -- ImGui on bgfx inside a Qt widget in
-/// a split cell beside a live 3D view. Phase 1 replaces the body with
-/// the ported MaterialX Graph.
+/// The shader graph editor's widget (docs/ShaderGraphEditor.md sec 4):
+/// an ImGuiSurface drawing the ported MaterialX node editor over a
+/// document given as MaterialX XML, and handing the text back after
+/// every completed gesture. The widget holds no state the document
+/// does not; its owner writes the text into the program's property
+/// and reloads the widget when the property changes from outside.
 
 #include "ImGuiSurface.h"
 
+#include <functional>
 #include <string>
 
 namespace Render {
@@ -42,8 +43,20 @@ public:
     explicit GraphEditorWidget(QWidget *parent = nullptr);
     ~GraphEditorWidget() override;
 
-    /// The name shown in the canvas header (the program's label).
+    /// The name shown at the root of the graph path (the program's label).
     void setTitle(const std::string &title);
+
+    /// Load, or reload, the document from MaterialX XML. Applied on
+    /// the next frame, with the node editor current; a text that does
+    /// not parse leaves the previous document and sets loadError().
+    void setDocument(const std::string &xml);
+
+    /// The parse error of the last setDocument, empty when it parsed.
+    const std::string &loadError() const;
+
+    /// Called from the event loop with the document text after each
+    /// completed gesture that changed it.
+    void setCommitHandler(std::function<void(const std::string &xml)> handler);
 
 protected:
     void contextCreated() override;

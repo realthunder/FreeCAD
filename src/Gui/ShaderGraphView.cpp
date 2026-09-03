@@ -27,14 +27,21 @@
 # include <QString>
 #endif
 
+#include <App/Document.h>
 #include <App/ShaderObject.h>
+#include <Base/Console.h>
+#include <Base/Tools.h>
 
 #include "ShaderGraphView.h"
 #include "Application.h"
+#include "Command.h"
 #include "Document.h"
 #include "Renderer/GraphEditor/GraphEditorWidget.h"
 
+FC_LOG_LEVEL_INIT("Gui", true, true)
+
 using namespace Gui;
+namespace sp = std::placeholders;
 
 TYPESYSTEM_SOURCE_ABSTRACT(Gui::ShaderGraphView, Gui::MDIView)
 
@@ -49,9 +56,74 @@ ShaderGraphView::ShaderGraphView(App::ShaderProgram *prog, QWidget *parent)
     editor = new Render::GraphEditorWidget(this);
     setCentralWidget(editor);
     labelChanged();
+
+    // The editor is a view over the property: it shows the text and
+    // hands back the text; the document is the only state.
+    editor->setCommitHandler([this](const std::string &xml) { commitText(xml); });
+    editor->setDocument(program->FragmentProgram.getValue());
+    changedConnection = prog->getDocument()->signalChangedObject.connect(
+            std::bind(&ShaderGraphView::slotChangedObject, this, sp::_1, sp::_2));
 }
 
-ShaderGraphView::~ShaderGraphView() = default;
+ShaderGraphView::~ShaderGraphView()
+{
+    changedConnection.disconnect();
+}
+
+void ShaderGraphView::slotChangedObject(const App::DocumentObject &obj,
+                                        const App::Property &prop)
+{
+    if (&obj != program || writing)
+        return;
+    if (&prop == &program->FragmentProgram)
+        editor->setDocument(program->FragmentProgram.getValue());
+}
+
+// A Python string literal for the text: strToPython escapes quotes and
+// backslashes but leaves newlines, which end the literal.
+static std::string pyLiteral(const std::string &text)
+{
+    std::string out;
+    out.reserve(text.size() + 16);
+    out += '"';
+    for (char c : text) {
+        switch (c) {
+        case '\\': out += "\\\\"; break;
+        case '"': out += "\\\""; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default: out += c;
+        }
+    }
+    out += '"';
+    return out;
+}
+
+void ShaderGraphView::commitText(const std::string &xml)
+{
+    if (!program || !program->getNameInDocument())
+        return;
+    const char *current = program->FragmentProgram.getValue();
+    if (current && xml == current)
+        return;
+    // A Python property assignment inside one transaction, the way the
+    // sync commands write: undoable, and on the macro record.
+    Base::FlagToggler<bool> guard(writing);
+    Gui::Document *doc = getGuiDocument();
+    doc->openCommand(QT_TRANSLATE_NOOP("Command", "Edit shader graph"));
+    try {
+        Gui::Command::doCommand(Gui::Command::Doc,
+                "App.getDocument(\"%s\").getObject(\"%s\").FragmentProgram = %s",
+                program->getDocument()->getName(), program->getNameInDocument(),
+                pyLiteral(xml).c_str());
+        doc->commitCommand();
+    }
+    catch (Base::Exception &e) {
+        doc->abortCommand();
+        FC_ERR("shader graph write failed: " << e.what());
+    }
+}
 
 void ShaderGraphView::labelChanged()
 {
