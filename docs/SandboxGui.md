@@ -1,6 +1,12 @@
 # GUI for sandboxed Python: the FreeCAD UI protocol, not a PySide shim
 
-Status as of **2026-09-03**: discussion draft, nothing built.  Written
+Status as of **2026-09-03**: discussion draft; the G0 linter is built
+(sec 8) and G1 is sized (sec 9).  **Revised the same evening, sec 10:**
+pivy runs in the guest and the scene is mirrored (U5/U6), forms use
+the Jupyter widget protocol with ipywidgets in the guest (U3), and the
+toolkit transition away from Qt goes through the widget managers.
+Secs 4-7 are kept as written for the record; where sec 10 supersedes
+a paragraph it says so in place.  Written
 on the user's framing of the same day: "since our final goal is to run
 everything Python in pyodide, eventually we'll need to find a way to
 expose GUI function ... my current thought is to have some kind of
@@ -158,7 +164,9 @@ Draft/BIM's standing (`addon:Draft`).
   (grant); `defer(ms, callback)` for the ToDo queue; `InputHint` /
   `HintManager` (already data); `updateGui` becomes a no-op with a
   note (the host owns the event loop).
-- **U3 Forms (model-sync).**  The form language is **Qt Designer
+- **U3 Forms (model-sync).**  *(Superseded in part by sec 10.2: the
+  model-sync protocol is the Jupyter widget protocol and the guest
+  library is ipywidgets; `.ui` stays the authoring format.)*  The form language is **Qt Designer
   `.ui` XML**, chosen because 68 of them already exist in Draft/BIM
   and because it is a declarative widget tree with object names,
   which is precisely a model.  The host loads the `.ui` (desktop: real
@@ -204,7 +212,10 @@ Draft/BIM's standing (`addon:Draft`).
   Draft's 26 uses are addon-principal calls that pass the gate once
   per addon and then run at Draft's own grants, which is what they do
   today minus the ambient authority.
-- **U5 View providers and the annotation scene.**  The proxy hook set
+- **U5 View providers and the annotation scene.**  *(Superseded by
+  sec 10.1: pivy runs in the guest and the guest's Coin graph is
+  mirrored into the host scene; the primitive list below survives as
+  the mirror's node-type allowlist.)*  The proxy hook set
   stays exactly as it is -- host calls guest entry points (`attach`,
   `updateData`, `onChanged`, `getIcon`, `claimChildren`, `setEdit`,
   `unsetEdit`, `doubleClicked`, `setupContextMenu`, display modes,
@@ -224,7 +235,10 @@ Draft/BIM's standing (`addon:Draft`).
   the likely C++ candidate (it is the most used and the most
   performance-sensitive), the rest rewrite.
 - **U6 Interactive tools: the snapper and the trackers move to the
-  host.**  `Gui.Snapper` becomes a C++ snap engine (endpoint, midpoint,
+  host.**  *(Revised in sec 10.1: the trackers stay Python in the
+  guest, mirrored like any other Coin graph; only the snapper and the
+  event stream remain U6, and the snapper's move to C++ is deferred.)*
+  `Gui.Snapper` becomes a C++ snap engine (endpoint, midpoint,
   center, intersection, perpendicular, extension, parallel, grid,
   working plane, ortho, the affinity rules) driven from the host's own
   event loop, with trackers (rubber-band line, wire, rectangle, arc,
@@ -256,6 +270,8 @@ kit; an addon whose Qt use is within the subset needs no change.  The
 island empties addon by addon; nothing gates on it.
 
 ## 6. Roadmap, with Draft/BIM as the gate at every step
+
+*(G3-G5 are revised in sec 10.6; G0-G2 and G6 stand.)*
 
 Each step ships alone and is measured on Draft/BIM under the existing
 rigs (`docs/Testing.md`; the BIM rig of the Draft/BIM port; the
@@ -324,9 +340,16 @@ G5 depends on G4 (trackers are primitives); G6 on all.
    on it to reach native Python is by definition on the island.
 5. **G1 before G2**, G2 in parallel if hands allow.  DECIDED.
 
-Next: G1 (sec 8.5 says what it needs).
+Decisions 6-8 (2026-09-03, evening) are in sec 10; decision 3 is
+withdrawn there and decision 1 amended.
+
+Next: G1 (sec 9 says what it needs) and the two probes of sec 10.6.
 
 ## 8. G0 results: the linter and what it found (2026-09-03)
+
+*(The numbers here are the first pass, against secs 4-7 as written.
+Sec 10.5 re-runs the linter with its table remapped to the revised
+decisions; the tool's `RULES` now carry that remap.)*
 
 `scripts/sandbox_gui_lint.py` is the U7 porting linter.  Pure standard
 library, Python >= 3.10 (Draft and BIM use `match`; the box's system
@@ -678,6 +701,311 @@ the bulk of the typing, G1c the architecture.
    Proposal: the wasm layer, because "byte-identical shapes" is the
    gate and floating-point order matters.
 
+## 10. Revision (2026-09-03, evening): the mirror, the widget protocol, the toolkit transition
+
+Three questions from the user after G0, each answered here and each
+changing a decision above:
+
+1. "Can we just port pivy over to wasm in full?  I don't see any
+   security problem with that."  -- Yes (10.1).  It replaces U5's
+   primitives with a mirror and removes the tracker half of U6.
+2. "Can we find some Python GUI module that has backends for both Qt
+   and imgui, as a transition from Qt to imgui ... to give user Python
+   code GUI capability without compromising security?"  -- No such
+   module exists; the transition mechanism is the toolkit-neutral
+   widget model behind U3, with a Qt renderer now and a Qt-free one
+   later (10.3).
+3. "Is there any similar design we can reference?" and, on the
+   Jupyter widgets + pythreejs pair: "very fitting for us, I'd like to
+   grow on it." -- The Jupyter widget protocol becomes U3's wire and
+   ipywidgets the guest library (10.2); the prior art is in 10.4.
+
+### 10.1 Decision 6: pivy in the guest, the scene mirrored
+
+Coin and `pivy.coin` are compiled into the guest.  Draft's Python
+builds real Coin graphs in the guest's own Coin; the host cannot
+render nodes in the guest heap, so the boundary is a **mirror**: the
+guest's subgraphs are replicated into the host scene and field changes
+are re-sent, coalesced per frame.  The wire is the widget protocol of
+10.2 -- a Coin node is a model whose synchronized traits are its
+fields (`hold_sync` coalesces a tracker's per-frame changes into one
+message), and the model classes are generated from Coin's own field
+introspection the way pythreejs generates its classes from three.js
+(10.4).  What it buys and costs:
+
+- All 555 pivy uses in Draft and BIM port unedited: the dimension view
+  provider (70 uses), the trackers (100), the ghost trackers' Inventor
+  strings (`writeInventor` -> `SoInput` in the guest's Coin), all of
+  it.  Desktop rendering does not change: the host scene holds the
+  same nodes it holds today, so the render cache, the bgfx renderer
+  and the scene stream see nothing new.
+- **Security is the mirror reader, which we write.**  The user's
+  reading is right: Coin inside the guest exposes nothing on the host.
+  The reader enforces a node-type allowlist that excludes anything
+  carrying a file path or code (`SoFile`, `SoTexture2` by filename,
+  `SoImage`, `SoWWWInline`, `SoShaderObject`, `SoCallback`, the VRML
+  script and inline nodes), quotas on node counts and inline texture
+  bytes, a structured wire of type name plus typed fields rather than
+  feeding Coin's Inventor parser untrusted text on the host, and a
+  check that a selection node's document/object path belongs to the
+  principal's own document.  The sec 4 U5 primitive list survives as
+  that allowlist.
+- What stays as ops: reads of the HOST scene -- `getSceneGraph`, the
+  camera node, pick, bounding-box and search actions on host nodes
+  (about 30 uses).  FreeCAD's own node types created by name
+  (`SoBrepEdgeSet` x9, `SoFCSelection`, `SoDatumLabel`,
+  `SoSkipBoundingGroup`; 13 uses) get guest stand-in classes that
+  mirror to the real host types.
+- **Build risk is the real cost.**  The Coin fork has no emscripten
+  support; its dependencies are Boost headers, OpenGL and X11, with
+  GLX and EGL behind options, so a no-render build looks feasible but
+  is untested.  Native pivy is 34 MB with symbols; the guest grows by
+  roughly 15-20 MB of wasm and its boot time by an amount to measure
+  -- acceptable for the addon guest, relevant to per-document guests
+  later.  The probe comes first (10.6).
+- Consequences: decision 3 (dimension to C++) is **withdrawn**; the
+  tracker half of U6 disappears; the snapper's move to C++ (decision
+  2) stands on cost -- its per-move work is geometry queries against
+  host shapes, not Coin -- but is **deferred**, since it is no longer
+  a correctness blocker.
+
+### 10.2 Decision 7: the Jupyter widget protocol is U3's wire, ipywidgets its guest library
+
+The widget protocol is a short versioned spec (comm open, state as
+key-value diffs, binary buffers, custom messages) with the core widget
+models specified attribute by attribute -- about forty of them -- and
+two independent model-side implementations, ipywidgets in Python and
+xwidgets in C++.  Since ipywidgets 8 the transport is pluggable: the
+`comm` package's `create_comm` / `get_comm_manager` are what
+xeus-python and JupyterLite's pyodide kernel replace.  So:
+
+- **Guest side: ipywidgets unchanged** in the package set, plus a comm
+  shim of about a hundred lines that carries comm messages over the
+  existing bridge as one op.  JupyterLite already runs ipywidgets on
+  pyodide, from a Web Worker with no DOM access, which is our browser
+  tier exactly.
+- **Host side: widget managers we write.**  The Qt manager maps the
+  core models to Qt widgets.  A FreeCAD widget module, registered on
+  both sides, adds what CAD panels need and ipywidgets' core lacks:
+  quantity inputs, a selection input (Fusion's
+  `SelectionCommandInput` shape, with dynamic filtering), color
+  buttons, and the **tree/table model widget of amendment A1** (typed
+  cells: text, number, quantity, choice, color, check; editable
+  flags; the delegates become cell types).
+- **`.ui` stays the authoring format** (decision 1 amended): the
+  guest's `loadUi` parses the `.ui` for object names and widget
+  classes and builds the widget tree; the host's manager reads the
+  same file for layout (Qt: `uic`, exact; a Qt-free manager: its own
+  converter, approximate).  The `.ui` is the layout, the models are
+  the state.  The U7 compatibility subset gives the models Qt-flavored
+  accessors (`text()`/`setText()` over `.value`) so the 25 `loadUi`
+  panels port with little edit; hand-built widget trees are rewritten
+  as ipywidgets trees or as `.ui`.
+- **Only host-registered model names render.**  ipywidgets' habit of
+  loading a widget package's own JavaScript from a CDN is the one
+  thing the managers never do: an unknown `_model_module` /
+  `_model_name` is the allowlist failing, rendered as a labeled
+  placeholder (the server-driven-UI lesson: define the fallback).
+- Chattiness: one state message per user event, batched per guest
+  call as before; `hold_sync` for bursts.  Caveat: ipywidgets is
+  traitlets-based, heavier per attribute than a hand-rolled model;
+  JupyterLite shows pyodide carries it.  The `HTML` and `Output`
+  widgets are browser-shaped; native managers support a subset and
+  say so.
+- The escape hatch -- an HTML panel in a sandboxed iframe with
+  JSON-RPC over postMessage, which VS Code (webview), Figma (UI
+  iframe) and MCP Apps all ended up with -- is **not offered** for
+  now; if the browser tier ever needs it, MCP Apps is the shape.
+
+### 10.3 Decision 8: the toolkit transition goes through the managers
+
+No Python toolkit with both a Qt and an imgui backend exists (Dear
+PyGui, imgui_bundle and pyimgui are imgui only and immediate-mode;
+Toga has the abstract-API shape but neither backend; Slint has its own
+renderer, a Qt platform backend and a wasm target, but its
+royalty-free license requires the Slint attribution and is GPLv3
+otherwise, a poor fit for an LGPL project).  None is adopted.  The
+transition is:
+
+1. The Qt manager first (free through `uic`, exact fidelity for the
+   68 existing forms).
+2. A Qt-free manager over bgfx for the same models, drawn in the 3D
+   viewer and identical in the browser viewer: the first Qt-free
+   panels on the desktop, and the first concrete step of retiring Qt
+   (panels move behind the model; the main-window chrome follows,
+   later).  For its renderer, **RmlUi is preferred over Dear ImGui**:
+   the ipywidgets `Layout` model is CSS flexbox and grid, RmlUi
+   implements flexbox and renders through a renderer you supply
+   (bgfx), and it covers the `HTML` widget's subset; imgui would need
+   Yoga for layout and a retained walker on top.  Dear ImGui is
+   already vendored under the bgfx submodule; RmlUi is not.  The
+   choice is taken at the time that manager is built, on a measured
+   prototype of each.
+3. Addons that insist on direct PySide (or direct imgui) stay on the
+   native island, as sec 5 says.
+
+### 10.4 Prior art, mapped onto the capability sets
+
+    design                          pattern                                   backs
+    ------------------------------  ----------------------------------------  --------
+    VS Code extension host          contribution points (manifest data), thin  U1, U2,
+                                    service API, TreeDataProvider (host       U4, A1
+                                    renders), webview as escape hatch, remote
+                                    extension host = location transparency
+    Zed extensions (Wasmtime, WIT)  "the extension describes what to render   U3
+                                    as data, Zed renders it natively";
+                                    "extensions compose primitives, they
+                                    don't draw pixels"; events return data
+                                    patches; GPU access rejected
+    Figma plugins                   QuickJS compiled to wasm after the Realms  runtime,
+                                    shim proved unsafe ("object                network
+                                    representations too different" for
+                                    confusion attacks); typed document API;
+                                    UI iframe; manifest networkAccess
+                                    allowedDomains
+    Jupyter widgets / JupyterLite   kernel-side models, front-end views,       U3 wire,
+                                    state diffs + binary buffers over comm;    browser
+                                    several front ends; ipywidgets on pyodide  tier
+    pythreejs / xthreejs            a scene graph as widget models, classes    U5 mirror
+                                    GENERATED from a per-class config
+    xwidgets, euporie               C++ model side of the same protocol;       host
+                                    a non-DOM (terminal) renderer of it        managers
+    Cash App Redwood + Zipline      Kotlin logic in a QuickJS guest, widget    U3 wire,
+                                    protocol generated from schema, native     versioning
+                                    renderers; guest/host protocol versioned
+    Office.js                       proxy objects queue, one sync flushes;     batching,
+                                    scalar vs navigational properties          values/handles
+    Fusion 360 command inputs       typed inputs (selection, value with units, FreeCAD
+                                    dropdown, table, triad ...), host renders, widget
+                                    input-changed / validate / execute events  module
+    Onshape FeatureScript           parameters with UI annotations, dialog     same
+                                    generated, sandboxed language
+    Adaptive Cards, Lyft Canvas,    declarative schema rendered natively per   schema,
+    Airbnb Magma                    host; protobuf versioning; unknown         fallback
+                                    components need a fallback policy          policy
+    Unity UI Toolkit                retained UXML/USS, one renderer for        .ui as
+                                    editor and runtime                         authoring
+    MCP Apps                        sandboxed iframe + JSON-RPC over           escape
+                                    postMessage, "no backchannel"              hatch
+    Blender layout API              toolkit-neutral vocabulary, but draw()     why not
+                                    per redraw in-process with full access     immediate
+
+### 10.5 The lint remapped onto the decisions
+
+`sandbox_gui_lint.py`'s table now carries the revision: Coin classes,
+the Inventor-string reads and the by-name nodes are `U5` "mirror, no
+edit"; A1 (model/view, delegates) is `U3` "tree/table model widget";
+A2 (composed icons, the XPM round trip) is `U2` "icon.swatch /
+icon.overlay"; A4 (openUrl, status, theme query, preferences.show) is
+`U2`; dock widgets and completers are `U3`.  The per-file weight no
+longer counts mirrored scene code.  Same tree, re-run:
+
+    bucket         first pass (sec 8)   revised      what changed
+    -------------  ------------------   ----------   ------------------------------
+    subset          2187 /  189 files   2187 / 189   --
+    U1               335 /  169          335 / 169   --
+    U2               209 /   54          310 /  75   A2 (80) and A4 (21) mapped
+    U3              1370 /  125         1504 / 125   A1 (122) and docks mapped
+    U4               846 /  192          846 / 192   --
+    U4.doCommand     247 /   47          247 /  47   --
+    U5               470 /   29          503 /  29   A3 mapped; ports UNEDITED
+    U6               243 /   62          243 /  62   --
+    unmapped         375 /   56          107 /  33   the residue
+
+    verdict                         first pass   revised
+    ------------------------------  ----------   -------
+    clean                              189          189
+    no-edit (incl. mirror-only)        108          118
+    form / tool / form+tool only       103          117
+    with RESIDUE                        56           33
+
+Files needing an edit: 170 -> 160; uses needing an edit: U3 + U6 +
+unmapped = 1988 -> 1854, of which 1504 are forms.  The scene work
+(503 uses, 29 files) is gone from the list; the residue is now:
+
+    uses  files  theme (revised)
+    ----  -----  --------------------------------------------------------------
+      16     7  Qt event types: event filters, key/mouse events (Draft toolbar, BIM dialogs)
+      11     3  addon state hung on the Gui module (BIM: guest module state instead)
+       9     5  filesystem: QFile, QDir, QFileInfo, QStandardPaths
+       8     1  rich text: QTextCharFormat, QTextCursor, QSyntaxHighlighter (ArchReport)
+       7     5  host scene graph handle (getSceneGraph): a U4/U5 query op
+       7     4  Qt classes outside the subset: QEventLoop, QFileSystemModel, QStringListModel, QToolTip
+       5     4  Coin actions on the host scene (bbox, search, matrix, ray pick)
+       5     3  camera nodes built for offscreen rendering (OfflineRenderingUtils)
+       4     3  MDI-area walk to find the 3D view (WorkingPlane): view.active instead
+       4     4  Quarter viewer handle
+       4     2  this fork's live-import switches
+      <=3      each: synthetic Qt events, QSvgWidget, font metrics, cursor
+               position, custom QObject, viewport region, process handle,
+               offscreen renderer, light node, .iv writer, Coin version
+
+Every remaining theme is either a rewrite in the file that owns it
+(event filters, rich text, the MDI walk, module-level state) or a
+host-scene query op (about 20 uses).  The revised work list is led by
+forms, as it should be: `ArchPrecast.py` (108 U3), `ArchReport.py`
+(72 U3, rich text), `DraftGui.py` (66 U3, 15 U6), `ArchComponent.py`
+(77 U3), `ArchCoveringGui.py`, `ArchWindow.py` (66 U3, form only),
+`ArchStructure.py`, `ArchSectionPlane.py`, `ArchGrid.py`,
+`BimIfcProperties.py` (42 U3, the A1 tree).  `gui_trackers.py` and
+`view_dimension.py`, first and fourteenth before, are off the list.
+
+### 10.6 Roadmap, revised
+
+G0 done, G1 as sized in sec 9, G2 (U1 + U2 + U7) unchanged.  Then:
+
+- **Probe A -- Coin and pivy to wasm.**  Compile the Coin fork with
+  emcc, no GL, no threads, no fonts; build `pivy.coin` with the guest
+  toolchain (`docs/PyodideHost.md` sec 7); load the wheel in a guest
+  and time the boot and a 10 k-node graph build.  Decides whether 10.1
+  ships as designed or the guest gets a pure-Python Coin-shaped model
+  library instead (same mirror, more typing).
+- **Probe B -- the widget protocol end to end.**  `ipywidgets` in the
+  package set, the comm shim over the bridge, a host manager
+  rendering Button, Text, FloatSlider, Dropdown and VBox in Qt from a
+  guest script.  Measures boot cost and per-event latency before any
+  generator work.
+- **G3 -- U3 over the widget protocol.**  The Qt manager for the core
+  models, the FreeCAD widget module (quantity, selection, color,
+  tree/table), the `.ui` loader on both sides, the U7 accessors.
+  Gate: every Draft/BIM task panel opens from the guest and
+  round-trips its fields; the BIM setup and views dialogs work; the
+  IFC properties tree edits through the model widget.
+- **G4 -- the mirror.**  The generated Coin model classes, the mirror
+  reader with its allowlist and quotas, the host-scene query ops, the
+  stand-ins for FreeCAD node types, the event stream (Coin events
+  serialized to guest callbacks, coalesced per frame).  Gate: the
+  Draft test documents render identically (pixel compare on a
+  converged scene) with the proxies in the guest; the trackers follow
+  the mouse under the GUI rig.
+- **G5 -- the snapper**, deferred: the C++ snap engine when its cost
+  is measured to matter, tool sessions as in sec 4 U6.
+- **G6 -- the switch for Draft/BIM**, unchanged.
+- **G7 -- the Qt-free manager** over bgfx (RmlUi or imgui + Yoga, on
+  a measured prototype), with no Draft/BIM gate of its own: the
+  panels render in the 3D viewer and the browser viewer from the same
+  models.  This is the toolkit transition's first shipped step.
+
+Dependencies: G3 needs Probe B; G4 needs Probe A and G3 (the mirror's
+wire); G5 needs G4; G7 needs G3; G6 needs all but G7.
+
+### 10.7 Open questions
+
+- Probe A's outcome: real Coin in the guest, or a Coin-shaped model
+  library.  Both keep the same mirror and allowlist.
+- Whether the mirror reader constructs host nodes through the widget
+  manager (one code path for forms and scene) or through a dedicated
+  scene manager; leaning to one manager with two model families.
+- Versioning of the widget protocol between a shipped guest wheel and
+  an older host: Redwood's problem; the protocol carries a version,
+  the manager refuses a newer major.
+- The browser-only tier (no desktop host): the mirrored subset must
+  render in the wasm viewer; today's pivy annotations do not reach it
+  either, so it is not a regression, but it is work owed.
+- Whether `getIcon` returning a composed icon should be a host op
+  (icon.swatch / icon.overlay) or an `Image` model with inline bytes
+  rendered by the guest; the op is smaller.
+
 ## References
 
 - Electron's `remote` module deprecation (synchronous IPC, leaky
@@ -689,3 +1017,48 @@ the bulk of the typing, G1c the architecture.
   `docs/ComputeBoundaries.md` sec 6 (the unified protocol),
   `docs/ExpressionSandbox.md` secs 3, 7.5, 8 (principals, generated
   facades, the ladder), `docs/SandboxNetwork.md` sec 11 (the switch).
+
+Prior art of sec 10.4 (all checked 2026-09-03):
+
+- VS Code contribution points, tree views, webviews:
+  https://code.visualstudio.com/api/references/contribution-points,
+  https://code.visualstudio.com/api/extension-guides/tree-view,
+  https://code.visualstudio.com/api/extension-guides/webview
+- Zed: extensions with custom rendering (discussion #37270):
+  https://github.com/zed-industries/zed/discussions/37270; the
+  extension API: https://zed.dev/blog/zed-decoded-extensions
+- Figma: an update on plugin security (Realms -> QuickJS in wasm):
+  https://www.figma.com/blog/an-update-on-plugin-security/; manifest
+  network access: https://www.figma.com/plugin-docs/manifest/
+- Jupyter widgets messaging protocol:
+  https://github.com/jupyter-widgets/ipywidgets/blob/main/packages/schema/messages.md;
+  low-level explanation:
+  https://ipywidgets.readthedocs.io/en/latest/examples/Widget%20Low%20Level.html;
+  the pluggable comm: https://github.com/ipython/comm and
+  https://github.com/jupyter-widgets/ipywidgets/issues/3209
+- JupyterLite kernels (ipywidgets on pyodide):
+  https://jupyterlite.readthedocs.io/en/stable/howto/configure/kernels.html,
+  https://github.com/jupyterlite/pyodide-kernel
+- pythreejs generator: https://github.com/jupyter-widgets/pythreejs/blob/master/CONTRIBUTING.md
+- xwidgets (C++ model side): https://github.com/jupyter-xeus/xwidgets;
+  euporie (terminal renderer): https://euporie.readthedocs.io/en/latest/apps/console.html;
+  qtconsole never displayed widgets: https://github.com/jupyter/qtconsole/issues/382
+- Cash App Redwood and Zipline:
+  https://code.cash.app/native-ui-and-multiplatform-compose-with-redwood,
+  https://code.cash.app/zipline, https://github.com/cashapp/redwood/releases
+- Office.js application-specific API model (proxy objects, sync):
+  https://learn.microsoft.com/en-us/office/dev/add-ins/develop/application-specific-api-model
+- Fusion 360 command inputs:
+  https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/CommandInputs_UM.htm,
+  https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/SelectionCommandInput.htm
+- Onshape FeatureScript feature UI: https://cad.onshape.com/FsDoc/uispec.html
+- Server-driven UI (Airbnb, Netflix, Lyft):
+  https://medium.com/@aubreyhaskett/server-driven-ui-what-airbnb-netflix-and-lyft-learned-building-dynamic-mobile-experiences-20e346265305
+- Unity UI Toolkit: https://docs.unity3d.com/6000.3/Documentation/Manual/ui-systems/introduction-ui-toolkit.html
+- MCP Apps: https://modelcontextprotocol.io/extensions/apps/overview,
+  https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx
+- RmlUi: https://github.com/mikke89/RmlUi (flexbox: PR #257); Yoga:
+  https://github.com/react/yoga; Dear ImGui bindings list:
+  https://github.com/ocornut/imgui/wiki/Bindings; pyimgui:
+  https://github.com/pyimgui/pyimgui
+- Slint license: https://github.com/slint-ui/slint/blob/master/LICENSE.md

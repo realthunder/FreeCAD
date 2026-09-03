@@ -8,17 +8,20 @@ FreeCADGui use, sorted into the buckets of docs/SandboxGui.md sec 4:
     subset        the U7 compatibility module covers it: no edit needed
     U1            registration data (addCommand, addWorkbench, ...)
     U2            host services (dialogs, defer, cursor, clipboard, hints)
-    U3            forms (.ui as a model-sync proxy tree; hand-built widget
-                  trees rewritten as .ui)
+    U3            forms: the Jupyter widget protocol, ipywidgets models in
+                  the guest, .ui as the authoring format (sec 10); the
+                  tree/table model widget of amendment A1 included
     U4            selection, view, edit state, runCommand
     U4.doCommand  the eval primitive with its own permission
-    U5            annotation scene primitives (replaces pivy nodes)
-    U6            interactive tools: snapper, trackers, 3D event stream
-    unmapped      nothing in sec 4 covers it: the residue
+    U5            the Coin scene graph, MIRRORED: pivy runs in the guest and
+                  the host replicates the graph (sec 10) -- ports unedited
+    U6            interactive tools: the 3D event stream and the snapper
+    unmapped      nothing in the design covers it: the residue
 
-The mapping table (RULES below) is the protocol's allowlist as it stands
-in the document; whatever lands in `unmapped` is what the document may
-have missed.  Run without arguments from anywhere in the tree to lint
+The mapping table (RULES below) is the protocol's allowlist as the
+document stands after its 2026-09-03 revision (sec 10); whatever lands in
+`unmapped` is what the document may have missed.  Sec 8 records the
+numbers of the first pass, before the revision.  Run without arguments from anywhere in the tree to lint
 src/Mod/Draft and src/Mod/BIM.
 
     sandbox_gui_lint.py [ROOT ...] [--all] [--list FILE] [--ui]
@@ -226,10 +229,10 @@ RULES = {
     "QTimer()": ("U2", "defer (rewrite: repeating timer to defer chain)"),
     "QTimer": ("U2", "defer"),
     "QProgressDialog": ("U2", "progress (Base.ProgressIndicator shape)"),
-    "QDesktopServices.openUrl": ("unmapped", "openUrl: an external launch, needs a new U2 op and a grant"),
+    "QDesktopServices.openUrl": ("U2", "openUrl (A4, a grant)"),
     "QApplication.activeWindow": ("U3", "form.parent (dropped: the host picks the parent)"),
-    "QApplication.style": ("unmapped", "style/palette query: theme data, a new U2 query op"),
-    "QApplication.palette": ("unmapped", "style/palette query: theme data, a new U2 query op"),
+    "QApplication.style": ("U2", "theme query (A4)"),
+    "QApplication.palette": ("U2", "theme query (A4)"),
     "QApplication.instance": ("unmapped", "process handle: never crosses"),
     "QApplication.sendEvent": ("unmapped", "synthetic Qt event: no protocol equivalent"),
     "QApplication.keyboardModifiers": ("U6", "tool.events (modifiers on the event)"),
@@ -238,21 +241,21 @@ RULES = {
     "QObject.connect": ("U3", "form.signal (subscribe)"),
     "QObject.disconnect": ("U3", "form.signal (unsubscribe)"),
     "QObject": ("unmapped", "QObject outside signal connect: event filters, custom QObjects"),
-    "QStandardItem": ("unmapped", "model/view (QStandardItem): no .ui equivalent, needs a U3 tree/table model op"),
-    "QStandardItemModel": ("unmapped", "model/view (QStandardItemModel): needs a U3 tree/table model op"),
-    "QAbstractItemModel": ("unmapped", "model/view (custom model): needs a U3 tree/table model op"),
-    "QAbstractTableModel": ("unmapped", "model/view (custom model): needs a U3 tree/table model op"),
-    "QSortFilterProxyModel": ("unmapped", "model/view (proxy model): needs a U3 tree/table model op"),
-    "QItemSelectionModel": ("unmapped", "model/view (selection model): needs a U3 tree/table model op"),
-    "QStyledItemDelegate": ("unmapped", "item delegate (custom editor/painting): no protocol equivalent"),
-    "QItemDelegate": ("unmapped", "item delegate (custom editor/painting): no protocol equivalent"),
-    "QCompleter": ("unmapped", "completer: a U3 field property (completion list)"),
+    "QStandardItem": ("U3", "tree/table model widget (A1): a FreeCAD widget-module model; cell types replace delegates"),
+    "QStandardItemModel": ("U3", "tree/table model widget (A1): a FreeCAD widget-module model; cell types replace delegates"),
+    "QAbstractItemModel": ("U3", "tree/table model widget (A1): a FreeCAD widget-module model; cell types replace delegates"),
+    "QAbstractTableModel": ("U3", "tree/table model widget (A1): a FreeCAD widget-module model; cell types replace delegates"),
+    "QSortFilterProxyModel": ("U3", "tree/table model widget (A1): a FreeCAD widget-module model; cell types replace delegates"),
+    "QItemSelectionModel": ("U3", "tree/table model widget (A1): a FreeCAD widget-module model; cell types replace delegates"),
+    "QStyledItemDelegate": ("U3", "tree/table model widget (A1): a FreeCAD widget-module model; cell types replace delegates"),
+    "QItemDelegate": ("U3", "tree/table model widget (A1): a FreeCAD widget-module model; cell types replace delegates"),
+    "QCompleter": ("U3", "field property: completion list (Combobox options)"),
     "QValidator": ("unmapped", "validator: a U3 field property (input mask)"),
     "QDoubleValidator": ("unmapped", "validator: a U3 field property (input mask)"),
     "QIntValidator": ("unmapped", "validator: a U3 field property (input mask)"),
     "QRegularExpressionValidator": ("unmapped", "validator: a U3 field property (input mask)"),
     "QShortcut": ("unmapped", "shortcut on a widget: U1 accelerator data or a U3 form property"),
-    "QDockWidget": ("unmapped", "dock widget: U3 dock placement of a .ui form (not in the subset yet)"),
+    "QDockWidget": ("U3", "dock placement of a form"),
     "QMainWindow": ("unmapped", "main window: never crosses"),
     "QMdiArea": ("unmapped", "MDI area walk to find the 3D view: U4 view.list/active instead"),
     "QMdiSubWindow": ("unmapped", "MDI window: never crosses"),
@@ -262,14 +265,14 @@ RULES = {
     "QMouseEvent": ("unmapped", "Qt event types: event filters have no protocol equivalent"),
     "QCursor": ("unmapped", "cursor object: cursor.override with a named cursor only"),
     # ---- raster, painting, text documents, printing ---------------------------
-    "QImage": ("unmapped", "icon composition and textures (QImage/QPainter): needs icon.swatch / icon.overlay ops, textures as U5 image data"),
-    "QPixmap": ("unmapped", "icon composition and textures (QImage/QPainter): needs icon.swatch / icon.overlay ops, textures as U5 image data"),
-    "QPainter": ("unmapped", "icon composition and textures (QImage/QPainter): needs icon.swatch / icon.overlay ops, textures as U5 image data"),
-    "QPen": ("unmapped", "icon composition and textures (QImage/QPainter): needs icon.swatch / icon.overlay ops, textures as U5 image data"),
-    "QBrush": ("unmapped", "icon composition and textures (QImage/QPainter): needs icon.swatch / icon.overlay ops, textures as U5 image data"),
-    "QPainterPath": ("unmapped", "icon composition and textures (QImage/QPainter): needs icon.swatch / icon.overlay ops, textures as U5 image data"),
-    "QPolygonF": ("unmapped", "icon composition and textures (QImage/QPainter): needs icon.swatch / icon.overlay ops, textures as U5 image data"),
-    "QTransform": ("unmapped", "icon composition and textures (QImage/QPainter): needs icon.swatch / icon.overlay ops, textures as U5 image data"),
+    "QImage": ("U2", "icon.swatch / icon.overlay (A2): composed icons as host ops; textures as mirrored image data"),
+    "QPixmap": ("U2", "icon.swatch / icon.overlay (A2): composed icons as host ops; textures as mirrored image data"),
+    "QPainter": ("U2", "icon.swatch / icon.overlay (A2): composed icons as host ops; textures as mirrored image data"),
+    "QPen": ("U2", "icon.swatch / icon.overlay (A2): composed icons as host ops; textures as mirrored image data"),
+    "QBrush": ("U2", "icon.swatch / icon.overlay (A2): composed icons as host ops; textures as mirrored image data"),
+    "QPainterPath": ("U2", "icon.swatch / icon.overlay (A2): composed icons as host ops; textures as mirrored image data"),
+    "QPolygonF": ("U2", "icon.swatch / icon.overlay (A2): composed icons as host ops; textures as mirrored image data"),
+    "QTransform": ("U2", "icon.swatch / icon.overlay (A2): composed icons as host ops; textures as mirrored image data"),
     "QTextCharFormat": ("unmapped", "rich text document: no protocol equivalent"),
     "QTextCursor": ("unmapped", "rich text document: no protocol equivalent"),
     "QTextDocument": ("unmapped", "rich text document: no protocol equivalent"),
@@ -281,14 +284,14 @@ RULES = {
     "QGraphicsItem": ("unmapped", "QGraphics scene: no protocol equivalent"),
     "QSvgWidget": ("unmapped", "SVG widget: no protocol equivalent"),
     "QSvgRenderer": ("unmapped", "SVG renderer: no protocol equivalent"),
-    "QPalette": ("unmapped", "style/palette query: theme data, a new U2 query op"),
-    "QStyle": ("unmapped", "style query: theme data, a new U2 query op"),
+    "QPalette": ("U2", "theme query (A4)"),
+    "QStyle": ("U2", "theme query (A4)"),
     "QStyleOption": ("unmapped", "style painting: no protocol equivalent"),
     "QStyleOptionViewItem": ("unmapped", "style painting: no protocol equivalent"),
     # ---- I/O, process, threads: never cross -----------------------------------
-    "QByteArray": ("unmapped", "Qt I/O types: bytes in the guest instead"),
-    "QBuffer": ("unmapped", "Qt I/O types: bytes in the guest instead"),
-    "QIODevice": ("unmapped", "Qt I/O types: bytes in the guest instead"),
+    "QByteArray": ("U2", "icon.swatch / icon.overlay (A2): the XPM round trip disappears"),
+    "QBuffer": ("U2", "icon.swatch / icon.overlay (A2): the XPM round trip disappears"),
+    "QIODevice": ("U2", "icon.swatch / icon.overlay (A2): the XPM round trip disappears"),
     "QFile": ("unmapped", "filesystem: never crosses (fs grant is the file dialog only)"),
     "QDir": ("unmapped", "filesystem: never crosses"),
     "QFileInfo": ("unmapped", "filesystem: never crosses"),
@@ -309,17 +312,17 @@ RULES = {
     "qBlue": ("subset", "color value"),
     "qAlpha": ("subset", "color value"),
     "qGray": ("subset", "color value"),
-    "QLinearGradient": ("unmapped", "icon composition and textures (QImage/QPainter): needs icon.swatch / icon.overlay ops, textures as U5 image data"),
-    "QRadialGradient": ("unmapped", "icon composition and textures (QImage/QPainter): needs icon.swatch / icon.overlay ops, textures as U5 image data"),
+    "QLinearGradient": ("U2", "icon.swatch / icon.overlay (A2): composed icons as host ops; textures as mirrored image data"),
+    "QRadialGradient": ("U2", "icon.swatch / icon.overlay (A2): composed icons as host ops; textures as mirrored image data"),
     "QFontMetrics": ("unmapped", "font metrics: needs a U3 text-measure query op"),
     "QActionGroup": ("U3", "widget tree (hand-built: rewrite as .ui)"),
-    "QTreeView": ("unmapped", "model/view (QTreeView): needs a U3 tree/table model op"),
-    "QTableView": ("unmapped", "model/view (QTableView): needs a U3 tree/table model op"),
-    "QListView": ("unmapped", "model/view (QListView): needs a U3 tree/table model op"),
+    "QTreeView": ("U3", "tree/table model widget (A1): a FreeCAD widget-module model; cell types replace delegates"),
+    "QTableView": ("U3", "tree/table model widget (A1): a FreeCAD widget-module model; cell types replace delegates"),
+    "QListView": ("U3", "tree/table model widget (A1): a FreeCAD widget-module model; cell types replace delegates"),
     "SIGNAL": ("U3", "form.signal (signal name)"),
     "SLOT": ("U3", "form.signal (slot name)"),
-    "Signal": ("unmapped", "custom Qt signal: guest-side callback instead"),
-    "Slot": ("unmapped", "Qt slot decorator: plain method instead"),
+    "Signal": ("U3", "form.signal (guest-side callback)"),
+    "Slot": ("U3", "form.signal (plain method)"),
     "QObject.tr": ("subset", "i18n.translate"),
     # ---- FreeCADGui: U1 registration -----------------------------------------
     "Gui.addCommand": ("U1", "register.command"),
@@ -346,9 +349,9 @@ RULES = {
     "Gui.UserInput": ("U2", "hints (data)"),
     "Gui.HintManager": ("U2", "hints.show/hide"),
     "Gui.updateGui": ("U2", "no-op (host owns the loop)"),
-    "Gui.getMainWindow().statusBar": ("unmapped", "status bar message: needs a U2 status op"),
-    "Gui.getMainWindow().showMessage": ("unmapped", "status bar message: needs a U2 status op"),
-    "Gui.getMainWindow().addStatusBarItem": ("unmapped", "status bar widget: needs a U3 dock placement (status)"),
+    "Gui.getMainWindow().statusBar": ("U2", "status (A4)"),
+    "Gui.getMainWindow().showMessage": ("U2", "status (A4)"),
+    "Gui.getMainWindow().addStatusBarItem": ("U3", "dock placement: status area"),
     # ---- FreeCADGui: U3 forms ------------------------------------------------
     "Gui.PySideUic.loadUi": ("U3", "form.load (.ui)"),
     "Gui.PySideUic": ("U3", "form.load (.ui)"),
@@ -423,7 +426,7 @@ RULES = {
     "Gui.removeWorkbenchManipulator": ("U1", "register.workbenchManipulator (menu/toolbar edits as data)"),
     "Gui.suspendWaitCursor": ("U2", "cursor.override (suspend)"),
     "Gui.resumeWaitCursor": ("U2", "cursor.override (resume)"),
-    "Gui.showPreferences": ("unmapped", "preferences dialog: needs a U2 preferences.show op"),
+    "Gui.showPreferences": ("U2", "preferences.show (A4)"),
     # ---- fork- or addon-specific objects hung on the Gui module -------------
     "Gui.setLiveImport": ("unmapped", "fork live-import switch: a host op of its own"),
     "Gui.isLiveImport": ("unmapped", "fork live-import switch: a host op of its own"),
@@ -468,15 +471,15 @@ RULES = {
     "coin.SbViewportRegion": ("unmapped", "viewport region for a Coin action: U4 view query instead"),
     "coin.SoType": ("U6", "tool.events (event type id)"),
     "coin.SoDB": ("unmapped", "Coin database: version query, init"),
-    "coin.SoDB.readAll": ("unmapped", "Inventor-string shape copy (writeInventor -> SoInput -> readAll): a U6 ghost tracker / U5 shape-reference primitive"),
-    "coin.SoType.fromName": ("unmapped", "FreeCAD Coin node by type name (SoBrepEdgeSet, SoBrepFaceSet, SoDatumLabel, SoFCSelection, SoSkipBoundingGroup): U5 selectable primitives, C++ dimension"),
-    "coin.SoInput": ("unmapped", "Inventor-string shape copy (writeInventor -> SoInput -> readAll): a U6 ghost tracker / U5 shape-reference primitive"),
+    "coin.SoDB.readAll": ("U5", "mirror: Inventor string parsed by the guest's own Coin (no edit)"),
+    "coin.SoType.fromName": ("U5", "mirror: FreeCAD node by name (guest stand-in class, mirrored to the host type)"),
+    "coin.SoInput": ("U5", "mirror: Inventor string parsed by the guest's own Coin (no edit)"),
     "coin.SoOutput": ("unmapped", "Coin .iv writer: no protocol equivalent"),
     "coin.SoWriteAction": ("unmapped", "Coin .iv writer: no protocol equivalent"),
-    "coin.SoGetBoundingBoxAction": ("unmapped", "Coin bounding box action: U4 view/object bbox query instead"),
-    "coin.SoGetMatrixAction": ("unmapped", "Coin matrix action: U4 query instead"),
-    "coin.SoSearchAction": ("unmapped", "Coin scene search: U5 owns the scene, no raw access"),
-    "coin.SoRayPickAction": ("unmapped", "Coin ray pick: U4 view.pick instead"),
+    "coin.SoGetBoundingBoxAction": ("unmapped", "Coin action: works in the guest's Coin on a guest graph; on the host scene it needs a U4 query op"),
+    "coin.SoGetMatrixAction": ("unmapped", "Coin action: works in the guest's Coin on a guest graph; on the host scene it needs a U4 query op"),
+    "coin.SoSearchAction": ("unmapped", "Coin action: works in the guest's Coin on a guest graph; on the host scene it needs a U4 query op"),
+    "coin.SoRayPickAction": ("unmapped", "Coin action: works in the guest's Coin on a guest graph; on the host scene it needs a U4 query op"),
     "coin.SoOffscreenRenderer": ("unmapped", "offscreen render: a U4 view.saveImage op"),
     "coin.SoPerspectiveCamera": ("unmapped", "camera node: U4 view.camera get/set instead"),
     "coin.SoOrthographicCamera": ("unmapped", "camera node: U4 view.camera get/set instead"),
@@ -815,25 +818,24 @@ def rel(path, roots):
 
 def weight(rec):
     c = rec["counts"]
-    return c["U3"] + c["U5"] + c["U6"] + 3 * c["unmapped"]
+    return c["U3"] + c["U6"] + 3 * c["unmapped"]
 
 
 def flags(rec):
+    """form / tool / RESIDUE are work; mirror (U5, pivy in the guest) is not."""
     c = rec["counts"]
     out = []
     if c["U3"]:
         out.append("form")
-    if c["U5"]:
-        out.append("scene")
     if c["U6"]:
         out.append("tool")
     if c["unmapped"]:
         out.append("RESIDUE")
-    if not out and any(c[b] for b in BUCKETS):
-        out.append("no-edit")
-    if not any(c[b] for b in BUCKETS):
-        out.append("clean")
-    return "+".join(out)
+    if not out:
+        if c["U5"]:
+            return "mirror"
+        return "no-edit" if any(c[b] for b in BUCKETS) else "clean"
+    return "+".join(out) + ("+mirror" if c["U5"] else "")
 
 
 def report_summary(res, out):
@@ -909,14 +911,14 @@ def report_residue(res, out, top=None):
 
 def report_worklist(res, out, show_all=False, top=40):
     roots = res["roots"]
-    rows = [(p, x) for p, x in res["files"].items() if weight(x) or x["counts"]["unmapped"]]
+    rows = [(p, x) for p, x in res["files"].items() if weight(x)]
     rows.sort(key=lambda px: (-weight(px[1]), px[0]))
     if not show_all:
         rows = rows[:top]
     print("== Work list (files needing an edit, heaviest first; --all for every file)", file=out)
     print(
         "  %6s %6s %5s %5s %5s %5s %5s %5s  %-22s %s"
-        % ("weight", "subset", "U1-2", "U3", "U4", "doCmd", "U5", "U6", "residue/flags", "file"),
+        % ("weight", "subset", "U1-2", "U3", "U4", "doCmd", "mirr", "U6", "residue/flags", "file"),
         file=out,
     )
     for p, x in rows:
@@ -943,8 +945,8 @@ def report_worklist(res, out, show_all=False, top=40):
 
 def report_noedit(res, out):
     roots = res["roots"]
-    rows = [p for p, x in res["files"].items() if flags(x) == "no-edit"]
-    print("== Files that port with no edit (subset + U1/U2/U4 ops only): %d" % len(rows), file=out)
+    rows = [p for p, x in res["files"].items() if flags(x) in ("no-edit", "mirror")]
+    print("== Files that port with no edit (subset, U1/U2/U4 ops, mirrored scene code): %d" % len(rows), file=out)
     for p in sorted(rows):
         print("  " + rel(p, roots), file=out)
     print(file=out)
@@ -1144,11 +1146,11 @@ EXPECT = [
     ("coin.SoLocation2Event.getClassTypeId", "U6", True),
     ("Gui.getMainWindow().getActiveWindow().getViewer", "unmapped", True),
     ("QT_TRANSLATE_NOOP", "subset", True),
-    ("QImage", "unmapped", True),
+    ("QImage", "U2", True),
     ("QTimer.singleShot", "subset", True),
     ("QIcon", "subset", True),
     ("QPixmap", "subset", True),
-    ("QPixmap.fromImage", "unmapped", True),
+    ("QPixmap.fromImage", "U2", True),
     ("Gui.Snapper.snap", "U6", True),
     ("QLabel", "U3", True),
     ("Gui.ActiveDocument.ActiveView.getSceneGraph", "unmapped", True),

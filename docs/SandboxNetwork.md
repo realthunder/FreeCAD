@@ -736,8 +736,10 @@ adds this document.
   with the same offer; it returns only with N5, when macros and
   console lines run in the guest and a scan before a long script is
   worth having.
-- **G0 (DONE 2026-09-03, `SandboxGui.md` sec 8), G1**
-  (`docs/SandboxGui.md`): the porting linter, then Draft's
+- **G0 (DONE 2026-09-03, `SandboxGui.md` sec 8), G1** (sized in
+  `SandboxGui.md` sec 9; G3-G5 revised in its sec 10: the scene is
+  mirrored from pivy in the guest, forms use the Jupyter widget
+  protocol): the porting linter, then Draft's
   and BIM's App side in the guest as LOCAL wheels through the same
   package loader -- boot-time loading only, which is why P2 is not a
   prerequisite of them.
